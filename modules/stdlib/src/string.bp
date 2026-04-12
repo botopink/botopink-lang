@@ -1,0 +1,18 @@
+
+interface String {
+    fn len(self: Self) -> i32
+    fn split(self: Self, sep: string) -> string[]
+    fn to_upper(self: Self) -> string
+    fn to_lower(self: Self) -> string
+    fn contains(self: Self, sub: string) -> bool
+    fn starts_with(self: Self, prefix: string) -> bool
+    fn ends_with(self: Self, suffix: string) -> bool
+    fn trim(self: Self) -> string
+    fn trim_start(self: Self) -> string
+    fn trim_end(self: Self) -> string
+    fn replace(self: Self, pattern: string, with: string) -> string
+    fn slice(self: Self, start: i32, end: i32) -> string
+    fn char_at(self: Self, index: i32) -> ?string
+    fn index_of(self: Self, sub: string) -> i32
+    fn to_string(self: Self) -> string
+}

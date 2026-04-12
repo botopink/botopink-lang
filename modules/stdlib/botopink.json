@@ -1,0 +1,12 @@
+{
+  "name": "stdlib",
+  "version": "0.0.1",
+  "description": "Botopink standard library — builtin types, primitives, and core interfaces",
+  "src": "src/",
+  "files": [
+    "primitives.bp",
+    "array.bp",
+    "string.bp",
+    "builtins.bp"
+  ]
+}

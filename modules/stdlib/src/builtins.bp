@@ -1,0 +1,29 @@
+
+// ── type reflection ───────────────────────────────────────────────────────────
+
+fn typeOf<T>(val: T) type
+fn typeName(comptime: typeinfo T) string
+fn sizeOf(comptime: typeinfo T) i32
+fn alignOf(comptime: typeinfo T) i32
+fn hasField(comptime: typeinfo T, comptime name: string) bool
+fn hasDecl(comptime: typeinfo T, comptime name: string) bool
+fn field<T, F>(obj: T, comptime name: string) F
+fn tagName<T>(val: T) string
+
+// ── numeric ───────────────────────────────────────────────────────────────────
+
+fn min<T>(a: T, b: T) T
+fn max<T>(a: T, b: T) T
+fn abs<T>(val: T) T
+fn as(comptime: typeinfo T, val: T) T
+
+// ── runtime ───────────────────────────────────────────────────────────────────
+
+fn panic(message: string)
+fn trap()
+fn src() string
+
+
+// ── compile-time I/O ──────────────────────────────────────────────────────────
+
+fn embedFile(comptime path: string) string

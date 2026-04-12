@@ -1,0 +1,44 @@
+
+interface I32 {
+    fn to_string(self: Self) -> string
+    fn abs(self: Self) -> i32
+    fn clamp(self: Self, min: i32, max: i32) -> i32
+}
+
+interface U32 {
+    fn to_string(self: Self) -> string
+    fn clamp(self: Self, min: u32, max: u32) -> u32
+}
+
+interface I64 {
+    fn to_string(self: Self) -> string
+    fn abs(self: Self) -> i64
+    fn clamp(self: Self, min: i64, max: i64) -> i64
+}
+
+interface U64 {
+    fn to_string(self: Self) -> string
+    fn clamp(self: Self, min: u64, max: u64) -> u64
+}
+
+interface F32 {
+    fn to_string(self: Self) -> string
+    fn abs(self: Self) -> f32
+    fn floor(self: Self) -> f32
+    fn ceil(self: Self) -> f32
+    fn round(self: Self) -> f32
+    fn clamp(self: Self, min: f32, max: f32) -> f32
+}
+
+interface F64 {
+    fn to_string(self: Self) -> string
+    fn abs(self: Self) -> f64
+    fn floor(self: Self) -> f64
+    fn ceil(self: Self) -> f64
+    fn round(self: Self) -> f64
+    fn clamp(self: Self, min: f64, max: f64) -> f64
+}
+
+interface Bool {
+    fn to_string(self: Self) -> string
+}

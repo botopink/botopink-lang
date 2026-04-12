@@ -1,0 +1,13 @@
+.zig-cache
+zig-out
+botopink.rar
+changes.txt
+.zip
+src.zip
+.zig-cache
+zig-pkg
+.claude/settings.local.json
+*tmp.js
+.botopink-ct-eval.js
+.botopinkbuild
+erl_crash.dump

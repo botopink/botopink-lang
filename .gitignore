@@ -4,3 +4,14 @@ botopink.rar
 changes.txt
 .zip
 src.zip
+.zig-cache
+zig-pkg
+.claude/settings.local.json
+*tmp.js
+.aider*
+.qwen
+**/.qwen
+settings.local.json
+.qwen
+.qwen/settings.json
+.qwen/settings.json.orig

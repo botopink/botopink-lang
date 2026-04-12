@@ -1,0 +1,16 @@
+
+interface Array<T> {
+    val length: i32
+
+    fn at(self: Self, index: i32) -> ?T
+    fn push(self: Self, item: T)
+    fn pop(self: Self) -> ?T
+    fn contains(self: Self, item: T) -> bool
+    fn slice(self: Self, start: i32, end: i32) -> Array
+    fn join(self: Self, sep: string) -> string
+    fn reverse(self: Self) -> Array
+    fn indexOf(self: Self, item: T) -> i32
+    fn forEach(self: Self, action: fn(item: T))
+    fn map(self: Self, transform: fn(item: T) -> T) -> Array
+    fn filter(self: Self, pred: fn(item: T) -> bool) -> Array
+}

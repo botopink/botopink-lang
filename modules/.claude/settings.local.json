@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git:*)",
+      "Bash(zig build:*)",
+      "Bash(Select-Object -First 100)",
+      "Bash(./botopink --help)",
+      "Bash(./zig-out/bin/botopink)",
+      "Bash(.\\\\\\\\zig-out\\\\\\\\bin\\\\\\\\botopink.exe:*)",
+      "Bash(del .botopink-ct-eval.js .botopink-test-tmp.js)",
+      "Bash(./zig-out/bin/botopink test:*)",
+      "Bash(Select-String \"integer\" -Context 5,5)",
+      "Bash(Select-String -Pattern \"error|warning|test\")",
+      "Bash(Select-Object -First 50)"
+    ]
+  }
+}
