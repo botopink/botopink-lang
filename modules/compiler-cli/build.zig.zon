@@ -1,0 +1,16 @@
+.{
+    .name = .botopink_compiler_cli,
+    .fingerprint = 0xe3a61dbd19b4f223,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .botopink = .{
+            .path = "../compiler-core",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

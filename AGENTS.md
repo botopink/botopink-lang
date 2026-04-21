@@ -72,11 +72,13 @@ Key types in `modules/core/src/ast.zig`:
 - `ValDecl` — top-level constant: `val name = expr`
 - `FnDecl` — top-level function: `is_pub`, `name`, `generic_params`, `params`, `return_type`, `body`
 - `DelegateDecl` — single-method interface alias: `name`, `isPub`, `params`, `returnType`; declared as `val X = interface fn(...)` or `[pub] declare fnX(...)`
-- `Param` — function parameter: `name`, `type_name`, `modifier` (`comptime`/`syntax`/`typeinfo`), optional `typeinfo_constraints` and `fn_type`
+- `Param` — function parameter: `name`, `typeRef` (full `TypeRef` supporting arrays/optionals/etc.), `modifier` (`comptime`/`syntax`/`typeinfo`), optional `typeinfo_constraints` and `fn_type`
 - `FnType` / `FnTypeParam` — function-type annotation for `syntax fn(item: T) -> R` params
-- `Expr` — expressions: literals, `Call`, `BuiltinCall`, `Lambda`, `Case`, `LocalBind`, `Return`, `ThrowNew`, `Todo`, `Comptime`, `ComptimeBlock`, `Break` (optional value), `Yield` (loop accumulate), `Continue`, `Range` (start..end or start..), `Loop`, binary ops, self-field access/assign
+- `Expr` — expressions: literals, `Call`, `BuiltinCall`, `Lambda`, `FnExpr` (anonymous `fn(params) { body }`), `Case`, `LocalBind`, `Return`, `ThrowNew`, `Todo`, `Comptime`, `ComptimeBlock`, `Break` (optional value), `Yield` (loop accumulate), `Continue`, `Range` (start..end or start..), `Loop`, binary ops, `pipeline` (`|>`), `grouped` (`(expr)`), self-field access/assign
 - `Stmt` — wraps an `Expr` (statement = expression-statement for now)
 - `Pattern` — case arm patterns: `Wildcard`, `Ident`, `VariantFields`, `NumberLit`, `StringLit`, `List` (with spread), `Or`
+- `CaseArm` — case arm: `pattern`, `body`, `emptyLineBefore` (preserves blank lines between arms)
+- `ArrayLit` — array literal: `elems`, `spread`, `comments`, `trailingComma` (forces multi-line format)
 
 `StructMember` reuses `InterfaceMethod` for `fn` members inside structs. `ImplementMethod` adds an optional `qualifier` field for disambiguating multiple-interface methods (`UsbCharger.Connect`).
 
@@ -131,3 +133,10 @@ Error-case parser tests use `expectParseError` which asserts the rendered error 
 - `if (expr) { binding -> body }` — null-check with value binding. Extends `if_` with optional `binding: ?[]const u8`.
 - Local bindings `val/var name [: TypeRef] = expr` accept an optional type annotation. The annotation is parsed and discarded; type inference resolves the type.
 - `noTrailingLambda: bool` flag on `Parser` prevents `parsePrimary` from consuming a following `{` as a trailing lambda. Set it before parsing any expression that must not consume the next `{`.
+- `Parser.init(tokens, allocator)` — the parser now stores an allocator for creating temporary strings (e.g. negative number literals). All call sites must pass it.
+- `Param.typeRef` — function parameters use a full `TypeRef` (not raw `[]const u8`), supporting array types (`T[]`), optionals (`?T`), etc.
+- Pipeline operator `|>` — left-associative chain: `a |> f |> g` emits `g(f(a))`. Formatted with each `|>` on its own line.
+- Anonymous function expression `fn(params) { body }` — parsed as `ExprKind.fnExpr`, distinct from lambda `{ params -> body }`.
+- Numeric literals: underscores as digit separators (`1_000_000`), scientific notation (`1.5e-10`), unary negation (`-123`).
+- Array literals with `trailingComma: bool` — trailing comma forces multi-line formatting; without it, arrays stay inline.
+- `case` supports multiple subjects: `case a, b, c { ... }`. Empty lines between arms are preserved via `CaseArm.emptyLineBefore`.

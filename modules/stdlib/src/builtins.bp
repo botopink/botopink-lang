@@ -17,10 +17,14 @@ fn max<T>(a: T, b: T) T
 fn abs<T>(val: T) T
 fn as(comptime: typeinfo T, val: T) T
 
+// ── control flow ───────────────────────────────────────────────────────────────
+
+fn block<T>(body: fn() -> T) T
+
 // ── runtime ───────────────────────────────────────────────────────────────────
 
-fn panic(message: string)
-fn trap()
+fn panic(message: string) noreturn
+fn trap() noreturn
 fn src() string
 
 

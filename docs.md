@@ -501,7 +501,7 @@ val Shape = enum {
             Circle(radius) -> radius * radius * 3.14;
             Square(side) -> side * side;
             Triangle(base, height) -> base * height * 0.5;
-            else -> 0.0;
+            _ -> 0.0;
         };
     }
 }
@@ -520,7 +520,7 @@ val HttpMethod = enum {
             Get -> "GET";
             Post -> "POST";
             Put -> "PUT";
-            else -> "DELETE";
+            _ -> "DELETE";
         };
         return label;
     }
@@ -597,7 +597,7 @@ fn classify(n: i32) -> string {
     val result = case n {
         0 -> "zero";
         1 -> "one";
-        else -> "many";
+        _ -> "many";
     };
     return result;
 }
@@ -623,7 +623,7 @@ fn greet(lang: string) -> string {
     val msg = case lang {
         "en" -> "hello";
         "pt" -> "ola";
-        else -> "hi";
+        _ -> "hi";
     };
     return msg;
 }
@@ -635,7 +635,7 @@ fn greet(lang: string) -> string {
 fn classify(day: i32) -> string {
     val kind = case day {
         6 | 7 -> "weekend";
-        else -> "weekday";
+        _ -> "weekday";
     };
     return kind;
 }
@@ -1206,7 +1206,7 @@ fn execute(comptime slug: string, input: i32) -> i32 {
             output = case cmd {
                 "calc" -> input * 2;
                 "noop" -> input;
-                else -> 0;
+                _ -> 0;
             };
         };
     };
@@ -1380,3 +1380,74 @@ val items = ["a", "b", "c"];
 ```botopink
 val empty: i32[] = [];
 ```
+
+---
+
+## Compiler Improvements (v0.0.11-beta)
+
+### Allocator Consistency
+
+All compiler components now follow a consistent pattern: **allocator is never stored, always passed as parameter**.
+
+**Before:**
+```zig
+pub const Parser = struct {
+    allocator: std.mem.Allocator,  // stored
+    // ...
+};
+pub fn init(tokens: []const Token, allocator: std.mem.Allocator) Parser { ... }
+```
+
+**After:**
+```zig
+pub const Parser = struct {
+    // no allocator field
+    // ...
+};
+pub fn init(tokens: []const Token) Parser { ... }
+pub fn parse(this: *This, alloc: std.mem.Allocator) ParseError!Program { ... }
+```
+
+This pattern applies to:
+- `Parser` — `init(tokens)`, all methods receive `alloc` as first parameter
+- `Lexer` — `init(source)`, `scanAll(alloc)`, `deinit(alloc)`
+- All codegen functions — `alloc: std.mem.Allocator` as first parameter name
+- All Emitter structs — `alloc` passed in `init()`, used consistently
+
+### Code Reduction via Helper Functions
+
+**Binary operator emission** (commonJS.zig, erlang.zig):
+```zig
+// Before: 14 operators × 6 lines = 84 lines
+.add => |b| {
+    try self.w("(");
+    try self.emitExpr(b.lhs.*);
+    try self.w(" + ");
+    try self.emitExpr(b.rhs.*);
+    try self.w(")");
+},
+// ... 13 more
+
+// After: 1 helper + 14 single-line calls = 28 lines
+fn emitBinaryOp(self: *Emitter, op: []const u8, lhs: *ast.Expr, rhs: *ast.Expr) !void {
+    try self.w("(");
+    try self.emitExpr(lhs.*);
+    try self.w(" ");
+    try self.w(op);
+    try self.w(" ");
+    try self.emitExpr(rhs.*);
+    try self.w(")");
+}
+
+.add => |b| try self.emitBinaryOp("+", b.lhs, b.rhs),
+.sub => |b| try self.emitBinaryOp("-", b.lhs, b.rhs),
+// ... 12 more
+```
+
+**Parser helpers:**
+- `boxExpr(alloc, expr)` — replaces repetitive `allocator.create(Expr)` pattern
+- `parseStmtListInBraces(alloc)` — replaces duplicate `parseBraceBlock` function
+- `parseCommaSeparatedIdentifiers(alloc, stopAt)` — reusable for extends, imports, etc.
+- `reportReservedWordError()` — centralized reserved word error creation
+
+**Total savings:** ~122 lines of repetitive code eliminated.
