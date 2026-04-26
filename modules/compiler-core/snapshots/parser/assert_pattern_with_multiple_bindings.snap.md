@@ -52,6 +52,7 @@
                           "call": {
                             "receiver": null,
                             "callee": "Point",
+                            "is_builtin": false,
                             "args": [
                               {
                                 "label": null,

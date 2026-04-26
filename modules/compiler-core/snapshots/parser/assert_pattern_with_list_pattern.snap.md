@@ -60,6 +60,7 @@
                                 "call": {
                                   "receiver": null,
                                   "callee": "Error",
+                                  "is_builtin": false,
                                   "args": [
                                     {
                                       "label": null,

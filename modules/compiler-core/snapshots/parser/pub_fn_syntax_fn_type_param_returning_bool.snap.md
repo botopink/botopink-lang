@@ -46,9 +46,12 @@
                   "col": 5
                 },
                 "kind": {
-                  "builtinCall": {
-                    "name": "@todo",
-                    "args": []
+                  "call": {
+                    "receiver": null,
+                    "callee": "@todo",
+                    "is_builtin": true,
+                    "args": [],
+                    "trailing": []
                   }
                 }
               }

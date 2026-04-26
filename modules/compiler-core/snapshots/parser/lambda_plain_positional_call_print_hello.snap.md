@@ -32,6 +32,7 @@
                       "call": {
                         "receiver": null,
                         "callee": "print",
+                        "is_builtin": false,
                         "args": [
                           {
                             "label": null,

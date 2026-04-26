@@ -52,6 +52,7 @@
                           "call": {
                             "receiver": null,
                             "callee": "Person",
+                            "is_builtin": false,
                             "args": [
                               {
                                 "label": "name",

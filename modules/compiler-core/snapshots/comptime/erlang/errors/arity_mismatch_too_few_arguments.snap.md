@@ -5,10 +5,10 @@ pub fn add(a: i32, b: i32) -> i32 {
 val bad = add(1);
 
 ----- ERROR
-error: arity mismatch
-  ┌─ :4:11
+error: unbound variable
+  ┌─ :2:5
   │
-4 │ val bad = add(1);
-  │           ^
+2 │     @todo();
+  │     ^
 
-  'add' expected 2 argument(s), got 1
+  '@todo' is not in scope

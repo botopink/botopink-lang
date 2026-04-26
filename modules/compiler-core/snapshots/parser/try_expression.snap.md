@@ -40,6 +40,7 @@
                                 "call": {
                                   "receiver": null,
                                   "callee": "fetch",
+                                  "is_builtin": false,
                                   "args": [],
                                   "trailing": []
                                 }

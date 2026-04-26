@@ -19,6 +19,7 @@
               "call": {
                 "receiver": null,
                 "callee": "wrap",
+                "is_builtin": false,
                 "args": [
                   {
                     "label": null,
@@ -61,6 +62,7 @@
               "call": {
                 "receiver": null,
                 "callee": "maxval",
+                "is_builtin": false,
                 "args": [
                   {
                     "label": null,

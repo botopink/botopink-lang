@@ -43,6 +43,7 @@
                       "call": {
                         "receiver": "Console",
                         "callee": "WriteLine",
+                        "is_builtin": false,
                         "args": [
                           {
                             "label": null,
@@ -134,6 +135,7 @@
                       "call": {
                         "receiver": "Console",
                         "callee": "WriteLine",
+                        "is_builtin": false,
                         "args": [
                           {
                             "label": null,

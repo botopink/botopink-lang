@@ -1203,7 +1203,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             return TypedExpr{ .call = .{ .loc = loc, .type_ = retType, .kind = .{ .call = .{
                 .receiver = call.receiver,
                 .callee = call.callee,
-                .args = typedArgs,
+                .is_builtin = call.is_builtin,                .args = typedArgs,
                 .trailing = typedTrailing,
             } } } };
         },
@@ -1218,17 +1218,6 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             } } } };
         },
 
-        .builtinCall => |bc| {
-            const typedArgs = try env.arena.alloc(ast.CallArgOf(.typed), bc.args.len);
-            for (bc.args, 0..) |arg, i| {
-                const val = try inferExprTyped(env, arg.value.*);
-                typedArgs[i] = .{ .label = arg.label, .value = try makeTypedPtr(env, val) };
-            }
-            return TypedExpr{ .call = .{ .loc = loc, .type_ = try env.freshVar(), .kind = .{ .builtinCall = .{
-                .name = bc.name,
-                .args = typedArgs,
-            } } } };
-        },
 
         .pipeline => |p| {
             const lhsTyped = try inferExprTyped(env, p.lhs.*);
@@ -1263,6 +1252,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                 const rhsNode = TypedExpr{ .call = .{ .loc = p.rhs.*.getLoc(), .type_ = retType, .kind = .{ .call = .{
                     .receiver = call.receiver,
                     .callee = call.callee,
+                    .is_builtin = call.is_builtin,
                     .args = typedCallArgs,
                     .trailing = typedTrailing,
                 } } } };
@@ -1389,13 +1379,6 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
             } } } };
         },
 
-        .block => |b| {
-            const typedBody = try inferStmtsTyped(env, b.body);
-            const bodyType = if (typedBody.len > 0) typedBody[typedBody.len - 1].expr.getType() else try env.namedType("void");
-            return TypedExpr{ .collection = .{ .loc = loc, .type_ = bodyType, .kind = .{ .block = .{
-                .body = typedBody,
-            } } } };
-        },
 
         .grouped => |e| {
             return try inferExprTyped(env, e.*);

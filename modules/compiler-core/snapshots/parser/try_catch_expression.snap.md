@@ -41,6 +41,7 @@
                                   "call": {
                                     "receiver": null,
                                     "callee": "fetch",
+                                    "is_builtin": false,
                                     "args": [],
                                     "trailing": []
                                   }
@@ -64,6 +65,7 @@
                                         "call": {
                                           "receiver": null,
                                           "callee": "Error",
+                                          "is_builtin": false,
                                           "args": [
                                             {
                                               "label": "msg",

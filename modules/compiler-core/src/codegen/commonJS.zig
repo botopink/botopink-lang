@@ -1122,71 +1122,73 @@ const Emitter = struct {
 
             .call => |c| switch (c.kind) {
                 .call => |cc| {
-                    if (cc.receiver) |recv| {
-                        try self.fmt("{s}.{s}(", .{ recv, cc.callee });
+                    if (cc.is_builtin) {
+                        const is_todo = std.mem.eql(u8, cc.callee, "todo");
+                        const is_panic = std.mem.eql(u8, cc.callee, "panic");
+                        const is_block = std.mem.eql(u8, cc.callee, "block");
+                        if (is_todo or is_panic) {
+                            const default_msg: []const u8 = if (is_todo) "not implemented" else "panic";
+                            try self.w("(() => { throw new Error(");
+                            if (cc.args.len > 0) {
+                                try self.emitExpr(cc.args[0].value.*);
+                            } else {
+                                try self.fmt("\"{s}\"", .{default_msg});
+                            }
+                            try self.w(") })()");
+                        } else if (is_block) {
+                            if (cc.args.len != 1) return error.InvalidArgs;
+                            const arg = cc.args[0].value;
+                            const isBlock = switch (arg.*) {
+                                .function => true,
+                                else => false,
+                            };
+                            if (!isBlock) return error.InvalidArgs;
+                            try self.emitExpr(arg.*);
+                        } else {
+                            try self.w("@");
+                            try self.w(cc.callee);
+                            try self.w("(");
+                            for (cc.args, 0..) |arg, i| {
+                                if (i > 0) try self.w(", ");
+                                try self.emitExpr(arg.value.*);
+                            }
+                            try self.w(")");
+                        }
                     } else {
-                        try self.fmt("{s}(", .{cc.callee});
-                    }
-                    var first = true;
-                    for (cc.args) |arg| {
-                        if (!first) try self.w(", ");
-                        try self.emitExpr(arg.value.*);
-                        first = false;
-                    }
-                    for (cc.trailing) |tl| {
-                        if (!first) try self.w(", ");
-                        first = false;
-                        try self.w("(");
-                        for (tl.params, 0..) |p, pi| {
-                            if (pi > 0) try self.w(", ");
-                            try self.w(p);
+                        if (cc.receiver) |recv| {
+                            try self.fmt("{s}.{s}(", .{ recv, cc.callee });
+                        } else {
+                            try self.fmt("{s}(", .{cc.callee});
                         }
-                        try self.w(") => {\n");
-                        for (tl.body) |st| {
-                            try self.w("    ");
-                            try self.emitStmt(st);
-                            try self.w("\n");
+                        var first = true;
+                        for (cc.args) |arg| {
+                            if (!first) try self.w(", ");
+                            try self.emitExpr(arg.value.*);
+                            first = false;
                         }
-                        try self.w("}");
+                        for (cc.trailing) |tl| {
+                            if (!first) try self.w(", ");
+                            first = false;
+                            try self.w("(");
+                            for (tl.params, 0..) |p, pi| {
+                                if (pi > 0) try self.w(", ");
+                                try self.w(p);
+                            }
+                            try self.w(") => {\n");
+                            for (tl.body) |st| {
+                                try self.w("    ");
+                                try self.emitStmt(st);
+                                try self.w("\n");
+                            }
+                            try self.w("}");
+                        }
+                        try self.w(")");
                     }
-                    try self.w(")");
                 },
                 .staticCall => |sc| {
                     try self.fmt("{s}.{s}(", .{ sc.receiver, sc.method });
                     try self.emitExpr(sc.arg.*);
                     try self.w(")");
-                },
-                .builtinCall => |bc| {
-                    const is_todo = std.mem.eql(u8, bc.name, "@todo");
-                    const is_panic = std.mem.eql(u8, bc.name, "@panic");
-                    const is_block = std.mem.eql(u8, bc.name, "@block");
-                    if (is_todo or is_panic) {
-                        const default_msg: []const u8 = if (is_todo) "not implemented" else "panic";
-                        try self.w("(() => { throw new Error(");
-                        if (bc.args.len > 0) {
-                            try self.emitExpr(bc.args[0].value.*);
-                        } else {
-                            try self.fmt("\"{s}\"", .{default_msg});
-                        }
-                        try self.w(") })()");
-                    } else if (is_block) {
-                        if (bc.args.len != 1) return error.InvalidArgs;
-                        const arg = bc.args[0].value;
-                        const isBlock = switch (arg.*) {
-                            .collection => |col| col.kind == .block,
-                            else => false,
-                        };
-                        if (!isBlock) return error.InvalidArgs;
-                        try self.emitExpr(arg.*);
-                    } else {
-                        try self.w(bc.name);
-                        try self.w("(");
-                        for (bc.args, 0..) |arg, i| {
-                            if (i > 0) try self.w(", ");
-                            try self.emitExpr(arg.value.*);
-                        }
-                        try self.w(")");
-                    }
                 },
                 .pipeline => |p| {
                     // Flatten the pipeline chain
@@ -1284,13 +1286,6 @@ const Emitter = struct {
                     try self.w("(");
                     try self.emitExpr(expr.*);
                     try self.w(")");
-                },
-                .block => |block| {
-                    try self.w("(() => { ");
-                    for (block.body) |stmt| {
-                        try self.emitStmt(stmt);
-                    }
-                    try self.w(" })()");
                 },
                 .case => |c| try self.emitCase(c.subjects, c.arms, null),
                 .range => |r| {

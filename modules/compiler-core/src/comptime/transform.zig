@@ -227,6 +227,15 @@ fn scanExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), comptime_
     switch (expr) {
         .call => |c| switch (c.kind) {
             .call => |call| {
+                // Builtin calls don't need specialization
+                if (call.is_builtin) {
+                    for (call.args) |arg| scanExpr(agg, fn_decls, comptime_arrays, arg.value.*) catch return ScanError.OutOfMemory;
+                    for (call.trailing) |tl| {
+                        for (tl.body) |s| scanExpr(agg, fn_decls, comptime_arrays, s.expr) catch return ScanError.OutOfMemory;
+                    }
+                    return;
+                }
+
                 const fn_decl = fn_decls.get(call.callee) orelse {
                     for (call.args) |arg| scanExpr(agg, fn_decls, comptime_arrays, arg.value.*) catch return ScanError.OutOfMemory;
                     for (call.trailing) |tl| {
@@ -245,9 +254,6 @@ fn scanExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), comptime_
                 scanExpr(agg, fn_decls, comptime_arrays, p.rhs.*) catch return ScanError.OutOfMemory;
             },
             .staticCall => |sc| scanExpr(agg, fn_decls, comptime_arrays, sc.arg.*) catch return ScanError.OutOfMemory,
-            .builtinCall => |bc| {
-                for (bc.args) |a| scanExpr(agg, fn_decls, comptime_arrays, a.value.*) catch return ScanError.OutOfMemory;
-            },
         },
         .binding => |b| switch (b.kind) {
             .localBind => |lb| scanExpr(agg, fn_decls, comptime_arrays, lb.value.*) catch return ScanError.OutOfMemory,
@@ -360,9 +366,6 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
                 rewriteExpr(agg, fn_decls, comptime_arrays, p.rhs) catch return ScanError.OutOfMemory;
             },
             .staticCall => |sc| rewriteExpr(agg, fn_decls, comptime_arrays, sc.arg) catch return ScanError.OutOfMemory,
-            .builtinCall => |bc| {
-                for (bc.args) |*a| rewriteExpr(agg, fn_decls, comptime_arrays, a.value) catch return ScanError.OutOfMemory;
-            },
         },
         .binding => |*b| switch (b.kind) {
             .localBind => |lb| rewriteExpr(agg, fn_decls, comptime_arrays, lb.value) catch return ScanError.OutOfMemory,

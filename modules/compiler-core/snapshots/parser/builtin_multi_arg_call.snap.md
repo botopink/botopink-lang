@@ -29,8 +29,10 @@
                       "col": 9
                     },
                     "kind": {
-                      "builtinCall": {
-                        "name": "@min",
+                      "call": {
+                        "receiver": null,
+                        "callee": "@min",
+                        "is_builtin": true,
                         "args": [
                           {
                             "label": null,
@@ -62,7 +64,8 @@
                             },
                             "comments": []
                           }
-                        ]
+                        ],
+                        "trailing": []
                       }
                     }
                   }
@@ -77,8 +80,10 @@
                       "col": 9
                     },
                     "kind": {
-                      "builtinCall": {
-                        "name": "@max",
+                      "call": {
+                        "receiver": null,
+                        "callee": "@max",
+                        "is_builtin": true,
                         "args": [
                           {
                             "label": null,
@@ -110,7 +115,8 @@
                             },
                             "comments": []
                           }
-                        ]
+                        ],
+                        "trailing": []
                       }
                     }
                   }
@@ -125,8 +131,10 @@
                       "col": 9
                     },
                     "kind": {
-                      "builtinCall": {
-                        "name": "@as",
+                      "call": {
+                        "receiver": null,
+                        "callee": "@as",
+                        "is_builtin": true,
                         "args": [
                           {
                             "label": null,
@@ -158,7 +166,8 @@
                             },
                             "comments": []
                           }
-                        ]
+                        ],
+                        "trailing": []
                       }
                     }
                   }

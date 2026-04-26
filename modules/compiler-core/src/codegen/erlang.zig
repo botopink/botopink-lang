@@ -418,38 +418,107 @@ const Emitter = struct {
                 },
 
                 .call => |cc| {
-                    if (cc.receiver) |recv| {
-                        try this.fmt("{s}:{s}(", .{ recv, cc.callee });
-                    } else {
-                        try this.fmt("{s}(", .{cc.callee});
-                    }
-                    var first = true;
-                    for (cc.args) |arg| {
-                        if (!first) try this.w(", ");
-                        try this.emitExpr(arg.value.*);
-                        first = false;
-                    }
-                    // Trailing lambdas: emit as fun args
-                    for (cc.trailing) |tl| {
-                        if (!first) try this.w(", ");
-                        first = false;
-                        try this.w("fun(");
-                        for (tl.params, 0..) |p, pi| {
-                            if (pi > 0) try this.w(", ");
-                            const vname = try erlangVar(this.alloc, p);
-                            defer this.alloc.free(vname);
-                            try this.w(vname);
+                    if (cc.is_builtin) {
+                        if (std.mem.eql(u8, cc.callee, "todo")) {
+                            try this.w("erlang:error({todo, ");
+                            if (cc.args.len > 0) {
+                                try this.emitExpr(cc.args[0].value.*);
+                            } else {
+                                try this.w("\"not implemented\"");
+                            }
+                            try this.w("})");
+                            return;
                         }
-                        try this.w(") ->\n");
-                        const tl_saved = this.indent;
-                        this.indent = this.indent + 1;
-                        try this.emitBody(tl.body);
-                        this.indent = tl_saved;
-                        try this.w("\n");
-                        try this.writeIndent();
-                        try this.w("end");
+                        if (std.mem.eql(u8, cc.callee, "panic")) {
+                            try this.w("erlang:error({panic, ");
+                            if (cc.args.len > 0) {
+                                try this.emitExpr(cc.args[0].value.*);
+                            } else {
+                                try this.w("\"panic\"");
+                            }
+                            try this.w("})");
+                            return;
+                        }
+                        if (std.mem.eql(u8, cc.callee, "block")) {
+                            // @block { ... } becomes a fun that executes the block
+                            if (cc.args.len != 1) return error.InvalidArgs;
+                            const arg = cc.args[0].value;
+                            const isFunction = switch (arg.*) {
+                                .function => true,
+                                else => false,
+                            };
+                            if (!isFunction) return error.InvalidArgs;
+                            try this.w("fun() ->\n");
+                            this.indent += 1;
+                            try this.emitExpr(arg.*);
+                            this.indent -= 1;
+                            try this.w("\n");
+                            try this.writeIndent();
+                            try this.w("end\n");
+                            return;
+                        }
+                        try this.fmt("{s}(", .{cc.callee});
+                        var first = true;
+                        for (cc.args) |arg| {
+                            if (!first) try this.w(", ");
+                            try this.emitExpr(arg.value.*);
+                            first = false;
+                        }
+                        // Trailing lambdas: emit as fun args
+                        for (cc.trailing) |tl| {
+                            if (!first) try this.w(", ");
+                            first = false;
+                            try this.w("fun(");
+                            for (tl.params, 0..) |p, pi| {
+                                if (pi > 0) try this.w(", ");
+                                const vname = try erlangVar(this.alloc, p);
+                                defer this.alloc.free(vname);
+                                try this.w(vname);
+                            }
+                            try this.w(") ->\n");
+                            const tl_saved = this.indent;
+                            this.indent = this.indent + 1;
+                            try this.emitBody(tl.body);
+                            this.indent = tl_saved;
+                            try this.w("\n");
+                            try this.writeIndent();
+                            try this.w("end");
+                        }
+                        try this.w(")");
+                    } else {
+                        if (cc.receiver) |recv| {
+                            try this.fmt("{s}:{s}(", .{ recv, cc.callee });
+                        } else {
+                            try this.fmt("{s}(", .{cc.callee});
+                        }
+                        var first = true;
+                        for (cc.args) |arg| {
+                            if (!first) try this.w(", ");
+                            try this.emitExpr(arg.value.*);
+                            first = false;
+                        }
+                        // Trailing lambdas: emit as fun args
+                        for (cc.trailing) |tl| {
+                            if (!first) try this.w(", ");
+                            first = false;
+                            try this.w("fun(");
+                            for (tl.params, 0..) |p, pi| {
+                                if (pi > 0) try this.w(", ");
+                                const vname = try erlangVar(this.alloc, p);
+                                defer this.alloc.free(vname);
+                                try this.w(vname);
+                            }
+                            try this.w(") ->\n");
+                            const tl_saved = this.indent;
+                            this.indent = this.indent + 1;
+                            try this.emitBody(tl.body);
+                            this.indent = tl_saved;
+                            try this.w("\n");
+                            try this.writeIndent();
+                            try this.w("end");
+                        }
+                        try this.w(")");
                     }
-                    try this.w(")");
                 },
 
                 .staticCall => |sc| {
@@ -458,68 +527,6 @@ const Emitter = struct {
                     try this.w(")");
                 },
 
-                .builtinCall => |bc| {
-                    if (std.mem.eql(u8, bc.name, "@todo")) {
-                        try this.w("erlang:error({todo, ");
-                        if (bc.args.len > 0) {
-                            try this.emitExpr(bc.args[0].value.*);
-                        } else {
-                            try this.w("\"not implemented\"");
-                        }
-                        try this.w("})");
-                        return;
-                    }
-                    if (std.mem.eql(u8, bc.name, "@panic")) {
-                        try this.w("erlang:error({panic, ");
-                        if (bc.args.len > 0) {
-                            try this.emitExpr(bc.args[0].value.*);
-                        } else {
-                            try this.w("\"panic\"");
-                        }
-                        try this.w("})");
-                        return;
-                    }
-                    if (std.mem.eql(u8, bc.name, "@block")) {
-                        // @block { ... } becomes a fun that executes the block
-                        if (bc.args.len != 1) return error.InvalidArgs;
-                        const arg = bc.args[0].value;
-                        const block_body = switch (arg.*) {
-                            .collection => |col| switch (col.kind) {
-                                .block => |blk| blk.body,
-                                else => return error.InvalidArgs,
-                            },
-                            else => return error.InvalidArgs,
-                        };
-
-                        try this.w("fun() ->\n");
-                        this.indent += 1;
-
-                        // Emit the block content directly (begin...end)
-                        try this.w("begin\n");
-                        this.indent += 1;
-                        for (block_body, 0..) |stmt, i| {
-                            try this.writeIndent();
-                            try this.emitBodyStmt(stmt, i == block_body.len - 1);
-                            if (i < block_body.len - 1) try this.w(",\n");
-                        }
-                        this.indent -= 1;
-                        try this.w("\n");
-                        try this.writeIndent();
-                        try this.w("end");
-
-                        this.indent -= 1;
-                        try this.w("\n");
-                        try this.writeIndent();
-                        try this.w("end\n");
-                        return;
-                    }
-                    try this.fmt("{s}(", .{bc.name});
-                    for (bc.args, 0..) |arg, i| {
-                        if (i > 0) try this.w(", ");
-                        try this.emitExpr(arg.value.*);
-                    }
-                    try this.w(")");
-                },
             },
 
             .function => |func| switch (func.kind) {
@@ -565,20 +572,6 @@ const Emitter = struct {
                     try this.w("(");
                     try this.emitExpr(inner.*);
                     try this.w(")");
-                },
-                .block => |b| {
-                    // Erlang: use begin...end for block expressions
-                    try this.w("begin\n");
-                    this.indent += 1;
-                    for (b.body, 0..) |stmt, i| {
-                        try this.writeIndent();
-                        try this.emitBodyStmt(stmt, i == b.body.len - 1);
-                        if (i < b.body.len - 1) try this.w(",\n");
-                    }
-                    this.indent -= 1;
-                    try this.w("\n");
-                    try this.writeIndent();
-                    try this.w("end\n");
                 },
                 .arrayLit => |al| {
                     // Special handling for spreadExpr: use ++ operator for list concatenation

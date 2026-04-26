@@ -10,6 +10,4 @@ const { foo, bar } = require("./mylib.js");
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-import { foo, bar } from "./mylib";
-
 ```

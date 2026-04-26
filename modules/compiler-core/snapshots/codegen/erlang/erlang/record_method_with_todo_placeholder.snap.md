@@ -14,5 +14,5 @@ record Unimplemented { id: i32,
 -record(Unimplemented, {id}).
 
 process() ->
-    erlang:error({todo, "not implemented"}).
+    @todo().
 ```

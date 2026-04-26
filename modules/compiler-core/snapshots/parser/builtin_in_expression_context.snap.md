@@ -51,8 +51,10 @@
                                 "col": 12
                               },
                               "kind": {
-                                "builtinCall": {
-                                  "name": "@abs",
+                                "call": {
+                                  "receiver": null,
+                                  "callee": "@abs",
+                                  "is_builtin": true,
                                   "args": [
                                     {
                                       "label": null,
@@ -69,7 +71,8 @@
                                       },
                                       "comments": []
                                     }
-                                  ]
+                                  ],
+                                  "trailing": []
                                 }
                               }
                             }
@@ -81,8 +84,10 @@
                                 "col": 22
                               },
                               "kind": {
-                                "builtinCall": {
-                                  "name": "@abs",
+                                "call": {
+                                  "receiver": null,
+                                  "callee": "@abs",
+                                  "is_builtin": true,
                                   "args": [
                                     {
                                       "label": null,
@@ -99,7 +104,8 @@
                                       },
                                       "comments": []
                                     }
-                                  ]
+                                  ],
+                                  "trailing": []
                                 }
                               }
                             }

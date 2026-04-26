@@ -29,9 +29,12 @@
                       "col": 9
                     },
                     "kind": {
-                      "builtinCall": {
-                        "name": "@src",
-                        "args": []
+                      "call": {
+                        "receiver": null,
+                        "callee": "@src",
+                        "is_builtin": true,
+                        "args": [],
+                        "trailing": []
                       }
                     }
                   }

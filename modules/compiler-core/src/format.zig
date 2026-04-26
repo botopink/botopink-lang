@@ -548,33 +548,7 @@ pub const Formatter = struct {
                     try this.fmtExpr(sc.arg.*),
                     try this.text(")"),
                 }),
-                .builtinCall => |bc| blk: {
-                    // Special case for @block { ... } syntax (no parentheses)
-                    if (std.mem.eql(u8, bc.name, "@block") and bc.args.len == 1) {
-                        const arg = bc.args[0].value.*;
-                        if (arg == .collection and arg.collection.kind == .block) {
-                            break :blk this.concatAll(&.{
-                                try this.text(bc.name),
-                                try this.fmtExpr(arg),
-                            });
-                        }
-                    }
 
-                    var argDocs = try this.arena.alloc(*const Doc, bc.args.len);
-                    for (bc.args, 0..) |a, i| {
-                        argDocs[i] = try this.fmtExpr(a.value.*);
-                    }
-                    const argsDoc = if (bc.args.len == 0)
-                        this.nil()
-                    else
-                        try this.join(argDocs, try this.text(", "));
-                    break :blk this.concatAll(&.{
-                        try this.text(bc.name),
-                        try this.text("("),
-                        argsDoc,
-                        try this.text(")"),
-                    });
-                },
                 .pipeline => |op| blk: {
                     // Flatten left-associative pipeline chain: ((a |> b) |> c) |> d → [a, b, c, d]
                     // Also collect per-step comments (comment[i] is before |> items[i], i >= 1).
@@ -636,60 +610,58 @@ pub const Formatter = struct {
                     try this.fmtExpr(e.*),
                     try this.text(")"),
                 }),
-                .block => |b| blk: {
-                    if (b.body.len == 0) break :blk try this.text("{ }");
-                    // Multiline se houver mais de um statement
-                    if (b.body.len > 1) {
-                        var stmtDocs = try this.arena.alloc(*const Doc, b.body.len);
-                        for (b.body, 0..) |stmt, i| {
-                            // Não adiciona hardline após o último statement
-                            if (i == b.body.len - 1) {
-                                stmtDocs[i] = try this.concatAll(&.{
-                                    try this.fmtExpr(stmt.expr),
-                                    try this.text(";"),
-                                });
-                            } else {
-                                stmtDocs[i] = try this.concatAll(&.{
-                                    try this.fmtExpr(stmt.expr),
-                                    try this.text(";"),
-                                    this.hardline(),
-                                });
-                            }
-                        }
-                        const inner = try this.concatAll(stmtDocs);
-                        break :blk try this.surroundBreak("{", inner, "}");
-                    } else {
-                        var stmtDocs = try this.arena.alloc(*const Doc, b.body.len);
-                        for (b.body, 0..) |stmt, i| {
-                            stmtDocs[i] = try this.fmtExpr(stmt.expr);
-                        }
-                        const inner = try this.join(stmtDocs, try this.text("; "));
-                        break :blk try this.concatAll(&.{
-                            try this.text("{ "),
-                            inner,
-                            try this.text("; }"),
-                        });
-                    }
-                },
                 .case => |c| try this.fmtCase(c.subjects, c.arms, c.trailingComments),
                 .arrayLit => |al| blk: {
-                // Build items interleaving elements and comments.
-                // Elements on the same source line as the previous element (and with no preceding
-                // comments) are grouped on the same doc row (separated by a space, not a hardline).
-                var docs: std.ArrayList(*const Doc) = .empty;
-                defer docs.deinit(this.arena);
+                    // Build items interleaving elements and comments.
+                    // Elements on the same source line as the previous element (and with no preceding
+                    // comments) are grouped on the same doc row (separated by a space, not a hardline).
+                    var docs: std.ArrayList(*const Doc) = .empty;
+                    defer docs.deinit(this.arena);
 
-                var commentIdx: usize = 0;
-                const hasComments = al.comments.len > 0;
-                const hasCounts = al.commentsPerElem.len > 0;
+                    var commentIdx: usize = 0;
+                    const hasComments = al.comments.len > 0;
+                    const hasCounts = al.commentsPerElem.len > 0;
 
-                for (al.elems, 0..) |e, i| {
-                    // Emit comments that appear before this element
-                    const numCommentsBefore: usize = if (hasCounts and i < al.commentsPerElem.len)
-                        al.commentsPerElem[i]
+                    for (al.elems, 0..) |e, i| {
+                        // Emit comments that appear before this element
+                        const numCommentsBefore: usize = if (hasCounts and i < al.commentsPerElem.len)
+                            al.commentsPerElem[i]
+                        else
+                            0;
+                        for (0..numCommentsBefore) |_| {
+                            if (commentIdx < al.comments.len) {
+                                const cText = al.comments[commentIdx];
+                                commentIdx += 1;
+                                try docs.append(this.arena, try this.text(
+                                    try std.fmt.allocPrint(this.arena, "// {s}", .{cText}),
+                                ));
+                            }
+                        }
+                        const elemDoc = try this.fmtExpr(e);
+                        // In multi-line mode (trailingComma/comments), always add comma
+                        const hasMore = (i < al.elems.len - 1) or (al.spread != null) or (al.spreadExpr != null);
+                        const shouldAddComma = hasMore or al.trailingComma or hasComments;
+                        const elemWithComma = if (shouldAddComma)
+                            try this.concat(elemDoc, try this.text(","))
+                        else
+                            elemDoc;
+                        // Group this element with the previous one if they share the same source line
+                        // and this element has no preceding comments.
+                        const sameLineAsPrev = i > 0 and numCommentsBefore == 0 and
+                            e.getLoc().line == al.elems[i - 1].getLoc().line;
+                        if (sameLineAsPrev and docs.items.len > 0) {
+                            const prev = docs.items[docs.items.len - 1];
+                            docs.items[docs.items.len - 1] = try this.concat(prev, try this.concat(try this.text(" "), elemWithComma));
+                        } else {
+                            try docs.append(this.arena, elemWithComma);
+                        }
+                    }
+                    // Emit spread comments (commentsPerElem[elems.len])
+                    const spreadCommentCount: usize = if (hasCounts and al.commentsPerElem.len > al.elems.len)
+                        al.commentsPerElem[al.elems.len]
                     else
                         0;
-                    for (0..numCommentsBefore) |_| {
+                    for (0..spreadCommentCount) |_| {
                         if (commentIdx < al.comments.len) {
                             const cText = al.comments[commentIdx];
                             commentIdx += 1;
@@ -698,116 +670,109 @@ pub const Formatter = struct {
                             ));
                         }
                     }
-                    const elemDoc = try this.fmtExpr(e);
-                    // In multi-line mode (trailingComma/comments), always add comma
-                    const hasMore = (i < al.elems.len - 1) or (al.spread != null) or (al.spreadExpr != null);
-                    const shouldAddComma = hasMore or al.trailingComma or hasComments;
-                    const elemWithComma = if (shouldAddComma)
-                        try this.concat(elemDoc, try this.text(","))
+                    // Emit trailing comments (commentsPerElem[elems.len + 1] or remaining)
+                    const trailingCommentStart = commentIdx;
+                    _ = trailingCommentStart;
+                    const trailingCount: usize = if (hasCounts and al.commentsPerElem.len > al.elems.len + 1)
+                        al.commentsPerElem[al.elems.len + 1]
                     else
-                        elemDoc;
-                    // Group this element with the previous one if they share the same source line
-                    // and this element has no preceding comments.
-                    const sameLineAsPrev = i > 0 and numCommentsBefore == 0 and
-                        e.getLoc().line == al.elems[i - 1].getLoc().line;
-                    if (sameLineAsPrev and docs.items.len > 0) {
-                        const prev = docs.items[docs.items.len - 1];
-                        docs.items[docs.items.len - 1] = try this.concat(prev, try this.concat(try this.text(" "), elemWithComma));
-                    } else {
-                        try docs.append(this.arena, elemWithComma);
+                        al.comments.len - commentIdx;
+                    for (0..trailingCount) |_| {
+                        if (commentIdx < al.comments.len) {
+                            const cText = al.comments[commentIdx];
+                            commentIdx += 1;
+                            try docs.append(this.arena, try this.text(
+                                try std.fmt.allocPrint(this.arena, "// {s}", .{cText}),
+                            ));
+                        }
                     }
-                }
-                // Emit spread comments (commentsPerElem[elems.len])
-                const spreadCommentCount: usize = if (hasCounts and al.commentsPerElem.len > al.elems.len)
-                    al.commentsPerElem[al.elems.len]
-                else
-                    0;
-                for (0..spreadCommentCount) |_| {
-                    if (commentIdx < al.comments.len) {
-                        const cText = al.comments[commentIdx];
-                        commentIdx += 1;
-                        try docs.append(this.arena, try this.text(
-                            try std.fmt.allocPrint(this.arena, "// {s}", .{cText}),
-                        ));
-                    }
-                }
-                // Emit trailing comments (commentsPerElem[elems.len + 1] or remaining)
-                const trailingCommentStart = commentIdx;
-                _ = trailingCommentStart;
-                const trailingCount: usize = if (hasCounts and al.commentsPerElem.len > al.elems.len + 1)
-                    al.commentsPerElem[al.elems.len + 1]
-                else
-                    al.comments.len - commentIdx;
-                for (0..trailingCount) |_| {
-                    if (commentIdx < al.comments.len) {
-                        const cText = al.comments[commentIdx];
-                        commentIdx += 1;
-                        try docs.append(this.arena, try this.text(
-                            try std.fmt.allocPrint(this.arena, "// {s}", .{cText}),
-                        ));
-                    }
-                }
 
-                const hasSpread = al.spread != null or al.spreadExpr != null;
-                const spreadDoc: *const Doc = if (al.spreadExpr) |se| blk2: {
-                    break :blk2 try this.concat(
-                        try this.text(".."),
-                        try this.fmtExpr(se.*),
-                    );
-                } else if (al.spread) |name| blk2: {
-                    break :blk2 try this.text(
-                        try std.fmt.allocPrint(this.arena, "..{s}", .{name}),
-                    );
-                } else this.nil();
+                    const hasSpread = al.spread != null or al.spreadExpr != null;
+                    const spreadDoc: *const Doc = if (al.spreadExpr) |se| blk2: {
+                        break :blk2 try this.concat(
+                            try this.text(".."),
+                            try this.fmtExpr(se.*),
+                        );
+                    } else if (al.spread) |name| blk2: {
+                        break :blk2 try this.text(
+                            try std.fmt.allocPrint(this.arena, "..{s}", .{name}),
+                        );
+                    } else this.nil();
 
-                if (al.elems.len == 0 and !hasSpread and !hasComments) {
-                    break :blk try this.text("[]");
-                }
-
-                // If trailingComma or comments are set, force multi-line format
-                if (al.trailingComma or hasComments) {
-                    // Add spread into docs so it gets proper indentation inside nest
-                    if (hasSpread) {
-                        try docs.append(this.arena, try this.concat(spreadDoc, try this.text(",")));
+                    if (al.elems.len == 0 and !hasSpread and !hasComments) {
+                        break :blk try this.text("[]");
                     }
-                    const inner = try this.join(docs.items, this.hardline());
-                    break :blk try this.forceBreak(try this.concatAll(&.{
+
+                    // If trailingComma or comments are set, force multi-line format
+                    if (al.trailingComma or hasComments) {
+                        // Add spread into docs so it gets proper indentation inside nest
+                        if (hasSpread) {
+                            try docs.append(this.arena, try this.concat(spreadDoc, try this.text(",")));
+                        }
+                        const inner = try this.join(docs.items, this.hardline());
+                        break :blk try this.forceBreak(try this.concatAll(&.{
+                            try this.text("["),
+                            try this.nest(INDENT, try this.concat(this.hardline(), inner)),
+                            this.hardline(),
+                            try this.text("]"),
+                        }));
+                    }
+
+                    // Otherwise, use group for flexible inline/multi-line
+                    const inner = try this.join(docs.items, this.line());
+                    break :blk this.group(try this.concatAll(&.{
                         try this.text("["),
-                        try this.nest(INDENT, try this.concat(this.hardline(), inner)),
-                        this.hardline(),
+                        try this.nest(INDENT, try this.concat(this.softline(), inner)),
+                        if (spreadDoc != this.nil()) try this.concatAll(&.{ this.line(), spreadDoc }) else this.nil(),
+                        this.softline(),
                         try this.text("]"),
                     }));
-                }
+                },
 
-                // Otherwise, use group for flexible inline/multi-line
-                const inner = try this.join(docs.items, this.line());
-                break :blk this.group(try this.concatAll(&.{
-                    try this.text("["),
-                    try this.nest(INDENT, try this.concat(this.softline(), inner)),
-                    if (spreadDoc != this.nil()) try this.concatAll(&.{ this.line(), spreadDoc }) else this.nil(),
-                    this.softline(),
-                    try this.text("]"),
-                }));
-            },
+                .tupleLit => |tl| blk: {
+                    // Build items interleaving elements and comments
+                    var items: std.ArrayList(*const Doc) = .empty;
+                    defer items.deinit(this.arena);
+                    var isComment: std.ArrayList(bool) = .empty;
+                    defer isComment.deinit(this.arena);
 
-            .tupleLit => |tl| blk: {
-                // Build items interleaving elements and comments
-                var items: std.ArrayList(*const Doc) = .empty;
-                defer items.deinit(this.arena);
-                var isComment: std.ArrayList(bool) = .empty;
-                defer isComment.deinit(this.arena);
+                    const tlHasComments = tl.comments.len > 0;
+                    const tlHasCounts = tl.commentsPerElem.len > 0;
 
-                const tlHasComments = tl.comments.len > 0;
-                const tlHasCounts = tl.commentsPerElem.len > 0;
-
-                var commentIdx: usize = 0;
-                for (tl.elems, 0..) |e, i| {
-                    // Emit per-element comments using commentsPerElem if available
-                    const numCommentsBefore: usize = if (tlHasCounts and i < tl.commentsPerElem.len)
-                        tl.commentsPerElem[i]
+                    var commentIdx: usize = 0;
+                    for (tl.elems, 0..) |e, i| {
+                        // Emit per-element comments using commentsPerElem if available
+                        const numCommentsBefore: usize = if (tlHasCounts and i < tl.commentsPerElem.len)
+                            tl.commentsPerElem[i]
+                        else
+                            0;
+                        for (0..numCommentsBefore) |_| {
+                            if (commentIdx < tl.comments.len) {
+                                const cText = tl.comments[commentIdx];
+                                commentIdx += 1;
+                                try items.append(this.arena, try this.text(
+                                    try std.fmt.allocPrint(this.arena, "// {s}", .{cText}),
+                                ));
+                                try isComment.append(this.arena, true);
+                            }
+                        }
+                        const isLast = i == tl.elems.len - 1;
+                        const elemDoc = try this.fmtExpr(e);
+                        // In comment mode: attach comma to element doc (all args get trailing comma)
+                        // In non-comment mode: no comma attached (separator handles it)
+                        try items.append(this.arena, if (tlHasComments)
+                            try this.concat(elemDoc, try this.text(","))
+                        else
+                            elemDoc);
+                        _ = isLast;
+                        try isComment.append(this.arena, false);
+                    }
+                    // Emit trailing comments
+                    const trailingCount2: usize = if (tlHasCounts and tl.commentsPerElem.len > tl.elems.len)
+                        tl.commentsPerElem[tl.elems.len]
                     else
-                        0;
-                    for (0..numCommentsBefore) |_| {
+                        tl.comments.len - commentIdx;
+                    for (0..trailingCount2) |_| {
                         if (commentIdx < tl.comments.len) {
                             const cText = tl.comments[commentIdx];
                             commentIdx += 1;
@@ -817,115 +782,89 @@ pub const Formatter = struct {
                             try isComment.append(this.arena, true);
                         }
                     }
-                    const isLast = i == tl.elems.len - 1;
-                    const elemDoc = try this.fmtExpr(e);
-                    // In comment mode: attach comma to element doc (all args get trailing comma)
-                    // In non-comment mode: no comma attached (separator handles it)
-                    try items.append(this.arena, if (tlHasComments)
-                        try this.concat(elemDoc, try this.text(","))
-                    else
-                        elemDoc);
-                    _ = isLast;
-                    try isComment.append(this.arena, false);
-                }
-                // Emit trailing comments
-                const trailingCount2: usize = if (tlHasCounts and tl.commentsPerElem.len > tl.elems.len)
-                    tl.commentsPerElem[tl.elems.len]
-                else
-                    tl.comments.len - commentIdx;
-                for (0..trailingCount2) |_| {
-                    if (commentIdx < tl.comments.len) {
-                        const cText = tl.comments[commentIdx];
-                        commentIdx += 1;
-                        try items.append(this.arena, try this.text(
-                            try std.fmt.allocPrint(this.arena, "// {s}", .{cText}),
-                        ));
-                        try isComment.append(this.arena, true);
+
+                    if (tl.elems.len == 0 and !tlHasComments) {
+                        break :blk try this.text("#()");
                     }
-                }
 
-                if (tl.elems.len == 0 and !tlHasComments) {
-                    break :blk try this.text("#()");
-                }
+                    if (tlHasComments) {
+                        // In comment mode: all items separated by hardlines
+                        var parts: std.ArrayList(*const Doc) = .empty;
+                        defer parts.deinit(this.arena);
+                        for (items.items, 0..) |item, i| {
+                            if (i > 0) try parts.append(this.arena, this.hardline());
+                            try parts.append(this.arena, item);
+                        }
+                        const inner = try this.concatAll(parts.items);
+                        break :blk try this.forceBreak(try this.concatAll(&.{
+                            try this.text("#("),
+                            try this.nest(INDENT, try this.concat(this.hardline(), inner)),
+                            this.hardline(),
+                            try this.text(")"),
+                        }));
+                    }
 
-                if (tlHasComments) {
-                    // In comment mode: all items separated by hardlines
+                    // No comments: comma-separated
                     var parts: std.ArrayList(*const Doc) = .empty;
                     defer parts.deinit(this.arena);
                     for (items.items, 0..) |item, i| {
-                        if (i > 0) try parts.append(this.arena, this.hardline());
+                        if (i > 0) {
+                            try parts.append(this.arena, try this.concat(try this.text(","), this.line()));
+                        }
                         try parts.append(this.arena, item);
                     }
                     const inner = try this.concatAll(parts.items);
-                    break :blk try this.forceBreak(try this.concatAll(&.{
+                    break :blk this.group(try this.concatAll(&.{
                         try this.text("#("),
-                        try this.nest(INDENT, try this.concat(this.hardline(), inner)),
-                        this.hardline(),
+                        try this.nest(INDENT, try this.concat(this.softline(), inner)),
+                        this.softline(),
                         try this.text(")"),
                     }));
-                }
+                },
 
-                // No comments: comma-separated
-                var parts: std.ArrayList(*const Doc) = .empty;
-                defer parts.deinit(this.arena);
-                for (items.items, 0..) |item, i| {
-                    if (i > 0) {
-                        try parts.append(this.arena, try this.concat(try this.text(","), this.line()));
+                .range => |r| if (r.end) |end|
+                    this.concat(try this.fmtExpr(r.start.*), try this.concat(try this.text(".."), try this.fmtExpr(end.*)))
+                else
+                    this.concat(try this.fmtExpr(r.start.*), try this.text("..")),
+            },
+            .comptime_ => |ct| switch (ct.kind) {
+                .comptimeExpr => |e| this.concat(try this.text("comptime "), try this.fmtExpr(e.*)),
+
+                .comptimeBlock => |cb| blk: {
+                    var items = try this.arena.alloc(*const Doc, cb.body.len);
+                    for (cb.body, 0..) |s, i| {
+                        const exprDoc = try this.fmtExpr(s.expr);
+                        items[i] = try this.concat(exprDoc, try this.text(";"));
                     }
-                    try parts.append(this.arena, item);
-                }
-                const inner = try this.concatAll(parts.items);
-                break :blk this.group(try this.concatAll(&.{
-                    try this.text("#("),
-                    try this.nest(INDENT, try this.concat(this.softline(), inner)),
-                    this.softline(),
-                    try this.text(")"),
-                }));
-            },
+                    const inner = try this.join(items, this.hardline());
+                    break :blk this.concat(
+                        try this.text("comptime "),
+                        try this.surroundBreak("{", inner, "}"),
+                    );
+                },
 
-            .range => |r| if (r.end) |end|
-                this.concat(try this.fmtExpr(r.start.*), try this.concat(try this.text(".."), try this.fmtExpr(end.*)))
-            else
-                this.concat(try this.fmtExpr(r.start.*), try this.text("..")),
-        },
-        .comptime_ => |ct| switch (ct.kind) {
-            .comptimeExpr => |e| this.concat(try this.text("comptime "), try this.fmtExpr(e.*)),
-
-            .comptimeBlock => |cb| blk: {
-                var items = try this.arena.alloc(*const Doc, cb.body.len);
-                for (cb.body, 0..) |s, i| {
-                    const exprDoc = try this.fmtExpr(s.expr);
-                    items[i] = try this.concat(exprDoc, try this.text(";"));
-                }
-                const inner = try this.join(items, this.hardline());
-                break :blk this.concat(
-                    try this.text("comptime "),
-                    try this.surroundBreak("{", inner, "}"),
-                );
+                .assert => |a| blk: {
+                    var doc: *const Doc = try this.text("assert ");
+                    doc = try this.concat(doc, try this.fmtExpr(a.condition.*));
+                    if (a.message) |msg| {
+                        doc = try this.concat(doc, try this.text(", "));
+                        doc = try this.concat(doc, try this.fmtExpr(msg.*));
+                    }
+                    break :blk doc;
+                },
+                .assertPattern => |ap| blk: {
+                    // Pattern assertions are used as: val assert Pattern = expr catch handler
+                    var doc: *const Doc = try this.text("val assert ");
+                    doc = try this.concat(doc, try this.fmtPattern(ap.pattern));
+                    doc = try this.concat(doc, try this.text(" = "));
+                    doc = try this.concat(doc, try this.fmtExpr(ap.expr.*));
+                    doc = try this.concat(doc, try this.text(" catch "));
+                    doc = try this.concat(doc, try this.fmtExpr(ap.handler.*));
+                    break :blk doc;
+                },
             },
-
-            .@"assert" => |a| blk: {
-                var doc: *const Doc = try this.text("assert ");
-                doc = try this.concat(doc, try this.fmtExpr(a.condition.*));
-                if (a.message) |msg| {
-                    doc = try this.concat(doc, try this.text(", "));
-                    doc = try this.concat(doc, try this.fmtExpr(msg.*));
-                }
-                break :blk doc;
-            },
-            .assertPattern => |ap| blk: {
-                // Pattern assertions are used as: val assert Pattern = expr catch handler
-                var doc: *const Doc = try this.text("val assert ");
-                doc = try this.concat(doc, try this.fmtPattern(ap.pattern));
-                doc = try this.concat(doc, try this.text(" = "));
-                doc = try this.concat(doc, try this.fmtExpr(ap.expr.*));
-                doc = try this.concat(doc, try this.text(" catch "));
-                doc = try this.concat(doc, try this.fmtExpr(ap.handler.*));
-                break :blk doc;
-            },
-        },
-    };
-}
+        };
+    }
 
     fn fmtBinop(this: *Formatter, lhs: ast.Expr, op: []const u8, rhs: ast.Expr) !*const Doc {
         return this.concatAll(&.{
@@ -963,10 +902,11 @@ pub const Formatter = struct {
             try isComment.append(this.arena, false);
         }
 
+        const is_builtin = if (@hasField(@TypeOf(c), "is_builtin")) c.is_builtin else false;
         const callee: *const Doc = if (c.receiver) |recv|
             try this.text(try std.fmt.allocPrint(this.arena, "{s}.{s}", .{ recv, c.callee }))
         else
-            try this.text(c.callee);
+            try this.text(if (is_builtin) try std.fmt.allocPrint(this.arena, "@{s}", .{c.callee}) else c.callee);
 
         // Check if there are any comments to force multiline formatting
         const hasComments = hasCommentsLoop: {

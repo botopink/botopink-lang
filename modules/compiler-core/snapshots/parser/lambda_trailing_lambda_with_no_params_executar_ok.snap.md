@@ -32,6 +32,7 @@
                       "call": {
                         "receiver": null,
                         "callee": "executar",
+                        "is_builtin": false,
                         "args": [],
                         "trailing": [
                           {

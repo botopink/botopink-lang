@@ -32,6 +32,7 @@
                       "call": {
                         "receiver": "precos",
                         "callee": "forEach",
+                        "is_builtin": false,
                         "args": [],
                         "trailing": [
                           {

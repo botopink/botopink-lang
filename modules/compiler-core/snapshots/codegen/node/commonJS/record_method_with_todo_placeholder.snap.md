@@ -15,7 +15,7 @@ class Unimplemented {
     }
 
     process() {
-        return (() => { throw new Error("not implemented") })();
+        return @@todo();
     }
 }
 ```

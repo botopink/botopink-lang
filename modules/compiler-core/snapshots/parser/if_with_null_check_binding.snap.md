@@ -74,6 +74,7 @@
                               "call": {
                                 "receiver": "console",
                                 "callee": "log",
+                                "is_builtin": false,
                                 "args": [
                                   {
                                     "label": null,

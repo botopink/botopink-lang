@@ -16,8 +16,10 @@
               "col": 12
             },
             "kind": {
-              "builtinCall": {
-                "name": "@sizeOf",
+              "call": {
+                "receiver": null,
+                "callee": "@sizeOf",
+                "is_builtin": true,
                 "args": [
                   {
                     "label": null,
@@ -34,7 +36,8 @@
                     },
                     "comments": []
                   }
-                ]
+                ],
+                "trailing": []
               }
             }
           }
@@ -56,8 +59,10 @@
               "col": 12
             },
             "kind": {
-              "builtinCall": {
-                "name": "@typeName",
+              "call": {
+                "receiver": null,
+                "callee": "@typeName",
+                "is_builtin": true,
                 "args": [
                   {
                     "label": null,
@@ -74,7 +79,8 @@
                     },
                     "comments": []
                   }
-                ]
+                ],
+                "trailing": []
               }
             }
           }
@@ -96,9 +102,12 @@
               "col": 11
             },
             "kind": {
-              "builtinCall": {
-                "name": "@src",
-                "args": []
+              "call": {
+                "receiver": null,
+                "callee": "@src",
+                "is_builtin": true,
+                "args": [],
+                "trailing": []
               }
             }
           }

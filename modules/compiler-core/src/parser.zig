@@ -2293,6 +2293,7 @@ pub const Parser = struct {
                         .kind = .{ .call = .{
                             .receiver = firstTok.lexeme,
                             .callee = methodTok.lexeme,
+                            .is_builtin = false,
                             .args = args,
                             .trailing = trailing,
                         } },
@@ -2319,6 +2320,7 @@ pub const Parser = struct {
                 return this.wrapCatch(alloc, Expr{ .call = .{ .loc = locFromToken(firstTok), .kind = .{ .call = .{
                     .receiver = null,
                     .callee = firstTok.lexeme,
+                    .is_builtin = false,
                     .args = args,
                     .trailing = trailing,
                 } } } });
@@ -2336,6 +2338,7 @@ pub const Parser = struct {
                     return this.wrapCatch(alloc, Expr{ .call = .{ .loc = locFromToken(firstTok), .kind = .{ .call = .{
                         .receiver = null,
                         .callee = firstTok.lexeme,
+                        .is_builtin = false,
                         .args = &.{},
                         .trailing = trailing,
                     } } } });
@@ -2570,6 +2573,7 @@ pub const Parser = struct {
                         break :rhs_blk Expr{ .call = .{ .loc = locFromToken(nameTok), .kind = .{ .call = .{
                             .receiver = null,
                             .callee = nameTok.lexeme,
+                            .is_builtin = false,
                             .args = args,
                             .trailing = trailing,
                         } } } };
@@ -2590,6 +2594,7 @@ pub const Parser = struct {
                         }
                         break :rhs_blk Expr{ .call = .{ .loc = locFromToken(nameTok), .kind = .{ .call = .{
                             .receiver = nameTok.lexeme,
+                            .is_builtin = false,
                             .callee = methodTok.lexeme,
                             .args = args,
                             .trailing = trailing,
@@ -2821,29 +2826,54 @@ pub const Parser = struct {
             return Expr{ .unaryOp = .{ .loc = locFromToken(opTok), .kind = .{ .not = operandPtr } } };
         }
 
-        // @name(args...) ---- built-in function call
+        // @name(args...) ---- built-in function call (same as regular calls, just with @ prefix)
         if (this.check(.builtinIdent)) {
             const nameTok = this.advance();
+            const callee = nameTok.lexeme[1..]; // Remove @ prefix
 
-            // Special handling for @block { ... } syntax (without parentheses)
-            if (std.mem.eql(u8, nameTok.lexeme, "@block") and this.check(.leftBrace)) {
-                const block = try this.parseBlockExpr(alloc);
-                const blockExprPtr = try alloc.create(Expr);
-                blockExprPtr.* = .{ .collection = block };
-                const args = try alloc.alloc(ast.CallArg, 1);
-                args[0] = .{ .label = null, .value = blockExprPtr, .comments = &.{} };
-                return Expr{ .call = .{ .loc = locFromToken(nameTok), .kind = .{ .builtinCall = .{
-                    .name = nameTok.lexeme,
-                    .args = args,
-                } } } };
+            // Check for @name{ ... } syntax (trailing lambda with no args)
+            if (this.check(.leftBrace)) {
+                const trailing = try this.parseTrailingLambdas(alloc);
+                errdefer {
+                    for (trailing) |*t| t.deinit(alloc);
+                    alloc.free(trailing);
+                }
+                return Expr{ .call = .{
+                    .loc = locFromToken(nameTok),
+                    .kind = .{ .call = .{
+                        .receiver = null,
+                        .callee = callee,
+                        .is_builtin = true,
+                        .args = &.{},
+                        .trailing = trailing,
+                    } },
+                } };
             }
 
+            // Regular @name(args...) syntax
             const args = try this.parseCallArgs(alloc);
             errdefer {
                 for (args) |*a| a.deinit(alloc);
                 alloc.free(args);
             }
-            return Expr{ .call = .{ .loc = locFromToken(nameTok), .kind = .{ .builtinCall = .{ .name = nameTok.lexeme, .args = args } } } };
+
+            // Check for trailing lambdas after args
+            const trailing = try this.parseTrailingLambdas(alloc);
+            errdefer {
+                for (trailing) |*t| t.deinit(alloc);
+                alloc.free(trailing);
+            }
+
+            return Expr{ .call = .{
+                .loc = locFromToken(nameTok),
+                .kind = .{ .call = .{
+                    .receiver = null,
+                    .callee = nameTok.lexeme,
+                    .is_builtin = true,
+                    .args = args,
+                    .trailing = trailing,
+                } },
+            } };
         }
 
         if (this.check(.stringLiteral)) {

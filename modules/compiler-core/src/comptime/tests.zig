@@ -1441,3 +1441,293 @@ test "types: if ---- null-check binding with else" {
         \\}
     );
 }
+
+// ── variant inference (TODO: not yet implemented) ──────────────────────────────
+
+test "variant inference: field access after pattern matching" {
+    try assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\val Result = enum {
+        \\    Ok(value: i32),
+        \\    Error(message: string),
+        \\};
+        \\val get_value = fn(r: Result) -> i32 {
+        \\    case r {
+        \\        Ok(v) -> v;
+        \\        Error(_) -> 0;
+        \\    }
+        \\};
+    );
+}
+
+test "variant inference error: shared field without pattern matching" {
+    try assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val Result = enum {
+        \\    Ok(value: i32),
+        \\    Error(message: string),
+        \\};
+        \\val get_value = fn(r: Result) -> i32 {
+        \\    r.value
+        \\};
+    );
+}
+
+test "variant inference error: variant does not escape clause scope" {
+    try assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val Result = enum {
+        \\    Ok(value: i32),
+        \\    Error(message: string),
+        \\};
+        \\val test = fn(r: Result) -> i32 {
+        \\    case r {
+        \\        Ok(_) -> {};
+        \\        Error(_) -> {};
+        \\    };
+        \\    return r.value;
+        \\};
+    );
+}
+
+test "variant inference: multiple variants with different fields" {
+    try assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\val Shape = enum {
+        \\    Circle(radius: f64),
+        \\    Rectangle(width: f64, height: f64),
+        \\    Point,
+        \\};
+        \\val area = fn(s: Shape) -> f64 {
+        \\    case s {
+        \\        Circle(r) -> 3.14 * r * r;
+        \\        Rectangle(w, h) -> w * h;
+        \\        Point -> 0.0;
+        \\    }
+        \\};
+    );
+}
+
+// ── record update (TODO: not yet implemented) ───────────────────────────────────
+
+test "record update: simple field update" {
+    try assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\val Person = record {
+        \\    name: string,
+        \\    age: i32,
+        \\    city: string,
+        \\};
+        \\val alice = Person(name: "Alice", age: 30, city: "London");
+        \\val bob = Person(..alice, name: "Bob", age: 25);
+    );
+}
+
+test "record update error: variant mismatch" {
+    try assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val Subject = enum {
+        \\    Person(name: string, age: i32),
+        \\    Animal(species: string),
+        \\};
+        \\val alice = Subject.Person(name: "Alice", age: 30);
+        \\val dog = Subject.Animal(..alice);
+    );
+}
+
+test "record update error: non-existent field" {
+    try assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val Person = record {
+        \\    name: string,
+        \\    age: i32,
+        \\};
+        \\val alice = Person(name: "Alice", age: 30);
+        \\val bob = Person(..alice, nickname: "Bobby");
+    );
+}
+
+test "record update error: field type mismatch" {
+    try assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val Person = record {
+        \\    name: string,
+        \\    age: i32,
+        \\};
+        \\val alice = Person(name: "Alice", age: 30);
+        \\val bob = Person(..alice, age: "thirty");
+    );
+}
+
+// ── exhaustiveness checking (TODO: not yet implemented) ────────────────────────
+
+test "exhaustiveness error: missing enum patterns" {
+    try assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val Color = enum {
+        \\    Red,
+        \\    Green,
+        \\    Blue,
+        \\};
+        \\val name = fn(c: Color) -> string {
+        \\    case c {
+        \\        Red -> "red";
+        \\    }
+        \\};
+    );
+}
+
+test "exhaustiveness: all enum patterns covered" {
+    try assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\val Color = enum {
+        \\    Red,
+        \\    Green,
+        \\    Blue,
+        \\};
+        \\val name = fn(c: Color) -> string {
+        \\    case c {
+        \\        Red -> "red";
+        \\        Green -> "green";
+        \\        Blue -> "blue";
+        \\    }
+        \\};
+    );
+}
+
+test "exhaustiveness: wildcard covers remaining patterns" {
+    try assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\val Color = enum {
+        \\    Red,
+        \\    Green,
+        \\    Blue,
+        \\};
+        \\val name = fn(c: Color) -> string {
+        \\    case c {
+        \\        Red -> "red";
+        \\        _ -> "other";
+        \\    }
+        \\};
+    );
+}
+
+test "exhaustiveness error: missing string patterns (with wildcard)" {
+    try assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val categorize = fn(s: string) -> string {
+        \\    case s {
+        \\        "hello" -> "greeting";
+        \\    }
+        \\};
+    );
+}
+
+test "exhaustiveness: nested pattern matching" {
+    try assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\val Result = enum <T, E> {
+        \\    Ok(value: T),
+        \\    Err(error: E),
+        \\};
+        \\val unwrap_or = fn(r: Result<i32, string>, default: i32) -> i32 {
+        \\    case r {
+        \\        Ok(v) -> v,
+        \\        Err(_) -> default,
+        \\    }
+        \\};
+    );
+}
+
+test "pattern: non-empty list pattern" {
+    try assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\val first_or_default = fn(list: i32[], default: i32) -> i32 {
+        \\    case list {
+        \\        [first, ..] -> first;
+        \\        [] -> default;
+        \\    }
+        \\};
+    );
+}
+
+test "pattern: assign pattern in enum" {
+    try assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\val Result = enum {
+        \\    Ok(value: i32),
+        \\    Err(message: string),
+        \\};
+        \\val process = fn(r: Result) -> string {
+        \\    case r {
+        \\        Ok(v) as result -> "Got: " + v;
+        \\        Err(e) as result -> "Error: " + e;
+        \\    }
+        \\};
+    );
+}
+
+test "type_unification_does_not_allow_different_variants_to_be_treated_as_safe" {
+    try assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\val Result = enum {
+        \\    Ok(value: i32),
+        \\    Err(message: string),
+        \\};
+        \\val process = fn(r: Result) -> string {
+        \\    case r {
+        \\      Ok(..) as b -> Wibble(..b, value: 1);
+        \\      Err(..) as b -> Wobble(..b, message: "a");
+        \\    }
+        \\};
+    );
+}
+test "pattern: assign pattern in record" {
+    try assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\val Person = record {
+        \\    name: string,
+        \\    age: i32,
+        \\};
+        \\val describe = fn(p: Person) -> string {
+        \\    case p {
+        \\        Person(name, age) as person -> name + " is " + age;
+        \\    };
+        \\};
+    );
+}
+
+test "pattern: complex nested patterns" {
+    try assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\val Result = enum <T, E> {
+        \\    Ok(value: T),
+        \\    Err(error: E),
+        \\};
+        \\val Container = enum {
+        \\    Single(Result<i32, string>),
+        \\    Multiple(Result<i32, string>[]),
+        \\};
+        \\val extract = fn(c: Container) -> i32 {
+        \\    case c {
+        \\        Single(Ok(v)) -> v;
+        \\        Multiple([Ok(v), ..]) -> v;
+        \\        _ -> 0;
+        \\    }
+        \\};
+    );
+}
+
+// ── combined tests: variant inference + pattern matching ───────────────────────
+
+test "variant inference: access variant-specific field after matching" {
+    try assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\val Shape = enum {
+        \\    Circle(radius: f64),
+        \\    Square(side: f64),
+        \\};
+        \\val scale = fn(s: Shape, factor: f64) -> Shape {
+        \\    case s {
+        \\        Circle(r) -> Circle(radius: r * factor);
+        \\        Square(s) -> Square(side: s * factor);
+        \\    };
+        \\};
+    );
+}
+
+test "variant inference: pattern matching on generic enum" {
+    try assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\val Option = enum <T> {
+        \\    Some(value: T),
+        \\    None,
+        \\};
+        \\val map = fn(opt: Option<i32>, f: fn(i32) -> i32) -> Option<i32> {
+        \\    case opt {
+        \\        Some(v) -> Some(value: f(v));
+        \\        None -> None;
+        \\    };
+        \\};
+    );
+}

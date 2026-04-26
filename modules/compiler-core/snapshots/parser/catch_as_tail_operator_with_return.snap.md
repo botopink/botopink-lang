@@ -41,6 +41,7 @@
                                   "call": {
                                     "receiver": null,
                                     "callee": "getPerson",
+                                    "is_builtin": false,
                                     "args": [],
                                     "trailing": []
                                   }

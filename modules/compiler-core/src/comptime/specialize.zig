@@ -197,19 +197,19 @@ fn transformBody(
                                 },
                                 else => continue,
                             };
-                        try transformBodyWithLoopCtx(
-                            arena,
-                            &out,
-                            lp.body,
-                            lp.params,
-                            elem_val,
-                            ct_arg_map,
-                        );
+                            try transformBodyWithLoopCtx(
+                                arena,
+                                &out,
+                                lp.body,
+                                lp.params,
+                                elem_val,
+                                ct_arg_map,
+                            );
+                        }
+                    } else {
+                        // Runtime array: keep the loop as-is.
+                        try out.append(arena, stmt);
                     }
-                } else {
-                    // Runtime array: keep the loop as-is.
-                    try out.append(arena, stmt);
-                }
                 },
                 .@"return" => try out.append(arena, stmt),
                 .throw_ => try out.append(arena, stmt),
@@ -247,14 +247,14 @@ fn transformBodyWithLoopCtx(
                             // Statically true: inline the then_ body.
                             try transformBodyWithLoopCtx(arena, out, if_node.then_, loop_params, elem_val, ct_arg_map);
                         } else if (if_node.else_) |else_stmts| {
-                        // Statically false: try the else branch.
-                        try transformBodyWithLoopCtx(arena, out, else_stmts, loop_params, elem_val, ct_arg_map);
+                            // Statically false: try the else branch.
+                            try transformBodyWithLoopCtx(arena, out, else_stmts, loop_params, elem_val, ct_arg_map);
+                        }
+                        // Statically false with no else: emit nothing.
+                    } else {
+                        // Cannot evaluate statically: keep stmt as-is.
+                        try out.append(arena, stmt);
                     }
-                    // Statically false with no else: emit nothing.
-                } else {
-                    // Cannot evaluate statically: keep stmt as-is.
-                    try out.append(arena, stmt);
-                }
                 },
                 else => try out.append(arena, stmt),
             },
@@ -429,13 +429,13 @@ fn identInExpr(expr: anytype, name: []const u8) bool {
             .pipeline => |p| identInExpr(p.lhs.*, name) or identInExpr(p.rhs.*, name),
             .call => |cc| blk: {
                 for (cc.args) |a| if (identInExpr(a.value.*, name)) break :blk true;
+                for (cc.trailing) |tl| {
+                    for (tl.body) |s| if (identInExpr(s.expr, name)) break :blk true;
+                }
                 break :blk false;
             },
             .staticCall => |sc| identInExpr(sc.arg.*, name),
-            .builtinCall => |bc| blk: {
-                for (bc.args) |a| if (identInExpr(a.value.*, name)) break :blk true;
-                break :blk false;
-            },
+
         },
         .binding => |b| switch (b.kind) {
             .localBind => |lb| identInExpr(lb.value.*, name),
@@ -476,10 +476,6 @@ fn identInExpr(expr: anytype, name: []const u8) bool {
         },
         .collection => |c| switch (c.kind) {
             .grouped => |g| identInExpr(g.*, name),
-            .block => |bl| blk: {
-                for (bl.body) |s| if (identInExpr(s.expr, name)) break :blk true;
-                break :blk false;
-            },
             .arrayLit => |al| blk: {
                 for (al.elems) |elem| if (identInExpr(elem, name)) break :blk true;
                 if (al.spreadExpr) |se| if (identInExpr(se, name)) break :blk true;
@@ -508,7 +504,7 @@ fn identInExpr(expr: anytype, name: []const u8) bool {
                 for (cb.body) |s| if (identInExpr(s.expr, name)) break :blk true;
                 break :blk false;
             },
-            .@"assert" => |a| blk: {
+            .assert => |a| blk: {
                 if (identInExpr(a.condition.*, name)) break :blk true;
                 if (a.message) |m| if (identInExpr(m.*, name)) break :blk true;
                 break :blk false;
