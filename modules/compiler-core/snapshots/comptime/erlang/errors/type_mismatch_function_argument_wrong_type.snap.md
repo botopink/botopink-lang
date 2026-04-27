@@ -11,4 +11,4 @@ error: unbound variable
 2 │     @todo();
   │     ^
 
-  '@todo' is not in scope
+  'todo' is not in scope

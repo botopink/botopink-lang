@@ -1,14 +1,14 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 loop (0..10) { i ->
-    print("item");
+    @print(i);
 };
 ```
 
 ----- JAVASCRIPT -- main.js
 ```javascript
 const _loop = for (const [i] of Object.entries(0..10)) {
-    print("item");
+    console.log(i);
 };
 ```
 
