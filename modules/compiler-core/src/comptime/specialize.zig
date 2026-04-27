@@ -434,7 +434,6 @@ fn identInExpr(expr: anytype, name: []const u8) bool {
                 }
                 break :blk false;
             },
-            .staticCall => |sc| identInExpr(sc.arg.*, name),
 
         },
         .binding => |b| switch (b.kind) {

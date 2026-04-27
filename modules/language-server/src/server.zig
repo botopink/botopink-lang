@@ -238,7 +238,7 @@ pub const Server = struct {
         };
 
         if (try engine.hover(self.gpa, source, pos, bindings)) |h| {
-            defer self.gpa.free(h.contents.value);
+            defer self.gpa.free(h.contents.kind);
             try messages.writeResponse(self.io, self.gpa, msg.id(), h);
         } else {
             try messages.writeResponse(self.io, self.gpa, msg.id(), null);
@@ -558,7 +558,7 @@ fn writeRenameResponse(
     uri: []const u8,
     edits: []const proto.TextEdit,
 ) !void {
-    const id_json = try std.json.Stringify.valueAlloc(gpa, id, .{});
+    const id_json = try std.json.Stringify.kindAlloc(gpa, id, .{});
     defer gpa.free(id_json);
 
     // Build edits array JSON
@@ -568,7 +568,7 @@ fn writeRenameResponse(
     try edit_buf.append(gpa, '[');
     for (edits, 0..) |edit, i| {
         if (i > 0) try edit_buf.append(gpa, ',');
-        const new_text_json = try std.json.Stringify.valueAlloc(gpa, edit.newText, .{});
+        const new_text_json = try std.json.Stringify.kindAlloc(gpa, edit.newText, .{});
         defer gpa.free(new_text_json);
         const piece = try std.fmt.allocPrint(gpa,
             \\{{"range":{{"start":{{"line":{d},"character":{d}}},"end":{{"line":{d},"character":{d}}}}},"newText":{s}}}
@@ -582,7 +582,7 @@ fn writeRenameResponse(
     }
     try edit_buf.append(gpa, ']');
 
-    const uri_json = try std.json.Stringify.valueAlloc(gpa, uri, .{});
+    const uri_json = try std.json.Stringify.kindAlloc(gpa, uri, .{});
     defer gpa.free(uri_json);
 
     const body = try std.fmt.allocPrint(gpa,

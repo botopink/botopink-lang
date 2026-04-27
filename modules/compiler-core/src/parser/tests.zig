@@ -1409,7 +1409,6 @@ test "parser: assign ---- string value" {
     );
 }
 
-
 test "parser: assert ---- simple assertion" {
     try assertParser(std.testing.allocator, @src(),
         \\fn f() {

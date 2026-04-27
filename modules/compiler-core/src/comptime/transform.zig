@@ -253,7 +253,6 @@ fn scanExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), comptime_
                 scanExpr(agg, fn_decls, comptime_arrays, p.lhs.*) catch return ScanError.OutOfMemory;
                 scanExpr(agg, fn_decls, comptime_arrays, p.rhs.*) catch return ScanError.OutOfMemory;
             },
-            .staticCall => |sc| scanExpr(agg, fn_decls, comptime_arrays, sc.arg.*) catch return ScanError.OutOfMemory,
         },
         .binding => |b| switch (b.kind) {
             .localBind => |lb| scanExpr(agg, fn_decls, comptime_arrays, lb.value.*) catch return ScanError.OutOfMemory,
@@ -365,7 +364,6 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
                 rewriteExpr(agg, fn_decls, comptime_arrays, p.lhs) catch return ScanError.OutOfMemory;
                 rewriteExpr(agg, fn_decls, comptime_arrays, p.rhs) catch return ScanError.OutOfMemory;
             },
-            .staticCall => |sc| rewriteExpr(agg, fn_decls, comptime_arrays, sc.arg) catch return ScanError.OutOfMemory,
         },
         .binding => |*b| switch (b.kind) {
             .localBind => |lb| rewriteExpr(agg, fn_decls, comptime_arrays, lb.value) catch return ScanError.OutOfMemory,

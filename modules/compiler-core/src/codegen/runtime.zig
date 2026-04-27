@@ -31,13 +31,46 @@ pub fn executeJavaScript(allocator: std.mem.Allocator, js_code: []const u8, io: 
 
 /// Execute Erlang code and capture stdout/stderr.
 pub fn executeErlang(allocator: std.mem.Allocator, erl_code: []const u8, module_name: []const u8, io: anytype) ![]u8 {
-    _ = erl_code;
-    _ = module_name;
-    _ = io;
+    // Create temporary .erl file
+    const erl_filename = try std.fmt.allocPrint(allocator, "{s}.erl", .{module_name});
+    defer allocator.free(erl_filename);
+    
+    {
+        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = erl_filename, .data = erl_code });
+    }
+    defer std.Io.Dir.cwd().deleteFile(io, erl_filename) catch {};
 
-    // For now, just return empty string for Erlang
-    // A full implementation would need to compile and execute Erlang code
+    // Compile the Erlang module
+    const beam_filename = try std.fmt.allocPrint(allocator, "{s}.beam", .{module_name});
+    defer allocator.free(beam_filename);
+    
+    _ = try std.process.run(allocator, io, .{ .argv = &.{ "erlc", erl_filename } });
+    defer std.Io.Dir.cwd().deleteFile(io, beam_filename) catch {};
+
+    // Find the main function to call (typically the first pub function or a function named 'main')
+    // For now, we'll try to call 'main' if it exists, otherwise skip execution
     var output: std.ArrayListUnmanaged(u8) = .empty;
-    try output.appendSlice(allocator, "// Erlang execution not yet implemented");
+    
+    // Try to execute the module's main function if it exists
+    const exec_result = std.process.run(allocator, io, .{
+        .argv = &.{ "erl", "-noshell", "-s", module_name, "main", "-s", "init", "stop" }
+    }) catch |err| {
+        // If main doesn't exist, that's okay - just return empty output
+        if (err == error.ProcessTerminated) {
+            return output.toOwnedSlice(allocator);
+        }
+        return err;
+    };
+    
+    defer allocator.free(exec_result.stdout);
+    defer allocator.free(exec_result.stderr);
+
+    // Combine stdout and stderr
+    try output.appendSlice(allocator, exec_result.stdout);
+    if (exec_result.stderr.len > 0) {
+        if (output.items.len > 0) try output.append(allocator, '\n');
+        try output.appendSlice(allocator, exec_result.stderr);
+    }
+
     return output.toOwnedSlice(allocator);
 }

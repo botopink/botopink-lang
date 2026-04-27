@@ -219,7 +219,7 @@ fn parseResults(
             else => continue,
         };
         const val = obj.get("value") orelse continue;
-        
+
         // Convert JSON value to Erlang literal
         const lit = switch (val) {
             .integer => |n| try std.fmt.allocPrint(allocator, "{d}", .{n}),
@@ -238,7 +238,7 @@ fn parseResults(
                     }
                     break :blk2 true;
                 };
-                
+
                 if (is_charcode_array) {
                     // Convert charcode array back to string
                     var str_buf: std.ArrayListUnmanaged(u8) = .empty;

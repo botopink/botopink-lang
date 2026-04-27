@@ -627,12 +627,6 @@ pub fn CallExprOf(comptime phase: Phase) type {
                 args: []CallArgOf(phase),
                 trailing: []TrailingLambdaOf(phase),
             },
-            /// Static method call, e.g. `Console.WriteLine(arg)`
-            staticCall: struct {
-                receiver: []const u8,
-                method: []const u8,
-                arg: if (phase == .untyped) *Expr else *TypedExpr,
-            },
             /// `expr |> fn1 |> fn2` — pipeline operator, left-associative chain
             pipeline: struct {
                 lhs: if (phase == .untyped) *Expr else *TypedExpr,
@@ -648,10 +642,6 @@ pub fn CallExprOf(comptime phase: Phase) type {
                         allocator.free(c.args);
                         for (c.trailing) |*t| t.deinit(allocator);
                         allocator.free(c.trailing);
-                    },
-                    .staticCall => |c| {
-                        c.arg.deinit(allocator);
-                        allocator.destroy(c.arg);
                     },
                     .pipeline => |p| {
                         p.lhs.deinit(allocator);

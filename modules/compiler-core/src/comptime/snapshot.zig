@@ -77,7 +77,7 @@ const CaseExpr = struct {
     return_type: []const u8,
 };
 
-/// Tagged union over all binding kinds — serialized via `jsonStringify`.
+/// Tagged union over all binding values — serialized via `jsonStringify`.
 const BindingRepr = union(enum) {
     val: struct {
         ast: []const u8,
@@ -498,24 +498,16 @@ pub fn buildSnapshot(allocator: std.mem.Allocator, output: comptimeMod.ComptimeO
             var items = std.json.Array.init(ja);
             for (ok.bindings) |b| {
                 const repr = (try bindingToRepr(ja, b, output.src, ok.type_ids)) orelse continue;
-                const jsonStr = try std.json.Stringify.valueAlloc(ja, repr, .{
-                    .emit_null_optional_fields = false,
-                    .whitespace = .indent_2,
-                });
+                const jsonStr = try std.json.Stringify.valueAlloc(ja, repr, .{ .emit_null_optional_fields = false, .whitespace = .indent_2 });
                 const value = try std.json.parseFromSliceLeaky(std.json.Value, ja, jsonStr, .{});
                 try items.append(value);
             }
-
             const empty_keys: []const []const u8 = &.{};
             const empty_values: []const std.json.Value = &.{};
             var root = try std.json.ObjectMap.init(ja, empty_keys, empty_values);
             try root.put(ja, "declarations", .{ .array = items });
 
-            const json = try std.json.Stringify.valueAlloc(
-                allocator,
-                std.json.Value{ .object = root },
-                .{ .whitespace = .indent_2 },
-            );
+            const json = try std.json.Stringify.valueAlloc(allocator, std.json.Value{ .object = root }, .{ .whitespace = .indent_2 });
             defer allocator.free(json);
             try buf.appendSlice(allocator, json);
             try buf.appendSlice(allocator, "\n```\n\n");

@@ -622,26 +622,26 @@ const Emitter = struct {
             .wildcard => try self.w("true"), // Wildcard matches everything
             .ident => {
                 // Identifier pattern - check if value is truthy and has the right type
-                try self.fmt("({s} !== null && {s} !== undefined)", .{value, value});
+                try self.fmt("({s} !== null && {s} !== undefined)", .{ value, value });
             },
             .variantFields => |vf| {
                 // Check if value is an instance of the variant type
-                try self.fmt("({s} instanceof {s})", .{value, vf.name});
+                try self.fmt("({s} instanceof {s})", .{ value, vf.name });
             },
             .variantBinding => |vb| {
                 // Check if value is an instance of the variant type
-                try self.fmt("({s} instanceof {s})", .{value, vb.name});
+                try self.fmt("({s} instanceof {s})", .{ value, vb.name });
             },
             .numberLit => |n| {
-                try self.fmt("({s} === {s})", .{value, n});
+                try self.fmt("({s} === {s})", .{ value, n });
             },
             .stringLit => |s| {
-                try self.fmt("({s} === \"{s}\")", .{value, s});
+                try self.fmt("({s} === \"{s}\")", .{ value, s });
             },
             .list => |l| {
                 try self.fmt("(Array.isArray({s})", .{value});
                 if (l.elems.len > 0) {
-                    try self.fmt(" && {s}.length >= {d}", .{value, l.elems.len});
+                    try self.fmt(" && {s}.length >= {d}", .{ value, l.elems.len });
                 }
                 try self.w(")");
             },
@@ -1146,14 +1146,26 @@ const Emitter = struct {
                             }
                             try self.w(") })()");
                         } else if (is_block) {
-                            if (cc.args.len != 1) return error.InvalidArgs;
-                            const arg = cc.args[0].value;
-                            const isBlock = switch (arg.*) {
-                                .function => true,
-                                else => false,
-                            };
-                            if (!isBlock) return error.InvalidArgs;
-                            try self.emitExpr(arg.*);
+                            // @block can be called as @block(arg) or @block { body }
+                            if (cc.args.len == 1) {
+                                const arg = cc.args[0].value;
+                                const isBlock = switch (arg.*) {
+                                    .function => true,
+                                    else => false,
+                                };
+                                if (!isBlock) return error.InvalidArgs;
+                                try self.emitExpr(arg.*);
+                            } else if (cc.trailing.len == 1 and cc.trailing[0].params.len == 0) {
+                                // @block { body } - trailing lambda with no params
+                                try self.w("(() => {");
+                                for (cc.trailing[0].body, 0..) |stmt, i| {
+                                    if (i > 0) try self.w(" ");
+                                    try self.emitStmt(stmt);
+                                }
+                                try self.w("})()");
+                            } else {
+                                return error.InvalidArgs;
+                            }
                         } else {
                             try self.w("@");
                             try self.w(cc.callee);
@@ -1194,11 +1206,6 @@ const Emitter = struct {
                         }
                         try self.w(")");
                     }
-                },
-                .staticCall => |sc| {
-                    try self.fmt("{s}.{s}(", .{ sc.receiver, sc.method });
-                    try self.emitExpr(sc.arg.*);
-                    try self.w(")");
                 },
                 .pipeline => |p| {
                     // Flatten the pipeline chain
@@ -1323,7 +1330,7 @@ const Emitter = struct {
                         }
                     }
                 },
-                .@"assert" => |a| {
+                .assert => |a| {
                     try self.w("console.assert(");
                     try self.emitExpr(a.condition.*);
                     if (a.message) |msg| {

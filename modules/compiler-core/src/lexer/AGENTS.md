@@ -24,4 +24,4 @@ Token {
 
 ## Conventions
 
-See `../AGENTS.md` for core architecture. Lexing errors are `LexicalError` kinds — prefer lexical errors over parser errors when token is malformed.
+See `../AGENTS.md` for core architecture. Lexing errors are `LexicalError` values — prefer lexical errors over parser errors when token is malformed.

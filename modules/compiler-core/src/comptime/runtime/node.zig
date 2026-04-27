@@ -15,7 +15,7 @@ fn buildScript(allocator: std.mem.Allocator, entries: []const eval.ComptimeEntry
 
     try bw.writeAll("const fs = require('fs');\n");
     try bw.writeAll("const results = [\n");
-    
+
     for (entries, 0..) |e, i| {
         try bw.writeAll("    { id: \"");
         try bw.writeAll(e.id);
@@ -45,7 +45,7 @@ fn buildScript(allocator: std.mem.Allocator, entries: []const eval.ComptimeEntry
         if (i < entries.len - 1) try bw.writeAll(",");
         try bw.writeAll("\n");
     }
-    
+
     try bw.writeAll("];\n");
     try bw.writeAll("process.stdout.write(JSON.stringify(results));\n");
 
@@ -206,7 +206,7 @@ fn parseResults(
             else => continue,
         };
         const val = obj.get("value") orelse continue;
-        
+
         // Convert JSON value to JS literal string
         const lit = switch (val) {
             .integer => |n| try std.fmt.allocPrint(allocator, "{d}", .{n}),
@@ -282,7 +282,7 @@ pub fn run(
     const tmp_dir = try std.fmt.bufPrint(&dir_buf, "{s}/node", .{build_root});
     var src_path_buf: [512]u8 = undefined;
     const src_path = try std.fmt.bufPrint(&src_path_buf, "{s}/main.js", .{tmp_dir});
-    
+
     // Clean previous build if exists, then create directory
     std.Io.Dir.cwd().deleteTree(io, tmp_dir) catch {};
     std.Io.Dir.cwd().createDirPath(io, tmp_dir) catch |err| {

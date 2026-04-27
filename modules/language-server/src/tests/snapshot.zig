@@ -114,7 +114,7 @@ pub fn assertHover(
     try appendSourceWithCursor(&buf, gpa, source, cursor);
     try buf.print(gpa, "----- HOVER at (line {d}, char {d})\n", .{ cursor.line, cursor.character });
     if (result) |hov| {
-        try buf.print(gpa, "kind: {s}\n\n{s}\n", .{ hov.contents.kind, hov.contents.value });
+        try buf.print(gpa, "kind: {s}\n\n{s}\n", .{ hov.contents.kind, hov.contents.kind });
     } else {
         try buf.appendSlice(gpa, "null\n");
     }
@@ -138,12 +138,15 @@ pub fn assertDefinition(
     try appendSourceWithCursor(&buf, gpa, source, cursor);
     try buf.print(gpa, "----- DEFINITION at (line {d}, char {d})\n", .{ cursor.line, cursor.character });
     if (result) |loc| {
-        try buf.print(gpa, 
+        try buf.print(
+            gpa,
             "uri: {s}\nrange: ({d},{d}) → ({d},{d})\n",
             .{
                 loc.uri,
-                loc.range.start.line, loc.range.start.character,
-                loc.range.end.line,   loc.range.end.character,
+                loc.range.start.line,
+                loc.range.start.character,
+                loc.range.end.line,
+                loc.range.end.character,
             },
         );
         try appendSourceWithUnderline(&buf, gpa, source, loc.range);
@@ -169,13 +172,16 @@ pub fn assertDocumentSymbols(
     try appendSource(&buf, gpa, source);
     try buf.appendSlice(gpa, "----- DOCUMENT SYMBOLS\n");
     for (symbols) |sym| {
-        try buf.print(gpa, 
+        try buf.print(
+            gpa,
             "{s}  [{s}]  selection: ({d},{d})–({d},{d})\n",
             .{
                 sym.name,
                 symbolKindName(sym.kind),
-                sym.selectionRange.start.line, sym.selectionRange.start.character,
-                sym.selectionRange.end.line,   sym.selectionRange.end.character,
+                sym.selectionRange.start.line,
+                sym.selectionRange.start.character,
+                sym.selectionRange.end.line,
+                sym.selectionRange.end.character,
             },
         );
     }
@@ -225,7 +231,8 @@ pub fn assertReferences(
     try appendSourceWithCursor(&buf, gpa, source, cursor);
     try buf.print(gpa, "----- REFERENCES at (line {d}, char {d})\n", .{ cursor.line, cursor.character });
     for (locs) |loc| {
-        try buf.print(gpa, 
+        try buf.print(
+            gpa,
             "  ({d},{d}) → ({d},{d})\n",
             .{
                 loc.range.start.line, loc.range.start.character,
@@ -253,17 +260,21 @@ pub fn assertRename(
     // use buf.print(gpa, ...) directly
 
     try appendSourceWithCursor(&buf, gpa, source, cursor);
-    try buf.print(gpa,
+    try buf.print(
+        gpa,
         "----- RENAME at (line {d}, char {d})  new name: \"{s}\"\n",
         .{ cursor.line, cursor.character, new_name },
     );
     for (edits, 1..) |edit, i| {
-        try buf.print(gpa, 
+        try buf.print(
+            gpa,
             "  edit {d}: ({d},{d}) → ({d},{d})  \"{s}\"\n",
             .{
                 i,
-                edit.range.start.line, edit.range.start.character,
-                edit.range.end.line,   edit.range.end.character,
+                edit.range.start.line,
+                edit.range.start.character,
+                edit.range.end.line,
+                edit.range.end.character,
                 edit.newText,
             },
         );
@@ -425,22 +436,22 @@ fn appendSourceWithUnderline(
 
 fn symbolKindName(kind: u32) []const u8 {
     return switch (kind) {
-        proto.SymbolKind.Function  => "Function",
-        proto.SymbolKind.Variable  => "Variable",
-        proto.SymbolKind.Struct    => "Struct",
-        proto.SymbolKind.Enum      => "Enum",
+        proto.SymbolKind.Function => "Function",
+        proto.SymbolKind.Variable => "Variable",
+        proto.SymbolKind.Struct => "Struct",
+        proto.SymbolKind.Enum => "Enum",
         proto.SymbolKind.Interface => "Interface",
-        proto.SymbolKind.Constant  => "Constant",
+        proto.SymbolKind.Constant => "Constant",
         else => "?",
     };
 }
 
 fn completionKindName(kind: u32) []const u8 {
     return switch (kind) {
-        proto.CompletionItemKind.Function  => "Function",
-        proto.CompletionItemKind.Variable  => "Variable",
-        proto.CompletionItemKind.Struct    => "Struct",
-        proto.CompletionItemKind.Enum      => "Enum",
+        proto.CompletionItemKind.Function => "Function",
+        proto.CompletionItemKind.Variable => "Variable",
+        proto.CompletionItemKind.Struct => "Struct",
+        proto.CompletionItemKind.Enum => "Enum",
         proto.CompletionItemKind.Interface => "Interface",
         else => "?",
     };

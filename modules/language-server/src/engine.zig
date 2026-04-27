@@ -103,7 +103,7 @@ pub fn formatting(arena: std.mem.Allocator, source: []const u8) !?proto.TextEdit
 // ── Hover ─────────────────────────────────────────────────────────────────────
 
 /// Returns hover info (inferred type) for the symbol under the cursor.
-/// The `contents.value` field of the returned Hover is owned by the caller.
+/// The `contents.kind` field of the returned Hover is owned by the caller.
 pub fn hover(
     gpa: std.mem.Allocator,
     source: []const u8,
@@ -137,12 +137,12 @@ pub fn definition(
 
     // Find the identifier token that is the name in a declaration:
     // look for a keyword (val/fn/record/struct/enum/interface) followed by an identifier with the given name.
-    const decl_kinds = [_]TokenKind{ .val, .@"fn", .record, .@"struct", .@"enum", .interface };
+    const decl_values = [_]TokenKind{ .val, .@"fn", .record, .@"struct", .@"enum", .interface };
     var i: usize = 0;
     while (i < tokens.len) : (i += 1) {
         const tok = tokens[i];
         var is_decl_kw = false;
-        for (decl_kinds) |k| {
+        for (decl_values) |k| {
             if (tok.kind == k) {
                 is_decl_kw = true;
                 break;
@@ -183,13 +183,13 @@ pub fn documentSymbols(
         syms.deinit(gpa);
     }
 
-    const decl_kinds = [_]TokenKind{ .val, .@"fn", .record, .@"struct", .@"enum", .interface };
+    const decl_values = [_]TokenKind{ .val, .@"fn", .record, .@"struct", .@"enum", .interface };
 
     var i: usize = 0;
     while (i < tokens.len) : (i += 1) {
         const tok = tokens[i];
         var sym_kind: ?u32 = null;
-        for (decl_kinds) |k| {
+        for (decl_values) |k| {
             if (tok.kind == k) {
                 sym_kind = tokenToSymbolKind(k);
                 break;
@@ -420,13 +420,13 @@ pub fn inlayHints(
 ) ![]proto.InlayHint {
     var hints: std.ArrayList(proto.InlayHint) = .empty;
 
-    const decl_kinds = [_]TokenKind{ .val, .@"fn" };
+    const decl_values = [_]TokenKind{ .val, .@"fn" };
 
     var i: usize = 0;
     while (i < tokens.len) : (i += 1) {
         const tok = tokens[i];
         var is_decl = false;
-        for (decl_kinds) |k| {
+        for (decl_values) |k| {
             if (tok.kind == k) {
                 is_decl = true;
                 break;
@@ -649,7 +649,7 @@ pub fn references(
         locs.deinit(gpa);
     }
 
-    const decl_kinds = [_]TokenKind{ .val, .@"fn", .record, .@"struct", .@"enum", .interface };
+    const decl_values = [_]TokenKind{ .val, .@"fn", .record, .@"struct", .@"enum", .interface };
 
     for (tokens, 0..) |tok, i| {
         if (tok.kind != .identifier) continue;
@@ -659,7 +659,7 @@ pub fn references(
         const is_decl = blk: {
             if (i == 0) break :blk false;
             const prev = tokens[i - 1];
-            for (decl_kinds) |k| {
+            for (decl_values) |k| {
                 if (prev.kind == k) break :blk true;
             }
             break :blk false;

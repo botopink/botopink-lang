@@ -1,6 +1,6 @@
 /// Type system tests for the botopink compiler.
 ///
-/// Two kinds of tests:
+/// Two values of tests:
 ///   1. AST snapshots ---- validate inferred AST structure via `assertTypeAst`.
 ///   2. Error snapshots ---- verify type error messages via `assertTypeErrorSnap`.
 const std = @import("std");
@@ -1466,7 +1466,7 @@ test "variant inference error: shared field without pattern matching" {
         \\    Error(message: string),
         \\};
         \\val get_value = fn(r: Result) -> i32 {
-        \\    r.value
+        \\    r.kind
         \\};
     );
 }
@@ -1482,7 +1482,7 @@ test "variant inference error: variant does not escape clause scope" {
         \\        Ok(_) -> {};
         \\        Error(_) -> {};
         \\    };
-        \\    return r.value;
+        \\    return r.kind;
         \\};
     );
 }

@@ -453,21 +453,34 @@ const Emitter = struct {
                         }
                         if (std.mem.eql(u8, cc.callee, "block")) {
                             // @block { ... } becomes a fun that executes the block
-                            if (cc.args.len != 1) return error.InvalidArgs;
-                            const arg = cc.args[0].value;
-                            const isFunction = switch (arg.*) {
-                                .function => true,
-                                else => false,
-                            };
-                            if (!isFunction) return error.InvalidArgs;
-                            try this.w("fun() ->\n");
-                            this.indent += 1;
-                            try this.emitExpr(arg.*);
-                            this.indent -= 1;
-                            try this.w("\n");
-                            try this.writeIndent();
-                            try this.w("end\n");
-                            return;
+                            if (cc.args.len == 1) {
+                                const arg = cc.args[0].value;
+                                const isFunction = switch (arg.*) {
+                                    .function => true,
+                                    else => false,
+                                };
+                                if (!isFunction) return error.InvalidArgs;
+                                try this.w("fun() ->\n");
+                                this.indent += 1;
+                                try this.emitExpr(arg.*);
+                                this.indent -= 1;
+                                try this.w("\n");
+                                try this.writeIndent();
+                                try this.w("end\n");
+                                return;
+                            } else if (cc.trailing.len == 1 and cc.trailing[0].params.len == 0) {
+                                // @block { body } - trailing lambda with no params
+                                try this.w("fun() ->\n");
+                                this.indent += 1;
+                                try this.emitBody(cc.trailing[0].body);
+                                this.indent -= 1;
+                                try this.w("\n");
+                                try this.writeIndent();
+                                try this.w("end\n");
+                                return;
+                            } else {
+                                return error.InvalidArgs;
+                            }
                         }
                         try this.fmt("{s}(", .{cc.callee});
                         var first = true;
@@ -532,13 +545,6 @@ const Emitter = struct {
                         try this.w(")");
                     }
                 },
-
-                .staticCall => |sc| {
-                    try this.fmt("{s}:{s}(", .{ sc.receiver, sc.method });
-                    try this.emitExpr(sc.arg.*);
-                    try this.w(")");
-                },
-
             },
 
             .function => |func| switch (func.kind) {
@@ -807,7 +813,7 @@ const Emitter = struct {
                         }
                     }
                 },
-                .@"assert" => |a| {
+                .assert => |a| {
                     // Erlang doesn't have built-in assert, so we use pattern matching
                     try this.w("true = (");
                     try this.emitExpr(a.condition.*);

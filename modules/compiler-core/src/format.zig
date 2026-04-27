@@ -543,15 +543,9 @@ pub const Formatter = struct {
             },
             .call => |c| switch (c.kind) {
                 .call => |cc| try this.fmtCall(cc),
-                .staticCall => |sc| this.concatAll(&.{
-                    try this.text(try std.fmt.allocPrint(this.arena, "{s}.{s}(", .{ sc.receiver, sc.method })),
-                    try this.fmtExpr(sc.arg.*),
-                    try this.text(")"),
-                }),
-
                 .pipeline => |op| blk: {
-                    // Flatten left-associative pipeline chain: ((a |> b) |> c) |> d → [a, b, c, d]
-                    // Also collect per-step comments (comment[i] is before |> items[i], i >= 1).
+                // Flatten left-associative pipeline chain: ((a |> b) |> c) |> d → [a, b, c, d]
+                // Also collect per-step comments (comment[i] is before |> items[i], i >= 1).
                     var items: std.ArrayList(ast.Expr) = .empty;
                     defer items.deinit(this.arena);
                     var stepComments: std.ArrayList(?[]const u8) = .empty;

@@ -21,7 +21,7 @@ pub const FileCache = struct {
         var it = self.map.iterator();
         while (it.next()) |entry| {
             self.gpa.free(entry.key_ptr.*);
-            self.gpa.free(entry.value_ptr.*);
+            self.gpa.free(entry.kind_ptr.*);
         }
         self.map.deinit();
     }
@@ -59,7 +59,7 @@ pub const FileCache = struct {
     pub fn close(self: *FileCache, uri: []const u8) void {
         if (self.map.fetchRemove(uri)) |kv| {
             self.gpa.free(kv.key);
-            self.gpa.free(kv.value);
+            self.gpa.free(kv.kind);
         }
     }
 
