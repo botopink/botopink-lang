@@ -14,9 +14,9 @@ fn main() {
 ----- ERLANG -- main.erl
 ```erlang
 -module(main).
--export([_botopink_main/0]).
+-export(['_botopink_main'/0, main/1]).
 
-_botopink_main() ->
+main() ->
     R1 = execute_$0(10),
     R2 = execute_$1(42),
     R3 = execute_$0(5).
@@ -26,6 +26,12 @@ execute_$0(Input) ->
 
 execute_$1(Input) ->
     (Input + 0).
+
+'_botopink_main'() ->
+    main().
+
+main(_Args) ->
+    '_botopink_main'().
 ```
 
 ----- RUN LOG -----

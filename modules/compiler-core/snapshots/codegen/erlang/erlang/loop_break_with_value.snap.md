@@ -15,7 +15,8 @@ find(Arr) ->
     lists:foreach(fun(X) ->
         case (X > 10) of
             true ->
-                X
+                X;
+            _ -> ok
         end
     end, Arr).
 ```

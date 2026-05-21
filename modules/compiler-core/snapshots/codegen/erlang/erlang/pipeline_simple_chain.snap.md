@@ -12,7 +12,7 @@ fn main() {
 ----- ERLANG -- main.erl
 ```erlang
 -module(main).
--export([_botopink_main/0]).
+-export(['_botopink_main'/0, main/1]).
 
 double(X) ->
     (X * 2).
@@ -20,8 +20,14 @@ double(X) ->
 inc(X) ->
     (X + 1).
 
-_botopink_main() ->
+main() ->
     Result = Inc(Double(1)).
+
+'_botopink_main'() ->
+    main().
+
+main(_Args) ->
+    '_botopink_main'().
 ```
 
 ----- RUN LOG -----

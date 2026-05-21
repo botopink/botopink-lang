@@ -51,6 +51,11 @@ function execute_$1(input) {
     output = input;
     return output;
 }
+
+function _botopink_main() {
+    main();
+}
+_botopink_main();
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

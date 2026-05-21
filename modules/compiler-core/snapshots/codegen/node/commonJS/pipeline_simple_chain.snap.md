@@ -22,6 +22,11 @@ function inc(x) {
 function main() {
     const result = (inc((double(1))));
 }
+
+function _botopink_main() {
+    main();
+}
+_botopink_main();
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

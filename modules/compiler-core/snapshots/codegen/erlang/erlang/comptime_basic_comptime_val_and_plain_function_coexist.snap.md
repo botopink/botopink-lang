@@ -27,16 +27,21 @@ main(_) ->
 ----- ERLANG -- main.erl
 ```erlang
 -module(main).
--export([_botopink_main/0]).
+-export(['_botopink_main'/0, main/1]).
 
-x() ->
-    3.
 
 double(N) ->
     (N * 2).
 
-_botopink_main() ->
+main() ->
     R = double(21).
+
+'_botopink_main'() ->
+    X = 3,
+    main().
+
+main(_Args) ->
+    '_botopink_main'().
 ```
 
 ----- RUN LOG -----

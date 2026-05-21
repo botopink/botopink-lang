@@ -41,6 +41,11 @@ function scale_$1(value) {
     const factor = 3;
     return (value * factor);
 }
+
+function _botopink_main() {
+    main();
+}
+_botopink_main();
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

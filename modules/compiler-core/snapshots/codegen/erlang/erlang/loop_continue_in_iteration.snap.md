@@ -16,7 +16,8 @@ sumEvens(Arr) ->
     lists:map(fun(X) ->
         case ((X rem 2) =/= 0) of
             true ->
-                %% continue
+                %% continue;
+            _ -> ok
         end,
         X
     end, Arr).

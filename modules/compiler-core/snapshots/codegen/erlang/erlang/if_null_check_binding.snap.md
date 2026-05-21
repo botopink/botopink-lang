@@ -16,7 +16,8 @@ getName(Name) ->
     case Name of
         undefined -> undefined;
         _ ->
-            N
+            N;
+        _ -> ok
     end,
     <<"unknown">>.
 ```

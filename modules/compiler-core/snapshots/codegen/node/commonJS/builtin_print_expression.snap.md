@@ -12,6 +12,11 @@ function main() {
     const x = 10;
     console.log((x * 2));
 }
+
+function _botopink_main() {
+    main();
+}
+_botopink_main();
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
@@ -21,4 +26,5 @@ function main() {
 
 ----- RUN LOG -----
 ```logs
+20
 ```

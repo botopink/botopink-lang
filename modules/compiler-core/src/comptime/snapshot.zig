@@ -625,10 +625,15 @@ pub fn buildSnapshot(allocator: std.mem.Allocator, output: comptimeMod.ComptimeO
                 const value = try std.json.parseFromSliceLeaky(std.json.Value, ja, jsonStr, .{});
                 try items.append(value);
             }
-            const empty_keys: []const []const u8 = &.{};
-            const empty_values: []const std.json.Value = &.{};
-            var root = try std.json.ObjectMap.init(ja, empty_keys, empty_values);
-            try root.put(ja, "declarations", .{ .array = items });
+            var root = if (comptime @hasDecl(std.array_hash_map, "String"))
+                try std.json.ObjectMap.init(ja, &.{}, &.{})
+            else
+                std.json.ObjectMap.init(ja);
+            if (comptime @hasDecl(std.array_hash_map, "String")) {
+                try root.put(ja, "declarations", .{ .array = items });
+            } else {
+                try root.put("declarations", .{ .array = items });
+            }
 
             const json = try std.json.Stringify.valueAlloc(allocator, std.json.Value{ .object = root }, .{ .whitespace = .indent_2 });
             defer allocator.free(json);

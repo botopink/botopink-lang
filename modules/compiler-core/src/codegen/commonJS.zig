@@ -142,6 +142,23 @@ pub fn emitProgram(
         }
     }
 
+    // Detect `fn main/0` so we can emit the `_botopink_main` entry wrapper.
+    var has_main_0 = false;
+    for (program.decls) |decl| {
+        switch (decl) {
+            .@"fn" => |f| {
+                if (std.mem.eql(u8, f.name, "main")) {
+                    var arity: usize = 0;
+                    for (f.params) |p| {
+                        if (!std.mem.eql(u8, p.name, "self")) arity += 1;
+                    }
+                    if (arity == 0) has_main_0 = true;
+                }
+            },
+            else => {},
+        }
+    }
+
     // Emit declarations from the transformed program.
     var firstEmitted = true;
     for (program.decls) |decl| {
@@ -225,6 +242,13 @@ pub fn emitProgram(
                 firstEmitted = false;
             },
         }
+    }
+
+    // Auto-invoke entry point when `fn main/0` is defined.
+    if (has_main_0) {
+        if (!firstEmitted) try aw.writer.writeByte('\n');
+        try aw.writer.writeAll("function _botopink_main() {\n    main();\n}\n");
+        try aw.writer.writeAll("_botopink_main();\n");
     }
 
     return aw.toOwnedSlice();

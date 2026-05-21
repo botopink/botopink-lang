@@ -17,6 +17,42 @@ const ast = @import("../ast.zig");
 const ModuleOutput = moduleOutput.ModuleOutput;
 const ComptimeOutput = comptimeMod.ComptimeOutput;
 
+fn fnArityNoSelf(f: ast.FnDecl) usize {
+    var n: usize = 0;
+    for (f.params) |p| {
+        if (!std.mem.eql(u8, p.name, "self")) n += 1;
+    }
+    return n;
+}
+
+fn isZeroArgMainCallExpr(expr: ast.Expr) bool {
+    return switch (expr) {
+        .call => |c| switch (c.kind) {
+            .call => |cc| !cc.is_builtin and
+                cc.receiver == null and
+                cc.args.len == 0 and
+                cc.trailing.len == 0 and
+                std.mem.eql(u8, cc.callee, "main"),
+            else => false,
+        },
+        .jump => |j| switch (j.kind) {
+            .@"return" => |r| if (r) |rp| isZeroArgMainCallExpr(rp.*) else false,
+            .try_ => |t| if (t) |tp| isZeroArgMainCallExpr(tp.*) else false,
+            else => false,
+        },
+        .collection => |col| switch (col.kind) {
+            .grouped => |inner| isZeroArgMainCallExpr(inner.*),
+            else => false,
+        },
+        else => false,
+    };
+}
+
+fn isSyntheticMainEntrypointCall(v: ast.ValDecl) bool {
+    if (std.mem.startsWith(u8, v.name, "_main")) return true;
+    return std.mem.startsWith(u8, v.name, "_") and isZeroArgMainCallExpr(v.value.*);
+}
+
 // ── public entry ─────────────────────────────────────────────────────────────
 
 pub fn codegenEmit(
@@ -71,35 +107,38 @@ fn emitErlang(
     defer aw.deinit();
 
     var em = Emitter.init(alloc, &aw.writer, comptime_vals);
+    var top_runtime_vals: std.ArrayListUnmanaged(ast.ValDecl) = .empty;
+    defer top_runtime_vals.deinit(alloc);
+    var has_main_0 = false;
+    for (program.decls) |decl| {
+        switch (decl) {
+            .val => |v| {
+                if (!v.value.isComptimeExpr() and !isSyntheticMainEntrypointCall(v)) try top_runtime_vals.append(alloc, v);
+            },
+            .@"fn" => |f| {
+                if (std.mem.eql(u8, f.name, "main") and fnArityNoSelf(f) == 0) has_main_0 = true;
+            },
+            else => {},
+        }
+    }
+    const emit_entrypoint_wrapper = has_main_0;
 
     // Module header
     try aw.writer.print("-module({s}).\n", .{module_name});
 
-    // Check for main function/val defined by user
-    const user_main = blk: {
-        for (program.decls) |decl| {
-            switch (decl) {
-                .@"fn" => |f| if (std.mem.eql(u8, f.name, "main")) break :blk true,
-                .val => |v| if (std.mem.eql(u8, v.name, "main") and !v.value.isComptimeExpr()) break :blk true,
-                else => {},
-            }
-        }
-        break :blk false;
-    };
-
-    // Collect public function names for export (excluding main)
+    // Collect public function names for export.
     var pub_fns: std.ArrayListUnmanaged(ast.FnDecl) = .empty;
     defer pub_fns.deinit(alloc);
     for (program.decls) |decl| {
         switch (decl) {
-            .@"fn" => |f| if (f.isPub and !std.mem.eql(u8, f.name, "main")) try pub_fns.append(alloc, f),
+            .@"fn" => |f| if (f.isPub) try pub_fns.append(alloc, f),
             else => {},
         }
     }
-
-    // Export main with exclusive name if it exists
-    if (user_main) {
-        try aw.writer.writeAll("-export([_botopink_main/0]).\n");
+    // Export generated entrypoint wrapper when main/0 exists.
+    // `main/1` is the escript entry point — escript calls it with the argv list.
+    if (emit_entrypoint_wrapper) {
+        try aw.writer.writeAll("-export(['_botopink_main'/0, main/1]).\n");
     }
 
     // Export other public functions
@@ -107,14 +146,7 @@ fn emitErlang(
         try aw.writer.writeAll("-export([");
         for (pub_fns.items, 0..) |f, i| {
             if (i > 0) try aw.writer.writeAll(", ");
-            const arity = blk: {
-                var n: usize = 0;
-                for (f.params) |p| {
-                    if (!std.mem.eql(u8, p.name, "self")) n += 1;
-                }
-                break :blk n;
-            };
-            try aw.writer.print("{s}/{d}", .{ f.name, arity });
+            try aw.writer.print("{s}/{d}", .{ f.name, fnArityNoSelf(f) });
         }
         try aw.writer.writeAll("]).\n");
     }
@@ -123,7 +155,13 @@ fn emitErlang(
     for (program.decls) |decl| {
         try aw.writer.writeByte('\n');
         switch (decl) {
-            .val => |v| try em.emitTopVal(v, comptime_vals),
+            .val => |v| {
+                if (emit_entrypoint_wrapper) {
+                    if (v.value.isComptimeExpr()) try em.emitTopVal(v, comptime_vals);
+                } else {
+                    try em.emitTopVal(v, comptime_vals);
+                }
+            },
             .@"fn" => |f| try em.emitFn(f),
             .@"struct" => |s| try em.emitStruct(s),
             .record => |r| try em.emitRecord(r),
@@ -137,6 +175,27 @@ fn emitErlang(
                 try aw.writer.print("{s} {s}\n", .{ prefix, c.text });
             },
         }
+    }
+
+    if (emit_entrypoint_wrapper) {
+        try aw.writer.writeByte('\n');
+        try aw.writer.writeAll("'_botopink_main'() ->\n");
+        const saved_indent = em.indent;
+        em.indent = 1;
+
+        for (top_runtime_vals.items) |v| {
+            try em.writeIndent();
+            try em.emitTopValEntryStmt(v);
+            try aw.writer.writeAll(",\n");
+        }
+        try em.writeIndent();
+        try aw.writer.writeAll("main().\n");
+        em.indent = saved_indent;
+
+        // escript entry point — `escript <file>` calls main/1 with the argv list.
+        try aw.writer.writeByte('\n');
+        try aw.writer.writeAll("main(_Args) ->\n");
+        try aw.writer.writeAll("    '_botopink_main'().\n");
     }
 
     return aw.toOwnedSlice();
@@ -185,9 +244,8 @@ const Emitter = struct {
             try this.fmt("%% comptime val {s}\n", .{v.name});
             return;
         }
-        // Emit as a 0-arity function (Erlang has no top-level constants)
-        const val_name = if (std.mem.eql(u8, v.name, "main")) "_botopink_main" else v.name;
-        try this.fmt("{s}() ->\n", .{val_name});
+        // Emit as a 0-arity function when there is no script wrapper entrypoint.
+        try this.fmt("{s}() ->\n", .{v.name});
         const saved = this.indent;
         this.indent = 1;
         try this.writeIndent();
@@ -196,11 +254,22 @@ const Emitter = struct {
         try this.w(".\n");
     }
 
+    fn emitTopValEntryStmt(this: *Emitter, v: ast.ValDecl) !void {
+        const synthetic_runtime_stmt = std.mem.startsWith(u8, v.name, "_");
+        if (synthetic_runtime_stmt) {
+            try this.emitExpr(v.value.*);
+            return;
+        }
+        const vname = try erlangVar(this.alloc, v.name);
+        defer this.alloc.free(vname);
+        try this.fmt("{s} = ", .{vname});
+        try this.emitExpr(v.value.*);
+    }
+
     // ── fn ────────────────────────────────────────────────────────────────────
 
     fn emitFn(this: *Emitter, f: ast.FnDecl) !void {
-        const fn_name = if (std.mem.eql(u8, f.name, "main")) "_botopink_main" else f.name;
-        try this.w(fn_name);
+        try this.w(f.name);
         try this.w("(");
         var first = true;
         for (f.params) |p| {
@@ -477,7 +546,8 @@ const Emitter = struct {
                             return;
                         }
                         if (std.mem.eql(u8, cc.callee, "block")) {
-                            // @block { ... } becomes a fun that executes the block
+                            // @block { ... } emits an immediately-invoked fun
+                            // so the body executes and its value is the call result.
                             if (cc.args.len == 1) {
                                 const arg = cc.args[0].value;
                                 const isFunction = switch (arg.*) {
@@ -485,23 +555,23 @@ const Emitter = struct {
                                     else => false,
                                 };
                                 if (!isFunction) return error.InvalidArgs;
-                                try this.w("fun() ->\n");
+                                try this.w("(fun() ->\n");
                                 this.indent += 1;
                                 try this.emitExpr(arg.*);
                                 this.indent -= 1;
                                 try this.w("\n");
                                 try this.writeIndent();
-                                try this.w("end\n");
+                                try this.w("end)()");
                                 return;
                             } else if (cc.trailing.len == 1 and cc.trailing[0].params.len == 0) {
                                 // @block { body } - trailing lambda with no params
-                                try this.w("fun() ->\n");
+                                try this.w("(fun() ->\n");
                                 this.indent += 1;
                                 try this.emitBody(cc.trailing[0].body);
                                 this.indent -= 1;
                                 try this.w("\n");
                                 try this.writeIndent();
-                                try this.w("end\n");
+                                try this.w("end)()");
                                 return;
                             } else {
                                 return error.InvalidArgs;
@@ -699,6 +769,12 @@ const Emitter = struct {
                         this.indent += 1;
                         try this.emitBranchBody(els);
                         this.indent -= 1;
+                    } else {
+                        // No else branch — emit a catch-all so the case
+                        // doesn't crash when the condition is false.
+                        try this.w(";\n");
+                        try this.writeIndent();
+                        try this.w("_ -> ok");
                     }
                     this.indent -= 1;
                     try this.w("\n");

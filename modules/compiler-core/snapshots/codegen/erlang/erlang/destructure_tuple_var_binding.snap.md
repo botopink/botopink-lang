@@ -8,10 +8,16 @@ fn main() {
 ----- ERLANG -- main.erl
 ```erlang
 -module(main).
--export([_botopink_main/0]).
+-export(['_botopink_main'/0, main/1]).
 
-_botopink_main() ->
+main() ->
     {X, Y} = {10, 20}.
+
+'_botopink_main'() ->
+    main().
+
+main(_Args) ->
+    '_botopink_main'().
 ```
 
 ----- RUN LOG -----

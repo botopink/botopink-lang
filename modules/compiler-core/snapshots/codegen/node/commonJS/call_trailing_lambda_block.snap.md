@@ -21,6 +21,11 @@ function main() {
     return "done";
 });
 }
+
+function _botopink_main() {
+    main();
+}
+_botopink_main();
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

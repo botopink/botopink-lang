@@ -11,13 +11,19 @@ fn main() -> i32 {
 ----- ERLANG -- main.erl
 ```erlang
 -module(main).
--export([_botopink_main/0]).
+-export(['_botopink_main'/0, main/1]).
 
-_botopink_main() ->
+main() ->
     Add = fun(A, B) ->
         (A + B)
     end,
     add(10, 20).
+
+'_botopink_main'() ->
+    main().
+
+main(_Args) ->
+    '_botopink_main'().
 ```
 
 ----- RUN LOG -----

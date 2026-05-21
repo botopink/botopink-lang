@@ -1,29 +1,32 @@
-# core/src/parser
+# compiler-core/src/parser
 
-## AGENTS links
+> Path: `modules/compiler-core/src/parser/`
+> Parent: [`../AGENTS.md`](../AGENTS.md)
 
-- [Root AGENTS](../../../../AGENTS.md)
-- [Compiler-core src AGENTS](../AGENTS.md)
+Parser tests. The parser implementation itself is at `../parser.zig`.
 
-Parser tests live here. The parser itself is at `../parser.zig`.
+## Tree
 
-## Files
-
-| File | Role |
-|---|---|
-| `tests.zig` | Snapshot tests via `assertParser(allocator, @src(), source)` |
+```text
+parser/
+├── AGENTS.md      ← you are here
+└── tests.zig      ← `assertParser` / `expectParseError` snapshot tests
+```
 
 ## Testing pattern
 
 ```zig
-test "some decl" {
-    try assertParser(std.testing.allocator, @src(), "val x = 42");
+test "use decl" {
+    try assertParser(std.testing.allocator, @src(), "use std.{print}");
 }
 ```
 
-Snapshot path: `../../snapshots/parser/<slug>.snap.md`.
-Use `expectParseError(source, "expected error text")` for error-case tests.
+- Snapshot path: `../../snapshots/parser/<slug>.snap.md`
+- Error tests: `expectParseError(source, "expected message")`
 
-## Conventions
+## Notes
 
-See `../AGENTS.md` for core testing and architecture guidelines. AST nodes use `union(enum)` — always call `deinit(allocator)` on heap-allocated nodes.
+- AST nodes are `union(enum)`; always call `deinit(alloc)` on heap-allocated
+  branches.
+- `Parser.init(tokens)` does **not** store an allocator; parse methods receive
+  `alloc: std.mem.Allocator`.

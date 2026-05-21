@@ -17,7 +17,8 @@ countUp(X) ->
     lists:foreach(fun(I) ->
         case (I > 100) of
             true ->
-                
+                ;
+            _ -> ok
         end
     end, lists:seq(X, infinity)).
 ```

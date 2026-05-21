@@ -18,6 +18,11 @@ function main() {
     const status = (() => {const calculo = (input * 2);  if ((calculo > 100)) { return "Alto"; }; return "Baixo";})();
     return status;
 }
+
+function _botopink_main() {
+    main();
+}
+_botopink_main();
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

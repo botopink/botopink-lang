@@ -13,6 +13,11 @@ fn main() {
 function main() {
     null;
 }
+
+function _botopink_main() {
+    main();
+}
+_botopink_main();
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

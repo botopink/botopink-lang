@@ -1,28 +1,31 @@
-# core/src/format
+# compiler-core/src/format
 
-## AGENTS links
+> Path: `modules/compiler-core/src/format/`
+> Parent: [`../AGENTS.md`](../AGENTS.md)
 
-- [Root AGENTS](../../../../AGENTS.md)
-- [Compiler-core src AGENTS](../AGENTS.md)
+Formatter tests. The Wadler-Lindig pretty-printer itself is at `../format.zig`.
 
-Formatter tests live here. The formatter implementation itself is at
-`../format.zig` (Wadler-Lindig pretty-printer).
+## Tree
 
-## Files
-
-| File | Role |
-|---|---|
-| `tests.zig` | Snapshot tests for round-trip formatting (`format(parse(src)) == src`) |
+```text
+format/
+├── AGENTS.md     ← you are here
+└── tests.zig     ← round-trip snapshot tests
+```
 
 ## Round-trip contract
 
-The formatter must be stable: running `format(parse(src))` twice must produce
-identical output. Tests verify this property via snapshots.
+`format(parse(src))` must produce output that re-parses to an equivalent AST,
+and running `format` twice in a row must produce identical text.
 
-## Conventions
+## Formatting rules (current release)
 
-See `../AGENTS.md` for core formatting rules. Key syntax (v0.0.11-beta):
-- **Record fields**: formatted WITHOUT `val` prefix: `record { name: Type, ... }`
-- **Struct fields**: formatted WITHOUT `val` prefix: `struct { name: Type, ... }`
-- **Enum variants**: comma-separated, single-line when no methods: `enum { Red, Rgb(r, g, b), }`
-- **Interface methods**: formatted with `fn` prefix: `interface { fn method(params): Type, }`
+| Construct | Rule |
+|---|---|
+| Record fields | No `val` prefix → `record { name: Type, ... }` |
+| Struct fields | No `val` prefix → `struct { name: Type, ... }` |
+| Enum variants | Comma-separated; single-line when no methods → `enum { Red, Rgb(r,g,b), }` |
+| Interface methods | `fn`-prefixed → `interface { fn method(p): T, }` |
+| Pipeline `\|>` | Each `\|>` on its own line for long chains |
+| Array literals | trailing comma → multi-line; otherwise inline |
+| Case arms | preserve `emptyLineBefore` as extra blank line |

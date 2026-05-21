@@ -1,32 +1,36 @@
-# core/src/lexer
+# compiler-core/src/lexer
 
-## AGENTS links
+> Path: `modules/compiler-core/src/lexer/`
+> Parent: [`../AGENTS.md`](../AGENTS.md)
 
-- [Root AGENTS](../../../../AGENTS.md)
-- [Compiler-core src AGENTS](../AGENTS.md)
+Lexer support files. The lexer entry point itself lives at `../lexer.zig`.
 
-Lexer support files. The lexer entry point is `../lexer.zig`.
+## Tree
 
-## Files
+```text
+lexer/
+├── AGENTS.md      ← you are here
+├── token.zig      ← TokenKind enum + Token struct (lexeme + line/col)
+└── tests.zig      ← lexer snapshot tests
+```
 
-| File | Role |
-|---|---|
-| `token.zig` | `TokenKind` enum and `Token` struct (lexeme + line/col positions) |
-| `tests.zig` | Lexer snapshot tests |
-
-## Token struct
+## `Token`
 
 ```zig
 Token {
     kind:   TokenKind,
-    lexeme: []const u8,  // the actual source text of this token
-    line:   usize,       // 1-based line number
-    col:    usize,       // 1-based column
+    lexeme: []const u8,  // exact slice of source for this token
+    line:   usize,       // 1-based
+    col:    usize,       // 1-based
 }
 ```
 
-`Lexer.init(src).scanAll(allocator)` returns `[]Token`.
+Usage: `Lexer.init(source).scanAll(alloc)` returns `[]Token`. `Lexer.init`
+does **not** store an allocator.
 
-## Conventions
+## Notes
 
-See `../AGENTS.md` for core architecture. Lexing errors are `LexicalError` values — prefer lexical errors over parser errors when token is malformed.
+- Prefer reporting `LexicalError` over a parser error when the token itself is
+  malformed.
+- Numeric literals support `1_000_000` digit separators, scientific notation
+  (`1.5e-10`, `2E+3`), and unary `-` is handled in the parser primary.

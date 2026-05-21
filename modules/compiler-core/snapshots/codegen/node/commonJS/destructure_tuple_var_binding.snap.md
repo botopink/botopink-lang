@@ -10,6 +10,11 @@ fn main() {
 function main() {
     let [ x, y ] = [10, 20];
 }
+
+function _botopink_main() {
+    main();
+}
+_botopink_main();
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

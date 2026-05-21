@@ -1,56 +1,71 @@
-# core/src/codegen
+# compiler-core/src/codegen
 
-## AGENTS links
+> Path: `modules/compiler-core/src/codegen/`
+> Parent: [`../AGENTS.md`](../AGENTS.md)
 
-- [Root AGENTS](../../../../AGENTS.md)
-- [Compiler-core src AGENTS](../AGENTS.md)
-- [Comptime AGENTS](../comptime/AGENTS.md)
+Per-target codegen backends. The public façade lives at `../codegen.zig`.
 
-## Files
+## Tree
 
-| File | Role |
-|---|---|
-| `config.zig` | Configuration: `Config`, `Target` (commonJS | erlang), `ComptimeRuntime`, `TypeDefLang` |
-| `moduleOutput.zig` | Shared types: `Module`, `ModuleOutput`, `GenerateResult` |
-| `commonJS.zig` | CommonJS backend — **blind emitter**: iterates transformed `ast.Program` and renders to JS. No specialization logic. |
-| `erlang.zig` | Erlang backend — **blind emitter**: iterates transformed `ast.Program` and renders to Erlang. No specialization logic. |
-| `typescript.zig` | TypeScript type definition generator |
-| `snapshot.zig` | Snapshot test helpers |
-| `tests.zig` | Snapshot test harness (`assertJs`, `assertJsSingle`, `assertJsError`) |
-
-## Design principle: Emitter is blind
-
-The CommonJS emitter knows nothing about comptime specialization. It only:
-- Iterates `program.decls` from the **transformed** AST
-- Renders each `DeclKind` to JavaScript
-- Comptime vals that were inlined appear as `const x = 6.28;` (resolved by the transform)
-- Specialized functions (`scale_$0`) are already present as regular `DeclKind.fn` nodes
-- Calls are already rewritten to mangled names with comptime args removed
-
-All specialization work happens in `../comptime/transform.zig` before codegen runs.
-
-## Pipeline (`codegen.generate`)
-
-```
-compile(allocator, modules, io, config)   — lex, parse, infer, transform
-  └─→ ComptimeSession (owns arena + per-module transformed programs)
-
-codegenEmit(allocator, outputs, config)   — blind emit based on config.target
-  ├─ commonJS: emitProgram(transformed_ast, comptime_vals) → JS source
-  ├─ erlang: emitProgram(transformed_ast, comptime_vals) → Erlang source
-  └─ typescript: generateTypedefs(bindings) → .d.ts source
+```text
+codegen/
+├── AGENTS.md         ← you are here
+├── config.zig        ← Config / Target (commonJS|erlang) / ComptimeRuntime / TypeDefLang
+├── moduleOutput.zig  ← shared types: Module, ModuleOutput, GenerateResult
+├── commonJS.zig      ← CommonJS emitter (blind: iterates transformed AST)
+├── erlang.zig        ← Erlang emitter (blind)
+├── typescript.zig    ← TypeScript `.d.ts` typedef generator
+├── runtime.zig       ← runtime helpers used when executing generated JS/Erlang in tests
+├── snapshot.zig      ← snapshot helpers for codegen tests
+└── tests.zig         ← `assertJs`, `assertJsSingle`, `assertJsError`, …
 ```
 
-## Snapshots
+## Entry-point convention
 
-`../../snapshots/codegen/<slug>.snap.md` — multi-section format:
+When the user module defines a `fn main()` with zero args, both backends emit
+an extra entry-point wrapper:
 
+| Target | Wrapper | How `botopink run` invokes it |
+|---|---|---|
+| CommonJS | `function _botopink_main() { …top stmts; main(); } _botopink_main();` at end of file | `node out/main.js` runs the trailing call automatically |
+| Erlang | `'_botopink_main'/0` (quoted atom to keep the leading `_`) + `main(_Args) -> '_botopink_main'().` | `escript out/main.erl` invokes `main/1` |
+
+For Erlang the function name **must** be quoted (`'_botopink_main'`) because
+plain identifiers may not start with `_` — `_botopink_main` alone would be
+parsed as an unbound variable, not a function name.
+
+## Design: emitters are blind
+
+The CommonJS / Erlang emitters know nothing about comptime specialization.
+They only:
+
+- iterate `program.decls` from the **already-transformed** AST
+- render each `DeclKind` to the target language
+- inlined comptime vals appear as plain decls (`const x = 6.28;`)
+- specialized functions (`scale_$0`) are already present as regular `DeclKind.fn`
+- calls are already rewritten to mangled names with comptime args removed
+
+All specialization work happens earlier in
+[`../comptime/transform.zig`](../comptime/AGENTS.md).
+
+## Codegen API (`../codegen.zig`)
+
+```text
+compile(alloc, modules, io, config)        → ComptimeSession   (lex + parse + infer + transform)
+codegenEmit(alloc, outputs, config)        → []ModuleOutput    (blind emit)
+generate(...)                              = compile + codegenEmit  (convenience)
 ```
+
+## Snapshot format
+
+`../../snapshots/codegen/<slug>.snap.md` is multi-section:
+
+```text
 ----- SOURCE CODE -- main.bp
 ...
 
 ----- COMPTIME JAVASCRIPT
-...  (empty when no comptime exprs)
+...                              (empty when no comptime exprs)
 
 ----- JAVASCRIPT -- main.js
 ...
@@ -60,7 +75,9 @@ codegenEmit(allocator, outputs, config)   — blind emit based on config.target
 
 Error snapshots live under `../../snapshots/codegen/errors/`.
 
-## Conventions
+## Notes
 
-See `../../AGENTS.md` for core architecture. No separate Node.js or Wasm modules — JS and Erlang are emitted natively in Zig.
-Comptime evaluation and specialization are handled by `../comptime.zig` and `../comptime/transform.zig` (target-agnostic), not by this package.
+- All public functions use `alloc: std.mem.Allocator` (renamed from `allocator`).
+- Emitter structs may carry an `alloc` field, but it must always be supplied
+  via `init`.
+- No standalone JS/WASM codegen — JS and Erlang are produced natively in Zig.

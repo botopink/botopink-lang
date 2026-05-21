@@ -1,75 +1,85 @@
-# core/src/comptime
+# compiler-core/src/comptime
 
-## AGENTS links
+> Path: `modules/compiler-core/src/comptime/`
+> Parent: [`../AGENTS.md`](../AGENTS.md)
 
-- [Root AGENTS](../../../../AGENTS.md)
-- [Compiler-core src AGENTS](../AGENTS.md)
-- [Comptime runtime AGENTS](runtime/AGENTS.md)
-- [Codegen AGENTS](../codegen/AGENTS.md)
+Hindley-Milner type inference, comptime evaluation, and the AST transform pass
+that specializes comptime calls. The target-agnostic façade is at
+`../comptime.zig`.
 
-Hindley-Milner type inference, comptime evaluation, and AST transformation for specialization.
+## Tree
+
+```text
+comptime/
+├── AGENTS.md          ← you are here
+├── types.zig          ← core Type union(enum)
+├── env.zig            ← Env (binding name → *Type) + builtins/stdlib loading
+├── infer.zig          ← `inferProgramTyped` — walks AST, returns []TypedBinding
+├── unify.zig          ← type-variable unification
+├── error.zig          ← structured TypeError with source locations + comptime validation
+├── eval.zig           ← evaluation driver (delegates to runtime/{node,erlang}.zig)
+├── render.zig         ← comptime value → target literal
+├── specialize.zig     ← `SpecializedFn`, `SpecCache`, `specialize()` — body rewriting
+├── transform.zig      ← `Aggregator` — drives the full transform pass
+├── snapshot.zig       ← comptime snapshot helpers
+├── tests.zig          ← `assertTypes`, `assertTypeErrorSnap`, …
+└── runtime/           ← Node.js + Erlang eval backends — see runtime/AGENTS.md
+```
 
 ## Files
 
 | File | Role |
 |---|---|
-| `types.zig` | Core `Type` struct — union(enum) for all type representations |
-| `env.zig` | `Env` — type environment (binding name → `*Type`); handles builtins + stdlib |
-| `infer.zig` | `inferProgramTyped` — walks AST, infers types, returns `[]TypedBinding` |
-| `unify.zig` | Unification algorithm for type variables |
-| `error.zig` | `TypeError` — structured type errors with source locations + comptime validation |
-| `eval.zig` | Comptime expression evaluation via external runtimes |
-| `render.zig` | Comptime value rendering to target literals |
-| `snapshot.zig` | Comptime snapshot utilities |
-| `specialize.zig` | Pure AST specialization: `SpecializedFn`, `SpecCache`, `specialize()` — transforms function bodies for comptime args (loop unrolling, static if/case folding) |
-| `transform.zig` | AST rewrite pass: `Aggregator` tracks calls, specializes, rewrites callee names, removes comptime args, inlines comptime vals, removes fully-specialized original functions |
-| `tests.zig` | Tests via `assertTypes` and `assertTypeErrorSnap` |
+| `types.zig` | All type representations as `union(enum)`. |
+| `env.zig` | Type environment — pushes/pops scopes, loads builtins + stdlib. |
+| `infer.zig` | Main HM inference: `inferProgramTyped(...) → []TypedBinding`. |
+| `unify.zig` | Unification with substitution + occurs check. |
+| `error.zig` | Structured type errors with source ranges and hints. |
+| `eval.zig` | Builds eval scripts, calls runtime, parses JSON results. |
+| `render.zig` | Converts an evaluated comptime value into a target literal. |
+| `specialize.zig` | Pure AST specialization — unroll loops, fold static if/case. |
+| `transform.zig` | `Aggregator` — drives specialize + rewrite + inline + dead-code. |
+| `snapshot.zig` | Snapshot helpers. |
+| `tests.zig` | Test entry points (`assertTypes`, `assertTypeErrorSnap`). |
 
-## Runtime backends
+## Façade (`../comptime.zig`)
 
-| File | Role |
-|---|---|
-| `runtime/node.zig` | Node.js comptime runtime — evaluates JS and parses JSON output |
-| `runtime/erlang.zig` | Erlang comptime runtime — evaluates Erlang scripts via `json:encode/1` |
+Re-exports types from this directory and adds the pipeline:
 
-## Testing helpers
+- `analyzeModule(...)` — lex / parse / validate comptime purity / infer
+- `evaluateComptime(...)` — run script via runtime, parse JSON output
+- `transform.transform(...)` — full AST rewrite
+- `ComptimeSession` — owns shared arena + per-module `ComptimeOutput`
 
-- `assertTypes(allocator, source, &.{.{"name", "Type"}, ...})` — checks inferred types
-- `assertTypeErrorSnap(allocator, @src(), source)` — snapshot-matches the rendered error
+## Transform pass
 
-## Parent module
-
-The parent `../comptime.zig` file re-exports types from this directory and
-provides the target-agnostic `compile` pipeline:
-- `analyzeModule()` — lex, parse, validate comptime purity, infer types
-- `evaluateComptime()` — build Node.js eval script, run it, parse JSON results
-- `transform.transform()` — rewrites AST: specializes calls, inlines comptime vals, removes dead code
-- `ComptimeSession` — owns shared arena + per-module `ComptimeOutput` (includes transformed program)
-
-## Transform pipeline
-
-```
-typed AST → transform (Aggregator) → transformed AST → codegen
+```text
+typed AST ──► Aggregator ──► transformed AST ──► codegen
 ```
 
-### `Aggregator` struct
+`Aggregator`:
 
 | Method | Role |
 |---|---|
-| `trackCall(fn_name)` | Counts a call to a fn with comptime params |
-| `trackSpecialization(fn_name)` | Counts a call that was rewritten to a mangled name |
-| `isFullySpecialized(fn_name)` | Returns true when ALL calls to fn were rewritten (original is dead code) |
+| `trackCall(fn_name)` | Counts a call to a fn with comptime params. |
+| `trackSpecialization(fn_name)` | Counts a call rewritten to a mangled name. |
+| `isFullySpecialized(fn_name)` | True if **all** calls were rewritten (original is dead). |
 
-### What transform does
+Steps:
 
-1. **Scan** — finds calls with comptime args, calls `specialize()` to generate `SpecializedFn`
-2. **Rewrite** — rewrites callee names (`scale(2, base)` → `scale_$0(base)`), removes comptime args from call arg lists
-3. **Inline** — replaces `val x = comptime expr` with `val x = <resolved_value>` (e.g. `val pi = 6.28;`)
-4. **Filter** — removes original functions where ALL calls were specialized (dead code)
-5. **Inject** — adds specialized `FnDecl` nodes to the program
+1. **Scan** — find calls with comptime args, run `specialize()` → `SpecializedFn`.
+2. **Rewrite** — `scale(2, base)` → `scale_$0(base)` (mangled, comptime arg dropped).
+3. **Inline** — `val x = comptime expr` → `val x = <resolved>`.
+4. **Filter** — drop originals where all calls were specialized.
+5. **Inject** — add specialized `FnDecl` nodes to `program.decls`.
 
-## Conventions
+## Testing helpers
 
-See `../AGENTS.md` for core architecture and testing guidelines. Type errors are
-rendered via the structured error system in `error.zig` with source locations
-and contextual hints.
+```zig
+try assertTypes(alloc, source, &.{ .{ "x", "i32" }, .{ "f", "fn(i32) i32" } });
+try assertTypeErrorSnap(alloc, @src(), source);
+```
+
+## Children
+
+- [`runtime/AGENTS.md`](runtime/AGENTS.md) — Node.js + Erlang external eval.

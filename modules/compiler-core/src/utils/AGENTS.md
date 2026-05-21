@@ -1,26 +1,35 @@
-# core/src/utils
+# compiler-core/src/utils
 
-## AGENTS links
+> Path: `modules/compiler-core/src/utils/`
+> Parent: [`../AGENTS.md`](../AGENTS.md)
 
-- [Root AGENTS](../../../../AGENTS.md)
-- [Compiler-core src AGENTS](../AGENTS.md)
+Snapshot-testing infrastructure shared by every test suite in the workspace
+(parser, codegen, comptime, LSP).
 
-Snapshot testing infrastructure shared by parser, codegen, and type tests.
+## Tree
+
+```text
+utils/
+├── AGENTS.md       ← you are here
+├── snap.zig        ← read/write/compare .snap.md files
+├── pretty.zig      ← indented JSON serialiser (used to render AST snapshots)
+└── json_diff.zig   ← structural JSON diff printed on mismatch
+```
 
 ## Files
 
 | File | Role |
 |---|---|
-| `snap.zig` | `checkText(allocator, name, content)` — read/write/compare `.snap.md` files; writes `.snap.md.new` on mismatch |
-| `pretty.zig` | Serialises any value to indented JSON via `std.json.stringify` (used to render AST snapshots) |
-| `json_diff.zig` | Structural JSON diff printed to stderr when a snapshot mismatches |
+| `snap.zig` | `checkText(alloc, name, content)` — compares against `<name>.snap.md`; writes `<name>.snap.md.new` on mismatch. |
+| `pretty.zig` | Serialises any value to indented JSON via `std.json.stringify`. |
+| `json_diff.zig` | Renders a structural JSON diff to stderr when a snapshot mismatches. |
 
 ## Snapshot workflow
 
-1. First run: snapshot file is created automatically.
-2. Mismatch: diff printed to stderr; `<name>.snap.md.new` written.
-3. Accept changes: delete the `.snap.md` file, re-run tests.
+1. First run → snapshot file is created automatically.
+2. Mismatch → diff printed to stderr; `<name>.snap.md.new` written.
+3. To accept the change: review the `.new` file, then replace the existing
+   `.snap.md` (or delete the old `.snap.md` and re-run tests).
 
-## Conventions
-
-See `../AGENTS.md` for core testing and architecture guidelines. Always preserve exact indentation in formatted files.
+Indentation in formatted output must be preserved exactly — snapshot diffs
+are character-sensitive.

@@ -13,7 +13,8 @@ fn sign(n: i32) -> string {
 sign(N) ->
     R = case (N > 0) of
         true ->
-            <<"positive">>
+            <<"positive">>;
+        _ -> ok
     end,
     R.
 ```

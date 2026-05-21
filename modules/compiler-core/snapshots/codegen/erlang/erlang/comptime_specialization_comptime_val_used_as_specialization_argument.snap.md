@@ -29,12 +29,10 @@ main(_) ->
 ----- ERLANG -- main.erl
 ```erlang
 -module(main).
--export([_botopink_main/0]).
+-export(['_botopink_main'/0, main/1]).
 
-base() ->
-    15.
 
-_botopink_main() ->
+main() ->
     Doubled = scale_$0(Base),
     Tripled = scale_$1(Base),
     DoubledAgain = scale_$0(100).
@@ -46,6 +44,13 @@ scale_$0(Value) ->
 scale_$1(Value) ->
     Factor = 3,
     (Value * Factor).
+
+'_botopink_main'() ->
+    Base = 15,
+    main().
+
+main(_Args) ->
+    '_botopink_main'().
 ```
 
 ----- RUN LOG -----

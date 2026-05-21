@@ -31,6 +31,11 @@ function double(n) {
 function main() {
     const r = double(21);
 }
+
+function _botopink_main() {
+    main();
+}
+_botopink_main();
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

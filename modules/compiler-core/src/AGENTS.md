@@ -1,162 +1,98 @@
-# core/src
+# compiler-core/src
 
-## AGENTS links
+> Path: `modules/compiler-core/src/`
+> Parent: [`../AGENTS.md`](../AGENTS.md) · Root: [`../../../AGENTS.md`](../../../AGENTS.md)
 
-- [Root AGENTS](../../../AGENTS.md)
-- [Compiler-core AGENTS](../AGENTS.md)
-- [Codegen AGENTS](codegen/AGENTS.md)
-- [Comptime AGENTS](comptime/AGENTS.md)
-- [Comptime runtime AGENTS](comptime/runtime/AGENTS.md)
-- [Format AGENTS](format/AGENTS.md)
-- [Lexer AGENTS](lexer/AGENTS.md)
-- [Parser AGENTS](parser/AGENTS.md)
-- [Utils AGENTS](utils/AGENTS.md)
+All compiler stages live here. Each top-level `*.zig` is a façade; the
+implementation typically delegates to a sibling directory of the same name.
 
-## Files at this level
+## Tree
+
+```text
+src/
+├── AGENTS.md             ← you are here
+├── root.zig              ← public library entry (re-exports the public API)
+├── main.zig              ← minimal CLI stub used by `zig build run`
+├── test_root.zig         ← aggregates all test files
+├── module.zig            ← `Module` struct — input module representation
+├── ast.zig               ← AST node types (categorised: literal/binaryOp/jump/branch/loop/binding/call/function/collection/comptime_)
+├── lexer.zig             ← Lexer (delegates to lexer/token.zig)
+├── parser.zig            ← Recursive-descent parser
+├── format.zig            ← Wadler-Lindig pretty printer (round-trip stable)
+├── print.zig             ← rustc-style diagnostics renderer
+├── comptime.zig          ← Target-agnostic comptime façade: `ComptimeSession`, `compile`, `evaluateComptime`
+├── codegen.zig           ← Public codegen API: `compile`, `codegenEmit`, `generate`
+├── codegen/              ← Per-target backends — see codegen/AGENTS.md
+├── comptime/             ← HM inference + comptime transform — see comptime/AGENTS.md
+│   └── runtime/          ← External eval scripts (Node.js + Erlang)
+├── lexer/                ← Token struct + lexer snapshot tests
+├── parser/               ← Parser snapshot tests
+├── format/               ← Formatter snapshot tests
+└── utils/                ← Snapshot/JSON helpers — see utils/AGENTS.md
+```
+
+## Top-level façades
 
 | File | Role |
 |---|---|
-| `root.zig` | Library entry point — exports the public API |
-| `main.zig` | CLI stub (currently minimal) |
-| `ast.zig` | All AST node types (`union(enum)` throughout) |
-| `lexer.zig` | Lexer entry point — delegates to `lexer/token.zig` |
-| `parser.zig` | Recursive-descent parser |
-| `module.zig` | `Module` struct — input module representation |
-| `comptime.zig` | Target-agnostic comptime compilation: `ComptimeSession`, `compile`, `evaluateComptime` |
-| `format.zig` | Wadler-Lindig pretty-printer (`ast.Program → formatted source`) |
-| `print.zig` | rustc-style error renderer (position + hint lines) |
-| `codegen.zig` | Public codegen API — dispatches to target-specific backends, re-exports `ComptimeSession` from `comptime.zig` |
+| `root.zig` | Library entry point — re-exports the public API. |
+| `main.zig` | Minimal CLI stub (used by `zig build run`). |
+| `ast.zig` | All AST node types (`union(enum)` throughout); both untyped and typed phases. |
+| `lexer.zig` | Lexer façade — delegates to `lexer/token.zig`. |
+| `parser.zig` | Recursive-descent parser. `init(tokens)` does **not** store an allocator. |
+| `module.zig` | `Module` — input module representation. |
+| `comptime.zig` | Target-agnostic comptime — `ComptimeSession`, `compile`, `evaluateComptime`. |
+| `format.zig` | Wadler-Lindig pretty-printer. Must be round-trip stable. |
+| `print.zig` | rustc-style error renderer (caret + position + hint). |
+| `codegen.zig` | Public codegen API. Dispatches to `codegen/<target>.zig`. |
 
 ## Subdirectories
 
-| Dir | Files |
-|---|---|
-| `lexer/` | `token.zig` (token definitions), `tests.zig` (snapshot tests) |
-| `parser/` | `tests.zig` (parser snapshot tests) |
-| `comptime/` | Type inference + comptime compilation: `types.zig`, `env.zig`, `infer.zig`, `unify.zig`, `error.zig`, `eval.zig`, `render.zig`, `snapshot.zig`, `tests.zig`, **`transform.zig`** (AST rewrite pass for specialization), **`specialize.zig`** (pure AST specialization), `runtime/` (Node.js + Erlang comptime runtimes) |
-| `codegen/` | `config.zig` (configuration), `moduleOutput.zig` (output types), `commonJS.zig` (CommonJS backend), `erlang.zig` (Erlang backend), `typescript.zig` (TypeScript typedefs), `snapshot.zig` (snapshot helpers), `tests.zig` (codegen tests) |
-| `format/` | `tests.zig` (formatter snapshot tests) |
-| `utils/` | `snap.zig` (snapshot infrastructure), `pretty.zig` (JSON serialization), `json_diff.zig` (JSON diff output) |
-
-## Pipeline
-
-```
-lex → parse → infer types → transform (Aggregator rewrites AST) → codegen (blind emitter) → target
-```
-
-### Phases
-
-1. **lex/parse** — source → typed AST
-2. **infer** — Hindley-Milner type inference
-3. **transform** (`comptime/transform.zig`) — `Aggregator` scans for comptime calls, generates specialized `FnDecl` nodes, rewrites calls to mangled names, removes comptime args, inlines comptime values, removes fully-specialized original functions
-4. **codegen** (`codegen/commonJS.zig` or `codegen/erlang.zig`) — blind emitter, only iterates `program.decls` and renders to target language
-
-## Refactoring Guidelines
-
-### Allocator Pattern
-
-**Rule:** Never store `allocator` as a struct field. Always pass it as a parameter.
-
-```zig
-// ❌ WRONG
-pub const Parser = struct {
-    allocator: std.mem.Allocator,
-};
-pub fn init(tokens: []const Token, allocator: std.mem.Allocator) Parser { ... }
-
-// ✅ CORRECT
-pub const Parser = struct {
-    // no allocator field
-};
-pub fn init(tokens: []const Token) Parser { ... }
-pub fn parse(this: *This, alloc: std.mem.Allocator) ParseError!Program { ... }
-```
-
-**Parameter naming:** Always use `alloc: std.mem.Allocator` (not `allocator`).
-
-**Exception:** Emitter structs (internal to codegen) may store `alloc` as a field, but it must always be passed in `init()`.
-
-### Helper Functions
-
-Create helpers to eliminate repetitive patterns:
-
-- **`boxExpr(alloc, expr)`** — replaces `const ptr = try alloc.create(Expr); ptr.* = expr;`
-- **`parseStmtListInBraces(alloc)`** — parses `{ stmt; stmt; }` blocks (single source of truth)
-- **`parseCommaSeparatedIdentifiers(alloc, stopAt)`** — reusable for extends, imports, etc.
-- **`reportReservedWordError()`** — centralized reserved word error creation
-- **`emitBinaryOp(op, lhs, rhs)`** — replaces 6-line binary operator emission pattern
-
-**Target:** Any pattern with 3+ similar occurrences should be considered for extraction.
-
-## Recent Changes (v0.0.11-beta — April 2026)
-
-### AST additions
-| Node | Purpose |
-|---|---|
-| `ExprKind.pipeline` | `a |> b |> c` — left-associative pipeline chain |
-| `ExprKind.fnExpr` | `fn(params) { body }` — anonymous function expression |
-| `ExprKind.grouped` | `(expr)` — parenthesized expression (precedence) |
-| `CaseArm.emptyLineBefore` | Preserves blank lines between case arms |
-| `ArrayLit.trailingComma` | When true, forces multi-line array formatting |
-| `Param.typeRef` | Full `TypeRef` replacing raw `typeName: []const u8` |
-
-### Lexer additions
-| Feature | Example | Implementation |
+| Dir | Purpose | AGENTS |
 |---|---|---|
-| Underscore digit separators | `1_000_000`, `0b1010_0011` | `scanNumber()` in `lexer.zig` |
-| Scientific notation | `1.5e-10`, `2E+3` | `scanNumber()` exponent branch |
-| Unary negation in parser | `-123`, `-1.0e5` | `parsePrimary()` detects `-` before number |
+| `lexer/` | `token.zig` + tests | [link](lexer/AGENTS.md) |
+| `parser/` | parser snapshot tests | [link](parser/AGENTS.md) |
+| `format/` | formatter snapshot tests | [link](format/AGENTS.md) |
+| `comptime/` | HM types, infer, unify, transform, specialize, eval | [link](comptime/AGENTS.md) |
+| `comptime/runtime/` | Node.js + Erlang comptime runtimes | [link](comptime/runtime/AGENTS.md) |
+| `codegen/` | per-target backends (commonJS, erlang, typescript) | [link](codegen/AGENTS.md) |
+| `utils/` | snap.zig, pretty.zig, json_diff.zig | [link](utils/AGENTS.md) |
 
-### Parser changes
-| Change | Detail |
-|---|---|
-| `Parser.init(tokens)` | No longer stores allocator — always passed as parameter to parse methods |
-| `Parser.initWithSource(tokens, source)` | No longer stores allocator |
-| `boxExpr(alloc, expr)` | Helper: creates heap-allocated Expr pointer (replaces repetitive `alloc.create` pattern) |
-| `parseStmtListInBraces(alloc)` | Helper: parses `{ stmt; stmt; }` blocks (replaces repetitive brace-block pattern) |
-| `parseCommaSeparatedIdentifiers(alloc, stopAt)` | Helper: parses comma-separated identifier lists |
-| `reportReservedWordError()` | Helper: reports reserved word error for current token |
-| `parsePipelineExpr()` | New level in expression hierarchy between `parseOrExpr` and `parseAndExpr` |
-| `parseCaseExpr()` | Supports multiple subjects (`case a, b, c`), detects `emptyLineBefore` |
-| `parseParam()` | Uses `parseTypeRef()` instead of `consumeTypeName()` for full type support |
-| `parsePrimary()` | Handles `fn(params) { body }` as `ExprKind.fnExpr`, unary `-` for negative numbers |
+## Pipeline at this level
 
-### Lexer changes
-| Change | Detail |
-|---|---|
-| `Lexer.init(source)` | Never stored allocator — always passed as parameter to scan methods |
-| `deinit(alloc)` | Allocator passed as parameter, not stored |
-| `scanAll(alloc)` | Allocator passed as parameter |
+```text
+lex → parse → infer → transform (Aggregator rewrites AST) → codegen (blind emit)
+```
 
-### Codegen changes
-| Change | Detail |
-|---|---|
-| All public functions | Renamed `allocator` parameter to `alloc` for consistency |
-| `codegenEmit(alloc, outputs, config)` | Parameter renamed to `alloc` |
-| `emitProgram(alloc, ...)` | Parameter renamed to `alloc` |
-| `Emitter` structs (commonJS, erlang, typescript) | Field renamed from `alloc` to consistent naming, always passed in `init` |
+1. **lex / parse** — source → typed AST
+2. **infer** — Hindley–Milner type inference (`comptime/infer.zig`)
+3. **transform** — `comptime/transform.zig` `Aggregator` scans for comptime
+   calls, generates specialized `FnDecl` nodes, rewrites callees to mangled
+   names, removes comptime args, inlines comptime vals, drops dead originals
+4. **codegen** — `codegen/commonJS.zig` or `codegen/erlang.zig`: blind emit
+   from the transformed AST
 
-### Formatter changes
-| Feature | Behavior |
-|---|---|
-| Pipeline `|>` | Each `|>` on its own line with `hardline` |
-| `fnExpr` | `fn(params) { stmt; }` with force-break |
-| `grouped` | `(expr)` — simple parenthesized output |
-| Case arms | Preserves `emptyLineBefore` as extra `hardline` |
-| Case subjects | Multiple subjects joined with `, ` |
-| Array literals | `trailingComma` → multi-line with `hardline`; no trailing comma → `group`/`softline` |
-| Statements in body | `hardline` between each statement (was missing) |
+## Conventions
 
-### Codegen changes
-| Target | Pipeline `|>` | `fnExpr` | `grouped` |
-|---|---|---|---|
-| CommonJS | `g(f(a))` nested calls | `(p) => { body }` | `(expr)` |
-| Erlang | `G(F(A))` nested calls | `fun(P) -> body end` | `(expr)` |
-| Node runtime | Nested `writeExprJs` | N/A | N/A |
-| Erlang runtime | Nested `writeExprErl` | N/A | N/A |
+- **Allocator pattern**: never store `allocator` as a struct field. Always
+  pass it as `alloc: std.mem.Allocator` to the method that needs it.
+  Emitters (internal) may keep an `alloc` field but it must arrive via `init`.
+- Helpers worth knowing about in the parser:
+  - `boxExpr(alloc, expr)` — heap-allocate an `Expr` pointer
+  - `parseStmtListInBraces(alloc)` — parse `{ stmt; … }` blocks
+  - `parseCommaSeparatedIdentifiers(alloc, stopAt)`
+  - `reportReservedWordError()` — centralised reserved-word error
+- Type annotations always use `TypeRef`
+  (`named`, `array`, `tuple_`, `optional`, `errorUnion`, `function`).
+- Formatter must round-trip: `format(parse(src))` must re-parse to an
+  equivalent AST.
 
-### Type inference
-| Addition | Detail |
-|---|---|
-| `.pipeline` | Returns `rhs.type_`; both sides inferred as typed expressions |
-| `.fnExpr` | Returns fresh type variable; body inferred via `inferStmtsTyped` |
+## Current-release highlights (v0.0.13-beta)
+
+- Pipeline `|>` (`ExprKind.pipeline`) — left-associative.
+- Anonymous function expression `fn(params) { body }` (`ExprKind.fnExpr`).
+- Parenthesised expression (`ExprKind.grouped`).
+- `CaseArm.emptyLineBefore` preserves blank lines between arms.
+- `ArrayLit.trailingComma` forces multi-line array formatting.
+- `Param.typeRef` replaces raw `typeName: []const u8`.
+- Lexer: `1_000_000` digit separators, scientific notation, unary `-` in primary.

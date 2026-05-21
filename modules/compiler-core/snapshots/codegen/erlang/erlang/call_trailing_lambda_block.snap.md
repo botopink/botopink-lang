@@ -13,15 +13,21 @@ fn main() {
 ----- ERLANG -- main.erl
 ```erlang
 -module(main).
--export([_botopink_main/0]).
+-export(['_botopink_main'/0, main/1]).
 
 run() ->
     erlang:error({todo, "not implemented"}).
 
-_botopink_main() ->
+main() ->
     run(fun(X) ->
         <<"done">>
     end).
+
+'_botopink_main'() ->
+    main().
+
+main(_Args) ->
+    '_botopink_main'().
 ```
 
 ----- RUN LOG -----

@@ -1,106 +1,55 @@
-# core
+# compiler-core
 
-## AGENTS links
+> Path: `modules/compiler-core/`
+> Parent: [`../AGENTS.md`](../AGENTS.md) · Root: [`../../AGENTS.md`](../../AGENTS.md)
 
-- [Root AGENTS](../../AGENTS.md)
-- [Modules AGENTS](../AGENTS.md)
-- [Compiler-core src AGENTS](src/AGENTS.md)
+Main Zig library: lexer, parser, AST, type inference, comptime, codegen and
+formatter. Imported as the `botopink` module by `compiler-cli` and
+`language-server`.
 
-Main Zig package. See the root `AGENTS.md` for the full architecture and
-conventions reference. This file covers package-level layout only.
+## Tree
 
-## Layout
-
+```text
+compiler-core/
+├── AGENTS.md            ← you are here
+├── build.zig            ← build graph (`zig build [run|test]`)
+├── build.zig.zon        ← deps (stdlib)
+├── src/                 ← all compiler stages — see src/AGENTS.md
+└── snapshots/           ← all .snap.md test fixtures — see snapshots/AGENTS.md
+    ├── parser/          ← AST snapshots
+    ├── codegen/         ← codegen output (erlang/, node/, errors/)
+    └── comptime/        ← comptime + type-error snapshots
 ```
-build.zig          Zig build script
-src/               All source (see src/AGENTS.md)
-snapshots/         Snapshot files consumed by tests
-  parser/          AST snapshots
-  codegen/         Codegen snapshots (commonJS/, erlang/, errors/)
-  comptime/        Comptime evaluation snapshots (ast/, errors/)
-```
 
-## Running
-
-All commands from this directory:
+## Commands (run from this directory)
 
 ```bash
-zig build           # compile
-zig build test      # run all tests
-zig build run       # run CLI stub
-zig build test -- --test-filter "some test name"
+zig build               # compile
+zig build test          # run all tests
+zig build run           # run CLI stub (main.zig)
+zig build test -- --test-filter "use decl"
 ```
 
-## Recent Syntax Changes (v0.0.11-beta)
+## High-level pipeline
 
-### Struct fields
-- `val` keyword is implicit: `struct { _count: i32 = 0, fn increment... }`
-- Comma `,` replaces semicolon `;` as member separator
-- Single-line when no methods: `struct { x: f32, y: f32 }`
-
-### Enum variants
-- Comma after all variants (no semicolon on last): `enum { Red, Rgb(r, g, b), }`
-- Single-line when no methods: `enum { North, South, East, West }`
-
-### Record syntax
-- Block-based with braces: `record { x: i32, y: i32 }`
-- `val` keyword is implicit for fields (not written in source, not included in formatted output)
-- Single-line when no methods: `record { first: T, second: T }`
-
-### Removed
-- `if val Pattern = expr { body }` — use `case` expression instead
-- `private` keyword on struct/enum/record fields — all fields are private by default
-
-### New Targets
-- **Erlang codegen** — `zig build test` now generates `.erl` files via `codegen/erlang.zig`
-- **Erlang comptime runtime** — comptime expressions evaluated via Erlang's `json:encode/1`
-
-### New Language Features
-
-#### Pipeline operator `|>`
-Left-associative function chaining. `a |> f |> g` emits `g(f(a))` in JS/Erlang.
-```
-value |> transform |> validate |> save
-```
-Formatted with each `|>` on its own line when the chain is long.
-
-#### Anonymous function expression `fn(params) { body }`
-Distinct from lambda. Can be used as case arm body, passed as argument, etc.
-```
-case x { 1 -> fn(y) { y + 1; }; _ -> 0; }
+```text
+source → lex → parse → infer (HM) → transform (specialize) → codegen → target
+                              ↘  format.zig   round-trippable formatter
+                              ↘  print.zig    rustc-style diagnostics
 ```
 
-#### Numeric literals (Kotlin style)
-- **Underscore separators**: `1_000_000`, `121_234_345_989_000`
-- **Scientific notation**: `1.0e1`, `1.5e-10`, `2E+3`
-- **Unary negation**: `-123`, `-1.0`, `-12_928_347_925`
+## Children
 
-#### Array literals — trailing comma controls formatting
-- **No trailing comma** → inline: `[1, 2, 3]`
-- **With trailing comma** → multi-line:
-  ```
-  [
-      really_long_variable_name,
-      really_long_variable_name,
-  ]
-  ```
+| Dir | Purpose |
+|---|---|
+| [`src/`](src/AGENTS.md) | Implementation of every stage. |
+| [`snapshots/`](snapshots/AGENTS.md) | Test fixtures for parser/codegen/comptime. |
 
-#### `case` with multiple subjects
-```
-case a, b, c {
-    1, 2, 3 -> 1;
-    _, _, _ -> 0;
-}
-```
-Empty lines between arms are preserved in formatting.
+## Notes
 
-#### Function parameters with full type references
-`Param` now uses `typeRef: TypeRef` instead of `typeName: []const u8`, supporting:
-- Array types: `fn(arr: i32[])`
-- Optionals: `fn(opt: ?T)`
-- Error unions: `fn(result: E!T)`
-- All other `TypeRef` forms
-
-## Conventions
-
-See `../AGENTS.md` for core architecture and testing guidelines. No separate Node.js or Wasm modules — all JS is generated natively in Zig by `core/src/codegen/commonJS/emit.zig`.
+- No standalone Node.js or WASM compiler — JS and Erlang are emitted natively
+  in Zig under `src/codegen/`.
+- Comptime evaluation is target-agnostic; the runtime backends live in
+  [`src/comptime/runtime/`](src/comptime/runtime/AGENTS.md).
+- For language syntax notes (records / enums / pipeline `|>` / numeric literals
+  / etc.) see the workspace [`docs.md`](../../docs.md).

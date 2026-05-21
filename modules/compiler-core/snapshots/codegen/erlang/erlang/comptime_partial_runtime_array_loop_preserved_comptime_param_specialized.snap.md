@@ -21,12 +21,10 @@ fn main() {
 ----- ERLANG -- main.erl
 ```erlang
 -module(main).
--export([_botopink_main/0]).
+-export(['_botopink_main'/0, main/1]).
 
-COMMANDS() ->
-    [<<"calc">>, <<"noop">>, <<"help">>].
 
-_botopink_main() ->
+main() ->
     R1 = execute_$0(10),
     R2 = execute_$1(42).
 
@@ -36,7 +34,8 @@ execute_$0(Input) ->
     lists:foreach(fun(Cmd) ->
         case (Cmd =:= Slug) of
             true ->
-                Output = (Input * 2)
+                Output = (Input * 2);
+            _ -> ok
         end
     end, COMMANDS),
     Output.
@@ -47,10 +46,18 @@ execute_$1(Input) ->
     lists:foreach(fun(Cmd) ->
         case (Cmd =:= Slug) of
             true ->
-                Output = (Input * 2)
+                Output = (Input * 2);
+            _ -> ok
         end
     end, COMMANDS),
     Output.
+
+'_botopink_main'() ->
+    COMMANDS = [<<"calc">>, <<"noop">>, <<"help">>],
+    main().
+
+main(_Args) ->
+    '_botopink_main'().
 ```
 
 ----- RUN LOG -----

@@ -34,12 +34,10 @@ main(_) ->
 ----- ERLANG -- main.erl
 ```erlang
 -module(main).
--export([_botopink_main/0]).
+-export(['_botopink_main'/0, main/1]).
 
-COMMANDS() ->
-    [undefined, undefined, undefined].
 
-_botopink_main() ->
+main() ->
     R1 = execute_$0(10),
     R2 = execute_$1(42).
 
@@ -52,6 +50,13 @@ execute_$1(Input) ->
     Output = 0,
     Output = (Input * 2),
     Output.
+
+'_botopink_main'() ->
+    COMMANDS = [undefined, undefined, undefined],
+    main().
+
+main(_Args) ->
+    '_botopink_main'().
 ```
 
 ----- RUN LOG -----

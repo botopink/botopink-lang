@@ -28,6 +28,11 @@ function build_$1(name) {
     const prefix = "WARN";
     return ((prefix + ": ") + name);
 }
+
+function _botopink_main() {
+    main();
+}
+_botopink_main();
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
