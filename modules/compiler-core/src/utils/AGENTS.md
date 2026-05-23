@@ -2,6 +2,7 @@
 
 > Path: `modules/compiler-core/src/utils/`
 > Parent: [`../AGENTS.md`](../AGENTS.md)
+> Docs: [`./docs.md`](docs.md)
 
 Snapshot-testing infrastructure shared by every test suite in the workspace
 (parser, codegen, comptime, LSP).
@@ -11,6 +12,7 @@ Snapshot-testing infrastructure shared by every test suite in the workspace
 ```text
 utils/
 ├── AGENTS.md       ← you are here
+├── docs.md         ← snapshot workflow + API surface
 ├── snap.zig        ← read/write/compare .snap.md files
 ├── pretty.zig      ← indented JSON serialiser (used to render AST snapshots)
 └── json_diff.zig   ← structural JSON diff printed on mismatch

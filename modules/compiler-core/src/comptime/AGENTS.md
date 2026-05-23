@@ -2,9 +2,10 @@
 
 > Path: `modules/compiler-core/src/comptime/`
 > Parent: [`../AGENTS.md`](../AGENTS.md)
+> Docs: [`./docs.md`](docs.md) · Examples: [`./examples.md`](examples.md)
 
-Hindley-Milner type inference, comptime evaluation, and the AST transform pass
-that specializes comptime calls. The target-agnostic façade is at
+Hindley-Milner type inference, comptime evaluation, and the AST transform
+pass that specializes comptime calls. The target-agnostic façade is at
 `../comptime.zig`.
 
 ## Tree
@@ -12,14 +13,16 @@ that specializes comptime calls. The target-agnostic façade is at
 ```text
 comptime/
 ├── AGENTS.md          ← you are here
+├── docs.md            ← architecture: type system, Aggregator 5-step pass
+├── examples.md        ← comptime usage in `.bp` source
 ├── types.zig          ← core Type union(enum)
 ├── env.zig            ← Env (binding name → *Type) + builtins/stdlib loading
-├── infer.zig          ← `inferProgramTyped` — walks AST, returns []TypedBinding
-├── unify.zig          ← type-variable unification
-├── error.zig          ← structured TypeError with source locations + comptime validation
-├── eval.zig           ← evaluation driver (delegates to runtime/{node,erlang}.zig)
+├── infer.zig          ← `inferProgramTyped` (1672 lines) — HM walk
+├── unify.zig          ← type-variable unification + occurs check
+├── error.zig          ← structured TypeError with source ranges + hints
+├── eval.zig           ← evaluation driver (delegates to runtime/)
 ├── render.zig         ← comptime value → target literal
-├── specialize.zig     ← `SpecializedFn`, `SpecCache`, `specialize()` — body rewriting
+├── specialize.zig     ← `SpecializedFn`, `SpecCache`, `specialize()`
 ├── transform.zig      ← `Aggregator` — drives the full transform pass
 ├── snapshot.zig       ← comptime snapshot helpers
 ├── tests.zig          ← `assertTypes`, `assertTypeErrorSnap`, …
@@ -42,38 +45,7 @@ comptime/
 | `snapshot.zig` | Snapshot helpers. |
 | `tests.zig` | Test entry points (`assertTypes`, `assertTypeErrorSnap`). |
 
-## Façade (`../comptime.zig`)
-
-Re-exports types from this directory and adds the pipeline:
-
-- `analyzeModule(...)` — lex / parse / validate comptime purity / infer
-- `evaluateComptime(...)` — run script via runtime, parse JSON output
-- `transform.transform(...)` — full AST rewrite
-- `ComptimeSession` — owns shared arena + per-module `ComptimeOutput`
-
-## Transform pass
-
-```text
-typed AST ──► Aggregator ──► transformed AST ──► codegen
-```
-
-`Aggregator`:
-
-| Method | Role |
-|---|---|
-| `trackCall(fn_name)` | Counts a call to a fn with comptime params. |
-| `trackSpecialization(fn_name)` | Counts a call rewritten to a mangled name. |
-| `isFullySpecialized(fn_name)` | True if **all** calls were rewritten (original is dead). |
-
-Steps:
-
-1. **Scan** — find calls with comptime args, run `specialize()` → `SpecializedFn`.
-2. **Rewrite** — `scale(2, base)` → `scale_$0(base)` (mangled, comptime arg dropped).
-3. **Inline** — `val x = comptime expr` → `val x = <resolved>`.
-4. **Filter** — drop originals where all calls were specialized.
-5. **Inject** — add specialized `FnDecl` nodes to `program.decls`.
-
-## Testing helpers
+## Quick-reference testing helpers
 
 ```zig
 try assertTypes(alloc, source, &.{ .{ "x", "i32" }, .{ "f", "fn(i32) i32" } });
@@ -83,3 +55,7 @@ try assertTypeErrorSnap(alloc, @src(), source);
 ## Children
 
 - [`runtime/AGENTS.md`](runtime/AGENTS.md) — Node.js + Erlang external eval.
+
+For the full 5-step `Aggregator` walk, type-system overview, and
+unification rules see [`./docs.md`](docs.md). For comptime usage in
+`.bp` source see [`./examples.md`](examples.md).

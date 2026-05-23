@@ -2,49 +2,49 @@
 
 > Path: `modules/compiler-core/src/`
 > Parent: [`../AGENTS.md`](../AGENTS.md) · Root: [`../../../AGENTS.md`](../../../AGENTS.md)
+> Docs: [`./docs.md`](docs.md)
 
 All compiler stages live here. Each top-level `*.zig` is a façade; the
-implementation typically delegates to a sibling directory of the same name.
+implementation delegates to a sibling directory of the same name.
 
 ## Tree
 
 ```text
 src/
 ├── AGENTS.md             ← you are here
+├── docs.md               ← detailed architecture: façade pattern, pipeline, conventions
 ├── root.zig              ← public library entry (re-exports the public API)
 ├── main.zig              ← minimal CLI stub used by `zig build run`
 ├── test_root.zig         ← aggregates all test files
 ├── module.zig            ← `Module` struct — input module representation
-├── ast.zig               ← AST node types (categorised: literal/binaryOp/jump/branch/loop/binding/call/function/collection/comptime_)
+├── ast.zig               ← AST node types (categorised)
 ├── lexer.zig             ← Lexer (delegates to lexer/token.zig)
 ├── parser.zig            ← Recursive-descent parser
 ├── format.zig            ← Wadler-Lindig pretty printer (round-trip stable)
 ├── print.zig             ← rustc-style diagnostics renderer
-├── comptime.zig          ← Target-agnostic comptime façade: `ComptimeSession`, `compile`, `evaluateComptime`
-├── codegen.zig           ← Public codegen API: `compile`, `codegenEmit`, `generate`
+├── comptime.zig          ← Target-agnostic comptime façade
+├── codegen.zig           ← Public codegen API
 ├── codegen/              ← Per-target backends — see codegen/AGENTS.md
-├── comptime/             ← HM inference + comptime transform — see comptime/AGENTS.md
+├── comptime/             ← HM inference + transform — see comptime/AGENTS.md
 │   └── runtime/          ← External eval scripts (Node.js + Erlang)
 ├── lexer/                ← Token struct + lexer snapshot tests
 ├── parser/               ← Parser snapshot tests
 ├── format/               ← Formatter snapshot tests
-└── utils/                ← Snapshot/JSON helpers — see utils/AGENTS.md
+└── utils/                ← Snapshot/JSON helpers
 ```
 
 ## Top-level façades
 
-| File | Role |
-|---|---|
-| `root.zig` | Library entry point — re-exports the public API. |
-| `main.zig` | Minimal CLI stub (used by `zig build run`). |
-| `ast.zig` | All AST node types (`union(enum)` throughout); both untyped and typed phases. |
-| `lexer.zig` | Lexer façade — delegates to `lexer/token.zig`. |
-| `parser.zig` | Recursive-descent parser. `init(tokens)` does **not** store an allocator. |
-| `module.zig` | `Module` — input module representation. |
-| `comptime.zig` | Target-agnostic comptime — `ComptimeSession`, `compile`, `evaluateComptime`. |
-| `format.zig` | Wadler-Lindig pretty-printer. Must be round-trip stable. |
-| `print.zig` | rustc-style error renderer (caret + position + hint). |
-| `codegen.zig` | Public codegen API. Dispatches to `codegen/<target>.zig`. |
+| File | Role | Deeper docs |
+|---|---|---|
+| `root.zig` | Library entry — re-exports public API | — |
+| `ast.zig` | All AST node types | [`./docs.md`](docs.md) |
+| `lexer.zig` | Lexer façade → `lexer/token.zig` | [`lexer/docs.md`](lexer/docs.md) |
+| `parser.zig` | Recursive-descent parser | [`parser/docs.md`](parser/docs.md) |
+| `comptime.zig` | Comptime façade — `ComptimeSession`, `compile`, `evaluateComptime` | [`comptime/docs.md`](comptime/docs.md) |
+| `format.zig` | Wadler-Lindig formatter | [`format/docs.md`](format/docs.md) |
+| `print.zig` | rustc-style error renderer | — |
+| `codegen.zig` | Public codegen API | [`codegen/docs.md`](codegen/docs.md) |
 
 ## Subdirectories
 
@@ -58,41 +58,16 @@ src/
 | `codegen/` | per-target backends (commonJS, erlang, typescript) | [link](codegen/AGENTS.md) |
 | `utils/` | snap.zig, pretty.zig, json_diff.zig | [link](utils/AGENTS.md) |
 
-## Pipeline at this level
+## Dir-specific conventions
 
-```text
-lex → parse → infer → transform (Aggregator rewrites AST) → codegen (blind emit)
-```
-
-1. **lex / parse** — source → typed AST
-2. **infer** — Hindley–Milner type inference (`comptime/infer.zig`)
-3. **transform** — `comptime/transform.zig` `Aggregator` scans for comptime
-   calls, generates specialized `FnDecl` nodes, rewrites callees to mangled
-   names, removes comptime args, inlines comptime vals, drops dead originals
-4. **codegen** — `codegen/commonJS.zig` or `codegen/erlang.zig`: blind emit
-   from the transformed AST
-
-## Conventions
-
-- **Allocator pattern**: never store `allocator` as a struct field. Always
-  pass it as `alloc: std.mem.Allocator` to the method that needs it.
-  Emitters (internal) may keep an `alloc` field but it must arrive via `init`.
-- Helpers worth knowing about in the parser:
-  - `boxExpr(alloc, expr)` — heap-allocate an `Expr` pointer
-  - `parseStmtListInBraces(alloc)` — parse `{ stmt; … }` blocks
-  - `parseCommaSeparatedIdentifiers(alloc, stopAt)`
-  - `reportReservedWordError()` — centralised reserved-word error
-- Type annotations always use `TypeRef`
-  (`named`, `array`, `tuple_`, `optional`, `errorUnion`, `function`).
-- Formatter must round-trip: `format(parse(src))` must re-parse to an
+- **Allocator pattern** — never store `allocator` as a struct field. Pass
+  `alloc: std.mem.Allocator` to the method that needs it. Emitters may keep
+  an `alloc` field but it must arrive via `init`.
+- **Parser helpers** to know about — `boxExpr`, `parseStmtListInBraces`,
+  `parseCommaSeparatedIdentifiers`, `reportReservedWordError`.
+- **Type annotations** always use `TypeRef`.
+- **Formatter** must round-trip: `format(parse(src))` must re-parse to an
   equivalent AST.
 
-## Current-release highlights (v0.0.13-beta)
-
-- Pipeline `|>` (`ExprKind.pipeline`) — left-associative.
-- Anonymous function expression `fn(params) { body }` (`ExprKind.fnExpr`).
-- Parenthesised expression (`ExprKind.grouped`).
-- `CaseArm.emptyLineBefore` preserves blank lines between arms.
-- `ArrayLit.trailingComma` forces multi-line array formatting.
-- `Param.typeRef` replaces raw `typeName: []const u8`.
-- Lexer: `1_000_000` digit separators, scientific notation, unary `-` in primary.
+For pipeline details, façade pattern rationale, and current-release
+highlights see [`./docs.md`](docs.md).

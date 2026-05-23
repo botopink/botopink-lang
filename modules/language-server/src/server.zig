@@ -12,6 +12,7 @@ const engine = @import("./engine.zig");
 const files_mod = @import("./files.zig");
 const feedback_mod = @import("./feedback.zig");
 const lsp_types = @import("./lsp_types.zig");
+const index_mod = @import("./project_index.zig");
 
 const Lexer = bp.Lexer;
 
@@ -20,6 +21,7 @@ pub const Server = struct {
     io: std.Io,
     files: files_mod.FileCache,
     feedback: feedback_mod.FeedbackBookkeeper,
+    index: index_mod.ProjectIndex,
     initialized: bool,
     shutdown_requested: bool,
 
@@ -29,6 +31,7 @@ pub const Server = struct {
             .io = io,
             .files = files_mod.FileCache.init(gpa),
             .feedback = feedback_mod.FeedbackBookkeeper.init(gpa),
+            .index = index_mod.ProjectIndex.init(gpa, io),
             .initialized = false,
             .shutdown_requested = false,
         };
@@ -37,6 +40,7 @@ pub const Server = struct {
     pub fn deinit(self: *Server) void {
         self.files.deinit();
         self.feedback.deinit();
+        self.index.deinit();
     }
 
     /// Main loop: reads messages from stdin and dispatches until shutdown.
@@ -98,6 +102,14 @@ pub const Server = struct {
             try self.handleSignatureHelp(msg);
         } else if (std.mem.eql(u8, method, "textDocument/inlayHint")) {
             try self.handleInlayHint(msg);
+        } else if (std.mem.eql(u8, method, "textDocument/typeDefinition")) {
+            try self.handleTypeDefinition(msg);
+        } else if (std.mem.eql(u8, method, "textDocument/foldingRange")) {
+            try self.handleFoldingRange(msg);
+        } else if (std.mem.eql(u8, method, "textDocument/prepareRename")) {
+            try self.handlePrepareRename(msg);
+        } else if (std.mem.eql(u8, method, "textDocument/codeAction")) {
+            try self.handleCodeAction(msg);
         } else if (msg.kind == .request) {
             try messages.writeError(self.io, self.gpa, msg.id(), -32601, "Method not found");
         }
@@ -109,6 +121,14 @@ pub const Server = struct {
     fn handleInitialize(self: *Server, msg: *messages.Message) !void {
         self.initialized = true;
 
+        // Extract rootUri for project indexing.
+        const params = msg.params();
+        if (params != .null) {
+            if (jsonStr(params, "rootUri")) |root_uri| {
+                self.index.setRoot(root_uri) catch {};
+            }
+        }
+
         const result = proto.InitializeResult{
             .capabilities = .{
                 .textDocumentSync = .{
@@ -118,17 +138,20 @@ pub const Server = struct {
                 },
                 .hoverProvider = true,
                 .definitionProvider = true,
+                .typeDefinitionProvider = true,
                 .documentFormattingProvider = true,
                 .documentSymbolProvider = true,
-                .completionProvider = .{ .triggerCharacters = null, .resolveProvider = false },
+                .completionProvider = .{ .triggerCharacters = &.{"."}, .resolveProvider = false },
                 .referencesProvider = true,
-                .renameProvider = true,
+                .renameProvider = .{ .prepareProvider = true },
                 .diagnosticProvider = null,
                 .signatureHelpProvider = .{
                     .triggerCharacters = &.{"("},
-                    .retriggerCharacters = &.{","},
+                    .retriggerCharacters = &.{ ",", ":" },
                 },
                 .inlayHintProvider = true,
+                .codeActionProvider = true,
+                .foldingRangeProvider = true,
             },
             .serverInfo = .{ .name = "botopink-lsp", .version = "0.1.0" },
         };
@@ -166,6 +189,7 @@ pub const Server = struct {
         if (changes != .array or changes.array.items.len == 0) return;
         const text = jsonStr(changes.array.items[0], "text") orelse return;
         try self.files.change(uri, text);
+        self.index.invalidate();
         try self.publishDiagnostics(uri, text);
     }
 
@@ -298,7 +322,7 @@ pub const Server = struct {
 
         const syms = try engine.documentSymbols(self.gpa, tokens);
         defer {
-            for (syms) |s| self.gpa.free(s.name);
+            for (syms) |s| engine.freeSymbol(self.gpa, s);
             self.gpa.free(syms);
         }
 
@@ -335,11 +359,22 @@ pub const Server = struct {
             return messages.writeResponse(self.io, self.gpa, msg.id(), null);
         };
 
+        // Try module completion first (inside `from "..."`).
+        if (try engine.moduleCompletion(self.gpa, source, pos, &self.index)) |mod_items| {
+            defer {
+                for (mod_items) |it| self.gpa.free(it.label);
+                self.gpa.free(mod_items);
+            }
+            const list = proto.CompletionList{ .isIncomplete = false, .items = mod_items };
+            return messages.writeResponse(self.io, self.gpa, msg.id(), list);
+        }
+
         const items = try engine.completion(self.gpa, source, pos, bindings);
         defer {
             for (items) |it| {
                 self.gpa.free(it.label);
                 if (it.detail) |d| self.gpa.free(d);
+                if (it.insertText) |t| self.gpa.free(t);
             }
             self.gpa.free(items);
         }
@@ -382,7 +417,10 @@ pub const Server = struct {
             return messages.writeResponse(self.io, self.gpa, msg.id(), null);
         };
 
-        const locs = try engine.references(self.gpa, uri, source, pos, tokens, include_decl);
+        const locs = if (self.index.root_uri != null)
+            try engine.crossModuleReferences(self.gpa, self.io, source, pos, uri, tokens, include_decl, &self.index)
+        else
+            try engine.references(self.gpa, uri, source, pos, tokens, include_decl);
         defer {
             for (locs) |l| self.gpa.free(l.uri);
             self.gpa.free(locs);
@@ -422,12 +460,21 @@ pub const Server = struct {
             return messages.writeResponse(self.io, self.gpa, msg.id(), null);
         };
 
-        const edits = try engine.rename(self.gpa, source, pos, new_name, tokens);
-        defer self.gpa.free(edits);
-
-        // Serialize WorkspaceEdit manually: {"changes":{"<uri>":[TextEdit,…]}}
-        // We build the JSON body directly to avoid std.json.ObjectMap vtable issues.
-        try writeRenameResponse(self.io, self.gpa, msg.id(), uri, edits);
+        if (self.index.root_uri != null) {
+            const result = try engine.crossModuleRename(self.gpa, self.io, source, pos, new_name, uri, tokens, &self.index);
+            defer {
+                for (result.entries) |e| {
+                    self.gpa.free(e.uri);
+                    self.gpa.free(e.edits);
+                }
+                self.gpa.free(result.entries);
+            }
+            try writeMultiFileRenameResponse(self.io, self.gpa, msg.id(), result.entries);
+        } else {
+            const edits = try engine.rename(self.gpa, source, pos, new_name, tokens);
+            defer self.gpa.free(edits);
+            try writeRenameResponse(self.io, self.gpa, msg.id(), uri, edits);
+        }
     }
 
     // ── textDocument/signatureHelp ────────────────────────────────────────────
@@ -518,9 +565,168 @@ pub const Server = struct {
         try messages.writeResponse(self.io, self.gpa, msg.id(), hints);
     }
 
+    // ── textDocument/typeDefinition ─────────────────────────────────────────
+
+    fn handleTypeDefinition(self: *Server, msg: *messages.Message) !void {
+        const uri = self.uriFromTextDocument(msg) orelse {
+            return messages.writeResponse(self.io, self.gpa, msg.id(), null);
+        };
+        const pos = positionFromParams(msg.params()) orelse {
+            return messages.writeResponse(self.io, self.gpa, msg.id(), null);
+        };
+
+        const source = self.files.read(self.gpa, self.io, uri) catch {
+            return messages.writeResponse(self.io, self.gpa, msg.id(), null);
+        };
+        defer self.gpa.free(source);
+
+        var arena = std.heap.ArenaAllocator.init(self.gpa);
+        defer arena.deinit();
+
+        var lexer = Lexer.init(source);
+        const tokens = lexer.scanAll(arena.allocator()) catch {
+            return messages.writeResponse(self.io, self.gpa, msg.id(), null);
+        };
+
+        var lsp_compiler = @import("./compiler.zig").LspCompiler.init(self.gpa);
+        const entries = [_]@import("./compiler.zig").ModuleEntry{.{ .uri = uri, .source = source }};
+        var result = lsp_compiler.compile(&entries) catch {
+            return messages.writeResponse(self.io, self.gpa, msg.id(), null);
+        };
+        defer result.deinit(self.gpa);
+
+        const bindings = blk: {
+            for (result.session.outputs.items) |output| {
+                if (!std.mem.eql(u8, output.name, lsp_types.uriToPath(uri))) continue;
+                if (output.outcome == .ok) break :blk output.outcome.ok.bindings;
+            }
+            return messages.writeResponse(self.io, self.gpa, msg.id(), null);
+        };
+
+        if (try engine.typeDefinition(self.gpa, uri, source, pos, tokens, bindings)) |loc| {
+            defer self.gpa.free(loc.uri);
+            try messages.writeResponse(self.io, self.gpa, msg.id(), loc);
+        } else {
+            try messages.writeResponse(self.io, self.gpa, msg.id(), null);
+        }
+    }
+
+    // ── textDocument/foldingRange ─────────────────────────────────────────────
+
+    fn handleFoldingRange(self: *Server, msg: *messages.Message) !void {
+        const uri = self.uriFromTextDocument(msg) orelse {
+            return messages.writeResponse(self.io, self.gpa, msg.id(), null);
+        };
+
+        const source = self.files.read(self.gpa, self.io, uri) catch {
+            return messages.writeResponse(self.io, self.gpa, msg.id(), null);
+        };
+        defer self.gpa.free(source);
+
+        var arena = std.heap.ArenaAllocator.init(self.gpa);
+        defer arena.deinit();
+
+        var lexer = Lexer.init(source);
+        const tokens = lexer.scanAll(arena.allocator()) catch {
+            return messages.writeResponse(self.io, self.gpa, msg.id(), null);
+        };
+
+        const ranges = try engine.foldingRanges(self.gpa, source, tokens);
+        defer self.gpa.free(ranges);
+
+        try messages.writeResponse(self.io, self.gpa, msg.id(), ranges);
+    }
+
+    // ── textDocument/prepareRename ────────────────────────────────────────────
+
+    fn handlePrepareRename(self: *Server, msg: *messages.Message) !void {
+        const pos = positionFromParams(msg.params()) orelse {
+            return messages.writeResponse(self.io, self.gpa, msg.id(), null);
+        };
+
+        const uri = self.uriFromTextDocument(msg) orelse {
+            return messages.writeResponse(self.io, self.gpa, msg.id(), null);
+        };
+
+        const source = self.files.read(self.gpa, self.io, uri) catch {
+            return messages.writeResponse(self.io, self.gpa, msg.id(), null);
+        };
+        defer self.gpa.free(source);
+
+        if (engine.prepareRename(source, pos)) |result| {
+            try messages.writeResponse(self.io, self.gpa, msg.id(), result);
+        } else {
+            try messages.writeResponse(self.io, self.gpa, msg.id(), null);
+        }
+    }
+
+    // ── textDocument/codeAction ───────────────────────────────────────────────
+
+    fn handleCodeAction(self: *Server, msg: *messages.Message) !void {
+        const uri = self.uriFromTextDocument(msg) orelse {
+            return messages.writeResponse(self.io, self.gpa, msg.id(), null);
+        };
+
+        const range = rangeFromParams(msg.params()) orelse proto.Range{
+            .start = .{ .line = 0, .character = 0 },
+            .end = .{ .line = std.math.maxInt(u32), .character = 0 },
+        };
+
+        const source = self.files.read(self.gpa, self.io, uri) catch {
+            return messages.writeResponse(self.io, self.gpa, msg.id(), null);
+        };
+        defer self.gpa.free(source);
+
+        var arena = std.heap.ArenaAllocator.init(self.gpa);
+        defer arena.deinit();
+
+        var lexer = Lexer.init(source);
+        const tokens = lexer.scanAll(arena.allocator()) catch {
+            return messages.writeResponse(self.io, self.gpa, msg.id(), null);
+        };
+
+        var lsp_compiler = @import("./compiler.zig").LspCompiler.init(self.gpa);
+        const entries = [_]@import("./compiler.zig").ModuleEntry{.{ .uri = uri, .source = source }};
+        var result = lsp_compiler.compile(&entries) catch {
+            return messages.writeResponse(self.io, self.gpa, msg.id(), null);
+        };
+        defer result.deinit(self.gpa);
+
+        const bindings = blk: {
+            for (result.session.outputs.items) |output| {
+                if (!std.mem.eql(u8, output.name, lsp_types.uriToPath(uri))) continue;
+                if (output.outcome == .ok) break :blk output.outcome.ok.bindings;
+            }
+            return messages.writeResponse(self.io, self.gpa, msg.id(), &.{});
+        };
+
+        const actions = try engine.codeActions(self.gpa, uri, source, range, tokens, bindings, &self.index);
+        defer {
+            for (actions) |a| {
+                self.gpa.free(a.title);
+                if (a.edit) |edit| {
+                    if (edit.documentChanges) |dcs| {
+                        for (dcs) |dc| {
+                            for (dc.edits) |e| {
+                                self.gpa.free(e.newText);
+                            }
+                            self.gpa.free(dc.edits);
+                        }
+                        self.gpa.free(dcs);
+                    }
+                }
+            }
+            self.gpa.free(actions);
+        }
+
+        try messages.writeResponse(self.io, self.gpa, msg.id(), actions);
+    }
+
     // ── Diagnostic helpers ────────────────────────────────────────────────────
 
     fn publishDiagnostics(self: *Server, uri: []const u8, source: []const u8) !void {
+        try self.sendProgress("begin", "Compiling...");
+
         var result = try engine.diagnose(self.gpa, self.io, uri, source);
         defer result.deinit(self.gpa);
 
@@ -531,11 +737,25 @@ pub const Server = struct {
         } else {
             self.feedback.clear(uri);
         }
+
+        try self.sendProgress("end", null);
     }
 
     fn sendDiagnostics(self: *Server, uri: []const u8, diags: []const proto.Diagnostic) !void {
         const params = proto.PublishDiagnosticsParams{ .uri = uri, .diagnostics = diags };
         try messages.writeNotification(self.io, self.gpa, "textDocument/publishDiagnostics", params);
+    }
+
+    fn sendProgress(self: *Server, kind: []const u8, msg: ?[]const u8) !void {
+        const params = .{
+            .token = "botopink-compile",
+            .value = .{
+                .kind = kind,
+                .title = if (msg) |m| m else "botopink",
+                .message = msg,
+            },
+        };
+        try messages.writeNotification(self.io, self.gpa, "$/progress", params);
     }
 
     // ── Param extraction helpers ──────────────────────────────────────────────
@@ -588,6 +808,61 @@ fn writeRenameResponse(
     const body = try std.fmt.allocPrint(gpa,
         \\{{"jsonrpc":"2.0","id":{s},"result":{{"changes":{{{s}:{s}}}}}}}
     , .{ id_json, uri_json, edit_buf.items });
+    defer gpa.free(body);
+
+    const header = try std.fmt.allocPrint(gpa, "Content-Length: {d}\r\n\r\n", .{body.len});
+    defer gpa.free(header);
+
+    const frame = try std.mem.concat(gpa, u8, &.{ header, body });
+    defer gpa.free(frame);
+
+    try std.Io.File.stdout().writeStreamingAll(io, frame);
+}
+
+fn writeMultiFileRenameResponse(
+    io: std.Io,
+    gpa: std.mem.Allocator,
+    id: std.json.Value,
+    entries: []const engine.RenameFileEntry,
+) !void {
+    const id_json = try std.json.Stringify.valueAlloc(gpa, id, .{});
+    defer gpa.free(id_json);
+
+    // Build {"changes": {"uri1": [...], "uri2": [...]}}
+    var changes_buf: std.ArrayList(u8) = .empty;
+    defer changes_buf.deinit(gpa);
+
+    try changes_buf.append(gpa, '{');
+    for (entries, 0..) |entry, ei| {
+        if (ei > 0) try changes_buf.append(gpa, ',');
+
+        const uri_json = try std.json.Stringify.valueAlloc(gpa, entry.uri, .{});
+        defer gpa.free(uri_json);
+        try changes_buf.appendSlice(gpa, uri_json);
+        try changes_buf.append(gpa, ':');
+        try changes_buf.append(gpa, '[');
+
+        for (entry.edits, 0..) |edit, i| {
+            if (i > 0) try changes_buf.append(gpa, ',');
+            const new_text_json = try std.json.Stringify.valueAlloc(gpa, edit.newText, .{});
+            defer gpa.free(new_text_json);
+            const piece = try std.fmt.allocPrint(gpa,
+                \\{{"range":{{"start":{{"line":{d},"character":{d}}},"end":{{"line":{d},"character":{d}}}}},"newText":{s}}}
+            , .{
+                edit.range.start.line, edit.range.start.character,
+                edit.range.end.line,   edit.range.end.character,
+                new_text_json,
+            });
+            defer gpa.free(piece);
+            try changes_buf.appendSlice(gpa, piece);
+        }
+        try changes_buf.append(gpa, ']');
+    }
+    try changes_buf.append(gpa, '}');
+
+    const body = try std.fmt.allocPrint(gpa,
+        \\{{"jsonrpc":"2.0","id":{s},"result":{{"changes":{s}}}}}
+    , .{ id_json, changes_buf.items });
     defer gpa.free(body);
 
     const header = try std.fmt.allocPrint(gpa, "Content-Length: {d}\r\n\r\n", .{body.len});

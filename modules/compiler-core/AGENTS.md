@@ -2,6 +2,7 @@
 
 > Path: `modules/compiler-core/`
 > Parent: [`../AGENTS.md`](../AGENTS.md) · Root: [`../../AGENTS.md`](../../AGENTS.md)
+> Docs: [`./docs.md`](docs.md)
 
 Main Zig library: lexer, parser, AST, type inference, comptime, codegen and
 formatter. Imported as the `botopink` module by `compiler-cli` and
@@ -53,3 +54,6 @@ source → lex → parse → infer (HM) → transform (specialize) → codegen �
   [`src/comptime/runtime/`](src/comptime/runtime/AGENTS.md).
 - For language syntax notes (records / enums / pipeline `|>` / numeric literals
   / etc.) see the workspace [`docs.md`](../../docs.md).
+
+Full pipeline diagram, AST model, public API table, and snapshot system
+overview live in [`./docs.md`](docs.md).

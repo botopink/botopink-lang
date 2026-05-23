@@ -1,0 +1,117 @@
+{
+  "name": "botopink",
+  "displayName": "Botopink",
+  "description": "Support for the Botopink programming language",
+  "version": "0.0.1",
+  "publisher": "botopink",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/botopink/botopink-lang"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Formatters",
+    "Snippets"
+  ],
+  "icon": "images/icon.png",
+  "contributes": {
+    "languages": [
+      {
+        "id": "botopink",
+        "aliases": [
+          "Botopink",
+          "botopink"
+        ],
+        "extensions": [
+          ".bp"
+        ],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./images/botopink-logo.png",
+          "dark": "./images/botopink-logo.png"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "botopink",
+        "scopeName": "source.botopink",
+        "path": "./syntaxes/botopink.tmLanguage.json"
+      },
+      {
+        "scopeName": "markdown.botopink.codeblock",
+        "path": "./syntaxes/botopink.codeblock.json",
+        "injectTo": [
+          "text.html.markdown"
+        ],
+        "embeddedLanguages": {
+          "meta.embedded.block.botopink": "botopink"
+        }
+      }
+    ],
+    "snippets": [
+      {
+        "language": "botopink",
+        "path": "./snippets.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "botopink.restartServer",
+        "title": "Restart Botopink Server",
+        "category": "Botopink"
+      }
+    ],
+    "configurationDefaults": {
+      "[botopink]": {
+        "editor.formatOnSave": true
+      }
+    },
+    "configuration": {
+      "title": "Botopink",
+      "properties": {
+        "botopink.path": {
+          "type": "string",
+          "default": null,
+          "description": "Path to the botopink-lsp executable. By default, the extension looks for botopink-lsp in the PATH; if set, this path is used instead.",
+          "scope": "machine"
+        },
+        "botopink.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Traces communication between VS Code and the Botopink language server."
+        }
+      }
+    }
+  },
+  "activationEvents": [
+    "onLanguage:botopink"
+  ],
+  "main": "./out/extension.js",
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:package": "vsce package",
+    "format-check": "prettier ./src/**/*.ts --check",
+    "format": "prettier ./src/**/*.ts --write"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.75.0",
+    "@vscode/vsce": "^2.29.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}

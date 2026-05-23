@@ -2,6 +2,7 @@
 
 > Path: `modules/compiler-cli/`
 > Parent: [`../AGENTS.md`](../AGENTS.md)
+> Docs: [`./docs.md`](docs.md) · Examples: [`src/cli/examples.md`](src/cli/examples.md)
 
 Package that builds the `botopink` CLI executable. Depends on `compiler-core`.
 
@@ -14,9 +15,12 @@ compiler-cli/
 ├── build.zig.zon        ← dependency manifest (compiler-core)
 └── src/
     ├── AGENTS.md
+    ├── docs.md          ← argv parser layout, dispatch flow
     ├── main.zig         ← argv parser, subcommand dispatcher
     └── cli/             ← one file per subcommand + shared helpers
-        └── AGENTS.md
+        ├── AGENTS.md
+        ├── docs.md      ← subcommand pipeline + shared helpers
+        └── examples.md  ← `botopink` command recipes
 ```
 
 ## Commands

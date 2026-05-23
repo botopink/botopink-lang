@@ -4,7 +4,8 @@ Guidance for AI agents working on the botopink language workspace.
 
 > Convention: source, comments, commit messages and docs are all in **English**.
 > Each directory ships its own `AGENTS.md` — read the closest one first, then
-> walk up the tree.
+> walk up the tree. Detailed architectural explanations live in sibling
+> `docs.md` files; concrete `.bp` / CLI usage in sibling `examples.md` files.
 
 ## Repository tree
 
@@ -12,8 +13,8 @@ Guidance for AI agents working on the botopink language workspace.
 botopink-lang/
 ├── AGENTS.md                  ← you are here (workspace overview)
 ├── README.md                  ← public-facing intro
-├── CHANGELOG.md               ← release notes (current: v0.0.11-beta)
-├── docs.md                    ← language reference
+├── CHANGELOG.md               ← release notes (current: v0.0.13-beta)
+├── docs.md                    ← language reference (.bp syntax + semantics)
 ├── build.zig                  ← workspace build graph (CLI + LSP)
 ├── test_format.zig            ← ad-hoc formatter smoke
 ├── test_pub.zig               ← ad-hoc pub-decl smoke
@@ -21,14 +22,13 @@ botopink-lang/
 │   ├── compiler-cli/          ← `botopink` CLI
 │   ├── compiler-core/         ← lexer, parser, AST, infer, comptime, codegen
 │   ├── language-server/       ← `botopink-lsp` LSP server
-│   └── stdlib/                ← .bp stdlib declarations (loaded at infer time)
+│   ├── stdlib/                ← .bp stdlib declarations (loaded at infer time)
+│   └── vscode-extension/     ← VS Code extension (syntax + LSP client)
 └── snapshots/                 ← workspace-level codegen snapshots
-    └── codegen/{erlang,node}/ ← target-specific outputs
+    └── codegen/{erlang,node}/ ← target-specific outputs (4 targets: commonJS, erlang, beam, wasm)
 ```
 
 ## Workspace commands
-
-Run from the repository root:
 
 ```bash
 zig build           # compile CLI + language-server
@@ -36,131 +36,99 @@ zig build test      # run compiler-core + language-server tests
 zig build run       # run the CLI entry point
 ```
 
-Per-package commands live in each package's `build.zig`. See:
+Per-package commands live in each package's `build.zig` — see
+[`modules/AGENTS.md`](modules/AGENTS.md).
 
-- [`modules/compiler-cli/AGENTS.md`](modules/compiler-cli/AGENTS.md)
-- [`modules/compiler-core/AGENTS.md`](modules/compiler-core/AGENTS.md)
-- [`modules/language-server/AGENTS.md`](modules/language-server/AGENTS.md)
-- [`modules/stdlib/AGENTS.md`](modules/stdlib/AGENTS.md)
-
-## Compiler pipeline (one-line summary)
+## AGENTS index — what each directory contains
 
 ```text
-source → lexer → parser → AST → infer (HM) → comptime transform → codegen → target
-                                                          ↘ format.zig (formatter)
-                                                          ↘ print.zig (diagnostics)
+.                                              → workspace overview, conventions, AGENTS index
+modules/                                       → all Zig packages
+modules/compiler-cli/                          → `botopink` CLI executable
+  └── src/                                     → argv parser + command dispatch
+      └── cli/                                 → per-subcommand impls (build, run, check, format, new, clean)
+modules/compiler-core/                         → main compiler library (lex → codegen)
+  └── src/                                     → compiler stages (façades)
+      ├── codegen/                             → per-target emitters (commonJS, erlang, beam, wasm, typescript)
+      ├── comptime/                            → HM inference, unification, Aggregator transform
+      │   └── runtime/                         → Node.js + Erlang external comptime eval backends
+      ├── format/                              → formatter snapshot tests (round-trip stable)
+      ├── lexer/                               → Token struct + lexer snapshot tests
+      ├── parser/                              → parser snapshot tests (recursive descent)
+      └── utils/                               → shared snap/pretty/json_diff helpers
+  └── snapshots/                               → .snap.md fixtures: parser / codegen / comptime
+      ├── codegen/                             → target output + error rendering
+      │   ├── erlang/erlang/                   → 143 Erlang outputs
+      │   ├── erlang/beam/                    → 143 BEAM Assembly outputs
+      │   ├── node/commonJS/                  → 143 CommonJS outputs
+      │   ├── node/wasm/                      → 143 WASM Text outputs
+      │   └── errors/                          → codegen-time error rendering (per target)
+      ├── comptime/                            → inference + evaluation snapshots (per backend)
+      │   ├── erlang/{,errors/}                → success (115) + errors (22)
+      │   └── node/{,errors/}                  → success (115) + errors (22)
+      └── parser/                              → 140 AST golden snapshots
+modules/language-server/                       → `botopink-lsp` LSP server
+  ├── src/                                     → JSON-RPC server + feature engine
+  │   └── tests/                               → LSP feature test harness
+  └── snapshots/lsp/                           → 50 LSP feature snapshots
+modules/stdlib/                                → embedded .bp standard library
+  └── src/                                     → prelude.zig + primitives/array/string/builtins.bp
+modules/vscode-extension/                      → VS Code extension (TypeScript)
+  ├── syntaxes/                                → TextMate grammar + markdown injection
+  └── src/                                     → extension.ts (LSP client launcher)
+snapshots/                                     → workspace-level smoke snapshots
+  └── codegen/                                 → 1 .bp scenario mirrored across targets
+      ├── erlang/erlang/                       → 1 Erlang snapshot
+      └── node/commonJS/                       → 1 CommonJS snapshot
 ```
 
-Public API entry points (in `modules/compiler-core/src/`):
+## Where deep content lives
 
-| Entry point | File |
+| Topic | Doc |
 |---|---|
-| Lexer | `lexer.zig` → `lexer/token.zig` |
-| Parser | `parser.zig` |
-| AST types | `ast.zig` |
-| Type inference + comptime | `comptime.zig` (delegates to `comptime/`) |
-| Formatter | `format.zig` |
-| Diagnostics renderer | `print.zig` |
-| Codegen façade | `codegen.zig` (`compile` / `codegenEmit` / `generate`) |
+| Full compiler pipeline + AST model + public API | [`modules/compiler-core/docs.md`](modules/compiler-core/docs.md) |
+| Façade pattern + allocator rule | [`modules/compiler-core/src/docs.md`](modules/compiler-core/src/docs.md) |
+| Backend design (emitters are blind) | [`modules/compiler-core/src/codegen/docs.md`](modules/compiler-core/src/codegen/docs.md) |
+| HM inference + Aggregator transform | [`modules/compiler-core/src/comptime/docs.md`](modules/compiler-core/src/comptime/docs.md) |
+| CLI lifecycle | [`modules/compiler-cli/docs.md`](modules/compiler-cli/docs.md) |
+| LSP layered design | [`modules/language-server/docs.md`](modules/language-server/docs.md) |
+| Stdlib loading + interface conventions | [`modules/stdlib/docs.md`](modules/stdlib/docs.md) |
+| VS Code extension design + LSP wiring | [`modules/vscode-extension/docs.md`](modules/vscode-extension/docs.md) |
+| `.bp` language reference (user-facing) | [`docs.md`](docs.md) |
 
-## AGENTS index (44 files)
+## Where concrete examples live
 
-```text
-.                                              AGENTS.md   ← root
-modules/                                       AGENTS.md
-modules/compiler-cli/                          AGENTS.md
-  └── src/                                     AGENTS.md
-      └── cli/                                 AGENTS.md
-modules/compiler-core/                         AGENTS.md
-  ├── src/                                     AGENTS.md
-  │   ├── codegen/                             AGENTS.md
-  │   ├── comptime/                            AGENTS.md
-  │   │   └── runtime/                         AGENTS.md
-  │   ├── format/                              AGENTS.md
-  │   ├── lexer/                               AGENTS.md
-  │   ├── parser/                              AGENTS.md
-  │   └── utils/                               AGENTS.md
-  └── snapshots/                               AGENTS.md
-      ├── codegen/                             AGENTS.md
-      │   ├── erlang/                          AGENTS.md
-      │   │   └── erlang/                      AGENTS.md
-      │   ├── errors/                          AGENTS.md
-      │   │   ├── erlang/                      AGENTS.md
-      │   │   │   └── erlang/                  AGENTS.md
-      │   │   └── node/                        AGENTS.md
-      │   │       └── commonJS/                AGENTS.md
-      │   └── node/                            AGENTS.md
-      │       └── commonJS/                    AGENTS.md
-      ├── comptime/                            AGENTS.md
-      │   ├── erlang/                          AGENTS.md
-      │   │   └── errors/                      AGENTS.md
-      │   └── node/                            AGENTS.md
-      │       └── errors/                      AGENTS.md
-      └── parser/                              AGENTS.md
-modules/language-server/                       AGENTS.md
-  ├── src/                                     AGENTS.md
-  │   └── tests/                               AGENTS.md
-  └── snapshots/                               AGENTS.md
-      └── lsp/                                 AGENTS.md
-modules/stdlib/                                AGENTS.md
-  └── src/                                     AGENTS.md
-snapshots/                                     AGENTS.md
-  └── codegen/                                 AGENTS.md
-      ├── erlang/                              AGENTS.md
-      │   └── erlang/                          AGENTS.md
-      └── node/                                AGENTS.md
-          └── commonJS/                        AGENTS.md
-```
-
-## AST model (current categories)
-
-`ExprOf(phase)` is organized by expression family:
-
-- `literal`, `identifier`
-- `binaryOp`, `unaryOp`
-- `jump` (`return`, `throw`, `try`, `break`, `yield`, `continue`)
-- `branch` (`if`, `tryCatch`)
-- `loop`
-- `binding`, `call`, `function`, `collection`, `comptime_`
-
-Legacy variants (`controlFlow`, `staticCall`) are gone — do not reintroduce them.
-
-## Snapshot testing
-
-- Parser snapshots: `modules/compiler-core/snapshots/parser/*.snap.md`
-- Codegen snapshots: `modules/compiler-core/snapshots/codegen/**/`
-- Comptime snapshots: `modules/compiler-core/snapshots/comptime/**/`
-- LSP snapshots: `modules/language-server/snapshots/lsp/`
-- Workspace smoke snapshots: `snapshots/codegen/**/`
-
-On mismatch, tests emit `*.snap.md.new` next to the original. Review and either
-promote (replace the `.snap.md`) or discard.
+| Topic | Doc |
+|---|---|
+| `botopink` CLI command usage | [`modules/compiler-cli/src/cli/examples.md`](modules/compiler-cli/src/cli/examples.md) |
+| `.bp` token / numeric literal syntax | [`modules/compiler-core/src/lexer/examples.md`](modules/compiler-core/src/lexer/examples.md) |
+| `.bp` declarations / expressions / statements | [`modules/compiler-core/src/parser/examples.md`](modules/compiler-core/src/parser/examples.md) |
+| `.bp` source → JS / Erlang side-by-side | [`modules/compiler-core/src/codegen/examples.md`](modules/compiler-core/src/codegen/examples.md) |
+| `comptime` usage in `.bp` | [`modules/compiler-core/src/comptime/examples.md`](modules/compiler-core/src/comptime/examples.md) |
+| `botopink format` before/after | [`modules/compiler-core/src/format/examples.md`](modules/compiler-core/src/format/examples.md) |
+| Using the stdlib (Array, String, builtins) | [`modules/stdlib/src/examples.md`](modules/stdlib/src/examples.md) |
 
 ## Conventions
 
 - **AGENTS.md must always be kept up to date.** Whenever code, layout, or
-  pipeline behaviour changes (new file, renamed module, added/removed
-  subcommand, new pipeline phase, changed conventions, etc.), update the
-  affected `AGENTS.md` in the same change. Each directory's `AGENTS.md` is
-  the contract for that directory — stale docs are worse than missing docs.
-- **`README.md` and `docs.md` must also stay in sync.** Whenever a language
-  feature, CLI flag, syntax form, or compiler-visible behaviour changes,
-  update both files in the same change as the code:
-  - `README.md` — top-level summary of features and recent updates.
-  - `docs.md` — full language reference / examples for every feature.
-  Don't merge a change that adds or modifies a feature without also touching
-  the matching section of `docs.md` (and `README.md` if the feature is
-  user-facing enough to belong in the high-level summary).
+  pipeline behaviour changes, update the affected `AGENTS.md` / `docs.md`
+  in the same change. Each directory's `AGENTS.md` is the contract for
+  that directory — stale docs are worse than missing docs.
+- **`README.md` and `docs.md` (language reference) must also stay in sync.**
+  When a language feature, CLI flag, syntax form, or compiler-visible
+  behaviour changes, update both files alongside the code.
 - **English only** in source, comments, commits, AGENTS.md docs.
-- `Parser.init(tokens)` and `Lexer.init(source)` do **not** store an allocator —
-  it is always passed as `alloc: std.mem.Allocator` to the method that needs it.
-- Type annotations always use `TypeRef` (`named`, `array`, `tuple_`, `optional`,
-  `errorUnion`, `function`).
-- Record/struct/enum/interface shorthand decls map to the same AST nodes as
-  long-form declarations.
-- Formatter must be round-trip stable: `format(parse(src))` must re-parse to an
-  equivalent AST.
-- Pipeline `|>` is left-associative — preserve stable formatting across cycles.
+- `Parser.init(tokens)` and `Lexer.init(source)` do **not** store an
+  allocator — it is always passed as `alloc: std.mem.Allocator` to the
+  method that needs it.
+- Type annotations always use `TypeRef` (`named`, `array`, `tuple_`,
+  `optional`, `errorUnion`, `function`).
+- Record/struct/enum/interface shorthand decls map to the same AST nodes
+  as long-form declarations.
+- Formatter must be round-trip stable: `format(parse(src))` must re-parse
+  to an equivalent AST.
+- Pipeline `|>` is left-associative — preserve stable formatting across
+  cycles.
 
 ## Recent commit context
 
@@ -179,5 +147,7 @@ promote (replace the `.snap.md`) or discard.
 
 Current release: see [`CHANGELOG.md`](CHANGELOG.md) (v0.0.13-beta, May 2026).
 
-When editing files: consult the closest `AGENTS.md` first, then parent docs up
-to this root file.
+When editing files: consult the closest `AGENTS.md` first, then parent
+docs up to this root file. For design rationale read the sibling
+`docs.md`; for concrete syntax / CLI usage read the sibling
+`examples.md`.

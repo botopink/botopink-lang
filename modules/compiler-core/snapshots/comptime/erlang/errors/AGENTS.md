@@ -6,3 +6,11 @@
 Error-case snapshots for comptime evaluation on the Erlang runtime —
 **22 files** (arity/type mismatches, missing patterns, unbound vars, etc.).
 Pair with `../../node/errors/<same_name>.snap.md`.
+
+## Tree
+
+```text
+errors/
+├── AGENTS.md
+└── *.snap.md      ← 22 error fixtures (Erlang runtime)
+```

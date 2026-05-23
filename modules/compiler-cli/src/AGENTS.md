@@ -2,6 +2,7 @@
 
 > Path: `modules/compiler-cli/src/`
 > Parent: [`../AGENTS.md`](../AGENTS.md) · Root: [`../../../AGENTS.md`](../../../AGENTS.md)
+> Docs: [`./docs.md`](docs.md)
 
 CLI entry point and command dispatch. The actual command implementations live
 in [`cli/`](cli/AGENTS.md).
@@ -11,9 +12,12 @@ in [`cli/`](cli/AGENTS.md).
 ```text
 src/
 ├── AGENTS.md      ← you are here
+├── docs.md        ← detailed entry & dispatch reference
 ├── main.zig       ← argv parser + subcommand dispatch (`botopink <cmd>`)
 └── cli/           ← one file per subcommand + shared helpers
-    └── AGENTS.md
+    ├── AGENTS.md
+    ├── docs.md
+    └── examples.md
 ```
 
 ## Files

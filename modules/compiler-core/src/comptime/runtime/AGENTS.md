@@ -2,6 +2,7 @@
 
 > Path: `modules/compiler-core/src/comptime/runtime/`
 > Parent: [`../AGENTS.md`](../AGENTS.md)
+> Docs: [`./docs.md`](docs.md)
 
 External runtime backends used to evaluate comptime expressions. Each backend
 generates a script, executes it on the target runtime, and parses the JSON
@@ -12,6 +13,7 @@ output back into `id → literal` pairs.
 ```text
 runtime/
 ├── AGENTS.md      ← you are here
+├── docs.md        ← backend interface + JSON transport + .botopinkbuild layout
 ├── node.zig       ← Node.js backend       (`node <script.js>`, stdout JSON array)
 └── erlang.zig     ← Erlang/OTP backend    (escript or erlc+erl, `json:encode/1`)
 ```

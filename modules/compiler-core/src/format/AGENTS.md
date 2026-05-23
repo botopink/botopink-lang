@@ -2,6 +2,7 @@
 
 > Path: `modules/compiler-core/src/format/`
 > Parent: [`../AGENTS.md`](../AGENTS.md)
+> Docs: [`./docs.md`](docs.md) · Examples: [`./examples.md`](examples.md)
 
 Formatter tests. The Wadler-Lindig pretty-printer itself is at `../format.zig`.
 
@@ -10,6 +11,8 @@ Formatter tests. The Wadler-Lindig pretty-printer itself is at `../format.zig`.
 ```text
 format/
 ├── AGENTS.md     ← you are here
+├── docs.md       ← round-trip contract + formatting rules
+├── examples.md   ← `botopink format` before/after pairs
 └── tests.zig     ← round-trip snapshot tests
 ```
 

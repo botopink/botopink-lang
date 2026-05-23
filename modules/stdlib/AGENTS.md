@@ -2,6 +2,7 @@
 
 > Path: `modules/stdlib/`
 > Parent: [`../AGENTS.md`](../AGENTS.md) · Root: [`../../AGENTS.md`](../../AGENTS.md)
+> Docs: [`./docs.md`](docs.md) · Examples: [`src/examples.md`](src/examples.md)
 
 Botopink standard library. Declarations (`.bp`) are embedded as compile-time
 strings and loaded by `compiler-core` into the type environment during
@@ -12,6 +13,7 @@ inference.
 ```text
 stdlib/
 ├── AGENTS.md          ← you are here
+├── docs.md            ← how the stdlib reaches the compiler + conventions
 ├── botopink.json      ← package metadata
 └── src/               ← .bp source files + prelude.zig — see src/AGENTS.md
     ├── prelude.zig    ← @embedFile of every .bp into Zig const strings

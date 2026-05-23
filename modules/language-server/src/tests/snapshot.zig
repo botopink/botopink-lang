@@ -342,6 +342,113 @@ pub fn assertInlayHints(
     try checkText(gpa, slug, buf.items);
 }
 
+// ── Folding Ranges ───────────────────────────────────────────────────────────
+
+pub fn assertFoldingRanges(
+    gpa: std.mem.Allocator,
+    slug: []const u8,
+    source: []const u8,
+    ranges: []const proto.FoldingRange,
+) !void {
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(gpa);
+
+    try appendSource(&buf, gpa, source);
+    try buf.appendSlice(gpa, "----- FOLDING RANGES\n");
+    for (ranges) |r| {
+        try buf.print(gpa, "  line {d}–{d}  kind: {s}\n", .{
+            r.startLine, r.endLine, r.kind orelse "?",
+        });
+    }
+    if (ranges.len == 0) try buf.appendSlice(gpa, "  (none)\n");
+
+    try checkText(gpa, slug, buf.items);
+}
+
+// ── Prepare Rename ───────────────────────────────────────────────────────────
+
+pub fn assertPrepareRename(
+    gpa: std.mem.Allocator,
+    slug: []const u8,
+    source: []const u8,
+    cursor: proto.Position,
+    result: ?proto.PrepareRenameResult,
+) !void {
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(gpa);
+
+    try appendSourceWithCursor(&buf, gpa, source, cursor);
+    try buf.print(gpa, "----- PREPARE RENAME at (line {d}, char {d})\n", .{ cursor.line, cursor.character });
+    if (result) |r| {
+        try buf.print(gpa, "placeholder: \"{s}\"\nrange: ({d},{d}) → ({d},{d})\n", .{
+            r.placeholder,
+            r.range.start.line,
+            r.range.start.character,
+            r.range.end.line,
+            r.range.end.character,
+        });
+    } else {
+        try buf.appendSlice(gpa, "null (not renameable)\n");
+    }
+
+    try checkText(gpa, slug, buf.items);
+}
+
+// ── Code Actions ─────────────────────────────────────────────────────────────
+
+pub fn assertCodeActions(
+    gpa: std.mem.Allocator,
+    slug: []const u8,
+    source: []const u8,
+    range: proto.Range,
+    actions: []const proto.CodeAction,
+) !void {
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(gpa);
+
+    try appendSource(&buf, gpa, source);
+    try buf.print(gpa, "----- CODE ACTIONS in range ({d},{d})–({d},{d})\n", .{
+        range.start.line, range.start.character,
+        range.end.line,   range.end.character,
+    });
+    for (actions) |a| {
+        try buf.print(gpa, "  [{s}] {s}\n", .{ a.kind orelse "?", a.title });
+    }
+    if (actions.len == 0) try buf.appendSlice(gpa, "  (none)\n");
+
+    try checkText(gpa, slug, buf.items);
+}
+
+// ── Type Definition ──────────────────────────────────────────────────────────
+
+pub fn assertTypeDefinition(
+    gpa: std.mem.Allocator,
+    slug: []const u8,
+    source: []const u8,
+    cursor: proto.Position,
+    result: ?proto.Location,
+) !void {
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(gpa);
+
+    try appendSourceWithCursor(&buf, gpa, source, cursor);
+    try buf.print(gpa, "----- TYPE DEFINITION at (line {d}, char {d})\n", .{ cursor.line, cursor.character });
+    if (result) |loc| {
+        try buf.print(gpa, "uri: {s}\nrange: ({d},{d}) → ({d},{d})\n", .{
+            loc.uri,
+            loc.range.start.line,
+            loc.range.start.character,
+            loc.range.end.line,
+            loc.range.end.character,
+        });
+        try appendSourceWithUnderline(&buf, gpa, source, loc.range);
+    } else {
+        try buf.appendSlice(gpa, "null\n");
+    }
+
+    try checkText(gpa, slug, buf.items);
+}
+
 // ╔══════════════════════════════════════════════════════════════════════════════╗
 // ║  Internal helpers                                                           ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
@@ -449,10 +556,15 @@ fn symbolKindName(kind: u32) []const u8 {
 fn completionKindName(kind: u32) []const u8 {
     return switch (kind) {
         proto.CompletionItemKind.Function => "Function",
+        proto.CompletionItemKind.Method => "Method",
         proto.CompletionItemKind.Variable => "Variable",
         proto.CompletionItemKind.Struct => "Struct",
         proto.CompletionItemKind.Enum => "Enum",
         proto.CompletionItemKind.Interface => "Interface",
+        proto.CompletionItemKind.Field => "Field",
+        proto.CompletionItemKind.Property => "Property",
+        proto.CompletionItemKind.EnumMember => "EnumMember",
+        proto.CompletionItemKind.Module => "Module",
         else => "?",
     };
 }

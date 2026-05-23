@@ -2,6 +2,7 @@
 
 > Path: `modules/compiler-cli/src/cli/`
 > Parent: [`../AGENTS.md`](../AGENTS.md) · Root: [`../../../../AGENTS.md`](../../../../AGENTS.md)
+> Docs: [`./docs.md`](docs.md) · Examples: [`./examples.md`](examples.md)
 
 Per-subcommand implementations and shared helpers for the `botopink` CLI.
 
@@ -10,6 +11,8 @@ Per-subcommand implementations and shared helpers for the `botopink` CLI.
 ```text
 cli/
 ├── AGENTS.md          ← you are here
+├── docs.md            ← subcommand pipeline + shared helpers reference
+├── examples.md        ← `botopink` command recipes
 ├── build.zig          ← `botopink build`    compile project, write outputs
 ├── check.zig          ← `botopink check`    type-check, no code emission
 ├── run.zig            ← `botopink run`      build + execute entry point

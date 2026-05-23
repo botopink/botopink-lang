@@ -2,6 +2,7 @@
 
 > Path: `modules/compiler-core/src/lexer/`
 > Parent: [`../AGENTS.md`](../AGENTS.md)
+> Docs: [`./docs.md`](docs.md) · Examples: [`./examples.md`](examples.md)
 
 Lexer support files. The lexer entry point itself lives at `../lexer.zig`.
 
@@ -10,6 +11,8 @@ Lexer support files. The lexer entry point itself lives at `../lexer.zig`.
 ```text
 lexer/
 ├── AGENTS.md      ← you are here
+├── docs.md        ← tokenizer reference (invariants, error policy)
+├── examples.md    ← `.bp` token syntax (numbers, strings, identifiers)
 ├── token.zig      ← TokenKind enum + Token struct (lexeme + line/col)
 └── tests.zig      ← lexer snapshot tests
 ```

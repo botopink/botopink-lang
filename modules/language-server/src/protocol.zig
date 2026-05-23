@@ -116,6 +116,7 @@ pub const CompletionItem = struct {
     detail: ?[]const u8 = null,
     documentation: ?MarkupContent = null,
     insertText: ?[]const u8 = null,
+    sortText: ?[]const u8 = null,
 };
 
 pub const CompletionList = struct {
@@ -148,14 +149,17 @@ pub const ServerCapabilities = struct {
     textDocumentSync: TextDocumentSyncOptions = .{},
     hoverProvider: bool = false,
     definitionProvider: bool = false,
+    typeDefinitionProvider: bool = false,
     documentFormattingProvider: bool = false,
     documentSymbolProvider: bool = false,
     completionProvider: ?CompletionOptions = null,
     referencesProvider: bool = false,
-    renameProvider: bool = false,
+    renameProvider: ?RenameOptions = null,
     diagnosticProvider: ?DiagnosticOptions = null,
     signatureHelpProvider: ?SignatureHelpOptions = null,
     inlayHintProvider: bool = false,
+    codeActionProvider: bool = false,
+    foldingRangeProvider: bool = false,
 };
 
 pub const CompletionOptions = struct {
@@ -221,6 +225,62 @@ pub const InlayHint = struct {
 pub const TextDocumentContentChangeEvent = struct {
     range: ?Range = null,
     text: []const u8,
+};
+
+// ── Rename (with prepare) ────────────────────────────────────────────────────
+
+pub const RenameOptions = struct {
+    prepareProvider: bool = false,
+};
+
+pub const PrepareRenameResult = struct {
+    range: Range,
+    placeholder: []const u8,
+};
+
+// ── Code Actions ─────────────────────────────────────────────────────────────
+
+pub const CodeActionKind = struct {
+    pub const QuickFix = "quickfix";
+    pub const Refactor = "refactor";
+    pub const Source = "source";
+};
+
+pub const CodeAction = struct {
+    title: []const u8,
+    kind: ?[]const u8 = null,
+    diagnostics: ?[]const Diagnostic = null,
+    edit: ?WorkspaceEditSimple = null,
+};
+
+pub const WorkspaceEditSimple = struct {
+    documentChanges: ?[]const TextDocumentEdit = null,
+};
+
+pub const TextDocumentEdit = struct {
+    textDocument: VersionedTextDocumentIdentifier,
+    edits: []const TextEdit,
+};
+
+pub const VersionedTextDocumentIdentifier = struct {
+    uri: []const u8,
+    version: ?i64 = null,
+};
+
+// ── Folding Ranges ───────────────────────────────────────────────────────────
+
+pub const FoldingRangeKind = struct {
+    pub const Comment = "comment";
+    pub const Imports = "imports";
+    pub const Region = "region";
+};
+
+pub const FoldingRange = struct {
+    startLine: u32,
+    startCharacter: ?u32 = null,
+    endLine: u32,
+    endCharacter: ?u32 = null,
+    kind: ?[]const u8 = null,
 };
 
 // ── JSON-RPC envelope ─────────────────────────────────────────────────────────

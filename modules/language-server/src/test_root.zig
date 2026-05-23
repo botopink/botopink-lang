@@ -10,4 +10,8 @@ comptime {
     _ = @import("./tests/references.zig");
     _ = @import("./tests/rename.zig");
     _ = @import("./tests/signature_help.zig");
+    _ = @import("./tests/folding_range.zig");
+    _ = @import("./tests/prepare_rename.zig");
+    _ = @import("./tests/code_actions.zig");
+    _ = @import("./tests/type_definition.zig");
 }

@@ -2,6 +2,7 @@
 
 > Path: `modules/language-server/src/tests/`
 > Parent: [`../AGENTS.md`](../AGENTS.md) · Snapshots: [`../../snapshots/lsp/AGENTS.md`](../../snapshots/lsp/AGENTS.md)
+> Docs: [`./docs.md`](docs.md)
 
 Feature-level tests for LSP behaviour and diagnostics.
 
@@ -10,6 +11,7 @@ Feature-level tests for LSP behaviour and diagnostics.
 ```text
 tests/
 ├── AGENTS.md
+├── docs.md               ← harness structure + determinism rules
 ├── root.zig              ← test aggregator
 ├── helpers.zig           ← assertion + setup helpers
 ├── snapshot.zig          ← snapshot read/write
@@ -22,7 +24,11 @@ tests/
 ├── completion.zig        ← textDocument/completion
 ├── references.zig        ← textDocument/references
 ├── rename.zig            ← textDocument/rename
-└── signature_help.zig    ← textDocument/signatureHelp
+├── signature_help.zig    ← textDocument/signatureHelp
+├── folding_range.zig     ← textDocument/foldingRange
+├── prepare_rename.zig    ← textDocument/prepareRename
+├── code_actions.zig      ← textDocument/codeAction
+└── type_definition.zig   ← textDocument/typeDefinition
 ```
 
 ## Snapshot workflow

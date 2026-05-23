@@ -2,6 +2,7 @@
 
 > Path: `modules/compiler-core/src/parser/`
 > Parent: [`../AGENTS.md`](../AGENTS.md)
+> Docs: [`./docs.md`](docs.md) · Examples: [`./examples.md`](examples.md)
 
 Parser tests. The parser implementation itself is at `../parser.zig`.
 
@@ -10,6 +11,8 @@ Parser tests. The parser implementation itself is at `../parser.zig`.
 ```text
 parser/
 ├── AGENTS.md      ← you are here
+├── docs.md        ← parser strategy, helpers, error policy
+├── examples.md    ← `.bp` declarations / expressions / statements
 └── tests.zig      ← `assertParser` / `expectParseError` snapshot tests
 ```
 

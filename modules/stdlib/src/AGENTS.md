@@ -2,6 +2,7 @@
 
 > Path: `modules/stdlib/src/`
 > Parent: [`../AGENTS.md`](../AGENTS.md)
+> Docs: [`./docs.md`](docs.md) · Examples: [`./examples.md`](examples.md)
 
 Source for the embedded stdlib. `prelude.zig` exposes each `.bp` file as a
 compile-time string consumed by `compiler-core`'s type inference.
@@ -11,6 +12,8 @@ compile-time string consumed by `compiler-core`'s type inference.
 ```text
 src/
 ├── AGENTS.md          ← you are here
+├── docs.md            ← registry + per-file roles
+├── examples.md        ← stdlib usage in `.bp` (Array, String, builtins)
 ├── prelude.zig        ← @embedFile of every .bp file
 ├── primitives.bp      ← numeric + bool interfaces
 ├── array.bp           ← generic Array<T> interface

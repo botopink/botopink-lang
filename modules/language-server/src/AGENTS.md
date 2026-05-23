@@ -2,6 +2,7 @@
 
 > Path: `modules/language-server/src/`
 > Parent: [`../AGENTS.md`](../AGENTS.md) · Root: [`../../../AGENTS.md`](../../../AGENTS.md)
+> Docs: [`./docs.md`](docs.md)
 
 JSON-RPC server, protocol types, feature engine and test harness.
 
@@ -10,6 +11,7 @@ JSON-RPC server, protocol types, feature engine and test harness.
 ```text
 src/
 ├── AGENTS.md          ← you are here
+├── docs.md            ← layered architecture + boundary rules
 ├── main.zig           ← process entry — constructs and runs Server
 ├── server.zig         ← JSON-RPC message loop + LSP method dispatch
 ├── messages.zig       ← frame parser/writer (Content-Length protocol)
@@ -19,8 +21,10 @@ src/
 ├── files.zig          ← in-memory cache for open document contents
 ├── feedback.zig       ← tracks active diagnostics → clears stale editor feedback
 ├── lsp_types.zig      ← position/offset, URI ↔ path helpers
+├── project_index.zig  ← lazy project-wide pub symbol index (powers cross-module features)
 ├── test_root.zig      ← aggregates every test module
 └── tests/             ← feature-level tests — see tests/AGENTS.md
+    └── docs.md
 ```
 
 ## Layered design

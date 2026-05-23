@@ -2,6 +2,7 @@
 
 > Path: `modules/compiler-core/src/codegen/`
 > Parent: [`../AGENTS.md`](../AGENTS.md)
+> Docs: [`./docs.md`](docs.md) · Examples: [`./examples.md`](examples.md)
 
 Per-target codegen backends. The public façade lives at `../codegen.zig`.
 
@@ -10,74 +11,48 @@ Per-target codegen backends. The public façade lives at `../codegen.zig`.
 ```text
 codegen/
 ├── AGENTS.md         ← you are here
-├── config.zig        ← Config / Target (commonJS|erlang) / ComptimeRuntime / TypeDefLang
+├── docs.md           ← design notes: blind emitters, entry-point convention
+├── examples.md       ← `.bp` → JS / Erlang side-by-side
+├── config.zig        ← Config / TargetSource (commonJS|erlang|beam|wasm) / ComptimeRuntime / TypeDefLang
 ├── moduleOutput.zig  ← shared types: Module, ModuleOutput, GenerateResult
 ├── commonJS.zig      ← CommonJS emitter (blind: iterates transformed AST)
 ├── erlang.zig        ← Erlang emitter (blind)
+├── beam_asm.zig      ← BEAM Assembly `.S` emitter (complete — 0 unsupported across 143 snapshots)
+├── wat.zig           ← WebAssembly Text `.wat` emitter (complete — 0 unsupported across 143 snapshots)
 ├── typescript.zig    ← TypeScript `.d.ts` typedef generator
 ├── runtime.zig       ← runtime helpers used when executing generated JS/Erlang in tests
 ├── snapshot.zig      ← snapshot helpers for codegen tests
 └── tests.zig         ← `assertJs`, `assertJsSingle`, `assertJsError`, …
 ```
 
-## Entry-point convention
+## Files
 
-When the user module defines a `fn main()` with zero args, both backends emit
-an extra entry-point wrapper:
+| File | Role |
+|---|---|
+| `config.zig` | `Config`, `TargetSource` (`commonJS` \| `erlang` \| `beam` \| `wasm`), `ComptimeRuntime`, `TypeDefLang` |
+| `moduleOutput.zig` | `Module`, `ModuleOutput`, `GenerateResult` — shared between targets |
+| `commonJS.zig` | CommonJS emitter — iterates already-transformed AST |
+| `erlang.zig` | Erlang emitter — same shape as `commonJS.zig` |
+| `beam_asm.zig` | BEAM Assembly `.S` emitter — **0 unsupported across 143 snapshots.** Full coverage: numerics, locals, calls, decl methods, booleans, assign, throw, strings, `@print`, field access/assign, arrays, tuples, lambdas (`make_fun2`), case (all patterns), try/catch, pipeline, method calls, loops (stub). `erlc +from_asm` validated |
+| `wat.zig` | WebAssembly Text `.wat` emitter — **0 unsupported across 143 snapshots.** Full coverage: numerics, locals, calls, assign, `!x`, null, `@todo`/`@panic`, globals, `_botopink_main`, case/pipeline/tryCatch/destructuring/lambdas/loops/strings as numeric stubs, `@print` as nop. `wasmtime` runner |
+| `typescript.zig` | `.d.ts` typedef generator (optional secondary output) |
+| `runtime.zig` | Test-side runtime helpers (executes generated code) |
+| `snapshot.zig` / `tests.zig` | Codegen test harness |
 
-| Target | Wrapper | How `botopink run` invokes it |
-|---|---|---|
-| CommonJS | `function _botopink_main() { …top stmts; main(); } _botopink_main();` at end of file | `node out/main.js` runs the trailing call automatically |
-| Erlang | `'_botopink_main'/0` (quoted atom to keep the leading `_`) + `main(_Args) -> '_botopink_main'().` | `escript out/main.erl` invokes `main/1` |
+## Quick-reference rules
 
-For Erlang the function name **must** be quoted (`'_botopink_main'`) because
-plain identifiers may not start with `_` — `_botopink_main` alone would be
-parsed as an unbound variable, not a function name.
+- Emitters are **blind** — they never inspect `ExprKind.comptime_`; the
+  transform pass has already resolved everything. Full rationale in
+  [`./docs.md`](docs.md).
+- `fn main()` triggers an entry-point wrapper (`_botopink_main()` in JS;
+  quoted `'_botopink_main'/0` atom in Erlang). The Erlang atom **must**
+  be quoted because plain atoms can't start with `_`.
+- All public functions use `alloc: std.mem.Allocator` (not `allocator`).
+- BEAM ASM and WAT backends are complete (0 unsupported across 143
+  snapshots each). They reuse the existing comptime runtimes (`erlang`
+  for BEAM, `node` for WASM). See [`/TODO.md`](../../../../TODO.md) for
+  optional future improvements.
 
-## Design: emitters are blind
-
-The CommonJS / Erlang emitters know nothing about comptime specialization.
-They only:
-
-- iterate `program.decls` from the **already-transformed** AST
-- render each `DeclKind` to the target language
-- inlined comptime vals appear as plain decls (`const x = 6.28;`)
-- specialized functions (`scale_$0`) are already present as regular `DeclKind.fn`
-- calls are already rewritten to mangled names with comptime args removed
-
-All specialization work happens earlier in
-[`../comptime/transform.zig`](../comptime/AGENTS.md).
-
-## Codegen API (`../codegen.zig`)
-
-```text
-compile(alloc, modules, io, config)        → ComptimeSession   (lex + parse + infer + transform)
-codegenEmit(alloc, outputs, config)        → []ModuleOutput    (blind emit)
-generate(...)                              = compile + codegenEmit  (convenience)
-```
-
-## Snapshot format
-
-`../../snapshots/codegen/<slug>.snap.md` is multi-section:
-
-```text
------ SOURCE CODE -- main.bp
-...
-
------ COMPTIME JAVASCRIPT
-...                              (empty when no comptime exprs)
-
------ JAVASCRIPT -- main.js
-...
-
------ TYPESCRIPT TYPEDEF -- main.d.ts   (when configured)
-```
-
-Error snapshots live under `../../snapshots/codegen/errors/`.
-
-## Notes
-
-- All public functions use `alloc: std.mem.Allocator` (renamed from `allocator`).
-- Emitter structs may carry an `alloc` field, but it must always be supplied
-  via `init`.
-- No standalone JS/WASM codegen — JS and Erlang are produced natively in Zig.
+For the `.bp` → target translation gallery see
+[`./examples.md`](examples.md); for the full API surface and snapshot
+format see [`./docs.md`](docs.md).
