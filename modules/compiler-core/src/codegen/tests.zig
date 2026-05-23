@@ -41,6 +41,16 @@ const configs = [_]config.Config{
         .targetSource = .erlang,
         .typeDefLanguage = null,
     },
+    .{
+        .comptimeRuntime = .erlang,
+        .targetSource = .beam,
+        .typeDefLanguage = null,
+    },
+    .{
+        .comptimeRuntime = .node,
+        .targetSource = .wasm,
+        .typeDefLanguage = null,
+    },
 };
 // ── slug helpers ──────────────────────────────────────────────────────────────
 
@@ -297,6 +307,19 @@ test "js: fn ---- private function with return" {
         \\}
         \\val result = double(5);
         \\@print(result);
+    );
+}
+
+// Tests max/2 — canonical example for the BEAM ASM backend.
+test "js: fn ---- max via if comparison" {
+    try assertJsSingle(std.testing.allocator, @src(),
+        \\pub fn max(a: i32, b: i32) -> i32 {
+        \\    if (a < b) {
+        \\        return b;
+        \\    } else {
+        \\        return a;
+        \\    }
+        \\}
     );
 }
 

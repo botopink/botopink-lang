@@ -50,10 +50,12 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, opts: Options) !u8 {
         .targetSource = switch (target) {
             .commonJS => .commonJS,
             .erlang => .erlang,
+            .beam => .beam,
+            .wasm => .wasm,
         },
         .comptimeRuntime = switch (target) {
-            .commonJS => .node,
-            .erlang => .erlang,
+            .commonJS, .wasm => .node,
+            .erlang, .beam => .erlang,
         },
         .typeDefLanguage = if (opts.typescript) .typescript else null,
         .build_root = ".botopinkbuild",
@@ -109,6 +111,8 @@ fn writeOutputs(
     const ext = switch (target) {
         .commonJS => ".js",
         .erlang => ".erl",
+        .beam => ".S",
+        .wasm => ".wat",
     };
 
     for (outputs) |o| {

@@ -99,6 +99,56 @@ pub fn buildSnapshot(alloc: std.mem.Allocator, name: []const u8, src: []const u8
                 try buf.appendSlice(alloc, "```\n");
             }
         },
+        .beam => {
+            // Comptime Erlang section (if any) — beam shares the Erlang comptime runtime.
+            if (result.comptime_script) |ct| {
+                const ctHdr = try std.fmt.allocPrint(alloc, "----- COMPTIME ERLANG -- {s}.erl\n```erlang\n", .{name});
+                defer alloc.free(ctHdr);
+                try buf.appendSlice(alloc, ctHdr);
+                try buf.appendSlice(alloc, ct);
+                try buf.appendSlice(alloc, "```\n\n");
+            }
+
+            // BEAM Assembly output section
+            const asmHdr = try std.fmt.allocPrint(alloc, "----- BEAM ASSEMBLY -- {s}.S\n```erlang\n", .{name});
+            defer alloc.free(asmHdr);
+            try buf.appendSlice(alloc, asmHdr);
+            try buf.appendSlice(alloc, result.js);
+            try buf.appendSlice(alloc, "```\n");
+
+            if (result.run_output) |output| {
+                const runLogHdr = try std.fmt.allocPrint(alloc, "\n----- RUN LOG -----\n```logs\n", .{});
+                defer alloc.free(runLogHdr);
+                try buf.appendSlice(alloc, runLogHdr);
+                try buf.appendSlice(alloc, output);
+                try buf.appendSlice(alloc, "```\n");
+            }
+        },
+        .wasm => {
+            // Comptime JavaScript section (if any) — wasm shares the Node comptime runtime.
+            if (result.comptime_script) |ct| {
+                const ctHdr = try std.fmt.allocPrint(alloc, "----- COMPTIME JAVASCRIPT -- {s}.js\n```javascript\n", .{name});
+                defer alloc.free(ctHdr);
+                try buf.appendSlice(alloc, ctHdr);
+                try buf.appendSlice(alloc, ct);
+                try buf.appendSlice(alloc, "```\n\n");
+            }
+
+            // WebAssembly Text output section
+            const watHdr = try std.fmt.allocPrint(alloc, "----- WASM TEXT -- {s}.wat\n```wasm\n", .{name});
+            defer alloc.free(watHdr);
+            try buf.appendSlice(alloc, watHdr);
+            try buf.appendSlice(alloc, result.js);
+            try buf.appendSlice(alloc, "```\n");
+
+            if (result.run_output) |output| {
+                const runLogHdr = try std.fmt.allocPrint(alloc, "\n----- RUN LOG -----\n```logs\n", .{});
+                defer alloc.free(runLogHdr);
+                try buf.appendSlice(alloc, runLogHdr);
+                try buf.appendSlice(alloc, output);
+                try buf.appendSlice(alloc, "```\n");
+            }
+        },
     }
 
     return try buf.toOwnedSlice(alloc);

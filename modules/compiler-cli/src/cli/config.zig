@@ -6,10 +6,14 @@ const std = @import("std");
 pub const Target = enum {
     commonJS,
     erlang,
+    beam,
+    wasm,
 
     pub fn fromString(s: []const u8) ?Target {
         if (std.mem.eql(u8, s, "commonJS")) return .commonJS;
         if (std.mem.eql(u8, s, "erlang")) return .erlang;
+        if (std.mem.eql(u8, s, "beam")) return .beam;
+        if (std.mem.eql(u8, s, "wasm")) return .wasm;
         return null;
     }
 
@@ -17,6 +21,8 @@ pub const Target = enum {
         return switch (self) {
             .commonJS => "commonJS",
             .erlang => "erlang",
+            .beam => "beam",
+            .wasm => "wasm",
         };
     }
 };

@@ -40,12 +40,28 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, opts: Options) !u8 {
     const entry_path = switch (target) {
         .commonJS => try std.fmt.allocPrint(arena, "out/{s}.js", .{opts.module}),
         .erlang => try std.fmt.allocPrint(arena, "out/{s}.erl", .{opts.module}),
+        .beam => try std.fmt.allocPrint(arena, "out/{s}.S", .{opts.module}),
+        .wasm => try std.fmt.allocPrint(arena, "out/{s}.wat", .{opts.module}),
     };
+
+    // BEAM assembly is an artifact — direct execution requires `erlc +from_asm`
+    // followed by an `erl` invocation. Tooling integration arrives in Fase 9.
+    if (target == .beam) {
+        const msg = try std.fmt.allocPrint(
+            arena,
+            "wrote {s} — BEAM Assembly is an artifact; compile with `erlc +from_asm {s}` to produce a `.beam`.\n",
+            .{ entry_path, entry_path },
+        );
+        reporter.stdout(io, msg);
+        return 0;
+    }
 
     // Build argv.
     const runner: []const u8 = switch (target) {
         .commonJS => "node",
         .erlang => "escript",
+        .wasm => "wasmtime",
+        .beam => unreachable, // handled above
     };
 
     var argv = std.ArrayListUnmanaged([]const u8).empty;

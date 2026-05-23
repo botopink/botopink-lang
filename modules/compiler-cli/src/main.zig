@@ -46,12 +46,12 @@ const HELP =
     \\  version  Show the compiler version
     \\
     \\Options for `build`:
-    \\  --target <commonJS|erlang>   Override the codegen target
+    \\  --target <commonJS|erlang|beam|wasm>   Override the codegen target
     \\  --out <dir>                  Output directory (default: out)
     \\  --typescript                 Emit TypeScript .d.ts definitions
     \\
     \\Options for `run`:
-    \\  --target <commonJS|erlang>   Override the codegen target
+    \\  --target <commonJS|erlang|beam|wasm>   Override the codegen target
     \\  --module <name>              Entry-point module (default: main)
     \\  --                           Pass remaining args to the program
     \\
@@ -61,7 +61,7 @@ const HELP =
     \\
     \\Options for `new`:
     \\  <name>                       Project name
-    \\  --target <commonJS|erlang>   Initial target (default: commonJS)
+    \\  --target <commonJS|erlang|beam|wasm>   Initial target (default: commonJS)
     \\
 ;
 

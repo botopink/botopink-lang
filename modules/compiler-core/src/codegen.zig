@@ -3,6 +3,8 @@ const moduleOutput = @import("./codegen/moduleOutput.zig");
 const configMod = @import("./codegen/config.zig");
 const commonJS = @import("./codegen/commonJS.zig");
 const erlang = @import("./codegen/erlang.zig");
+const beam_asm = @import("./codegen/beam_asm.zig");
+const wat = @import("./codegen/wat.zig");
 const comptimeMod = @import("./comptime.zig");
 const moduleMod = @import("./module.zig");
 const runtime = @import("./codegen/runtime.zig");
@@ -26,6 +28,8 @@ pub fn generate(
     const outputs = try switch (config.targetSource) {
         .commonJS => commonJS.codegenEmit(allocator, session.outputs.items, config),
         .erlang => erlang.codegenEmit(allocator, session.outputs.items, config),
+        .beam => beam_asm.codegenEmit(allocator, session.outputs.items, config),
+        .wasm => wat.codegenEmit(allocator, session.outputs.items, config),
     };
 
     // Execute generated code and capture output
@@ -37,6 +41,14 @@ pub fn generate(
                     break :blk err_msg;
                 },
                 .erlang => runtime.executeErlang(allocator, output.result.js, output.name, io) catch |err| blk: {
+                    const err_msg = try std.fmt.allocPrint(allocator, "Execution error: {}", .{err});
+                    break :blk err_msg;
+                },
+                .beam => runtime.executeBeamAsm(allocator, output.result.js, output.name, io) catch |err| blk: {
+                    const err_msg = try std.fmt.allocPrint(allocator, "Execution error: {}", .{err});
+                    break :blk err_msg;
+                },
+                .wasm => runtime.executeWat(allocator, output.result.js, output.name, io) catch |err| blk: {
                     const err_msg = try std.fmt.allocPrint(allocator, "Execution error: {}", .{err});
                     break :blk err_msg;
                 },

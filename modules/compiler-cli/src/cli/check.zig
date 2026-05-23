@@ -31,8 +31,8 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io) !u8 {
     const t0 = std.Io.Timestamp.now(io, .awake);
 
     const runtime: bp.comptime_pipeline.ComptimeRuntime = switch (proj.parsedTarget()) {
-        .commonJS => .node,
-        .erlang => .erlang,
+        .commonJS, .wasm => .node,
+        .erlang, .beam => .erlang,
     };
 
     var session = bp.comptime_pipeline.compile(

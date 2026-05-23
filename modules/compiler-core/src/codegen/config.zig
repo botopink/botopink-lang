@@ -4,6 +4,10 @@ const comptimeMod = @import("../comptime.zig");
 pub const TargetSource = enum {
     commonJS,
     erlang,
+    /// BEAM Assembly (`.S`) — the textual form produced by `erlc +to_asm`.
+    beam,
+    /// WebAssembly Text format (`.wat`) — target name is `wasm`.
+    wasm,
     // esm,
     // iife,
 };
