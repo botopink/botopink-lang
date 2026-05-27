@@ -437,7 +437,6 @@ fn identInExpr(expr: anytype, name: []const u8) bool {
                 }
                 break :blk false;
             },
-
         },
         .binding => |b| switch (b.kind) {
             .localBind => |lb| identInExpr(lb.value.*, name),
@@ -449,6 +448,11 @@ fn identInExpr(expr: anytype, name: []const u8) bool {
                 break :blk target_has or identInExpr(a.value.*, name);
             },
             .localBindDestruct => |lb| identInExpr(lb.value.*, name),
+        },
+        .useHook => |uh| switch (uh.kind) {
+            .useVoid => |v| identInExpr(v.*, name),
+            .useBind => |b| identInExpr(b.value.*, name),
+            .useBindDestruct => |b| identInExpr(b.value.*, name),
         },
         .jump => |j| switch (j.kind) {
             .@"return" => |r| if (r) |rp| identInExpr(rp.*, name) else false,

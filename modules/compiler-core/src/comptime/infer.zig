@@ -967,6 +967,9 @@ pub fn inferExprTyped(env: *Env, expr: ast.Expr) InferError!TypedExpr {
         // ── binding expressions ────────────────────────────────────────────────
         .binding => |b| inferBindingExpr(env, b, b.loc),
 
+        // ── use-hook expressions (@Context Fase 3) ────────────────────────────
+        .useHook => return InferError.TypeError,
+
         // ── call expressions ───────────────────────────────────────────────────
         .call => |c| inferCallExpr(env, c, c.loc),
 

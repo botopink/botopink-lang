@@ -893,6 +893,8 @@ const Emitter = struct {
                 },
             },
 
+            .useHook => {},
+
             .comptime_ => |ct| switch (ct.kind) {
                 .comptimeExpr => |inner| try this.emitExpr(inner.*),
                 .comptimeBlock => |cb| {

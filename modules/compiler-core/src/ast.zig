@@ -116,6 +116,7 @@ pub fn ExprOf(comptime phase: Phase) type {
         branch: MakeExpr(phase, BranchExprOf(phase)),
         loop: MakeExpr(phase, LoopExprOf(phase)),
         binding: BindingExprOf(phase),
+        useHook: UseHookExprOf(phase),
         call: CallExprOf(phase),
         function: FunctionExprOf(phase),
         collection: CollectionExprOf(phase),
@@ -169,6 +170,7 @@ pub const JumpExpr = JumpExprOf(.untyped);
 pub const BranchExpr = BranchExprOf(.untyped);
 pub const LoopExpr = LoopExprOf(.untyped);
 pub const BindingExpr = BindingExprOf(.untyped);
+pub const UseHookExpr = UseHookExprOf(.untyped);
 pub const FunctionExpr = FunctionExprOf(.untyped);
 pub const CollectionExpr = CollectionExprOf(.untyped);
 pub const ComptimeExpr = ComptimeExprOf(.untyped);
@@ -453,6 +455,41 @@ pub fn BindingExprOf(comptime phase: Phase) type {
                 .localBindDestruct => |*lb| {
                     @constCast(&lb.pattern).deinit(allocator);
                     destroyExpr(allocator, lb.value);
+                },
+            }
+        }
+    };
+
+    return MakeExpr(phase, Kind);
+}
+
+/// Use-hook expressions: `use` inside function bodies (distinct from top-level `UseDecl` imports)
+///
+/// Two forms:
+///   `use expr`              — void hook, no binding (e.g. `use effect(cleanup)`)
+///   `use binding = expr`    — hook with binding (e.g. `use {val, set} = state(0)`)
+pub fn UseHookExprOf(comptime phase: Phase) type {
+    const Kind = union(enum) {
+        /// `use expr` — void hook, no binding
+        useVoid: *ExprOf(phase),
+        /// `use name = expr` — hook with simple name binding
+        useBind: struct {
+            name: []const u8,
+            value: *ExprOf(phase),
+        },
+        /// `use {a, b} = expr` — hook with destructuring binding
+        useBindDestruct: struct {
+            pattern: ParamDestruct,
+            value: *ExprOf(phase),
+        },
+
+        pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
+            switch (this.*) {
+                .useVoid => |e| destroyExpr(allocator, e),
+                .useBind => |*b| destroyExpr(allocator, b.value),
+                .useBindDestruct => |*b| {
+                    @constCast(&b.pattern).deinit(allocator);
+                    destroyExpr(allocator, b.value);
                 },
             }
         }

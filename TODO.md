@@ -201,8 +201,8 @@ error: `fn` cannot return @Future directly
 
 ### Fase 1: AST
 
-- [ ] Adicionar `interface` como keyword/declaração no AST (`ast.zig`)
-- [ ] Adicionar variant `Expr.useHook` para `use` como hook no body (distinto de `UseDecl` de imports)
+- [x] Adicionar `interface` como keyword/declaração no AST (`ast.zig`) — já existia
+- [x] Adicionar variant `Expr.useHook` para `use` como hook no body (distinto de `UseDecl` de imports)
 - [ ] Adicionar `ContextBase` tracking na representação de tipo — phantom param em `TypeRef.generic`
 - [ ] Adicionar `ImplList` ao `StructDecl`/`EnumDecl` para `struct X: @Context<B, R> { }`
 

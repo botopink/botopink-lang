@@ -753,6 +753,7 @@ const Emitter = struct {
                     try self.w(";");
                 },
             },
+            .useHook => {},
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| {
                     if (r) |rp| {
@@ -1102,6 +1103,8 @@ const Emitter = struct {
                     try self.emitExpr(lb.value.*);
                 },
             },
+
+            .useHook => {},
 
             .call => |c| switch (c.kind) {
                 .call => |cc| {
