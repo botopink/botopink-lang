@@ -355,6 +355,38 @@ test "parser: full Account struct (private field + getter + setter + method)" {
     );
 }
 
+// ── inline implement ─────────────────────────────────────────────────────────
+
+test "parser: struct with inline implement single interface" {
+    try assertParser(std.testing.allocator, @src(),
+        \\val AuthState = struct implement Drawable {}
+    );
+}
+
+test "parser: struct with inline implement builtin generic" {
+    try assertParser(std.testing.allocator, @src(),
+        \\val AuthState = struct implement @Context<Element, AuthState> {}
+    );
+}
+
+test "parser: struct with inline implement multiple interfaces" {
+    try assertParser(std.testing.allocator, @src(),
+        \\val Widget = struct implement Drawable, @Context<Element, Widget> {}
+    );
+}
+
+test "parser: enum with inline implement" {
+    try assertParser(std.testing.allocator, @src(),
+        \\val Color = enum implement Printable { Red, Green, Blue }
+    );
+}
+
+test "parser: record with inline implement" {
+    try assertParser(std.testing.allocator, @src(),
+        \\val Point = record implement Serializable { x: number, y: number }
+    );
+}
+
 // ── record: basic structure ───────────────────────────────────────────────────
 
 test "parser: empty record (no fields, no methods)" {
@@ -437,6 +469,114 @@ test "parser: implement with two interfaces and qualified methods" {
         \\    fn SolarCharger.Conectar(self: Self) {
         \\        Console.WriteLine("Conectado via Painel Solar. Bateria atual: " + self.batteryLevel);
         \\    }
+        \\}
+    );
+}
+
+// ── interface: full Canvas with multiple abstract methods ────────────────────
+
+test "parser: interface with multiple abstract methods (Canvas)" {
+    try assertParser(std.testing.allocator, @src(),
+        \\val Canvas = interface {
+        \\    fn clear(self: Self),
+        \\    fn drawLine(self: Self, x1: i32, y1: i32),
+        \\    fn drawRect(self: Self, x: i32, y: i32, color: string),
+        \\}
+    );
+}
+
+// ── struct: full with private field + getter + setter validation + method ────
+
+test "parser: struct with private field, getter, setter with throw, and method" {
+    try assertParser(std.testing.allocator, @src(),
+        \\val Account = struct {
+        \\    _balance: number = 0,
+        \\    get balance(self: Self) -> number {
+        \\        return self._balance;
+        \\    }
+        \\    set balance(self: Self, value: number) {
+        \\        throw Error(msg: "Balance cannot be negative");
+        \\    }
+        \\    fn deposit(self: Self, amount: number) {
+        \\        self._balance += amount;
+        \\    }
+        \\}
+    );
+}
+
+// ── record: with fields and method ──────────────────────────────────────────
+
+test "parser: record with two fields and a toString method" {
+    try assertParser(std.testing.allocator, @src(),
+        \\val GPSCoordinates = record {
+        \\    lat: number,
+        \\    lon: number,
+        \\    fn toString(self: Self) -> string {
+        \\        return "Lat: " + self.lat + " Lon: " + self.lon;
+        \\    }
+        \\}
+    );
+}
+
+// ── implement: single interface with method body ────────────────────────────
+
+test "parser: implement single interface with method body" {
+    try assertParser(std.testing.allocator, @src(),
+        \\val CircleDrawing = implement Drawable for Circle {
+        \\    fn draw(self: Self) {
+        \\        @print("Drawing circle");
+        \\    }
+        \\}
+    );
+}
+
+// ── implement: multiple interfaces with qualified method disambiguation ─────
+
+test "parser: implement two interfaces with qualified method disambiguation" {
+    try assertParser(std.testing.allocator, @src(),
+        \\val CameraPowerCharger = implement UsbCharger, SolarCharger for SmartCamera {
+        \\    fn UsbCharger.Connect(self: Self) {
+        \\        @print("Connected via USB. Battery level: " + self.batteryLevel);
+        \\    }
+        \\    fn SolarCharger.Connect(self: Self) {
+        \\        @print("Connected via Solar Panel. Battery level: " + self.batteryLevel);
+        \\    }
+        \\}
+    );
+}
+
+// ── use hooks in function body ───────────────────────────────────────────────
+
+test "parser: use void hook (discard with _)" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn App() {
+        \\    use _ = effect({ -> cleanup() });
+        \\}
+    );
+}
+
+test "parser: use simple binding hook" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn App() {
+        \\    use doubled = memo({ -> count * 2 });
+        \\}
+    );
+}
+
+test "parser: use destructuring hook" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn App() {
+        \\    use {count, setCount} = state(0);
+        \\}
+    );
+}
+
+test "parser: use multiple hooks in function" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn Dashboard() {
+        \\    use {count, setCount} = state(0);
+        \\    use doubled = memo({ -> count * 2 });
+        \\    use _ = effect({ -> cleanup() });
         \\}
     );
 }

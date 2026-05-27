@@ -1197,6 +1197,11 @@ pub const Parser = struct {
     fn parseStructBody(this: *This, alloc: std.mem.Allocator, name: []const u8, annotations: []Annotation, isPub: bool) ParseError!StructDecl {
         const genericParams = try this.parseGenericParams(alloc);
         errdefer alloc.free(genericParams);
+        const implementList = try this.parseImplementClause(alloc);
+        errdefer {
+            for (implementList) |*im| @constCast(im).deinit(alloc);
+            alloc.free(implementList);
+        }
         _ = try this.consume(.leftBrace);
 
         var members: std.ArrayList(StructMember) = .empty;
@@ -1265,6 +1270,7 @@ pub const Parser = struct {
             .isPub = isPub,
             .annotations = annotations,
             .genericParams = genericParams,
+            .implement = implementList,
             .members = try members.toOwnedSlice(alloc),
             .trailingComma = trailingComma,
         };
@@ -1339,6 +1345,11 @@ pub const Parser = struct {
     fn parseRecordBody(this: *This, alloc: std.mem.Allocator, name: []const u8, annotations: []Annotation, isPub: bool) ParseError!RecordDecl {
         const genericParams = try this.parseGenericParams(alloc);
         errdefer alloc.free(genericParams);
+        const implementList = try this.parseImplementClause(alloc);
+        errdefer {
+            for (implementList) |*im| @constCast(im).deinit(alloc);
+            alloc.free(implementList);
+        }
         _ = try this.consume(.leftBrace);
 
         var fields: std.ArrayList(RecordField) = .empty;
@@ -1396,6 +1407,7 @@ pub const Parser = struct {
             .isPub = isPub,
             .annotations = annotations,
             .genericParams = genericParams,
+            .implement = implementList,
             .fields = try fields.toOwnedSlice(alloc),
             .trailingComma = trailingComma,
             .methods = try methods.toOwnedSlice(alloc),
@@ -1521,6 +1533,11 @@ pub const Parser = struct {
     fn parseEnumBody(this: *This, alloc: std.mem.Allocator, name: []const u8, annotations: []Annotation, isPub: bool) ParseError!EnumDecl {
         const genericParams = try this.parseGenericParams(alloc);
         errdefer alloc.free(genericParams);
+        const implementList = try this.parseImplementClause(alloc);
+        errdefer {
+            for (implementList) |*im| @constCast(im).deinit(alloc);
+            alloc.free(implementList);
+        }
         _ = try this.consume(.leftBrace);
 
         var variants: std.ArrayList(EnumVariant) = .empty;
@@ -1585,6 +1602,7 @@ pub const Parser = struct {
             .isPub = isPub,
             .annotations = annotations,
             .genericParams = genericParams,
+            .implement = implementList,
             .variants = try variants.toOwnedSlice(alloc),
             .trailingComma = trailingComma,
             .methods = try methods.toOwnedSlice(alloc),
@@ -1916,6 +1934,21 @@ pub const Parser = struct {
         return list.toOwnedSlice(alloc);
     }
 
+    fn parseImplementClause(this: *This, alloc: std.mem.Allocator) ParseError![]TypeRef {
+        var list: std.ArrayList(TypeRef) = .empty;
+        errdefer {
+            for (list.items) |*t| t.deinit(alloc);
+            list.deinit(alloc);
+        }
+        if (!this.match(.implement)) return list.toOwnedSlice(alloc);
+        try list.append(alloc, try this.parseTypeRef(alloc));
+        while (this.match(.comma)) {
+            if (this.check(.leftBrace)) break;
+            try list.append(alloc, try this.parseTypeRef(alloc));
+        }
+        return list.toOwnedSlice(alloc);
+    }
+
     /// Parses a single function/method parameter with optional modifier.
     ///
     /// Grammar:
@@ -2091,6 +2124,62 @@ pub const Parser = struct {
             const inner = try this.parseExpr(alloc);
             const innerPtr = try this.boxExpr(alloc, inner);
             return Expr{ .jump = .{ .loc = locFromToken(throwTok), .kind = .{ .throw_ = innerPtr } } };
+        }
+
+        // use hook: `use expr` | `use name = expr` | `use {a, b} = expr`
+        if (this.check(.use)) {
+            const useTok = this.advance();
+            const loc = locFromToken(useTok);
+
+            // use {a, b} = expr — destructuring hook
+            if (this.check(.leftBrace)) {
+                _ = this.advance();
+                var fields: std.ArrayList(ast.FieldDestruct) = .empty;
+                errdefer {
+                    for (fields.items) |f| {
+                        alloc.free(f.field_name);
+                        if (f.bind_name.ptr != f.field_name.ptr or f.bind_name.len != f.field_name.len)
+                            alloc.free(f.bind_name);
+                    }
+                    fields.deinit(alloc);
+                }
+                var hasSpread = false;
+                while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
+                    if (this.check(.dotDot)) {
+                        _ = this.advance();
+                        hasSpread = true;
+                        break;
+                    }
+                    const field_name = try alloc.dupe(u8, (try this.consume(.identifier)).lexeme);
+                    const bind_name: []const u8 = if (this.match(.colon))
+                        try alloc.dupe(u8, (try this.consume(.identifier)).lexeme)
+                    else
+                        field_name;
+                    try fields.append(alloc, .{ .field_name = field_name, .bind_name = bind_name });
+                    if (!this.match(.comma)) break;
+                }
+                _ = try this.consume(.rightBrace);
+                _ = try this.consume(.equal);
+                const value = try this.parseExpr(alloc);
+                const valuePtr = try this.boxExpr(alloc, value);
+                return Expr{ .useHook = .{ .loc = loc, .kind = .{ .useBindDestruct = .{
+                    .pattern = .{ .names = .{ .fields = try fields.toOwnedSlice(alloc), .hasSpread = hasSpread } },
+                    .value = valuePtr,
+                } } } };
+            }
+
+            // use name = expr — simple binding (including `use _ = expr` for void)
+            const nameTok = if (this.check(.identifier))
+                this.advance()
+            else if (this.check(.underscore))
+                this.advance()
+            else
+                return ParseError.UnexpectedToken;
+            _ = try this.consume(.equal);
+            const value = try this.parseExpr(alloc);
+            const valuePtr = try this.boxExpr(alloc, value);
+            const name = if (nameTok.kind == .underscore) "_" else nameTok.lexeme;
+            return Expr{ .useHook = .{ .loc = loc, .kind = .{ .useBind = .{ .name = name, .value = valuePtr } } } };
         }
 
         // try expr [catch handler]

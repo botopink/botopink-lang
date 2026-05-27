@@ -74,7 +74,7 @@ use {std.List as L} = @root()        // binding: L
 ### `use` sem binding (void)
 
 ```bp
-use effect({ -> cleanup() })         // @Context<_, void> — sem = necessário
+use _ = effect({ -> cleanup() })     // @Context<_, void> — `_` descarta resultado
 use {val, set} = state(0)            // @Context<_, T> — binding obrigatório
 ```
 
@@ -228,10 +228,9 @@ Duas formas de implementar:
 
 ### Fase 2: Parser
 
-- [ ] Parsear `struct implement Interface1, Interface2 { }` — lista de TypeRef após `implement` keyword
-- [ ] Parsear `enum implement Interface { }` e `record(...) implement Interface { }` — mesma regra
-- [ ] Parsear `use expr` (sem `=`) para hooks void (`parser.zig`)
-- [ ] Parsear `use binding = expr` como hook no body (diferente de `use {imports} = source` no top-level por posição)
+- [x] Parsear `struct implement Interface1, Interface2 { }` — lista de TypeRef após `implement` keyword
+- [x] Parsear `enum implement Interface { }` e `record(...) implement Interface { }` — mesma regra
+- [x] Parsear `use _ = expr` e `use name = expr` e `use {a, b} = expr` como hooks no body
 - [ ] Validar prefix estático: emitir erro se `use` aparece após branch/return
 
 ### Fase 3: Type Inference
