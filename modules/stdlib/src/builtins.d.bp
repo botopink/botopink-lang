@@ -63,6 +63,10 @@ pub interface AsyncIterable<T, E> {
     fn iter(self: Self) -> AsyncIterator<T, E>
 }
 
+// ── context (hooks) ──────────────────────────────────────────────────────────
+
+pub interface Context<ContextBase, Return> { }
+
 // ── control flow ───────────────────────────────────────────────────────────────
 
 fn block<T>(body: fn() -> T) T

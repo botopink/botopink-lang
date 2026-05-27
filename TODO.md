@@ -235,7 +235,7 @@ Duas formas de implementar:
 
 ### Fase 3: Type Inference
 
-- [ ] Definir `@Context<B, R>` como interface builtin em `builtins.d.bp`
+- [x] Definir `@Context<B, R>` como interface builtin em `builtins.d.bp`
 - [ ] Resolver `implement` (inline e separado) — registrar que T impl @Context
 - [ ] Ao entrar em fn body: extrair ContextBase do return type se impl `@Context`
 - [ ] Ao encontrar `use`: verificar que a expressão retorna `@Context<B, _>` com B == ContextBase da fn
