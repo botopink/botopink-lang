@@ -31,6 +31,7 @@ pub const TypeDef = union(enum) {
         id: usize,
         genericParams: []const []const u8,
         fields: []FieldDef,
+        implements: []const []const u8 = &.{},
     };
 
     pub const Struct = struct {
@@ -38,6 +39,7 @@ pub const TypeDef = union(enum) {
         id: usize,
         genericParams: []const []const u8,
         fields: []FieldDef,
+        implements: []const []const u8 = &.{},
     };
 
     pub const Enum = struct {
@@ -45,6 +47,7 @@ pub const TypeDef = union(enum) {
         id: usize,
         genericParams: []const []const u8,
         variants: []VariantDef,
+        implements: []const []const u8 = &.{},
     };
 
     /// Return the fields slice for record or struct types; null for enums.

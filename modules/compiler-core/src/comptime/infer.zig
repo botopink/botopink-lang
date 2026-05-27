@@ -173,6 +173,19 @@ fn registerTypeDecl(env: *Env, decl: ast.DeclKind) InferError!void {
     }
 }
 
+fn extractImplementNames(arena: std.mem.Allocator, impls: []const ast.TypeRef) ![]const []const u8 {
+    if (impls.len == 0) return &.{};
+    var names = try arena.alloc([]const u8, impls.len);
+    for (impls, 0..) |im, i| {
+        names[i] = switch (im) {
+            .named => |n| n,
+            .generic => |g| g.name,
+            else => "unknown",
+        };
+    }
+    return names;
+}
+
 fn registerRecord(env: *Env, r: ast.RecordDecl) InferError!void {
     // Build generic param map: each param name → fresh generic type var.
     var genericMap = std.StringHashMap(*T.Type).init(env.arena);
@@ -195,11 +208,13 @@ fn registerRecord(env: *Env, r: ast.RecordDecl) InferError!void {
 
     // Register the type definition.
     const typeId = env.allocTypeId();
+    const implNames = try extractImplementNames(env.arena, r.implement);
     try env.registerTypeDef(r.name, .{ .record = .{
         .name = r.name,
         .id = typeId,
         .genericParams = genericIds,
         .fields = fields,
+        .implements = implNames,
     } });
 
     // Build constructor function type: `fn(T1, T2, ...) -> RecordName<A,B,...>`.
@@ -245,11 +260,13 @@ fn registerStruct(env: *Env, s: ast.StructDecl) InferError!void {
     };
 
     const structTypeId = env.allocTypeId();
+    const implNames = try extractImplementNames(env.arena, s.implement);
     try env.registerTypeDef(s.name, .{ .struct_ = .{
         .name = s.name,
         .id = structTypeId,
         .genericParams = genericIds,
         .fields = fields,
+        .implements = implNames,
     } });
 
     var paramTypes = try env.arena.alloc(*T.Type, fields.len);
@@ -293,11 +310,13 @@ fn registerEnum(env: *Env, e: ast.EnumDecl) InferError!void {
     }
 
     const enumTypeId = env.allocTypeId();
+    const implNames = try extractImplementNames(env.arena, e.implement);
     try env.registerTypeDef(e.name, .{ .enum_ = .{
         .name = e.name,
         .id = enumTypeId,
         .genericParams = genericIds,
         .variants = variants,
+        .implements = implNames,
     } });
     // Bind the enum name itself so `inferDecl` can look it up.
     try env.bind(e.name, try env.namedType(e.name));
