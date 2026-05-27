@@ -1061,6 +1061,7 @@ pub const StructMember = union(enum) {
 };
 
 /// `val Name = struct { ... }`  or  `val Name = struct <T> { ... }`
+/// `val Name = struct implement @Context<B, R> { ... }`
 pub const StructDecl = struct {
     name: []const u8,
     /// Auto-generated unique ID counter, formatted as `"struct_{id:0>4}"` when rendered.
@@ -1074,6 +1075,8 @@ pub const StructDecl = struct {
     annotations: []Annotation = &.{},
     /// Generic type parameters on the struct, e.g. `<T, R>`.
     genericParams: []GenericParam = &.{},
+    /// Inline interface implementations: `struct implement I1, I2 { }`.
+    implement: []TypeRef = &.{},
     members: []StructMember,
     /// Whether the last member had a trailing comma in the source.
     trailingComma: bool = false,
@@ -1082,6 +1085,8 @@ pub const StructDecl = struct {
         for (this.annotations) |*ann| ann.deinit(allocator);
         allocator.free(this.annotations);
         allocator.free(this.genericParams);
+        for (this.implement) |*im| im.deinit(allocator);
+        allocator.free(this.implement);
         for (this.members) |*m| m.deinit(allocator);
         allocator.free(this.members);
     }
@@ -1126,6 +1131,8 @@ pub const EnumDecl = struct {
     moduleComment: ?[]const u8 = null,
     annotations: []Annotation = &.{},
     genericParams: []GenericParam = &.{},
+    /// Inline interface implementations: `enum implement I1 { }`.
+    implement: []TypeRef = &.{},
     variants: []EnumVariant,
     /// Whether the last variant had a trailing comma in the source.
     trailingComma: bool = false,
@@ -1136,6 +1143,8 @@ pub const EnumDecl = struct {
         for (this.annotations) |*ann| ann.deinit(allocator);
         allocator.free(this.annotations);
         allocator.free(this.genericParams);
+        for (this.implement) |*im| im.deinit(allocator);
+        allocator.free(this.implement);
         for (this.variants) |*v| v.deinit(allocator);
         allocator.free(this.variants);
         for (this.methods) |*m| m.deinit(allocator);
@@ -1320,6 +1329,8 @@ pub const RecordDecl = struct {
     annotations: []Annotation = &.{},
     /// Generic type parameters on the record, e.g. `<T>`.
     genericParams: []GenericParam = &.{},
+    /// Inline interface implementations: `record(...) implement I1 { }`.
+    implement: []TypeRef = &.{},
     /// Inline fields declared in the parameter list.
     fields: []RecordField,
     /// Whether the last field had a trailing comma in the source.
@@ -1331,6 +1342,8 @@ pub const RecordDecl = struct {
         for (this.annotations) |*ann| ann.deinit(allocator);
         allocator.free(this.annotations);
         allocator.free(this.genericParams);
+        for (this.implement) |*im| im.deinit(allocator);
+        allocator.free(this.implement);
         for (this.fields) |*f| f.deinit(allocator);
         allocator.free(this.fields);
         for (this.methods) |*m| m.deinit(allocator);

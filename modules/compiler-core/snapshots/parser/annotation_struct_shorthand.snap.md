@@ -18,6 +18,7 @@
           }
         ],
         "genericParams": [],
+        "implement": [],
         "members": [],
         "trailingComma": false
       }

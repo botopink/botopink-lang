@@ -116,38 +116,41 @@
               "body": [
                 {
                   "expr": {
-                    "binding": {
+                    "jump": {
                       "loc": {
                         "line": 7,
                         "col": 9
                       },
                       "kind": {
-                        "assign": {
-                          "target": {
-                            "fieldAccess": {
-                              "receiver": {
-                                "identifier": {
-                                  "loc": {
-                                    "line": 7,
-                                    "col": 9
-                                  },
-                                  "kind": {
-                                    "ident": "self"
+                        "throw_": {
+                          "call": {
+                            "loc": {
+                              "line": 7,
+                              "col": 15
+                            },
+                            "kind": {
+                              "call": {
+                                "receiver": null,
+                                "callee": "Error",
+                                "is_builtin": false,
+                                "args": [
+                                  {
+                                    "label": "msg",
+                                    "value": {
+                                      "literal": {
+                                        "loc": {
+                                          "line": 7,
+                                          "col": 26
+                                        },
+                                        "kind": {
+                                          "stringLit": "Balance cannot be negative"
+                                        }
+                                      }
+                                    },
+                                    "comments": []
                                   }
-                                }
-                              },
-                              "field": "_balance"
-                            }
-                          },
-                          "op": "assign",
-                          "value": {
-                            "identifier": {
-                              "loc": {
-                                "line": 7,
-                                "col": 25
-                              },
-                              "kind": {
-                                "ident": "value"
+                                ],
+                                "trailing": []
                               }
                             }
                           }

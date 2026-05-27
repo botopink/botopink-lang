@@ -18,6 +18,7 @@
           }
         ],
         "genericParams": [],
+        "implement": [],
         "fields": [
           {
             "name": "name",

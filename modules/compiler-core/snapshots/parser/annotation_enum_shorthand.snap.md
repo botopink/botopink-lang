@@ -18,6 +18,7 @@
           }
         ],
         "genericParams": [],
+        "implement": [],
         "variants": [
           {
             "name": "Red",

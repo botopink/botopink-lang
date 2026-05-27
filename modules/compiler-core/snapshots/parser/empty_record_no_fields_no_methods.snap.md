@@ -11,6 +11,7 @@
         "moduleComment": null,
         "annotations": [],
         "genericParams": [],
+        "implement": [],
         "fields": [],
         "trailingComma": false,
         "methods": []

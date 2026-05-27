@@ -224,7 +224,7 @@ Duas formas de implementar:
 - [x] `interface` keyword/declaração no AST — já existia
 - [x] `Expr.useHook` variant para `use` como hook no body (distinto de `UseDecl` de imports)
 - [x] `TypeRef.generic` com `is_builtin` já representa `@Context<B, R>`
-- [ ] Adicionar `implement: []TypeRef` ao `StructDecl`/`EnumDecl`/`RecordDecl` para `struct implement I1, I2 { }`
+- [x] Adicionar `implement: []TypeRef` ao `StructDecl`/`EnumDecl`/`RecordDecl` para `struct implement I1, I2 { }`
 
 ### Fase 2: Parser
 

@@ -15,6 +15,7 @@
             "name": "T"
           }
         ],
+        "implement": [],
         "fields": [
           {
             "name": "first",
