@@ -5,6 +5,7 @@ fn fetch() -> i32 {
 }
 fn safe() -> i32 {
     val r = try fetch() catch 0;
+    @print(r);
     return r;
 }
 ```
@@ -23,6 +24,7 @@ catch
         _Err ->
             0(_Err)
 end,
+    io:format("~p~n", [R]),
     R.
 ```
 

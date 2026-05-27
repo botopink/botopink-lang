@@ -97,7 +97,6 @@ pub const TokenKind = enum {
     @"var",
     @"comptime",
     syntax,
-    typeinfo,
     @"break",
     loop,
     @"continue",

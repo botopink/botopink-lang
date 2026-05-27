@@ -67,7 +67,7 @@ phases share the same shape:
 - `binding`, `call`, `function`, `collection`, `comptime_`
 
 Type annotations always use **`TypeRef`** (`named`, `array`, `tuple_`,
-`optional`, `errorUnion`, `function`). Record/struct/enum/interface shorthand
+`optional`, `function`). Record/struct/enum/interface shorthand
 declarations map to the same AST nodes as the long-form equivalents.
 
 Legacy variants (`controlFlow`, `staticCall`) have been removed — do not

@@ -25,7 +25,6 @@
             },
             "typeName": "fn",
             "modifier": "syntax",
-            "typeinfoConstraints": null,
             "fnType": {
               "params": [
                 {

@@ -6,6 +6,7 @@ fn main() {
     val result = 1
         |> double
         |> inc;
+    @print(result);
 }
 ```
 
@@ -21,6 +22,7 @@ function inc(x) {
 
 function main() {
     const result = (inc((double(1))));
+    console.log(result);
 }
 
 function _botopink_main() {
@@ -40,4 +42,5 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
+3
 ```

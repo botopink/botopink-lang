@@ -5,6 +5,7 @@ fn fetch() -> i32 {
 }
 fn process() -> i32 {
     val r = try fetch();
+    @print(r);
     return r;
 }
 ```
@@ -18,6 +19,7 @@ fetch() ->
 
 process() ->
     R = fetch(),
+    io:format("~p~n", [R]),
     R.
 ```
 

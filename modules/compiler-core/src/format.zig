@@ -257,38 +257,28 @@ pub const Formatter = struct {
                 try this.fmtTypeRef(p.typeRef),
             });
         }
-        // Typeinfo params use a special form: `comptime: typeinfo TypeVar [constraints]`
-        // where `p.name` holds the type-variable name (e.g. `T`).
-        if (p.modifier == .typeinfo) {
-            const constraintDoc: *const Doc = if (p.typeinfoConstraints) |cs| blk: {
-                var parts = try this.arena.alloc(*const Doc, cs.len);
-                for (cs, 0..) |c, i| parts[i] = try this.text(c);
-                const joined = try this.join(parts, try this.text(" | "));
-                break :blk try this.concat(try this.text(" "), joined);
-            } else this.nil();
-            return this.concatAll(&.{
-                try this.text("comptime: typeinfo "),
-                try this.text(p.name),
-                constraintDoc,
-            });
-        }
-        // For comptime and syntax params the modifier appears between the name and
-        // the colon: `name comptime: [syntax] type`.
-        const preColon: *const Doc = switch (p.modifier) {
-            .none => try this.text(": "),
-            .@"comptime" => try this.text(" comptime: "),
-            .syntax => try this.text(" comptime: syntax "),
-            .typeinfo => unreachable, // handled above
-        };
         const typeDoc: *const Doc = if (p.modifier == .syntax) blk: {
             if (p.fnType) |ft| break :blk try this.fmtFnType(ft);
             break :blk try this.fmtTypeRef(p.typeRef);
         } else try this.fmtTypeRef(p.typeRef);
-        return this.concatAll(&.{
-            try this.text(p.name),
-            preColon,
-            typeDoc,
-        });
+        return switch (p.modifier) {
+            .none => this.concatAll(&.{
+                try this.text(p.name),
+                try this.text(": "),
+                typeDoc,
+            }),
+            .@"comptime" => this.concatAll(&.{
+                try this.text("comptime "),
+                try this.text(p.name),
+                try this.text(": "),
+                typeDoc,
+            }),
+            .syntax => this.concatAll(&.{
+                try this.text(p.name),
+                try this.text(" comptime: syntax "),
+                typeDoc,
+            }),
+        };
     }
 
     fn fmtParams(this: *Formatter, params: []const ast.Param) !*const Doc {
@@ -541,8 +531,8 @@ pub const Formatter = struct {
             .call => |c| switch (c.kind) {
                 .call => |cc| try this.fmtCall(cc),
                 .pipeline => |op| blk: {
-                // Flatten left-associative pipeline chain: ((a |> b) |> c) |> d → [a, b, c, d]
-                // Also collect per-step comments (comment[i] is before |> items[i], i >= 1).
+                    // Flatten left-associative pipeline chain: ((a |> b) |> c) |> d → [a, b, c, d]
+                    // Also collect per-step comments (comment[i] is before |> items[i], i >= 1).
                     var items: std.ArrayList(ast.Expr) = .empty;
                     defer items.deinit(this.arena);
                     var stepComments: std.ArrayList(?[]const u8) = .empty;
@@ -1788,11 +1778,6 @@ pub const Formatter = struct {
             .named => |n| this.text(n),
             .array => |elem| this.concat(try this.fmtTypeRef(elem.*), try this.text("[]")),
             .optional => |inner| this.concat(try this.text("?"), try this.fmtTypeRef(inner.*)),
-            .errorUnion => |eu| this.concatAll(&.{
-                try this.fmtTypeRef(eu.errorType.*),
-                try this.text("!"),
-                try this.fmtTypeRef(eu.payload.*),
-            }),
             .tuple_ => |elems| blk: {
                 var docs = try this.arena.alloc(*const Doc, elems.len);
                 for (elems, 0..) |e, i| docs[i] = try this.fmtTypeRef(e);
@@ -1818,6 +1803,21 @@ pub const Formatter = struct {
                     inner,
                     try this.text(") -> "),
                     try this.fmtTypeRef(f.returnType.*),
+                });
+            },
+            .builtin => |b| blk: {
+                var argDocs = try this.arena.alloc(*const Doc, b.args.len);
+                for (b.args, 0..) |a, i| argDocs[i] = try this.fmtTypeRef(a);
+                const inner = if (b.args.len == 0)
+                    this.nil()
+                else
+                    try this.join(argDocs, try this.text(", "));
+                break :blk this.concatAll(&.{
+                    try this.text("@"),
+                    try this.text(b.name),
+                    try this.text("("),
+                    inner,
+                    try this.text(")"),
                 });
             },
         };

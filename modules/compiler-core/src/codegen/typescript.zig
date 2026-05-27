@@ -386,11 +386,6 @@ const Emitter = struct {
                 try self.emitTypeRef(inner.*);
                 try self.w(" | null");
             },
-            .errorUnion => |eu| {
-                try self.emitTypeRef(eu.errorType.*);
-                try self.w(" | ");
-                try self.emitTypeRef(eu.payload.*);
-            },
             .function => |f| {
                 try self.w("(");
                 for (f.params, 0..) |p, i| {
@@ -399,6 +394,23 @@ const Emitter = struct {
                 }
                 try self.w(") => ");
                 try self.emitTypeRef(f.returnType.*);
+            },
+            .builtin => |b| {
+                if (std.mem.eql(u8, b.name, "Result") and b.args.len == 2) {
+                    try self.w("{ tag: \"Ok\"; data: ");
+                    try self.emitTypeRef(b.args[0]);
+                    try self.w(" } | { tag: \"Error\"; error: ");
+                    try self.emitTypeRef(b.args[1]);
+                    try self.w(" }");
+                } else {
+                    try self.w(b.name);
+                    try self.w("<");
+                    for (b.args, 0..) |a, i| {
+                        if (i > 0) try self.w(", ");
+                        try self.emitTypeRef(a);
+                    }
+                    try self.w(">");
+                }
             },
         }
     }

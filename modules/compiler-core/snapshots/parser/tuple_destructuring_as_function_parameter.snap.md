@@ -25,7 +25,6 @@
             },
             "typeName": "",
             "modifier": "none",
-            "typeinfoConstraints": null,
             "fnType": null,
             "destruct": {
               "tuple_": [

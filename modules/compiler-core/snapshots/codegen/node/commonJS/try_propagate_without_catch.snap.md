@@ -5,6 +5,7 @@ fn fetch() -> i32 {
 }
 fn process() -> i32 {
     val r = try fetch();
+    @print(r);
     return r;
 }
 ```
@@ -17,6 +18,7 @@ function fetch() {
 
 function process() {
     const r = fetch();
+    console.log(r);
     return r;
 }
 ```

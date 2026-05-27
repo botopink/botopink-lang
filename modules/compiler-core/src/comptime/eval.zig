@@ -1,13 +1,15 @@
 /// Generic comptime evaluation interface.
 ///
 /// `ComptimeEntry`  — one expression to evaluate, with its generated ID.
-/// `Runtime`        — which backend to use (node today, erlang in the future).
+/// `Runtime`        — which backend to use (node, erlang, wasm).
 /// `RunResult`      — what every backend must return.
 /// `evaluate()`     — dispatches to the selected runtime backend.
 const std = @import("std");
 const ast = @import("../ast.zig");
 const node = @import("./runtime/node.zig");
 const erlang = @import("./runtime/erlang.zig");
+const wasm = @import("./runtime/wasm.zig");
+const beam = @import("./runtime/beam.zig");
 
 // ── Shared types ──────────────────────────────────────────────────────────────
 
@@ -32,11 +34,15 @@ pub const RunResult = struct {
 pub const Runtime = enum {
     node,
     erlang,
+    wasm,
+    beam,
 
     pub fn name(self: Runtime) []const u8 {
         return switch (self) {
             .node => "node",
             .erlang => "erlang",
+            .wasm => "wasm",
+            .beam => "beam",
         };
     }
 };
@@ -57,5 +63,7 @@ pub fn evaluate(
     return switch (runtime) {
         .node => node.run(allocator, io, entries, build_root),
         .erlang => erlang.run(allocator, io, entries, build_root),
+        .wasm => wasm.run(allocator, io, entries, build_root),
+        .beam => beam.run(allocator, io, entries, build_root),
     };
 }

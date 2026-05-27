@@ -67,6 +67,8 @@ pub const ParseErrorType = enum {
     listSpreadNotLast,
     /// Useless spread with no elements to its left (e.g. [..wibble])
     uselessSpread,
+    /// Removed error union syntax `T!E` (use `@Result(D, E)` instead)
+    removedErrorUnion,
 };
 
 pub const ParseErrorInfo = struct {
@@ -665,21 +667,22 @@ pub const Parser = struct {
         return ValDecl{ .name = name, .isPub = isPub, .typeAnnotation = typeAnnotation, .value = value_ptr };
     }
 
-    /// Parses a full type reference, including `E!T` error-union postfix.
+    /// Parses a full type reference.
     fn parseTypeRef(this: *This, alloc: std.mem.Allocator) ParseError!ast.TypeRef {
-        var base = try this.parseBaseTypeRef(alloc);
-        errdefer base.deinit(alloc);
-        // E!T ---- error union: base is the error type, rhs is the payload
-        if (this.match(.bang)) {
-            var payload = try this.parseBaseTypeRef(alloc);
-            errdefer payload.deinit(alloc);
-            const errPtr = try alloc.create(ast.TypeRef);
-            errPtr.* = base;
-            const payPtr = try alloc.create(ast.TypeRef);
-            payPtr.* = payload;
-            return ast.TypeRef{ .errorUnion = .{ .errorType = errPtr, .payload = payPtr } };
+        const ref = try this.parseBaseTypeRef(alloc);
+        if (this.check(.bang)) {
+            const tok = this.peek();
+            this.parseError = .{
+                .kind = .removedErrorUnion,
+                .start = tok.col - 1,
+                .end = tok.col - 1 + tok.lexeme.len,
+                .lexeme = tok.lexeme,
+                .line = tok.line,
+                .col = tok.col,
+            };
+            return ParseError.UnexpectedToken;
         }
-        return base;
+        return ref;
     }
 
     /// Parses a base type ref: `?T`, `#(T1,T2)`, plain name with optional `[]` wraps.
@@ -742,6 +745,23 @@ pub const Parser = struct {
                 .params = paramsSlice,
                 .returnType = returnPtr,
             } };
+        }
+        // @Name(T1, T2) ---- builtin type constructor
+        if (this.check(.builtinIdent)) {
+            const tok = this.advance();
+            const name = tok.lexeme[1..];
+            _ = try this.consume(.leftParenthesis);
+            var args: std.ArrayList(ast.TypeRef) = .empty;
+            errdefer {
+                for (args.items) |*a| a.deinit(alloc);
+                args.deinit(alloc);
+            }
+            while (!this.check(.rightParenthesis) and !this.check(.endOfFile)) {
+                try args.append(alloc, try this.parseTypeRef(alloc));
+                if (!this.match(.comma)) break;
+            }
+            _ = try this.consume(.rightParenthesis);
+            return ast.TypeRef{ .builtin = .{ .name = name, .args = try args.toOwnedSlice(alloc) } };
         }
         // Plain named type, possibly followed by [] for array
         const nameTok = try this.consumeTypeName();
@@ -1857,18 +1877,15 @@ pub const Parser = struct {
     ///
     /// Grammar:
     ///   param          ::= record_destruct
-    ///                    | 'comptime' ':' typeinfo_body       (typeinfo param)
     ///                    | param_name ['comptime'] ':' value_param
     ///
     ///   record_destruct ::= '{' ident (',' ident)* '}' ':' type_name
-    ///   typeinfo_body   ::= 'typeinfo' type_var (type_name ('|' type_name)*)?
     ///   value_param     ::= ['syntax'] 'fn' '(' fn_param* ')' ('->' type_name)?
     ///                     | ['syntax'] type_name
     ///
     /// The `comptime` keyword marks a compile-time param. It may appear:
     ///   - before the name:  `comptime name : type`  (stdlib / builtin style)
     ///   - after the name:   `name comptime : type`  (inline style)
-    ///   - as typeinfo slot: `comptime : typeinfo TypeVar [constraints]`
     ///
     /// The post-colon `syntax` keyword overrides the modifier to `.syntax`.
     fn parseParam(this: *This, alloc: std.mem.Allocator) ParseError!Param {
@@ -1932,42 +1949,13 @@ pub const Parser = struct {
             };
         }
 
-        // ── comptime-prefixed forms ───────────────────────────────────────────
-        // Peek one ahead to tell apart:
-        //   `comptime :` → typeinfo slot   (`comptime: typeinfo TypeVar [constraints]`)
-        //   `comptime id :` → pre-name modifier (`comptime name: type`)
+        // ── comptime-prefixed form: `comptime name : type` ─────────────────
         if (this.check(.@"comptime")) {
-            if (this.peekAt(1).kind == .colon) {
-                // Typeinfo param: `comptime : typeinfo TypeVar [constraints]`
-                _ = this.advance(); // consume 'comptime'
-                _ = try this.consume(.colon);
-                _ = try this.consume(.typeinfo);
-                const varName = (try this.consumeTypeName()).lexeme;
-                if (this.check(.rightParenthesis) or this.check(.comma)) {
-                    return Param{ .name = varName, .typeRef = .{ .named = "" }, .modifier = .typeinfo };
-                }
-                const firstType = try this.consumeTypeName();
-                var constraints: std.ArrayList([]const u8) = .empty;
-                errdefer constraints.deinit(alloc);
-                try constraints.append(alloc, firstType.lexeme);
-                while (this.match(.verticalBar)) {
-                    try constraints.append(alloc, (try this.consumeTypeName()).lexeme);
-                }
-                return Param{
-                    .name = varName,
-                    .typeRef = .{ .named = firstType.lexeme },
-                    .typeName = firstType.lexeme,
-                    .modifier = .typeinfo,
-                    .typeinfoConstraints = try constraints.toOwnedSlice(alloc),
-                };
-            } else {
-                // Pre-name comptime: `comptime name : type`
-                _ = this.advance(); // consume 'comptime'
-                const name = (try this.consumeParamName()).lexeme;
-                _ = try this.consume(.colon);
-                const typeRef = try this.parseTypeRef(alloc);
-                return Param{ .name = name, .typeRef = typeRef, .modifier = .@"comptime" };
-            }
+            _ = this.advance(); // consume 'comptime'
+            const name = (try this.consumeParamName()).lexeme;
+            _ = try this.consume(.colon);
+            const typeRef = try this.parseTypeRef(alloc);
+            return Param{ .name = name, .typeRef = typeRef, .modifier = .@"comptime" };
         }
 
         // ── regular param: name ['comptime'] ':' ['syntax'] type_expr ───────────

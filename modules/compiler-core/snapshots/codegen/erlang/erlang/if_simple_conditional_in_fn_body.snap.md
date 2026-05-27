@@ -2,6 +2,7 @@
 ```botopink
 fn sign(n: i32) -> string {
     val r = if (n > 0) { "positive"; };
+    @print(r);
     return r;
 }
 ```
@@ -16,6 +17,7 @@ sign(N) ->
             <<"positive">>;
         _ -> ok
     end,
+    io:format("~p~n", [R]),
     R.
 ```
 

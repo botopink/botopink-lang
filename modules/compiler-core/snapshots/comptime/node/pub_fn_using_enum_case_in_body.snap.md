@@ -14,55 +14,10 @@ pub fn label(d: Direction) -> string {
         West -> "W";
         _ -> "?";
     };
+    @print(result);
     return result;
 }
 val n = label(Direction.North);
-```
-
------ TYPED AST JSON -- main.json
-```json
-{
-  "declarations": [
-    {
-      "ast": "enum_def",
-      "name": "Direction",
-      "id": 0
-    },
-    {
-      "ast": "fn_def",
-      "name": "label",
-      "is_pub": true,
-      "params": [
-        {
-          "name": "d",
-          "type": "Direction"
-        }
-      ],
-      "return_type": "string",
-      "body": [
-        {
-          "source": "val result = case d {"
-        },
-        {
-          "source": "return result;"
-        }
-      ]
-    },
-    {
-      "ast": "val",
-      "indent": "n",
-      "return_type": "string",
-      "expr": {
-        "ast": "call",
-        "params": [
-          {
-            "value": "Direction"
-          }
-        ],
-        "return_type": "string"
-      }
-    }
-  ]
-}
+@print(n);
 ```
 

@@ -26,7 +26,6 @@
                 },
                 "typeName": "",
                 "modifier": "none",
-                "typeinfoConstraints": null,
                 "fnType": null,
                 "destruct": null,
                 "defaultVal": null
@@ -38,7 +37,6 @@
                 },
                 "typeName": "",
                 "modifier": "none",
-                "typeinfoConstraints": null,
                 "fnType": null,
                 "destruct": null,
                 "defaultVal": null
@@ -50,7 +48,6 @@
                 },
                 "typeName": "",
                 "modifier": "none",
-                "typeinfoConstraints": null,
                 "fnType": null,
                 "destruct": null,
                 "defaultVal": null

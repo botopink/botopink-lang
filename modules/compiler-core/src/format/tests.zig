@@ -363,7 +363,7 @@ test "format: pub fn ---- simple with return type" {
 
 test "format: pub fn ---- comptime params" {
     try assertFormat(std.testing.allocator,
-        \\pub fn repeat(s comptime: string, n comptime: int) -> string {
+        \\pub fn repeat(comptime s: string, comptime n: int) -> string {
         \\    todo;
         \\}
     );
@@ -377,17 +377,9 @@ test "format: pub fn ---- syntax fn type param" {
     );
 }
 
-test "format: pub fn ---- typeinfo no constraint" {
+test "format: pub fn ---- typeparam no constraint" {
     try assertFormat(std.testing.allocator,
-        \\pub fn wrap(comptime: typeinfo T) -> type {
-        \\    todo;
-        \\}
-    );
-}
-
-test "format: pub fn ---- typeinfo with constraints" {
-    try assertFormat(std.testing.allocator,
-        \\pub fn maxval(comptime: typeinfo T int | float) -> T {
+        \\pub fn wrap(comptime T: typeparam) -> type {
         \\    todo;
         \\}
     );

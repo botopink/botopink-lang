@@ -3,6 +3,7 @@
 fn increment() {
     var count = 0;
     count += 1;
+    @print(count);
 }
 ```
 
@@ -12,7 +13,8 @@ fn increment() {
 
 increment() ->
     Count = 0,
-    Count = Count + 1.
+    Count = Count + 1,
+    io:format("~p~n", [Count]).
 ```
 
 ----- RUN LOG -----

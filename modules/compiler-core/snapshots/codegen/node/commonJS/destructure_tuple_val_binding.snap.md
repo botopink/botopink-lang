@@ -2,6 +2,7 @@
 ```botopink
 fn extract() {
     val #(a, b) = #(12, "hello");
+    @print(a, b);
 }
 ```
 
@@ -9,6 +10,7 @@ fn extract() {
 ```javascript
 function extract() {
     const [ a, b ] = [12, "hello"];
+    console.log(a, b);
 }
 ```
 

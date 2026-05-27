@@ -2,6 +2,7 @@
 ```botopink
 fn extract() {
     val #(a, b) = #(12, "hello");
+    @print(a, b);
 }
 ```
 
@@ -10,7 +11,8 @@ fn extract() {
 -module(main).
 
 extract() ->
-    {A, B} = {12, <<"hello">>}.
+    {A, B} = {12, <<"hello">>},
+    io:format("~p~n", [A, B]).
 ```
 
 ----- RUN LOG -----

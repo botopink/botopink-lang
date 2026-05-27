@@ -105,7 +105,7 @@ fn assertComptimeAst(
     modules: []const Module,
 ) !void {
     const io = std.testing.io;
-    const runtimes = [_]comptimeMod.ComptimeRuntime{ .node, .erlang };
+    const runtimes = [_]comptimeMod.ComptimeRuntime{ .node, .erlang, .wasm, .beam };
     const base_slug = comptime slugFromSrc(loc);
 
     for (runtimes) |runtime| {
@@ -123,10 +123,12 @@ fn assertComptimeAst(
             try outputs.append(allocator, output);
         }
 
-        // Save snapshots in separate directories: comptime/node/ and comptime/erlang/
+        // Save snapshots in separate directories per runtime
         const runtime_path = switch (runtime) {
             .node => "comptime/node",
             .erlang => "comptime/erlang",
+            .wasm => "comptime/wasm",
+            .beam => "comptime/beam",
         };
         var snap_buf: [512]u8 = undefined;
         const snap_slug = try std.fmt.bufPrint(&snap_buf, "{s}/{s}", .{ runtime_path, base_slug });
@@ -330,12 +332,14 @@ test "infer: integer and float literals" {
     try assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val x = 42;
         \\val y = 3.14;
+        \\@print(x, y);
     );
 }
 
 test "infer: string literal" {
     try assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val greeting = "hello";
+        \\@print(greeting);
     );
 }
 
@@ -344,6 +348,7 @@ test "infer: binary operators" {
         \\val sum = 1 + 2;
         \\val product = 3.0 * 2.0;
         \\val joined = "a" + "b";
+        \\@print(sum, product, joined);
     );
 }
 
@@ -371,6 +376,7 @@ test "infer: record constructor" {
     try assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val Point = record { x: i32, y: i32 };
         \\val p = Point(x: 1, y: 2);
+        \\@print(p);
     );
 }
 
@@ -378,6 +384,7 @@ test "infer: generic record Pair<A, B>" {
     try assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val Pair = record <A, B> { first: A, second: B };
         \\val p = Pair(first: 42, second: "hello");
+        \\@print(p);
     );
 }
 
@@ -485,6 +492,7 @@ test "infer: case on integer with wildcard" {
         \\    0 -> "zero";
         \\    _ -> "nonzero";
         \\};
+        \\@print(desc);
     );
 }
 
@@ -494,6 +502,7 @@ test "infer: case with OR patterns" {
         \\    0 | 2 | 4 -> "even";
         \\    _ -> "odd";
         \\};
+        \\@print(parity);
     );
 }
 
@@ -522,6 +531,7 @@ test "infer: pub fn basic ---- greet returns string" {
         \\    return "Hello, " + name;
         \\}
         \\val msg = greet("world");
+        \\@print(msg);
     );
 }
 
@@ -538,9 +548,11 @@ test "infer: pub fn with local val binding in body" {
     try assertComptimeAstSingle(std.testing.allocator, @src(),
         \\pub fn compute(x: i32) -> i32 {
         \\    val doubled = x + x;
+        \\    @print(doubled);
         \\    return doubled;
         \\}
         \\val result = compute(21);
+        \\@print(result);
     );
 }
 
@@ -578,9 +590,11 @@ test "infer: pub fn using enum + case in body" {
         \\        West -> "W";
         \\        _ -> "?";
         \\    };
+        \\    @print(result);
         \\    return result;
         \\}
         \\val n = label(Direction.North);
+        \\@print(n);
     );
 }
 
@@ -1729,5 +1743,96 @@ test "variant inference: pattern matching on generic enum" {
         \\        None -> None;
         \\    };
         \\};
+    );
+}
+
+// ── @Result type resolution ──────────────────────────────────────────────────
+
+test "@Result: try unwraps Result to D" {
+    try assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\record AppError { msg: string }
+        \\fn fetch() -> @Result(i32, AppError) {
+        \\    throw AppError(msg: "fail");
+        \\}
+        \\fn process() -> i32 {
+        \\    val r = try fetch() catch 0;
+        \\    return r;
+        \\}
+    );
+}
+
+test "@Result: try propagates without catch" {
+    try assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\record IoError { path: string }
+        \\fn load() -> @Result(string, IoError) {
+        \\    throw IoError(path: "/data");
+        \\}
+        \\fn run() -> @Result(string, IoError) {
+        \\    val s = try load();
+        \\    return s;
+        \\}
+    );
+}
+
+test "@Result: multiple catch with different types" {
+    try assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\record UserError { msg: string }
+        \\fn getName() -> @Result(string, UserError) {
+        \\    throw UserError(msg: "missing");
+        \\}
+        \\fn getAge() -> @Result(i32, UserError) {
+        \\    throw UserError(msg: "missing");
+        \\}
+        \\fn loadUser() {
+        \\    val name = try getName() catch "anon";
+        \\    val age = try getAge() catch 0;
+        \\}
+    );
+}
+
+// ── @print ─────��─────────────────────────────────────────────────────────────
+
+test "@print: single string argument infers void" {
+    try assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    @print("hello");
+        \\}
+    );
+}
+
+test "@print: multiple arguments infers void" {
+    try assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    @print("x =", 42, true);
+        \\}
+    );
+}
+
+test "@print: expression argument infers void" {
+    try assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    val x = 10;
+        \\    @print(x + 5);
+        \\}
+    );
+}
+
+test "@print: in if branch infers void" {
+    try assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\fn check(x: i32) {
+        \\    if x > 0 {
+        \\        @print("positive");
+        \\    } else {
+        \\        @print("non-positive");
+        \\    }
+        \\}
+    );
+}
+
+test "@print: string interpolation argument" {
+    try assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\fn greet(name: string) {
+        \\    @print("Hello, " + name + "!");
+        \\}
     );
 }

@@ -3,6 +3,7 @@
 fn increment() {
     var count = 0;
     count += 1;
+    @print(count);
 }
 ```
 
@@ -11,6 +12,7 @@ fn increment() {
 function increment() {
     let count = 0;
     count += 1;
+    console.log(count);
 }
 ```
 

@@ -88,14 +88,15 @@ zig build run       # compile and run the botopink CLI
 - Expressions: literals, field access, method calls, binary operators, unary operators, `return`, `throw`, `try`, `if`, `loop`, `break`, `continue`, `yield`, `comptime`, pipeline `|>`, and anonymous `fn(...) { ... }`
 - Pipeline operator: `a |> b |> c` — left-associative function composition
 - Lambda syntax: `{ params -> body }` — inline anonymous function
-- Optional types `?T`, error unions `E!T`, array types `T[]`, tuple types `#(T1,T2)` in type annotations
+- Optional types `?T`, array types `T[]`, tuple types `#(T1,T2)` in type annotations
+- `@Result(D, E)` builtin type — `Ok(data)` / `Error(error)` enum for error handling
 - Array literals `[e1, e2, ...]`, tuple literals `#(e1, e2, ...)`
-- `try expr [catch handler]` — error-union unwrapping with optional inline error handler
+- `try expr [catch handler]` — `@Result` unwrapping with optional inline error handler
 - `catch` as universal tail operator for error propagation
 - `if (expr) { binding -> body }` — null-check with value binding
 - `val/var name [: TypeRef] = expr` — optional type annotation on local bindings
 - **Mandatory type annotations on function parameters**: `fn f(x: i32)` — required
-- Parameter modifiers: `comptime`, `syntax`, `typeinfo` (with optional constraints)
+- Parameter modifiers: `comptime`, `syntax`; type params via `comptime T: typeparam`
 - Pattern matching: `case expr { pattern -> body; ... }` with OR patterns, list patterns, wildcard
 - Structured parse error reporting with position and context
 - **Allocator never stored** — `Parser.init(tokens)` receives no allocator
@@ -103,7 +104,7 @@ zig build run       # compile and run the botopink CLI
 ### AST
 - Typed representation of all language nodes via Zig's `union(enum)`
 - `Param.typeRef: TypeRef` — structured type references in function parameters (not flat strings)
-- `TypeRef` union: `named`, `array`, `tuple_`, `optional`, `errorUnion`, `function` — covers all type annotation forms
+- `TypeRef` union: `named`, `array`, `tuple_`, `optional`, `function` — covers all type annotation forms
 - `ValDecl`, `FnDecl`, `DelegateDecl`, `RecordDecl`, `StructDecl`, `EnumDecl`, `InterfaceDecl`
 - Generic parameters, parameter modifiers, getters/setters
 - `ExprOf(phase)` categorized families: `literal`, `identifier`, `binaryOp`, `unaryOp`, `jump`, `branch`, `loop`, `binding`, `call`, `function`, `collection`, `comptime_`

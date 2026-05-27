@@ -41,7 +41,7 @@ comptime/
 
 - Primitive: `i32`, `i64`, `u32`, `u64`, `f32`, `f64`, `bool`, `string`,
   `void`, `never`.
-- Composite: `array`, `tuple`, `record`, `enum_`, `interface`, `errorUnion`.
+- Composite: `array`, `tuple`, `record`, `enum_`, `interface`.
 - Polymorphic: `var_` (type variable), `forall` (generalised scheme),
   `function`.
 

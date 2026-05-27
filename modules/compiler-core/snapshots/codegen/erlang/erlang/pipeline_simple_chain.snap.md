@@ -6,6 +6,7 @@ fn main() {
     val result = 1
         |> double
         |> inc;
+    @print(result);
 }
 ```
 
@@ -21,7 +22,8 @@ inc(X) ->
     (X + 1).
 
 main() ->
-    Result = Inc(Double(1)).
+    Result = Inc(Double(1)),
+    io:format("~p~n", [Result]).
 
 '_botopink_main'() ->
     main().

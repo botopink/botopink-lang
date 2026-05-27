@@ -184,7 +184,7 @@ fn count_to(n: i32) {
 val n: i32 = 0;
 val xs: Array<i32> = [1, 2];
 val opt: ?string = none;             // optional
-val result: i32!ParseError = parse(); // error union
+val result: @Result(i32, ParseError) = parse(); // result type
 val pair: (i32, string) = (1, "x");  // tuple
 val cb: fn(i32) i32 = double;        // function type
 ```

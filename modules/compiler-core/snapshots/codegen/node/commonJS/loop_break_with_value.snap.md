@@ -5,6 +5,9 @@ fn find(arr: i32[]) -> i32 {
         if (x > 10) { break x; };
     };
 }
+fn main() {
+    @print(find([5, 8, 15, 20]));
+}
 ```
 
 ----- JAVASCRIPT -- main.js
@@ -14,10 +17,21 @@ function find(arr) {
     (() => { if ((x > 10)) { return return x; } })();
 };
 }
+
+function main() {
+    console.log(find([5, 8, 15, 20]));
+}
+
+function _botopink_main() {
+    main();
+}
+_botopink_main();
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
+
+
 
 ```
 

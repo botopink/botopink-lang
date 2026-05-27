@@ -54,6 +54,10 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "This spread does nothing",
             .hint = "Try prepending elements: [1, 2, ..list]",
         },
+        .removedErrorUnion => .{
+            .message = "Error union syntax `T!E` has been removed",
+            .hint = "Use `@Result(D, E)` instead, e.g. `fn fetch() -> @Result(i32, MyError)`",
+        },
     };
 }
 

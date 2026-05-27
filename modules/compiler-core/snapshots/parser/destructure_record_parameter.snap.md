@@ -18,7 +18,6 @@
             },
             "typeName": "Person",
             "modifier": "none",
-            "typeinfoConstraints": null,
             "fnType": null,
             "destruct": {
               "names": {

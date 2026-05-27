@@ -20,7 +20,6 @@ const Parser = @import("../parser.zig").Parser;
 const Module = @import("../module.zig").Module;
 const comptimeMod = @import("../comptime.zig");
 
-
 pub const InferError = error{ TypeError, OutOfMemory };
 
 /// A single resolved top-level binding: the declaration name and its inferred type.
@@ -486,11 +485,6 @@ fn appendTypeRefStr(buf: *std.ArrayListUnmanaged(u8), allocator: std.mem.Allocat
             try buf.append(allocator, '?');
             try appendTypeRefStr(buf, allocator, inner.*);
         },
-        .errorUnion => |eu| {
-            try appendTypeRefStr(buf, allocator, eu.errorType.*);
-            try buf.append(allocator, '!');
-            try appendTypeRefStr(buf, allocator, eu.payload.*);
-        },
         .function => |f| {
             try buf.appendSlice(allocator, "fn(");
             for (f.params, 0..) |p, i| {
@@ -499,6 +493,16 @@ fn appendTypeRefStr(buf: *std.ArrayListUnmanaged(u8), allocator: std.mem.Allocat
             }
             try buf.appendSlice(allocator, ") -> ");
             try appendTypeRefStr(buf, allocator, f.returnType.*);
+        },
+        .builtin => |b| {
+            try buf.append(allocator, '@');
+            try buf.appendSlice(allocator, b.name);
+            try buf.append(allocator, '(');
+            for (b.args, 0..) |a, i| {
+                if (i > 0) try buf.appendSlice(allocator, ", ");
+                try appendTypeRefStr(buf, allocator, a);
+            }
+            try buf.append(allocator, ')');
         },
     }
 }
@@ -655,7 +659,23 @@ fn inferBuiltinCallReturnType(
         if (typedArgs.len > 0) return typedArgs[0].value.getType();
         return env.freshVar();
     }
+    if (std.mem.eql(u8, callee, "Result")) {
+        const args = try env.arena.alloc(*T.Type, typedArgs.len);
+        for (typedArgs, 0..) |a, i| args[i] = a.value.getType();
+        return env.namedTypeArgs("Result", args);
+    }
     return env.namedType("void");
+}
+
+fn unwrapResultType(ty: *T.Type) ?*T.Type {
+    const t = ty.deref();
+    return switch (t.*) {
+        .named => |n| if (std.mem.eql(u8, n.name, "Result") and n.args.len >= 1)
+            n.args[0]
+        else
+            null,
+        else => null,
+    };
 }
 
 /// Shallow structural equality check ---- used by case-arm deduplication.
@@ -703,14 +723,6 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
             args[0] = innerTy;
             return env.namedTypeArgs("optional", args);
         },
-        .errorUnion => |eu| {
-            const errTy = try resolveTypeRefInContext(env, eu.errorType.*, genericMap);
-            const payTy = try resolveTypeRefInContext(env, eu.payload.*, genericMap);
-            const args = try env.arena.alloc(*T.Type, 2);
-            args[0] = errTy;
-            args[1] = payTy;
-            return env.namedTypeArgs("errorUnion", args);
-        },
         .function => |f| {
             // For function types, resolve params and return type
             const paramTypes = try env.arena.alloc(*T.Type, f.params.len);
@@ -722,6 +734,13 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
             for (f.params, 0..) |_, i| args[i] = paramTypes[i];
             args[f.params.len] = returnType;
             return env.namedTypeArgs("function", args);
+        },
+        .builtin => |b| {
+            const args = try env.arena.alloc(*T.Type, b.args.len);
+            for (b.args, 0..) |a, i| {
+                args[i] = try resolveTypeRefInContext(env, a, genericMap);
+            }
+            return env.namedTypeArgs(b.name, args);
         },
     }
 }
@@ -1136,7 +1155,8 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
         },
         .try_ => |e| {
             const valPtr: ?*TypedExpr = if (e) |ev| try makeTypedPtr(env, try inferExprTyped(env, ev.*)) else null;
-            const ty = if (valPtr) |vp| vp.getType() else try env.freshVar();
+            const rawTy = if (valPtr) |vp| vp.getType() else try env.freshVar();
+            const ty = unwrapResultType(rawTy) orelse rawTy;
             return TypedExpr{ .jump = .{ .loc = loc, .type_ = ty, .kind = .{ .try_ = valPtr } } };
         },
         .@"break" => |e| {
@@ -1199,11 +1219,17 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
             const exprPtr = try makeTypedPtr(env, exprTyped);
             const handlerTyped = try inferExprTyped(env, tc.handler.*);
             const handlerPtr = try makeTypedPtr(env, handlerTyped);
-            // Skip unification when the handler diverges (throw/return → void type).
-            if (!handlerTyped.getType().isNamed("void")) {
-                try unify(env, exprTyped.getType(), handlerTyped.getType());
+            const rawTy = exprTyped.getType();
+            const resultTy = unwrapResultType(rawTy) orelse rawTy;
+            const handlerTy = handlerTyped.getType().deref();
+            const effectiveTy = switch (handlerTy.*) {
+                .func => |f| f.ret,
+                else => handlerTyped.getType(),
+            };
+            if (!effectiveTy.isNamed("void")) {
+                try unify(env, resultTy, effectiveTy);
             }
-            return TypedExpr{ .branch = .{ .loc = loc, .type_ = exprTyped.getType(), .kind = .{ .tryCatch = .{
+            return TypedExpr{ .branch = .{ .loc = loc, .type_ = resultTy, .kind = .{ .tryCatch = .{
                 .expr = exprPtr,
                 .handler = handlerPtr,
             } } } };
@@ -1604,7 +1630,6 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
             } } } };
         },
 
-
         .grouped => |e| {
             return try inferExprTyped(env, e.*);
         },
@@ -1628,11 +1653,11 @@ fn inferComptimeExpr(env: *Env, ct: ast.ComptimeExprOf(.untyped), loc: ast.Loc) 
             } } } };
         },
 
-        .@"assert" => |a| {
+        .assert => |a| {
             const condTyped = try inferExprTyped(env, a.condition.*);
             const condPtr = try makeTypedPtr(env, condTyped);
             const msgPtr = if (a.message) |msg| try makeTypedPtr(env, try inferExprTyped(env, msg.*)) else null;
-            return TypedExpr{ .comptime_ = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .@"assert" = .{
+            return TypedExpr{ .comptime_ = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .assert = .{
                 .condition = condPtr,
                 .message = msgPtr,
             } } } };

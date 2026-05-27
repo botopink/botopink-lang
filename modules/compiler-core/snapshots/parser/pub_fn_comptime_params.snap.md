@@ -18,7 +18,6 @@
             },
             "typeName": "",
             "modifier": "comptime",
-            "typeinfoConstraints": null,
             "fnType": null,
             "destruct": null,
             "defaultVal": null
@@ -30,7 +29,6 @@
             },
             "typeName": "",
             "modifier": "comptime",
-            "typeinfoConstraints": null,
             "fnType": null,
             "destruct": null,
             "defaultVal": null

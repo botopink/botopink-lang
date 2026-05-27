@@ -72,7 +72,7 @@ modules/language-server/                       → `botopink-lsp` LSP server
   │   └── tests/                               → LSP feature test harness
   └── snapshots/lsp/                           → 50 LSP feature snapshots
 modules/stdlib/                                → embedded .bp standard library
-  └── src/                                     → prelude.zig + primitives/array/string/builtins.bp
+  └── src/                                     → prelude.zig + primitives/array/string.bp + builtins.d.bp
 modules/vscode-extension/                      → VS Code extension (TypeScript)
   ├── syntaxes/                                → TextMate grammar + markdown injection
   └── src/                                     → extension.ts (LSP client launcher)
@@ -122,7 +122,7 @@ snapshots/                                     → workspace-level smoke snapsho
   allocator — it is always passed as `alloc: std.mem.Allocator` to the
   method that needs it.
 - Type annotations always use `TypeRef` (`named`, `array`, `tuple_`,
-  `optional`, `errorUnion`, `function`).
+  `optional`, `function`).
 - Record/struct/enum/interface shorthand decls map to the same AST nodes
   as long-form declarations.
 - Formatter must be round-trip stable: `format(parse(src))` must re-parse

@@ -262,19 +262,19 @@ pub fn BinOpExprOf(comptime phase: Phase) type {
     const Kind = struct {
         /// Binary operator type
         op: enum {
-            lt,    // `<`
-            gt,    // `>`
-            lte,   // `<=`
-            gte,   // `>=`
-            eq,    // `==`
-            ne,    // `!=`
-            add,   // `+`
-            sub,   // `-`
-            mul,   // `*`
-            div,   // `/`
-            mod,   // `%`
+            lt, // `<`
+            gt, // `>`
+            lte, // `<=`
+            gte, // `>=`
+            eq, // `==`
+            ne, // `!=`
+            add, // `+`
+            sub, // `-`
+            mul, // `*`
+            div, // `/`
+            mod, // `%`
             @"and", // `&&`
-            @"or",  // `||`
+            @"or", // `||`
         },
         lhs: *ExprOf(phase),
         rhs: *ExprOf(phase),
@@ -293,8 +293,8 @@ pub fn UnaryOpExprOf(comptime phase: Phase) type {
     const Kind = struct {
         /// Unary operator type
         op: enum {
-            neg,  // `-` negation
-            not,  // `not` logical not
+            neg, // `-` negation
+            not, // `not` logical not
         },
         expr: *ExprOf(phase),
 
@@ -411,7 +411,7 @@ pub fn BindingExprOf(comptime phase: Phase) type {
     };
 
     const AssignOp = enum {
-        assign,     // `=`
+        assign, // `=`
         plusAssign, // `+=`
     };
 
@@ -776,8 +776,6 @@ pub const ParamModifier = enum {
     @"comptime",
     /// `syntax` ---- argument is passed as an unevaluated expression tree (AST).
     syntax,
-    /// `typeinfo` ---- argument is a type used as a value; constraint lists allowed.
-    typeinfo,
 };
 
 /// A parameter inside a function-type annotation used by `syntax` params.
@@ -842,17 +840,13 @@ pub const ParamDestruct = union(enum) {
 ///   `x: Int`
 ///   `s comptime: string`
 ///   `lamb comptime: syntax fn(item: T) -> R`
-///   `comptime: typeinfo T int | float`
+///   `comptime T: typeparam`
 pub const Param = struct {
     name: []const u8,
-    /// Full type reference (supports arrays, optionals, error unions, etc.)
+    /// Full type reference (supports arrays, optionals, etc.)
     typeRef: TypeRef,
-    /// For typeinfo params: kept for backward compat, typeName from typeRef.named
     typeName: []const u8 = "",
     modifier: ParamModifier = .none,
-    /// For `typeinfo` params: the union-of-types constraint, e.g. ["int","float"].
-    /// Null when there is no constraint or the modifier is not Typeinfo.
-    typeinfoConstraints: ?[]const []const u8 = null,
     /// For `syntax fn(...)` params: the function-type signature.
     /// Null for all other params.
     fnType: ?FnType = null,
@@ -863,7 +857,6 @@ pub const Param = struct {
 
     pub fn deinit(this: *Param, allocator: std.mem.Allocator) void {
         this.typeRef.deinit(allocator);
-        if (this.typeinfoConstraints) |c| allocator.free(c);
         if (this.fnType) |*ft| ft.deinit(allocator);
         if (this.destruct) |*d| d.deinit(allocator);
         if (this.defaultVal) |v| allocator.free(v);
@@ -1110,7 +1103,7 @@ pub const EnumDecl = struct {
 
 // ── type reference ────────────────────────────────────────────────────────────
 
-/// A type annotation expression, e.g. `Int`, `string[]`, `#(Int, string)`, `?T`, `E!T`.
+/// A type annotation expression, e.g. `Int`, `string[]`, `#(Int, string)`, `?T`.
 pub const TypeRef = union(enum) {
     /// Plain named type: `Int`, `string`, `Self`. Slice into source — not heap-owned.
     named: []const u8,
@@ -1120,10 +1113,10 @@ pub const TypeRef = union(enum) {
     tuple_: []TypeRef,
     /// Optional type: `?T`. Owns the inner type.
     optional: *TypeRef,
-    /// Error-union type: `E!T`. Owns both sides.
-    errorUnion: struct { errorType: *TypeRef, payload: *TypeRef },
     /// Function type: `fn(T1, T2) -> R`. Owns both param types and return type.
     function: struct { params: []TypeRef, returnType: *TypeRef },
+    /// Builtin type constructor: `@Result(D, E)`. Owns the argument types.
+    builtin: struct { name: []const u8, args: []TypeRef },
 
     pub fn deinit(this: *TypeRef, allocator: std.mem.Allocator) void {
         switch (this.*) {
@@ -1140,17 +1133,15 @@ pub const TypeRef = union(enum) {
                 inner.deinit(allocator);
                 allocator.destroy(inner);
             },
-            .errorUnion => |eu| {
-                eu.errorType.deinit(allocator);
-                allocator.destroy(eu.errorType);
-                eu.payload.deinit(allocator);
-                allocator.destroy(eu.payload);
-            },
             .function => |f| {
                 for (f.params) |*p| p.deinit(allocator);
                 allocator.free(f.params);
                 f.returnType.deinit(allocator);
                 allocator.destroy(f.returnType);
+            },
+            .builtin => |b| {
+                for (b.args) |*a| a.deinit(allocator);
+                allocator.free(b.args);
             },
         }
     }

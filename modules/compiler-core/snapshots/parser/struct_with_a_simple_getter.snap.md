@@ -22,7 +22,6 @@
                 },
                 "typeName": "Self",
                 "modifier": "none",
-                "typeinfoConstraints": null,
                 "fnType": null,
                 "destruct": null,
                 "defaultVal": null

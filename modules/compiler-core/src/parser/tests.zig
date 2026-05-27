@@ -485,6 +485,20 @@ test "parser error: reserved word in expression" {
     , "echo");
 }
 
+test "parser error: removed error union syntax T!E" {
+    try expectParseError(std.testing.allocator,
+        \\error: Error union syntax `T!E` has been removed
+        \\ --> <test>:1:16
+        \\  |
+        \\1 | fn foo() -> i32!Error { }
+        \\  |                ^ Error union syntax `T!E` has been removed
+        \\  |
+        \\  = hint: Use `@Result(D, E)` instead, e.g. `fn fetch() -> @Result(i32, MyError)`
+        \\
+        \\
+    , "fn foo() -> i32!Error { }");
+}
+
 // ── validateListSpread ────────────────────────────────────────────────────────
 
 test "parser: validateListSpread ---- empty list is valid" {
@@ -1055,17 +1069,9 @@ test "parser: pub fn ---- syntax fn type param returning bool" {
     );
 }
 
-test "parser: pub fn ---- typeinfo param no constraint" {
+test "parser: pub fn ---- typeparam no constraint" {
     try assertParser(std.testing.allocator, @src(),
-        \\pub fn wrap(comptime: typeinfo T) -> type {
-        \\    @todo();
-        \\}
-    );
-}
-
-test "parser: pub fn ---- typeinfo param with constraints" {
-    try assertParser(std.testing.allocator, @src(),
-        \\pub fn maxval(comptime: typeinfo T int | float) -> T {
+        \\pub fn wrap(comptime T: typeparam) -> type {
         \\    @todo();
         \\}
     );

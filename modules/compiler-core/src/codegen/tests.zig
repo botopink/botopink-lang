@@ -42,12 +42,12 @@ const configs = [_]config.Config{
         .typeDefLanguage = null,
     },
     .{
-        .comptimeRuntime = .erlang,
+        .comptimeRuntime = .beam,
         .targetSource = .beam,
         .typeDefLanguage = null,
     },
     .{
-        .comptimeRuntime = .node,
+        .comptimeRuntime = .wasm,
         .targetSource = .wasm,
         .typeDefLanguage = null,
     },
@@ -319,6 +319,9 @@ test "js: fn ---- max via if comparison" {
         \\    } else {
         \\        return a;
         \\    }
+        \\}
+        \\fn main() {
+        \\    @print(max(3, 7));
         \\}
     );
 }
@@ -674,6 +677,10 @@ test "js: operators ---- comparison" {
         \\fn isPositive(n: i32) -> bool {
         \\    return n > 0;
         \\}
+        \\fn main() {
+        \\    @print(isPositive(5));
+        \\    @print(isPositive(-1));
+        \\}
     );
 }
 
@@ -682,6 +689,10 @@ test "js: operators ---- equality maps to ==" {
     try assertJsSingle(std.testing.allocator, @src(),
         \\fn isZero(n: i32) -> bool {
         \\    return n == 0;
+        \\}
+        \\fn main() {
+        \\    @print(isZero(0));
+        \\    @print(isZero(42));
         \\}
     );
 }
@@ -692,6 +703,9 @@ test "js: operators ---- logical and" {
         \\fn both(a: bool, b: bool) -> bool {
         \\    return a && b;
         \\}
+        \\fn main() {
+        \\    @print(both(true, false));
+        \\}
     );
 }
 
@@ -701,6 +715,9 @@ test "js: operators ---- logical or" {
         \\fn either(a: bool, b: bool) -> bool {
         \\    return a || b;
         \\}
+        \\fn main() {
+        \\    @print(either(false, true));
+        \\}
     );
 }
 
@@ -709,6 +726,9 @@ test "js: operators ---- logical not" {
     try assertJsSingle(std.testing.allocator, @src(),
         \\fn negate(v: bool) -> bool {
         \\    return !v;
+        \\}
+        \\fn main() {
+        \\    @print(negate(true));
         \\}
     );
 }
@@ -730,6 +750,7 @@ test "js: destructure ---- record val binding" {
         \\record Point { x: i32, y: i32 }
         \\fn describe(p: Point) -> i32 {
         \\    val { x, y } = p;
+        \\    @print(x, y);
         \\    return x;
         \\}
     );
@@ -753,6 +774,7 @@ test "js: destructure ---- record parameter in fn" {
     try assertJsSingle(std.testing.allocator, @src(),
         \\record Person { name: string, age: i32 }
         \\fn greet({ name, .. }: Person) -> string {
+        \\    @print(name);
         \\    return name;
         \\}
     );
@@ -763,6 +785,7 @@ test "js: destructure ---- tuple val binding" {
     try assertJsSingle(std.testing.allocator, @src(),
         \\fn extract() {
         \\    val #(a, b) = #(12, "hello");
+        \\    @print(a, b);
         \\}
     );
 }
@@ -833,6 +856,7 @@ test "js: if ---- simple conditional in fn body" {
     try assertJsSingle(std.testing.allocator, @src(),
         \\fn sign(n: i32) -> string {
         \\    val r = if (n > 0) { "positive"; };
+        \\    @print(r);
         \\    return r;
         \\}
     );
@@ -843,6 +867,10 @@ test "js: if ---- conditional with else branch" {
     try assertJsSingle(std.testing.allocator, @src(),
         \\fn describe(n: i32) -> string {
         \\    return if (n > 0) "positive" else "non-positive";
+        \\}
+        \\fn main() {
+        \\    @print(describe(5));
+        \\    @print(describe(-3));
         \\}
     );
 }
@@ -857,6 +885,7 @@ test "js: try ---- propagate without catch" {
         \\}
         \\fn process() -> i32 {
         \\    val r = try fetch();
+        \\    @print(r);
         \\    return r;
         \\}
     );
@@ -870,6 +899,7 @@ test "js: try ---- with inline catch handler" {
         \\}
         \\fn safe() -> i32 {
         \\    val r = try fetch() catch 0;
+        \\    @print(r);
         \\    return r;
         \\}
     );
@@ -1604,6 +1634,7 @@ test "js: pipeline ---- simple chain" {
         \\    val result = 1
         \\        |> double
         \\        |> inc;
+        \\    @print(result);
         \\}
     );
 }
@@ -1616,6 +1647,7 @@ test "js: pipeline ---- with labeled args" {
         \\    val result = 1
         \\        |> double
         \\        |> inc;
+        \\    @print(result);
         \\}
     );
 }
@@ -1628,6 +1660,9 @@ test "js: loop ---- break with value" {
         \\    return loop (arr) { x ->
         \\        if (x > 10) { break x; };
         \\    };
+        \\}
+        \\fn main() {
+        \\    @print(find([5, 8, 15, 20]));
         \\}
     );
 }
@@ -1649,6 +1684,9 @@ test "js: loop ---- yield accumulation" {
         \\    return loop (arr) { x ->
         \\        yield x * 2;
         \\    };
+        \\}
+        \\fn main() {
+        \\    @print(doubles([1, 2, 3]));
         \\}
     );
 }
@@ -1738,6 +1776,9 @@ test "js: negation ---- simple unary minus" {
         \\fn negate(x: i32) -> i32 {
         \\    return -x;
         \\}
+        \\fn main() {
+        \\    @print(negate(42));
+        \\}
     );
 }
 
@@ -1745,6 +1786,9 @@ test "js: negation ---- in expression" {
     try assertJsSingle(std.testing.allocator, @src(),
         \\fn diff(x: i32, y: i32) -> i32 {
         \\    return x + -y;
+        \\}
+        \\fn main() {
+        \\    @print(diff(10, 3));
         \\}
     );
 }
@@ -1756,6 +1800,7 @@ test "js: assign ---- update var with plusEq" {
         \\fn increment() {
         \\    var count = 0;
         \\    count += 1;
+        \\    @print(count);
         \\}
     );
 }
@@ -1882,6 +1927,7 @@ test "js: lambda ---- standalone with params" {
         \\    x + y;
         \\};
         \\val result = add(10, 20);
+        \\@print(result);
     );
 }
 
@@ -1947,6 +1993,10 @@ test "js: if ---- with else branch" {
         \\    val result = if (n < 0) -n else n;
         \\    return result;
         \\}
+        \\fn main() {
+        \\    @print(abs(-5));
+        \\    @print(abs(3));
+        \\}
     );
 }
 
@@ -1986,6 +2036,260 @@ test "js: case ---- nested case in fn body" {
         \\        };
         \\        _ -> "non-zero";
         \\    };
+        \\}
+    );
+}
+
+// ── try / catch / throw — @Result scenarios ──────────────────────────────────
+
+test "js: try ---- catch with throw rethrow" {
+    try assertJsSingle(std.testing.allocator, @src(),
+        \\record ApiError { msg: string }
+        \\fn fetch() -> @Result(i32, ApiError) {
+        \\    throw ApiError(msg: "not found");
+        \\}
+        \\fn strict() -> @Result(i32, string) {
+        \\    val r = try fetch() catch throw "fetch failed";
+        \\    return r;
+        \\}
+    );
+}
+
+test "js: try ---- catch with return fallback" {
+    try assertJsSingle(std.testing.allocator, @src(),
+        \\record NetError { code: i32 }
+        \\fn fetch() -> @Result(i32, NetError) {
+        \\    throw NetError(code: 500);
+        \\}
+        \\fn safe() -> i32 {
+        \\    val r = try fetch() catch return -1;
+        \\    return r;
+        \\}
+    );
+}
+
+test "js: try ---- nested try catch" {
+    try assertJsSingle(std.testing.allocator, @src(),
+        \\record DbError { msg: string }
+        \\fn inner() -> @Result(i32, DbError) {
+        \\    throw DbError(msg: "conn refused");
+        \\}
+        \\fn outer() -> @Result(i32, DbError) {
+        \\    throw DbError(msg: "timeout");
+        \\}
+        \\fn process() -> i32 {
+        \\    val a = try inner() catch 0;
+        \\    val b = try outer() catch a;
+        \\    @print(a, b);
+        \\    return a + b;
+        \\}
+    );
+}
+
+test "js: try ---- catch tail on method call" {
+    try assertJsSingle(std.testing.allocator, @src(),
+        \\record ParseError { msg: string }
+        \\val Parser = struct {
+        \\    fn parse(self: Self) -> @Result(i32, ParseError) {
+        \\        throw ParseError(msg: "bad input");
+        \\    }
+        \\}
+        \\fn run(p: Parser) -> i32 {
+        \\    val result = p.parse() catch 0;
+        \\    return result;
+        \\}
+    );
+}
+
+test "js: throw ---- string literal" {
+    try assertJsSingle(std.testing.allocator, @src(),
+        \\fn fail() {
+        \\    throw "something went wrong";
+        \\}
+    );
+}
+
+test "js: throw ---- record constructor" {
+    try assertJsSingle(std.testing.allocator, @src(),
+        \\record AppError { code: i32, msg: string }
+        \\fn validate(x: i32) {
+        \\    if (x < 0) {
+        \\        throw AppError(code: 400, msg: "negative");
+        \\    };
+        \\}
+    );
+}
+
+test "js: try ---- propagate in multi-statement fn" {
+    try assertJsSingle(std.testing.allocator, @src(),
+        \\record IoError { path: string }
+        \\fn step1() -> @Result(i32, IoError) {
+        \\    throw IoError(path: "/data");
+        \\}
+        \\fn step2(x: i32) -> @Result(i32, IoError) {
+        \\    throw IoError(path: "/out");
+        \\}
+        \\fn pipeline() -> @Result(i32, IoError) {
+        \\    val a = try step1();
+        \\    val b = try step2(a);
+        \\    return b;
+        \\}
+    );
+}
+
+test "js: try ---- catch with lambda handler" {
+    try assertJsSingle(std.testing.allocator, @src(),
+        \\record FetchError { url: string }
+        \\fn fetch() -> @Result(i32, FetchError) {
+        \\    throw FetchError(url: "/api");
+        \\}
+        \\fn safe() -> i32 {
+        \\    val r = try fetch() catch fn(e) { return 0; };
+        \\    return r;
+        \\}
+    );
+}
+
+test "js: catch ---- tail on binary expression" {
+    try assertJsSingle(std.testing.allocator, @src(),
+        \\record CalcError { msg: string }
+        \\fn getA() -> @Result(i32, CalcError) {
+        \\    throw CalcError(msg: "overflow");
+        \\}
+        \\fn compute() -> i32 {
+        \\    val r = getA() catch 0;
+        \\    return r;
+        \\}
+    );
+}
+
+test "js: try ---- catch with case handler" {
+    try assertJsSingle(std.testing.allocator, @src(),
+        \\val ErrorKind = enum { NotFound, Timeout }
+        \\fn fetch() -> @Result(i32, ErrorKind) {
+        \\    throw ErrorKind.NotFound;
+        \\}
+        \\fn handle() -> i32 {
+        \\    val r = try fetch() catch 0;
+        \\    return r;
+        \\}
+    );
+}
+
+test "js: throw ---- inside case arm" {
+    try assertJsSingle(std.testing.allocator, @src(),
+        \\val Status = enum { Ok, Fail }
+        \\fn check(s: Status) -> i32 {
+        \\    return case s {
+        \\        Status.Ok -> 1;
+        \\        Status.Fail -> throw "failed";
+        \\    };
+        \\}
+    );
+}
+
+test "js: try ---- catch preserves surrounding bindings" {
+    try assertJsSingle(std.testing.allocator, @src(),
+        \\record LoadError { msg: string }
+        \\fn load() -> @Result(i32, LoadError) {
+        \\    throw LoadError(msg: "not found");
+        \\}
+        \\fn process() -> i32 {
+        \\    val prefix = 10;
+        \\    val data = try load() catch 0;
+        \\    val suffix = 20;
+        \\    @print(prefix, data, suffix);
+        \\    return prefix + data + suffix;
+        \\}
+    );
+}
+
+test "js: throw ---- inside loop body" {
+    try assertJsSingle(std.testing.allocator, @src(),
+        \\fn validate(items: i32) {
+        \\    val i = 0;
+        \\    loop {
+        \\        if (i > items) { throw "too many"; };
+        \\        break;
+        \\    };
+        \\}
+    );
+}
+
+test "js: try ---- multiple catch with different fallbacks" {
+    try assertJsSingle(std.testing.allocator, @src(),
+        \\record UserError { msg: string }
+        \\fn fetchName() -> @Result(string, UserError) {
+        \\    throw UserError(msg: "name missing");
+        \\}
+        \\fn fetchAge() -> @Result(i32, UserError) {
+        \\    throw UserError(msg: "age missing");
+        \\}
+        \\fn loadUser() {
+        \\    val name = try fetchName() catch "anonymous";
+        \\    val age = try fetchAge() catch 0;
+        \\    @print(name, age);
+        \\}
+    );
+}
+
+test "js: catch ---- tail on function call no try" {
+    try assertJsSingle(std.testing.allocator, @src(),
+        \\record RiskError { level: i32 }
+        \\fn risky() -> @Result(i32, RiskError) {
+        \\    throw RiskError(level: 5);
+        \\}
+        \\fn safe() -> i32 {
+        \\    return risky() catch -1;
+        \\}
+    );
+}
+
+// ── @print additional scenarios ──────────────────────────────────────────────
+
+test "js: builtin ---- @print in if branch" {
+    try assertJsSingle(std.testing.allocator, @src(),
+        \\fn check(x: i32) {
+        \\    if x > 0 {
+        \\        @print("positive");
+        \\    } else {
+        \\        @print("non-positive");
+        \\    }
+        \\}
+    );
+}
+
+test "js: builtin ---- @print with variable" {
+    try assertJsSingle(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    val name = "world";
+        \\    @print("Hello, " + name);
+        \\}
+    );
+}
+
+test "js: builtin ---- @print in loop" {
+    try assertJsSingle(std.testing.allocator, @src(),
+        \\fn countdown(n: i32) {
+        \\    val i = n;
+        \\    loop {
+        \\        if i <= 0 { break; }
+        \\        @print(i);
+        \\        val i = i - 1;
+        \\    }
+        \\}
+    );
+}
+
+test "js: builtin ---- @print return value void" {
+    try assertJsSingle(std.testing.allocator, @src(),
+        \\fn log(msg: string) {
+        \\    @print(msg);
+        \\}
+        \\fn main() {
+        \\    log("started");
+        \\    val x = 42;
+        \\    log("done");
         \\}
     );
 }
