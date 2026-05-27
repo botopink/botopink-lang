@@ -610,15 +610,15 @@ try ---- try on non-Result type (comptime error)
 
 ### Fase 1: Parser tests
 
-- [ ] Interface with field + abstract method + default method (full Drawable spec)
-- [ ] Interface with multiple abstract methods (Canvas spec)
-- [ ] Struct with private field + getter + setter (with throw) + method
-- [ ] Record with fields + method (toString pattern)
-- [ ] Implement single interface with method body (separada: `implement I for T {}`)
-- [ ] Implement multiple interfaces with qualified method disambiguation (separada)
-- [ ] Struct with inline implement (`struct implement I1, I2 {}`)
-- [ ] Enum with inline implement (`enum implement I {}`)
-- [ ] Record with inline implement (`record(...) implement I {}`)
+- [x] Interface with field + abstract method + default method (full Drawable spec)
+- [x] Interface with multiple abstract methods (Canvas spec)
+- [x] Struct with private field + getter + setter (with throw) + method
+- [x] Record with fields + method (toString pattern)
+- [x] Implement single interface with method body (separada: `implement I for T {}`)
+- [x] Implement multiple interfaces with qualified method disambiguation (separada)
+- [x] Struct with inline implement (`struct implement I1, I2 {}`)
+- [x] Enum with inline implement (`enum implement I {}`)
+- [x] Record with inline implement (`record(...) implement I {}`)
 
 ### Fase 2: Comptime / Inference tests
 
