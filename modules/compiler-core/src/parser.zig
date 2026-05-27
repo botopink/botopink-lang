@@ -71,6 +71,8 @@ pub const ParseErrorType = enum {
     removedErrorUnion,
     /// Removed builtin type syntax `@Result(D, E)` (use `@Result<D, E>` instead)
     removedBuiltinType,
+    /// Removed `from` import syntax (use `= @root()` / `= @module("name")` instead)
+    removedFromSyntax,
 };
 
 pub const ParseErrorInfo = struct {
@@ -817,6 +819,18 @@ pub const Parser = struct {
             alloc.free(imports);
         }
         _ = try this.consume(.rightBrace);
+        if (this.check(.from)) {
+            const tok = this.peek();
+            this.parseError = .{
+                .kind = .removedFromSyntax,
+                .start = tok.col - 1,
+                .end = tok.col - 1 + tok.lexeme.len,
+                .lexeme = tok.lexeme,
+                .line = tok.line,
+                .col = tok.col,
+            };
+            return ParseError.UnexpectedToken;
+        }
         _ = try this.consume(.equal);
         const expr_val = try this.parseExpr(alloc);
         const source = try alloc.create(Expr);

@@ -62,6 +62,10 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "Builtin type syntax `@Result(D, E)` has been removed",
             .hint = "Use `@Result<D, E>` instead",
         },
+        .removedFromSyntax => .{
+            .message = "Import syntax `from \"mod\"` has been removed",
+            .hint = "Use `= @root()` or `= @module(\"name\")` instead, e.g. `use {List} = @root()`",
+        },
     };
 }
 

@@ -499,6 +499,22 @@ test "parser error: removed error union syntax T!E" {
     , "fn foo() -> i32!Error { }");
 }
 
+test "parser error: removed from syntax use {X} from \"mod\"" {
+    try expectParseError(std.testing.allocator,
+        \\error: Import syntax `from "mod"` has been removed
+        \\ --> <test>:1:12
+        \\  |
+        \\1 | use {List} from "std"
+        \\  |            ^^^^ Import syntax `from "mod"` has been removed
+        \\  |
+        \\  = hint: Use `= @root()` or `= @module("name")` instead, e.g. `use {List} = @root()`
+        \\
+        \\
+    ,
+        \\use {List} from "std"
+    );
+}
+
 // ── validateListSpread ────────────────────────────────────────────────────────
 
 test "parser: validateListSpread ---- empty list is valid" {
