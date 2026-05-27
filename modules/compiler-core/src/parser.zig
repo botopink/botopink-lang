@@ -73,6 +73,8 @@ pub const ParseErrorType = enum {
     removedBuiltinType,
     /// Removed `from` import syntax (use `= @root()` / `= @module("name")` instead)
     removedFromSyntax,
+    /// `use` hook after branch/return (must be in static prefix)
+    useAfterBranch,
 };
 
 pub const ParseErrorInfo = struct {
@@ -320,6 +322,7 @@ pub const Parser = struct {
             for (stmts.items) |*s| s.deinit(alloc);
             stmts.deinit(alloc);
         }
+        var seenBranch = false;
         while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
             // Compute empty lines before this item using token line numbers
             const prevLine = if (this.current > 0) this.tokens[this.current - 1].line else 1;
@@ -338,6 +341,22 @@ pub const Parser = struct {
                 try stmts.append(alloc, .{ .expr = Expr{ .literal = .{ .loc = locFromToken(tok), .kind = .{ .comment = .{ .kind = kind, .text = text } } } }, .emptyLinesBefore = emptyLinesBefore });
                 continue;
             }
+
+            if (seenBranch and this.check(.use)) {
+                const tok = this.peek();
+                this.parseError = .{
+                    .kind = .useAfterBranch,
+                    .start = tok.col - 1,
+                    .end = tok.col - 1 + tok.lexeme.len,
+                    .lexeme = tok.lexeme,
+                    .line = tok.line,
+                    .col = tok.col,
+                };
+                return ParseError.UnexpectedToken;
+            }
+
+            if (this.check(.@"if") or this.check(.@"return") or this.check(.loop) or this.check(.case))
+                seenBranch = true;
 
             const expr = try this.parseExpr(alloc);
             if (!this.match(.semicolon) and !this.check(.rightBrace)) {

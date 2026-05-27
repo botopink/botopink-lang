@@ -581,6 +581,25 @@ test "parser: use multiple hooks in function" {
     );
 }
 
+test "parser error: use after return (static prefix violation)" {
+    try expectParseError(std.testing.allocator,
+        \\error: `use` must be in static prefix
+        \\ --> <test>:1:5
+        \\  |
+        \\1 | fn App() {
+        \\  |     ^^^ `use` must be in static prefix
+        \\  |
+        \\  = hint: Move all `use` statements to the top of the function body, before any `if`, `case`, `loop`, or `return`
+        \\
+        \\
+    ,
+        \\fn App() {
+        \\    return 1;
+        \\    use count = state(0);
+        \\}
+    );
+}
+
 // ── parse errors: snapshot tests ─────────────────────────────────────────────
 
 test "parser error: assignment without val" {

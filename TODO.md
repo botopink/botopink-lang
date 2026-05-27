@@ -231,7 +231,7 @@ Duas formas de implementar:
 - [x] Parsear `struct implement Interface1, Interface2 { }` — lista de TypeRef após `implement` keyword
 - [x] Parsear `enum implement Interface { }` e `record(...) implement Interface { }` — mesma regra
 - [x] Parsear `use _ = expr` e `use name = expr` e `use {a, b} = expr` como hooks no body
-- [ ] Validar prefix estático: emitir erro se `use` aparece após branch/return
+- [x] Validar prefix estático: emitir erro se `use` aparece após branch/return
 
 ### Fase 3: Type Inference
 
