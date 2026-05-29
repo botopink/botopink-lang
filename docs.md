@@ -32,16 +32,17 @@ Complete examples and language features organized by topic. Most examples map to
 ## Reference Updates (v0.0.13-beta)
 
 This reference was updated after reviewing the latest commit series:
-`787e5c0`, `9b93b5c`, `e61ba77`, `e98f4f5`, and `b86c5de`.
+`a42d948`, `1888bfb`, `65f990d`, `8a79f94`, and `7991edc`.
 
 ### Compiler changes that affect this document
 
 - The active expression model is now grouped into AST families:
-  `literal`, `identifier`, `binaryOp`, `unaryOp`, `jump`, `branch`, `loop`, `binding`, `call`, `function`, `collection`, `comptime_`.
-- Legacy expression variants (including `staticCall` and older control-flow grouping) were removed from the active compiler flow.
-- Parser/comptime/codegen snapshots were refreshed for Zig `0.16.0`; obsolete snapshot files were removed or renamed.
-- Runtime helpers for executing generated output are centralized in `modules/compiler-core/src/codegen/runtime.zig`.
-- Generated static library artifacts (`format.o*.a`) are now ignored in version control.
+  `literal`, `identifier`, `binaryOp`, `unaryOp`, `jump`, `branch`, `loop`, `binding`, `useHook`, `call`, `function`, `collection`, `comptime_`.
+- Import syntax migrated: `use { X } from "mod"` replaced by `use { X } = @root()` / `use { X } = @module("name")`. The old `from "mod"` syntax is rejected with a migration hint.
+- `Expr.useHook` added to the AST for `use` hooks inside function bodies (distinct from top-level `UseDecl` imports).
+- Generic type syntax: `@Result<D, E>` with `is_builtin` flag (replaces old `@Result(D, E)` parenthesis syntax).
+- Four comptime runtimes: `node`, `erlang`, `beam` (BEAM via erlang), `wasm` (WAT via wasmtime).
+- Codegen snapshot directories renamed: `beam_asm` → `beam`, `wat` → `wasm`.
 
 ### Reading note
 
@@ -51,15 +52,21 @@ Examples in this file describe language behavior. Exact snapshot file names may 
 
 ## Imports
 
-### Named imports
+### Named imports from project root
 
 ```botopink
-use { foo, bar } from "mylib";
+use { foo, bar } = @root();
 ```
 
 **Generates:**
 ```javascript
 const { foo, bar } = require("./mylib.js");
+```
+
+### Named imports from external module
+
+```botopink
+use { fetch, Response } = @module("http");
 ```
 
 ### Multi-module public function import
@@ -71,7 +78,7 @@ pub fn double(x: i32) -> i32 {
 }
 
 // main.bp
-use { double } from "math";
+use { double } = @root();
 val result = double(21);
 ```
 
@@ -83,9 +90,23 @@ pub val PORT = 8080;
 pub val HOST = "localhost";
 
 // main.bp
-use { PORT, HOST } from "config";
+use { PORT, HOST } = @root();
 val addr = HOST;
 val port = PORT;
+```
+
+### Dotted path imports
+
+```botopink
+use { std.List, std.Map } = @root();
+```
+
+### Old syntax (rejected)
+
+```botopink
+// ERROR: old syntax rejected with migration hint
+use { foo } from "mylib";
+// hint: replace with `use { foo } = @root()` or `use { foo } = @module("mylib")`
 ```
 
 ---

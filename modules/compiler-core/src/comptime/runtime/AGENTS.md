@@ -15,12 +15,14 @@ runtime/
 ├── AGENTS.md      ← you are here
 ├── docs.md        ← backend interface + JSON transport + .botopinkbuild layout
 ├── node.zig       ← Node.js backend       (`node <script.js>`, stdout JSON array)
-└── erlang.zig     ← Erlang/OTP backend    (escript or erlc+erl, `json:encode/1`)
+├── erlang.zig     ← Erlang/OTP backend    (escript or erlc+erl, `json:encode/1`)
+├── beam.zig       ← BEAM backend          (erlc+erl, reuses Erlang OTP toolchain)
+└── wasm.zig       ← WASM backend          (wasmtime, executes WAT via WASI)
 ```
 
 ## Shared interface
 
-Both backends expose the same public function:
+All four backends expose the same public function:
 
 ```zig
 pub fn run(
@@ -54,6 +56,6 @@ build dir is always fresh.
 
 ## Notes
 
-- Both backends emit JSON as their output protocol — keep parsing in `eval.zig`.
+- All four backends emit JSON as their output protocol — keep parsing in `eval.zig`.
 - When adding a new backend, mirror the `run(...)` signature exactly so
   `eval.zig` can dispatch without target-specific code paths.

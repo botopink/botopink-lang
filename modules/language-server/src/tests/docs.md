@@ -16,15 +16,19 @@ tests/
 ├── helpers.zig           ← assertion + setup helpers
 ├── snapshot.zig          ← snapshot read/write
 ├── snapshot_test.zig     ← shared snapshot test harness
+├── code_actions.zig      ← textDocument/codeAction
+├── completion.zig        ← textDocument/completion
+├── definition.zig        ← textDocument/definition
 ├── diagnostics.zig       ← publishDiagnostics
+├── folding_range.zig     ← textDocument/foldingRange
 ├── formatting.zig        ← textDocument/formatting
 ├── hover.zig             ← textDocument/hover
-├── definition.zig        ← textDocument/definition
-├── symbols.zig           ← textDocument/documentSymbol
-├── completion.zig        ← textDocument/completion
+├── prepare_rename.zig    ← textDocument/prepareRename
 ├── references.zig        ← textDocument/references
 ├── rename.zig            ← textDocument/rename
-└── signature_help.zig    ← textDocument/signatureHelp
+├── signature_help.zig    ← textDocument/signatureHelp
+├── symbols.zig           ← textDocument/documentSymbol
+└── type_definition.zig   ← textDocument/typeDefinition
 ```
 
 ## How a test is shaped

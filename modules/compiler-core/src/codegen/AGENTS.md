@@ -17,8 +17,8 @@ codegen/
 ├── moduleOutput.zig  ← shared types: Module, ModuleOutput, GenerateResult
 ├── commonJS.zig      ← CommonJS emitter (blind: iterates transformed AST)
 ├── erlang.zig        ← Erlang emitter (blind)
-├── beam_asm.zig      ← BEAM Assembly `.S` emitter (complete — 0 unsupported across 143 snapshots)
-├── wat.zig           ← WebAssembly Text `.wat` emitter (complete — 0 unsupported across 143 snapshots)
+├── beam_asm.zig      ← BEAM Assembly `.S` emitter (complete — 0 unsupported across 162 snapshots)
+├── wat.zig           ← WebAssembly Text `.wat` emitter (complete — 0 unsupported across 162 snapshots)
 ├── typescript.zig    ← TypeScript `.d.ts` typedef generator
 ├── runtime.zig       ← runtime helpers used when executing generated JS/Erlang in tests
 ├── snapshot.zig      ← snapshot helpers for codegen tests
@@ -33,8 +33,8 @@ codegen/
 | `moduleOutput.zig` | `Module`, `ModuleOutput`, `GenerateResult` — shared between targets |
 | `commonJS.zig` | CommonJS emitter — iterates already-transformed AST |
 | `erlang.zig` | Erlang emitter — same shape as `commonJS.zig` |
-| `beam_asm.zig` | BEAM Assembly `.S` emitter — **0 unsupported across 143 snapshots.** Full coverage: numerics, locals, calls, decl methods, booleans, assign, throw, strings, `@print`, field access/assign, arrays, tuples, lambdas (`make_fun2`), case (all patterns), try/catch, pipeline, method calls, loops (stub). `erlc +from_asm` validated |
-| `wat.zig` | WebAssembly Text `.wat` emitter — **0 unsupported across 143 snapshots.** Full coverage: numerics, locals, calls, assign, `!x`, null, `@todo`/`@panic`, globals, `_botopink_main`, case/pipeline/tryCatch/destructuring/lambdas/loops/strings as numeric stubs, `@print` as nop. `wasmtime` runner |
+| `beam_asm.zig` | BEAM Assembly `.S` emitter — **0 unsupported across 162 snapshots.** Full coverage: numerics, locals, calls, decl methods, booleans, assign, throw, strings, `@print`, field access/assign, arrays, tuples, lambdas (`make_fun2`), case (all patterns), try/catch, pipeline, method calls, loops (stub). `erlc +from_asm` validated |
+| `wat.zig` | WebAssembly Text `.wat` emitter — **0 unsupported across 162 snapshots.** Full coverage: numerics, locals, calls, assign, `!x`, null, `@todo`/`@panic`, globals, `_botopink_main`, case/pipeline/tryCatch/destructuring/lambdas/loops/strings as numeric stubs, `@print` as nop. `wasmtime` runner |
 | `typescript.zig` | `.d.ts` typedef generator (optional secondary output) |
 | `runtime.zig` | Test-side runtime helpers (executes generated code) |
 | `snapshot.zig` / `tests.zig` | Codegen test harness |
@@ -48,7 +48,7 @@ codegen/
   quoted `'_botopink_main'/0` atom in Erlang). The Erlang atom **must**
   be quoted because plain atoms can't start with `_`.
 - All public functions use `alloc: std.mem.Allocator` (not `allocator`).
-- BEAM ASM and WAT backends are complete (0 unsupported across 143
+- BEAM ASM and WAT backends are complete (0 unsupported across 162
   snapshots each). They reuse the existing comptime runtimes (`erlang`
   for BEAM, `node` for WASM). See [`/TODO.md`](../../../../TODO.md) for
   optional future improvements.

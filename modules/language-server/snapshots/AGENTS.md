@@ -10,7 +10,7 @@ Snapshot artefacts produced by language-server tests.
 ```text
 snapshots/
 ├── AGENTS.md
-└── lsp/               ← 50 feature snapshots — see lsp/AGENTS.md
+└── lsp/               ← 66 feature snapshots — see lsp/AGENTS.md
 ```
 
 ## Regenerate

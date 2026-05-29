@@ -667,6 +667,96 @@ test "infer: implement block is invisible to the binding list" {
     );
 }
 
+// ── interface: full structures ───────────────────────────────────────────────
+
+test "infer: interface with field and abstract method" {
+    try assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\val Drawable = interface {
+        \\    val color: string,
+        \\    fn draw(self: Self),
+        \\}
+    );
+}
+
+test "infer: interface with multiple abstract methods" {
+    try assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\val Canvas = interface {
+        \\    fn clear(self: Self),
+        \\    fn drawLine(self: Self, x1: i32, y1: i32),
+        \\    fn drawRect(self: Self, x: i32, y: i32, color: string),
+        \\}
+    );
+}
+
+// ── struct: full with getter/setter/method ──────────────────────────────────
+
+test "infer: struct with private field, getter, setter and method" {
+    try assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\val Account = struct {
+        \\    _balance: number = 0,
+        \\    get balance(self: Self) -> number {
+        \\        return self._balance;
+        \\    }
+        \\    set balance(self: Self, value: number) {
+        \\        self._balance = value;
+        \\    }
+        \\    fn deposit(self: Self, amount: number) {
+        \\        self._balance += amount;
+        \\    }
+        \\}
+    );
+}
+
+// ── record: with fields and method ──────────────────────────────────────────
+
+test "infer: record with fields and toString method" {
+    try assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\val GPSCoordinates = record {
+        \\    lat: number,
+        \\    lon: number,
+        \\    fn toString(self: Self) -> string {
+        \\        return "Lat: " + self.lat + " Lon: " + self.lon;
+        \\    }
+        \\}
+    );
+}
+
+// ── implement: interface for record ─────────────────────────────────────────
+
+test "infer: implement single interface for record" {
+    try assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\val Drawable = interface {
+        \\    fn draw(self: Self),
+        \\};
+        \\val Circle = record { radius: f64 };
+        \\val CircleDrawing = implement Drawable for Circle {
+        \\    fn draw(self: Self) {
+        \\        @print("Drawing circle");
+        \\    }
+        \\};
+    );
+}
+
+test "infer: implement two interfaces with qualified methods" {
+    try assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\val UsbCharger = interface {
+        \\    fn Connect(self: Self),
+        \\};
+        \\val SolarCharger = interface {
+        \\    fn Connect(self: Self),
+        \\};
+        \\val SmartCamera = record { batteryLevel: i32 };
+        \\val CameraPowerCharger = implement UsbCharger, SolarCharger for SmartCamera {
+        \\    fn UsbCharger.Connect(self: Self) {
+        \\        @print("Connected via USB");
+        \\    }
+        \\    fn SolarCharger.Connect(self: Self) {
+        \\        @print("Connected via Solar");
+        \\    }
+        \\};
+    );
+}
+
 // ── logical operators ────────────────────────────────────────────────────────
 
 test "infer: logical and returns bool" {

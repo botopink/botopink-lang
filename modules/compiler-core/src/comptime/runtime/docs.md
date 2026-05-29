@@ -13,12 +13,14 @@ the AST.
 ```text
 runtime/
 ├── node.zig       ← Node.js backend       (`node <script.js>`, stdout JSON array)
-└── erlang.zig     ← Erlang/OTP backend    (escript or erlc+erl, `json:encode/1`)
+├── erlang.zig     ← Erlang/OTP backend    (escript or erlc+erl, `json:encode/1`)
+├── beam.zig       ← BEAM backend          (erlc+erl, reuses Erlang OTP toolchain)
+└── wasm.zig       ← WASM backend          (wasmtime, executes WAT via WASI)
 ```
 
 ## Shared interface
 
-Both backends expose the same public function — `eval.zig` calls into them
+All four backends expose the same public function — `eval.zig` calls into them
 without target-specific code paths.
 
 ```zig
@@ -45,7 +47,7 @@ an AST literal honouring the declared `TypeRef`.
 
 | Reason | Detail |
 |---|---|
-| Lingua franca | Both runtimes ship a JSON encoder out of the box (Node has it native; Erlang's `json` module). |
+| Lingua franca | All runtimes ship a JSON encoder out of the box (Node has it native; Erlang's `json` module; BEAM/WASM reuse their respective toolchains). |
 | Inspectable | The script and output are plain text — easy to dump under `.botopinkbuild/`. |
 | Cheap recovery | Parsing errors degrade gracefully into a clear `TypeError` rather than panicking. |
 
@@ -78,7 +80,7 @@ End-to-end recipe: [`./examples.md`](examples.md). At minimum:
 
 ## Notes
 
-- Both backends emit JSON as their output protocol — keep parsing in
+- All four backends emit JSON as their output protocol — keep parsing in
   `../eval.zig` so each new backend gets it for free.
 - The `build_root` parameter exists so multiple compile invocations (e.g.
   parallel CLI runs) don't stomp on each other's scratch directories.

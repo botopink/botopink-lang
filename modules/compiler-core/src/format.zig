@@ -189,6 +189,14 @@ pub const Formatter = struct {
         return this.commaList("<", items, ">");
     }
 
+    fn fmtImplementClause(this: *Formatter, impls: []const ast.TypeRef) anyerror!*const Doc {
+        if (impls.len == 0) return this.nil();
+        var parts = try this.arena.alloc(*const Doc, impls.len);
+        for (impls, 0..) |im, i| parts[i] = try this.fmtTypeRef(im);
+        const list = try this.joinWith(parts, try this.text(", "));
+        return this.concatAll(&.{ try this.text("implement "), list, try this.text(" ") });
+    }
+
     fn fmtFnType(this: *Formatter, ft: ast.FnType) !*const Doc {
         var items = try this.arena.alloc(*const Doc, ft.params.len);
         for (ft.params, 0..) |p, i| {
@@ -1518,6 +1526,7 @@ pub const Formatter = struct {
             try this.text(s.name),
             try this.fmtGenericParams(s.genericParams),
             try this.text(" = struct "),
+            try this.fmtImplementClause(s.implement),
             body,
         });
     }
@@ -1648,6 +1657,7 @@ pub const Formatter = struct {
             try this.text(r.name),
             try this.fmtGenericParams(r.genericParams),
             try this.text(" = record "),
+            try this.fmtImplementClause(r.implement),
             body,
         });
     }
@@ -1727,6 +1737,7 @@ pub const Formatter = struct {
             try this.text(e.name),
             try this.fmtGenericParams(e.genericParams),
             try this.text(" = enum "),
+            try this.fmtImplementClause(e.implement),
             body,
         });
     }
