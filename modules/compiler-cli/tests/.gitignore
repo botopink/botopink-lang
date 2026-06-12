@@ -1,0 +1,6 @@
+# Build artifacts produced when the end-to-end CLI scripts run their fixtures.
+# `botopink build` writes out/<target> files; `botopink test` writes
+# .botopinkbuild/; a BEAM crash drops erl_crash.dump.
+**/out/
+**/.botopinkbuild/
+**/erl_crash.dump

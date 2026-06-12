@@ -1,0 +1,14 @@
+.{
+    .name = .botopink_bpmp,
+    .fingerprint = 0xd1bba7a118b0a3b1,
+    .version = "0.0.0",
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{},
+    .paths = .{
+        "src",
+        "build.zig.zon",
+        "AGENTS.md",
+        "docs.md",
+        "examples.md",
+    },
+}

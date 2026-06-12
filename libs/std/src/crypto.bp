@@ -1,0 +1,87 @@
+//// std/crypto — cryptographic hash primitives, cross-backend.
+////
+//// Reference:
+////   Node.js  — https://nodejs.org/api/crypto.html
+////              (`crypto.createHash`, `.update`, `.digest`,
+////               `crypto.createHmac`, `crypto.randomBytes`)
+////   Erlang   — https://www.erlang.org/doc/man/crypto.html
+////              (`crypto:hash/2`, `crypto:mac/4`, `crypto:strong_rand_bytes/1`)
+////
+//// Each hash fn renders the host chain inline at the call site via §A2
+//// templates — `crypto.createHash('sha256').update($0).digest('hex')`
+//// on Node, `binary_to_list(...)` over `crypto:hash(sha256, $0)` on
+//// Erlang. Node's `crypto` isn't a global so the template inlines a
+//// `require('crypto')` (cheap — Node caches the require).
+////
+//// Returns hex-string digests (the canonical interchange shape).
+//// `randomBytes(n)` returns the raw byte array — caller hex-encodes
+//// when needed.
+
+#[@External.Node("""require('crypto').createHash('sha256').update($0).digest('hex')"""),
+  @External.Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:hash(sha256, $0))])""")]
+pub declare fn sha256(data: string) -> string;
+
+#[@External.Node("""require('crypto').createHash('sha512').update($0).digest('hex')"""),
+  @External.Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:hash(sha512, $0))])""")]
+pub declare fn sha512(data: string) -> string;
+
+#[@External.Node("""require('crypto').createHash('md5').update($0).digest('hex')"""),
+  @External.Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:hash(md5, $0))])""")]
+pub declare fn md5(data: string) -> string;
+
+// HMAC-SHA256. `key` is the secret material; `data` is the message.
+// Both lower to the host's keyed-hash primitive — Node's
+// `crypto.createHmac('sha256', key).update(data).digest('hex')` and
+// Erlang's `crypto:mac(hmac, sha256, key, data)`.
+#[@External.Node("""require('crypto').createHmac('sha256', $0).update($1).digest('hex')"""),
+  @External.Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:mac(hmac, sha256, $0, $1))])""")]
+pub declare fn hmacSha256(key: string, data: string) -> string;
+
+// ── tests ────────────────────────────────────────────────────────────────────
+
+test "crypto.sha256 matches the canonical 'hello world' vector" {
+    val h = sha256("hello world");
+    assert h == "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
+}
+
+test "crypto.sha256 of empty string is the well-known zero-length digest" {
+    val h = sha256("");
+    assert h == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+}
+
+test "crypto.md5 of 'hello' matches the canonical digest" {
+    val h = md5("hello");
+    assert h == "5d41402abc4b2a76b9719d911017c592";
+}
+
+test "crypto.sha512 of empty is the zero-length sha512 digest" {
+    val h = sha512("");
+    assert h.length == 128;
+}
+
+test "crypto.hmacSha256 produces a 64-hex-char digest" {
+    val h = hmacSha256("secret", "message");
+    assert h.length == 64;
+}
+
+// `n` cryptographically-secure random bytes as a hex string of length
+// `2 * n` (each byte rendered as two lowercase hex chars). The hex shape
+// sidesteps the `Array<u8>` cross-backend representation gap — Node
+// `Buffer` and Erlang `binary()` don't share a bp-side type. Callers
+// that need bytes parse the hex back themselves.
+// Node: `require('crypto').randomBytes(n).toString('hex')`.
+// Erlang: `crypto:strong_rand_bytes/1` + the same per-byte hex format
+// string used by the hashes above.
+#[@External.Node("""require('crypto').randomBytes($0).toString('hex')"""),
+  @External.Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:strong_rand_bytes($0))])""")]
+pub declare fn randomBytes(n: i32) -> string;
+
+test "crypto.randomBytes(16) returns 32 hex chars" {
+    val h = randomBytes(16);
+    assert h.length == 32;
+}
+
+test "crypto.randomBytes(0) is empty" {
+    val h = randomBytes(0);
+    assert h.length == 0;
+}

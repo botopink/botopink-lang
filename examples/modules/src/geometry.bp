@@ -1,0 +1,5 @@
+// A leaf module: a sibling `.bp` file pulled in by `pub mod geometry;`.
+
+pub fn area(w: i32, h: i32) -> i32 {
+    return w * h;
+}

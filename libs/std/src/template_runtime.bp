@@ -1,0 +1,120 @@
+//// Compiler-internal comptime prelude — the in-WAT runtime surface that
+//// `comptime/template_eval.zig` and `comptime/decorator_eval.zig` splice
+//// ahead of every template/decorator body when the wat3 evaluator runs.
+////
+//// `#[builtin]` functions are provided by the raw-infra WAT block in
+//// `wat_runtime.zig` — they use `unreachable`, `fd_write`, and the bump
+//// allocator directly, which bp can't express. The wat backend skips
+//// `#[builtin]` fns during codegen.
+////
+//// Field-getter methods (`Capture.text`, `DeclHandle.kind`, etc.) lower
+//// to `i32.load offset=N` via the wat backend — no raw-infra needed.
+////
+//// NOT an importable std module — wired via `build.zig std_internal_files`.
+
+// ── Builtins (provided by raw-infra WAT) ─────────────────────────────────────
+
+#[@Host] pub fn failRaw(message: i32, param: i32, span: i32) {}
+
+#[@Host] pub fn compilerError(message: i32) {}
+
+// ── Records ──────────────────────────────────────────────────────────────────
+
+pub record Span {
+    start: i32,
+    end: i32,
+    line: i32,
+}
+
+pub record CustomNode {
+    kind: i32,
+    span: i32,
+    label: i32,
+    ref: i32,
+    children: i32,
+}
+
+pub record Capture {
+    param: i32,
+    descriptor: i32,
+    parts: i32,
+
+    pub fn value(self: Self) -> i32 {
+        failRaw(self.param, self.param, 0);
+        return 0;
+    }
+
+    pub fn text(self: Self) -> i32 {
+        return self.descriptor;
+    }
+
+    pub fn source(self: Self) -> i32 {
+        return self.descriptor;
+    }
+
+    pub fn parts(self: Self) -> i32 {
+        return self.parts;
+    }
+
+    #[@Host] pub fn context(self: Self) -> i32 {}
+
+    #[@Host] pub fn lookup(self: Self, name: i32) -> i32 {}
+
+    #[@Host] pub fn bindings(self: Self) -> i32 {}
+
+    pub fn build(self: Self, s: i32) -> i32 {
+        return makeCode(s);
+    }
+
+    #[@Host] pub fn custom(self: Self, ast: i32, code: i32) -> i32 {}
+
+    pub fn fail(self: Self, message: i32) {
+        failRaw(message, self.param, 0);
+    }
+
+    pub fn failAt(self: Self, span: i32, message: i32) {
+        failRaw(message, self.param, span);
+    }
+}
+
+pub record DeclHandle {
+    kind: i32,
+    name: i32,
+    fields: i32,
+    methods: i32,
+    returnType: i32,
+    annotations: i32,
+
+    pub fn fail(self: Self, message: i32) {
+        failRaw(message, 0, 0);
+    }
+
+    pub fn failAt(self: Self, span: i32, message: i32) {
+        failRaw(message, 0, span);
+    }
+}
+
+// ── Constructors ─────────────────────────────────────────────────────────────
+
+#[@Host] pub fn makeExpr(v: i32) -> i32 {}
+
+#[@Host] pub fn makeCode(s: i32) -> i32 {}
+
+pub fn makeCapture(param: i32, descriptor: i32, parts: i32) -> Capture {
+    return Capture(param: param, descriptor: descriptor, parts: parts);
+}
+
+pub fn makeSpan(start: i32, end: i32, line: i32) -> Span {
+    return Span(start: start, end: end, line: line);
+}
+
+pub fn makeCustomNode(kind: i32, span: i32, label: i32, ref: i32, children: i32) -> CustomNode {
+    return CustomNode(kind: kind, span: span, label: label, ref: ref, children: children);
+}
+
+// ── Outcome envelope (for test assertions) ────────────────────────────────
+
+pub record Outcome {
+    tag: i32,
+    payload: i32,
+}

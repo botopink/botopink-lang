@@ -1,0 +1,22 @@
+// Pure-arithmetic program: compiles, runs, and returns the SAME number on every
+// backend (commonJS, erlang, beam, wasm). `sumTo` is tail-recursive (the
+// recursive call is in tail position, with no arithmetic applied to its result),
+// so it doubles as the BEAM deep-tail-recursion (`call_only`) scenario. `main()`
+// returns 55 everywhere. This is the wasm numeric smoke (no records/strings,
+// which wasm doesn't carry) and the cross-backend numeric-parity case in one.
+
+fn sumTo(n: i32, acc: i32) -> i32 {
+  if (n == 0) { return acc; };
+  return sumTo(n - 1, acc + n);
+}
+
+pub fn main() -> i32 {
+  return sumTo(10, 0);
+}
+
+test "tail-recursive sum agrees on every backend that runs tests" {
+  assert sumTo(0, 0) == 0;
+  assert sumTo(1, 0) == 1;
+  assert sumTo(10, 0) == 55;
+  assert main() == 55;
+}

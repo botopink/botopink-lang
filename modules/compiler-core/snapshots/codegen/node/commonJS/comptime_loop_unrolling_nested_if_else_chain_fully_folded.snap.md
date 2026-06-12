@@ -1,0 +1,77 @@
+----- SOURCE CODE -- main.bp
+```botopink
+val COMMANDS = comptime ["calc", "noop", "help"];
+
+fn execute(comptime slug: string, input: i32) -> i32 {
+    var output = 0;
+    loop (COMMANDS) { cmd ->
+        if (cmd == slug) {
+            if (cmd == "calc") {
+                output = input * 2;
+            } else if (cmd == "noop") {
+                output = input;
+            };
+        };
+    };
+    return output;
+}
+
+fn main() {
+    val r1 = execute("calc", 10);
+    val r2 = execute("noop", 42);
+}
+```
+
+----- COMPTIME JAVASCRIPT -- main.js
+```javascript
+(module
+  (import "wasi_snapshot_preview1" "fd_write"
+    (func $fd_write (param i32 i32 i32 i32) (result i32)))
+  (memory (export "memory") 1)
+  (data (i32.const 8) "[{\"id\":\"ct_0\",\"value\":[\"calc\",\"noop\",\"help\"]}]")
+  (func $main (export "_start")
+    (i32.store (i32.const 0) (i32.const 8))
+    (i32.store (i32.const 4) (i32.const 46))
+    (drop (call $fd_write (i32.const 1) (i32.const 0) (i32.const 1) (i32.const 200))))
+)
+```
+
+----- JAVASCRIPT -- main.js
+```javascript
+const COMMANDS = ["calc", "noop", "help"];
+
+function main() {
+    const r1 = execute_$0(10);
+    const r2 = execute_$1(42);
+}
+
+function execute_$0(input) {
+    let output = 0;
+    output = (input * 2);
+    return output;
+}
+
+function execute_$1(input) {
+    let output = 0;
+    output = input;
+    return output;
+}
+
+function _botopink_main() {
+    main();
+}
+_botopink_main();
+```
+
+----- TYPESCRIPT TYPEDEF -- main.d.ts
+```typescript
+
+
+
+
+
+```
+
+----- RUN LOG -----
+```logs
+```

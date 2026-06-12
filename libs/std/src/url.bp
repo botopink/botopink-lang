@@ -1,0 +1,234 @@
+//// std/url — pure-botopink URL parsing.
+////
+//// Reference:
+////   Node.js  — https://nodejs.org/api/url.html
+////   Erlang   — https://www.erlang.org/doc/apps/stdlib/uri_string.html
+////
+//// The surface is `parse(s)` → `Url` and `serialize(u)` → `string`. Both
+//// are pure botopink — no host call — so the module works on every
+//// backend including wat. Parsing handles the standard authority shape
+////
+////     scheme://[user[:password]@]host[:port][/path][?query][#fragment]
+////
+//// Authentication and port are optional; missing pieces come back as
+//// `""` (string fields) or `0` (port). URI percent-encoding is NOT
+//// applied here — pair this with `querystring` for form values.
+
+pub record Url {
+    scheme: string,
+    user: string,
+    password: string,
+    host: string,
+    port: i32,
+    path: string,
+    query: string,
+    fragment: string,
+}
+
+// Internal: split `s` at the first occurrence of `delim`. Returns
+// `#(head, tail)` where `tail` excludes the delimiter. If `delim` is
+// not present, `head = s` and `tail = ""`. Implemented via
+// `String.split` (which splits on all occurrences) + a rejoin of the
+// tail with the delimiter — avoids `String.indexOf` whose Erlang host
+// binding (`string:str/2`) is deprecated and reds with `function_clause`
+// on binaries in OTP 25+.
+fn splitOnce(s: string, delim: string) -> #(string, string) {
+    val parts = s.split(delim);
+    if (parts.length < 2) {
+        return #(s, "");
+    };
+    val head = parts.at(0).unwrapOr("");
+    val rest = parts.slice(1, parts.length);
+    val tail = rest.join(delim);
+    return #(head, tail);
+}
+
+// Parse a URL into its component fields. Pure botopink — no host call.
+// Defaults: empty strings for absent text fields; 0 for absent port.
+pub fn parse(input: string) -> Url {
+    // 1. Split off scheme via `://`.
+    val schemeSplit = splitOnce(input, "://");
+    val scheme = schemeSplit._0;
+    val rest1 = schemeSplit._1;
+    // 2. Split off fragment via `#`.
+    val fragmentSplit = splitOnce(rest1, "#");
+    val rest2 = fragmentSplit._0;
+    val fragment = fragmentSplit._1;
+    // 3. Split off query via `?`.
+    val querySplit = splitOnce(rest2, "?");
+    val rest3 = querySplit._0;
+    val query = querySplit._1;
+    // 4. Split authority from path via the first `/` after the scheme.
+    val pathSplit = splitOnce(rest3, "/");
+    val authority = pathSplit._0;
+    val pathBody = pathSplit._1;
+    val path = if (pathBody == "") { ""; } else { ["/", pathBody].join(""); };
+    // 5. Split userinfo from hostport via `@`.
+    val userinfoSplit = splitOnce(authority, "@");
+    val hasUserinfo = userinfoSplit._1 != "";
+    val userinfo = if (hasUserinfo) { userinfoSplit._0; } else { ""; };
+    val hostport = if (hasUserinfo) { userinfoSplit._1; } else { authority; };
+    // 6. Split user:password.
+    val userSplit = splitOnce(userinfo, ":");
+    val user = userSplit._0;
+    val password = userSplit._1;
+    // 7. Split host:port.
+    val hostSplit = splitOnce(hostport, ":");
+    val host = hostSplit._0;
+    val portStr = hostSplit._1;
+    val port = parsePort(portStr);
+    return Url(
+        scheme: scheme,
+        user: user,
+        password: password,
+        host: host,
+        port: port,
+        path: path,
+        query: query,
+        fragment: fragment,
+    );
+}
+
+// Internal: parse a numeric port from a string. Returns 0 on empty or
+// malformed input. Pure botopink — walks each char via a tail-recursive
+// helper that uses `String.slice(i, i+1)` to read one char at a time.
+// `s.split("")` would give per-char chunks on Node (JS) but on Erlang
+// `string:split(S, <<"">>, all)` returns `[S]` (a single chunk), so the
+// slice form is the cross-backend portable shape.
+fn parsePort(s: string) -> i32 {
+    if (s == "") {
+        return 0;
+    };
+    return parsePortWalk(s, 0, 0);
+}
+
+fn parsePortWalk(s: string, idx: i32, acc: i32) -> i32 {
+    if (idx >= s.length()) {
+        return acc;
+    };
+    val ch = s.slice(idx, idx + 1);
+    val digit = charToDigit(ch);
+    val nextAcc = if (digit < 0) { acc; } else { acc * 10 + digit; };
+    return parsePortWalk(s, idx + 1, nextAcc);
+}
+
+// Internal: render an i32 as a decimal string by piggy-backing on
+// `Array<i32>.join("")` — both backends stringify numeric elements
+// for `join`: Node's `Array.prototype.join` calls `String(n)` per
+// element and Erlang's `lists:join` + iolist-to-binary path maps
+// `is_integer(__E) -> integer_to_binary(__E)`. The single-element
+// array `[n].join("")` is therefore equivalent to a host
+// `int_to_string(n)` on every backend, with no hand-rolled walk
+// that would have to dodge i32 division being float on Node.
+fn intToDecimal(n: i32) -> string {
+    return [n].join("");
+}
+
+fn charToDigit(ch: string) -> i32 {
+    if (ch == "0") { return 0; };
+    if (ch == "1") { return 1; };
+    if (ch == "2") { return 2; };
+    if (ch == "3") { return 3; };
+    if (ch == "4") { return 4; };
+    if (ch == "5") { return 5; };
+    if (ch == "6") { return 6; };
+    if (ch == "7") { return 7; };
+    if (ch == "8") { return 8; };
+    if (ch == "9") { return 9; };
+    return 0 - 1;
+}
+
+// Serialize a `Url` back to the standard
+// `scheme://[user[:password]@]host[:port][/path][?query][#fragment]`
+// shape. Inverse of `parse` on every valid URL the parser produces.
+// String concat uses the cross-backend `[a, b].join("")` workaround
+// (raw `+` on strings is numeric on Erlang — badarith on binaries).
+pub fn serialize(u: Url) -> string {
+    val userinfo = if (u.user == "") {
+        "";
+    } else {
+        if (u.password == "") {
+            [u.user, "@"].join("");
+        } else {
+            [u.user, ":", u.password, "@"].join("");
+        };
+    };
+    // `intToDecimal(u.port)` rather than `u.port.toString()`: the
+    // `Integer.toString()` Erlang lowering emits a bare `toString/1`
+    // undefined call when the receiver is a record-field access of
+    // i32, and a pure-botopink walk avoids that bridge gap.
+    val hostport = if (u.port == 0) {
+        u.host;
+    } else {
+        [u.host, ":", intToDecimal(u.port)].join("");
+    };
+    val querySuffix = if (u.query == "") {
+        "";
+    } else {
+        ["?", u.query].join("");
+    };
+    val fragmentSuffix = if (u.fragment == "") {
+        "";
+    } else {
+        ["#", u.fragment].join("");
+    };
+    return [
+        u.scheme,
+        "://",
+        userinfo,
+        hostport,
+        u.path,
+        querySuffix,
+        fragmentSuffix,
+    ].join("");
+}
+
+// ── tests ────────────────────────────────────────────────────────────────────
+
+test "url.parse extracts the scheme" {
+    val u = parse("https://example.com");
+    assert u.scheme == "https";
+    assert u.host == "example.com";
+}
+
+test "url.parse with port" {
+    val u = parse("http://localhost:8080/");
+    assert u.scheme == "http";
+    assert u.host == "localhost";
+    assert u.port == 8080;
+}
+
+test "url.parse with path and query" {
+    val u = parse("https://api.example.com/v1/users?id=42");
+    assert u.host == "api.example.com";
+    assert u.path == "/v1/users";
+    assert u.query == "id=42";
+}
+
+test "url.parse with fragment" {
+    val u = parse("https://example.com/docs#section-2");
+    assert u.path == "/docs";
+    assert u.fragment == "section-2";
+}
+
+test "url.parse with userinfo" {
+    val u = parse("https://alice:secret@example.com/private");
+    assert u.user == "alice";
+    assert u.password == "secret";
+    assert u.host == "example.com";
+}
+
+test "url.serialize round-trips a simple URL" {
+    val u = parse("https://example.com");
+    assert serialize(u) == "https://example.com";
+}
+
+test "url.serialize round-trips with port and path" {
+    val u = parse("http://localhost:8080/api");
+    assert serialize(u) == "http://localhost:8080/api";
+}
+
+test "url.serialize round-trips with query and fragment" {
+    val u = parse("https://example.com/docs?ver=1#top");
+    assert serialize(u) == "https://example.com/docs?ver=1#top";
+}

@@ -1,0 +1,109 @@
+//// std/os — host OS introspection, cross-backend.
+////
+//// Reference:
+////   Node.js  — https://nodejs.org/api/os.html
+////              (`os.hostname()`, `os.arch()`, `os.cpus()`, `os.tmpdir()`,
+////               `os.userInfo()`, `os.EOL`)
+////   Erlang   — https://www.erlang.org/doc/apps/stdlib/erlang.html
+////              + https://www.erlang.org/doc/apps/stdlib/filename.html
+////              (`inet:gethostname/0`, `erlang:system_info(schedulers_online)`,
+////               `filename:basedir/2`, `os:getenv("USER")`)
+////
+//// Each Node template inlines `require('os')` at the call site —
+//// `os` is NOT a JS global so the §A2 alias path can't reach it; the
+//// arity-branched template form rolls the require + the call into a
+//// single expression that renders per call (cheap — Node caches the
+//// require).
+////
+//// `cpuCount()` returns the count of logical cores; `tmpdir()` is the
+//// host's temp directory; `userInfo()` returns the calling user's uid
+//// + username; `eol()` is the platform line-terminator.
+
+// Host hostname.
+// Node: `require('os').hostname()` (re-require'd inline per call).
+// Erlang: `inet:gethostname()` returns `{ok, Name}` (charlist).
+#[@External.Node("""require('os').hostname()"""),
+  @External.Erlang("""(fun() -> {ok, __H} = inet:gethostname(), list_to_binary(__H) end)()""")]
+pub declare fn hostname() -> string;
+
+// Host CPU architecture string — `'x64'`, `'arm64'`, etc.
+// Node: `require('os').arch()`.
+// Erlang: `erlang:system_info(system_architecture)`.
+#[@External.Node("""require('os').arch()"""),
+  @External.Erlang("list_to_binary(erlang:system_info(system_architecture))")]
+pub declare fn arch() -> string;
+
+// Count of logical CPU cores available to the runtime.
+// Node: `require('os').cpus().length`.
+// Erlang: `erlang:system_info(schedulers_online)` returns the count
+// of online schedulers — the BEAM analogue of "available cores".
+#[@External.Node("""require('os').cpus().length"""),
+  @External.Erlang("erlang:system_info(schedulers_online)")]
+pub declare fn cpuCount() -> i32;
+
+// Host temp directory (an absolute path).
+// Node: `require('os').tmpdir()`.
+// Erlang: best-effort via the `TMPDIR` env var with a fallback to
+// `/tmp` — matches the POSIX convention; on Windows the BEAM-side
+// fallback would need `os:getenv("TEMP")` (deferred).
+#[@External.Node("""require('os').tmpdir()"""),
+  @External.Erlang("""(fun() -> case os:getenv("TMPDIR") of false -> <<"/tmp">>; __V -> list_to_binary(__V) end end)()""")]
+pub declare fn tmpdir() -> string;
+
+// Calling user's basic identity. Node returns a structured object; on
+// Erlang there is no direct `os:userInfo` BIF so the template lifts the
+// `USER` env var (falling back to `<<"unknown">>`) and reads the uid
+// from `process_info` — best-effort, the Erlang side stays informative
+// without claiming POSIX-grade accuracy.
+pub record UserInfo {
+    uid: i32,
+    username: string,
+}
+
+#[@External.Node("""(() => { const __u = require('os').userInfo(); return { uid: __u.uid, username: __u.username } })()"""),
+  @External.Erlang("""(fun() -> __U = case os:getenv("USER") of false -> <<"unknown">>; __V -> list_to_binary(__V) end, #{uid => 0, username => __U} end)()""")]
+pub declare fn userInfo() -> UserInfo;
+
+// Platform line terminator — `"\n"` on POSIX, `"\r\n"` on Windows.
+// Node reads `require('os').EOL`; Erlang branches on `os:type/0`.
+#[@External.Node("""require('os').EOL"""),
+  @External.Erlang("""(fun() -> case os:type() of {win32, _} -> <<"\r\n">>; _ -> <<"\n">> end end)()""")]
+pub declare fn eol() -> string;
+
+// ── tests ────────────────────────────────────────────────────────────────────
+
+test "os.hostname is non-empty" {
+    val h = hostname();
+    assert h.length > 0;
+}
+
+test "os.arch is non-empty" {
+    val a = arch();
+    assert a.length > 0;
+}
+
+test "os.cpuCount is at least 1" {
+    val n = cpuCount();
+    assert n >= 1;
+}
+
+test "os.tmpdir is a non-empty path" {
+    val t = tmpdir();
+    assert t.length > 0;
+}
+
+test "os.userInfo username is non-empty" {
+    val u = userInfo();
+    assert u.username.length > 0;
+}
+
+test "os.eol is non-empty" {
+    val e = eol();
+    assert e.length > 0;
+}
+
+test "os.eol length is 1 or 2" {
+    val e = eol();
+    assert e.length >= 1;
+    assert e.length <= 2;
+}

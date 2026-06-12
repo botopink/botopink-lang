@@ -1,0 +1,1 @@
+{ "name": "modules", "version": "0.0.1", "target": "commonJS", "entry": "main.bp" }

@@ -1,0 +1,91 @@
+//// std/base64 — base64 encoding / decoding, cross-backend.
+////
+//// Reference:
+////   Node.js  — https://nodejs.org/api/buffer.html
+////              (`Buffer.from(s, 'utf8').toString('base64')` /
+////              `Buffer.from(b, 'base64').toString('utf8')`)
+////   Erlang   — https://www.erlang.org/doc/apps/stdlib/base64.html
+////              (`base64:encode/1` / `base64:decode/1`)
+////
+//// `encode` / `decode` round-trip UTF-8 strings through the host's
+//// base64 implementation. `encodeUrlSafe` / `decodeUrlSafe` are
+//// pure-botopink variants — they post-process the standard encoder
+//// output by substituting `+/=` for url-safe `-_` (with `=` padding
+//// dropped) and reverse on decode. Lower across §A2 chained host-call
+//// templates on Node (the `Buffer.from(s, 'utf8').toString('base64')`
+//// shape needs the §A2 commonJS template wiring landed in
+//// `std-expansion-tail` §A2); Erlang lowers to the bare `base64`
+//// module symbols.
+
+#[@External.Node("""Buffer.from($0, 'utf8').toString('base64')"""),
+  @External.Erlang("base64", "encode")]
+pub declare fn encode(s: string) -> string;
+
+#[@External.Node("""Buffer.from($0, 'base64').toString('utf8')"""),
+  @External.Erlang("base64", "decode")]
+pub declare fn decode(b: string) -> string;
+
+// URL-safe variant: standard base64 uses `+` `/` `=` which collide
+// with URL grammar. The url-safe alphabet substitutes `+`→`-`,
+// `/`→`_`, and drops the trailing `=` padding. Pure botopink — wraps
+// the standard `encode` and post-processes via `String.replace`
+// chains (cross-backend safe through the existing String primitive
+// surface).
+pub fn encodeUrlSafe(s: string) -> string {
+    val raw = encode(s);
+    val noPlus = raw.replace("+", "-");
+    val noSlash = noPlus.replace("/", "_");
+    return noSlash.replace("=", "");
+}
+
+// Reverse of `encodeUrlSafe`: substitute `-`→`+`, `_`→`/`, then
+// re-pad with `=` so the input length is a multiple of 4 (standard
+// base64 padding). The padding helper is tail-recursive to avoid the
+// `var` + `push` Erlang dead-store trap.
+pub fn decodeUrlSafe(b: string) -> string {
+    val noDash = b.replace("-", "+");
+    val noUnder = noDash.replace("_", "/");
+    val padded = padToMultipleOfFour(noUnder);
+    return decode(padded);
+}
+
+// Internal: append `=` chars until `s.length` is a multiple of 4.
+// Tail-recursive on the result; never rebinds an accumulator. We
+// keep the recursion bounded by `len % 4` so it terminates in at
+// most 3 iterations regardless of input length.
+fn padToMultipleOfFour(s: string) -> string {
+    val remainder = s.length % 4;
+    return if (remainder == 0) {
+        s;
+    } else {
+        padToMultipleOfFour([s, "="].join(""));
+    };
+}
+
+// ── tests ────────────────────────────────────────────────────────────────────
+
+test "base64.encode of an ASCII string round-trips" {
+    val encoded = encode("hello");
+    assert encoded == "aGVsbG8=";
+    val decoded = decode(encoded);
+    assert decoded == "hello";
+}
+
+test "base64.encode of an empty string is an empty string" {
+    assert encode("") == "";
+    assert decode("") == "";
+}
+
+test "base64.encodeUrlSafe drops padding and substitutes the unsafe pair" {
+    val s = encode("hello world");
+    val urlSafe = encodeUrlSafe("hello world");
+    assert urlSafe.contains("=").negate();
+    assert s.contains("=");
+}
+
+test "base64.decodeUrlSafe reverses encodeUrlSafe round-trip" {
+    val original = "any carnal pleasure.";
+    val urlSafe = encodeUrlSafe(original);
+    val decoded = decodeUrlSafe(urlSafe);
+    assert decoded == original;
+}

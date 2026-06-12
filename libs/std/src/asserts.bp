@@ -1,0 +1,184 @@
+//// std/asserts — runtime assertions, cross-backend (pure botopink + @panic).
+////
+//// Reference:
+////   Node.js  — https://nodejs.org/api/assert.html
+////   Erlang   — (no equivalent module; pattern matching does the same job)
+////
+//// Pure botopink — every fn lowers to a comparison + `@panic("…")` on
+//// failure, with no host binding. Works on every backend, wat included.
+//// Failure messages are short string literals (no string interpolation):
+//// the call site documents what was being checked.
+////
+//// The module is named `asserts` (plural) because the unqualified `assert`
+//// is a reserved keyword statement; `import {asserts} from "std";` then
+//// `asserts.truthy(x)` keeps the qualified-call style.
+
+// True-or-panic. Use to guard arbitrary boolean conditions.
+pub fn truthy(condition: bool) {
+    if (condition.negate()) {
+        @panic("asserts.truthy: condition was false");
+    };
+}
+
+// False-or-panic. The dual of `truthy` — handy for "this must not happen"
+// branches that you'd otherwise spell as `truthy(!cond)`.
+pub fn falsy(condition: bool) {
+    if (condition) {
+        @panic("asserts.falsy: condition was true");
+    };
+}
+
+// Strict equality. `a == b` uses the language's structural-equality rule
+// for primitives (numbers / booleans / strings); reference-equality falls
+// back to JS-style `===` on Node and `=:=` on Erlang.
+pub fn equal<T>(a: T, b: T) {
+    if (a != b) {
+        @panic("asserts.equal: values differ");
+    };
+}
+
+pub fn notEqual<T>(a: T, b: T) {
+    if (a == b) {
+        @panic("asserts.notEqual: values match");
+    };
+}
+
+// Approximate equality for floats: `|a - b| <= tolerance`. The expected
+// idiom is `approxEqual(measured, expected, 1e-6)` — pick a tolerance that
+// fits the operation's numerical-stability budget, not 0. Implemented with
+// an inline `if` (instead of importing `math.abs`) to keep this module's
+// surface lib-self-contained — pure-botopink, no host hops.
+pub fn approxEqual(a: f64, b: f64, tolerance: f64) {
+    val diff = a - b;
+    val absDiff = if (diff >= 0.0) {
+        diff;
+    } else {
+        0.0 - diff;
+    };
+    if (absDiff > tolerance) {
+        @panic("asserts.approxEqual: values differ by more than tolerance");
+    };
+}
+
+// Substring containment over strings (delegates to `String.contains`).
+pub fn contains(haystack: string, needle: string) {
+    if (haystack.contains(needle).negate()) {
+        @panic("asserts.contains: needle not in haystack");
+    };
+}
+
+// A structured panic message: the failed assertion's text plus the
+// file/line where it fired. Test runners that catch a `@panic` value
+// at the host level can rehydrate this shape for nicer reporting
+// (the value is delivered verbatim — the panic stays the host-level
+// exit mechanism). `throws`/`matches` will produce these once the
+// host-level catch hook lands (see the deferral note below).
+pub record AssertError {
+    message: string,
+    file: string,
+    line: i32,
+}
+
+// Private host-level try/catch wrapper (§A3 — `#[@result] declare fn`
+// template-owned). Runs `body` (no-arg fn returning a discardable `i32`
+// sentinel) and returns `{ok, 0}` on normal exit, `{error, …}` when the
+// body throws/panics. The sentinel `i32` (instead of `unit`/`void`) lets
+// the caller pass a closure whose final expression is an integer so the
+// type checker can unify the return — `unit`-bodied closures don't
+// type-check when the only body statement is `@panic("…")` (noreturn ≠
+// unit). Callers wrap the body with a trailing `0;` to satisfy the
+// signature.
+#[@result]
+#[@External.Node("""(() => { try { $0(); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()"""),
+  @External.Erlang("""(fun(__B) -> try __B(), {ok, 0} catch __C:__E -> {error, iolist_to_binary(io_lib:format("~p:~p", [__C, __E]))} end end)($0)""")]
+declare fn tryCatch(body: fn() -> i32) -> @Result<i32, string>;
+
+// `throws(body, message)`: asserts that `body` raises (a `@panic` or any
+// host-level throw). Panics with `asserts.throws: …` when the body
+// completed normally. Built on the §A3 `tryCatch` wrapper — pure bp at
+// the call site, the host catch lives entirely inside the template.
+// Callers pass a closure whose body ends with `0;` (sentinel — only
+// reached if the panic-path doesn't fire, in which case the assertion
+// itself fires).
+pub fn throws(body: fn() -> i32, message: string) {
+    val r = tryCatch(body);
+    if (r.isOk()) {
+        @panic("asserts.throws: body did not raise");
+    };
+}
+
+// Private regex.matches twin: inlined here rather than via a cross-
+// module call so this file stays self-contained (std-internal modules
+// do not import each other today). The annotation is byte-identical
+// to `regex.matches`.
+#[@External.Node("""(new RegExp($0).test($1))"""),
+  @External.Erlang("""(re:run($1, $0) =/= nomatch)""")]
+declare fn regexMatches(pattern: string, input: string) -> bool;
+
+// Substring-or-regex match. The `pattern` is a regular expression in
+// the host's native flavour (PCRE-ish on every supported backend); use
+// `contains` when you want a literal needle.
+pub fn matches(pattern: string, actual: string) {
+    if (regexMatches(pattern, actual).negate()) {
+        @panic("asserts.matches: pattern did not match");
+    };
+}
+
+// ── tests ────────────────────────────────────────────────────────────────────
+
+test "asserts.truthy passes when the condition is true" {
+    truthy(true);
+    truthy(1 == 1);
+}
+
+test "asserts.falsy passes when the condition is false" {
+    falsy(false);
+    falsy(1 == 2);
+}
+
+test "asserts.equal passes for equal primitives" {
+    equal(42, 42);
+    equal("hello", "hello");
+    equal(true, true);
+}
+
+test "asserts.notEqual passes when values differ" {
+    notEqual(1, 2);
+    notEqual("a", "b");
+}
+
+test "asserts.approxEqual accepts values within tolerance" {
+    approxEqual(1.0, 1.00001, 0.001);
+    approxEqual(0.0, 0.0, 0.0);
+}
+
+test "asserts.contains finds a substring" {
+    contains("hello world", "world");
+    contains("foobar", "oob");
+}
+
+test "asserts.matches accepts a digit pattern over digits" {
+    matches("[0-9]+", "abc123def");
+}
+
+test "asserts.matches accepts a literal pattern" {
+    matches("hello", "say hello there");
+}
+
+test "asserts.throws catches a panicking body" {
+    throws({ ->
+        @panic("expected");
+        0;
+    }, "expected panic");
+}
+
+test "asserts.AssertError carries the failed-assertion shape" {
+    val err = AssertError(
+        message: "expected positive",
+        file: "asserts.bp",
+        line: 0,
+    );
+    assert err.message == "expected positive";
+    assert err.file == "asserts.bp";
+    assert err.line == 0;
+}

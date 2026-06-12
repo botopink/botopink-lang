@@ -1,0 +1,7 @@
+{
+  "name": "test_tooling_pass",
+  "version": "0.0.1",
+  "description": "test-tooling fixture: empty test, multi-filter, and all-passing run. Front-C C1.",
+  "target": "commonJS",
+  "src": "src/"
+}

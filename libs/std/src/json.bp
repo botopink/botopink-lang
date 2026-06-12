@@ -1,0 +1,62 @@
+//// std/json — JSON parsing + stringification, cross-backend.
+////
+//// Reference:
+////   Node.js  — `JSON.parse` / `JSON.stringify` (https://nodejs.org/api/)
+////   Erlang   — `json:decode/1` / `json:encode/1` (OTP 27+)
+////
+//// V1 surface: validate JSON syntax (`parse`) and round-trip via the
+//// host's JSON encoder (`stringify`). The full `JsonValue` enum walker
+//// + structured access (`as_object`/`as_array`/`field`/`index`) is
+//// deferred — the enum's tagged-shape representation on Node
+//// (`{ tag: "Bool", value: true }`) doesn't match what `JSON.parse`
+//// returns natively, so the materialiser needs a per-target recursive
+//// conversion that walks the host shape into the bp enum. Stub-grade
+//// for now; callers wanting structured access dump and re-stringify
+//// via the round-trip, or use the host BIF directly through their
+//// own `#[@External.<targert>(...)]`.
+////
+//// `parse(s)` uses the §A3 `#[@result] declare fn` template-owned
+//// wrapper: the host body wraps `JSON.parse` / `json:decode` in
+//// try/catch and returns `{ok: <raw>}` / `{error: <reason>}`. The raw
+//// JSON string is returned (re-stringified on the host side) so
+//// callers get a normalised JSON without manual encoder/decoder
+//// bookkeeping. (Mirrors the parse-then-re-stringify idiom; not yet
+//// the structured `JsonValue` enum the spec ultimately targets.)
+////
+//// `stringify(s)` is the inverse pass — validates `s` is valid JSON
+//// and returns the canonical (re-encoded) form. Useful for normalising
+//// whitespace / key ordering before transmitting to another service.
+
+// Validate a JSON string and return its canonical re-encoded form. Reds
+// with `{error, "<reason>"}` on syntax errors; the §A3 template owns
+// the wrapper shape.
+#[@result]
+#[@External.Node("""(() => { try { return { ok: JSON.stringify(JSON.parse($0)) } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()"""),
+  @External.Erlang("""(fun(__S) -> try {ok, iolist_to_binary(json:encode(json:decode(__S)))} catch __C:__E -> {error, iolist_to_binary(io_lib:format("~p:~p", [__C, __E]))} end end)($0)""")]
+pub declare fn parse(s: string) -> @Result<string, string>;
+
+// Re-encode an already-valid JSON string. Identical to `parse` for V1
+// (both round-trip through the host parser); kept as a distinct fn so
+// the surface matches the spec's eventual `parse -> JsonValue` +
+// `stringify(JsonValue) -> string` split.
+#[@result]
+#[@External.Node("""(() => { try { return { ok: JSON.stringify(JSON.parse($0)) } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()"""),
+  @External.Erlang("""(fun(__S) -> try {ok, iolist_to_binary(json:encode(json:decode(__S)))} catch __C:__E -> {error, iolist_to_binary(io_lib:format("~p:~p", [__C, __E]))} end end)($0)""")]
+pub declare fn stringify(s: string) -> @Result<string, string>;
+
+// ── tests ────────────────────────────────────────────────────────────────────
+
+test "json.parse round-trips a valid object" {
+    val r = parse("""{"a":1}""");
+    assert r.isOk();
+}
+
+test "json.parse reds with an error on invalid JSON" {
+    val r = parse("{not valid}");
+    assert r.isError();
+}
+
+test "json.parse normalises a value" {
+    val r = parse("[1,2,3]").unwrapOr("");
+    assert r == "[1,2,3]";
+}

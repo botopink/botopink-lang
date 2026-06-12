@@ -1,0 +1,170 @@
+//// std/erlang — auto-imported Erlang BIF catalog (shadow-detection
+//// metadata, also callable when explicitly imported).
+////
+//// Each decl uses `@External.Erlang("erlang", "<symbol>")`. The erlang
+//// codegen (`codegen/erlang.zig`) walks this module via the std
+//// `pkg_modules` table, extracts the (symbol, arity) pairs from every
+//// annotation whose first arg is `"erlang"`, and emits
+//// `-compile({no_auto_import,[fn/arity, …]}).` in the generated module
+//// prelude when a user-defined fn shadows one.
+////
+//// Why a dedicated `std/erlang` module (not `builtins.d.bp`)? These
+//// host-symbol wrappers are not essential to the language surface — the
+//// majority of botopink programs never name them. Keeping them in their
+//// own module avoids polluting the global env (consumers `import { …}
+//// from "std/erlang"` only when needed).
+////
+//// Why only some BIFs (~30)? The shadow-directive matters only when a
+//// botopink fn (camelCase) lowers to an erlang symbol that matches a
+//// BIF — i.e., when the BIF name is a single word (`abs`, `length`,
+//// `max`, …). Snake-case BIFs (`integer_to_binary`, `atom_to_list`, …)
+//// can't be shadowed by camelCase user fns; they live as primitive
+//// methods on `primitives.d.bp` and don't need a shadow entry here.
+////
+//// Adding a BIF: add one `#[@External.Erlang("erlang", "<name>")] pub
+//// declare fn <camelCase>(…) -> any;`. Symbol + param count drive the
+//// shadow entry — name in botopink is doc-only for callers.
+
+#[@External.Erlang("erlang", "abs")]
+pub declare fn abs(n: any) -> any;
+
+#[@External.Erlang("erlang", "alias")]
+pub declare fn alias() -> any;
+
+#[@External.Erlang("erlang", "apply")]
+pub declare fn apply(fun: any, args: any) -> any;
+
+#[@External.Erlang("erlang", "apply")]
+pub declare fn applyMfa(m: any, f: any, a: any) -> any;
+
+#[@External.Erlang("erlang", "element")]
+pub declare fn element(n: any, tuple: any) -> any;
+
+#[@External.Erlang("erlang", "error")]
+pub declare fn error(reason: any) -> any;
+
+#[@External.Erlang("erlang", "error")]
+pub declare fn errorWithArgs(reason: any, args: any) -> any;
+
+#[@External.Erlang("erlang", "error")]
+pub declare fn errorWithArgsAndOptions(reason: any, args: any, options: any) -> any;
+
+#[@External.Erlang("erlang", "exit")]
+pub declare fn exit(reason: any) -> any;
+
+#[@External.Erlang("erlang", "exit")]
+pub declare fn exitProcess(pid: any, reason: any) -> any;
+
+#[@External.Erlang("erlang", "float")]
+pub declare fn float(n: any) -> any;
+
+#[@External.Erlang("erlang", "get")]
+pub declare fn erlangGet() -> any;
+
+#[@External.Erlang("erlang", "get")]
+pub declare fn erlangGetByKey(key: any) -> any;
+
+#[@External.Erlang("erlang", "halt")]
+pub declare fn halt() -> any;
+
+#[@External.Erlang("erlang", "halt")]
+pub declare fn haltWithStatus(status: any) -> any;
+
+#[@External.Erlang("erlang", "halt")]
+pub declare fn haltWithStatusAndOptions(status: any, options: any) -> any;
+
+#[@External.Erlang("erlang", "hd")]
+pub declare fn hd(list: any) -> any;
+
+#[@External.Erlang("erlang", "length")]
+pub declare fn length(list: any) -> any;
+
+#[@External.Erlang("erlang", "link")]
+pub declare fn link(pid: any) -> any;
+
+#[@External.Erlang("erlang", "max")]
+pub declare fn max(a: any, b: any) -> any;
+
+#[@External.Erlang("erlang", "min")]
+pub declare fn min(a: any, b: any) -> any;
+
+#[@External.Erlang("erlang", "monitor")]
+pub declare fn monitor(kind: any, item: any) -> any;
+
+#[@External.Erlang("erlang", "monitor")]
+pub declare fn monitorWithOptions(kind: any, item: any, options: any) -> any;
+
+#[@External.Erlang("erlang", "node")]
+pub declare fn node() -> any;
+
+#[@External.Erlang("erlang", "nodes")]
+pub declare fn nodes() -> any;
+
+#[@External.Erlang("erlang", "nodes")]
+pub declare fn nodesOfType(arg: any) -> any;
+
+#[@External.Erlang("erlang", "now")]
+pub declare fn now() -> any;
+
+#[@External.Erlang("erlang", "ports")]
+pub declare fn ports() -> any;
+
+#[@External.Erlang("erlang", "processes")]
+pub declare fn processes() -> any;
+
+#[@External.Erlang("erlang", "put")]
+pub declare fn put(key: any, value: any) -> any;
+
+#[@External.Erlang("erlang", "register")]
+pub declare fn register(name: any, pid: any) -> any;
+
+#[@External.Erlang("erlang", "registered")]
+pub declare fn registered() -> any;
+
+#[@External.Erlang("erlang", "round")]
+pub declare fn round(n: any) -> any;
+
+#[@External.Erlang("erlang", "self")]
+pub declare fn self() -> any;
+
+#[@External.Erlang("erlang", "send")]
+pub declare fn send(dest: any, msg: any) -> any;
+
+#[@External.Erlang("erlang", "send")]
+pub declare fn sendWithOptions(dest: any, msg: any, options: any) -> any;
+
+#[@External.Erlang("erlang", "size")]
+pub declare fn size(term: any) -> any;
+
+#[@External.Erlang("erlang", "spawn")]
+pub declare fn spawn(fun: any) -> any;
+
+#[@External.Erlang("erlang", "spawn")]
+pub declare fn spawnOnNode(node: any, fun: any) -> any;
+
+#[@External.Erlang("erlang", "spawn")]
+pub declare fn spawnMfa(m: any, f: any, a: any) -> any;
+
+#[@External.Erlang("erlang", "spawn")]
+pub declare fn spawnMfaOnNode(node: any, m: any, f: any, a: any) -> any;
+
+#[@External.Erlang("erlang", "statistics")]
+pub declare fn statistics(item: any) -> any;
+
+#[@External.Erlang("erlang", "time")]
+pub declare fn time() -> any;
+
+#[@External.Erlang("erlang", "tl")]
+pub declare fn tl(list: any) -> any;
+
+#[@External.Erlang("erlang", "trunc")]
+pub declare fn trunc(n: any) -> any;
+
+#[@External.Erlang("erlang", "unlink")]
+pub declare fn unlink(pid: any) -> any;
+
+#[@External.Erlang("erlang", "unregister")]
+pub declare fn unregister(name: any) -> any;
+
+#[@External.Erlang("erlang", "whereis")]
+pub declare fn whereis(name: any) -> any;

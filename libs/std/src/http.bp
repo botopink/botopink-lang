@@ -1,0 +1,74 @@
+//// std/http — minimal HTTP client primitives (cross-backend).
+////
+//// Reference:
+////   Node.js  — https://nodejs.org/api/globals.html#fetch
+////              (the global `fetch` since Node 18; `Response.text()`
+////               reads the body as a UTF-8 string).
+////   Erlang   — https://www.erlang.org/doc/man/httpc.html
+////              (`httpc:request/4`; requires `inets:start()` and,
+////               for https URLs, `ssl:start()`).
+////
+//// `fetch(url) -> @Future<Response>` is the single GET surface. The
+//// node template lowers to a `fetch` + `.text()` chain that resolves
+//// to a `{ status, body }` shape. The erlang template ensures
+//// `inets`/`ssl` are started (idempotent — `{error, {already_started,
+//// _}}` is folded back to ok via `catch`) and lowers to a synchronous
+//// `httpc:request/4`. Erlang is eager: `@Future<T>` resolves to `T`
+//// in the eager-lowering arm documented in `codegen/erlang.zig`, so
+//// the caller's `await fetch(url)` is identity on that backend.
+////
+//// Out of scope: methods other than GET, request headers/body,
+//// streaming responses. Richer shapes can land as separate `declare`s
+//// (`get`/`post`/`request`) on top of the same `@Future<Response>`
+//// contract.
+////
+//// BEAM and wasm targets are out of scope: `wat3` has no host fetch
+//// surface; BEAM follows the erlang template once an `httpc`-equivalent
+//// shim is ported. Either backend's caller will fail with a missing-
+//// external diagnostic at codegen time, matching the spec wave's
+//// scope.
+
+pub record Response {
+    status: i32,
+    body: string,
+}
+
+// Issue a GET request and resolve with the response body.
+//
+// Node: `globalThis.fetch($0).then(r => r.text().then(b => ({status:
+// r.status, body: b})))` — the chained `.then` flattens the
+// `Response → Promise<text>` shape into a single `Promise<Response>`
+// whose payload matches the `Response` record. The Promise itself
+// satisfies the `@Future<Response>` contract on the node lowering
+// (`#[@future]` async lowering keeps the Promise live across `await`).
+//
+// Erlang: idempotently start `inets` + `ssl` (caught so a second
+// `fetch` call doesn't bomb on `{already_started, _}`), then call
+// `httpc:request/4`. The OK arm constructs the `Response` record as
+// `#{status => Code, body => Body}`; the error arm folds the failure
+// into the same record with `status = -1` and the error reason
+// formatted into `body`. Callers reading `status >= 200 andalso
+// status < 400` get the same go/no-go gate as the node side.
+#[@future]
+#[@External.Node("""globalThis.fetch($0).then(__r => __r.text().then(__b => ({status: __r.status, body: __b})))"""),
+  @External.Erlang("""(fun(__U) -> (catch inets:start()), (catch ssl:start()), case httpc:request(get, {binary_to_list(__U), []}, [], []) of {ok, {{_, __C, _}, _, __B}} -> #{status => __C, body => iolist_to_binary(__B)}; {error, __R} -> #{status => -1, body => iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
+pub declare fn fetch(url: string) -> @Future<Response>;
+
+// ── tests ────────────────────────────────────────────────────────────────────
+// No inline runtime tests: `fetch` needs network access, which the
+// per-backend lib-test runners do not provide. The surface is exercised
+// indirectly through the parser §A3 + infer §A3 acceptance gates
+// (`modules/compiler-core/src/parser/tests/effect_rejections.zig`)
+// which pin `#[@future] declare fn` with `@external` as accepted.
+//
+// A compile-only smoke fixture lives below to ensure callers can
+// `await fetch(url)` from a `#[@future]` body without the type checker
+// tripping on the eager `Response` payload. The body is not executed
+// at test time (its `await` would issue a network call), but the
+// fixture type-checks at compile time.
+
+#[@future]
+pub fn fetchStatus(url: string) -> @Future<i32> {
+    val resp = await fetch(url);
+    return resp.status;
+}

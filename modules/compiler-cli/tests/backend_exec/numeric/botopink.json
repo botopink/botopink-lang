@@ -1,0 +1,7 @@
+{
+  "name": "numeric",
+  "version": "0.0.1",
+  "description": "Backend-execution fixture: a pure-arithmetic program that runs and returns the SAME number on every backend (node, erlang, beam, wasm). Front-C C2.",
+  "target": "commonJS",
+  "src": "src/"
+}

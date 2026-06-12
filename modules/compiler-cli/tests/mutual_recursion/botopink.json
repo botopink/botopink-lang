@@ -1,0 +1,7 @@
+{
+  "name": "mutual_recursion",
+  "version": "0.0.1",
+  "description": "Regression fixture: forward reference + true mutual recursion, run on every backend (mutual-recursion spec).",
+  "target": "commonJS",
+  "src": "src/"
+}

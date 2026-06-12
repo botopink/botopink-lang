@@ -1,0 +1,125 @@
+//// std/regex — regular-expression matching primitives, cross-backend.
+////
+//// Reference:
+////   Node.js  — https://nodejs.org/api/  (`RegExp`, `String.prototype.match`,
+////              `replace`, `split`)
+////   Erlang   — https://www.erlang.org/doc/man/re.html
+////              (`re:run/2`, `re:replace/4`, `re:split/2`)
+////
+//// `test(pattern, input)` checks whether `pattern` matches anywhere in
+//// `input`. `replace(pattern, input, replacement)` substitutes the first
+//// occurrence (Node `String.prototype.replace` semantics); `replaceAll`
+//// substitutes every occurrence (Node-style `g` flag baked in).
+//// `splitOn(pattern, input)` splits on every pattern match.
+////
+//// All §A2 templates — chained `new RegExp(...).test(...)` shapes on
+//// Node, `re:run/2` / `re:replace/4` on Erlang. The patterns follow
+//// the host's native regex flavour: Node uses ECMAScript regex,
+//// Erlang uses PCRE-style — most basic patterns (`\d`, `\w`, `[a-z]`,
+//// `*`, `+`, `?`) overlap so portable patterns are the common case.
+////
+//// `match(pattern, input)` returns the first match as `?Match` (the
+//// value + index pair). `matchAll(pattern, input)` returns every
+//// non-overlapping match. The wrappers compose `re:run` / `RegExp`
+//// templates around the value+offset extraction so the result shape
+//// matches across backends.
+
+// True when `pattern` matches anywhere in `input`. Named `matches`
+// rather than the spec's `test` because `test` is a reserved keyword
+// introducing inline test blocks at the parser level.
+// Node: `new RegExp($0).test($1)`.
+// Erlang: `re:run/2` returns `{match, _}` or `nomatch`; the template
+// pattern-matches the result against `nomatch`.
+#[@External.Node("""(new RegExp($0).test($1))"""),
+  @External.Erlang("""(re:run($1, $0) =/= nomatch)""")]
+pub declare fn matches(pattern: string, input: string) -> bool;
+
+// Replace the FIRST occurrence of `pattern` in `input` with `replacement`.
+// Node: `$1.replace(new RegExp($0), $2)` (no `g` flag → first only).
+// Erlang: `re:replace/4` with no `global` option → first match only;
+// `{return, binary}` keeps the output a binary.
+#[@External.Node("""($1.replace(new RegExp($0), $2))"""),
+  @External.Erlang("""re:replace($1, $0, $2, [{return, binary}])""")]
+pub declare fn replace(pattern: string, input: string, replacement: string) -> string;
+
+// Replace EVERY occurrence of `pattern` in `input` with `replacement`.
+// Node: `new RegExp($0, 'g')` for global flag.
+// Erlang: `re:replace/4` with the `global` option.
+#[@External.Node("""($1.replace(new RegExp($0, 'g'), $2))"""),
+  @External.Erlang("""re:replace($1, $0, $2, [global, {return, binary}])""")]
+pub declare fn replaceAll(pattern: string, input: string, replacement: string) -> string;
+
+// Split `input` on every match of `pattern`. Returns the array of
+// pieces between matches.
+// Node: `$1.split(new RegExp($0))`.
+// Erlang: `re:split/2` returns a list of binaries with the matches
+// removed — `{return, binary}` keeps the output a binary list.
+#[@External.Node("""($1.split(new RegExp($0)))"""),
+  @External.Erlang("""re:split($1, $0, [{return, binary}])""")]
+pub declare fn splitOn(pattern: string, input: string) -> string[];
+
+// A single match site — the matched text and its 0-based start position
+// in the input.
+pub record Match {
+    value: string,
+    index: i32,
+}
+
+// First non-overlapping match, or null when `pattern` matches nothing.
+// Node materialises `null` from a missing match; Erlang's `re:run`
+// yields `{match, [{Offset, Len}]}` (0-based byte offsets) and the
+// template projects that into a `#{value, index}` map matching the bp
+// `Match` record shape.
+#[@External.Node("""(() => { const __m = $1.match(new RegExp($0)); return __m ? { value: __m[0], index: __m.index } : null })()"""),
+  @External.Erlang("""(fun() -> case re:run($1, $0, [{capture, first, index}]) of {match, [{__O, __L}]} -> #{value => binary:part($1, __O, __L), index => __O}; nomatch -> undefined end end)()""")]
+pub declare fn match(pattern: string, input: string) -> ?Match;
+
+// Every non-overlapping match. Node uses the `g` flag + `matchAll`;
+// Erlang uses `[global, {capture, first, index}]` and projects each
+// `{Offset, Len}` into the record shape.
+#[@External.Node("""(Array.from($1.matchAll(new RegExp($0, 'g'))).map((__m) => ({ value: __m[0], index: __m.index })))"""),
+  @External.Erlang("""(fun() -> case re:run($1, $0, [global, {capture, first, index}]) of {match, __Ms} -> [#{value => binary:part($1, __O, __L), index => __O} || [{__O, __L}] <- __Ms]; nomatch -> [] end end)()""")]
+pub declare fn matchAll(pattern: string, input: string) -> Array<Match>;
+
+// ── tests ────────────────────────────────────────────────────────────────────
+
+test "regex.matchesmatches a digit class" {
+    assert matches("[0-9]+", "abc123def");
+    assert matches("[0-9]+", "abc-def").negate();
+}
+
+test "regex.replace swaps the first occurrence" {
+    val out = replace("a", "banana", "X");
+    assert out == "bXnana";
+}
+
+test "regex.replaceAll swaps every occurrence" {
+    val out = replaceAll("a", "banana", "X");
+    assert out == "bXnXnX";
+}
+
+test "regex.splitOn breaks on the pattern" {
+    val parts = splitOn(",", "a,b,c");
+    assert parts.length == 3;
+    assert parts.at(0).unwrapOr("") == "a";
+    assert parts.at(2).unwrapOr("") == "c";
+}
+
+test "regex.match returns Some when the pattern matches" {
+    val m = match("[0-9]+", "abc123def");
+    val v = m.map({ x -> x.value }).unwrapOr("");
+    assert v == "123";
+}
+
+test "regex.match returns absent for nomatch" {
+    val m = match("[0-9]+", "abc-def");
+    val v = m.map({ x -> x.value }).unwrapOr("absent");
+    assert v == "absent";
+}
+
+test "regex.matchAll yields every match" {
+    val ms = matchAll("[0-9]+", "1 a 22 b 333");
+    assert ms.length == 3;
+    assert ms.at(0).map({ x -> x.value }).unwrapOr("") == "1";
+    assert ms.at(2).map({ x -> x.value }).unwrapOr("") == "333";
+}

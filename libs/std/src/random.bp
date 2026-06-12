@@ -1,0 +1,209 @@
+//// std/random — pseudo-random number primitives (cross-backend).
+////
+//// Reference:
+////   Node.js  — https://nodejs.org/api/  (the `Math.random` global)
+////   Erlang   — https://www.erlang.org/doc/apps/stdlib/rand.html
+////
+//// `float()` returns a uniform `[0.0, 1.0)` sample on every backend.
+//// Higher-level helpers (`coin`/`pick`) compose `float()` — portable +
+//// no host call beyond the uniform sample. Seedable RNGs are deferred:
+//// Node has no built-in seedable PRNG behind `Math.random`, so any
+//// seed/state surface needs a userland PRNG; ship that in a follow-up
+//// once the test infra is ready for reproducible draws.
+
+#[@External.Node("Math", "random"),
+  @External.Erlang("rand", "uniform"),
+  @External.Beam("rand", "uniform")]
+pub declare fn float() -> f64;
+
+// Seed the Node-side userland PRNG (Mulberry32) shipped via the sidecar
+// at `libs/std/src/sidecars/random.mjs`. After seeding, `seededFloat()`
+// draws from the reproducible stream. `float()` itself stays on
+// `Math.random`; explicit-stream callers opt into determinism by using
+// `seededFloat` after `seed`.
+// Node: `require('./sidecars/random.mjs').seed($0)` — the CLI's sidecar
+// shipper copies the `.mjs` next to the emitted module.
+// Erlang: `rand:seed/2` with the `exsplus` algorithm + a `{S, S, S}`
+// triple. `S` is folded to an integer via the i64 input.
+#[@External.Node("""require('./sidecars/random.mjs').seed($0)"""),
+  @External.Erlang("""(fun(__S) -> rand:seed(exsplus, {__S, __S, __S}) end)($0)""")]
+pub declare fn seed(s: i32) -> unit;
+
+// Draw from the seeded PRNG when a `seed` call has been made; otherwise
+// falls through to the unseeded `float()` baseline. Erlang's `rand`
+// module reads from the process dictionary's seed state directly, so
+// the same `rand:uniform/0` call after `seed` produces the reproducible
+// stream automatically.
+#[@External.Node("""require('./sidecars/random.mjs').seededFloat()"""),
+  @External.Erlang("rand", "uniform")]
+pub declare fn seededFloat() -> f64;
+
+// 50/50 boolean draw. `float() >= 0.5` picks the upper half of the
+// uniform sample — identically distributed on every backend that has
+// a uniform `float()`.
+pub fn coin() -> bool {
+    return float() >= 0.5;
+}
+
+// Alias for `coin()` — matches the Node `Math.random()` mental model
+// where you draw a boolean by comparing the uniform sample to `0.5`.
+// Pure-botopink: lowers to the same `float() >= 0.5` shape as `coin`.
+pub fn bool() -> bool {
+    return coin();
+}
+
+// Random integer in the closed interval `[lo, hi]`. When `lo > hi` the
+// range is empty and the result is `lo` (a defensive default — the
+// alternative is to `@panic`, which the @assert-style tests would
+// rather catch at the call site).
+pub fn intInRange(lo: i32, hi: i32) -> i32 {
+    if (lo >= hi) {
+        return lo;
+    };
+    val span = (hi - lo) + 1;
+    val product = float() * span;
+    val offset = floorWalk(0, 1.0, product, span);
+    return lo + offset;
+}
+
+// Pick a random element from a non-empty array. Returns `null` for the
+// empty array — the call site should default with `?.unwrapOr(…)` rather
+// than panic. Uses a walk-up integer floor (no `Math.floor` import) so
+// the body stays self-contained.
+pub fn pick<T>(xs: Array<T>) -> ?T {
+    val n = xs.length;
+    if (n == 0) {
+        return null;
+    };
+    // `float() * n` mixes f64 × i32 — inference promotes to f64.
+    val product = float() * n;
+    val idx = floorWalk(0, 1.0, product, n);
+    return xs.at(idx);
+}
+
+// Internal: integer floor of a non-negative `product` < `upper`. Walks
+// `start` up from 0 while `threshold (= start + 1)` still fits below
+// `product`. O(upper) — fine for the small `Array<T>` arities `pick`
+// targets in tests.
+fn floorWalk(start: i32, threshold: f64, product: f64, upper: i32) -> i32 {
+    if (start + 1 > upper) {
+        return start;
+    };
+    if (threshold > product) {
+        return start;
+    };
+    return floorWalk(start + 1, threshold + 1.0, product, upper);
+}
+
+// Fisher-Yates shuffle. Returns a fresh array whose elements are a
+// permutation of `xs`. The pure-bp shape was deferred (the deferral
+// note used to live here) because `Array<T>::at(i)` returns `?T` and
+// extracting T without a sentinel value of T is circular. Solution:
+// host-backed `pub declare fn shuffle<T>(xs)` — the host owns the
+// in-place swap; the bp side only declares the signature and the
+// per-target template.
+//
+// Node: classic Fisher-Yates over the input array, returning a fresh
+// copy (the input is not mutated — matches the immutable-by-default
+// botopink contract for return values). `random.seed` from this same
+// module seeds the sidecar PRNG; subsequent `shuffle` draws are
+// reproducible after `seed(s)`.
+//
+// Erlang: `[X || {_, X} <- lists:sort([{rand:uniform(), Y} || Y <- $0])]`
+// — the Schwartzian-transform shuffle: pair each element with a
+// random key, sort by key, strip the keys. Stable across `rand:seed`
+// state (the same `rand` server `seed/2` controls both `uniform/0`
+// here and `seededFloat()` above).
+//
+// Beam/wasm: out of scope at v1 (no `lists:sort` template, no
+// `Math.random` equivalent in wat3); the matrix will report
+// `MissingExternalTarget` on a `shuffle(...)` call from those backends
+// until the corresponding shim lands.
+#[@External.Node("""(function(__A){ var __O = __A.slice(); for (var __I = __O.length - 1; __I > 0; __I--) { var __J = Math.floor(Math.random() * (__I + 1)); var __T = __O[__I]; __O[__I] = __O[__J]; __O[__J] = __T; } return __O; })($0)"""),
+  @External.Erlang("""[__X || {_, __X} <- lists:sort([{rand:uniform(), __Y} || __Y <- $0])]""")]
+pub declare fn shuffle<T>(xs: Array<T>) -> Array<T>;
+
+// ── tests ────────────────────────────────────────────────────────────────────
+
+test "random.float lies in [0.0, 1.0)" {
+    val r = float();
+    assert r >= 0.0;
+    assert r < 1.0;
+}
+
+test "random.coin draws either truth value" {
+    val b = coin();
+    assert b == true || b == false;
+}
+
+test "random.pick from non-empty array returns a member" {
+    val xs = [1, 2, 3];
+    val r = pick(xs).unwrapOr(99);
+    assert r >= 1;
+    assert r <= 3;
+}
+
+test "random.pick from empty array returns null" {
+    val empty: Array<i32> = [];
+    assert pick(empty).unwrapOr(99) == 99;
+}
+
+test "random.bool draws either truth value" {
+    val b = bool();
+    assert b == true || b == false;
+}
+
+test "random.intInRange yields a value in the closed interval" {
+    val r = intInRange(1, 6);
+    assert r >= 1;
+    assert r <= 6;
+}
+
+test "random.intInRange on a one-element range returns that element" {
+    assert intInRange(7, 7) == 7;
+}
+
+test "random.intInRange on an inverted range returns the low bound" {
+    assert intInRange(10, 5) == 10;
+}
+
+test "random.seed + seededFloat draws are reproducible" {
+    seed(42);
+    val a = seededFloat();
+    seed(42);
+    val b = seededFloat();
+    assert a == b;
+}
+
+test "random.seededFloat lies in [0.0, 1.0)" {
+    val r = seededFloat();
+    assert r >= 0.0;
+    assert r < 1.0;
+}
+
+test "random.shuffle preserves length" {
+    val xs = [1, 2, 3, 4, 5];
+    val ys = shuffle(xs);
+    assert ys.length == 5;
+}
+
+test "random.shuffle preserves the multiset (sum)" {
+    val xs = [1, 2, 3, 4, 5];
+    val ys = shuffle(xs);
+    // Sum is permutation-invariant — every element still appears once.
+    var s = 0;
+    ys.forEach({ y -> s = s + y; });
+    assert s == 15;
+}
+
+test "random.shuffle of an empty array is empty" {
+    val empty: Array<i32> = [];
+    assert shuffle(empty).length == 0;
+}
+
+test "random.shuffle of a single-element array preserves it" {
+    val xs = [42];
+    val ys = shuffle(xs);
+    assert ys.length == 1;
+    assert ys.at(0).unwrapOr(0) == 42;
+}
