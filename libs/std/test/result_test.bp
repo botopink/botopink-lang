@@ -1,0 +1,55 @@
+// std — `@Result<R, E>` method API (B1 gap: Result map/flatMap/unwrapOr).
+//
+// A `@Result` value is only produced by `return`/`throw` inside a `#[@result]`
+// fn, so the suite carries its own tiny effectful producers and then exercises
+// the inference-resolved, inline-lowered method surface on the values they
+// return. Run by `botopink test` from `libs/std/`.
+
+#[@result]
+fn parse(n: i32) -> @Result<i32, string> {
+  if (n < 0) { throw "negative"; };
+  return n;
+}
+
+#[@result]
+fn half(n: i32) -> @Result<i32, string> {
+  if (n % 2 != 0) { throw "odd"; };
+  return n / 2;
+}
+
+test "result map over Ok transforms the payload" {
+  val r = parse(5).map({ x -> x + 1 });
+  assert r.unwrapOr(0) == 6;
+}
+
+test "result map over Error is propagated untouched" {
+  val r = parse(-3).map({ x -> x + 1 });
+  assert r.unwrapOr(-99) == -99;
+}
+
+test "result flatMap chains Result-returning steps" {
+  val r = parse(8).flatMap({ x -> half(x) });
+  assert r.unwrapOr(0) == 4;
+}
+
+test "result flatMap short-circuits on the first Error" {
+  val r = parse(7).flatMap({ x -> half(x) });   // 7 is odd → `half` throws
+  assert r.unwrapOr(-1) == -1;
+}
+
+test "result flatMap short-circuits when the head is Error" {
+  val r = parse(-1).flatMap({ x -> half(x) });
+  assert r.unwrapOr(-1) == -1;
+}
+
+test "result unwrapOr returns the Ok payload" {
+  assert parse(42).unwrapOr(0) == 42;
+}
+
+// LIMITATION (recorded): `isOk()`/`isError()` — neither the method form
+// (`r.isOk()`) nor the `result` namespace form (`result.isOk(r)`) is lowered by
+// the commonJS backend today (both type-check via inference but emit an
+// undefined symbol at run time). The B1 gap is the map/flatMap/unwrapOr surface,
+// which is fully covered above; discriminating the variant is exercised
+// indirectly through `unwrapOr` (Ok payload vs. fallback). Re-add a discriminator
+// test once the backend lowers `isOk`/`isError`.

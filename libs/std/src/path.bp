@@ -1,0 +1,322 @@
+//// std/path — pure-botopink path manipulation (posix forward-slash).
+////
+//// Reference:
+////   Node.js  — https://nodejs.org/api/path.html
+////   Erlang   — https://www.erlang.org/doc/apps/stdlib/filename.html
+////
+//// Lib-self-contained: every operation composes `String` methods (`split`,
+//// `slice`, `length`, `startsWith`), so the module works on every backend
+//// including wat. Forward-slash separator only — Windows backslash paths
+//// are not normalised here (the spec keeps `path` posix-shaped; a
+//// `path_win32` sibling can land later if a target needs it).
+
+pub val separator: string = "/";
+pub val delimiter: string = ":";
+
+// Split a path into its non-empty components. Leading-`/` paths drop the
+// empty head; trailing-`/` paths drop the empty tail. A path made of pure
+// separators yields the empty array. Uses `filter` rather than
+// `forEach` + `push`: a `var` + `push` pattern lowers to a dead-store
+// (`out ++ [p]` discarded) on Erlang because the immutable runtime never
+// rebinds `Out`; `filter` round-trips through `lists:filter/2` and
+// `Array.prototype.filter` directly.
+pub fn split(path: string) -> string[] {
+    val raw = path.split(separator);
+    return raw.filter({ p -> p != "" });
+}
+
+// True when `path` starts with `/` — the posix absolute-path marker.
+pub fn isAbsolute(path: string) -> bool {
+    return path.startsWith(separator);
+}
+
+// The last non-empty component of `path` (the file name, in the common
+// case). Returns "" for the empty path and for pure-separator paths.
+pub fn basename(path: string) -> string {
+    val parts = split(path);
+    val n = parts.length;
+    if (n == 0) {
+        return "";
+    };
+    return parts.at(n - 1).unwrapOr("");
+}
+
+// Everything except the basename — the parent directory portion. For an
+// absolute path this preserves the leading `/`. For a path with no
+// separator (`"foo"`), returns `""`.
+pub fn dirname(path: string) -> string {
+    val parts = split(path);
+    val n = parts.length;
+    if (n <= 1) {
+        return if (isAbsolute(path)) {
+            separator;
+        } else {
+            "";
+        };
+    };
+    val head = parts.slice(0, n - 1);
+    val joined = head.join(separator);
+    // String `+` lowers to numeric `+` on Erlang (badarith on binaries);
+    // use a 2-element array `.join("")` to concat instead — that goes
+    // through `lists:join("", …)` + `iolist_to_binary` on Erlang and
+    // `Array.prototype.join("")` on Node, both string-safe.
+    return if (isAbsolute(path)) {
+        [separator, joined].join("");
+    } else {
+        joined;
+    };
+}
+
+// The trailing extension on the basename — the substring from the LAST
+// `.` to the end, including the dot. Returns `""` when the basename has
+// no extension (or is a dotfile with no further `.`s, e.g. `.bashrc`).
+pub fn extname(path: string) -> string {
+    val base = basename(path);
+    val pieces = base.split(".");
+    val n = pieces.length;
+    if (n <= 1) {
+        return "";
+    };
+    val head = pieces.at(0).unwrapOr("");
+    val tail = pieces.at(n - 1).unwrapOr("");
+    // Dotfiles like ".bashrc" split into ["", "bashrc"] — no extension.
+    val isDotfile = head == "" && n == 2;
+    return if (isDotfile) { ""; } else { [".", tail].join(""); };
+}
+
+// Join a list of path segments with the separator. Leading separator on
+// the first segment is preserved; intra-segment slashes are normalised
+// (`"foo/" + "/bar"` joins to `"foo/bar"`, never `"foo//bar"`). Uses
+// `map` + `filter` + `join` rather than `fold` / `flatMap`: those land
+// on `Array<T>` default-fn bodies that lower to a `var` + `push` shape,
+// which lowers to a dead store on Erlang's immutable runtime (the same
+// trap `split` sidesteps).
+pub fn join(parts: string[]) -> string {
+    val isAbs = if (parts.length == 0) {
+        false;
+    } else {
+        isAbsolute(parts.at(0).unwrapOr(""));
+    };
+    val collapsed = parts.map({ p -> split(p).join(separator) });
+    val joined = collapsed.filter({ p -> p != "" }).join(separator);
+    return if (isAbs) {
+        [separator, joined].join("");
+    } else {
+        joined;
+    };
+}
+
+// Collapse `//` and drop `.` segments via a `filter` over the split
+// pieces. Full `..` pop semantics are deferred: they need a stack-shaped
+// accumulator and `var` reassignment, which lowers to a dead store on
+// Erlang's immutable runtime (the same trap `split`/`join` sidestep with
+// `filter`/`flatMap`).
+pub fn normalize(path: string) -> string {
+    if (path == "") {
+        return ".";
+    };
+    val isAbs = isAbsolute(path);
+    val pieces = split(path).filter({ p -> p != "." });
+    val joined = pieces.join(separator);
+    return if (isAbs) {
+        [separator, joined].join("");
+    } else {
+        if (joined == "") { "."; } else { joined; };
+    };
+}
+
+// Internal: count how many leading components two split paths share. Tail-
+// recursive on `i` so the accumulator never needs a `var` rebind (which
+// lowers to a dead store on Erlang's immutable runtime).
+fn commonPrefixCount(a: string[], b: string[], i: i32) -> i32 {
+    if (i >= a.length) {
+        return i;
+    };
+    if (i >= b.length) {
+        return i;
+    };
+    val ai = a.at(i).unwrapOr("");
+    val bi = b.at(i).unwrapOr("");
+    return if (ai == bi) {
+        commonPrefixCount(a, b, i + 1);
+    } else {
+        i;
+    };
+}
+
+// Internal: build an array of `n` ".." strings via head/tail recursion.
+// Avoids a `var` + `push` accumulator (the Erlang dead-store trap).
+fn makeUps(n: i32) -> string[] {
+    return if (n <= 0) {
+        [];
+    } else {
+        makeUps(n - 1).prepend("..");
+    };
+}
+
+// The relative path from `src` to `dst` — the path you would prefix to
+// `src` to reach `dst`. Both inputs are treated structurally (no `cwd()`
+// fallback — that belongs in `process` once it lands). Returns "." when
+// the paths point at the same location.
+//
+// `src` is named `src` rather than `from` because `from` is a reserved
+// keyword (the `import { … } from "<lib>"` syntax) — it does not parse
+// as a parameter name.
+pub fn relative(src: string, dst: string) -> string {
+    val srcParts = split(src);
+    val dstParts = split(dst);
+    val common = commonPrefixCount(srcParts, dstParts, 0);
+    val ups = makeUps(srcParts.length - common);
+    val downs = dstParts.slice(common, dstParts.length);
+    val combined = ups.append(downs);
+    val joined = combined.join(separator);
+    return if (joined == "") {
+        ".";
+    } else {
+        joined;
+    };
+}
+
+// Internal accumulator for `resolve`: a list of normalised path parts
+// plus whether the resolved-so-far path is absolute. The record carries
+// the state through the tail-recursive `resolveAll` so no `var` is
+// needed.
+record PathAccum {
+    isAbs: bool,
+    parts: string[],
+}
+
+// Internal: apply each component of one segment (post-split) to the
+// accumulator, popping for `..` and appending the rest. Head/tail
+// recursive — no `var` rebinds.
+fn applyPieces(acc: string[], pieces: string[]) -> string[] {
+    if (pieces.length == 0) {
+        return acc;
+    };
+    val p = pieces.at(0).unwrapOr("");
+    val rest = pieces.slice(1, pieces.length);
+    val nextAcc = if (p == "..") {
+        if (acc.length == 0) {
+            acc;
+        } else {
+            acc.slice(0, acc.length - 1);
+        };
+    } else {
+        acc.append([p]);
+    };
+    return applyPieces(nextAcc, rest);
+}
+
+fn resolveStep(state: PathAccum, seg: string) -> PathAccum {
+    val pieces = split(seg);
+    val nextIsAbs = isAbsolute(seg) || state.isAbs;
+    val baseParts = if (isAbsolute(seg)) {
+        [];
+    } else {
+        state.parts;
+    };
+    return PathAccum(
+        isAbs: nextIsAbs,
+        parts: applyPieces(baseParts, pieces),
+    );
+}
+
+fn resolveAll(segments: string[], i: i32, state: PathAccum) -> PathAccum {
+    if (i >= segments.length) {
+        return state;
+    };
+    val seg = segments.at(i).unwrapOr("");
+    val next = resolveStep(state, seg);
+    return resolveAll(segments, i + 1, next);
+}
+
+// Resolve a list of path segments into a single normalised path.
+// Absolute segments restart the accumulator (matches Node's
+// `path.resolve`); `..` pops one component; `.` drops out (already
+// filtered by `split`). The empty input resolves to ".".
+pub fn resolve(segments: string[]) -> string {
+    val finalState = resolveAll(
+        segments,
+        0,
+        PathAccum(isAbs: false, parts: []),
+    );
+    val joined = finalState.parts.join(separator);
+    return if (finalState.isAbs) {
+        [separator, joined].join("");
+    } else {
+        if (joined == "") {
+            ".";
+        } else {
+            joined;
+        };
+    };
+}
+
+// ── tests ────────────────────────────────────────────────────────────────────
+
+test "path.separator is forward slash" {
+    assert separator == "/";
+}
+
+test "path.isAbsolute distinguishes leading slash" {
+    assert isAbsolute("/usr/bin");
+    assert isAbsolute("foo/bar").negate();
+}
+
+test "path.split drops empties" {
+    val s = split("/usr//bin/");
+    assert s.length == 2;
+    assert s.at(0).unwrapOr("") == "usr";
+    assert s.at(1).unwrapOr("") == "bin";
+}
+
+test "path.basename returns the last component" {
+    assert basename("/usr/bin/zig") == "zig";
+    assert basename("foo") == "foo";
+    assert basename("") == "";
+}
+
+test "path.dirname returns the parent" {
+    assert dirname("/usr/bin/zig") == "/usr/bin";
+    assert dirname("foo/bar") == "foo";
+    assert dirname("foo") == "";
+    assert dirname("/foo") == "/";
+}
+
+test "path.extname returns the trailing suffix" {
+    assert extname("file.txt") == ".txt";
+    assert extname("archive.tar.gz") == ".gz";
+    assert extname("README") == "";
+    assert extname(".bashrc") == "";
+}
+
+test "path.join concatenates with separator" {
+    assert join(["foo", "bar", "baz"]) == "foo/bar/baz";
+    assert join(["/foo", "bar"]) == "/foo/bar";
+    assert join(["foo/", "/bar"]) == "foo/bar";
+}
+
+test "path.normalize collapses doubles" {
+    assert normalize("/foo//bar") == "/foo/bar";
+    assert normalize("foo/./bar") == "foo/bar";
+}
+
+test "path.normalize on empty is dot" {
+    assert normalize("") == ".";
+}
+
+test "path.relative same dir" {
+    assert relative("/a/b/c", "/a/b/c") == ".";
+}
+
+test "path.relative up one" {
+    assert relative("/a/b/c", "/a/b") == "..";
+}
+
+test "path.resolve absolute" {
+    assert resolve(["/a", "b", "c"]) == "/a/b/c";
+}
+
+test "path.resolve with double-dot" {
+    assert resolve(["/a", "b", "..", "c"]) == "/a/c";
+}

@@ -1,0 +1,228 @@
+/// Snapshot generation for codegen tests.
+///
+/// Builds multi-section snapshot content:
+///   ----- SOURCE CODE -- name.bp
+///   ----- COMPTIME JAVASCRIPT -- name.js  (optional)
+///   ----- JAVASCRIPT -- name.js
+///   ----- TYPESCRIPT TYPEDEF -- name.d.ts  (optional)
+///   ----- RUN LOG -----  (optional)
+///
+/// And for error tests:
+///   ----- SOURCE CODE -- main.bp
+///   ----- ERROR
+const std = @import("std");
+const snapMod = @import("../utils/snap.zig");
+const codegen = @import("../codegen.zig");
+const config = @import("./config.zig");
+const moduleOutput = @import("./moduleOutput.zig");
+const Module = codegen.Module;
+const GenerateResult = moduleOutput.GenerateResult;
+
+/// Input data for snapshot generation.
+pub const SnapInput = struct {
+    name: []const u8,
+    src: []const u8,
+    result: GenerateResult,
+};
+
+/// Builds the full snapshot text for a single codegen module output.
+pub fn buildSnapshot(alloc: std.mem.Allocator, name: []const u8, src: []const u8, result: GenerateResult, cfg: config.Config) ![]u8 {
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer buf.deinit(alloc);
+
+    // Source code section
+    const srcHdr = try std.fmt.allocPrint(alloc, "----- SOURCE CODE -- {s}.bp\n```botopink\n", .{name});
+    defer alloc.free(srcHdr);
+    try buf.appendSlice(alloc, srcHdr);
+    try buf.appendSlice(alloc, src);
+    try buf.appendSlice(alloc, "\n```\n\n");
+
+    switch (cfg.targetSource) {
+        .commonJS => {
+            // Comptime JavaScript section (if any)
+            if (result.comptime_script) |ct| {
+                const ctHdr = try std.fmt.allocPrint(alloc, "----- COMPTIME JAVASCRIPT -- {s}.js\n```javascript\n", .{name});
+                defer alloc.free(ctHdr);
+                try buf.appendSlice(alloc, ctHdr);
+                try buf.appendSlice(alloc, ct);
+                try buf.appendSlice(alloc, "```\n\n");
+            }
+
+            // JavaScript output section
+            const jsHdr = try std.fmt.allocPrint(alloc, "----- JAVASCRIPT -- {s}.js\n```javascript\n", .{name});
+            defer alloc.free(jsHdr);
+            try buf.appendSlice(alloc, jsHdr);
+            try buf.appendSlice(alloc, result.js);
+            try buf.appendSlice(alloc, "```\n");
+
+            // TypeScript typedef section (if any)
+            if (result.typedef) |ts| {
+                const tsHdr = try std.fmt.allocPrint(alloc, "\n----- TYPESCRIPT TYPEDEF -- {s}.d.ts\n```typescript\n", .{name});
+                defer alloc.free(tsHdr);
+                try buf.appendSlice(alloc, tsHdr);
+                try buf.appendSlice(alloc, ts);
+                try buf.appendSlice(alloc, "```\n");
+            }
+
+            // RUN LOG section (if any)
+            if (result.run_output) |output| {
+                const runLogHdr = try std.fmt.allocPrint(alloc, "\n----- RUN LOG -----\n```logs\n", .{});
+                defer alloc.free(runLogHdr);
+                try buf.appendSlice(alloc, runLogHdr);
+                try buf.appendSlice(alloc, output);
+                try buf.appendSlice(alloc, "```\n");
+            }
+        },
+        .erlang => {
+            // Comptime Erlang section (if any)
+            if (result.comptime_script) |ct| {
+                const ctHdr = try std.fmt.allocPrint(alloc, "----- COMPTIME ERLANG -- {s}.erl\n```erlang\n", .{name});
+                defer alloc.free(ctHdr);
+                try buf.appendSlice(alloc, ctHdr);
+                try buf.appendSlice(alloc, ct);
+                try buf.appendSlice(alloc, "```\n\n");
+            }
+
+            // Erlang output section
+            const erlHdr = try std.fmt.allocPrint(alloc, "----- ERLANG -- {s}.erl\n```erlang\n", .{name});
+            defer alloc.free(erlHdr);
+            try buf.appendSlice(alloc, erlHdr);
+            try buf.appendSlice(alloc, result.js);
+            try buf.appendSlice(alloc, "```\n");
+
+            // RUN LOG section (if any)
+            if (result.run_output) |output| {
+                const runLogHdr = try std.fmt.allocPrint(alloc, "\n----- RUN LOG -----\n```logs\n", .{});
+                defer alloc.free(runLogHdr);
+                try buf.appendSlice(alloc, runLogHdr);
+                try buf.appendSlice(alloc, output);
+                try buf.appendSlice(alloc, "```\n");
+            }
+        },
+        .beam => {
+            // Comptime Erlang section (if any) — beam shares the Erlang comptime runtime.
+            if (result.comptime_script) |ct| {
+                const ctHdr = try std.fmt.allocPrint(alloc, "----- COMPTIME ERLANG -- {s}.erl\n```erlang\n", .{name});
+                defer alloc.free(ctHdr);
+                try buf.appendSlice(alloc, ctHdr);
+                try buf.appendSlice(alloc, ct);
+                try buf.appendSlice(alloc, "```\n\n");
+            }
+
+            // BEAM Assembly output section
+            const asmHdr = try std.fmt.allocPrint(alloc, "----- BEAM ASSEMBLY -- {s}.S\n```erlang\n", .{name});
+            defer alloc.free(asmHdr);
+            try buf.appendSlice(alloc, asmHdr);
+            try buf.appendSlice(alloc, result.js);
+            try buf.appendSlice(alloc, "```\n");
+
+            if (result.run_output) |output| {
+                const runLogHdr = try std.fmt.allocPrint(alloc, "\n----- RUN LOG -----\n```logs\n", .{});
+                defer alloc.free(runLogHdr);
+                try buf.appendSlice(alloc, runLogHdr);
+                try buf.appendSlice(alloc, output);
+                try buf.appendSlice(alloc, "```\n");
+            }
+        },
+        .wasm => {
+            // Comptime JavaScript section (if any) — wasm shares the Node comptime runtime.
+            if (result.comptime_script) |ct| {
+                const ctHdr = try std.fmt.allocPrint(alloc, "----- COMPTIME JAVASCRIPT -- {s}.js\n```javascript\n", .{name});
+                defer alloc.free(ctHdr);
+                try buf.appendSlice(alloc, ctHdr);
+                try buf.appendSlice(alloc, ct);
+                try buf.appendSlice(alloc, "```\n\n");
+            }
+
+            // WebAssembly Text output section
+            const watHdr = try std.fmt.allocPrint(alloc, "----- WASM TEXT -- {s}.wat\n```wasm\n", .{name});
+            defer alloc.free(watHdr);
+            try buf.appendSlice(alloc, watHdr);
+            try buf.appendSlice(alloc, result.js);
+            try buf.appendSlice(alloc, "```\n");
+
+            if (result.run_output) |output| {
+                const runLogHdr = try std.fmt.allocPrint(alloc, "\n----- RUN LOG -----\n```logs\n", .{});
+                defer alloc.free(runLogHdr);
+                try buf.appendSlice(alloc, runLogHdr);
+                try buf.appendSlice(alloc, output);
+                try buf.appendSlice(alloc, "```\n");
+            }
+        },
+    }
+
+    return try buf.toOwnedSlice(alloc);
+}
+
+/// Builds a multi-section snapshot for multiple codegen module outputs joined together.
+pub fn buildSnapshotMulti(alloc: std.mem.Allocator, outputs: []const SnapInput, cfg: config.Config) ![]u8 {
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer buf.deinit(alloc);
+
+    for (outputs, 0..) |out, idx| {
+        if (idx > 0) try buf.appendSlice(alloc, "\n");
+        const text = try buildSnapshot(alloc, out.name, out.src, out.result, cfg);
+        defer alloc.free(text);
+        try buf.appendSlice(alloc, text);
+    }
+
+    return try buf.toOwnedSlice(alloc);
+}
+
+/// Asserts the codegen output against a snapshot file.
+/// The snapshot path is "codegen/{runtimeTag}/{targetSource}/{slug}.snap.md".
+///
+/// `runtimeTag` was the pre-v0.beta.21 `comptimeRuntime` enum tag (one of
+/// node/erlang/wasm/beam). After the four-runtime architecture collapsed into
+/// a single wasm3 path we keep the tag in the snapshot path — purely to leave
+/// the on-disk snapshot tree byte-identical — by deriving it from the
+/// target backend (each target had exactly one comptime runtime historically).
+pub fn assertCodegen(
+    alloc: std.mem.Allocator,
+    slug: []const u8,
+    outputs: []const SnapInput,
+    cfg: config.Config,
+) !void {
+    const snapName = try std.fmt.allocPrint(alloc, "codegen/{s}/{s}/{s}", .{ legacyRuntimeTag(cfg.targetSource), @tagName(cfg.targetSource), slug });
+    defer alloc.free(snapName);
+
+    const text = try buildSnapshotMulti(alloc, outputs, cfg);
+    defer alloc.free(text);
+
+    try snapMod.checkText(alloc, snapName, text);
+}
+
+/// Asserts a codegen error against a snapshot file.
+/// The snapshot path is "codegen/errors/{comptimeRuntime}/{targetSource}/{slug}.snap.md".
+pub fn assertCodegenError(
+    alloc: std.mem.Allocator,
+    slug: []const u8,
+    src: []const u8,
+    errText: []const u8,
+    cfg: config.Config,
+) !void {
+    const combined = try std.fmt.allocPrint(
+        alloc,
+        "----- SOURCE CODE -- main.bp\n```botopink\n{s}\n```\n\n----- ERROR\n{s}",
+        .{ src, errText },
+    );
+    defer alloc.free(combined);
+
+    const snapName = try std.fmt.allocPrint(alloc, "codegen/errors/{s}/{s}/{s}", .{ legacyRuntimeTag(cfg.targetSource), @tagName(cfg.targetSource), slug });
+    defer alloc.free(snapName);
+
+    try snapMod.checkText(alloc, snapName, combined);
+}
+
+/// Returns the pre-v0.beta.21 `comptimeRuntime` tag for `target` — used only to
+/// preserve the on-disk snapshot path layout when the runtime enum disappeared.
+/// The pairing is the same one `helpers.zig::configs` used before the unify:
+/// commonJS ↔ node, erlang ↔ erlang, beam ↔ beam, wasm ↔ wasm.
+fn legacyRuntimeTag(target: config.TargetSource) []const u8 {
+    return switch (target) {
+        .commonJS => "node",
+        .erlang => "erlang",
+        .beam => "beam",
+        .wasm => "wasm",
+    };
+}

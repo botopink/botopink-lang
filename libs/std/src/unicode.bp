@@ -1,0 +1,134 @@
+//// std/unicode — Unicode codepoint primitives, cross-backend.
+////
+//// Reference:
+////   Node.js  — https://nodejs.org/api/
+////              (`String.prototype.codePointAt`, `String.fromCodePoint`,
+////               `String.prototype.normalize`)
+////   Erlang   — https://www.erlang.org/doc/apps/stdlib/unicode.html
+////              (`unicode:characters_to_list`, `unicode:characters_to_binary`,
+////               `unicode:characters_to_nfc_binary`)
+////
+//// `codepoints(s)` decomposes a string into its sequence of Unicode
+//// codepoints (the i32 representation each backend hands back as an
+//// integer). `fromCodepoint(cp)` lifts a single codepoint to a string;
+//// `firstCodepoint(s)` peeks the head. The carry-forward declares use
+//// the typed `#[@External.<Target>]` annotation form (migrated in
+//// `external-target-libs-migration` F5-partial, c828308).
+////
+//// `normalize(s, form)` selects one of the four NFC/NFD/NFKC/NFKD forms
+//// by pure-bp dispatch over `NormalizationForm` enum, calling per-form
+//// host fns wrapped in their own `#[@External]` annotations. Node uses
+//// `String.prototype.normalize('<form>')`; Erlang uses
+//// `unicode:characters_to_nfc_binary/1` (and the matching NFD/NFKC/NFKD
+//// variants). The per-form templates retain the `#[@External.Node(…)]`
+//// shape (rather than the typed `#[@External.Node]` form) because the
+//// `when(argc == 1):` arity-branched form lives in the legacy
+//// annotation grammar; once the `when-argc-removal` keystone lands the
+//// four per-form declares can migrate together.
+
+#[@External.Node("String.fromCodePoint($0)"),
+  @External.Erlang("unicode:characters_to_binary([$0], utf8)")]
+pub declare fn fromCodepoint(cp: i32) -> string;
+
+#[@External.Node("($0.codePointAt(0) ?? 0)"),
+  @External.Erlang("""(fun(__S) -> case unicode:characters_to_list(__S, utf8) of [__C | _] -> __C; _ -> 0 end end)($0)""")]
+declare fn firstCodepointOrZero(s: string) -> i32;
+
+// First codepoint of `s`, or `null` for the empty string. Implemented
+// in pure botopink over `firstCodepointOrZero` + a length check —
+// keeps the host call to a single template invocation and lets the
+// option wrapping shape match the rest of std.
+pub fn firstCodepoint(s: string) -> ?i32 {
+    if (s.length == 0) {
+        return null;
+    };
+    val cp = firstCodepointOrZero(s);
+    return cp;
+}
+
+// Decompose a string into its sequence of Unicode codepoints.
+// Node: `Array.from($0).map(c => c.codePointAt(0))` — `Array.from` on
+// a string iterates by codepoint (not by UTF-16 unit), and the comma
+// operator inside the arrow body keeps the expression a single template
+// substitution. Erlang: `unicode:characters_to_list/2` returns an
+// integer list of codepoints when given a UTF-8 binary.
+#[@External.Node("""(Array.from($0).map((__c) => __c.codePointAt(0)))"""),
+  @External.Erlang("unicode:characters_to_list($0, utf8)")]
+pub declare fn codepoints(s: string) -> Array<i32>;
+
+// Which Unicode normalization form to apply (NFC, NFD, NFKC, NFKD).
+pub enum NormalizationForm { NFC, NFD, NFKC, NFKD }
+
+#[@External.Node("""($0.normalize('NFC'))"""),
+  @External.Erlang("unicode:characters_to_nfc_binary($0)")]
+declare fn normalizeNfc(s: string) -> string;
+
+#[@External.Node("""($0.normalize('NFD'))"""),
+  @External.Erlang("unicode:characters_to_nfd_binary($0)")]
+declare fn normalizeNfd(s: string) -> string;
+
+#[@External.Node("""($0.normalize('NFKC'))"""),
+  @External.Erlang("unicode:characters_to_nfkc_binary($0)")]
+declare fn normalizeNfkc(s: string) -> string;
+
+#[@External.Node("""($0.normalize('NFKD'))"""),
+  @External.Erlang("unicode:characters_to_nfkd_binary($0)")]
+declare fn normalizeNfkd(s: string) -> string;
+
+// Render `s` under the selected Unicode normalization form. Each form
+// dispatches to a per-target host fn; the bp-side dispatch keeps the
+// surface a single `pub fn` while the per-target shape stays one BIF.
+pub fn normalize(s: string, form: NormalizationForm) -> string {
+    val out = case form {
+        NFC -> normalizeNfc(s);
+        NFD -> normalizeNfd(s);
+        NFKC -> normalizeNfkc(s);
+        _ -> normalizeNfkd(s);
+    };
+    return out;
+}
+
+// ── tests ────────────────────────────────────────────────────────────────────
+
+test "unicode.fromCodepoint round-trips ASCII 'A'" {
+    assert fromCodepoint(65) == "A";
+}
+
+test "unicode.fromCodepoint round-trips ASCII '0' (U+0030)" {
+    assert fromCodepoint(48) == "0";
+}
+
+test "unicode.firstCodepoint of empty is null" {
+    assert firstCodepoint("").unwrapOr(-1) == -1;
+}
+
+test "unicode.firstCodepoint of 'A' is 65" {
+    assert firstCodepoint("A").unwrapOr(0) == 65;
+}
+
+test "unicode.codepoints of 'AB' is [65, 66]" {
+    val xs = codepoints("AB");
+    assert xs.length == 2;
+    assert xs.at(0).unwrapOr(0) == 65;
+    assert xs.at(1).unwrapOr(0) == 66;
+}
+
+test "unicode.normalize NFC is idempotent on ASCII" {
+    val s = normalize("hello", NormalizationForm.NFC);
+    assert s == "hello";
+}
+
+test "unicode.normalize NFD passes ASCII through unchanged" {
+    val s = normalize("AB", NormalizationForm.NFD);
+    assert s == "AB";
+}
+
+test "unicode.normalize NFKC is a no-op on ASCII" {
+    val s = normalize("test123", NormalizationForm.NFKC);
+    assert s == "test123";
+}
+
+test "unicode.normalize NFKD is a no-op on ASCII" {
+    val s = normalize("abc", NormalizationForm.NFKD);
+    assert s == "abc";
+}

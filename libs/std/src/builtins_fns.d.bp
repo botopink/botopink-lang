@@ -1,0 +1,20 @@
+//// Parseable fn-decl slice of `builtins.d.bp`: the builtin fns that carry a
+//// trailing literal default and therefore need a real `FnDecl` entry in
+//// `env.stdlibFnDecls` so call-site default injection
+//// (`expandTrailingDefaults`) can read the `.default` Expr and inject it
+//// into the call's args before dispatch. Each annotated `declare fn` lands
+//// as a `FnDecl` (parser.zig line ~319: an annotated `declare fn` is the
+//// FFI form, not a delegate); `parseFnDecl` reads the `default` value off
+//// each Param.
+////
+//// Surface bookkeeping (the doc-only fns in `builtins.d.bp`): `field<T,F>` /
+//// `trap` / `emit` / `module` / `getContex<T>` keep their declarative form
+//// in `builtins.d.bp` (no default, so they don't need this parse path).
+
+#[@External.Erlang("erlang:error({todo, $0})"),
+  @External.Node("(() => { throw new Error($0) })()")]
+declare fn todo(message: string = "not implemented") -> noreturn;
+
+#[@External.Erlang("erlang:error({panic, $0})"),
+  @External.Node("(() => { throw new Error($0) })()")]
+declare fn panic(message: string = "panic") -> noreturn;

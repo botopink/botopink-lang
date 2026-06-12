@@ -1,0 +1,6 @@
+// A *private* submodule (`mod helpers;`): reachable only from within the
+// `shapes` subtree, not from the package root or other subtrees.
+
+pub fn secret() -> i32 {
+    return 7;
+}

@@ -1,0 +1,147 @@
+# Push/PR CI for botopink-lang.
+#
+# `zig build test` is the hard gate on every supported runner. `zig build
+# test-libs -- --target commonJS` runs as an opt-in fan-out — it depends on
+# `node` being on PATH (linux/macos runners ship it; the windows runner is
+# allowed to fail until newline / escript shim quirks land in a separate spec).
+name: test
+
+on:
+  push:
+    branches: [main, feat]
+  pull_request:
+    branches: [main, feat]
+
+# Cancel a prior run for the same ref so a force-push doesn't pile builds up.
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: zig build test (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            allow_fail: false
+          - runner: macos-14
+            allow_fail: false
+          # Windows snapshot tests carry CRLF / path-separator drift the same
+          # way test-libs does; pinned-red until a follow-up spec normalises
+          # the snapshot capture for Windows. The hard gate is ubuntu+macos.
+          - runner: windows-2022
+            allow_fail: true
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: ${{ matrix.allow_fail }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          submodules: false
+
+      - name: Install Zig (pinned to build.zig.zon minimum_zig_version)
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      # 60 tests under `comptime/runtime/erlang.zig` shell out to `erl`/`erlc`
+      # via `std.process.run`. Install Erlang/OTP 27+ — the comptime runtime
+      # writes JSON via `json:encode/1`, which only landed in OTP 27.
+      # `erlef/setup-beam` pins the version cleanly on linux; macos goes
+      # through Homebrew (current bottle is OTP 27 / OTP 28). Windows
+      # skipped — the main test job is allow-fail there anyway.
+      - name: Install Erlang/OTP (linux)
+        if: matrix.runner == 'ubuntu-22.04'
+        uses: erlef/setup-beam@v1
+        with:
+          # OTP 28 (BEAM 16.x) — matches the dev workstation BEAM. OTP 27
+          # (BEAM 15.x) treats the `ambiguous call of overridden BIF abs/1`
+          # diagnostic in the codegen `if_with_else_branch` fixture as a
+          # compile *error*; OTP 28 treats it as a warning, which is what
+          # the runtime expects (erlc must exit 0 for the test framework's
+          # snapshot RUN LOG capture to fire).
+          otp-version: '28'
+
+      - name: Install Erlang/OTP (macos)
+        if: matrix.runner == 'macos-14'
+        run: brew install erlang
+
+      # 26 wasm-codegen snapshot tests embed the wasmtime `RUN LOG`
+      # (stdout of the generated `.wat` evaluated against wasmtime) into
+      # the snapshot itself. Without wasmtime on PATH the run log is
+      # empty and every wasm snapshot mismatches. Windows: skipped — the
+      # snapshot framework's CRLF gap shadows this anyway.
+      #
+      # We pin a specific release tarball instead of running the
+      # `wasmtime.dev/install.sh` shell installer — that script's
+      # version lookup is flaky on the GH runners (resolves to literal
+      # `{` on macOS, to `<!DOCTYPE html>` on linux when the upstream
+      # release feed 404s under rate-limiting).
+      - name: Install wasmtime (linux)
+        if: matrix.runner == 'ubuntu-22.04'
+        shell: bash
+        env:
+          WASMTIME_VERSION: v45.0.1
+        run: |
+          set -euo pipefail
+          url="https://github.com/bytecodealliance/wasmtime/releases/download/${WASMTIME_VERSION}/wasmtime-${WASMTIME_VERSION}-x86_64-linux.tar.xz"
+          curl --proto '=https' --tlsv1.2 -sSfL -o /tmp/wasmtime.tar.xz "$url"
+          mkdir -p "$HOME/.wasmtime/bin"
+          tar -xJf /tmp/wasmtime.tar.xz -C /tmp/
+          mv "/tmp/wasmtime-${WASMTIME_VERSION}-x86_64-linux/wasmtime" "$HOME/.wasmtime/bin/"
+          chmod +x "$HOME/.wasmtime/bin/wasmtime"
+          echo "$HOME/.wasmtime/bin" >> "$GITHUB_PATH"
+          "$HOME/.wasmtime/bin/wasmtime" --version
+
+      - name: Install wasmtime (macos)
+        if: matrix.runner == 'macos-14'
+        run: brew install wasmtime
+
+      # First step prints the resolved Zig version + SHA so a CI red can be
+      # bisected against a Zig point release without re-running the job.
+      - name: Print build identity
+        shell: bash
+        run: |
+          echo "zig version: $(zig version)"
+          echo "git sha: $GITHUB_SHA"
+          echo "runner: ${{ matrix.runner }}"
+
+      - name: zig build test
+        run: zig build test
+
+  test-libs:
+    name: zig build test-libs --target commonJS (${{ matrix.runner }})
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            allow_fail: false
+          - runner: macos-14
+            allow_fail: false
+          # Windows lacks `escript` and has CRLF newline differences in the
+          # lib-test runner's child stdout parsing — pinned-red until a
+          # follow-up spec resolves it. The hard gate above must stay green.
+          - runner: windows-2022
+            allow_fail: true
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: ${{ matrix.allow_fail }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      - name: Install Node 20
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+
+      - name: zig build test-libs (commonJS only)
+        run: zig build test-libs -- --target commonJS

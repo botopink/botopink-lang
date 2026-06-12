@@ -1,0 +1,135 @@
+//// std/time — wall-clock primitives, cross-backend.
+////
+//// Reference:
+////   Node.js  — https://nodejs.org/api/  (the `Date` global, the
+////              `Date.now()` static method in particular)
+////   Erlang   — https://www.erlang.org/doc/man/erlang.html#system_time-1
+////              (`erlang:system_time(Unit)` — `Unit` may be an integer
+////              divisor `1`, `1000`, `1000000`, `1000000000`)
+////
+//// `nowMillis()` returns Unix epoch milliseconds on every backend. The
+//// implementation lowers to `Date.now(1000)` on Node — `Date.now/0`
+//// silently ignores the extra arg (JS variadic) — and to
+//// `erlang:system_time(1000)` on Erlang, where the integer `1000`
+//// selects the millisecond unit. The split exists because the bare-symbol
+//// `#[@External.<Target>]` form cannot inject a literal atom-style unit on the
+//// Erlang side without a richer template (tracked under
+//// prim-op-annotation); the integer divisor form is universal and
+//// keeps the call signature 1-arg. The `#[@External.<Target>]`
+//// annotation form (typed-enum) is the canonical surface.
+////
+//// `monotonicMillis()` returns the host's monotonic clock in
+//// milliseconds — `performance.now()` on Node (DOM high-res timestamp,
+//// floating point but assignable to the `i64` return on a backend that
+//// has no integer-only clock without a chained `Math.floor`), and
+//// `erlang:monotonic_time(1000)` on Erlang (integer divisor selects
+//// milliseconds, matching the `nowMillis()` shape).
+////
+//// `measureMillis<T>(body)` composes `nowMillis()` calls — pure
+//// botopink, no host call beyond what `nowMillis()` already lowers.
+////
+//// `sleep` stays deferred: a `#[@future]`-annotated `declare fn` whose
+//// host body is a chained `new Promise(resolve => setTimeout(resolve,
+//// $0))` — both pieces (`#[@future]` over a bodyless declare + `new`-
+//// on-chained-call templates) land in `std-expansion-tail` §A3.
+////
+//// `formatIso8601(epochMillis)` renders an RFC-3339 / ISO-8601 string
+//// for an epoch-milliseconds reading. Node uses `new Date($0).toISOString()`
+//// (chained host call, §A2-wired); Erlang gates the divisor down to
+//// whole seconds and supplies `[{unit, second}]` to
+//// `calendar:system_time_to_rfc3339/2`. The cross-backend output agrees
+//// modulo the fractional-second suffix — Node always renders `.000` for
+//// integer-millisecond inputs, Erlang's BIF omits the fractional part
+//// when `unit=second`. Callers that need byte-identical output across
+//// backends should strip the `.000` suffix.
+
+// Internal: read the host's current millisecond clock. The `unit`
+// argument is `1000` for millis; Node `Date.now` ignores it, Erlang
+// `erlang:system_time/1` uses it as the divisor selector.
+#[@External.Node("Date", "now"),
+  @External.Erlang("erlang", "system_time"),
+  @External.Beam("erlang", "system_time")]
+declare fn systemTimeWithUnit(unit: i32) -> i64;
+
+// Milliseconds since the Unix epoch. Monotonic across reasonable clock
+// drift on every backend; not adjusted for leap seconds.
+pub fn nowMillis() -> i64 {
+    return systemTimeWithUnit(1000);
+}
+
+// Internal: read the host's monotonic clock. `unit` is `1000` for
+// millis on Erlang (`erlang:monotonic_time/1` uses the divisor selector);
+// Node uses the §A2 commonJS template form (`performance.now($0)`)
+// to keep the receiver bound — the legacy
+// `#[@External.Node("performance", "now")]` form aliased `const x =
+// performance.now` and stripped `this`, reding with `Value of "this"
+// must be of type Performance` at the first call site. The template
+// renders inline at every call to `monotonicTimeWithUnit(N)`.
+#[@External.Node("performance.now($0)"),
+  @External.Erlang("erlang", "monotonic_time"),
+  @External.Beam("erlang", "monotonic_time")]
+declare fn monotonicTimeWithUnit(unit: i32) -> i64;
+
+// Monotonic milliseconds — the host's monotonic clock, suitable for
+// elapsed-time measurements (use `nowMillis()` for the wall clock).
+// Two consecutive `monotonicMillis()` reads on the same backend are
+// non-decreasing; the relative scale matches `nowMillis()` (millisecond
+// units). On Node the absolute origin is the Unix epoch (`Date.now()`)
+// until §A2 wires `performance.now()`; on Erlang it is the host's
+// monotonic origin (`erlang:monotonic_time/1`).
+pub fn monotonicMillis() -> i64 {
+    return monotonicTimeWithUnit(1000);
+}
+
+// Render `epochMillis` as an ISO-8601 / RFC-3339 timestamp string.
+// Node: `new Date($0).toISOString()` (renders `YYYY-MM-DDTHH:MM:SS.sssZ`).
+// Erlang: `calendar:system_time_to_rfc3339/2` with the `second` unit —
+// the divisor lifts the i64 millis into whole seconds before the BIF
+// runs; the resulting binary lacks the millisecond fraction Node always
+// emits.
+#[@External.Node("""(new Date($0).toISOString())"""),
+  @External.Erlang("""list_to_binary(calendar:system_time_to_rfc3339($0 div 1000, [{unit, second}]))""")]
+pub declare fn formatIso8601(epochMillis: i64) -> string;
+
+// Measure how long `body` takes to evaluate, in milliseconds. Returns
+// the body's result paired with the elapsed time. Uses `nowMillis()`
+// (the wall clock) rather than `monotonicMillis()` for cross-backend
+// f64/i64 unifier symmetry — both readings are i64-typed, so the
+// difference stays in the integer arithmetic path on every target.
+pub fn measureMillis<T>(body: fn() -> T) -> #(T, i64) {
+    val start = nowMillis();
+    val result = body();
+    val elapsed = nowMillis() - start;
+    return #(result, elapsed);
+}
+
+// ── tests ────────────────────────────────────────────────────────────────────
+
+test "time.nowMillis returns a positive epoch reading" {
+    val t = nowMillis();
+    assert t > 0;
+}
+
+test "time.nowMillis is monotonic within a single tick window" {
+    val t1 = nowMillis();
+    val t2 = nowMillis();
+    assert t2 >= t1;
+}
+
+test "time.monotonicMillis is non-decreasing across two reads" {
+    val a = monotonicMillis();
+    val b = monotonicMillis();
+    assert b >= a;
+}
+
+test "time.measureMillis returns body result and non-negative elapsed" {
+    val pair = measureMillis({ -> 42 });
+    assert pair._0 == 42;
+    assert pair._1 >= 0;
+}
+
+test "time.formatIso8601 renders an ISO-8601 prefix for the current time" {
+    val s = formatIso8601(nowMillis());
+    assert s.startsWith("20") || s.startsWith("21");
+    assert s.contains("T");
+}

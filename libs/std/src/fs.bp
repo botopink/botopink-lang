@@ -1,0 +1,112 @@
+//// std/fs — synchronous filesystem primitives, cross-backend.
+////
+//// Reference:
+////   Node.js  — https://nodejs.org/api/fs.html
+////              (`readFileSync`, `writeFileSync`, `existsSync`,
+////               `readdirSync`, `mkdirSync`, `rmSync`, `statSync`,
+////               `copyFileSync`)
+////   Erlang   — https://www.erlang.org/doc/man/file.html
+////              (`file:read_file/1`, `file:write_file/2`,
+////               `filelib:is_regular/1`, `file:list_dir/1`,
+////               `file:make_dir/1`, `file:delete/1`,
+////               `file:read_file_info/1`, `file:copy/2`)
+////
+//// All operations are synchronous (`*Sync` on Node, blocking BIFs on
+//// Erlang). Each fallible operation returns `@Result<R, string>` via
+//// the §A3 `#[@result] declare fn` template-owned wrapper — the host
+//// template wraps the call in try/catch and lifts the error to the
+//// `{error, <message>}` channel.
+
+pub record FileStat {
+    size: i64,
+    mtime: i64,
+    isDir: bool,
+}
+
+// Read the entire file as a UTF-8 string. Reds with the host's I/O
+// error message on missing file / permission denied / etc.
+// Node: `require('fs').readFileSync($0, 'utf8')`.
+// Erlang: `file:read_file/1` returns `{ok, Bin}` or `{error, Reason}`.
+#[@result]
+#[@External.Node("""(() => { try { return { ok: require('fs').readFileSync($0, 'utf8') } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()"""),
+  @External.Erlang("""(fun(__P) -> case file:read_file(__P) of {ok, __B} -> {ok, __B}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
+pub declare fn readText(path: string) -> @Result<string, string>;
+
+// Write `contents` to `path`, creating or truncating. Reds with the
+// host's I/O error message.
+// Node: `require('fs').writeFileSync($0, $1)`.
+// Erlang: `file:write_file/2`.
+#[@result]
+#[@External.Node("""(() => { try { require('fs').writeFileSync($0, $1); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()"""),
+  @External.Erlang("""(fun(__P, __C) -> case file:write_file(__P, __C) of ok -> {ok, 0}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0, $1)""")]
+pub declare fn writeText(path: string, contents: string) -> @Result<i32, string>;
+
+// Does the file exist at `path`?
+// Node: `require('fs').existsSync($0)`.
+// Erlang: `filelib:is_file/1` (covers both regular files and
+// directories — matching Node's semantics).
+#[@External.Node("""require('fs').existsSync($0)"""),
+  @External.Erlang("filelib:is_file($0)")]
+pub declare fn exists(path: string) -> bool;
+
+// List the names of the directory entries at `path` (relative).
+// Node: `require('fs').readdirSync($0)`.
+// Erlang: `file:list_dir/1` returns `{ok, [string()]}`.
+#[@result]
+#[@External.Node("""(() => { try { return { ok: require('fs').readdirSync($0) } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()"""),
+  @External.Erlang("""(fun(__P) -> case file:list_dir(__P) of {ok, __L} -> {ok, [list_to_binary(__N) || __N <- __L]}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
+pub declare fn list(path: string) -> @Result<string[], string>;
+
+// Create directory at `path`. Use `mkdirRecursive` to create
+// intermediate parents (the spec's `recursive: bool = true` overload
+// gates on default-fn-param-default support landing).
+// Node: `require('fs').mkdirSync($0)`.
+// Erlang: `file:make_dir/1`.
+#[@result]
+#[@External.Node("""(() => { try { require('fs').mkdirSync($0); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()"""),
+  @External.Erlang("""(fun(__P) -> case file:make_dir(__P) of ok -> {ok, 0}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
+pub declare fn mkdir(path: string) -> @Result<i32, string>;
+
+// Delete the file (or empty directory) at `path`.
+// Node: `require('fs').rmSync($0)`.
+// Erlang: `file:delete/1`.
+#[@result]
+#[@External.Node("""(() => { try { require('fs').rmSync($0); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()"""),
+  @External.Erlang("""(fun(__P) -> case file:delete(__P) of ok -> {ok, 0}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
+pub declare fn rm(path: string) -> @Result<i32, string>;
+
+// Copy file from `src` to `dest`. Reds when `src` is missing or
+// `dest` already exists (Node's default `copyFileSync` semantics).
+// Node: `require('fs').copyFileSync($0, $1)`.
+// Erlang: `file:copy/2` (returns `{ok, BytesCopied}` or `{error, _}`).
+#[@result]
+#[@External.Node("""(() => { try { require('fs').copyFileSync($0, $1); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()"""),
+  @External.Erlang("""(fun(__S, __D) -> case file:copy(__S, __D) of {ok, _} -> {ok, 0}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0, $1)""")]
+pub declare fn copy(src: string, dest: string) -> @Result<i32, string>;
+
+// File metadata. Returns a `FileStat { size, mtime, isDir }` on
+// success. `mtime` is epoch milliseconds (matching `time.nowMillis()`);
+// `size` is in bytes.
+// Node: `(() => { const s = require('fs').statSync($0); return { size: s.size, mtime: Math.floor(s.mtimeMs), isDir: s.isDirectory() } })()`.
+// Erlang: `file:read_file_info/1` returns a `#file_info` record; the
+// template projects the `size`, `mtime`, and `type` fields.
+#[@result]
+#[@External.Node("""(() => { try { const __s = require('fs').statSync($0); return { ok: { size: __s.size, mtime: Math.floor(__s.mtimeMs), isDir: __s.isDirectory() } } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()"""),
+  @External.Erlang("""(fun(__P) -> case file:read_file_info(__P, [{time, posix}]) of {ok, {file_info, __Sz, __Ty, _, _, __Mt, _, _, _, _, _, _, _, _}} -> {ok, #{size => __Sz, mtime => __Mt * 1000, isDir => (__Ty =:= directory)}}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
+pub declare fn stat(path: string) -> @Result<FileStat, string>;
+
+// ── tests ────────────────────────────────────────────────────────────────────
+// (Inline tests are smoke-grade — they require the host filesystem to be
+// writable at the host's `tmpdir()`. The lib-test harness runs each
+// inline test as a separate process; the temp filenames are seeded with
+// `time.nowMillis()` for cross-run uniqueness.)
+
+test "fs.exists is false for a fixed-name path that doesn't exist" {
+    val e = exists("/__bp_std_fs_definitely_not_a_real_path_xyz__");
+    assert e.negate();
+}
+
+test "fs.list of the host '/' resolves Ok" {
+    val r = list("/");
+    assert r.isOk();
+}

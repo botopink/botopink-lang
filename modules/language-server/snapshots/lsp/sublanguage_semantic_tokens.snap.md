@@ -1,0 +1,76 @@
+----- SOURCE
+```botopink
+pub struct Users { name: string }
+pub fn q<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
+    val code = e.build("[1, 2]");
+    val kw = CustomNode(kind: "kw", span: Span(0, 6, 1), label: "keyword", ref: null, children: []);
+    val col = CustomNode(kind: "col", span: Span(7, 11, 1), label: "property", ref: e.lookup("Users"), children: []);
+    val root = CustomNode(kind: "root", span: Span(0, 0, 1), label: "none", ref: null, children: [kw, col]);
+    return e.custom(root, code);
+}
+val xs = q "select name";
+```
+
+----- SEMANTIC TOKENS
+  (0,0) +3  keyword  "pub"
+  (0,4) +6  keyword  "struct"
+  (0,11) +5  type [declaration]  "Users"
+  (0,19) +4  variable  "name"
+  (0,25) +6  type [defaultLibrary]  "string"
+  (1,0) +3  keyword  "pub"
+  (1,4) +2  keyword  "fn"
+  (1,7) +1  function [declaration]  "q"
+  (1,9) +1  variable  "T"
+  (1,12) +8  keyword  "comptime"
+  (1,21) +1  parameter [readonly]  "e"
+  (1,24) +5  type [defaultLibrary]  "@Expr"
+  (1,30) +6  type [defaultLibrary]  "string"
+  (1,42) +11  type [defaultLibrary]  "@ExprCustom"
+  (1,54) +1  variable  "T"
+  (2,4) +3  keyword  "val"
+  (2,8) +4  variable [declaration]  "code"
+  (2,15) +1  variable  "e"
+  (2,17) +5  method  "build"
+  (3,4) +3  keyword  "val"
+  (3,8) +2  variable [declaration]  "kw"
+  (3,13) +10  function  "CustomNode"
+  (3,24) +4  variable  "kind"
+  (3,36) +4  variable  "span"
+  (3,42) +4  function  "Span"
+  (3,57) +5  variable  "label"
+  (3,75) +3  variable  "ref"
+  (3,80) +4  keyword  "null"
+  (3,86) +8  variable  "children"
+  (4,4) +3  keyword  "val"
+  (4,8) +3  variable [declaration]  "col"
+  (4,14) +10  function  "CustomNode"
+  (4,25) +4  variable  "kind"
+  (4,38) +4  variable  "span"
+  (4,44) +4  function  "Span"
+  (4,60) +5  variable  "label"
+  (4,79) +3  variable  "ref"
+  (4,84) +1  variable  "e"
+  (4,86) +6  method  "lookup"
+  (4,103) +8  variable  "children"
+  (5,4) +3  keyword  "val"
+  (5,8) +4  variable [declaration]  "root"
+  (5,15) +10  function  "CustomNode"
+  (5,26) +4  variable  "kind"
+  (5,40) +4  variable  "span"
+  (5,46) +4  function  "Span"
+  (5,61) +5  variable  "label"
+  (5,76) +3  variable  "ref"
+  (5,81) +4  keyword  "null"
+  (5,87) +8  variable  "children"
+  (5,98) +2  variable  "kw"
+  (5,102) +3  variable  "col"
+  (6,4) +6  keyword  "return"
+  (6,11) +1  variable  "e"
+  (6,13) +6  method  "custom"
+  (6,20) +4  variable  "root"
+  (6,26) +4  variable  "code"
+  (8,0) +3  keyword  "val"
+  (8,4) +2  variable [declaration]  "xs"
+  (8,9) +1  function  "q"
+  (8,12) +6  keyword  "select"
+  (8,19) +4  property  "name"

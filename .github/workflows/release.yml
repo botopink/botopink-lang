@@ -1,0 +1,113 @@
+# Release pipeline: pushing a `v*` tag cross-builds four binaries
+# (`botopink`, `botopink-lsp`, `botopink-lib-test`, `bpmp`) for five targets,
+# writes per-archive sha256 sidecars, and uploads everything to a single
+# GitHub Release. Prerelease iff the tag carries a `-` (e.g. `v0.0.1-rc.1`).
+#
+# Asset naming, target tuples, and the sha256 sidecar convention are the
+# *only* contract bpmp and the install script know — keep them in lockstep
+# with `docs/botopink-json.md` and `scripts/release-pack.sh`.
+#
+# `bpmp` is built when the bpmp module exists in `build.zig` (lands later in
+# the v0.beta.18 set). When it is missing the packaging step silently skips
+# it, so the matrix can land before bpmp without going red.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  build:
+    name: build (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            runner: ubuntu-22.04
+            zigtarget: x86_64-linux-gnu
+            ext: tar.gz
+          - target: linux-aarch64
+            runner: ubuntu-22.04
+            zigtarget: aarch64-linux-gnu
+            ext: tar.gz
+          - target: macos-x86_64
+            runner: macos-13
+            zigtarget: x86_64-macos
+            ext: tar.gz
+          - target: macos-aarch64
+            runner: macos-14
+            zigtarget: aarch64-macos
+            ext: tar.gz
+          - target: windows-x86_64
+            runner: windows-2022
+            zigtarget: x86_64-windows-gnu
+            ext: zip
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      - name: Print build identity
+        shell: bash
+        run: |
+          echo "tag:       $GITHUB_REF_NAME"
+          echo "target:    ${{ matrix.target }}"
+          echo "zigtarget: ${{ matrix.zigtarget }}"
+          echo "zig:       $(zig version)"
+
+      - name: Cross-build (ReleaseSafe)
+        shell: bash
+        run: |
+          zig build \
+            -Doptimize=ReleaseSafe \
+            -Dtarget=${{ matrix.zigtarget }}
+
+      - name: Pack archives + sha256 sidecars
+        shell: bash
+        run: ./scripts/release-pack.sh ${{ matrix.target }} ${{ github.ref_name }} ${{ matrix.ext }}
+
+      - name: Upload matrix artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: dist/*
+          retention-days: 7
+          if-no-files-found: error
+
+  publish:
+    name: publish to GitHub Release
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout (for release notes)
+        uses: actions/checkout@v5
+
+      - name: Download every matrix artifact
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: release-*
+          merge-multiple: true
+
+      - name: List staged assets
+        shell: bash
+        run: ls -la dist/
+
+      - name: Create / update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: dist/*
+          fail_on_unmatched_files: true
+          draft: false
+          # Pre-release iff the tag carries a `-` (rustup convention:
+          # v0.0.1-rc.1 / v0.0.1-feat / v0.0.1-test.0 are all prereleases).
+          prerelease: ${{ contains(github.ref_name, '-') }}

@@ -1,0 +1,90 @@
+//// std/querystring — application/x-www-form-urlencoded primitives.
+////
+//// Reference:
+////   Node.js  — https://nodejs.org/api/querystring.html
+////   Erlang   — https://www.erlang.org/doc/apps/stdlib/uri_string.html
+////              (`uri_string:compose_query/1` and `dissect_query/1`)
+////
+//// Pure-botopink — works on every backend including wat. The surface is
+//// `parse(query) -> Array<#(string, string)>` and `stringify(pairs) ->
+//// string`. URI percent-encoding for component values is deferred (the
+//// host bindings `encodeURIComponent` / `uri_string:quote` need a richer
+//// `#[@External.<targert>(...)]` template grammar than the bare-symbol form lands today
+//// — tracked under the prim-op-annotation spec). Inputs/outputs containing
+//// `&` or `=` round-trip incorrectly until that lands; the call site should
+//// pre-escape. Empty values are preserved; leading `?` is stripped from
+//// `parse`.
+
+// Strip an optional leading `?` from a URL's query portion. Idempotent.
+fn stripPrefix(query: string) -> string {
+    if (query.startsWith("?")) {
+        return query.slice(1, query.length);
+    };
+    return query;
+}
+
+fn parsePair(chunk: string) -> #(string, string) {
+    val parts = chunk.split("=");
+    val key = parts.at(0).unwrapOr("");
+    val value = if (parts.length >= 2) {
+        parts.at(1).unwrapOr("");
+    } else {
+        "";
+    };
+    return #(key, value);
+}
+
+// Parse a form-urlencoded query into an ordered list of `#(key, value)`
+// pairs. Duplicate keys are preserved (Node's `querystring.parse` collapses
+// them into arrays; the simpler pair-list shape leaves that policy to the
+// caller and reads with `Dict<string, string>.fromList`).
+pub fn parse(query: string) -> Array<#(string, string)> {
+    val body = stripPrefix(query);
+    if (body == "") {
+        return [];
+    };
+    return body.split("&")
+        .filter({ chunk -> chunk != "" })
+        .map({ chunk -> parsePair(chunk) });
+}
+
+fn joinPair(p: #(string, string)) -> string {
+    return [p._0, "=", p._1].join("");
+}
+
+// Serialize an ordered list of `#(key, value)` pairs into a form-
+// urlencoded string. Empty input yields `""`; the result has no leading
+// `?` (the caller adds it when composing a URL).
+pub fn stringify(pairs: Array<#(string, string)>) -> string {
+    return pairs
+        .map({ p -> joinPair(p) })
+        .join("&");
+}
+
+// ── tests ────────────────────────────────────────────────────────────────────
+
+test "querystring.parse splits ampersand-separated pairs" {
+    val out = parse("a=1&b=2&c=3");
+    assert out.length == 3;
+    val first = out.at(0).unwrapOr(#("", ""));
+    assert first._0 == "a";
+    assert first._1 == "1";
+}
+
+test "querystring.parse strips the leading question mark" {
+    val out = parse("?x=42");
+    assert out.length == 1;
+    val first = out.at(0).unwrapOr(#("", ""));
+    assert first._0 == "x";
+    assert first._1 == "42";
+}
+
+test "querystring.parse on empty input yields the empty list" {
+    val out = parse("");
+    assert out.length == 0;
+}
+
+test "querystring.stringify reverses parse" {
+    val pairs = [#("a", "1"), #("b", "2")];
+    assert stringify(pairs) == "a=1&b=2";
+}

@@ -1,0 +1,15 @@
+.{
+    .name = .botopink_language_server,
+    .version = "0.1.0",
+    .fingerprint = 0xdefec6bf43e12a31,
+    .dependencies = .{
+        .botopink = .{
+            .path = "../compiler-core",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

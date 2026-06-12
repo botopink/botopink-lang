@@ -1,0 +1,5 @@
+// A submodule of the `shapes` folder, pulled in by `pub mod circle;`.
+
+pub fn name() -> string {
+    return "circle";
+}

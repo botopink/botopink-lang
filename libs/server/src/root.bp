@@ -1,0 +1,8 @@
+//// The `server` package — module-tree root.
+////
+//// The framework-agnostic HTTP backing: `server` (the `#[@External.<targert>(...)]` node-`http`
+//// transport — `serverServe`/`serverStop`). Public surface, reached by a consumer
+//// (rakun's `Rakun.run`) via `import { serverServe } from "server"` — the single
+//// real module `server.bp`, wired both into this tree and `botopink.json` `files`.
+
+pub mod server;

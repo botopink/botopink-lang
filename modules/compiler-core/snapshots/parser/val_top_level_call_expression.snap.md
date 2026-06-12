@@ -1,0 +1,98 @@
+```json
+{
+  "decls": [
+    {
+      "val": {
+        "name": "box",
+        "isPub": false,
+        "docComment": null,
+        "comment": null,
+        "moduleComment": null,
+        "typeAnnotation": null,
+        "value": {
+          "call": {
+            "loc": {
+              "line": 1,
+              "col": 11
+            },
+            "kind": {
+              "call": {
+                "receiver": null,
+                "callee": "wrap",
+                "is_builtin": false,
+                "is_tagged": false,
+                "optional": false,
+                "args": [
+                  {
+                    "label": null,
+                    "value": {
+                      "identifier": {
+                        "loc": {
+                          "line": 1,
+                          "col": 16
+                        },
+                        "kind": {
+                          "ident": "int"
+                        }
+                      }
+                    },
+                    "comments": [],
+                    "is_default_inj": false
+                  }
+                ],
+                "trailing": []
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "val": {
+        "name": "m",
+        "isPub": false,
+        "docComment": null,
+        "comment": null,
+        "moduleComment": null,
+        "typeAnnotation": null,
+        "value": {
+          "call": {
+            "loc": {
+              "line": 2,
+              "col": 9
+            },
+            "kind": {
+              "call": {
+                "receiver": null,
+                "callee": "maxval",
+                "is_builtin": false,
+                "is_tagged": false,
+                "optional": false,
+                "args": [
+                  {
+                    "label": null,
+                    "value": {
+                      "identifier": {
+                        "loc": {
+                          "line": 2,
+                          "col": 16
+                        },
+                        "kind": {
+                          "ident": "float"
+                        }
+                      }
+                    },
+                    "comments": [],
+                    "is_default_inj": false
+                  }
+                ],
+                "trailing": []
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
+```

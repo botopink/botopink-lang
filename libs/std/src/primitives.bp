@@ -1,0 +1,1019 @@
+//// Primitive controller — the central interface registry for botopink's
+//// primitive types. Declarations only (no bodies): the type checker consumes
+//// the signatures, and `#[@External.<Target>(...)]` tells each codegen
+//// backend how to lower the operation (host symbol per target). Pure-logic
+//// operations carry no `@External.*` — the compiler synthesises them.
+////
+//// Naming convention: camelCase (the legacy snake_case surface is normalised
+//// here). Method receivers are `self: Self`; free combinators live in the
+//// `Function` interface as associated functions.
+
+// ── numeric tower ─────────────────────────────────────────────────────────────
+// Capability interfaces shared by every numeric width. `Self` abstracts the
+// concrete type, so one signature serves all widths; concrete types inherit via
+// `extends` and carry no duplicated members. Declared (host-backed) methods use
+// `#[@External.Erlang(…), @External.Node(…)]`; pure-logic ops carry none.
+
+interface Number {
+    #[@External.Erlang("erlang", "min"),
+      @External.Node("Math", "min")]
+    fn min(self: Self, other: Self) -> Self
+
+    #[@External.Erlang("erlang", "max"),
+      @External.Node("Math", "max")]
+    fn max(self: Self, other: Self) -> Self
+
+    default fn clamp(self: Self, lo: Self, hi: Self) -> Self {
+        return self.max(lo).min(hi);
+    }
+}
+
+interface Integer extends Number {
+    #[@External.Erlang("erlang", "integer_to_binary"),
+      @External.Node("toString")]
+    fn toString(self: Self) -> string
+
+    default fn isEven(self: Self) -> bool {
+        return self % 2 == 0;
+    }
+
+    default fn isOdd(self: Self) -> bool {
+        return self % 2 != 0;
+    }
+}
+
+interface Signed extends Integer {
+    #[@External.Erlang("erlang", "abs"),
+      @External.Node("Math", "abs")]
+    fn abs(self: Self) -> Self
+}
+
+interface Float extends Number {
+    #[@External.Erlang("erlang", "float_to_binary"),
+      @External.Node("toString")]
+    fn toString(self: Self) -> string
+
+    #[@External.Erlang("erlang", "abs"),
+      @External.Node("Math", "abs")]
+    fn abs(self: Self) -> Self
+
+    #[@External.Erlang("math", "floor"),
+      @External.Node("Math", "floor")]
+    fn floor(self: Self) -> Self
+
+    #[@External.Erlang("math", "ceil"),
+      @External.Node("Math", "ceil")]
+    fn ceil(self: Self) -> Self
+
+    #[@External.Erlang("math", "round"),
+      @External.Node("Math", "round")]
+    fn round(self: Self) -> Self
+
+    #[@External.Erlang("math", "sqrt"),
+      @External.Node("Math", "sqrt")]
+    fn squareRoot(self: Self) -> Self
+}
+
+// Concrete primitive widths — thin markers binding each type to its capabilities.
+interface I32 extends Signed {}
+interface I64 extends Signed {}
+interface U32 extends Integer {}
+interface U64 extends Integer {}
+interface F32 extends Float {}
+interface F64 extends Float {}
+
+// ── boolean ───────────────────────────────────────────────────────────────────
+
+interface Bool {
+    #[@External.Erlang("erlang", "atom_to_binary"),
+      @External.Node("toString")]
+    fn toString(self: Self) -> string
+
+    #[@External.Erlang("(not $self)")]
+    default fn negate(self: Self) -> bool {
+        return !self;
+    }
+
+    default fn nor(self: Self, other: bool) -> bool {
+        return !(self || other);
+    }
+
+    default fn nand(self: Self, other: bool) -> bool {
+        return !(self && other);
+    }
+
+    default fn exclusiveOr(self: Self, other: bool) -> bool {
+        return self != other;
+    }
+
+    default fn exclusiveNor(self: Self, other: bool) -> bool {
+        return self == other;
+    }
+}
+
+// ── string ────────────────────────────────────────────────────────────────────
+
+interface String {
+    #[@External.Erlang("string", "length"),
+      @External.Node("./gleam_stdlib.mjs", "string_length")]
+    fn length(self: Self) -> i32
+
+    #[@External.Erlang("string:split($self, $0, all)"),
+      @External.Node("./gleam_stdlib.mjs", "split")]
+    fn split(self: Self, sep: string) -> string[]
+
+    #[@External.Erlang("string", "uppercase"),
+      @External.Beam("""    {call_ext, 1, {extfunc, string, uppercase, 1}}."""),
+      @External.Node("toUpperCase")]
+    fn toUpper(self: Self) -> string
+
+    #[@External.Erlang("string", "lowercase"),
+      @External.Beam("""    {call_ext, 1, {extfunc, string, lowercase, 1}}."""),
+      @External.Node("toLowerCase")]
+    fn toLower(self: Self) -> string
+
+    #[@External.Erlang("(string:find($self, $0) =/= nomatch)"),
+      @External.Node("includes")]
+    fn contains(self: Self, sub: string) -> bool
+
+    #[@External.Erlang("(string:prefix($self, $0) =/= nomatch)"),
+      @External.Node("./gleam_stdlib.mjs", "starts_with")]
+    fn startsWith(self: Self, prefix: string) -> bool
+
+    #[@External.Erlang("string", "suffix"),
+      @External.Beam("""    {call_ext, 2, {extfunc, string, suffix, 2}}."""),
+      @External.Node("./gleam_stdlib.mjs", "ends_with")]
+    fn endsWith(self: Self, suffix: string) -> bool
+
+    #[@External.Erlang("string", "trim"),
+      @External.Beam("""    {call_ext, 1, {extfunc, string, trim, 1}}."""),
+      @External.Node("./gleam_stdlib.mjs", "trim")]
+    fn trim(self: Self) -> string
+
+    #[@External.Erlang("string", "trim"),
+      @External.Node("./gleam_stdlib.mjs", "trim_start")]
+    fn trimStart(self: Self) -> string
+
+    #[@External.Erlang("string", "trim"),
+      @External.Node("./gleam_stdlib.mjs", "trim_end")]
+    fn trimEnd(self: Self) -> string
+
+    #[@External.Erlang("string", "replace"),
+      @External.Node("./gleam_stdlib.mjs", "replace")]
+    fn replace(self: Self, pattern: string, with: string) -> string
+
+    default fn slice(self: Self, start: i32, end: i32 = null) -> string {
+        if (end) {
+            return stringSlice1(self, start, end);
+        } else {
+            return stringSlice0(self, start);
+        };
+    }
+
+    #[@External.Erlang("string", "slice"),
+      @External.Node("./gleam_stdlib.mjs", "string_char_at")]
+    fn charAt(self: Self, index: i32) -> ?string
+
+    #[@External.Erlang("string", "str"),
+      @External.Node("./gleam_stdlib.mjs", "index_of")]
+    fn indexOf(self: Self, sub: string) -> i32
+
+    #[@External.Node("toString")]
+    default fn toString(self: Self) -> string {
+        return self;
+    }
+
+    // ── std-tail F7.string_ext additions ────────────────────────────────────
+    // Each is wired to the Node prototype method on commonJS plus an Erlang
+    // shape that mirrors the semantic. `string:pad/3` is BIF on OTP 27+; we
+    // gate behind `binary_to_list`/`list_to_binary` to keep the shape simple.
+
+    #[@External.Erlang("(fun(__S, __L, __P) -> __N = max(__L - byte_size(__S), 0), __PadBin = case __P of <<>> -> <<>>; _ -> list_to_binary(lists:duplicate(__N, binary:first(__P))) end, <<__PadBin/binary, __S/binary>> end)($self, $0, $1)"),
+      @External.Node("padStart")]
+    fn padStart(self: Self, length: i32, pad: string) -> string
+
+    #[@External.Erlang("(fun(__S, __L, __P) -> __N = max(__L - byte_size(__S), 0), __PadBin = case __P of <<>> -> <<>>; _ -> list_to_binary(lists:duplicate(__N, binary:first(__P))) end, <<__S/binary, __PadBin/binary>> end)($self, $0, $1)"),
+      @External.Node("padEnd")]
+    fn padEnd(self: Self, length: i32, pad: string) -> string
+
+    #[@External.Erlang("binary:copy($self, $0)"),
+      @External.Node("repeat")]
+    fn repeat(self: Self, times: i32) -> string
+
+    #[@External.Erlang("(fun(__S, __P, __R) -> binary:replace(__S, __P, __R, [global]) end)($self, $0, $1)"),
+      @External.Node("replaceAll")]
+    fn replaceAll(self: Self, pattern: string, with: string) -> string
+
+    #[@External.Erlang("[<<__C/utf8>> || __C <- unicode:characters_to_list($self, utf8)]"),
+      @External.Node("(Array.from($self))")]
+    fn chars(self: Self) -> string[]
+
+    #[@External.Erlang("binary:split($self, [<<\"\\n\">>], [global])"),
+      @External.Node("$self.split(/\\r?\\n/)")]
+    fn lines(self: Self) -> string[]
+
+    #[@External.Erlang("[__W || __W <- binary:split($self, [<<\" \">>, <<\"\\t\">>, <<\"\\n\">>, <<\"\\r\">>], [global]), __W =/= <<>>]"),
+      @External.Node("$self.split(/\\s+/).filter(__w => __w.length > 0)")]
+    fn words(self: Self) -> string[]
+
+    #[@External.Erlang("(fun(__S, __I) -> case unicode:characters_to_list(__S, utf8) of __L when length(__L) > __I, __I >= 0 -> lists:nth(__I + 1, __L); _ -> -1 end end)($self, $0)"),
+      @External.Node("(($self.charCodeAt($0) ?? -1) | 0)")]
+    fn charCodeAt(self: Self, index: i32) -> i32
+
+    #[@External.Erlang("(fun(__S, __Sub) -> __L = byte_size(__S), __SL = byte_size(__Sub), __Find = fun __F(__I) -> case __I < 0 of true -> -1; false -> case binary:part(__S, __I, min(__SL, __L - __I)) =:= __Sub of true -> __I; false -> __F(__I - 1) end end end, __Find(__L - __SL) end)($self, $0)"),
+      @External.Node("lastIndexOf")]
+    fn lastIndexOf(self: Self, sub: string) -> i32
+}
+
+// ── string slice arity dispatch ──────────────────────────────────────────────
+
+#[@External.Erlang("string:slice($self, $0)"),
+  @External.Node("./gleam_stdlib.mjs", "string_slice")]
+declare fn stringSlice0(self: string, start: i32) -> string
+
+#[@External.Erlang("string:slice($self, $0, (($1) - ($0)))"),
+  @External.Node("./gleam_stdlib.mjs", "string_slice")]
+declare fn stringSlice1(self: string, start: i32, end: i32) -> string
+
+// ── function combinators ──────────────────────────────────────────────────────
+
+// Pure higher-order combinators for function values. Associated functions
+// (no `self` receiver): `Function.identity(x)`, `Function.compose(f, g)`, …
+// Pure botopink — `default` bodies, no host backing.
+interface Function {
+    default fn identity<A>(x: A) -> A {
+        return x;
+    }
+
+    default fn compose<A, B, C>(f: fn(a: A) -> B, g: fn(b: B) -> C) -> fn(A) -> C {
+        return { a -> g(f(a)) };
+    }
+
+    default fn flip<A, B, C>(f: fn(a: A, b: B) -> C) -> fn(B, A) -> C {
+        return { b, a -> f(a, b) };
+    }
+
+    default fn constant<A, B>(x: A) -> fn(B) -> A {
+        return { ignored -> x };
+    }
+}
+
+// A pair IS a 2-tuple `#(A, B)` — structural, so no own record type. Associated
+// functions (no `self` receiver) over tuples: `Pair.of(a, b)`, `Pair.first(p)`, …
+// Pure botopink — `default` bodies, no host backing.
+interface Pair<A, B> {
+    // NOTE: named `of` (not `new`) — `new` is a reserved keyword.
+    default fn of(first: A, second: B) -> #(A, B) {
+        return #(first, second);
+    }
+
+    default fn first(p: #(A, B)) -> A {
+        return p._0;
+    }
+
+    default fn second(p: #(A, B)) -> B {
+        return p._1;
+    }
+
+    default fn swap(p: #(A, B)) -> #(B, A) {
+        return #(p._1, p._0);
+    }
+
+    default fn mapFirst<C>(p: #(A, B), transform: fn(value: A) -> C) -> #(C, B) {
+        return #(transform(p._0), p._1);
+    }
+
+    default fn mapSecond<C>(p: #(A, B), transform: fn(value: B) -> C) -> #(A, C) {
+        return #(p._0, transform(p._1));
+    }
+}
+
+// ── tests ─────────────────────────────────────────────────────────────────────
+// Migrated from the former int/float/bool/string/function modules. Rewritten
+// in method syntax (receivers are `val`-bound — literal receivers don't parse).
+// Combinators are called via the interface qualifier: `Function.identity(x)`.
+
+test "i32 abs" {
+    val neg = -5;
+    val zero = 0;
+    val pos = 5;
+    assert neg.abs() == 5;
+    assert zero.abs() == 0;
+    assert pos.abs() == 5;
+}
+
+test "i32 min and max" {
+    val a = 3;
+    val b = 7;
+    val c = -1;
+    val d = 0;
+    assert a.min(b) == 3;
+    assert a.max(b) == 7;
+    assert c.min(d) == -1;
+}
+
+test "i32 clamp" {
+    val a = 3;
+    val b = -1;
+    val c = 10;
+    assert a.clamp(0, 5) == 3;
+    assert b.clamp(0, 5) == 0;
+    assert c.clamp(0, 5) == 5;
+}
+
+test "i32 isEven and isOdd" {
+    val four = 4;
+    val three = 3;
+    val seven = 7;
+    val eight = 8;
+    assert four.isEven();
+    assert !three.isEven();
+    assert seven.isOdd();
+    assert !eight.isOdd();
+}
+
+test "i32 toString" {
+    val n = 42;
+    val z = 0;
+    assert n.toString() == "42";
+    assert z.toString() == "0";
+}
+
+test "f64 abs" {
+    val zero = 0.0;
+    val neg = -3.5;
+    val pos = 2.1;
+    assert zero.abs() == 0.0;
+    assert neg.abs() == 3.5;
+    assert pos.abs() == 2.1;
+}
+
+test "f64 min and max" {
+    val a = 1.5;
+    val b = 2.5;
+    assert a.min(b) == 1.5;
+    assert a.max(b) == 2.5;
+}
+
+test "f64 clamp" {
+    val a = 3.0;
+    val b = -1.0;
+    val c = 9.9;
+    assert a.clamp(0.0, 5.0) == 3.0;
+    assert b.clamp(0.0, 5.0) == 0.0;
+    assert c.clamp(0.0, 5.0) == 5.0;
+}
+
+test "f64 toString" {
+    val n = 1.5;
+    assert n.toString() == "1.5";
+}
+
+test "bool negate" {
+    val f = false;
+    val t = true;
+    assert f.negate();
+    assert t.negate().negate();
+}
+
+test "bool nor" {
+    val f = false;
+    val t = true;
+    assert f.nor(f);
+    assert t.nor(f).negate();
+}
+
+test "bool nand" {
+    val t = true;
+    val f = false;
+    assert t.nand(f);
+    assert t.nand(t).negate();
+}
+
+test "bool exclusiveOr" {
+    val t = true;
+    val f = false;
+    assert t.exclusiveOr(f);
+    assert t.exclusiveOr(t).negate();
+}
+
+test "bool exclusiveNor" {
+    val t = true;
+    val f = false;
+    assert t.exclusiveNor(t);
+    assert t.exclusiveNor(f).negate();
+}
+
+test "string split and join" {
+    val csv = "a,b,c";
+    val parts = csv.split(",");
+    assert parts.join("-") == "a-b-c";
+}
+
+test "string contains" {
+    val hw = "hello world";
+    val h = "hello";
+    assert hw.contains("world");
+    assert !h.contains("xyz");
+}
+
+test "string startsWith and endsWith" {
+    val s = "foobar";
+    assert s.startsWith("foo");
+    assert s.endsWith("bar");
+}
+
+test "string slice" {
+    val h = "hello";
+    assert h.slice(1, 3) == "el";
+    assert h.slice(0, 2) == "he";
+}
+
+test "string split length" {
+    val s = "a,b";
+    val parts = s.split(",");
+    assert parts.length == 2;
+}
+
+test "string trim" {
+    val padded = "  hi  ";
+    assert padded.trim() == "hi";
+}
+
+test "function identity" {
+    assert Function.identity(42) == 42;
+    assert Function.identity("hi") == "hi";
+    assert Function.identity(true);
+}
+
+test "function compose left-to-right" {
+    val double = { n -> n * 2 };
+    val addOne = { n -> n + 1 };
+    val f = Function.compose(double, addOne);
+    assert f(3) == 7;
+    assert f(0) == 1;
+}
+
+test "function compose with string transform" {
+    val shout = { s -> s + "!" };
+    val greet = { s -> "Hello, " + s };
+    val greetAndShout = Function.compose(greet, shout);
+    assert greetAndShout("world") == "Hello, world!";
+}
+
+test "function flip reverses arg order" {
+    val sub = { a, b -> a - b };
+    val rsub = Function.flip(sub);
+    assert rsub(3, 10) == 7;
+}
+
+test "function constant ignores arg" {
+    val always42 = Function.constant(42);
+    assert always42("anything") == 42;
+    assert always42(0) == 42;
+}
+
+// ── option ────────────────────────────────────────────────────────────────────
+// `?T` builtin surface (map/flatMap/unwrapOr) + optional chaining `?.`.
+// Migrated from option_test.bp. No `option` module/namespace — `?` syntax only.
+
+record User { name: string }
+
+test "option map and unwrapOr" {
+    val x: ?i32 = 3;
+    val y = x.map({ n -> n * 2 });
+    assert y.unwrapOr(0) == 6;
+}
+
+test "option unwrapOr on null" {
+    val z: ?i32 = null;
+    assert z.unwrapOr(7) == 7;
+}
+
+test "option flatMap" {
+    val x: ?i32 = 3;
+    val y = x.flatMap({ n -> x });
+    assert y.unwrapOr(0) == 3;
+}
+
+test "optional chaining member access" {
+    val u: ?User = User(name: "ana");
+    val n = u?.name;
+    assert n.unwrapOr("none") == "ana";
+}
+
+test "optional chaining short-circuits null" {
+    val v: ?User = null;
+    val n = v?.name;
+    assert n.unwrapOr("none") == "none";
+}
+
+// ── result ────────────────────────────────────────────────────────────────────
+// Builtin `result` namespace (no import): map/then/unwrap/isOk/isError. Producers
+// follow the rule: only a `#[@result]` fn (`-> @Result<D, E>`) gets
+// checked-Result treatment. Migrated from result_test.bp.
+
+#[@result]
+fn parse(n: i32) -> @Result<i32, string> {
+    if (n < 0) { throw "negative"; };
+    return n;
+}
+
+test "result.isOk and isError" {
+    assert result.isOk(parse(1));
+    assert result.isError(parse(-1));
+}
+
+test "result.map transforms ok" {
+    val r = result.map(parse(20), { x -> x * 2 + 2 });
+    assert result.unwrap(r, 0) == 42;
+}
+
+test "result.map propagates error" {
+    val r = result.map(parse(-1), { x -> x * 2 });
+    assert result.isError(r);
+    assert result.unwrap(r, 7) == 7;
+}
+
+test "result.then chains" {
+    val r = result.then(parse(10), { x -> parse(x + 1) });
+    assert result.unwrap(r, 0) == 11;
+}
+
+test "result.then propagates inner error" {
+    val r = result.then(parse(5), { x -> parse(0 - x) });
+    assert result.isError(r);
+}
+
+// ── array (eager collection) ──────────────────────────────────────
+// The eager indexed collection — implements the lazy `Iterator<T>` (`next`)
+// and adds `length`/index + host-backed ops, with derived `default fn`.
+
+// NOTE: conceptually `Array<T>` is an `Iterator<T>` (it provides `next`), but the
+// parser puts generics after `extends` (`interface N extends B <T>`), so a
+// generic-extends-generic clause doesn't parse yet — kept standalone for now.
+interface Array<T> {
+    // intrinsic length (builtin).
+    val length: i32
+
+    // ── host-backed primitives ──
+    #[@External.Erlang("(fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)($self, $0)"),
+      @External.Node("./gleam_stdlib.mjs", "index")]
+    fn at(self: Self, index: i32) -> ?T
+
+    #[@External.Erlang("($self ++ [$0])"),
+      @External.Node("./gleam_stdlib.mjs", "push")]
+    fn push(self: Self, item: T)
+
+    #[@External.Erlang("lists", "last"),
+      @External.Node("./gleam_stdlib.mjs", "pop")]
+    fn pop(self: Self) -> ?T
+
+    default fn slice(self: Self, start: i32, end: i32 = null) -> Self {
+        if (end) {
+            return arraySlice1(self, start, end);
+        } else {
+            return arraySlice0(self, start);
+        };
+    }
+
+    #[@External.Erlang("""iolist_to_binary(lists:join($0, lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> $stringify(__E) end end, $self)))"""),
+      @External.Node("./gleam_stdlib.mjs", "join")]
+    fn join(self: Self, sep: string) -> string
+
+    #[@External.Erlang("lists", "reverse"),
+      @External.Beam("""    {call_ext, 1, {extfunc, lists, reverse, 1}}."""),
+      @External.Node("reverse")]
+    fn reverse(self: Self) -> Self
+
+    #[@External.Erlang("(fun(__L, __X) -> __Find = fun __F(__I, [__H | __T]) -> case (__H =:= __X) of true -> __I; false -> __F(__I + 1, __T) end; __F(_, []) -> -1 end, __Find(0, __L) end)($self, $0)"),
+      @External.Node("./gleam_stdlib.mjs", "index_of")]
+    fn indexOf(self: Self, item: T) -> i32
+
+    #[@External.Erlang("lists", "foreach(action, self)"),
+      @External.Node("./gleam_stdlib.mjs", "for_each")]
+    fn forEach(self: Self, action: fn(item: T))
+
+    #[@External.Erlang("lists", "map(transform, self)"),
+      @External.Node("./gleam_stdlib.mjs", "map")]
+    fn map<U>(self: Self, transform: fn(item: T) -> U) -> Array<U>
+
+    #[@External.Erlang("lists", "filter(pred, self)"),
+      @External.Node("./gleam_stdlib.mjs", "filter")]
+    fn filter(self: Self, pred: fn(item: T) -> bool) -> Self
+
+    // `zip` pairs the receiver's items with `other`'s by index, truncating to
+    // the shorter array. Template form: erlang uses `lists:zipwith` with a
+    // tuple constructor; node uses an inline `.map` with index lookup +
+    // truncation. wat deferred — no native zip primitive (logged as a known
+    // gap; falls through to the inline allow-list as today).
+    #[@External.Erlang("lists:zipwith(fun(__X, __Y) -> {__X, __Y} end, lists:sublist($self, length($0)), lists:sublist($0, length($self)))"),
+      @External.Node("$self.map((__x, __i) => [__x, ($0)[__i]]).slice(0, Math.min($self.length, ($0).length))")]
+    fn zip<U>(self: Self, other: Array<U>) -> Array<#(T, U)>
+
+    // ── producers (associated — no receiver) ──
+    // Pure botopink (no host backing): the host `lists:seq`/`duplicate` have the
+    // wrong semantics (`seq` is end-inclusive; `duplicate` swaps the args), so
+    // these recurse with an array-literal spread `[head, ..tail]`, giving
+    // identical end-exclusive `[start, stop)` / `times`-copy results on every
+    // backend. `head` is bound to a `val` first so the BEAM backend spills it to a
+    // stack slot — an x-register would be clobbered by the recursive call. (No
+    // comments inside the bodies: the commonJS if-expr emits as a one-line IIFE,
+    // where a `//` would swallow the rest of the block.)
+    default fn range(start: i32, stop: i32) -> Array<i32> {
+        return if (start >= stop) {
+            [];
+        } else {
+            val head = start;
+            [head, ..(Array.range(start + 1, stop))];
+        };
+    }
+
+    default fn repeat<E>(value: E, times: i32) -> Array<E> {
+        return if (times <= 0) {
+            [];
+        } else {
+            val head = value;
+            [head, ..(Array.repeat(value, times - 1))];
+        };
+    }
+
+    // ── derived ops (default implementations over the primitives) ──
+    #[@External.Erlang("($self =:= [])")]
+    default fn isEmpty(self: Self) -> bool {
+        return self.length == 0;
+    }
+
+    #[@External.Erlang("lists:member($0, $self)")]
+    default fn contains(self: Self, x: T) -> bool {
+        return self.indexOf(x) != -1;
+    }
+
+    default fn first(self: Self) -> ?T {
+        return self.at(0);
+    }
+
+    default fn rest(self: Self) -> Self {
+        return self.slice(1, self.length);
+    }
+
+    default fn take(self: Self, n: i32) -> Self {
+        return self.slice(0, n);
+    }
+
+    default fn drop(self: Self, n: i32) -> Self {
+        return self.slice(n, self.length);
+    }
+
+    default fn fold<A>(self: Self, initial: A, f: fn(acc: A, item: T) -> A) -> A {
+        var acc = initial;
+        self.forEach({ x -> acc = f(acc, x); });
+        return acc;
+    }
+
+    #[@External.Node("find")]
+    default fn find(self: Self, pred: fn(item: T) -> bool) -> ?T {
+        return self.filter(pred).at(0);
+    }
+
+    default fn count(self: Self, pred: fn(item: T) -> bool) -> i32 {
+        return self.filter(pred).length;
+    }
+
+    default fn all(self: Self, pred: fn(item: T) -> bool) -> bool {
+        return self.filter(pred).length == self.length;
+    }
+
+    default fn any(self: Self, pred: fn(item: T) -> bool) -> bool {
+        return self.filter(pred).length != 0;
+    }
+
+    #[@External.Erlang("($self ++ $0)"),
+      @External.Node("concat")]
+    default fn append(self: Self, other: Self) -> Self {
+        var out = self.slice(0, self.length);
+        other.forEach({ y -> out.push(y); });
+        return out;
+    }
+
+    #[@External.Erlang("[$0 | $self]")]
+    default fn prepend(self: Self, item: T) -> Self {
+        var out = [item];
+        self.forEach({ x -> out.push(x); });
+        return out;
+    }
+
+    // NOTE: nested trailing lambdas don't parse yet (catalogued gap) — the inner
+    // copy goes through `append` rather than a nested `forEach`.
+    default fn flatten<E>(self: Self) -> Array<E> {
+        var out = [];
+        self.forEach({ inner -> out = out.append(inner); });
+        return out;
+    }
+
+    #[@External.Node("flatMap")]
+    default fn flatMap<U>(self: Self, transform: fn(item: T) -> U) -> Array<U> {
+        return self.map(transform).flatten();
+    }
+
+    default fn toList(self: Self) -> Self {
+        return self;
+    }
+
+    // ── std-tail F7.array_ext additions ──────────────────────────────────────
+    // `some`/`every`/`flat` aliases over the existing `any`/`all`/`flatten`
+    // (different camelCase name, identical semantics — chosen to mirror the
+    // Node Array prototype). The originals stay so existing callers don't
+    // break.
+    default fn some(self: Self, pred: fn(item: T) -> bool) -> bool {
+        return self.any(pred);
+    }
+
+    default fn every(self: Self, pred: fn(item: T) -> bool) -> bool {
+        return self.all(pred);
+    }
+
+    default fn flat<E>(self: Self) -> Array<E> {
+        return self.flatten();
+    }
+
+    // First index where `pred` holds, or -1 when no element matches. Pure
+    // botopink — recurses over indices through a fold that captures the
+    // first hit (`-1` is preserved once set).
+    default fn findIndex(self: Self, pred: fn(item: T) -> bool) -> i32 {
+        var out = -1;
+        var i = 0;
+        self.forEach({ x ->
+            if (out == -1) {
+                if (pred(x)) {
+                    out = i;
+                };
+            };
+            i = i + 1;
+        });
+        return out;
+    }
+
+    // Build a fresh array of `length` copies of `value` — equivalent to
+    // `Array.repeat(value, self.length)`, but the receiver-method form
+    // matches the JS prototype signature callers expect.
+    default fn fill<E>(self: Self, value: E) -> Array<E> {
+        return Array.repeat(value, self.length);
+    }
+
+    // Partition the array into consecutive chunks of `n` elements; the last
+    // chunk may be shorter when `self.length` is not divisible by `n`.
+    // Negative or zero `n` returns an empty array (no infinite loop).
+    default fn chunked(self: Self, n: i32) -> Array<Self> {
+        var out = [];
+        if (n <= 0) {
+            return out;
+        };
+        var i = 0;
+        var len = self.length;
+        while (i < len) {
+            val piece = self.slice(i, i + n);
+            out = out.append([piece]);
+            i = i + n;
+        };
+        return out;
+    }
+
+    // Sliding window of length `n` over the array. Returns one window per
+    // valid start offset (`self.length - n + 1` windows). Negative or zero
+    // `n`, or `n > self.length`, returns an empty array.
+    default fn sliding(self: Self, n: i32) -> Array<Self> {
+        var out = [];
+        if (n <= 0) {
+            return out;
+        };
+        var i = 0;
+        var len = self.length;
+        var last = len - n;
+        while (i <= last) {
+            val piece = self.slice(i, i + n);
+            out = out.append([piece]);
+            i = i + 1;
+        };
+        return out;
+    }
+
+    // Drop consecutive duplicates. Matches the Node Array convention —
+    // non-consecutive de-dup is `xs.fold([], …)` (left to callers since it
+    // needs an equality predicate that interacts with generic `T`).
+    default fn unique(self: Self) -> Self {
+        var out = [];
+        var seenLast = false;
+        var prev = self.at(0);
+        self.forEach({ x ->
+            if (seenLast) {
+                if (prev.unwrapOr(x) != x) {
+                    out = out.append([x]);
+                    prev = self.at(out.length);
+                };
+            } else {
+                out = out.append([x]);
+                seenLast = true;
+                prev = self.at(0);
+            };
+        });
+        return out;
+    }
+
+}
+
+// ── array slice arity dispatch ───────────────────────────────────────────────
+
+#[@External.Erlang("lists:nthtail($0, $self)"),
+  @External.Node("./gleam_stdlib.mjs", "slice")]
+declare fn arraySlice0<T>(self: Array<T>, start: i32) -> Array<T>
+
+#[@External.Erlang("lists:sublist($self, ($0) + 1, (($1) - ($0)))"),
+  @External.Node("./gleam_stdlib.mjs", "slice")]
+declare fn arraySlice1<T>(self: Array<T>, start: i32, end: i32) -> Array<T>
+
+// ── tests ─────────────────────────────────────────────────────────────────────
+
+test "iterator fold and map" {
+    val xs = [1, 2, 3, 4];
+    val doubled = xs.map({ x -> x * 2 });
+    assert doubled.fold(0, { acc, x -> acc + x }) == 20, "fold of doubled";
+}
+
+test "iterator filter length count" {
+    val xs = [1, 2, 3, 4];
+    assert xs.filter({ x -> x > 2 }).length == 2, "filter > 2";
+    assert xs.count({ x -> x > 1 }) == 3, "count > 1";
+}
+
+test "iterator contains first isEmpty" {
+    val xs = [1, 2, 3];
+    assert xs.contains(3), "contains 3";
+    assert xs.filter({ x -> x > 9 }).isEmpty(), "filtered empty";
+}
+
+test "iterator take drop reverse" {
+    val xs = [1, 2, 3, 4];
+    assert xs.take(2).join(",") == "1,2", "take 2";
+    assert xs.drop(2).join(",") == "3,4", "drop 2";
+    assert xs.reverse().join(",") == "4,3,2,1", "reverse";
+}
+
+test "iterator range append prepend" {
+    val a = [1, 2];
+    val b = [2, 3];
+    assert Array.range(1, 5).join(",") == "1,2,3,4", "range half-open";
+    assert a.append([3, 4]).join(",") == "1,2,3,4", "append";
+    assert b.prepend(1).join(",") == "1,2,3", "prepend";
+}
+
+test "iterator all any" {
+    val xs = [2, 4, 6];
+    assert xs.all({ x -> x > 1 }), "all > 1";
+    assert xs.any({ x -> x > 5 }), "any > 5";
+}
+
+test "iterator range produces expected values" {
+    val lr = Array.range(0, 5);
+    assert lr.join(",") == "0,1,2,3,4";
+}
+
+test "iterator range half-open semantics" {
+    val xs = Array.range(3, 3);
+    assert xs.length == 0;
+}
+
+test "iterator range single element" {
+    val xs = Array.range(7, 8);
+    assert xs.length == 1;
+    assert xs.join(",") == "7";
+}
+
+test "iterator toList collects range" {
+    val xs = Array.range(0, 4).toList();
+    assert xs.length == 4;
+    assert xs.join(",") == "0,1,2,3";
+}
+
+test "iterator fold sums range" {
+    val total = Array.range(1, 5).fold(0, { acc, item -> acc + item });
+    assert total == 10;
+}
+
+test "iterator map doubles range" {
+    val xs = Array.range(0, 3).map({ n -> n * 2 });
+    assert xs.join(",") == "0,2,4";
+}
+
+test "iterator filter evens from range" {
+    val evens = Array.range(0, 6).filter({ n -> n % 2 == 0 });
+    assert evens.join(",") == "0,2,4";
+}
+
+test "iterator take first three" {
+    val xs = Array.range(0, 10).take(3);
+    assert xs.length == 3;
+    assert xs.join(",") == "0,1,2";
+}
+
+test "iterator take more than available" {
+    val xs = Array.range(0, 2).take(10);
+    assert xs.length == 2;
+}
+
+test "iterator fold empty is initial" {
+    val total = Array.range(5, 5).fold(99, { acc, item -> acc + item });
+    assert total == 99;
+}
+
+test "array join" {
+    val xs = ["a", "b", "c"];
+    assert xs.join("-") == "a-b-c";
+}
+
+test "array reverse" {
+    val ns = [1, 2, 3];
+    assert ns.reverse().join(",") == "3,2,1";
+}
+
+test "array indexOf and at" {
+    val ns = [1, 2, 3];
+    assert ns.indexOf(3) == 2;
+    assert ns.at(1) == 2;
+}
+
+test "array map" {
+    val ns = [1, 2, 3];
+    val sq = ns.map({ x -> x * x });
+    assert sq.join(",") == "1,4,9";
+}
+
+test "array filter" {
+    val ns = [1, 2, 3, 4];
+    val ev = ns.filter({ n -> n % 2 == 0 });
+    assert ev.join(",") == "2,4";
+}
+
+test "array slice" {
+    val ns = [1, 2, 3, 4];
+    assert ns.slice(1, 3).join(",") == "2,3";
+}
+
+// ── F7.array_ext smoke tests ─────────────────────────────────────────────────
+
+test "array some / every aliases over any / all" {
+    val ns = [1, 2, 3, 4];
+    assert ns.some({ x -> x > 3 });
+    assert ns.every({ x -> x > 0 });
+    assert ns.some({ x -> x > 9 }).negate();
+    assert ns.every({ x -> x > 1 }).negate();
+}
+
+test "array findIndex returns first hit, -1 when no match" {
+    val ns = [10, 20, 30, 40];
+    assert ns.findIndex({ x -> x == 30 }) == 2;
+    assert ns.findIndex({ x -> x > 100 }) == -1;
+}
+
+test "array chunked partitions" {
+    val ns = [1, 2, 3, 4, 5];
+    val parts = ns.chunked(2);
+    assert parts.length == 3;
+}
+
+test "array sliding window of 2" {
+    val ns = [1, 2, 3, 4];
+    val ws = ns.sliding(2);
+    assert ws.length == 3;
+}
+
+test "array zip pairs the prefix" {
+    val a = [1, 2, 3];
+    val b = ["a", "b"];
+    val pairs = a.zip(b);
+    assert pairs.length == 2;
+}
+
+// ── F7.string_ext smoke tests ────────────────────────────────────────────────
+
+test "string padStart pads to length" {
+    assert "5".padStart(3, "0") == "005";
+}
+
+test "string repeat duplicates" {
+    assert "ab".repeat(3) == "ababab";
+}
+
+test "string replaceAll swaps every occurrence" {
+    assert "banana".replaceAll("a", "X") == "bXnXnX";
+}
+
+test "string chars decomposes ASCII" {
+    val cs = "abc".chars();
+    assert cs.length == 3;
+}
+
+test "string lines splits on newline" {
+    val ls = "a\nb\nc".lines();
+    assert ls.length == 3;
+}

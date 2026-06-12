@@ -1,0 +1,7 @@
+{
+  "name": "client",
+  "version": "0.0.1",
+  "description": "Botopink client-side interfaces — HTTP client/request declarations (scaffold)",
+  "src": "src/",
+  "files": []
+}

@@ -1,0 +1,17 @@
+// test-tooling fixture (mixed pass/fail): one passing test and one failing
+// `assert cond, "msg"`. The runner must (a) surface the custom message in the
+// FAIL line, (b) still run the passing test, and (c) exit non-zero. The harness
+// (../../test_tooling.sh) asserts all three. The failing assert also shows the
+// runner catches a thrown assertion gracefully rather than crashing.
+
+fn double(n: i32) -> i32 {
+  return n * 2;
+}
+
+test "this one passes" {
+  assert double(2) == 4;
+}
+
+test "this one fails with a custom message" {
+  assert double(2) == 5, "double(2) should be five";
+}
