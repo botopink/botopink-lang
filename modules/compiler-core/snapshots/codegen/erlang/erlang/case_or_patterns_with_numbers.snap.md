@@ -1,0 +1,32 @@
+----- SOURCE CODE -- main.bp
+```botopink
+fn classify(day: i32) -> string {
+    val kind = case day {
+        6 | 7 -> "weekend";
+        _ -> "weekday";
+    };
+    @print(kind);
+    return kind;
+}
+```
+
+----- ERLANG -- main.erl
+```erlang
+-module(main).
+
+classify(Day) ->
+    Kind = case Day of
+        6 ->
+            <<"weekend">>;
+        7 ->
+            <<"weekend">>;
+        _ ->
+            <<"weekday">>
+    end,
+    io:format("~p~n", [Kind]),
+    Kind.
+```
+
+----- RUN LOG -----
+```logs
+```

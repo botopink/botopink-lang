@@ -1,0 +1,1 @@
+{ "name": "generic-loader-binding", "version": "0.0.1", "target": "commonJS", "dependencies": ["erika"] }

@@ -1,0 +1,383 @@
+
+// ── type reflection ───────────────────────────────────────────────────────────
+
+fn typeOf<T>(val: T) type
+fn typeName(comptime T: type) string
+fn sizeOf(comptime T: type) i32
+fn alignOf(comptime T: type) i32
+fn hasField(comptime T: type, comptime name: string) bool
+fn hasDecl(comptime T: type, comptime name: string) bool
+fn field<T, F>(obj: T, comptime name: string) F
+fn tagName<T>(val: T) string
+
+
+//// Gleam-inspired `io` module (`import {io} from "std";`).
+//// Host-backed I/O primitives — declaration-only, no pure implementation.
+//// Each target backend supplies the concrete symbol via `#[@external]`.
+
+#[@external(node, "console", "log"),
+  @external(erlang, "io", "format")]
+pub declare fn print(message: string);
+
+#[@external(node, "console", "log"),
+  @external(erlang, "io", "format")]
+pub declare fn println(message: string);
+
+#[@external(node, "console", "debug"),
+  @external(erlang, "io", "format")]
+pub declare fn debug(value: string);
+
+// ── numeric ───────────────────────────────────────────────────────────────────
+
+fn min<T>(a: T, b: T) T
+fn max<T>(a: T, b: T) T
+fn abs<T>(val: T) T
+fn as(comptime T: type, val: T) T
+
+// ── result type ──────────────────────────────────────────────────────────────
+
+pub enum Result<R, E> {
+    Ok(result: R),
+    Error(error: E);
+}
+
+// `@Result<R, E>` carries the following builtin methods. They are resolved by
+// type inference and lowered inline by every codegen backend (there is no
+// runtime dispatch table), so they are documented here rather than declared as
+// enum methods:
+//
+//   fn map(self, transform: fn(value: R) -> R2) -> @Result<R2, E>
+//       Apply `transform` to the Ok payload; an Error is propagated untouched.
+//   fn flatMap(self, transform: fn(value: R) -> @Result<R2, E>) -> @Result<R2, E>
+//       Like `map` but `transform` itself returns a Result (no nesting).
+//   fn unwrapOr(self, default: R) -> R
+//       The Ok payload, or `default` when the receiver is an Error.
+//   fn isOk(self) -> bool        // true when the receiver is `Ok`
+//   fn isError(self) -> bool     // true when the receiver is `Error`
+//
+// The builtin `result` NAMESPACE exposes the same ops as Gleam-style qualified
+// calls — no import needed; a local binding named `result` shadows it:
+//
+//   result.map(r, transform)        ≡ r.map(transform)
+//   result.then(r, transform)       ≡ r.flatMap(transform)
+//   result.unwrap(r, fallback)      ≡ r.unwrapOr(fallback)
+//   result.isOk(r)                 ≡ r.isOk()
+//   result.isError(r)              ≡ r.isError()
+//
+// A `@Result` value is only constructed by `return`/`throw` inside a
+// `*fn -> @Result<R, E>` fn; the runtime shape is `{ ok: V } | { error: E }` (JS) /
+// `{ok, V} | {error, E}` (erlang/beam).
+
+// ── option type ──────────────────────────────────────────────────────────────
+
+// The optional type is `?T` — the ONLY spelling. Optional is not a concrete
+// named type: `@Option<T>` / `@Optional<T>` annotations are rejected with a
+// pointed diagnostic. One representation: a value, or absent. It mirrors the
+// Result method API (also inference-resolved + inline-lowered):
+//
+//   fn map(self, transform: fn(value: T) -> T2) -> ?T2
+//       Apply `transform` to the present value; absence is propagated.
+//   fn flatMap(self, transform: fn(value: T) -> ?T2) -> ?T2
+//   fn unwrapOr(self, default: T) -> T
+//       The present value, or `default` when absent.
+//
+// There is deliberately NO `option` namespace — the ergonomic surface for
+// optionals is JS-style optional chaining (planned):
+//
+//   obj.val?.prop      obj.val?.[expr]      obj.arr?.[index]      obj.func?.(args)
+
+// ── iterator ─────────────────────────────────────────────────────────────────
+
+pub interface Iterator<T> {
+    // The sole abstract method — produce the next item, or absence at the end.
+    // Lazy pull-based protocol; eager collections (Array<T>) implement it via next.
+    fn next(self: Self) -> ?T
+}
+
+pub interface Iterable<T> {
+    fn iter(self: Self) -> Iterator<T>
+}
+
+// ── generator ────────────────────────────────────────────────────────────────
+
+pub enum Yield<T, R> {
+    Yielded(value: T),
+    Done(result: R);
+}
+
+pub interface Generator<T, R> {
+    fn next(self: Self) -> Yield<T, R>
+}
+
+// ── async ────────────────────────────────────────────────────────────────────
+
+pub interface Future<T, E> {
+    fn await(self: Self) -> Result<T, E>
+    fn map<R>(self: Self, transform: fn(value: T) -> R) -> Future<R, E>
+    fn flatMap<R>(self: Self, transform: fn(value: T) -> Future<R, E>) -> Future<R, E>
+}
+
+// ── async iterator ───────────────────────────────────────────────────────────
+
+pub interface AsyncIterator<T, E> {
+    fn next(self: Self) -> Future<?T, E>
+}
+
+pub interface AsyncIterable<T, E> {
+    fn iter(self: Self) -> AsyncIterator<T, E>
+}
+
+// ── context (hooks) ──────────────────────────────────────────────────────────
+
+pub interface Context<ContextBase, Return> { }
+
+// ── control flow ───────────────────────────────────────────────────────────────
+
+fn block<T>(body: fn() -> T) T
+
+// ── runtime ───────────────────────────────────────────────────────────────────
+
+fn panic(message: string) noreturn
+fn trap() noreturn
+fn src() string
+
+// ── compile-time diagnostics ──────────────────────────────────────────────────
+// Abort compilation with `message`. The generic way for any comptime body — a
+// decorator (`fn d(comptime _: @Decl)`) or a template (`-> @Expr<…>`) — to reject
+// its input, surfaced as a scoped diagnostic at the call site. Preferred over the
+// `@Decl` handle's `fail`/`failAt`: it needs no handle and reads like `@panic`.
+fn compilerError(message: string) noreturn
+
+// Contribute generated top-level declarations to the program from a decorator
+// body. `@emit("pub val userServiceSingleton = …")` parses `source` as botopink
+// declarations and splices them into the annotated declaration's module, so a
+// decorator can build wiring (singletons, a DI graph, a router table) as ordinary
+// code. May be called any number of times; each call appends. Comptime-only.
+fn emit(source: string)
+
+
+// ── module imports ───────────────────────────────────────────────────────────
+
+fn root() module
+fn module() module
+
+// ── compile-time I/O ──────────────────────────────────────────────────────────
+
+fn embedFile(comptime path: string) string
+
+// ── annotations ──────────────────────────────────────────────────────────────
+
+// Annotation builtins are invoked inside the annotation block `#[ … ]` that
+// precedes a declaration; each entry is a normal builtin-function call:
+//
+//   #[@external(erlang, "string", "length"),
+//     @external(node, "./gleam_stdlib.mjs", "string_length")]
+//   pub declare fn length(s: string) -> i32;
+//
+// `external` is only valid on a `declare fn` — the declaration is typed from
+// the signature alone, and each codegen backend emits a call to the target's
+// symbol (Erlang `module:symbol`, JS `require(module).symbol`).
+//
+// The target is a `Target` enum value. It may be written bare (`erlang`), as the
+// dot-variant shorthand (`.Erlang`) or qualified (`Target.Erlang`) — all matched
+// case-insensitively, so the legacy bare-lowercase annotations keep working.
+//
+// Two forms, both valid (see libs/std/AGENTS.md for the full vocabulary):
+//   Form A — positional:    #[@external(Target.Erlang, "lists", "reverse")]
+//   Form B — keyword args:  #[@external(runtime: Target.Erlang, module: "lists",
+//                                       method: "reverse(self)")]
+// The `symbol`/`method` string may carry a call template `"sym(arg, self)"` to
+// fix the host argument order and receiver position. Omitting `module` on node
+// (`#[@external(Target.Node, "reverse")]`) means "emit the native JS prototype
+// method directly", with no host module require.
+
+pub enum Target { Node, Typescript, Erlang, Beam, Wasm }
+
+fn external(target: Target, module: string, symbol: string)
+
+// ── effect annotations ─────────────────────────────────────────────────────
+//
+// An effect annotation names a function's effect — the implementation marker
+// that replaces the deprecated `*fn` prefix. Each takes no arguments and pairs
+// with the matching return wrapper, which carries the effect's type parameters:
+//
+//   #[@result]         fn parse(n: i32) -> @Result<i32, string>
+//   #[@future]         fn load() -> @Future<T>
+//   #[@generator]      fn range(a: i32, b: i32) -> @Generator<i32>
+//   #[@iterator]       fn lazy() -> @Iterator<T>
+//   #[@asyncGenerator] fn stream() -> @AsyncIterator<T>
+//   #[@context]        fn useThing() -> @Context<Base, T>
+//
+// The annotation marks an IMPLEMENTATION (a `fn` with a body): it gates the
+// body operations (`await` under future/asyncGenerator; `yield` under
+// generator/iterator/asyncGenerator; `throw`/`try` under result) and drives
+// codegen (future → `async function`, generator/iterator → `function*`,
+// asyncGenerator → `async function*`, result/context → plain `function`).
+// Interface methods and `declare fn` declarations are declarative — they
+// express the effect through the return wrapper alone, with NO annotation
+// (using one there is an error).
+//
+// The markers (`result`, `future`, `generator`, `iterator`, `asyncGenerator`,
+// `context`) are recognized as core builtins by the compiler — they are
+// lib-agnostic and take no arguments, so they need no signature here.
+
+
+
+
+// ── @Expr template model (std.syntax) ─────────────────────────────────────────
+// Data model for `@Expr` templates. Interfaces are pure behaviour contracts, so
+// the companion types are top-level declarations (siblings of `Expr<E>`), not
+// nested members.
+
+pub struct Span {
+    start: i32,
+    end: i32,
+    line: i32,
+}
+
+// One segment of a template: raw text, or a `${…}` interpolation hole whose
+// expression was already type-checked in the caller's scope (string holes —
+// interpolation follows the language's `+` coercion).
+pub enum Part {
+    Text(text: string, span: Span),
+    Interp(hole: Expr<string>, span: Span),
+}
+
+// What kind of top-level declaration a scope lookup resolved to.
+pub enum BindingKind {
+    Fn,
+    Val,
+    Struct,
+    Enum,
+    Interface,
+}
+
+// A name resolved in an expression's origin scope (V1: the caller module's
+// top-level declarations + imports — function locals are not visible).
+pub struct Binding {
+    name: string,
+    kind: BindingKind,
+}
+
+// Where an expression was written: the declaration position in the origin file.
+// `file` is the module path ("" for main); `line`/`col` point at the template
+// literal's opening quote (1-based).
+pub struct Source {
+    file: string,
+    line: i32,
+    col: i32,
+}
+
+// Everything a second-layer language (a DSL compiler running inside a template
+// function) needs about its input in one object: where the template was
+// declared, its raw text, and its shape. The origin scope is reached via
+// `lookup`/`bindings`; the segmented view via `parts`.
+pub struct Context {
+    source: Source,
+    text: string,
+    multiline: bool,
+}
+
+// ── @ExprCustom carrier (expr-custom) ──────────────────────────────────────────
+// A node of ANY embedded sub-language, in one canonical shape the core and the
+// tooling understand WITHOUT knowing the language. A second-layer language (an
+// `@Expr` template that lexes/parses its own DSL) converts its private AST into
+// `CustomNode`s at the boundary; the core never branches on the contents.
+// `kind`/`label` are opaque tags the lib picks; `span` indexes the
+// `@Expr<string>` source text; `ref` optionally ties a node (a queried
+// collection, a column, …) to a caller-scope symbol via a `lookup` result.
+pub struct CustomNode {
+    kind: string,             // lib-chosen tag: "select" / "field" / "predicate" / "literal" …
+    span: Span,               // offsets into the template's source text
+    label: string,            // tooling token category: "keyword"/"property"/"string"/"number"/"operator"
+    ref: ?Binding,            // optional association to an origin-scope symbol
+    children: CustomNode[],
+}
+
+// What `@ExprCustom<T>` carries: the executable expression plus the reference
+// tree. The `code` half travels the ordinary `@Expr<T>` expansion path (spliced,
+// lowered to every backend — runtime behaviour is unchanged); the `ast` half is
+// stored by call-location and is reference-only (the language server reads it).
+pub struct CustomExpr<T> {
+    code: Expr<T>,            // the botopink expression that actually runs
+    ast: CustomNode,          // the sub-language tree, reference only
+}
+
+pub interface Expr<E> {
+    fn text(self: Self) -> string
+    fn parts(self: Self) -> Part[]
+    fn source(self: Self) -> Source
+    fn context(self: Self) -> Context
+    fn lookup(self: Self, name: string) -> ?Binding
+    fn bindings(self: Self) -> Binding[]
+    fn build<R>(self: Self, source: string) -> Expr<R>
+    // Pack a reference tree + the executable code into the custom return — a
+    // template fn opts into tooling visibility by returning `@ExprCustom<T>`.
+    fn custom<R>(self: Self, ast: CustomNode, code: Expr<R>) -> CustomExpr<R>
+    fn fail(self: Self, message: string)
+    fn failAt(self: Self, span: Span, message: string)
+}
+
+// ── @Decl reflection model (annotation processors) ─────────────────────────────
+// Read-only reflection of the declaration a decorator is attached to. A decorator
+// is an ordinary comptime function whose first parameter is `comptime _: @Decl`;
+// when `#[d(args)]` is applied, the core serializes the annotated declaration into
+// a `@Decl` handle and runs the body, exactly like an `@Expr` template capture.
+// The lib (rakun, …) — never the core — gives the marker meaning: validate
+// placement/arguments via `fail`/`failAt`, and (later) contribute generated
+// wiring. The core only provides the protocol (recognize → reflect → invoke).
+
+// Which kind of top-level declaration the annotation sits on.
+pub enum DeclKind {
+    Record,
+    Struct,
+    Enum,
+    Interface,
+    Fn,
+    Method,
+    Field,
+}
+
+// One annotation entry on a reflected declaration (`#[name(args…)]`). `args`
+// holds the raw argument lexemes in source order.
+pub struct Annotation {
+    name: string,
+    args: string[],
+}
+
+// One parameter of a reflected method/fn.
+pub struct Param {
+    name: string,
+    typeName: string,
+}
+
+// One field of a reflected record/struct, with its own annotations.
+pub struct Field {
+    name: string,
+    typeName: string,
+    annotations: Annotation[],
+}
+
+// One method of a reflected record/struct/enum, with its own annotations.
+pub struct Method {
+    name: string,
+    params: Param[],
+    returnType: string,
+    annotations: Annotation[],
+}
+
+// The reflection handle. `kind`/`name`/`fields`/`methods`/`returnType`/
+// `annotations` are read-only data (serialized like a template's capture);
+// `fail`/`failAt` emit a scoped diagnostic at the annotated declaration, reusing
+// the template diagnostic surface.
+pub interface Decl {
+    val kind: DeclKind
+    val name: string
+    val fields: Field[]
+    val methods: Method[]
+    val returnType: string
+    val annotations: Annotation[]
+
+    fn fail(self: Self, message: string)
+    fn failAt(self: Self, span: Span, message: string)
+}

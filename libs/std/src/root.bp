@@ -1,0 +1,17 @@
+//// The botopink standard library — module-tree root.
+////
+//// This `root.bp` is the explicit tree root of the `std` package: each
+//// `pub mod` below declares an importable std module (`import {…} from "std"`).
+//// It is the single source of truth for the std module set — the build embeds
+//// exactly the modules declared here, so adding a std module is `drop
+//// libs/std/src/<name>.bp` + `pub mod <name>;` here (no build.zig edit).
+////
+//// The ambient declaration modules (`primitives.d.bp`, `builtins.d.bp`) are
+//// flattened into the global type env rather than imported, so they are wired
+//// separately by the build and are not declared here.
+
+pub mod order;
+pub mod dict;
+pub mod sets;
+pub mod string_builder;
+pub mod queue;

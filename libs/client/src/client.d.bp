@@ -1,0 +1,5 @@
+// client — client-side interfaces (scaffold)
+//
+// Placeholder for botopink's HTTP client / request declarations. No symbols
+// are declared yet; this file exists so the package has a source entry point.
+// It is NOT embedded into the compiler and is NOT loaded into the type env.

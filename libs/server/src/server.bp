@@ -1,0 +1,22 @@
+//// server — the HTTP backing's botopink surface (`#[@external]` → `server.mjs`).
+////
+//// Real, emitted module (not a `.d.bp` scaffold): the `declare fn`s below bind
+//// the node-`http` host runtime in `server.mjs`. The server is
+//// framework-agnostic — `serve` takes the dispatcher as a plain function, so it
+//// has no dependency on rakun (rakun depends on `server`, never the reverse).
+////
+//// `serve(port, handler)` starts the server; `handler` is the framework's
+//// request dispatcher — `(method, path, headersJson, queryJson, body) -> R`,
+//// generic over the response value `R` (rakun passes its `Response`). The host
+//// reads `R.status`/`R.body` to write the reply. `stop()` closes the socket.
+////
+//// The `#[@external]` path is the SIBLING `./server.mjs`: the CLI ships the
+//// runtime `.mjs` next to every emitted module (G2), so `require("./server.mjs")`
+//// resolves in both the lib's own and a consumer's build tree. Reached via
+//// `from "server"`. See ./AGENTS.md.
+
+#[@external(node, "./server.mjs", "serve")]
+pub declare fn serverServe<R>(port: i32, handler: fn(method: string, path: string, headersJson: string, queryJson: string, body: string) -> R) -> i32;
+
+#[@external(node, "./server.mjs", "stop")]
+pub declare fn serverStop() -> i32;

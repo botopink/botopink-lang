@@ -1,0 +1,9 @@
+{
+  "name": "server",
+  "version": "0.0.1",
+  "description": "Botopink server-side HTTP backing — node `http` transport behind #[@external]",
+  "src": "src/",
+  "files": [
+    "server.bp"
+  ]
+}

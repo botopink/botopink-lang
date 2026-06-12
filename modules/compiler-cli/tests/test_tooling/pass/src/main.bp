@@ -1,0 +1,21 @@
+// test-tooling fixture (all passing): exercises an empty test body and the
+// `--filter` matcher (two tests share the "math" substring). `botopink test`
+// here must exit 0; see ../../test_tooling.sh.
+
+fn double(n: i32) -> i32 {
+  return n * 2;
+}
+
+test "math doubles two" {
+  assert double(2) == 4;
+}
+
+test "math doubles three" {
+  assert double(3) == 6;
+}
+
+test "empty body still passes" {}
+
+test "unrelated name still runs" {
+  assert double(0) == 0;
+}

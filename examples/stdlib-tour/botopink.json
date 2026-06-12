@@ -1,0 +1,1 @@
+{ "name": "stdlib-tour", "version": "0.0.1", "target": "commonJS", "src": "src/", "dependencies": [] }

@@ -1,0 +1,7 @@
+{
+  "name": "test_tooling_fail",
+  "version": "0.0.1",
+  "description": "test-tooling fixture: a failing `assert cond, \"msg\"` whose custom message must surface, and a passing test alongside it (mixed run → non-zero exit). Front-C C1.",
+  "target": "commonJS",
+  "src": "src/"
+}

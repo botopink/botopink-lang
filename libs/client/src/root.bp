@@ -1,0 +1,12 @@
+//// The `client` package — module-tree root.
+////
+//// Declaration-only scaffold: `client` ships no runnable `.bp` module yet, so
+//// this root declares no `mod`. Its surface lives in `client.d.bp`, a
+//// consumer-facing declaration module wired through `botopink.json` `files`
+//// (loaded with `.declaration = true` for a `from "client"` consumer), not the
+//// build tree — `.d.bp` modules are not resolved by `mod` paths (the resolver
+//// only follows `<name>.bp` / `<name>/mod.bp`), mirroring how `libs/std` keeps
+//// its ambient `.d.bp` out of `root.bp`.
+////
+//// When the first real symbols land, drop `src/<name>.bp` + add `pub mod
+//// <name>;` here.
