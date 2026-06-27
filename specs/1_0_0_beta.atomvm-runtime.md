@@ -353,6 +353,37 @@ Update CI workflows if needed (`.github/workflows/test.yml`).
 
 ---
 
+## Scope
+
+This spec changes **only** the comptime evaluation runtime — the in-process
+engine that executes `.bp` expressions at compile time (comptime blocks,
+template bodies, decorator bodies). Every codegen backend stays exactly as
+it is today:
+
+| Backend       | File                        | Affected? |
+|---------------|-----------------------------|-----------|
+| commonJS      | `codegen/commonJS.zig`      | No        |
+| TypeScript    | `codegen/typescript.zig`    | No        |
+| Erlang        | `codegen/erlang.zig`        | No        |
+| BEAM          | `codegen/beam_asm.zig`      | No        |
+| WASM          | `codegen/wat.zig`           | No        |
+
+The BEAM codegen backend (`beam_asm.zig`) is **reused** by the comptime
+runtime to lower `.bp` expressions to BEAM bytecode that AtomVM executes,
+but the backend itself is unchanged — it continues to serve user-facing
+`botopink build --target beam` as before.
+
+What changes:
+- `comptime/runtime/` — wasm3 host + WAT prelude → AtomVM host + BEAM codegen
+- `modules/wasm3/` → `modules/atomvm/` (vendored interpreter swap)
+- `build.zig` — link AtomVM instead of wasm3
+
+What does NOT change:
+- User-facing codegen (all 5 targets produce identical output)
+- Stdlib compilation (same `.bp` → same output per target)
+- LSP analysis (comptime values are opaque to the LSP regardless of runtime)
+- Snapshot format for non-comptime codegen tests
+
 ## Notes
 
 - AtomVM must be evaluated for embeddability before step 3 begins. If AtomVM
