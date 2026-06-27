@@ -1,6 +1,6 @@
 /// Core type representation for the botopink type system.
 ///
-/// Inspired by Gleam's Type enum with four variants:
+/// Type enum with four variants:
 ///   Named | Func | TypeVar | Union_
 ///
 /// All nodes are allocated in a caller-supplied arena ---- no individual frees.

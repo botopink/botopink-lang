@@ -1,10 +1,10 @@
-/// Conversões entre posições do compiler-core e LSP.
+/// Conversions between compiler-core positions and LSP.
 ///
-/// O compiler-core usa:
-///   - Loc { line: usize, col: usize }  (1-based, em nós do AST)
-///   - byte offset usize                (em ParseErrorInfo e lexer)
+/// The compiler-core uses:
+///   - Loc { line: usize, col: usize }  (1-based, in AST nodes)
+///   - byte offset usize                (in ParseErrorInfo and lexer)
 ///
-/// O LSP usa:
+/// The LSP uses:
 ///   - Position { line: u32, character: u32 }  (0-based)
 const std = @import("std");
 const proto = @import("./protocol.zig");
@@ -58,7 +58,7 @@ pub fn locToPosition(line_1based: usize, col_1based: usize) proto.Position {
 
 // ── Range cobrindo o documento inteiro ────────────────────────────────────────
 
-/// Range que abrange todo o conteúdo do source.
+/// Range covering the entire source content.
 pub fn fullRange(source: []const u8) proto.Range {
     return .{
         .start = .{ .line = 0, .character = 0 },
@@ -68,14 +68,14 @@ pub fn fullRange(source: []const u8) proto.Range {
 
 // ── URI → caminho de arquivo ───────────────────────────────────────────────────
 
-/// Remove o prefixo "file://" de um URI retornando o caminho no sistema de arquivos.
-/// O slice retornado aponta para dentro de `uri` (sem alocação).
+/// Removes the "file://" prefix from a URI, returning the filesystem path.
+/// The returned slice points into `uri` (no allocation).
 pub fn uriToPath(uri: []const u8) []const u8 {
     if (std.mem.startsWith(u8, uri, "file://")) return uri["file://".len..];
     return uri;
 }
 
-/// Constrói um URI "file://<path>" alocado com `gpa`.
+/// Builds a "file://<path>" URI allocated with `gpa`.
 pub fn pathToUri(gpa: std.mem.Allocator, path: []const u8) ![]u8 {
     return std.fmt.allocPrint(gpa, "file://{s}", .{path});
 }

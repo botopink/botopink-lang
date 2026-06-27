@@ -91,7 +91,6 @@ pub const TokenKind = enum {
     @"return",
     selfType,
     set,
-    @"struct",
     @"test",
     throw,
     interface,

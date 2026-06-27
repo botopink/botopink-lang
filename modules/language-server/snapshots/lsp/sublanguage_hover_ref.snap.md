@@ -1,6 +1,6 @@
 ----- SOURCE
 ```botopink
-pub struct Users { name: string }
+pub record Users { name: string }
 pub fn q<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
     val code = e.build("[1, 2]");
     val kw = CustomNode(kind: "kw", span: Span(0, 6, 1), label: "keyword", ref: null, children: []);
@@ -16,5 +16,5 @@ val xs = q "select name";
 kind: markdown
 
 ```botopink
-pub struct Users
+pub record Users { name: string }
 ```

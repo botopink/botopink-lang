@@ -1,13 +1,13 @@
-/// Testes de formatação — cobre `engine.formatting`.
+/// Formatting tests — covers `engine.formatting`.
 ///
-/// Analogia BotoPink não tem suite separada (formatação é testada no compiler-core).
-/// Aqui testamos a camada LSP: TextEdit retornado, null quando já formatado.
+/// BotoPink has no separate formatting suite (formatting is tested in compiler-core).
+/// Here we test the LSP layer: returned TextEdit, null when already formatted.
 const std = @import("std");
 const h = @import("./helpers.zig");
 const engine = @import("../engine.zig");
 const proto = @import("../protocol.zig");
 
-// ── F1 — fonte já formatada não gera edits ────────────────────────────────────
+// ── F1 — already formatted source produces no edits ──
 
 test "formatting: already-formatted source returns null" {
     const gpa = std.testing.allocator;
@@ -42,25 +42,25 @@ test "formatting: empty source returns null" {
     try std.testing.expectEqual(@as(?proto.TextEdit, null), edit);
 }
 
-// ── F4 — fonte formatável retorna TextEdit cobrindo o documento inteiro ───────
+// ── F4 — formattable source returns TextEdit covering the whole document ──
 
 test "formatting: unformatted source returns a TextEdit covering the whole document" {
     const gpa = std.testing.allocator;
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
 
-    // Fonte válida mas que o formatter vai normalizar (espaços extras)
+    // Valid source that the formatter will normalize (extra spaces)
     const source = "val   x = 42;";
     const edit = try engine.formatting(arena.allocator(), source);
 
-    // Se o formatter normalizou algo, edit != null e range começa em (0,0)
+    // If the formatter normalized anything, edit != null and range starts at (0,0)
     if (edit) |e| {
         try std.testing.expectEqual(@as(u32, 0), e.range.start.line);
         try std.testing.expectEqual(@as(u32, 0), e.range.start.character);
-        // newText não deve ser vazio
+        // newText must not be empty
         try std.testing.expect(e.newText.len > 0);
     }
-    // Se null, o formatter considerou correto — também aceitável
+    // If null, the formatter considered it correct — also acceptable
 }
 
 // ── F5 — TextEdit range.end aponta para o fim do documento ───────────────────
@@ -70,11 +70,11 @@ test "formatting: TextEdit end position matches end of source" {
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
 
-    // Multilinhas para garantir que end.line > 0 se houver edit
+    // Multi-line to ensure end.line > 0 if there is an edit
     const source = "val   x = 1;\nval   y = 2;";
     const edit = try engine.formatting(arena.allocator(), source);
     if (edit) |e| {
-        // Range deve cobrir as 2 linhas
+        // Range must cover both lines
         try std.testing.expect(e.range.end.line >= 1);
     }
 }

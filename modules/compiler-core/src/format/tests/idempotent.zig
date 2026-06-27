@@ -7,22 +7,6 @@ const parserMod = @import("../../parser.zig");
 const formatMod = @import("../../format.zig");
 const h = @import("helpers.zig");
 
-test "format: idempotent ---- full Account struct" {
-    try h.assertIdempotent(std.testing.allocator,
-        \\val Account = struct {
-        \\    _balance: number = 0,
-        \\    get balance(self: Self) -> number {
-        \\        return self._balance;
-        \\    }
-        \\    set balance(self: Self, value: number) {
-        \\        self._balance = value;
-        \\    }
-        \\    fn deposit(self: Self, amount: number) {
-        \\        self._balance += amount;
-        \\    }
-        \\};
-    );
-}
 
 test "format: idempotent ---- full Drawable interface" {
     try h.assertIdempotent(std.testing.allocator,
@@ -95,22 +79,6 @@ test "format: idempotent ---- nested case expressions" {
     );
 }
 
-test "format: idempotent ---- struct with methods" {
-    try h.assertIdempotent(std.testing.allocator,
-        \\val Account = struct {
-        \\    _balance: number = 0,
-        \\    get balance(self: Self) -> number {
-        \\        return self._balance;
-        \\    }
-        \\    set balance(self: Self, value: number) {
-        \\        self._balance = value;
-        \\    }
-        \\    fn deposit(self: Self, amount: number) {
-        \\        self._balance += amount;
-        \\    }
-        \\};
-    );
-}
 
 test "format: idempotent ---- interface with default method" {
     try h.assertIdempotent(std.testing.allocator,

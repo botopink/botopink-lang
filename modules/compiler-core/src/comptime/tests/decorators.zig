@@ -84,7 +84,7 @@ test "decorator: marker on a struct method (P3 method-site)" {
     try h.assertInfersOk(std.testing.allocator,
         \\fn tag(comptime decl: @Decl, label: string) { }
         \\
-        \\struct Sb {
+        \\record Sb {
         \\    val x: i32,
         \\    #[tag("a")]
         \\    fn m(self: Self) -> i32 { return self.x; }
@@ -108,7 +108,7 @@ test "decorator: string-arg marker on a struct field (P3 field-site)" {
     try h.assertInfersOk(std.testing.allocator,
         \\fn value(comptime decl: @Decl, key: string) { }
         \\
-        \\struct Config {
+        \\record Config {
         \\    #[value("port")]
         \\    val port: i32
         \\}
@@ -131,7 +131,7 @@ test "decorator: applies on struct, enum and fn sites" {
         \\fn tag(comptime decl: @Decl, label: string) { }
         \\
         \\#[tag("a")]
-        \\struct Sa { val x: i32 }
+        \\record Sa { val x: i32 }
         \\
         \\#[tag("b")]
         \\enum Color { Red, Green }

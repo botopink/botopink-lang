@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Point = struct {
+val Point = record {
     x: i32,
     y: i32,
     fn sum() -> i32 {

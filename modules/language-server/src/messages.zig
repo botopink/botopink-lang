@@ -10,8 +10,8 @@ const std = @import("std");
 
 pub const MessageKind = enum { request, notification, response };
 
-/// Mensagem JSON-RPC decodificada. Ownership do JSON raw e do parsed value
-/// são gerenciados pelo `Parsed` — chame `deinit()` quando terminar.
+/// Decoded JSON-RPC message. Ownership of raw JSON and parsed value
+/// is managed by `Parsed` — call `deinit()` when done.
 pub const Message = struct {
     kind: MessageKind,
     /// JSON bruto (alocado com `gpa`).
@@ -48,7 +48,7 @@ pub const Message = struct {
 
 // ── Reader ────────────────────────────────────────────────────────────────────
 
-/// Lê uma mensagem JSON-RPC do `reader`. Retorna `null` em EOF.
+/// Reads a JSON-RPC message from `reader`. Returns `null` on EOF.
 pub fn readMessage(
     reader: *std.Io.Reader,
     gpa: std.mem.Allocator,
@@ -107,7 +107,7 @@ pub fn readMessage(
 // ── Writer ────────────────────────────────────────────────────────────────────
 
 const WRITE_MUTEX = std.debug.lockStderr; // reuse stderr mutex as a no-op placeholder
-// Stdout é single-threaded no LSP — sem mutex necessário na fase 1.
+// Stdout is single-threaded in LSP — no mutex needed in phase 1.
 
 /// Escreve um JSON-RPC response (result) para stdout.
 pub fn writeResponse(

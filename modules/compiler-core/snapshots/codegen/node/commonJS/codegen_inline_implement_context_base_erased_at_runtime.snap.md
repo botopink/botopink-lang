@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Element = struct implement @Context<Element, Element> { }
+val Element = record implement @Context<Element, Element> { }
 fn render() -> Element {
     Element();
 }
@@ -8,8 +8,11 @@ fn render() -> Element {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
+class Element {
+}
+
 function render() {
-    Element();
+    new Element();
 }
 ```
 

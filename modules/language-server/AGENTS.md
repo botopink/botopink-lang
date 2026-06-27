@@ -52,7 +52,7 @@ The server currently handles `initialize` / `shutdown` plus these
   `references` (cross-module with exact positions), `rename` (cross-module multi-file, with `prepareRename`, rejects keywords),
   `signatureHelp` (incl. builtin interface methods, `self` dropped),
   `inlayHint` (inferred `val` types, call-site parameter names, lambda parameter types; `workspace/inlayHint/refresh` on edits),
-  `semanticTokens` (`full` + `range`; token-driven legend distinguishing builtin `@Type`s, interface/struct methods vs free fns, `*fn` effect marker, comptime params, enum members; **plus a sub-language overlay inside string literals — see below**),
+  `semanticTokens` (`full` + `range`; token-driven legend distinguishing builtin `@Type`s, interface methods vs free fns, `*fn` effect marker, comptime params, enum members; **plus a sub-language overlay inside string literals — see below**),
   `codeAction` (add type annotation, remove unused import, add missing case patterns, add missing import),
   `foldingRange` (incl. `test` blocks).
 
@@ -113,7 +113,7 @@ already have:
   arm picks element `N` via `tupleMemberIndex` and lifts its type back into
   the `ReceiverType` lattice via `receiverFromType`. A request *on* `_N`
   itself returns null (no source-declared name); a chained `t._0.field`
-  resolves `field` against element 0's record/struct.
+  resolves `field` against element 0's record.
 - **`Iface.method(...)` (interface assoc-fn — §E E2)** — the head identifier
   is an interface name (not a value binding), so `resolveChainType` returns
   `.unknown`. `definitionMember`'s `.unknown` fall-through invokes

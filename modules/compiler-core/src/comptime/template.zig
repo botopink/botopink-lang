@@ -33,7 +33,7 @@ pub const BindingKind = enum {
         return switch (self) {
             .fn_ => "Fn",
             .val => "Val",
-            .struct_ => "Struct",
+            .struct_ => "Record_",
             .enum_ => "Enum",
             .interface => "Interface",
         };

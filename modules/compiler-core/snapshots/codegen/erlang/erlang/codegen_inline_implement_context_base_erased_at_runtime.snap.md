@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Element = struct implement @Context<Element, Element> { }
+val Element = record implement @Context<Element, Element> { }
 fn render() -> Element {
     Element();
 }
@@ -10,7 +10,7 @@ fn render() -> Element {
 ```erlang
 -module(main).
 
-%% struct Element: 
+%% record Element: 
 
 render() ->
     #{}.

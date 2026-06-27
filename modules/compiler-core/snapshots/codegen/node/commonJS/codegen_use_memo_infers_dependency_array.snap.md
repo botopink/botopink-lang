@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Element = struct implement @Context<Element, Element> { }
+val Element = record implement @Context<Element, Element> { }
 fn state(initial: i32) -> @Context<Element, i32> {
     initial;
 }
@@ -16,6 +16,9 @@ fn Counter() -> Element {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
+class Element {
+}
+
 function state(initial) {
     initial;
 }
@@ -29,7 +32,7 @@ function Counter() {
     const doubled = useMemo(() => {
     return (count * 2);
 }, [count]);
-    Element();
+    new Element();
 }
 ```
 

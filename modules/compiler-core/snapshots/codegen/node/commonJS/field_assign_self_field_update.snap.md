@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Counter = struct {
+val Counter = record {
     count: i32 = 0,
     fn inc() {
         self.count += 1;
@@ -11,11 +11,11 @@ val Counter = struct {
 ----- JAVASCRIPT -- main.js
 ```javascript
 class Counter {
-    constructor(count = 0) {
+    constructor(count) {
         this.count = count;
     }
 
-    inc() {
+    static inc() {
         this.count += 1;
     }
 }

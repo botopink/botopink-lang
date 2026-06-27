@@ -1,18 +1,15 @@
-/// Testes de signature help — cobre `engine.signatureHelp`.
-/// Snapshots em: snapshots/lsp/sig_*.snap.md
-///
-/// Analogia Gleam: tests/signature_help.rs (26 testes / 25 snapshots).
+/// Signature help tests — covers `engine.signatureHelp`.
 const std = @import("std");
 const h = @import("./helpers.zig");
 const snap = @import("./snapshot.zig");
 const engine = @import("../engine.zig");
 
-// ── SH1 — cursor após ( mostra primeiro parâmetro ─────────────────────────────
+// ── SH1 — cursor after ( shows first parameter ──
 
 test "signature_help: cursor after opening paren shows first param" {
     const gpa = std.testing.allocator;
 
-    // Bindings da última compilação bem-sucedida (só a definição).
+    // Bindings from the last successful compilation (definition only).
     const bindings_source =
         \\fn add(x: i32, y: i32) { return x; }
     ;
@@ -23,7 +20,7 @@ test "signature_help: cursor after opening paren shows first param" {
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
 
-    // Fonte atual (incompleta) — cenário real de edição.
+    // Current source (incomplete) — real editing scenario.
     const source =
         \\fn add(x: i32, y: i32) { return x; }
         \\val r = add(
@@ -35,12 +32,12 @@ test "signature_help: cursor after opening paren shows first param" {
     try snap.assertSignatureHelp(gpa, "sig_first_param", source, cursor, result);
 }
 
-// ── SH2 — após vírgula mostra segundo parâmetro ───────────────────────────────
+// ── SH2 — after comma shows second parameter ──
 
 test "signature_help: cursor after comma shows second param" {
     const gpa = std.testing.allocator;
 
-    // Bindings da última compilação bem-sucedida.
+    // Bindings from the last successful compilation.
     const bindings_source =
         \\fn add(x: i32, y: i32) { return x; }
     ;
@@ -51,12 +48,12 @@ test "signature_help: cursor after comma shows second param" {
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
 
-    // Fonte atual (incompleta): usuário digitou o primeiro argumento e a vírgula.
+    // Current source (incomplete): user typed first argument and comma.
     const source =
         \\fn add(x: i32, y: i32) { return x; }
         \\val r = add(1,
     ;
-    // col 14 = depois da vírgula em "val r = add(1," → active_param=1
+    // col 14 = after comma in "val r = add(1," → active_param=1
     const cursor = h.pos(1, 14);
     const result = try engine.signatureHelp(arena.allocator(), source, cursor, bindings);
 
@@ -88,12 +85,12 @@ test "signature_help: cursor outside a call returns null" {
     try snap.assertSignatureHelp(gpa, "sig_outside_call_null", source, cursor, result);
 }
 
-// ── SH4 — função sem parâmetros ───────────────────────────────────────────────
+// ── SH4 — function with no parameters ──
 
 test "signature_help: zero-param function" {
     const gpa = std.testing.allocator;
 
-    // Bindings da última compilação bem-sucedida.
+    // Bindings from the last successful compilation.
     const bindings_source =
         \\fn greet() { return 42; }
     ;
@@ -104,7 +101,7 @@ test "signature_help: zero-param function" {
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
 
-    // Fonte atual (incompleta): usuário acabou de digitar `greet(`.
+    // Current source (incomplete): user just typed `greet(`.
     const source =
         \\fn greet() { return 42; }
         \\val r = greet(
@@ -116,7 +113,7 @@ test "signature_help: zero-param function" {
     try snap.assertSignatureHelp(gpa, "sig_zero_params", source, cursor, result);
 }
 
-// ── SH5 — identificador não é função ─────────────────────────────────────────
+// ── SH5 — identifier is not a function ──
 
 test "signature_help: non-function identifier returns null" {
     const gpa = std.testing.allocator;
@@ -148,12 +145,12 @@ test "signature_help: non-function identifier returns null" {
     try snap.assertSignatureHelp(gpa, "sig_non_function_null", scan_source, cursor, result);
 }
 
-// ── SH6 — label da assinatura contém nome da função ──────────────────────────
+// ── SH6 — signature label contains function name ──
 
 test "signature_help: signature label contains function name" {
     const gpa = std.testing.allocator;
 
-    // Bindings da última compilação bem-sucedida (só a definição).
+    // Bindings from the last successful compilation (definition only).
     const bindings_source =
         \\fn compute(n: i32) { return n; }
     ;
@@ -164,7 +161,7 @@ test "signature_help: signature label contains function name" {
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
 
-    // Fonte atual (incompleta) — usuário acabou de digitar `compute(`.
+    // Current source (incomplete) — user just typed `compute(`.
     const source =
         \\fn compute(n: i32) { return n; }
         \\val r = compute(

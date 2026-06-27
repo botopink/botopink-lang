@@ -208,7 +208,7 @@ pub const ProjectIndex = struct {
                 .@"fn" => .function,
                 .val => .value,
                 .record => .record,
-                .@"struct" => .@"struct",
+                
                 .@"enum" => .@"enum",
                 .interface => .interface,
                 else => null,

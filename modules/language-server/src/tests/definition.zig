@@ -1,14 +1,11 @@
-/// Testes de go-to-definition — cobre `engine.definition`.
-/// Snapshots em: snapshots/lsp/definition_*.snap.md
-///
-/// Analogia Gleam: tests/definition.rs (43 testes / 77 snapshots).
+/// Go-to-definition tests — covers `engine.definition`.
 const std = @import("std");
 const h = @import("./helpers.zig");
 const snap = @import("./snapshot.zig");
 const engine = @import("../engine.zig");
 const proto = @import("../protocol.zig");
 
-// ── DG1 — vai para declaração val ────────────────────────────────────────────
+// ── DG1 — jumps to val declaration ──
 
 test "definition: cursor on val usage jumps to declaration" {
     const gpa = std.testing.allocator;
@@ -28,7 +25,7 @@ test "definition: cursor on val usage jumps to declaration" {
     try snap.assertDefinition(gpa, "definition_val_usage", source, h.pos(1, 8), result);
 }
 
-// ── DG2 — vai para declaração fn ─────────────────────────────────────────────
+// ── DG2 — jumps to fn declaration ──
 
 test "definition: cursor on fn call jumps to fn declaration" {
     const gpa = std.testing.allocator;
@@ -60,7 +57,7 @@ test "definition: cursor on integer literal" {
     defer arena.deinit();
 
     const tokens = try h.tokenize(arena.allocator(), source);
-    // '42' começa na col 8
+    // '42' starts at col 8
     const result = try engine.definition(gpa, h.TEST_URI, source, h.pos(0, 8), tokens);
     defer if (result) |loc| gpa.free(loc.uri);
 
@@ -103,7 +100,7 @@ test "definition: returned Location carries the correct URI" {
     const result = try engine.definition(gpa, h.TEST_URI, source, h.pos(1, 8), tokens);
     defer if (result) |loc| gpa.free(loc.uri);
 
-    // Verificação inline: URI deve ser a que passamos
+    // Inline verification: URI must match what we passed
     if (result) |loc| {
         try std.testing.expectEqualStrings(h.TEST_URI, loc.uri);
     }
@@ -202,7 +199,7 @@ test "definition: std lookup misses without a std import" {
         \\val y = map;
     ;
 
-    // 'map' sem qualificador nem `from "std"` — não deve resolver no std.
+    // 'map' without qualifier or `from "std"` — should not resolve to std.
     const result = try engine.definitionInStdModules(gpa, source, h.pos(0, 8));
     try std.testing.expect(result == null);
 }
@@ -214,7 +211,7 @@ test "definition: non-std qualifier does not resolve into std" {
         \\val xs = foo.map(1);
     ;
 
-    // 'map' qualificado por `foo` (não é módulo std) — null.
+    // 'map' qualified by `foo` (not a std module) — null.
     const result = try engine.definitionInStdModules(gpa, source, h.pos(1, 13));
     try std.testing.expect(result == null);
 }

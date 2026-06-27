@@ -541,12 +541,12 @@ pub const std_pkg_modules = @import("std_prelude").pkg_modules;
 /// `decl.fail(…)` type-check against the same data the runtime provides.
 const decl_reflection_src =
     \\pub enum DeclKind { Record, Struct, Enum, Interface, Fn, Method, Field }
-    \\pub struct Span { val start: i32, val end: i32, val line: i32 }
-    \\pub struct Annotation { val name: string, val args: string[] }
-    \\pub struct Param { val name: string, val typeName: string }
-    \\pub struct Field { val name: string, val typeName: string, val annotations: Annotation[] }
-    \\pub struct Method { val name: string, val params: Param[], val returnType: string, val annotations: Annotation[] }
-    \\pub struct Decl {
+    \\pub record Span { val start: i32, val end: i32, val line: i32 }
+    \\pub record Annotation { val name: string, val args: string[] }
+    \\pub record Param { val name: string, val typeName: string }
+    \\pub record Field { val name: string, val typeName: string, val annotations: Annotation[] }
+    \\pub record Method { val name: string, val params: Param[], val returnType: string, val annotations: Annotation[] }
+    \\pub record Decl {
     \\    val kind: DeclKind,
     \\    val name: string,
     \\    val fields: Field[],
@@ -566,7 +566,7 @@ const decl_reflection_src =
 /// `Span` field type resolves. `Binding` (the `ref` field) is the same opaque
 /// type `q.lookup` yields. Generic — the core never inspects `kind`/`label`.
 const custom_ast_reflection_src =
-    \\pub struct CustomNode {
+    \\pub record CustomNode {
     \\    val kind: string,
     \\    val span: Span,
     \\    val label: string,
@@ -823,7 +823,6 @@ fn registerExports(
             // for value use, but carry no cross-module `TypeDef`.
             switch (b.decl) {
                 .record => |r| if (r.isPub) try typeDecls.put(b.name, b.decl),
-                .@"struct" => |s| if (s.isPub) try typeDecls.put(b.name, b.decl),
                 .@"enum" => |e| if (e.isPub) try typeDecls.put(b.name, b.decl),
                 else => {},
             }
@@ -1001,7 +1000,6 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
             for (program.decls) |decl| {
                 const is_pub_type = switch (decl) {
                     .record => |r| r.isPub,
-                    .@"struct" => |s| s.isPub,
                     .@"enum" => |e2| e2.isPub,
                     else => false,
                 };

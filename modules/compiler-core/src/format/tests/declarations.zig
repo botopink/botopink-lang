@@ -85,98 +85,15 @@ test "format: interface ---- multiple abstract methods" {
     );
 }
 
-test "format: struct ---- empty" {
-    try h.assertFormat(std.testing.allocator,
-        \\val Account = struct {};
-    );
-}
 
-test "format: struct ---- single field single-line" {
-    try h.assertFormat(std.testing.allocator,
-        \\val Account = struct { _balance: number = 0 };
-    );
-}
 
-test "format: struct ---- multiple fields single-line" {
-    try h.assertFormat(std.testing.allocator,
-        \\val Point = struct { x: f32, y: f32 };
-    );
-}
 
-test "format: struct ---- field with default value" {
-    try h.assertFormat(std.testing.allocator,
-        \\val Config = struct { host: string = "localhost", port: i32 = 8080 };
-    );
-}
 
-test "format: struct ---- field with method multi-line" {
-    try h.assertFormat(std.testing.allocator,
-        \\val Counter = struct {
-        \\    _count: i32 = 0,
-        \\    fn increment(self: Self) {
-        \\        self._count += 1;
-        \\    }
-        \\};
-    );
-}
 
-test "format: struct ---- field with getter multi-line" {
-    try h.assertFormat(std.testing.allocator,
-        \\val Account = struct {
-        \\    _balance: number = 0,
-        \\    get balance(self: Self) -> number {
-        \\        return self._balance;
-        \\    }
-        \\};
-    );
-}
 
-test "format: struct ---- getter" {
-    try h.assertFormat(std.testing.allocator,
-        \\val Account = struct {
-        \\    get balance(self: Self) -> number {
-        \\        return self._balance;
-        \\    }
-        \\};
-    );
-}
 
-test "format: struct ---- setter that throws" {
-    try h.assertFormat(std.testing.allocator,
-        \\val Account = struct {
-        \\    set balance(self: Self, value: number) {
-        \\        throw Error(msg: "Balance cannot be negative");
-        \\    }
-        \\};
-    );
-}
 
-test "format: struct ---- method with augmented assign" {
-    try h.assertFormat(std.testing.allocator,
-        \\val Account = struct {
-        \\    fn deposit(self: Self, amount: number) {
-        \\        self._balance += amount;
-        \\    }
-        \\};
-    );
-}
 
-test "format: struct ---- full Account" {
-    try h.assertFormat(std.testing.allocator,
-        \\val Account = struct {
-        \\    _balance: number = 0,
-        \\    get balance(self: Self) -> number {
-        \\        return self._balance;
-        \\    }
-        \\    set balance(self: Self, value: number) {
-        \\        self._balance = value;
-        \\    }
-        \\    fn deposit(self: Self, amount: number) {
-        \\        self._balance += amount;
-        \\    }
-        \\};
-    );
-}
 
 test "format: record ---- empty" {
     try h.assertFormat(std.testing.allocator,
@@ -339,11 +256,6 @@ test "format: pub fn ---- comptime param with generic constraint" {
     );
 }
 
-test "format: struct ---- inline implement @Context<B, R>" {
-    try h.assertFormat(std.testing.allocator,
-        \\val Handler = struct implement @Context<i32, string> { state: i32 };
-    );
-}
 
 test "format: fn statement ---- simple" {
     try h.assertFormat(std.testing.allocator,

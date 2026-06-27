@@ -1,4 +1,4 @@
-/// CLI status output — colored prefixes in the style of gleam/cargo.
+/// CLI status output — colored prefixes.
 ///
 /// All messages go to stderr via `std.debug.print`.
 /// Pass `io` only for the stdout helpers (help / version).

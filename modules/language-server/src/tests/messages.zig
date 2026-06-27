@@ -1,8 +1,8 @@
-/// Testes do frame reader JSON-RPC — cobre `messages.readMessage`.
+/// JSON-RPC frame reader tests — covers `messages.readMessage`.
 ///
-/// Regressão F0a (tooling-update): com a API de Reader do Zig 0.16,
-/// `takeDelimiterExclusive` parou ANTES do '\n', o que truncava o body e
-/// derrubava o server na primeira mensagem. O reader deve consumir o '\n'.
+/// Regression F0a (tooling-update): with the Zig 0.16 Reader API,
+/// `takeDelimiterExclusive` stopped BEFORE the '\n', which truncated the body and
+/// crashed the server on the first message. The reader must consume the '\n'.
 const std = @import("std");
 const messages = @import("../messages.zig");
 

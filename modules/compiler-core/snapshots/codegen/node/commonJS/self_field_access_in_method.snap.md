@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Point = struct {
+val Point = record {
     x: i32,
     y: i32,
     fn sum() -> i32 {
@@ -17,7 +17,7 @@ class Point {
         this.y = y;
     }
 
-    sum() {
+    static sum() {
         return (this.x + this.y);
     }
 }

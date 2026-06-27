@@ -192,11 +192,6 @@ fn renderBindingHover(gpa: std.mem.Allocator, b: comptime_pipeline.TypedBinding)
             }
             try buf.appendSlice(gpa, " }");
         },
-        .@"struct" => |s| {
-            if (s.isPub) try buf.appendSlice(gpa, "pub ");
-            try buf.appendSlice(gpa, "struct ");
-            try buf.appendSlice(gpa, b.name);
-        },
         .@"enum" => |e| {
             if (e.isPub) try buf.appendSlice(gpa, "pub ");
             try buf.appendSlice(gpa, "enum ");
@@ -342,7 +337,6 @@ fn getDeclDocComment(decl: ast.DeclKind) ?[]const u8 {
         .@"fn" => |f| f.docComment,
         .val => |v| v.docComment,
         .record => |r| r.docComment,
-        .@"struct" => |s| s.docComment,
         .@"enum" => |e| e.docComment,
         .interface => |i| i.docComment,
         .delegate => |d| d.docComment,
@@ -445,7 +439,7 @@ fn findDeclLocation(
 ) !?proto.Location {
     // `var` is included so a `var`-declared local resolves on go-to-def; a `var`
     // is never `pub`, so it is naturally absent from the `require_pub` path.
-    const decl_values = [_]TokenKind{ .val, .@"var", .@"fn", .record, .@"struct", .@"enum", .interface };
+    const decl_values = [_]TokenKind{ .val, .@"var", .@"fn", .record, .@"enum", .interface };
     var i: usize = 0;
     while (i < tokens.len) : (i += 1) {
         const tok = tokens[i];
@@ -620,7 +614,7 @@ pub fn documentSymbols(
         syms.deinit(gpa);
     }
 
-    const decl_values = [_]TokenKind{ .val, .@"fn", .record, .@"struct", .@"enum", .interface };
+    const decl_values = [_]TokenKind{ .val, .@"fn", .record, .@"enum", .interface };
 
     var i: usize = 0;
     while (i < tokens.len) : (i += 1) {
@@ -786,7 +780,7 @@ fn collectChildren(
                     }
                 }
             },
-            .@"struct", .record => {
+            .record => {
                 // Fields: identifier followed by `:` (but not `self`).
                 if (tok.kind == .identifier and i + 1 < end and tokens[i + 1].kind == .colon) {
                     if (!std.mem.eql(u8, tok.lexeme, "self")) {
@@ -911,7 +905,6 @@ fn tokenToSymbolKind(kind: TokenKind) u32 {
         .@"fn" => proto.SymbolKind.Function,
         .val => proto.SymbolKind.Variable,
         .record => proto.SymbolKind.Struct,
-        .@"struct" => proto.SymbolKind.Struct,
         .@"enum" => proto.SymbolKind.Enum,
         .interface => proto.SymbolKind.Interface,
         else => proto.SymbolKind.Variable,
@@ -1017,7 +1010,7 @@ pub fn typeDefinition(
         return null;
     };
 
-    const decl_kws = [_]TokenKind{ .record, .@"struct", .@"enum", .interface, .type };
+    const decl_kws = [_]TokenKind{ .record, .@"enum", .interface, .type };
     var i: usize = 0;
     while (i < tokens.len) : (i += 1) {
         const tok = tokens[i];
@@ -1366,12 +1359,6 @@ fn stepField(
                     if (std.mem.eql(u8, f.name, field)) return typeRefState(f.typeRef);
                 }
             },
-            .@"struct" => |s| {
-                for (s.members) |m| switch (m) {
-                    .field => |f| if (std.mem.eql(u8, f.name, field)) return typeRefState(f.typeRef),
-                    else => {},
-                };
-            },
             else => {},
         }
         break;
@@ -1408,7 +1395,7 @@ fn enclosingTypeName(source: []const u8, tokens: []const Token, pos: proto.Posit
     var i: usize = 0;
     while (i < tokens.len) : (i += 1) {
         switch (tokens[i].kind) {
-            .record, .@"struct", .@"enum" => {},
+            .record, .@"enum" => {},
             else => continue,
         }
         var j = i + 1;
@@ -1578,7 +1565,7 @@ fn findMemberInTokens(
     var i: usize = 0;
     while (i < tokens.len) : (i += 1) {
         switch (tokens[i].kind) {
-            .record, .@"struct", .@"enum" => {},
+            .record, .@"enum" => {},
             else => continue,
         }
         if (require_pub and (i == 0 or tokens[i - 1].kind != .@"pub")) continue;
@@ -1717,7 +1704,7 @@ pub fn foldingRanges(
     // implement and `test "name" { … }` blocks. The brace-finder skips the
     // intervening string-literal name, so `test` needs no special handling.
     const block_kws = [_]TokenKind{
-        .@"fn", .@"struct", .record, .@"enum", .interface, .implement, .@"test",
+        .@"fn", .record, .@"enum", .interface, .implement, .@"test",
     };
     var i: usize = 0;
     while (i < tokens.len) : (i += 1) {
@@ -2170,7 +2157,7 @@ fn addMissingImportActions(
     idx: *index_mod.ProjectIndex,
 ) !void {
     // Find identifiers on the selected line(s) that are not in bindings.
-    const decl_kws = [_]TokenKind{ .val, .@"fn", .record, .@"struct", .@"enum", .interface, .@"var" };
+    const decl_kws = [_]TokenKind{ .val, .@"fn", .record, .@"enum", .interface, .@"var" };
 
     var i: usize = 0;
     while (i < tokens.len) : (i += 1) {
@@ -3014,7 +3001,6 @@ pub fn semanticTokens(
         // Container keywords arm `pending_container` for the next `{`.
         switch (tok.kind) {
             .interface => pending_container = .interface,
-            .@"struct" => pending_container = .@"struct",
             .record => pending_container = .record,
             .@"enum" => pending_container = .@"enum",
             .extend, .extends => pending_container = .extend,
@@ -3065,13 +3051,13 @@ pub fn semanticTokens(
                 expect_fn_name = false;
                 expect_fn_paren = true;
                 type_idx = switch (container_top) {
-                    .interface, .@"struct", .record, .extend, .implement => proto.SemanticTokenTypes.method,
+                    .interface, .record, .extend, .implement => proto.SemanticTokenTypes.method,
                     else => proto.SemanticTokenTypes.function,
                 };
                 mods |= proto.SemanticTokenModifiers.declaration;
-            } else if (pk == .val or pk == .record or pk == .@"struct" or pk == .@"enum" or pk == .interface) {
+            } else if (pk == .val or pk == .record or pk == .@"enum" or pk == .interface) {
                 type_idx = lookupCategory(bindings, tok.lexeme) orelse switch (pk.?) {
-                    .record, .@"struct" => proto.SemanticTokenTypes.type_,
+                    .record => proto.SemanticTokenTypes.type_,
                     .@"enum" => proto.SemanticTokenTypes.@"enum",
                     .interface => proto.SemanticTokenTypes.interface,
                     else => proto.SemanticTokenTypes.variable,
@@ -3336,7 +3322,7 @@ fn lookupCategory(bindings: []const comptime_pipeline.TypedBinding, name: []cons
         if (!std.mem.eql(u8, b.name, name)) continue;
         return switch (b.decl) {
             .@"fn" => proto.SemanticTokenTypes.function,
-            .record, .@"struct" => proto.SemanticTokenTypes.type_,
+            .record => proto.SemanticTokenTypes.type_,
             .@"enum" => proto.SemanticTokenTypes.@"enum",
             .interface => proto.SemanticTokenTypes.interface,
             .val => proto.SemanticTokenTypes.variable,
@@ -3373,7 +3359,7 @@ fn isPrimitiveType(name: []const u8) bool {
 /// reclassified as a type by the caller).
 fn isKeywordKind(kind: TokenKind) bool {
     return switch (kind) {
-        .as, .assert, .auto, .await, .case, .@"const", .default, .delegate, .derive, .@"else", .@"enum", .extend, .extends, .@"fn", .@"for", .from, .get, .@"if", .implement, .import, .macro, .new, .@"opaque", .private, .@"pub", .@"return", .selfType, .set, .@"struct", .@"test", .throw, .interface, .type, .record, .use, .val, .@"var", .@"comptime", .syntax, .@"break", .loop, .@"continue", .yield, .declare, .null, .@"try", .@"catch" => true,
+        .as, .assert, .auto, .await, .case, .@"const", .default, .delegate, .derive, .@"else", .@"enum", .extend, .extends, .@"fn", .@"for", .from, .get, .@"if", .implement, .import, .macro, .new, .@"opaque", .private, .@"pub", .@"return", .selfType, .set, .@"test", .throw, .interface, .type, .record, .use, .val, .@"var", .@"comptime", .syntax, .@"break", .loop, .@"continue", .yield, .declare, .null, .@"try", .@"catch" => true,
         else => false,
     };
 }
@@ -4334,7 +4320,7 @@ fn stdSignatureDetail(
 /// can be completed after a `.`.
 fn isTypeDecl(decl: anytype) bool {
     return switch (decl) {
-        .record, .@"struct", .@"enum" => true,
+        .record, .@"enum" => true,
         else => false,
     };
 }
@@ -4358,30 +4344,6 @@ fn appendDeclMembers(
                 .kind = proto.CompletionItemKind.Method,
                 .detail = null,
             });
-        },
-        .@"struct" => |s| {
-            for (s.members) |member| switch (member) {
-                .field => |field| try items.append(gpa, .{
-                    .label = try gpa.dupe(u8, field.name),
-                    .kind = proto.CompletionItemKind.Field,
-                    .detail = null,
-                }),
-                .method => |method| try items.append(gpa, .{
-                    .label = try gpa.dupe(u8, method.name),
-                    .kind = proto.CompletionItemKind.Method,
-                    .detail = null,
-                }),
-                .getter => |getter| try items.append(gpa, .{
-                    .label = try gpa.dupe(u8, getter.name),
-                    .kind = proto.CompletionItemKind.Property,
-                    .detail = null,
-                }),
-                .setter => |setter| try items.append(gpa, .{
-                    .label = try gpa.dupe(u8, setter.name),
-                    .kind = proto.CompletionItemKind.Property,
-                    .detail = null,
-                }),
-            };
         },
         .@"enum" => |e| {
             for (e.variants) |v| try items.append(gpa, .{
@@ -4479,7 +4441,7 @@ fn tupleMemberIndex(member: []const u8) ?usize {
 fn bindingCompletionKind(b: comptime_pipeline.TypedBinding) u32 {
     return switch (b.decl) {
         .@"fn" => proto.CompletionItemKind.Function,
-        .record, .@"struct" => proto.CompletionItemKind.Struct,
+        .record => proto.CompletionItemKind.Struct,
         .@"enum" => proto.CompletionItemKind.Enum,
         .interface => proto.CompletionItemKind.Interface,
         else => proto.CompletionItemKind.Variable,
@@ -4490,7 +4452,7 @@ fn bindingSortText(b: comptime_pipeline.TypedBinding) []const u8 {
     return switch (b.decl) {
         .@"fn" => "0",
         .val => "1",
-        .record, .@"struct" => "2",
+        .record => "2",
         .@"enum" => "2",
         .interface => "3",
         else => "4",
@@ -4528,7 +4490,7 @@ pub fn references(
         locs.deinit(gpa);
     }
 
-    const decl_values = [_]TokenKind{ .val, .@"fn", .record, .@"struct", .@"enum", .interface };
+    const decl_values = [_]TokenKind{ .val, .@"fn", .record, .@"enum", .interface };
 
     for (tokens, 0..) |tok, i| {
         if (tok.kind != .identifier) continue;

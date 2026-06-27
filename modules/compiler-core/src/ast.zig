@@ -1350,105 +1350,6 @@ pub const InterfaceDecl = struct {
     }
 };
 
-// ── struct decl ───────────────────────────────────────────────────────────────
-
-/// A field declared inside a struct.
-/// `name: type` or `name: type = defaultValue`
-pub const StructField = struct {
-    name: []const u8,
-    /// Full type reference — supports arrays (`E[]`), optionals (`?T`),
-    /// generics, etc., exactly like `RecordField.typeRef`.
-    typeRef: TypeRef,
-    /// Optional initializer expression.
-    init: ?Expr,
-    /// Member-level decorators on the field (`#[inject] val repo: …`).
-    annotations: []Annotation = &.{},
-
-    pub fn deinit(this: *StructField, allocator: std.mem.Allocator) void {
-        this.typeRef.deinit(allocator);
-        if (this.init) |*expr| expr.deinit(allocator);
-        for (this.annotations) |*ann| ann.deinit(allocator);
-        if (this.annotations.len > 0) allocator.free(this.annotations);
-    }
-};
-
-/// `get name(self: Self): ReturnType { ... }`
-pub const StructGetter = struct {
-    name: []const u8,
-    selfParam: Param,
-    returnType: []const u8,
-    body: []Stmt,
-
-    pub fn deinit(this: *StructGetter, allocator: std.mem.Allocator) void {
-        for (this.body) |*s| s.deinit(allocator);
-        allocator.free(this.body);
-    }
-};
-
-/// `set name(self: Self, value: Type) { ... }`
-pub const StructSetter = struct {
-    name: []const u8,
-    params: []Param,
-    body: []Stmt,
-
-    pub fn deinit(this: *StructSetter, allocator: std.mem.Allocator) void {
-        for (this.params) |*p| p.deinit(allocator);
-        allocator.free(this.params);
-        for (this.body) |*s| s.deinit(allocator);
-        allocator.free(this.body);
-    }
-};
-
-/// A member inside a struct body.
-pub const StructMember = union(enum) {
-    field: StructField,
-    getter: StructGetter,
-    setter: StructSetter,
-    method: InterfaceMethod, // re-use InterfaceMethod for fn members
-
-    pub fn deinit(this: *StructMember, allocator: std.mem.Allocator) void {
-        switch (this.*) {
-            .field => |*f| f.deinit(allocator),
-            .getter => |*g| g.deinit(allocator),
-            .setter => |*s| s.deinit(allocator),
-            .method => |*m| m.deinit(allocator),
-        }
-    }
-};
-
-/// `val Name = struct { ... }`  or  `val Name = struct <T> { ... }`
-/// `val Name = struct implement @Context<B, R> { ... }`
-pub const StructDecl = struct {
-    name: []const u8,
-    /// Auto-generated unique ID counter, formatted as `"struct_{id:0>4}"` when rendered.
-    id: u32 = 0,
-    isPub: bool = false,
-    docComment: ?[]const u8 = null,
-    /// `//` regular comment (last one before the declaration)
-    comment: ?[]const u8 = null,
-    /// `////` module-level documentation
-    moduleComment: ?[]const u8 = null,
-    annotations: []Annotation = &.{},
-    /// Generic type parameters on the struct, e.g. `<T, R>`.
-    genericParams: []GenericParam = &.{},
-    /// Inline interface implementations: `struct implement I1, I2 { }`.
-    implement: []TypeRef = &.{},
-    members: []StructMember,
-    /// Whether the last member had a trailing comma in the source.
-    trailingComma: bool = false,
-
-    pub fn deinit(this: *StructDecl, allocator: std.mem.Allocator) void {
-        for (this.annotations) |*ann| ann.deinit(allocator);
-        allocator.free(this.annotations);
-        for (this.genericParams) |*gp| gp.deinit(allocator);
-        allocator.free(this.genericParams);
-        for (this.implement) |*im| im.deinit(allocator);
-        allocator.free(this.implement);
-        for (this.members) |*m| m.deinit(allocator);
-        allocator.free(this.members);
-    }
-};
-
 // ── enum decl ─────────────────────────────────────────────────────────────────
 
 /// A named field inside an enum variant with a payload: `r: Int` or `reason: ?string`
@@ -1697,7 +1598,6 @@ pub const DeclKind = union(enum) {
     mod: ModDecl,
     interface: InterfaceDecl,
     delegate: DelegateDecl,
-    @"struct": StructDecl,
     @"enum": EnumDecl,
     @"fn": FnDecl,
     val: ValDecl,
@@ -1716,7 +1616,6 @@ pub const DeclKind = union(enum) {
             },
             .interface => |*t| t.deinit(allocator),
             .delegate => |*d| d.deinit(allocator),
-            .@"struct" => |*s| s.deinit(allocator),
             .record => |*r| r.deinit(allocator),
             .implement => |*i| i.deinit(allocator),
             .extend => |*x| x.deinit(allocator),

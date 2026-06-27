@@ -13,7 +13,7 @@ const compiler_mod = @import("../compiler.zig");
 pub const comptime_pipeline = bp.comptime_pipeline;
 pub const Lexer = bp.Lexer;
 
-/// URI usado em todos os testes.
+/// URI used in all tests.
 pub const TEST_URI = "file:///test.bp";
 
 /// Cria um LSP Position (0-based).
@@ -26,8 +26,8 @@ pub fn range(sl: u32, sc: u32, el: u32, ec: u32) proto.Range {
     return .{ .start = pos(sl, sc), .end = pos(el, ec) };
 }
 
-/// Compila `source` (módulo único) e devolve um handle que o chamador deve `.deinit(gpa)`.
-/// Sem eval context — corpos de template não são expandidos (types-only puro).
+/// Compiles `source` (single module) and returns a handle the caller must `.deinit(gpa)`.
+/// No eval context — template bodies are not expanded (pure types-only).
 pub fn compile(gpa: std.mem.Allocator, source: []const u8) !CompileHandle {
     var lsp_compiler = compiler_mod.LspCompiler.init(gpa, std.testing.io, null);
     const entries = [_]compiler_mod.ModuleEntry{.{ .uri = TEST_URI, .source = source }};
@@ -39,10 +39,10 @@ pub fn compile(gpa: std.mem.Allocator, source: []const u8) !CompileHandle {
 /// parallel, so a shared `node` build root would race on deleteTree/writeFile.
 var eval_counter: std.atomic.Value(usize) = .init(0);
 
-/// Compila `source` expandindo corpos de template via `node` (necessário para
-/// que sub-linguagens `@ExprCustom` produzam suas árvores `CustomNode`). Usa um
-/// build root único por chamada para evitar corrida entre testes paralelos.
-/// O `root` só é usado durante a compilação, então é liberado ao retornar.
+/// Compiles `source` expanding template bodies via `node` (needed for
+/// `@ExprCustom` sub-languages to produce their `CustomNode` trees). Uses a
+/// unique per-call build root to avoid races between parallel tests.
+/// The `root` is only used during compilation, so it is freed on return.
 pub fn compileEval(gpa: std.mem.Allocator, source: []const u8) !CompileHandle {
     const n = eval_counter.fetchAdd(1, .monotonic);
     const root = try std.fmt.allocPrint(gpa, ".botopinkbuild/lsp-test/{d}", .{n});
@@ -53,14 +53,14 @@ pub fn compileEval(gpa: std.mem.Allocator, source: []const u8) !CompileHandle {
     return .{ .result = result };
 }
 
-/// Compila múltiplos módulos juntos e devolve um handle que o chamador deve `.deinit(gpa)`.
+/// Compiles multiple modules together and returns a handle the caller must `.deinit(gpa)`.
 ///
-/// Os módulos são compilados em ordem: os primeiros servem como dependências
-/// para os posteriores, exatamente como `TestProject.add_module("dep", dep)` no Gleam.
-/// O URI do módulo principal (último da lista) é `TEST_URI`; os demais recebem
+/// Modules are compiled in order: earlier ones serve as dependencies
+/// for later ones.
+/// The main module URI (last in the list) is `TEST_URI`; others receive
 /// `"file:///dep_{i}.bp"`.
 ///
-/// Exemplo:
+/// Example:
 /// ```zig
 /// const dep_src = "pub fn greet() -> string { return \"hi\"; }";
 /// const main_src = "import { greet } from \"file:///dep_0.bp\"; val x = greet();";
@@ -79,10 +79,10 @@ pub fn compileMulti(
     return .{ .result = result };
 }
 
-/// Como `compileMulti`, mas expande corpos de template via `node` — necessário
-/// para que uma sub-linguagem `@ExprCustom` definida num módulo de dependência
-/// (`from "<lib>"`) seja expandida ao ser usada no módulo principal (F4: a
-/// expansão cross-module só acontece quando o grafo resolve o template fn).
+/// Like `compileMulti`, but expands template bodies via `node` — needed
+/// for an `@ExprCustom` sub-language defined in a dependency module
+/// (`from "<lib>"`) to be expanded when used in the main module (F4: cross-module
+/// expansion only happens when the graph resolves the template fn).
 pub fn compileMultiEval(
     gpa: std.mem.Allocator,
     entries: []const compiler_mod.ModuleEntry,
@@ -102,7 +102,7 @@ pub const CompileHandle = struct {
         self.result.deinit(gpa);
     }
 
-    /// Retorna bindings do primeiro output bem-sucedido, ou null se falhou.
+    /// Returns bindings from the first successful output, or null if failed.
     pub fn bindings(self: *const CompileHandle) ?[]const comptime_pipeline.TypedBinding {
         for (self.result.session.outputs.items) |output| {
             if (output.outcome == .ok) return output.outcome.ok.bindings;
@@ -110,12 +110,12 @@ pub const CompileHandle = struct {
         return null;
     }
 
-    /// Entradas de Custom AST (`@ExprCustom`) do módulo principal.
+    /// Custom AST entries (`@ExprCustom`) from the main module.
     pub fn customAst(self: *const CompileHandle) []const compiler_mod.CustomAstEntry {
         return self.result.customAstFor(TEST_URI);
     }
 
-    /// true se o módulo compilou sem erros.
+    /// true if the module compiled without errors.
     pub fn isOk(self: *const CompileHandle) bool {
         for (self.result.session.outputs.items) |output| {
             if (output.outcome == .ok) return true;

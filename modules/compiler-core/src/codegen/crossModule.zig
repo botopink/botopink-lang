@@ -19,7 +19,7 @@ const ComptimeOutput = comptimeMod.ComptimeOutput;
 /// Which kind of declaration a `pub` symbol comes from. Mirrors the relevant
 /// `ast.Decl` tags; the consumer uses it to pick the right call/construction
 /// lowering (a record name is constructed; a `fn`/`val` is referenced).
-pub const ExportKind = enum { record, @"struct", @"enum", @"fn", val };
+pub const ExportKind = enum { record, @"enum", @"fn", val };
 
 /// Where a `pub` symbol is emitted, for resolving cross-module imports.
 /// `module` is the emitting module's path (e.g. `"web/http"`). `is_class`
@@ -90,23 +90,6 @@ pub fn build(alloc: std.mem.Allocator, outputs: []ComptimeOutput) !CrossModule {
                 for (r.fields, 0..) |f, i| fields[i] = f.name;
                 try field_arrays.append(alloc, fields);
                 try exports.put(r.name, .{ .module = ct.name, .kind = .record, .is_class = true, .fields = fields });
-            },
-            .@"struct" => |s| if (s.isPub and !commonJS.isPhantomContextStruct(s)) {
-                var count: usize = 0;
-                for (s.members) |m| {
-                    if (m == .field) count += 1;
-                }
-                const fields = try alloc.alloc([]const u8, count);
-                var i: usize = 0;
-                for (s.members) |m| switch (m) {
-                    .field => |f| {
-                        fields[i] = f.name;
-                        i += 1;
-                    },
-                    else => {},
-                };
-                try field_arrays.append(alloc, fields);
-                try exports.put(s.name, .{ .module = ct.name, .kind = .@"struct", .is_class = true, .fields = fields });
             },
             .@"enum" => |e| if (e.isPub) try exports.put(e.name, .{ .module = ct.name, .kind = .@"enum", .is_class = false }),
             // `pub fn` exports — including host-backed `#[@External.<targert>(...)]` declarations.

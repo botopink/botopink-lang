@@ -12,7 +12,7 @@
 /// Snapshot files: `snapshots/lsp/{slug}.snap.md` (relative to test CWD,
 /// which build.zig sets to `modules/language-server/`).
 ///
-/// Snap format (inspired by Gleam's language-server snapshots):
+/// Snap format:
 ///   ----- SOURCE
 ///   ```botopink
 ///   val x = 42;
@@ -531,7 +531,7 @@ fn appendSource(buf: *std.ArrayList(u8), gpa: std.mem.Allocator, source: []const
 
 /// Renders the source inside a ```botopink code block.
 /// When `cursor` is non-null, a line with `↑` is printed immediately after
-/// the cursor's line, aligned to `cursor.character` — matching Gleam's style.
+/// the cursor's line, aligned to `cursor.character`.
 ///
 /// Edge cases handled:
 ///   • Source ending with `\n` — the trailing empty segment is stripped.
@@ -577,7 +577,7 @@ fn appendSourceWithCursor(
 }
 
 /// Appends the declaration line with a `^` underline under the selected range
-/// (same visual style as Gleam's snapshots, adapted to ASCII).
+/// (adapted to ASCII).
 fn appendSourceWithUnderline(
     buf: *std.ArrayList(u8),
     gpa: std.mem.Allocator,

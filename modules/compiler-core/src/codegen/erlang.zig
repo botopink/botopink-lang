@@ -332,14 +332,6 @@ fn emitNoAutoImportDirective(
                     try CollectSym.run(alloc, bif_table, &seen, &shadows, m.name, m.params.len);
                 }
             },
-            .@"struct" => |s| {
-                for (s.members) |mem| {
-                    if (mem != .method) continue;
-                    const m = mem.method;
-                    if (m.is_declare) continue;
-                    try CollectSym.run(alloc, bif_table, &seen, &shadows, m.name, m.params.len);
-                }
-            },
             // `extend`/`implement` methods emit through `emitExtensionMethods`
             // with `keep_self = true`, so the receiver is always kept as the
             // first param; `m.params.len` is the actual emitted arity.
@@ -613,12 +605,6 @@ fn emitErlang(
         for (program.decls) |decl| switch (decl) {
             .record => |r| if (xc.imported.contains(r.name)) try Collect.methods(&assoc_exports, alloc, r.methods),
             .@"enum" => |e| if (xc.imported.contains(e.name)) try Collect.methods(&assoc_exports, alloc, e.methods),
-            .@"struct" => |s| if (xc.imported.contains(s.name)) {
-                for (s.members) |m| if (m == .method) {
-                    if (m.method.is_declare or !isAssocMethod(m.method)) continue;
-                    try assoc_exports.append(alloc, .{ .name = m.method.name, .arity = m.method.params.len });
-                };
-            },
             else => {},
         };
     }
@@ -664,7 +650,6 @@ fn emitErlang(
                     try em.emitFn(f);
                 }
             },
-            .@"struct" => |s| try em.emitStruct(s),
             .record => |r| try em.emitRecord(r),
             .@"enum" => |e| try em.emitEnum(e),
             .interface => |i| try em.emitInterface(i),
@@ -1115,19 +1100,10 @@ const Emitter = struct {
         for (program.decls) |decl| {
             const type_name: []const u8 = switch (decl) {
                 .record => |r| r.name,
-                .@"struct" => |s| s.name,
                 else => continue,
             };
             const methods: []const ast.InterfaceMethod = switch (decl) {
                 .record => |r| r.methods,
-                .@"struct" => |s| blk: {
-                    var ms: std.ArrayListUnmanaged(ast.InterfaceMethod) = .empty;
-                    for (s.members) |mem| switch (mem) {
-                        .method => |m| try ms.append(aa, m),
-                        else => {},
-                    };
-                    break :blk try ms.toOwnedSlice(aa);
-                },
                 else => continue,
             };
             for (methods) |m| {
@@ -1703,22 +1679,6 @@ const Emitter = struct {
                 for (r.fields, 0..) |f, i| names[i] = f.name;
                 try self.record_fields.put(r.name, names);
             },
-            .@"struct" => |s| {
-                var count: usize = 0;
-                for (s.members) |m| {
-                    if (m == .field) count += 1;
-                }
-                var names = try self.alloc.alloc([]const u8, count);
-                var i: usize = 0;
-                for (s.members) |m| switch (m) {
-                    .field => |f| {
-                        names[i] = f.name;
-                        i += 1;
-                    },
-                    else => {},
-                };
-                try self.record_fields.put(s.name, names);
-            },
             .@"enum" => |e| {
                 try self.enum_names.put(e.name, {});
                 for (e.variants) |v| try self.enum_variants.put(v.name, {});
@@ -1740,15 +1700,8 @@ const Emitter = struct {
             .use => |u| for (u.imports) |imp| {
                 const name = imp.name();
                 const info = xc.exports.get(name) orelse continue;
-                const owner = crossModule.moduleBasename(info.module);
                 switch (info.kind) {
-                    .record, .@"struct" => {
-                        if (!self.record_fields.contains(name)) {
-                            const fields = try self.alloc.dupe([]const u8, info.fields);
-                            try self.record_fields.put(name, fields);
-                        }
-                        try self.imported_types.put(name, owner);
-                    },
+                    .record => {},
                     .@"enum" => try self.enum_names.put(name, {}),
                     .@"fn", .val => {},
                 }

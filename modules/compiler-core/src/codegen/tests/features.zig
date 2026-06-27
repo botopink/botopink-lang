@@ -195,7 +195,7 @@ test "js: import ---- named imports" {
 
 test "codegen ---- use object destructure state to useState" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = struct implement @Context<Element, Element> { }
+        \\val Element = record implement @Context<Element, Element> { }
         \\fn state(initial: i32) -> @Context<Element, i32> {
         \\    initial;
         \\}
@@ -208,7 +208,7 @@ test "codegen ---- use object destructure state to useState" {
 
 test "codegen ---- use tuple destructure state to useState" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = struct implement @Context<Element, Element> { }
+        \\val Element = record implement @Context<Element, Element> { }
         \\fn state(initial: i32) -> @Context<Element, i32> {
         \\    initial;
         \\}
@@ -221,7 +221,7 @@ test "codegen ---- use tuple destructure state to useState" {
 
 test "codegen ---- use memo infers dependency array" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = struct implement @Context<Element, Element> { }
+        \\val Element = record implement @Context<Element, Element> { }
         \\fn state(initial: i32) -> @Context<Element, i32> {
         \\    initial;
         \\}
@@ -238,7 +238,7 @@ test "codegen ---- use memo infers dependency array" {
 
 test "codegen ---- use effect void hook empty deps" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = struct implement @Context<Element, Element> { }
+        \\val Element = record implement @Context<Element, Element> { }
         \\fn cleanup() {
         \\    0;
         \\}
@@ -254,7 +254,7 @@ test "codegen ---- use effect void hook empty deps" {
 
 test "codegen ---- inline implement context base erased at runtime" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = struct implement @Context<Element, Element> { }
+        \\val Element = record implement @Context<Element, Element> { }
         \\fn render() -> Element {
         \\    Element();
         \\}

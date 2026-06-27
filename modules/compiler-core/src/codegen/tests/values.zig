@@ -246,7 +246,7 @@ test "js: doc comment ---- multiline before struct" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\/// User account structure
         \\/// Holds name and email
-        \\val Account = struct { name: string, email: string };
+        \\val Account = record { name: string, email: string };
     );
 }
 
@@ -273,7 +273,7 @@ test "js: assign ---- update var with plusEq" {
 
 test "js: field assign ---- self.field update" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Counter = struct {
+        \\val Counter = record {
         \\    count: i32 = 0,
         \\    fn inc() {
         \\        self.count += 1;
@@ -284,7 +284,7 @@ test "js: field assign ---- self.field update" {
 
 test "js: self ---- field access in method" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Point = struct {
+        \\val Point = record {
         \\    x: i32,
         \\    y: i32,
         \\    fn sum() -> i32 {

@@ -1,7 +1,4 @@
-/// Testes de rename — cobre `engine.rename`.
-/// Snapshots em: snapshots/lsp/rename_*.snap.md
-///
-/// Analogia Gleam: tests/rename.rs (125 testes / 160 snapshots).
+/// Rename tests — covers `engine.rename`.
 const std = @import("std");
 const h = @import("./helpers.zig");
 const snap = @import("./snapshot.zig");
@@ -24,7 +21,7 @@ test "rename: val with usages produces edits for all occurrences" {
     const edits = try engine.rename(gpa, source, cursor, "newX", tokens);
     defer gpa.free(edits);
 
-    // Declaração 'x' + uso 'x' = 2 edits
+    // Declaration 'x' + usage 'x' = 2 edits
     try std.testing.expectEqual(@as(usize, 2), edits.len);
     // Todos os edits devem ter newText = "newX"
     for (edits) |edit| {
@@ -50,7 +47,7 @@ test "rename: fn with calls produces edits for all occurrences" {
     const edits = try engine.rename(gpa, source, cursor, "identity", tokens);
     defer gpa.free(edits);
 
-    // Declaração 'f' + chamada 'f' = 2 edits
+    // Declaration 'f' + call 'f' = 2 edits
     try std.testing.expectEqual(@as(usize, 2), edits.len);
     try snap.assertRename(gpa, "rename_fn_with_calls", source, cursor, "identity", edits);
 }
@@ -75,7 +72,7 @@ test "rename: cursor on literal returns no edits" {
     try snap.assertRename(gpa, "rename_literal_no_edits", source, cursor, "z", edits);
 }
 
-// ── Rn4 — múltiplas ocorrências ───────────────────────────────────────────────
+// ── Rn4 — multiple occurrences ──
 
 test "rename: symbol used 3 times produces 3 edits" {
     const gpa = std.testing.allocator;
@@ -94,7 +91,7 @@ test "rename: symbol used 3 times produces 3 edits" {
     const edits = try engine.rename(gpa, source, cursor, "num", tokens);
     defer gpa.free(edits);
 
-    // 1 declaração + 3 usos = 4 edits
+    // 1 declaration + 3 usages = 4 edits
     try std.testing.expectEqual(@as(usize, 4), edits.len);
     try snap.assertRename(gpa, "rename_multiple_occurrences", source, cursor, "num", edits);
 }
@@ -115,7 +112,7 @@ test "rename: edit ranges cover exactly the identifier token" {
     const edits = try engine.rename(gpa, source, h.pos(0, 4), "z", tokens);
     defer gpa.free(edits);
 
-    // O primeiro edit deve cobrir a posição de 'x' na declaração (linha 0, col 4)
+    // The first edit should cover the position of 'x' in the declaration (line 0, col 4)
     var found = false;
     for (edits) |edit| {
         if (edit.range.start.line == 0 and edit.range.start.character == 4) {

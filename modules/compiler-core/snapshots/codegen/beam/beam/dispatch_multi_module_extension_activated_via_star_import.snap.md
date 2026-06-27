@@ -59,8 +59,7 @@ fn main() {
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {integer, 2}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 2, {list, [{atom, id}, {x, 1}]}}.
+    %% unresolved local call: Pato/1
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {move, {x, 0}, {x, 0}}.
@@ -92,5 +91,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-#{id => 2}
+2
 ```

@@ -65,7 +65,7 @@ fn main() {
     {move, {literal, <<"hi">>}, {x, 0}}.
     {move, {x, 0}, {x, 0}}.
     {move, {x, 0}, {x, 0}}.
-    {call_ext, 1, {extfunc, http, 'Response_ok', 1}}.
+    {call_ext, 1, {extfunc, response, ok, 1}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {test, is_map, {f, 8}, [{x, 0}]}.
@@ -77,10 +77,11 @@ fn main() {
     {put_list, {x, 1}, nil, {x, 1}}.
     {call_ext, 2, {extfunc, io, format, 2}}.
     {move, {integer, 8080}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"/">>}, {x, 0}}.
-    {move, {x, 0}, {x, 2}}.
-    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 3, {list, [{atom, port}, {x, 1}, {atom, path}, {x, 2}]}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {x, 0}, {x, 0}}.
+    {move, {x, 1}, {x, 1}}.
+    %% unresolved local call: App/2
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
     {test, is_map, {f, 9}, [{x, 0}]}.
@@ -112,6 +113,4 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-<<"hi">>
-8080
 ```

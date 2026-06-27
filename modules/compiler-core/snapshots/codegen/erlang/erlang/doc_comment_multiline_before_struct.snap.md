@@ -2,7 +2,7 @@
 ```botopink
 /// User account structure
 /// Holds name and email
-val Account = struct { name: string, email: string };
+val Account = record { name: string, email: string };
 ```
 
 ----- ERLANG -- main.erl
@@ -13,7 +13,7 @@ val Account = struct { name: string, email: string };
 
 %% Holds name and email
 
-%% struct Account: name, email
+%% record Account: name, email
 ```
 
 ----- RUN LOG -----

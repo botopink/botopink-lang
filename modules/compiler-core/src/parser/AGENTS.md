@@ -35,14 +35,14 @@ parser/
 ├── examples.md    ← `.bp` declarations / expressions / statements
 ├── types.zig      ← type-ref sub-grammar: parseTypeRef/BaseTypeRef/GenericParams/ImplementClause
 ├── patterns.zig   ← case/pattern sub-grammar: parseCaseExpr/parsePattern/SimplePattern/ListPattern
-├── decls.zig      ← declaration sub-grammar: val/fn/test/struct/record/enum/interface/implement/extend/delegate/import + params
+├── decls.zig      ← declaration sub-grammar: val/fn/test/record/enum/interface/implement/extend/delegate/import + params
 ├── exprs.zig      ← expression sub-grammar: precedence climbing, primary/pipeline/local-bind/lambda/loop/range,
 │                     string templates (`${…}` re-scan), tagged calls
 ├── tests.zig      ← barrel: aggregates tests/<feature>.zig for test_root.zig
 └── tests/         ← parser tests, split by feature
     ├── helpers.zig       ← shared harness (`assertParser`/`expectParseError`/…)
     ├── imports.zig       ← import/activate/delegate/star declarations
-    ├── declarations.zig  ← struct/record/enum/interface/implement, val/pub/fn, test blocks
+    ├── declarations.zig  ← record/enum/interface/implement, val/pub/fn, test blocks
     ├── expressions.zig   ← operator/lambda/array/tuple/case/builtin/control-flow
     ├── destructuring.zig ← destructure/shorthand/assign
     └── errors.zig        ← parse errors & cross-stage error-message units
@@ -75,15 +75,6 @@ two additions for record/builder ergonomics:
 A non-`syntax` `name: fn(…)` param is parsed through `parseTypeRef` (a
 `TypeRef.function`, so its return may be an array — `fn() -> T[]`); the legacy
 string-based `Param.fnType` is kept **only** for `syntax fn(…)` params.
-
-## Soft keywords `get` / `set`
-
-`get`/`set` introduce struct getters/setters only at the **start** of a struct
-member; everywhere else they are ordinary names. `Parser.isMemberName` /
-`consumeMemberName` accept `identifier`/`get`/`set` and back the record field
-names, record-literal labels, destructuring names, member access, method-call
-names, and named-call labels — so a hook can return the shape `{ value, set }`
-with `set` a function field (`s.set(x)`).
 
 ## Postfix-chain locs
 

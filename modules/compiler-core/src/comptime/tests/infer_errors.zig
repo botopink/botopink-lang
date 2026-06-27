@@ -104,28 +104,6 @@ test "infer error: duplicate method across interfaces without qualification" {
     );
 }
 
-test "infer error: getter return type mismatch with field type" {
-    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Account = struct {
-        \\    balance: i32 = 0,
-        \\    get balance(self: Self) -> string {
-        \\        return "nope";
-        \\    }
-        \\};
-    );
-}
-
-test "infer error: setter value type mismatch with field type" {
-    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Account = struct {
-        \\    balance: i32 = 0,
-        \\    set balance(self: Self, value: string) {
-        \\        self.balance = value;
-        \\    }
-        \\};
-    );
-}
-
 test "infer error: type mismatch ---- non-bool lhs with &&" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\val bad = 1 && true;

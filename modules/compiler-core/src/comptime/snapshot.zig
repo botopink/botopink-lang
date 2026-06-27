@@ -430,22 +430,6 @@ fn bindingToRepr(
             } };
         },
 
-        .@"struct" => |s| blk: {
-            var entries: std.ArrayList(FieldMap.Entry) = .empty;
-            for (s.members) |member| switch (member) {
-                .field => |fld| try entries.append(allocator, .{ .name = fld.name, .value = typeNameFromTypeRef(fld.typeRef) }),
-                else => {},
-            };
-            const gens = try genericNames(allocator, s.genericParams);
-            break :blk .{ .struct_ = .{
-                .ast = "struct_def",
-                .name = b.name,
-                .id = resolvedTypeId orelse 0,
-                .generic = if (gens.len > 0) gens else null,
-                .fields = .{ .entries = try entries.toOwnedSlice(allocator) },
-            } };
-        },
-
         .record => |r| blk: {
             var entries: std.ArrayList(FieldMap.Entry) = .empty;
             for (r.fields) |fld| {

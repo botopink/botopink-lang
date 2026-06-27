@@ -20,11 +20,6 @@ pub const ImportPath = ast.ImportPath;
 pub const InterfaceDecl = ast.InterfaceDecl;
 pub const InterfaceField = ast.InterfaceField;
 pub const InterfaceMethod = ast.InterfaceMethod;
-pub const StructDecl = ast.StructDecl;
-pub const StructMember = ast.StructMember;
-pub const StructField = ast.StructField;
-pub const StructGetter = ast.StructGetter;
-pub const StructSetter = ast.StructSetter;
 pub const Param = ast.Param;
 pub const Stmt = ast.Stmt;
 pub const Expr = ast.Expr;
@@ -271,10 +266,6 @@ pub const Parser = struct {
                 const d = try this.parseShorthandEnumDecl(alloc);
                 _ = this.match(.semicolon);
                 break :blk .{ .@"enum" = d };
-            } else if (this.checkShorthand(.@"struct")) blk: {
-                const d = try this.parseShorthandStructDecl(alloc);
-                _ = this.match(.semicolon);
-                break :blk .{ .@"struct" = d };
             } else if (this.checkShorthand(.record)) blk: {
                 const d = try this.parseShorthandRecordDecl(alloc);
                 _ = this.match(.semicolon);
@@ -320,7 +311,6 @@ pub const Parser = struct {
                 const eff = if (isPub) this.peekAt(annEnd + 1).kind else tok;
                 const decl: DeclKind = switch (eff) {
                     .@"fn", .star => DeclKind{ .@"fn" = try this.parseFnDecl(alloc) },
-                    .@"struct" => DeclKind{ .@"struct" = try this.parseShorthandStructDecl(alloc) },
                     .@"enum" => DeclKind{ .@"enum" = try this.parseShorthandEnumDecl(alloc) },
                     .record => DeclKind{ .record = try this.parseShorthandRecordDecl(alloc) },
                     .interface => DeclKind{ .interface = try this.parseShorthandInterfaceDecl(alloc) },
@@ -397,7 +387,6 @@ pub const Parser = struct {
         const body = this.peekAt(adjustedOffset).kind;
         const bodyNext = this.peekAt(adjustedOffset + 1).kind;
         return switch (body) {
-            .@"struct" => .{ .@"struct" = try this.parseStructDecl(alloc) },
             .record => .{ .record = try this.parseRecordDecl(alloc) },
             .implement => .{ .implement = try this.parseImplementDecl(alloc) },
             .extend => .{ .extend = try this.parseExtendDecl(alloc) },
@@ -974,18 +963,6 @@ pub const Parser = struct {
     pub const parseInterfaceMethod = decl_grammar.parseInterfaceMethod;
 
     pub const parseMethodDecl = decl_grammar.parseMethodDecl;
-
-    // ── struct decl ───────────────────────────────────────────────────────────
-
-    pub const parseStructDecl = decl_grammar.parseStructDecl;
-
-    pub const parseShorthandStructDecl = decl_grammar.parseShorthandStructDecl;
-
-    pub const parseStructBody = decl_grammar.parseStructBody;
-
-    pub const parseStructGetter = decl_grammar.parseStructGetter;
-
-    pub const parseStructSetter = decl_grammar.parseStructSetter;
 
     // ── record decl ──────────────────────────────────────────────────────────
 

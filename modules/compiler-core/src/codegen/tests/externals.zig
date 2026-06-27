@@ -1,4 +1,4 @@
-//! codegen: `#[@External.<Target>(…)]` FFI declarations (F1, stdlib-gleam).
+//! codegen: `#[@External.<Target>(…)]` FFI declarations.
 //! Erlang lowers calls to the remote `module:symbol(…)`; CommonJS imports the
 //! host symbol under the fn name via `require`.
 

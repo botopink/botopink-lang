@@ -486,13 +486,6 @@ test "lexer: recognizes keyword set" {
     try std.testing.expectEqual(TokenKind.set, tokens[0].kind);
 }
 
-test "lexer: recognizes keyword struct" {
-    var l = Lexer.init("struct");
-    const tokens = try l.scanAll(std.testing.allocator);
-    defer l.deinit(std.testing.allocator);
-    try std.testing.expectEqual(TokenKind.@"struct", tokens[0].kind);
-}
-
 test "lexer: recognizes keyword test" {
     var l = Lexer.init("test");
     const tokens = try l.scanAll(std.testing.allocator);

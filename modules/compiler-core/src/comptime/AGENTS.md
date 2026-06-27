@@ -35,7 +35,7 @@ comptime/
 ├── tests/             ← comptime tests, split by feature
 │   ├── helpers.zig        ← shared harness (`assertComptimeAst`, `assertTypeErrorSnap`, …)
 │   ├── infer_exprs.zig    ← literal/binary/case/control-flow inference
-│   ├── infer_decls.zig    ← pub fn/record/struct/interface/implement/test-block inference
+│   ├── infer_decls.zig    ← pub fn/record/interface/implement/test-block inference
 │   ├── infer_generics.zig ← type meta-kind & generic inference
 │   ├── infer_errors.zig   ← inference type errors (`infer error: …`)
 │   ├── types.zig          ← types / type_unification
@@ -56,13 +56,13 @@ comptime/
 | `env.zig` | Type environment — scopes, builtins + stdlib, `TypeDef.contextBase`, `FnContext`, static-extension-dispatch tables (`extensions`, `activations`, `inherentMethods`, `dispatchRewrites`), the `"std"` package tables (`stdModules`: module → fn exports; `stdModuleTypes`: module → pub type decls, registered into the importer by `markStdImports` — type export; `stdModuleFns`: module → `pub fn`/`pub declare fn` slice, walked by STD-001's `markStdImports` red when `Env.target != null` so a `from "std"` import on a target with no `@external` match reds at the import site; `stdImports`: names imported via `from "std"` — explicit import wins over same-named value bindings like the primitive `bool`), the lib-agnostic `decorators` table (decorator name →
 `DecoratorSig{ params }`, filled by `registerDecoratorSig` for any fn/delegate whose
 first param is `comptime _: @Decl`; drives `#[d(args)]` argument checking), and the loc-keyed lowering maps `method_lowerings` (`@Result`/`@Option` methods + the builtin `result` namespace, `qualified` flag) + `result_jump_lowerings` (`return`/`throw` → `__bp_ok`/`__bp_error` in `#[@result]` fns) + `jsMethodRenames` (type-directed JS-only method renames, e.g. `string` `contains` → native `includes`; recorded only when the receiver's static type makes a global name-map unsafe, since `record Set` also declares `contains`). |
-| `infer.zig` | Main HM inference: `inferProgramTyped(...) → []TypedBinding`. `registerExtensions` pre-pass + `resolveReceiverCall` implement F6 static extension dispatch. `registerFnSignatures` pre-pass (via `buildFnSignatureType`) binds every top-level `fn` signature *before* any body is inferred, so mutually-recursive / forward-referenced top-level fns resolve (a fn's signature is fully determined by its declared param/return types + generics, so the pre-pass type matches the one `inferFnDecl` re-derives for self-recursion). Ends with `validateProgram` — `implement`/interface coverage + getter/setter type checks. Top-level `test { … }` bodies type-check like void `fn` bodies via `inferTestDecl` (no binding produced); `assert cond` unifies `cond` with `bool`. **Type method bodies** (`stdlib-backends-parity`): `inferTypeMethods` walks record/struct/enum method bodies (previously only signatures were registered) — binding the type generics, `Self`, the method generics + params, then inferring each statement. This type-checks method/`default fn` bodies AND records the codegen lowerings for the calls inside; it is **best-effort** (a body that trips an inference gap is skipped, not a hard error). The three v0.beta.19 §B / v0.beta.20 keystone gaps — chained method substitution, generic-fn back-prop from a typed binding, structural-tuple unify — closed in v0.beta.22 (`generic-inference-finalize`, regression guards in `tests/infer_generics.zig`). **Value-receiver instance calls** are recorded in the loc-keyed `instanceLowerings` table (`env.zig`): `.record <typeName>` (codegen resolves local vs imported owner) or `.prim <PrimKind>` (array/string/bool/int/float — the non-JS backends map it to a host op). `primMethodReturnType` recovers an array/string method's real return type so a chain (`xs.filter(f).at(0)` → `?T`) keeps tracking through it; `arr.length`/`s.length`/`.len` field access records a `.prim` entry too (→ `length`/`string:length`). commonJS ignores `instanceLowerings` (native dispatch). |
+| `infer.zig` | Main HM inference: `inferProgramTyped(...) → []TypedBinding`. `registerExtensions` pre-pass + `resolveReceiverCall` implement F6 static extension dispatch. `registerFnSignatures` pre-pass (via `buildFnSignatureType`) binds every top-level `fn` signature *before* any body is inferred, so mutually-recursive / forward-referenced top-level fns resolve (a fn's signature is fully determined by its declared param/return types + generics, so the pre-pass type matches the one `inferFnDecl` re-derives for self-recursion). Ends with `validateProgram` — `implement`/interface coverage + getter/setter type checks. Top-level `test { … }` bodies type-check like void `fn` bodies via `inferTestDecl` (no binding produced); `assert cond` unifies `cond` with `bool`. **Type method bodies** (`stdlib-backends-parity`): `inferTypeMethods` walks record/enum method bodies (previously only signatures were registered) — binding the type generics, `Self`, the method generics + params, then inferring each statement. This type-checks method/`default fn` bodies AND records the codegen lowerings for the calls inside; it is **best-effort** (a body that trips an inference gap is skipped, not a hard error). The three v0.beta.19 §B / v0.beta.20 keystone gaps — chained method substitution, generic-fn back-prop from a typed binding, structural-tuple unify — closed in v0.beta.22 (`generic-inference-finalize`, regression guards in `tests/infer_generics.zig`). **Value-receiver instance calls** are recorded in the loc-keyed `instanceLowerings` table (`env.zig`): `.record <typeName>` (codegen resolves local vs imported owner) or `.prim <PrimKind>` (array/string/bool/int/float — the non-JS backends map it to a host op). `primMethodReturnType` recovers an array/string method's real return type so a chain (`xs.filter(f).at(0)` → `?T`) keeps tracking through it; `arr.length`/`s.length`/`.len` field access records a `.prim` entry too (→ `length`/`string:length`). commonJS ignores `instanceLowerings` (native dispatch). |
 | `unify.zig` | Unification with substitution + occurs check. |
 | `error.zig` | Structured type errors with source ranges and hints (incl. `missingMethod`/`unknownMethod`/`unknownInterface`/`ambiguousMethod`). |
 | `eval.zig` | Builds eval scripts, calls runtime, parses JSON results. |
 | `render.zig` | Converts an evaluated comptime value into a target literal. |
 | `specialize.zig` | Pure AST specialization — unroll loops, fold static if/case. |
-| `transform.zig` | `Aggregator` — drives specialize + rewrite + inline + dead-code; lowers `@Result`/`@Option` method calls to `__bp_<domain>_<op>(…)` and `return`/`throw` in `#[@result]` fns to `return __bp_ok(…)`/`return __bp_error(…)` (`tryLowerResultJump`). Walks `fn` AND `test { … }` decl bodies, including `assert` condition/message subexpressions (`.comptime_` stmt/expr arms) — lowerings inside test asserts apply like anywhere else. **Default-value expansion** (`expandTrailingDefaults` / `expandTrailingDefaultsWithParams`, fn-param-default-expansion F0+F4): when a call site supplies fewer args than the callee's param count AND every missing trailing param carries a `.default` Expr, the helper appends `is_default_inj` arg entries pointing into the param's own Expr — same rule across free-fn calls (`fn_decls` hit, F0) and record/struct/enum-variant ctor calls (`ctor_params` hit, F4); the helper deliberately doesn't materialize new Exprs, so the dispatch path sees the expanded shape without arena churn. The `Aggregator.ctor_params` map is supplied by `compile`/`compileTypesOnly` from `env.ctorParams`; enum variants register under both bare and `Enum.Variant` qualified name. Receiver-bound defaults (`end: i32 = self.length()` for instance methods) need the F1 follow-up — that path bypasses transform's `fn_decls` lookup and lives in the codegen `tryEmitPrimAnnotation` renderer. |
+| `transform.zig` | `Aggregator` — drives specialize + rewrite + inline + dead-code; lowers `@Result`/`@Option` method calls to `__bp_<domain>_<op>(…)` and `return`/`throw` in `#[@result]` fns to `return __bp_ok(…)`/`return __bp_error(…)` (`tryLowerResultJump`). Walks `fn` AND `test { … }` decl bodies, including `assert` condition/message subexpressions (`.comptime_` stmt/expr arms) — lowerings inside test asserts apply like anywhere else. **Default-value expansion** (`expandTrailingDefaults` / `expandTrailingDefaultsWithParams`, fn-param-default-expansion F0+F4): when a call site supplies fewer args than the callee's param count AND every missing trailing param carries a `.default` Expr, the helper appends `is_default_inj` arg entries pointing into the param's own Expr — same rule across free-fn calls (`fn_decls` hit, F0) and record/enum-variant ctor calls (`ctor_params` hit, F4); the helper deliberately doesn't materialize new Exprs, so the dispatch path sees the expanded shape without arena churn. The `Aggregator.ctor_params` map is supplied by `compile`/`compileTypesOnly` from `env.ctorParams`; enum variants register under both bare and `Enum.Variant` qualified name. Receiver-bound defaults (`end: i32 = self.length()` for instance methods) need the F1 follow-up — that path bypasses transform's `fn_decls` lookup and lives in the codegen `tryEmitPrimAnnotation` renderer. |
 | `template.zig` | `@Expr` template infrastructure: `CapturedExpr` (an argument bound to a `comptime p: @Expr<T>` param, captured unevaluated with provenance), `PlainArg` (a non-`@Expr` param that received a literal value at the call site — emitted as a plain JS binding in the eval script), `ScopeSnapshot` (V1 origin scope: caller's top-level decls + imports, serializable via `toJsonAlloc`), `contextJsonAlloc` (the full second-layer handle), and `mapSpanToLoc`/`failDiagnostic` (rustc-style `fail`/`failAt` diagnostics pointing inside the caller's `"""…"""`). `mapSpanToLoc` fallback for holed templates uses `capture.loc.line + span.line - 1` (span.line is 1-based, line 1 = opening `"""` line). |
 | `template_eval.zig` | F6-full: runs a non-V1 template body in the **node** eval runtime (host-side comptime, independent of the compile target). Captures become JS objects implementing the comptime surface (`text`/`parts`/`source`/`context`/`lookup`/`bindings`/`build`/`fail`/`failAt`) over the `contextJsonAlloc` handle; plain args are emitted as JS bindings before capture objects; params are passed in declaration order. The script reports one protocol result — `code` (parse + splice), `value` (`@expr` lift → literal), `capture` (param pass-through), `fail` (template diagnostic), `error`. Erlang evaluator parity (running bodies via erlang for erlang-only environments) is a recorded follow-up. |
 | `decorator_eval.zig` | Annotation processors (P2): runs a decorator body in the **node** eval runtime over the declaration it annotates. The serialized `@Decl` handle becomes a `__decl(...)` object exposing the reflection fields (`kind`/`name`/`fields`/`methods`/`returnType`/`annotations`) + `fail`/`failAt`; a global `DeclKind` mirrors the registered enum. Each `fields[]` entry carries its own `name`/`typeName`/**`annotations`** (so a record decorator reads per-field markers like `#[value]`/`#[inject]`), and each `methods[]` entry its `params`/`returnType`/`annotations` (so a controller decorator reads `#[getMapping]`/… off methods). The script reports `ok` (placement accepted), `fail` (scoped diagnostic), or `error`. Driven by `infer.zig invokeDecorators`, which serializes each annotated decl and surfaces a `fail` as a `TypeError`. Like template eval, node-only and skipped in tooling paths. |
@@ -208,7 +208,7 @@ is enforced per-module in `validateUniqueDefaults` (a 2nd default mod/fn in one
 module is a `TypeError`); it is NOT a location restriction. For an external lib
 the `pub default mod`'s module must SHIP (listed in the lib's `botopink.json`
 `files`), since only those modules reach a consumer.
-Imported `pub` nominal types (`record`/`struct`/`enum`) likewise carry their
+Imported `pub` nominal types (`record`/`enum`) likewise carry their
 AST decl across the boundary (comptime.zig `type_decl_registry`); `resolveImports`
 re-registers them via `registerImportedTypeDecl` so the importer sees the full
 `TypeDef` — `implements`/`contextBase`/fields — not just the constructor value
@@ -275,10 +275,10 @@ never knows what a marker means (that lives in the lib body, in `.bp`).
   and `delegate`; when the first param is `comptime _: @Decl` it records the
   trailing signature (everything after the handle) **and the body-carrying
   `FnDecl`** in `env.decorators` (name → `DecoratorSig{ params, fn_decl }`).
-- The `@Decl` cluster (`enum DeclKind` + `struct Decl`/`Field`/`Method`/`Param`/
+- The `@Decl` cluster (`enum DeclKind` + `record Decl`/`Field`/`Method`/`Param`/
   `Annotation`/`Span`) is registered into the global env by `comptime.zig
   registerStdlib` from `decl_reflection_src`, so a decorator body type-checks. It
-  is a `struct` (not an interface) so the **aggregate** members resolve too —
+  is a `record` (not an interface) so the **aggregate** members resolve too —
   `decl.fields`/`decl.methods`/`decl.annotations` (array types interface `val`s
   don't parse) — which is what a wiring decorator iterates. The shape matches the
   handle JSON and the `__decl` runtime object.
@@ -299,7 +299,7 @@ never knows what a marker means (that lives in the lib body, in `.bp`).
   `__compilerError` as a `__failRaw` throw, so it surfaces as the same scoped
   diagnostic as `decl.fail`, but needs no `@Decl` handle.
 - `validateDecorators` walks every declaration's `annotations` —
-  record/struct/enum/fn/interface + their methods — and for each `#[name(args)]`
+  record/enum/fn/interface + their methods — and for each `#[name(args)]`
   whose `name` is a recognized decorator, `checkDecoratorArgs` type-checks the
   trailing args: arity (honoring trailing defaults) + a per-argument lexical kind
   check (`string`/numeric/`bool`/enum member). Unknown markers stay lenient (a lib
@@ -335,7 +335,7 @@ never knows what a marker means (that lives in the lib body, in `.bp`).
   reflection. So `#[mock] interface Repo { … }` runs over the interface. (Records
   reflect as `Record`, so a `#[service]` that rejects non-records still rejects an
   interface correctly.)
-- Method-site **and** field-site decorators now parse on record/struct bodies
+- Method-site **and** field-site decorators now parse on record bodies
   (`parseRecordBody`/`parseStructBody` read member-level annotations before a `fn`
   or a field; `RecordField`/`StructField` carry an `annotations` slice). So
   `#[getMapping]` on a controller method and `#[inject]`/`#[value]` on a field both
@@ -383,7 +383,7 @@ The AST node is `Expr.useHook { inner }`. It is gated by the function's **return
 
 - The return must implement `@Context<ContextBase, Return>` — either directly
   (`fn f() -> @Context<Element, R>`) or via a named type whose inline
-  `implement` clause lists `@Context<…>` (`struct implement @Context<Element, R>`).
+  `implement` clause lists `@Context<…>` (`record implement @Context<Element, R>`).
 - Every `use` expression in the body must itself return `@Context<B, _>` with the
   **same** `ContextBase` as the function. Validation is transitive through custom
   hooks (a hook's return type carries its `ContextBase`).
@@ -403,7 +403,7 @@ Wiring in `infer.zig`:
 Codegen (F8) lowers `use` per target. CommonJS maps it to React hooks
 (`state` → `useState`, `memo`/`effect` get an inferred dependency array); the
 other targets treat `use` as a transparent prefix (bind the call result into a
-slot). Phantom `@Context` base structs (`struct implement @Context { }`, no
+slot). Phantom `@Context` base structs (`record implement @Context { }`, no
 members) are erased — see `codegen/AGENTS.md`.
 
 ## Anonymous record types + `Children` coercion

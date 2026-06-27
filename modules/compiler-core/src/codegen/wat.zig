@@ -173,7 +173,6 @@ fn emitWat(
         // record pointer + a method body's `self.field` walks the declared
         // layout via `self_type`.
         .record => |r| try em.emitInterfaceMethods(r.name, r.methods),
-        .@"struct" => |s| try em.emitStructMethods(s),
         // KNOWN GAP: wasm is single-module. A `from "<pkg>"` import that
         // resolves to a concrete emitted symbol in another module can't be
         // linked here (no wasm module-linking story yet) — flag it explicitly
@@ -658,26 +657,6 @@ const Emitter = struct {
                 }
                 try self.records.put(r.name, names);
                 try self.record_field_types.put(r.name, types);
-            },
-            .@"struct" => |s| {
-                var count: usize = 0;
-                for (s.members) |m| switch (m) {
-                    .field => count += 1,
-                    else => {},
-                };
-                const names = try ra.alloc([]const u8, count);
-                const types = try ra.alloc([]const u8, count);
-                var i: usize = 0;
-                for (s.members) |m| switch (m) {
-                    .field => |f| {
-                        names[i] = f.name;
-                        types[i] = typeRefName(f.typeRef);
-                        i += 1;
-                    },
-                    else => {},
-                };
-                try self.records.put(s.name, names);
-                try self.record_field_types.put(s.name, types);
             },
             .@"enum" => |e| try self.enums.put(e.name, e.variants),
             .@"fn" => |f| {

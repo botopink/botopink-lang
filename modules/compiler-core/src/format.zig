@@ -1351,7 +1351,6 @@ pub const Formatter = struct {
                 .use => |v| v.docComment,
                 .interface => |v| v.docComment,
                 .delegate => |v| v.docComment,
-                .@"struct" => |v| v.docComment,
                 .record => |v| v.docComment,
                 .@"enum" => |v| v.docComment,
                 .implement => |v| v.docComment,
@@ -1368,7 +1367,6 @@ pub const Formatter = struct {
                 .@"fn" => false,
                 .@"test" => false,
                 .val => true,
-                .@"struct" => true,
                 .record => true,
                 .@"enum" => true,
                 .interface => true,
@@ -1419,7 +1417,6 @@ pub const Formatter = struct {
             .use => |u| this.fmtUse(u),
             .interface => |iface| this.fmtInterface(iface),
             .delegate => |d| this.fmtDelegate(d),
-            .@"struct" => |s| this.fmtStruct(s),
             .record => |r| this.fmtRecord(r),
             .@"enum" => |e| this.fmtEnum(e),
             .implement => |impl| this.fmtImplement(impl),
@@ -1578,126 +1575,6 @@ pub const Formatter = struct {
         }
         // Abstract method - add semicolon
         return this.concat(sig, try this.text(";"));
-    }
-
-    fn fmtStruct(this: *Formatter, s: ast.StructDecl) !*const Doc {
-        // Check if there are any methods (fn/get/set)
-        var hasMethods = false;
-        for (s.members) |m| {
-            switch (m) {
-                .field => {},
-                .getter, .setter, .method => hasMethods = true,
-            }
-        }
-
-        var members = try this.arena.alloc(*const Doc, s.members.len);
-        for (s.members, 0..) |m, i| {
-            members[i] = try this.fmtStructMemberWithComma(m);
-        }
-
-        const useMultiline = hasMethods or s.trailingComma;
-        const body = if (members.len == 0)
-            try this.text("{}")
-        else if (!useMultiline) blk: {
-            // Single line: struct {field: Type = expr, field2: Type = expr}
-            const withCommas = try this.arena.alloc(*const Doc, members.len);
-            for (members, 0..) |item, i| {
-                const isLast = i == members.len - 1;
-                withCommas[i] = if (!isLast)
-                    try this.concat(item, try this.text(","))
-                else
-                    item;
-            }
-            const inner = try this.joinWith(withCommas, try this.text(" "));
-            break :blk try this.surroundFlat("{", inner, "}");
-        } else blk: {
-            const addTrailingComma = s.trailingComma and !hasMethods;
-            const withCommas = try this.arena.alloc(*const Doc, members.len);
-            for (members, 0..) |item, i| {
-                const isLastItem = i == members.len - 1;
-                // Add comma after fields; methods only if not last (or trailing comma applies)
-                const isField = switch (s.members[i]) {
-                    .field => true,
-                    .getter, .setter, .method => false,
-                };
-                const needsComma = isField and (!isLastItem or (isLastItem and addTrailingComma));
-                withCommas[i] = if (needsComma)
-                    try this.concat(item, try this.text(","))
-                else
-                    item;
-            }
-            const inner = try this.join(withCommas, this.hardline());
-            break :blk try this.surroundBreak("{", inner, "}");
-        };
-
-        const pubPrefix = if (s.isPub) try this.text("pub ") else try this.text("");
-        return this.concatAll(&.{
-            try this.fmtAnnotations(s.annotations),
-            pubPrefix,
-            try this.text("val "),
-            try this.text(s.name),
-            try this.fmtGenericParams(s.genericParams),
-            try this.text(" = struct "),
-            try this.fmtImplementClause(s.implement),
-            body,
-        });
-    }
-
-    fn fmtStructMemberWithComma(this: *Formatter, m: ast.StructMember) !*const Doc {
-        return switch (m) {
-            .field => |f| this.fmtStructField(f),
-            .getter => |g| this.fmtGetter(g),
-            .setter => |s| this.fmtSetter(s),
-            .method => |meth| this.fmtInterfaceMethod(meth),
-        };
-    }
-
-    fn fmtStructMember(this: *Formatter, m: ast.StructMember) !*const Doc {
-        return switch (m) {
-            .field => |f| this.fmtStructField(f),
-            .getter => |g| this.fmtGetter(g),
-            .setter => |s| this.fmtSetter(s),
-            .method => |meth| this.fmtInterfaceMethod(meth),
-        };
-    }
-
-    fn fmtStructField(this: *Formatter, f: ast.StructField) !*const Doc {
-        if (f.init) |initExpr| {
-            return this.concatAll(&.{
-                try this.text(f.name),
-                try this.text(": "),
-                try this.fmtTypeRef(f.typeRef),
-                try this.text(" = "),
-                try this.fmtExpr(initExpr),
-            });
-        } else {
-            return this.concatAll(&.{
-                try this.text(f.name),
-                try this.text(": "),
-                try this.fmtTypeRef(f.typeRef),
-            });
-        }
-    }
-
-    fn fmtGetter(this: *Formatter, g: ast.StructGetter) !*const Doc {
-        const selfParams: []const ast.Param = &.{g.selfParam};
-        return this.concatAll(&.{
-            try this.text("get "),
-            try this.text(g.name),
-            try this.fmtParams(selfParams),
-            try this.text(try std.fmt.allocPrint(this.arena, " -> {s} ", .{g.returnType})),
-            try this.fmtBody(g.body),
-        });
-    }
-
-    fn fmtSetter(this: *Formatter, s: ast.StructSetter) !*const Doc {
-        return this.concatAll(&.{
-            try this.text("set "),
-            try this.text(s.name),
-            try this.fmtParams(s.params),
-            try this.text(" "),
-            try this.fmtBody(s.body),
-        });
     }
 
     fn fmtRecord(this: *Formatter, r: ast.RecordDecl) !*const Doc {

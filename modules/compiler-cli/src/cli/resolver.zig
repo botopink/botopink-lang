@@ -521,7 +521,6 @@ fn collectModuleRefs(
         .@"fn" => |f| if (f.isPub) try registerExport(sa, owner, &exps, f.name, idx),
         .val => |v| if (v.isPub) try registerExport(sa, owner, &exps, v.name, idx),
         .record => |r| if (r.isPub) try registerExport(sa, owner, &exps, r.name, idx),
-        .@"struct" => |s| if (s.isPub) try registerExport(sa, owner, &exps, s.name, idx),
         .@"enum" => |e| if (e.isPub) try registerExport(sa, owner, &exps, e.name, idx),
         .interface => |it| if (it.isPub) try registerExport(sa, owner, &exps, it.name, idx),
         .use => |u| {

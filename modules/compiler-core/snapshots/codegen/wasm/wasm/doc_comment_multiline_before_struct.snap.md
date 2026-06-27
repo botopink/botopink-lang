@@ -2,7 +2,7 @@
 ```botopink
 /// User account structure
 /// Holds name and email
-val Account = struct { name: string, email: string };
+val Account = record { name: string, email: string };
 ```
 
 ----- WASM TEXT -- main.wat

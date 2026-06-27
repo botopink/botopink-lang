@@ -17,7 +17,7 @@ format/
 └── tests/        ← format tests, split by feature
     ├── helpers.zig      ← shared harness (`assertFormat`/`assertIdempotent`)
     ├── imports.zig      ← import formatting
-    ├── declarations.zig ← struct/interface/implement/fn/const/val/let/pub, test blocks
+    ├── declarations.zig ← interface/implement/fn/const/val/let/pub, test blocks
     ├── expressions.zig  ← binary/call/access/lambda/precedence/pipeline
     ├── literals.zig     ← list/tuple/array/float/int/string literals
     ├── patterns.zig     ← case / pattern / assert
@@ -35,7 +35,6 @@ and running `format` twice in a row must produce identical text.
 | Construct | Rule |
 |---|---|
 | Record fields | No `val` prefix → `record { name: Type, ... }` |
-| Struct fields | No `val` prefix → `struct { name: Type, ... }` |
 | Enum variants | Comma-separated; single-line when no methods → `enum { Red, Rgb(r,g,b), }` |
 | Interface methods | `fn`-prefixed → `interface { fn method(p): T, }` |
 | Pipeline `\|>` | Each `\|>` on its own line for long chains |

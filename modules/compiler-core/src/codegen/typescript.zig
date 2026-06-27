@@ -41,7 +41,6 @@ const Emitter = struct {
             .val => |v| try self.emitVal(v.name, v.isPub, b.type_),
             .@"fn" => |f| try self.emitFn(f),
             // Phantom `@Context` base structs are erased from the typedef too.
-            .@"struct" => |s| if (!commonJS.isPhantomContextStruct(s)) try self.emitStruct(s),
             .record => |r| try self.emitRecord(r),
             .@"enum" => |e| try self.emitEnum(e),
             .interface => |i| try self.emitInterface(i),

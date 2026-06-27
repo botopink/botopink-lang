@@ -688,7 +688,6 @@ pub const Lexer = struct {
         if (std.mem.eql(u8, text, "return")) return .@"return";
         if (std.mem.eql(u8, text, "Self")) return .selfType;
         if (std.mem.eql(u8, text, "set")) return .set;
-        if (std.mem.eql(u8, text, "struct")) return .@"struct";
         if (std.mem.eql(u8, text, "test")) return .@"test";
         if (std.mem.eql(u8, text, "throw")) return .throw;
         if (std.mem.eql(u8, text, "interface")) return .interface;

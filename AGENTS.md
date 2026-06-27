@@ -196,7 +196,7 @@ replays. `bpmp install --frozen` is the CI gate.
 - Type annotations always use `TypeRef` (`named`, `array`, `tuple_`,
   `optional`, `function`, `generic`). Generic types use `is_builtin`
   flag to distinguish `@Result<D, E>` (builtin) from `MyType<T>` (user).
-- Record/struct/enum/interface shorthand decls map to the same AST nodes
+- Record/enum/interface shorthand decls map to the same AST nodes
   as long-form declarations.
 - Formatter must be round-trip stable: `format(parse(src))` must re-parse
   to an equivalent AST.

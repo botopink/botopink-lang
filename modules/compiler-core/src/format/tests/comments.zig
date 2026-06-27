@@ -121,7 +121,7 @@ test "format: doc comment ---- multiline before fn" {
 test "format: doc comment ---- before struct" {
     try h.assertFormat(std.testing.allocator,
         \\/// User account structure
-        \\val Account = struct {};
+        \\val Account = record {};
     );
 }
 

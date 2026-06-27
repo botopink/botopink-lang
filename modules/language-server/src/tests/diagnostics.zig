@@ -1,13 +1,13 @@
-/// Testes de diagnóstico — cobre `compiler_mod.LspCompiler` + parse errors.
+/// Diagnostic tests — covers `compiler_mod.LspCompiler` + parse errors.
 ///
-/// Analogia BotoPink tests/compilation.rs (6 testes)
+/// Analogous to BotoPink tests/compilation.rs (6 tests)
 const std = @import("std");
 const bp = @import("botopink");
 const h = @import("./helpers.zig");
 const proto = @import("../protocol.zig");
 const engine = @import("../engine.zig");
 
-// ── D1 — arquivo vazio ────────────────────────────────────────────────────────
+// ── D1 — empty file ────────────────────────────────────────────────────────
 
 test "diagnostics: empty source compiles without errors" {
     const gpa = std.testing.allocator;
@@ -16,7 +16,7 @@ test "diagnostics: empty source compiles without errors" {
     try std.testing.expect(c.isOk());
 }
 
-// ── D2 — fonte válida ─────────────────────────────────────────────────────────
+// ── D2 — valid source ─────────────────────────────────────────────────────────
 
 test "diagnostics: simple val compiles without errors" {
     const gpa = std.testing.allocator;
@@ -25,7 +25,7 @@ test "diagnostics: simple val compiles without errors" {
     try std.testing.expect(c.isOk());
 }
 
-// ── D3 — múltiplas declarações válidas ────────────────────────────────────────
+// ── D3 — multiple valid declarations ────────────────────────────────────────
 
 test "diagnostics: multiple declarations compile without errors" {
     const gpa = std.testing.allocator;
@@ -38,7 +38,7 @@ test "diagnostics: multiple declarations compile without errors" {
     try std.testing.expect(c.isOk());
 }
 
-// ── D4 — erro de parse — token inesperado ─────────────────────────────────────
+// ── D4 — parse error — unexpected token ─────────────────────────────────────
 
 test "diagnostics: parse error on unexpected token" {
     const gpa = std.testing.allocator;
@@ -46,7 +46,7 @@ test "diagnostics: parse error on unexpected token" {
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
 
-    const source = "val = 1;"; // falta nome do binding
+    const source = "val = 1;"; // missing binding name
     var lexer = bp.Lexer.init(source);
     const tokens = try lexer.scanAll(arena.allocator());
 
@@ -56,7 +56,7 @@ test "diagnostics: parse error on unexpected token" {
     try std.testing.expect(parser.parseError != null);
 }
 
-// ── D5 — erro de parse — falta fechamento ─────────────────────────────────────
+// ── D5 — parse error — missing close ─────────────────────────────────────
 
 test "diagnostics: parse error on unclosed expression" {
     const gpa = std.testing.allocator;
@@ -73,7 +73,7 @@ test "diagnostics: parse error on unclosed expression" {
     try std.testing.expectError(error.UnexpectedToken, result);
 }
 
-// ── D6 — struct válido ────────────────────────────────────────────────────────
+// ── D6 — valid struct ──
 
 test "diagnostics: struct declaration compiles without errors" {
     const gpa = std.testing.allocator;
@@ -85,7 +85,7 @@ test "diagnostics: struct declaration compiles without errors" {
     try std.testing.expect(c.isOk());
 }
 
-// ── D7 — enum válido ──────────────────────────────────────────────────────────
+// ── D7 — valid enum ──
 
 test "diagnostics: enum declaration compiles without errors" {
     const gpa = std.testing.allocator;
@@ -97,7 +97,7 @@ test "diagnostics: enum declaration compiles without errors" {
     try std.testing.expect(c.isOk());
 }
 
-// ── D8 — fn com anotação de tipos ─────────────────────────────────────────────
+// ── D8 — fn with type annotations ──
 
 test "diagnostics: annotated function compiles without errors" {
     const gpa = std.testing.allocator;

@@ -64,9 +64,9 @@ test "infer: generic record Triple<A, B, C>" {
     );
 }
 
-test "infer: generic struct Box<T>" {
+test "infer: generic record Box<T>" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Box = struct <T> {
+        \\val Box = record <T> {
         \\    value: T = todo,
         \\};
         \\val b = Box(42);
@@ -117,7 +117,7 @@ test "infer: pub fn generic with two type params<T, R>" {
 }
 
 test "infer: generic fn ---- two calls with different types in same scope" {
-    // Regression (stdlib-gleam known gap #6): each call site must get a fresh
+    // Regression: each call site must get a fresh
     // instantiation of the fn's generic vars — the first call must not lock
     // `T` for the second.
     try h.assertInfersOk(std.testing.allocator,
@@ -261,7 +261,7 @@ test "infer: net-new ---- inline test in a generic module resolves" {
 // `Element` with no ContextBase drift.
 test "infer: net-new ---- @Context across three hook layers stays Element-based" {
     try h.assertInfersOk(std.testing.allocator,
-        \\val Element = struct implement @Context<Element, Element> { }
+        \\val Element = record implement @Context<Element, Element> { }
         \\fn layer1(initial: i32) -> @Context<Element, i32> {
         \\    initial;
         \\}

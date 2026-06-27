@@ -17,7 +17,7 @@ const lsp_types = @import("../lsp_types.zig");
 /// (the latter bound to the `Users` struct via `ref`). No real lib involved —
 /// proves the overlay is generic.
 const FIXTURE =
-    \\pub struct Users { name: string }
+    \\pub record Users { name: string }
     \\pub fn q<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
     \\    val code = e.build("[1, 2]");
     \\    val kw = CustomNode(kind: "kw", span: Span(0, 6, 1), label: "keyword", ref: null, children: []);
@@ -71,7 +71,7 @@ test "sublanguage: semantic tokens light up keyword + property inside the string
 /// A template that aborts via `q.failAt(span, msg)` — the sub-language rejecting
 /// a malformed query. The span (7..11) targets `name` inside `q "select name"`.
 const FIXTURE_FAIL =
-    \\pub struct Users { name: string }
+    \\pub record Users { name: string }
     \\pub fn q<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
     \\    e.failAt(Span(7, 11, 1), "unknown column 'name'");
     \\    val code = e.build("[1, 2]");
@@ -131,8 +131,8 @@ test "sublanguage F3: hover on a bound node shows the referenced symbol" {
         return error.NoHover;
     defer gpa.free(hover.contents.value);
 
-    // Hover renders the *bound* symbol (`struct Users`), not the word `name`.
-    try std.testing.expect(std.mem.indexOf(u8, hover.contents.value, "struct Users") != null);
+    // Hover renders the *bound* symbol (`record Users`), not the word `name`.
+    try std.testing.expect(std.mem.indexOf(u8, hover.contents.value, "record Users") != null);
 }
 
 test "sublanguage F3: go-to-definition on a bound node jumps to its declaration" {
@@ -183,7 +183,7 @@ test "sublanguage F4: hover snapshot on a bound sub-language node" {
 // lights up. The overlay code is unchanged; only the AST now exists.
 
 const X_DEP =
-    \\pub struct Cities { name: string }
+    \\pub record Cities { name: string }
     \\pub fn erika<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
     \\    val code = e.build("[1, 2]");
     \\    val kw = CustomNode(kind: "kw", span: Span(0, 6, 1), label: "keyword", ref: null, children: []);
@@ -240,7 +240,7 @@ test "sublanguage R4: cross-module literal paints keyword + property tokens" {
 /// A cross-module template that rejects the query via `failAt` — the malformed
 /// case of R4. The diagnostic must land inside the literal in the CALLER module.
 const X_DEP_FAIL =
-    \\pub struct Cities { name: string }
+    \\pub record Cities { name: string }
     \\pub fn erika<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
     \\    e.failAt(Span(7, 11, 1), "unknown column 'name'");
     \\    val code = e.build("[1, 2]");

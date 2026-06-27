@@ -286,7 +286,6 @@ fn validateProgram(env: *Env, program: ast.Program) InferError!void {
 
     for (program.decls) |decl| switch (decl) {
         .implement => |impl| try validateImplement(env, impl, interfaces),
-        .@"struct" => |s| try validateStructAccessors(env, s),
         else => {},
     };
 }
@@ -474,21 +473,6 @@ fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
             try inferTypeMethods(env, r.name, r.genericParams, r.methods);
             return .{ .name = r.name, .type_ = try env.namedType(typeName), .typedExpr = null, .decl = decl, .typeId = typeId };
         },
-        .@"struct" => |s| {
-            const typeName = try buildStructDeclName(env, s);
-            const typeId = if (env.lookupTypeDef(s.name)) |td| switch (td) {
-                .struct_ => |st| st.id,
-                else => null,
-            } else null;
-            var structMethods: std.ArrayListUnmanaged(ast.InterfaceMethod) = .empty;
-            defer structMethods.deinit(env.arena);
-            for (s.members) |mem| switch (mem) {
-                .method => |md| try structMethods.append(env.arena, md),
-                else => {},
-            };
-            try inferTypeMethods(env, s.name, s.genericParams, structMethods.items);
-            return .{ .name = s.name, .type_ = try env.namedType(typeName), .typedExpr = null, .decl = decl, .typeId = typeId };
-        },
         .@"enum" => |e| {
             const typeName = try buildEnumDeclName(env, e);
             const typeId = if (env.lookupTypeDef(e.name)) |td| switch (td) {
@@ -524,7 +508,6 @@ fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
 fn registerTypeDecl(env: *Env, decl: ast.DeclKind) InferError!void {
     switch (decl) {
         .record => |r| try registerRecord(env, r),
-        .@"struct" => |s| try registerStruct(env, s),
         .@"enum" => |e| try registerEnum(env, e),
         else => {},
     }
@@ -673,11 +656,6 @@ pub fn registerAnnotationTypes(env: *Env, program: ast.Program) InferError!void 
             const params = try recordFieldsAsParams(env, r.fields);
             env.decorators.put(r.name, .{ .params = params, .fn_decl = null }) catch {};
         },
-        .@"struct" => |s| {
-            if (!implementsAnnotation(s.implement)) continue;
-            const params = try structFieldsAsParams(env, s.members);
-            env.decorators.put(s.name, .{ .params = params, .fn_decl = null }) catch {};
-        },
         .@"enum" => |e| {
             if (!implementsAnnotation(e.implement)) continue;
             for (e.variants) |v| {
@@ -751,10 +729,6 @@ fn registerExtensions(env: *Env, program: ast.Program) InferError!void {
     // Inherent methods + extension entries.
     for (program.decls) |decl| {
         switch (decl) {
-            .@"struct" => |s| for (s.members) |m| switch (m) {
-                .method => |im| try env.addInherentMethod(s.name, im.name),
-                else => {},
-            },
             .record => |r| for (r.methods) |im| try env.addInherentMethod(r.name, im.name),
             .@"enum" => |e| for (e.methods) |im| try env.addInherentMethod(e.name, im.name),
             .implement => |im| {
@@ -818,7 +792,6 @@ fn buildScopeSnapshot(env: *Env, program: ast.Program) InferError!void {
     for (program.decls) |decl| switch (decl) {
         .@"fn" => |f| try snap.put(f.name, .fn_, false),
         .val => |v| try snap.put(v.name, .val, false),
-        .@"struct" => |s| try snap.put(s.name, .struct_, false),
         .record => |r| try snap.put(r.name, .struct_, false),
         .@"enum" => |e| try snap.put(e.name, .enum_, false),
         .interface => |i| try snap.put(i.name, .interface, false),
@@ -2017,10 +1990,6 @@ fn inferDecl(env: *Env, decl: ast.DeclKind) InferError!?Binding {
             const typeName = try buildRecordDeclName(env, r);
             return .{ .name = r.name, .type_ = try env.namedType(typeName) };
         },
-        .@"struct" => |s| {
-            const typeName = try buildStructDeclName(env, s);
-            return .{ .name = s.name, .type_ = try env.namedType(typeName) };
-        },
         .@"enum" => |e| {
             const typeName = try buildEnumDeclName(env, e);
             return .{ .name = e.name, .type_ = try env.namedType(typeName) };
@@ -2156,14 +2125,6 @@ fn validateDecorators(env: *Env, program: ast.Program) InferError!void {
             try checkDecoratorAnnotations(env, r.annotations, r.name);
             for (r.fields) |fld| try checkDecoratorAnnotations(env, fld.annotations, fld.name);
             for (r.methods) |m| try checkDecoratorAnnotations(env, m.annotations, m.name);
-        },
-        .@"struct" => |s| {
-            try checkDecoratorAnnotations(env, s.annotations, s.name);
-            for (s.members) |mem| switch (mem) {
-                .field => |fld| try checkDecoratorAnnotations(env, fld.annotations, fld.name),
-                .method => |m| try checkDecoratorAnnotations(env, m.annotations, m.name),
-                else => {},
-            };
         },
         .@"enum" => |e| {
             try checkDecoratorAnnotations(env, e.annotations, e.name);
@@ -2426,26 +2387,6 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                 const mh = try buildHandleJson(env.arena, "Method", m.name, &.{}, &.{}, if (m.returnType) |rt| declTypeName(rt) else "", m.annotations);
                 try runDeclDecorators(env, ctx, m.annotations, mh);
             }
-        },
-        .@"struct" => |s| {
-            var fields: std.ArrayList(HandleField) = .empty;
-            for (s.members) |mem| switch (mem) {
-                .field => |fld| try fields.append(env.arena, .{ .name = fld.name, .typeName = declTypeName(fld.typeRef), .annotations = fld.annotations }),
-                else => {},
-            };
-            const h = try buildHandleJson(env.arena, "Struct", s.name, fields.items, &.{}, "", s.annotations);
-            try runDeclDecorators(env, ctx, s.annotations, h);
-            for (s.members) |mem| switch (mem) {
-                .field => |fld| {
-                    const fh = try buildHandleJson(env.arena, "Field", fld.name, &.{}, &.{}, declTypeName(fld.typeRef), fld.annotations);
-                    try runDeclDecorators(env, ctx, fld.annotations, fh);
-                },
-                .method => |m| {
-                    const mh = try buildHandleJson(env.arena, "Method", m.name, &.{}, &.{}, if (m.returnType) |rt| declTypeName(rt) else "", m.annotations);
-                    try runDeclDecorators(env, ctx, m.annotations, mh);
-                },
-                else => {},
-            };
         },
         .@"enum" => |e| {
             const h = try buildHandleJson(env.arena, "Enum", e.name, &.{}, e.methods, "", e.annotations);
@@ -5582,7 +5523,7 @@ fn methodCallReturnType(
     return fn_.func.ret;
 }
 
-/// Resolve a builtin `result` namespace qualified call (Gleam-style surface):
+/// Resolve a builtin `result` namespace qualified call:
 /// `result.map(r, f)` / `result.then(r, f)` / `result.unwrap(r, fallback)` /
 /// `result.isOk(r)` / `result.isError(r)`. The subject `@Result<R, E>` value
 /// arrives as the first positional argument. Records a `qualified`
@@ -6321,7 +6262,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                 } } } };
             }
             // Builtin `result` namespace: `result.map(r, f)`, `result.unwrap(r, 0)`,
-            // `result.isOk(r)`… — Gleam-style qualified surface over the built-in
+            // `result.isOk(r)`… — qualified surface over the built-in
             // `@Result` method ops. No import needed (builtin, not a "std" module);
             // a local value binding named `result` shadows the namespace.
             if (call.receiver) |recvExpr| {

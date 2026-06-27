@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub struct Button {
+pub record Button {
     label: string,
 }
 pub fn need(comptime t: @Expr<string>) -> @Expr<string> {
@@ -18,7 +18,7 @@ val r = need "x";
 {
   "declarations": [
     {
-      "ast": "struct_def",
+      "ast": "record_def",
       "name": "Button",
       "id": 0,
       "fields": {

@@ -499,7 +499,6 @@ fn emitBeamAsm(
                 try em.reserveFn(v.name, 0);
             },
             .record => |r| try em.reserveRecordMethods(r),
-            .@"struct" => |s| try em.reserveStructMembers(s),
             .@"enum" => |e| try em.reserveEnumMethods(e),
             .interface => |i| try em.reserveInterfaceMethods(i),
             .implement => |im| try em.reserveImplementMethods(im),
@@ -532,7 +531,6 @@ fn emitBeamAsm(
                 try exports.append(alloc, .{ .name = f.name, .arity = fnArityNoSelf(f) });
             },
             .record => |r| try collectMethodExports(alloc, &exports, &owned_export_names, r.name, r.methods, isCrossImported(cross, r.name)),
-            .@"struct" => |s| try collectStructExports(alloc, &exports, &owned_export_names, s, isCrossImported(cross, s.name)),
             .@"enum" => |e| try collectMethodExports(alloc, &exports, &owned_export_names, e.name, e.methods, isCrossImported(cross, e.name)),
             .implement => |im| try collectImplementExports(alloc, &exports, &owned_export_names, im),
             .extend => |ex| try collectExtendExports(alloc, &exports, &owned_export_names, ex),
@@ -554,7 +552,6 @@ fn emitBeamAsm(
                 try em.bodyPrint("{s} {s}\n", .{ prefix, c.text });
             },
             .record => |r| try em.emitRecord(r),
-            .@"struct" => |s| try em.emitStruct(s),
             .@"enum" => |e| try em.emitEnum(e),
             // An interface's associated `default fn`s (`Array.range`, `Pair.of`)
             // are pure botopink — emit them as local mangled fns (`'Array_range'`).
@@ -987,22 +984,6 @@ const Emitter = struct {
                 for (r.fields, 0..) |f, i| fields[i] = f.name;
                 try self.record_fields.put(r.name, fields);
             },
-            .@"struct" => |s| {
-                var count: usize = 0;
-                for (s.members) |m| {
-                    if (m == .field) count += 1;
-                }
-                const fields = try self.alloc.alloc([]const u8, count);
-                var i: usize = 0;
-                for (s.members) |m| switch (m) {
-                    .field => |f| {
-                        fields[i] = f.name;
-                        i += 1;
-                    },
-                    else => {},
-                };
-                try self.record_fields.put(s.name, fields);
-            },
             else => {},
         };
         const xc = self.cross orelse return;
@@ -1011,13 +992,7 @@ const Emitter = struct {
                 const name = imp.name();
                 const info = xc.exports.get(name) orelse continue;
                 switch (info.kind) {
-                    .record, .@"struct" => {
-                        if (!self.record_fields.contains(name)) {
-                            const fields = try self.alloc.dupe([]const u8, info.fields);
-                            try self.record_fields.put(name, fields);
-                        }
-                        try self.imported_types.put(name, crossModule.moduleBasename(info.module));
-                    },
+                    .record => {},
                     else => {},
                 }
             },

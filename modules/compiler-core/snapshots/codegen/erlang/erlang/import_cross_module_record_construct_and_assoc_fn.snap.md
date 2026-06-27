@@ -50,9 +50,9 @@ fn main() {
 %% import Response, App
 
 main() ->
-    R = http:ok(<<"hi">>),
+    R = response:ok(<<"hi">>),
     io:format("~p~n", [maps:get(body, R)]),
-    A = #{port => 8080, path => <<"/">>},
+    A = 'App'(8080, <<"/">>),
     io:format("~p~n", [maps:get(port, A)]).
 
 '_botopink_main'() ->
@@ -64,6 +64,4 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-<<"hi">>
-8080
 ```

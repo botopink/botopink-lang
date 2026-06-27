@@ -38,22 +38,6 @@ test "parser: shorthand enum ---- pub with generics and payload" {
     );
 }
 
-test "parser: shorthand struct ---- simple" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\struct Account {
-        \\    _balance: i32 = 0,
-        \\}
-    );
-}
-
-test "parser: shorthand struct ---- pub with generics" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\pub struct Box <T> {
-        \\    item: T = 0,
-        \\}
-    );
-}
-
 test "parser: shorthand record ---- simple" {
     try h.assertParser(std.testing.allocator, @src(),
         \\record Point { x: i32, y: i32 }

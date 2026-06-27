@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Element = struct implement @Context<Element, Element> { }
+val Element = record implement @Context<Element, Element> { }
 fn state(initial: i32) -> @Context<Element, i32> {
     initial;
 }
@@ -18,7 +18,7 @@ fn Counter() -> Element {
 ```erlang
 -module(main).
 
-%% struct Element: 
+%% record Element: 
 
 state(Initial) ->
     Initial.

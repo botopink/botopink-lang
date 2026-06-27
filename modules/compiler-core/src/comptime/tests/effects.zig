@@ -264,9 +264,9 @@ test "context: use void hook with discard binding passes" {
     );
 }
 
-test "context: struct implement @Context resolved via inline impl passes" {
+test "context: record implement @Context resolved via inline impl passes" {
     try h.assertInfersOk(std.testing.allocator,
-        \\val Element = struct implement @Context<Element, Element> { }
+        \\val Element = record implement @Context<Element, Element> { }
         \\fn state(initial: i32) -> @Context<Element, i32> {
         \\    initial;
         \\}
@@ -279,8 +279,8 @@ test "context: struct implement @Context resolved via inline impl passes" {
 
 test "context: custom hook propagates ContextBase transitively passes" {
     try h.assertInfersOk(std.testing.allocator,
-        \\val Element = struct implement @Context<Element, Element> { }
-        \\val AuthState = struct implement @Context<Element, AuthState> {
+        \\val Element = record implement @Context<Element, Element> { }
+        \\val AuthState = record implement @Context<Element, AuthState> {
         \\    loggedIn: bool
         \\}
         \\fn state(initial: i32) -> @Context<Element, i32> {
@@ -324,9 +324,9 @@ test "context error: ContextBase mismatch Element vs Http" {
     );
 }
 
-test "context error: struct without @Context impl used with use" {
+test "context error: record without @Context impl used with use" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Plain = struct { x: i32 }
+        \\val Plain = record { x: i32 }
         \\fn make() -> Plain {
         \\    Plain(x: 0);
         \\}
@@ -365,7 +365,7 @@ test "context: fn() -> T[] parses" {
 // fn-typed `set`, and a component uses it (`s.set(s.value)`).
 test "context: {value, set} hook shape type-checks" {
     try h.assertInfersOk(std.testing.allocator,
-        \\val Element = struct implement @Context<Element, Element> { }
+        \\val Element = record implement @Context<Element, Element> { }
         \\record State<T> { value: T, set: fn(next: T) }
         \\fn state<T>(initial: T) -> @Context<Element, State<T>> {
         \\    State(value: initial, set: { n -> });
@@ -392,7 +392,7 @@ test "context: anonymous record type as return annotation" {
 // model `div([a, b])`); a single `Element` and a `string` coerce too.
 test "context: Element[] coerces into Children" {
     try h.assertInfersOk(std.testing.allocator,
-        \\val Element = struct implement @Context<Element, Element> { }
+        \\val Element = record implement @Context<Element, Element> { }
         \\fn div(children: Children) -> Element { Element(); }
         \\fn a() -> Element { Element(); }
         \\val list = div([a(), a()]);

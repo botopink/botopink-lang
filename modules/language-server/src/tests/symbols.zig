@@ -1,13 +1,10 @@
-/// Testes de document symbols — cobre `engine.documentSymbols`.
-/// Snapshots em: snapshots/lsp/symbols_*.snap.md
-///
-/// Analogia Gleam: tests/document_symbols.rs (10 testes / 10 snapshots).
+/// Document symbols tests — covers `engine.documentSymbols`.
 const std = @import("std");
 const h = @import("./helpers.zig");
 const snap = @import("./snapshot.zig");
 const engine = @import("../engine.zig");
 
-// ── S1 — arquivo vazio ────────────────────────────────────────────────────────
+// ── S1 — empty file ────────────────────────────────────────────────────────
 
 test "symbols: empty source returns no symbols" {
     const gpa = std.testing.allocator;
@@ -111,7 +108,7 @@ test "symbols: enum declaration" {
     try snap.assertDocumentSymbols(gpa, "symbols_enum", source, syms);
 }
 
-// ── S6 — múltiplos ────────────────────────────────────────────────────────────
+// ── S6 — multiple ──
 
 test "symbols: multiple declarations in order" {
     const gpa = std.testing.allocator;
@@ -135,7 +132,7 @@ test "symbols: multiple declarations in order" {
     try snap.assertDocumentSymbols(gpa, "symbols_multiple", source, syms);
 }
 
-// ── S7 — selectionRange linha correta ─────────────────────────────────────────
+// ── S7 — correct selectionRange line ─────────────────────────────────────────
 
 test "symbols: selectionRange.start.line matches declaration line" {
     const gpa = std.testing.allocator;

@@ -1,14 +1,11 @@
-/// Testes de completion — cobre `engine.completion`.
-/// Snapshots em: snapshots/lsp/completion_*.snap.md
-///
-/// Analogia Gleam: tests/completion.rs (139 testes / 132 snapshots).
+/// Completion tests — covers `engine.completion`.
 const std = @import("std");
 const h = @import("./helpers.zig");
 const snap = @import("./snapshot.zig");
 const engine = @import("../engine.zig");
 const proto = @import("../protocol.zig");
 
-// ── C1 — prefixo vazio retorna todos os bindings ──────────────────────────────
+// ── C1 — empty prefix returns all bindings ──────────────────────────────
 
 test "completion: empty prefix returns all bindings" {
     const gpa = std.testing.allocator;
@@ -21,7 +18,7 @@ test "completion: empty prefix returns all bindings" {
     defer c.deinit(gpa);
     const bindings = c.bindings() orelse return error.CompileFailed;
 
-    // cursor ao final da linha 1 (depois de todo o conteúdo)
+    // cursor at end of line 1 (after all content)
     const cursor = h.pos(1, 10);
     const items = try engine.completion(gpa, source, cursor, bindings);
     defer {
@@ -41,7 +38,7 @@ test "completion: empty prefix returns all bindings" {
 
 test "completion: prefix filters to matching bindings" {
     const gpa = std.testing.allocator;
-    // O prefixAt() lê o source diretamente; cursor em "gree" extrai o prefixo "gree".
+    // prefixAt() reads source directly; cursor on "gree" extracts prefix "gree".
     const source =
         \\val greeting = "hello";
         \\val x = greeting;
@@ -51,7 +48,7 @@ test "completion: prefix filters to matching bindings" {
     defer c.deinit(gpa);
     const bindings = c.bindings() orelse return error.CompileFailed;
 
-    // col 12 = dentro de "greeting" na linha 1, prefixAt extrai "gree"
+    // col 12 = inside "greeting" on line 1, prefixAt extracts "gree"
     const cursor = h.pos(1, 12);
     const items = try engine.completion(gpa, source, cursor, bindings);
     defer {
@@ -62,14 +59,14 @@ test "completion: prefix filters to matching bindings" {
         gpa.free(items);
     }
 
-    // Só 'greeting' começa com "gree"
+    // Only 'greeting' starts with "gree"
     for (items) |it| {
         try std.testing.expect(std.mem.startsWith(u8, it.label, "gree"));
     }
     try snap.assertCompletion(gpa, "completion_prefix_filter", source, cursor, items);
 }
 
-// ── C3 — prefixo sem match retorna vazio ─────────────────────────────────────
+// ── C3 — prefix with no match returns empty ─────────────────────────────────────
 
 test "completion: prefix with no match returns empty" {
     const gpa = std.testing.allocator;
@@ -82,7 +79,7 @@ test "completion: prefix with no match returns empty" {
     defer c.deinit(gpa);
     const bindings = c.bindings() orelse &[_]h.comptime_pipeline.TypedBinding{};
 
-    // col 7 = depois de "zzz"
+    // col 7 = after "zzz"
     const cursor = h.pos(1, 7);
     const items = try engine.completion(gpa, source, cursor, bindings);
     defer {
@@ -130,7 +127,7 @@ test "completion: fn binding has Function kind" {
     try snap.assertCompletion(gpa, "completion_fn_kind", source, cursor, items);
 }
 
-// ── C5 — detail mostra tipo ───────────────────────────────────────────────────
+// ── C5 — detail shows type ───────────────────────────────────────────────────
 
 test "completion: item detail shows inferred type" {
     const gpa = std.testing.allocator;
@@ -155,23 +152,23 @@ test "completion: item detail shows inferred type" {
     for (items) |it| {
         if (std.mem.eql(u8, it.label, "count")) {
             try std.testing.expect(it.detail != null);
-            // detail deve conter o nome do tipo
+            // detail must contain the type name
             try std.testing.expect(it.detail.?.len > 0);
         }
     }
     try snap.assertCompletion(gpa, "completion_detail_type", source, cursor, items);
 }
 
-// ── C7 — cursor sobre literal numérico retorna vazio ─────────────────────────
+// ── C7 — cursor on numeric literal returns empty ──
 //
-// Gleam ref: `do_not_show_completions_when_typing_a_number`
-// O binding "result_2" existe e contém "2" no nome, mas o cursor está sobre
-// o literal `2` (não sobre um identificador), então nenhum item é sugerido.
+// Ref: `do_not_show_completions_when_typing_a_number`
+// The binding "result_2" exists and contains "2" in the name, but the cursor is over
+// the literal `2` (not an identifier), so no items are suggested.
 
 test "completion: number literal at cursor returns empty" {
     const gpa = std.testing.allocator;
-    // "result_2" é um binding válido — intencionalmente contém "2" no nome
-    // para confirmar que o guard atua antes do filtro de prefixo.
+    // "result_2" is a valid binding — intentionally contains "2" in the name
+    // to confirm the guard runs before the prefix filter.
     const source =
         \\val result_2 = 2;
     ;
@@ -180,11 +177,11 @@ test "completion: number literal at cursor returns empty" {
     defer c.deinit(gpa);
     const bindings = c.bindings() orelse return error.CompileFailed;
 
-    // cursor antes do literal '2' (col 15 = char imediatamente antes de '2')
+    // cursor before literal '2' (col 15 = char immediately before '2')
     // val result_2 = 2;
     // 0         1
     // 0123456789012345
-    // col 15 = '2', source[offset] = '2' → guard numérico → vazio
+    // col 15 = '2', source[offset] = '2' → numeric guard → empty
     const cursor = h.pos(0, 15);
     const items = try engine.completion(gpa, source, cursor, bindings);
     defer {
@@ -199,9 +196,9 @@ test "completion: number literal at cursor returns empty" {
     try snap.assertCompletion(gpa, "completion_number_prefix", source, cursor, items);
 }
 
-// ── C8 — cursor dentro de string literal retorna vazio ────────────────────────
+// ── C8 — cursor inside string literal returns empty ──
 //
-// Gleam refs: `ignore_completions_inside_string`,
+// Refs: `ignore_completions_inside_string`,
 //             `ignore_completions_inside_empty_string`
 
 test "completion: cursor inside string literal returns empty" {
@@ -218,7 +215,7 @@ test "completion: cursor inside string literal returns empty" {
     // 0         1         2
     // 0123456789012345678901 2
     // col 15 = '"', col 16 = 'h', col 17 = 'e', col 18 = 'l'
-    // cursor em col 18 → offset 18 cai dentro da string → guard retorna vazio
+    // cursor at col 18 → offset 18 falls inside string → guard returns empty
     const cursor = h.pos(0, 18);
     const items = try engine.completion(gpa, source, cursor, bindings);
     defer {
@@ -246,8 +243,8 @@ test "completion: cursor inside empty string returns empty" {
     // val x = "";
     // 0         1
     // 012345678901
-    // col 8 = '"' (abertura), col 9 = '"' (fechamento)
-    // cursorInString varre até offset 9 exclusive: processa col 8 → in_string = true → vazio
+    // col 8 = '"' (open), col 9 = '"' (close)
+    // cursorInString scans up to offset 9 exclusive: processes col 8 → in_string = true → empty
     const cursor = h.pos(0, 9);
     const items = try engine.completion(gpa, source, cursor, bindings);
     defer {
@@ -262,9 +259,9 @@ test "completion: cursor inside empty string returns empty" {
     try snap.assertCompletion(gpa, "completion_cursor_in_empty_string", source, cursor, items);
 }
 
-// ── C9 — cursor dentro de string com prefixo "io." retorna vazio ────────────────
+// ── C9 — cursor inside string with "io." prefix returns empty ──
 //
-// Gleam ref: `no_completions_in_constant_string`
+// Ref: `no_completions_in_constant_string`
 
 test "completion: cursor in const string returns empty" {
     const gpa = std.testing.allocator;
@@ -280,7 +277,7 @@ test "completion: cursor in const string returns empty" {
     // 0         1         2
     // 0123456789012345678
     // col 10 = 'i', col 11 = 'o', col 12 = '.'
-    // cursor em col 12 → dentro da string → guard retorna vazio
+    // cursor at col 12 → inside string → guard returns empty
     const cursor = h.pos(0, 12);
     const items = try engine.completion(gpa, source, cursor, bindings);
     defer {
@@ -295,9 +292,9 @@ test "completion: cursor in const string returns empty" {
     try snap.assertCompletion(gpa, "completion_cursor_in_const_string", source, cursor, items);
 }
 
-// ── C10, C11, C12 — cursor dentro de comentário retorna vazio ───────────────────
+// ── C10, C11, C12 — cursor inside comment returns empty ──
 //
-// Gleam refs: `ignore_completions_in_empty_comment`,
+// Refs: `ignore_completions_in_empty_comment`,
 //             `ignore_completions_in_middle_of_comment`,
 //             `ignore_completions_in_end_of_comment`
 
@@ -312,10 +309,10 @@ test "completion: cursor in empty comment returns empty" {
     defer c.deinit(gpa);
     const bindings = c.bindings() orelse return error.CompileFailed;
 
-    // linha 1: //
+    // line 1: //
     // 01
-    // col 0 = '/', col 1 = '/', col 2 = (após //)
-    // cursor em col 2 → dentro de comentário → guard retorna vazio
+    // col 0 = '/', col 1 = '/', col 2 = (after //)
+    // cursor at col 2 → inside comment → guard returns empty
     const cursor = h.pos(1, 2);
     const items = try engine.completion(gpa, source, cursor, bindings);
     defer {
@@ -341,10 +338,10 @@ test "completion: cursor in middle of comment returns empty" {
     defer c.deinit(gpa);
     const bindings = c.bindings() orelse return error.CompileFailed;
 
-    // linha 1: // hello world
+    // line 1: // hello world
     // 01 234567890123456
-    // col 0-1 = '//', col 7 = 'o' (meio de "world")
-    // cursor em col 7 → dentro de comentário → guard retorna vazio
+    // col 0-1 = '//', col 7 = 'o' (middle of "world")
+    // cursor at col 7 → inside comment → guard returns empty
     const cursor = h.pos(1, 7);
     const items = try engine.completion(gpa, source, cursor, bindings);
     defer {
@@ -370,10 +367,10 @@ test "completion: cursor at end of comment returns empty" {
     defer c.deinit(gpa);
     const bindings = c.bindings() orelse return error.CompileFailed;
 
-    // linha 1: // hello
+    // line 1: // hello
     // 01 23456789
-    // col 0-1 = '//', col 8 = fim da linha (após 'o')
-    // cursor em col 8 → ainda na linha com // → guard retorna vazio
+    // col 0-1 = '//', col 8 = end of line (after 'o')
+    // cursor at col 8 → still on line with // → guard returns empty
     const cursor = h.pos(1, 8);
     const items = try engine.completion(gpa, source, cursor, bindings);
     defer {
@@ -388,7 +385,7 @@ test "completion: cursor at end of comment returns empty" {
     try snap.assertCompletion(gpa, "completion_comment_end", source, cursor, items);
 }
 
-// ── C6 — bindings vazios ──────────────────────────────────────────────────────
+// ── C6 — empty bindings ──────────────────────────────────────────────────────
 
 test "completion: empty bindings returns empty list" {
     const gpa = std.testing.allocator;
@@ -418,7 +415,7 @@ test "completion: dot completes record fields" {
     defer c.deinit(gpa);
     const bindings = c.bindings() orelse return error.CompileFailed;
 
-    // "val gx = origin." → o ponto fica na col 15; cursor logo após (col 16).
+    // "val gx = origin." → dot is at col 15; cursor right after (col 16).
     const cursor = h.pos(2, 16);
     const items = try engine.completion(gpa, source, cursor, bindings);
     defer {
@@ -452,7 +449,7 @@ test "completion: dot completes enum variants" {
     defer c.deinit(gpa);
     const bindings = c.bindings() orelse return error.CompileFailed;
 
-    // "val s = Status." → o ponto fica na col 14; cursor logo após (col 15).
+    // "val s = Status." → dot is at col 14; cursor right after (col 15).
     const cursor = h.pos(1, 15);
     const items = try engine.completion(gpa, source, cursor, bindings);
     defer {

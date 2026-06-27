@@ -112,7 +112,7 @@ test "template: scope snapshot lookup ---- hit and miss" {
     defer env.deinit();
 
     try inferInto(&env, alloc,
-        \\pub struct Button {
+        \\pub record Button {
         \\    label: string,
         \\}
         \\pub fn html(comptime template: @Expr<string>) -> @Expr<string> {
@@ -136,7 +136,7 @@ test "template: scope snapshot lookup ---- hit and miss" {
     const json = try scope.toJsonAlloc(std.testing.allocator);
     defer std.testing.allocator.free(json);
     try std.testing.expectEqualStrings(
-        \\{"Button":"Struct","html":"Fn","c":"Val"}
+        \\{"Button":"Record_","html":"Fn","c":"Val"}
     , json);
 }
 
@@ -243,7 +243,7 @@ test "template: context exposes declaration position and scope for second-layer 
     defer env.deinit();
 
     try inferInto(&env, alloc,
-        \\pub struct Button {
+        \\pub record Button {
         \\    label: string,
         \\}
         \\pub fn dsl(comptime template: @Expr<string>) -> @Expr<string> {
@@ -258,7 +258,7 @@ test "template: context exposes declaration position and scope for second-layer 
     const json = try template.contextJsonAlloc(&captures[0], std.testing.allocator);
     defer std.testing.allocator.free(json);
     try std.testing.expectEqualStrings(
-        \\{"file":"","line":7,"col":13,"multiline":true,"text":"\n<Button/>\n","scope":{"Button":"Struct","dsl":"Fn","c":"Val"}}
+        \\{"file":"","line":7,"col":13,"multiline":true,"text":"\n<Button/>\n","scope":{"Button":"Record_","dsl":"Fn","c":"Val"}}
     , json);
 }
 
@@ -404,7 +404,7 @@ test "comptime: runtime template body ---- text() + build() end to end" {
 
 test "comptime: runtime template body ---- lookup miss drives control flow" {
     const src =
-        \\pub struct Button {
+        \\pub record Button {
         \\    label: string,
         \\}
         \\pub fn need(comptime t: @Expr<string>) -> @Expr<string> {
@@ -506,7 +506,7 @@ test "infer: a fn returning @ExprCustom<T> is recognized as a template fn" {
 
 test "comptime: q.custom executes `code` identically + the tree is retrievable by loc" {
     const src =
-        \\pub struct Item { id: i32 }
+        \\pub record Item { id: i32 }
         \\pub fn dsl<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
         \\    val code = e.build("41");
         \\    val leaf = CustomNode(kind: "field", span: Span(5, 9, 1), label: "property", ref: e.lookup("Item"), children: []);
@@ -562,7 +562,7 @@ test "comptime: q.custom executes `code` identically + the tree is retrievable b
     // `ref` carries the resolved origin-scope Binding (a `q.lookup` result).
     try std.testing.expect(leaf.ref != null);
     try std.testing.expectEqualStrings("Item", leaf.ref.?.name);
-    try std.testing.expectEqualStrings("Struct", leaf.ref.?.kind);
+    try std.testing.expectEqualStrings("Record_", leaf.ref.?.kind);
 }
 
 test "gate: the @ExprCustom carrier code names no sub-language" {
@@ -823,7 +823,7 @@ test "comptime: net-new ---- nested template call inside a template body" {
 
 test "template: markup DSL ---- <Component/> tags resolve to calls" {
     try assertCompilesOk(@src(),
-        \\val Element = struct implement @Context<Element, Element> { }
+        \\val Element = record implement @Context<Element, Element> { }
         \\fn fragment(items: Element[]) -> Element { Element(); }
         \\fn Page1() -> Element { Element(); }
         \\fn Page2() -> Element { Element(); }
@@ -836,7 +836,7 @@ test "template: markup DSL ---- <Component/> tags resolve to calls" {
 
 test "template: markup DSL ---- ${expr} splices as a text child" {
     try assertCompilesOk(@src(),
-        \\val Element = struct implement @Context<Element, Element> { }
+        \\val Element = record implement @Context<Element, Element> { }
         \\fn fragment(items: Element[]) -> Element { Element(); }
         \\fn text(value: string) -> Element { Element(); }
         \\pub fn html(comptime q: @Expr<string>) -> @Expr<Element> {

@@ -418,15 +418,6 @@ fn emitProgramOptsX(
                 try aw.writer.writeByte('\n');
                 firstEmitted = false;
             },
-            .@"struct" => |s| {
-                // Phantom `@Context` base structs are erased — emit no runtime code.
-                if (!isPhantomContextStruct(s)) {
-                    if (!firstEmitted) try aw.writer.writeByte('\n');
-                    try em.emitStruct(s);
-                    try aw.writer.writeByte('\n');
-                    firstEmitted = false;
-                }
-            },
             .record => |r| {
                 if (!firstEmitted) try aw.writer.writeByte('\n');
                 try em.emitRecord(r);
@@ -1161,10 +1152,6 @@ const Emitter = struct {
         defer record_methods.deinit();
         for (program.decls) |decl| switch (decl) {
             .record => |r| for (r.methods) |m| try record_methods.put(m.name, {}),
-            .@"struct" => |s| for (s.members) |mem| switch (mem) {
-                .method => |m| try record_methods.put(m.name, {}),
-                else => {},
-            },
             else => {},
         };
         for (program.decls) |decl| {
@@ -1245,10 +1232,7 @@ const Emitter = struct {
     fn collectClassNames(self: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| switch (decl) {
             .record => |r| try self.class_names.put(r.name, {}),
-            .@"struct" => |s| {
-                if (!isPhantomContextStruct(s)) try self.class_names.put(s.name, {});
-            },
-            // An imported record/struct is a class in its own module — a
+            // An imported record is a class in its own module — a
             // construction here (`App(8080, "/")`) still needs `new`.
             .use => |u| if (self.cross) |xc| {
                 for (u.imports) |imp| {

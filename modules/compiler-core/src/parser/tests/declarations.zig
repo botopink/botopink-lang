@@ -82,101 +82,6 @@ test "parser: full Drawable interface (field + abstract + default method)" {
     );
 }
 
-test "parser: empty struct" {
-    try h.assertParser(std.testing.allocator, @src(), "val Account = struct {}");
-}
-
-test "parser: struct with one field" {
-    try h.assertParser(std.testing.allocator, @src(), "val Account = struct { _balance: number = 0 }");
-}
-
-test "parser: struct with field and default" {
-    try h.assertParser(std.testing.allocator, @src(), "val Config = struct { host: string = \"localhost\" }");
-}
-
-test "parser: struct with a simple getter" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\val Account = struct {
-        \\    get balance(self: Self) -> number {
-        \\        return self._balance;
-        \\    }
-        \\}
-    );
-}
-
-test "parser: struct with a setter that throws" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\val Account = struct {
-        \\    set balance(self: Self, value: number) {
-        \\        throw Error(msg: "Saldo nao pode ser negativo");
-        \\    }
-        \\}
-    );
-}
-
-test "parser: setter with assign" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\val Account = struct {
-        \\    set balance(self: Self, value: number) {
-        \\        self._balance = value;
-        \\    }
-        \\}
-    );
-}
-
-test "parser: struct with a fn method (deposit)" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\val Account = struct {
-        \\    fn deposit(self: Self, amount: number) {
-        \\        self._balance += amount;
-        \\    }
-        \\}
-    );
-}
-
-test "parser: full Account struct (private field + getter + setter + method)" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\val Account = struct {
-        \\    _balance: number = 0,
-        \\    get balance(self: Self) -> number {
-        \\        return self._balance;
-        \\    }
-        \\    set balance(self: Self, value: number) {
-        \\        self._balance = value;
-        \\    }
-        \\    fn deposit(self: Self, amount: number) {
-        \\        self._balance += amount;
-        \\    }
-        \\}
-    );
-}
-
-test "parser: struct with inline implement single interface" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\val AuthState = struct implement Drawable {}
-    );
-}
-
-test "parser: struct with inline implement builtin generic" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\val AuthState = struct implement @Context<Element, AuthState> {}
-    );
-}
-
-test "parser: struct with inline implement multiple interfaces" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\val Widget = struct implement Drawable, @Context<Element, Widget> {}
-    );
-}
-
-test "parser: struct implement with array-typed field" {
-    // G5: an array-typed (suffixed) field inside an inline `struct implement`
-    // body must parse, just like a plain record field.
-    try h.assertParser(std.testing.allocator, @src(),
-        \\val E = struct implement @Context<E, E> { tag: string, children: E[] }
-    );
-}
-
 test "parser: implement generic interface for type" {
     // G6: a standalone `implement <generic-iface> for <Type>` must parse, both
     // for a builtin generic (`@Context<…>`) and a user generic (`Foo<A, B>`).
@@ -239,15 +144,6 @@ test "parser: record with declare fn (abstract method declaration)" {
     );
 }
 
-test "parser: struct with declare fn (abstract method declaration)" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\val Account = struct {
-        \\    fn deposit(self: Self) {}
-        \\    declare fn withdraw(self: Self) -> number;
-        \\}
-    );
-}
-
 test "parser: enum with declare fn (abstract method declaration)" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val Direction = enum {
@@ -285,23 +181,6 @@ test "parser: interface with multiple abstract methods (Canvas)" {
         \\    fn clear(self: Self),
         \\    fn drawLine(self: Self, x1: i32, y1: i32),
         \\    fn drawRect(self: Self, x: i32, y: i32, color: string),
-        \\}
-    );
-}
-
-test "parser: struct with private field, getter, setter with throw, and method" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\val Account = struct {
-        \\    _balance: number = 0,
-        \\    get balance(self: Self) -> number {
-        \\        return self._balance;
-        \\    }
-        \\    set balance(self: Self, value: number) {
-        \\        throw Error(msg: "Balance cannot be negative");
-        \\    }
-        \\    fn deposit(self: Self, amount: number) {
-        \\        self._balance += amount;
-        \\    }
         \\}
     );
 }
@@ -486,13 +365,6 @@ test "parser: annotation ---- fn multiple annotations" {
 test "parser: annotation ---- val form fn" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val maxval = #[target(.erlang)] fn() {}
-    );
-}
-
-test "parser: annotation ---- struct shorthand" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\#[target(.erlang)]
-        \\struct Point {}
     );
 }
 

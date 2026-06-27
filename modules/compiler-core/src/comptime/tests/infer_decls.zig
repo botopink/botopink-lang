@@ -51,27 +51,6 @@ test "infer: record with method" {
     );
 }
 
-test "infer: struct constructor" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Counter = struct {
-        \\    count: i32 = 0,
-        \\};
-        \\val c = Counter(0);
-    );
-}
-
-test "infer: struct with private field and method" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Account = struct {
-        \\    _balance: i32 = 0,
-        \\    fn deposit(self: Self, amount: i32) {
-        \\        self._balance += amount;
-        \\    }
-        \\};
-        \\val a = Account(0);
-    );
-}
-
 test "infer: pub fn basic ---- greet returns string" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\pub fn greet(name: string) -> string {
@@ -187,23 +166,6 @@ test "infer: interface with multiple abstract methods" {
     );
 }
 
-test "infer: struct with private field, getter, setter and method" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Account = struct {
-        \\    _balance: number = 0,
-        \\    get balance(self: Self) -> number {
-        \\        return self._balance;
-        \\    }
-        \\    set balance(self: Self, value: number) {
-        \\        self._balance = value;
-        \\    }
-        \\    fn deposit(self: Self, amount: number) {
-        \\        self._balance += amount;
-        \\    }
-        \\}
-    );
-}
-
 test "infer: record with fields and toString method" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val GPSCoordinates = record {
@@ -260,10 +222,10 @@ test "infer: doc comment on function" {
     );
 }
 
-test "infer: doc comment on struct" {
+test "infer: doc comment on record" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\//// A point in 2D space
-        \\val Point = struct { x: i32, y: i32 };
+        \\val Point = record { x: i32, y: i32 };
     );
 }
 

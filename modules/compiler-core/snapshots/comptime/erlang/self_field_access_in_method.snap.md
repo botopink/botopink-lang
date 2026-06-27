@@ -9,20 +9,3 @@ val Point = struct {
 };
 ```
 
------ TYPED AST JSON -- main.json
-```json
-{
-  "declarations": [
-    {
-      "ast": "struct_def",
-      "name": "Point",
-      "id": 0,
-      "fields": {
-        "x": "i32",
-        "y": "i32"
-      }
-    }
-  ]
-}
-```
-

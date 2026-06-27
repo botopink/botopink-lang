@@ -1,13 +1,10 @@
-/// Testes de find references — cobre `engine.references`.
-/// Snapshots em: snapshots/lsp/references_*.snap.md
-///
-/// Analogia Gleam: tests/reference.rs (49 testes / 61 snapshots).
+/// Find references tests — covers `engine.references`.
 const std = @import("std");
 const h = @import("./helpers.zig");
 const snap = @import("./snapshot.zig");
 const engine = @import("../engine.zig");
 
-// ── R1 — inclui declaração ────────────────────────────────────────────────────
+// ── R1 — includes declaration ──
 
 test "references: include_declaration=true returns decl + usages" {
     const gpa = std.testing.allocator;
@@ -21,7 +18,7 @@ test "references: include_declaration=true returns decl + usages" {
     defer arena.deinit();
 
     const tokens = try h.tokenize(arena.allocator(), source);
-    // cursor na declaração 'x' linha 0, col 4
+    // cursor on declaration 'x' line 0, col 4
     const cursor = h.pos(0, 4);
     const locs = try engine.references(gpa, h.TEST_URI, source, cursor, tokens, true);
     defer {
@@ -29,12 +26,12 @@ test "references: include_declaration=true returns decl + usages" {
         gpa.free(locs);
     }
 
-    // declaração + 2 usos = 3
+    // declaration + 2 usages = 3
     try std.testing.expectEqual(@as(usize, 3), locs.len);
     try snap.assertReferences(gpa, "references_include_decl", source, cursor, locs);
 }
 
-// ── R2 — exclui declaração ────────────────────────────────────────────────────
+// ── R2 — excludes declaration ──
 
 test "references: include_declaration=false returns only usages" {
     const gpa = std.testing.allocator;
@@ -55,12 +52,12 @@ test "references: include_declaration=false returns only usages" {
         gpa.free(locs);
     }
 
-    // apenas 2 usos (sem a declaração)
+    // only 2 usages (no declaration)
     try std.testing.expectEqual(@as(usize, 2), locs.len);
     try snap.assertReferences(gpa, "references_exclude_decl", source, cursor, locs);
 }
 
-// ── R3 — símbolo não utilizado ────────────────────────────────────────────────
+// ── R3 — unused symbol ──
 
 test "references: unused binding has no references" {
     const gpa = std.testing.allocator;
@@ -84,7 +81,7 @@ test "references: unused binding has no references" {
     try snap.assertReferences(gpa, "references_unused", source, cursor, locs);
 }
 
-// ── R4 — cursor em não-identifier ─────────────────────────────────────────────
+// ── R4 — cursor on non-identifier ──
 
 test "references: cursor on literal returns empty" {
     const gpa = std.testing.allocator;
@@ -126,7 +123,7 @@ test "references: returned ranges match token positions" {
         gpa.free(locs);
     }
 
-    // A declaração 'x' está na linha 0
+    // The declaration 'x' is on line 0
     var found_decl = false;
     for (locs) |loc| {
         if (loc.range.start.line == 0) {
@@ -138,7 +135,7 @@ test "references: returned ranges match token positions" {
     try snap.assertReferences(gpa, "references_ranges", source, h.pos(0, 4), locs);
 }
 
-// ── R6 — referências de fn ────────────────────────────────────────────────────
+// ── R6 — fn references ──
 
 test "references: fn references across multiple usages" {
     const gpa = std.testing.allocator;

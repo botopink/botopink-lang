@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Element = struct implement @Context<Element, Element> { }
+val Element = record implement @Context<Element, Element> { }
 fn cleanup() {
     0;
 }
@@ -15,6 +15,9 @@ fn Widget() -> Element {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
+class Element {
+}
+
 function cleanup() {
     0;
 }
@@ -27,7 +30,7 @@ function Widget() {
     useEffect(() => {
     cleanup();
 }, []);
-    Element();
+    new Element();
 }
 ```
 

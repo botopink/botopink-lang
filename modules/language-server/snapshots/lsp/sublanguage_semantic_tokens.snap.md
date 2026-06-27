@@ -1,6 +1,6 @@
 ----- SOURCE
 ```botopink
-pub struct Users { name: string }
+pub record Users { name: string }
 pub fn q<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
     val code = e.build("[1, 2]");
     val kw = CustomNode(kind: "kw", span: Span(0, 6, 1), label: "keyword", ref: null, children: []);
@@ -13,7 +13,7 @@ val xs = q "select name";
 
 ----- SEMANTIC TOKENS
   (0,0) +3  keyword  "pub"
-  (0,4) +6  keyword  "struct"
+  (0,4) +6  keyword  "record"
   (0,11) +5  type [declaration]  "Users"
   (0,19) +4  variable  "name"
   (0,25) +6  type [defaultLibrary]  "string"

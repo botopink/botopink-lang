@@ -67,7 +67,7 @@ test "foldingRange: consecutive use imports" {
 test "foldingRange: struct with methods" {
     const gpa = std.testing.allocator;
     const source =
-        \\struct Counter {
+        \\record Counter {
         \\    _count: i32 = 0,
         \\    fn increment(self: Self) {
         \\        self._count += 1;

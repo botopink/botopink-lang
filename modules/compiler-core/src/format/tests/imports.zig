@@ -94,12 +94,12 @@ test "format: multiple statements with import and types" {
         \\import {three};
         \\import {two};
         \\
-        \\pub val One = struct {};
+        \\pub val One = record {};
         \\
-        \\pub val Two = struct {};
+        \\pub val Two = record {};
         \\
-        \\pub val Three = struct {};
+        \\pub val Three = record {};
         \\
-        \\pub val Four = struct {};
+        \\pub val Four = record {};
     );
 }

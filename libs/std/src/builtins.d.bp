@@ -302,7 +302,7 @@ fn getContex<T>(comptime _: type) Context<T, any>
 // the companion types are top-level declarations (siblings of `Expr<E>`), not
 // nested members.
 
-pub struct Span {
+pub record Span {
     start: i32,
     end: i32,
     line: i32,
@@ -320,14 +320,14 @@ pub enum Part {
 pub enum BindingKind {
     Fn,
     Val,
-    Struct,
+    Record_,
     Enum,
     Interface,
 }
 
 // A name resolved in an expression's origin scope (V1: the caller module's
 // top-level declarations + imports — function locals are not visible).
-pub struct Binding {
+pub record Binding {
     name: string,
     kind: BindingKind,
 }
@@ -335,7 +335,7 @@ pub struct Binding {
 // Where an expression was written: the declaration position in the origin file.
 // `file` is the module path ("" for main); `line`/`col` point at the template
 // literal's opening quote (1-based).
-pub struct Source {
+pub record Source {
     file: string,
     line: i32,
     col: i32,
@@ -345,7 +345,7 @@ pub struct Source {
 // function) needs about its input in one object: where the template was
 // declared, its raw text, and its shape. The origin scope is reached via
 // `lookup`/`bindings`; the segmented view via `parts`.
-pub struct Context {
+pub record Context {
     source: Source,
     text: string,
     multiline: bool,
@@ -359,7 +359,7 @@ pub struct Context {
 // `kind`/`label` are opaque tags the lib picks; `span` indexes the
 // `Expr<string>` source text; `ref` optionally ties a node (a queried
 // collection, a column, …) to a caller-scope symbol via a `lookup` result.
-pub struct CustomNode {
+pub record CustomNode {
     kind: string,             // lib-chosen tag: "select" / "field" / "predicate" / "literal" …
     span: Span,               // offsets into the template's source text
     label: string,            // tooling token category: "keyword"/"property"/"string"/"number"/"operator"
@@ -371,7 +371,7 @@ pub struct CustomNode {
 // tree. The `code` half travels the ordinary `Expr<T>` expansion path (spliced,
 // lowered to every backend — runtime behaviour is unchanged); the `ast` half is
 // stored by call-location and is reference-only (the language server reads it).
-pub struct CustomExpr<T> {
+pub record CustomExpr<T> {
     code: Expr<T>,            // the botopink expression that actually runs
     ast: CustomNode,          // the sub-language tree, reference only
 }
@@ -413,26 +413,26 @@ pub enum DeclKind {
 
 // One annotation entry on a reflected declaration (`#[name(args…)]`). `args`
 // holds the raw argument lexemes in source order.
-pub struct DeclAnnotation {
+pub record DeclAnnotation {
     name: string,
     args: string[],
 }
 
 // One parameter of a reflected method/fn.
-pub struct Param {
+pub record Param {
     name: string,
     typeName: string,
 }
 
 // One field of a reflected record/struct, with its own annotations.
-pub struct Field {
+pub record Field {
     name: string,
     typeName: string,
     annotations: DeclAnnotation[],
 }
 
 // One method of a reflected record/struct/enum, with its own annotations.
-pub struct Method {
+pub record Method {
     name: string,
     params: Param[],
     returnType: string,

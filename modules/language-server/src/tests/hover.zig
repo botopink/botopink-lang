@@ -1,22 +1,9 @@
-/// Testes de hover — cobre `engine.hover`.
-/// Snapshots em: snapshots/lsp/hover_*.snap.md
-///
-/// Analogia Gleam: tests/hover.rs (128 testes / 127 snapshots).
-/// Formato (inspirado em Gleam):
-///   ----- SOURCE
-///   ```botopink
-///   val x = 42;
-///   ```
-///   ----- HOVER at (line 0, char 4)
-///   kind: markdown
-///   ```botopink
-///   x : i32
-///   ```
-const std = @import("std");
+/// Hover tests — covers `engine.hover`. = @import("std");
 const h = @import("./helpers.zig");
 const snap = @import("./snapshot.zig");
 const engine = @import("../engine.zig");
 const proto = @import("../protocol.zig");
+const std = @import("std");
 
 // ── H1 — val inteiro ──────────────────────────────────────────────────────────
 
@@ -54,7 +41,7 @@ test "hover: val string shows type string" {
     try snap.assertHover(gpa, "hover_val_string", source, h.pos(0, 4), result);
 }
 
-// ── H3 — keyword não tem hover ────────────────────────────────────────────────
+// ── H3 — keyword has no hover ──
 
 test "hover: keyword val returns null" {
     const gpa = std.testing.allocator;
@@ -73,7 +60,7 @@ test "hover: keyword val returns null" {
     try snap.assertHover(gpa, "hover_keyword_null", source, h.pos(0, 0), result);
 }
 
-// ── H4 — fn polimórfica ───────────────────────────────────────────────────────
+// ── H4 — polymorphic fn ──
 
 test "hover: fn binding shows function type" {
     const gpa = std.testing.allocator;

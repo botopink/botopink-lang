@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Counter = struct {
+val Counter = record {
     count: i32 = 0,
     fn inc() {
         self.count += 1;
@@ -12,7 +12,7 @@ val Counter = struct {
 ```erlang
 -module(main).
 
-%% struct Counter: count
+%% record Counter: count
 
 inc() ->
     %% field assignment is not directly supported in Erlang.

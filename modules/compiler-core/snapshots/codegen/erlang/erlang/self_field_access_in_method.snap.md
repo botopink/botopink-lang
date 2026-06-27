@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Point = struct {
+val Point = record {
     x: i32,
     y: i32,
     fn sum() -> i32 {
@@ -13,7 +13,7 @@ val Point = struct {
 ```erlang
 -module(main).
 
-%% struct Point: x, y
+%% record Point: x, y
 
 sum() ->
     (maps:get(x, Self) + maps:get(y, Self)).
