@@ -14,6 +14,7 @@
 const std = @import("std");
 const ast = @import("../ast.zig");
 const wasm = @import("./runtime/wasm.zig");
+const beam = @import("./runtime/beam.zig");
 
 // ── Shared types ──────────────────────────────────────────────────────────────
 
@@ -43,5 +44,8 @@ pub fn evaluate(
     entries: []const ComptimeEntry,
     build_root: []const u8,
 ) !RunResult {
+    if (@import("build_options").use_atomvm) {
+        return beam.run(allocator, io, entries, build_root);
+    }
     return wasm.run(allocator, io, entries, build_root);
 }

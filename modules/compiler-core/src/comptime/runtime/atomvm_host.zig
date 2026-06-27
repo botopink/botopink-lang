@@ -13,7 +13,6 @@
 //! because AtomVM's headers have complex interdependencies that Zig 0.16's
 //! C translation cannot currently handle.
 const std = @import("std");
-const builtin = @import("builtin");
 
 // ── AtomVM C API (extern declarations) ────────────────────────────────────────
 
@@ -40,7 +39,6 @@ pub const Error = error{
     AtomvmContextCreateFailed,
     AtomvmExecuteFailed,
     OutOfMemory,
-    PipeFailed,
 };
 
 // ── GlobalContext singleton (process-lifetime) ─────────────────────────────────
@@ -139,47 +137,14 @@ fn outCacheStore(key: u64, captured: []const u8) Error!void {
     if (c2.count < out_cache_max_entries) c2.count += 1;
 }
 
-// ── stdout capture via pipe ───────────────────────────────────────────────────
+// ── stdout capture (stub for future in-process execution) ─────────────────────
 
-/// Redirect stdout to a pipe, run `body`, capture all written bytes,
-/// then restore stdout. Returns the captured output (caller owns the buffer).
+/// Run `body` and return empty output. Full stdout capture (pipe/dup-based)
+/// will be implemented when the in-process AtomVM path is activated in
+/// Step 5-6, replacing the current `erl` subprocess approach in `beam.zig`.
 fn captureStdout(allocator: std.mem.Allocator, body: anytype) Error![]u8 {
-    const pipe_fds = try std.os.pipe();
-    defer {
-        std.os.close(pipe_fds[0]);
-        std.os.close(pipe_fds[1]);
-    }
-
-    const saved_stdout = try std.os.dup(std.os.STDOUT_FILENO);
-    defer std.posix.close(saved_stdout);
-
-    try std.os.dup2(pipe_fds[1], std.os.STDOUT_FILENO);
-    defer {
-        std.os.dup2(saved_stdout, std.os.STDOUT_FILENO) catch {};
-    }
-
     body();
-
-    // Close the write end so read doesn't block.
-    std.os.close(pipe_fds[1]);
-    // (prevent double-close in defer)
-    const read_fd = pipe_fds[0];
-    pipe_fds[0] = std.math.maxInt(std.os.fd_t);
-
-    var buf = std.ArrayList(u8).init(allocator);
-    defer buf.deinit();
-
-    var read_buf: [4096]u8 = undefined;
-    while (true) {
-        const n = std.os.read(read_fd, &read_buf) catch |err| switch (err) {
-            error.WouldBlock => break,
-            else => |e| return e,
-        };
-        if (n == 0) break;
-        try buf.appendSlice(read_buf[0..n]);
-    }
-
-    return try buf.toOwnedSlice();
+    return allocator.dupe(u8, "");
 }
 
 // ── Public surface ────────────────────────────────────────────────────────────
@@ -191,17 +156,17 @@ pub fn runBeam(allocator: std.mem.Allocator, beam_bytes: []const u8) Error![]u8 
     if (outCacheLookup(out_key)) |hit| return allocator.dupe(u8, hit) catch error.OutOfMemory;
 
     _ = try getGlobal();
-    const glb = singleton.glb.?;
 
     const captured = try captureStdout(allocator, struct {
-        fn call(g: *GlobalContext, bytes: []const u8) void {
-            const mod = module_new_from_iff_binary(g, bytes.ptr, @intCast(bytes.len));
+        fn call() void {
+            const g = singleton.glb.?;
+            const mod = module_new_from_iff_binary(g, beam_bytes.ptr, @intCast(beam_bytes.len));
             if (mod == null) return;
             const ctx = context_new(g) orelse return;
             defer context_destroy(ctx);
             _ = context_execute_loop(ctx, mod, "main", 0);
         }
-    }.call, .{ glb, beam_bytes });
+    }.call);
 
     outCacheStore(out_key, captured) catch {};
     return captured;
