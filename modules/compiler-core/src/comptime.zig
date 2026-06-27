@@ -398,6 +398,15 @@ pub fn warmWasm3Runtime(io: std.Io, gpa: std.mem.Allocator) !void {
     w3.warm(gpa) catch return;
 }
 
+/// Pre-spawn the persistent erl subprocess used for comptime val evaluation.
+/// Erlang/OTP cold-spawns in ~50ms; pre-warming keeps the first comptime
+/// evaluation's latency honest and prevents the first test from paying the
+/// spawn cost.
+pub fn warmPersistentErlRunner(io: std.Io, gpa: std.mem.Allocator) !void {
+    const erl = @import("./comptime/runtime/persistent_erl.zig");
+    erl.warm(gpa, io) catch return;
+}
+
 pub fn getStdlibTemplate(gpa: std.mem.Allocator) !*const Env {
     while (true) {
         const s = stdlib_template_init.load(.acquire);

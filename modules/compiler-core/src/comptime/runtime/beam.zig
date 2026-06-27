@@ -60,7 +60,7 @@ pub fn buildScript(allocator: std.mem.Allocator, entries: []const eval.ComptimeE
 
     try bw.print("-module({s}).\n", .{mod_name});
     try bw.print("-export([main/0]).\n", .{});
-    try bw.print("main() -> io:format(\"~s\", [\"{s}\"]).\n", .{erl_str.items});
+    try bw.print("main() -> \"{s}\".\n", .{erl_str.items});
 
     return aw.toOwnedSlice();
 }
@@ -173,11 +173,9 @@ fn parseResults(
     data: []const u8,
     out: *std.StringHashMap([]const u8),
 ) !void {
-    // io:format wraps in quotes. Strip the outer Erlang string quoting.
+    // The persistent erl server returns the module's main/0 result formatted
+    // with io:format("~s~n", [Result]). Strip the trailing newline.
     var stripped = data;
-    // Erlang io:format("~s", ["..."]) outputs the string without extra wrapping
-    // but trailed by "ok". Actually io:format returns ok, so the output
-    // is just the formatted string followed by newline.
     if (stripped.len > 0 and stripped[stripped.len - 1] == '\n') stripped = stripped[0 .. stripped.len - 1];
 
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, stripped, .{});
@@ -257,19 +255,20 @@ fn parseResults(
 
 // ── Public entry point ────────────────────────────────────────────────────────
 
-/// Evaluate `entries` via Erlang/OTP (`erlc` + `erl`).
+/// Evaluate `entries` via the persistent erl subprocess.
 ///
-/// Generates an Erlang source module, compiles it via `erlc`, runs it via
-/// `erl -noshell -run <module> main -run init stop`, captures stdout, and
-/// parses the captured JSON.
+/// Generates an Erlang source module, writes it to a tmp file, and delegates
+/// compilation + execution to the persistent erl process. Returns a `RunResult`
+/// with the generated script and evaluated values.
 pub fn run(
     allocator: std.mem.Allocator,
     io: std.Io,
     entries: []const eval.ComptimeEntry,
     build_root: []const u8,
 ) !eval.RunResult {
+    const persistent_erl = @import("./persistent_erl.zig");
+
     // Compute a stable hash from the entries for the module/file name.
-    // Use the entries IDs as input so the hash is deterministic across runs.
     var hash_input: std.ArrayListUnmanaged(u8) = .empty;
     defer hash_input.deinit(allocator);
     for (entries) |e| {
@@ -295,33 +294,10 @@ pub fn run(
     defer allocator.free(erl_path);
     try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = erl_path, .data = src });
 
-    // Compile with erlc.
-    const compile_result = std.process.run(allocator, io, .{
-        .argv = &.{ "erlc", "-o", tmp_dir, erl_path },
-    }) catch |err| switch (err) {
-        error.FileNotFound => return error.AtomvmExecuteFailed,
-        else => return err,
-    };
-    defer allocator.free(compile_result.stdout);
-    defer allocator.free(compile_result.stderr);
-    if (compile_result.term != .exited or compile_result.term.exited != 0) {
-        return error.AtomvmModuleLoadFailed;
-    }
+    // Delegate to persistent erl: compile + execute in one round-trip.
+    const stdout = try persistent_erl.eval(allocator, io, erl_path);
+    errdefer allocator.free(stdout);
 
-    // Run with erl.
-    const beam_path = try std.fs.path.join(allocator, &.{ tmp_dir, mod_name });
-    defer allocator.free(beam_path);
-    // erl -noshell -run <module> main -run init stop
-    const run_result = std.process.run(allocator, io, .{
-        .argv = &.{ "erl", "-noshell", "-pa", tmp_dir, "-run", mod_name, "main", "-run", "init", "stop" },
-    }) catch |err| switch (err) {
-        error.FileNotFound => return error.AtomvmExecuteFailed,
-        else => return err,
-    };
-    defer allocator.free(run_result.stdout);
-    defer allocator.free(run_result.stderr);
-
-    const stdout = try allocator.dupe(u8, run_result.stdout);
     var values = std.StringHashMap([]const u8).init(allocator);
     errdefer values.deinit();
 
