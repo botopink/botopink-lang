@@ -4,13 +4,10 @@
 /// it via `erlc` to BEAM bytecode, executes it via `erl`, captures stdout,
 /// and parses the JSON output.
 ///
-/// Currently uses `erl` (full Erlang/OTP VM) for execution. The in-process
-/// AtomVM path (`atomvm_host.runBeam`) is wired in `runBeam` but requires
-/// estdlib bundling for `io:format` support; see Step 5-6.
+/// Currently uses `erl` (full Erlang/OTP VM) for execution via subprocess.
 const std = @import("std");
 const ast = @import("../../ast.zig");
 const eval = @import("../eval.zig");
-const atomvm_host = @import("./atomvm_host.zig");
 
 // ── Script builder ────────────────────────────────────────────────────────────
 

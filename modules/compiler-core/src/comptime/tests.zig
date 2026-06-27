@@ -26,7 +26,4 @@ test {
     _ = @import("./runtime/wat_runtime.zig");
     _ = @import("./template_eval.zig");
     _ = @import("./decorator_eval.zig");
-    if (@import("build_options").use_atomvm) {
-        _ = @import("./runtime/atomvm_host.zig");
-    }
 }
