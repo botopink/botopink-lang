@@ -1,7 +1,7 @@
 # Replace wasm3 comptime runtime with AtomVM
 
 **Version:** 1.0.0-beta                                                   <!-- canonical format; filename uses underscores: 1_0_0_beta.[name].md -->
-**Status:** planning
+**Status:** awaiting execution
 **Created:** 2026-06-27
 **Author:** ericfillipe
 
@@ -15,12 +15,12 @@
 > - **completed** — all steps are `completed`
 > - **cancelled** — spec discarded (explicit cancel decision)
 
-**Current:** planning
+**Current:** awaiting execution
 
 | Step   | Title                                      | Status    | Assignee |
 |--------|--------------------------------------------|-----------|----------|
-| Step 1 | Vendor AtomVM as a Zig module              | pending   |          |
-| Step 2 | Wire AtomVM into the build graph           | pending   |          |
+| Step 1 | Vendor AtomVM as a Zig module              | completed |          |
+| Step 2 | Wire AtomVM into the build graph           | completed |          |
 | Step 3 | Port comptime runtime host layer           | pending   |          |
 | Step 4 | Switch comptime codegen from WAT to BEAM   | pending   |          |
 | Step 5 | Replace inline WAT prelude with BP/Zig     | pending   |          |
@@ -77,7 +77,7 @@ Each step must be atomic and verifiable. Use the following statuses:
 
 ### Step 1 — Vendor AtomVM as a Zig module
 
-**Status:** pending
+**Status:** completed
 **Assignee:**
 
 **Description:**
@@ -97,7 +97,7 @@ The `build.zig` integration contract mirrors wasm3's:
 
 ### Step 2 — Wire AtomVM into the build graph
 
-**Status:** pending
+**Status:** completed
 **Assignee:**
 
 **Description:**

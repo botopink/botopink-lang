@@ -6,10 +6,18 @@
 ///   zig build run      → builds and runs the botopink CLI
 const std = @import("std");
 const wasm3 = @import("modules/wasm3/build.zig");
+const atomvm = @import("modules/atomvm/build.zig");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+
+    const use_atomvm = b.option(bool, "atomvm", "Use AtomVM comptime runtime instead of wasm3") orelse false;
+
+    // Build-time options exposed to modules via @import("build_options").
+    const build_options_opts = b.addOptions();
+    build_options_opts.addOption(bool, "use_atomvm", use_atomvm);
+    const build_options_mod = build_options_opts.createModule();
 
     // wasm3 needs libc; on Linux + system glibc 2.42 (Arch as of 2026-06-17)
     // Zig 0.16's linker errors on the new `.sframe` sections in the system
@@ -110,6 +118,12 @@ pub fn build(b: *std.Build) void {
     // are only linked into downstream Compile targets via `wasm3.link`.
     wasm3.exposeHeaders(b, core_mod);
 
+    core_mod.addImport("build_options", build_options_mod);
+
+    if (use_atomvm) {
+        atomvm.exposeHeaders(b, core_mod);
+    }
+
     // ── compiler-core tests ───────────────────────────────────────────────────
 
     const core_test_mod = b.addModule("botopink_tests", .{
@@ -120,6 +134,8 @@ pub fn build(b: *std.Build) void {
         },
     });
 
+    core_test_mod.addImport("build_options", build_options_mod);
+
     const test_filters = b.option([]const []const u8, "test-filter", "Only run tests matching filter") orelse &.{};
     const core_tests = b.addTest(.{
         .root_module = core_test_mod,
@@ -127,6 +143,10 @@ pub fn build(b: *std.Build) void {
     });
 
     wasm3.link(b, core_tests);
+
+    if (use_atomvm) {
+        atomvm.link(b, core_tests);
+    }
 
     const run_core_tests = b.addRunArtifact(core_tests);
     // Ensure snapshots are written inside modules/compiler-core/,
@@ -183,6 +203,10 @@ pub fn build(b: *std.Build) void {
 
     const lsp_tests = b.addTest(.{ .root_module = lsp_test_mod, .filters = test_filters });
     wasm3.link(b, lsp_tests);
+
+    if (use_atomvm) {
+        atomvm.link(b, lsp_tests);
+    }
     const run_lsp_tests = b.addRunArtifact(lsp_tests);
     run_lsp_tests.setCwd(b.path("modules/language-server"));
 
@@ -202,6 +226,10 @@ pub fn build(b: *std.Build) void {
 
     const cli_tests = b.addTest(.{ .root_module = cli_test_mod, .filters = test_filters });
     wasm3.link(b, cli_tests);
+
+    if (use_atomvm) {
+        atomvm.link(b, cli_tests);
+    }
     const run_cli_tests = b.addRunArtifact(cli_tests);
     run_cli_tests.setCwd(b.path("modules/compiler-cli"));
 
@@ -222,6 +250,10 @@ pub fn build(b: *std.Build) void {
     });
     wasm3.link(b, cli_exe);
 
+    if (use_atomvm) {
+        atomvm.link(b, cli_exe);
+    }
+
     b.installArtifact(cli_exe);
 
     // ── language-server (botopink-lsp executable) ─────────────────────────────
@@ -238,6 +270,10 @@ pub fn build(b: *std.Build) void {
         }),
     });
     wasm3.link(b, lsp_exe);
+
+    if (use_atomvm) {
+        atomvm.link(b, lsp_exe);
+    }
 
     b.installArtifact(lsp_exe);
 
