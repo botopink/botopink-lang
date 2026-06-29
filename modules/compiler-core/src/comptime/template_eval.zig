@@ -23,8 +23,6 @@ const template = @import("./template.zig");
 const commonJS = @import("../codegen/commonJS.zig");
 const wat = @import("../codegen/wat.zig");
 const persistent_node = @import("./runtime/persistent_node.zig");
-const wat_runtime = @import("./runtime/wat_runtime.zig");
-const wasm3_host = @import("./runtime/wasm3_host.zig");
 
 /// F8 — runtime dispatch for template body evaluation.
 ///
@@ -39,7 +37,7 @@ const wasm3_host = @import("./runtime/wasm3_host.zig");
 /// walker (`lookup`/`bindings`/`text` after expansion) and there is no
 /// wat-side `emitFnJs` analogue yet — `evaluateWat` returns
 /// `error.EvalFailed` so the caller transparently falls back to `node`.
-pub const Runtime = enum { node, wat };
+pub const Runtime = enum { node, wat, erl };
 
 // ── outcome ───────────────────────────────────────────────────────────────────
 
@@ -411,16 +409,32 @@ pub fn evaluateRuntime(
     plainArgs: []const template.PlainArg,
     runtime: Runtime,
 ) EvalError!Outcome {
-    if (runtime == .wat) {
-        if (evaluateWat(arena, io, tfn, captures, plainArgs)) |out| {
+    if (runtime == .erl) {
+        if (evaluateErl(arena, io, tfn, captures, plainArgs)) |out| {
             return out;
-        } else |_| {
-            // Fall through to JS path. Once F6 prelude bodies are filled
-            // and the wat body emitter ships, this fallback closes via a
-            // diagnostic instead of a silent route to JS.
-        }
+        } else |_| {}
     }
     return evaluateNode(arena, io, build_root, tfn, captures, plainArgs);
+}
+
+/// Persistent erl path for template body evaluation.
+/// Compiles the template body to Erlang source via erlang.zig codegen,
+/// merges with the comptime prelude module, and executes via the persistent
+/// erl subprocess. Returns error.EvalFailed until the erlang.zig template
+/// body emitter is implemented.
+fn evaluateErl(
+    arena: std.mem.Allocator,
+    io: std.Io,
+    tfn: ast.FnDecl,
+    captures: []const template.CapturedExpr,
+    plainArgs: []const template.PlainArg,
+) EvalError!Outcome {
+    _ = arena;
+    _ = io;
+    _ = tfn;
+    _ = captures;
+    _ = plainArgs;
+    return error.EvalFailed;
 }
 
 /// F8 scaffold for the wat3 path. Returns `error.EvalFailed` today —
@@ -437,282 +451,6 @@ pub fn evaluateRuntime(
 ///   4. Inspect the `$__bp_err` global: on trap with err≠0, parse the
 ///      stored payload as a `fail` outcome; otherwise parse the stdout
 ///      as the JSON outcome same shape the node path returns.
-fn evaluateWat(
-    arena: std.mem.Allocator,
-    io: std.Io,
-    tfn: ast.FnDecl,
-    captures: []const template.CapturedExpr,
-    plainArgs: []const template.PlainArg,
-) EvalError!Outcome {
-    _ = plainArgs;
-
-    // 1. Assemble the WAT source: prelude + module-wrapped template body
-    //    + entrypoint wrapper. The wat_runtime prelude carries the
-    //    (memory ...) declaration, bump heap, error register, and the
-    //    comptime surface; emitFnWat emits the template fn itself; the
-    //    trailing `_botopink_main` wrapper drives the call so wasm3's
-    //    runWat finds an entry point.
-    var aw: std.Io.Writer.Allocating = .init(arena);
-    defer aw.deinit();
-    const bw = &aw.writer;
-
-    bw.writeAll("(module\n") catch return error.EvalFailed;
-
-    const prelude_bytes = wat_runtime.prelude(arena, io) catch return error.EvalFailed;
-    bw.writeAll(prelude_bytes) catch return error.EvalFailed;
-
-    // 2. Per-capture descriptor blob, embedded at fixed offsets in linear
-    //    memory. Offsets start above the prelude's reserved page-0
-    //    region (~300 bytes used by static prefixes/iovec scratch). Each
-    //    capture gets a length-prefixed text buffer.
-    //    Layout: cap0 at offset 600, cap1 at offset 600 + cap0.len + 4, ...
-    //    For now we support a single capture (the audit's most common
-    //    shape — `template_eval` always sees ≥ 1 capture, and the body's
-    //    surface methods all operate on the lead capture). Multi-capture
-    //    extends linearly.
-    const CAPS_BASE: u32 = 600;
-    var cap_offset: u32 = CAPS_BASE;
-    for (captures) |cap| {
-        const blob = wat_runtime.appendDescriptorBytes(arena, &cap) catch return error.EvalFailed;
-        bw.print("(data (i32.const {d}) \"", .{cap_offset}) catch return error.EvalFailed;
-        for (blob) |b| switch (b) {
-            '\n' => bw.writeAll("\\n") catch return error.EvalFailed,
-            '"' => bw.writeAll("\\\"") catch return error.EvalFailed,
-            '\\' => bw.writeAll("\\\\") catch return error.EvalFailed,
-            else => if (b < 0x20 or b >= 0x7f) {
-                bw.print("\\{x:0>2}", .{b}) catch return error.EvalFailed;
-            } else {
-                bw.writeByte(b) catch return error.EvalFailed;
-            },
-        };
-        bw.writeAll("\")\n") catch return error.EvalFailed;
-        cap_offset += @intCast(blob.len);
-    }
-
-    // Emit data segments for capture param names (used by passthrough detection).
-    var param_name_offsets = try arena.alloc(u32, captures.len);
-    var current_data_off: u32 = cap_offset;
-    for (captures, 0..) |cap, i| {
-        const name_bytes = cap.paramName;
-        bw.print("(data (i32.const {d}) \"", .{current_data_off}) catch return error.EvalFailed;
-        // Write length prefix (4 bytes LE) + name bytes
-        {
-            const lenbytes = [4]u8{
-                @truncate(name_bytes.len),
-                @truncate(name_bytes.len >> 8),
-                @truncate(name_bytes.len >> 16),
-                @truncate(name_bytes.len >> 24),
-            };
-            for (lenbytes) |lc| bw.print("\\{x:0>2}", .{lc}) catch return error.EvalFailed;
-            for (name_bytes) |b| switch (b) {
-                '\n' => bw.writeAll("\\n") catch return error.EvalFailed,
-                '"' => bw.writeAll("\\\"") catch return error.EvalFailed,
-                '\\' => bw.writeAll("\\\\") catch return error.EvalFailed,
-                else => if (b < 0x20 or b >= 0x7f) {
-                    bw.print("\\{x:0>2}", .{b}) catch return error.EvalFailed;
-                } else {
-                    bw.writeByte(b) catch return error.EvalFailed;
-                },
-            };
-        }
-        bw.writeAll("\")\n") catch return error.EvalFailed;
-        param_name_offsets[i] = current_data_off;
-        current_data_off += 4 + @as(u32, @intCast(name_bytes.len));
-    }
-
-    wat.emitFnWat(arena, bw, tfn) catch return error.EvalFailed;
-
-    // 3. Entrypoint wrapper. For each capture, construct a handle via
-    //    `__capture(param=0, descriptor_ptr, parts_offset)`,
-    //    then call the template fn with the handles as positional args.
-    //    Save capture pointers in locals to detect passthrough returns.
-    bw.writeAll(
-        "  (func $_botopink_main (export \"_botopink_main\") (export \"_start\")\n" ++
-        "    (local $__r i32) (local $__p i32)",
-    ) catch return error.EvalFailed;
-    for (captures, 0..) |_, i| {
-        bw.print(" (local $__cap{d} i32)", .{i}) catch return error.EvalFailed;
-    }
-    bw.writeAll("\n") catch return error.EvalFailed;
-    cap_offset = CAPS_BASE;
-    for (captures, 0..) |cap, i| {
-        const blob = wat_runtime.appendDescriptorBytes(arena, &cap) catch return error.EvalFailed;
-        const parts_off = wat_runtime.partsOffsetInDescriptor(blob);
-        bw.print(
-            \\    ;; capture {s}
-            \\    i32.const 0
-            \\    i32.const {d}
-            \\    i32.const {d}
-            \\    call $__capture
-            \\    local.tee $__cap{d}
-            \\
-        , .{ cap.paramName, cap_offset, cap_offset + parts_off, i }) catch return error.EvalFailed;
-        cap_offset += @intCast(blob.len);
-    }
-    // Push all capture handles as args to the template fn.
-    for (captures, 0..) |_, i| {
-        bw.print("    local.get $__cap{d}\n", .{i}) catch return error.EvalFailed;
-    }
-    bw.print("    call ${s}\n", .{tfn.name}) catch return error.EvalFailed;
-
-    // 4. Outcome emission — the wrapper inspects the return type and emits the
-    //    appropriate JSON envelope (mirroring the JS buildScript's
-    //    r.__code / r.__custom inspection). The return value is a record
-    //    pointer from a constructor like $__code or $__capture__custom.
-    if (tfn.returnType) |rt| {
-        if (rt.isExprCustomType()) {
-            // Return is __custom record: { code_ptr: i32, ast_ptr: i32 }
-            bw.writeAll(
-                \\    ;; emit custom outcome from return value
-                \\    local.tee $__r
-                \\    ;; stash ast_ptr at address 0 for host to read post-execution
-                \\    i32.const 0
-                \\    local.get $__r
-                \\    i32.load offset=4
-                \\    i32.store
-                \\    ;; emit code half
-                \\    local.get $__r
-                \\    i32.load
-                \\    local.tee $__p
-                \\    i32.load
-                \\    local.get $__p
-                \\    i32.const 4
-                \\    i32.add
-                \\    i32.const 0
-                \\    i32.const 0
-                \\    call $__emit_outcome_custom
-                \\
-            ) catch return error.EvalFailed;
-        } else if (rt.isExprType()) {
-            // Check capture passthrough first, then kind dispatch.
-            bw.writeAll("    ;; outcome dispatch\n    local.set $__r\n") catch return error.EvalFailed;
-            for (captures, 0..) |cap, i| {
-                bw.print(
-                    \\    local.get $__r
-                    \\    local.get $__cap{d}
-                    \\    i32.eq
-                    \\    if
-                    \\      i32.const {d}
-                    \\      i32.const {d}
-                    \\      call $__emit_outcome_capture
-                    \\      return
-                    \\    end
-                    \\
-                , .{ i, param_name_offsets[i] + 4, cap.paramName.len }) catch return error.EvalFailed;
-            }
-            // Fall through: code or value outcome.
-            bw.writeAll(
-                \\    ;; kind dispatch: 0=code, 1=value
-                \\    global.get $__bp_outcome_kind
-                \\    i32.const 1
-                \\    i32.eq
-                \\    if
-                \\      local.get $__r
-                \\      drop
-                \\      call $__emit_outcome_value
-                \\    else
-                \\      local.get $__r
-                \\      i32.load
-                \\      local.tee $__p
-                \\      i32.load
-                \\      local.get $__p
-                \\      i32.const 4
-                \\      i32.add
-                \\      call $__emit_outcome_code
-                \\    end
-                \\
-            ) catch return error.EvalFailed;
-        } else {
-            bw.writeAll("    drop\n") catch return error.EvalFailed;
-        }
-    } else {
-        bw.writeAll("    drop\n") catch return error.EvalFailed;
-    }
-    bw.writeAll("  )\n") catch return error.EvalFailed;
-
-    bw.writeAll(")\n") catch return error.EvalFailed;
-
-    const wat_source = aw.toOwnedSlice() catch return error.EvalFailed;
-
-    // 4. Hand off to wasm3. For @ExprCustom returns, also capture
-    //    linear memory so we can read the CustomNode tree.
-    const is_custom = if (tfn.returnType) |rt| rt.isExprCustomType() else false;
-    if (is_custom) {
-        const result = wasm3_host.runWatGetMem(arena, wat_source, 0, 0) catch return error.EvalFailed;
-        const out = result.stdout;
-        const mem = result.memory;
-        defer arena.free(mem);
-        if (out.len == 0) return error.EvalFailed;
-        var outcome = parseOutcome(arena, out) catch return error.EvalFailed;
-
-        // Read the CustomNode tree from memory. The wrapper stashed
-        // ast_ptr at linear memory offset 0.
-        if (mem.len >= 4) {
-            const ast_ptr = std.mem.readInt(u32, mem[0..4], .little);
-            if (ast_ptr != 0) {
-                outcome.custom.root = template.readCustomNodeFromMemory(arena, mem, ast_ptr) catch return error.EvalFailed;
-            }
-        }
-        return outcome;
-    }
-
-    const out = wasm3_host.runWat(arena, wat_source) catch return error.EvalFailed;
-
-    if (out.len == 0) return error.EvalFailed;
-    return parseOutcome(arena, out) catch error.EvalFailed;
-}
-
-// F8 readiness gate. Pin that the dispatcher exists and that the wat
-// path's scaffold returns EvalFailed (so the node fallback always wins
-// until F6 prelude bodies + the wat body emitter land).
-test "F8 evaluateRuntime dispatches node default; wat scaffold falls back to node" {
-    // The Runtime enum exists and has both arms.
-    try std.testing.expect(@hasDecl(@This(), "Runtime"));
-    const r_node: Runtime = .node;
-    const r_wat: Runtime = .wat;
-    try std.testing.expect(r_node == .node);
-    try std.testing.expect(r_wat == .wat);
-
-    // evaluateRuntime and evaluateWat are both exposed at module level.
-    try std.testing.expect(@hasDecl(@This(), "evaluateRuntime"));
-}
-
-// F8 end-to-end: the WAT module assembly works. Builds the prelude +
-// emits a minimal template fn through emitFnWat; passes the combined
-// source through wat_to_wasm.compile to verify it's syntactically
-// valid WAT that the wasm3 host could accept. Doesn't run the result
-// — the runtime contract (RUN LOG parsing back into Outcome) lands
-// in F9-tail.
-test "F8 evaluateWat assembles a syntactically valid wat module" {
-    const allocator = std.testing.allocator;
-    const wat_to_wasm = @import("./runtime/wat_to_wasm.zig");
-
-    // Build the same WAT shape evaluateWat does, minus the body emitter
-    // (we don't have a real ast.FnDecl handy in this unit context). The
-    // shape we verify here is: (module + prelude + close paren). If the
-    // prelude assembles cleanly, the half-test is satisfied.
-    var aw: std.Io.Writer.Allocating = .init(allocator);
-    defer aw.deinit();
-    try aw.writer.writeAll("(module\n");
-    const prelude_bytes = try wat_runtime.prelude(allocator, std.testing.io);
-    defer allocator.free(prelude_bytes);
-    try aw.writer.writeAll(prelude_bytes);
-    try aw.writer.writeAll(")\n");
-
-    const wat_source = try aw.toOwnedSlice();
-    defer allocator.free(wat_source);
-
-    // Roundtrip through wat_to_wasm: a syntactically invalid prelude
-    // would fail to parse here, so a successful compile pins the shape.
-    const wasm_bytes = wat_to_wasm.compile(allocator, wat_source) catch |err| {
-        std.debug.print("wat_to_wasm.compile failed: {s}\n", .{@errorName(err)});
-        return error.WatCompileFailed;
-    };
-    defer allocator.free(wasm_bytes);
-
-    try std.testing.expect(wasm_bytes.len > 0);
-}
-
 fn evaluateNode(
     arena: std.mem.Allocator,
     io: std.Io,

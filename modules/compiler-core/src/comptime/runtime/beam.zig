@@ -1,26 +1,25 @@
-/// WebAssembly comptime evaluation backend — the single comptime runtime
-/// since v0.beta.21 (`wasm3-unified-runtime` spec).
+/// AtomVM/BEAM comptime evaluation backend — the BEAM counterpart to `wasm.zig`.
 ///
-/// Builds a WAT module from typed comptime expressions, runs it via the
-/// in-process embedded `wasm3` interpreter (`wasm3_host.runWat`), and parses
-/// the JSON array the module writes to fd 1.
+/// Builds an Erlang source module from typed comptime expressions, compiles
+/// it via `erlc` to BEAM bytecode, executes it via `erl`, captures stdout,
+/// and parses the JSON output.
+///
+/// Currently uses `erl` (full Erlang/OTP VM) for execution via subprocess.
 const std = @import("std");
 const ast = @import("../../ast.zig");
 const eval = @import("../eval.zig");
-const wasm3_host = @import("./wasm3_host.zig");
 
 // ── Script builder ────────────────────────────────────────────────────────────
 
-fn buildScript(allocator: std.mem.Allocator, entries: []const eval.ComptimeEntry) ![]u8 {
+/// Build an Erlang source module as text. The module's `main/0` function
+/// writes a JSON array of `[{"id":"ct_0","value":...}, ...]` to stdout
+/// via `io:format("~s", [Json])` and returns `ok`.
+/// `mod_name` is the Erlang module name (must match the filename).
+pub fn buildScript(allocator: std.mem.Allocator, entries: []const eval.ComptimeEntry, mod_name: []const u8) ![]u8 {
     var aw: std.Io.Writer.Allocating = .init(allocator);
     defer aw.deinit();
     const bw = &aw.writer;
 
-    // Collect string data for results
-    var data_buf: std.ArrayListUnmanaged(u8) = .empty;
-    defer data_buf.deinit(allocator);
-
-    // Pre-render each entry value as a string
     var rendered: std.ArrayListUnmanaged([]const u8) = .empty;
     defer {
         for (rendered.items) |s| allocator.free(s);
@@ -32,7 +31,6 @@ fn buildScript(allocator: std.mem.Allocator, entries: []const eval.ComptimeEntry
         try rendered.append(allocator, val_str);
     }
 
-    // Build JSON output: [{"id":"ct_0","value":...}, ...]
     var json_buf: std.ArrayListUnmanaged(u8) = .empty;
     defer json_buf.deinit(allocator);
     try json_buf.append(allocator, '[');
@@ -47,35 +45,22 @@ fn buildScript(allocator: std.mem.Allocator, entries: []const eval.ComptimeEntry
     try json_buf.append(allocator, ']');
 
     const json_str = json_buf.items;
-    const data_offset: u32 = 0;
-    const data_len: u32 = @intCast(json_str.len);
 
-    // Emit WAT module with WASI fd_write
-    try bw.writeAll("(module\n");
-    try bw.writeAll("  (import \"wasi_snapshot_preview1\" \"fd_write\"\n");
-    try bw.writeAll("    (func $fd_write (param i32 i32 i32 i32) (result i32)))\n");
-    try bw.writeAll("  (memory (export \"memory\") 1)\n");
-
-    // Data section with our JSON string
-    try bw.writeAll("  (data (i32.const 8) \"");
+    // Escape JSON for Erlang string (escape \ and ")
+    var erl_str: std.ArrayListUnmanaged(u8) = .empty;
+    defer erl_str.deinit(allocator);
     for (json_str) |c| {
         switch (c) {
-            '"' => try bw.writeAll("\\\""),
-            '\\' => try bw.writeAll("\\\\"),
-            '\n' => try bw.writeAll("\\n"),
-            '\t' => try bw.writeAll("\\t"),
-            else => try bw.writeByte(c),
+            '\\' => try erl_str.appendSlice(allocator, "\\\\"),
+            '"' => try erl_str.appendSlice(allocator, "\\\""),
+            '\n' => try erl_str.appendSlice(allocator, "\\n"),
+            else => try erl_str.append(allocator, c),
         }
     }
-    try bw.writeAll("\")\n");
 
-    // iov at offset 0: [ptr=8, len=data_len]
-    try bw.writeAll("  (func $main (export \"_start\")\n");
-    try bw.print("    (i32.store (i32.const 0) (i32.const 8))\n", .{});
-    try bw.print("    (i32.store (i32.const 4) (i32.const {d}))\n", .{data_len});
-    // fd_write(fd=1, iovs=0, iovs_len=1, nwritten=200)
-    try bw.print("    (drop (call $fd_write (i32.const 1) (i32.const {d}) (i32.const 1) (i32.const 200))))\n", .{data_offset});
-    try bw.writeAll(")\n");
+    try bw.print("-module({s}).\n", .{mod_name});
+    try bw.print("-export([main/0]).\n", .{});
+    try bw.print("main() -> \"{s}\".\n", .{erl_str.items});
 
     return aw.toOwnedSlice();
 }
@@ -115,7 +100,6 @@ fn renderExprValue(allocator: std.mem.Allocator, te: ast.TypedExpr) ![]const u8 
             },
             .null_ => return allocator.dupe(u8, "null"),
             .comment => return allocator.dupe(u8, "null"),
-            // Desugared to a `+` chain during inference; never reaches eval.
             .stringTemplate => unreachable,
         },
         .binaryOp => |b| {
@@ -189,7 +173,12 @@ fn parseResults(
     data: []const u8,
     out: *std.StringHashMap([]const u8),
 ) !void {
-    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, data, .{});
+    // The persistent erl server returns the module's main/0 result formatted
+    // with io:format("~s~n", [Result]). Strip the trailing newline.
+    var stripped = data;
+    if (stripped.len > 0 and stripped[stripped.len - 1] == '\n') stripped = stripped[0 .. stripped.len - 1];
+
+    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, stripped, .{});
     defer parsed.deinit();
 
     const arr = switch (parsed.value) {
@@ -230,8 +219,8 @@ fn parseResults(
                 var buf: std.ArrayListUnmanaged(u8) = .empty;
                 defer buf.deinit(allocator);
                 try buf.append(allocator, '[');
-                for (items.items, 0..) |elem, i| {
-                    if (i > 0) try buf.appendSlice(allocator, ", ");
+                for (items.items, 0..) |elem, j| {
+                    if (j > 0) try buf.appendSlice(allocator, ", ");
                     const elem_str = switch (elem) {
                         .integer => |n| try std.fmt.allocPrint(allocator, "{d}", .{n}),
                         .float => |f| try std.fmt.allocPrint(allocator, "{d}", .{f}),
@@ -266,24 +255,48 @@ fn parseResults(
 
 // ── Public entry point ────────────────────────────────────────────────────────
 
-/// Evaluate `entries` via the embedded wasm3 interpreter.
+/// Evaluate `entries` via the persistent erl subprocess.
 ///
-/// Builds a WAT module in memory, hands it to `wasm3_host.runWat` (which
-/// compiles WAT → binary WASM, instantiates in a per-call runtime, calls the
-/// entry, and captures fd 1 bytes), then parses the captured JSON.
+/// Generates an Erlang source module, writes it to a tmp file, and delegates
+/// compilation + execution to the persistent erl process. Returns a `RunResult`
+/// with the generated script and evaluated values.
 pub fn run(
     allocator: std.mem.Allocator,
     io: std.Io,
     entries: []const eval.ComptimeEntry,
     build_root: []const u8,
 ) !eval.RunResult {
-    _ = io;
-    _ = build_root;
-    const src = try buildScript(allocator, entries);
+    const persistent_erl = @import("./persistent_erl.zig");
+
+    // Compute a stable hash from the entries for the module/file name.
+    var hash_input: std.ArrayListUnmanaged(u8) = .empty;
+    defer hash_input.deinit(allocator);
+    for (entries) |e| {
+        try hash_input.appendSlice(allocator, e.id);
+    }
+    const hash = std.hash.Wyhash.hash(0, hash_input.items);
+    const mod_name = try std.fmt.allocPrint(allocator, "comptime_{x}", .{hash});
+    defer allocator.free(mod_name);
+
+    const src = try buildScript(allocator, entries, mod_name);
     errdefer allocator.free(src);
 
-    const stdout = try wasm3_host.runWat(allocator, src);
-    defer allocator.free(stdout);
+    const erl_filename = try std.fmt.allocPrint(allocator, "{s}.erl", .{mod_name});
+    defer allocator.free(erl_filename);
+
+    const tmp_dir_base = try std.fs.path.join(allocator, &.{ build_root, ".botopinkbuild", "tmp" });
+    defer allocator.free(tmp_dir_base);
+    const tmp_dir = try std.fmt.allocPrint(allocator, "{s}/{x}", .{ tmp_dir_base, hash });
+    defer allocator.free(tmp_dir);
+    try std.Io.Dir.cwd().createDirPath(io, tmp_dir);
+
+    const erl_path = try std.fs.path.join(allocator, &.{ tmp_dir, erl_filename });
+    defer allocator.free(erl_path);
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = erl_path, .data = src });
+
+    // Delegate to persistent erl: compile + execute in one round-trip.
+    const stdout = try persistent_erl.eval(allocator, io, erl_path);
+    errdefer allocator.free(stdout);
 
     var values = std.StringHashMap([]const u8).init(allocator);
     errdefer values.deinit();

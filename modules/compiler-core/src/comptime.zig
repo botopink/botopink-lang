@@ -375,27 +375,13 @@ var stdlib_template_env: Env = undefined;
 /// init function runs exactly once, every other caller is read-only.
 var stdlib_template_init: std.atomic.Value(u8) = .init(0);
 
-/// Pre-spawn the persistent `node` runner used by `template_eval` /
-/// `decorator_eval` / `runtime/node.zig`. Without warming, the FIRST test that
-/// triggers a template or decorator evaluation pays the ~50ms node cold-spawn
-/// cost on its row. Calling this from a test-binary warmup moves the cost out
-/// of any single test (mirrors `getStdlibTemplate`'s pre-warm contract).
-pub fn warmPersistentNodeRunner(io: std.Io, gpa: std.mem.Allocator) !void {
-    const pn = @import("./comptime/runtime/persistent_node.zig");
-    const out = pn.eval(gpa, io, "process.stdout.write(\"warm\");") catch return;
-    gpa.free(out);
-}
-
-/// Pre-init the embedded wasm3 runtime used by `runtime/wasm.zig` for every
-/// comptime val expression. wasm3 is an interpreter (no JIT spin-up), so the
-/// cold cost is sub-millisecond — but pre-warming keeps the first comptime
-/// test's `--time-report` row honest. Replaces the v0.beta.20
-/// `warmPersistentErlangRunner` (deleted with the four-runtime architecture
-/// in v0.beta.21).
-pub fn warmWasm3Runtime(io: std.Io, gpa: std.mem.Allocator) !void {
-    _ = io;
-    const w3 = @import("./comptime/runtime/wasm3_host.zig");
-    w3.warm(gpa) catch return;
+/// Pre-spawn the persistent erl subprocess used for comptime val evaluation.
+/// Erlang/OTP cold-spawns in ~50ms; pre-warming keeps the first comptime
+/// evaluation's latency honest and prevents the first test from paying the
+/// spawn cost.
+pub fn warmPersistentErlRunner(io: std.Io, gpa: std.mem.Allocator) !void {
+    const erl = @import("./comptime/runtime/persistent_erl.zig");
+    erl.warm(gpa, io) catch return;
 }
 
 pub fn getStdlibTemplate(gpa: std.mem.Allocator) !*const Env {

@@ -17,11 +17,3 @@ const comptimeMod = @import("./comptime.zig");
 test "_warmup: lazy-init the stdlib template once" {
     _ = try comptimeMod.getStdlibTemplate(std.testing.allocator);
 }
-
-test "_warmup: pre-spawn the persistent node runner" {
-    try comptimeMod.warmPersistentNodeRunner(std.testing.io, std.testing.allocator);
-}
-
-test "_warmup: pre-init the wasm3 runtime" {
-    try comptimeMod.warmWasm3Runtime(std.testing.io, std.testing.allocator);
-}

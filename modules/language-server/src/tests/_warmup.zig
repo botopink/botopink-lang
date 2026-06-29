@@ -11,11 +11,3 @@ const bp = @import("botopink");
 test "_warmup: lazy-init the stdlib template once" {
     _ = try bp.comptime_pipeline.getStdlibTemplate(std.testing.allocator);
 }
-
-test "_warmup: pre-spawn the persistent node runner" {
-    try bp.comptime_pipeline.warmPersistentNodeRunner(std.testing.io, std.testing.allocator);
-}
-
-test "_warmup: pre-init the wasm3 runtime" {
-    try bp.comptime_pipeline.warmWasm3Runtime(std.testing.io, std.testing.allocator);
-}

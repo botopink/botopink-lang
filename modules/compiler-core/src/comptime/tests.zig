@@ -21,9 +21,6 @@ test {
     _ = @import("tests/effect_generator.zig");
     _ = @import("primOpTemplate.zig");
     _ = @import("./diagnostics.zig");
-    _ = @import("./runtime/wat_to_wasm.zig");
-    _ = @import("./runtime/wasm3_host.zig");
-    _ = @import("./runtime/wat_runtime.zig");
     _ = @import("./template_eval.zig");
     _ = @import("./decorator_eval.zig");
 }
