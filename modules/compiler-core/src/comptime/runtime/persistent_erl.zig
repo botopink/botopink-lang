@@ -28,6 +28,7 @@ const std = @import("std");
 const Io = std.Io;
 const Child = std.process.Child;
 const File = std.Io.File;
+const erl_prelude = @import("./erl_prelude.zig");
 
 /// Erlang server module. Compiled once at warmup, loaded into the persistent
 /// `erl`. Each `eval` request compiles and executes a comptime module via
@@ -104,8 +105,13 @@ fn ensureSpawned(io: Io, allocator: std.mem.Allocator) !void {
             defer allocator.free(server_path);
             try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = server_path, .data = server_erl });
 
+            // Also compile the comptime prelude module (descriptor walkers).
+            const prelude_path = try std.fs.path.join(allocator, &.{ server_dir, "botopink_comptime_prelude.erl" });
+            defer allocator.free(prelude_path);
+            try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = prelude_path, .data = erl_prelude.source });
+
             const compile_result = std.process.run(allocator, io, .{
-                .argv = &.{ "erlc", "-o", server_dir, server_path },
+                .argv = &.{ "erlc", "-o", server_dir, server_path, prelude_path },
             }) catch |err| switch (err) {
                 error.FileNotFound => return error.PersistentErlNotFound,
                 else => return err,
