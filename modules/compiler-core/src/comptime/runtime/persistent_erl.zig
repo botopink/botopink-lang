@@ -166,7 +166,31 @@ fn readLine(io: Io, allocator: std.mem.Allocator) ![]u8 {
     return buf.toOwnedSlice(allocator);
 }
 
-/// Evaluate a comptime module at `beam_path` (an `.erl` source file) in the
+pub fn loadBeam(allocator: std.mem.Allocator, io: Io, beam_path: []const u8) ![]u8 {
+    try ensureSpawned(io, allocator);
+    lock();
+    defer unlock();
+
+    try state.stdin.writeStreamingAll(io, "load ");
+    try state.stdin.writeStreamingAll(io, beam_path);
+    try state.stdin.writeStreamingAll(io, "\n");
+
+    const line = try readLine(io, allocator);
+    errdefer allocator.free(line);
+
+    if (std.mem.startsWith(u8, line, "__BP_ERL_LOAD_ERROR__:")) {
+        allocator.free(line);
+        return error.PersistentErlCompileError;
+    }
+    if (std.mem.startsWith(u8, line, "__BP_ERL_BAD_COMMAND__:")) {
+        allocator.free(line);
+        return error.PersistentErlBadCommand;
+    }
+
+    return line;
+}
+
+/// Evaluate a comptime module at `erl_path` (an `.erl` source file) in the
 /// persistent erl process. Returns the captured stdout (one JSON line) allocated
 /// from `allocator` and owned by the caller.
 ///
