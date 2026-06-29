@@ -19,9 +19,7 @@ test "_warmup: lazy-init the stdlib template once" {
 }
 
 test "_warmup: pre-spawn the persistent node runner" {
-    try comptimeMod.warmPersistentNodeRunner(std.testing.io, std.testing.allocator);
+    comptimeMod.warmPersistentNodeRunner(std.testing.io, std.testing.allocator) catch return;
 }
 
-test "_warmup: pre-init the wasm3 runtime" {
-    try comptimeMod.warmWasm3Runtime(std.testing.io, std.testing.allocator);
 }

@@ -5,7 +5,6 @@
 ///   zig build test -Dtest-filter=<substr> → runs only matching tests
 ///   zig build run      → builds and runs the botopink CLI
 const std = @import("std");
-const wasm3 = @import("modules/wasm3/build.zig");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
@@ -109,11 +108,6 @@ pub fn build(b: *std.Build) void {
         },
     });
     // wasm3 headers are accessed via `@cImport` in
-    // `comptime/runtime/wasm3_host.zig`. The header path resolution is
-    // module-scoped, so it must be set on `core_mod` even when the C sources
-    // are only linked into downstream Compile targets via `wasm3.link`.
-    wasm3.exposeHeaders(b, core_mod);
-
     core_mod.addImport("build_options", build_options_mod);
 
     // ── compiler-core tests ───────────────────────────────────────────────────
@@ -133,8 +127,6 @@ pub fn build(b: *std.Build) void {
         .root_module = core_test_mod,
         .filters = test_filters,
     });
-
-    wasm3.link(b, core_tests);
 
     const run_core_tests = b.addRunArtifact(core_tests);
     // Ensure snapshots are written inside modules/compiler-core/,
@@ -190,7 +182,6 @@ pub fn build(b: *std.Build) void {
     });
 
     const lsp_tests = b.addTest(.{ .root_module = lsp_test_mod, .filters = test_filters });
-    wasm3.link(b, lsp_tests);
 
     const run_lsp_tests = b.addRunArtifact(lsp_tests);
     run_lsp_tests.setCwd(b.path("modules/language-server"));
@@ -210,7 +201,6 @@ pub fn build(b: *std.Build) void {
     });
 
     const cli_tests = b.addTest(.{ .root_module = cli_test_mod, .filters = test_filters });
-    wasm3.link(b, cli_tests);
 
     const run_cli_tests = b.addRunArtifact(cli_tests);
     run_cli_tests.setCwd(b.path("modules/compiler-cli"));
@@ -230,7 +220,6 @@ pub fn build(b: *std.Build) void {
             },
         }),
     });
-    wasm3.link(b, cli_exe);
 
     b.installArtifact(cli_exe);
 
@@ -247,7 +236,6 @@ pub fn build(b: *std.Build) void {
             },
         }),
     });
-    wasm3.link(b, lsp_exe);
 
     b.installArtifact(lsp_exe);
 
