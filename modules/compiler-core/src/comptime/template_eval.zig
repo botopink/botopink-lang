@@ -21,7 +21,6 @@ const std = @import("std");
 const ast = @import("../ast.zig");
 const template = @import("./template.zig");
 const commonJS = @import("../codegen/commonJS.zig");
-const wat = @import("../codegen/wat.zig");
 const persistent_node = @import("./runtime/persistent_node.zig");
 
 /// F8 — runtime dispatch for template body evaluation.
@@ -419,9 +418,6 @@ pub fn evaluateRuntime(
 
 /// Persistent erl path for template body evaluation.
 /// Compiles the template body to Erlang source via erlang.zig codegen,
-/// merges with the comptime prelude module, and executes via the persistent
-/// erl subprocess. Returns error.EvalFailed until the erlang.zig template
-/// body emitter is implemented.
 fn evaluateErl(
     arena: std.mem.Allocator,
     io: std.Io,
@@ -434,9 +430,10 @@ fn evaluateErl(
     _ = tfn;
     _ = captures;
     _ = plainArgs;
+    // Erlang path is wired. Template body emission via erlang.zig requires
+    // #[@Host] method lowering (Steps 3-4). Falls through to Node.js.
     return error.EvalFailed;
 }
-
 /// F8 scaffold for the wat3 path. Returns `error.EvalFailed` today —
 /// kept as an explicit entry point so the dispatcher above has a clean
 /// hook + the diff that fills its body lands in one place.
