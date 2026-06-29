@@ -39,7 +39,7 @@ const wasm3_host = @import("./runtime/wasm3_host.zig");
 /// walker (`lookup`/`bindings`/`text` after expansion) and there is no
 /// wat-side `emitFnJs` analogue yet — `evaluateWat` returns
 /// `error.EvalFailed` so the caller transparently falls back to `node`.
-pub const Runtime = enum { node, wat };
+pub const Runtime = enum { node, wat, erl };
 
 // ── outcome ───────────────────────────────────────────────────────────────────
 
@@ -411,6 +411,14 @@ pub fn evaluateRuntime(
     plainArgs: []const template.PlainArg,
     runtime: Runtime,
 ) EvalError!Outcome {
+    if (runtime == .erl) {
+        if (evaluateErl(arena, io, tfn, captures, plainArgs)) |out| {
+            return out;
+        } else |_| {
+            // Fall through to node path. The erl path will be filled in
+            // when erlang.zig gains template body emission support.
+        }
+    }
     if (runtime == .wat) {
         if (evaluateWat(arena, io, tfn, captures, plainArgs)) |out| {
             return out;
@@ -421,6 +429,26 @@ pub fn evaluateRuntime(
         }
     }
     return evaluateNode(arena, io, build_root, tfn, captures, plainArgs);
+}
+
+/// Persistent erl path for template body evaluation.
+/// Compiles the template body to Erlang source via erlang.zig codegen,
+/// merges with the comptime prelude module, and executes via the persistent
+/// erl subprocess. Returns error.EvalFailed until the erlang.zig template
+/// body emitter is implemented.
+fn evaluateErl(
+    arena: std.mem.Allocator,
+    io: std.Io,
+    tfn: ast.FnDecl,
+    captures: []const template.CapturedExpr,
+    plainArgs: []const template.PlainArg,
+) EvalError!Outcome {
+    _ = arena;
+    _ = io;
+    _ = tfn;
+    _ = captures;
+    _ = plainArgs;
+    return error.EvalFailed;
 }
 
 /// F8 scaffold for the wat3 path. Returns `error.EvalFailed` today —

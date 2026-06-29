@@ -33,7 +33,7 @@ const wasm3_host = @import("./runtime/wasm3_host.zig");
 /// `evaluate`; the `.wat` path is an opt-in scaffold that returns
 /// `error.EvalFailed` until F6 prelude bodies + the wat-side body
 /// emitter land.
-pub const Runtime = enum { node, wat };
+pub const Runtime = enum { node, wat, erl };
 
 const Sha256 = std.crypto.hash.sha2.Sha256;
 
@@ -288,12 +288,34 @@ pub fn evaluateRuntime(
     plainArgs: []const template.PlainArg,
     runtime: Runtime,
 ) EvalError!Outcome {
+    if (runtime == .erl) {
+        if (evaluateErl(arena, io, dfn, handleJson, plainArgs)) |out| {
+            return out;
+        } else |_| {}
+    }
     if (runtime == .wat) {
         if (evaluateWat(arena, io, dfn, handleJson, plainArgs)) |out| {
             return out;
         } else |_| {}
     }
     return evaluateNode(arena, io, build_root, dfn, handleJson, plainArgs);
+}
+
+/// Persistent erl path for decorator body evaluation. Returns error.EvalFailed
+/// until the erlang.zig decorator body emitter is implemented.
+fn evaluateErl(
+    arena: std.mem.Allocator,
+    io: std.Io,
+    dfn: ast.FnDecl,
+    handleJson: []const u8,
+    plainArgs: []const template.PlainArg,
+) EvalError!Outcome {
+    _ = arena;
+    _ = io;
+    _ = dfn;
+    _ = handleJson;
+    _ = plainArgs;
+    return error.EvalFailed;
 }
 
 /// F9 scaffold for the wat3 path. Returns `error.EvalFailed` today —
