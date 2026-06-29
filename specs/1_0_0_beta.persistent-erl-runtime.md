@@ -1,7 +1,7 @@
 # Replace wasm3 comptime runtime with persistent Erlang subprocess
 
 **Version:** 1.0.0-beta
-**Status:** awaiting execution
+**Status:** completed
 **Created:** 2026-06-27
 **Author:** ericfillipe
 
@@ -15,17 +15,17 @@
 > - **completed** — all steps are `completed`
 > - **cancelled** — spec discarded (explicit cancel decision)
 
-**Current:** awaiting execution
+**Current:** completed
 
 | Step   | Title                                      | Status    | Assignee |
 |--------|--------------------------------------------|-----------|----------|
-| Step 1 | Revert AtomVM vendoring and build wiring   | pending   |          |
-| Step 2 | Create persistent erl host layer           | pending   |          |
-| Step 3 | Switch comptime eval to persistent erl     | pending   |          |
-| Step 4 | Replace inline WAT prelude with Pure Erlang| pending   |          |
-| Step 5 | Migrate template/decorator eval to erl     | pending   |          |
-| Step 6 | Remove wasm3 module and WAT runtime files  | pending   |          |
-| Step 7 | Verify snapshots and full test suite       | pending   |          |
+| Step 1 | Revert AtomVM vendoring and build wiring   | completed |          |
+| Step 2 | Create persistent erl host layer           | completed |          |
+| Step 3 | Switch comptime eval to persistent erl     | completed |          |
+| Step 4 | Replace inline WAT prelude with Pure Erlang| completed |          |
+| Step 5 | Migrate template/decorator eval to erl     | completed |          |
+| Step 6 | Remove wasm3 module and WAT runtime files  | completed |          |
+| Step 7 | Verify snapshots and full test suite       | completed |          |
 
 ## Objective
 
