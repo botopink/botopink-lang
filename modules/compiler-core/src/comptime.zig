@@ -382,6 +382,35 @@ var stdlib_template_init: std.atomic.Value(u8) = .init(0);
 pub fn warmPersistentErlRunner(io: std.Io, gpa: std.mem.Allocator) !void {
     const erl = @import("./comptime/runtime/persistent_erl.zig");
     erl.warm(gpa, io) catch return;
+
+    // Compile template_runtime.bp to Erlang and write to the server directory
+    // so Span, CustomNode, Capture, DeclHandle types are available to
+    // template/decorator bodies compiled to Erlang.
+    const erlang_codegen = @import("./codegen/erlang.zig");
+    const session = compile(gpa, &.{.{ .path = "template_runtime", .source = template_runtime_src }}, io, null, "erlang") catch return;
+    defer session.deinit(gpa);
+    for (session.outputs.items) |out| {
+        if (out.outcome == .ok) {
+            var results = erlang_codegen.codegenEmit(gpa, &.{out}, .{ .targetSource = .erlang }) catch continue;
+            defer {
+                for (results.items) |*r| r.result.deinit(gpa);
+                results.deinit(gpa);
+            }
+            for (results.items) |r| {
+                if (r.result.js.len > 0) {
+                    const server_dir = ".botopinkbuild/tmp/persistent_erl";
+                    const tr_path = try std.fs.path.join(gpa, &.{ server_dir, "template_runtime.erl" });
+                    defer gpa.free(tr_path);
+                    std.Io.Dir.cwd().writeFile(io, .{ .sub_path = tr_path, .data = r.result.js }) catch break;
+                    _ = std.process.run(gpa, io, .{
+                        .argv = &.{ "erlc", "-o", server_dir, tr_path },
+                    }) catch {};
+                    break;
+                }
+            }
+            break;
+        }
+    }
 }
 
 pub fn getStdlibTemplate(gpa: std.mem.Allocator) !*const Env {
