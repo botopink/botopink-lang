@@ -1,4 +1,5 @@
 
+.spec/
 .zig-cache/
 zig-out/
 .botopinkbuild/
