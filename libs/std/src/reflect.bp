@@ -1,0 +1,49 @@
+//// Type reflection and record merging utilities.
+////
+//// `mergeRecords(A, B)` merges two record types into one with all fields.
+//// Conflicting field names with different types produce a `@comptimeError`.
+//// Comptime-only — all arguments and results are resolved at compile time.
+
+/// Merge two record types into a single record with all fields.
+/// Fields from `A` take precedence when a field name appears in both types
+/// with the same type; conflicting names with different types produce a
+/// comptime error.
+///
+/// Usage:
+/// ```
+/// record User { name: string, id: i32 }
+/// record Timestamps { createdAt: string, updatedAt: string }
+/// val UserWithTimestamps = mergeRecords(User, Timestamps);
+/// // → record { name: string, id: i32, createdAt: string, updatedAt: string }
+/// ```
+pub fn mergeRecords(comptime A: type, comptime B: type) -> type {
+    val infoA = @typeInfo(A);
+    val infoB = @typeInfo(B);
+
+    // Detect conflicts: same name, different types
+    loop (infoA.Record.fields) { fa ->
+        loop (infoB.Record.fields) { fb ->
+            if (fa.name == fb.name and fa.typeName != fb.typeName) {
+                @comptimeError(
+                    "conflito no campo '" + fa.name +
+                    "': " + fa.typeName + " vs " + fb.typeName
+                );
+            };
+        };
+    };
+
+    // Join fields (A first, then B without duplicates)
+    var fields: RecordField[] = [];
+    loop (infoA.Record.fields) { f ->
+        fields = fields.append(f);
+    };
+    loop (infoB.Record.fields) { fb ->
+        var duplicate = false;
+        loop (infoA.Record.fields) { fa ->
+            if (fa.name == fb.name) { duplicate = true; };
+        };
+        if (!duplicate) { fields = fields.append(fb); };
+    };
+
+    break @makeRecord(fields);
+}

@@ -575,6 +575,38 @@ const custom_ast_reflection_src =
     \\}
 ;
 
+/// Comptime type introspection types (§1.0.0-beta): `@typeInfo` returns a
+/// `TypeInfo` enum variant describing the structure of any type. These are
+/// registered into the global env so comptime code can pattern-match on
+/// introspection results. Mirrors the surface documented in
+/// `libs/std/src/builtins.d.bp`; registered like the `@Decl` cluster.
+const type_info_src =
+    \\pub record RecordField {
+    \\    val name: string,
+    \\    val typeName: string,
+    \\}
+    \\
+    \\pub record EnumVariant {
+    \\    val name: string,
+    \\    val fields: RecordField[],
+    \\}
+    \\
+    \\pub enum TypeInfoKind { Int, Float, Bool, String, Array, Record, Enum, Fn, Optional, Generic }
+    \\
+    \\pub enum TypeInfo {
+    \\    Int,
+    \\    Float,
+    \\    Bool,
+    \\    String,
+    \\    Array(element: string),
+    \\    Record(fields: RecordField[]),
+    \\    Enum(variants: EnumVariant[]),
+    \\    Fn(params: RecordField[], returnType: string),
+    \\    Optional(inner: string),
+    \\    Generic(name: string, params: string[]),
+    \\}
+;
+
 /// Compiler-internal `.bp` source for the wat3 comptime prelude. Re-exports
 /// `std_prelude.template_runtime_src` so `comptime/runtime/wat_runtime.zig`
 /// can read the embedded bp bytes without taking a direct `std_prelude`
@@ -935,6 +967,19 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
     {
         const alloc = env.arena;
         var lx = Lexer.init(custom_ast_reflection_src);
+        const tokens = try lx.scanAll(alloc);
+        var p = Parser.init(tokens);
+        const program = try p.parse(alloc);
+        _ = try infer.inferProgram(env, program);
+    }
+
+    // Type introspection types (§1.0.0-beta): `TypeInfo`, `RecordField`,
+    // `EnumVariant`, `TypeInfoKind` — the value domain of `@typeInfo`. Registered
+    // after `custom_ast_reflection_src` so the global env carries the complete
+    // comptime surface (Decl/Span/Annotation/… + TypeInfo/RecordField/…).
+    {
+        const alloc = env.arena;
+        var lx = Lexer.init(type_info_src);
         const tokens = try lx.scanAll(alloc);
         var p = Parser.init(tokens);
         const program = try p.parse(alloc);
