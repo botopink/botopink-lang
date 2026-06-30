@@ -1,7 +1,7 @@
 # Erlang comptime execution — speed-optimised pipeline
 
 **Version:** 1.0.0-beta
-**Status:** planning
+**Status:** completed
 **Created:** 2026-06-29
 **Author:** ericfillipe
 
@@ -9,7 +9,7 @@
 
 ## Status
 
-**Current:** planning
+**Current:** completed
 
 | Step | Title | Status | Assignee |
 |------|-------|--------|----------|
