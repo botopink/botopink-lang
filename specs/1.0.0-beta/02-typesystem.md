@@ -205,27 +205,22 @@ Build evaluation loop so `.bp` functions with `comptime` params can execute duri
 
 **Status:** pending **Assignee:**
 
-Six std functions built purely in user-space `.bp` code using the 3 core builtins:
+Six std functions built purely in user-space `.bp` code using the 2 core builtins + `#[@code]`:
 
-**Type manipulation** (`libs/std/src/reflect.bp`):
+**`libs/std/src/types.bp`:**
+
 ```botopink
+// Type construction — returns TypeInfo, lifted by #[@code]:
 #[@code]
-fn mergeRecords(comptime A: type, comptime B: type) -> TypeInfo {
-    val infoA = @typeInfo(A);
-    val infoB = @typeInfo(B);
-    // conflict detection + field join → return TypeInfo.Record(...)
-}
-
+fn mergeRecords(comptime A: type, comptime B: type) -> TypeInfo { ... }
 #[@code]
 fn partial(comptime T: type) -> TypeInfo { ... }
 #[@code]
 fn omit(comptime T: type, comptime name: string) -> TypeInfo { ... }
 #[@code]
 fn pick(comptime T: type, comptime names: string[]) -> TypeInfo { ... }
-```
 
-**Type introspection** (`libs/std/src/types.bp`):
-```botopink
+// Type introspection — pure functions built on @typeInfo:
 fn recordKeys(comptime T: type) -> string[] {
     // Uses @typeInfo(T).Record.fields → extracts field names
 }
