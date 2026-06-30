@@ -124,6 +124,7 @@ fn parseOutcome(arena: std.mem.Allocator, stdout: []const u8) !Outcome {
     return .{ .err = message };
 }
 
+
 fn evaluateErl(
     arena: std.mem.Allocator,
     io: std.Io,
@@ -136,13 +137,11 @@ fn evaluateErl(
     _ = tfn;
     _ = captures;
     _ = plainArgs;
-    // Template body emission to Erlang requires #[@Host] method lowering
-    // in erlang.zig. Methods annotated #[@Host] in template_runtime.bp
-    // (Capture.lookup, Capture.bindings, failRaw, makeExpr, makeCode,
-    // etc.) must be redirected to botopink_comptime_prelude module calls.
-    //
-    // The persistent erl infrastructure (BEAM cache, binary protocol,
-    // warmup, safe_call error handling) is fully operational for
-    // comptime val evaluation via beam.zig.
+    // Template body emission to Erlang requires #[@Host] method lowering.
+    // failRaw and compilerError are now regular BP functions (removed from
+    // #[@Host] in template_runtime.bp). Remaining #[@Host] methods:
+    // Capture.lookup, Capture.bindings, Capture.parts, Capture.context,
+    // Capture.custom, makeExpr, makeCode — these need redirects to
+    // botopink_comptime_prelude in erlang.zig codegen.
     return error.EvalFailed;
 }
