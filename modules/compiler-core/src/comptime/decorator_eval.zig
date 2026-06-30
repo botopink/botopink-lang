@@ -29,7 +29,7 @@ const commonJS = @import("../codegen/commonJS.zig");
 /// `evaluate`; the `.wat` path is an opt-in scaffold that returns
 /// `error.EvalFailed` until F6 prelude bodies + the wat-side body
 /// emitter land.
-pub const Runtime = enum { node, erl };
+pub const Runtime = enum { erl };
 
 const Sha256 = std.crypto.hash.sha2.Sha256;
 
@@ -253,12 +253,6 @@ fn jsonUsize(v: ?std.json.Value) ?usize {
     };
 }
 
-// ── entry point ───────────────────────────────────────────────────────────────
-
-/// Run decorator `dfn` over the serialized `handleJson` (the annotated decl's
-/// `@Decl` shape) in the node runtime, with `plainArgs` for its trailing
-/// parameters. Everything in the returned `Outcome` is allocated in `arena`. The
-/// script lands in `<build_root>/decorator/<fn>/`.
 pub fn evaluate(
     arena: std.mem.Allocator,
     io: std.Io,
@@ -267,33 +261,11 @@ pub fn evaluate(
     handleJson: []const u8,
     plainArgs: []const template.PlainArg,
 ) EvalError!Outcome {
-    // F9 default-flip — see template_eval.evaluate's matching comment.
-    return evaluateRuntime(arena, io, build_root, dfn, handleJson, plainArgs, .node);
+    _ = build_root;
+    return evaluateErl(arena, io, dfn, handleJson, plainArgs);
 }
 
-/// F9 — runtime-parameterised evaluate. Default callers use `.node`; the
-/// `.wat` path attempts the in-WAT prelude + wasm3 first; on failure
-/// falls through to the JS path so the suite stays green during
-/// F6/F7/F9 implementation.
-pub fn evaluateRuntime(
-    arena: std.mem.Allocator,
-    io: std.Io,
-    build_root: []const u8,
-    dfn: ast.FnDecl,
-    handleJson: []const u8,
-    plainArgs: []const template.PlainArg,
-    runtime: Runtime,
-) EvalError!Outcome {
-    if (runtime == .erl) {
-        if (evaluateErl(arena, io, dfn, handleJson, plainArgs)) |out| {
-            return out;
-        } else |_| {}
-    }
-    return evaluateNode(arena, io, build_root, dfn, handleJson, plainArgs);
-}
 
-/// Persistent erl path for decorator body evaluation. Returns error.EvalFailed
-/// until the erlang.zig decorator body emitter is implemented.
 fn evaluateErl(
     arena: std.mem.Allocator,
     io: std.Io,
@@ -307,38 +279,4 @@ fn evaluateErl(
     _ = handleJson;
     _ = plainArgs;
     return error.EvalFailed;
-}
-
-fn evaluateNode(
-    arena: std.mem.Allocator,
-    io: std.Io,
-    build_root: []const u8,
-    dfn: ast.FnDecl,
-    handleJson: []const u8,
-    plainArgs: []const template.PlainArg,
-) EvalError!Outcome {
-    const script = buildScript(arena, dfn, handleJson, plainArgs) catch return error.EvalFailed;
-
-    // Memo: identical decorator bodies → identical stdout. Re-parsing into a
-    // per-arena Outcome keeps lifetime semantics the same as the cold path.
-    const key_bytes = scriptKey(script);
-    const key: []const u8 = &key_bytes;
-    if (memoLookup(key)) |cached_stdout| {
-        return parseOutcome(arena, cached_stdout) catch error.EvalFailed;
-    }
-
-    // Spawn node to evaluate the JS script directly.
-    // One-shot spawn per decorator evaluation (~18ms).
-    var dir_buf: [512]u8 = undefined;
-    const tmp_dir = std.fmt.bufPrint(&dir_buf, "{s}/decorator/{s}", .{ build_root, dfn.name }) catch return error.EvalFailed;
-    var src_buf: [512]u8 = undefined;
-    const src_path = std.fmt.bufPrint(&src_buf, "{s}/main.js", .{tmp_dir}) catch return error.EvalFailed;
-
-    std.Io.Dir.cwd().deleteTree(io, tmp_dir) catch {};
-    std.Io.Dir.cwd().createDirPath(io, tmp_dir) catch return error.EvalFailed;
-    std.Io.Dir.cwd().writeFile(io, .{ .sub_path = src_path, .data = script }) catch return error.EvalFailed;
-
-    const res = std.process.run(arena, io, .{ .argv = &.{ "node", src_path } }) catch return error.EvalFailed;
-    memoStore(key, res.stdout);
-    return parseOutcome(arena, res.stdout) catch error.EvalFailed;
 }
