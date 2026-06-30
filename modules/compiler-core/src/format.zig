@@ -311,8 +311,18 @@ pub const Formatter = struct {
         return this.nil();
     }
 
-    fn fmtReturnTypeRef(this: *Formatter, ret: ?ast.TypeRef) !*const Doc {
-        if (ret) |r| return this.concat(try this.text(" -> "), try this.fmtTypeRef(r));
+    fn fmtReturnTypeRef(this: *Formatter, ret: ?ast.TypeRef, typeGuardParam: ?[]const u8) !*const Doc {
+        if (ret) |r| {
+            if (typeGuardParam) |param| {
+                return this.concatAll(&.{
+                    try this.text(" -> "),
+                    try this.text(param),
+                    try this.text(" is "),
+                    try this.fmtTypeRef(r),
+                });
+            }
+            return this.concat(try this.text(" -> "), try this.fmtTypeRef(r));
+        }
         return this.nil();
     }
 
@@ -1564,7 +1574,7 @@ pub const Formatter = struct {
             try this.text(m.name),
             try this.fmtGenericParams(m.genericParams),
             try this.fmtParams(m.params),
-            try this.fmtReturnTypeRef(m.returnType),
+            try this.fmtReturnTypeRef(m.returnType, null),
         });
         if (m.body) |stmts| {
             return this.concatAll(&.{
@@ -1836,7 +1846,7 @@ pub const Formatter = struct {
             try this.text(f.name),
             try this.fmtGenericParams(f.genericParams),
             try this.fmtParams(f.params),
-            try this.fmtReturnTypeRef(f.returnType),
+            try this.fmtReturnTypeRef(f.returnType, f.typeGuardParam),
             labelDoc,
             try this.text(" "),
             try this.fmtBody(f.body),

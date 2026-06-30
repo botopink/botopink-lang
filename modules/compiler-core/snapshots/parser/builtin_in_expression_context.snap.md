@@ -30,6 +30,7 @@
         "returnType": {
           "named": "Int"
         },
+        "typeGuardParam": null,
         "body": [
           {
             "expr": {

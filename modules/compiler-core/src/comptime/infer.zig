@@ -527,6 +527,17 @@ fn registerFnSignatures(env: *Env, program: ast.Program) InferError!void {
         .@"fn" => |f| {
             try env.bind(f.name, try buildFnSignatureType(env, f));
             registerDecoratorSig(env, f.name, f.params, f);
+            if (f.typeGuardParam) |paramName| {
+                var paramIndex: usize = 0;
+                for (f.params, 0..) |p, i| {
+                    if (std.mem.eql(u8, p.name, paramName)) { paramIndex = i; break; }
+                }
+                const narrowedName: []const u8 = if (f.returnType) |rt| switch (rt) {
+                    .named => |n| n,
+                    else => paramName,
+                } else paramName;
+                try env.typeGuardFns.put(f.name, .{ .paramIndex = paramIndex, .narrowedTypeName = narrowedName });
+            }
         },
         // A `declare fn` decorator (`declare fn service(comptime _: @Decl)`) —
         // the bodyless form a lib ships its markers as — parses as a delegate.
@@ -2857,6 +2868,24 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     // recursion across decls still needs a program-level pre-pass.)
     try env.bind(f.name, try env.funcType(paramTypes, retType));
 
+    // Register type guard info for narrowing at call sites.
+    if (f.typeGuardParam) |paramName| {
+        // Find the parameter index matching the guard parameter name.
+        var paramIndex: usize = 0;
+        for (f.params, 0..) |p, i| {
+            if (std.mem.eql(u8, p.name, paramName)) {
+                paramIndex = i;
+                break;
+            }
+        }
+        // Record the narrowed type name from the return type.
+        const narrowedName: []const u8 = if (f.returnType) |rt| switch (rt) {
+            .named => |n| n,
+            else => paramName,
+        } else paramName;
+        try env.typeGuardFns.put(f.name, .{ .paramIndex = paramIndex, .narrowedTypeName = narrowedName });
+    }
+
     // Infer body (for type checking; we ignore the result for now).
     for (f.body) |stmt| {
         _ = try inferExpr(env, stmt.expr);
@@ -4780,7 +4809,30 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
 /// Infer type for binary operation expressions
 fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
     const lhsTyped = try inferExprTyped(env, binop.lhs.*);
+
+    // AND condition narrowing: `x && x.field` — if LHS is an optional variable,
+    // narrow it before inferring the RHS so `.field` access resolves.
+    var andSnapshots: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
+    defer andSnapshots.deinit(env.arena);
+    if (binop.op == .@"and") {
+        if (binop.lhs.* == .identifier and binop.lhs.identifier.kind == .ident) {
+            const varName = binop.lhs.identifier.kind.ident;
+            const lhsTy = lhsTyped.getType().deref();
+            if (lhsTy.* == .named and std.mem.eql(u8, lhsTy.named.name, "optional") and lhsTy.named.args.len >= 1) {
+                const innerTy = lhsTy.named.args[0];
+                const old = env.lookup(varName);
+                try andSnapshots.append(env.arena, .{ .name = varName, .previous = old });
+                try env.bind(varName, innerTy);
+            }
+        }
+    }
+
     const rhsTyped = try inferExprTyped(env, binop.rhs.*);
+
+    // Restore after RHS inference.
+    if (andSnapshots.items.len > 0) {
+        try restorePatternBindings(env, andSnapshots.items);
+    }
     const lhsPtr = try makeTypedPtr(env, lhsTyped);
     const rhsPtr = try makeTypedPtr(env, rhsTyped);
 
@@ -5206,6 +5258,9 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
             const condTyped = try inferExprTyped(env, i.cond.*);
             const condPtr = try makeTypedPtr(env, condTyped);
 
+            var guardArgName: ?[]const u8 = null;
+            var guardNarrowedType: ?*T.Type = null;
+
             if (i.binding) |binding_name| {
                 // Null-check form: `if (x) { e -> ... }` — condition is optional, not bool.
                 // Bind the unwrapped inner type to `binding_name`.
@@ -5219,10 +5274,51 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
                 };
                 try env.bind(binding_name, innerTy);
             } else {
+                // Check for type guard call: `if (guardName(arg, ...))`
+                // Narrow the argument's type in the then-branch.
+                if (i.cond.* == .call) {
+                    const ci = i.cond.call.kind.call;
+                    if (env.typeGuardFns.get(ci.callee)) |guardInfo| {
+                        if (guardInfo.paramIndex < ci.args.len) {
+                            const argExpr = ci.args[guardInfo.paramIndex].value.*;
+                            if (argExpr == .identifier and argExpr.identifier.kind == .ident) {
+                                guardArgName = argExpr.identifier.kind.ident;
+                                const argTyped = try inferExprTyped(env, argExpr);
+                                const argTy = argTyped.getType().deref();
+                                const narrowed: *T.Type = switch (argTy.*) {
+                                    .named => |n| if (std.mem.eql(u8, n.name, "optional") and n.args.len == 1)
+                                        n.args[0]
+                                    else if (std.mem.eql(u8, n.name, guardInfo.narrowedTypeName))
+                                        argTy
+                                    else
+                                        try env.namedType(guardInfo.narrowedTypeName),
+                                    else => try env.namedType(guardInfo.narrowedTypeName),
+                                };
+                                guardNarrowedType = narrowed;
+                            }
+                        }
+                    }
+                }
                 try unifyAt(env, try env.namedType("bool"), condTyped.getType(), loc);
             }
 
+            // Narrow the argument in the then-branch for type guards.
+            var snapshots: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
+            defer snapshots.deinit(env.arena);
+            if (guardArgName) |argName| {
+                if (guardNarrowedType) |narrowedTy| {
+                    const old = env.lookup(argName);
+                    try snapshots.append(env.arena, .{ .name = argName, .previous = old });
+                    try env.bind(argName, narrowedTy);
+                }
+            }
+
             const thenTyped = try inferStmtsTyped(env, i.then_);
+
+            // Restore bindings after then-branch for type guards.
+            try restorePatternBindings(env, snapshots.items);
+            snapshots.clearAndFree(env.arena);
+
             const elseTyped = if (i.else_) |els| try inferStmtsTyped(env, els) else null;
 
             const bodyType = if (thenTyped.len > 0) thenTyped[thenTyped.len - 1].expr.getType() else try env.namedType("void");

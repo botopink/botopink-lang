@@ -30,6 +30,7 @@
         "returnType": {
           "typeparam": []
         },
+        "typeGuardParam": null,
         "body": [
           {
             "expr": {

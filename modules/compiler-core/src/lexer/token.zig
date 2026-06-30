@@ -81,6 +81,7 @@ pub const TokenKind = enum {
     get,
     @"if",
     implement,
+    @"is",
     import,
     macro,
     mod,

@@ -544,6 +544,10 @@ pub const Env = struct {
     /// `expandTrailingDefaults` can inject them at call sites — same rule as
     /// free-fn defaults; constructors take the same arity-check shape.
     ctorParams: std.StringHashMap([]const ast.Param),
+    /// Type guard function info, keyed by function name. A type guard
+    /// `fn f(x: T) -> x is NarrowedT` narrows `x` from `T` to `NarrowedT`
+    /// when called in an `if` condition or as a statement (assertion mode).
+    typeGuardFns: std.StringHashMap(TypeGuardInfo),
 
     pub fn init(arena: std.mem.Allocator) Env {
         return .{
@@ -590,6 +594,7 @@ pub const Env = struct {
             .decorators = std.StringHashMap(DecoratorSig).init(arena),
             .stdlibFnDecls = std.StringHashMap(ast.FnDecl).init(arena),
             .ctorParams = std.StringHashMap([]const ast.Param).init(arena),
+            .typeGuardFns = std.StringHashMap(TypeGuardInfo).init(arena),
         };
     }
 
@@ -657,6 +662,7 @@ pub const Env = struct {
             .decorators = try tmpl.decorators.cloneWithAllocator(arena),
             .stdlibFnDecls = try tmpl.stdlibFnDecls.cloneWithAllocator(arena),
             .ctorParams = try tmpl.ctorParams.cloneWithAllocator(arena),
+            .typeGuardFns = try tmpl.typeGuardFns.cloneWithAllocator(arena),
         };
     }
 
@@ -711,6 +717,7 @@ pub const Env = struct {
         self.decorators.deinit();
         self.stdlibFnDecls.deinit();
         self.ctorParams.deinit();
+        self.typeGuardFns.deinit();
         self.synthesisedEnumDecls.deinit();
         self.enumSectionRewrites.deinit();
     }
@@ -918,4 +925,11 @@ pub const Env = struct {
         // Fallback: treat as an opaque named type (forward reference, etc.)
         return self.namedType(name);
     }
+};
+
+/// Type guard information for narrowing at call sites.
+/// `fn f(x: T) -> x is NarrowedT` records the param index and narrowed type name.
+pub const TypeGuardInfo = struct {
+    paramIndex: usize,
+    narrowedTypeName: []const u8,
 };

@@ -62,6 +62,7 @@
             "is_builtin": false
           }
         },
+        "typeGuardParam": null,
         "body": []
       }
     }

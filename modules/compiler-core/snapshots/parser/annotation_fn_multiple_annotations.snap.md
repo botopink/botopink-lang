@@ -29,6 +29,7 @@
         "genericParams": [],
         "params": [],
         "returnType": null,
+        "typeGuardParam": null,
         "body": []
       }
     }

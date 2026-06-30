@@ -72,6 +72,7 @@
         "returnType": {
           "named": "bool"
         },
+        "typeGuardParam": null,
         "body": [
           {
             "expr": {

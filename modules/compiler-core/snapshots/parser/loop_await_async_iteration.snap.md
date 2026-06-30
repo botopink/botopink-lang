@@ -46,6 +46,7 @@
             "is_builtin": true
           }
         },
+        "typeGuardParam": null,
         "body": [
           {
             "expr": {

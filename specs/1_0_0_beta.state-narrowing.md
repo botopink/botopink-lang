@@ -1,7 +1,7 @@
 # State Narrowing — Control-Flow Type Refinement
 
 **Version:** 1.0.0-beta
-**Status:** planning
+**Status:** completed
 **Created:** 2026-06-30
 **Author:** ericfillipe
 **Replaces:** `1_0_0_beta.state-narrowing.md` (expanded with type guards from `1_0_0_beta.ts-advanced-types-bp.md` §2.4)
@@ -10,16 +10,16 @@
 
 ## Status
 
-**Current:** planning
+**Current:** completed
 
 | Step | Title | Status | Assignee |
 |------|-------|--------|----------|
 | Step 1 | Audit existing narrowing coverage | completed | ericfillipe |
 | Step 2 | Design narrowing test matrix | completed | ericfillipe |
-| Step 3 | Implement parser support for type guards | pending | |
-| Step 4 | Implement inference engine narrowing | pending | |
-| Step 5 | Implement comptime narrowing tests | pending | |
-| Step 6 | Implement codegen narrowing tests (all 4 backends) | pending | |
+| Step 3 | Implement parser support for type guards | completed | ericfillipe |
+| Step 4 | Implement inference engine narrowing | completed | ericfillipe |
+| Step 5 | Implement comptime narrowing tests | completed | ericfillipe |
+| Step 6 | Implement codegen narrowing tests (all 4 backends) | completed | ericfillipe |
 
 ## Objective
 

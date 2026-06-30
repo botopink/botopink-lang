@@ -42,6 +42,7 @@
         "returnType": {
           "named": "i32"
         },
+        "typeGuardParam": null,
         "body": [
           {
             "expr": {
