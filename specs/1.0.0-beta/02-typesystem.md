@@ -44,7 +44,7 @@ Types are embedded in compiler as Zig source. `RecordField.typeName` (not `type`
 // #[@code] annotation pattern:
 #[@code]
 fn makePoint() -> TypeInfo {
-    break TypeInfo.Record(fields: [
+    return TypeInfo.Record(fields: [
         RecordField(name: "x", typeName: i32),
         RecordField(name: "y", typeName: i32),
     ]);
@@ -99,7 +99,7 @@ The `#[@code]` annotation on a function tells the compiler: "this function retur
 // #[@code] lifts a TypeInfo return value into a type:
 #[@code]
 fn Point() -> TypeInfo {
-    break TypeInfo.Record(fields: [
+    return TypeInfo.Record(fields: [
         RecordField(name: "x", typeName: i32),
         RecordField(name: "y", typeName: i32),
     ]);
@@ -112,7 +112,7 @@ val p: Point() = Point()(x: 1, y: 2);  // Point() is the type
 // Works with generic type constructors too:
 #[@code]
 fn Pair(comptime A: type, comptime B: type) -> TypeInfo {
-    break TypeInfo.Record(fields: [
+    return TypeInfo.Record(fields: [
         RecordField(name: "first", typeName: A),
         RecordField(name: "second", typeName: B),
     ]);

@@ -298,7 +298,7 @@ val T = @TypeOf(getNum());  // T = i32
 // slug: code_annotation_point_type
 #[@code]
 fn Point() -> TypeInfo {
-    break TypeInfo.Record(fields: [
+    return TypeInfo.Record(fields: [
         RecordField(name: "x", typeName: i32),
         RecordField(name: "y", typeName: i32),
     ]);
@@ -309,7 +309,7 @@ val p: Point() = Point()(x: 1, y: 2);
 // slug: code_annotation_empty_record
 #[@code]
 fn Empty() -> TypeInfo {
-    break TypeInfo.Record(fields: []);
+    return TypeInfo.Record(fields: []);
 }
 val e = Empty()();
 // Round-trip: @typeInfo(Empty()).Record.fields.len == 0
