@@ -3825,9 +3825,34 @@ fn inferBuiltinCallReturnType(
         return env.namedTypeArgs("Expr", &.{try env.freshVar()});
     }
 
-    // `@field(obj, "name")` — typed reflection: the result types as a fresh var
-    // (the field's type is unknown at the call site; the obj's type is its first
-    // arg's type by convention used downstream).
+    // ── Type introspection / manipulation builtins (§1.0.0-beta) ─────────────
+    // `@typeInfo(T: type) -> TypeInfo` — returns a TypeInfo enum variant
+    // describing the structure of T. Comptime-only: evaluated during inference,
+    // produces zero runtime code.
+    if (std.mem.eql(u8, callee, "typeInfo")) {
+        // Accept any type expression (identifier, array, optional, etc.).
+        // Type-checking ensures the argument is a type, so no additional
+        // validation is needed here — the inference system handles it.
+        return env.namedType("TypeInfo");
+    }
+    // `@TypeOf(value: any) -> type` — returns the type of any value.
+    // Comptime-only.
+    if (std.mem.eql(u8, callee, "TypeOf")) {
+        if (typedArgs.len > 0) return typedArgs[0].value.getType();
+        return env.freshVar();
+    }
+    // `@makeRecord(fields: RecordField[]) -> type` — creates a new record type
+    // from field descriptors. Comptime-only.
+    if (std.mem.eql(u8, callee, "makeRecord")) {
+        return env.freshVar();
+    }
+    // `@RecordKeys(T: type) -> string[]` — returns field name strings of a
+    // record type. Comptime-only.
+    if (std.mem.eql(u8, callee, "RecordKeys")) {
+        return try env.namedTypeArgs("Array", &.{try env.namedType("string")});
+    }
+    // `@Field(value: any, comptime name: string) -> any` — field access by
+    // compile-time-known name. Comptime-only.
     if (std.mem.eql(u8, callee, "field")) {
         if (typedArgs.len > 0) return typedArgs[0].value.getType();
         return env.freshVar();
