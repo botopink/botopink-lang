@@ -3825,9 +3825,34 @@ fn inferBuiltinCallReturnType(
         return env.namedTypeArgs("Expr", &.{try env.freshVar()});
     }
 
-    // `@field(obj, "name")` — typed reflection: the result types as a fresh var
-    // (the field's type is unknown at the call site; the obj's type is its first
-    // arg's type by convention used downstream).
+    // ── Type introspection / manipulation builtins (§1.0.0-beta) ─────────────
+    // `@typeInfo(T: type) -> TypeInfo` — returns a TypeInfo enum variant
+    // describing the structure of T. Comptime-only: evaluated during inference,
+    // produces zero runtime code.
+    if (std.mem.eql(u8, callee, "typeInfo")) {
+        // Accept any type expression (identifier, array, optional, etc.).
+        // Type-checking ensures the argument is a type, so no additional
+        // validation is needed here — the inference system handles it.
+        return env.namedType("TypeInfo");
+    }
+    // `@TypeOf(value: any) -> type` — returns the type of any value.
+    // Comptime-only.
+    if (std.mem.eql(u8, callee, "TypeOf")) {
+        if (typedArgs.len > 0) return typedArgs[0].value.getType();
+        return env.freshVar();
+    }
+    // `@makeRecord(fields: RecordField[]) -> type` — creates a new record type
+    // from field descriptors. Comptime-only.
+    if (std.mem.eql(u8, callee, "makeRecord")) {
+        return env.freshVar();
+    }
+    // `@RecordKeys(T: type) -> string[]` — returns field name strings of a
+    // record type. Comptime-only.
+    if (std.mem.eql(u8, callee, "RecordKeys")) {
+        return try env.namedTypeArgs("Array", &.{try env.namedType("string")});
+    }
+    // `@Field(value: any, comptime name: string) -> any` — field access by
+    // compile-time-known name. Comptime-only.
     if (std.mem.eql(u8, callee, "field")) {
         if (typedArgs.len > 0) return typedArgs[0].value.getType();
         return env.freshVar();
@@ -3902,7 +3927,540 @@ fn inferBuiltinCallReturnType(
         }
         return env.freshVar();
     }
+    // `@comptimeError(message)` — report a compile-time error from comptime
+    // code. Takes a string message and sets env.lastError, causing inference
+    // to fail with a custom type error.
+    if (std.mem.eql(u8, callee, "comptimeError")) {
+        if (typedArgs.len >= 1) {
+            const arg = typedArgs[0].value;
+            const msg: []const u8 = switch (arg.*) {
+                .literal => |lit| switch (lit.kind) {
+                    .stringLit => |s| s,
+                    else => "<non-string argument>",
+                },
+                else => "<non-literal argument>",
+            };
+            env.lastError = TypeError.custom(
+                try std.fmt.allocPrint(env.arena, "comptime error: {s}", .{msg}),
+                "This error was raised by @comptimeError during type checking.",
+            ).withLoc(arg.getLoc());
+            return error.TypeError;
+        }
+        env.lastError = TypeError.custom(
+            "comptime error",
+            "@comptimeError called without a message.",
+        );
+        return error.TypeError;
+    }
     return env.namedType("void");
+}
+
+/// Evaluate `@makeRecord(fields)` at inference time when `fields` is a literal
+/// array of RecordField values. Extracts field names and type names from the
+/// untyped AST, looks up the types, and creates a synthetic record type.
+///
+/// Returns a TypedExpr on success, null when the argument cannot be statically
+/// evaluated (delegates to the general builtin path which returns a fresh var).
+fn tryEvalMakeRecord(env: *Env, arg: ast.Expr, loc: ast.Loc) InferError!?TypedExpr {
+    switch (arg) {
+        .collection => |col| switch (col.kind) {
+            .arrayLit => |al| {
+                if (al.elems.len == 0) {
+                    // Empty record.
+                    return try makeSyntheticRecordType(env, &.{});
+                }
+                var fields: std.ArrayListUnmanaged(envMod.FieldDef) = .empty;
+                for (al.elems) |*elem| {
+                    // Each element should be a call: RecordField(name: "x", typeName: "i32")
+                    switch (elem.*) {
+                        .call => |ec| switch (ec.kind) {
+                            .call => |ecc| {
+                                var fieldName: ?[]const u8 = null;
+                                var typeName: ?[]const u8 = null;
+                                for (ecc.args) |farg| {
+                                    if (farg.label) |label| {
+                                        if (std.mem.eql(u8, label, "name")) {
+                                            switch (farg.value.*) {
+                                                .literal => |lit| switch (lit.kind) {
+                                                    .stringLit => |s| fieldName = s,
+                                                    else => {},
+                                                },
+                                                else => {},
+                                            }
+                                        } else if (std.mem.eql(u8, label, "typeName")) {
+                                            switch (farg.value.*) {
+                                                .literal => |lit| switch (lit.kind) {
+                                                    .stringLit => |s| typeName = s,
+                                                    else => {},
+                                                },
+                                                else => {},
+                                            }
+                                        }
+                                    }
+                                }
+                                const name = fieldName orelse {
+                                    env.lastError = TypeError.custom(
+                                        "@makeRecord: RecordField missing 'name'",
+                                        "Each RecordField must have a 'name' label.",
+                                    ).withLoc(loc);
+                                    return error.TypeError;
+                                };
+                                const tname = typeName orelse {
+                                    env.lastError = TypeError.custom(
+                                        "@makeRecord: RecordField missing 'typeName'",
+                                        "Each RecordField must have a 'typeName' label.",
+                                    ).withLoc(loc);
+                                    return error.TypeError;
+                                };
+                                // Resolve the type name to a Type.
+                                const ty = try env.namedType(tname);
+                                try fields.append(env.arena, .{ .name = name, .type_ = ty });
+                            },
+                            else => return null,
+                        },
+                        else => return null,
+                    }
+                }
+                return try makeSyntheticRecordType(env, fields.items);
+            },
+            else => return null,
+        },
+        else => return null,
+    }
+}
+
+/// Resolve comptime type-manipulation calls (§1.0.0-beta Steps 4-6).
+/// These are std functions (`mergeRecords`, `mapFields`, `partial`, `omit`,
+/// `pick`) that operate on types at compile time. They are resolved entirely
+/// during inference and produce zero runtime code.
+///
+/// Returns a TypedExpr on match, or null when the callee is not a known
+/// type-manipulation function.
+fn tryResolveTypeManipulationCall(
+    env: *Env,
+    callee: []const u8,
+    typedArgs: []ast.CallArgOf(.typed),
+    typedTrailing: []ast.TrailingLambdaOf(.typed),
+    loc: ast.Loc,
+) InferError!?TypedExpr {
+    _ = typedTrailing;
+    if (!std.mem.eql(u8, callee, "mergeRecords") and
+        !std.mem.eql(u8, callee, "mapFields") and
+        !std.mem.eql(u8, callee, "partial") and
+        !std.mem.eql(u8, callee, "omit") and
+        !std.mem.eql(u8, callee, "pick"))
+    {
+        return null;
+    }
+
+    // Dispatch per function.
+    if (std.mem.eql(u8, callee, "mergeRecords")) {
+        return try resolveMergeRecords(env, typedArgs, loc);
+    }
+    if (std.mem.eql(u8, callee, "partial")) {
+        return try resolvePartial(env, typedArgs, loc);
+    }
+    if (std.mem.eql(u8, callee, "omit")) {
+        return try resolveOmit(env, typedArgs, loc);
+    }
+    if (std.mem.eql(u8, callee, "pick")) {
+        return try resolvePick(env, typedArgs, loc);
+    }
+    // mapFields: takes a lambda transform — not yet implemented.
+    return null;
+}
+
+/// Resolve `mergeRecords(A, B)` — merge two record types into one.
+fn resolveMergeRecords(env: *Env, typedArgs: []ast.CallArgOf(.typed), loc: ast.Loc) InferError!TypedExpr {
+    if (typedArgs.len < 2) {
+        env.lastError = TypeError.custom(
+            "mergeRecords expects two type arguments",
+            "Usage: mergeRecords(comptime A: type, comptime B: type) -> type",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    const nameA = resolveTypeArgName(env, typedArgs[0].value, "mergeRecords", "first", loc) orelse return error.TypeError;
+    const nameB = resolveTypeArgName(env, typedArgs[1].value, "mergeRecords", "second", loc) orelse return error.TypeError;
+
+    const defA = env.lookupTypeDef(nameA) orelse {
+        env.lastError = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, "mergeRecords: '{s}' is not a known record type", .{nameA}),
+            "Only named record types can be merged.",
+        ).withLoc(typedArgs[0].value.getLoc());
+        return error.TypeError;
+    };
+    const fieldsA = defA.fields() orelse {
+        env.lastError = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, "mergeRecords: '{s}' is not a record type", .{nameA}),
+            "Only record types can be merged.",
+        ).withLoc(typedArgs[0].value.getLoc());
+        return error.TypeError;
+    };
+    const defB = env.lookupTypeDef(nameB) orelse {
+        env.lastError = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, "mergeRecords: '{s}' is not a known record type", .{nameB}),
+            "Only named record types can be merged.",
+        ).withLoc(typedArgs[1].value.getLoc());
+        return error.TypeError;
+    };
+    const fieldsB = defB.fields() orelse {
+        env.lastError = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, "mergeRecords: '{s}' is not a record type", .{nameB}),
+            "Only record types can be merged.",
+        ).withLoc(typedArgs[1].value.getLoc());
+        return error.TypeError;
+    };
+
+    // Check for conflicts: same name, different types.
+    for (fieldsA) |fa| {
+        for (fieldsB) |fb| {
+            if (std.mem.eql(u8, fa.name, fb.name)) {
+                // Types must be structurally equal.
+                if (!typesEqual(fa.type_, fb.type_)) {
+                    const msg = std.fmt.allocPrint(env.arena, "mergeRecords: field '{s}' has conflicting types in the two records", .{fa.name}) catch "mergeRecords: conflicting field types";
+                    env.lastError = TypeError.custom(
+                        msg,
+                        "Fields with the same name must have identical types.",
+                    ).withLoc(loc);
+                    return error.TypeError;
+                }
+            }
+        }
+    }
+
+    // Build merged field list: A's fields first, then B's non-duplicate fields.
+    var mergedFields: std.ArrayListUnmanaged(envMod.FieldDef) = .empty;
+    for (fieldsA) |f| try mergedFields.append(env.arena, f);
+    for (fieldsB) |fb| {
+        var duplicate = false;
+        for (fieldsA) |fa| {
+            if (std.mem.eql(u8, fa.name, fb.name)) { duplicate = true; break; }
+        }
+        if (!duplicate) try mergedFields.append(env.arena, fb);
+    }
+
+    return try makeSyntheticRecordType(env, mergedFields.items);
+}
+
+/// Resolve `partial(T)` — make all fields optional.
+fn resolvePartial(env: *Env, typedArgs: []ast.CallArgOf(.typed), loc: ast.Loc) InferError!TypedExpr {
+    if (typedArgs.len < 1) {
+        env.lastError = TypeError.custom(
+            "partial expects a type argument",
+            "Usage: partial(comptime T: type) -> type",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    const name = resolveTypeArgName(env, typedArgs[0].value, "partial", "first", loc) orelse return error.TypeError;
+    const def = env.lookupTypeDef(name) orelse {
+        env.lastError = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, "partial: '{s}' is not a known record type", .{name}),
+            "Only named record types can be made partial.",
+        ).withLoc(typedArgs[0].value.getLoc());
+        return error.TypeError;
+    };
+    const fields = def.fields() orelse {
+        env.lastError = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, "partial: '{s}' is not a record type", .{name}),
+            "Only record types can be made partial.",
+        ).withLoc(typedArgs[0].value.getLoc());
+        return error.TypeError;
+    };
+
+    // Wrap each field's type in an optional.
+    var partialFields = try env.arena.alloc(envMod.FieldDef, fields.len);
+    for (fields, 0..) |f, i| {
+        const optTy = try env.arena.create(T.Type);
+        const args = try env.arena.alloc(*T.Type, 1);
+        args[0] = f.type_;
+        optTy.* = .{ .named = .{ .name = "optional", .args = args } };
+        partialFields[i] = .{ .name = f.name, .type_ = optTy };
+    }
+
+    return try makeSyntheticRecordType(env, partialFields);
+}
+
+/// Resolve `omit(T, name)` — remove a single field by name.
+fn resolveOmit(env: *Env, typedArgs: []ast.CallArgOf(.typed), loc: ast.Loc) InferError!TypedExpr {
+    if (typedArgs.len < 2) {
+        env.lastError = TypeError.custom(
+            "omit expects a type and a field name",
+            "Usage: omit(comptime T: type, comptime name: string) -> type",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    const typeName = resolveTypeArgName(env, typedArgs[0].value, "omit", "first", loc) orelse return error.TypeError;
+    const fieldName = resolveStringArg(env, typedArgs[1].value, "omit", "second", loc) orelse return error.TypeError;
+
+    const def = env.lookupTypeDef(typeName) orelse {
+        env.lastError = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, "omit: '{s}' is not a known record type", .{typeName}),
+            "Only named record types support omit.",
+        ).withLoc(typedArgs[0].value.getLoc());
+        return error.TypeError;
+    };
+    const fields = def.fields() orelse {
+        env.lastError = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, "omit: '{s}' is not a record type", .{typeName}),
+            "Only record types support omit.",
+        ).withLoc(typedArgs[0].value.getLoc());
+        return error.TypeError;
+    };
+
+    // Collect all fields except the named one.
+    var kept: std.ArrayListUnmanaged(envMod.FieldDef) = .empty;
+    var found = false;
+    for (fields) |f| {
+        if (std.mem.eql(u8, f.name, fieldName)) {
+            found = true;
+        } else {
+            try kept.append(env.arena, f);
+        }
+    }
+    if (!found) {
+        env.lastError = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, "omit: field '{s}' not found in type '{s}'", .{ fieldName, typeName }),
+            "The field name must exist in the record type.",
+        ).withLoc(typedArgs[1].value.getLoc());
+        return error.TypeError;
+    }
+
+    return try makeSyntheticRecordType(env, kept.items);
+}
+
+/// Resolve `pick(T, names)` — keep only specified fields.
+fn resolvePick(env: *Env, typedArgs: []ast.CallArgOf(.typed), loc: ast.Loc) InferError!TypedExpr {
+    if (typedArgs.len < 2) {
+        env.lastError = TypeError.custom(
+            "pick expects a type and field names",
+            "Usage: pick(comptime T: type, comptime names: string[]) -> type",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    const typeName = resolveTypeArgName(env, typedArgs[0].value, "pick", "first", loc) orelse return error.TypeError;
+
+    // The second arg is a string array literal.
+    const names = resolveStringArrayArg(env, typedArgs[1].value, "pick", loc) orelse return error.TypeError;
+
+    const def = env.lookupTypeDef(typeName) orelse {
+        env.lastError = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, "pick: '{s}' is not a known record type", .{typeName}),
+            "Only named record types support pick.",
+        ).withLoc(typedArgs[0].value.getLoc());
+        return error.TypeError;
+    };
+    const fields = def.fields() orelse {
+        env.lastError = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, "pick: '{s}' is not a record type", .{typeName}),
+            "Only record types support pick.",
+        ).withLoc(typedArgs[0].value.getLoc());
+        return error.TypeError;
+    };
+
+    // Keep only fields whose name is in the names list.
+    var kept: std.ArrayListUnmanaged(envMod.FieldDef) = .empty;
+    for (names) |name| {
+        var found = false;
+        for (fields) |f| {
+            if (std.mem.eql(u8, f.name, name)) {
+                try kept.append(env.arena, f);
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            env.lastError = TypeError.custom(
+                try std.fmt.allocPrint(env.arena, "pick: field '{s}' not found in type '{s}'", .{ name, typeName }),
+                "All field names must exist in the record type.",
+            ).withLoc(loc);
+            return error.TypeError;
+        }
+    }
+
+    return try makeSyntheticRecordType(env, kept.items);
+}
+
+/// Extract a type name from a typed argument that should be a type reference.
+fn resolveTypeArgName(env: *Env, arg: *const ast.TypedExpr, fn_name: []const u8, pos: []const u8, loc: ast.Loc) ?[]const u8 {
+    _ = loc;
+    switch (arg.*) {
+        .identifier => |id| if (id.kind == .ident) {
+            const name = id.kind.ident;
+            if (env.lookupTypeDef(name) != null) return name;
+            // Also accept primitive type names.
+            if (env.lookup(name) != null) return name;
+        },
+        else => {},
+    }
+    const msg = std.fmt.allocPrint(env.arena, "{s}: {s} argument must be a type name", .{ fn_name, pos }) catch {
+        env.lastError = TypeError.custom("out of memory", "").withLoc(arg.getLoc());
+        return null;
+    };
+    env.lastError = TypeError.custom(
+        msg,
+        "Pass a record type name, not a value or expression.",
+    ).withLoc(arg.getLoc());
+    return null;
+}
+
+/// Extract a string literal from a typed argument.
+fn resolveStringArg(env: *Env, arg: *const ast.TypedExpr, fn_name: []const u8, pos: []const u8, loc: ast.Loc) ?[]const u8 {
+    _ = loc;
+    switch (arg.*) {
+        .literal => |lit| switch (lit.kind) {
+            .stringLit => |s| return s,
+            else => {},
+        },
+        else => {},
+    }
+    const msg = std.fmt.allocPrint(env.arena, "{s}: {s} argument must be a string literal", .{ fn_name, pos }) catch {
+        env.lastError = TypeError.custom("out of memory", "").withLoc(arg.getLoc());
+        return null;
+    };
+    env.lastError = TypeError.custom(
+        msg,
+        "Pass a string literal (e.g. \"fieldName\"), not a variable.",
+    ).withLoc(arg.getLoc());
+    return null;
+}
+
+/// Extract a string array from a typed argument (for pick's names parameter).
+fn resolveStringArrayArg(env: *Env, arg: *const ast.TypedExpr, fn_name: []const u8, loc: ast.Loc) ?[]const []const u8 {
+    _ = loc;
+    switch (arg.*) {
+        .collection => |col| switch (col.kind) {
+            .arrayLit => |al| {
+                var names: std.ArrayListUnmanaged([]const u8) = .empty;
+                for (al.elems) |*elem| {
+                    switch (elem.*) {
+                        .literal => |lit| switch (lit.kind) {
+                            .stringLit => |s| names.append(env.arena, s) catch {
+                                env.lastError = TypeError.custom("out of memory", "").withLoc(arg.getLoc());
+                                return null;
+                            },
+                            else => {
+                                const msg = std.fmt.allocPrint(env.arena, "{s}: all array elements must be string literals", .{fn_name}) catch {
+                                    env.lastError = TypeError.custom("out of memory", "").withLoc(arg.getLoc());
+                                    return null;
+                                };
+                                env.lastError = TypeError.custom(
+                                    msg,
+                                    "Each element should be a string like \"fieldName\".",
+                                ).withLoc(arg.getLoc());
+                                return null;
+                            },
+                        },
+                        else => {
+                            const msg = std.fmt.allocPrint(env.arena, "{s}: all array elements must be string literals", .{fn_name}) catch {
+                                env.lastError = TypeError.custom("out of memory", "").withLoc(arg.getLoc());
+                                return null;
+                            };
+                            env.lastError = TypeError.custom(
+                                msg,
+                                "Each element should be a string like \"fieldName\".",
+                            ).withLoc(arg.getLoc());
+                            return null;
+                        },
+                    }
+                }
+                return names.items;
+            },
+            else => {},
+        },
+        else => {},
+    }
+    const msg = std.fmt.allocPrint(env.arena, "{s}: second argument must be a string array literal", .{fn_name}) catch {
+        env.lastError = TypeError.custom("out of memory", "").withLoc(arg.getLoc());
+        return null;
+    };
+    env.lastError = TypeError.custom(
+        msg,
+        "Pass a string array like [\"name\", \"id\"].",
+    ).withLoc(arg.getLoc());
+    return null;
+}
+
+/// Check if two types are structurally equal (deref and compare).
+fn typesEqual(a: *T.Type, b: *T.Type) bool {
+    const ta = a.deref();
+    const tb = b.deref();
+    switch (ta.*) {
+        .named => |na| switch (tb.*) {
+            .named => |nb| {
+                if (!std.mem.eql(u8, na.name, nb.name)) return false;
+                if (na.args.len != nb.args.len) return false;
+                for (na.args, 0..) |arg_a, i| {
+                    if (!typesEqual(arg_a, nb.args[i])) return false;
+                }
+                return true;
+            },
+            else => return false,
+        },
+        .record => |ra| switch (tb.*) {
+            .record => |rb| {
+                if (ra.len != rb.len) return false;
+                for (ra, 0..) |fa, i| {
+                    if (!std.mem.eql(u8, fa.name, rb[i].name)) return false;
+                    if (!typesEqual(fa.type_, rb[i].type_)) return false;
+                }
+                return true;
+            },
+            else => return false,
+        },
+        .func => |fa| switch (tb.*) {
+            .func => |fb| {
+                if (fa.params.len != fb.params.len) return false;
+                for (fa.params, 0..) |p, i| {
+                    if (!typesEqual(p, fb.params[i])) return false;
+                }
+                return typesEqual(fa.ret, fb.ret);
+            },
+            else => return false,
+        },
+        .typeVar => |ca| {
+            if (ca == tb.typeVar) return true;
+            switch (tb.*) {
+                .typeVar => |cb| return ca == cb,
+                else => return false,
+            }
+        },
+        .union_ => return false,
+    }
+}
+
+/// Create a synthetic/anonymous record type from field definitions and return
+/// a TypedExpr holding the type value.
+fn makeSyntheticRecordType(env: *Env, fields: []envMod.FieldDef) !TypedExpr {
+    const typeId = env.allocTypeId();
+    const syntheticName = try std.fmt.allocPrint(env.arena, "#synth_{d}", .{typeId});
+
+    // Build the record Type (anonymous structural record).
+    var recordFields = try env.arena.alloc(T.RecordField, fields.len);
+    for (fields, 0..) |f, i| {
+        recordFields[i] = .{ .name = f.name, .type_ = f.type_ };
+    }
+    const recordTy = try env.arena.create(T.Type);
+    recordTy.* = .{ .record = recordFields };
+
+    // Register the type definition so it can be looked up by name.
+    try env.registerTypeDef(syntheticName, .{ .record = .{
+        .name = syntheticName,
+        .id = typeId,
+        .genericParams = &.{},
+        .fields = fields,
+    } });
+
+    // Bind the name as a constructor.
+    var paramTypes = try env.arena.alloc(*T.Type, fields.len);
+    for (fields, 0..) |f, i| paramTypes[i] = f.type_;
+    const ctorType = try env.funcType(paramTypes, recordTy);
+    try env.bind(syntheticName, ctorType);
+
+    return TypedExpr{ .identifier = .{
+        .loc = .{ .line = 0, .col = 0 },
+        .type_ = recordTy,
+        .kind = .{ .ident = syntheticName },
+    } };
 }
 
 fn unwrapResultType(ty: *T.Type) ?*T.Type {
@@ -6252,6 +6810,13 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             const typedTrailing = try inferTrailingLambdasTyped(env, call.trailing);
 
             if (call.is_builtin) {
+                // `@makeRecord(fields)` — when fields is a literal array of RecordField
+                // values, evaluate at inference time and create a synthetic record type.
+                if (std.mem.eql(u8, call.callee, "makeRecord") and call.args.len >= 1) {
+                    if (try tryEvalMakeRecord(env, call.args[0].value.*, loc)) |result| {
+                        return result;
+                    }
+                }
                 const retType = try inferBuiltinCallReturnType(env, call.callee, typedArgs, typedTrailing);
                 return TypedExpr{ .call = .{ .loc = loc, .type_ = retType, .kind = .{ .call = .{
                     .receiver = null,
@@ -6260,6 +6825,12 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                     .args = typedArgs,
                     .trailing = typedTrailing,
                 } } } };
+            }
+            // Comptime type-manipulation functions (§1.0.0-beta Steps 4-6):
+            // `mergeRecords`, `mapFields`, `partial`, `omit`, `pick` — resolved
+            // entirely during inference; produce zero runtime code.
+            if (try tryResolveTypeManipulationCall(env, call.callee, typedArgs, typedTrailing, loc)) |result| {
+                return result;
             }
             // Builtin `result` namespace: `result.map(r, f)`, `result.unwrap(r, 0)`,
             // `result.isOk(r)`… — qualified surface over the built-in

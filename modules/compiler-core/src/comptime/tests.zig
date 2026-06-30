@@ -19,6 +19,7 @@ test {
     _ = @import("tests/effect_result.zig");
     _ = @import("tests/effect_future.zig");
     _ = @import("tests/effect_generator.zig");
+    _ = @import("tests/builtins_typeinfo.zig");
     _ = @import("primOpTemplate.zig");
     _ = @import("./diagnostics.zig");
     _ = @import("./template_eval.zig");
