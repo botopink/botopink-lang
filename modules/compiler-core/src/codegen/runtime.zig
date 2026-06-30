@@ -31,7 +31,6 @@
 //! `if (stderr.len > 0) return ""` short-circuit that the original
 //! shape carried, which proved fragile under runner-specific noise.
 const std = @import("std");
-const persistent_node = @import("../comptime/runtime/persistent_node.zig");
 fn isProcessSuccess(term: std.process.Child.Term) bool {
     return switch (term) {
         .exited => |code| code == 0,
@@ -161,15 +160,13 @@ pub fn executeJavaScript(allocator: std.mem.Allocator, js_code: []const u8, aux:
     cacheKey(&key, "node", "", js_code, aux);
     if (cacheRead(allocator, io, &key)) |hit| return hit;
 
-    // Fast path: no aux → run inside the persistent node runner. Falls
-    // through to the one-shot path if the runner can't be spawned.
+    // One-shot node spawn for JavaScript execution (~30ms).
     if (aux.len == 0) {
-        if (persistent_node.eval(allocator, io, js_code)) |out| {
-            // Empty output = treat as exec failure (consistent with the
-            // one-shot path returning "" on non-zero exit).
-            cacheWrite(io, allocator, &key, out);
-            return out;
-        } else |_| {}
+        const res = std.process.run(allocator, io, .{ .argv = &.{ "node", "-e", js_code } }) catch return allocator.dupe(u8, "");
+        if (res.stdout.len == 0) return allocator.dupe(u8, "");
+        const out = try allocator.dupe(u8, res.stdout);
+        cacheWrite(io, allocator, &key, out);
+        return out;
     }
 
     // Write code to a temporary file in a per-execution scratch dir
@@ -424,24 +421,11 @@ pub fn executeBeamAsm(allocator: std.mem.Allocator, asm_code: []const u8, module
 /// `executeErlang` signatures (currently unused — wasm3 takes WAT bytes
 /// in-memory and does not write a `.wat` file).
 pub fn executeWat(allocator: std.mem.Allocator, wat_code: []const u8, module_name: []const u8, io: anytype) ![]u8 {
-    if (std.mem.indexOf(u8, wat_code, "_botopink_main") == null) {
-        return allocator.dupe(u8, "");
-    }
-
-    // Cache wasm3 runs too. The interpreter itself is fast (<1ms for the
-    // common fixture), but a file-system read is faster still and saves
-    // the wat→wasm compile + module instantiation on a hit.
-    var key: [64]u8 = undefined;
-    cacheKey(&key, "wasm", module_name, wat_code, &.{});
-    if (cacheRead(allocator, io, &key)) |hit| return hit;
-
-    const wasm3_host = @import("../comptime/runtime/wasm3_host.zig");
-    // Any compile/load/call failure inside wasm3 collapses to an empty RUN
-    // LOG buffer — same behaviour as the legacy `wasmtime` absence path.
-    // The follow-up `templates-decorators-botopink-native` spec broadens
-    // `wat_to_wasm.zig` to cover the rest of the codegen surface; until then
-    // the affected snapshots simply record an empty RUN LOG row.
-    const out = wasm3_host.runWat(allocator, wat_code) catch return allocator.dupe(u8, "");
-    cacheWrite(io, allocator, &key, out);
-    return out;
+    _ = wat_code;
+    _ = module_name;
+    _ = io;
+    // wasm3 was removed in persistent-erl-runtime spec. WAT execution
+    // for codegen snapshots falls back to empty run log until wasmtime
+    // integration is restored.
+    return allocator.dupe(u8, "");
 }
