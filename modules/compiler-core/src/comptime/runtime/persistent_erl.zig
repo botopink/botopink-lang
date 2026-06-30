@@ -44,12 +44,12 @@ const server_erl =
     \\            case compile:file(Path, [binary, return]) of
     \\                {ok, Mod, Beam} ->
     \\                    {module, _} = code:load_binary(Mod, "", Beam),
-    \\                    Result = Mod:main(),
+    \\                    Result = safe_call(Mod),
     \\                    write_frame(Result),
     \\                    start();
     \\                {ok, Mod, Beam, _Warnings} ->
     \\                    {module, _} = code:load_binary(Mod, "", Beam),
-    \\                    Result = Mod:main(),
+    \\                    Result = safe_call(Mod),
     \\                    write_frame(Result),
     \\                    start();
     \\                {error, Errors, Warnings} ->
@@ -60,13 +60,20 @@ const server_erl =
     \\            Path = binary_to_list(PathBin),
     \\            case code:load_file(Path) of
     \\                {module, Mod} ->
-    \\                    Result = Mod:main(),
+    \\                    Result = safe_call(Mod),
     \\                    write_frame(Result),
     \\                    start();
     \\                {error, Reason} ->
     \\                    write_frame(io_lib:format("__BP_ERL_LOAD_ERROR__:~p", [Reason])),
     \\                    start()
     \\            end
+    \\    end.
+    \\
+    \\safe_call(Mod) ->
+    \\    try Mod:main()
+    \\    catch
+    \\        Class:Reason:Stack ->
+    \\            io_lib:format("__BP_ERL_RUNTIME_ERROR__:~p:~p~n~p", [Class, Reason, Stack])
     \\    end.
     \\
     \\read_frame() ->
@@ -197,7 +204,9 @@ pub fn loadBeam(allocator: std.mem.Allocator, io: Io, beam_path: []const u8) ![]
     const payload = try readFrame(io, allocator);
     errdefer allocator.free(payload);
 
-    if (std.mem.startsWith(u8, payload, "__BP_ERL_LOAD_ERROR__:")) {
+    if (std.mem.startsWith(u8, payload, "__BP_ERL_LOAD_ERROR__:") or
+        std.mem.startsWith(u8, payload, "__BP_ERL_RUNTIME_ERROR__:"))
+    {
         allocator.free(payload);
         return error.PersistentErlCompileError;
     }
@@ -219,7 +228,9 @@ pub fn eval(allocator: std.mem.Allocator, io: Io, erl_path: []const u8) ![]u8 {
     const payload = try readFrame(io, allocator);
     errdefer allocator.free(payload);
 
-    if (std.mem.startsWith(u8, payload, "__BP_ERL_COMPILE_ERROR__:")) {
+    if (std.mem.startsWith(u8, payload, "__BP_ERL_COMPILE_ERROR__:") or
+        std.mem.startsWith(u8, payload, "__BP_ERL_RUNTIME_ERROR__:"))
+    {
         allocator.free(payload);
         return error.PersistentErlCompileError;
     }
