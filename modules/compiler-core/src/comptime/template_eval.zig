@@ -1,11 +1,9 @@
-/// Runtime-backed template evaluation (expr-templates F6-full, slice 1).
+/// Template evaluation — single persistent erl runtime.
 ///
 /// When the V1 classifier in `infer.zig` cannot reduce a template body by
-/// inspection, this module *runs* the body: the captures become JS objects
-/// carrying the comptime surface (`text`/`parts`/`source`/`context`/`lookup`/
-/// `bindings`/`build`/`fail`/`failAt`), the template fn is emitted as plain
-/// JS (reusing the commonJS emitter), and the script reports one result:
+/// inspection, this module runs the body inside the persistent erl subprocess.
 ///
+/// Outcome format:
 ///   {"kind":"code","source":"…"}                  ← build() / @code
 ///   {"kind":"value","value":<json>}               ← @expr(v)
 ///   {"kind":"capture","param":"template"}         ← `return template;`
@@ -13,49 +11,43 @@
 ///   {"kind":"fail","message","param","span"}      ← fail()/failAt()
 ///   {"kind":"error","message"}                    ← anything else thrown
 ///
-/// Template evaluation always uses the **node** runtime regardless of the
-/// compile target — it is host-side comptime work, like the existing eval
-/// backends (erlang parity is a recorded follow-up). Tooling paths
-/// (compileTypesOnly / LSP) never reach this module.
+/// NOTE: evaluateErl() returns EvalFailed until erlang.zig gains #[@Host]
+/// method lowering. Methods like Capture.lookup(), Capture.bindings(),
+/// failRaw(), makeExpr(), makeCode() are annotated #[@Host] in
+/// template_runtime.bp and must be redirected to botopink_comptime_prelude
+/// module calls. The persistent erl infrastructure (BEAM cache, binary
+/// protocol, warmup) is fully operational for comptime val evaluation
+/// (beam.zig path).
 const std = @import("std");
 const ast = @import("../ast.zig");
 const template = @import("./template.zig");
 
-
-/// Persistent erl is the sole comptime runtime for template evaluation.
+/// Sole comptime runtime.
 pub const Runtime = enum { erl };
 
 // ── outcome ───────────────────────────────────────────────────────────────────
 
 pub const Outcome = union(enum) {
-    /// Generated source text to parse and splice at the call site.
     code: []const u8,
-    /// A comptime value to lift as a literal (JSON-encoded).
     value: std.json.Value,
-    /// Pass-through of the named `@Expr` parameter's capture.
     capture: []const u8,
-    /// `q.custom(tree, code)` — the executable `code` half (source text, spliced
-    /// like `code` above) plus the reference `ast` tree (a JSON `CustomNode`,
-    /// stored by call-location for tooling, never lowered). expr-custom.
-    /// `root` is an optional pre-parsed tree from WAT memory (bypasses JSON).
     custom: struct {
         code: []const u8,
         ast: std.json.Value,
         root: ?template.CustomNode = null,
     },
-    /// `fail`/`failAt` — abort expansion with a template diagnostic.
     fail: struct {
         message: []const u8,
         param: ?[]const u8,
         span: ?template.Span,
     },
-    /// The script itself failed (JS exception, protocol violation, …).
     err: []const u8,
 };
 
 pub const EvalError = error{ OutOfMemory, EvalFailed } || std.Io.Writer.Error;
 
-// ── JS prelude ────────────────────────────────────────────────────────────────
+// ── evaluate ──────────────────────────────────────────────────────────────────
+
 pub fn evaluate(
     arena: std.mem.Allocator,
     io: std.Io,
@@ -82,6 +74,55 @@ pub fn evaluateRuntime(
     return evaluateErl(arena, io, tfn, captures, plainArgs);
 }
 
+fn parseOutcome(arena: std.mem.Allocator, stdout: []const u8) !Outcome {
+    const parsed = std.json.parseFromSliceLeaky(std.json.Value, arena, stdout, .{}) catch {
+        return .{ .err = try std.fmt.allocPrint(arena, "template evaluator produced no result", .{}) };
+    };
+    const obj = switch (parsed) {
+        .object => |o| o,
+        else => return .{ .err = "template evaluator produced a non-object result" },
+    };
+    const kind = switch (obj.get("kind") orelse return .{ .err = "missing result kind" }) {
+        .string => |s| s,
+        else => return .{ .err = "missing result kind" },
+    };
+    if (std.mem.eql(u8, kind, "code")) {
+        const src = switch (obj.get("source") orelse .null) {
+            .string => |s| s,
+            else => return .{ .err = "code result without source text" },
+        };
+        return .{ .code = src };
+    }
+    if (std.mem.eql(u8, kind, "value")) {
+        return .{ .value = obj.get("value") orelse .null };
+    }
+    if (std.mem.eql(u8, kind, "capture")) {
+        const param = switch (obj.get("param") orelse .null) {
+            .string => |s| s,
+            else => return .{ .err = "capture result without param name" },
+        };
+        return .{ .capture = param };
+    }
+    if (std.mem.eql(u8, kind, "custom")) {
+        const src = switch (obj.get("source") orelse .null) {
+            .string => |s| s,
+            else => return .{ .err = "custom result without code source" },
+        };
+        return .{ .custom = .{ .code = src, .ast = obj.get("ast") orelse .null } };
+    }
+    if (std.mem.eql(u8, kind, "fail")) {
+        const message = switch (obj.get("message") orelse .null) {
+            .string => |s| s,
+            else => "template failed",
+        };
+        return .{ .fail = .{ .message = message, .param = null, .span = null } };
+    }
+    const message = switch (obj.get("message") orelse .null) {
+        .string => |s| s,
+        else => "template evaluation failed",
+    };
+    return .{ .err = message };
+}
 
 fn evaluateErl(
     arena: std.mem.Allocator,
@@ -95,5 +136,13 @@ fn evaluateErl(
     _ = tfn;
     _ = captures;
     _ = plainArgs;
+    // Template body emission to Erlang requires #[@Host] method lowering
+    // in erlang.zig. Methods annotated #[@Host] in template_runtime.bp
+    // (Capture.lookup, Capture.bindings, failRaw, makeExpr, makeCode,
+    // etc.) must be redirected to botopink_comptime_prelude module calls.
+    //
+    // The persistent erl infrastructure (BEAM cache, binary protocol,
+    // warmup, safe_call error handling) is fully operational for
+    // comptime val evaluation via beam.zig.
     return error.EvalFailed;
 }
