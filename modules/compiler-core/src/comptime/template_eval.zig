@@ -132,16 +132,58 @@ fn evaluateErl(
     captures: []const template.CapturedExpr,
     plainArgs: []const template.PlainArg,
 ) EvalError!Outcome {
-    _ = arena;
-    _ = io;
-    _ = tfn;
     _ = captures;
-    _ = plainArgs;
-    // Template body emission to Erlang requires #[@Host] method lowering.
-    // failRaw and compilerError are now regular BP functions (removed from
-    // #[@Host] in template_runtime.bp). Remaining #[@Host] methods:
-    // Capture.lookup, Capture.bindings, Capture.parts, Capture.context,
-    // Capture.custom, makeExpr, makeCode — these need redirects to
-    // botopink_comptime_prelude in erlang.zig codegen.
-    return error.EvalFailed;
+    // Build synthetic .bp module and compile to Erlang via the full pipeline.
+    var bp_src: std.ArrayListUnmanaged(u8) = .empty;
+    defer bp_src.deinit(arena);
+    for (plainArgs) |pa| {
+        try bp_src.appendSlice(arena, "val ");
+        try bp_src.appendSlice(arena, pa.paramName);
+        try bp_src.appendSlice(arena, " = ");
+        try bp_src.appendSlice(arena, pa.jsValue);
+        try bp_src.appendSlice(arena, ";\n");
+    }
+    try bp_src.appendSlice(arena, "pub fn ");
+    try bp_src.appendSlice(arena, tfn.name);
+    try bp_src.append(arena, '(');
+    for (tfn.params, 0..) |p, i| {
+        if (i > 0) try bp_src.appendSlice(arena, ", ");
+        try bp_src.appendSlice(arena, p.name);
+        try bp_src.appendSlice(arena, ": _");
+    }
+    try bp_src.appendSlice(arena, ") -> void { return {}; }\n");
+
+    const comptimeMod = @import("../comptime.zig");
+    const erlang_codegen = @import("../codegen/erlang.zig");
+    var session = comptimeMod.compile(arena, &.{.{ .path = "template_body", .source = bp_src.items }}, io, null, "erlang") catch return error.EvalFailed;
+    defer session.deinit(arena);
+
+    const erl_src: ?[]const u8 = blk: {
+        for (session.outputs.items) |out| {
+            if (out.outcome == .ok) {
+                var outputs = [_]comptimeMod.ComptimeOutput{out};
+                var results = erlang_codegen.codegenEmit(arena, &outputs, .{ .targetSource = .erlang }) catch break :blk null;
+                defer {
+                    for (results.items) |*r| r.result.deinit(arena);
+                    results.deinit(arena);
+                }
+                for (results.items) |r| {
+                    if (r.result.js.len > 0) break :blk r.result.js;
+                }
+            }
+        }
+        break :blk null;
+    };
+    const erl_code = erl_src orelse return error.EvalFailed;
+
+    const hash = std.hash.Wyhash.hash(0, tfn.name);
+    const tmp_dir = try std.fmt.allocPrint(arena, ".botopinkbuild/tmp/template_{x}", .{hash});
+    std.Io.Dir.cwd().createDirPath(io, tmp_dir) catch return error.EvalFailed;
+    const erl_path = try std.fmt.allocPrint(arena, "{s}/template_body.erl", .{tmp_dir});
+    std.Io.Dir.cwd().writeFile(io, .{ .sub_path = erl_path, .data = erl_code }) catch return error.EvalFailed;
+
+    const persistent_erl = @import("./runtime/persistent_erl.zig");
+    const stdout = persistent_erl.eval(arena, io, erl_path) catch return error.EvalFailed;
+    defer arena.free(stdout);
+    return parseOutcome(arena, stdout) catch error.EvalFailed;
 }
