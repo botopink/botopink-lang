@@ -401,7 +401,11 @@ pub fn warmPersistentErlRunner(io: std.Io, gpa: std.mem.Allocator) !void {
                     const server_dir = ".botopinkbuild/tmp/persistent_erl";
                     const tr_path = try std.fs.path.join(gpa, &.{ server_dir, "template_runtime.erl" });
                     defer gpa.free(tr_path);
-                    std.Io.Dir.cwd().writeFile(io, .{ .sub_path = tr_path, .data = r.result.js }) catch break;
+
+                    // Post-process: replace #[@Host] stub bodies with prelude calls.
+                    const patched = try patchHostMethods(gpa, r.result.js);
+                    defer gpa.free(patched);
+                    std.Io.Dir.cwd().writeFile(io, .{ .sub_path = tr_path, .data = patched }) catch break;
                     _ = std.process.run(gpa, io, .{
                         .argv = &.{ "erlc", "-o", server_dir, tr_path },
                     }) catch {};
@@ -411,6 +415,40 @@ pub fn warmPersistentErlRunner(io: std.Io, gpa: std.mem.Allocator) !void {
             break;
         }
     }
+}
+
+/// Replace #[@Host] stub bodies in the generated template_runtime Erlang source
+/// with calls to botopink_comptime_prelude. The codegen emits #[@Host] methods as
+/// empty functions (returning `ok`). This patches them to delegate to the prelude.
+fn patchHostMethods(gpa: std.mem.Allocator, erl_src: []const u8) ![]u8 {
+    var result: std.ArrayListUnmanaged(u8) = .empty;
+    try result.ensureTotalCapacity(gpa, erl_src.len + 512);
+
+    var lines = std.mem.splitScalar(u8, erl_src, '\n');
+    while (lines.next()) |line| {
+        const trimmed = std.mem.trim(u8, line, " \t");
+        // Match #[@Host] function stubs and replace bodies.
+        if (std.mem.startsWith(u8, trimmed, "context(")) {
+            try result.appendSlice(gpa, "context(Self) -> botopink_comptime_prelude:context(element(2, Self)).\n");
+        } else if (std.mem.startsWith(u8, trimmed, "lookup(")) {
+            try result.appendSlice(gpa, "lookup(Self, Name) -> botopink_comptime_prelude:lookup(element(2, Self), Name).\n");
+        } else if (std.mem.startsWith(u8, trimmed, "bindings(")) {
+            try result.appendSlice(gpa, "bindings(Self) -> botopink_comptime_prelude:bindings(element(2, Self)).\n");
+        } else if (std.mem.startsWith(u8, trimmed, "parts(")) {
+            try result.appendSlice(gpa, "parts(Self) -> botopink_comptime_prelude:parts(element(2, Self)).\n");
+        } else if (std.mem.startsWith(u8, trimmed, "custom(")) {
+            try result.appendSlice(gpa, "custom(Self, Ast, Code) -> {element(2, Self), Ast, Code}.\n");
+        } else if (std.mem.startsWith(u8, trimmed, "makeExpr(")) {
+            try result.appendSlice(gpa, "makeExpr(V) -> {v, V}.\n");
+        } else if (std.mem.startsWith(u8, trimmed, "makeCode(")) {
+            try result.appendSlice(gpa, "makeCode(S) -> {code, S}.\n");
+        } else {
+            try result.appendSlice(gpa, line);
+            try result.append(gpa, '\n');
+        }
+    }
+
+    return result.toOwnedSlice(gpa);
 }
 
 pub fn getStdlibTemplate(gpa: std.mem.Allocator) !*const Env {
