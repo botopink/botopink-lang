@@ -1,25 +1,26 @@
 # State Narrowing — Control-Flow Type Refinement
 
 **Version:** 1.0.0-beta
-**Status:** completed
+**Status:** in progress
 **Created:** 2026-06-30
 **Author:** ericfillipe
-**Replaces:** `1_0_0_beta.state-narrowing.md` (expanded with type guards from `1_0_0_beta.ts-advanced-types-bp.md` §2.4)
 
 ---
 
 ## Status
 
-**Current:** completed
+**Current:** in progress — audit and test matrix done; implementation (parser + inference) not started
+
+> Steps 1-2 (audit + test design) are complete. Steps 3-6 (implementation) are all pending. The spec was previously marked "completed" but only the planning phase was done.
 
 | Step | Title | Status | Assignee |
 |------|-------|--------|----------|
 | Step 1 | Audit existing narrowing coverage | completed | ericfillipe |
 | Step 2 | Design narrowing test matrix | completed | ericfillipe |
-| Step 3 | Implement parser support for type guards | completed | ericfillipe |
-| Step 4 | Implement inference engine narrowing | completed | ericfillipe |
-| Step 5 | Implement comptime narrowing tests | completed | ericfillipe |
-| Step 6 | Implement codegen narrowing tests (all 4 backends) | completed | ericfillipe |
+| Step 3 | Implement parser support for type guards | pending | |
+| Step 4 | Implement inference engine narrowing | pending | |
+| Step 5 | Implement comptime narrowing tests | pending | |
+| Step 6 | Implement codegen narrowing tests (all 4 backends) | pending | |
 
 ## Objective
 
@@ -36,14 +37,14 @@ argument type at the call site.
 ## Prerequisites
 
 - `zig build test` passing
-- Spec `1_0_0_beta.codegen-test-gap.md` (codegen tests for narrowed values go there)
+- [**BLOCKING**] Parser must support `!x` prefix operator for early-return guard clauses (`if (!x) { return; }`) — verify before Step 4
+- Codegen tests (Step 6) depend on [`1_0_0_beta.codegen-test-gap.md`](./1_0_0_beta.codegen-test-gap.md) for test infrastructure
 
 ---
 
 ## Step 1 — Audit existing narrowing coverage
 
-**Status:** completed
-**Assignee:** ericfillipe
+**Status:** completed **Assignee:** ericfillipe
 
 ### What already exists
 
@@ -53,12 +54,10 @@ Botopink already has comptime-level narrowing tests:
 |---------|-----------|-----------|
 | `if (x)` null check | `if_null_check_binding_returns_optional` | `?T → T` in then-branch |
 | `if (x)` with else | `if_null_check_binding_with_else` | `?T → T` in then, `?T` in else |
-| `if (x)` body ignores | `null_check_binding_if_x_e_body_ignores_binding` | Narrowed if binding unused |
 | `case` variant field access | `field_access_after_pattern_matching` | Enum variant fields accessible after match |
 | `case` variant field access 2 | `access_variant_specific_field_after_matching` | Variant-specific field access |
 | Variant scope | `variant_does_not_escape_clause_scope` | Bindings don't leak out of `case` arm |
 | Optional annotation | `optional_annotation_i32_val_with_null` | `?i32` type inference |
-| Type mismatch with null | `type_mismatch_i32_bool` | Error on type mismatch |
 
 ### What's missing
 
@@ -72,7 +71,6 @@ Botopink already has comptime-level narrowing tests:
 | `assert` pattern narrowing | Medium | Pattern-match assertions |
 | Early-return narrowing (`if (!x) { return; }`) | Medium | Guard clauses |
 | Nested narrowing (if inside case arm) | Medium | Complex control flow |
-| `case` on `@Result` with `try`-fallthrough | Medium | Error propagation |
 | `else if` chain narrowing | Low | Multi-branch refinement |
 | Narrowing across function boundaries | Low | Advanced |
 | Loop invariant narrowing | Low | While/loop |
@@ -81,333 +79,44 @@ Botopink already has comptime-level narrowing tests:
 
 ## Step 2 — Design narrowing test matrix
 
-**Status:** completed
-**Assignee:** ericfillipe
+**Status:** completed **Assignee:** ericfillipe
 
-### 2.1 — `if` null-check narrowing
+25+ tests designed across 14 narrowing patterns (see full test matrix below).
 
-```botopink
-// slug: narrow_if_null_check_record_field_access
-record User { name: string }
-fn greet(maybeUser: ?User) -> string {
-    if (maybeUser) { u ->
-        return "hello " + u.name;  // u: User (narrowed from ?User)
-    };
-    return "no user";
-}
+### Test patterns designed
 
-// slug: narrow_if_null_check_bool
-fn and(a: ?bool, b: ?bool) -> ?bool {
-    if (a) { va ->
-        if (b) { vb ->
-            return va && vb;       // both narrowed to bool
-        };
-    };
-    return null;
-}
+| # | Pattern | Slug prefix | Positive | Negative |
+|---|---------|-------------|----------|----------|
+| 1 | `if` null-check narrowing | `narrow_if_null_check_*` | 3 | — |
+| 2 | `if` null-check with `else` | `narrow_if_null_else_*` | 2 | — |
+| 3 | `case` on `@Result<D,E>` | `narrow_case_result_*` | 2 | — |
+| 4 | `case` on `@Option<T>` | `narrow_case_option_*` | 1 | — |
+| 5 | `case` on user enum variants | `narrow_case_enum_*` | 2 | — |
+| 6 | `case` with OR patterns | `narrow_case_or_*` | 1 | — |
+| 7 | `case` with guard clauses | `narrow_case_guard_*` | 2 | — |
+| 8 | `assert` pattern narrowing | `narrow_assert_*` | 2 | — |
+| 9 | Early return narrowing | `narrow_early_return_*` | 1 | — |
+| 10 | `else if` chain | `narrow_else_if_*` | 1 | — |
+| 11 | `if` with `&&` condition | `narrow_if_and_*` | 1 | — |
+| 12 | Optional chaining | `narrow_optional_chaining_*` | 1 | — |
+| 13 | Narrowing failure tests | `narrow_error_*` | — | 2 |
+| 14 | Type guards | `typeguard_*` | 3 | — |
+| **Total** | | | **22** | **2** |
 
-// slug: narrow_if_null_check_chained
-record A { b: ?record { c: i32 } }
-fn getC(x: ?A) -> ?i32 {
-    if (x) { a ->
-        if (a.b) { b ->
-            return b.c;            // doubly-narrowed
-        };
-    };
-    return null;
-}
-```
-
-### 2.2 — `if` null-check with `else` branch
-
-```botopink
-// slug: narrow_if_null_else_returns_different_type
-fn describe(x: ?i32) -> string {
-    if (x) { n -> return "got " + n; };  // n: i32
-    return "nothing";                      // x still ?i32 here
-}
-
-// slug: narrow_if_null_else_uses_original_type
-fn fallback(x: ?string) -> string {
-    if (x) { s -> return s; };      // s: string
-    return "default";                // x was null
-}
-```
-
-### 2.3 — `case` narrowing on `@Result<D,E>`
-
-```botopink
-// slug: narrow_case_result_ok_err
-#[@result]
-fn parse(n: i32) -> @Result<string, string> {
-    if (n < 0) { throw "negative"; };
-    return "ok";
-}
-fn handle(n: i32) -> string {
-    val r = parse(n);
-    return case r {
-        Ok(v) -> "parsed: " + v;     // v: string
-        Err(e) -> "error: " + e;     // e: string
-    };
-}
-
-// slug: narrow_case_result_different_payload_types
-record User { name: string }
-enum AppError { NotFound, Timeout(msg: string) }
-#[@result]
-fn fetchUser(id: i32) -> @Result<User, AppError> {
-    if (id == 0) { throw AppError.NotFound; };
-    return User(name: "alice");
-}
-fn main() {
-    val r = fetchUser(1);
-    case r {
-        Ok(u) -> @print(u.name);            // u: User
-        Err(NotFound) -> @print("404");
-        Err(Timeout(msg)) -> @print("timeout: " + msg);  // msg: string
-    };
-}
-```
-
-### 2.4 — `case` narrowing on `@Option<T>`
-
-```botopink
-// slug: narrow_case_option_some_none
-enum @Option<T> { None, Some(T) }
-fn describe(opt: @Option<i32>) -> string {
-    return case opt {
-        None -> "empty";
-        Some(v) -> "value: " + v;     // v: i32
-    };
-}
-```
-
-### 2.5 — `case` narrowing on user-defined enum variants
-
-```botopink
-// slug: narrow_case_enum_variant_field_bindings
-enum Shape {
-    Circle(radius: f64),
-    Rectangle(w: f64, h: f64),
-    Point,
-}
-fn area(s: Shape) -> f64 {
-    return case s {
-        Circle(radius) -> 3.14 * radius * radius;   // radius: f64
-        Rectangle(w, h) -> w * h;                     // w: f64, h: f64
-        Point -> 0.0;
-    };
-}
-
-// slug: narrow_case_enum_nested_variant_access
-enum Result_ { OkData(val: record { code: i32, msg: string }), Fail }
-fn describe(r: Result_) -> string {
-    return case r {
-        OkData(d) -> d.msg;           // d: { code: i32, msg: string }
-        Fail -> "failed";
-    };
-}
-```
-
-### 2.6 — `case` with OR patterns
-
-```botopink
-// slug: narrow_case_or_patterns_shared_bindings
-enum Animal {
-    Dog(breed: string),
-    Cat(breed: string),
-    Fish,
-}
-fn breed(a: Animal) -> string {
-    return case a {
-        Dog(b) | Cat(b) -> b;         // b: string from either variant
-        Fish -> "none";
-    };
-}
-```
-
-### 2.7 — `case` with guard clauses
-
-```botopink
-// slug: narrow_case_guard_bound_identifier
-fn describe(n: i32) -> string {
-    return case n {
-        x if (x > 0) -> "positive: " + x;   // x: i32
-        x if (x < 0) -> "negative: " + x;   // x: i32
-        _ -> "zero";
-    };
-}
-
-// slug: narrow_case_guard_variant_field
-enum Response {
-    Data(code: i32, body: string),
-    Error(code: i32),
-}
-fn handle(r: Response) -> string {
-    return case r {
-        Data(code, body) if (code == 200) -> body;   // narrowed to Data
-        Data(code, body) if (code == 404) -> "not found";
-        Error(code) -> "error " + code;
-    };
-}
-```
-
-### 2.8 — `assert` pattern narrowing
-
-```botopink
-// slug: narrow_assert_pattern_after_assert
-fn process(x: ?i32) -> i32 {
-    assert x is Some(n);
-    return n + 1;                       // n: i32 (narrowed from assert)
-}
-
-// slug: narrow_assert_pattern_enum_variant
-enum Status { Ready, Busy(count: i32), Down }
-fn work(s: Status) -> i32 {
-    assert s is Busy(n);
-    return n;                           // n: i32
-}
-```
-
-### 2.9 — Early return narrowing
-
-```botopink
-// slug: narrow_early_return_guard_clause
-fn greet(x: ?string) -> string {
-    if (!x) { return "nobody"; };
-    return "hello " + x;                // x: string (narrowed by early return)
-}
-```
-
-### 2.10 — `else if` chain narrowing
-
-```botopink
-// slug: narrow_else_if_chain
-fn classify(x: ?i32) -> string {
-    if (x == 0) { return "zero"; }
-    else if (x > 0) { return "positive: " + x; }   // x: i32
-    else if (x < 0) { return "negative: " + x; }   // x: i32
-    else { return "null"; }
-}
-```
-
-### 2.11 — Narrowing across `if` with `&&`
-
-```botopink
-// slug: narrow_if_and_condition
-record Box { weight: i32 }
-fn describe(b: ?Box) -> string {
-    if (b && b.weight > 10) {          // b narrowed to Box for .weight access
-        return "heavy: " + b.weight;
-    };
-    return "light or none";
-}
-```
-
-### 2.12 — Optional chaining with narrowing
-
-```botopink
-// slug: narrow_optional_chaining_field_access
-record Inner { value: i32 }
-record Outer { inner: ?Inner }
-fn getValue(o: Outer) -> ?i32 {
-    return o.inner?.value;              // .value only accessed if inner != null
-}
-```
-
-### 2.13 — Narrowing failure tests (must error)
-
-```botopink
-// slug: narrow_error_variant_field_in_wrong_arm
-enum Shape {
-    Circle(radius: f64),
-    Square(side: f64),
-}
-fn bad(s: Shape) -> f64 {
-    return case s {
-        Circle(radius) -> radius;
-        Square(side) -> radius;          // ERROR: radius not in scope
-    };
-}
-
-// slug: narrow_error_optional_field_without_narrowing
-record User { name: string }
-fn bad(maybeUser: ?User) -> string {
-    return maybeUser.name;               // ERROR: ?User has no field 'name'
-}
-```
-
-### 2.14 — Type guards (user-defined narrowing functions)
-
-Type guards extend the narrowing system with user-defined predicates. A
-function with return type `-> param is NarrowedType` tells the inference
-engine to refine the argument type at the call site.
-
-**Syntax:**
-
-```
-fn name(param: T) -> param is NarrowedType { ... }
-```
-
-**Rules:**
-
-1. **Parser:** `->` followed by `ident is Type` in fn return position is a
-   type guard return.
-2. **Inference:** At call site, when `if (guard(x))`, the type of `x` inside
-   the then-branch is refined to `NarrowedType`. In the else-branch, `x` is
-   `T \ NarrowedType`.
-3. **Soundness:** The compiler verifies the function body covers all cases
-   and returns `true` only when the parameter is provably of the narrowed type.
-4. **Assertion mode:** `guard(x)` as a statement (not in `if`) narrows `x`
-   unconditionally — the guard must `@panic` internally if the condition fails.
-5. **Negation:** `if (!guard(x))` narrows `x` in the else-branch.
-6. **Chaining:** `if (isA(x) && isB(x.a))` — narrowing composes between guards.
-
-**Tests:**
-
-```botopink
-// slug: typeguard_enum_variant_narrowing
-enum Shape { Circle(radius: f64), Square(side: f64) }
-fn isCircle(s: Shape) -> s is Shape.Circle {
-    return case s { Circle(_) -> true; _ -> false; };
-}
-fn area(s: Shape) -> f64 {
-    if (isCircle(s)) {
-        return 3.14 * s.radius * s.radius;  // s: Circle
-    };
-    return s.side * s.side;  // s: Square (narrowed by else)
-}
-
-// slug: typeguard_assertion_mode
-fn assertNonEmpty(s: ?string) -> s is string {
-    if (s.len > 0) { return true; };
-    @panic("empty or null string");
-}
-fn yell(s: ?string) -> string {
-    assertNonEmpty(s);  // assertion mode: s narrowed to string
-    return s.toUpper();
-}
-
-// slug: typeguard_negation_narrowing
-fn isError(r: @Result<i32, string>) -> r is @Result.Err {
-    return case r { Err(_) -> true; _ -> false; };
-}
-fn describe(r: @Result<i32, string>) -> string {
-    if (isError(r)) {
-        return "error: " + r.e;    // r narrowed to Err(string)
-    };
-    return "ok: " + r.d;           // r narrowed to Ok(i32)
-}
-```
+Full test source code in the detailed test matrix at the end of this spec.
 
 ---
 
 ## Step 3 — Implement parser support for type guards
 
-**Status:** pending
-**Assignee:**
+**Status:** pending **Assignee:**
 
 Add parsing for `-> ident is Type` in function return position.
+
+```botopink
+fn isCircle(s: Shape) -> s is Shape.Circle { ... }
+fn isError(r: @Result<i32, string>) -> r is @Result.Err { ... }
+```
 
 **Acceptance criteria:**
 - [ ] `fn isX(x: T) -> x is NarrowedType { ... }` parses correctly
@@ -418,17 +127,16 @@ Add parsing for `-> ident is Type` in function return position.
 
 | File | Purpose |
 |------|---------|
-| `parser/decls.zig` | Parse `-> ident is Type` in fn return type |
-| `parser/tests/decls.zig` | Parser tests for type guard syntax |
+| `modules/compiler-core/src/parser/decls.zig` | Parse `-> ident is Type` in fn return type |
+| `modules/compiler-core/src/parser/tests/declarations.zig` | Parser tests for type guard syntax |
 
 ---
 
 ## Step 4 — Implement inference engine narrowing
 
-**Status:** pending
-**Assignee:**
+**Status:** pending **Assignee:**
 
-Implement all 12 narrowing patterns in the Hindley-Milner inference engine.
+Implement all narrowing patterns in the Hindley-Milner inference engine.
 
 **Acceptance criteria:**
 - [ ] `if (x)` narrows `?T → T` for `?i32`, `?bool`, `?string`, `?record`
@@ -449,56 +157,40 @@ Implement all 12 narrowing patterns in the Hindley-Milner inference engine.
 
 | File | Purpose |
 |------|---------|
-| `comptime/infer.zig` | Narrowing logic in all control-flow constructs |
-| `comptime/env.zig` | Scoped type environments for narrowed branches |
-| `parser/decls.zig` | Type guard return type annotation (from Step 3) |
+| `modules/compiler-core/src/comptime/infer.zig` | Narrowing logic in all control-flow constructs |
+| `modules/compiler-core/src/comptime/env.zig` | Scoped type environments for narrowed branches |
 
 ---
 
 ## Step 5 — Implement comptime narrowing tests
 
-**Status:** pending
-**Assignee:**
+**Status:** pending **Assignee:**
 
-Add the 25+ narrowing tests from Section 2 to the comptime test suite in
-`modules/compiler-core/src/comptime/tests/`. Each test verifies that the
-inference engine correctly narrows types or rejects invalid narrowing.
+Add the 24 narrowing tests from Step 2 to the comptime test suite.
 
 **Acceptance criteria:**
-- [ ] All 25+ narrowing tests pass with `zig build test`
+- [ ] All 24 narrowing tests pass with `zig build test`
 - [ ] Each narrowing pattern has at least one positive test (correct narrowing)
 - [ ] Each narrowing pattern has at least one negative test (should error)
 - [ ] Snapshot files auto-created
 
-### Files to create/modify
+### Files to create
 
 | File | Purpose |
 |------|---------|
-| `comptime/tests/narrowing.zig` | New test file with all narrowing tests |
-| `comptime/tests/AGENTS.md` | Add entry for narrowing.zig |
+| `modules/compiler-core/src/comptime/tests/narrowing.zig` | All narrowing tests |
 
 ---
 
 ## Step 6 — Implement codegen narrowing tests (all 4 backends)
 
-**Status:** pending
-**Assignee:**
+**Status:** pending **Assignee:**
 
-For each narrowing pattern, add codegen tests that verify the narrowed value
-produces correct runtime output (RUN LOG capture). The comptime tests verify
-type inference; the codegen tests verify end-to-end behavior.
+For each narrowing pattern, add codegen tests that verify runtime behavior (RUN LOG capture).
 
-Detailed test designs live in `1_0_0_beta.codegen-test-gap.md` (the codegen
-test gap spec). This step creates the subset that exercises narrowing
-semantics at runtime.
+**Depends on:** Step 4 (inference engine), `codegen-test-gap.md` Step 2 (runtime crash fixes).
 
-**Acceptance criteria:**
-- [ ] At least 8 narrowing codegen tests added
-- [ ] Each test runs on all 4 backends (node, erlang, beam, wasm)
-- [ ] `zig build test` passes
-- [ ] RUN LOG captures correct output
-
-### Priority codegen tests
+Priority tests:
 
 ```botopink
 // slug: narrow_if_null_with_print
@@ -510,10 +202,7 @@ fn main() {
 // slug: narrow_case_enum_area_with_print
 enum Shape { Circle(radius: f64), Square(side: f64) }
 fn area(s: Shape) -> f64 {
-    return case s {
-        Circle(r) -> 3.14 * r * r;
-        Square(s) -> s * s;
-    };
+    return case s { Circle(r) -> 3.14 * r * r; Square(s) -> s * s; };
 }
 fn main() {
     @print(area(Shape.Circle(2.0)));
@@ -524,16 +213,13 @@ fn main() {
 // slug: narrow_case_result_ok_err_with_print
 #[@result]
 fn fetch(ok: bool) -> @Result<string, string> {
-    if (ok) { return "data"; };
-    throw "fail";
+    if (ok) { return "data"; }; throw "fail";
 }
 fn main() {
     val r1 = fetch(true);
-    val msg1 = case r1 { Ok(v) -> "OK:" + v; Err(e) -> "ERR:" + e; };
-    @print(msg1);
+    @print(case r1 { Ok(v) -> "OK:" + v; Err(e) -> "ERR:" + e; });
     val r2 = fetch(false);
-    val msg2 = case r2 { Ok(v) -> "OK:" + v; Err(e) -> "ERR:" + e; };
-    @print(msg2);
+    @print(case r2 { Ok(v) -> "OK:" + v; Err(e) -> "ERR:" + e; });
 }
 // expected RUN LOG: OK:data\nERR:fail
 
@@ -549,50 +235,272 @@ fn main() {
 // expected RUN LOG: hello world\nnobody
 ```
 
+**Acceptance criteria:**
+- [ ] ≥8 narrowing codegen tests added
+- [ ] Each test runs on all 4 backends (node, erlang, beam, wasm)
+- [ ] `zig build test` passes
+- [ ] RUN LOG captures correct output
+
+---
+
+## Detailed test matrix
+
+### 2.1 — `if` null-check narrowing
+
+```botopink
+// slug: narrow_if_null_check_record_field_access
+record User { name: string }
+fn greet(maybeUser: ?User) -> string {
+    if (maybeUser) { u -> return "hello " + u.name; };
+    return "no user";
+}
+
+// slug: narrow_if_null_check_bool
+fn and(a: ?bool, b: ?bool) -> ?bool {
+    if (a) { va -> if (b) { vb -> return va && vb; }; };
+    return null;
+}
+
+// slug: narrow_if_null_check_chained
+record A { b: ?record { c: i32 } }
+fn getC(x: ?A) -> ?i32 {
+    if (x) { a -> if (a.b) { b -> return b.c; }; };
+    return null;
+}
+```
+
+### 2.2 — `if` null-check with `else` branch
+
+```botopink
+// slug: narrow_if_null_else_returns_different_type
+fn describe(x: ?i32) -> string {
+    if (x) { n -> return "got " + n; };
+    return "nothing";
+}
+
+// slug: narrow_if_null_else_uses_original_type
+fn fallback(x: ?string) -> string {
+    if (x) { s -> return s; };
+    return "default";
+}
+```
+
+### 2.3 — `case` narrowing on `@Result<D,E>`
+
+```botopink
+// slug: narrow_case_result_ok_err
+#[@result]
+fn parse(n: i32) -> @Result<string, string> { ... }
+fn handle(n: i32) -> string {
+    val r = parse(n);
+    return case r { Ok(v) -> "parsed: " + v; Err(e) -> "error: " + e; };
+}
+
+// slug: narrow_case_result_different_payload_types
+record User { name: string }
+enum AppError { NotFound, Timeout(msg: string) }
+#[@result]
+fn fetchUser(id: i32) -> @Result<User, AppError> { ... }
+fn main() {
+    val r = fetchUser(1);
+    case r {
+        Ok(u) -> @print(u.name);
+        Err(NotFound) -> @print("404");
+        Err(Timeout(msg)) -> @print("timeout: " + msg);
+    };
+}
+```
+
+### 2.4 — `case` narrowing on `@Option<T>`
+
+```botopink
+// slug: narrow_case_option_some_none
+fn describe(opt: @Option<i32>) -> string {
+    return case opt { None -> "empty"; Some(v) -> "value: " + v; };
+}
+```
+
+### 2.5 — `case` narrowing on user-defined enum variants
+
+```botopink
+// slug: narrow_case_enum_variant_field_bindings
+enum Shape { Circle(radius: f64), Rectangle(w: f64, h: f64), Point }
+fn area(s: Shape) -> f64 {
+    return case s {
+        Circle(radius) -> 3.14 * radius * radius;
+        Rectangle(w, h) -> w * h;
+        Point -> 0.0;
+    };
+}
+
+// slug: narrow_case_enum_nested_variant_access
+enum Result_ { OkData(val: record { code: i32, msg: string }), Fail }
+fn describe(r: Result_) -> string {
+    return case r { OkData(d) -> d.msg; Fail -> "failed"; };
+}
+```
+
+### 2.6 — `case` with OR patterns
+
+```botopink
+// slug: narrow_case_or_patterns_shared_bindings
+enum Animal { Dog(breed: string), Cat(breed: string), Fish }
+fn breed(a: Animal) -> string {
+    return case a { Dog(b) | Cat(b) -> b; Fish -> "none"; };
+}
+```
+
+### 2.7 — `case` with guard clauses
+
+```botopink
+// slug: narrow_case_guard_bound_identifier
+fn describe(n: i32) -> string {
+    return case n { x if (x > 0) -> "positive: " + x; x if (x < 0) -> "negative: " + x; _ -> "zero"; };
+}
+
+// slug: narrow_case_guard_variant_field
+enum Response { Data(code: i32, body: string), Error(code: i32) }
+fn handle(r: Response) -> string {
+    return case r {
+        Data(code, body) if (code == 200) -> body;
+        Data(code, body) if (code == 404) -> "not found";
+        Error(code) -> "error " + code;
+    };
+}
+```
+
+### 2.8 — `assert` pattern narrowing
+
+```botopink
+// slug: narrow_assert_pattern_after_assert
+fn process(x: ?i32) -> i32 {
+    assert x is Some(n);
+    return n + 1;
+}
+
+// slug: narrow_assert_pattern_enum_variant
+enum Status { Ready, Busy(count: i32), Down }
+fn work(s: Status) -> i32 {
+    assert s is Busy(n);
+    return n;
+}
+```
+
+### 2.9 — Early return narrowing
+
+```botopink
+// slug: narrow_early_return_guard_clause
+fn greet(x: ?string) -> string {
+    if (!x) { return "nobody"; };
+    return "hello " + x;
+}
+```
+
+### 2.10 — `else if` chain narrowing
+
+```botopink
+// slug: narrow_else_if_chain
+fn classify(x: ?i32) -> string {
+    if (x == 0) { return "zero"; }
+    else if (x > 0) { return "positive: " + x; }
+    else if (x < 0) { return "negative: " + x; }
+    else { return "null"; }
+}
+```
+
+### 2.11 — Narrowing across `if` with `&&`
+
+```botopink
+// slug: narrow_if_and_condition
+record Box { weight: i32 }
+fn describe(b: ?Box) -> string {
+    if (b && b.weight > 10) { return "heavy: " + b.weight; };
+    return "light or none";
+}
+```
+
+### 2.12 — Optional chaining with narrowing
+
+```botopink
+// slug: narrow_optional_chaining_field_access
+record Inner { value: i32 }
+record Outer { inner: ?Inner }
+fn getValue(o: Outer) -> ?i32 { return o.inner?.value; }
+```
+
+### 2.13 — Narrowing failure tests (must error)
+
+```botopink
+// slug: narrow_error_variant_field_in_wrong_arm — ERROR: radius not in scope in Square arm
+// slug: narrow_error_optional_field_without_narrowing — ERROR: ?User has no field 'name'
+```
+
+### 2.14 — Type guards (user-defined narrowing functions)
+
+```botopink
+// slug: typeguard_enum_variant_narrowing
+fn isCircle(s: Shape) -> s is Shape.Circle {
+    return case s { Circle(_) -> true; _ -> false; };
+}
+fn area(s: Shape) -> f64 {
+    if (isCircle(s)) { return 3.14 * s.radius * s.radius; };
+    return s.side * s.side;
+}
+
+// slug: typeguard_assertion_mode
+fn assertNonEmpty(s: ?string) -> s is string {
+    if (s.len > 0) { return true; };
+    @panic("empty or null string");
+}
+fn yell(s: ?string) -> string {
+    assertNonEmpty(s);
+    return s.toUpper();
+}
+
+// slug: typeguard_negation_narrowing
+fn isError(r: @Result<i32, string>) -> r is @Result.Err {
+    return case r { Err(_) -> true; _ -> false; };
+}
+fn describe(r: @Result<i32, string>) -> string {
+    if (isError(r)) { return "error: " + r.e; };
+    return "ok: " + r.d;
+}
+```
+
 ---
 
 ## Summary
 
 | Metric | Count |
 |--------|-------|
-| Narrowing patterns identified | 13 |
-| Positive tests designed | 19 |
-| Negative tests designed | 6 |
-| Type guard tests designed | 3 |
-| Codegen tests prioritized | 4 |
+| Narrowing patterns identified | 14 |
+| Positive tests designed | 22 |
+| Negative tests designed | 2 |
+| Codegen tests prioritized | 4+ |
 
 ### Key findings
 
-1. **Botopink already has 8 comptime narrowing tests** for null-check, variant
-   access, and optional type inference — but coverage is sparse.
+1. **Botopink already has 8 comptime narrowing tests** for null-check, variant access, and optional type inference — but coverage is sparse.
 
-2. **No codegen tests exist** for narrowing patterns. The existing comptime
-   tests only verify type inference, not runtime behavior.
+2. **No codegen tests exist** for narrowing patterns. The existing comptime tests only verify type inference, not runtime behavior.
 
-3. **Critical gaps:** `@Result<D,E>` narrowing with different payload types,
-   `@Option<T>` narrowing, early-return guard clause narrowing, type guards,
-   and `assert` pattern narrowing have zero tests.
+3. **Critical gaps:** `@Result<D,E>` narrowing, `@Option<T>` narrowing, early-return guard clauses, type guards, and `assert` pattern narrowing have zero tests.
 
-4. **Type guards** (`fn isX(x: T) -> x is NarrowedType`) are the most impactful
-   new feature — they enable user-defined narrowing predicates that compose
-   with `if`, `else`, negation, and assertion mode.
+4. **Type guards** (`fn isX(x: T) -> x is NarrowedType`) are the most impactful new feature — they enable user-defined narrowing predicates.
 
-5. **The `!x` prefix operator** for boolean negation is needed for early-return
-   guard clauses (`if (!x) { return; }`). Verify it's supported by the parser
-   before writing those tests.
+5. **Steps 3-4 can be parallelized:** parser changes (Step 3) and inference engine work (Step 4) touch different files for the most part. Step 4 depends on Step 3 only for the type guard return type AST node shape.
 
 ## Notes
 
-- Type narrowing is purely a **comptime/inference** concern — the codegen just
-  receives an already-typed AST. Codegen tests are still valuable to verify
-  the whole pipeline.
-- `case` arm narrowing (fields available only in matched variant) is the most
-  complex part of the inference engine.
-- Type guard return syntax (`-> param is Type`) requires parser changes before
-  inference work can begin on that pattern.
+- Type narrowing is purely a **comptime/inference** concern — codegen receives an already-typed AST.
+- `case` arm narrowing (fields available only in matched variant) is the most complex part.
+- Type guard return syntax (`-> param is Type`) requires parser changes before inference work.
+- This spec does NOT overlap with `comptime-type-introspection` — narrowing is about control-flow type refinement, not type construction.
 
 ## Changelog
 
 | Date | Change | Author |
 |------|--------|--------|
-| 2026-06-30 | Spec created — state narrowing + type guards, merged from ts-advanced-types §2.4 | ericfillipe |
+| 2026-06-30 | Spec created — state narrowing + type guards | ericfillipe |
+| 2026-06-30 | Steps 1-2 completed: audit and test matrix designed | ericfillipe |
+| 2026-06-30 | Rewritten: fixed status from "completed" to "in progress"; steps 3-6 correctly marked pending; removed codegen duplication (deferred to codegen-test-gap); added detailed test matrix inline | ericfillipe |
