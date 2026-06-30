@@ -203,23 +203,41 @@ import { partial, omit, pick } from "std/types";
 
 ---
 
-## Step 9 — `@make` shorthand for named-arg type construction
+## Step 9 — `@make` builder pattern (replaces `@makeRecord`)
 
-Syntactic sugar for `@makeRecord`:
+`@make` takes an enum variant describing the type to construct. The enum acts
+as a type-constructor DSL — one variant per type shape. This replaces the
+separate `@makeRecord` builtin.
 
 ```botopink
-val Point = @make(x: i32, y: string);
-// Equivalent to: val Point = @makeRecord([
-//     RecordField(name: "x", typeName: "i32"),
-//     RecordField(name: "y", typeName: "string"),
-// ]);
+// Builder enum — one variant per type shape
+enum TypeCtor {
+    Record(fields: RecordField[]),
+    Optional(inner: type),
+    Array(elem: type),
+}
+
+// Literal usage: pass Record variant with named args
+val Point = @make(TypeCtor.Record(fields: [
+    RecordField(name: "x", typeName: "i32"),
+    RecordField(name: "y", typeName: "i32"),
+]));
+
+// Computed usage (from @typeInfo results):
+fn mergeRecords(comptime A: type, comptime B: type) -> type {
+    // ... compute fields ...
+    break @make(TypeCtor.Record(fields: mergedFields));
+}
 ```
 
 ### Implementation
 
-- Parser: `@make(label: Type, ...)` as a special builtin call form
-- Converts named args directly to `RecordField` descriptors
-- Delegates to the same `makeSyntheticRecordType` path
+- Parser: `@make(Variant(args))` as builtin call form
+- At inference time: dispatch on variant name
+  - `TypeCtor.Record` → `makeSyntheticRecordType` with extracted fields
+  - `TypeCtor.Optional` → wrap inner type
+  - `TypeCtor.Array` → create array type
+- `@makeRecord` is deprecated/removed in favor of `@make(TypeCtor.Record(...))`
 
 ---
 
