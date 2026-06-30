@@ -375,27 +375,80 @@ var stdlib_template_env: Env = undefined;
 /// init function runs exactly once, every other caller is read-only.
 var stdlib_template_init: std.atomic.Value(u8) = .init(0);
 
-/// Pre-spawn the persistent `node` runner used by `template_eval` /
-/// `decorator_eval` / `runtime/node.zig`. Without warming, the FIRST test that
-/// triggers a template or decorator evaluation pays the ~50ms node cold-spawn
-/// cost on its row. Calling this from a test-binary warmup moves the cost out
-/// of any single test (mirrors `getStdlibTemplate`'s pre-warm contract).
-pub fn warmPersistentNodeRunner(io: std.Io, gpa: std.mem.Allocator) !void {
-    const pn = @import("./comptime/runtime/persistent_node.zig");
-    const out = pn.eval(gpa, io, "process.stdout.write(\"warm\");") catch return;
-    gpa.free(out);
+/// Pre-spawn the persistent erl subprocess used for comptime val evaluation.
+/// Erlang/OTP cold-spawns in ~50ms; pre-warming keeps the first comptime
+/// evaluation's latency honest and prevents the first test from paying the
+/// spawn cost.
+pub fn warmPersistentErlRunner(io: std.Io, gpa: std.mem.Allocator) !void {
+    const erl = @import("./comptime/runtime/persistent_erl.zig");
+    erl.warm(gpa, io) catch return;
+
+    // Compile template_runtime.bp to Erlang and write to the server directory
+    // so Span, CustomNode, Capture, DeclHandle types are available to
+    // template/decorator bodies compiled to Erlang.
+    const erlang_codegen = @import("./codegen/erlang.zig");
+    const session = compile(gpa, &.{.{ .path = "template_runtime", .source = template_runtime_src }}, io, null, "erlang") catch return;
+    defer session.deinit(gpa);
+    for (session.outputs.items) |out| {
+        if (out.outcome == .ok) {
+            var results = erlang_codegen.codegenEmit(gpa, &.{out}, .{ .targetSource = .erlang }) catch continue;
+            defer {
+                for (results.items) |*r| r.result.deinit(gpa);
+                results.deinit(gpa);
+            }
+            for (results.items) |r| {
+                if (r.result.js.len > 0) {
+                    const server_dir = ".botopinkbuild/tmp/persistent_erl";
+                    const tr_path = try std.fs.path.join(gpa, &.{ server_dir, "template_runtime.erl" });
+                    defer gpa.free(tr_path);
+
+                    // Post-process: replace #[@Host] stub bodies with prelude calls.
+                    const patched = try patchHostMethods(gpa, r.result.js);
+                    defer gpa.free(patched);
+                    std.Io.Dir.cwd().writeFile(io, .{ .sub_path = tr_path, .data = patched }) catch break;
+                    _ = std.process.run(gpa, io, .{
+                        .argv = &.{ "erlc", "-o", server_dir, tr_path },
+                    }) catch {};
+                    break;
+                }
+            }
+            break;
+        }
+    }
 }
 
-/// Pre-init the embedded wasm3 runtime used by `runtime/wasm.zig` for every
-/// comptime val expression. wasm3 is an interpreter (no JIT spin-up), so the
-/// cold cost is sub-millisecond — but pre-warming keeps the first comptime
-/// test's `--time-report` row honest. Replaces the v0.beta.20
-/// `warmPersistentErlangRunner` (deleted with the four-runtime architecture
-/// in v0.beta.21).
-pub fn warmWasm3Runtime(io: std.Io, gpa: std.mem.Allocator) !void {
-    _ = io;
-    const w3 = @import("./comptime/runtime/wasm3_host.zig");
-    w3.warm(gpa) catch return;
+/// Replace #[@Host] stub bodies in the generated template_runtime Erlang source
+/// with calls to botopink_comptime_prelude. The codegen emits #[@Host] methods as
+/// empty functions (returning `ok`). This patches them to delegate to the prelude.
+fn patchHostMethods(gpa: std.mem.Allocator, erl_src: []const u8) ![]u8 {
+    var result: std.ArrayListUnmanaged(u8) = .empty;
+    try result.ensureTotalCapacity(gpa, erl_src.len + 512);
+
+    var lines = std.mem.splitScalar(u8, erl_src, '\n');
+    while (lines.next()) |line| {
+        const trimmed = std.mem.trim(u8, line, " \t");
+        // Match #[@Host] function stubs and replace bodies.
+        if (std.mem.startsWith(u8, trimmed, "context(")) {
+            try result.appendSlice(gpa, "context(Self) -> botopink_comptime_prelude:context(element(2, Self)).\n");
+        } else if (std.mem.startsWith(u8, trimmed, "lookup(")) {
+            try result.appendSlice(gpa, "lookup(Self, Name) -> botopink_comptime_prelude:lookup(element(2, Self), Name).\n");
+        } else if (std.mem.startsWith(u8, trimmed, "bindings(")) {
+            try result.appendSlice(gpa, "bindings(Self) -> botopink_comptime_prelude:bindings(element(2, Self)).\n");
+        } else if (std.mem.startsWith(u8, trimmed, "parts(")) {
+            try result.appendSlice(gpa, "parts(Self) -> botopink_comptime_prelude:parts(element(2, Self)).\n");
+        } else if (std.mem.startsWith(u8, trimmed, "custom(")) {
+            try result.appendSlice(gpa, "custom(Self, Ast, Code) -> {element(2, Self), Ast, Code}.\n");
+        } else if (std.mem.startsWith(u8, trimmed, "makeExpr(")) {
+            try result.appendSlice(gpa, "makeExpr(V) -> {v, V}.\n");
+        } else if (std.mem.startsWith(u8, trimmed, "makeCode(")) {
+            try result.appendSlice(gpa, "makeCode(S) -> {code, S}.\n");
+        } else {
+            try result.appendSlice(gpa, line);
+            try result.append(gpa, '\n');
+        }
+    }
+
+    return result.toOwnedSlice(gpa);
 }
 
 pub fn getStdlibTemplate(gpa: std.mem.Allocator) !*const Env {

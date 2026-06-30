@@ -1717,6 +1717,10 @@ pub const FnDecl = struct {
     params: []Param,
     /// null when the return type is omitted (void-returning functions).
     returnType: ?TypeRef,
+    /// When non-null, this fn is a type guard: `fn f(x: T) -> x is NarrowedType`.
+    /// The string names the parameter being narrowed. The return type (above)
+    /// holds the narrowed type.
+    typeGuardParam: ?[]const u8 = null,
     body: []Stmt,
 
     /// The effect named by a `#[@<effect>]` annotation on this fn, if any.

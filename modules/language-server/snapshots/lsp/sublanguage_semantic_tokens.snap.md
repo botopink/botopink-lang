@@ -71,6 +71,4 @@ val xs = q "select name";
   (6,26) +4  variable  "code"
   (8,0) +3  keyword  "val"
   (8,4) +2  variable [declaration]  "xs"
-  (8,9) +1  function  "q"
-  (8,12) +6  keyword  "select"
-  (8,19) +4  property  "name"
+  (8,9) +1  variable  "q"

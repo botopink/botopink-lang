@@ -11,6 +11,7 @@ test {
     _ = @import("tests/dispatch.zig");
     _ = @import("tests/features.zig");
     _ = @import("tests/externals.zig");
+    _ = @import("tests/narrowing.zig");
     _ = @import("tests/std_package.zig");
     _ = @import("tests/wat.zig");
     _ = @import("tests/dts_skips_templates.zig");

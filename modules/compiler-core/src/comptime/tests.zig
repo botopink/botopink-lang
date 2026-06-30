@@ -16,15 +16,13 @@ test {
     _ = @import("tests/decorator_invocation.zig");
     _ = @import("tests/generic_defaults.zig");
     _ = @import("tests/std_target_gating.zig");
+    _ = @import("tests/narrowing.zig");
     _ = @import("tests/effect_result.zig");
     _ = @import("tests/effect_future.zig");
     _ = @import("tests/effect_generator.zig");
     _ = @import("tests/builtins_typeinfo.zig");
     _ = @import("primOpTemplate.zig");
     _ = @import("./diagnostics.zig");
-    _ = @import("./runtime/wat_to_wasm.zig");
-    _ = @import("./runtime/wasm3_host.zig");
-    _ = @import("./runtime/wat_runtime.zig");
     _ = @import("./template_eval.zig");
     _ = @import("./decorator_eval.zig");
 }

@@ -890,3 +890,30 @@ test "parser: declare fn ---- external + param default" {
         \\pub declare fn slice(s: string, start: i32, end: i32 = -1) -> string;
     );
 }
+
+test "parser: type guard ---- basic" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lx = Lexer.init(
+        \\fn isString(x: ?string) -> x is string { return true; }
+    );
+    const tokens = try lx.scanAll(alloc);
+    var p = Parser.init(tokens);
+    const program = try p.parse(alloc);
+    try std.testing.expect(program.decls.len == 1);
+    try std.testing.expect(program.decls[0] == .@"fn");
+    const fnDecl = program.decls[0].@"fn";
+    try std.testing.expectEqualStrings("isString", fnDecl.name);
+    try std.testing.expect(fnDecl.typeGuardParam != null);
+    try std.testing.expectEqualStrings("x", fnDecl.typeGuardParam.?);
+    try std.testing.expect(fnDecl.returnType != null);
+    try std.testing.expect(fnDecl.returnType.? == .named);
+    try std.testing.expectEqualStrings("string", fnDecl.returnType.?.named);
+}
+
+test "parser: type guard ---- snapshot round-trip" {
+    try h.assertParser(std.testing.allocator, @src(),
+        \\fn isString(x: ?string) -> x is string { return true; }
+    );
+}

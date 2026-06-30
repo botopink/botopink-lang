@@ -41,6 +41,7 @@
           }
         ],
         "returnType": null,
+        "typeGuardParam": null,
         "body": [
           {
             "expr": {

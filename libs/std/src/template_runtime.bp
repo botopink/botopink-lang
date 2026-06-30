@@ -12,11 +12,17 @@
 ////
 //// NOT an importable std module — wired via `build.zig std_internal_files`.
 
-// ── Builtins (provided by raw-infra WAT) ─────────────────────────────────────
+// ── Error handling ────────────────────────────────────────────────────────────
 
-#[@Host] pub fn failRaw(message: i32, param: i32, span: i32) {}
+/// Throw a structured fail for the template/decorator evaluator to catch.
+/// The evaluator wraps this in the outcome protocol.
+pub fn failRaw(message: i32, param: i32, span: i32) {
+    throw { message, param, span };
+}
 
-#[@Host] pub fn compilerError(message: i32) {}
+pub fn compilerError(message: i32) {
+    failRaw(message, 0, 0);
+}
 
 // ── Records ──────────────────────────────────────────────────────────────────
 

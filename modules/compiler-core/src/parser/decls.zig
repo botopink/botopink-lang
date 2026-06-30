@@ -366,8 +366,16 @@ pub fn parseFnBody(
 
     var returnType: ?ast.TypeRef = null;
     var arrowOmitted = false;
+    var typeGuardParam: ?[]const u8 = null;
     if (this.match(.rightArrow)) {
-        returnType = try this.parseTypeRef(alloc);
+        // Type guard: `-> param is NarrowedType`
+        if (this.check(.identifier) and this.peekAt(1).kind == .@"is") {
+            typeGuardParam = this.advance().lexeme;
+            _ = try this.consume(.@"is");
+            returnType = try this.parseTypeRef(alloc);
+        } else {
+            returnType = try this.parseTypeRef(alloc);
+        }
     } else if (!this.check(.leftBrace) and !this.check(.semicolon) and
         !this.check(.colon) and !this.check(.endOfFile) and
         isTypeStart(this.peek().kind))
@@ -461,6 +469,7 @@ pub fn parseFnBody(
             .genericParams = genericParams,
             .params = params,
             .returnType = returnType,
+            .typeGuardParam = typeGuardParam,
             .body = &.{},
         };
     }
@@ -477,6 +486,7 @@ pub fn parseFnBody(
         .genericParams = genericParams,
         .params = params,
         .returnType = returnType,
+        .typeGuardParam = typeGuardParam,
         .body = body,
     };
 }

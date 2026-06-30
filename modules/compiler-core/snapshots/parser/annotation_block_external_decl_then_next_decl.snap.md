@@ -39,6 +39,7 @@
         "returnType": {
           "named": "i32"
         },
+        "typeGuardParam": null,
         "body": []
       }
     },
@@ -57,6 +58,7 @@
         "genericParams": [],
         "params": [],
         "returnType": null,
+        "typeGuardParam": null,
         "body": [
           {
             "expr": {

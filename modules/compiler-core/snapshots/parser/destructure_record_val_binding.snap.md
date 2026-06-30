@@ -30,6 +30,7 @@
         "returnType": {
           "named": "string"
         },
+        "typeGuardParam": null,
         "body": [
           {
             "expr": {
