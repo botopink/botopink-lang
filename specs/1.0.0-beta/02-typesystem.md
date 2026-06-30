@@ -17,7 +17,8 @@
 | Step | Title | Status | Assignee |
 |------|-------|--------|----------|
 | Step 1 | `type` as first-class comptime value | pending | |
-| Step 2 | Implement comptime value evaluation for builtins | pending | |
+| Step 1b | `#[@code]` annotation: TypeInfo → type lifting | pending | |
+| Step 2 | Implement comptime value evaluation for core builtins | pending | |
 | Step 3 | Implement comptime eval loop for std functions | pending | |
 | Step 4 | Implement std functions in .bp | pending | |
 | Step 5 | Comptime tests for builtins + std functions | pending | |
@@ -28,14 +29,28 @@
 
 ## What's already done
 
-3 core builtins registered in the compiler, resolve correct return types during inference:
+2 core builtins registered in the compiler, resolve correct return types during inference:
 - `@typeInfo(T)` — returns `TypeInfo` type (not value yet)
 - `@TypeOf(v)` — returns type of value (inference-time only)
-- `@makeRecord(fields)` — returns fresh type variable (not concrete yet)
 
 Types are embedded in compiler as Zig source. `RecordField.typeName` (not `type` — keyword conflict). 23 snapshot tests pass.
 
-> **Design note:** `@RecordKeys` and `@Field` are NOT compiler builtins — they're std functions in `types.bp` built on `@typeInfo`. Formerly registered as inference-time builtins; those registrations should be removed when the std versions land (Step 4).
+> **Design decisions:**
+> - `@makeRecord` is **not a builtin** — type construction is done by std functions that return a `TypeInfo.Record(...)` value and are annotated with `#[@code]`. The `#[@code]` annotation tells the compiler: "the return value is a TypeInfo that represents a type — treat it as the type at the call site."
+> - `@RecordKeys` and `@Field` are **not builtins** — they're std functions in `types.bp` built on `@typeInfo`.
+> - Former inference-time registrations for `@makeRecord`, `@RecordKeys`, `@Field` should be removed.
+
+```botopink
+// #[@code] annotation pattern:
+#[@code]
+fn makePoint() -> TypeInfo {
+    break TypeInfo.Record(fields: [
+        RecordField(name: "x", typeName: i32),
+        RecordField(name: "y", typeName: i32),
+    ]);
+}
+val p: makePoint() = makePoint()(x: 1, y: 2);  // type constructed from TypeInfo
+```
 
 State-narrowing audit + test matrix designed (24 tests across 14 patterns). Existing comptime narrowing coverage: 8 tests for null-check + variant access — sparse.
 
@@ -74,23 +89,82 @@ fn identityType(comptime T: type) -> type { break T; }
 
 ---
 
+### Step 1b — `#[@code]` annotation: TypeInfo → type lifting
+
+**Status:** pending **Assignee:**
+
+The `#[@code]` annotation on a function tells the compiler: "this function returns a `TypeInfo` value that represents a type — treat it as the actual type at the call site." This replaces `@makeRecord` as the type construction mechanism.
+
+```botopink
+// #[@code] lifts a TypeInfo return value into a type:
+#[@code]
+fn Point() -> TypeInfo {
+    break TypeInfo.Record(fields: [
+        RecordField(name: "x", typeName: i32),
+        RecordField(name: "y", typeName: i32),
+    ]);
+}
+
+// Usage: the return type of Point() is treated as the record type itself
+val p: Point() = Point()(x: 1, y: 2);  // Point() is the type
+@print(p.x);  // 1
+
+// Works with generic type constructors too:
+#[@code]
+fn Pair(comptime A: type, comptime B: type) -> TypeInfo {
+    break TypeInfo.Record(fields: [
+        RecordField(name: "first", typeName: A),
+        RecordField(name: "second", typeName: B),
+    ]);
+}
+val ip: Pair(i32, string) = Pair(i32, string)(first: 42, second: "hello");
+```
+
+**How it works:**
+1. Parser recognizes `#[@code]` annotation on function declarations
+2. Inference: when a `#[@code]` function is called, evaluate the body at comptime
+3. The return value must be a `TypeInfo` enum variant
+4. The compiler lifts the TypeInfo into a concrete type at the call site
+5. The function is also callable as a value constructor (like record constructors)
+
+**Acceptance criteria:**
+- [ ] `#[@code]` annotation parses on function declarations
+- [ ] Functions annotated `#[@code]` can return TypeInfo values
+- [ ] Returned TypeInfo is lifted to a type at call sites
+- [ ] Type constructors with comptime params work
+- [ ] Remove `@makeRecord` builtin registration from compiler
+- [ ] `zig build test` passes
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `parser/decls.zig` | Parse `#[@code]` annotation |
+| `comptime/infer.zig` | TypeInfo → type lifting at call sites |
+| `comptime/builtins.zig` | Remove `@makeRecord` registration |
+
+---
+
 ### Step 2 — Implement comptime value evaluation for core builtins
 
 **Status:** pending **Assignee:**
 
-3 core builtins must compute actual values at comptime, not just types. `@RecordKeys` and `@Field` are implemented as std functions in `types.bp` (see Step 4), not as compiler builtins.
+2 core builtins must compute actual values at comptime. `@makeRecord` is removed — type construction uses `#[@code]` annotation (see Step 1b).
 
 ```botopink
 @typeInfo(i32)                    → TypeInfo.Int (value)
 @typeInfo(record { x: i32 })      → TypeInfo.Record(fields: [...])
 @typeInfo(enum { A, B(x: i32) })  → TypeInfo.Enum(variants: [...])
-@TypeOf(42)                      → i32 (type value)
-@makeRecord([RecordField("a", i32)]) → concrete record type
+@typeInfo(?string)                → TypeInfo.Optional(inner: string)
+@typeInfo(i32[])                  → TypeInfo.Array(element: i32)
+@TypeOf(42)                       → i32 (type value)
+@TypeOf(Point(x:1, y:2))         → Point (type value)
 ```
 
 **Acceptance criteria:**
-- [ ] All 5 value-eval cases above produce correct results
-- [ ] Remove inference-time-only registrations for `@RecordKeys` and `@Field` from compiler
+- [ ] `@typeInfo` computes correct TypeInfo values for all type kinds
+- [ ] `@TypeOf` returns the correct type value
+- [ ] Remove inference-time registrations for `@makeRecord`, `@RecordKeys`, `@Field`
 - [ ] `zig build test` passes
 
 ### Files
@@ -109,7 +183,7 @@ fn identityType(comptime T: type) -> type { break T; }
 Build evaluation loop so `.bp` functions with `comptime` params can execute during inference:
 1. Resolve comptime params to concrete values
 2. Evaluate function body expression by expression
-3. Handle builtins (`@typeInfo`, `@RecordKeys`, `@makeRecord`, `@comptimeError`)
+3. Handle builtins (`@typeInfo`, `@comptimeError`)
 4. Handle loops over comptime arrays, `break` with type value, `if/else` with comptime conditions
 
 **Acceptance criteria:**
@@ -135,10 +209,19 @@ Six std functions built purely in user-space `.bp` code using the 3 core builtin
 
 **Type manipulation** (`libs/std/src/reflect.bp`):
 ```botopink
-fn mergeRecords(comptime A: type, comptime B: type) -> type { ... }
-fn partial(comptime T: type) -> type { ... }
-fn omit(comptime T: type, comptime name: string) -> type { ... }
-fn pick(comptime T: type, comptime names: string[]) -> type { ... }
+#[@code]
+fn mergeRecords(comptime A: type, comptime B: type) -> TypeInfo {
+    val infoA = @typeInfo(A);
+    val infoB = @typeInfo(B);
+    // conflict detection + field join → return TypeInfo.Record(...)
+}
+
+#[@code]
+fn partial(comptime T: type) -> TypeInfo { ... }
+#[@code]
+fn omit(comptime T: type, comptime name: string) -> TypeInfo { ... }
+#[@code]
+fn pick(comptime T: type, comptime names: string[]) -> TypeInfo { ... }
 ```
 
 **Type introspection** (`libs/std/src/types.bp`):
@@ -317,10 +400,11 @@ Steps 6-9 (narrowing) can run in parallel with Steps 2-5 (type introspection) on
 
 | Metric | Count |
 |--------|-------|
-| New builtins | 5 + `@comptimeError` |
-| New std functions | 4 |
+| Core builtins | 2 (`@typeInfo`, `@TypeOf`) + `@comptimeError` |
+| Compiler annotations | 1 (`#[@code]`) |
+| Std functions | 6 (`mergeRecords`, `partial`, `omit`, `pick`, `recordKeys`, `field`) |
 | Narrowing patterns | 13 |
-| Comptime tests | ~44 (20 builtins + 24 narrowing) |
+| Comptime tests | ~42 |
 | Codegen tests | ≥8 |
 
 ## Changelog

@@ -292,19 +292,27 @@ fn getNum() -> i32 { return 10; }
 val T = @TypeOf(getNum());  // T = i32
 ```
 
-### 7.4 — `@makeRecord(fields)` creating concrete types
+### 7.4 — `#[@code]` type construction
 
 ```botopink
-// slug: makerecord_simple
-val fields = [RecordField("name", string), RecordField("age", i32)];
-val Person = @makeRecord(fields);
-val p: Person = Person(name: "alice", age: 30);
-@print(p.name);    // RUN LOG: alice
+// slug: code_annotation_point_type
+#[@code]
+fn Point() -> TypeInfo {
+    break TypeInfo.Record(fields: [
+        RecordField(name: "x", typeName: i32),
+        RecordField(name: "y", typeName: i32),
+    ]);
+}
+val p: Point() = Point()(x: 1, y: 2);
+@print(p.x);    // RUN LOG: 1
 
-// slug: makerecord_empty
-val Empty = @makeRecord([]);
-val e = Empty();
-// Round-trip: @typeInfo(Empty).Record.fields.len == 0
+// slug: code_annotation_empty_record
+#[@code]
+fn Empty() -> TypeInfo {
+    break TypeInfo.Record(fields: []);
+}
+val e = Empty()();
+// Round-trip: @typeInfo(Empty()).Record.fields.len == 0
 ```
 
 ### 7.5 — Comptime loop over type fields
@@ -341,8 +349,8 @@ fn safeRecord(comptime T: type) -> type {
 **Acceptance criteria:**
 - [ ] ≥12 comptime type eval tests in `comptime/tests/builtins_typeinfo.zig`
 - [ ] `type` usable as value, param, return type — all with @print validation
-- [ ] 3 core builtins compute correct values at comptime (not just types)
-- [ ] `@makeRecord` produces types that can be instantiated and printed
+- [ ] 2 core builtins compute correct values (`@typeInfo`, `@TypeOf`)
+- [ ] `#[@code]` annotation lifts TypeInfo to type at call site
 - [ ] `@comptimeError` surfaces clear error messages
 - [ ] Comptime loops over record fields work (via @typeInfo, not @RecordKeys)
 - [ ] `zig build test` passes
@@ -620,4 +628,4 @@ zig build test && zig build test-libs && zig build test-backends
 |------|--------|--------|
 | 2026-06-30 | Created from erl-comptime-gaps consolidation | ericfillipe |
 | 2026-06-30 | Added Step 6: erl runtime regression tests (decompiler round-trip, persistent erl health, decorator e2e, error surface) | ericfillipe |
-| 2026-06-30 | Updated Step 7: `@RecordKeys`/`@Field` removed from builtins — they're std functions in Wave 2 Step 4; only 3 core builtins tested (@typeInfo, @TypeOf, @makeRecord) | ericfillipe |
+| 2026-06-30 | Updated Step 7: `@makeRecord` removed — replaced by `#[@code]` annotation pattern. Only 2 core builtins tested (@typeInfo, @TypeOf) | ericfillipe |
