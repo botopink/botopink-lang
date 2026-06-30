@@ -151,7 +151,9 @@ fn evaluateErl(
         try bp_src.appendSlice(arena, p.name);
         try bp_src.appendSlice(arena, ": _");
     }
-    try bp_src.appendSlice(arena, ") -> void { return {}; }\n");
+    try bp_src.appendSlice(arena, ") -> void {\n");
+    try emitBpBody(&bp_src, arena, tfn.body);
+    try bp_src.appendSlice(arena, "}\n");
 
     const comptimeMod = @import("../comptime.zig");
     const erlang_codegen = @import("../codegen/erlang.zig");
@@ -186,4 +188,82 @@ fn evaluateErl(
     const stdout = persistent_erl.eval(arena, io, erl_path) catch return error.EvalFailed;
     defer arena.free(stdout);
     return parseOutcome(arena, stdout) catch error.EvalFailed;
+}
+
+fn emitBpBody(buf: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, body: []const ast.Stmt) !void {
+    for (body) |stmt| {
+        try emitBpStmt(buf, arena, stmt);
+    }
+}
+
+fn emitBpStmt(buf: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, stmt: ast.Stmt) !void {
+    switch (stmt.expr) {
+        .jump => |j| switch (j.kind) {
+            .@"return" => |r| {
+                try buf.appendSlice(arena, "  return");
+                if (r) |val| {
+                    try buf.append(arena, ' ');
+                    try emitBpExpr(buf, arena, val.*);
+                }
+                try buf.appendSlice(arena, ";\n");
+            },
+            .throw_ => |t| {
+                try buf.appendSlice(arena, "  throw");
+                if (t) |val| {
+                    try buf.append(arena, ' ');
+                    try emitBpExpr(buf, arena, val.*);
+                }
+                try buf.appendSlice(arena, ";\n");
+            },
+            else => try buf.appendSlice(arena, "  return {};\n"),
+        },
+        .binding => |b| switch (b.kind) {
+            .assign => |a| {
+                try buf.appendSlice(arena, "  let _ = ");
+                try emitBpExpr(buf, arena, a.value.*);
+                try buf.appendSlice(arena, ";\n");
+            },
+            else => try buf.appendSlice(arena, "  return {};\n"),
+        },
+        else => try buf.appendSlice(arena, "  return {};\n"),
+    }
+}
+
+fn emitBpExpr(buf: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, te: ast.Expr) !void {
+    switch (te) {
+        .literal => |lit| switch (lit.kind) {
+            .stringLit => |s| {
+                try buf.append(arena, '"');
+                try buf.appendSlice(arena, s);
+                try buf.append(arena, '"');
+            },
+            .numberLit => |n| try buf.appendSlice(arena, n),
+            .null_ => try buf.appendSlice(arena, "null"),
+            else => try buf.appendSlice(arena, "null"),
+        },
+        .identifier => |id| switch (id.kind) {
+            .ident => |name| try buf.appendSlice(arena, name),
+            else => try buf.appendSlice(arena, "_"),
+        },
+        .call => |cc| switch (cc.kind) {
+            .call => |c| {
+                try buf.appendSlice(arena, c.callee);
+                try buf.append(arena, '(');
+                for (c.args, 0..) |arg, i| {
+                    if (i > 0) try buf.appendSlice(arena, ", ");
+                    try emitBpExpr(buf, arena, arg.value.*);
+                }
+                try buf.append(arena, ')');
+            },
+            else => try buf.appendSlice(arena, "null"),
+        },
+        .binaryOp => |b| {
+            try emitBpExpr(buf, arena, b.lhs.*);
+            try buf.append(arena, ' ');
+            try buf.appendSlice(arena, @tagName(b.op));
+            try buf.append(arena, ' ');
+            try emitBpExpr(buf, arena, b.rhs.*);
+        },
+        else => try buf.appendSlice(arena, "null"),
+    }
 }
