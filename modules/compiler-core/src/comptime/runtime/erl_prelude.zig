@@ -22,14 +22,13 @@
 
 const std = @import("std");
 
-/// Erlang prelude module — descriptor walkers, error handling, and constructors.
+/// Erlang prelude module — descriptor walkers (binary parsing only).
 /// Compiled once at warmup and loaded into the persistent `erl` process.
 pub const source: []const u8 =
     \\-module(botopink_comptime_prelude).
     \\-export([
     \\    text/1, file/1, line/1, col/1, multiline/1,
     \\    context/1, lookup/2, bindings/1, parts/1,
-    \\    fail_raw/3, compiler_error/1
     \\]).
     \\
     \\read_u32(<<N:32/unsigned-big-integer, _/binary>>) -> N.
@@ -124,11 +123,8 @@ pub const source: []const u8 =
     \\    {Text, NextRest} = read_str(PartRest),
     \\    read_parts(NextRest, Count - 1, [{Kind, Text} | Acc]).
     \\
-    \\fail_raw(Message, Param, Span) ->
     \\    throw({comptime_fail, Message, Param, Span}).
     \\
-    \\compiler_error(Message) ->
-    \\    fail_raw(Message, 0, 0).
 ;
 
 // ── Build integration ─────────────────────────────────────────────────────────

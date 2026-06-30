@@ -278,17 +278,62 @@ pub fn run(
     const mod_name = try std.fmt.allocPrint(allocator, "comptime_{x}", .{hash});
     defer allocator.free(mod_name);
 
-    const src = try buildScript(allocator, entries, mod_name);
-    errdefer allocator.free(src);
-
-    const erl_filename = try std.fmt.allocPrint(allocator, "{s}.erl", .{mod_name});
-    defer allocator.free(erl_filename);
-
     const tmp_dir_base = try std.fs.path.join(allocator, &.{ build_root, ".botopinkbuild", "tmp" });
     defer allocator.free(tmp_dir_base);
     const tmp_dir = try std.fmt.allocPrint(allocator, "{s}/{x}", .{ tmp_dir_base, hash });
     defer allocator.free(tmp_dir);
     try std.Io.Dir.cwd().createDirPath(io, tmp_dir);
+
+    // BEAM bytecode cache: check for a pre-compiled .beam file.
+    const cache_dir = try std.fs.path.join(allocator, &.{ build_root, ".botopinkbuild", "tmp", "beam_cache" });
+    defer allocator.free(cache_dir);
+    const cache_beam = try std.fmt.allocPrint(allocator, "{s}/{s}.beam", .{ cache_dir, mod_name });
+    defer allocator.free(cache_beam);
+
+    // Try cache hit: if a cached BEAM exists, copy to tmp dir and load directly.
+    var cache_buf: [65536]u8 = undefined;
+    const cache_hit = std.Io.Dir.cwd().readFile(io, cache_beam, &cache_buf) catch null;
+    if (cache_hit) |cached_bytes_slice| {
+        const cached_bytes = try allocator.dupe(u8, cached_bytes_slice);
+        defer allocator.free(cached_bytes);
+        const beam_path = try std.fs.path.join(allocator, &.{ tmp_dir, mod_name });
+        defer allocator.free(beam_path);
+        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = beam_path, .data = cached_bytes });
+
+        if (persistent_erl.loadBeam(allocator, io, beam_path)) |stdout| {
+            defer allocator.free(stdout);
+            var values = std.StringHashMap([]const u8).init(allocator);
+            errdefer values.deinit();
+            try parseResults(allocator, stdout, &values);
+            const script = try allocator.dupe(u8, "(cached)");
+            return .{ .script = script, .values = values };
+        } else |_| {
+            // Load failed — remove stale cache and fall through.
+            std.Io.Dir.cwd().deleteFile(io, cache_beam) catch {};
+        }
+    }
+
+    return runUncached(allocator, io, entries, build_root, mod_name, tmp_dir, cache_dir, cache_beam);
+}
+
+fn runUncached(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    entries: []const eval.ComptimeEntry,
+    build_root: []const u8,
+    mod_name: []const u8,
+    tmp_dir: []const u8,
+    cache_dir: []const u8,
+    cache_beam: []const u8,
+) !eval.RunResult {
+    _ = build_root;
+    const persistent_erl = @import("./persistent_erl.zig");
+
+    const src = try buildScript(allocator, entries, mod_name);
+    errdefer allocator.free(src);
+
+    const erl_filename = try std.fmt.allocPrint(allocator, "{s}.erl", .{mod_name});
+    defer allocator.free(erl_filename);
 
     const erl_path = try std.fs.path.join(allocator, &.{ tmp_dir, erl_filename });
     defer allocator.free(erl_path);
@@ -297,6 +342,19 @@ pub fn run(
     // Delegate to persistent erl: compile + execute in one round-trip.
     const stdout = try persistent_erl.eval(allocator, io, erl_path);
     errdefer allocator.free(stdout);
+
+    // Cache the compiled BEAM for future runs.
+    // The BEAM file was written to tmp_dir by erlc (compile:file).
+    const beam_path = try std.fmt.allocPrint(allocator, "{s}/{s}.beam", .{ tmp_dir, mod_name });
+    defer allocator.free(beam_path);
+    var cache_read_buf: [65536]u8 = undefined;
+    const beam_result = std.Io.Dir.cwd().readFile(io, beam_path, &cache_read_buf) catch null;
+    if (beam_result) |beam_bytes_slice| {
+        const beam_bytes = try allocator.dupe(u8, beam_bytes_slice);
+        defer allocator.free(beam_bytes);
+        try std.Io.Dir.cwd().createDirPath(io, cache_dir);
+        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = cache_beam, .data = beam_bytes });
+    }
 
     var values = std.StringHashMap([]const u8).init(allocator);
     errdefer values.deinit();

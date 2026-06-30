@@ -37,32 +37,64 @@ const server_erl =
     \\-module(botopink_comptime_server).
     \\-export([start/0]).
     \\start() ->
-    \\    case io:get_line("") of
+    \\    case read_frame() of
     \\        eof -> ok;
-    \\        "eval " ++ Path0 ->
-    \\            Path = string:trim(Path0),
+    \\        {1, PathBin} ->  %% eval: compile .erl file
+    \\            Path = binary_to_list(PathBin),
     \\            case compile:file(Path, [binary, return]) of
     \\                {ok, Mod, Beam} ->
     \\                    {module, _} = code:load_binary(Mod, "", Beam),
-    \\                    Result = Mod:main(),
-    \\                    io:format("~s~n", [Result]),
+    \\                    Result = safe_call(Mod),
+    \\                    write_frame(Result),
     \\                    start();
     \\                {ok, Mod, Beam, _Warnings} ->
     \\                    {module, _} = code:load_binary(Mod, "", Beam),
-    \\                    Result = Mod:main(),
-    \\                    io:format("~s~n", [Result]),
+    \\                    Result = safe_call(Mod),
+    \\                    write_frame(Result),
     \\                    start();
     \\                {error, Errors, Warnings} ->
-    \\                    io:format("__BP_ERL_COMPILE_ERROR__:~p~n", [{Errors, Warnings}]),
+    \\                    write_frame(io_lib:format("__BP_ERL_COMPILE_ERROR__:~p", [{Errors, Warnings}])),
     \\                    start()
     \\            end;
-    \\        "ping" ++ _ ->
-    \\            io:format("pong~n"),
-    \\            start();
-    \\        _Other ->
-    \\            io:format("__BP_ERL_BAD_COMMAND__:~s~n", [_Other]),
-    \\            start()
+    \\        {2, PathBin} ->  %% load: execute .beam file
+    \\            Path = binary_to_list(PathBin),
+    \\            case code:load_file(Path) of
+    \\                {module, Mod} ->
+    \\                    Result = safe_call(Mod),
+    \\                    write_frame(Result),
+    \\                    start();
+    \\                {error, Reason} ->
+    \\                    write_frame(io_lib:format("__BP_ERL_LOAD_ERROR__:~p", [Reason])),
+    \\                    start()
+    \\            end
     \\    end.
+    \\
+    \\safe_call(Mod) ->
+    \\    try Mod:main()
+    \\    catch
+    \\        Class:Reason:Stack ->
+    \\            io_lib:format("__BP_ERL_RUNTIME_ERROR__:~p:~p~n~p", [Class, Reason, Stack])
+    \\    end.
+    \\
+    \\read_frame() ->
+    \\    case file:read(standard_io, 4) of
+    \\        {ok, <<Len:32/unsigned-big-integer>>} ->
+    \\            case file:read(standard_io, Len) of
+    \\                {ok, <<Cmd:8, Rest/binary>>} -> {Cmd, Rest};
+    \\                eof -> eof;
+    \\                _ -> eof
+    \\            end;
+    \\        eof -> eof;
+    \\        _ -> eof
+    \\    end.
+    \\
+    \\write_frame(Data) when is_binary(Data) ->
+    \\    Len = byte_size(Data),
+    \\    io:put_chars(<<Len:32/unsigned-big-integer, Data/binary>>);
+    \\write_frame(Data) when is_list(Data) ->
+    \\    B = iolist_to_binary(Data),
+    \\    Len = byte_size(B),
+    \\    io:put_chars(<<Len:32/unsigned-big-integer, B/binary>>).
 ;
 
 // ── singleton state ───────────────────────────────────────────────────────────
@@ -135,38 +167,53 @@ fn ensureSpawned(io: Io, allocator: std.mem.Allocator) !void {
                 .stdout = child.stdout orelse return error.NoStdout,
             };
             init_state.store(2, .release);
-
-            // Health check: ping the server.
-            try state.stdin.writeStreamingAll(io, "ping\n");
-            var pong_buf: [5]u8 = undefined;
-            _ = try state.stdout.readStreaming(io, &.{&pong_buf});
-            if (!std.mem.eql(u8, &pong_buf, "pong\n")) return error.PersistentErlBadPong;
             return;
         }
         std.atomic.spinLoopHint();
     }
 }
 
-/// Read a line from the persistent erl's stdout. Returns the line without
-/// the trailing newline.
-fn readLine(io: Io, allocator: std.mem.Allocator) ![]u8 {
-    var buf: std.ArrayListUnmanaged(u8) = .empty;
-    errdefer buf.deinit(allocator);
-
-    var byte: [1]u8 = undefined;
-    while (true) {
-        const n = state.stdout.readStreaming(io, &.{&byte}) catch |err| switch (err) {
-            error.EndOfStream => return error.PersistentErlEof,
-            else => return err,
-        };
-        if (n == 0) return error.PersistentErlEof;
-        if (byte[0] == '\n') break;
-        try buf.append(allocator, byte[0]);
-    }
-    return buf.toOwnedSlice(allocator);
+/// Read a length-prefixed binary frame from stdout: <4-byte BE len><payload>.
+/// Returns the payload bytes (without length prefix).
+fn readFrame(io: Io, allocator: std.mem.Allocator) ![]u8 {
+    var len_buf: [4]u8 = undefined;
+    _ = try state.stdout.readStreaming(io, &.{&len_buf});
+    const len = std.mem.readInt(u32, &len_buf, .big);
+    const payload = try allocator.alloc(u8, len);
+    errdefer allocator.free(payload);
+    _ = try state.stdout.readStreaming(io, &.{payload});
+    return payload;
 }
 
-/// Evaluate a comptime module at `beam_path` (an `.erl` source file) in the
+/// Send a command frame: <4-byte BE len><cmd byte><path bytes>.
+fn sendFrame(io: Io, cmd: u8, path: []const u8) !void {
+    const total_len: u32 = @intCast(1 + path.len); // cmd byte + path
+    var len_buf: [4]u8 = undefined;
+    std.mem.writeInt(u32, &len_buf, total_len, .big);
+    try state.stdin.writeStreamingAll(io, &len_buf);
+    try state.stdin.writeStreamingAll(io, &.{cmd});
+    try state.stdin.writeStreamingAll(io, path);
+}
+
+pub fn loadBeam(allocator: std.mem.Allocator, io: Io, beam_path: []const u8) ![]u8 {
+    try ensureSpawned(io, allocator);
+    lock();
+    defer unlock();
+
+    try sendFrame(io, 2, beam_path); // cmd=2: load .beam file
+    const payload = try readFrame(io, allocator);
+    errdefer allocator.free(payload);
+
+    if (std.mem.startsWith(u8, payload, "__BP_ERL_LOAD_ERROR__:") or
+        std.mem.startsWith(u8, payload, "__BP_ERL_RUNTIME_ERROR__:"))
+    {
+        allocator.free(payload);
+        return error.PersistentErlCompileError;
+    }
+    return payload;
+}
+
+/// Evaluate a comptime module at `erl_path` (an `.erl` source file) in the
 /// persistent erl process. Returns the captured stdout (one JSON line) allocated
 /// from `allocator` and owned by the caller.
 ///
@@ -176,26 +223,18 @@ pub fn eval(allocator: std.mem.Allocator, io: Io, erl_path: []const u8) ![]u8 {
     lock();
     defer unlock();
 
-    // Send: "eval <path>\n"
-    try state.stdin.writeStreamingAll(io, "eval ");
-    try state.stdin.writeStreamingAll(io, erl_path);
-    try state.stdin.writeStreamingAll(io, "\n");
+    try sendFrame(io, 1, erl_path); // cmd=1: eval (compile+execute .erl file)
 
-    // Receive: one JSON line.
-    const line = try readLine(io, allocator);
-    errdefer allocator.free(line);
+    const payload = try readFrame(io, allocator);
+    errdefer allocator.free(payload);
 
-    // Check for server-side errors.
-    if (std.mem.startsWith(u8, line, "__BP_ERL_COMPILE_ERROR__:")) {
-        allocator.free(line);
+    if (std.mem.startsWith(u8, payload, "__BP_ERL_COMPILE_ERROR__:") or
+        std.mem.startsWith(u8, payload, "__BP_ERL_RUNTIME_ERROR__:"))
+    {
+        allocator.free(payload);
         return error.PersistentErlCompileError;
     }
-    if (std.mem.startsWith(u8, line, "__BP_ERL_BAD_COMMAND__:")) {
-        allocator.free(line);
-        return error.PersistentErlBadCommand;
-    }
-
-    return line;
+    return payload;
 }
 
 /// Spawn the persistent erl process and verify it responds to ping.
@@ -215,8 +254,6 @@ pub const PersistentErlError = error{
     PersistentErlBroken,
     PersistentErlEof,
     PersistentErlCompileError,
-    PersistentErlBadCommand,
-    PersistentErlBadPong,
     NoStdin,
     NoStdout,
     OutOfMemory,

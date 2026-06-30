@@ -31,7 +31,6 @@
 //! `if (stderr.len > 0) return ""` short-circuit that the original
 //! shape carried, which proved fragile under runner-specific noise.
 const std = @import("std");
-const persistent_node = @import("../comptime/runtime/persistent_node.zig");
 fn isProcessSuccess(term: std.process.Child.Term) bool {
     return switch (term) {
         .exited => |code| code == 0,
@@ -161,15 +160,13 @@ pub fn executeJavaScript(allocator: std.mem.Allocator, js_code: []const u8, aux:
     cacheKey(&key, "node", "", js_code, aux);
     if (cacheRead(allocator, io, &key)) |hit| return hit;
 
-    // Fast path: no aux → run inside the persistent node runner. Falls
-    // through to the one-shot path if the runner can't be spawned.
+    // One-shot node spawn for JavaScript execution (~30ms).
     if (aux.len == 0) {
-        if (persistent_node.eval(allocator, io, js_code)) |out| {
-            // Empty output = treat as exec failure (consistent with the
-            // one-shot path returning "" on non-zero exit).
-            cacheWrite(io, allocator, &key, out);
-            return out;
-        } else |_| {}
+        const res = std.process.run(allocator, io, .{ .argv = &.{ "node", "-e", js_code } }) catch return allocator.dupe(u8, "");
+        if (res.stdout.len == 0) return allocator.dupe(u8, "");
+        const out = try allocator.dupe(u8, res.stdout);
+        cacheWrite(io, allocator, &key, out);
+        return out;
     }
 
     // Write code to a temporary file in a per-execution scratch dir
