@@ -29,71 +29,7 @@ const commonJS = @import("../codegen/commonJS.zig");
 /// `evaluate`; the `.wat` path is an opt-in scaffold that returns
 /// `error.EvalFailed` until F6 prelude bodies + the wat-side body
 /// emitter land.
-pub const Runtime = enum { erl };
 
-const Sha256 = std.crypto.hash.sha2.Sha256;
-
-// ── process-global memo (script hash → stdout) ────────────────────────────────
-//
-// Identical decorator bodies always produce identical stdout (the body is pure
-// — it only reads from `__decl(...)` and emits `{kind,…}` JSON). Re-spawning
-// `node` for the same body across tests is pure waste. Mirrors the memo in
-// `template_eval.zig`: SHA-256-keyed, process-lifetime arena, page_allocator
-// backed; the hashmap mutates under a one-writer spinlock so the actual `node`
-// IPC stays parallel. On a hit `parseOutcome(arena, cached_stdout)` re-runs
-// against the cached bytes, so the freshly-allocated Outcome stays bound to
-// the caller's per-compile arena.
-
-var script_memo_arena: std.heap.ArenaAllocator = undefined;
-var script_memo: std.StringHashMapUnmanaged([]const u8) = .empty;
-var script_memo_init: std.atomic.Value(u8) = .init(0);
-var script_memo_mu: std.atomic.Value(u8) = .init(0);
-
-fn memoInit() void {
-    while (true) {
-        const s = script_memo_init.load(.acquire);
-        if (s == 2) return;
-        if (s == 0) {
-            if (script_memo_init.cmpxchgStrong(0, 1, .acquire, .acquire)) |_| continue;
-            script_memo_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-            script_memo_init.store(2, .release);
-            return;
-        }
-        std.atomic.spinLoopHint();
-    }
-}
-
-fn memoLock() void {
-    while (script_memo_mu.cmpxchgWeak(0, 1, .acquire, .monotonic)) |_| {
-        std.atomic.spinLoopHint();
-    }
-}
-fn memoUnlock() void {
-    script_memo_mu.store(0, .release);
-}
-
-fn scriptKey(src: []const u8) [Sha256.digest_length]u8 {
-    var out: [Sha256.digest_length]u8 = undefined;
-    Sha256.hash(src, &out, .{});
-    return out;
-}
-
-fn memoLookup(key: []const u8) ?[]const u8 {
-    memoInit();
-    memoLock();
-    defer memoUnlock();
-    return script_memo.get(key);
-}
-
-fn memoStore(key: []const u8, stdout: []const u8) void {
-    memoInit();
-    memoLock();
-    defer memoUnlock();
-    const arena = script_memo_arena.allocator();
-    const key_dup = arena.dupe(u8, key) catch return;
-    const val_dup = arena.dupe(u8, stdout) catch return;
-    script_memo.put(arena, key_dup, val_dup) catch {};
-}
 
 // ── outcome ───────────────────────────────────────────────────────────────────
 

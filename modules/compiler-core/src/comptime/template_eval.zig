@@ -20,21 +20,9 @@
 const std = @import("std");
 const ast = @import("../ast.zig");
 const template = @import("./template.zig");
-const commonJS = @import("../codegen/commonJS.zig");
 
-/// F8 — runtime dispatch for template body evaluation.
-///
-/// `node` (default): builds JS via `commonJS.emitFnJs` + the JS prelude in
-/// `template_eval.zig`, runs through `persistent_node.eval`. Stable path,
-/// covers every audit body today.
-///
-/// `wat`: builds WAT via `wat_runtime.prelude` + the wat backend's template
-/// emitter, runs through `wasm3_host.runWat`. End-to-end path the spec
-/// terminates at after F10 deletes `persistent_node.zig`. Currently gated
-/// behind opt-in because F6's prelude has stub bodies for the descriptor
-/// walker (`lookup`/`bindings`/`text` after expansion) and there is no
-/// wat-side `emitFnJs` analogue yet — `evaluateWat` returns
-/// `error.EvalFailed` so the caller transparently falls back to `node`.
+
+/// Persistent erl is the sole comptime runtime for template evaluation.
 pub const Runtime = enum { erl };
 
 // ── outcome ───────────────────────────────────────────────────────────────────
