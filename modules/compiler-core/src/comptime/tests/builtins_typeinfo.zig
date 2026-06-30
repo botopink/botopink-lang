@@ -175,3 +175,85 @@ test "typeInfo: TypeInfoKind is a known type" {
         \\val kind: TypeInfoKind = TypeInfoKind.Int;
     );
 }
+
+// ── @comptimeError ──────────────────────────────────────────────────────────
+
+test "comptimeError: string literal raises custom error" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val err = @comptimeError("field x not found");
+    );
+}
+
+// ── mergeRecords ────────────────────────────────────────────────────────────
+
+test "mergeRecords: disjoint records merge correctly" {
+    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\record User { name: string, id: i32 }
+        \\record Timestamps { createdAt: string, updatedAt: string }
+        \\val Merged = mergeRecords(User, Timestamps);
+    );
+}
+
+test "mergeRecords: same-name same-type deduplicates" {
+    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\record A { x: i32, y: string }
+        \\record B { x: i32, z: bool }
+        \\val Merged = mergeRecords(A, B);
+    );
+}
+
+test "mergeRecords: conflict raises error" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\record A { x: i32 }
+        \\record B { x: string }
+        \\val Merged = mergeRecords(A, B);
+    );
+}
+
+// ── partial ─────────────────────────────────────────────────────────────────
+
+test "partial: record fields become optional" {
+    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\record Config { port: i32, host: string }
+        \\val PartialCfg = partial(Config);
+    );
+}
+
+test "partial: empty record works" {
+    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\record Empty {}
+        \\val PartialE = partial(Empty);
+    );
+}
+
+// ── omit ────────────────────────────────────────────────────────────────────
+
+test "omit: remove a single field" {
+    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\record FullUser { id: i32, name: string, password: string }
+        \\val PublicUser = omit(FullUser, "password");
+    );
+}
+
+test "omit: non-existent field raises error" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\record User { id: i32 }
+        \\val NoField = omit(User, "email");
+    );
+}
+
+// ── pick ────────────────────────────────────────────────────────────────────
+
+test "pick: keep specified fields" {
+    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\record FullUser { id: i32, name: string, password: string }
+        \\val NameOnly = pick(FullUser, ["name", "id"]);
+    );
+}
+
+test "pick: field email not found raises type error" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\record User { id: i32, name: string }
+        \\val BadPick = pick(User, ["email"]);
+    );
+}

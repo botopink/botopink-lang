@@ -3927,6 +3927,31 @@ fn inferBuiltinCallReturnType(
         }
         return env.freshVar();
     }
+    // `@comptimeError(message)` — report a compile-time error from comptime
+    // code. Takes a string message and sets env.lastError, causing inference
+    // to fail with a custom type error.
+    if (std.mem.eql(u8, callee, "comptimeError")) {
+        if (typedArgs.len >= 1) {
+            const arg = typedArgs[0].value;
+            const msg: []const u8 = switch (arg.*) {
+                .literal => |lit| switch (lit.kind) {
+                    .stringLit => |s| s,
+                    else => "<non-string argument>",
+                },
+                else => "<non-literal argument>",
+            };
+            env.lastError = TypeError.custom(
+                try std.fmt.allocPrint(env.arena, "comptime error: {s}", .{msg}),
+                "This error was raised by @comptimeError during type checking.",
+            ).withLoc(arg.getLoc());
+            return error.TypeError;
+        }
+        env.lastError = TypeError.custom(
+            "comptime error",
+            "@comptimeError called without a message.",
+        );
+        return error.TypeError;
+    }
     return env.namedType("void");
 }
 
