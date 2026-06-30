@@ -1,10 +1,10 @@
-# Wave 1 — Erlang Runtime Fixes
+# Wave 1 — Foundation: Erl Runtime + Codegen Fixes
 
 **Version:** 1.0.0-beta
 **Status:** in progress
 **Created:** 2026-06-30
 **Author:** ericfillipe
-**Blocks:** Wave 2 (`02-typesystem.md`), Wave 3 (`03-codegen.md`)
+**Blocks:** Wave 2 (`02-typesystem.md`)
 
 ---
 
@@ -23,6 +23,11 @@
 | Step 5 | Restore WAT RUN LOG execution | pending | |
 | Step 6 | Add erl runtime regression tests | pending | |
 | Step 7 | Comptime type evaluation & first-class types tests | pending | |
+| Step 8 | Fix codegen runtime crashes (all 4 backends) | pending | |
+| Step 9 | Remove 76 orphaned snapshot files | pending | |
+| Step 10 | New codegen tests: optional, imports, records, enums, generics, interfaces, lambdas, operators | pending | |
+| Step 11 | New codegen tests: template/@Expr + comptime eval | pending | |
+| Step 12 | Regenerate snapshots, verify full suite | pending | |
 
 ## Context
 
@@ -373,26 +378,196 @@ fn safeRecord(comptime T: type) -> type {
 
 ---
 
+## Part B — Codegen Hardening (Steps 8-12)
+
+### Context
+
+Only ~10% of comptime-verified features have codegen runtime tests. 120 snapshots have `@print` but empty RUN LOG (runtime crashed). 13 show `undefined` from known gaps. 191 parser features (91.8%) have zero codegen tests.
+
+**Audit summary (done):**
+
+| Backend | OK | Limitations | Crashes |
+|---------|-----|-------------|---------|
+| node/commonJS | 246 | 8 | 13 |
+| erlang/erlang | 251 | 2 | 38 |
+| beam/beam | 248 | 4 | 21 |
+| wasm/wasm | 252 | 0 | 48 |
+
+**Coverage gaps:**
+
+| Category | Comptime | Codegen | Gap |
+|----------|----------|---------|-----|
+| optional/null | 8 | 0 | 8 |
+| template/@Expr | 11 | 0 | 11 |
+| import/cross-module | 8 | 0 | 8 |
+| interface/implement | 16 | 0 | 16 |
+| generic types | 3 | 0 | 3 |
+| record/enum | 28 | 2 | 26 |
+
+---
+
+## Step 8 — Fix codegen runtime crashes (all backends)
+
+**Status:** pending **Assignee:**
+**Parallel per backend** — different files.
+
+### commonJS (13 crashes + 8 limitations) — `codegen/commonJS.zig`
+
+1. **Fix `.len` → `.length`** — Resolves 6 `undefined` limitations
+2. **`if` without `else`** — Emit ternary `cond ? value : undefined`
+3. **String methods + Array operations** — Fix method name mapping + lowering
+4. **try/catch propagation** — Result-unwrapping at runtime
+
+### Erlang (38 crashes) — `codegen/erlang.zig`
+
+5. **Template system** — 6 `template_end_to_end_*` tests (needs Step 1 decompiler)
+6. **Pipeline operator** — `|>` lowering doesn't thread args correctly
+7. **Instance methods** — External functions not compiled into module
+
+### BEAM (21 crashes) — `codegen/beam_asm.zig`
+
+8. **try/catch** — `@Result` unwrapping broken in BEAM blocks
+9. **Anonymous record literal** — Implement or skip runtime execution
+10. **String `.len` in arithmetic** — Tagged integer doesn't work in BEAM ops
+
+### WASM (48 crashes) — `codegen/wat.zig` + `codegen/runtime.zig`
+
+11. **External host functions** — Skip RUN LOG for `external_*` on WASM
+12. **Template system + Iterators** — Skip or document as unsupported in wasmtime
+13. **Case/switch on literals** — BR_TABLE doesn't produce working code
+14. **Instance methods + Array builtins** — Host functions not in wasmtime → skip
+
+**Acceptance criteria:**
+- [ ] All commonJS/Erlang/BEAM/WASM crashes fixed or documented as intentional skips
+- [ ] `zig build test` passes
+- [ ] Empty RUN LOGs replaced with actual output where fixes applied
+
+---
+
+## Step 9 — Remove 76 orphaned snapshot files
+
+**Status:** pending **Assignee:**
+**Parallel-safe:** Yes — zero risk, independent of everything.
+
+76 empty files (19 per backend) unchanged since `0c30a38`. No test references them.
+
+**Acceptance criteria:**
+- [ ] 76 orphaned files deleted from `snapshots/codegen/{node,erlang,beam,wasm}/`
+- [ ] `zig build test` passes
+- [ ] No empty directories left behind
+
+---
+
+## Step 10 — New codegen tests: optional, imports, records, enums, generics, interfaces, lambdas, operators
+
+**Status:** pending **Assignee:**
+**Parallel-safe per category.** Depends on Step 8 (crash fixes for existing tests).
+
+27 tests across 6 categories, all backends:
+
+| Category | Tests | Target file |
+|----------|-------|-------------|
+| Optional/null | 6 | `codegen/tests/values.zig` |
+| Cross-module imports | 5 | `codegen/tests/features.zig` |
+| Interface/implement | 4 | `codegen/tests/aggregates.zig` |
+| Record/enum | 6 | `codegen/tests/aggregates.zig` |
+| Generics | 3 | `codegen/tests/values.zig` |
+| Lambda, operators, annotations | 3 | `codegen/tests/features.zig` |
+
+Test designs in the original `codegen-test-gap` audit.
+
+**Acceptance criteria:**
+- [ ] 27 codegen tests added
+- [ ] Each test runs on all 4 backends (with documented skips)
+- [ ] RUN LOG captures correct output
+- [ ] `zig build test` passes
+
+---
+
+## Step 11 — New codegen tests: template/@Expr + comptime eval
+
+**Status:** pending **Assignee:**
+**Depends on:** Step 1 (decompiler fix)
+
+7 tests: 4 template/@Expr + 3 comptime eval.
+
+```botopink
+// slug: template_expr_hole_with_runtime_value
+pub fn greet(comptime q: @Expr<string>) -> @Expr<string> { return q; }
+fn main() {
+    val name = "botopink";
+    val msg = greet "hello ${name}!";
+    @print(msg);
+}
+// RUN LOG: hello botopink!
+```
+
+**Acceptance criteria:**
+- [ ] 7 tests added, all 4 backends
+- [ ] `zig build test` passes
+
+---
+
+## Step 12 — Regenerate snapshots, verify full suite
+
+**Status:** pending **Assignee:**
+
+```bash
+zig build test && zig build test-libs && zig build test-backends
+```
+
+**Acceptance criteria:**
+- [ ] Full test suite passes
+- [ ] ≥34 new codegen tests with correct RUN LOG
+- [ ] ≥120 previously-crashed tests fixed or documented
+- [ ] All snapshot files regenerated
+
+---
+
 ## Execution order
+
+### Phase A — Erl runtime (Steps 1-7)
 
 1. **Step 1 first** — unblocks everything that needs comptime eval
 2. **Step 2** — decorator eval, can share Step 1's decompiler
 3. **Steps 3, 5** are independent — can run anytime
-4. **Step 6** runs after Steps 1-2 — regression tests for the fixes
-5. **Step 7** runs after Steps 1-2 — validates the erl runtime + builtins chain
+4. **Step 6** runs after Steps 1-2 — regression tests
+5. **Step 7** runs after Steps 1-2 — validates builtins chain
 6. **Step 4** resolves naturally as gaps close
+
+### Phase B — Codegen (Steps 8-12, parallel with Phase A)
+
+1. **Step 9** first (orphans) — zero risk, independent
+2. **Step 8** per backend — commonJS/WASM independent of erl steps; Erlang/BEAM may need Step 1
+3. **Steps 10-11** after Step 8 — new tests
+4. **Step 12** final sweep
+
+**Quick wins (no deps, under 30 min):**
+
+| # | Action | Step | Time |
+|---|--------|------|------|
+| 1 | Delete 76 orphaned snapshots | 9 | ~10 min |
+| 2 | Fix `.len` → `.length` in JS | 8 | ~30 min |
+| 3 | Fix `if` without `else` in JS | 8 | ~20 min |
+| 4 | Skip WASM RUN LOG for external tests | 8 | ~15 min |
+| 5 | Fix record layout assumption | 3 | ~30 min |
 
 ## Summary
 
-| Gap | Priority | Blocks | Parallel-safe |
-|-----|----------|--------|---------------|
-| Step 1 — Decompiler | **CRITICAL** | Waves 2, 3 | No |
-| Step 2 — Decorator eval | HIGH | — | After Step 1 |
-| Step 3 — Record layout | MEDIUM | — | Yes |
-| Step 4 — Test failures | HIGH | — | After Steps 1-3, 5 |
-| Step 5 — WAT RUN LOG | LOW | — | Yes |
-| Step 6 — Regression tests | HIGH | — | After Steps 1-2 |
-| Step 7 — Type eval tests | HIGH | Wave 2 | After Steps 1-2 |
+| Step | Priority | Blocks | Parallel-safe |
+|------|----------|--------|---------------|
+| 1 — Decompiler | **CRITICAL** | Waves 2 | No |
+| 2 — Decorator eval | HIGH | — | After Step 1 |
+| 3 — Record layout | MEDIUM | — | Yes |
+| 4 — Test failures | HIGH | — | After Steps 1-3, 5 |
+| 5 — WAT RUN LOG | LOW | — | Yes |
+| 6 — Erl regression tests | HIGH | — | After Steps 1-2 |
+| 7 — Type eval tests | HIGH | Wave 2 | After Steps 1-2 |
+| 8 — Codegen crash fixes | HIGH | Steps 10-11 | Yes (per backend) |
+| 9 — Orphaned snapshots | LOW | — | Yes |
+| 10 — New codegen tests | HIGH | — | After Step 8 |
+| 11 — Template codegen tests | HIGH | — | After Steps 1 + 8 |
+| 12 — Final sweep | HIGH | — | After all |
 
 ## Changelog
 

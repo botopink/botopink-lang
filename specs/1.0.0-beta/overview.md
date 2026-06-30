@@ -5,46 +5,36 @@
 
 ---
 
-## 3 Waves
+## 2 Waves
 
 | # | Spec | Status | What |
 |---|------|--------|------|
-| 1 | [`01-erl-fixes`](./01-erl-fixes.md) | 🔴 in progress | Erl runtime fixes (7 steps: decompiler, decorator eval, record layout, test failures, WAT RUN LOG, regression tests, type eval tests). **CRITICAL — blocks waves 2 and 3.** |
-| 2 | [`02-typesystem`](./02-typesystem.md) | 🟡 in progress | Type introspection builtins, std functions, state narrowing, type guards. |
-| 3 | [`03-codegen`](./03-codegen.md) | 🟡 in progress | Runtime crash fixes (120 across 4 backends) + 34 new codegen tests. |
-
-## Completed (reference)
-
-| Spec | What |
-|------|------|
-| [`persistent-erl-runtime`](./persistent-erl-runtime.md) | Replace wasm3 with persistent erl subprocess |
-| [`erl-comptime-speed`](./erl-comptime-speed.md) | BEAM cache, binary protocol, single erl runtime |
+| 1 | [`01-erl-fixes`](./01-erl-fixes.md) | 🔴 in progress | Erl runtime fixes (7 steps) + Codegen hardening (5 steps). 12 steps total. **CRITICAL — blocks wave 2.** |
+| 2 | [`02-typesystem`](./02-typesystem.md) | 🟡 in progress | Type introspection builtins, std functions, state narrowing, type guards. 9 steps. |
 
 ## Dependency chain
 
 ```
-Wave 1: 01-erl-fixes (decompiler)
-  ├──► Wave 2: 02-typesystem (builtins + narrowing)
-  │      └──► needs Wave 3 Step 1 for codegen narrowing tests
+Wave 1: 01-erl-fixes (foundation — runtime + codegen)
+  ├── Part A: Erl runtime (Steps 1-7)
+  │     └──► unblocks comptime eval for Wave 2
+  ├── Part B: Codegen hardening (Steps 8-12)
+  │     └──► Steps 8-9 independent (quick wins)
+  │     └──► Steps 10-12 depend on Step 8
   │
-  └──► Wave 3: 03-codegen (crash fixes + new tests)
-         └──► Steps 3-4 (template/comptime tests)
-```
+  └──► Wave 2: 02-typesystem
+         └──► needs Wave 1 Step 1 (decompiler) for comptime eval
+         └──► needs Wave 1 Step 8 (crash fixes) for codegen narrowing tests
 
 ## Parallel work within each wave
 
 ### Wave 1
-- Steps 3 (record layout) and 5 (WAT RUN LOG) independent
-- Step 2 (decorator) can start after Step 1's decompiler is reusable
+- **Part A** (Steps 1-7, erl runtime): Steps 3, 5 independent. Step 6 after 1-2. Step 7 after 1-2.
+- **Part B** (Steps 8-12, codegen): Step 9 independent (quick win). Step 8 per-backend parallel. Steps 10-11 after 8.
 
 ### Wave 2
 - Steps 1-5 (type infrastructure) and Steps 6-9 (narrowing) after Step 1
 - ⚠️ Steps 2 and 7 both touch `comptime/infer.zig`
-
-### Wave 3
-- Step 2 (orphans) independent — do first
-- Step 1 per-backend sub-steps parallel (different files)
-- Steps 3-4 parallel per category after Step 1
 
 ## Quick wins (no deps, <30 min each)
 
