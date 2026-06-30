@@ -40,10 +40,10 @@ Wave 1: 01-erl-fixes (foundation — runtime + codegen)
 
 | # | Action | Wave | Time |
 |---|--------|------|------|
-| 1 | Delete 76 orphaned snapshots | 3 | ~10 min |
-| 2 | Fix `.len` → `.length` in JS | 3 | ~30 min |
-| 3 | Fix `if` without `else` in JS | 3 | ~20 min |
-| 4 | Skip WASM RUN LOG for external tests | 3 | ~15 min |
+| 1 | Delete 76 orphaned snapshots | 1 | ~10 min |
+| 2 | Fix `.len` → `.length` in JS | 1 | ~30 min |
+| 3 | Fix `if` without `else` in JS | 1 | ~20 min |
+| 4 | Skip WASM RUN LOG for external tests | 1 | ~15 min |
 | 5 | Fix record layout assumption | 1 | ~30 min |
 
 ## Branch naming
@@ -52,10 +52,10 @@ Wave 1: 01-erl-fixes (foundation — runtime + codegen)
 spec/1.0.0-beta.<wave>-<step>
 ```
 
-Examples: `spec/1.0.0-beta.wave1-step1`, `spec/1.0.0-beta.wave3-step1-wasm`
+Examples: `spec/1.0.0-beta.wave1-step1`, `spec/1.0.0-beta.wave1-step8-wasm`
 
 ## Changelog
 
 | Date | Change | Author |
 |------|--------|--------|
-| 2026-06-30 | Restructured into 3 waves; merged comptime-type-introspection + state-narrowing + comptime-eval-and-types into wave 2; merged codegen-test-gap into wave 3 | ericfillipe |
+| 2026-06-30 | Restructured into 2 waves. Wave 1 (12 steps): erl runtime fixes + codegen hardening. Wave 2 (9 steps): type introspection + state narrowing. | ericfillipe |
