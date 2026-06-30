@@ -3955,6 +3955,80 @@ fn inferBuiltinCallReturnType(
     return env.namedType("void");
 }
 
+/// Evaluate `@makeRecord(fields)` at inference time when `fields` is a literal
+/// array of RecordField values. Extracts field names and type names from the
+/// untyped AST, looks up the types, and creates a synthetic record type.
+///
+/// Returns a TypedExpr on success, null when the argument cannot be statically
+/// evaluated (delegates to the general builtin path which returns a fresh var).
+fn tryEvalMakeRecord(env: *Env, arg: ast.Expr, loc: ast.Loc) InferError!?TypedExpr {
+    switch (arg) {
+        .collection => |col| switch (col.kind) {
+            .arrayLit => |al| {
+                if (al.elems.len == 0) {
+                    // Empty record.
+                    return try makeSyntheticRecordType(env, &.{});
+                }
+                var fields: std.ArrayListUnmanaged(envMod.FieldDef) = .empty;
+                for (al.elems) |*elem| {
+                    // Each element should be a call: RecordField(name: "x", typeName: "i32")
+                    switch (elem.*) {
+                        .call => |ec| switch (ec.kind) {
+                            .call => |ecc| {
+                                var fieldName: ?[]const u8 = null;
+                                var typeName: ?[]const u8 = null;
+                                for (ecc.args) |farg| {
+                                    if (farg.label) |label| {
+                                        if (std.mem.eql(u8, label, "name")) {
+                                            switch (farg.value.*) {
+                                                .literal => |lit| switch (lit.kind) {
+                                                    .stringLit => |s| fieldName = s,
+                                                    else => {},
+                                                },
+                                                else => {},
+                                            }
+                                        } else if (std.mem.eql(u8, label, "typeName")) {
+                                            switch (farg.value.*) {
+                                                .literal => |lit| switch (lit.kind) {
+                                                    .stringLit => |s| typeName = s,
+                                                    else => {},
+                                                },
+                                                else => {},
+                                            }
+                                        }
+                                    }
+                                }
+                                const name = fieldName orelse {
+                                    env.lastError = TypeError.custom(
+                                        "@makeRecord: RecordField missing 'name'",
+                                        "Each RecordField must have a 'name' label.",
+                                    ).withLoc(loc);
+                                    return error.TypeError;
+                                };
+                                const tname = typeName orelse {
+                                    env.lastError = TypeError.custom(
+                                        "@makeRecord: RecordField missing 'typeName'",
+                                        "Each RecordField must have a 'typeName' label.",
+                                    ).withLoc(loc);
+                                    return error.TypeError;
+                                };
+                                // Resolve the type name to a Type.
+                                const ty = try env.namedType(tname);
+                                try fields.append(env.arena, .{ .name = name, .type_ = ty });
+                            },
+                            else => return null,
+                        },
+                        else => return null,
+                    }
+                }
+                return try makeSyntheticRecordType(env, fields.items);
+            },
+            else => return null,
+        },
+        else => return null,
+    }
+}
+
 /// Resolve comptime type-manipulation calls (§1.0.0-beta Steps 4-6).
 /// These are std functions (`mergeRecords`, `mapFields`, `partial`, `omit`,
 /// `pick`) that operate on types at compile time. They are resolved entirely
@@ -6736,6 +6810,13 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             const typedTrailing = try inferTrailingLambdasTyped(env, call.trailing);
 
             if (call.is_builtin) {
+                // `@makeRecord(fields)` — when fields is a literal array of RecordField
+                // values, evaluate at inference time and create a synthetic record type.
+                if (std.mem.eql(u8, call.callee, "makeRecord") and call.args.len >= 1) {
+                    if (try tryEvalMakeRecord(env, call.args[0].value.*, loc)) |result| {
+                        return result;
+                    }
+                }
                 const retType = try inferBuiltinCallReturnType(env, call.callee, typedArgs, typedTrailing);
                 return TypedExpr{ .call = .{ .loc = loc, .type_ = retType, .kind = .{ .call = .{
                     .receiver = null,
