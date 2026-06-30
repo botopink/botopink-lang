@@ -23,15 +23,13 @@ const std = @import("std");
 const ast = @import("../ast.zig");
 const template = @import("./template.zig");
 const commonJS = @import("../codegen/commonJS.zig");
-const persistent_node = @import("./runtime/persistent_node.zig");
-const wat = @import("../codegen/wat.zig");
 
 /// F9 — runtime dispatch for decorator body evaluation. Mirrors
 /// `template_eval.Runtime`. Default callers use the `.node` path via
 /// `evaluate`; the `.wat` path is an opt-in scaffold that returns
 /// `error.EvalFailed` until F6 prelude bodies + the wat-side body
 /// emitter land.
-pub const Runtime = enum { node, wat, erl };
+pub const Runtime = enum { node, erl };
 
 const Sha256 = std.crypto.hash.sha2.Sha256;
 
@@ -329,14 +327,8 @@ fn evaluateNode(
         return parseOutcome(arena, cached_stdout) catch error.EvalFailed;
     }
 
-    // Fast path: persistent `node` runner (~1ms per call). Falls back to
-    // one-shot `node main.js` if the runner can't be spawned. Same wiring
-    // pattern as `template_eval.evaluate` and `runtime/node.zig run`.
-    if (persistent_node.eval(arena, io, script)) |out| {
-        memoStore(key, out);
-        return parseOutcome(arena, out) catch error.EvalFailed;
-    } else |_| {}
-
+    // Spawn node to evaluate the JS script directly.
+    // One-shot spawn per decorator evaluation (~18ms).
     var dir_buf: [512]u8 = undefined;
     const tmp_dir = std.fmt.bufPrint(&dir_buf, "{s}/decorator/{s}", .{ build_root, dfn.name }) catch return error.EvalFailed;
     var src_buf: [512]u8 = undefined;

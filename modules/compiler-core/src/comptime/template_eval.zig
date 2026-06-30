@@ -21,7 +21,6 @@ const std = @import("std");
 const ast = @import("../ast.zig");
 const template = @import("./template.zig");
 const commonJS = @import("../codegen/commonJS.zig");
-const persistent_node = @import("./runtime/persistent_node.zig");
 
 /// F8 — runtime dispatch for template body evaluation.
 ///
@@ -36,7 +35,7 @@ const persistent_node = @import("./runtime/persistent_node.zig");
 /// walker (`lookup`/`bindings`/`text` after expansion) and there is no
 /// wat-side `emitFnJs` analogue yet — `evaluateWat` returns
 /// `error.EvalFailed` so the caller transparently falls back to `node`.
-pub const Runtime = enum { node, wat, erl };
+pub const Runtime = enum { node, erl };
 
 // ── outcome ───────────────────────────────────────────────────────────────────
 
@@ -391,7 +390,7 @@ pub fn evaluate(
     // correctly. Once one release cycle observes zero `.node` fallback
     // fires in production, the F10 cleanup deletes `persistent_node.zig`
     // + drops this whole evaluateNode branch.
-    return evaluateRuntime(arena, io, build_root, tfn, captures, plainArgs, .wat);
+    return evaluateRuntime(arena, io, build_root, tfn, captures, plainArgs, .erl);
 }
 
 /// F8 — Runtime-parameterised evaluate. Default callers use the `.node`
@@ -464,26 +463,20 @@ fn evaluateNode(
         return parseOutcome(arena, cached_stdout) catch error.EvalFailed;
     }
 
-    // Persistent node runner: one long-lived `node` process per Zig process
-    // evaluates scripts via vm.runInNewContext over a length-prefixed
-    // stdin/stdout protocol (~1ms per call vs ~18ms cold spawn). Falls back
-    // to one-shot `node main.js` if the runner can't be spawned (no node on
-    // PATH, IPC framing error, etc.).
-    if (persistent_node.eval(arena, io, script)) |out| {
-        memoStore(key, out);
-        return parseOutcome(arena, out) catch error.EvalFailed;
-    } else |_| {
-        var dir_buf: [512]u8 = undefined;
-        const tmp_dir = std.fmt.bufPrint(&dir_buf, "{s}/template/{s}", .{ build_root, tfn.name }) catch return error.EvalFailed;
-        var src_buf: [512]u8 = undefined;
-        const src_path = std.fmt.bufPrint(&src_buf, "{s}/main.js", .{tmp_dir}) catch return error.EvalFailed;
+    // Spawn node to evaluate the JS script directly.
+    // One-shot spawn per template evaluation (~18ms).
+    // TODO: replace with persistent erl path once erlang.zig codegen
+    // supports template body emission (Steps 3-5).
+    var dir_buf: [512]u8 = undefined;
+    const tmp_dir = std.fmt.bufPrint(&dir_buf, "{s}/template/{s}", .{ build_root, tfn.name }) catch return error.EvalFailed;
+    var src_buf: [512]u8 = undefined;
+    const src_path = std.fmt.bufPrint(&src_buf, "{s}/main.js", .{tmp_dir}) catch return error.EvalFailed;
 
-        std.Io.Dir.cwd().deleteTree(io, tmp_dir) catch {};
-        std.Io.Dir.cwd().createDirPath(io, tmp_dir) catch return error.EvalFailed;
-        std.Io.Dir.cwd().writeFile(io, .{ .sub_path = src_path, .data = script }) catch return error.EvalFailed;
+    std.Io.Dir.cwd().deleteTree(io, tmp_dir) catch {};
+    std.Io.Dir.cwd().createDirPath(io, tmp_dir) catch return error.EvalFailed;
+    std.Io.Dir.cwd().writeFile(io, .{ .sub_path = src_path, .data = script }) catch return error.EvalFailed;
 
-        const res = std.process.run(arena, io, .{ .argv = &.{ "node", src_path } }) catch return error.EvalFailed;
-        memoStore(key, res.stdout);
-        return parseOutcome(arena, res.stdout) catch error.EvalFailed;
-    }
+    const res = std.process.run(arena, io, .{ .argv = &.{ "node", src_path } }) catch return error.EvalFailed;
+    memoStore(key, res.stdout);
+    return parseOutcome(arena, res.stdout) catch error.EvalFailed;
 }
