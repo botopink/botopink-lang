@@ -28,14 +28,14 @@
 
 ## What's already done
 
-5 builtins registered in the compiler, resolve correct return types during inference:
+3 core builtins registered in the compiler, resolve correct return types during inference:
 - `@typeInfo(T)` — returns `TypeInfo` type (not value yet)
 - `@TypeOf(v)` — returns type of value (inference-time only)
 - `@makeRecord(fields)` — returns fresh type variable (not concrete yet)
-- `@RecordKeys(T)` — returns `string[]` type
-- `@Field(v, name)` — resolves field type
 
 Types are embedded in compiler as Zig source. `RecordField.typeName` (not `type` — keyword conflict). 23 snapshot tests pass.
+
+> **Design note:** `@RecordKeys` and `@Field` are NOT compiler builtins — they're std functions in `types.bp` built on `@typeInfo`. Formerly registered as inference-time builtins; those registrations should be removed when the std versions land (Step 4).
 
 State-narrowing audit + test matrix designed (24 tests across 14 patterns). Existing comptime narrowing coverage: 8 tests for null-check + variant access — sparse.
 
@@ -74,11 +74,11 @@ fn identityType(comptime T: type) -> type { break T; }
 
 ---
 
-### Step 2 — Implement comptime value evaluation for builtins
+### Step 2 — Implement comptime value evaluation for core builtins
 
 **Status:** pending **Assignee:**
 
-All 5 builtins must compute actual values at comptime, not just types.
+3 core builtins must compute actual values at comptime, not just types. `@RecordKeys` and `@Field` are implemented as std functions in `types.bp` (see Step 4), not as compiler builtins.
 
 ```botopink
 @typeInfo(i32)                    → TypeInfo.Int (value)
@@ -86,12 +86,11 @@ All 5 builtins must compute actual values at comptime, not just types.
 @typeInfo(enum { A, B(x: i32) })  → TypeInfo.Enum(variants: [...])
 @TypeOf(42)                      → i32 (type value)
 @makeRecord([RecordField("a", i32)]) → concrete record type
-@RecordKeys(record { x, y })     → ["x", "y"]
-@Field(record { x: 1 }, "x")     → 1
 ```
 
 **Acceptance criteria:**
-- [ ] All 7 value-eval cases above produce correct results
+- [ ] All 5 value-eval cases above produce correct results
+- [ ] Remove inference-time-only registrations for `@RecordKeys` and `@Field` from compiler
 - [ ] `zig build test` passes
 
 ### Files
@@ -132,25 +131,35 @@ Build evaluation loop so `.bp` functions with `comptime` params can execute duri
 
 **Status:** pending **Assignee:**
 
-Four std functions built purely in user-space `.bp` code:
+Six std functions built purely in user-space `.bp` code using the 3 core builtins:
 
+**Type manipulation** (`libs/std/src/reflect.bp`):
 ```botopink
-// libs/std/src/reflect.bp
 fn mergeRecords(comptime A: type, comptime B: type) -> type { ... }
 fn partial(comptime T: type) -> type { ... }
 fn omit(comptime T: type, comptime name: string) -> type { ... }
 fn pick(comptime T: type, comptime names: string[]) -> type { ... }
 ```
 
-`mergeRecords` detects conflicts (same name, different types → `@comptimeError`).
-`partial` makes all fields optional. `omit` removes a field. `pick` keeps named fields.
+**Type introspection** (`libs/std/src/types.bp`):
+```botopink
+fn recordKeys(comptime T: type) -> string[] {
+    // Uses @typeInfo(T).Record.fields → extracts field names
+}
+fn field(comptime T: type, v: T, comptime name: string) -> any {
+    // Uses @typeInfo(T) + runtime field access
+}
+```
+
+`recordKeys` and `field` are std functions — NOT compiler builtins. They prove `@typeInfo` is sufficient for field-level introspection. The compiler-side `@RecordKeys`/`@Field` inference-time registrations should be removed once these land.
 
 **Acceptance criteria:**
-- [ ] All 4 functions compile and produce correct types
-- [ ] Conflict detection works
+- [ ] All 6 functions compile and produce correct types/values
+- [ ] `mergeRecords` conflict detection works
+- [ ] `recordKeys(record { x: i32, y: string })` → `["x", "y"]`
+- [ ] `field(Point(x: 1, y: 2), "x")` → `1`
+- [ ] Remove `@RecordKeys`/`@Field` inference-time builtin registrations from compiler
 - [ ] `zig build test` passes
-
-> **`mapFields` deferred** — requires comptime lambda evaluation (separate capability).
 
 ---
 

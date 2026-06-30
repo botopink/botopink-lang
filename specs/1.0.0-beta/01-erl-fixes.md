@@ -24,6 +24,7 @@
 | Step 6 | Add erl runtime regression tests | pending | |
 | Step 7 | Comptime type evaluation & first-class types tests | pending | |
 | Step 8 | Fix codegen runtime crashes (all 4 backends) | pending | |
+| Step 8a | Add 2-minute timeout to all runtime executions | pending | |
 | Step 9 | Remove 76 orphaned snapshot files | pending | |
 | Step 10 | New codegen tests: optional, imports, records, enums, generics, interfaces, lambdas, operators | pending | |
 | Step 11 | New codegen tests: template/@Expr + comptime eval | pending | |
@@ -306,28 +307,7 @@ val e = Empty();
 // Round-trip: @typeInfo(Empty).Record.fields.len == 0
 ```
 
-### 7.5 — `@RecordKeys(T)` + `@Field(v, name)`
-
-```botopink
-// slug: recordkeys_basic
-record Point { x: i32, y: string }
-val keys = @RecordKeys(Point);   // ["x", "y"]
-
-// slug: field_access_by_name
-val p = Point(x: 1, y: "hello");
-val xVal = @Field(p, "x");       // 1
-val yVal = @Field(p, "y");       // "hello"
-
-// slug: recordkeys_field_roundtrip
-record User { id: i32, name: string, active: bool }
-val keys = @RecordKeys(User);
-// Each key → @Field works
-loop (keys) { k ->
-    // @Field(someUser, k) succeeds
-};
-```
-
-### 7.6 — Comptime loop over type fields
+### 7.5 — Comptime loop over type fields
 
 ```botopink
 // slug: comptime_loop_over_record_fields
@@ -340,7 +320,7 @@ loop (info.Record.fields) { f ->
 // names = ["port", "host", "debug"]
 ```
 
-### 7.7 — `@comptimeError` builtin
+### 7.6 — `@comptimeError` builtin
 
 ```botopink
 // slug: comptime_error_basic
@@ -359,14 +339,15 @@ fn safeRecord(comptime T: type) -> type {
 ```
 
 **Acceptance criteria:**
-- [ ] ≥15 comptime type eval tests in `comptime/tests/builtins_typeinfo.zig`
+- [ ] ≥12 comptime type eval tests in `comptime/tests/builtins_typeinfo.zig`
 - [ ] `type` usable as value, param, return type — all with @print validation
-- [ ] All 5 builtins compute correct values at comptime (not just types)
+- [ ] 3 core builtins compute correct values at comptime (not just types)
 - [ ] `@makeRecord` produces types that can be instantiated and printed
 - [ ] `@comptimeError` surfaces clear error messages
-- [ ] Comptime loops over record fields work
+- [ ] Comptime loops over record fields work (via @typeInfo, not @RecordKeys)
 - [ ] `zig build test` passes
 - [ ] Tests run on erl runtime (prove decompiler + eval chain works)
+- [ ] `@RecordKeys`/`@Field` NOT tested as builtins — they're std functions (Wave 2 Step 4)
 
 ### Files
 
@@ -441,6 +422,70 @@ Only ~10% of comptime-verified features have codegen runtime tests. 120 snapshot
 - [ ] All commonJS/Erlang/BEAM/WASM crashes fixed or documented as intentional skips
 - [ ] `zig build test` passes
 - [ ] Empty RUN LOGs replaced with actual output where fixes applied
+
+---
+
+## Step 8a — Add 2-minute timeout to all runtime executions
+
+**Status:** pending **Assignee:**
+**Priority:** HIGH — hanging tests block the entire suite
+
+Some spawned processes (`node`, `erl`, `erlc`, `wasmtime`) never terminate, causing `zig build test` to hang indefinitely. `std.process.run` blocks until the child exits — no built-in timeout.
+
+### Fix: Replace `std.process.run` with `std.process.Child` + deadline
+
+Create a helper `runWithTimeout` in `runtime.zig`:
+
+```zig
+/// Spawns a child process, captures stdout, kills it after `timeout_ms`.
+/// Returns empty string on timeout or non-zero exit.
+fn runWithTimeout(allocator, io, argv, timeout_ms) ![]u8
+```
+
+Implementation approach:
+1. Use `std.process.Child.init(argv, allocator)` instead of `std.process.run`
+2. Set `stdin_behavior = .Ignore`, `stdout_behavior = .Pipe`, `stderr_behavior = .Pipe`
+3. Spawn the child via `child.spawn()`
+4. Use a separate thread (`std.Thread.spawn`) that sleeps `timeout_ms` then calls `child.kill()`
+5. Collect stdout from the pipe before the deadline
+6. On timeout: return empty string (RUN LOG stays empty)
+7. Always clean up: `child.deinit()` + join the watchdog thread
+
+**Affected functions in `runtime.zig`:**
+
+| Function | Current | Spawns |
+|----------|---------|--------|
+| `executeJavaScript` | `std.process.run` (×2) | `node` |
+| `executeErlang` | `std.process.run` (×3) | `erlc`, `erl` |
+| `executeBeamAsm` | `std.process.run` (×3) | `erlc`, `erl` |
+| `executeWat` | stub (wasm3 removed) | — |
+
+**Timeout value:** 120_000 ms (2 minutes) — generous enough for cold `erlc` + `erl` (~2s worst case), short enough that a hung suite doesn't waste CI minutes.
+
+```zig
+const RUNTIME_TIMEOUT_MS = 120_000; // 2 minutes
+```
+
+### Edge cases
+
+- **Slow CI:** first `erlc` invocation may load BEAM compiler from disk (cold cache). 2 min covers this.
+- **Persistent processes:** `node`/`erl` in comptime path are persistent (spawned once). This timeout is for **codegen snapshot execution** only — one-shot spawns.
+- **WASM:** `executeWat` currently returns `""` (wasm3 removed). If wasmtime is restored (Step 5), add the same timeout wrapper.
+
+**Acceptance criteria:**
+- [ ] All `std.process.run` calls in `runtime.zig` replaced with timeout-gated spawns
+- [ ] Hanging processes killed after 2 minutes (test continues, RUN LOG empty)
+- [ ] `zig build test` never hangs — every test completes or times out
+- [ ] Timeout produces a clear log message: `[TIMEOUT] <cmd> killed after 120s`
+- [ ] Normal execution unaffected — fast spawns complete before timeout
+- [ ] Cache hits still short-circuit (no spawn at all)
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `modules/compiler-core/src/codegen/runtime.zig` | Add `runWithTimeout`, replace all `std.process.run` calls |
+| `modules/compiler-core/src/codegen/tests/runtime_scratch.zig` | Add timeout test (spawn `sleep 999 && echo done`, verify killed) |
 
 ---
 
@@ -575,4 +620,4 @@ zig build test && zig build test-libs && zig build test-backends
 |------|--------|--------|
 | 2026-06-30 | Created from erl-comptime-gaps consolidation | ericfillipe |
 | 2026-06-30 | Added Step 6: erl runtime regression tests (decompiler round-trip, persistent erl health, decorator e2e, error surface) | ericfillipe |
-| 2026-06-30 | Added Step 7: comptime type evaluation & first-class types tests (type as value, @typeInfo, @TypeOf, @makeRecord, @RecordKeys, @Field, @comptimeError, comptime loops) | ericfillipe |
+| 2026-06-30 | Updated Step 7: `@RecordKeys`/`@Field` removed from builtins — they're std functions in Wave 2 Step 4; only 3 core builtins tested (@typeInfo, @TypeOf, @makeRecord) | ericfillipe |
