@@ -125,7 +125,10 @@ fn ensureSpawned(io: Io, allocator: std.mem.Allocator) !void {
     while (true) {
         const s = init_state.load(.acquire);
         if (s == 2) return;
-        if (s == 3) return error.PersistentErlBroken;
+        if (s == 3) {
+            // Previous invocation detected a broken pipe — reset and respawn.
+            if (init_state.cmpxchgStrong(3, 0, .acquire, .acquire)) |_| continue;
+        }
         if (s == 0) {
             if (init_state.cmpxchgStrong(0, 1, .acquire, .acquire)) |_| continue;
             errdefer init_state.store(3, .release);
@@ -144,9 +147,10 @@ fn ensureSpawned(io: Io, allocator: std.mem.Allocator) !void {
 
             const compile_result = std.process.run(allocator, io, .{
                 .argv = &.{ "erlc", "-o", server_dir, server_path, prelude_path },
+                .timeout = .{ .duration = .{ .raw = .{ .nanoseconds = 120 * std.time.ns_per_s }, .clock = .real } },
             }) catch |err| switch (err) {
                 error.FileNotFound => return error.PersistentErlNotFound,
-                else => return err,
+                else => return error.PersistentErlBroken,
             };
             defer allocator.free(compile_result.stdout);
             defer allocator.free(compile_result.stderr);
@@ -225,7 +229,10 @@ pub fn eval(allocator: std.mem.Allocator, io: Io, erl_path: []const u8) ![]u8 {
 
     try sendFrame(io, 1, erl_path); // cmd=1: eval (compile+execute .erl file)
 
-    const payload = try readFrame(io, allocator);
+    const payload = readFrame(io, allocator) catch {
+        init_state.store(3, .release);
+        return error.PersistentErlBroken;
+    };
     errdefer allocator.free(payload);
 
     if (std.mem.startsWith(u8, payload, "__BP_ERL_COMPILE_ERROR__:") or

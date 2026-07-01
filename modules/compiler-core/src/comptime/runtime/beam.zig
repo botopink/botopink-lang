@@ -74,6 +74,7 @@ fn renderExprValue(allocator: std.mem.Allocator, te: ast.TypedExpr) ![]const u8 
                     switch (stmt.expr) {
                         .jump => |j| switch (j.kind) {
                             .@"break" => |y| if (y.value) |yp| return renderExprValue(allocator, yp.*),
+                            .@"return" => |r| if (r) |rv| return renderExprValue(allocator, rv.*),
                             else => {},
                         },
                         else => {},
@@ -134,6 +135,25 @@ fn renderExprValue(allocator: std.mem.Allocator, te: ast.TypedExpr) ![]const u8 
         .jump => |j| switch (j.kind) {
             .@"break" => |y| if (y.value) |yp| return renderExprValue(allocator, yp.*),
             else => {},
+        },
+        .branch => |br| switch (br.kind) {
+            .if_ => |i| {
+                const cond_str = try renderExprValue(allocator, i.cond.*);
+                defer allocator.free(cond_str);
+                const branch_body = if (std.mem.eql(u8, cond_str, "true")) i.then_ else i.else_ orelse &.{};
+                for (branch_body) |stmt| {
+                    switch (stmt.expr) {
+                        .jump => |j| switch (j.kind) {
+                            .@"break" => |y| if (y.value) |yp| return renderExprValue(allocator, yp.*),
+                            .@"return" => |r| if (r) |rv| return renderExprValue(allocator, rv.*),
+                            else => {},
+                        },
+                        else => {},
+                    }
+                }
+                return allocator.dupe(u8, "null");
+            },
+            else => return allocator.dupe(u8, "null"),
         },
         else => {},
     }

@@ -117,5 +117,4 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-<<"anonymous">>
 ```

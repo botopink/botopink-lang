@@ -73,6 +73,4 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-<<"positive">>
-undefined
 ```

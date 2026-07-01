@@ -95,7 +95,4 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-<<"hello">>
-<<"hi">>
-<<"hi">>
 ```

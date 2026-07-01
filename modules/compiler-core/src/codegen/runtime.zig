@@ -38,6 +38,35 @@ fn isProcessSuccess(term: std.process.Child.Term) bool {
     };
 }
 
+/// Default runtime execution timeout — 2 minutes.
+/// Generous enough for cold erlc/erl (~2s worst case), short enough that
+/// a hung suite doesn't waste CI minutes. `std.process.run`'s built-in
+/// `timeout` field enforces the deadline via the Io abstractions, no
+/// separate watchdog thread needed.
+const RUNTIME_TIMEOUT_NS: i96 = 120 * std.time.ns_per_s;
+
+/// Spawn `argv`, capture combined stdout+stderr, enforce timeout.
+/// Returns empty string on timeout, non-zero exit, or spawn failure.
+fn runWithTimeout(allocator: std.mem.Allocator, io: anytype, argv: []const []const u8, timeout_ns: i96) ![]u8 {
+    const result = std.process.run(allocator, io, .{
+        .argv = argv,
+        .timeout = .{ .duration = .{ .raw = .{ .nanoseconds = timeout_ns }, .clock = .real } },
+    }) catch return allocator.dupe(u8, "");
+
+    defer allocator.free(result.stderr);
+    defer allocator.free(result.stdout);
+
+    if (!isProcessSuccess(result.term)) return allocator.dupe(u8, "");
+
+    if (result.stderr.len == 0) return try allocator.dupe(u8, result.stdout);
+
+    var combined: std.ArrayListUnmanaged(u8) = .empty;
+    try combined.appendSlice(allocator, result.stdout);
+    if (combined.items.len > 0) try combined.append(allocator, '\n');
+    try combined.appendSlice(allocator, result.stderr);
+    return combined.toOwnedSlice(allocator);
+}
+
 /// Single root for every per-test scratch dir. Lives under the
 /// build dir (`.botopinkbuild/`) so the umbrella `.gitignore` rule
 /// already swallows it — no separate `.tmp-exec-*/` line needed.
@@ -162,9 +191,8 @@ pub fn executeJavaScript(allocator: std.mem.Allocator, js_code: []const u8, aux:
 
     // One-shot node spawn for JavaScript execution (~30ms).
     if (aux.len == 0) {
-        const res = std.process.run(allocator, io, .{ .argv = &.{ "node", "-e", js_code } }) catch return allocator.dupe(u8, "");
-        if (res.stdout.len == 0) return allocator.dupe(u8, "");
-        const out = try allocator.dupe(u8, res.stdout);
+        const out = try runWithTimeout(allocator, io, &.{ "node", "-e", js_code }, RUNTIME_TIMEOUT_NS);
+        if (out.len == 0) return allocator.dupe(u8, "");
         cacheWrite(io, allocator, &key, out);
         return out;
     }
@@ -187,17 +215,8 @@ pub fn executeJavaScript(allocator: std.mem.Allocator, js_code: []const u8, aux:
     }
 
     // Execute with Node.js
-    const result = std.process.run(allocator, io, .{ .argv = &.{ "node", tmp_path } }) catch |err| switch (err) {
-        error.FileNotFound => return allocator.dupe(u8, ""),
-        else => return err,
-    };
-    defer allocator.free(result.stderr);
-    defer allocator.free(result.stdout);
-    if (!isProcessSuccess(result.term)) {
-        return allocator.dupe(u8, "");
-    }
-
-    const combined = try combineOutput(allocator, result.stdout, result.stderr);
+    const combined = try runWithTimeout(allocator, io, &.{ "node", tmp_path }, RUNTIME_TIMEOUT_NS);
+    if (combined.len == 0) return allocator.dupe(u8, "");
     cacheWrite(io, allocator, &key, combined);
     return combined;
 }
@@ -283,50 +302,25 @@ pub fn executeErlang(allocator: std.mem.Allocator, erl_code: []const u8, module_
     }
 
     // Compile the Erlang module (and any sibling modules it calls into)
-    const compile_result = std.process.run(allocator, io, .{ .argv = &.{ "erlc", "-o", tmp_dir, erl_filename } }) catch |err| switch (err) {
-        error.FileNotFound => return allocator.dupe(u8, ""),
-        else => return err,
-    };
-    defer allocator.free(compile_result.stdout);
-    defer allocator.free(compile_result.stderr);
-    if (!isProcessSuccess(compile_result.term)) {
-        return allocator.dupe(u8, "");
-    }
+    const compile_out = try runWithTimeout(allocator, io, &.{ "erlc", "-o", tmp_dir, erl_filename }, RUNTIME_TIMEOUT_NS);
+    if (compile_out.len > 0) return allocator.dupe(u8, "");
     for (aux) |a| {
         const aux_module = erlModuleName(a.name);
         if (std.mem.eql(u8, aux_module, entry_module)) continue;
         const aux_filename = try std.fmt.allocPrint(allocator, "{s}/{s}.erl", .{ tmp_dir, aux_module });
         defer allocator.free(aux_filename);
         try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = aux_filename, .data = a.code });
-        const aux_compile = std.process.run(allocator, io, .{ .argv = &.{ "erlc", "-o", tmp_dir, aux_filename } }) catch |err| switch (err) {
-            error.FileNotFound => return allocator.dupe(u8, ""),
-            else => return err,
-        };
-        allocator.free(aux_compile.stdout);
-        allocator.free(aux_compile.stderr);
-        if (!isProcessSuccess(aux_compile.term)) {
-            return allocator.dupe(u8, "");
-        }
+        const aux_out = try runWithTimeout(allocator, io, &.{ "erlc", "-o", tmp_dir, aux_filename }, RUNTIME_TIMEOUT_NS);
+        if (aux_out.len > 0) return allocator.dupe(u8, "");
     }
 
-    const exec_result = std.process.run(allocator, io, .{
-        .argv = &.{ "erl", "-noinput", "-pa", tmp_dir, "-s", entry_module, "_botopink_main", "-s", "init", "stop" },
-    }) catch |err| switch (err) {
-        error.FileNotFound => return allocator.dupe(u8, ""),
-        else => return err,
-    };
-    defer allocator.free(exec_result.stdout);
-    defer allocator.free(exec_result.stderr);
-    if (!isProcessSuccess(exec_result.term)) {
-        return allocator.dupe(u8, "");
-    }
+    const exec_result = try runWithTimeout(allocator, io, &.{ "erl", "-noinput", "-pa", tmp_dir, "-s", entry_module, "_botopink_main", "-s", "init", "stop" }, RUNTIME_TIMEOUT_NS);
     // Return stdout only — Erlang's startup logger emits notices to
     // stderr on some hosts (notably erlef/setup-beam's OTP 27 on the
     // GitHub runner) that do not reproduce locally. Including stderr
     // in the snapshot would make the RUN LOG host-dependent.
-    const out = try allocator.dupe(u8, exec_result.stdout);
-    cacheWrite(io, allocator, &key, out);
-    return out;
+    cacheWrite(io, allocator, &key, exec_result);
+    return exec_result;
 }
 
 /// Execute BEAM Assembly code: write the `.S`, assemble it with
@@ -367,15 +361,8 @@ pub fn executeBeamAsm(allocator: std.mem.Allocator, asm_code: []const u8, module
         try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = asm_filename, .data = asm_code });
     }
 
-    const assemble_result = std.process.run(allocator, io, .{ .argv = &.{ "erlc", "+from_asm", "-o", tmp_dir, asm_filename } }) catch |err| switch (err) {
-        error.FileNotFound => return allocator.dupe(u8, ""),
-        else => return err,
-    };
-    defer allocator.free(assemble_result.stdout);
-    defer allocator.free(assemble_result.stderr);
-    if (!isProcessSuccess(assemble_result.term)) {
-        return allocator.dupe(u8, "");
-    }
+    const assemble_result = try runWithTimeout(allocator, io, &.{ "erlc", "+from_asm", "-o", tmp_dir, asm_filename }, RUNTIME_TIMEOUT_NS);
+    if (assemble_result.len == 0) return allocator.dupe(u8, "");
 
     // Assemble sibling modules the entry calls into (cross-module `call_ext`).
     for (aux) |a| {
@@ -384,31 +371,14 @@ pub fn executeBeamAsm(allocator: std.mem.Allocator, asm_code: []const u8, module
         const aux_filename = try std.fmt.allocPrint(allocator, "{s}/{s}.S", .{ tmp_dir, aux_module });
         defer allocator.free(aux_filename);
         try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = aux_filename, .data = a.code });
-        const aux_assemble = std.process.run(allocator, io, .{ .argv = &.{ "erlc", "+from_asm", "-o", tmp_dir, aux_filename } }) catch |err| switch (err) {
-            error.FileNotFound => return allocator.dupe(u8, ""),
-            else => return err,
-        };
-        allocator.free(aux_assemble.stdout);
-        allocator.free(aux_assemble.stderr);
-        if (!isProcessSuccess(aux_assemble.term)) {
-            return allocator.dupe(u8, "");
-        }
+        const aux_assemble = try runWithTimeout(allocator, io, &.{ "erlc", "+from_asm", "-o", tmp_dir, aux_filename }, RUNTIME_TIMEOUT_NS);
+        if (aux_assemble.len == 0) return allocator.dupe(u8, "");
     }
 
-    const exec_result = std.process.run(allocator, io, .{
-        .argv = &.{ "erl", "-noinput", "-pa", tmp_dir, "-s", entry_module, "_botopink_main", "-s", "init", "stop" },
-    }) catch |err| switch (err) {
-        error.FileNotFound => return allocator.dupe(u8, ""),
-        else => return err,
-    };
-    defer allocator.free(exec_result.stdout);
-    defer allocator.free(exec_result.stderr);
-    if (!isProcessSuccess(exec_result.term)) return allocator.dupe(u8, "");
-    // stdout only — see comment in executeErlang above for why the
-    // host-dependent stderr is dropped.
-    const out = try allocator.dupe(u8, exec_result.stdout);
-    cacheWrite(io, allocator, &key, out);
-    return out;
+    const exec_result = try runWithTimeout(allocator, io, &.{ "erl", "-noinput", "-pa", tmp_dir, "-s", entry_module, "_botopink_main", "-s", "init", "stop" }, RUNTIME_TIMEOUT_NS);
+    if (exec_result.len == 0) return allocator.dupe(u8, "");
+    cacheWrite(io, allocator, &key, exec_result);
+    return exec_result;
 }
 
 /// Execute WebAssembly Text via the in-process embedded wasm3 interpreter

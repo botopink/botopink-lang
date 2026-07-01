@@ -48,6 +48,9 @@ Golden snapshots live inside the owning package (`modules/compiler-core/snapshot
 ```bash
 zig build             # compile CLI + language-server + lib-test-runner + bpmp
 zig build test        # run compiler-core + language-server tests
+# Run tests with per-test timeout (kills hanging tests):
+#   <test-binary> --test-timeout 120s
+# The test binary is at .zig-cache/o/<hash>/test (pass test names via stdin).
 zig build run         # run the CLI entry point
 zig build test-libs   # run every libs/ project's tests per backend
 zig build test-vscode # run the VS Code extension's pure-fn unit suite
@@ -232,6 +235,10 @@ the conflict.
 Each worktree carries its own `.tasks/<name>/TODO.md` (the live execution state,
 seeded from the spec's steps). Its shape and the spec→worktree→completion flow are
 defined in [`tasks/AGENTS.md`](../../tasks/AGENTS.md).
+
+**Before starting any spec work, read [`specs/__template.md`](specs/__template.md)**
+for the spec execution conventions — including the **Working Memory** `_memory.md`
+scratchpad and the status lifecycle (planning → in progress → completed).
 
 Tool paths (Read/Edit/Write) must target the worktree
 (`.../botopink-lang/.tasks/<name>/...`), never the main repo — it is easy to

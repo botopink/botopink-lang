@@ -10,29 +10,64 @@
 
 ## Status
 
-**Current:** in progress — 6 gaps identified; none fixed yet
+**Current:** in progress — Steps 1, 2, 3, 5.2, 5.3, 5.4, 8a, 9 completed
 
-> The persistent erl infrastructure is solid. All gaps are in the **decompiler** (AST → BP source) that feeds template/decorator bodies to the erl runtime. Fixing this unblocks comptime eval for everything else.
+> The decompiler (`emitBpExpr`) was already complete for all listed constructs. The real gaps were: (a) `renderExprValue` in `beam.zig` missing expression kinds, (b) `evaluateErl` in `decorator_eval.zig` stubbed out, (c) record layout assumption in `patchHostMethods`, and (d) missing `fail`/`failAt`/`build` in `erl_prelude` + `patchHostMethods`.
 
-| Step | Title | Status | Assignee |
-|------|-------|--------|----------|
-| Step 1 | Fix template body decompiler | pending | |
-| Step 2 | Fix decorator eval | pending | |
-| Step 3 | Fix record layout assumption | pending | |
-| Step 4 | Fix test failures + regenerate snapshots | pending | |
-| Step 5 | Restore WAT RUN LOG execution | pending | |
-| Step 6 | Add erl runtime regression tests | pending | |
-| Step 7 | Comptime type evaluation & first-class types tests | pending | |
-| Step 8 | Fix codegen runtime crashes (all 4 backends) | pending | |
-| Step 8a | Add 2-minute timeout to all runtime executions | pending | |
-| Step 9 | Remove 76 orphaned snapshot files | pending | |
-| Step 10 | New codegen tests: optional, imports, records, enums, generics, interfaces, lambdas, operators | pending | |
-| Step 11 | New codegen tests: template/@Expr + comptime eval | pending | |
-| Step 12 | Regenerate snapshots, verify full suite | pending | |
+| Step | Title | Status | Tests | Assignee |
+|------|-------|--------|-------|----------|
+| Step 1 | Fix template body decompiler | **completed** | already handled all constructs | |
+| Step 2 | Fix decorator eval | **completed** | shares decompiler from template_eval | |
+| Step 3 | Fix record layout assumption | **completed** | maps:get(descriptor, Self) | |
+| Step 4 | Fix test failures + regenerate snapshots | pending | snapshot verify | |
+| Step 5.1 | Extend renderExprValue (fnCall, identAccess, etc.) | pending | 8 expr | |
+| Step 5.2 | Complete patchHostMethods (fail/failAt/build) | **completed** | 2 host | |
+| Step 5.3 | Add fail/failAt to erl prelude | **completed** | 2 prelude | |
+| Step 5.4 | Handle return in comptime blocks | **completed** | — | |
+| Step 5.5 | Eval pipeline integration test | pending | 1 integration | |
+| Step 6 | Add erl runtime regression tests | pending | 10 decompiler + 4 health + 3 decorator e2e + 3 error | |
+| Step 7 | Comptime type evaluation & first-class types tests | pending | ≥12 type eval | |
+| Step 8 | Fix codegen runtime crashes (all 4 backends) | pending | 14 per-backend snapshot | |
+| Step 8a | Add 2-minute timeout to all runtime executions | **completed** | runtime.zig + persistent_erl.zig | |
+| Step 9 | Remove 110 orphaned snapshot files | **completed** | snapshot count | |
+| Step 10 | New codegen tests: optional, imports, records, etc. | pending | 27 new (4 backends) | |
+| Step 11 | New codegen tests: template/@Expr + comptime eval | pending | 7 new (4 backends) | |
+| Step 12 | Restore WAT RUN LOG execution | pending | snapshot verify | |
+| Step 13 | Regenerate snapshots, verify full suite | pending | full suite gate | |
+
+### ⚠️ Known hang: comptime val + specialization (pre-existing)
+
+Test 114/1229 `codegen.tests.comptime.test.js: comptime specialization ---- comptime val used as specialization argument` hangs indefinitely. This is NOT caused by the changes in this spec — it reproduces on the base commit too.
+
+**Symptoms:**
+- Tests 104–110 (comptime vals alone) pass
+- Tests 111–113 (specialization alone) pass  
+- Test 114 (comptime val used as runtime arg in a call that also has comptime specialization params) hangs
+- The hang occurs during the Erlang/BEAM backend codegen pass, NOT in the persistent erl communication or `evaluateComptime`
+- The JS snapshot exists and is correct; the Erlang/BEAM/WASM snapshots are deleted (Step 9) and need regeneration
+- Deleting the non-JS snapshots doesn't help — the hang is during `codegen.generate` for the Erlang backend
+
+**Root cause analysis:**
+The Erlang/BEAM codegen encounters a specialized function (`scale_$0`) with a `const factor = 2;` prepended declaration (from the specialization transform). The codegen path for function bodies with local bindings that reference a mix of comptime-resolved and runtime values appears to enter an infinite loop or deadlock during AST walking/emission.
+
+**Fix required:** The Erlang codegen's `emitFnBody` must handle the `const param = value;` declarations that the specialization transform prepends to function bodies. Currently it may loop indefinitely when encountering a `.binding → .localBind` inside a function body that was added by the transform.
+
+**Workaround:** Run tests with `--test-timeout 120s` to skip the hanging test:
+```bash
+.zig-cache/o/<hash>/test --test-timeout 120s
+```
+Or pass test names via stdin to run specific subsets. See `AGENTS.md` §Workspace commands.
 
 ## Context
 
-After `persistent-erl-runtime` and `erl-comptime-speed` (both completed), the persistent erl subprocess handles all comptime. But the decompiler (`template_eval.zig:emitBpExpr`) only handles basic constructs — complex template bodies produce `"null"`, decorator eval returns `error.EvalFailed`, and 36 tests fail.
+After `persistent-erl-runtime` and `erl-comptime-speed` (both completed), the persistent erl subprocess handles all comptime. The decompiler (`template_eval.zig:emitBpExpr`) already handles all AST constructs (if/else, case, loop, identAccess, dotIdent, pipeline, string templates).  
+
+The real gaps were:
+- **decorator_eval.zig**: `evaluateErl()` was a stub returning `error.EvalFailed`
+- **beam.zig**: `renderExprValue` only handled literals, binary ops, and simple arrays — missing fnCall, identAccess, if/else, case, recordLit
+- **comptime.zig**: `patchHostMethods` used `element(2, Self)` but records are maps, not tuples; also missing `fail`/`failAt`/`build` methods
+- **erl_prelude.zig**: Missing `fail`/`fail_at`/`build` Erlang functions
+- **runtime.zig**: `executeBeamAsm` used `std.process.run` without timeout; `persistent_erl.zig` `ensureSpawned` had no `erlc` timeout
 
 **What was delivered (by prior specs):**
 - Persistent erl subprocess as sole comptime runtime
@@ -40,6 +75,21 @@ After `persistent-erl-runtime` and `erl-comptime-speed` (both completed), the pe
 - Binary framing protocol
 - `#[@Host]` lowering via post-processing of `template_runtime.erl`
 - Node.js, wasm3, WAT, AtomVM — all removed
+
+---
+
+## Testing Strategy
+
+| Layer | What | Where | When |
+|-------|------|-------|------|
+| **Unit** | Per-function correctness (decompiler, renderExprValue, patchHostMethods) | `comptime/tests/` — Zig tests calling functions directly | Within each step — write BEFORE fixing |
+| **Integration** | End-to-end chains (BP source → erl eval → result) | `comptime/tests/` — compile .bp snippets through full pipeline | After unit tests pass |
+| **Snapshot** | Codegen output across all 4 backends | `snapshots/codegen/{node,erlang,beam,wasm}/` | Regenerate after each codegen fix step |
+| **Regression** | Fixed gaps stay fixed | `comptime/tests/templates.zig`, `comptime/tests/decorators.zig` | Step 6 — after fixes land |
+
+**Test-first rule for Steps 1-5**: Write the test first, confirm it fails (red), then implement the fix (green). Every acceptance criterion must map to at least one test.
+
+**Snapshot cycle**: `rm snapshots/codegen/<backend>/*.snap.md && zig build test` regenerates. Never hand-edit snapshots. A snapshot diff is either a bug (fix the codegen) or intentional (regenerate and commit).
 
 ---
 
@@ -67,6 +117,58 @@ After `persistent-erl-runtime` and `erl-comptime-speed` (both completed), the pe
 - [ ] Template bodies using these constructs compile to correct BP source
 - [ ] `zig build test` passes (template tests unblocked)
 
+### Tests (write before fixing)
+
+Each test: parse BP snippet → decompile AST via `emitBpExpr` → re-parse → verify AST equality.
+
+```botopink
+// slug: decompile_if_else
+fn merge(comptime a: type, comptime b: type) -> type {
+    if (a == b) { break a; } else { break record {}; };
+}
+
+// slug: decompile_case_match
+fn describe(comptime t: type) -> string {
+    case (@typeInfo(t)) {
+        TypeInfo.Int -> { break "integer"; };
+        _ -> { break "other"; };
+    };
+}
+
+// slug: decompile_loop_fields
+fn fieldNames(comptime T: type) -> string[] {
+    val info = @typeInfo(T);
+    var names: string[] = [];
+    loop (info.Record.fields) { f ->
+        names = names.push(f.name);
+    };
+    break names;
+}
+
+// slug: decompile_field_access
+fn firstFieldType(comptime T: type) -> type {
+    val info = @typeInfo(T);
+    break info.Record.fields[0].typeName;
+}
+
+// slug: decompile_dot_ident
+fn isRecord(comptime T: type) -> bool {
+    break @typeInfo(T) is TypeInfo.Record;
+}
+
+// slug: decompile_pipeline
+fn countFields(comptime T: type) -> i32 {
+    break (@typeInfo(T).Record.fields |> .len);
+}
+
+// slug: decompile_string_template
+fn typeName(comptime T: type) -> string {
+    break "type: ${T}";
+}
+```
+
+**Test file:** `modules/compiler-core/src/comptime/tests/templates.zig`
+
 ### Files
 
 | File | Purpose |
@@ -90,6 +192,32 @@ After `persistent-erl-runtime` and `erl-comptime-speed` (both completed), the pe
 - [ ] 10 decorator test failures resolved
 - [ ] `zig build test` passes
 
+### Tests (write before fixing)
+
+```botopink
+// slug: decorator_simple_attribute
+#[result(value = 42)]
+fn getAnswer() -> i32 { return 42; }
+// getAnswer() should have attribute "result" with value 42
+
+// slug: decorator_loop_body
+#[validate(fields)]
+record User { name: string, age: i32 }
+// validate decorator body loops over fields — must not crash
+
+// slug: decorator_conditional_body
+#[guard(when: target is record)]
+fn guardedFn(comptime T: type) -> type { break T; }
+// guard decorator with conditional — must not crash
+
+// slug: decorator_error_surface
+#[fail("test error")]
+fn badDecorator() -> void {}
+// Should produce compiler diagnostic with "test error", not silent crash
+```
+
+**Test file:** `modules/compiler-core/src/comptime/tests/decorators.zig`
+
 ### Files
 
 | File | Purpose |
@@ -111,6 +239,21 @@ After `persistent-erl-runtime` and `erl-comptime-speed` (both completed), the pe
 - [ ] Add test that validates descriptor extraction
 - [ ] Or: refactor to use named field access instead of positional
 
+### Test
+
+```zig
+// Verify patchHostMethods correctly extracts descriptor from Capture record.
+// Compile template_runtime.bp → Erlang → inspect tuple layout.
+// If element(2, Self) matches actual position → test passes.
+// If not → refactor to use named field or fix position.
+test "patchHostMethods: descriptor extraction" {
+    const erl_output = try compileModule("libs/std/src/template_runtime.bp", .erlang);
+    // Verify Capture tuple layout: {capture, Descriptor, ...}
+    try testing.expect(erl_output contains "element(2, Self)");
+    // Verify no silent crash from wrong position
+}
+```
+
 ### Files
 
 | File | Purpose |
@@ -128,10 +271,10 @@ After `persistent-erl-runtime` and `erl-comptime-speed` (both completed), the pe
 |----------|-------|------------|----------|
 | Decorator eval | 10 | Step 2 | Step 2 |
 | Template eval (complex bodies) | 5 | Step 1 | Step 1 |
-| Codegen snapshots (RUN LOG empty) | 5 | wasm3 removed | Step 5 |
+| Codegen snapshots (RUN LOG empty) | 5 | comptime eval produces `"null"` | Step 5 |
 | LSP sublanguage tests | 9 | Templates not executing on erl | Step 1 |
 | Memory leak | 1 | Unrelated — separate investigation | — |
-| Snapshot diffs | 6 | WAT → Erlang output change | Step 5 |
+| Snapshot diffs | 6 | comptime eval produces `"null"` | Step 5 |
 | **Total** | **36** | | |
 
 **Acceptance criteria:**
@@ -141,26 +284,175 @@ After `persistent-erl-runtime` and `erl-comptime-speed` (both completed), the pe
 
 ---
 
-## Step 5 — Restore WAT RUN LOG execution
+## Step 5 — Make comptime eval work in Erl
 
 **Status:** pending **Assignee:**
-**Priority:** LOW — WAT backend is intact, only execution is gone
+**Priority:** HIGH — blocks comptime eval for complex expressions
 
-`codegen/runtime.zig:executeWat()` returns `""` because wasm3 was removed. Options:
-- **A)** Restore wasmtime-based WAT execution (needs wasmtime on PATH)
-- **B)** Accept empty RUN LOGs as new baseline
+The persistent erl subprocess is the sole comptime runtime, but the eval pipeline has gaps:
+
+| Gap | File | Impact |
+|-----|------|--------|
+| `renderExprValue` incomplete | `beam.zig:68-141` | Falls to `"null"` for: fn calls, field access, method calls, if/case/loop, record/enum construction, pipeline, string templates |
+| `patchHostMethods` incomplete | `comptime.zig:423-451` | Missing `fail`/`failAt`/`build` on Capture/DeclHandle — template bodies crash at runtime |
+| `erl_prelude` missing `fail`/`failAt` | `erl_prelude.zig` | No Erlang-side implementation for comptime error surfacing |
+| `renderExprValue` only handles break not return | `beam.zig:68-141` | Return statements with values produce `"null"` |
+
+### 5.1 — Extend `renderExprValue` for complex expressions
+
+`beam.zig:renderExprValue()` currently handles: literals, binary ops on ints, array literals, break/return with values. Add support for:
+
+| Expression | Priority | Used by |
+|-----------|----------|---------|
+| `fnCall` | CRITICAL | `@typeInfo(T)`, `@TypeOf(v)`, `@print(x)`, all builtin calls |
+| `identAccess` (field access) | CRITICAL | `info.Record.fields`, `f.name`, record field reads |
+| `dotIdent` | HIGH | `@typeInfo(T).Record`, enum variant access |
+| `if/else` | HIGH | Comptime branching, `@comptimeError` guard |
+| `case`/`match` | HIGH | Enum introspection, Result/Ok/Error handling |
+| `collection.recordLit` | MEDIUM | `RecordField(name: "x", typeName: i32)`, struct construction |
+| `loop` | MEDIUM | Field iteration over record fields |
+| Pipeline `\|>` | LOW | Std function chaining |
+
+### 5.2 — Complete `patchHostMethods`
+
+`comptime.zig:patchHostMethods()` post-processes generated Erlang to replace `#[@Host]` stubs with prelude calls. Currently handles: `context`, `lookup`, `bindings`, `parts`, `custom`, `makeExpr`, `makeCode`.
+
+**Missing methods to add:**
+- `DeclHandle.fail(msg)` / `DeclHandle.failAt(span, msg)` → throw `{comptime_fail, ...}`
+- `Capture.fail(msg)` / `Capture.failAt(span, msg)`
+- `Capture.build(type)` → construct record from captures
+- Any other `#[@Host]` methods used by template_runtime.bp
+
+### 5.3 — Add `fail`/`failAt` to erl prelude
+
+`erl_prelude.zig` exports descriptor walkers but has no `fail`/`failAt` functions. The bare `throw({comptime_fail, ...})` at line 126 needs proper Erlang functions that:
+- Format the error message with span info
+- Throw a structured `{comptime_fail, Message, Span}` tuple
+- Are callable from patched `#[@Host]` stubs
+
+### 5.4 — Handle `return` (not just `break`) in comptime blocks
+
+`renderExprValue` walks comptime blocks looking for `break` with value. It should also handle `return` with value — both are valid exit paths.
+
+### 5.5 — Eval pipeline integration test
+
+Once renderExprValue is extended, add a round-trip test:
+1. Build a BP snippet with complex comptime expressions (fn calls, field access, conditionals)
+2. Run through the full eval pipeline: `comptimeEntry → buildScript → erl exec → parse result`
+3. Verify JSON output has correct values (not `null`)
 
 **Acceptance criteria:**
-- [ ] Decision: option A or B
-- [ ] If A: `executeWat()` runs WAT through wasmtime
-- [ ] If B: regenerate WAT snapshots with empty RUN LOG
-- [ ] No test failures from WAT RUN LOG
+- [ ] `renderExprValue` handles fnCall, identAccess, dotIdent, if/else, case/match, recordLit
+- [ ] `patchHostMethods` covers fail/failAt/build
+- [ ] `erl_prelude` has fail/failAt Erlang functions
+- [ ] Comptime blocks accept both `break` and `return` as exit paths
+- [ ] Eval pipeline round-trip test passes
+- [ ] `zig build test` passes — comptime tests that previously got `"null"` now get real values
+- [ ] No WAT RUN LOG restoration — wasm3 is gone, erl is the sole comptime runtime
 
-### Files (if option A)
+### Tests (write before fixing)
+
+#### 5.1 Tests — `renderExprValue` per expression kind
+
+Each test: build a `ComptimeEntry` from a typed expression → call `renderExprValue` → verify JSON output is not `"null"`.
+
+```zig
+// Test file: comptime/tests/eval_pipeline.zig
+
+test "renderExprValue: fnCall" {
+    // comptime x = @typeInfo(i32)
+    // Expected: JSON with TypeInfo.Int structure, not "null"
+}
+
+test "renderExprValue: identAccess" {
+    // comptime val info = @typeInfo(Point); val fields = info.Record.fields
+    // Expected: JSON array of RecordField objects
+}
+
+test "renderExprValue: dotIdent" {
+    // comptime val kind = @typeInfo(i32).Int  (or .Float, .Bool, etc.)
+    // Expected: JSON with variant tag
+}
+
+test "renderExprValue: if_else" {
+    // comptime val x = if (true) { 1 } else { 2 }
+    // Expected: "1"
+}
+
+test "renderExprValue: case_match" {
+    // comptime val x = case (@typeInfo(i32)) { TypeInfo.Int -> { 1 }; _ -> { 0 }; }
+    // Expected: "1"
+}
+
+test "renderExprValue: recordLit" {
+    // comptime val f = RecordField(name: "x", typeName: i32)
+    // Expected: JSON object with name and typeName fields
+}
+
+test "renderExprValue: comptimeBlock_return" {
+    // comptime { return 42; }
+    // Expected: "42" (not "null")
+}
+
+test "renderExprValue: comptimeBlock_break" {
+    // comptime { break 42; } 
+    // Expected: "42"
+}
+```
+
+#### 5.2 Tests — `patchHostMethods`
+
+```zig
+// Test file: comptime/tests/eval_pipeline.zig
+
+test "patchHostMethods: fail on DeclHandle" {
+    // Compile template that calls decl.fail("msg")
+    // Verify generated Erlang calls botopink_comptime_prelude:fail(Decl, "msg")
+}
+
+test "patchHostMethods: failAt on Capture" {
+    // Compile template that calls capture.failAt(span, "msg")
+    // Verify generated Erlang calls botopink_comptime_prelude:fail_at(Capture, Span, "msg")
+}
+```
+
+#### 5.3 Tests — `erl_prelude` fail/failAt
+
+```erlang
+% Test: compile prelude → call fail("test") → verify throw
+% Expected: throw({comptime_fail, "test", #{}})
+
+% Test: compile prelude → call fail_at("test", Span) → verify throw
+% Expected: throw({comptime_fail, "test", Span})
+```
+
+#### 5.5 Integration test (after all sub-steps)
+
+```zig
+test "eval pipeline: complex comptime expression" {
+    // Full pipeline: BP source → TypedExpr → ComptimeEntry → buildScript → erl exec
+    const bp =
+        \\val info = @typeInfo(Point);
+        \\val names: string[] = [];
+        \\loop (info.Record.fields) { f ->
+        \\    names = names.push(f.name);
+        \\};
+        \\val count = names.len;
+    ;
+    const result = try evaluatePipeline(bp);
+    try testing.expect(result.get("names") != null);
+    try testing.expect(result.get("count") != null);
+}
+```
+
+### Files
 
 | File | Purpose |
 |------|---------|
-| `modules/compiler-core/src/codegen/runtime.zig` | `executeWat` — wasmtime integration |
+| `modules/compiler-core/src/comptime/runtime/beam.zig` | `renderExprValue` — add missing expression kinds |
+| `modules/compiler-core/src/comptime.zig` | `patchHostMethods` — add fail/failAt/build |
+| `modules/compiler-core/src/comptime/runtime/erl_prelude.zig` | Add fail/failAt Erlang functions |
+| `modules/compiler-core/src/comptime/tests/` | Integration test for eval pipeline |
 
 ---
 
@@ -431,6 +723,45 @@ Only ~10% of comptime-verified features have codegen runtime tests. 120 snapshot
 - [ ] `zig build test` passes
 - [ ] Empty RUN LOGs replaced with actual output where fixes applied
 
+### Tests — per backend verification strategy
+
+For each fix, verify with a snapshot test:
+
+```zig
+// Pattern: fix → run test → snapshot gets RUN LOG (not empty, not crash)
+test "codegen: .len → .length in JS" {
+    // .bp: val s = "hello"; @print(s.len);
+    // Expected RUN LOG: 5  (not undefined)
+}
+
+test "codegen: if without else in JS" {
+    // .bp: val x = if (true) { 1; };
+    // Expected RUN LOG: 1  (not crash)
+}
+
+test "codegen: try/catch in Erlang" {
+    // .bp: val r: @Result<i32, string> = Ok(42);
+    //       val v = try r;
+    // Expected RUN LOG: 42
+}
+
+test "codegen: pipeline in Erlang" {
+    // .bp: val x = [1,2,3] |> .len;
+    // Expected RUN LOG: 3
+}
+
+test "codegen: try/catch in BEAM" {
+    // .bp: val r: @Result<i32, string> = Ok(42);
+    //       val v = try r;
+    // Expected RUN LOG: 42
+}
+
+test "codegen: wasm external skip" {
+    // .bp: uses external host functions
+    // Expected: RUN LOG empty (documented skip), no crash
+}
+```
+
 ---
 
 ## Step 8a — Add 2-minute timeout to all runtime executions
@@ -478,7 +809,7 @@ const RUNTIME_TIMEOUT_MS = 120_000; // 2 minutes
 
 - **Slow CI:** first `erlc` invocation may load BEAM compiler from disk (cold cache). 2 min covers this.
 - **Persistent processes:** `node`/`erl` in comptime path are persistent (spawned once). This timeout is for **codegen snapshot execution** only — one-shot spawns.
-- **WASM:** `executeWat` currently returns `""` (wasm3 removed). If wasmtime is restored (Step 5), add the same timeout wrapper.
+- **WASM:** `executeWat` currently returns `""` (wasm3 removed). If wasmtime is restored (Step 12), add the same timeout wrapper.
 
 **Acceptance criteria:**
 - [ ] All `std.process.run` calls in `runtime.zig` replaced with timeout-gated spawns
@@ -561,7 +892,38 @@ fn main() {
 
 ---
 
-## Step 12 — Regenerate snapshots, verify full suite
+## Step 12 — Restore WAT RUN LOG execution
+
+**Status:** pending **Assignee:**
+**Priority:** LOW — codegen backend, only execution is gone
+
+`codegen/runtime.zig:executeWat()` returns `""` because wasm3 was removed. The WAT codegen backend (`codegen/wat.zig`) is intact — only the runtime execution is missing.
+
+**Options:**
+- **A)** Restore wasmtime-based WAT execution (needs wasmtime on PATH)
+- **B)** Accept empty RUN LOGs as new baseline
+
+**Acceptance criteria:**
+- [ ] Decision: option A or B
+- [ ] If A: `executeWat()` runs WAT through wasmtime (use same `runWithTimeout` wrapper from Step 8a)
+- [ ] If B: regenerate WAT snapshots with empty RUN LOG
+- [ ] No test failures from WAT RUN LOG
+
+### Files (if option A)
+
+| File | Purpose |
+|------|---------|
+| `modules/compiler-core/src/codegen/runtime.zig` | `executeWat` — wasmtime integration |
+
+### Files (if option B)
+
+| File | Purpose |
+|------|---------|
+| `modules/compiler-core/src/codegen/snapshots/wasm/` | Regenerate WAT snapshots with empty RUN LOG |
+
+---
+
+## Step 13 — Regenerate snapshots, verify full suite
 
 **Status:** pending **Assignee:**
 
@@ -588,12 +950,13 @@ zig build test && zig build test-libs && zig build test-backends
 5. **Step 7** runs after Steps 1-2 — validates builtins chain
 6. **Step 4** resolves naturally as gaps close
 
-### Phase B — Codegen (Steps 8-12, parallel with Phase A)
+### Phase B — Codegen (Steps 8-13, parallel with Phase A)
 
 1. **Step 9** first (orphans) — zero risk, independent
 2. **Step 8** per backend — commonJS/WASM independent of erl steps; Erlang/BEAM may need Step 1
 3. **Steps 10-11** after Step 8 — new tests
-4. **Step 12** final sweep
+4. **Step 12** independent — restore WAT RUN LOG (codegen runtime)
+5. **Step 13** final sweep
 
 **Quick wins (no deps, under 30 min):**
 
@@ -605,6 +968,31 @@ zig build test && zig build test-libs && zig build test-backends
 | 4 | Skip WASM RUN LOG for external tests | 8 | ~15 min |
 | 5 | Fix record layout assumption | 3 | ~30 min |
 
+## Test budget
+
+| Category | Count | Step |
+|----------|-------|------|
+| Decompiler round-trip (unit) | 7 | 1 |
+| Decorator e2e | 4 | 2 |
+| Record layout unit | 1 | 3 |
+| renderExprValue per-expr | 8 | 5.1 |
+| patchHostMethods unit | 2 | 5.2 |
+| erl_prelude unit | 2 | 5.3 |
+| Eval pipeline integration | 1 | 5.5 |
+| Decompiler round-trip (regression) | 10 | 6.1 |
+| Persistent erl health | 4 | 6.2 |
+| Decorator eval e2e (regression) | 3 | 6.3 |
+| Error surface | 3 | 6.4 |
+| Comptime type eval | ≥12 | 7 |
+| Codegen crash fix snapshots | 14 | 8 |
+| Timeout unit | 1 | 8a |
+| New codegen tests | 27 | 10 |
+| Template/@Expr codegen tests | 7 | 11 |
+| WAT RUN LOG snapshot verify | — | 12 |
+| **Total new tests** | **≥106** | |
+| **Existing fixed** | 36 | 4 |
+| **Grand total** | **≥142** | |
+
 ## Summary
 
 | Step | Priority | Blocks | Parallel-safe |
@@ -613,14 +1001,15 @@ zig build test && zig build test-libs && zig build test-backends
 | 2 — Decorator eval | HIGH | — | After Step 1 |
 | 3 — Record layout | MEDIUM | — | Yes |
 | 4 — Test failures | HIGH | — | After Steps 1-3, 5 |
-| 5 — WAT RUN LOG | LOW | — | Yes |
-| 6 — Erl regression tests | HIGH | — | After Steps 1-2 |
-| 7 — Type eval tests | HIGH | Wave 2 | After Steps 1-2 |
+| 5 — Comptime eval in Erl | HIGH | — | Yes |
+| 6 — Erl regression tests | HIGH | — | After Steps 1-2, 5 |
+| 7 — Type eval tests | HIGH | Wave 2 | After Steps 1-2, 5 |
 | 8 — Codegen crash fixes | HIGH | Steps 10-11 | Yes (per backend) |
 | 9 — Orphaned snapshots | LOW | — | Yes |
 | 10 — New codegen tests | HIGH | — | After Step 8 |
 | 11 — Template codegen tests | HIGH | — | After Steps 1 + 8 |
-| 12 — Final sweep | HIGH | — | After all |
+| 12 — WAT RUN LOG | LOW | — | Yes |
+| 13 — Final sweep | HIGH | — | After all |
 
 ## Changelog
 
@@ -628,4 +1017,6 @@ zig build test && zig build test-libs && zig build test-backends
 |------|--------|--------|
 | 2026-06-30 | Created from erl-comptime-gaps consolidation | ericfillipe |
 | 2026-06-30 | Added Step 6: erl runtime regression tests (decompiler round-trip, persistent erl health, decorator e2e, error surface) | ericfillipe |
+| 2026-06-30 | Step 5 → Comptime eval in Erl + Step 12 → WAT RUN LOG (codegen); Testing Strategy section + concrete tests per step + test budget (≥106 new) | ericfillipe |
 | 2026-06-30 | Updated Step 7: `@makeRecord` removed — replaced by `#[@code]` annotation pattern. Only 2 core builtins tested (@typeInfo, @TypeOf) | ericfillipe |
+| 2026-07-01 | Steps 1-3, 5.2-5.4, 8a, 9 completed. Decompiler already complete. Fixed record layout (maps:get). Added fail/failAt/build to prelude + patchHostMethods. Implemented decorator eval. Added timeouts to executeBeamAsm + persistent_erl. Deleted 110 orphaned snapshots. Pre-existing hang: test 114 (comptime val + specialization). | ericfillipe |
