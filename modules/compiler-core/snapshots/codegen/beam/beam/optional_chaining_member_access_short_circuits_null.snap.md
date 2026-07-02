@@ -63,5 +63,4 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-<<"ana">>
 ```

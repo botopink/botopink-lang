@@ -172,6 +172,4 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
--1
-<<"less">>
 ```

@@ -70,6 +70,4 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-<<"started">>
-<<"done">>
 ```

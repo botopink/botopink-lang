@@ -31,6 +31,7 @@ pub fn generate(
         .erlang, .beam => "erlang",
         .wasm => "wasm",
     };
+
     var session = try comptimeMod.compile(allocator, modules, io, config.build_root, target_name);
     defer session.deinit(allocator);
     const outputs = try switch (config.targetSource) {

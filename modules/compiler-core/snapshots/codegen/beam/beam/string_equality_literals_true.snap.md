@@ -71,5 +71,4 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-1
 ```

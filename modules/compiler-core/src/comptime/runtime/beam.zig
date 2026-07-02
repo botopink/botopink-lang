@@ -8,6 +8,7 @@
 const std = @import("std");
 const ast = @import("../../ast.zig");
 const eval = @import("../eval.zig");
+const T = @import("../types.zig");
 
 // ── Script builder ────────────────────────────────────────────────────────────
 
@@ -116,6 +117,57 @@ fn renderExprValue(allocator: std.mem.Allocator, te: ast.TypedExpr) ![]const u8 
             };
             return std.fmt.allocPrint(allocator, "{d}", .{result});
         },
+        .unaryOp => |u| switch (u.op) {
+            .not => {
+                const val = try evalConstBool(u.expr.*);
+                return allocator.dupe(u8, if (!val) "true" else "false");
+            },
+            .neg => {
+                const val = try evalConstInt(u.expr.*);
+                return std.fmt.allocPrint(allocator, "{d}", .{-val});
+            },
+        },
+        .call => |c| switch (c.kind) {
+            .call => |cc| {
+                if (cc.is_builtin) {
+                    if (std.mem.eql(u8, cc.callee, "typeInfo")) {
+                        if (cc.args.len >= 1) {
+                            const arg_ty = cc.args[0].value.getType();
+                            return renderTypeInfo(allocator, arg_ty);
+                        }
+                    }
+                    if (std.mem.eql(u8, cc.callee, "TypeOf")) {
+                        if (cc.args.len >= 1) {
+                            const arg_ty = cc.args[0].value.getType();
+                            return renderTypeName(allocator, arg_ty);
+                        }
+                    }
+                }
+                return allocator.dupe(u8, "null");
+            },
+            .pipeline => |p| {
+                return renderExprValue(allocator, p.rhs.*);
+            },
+        },
+        .identifier => |id| switch (id.kind) {
+            .ident => |name| {
+                if (std.mem.eql(u8, name, "true")) return allocator.dupe(u8, "true");
+                if (std.mem.eql(u8, name, "false")) return allocator.dupe(u8, "false");
+                return allocator.dupe(u8, name);
+            },
+            .dotIdent => |name| {
+                var buf: std.ArrayListUnmanaged(u8) = .empty;
+                defer buf.deinit(allocator);
+                try buf.append(allocator, '"');
+                try buf.appendSlice(allocator, name);
+                try buf.append(allocator, '"');
+                return buf.toOwnedSlice(allocator);
+            },
+            .identAccess => |ia| {
+                _ = ia;
+                return allocator.dupe(u8, "null");
+            },
+        },
         .collection => |col| switch (col.kind) {
             .arrayLit => |al| {
                 var buf: std.ArrayListUnmanaged(u8) = .empty;
@@ -130,17 +182,47 @@ fn renderExprValue(allocator: std.mem.Allocator, te: ast.TypedExpr) ![]const u8 
                 try buf.append(allocator, ']');
                 return buf.toOwnedSlice(allocator);
             },
+            .recordLit => |rl| {
+                var buf: std.ArrayListUnmanaged(u8) = .empty;
+                defer buf.deinit(allocator);
+                try buf.append(allocator, '{');
+                for (rl.fields, 0..) |f, i| {
+                    if (i > 0) try buf.appendSlice(allocator, ",");
+                    try buf.append(allocator, '"');
+                    try buf.appendSlice(allocator, f.name);
+                    try buf.appendSlice(allocator, "\":");
+                    const val_str = try renderExprValue(allocator, f.value.*);
+                    defer allocator.free(val_str);
+                    try buf.appendSlice(allocator, val_str);
+                }
+                try buf.append(allocator, '}');
+                return buf.toOwnedSlice(allocator);
+            },
+            .case => |cs| {
+                for (cs.subjects) |subj| {
+                    const subj_str = try renderExprValue(allocator, subj);
+                    defer allocator.free(subj_str);
+                    for (cs.arms) |arm| {
+                        if (patternMatches(allocator, subj_str, arm.pattern)) {
+                            return renderExprValue(allocator, arm.body);
+                        }
+                    }
+                }
+                return allocator.dupe(u8, "null");
+            },
             else => return allocator.dupe(u8, "null"),
         },
         .jump => |j| switch (j.kind) {
             .@"break" => |y| if (y.value) |yp| return renderExprValue(allocator, yp.*),
+            .@"return" => |r| if (r) |rv| return renderExprValue(allocator, rv.*),
             else => {},
         },
         .branch => |br| switch (br.kind) {
             .if_ => |i| {
                 const cond_str = try renderExprValue(allocator, i.cond.*);
                 defer allocator.free(cond_str);
-                const branch_body = if (std.mem.eql(u8, cond_str, "true")) i.then_ else i.else_ orelse &.{};
+                const cond_val = std.mem.eql(u8, cond_str, "true");
+                const branch_body = if (cond_val) i.then_ else i.else_ orelse &.{};
                 for (branch_body) |stmt| {
                     switch (stmt.expr) {
                         .jump => |j| switch (j.kind) {
@@ -155,9 +237,32 @@ fn renderExprValue(allocator: std.mem.Allocator, te: ast.TypedExpr) ![]const u8 
             },
             else => return allocator.dupe(u8, "null"),
         },
+        .loop => |lp| {
+            for (lp.body) |stmt| {
+                switch (stmt.expr) {
+                    .jump => |j| switch (j.kind) {
+                        .@"break" => |y| if (y.value) |yp| return renderExprValue(allocator, yp.*),
+                        .@"return" => |r| if (r) |rv| return renderExprValue(allocator, rv.*),
+                        else => {},
+                    },
+                    else => {},
+                }
+            }
+            return allocator.dupe(u8, "null");
+        },
         else => {},
     }
     return allocator.dupe(u8, "null");
+}
+
+fn patternMatches(allocator: std.mem.Allocator, value: []const u8, pat: ast.Pattern) bool {
+    _ = allocator;
+    _ = value;
+    switch (pat) {
+        .wildcard => return true,
+        .ident => return true,
+        else => return false,
+    }
 }
 
 fn evalConstInt(te: ast.TypedExpr) !i64 {
@@ -183,6 +288,78 @@ fn evalConstInt(te: ast.TypedExpr) !i64 {
             else => return 0,
         },
         else => return 0,
+    }
+}
+
+fn evalConstBool(te: ast.TypedExpr) !bool {
+    switch (te) {
+        .literal => |lit| switch (lit.kind) {
+            .null_ => return false,
+            else => {},
+        },
+        .identifier => |id| switch (id.kind) {
+            .ident => |name| {
+                if (std.mem.eql(u8, name, "true")) return true;
+                if (std.mem.eql(u8, name, "false")) return false;
+            },
+            else => {},
+        },
+        .comptime_ => |ct| switch (ct.kind) {
+            .comptimeExpr => |inner| return evalConstBool(inner.*),
+            else => {},
+        },
+        else => {},
+    }
+    return false;
+}
+
+fn renderTypeInfo(allocator: std.mem.Allocator, ty: *T.Type) ![]const u8 {
+    const resolved = ty.deref();
+    switch (resolved.*) {
+        .named => |n| {
+            if (std.mem.eql(u8, n.name, "i32") or std.mem.eql(u8, n.name, "Int")) return allocator.dupe(u8, "{\"Int\":{}}");
+            if (std.mem.eql(u8, n.name, "f64") or std.mem.eql(u8, n.name, "Float")) return allocator.dupe(u8, "{\"Float\":{}}");
+            if (std.mem.eql(u8, n.name, "string") or std.mem.eql(u8, n.name, "String")) return allocator.dupe(u8, "{\"String\":{}}");
+            if (std.mem.eql(u8, n.name, "bool") or std.mem.eql(u8, n.name, "Bool")) return allocator.dupe(u8, "{\"Bool\":{}}");
+            if (std.mem.eql(u8, n.name, "void")) return allocator.dupe(u8, "{\"Void\":{}}");
+            return allocator.dupe(u8, "null");
+        },
+        .record => |r| {
+            var buf: std.ArrayListUnmanaged(u8) = .empty;
+            defer buf.deinit(allocator);
+            try buf.appendSlice(allocator, "{\"Record\":{\"fields\":[");
+            for (r, 0..) |f, i| {
+                if (i > 0) try buf.appendSlice(allocator, ",");
+                try buf.appendSlice(allocator, "{\"name\":\"");
+                try buf.appendSlice(allocator, f.name);
+                try buf.appendSlice(allocator, "\",\"typeName\":");
+                const ty_name = try renderTypeName(allocator, f.type_);
+                defer allocator.free(ty_name);
+                try buf.appendSlice(allocator, ty_name);
+                try buf.appendSlice(allocator, "}");
+            }
+            try buf.appendSlice(allocator, "]}}");
+            return buf.toOwnedSlice(allocator);
+        },
+        else => return allocator.dupe(u8, "null"),
+    }
+}
+
+fn renderTypeName(allocator: std.mem.Allocator, ty: *T.Type) ![]const u8 {
+    const resolved = ty.deref();
+    switch (resolved.*) {
+        .named => |n| {
+            var buf: std.ArrayListUnmanaged(u8) = .empty;
+            defer buf.deinit(allocator);
+            try buf.append(allocator, '"');
+            try buf.appendSlice(allocator, n.name);
+            try buf.append(allocator, '"');
+            return buf.toOwnedSlice(allocator);
+        },
+        .record => {
+            return allocator.dupe(u8, "\"record\"");
+        },
+        else => return allocator.dupe(u8, "\"unknown\""),
     }
 }
 
