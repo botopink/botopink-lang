@@ -316,3 +316,28 @@ test "format: record literal ---- round-trip" {
         \\}
     );
 }
+
+test "format: interface literal ---- basic" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn main() {
+        \\    val decl = @Decl(kind: "Record", name: "Service");
+        \\}
+    );
+}
+
+test "format: interface literal ---- multiple fields" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn main() {
+        \\    val decl = @Decl(kind: "Record", name: "Service", fields: [], methods: []);
+        \\}
+    );
+}
+
+test "format: interface literal ---- with array" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn main() {
+        \\    val decl = @Decl(kind: "Record", name: "Service", fields: [record { name: "x", typeName: "i32" }]);
+        \\}
+    );
+}
+

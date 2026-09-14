@@ -189,3 +189,18 @@ test "js: call ---- Children coercion (list / single / text)" {
         \\val txt = box("hi");
     );
 }
+
+test "js: interface literal ---- basic" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\val DeclKind = record { Record: "Record", Fn: "Fn" };
+        \\val decl = @Decl(kind: DeclKind.Record, name: "Service", fields: [], methods: [], returnType: "", annotations: []);
+    );
+}
+
+test "js: interface literal ---- with fields" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\val DeclKind = record { Record: "Record", Fn: "Fn" };
+        \\val decl = @Decl(kind: DeclKind.Record, name: "Service", fields: [record { name: "x", typeName: "i32", annotations: [] }], methods: [], returnType: "", annotations: []);
+    );
+}
+

@@ -735,3 +735,28 @@ test "parser: echo is a plain identifier (keyword removed)" {
         \\val r = echo("hi");
     );
 }
+
+test "parser: interface literal ---- basic" {
+    try h.assertParser(std.testing.allocator, @src(),
+        \\val decl = @Decl(kind: "Record", name: "Service");
+    );
+}
+
+test "parser: interface literal ---- multiple fields" {
+    try h.assertParser(std.testing.allocator, @src(),
+        \\val decl = @Decl(kind: "Record", name: "Service", fields: [], methods: []);
+    );
+}
+
+test "parser: interface literal ---- with array field" {
+    try h.assertParser(std.testing.allocator, @src(),
+        \\val decl = @Decl(kind: "Record", name: "Service", fields: [record { name: "x", typeName: "i32" }]);
+    );
+}
+
+test "parser: interface literal ---- with nested record" {
+    try h.assertParser(std.testing.allocator, @src(),
+        \\val decl = @Decl(kind: "Record", name: "Service", fields: [record { name: "x", typeName: "i32", annotations: [] }], methods: [], returnType: "", annotations: [record { name: "addHelper", args: [] }]);
+    );
+}
+
