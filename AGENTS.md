@@ -233,6 +233,10 @@ Each worktree carries its own `.tasks/<name>/TODO.md` (the live execution state,
 seeded from the spec's steps). Its shape and the spec→worktree→completion flow are
 defined in [`tasks/AGENTS.md`](../../tasks/AGENTS.md).
 
+**Before starting any spec work, read [`specs/__template.md`](specs/__template.md)**
+for the spec execution conventions — including the **Working Memory** `_memory.md`
+scratchpad and the status lifecycle (planning → in progress → completed).
+
 Tool paths (Read/Edit/Write) must target the worktree
 (`.../botopink-lang/.tasks/<name>/...`), never the main repo — it is easy to
 edit the wrong tree. Do not `cd` into the main repo in Bash; the hook resets

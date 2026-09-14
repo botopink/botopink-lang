@@ -78,9 +78,14 @@ const server_erl =
     \\
     \\read_frame() ->
     \\    case file:read(standard_io, 4) of
-    \\        {ok, <<Len:32/unsigned-big-integer>>} ->
+    \\        {ok, RawLen} ->
+    \\            LenBin = if is_binary(RawLen) -> RawLen; true -> list_to_binary(RawLen) end,
+    \\            <<Len:32/unsigned-big-integer>> = LenBin,
     \\            case file:read(standard_io, Len) of
-    \\                {ok, <<Cmd:8, Rest/binary>>} -> {Cmd, Rest};
+    \\                {ok, RawPayload} ->
+    \\                    PayloadBin = if is_binary(RawPayload) -> RawPayload; true -> list_to_binary(RawPayload) end,
+    \\                    <<Cmd:8, Rest/binary>> = PayloadBin,
+    \\                    {Cmd, Rest};
     \\                eof -> eof;
     \\                _ -> eof
     \\            end;

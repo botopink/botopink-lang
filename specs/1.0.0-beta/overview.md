@@ -9,7 +9,7 @@
 
 | # | Spec | Status | What |
 |---|------|--------|------|
-| 1 | [`01-erl-fixes`](./01-erl-fixes.md) | 🔴 in progress | Erl runtime fixes (7 steps) + Codegen hardening (5 steps). 12 steps total. **CRITICAL — blocks wave 2.** |
+| 1 | [`01-erl-fixes`](./01-erl-fixes.md) | 🔴 in progress | Erl runtime + comptime eval (7 steps) + Codegen hardening (6 steps). 13 steps total. **CRITICAL — blocks wave 2.** |
 | 2 | [`02-typesystem`](./02-typesystem.md) | 🟡 in progress | Type introspection builtins, std functions, state narrowing, type guards. 9 steps. |
 
 ## Dependency chain
@@ -18,9 +18,11 @@
 Wave 1: 01-erl-fixes (foundation — runtime + codegen)
   ├── Part A: Erl runtime (Steps 1-7)
   │     └──► unblocks comptime eval for Wave 2
-  ├── Part B: Codegen hardening (Steps 8-12)
+  ├── Part B: Codegen hardening (Steps 8-13)
   │     └──► Steps 8-9 independent (quick wins)
-  │     └──► Steps 10-12 depend on Step 8
+  │     └──► Steps 10-11 depend on Step 8
+  │     └──► Step 12: WAT RUN LOG (codegen runtime)
+  │     └──► Step 13: final sweep
   │
   └──► Wave 2: 02-typesystem
          └──► needs Wave 1 Step 1 (decompiler) for comptime eval
@@ -43,8 +45,7 @@ Wave 1: 01-erl-fixes (foundation — runtime + codegen)
 | 1 | Delete 76 orphaned snapshots | 1 | ~10 min |
 | 2 | Fix `.len` → `.length` in JS | 1 | ~30 min |
 | 3 | Fix `if` without `else` in JS | 1 | ~20 min |
-| 4 | Skip WASM RUN LOG for external tests | 1 | ~15 min |
-| 5 | Fix record layout assumption | 1 | ~30 min |
+| 4 | Fix record layout assumption | 1 | ~30 min |
 
 ## Branch naming
 
@@ -58,4 +59,5 @@ Examples: `spec/1.0.0-beta.wave1-step1`, `spec/1.0.0-beta.wave1-step8-wasm`
 
 | Date | Change | Author |
 |------|--------|--------|
+| 2026-06-30 | Step 5 replaced: Restore WAT RUN LOG → Comptime eval pipeline in Erl (renderExprValue + patchHostMethods + erl_prelude) | ericfillipe |
 | 2026-06-30 | Restructured into 2 waves. Wave 1 (12 steps): erl runtime fixes + codegen hardening. Wave 2 (9 steps): type introspection + state narrowing. | ericfillipe |
