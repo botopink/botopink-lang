@@ -115,21 +115,16 @@ pub fn assertJs(
     for (configs) |c| {
         var cfg = c;
         cfg.build_root = build_root_path;
-        
-        var tracking = std.heap.GeneralPurposeAllocator(.{ .stack_trace_frames = 8 }){};
-        defer _ = tracking.deinit();
-        const track_alloc = tracking.allocator();
-        
         var outputs = try codegen.generate(
-            track_alloc,
+            allocator,
             modules,
             io,
             cfg,
         );
 
         defer {
-            for (outputs.items) |*o| o.result.deinit(track_alloc);
-            outputs.deinit(track_alloc);
+            for (outputs.items) |*o| o.result.deinit(allocator);
+            outputs.deinit(allocator);
         }
 
         // Build snapshot data for each module
