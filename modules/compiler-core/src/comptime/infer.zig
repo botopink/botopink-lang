@@ -2349,10 +2349,12 @@ fn runDeclDecorators(
             plain[i] = .{ .paramName = pname, .jsValue = arg };
         }
 
-        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, dfn, handleJson, plain) catch {
+        std.debug.print("infer.zig: calling decoratorEval.evaluate for decorator '{s}'\n", .{dfn.name});
+        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, dfn, handleJson, plain) catch |err| {
+            std.debug.print("infer.zig: decoratorEval.evaluate failed with error: {}\n", .{err});
             env.lastError = TypeError.custom(
                 "the decorator evaluator failed to run",
-                "Decorator bodies run in the node runtime at compile time — check that `node` is available.",
+                "Decorator bodies run in the erlang runtime at compile time — check that `erl` is available.",
             );
             return error.TypeError;
         };
@@ -7518,6 +7520,21 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
             const recTy = try env.arena.create(T.Type);
             recTy.* = .{ .record = fieldTypes };
             return TypedExpr{ .collection = .{ .loc = loc, .type_ = recTy, .kind = .{ .recordLit = .{
+                .fields = typedFields,
+            } } } };
+        },
+
+        .interfaceLit => |il| {
+            // Interface literal: @InterfaceName(field: value, …).
+            // Each field is typed independently; the result type is the named interface.
+            const typedFields = try env.arena.alloc(ast.RecordLitFieldOf(.typed), il.fields.len);
+            for (il.fields, 0..) |f, i| {
+                const typedValue = try inferExprTyped(env, f.value.*);
+                typedFields[i] = .{ .name = f.name, .value = try makeTypedPtr(env, typedValue) };
+            }
+            const ifaceTy = try env.namedType(il.name);
+            return TypedExpr{ .collection = .{ .loc = loc, .type_ = ifaceTy, .kind = .{ .interfaceLit = .{
+                .name = il.name,
                 .fields = typedFields,
             } } } };
         },

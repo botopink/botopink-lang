@@ -679,6 +679,18 @@ pub const Formatter = struct {
                     }
                     break :blk try this.concat(doc, try this.text(" }"));
                 },
+                .interfaceLit => |il| blk: {
+                    var doc: *const Doc = try this.text("@");
+                    doc = try this.concat(doc, try this.text(il.name));
+                    doc = try this.concat(doc, try this.text("("));
+                    for (il.fields, 0..) |f, i| {
+                        if (i > 0) doc = try this.concat(doc, try this.text(", "));
+                        doc = try this.concat(doc, try this.text(f.name));
+                        doc = try this.concat(doc, try this.text(": "));
+                        doc = try this.concat(doc, try this.fmtExpr(f.value.*));
+                    }
+                    break :blk try this.concat(doc, try this.text(")"));
+                },
                 .case => |c| try this.fmtCase(c.subjects, c.arms, c.trailingComments),
                 .arrayLit => |al| blk: {
                     // Build items interleaving elements and comments.

@@ -889,6 +889,8 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     }
 
     // @name(args...) ---- built-in function call (same as regular calls, just with @ prefix)
+    // OR @InterfaceName(field: value, …) ---- interface literal instantiation.
+    // Distinguish by checking for named arguments (field: value pattern).
     if (this.check(.builtinIdent)) {
         const nameTok = this.advance();
         const callee = nameTok.lexeme[1..]; // Remove @ prefix
@@ -901,6 +903,42 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
                 alloc.free(trailing);
             }
             return makeCall(nameTok, null, callee, true, &.{}, trailing);
+        }
+
+        // Check for interface literal: @Name(field: value, ...)
+        // Look ahead to see if we have named arguments (identifier followed by colon)
+        if (this.check(.leftParenthesis)) {
+            const savedPos = this.current;
+            _ = this.advance(); // consume (
+            const isInterfaceLit = this.check(.identifier) and this.peekAt(1).kind == .colon;
+            this.current = savedPos; // restore position
+
+            if (isInterfaceLit) {
+                // Parse as interface literal
+                _ = this.advance(); // consume (
+                var fields: std.ArrayList(ast.RecordLitFieldOf(.untyped)) = .empty;
+                errdefer {
+                    for (fields.items) |f| {
+                        f.value.deinit(alloc);
+                        alloc.destroy(f.value);
+                    }
+                    fields.deinit(alloc);
+                }
+                while (!this.check(.rightParenthesis) and !this.check(.endOfFile)) {
+                    const nameTok2 = try this.consumeMemberName();
+                    _ = try this.consume(.colon);
+                    const value = try this.parseExpr(alloc);
+                    const valuePtr = try this.boxExpr(alloc, value);
+                    try fields.append(alloc, .{ .name = nameTok2.lexeme, .value = valuePtr });
+                    if (!this.match(.comma)) break;
+                }
+                _ = try this.consume(.rightParenthesis);
+                const lit = Expr{ .collection = .{ .loc = locFromToken(nameTok), .kind = .{ .interfaceLit = .{
+                    .name = callee,
+                    .fields = try fields.toOwnedSlice(alloc),
+                } } } };
+                return parsePostfixChain(this, alloc, lit);
+            }
         }
 
         // Regular @name(args...) syntax

@@ -43,6 +43,7 @@ pub fn build(b: *std.Build) void {
     const std_core_files = [_][]const u8{
         "primitives.bp",
         "builtins.d.bp",
+        "builtins_fns.d.bp",
     };
     for (std_core_files) |f| {
         std_prelude.addAnonymousImport(f, .{
@@ -183,8 +184,16 @@ pub fn build(b: *std.Build) void {
     // Creates an executable that will run `test` blocks from the provided module.
     // Here `mod` needs to define a target, which is why earlier we made sure to
     // set the releative field.
+    // Use test_root.zig instead of root.zig to avoid pulling tests into consumer binaries.
+    const test_mod = b.createModule(.{
+        .root_source_file = b.path("src/test_root.zig"),
+        .target = target,
+        .imports = &.{
+            .{ .name = "std_prelude", .module = std_prelude },
+        },
+    });
     const mod_tests = b.addTest(.{
-        .root_module = mod,
+        .root_module = test_mod,
     });
 
     // A run step that will run the test executable.

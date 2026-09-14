@@ -3033,6 +3033,15 @@ const Emitter = struct {
                     }
                     try this.w("}");
                 },
+                .interfaceLit => |il| {
+                    try this.w("#{");
+                    for (il.fields, 0..) |f, i| {
+                        if (i > 0) try this.w(", ");
+                        try this.fmt("{s} => ", .{f.name});
+                        try this.emitExpr(f.value.*);
+                    }
+                    try this.w("}");
+                },
             },
 
             .jump => |j| switch (j.kind) {

@@ -737,6 +737,12 @@ pub fn CollectionExprOf(comptime phase: Phase) type {
         recordLit: struct {
             fields: []RecordLitFieldOf(phase),
         },
+        /// `@InterfaceName(field: value, …)` ---- interface literal instantiation.
+        /// Creates a value of the named interface type with the given fields.
+        interfaceLit: struct {
+            name: []const u8,
+            fields: []RecordLitFieldOf(phase),
+        },
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
             switch (this.*) {
@@ -784,6 +790,13 @@ pub fn CollectionExprOf(comptime phase: Phase) type {
                         allocator.destroy(f.value);
                     }
                     allocator.free(rl.fields);
+                },
+                .interfaceLit => |il| {
+                    for (il.fields) |f| {
+                        f.value.deinit(allocator);
+                        allocator.destroy(f.value);
+                    }
+                    allocator.free(il.fields);
                 },
             }
         }

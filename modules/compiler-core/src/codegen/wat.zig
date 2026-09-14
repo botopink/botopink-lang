@@ -752,6 +752,7 @@ const Emitter = struct {
             },
             .collection => |c| switch (c.kind) {
                 .recordLit => |rl| self.ensureAnonRecord(c.loc, rl) catch null,
+                .interfaceLit => |il| self.ensureAnonRecord(c.loc, .{ .fields = il.fields }) catch null,
                 .grouped => |inner| self.recordTypeOfExpr(inner.*),
                 else => null,
             },
@@ -1259,6 +1260,11 @@ const Emitter = struct {
                     for (rl.fields) |f| n += self.countMemsExpr(f.value.*);
                     break :blk n;
                 },
+                .interfaceLit => |il| blk: {
+                    var n: u32 = 1;
+                    for (il.fields) |f| n += self.countMemsExpr(f.value.*);
+                    break :blk n;
+                },
             },
             .jump => |j| switch (j.kind) {
                 .@"return", .throw_, .try_ => |v| if (v) |i| self.countMemsExpr(i.*) else 0,
@@ -1651,6 +1657,7 @@ const Emitter = struct {
                 .tupleLit => |tl| try self.lowerTupleLit(tl),
                 .arrayLit => |al| try self.lowerArrayLit(al),
                 .recordLit => |rl| try self.lowerRecordLit(rl),
+                .interfaceLit => |il| try self.lowerRecordLit(.{ .fields = il.fields }),
                 .range => try self.w("    i32.const 0 ;; range\n"),
             },
             .jump => |j| switch (j.kind) {

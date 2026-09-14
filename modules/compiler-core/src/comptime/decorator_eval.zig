@@ -15,6 +15,76 @@ const templateEval = @import("./template_eval.zig");
 /// Sole comptime runtime.
 pub const Runtime = enum { erl };
 
+/// Convert a JSON value to a botopink source expression
+fn jsonToBpSrc(buf: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, v: std.json.Value, isDecl: bool) !void {
+    switch (v) {
+        .integer => |n| {
+            try buf.appendSlice(arena, try std.fmt.allocPrint(arena, "{d}", .{n}));
+        },
+        .float => |f| {
+            try buf.appendSlice(arena, try std.fmt.allocPrint(arena, "{d}", .{f}));
+        },
+        .string => |str| {
+            try buf.append(arena, '"');
+            try buf.appendSlice(arena, str);
+            try buf.append(arena, '"');
+        },
+        .bool => |b| {
+            try buf.appendSlice(arena, if (b) "true" else "false");
+        },
+        .null => {
+            try buf.appendSlice(arena, "null");
+        },
+        .array => |items| {
+            try buf.append(arena, '[');
+            for (items.items, 0..) |item, i| {
+                if (i > 0) try buf.appendSlice(arena, ", ");
+                try jsonToBpSrc(buf, arena, item, false);
+            }
+            try buf.append(arena, ']');
+        },
+        .object => |obj| {
+            if (isDecl) {
+                // Generate @Decl(kind: DeclKind.Record, name: ..., ...) for interface instantiation
+                try buf.appendSlice(arena, "@Decl(");
+                var first = true;
+                var it = obj.iterator();
+                while (it.next()) |entry| {
+                    if (!first) try buf.appendSlice(arena, ", ");
+                    first = false;
+                    try buf.appendSlice(arena, entry.key_ptr.*);
+                    try buf.appendSlice(arena, ": ");
+                    // Special handling for "kind" field - convert string to DeclKind enum
+                    if (std.mem.eql(u8, entry.key_ptr.*, "kind")) {
+                        if (entry.value_ptr.* == .string) {
+                            try buf.appendSlice(arena, "DeclKind.");
+                            try buf.appendSlice(arena, entry.value_ptr.*.string);
+                        } else {
+                            try jsonToBpSrc(buf, arena, entry.value_ptr.*, false);
+                        }
+                    } else {
+                        try jsonToBpSrc(buf, arena, entry.value_ptr.*, false);
+                    }
+                }
+                try buf.appendSlice(arena, ")");
+            } else {
+                try buf.appendSlice(arena, "record { ");
+                var first = true;
+                var it = obj.iterator();
+                while (it.next()) |entry| {
+                    if (!first) try buf.appendSlice(arena, ", ");
+                    first = false;
+                    try buf.appendSlice(arena, entry.key_ptr.*);
+                    try buf.appendSlice(arena, ": ");
+                    try jsonToBpSrc(buf, arena, entry.value_ptr.*, false);
+                }
+                try buf.appendSlice(arena, " }");
+            }
+        },
+        else => try buf.appendSlice(arena, "null"),
+    }
+}
+
 pub const Outcome = union(enum) {
     ok: []const []const u8,
     fail: struct { message: []const u8, span: ?template.Span },
@@ -102,12 +172,8 @@ fn evaluateErl(
     var bp_src: std.ArrayListUnmanaged(u8) = .empty;
     defer bp_src.deinit(arena);
 
-    // Bind the @Decl handle as the first parameter (a JSON value).
-    try bp_src.appendSlice(arena, "val ");
-    try bp_src.appendSlice(arena, dfn.params[0].name);
-    try bp_src.appendSlice(arena, " = ");
-    try bp_src.appendSlice(arena, handleJson);
-    try bp_src.appendSlice(arena, ";\n");
+    std.debug.print("decorator_eval: starting evaluation for fn '{s}'\n", .{dfn.name});
+    std.debug.print("decorator_eval: handleJson = {s}\n", .{handleJson});
 
     // Bind plain args.
     for (plainArgs) |pa| {
@@ -118,28 +184,55 @@ fn evaluateErl(
         try bp_src.appendSlice(arena, ";\n");
     }
 
+    // Define DeclKind enum as a record with string values for decorator body evaluation
+    // Must be defined BEFORE the @Decl(...) call that references it
+    try bp_src.appendSlice(arena, "val DeclKind = record { Record: \"Record\", Fn: \"Fn\", Method: \"Method\", Interface: \"Interface\", Enum: \"Enum\", Struct: \"Struct\", Val: \"Val\" };\n");
+
+    // Bind the @Decl handle as the first parameter (a JSON value).
+    // Convert JSON to @Decl(...) interface literal syntax.
+    try bp_src.appendSlice(arena, "val ");
+    try bp_src.appendSlice(arena, dfn.params[0].name);
+    try bp_src.appendSlice(arena, " = ");
+    const parsedHandle = std.json.parseFromSliceLeaky(std.json.Value, arena, handleJson, .{}) catch {
+        std.debug.print("decorator_eval: failed to parse handleJson as JSON\n", .{});
+        return error.EvalFailed;
+    };
+    try jsonToBpSrc(&bp_src, arena, parsedHandle, true);
+    try bp_src.appendSlice(arena, ";\n");
+
     try bp_src.appendSlice(arena, "pub fn ");
     try bp_src.appendSlice(arena, dfn.name);
     try bp_src.append(arena, '(');
     for (dfn.params, 0..) |p, i| {
         if (i > 0) try bp_src.appendSlice(arena, ", ");
         try bp_src.appendSlice(arena, p.name);
-        try bp_src.appendSlice(arena, ": _");
+        try bp_src.appendSlice(arena, ": @Decl");
     }
     try bp_src.appendSlice(arena, ") -> void {\n");
+    std.debug.print("decorator_eval: body has {} statements\n", .{dfn.body.len});
     try templateEval.emitBpBody(&bp_src, arena, dfn.body);
+    std.debug.print("decorator_eval: after emitBpBody, bp_src len = {}\n", .{bp_src.items.len});
     try bp_src.appendSlice(arena, "}\n");
+
+    std.debug.print("decorator_eval: generated bp_src:\n{s}\n", .{bp_src.items});
 
     const comptimeMod = @import("../comptime.zig");
     const erlang_codegen = @import("../codegen/erlang.zig");
-    var session = comptimeMod.compile(arena, &.{.{ .path = "decorator_body", .source = bp_src.items }}, io, null, "erlang") catch return error.EvalFailed;
+    var session = comptimeMod.compile(arena, &.{.{ .path = "decorator_body", .source = bp_src.items }}, io, null, "erlang") catch |err| {
+        std.debug.print("decorator_eval: compile failed: {}\n", .{err});
+        return error.EvalFailed;
+    };
     defer session.deinit(arena);
 
     const erl_src: ?[]const u8 = blk: {
         for (session.outputs.items) |out| {
+            std.debug.print("decorator_eval: checking outcome: {}\n", .{out.outcome});
             if (out.outcome == .ok) {
                 var outputs = [_]comptimeMod.ComptimeOutput{out};
-                var results = erlang_codegen.codegenEmit(arena, &outputs, .{ .targetSource = .erlang }) catch break :blk null;
+                var results = erlang_codegen.codegenEmit(arena, &outputs, .{ .targetSource = .erlang }) catch |err| {
+                    std.debug.print("decorator_eval: codegenEmit failed: {}\n", .{err});
+                    break :blk null;
+                };
                 defer {
                     for (results.items) |*r| r.result.deinit(arena);
                     results.deinit(arena);
@@ -147,20 +240,37 @@ fn evaluateErl(
                 for (results.items) |r| {
                     if (r.result.js.len > 0) break :blk r.result.js;
                 }
+            } else if (out.outcome == .parseError) {
+                std.debug.print("decorator_eval: parseError - full output: {any}\n", .{out});
             }
         }
         break :blk null;
     };
-    const erl_code = erl_src orelse return error.EvalFailed;
+    const erl_code = erl_src orelse {
+        std.debug.print("decorator_eval: no erl_src generated\n", .{});
+        return error.EvalFailed;
+    };
 
     const hash = std.hash.Wyhash.hash(0, dfn.name);
     const tmp_dir = try std.fmt.allocPrint(arena, ".botopinkbuild/tmp/decorator_{x}", .{hash});
-    std.Io.Dir.cwd().createDirPath(io, tmp_dir) catch return error.EvalFailed;
+    std.Io.Dir.cwd().createDirPath(io, tmp_dir) catch |err| {
+        std.debug.print("decorator_eval: createDirPath failed: {}\n", .{err});
+        return error.EvalFailed;
+    };
     const erl_path = try std.fmt.allocPrint(arena, "{s}/decorator_body.erl", .{tmp_dir});
-    std.Io.Dir.cwd().writeFile(io, .{ .sub_path = erl_path, .data = erl_code }) catch return error.EvalFailed;
+    std.Io.Dir.cwd().writeFile(io, .{ .sub_path = erl_path, .data = erl_code }) catch |err| {
+        std.debug.print("decorator_eval: writeFile failed: {}\n", .{err});
+        return error.EvalFailed;
+    };
 
     const persistent_erl = @import("./runtime/persistent_erl.zig");
-    const stdout = persistent_erl.eval(arena, io, erl_path) catch return error.EvalFailed;
+    const stdout = persistent_erl.eval(arena, io, erl_path) catch |err| {
+        std.debug.print("decorator_eval: persistent_erl.eval failed: {}\n", .{err});
+        return error.EvalFailed;
+    };
     defer arena.free(stdout);
-    return parseOutcome(arena, stdout) catch error.EvalFailed;
+    return parseOutcome(arena, stdout) catch |err| {
+        std.debug.print("decorator_eval: parseOutcome failed: {}\n", .{err});
+        return error.EvalFailed;
+    };
 }

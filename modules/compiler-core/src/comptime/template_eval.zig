@@ -379,6 +379,24 @@ pub fn emitBpStmt(buf: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, st
     }
 }
 
+fn binOpToString(op: anytype) []const u8 {
+    return switch (op) {
+        .lt => "<",
+        .gt => ">",
+        .lte => "<=",
+        .gte => ">=",
+        .eq => "==",
+        .ne => "!=",
+        .add => "+",
+        .sub => "-",
+        .mul => "*",
+        .div => "/",
+        .mod => "%",
+        .@"and" => "&&",
+        .@"or" => "||",
+    };
+}
+
 pub fn emitBpExpr(buf: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, te: ast.Expr) std.mem.Allocator.Error!void {
     switch (te) {
         .literal => |lit| switch (lit.kind) {
@@ -508,7 +526,7 @@ pub fn emitBpExpr(buf: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, te
         .binaryOp => |b| {
             try emitBpExpr(buf, arena, b.lhs.*);
             try buf.append(arena, ' ');
-            try buf.appendSlice(arena, @tagName(b.op));
+            try buf.appendSlice(arena, binOpToString(b.op));
             try buf.append(arena, ' ');
             try emitBpExpr(buf, arena, b.rhs.*);
         },
@@ -588,6 +606,18 @@ pub fn emitBpExpr(buf: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, te
                     try emitBpExpr(buf, arena, f.value.*);
                 }
                 try buf.appendSlice(arena, " }");
+            },
+            .interfaceLit => |il| {
+                try buf.appendSlice(arena, "@");
+                try buf.appendSlice(arena, il.name);
+                try buf.appendSlice(arena, "(");
+                for (il.fields, 0..) |*f, i| {
+                    if (i > 0) try buf.appendSlice(arena, ", ");
+                    try buf.appendSlice(arena, f.name);
+                    try buf.appendSlice(arena, ": ");
+                    try emitBpExpr(buf, arena, f.value.*);
+                }
+                try buf.appendSlice(arena, ")");
             },
         },
         .branch => |br| switch (br.kind) {

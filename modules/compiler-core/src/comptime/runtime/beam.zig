@@ -198,6 +198,22 @@ fn renderExprValue(allocator: std.mem.Allocator, te: ast.TypedExpr) ![]const u8 
                 try buf.append(allocator, '}');
                 return buf.toOwnedSlice(allocator);
             },
+            .interfaceLit => |il| {
+                var buf: std.ArrayListUnmanaged(u8) = .empty;
+                defer buf.deinit(allocator);
+                try buf.append(allocator, '{');
+                for (il.fields, 0..) |f, i| {
+                    if (i > 0) try buf.appendSlice(allocator, ",");
+                    try buf.append(allocator, '"');
+                    try buf.appendSlice(allocator, f.name);
+                    try buf.appendSlice(allocator, "\":");
+                    const val_str = try renderExprValue(allocator, f.value.*);
+                    defer allocator.free(val_str);
+                    try buf.appendSlice(allocator, val_str);
+                }
+                try buf.append(allocator, '}');
+                return buf.toOwnedSlice(allocator);
+            },
             .case => |cs| {
                 for (cs.subjects) |subj| {
                     const subj_str = try renderExprValue(allocator, subj);
