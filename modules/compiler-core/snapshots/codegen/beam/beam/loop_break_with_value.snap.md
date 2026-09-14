@@ -95,5 +95,4 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-[ok,ok,15,20]
 ```

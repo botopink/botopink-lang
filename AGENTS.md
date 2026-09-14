@@ -48,6 +48,9 @@ Golden snapshots live inside the owning package (`modules/compiler-core/snapshot
 ```bash
 zig build             # compile CLI + language-server + lib-test-runner + bpmp
 zig build test        # run compiler-core + language-server tests
+# Run tests with per-test timeout (kills hanging tests):
+#   <test-binary> --test-timeout 120s
+# The test binary is at .zig-cache/o/<hash>/test (pass test names via stdin).
 zig build run         # run the CLI entry point
 zig build test-libs   # run every libs/ project's tests per backend
 zig build test-vscode # run the VS Code extension's pure-fn unit suite
@@ -326,3 +329,101 @@ those runtimes are present.
 
 [meta]: https://github.com/botopink/projects
 [test-libs]: https://github.com/botopink/botopink-lang/blob/feat/scripts/test-libs.sh
+
+## Debugging tips & gotchas
+
+### Persistent Erl server (`persistent_erl.zig`)
+
+The comptime evaluator spawns a long-lived `erl` process that communicates
+via a binary frame protocol over stdin/stdout. Key things to know:
+
+- **OTP 27 `file:read/2` returns lists, not binaries.** When reading from
+  `standard_io`, `file:read(standard_io, N)` returns `{ok, [Byte, ...]}`
+  (a list of integers), **not** `{ok, <<...>>}` (a binary). Pattern matches
+  like `<<Len:32/unsigned-big-integer>>` fail silently and fall through to
+  catch-all clauses. Always convert first:
+  ```erlang
+  {ok, RawLen} ->
+      LenBin = if is_binary(RawLen) -> RawLen; true -> list_to_binary(RawLen) end,
+      <<Len:32/unsigned-big-integer>> = LenBin,
+  ```
+  This bit us in the `read_frame/0` function — the server appeared to hang
+  because it matched `_ -> eof` instead of reading the frame, so `readFrame`
+  in Zig blocked forever waiting for a response that never came.
+
+- **No timeout on pipe reads.** `readFrame` in `persistent_erl.zig` does
+  blocking `readStreaming` with no timeout. If the erl server crashes or
+  deadlocks, the compiler hangs indefinitely. When debugging, always wrap
+  test runs with `timeout 60 zig build test`.
+
+- **SIGTERM output on stdout.** OTP 27's logger writes shutdown messages
+  (e.g., `=INFO REPORT==== SIGTERM received`) to **stdout**, which can
+  corrupt the binary frame protocol if the process is terminated mid-frame.
+  The frame reader must be resilient to partial/corrupt headers.
+
+- **Server module lives inside a Zig string literal.** The Erlang source
+  for `botopink_comptime_server` is embedded as a `\\`-prefixed multiline
+  string in `persistent_erl.zig`. After editing it, you must rebuild
+  (`zig build`) — the compiled `.beam` in `.botopinkbuild/tmp/persistent_erl/`
+  is regenerated at runtime by `ensureSpawned`, but stale caches under
+  `.botopinkbuild/tmp/beam_cache/` may serve old bytecode. Delete both
+  dirs when debugging server changes:
+  ```bash
+  rm -rf .botopinkbuild/tmp/persistent_erl/*.beam .botopinkbuild/tmp/beam_cache
+  ```
+
+- **Testing the server manually.** Use Python to send binary frames:
+  ```python
+  import struct, sys
+  path = b'/tmp/test.erl'
+  payload = b'\x01' + path  # cmd=1 (eval)
+  length = struct.pack('>I', len(payload))
+  sys.stdout.buffer.write(length + payload)
+  sys.stdout.buffer.flush()
+  ```
+  Pipe into `erl -noshell -pa <server_dir> -eval 'botopink_comptime_server:start()'`.
+  Never use `-noinput` — it disables stdin reading entirely.
+
+### Comptime specialization (`transform.zig`)
+
+- **`extractComptimeLiteral` only handles `.literal` nodes.** If a comptime
+  param receives an identifier (e.g., `scale(2, base)` where `base` is a
+  `val`), extraction returns `null` and the call falls into the non-comptime
+  branch. This is correct behavior — `base` gets folded to a literal in
+  Phase 2 before codegen sees it — but means specialization only triggers
+  for direct literal arguments at the call site.
+
+- **Phase ordering matters.** Phase 1 scans for specialization opportunities,
+  Phase 2 rewrites calls and inlines comptime vals, Phase 3 removes
+  fully-specialized functions. A comptime val used as a *runtime* argument
+  (not a comptime param) is replaced with its literal value in Phase 2,
+  so codegen never sees the original `comptime` expression.
+
+### Runtime execution (`runtime.zig`)
+
+- **All subprocess spawns lack timeouts.** `executeJavaScript`, `executeErlang`,
+  and `executeBeamAsm` use `std.process.run` with no timeout parameter.
+  Generated code that infinite-loops will hang the test runner forever.
+  Always run tests with an external timeout wrapper during development.
+
+- **Erlang/BEAM early-exit optimization.** Both `executeErlang` and
+  `executeBeamAsm` skip spawning `erlc`/`erl` when the generated code
+  contains no `_botopink_main` or no I/O primitives (`io:format`). Most
+  codegen test fixtures hit this fast path. If your test unexpectedly
+  spawns erl, check whether the generated code accidentally includes
+  `_botopink_main` or `@print`.
+
+- **Output cache.** Runtime executions are content-keyed (SHA256) and cached
+  under `.botopinkbuild/runtime-cache/`. Cache keys don't include toolchain
+  versions — after upgrading node/erl/wasmtime, delete the cache dir.
+
+### General debugging
+
+- **Run specific tests.** The Zig test binary doesn't support `--test-filter`.
+  Instead, grep the full output: `timeout 60 zig build test 2>&1 | grep "comptime"`.
+- **Check for stale processes.** Hung tests leave orphan `erl`/`node` processes.
+  Kill them with `pkill -f botopink_comptime_server` or `pkill -f "erl -noshell"`.
+- **Scratch dirs accumulate.** Per-test scratch dirs live under
+  `.botopinkbuild/tmp/<hex>/`. The `clean-tmp` build step reaps entries older
+  than 1 day, but during active debugging they pile up fast. Safe to delete
+  manually: `rm -rf .botopinkbuild/tmp/[0-9a-f]*`.

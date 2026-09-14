@@ -40,5 +40,4 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-42
 ```

@@ -140,7 +140,7 @@ pub fn build(b: *std.Build) void {
     // makes the step idempotent on a fresh clone where the tmp root
     // hasn't been created yet.
     const clean_tmp_run = b.addSystemCommand(&.{
-        "sh", "-c",
+        "sh",                                                                                                                 "-c",
         "mkdir -p .botopinkbuild/tmp && find .botopinkbuild/tmp -mindepth 1 -maxdepth 1 -type d -mtime +1 -exec rm -rf {} +",
     });
     clean_tmp_run.setCwd(b.path("modules/compiler-core"));

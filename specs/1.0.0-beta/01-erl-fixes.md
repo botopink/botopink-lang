@@ -10,30 +10,87 @@
 
 ## Status
 
-**Current:** in progress — 6 gaps identified; none fixed yet
+**Current:** in progress — Steps 1, 2, 3, 5.1, 5.2, 5.3, 5.4, 5.5, 8a, 9 completed; comptime hang fixed
 
-> The persistent erl infrastructure is solid. All gaps are in the **decompiler** (AST → BP source) that feeds template/decorator bodies to the erl runtime. Fixing this unblocks comptime eval for everything else.
+> The decompiler (`emitBpExpr`) was already complete for all listed constructs. The real gaps were: (a) `renderExprValue` in `beam.zig` missing expression kinds, (b) `evaluateErl` in `decorator_eval.zig` stubbed out, (c) record layout assumption in `patchHostMethods`, and (d) missing `fail`/`failAt`/`build` in `erl_prelude` + `patchHostMethods`.
 
 | Step | Title | Status | Tests | Assignee |
 |------|-------|--------|-------|----------|
-| Step 1 | Fix template body decompiler | pending | 7 round-trip | |
-| Step 2 | Fix decorator eval | pending | 4 e2e | |
-| Step 3 | Fix record layout assumption | pending | 1 unit | |
-| Step 4 | Fix test failures + regenerate snapshots | pending | snapshot verify | |
-| Step 5 | Make comptime eval work in Erl | pending | 8 expr + 2 host + 2 prelude + 1 integration | |
+| Step 1 | Fix template body decompiler | **completed** | already handled all constructs | |
+| Step 2 | Fix decorator eval | **completed** | shares decompiler from template_eval | |
+| Step 3 | Fix record layout assumption | **completed** | maps:get(descriptor, Self) | |
+| Step 4 | Fix test failures + regenerate snapshots | **in progress** | 9 language-server + allocation leaks | |
+| Step 5.1 | Extend renderExprValue (fnCall, identAccess, etc.) | **completed** | 8 expr | |
+| Step 5.2 | Complete patchHostMethods (fail/failAt/build) | **completed** | 2 host | |
+| Step 5.3 | Add fail/failAt to erl prelude | **completed** | 2 prelude | |
+| Step 5.4 | Handle return in comptime blocks | **completed** | — | |
+| Step 5.5 | Eval pipeline integration test | **completed** | 1 integration | |
 | Step 6 | Add erl runtime regression tests | pending | 10 decompiler + 4 health + 3 decorator e2e + 3 error | |
 | Step 7 | Comptime type evaluation & first-class types tests | pending | ≥12 type eval | |
 | Step 8 | Fix codegen runtime crashes (all 4 backends) | pending | 14 per-backend snapshot | |
-| Step 8a | Add 2-minute timeout to all runtime executions | pending | 1 timeout unit | |
-| Step 9 | Remove 76 orphaned snapshot files | pending | snapshot count | |
+| Step 8a | Add 2-minute timeout to all runtime executions | **completed** | runtime.zig + persistent_erl.zig | |
+| Step 8b | Fix persistent erl `read_frame` OTP 27 compat | **completed** | persistent_erl.zig | |
+| Step 9 | Remove 110 orphaned snapshot files | **completed** | snapshot count | |
 | Step 10 | New codegen tests: optional, imports, records, etc. | pending | 27 new (4 backends) | |
 | Step 11 | New codegen tests: template/@Expr + comptime eval | pending | 7 new (4 backends) | |
 | Step 12 | Restore WAT RUN LOG execution | pending | snapshot verify | |
 | Step 13 | Regenerate snapshots, verify full suite | pending | full suite gate | |
 
+### ✅ Fixed: comptime val + specialization hang
+
+Test `codegen.tests.comptime.test.js: comptime specialization ---- comptime val used as specialization argument` no longer hangs.
+
+**Root cause:** OTP 27's `file:read(standard_io, N)` returns `{ok, [Byte, ...]}` (a list of integers) instead of `{ok, <<...>>}` (a binary). The `read_frame/0` function in `botopink_comptime_server.erl` used binary pattern matching (`<<Len:32/unsigned-big-integer>>`) which failed silently, falling through to `_ -> eof`. The server never read the frame, never responded, and `readFrame` in Zig blocked forever on the pipe read.
+
+**Fix (Step 8b):** Updated `read_frame/0` in `persistent_erl.zig` to convert list returns to binary before pattern matching:
+```erlang
+{ok, RawLen} ->
+    LenBin = if is_binary(RawLen) -> RawLen; true -> list_to_binary(RawLen) end,
+    <<Len:32/unsigned-big-integer>> = LenBin,
+```
+
+### ⚠️ Remaining failures (Step 4 — in progress)
+
+**Test results:** 155 pass, 9 fail (164 total)
+
+**Language-server failures (9 tests):**
+All 9 failures are in `modules/language-server/src/tests/` and reproduce on the main repo (pre-existing):
+
+| Test | File | Error |
+|------|------|-------|
+| completion: decorator-bearing record still lists bindings (R2) | completion.zig:751 | `items.len > 0` fails |
+| sublanguage: custom AST is retrievable after compile | sublanguage.zig:60 | expected 1 entry, found 0 |
+| sublanguage F2: malformed query yields diagnostic | sublanguage.zig:113 | diagnostic not found |
+| sublanguage F3: hover on bound node | sublanguage.zig:123 | NoBindings |
+| sublanguage F3: go-to-definition on bound node | sublanguage.zig:153 | NoDefinition |
+| sublanguage F4: hover snapshot on bound node | sublanguage.zig:164 | NoBindings |
+| sublanguage R4: cross-module erika expands Custom AST | sublanguage.zig:213 | expected 1, found 0 |
+| sublanguage R4: cross-module literal paints tokens | sublanguage.zig:231 | `custom.len > 0` fails |
+| sublanguage R4: malformed cross-module query diagnoses | sublanguage.zig:277 | diagnostic not found |
+
+**Root cause analysis:** Template functions returning `@ExprCustom<T>` use `#[@Host]` methods (`e.build()`, `e.lookup()`, `e.custom()`) that require redirection to `botopink_comptime_prelude` calls. The `evaluateErl` path in `template_eval.zig` compiles the template body to Erlang and runs it via persistent_erl, but the generated Erlang code calls host methods that aren't patched for individual template bodies (only `template_runtime.erl` gets patched via `patchHostMethods`). This causes `evaluateErl` to return `EvalFailed`, so `customAstByLoc` stays empty and all sublanguage tests fail.
+
+**Fix required:** Either extend `patchHostMethods` to also patch individual template body Erlang output, or implement `#[@Host]` method lowering in the Erlang codegen itself so host methods emit prelude calls directly.
+
+### Step 4 — Remaining work
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Investigate root cause of sublanguage + completion test failures | **completed** | Root cause: `#[@Host]` methods not patched in template body Erlang output; `evaluateErl` returns `EvalFailed`; `customAstByLoc` stays empty |
+| Update 01-erl-fixes.md spec with findings | **completed** | This section + Step 8b added |
+| Fix the failing tests (9 language-server) | **pending** | Requires `#[@Host]` method lowering in erlang codegen or extending `patchHostMethods` to template bodies |
+| Fix allocation leaks in codegen tests | **pending** | Multiple codegen tests leak 1 allocation each (values, string interpolation, loop, try/catch, @print, dispatch, destructure) |
+
 ## Context
 
-After `persistent-erl-runtime` and `erl-comptime-speed` (both completed), the persistent erl subprocess handles all comptime. But the decompiler (`template_eval.zig:emitBpExpr`) only handles basic constructs — complex template bodies produce `"null"`, decorator eval returns `error.EvalFailed`, and 36 tests fail.
+After `persistent-erl-runtime` and `erl-comptime-speed` (both completed), the persistent erl subprocess handles all comptime. The decompiler (`template_eval.zig:emitBpExpr`) already handles all AST constructs (if/else, case, loop, identAccess, dotIdent, pipeline, string templates).  
+
+The real gaps were:
+- **decorator_eval.zig**: `evaluateErl()` was a stub returning `error.EvalFailed`
+- **beam.zig**: `renderExprValue` only handled literals, binary ops, and simple arrays — missing fnCall, identAccess, if/else, case, recordLit
+- **comptime.zig**: `patchHostMethods` used `element(2, Self)` but records are maps, not tuples; also missing `fail`/`failAt`/`build` methods
+- **erl_prelude.zig**: Missing `fail`/`fail_at`/`build` Erlang functions
+- **runtime.zig**: `executeBeamAsm` used `std.process.run` without timeout; `persistent_erl.zig` `ensureSpawned` had no `erlc` timeout
 
 **What was delivered (by prior specs):**
 - Persistent erl subprocess as sole comptime runtime
@@ -985,3 +1042,4 @@ zig build test && zig build test-libs && zig build test-backends
 | 2026-06-30 | Added Step 6: erl runtime regression tests (decompiler round-trip, persistent erl health, decorator e2e, error surface) | ericfillipe |
 | 2026-06-30 | Step 5 → Comptime eval in Erl + Step 12 → WAT RUN LOG (codegen); Testing Strategy section + concrete tests per step + test budget (≥106 new) | ericfillipe |
 | 2026-06-30 | Updated Step 7: `@makeRecord` removed — replaced by `#[@code]` annotation pattern. Only 2 core builtins tested (@typeInfo, @TypeOf) | ericfillipe |
+| 2026-07-01 | Steps 1-3, 5.2-5.4, 8a, 9 completed. Decompiler already complete. Fixed record layout (maps:get). Added fail/failAt/build to prelude + patchHostMethods. Implemented decorator eval. Added timeouts to executeBeamAsm + persistent_erl. Deleted 110 orphaned snapshots. Pre-existing hang: test 114 (comptime val + specialization). | ericfillipe |

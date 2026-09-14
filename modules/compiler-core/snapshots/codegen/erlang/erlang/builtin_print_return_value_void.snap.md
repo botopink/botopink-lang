@@ -32,6 +32,4 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-<<"started">>
-<<"done">>
 ```

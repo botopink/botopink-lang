@@ -429,19 +429,25 @@ fn patchHostMethods(gpa: std.mem.Allocator, erl_src: []const u8) ![]u8 {
         const trimmed = std.mem.trim(u8, line, " \t");
         // Match #[@Host] function stubs and replace bodies.
         if (std.mem.startsWith(u8, trimmed, "context(")) {
-            try result.appendSlice(gpa, "context(Self) -> botopink_comptime_prelude:context(element(2, Self)).\n");
+            try result.appendSlice(gpa, "context(Self) -> botopink_comptime_prelude:context(maps:get(descriptor, Self)).\n");
         } else if (std.mem.startsWith(u8, trimmed, "lookup(")) {
-            try result.appendSlice(gpa, "lookup(Self, Name) -> botopink_comptime_prelude:lookup(element(2, Self), Name).\n");
+            try result.appendSlice(gpa, "lookup(Self, Name) -> botopink_comptime_prelude:lookup(maps:get(descriptor, Self), Name).\n");
         } else if (std.mem.startsWith(u8, trimmed, "bindings(")) {
-            try result.appendSlice(gpa, "bindings(Self) -> botopink_comptime_prelude:bindings(element(2, Self)).\n");
+            try result.appendSlice(gpa, "bindings(Self) -> botopink_comptime_prelude:bindings(maps:get(descriptor, Self)).\n");
         } else if (std.mem.startsWith(u8, trimmed, "parts(")) {
-            try result.appendSlice(gpa, "parts(Self) -> botopink_comptime_prelude:parts(element(2, Self)).\n");
+            try result.appendSlice(gpa, "parts(Self) -> botopink_comptime_prelude:parts(maps:get(descriptor, Self)).\n");
         } else if (std.mem.startsWith(u8, trimmed, "custom(")) {
-            try result.appendSlice(gpa, "custom(Self, Ast, Code) -> {element(2, Self), Ast, Code}.\n");
+            try result.appendSlice(gpa, "custom(Self, Ast, Code) -> {maps:get(descriptor, Self), Ast, Code}.\n");
         } else if (std.mem.startsWith(u8, trimmed, "makeExpr(")) {
             try result.appendSlice(gpa, "makeExpr(V) -> {v, V}.\n");
         } else if (std.mem.startsWith(u8, trimmed, "makeCode(")) {
             try result.appendSlice(gpa, "makeCode(S) -> {code, S}.\n");
+        } else if (std.mem.startsWith(u8, trimmed, "fail(")) {
+            try result.appendSlice(gpa, "fail(Self, Msg) -> botopink_comptime_prelude:fail(maps:get(descriptor, Self), Msg).\n");
+        } else if (std.mem.startsWith(u8, trimmed, "failAt(")) {
+            try result.appendSlice(gpa, "failAt(Self, Span, Msg) -> botopink_comptime_prelude:fail_at(maps:get(descriptor, Self), Msg, Span).\n");
+        } else if (std.mem.startsWith(u8, trimmed, "build(")) {
+            try result.appendSlice(gpa, "build(Self, Type) -> botopink_comptime_prelude:build(maps:get(descriptor, Self), Type).\n");
         } else {
             try result.appendSlice(gpa, line);
             try result.append(gpa, '\n');

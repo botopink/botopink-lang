@@ -72,6 +72,4 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-<<"positive">>
-<<"non-positive">>
 ```

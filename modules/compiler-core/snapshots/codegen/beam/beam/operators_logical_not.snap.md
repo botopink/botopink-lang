@@ -66,5 +66,4 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-false
 ```

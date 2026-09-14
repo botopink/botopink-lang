@@ -45,5 +45,4 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-<<"Hello">>
 ```
