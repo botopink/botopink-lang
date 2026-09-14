@@ -90,4 +90,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+<<"one">>
 ```

@@ -45,4 +45,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+<<"Hello, World!">>
 ```

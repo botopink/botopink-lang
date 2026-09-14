@@ -68,4 +68,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+name
 ```

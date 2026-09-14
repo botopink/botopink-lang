@@ -83,4 +83,7 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+<<"weekday">>
+<<"weekend">>
+<<"weekend">>
 ```

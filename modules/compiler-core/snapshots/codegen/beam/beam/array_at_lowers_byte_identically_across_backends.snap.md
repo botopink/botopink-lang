@@ -88,4 +88,6 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+10
+undefined
 ```

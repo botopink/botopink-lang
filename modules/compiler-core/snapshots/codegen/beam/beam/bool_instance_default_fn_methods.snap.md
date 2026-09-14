@@ -87,4 +87,8 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+true
+false
+true
+false
 ```
