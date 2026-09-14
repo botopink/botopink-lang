@@ -14,6 +14,7 @@ test {
     _ = @import("tests/templates.zig");
     _ = @import("tests/decorators.zig");
     _ = @import("tests/decorator_invocation.zig");
+    _ = @import("tests/decorator_regression.zig");
     _ = @import("tests/generic_defaults.zig");
     _ = @import("tests/std_target_gating.zig");
     _ = @import("tests/narrowing.zig");
