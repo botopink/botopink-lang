@@ -1,7 +1,5 @@
 # Botopink language reference
 
-> Version: v0.0.13-beta
-
 ## Program structure
 
 A Botopink program is a sequence of declarations — bindings, functions, types,
@@ -16,33 +14,37 @@ fn main() {
 
 ### Modules
 
-Projects use an explicit, Rust-style module tree. The root module (`main.bp`)
-declares which submodules to include; the compiler follows these declarations
-instead of compiling every `.bp` it finds.
+Projects use an explicit, Rust-style module tree. The root module (`main.bp`
+for a binary, `root.bp` for a library) declares which submodules to include;
+the compiler follows these declarations instead of compiling every `.bp` it
+finds.
 
 ```botopink
 // src/main.bp
-pub mod geometry;    // resolves src/geometry.bp
-pub mod shapes;      // resolves src/shapes/mod.bp
-
 import {area} from "geometry";
 import {describe} from "shapes";
 
+pub mod geometry;    // resolves src/geometry.bp
+pub mod shapes;      // resolves src/shapes/mod.bp
+
 fn main() {
     @print(area(3, 4));    // 12
-    @print(describe());     // circle
+    @print(describe());    // circle
 }
 ```
 
-Leaf modules are single files; folder modules use a `mod.bp` entry point. Only
-`pub` declarations are visible outside their module.
+Leaf modules are single files; folder modules use a `mod.bp` entry point.
+`pub mod` is visible through the parent; a plain `mod` is private to its
+declaring module's subtree. Only `pub` declarations are visible outside their
+module.
 
 ### Imports
 
 ```botopink
-import {dict, queue, order} from "std";   // stdlib
-import {area} from "geometry";             // sibling module
-import {of, erika} from "erika";           // disk dependency
+import {dict, queue, order} from "std";   // stdlib modules
+import {area} from "geometry";             // module in this package
+import {name} from "shapes.circle";        // nested module path
+import {of, erika} from "erika";           // library dependency
 ```
 
 ## Bindings
@@ -52,7 +54,6 @@ import {of, erika} from "erika";           // disk dependency
 ```botopink
 val x = 42;
 val greeting = "hello";
-val Point = record { x: i32, y: i32 };
 ```
 
 Types are inferred via Hindley-Milner unification. Explicit annotations are
@@ -60,7 +61,7 @@ optional:
 
 ```botopink
 val count: i32 = 42;
-val names: Array<string> = ["alice", "bob"];
+val names: string[] = ["alice", "bob"];
 ```
 
 ### var — mutable binding
@@ -76,22 +77,14 @@ n = n + 1;
 fn add(x: i32, y: i32) -> i32 {
     return x + y;
 }
-
-// Inferred return type
-fn double(x: i32) { return x * 2; }
-
-// Nested functions use `return` to exit the enclosing `fn`
-fn outer() {
-    fn inner() { return 42; }
-    @print(inner());  // 42
-}
 ```
 
 ## Types
 
 ### Primitives
 
-`i32`, `i64`, `f64`, `string`, `bool`, `void`
+`i32`, `i64`, `u32`, `u64`, `f32`, `f64`, `string`, `bool`, `void`.
+Their methods are declared in `libs/std/src/primitives.bp`.
 
 ### Record
 
@@ -99,18 +92,24 @@ fn outer() {
 record Point { x: i32, y: i32 }
 
 val p = Point(x: 1, y: 2);
-val px = p.x;                       // field access
+val px = p.x;
 ```
 
-Records can have methods:
+Records can carry methods:
 
 ```botopink
-record Point {
-    x: i32,
-    y: i32,
-
-    fn magnitude(self: Self) -> f64 { ... }
+record Counter {
+    n: i32,
+    fn current(self: Self) -> i32 {
+        return self.n;
+    }
 }
+```
+
+Anonymous records bind to a `val`:
+
+```botopink
+val Inner = record { value: i32 }
 ```
 
 ### Enum
@@ -118,25 +117,24 @@ record Point {
 ```botopink
 enum Color { Red, Green, Blue }
 
-val c = Color.Red;
-```
-
-Enum variants can carry payloads:
-
-```botopink
-enum Option<T> { None, Some(T) }
+enum Shape {
+    Circle(radius: f64),
+    Square(side: f64),
+}
 ```
 
 ### Interface
 
 ```botopink
-interface Show {
-    fn show(self: Self) -> string;
+interface Printable {
+    fn print(self: Self),
 }
 
-implement Show for Point {
-    fn show(self: Self) -> string {
-        return "(" ++ self.x ++ ", " ++ self.y ++ ")";
+record Person { name: string }
+
+implement Printable for Person {
+    fn print(self: Self) {
+        @print(self.name);
     }
 }
 ```
@@ -144,22 +142,16 @@ implement Show for Point {
 ### Generics
 
 ```botopink
-record Pair<A, B> { first: A, second: B }
-
 fn identity<T>(x: T) -> T { return x; }
 
-enum Option<T> { None, Some(T) }
-enum @Result<D, E> { Ok(D), Error(E) }
+enum Tree<T> {
+    Leaf(value: T),
+    Node(left: Tree<T>, right: Tree<T>),
+}
 ```
 
-Built-in generic types use `@Result`, `@Iterator`, `@Future`. User-defined
-generics use angle brackets: `MyType<T>`.
-
-### Type aliases
-
-```botopink
-val Age = record { years: i32 };
-```
+Built-in generic types carry an `@` prefix: `@Result<D, E>`, `@Iterator<T>`,
+`@Future<T>`, `@Expr<T>`. Optionals are `?T`; tuples are `#(A, B)`.
 
 ## Expressions
 
@@ -169,6 +161,7 @@ val Age = record { years: i32 };
 42             // i32
 3.14           // f64
 "hello"        // string
+"hi ${name}!"  // string interpolation
 true, false    // bool
 ```
 
@@ -176,32 +169,31 @@ true, false    // bool
 
 ```botopink
 val xs = [1, 2, 3];
-val empty: Array<i32> = [];
 val tail = xs.slice(1, xs.length);    // [2, 3]
 ```
 
 ### Operators
 
 ```botopink
-a + b, a - b, a * b, a / b, a % b    // arithmetic
-a ++ b                                // string / array concatenation
-a == b, a != b, a < b, a > b          // comparison
-a <= b, a >= b
+a + b, a - b, a * b, a / b, a % b     // arithmetic (+ also concatenates strings)
+a == b, a != b, a < b, a > b, a <= b, a >= b
 !x, x && y, x || y                    // logical
 a |> f                                // pipe: f(a)
+x?.field                              // optional chaining
 ```
 
-### Pipeline
+### Lambdas and method chains
 
 ```botopink
-val result = xs
+val double = { n -> n * 2 };
+
+val total = xs
     .filter({ n -> n % 2 == 0 })
     .map({ n -> n * 2 })
     .fold(0, { acc, n -> acc + n });
 ```
 
-The pipeline operator `|>` is left-associative. A method call `x.f(y)` is
-equivalent to `f(x, y)`.
+The pipe operator `|>` is left-associative.
 
 ### If / else
 
@@ -209,44 +201,52 @@ equivalent to `f(x, y)`.
 val s = if (x > 0) { "positive" } else { "negative" };
 ```
 
-If expressions return values; both branches must unify to the same type.
+`if` on an optional unwraps it in the then-branch:
+
+```botopink
+fn show(x: ?i32) {
+    if (x) { n -> @print(n); };
+}
+```
 
 ### Case (pattern matching)
 
 ```botopink
-case color {
-    Color.Red   -> "warm";
-    Color.Green -> "calm";
-    Color.Blue  -> { val _ = 1; "cool" };   // block arm
+fn area(shape: Shape) -> f64 {
+    return case shape {
+        Circle(radius) -> radius * radius * 3.14;
+        Square(side) -> side * side;
+    };
 }
 ```
 
-List patterns:
+List and or-patterns:
 
 ```botopink
-case xs {
-    []        -> "empty";
-    [a, ...b] -> "first: " ++ a;
+case items {
+    [] -> "empty";
+    [x] -> "one";
+    [first, ..rest] -> "many";
 }
-```
 
-Or-patterns:
-
-```botopink
-case x {
-    0 | 1 -> "small";
-    _     -> "other";
+case c {
+    Red | Green -> true;
+    Blue -> false;
 }
 ```
 
 ### Loop
 
+`loop` iterates a collection or a range; `break` exits with a value.
+
 ```botopink
-var i = 0;
-loop (i < 5) {
+loop (xs) { item ->
+    @print(item);
+};
+
+loop (0..10) { i ->
     @print(i);
-    i = i + 1;
-}
+};
 ```
 
 ### Assert
@@ -254,9 +254,8 @@ loop (i < 5) {
 ```botopink
 assert x > 0;
 assert x > 0, "x must be positive";
-
-// Pattern assertions
-assert Ok(v) = result;
+assert x is Some(n);                                   // narrows x
+val assert Ok(value) = result catch throw Error("not ok");
 ```
 
 ## Functions
@@ -265,103 +264,80 @@ assert Ok(v) = result;
 
 ```botopink
 fn greet(name: string, greeting: string = "hello") -> string {
-    return greeting ++ ", " ++ name ++ "!";
+    return greeting + ", " + name + "!";
 }
 ```
 
-### Lambda
+### Results
+
+A `#[@result]` function returns `@Result<D, E>`; `throw` produces the error,
+`try … catch` unwraps it.
 
 ```botopink
-val double = { n -> n * 2 };
-val add = { a, b -> a + b };
+#[@result]
+fn parse(s: string) -> @Result<i32, string> {
+    if (s == "") {
+        throw "empty input";
+    }
+    return 0;
+}
+
+fn load() {
+    val n = try parse("42") catch 0;
+    val ok = parse("42").isOk();
+}
 ```
 
-### Trailing lambda
-
-When the last argument is a lambda, it can be written after the closing paren:
+### Iterators
 
 ```botopink
-xs.filter({ n -> n > 0 });
-xs.map({ n -> n * 2 });
-```
-
-### Trailing blocks
-
-```botopink
-result.map(r, { v ->
-    val doubled = v * 2;
-    return doubled;
-});
+#[@iterator]
+fn counter() -> @Iterator<i32> {
+    yield 1;
+    yield 2;
+}
 ```
 
 ## Comptime
 
-Comptime evaluates code at compile time, producing values or AST fragments.
-
 ### Compile-time evaluation
 
 ```botopink
-comptime {
-    val layout = @print("computed at build time");
-}
+val result = comptime {
+    val x = 10;
+    break x * 2;
+};
 ```
 
 ### Template functions
 
+A function taking `comptime q: @Expr<…>` expands at the call site; `@expr`
+lifts a comptime value back into code.
+
 ```botopink
 pub fn conf<T>(comptime q: @Expr<string>) -> @Expr<T> {
-    val text = q.text();
-    return @expr(record {
-        server: record { host: "0.0.0.0", port: 8000 + text.length },
-        debug: true,
-    });
+    val t = q.text();
+    return @expr(record { port: 8000 + t.length, debug: true });
 }
 ```
 
-### Annotations
+### Host bindings
 
 ```botopink
-#[@External.Node("./helpers.mjs", "parse")]
+#[@External.Node("./helpers.mjs", "parse"),
+  @External.Erlang("helpers", "parse")]
 pub declare fn parse(input: string) -> i32;
-
-#[@iterator]
-fn counter() -> @Iterator<i32> :gen { yield 1; }
 ```
 
 ## Builtins
 
-### @print
-
 ```botopink
 @print("hello");
-@print(42);
-```
-
-### @todo
-
-```botopink
 fn notReady() -> i32 { @todo(); }
 ```
 
-### @Result
-
-```botopink
-fn parse(s: string) -> @Result<i32, string> {
-    return if (s == "") { Error("empty") } else { Ok(42) };
-}
-
-val r = parse("42");
-r.isOk();                          // result methods
-r.unwrapOr(0);
-```
-
-### @Expr
-
-```botopink
-pub fn lift<T>(comptime v: T) -> @Expr<T> {
-    return @expr(v);
-}
-```
+Other builtins (`@panic`, `@field`, `@emit`, …) are declared in
+`libs/std/src/builtins.d.bp` and `libs/std/src/builtins_fns.d.bp`.
 
 ## Tests
 
@@ -369,28 +345,24 @@ pub fn lift<T>(comptime v: T) -> @Expr<T> {
 test "addition works" {
     assert 1 + 1 == 2;
 }
-
-test "strings concatenate" {
-    assert "a" ++ "b" == "ab";
-}
 ```
 
-Tests blocks are declared at the module level. Run with `botopink test`.
+Test blocks are declared at module level. Run with `botopink test`
+(`--target`, `--filter <substring>`).
 
 ## Backends
 
-| Target     | Output         | Runtime           |
-|------------|----------------|-------------------|
-| `commonJS` | `.mjs`         | Node.js ≥ 20      |
-| `erlang`   | `.erl`         | escript (OTP)     |
-| `beam`     | `.beam`        | erlc + escript    |
-| `wasm`     | `.wat`/`.wasm` | wasmtime          |
+| Target     | Output | Runner                      |
+|------------|--------|-----------------------------|
+| `commonJS` | `.js`  | `node` ≥ 20                 |
+| `erlang`   | `.erl` | `escript` (OTP)             |
+| `beam`     | `.S`   | artifact — `erlc +from_asm` |
+| `wasm`     | `.wat` | `wasmtime`                  |
 
 Select the target with `--target`:
 
 ```bash
 botopink run --target commonJS
-botopink run --target wasm
 botopink build --target erlang
 ```
 
@@ -402,9 +374,12 @@ Every project carries a `botopink.json` at its root:
 {
   "name": "my-project",
   "version": "0.1.0",
-  "sources": ["src"],
+  "target": "commonJS",
   "dependencies": {
-    "disk-lib": { "git": "https://github.com/user/disk-lib", "branch": "main" }
+    "erika": { "git": "https://github.com/botopink/erika.git", "branch": "feat" }
   }
 }
 ```
+
+Optional `entry` names the module-tree root under `src/` (default: `main.bp`,
+else `root.bp`). `dependencies` also accepts an array of bare names.

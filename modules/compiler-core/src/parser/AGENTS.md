@@ -2,7 +2,6 @@
 
 > Path: `modules/compiler-core/src/parser/`
 > Parent: [`../AGENTS.md`](../AGENTS.md)
-> Docs: [`./docs.md`](docs.md) · Examples: [`./examples.md`](examples.md)
 
 Parser sub-grammars + tests. The `Parser` struct (state, token cursor, shared
 helpers) lives at `../parser.zig`; each weakly-coupled sub-grammar is split into
@@ -10,8 +9,8 @@ a sibling module here.
 
 ## Free-function-on-`*Parser` convention
 
-`usingnamespace` was removed in Zig 0.15, so the split uses free functions on
-`*Parser` instead of methods. Each sibling module declares
+Zig has no `usingnamespace`, so the split uses free functions on `*Parser`
+instead of methods. Each sibling module declares
 `pub fn parseX(this: *Parser, …)` and `parser.zig` re-exports it as a thin alias:
 
 ```zig
@@ -31,8 +30,6 @@ cycle is fine because no struct-layout depends on it.
 ```text
 parser/
 ├── AGENTS.md      ← you are here
-├── docs.md        ← parser strategy, helpers, error policy
-├── examples.md    ← `.bp` declarations / expressions / statements
 ├── types.zig      ← type-ref sub-grammar: parseTypeRef/BaseTypeRef/GenericParams/ImplementClause
 ├── patterns.zig   ← case/pattern sub-grammar: parseCaseExpr/parsePattern/SimplePattern/ListPattern
 ├── decls.zig      ← declaration sub-grammar: val/fn/test/record/enum/interface/implement/extend/delegate/import + params
@@ -45,7 +42,8 @@ parser/
     ├── declarations.zig  ← record/enum/interface/implement, val/pub/fn, test blocks
     ├── expressions.zig   ← operator/lambda/array/tuple/case/builtin/control-flow
     ├── destructuring.zig ← destructure/shorthand/assign
-    └── errors.zig        ← parse errors & cross-stage error-message units
+    ├── errors.zig        ← parse errors & cross-stage error-message units
+    └── effect_rejections.zig ← parser-level `#[@<effect>]` rejections (R1/R2/R5…)
 ```
 
 ## Testing pattern
@@ -56,8 +54,8 @@ test "import decl" {
 }
 ```
 
-- Snapshot path: `../../snapshots/parser/<slug>.snap.md`
-- Error tests: `expectParseError(source, "expected message")`
+- Snapshot path: `modules/compiler-core/snapshots/parser/<slug>.snap.md` (slug from the test name)
+- Error tests: `expectParseError(alloc, "expected rendered message", source)`; `expectParseFails(alloc, source)` only checks that parsing fails
 
 ## Type-ref grammar (`types.zig`)
 
@@ -73,8 +71,8 @@ two additions for record/builder ergonomics:
   return type; inference resolves it to a structural `Type.record`.
 
 A non-`syntax` `name: fn(…)` param is parsed through `parseTypeRef` (a
-`TypeRef.function`, so its return may be an array — `fn() -> T[]`); the legacy
-string-based `Param.fnType` is kept **only** for `syntax fn(…)` params.
+`TypeRef.function`, so its return may be an array — `fn() -> T[]`);
+`Param.fnType` (`ast.FnType`) is set **only** for `syntax fn(…)` params.
 
 ## Postfix-chain locs
 
@@ -85,19 +83,22 @@ the access loc), so two links sharing a loc collide — `self.pairs.length` woul
 emit `length(length(Self))`. `parsePostfixChain` and the identifier postfix loop
 both use `locFromToken(fieldTok)` for this reason.
 
-## Annotation arguments (`parseAnnotationCall`)
+## Annotations (`parseAnnotationCall`)
 
-`#[name(arg, …)]` / `@name(…)` arguments are kept as **raw lexemes**
-(`Annotation.args: [][]const u8`), not parsed expressions. The arg loop special-cases
-two shapes so the `#[@External.<targert>(...)]` vocabulary stays expressible (see §A,
-`libs/std/AGENTS.md`):
+The annotation name may be a qualified path — `@External.Erlang(…)` lands as
+`Annotation.name = "External.Erlang"` with `is_builtin = true` (leading `@`
+stripped). Arguments are kept as **raw lexemes** (`Annotation.args: []const []const u8`),
+not parsed expressions; each reader (`FnDecl.externalFor`,
+`ast.parseArityBranchArg`, …) interprets them. The arg loop special-cases three
+shapes (vocabulary in `libs/std/AGENTS.md`):
 
-- **Enum/member chains** — `.Erlang`, `Target.Erlang`: a run of adjacent
-  `.`/identifier tokens is folded into a single argument lexeme spanning the source
-  bytes (`spanLexemes`). The bare single identifier (`erlang`) and string literals
-  go through unchanged.
-- **Keyword labels** — `runtime:`/`module:`/`method:`: a leading `identifier :` is
-  dropped, so the labeled Form B and positional Form A produce the same `args`.
+- **Arity branches** — `when($argc == N): "<template>"` spans the balanced parens,
+  the `:` and the value into one lexeme (`spanLexemes`).
+- **Labels** — a leading `identifier :` or `identifier =` (`module:`,
+  `inline = true`) is dropped; the value lands positionally.
+- **Enum/member chains** — `.Erlang`, `Target.Erlang`: adjacent `.`/identifier
+  tokens fold into one lexeme spanning the source bytes. A bare identifier or
+  string literal goes through unchanged.
 
 ## Notes
 
@@ -105,21 +106,22 @@ two shapes so the `#[@External.<targert>(...)]` vocabulary stays expressible (se
   branches.
 - `Parser.init(tokens)` does **not** store an allocator; parse methods receive
   `alloc: std.mem.Allocator`.
-- **Package-default DSL** (`package-default-dsl`): `pub default mod Name;` parses
+- **Package default**: `pub default mod Name;` parses
   at any module top level (`checkDefaultMod` mirrors `checkDefaultFn`;
-  `parseModDecl` reads the optional `default` modifier → `ModDecl.isDefault`).
+  `parseModDecl` in `parser.zig` reads the optional `default` modifier →
+  `ModDecl.isDefault`).
   Pairs with `pub default fn` (`FnDecl.isDefault`) and the package-namespace
   `import pkg [, { … }] [from "…"]` form (`ImportDecl.package`, parsed in
   `decls.zig`). The parser only records the modifier — uniqueness is validated in
   inference, and the resolver/driver (`comptime.zig`) binds the handle.
-- **Enum sections** (`enum-sections`, v0.beta.20): an `Identifier { … }` item
+- **Enum sections**: an `Identifier { … }` item
   inside an enum body declares a *section* — a named grouping of nested
   variants — captured as `EnumSection { name, variants, sections }` and stored
   on `EnumDecl.sections` alongside the flat `variants` slot. Sections nest
   arbitrarily deep; inside a section body, pure-digit tokens (`100`, `4`) are
   permitted as terminal variant leaves (`EnumVariant.numeric = true`) — they
-  cannot open further sections nor carry payload. Top-level enum bodies still
-  reject digit names. Disambiguation is single-token (`{` after a name = section,
+  cannot open further sections nor carry payload. Top-level enum bodies reject
+  digit names. Disambiguation is single-token (`{` after a name = section,
   `(` = payload, `,`/`}` = bare). The comptime desugars the tree into the
   enum-of-enum form with mangled inner names; the parser only records the
   structure.

@@ -2,19 +2,17 @@
 
 > Path: `modules/compiler-core/src/utils/`
 > Parent: [`../AGENTS.md`](../AGENTS.md)
-> Docs: [`./docs.md`](docs.md)
 
-Snapshot-testing infrastructure shared by every test suite in the workspace
-(parser, codegen, comptime, LSP).
+Snapshot-testing infrastructure shared by the compiler-core test suites
+(parser, codegen, comptime).
 
 ## Tree
 
 ```text
 utils/
 ├── AGENTS.md       ← you are here
-├── docs.md         ← snapshot workflow + API surface
 ├── snap.zig        ← read/write/compare .snap.md files
-├── pretty.zig      ← indented JSON serialiser (used to render AST snapshots)
+├── pretty.zig      ← indented JSON serialiser (AST snapshots)
 └── json_diff.zig   ← structural JSON diff printed on mismatch
 ```
 
@@ -22,16 +20,17 @@ utils/
 
 | File | Role |
 |---|---|
-| `snap.zig` | `checkText(alloc, name, content)` — compares against `<name>.snap.md`; writes `<name>.snap.md.new` on mismatch. |
-| `pretty.zig` | Serialises any value to indented JSON via `std.json.stringify`. |
-| `json_diff.zig` | Renders a structural JSON diff to stderr when a snapshot mismatches. |
+| `snap.zig` | `checkText(alloc, name, text)` compares against `snapshots/<name>.snap.md`; `check(alloc, name, value)` does the same for a value rendered through `pretty.formatAlloc`; `readSource` reads `snapshots/<name>.botopink`. Paths are relative to `SNAP_DIR = "snapshots"`. CRLF and path separators are normalised before comparing. |
+| `pretty.zig` | `formatAlloc` — serialises any value to 2-space-indented JSON via `std.json.Stringify.valueAlloc`. |
+| `json_diff.zig` | `diff(alloc, expected, actual, writer)` — colored structural JSON diff; `snap.zig` prints it when the expected snapshot looks like JSON. |
 
 ## Snapshot workflow
 
-1. First run → snapshot file is created automatically.
-2. Mismatch → diff printed to stderr; `<name>.snap.md.new` written.
-3. To accept the change: review the `.new` file, then replace the existing
-   `.snap.md` (or delete the old `.snap.md` and re-run tests).
+1. Missing snapshot → created automatically (`snap created: …`).
+2. Mismatch → `<name>.snap.md.new` written next to it, diff printed, test fails
+   with `error.SnapshotMismatch`.
+3. To accept: review the `.new` file and replace the `.snap.md` (or delete the
+   old `.snap.md` and re-run). A matching run deletes a stale `.new`.
 
-Indentation in formatted output must be preserved exactly — snapshot diffs
-are character-sensitive.
+Leading/trailing newlines are trimmed before comparing, but everything else
+(including indentation) is character-sensitive.

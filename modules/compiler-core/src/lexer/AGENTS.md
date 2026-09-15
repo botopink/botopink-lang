@@ -2,7 +2,6 @@
 
 > Path: `modules/compiler-core/src/lexer/`
 > Parent: [`../AGENTS.md`](../AGENTS.md)
-> Docs: [`./docs.md`](docs.md) · Examples: [`./examples.md`](examples.md)
 
 Lexer support files. The lexer entry point itself lives at `../lexer.zig`.
 
@@ -11,12 +10,10 @@ Lexer support files. The lexer entry point itself lives at `../lexer.zig`.
 ```text
 lexer/
 ├── AGENTS.md      ← you are here
-├── docs.md        ← tokenizer reference (invariants, error policy)
-├── examples.md    ← `.bp` token syntax (numbers, strings, identifiers)
 ├── token.zig      ← TokenKind enum + Token struct (lexeme + line/col)
-├── tests.zig      ← barrel: aggregates tests/<feature>.zig for test_root.zig
+├── tests.zig      ← barrel for tests/<feature>.zig (currently imports none — see Notes)
 └── tests/         ← lexer tests, split by feature
-    ├── helpers.zig    ← shared harness (`pub fn assertTokens`, imports)
+    ├── helpers.zig    ← placeholder harness module (no helpers defined)
     ├── basics.zig     ← empty/whitespace/identifier/number basics
     ├── recognizes.zig ← single-token recognition
     ├── tokenizes.zig  ← multi-token sequences
@@ -36,12 +33,19 @@ Token {
 }
 ```
 
-Usage: `Lexer.init(source).scanAll(alloc)` returns `[]Token`. `Lexer.init`
-does **not** store an allocator.
+Usage: `var l = Lexer.init(source); const tokens = try l.scanAll(alloc);
+defer l.deinit(alloc);` — `scanAll` returns `[]const Token` owned by the lexer.
+`Lexer.init` does **not** store an allocator.
 
 ## Notes
 
-- Prefer reporting `LexicalError` over a parser error when the token itself is
-  malformed.
-- Numeric literals support `1_000_000` digit separators, scientific notation
-  (`1.5e-10`, `2E+3`), and unary `-` is handled in the parser primary.
+- Prefer reporting a lexical error over a parser error when the token itself is
+  malformed: `scanAll` returns `LexerError.LexicalError` and fills
+  `Lexer.lexError: ?LexicalError` (`LexicalErrorType`: `DigitOutOfRadix`,
+  `RadixIntNovalue`, `BadStringEscape`, `InvalidUnicodeEscape`,
+  `InvalidTripleEqual`).
+- Numeric literals support `1_000_000` digit separators and scientific notation
+  (`1.5e-10`, `2E+3`); unary `-` is handled in the parser primary.
+- `tests.zig` is `test {}` — none of the `tests/*.zig` files are imported, so
+  they are not compiled or run by `zig build test`. Register them in
+  `tests.zig` to re-enable them.

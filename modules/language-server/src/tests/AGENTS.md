@@ -1,21 +1,22 @@
 # language-server/src/tests
 
 > Path: `modules/language-server/src/tests/`
-> Parent: [`../AGENTS.md`](../AGENTS.md) · Snapshots: [`../../snapshots/lsp/AGENTS.md`](../../snapshots/lsp/AGENTS.md)
-> Docs: [`./docs.md`](docs.md)
+> Parent: [`../AGENTS.md`](../AGENTS.md)
 
-Feature-level tests for LSP behaviour and diagnostics.
+Feature-level tests for LSP behaviour and diagnostics. Every file here is
+registered in [`../test_root.zig`](../test_root.zig) — add new suites there.
 
 ## Tree
 
 ```text
 tests/
 ├── AGENTS.md
-├── docs.md               ← harness structure + determinism rules
-├── root.zig              ← test aggregator
-├── helpers.zig           ← assertion + setup helpers
+├── root.zig              ← older partial aggregator (not used by the build — see ../test_root.zig)
+├── _warmup.zig           ← runs first: lazy-inits compiler-core's stdlib template
+├── helpers.zig           ← assertion + setup helpers (compile, compileEval, multi-module)
 ├── snapshot.zig          ← snapshot read/write
 ├── snapshot_test.zig     ← shared snapshot test harness
+├── messages.zig          ← JSON-RPC frame reader (`messages.readMessage`)
 ├── diagnostics.zig       ← publishDiagnostics
 ├── formatting.zig        ← textDocument/formatting
 ├── hover.zig             ← textDocument/hover
@@ -33,26 +34,32 @@ tests/
 ├── inlay_hints.zig       ← textDocument/inlayHint
 ├── sublanguage.zig       ← `@ExprCustom` overlay: tokens + diagnostics + hover/def
 ├── lifecycle.zig         ← `files.FileCache` didOpen→didChange→didClose
-└── cross_module.zig      ← project-index requests (references / rename / import-missing)
+├── cross_module.zig      ← project-index requests (references / rename / import-missing)
+└── project_graph.zig     ← project-graph compile + `ProjectGraph.resolveRoots`
 ```
 
 `sublanguage.zig` uses `helpers.compileEval` (template-eval context on, unique
-scratch root per call) so the `@ExprCustom` `CustomNode` trees actually exist —
-it spawns `node`, like the comptime template tests.
+scratch root `.botopinkbuild/lsp-test/<n>` per call) so the `@ExprCustom`
+`CustomNode` trees actually exist — template bodies run through compiler-core's
+persistent `erl` comptime runtime, so `erl` must be on `PATH`.
 
-`cross_module.zig` is the only suite that touches **disk**: it materializes a
-tiny project under a unique `.botopinkbuild/xmod-*` dir (resolved against the
-test cwd, this module's root), points a `ProjectIndex` at it via `setRoot`, and
-exercises `crossModuleReferences` / `crossModuleRename` / the import-missing
-`codeAction` — the requests that only fire once a workspace root is known. Each
-test deletes its dir on exit (and pre-deletes on entry, so a crashed run leaves
-no stale fixture). `lifecycle.zig` drives the in-memory `FileCache` directly (no
-`node`, no disk); writing it surfaced a double-dup leak in `FileCache.change`'s
-unopened-uri fallback, since fixed.
+Suites that touch **disk** (paths resolved against the test cwd,
+`modules/language-server`):
+
+- `cross_module.zig` materializes a tiny project under `.botopinkbuild/xmod-*`,
+  points a `ProjectIndex` at it via `setRoot`, and exercises
+  `crossModuleReferences` / `crossModuleRename` / the import-missing
+  `codeAction`. Each test pre-deletes and deletes its dir on exit.
+- `project_graph.zig` writes throwaway workspaces under
+  `.botopinkbuild/lsp-roots-*` for the `BOTOPINK_LIB_ROOTS` tests, and resolves a
+  real sibling project (`../../../rakun/examples/rakun/`) for the cache test — that
+  test skips when the sibling checkout is absent.
+
+`lifecycle.zig` drives the in-memory `FileCache` directly (no runtime, no disk).
 
 ## Snapshot workflow
 
-- Snapshots live under [`../../snapshots/lsp/`](../../snapshots/lsp/AGENTS.md).
+- Snapshots live under `../../snapshots/lsp/`.
 - On mismatch a `<name>.snap.md.new` is written — review the diff and either
   promote it or fix the underlying bug.
 - Promote only intentional protocol/output changes; surprise changes usually

@@ -2,10 +2,9 @@
 
 > Path: `modules/`
 > Parent: [`../AGENTS.md`](../AGENTS.md)
-> Docs: [`./docs.md`](docs.md)
 
-All Zig packages live here. Each package ships its own `build.zig` and `AGENTS.md`.
-The bundled `.bp` libraries (`std`/`server`/`client`) live alongside under
+All Zig packages live here. Each package ships its own `AGENTS.md`.
+The bundled `.bp` standard library lives alongside under
 [`../libs/`](../libs/AGENTS.md). The **VS Code extension** is a sibling project
 at [`../../vscode-extension/`](../../vscode-extension/AGENTS.md), not a module
 here — it ships and versions separately from the language core.
@@ -18,8 +17,9 @@ modules/
 ├── compiler-cli/            ← `botopink` CLI executable
 │   ├── build.zig
 │   ├── build.zig.zon
-│   └── src/                 ← main + cli/ (commands)
-├── compiler-core/           ← library: lexer / parser / AST / infer / codegen
+│   ├── src/                 ← main + cli/ (commands)
+│   └── tests/               ← end-to-end shell scripts (not in `zig build test`)
+├── compiler-core/           ← library: lexer / parser / AST / infer / comptime / codegen
 │   ├── build.zig
 │   ├── build.zig.zon
 │   ├── src/                 ← all compiler stages
@@ -33,15 +33,9 @@ modules/
 │   ├── build.zig
 │   ├── build.zig.zon
 │   └── src/                 ← discovery + fan-out + matrix (self-contained)
-├── bpmp/                    ← `bpmp` — Boto Pink Package Manager + toolchain manager
-│   ├── AGENTS.md
-│   └── src/                 ← manifest + lockfile + semver + resolver + commands
-└── wasm3/                   ← vendored wasm3 interpreter (C) — embedded comptime runtime
-    ├── AGENTS.md
-    ├── README.md            ← upstream pin + excluded content + upgrade procedure
-    ├── LICENSE
-    ├── build.zig            ← exports link() + exposeHeaders() + wasm3_srcs/cflags
-    └── source/              ← byte-identical upstream `source/` (16 .c + headers)
+└── bpmp/                    ← `bpmp` — Boto Pink Package Manager + toolchain manager
+    ├── build.zig.zon        ← no own build.zig; built by the workspace build.zig
+    └── src/                 ← manifest + lockfiles + semver + resolver + commands
 ```
 
 ## Packages
@@ -53,30 +47,38 @@ modules/
 | `language-server/` | `botopink-lsp` executable | `compiler-core` | [link](language-server/AGENTS.md) |
 | `lib-test-runner/` | `botopink-lib-test` executable | none (shells out to `botopink`) | [link](lib-test-runner/AGENTS.md) |
 | `bpmp/` | `bpmp` executable | none (spawns `botopink`) | [link](bpmp/AGENTS.md) |
-| `wasm3/` | vendored C interpreter (no standalone output) | none (consumed by `compiler-core`) | [link](wasm3/AGENTS.md) |
 | `../../vscode-extension/` | VS Code `.vsix` extension (sibling project) | `language-server` (runtime) | [link](../../vscode-extension/AGENTS.md) |
 
-## Per-package commands
+## Commands
+
+The workspace [`../build.zig`](../build.zig) builds every executable
+(`botopink`, `botopink-lsp`, `botopink-lib-test`, `bpmp`) and owns the steps:
 
 ```bash
-cd modules/<package> && zig build           # compile
-cd modules/<package> && zig build run       # run (cli + lsp only)
-cd modules/<package> && zig build test      # tests (core + lsp + lib-test-runner units)
+zig build                  # build all four executables into zig-out/bin/
+zig build run -- <args>    # build + run the botopink CLI
+zig build test             # compiler-core + language-server + compiler-cli tests
+                           # (+ lib-agnostic grep gate over compiler-core/src)
+zig build test -Dtest-filter=<substr>
+zig build test-bpmp        # bpmp unit tests          (not part of `test`)
+zig build test-libs        # every libs/ project per backend via botopink-lib-test
+zig build test-vscode      # VS Code extension unit tests (needs node/npm)
+zig build test-backends    # compiler-cli/tests/backend_exec.sh (needs runtimes)
+zig build clean-tmp        # reap compiler-core/.botopinkbuild/tmp dirs older than 1 day
 ```
 
-The workspace `../build.zig` wires CLI + LSP + lib-test-runner together, plus a
-`zig build test-libs` step that runs every `libs/` project's tests per backend via
-`botopink-lib-test` (needs `node`/`escript` on `PATH`; not part of `zig build
-test`). See the root [`AGENTS.md`](../AGENTS.md) for top-level commands.
+`compiler-cli`, `compiler-core`, `language-server` and `lib-test-runner` also
+carry a standalone `build.zig` (`zig build` / `zig build test`, plus `run` for
+the executables) usable from inside the package directory. See the root
+[`AGENTS.md`](../AGENTS.md) for top-level commands.
 
 ## Cross-package conventions
 
 - English only in source, comments, docs and commit messages.
 - When adding a new subdirectory under a package, create an `AGENTS.md` for it
-  and link it from the parent. Add a `docs.md` if the directory deserves a
-  detailed module explanation.
+  and link it from the parent.
 - Codegen is implemented entirely in Zig under `compiler-core/`. There is **no**
   standalone Node.js/WASM compiler.
-
-For the package dependency graph and full cross-package conventions see
-[`./docs.md`](docs.md).
+- Comptime evaluation (templates, decorators) runs through compiler-core's
+  persistent `erl` process (`compiler-core/src/comptime/runtime/persistent_erl.zig`);
+  the CLI and the LSP share that pipeline.

@@ -3,9 +3,11 @@
 > Path: `modules/compiler-core/src/codegen/tests/`
 > Parent: [`../AGENTS.md`](../AGENTS.md) (owns the per-file breakdown)
 
-Codegen tests, split by feature (`values.zig` etc. for codegen, `wat.zig` for the WAT
-backend, `externals.zig` for `@[external(…)]` FFI declarations). Aggregated by the sibling barrel `../tests.zig` for `test_root.zig`;
-shared harness (`assertJs`/`assertJsError`/`configs`) lives in `helpers.zig`.
+Codegen tests, split by feature (`values.zig` etc. for codegen, `wat.zig` for the
+WAT backend, `externals.zig` for `#[@External.<Target>(…)]` FFI declarations,
+`comptime_module.zig` for `erlang.emitComptimeModule`). Aggregated by the
+sibling barrel `../tests.zig` for `test_root.zig`; shared harness
+(`assertJs`/`assertJsError`/`configs`) lives in `helpers.zig`.
 For multi-module assertions without a snapshot, `assertConsumerJs(modules, present, absent)`
 generates every module (last = consumer `main`) and checks the consumer's JS
 contains/omits given substrings — used by the disk-lib namespace test in

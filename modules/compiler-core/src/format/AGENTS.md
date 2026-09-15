@@ -2,7 +2,6 @@
 
 > Path: `modules/compiler-core/src/format/`
 > Parent: [`../AGENTS.md`](../AGENTS.md)
-> Docs: [`./docs.md`](docs.md) · Examples: [`./examples.md`](examples.md)
 
 Formatter tests. The Wadler-Lindig pretty-printer itself is at `../format.zig`.
 
@@ -11,14 +10,12 @@ Formatter tests. The Wadler-Lindig pretty-printer itself is at `../format.zig`.
 ```text
 format/
 ├── AGENTS.md     ← you are here
-├── docs.md       ← round-trip contract + formatting rules
-├── examples.md   ← `botopink format` before/after pairs
 ├── tests.zig     ← barrel: aggregates tests/<feature>.zig for test_root.zig
 └── tests/        ← format tests, split by feature
     ├── helpers.zig      ← shared harness (`assertFormat`/`assertIdempotent`)
     ├── imports.zig      ← import formatting
-    ├── declarations.zig ← interface/implement/fn/const/val/let/pub, test blocks
-    ├── expressions.zig  ← binary/call/access/lambda/precedence/pipeline
+    ├── declarations.zig ← val/const/let, interface/record/enum/implement/extend, fn/pub fn, test blocks, empty lines
+    ├── expressions.zig  ← binary/call/access/lambda/precedence/pipeline/tagged calls
     ├── literals.zig     ← list/tuple/array/float/int/string literals
     ├── patterns.zig     ← case / pattern / assert
     ├── comments.zig     ← comments / doc / todo
@@ -30,14 +27,14 @@ format/
 `format(parse(src))` must produce output that re-parses to an equivalent AST,
 and running `format` twice in a row must produce identical text.
 
-## Formatting rules (current release)
+## Formatting rules
 
 | Construct | Rule |
 |---|---|
-| Record fields | No `val` prefix → `record { name: Type, ... }` |
-| Enum variants | Comma-separated; single-line when no methods → `enum { Red, Rgb(r,g,b), }` |
-| Interface methods | `fn`-prefixed → `interface { fn method(p): T, }` |
-| Pipeline `\|>` | Each `\|>` on its own line for long chains |
-| Array literals | trailing comma → multi-line; otherwise inline |
-| Case arms | preserve `emptyLineBefore` as extra blank line |
+| Record fields | No `val` prefix → `val Point = record { x: number, y: number };` |
+| Enum variants | Comma-separated, single line when there are no methods → `val Color = enum { Red, Rgb(r: i32, g: i32, b: i32) };` |
+| Interface methods | `fn`-prefixed, `;`-terminated, one per line → `fn draw(self: Self);` |
+| Pipeline `\|>` | A single step with no comments stays inline if it fits; multi-step chains (or any step comment) put each `\|>` on its own line |
+| Array / list literals | Trailing comma or comments → multi-line; otherwise inline if it fits |
+| Blank lines | `emptyLinesBefore` on statements and case arms is preserved as blank lines |
 | Test blocks | `test { … }` / `test "name" { … }` — no trailing semicolon, body formatted like a `fn` body |
