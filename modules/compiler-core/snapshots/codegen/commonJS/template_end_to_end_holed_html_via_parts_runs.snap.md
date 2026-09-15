@@ -44,7 +44,39 @@ html(Q) ->
 
 main() ->
     try
-        json:encode('__bp_reply'(html(#{'__bp_capture' => <<"q">>, text => <<"<p>__bp_hole_q_0</p>">>, parts => [#{kind => <<"Text">>, text => <<"<p>">>, span => #{start => 0, 'end' => 3, line => 1}}, #{kind => <<"Interp">>, code => <<"__bp_hole_q_0">>, span => #{start => 3, 'end' => 16, line => 1}}, #{kind => <<"Text">>, text => <<"</p>">>, span => #{start => 16, 'end' => 20, line => 1}}], source => #{file => <<"">>, line => 14, col => 17}, context => #{source => #{file => <<"">>, line => 14, col => 17}, text => <<"<p>__bp_hole_q_0</p>">>, multiline => true}, bindings => [#{name => <<"html">>, kind => 'Fn'}, #{name => <<"name">>, kind => 'Val'}, #{name => <<"page">>, kind => 'Val'}, #{name => <<"main">>, kind => 'Fn'}]})))
+        json:encode('__bp_reply'(html(#{
+            '__bp_capture' => <<"q">>,
+            text => <<"<p>__bp_hole_q_0</p>">>,
+            parts => [
+                #{
+                    kind => <<"Text">>,
+                    text => <<"<p>">>,
+                    span => #{start => 0, 'end' => 3, line => 1}
+                },
+                #{
+                    kind => <<"Interp">>,
+                    code => <<"__bp_hole_q_0">>,
+                    span => #{start => 3, 'end' => 16, line => 1}
+                },
+                #{
+                    kind => <<"Text">>,
+                    text => <<"</p>">>,
+                    span => #{start => 16, 'end' => 20, line => 1}
+                }
+            ],
+            source => #{file => <<"">>, line => 14, col => 17},
+            context => #{
+                source => #{file => <<"">>, line => 14, col => 17},
+                text => <<"<p>__bp_hole_q_0</p>">>,
+                multiline => true
+            },
+            bindings => [
+                #{name => <<"html">>, kind => 'Fn'},
+                #{name => <<"name">>, kind => 'Val'},
+                #{name => <<"page">>, kind => 'Val'},
+                #{name => <<"main">>, kind => 'Fn'}
+            ]
+        })))
     catch
         throw:{'__bp_template_fail', Message, Param, Span} ->
             json:encode(#{kind => <<"fail">>, message => '__bp_text'(Message), param => Param, span => '__bp_json'(Span)});

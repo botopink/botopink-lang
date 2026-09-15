@@ -15,7 +15,24 @@ six(T) ->
 
 main() ->
     try
-        json:encode('__bp_reply'(six(#{'__bp_capture' => <<"t">>, text => <<"ignored">>, parts => [#{kind => <<"Text">>, text => <<"ignored">>, span => #{start => 0, 'end' => 7, line => 1}}], source => #{file => <<"">>, line => 5, col => 13}, context => #{source => #{file => <<"">>, line => 5, col => 13}, text => <<"ignored">>, multiline => false}, bindings => [#{name => <<"six">>, kind => 'Fn'}, #{name => <<"n">>, kind => 'Val'}]})))
+        json:encode('__bp_reply'(six(#{
+            '__bp_capture' => <<"t">>,
+            text => <<"ignored">>,
+            parts => [
+                #{
+                    kind => <<"Text">>,
+                    text => <<"ignored">>,
+                    span => #{start => 0, 'end' => 7, line => 1}
+                }
+            ],
+            source => #{file => <<"">>, line => 5, col => 13},
+            context => #{
+                source => #{file => <<"">>, line => 5, col => 13},
+                text => <<"ignored">>,
+                multiline => false
+            },
+            bindings => [#{name => <<"six">>, kind => 'Fn'}, #{name => <<"n">>, kind => 'Val'}]
+        })))
     catch
         throw:{'__bp_template_fail', Message, Param, Span} ->
             json:encode(#{kind => <<"fail">>, message => '__bp_text'(Message), param => Param, span => '__bp_json'(Span)});

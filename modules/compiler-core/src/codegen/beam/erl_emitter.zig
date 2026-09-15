@@ -253,6 +253,53 @@ fn writeSeq(w: *Writer, open: []const u8, items: []const Term, close: []const u8
     try w.writeAll(close);
 }
 
+/// Widest flat map or list a term in code keeps on one line.
+const term_line_width = 80;
+
+fn flatTermLen(t: Term) Error!u64 {
+    var buf: [256]u8 = undefined;
+    var d: Writer.Discarding = .init(&buf);
+    try writeTerm(&d.writer, t);
+    return d.fullCount();
+}
+
+/// `t` as it continues a line indented to `indent`: a map or list wider than
+/// `term_line_width` puts one element per line at +1, its closer at `indent`.
+fn writeTermAt(w: *Writer, t: Term, indent: usize) Error!void {
+    switch (t) {
+        .map, .list => {},
+        else => return writeTerm(w, t),
+    }
+    if (try flatTermLen(t) <= term_line_width) return writeTerm(w, t);
+    switch (t) {
+        .map => |entries| {
+            try w.writeAll("#{\n");
+            for (entries, 0..) |e, i| {
+                if (i > 0) try w.writeAll(",\n");
+                try writeIndent(w, indent + 1);
+                try writeTerm(w, e.key);
+                try w.writeAll(" => ");
+                try writeTermAt(w, e.value, indent + 1);
+            }
+            try w.writeByte('\n');
+            try writeIndent(w, indent);
+            try w.writeByte('}');
+        },
+        .list => |items| {
+            try w.writeAll("[\n");
+            for (items, 0..) |item, i| {
+                if (i > 0) try w.writeAll(",\n");
+                try writeIndent(w, indent + 1);
+                try writeTermAt(w, item, indent + 1);
+            }
+            try w.writeByte('\n');
+            try writeIndent(w, indent);
+            try w.writeByte(']');
+        },
+        else => unreachable,
+    }
+}
+
 // ── code (erl_ast) ───────────────────────────────────────────────────────────
 
 pub fn writeIndent(w: *Writer, indent: usize) Writer.Error!void {
@@ -264,7 +311,7 @@ pub fn writeIndent(w: *Writer, indent: usize) Writer.Error!void {
 pub fn writeExpr(w: *Writer, e: Ast.Expr, indent: usize) Error!void {
     switch (e) {
         .raw => |text| try w.writeAll(text),
-        .term => |value| try writeTerm(w, value),
+        .term => |value| try writeTermAt(w, value, indent),
         .variable => |name| try w.writeAll(name),
         .atom => |name| try writeAtom(w, name),
         .lexeme_binary => |lexeme| try writeBinaryFromLexeme(w, lexeme),
@@ -694,6 +741,33 @@ test "erl_emitter: expressions" {
         "maps:get(kind, Decl) | (X + 1) | Y@1 = 'Record' | #{text := Text} | [Hit | _]",
         aw.written(),
     );
+}
+
+test "erl_emitter: wide terms in code break one element per line" {
+    var aw: Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    const w = &aw.writer;
+    const source = [_]Term.MapEntry{
+        Term.field("file", Term.str("view.bp")),
+        Term.field("line", Term.int(6)),
+    };
+    const long = Term.str("<div>\n  <p>__bp_hole_q_0</p>\n  <Page1/>\n</div>");
+    const parts = [_]Term{ long, long };
+    const capture = [_]Term.MapEntry{
+        Term.field("source", Term.mapOf(&source)),
+        Term.field("parts", Term.listOf(&parts)),
+    };
+    try writeIndent(w, 1);
+    try writeExpr(w, .{ .call = .{ .name = "html", .args = &.{Ast.Expr.t(Term.mapOf(&capture))} } }, 1);
+    try std.testing.expectEqualStrings(
+        \\    html(#{
+        \\        source => #{file => <<"view.bp">>, line => 6},
+        \\        parts => [
+        \\            <<"<div>\n  <p>__bp_hole_q_0</p>\n  <Page1/>\n</div>">>,
+        \\            <<"<div>\n  <p>__bp_hole_q_0</p>\n  <Page1/>\n</div>">>
+        \\        ]
+        \\    })
+    , aw.written());
 }
 
 test "erl_emitter: case, fun and function layouts" {

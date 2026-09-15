@@ -347,7 +347,15 @@ test "decorator module: lowered body, handle term and host glue" {
         "-export([main/0]).",
         "(maps:get(kind, Decl) =/= 'Method')",
         "fail(Decl, <<\"#[getMapping] must annotate a method\">>)",
-        "getMapping(#{kind => 'Record', name => <<\"Nope\">>, fields => [], methods => [], returnType => <<\"\">>, annotations => []}, <<\"/x\">>, undefined),",
+        \\        getMapping(#{
+        \\            kind => 'Record',
+        \\            name => <<"Nope">>,
+        \\            fields => [],
+        \\            methods => [],
+        \\            returnType => <<"">>,
+        \\            annotations => []
+        \\        }, <<"/x">>, undefined),
+        ,
         "throw:{'__bp_decorator_fail', Message, Span} ->",
     };
     for (expected) |needle| {
