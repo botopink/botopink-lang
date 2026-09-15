@@ -41,13 +41,13 @@ main() ->
 
 'execute_$0'(Input) ->
     Output = 0,
-    Output = (Input * 2),
-    Output.
+    Output@1 = (Input * 2),
+    Output@1.
 
 'execute_$1'(Input) ->
     Output = 0,
-    Output = Input,
-    Output.
+    Output@1 = Input,
+    Output@1.
 
 '_botopink_main'() ->
     COMMANDS = ["calc", "noop", "help"],

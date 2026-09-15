@@ -34,11 +34,11 @@ main() ->
     lists:foreach(fun(Cmd) ->
         case (Cmd =:= Slug) of
             true ->
-                Output = (Input * 2);
+                Output@1 = (Input * 2);
             _ -> ok
         end
     end, COMMANDS),
-    Output.
+    Output@1.
 
 'execute_$1'(Input) ->
     Slug = <<"noop">>,
@@ -46,11 +46,11 @@ main() ->
     lists:foreach(fun(Cmd) ->
         case (Cmd =:= Slug) of
             true ->
-                Output = (Input * 2);
+                Output@1 = (Input * 2);
             _ -> ok
         end
     end, COMMANDS),
-    Output.
+    Output@1.
 
 '_botopink_main'() ->
     COMMANDS = [<<"calc">>, <<"noop">>, <<"help">>],

@@ -1,27 +1,26 @@
 //! Persistent `erl` runner — one long-lived Erlang/OTP process per Zig process.
 //!
-//! Spawns `erl` once at compiler startup and keeps it alive. Comptime evaluations
-//! send `eval <path>\n` via stdin and receive one JSON line back on stdout.
-//! Subsequent evals cost ~2ms (compile:file + code:load_binary + module call).
+//! Spawns `erl` lazily on the first request and keeps it alive. Comptime
+//! evaluators write a module to disk and ask the server to run it; evals after
+//! the first cost ~2ms (compile:file + code:load_binary + module call).
 //!
-//! Protocol (Zig ↔ erl):
-//!   request:  `eval /path/to/comptime_<hash>.erl\n`
-//!   response: `[{"id":"ct_0","value":42},...]\n`
-//!   health:   `ping\n` → `pong\n`
+//! Protocol (Zig ↔ erl), length-prefixed binary frames both ways:
+//!   request:  <u32 BE len><cmd:u8><path>   cmd 1 = compile+run `.erl`, 2 = load+run `.beam`
+//!   response: <u32 BE len><payload>        `main/0`'s iodata result, or an error
+//!             payload tagged `__BP_ERL_COMPILE_ERROR__:` / `__BP_ERL_LOAD_ERROR__:` /
+//!             `__BP_ERL_RUNTIME_ERROR__:` (raise, exit, non-iodata result, timeout)
 //!
-//! The Erlang server module is compiled once at warmup and loaded into the
-//! persistent process. Template/decorator comptime modules are compiled on
-//! demand via `compile:file/2` and executed in the same `erl` instance.
+//! `main/0` runs in a monitored process with a wall-clock budget
+//! (`eval_timeout_ms`), so a runaway body is killed instead of wedging the server.
+//! `evalDetailed` surfaces the tagged payload; `eval` / `loadBeam` only succeed or fail.
 //!
-//! Thread-safety: same atomic spin-lock pattern as persistent_node.zig. Pipes
-//! are serialised; the actual BEAM execution inside erl remains single-threaded.
+//! Thread-safety: an atomic spin-lock serialises the pipes; BEAM execution inside
+//! erl stays single-request-at-a-time.
 //!
-//! Lifecycle: the child process is leaked on purpose (process-lifetime). When
-//! the parent exits, the child's stdin EOFs and it exits cleanly.
-//!
-//! Crash recovery: if `erl` exits unexpectedly, the next `eval()` detects the
-//! broken pipe, marks the singleton as broken, respawns, and retries. Stderr
-//! from the crashed process is surfaced as a compiler diagnostic.
+//! Lifecycle: the child is process-lifetime; when the parent exits, its stdin
+//! EOFs and it exits. Crash recovery: a transport failure (erl died, short or
+//! garbled frame) kills the child and marks the singleton broken; the next
+//! request respawns. The failed request itself is not retried.
 
 const std = @import("std");
 
@@ -33,9 +32,15 @@ const erl_prelude = @import("./erl_prelude.zig");
 /// Erlang server module. Compiled once at warmup, loaded into the persistent
 /// `erl`. Each `eval` request compiles and executes a comptime module via
 /// `compile:file/2` + `code:load_binary/3` + `Mod:main()`.
-const server_erl =
+const server_erl = server_header ++ std.fmt.comptimePrint("-define(EVAL_TIMEOUT_MS, {d}).\n", .{eval_timeout_ms}) ++ server_body;
+
+const server_header =
     \\-module(botopink_comptime_server).
     \\-export([start/0]).
+    \\
+;
+
+const server_body =
     \\start() ->
     \\    %% Frames are raw bytes; `unicode` (the default) would UTF-8-encode the
     \\    %% 4-byte length prefix and corrupt any payload >= 128 bytes.
@@ -72,11 +77,27 @@ const server_erl =
     \\            end
     \\    end.
     \\
+    \\%% `Mod:main()` runs in a monitored process so a runaway comptime body
+    \\%% (infinite loop, blocked receive) is killed after the timeout instead of
+    \\%% wedging the server — and with it every later eval of this compiler run.
     \\safe_call(Mod) ->
-    \\    try Mod:main()
-    \\    catch
-    \\        Class:Reason:Stack ->
-    \\            io_lib:format("__BP_ERL_RUNTIME_ERROR__:~p:~p~n~p", [Class, Reason, Stack])
+    \\    {Pid, Ref} = spawn_monitor(fun() ->
+    \\        Result = try {ok, Mod:main()}
+    \\        catch
+    \\            Class:Reason:Stack ->
+    \\                {error, io_lib:format("__BP_ERL_RUNTIME_ERROR__:~p:~p~n~p", [Class, Reason, Stack])}
+    \\        end,
+    \\        exit({bp_result, Result})
+    \\    end),
+    \\    receive
+    \\        {'DOWN', Ref, process, Pid, {bp_result, {ok, Value}}} -> Value;
+    \\        {'DOWN', Ref, process, Pid, {bp_result, {error, Message}}} -> Message;
+    \\        {'DOWN', Ref, process, Pid, Other} ->
+    \\            io_lib:format("__BP_ERL_RUNTIME_ERROR__:exit:~p", [Other])
+    \\    after ?EVAL_TIMEOUT_MS ->
+    \\        exit(Pid, kill),
+    \\        receive {'DOWN', Ref, process, Pid, _} -> ok end,
+    \\        io_lib:format("__BP_ERL_RUNTIME_ERROR__:timeout:main/0 did not return within ~pms", [?EVAL_TIMEOUT_MS])
     \\    end.
     \\
     \\read_frame() ->
@@ -96,14 +117,20 @@ const server_erl =
     \\        _ -> eof
     \\    end.
     \\
-    \\write_frame(Data) when is_binary(Data) ->
-    \\    Len = byte_size(Data),
-    \\    file:write(standard_io, <<Len:32/unsigned-big-integer, Data/binary>>);
-    \\write_frame(Data) when is_list(Data) ->
-    \\    B = iolist_to_binary(Data),
+    \\%% Every response is exactly one frame. A `main/0` result that is not iodata
+    \\%% becomes a runtime error frame rather than crashing the server.
+    \\write_frame(Data) ->
+    \\    B = try iolist_to_binary(Data)
+    \\        catch _:_ ->
+    \\            iolist_to_binary(io_lib:format("__BP_ERL_RUNTIME_ERROR__:bad_result:~p", [Data]))
+    \\        end,
     \\    Len = byte_size(B),
     \\    file:write(standard_io, <<Len:32/unsigned-big-integer, B/binary>>).
 ;
+
+/// Per-eval wall-clock budget enforced by the server (`safe_call`).
+const eval_timeout_ms = 10_000;
+
 
 // ── singleton state ───────────────────────────────────────────────────────────
 
@@ -166,12 +193,21 @@ fn ensureSpawned(io: Io, allocator: std.mem.Allocator) !void {
                 return error.PersistentErlCompileError;
             }
 
-            // Spawn erl with the server module on its code path.
+            // Spawn erl with the server module on its code path. `halt()` after
+            // `start()` returns (stdin EOF — the parent exited) ends the VM;
+            // without it `-noshell` keeps an orphan `beam.smp` alive forever.
+            // stderr goes to a log file, never inherited: an orphan holding the
+            // parent's stderr open blocks whoever waits for its EOF (the
+            // `zig build test` runner reports "test runner failed to respond").
+            const log_path = try std.fs.path.join(allocator, &.{ server_dir, "erl.stderr.log" });
+            defer allocator.free(log_path);
+            const stderr_log = try std.Io.Dir.cwd().createFile(io, log_path, .{});
+            defer stderr_log.close(io);
             const child = try std.process.spawn(io, .{
-                .argv = &.{ "erl", "-noshell", "-pa", server_dir, "-eval", "botopink_comptime_server:start()" },
+                .argv = &.{ "erl", "-noshell", "-pa", server_dir, "-eval", "botopink_comptime_server:start(), halt()." },
                 .stdin = .pipe,
                 .stdout = .pipe,
-                .stderr = .inherit,
+                .stderr = .{ .file = stderr_log },
             });
             state = .{
                 .child = child,
@@ -185,15 +221,27 @@ fn ensureSpawned(io: Io, allocator: std.mem.Allocator) !void {
     }
 }
 
+/// Fill `buf` completely from the child's stdout. `readStreaming` may return
+/// short reads (a large compile-error payload arrives in several chunks);
+/// stopping early would desynchronise the frame protocol for every later eval.
+fn readExact(io: Io, buf: []u8) !void {
+    var filled: usize = 0;
+    while (filled < buf.len) {
+        const n = try state.stdout.readStreaming(io, &.{buf[filled..]});
+        if (n == 0) return error.PersistentErlEof;
+        filled += n;
+    }
+}
+
 /// Read a length-prefixed binary frame from stdout: <4-byte BE len><payload>.
 /// Returns the payload bytes (without length prefix).
 fn readFrame(io: Io, allocator: std.mem.Allocator) ![]u8 {
     var len_buf: [4]u8 = undefined;
-    _ = try state.stdout.readStreaming(io, &.{&len_buf});
+    try readExact(io, &len_buf);
     const len = std.mem.readInt(u32, &len_buf, .big);
     const payload = try allocator.alloc(u8, len);
     errdefer allocator.free(payload);
-    _ = try state.stdout.readStreaming(io, &.{payload});
+    try readExact(io, payload);
     return payload;
 }
 
@@ -207,49 +255,93 @@ fn sendFrame(io: Io, cmd: u8, path: []const u8) !void {
     try state.stdin.writeStreamingAll(io, path);
 }
 
-pub fn loadBeam(allocator: std.mem.Allocator, io: Io, beam_path: []const u8) ![]u8 {
-    try ensureSpawned(io, allocator);
-    lock();
-    defer unlock();
+/// Outcome of one request. Every variant's slice is allocated from the
+/// caller's allocator and owned by the caller.
+pub const Response = union(enum) {
+    /// `main/0`'s result.
+    ok: []u8,
+    /// `compile:file/2` rejected the module (`~p` of `{Errors, Warnings}`).
+    compile_error: []u8,
+    /// `code:load_file/1` failed (`loadBeam` only).
+    load_error: []u8,
+    /// `main/0` raised, exited, returned non-iodata, or timed out.
+    runtime_error: []u8,
 
-    try sendFrame(io, 2, beam_path); // cmd=2: load .beam file
-    const payload = try readFrame(io, allocator);
-    errdefer allocator.free(payload);
-
-    if (std.mem.startsWith(u8, payload, "__BP_ERL_LOAD_ERROR__:") or
-        std.mem.startsWith(u8, payload, "__BP_ERL_RUNTIME_ERROR__:"))
-    {
-        allocator.free(payload);
-        return error.PersistentErlCompileError;
+    pub fn payload(self: Response) []u8 {
+        return switch (self) {
+            inline else => |p| p,
+        };
     }
-    return payload;
-}
+};
 
-/// Evaluate a comptime module at `erl_path` (an `.erl` source file) in the
-/// persistent erl process. Returns the captured stdout (one JSON line) allocated
-/// from `allocator` and owned by the caller.
-///
-/// On the first call, lazy-spawns the erl process and compiles the server module.
-pub fn eval(allocator: std.mem.Allocator, io: Io, erl_path: []const u8) ![]u8 {
+const compile_error_tag = "__BP_ERL_COMPILE_ERROR__:";
+const load_error_tag = "__BP_ERL_LOAD_ERROR__:";
+const runtime_error_tag = "__BP_ERL_RUNTIME_ERROR__:";
+
+/// Send one command and classify the reply. A transport failure (erl died,
+/// short/garbled frame) kills the child and marks the singleton broken so the
+/// next request respawns a fresh process instead of reading a desynced pipe.
+fn request(allocator: std.mem.Allocator, io: Io, cmd: u8, path: []const u8) !Response {
     try ensureSpawned(io, allocator);
     lock();
     defer unlock();
 
-    try sendFrame(io, 1, erl_path); // cmd=1: eval (compile+execute .erl file)
-
-    const payload = readFrame(io, allocator) catch {
+    const raw = blk: {
+        sendFrame(io, cmd, path) catch break :blk null;
+        break :blk readFrame(io, allocator) catch null;
+    } orelse {
+        state.child.kill(io);
         init_state.store(3, .release);
         return error.PersistentErlBroken;
     };
-    errdefer allocator.free(payload);
+    errdefer allocator.free(raw);
 
-    if (std.mem.startsWith(u8, payload, "__BP_ERL_COMPILE_ERROR__:") or
-        std.mem.startsWith(u8, payload, "__BP_ERL_RUNTIME_ERROR__:"))
-    {
-        allocator.free(payload);
-        return error.PersistentErlCompileError;
+    const tags = [_]struct { []const u8, std.meta.Tag(Response) }{
+        .{ compile_error_tag, .compile_error },
+        .{ load_error_tag, .load_error },
+        .{ runtime_error_tag, .runtime_error },
+    };
+    for (tags) |t| {
+        if (!std.mem.startsWith(u8, raw, t[0])) continue;
+        const message = try allocator.dupe(u8, raw[t[0].len..]);
+        allocator.free(raw);
+        return switch (t[1]) {
+            .compile_error => .{ .compile_error = message },
+            .load_error => .{ .load_error = message },
+            .runtime_error => .{ .runtime_error = message },
+            .ok => unreachable,
+        };
     }
-    return payload;
+    return .{ .ok = raw };
+}
+
+/// Load and run a pre-compiled `.beam` (cmd=2). Returns `main/0`'s result, or
+/// `error.PersistentErlCompileError` on a load/runtime failure.
+pub fn loadBeam(allocator: std.mem.Allocator, io: Io, beam_path: []const u8) ![]u8 {
+    return okOrError(allocator, try request(allocator, io, 2, beam_path));
+}
+
+/// Compile and run the comptime module at `erl_path` (cmd=1), keeping the
+/// failure detail: the compiler diagnostics, or the runtime class/reason/stack.
+/// On the first call, lazy-spawns the erl process and compiles the server module.
+pub fn evalDetailed(allocator: std.mem.Allocator, io: Io, erl_path: []const u8) !Response {
+    return request(allocator, io, 1, erl_path);
+}
+
+/// `evalDetailed` for callers that only need success: returns `main/0`'s result
+/// or `error.PersistentErlCompileError` (detail discarded).
+pub fn eval(allocator: std.mem.Allocator, io: Io, erl_path: []const u8) ![]u8 {
+    return okOrError(allocator, try evalDetailed(allocator, io, erl_path));
+}
+
+fn okOrError(allocator: std.mem.Allocator, response: Response) ![]u8 {
+    switch (response) {
+        .ok => |p| return p,
+        else => {
+            allocator.free(response.payload());
+            return error.PersistentErlCompileError;
+        },
+    }
 }
 
 /// Spawn the persistent erl process and verify it responds to ping.
@@ -273,11 +365,3 @@ pub const PersistentErlError = error{
     NoStdout,
     OutOfMemory,
 };
-
-// ── Note ──────────────────────────────────────────────────────────────────────
-//
-// Tests are deferred to Step 3 (integration with beam.zig). The persistent
-// erl singleton pattern is validated end-to-end through the comptime eval
-// snapshot tests. Unit tests for warm/eval round-trip require erl on PATH
-// and are incompatible with Zig 0.16's parallel test runner when spawning
-// child processes that inherit testing.io.

@@ -425,8 +425,9 @@ pub const ComptimeModule = struct {
 };
 
 /// Emit `program` as a comptime-evaluated Erlang module. Bodies are untyped (no
-/// inference ran over them), so `+` dispatches at runtime on its operands
-/// (`'__bp_add'/2`: binary concat for strings, arithmetic otherwise).
+/// inference ran over them), so type-directed lowerings dispatch at runtime:
+/// `+` → `'__bp_add'/2` (binary concat for strings, arithmetic otherwise) and
+/// `.len`/`.length` → `'__bp_len'/2` (list/string length, else the map field).
 pub fn emitComptimeModule(
     alloc: std.mem.Allocator,
     module_name: []const u8,
@@ -473,7 +474,7 @@ fn emitErlangModule(
 
     var em = Emitter.init(alloc, &aw.writer, comptime_vals, rewrites);
     em.instance_lowerings = instance_lowerings;
-    em.dynamic_add = comptime_module != null;
+    em.untyped = comptime_module != null;
     em.test_mode = test_mode;
     em.module_name = module_name;
     em.cross = cross;
@@ -499,6 +500,8 @@ fn emitErlangModule(
     try em.collectStdImports(program);
     defer em.std_imports.deinit();
     defer em.locals.deinit();
+    defer em.var_current.deinit();
+    defer em.var_next.deinit();
     defer em.top_vals.deinit();
     try em.collectInterfaces(program);
     defer {
@@ -734,6 +737,10 @@ fn emitErlangModule(
             \\
             \\'__bp_add'(A, B) when is_binary(A), is_binary(B) -> <<A/binary, B/binary>>;
             \\'__bp_add'(A, B) -> A + B.
+            \\
+            \\'__bp_len'(X, _) when is_list(X) -> length(X);
+            \\'__bp_len'(X, _) when is_binary(X) -> string:length(X);
+            \\'__bp_len'(X, Field) -> maps:get(Field, X).
             \\
             \\
         );
@@ -972,9 +979,10 @@ const Emitter = struct {
     cv: std.StringHashMap([]const u8),
     indent: usize = 0,
     try_seq: usize = 0,
-    /// Comptime modules lower `+` to the runtime-dispatched `'__bp_add'/2`
-    /// (see `emitComptimeModule`) — their bodies carry no inferred types.
-    dynamic_add: bool = false,
+    /// Comptime modules (see `emitComptimeModule`) carry no inferred types, so
+    /// type-directed lowerings dispatch at runtime instead: `+` → `'__bp_add'/2`
+    /// (binary concat or arithmetic), `.len`/`.length` → `'__bp_len'/2`.
+    untyped: bool = false,
     alloc: std.mem.Allocator,
     /// Static extension dispatch (F6): call-site loc → activated extension symbol.
     /// At these sites `recv.m(args)` lowers to the bare local function `m(Recv, args)`.
@@ -1033,6 +1041,15 @@ const Emitter = struct {
     /// a flat per-function set is exact. A no-receiver call whose callee is a
     /// local lowers to a fun application (`F(args)`), not a bare function call.
     locals: std.StringHashMap(void),
+    /// Single-assignment versioning. Erlang variables bind once, so a botopink
+    /// name rebound in the same function (`count += 1`, `msg = msg + x`) gets a
+    /// fresh variable per binding: `Count`, `Count@1`, `Count@2`. `var_current`
+    /// is the version reads resolve to; `var_next` the last version handed out
+    /// (never reused, so a version bound in one `case` arm can't collide with a
+    /// later one). Both reset per function. `@` keeps versions disjoint from
+    /// botopink identifiers.
+    var_current: std.StringHashMap(u32),
+    var_next: std.StringHashMap(u32),
     /// Module-level `val` names emitted as 0-arity functions (library / test
     /// mode, no entrypoint wrapper). A bare reference to one is NOT a variable —
     /// it lowers to the call `name()`. Empty when an entrypoint wrapper binds the
@@ -1088,6 +1105,8 @@ const Emitter = struct {
             .enum_variants = std.StringHashMap(void).init(alloc),
             .imported_types = std.StringHashMap([]const u8).init(alloc),
             .locals = std.StringHashMap(void).init(alloc),
+            .var_current = std.StringHashMap(u32).init(alloc),
+            .var_next = std.StringHashMap(u32).init(alloc),
             .top_vals = std.StringHashMap(void).init(alloc),
             .interface_assoc = std.StringHashMap(void).init(alloc),
             .prim_erlang_dispatch = std.StringHashMap(PrimErlangCall).init(alloc),
@@ -1684,6 +1703,61 @@ const Emitter = struct {
     /// Mark `name` as a function-scoped local (param / `val` / lambda param).
     fn addLocal(this: *Emitter, name: []const u8) void {
         this.locals.put(name, {}) catch {};
+        // A fresh binding (param, lambda param, first `val`) shadows any
+        // rebound version of the same name.
+        _ = this.var_current.remove(name);
+    }
+
+    fn resetLocals(this: *Emitter) void {
+        this.locals.clearRetainingCapacity();
+        this.var_current.clearRetainingCapacity();
+        this.var_next.clearRetainingCapacity();
+    }
+
+    /// Heap-allocated Erlang variable for a read of `name` at its current
+    /// version (`Count` or `Count@2`). Caller owns the result.
+    fn varRef(this: *Emitter, name: []const u8) ![]u8 {
+        const version = this.var_current.get(name) orelse 0;
+        if (version == 0) return erlangVar(this.alloc, name);
+        const base = try erlangVar(this.alloc, name);
+        defer this.alloc.free(base);
+        return std.fmt.allocPrint(this.alloc, "{s}@{d}", .{ base, version });
+    }
+
+    /// `Name = Value` for `val`/`var` declarations and `=`/`+=` assignments.
+    /// The first binding of a name in the function keeps the bare variable; any
+    /// later binding — assignment or a shadowing `val i = i - 1` — binds the next
+    /// version, with `value` (and the `+=` left operand) reading the previous one.
+    fn emitBind(this: *Emitter, name: []const u8, op: enum { bind, assign, plus_assign }, value: ast.Expr) !void {
+        const rebind = this.locals.contains(name);
+        if (!rebind) {
+            const vname = try erlangVar(this.alloc, name);
+            defer this.alloc.free(vname);
+            this.addLocal(name);
+            try this.fmt("{s} = ", .{vname});
+            try this.emitExpr(value);
+            return;
+        }
+        const version = (this.var_next.get(name) orelse 0) + 1;
+        const base = try erlangVar(this.alloc, name);
+        defer this.alloc.free(base);
+        try this.fmt("{s}@{d} = ", .{ base, version });
+        if (op == .plus_assign) {
+            const old = try this.varRef(name);
+            defer this.alloc.free(old);
+            if (this.untyped) {
+                try this.fmt("'__bp_add'({s}, ", .{old});
+                try this.emitExpr(value);
+                try this.w(")");
+            } else {
+                try this.fmt("{s} + ", .{old});
+                try this.emitExpr(value);
+            }
+        } else {
+            try this.emitExpr(value);
+        }
+        try this.var_next.put(name, version);
+        try this.var_current.put(name, version);
     }
 
     /// Indexes record/struct field orders + enum names for constructor-call,
@@ -1872,7 +1946,7 @@ const Emitter = struct {
             try this.fmt("%% #[@future] / #[@asyncGenerator] — eager lowering\n", .{});
         }
         // Fresh local scope for this function (erlang vars are function-scoped).
-        this.locals.clearRetainingCapacity();
+        this.resetLocals();
         var fn_buf: [256]u8 = undefined;
         try this.w(try fnAtom(f.name, &fn_buf));
         try this.w("(");
@@ -1942,6 +2016,7 @@ const Emitter = struct {
     /// Emit a `test { … }` body as `'__bp_test_<idx>'() -> Body.`
     /// Same body emission as `emitFn` — no params, exported via the runner.
     fn emitTestFn(this: *Emitter, t: ast.TestDecl, idx: usize) !void {
+        this.resetLocals();
         try this.fmt("'__bp_test_{d}'() ->\n", .{idx});
         const saved = this.indent;
         this.indent = 1;
@@ -2374,24 +2449,13 @@ const Emitter = struct {
                 else => try this.emitExpr(e),
             },
             .binding => |b| switch (b.kind) {
-                .localBind => |lb| {
-                    const vname = try erlangVar(this.alloc, lb.name);
-                    defer this.alloc.free(vname);
-                    this.addLocal(lb.name);
-                    try this.fmt("{s} = ", .{vname});
-                    try this.emitExpr(lb.value.*);
-                },
+                .localBind => |lb| try this.emitBind(lb.name, .bind, lb.value.*),
                 .assign => |a| {
                     switch (a.target) {
-                        .name => |name| {
-                            const vname = try erlangVar(this.alloc, name);
-                            defer this.alloc.free(vname);
-                            switch (a.op) {
-                                .assign => try this.fmt("{s} = ", .{vname}),
-                                .plusAssign => try this.fmt("{s} = {s} + ", .{ vname, vname }),
-                            }
-                            try this.emitExpr(a.value.*);
-                        },
+                        .name => |name| try this.emitBind(name, switch (a.op) {
+                            .assign => .assign,
+                            .plusAssign => .plus_assign,
+                        }, a.value.*),
                         .fieldAccess => |*fa| {
                             _ = fa;
                             try this.w("%% field assignment is not directly supported in Erlang");
@@ -2526,7 +2590,7 @@ const Emitter = struct {
                         var fb: [256]u8 = undefined;
                         try this.fmt("{s}()", .{try fnAtom(n, &fb)});
                     } else {
-                        const vname = try erlangVar(this.alloc, n);
+                        const vname = try this.varRef(n);
                         defer this.alloc.free(vname);
                         try this.w(vname);
                     }
@@ -2571,6 +2635,14 @@ const Emitter = struct {
                         },
                         .record => {},
                     };
+                    if (this.untyped and !ia.optional and
+                        (std.mem.eql(u8, ia.member, "len") or std.mem.eql(u8, ia.member, "length")))
+                    {
+                        try this.w("'__bp_len'(");
+                        try this.emitExpr(ia.receiver.*);
+                        try this.fmt(", {s})", .{ia.member});
+                        return;
+                    }
                     // Record/struct field access — records are maps at runtime.
                     // Optional chaining (`a?.b`) guards on `undefined`.
                     if (ia.optional) {
@@ -2591,7 +2663,7 @@ const Emitter = struct {
             },
 
             .binaryOp => |bin| switch (bin.op) {
-                .add => if (this.dynamic_add) {
+                .add => if (this.untyped) {
                     try this.w("'__bp_add'(");
                     try this.emitExpr(bin.lhs.*);
                     try this.w(", ");
@@ -3196,24 +3268,13 @@ const Emitter = struct {
             },
 
             .binding => |b| switch (b.kind) {
-                .localBind => |lb| {
-                    const vname = try erlangVar(this.alloc, lb.name);
-                    defer this.alloc.free(vname);
-                    this.addLocal(lb.name);
-                    try this.fmt("{s} = ", .{vname});
-                    try this.emitExpr(lb.value.*);
-                },
+                .localBind => |lb| try this.emitBind(lb.name, .bind, lb.value.*),
                 .assign => |a| {
                     switch (a.target) {
-                        .name => |name| {
-                            const vname = try erlangVar(this.alloc, name);
-                            defer this.alloc.free(vname);
-                            switch (a.op) {
-                                .assign => try this.fmt("{s} = ", .{vname}),
-                                .plusAssign => try this.fmt("{s} = {s} + ", .{ vname, vname }),
-                            }
-                            try this.emitExpr(a.value.*);
-                        },
+                        .name => |name| try this.emitBind(name, switch (a.op) {
+                            .assign => .assign,
+                            .plusAssign => .plus_assign,
+                        }, a.value.*),
                         .fieldAccess => |*fa| {
                             // Erlang records don't support mutation like this; emit a comment
                             try this.fmt("%% {s}.{s} = ...", .{ "self", fa.field });

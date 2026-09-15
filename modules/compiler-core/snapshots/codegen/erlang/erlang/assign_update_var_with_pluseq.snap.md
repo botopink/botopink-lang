@@ -14,8 +14,8 @@ fn main() {
 
 main() ->
     Count = 0,
-    Count = Count + 1,
-    io:format("~p~n", [Count]).
+    Count@1 = Count + 1,
+    io:format("~p~n", [Count@1]).
 
 '_botopink_main'() ->
     main().
@@ -26,4 +26,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+1
 ```
