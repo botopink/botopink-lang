@@ -125,17 +125,21 @@ codegen/
   reset per fn; versions are never reused so separate `case` arms can't
   collide). A version bound inside a `case`/`fun` and read after it is left as an
   Erlang compile error (unsafe/unbound) rather than silently wrong.
-- **Mutation through branches and loops** (`emitMutatingStmt`): a statement-level
+- **Bodies are `erl_ast` nodes**: `emitBodyFrom` builds an `Ast.Body` with
+  `bodyNode(b, body, start, indent)` and renders it with `erl_emitter.writeBody`.
+  Statements (`stmtExpr`: `return`, `bindExpr` for `val`/`=`/`+=` with versioning,
+  destructuring, comments) and the body-level lowerings — `propagateTryExpr`,
+  `earlyReturnIfExpr`, `foldFusionExpr`, `mutatingExpr` — are nodes; expressions
+  not yet modelled enter as `raw` via `exprAsRaw` (captured at the indentation the
+  node is rendered at).
+- **Mutation through branches and loops** (`mutatingExpr`): a statement-level
   `if` / `loop (xs) { x -> … }` / `xs.forEach({ x -> … })` that reassigns variables
   bound before it (looking through nested `if`/`loop`/`forEach`) returns the new
   values instead of binding them inside a `case` arm or `fun`:
   `Acc@1 = case C of true -> …, Acc@2; _ -> Acc end` and
   `Acc@3 = lists:foldl(fun(X, Acc@1) -> …, Acc@2 end, Acc, Xs)`; several
   variables travel as a tuple. Arms are rendered into a side buffer first (the
-  group's fresh versions are known only afterwards); the construct is built as
-  `beam/erl_ast.zig` nodes (`match` + `case_` / `lists:foldl` + `fun`) rendered by
-  `erl_emitter.writeExpr`, with the arm bodies still legacy-emitted as `raw`
-  statements. Arms ending in `return`,
+  group's fresh versions are known only afterwards). Arms ending in `return`,
   indexed/`await`/yielding loops keep the plain lowering; the older
   `var acc = …; xs.forEach(…)` fold fusion still takes precedence.
 - **Comptime modules:** `emitComptimeModule(alloc, name, program, .{ host_enums,

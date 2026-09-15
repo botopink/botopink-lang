@@ -32,7 +32,7 @@ beam/
 
 - `../erlang.zig` — `atomName`/`fnAtom` = `atomText`, `erlangVar` = `varName`, `erlangModule` = `moduleName`, string literals via `writeBinaryFromLexeme`.
 - `../beam_asm.zig` — `atomName` = `atomText`; string literals (`emitStringLiteral`), `{literal, #{}}`, `put_map_assoc` keys and atom `move`s via `beam_emitter`.
-- `../erlang.zig` — `emitComptimeModule` helper functions (`comptime_helper_forms`) and host forms; mutation lowering (`emitMutatingIf`/`emitMutatingFold`) builds `match`/`case_`/`fun` nodes (bodies still legacy-emitted `raw`).
+- `../erlang.zig` — `emitComptimeModule` helper functions (`comptime_helper_forms`) and host forms; function/lambda/branch bodies (`bodyNode`: statements, bindings, `try` propagation, early return, fold fusion, mutation lowering) are nodes; expressions not yet modelled are `raw`.
 - `../../comptime/decorator_eval.zig`, `../../comptime/template_eval.zig` — host glue and `main/0` as `Form`s built with `Builder`; the `@Decl` handle and captures are `Term`s.
 
 ## Rules

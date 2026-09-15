@@ -1834,40 +1834,43 @@ const Emitter = struct {
         return std.fmt.allocPrint(this.alloc, "{s}@{d}", .{ base, version });
     }
 
+    const BindOp = enum { bind, assign, plus_assign };
+
     /// `Name = Value` for `val`/`var` declarations and `=`/`+=` assignments.
     /// The first binding of a name in the function keeps the bare variable; any
     /// later binding — assignment or a shadowing `val i = i - 1` — binds the next
     /// version, with `value` (and the `+=` left operand) reading the previous one.
-    fn emitBind(this: *Emitter, name: []const u8, op: enum { bind, assign, plus_assign }, value: ast.Expr) !void {
-        const rebind = this.locals.contains(name);
-        if (!rebind) {
-            const vname = try erlangVar(this.alloc, name);
-            defer this.alloc.free(vname);
+    fn bindExpr(this: *Emitter, b: Ast.Builder, name: []const u8, op: BindOp, value: ast.Expr) anyerror!Ast.Expr {
+        if (!this.locals.contains(name)) {
+            const vname = Ast.Expr.v(try this.arenaVar(b, name));
             this.addLocal(name);
-            try this.fmt("{s} = ", .{vname});
-            try this.emitExpr(value);
-            return;
+            return b.match(vname, try this.exprAsRaw(b, value));
         }
         const version = (this.var_next.get(name) orelse 0) + 1;
         const base = try erlangVar(this.alloc, name);
         defer this.alloc.free(base);
-        try this.fmt("{s}@{d} = ", .{ base, version });
-        if (op == .plus_assign) {
+        const target = Ast.Expr.v(try std.fmt.allocPrint(b.arena, "{s}@{d}", .{ base, version }));
+        const rhs: Ast.Expr = if (op == .plus_assign) blk: {
             const old = try this.varRef(name);
             defer this.alloc.free(old);
-            if (this.untyped) {
-                try this.fmt("'__bp_add'({s}, ", .{old});
-                try this.emitExpr(value);
-                try this.w(")");
-            } else {
-                try this.fmt("{s} + ", .{old});
-                try this.emitExpr(value);
-            }
-        } else {
-            try this.emitExpr(value);
-        }
+            const old_var = Ast.Expr.v(try b.arena.dupe(u8, old));
+            const addend = try this.exprAsRaw(b, value);
+            break :blk if (this.untyped)
+                try b.call("__bp_add", &.{ old_var, addend })
+            else
+                .{ .binop = .{ .op = "+", .lhs = try b.ptr(old_var), .rhs = try b.ptr(addend), .parens = false } };
+        } else try this.exprAsRaw(b, value);
         try this.var_next.put(name, version);
         try this.var_current.put(name, version);
+        return b.match(target, rhs);
+    }
+
+    /// Render `bindExpr` in place (binding used as an expression).
+    fn emitBind(this: *Emitter, name: []const u8, op: BindOp, value: ast.Expr) !void {
+        var arena_state = std.heap.ArenaAllocator.init(this.alloc);
+        defer arena_state.deinit();
+        const b: Ast.Builder = .{ .arena = arena_state.allocator() };
+        try erlEmitter.writeExpr(this.out, try this.bindExpr(b, name, op, value), this.indent);
     }
 
     /// Indexes record/struct field orders + enum names for constructor-call,
@@ -2158,23 +2161,39 @@ const Emitter = struct {
         try this.emitBodyFrom(body, 0);
     }
 
-    /// Emit statements `body[start..]`. A `try` without `catch` short-circuits:
-    /// it lowers to `case Inner of {ok, V} -> <rest>; {error, E} -> {error, E} end`,
-    /// nesting every following statement inside the Ok arm (Erlang has no early
-    /// return), so the Error variant propagates up as the function's value.
+    /// Emit statements `body[start..]` at the current indentation: build the
+    /// `erl_ast` body (`bodyNode`) and render it.
     fn emitBodyFrom(this: *Emitter, body: []const ast.Stmt, start: usize) anyerror!void {
-        // The body's tail (last value) and comma-joining key off the last *real*
-        // statement, so trailing comments neither become the tail nor strand a
-        // dangling `,` before the closing `end`/`.`.
+        var arena_state = std.heap.ArenaAllocator.init(this.alloc);
+        defer arena_state.deinit();
+        const b: Ast.Builder = .{ .arena = arena_state.allocator() };
+        try erlEmitter.writeBody(this.out, try this.bodyNode(b, body, start, this.indent), this.indent);
+    }
+
+    /// The statements `body[start..]` as an `erl_ast` body rendered at `indent`.
+    ///
+    /// A `try` without `catch` short-circuits: it lowers to
+    /// `case Inner of {ok, V} -> <rest>; {error, E} -> {error, E} end`, nesting
+    /// every following statement inside the Ok arm (Erlang has no early return),
+    /// so the Error variant propagates up as the function's value. An `if` whose
+    /// then-branch ends in `return` nests the rest in its false arm the same way.
+    fn bodyNode(this: *Emitter, b: Ast.Builder, body: []const ast.Stmt, start: usize, indent: usize) anyerror!Ast.Body {
+        const saved_indent = this.indent;
+        this.indent = indent;
+        defer this.indent = saved_indent;
+
+        var stmts: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
+        // The body's tail (last value) keys off the last *real* statement, so
+        // trailing comments never become the tail.
         const last_real = lastRealStmt(body);
         var i = start;
         while (i < body.len) : (i += 1) {
             const stmt = body[i];
             const is_last = if (last_real) |lr| (i == lr) else (i == body.len - 1);
 
-            // Detect `[val name =] try inner` (no catch) at this position.
+            // `[val name =] try inner` (no catch) at this position.
             const prop: ?struct { inner: ast.Expr, head: TryHead } = switch (stmt.expr) {
-                .binding => |b| switch (b.kind) {
+                .binding => |bind| switch (bind.kind) {
                     .localBind => |lb| if (propagateTryInner(lb.value.*)) |inner|
                         .{ .inner = inner, .head = .{ .name = lb.name } }
                     else
@@ -2198,22 +2217,16 @@ const Emitter = struct {
                 },
                 else => null,
             };
-
             if (prop) |p| {
-                try this.writeIndent();
-                try this.emitPropagateTry(body, i, p.inner, p.head);
-                return; // remaining statements are nested inside the Ok arm
+                try stmts.append(b.arena, .{ .expr = try this.propagateTryExpr(b, body, i, p.inner, p.head) });
+                break; // remaining statements are nested inside the Ok arm
             }
 
-            // `if` whose then-branch ends in `return` and that has following
-            // statements: Erlang has no early return, so nest the rest of the
-            // body inside the false arm (mirrors the propagate-try nesting).
             if (!is_last and stmt.expr == .branch and stmt.expr.branch.kind == .if_) {
                 const if_node = stmt.expr.branch.kind.if_;
                 if (if_node.binding == null and if_node.else_ == null and bodyEndsWithReturn(if_node.then_)) {
-                    try this.writeIndent();
-                    try this.emitEarlyReturnIf(body, i, if_node);
-                    return; // remaining statements are nested inside the false arm
+                    try stmts.append(b.arena, .{ .expr = try this.earlyReturnIfExpr(b, body, i, if_node) });
+                    break; // remaining statements are nested inside the false arm
                 }
             }
 
@@ -2222,49 +2235,21 @@ const Emitter = struct {
             // captured var). Consumes both statements.
             if (!is_last) {
                 if (this.detectFoldFusion(body, i)) |ff| {
-                    try this.writeIndent();
-                    try this.emitFoldFusion(ff);
-                    if (i + 1 != body.len - 1) {
-                        const real_follows = if (last_real) |lr| (i + 1 < lr) else false;
-                        try this.w(if (real_follows) ",\n" else "\n");
-                    }
+                    try stmts.append(b.arena, .{ .expr = try this.foldFusionExpr(b, ff) });
                     i += 1; // also consume the forEach statement
                     continue;
                 }
             }
 
-            try this.writeIndent();
-            if (!try this.emitMutatingStmt(stmt)) try this.emitBodyStmt(stmt, is_last);
-            // A real statement takes a trailing `,` only when another real
-            // statement follows; comments (and the tail) get a bare newline.
-            if (i != body.len - 1) {
-                const real_follows = if (last_real) |lr| (!isCommentStmt(stmt) and i < lr) else false;
-                try this.w(if (real_follows) ",\n" else "\n");
+            if (commentText(stmt)) |c| {
+                try stmts.append(b.arena, .{ .comment = try std.fmt.allocPrint(b.arena, "{s} {s}", .{ c.prefix, c.text }) });
+            } else if (try this.mutatingExpr(b, stmt)) |mutation| {
+                try stmts.append(b.arena, .{ .expr = mutation });
+            } else {
+                try stmts.append(b.arena, .{ .expr = try this.stmtExpr(b, stmt) });
             }
         }
-
-        // Erlang has no empty body: a `fun`, clause or function must end in an
-        // expression (`fun(X) -> end` is a syntax error). When `body[start..]`
-        // contributes no real statement — empty, or comments only — the tail
-        // value is `undefined` (mirrors how an absent value lowers elsewhere).
-        const has_real = blk: {
-            var k = start;
-            while (k < body.len) : (k += 1) {
-                if (!isCommentStmt(body[k])) break :blk true;
-            }
-            break :blk false;
-        };
-        if (!has_real) {
-            if (start < body.len) try this.w("\n"); // separate from emitted comments
-            try this.writeIndent();
-            try this.w("undefined");
-        } else if (body.len > start and isCommentStmt(body[body.len - 1])) {
-            // A trailing comment ends the body on a `%`-line; the caller's
-            // terminator (`.` for a clause, `end` for a fun) would be swallowed
-            // by it. Break to a fresh indented line so it lands cleanly.
-            try this.w("\n");
-            try this.writeIndent();
-        }
+        return .{ .stmts = stmts.items };
     }
 
     /// Match `var acc = init;` at `body[i]` immediately followed by
@@ -2322,62 +2307,43 @@ const Emitter = struct {
         };
     }
 
-    /// Emit `Acc = lists:foldl(fun(P, Acc) -> <body> end, Init, Recv)`. The
+    /// `Acc = lists:foldl(fun(P, Acc) -> <body> end, Init, Recv)`. The
     /// accumulator reuses its source name as the fun's second parameter so the
     /// body's reads of `acc` resolve to the per-iteration value.
-    fn emitFoldFusion(this: *Emitter, ff: FoldFusion) anyerror!void {
-        const acc_var = try erlangVar(this.alloc, ff.acc_name);
-        defer this.alloc.free(acc_var);
-        const p_var = try erlangVar(this.alloc, ff.param);
-        defer this.alloc.free(p_var);
+    fn foldFusionExpr(this: *Emitter, b: Ast.Builder, ff: FoldFusion) anyerror!Ast.Expr {
+        const acc_var = Ast.Expr.v(try this.arenaVar(b, ff.acc_name));
+        const p_var = Ast.Expr.v(try this.arenaVar(b, ff.param));
         this.addLocal(ff.acc_name);
         this.addLocal(ff.param);
-        try this.fmt("{s} = lists:foldl(fun({s}, {s}) ->\n", .{ acc_var, p_var, acc_var });
         const saved = this.indent;
         this.indent = saved + 1;
-        try this.writeIndent();
-        try this.emitFoldBody(ff.body_kind, acc_var);
+        const fold_body = try this.foldBodyExpr(b, ff.body_kind, acc_var);
         this.indent = saved;
-        try this.w("\n");
-        try this.writeIndent();
-        try this.w("end, ");
-        try this.emitExpr(ff.init.*);
-        try this.w(", ");
-        try this.emitExpr(ff.recv.*);
-        try this.w(")");
+        const fold = try b.remote("lists", "foldl", &.{
+            .{ .fun = .{ .params = try b.exprs(&.{ p_var, acc_var }), .body = try b.body(&.{fold_body}) } },
+            try this.exprAsRaw(b, ff.init.*),
+            try this.exprAsRaw(b, ff.recv.*),
+        });
+        return b.match(acc_var, fold);
     }
 
-    fn emitFoldBody(this: *Emitter, bk: FoldBodyKind, acc_var: []const u8) anyerror!void {
-        switch (bk) {
-            .assign => |e| try this.emitExpr(e.*),
-            .plus_assign => |e| {
-                try this.fmt("({s} + ", .{acc_var});
-                try this.emitExpr(e.*);
-                try this.w(")");
-            },
-            .push => |e| {
-                try this.fmt("({s} ++ [", .{acc_var});
-                try this.emitExpr(e.*);
-                try this.w("])");
-            },
-            .if_assign => |ia| {
-                try this.w("case ");
-                try this.emitExpr(ia.cond.*);
-                try this.w(" of\n");
+    fn foldBodyExpr(this: *Emitter, b: Ast.Builder, bk: FoldBodyKind, acc_var: Ast.Expr) anyerror!Ast.Expr {
+        return switch (bk) {
+            .assign => |e| this.exprAsRaw(b, e.*),
+            .plus_assign => |e| b.binop("+", acc_var, try this.exprAsRaw(b, e.*)),
+            .push => |e| b.binop("++", acc_var, try b.list(&.{try this.exprAsRaw(b, e.*)})),
+            .if_assign => |ia| blk: {
+                const cond = try this.exprAsRaw(b, ia.cond.*);
                 this.indent += 1;
-                try this.writeIndent();
-                try this.w("true -> ");
-                try this.emitExpr(ia.then_val.*);
-                try this.w(";\n");
-                try this.writeIndent();
-                try this.w("_ -> ");
-                if (ia.else_val) |ev| try this.emitExpr(ev.*) else try this.w(acc_var);
-                this.indent -= 1;
-                try this.w("\n");
-                try this.writeIndent();
-                try this.w("end");
+                defer this.indent -= 1;
+                const then_val = try this.exprAsRaw(b, ia.then_val.*);
+                const else_val = if (ia.else_val) |ev| try this.exprAsRaw(b, ev.*) else acc_var;
+                break :blk b.caseOf(cond, &.{
+                    try b.clause(&.{Ast.Expr.a("true")}, &.{}, &.{then_val}),
+                    try b.clause(&.{Ast.Expr.v("_")}, &.{}, &.{else_val}),
+                });
             },
-        }
+        };
     }
 
     // ── mutation through branches and loops ──────────────────────────────────
@@ -2394,41 +2360,37 @@ const Emitter = struct {
     // already bound in the function (`locals`) that the statement assigns,
     // looking through nested `if`/`loop`/`forEach` bodies.
 
-    /// Lower `stmt` through the mutation-returning shapes above when it
-    /// reassigns outer variables. Returns false (nothing written) otherwise.
-    fn emitMutatingStmt(this: *Emitter, stmt: ast.Stmt) anyerror!bool {
+    /// `stmt` through the mutation-returning shapes above when it reassigns
+    /// outer variables, or null.
+    fn mutatingExpr(this: *Emitter, b: Ast.Builder, stmt: ast.Stmt) anyerror!?Ast.Expr {
         var names: std.ArrayListUnmanaged([]const u8) = .empty;
-        defer names.deinit(this.alloc);
         switch (stmt.expr) {
             .branch => |br| switch (br.kind) {
                 .if_ => |if_node| {
-                    if (bodyEndsWithReturn(if_node.then_)) return false;
-                    if (if_node.else_) |els| if (bodyEndsWithReturn(els)) return false;
-                    try this.collectMutations(if_node.then_, &.{}, &names);
-                    if (if_node.else_) |els| try this.collectMutations(els, &.{}, &names);
-                    if (if_node.binding) |b| removeName(&names, b);
-                    if (names.items.len == 0) return false;
-                    try this.emitMutatingIf(if_node, names.items);
-                    return true;
+                    if (bodyEndsWithReturn(if_node.then_)) return null;
+                    if (if_node.else_) |els| if (bodyEndsWithReturn(els)) return null;
+                    try this.collectMutations(b.arena, if_node.then_, &.{}, &names);
+                    if (if_node.else_) |els| try this.collectMutations(b.arena, els, &.{}, &names);
+                    if (if_node.binding) |bn| removeName(&names, bn);
+                    if (names.items.len == 0) return null;
+                    return try this.mutatingIfExpr(b, if_node, names.items);
                 },
-                else => return false,
+                else => return null,
             },
             .loop => |lp| {
-                if (lp.params.len != 1 or lp.indexRange != null or lp.awaitLoop) return false;
-                for (lp.body) |s| if (s.expr == .jump and s.expr.jump.kind == .yield) return false;
-                try this.collectMutations(lp.body, lp.params, &names);
-                if (names.items.len == 0) return false;
-                try this.emitMutatingFold(lp.params[0], lp.body, lp.iter.*, names.items);
-                return true;
+                if (lp.params.len != 1 or lp.indexRange != null or lp.awaitLoop) return null;
+                for (lp.body) |s| if (s.expr == .jump and s.expr.jump.kind == .yield) return null;
+                try this.collectMutations(b.arena, lp.body, lp.params, &names);
+                if (names.items.len == 0) return null;
+                return try this.mutatingFoldExpr(b, lp.params[0], lp.body, lp.iter.*, names.items);
             },
             .call => {
-                const each = forEachLambda(stmt.expr) orelse return false;
-                try this.collectMutations(each.body, each.params, &names);
-                if (names.items.len == 0) return false;
-                try this.emitMutatingFold(each.params[0], each.body, each.recv.*, names.items);
-                return true;
+                const each = forEachLambda(stmt.expr) orelse return null;
+                try this.collectMutations(b.arena, each.body, each.params, &names);
+                if (names.items.len == 0) return null;
+                return try this.mutatingFoldExpr(b, each.params[0], each.body, each.recv.*, names.items);
             },
-            else => return false,
+            else => return null,
         }
     }
 
@@ -2461,14 +2423,14 @@ const Emitter = struct {
 
     /// Append (once each) the outer variables that `stmts` reassigns. `shadowed`
     /// names are bound by the construct itself (loop/lambda params) and skipped.
-    fn collectMutations(this: *Emitter, stmts: []const ast.Stmt, shadowed: []const []const u8, out: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
+    fn collectMutations(this: *Emitter, gpa: std.mem.Allocator, stmts: []const ast.Stmt, shadowed: []const []const u8, out: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
         for (stmts) |s| switch (s.expr) {
             .binding => |b| switch (b.kind) {
                 .assign => |a| switch (a.target) {
                     .name => |n| {
                         if (!this.locals.contains(n)) continue;
                         if (containsName(shadowed, n) or containsName(out.items, n)) continue;
-                        try out.append(this.alloc, n);
+                        try out.append(gpa, n);
                     },
                     else => {},
                 },
@@ -2476,13 +2438,13 @@ const Emitter = struct {
             },
             .branch => |br| switch (br.kind) {
                 .if_ => |if_node| {
-                    try this.collectMutations(if_node.then_, shadowed, out);
-                    if (if_node.else_) |els| try this.collectMutations(els, shadowed, out);
+                    try this.collectMutations(gpa, if_node.then_, shadowed, out);
+                    if (if_node.else_) |els| try this.collectMutations(gpa, els, shadowed, out);
                 },
                 else => {},
             },
-            .loop => |lp| try this.collectMutations(lp.body, lp.params, out),
-            .call => if (forEachLambda(s.expr)) |each| try this.collectMutations(each.body, each.params, out),
+            .loop => |lp| try this.collectMutations(gpa, lp.body, lp.params, out),
+            .call => if (forEachLambda(s.expr)) |each| try this.collectMutations(gpa, each.body, each.params, out),
             else => {},
         };
     }
@@ -2529,26 +2491,6 @@ const Emitter = struct {
         while (it.next()) |e| try this.var_current.put(e.key_ptr.*, e.value_ptr.*);
     }
 
-    /// Legacy-emitted statements of `body` at `indent`, as one `raw` statement
-    /// (its first line's indentation stripped — `erl_emitter.writeBody` adds
-    /// it back). Null when `body` has no real statement.
-    fn bodyAsRawStmt(this: *Emitter, b: Ast.Builder, body: []const ast.Stmt, indent: usize) anyerror!?Ast.Stmt {
-        if (lastRealStmt(body) == null) return null;
-        var buf: std.Io.Writer.Allocating = .init(b.arena);
-        const out = this.out;
-        const saved_indent = this.indent;
-        this.out = &buf.writer;
-        this.indent = indent;
-        defer {
-            this.out = out;
-            this.indent = saved_indent;
-        }
-        try this.emitBody(body);
-        const text = buf.written();
-        const prefix = indent * 4;
-        return .{ .expr = Ast.Expr.r(if (text.len >= prefix) text[prefix..] else text) };
-    }
-
     /// A legacy-emitted expression at the current indentation, as a `raw` node.
     fn exprAsRaw(this: *Emitter, b: Ast.Builder, e: ast.Expr) anyerror!Ast.Expr {
         var buf: std.Io.Writer.Allocating = .init(b.arena);
@@ -2559,20 +2501,27 @@ const Emitter = struct {
         return Ast.Expr.r(buf.written());
     }
 
-    /// An arm body: the statements, then the group at its post-arm versions.
+    /// `erlangVar(name)` copied into the builder's arena.
+    fn arenaVar(this: *Emitter, b: Ast.Builder, name: []const u8) anyerror![]const u8 {
+        const v = try erlangVar(this.alloc, name);
+        defer this.alloc.free(v);
+        return b.arena.dupe(u8, v);
+    }
+
+    /// An arm body at `indent`: its statements (when it has a real one), then
+    /// the group at its post-arm versions.
     fn armWithGroup(this: *Emitter, b: Ast.Builder, body: []const ast.Stmt, names: []const []const u8, indent: usize) anyerror!Ast.Body {
         var stmts: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
-        if (try this.bodyAsRawStmt(b, body, indent)) |raw| try stmts.append(b.arena, raw);
+        if (lastRealStmt(body) != null) {
+            try stmts.appendSlice(b.arena, (try this.bodyNode(b, body, 0, indent)).stmts);
+        }
         try stmts.append(b.arena, .{ .expr = try this.varGroupExpr(b, names) });
         return .{ .stmts = stmts.items };
     }
 
     /// `Group = case Cond of true -> Then, Group'; _ -> Else, Group'' end`
     /// (the binding form `if (x) { b -> … }` matches `undefined` first).
-    fn emitMutatingIf(this: *Emitter, if_node: anytype, names: []const []const u8) anyerror!void {
-        var arena_state = std.heap.ArenaAllocator.init(this.alloc);
-        defer arena_state.deinit();
-        const b: Ast.Builder = .{ .arena = arena_state.allocator() };
+    fn mutatingIfExpr(this: *Emitter, b: Ast.Builder, if_node: anytype, names: []const []const u8) anyerror!Ast.Expr {
         var snapshot = try this.var_current.clone();
         defer snapshot.deinit();
 
@@ -2583,9 +2532,7 @@ const Emitter = struct {
         var then_pattern = Ast.Expr.a("true");
         if (if_node.binding) |name| {
             try clauses.append(b.arena, try b.clause(&.{Ast.Expr.a("undefined")}, &.{}, &.{try this.varGroupExpr(b, names)}));
-            const bname = try erlangVar(this.alloc, name);
-            defer this.alloc.free(bname);
-            then_pattern = Ast.Expr.v(try b.arena.dupe(u8, bname));
+            then_pattern = Ast.Expr.v(try this.arenaVar(b, name));
             this.addLocal(name);
         }
         try clauses.append(b.arena, .{
@@ -2601,21 +2548,17 @@ const Emitter = struct {
         } else try b.body(&.{try this.varGroupExpr(b, names)});
         try clauses.append(b.arena, .{ .patterns = try b.exprs(&.{Ast.Expr.v("_")}), .body = else_body });
 
-        // The group's fresh versions are only known once both arms were emitted.
+        // The group's fresh versions are only known once both arms were built.
         const target = try this.bindVarGroupExpr(b, names);
-        try erlEmitter.writeExpr(this.out, try b.match(target, try b.caseOf(subject, clauses.items)), this.indent);
+        return b.match(target, try b.caseOf(subject, clauses.items));
     }
 
     /// `Group = lists:foldl(fun(Param, GroupIn) -> Body, GroupOut end, Group, Iter)`.
-    fn emitMutatingFold(this: *Emitter, param: []const u8, body: []const ast.Stmt, iter: ast.Expr, names: []const []const u8) anyerror!void {
-        var arena_state = std.heap.ArenaAllocator.init(this.alloc);
-        defer arena_state.deinit();
-        const b: Ast.Builder = .{ .arena = arena_state.allocator() };
+    fn mutatingFoldExpr(this: *Emitter, b: Ast.Builder, param: []const u8, body: []const ast.Stmt, iter: ast.Expr, names: []const []const u8) anyerror!Ast.Expr {
         var snapshot = try this.var_current.clone();
         defer snapshot.deinit();
 
-        const pname = try erlangVar(this.alloc, param);
-        defer this.alloc.free(pname);
+        const pname = Ast.Expr.v(try this.arenaVar(b, param));
         this.addLocal(param);
         // The accumulator parameter is a fresh version: fun heads always bind.
         const group_in = try this.bindVarGroupExpr(b, names);
@@ -2625,18 +2568,34 @@ const Emitter = struct {
         const iter_expr = try this.exprAsRaw(b, iter);
 
         const fold = try b.remote("lists", "foldl", &.{
-            .{ .fun = .{ .params = try b.exprs(&.{ Ast.Expr.v(try b.arena.dupe(u8, pname)), group_in }), .body = fun_body } },
+            .{ .fun = .{ .params = try b.exprs(&.{ pname, group_in }), .body = fun_body } },
             group_init,
             iter_expr,
         });
         const target = try this.bindVarGroupExpr(b, names);
-        try erlEmitter.writeExpr(this.out, try b.match(target, fold), this.indent);
+        return b.match(target, fold);
     }
 
     /// True when the last statement of a branch body is a valued `return`.
     /// A statement that is only a source comment (`.literal.comment`). Comments
     /// are not Erlang expressions: they never take a `,` separator and must not
     /// be treated as the body's tail value.
+    const CommentText = struct { prefix: []const u8, text: []const u8 };
+
+    /// The `%`-prefix and text of a comment statement, or null.
+    fn commentText(stmt: ast.Stmt) ?CommentText {
+        if (stmt.expr != .literal or stmt.expr.literal.kind != .comment) return null;
+        const c = stmt.expr.literal.kind.comment;
+        return .{
+            .prefix = switch (c.kind) {
+                .normal => "%",
+                .doc => "%%",
+                .module => "%%%",
+            },
+            .text = c.text,
+        };
+    }
+
     fn isCommentStmt(stmt: ast.Stmt) bool {
         return switch (stmt.expr) {
             .literal => |lit| switch (lit.kind) {
@@ -2671,27 +2630,15 @@ const Emitter = struct {
         };
     }
 
-    /// Emit `case Cond of true -> <then-body>; _ -> <body[i+1..]> end` for an
-    /// `if` that early-returns, nesting the remaining statements in the false arm.
-    fn emitEarlyReturnIf(this: *Emitter, body: []const ast.Stmt, i: usize, if_node: anytype) anyerror!void {
-        try this.w("case ");
-        try this.emitExpr(if_node.cond.*);
-        try this.w(" of\n");
-        this.indent += 1;
-        try this.writeIndent();
-        try this.w("true ->\n");
-        this.indent += 1;
-        try this.emitBranchBody(if_node.then_);
-        this.indent -= 1;
-        try this.w(";\n");
-        try this.writeIndent();
-        try this.w("_ ->\n");
-        this.indent += 1;
-        try this.emitBodyFrom(body, i + 1);
-        this.indent -= 2;
-        try this.w("\n");
-        try this.writeIndent();
-        try this.w("end");
+    /// `case Cond of true -> <then-body>; _ -> <body[i+1..]> end` for an `if`
+    /// that early-returns, nesting the remaining statements in the false arm.
+    fn earlyReturnIfExpr(this: *Emitter, b: Ast.Builder, body: []const ast.Stmt, i: usize, if_node: anytype) anyerror!Ast.Expr {
+        const cond = try this.exprAsRaw(b, if_node.cond.*);
+        const arm_indent = this.indent + 2;
+        return b.caseOf(cond, &.{
+            .{ .patterns = try b.exprs(&.{Ast.Expr.a("true")}), .body = try this.bodyNode(b, if_node.then_, 0, arm_indent) },
+            .{ .patterns = try b.exprs(&.{Ast.Expr.v("_")}), .body = try this.bodyNode(b, body, i + 1, arm_indent) },
+        });
     }
 
     const TryHead = union(enum) {
@@ -2700,161 +2647,89 @@ const Emitter = struct {
         none,
     };
 
-    /// Emit the propagating `case` for a `try` at `body[i]`, nesting `body[i+1..]`
+    /// The propagating `case` for a `try` at `body[i]`, nesting `body[i+1..]`
     /// inside the `{ok, _}` arm.
-    fn emitPropagateTry(this: *Emitter, body: []const ast.Stmt, i: usize, inner: ast.Expr, head: TryHead) !void {
+    fn propagateTryExpr(this: *Emitter, b: Ast.Builder, body: []const ast.Stmt, i: usize, inner: ast.Expr, head: TryHead) anyerror!Ast.Expr {
         const n = this.try_seq;
         this.try_seq += 1;
 
-        try this.w("case ");
-        try this.emitExpr(inner);
-        try this.w(" of\n");
-        this.indent += 1;
-        try this.writeIndent();
-
-        // {ok, <bind>} ->
-        try this.w("{ok, ");
-        switch (head) {
-            .name => |nm| {
-                const vname = try erlangVar(this.alloc, nm);
-                defer this.alloc.free(vname);
-                try this.w(vname);
-            },
-            .destruct => |pat| try this.emitDestructPattern(pat),
-            .none => try this.fmt("_TryV{d}", .{n}),
-        }
-        try this.w("} ->\n");
-
-        this.indent += 1;
-        if (i + 1 < body.len) {
-            try this.emitBodyFrom(body, i + 1);
-        } else {
+        const subject = try this.exprAsRaw(b, inner);
+        const bound: Ast.Expr = switch (head) {
+            .name => |nm| Ast.Expr.v(try this.arenaVar(b, nm)),
+            .destruct => |pat| try this.destructPatternExpr(b, pat),
+            .none => Ast.Expr.v(try std.fmt.allocPrint(b.arena, "_TryV{d}", .{n})),
+        };
+        const arm_indent = this.indent + 2;
+        const ok_body: Ast.Body = if (i + 1 < body.len)
+            try this.bodyNode(b, body, i + 1, arm_indent)
+        else switch (head) {
             // No continuation: the Ok value is the function's result.
-            try this.writeIndent();
-            switch (head) {
-                .name => |nm| {
-                    const vname = try erlangVar(this.alloc, nm);
-                    defer this.alloc.free(vname);
-                    try this.w(vname);
-                },
-                else => try this.fmt("_TryV{d}", .{n}),
-            }
-        }
-        this.indent -= 1;
-        try this.w(";\n");
-        try this.writeIndent();
-        try this.fmt("{{error, _TryE{d}}} -> {{error, _TryE{d}}}\n", .{ n, n });
-        this.indent -= 1;
-        try this.writeIndent();
-        try this.w("end");
+            .name => try b.body(&.{bound}),
+            else => try b.body(&.{Ast.Expr.v(try std.fmt.allocPrint(b.arena, "_TryV{d}", .{n}))}),
+        };
+        const err_var = Ast.Expr.v(try std.fmt.allocPrint(b.arena, "_TryE{d}", .{n}));
+        const err = try b.tuple(&.{ Ast.Expr.a("error"), err_var });
+        return b.caseOf(subject, &.{
+            .{ .patterns = try b.exprs(&.{try b.tuple(&.{ Ast.Expr.a("ok"), bound })}), .body = ok_body },
+            try b.clause(&.{err}, &.{}, &.{err}),
+        });
     }
 
-    /// Render a destructuring pattern (tuple/record names) as an Erlang pattern.
-    fn emitDestructPattern(this: *Emitter, pattern: ast.ParamDestruct) !void {
+    /// A destructuring pattern (tuple/record names) as an Erlang pattern.
+    fn destructPatternExpr(this: *Emitter, b: Ast.Builder, pattern: ast.ParamDestruct) anyerror!Ast.Expr {
+        var items: std.ArrayListUnmanaged(Ast.Expr) = .empty;
         switch (pattern) {
             .names => |n| {
-                try this.w("{");
-                for (n.fields, 0..) |fld, k| {
-                    if (k > 0) try this.w(", ");
-                    const vname = try erlangVar(this.alloc, fld.bind_name);
-                    defer this.alloc.free(vname);
-                    try this.w(vname);
-                }
-                if (n.hasSpread) try this.w(", _");
-                try this.w("}");
+                for (n.fields) |fld| try items.append(b.arena, Ast.Expr.v(try this.arenaVar(b, fld.bind_name)));
+                if (n.hasSpread) try items.append(b.arena, Ast.Expr.v("_"));
             },
-            .tuple_ => |t| {
-                try this.w("{");
-                for (t, 0..) |nm, k| {
-                    if (k > 0) try this.w(", ");
-                    const vname = try erlangVar(this.alloc, nm);
-                    defer this.alloc.free(vname);
-                    try this.w(vname);
-                }
-                try this.w("}");
-            },
-            .list, .ctor => try this.w("_"),
+            .tuple_ => |t| for (t) |nm| try items.append(b.arena, Ast.Expr.v(try this.arenaVar(b, nm))),
+            .list, .ctor => return Ast.Expr.v("_"),
         }
+        return .{ .tuple = items.items };
     }
 
-    /// Emit a statement inside a function body.
-    /// When `is_last` is true, `return expr` is emitted as bare `expr`.
-    fn emitBodyStmt(this: *Emitter, stmt: ast.Stmt, is_last: bool) !void {
+    /// A statement inside a function body. `return expr` is the bare expression
+    /// (in Erlang the last expression is the value).
+    fn stmtExpr(this: *Emitter, b: Ast.Builder, stmt: ast.Stmt) anyerror!Ast.Expr {
         const e = stmt.expr;
         switch (e) {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| {
-                    // In Erlang the last expression is the return value.
-                    // Emit a bare expression; if not last, wrap in a noop binding.
-                    _ = is_last;
-                    if (r) |val| {
-                        // §1F F4F-T2 — `#[@future]` eager lowering: strip the
-                        // `__bp_future_resolved(<t>)` marker back to `<t>`, and
-                        // map `__bp_future_rejected(<e>)` to a plain `throw(<e>)`.
-                        // The marker is the post-transform shape; erlang's eager
-                        // lowering renders #[@future] as sync code, so the
-                        // promise wrap is implicit (no marker on the wire).
-                        if (futureWrapCallNameErl(val.*)) |kind| {
-                            const inner = val.*.call.kind.call.args[0].value.*;
-                            switch (kind) {
-                                .resolved => try this.emitExpr(inner),
-                                .rejected => {
-                                    try this.w("throw(");
-                                    try this.emitExpr(inner);
-                                    try this.w(")");
-                                },
-                            }
-                        } else {
-                            try this.emitExpr(val.*);
-                        }
-                    } else try this.w("undefined");
-                },
-                else => try this.emitExpr(e),
-            },
-            .binding => |b| switch (b.kind) {
-                .localBind => |lb| try this.emitBind(lb.name, .bind, lb.value.*),
-                .assign => |a| {
-                    switch (a.target) {
-                        .name => |name| try this.emitBind(name, switch (a.op) {
-                            .assign => .assign,
-                            .plusAssign => .plus_assign,
-                        }, a.value.*),
-                        .fieldAccess => |*fa| {
-                            _ = fa;
-                            try this.w("%% field assignment is not directly supported in Erlang");
-                        },
+                    const val = r orelse return Ast.Expr.a("undefined");
+                    // `#[@future]` eager lowering: strip the
+                    // `__bp_future_resolved(<t>)` marker back to `<t>`, and map
+                    // `__bp_future_rejected(<e>)` to a plain `throw(<e>)` — the
+                    // promise wrap is implicit in erlang's sync rendering.
+                    if (futureWrapCallNameErl(val.*)) |kind| {
+                        const inner = try this.exprAsRaw(b, val.*.call.kind.call.args[0].value.*);
+                        return switch (kind) {
+                            .resolved => inner,
+                            .rejected => b.call("throw", &.{inner}),
+                        };
                     }
+                    return this.exprAsRaw(b, val.*);
+                },
+                else => return this.exprAsRaw(b, e),
+            },
+            .binding => |bind| switch (bind.kind) {
+                .localBind => |lb| return this.bindExpr(b, lb.name, .bind, lb.value.*),
+                .assign => |a| switch (a.target) {
+                    .name => |name| return this.bindExpr(b, name, switch (a.op) {
+                        .assign => .assign,
+                        .plusAssign => .plus_assign,
+                    }, a.value.*),
+                    .fieldAccess => return Ast.Expr.r("%% field assignment is not directly supported in Erlang"),
                 },
                 .localBindDestruct => |lb| {
-                    switch (lb.pattern) {
-                        .names => |*n| {
-                            try this.w("{");
-                            for (n.fields, 0..) |fld, i| {
-                                if (i > 0) try this.w(", ");
-                                const vname = try erlangVar(this.alloc, fld.bind_name);
-                                defer this.alloc.free(vname);
-                                try this.w(vname);
-                            }
-                            if (n.hasSpread) try this.w(", _");
-                            try this.w("} = ");
-                        },
-                        .tuple_ => |t| {
-                            try this.w("{");
-                            for (t, 0..) |nm, i| {
-                                if (i > 0) try this.w(", ");
-                                const vname = try erlangVar(this.alloc, nm);
-                                defer this.alloc.free(vname);
-                                try this.w(vname);
-                            }
-                            try this.w("} = ");
-                        },
-                        .list => {}, // List pattern — placeholder
-                        .ctor => {}, // Constructor pattern — placeholder
-                    }
-                    try this.emitExpr(lb.value.*);
+                    const value = try this.exprAsRaw(b, lb.value.*);
+                    return switch (lb.pattern) {
+                        .names, .tuple_ => b.match(try this.destructPatternExpr(b, lb.pattern), value),
+                        .list, .ctor => value,
+                    };
                 },
             },
-            else => try this.emitExpr(e),
+            else => return this.exprAsRaw(b, e),
         }
     }
 
