@@ -125,6 +125,16 @@ codegen/
   reset per fn; versions are never reused so separate `case` arms can't
   collide). A version bound inside a `case`/`fun` and read after it is left as an
   Erlang compile error (unsafe/unbound) rather than silently wrong.
+- **Modules are `erl_ast` forms**: `emitErlangModule` builds every form in one
+  arena and renders them with `erl_emitter.writeForms`: `-module`,
+  `-compile({no_auto_import,…})` (`noAutoImportRefs`), `-export`s, then each
+  declaration after a `.blank` — `topValForms`, `fnForms` (parameters, destructured
+  tuples, plain `yield` generators as lists), `recordForms`/`enumForms`/
+  `interfaceForms`/`implementForms`/`extendForms` (a `%%` comment plus method
+  functions), `use`/`delegate`/external-fn comments, `testFunction` — the comptime
+  helper and host forms, the `'_botopink_main'/0` + `main/1` entrypoint wrapper and,
+  in test mode, the runner (`testRunnerForms`: `'__bp_run_one'/1`,
+  `'__bp_run_tests'/1`, `main/1`).
 - **Bodies are `erl_ast` nodes**: `emitBodyFrom` builds an `Ast.Body` with
   `bodyNode(b, body, start, indent)` and renders it with `erl_emitter.writeBody`.
   Statements (`stmtExpr`: `return`, `bindExpr` for `val`/`=`/`+=` with versioning,
@@ -163,10 +173,10 @@ codegen/
   indexed/`await`/yielding loops keep the plain lowering; the older
   `var acc = …; xs.forEach(…)` fold fusion still takes precedence.
 - **Comptime modules:** `emitComptimeModule(alloc, name, program, .{ host_enums,
-  host_records, exports, tail })` lowers an untyped decorator/template body with
+  host_records, exports, forms })` lowers an untyped decorator/template body with
   the same emitter — `host_enums` join `enum_names` (`DeclKind.Record` →
   `'Record'`), `host_records` (`HostRecord{name, fields}`) join `record_fields`
-  so host record constructors build maps, `exports` are prepended to `-export`,
+  so host record constructors build maps, `exports` (`[]erl_ast.FnRef`) are prepended to `-export`,
   `forms` (`[]erl_ast.Form`) are rendered after the
   `'__bp_add'/2` / `'__bp_len'/2` helpers; the `untyped` flag routes `+` to
   `'__bp_add'` (binary concat or arithmetic) and `.len`/`.length` without an
@@ -203,7 +213,7 @@ codegen/
   `Response.ok(…)` calls into the owner module atom (`http:ok(…)`); the owner
   exports a `pub` type's associated fns when another module imports it.
 - **Interface associated `default fn`s** (`Array.range`, `Pair.of`):
-  `emitInterface` emits each no-`self` body as a local function
+  `interfaceForms` emits each no-`self` body as a local function
   (`collectInterfaces`); `Interface.method(...)` calls it (reserved words quoted,
   e.g. `'of'`).
 - **Value-receiver instance methods**: record/enum/struct methods keep `self`

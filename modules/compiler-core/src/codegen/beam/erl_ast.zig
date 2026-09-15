@@ -60,6 +60,12 @@ pub const Expr = union(enum) {
     fun_clauses: []const Clause,
     /// `Class:Reason` / `Class:Reason:Stack` — a `catch` clause pattern.
     exception: Exception,
+    /// An Erlang string literal `"text"` (a character list) from raw bytes.
+    string: []const u8,
+    /// `fun name/Arity`.
+    fun_ref: FnRef,
+    /// `[` newline, one element per line at +1 joined `,`, newline, `]`.
+    list_block: []const Expr,
     /// Parts written one after another with no separator — a host template
     /// (`raw` text around argument nodes).
     seq: []const Expr,
@@ -76,6 +82,12 @@ pub const Expr = union(enum) {
     pub fn t(value: Term) Expr {
         return .{ .term = value };
     }
+};
+
+/// `name/Arity` — a function reference in `fun`, `-export` and `-compile`.
+pub const FnRef = struct {
+    name: []const u8,
+    arity: usize,
 };
 
 pub const Call = struct {
@@ -212,11 +224,19 @@ pub const Function = struct {
 };
 
 pub const Form = union(enum) {
-    /// `-name(Value).` with the value already rendered (`-module(m).`,
-    /// `-export([f/0]).`).
+    /// `-module(name).` — the name as spelled.
+    module: []const u8,
+    /// `-export([f/0, g/1]).`
+    exports: []const FnRef,
+    /// `-compile({no_auto_import,[f/1]}).`
+    no_auto_import: []const FnRef,
+    /// `-name(Value).` with the value already rendered.
     attribute: struct { name: []const u8, value: []const u8 },
     function: Function,
+    /// A comment line; the text carries its `%` prefix.
     comment: []const u8,
+    /// An empty line.
+    blank,
     /// Rendered form text, written verbatim.
     raw: []const u8,
 };

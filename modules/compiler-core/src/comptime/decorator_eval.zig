@@ -190,7 +190,7 @@ fn buildModule(
     decls[0] = .{ .@"fn" = dfn };
     const code = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, .{
         .host_enums = &.{"DeclKind"},
-        .exports = &.{"main/0"},
+        .exports = &.{.{ .name = "main", .arity = 0 }},
         .forms = forms,
     }) catch return error.EvalFailed;
 

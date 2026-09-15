@@ -33,7 +33,7 @@ test "comptime module: host enum member lowers to an atom, method call to a host
         \\}
     , .{
         .host_enums = &.{"DeclKind"},
-        .exports = &.{"main/0"},
+        .exports = &.{.{ .name = "main", .arity = 0 }},
         .forms = &.{.{ .function = .{ .name = "main", .clauses = &.{.{
             .patterns = &.{},
             .body = .{ .stmts = &.{.{ .expr = .{ .call = .{ .name = "service", .args = &.{.{ .map = &.{

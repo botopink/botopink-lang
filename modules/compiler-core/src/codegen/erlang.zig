@@ -258,108 +258,41 @@ fn freeAutoImportedBifs(alloc: std.mem.Allocator, list: *std.ArrayListUnmanaged(
     list.deinit(alloc);
 }
 
-fn emitNoAutoImportDirective(
-    alloc: std.mem.Allocator,
-    writer: anytype,
-    decls: []ast.DeclKind,
-    bif_table: []const AutoImportedBif,
-) !void {
-    // Collect the intersection of user-defined symbols with the BIF table.
-    // Walks every emitted-as-bare-erlang-fn surface: top-level fns plus
-    // methods inside record/enum/struct/extend/implement (which the
-    // codegen also emits as bare local functions sharing the global atom
-    // namespace). `interface` assoc fns are mangled (`'Interface_name'`)
-    // and quoted — they start uppercase and cannot collide with a
-    // lowercase BIF, so they are excluded.
-    //
-    // Deduplicate so a symbol declared twice in the same module
-    // (overload, or the same method reused via `extend` + `impl`)
-    // contributes one entry, not two.
-    var seen: std.StringHashMap(void) = .init(alloc);
-    defer {
-        var keys = seen.keyIterator();
-        while (keys.next()) |k| alloc.free(k.*);
-        seen.deinit();
-    }
-
-    var shadows: std.ArrayListUnmanaged([]u8) = .empty;
-    defer {
-        for (shadows.items) |s| alloc.free(s);
-        shadows.deinit(alloc);
-    }
-
-    const CollectSym = struct {
-        fn run(
-            a: std.mem.Allocator,
-            table: []const AutoImportedBif,
-            seen_set: *std.StringHashMap(void),
-            shadow_list: *std.ArrayListUnmanaged([]u8),
-            name: []const u8,
-            arity: usize,
-        ) !void {
+/// `name/arity` of every user function whose name + arity shadows an Erlang
+/// auto-imported BIF, deduplicated in declaration order. Walks every surface
+/// emitted as a bare erlang fn: top-level fns plus methods of records, enums,
+/// `extend` and `implement` (sharing the global atom namespace). Interface
+/// assoc fns are mangled (`'Interface_name'`) and cannot collide with a
+/// lowercase BIF, so they are excluded.
+fn noAutoImportRefs(b: Ast.Builder, decls: []ast.DeclKind, bif_table: []const AutoImportedBif) ![]const Ast.FnRef {
+    var refs: std.ArrayListUnmanaged(Ast.FnRef) = .empty;
+    const Collect = struct {
+        fn run(arena: std.mem.Allocator, out: *std.ArrayListUnmanaged(Ast.FnRef), table: []const AutoImportedBif, name: []const u8, arity: usize) !void {
             for (table) |bif| {
-                if (bif.arity == arity and std.mem.eql(u8, bif.name, name)) {
-                    const key = try std.fmt.allocPrint(a, "{s}/{d}", .{ name, arity });
-                    const gop = try seen_set.getOrPut(key);
-                    if (gop.found_existing) {
-                        a.free(key);
-                        return;
-                    }
-                    gop.key_ptr.* = key;
-                    try shadow_list.append(a, try a.dupe(u8, key));
-                    return;
+                if (bif.arity != arity or !std.mem.eql(u8, bif.name, name)) continue;
+                for (out.items) |seen| {
+                    if (seen.arity == arity and std.mem.eql(u8, seen.name, name)) return;
                 }
+                return out.append(arena, .{ .name = try arena.dupe(u8, name), .arity = arity });
             }
         }
     };
-
-    for (decls) |decl| {
-        switch (decl) {
-            .@"fn" => |f| {
-                try CollectSym.run(alloc, bif_table, &seen, &shadows, f.name, f.params.len);
-            },
-            // Record / enum methods emit through `emitFn` with `f.name = m.name`;
-            // both instance methods (`self` retained, `params.len` already
-            // includes the receiver) and associated fns (no `self`) keep
-            // `params.len` as the actual erlang arity. `is_declare` methods
-            // emit no body — skip.
-            .record => |r| {
-                for (r.methods) |m| {
-                    if (m.is_declare) continue;
-                    try CollectSym.run(alloc, bif_table, &seen, &shadows, m.name, m.params.len);
-                }
-            },
-            .@"enum" => |e| {
-                for (e.methods) |m| {
-                    if (m.is_declare) continue;
-                    try CollectSym.run(alloc, bif_table, &seen, &shadows, m.name, m.params.len);
-                }
-            },
-            // `extend`/`implement` methods emit through `emitExtensionMethods`
-            // with `keep_self = true`, so the receiver is always kept as the
-            // first param; `m.params.len` is the actual emitted arity.
-            .extend => |ex| {
-                for (ex.methods) |m| {
-                    try CollectSym.run(alloc, bif_table, &seen, &shadows, m.name, m.params.len);
-                }
-            },
-            .implement => |im| {
-                for (im.methods) |m| {
-                    try CollectSym.run(alloc, bif_table, &seen, &shadows, m.name, m.params.len);
-                }
-            },
-            else => {},
-        }
-    }
-
-    if (shadows.items.len == 0) return;
-
-    try writer.writeAll("-compile({no_auto_import,[");
-    for (shadows.items, 0..) |s, i| {
-        if (i > 0) try writer.writeAll(", ");
-        try writer.writeAll(s);
-    }
-    try writer.writeAll("]}).\n");
+    for (decls) |decl| switch (decl) {
+        .@"fn" => |f| try Collect.run(b.arena, &refs, bif_table, f.name, f.params.len),
+        // Record / enum methods keep `params.len` as the erlang arity (instance
+        // methods include the receiver); `is_declare` methods emit no body.
+        .record => |r| for (r.methods) |m| {
+            if (!m.is_declare) try Collect.run(b.arena, &refs, bif_table, m.name, m.params.len);
+        },
+        .@"enum" => |e| for (e.methods) |m| {
+            if (!m.is_declare) try Collect.run(b.arena, &refs, bif_table, m.name, m.params.len);
+        },
+        // Extension methods always keep the receiver as the first param.
+        .extend => |ex| for (ex.methods) |m| try Collect.run(b.arena, &refs, bif_table, m.name, m.params.len),
+        .implement => |im| for (im.methods) |m| try Collect.run(b.arena, &refs, bif_table, m.name, m.params.len),
+        else => {},
+    };
+    return refs.items;
 }
 
 // ── public entry ─────────────────────────────────────────────────────────────
@@ -425,8 +358,8 @@ pub const ComptimeModule = struct {
     /// `CustomNode(kind: …)`) lowers to the same `#{field => …}` map a declared
     /// record would.
     host_records: []const HostRecord = &.{},
-    /// Extra `name/arity` exports (the evaluator entry, `main/0`).
-    exports: []const []const u8 = &.{},
+    /// Extra exports (the evaluator entry, `main/0`).
+    exports: []const Ast.FnRef = &.{},
     /// Host forms appended after the lowered decls and the standard helpers
     /// (host functions, the evaluator entry).
     forms: []const Ast.Form = &.{},
@@ -701,12 +634,18 @@ fn emitErlangModule(
     const emit_entrypoint_wrapper = has_main_0 and !test_mode;
 
     // Without the wrapper, each runtime module-level `val` is emitted as a 0-arity
-    // function (`emitTopVal`), so a bare reference to it lowers to a call `name()`,
+    // function (`topValForms`), so a bare reference to it lowers to a call `name()`,
     // not a variable. With the wrapper the vals are local `Name = …` bindings, so
     // the set stays empty and references stay variables.
     if (!emit_entrypoint_wrapper) {
         for (top_runtime_vals.items) |v| em.top_vals.put(v.name, {}) catch {};
     }
+
+    // The module is built as `erl_ast` forms in one arena, then rendered.
+    var arena_state = std.heap.ArenaAllocator.init(alloc);
+    defer arena_state.deinit();
+    const b: Ast.Builder = .{ .arena = arena_state.allocator() };
+    var forms: Forms = .empty;
 
     // Module header. "std" package modules are named `std/<mod>` for output
     // layout; the Erlang module atom is the basename (`-module(option).`).
@@ -714,22 +653,18 @@ fn emitErlangModule(
         module_name[i + 1 ..]
     else
         module_name;
-    try aw.writer.print("-module({s}).\n", .{erl_module_name});
+    try forms.append(b.arena, .{ .module = erl_module_name });
 
-    // Emit `-compile({no_auto_import,[fn/arity, ...]}).` for any user
-    // function whose name + arity shadows an Erlang auto-imported BIF.
-    // OTP 27+ erlc upgrades the diagnostic
+    // `-compile({no_auto_import,[fn/arity, ...]}).` for any user function whose
+    // name + arity shadows an Erlang auto-imported BIF: OTP 27+ erlc makes the
     // `ambiguous call of overridden pre Erlang/OTP R14 auto-imported BIF`
-    // from a warning to a compile error; the directive resolves the name
-    // clash and makes the generated code OTP-version-independent.
-    //
-    // The (name, arity) catalog is loaded from `prelude.erlang_bifs`
-    // (annotations in `libs/std/src/erlang_bifs.d.bp`) — see
-    // `loadAutoImportedBifsFromPrelude` above. Loaded per emit (cheap:
-    // ~110 decls; cached per-Emitter would be a future micro-opt).
+    // diagnostic an error, and the directive keeps the generated code
+    // OTP-version-independent. The (name, arity) catalog comes from
+    // `prelude.erlang_bifs` (`libs/std/src/erlang_bifs.d.bp`).
     var bif_table = try loadAutoImportedBifsFromPrelude(alloc);
     defer freeAutoImportedBifs(alloc, &bif_table);
-    try emitNoAutoImportDirective(alloc, &aw.writer, program.decls, bif_table.items);
+    const shadows = try noAutoImportRefs(b, program.decls, bif_table.items);
+    if (shadows.len > 0) try forms.append(b.arena, .{ .no_auto_import = shadows });
 
     // Collect public function names for export.
     var pub_fns: std.ArrayListUnmanaged(ast.FnDecl) = .empty;
@@ -741,221 +676,262 @@ fn emitErlangModule(
             else => {},
         }
     }
-    // Export generated entrypoint wrapper when main/0 exists.
-    // `main/1` is the escript entry point — escript calls it with the argv list.
+    // The generated entrypoint wrapper when main/0 exists; `main/1` is the
+    // escript entry point (escript calls it with the argv list).
     if (emit_entrypoint_wrapper) {
-        try aw.writer.writeAll("-export(['_botopink_main'/0, main/1]).\n");
+        try forms.append(b.arena, .{ .exports = &.{ .{ .name = "_botopink_main", .arity = 0 }, .{ .name = "main", .arity = 1 } } });
     }
     // Test runner escript entry point.
     if (test_mode and test_count > 0) {
-        try aw.writer.writeAll("-export([main/1]).\n");
+        try forms.append(b.arena, .{ .exports = &.{.{ .name = "main", .arity = 1 }} });
     }
 
-    // A record/struct/enum whose name another module imports must export its
-    // associated fns: the consumer reaches them via a remote call
-    // (`http:ok(...)`). Records emit assoc fns as bare local functions (see
-    // `emitRecord`), so the owner exports `<fn>/<arity>` for every no-`self`
-    // method. Scoped to consumed types → single-module programs are unchanged.
-    var assoc_exports: std.ArrayListUnmanaged(struct { name: []const u8, arity: usize }) = .empty;
-    defer assoc_exports.deinit(alloc);
+    // A record/enum whose name another module imports exports its associated
+    // fns: the consumer reaches them via a remote call (`http:ok(...)`). Records
+    // emit assoc fns as bare local functions (see `recordForms`), so the owner
+    // exports `<fn>/<arity>` for every no-`self` method. Scoped to consumed
+    // types → single-module programs are unchanged.
+    var exports: std.ArrayListUnmanaged(Ast.FnRef) = .empty;
+    if (comptime_module) |cm| try exports.appendSlice(b.arena, cm.exports);
+    for (pub_fns.items) |f| try exports.append(b.arena, .{ .name = f.name, .arity = fnArityNoSelf(f) });
     if (cross) |xc| {
-        const Collect = struct {
-            fn methods(list: *@TypeOf(assoc_exports), a: std.mem.Allocator, ms: []const ast.InterfaceMethod) !void {
-                for (ms) |m| {
-                    if (m.is_declare or !isAssocMethod(m)) continue;
-                    try list.append(a, .{ .name = m.name, .arity = m.params.len });
-                }
+        for (program.decls) |decl| {
+            const methods = switch (decl) {
+                .record => |r| if (xc.imported.contains(r.name)) r.methods else continue,
+                .@"enum" => |e| if (xc.imported.contains(e.name)) e.methods else continue,
+                else => continue,
+            };
+            for (methods) |m| {
+                if (m.is_declare or !isAssocMethod(m)) continue;
+                try exports.append(b.arena, .{ .name = m.name, .arity = m.params.len });
             }
-        };
-        for (program.decls) |decl| switch (decl) {
-            .record => |r| if (xc.imported.contains(r.name)) try Collect.methods(&assoc_exports, alloc, r.methods),
-            .@"enum" => |e| if (xc.imported.contains(e.name)) try Collect.methods(&assoc_exports, alloc, e.methods),
-            else => {},
-        };
+        }
     }
+    if (exports.items.len > 0) try forms.append(b.arena, .{ .exports = exports.items });
 
-    const host_exports: []const []const u8 = if (comptime_module) |cm| cm.exports else &.{};
-
-    // Export other public functions + cross-imported associated fns.
-    if (pub_fns.items.len > 0 or assoc_exports.items.len > 0 or host_exports.len > 0) {
-        try aw.writer.writeAll("-export([");
-        var first = true;
-        for (host_exports) |e| {
-            if (!first) try aw.writer.writeAll(", ");
-            first = false;
-            try aw.writer.writeAll(e);
-        }
-        var exp_buf: [256]u8 = undefined;
-        for (pub_fns.items) |f| {
-            if (!first) try aw.writer.writeAll(", ");
-            first = false;
-            try aw.writer.print("{s}/{d}", .{ try fnAtom(f.name, &exp_buf), fnArityNoSelf(f) });
-        }
-        for (assoc_exports.items) |e| {
-            if (!first) try aw.writer.writeAll(", ");
-            first = false;
-            try aw.writer.print("{s}/{d}", .{ try fnAtom(e.name, &exp_buf), e.arity });
-        }
-        try aw.writer.writeAll("]).\n");
-    }
-
-    // Emit declarations
+    // Declarations, each after an empty line.
     for (program.decls) |decl| {
-        try aw.writer.writeByte('\n');
+        try forms.append(b.arena, .blank);
         switch (decl) {
-            .val => |v| {
-                if (emit_entrypoint_wrapper) {
-                    if (v.value.isComptimeExpr()) try em.emitTopVal(v, comptime_vals);
-                } else {
-                    try em.emitTopVal(v, comptime_vals);
-                }
-            },
+            .val => |v| if (!emit_entrypoint_wrapper or v.value.isComptimeExpr()) try em.topValForms(b, &forms, v),
             .@"fn" => |f| {
-                if (f.isExternal()) {
-                    // FFI declaration — calls lower to the remote target directly.
-                    if (em.externals.get(f.name)) |ref| {
-                        try aw.writer.print("%% external fn {s} -> {s}:{s}\n", .{ f.name, ref.module, ref.symbol });
-                    } else {
-                        try aw.writer.print("%% external fn {s} (no erlang target)\n", .{f.name});
-                    }
-                } else {
-                    try em.emitFn(f);
+                if (!f.isExternal()) {
+                    try em.fnForms(b, &forms, f);
+                    continue;
                 }
+                // FFI declaration — calls lower to the remote target directly.
+                const text = if (em.externals.get(f.name)) |ref|
+                    try std.fmt.allocPrint(b.arena, "%% external fn {s} -> {s}:{s}", .{ f.name, ref.module, ref.symbol })
+                else
+                    try std.fmt.allocPrint(b.arena, "%% external fn {s} (no erlang target)", .{f.name});
+                try forms.append(b.arena, .{ .comment = text });
             },
-            .record => |r| try em.emitRecord(r),
-            .@"enum" => |e| try em.emitEnum(e),
-            .interface => |i| try em.emitInterface(i),
-            .implement => |im| try em.emitImplement(im),
-            .extend => |ex| try em.emitExtend(ex),
-            .use => |u| try em.emitUse(u),
+            .record => |r| try em.recordForms(b, &forms, r),
+            .@"enum" => |e| try em.enumForms(b, &forms, e),
+            .interface => |i| try em.interfaceForms(b, &forms, i),
+            .implement => |im| try em.implementForms(b, &forms, im),
+            .extend => |ex| try em.extendForms(b, &forms, ex),
+            .use => |u| try forms.append(b.arena, .{ .comment = try useComment(b, u) }),
             // `mod` is module-tree metadata; the submodule emits as its own atom.
             .mod => {},
-            .delegate => |d| try aw.writer.print("%% delegate {s}\n", .{d.name}),
+            .delegate => |d| try forms.append(b.arena, .{ .comment = try std.fmt.allocPrint(b.arena, "%% delegate {s}", .{d.name}) }),
             // Test blocks are only compiled under `botopink test`; in normal
             // builds they are skipped entirely.
             .@"test" => |t| {
                 if (!test_mode) continue;
                 const idx = test_entries.items.len;
                 try test_entries.append(alloc, .{ .name = t.name, .line = t.loc.line, .idx = idx });
-                try em.emitTestFn(t, idx);
+                try forms.append(b.arena, try em.testFunction(b, t, idx));
             },
             .comment => |c| {
                 const prefix = if (c.is_doc) "%%" else if (c.is_module) "%%%" else "%";
-                try aw.writer.print("{s} {s}\n", .{ prefix, c.text });
+                try forms.append(b.arena, .{ .comment = try std.fmt.allocPrint(b.arena, "{s} {s}", .{ prefix, c.text }) });
             },
         }
     }
 
     if (comptime_module) |cm| {
-        for (&comptime_helper_forms) |form| {
-            try aw.writer.writeByte('\n');
-            try erlEmitter.writeForm(&aw.writer, form);
-        }
-        for (cm.forms) |form| {
-            try aw.writer.writeByte('\n');
-            try erlEmitter.writeForm(&aw.writer, form);
-        }
+        for (&comptime_helper_forms) |form| try forms.appendSlice(b.arena, &.{ .blank, form });
+        for (cm.forms) |form| try forms.appendSlice(b.arena, &.{ .blank, form });
     }
 
     if (emit_entrypoint_wrapper) {
-        try aw.writer.writeByte('\n');
-        try aw.writer.writeAll("'_botopink_main'() ->\n");
+        // `'_botopink_main'() -> Val1 = …, …, main().` binds the runtime
+        // module-level vals as locals, then runs `main/0`.
         const saved_indent = em.indent;
         em.indent = 1;
-
-        for (top_runtime_vals.items) |v| {
-            try em.writeIndent();
-            try em.emitTopValEntryStmt(v);
-            try aw.writer.writeAll(",\n");
-        }
-        try em.writeIndent();
-        try aw.writer.writeAll("main().\n");
+        var stmts: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+        for (top_runtime_vals.items) |v| try stmts.append(b.arena, try em.topValEntryExpr(b, v));
+        try stmts.append(b.arena, try b.call("main", &.{}));
         em.indent = saved_indent;
-
-        // escript entry point — `escript <file>` calls main/1 with the argv list.
-        try aw.writer.writeByte('\n');
-        try aw.writer.writeAll("main(_Args) ->\n");
-        try aw.writer.writeAll("    '_botopink_main'().\n");
+        try forms.appendSlice(b.arena, &.{
+            .blank,
+            try blockFunction(b, "_botopink_main", &.{}, try b.body(stmts.items)),
+            .blank,
+            try blockFunction(b, "main", &.{Ast.Expr.v("_Args")}, try b.body(&.{try b.call("_botopink_main", &.{})})),
+        });
     }
 
-    // Test mode: emit the registry + runner + escript entry.
+    // Test mode: the registry, the runner and the escript entry.
     if (test_mode and test_entries.items.len > 0) {
-        try aw.writer.writeByte('\n');
-        try aw.writer.writeAll(
-            \\'__bp_run_one'({Name, Fun, Loc}) ->
-            \\    %% §T `----- RUN LOG -----` envelope (v0.beta.20 frente-b spec):
-            \\    %% emit TEST header + fenced ```logs``` block; the test body's
-            \\    %% io:format/io:put_chars calls land inside the fence
-            \\    %% sequentially via the group leader (no explicit capture
-            \\    %% needed for the sync erlang shape).
-            \\    io:format("TEST ~s ~s~n", [Loc, Name]),
-            \\    io:format("----- RUN LOG -----~n```logs~n", []),
-            \\    %% §T duration: monotonic millisecond clock around Fun(); the
-            \\    %% delta lands on its own `  duration <ms>ms` line between the
-            \\    %% fence close and the ok/FAIL line. Older parsers that don't
-            \\    %% recognise the duration line skip it (forward-compatible).
-            \\    T0 = erlang:monotonic_time(millisecond),
-            \\    Outcome = try
-            \\        Fun(),
-            \\        ok
-            \\    catch
-            \\        error:{bp_assert, Msg, ALoc} ->
-            \\            {fail, Msg, ALoc};
-            \\        Class:Reason ->
-            \\            {fail, {Class, Reason}, Loc}
-            \\    end,
-            \\    T1 = erlang:monotonic_time(millisecond),
-            \\    DurMs = erlang:max(0, T1 - T0),
-            \\    io:format("```~n", []),
-            \\    io:format("  duration ~pms~n", [DurMs]),
-            \\    case Outcome of
-            \\        ok ->
-            \\            io:format("  ok   ~s~n", [Name]),
-            \\            ok;
-            \\        {fail, FMsg, FLoc} when is_binary(FMsg) ->
-            \\            io:format("  FAIL ~s  (~s)  at ~s~n", [Name, FMsg, FLoc]),
-            \\            fail;
-            \\        {fail, FMsg, FLoc} ->
-            \\            io:format("  FAIL ~s  (~p)  at ~s~n", [Name, FMsg, FLoc]),
-            \\            fail
-            \\    end.
-            \\
-            \\'__bp_run_tests'(Filter) ->
-            \\    Tests = [
-            \\
-        );
+        const tests = try b.arena.alloc(Ast.Expr, test_entries.items.len);
         for (test_entries.items, 0..) |t, i| {
-            if (i > 0) try aw.writer.writeAll(",\n");
-            if (t.name) |n| {
-                try aw.writer.print("        {{<<\"{s}\">>, fun '__bp_test_{d}'/0, <<\"{s}.bp:{d}\">>}}", .{ n, t.idx, module_name, t.line });
-            } else {
-                try aw.writer.print("        {{<<\"test_{d}\">>, fun '__bp_test_{d}'/0, <<\"{s}.bp:{d}\">>}}", .{ t.idx, t.idx, module_name, t.line });
-            }
+            const name = t.name orelse try std.fmt.allocPrint(b.arena, "test_{d}", .{t.idx});
+            tests[i] = try b.tuple(&.{
+                .{ .lexeme_binary = name },
+                .{ .fun_ref = .{ .name = try std.fmt.allocPrint(b.arena, "__bp_test_{d}", .{t.idx}), .arity = 0 } },
+                .{ .lexeme_binary = try std.fmt.allocPrint(b.arena, "{s}.bp:{d}", .{ module_name, t.line }) },
+            });
         }
-        try aw.writer.writeAll(
-            \\
-            \\    ],
-            \\    Selected = case Filter of
-            \\        none -> Tests;
-            \\        _ -> [T || {N, _, _} = T <- Tests, binary:match(N, Filter) =/= nomatch]
-            \\    end,
-            \\    Results = ['__bp_run_one'(T) || T <- Selected],
-            \\    Failed = length([R || R <- Results, R =:= fail]),
-            \\    Passed = length(Results) - Failed,
-            \\    io:format("~p passed, ~p failed~n", [Passed, Failed]),
-            \\    case Failed > 0 of true -> halt(1); false -> ok end.
-            \\
-            \\main(Args) ->
-            \\    Filter = case Args of
-            \\        [F | _] -> list_to_binary(F);
-            \\        _ -> none
-            \\    end,
-            \\    '__bp_run_tests'(Filter).
-            \\
-        );
+        try testRunnerForms(b, &forms, tests);
     }
 
+    try erlEmitter.writeForms(&aw.writer, forms.items);
     return aw.toOwnedSlice();
+}
+
+const Forms = std.ArrayListUnmanaged(Ast.Form);
+
+/// `name(Patterns) ->` + block body.
+fn blockFunction(b: Ast.Builder, name: []const u8, patterns: []const Ast.Expr, body: Ast.Body) !Ast.Form {
+    return .{ .function = .{
+        .name = try b.arena.dupe(u8, name),
+        .clauses = try b.arena.dupe(Ast.Clause, &.{.{ .patterns = try b.exprs(patterns), .body = body }}),
+    } };
+}
+
+/// `%% import a, b` / `%% activate a, b`.
+fn useComment(b: Ast.Builder, u: ast.ImportDecl) ![]const u8 {
+    var text: std.ArrayListUnmanaged(u8) = .empty;
+    try text.appendSlice(b.arena, if (u.activationOnly) "%% activate " else "%% import ");
+    for (u.imports, 0..) |imp, i| {
+        if (i > 0) try text.appendSlice(b.arena, ", ");
+        try text.appendSlice(b.arena, imp.name());
+    }
+    return text.items;
+}
+
+/// `io:format("Format", [Args])`.
+fn ioFormat(b: Ast.Builder, format: []const u8, args: []const Ast.Expr) !Ast.Expr {
+    return b.remote("io", "format", &.{ .{ .string = format }, try b.list(args) });
+}
+
+fn comments(b: Ast.Builder, lines: []const []const u8) ![]const Ast.Stmt {
+    const out = try b.arena.alloc(Ast.Stmt, lines.len);
+    for (lines, 0..) |line, i| out[i] = .{ .comment = line };
+    return out;
+}
+
+/// The test-mode runner: `'__bp_run_one'/1` runs one `{Name, Fun, Loc}` inside
+/// the `----- RUN LOG -----` envelope, `'__bp_run_tests'/1` runs the registry
+/// (`tests`, filtered by name) and halts non-zero on failure, and `main/1` is the
+/// escript entry.
+fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr) !void {
+    const V = Ast.Expr.v;
+    const A = Ast.Expr.a;
+    const monotonic = try b.remote("erlang", "monotonic_time", &.{A("millisecond")});
+    const outcome = try b.match(V("Outcome"), .{ .try_catch = .{
+        .body = try b.body(&.{ .{ .apply = .{ .fun = try b.ptr(V("Fun")) } }, A("ok") }),
+        .catches = try b.arena.dupe(Ast.Clause, &.{
+            .{
+                .patterns = try b.exprs(&.{try b.exception(A("error"), try b.tuple(&.{ A("bp_assert"), V("Msg"), V("ALoc") }))}),
+                .body = try b.body(&.{try b.tuple(&.{ A("fail"), V("Msg"), V("ALoc") })}),
+            },
+            .{
+                .patterns = try b.exprs(&.{try b.exception(V("Class"), V("Reason"))}),
+                .body = try b.body(&.{try b.tuple(&.{ A("fail"), try b.tuple(&.{ V("Class"), V("Reason") }), V("Loc") })}),
+            },
+        }),
+    } });
+    const fail_pattern = try b.tuple(&.{ A("fail"), V("FMsg"), V("FLoc") });
+    const report = try b.caseOf(V("Outcome"), &.{
+        .{ .patterns = try b.exprs(&.{A("ok")}), .body = try b.body(&.{ try ioFormat(b, "  ok   ~s~n", &.{V("Name")}), A("ok") }) },
+        .{
+            .patterns = try b.exprs(&.{fail_pattern}),
+            .guards = try b.exprs(&.{try b.call("is_binary", &.{V("FMsg")})}),
+            .body = try b.body(&.{ try ioFormat(b, "  FAIL ~s  (~s)  at ~s~n", &.{ V("Name"), V("FMsg"), V("FLoc") }), A("fail") }),
+        },
+        .{ .patterns = try b.exprs(&.{fail_pattern}), .body = try b.body(&.{ try ioFormat(b, "  FAIL ~s  (~p)  at ~s~n", &.{ V("Name"), V("FMsg"), V("FLoc") }), A("fail") }) },
+    });
+
+    var run_one: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
+    try run_one.appendSlice(b.arena, try comments(b, &.{
+        "%% §T `----- RUN LOG -----` envelope (v0.beta.20 frente-b spec):",
+        "%% emit TEST header + fenced ```logs``` block; the test body's",
+        "%% io:format/io:put_chars calls land inside the fence",
+        "%% sequentially via the group leader (no explicit capture",
+        "%% needed for the sync erlang shape).",
+    }));
+    try run_one.appendSlice(b.arena, &.{
+        .{ .expr = try ioFormat(b, "TEST ~s ~s~n", &.{ V("Loc"), V("Name") }) },
+        .{ .expr = try ioFormat(b, "----- RUN LOG -----~n```logs~n", &.{}) },
+    });
+    try run_one.appendSlice(b.arena, try comments(b, &.{
+        "%% §T duration: monotonic millisecond clock around Fun(); the",
+        "%% delta lands on its own `  duration <ms>ms` line between the",
+        "%% fence close and the ok/FAIL line. Older parsers that don't",
+        "%% recognise the duration line skip it (forward-compatible).",
+    }));
+    try run_one.appendSlice(b.arena, &.{
+        .{ .expr = try b.match(V("T0"), monotonic) },
+        .{ .expr = outcome },
+        .{ .expr = try b.match(V("T1"), monotonic) },
+        .{ .expr = try b.match(V("DurMs"), try b.remote("erlang", "max", &.{
+            .{ .number = "0" },
+            .{ .binop = .{ .op = "-", .lhs = try b.ptr(V("T1")), .rhs = try b.ptr(V("T0")), .parens = false } },
+        })) },
+        .{ .expr = try ioFormat(b, "```~n", &.{}) },
+        .{ .expr = try ioFormat(b, "  duration ~pms~n", &.{V("DurMs")}) },
+        .{ .expr = report },
+    });
+
+    const selected = try b.caseOf(V("Filter"), &.{
+        try b.clause(&.{A("none")}, &.{}, &.{V("Tests")}),
+        try b.clause(&.{V("_")}, &.{}, &.{.{ .list_comp = .{
+            .element = try b.ptr(V("T")),
+            .qualifiers = try b.arena.dupe(Ast.ListComp.Qualifier, &.{
+                .{ .generator = .{ .pattern = try b.match(try b.tuple(&.{ V("N"), V("_"), V("_") }), V("T")), .list = V("Tests") } },
+                .{ .filter = .{ .binop = .{ .op = "=/=", .lhs = try b.ptr(try b.remote("binary", "match", &.{ V("N"), V("Filter") })), .rhs = try b.ptr(A("nomatch")), .parens = false } } },
+            }),
+        } }}),
+    });
+    const results: Ast.Expr = .{ .list_comp = .{
+        .element = try b.ptr(try b.call("__bp_run_one", &.{V("T")})),
+        .qualifiers = try b.arena.dupe(Ast.ListComp.Qualifier, &.{.{ .generator = .{ .pattern = V("T"), .list = V("Selected") } }}),
+    } };
+    const failures: Ast.Expr = .{ .list_comp = .{
+        .element = try b.ptr(V("R")),
+        .qualifiers = try b.arena.dupe(Ast.ListComp.Qualifier, &.{
+            .{ .generator = .{ .pattern = V("R"), .list = V("Results") } },
+            .{ .filter = .{ .binop = .{ .op = "=:=", .lhs = try b.ptr(V("R")), .rhs = try b.ptr(A("fail")), .parens = false } } },
+        }),
+    } };
+    const run_tests = try b.body(&.{
+        try b.match(V("Tests"), .{ .list_block = tests }),
+        try b.match(V("Selected"), selected),
+        try b.match(V("Results"), results),
+        try b.match(V("Failed"), try b.call("length", &.{failures})),
+        try b.match(V("Passed"), .{ .binop = .{ .op = "-", .lhs = try b.ptr(try b.call("length", &.{V("Results")})), .rhs = try b.ptr(V("Failed")), .parens = false } }),
+        try ioFormat(b, "~p passed, ~p failed~n", &.{ V("Passed"), V("Failed") }),
+        try b.caseInline(.{ .binop = .{ .op = ">", .lhs = try b.ptr(V("Failed")), .rhs = try b.ptr(.{ .number = "0" }), .parens = false } }, &.{
+            try b.clause(&.{A("true")}, &.{}, &.{try b.call("halt", &.{.{ .number = "1" }})}),
+            try b.clause(&.{A("false")}, &.{}, &.{A("ok")}),
+        }),
+    });
+
+    const filter = try b.caseOf(V("Args"), &.{
+        try b.clause(&.{try b.cons(&.{V("F")}, V("_"))}, &.{}, &.{try b.call("list_to_binary", &.{V("F")})}),
+        try b.clause(&.{V("_")}, &.{}, &.{A("none")}),
+    });
+
+    try forms.appendSlice(b.arena, &.{
+        .blank,
+        try blockFunction(b, "__bp_run_one", &.{try b.tuple(&.{ V("Name"), V("Fun"), V("Loc") })}, .{ .stmts = run_one.items }),
+        .blank,
+        try blockFunction(b, "__bp_run_tests", &.{V("Filter")}, run_tests),
+        .blank,
+        try blockFunction(b, "main", &.{V("Args")}, try b.body(&.{ try b.match(V("Filter"), filter), try b.call("__bp_run_tests", &.{V("Filter")}) })),
+    });
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -1116,7 +1092,7 @@ const Emitter = struct {
     /// Module names imported via `import {…} from "std"` — a lowercase
     /// receiver naming one lowers to a remote call (`option:map(Args)`).
     std_imports: std.StringHashMap(void),
-    /// When true, `emitFn` keeps the `self` parameter (extension methods take
+    /// When true, `fnForms` keeps the `self` parameter (extension methods take
     /// the receiver as an explicit first argument; ordinary fns drop `self`).
     keep_self: bool = false,
     /// `botopink test` compilation: `assert` lowers to a `bp_assert` error the
@@ -1631,7 +1607,7 @@ const Emitter = struct {
 
     /// Index interface associated `default fn`s (no `self`, with a body) by their
     /// qualified name so `Interface.method(...)` resolves to the bare local fn
-    /// `emitInterface` emits.
+    /// `interfaceForms` emits.
     fn collectInterfaces(this: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| switch (decl) {
             .interface => |i| {
@@ -1844,33 +1820,24 @@ const Emitter = struct {
 
     // ── top-level val ─────────────────────────────────────────────────────────
 
-    fn emitTopVal(this: *Emitter, v: ast.ValDecl, cv: std.StringHashMap([]const u8)) !void {
+    /// Without the entrypoint wrapper a runtime module-level `val` is a 0-arity
+    /// function; a comptime `val` leaves only a comment.
+    fn topValForms(this: *Emitter, b: Ast.Builder, out: *Forms, v: ast.ValDecl) !void {
         if (v.value.isComptimeExpr()) {
-            _ = cv;
-            try this.fmt("%% comptime val {s}\n", .{v.name});
-            return;
+            return out.append(b.arena, .{ .comment = try std.fmt.allocPrint(b.arena, "%% comptime val {s}", .{v.name}) });
         }
-        // Emit as a 0-arity function when there is no script wrapper entrypoint.
-        var name_buf: [256]u8 = undefined;
-        try this.fmt("{s}() ->\n", .{try fnAtom(v.name, &name_buf)});
         const saved = this.indent;
         this.indent = 1;
-        try this.writeIndent();
-        try this.emitExpr(v.value.*);
-        this.indent = saved;
-        try this.w(".\n");
+        defer this.indent = saved;
+        try out.append(b.arena, try blockFunction(b, v.name, &.{}, try b.body(&.{try this.exprNode(b, v.value.*)})));
     }
 
-    fn emitTopValEntryStmt(this: *Emitter, v: ast.ValDecl) !void {
-        const synthetic_runtime_stmt = std.mem.startsWith(u8, v.name, "_");
-        if (synthetic_runtime_stmt) {
-            try this.emitExpr(v.value.*);
-            return;
-        }
-        const vname = try erlangVar(this.alloc, v.name);
-        defer this.alloc.free(vname);
-        try this.fmt("{s} = ", .{vname});
-        try this.emitExpr(v.value.*);
+    /// A runtime module-level `val` inside `'_botopink_main'/0`: `Name = Value`,
+    /// or the bare value for a synthetic `_`-named statement.
+    fn topValEntryExpr(this: *Emitter, b: Ast.Builder, v: ast.ValDecl) !Ast.Expr {
+        if (std.mem.startsWith(u8, v.name, "_")) return this.exprNode(b, v.value.*);
+        const name = Ast.Expr.v(try this.arenaVar(b, v.name));
+        return b.match(name, try this.exprNode(b, v.value.*));
     }
 
     // ── fn ────────────────────────────────────────────────────────────────────
@@ -1885,93 +1852,59 @@ const Emitter = struct {
         return true;
     }
 
-    fn emitFn(this: *Emitter, f: ast.FnDecl) !void {
+    fn fnForms(this: *Emitter, b: Ast.Builder, out: *Forms, f: ast.FnDecl) !void {
         // An effect fn is async/generator — except `#[@result]` (checked-Result
         // effect), which is a plain function. Erlang is eager: a `@Future<T>`
         // resolves to `T` (so `await` is identity) and a finite `@Iterator<T>`
         // is a list.
         if (f.effect != null and f.effect.? != .result) {
-            try this.fmt("%% #[@future] / #[@asyncGenerator] — eager lowering\n", .{});
+            try out.append(b.arena, .{ .comment = "%% #[@future] / #[@asyncGenerator] — eager lowering" });
         }
         // Fresh local scope for this function (erlang vars are function-scoped).
         this.resetLocals();
-        var fn_buf: [256]u8 = undefined;
-        try this.w(try fnAtom(f.name, &fn_buf));
-        try this.w("(");
-        var first = true;
+        var params: std.ArrayListUnmanaged(Ast.Expr) = .empty;
         for (f.params) |p| {
-            if (p.destruct) |d| {
-                switch (d) {
-                    .names => |*n| {
-                        if (!first) try this.w(", ");
-                        try this.w("{");
-                        for (n.fields, 0..) |fld, i| {
-                            if (i > 0) try this.w(", ");
-                            const vname = try erlangVar(this.alloc, fld.bind_name);
-                            defer this.alloc.free(vname);
-                            try this.w(vname);
-                            this.addLocal(fld.bind_name);
-                        }
-                        if (n.hasSpread) try this.w(", _");
-                        try this.w("}");
-                        first = false;
-                    },
-                    .tuple_ => |t| {
-                        if (!first) try this.w(", ");
-                        try this.w("{");
-                        for (t, 0..) |nm, i| {
-                            if (i > 0) try this.w(", ");
-                            const vname = try erlangVar(this.alloc, nm);
-                            defer this.alloc.free(vname);
-                            try this.w(vname);
-                            this.addLocal(nm);
-                        }
-                        try this.w("}");
-                        first = false;
-                    },
-                    .list => {}, // List pattern — placeholder
-                    .ctor => {}, // Constructor pattern — placeholder
-                }
+            if (p.destruct) |d| switch (d) {
+                .names => |n| {
+                    try params.append(b.arena, try this.destructPatternExpr(b, d));
+                    for (n.fields) |fld| this.addLocal(fld.bind_name);
+                },
+                .tuple_ => |t| {
+                    try params.append(b.arena, try this.destructPatternExpr(b, d));
+                    for (t) |nm| this.addLocal(nm);
+                },
+                // List / constructor parameter patterns are not lowered yet.
+                .list, .ctor => {},
             } else if (this.keep_self or !std.mem.eql(u8, p.name, "self")) {
-                if (!first) try this.w(", ");
-                const vname = try erlangVar(this.alloc, p.name);
-                defer this.alloc.free(vname);
-                try this.w(vname);
+                try params.append(b.arena, Ast.Expr.v(try this.arenaVar(b, p.name)));
                 this.addLocal(p.name);
-                first = false;
             }
         }
-        try this.w(") ->\n");
         const saved = this.indent;
         this.indent = 1;
+        defer this.indent = saved;
         this.try_seq = 0;
-        if (isPlainYieldGenerator(f)) {
+        const body: Ast.Body = if (isPlainYieldGenerator(f)) blk: {
             // Finite generator → eager list of yielded items: `[V1, V2, ...]`.
-            try this.writeIndent();
-            try this.w("[");
+            const items = try b.arena.alloc(Ast.Expr, f.body.len);
             for (f.body, 0..) |stmt, i| {
-                if (i > 0) try this.w(", ");
-                if (stmt.expr.jump.kind.yield.value) |val| try this.emitExpr(val.*);
+                items[i] = if (stmt.expr.jump.kind.yield.value) |val| try this.exprNode(b, val.*) else Ast.Expr.r("");
             }
-            try this.w("]");
-        } else {
-            try this.emitBody(f.body);
-        }
-        this.indent = saved;
-        try this.w(".\n");
+            break :blk try b.body(&.{.{ .list = items }});
+        } else try this.bodyNode(b, f.body, 0, 1);
+        try out.append(b.arena, try blockFunction(b, f.name, params.items, body));
     }
 
-    /// Emit a `test { … }` body as `'__bp_test_<idx>'() -> Body.`
-    /// Same body emission as `emitFn` — no params, exported via the runner.
-    fn emitTestFn(this: *Emitter, t: ast.TestDecl, idx: usize) !void {
+    /// A `test { … }` body as `'__bp_test_<idx>'() -> Body.`, registered with
+    /// the runner.
+    fn testFunction(this: *Emitter, b: Ast.Builder, t: ast.TestDecl, idx: usize) !Ast.Form {
         this.resetLocals();
-        try this.fmt("'__bp_test_{d}'() ->\n", .{idx});
         const saved = this.indent;
         this.indent = 1;
+        defer this.indent = saved;
         this.try_seq = 0;
-        try this.emitBody(t.body);
-        this.indent = saved;
-        try this.w(".\n");
+        const name = try std.fmt.allocPrint(b.arena, "__bp_test_{d}", .{idx});
+        return blockFunction(b, name, &.{}, try this.bodyNode(b, t.body, 0, 1));
     }
 
     /// `try expr` (no catch) at body position → propagate `{error, E}` by nesting
@@ -2995,7 +2928,7 @@ const Emitter = struct {
             return headCall(b, try qualified(b, recv.identifier.kind.ident, try this.calleeAtom(b, cc.callee)), try this.callArgs(b, null, cc));
         }
         // Activated extension dispatch: `recv.m(args)` → the local `m(Recv, args)`
-        // emitted by `emitExtensionMethods`.
+        // emitted by `extensionForms`.
         if (this.rewrites.get(loc) != null) {
             return b.call(cc.callee, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
         }
@@ -3019,7 +2952,7 @@ const Emitter = struct {
             // Associated fn of a LOCAL record: a local function of this module.
             if (this.record_fields.contains(name)) return b.call(cc.callee, try this.callArgs(b, null, cc));
             // Associated `default fn` of an interface (`Array.range`): the mangled
-            // local `'<Interface>_<method>'` that `emitInterface` emits.
+            // local `'<Interface>_<method>'` that `interfaceForms` emits.
             if (this.isInterfaceAssoc(name, cc.callee)) {
                 var mraw: [256]u8 = undefined;
                 const mname = interfaceAssocAtom(&mraw, name, cc.callee) catch return Ast.Expr.r("");
@@ -3328,133 +3261,88 @@ const Emitter = struct {
         return null;
     }
 
-    // ── struct / record / enum ────────────────────────────────────────────────
+    // ── record / enum / interface / extensions ────────────────────────────────
 
-    fn emitStruct(this: *Emitter, s: ast.StructDecl) !void {
-        // Structs are maps at runtime (`#{field => V}`) — no decl needed.
-        // (`-record(PascalCase, …)` is invalid Erlang: a capitalised bare atom.)
-        try this.fmt("%% struct {s}: ", .{s.name});
-        var first = true;
-        for (s.members) |m| switch (m) {
-            .field => |f| {
-                if (!first) try this.w(", ");
-                try this.w(f.name);
-                first = false;
-            },
-            else => {},
-        };
-        try this.w("\n");
-        // Emit methods as standalone functions
-        for (s.members) |m| switch (m) {
-            .method => |md| {
-                if (md.is_declare) continue;
-                try this.w("\n");
-                const saved_keep_self = this.keep_self;
-                this.keep_self = !isAssocMethod(md);
-                defer this.keep_self = saved_keep_self;
-                try this.emitFn(.{
-                    .isPub = false,
-                    .name = md.name,
-                    .annotations = &.{},
-                    .genericParams = &.{},
-                    .params = md.params,
-                    .returnType = md.returnType,
-                    .body = md.body orelse &.{},
-                });
-            },
-            else => {},
-        };
+    /// A method as a function form: `keep_self` keeps the receiver as the first
+    /// parameter (`Self`) for instance methods; associated fns have none.
+    fn methodForms(this: *Emitter, b: Ast.Builder, out: *Forms, name: []const u8, m: anytype) !void {
+        const saved_keep_self = this.keep_self;
+        this.keep_self = !isAssocMethod(m);
+        defer this.keep_self = saved_keep_self;
+        try out.append(b.arena, .blank);
+        try this.fnForms(b, out, .{
+            .isPub = false,
+            .name = name,
+            .annotations = &.{},
+            .genericParams = &.{},
+            .params = m.params,
+            .returnType = m.returnType,
+            .body = m.body orelse &.{},
+        });
     }
 
-    fn emitRecord(this: *Emitter, r: ast.RecordDecl) !void {
+    fn recordForms(this: *Emitter, b: Ast.Builder, out: *Forms, r: ast.RecordDecl) !void {
         // Records are maps at runtime (`#{field => V}`) — no decl needed.
         // (`-record(PascalCase, …)` is invalid Erlang: a capitalised bare atom.)
-        try this.fmt("%% record {s}: ", .{r.name});
+        var text: std.ArrayListUnmanaged(u8) = .empty;
+        try text.appendSlice(b.arena, try std.fmt.allocPrint(b.arena, "%% record {s}: ", .{r.name}));
         for (r.fields, 0..) |f, i| {
-            if (i > 0) try this.w(", ");
-            try this.w(f.name);
+            if (i > 0) try text.appendSlice(b.arena, ", ");
+            try text.appendSlice(b.arena, f.name);
         }
-        try this.w("\n");
-        // Instance methods keep their `self` receiver as an explicit first
-        // parameter (`Self`); the call site passes the receiver positionally
-        // (`recv.m(args)` → `m(Recv, args)`). Associated fns (no `self`) are
-        // emitted as ordinary bare functions. A method whose name collides
-        // with another record's method gets mangled to `<recordtype>_<method>`
-        // so erlang's flat top-level fn namespace doesn't double-define it.
+        try out.append(b.arena, .{ .comment = text.items });
+        // Instance methods take the receiver positionally (`recv.m(args)` →
+        // `m(Recv, args)`). A method whose name collides with another record's
+        // method is mangled to `<recordtype>_<method>` so erlang's flat
+        // top-level fn namespace doesn't double-define it.
         for (r.methods) |m| {
             if (m.is_declare) continue;
-            try this.w("\n");
-            const saved_keep_self = this.keep_self;
-            this.keep_self = !isAssocMethod(m);
-            defer this.keep_self = saved_keep_self;
             var mname_buf: [256]u8 = undefined;
             const mname: []const u8 = if (this.isRecordMethodCollision(r.name, m.name))
                 try recordMethodAtom(&mname_buf, r.name, m.name)
             else
                 m.name;
-            try this.emitFn(.{
-                .isPub = false,
-                .name = mname,
-                .annotations = &.{},
-                .genericParams = &.{},
-                .params = m.params,
-                .returnType = m.returnType,
-                .body = m.body orelse &.{},
-            });
+            try this.methodForms(b, out, mname, m);
         }
     }
 
-    fn emitEnum(this: *Emitter, e: ast.EnumDecl) !void {
-        try this.fmt("%% enum {s}\n", .{e.name});
+    fn enumForms(this: *Emitter, b: Ast.Builder, out: *Forms, e: ast.EnumDecl) !void {
+        try out.append(b.arena, .{ .comment = try std.fmt.allocPrint(b.arena, "%% enum {s}", .{e.name}) });
         for (e.variants) |v| {
-            if (v.fields.len == 0) {
-                try this.fmt("%%   {s}\n", .{v.name});
-            } else {
-                try this.fmt("%%   {s}(", .{v.name});
+            var text: std.ArrayListUnmanaged(u8) = .empty;
+            try text.appendSlice(b.arena, try std.fmt.allocPrint(b.arena, "%%   {s}", .{v.name}));
+            if (v.fields.len > 0) {
+                try text.append(b.arena, '(');
                 for (v.fields, 0..) |f, i| {
-                    if (i > 0) try this.w(", ");
-                    try this.w(f.name);
+                    if (i > 0) try text.appendSlice(b.arena, ", ");
+                    try text.appendSlice(b.arena, f.name);
                 }
-                try this.w(")\n");
+                try text.append(b.arena, ')');
             }
+            try out.append(b.arena, .{ .comment = text.items });
         }
         for (e.methods) |m| {
             if (m.is_declare) continue;
-            try this.w("\n");
-            const saved_keep_self = this.keep_self;
-            this.keep_self = !isAssocMethod(m);
-            defer this.keep_self = saved_keep_self;
-            try this.emitFn(.{
-                .isPub = false,
-                .name = m.name,
-                .annotations = &.{},
-                .genericParams = &.{},
-                .params = m.params,
-                .returnType = m.returnType,
-                .body = m.body orelse &.{},
-            });
+            try this.methodForms(b, out, m.name, m);
         }
     }
 
-    fn emitInterface(this: *Emitter, i: ast.InterfaceDecl) !void {
-        try this.fmt("%% interface {s}\n", .{i.name});
-        // Associated `default fn`s (no `self`) are pure botopink — emit them as
-        // local functions so `Interface.method(...)` resolves locally (the
-        // interface decl is inlined into each consuming module). The name is
-        // mangled `Interface_method` (→ quoted `'Array_range'`, since it starts
-        // uppercase) so it never collides with a consumer's own top-level fn of
-        // the same name (a consumer may define its own `range`/`repeat`). Instance
-        // default fns (with `self`) are a separate gap (§B4 — needs §B1
-        // generic-Self resolution + cross-primitive-method routing), not emitted
-        // here.
+    fn interfaceForms(this: *Emitter, b: Ast.Builder, out: *Forms, i: ast.InterfaceDecl) !void {
+        try out.append(b.arena, .{ .comment = try std.fmt.allocPrint(b.arena, "%% interface {s}", .{i.name}) });
+        // Associated `default fn`s (no `self`) are pure botopink — local
+        // functions so `Interface.method(...)` resolves locally (the interface
+        // decl is inlined into each consuming module). The name is mangled
+        // `Interface_method` (→ quoted `'Array_range'`) so it never collides with
+        // a consumer's own top-level fn of the same name. Instance default fns
+        // (with `self`) are not emitted here.
         for (i.methods) |m| {
             if (!m.is_default or m.body == null) continue;
             const has_self = m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self");
             if (has_self) continue;
             var mbuf: [256]u8 = undefined;
             const mangled = interfaceAssocAtom(&mbuf, i.name, m.name) catch continue;
-            try this.w("\n");
-            try this.emitFn(.{
+            try out.append(b.arena, .blank);
+            try this.fnForms(b, out, .{
                 .isPub = false,
                 .name = mangled,
                 .annotations = &.{},
@@ -3466,35 +3354,37 @@ const Emitter = struct {
         }
     }
 
-    fn emitImplement(this: *Emitter, im: ast.ImplementDecl) !void {
-        try this.w("%% implement ");
+    fn implementForms(this: *Emitter, b: Ast.Builder, out: *Forms, im: ast.ImplementDecl) !void {
+        var text: std.ArrayListUnmanaged(u8) = .empty;
+        try text.appendSlice(b.arena, "%% implement ");
         for (im.interfaces, 0..) |iface, i| {
-            if (i > 0) try this.w(", ");
-            try this.w(switch (iface) {
+            if (i > 0) try text.appendSlice(b.arena, ", ");
+            try text.appendSlice(b.arena, switch (iface) {
                 .named => |n| n,
                 .generic => |g| g.name,
                 else => "?",
             });
         }
-        try this.fmt(" for {s}\n", .{im.target});
-        try this.emitExtensionMethods(im.methods);
+        try text.appendSlice(b.arena, try std.fmt.allocPrint(b.arena, " for {s}", .{im.target}));
+        try out.append(b.arena, .{ .comment = text.items });
+        try this.extensionForms(b, out, im.methods);
     }
 
-    fn emitExtend(this: *Emitter, ex: ast.ExtendDecl) !void {
-        try this.fmt("%% extend {s}\n", .{ex.target});
-        try this.emitExtensionMethods(ex.methods);
+    fn extendForms(this: *Emitter, b: Ast.Builder, out: *Forms, ex: ast.ExtendDecl) !void {
+        try out.append(b.arena, .{ .comment = try std.fmt.allocPrint(b.arena, "%% extend {s}", .{ex.target}) });
+        try this.extensionForms(b, out, ex.methods);
     }
 
-    /// Extension methods (from `implement`/`extend`) are emitted as bare
-    /// top-level functions that take the receiver as their first param, so an
-    /// activated `recv.m(args)` dispatch can call `m(Recv, args)` directly.
-    fn emitExtensionMethods(this: *Emitter, methods: []const ast.ImplementMethod) !void {
+    /// Extension methods (from `implement`/`extend`) are bare top-level
+    /// functions taking the receiver first, so an activated `recv.m(args)`
+    /// dispatch calls `m(Recv, args)` directly.
+    fn extensionForms(this: *Emitter, b: Ast.Builder, out: *Forms, methods: []const ast.ImplementMethod) !void {
         const saved_keep_self = this.keep_self;
         this.keep_self = true;
         defer this.keep_self = saved_keep_self;
         for (methods) |m| {
-            try this.w("\n");
-            try this.emitFn(.{
+            try out.append(b.arena, .blank);
+            try this.fnForms(b, out, .{
                 .isPub = false,
                 .name = m.name,
                 .annotations = &.{},
@@ -3504,22 +3394,5 @@ const Emitter = struct {
                 .body = m.body,
             });
         }
-    }
-
-    fn emitUse(this: *Emitter, u: ast.ImportDecl) !void {
-        try this.w(if (u.activationOnly) "%% activate " else "%% import ");
-        for (u.imports, 0..) |imp, i| {
-            if (i > 0) try this.w(", ");
-            try this.w(imp.name());
-        }
-        try this.w("\n");
-    }
-
-    // ── binary string helper ─────────────────────────────────────────────────
-
-    /// A string literal's lexeme content as a binary (escapes resolved by
-    /// `erlEmitter.writeBinaryFromLexeme`).
-    fn emitBinary(this: *Emitter, s: []const u8) !void {
-        try erlEmitter.writeBinaryFromLexeme(this.out, s);
     }
 };

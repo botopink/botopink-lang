@@ -128,6 +128,19 @@ pub fn moduleName(alloc: std.mem.Allocator, name: []const u8) std.mem.Allocator.
 /// these bytes regardless of the source file encoding.
 pub fn writeBinaryFromBytes(w: *Writer, bytes: []const u8) Writer.Error!void {
     try w.writeAll("<<\"");
+    try writeEscaped(w, bytes);
+    try w.writeAll("\">>");
+}
+
+/// `"…"` — an Erlang string literal (character list) from raw bytes, escaped
+/// like `writeBinaryFromBytes`.
+pub fn writeString(w: *Writer, bytes: []const u8) Writer.Error!void {
+    try w.writeByte('"');
+    try writeEscaped(w, bytes);
+    try w.writeByte('"');
+}
+
+fn writeEscaped(w: *Writer, bytes: []const u8) Writer.Error!void {
     for (bytes) |c| switch (c) {
         '"' => try w.writeAll("\\\""),
         '\\' => try w.writeAll("\\\\"),
@@ -137,7 +150,6 @@ pub fn writeBinaryFromBytes(w: *Writer, bytes: []const u8) Writer.Error!void {
         0...8, 11, 12, 14...31, 127...255 => try w.print("\\x{{{X:0>2}}}", .{c}),
         else => try w.writeByte(c),
     };
-    try w.writeAll("\">>");
 }
 
 /// `<<"…">>` from a botopink string literal's lexeme content. The lexer keeps
@@ -386,6 +398,22 @@ pub fn writeExpr(w: *Writer, e: Ast.Expr, indent: usize) Error!void {
                 try writeExpr(w, st.*, indent);
             }
         },
+        .string => |text| try writeString(w, text),
+        .fun_ref => |ref| {
+            try w.writeAll("fun ");
+            try writeFnRef(w, ref);
+        },
+        .list_block => |items| {
+            try w.writeAll("[\n");
+            for (items, 0..) |item, i| {
+                if (i > 0) try w.writeAll(",\n");
+                try writeIndent(w, indent + 1);
+                try writeExpr(w, item, indent + 1);
+            }
+            try w.writeByte('\n');
+            try writeIndent(w, indent);
+            try w.writeByte(']');
+        },
         .seq => |parts| for (parts) |part| try writeExpr(w, part, indent),
         .try_catch => |tc| {
             try w.writeAll("try\n");
@@ -520,13 +548,43 @@ pub fn writeFunction(w: *Writer, f: Ast.Function) Error!void {
     try w.writeAll(".\n");
 }
 
+fn writeFnRef(w: *Writer, ref: Ast.FnRef) Error!void {
+    try writeAtom(w, ref.name);
+    try w.print("/{d}", .{ref.arity});
+}
+
+fn writeFnRefs(w: *Writer, refs: []const Ast.FnRef) Error!void {
+    try w.writeByte('[');
+    for (refs, 0..) |ref, i| {
+        if (i > 0) try w.writeAll(", ");
+        try writeFnRef(w, ref);
+    }
+    try w.writeByte(']');
+}
+
 pub fn writeForm(w: *Writer, form: Ast.Form) Error!void {
     switch (form) {
+        .module => |name| try w.print("-module({s}).\n", .{name}),
+        .exports => |refs| {
+            try w.writeAll("-export(");
+            try writeFnRefs(w, refs);
+            try w.writeAll(").\n");
+        },
+        .no_auto_import => |refs| {
+            try w.writeAll("-compile({no_auto_import,");
+            try writeFnRefs(w, refs);
+            try w.writeAll("}).\n");
+        },
+        .blank => try w.writeByte('\n'),
         .attribute => |attr| try w.print("-{s}({s}).\n", .{ attr.name, attr.value }),
         .function => |f| try writeFunction(w, f),
         .comment => |text| try w.print("{s}\n", .{text}),
         .raw => |text| try w.writeAll(text),
     }
+}
+
+pub fn writeForms(w: *Writer, forms: []const Ast.Form) Error!void {
+    for (forms) |form| try writeForm(w, form);
 }
 
 // ── tests ────────────────────────────────────────────────────────────────────
@@ -684,4 +742,35 @@ test "erl_emitter: inline case and seq" {
         "case R of {ok, V} -> V; _ -> false end | (string:find(S, <<\"x\">>) =/= nomatch)",
         aw.written(),
     );
+}
+
+test "erl_emitter: module forms" {
+    var aw: Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    const w = &aw.writer;
+    const tests = [_]Ast.Expr{
+        .{ .tuple = &.{ Ast.Expr.t(Term.str("a")), .{ .fun_ref = .{ .name = "__bp_test_0", .arity = 0 } } } },
+        .{ .string = "~p~n" },
+    };
+    try writeForms(w, &.{
+        .{ .module = "m" },
+        .{ .no_auto_import = &.{.{ .name = "abs", .arity = 1 }} },
+        .{ .exports = &.{ .{ .name = "main", .arity = 1 }, .{ .name = "of", .arity = 0 } } },
+        .blank,
+        .{ .comment = "%% record R: a" },
+        .{ .function = .{ .name = "t", .clauses = &.{.{ .patterns = &.{}, .body = Ast.Body.of(&.{.{ .expr = .{ .list_block = &tests } }}) }} } },
+    });
+    try std.testing.expectEqualStrings(
+        \\-module(m).
+        \\-compile({no_auto_import,[abs/1]}).
+        \\-export([main/1, 'of'/0]).
+        \\
+        \\%% record R: a
+        \\t() ->
+        \\    [
+        \\        {<<"a">>, fun '__bp_test_0'/0},
+        \\        "~p~n"
+        \\    ].
+        \\
+    , aw.written());
 }

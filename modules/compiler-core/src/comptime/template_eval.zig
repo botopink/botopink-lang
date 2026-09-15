@@ -271,7 +271,7 @@ fn buildModule(
     const code = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, .{
         .host_enums = &.{ "BindingKind", "DeclKind" },
         .host_records = &host_records,
-        .exports = &.{"main/0"},
+        .exports = &.{.{ .name = "main", .arity = 0 }},
         .forms = forms,
     }) catch return error.EvalFailed;
 
