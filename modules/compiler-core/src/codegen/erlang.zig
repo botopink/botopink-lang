@@ -513,10 +513,7 @@ fn emitErlangModule(
     cross: ?*const CrossModule,
     comptime_module: ?ComptimeModule,
 ) ![]u8 {
-    var aw: std.Io.Writer.Allocating = .init(alloc);
-    defer aw.deinit();
-
-    var em = Emitter.init(alloc, &aw.writer, comptime_vals, rewrites);
+    var em = Emitter.init(alloc, comptime_vals, rewrites);
     em.instance_lowerings = instance_lowerings;
     em.untyped = comptime_module != null;
     em.test_mode = test_mode;
@@ -786,6 +783,8 @@ fn emitErlangModule(
         try testRunnerForms(b, &forms, tests);
     }
 
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
     try erlEmitter.writeForms(&aw.writer, forms.items);
     return aw.toOwnedSlice();
 }
@@ -1061,7 +1060,6 @@ fn hasExternalInline(annotations: []const ast.Annotation, target: []const u8) bo
 // ── Emitter ───────────────────────────────────────────────────────────────────
 
 const Emitter = struct {
-    out: *std.Io.Writer,
     cv: std.StringHashMap([]const u8),
     indent: usize = 0,
     try_seq: usize = 0,
@@ -1176,9 +1174,8 @@ const Emitter = struct {
     /// Populated by `collectRecordMethodCollisions` before any emit.
     record_method_collisions: std.StringHashMap(void),
 
-    fn init(alloc: std.mem.Allocator, out: *std.Io.Writer, cv: std.StringHashMap([]const u8), rewrites: std.AutoHashMap(ast.Loc, []const u8)) Emitter {
+    fn init(alloc: std.mem.Allocator, cv: std.StringHashMap([]const u8), rewrites: std.AutoHashMap(ast.Loc, []const u8)) Emitter {
         return .{
-            .out = out,
             .cv = cv,
             .alloc = alloc,
             .rewrites = rewrites,
@@ -1806,18 +1803,6 @@ const Emitter = struct {
         };
     }
 
-    fn w(this: *Emitter, s: []const u8) !void {
-        try this.out.writeAll(s);
-    }
-
-    fn fmt(this: *Emitter, comptime f: []const u8, args: anytype) !void {
-        try this.out.print(f, args);
-    }
-
-    fn writeIndent(this: *Emitter) !void {
-        for (0..this.indent) |_| try this.w("    ");
-    }
-
     // ── top-level val ─────────────────────────────────────────────────────────
 
     /// Without the entrypoint wrapper a runtime module-level `val` is a 0-arity
@@ -1917,25 +1902,6 @@ const Emitter = struct {
             },
             else => null,
         };
-    }
-
-    // ── body (comma-separated stmts; does NOT emit trailing newline) ──────────
-    //
-    // Callers are responsible for the terminator that follows on the same line:
-    //   emitFn  → ".\n"
-    //   fun end → "\nINDENT end"
-
-    fn emitBody(this: *Emitter, body: []const ast.Stmt) !void {
-        try this.emitBodyFrom(body, 0);
-    }
-
-    /// Emit statements `body[start..]` at the current indentation: build the
-    /// `erl_ast` body (`bodyNode`) and render it.
-    fn emitBodyFrom(this: *Emitter, body: []const ast.Stmt, start: usize) anyerror!void {
-        var arena_state = std.heap.ArenaAllocator.init(this.alloc);
-        defer arena_state.deinit();
-        const b: Ast.Builder = .{ .arena = arena_state.allocator() };
-        try erlEmitter.writeBody(this.out, try this.bodyNode(b, body, start, this.indent), this.indent);
     }
 
     /// The statements `body[start..]` as an `erl_ast` body rendered at `indent`.
@@ -2557,14 +2523,6 @@ const Emitter = struct {
         return if (args.len > 1) this.exprNode(b, args[1].value.*) else Ast.Expr.r("");
     }
 
-    /// Emit `e` at the current indentation: build its `erl_ast` node and render it.
-    fn emitExpr(this: *Emitter, e: ast.Expr) anyerror!void {
-        var arena_state = std.heap.ArenaAllocator.init(this.alloc);
-        defer arena_state.deinit();
-        const b: Ast.Builder = .{ .arena = arena_state.allocator() };
-        try erlEmitter.writeExpr(this.out, try this.exprNode(b, e), this.indent);
-    }
-
     /// `e` as an `erl_ast` expression rendered at the current indentation.
     fn exprNode(this: *Emitter, b: Ast.Builder, e: ast.Expr) anyerror!Ast.Expr {
         const V = Ast.Expr.v;
@@ -3007,7 +2965,7 @@ const Emitter = struct {
 
     /// `iolist_to_binary(io_lib:format("~p", [Value]))` — any value as text.
     fn formatNode(this: *Emitter, b: Ast.Builder, value: *const ast.Expr) anyerror!Ast.Expr {
-        const format = try b.remote("io_lib", "format", &.{ Ast.Expr.r("\"~p\""), try b.list(&.{try this.exprNode(b, value.*)}) });
+        const format = try b.remote("io_lib", "format", &.{ .{ .string = "~p" }, try b.list(&.{try this.exprNode(b, value.*)}) });
         return b.call("iolist_to_binary", &.{format});
     }
 
@@ -3054,7 +3012,7 @@ const Emitter = struct {
                 // Test mode raises a tagged error the runner catches per test
                 // (it records the failure and continues).
                 const message = if (a.message) |msg| try this.exprNode(b, msg.*) else Ast.str("assertion failed");
-                const where = Ast.str(try std.fmt.allocPrint(b.arena, "{s}.bp:{d}", .{ this.module_name, ct.loc.line }));
+                const where: Ast.Expr = .{ .lexeme_binary = try std.fmt.allocPrint(b.arena, "{s}.bp:{d}", .{ this.module_name, ct.loc.line }) };
                 const raise = try b.remote("erlang", "error", &.{try b.tuple(&.{ A("bp_assert"), message, where })});
                 return b.caseInline(cond, &.{
                     try b.clause(&.{A("true")}, &.{}, &.{A("ok")}),

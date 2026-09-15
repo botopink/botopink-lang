@@ -168,8 +168,8 @@ codegen/
   values instead of binding them inside a `case` arm or `fun`:
   `Acc@1 = case C of true -> …, Acc@2; _ -> Acc end` and
   `Acc@3 = lists:foldl(fun(X, Acc@1) -> …, Acc@2 end, Acc, Xs)`; several
-  variables travel as a tuple. Arms are rendered into a side buffer first (the
-  group's fresh versions are known only afterwards). Arms ending in `return`,
+  variables travel as a tuple. Arms are built first (the group's fresh versions
+  are known only afterwards). Arms ending in `return`,
   indexed/`await`/yielding loops keep the plain lowering; the older
   `var acc = …; xs.forEach(…)` fold fusion still takes precedence.
 - **Comptime modules:** `emitComptimeModule(alloc, name, program, .{ host_enums,
@@ -182,8 +182,10 @@ codegen/
   `'__bp_add'` (binary concat or arithmetic) and `.len`/`.length` without an
   instance lowering to `'__bp_len'(X, Field)`. Tests: `tests/comptime_module.zig`.
 - **Names**: `atomName`/`fnAtom`/`erlangVar`/`erlangModule` are aliases of
-  `beam/erl_emitter.zig`; `emitBinary` delegates to
-  `erl_emitter.writeBinaryFromLexeme`.
+  `beam/erl_emitter.zig`. `erlang.zig` writes no Erlang text itself: the emitter
+  builds `erl_ast` nodes and forms and `erl_emitter` renders them (`raw` remains
+  only for host template text, names written as spelled and the `%%` comments
+  left in place of unsupported constructs).
 - **Records are maps**: constructors lower to `#{field => V, …}` (positional args
   use the declared field order from `collectTypeShapes`); field access is
   `maps:get(field, Recv)`; tuple index `t._N` → `element(N+1, T)`. No `-record`
