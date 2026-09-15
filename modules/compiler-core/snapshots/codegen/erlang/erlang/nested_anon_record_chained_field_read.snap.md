@@ -12,7 +12,7 @@ fn main() {
 -export(['_botopink_main'/0, main/1]).
 
 main() ->
-    Outer = #{span => #{start => 5, end => 9}, kind => 3},
+    Outer = #{span => #{start => 5, 'end' => 9}, kind => 3},
     io:format("~p~n", [maps:get(start, maps:get(span, Outer))]).
 
 '_botopink_main'() ->
@@ -24,4 +24,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+5
 ```

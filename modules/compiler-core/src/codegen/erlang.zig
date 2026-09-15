@@ -2769,10 +2769,11 @@ const Emitter = struct {
         return .{ .apply = .{ .fun = try b.ptr(try b.paren(fun)), .args = try b.exprs(&.{try this.exprNode(b, receiver)}) } };
     }
 
-    /// `#{field => Value, …}` with the field names as written.
+    /// `#{field => Value, …}`, the field names as atoms (quoted when PascalCase
+    /// or reserved, e.g. `'Kind'`, `'end'`).
     fn fieldMap(this: *Emitter, b: Ast.Builder, fields: anytype) anyerror!Ast.Expr {
         const out = try b.arena.alloc(Ast.MapField, fields.len);
-        for (fields, 0..) |f, i| out[i] = .{ .key = Ast.Expr.r(f.name), .value = try this.exprNode(b, f.value.*) };
+        for (fields, 0..) |f, i| out[i] = Ast.field(f.name, try this.exprNode(b, f.value.*));
         return .{ .map = out };
     }
 

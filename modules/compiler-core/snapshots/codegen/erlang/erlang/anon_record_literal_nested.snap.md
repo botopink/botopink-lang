@@ -11,7 +11,7 @@ fn make() -> i32 {
 -module(main).
 
 make() ->
-    Outer = #{span => #{start => 1, end => 2}, kind => 3},
+    Outer = #{span => #{start => 1, 'end' => 2}, kind => 3},
     Outer.
 ```
 

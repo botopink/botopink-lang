@@ -149,8 +149,9 @@ codegen/
   expand to one clause per alternative; `patternNode` for variables, enum-variant
   atoms, `{tag, Name, …}` variant tuples, list/cons and multi-subject tuples),
   binding expressions (`bindingNode`), `use` and comptime forms (`comptimeNode`:
-  `assert` as an inline `case` in test mode, `assertPattern`). Record literal keys
-  and array spread names are written as the source spelled them.
+  `assert` as an inline `case` in test mode, `assertPattern`). Record/interface
+  literal keys are atoms (quoted when PascalCase or reserved); array spread names
+  are written as the source spelled them.
 - **Calls are `erl_ast` nodes** (`callNode`): pipelines apply inside out
   (`pipelineNode`); builtins (`builtinCallNode`) render their `@external(erlang, …)`
   template, `@block` as an applied `fun`, or the `__bp_*` result/option ops
