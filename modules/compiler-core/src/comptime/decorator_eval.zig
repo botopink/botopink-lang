@@ -108,92 +108,109 @@ pub fn evaluate(
 
 /// Emit Erlang code for a DeclHandle as a map literal.
 fn emitDeclHandle(buf: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, handle: DeclHandle) !void {
-    try buf.appendSlice(arena, "#{");
+    const erl_emitter = @import("./erl_emitter.zig");
+    
+    // Converter DeclHandle para ErlValue map
+    var entries = try arena.alloc(erl_emitter.MapEntry, 6);
     
     // kind
-    try buf.appendSlice(arena, "'kind' => <<\"");
-    try buf.appendSlice(arena, handle.kind);
-    try buf.appendSlice(arena, "\">>, ");
+    entries[0] = .{ .key = "kind", .value = .{ .string = handle.kind } };
     
     // name
-    try buf.appendSlice(arena, "'name' => <<\"");
-    try buf.appendSlice(arena, handle.name);
-    try buf.appendSlice(arena, "\">>, ");
+    entries[1] = .{ .key = "name", .value = .{ .string = handle.name } };
     
     // fields
-    try buf.appendSlice(arena, "'fields' => [");
+    var field_values = try arena.alloc(erl_emitter.ErlValue, handle.fields.len);
     for (handle.fields, 0..) |field, i| {
-        if (i > 0) try buf.appendSlice(arena, ", ");
-        try buf.appendSlice(arena, "#{'name' => <<\"");
-        try buf.appendSlice(arena, field.name);
-        try buf.appendSlice(arena, "\">>, 'typeName' => <<\"");
-        try buf.appendSlice(arena, field.typeName);
-        try buf.appendSlice(arena, "\">>, 'annotations' => [");
+        var field_entries = try arena.alloc(erl_emitter.MapEntry, 3);
+        field_entries[0] = .{ .key = "name", .value = .{ .string = field.name } };
+        field_entries[1] = .{ .key = "typeName", .value = .{ .string = field.typeName } };
+        
+        // Converter annotations do field
+        var ann_values = try arena.alloc(erl_emitter.ErlValue, field.annotations.len);
         for (field.annotations, 0..) |ann, j| {
-            if (j > 0) try buf.appendSlice(arena, ", ");
-            try buf.appendSlice(arena, "#{'name' => <<\"");
-            try buf.appendSlice(arena, ann.name);
-            try buf.appendSlice(arena, "\">>, 'args' => [");
+            var ann_entries = try arena.alloc(erl_emitter.MapEntry, 2);
+            ann_entries[0] = .{ .key = "name", .value = .{ .string = ann.name } };
+            
+            var arg_values = try arena.alloc(erl_emitter.ErlValue, ann.args.len);
             for (ann.args, 0..) |arg, k| {
-                if (k > 0) try buf.appendSlice(arena, ", ");
-                try buf.appendSlice(arena, "<<\"");
-                try buf.appendSlice(arena, arg);
-                try buf.appendSlice(arena, "\">>");
+                arg_values[k] = .{ .string = arg };
             }
-            try buf.appendSlice(arena, "]}");
+            ann_entries[1] = .{ .key = "args", .value = .{ .list = arg_values } };
+            
+            ann_values[j] = .{ .map = ann_entries };
         }
-        try buf.appendSlice(arena, "]}");
+        field_entries[2] = .{ .key = "annotations", .value = .{ .list = ann_values } };
+        
+        field_values[i] = .{ .map = field_entries };
     }
-    try buf.appendSlice(arena, "], ");
+    entries[2] = .{ .key = "fields", .value = .{ .list = field_values } };
     
     // methods
-    try buf.appendSlice(arena, "'methods' => [");
+    var method_values = try arena.alloc(erl_emitter.ErlValue, handle.methods.len);
     for (handle.methods, 0..) |method, i| {
-        if (i > 0) try buf.appendSlice(arena, ", ");
-        try buf.appendSlice(arena, "#{'name' => <<\"");
-        try buf.appendSlice(arena, method.name);
-        try buf.appendSlice(arena, "\">>, 'params' => [");
+        var method_entries = try arena.alloc(erl_emitter.MapEntry, 4);
+        method_entries[0] = .{ .key = "name", .value = .{ .string = method.name } };
+        
+        // Converter params do method
+        var param_values = try arena.alloc(erl_emitter.ErlValue, method.params.len);
         for (method.params, 0..) |param, j| {
-            if (j > 0) try buf.appendSlice(arena, ", ");
-            try buf.appendSlice(arena, "#{'name' => <<\"");
-            try buf.appendSlice(arena, param.name);
-            try buf.appendSlice(arena, "\">>}");
+            var param_entries = try arena.alloc(erl_emitter.MapEntry, 1);
+            param_entries[0] = .{ .key = "name", .value = .{ .string = param.name } };
+            param_values[j] = .{ .map = param_entries };
         }
-        try buf.appendSlice(arena, "], 'returnType' => <<\"");
-        if (method.returnType) |rt| {
-            // Convert TypeRef to string representation
-            switch (rt) {
-                .named => |n| try buf.appendSlice(arena, n),
-                .array => try buf.appendSlice(arena, "array"),
-                .optional => try buf.appendSlice(arena, "optional"),
-                else => try buf.appendSlice(arena, "unknown"),
+        method_entries[1] = .{ .key = "params", .value = .{ .list = param_values } };
+        
+        // Converter returnType
+        const return_type_str = if (method.returnType) |rt| switch (rt) {
+            .named => |n| n,
+            .array => "array",
+            .optional => "optional",
+            else => "unknown",
+        } else "";
+        method_entries[2] = .{ .key = "returnType", .value = .{ .string = return_type_str } };
+        
+        // Converter annotations do method
+        var m_ann_values = try arena.alloc(erl_emitter.ErlValue, method.annotations.len);
+        for (method.annotations, 0..) |ann, j| {
+            var m_ann_entries = try arena.alloc(erl_emitter.MapEntry, 2);
+            m_ann_entries[0] = .{ .key = "name", .value = .{ .string = ann.name } };
+            
+            var m_arg_values = try arena.alloc(erl_emitter.ErlValue, ann.args.len);
+            for (ann.args, 0..) |arg, k| {
+                m_arg_values[k] = .{ .string = arg };
             }
+            m_ann_entries[1] = .{ .key = "args", .value = .{ .list = m_arg_values } };
+            
+            m_ann_values[j] = .{ .map = m_ann_entries };
         }
-        try buf.appendSlice(arena, "\">>}");
+        method_entries[3] = .{ .key = "annotations", .value = .{ .list = m_ann_values } };
+        
+        method_values[i] = .{ .map = method_entries };
     }
-    try buf.appendSlice(arena, "], ");
+    entries[3] = .{ .key = "methods", .value = .{ .list = method_values } };
     
     // returnType
-    try buf.appendSlice(arena, "'returnType' => <<\"");
-    try buf.appendSlice(arena, handle.returnType);
-    try buf.appendSlice(arena, "\">>, ");
+    entries[4] = .{ .key = "returnType", .value = .{ .string = handle.returnType } };
     
     // annotations
-    try buf.appendSlice(arena, "'annotations' => [");
+    var h_ann_values = try arena.alloc(erl_emitter.ErlValue, handle.annotations.len);
     for (handle.annotations, 0..) |ann, i| {
-        if (i > 0) try buf.appendSlice(arena, ", ");
-        try buf.appendSlice(arena, "#{'name' => <<\"");
-        try buf.appendSlice(arena, ann.name);
-        try buf.appendSlice(arena, "\">>, 'args' => [");
+        var h_ann_entries = try arena.alloc(erl_emitter.MapEntry, 2);
+        h_ann_entries[0] = .{ .key = "name", .value = .{ .string = ann.name } };
+        
+        var h_arg_values = try arena.alloc(erl_emitter.ErlValue, ann.args.len);
         for (ann.args, 0..) |arg, j| {
-            if (j > 0) try buf.appendSlice(arena, ", ");
-            try buf.appendSlice(arena, "<<\"");
-            try buf.appendSlice(arena, arg);
-            try buf.appendSlice(arena, "\">>");
+            h_arg_values[j] = .{ .string = arg };
         }
-        try buf.appendSlice(arena, "]}");
+        h_ann_entries[1] = .{ .key = "args", .value = .{ .list = h_arg_values } };
+        
+        h_ann_values[i] = .{ .map = h_ann_entries };
     }
-    try buf.appendSlice(arena, "]}");
+    entries[5] = .{ .key = "annotations", .value = .{ .list = h_ann_values } };
+    
+    // Emitir o map usando erl_emitter
+    try erl_emitter.emitMap(buf, arena, "", entries);
 }
 
 /// Emit Erlang code for an expression.
