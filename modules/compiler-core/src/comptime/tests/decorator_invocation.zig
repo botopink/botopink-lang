@@ -38,9 +38,13 @@ fn assertRejects(comptime loc: std.builtin.SourceLocation, src: []const u8, need
     defer session.deinit(std.testing.allocator);
     const outcome = session.outputs.items[0].outcome;
     try std.testing.expect(outcome == .typeError);
-    const desc = try h.renderTypeError(std.testing.allocator, src, outcome.typeError);
-    defer std.testing.allocator.free(desc);
-    if (std.mem.indexOf(u8, desc, needle) == null) {
+    // Match the diagnostic's own message, not the rendered report: the report
+    // quotes the source, where the expected text appears as a string literal.
+    const message = try outcome.typeError.message(std.testing.allocator);
+    defer std.testing.allocator.free(message);
+    if (std.mem.indexOf(u8, message, needle) == null) {
+        const desc = try h.renderTypeError(std.testing.allocator, src, outcome.typeError);
+        defer std.testing.allocator.free(desc);
         std.debug.print("\nexpected rejection containing \"{s}\", got:\n{s}\n", .{ needle, desc });
         return error.TestUnexpectedResult;
     }

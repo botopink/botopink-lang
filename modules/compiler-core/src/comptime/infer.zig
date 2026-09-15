@@ -2261,12 +2261,10 @@ fn runDeclDecorators(
             plain[i] = .{ .paramName = pname, .jsValue = arg };
         }
 
-        std.debug.print("infer.zig: calling decoratorEval.evaluate for decorator '{s}'\n", .{dfn.name});
-        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, dfn, handle, plain) catch |err| {
-            std.debug.print("infer.zig: decoratorEval.evaluate failed with error: {}\n", .{err});
+        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, dfn, handle, plain) catch {
             env.lastError = TypeError.custom(
                 "the decorator evaluator failed to run",
-                "Decorator bodies run in the erlang runtime at compile time — check that `erl` is available.",
+                "Decorator bodies run in a persistent `erl` process at compile time — check that `erl` and `erlc` are on PATH.",
             );
             return error.TypeError;
         };
@@ -2280,7 +2278,7 @@ fn runDeclDecorators(
                 return error.TypeError;
             },
             .err => |m| {
-                env.lastError = TypeError.custom(m, "the decorator body raised an unexpected error");
+                env.lastError = TypeError.custom(m, "the decorator could not be evaluated");
                 return error.TypeError;
             },
         }
