@@ -37,6 +37,9 @@ const server_erl =
     \\-module(botopink_comptime_server).
     \\-export([start/0]).
     \\start() ->
+    \\    %% Frames are raw bytes; `unicode` (the default) would UTF-8-encode the
+    \\    %% 4-byte length prefix and corrupt any payload >= 128 bytes.
+    \\    ok = io:setopts(standard_io, [{encoding, latin1}]),
     \\    case read_frame() of
     \\        eof -> ok;
     \\        {1, PathBin} ->  %% eval: compile .erl file
@@ -95,11 +98,11 @@ const server_erl =
     \\
     \\write_frame(Data) when is_binary(Data) ->
     \\    Len = byte_size(Data),
-    \\    io:put_chars(<<Len:32/unsigned-big-integer, Data/binary>>);
+    \\    file:write(standard_io, <<Len:32/unsigned-big-integer, Data/binary>>);
     \\write_frame(Data) when is_list(Data) ->
     \\    B = iolist_to_binary(Data),
     \\    Len = byte_size(B),
-    \\    io:put_chars(<<Len:32/unsigned-big-integer, B/binary>>).
+    \\    file:write(standard_io, <<Len:32/unsigned-big-integer, B/binary>>).
 ;
 
 // ── singleton state ───────────────────────────────────────────────────────────

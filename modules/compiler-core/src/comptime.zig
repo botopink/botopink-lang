@@ -515,7 +515,11 @@ fn analyzeSource(
 
     var parser = Parser.init(tokens);
     const program = parser.parse(arena) catch |err| switch (err) {
-        error.UnexpectedToken => return .parseError,
+        error.UnexpectedToken => {
+            std.debug.print("comptime: parse failed for module '{s}'\n", .{if (mod.path.len > 0) mod.path else "main"});
+            std.debug.print("comptime: source:\n{s}\n", .{source});
+            return .parseError;
+        },
         else => return err,
     };
 

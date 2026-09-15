@@ -160,7 +160,7 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
             }
             while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
                 const expr = try this.parseExpr(alloc);
-                _ = try this.consume(.semicolon);
+                if (!this.match(.semicolon) and !this.check(.rightBrace)) return ParseError.UnexpectedToken;
                 try stmts.append(alloc, .{ .expr = expr });
             }
             _ = try this.consume(.rightBrace);

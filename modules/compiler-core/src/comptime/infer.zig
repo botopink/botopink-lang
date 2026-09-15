@@ -2335,7 +2335,7 @@ fn runDeclDecorators(
     env: *Env,
     ctx: envMod.TemplateEvalCtx,
     anns: []const ast.Annotation,
-    handleJson: []const u8,
+    handle: decoratorEval.DeclHandle,
 ) InferError!void {
     for (anns) |a| {
         if (a.is_builtin) continue;
@@ -2350,7 +2350,7 @@ fn runDeclDecorators(
         }
 
         std.debug.print("infer.zig: calling decoratorEval.evaluate for decorator '{s}'\n", .{dfn.name});
-        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, dfn, handleJson, plain) catch |err| {
+        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, dfn, handle, plain) catch |err| {
             std.debug.print("infer.zig: decoratorEval.evaluate failed with error: {}\n", .{err});
             env.lastError = TypeError.custom(
                 "the decorator evaluator failed to run",
@@ -2384,28 +2384,76 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
     const ctx = env.templateEval orelse return;
     for (program.decls) |decl| switch (decl) {
         .@"fn" => |f| {
-            const h = try buildHandleJson(env.arena, "Fn", f.name, &.{}, &.{}, if (f.returnType) |rt| declTypeName(rt) else "", f.annotations);
+            const h = decoratorEval.DeclHandle{
+                .kind = "Fn",
+                .name = f.name,
+                .fields = &.{},
+                .methods = &.{},
+                .returnType = if (f.returnType) |rt| declTypeName(rt) else "",
+                .annotations = f.annotations,
+            };
             try runDeclDecorators(env, ctx, f.annotations, h);
         },
         .record => |r| {
-            var fields = try env.arena.alloc(HandleField, r.fields.len);
-            for (r.fields, 0..) |fld, i| fields[i] = .{ .name = fld.name, .typeName = declTypeName(fld.typeRef), .annotations = fld.annotations };
-            const h = try buildHandleJson(env.arena, "Record", r.name, fields, r.methods, "", r.annotations);
+            var fields = try env.arena.alloc(decoratorEval.FieldHandle, r.fields.len);
+            for (r.fields, 0..) |fld, i| {
+                fields[i] = .{
+                    .name = fld.name,
+                    .typeName = declTypeName(fld.typeRef),
+                    .annotations = fld.annotations,
+                };
+            }
+            const h = decoratorEval.DeclHandle{
+                .kind = "Record",
+                .name = r.name,
+                .fields = fields,
+                .methods = r.methods,
+                .returnType = "",
+                .annotations = r.annotations,
+            };
             try runDeclDecorators(env, ctx, r.annotations, h);
             for (r.fields) |fld| {
-                const fh = try buildHandleJson(env.arena, "Field", fld.name, &.{}, &.{}, declTypeName(fld.typeRef), fld.annotations);
+                const fh = decoratorEval.DeclHandle{
+                    .kind = "Field",
+                    .name = fld.name,
+                    .fields = &.{},
+                    .methods = &.{},
+                    .returnType = declTypeName(fld.typeRef),
+                    .annotations = fld.annotations,
+                };
                 try runDeclDecorators(env, ctx, fld.annotations, fh);
             }
             for (r.methods) |m| {
-                const mh = try buildHandleJson(env.arena, "Method", m.name, &.{}, &.{}, if (m.returnType) |rt| declTypeName(rt) else "", m.annotations);
+                const mh = decoratorEval.DeclHandle{
+                    .kind = "Method",
+                    .name = m.name,
+                    .fields = &.{},
+                    .methods = &.{},
+                    .returnType = if (m.returnType) |rt| declTypeName(rt) else "",
+                    .annotations = m.annotations,
+                };
                 try runDeclDecorators(env, ctx, m.annotations, mh);
             }
         },
         .@"enum" => |e| {
-            const h = try buildHandleJson(env.arena, "Enum", e.name, &.{}, e.methods, "", e.annotations);
+            const h = decoratorEval.DeclHandle{
+                .kind = "Enum",
+                .name = e.name,
+                .fields = &.{},
+                .methods = e.methods,
+                .returnType = "",
+                .annotations = e.annotations,
+            };
             try runDeclDecorators(env, ctx, e.annotations, h);
             for (e.methods) |m| {
-                const mh = try buildHandleJson(env.arena, "Method", m.name, &.{}, &.{}, if (m.returnType) |rt| declTypeName(rt) else "", m.annotations);
+                const mh = decoratorEval.DeclHandle{
+                    .kind = "Method",
+                    .name = m.name,
+                    .fields = &.{},
+                    .methods = &.{},
+                    .returnType = if (m.returnType) |rt| declTypeName(rt) else "",
+                    .annotations = m.annotations,
+                };
                 try runDeclDecorators(env, ctx, m.annotations, mh);
             }
         },
@@ -2413,12 +2461,32 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
             // Interface-level markers (`#[mock]`) reflect with kind `Interface`,
             // exposing the interface's fields + method signatures. Its methods also
             // reflect individually (`#[getMapping]` on a route) as `Method`.
-            var fields = try env.arena.alloc(HandleField, i.fields.len);
-            for (i.fields, 0..) |fld, idx| fields[idx] = .{ .name = fld.name, .typeName = fld.typeName };
-            const h = try buildHandleJson(env.arena, "Interface", i.name, fields, i.methods, "", i.annotations);
+            var fields = try env.arena.alloc(decoratorEval.FieldHandle, i.fields.len);
+            for (i.fields, 0..) |fld, idx| {
+                fields[idx] = .{
+                    .name = fld.name,
+                    .typeName = fld.typeName,
+                    .annotations = &.{},
+                };
+            }
+            const h = decoratorEval.DeclHandle{
+                .kind = "Interface",
+                .name = i.name,
+                .fields = fields,
+                .methods = i.methods,
+                .returnType = "",
+                .annotations = i.annotations,
+            };
             try runDeclDecorators(env, ctx, i.annotations, h);
             for (i.methods) |m| {
-                const mh = try buildHandleJson(env.arena, "Method", m.name, &.{}, &.{}, if (m.returnType) |rt| declTypeName(rt) else "", m.annotations);
+                const mh = decoratorEval.DeclHandle{
+                    .kind = "Method",
+                    .name = m.name,
+                    .fields = &.{},
+                    .methods = &.{},
+                    .returnType = if (m.returnType) |rt| declTypeName(rt) else "",
+                    .annotations = m.annotations,
+                };
                 try runDeclDecorators(env, ctx, m.annotations, mh);
             }
         },

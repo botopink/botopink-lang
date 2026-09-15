@@ -3943,14 +3943,50 @@ const Emitter = struct {
 
     fn emitBinary(this: *Emitter, s: []const u8) !void {
         try this.w("<<\"");
-        for (s) |c| switch (c) {
-            '"' => try this.w("\\\""),
-            '\\' => try this.w("\\\\"),
-            '\n' => try this.w("\\n"),
-            '\r' => try this.w("\\r"),
-            '\t' => try this.w("\\t"),
-            else => try this.out.writeByte(c),
-        };
+        var i: usize = 0;
+        while (i < s.len) {
+            const c = s[i];
+            // The lexer keeps `\n`/`\t`/… escape sequences verbatim in the
+            // string content (they resolve in the target). Botopink's escapes
+            // map 1:1 onto Erlang's for the common set; `\$` and `\u{…}` are the
+            // two that differ.
+            if (c == '\\' and i + 1 < s.len) {
+                const esc = s[i + 1];
+                switch (esc) {
+                    'n', 'r', 't', '0', '\\', '"' => {
+                        try this.out.writeByte('\\');
+                        try this.out.writeByte(esc);
+                        i += 2;
+                    },
+                    '$' => {
+                        try this.out.writeByte('$');
+                        i += 2;
+                    },
+                    'u' => {
+                        try this.w("\\x{");
+                        i += 3; // skip `\u{`
+                        while (i < s.len and s[i] != '}') : (i += 1) {
+                            try this.out.writeByte(s[i]);
+                        }
+                        if (i < s.len) i += 1; // skip `}`
+                        try this.out.writeByte('}');
+                    },
+                    else => {
+                        try this.out.writeByte(c);
+                        i += 1;
+                    },
+                }
+            } else {
+                switch (c) {
+                    '"' => try this.w("\\\""),
+                    '\n' => try this.w("\\n"),
+                    '\r' => try this.w("\\r"),
+                    '\t' => try this.w("\\t"),
+                    else => try this.out.writeByte(c),
+                }
+                i += 1;
+            }
+        }
         try this.w("\">>");
     }
 };
