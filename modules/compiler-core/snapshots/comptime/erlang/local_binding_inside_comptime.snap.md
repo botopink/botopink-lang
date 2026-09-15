@@ -5,7 +5,9 @@ val hash = comptime { break 6364 + 11; };
 
 ----- COMPTIME VALUES -- main
 ```text
-ct_0 = 6375
+ct_0: val hash = comptime {
+          break 6364 + 11;
+      } → 6375
 ```
 
 ----- BOTOPINK TRANSFORM CODE -- main.bp

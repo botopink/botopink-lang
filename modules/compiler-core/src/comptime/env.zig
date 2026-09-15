@@ -6,6 +6,7 @@ const std = @import("std");
 const ast = @import("../ast.zig");
 const T = @import("./types.zig");
 const template = @import("./template.zig");
+const trace = @import("./trace.zig");
 
 // ── type definitions ──────────────────────────────────────────────────────────
 
@@ -528,6 +529,10 @@ pub const Env = struct {
     /// and re-analyzes it (a wiring decorator builds singletons / DI / router as
     /// ordinary code). Allocated in `arena`; no explicit deinit needed.
     contributions: std.ArrayListUnmanaged([]const u8) = .empty,
+    /// Erlang sent to and replies received from the `erl` runtime by every
+    /// decorator / template evaluation in this module, in order (snapshots).
+    /// Allocated in `arena`.
+    comptimeTraces: std.ArrayListUnmanaged(trace.Entry) = .empty,
     /// Set on the second analysis pass (after splicing contributions) so
     /// decorators are not re-invoked — no re-contribution, no infinite loop.
     skipDecoratorInvoke: bool = false,

@@ -66,7 +66,7 @@ codegen/
 | `wat.zig` | WebAssembly Text emitter. See [wat](#wat) below |
 | `typescript.zig` | `.d.ts` typedef generator (optional secondary output, `Config.typeDefLanguage`). Type declarations only — no call lowering. Skips template fns (`TypeRef.isTemplateReturnType()`) and phantom `@Context` structs, erases `@Context<B, R>` to `R`, renders an anonymous `TypeRef.record_type` as `{ f: T; … }` |
 | `runtime.zig` | Test-side execution for the snapshot `----- RUN LOG -----` block. See [runtime](#runtime) below |
-| `snapshot.zig` | `buildSnapshot` / `buildSnapshotMulti` / `assertCodegen` / `assertCodegenError` |
+| `snapshot.zig` | `buildSnapshot` / `buildSnapshotMulti` / `assertCodegen` / `assertCodegenError`; `writeComptimeSections` writes `GenerateResult.comptime_trace` (`COMPTIME ERLANG` / `COMPTIME REPLY`, rendered by `comptime/trace.zig`) then `COMPTIME VALUES` for every backend |
 | `tests.zig` | Barrel aggregating `tests/<feature>.zig` and the `beam/*.zig` unit tests; harness in `tests/helpers.zig` (`assertJs`, `assertJsSingle`, `assertJsError`, `assertJsTestMode`, `assertJsContains`, `assertConsumerJs`, `configs` — one config per target) |
 
 ### commonJS
@@ -174,11 +174,13 @@ codegen/
   indexed/`await`/yielding loops keep the plain lowering; the older
   `var acc = …; xs.forEach(…)` fold fusion still takes precedence.
 - **Comptime modules:** `emitComptimeModule(alloc, name, program, .{ host_enums,
-  host_records, exports, forms })` lowers an untyped decorator/template body with
+  host_records, exports, forms, listing })` lowers an untyped decorator/template body with
   the same emitter — `host_enums` join `enum_names` (`DeclKind.Record` →
   `'Record'`), `host_records` (`HostRecord{name, fields}`) join `record_fields`
   so host record constructors build maps, `exports` (`[]erl_ast.FnRef`) are prepended to `-export`,
-  `forms` (`[]erl_ast.Form`) are rendered after the
+  `listing = true` renders only the lowered decls and `forms` (no header,
+  exports or helpers — the `COMPTIME ERLANG` snapshot section, not a compilable
+  module), `forms` (`[]erl_ast.Form`) are rendered after the
   `'__bp_add'/2` / `'__bp_len'/2` helpers; the `untyped` flag routes `+` to
   `'__bp_add'` (binary concat or arithmetic) and `.len`/`.length` without an
   instance lowering to `'__bp_len'(X, Field)`. Tests: `tests/comptime_module.zig`.

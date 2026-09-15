@@ -13,6 +13,37 @@ pub fn need(comptime t: @Expr<string>) -> @Expr<string> {
 val r = need "x";
 ```
 
+----- COMPTIME ERLANG -- template need
+```erlang
+need(T) ->
+    Hit = lookup(T, <<"Buttom">>),
+    case Hit of
+        undefined -> undefined;
+        B ->
+            fail(T, <<"should be missing">>);
+        _ -> ok
+    end,
+    build(T, <<"\"ok\"">>).
+
+main() ->
+    try
+        json:encode('__bp_reply'(need(#{'__bp_capture' => <<"t">>, text => <<"x">>, parts => [#{kind => <<"Text">>, text => <<"x">>, span => #{start => 0, 'end' => 1, line => 1}}], source => #{file => <<"">>, line => 11, col => 14}, context => #{source => #{file => <<"">>, line => 11, col => 14}, text => <<"x">>, multiline => false}, bindings => [#{name => <<"Button">>, kind => 'Record_'}, #{name => <<"need">>, kind => 'Fn'}, #{name => <<"r">>, kind => 'Val'}]})))
+    catch
+        throw:{'__bp_template_fail', Message, Param, Span} ->
+            json:encode(#{kind => <<"fail">>, message => '__bp_text'(Message), param => Param, span => '__bp_json'(Span)});
+        Class:Reason ->
+            json:encode(#{kind => <<"error">>, message => '__bp_text'({Class, Reason})})
+    end.
+```
+
+----- COMPTIME REPLY -- template need
+```json
+{
+  "source": "\"ok\"",
+  "kind": "code"
+}
+```
+
 ----- TYPED AST JSON -- main.json
 ```json
 {

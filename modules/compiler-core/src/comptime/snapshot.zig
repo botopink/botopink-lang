@@ -3,6 +3,7 @@
 /// Converts typed bindings to structured JSON representations and builds
 /// multi-section snapshot content for assertion:
 ///   ----- SOURCE CODE -- name.bp
+///   ----- COMPTIME ERLANG / COMPTIME REPLY -- <kind> <fn>  (per decorator/template evaluation)
 ///   ----- COMPTIME VALUES -- name  (if comptime expressions exist)
 ///   ----- BOTOPINK TRANSFORM CODE -- name.bp  (if comptime expressions exist)
 ///   ----- TYPED AST JSON -- name.json
@@ -548,6 +549,7 @@ pub fn buildSnapshot(allocator: std.mem.Allocator, output: comptimeMod.ComptimeO
 
     switch (output.outcome) {
         .ok => |ok| {
+            try comptimeMod.trace.render(allocator, &buf, ok.comptime_traces);
             if (ok.comptime_script) |ct| {
                 const ctHdr = try std.fmt.allocPrint(allocator, "----- COMPTIME VALUES -- {s}\n```text\n", .{output.name});
                 defer allocator.free(ctHdr);

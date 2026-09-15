@@ -6,8 +6,8 @@ val y = comptime 42;
 
 ----- COMPTIME VALUES -- main
 ```text
-ct_0 = 15
-ct_1 = 42
+ct_0: val x = comptime 10 + 5 → 15
+ct_1: val y = comptime 42 → 42
 ```
 
 ----- BOTOPINK TRANSFORM CODE -- main.bp

@@ -336,6 +336,7 @@ pub fn codegenEmit(
                     .result = .{
                         .js = code,
                         .comptime_script = if (ok.comptime_script) |s| try alloc.dupe(u8, s) else null,
+                        .comptime_trace = try comptimeMod.trace.renderAlloc(alloc, ok.comptime_traces),
                         .comptime_err = null,
                     },
                 });
@@ -363,6 +364,9 @@ pub const ComptimeModule = struct {
     /// Host forms appended after the lowered decls and the standard helpers
     /// (host functions, the evaluator entry).
     forms: []const Ast.Form = &.{},
+    /// Render only the lowered decls and `forms` — no module header, exports or
+    /// helper forms. Not a compilable module: the listing snapshots show.
+    listing: bool = false,
 };
 
 pub const HostRecord = struct {
@@ -707,6 +711,7 @@ fn emitErlangModule(
     if (exports.items.len > 0) try forms.append(b.arena, .{ .exports = exports.items });
 
     // Declarations, each after an empty line.
+    const decls_start = forms.items.len;
     for (program.decls) |decl| {
         try forms.append(b.arena, .blank);
         switch (decl) {
@@ -748,7 +753,9 @@ fn emitErlangModule(
     }
 
     if (comptime_module) |cm| {
-        for (&comptime_helper_forms) |form| try forms.appendSlice(b.arena, &.{ .blank, form });
+        if (!cm.listing) {
+            for (&comptime_helper_forms) |form| try forms.appendSlice(b.arena, &.{ .blank, form });
+        }
         for (cm.forms) |form| try forms.appendSlice(b.arena, &.{ .blank, form });
     }
 
@@ -785,7 +792,10 @@ fn emitErlangModule(
 
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
-    try erlEmitter.writeForms(&aw.writer, forms.items);
+    const listing = if (comptime_module) |cm| cm.listing else false;
+    // A listing starts at the first decl, past its leading blank line.
+    const written = if (listing) forms.items[@min(decls_start + 1, forms.items.len)..] else forms.items;
+    try erlEmitter.writeForms(&aw.writer, written);
     return aw.toOwnedSlice();
 }
 

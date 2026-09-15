@@ -24,7 +24,7 @@ fn main() {
 
 ----- COMPTIME VALUES -- main
 ```text
-ct_0 = ["calc", "noop", "help"]
+ct_0: val COMMANDS = comptime ["calc", "noop", "help"] → ["calc", "noop", "help"]
 ```
 
 ----- ERLANG -- main.erl

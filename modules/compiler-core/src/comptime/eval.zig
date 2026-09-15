@@ -16,10 +16,12 @@ const T = @import("./types.zig");
 pub const ComptimeEntry = struct {
     id: []const u8, // "ct_0", "ct_1", …
     expr: ast.TypedExpr,
+    /// The declaration as written (formatted), shown next to its value.
+    source: []const u8 = "",
 };
 
 pub const RunResult = struct {
-    /// `id = literal` per entry, one per line (shown in snapshots).
+    /// `id: <declaration> → literal` per entry (shown in snapshots).
     script: []u8,
     /// Evaluated values: id → literal (`3`, `"text"`, `[1, 2]`, `true`, `null`).
     values: std.StringHashMap([]const u8),
@@ -48,12 +50,27 @@ pub fn evaluate(allocator: std.mem.Allocator, entries: []const ComptimeEntry) Ev
         const lit = try literal(allocator, try valueOf(arena, e.expr));
         errdefer allocator.free(lit);
         try values.put(try allocator.dupe(u8, e.id), lit);
-        try script.appendSlice(allocator, e.id);
-        try script.appendSlice(allocator, " = ");
-        try script.appendSlice(allocator, lit);
-        try script.append(allocator, '\n');
+        try writeListing(allocator, &script, e, lit);
     }
     return .{ .script = try script.toOwnedSlice(allocator), .values = values };
+}
+
+/// `ct_0: val pi = comptime 3.14 * 2 → 6.28`; a multi-line declaration keeps
+/// its lines aligned under the first one.
+fn writeListing(allocator: std.mem.Allocator, script: *std.ArrayListUnmanaged(u8), e: ComptimeEntry, lit: []const u8) EvalError!void {
+    try script.print(allocator, "{s}: ", .{e.id});
+    const source = std.mem.trimEnd(u8, std.mem.trim(u8, e.source, " \n"), ";");
+    var lines = std.mem.splitScalar(u8, source, '\n');
+    var first = true;
+    while (lines.next()) |line| {
+        if (!first) {
+            try script.append(allocator, '\n');
+            try script.appendNTimes(allocator, ' ', e.id.len + 2);
+        }
+        try script.appendSlice(allocator, line);
+        first = false;
+    }
+    try script.print(allocator, " → {s}\n", .{lit});
 }
 
 // ── folding ───────────────────────────────────────────────────────────────────

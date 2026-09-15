@@ -9,6 +9,9 @@ pub const GenerateResult = struct {
     js: []u8,
     typedef: ?[]u8 = null,
     comptime_script: ?[]u8,
+    /// `COMPTIME ERLANG` / `COMPTIME REPLY` sections of the module's decorator
+    /// and template evaluations (`comptime/trace.zig`), null when there are none.
+    comptime_trace: ?[]u8 = null,
     comptime_err: ?comptimeMod.ComptimeError = null,
     run_output: ?[]u8 = null,
 
@@ -16,6 +19,7 @@ pub const GenerateResult = struct {
         allocator.free(self.js);
         if (self.typedef) |t| allocator.free(t);
         if (self.comptime_script) |s| allocator.free(s);
+        if (self.comptime_trace) |s| allocator.free(s);
         if (self.run_output) |o| allocator.free(o);
     }
 };

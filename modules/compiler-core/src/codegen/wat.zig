@@ -114,6 +114,7 @@ pub fn codegenEmit(
                     .result = .{
                         .js = code,
                         .comptime_script = if (ok.comptime_script) |s| try alloc.dupe(u8, s) else null,
+                        .comptime_trace = try comptimeMod.trace.renderAlloc(alloc, ok.comptime_traces),
                         .comptime_err = null,
                     },
                 });

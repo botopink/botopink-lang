@@ -25,6 +25,7 @@ const erlang = @import("../codegen/erlang.zig");
 const Ast = @import("../codegen/beam/erl_ast.zig");
 const Term = @import("../codegen/beam/term.zig").Term;
 const persistent_erl = @import("./runtime/persistent_erl.zig");
+const trace = @import("./trace.zig");
 
 /// Sole comptime runtime.
 pub const Runtime = enum { erl };
@@ -83,6 +84,8 @@ pub fn evaluate(
     tfn: ast.FnDecl,
     captures: []const template.CapturedExpr,
     plainArgs: []const template.PlainArg,
+    /// Receives what was sent to and returned by the runtime (snapshots); null skips it.
+    traces: ?*std.ArrayListUnmanaged(trace.Entry),
 ) EvalError!Outcome {
     _ = build_root;
     const source = try buildModule(arena, tfn, captures, plainArgs);
@@ -93,6 +96,16 @@ pub fn evaluate(
     std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = source.code }) catch return error.EvalFailed;
 
     const response = persistent_erl.evalDetailed(arena, io, path) catch return error.EvalFailed;
+    if (traces) |list| try list.append(arena, .{
+        .kind = .template,
+        .name = tfn.name,
+        .erl = source.listing,
+        .reply = switch (response) {
+            .ok => |stdout| stdout,
+            .compile_error => |detail| try std.fmt.allocPrint(arena, "compile error: {s}", .{detail}),
+            .runtime_error => |detail| try std.fmt.allocPrint(arena, "runtime error: {s}", .{detail}),
+        },
+    });
     return switch (response) {
         .ok => |stdout| parseOutcome(arena, stdout),
         .compile_error => |detail| .{ .err = try errorText(arena, "the template module did not compile", detail) },
@@ -112,6 +125,8 @@ const Module = struct {
     /// Erlang module atom derived from the code's hash.
     module: []const u8,
     code: []const u8,
+    /// The lowered body and `main/0` only (`trace.Entry.erl`).
+    listing: []const u8,
 };
 
 const placeholder_module = "template_module";
@@ -267,18 +282,23 @@ fn buildModule(
 
     const decls = try arena.alloc(ast.DeclKind, 1);
     decls[0] = .{ .@"fn" = tfn };
-    const code = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, .{
+    var config: erlang.ComptimeModule = .{
         .host_enums = &.{ "BindingKind", "DeclKind" },
         .host_records = &host_records,
         .exports = &.{.{ .name = "main", .arity = 0 }},
         .forms = forms,
-    }) catch return error.EvalFailed;
+    };
+    const code = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, config) catch return error.EvalFailed;
+    // What snapshots show: the lowered body and `main/0` (the last host form).
+    config.forms = forms[forms.len - 1 ..];
+    config.listing = true;
+    const listing = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, config) catch return error.EvalFailed;
 
     const module = try std.fmt.allocPrint(arena, "template_{x:0>16}", .{std.hash.Wyhash.hash(0, code)});
     const header = "-module(" ++ placeholder_module ++ ").";
     if (!std.mem.startsWith(u8, code, header)) return error.EvalFailed;
     const renamed = try std.fmt.allocPrint(arena, "-module({s}).{s}", .{ module, code[header.len..] });
-    return .{ .module = module, .code = renamed };
+    return .{ .module = module, .code = renamed, .listing = listing };
 }
 
 /// The argument for parameter `index`: its capture map, its literal plain

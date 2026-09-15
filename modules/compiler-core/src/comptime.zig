@@ -7,6 +7,8 @@ const ast = @import("./ast.zig");
 const infer = @import("./comptime/infer.zig");
 const transform = @import("./comptime/transform.zig");
 const evalMod = @import("./comptime/eval.zig");
+const format = @import("./format.zig");
+pub const trace = @import("./comptime/trace.zig");
 const Lexer = @import("./lexer.zig").Lexer;
 const Parser = @import("./parser.zig").Parser;
 const Env = @import("./comptime/env.zig").Env;
@@ -101,6 +103,9 @@ pub const ComptimeOutput = struct {
         /// for tooling (the language server). Empty for modules with no custom
         /// templates. expr-custom.
         custom_ast: []const CustomAstEntry,
+        /// What each decorator / template evaluation sent to and got back from
+        /// the `erl` runtime, in evaluation order (snapshots).
+        comptime_traces: []const trace.Entry,
     };
 };
 
@@ -306,6 +311,12 @@ fn parseAndMergeContributions(
     return ast.Program{ .decls = try merged.toOwnedSlice(arena) };
 }
 
+/// The pass-2 env replaces pass 1's, where the decorators ran: carry their
+/// runtime traces over, ahead of any pass-2 (template) evaluations.
+fn keepPassOneTraces(pass_two: *Env, pass_one: *const Env) !void {
+    try pass_two.comptimeTraces.insertSlice(pass_two.arena, 0, pass_one.comptimeTraces.items);
+}
+
 /// Pass-2 of decorator `@emit` expansion: re-infer on the merged program
 /// (original decls + parsed contributions) with decorator invocation disabled
 /// so generated decls don't re-emit. Mirrors `analyzeSource` minus the lex/
@@ -464,8 +475,9 @@ fn analyzeSource(
     // splicing only when a contribution fails to parse standalone.
     if (!skip_invoke and env.contributions.items.len > 0) {
         if (try parseAndMergeContributions(arena, program, env.contributions.items)) |merged_program| {
-            const reanalysis = try analyzeMerged(arena, mod, merged_program, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, target_name);
+            var reanalysis = try analyzeMerged(arena, mod, merged_program, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, target_name);
             if (reanalysis == .success) {
+                try keepPassOneTraces(&reanalysis.success.env, &env);
                 env.deinit();
                 return reanalysis;
             }
@@ -485,8 +497,9 @@ fn analyzeSource(
         // full re-lex so the parser sees the original module as one unit (its
         // diagnostics carry global offsets).
         const spliced = try spliceContributions(arena, source, env.contributions.items);
-        const reanalysis = try analyzeSource(arena, mod, spliced, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, types_only, true, target_name);
+        var reanalysis = try analyzeSource(arena, mod, spliced, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, types_only, true, target_name);
         if (reanalysis == .success) {
+            try keepPassOneTraces(&reanalysis.success.env, &env);
             env.deinit();
             return reanalysis;
         }
@@ -1073,14 +1086,21 @@ pub fn evaluateComptime(
 ) !ComptimeEvalResult {
     var entries: std.ArrayListUnmanaged(evalMod.ComptimeEntry) = .empty;
     defer {
-        for (entries.items) |e| allocator.free(e.id);
+        for (entries.items) |e| {
+            allocator.free(e.id);
+            allocator.free(e.source);
+        }
         entries.deinit(allocator);
     }
     for (bindings, 0..) |b, i| {
         const te = b.typedExpr orelse continue;
         if (!te.isComptimeExpr()) continue;
         const id = try std.fmt.allocPrint(allocator, "ct_{d}", .{i});
-        try entries.append(allocator, .{ .id = id, .expr = te });
+        errdefer allocator.free(id);
+        var decl = [_]ast.DeclKind{b.decl};
+        const source = format.format(allocator, .{ .decls = &decl }) catch try allocator.dupe(u8, b.name);
+        errdefer allocator.free(source);
+        try entries.append(allocator, .{ .id = id, .expr = te, .source = source });
     }
 
     if (entries.items.len == 0) {
@@ -1267,6 +1287,7 @@ pub fn compileTypesOnly(
                         .js_method_renames = js_method_renames,
                         .instance_lowerings = instance_lowerings,
                         .custom_ast = try collectCustomAst(arena_alloc, &succ.env),
+                        .comptime_traces = succ.env.comptimeTraces.items,
                     } },
                 });
             },
@@ -1444,6 +1465,7 @@ pub fn compile(
                         .js_method_renames = js_method_renames,
                         .instance_lowerings = instance_lowerings,
                         .custom_ast = try collectCustomAst(arena_alloc, &succ.env),
+                        .comptime_traces = succ.env.comptimeTraces.items,
                     } },
                 });
             },

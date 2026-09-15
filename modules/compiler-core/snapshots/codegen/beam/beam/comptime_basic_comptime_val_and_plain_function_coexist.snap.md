@@ -13,7 +13,7 @@ fn main() {
 
 ----- COMPTIME VALUES -- main
 ```text
-ct_0 = 3
+ct_0: val x = comptime 1 + 2 → 3
 ```
 
 ----- BEAM ASSEMBLY -- main.S

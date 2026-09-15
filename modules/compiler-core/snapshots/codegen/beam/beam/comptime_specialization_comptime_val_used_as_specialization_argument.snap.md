@@ -15,7 +15,7 @@ fn main() {
 
 ----- COMPTIME VALUES -- main
 ```text
-ct_0 = 15
+ct_0: val base = comptime 10 + 5 → 15
 ```
 
 ----- BEAM ASSEMBLY -- main.S

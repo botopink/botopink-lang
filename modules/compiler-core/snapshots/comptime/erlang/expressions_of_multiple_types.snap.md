@@ -7,9 +7,9 @@ val banner  = comptime "Hello, " + "World";
 
 ----- COMPTIME VALUES -- main
 ```text
-ct_0 = 0
-ct_1 = 101
-ct_2 = 0
+ct_0: val pi = comptime 3.14 * 2.0 → 0
+ct_1: val maxVal = comptime 100 + 1 → 101
+ct_2: val banner = comptime "Hello, " + "World" → 0
 ```
 
 ----- BOTOPINK TRANSFORM CODE -- main.bp

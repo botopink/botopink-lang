@@ -25,6 +25,18 @@ pub const SnapInput = struct {
     result: GenerateResult,
 };
 
+/// The comptime evidence, shared by every backend: the decorator/template
+/// runtime exchanges (`COMPTIME ERLANG` / `COMPTIME REPLY`), then the folded
+/// `val`s (`COMPTIME VALUES`).
+fn writeComptimeSections(alloc: std.mem.Allocator, buf: *std.ArrayListUnmanaged(u8), name: []const u8, result: GenerateResult) !void {
+    if (result.comptime_trace) |tr| try buf.appendSlice(alloc, tr);
+    if (result.comptime_script) |ct| {
+        try buf.print(alloc, "----- COMPTIME VALUES -- {s}\n```text\n", .{name});
+        try buf.appendSlice(alloc, ct);
+        try buf.appendSlice(alloc, "```\n\n");
+    }
+}
+
 /// Builds the full snapshot text for a single codegen module output.
 pub fn buildSnapshot(alloc: std.mem.Allocator, name: []const u8, src: []const u8, result: GenerateResult, cfg: config.Config) ![]u8 {
     var buf: std.ArrayListUnmanaged(u8) = .empty;
@@ -39,14 +51,7 @@ pub fn buildSnapshot(alloc: std.mem.Allocator, name: []const u8, src: []const u8
 
     switch (cfg.targetSource) {
         .commonJS => {
-            // Comptime JavaScript section (if any)
-            if (result.comptime_script) |ct| {
-                const ctHdr = try std.fmt.allocPrint(alloc, "----- COMPTIME VALUES -- {s}\n```text\n", .{name});
-                defer alloc.free(ctHdr);
-                try buf.appendSlice(alloc, ctHdr);
-                try buf.appendSlice(alloc, ct);
-                try buf.appendSlice(alloc, "```\n\n");
-            }
+            try writeComptimeSections(alloc, &buf, name, result);
 
             // JavaScript output section
             const jsHdr = try std.fmt.allocPrint(alloc, "----- JAVASCRIPT -- {s}.js\n```javascript\n", .{name});
@@ -74,14 +79,7 @@ pub fn buildSnapshot(alloc: std.mem.Allocator, name: []const u8, src: []const u8
             }
         },
         .erlang => {
-            // Comptime Erlang section (if any)
-            if (result.comptime_script) |ct| {
-                const ctHdr = try std.fmt.allocPrint(alloc, "----- COMPTIME VALUES -- {s}\n```text\n", .{name});
-                defer alloc.free(ctHdr);
-                try buf.appendSlice(alloc, ctHdr);
-                try buf.appendSlice(alloc, ct);
-                try buf.appendSlice(alloc, "```\n\n");
-            }
+            try writeComptimeSections(alloc, &buf, name, result);
 
             // Erlang output section
             const erlHdr = try std.fmt.allocPrint(alloc, "----- ERLANG -- {s}.erl\n```erlang\n", .{name});
@@ -100,14 +98,7 @@ pub fn buildSnapshot(alloc: std.mem.Allocator, name: []const u8, src: []const u8
             }
         },
         .beam => {
-            // Comptime Erlang section (if any) — beam shares the Erlang comptime runtime.
-            if (result.comptime_script) |ct| {
-                const ctHdr = try std.fmt.allocPrint(alloc, "----- COMPTIME VALUES -- {s}\n```text\n", .{name});
-                defer alloc.free(ctHdr);
-                try buf.appendSlice(alloc, ctHdr);
-                try buf.appendSlice(alloc, ct);
-                try buf.appendSlice(alloc, "```\n\n");
-            }
+            try writeComptimeSections(alloc, &buf, name, result);
 
             // BEAM Assembly output section
             const asmHdr = try std.fmt.allocPrint(alloc, "----- BEAM ASSEMBLY -- {s}.S\n```erlang\n", .{name});
@@ -125,14 +116,7 @@ pub fn buildSnapshot(alloc: std.mem.Allocator, name: []const u8, src: []const u8
             }
         },
         .wasm => {
-            // Comptime JavaScript section (if any) — wasm shares the Node comptime runtime.
-            if (result.comptime_script) |ct| {
-                const ctHdr = try std.fmt.allocPrint(alloc, "----- COMPTIME VALUES -- {s}\n```text\n", .{name});
-                defer alloc.free(ctHdr);
-                try buf.appendSlice(alloc, ctHdr);
-                try buf.appendSlice(alloc, ct);
-                try buf.appendSlice(alloc, "```\n\n");
-            }
+            try writeComptimeSections(alloc, &buf, name, result);
 
             // WebAssembly Text output section
             const watHdr = try std.fmt.allocPrint(alloc, "----- WASM TEXT -- {s}.wat\n```wasm\n", .{name});

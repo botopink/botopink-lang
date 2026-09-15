@@ -2263,7 +2263,7 @@ fn runDeclDecorators(
 
         // Diagnostics point at the annotation. A `failAt` span has no source text
         // to map onto for a declaration, so it is reported at the annotation too.
-        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, dfn, handle, plain) catch {
+        const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, dfn, handle, plain, &env.comptimeTraces) catch {
             return decoratorError(env, a, "the decorator evaluator failed to run", "Decorator bodies run in a persistent `erl` process at compile time — check that `erl` and `erlc` are on PATH.");
         };
         switch (outcome) {
@@ -3326,7 +3326,7 @@ fn expandTemplateCallViaRuntime(
         }
     }
 
-    const outcome = templateEval.evaluate(env.arena, ctx.io, ctx.build_root, tfn, captures, plainArgs) catch {
+    const outcome = templateEval.evaluate(env.arena, ctx.io, ctx.build_root, tfn, captures, plainArgs, &env.comptimeTraces) catch {
         env.lastError = TypeError.custom(
             "the template evaluator failed to run",
             "Template bodies run in a persistent `erl` process at compile time — check that `erl` and `erlc` are on PATH.",
