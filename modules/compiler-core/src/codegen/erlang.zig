@@ -718,20 +718,20 @@ fn emitErlangModule(
                 }
                 // FFI declaration — calls lower to the remote target directly.
                 const text = if (em.externals.get(f.name)) |ref|
-                    try std.fmt.allocPrint(b.arena, "%% external fn {s} -> {s}:{s}", .{ f.name, ref.module, ref.symbol })
+                    try std.fmt.allocPrint(b.arena, "external fn {s} -> {s}:{s}", .{ f.name, ref.module, ref.symbol })
                 else
-                    try std.fmt.allocPrint(b.arena, "%% external fn {s} (no erlang target)", .{f.name});
-                try forms.append(b.arena, .{ .comment = text });
+                    try std.fmt.allocPrint(b.arena, "external fn {s} (no erlang target)", .{f.name});
+                try forms.append(b.arena, .{ .comment = Ast.Comment.doc(text) });
             },
             .record => |r| try em.recordForms(b, &forms, r),
             .@"enum" => |e| try em.enumForms(b, &forms, e),
             .interface => |i| try em.interfaceForms(b, &forms, i),
             .implement => |im| try em.implementForms(b, &forms, im),
             .extend => |ex| try em.extendForms(b, &forms, ex),
-            .use => |u| try forms.append(b.arena, .{ .comment = try useComment(b, u) }),
+            .use => |u| try forms.append(b.arena, .{ .comment = Ast.Comment.doc(try useComment(b, u)) }),
             // `mod` is module-tree metadata; the submodule emits as its own atom.
             .mod => {},
-            .delegate => |d| try forms.append(b.arena, .{ .comment = try std.fmt.allocPrint(b.arena, "%% delegate {s}", .{d.name}) }),
+            .delegate => |d| try forms.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "delegate {s}", .{d.name})) }),
             // Test blocks are only compiled under `botopink test`; in normal
             // builds they are skipped entirely.
             .@"test" => |t| {
@@ -740,10 +740,10 @@ fn emitErlangModule(
                 try test_entries.append(alloc, .{ .name = t.name, .line = t.loc.line, .idx = idx });
                 try forms.append(b.arena, try em.testFunction(b, t, idx));
             },
-            .comment => |c| {
-                const prefix = if (c.is_doc) "%%" else if (c.is_module) "%%%" else "%";
-                try forms.append(b.arena, .{ .comment = try std.fmt.allocPrint(b.arena, "{s} {s}", .{ prefix, c.text }) });
-            },
+            .comment => |c| try forms.append(b.arena, .{ .comment = .{
+                .level = if (c.is_doc) .doc else if (c.is_module) .module else .line,
+                .text = c.text,
+            } }),
         }
     }
 
@@ -799,10 +799,10 @@ fn blockFunction(b: Ast.Builder, name: []const u8, patterns: []const Ast.Expr, b
     } };
 }
 
-/// `%% import a, b` / `%% activate a, b`.
+/// `import a, b` / `activate a, b` (a comment's text).
 fn useComment(b: Ast.Builder, u: ast.ImportDecl) ![]const u8 {
     var text: std.ArrayListUnmanaged(u8) = .empty;
-    try text.appendSlice(b.arena, if (u.activationOnly) "%% activate " else "%% import ");
+    try text.appendSlice(b.arena, if (u.activationOnly) "activate " else "import ");
     for (u.imports, 0..) |imp, i| {
         if (i > 0) try text.appendSlice(b.arena, ", ");
         try text.appendSlice(b.arena, imp.name());
@@ -817,7 +817,7 @@ fn ioFormat(b: Ast.Builder, format: []const u8, args: []const Ast.Expr) !Ast.Exp
 
 fn comments(b: Ast.Builder, lines: []const []const u8) ![]const Ast.Stmt {
     const out = try b.arena.alloc(Ast.Stmt, lines.len);
-    for (lines, 0..) |line, i| out[i] = .{ .comment = line };
+    for (lines, 0..) |line, i| out[i] = .{ .comment = Ast.Comment.doc(line) };
     return out;
 }
 
@@ -855,21 +855,21 @@ fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr) !void
 
     var run_one: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
     try run_one.appendSlice(b.arena, try comments(b, &.{
-        "%% §T `----- RUN LOG -----` envelope (v0.beta.20 frente-b spec):",
-        "%% emit TEST header + fenced ```logs``` block; the test body's",
-        "%% io:format/io:put_chars calls land inside the fence",
-        "%% sequentially via the group leader (no explicit capture",
-        "%% needed for the sync erlang shape).",
+        "§T `----- RUN LOG -----` envelope (v0.beta.20 frente-b spec):",
+        "emit TEST header + fenced ```logs``` block; the test body's",
+        "io:format/io:put_chars calls land inside the fence",
+        "sequentially via the group leader (no explicit capture",
+        "needed for the sync erlang shape).",
     }));
     try run_one.appendSlice(b.arena, &.{
         .{ .expr = try ioFormat(b, "TEST ~s ~s~n", &.{ V("Loc"), V("Name") }) },
         .{ .expr = try ioFormat(b, "----- RUN LOG -----~n```logs~n", &.{}) },
     });
     try run_one.appendSlice(b.arena, try comments(b, &.{
-        "%% §T duration: monotonic millisecond clock around Fun(); the",
-        "%% delta lands on its own `  duration <ms>ms` line between the",
-        "%% fence close and the ok/FAIL line. Older parsers that don't",
-        "%% recognise the duration line skip it (forward-compatible).",
+        "§T duration: monotonic millisecond clock around Fun(); the",
+        "delta lands on its own `  duration <ms>ms` line between the",
+        "fence close and the ok/FAIL line. Older parsers that don't",
+        "recognise the duration line skip it (forward-compatible).",
     }));
     try run_one.appendSlice(b.arena, &.{
         .{ .expr = try b.match(V("T0"), monotonic) },
@@ -1809,7 +1809,7 @@ const Emitter = struct {
     /// function; a comptime `val` leaves only a comment.
     fn topValForms(this: *Emitter, b: Ast.Builder, out: *Forms, v: ast.ValDecl) !void {
         if (v.value.isComptimeExpr()) {
-            return out.append(b.arena, .{ .comment = try std.fmt.allocPrint(b.arena, "%% comptime val {s}", .{v.name}) });
+            return out.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "comptime val {s}", .{v.name})) });
         }
         const saved = this.indent;
         this.indent = 1;
@@ -1843,7 +1843,7 @@ const Emitter = struct {
         // resolves to `T` (so `await` is identity) and a finite `@Iterator<T>`
         // is a list.
         if (f.effect != null and f.effect.? != .result) {
-            try out.append(b.arena, .{ .comment = "%% #[@future] / #[@asyncGenerator] — eager lowering" });
+            try out.append(b.arena, .{ .comment = Ast.Comment.doc("#[@future] / #[@asyncGenerator] — eager lowering") });
         }
         // Fresh local scope for this function (erlang vars are function-scoped).
         this.resetLocals();
@@ -1975,8 +1975,8 @@ const Emitter = struct {
                 }
             }
 
-            if (commentText(stmt)) |c| {
-                try stmts.append(b.arena, .{ .comment = try std.fmt.allocPrint(b.arena, "{s} {s}", .{ c.prefix, c.text }) });
+            if (sourceComment(stmt)) |c| {
+                try stmts.append(b.arena, .{ .comment = c });
             } else if (try this.mutatingExpr(b, stmt)) |mutation| {
                 try stmts.append(b.arena, .{ .expr = mutation });
             } else {
@@ -2304,17 +2304,18 @@ const Emitter = struct {
     /// A statement that is only a source comment (`.literal.comment`). Comments
     /// are not Erlang expressions: they never take a `,` separator and must not
     /// be treated as the body's tail value.
-    const CommentText = struct { prefix: []const u8, text: []const u8 };
-
-    /// The `%`-prefix and text of a comment statement, or null.
-    fn commentText(stmt: ast.Stmt) ?CommentText {
+    fn sourceComment(stmt: ast.Stmt) ?Ast.Comment {
         if (stmt.expr != .literal or stmt.expr.literal.kind != .comment) return null;
-        const c = stmt.expr.literal.kind.comment;
+        return commentNode(stmt.expr.literal.kind.comment);
+    }
+
+    /// A source comment as an Erlang comment: `//` → `%`, `///` → `%%`, `////` → `%%%`.
+    fn commentNode(c: anytype) Ast.Comment {
         return .{
-            .prefix = switch (c.kind) {
-                .normal => "%",
-                .doc => "%%",
-                .module => "%%%",
+            .level = switch (c.kind) {
+                .normal => .line,
+                .doc => .doc,
+                .module => .module,
             },
             .text = c.text,
         };
@@ -2443,7 +2444,7 @@ const Emitter = struct {
                         .assign => .assign,
                         .plusAssign => .plus_assign,
                     }, a.value.*),
-                    .fieldAccess => return Ast.Expr.r("%% field assignment is not directly supported in Erlang"),
+                    .fieldAccess => return .{ .comment = Ast.Comment.doc("field assignment is not directly supported in Erlang") },
                 },
                 .localBindDestruct => |lb| {
                     const value = try this.exprNode(b, lb.value.*);
@@ -2530,14 +2531,7 @@ const Emitter = struct {
         switch (e) {
             .literal => |lit| return switch (lit.kind) {
                 .numberLit => |n| .{ .number = n },
-                .comment => |c| Ast.Expr.r(try std.fmt.allocPrint(b.arena, "{s} {s}", .{
-                    switch (c.kind) {
-                        .normal => "%",
-                        .doc => "%%",
-                        .module => "%%%",
-                    },
-                    c.text,
-                })),
+                .comment => |c| .{ .comment = commentNode(c) },
                 .stringLit => |str| .{ .lexeme_binary = str },
                 // Desugared to a `+` chain by the transform pass; never reaches codegen.
                 .stringTemplate => unreachable,
@@ -2695,7 +2689,7 @@ const Emitter = struct {
                 .await_ => |av| this.exprNode(b, av.*),
                 .@"break" => |brk| if (brk.value) |bp| this.exprNode(b, bp.*) else Ast.Expr.r(""),
                 .yield => |y| if (y.value) |val| this.exprNode(b, val.*) else Ast.Expr.r(""),
-                .@"continue" => Ast.Expr.r("%% continue"),
+                .@"continue" => .{ .comment = Ast.Comment.doc("continue") },
             },
 
             .branch => |br| switch (br.kind) {
@@ -2978,7 +2972,7 @@ const Emitter = struct {
                     .plusAssign => .plus_assign,
                 }, a.value.*),
                 // Maps are immutable; a field assignment has no Erlang form.
-                .fieldAccess => |fa| return Ast.Expr.r(try std.fmt.allocPrint(b.arena, "%% self.{s} = ...", .{fa.field})),
+                .fieldAccess => |fa| return .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "self.{s} = ...", .{fa.field})) },
             },
             .localBindDestruct => |lb| switch (lb.pattern) {
                 .names, .tuple_ => {
@@ -3243,12 +3237,12 @@ const Emitter = struct {
         // Records are maps at runtime (`#{field => V}`) — no decl needed.
         // (`-record(PascalCase, …)` is invalid Erlang: a capitalised bare atom.)
         var text: std.ArrayListUnmanaged(u8) = .empty;
-        try text.appendSlice(b.arena, try std.fmt.allocPrint(b.arena, "%% record {s}: ", .{r.name}));
+        try text.appendSlice(b.arena, try std.fmt.allocPrint(b.arena, "record {s}: ", .{r.name}));
         for (r.fields, 0..) |f, i| {
             if (i > 0) try text.appendSlice(b.arena, ", ");
             try text.appendSlice(b.arena, f.name);
         }
-        try out.append(b.arena, .{ .comment = text.items });
+        try out.append(b.arena, .{ .comment = Ast.Comment.doc(text.items) });
         // Instance methods take the receiver positionally (`recv.m(args)` →
         // `m(Recv, args)`). A method whose name collides with another record's
         // method is mangled to `<recordtype>_<method>` so erlang's flat
@@ -3265,10 +3259,10 @@ const Emitter = struct {
     }
 
     fn enumForms(this: *Emitter, b: Ast.Builder, out: *Forms, e: ast.EnumDecl) !void {
-        try out.append(b.arena, .{ .comment = try std.fmt.allocPrint(b.arena, "%% enum {s}", .{e.name}) });
+        try out.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "enum {s}", .{e.name})) });
         for (e.variants) |v| {
             var text: std.ArrayListUnmanaged(u8) = .empty;
-            try text.appendSlice(b.arena, try std.fmt.allocPrint(b.arena, "%%   {s}", .{v.name}));
+            try text.appendSlice(b.arena, try std.fmt.allocPrint(b.arena, "  {s}", .{v.name}));
             if (v.fields.len > 0) {
                 try text.append(b.arena, '(');
                 for (v.fields, 0..) |f, i| {
@@ -3277,7 +3271,7 @@ const Emitter = struct {
                 }
                 try text.append(b.arena, ')');
             }
-            try out.append(b.arena, .{ .comment = text.items });
+            try out.append(b.arena, .{ .comment = Ast.Comment.doc(text.items) });
         }
         for (e.methods) |m| {
             if (m.is_declare) continue;
@@ -3286,7 +3280,7 @@ const Emitter = struct {
     }
 
     fn interfaceForms(this: *Emitter, b: Ast.Builder, out: *Forms, i: ast.InterfaceDecl) !void {
-        try out.append(b.arena, .{ .comment = try std.fmt.allocPrint(b.arena, "%% interface {s}", .{i.name}) });
+        try out.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "interface {s}", .{i.name})) });
         // Associated `default fn`s (no `self`) are pure botopink — local
         // functions so `Interface.method(...)` resolves locally (the interface
         // decl is inlined into each consuming module). The name is mangled
@@ -3314,7 +3308,7 @@ const Emitter = struct {
 
     fn implementForms(this: *Emitter, b: Ast.Builder, out: *Forms, im: ast.ImplementDecl) !void {
         var text: std.ArrayListUnmanaged(u8) = .empty;
-        try text.appendSlice(b.arena, "%% implement ");
+        try text.appendSlice(b.arena, "implement ");
         for (im.interfaces, 0..) |iface, i| {
             if (i > 0) try text.appendSlice(b.arena, ", ");
             try text.appendSlice(b.arena, switch (iface) {
@@ -3324,12 +3318,12 @@ const Emitter = struct {
             });
         }
         try text.appendSlice(b.arena, try std.fmt.allocPrint(b.arena, " for {s}", .{im.target}));
-        try out.append(b.arena, .{ .comment = text.items });
+        try out.append(b.arena, .{ .comment = Ast.Comment.doc(text.items) });
         try this.extensionForms(b, out, im.methods);
     }
 
     fn extendForms(this: *Emitter, b: Ast.Builder, out: *Forms, ex: ast.ExtendDecl) !void {
-        try out.append(b.arena, .{ .comment = try std.fmt.allocPrint(b.arena, "%% extend {s}", .{ex.target}) });
+        try out.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "extend {s}", .{ex.target})) });
         try this.extensionForms(b, out, ex.methods);
     }
 

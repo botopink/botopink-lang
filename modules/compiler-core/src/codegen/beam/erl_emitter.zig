@@ -414,6 +414,7 @@ pub fn writeExpr(w: *Writer, e: Ast.Expr, indent: usize) Error!void {
             try writeIndent(w, indent);
             try w.writeByte(']');
         },
+        .comment => |c| try writeComment(w, c),
         .seq => |parts| for (parts) |part| try writeExpr(w, part, indent),
         .try_catch => |tc| {
             try w.writeAll("try\n");
@@ -533,7 +534,7 @@ fn writeInlineBody(w: *Writer, body: Ast.Body, indent: usize) Error!void {
 fn writeStmt(w: *Writer, s: Ast.Stmt, indent: usize) Error!void {
     switch (s) {
         .expr => |e| try writeExpr(w, e, indent),
-        .comment => |text| try w.writeAll(text),
+        .comment => |c| try writeComment(w, c),
     }
 }
 
@@ -546,6 +547,16 @@ pub fn writeFunction(w: *Writer, f: Ast.Function) Error!void {
         try writeClauseTail(w, c, 0);
     }
     try w.writeAll(".\n");
+}
+
+/// `% text` / `%% text` / `%%% text`.
+pub fn writeComment(w: *Writer, c: Ast.Comment) Writer.Error!void {
+    try w.writeAll(switch (c.level) {
+        .line => "% ",
+        .doc => "%% ",
+        .module => "%%% ",
+    });
+    try w.writeAll(c.text);
 }
 
 fn writeFnRef(w: *Writer, ref: Ast.FnRef) Error!void {
@@ -578,7 +589,10 @@ pub fn writeForm(w: *Writer, form: Ast.Form) Error!void {
         .blank => try w.writeByte('\n'),
         .attribute => |attr| try w.print("-{s}({s}).\n", .{ attr.name, attr.value }),
         .function => |f| try writeFunction(w, f),
-        .comment => |text| try w.print("{s}\n", .{text}),
+        .comment => |c| {
+            try writeComment(w, c);
+            try w.writeByte('\n');
+        },
         .raw => |text| try w.writeAll(text),
     }
 }
@@ -692,7 +706,7 @@ test "erl_emitter: case, fun and function layouts" {
         .{ .patterns = &.{Ast.Expr.a("undefined")}, .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.a("undefined") }}), .layout = .inline_ },
         .{ .patterns = &.{Ast.Expr.v("B")}, .body = Ast.Body.of(&.{
             .{ .expr = .{ .call = .{ .name = "f", .args = &.{Ast.Expr.v("B")} } } },
-            .{ .comment = "% done" },
+            .{ .comment = .{ .level = .line, .text = "done" } },
             .{ .expr = Ast.Expr.a("ok") },
         }) },
     } } }, 1);
@@ -757,7 +771,8 @@ test "erl_emitter: module forms" {
         .{ .no_auto_import = &.{.{ .name = "abs", .arity = 1 }} },
         .{ .exports = &.{ .{ .name = "main", .arity = 1 }, .{ .name = "of", .arity = 0 } } },
         .blank,
-        .{ .comment = "%% record R: a" },
+        .{ .comment = Ast.Comment.doc("record R: a") },
+        .{ .comment = .{ .level = .module, .text = "module doc" } },
         .{ .function = .{ .name = "t", .clauses = &.{.{ .patterns = &.{}, .body = Ast.Body.of(&.{.{ .expr = .{ .list_block = &tests } }}) }} } },
     });
     try std.testing.expectEqualStrings(
@@ -766,6 +781,7 @@ test "erl_emitter: module forms" {
         \\-export([main/1, 'of'/0]).
         \\
         \\%% record R: a
+        \\%%% module doc
         \\t() ->
         \\    [
         \\        {<<"a">>, fun '__bp_test_0'/0},

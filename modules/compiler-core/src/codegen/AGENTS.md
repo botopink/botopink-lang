@@ -184,8 +184,11 @@ codegen/
 - **Names**: `atomName`/`fnAtom`/`erlangVar`/`erlangModule` are aliases of
   `beam/erl_emitter.zig`. `erlang.zig` writes no Erlang text itself: the emitter
   builds `erl_ast` nodes and forms and `erl_emitter` renders them (`raw` remains
-  only for host template text, names written as spelled and the `%%` comments
-  left in place of unsupported constructs).
+  only for host template text and names written as spelled). Comments are
+  `erl_ast.Comment` nodes: source comments keep their level (`//` → `%`, `///` →
+  `%%`, `////` → `%%%`, `commentNode`), and the `%%` notes the backend writes
+  (declaration headers, `continue`, unsupported field assignment) carry only
+  their text.
 - **Records are maps**: constructors lower to `#{field => V, …}` (positional args
   use the declared field order from `collectTypeShapes`); field access is
   `maps:get(field, Recv)`; tuple index `t._N` → `element(N+1, T)`. No `-record`

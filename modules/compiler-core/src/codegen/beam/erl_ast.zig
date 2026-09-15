@@ -66,6 +66,9 @@ pub const Expr = union(enum) {
     fun_ref: FnRef,
     /// `[` newline, one element per line at +1 joined `,`, newline, `]`.
     list_block: []const Expr,
+    /// A comment in expression position (`%% continue`): it ends the line, so
+    /// it stands in for a construct with no Erlang form.
+    comment: Comment,
     /// Parts written one after another with no separator — a host template
     /// (`raw` text around argument nodes).
     seq: []const Expr,
@@ -213,8 +216,21 @@ pub const Body = union(enum) {
 
 pub const Stmt = union(enum) {
     expr: Expr,
-    /// `% text` / `%% text` — never takes a `,` separator.
-    comment: []const u8,
+    /// A comment line — never takes a `,` separator.
+    comment: Comment,
+};
+
+/// `% text` (line), `%% text` (doc, the default) or `%%% text` (module). The
+/// text is written after the prefix and one space, as given.
+pub const Comment = struct {
+    level: Level = .doc,
+    text: []const u8,
+
+    pub const Level = enum { line, doc, module };
+
+    pub fn doc(text: []const u8) Comment {
+        return .{ .text = text };
+    }
 };
 
 /// `name(P1, P2) -> Body.` with one or more clauses.
@@ -233,8 +249,8 @@ pub const Form = union(enum) {
     /// `-name(Value).` with the value already rendered.
     attribute: struct { name: []const u8, value: []const u8 },
     function: Function,
-    /// A comment line; the text carries its `%` prefix.
-    comment: []const u8,
+    /// A comment line.
+    comment: Comment,
     /// An empty line.
     blank,
     /// Rendered form text, written verbatim.
