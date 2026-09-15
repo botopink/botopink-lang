@@ -323,6 +323,20 @@ pub fn writeExpr(w: *Writer, e: Ast.Expr, indent: usize) Error!void {
         .case_ => |c| {
             try w.writeAll("case ");
             try writeExpr(w, c.subject.*, indent);
+            if (c.layout == .inline_) {
+                try w.writeAll(" of ");
+                for (c.clauses, 0..) |cl, i| {
+                    if (i > 0) try w.writeAll("; ");
+                    try writeExpr(w, cl.patterns[0], indent);
+                    for (cl.guards, 0..) |g, gi| {
+                        try w.writeAll(if (gi == 0) " when " else ", ");
+                        try writeExpr(w, g, indent);
+                    }
+                    try w.writeAll(" -> ");
+                    try writeInlineBody(w, cl.body, indent);
+                }
+                return w.writeAll(" end");
+            }
             try w.writeAll(" of\n");
             try writeClauses(w, c.clauses, indent + 1);
             try w.writeByte('\n');
@@ -372,6 +386,7 @@ pub fn writeExpr(w: *Writer, e: Ast.Expr, indent: usize) Error!void {
                 try writeExpr(w, st.*, indent);
             }
         },
+        .seq => |parts| for (parts) |part| try writeExpr(w, part, indent),
         .try_catch => |tc| {
             try w.writeAll("try\n");
             try writeBody(w, tc.body, indent + 1);
@@ -651,4 +666,22 @@ test "erl_emitter: case, fun and function layouts" {
         \\text(#{text := Text}) -> Text.
         \\
     , aw.written());
+}
+
+test "erl_emitter: inline case and seq" {
+    var aw: Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    const w = &aw.writer;
+    const subject = Ast.Expr.v("R");
+    const ok_v = [_]Ast.Expr{ Ast.Expr.a("ok"), Ast.Expr.v("V") };
+    try writeExpr(w, .{ .case_ = .{ .subject = &subject, .layout = .inline_, .clauses = &.{
+        .{ .patterns = &.{.{ .tuple = &ok_v }}, .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("V") }}) },
+        .{ .patterns = &.{Ast.Expr.v("_")}, .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.a("false") }}) },
+    } } }, 0);
+    try w.writeAll(" | ");
+    try writeExpr(w, .{ .seq = &.{ Ast.Expr.r("(string:find("), Ast.Expr.v("S"), Ast.Expr.r(", "), .{ .lexeme_binary = "x" }, Ast.Expr.r(") =/= nomatch)") } }, 0);
+    try std.testing.expectEqualStrings(
+        "case R of {ok, V} -> V; _ -> false end | (string:find(S, <<\"x\">>) =/= nomatch)",
+        aw.written(),
+    );
 }

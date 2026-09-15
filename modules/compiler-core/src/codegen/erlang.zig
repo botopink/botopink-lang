@@ -1047,7 +1047,7 @@ fn primIfaceForKind(k: envMod.PrimKind) ?[]const u8 {
 /// Walk the `extends` chain of `iface` (depth-bounded) and yield each
 /// successive parent name, starting with `iface` itself. Mirrors the
 /// `primMethodReturnTypeFromIface` chain walk on the infer side — used
-/// by `tryEmitPrimAnnotation` so a method declared on a parent
+/// by `primAnnotationNode` so a method declared on a parent
 /// (`Integer.toString` for an `I32` receiver) lights up via dispatch
 /// without flattening the map at collection time.
 const PrimIfaceWalker = struct {
@@ -1110,7 +1110,7 @@ const Emitter = struct {
     /// or whose annotation list carries `when(argc == N): "..."` branches.
     /// The decl emits no `module:symbol` reference at the top level — the
     /// template renders inline at every call site, matching how the
-    /// existing interface-method `tryEmitPrimAnnotation` path already
+    /// existing interface-method `primAnnotationNode` path already
     /// handles per-callee templates on primitives.d.bp methods.
     user_erlang_templates: std.StringHashMap(PrimErlangCall),
     /// Module names imported via `import {…} from "std"` — a lowercase
@@ -1174,20 +1174,20 @@ const Emitter = struct {
     /// §A5 annotation-driven prim-method dispatch: `<Iface>.<method>` →
     /// `(host module, host symbol, ordered arg names)` parsed from
     /// `@external(erlang, "mod", "sym(args)")` on a primitive interface method.
-    /// Populated by `collectPrimErlangDispatch`. `emitPrimMethod` consults this
+    /// Populated by `collectPrimErlangDispatch`. `primMethodNode` consults this
     /// map FIRST and emits `mod:sym(...)` with the args rendered in the template
     /// order (`self` resolves to the receiver expression); the inline allow-list
     /// catches irreducible cases (list ops, custom comparisons, BIF aliases).
     prim_erlang_dispatch: std.StringHashMap(PrimErlangCall),
     /// `prim-op-annotation` builtin dispatch: top-level `fn` callees from
     /// `builtins.d.bp` carrying `@external(erlang, …)` annotations, keyed by
-    /// callee name (`todo`, `panic`, …). `tryEmitBuiltinAnnotation` consults
+    /// callee name (`todo`, `panic`, …). `builtinAnnotationNode` consults
     /// this map before the hardcoded `@todo`/`@panic`/`@block`/`@print`
     /// switches in `if (cc.is_builtin)`.
     builtin_erlang_dispatch: std.StringHashMap(PrimErlangCall),
     /// Parent-interface edges parsed from `primitives.d.bp`:
     /// `prim_iface_chain.get("I32")` → `"Signed"`, etc. Used by
-    /// `tryEmitPrimAnnotation`'s `PrimIfaceWalker` so a method declared on
+    /// `primAnnotationNode`'s `PrimIfaceWalker` so a method declared on
     /// `Integer` lights up via an `I32` receiver. Populated by
     /// `collectPrimErlangDispatch` alongside the dispatch map.
     prim_iface_chain: std.StringHashMap([]const u8),
@@ -1290,7 +1290,7 @@ const Emitter = struct {
 
     /// `prim-op-annotation`: index top-level `fn` decls in `builtins.d.bp`
     /// carrying `@external(erlang, …)` — the dispatch map is keyed by the bare
-    /// callee name (`todo`, `panic`, …). `tryEmitBuiltinAnnotation` consults
+    /// callee name (`todo`, `panic`, …). `builtinAnnotationNode` consults
     /// this in the `if (cc.is_builtin)` branch before the hardcoded switches.
     ///
     /// `libs/std/src/builtins.d.bp` is the *documented* surface and is not
@@ -1385,75 +1385,73 @@ const Emitter = struct {
         });
     }
 
-    /// Try emitting an `@builtin(...)` call from its `@external(erlang, …)`
-    /// annotation. Returns false when no annotation is registered (caller falls
-    /// through to the hardcoded `@print`/`@todo`/`@panic`/`@block` switches).
-    fn tryEmitBuiltinAnnotation(this: *Emitter, callee: []const u8, cc: anytype) anyerror!bool {
-        const call = this.builtin_erlang_dispatch.get(callee) orelse return false;
+    /// A `@builtin(...)` call rendered from its `@external(erlang, …)` template,
+    /// or null when no template is registered (the caller falls through to
+    /// `@block`, the `__bp_*` ops and the plain call).
+    fn builtinAnnotationNode(this: *Emitter, b: Ast.Builder, callee: []const u8, cc: anytype) anyerror!?Ast.Expr {
+        const call = this.builtin_erlang_dispatch.get(callee) orelse return null;
+        const template = templateFor(call, cc) orelse return null;
+        return try this.templateNode(b, template, null, cc, error.PrimOpRecvInBuiltinTemplate);
+    }
+
+    /// The template an annotation renders for this call site: the arity branch
+    /// matching its argument count, or the single `$`-bearing symbol.
+    fn templateFor(call: PrimErlangCall, cc: anytype) ?[]const u8 {
         if (call.arity_branches.len > 0) {
             const argc = cc.args.len + cc.trailing.len;
             for (call.arity_branches) |branch| {
-                if (branch.argc != argc) continue;
-                const Ctx = struct {
-                    self: *Emitter,
-                    cc_ref: @TypeOf(cc),
-                    argc: usize,
-                    pub fn writeByte(c: *@This(), ch: u8) anyerror!void {
-                        try c.self.out.writeByte(ch);
-                    }
-                    pub fn writeAll(c: *@This(), s: []const u8) anyerror!void {
-                        try c.self.w(s);
-                    }
-                    pub fn emitRecv(c: *@This()) anyerror!void {
-                        _ = c;
-                        return error.PrimOpRecvInBuiltinTemplate;
-                    }
-                    pub fn emitArg(c: *@This(), i: usize) anyerror!void {
-                        try c.self.emitArg(c.cc_ref, i);
-                    }
-                    pub fn emitStringifyOpen(c: *@This()) anyerror!void {
-                        try c.self.w("iolist_to_binary(io_lib:format(\"~p\", [");
-                    }
-                    pub fn emitStringifyClose(c: *@This()) anyerror!void {
-                        try c.self.w("]))");
-                    }
-                };
-                var ctx = Ctx{ .self = this, .cc_ref = cc, .argc = argc };
-                try primOpTemplate.render(branch.template, &ctx);
-                return true;
+                if (branch.argc == argc) return branch.template;
             }
-            return false;
+            return null;
         }
-        if (primOpTemplate.looksLikeTemplate(call.symbol)) {
-            const Ctx = struct {
-                self: *Emitter,
-                cc_ref: @TypeOf(cc),
-                argc: usize,
-                pub fn writeByte(c: *@This(), ch: u8) anyerror!void {
-                    try c.self.out.writeByte(ch);
-                }
-                pub fn writeAll(c: *@This(), s: []const u8) anyerror!void {
-                    try c.self.w(s);
-                }
-                pub fn emitRecv(c: *@This()) anyerror!void {
-                    _ = c;
-                    return error.PrimOpRecvInBuiltinTemplate;
-                }
-                pub fn emitArg(c: *@This(), i: usize) anyerror!void {
-                    try c.self.emitArg(c.cc_ref, i);
-                }
-                pub fn emitStringifyOpen(c: *@This()) anyerror!void {
-                    try c.self.w("iolist_to_binary(io_lib:format(\"~p\", [");
-                }
-                pub fn emitStringifyClose(c: *@This()) anyerror!void {
-                    try c.self.w("]))");
-                }
-            };
-            var ctx = Ctx{ .self = this, .cc_ref = cc, .argc = cc.args.len + cc.trailing.len };
-            try primOpTemplate.render(call.symbol, &ctx);
-            return true;
-        }
-        return false;
+        return if (primOpTemplate.looksLikeTemplate(call.symbol)) call.symbol else null;
+    }
+
+    /// A host template (`comptime/primOpTemplate.zig`) as a `seq` node: the
+    /// template text is kept verbatim around the receiver (`$self`) and argument
+    /// (`$N`, `$args`) nodes. `no_recv` is raised when the template names
+    /// `$self` but the call has no receiver.
+    fn templateNode(this: *Emitter, b: Ast.Builder, template: []const u8, recv: ?*const ast.Expr, cc: anytype, no_recv: anyerror) anyerror!Ast.Expr {
+        const Ctx = struct {
+            self: *Emitter,
+            b: Ast.Builder,
+            recv: ?*const ast.Expr,
+            cc_ref: @TypeOf(cc),
+            argc: usize,
+            no_recv: anyerror,
+            parts: std.ArrayListUnmanaged(Ast.Expr) = .empty,
+            text: std.ArrayListUnmanaged(u8) = .empty,
+
+            fn flush(c: *@This()) anyerror!void {
+                if (c.text.items.len == 0) return;
+                try c.parts.append(c.b.arena, Ast.Expr.r(try c.text.toOwnedSlice(c.b.arena)));
+            }
+            pub fn writeByte(c: *@This(), ch: u8) anyerror!void {
+                try c.text.append(c.b.arena, ch);
+            }
+            pub fn writeAll(c: *@This(), s: []const u8) anyerror!void {
+                try c.text.appendSlice(c.b.arena, s);
+            }
+            pub fn emitRecv(c: *@This()) anyerror!void {
+                const r = c.recv orelse return c.no_recv;
+                try c.flush();
+                try c.parts.append(c.b.arena, try c.self.exprNode(c.b, r.*));
+            }
+            pub fn emitArg(c: *@This(), i: usize) anyerror!void {
+                try c.flush();
+                try c.parts.append(c.b.arena, try c.self.argNode(c.b, c.cc_ref, i));
+            }
+            pub fn emitStringifyOpen(c: *@This()) anyerror!void {
+                try c.writeAll("iolist_to_binary(io_lib:format(\"~p\", [");
+            }
+            pub fn emitStringifyClose(c: *@This()) anyerror!void {
+                try c.writeAll("]))");
+            }
+        };
+        var ctx = Ctx{ .self = this, .b = b, .recv = recv, .cc_ref = cc, .argc = cc.args.len + cc.trailing.len, .no_recv = no_recv };
+        try primOpTemplate.render(template, &ctx);
+        try ctx.flush();
+        return .{ .seq = ctx.parts.items };
     }
 
     /// §A5: index interface methods carrying `@external(erlang, "mod", "sym[(args)]")`
@@ -1490,7 +1488,7 @@ const Emitter = struct {
     }
 
     /// Record `iface.extends[0]` as the parent for `iface` in
-    /// `prim_iface_chain` so `tryEmitPrimAnnotation`'s walker can climb
+    /// `prim_iface_chain` so `primAnnotationNode`'s walker can climb
     /// `I32 → Signed → Integer → Number`. First-write-wins (the parse of
     /// `program.decls` lands before the embedded `primitives.d.bp`
     /// re-parse). We only record the first parent — multi-inheritance is
@@ -1553,7 +1551,7 @@ const Emitter = struct {
             // `prim-op-annotation` template form: a `$`-bearing symbol is a raw
             // template body — store it verbatim and skip `parseExternalCallTemplate`
             // (which would interpret `($self ++ $0)` as a `f(arg)` shape with an
-            // empty head and one bogus arg). `tryEmitPrimAnnotation` runs the same
+            // empty head and one bogus arg). `primAnnotationNode` runs the same
             // `looksLikeTemplate` discriminator and renders via
             // `comptime/primOpTemplate.zig`.
             if (primOpTemplate.looksLikeTemplate(ref.symbol)) {
@@ -1578,212 +1576,57 @@ const Emitter = struct {
         }
     }
 
-    /// Try emitting a primitive method call from its `@external(erlang, …)`
-    /// annotation. Returns false when no annotation is registered for this
-    /// `<iface>.<method>` (callers fall through to the inline allow-list for
-    /// irreducible cases). `iface_name` maps a `PrimKind` to the controller
-    /// interface name (`PrimKind.array` → `"Array"`); the dispatch map is keyed
-    /// on the interface so a numeric tower lookup follows the same path.
-    fn tryEmitPrimAnnotation(this: *Emitter, k: envMod.PrimKind, callee: []const u8, recv: *const ast.Expr, cc: anytype) anyerror!bool {
-        const head_iface = primIfaceForKind(k) orelse return false;
-        // Walk the `extends` chain so a method declared on a parent
-        // interface (e.g. `Integer.toString` reached from an `I32` receiver)
-        // resolves without flattening the dispatch map at collection time.
+    /// A primitive method call rendered from its `@external(erlang, …)`
+    /// annotation, or null when none is registered for `<iface>.<method>`
+    /// (callers fall through to the inline lowerings for irreducible cases).
+    /// `primIfaceForKind` maps a `PrimKind` to its interface (`.array` →
+    /// `"Array"`), and the `extends` chain is walked so a method declared on a
+    /// parent interface (`Integer.toString` from an `I32` receiver) resolves.
+    fn primAnnotationNode(this: *Emitter, b: Ast.Builder, k: envMod.PrimKind, callee: []const u8, recv: *const ast.Expr, cc: anytype) anyerror!?Ast.Expr {
+        const head_iface = primIfaceForKind(k) orelse return null;
         var iface_walk = PrimIfaceWalker.init(this, head_iface, &this.prim_iface_chain);
-        var call_opt: ?PrimErlangCall = null;
-        while (iface_walk.next()) |iface_name| {
-            var b: [128]u8 = undefined;
-            const k_str = std.fmt.bufPrint(&b, "{s}.{s}", .{ iface_name, callee }) catch return false;
-            if (this.prim_erlang_dispatch.get(k_str)) |hit| {
-                call_opt = hit;
-                break;
-            }
+        const call = while (iface_walk.next()) |iface_name| {
+            var key_buf: [128]u8 = undefined;
+            const key = std.fmt.bufPrint(&key_buf, "{s}.{s}", .{ iface_name, callee }) catch return null;
+            if (this.prim_erlang_dispatch.get(key)) |hit| break hit;
+        } else return null;
+        // Arity-branched (`when($argc == N): "…"`) or single-string template:
+        // `$self` ⇒ the receiver, `$N` ⇒ the N-th argument. An arity-branched
+        // annotation with no branch for this argument count falls through.
+        if (call.arity_branches.len > 0 or primOpTemplate.looksLikeTemplate(call.symbol)) {
+            const template = templateFor(call, cc) orelse return null;
+            return try this.templateNode(b, template, recv, cc, error.PrimOpRecvMissing);
         }
-        const call = call_opt orelse return false;
-        // `prim-op-annotation` arity branch (`when($argc == N): "..."`):
-        // select the matching branch by the call-site arg count and render its
-        // template. No matching branch ⇒ return false so the inline switch (or
-        // value-receiver fallback) handles it — RP2 (`prim-op-no-arity-match`)
-        // would be surfaced by inference, not by codegen.
-        if (call.arity_branches.len > 0) {
-            const argc = cc.args.len + cc.trailing.len;
-            for (call.arity_branches) |branch| {
-                if (branch.argc != argc) continue;
-                const Ctx = struct {
-                    self: *Emitter,
-                    recv: *const ast.Expr,
-                    cc_ref: @TypeOf(cc),
-                    argc: usize,
-                    pub fn writeByte(c: *@This(), ch: u8) anyerror!void {
-                        try c.self.out.writeByte(ch);
-                    }
-                    pub fn writeAll(c: *@This(), s: []const u8) anyerror!void {
-                        try c.self.w(s);
-                    }
-                    pub fn emitRecv(c: *@This()) anyerror!void {
-                        try c.self.emitExpr(c.recv.*);
-                    }
-                    pub fn emitArg(c: *@This(), i: usize) anyerror!void {
-                        try c.self.emitArg(c.cc_ref, i);
-                    }
-                    pub fn emitStringifyOpen(c: *@This()) anyerror!void {
-                        try c.self.w("iolist_to_binary(io_lib:format(\"~p\", [");
-                    }
-                    pub fn emitStringifyClose(c: *@This()) anyerror!void {
-                        try c.self.w("]))");
-                    }
-                };
-                var ctx = Ctx{ .self = this, .recv = recv, .cc_ref = cc, .argc = argc };
-                try primOpTemplate.render(branch.template, &ctx);
-                return true;
-            }
-            return false;
-        }
-        // `prim-op-annotation` template form: a `$`-bearing symbol is the
-        // single-string template body (`#[@External.Erlang( "<template>")]`).
-        // Render it via the shared walker — `$self` ⇒ recv, `$N` ⇒ N-th arg,
-        // any other byte is target-language passthrough.
-        if (primOpTemplate.looksLikeTemplate(call.symbol)) {
-            const Ctx = struct {
-                self: *Emitter,
-                recv: *const ast.Expr,
-                cc_ref: @TypeOf(cc),
-                argc: usize,
-                pub fn writeByte(c: *@This(), ch: u8) anyerror!void {
-                    try c.self.out.writeByte(ch);
-                }
-                pub fn writeAll(c: *@This(), s: []const u8) anyerror!void {
-                    try c.self.w(s);
-                }
-                pub fn emitRecv(c: *@This()) anyerror!void {
-                    try c.self.emitExpr(c.recv.*);
-                }
-                pub fn emitArg(c: *@This(), i: usize) anyerror!void {
-                    try c.self.emitArg(c.cc_ref, i);
-                }
-                pub fn emitStringifyOpen(c: *@This()) anyerror!void {
-                    try c.self.w("iolist_to_binary(io_lib:format(\"~p\", [");
-                }
-                pub fn emitStringifyClose(c: *@This()) anyerror!void {
-                    try c.self.w("]))");
-                }
-            };
-            var ctx = Ctx{
-                .self = this,
-                .recv = recv,
-                .cc_ref = cc,
-                .argc = cc.args.len + cc.trailing.len,
-            };
-            try primOpTemplate.render(call.symbol, &ctx);
-            return true;
-        }
-        try this.fmt("{s}:{s}(", .{ call.module, call.symbol });
-        if (call.args) |args| {
-            // Render in template order. `self` ⇒ the receiver expression; any
-            // other slot ⇒ the next positional call argument (the parser drops
-            // `@external(…)` arg labels, so the template's param names are
-            // documentation — the binding is positional, in source order).
+        var args: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+        if (call.args) |names| {
+            // Template order: `self` ⇒ the receiver; any other slot ⇒ the next
+            // positional argument (the parser drops `@external(…)` arg labels,
+            // so the binding is positional, in source order).
             var next_arg: usize = 0;
-            for (args, 0..) |name, i| {
-                if (i > 0) try this.w(", ");
+            for (names) |name| {
                 if (std.mem.eql(u8, name, "self")) {
-                    try this.emitExpr(recv.*);
+                    try args.append(b.arena, try this.exprNode(b, recv.*));
                 } else {
-                    try this.emitArg(cc, next_arg);
+                    try args.append(b.arena, try this.argNode(b, cc, next_arg));
                     next_arg += 1;
                 }
             }
         } else {
-            // Bare symbol — use declaration order (`self` first, then the call's
-            // positional args / trailing lambdas).
-            try this.emitExpr(recv.*);
-            for (cc.args) |arg| {
-                try this.w(", ");
-                try this.emitExpr(arg.value.*);
-            }
+            // Bare symbol — declaration order: `self`, then the positional args.
+            try args.append(b.arena, try this.exprNode(b, recv.*));
+            for (cc.args) |arg| try args.append(b.arena, try this.exprNode(b, arg.value.*));
         }
-        try this.w(")");
-        return true;
+        return try headCall(b, try qualified(b, call.module, call.symbol), args.items);
     }
 
-    /// §A2 erlang twin: render a top-level user `declare fn` whose
-    /// `@external(erlang, …)` annotation is a template (with `$0`/`$N`
-    /// markers) or arity-branched (`when(argc == N): "..."`) at the call
-    /// site instead of emitting `module:symbol(args)` against the
-    /// `externals` map (which would emit `:symbol(args)` for the
-    /// chained-host-call shapes whose host doesn't fit `module:symbol`).
-    /// Mirrors `tryEmitPrimAnnotation` for the call-site dispatch path,
-    /// minus the receiver (top-level fns have no `self`).
-    fn tryEmitUserTemplate(this: *Emitter, callee: []const u8, cc: anytype) anyerror!bool {
-        const call = this.user_erlang_templates.get(callee) orelse return false;
-        if (call.arity_branches.len > 0) {
-            const argc = cc.args.len + cc.trailing.len;
-            for (call.arity_branches) |branch| {
-                if (branch.argc != argc) continue;
-                const Ctx = struct {
-                    self: *Emitter,
-                    cc_ref: @TypeOf(cc),
-                    argc: usize,
-                    pub fn writeByte(c: *@This(), ch: u8) anyerror!void {
-                        try c.self.out.writeByte(ch);
-                    }
-                    pub fn writeAll(c: *@This(), s: []const u8) anyerror!void {
-                        try c.self.w(s);
-                    }
-                    pub fn emitRecv(c: *@This()) anyerror!void {
-                        _ = c;
-                        return error.PrimOpRecvInUserTemplate;
-                    }
-                    pub fn emitArg(c: *@This(), i: usize) anyerror!void {
-                        try c.self.emitArg(c.cc_ref, i);
-                    }
-                    pub fn emitStringifyOpen(c: *@This()) anyerror!void {
-                        try c.self.w("iolist_to_binary(io_lib:format(\"~p\", [");
-                    }
-                    pub fn emitStringifyClose(c: *@This()) anyerror!void {
-                        try c.self.w("]))");
-                    }
-                };
-                var ctx = Ctx{ .self = this, .cc_ref = cc, .argc = argc };
-                try primOpTemplate.render(branch.template, &ctx);
-                return true;
-            }
-            return false;
-        }
-        if (primOpTemplate.looksLikeTemplate(call.symbol)) {
-            const Ctx = struct {
-                self: *Emitter,
-                cc_ref: @TypeOf(cc),
-                argc: usize,
-                pub fn writeByte(c: *@This(), ch: u8) anyerror!void {
-                    try c.self.out.writeByte(ch);
-                }
-                pub fn writeAll(c: *@This(), s: []const u8) anyerror!void {
-                    try c.self.w(s);
-                }
-                pub fn emitRecv(c: *@This()) anyerror!void {
-                    _ = c;
-                    return error.PrimOpRecvInUserTemplate;
-                }
-                pub fn emitArg(c: *@This(), i: usize) anyerror!void {
-                    try c.self.emitArg(c.cc_ref, i);
-                }
-                pub fn emitStringifyOpen(c: *@This()) anyerror!void {
-                    try c.self.w("iolist_to_binary(io_lib:format(\"~p\", [");
-                }
-                pub fn emitStringifyClose(c: *@This()) anyerror!void {
-                    try c.self.w("]))");
-                }
-            };
-            var ctx = Ctx{
-                .self = this,
-                .cc_ref = cc,
-                .argc = cc.args.len + cc.trailing.len,
-            };
-            try primOpTemplate.render(call.symbol, &ctx);
-            return true;
-        }
-        return false;
+    /// §A2 erlang twin: a top-level user `declare fn` whose `@external(erlang, …)`
+    /// annotation is a template (`$0`/`$N`) or arity-branched, rendered at the
+    /// call site instead of `module:symbol(args)` (which does not fit
+    /// chained-host-call shapes). Null when no template matches.
+    fn userTemplateNode(this: *Emitter, b: Ast.Builder, callee: []const u8, cc: anytype) anyerror!?Ast.Expr {
+        const call = this.user_erlang_templates.get(callee) orelse return null;
+        const template = templateFor(call, cc) orelse return null;
+        return try this.templateNode(b, template, null, cc, error.PrimOpRecvInUserTemplate);
     }
 
     /// Index interface associated `default fn`s (no `self`, with a body) by their
@@ -1865,14 +1708,6 @@ const Emitter = struct {
         return b.match(target, rhs);
     }
 
-    /// Render `bindExpr` in place (binding used as an expression).
-    fn emitBind(this: *Emitter, name: []const u8, op: BindOp, value: ast.Expr) !void {
-        var arena_state = std.heap.ArenaAllocator.init(this.alloc);
-        defer arena_state.deinit();
-        const b: Ast.Builder = .{ .arena = arena_state.allocator() };
-        try erlEmitter.writeExpr(this.out, try this.bindExpr(b, name, op, value), this.indent);
-    }
-
     /// Indexes record/struct field orders + enum names for constructor-call,
     /// field-access, and enum-member lowering.
     fn collectTypeShapes(self: *Emitter, program: ast.Program) !void {
@@ -1947,7 +1782,7 @@ const Emitter = struct {
                 if (!f.isExternal()) continue;
                 // §A2 arity-branched template (`when(argc == N): "<tmpl>"`)
                 // on a top-level declare fn — the existing
-                // interface-method `tryEmitPrimAnnotation` path already
+                // interface-method `primAnnotationNode` path already
                 // handles primitives.d.bp; this map covers
                 // top-level user `declare fn`s so chained-host-call
                 // shapes (`file:get_cwd()`, `os:getpid()`, etc.) can
@@ -2725,66 +2560,68 @@ const Emitter = struct {
 
     // ── expressions ──────────────────────────────────────────────────────────
 
-    fn emitBinaryOp(this: *Emitter, op: []const u8, lhs: *ast.Expr, rhs: *ast.Expr) !void {
-        try this.w("(");
-        try this.emitExpr(lhs.*);
-        try this.w(" ");
-        try this.w(op);
-        try this.w(" ");
-        try this.emitExpr(rhs.*);
-        try this.w(")");
-    }
-
-    /// Emit the inline Erlang form for a lowered `@Result`/`@Option` method op.
+    /// The inline Erlang form of a lowered `@Result`/`@Option` method op.
     /// `args[0]` is the receiver; `args[1]` (when present) the fn/default value.
     /// A fun binds the receiver once (so chains don't re-evaluate it). Result
-    /// values use the idiomatic OTP `{ok, V} | {error, E}` shape; absent options
-    /// are `undefined`.
-    fn emitResultOptionOp(this: *Emitter, callee: []const u8, args: []const ast.CallArg) anyerror!void {
+    /// values use the OTP `{ok, V} | {error, E}` shape; absent options are
+    /// `undefined`.
+    fn resultOptionNode(this: *Emitter, b: Ast.Builder, callee: []const u8, args: []const ast.CallArg) anyerror!Ast.Expr {
+        const eq = std.mem.eql;
+        const V = Ast.Expr.v;
+        const A = Ast.Expr.a;
         const recv = args[0].value;
-        const arg1: ?*ast.Expr = if (args.len > 1) args[1].value else null;
+        // Result constructors: `return v` / `throw e` in a `-> @Result<…>` fn.
+        if (eq(u8, callee, "__bp_ok")) return b.tuple(&.{ A("ok"), try this.exprNode(b, recv.*) });
+        if (eq(u8, callee, "__bp_error")) return b.tuple(&.{ A("error"), try this.exprNode(b, recv.*) });
 
-        if (std.mem.eql(u8, callee, "__bp_ok")) {
-            // Result constructor: `return v` in a `-> @Result<…>` fn.
-            try this.w("{ok, ");
-            try this.emitExpr(recv.*);
-            try this.w("}");
-            return;
-        } else if (std.mem.eql(u8, callee, "__bp_error")) {
-            // Result constructor: `throw e` in a `-> @Result<…>` fn.
-            try this.w("{error, ");
-            try this.emitExpr(recv.*);
-            try this.w("}");
-            return;
-        } else if (std.mem.eql(u8, callee, "__bp_result_map")) {
-            try this.w("(fun(R) -> case R of {ok, V} -> {ok, (");
-            if (arg1) |a| try this.emitExpr(a.*);
-            try this.w(")(V)}; _ -> R end end)(");
-        } else if (std.mem.eql(u8, callee, "__bp_result_flatMap")) {
-            try this.w("(fun(R) -> case R of {ok, V} -> (");
-            if (arg1) |a| try this.emitExpr(a.*);
-            try this.w(")(V); _ -> R end end)(");
-        } else if (std.mem.eql(u8, callee, "__bp_result_unwrapOr")) {
-            try this.w("(fun(R) -> case R of {ok, V} -> V; _ -> (");
-            if (arg1) |a| try this.emitExpr(a.*);
-            try this.w(") end end)(");
-        } else if (std.mem.eql(u8, callee, "__bp_result_isOk")) {
-            try this.w("(fun(R) -> case R of {ok, _} -> true; _ -> false end end)(");
-        } else if (std.mem.eql(u8, callee, "__bp_result_isError")) {
-            try this.w("(fun(R) -> case R of {error, _} -> true; _ -> false end end)(");
-        } else if (std.mem.eql(u8, callee, "__bp_option_map") or std.mem.eql(u8, callee, "__bp_option_flatMap")) {
-            try this.w("(fun(O) -> case O of undefined -> undefined; V -> (");
-            if (arg1) |a| try this.emitExpr(a.*);
-            try this.w(")(V) end end)(");
-        } else if (std.mem.eql(u8, callee, "__bp_option_unwrapOr")) {
-            try this.w("(fun(O) -> case O of undefined -> (");
-            if (arg1) |a| try this.emitExpr(a.*);
-            try this.w("); V -> V end end)(");
+        const ok_v = try b.tuple(&.{ A("ok"), V("V") });
+        var subject = V("R");
+        var clauses: [2]Ast.Clause = undefined;
+        if (eq(u8, callee, "__bp_result_map")) {
+            clauses = .{
+                try b.clause(&.{ok_v}, &.{}, &.{try b.tuple(&.{ A("ok"), try b.applyParen(try this.opArg(b, args), &.{V("V")}) })}),
+                try b.clause(&.{V("_")}, &.{}, &.{subject}),
+            };
+        } else if (eq(u8, callee, "__bp_result_flatMap")) {
+            clauses = .{
+                try b.clause(&.{ok_v}, &.{}, &.{try b.applyParen(try this.opArg(b, args), &.{V("V")})}),
+                try b.clause(&.{V("_")}, &.{}, &.{subject}),
+            };
+        } else if (eq(u8, callee, "__bp_result_unwrapOr")) {
+            clauses = .{
+                try b.clause(&.{ok_v}, &.{}, &.{V("V")}),
+                try b.clause(&.{V("_")}, &.{}, &.{try b.paren(try this.opArg(b, args))}),
+            };
+        } else if (eq(u8, callee, "__bp_result_isOk") or eq(u8, callee, "__bp_result_isError")) {
+            const tag = if (eq(u8, callee, "__bp_result_isOk")) "ok" else "error";
+            clauses = .{
+                try b.clause(&.{try b.tuple(&.{ A(tag), V("_") })}, &.{}, &.{A("true")}),
+                try b.clause(&.{V("_")}, &.{}, &.{A("false")}),
+            };
+        } else if (eq(u8, callee, "__bp_option_map") or eq(u8, callee, "__bp_option_flatMap")) {
+            subject = V("O");
+            clauses = .{
+                try b.clause(&.{A("undefined")}, &.{}, &.{A("undefined")}),
+                try b.clause(&.{V("V")}, &.{}, &.{try b.applyParen(try this.opArg(b, args), &.{V("V")})}),
+            };
+        } else if (eq(u8, callee, "__bp_option_unwrapOr")) {
+            subject = V("O");
+            clauses = .{
+                try b.clause(&.{A("undefined")}, &.{}, &.{try b.paren(try this.opArg(b, args))}),
+                try b.clause(&.{V("V")}, &.{}, &.{V("V")}),
+            };
         } else {
-            return;
+            return Ast.Expr.r("");
         }
-        try this.emitExpr(recv.*);
-        try this.w(")");
+        const fun: Ast.Expr = .{ .fun_clauses = try b.arena.dupe(Ast.Clause, &.{
+            try b.clause(&.{subject}, &.{}, &.{try b.caseInline(subject, &clauses)}),
+        }) };
+        return b.applyParen(fun, &.{try this.exprNode(b, recv.*)});
+    }
+
+    /// The fn/default argument of a `@Result`/`@Option` op (empty when absent).
+    fn opArg(this: *Emitter, b: Ast.Builder, args: []const ast.CallArg) anyerror!Ast.Expr {
+        return if (args.len > 1) this.exprNode(b, args[1].value.*) else Ast.Expr.r("");
     }
 
     /// Emit `e` at the current indentation: build its `erl_ast` node and render it.
@@ -2796,8 +2633,6 @@ const Emitter = struct {
     }
 
     /// `e` as an `erl_ast` expression rendered at the current indentation.
-    /// Kinds not modelled yet (calls, binding expressions, comptime forms,
-    /// `case`) are captured from `emitExprLegacy` as `raw` text.
     fn exprNode(this: *Emitter, b: Ast.Builder, e: ast.Expr) anyerror!Ast.Expr {
         const V = Ast.Expr.v;
         const A = Ast.Expr.a;
@@ -3031,7 +2866,12 @@ const Emitter = struct {
                 return b.remote("lists", if (yields) "map" else "foreach", &.{ fun, try this.exprNode(b, lp.iter.*) });
             },
 
-            else => return this.legacyAsRaw(b, e),
+            .call => |c| return this.callNode(b, c),
+            .binding => |bind| return this.bindingNode(b, bind),
+            // `use` is a transparent prefix: lower the wrapped call (any binding
+            // belongs to the enclosing `val`).
+            .useHook => |uh| return this.exprNode(b, uh.kind.inner.*),
+            .comptime_ => |ct| return this.comptimeNode(b, ct),
         }
     }
 
@@ -3051,469 +2891,265 @@ const Emitter = struct {
         return .{ .map = out };
     }
 
-    /// `emitExprLegacy(e)` captured at the current indentation as a `raw` node.
-    fn legacyAsRaw(this: *Emitter, b: Ast.Builder, e: ast.Expr) anyerror!Ast.Expr {
-        var buf: std.Io.Writer.Allocating = .init(b.arena);
-        const out = this.out;
-        this.out = &buf.writer;
-        defer this.out = out;
-        try this.emitExprLegacy(e);
-        return Ast.Expr.r(buf.written());
+    // ── calls ─────────────────────────────────────────────────────────────────
+
+    fn callNode(this: *Emitter, b: Ast.Builder, c: anytype) anyerror!Ast.Expr {
+        return switch (c.kind) {
+            .pipeline => |p| this.pipelineNode(b, p),
+            .call => |cc| if (cc.is_builtin) this.builtinCallNode(b, cc) else this.plainCallNode(b, c.loc, cc),
+        };
     }
 
-    /// Expressions not yet modelled as `erl_ast` nodes, written as text.
-    fn emitExprLegacy(this: *Emitter, e: ast.Expr) anyerror!void {
-        switch (e) {
-            .call => |c| switch (c.kind) {
-                .pipeline => |b| {
-                    // Flatten the pipeline chain
-                    var items: std.ArrayList(ast.Expr) = .empty;
-                    defer items.deinit(this.alloc);
-                    try items.append(this.alloc, b.lhs.*);
-                    var current = b.rhs.*;
-                    while (true) {
-                        switch (current) {
-                            .call => |cc| switch (cc.kind) {
-                                .pipeline => |p| {
-                                    try items.append(this.alloc, p.lhs.*);
-                                    current = p.rhs.*;
-                                    continue;
-                                },
-                                else => {},
-                            },
-                            else => {},
-                        }
-                        break;
-                    }
-                    try items.append(this.alloc, current);
-
-                    // Emit as nested calls: last(...(first))
-                    var i: usize = items.items.len - 1;
-                    while (i > 0) : (i -= 1) {
-                        try this.emitExpr(items.items[i]);
-                        try this.w("(");
-                    }
-                    try this.emitExpr(items.items[0]);
-                    i = items.items.len - 1;
-                    while (i > 0) : (i -= 1) {
-                        try this.w(")");
-                    }
-                },
-
-                .call => |cc| {
-                    if (cc.is_builtin) {
-                        // `prim-op-annotation` builtin dispatch: a `fn` declared
-                        // in `builtins.d.bp` with `@external(erlang, …)` matches
-                        // here first (`todo`/`panic`/`print`/`println`/`debug`).
-                        // `@block` keeps its bespoke inline-fun shape below.
-                        if (try this.tryEmitBuiltinAnnotation(cc.callee, cc)) return;
-                        if (std.mem.eql(u8, cc.callee, "block")) {
-                            // @block { ... } emits an immediately-invoked fun
-                            // so the body executes and its value is the call result.
-                            if (cc.args.len == 1) {
-                                const arg = cc.args[0].value;
-                                const isFunction = switch (arg.*) {
-                                    .function => true,
-                                    else => false,
-                                };
-                                if (!isFunction) return error.InvalidArgs;
-                                try this.w("(fun() ->\n");
-                                this.indent += 1;
-                                try this.emitExpr(arg.*);
-                                this.indent -= 1;
-                                try this.w("\n");
-                                try this.writeIndent();
-                                try this.w("end)()");
-                                return;
-                            } else if (cc.trailing.len == 1 and cc.trailing[0].params.len == 0) {
-                                // @block { body } - trailing lambda with no params
-                                try this.w("(fun() ->\n");
-                                this.indent += 1;
-                                try this.emitBody(cc.trailing[0].body);
-                                this.indent -= 1;
-                                try this.w("\n");
-                                try this.writeIndent();
-                                try this.w("end)()");
-                                return;
-                            } else {
-                                return error.InvalidArgs;
-                            }
-                        }
-                        if (std.mem.startsWith(u8, cc.callee, "__bp_")) {
-                            try this.emitResultOptionOp(cc.callee, cc.args);
-                            return;
-                        }
-                        var callee_buf: [256]u8 = undefined;
-                        try this.fmt("{s}(", .{try fnAtom(cc.callee, &callee_buf)});
-                        var first = true;
-                        for (cc.args) |arg| {
-                            if (!first) try this.w(", ");
-                            try this.emitExpr(arg.value.*);
-                            first = false;
-                        }
-                        // Trailing lambdas: emit as fun args
-                        for (cc.trailing) |tl| {
-                            if (!first) try this.w(", ");
-                            first = false;
-                            try this.w("fun(");
-                            for (tl.params, 0..) |p, pi| {
-                                if (pi > 0) try this.w(", ");
-                                const vname = try erlangVar(this.alloc, p);
-                                defer this.alloc.free(vname);
-                                try this.w(vname);
-                                this.addLocal(p);
-                            }
-                            try this.w(") ->\n");
-                            const tl_saved = this.indent;
-                            this.indent = this.indent + 1;
-                            try this.emitBody(tl.body);
-                            this.indent = tl_saved;
-                            try this.w("\n");
-                            try this.writeIndent();
-                            try this.w("end");
-                        }
-                        try this.w(")");
-                    } else {
-                        // `recv_arg_emitted` tracks whether the receiver was
-                        // already written as the first positional argument
-                        // (activated extension dispatch) so the argument loop
-                        // knows to prefix a comma.
-                        var recv_arg_emitted = false;
-                        // Reserved-word function names (`of`, `div`) must be
-                        // single-quoted wherever they are called; `fnAtom` is a
-                        // no-op for every other callee. One buffer, reused per use.
-                        var callee_buf: [256]u8 = undefined;
-                        const callee = try fnAtom(cc.callee, &callee_buf);
-                        if (cc.receiver) |recv| {
-                            const mod_name: ?[]const u8 = switch (recv.*) {
-                                .identifier => |id| switch (id.kind) {
-                                    .ident => |n| if (isModuleRef(n)) n else null,
-                                    else => null,
-                                },
-                                else => null,
-                            };
-                            // `"std"` package qualified call: a lowercase
-                            // receiver naming an imported std module lowers to
-                            // the remote `option:map(Args)`.
-                            const std_mod: ?[]const u8 = switch (recv.*) {
-                                .identifier => |id| switch (id.kind) {
-                                    .ident => |n| if (this.std_imports.contains(n)) n else null,
-                                    else => null,
-                                },
-                                else => null,
-                            };
-                            if (std_mod) |sm| {
-                                try this.fmt("{s}:{s}(", .{ sm, callee });
-                            } else if (this.rewrites.get(c.loc)) |_| {
-                                // Activated extension dispatch: `recv.m(args)` →
-                                // `m(Recv, args)`, a bare local call to the
-                                // function emitted by `emitExtensionMethods`.
-                                try this.fmt("{s}(", .{callee});
-                                try this.emitExpr(recv.*);
-                                recv_arg_emitted = true;
-                            } else if (mod_name != null and this.ext_names.contains(mod_name.?)) {
-                                // Qualified extension call `Sym.m(obj)`: the
-                                // receiver names the extension block, so it is
-                                // not a module — call the bare local `m(obj)`.
-                                try this.fmt("{s}(", .{callee});
-                            } else if (mod_name != null and this.enum_names.contains(mod_name.?)) {
-                                // Qualified enum payload constructor:
-                                // `Color.Rgb(r, g, b)` → tagged tuple
-                                // `{'Rgb', R, G, B}` (matches the case-arm
-                                // constructor pattern lowering).
-                                var tag_buf: [128]u8 = undefined;
-                                try this.fmt("{{{s}", .{try atomName(cc.callee, &tag_buf)});
-                                for (cc.args) |arg| {
-                                    try this.w(", ");
-                                    try this.emitExpr(arg.value.*);
-                                }
-                                try this.w("}");
-                                return;
-                            } else if (mod_name != null and this.imported_types.get(mod_name.?) != null) {
-                                // Associated fn of an IMPORTED record/struct
-                                // (`Response.ok(...)` where `Response` comes
-                                // `from "web"`): a remote call into the owning
-                                // module (`http:ok(...)`) — the bare fn only
-                                // exists in the owner, lowercasing the type name
-                                // (`response:ok`) would hit the wrong module.
-                                const owner = this.imported_types.get(mod_name.?).?;
-                                try this.fmt("{s}:{s}(", .{ owner, callee });
-                            } else if (mod_name != null and this.record_fields.contains(mod_name.?)) {
-                                // Associated fn of a LOCAL record (`Response.ok(...)`):
-                                // the fn is emitted as a bare local function in this
-                                // module, not a remote `response:ok(...)`.
-                                try this.fmt("{s}(", .{callee});
-                            } else if (mod_name != null and this.isInterfaceAssoc(mod_name.?, cc.callee)) {
-                                // Associated `default fn` of an interface (`Array.range`,
-                                // `Pair.of`): `emitInterface` emits it as the mangled
-                                // local `'<Interface>_<method>'` (so it never collides
-                                // with a consumer's own top-level fn), so call that — not
-                                // a remote `array:range`.
-                                var mraw: [256]u8 = undefined;
-                                const mname = interfaceAssocAtom(&mraw, mod_name.?, cc.callee) catch return;
-                                try this.fmt("{s}(", .{mname});
-                            } else if (mod_name) |name| {
-                                // A PascalCase identifier receiver is a module-qualified
-                                // call: `List.map(xs, f)` → a remote call `list:map(Xs, F)`.
-                                // The module name is lowercased to a valid atom; arity is
-                                // implicit from the arg count (args + trailing lambdas).
-                                const mod = try erlangModule(this.alloc, name);
-                                defer this.alloc.free(mod);
-                                try this.fmt("{s}:{s}(", .{ mod, callee });
-                            } else if (this.instance_lowerings.get(c.loc)) |il| switch (il) {
-                                // Builtin-primitive method (`xs.map(f)`, `s.split(sep)`):
-                                // erlang has no native method dispatch — emit the host op
-                                // directly (the receiver's argument position varies).
-                                .prim => |k| {
-                                    try this.emitPrimMethod(k, cc.callee, recv, cc);
-                                    return;
-                                },
-                                // Record/struct/enum instance method: a plain function
-                                // taking the receiver first. Local types call the bare
-                                // `m(Recv, args)`; an imported type calls into its owner
-                                // module (`owner:m(Recv, args)`). A method name that
-                                // collides with another record's method (`Query.count`
-                                // + `Grouping.count`) is mangled at emit and at the
-                                // call site to `<recordtype>_<method>` so the flat
-                                // erlang top-level fn namespace stays unambiguous.
-                                .record => |tn| {
-                                    var mn_buf: [256]u8 = undefined;
-                                    const mn: []const u8 = if (this.isRecordMethodCollision(tn, cc.callee))
-                                        try recordMethodAtom(&mn_buf, tn, cc.callee)
-                                    else
-                                        callee;
-                                    if (this.imported_types.get(tn)) |owner| {
-                                        try this.fmt("{s}:{s}(", .{ owner, mn });
-                                    } else {
-                                        try this.fmt("{s}(", .{mn});
-                                    }
-                                    try this.emitExpr(recv.*);
-                                    recv_arg_emitted = true;
-                                },
-                            } else {
-                                // Method call on a value receiver with no recorded
-                                // lowering. Before falling through to the bare
-                                // local-fn shape, speculatively try the Array
-                                // primitive dispatch (`forEach`/`fold`/`drop`/
-                                // `take`/`toList`) and the universal `toString`.
-                                // These callee names are tightly bound to the std
-                                // Array/Integer/Float interface methods; a user-
-                                // defined record with the same name is rare and
-                                // would also red as `m(Recv, args)` (the existing
-                                // fallback) — the speculative dispatch is a
-                                // strict improvement for the chained-self case
-                                // where `inferTypeMethods` bails out before
-                                // recording an `.array` lowering (e.g. a body
-                                // with a control-flow shape the best-effort
-                                // walker can't resolve).
-                                if (try this.tryArrayPrimFallback(cc.callee, recv, cc)) return;
-                                if (std.mem.eql(u8, cc.callee, "toString") and cc.args.len == 0) {
-                                    // Generic toString fallback — use the BIF
-                                    // `io_lib:format("~p", [Recv])` shape so any
-                                    // value renders. The wider integer/float
-                                    // toString annotations on `Integer`/`Float`
-                                    // light up via `emitPrimMethod` when the
-                                    // lowering IS recorded; this catches the
-                                    // gap-inference case where it isn't.
-                                    try this.w("iolist_to_binary(io_lib:format(\"~p\", [");
-                                    try this.emitExpr(recv.*);
-                                    try this.w("]))");
-                                    return;
-                                }
-                                try this.fmt("{s}(", .{callee});
-                                try this.emitExpr(recv.*);
-                                recv_arg_emitted = true;
-                            }
-                        } else if (this.user_erlang_templates.contains(cc.callee)) {
-                            // §A2 erlang twin: per-callee template /
-                            // arity-branched annotation — render inline
-                            // and return (no `{s}(args)` fallback below).
-                            if (try this.tryEmitUserTemplate(cc.callee, cc)) return;
-                            // No matching arity branch — fall back to the
-                            // bare local-fn call so the missing branch
-                            // surfaces as an erlang "undefined function"
-                            // at compile time rather than silently emitting
-                            // nothing.
-                            try this.fmt("{s}(", .{callee});
-                        } else if (this.externals.get(cc.callee)) |ref| {
-                            // `@[external(erlang, "module", "symbol")]` fn:
-                            // the call lowers to the remote `module:symbol(…)`.
-                            try this.fmt("{s}:{s}(", .{ ref.module, ref.symbol });
-                        } else if (this.externals_missing.contains(cc.callee)) {
-                            // External fn with no `erlang` target — no symbol
-                            // to call on this backend.
-                            return error.MissingExternalTarget;
-                        } else if (this.record_fields.get(cc.callee)) |fields| {
-                            // Record/struct constructor → map literal
-                            // `#{field => V, …}` (runtime shape mirrors the
-                            // beam backend's `put_map_assoc` maps). Labeled
-                            // args use their label; positional args map to
-                            // the declared field order.
-                            try this.w("#{");
-                            for (cc.args, 0..) |arg, ai| {
-                                if (ai > 0) try this.w(", ");
-                                const fname: []const u8 = if (arg.label) |lbl|
-                                    lbl
-                                else if (ai < fields.len)
-                                    fields[ai]
-                                else
-                                    "_arg";
-                                var kb: [128]u8 = undefined;
-                                try this.fmt("{s} => ", .{try atomName(fname, &kb)});
-                                try this.emitExpr(arg.value.*);
-                            }
-                            try this.w("}");
-                            return;
-                        } else if (this.locals.contains(cc.callee)) {
-                            // The callee is a fn-typed local (a parameter, `val`,
-                            // or lambda binding) — apply it as a fun variable
-                            // (`Pred(X)`), not a bare module function call.
-                            const vname = try erlangVar(this.alloc, cc.callee);
-                            defer this.alloc.free(vname);
-                            try this.fmt("{s}(", .{vname});
-                        } else {
-                            try this.fmt("{s}(", .{callee});
-                        }
-                        var first = !recv_arg_emitted;
-                        for (cc.args) |arg| {
-                            if (!first) try this.w(", ");
-                            try this.emitExpr(arg.value.*);
-                            first = false;
-                        }
-                        // Trailing lambdas: emit as fun args
-                        for (cc.trailing) |tl| {
-                            if (!first) try this.w(", ");
-                            first = false;
-                            try this.w("fun(");
-                            for (tl.params, 0..) |p, pi| {
-                                if (pi > 0) try this.w(", ");
-                                const vname = try erlangVar(this.alloc, p);
-                                defer this.alloc.free(vname);
-                                try this.w(vname);
-                                this.addLocal(p);
-                            }
-                            try this.w(") ->\n");
-                            const tl_saved = this.indent;
-                            this.indent = this.indent + 1;
-                            try this.emitBody(tl.body);
-                            this.indent = tl_saved;
-                            try this.w("\n");
-                            try this.writeIndent();
-                            try this.w("end");
-                        }
-                        try this.w(")");
-                    }
-                },
-            },
-
-            .binding => |b| switch (b.kind) {
-                .localBind => |lb| try this.emitBind(lb.name, .bind, lb.value.*),
-                .assign => |a| {
-                    switch (a.target) {
-                        .name => |name| try this.emitBind(name, switch (a.op) {
-                            .assign => .assign,
-                            .plusAssign => .plus_assign,
-                        }, a.value.*),
-                        .fieldAccess => |*fa| {
-                            // Erlang records don't support mutation like this; emit a comment
-                            try this.fmt("%% {s}.{s} = ...", .{ "self", fa.field });
-                        },
-                    }
-                },
-                .localBindDestruct => |lb| {
-                    switch (lb.pattern) {
-                        .names => |*n| {
-                            try this.w("{");
-                            for (n.fields, 0..) |fld, i| {
-                                if (i > 0) try this.w(", ");
-                                const vname = try erlangVar(this.alloc, fld.bind_name);
-                                defer this.alloc.free(vname);
-                                try this.w(vname);
-                            }
-                            if (n.hasSpread) try this.w(", _");
-                            try this.w("} = ");
-                        },
-                        .tuple_ => |t| {
-                            try this.w("{");
-                            for (t, 0..) |nm, i| {
-                                if (i > 0) try this.w(", ");
-                                const vname = try erlangVar(this.alloc, nm);
-                                defer this.alloc.free(vname);
-                                try this.w(vname);
-                            }
-                            try this.w("} = ");
-                        },
-                        .list => {}, // List pattern — placeholder
-                        .ctor => {}, // Constructor pattern — placeholder
-                    }
-                    try this.emitExpr(lb.value.*);
-                },
-            },
-
-            // `use` is a transparent prefix in Erlang: lower the wrapped call.
-            // Any binding is handled by the enclosing `val` (localBind/Destruct),
-            // so the hook result lands in a bound variable (a per-process slot).
-            .useHook => |uh| try this.emitExpr(uh.kind.inner.*),
-
-            .comptime_ => |ct| switch (ct.kind) {
-                .comptimeExpr => |inner| try this.emitExpr(inner.*),
-                .comptimeBlock => |cb| {
-                    for (cb.body) |stmt| {
-                        switch (stmt.expr) {
-                            .jump => |j| switch (j.kind) {
-                                .@"break" => |y| {
-                                    if (y.value) |yp| try this.emitExpr(yp.*);
-                                    return;
-                                },
-                                else => {},
-                            },
-                            else => {},
-                        }
-                    }
-                },
-                .assert => |a| {
-                    if (this.test_mode) {
-                        // Raise a tagged error the test runner catches per
-                        // test (records the failure and continues).
-                        try this.w("case (");
-                        try this.emitExpr(a.condition.*);
-                        try this.w(") of true -> ok; _ -> erlang:error({bp_assert, ");
-                        if (a.message) |msg| {
-                            try this.emitExpr(msg.*);
-                        } else {
-                            try this.w("<<\"assertion failed\">>");
-                        }
-                        try this.fmt(", <<\"{s}.bp:{d}\">>}}) end", .{ this.module_name, ct.loc.line });
-                    } else {
-                        // Erlang doesn't have built-in assert, so we use pattern matching
-                        try this.w("true = (");
-                        try this.emitExpr(a.condition.*);
-                        try this.w(")");
-                    }
-                },
-                .assertPattern => |ap| {
-                    // Use Erlang's native pattern matching with case expressions
-                    try this.w("case ");
-                    try this.emitExpr(ap.expr.*);
-                    try this.w(" of ");
-
-                    // Emit the pattern
-                    try this.emitPattern(ap.pattern);
-                    try this.w(" -> ");
-
-                    // On successful match, return the matched value
-                    try this.emitExpr(ap.expr.*);
-
-                    try this.w("; _ -> ");
-
-                    // Handle the failure case
-                    try this.emitExpr(ap.handler.*);
-
-                    try this.w(" end");
-                },
-            },
-            else => unreachable, // modelled in `exprNode`
+    /// `a |> f |> g` → `g(f(A))`: the chain flattened and applied inside out.
+    /// Stages are built from the last one down, as they have always been emitted.
+    fn pipelineNode(this: *Emitter, b: Ast.Builder, p: anytype) anyerror!Ast.Expr {
+        var items: std.ArrayListUnmanaged(ast.Expr) = .empty;
+        try items.append(b.arena, p.lhs.*);
+        var current = p.rhs.*;
+        while (current == .call and current.call.kind == .pipeline) {
+            try items.append(b.arena, current.call.kind.pipeline.lhs.*);
+            current = current.call.kind.pipeline.rhs.*;
         }
+        try items.append(b.arena, current);
+
+        const stages = try b.arena.alloc(Ast.Expr, items.items.len);
+        var i: usize = items.items.len - 1;
+        while (i > 0) : (i -= 1) stages[i] = try this.exprNode(b, items.items[i]);
+        var node = try this.exprNode(b, items.items[0]);
+        for (stages[1..]) |stage| {
+            const args = try b.exprs(&.{node});
+            node = .{ .apply = .{ .fun = try b.ptr(stage), .args = args } };
+        }
+        return node;
+    }
+
+    /// `@name(...)`: the builtin's `@external(erlang, …)` template when it has
+    /// one (`todo`/`panic`/`print`/`println`/`debug`), `@block`, the lowered
+    /// `__bp_*` result/option ops, else a local call.
+    fn builtinCallNode(this: *Emitter, b: Ast.Builder, cc: anytype) anyerror!Ast.Expr {
+        if (try this.builtinAnnotationNode(b, cc.callee, cc)) |node| return node;
+        if (std.mem.eql(u8, cc.callee, "block")) {
+            // `@block { … }` (or `@block(fn)`) is an immediately-applied fun, so
+            // the body runs and its value is the call's value.
+            const body: Ast.Body = if (cc.args.len == 1) blk: {
+                const arg = cc.args[0].value;
+                if (arg.* != .function) return error.InvalidArgs;
+                this.indent += 1;
+                defer this.indent -= 1;
+                break :blk try b.body(&.{try this.exprNode(b, arg.*)});
+            } else if (cc.trailing.len == 1 and cc.trailing[0].params.len == 0)
+                try this.bodyNode(b, cc.trailing[0].body, 0, this.indent + 1)
+            else
+                return error.InvalidArgs;
+            return b.applyParen(.{ .fun = .{ .params = &.{}, .body = body } }, &.{});
+        }
+        if (std.mem.startsWith(u8, cc.callee, "__bp_")) return this.resultOptionNode(b, cc.callee, cc.args);
+        return b.call(cc.callee, try this.callArgs(b, null, cc));
+    }
+
+    /// A user-level call: receiver dispatch (std module, extension, enum
+    /// constructor, associated fn, primitive/record instance method), host
+    /// templates and externals, record constructors, fun-typed locals, or a
+    /// plain local call. Reserved-word callees (`of`, `div`) are quoted atoms.
+    fn plainCallNode(this: *Emitter, b: Ast.Builder, loc: anytype, cc: anytype) anyerror!Ast.Expr {
+        const recv = cc.receiver orelse {
+            if (this.user_erlang_templates.contains(cc.callee)) {
+                // §A2 per-callee template / arity-branched annotation. With no
+                // matching branch, the bare local call surfaces the gap as an
+                // erlang "undefined function" instead of emitting nothing.
+                if (try this.userTemplateNode(b, cc.callee, cc)) |node| return node;
+                return b.call(cc.callee, try this.callArgs(b, null, cc));
+            }
+            // `#[@external(erlang, "module", "symbol")]` fn → `module:symbol(…)`.
+            if (this.externals.get(cc.callee)) |ref| {
+                return headCall(b, try qualified(b, ref.module, ref.symbol), try this.callArgs(b, null, cc));
+            }
+            // External fn with no `erlang` target — no symbol to call here.
+            if (this.externals_missing.contains(cc.callee)) return error.MissingExternalTarget;
+            // Record/struct constructor → `#{field => V, …}` (the runtime shape of
+            // the beam backend's `put_map_assoc` maps). Labeled args use their
+            // label; positional args follow the declared field order.
+            if (this.record_fields.get(cc.callee)) |fields| {
+                const out = try b.arena.alloc(Ast.MapField, cc.args.len);
+                for (cc.args, 0..) |arg, ai| {
+                    const fname: []const u8 = if (arg.label) |lbl| lbl else if (ai < fields.len) fields[ai] else "_arg";
+                    out[ai] = Ast.field(fname, try this.exprNode(b, arg.value.*));
+                }
+                return .{ .map = out };
+            }
+            // A fn-typed local (parameter, `val`, lambda binding) is applied as a
+            // fun variable (`Pred(X)`), not called as a module function.
+            if (this.locals.contains(cc.callee)) {
+                return headCall(b, try this.arenaVar(b, cc.callee), try this.callArgs(b, null, cc));
+            }
+            return b.call(cc.callee, try this.callArgs(b, null, cc));
+        };
+
+        const mod_name: ?[]const u8 = if (recv.* == .identifier and recv.identifier.kind == .ident and isModuleRef(recv.identifier.kind.ident))
+            recv.identifier.kind.ident
+        else
+            null;
+        // `"std"` package call: a lowercase receiver naming an imported std
+        // module lowers to the remote `option:map(Args)`.
+        if (recv.* == .identifier and recv.identifier.kind == .ident and this.std_imports.contains(recv.identifier.kind.ident)) {
+            return headCall(b, try qualified(b, recv.identifier.kind.ident, try this.calleeAtom(b, cc.callee)), try this.callArgs(b, null, cc));
+        }
+        // Activated extension dispatch: `recv.m(args)` → the local `m(Recv, args)`
+        // emitted by `emitExtensionMethods`.
+        if (this.rewrites.get(loc) != null) {
+            return b.call(cc.callee, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
+        }
+        if (mod_name) |name| {
+            // Qualified extension call `Sym.m(obj)`: the receiver names the
+            // extension block, not a module — the local `m(obj)`.
+            if (this.ext_names.contains(name)) return b.call(cc.callee, try this.callArgs(b, null, cc));
+            // Qualified enum payload constructor `Color.Rgb(r, g, b)` → the tagged
+            // tuple `{'Rgb', R, G, B}` (the case-arm constructor pattern shape).
+            if (this.enum_names.contains(name)) {
+                const items = try b.arena.alloc(Ast.Expr, cc.args.len + 1);
+                items[0] = Ast.Expr.a(cc.callee);
+                for (cc.args, 1..) |arg, i| items[i] = try this.exprNode(b, arg.value.*);
+                return .{ .tuple = items };
+            }
+            // Associated fn of an IMPORTED record (`Response.ok(...)` from
+            // `"web"`): a remote call into the owning module (`http:ok(...)`).
+            if (this.imported_types.get(name)) |owner| {
+                return headCall(b, try qualified(b, owner, try this.calleeAtom(b, cc.callee)), try this.callArgs(b, null, cc));
+            }
+            // Associated fn of a LOCAL record: a local function of this module.
+            if (this.record_fields.contains(name)) return b.call(cc.callee, try this.callArgs(b, null, cc));
+            // Associated `default fn` of an interface (`Array.range`): the mangled
+            // local `'<Interface>_<method>'` that `emitInterface` emits.
+            if (this.isInterfaceAssoc(name, cc.callee)) {
+                var mraw: [256]u8 = undefined;
+                const mname = interfaceAssocAtom(&mraw, name, cc.callee) catch return Ast.Expr.r("");
+                return headCall(b, try b.arena.dupe(u8, mname), try this.callArgs(b, null, cc));
+            }
+            // Any other PascalCase receiver is a module: `List.map(xs, f)` →
+            // `list:map(Xs, F)`.
+            const mod = try erlangModule(b.arena, name);
+            return headCall(b, try qualified(b, mod, try this.calleeAtom(b, cc.callee)), try this.callArgs(b, null, cc));
+        }
+        if (this.instance_lowerings.get(loc)) |il| switch (il) {
+            // Builtin-primitive method (`xs.map(f)`, `s.split(sep)`): the host op.
+            .prim => |k| return this.primMethodNode(b, k, cc.callee, recv, cc),
+            // Record/struct/enum instance method: a function taking the receiver
+            // first — local `m(Recv, args)`, or `owner:m(Recv, args)` for an
+            // imported type. A method name shared by two records is mangled to
+            // `<recordtype>_<method>` so the flat fn namespace stays unambiguous.
+            .record => |tn| {
+                var mn_buf: [256]u8 = undefined;
+                const mn: []const u8 = if (this.isRecordMethodCollision(tn, cc.callee))
+                    try recordMethodAtom(&mn_buf, tn, cc.callee)
+                else
+                    try this.calleeAtom(b, cc.callee);
+                const head = if (this.imported_types.get(tn)) |owner| try qualified(b, owner, mn) else try b.arena.dupe(u8, mn);
+                return headCall(b, head, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
+            },
+        };
+        // A value receiver with no recorded lowering (inference bailed out, e.g.
+        // on a chained call): try the Array primitive defaults and the universal
+        // `toString` before the bare `m(Recv, args)` call.
+        if (try this.arrayPrimFallbackNode(b, cc.callee, recv, cc)) |node| return node;
+        if (std.mem.eql(u8, cc.callee, "toString") and cc.args.len == 0) return this.formatNode(b, recv);
+        return b.call(cc.callee, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
+    }
+
+    /// Call arguments: `first` (a receiver passed positionally), the positional
+    /// arguments, then trailing lambdas as funs.
+    fn callArgs(this: *Emitter, b: Ast.Builder, first: ?Ast.Expr, cc: anytype) anyerror![]const Ast.Expr {
+        var out: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+        if (first) |f| try out.append(b.arena, f);
+        for (cc.args) |arg| try out.append(b.arena, try this.exprNode(b, arg.value.*));
+        for (cc.trailing) |tl| try out.append(b.arena, try this.trailingFunNode(b, tl));
+        return out.items;
+    }
+
+    /// The callee as an atom (quoted when reserved), copied into the arena.
+    fn calleeAtom(this: *Emitter, b: Ast.Builder, callee: []const u8) anyerror![]const u8 {
+        _ = this;
+        var buf: [256]u8 = undefined;
+        return b.arena.dupe(u8, try fnAtom(callee, &buf));
+    }
+
+    /// `iolist_to_binary(io_lib:format("~p", [Value]))` — any value as text.
+    fn formatNode(this: *Emitter, b: Ast.Builder, value: *const ast.Expr) anyerror!Ast.Expr {
+        const format = try b.remote("io_lib", "format", &.{ Ast.Expr.r("\"~p\""), try b.list(&.{try this.exprNode(b, value.*)}) });
+        return b.call("iolist_to_binary", &.{format});
+    }
+
+    fn bindingNode(this: *Emitter, b: Ast.Builder, bind: anytype) anyerror!Ast.Expr {
+        switch (bind.kind) {
+            .localBind => |lb| return this.bindExpr(b, lb.name, .bind, lb.value.*),
+            .assign => |a| switch (a.target) {
+                .name => |name| return this.bindExpr(b, name, switch (a.op) {
+                    .assign => .assign,
+                    .plusAssign => .plus_assign,
+                }, a.value.*),
+                // Maps are immutable; a field assignment has no Erlang form.
+                .fieldAccess => |fa| return Ast.Expr.r(try std.fmt.allocPrint(b.arena, "%% self.{s} = ...", .{fa.field})),
+            },
+            .localBindDestruct => |lb| switch (lb.pattern) {
+                .names, .tuple_ => {
+                    const pattern = try this.destructPatternExpr(b, lb.pattern);
+                    return b.match(pattern, try this.exprNode(b, lb.value.*));
+                },
+                // List / constructor patterns are not lowered yet: the value alone.
+                .list, .ctor => return this.exprNode(b, lb.value.*),
+            },
+        }
+    }
+
+    fn comptimeNode(this: *Emitter, b: Ast.Builder, ct: anytype) anyerror!Ast.Expr {
+        const V = Ast.Expr.v;
+        const A = Ast.Expr.a;
+        switch (ct.kind) {
+            .comptimeExpr => |inner| return this.exprNode(b, inner.*),
+            // A comptime block's value is its `break` value.
+            .comptimeBlock => |cb| {
+                for (cb.body) |stmt| {
+                    if (stmt.expr == .jump and stmt.expr.jump.kind == .@"break") {
+                        const value = stmt.expr.jump.kind.@"break".value orelse return Ast.Expr.r("");
+                        return this.exprNode(b, value.*);
+                    }
+                }
+                return Ast.Expr.r("");
+            },
+            .assert => |a| {
+                const cond = try b.paren(try this.exprNode(b, a.condition.*));
+                if (!this.test_mode) return b.match(A("true"), cond);
+                // Test mode raises a tagged error the runner catches per test
+                // (it records the failure and continues).
+                const message = if (a.message) |msg| try this.exprNode(b, msg.*) else Ast.str("assertion failed");
+                const where = Ast.str(try std.fmt.allocPrint(b.arena, "{s}.bp:{d}", .{ this.module_name, ct.loc.line }));
+                const raise = try b.remote("erlang", "error", &.{try b.tuple(&.{ A("bp_assert"), message, where })});
+                return b.caseInline(cond, &.{
+                    try b.clause(&.{A("true")}, &.{}, &.{A("ok")}),
+                    try b.clause(&.{V("_")}, &.{}, &.{raise}),
+                });
+            },
+            // `case E of Pat -> E; _ -> Handler end`.
+            .assertPattern => |ap| {
+                const subject = try this.exprNode(b, ap.expr.*);
+                const pattern = try this.patternNode(b, ap.pattern);
+                const matched = try this.exprNode(b, ap.expr.*);
+                const handler = try this.exprNode(b, ap.handler.*);
+                return b.caseInline(subject, &.{
+                    try b.clause(&.{pattern}, &.{}, &.{matched}),
+                    try b.clause(&.{V("_")}, &.{}, &.{handler}),
+                });
+            },
+        }
+    }
+
+    /// `module:name` spelled as written, in the arena.
+    fn qualified(b: Ast.Builder, module: []const u8, name: []const u8) anyerror![]const u8 {
+        return std.fmt.allocPrint(b.arena, "{s}:{s}", .{ module, name });
+    }
+
+    /// `Head(Args)` with an already-spelled head (`Var`, `mod:fn`, a mangled atom).
+    fn headCall(b: Ast.Builder, head: []const u8, args: []const Ast.Expr) anyerror!Ast.Expr {
+        return .{ .apply = .{ .fun = try b.ptr(Ast.Expr.r(head)), .args = try b.exprs(args) } };
     }
 
     // ── case expression ───────────────────────────────────────────────────────
@@ -3556,13 +3192,6 @@ const Emitter = struct {
         this.indent = indent;
         defer this.indent = saved;
         return b.body(&.{try this.exprNode(b, body)});
-    }
-
-    fn emitPattern(this: *Emitter, pat: ast.Pattern) !void {
-        var arena_state = std.heap.ArenaAllocator.init(this.alloc);
-        defer arena_state.deinit();
-        const b: Ast.Builder = .{ .arena = arena_state.allocator() };
-        try erlEmitter.writeExpr(this.out, try this.patternNode(b, pat), this.indent);
     }
 
     fn patternNode(this: *Emitter, b: Ast.Builder, pat: ast.Pattern) anyerror!Ast.Expr {
@@ -3614,271 +3243,89 @@ const Emitter = struct {
 
     // ── builtin-primitive method lowering ─────────────────────────────────────
 
-    /// Emit the `i`-th argument of a call (positional args first, then trailing
-    /// lambdas as `fun(...) -> ... end`). Used by `emitPrimMethod`, where the
-    /// receiver and arguments are reordered to fit the erlang host signature.
-    fn emitArg(this: *Emitter, cc: anytype, i: usize) anyerror!void {
-        if (i < cc.args.len) {
-            try this.emitExpr(cc.args[i].value.*);
-            return;
-        }
-        if (i - cc.args.len >= cc.trailing.len) {
-            // Caller asked for an argument that wasn't supplied (e.g. an
-            // optional-arg method form) — emit nothing rather than crash.
-            try this.w("undefined");
-            return;
-        }
-        const tl = cc.trailing[i - cc.args.len];
-        try this.w("fun(");
-        for (tl.params, 0..) |p, pi| {
-            if (pi > 0) try this.w(", ");
-            const vname = try erlangVar(this.alloc, p);
-            defer this.alloc.free(vname);
-            try this.w(vname);
-            this.addLocal(p);
-        }
-        try this.w(") ->\n");
-        const saved = this.indent;
-        this.indent = this.indent + 1;
-        try this.emitBody(tl.body);
-        this.indent = saved;
-        try this.w("\n");
-        try this.writeIndent();
-        try this.w("end");
+    /// The `i`-th argument of a call: a positional argument, then trailing
+    /// lambdas as funs; `undefined` when not supplied (an optional-arg method
+    /// form). Receiver and arguments are reordered to fit host signatures.
+    fn argNode(this: *Emitter, b: Ast.Builder, cc: anytype, i: usize) anyerror!Ast.Expr {
+        if (i < cc.args.len) return this.exprNode(b, cc.args[i].value.*);
+        if (i - cc.args.len >= cc.trailing.len) return Ast.Expr.a("undefined");
+        return this.trailingFunNode(b, cc.trailing[i - cc.args.len]);
     }
 
-    /// Lower a builtin-primitive instance method to its erlang host operation.
-    /// botopink arrays are erlang lists, strings are binaries, numbers/bools are
-    /// native. The receiver's argument position differs per op (e.g. the fun is
-    /// first in `lists:map/2`), so this emits the whole call. Unmapped methods
-    /// fall back to a bare local `m(Recv, args)` call (a clear runtime error if
-    /// truly unsupported) rather than invalid `Recv:m(args)` syntax.
-    fn emitPrimMethod(this: *Emitter, k: envMod.PrimKind, callee: []const u8, recv: *const ast.Expr, cc: anytype) anyerror!void {
+    /// A trailing lambda `{ a, b -> … }` as `fun(A, B) -> … end`.
+    fn trailingFunNode(this: *Emitter, b: Ast.Builder, tl: anytype) anyerror!Ast.Expr {
+        const params = try b.arena.alloc(Ast.Expr, tl.params.len);
+        for (tl.params, 0..) |p, i| {
+            params[i] = Ast.Expr.v(try this.arenaVar(b, p));
+            this.addLocal(p);
+        }
+        return .{ .fun = .{ .params = params, .body = try this.bodyNode(b, tl.body, 0, this.indent + 1) } };
+    }
+
+    /// A builtin-primitive instance method lowered to its erlang host operation
+    /// (arrays are lists, strings binaries, numbers/bools native). Most methods
+    /// are annotation-driven (`primitives.d.bp` `@external(erlang, …)`
+    /// templates); the inline cases below don't reduce to a template. An
+    /// unmapped method is a bare local `m(Recv, args)` call (a clear runtime
+    /// error if truly unsupported) rather than invalid `Recv:m(args)` syntax.
+    fn primMethodNode(this: *Emitter, b: Ast.Builder, k: envMod.PrimKind, callee: []const u8, recv: *const ast.Expr, cc: anytype) anyerror!Ast.Expr {
         const eq = std.mem.eql;
-        // §A5 annotation-driven path: if `primitives.d.bp` carries
-        // `#[@External.Erlang( "mod", "sym(args)")]` for this primitive method,
-        // emit `mod:sym(...)` in the template's arg order — the inline allow-list
-        // below catches only the cases that don't reduce to `mod:sym(args)`
-        // (list-cons / `++` ops, custom comparisons, BIF aliases, arithmetic
-        // slices, inline guard funs).
-        if (try this.tryEmitPrimAnnotation(k, callee, recv, cc)) return;
+        if (try this.primAnnotationNode(b, k, callee, recv, cc)) |node| return node;
         switch (k) {
-            .array => {
-                // map / filter / forEach / reverse are §A5 annotation-driven —
-                // see `Array.{map,filter,forEach,reverse}` in primitives.d.bp +
-                // `tryEmitPrimAnnotation` above. `append` / `prepend` / `push` /
-                // `contains` / `isEmpty` are `prim-op-annotation` template-driven
-                // (same path; templates `($self ++ $0)`, `[$0 | $self]`,
-                // `($self ++ [$0])`, `lists:member($0, $self)`, `($self =:= [])`).
-                // `indexOf` is `prim-op-annotation` template-driven (the full
-                // inline-fun body lives as a single-string template in
-                // primitives.d.bp; `$self` and `$0` substitute to the receiver
-                // and the search-key argument).
-                if (eq(u8, callee, "len") or eq(u8, callee, "length") or eq(u8, callee, "size")) {
-                    try this.w("length(");
-                    try this.emitExpr(recv.*);
-                    try this.w(")");
-                    return;
-                }
-                // `slice` is `prim-op-annotation` arity-branched
-                // (`when($argc == 1)` / `when($argc == 2)` templates in
-                // primitives.d.bp).
-                // `join` is `prim-op-annotation` template-driven (triple-quoted
-                // raw string in primitives.d.bp — the body carries `"~p"` which
-                // needs `"""…"""` to avoid `\"` escapes that wouldn't unescape
-                // through the renderer).
-                // `at` is `prim-op-annotation` template-driven (bounds-safe
-                // 0-based index → 1-based `lists:nth`, `undefined` out of
-                // range — full body in primitives.d.bp).
+            .array => if (eq(u8, callee, "len") or eq(u8, callee, "length") or eq(u8, callee, "size")) {
+                return b.call("length", &.{try this.exprNode(b, recv.*)});
             },
-            .string => {
-                // length / toUpper / toLower / trim are §A5 annotation-driven —
-                // see `String.{length,toUpper,toLower,trim}` in primitives.d.bp.
-                // `slice` is `prim-op-annotation` arity-branched
-                // (`when($argc == 1)` / `when($argc == 2)` templates in
-                // primitives.d.bp).
-                // `contains` / `startsWith` / `split` are `prim-op-annotation`
-                // template-driven (templates `(string:find($self, $0) =/= nomatch)`,
-                // `(string:prefix($self, $0) =/= nomatch)`,
-                // `string:split($self, $0, all)`).
-            },
-            // .bool: `negate` is annotation-driven (template `(not $self)`).
-            .bool => {},
-            // .int/.float: `toString` is declared on `Integer`/`Float` (parent
-            // interfaces) with `erlang:integer_to_binary`/`float_to_binary`
-            // annotations; the chain-walking `tryEmitPrimAnnotation` above
-            // catches it. The inline fallback for `toString` here defends
-            // against a missing dispatch entry (e.g. when the receiver's type
-            // is a freshly-introduced numeric variant the chain doesn't
-            // know about) by emitting the canonical host conversion directly.
-            .int => {
-                if (eq(u8, callee, "toString")) {
-                    try this.w("integer_to_binary(");
-                    try this.emitExpr(recv.*);
-                    try this.w(")");
-                    return;
-                }
-            },
-            .float => {
-                if (eq(u8, callee, "toString")) {
-                    try this.w("float_to_binary(");
-                    try this.emitExpr(recv.*);
-                    try this.w(")");
-                    return;
-                }
-            },
+            // `toString` is declared on `Integer`/`Float` with host annotations;
+            // this covers a numeric receiver the interface chain doesn't know.
+            .int => if (eq(u8, callee, "toString")) return b.call("integer_to_binary", &.{try this.exprNode(b, recv.*)}),
+            .float => if (eq(u8, callee, "toString")) return b.call("float_to_binary", &.{try this.exprNode(b, recv.*)}),
+            .string, .bool => {},
         }
-        // Unmapped primitive method on an Array receiver: fall back to inline
-        // BIF-shaped lowerings for the default fns that lack a `@external`
-        // annotation. These mirror the bp default body but use the canonical
-        // host op so the emitted module is self-contained (no need to inline
-        // the default fn's bp body as an erlang fn).
+        // Array default fns without an `@external` annotation (or a chained call
+        // the inferer didn't tag) use the canonical host op directly.
         if (k == .array) {
-            // `xs.forEach(action)` — `lists:foreach(Action, Xs)`. The
-            // `lists:foreach/2` BIF takes Fun first, Xs second. (The
-            // primitives.d.bp annotation `"lists", "foreach(action, self)"`
-            // should already light up via `tryEmitPrimAnnotation` for an
-            // `Array<T>` receiver, but a chained `.where(...).forEach(...)`
-            // hits this fallback when the inferer doesn't tag the chained
-            // call site — recovers parity.)
-            if (eq(u8, callee, "forEach") and cc.args.len + cc.trailing.len == 1) {
-                try this.w("lists:foreach(");
-                try this.emitArgOrTrailing(cc, 0);
-                try this.w(", ");
-                try this.emitExpr(recv.*);
-                try this.w(")");
-                return;
-            }
-            // `xs.fold(init, fn(acc, x) -> ...)` — `lists:foldl(Fun, Init, Xs)`.
-            // bp's `f(acc, x)` arg order DIFFERS from erlang's `foldl(fun(X,
-            // Acc) -> …, Init, L)`: swap the lambda params inside the
-            // wrapper so the bp-side body receives `(acc, x)` as authored.
-            if (eq(u8, callee, "fold") and cc.args.len + cc.trailing.len == 2) {
-                try this.w("lists:foldl(fun(__X, __A) -> (");
-                try this.emitArgOrTrailing(cc, 1);
-                try this.w(")(__A, __X) end, ");
-                try this.emitArgOrTrailing(cc, 0);
-                try this.w(", ");
-                try this.emitExpr(recv.*);
-                try this.w(")");
-                return;
-            }
-            // `xs.drop(n)` — `lists:nthtail(N, Xs)` (or `lists:sublist(Xs,
-            // N+1, length(Xs))` when N may exceed length; nthtail panics
-            // out-of-bounds on erlang, matching the bp `default fn drop`'s
-            // `slice(n, length)` contract for in-bounds N).
-            if (eq(u8, callee, "drop") and cc.args.len == 1) {
-                try this.w("lists:nthtail(");
-                try this.emitExpr(cc.args[0].value.*);
-                try this.w(", ");
-                try this.emitExpr(recv.*);
-                try this.w(")");
-                return;
-            }
-            // `xs.take(n)` — `lists:sublist(Xs, N)`.
-            if (eq(u8, callee, "take") and cc.args.len == 1) {
-                try this.w("lists:sublist(");
-                try this.emitExpr(recv.*);
-                try this.w(", ");
-                try this.emitExpr(cc.args[0].value.*);
-                try this.w(")");
-                return;
-            }
-            // `xs.toList()` — identity. `Array<T>` is already a list on
-            // erlang, so the call returns the receiver unchanged.
-            if (eq(u8, callee, "toList") and cc.args.len == 0) {
-                try this.emitExpr(recv.*);
-                return;
-            }
+            if (try this.arrayPrimFallbackNode(b, callee, recv, cc)) |node| return node;
         }
-        // Unmapped primitive method: bare local call (`m(Recv, args)`).
-        try this.fmt("{s}(", .{callee});
-        try this.emitExpr(recv.*);
-        for (cc.args) |arg| {
-            try this.w(", ");
-            try this.emitExpr(arg.value.*);
-        }
-        try this.w(")");
+        var args: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+        try args.append(b.arena, try this.exprNode(b, recv.*));
+        for (cc.args) |arg| try args.append(b.arena, try this.exprNode(b, arg.value.*));
+        return headCall(b, try b.arena.dupe(u8, callee), args.items);
     }
 
-    /// Speculative Array-primitive dispatch for the no-`instance_lowering`
-    /// fallback path. Recognises the std Array default-fn names and emits
-    /// the canonical erlang BIF directly, matching the lowering
-    /// `emitPrimMethod` would have used. Returns true when the call is
-    /// emitted (caller returns immediately); false otherwise (caller
-    /// continues to the bare local-fn fallback).
-    fn tryArrayPrimFallback(this: *Emitter, callee: []const u8, recv: *const ast.Expr, cc: anytype) anyerror!bool {
+    /// The std Array default fns as erlang BIFs (`forEach`/`fold`/`drop`/
+    /// `take`/`toList`), or null for any other method.
+    fn arrayPrimFallbackNode(this: *Emitter, b: Ast.Builder, callee: []const u8, recv: *const ast.Expr, cc: anytype) anyerror!?Ast.Expr {
         const eq = std.mem.eql;
-        if (eq(u8, callee, "forEach") and cc.args.len + cc.trailing.len == 1) {
-            try this.w("lists:foreach(");
-            try this.emitArgOrTrailing(cc, 0);
-            try this.w(", ");
-            try this.emitExpr(recv.*);
-            try this.w(")");
-            return true;
+        const arity = cc.args.len + cc.trailing.len;
+        // `xs.forEach(action)` → `lists:foreach(Action, Xs)`.
+        if (eq(u8, callee, "forEach") and arity == 1) {
+            const action = try this.argNode(b, cc, 0);
+            return try b.remote("lists", "foreach", &.{ action, try this.exprNode(b, recv.*) });
         }
-        if (eq(u8, callee, "fold") and cc.args.len + cc.trailing.len == 2) {
-            try this.w("lists:foldl(fun(__X, __A) -> (");
-            try this.emitArgOrTrailing(cc, 1);
-            try this.w(")(__A, __X) end, ");
-            try this.emitArgOrTrailing(cc, 0);
-            try this.w(", ");
-            try this.emitExpr(recv.*);
-            try this.w(")");
-            return true;
+        // `xs.fold(init, f)` → `lists:foldl(fun(__X, __A) -> (F)(__A, __X) end, Init, Xs)`:
+        // botopink's `f(acc, x)` order is swapped inside the wrapper.
+        if (eq(u8, callee, "fold") and arity == 2) {
+            const f = try this.argNode(b, cc, 1);
+            const step: Ast.Expr = .{ .fun_clauses = try b.arena.dupe(Ast.Clause, &.{
+                try b.clause(&.{ Ast.Expr.v("__X"), Ast.Expr.v("__A") }, &.{}, &.{try b.applyParen(f, &.{ Ast.Expr.v("__A"), Ast.Expr.v("__X") })}),
+            }) };
+            const initial = try this.argNode(b, cc, 0);
+            return try b.remote("lists", "foldl", &.{ step, initial, try this.exprNode(b, recv.*) });
         }
+        // `xs.drop(n)` → `lists:nthtail(N, Xs)` (panics out of bounds, matching
+        // the default fn's in-bounds contract).
         if (eq(u8, callee, "drop") and cc.args.len == 1) {
-            try this.w("lists:nthtail(");
-            try this.emitExpr(cc.args[0].value.*);
-            try this.w(", ");
-            try this.emitExpr(recv.*);
-            try this.w(")");
-            return true;
+            const n = try this.exprNode(b, cc.args[0].value.*);
+            return try b.remote("lists", "nthtail", &.{ n, try this.exprNode(b, recv.*) });
         }
+        // `xs.take(n)` → `lists:sublist(Xs, N)`.
         if (eq(u8, callee, "take") and cc.args.len == 1) {
-            try this.w("lists:sublist(");
-            try this.emitExpr(recv.*);
-            try this.w(", ");
-            try this.emitExpr(cc.args[0].value.*);
-            try this.w(")");
-            return true;
+            const xs = try this.exprNode(b, recv.*);
+            return try b.remote("lists", "sublist", &.{ xs, try this.exprNode(b, cc.args[0].value.*) });
         }
-        if (eq(u8, callee, "toList") and cc.args.len == 0) {
-            try this.emitExpr(recv.*);
-            return true;
-        }
-        return false;
-    }
-
-    /// Emit either the i-th positional arg or, when `i` is past `cc.args`,
-    /// the corresponding trailing-lambda materialised as a `fun(...)`.
-    /// Used by the array-method fallbacks above so the same emitter line
-    /// handles both `xs.fold(0, { a, x -> a + x })` (trailing) and
-    /// `xs.fold(0, step)` (positional).
-    fn emitArgOrTrailing(this: *Emitter, cc: anytype, i: usize) anyerror!void {
-        if (i < cc.args.len) {
-            try this.emitExpr(cc.args[i].value.*);
-            return;
-        }
-        const ti = i - cc.args.len;
-        if (ti >= cc.trailing.len) return;
-        const tl = cc.trailing[ti];
-        try this.w("fun(");
-        for (tl.params, 0..) |p, pi| {
-            if (pi > 0) try this.w(", ");
-            const vname = try erlangVar(this.alloc, p);
-            defer this.alloc.free(vname);
-            try this.w(vname);
-            this.addLocal(p);
-        }
-        try this.w(") ->\n");
-        const saved = this.indent;
-        this.indent = this.indent + 1;
-        try this.emitBody(tl.body);
-        this.indent = saved;
-        try this.w("\n");
-        try this.writeIndent();
-        try this.w("end");
+        // `xs.toList()` — an `Array<T>` is already a list.
+        if (eq(u8, callee, "toList") and cc.args.len == 0) return try this.exprNode(b, recv.*);
+        return null;
     }
 
     // ── struct / record / enum ────────────────────────────────────────────────

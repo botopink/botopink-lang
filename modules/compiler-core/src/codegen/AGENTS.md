@@ -137,10 +137,21 @@ codegen/
   lambdas, grouped/array (with spread)/tuple/range/record/interface literals,
   jumps, `if`/`try … catch` expressions, `loop` and `case` (`caseNode`: OR patterns
   expand to one clause per alternative; `patternNode` for variables, enum-variant
-  atoms, `{tag, Name, …}` variant tuples, list/cons and multi-subject tuples). Calls,
-  binding expressions and comptime forms still come from `emitExprLegacy` as `raw`
-  nodes (`legacyAsRaw`). Record literal keys and array spread names are written as
-  the source spelled them.
+  atoms, `{tag, Name, …}` variant tuples, list/cons and multi-subject tuples),
+  binding expressions (`bindingNode`), `use` and comptime forms (`comptimeNode`:
+  `assert` as an inline `case` in test mode, `assertPattern`). Record literal keys
+  and array spread names are written as the source spelled them.
+- **Calls are `erl_ast` nodes** (`callNode`): pipelines apply inside out
+  (`pipelineNode`); builtins (`builtinCallNode`) render their `@external(erlang, …)`
+  template, `@block` as an applied `fun`, or the `__bp_*` result/option ops
+  (`resultOptionNode`, inline `fun`+`case`); `plainCallNode` does receiver dispatch
+  (std module, activated extension, enum constructor tuple, imported/local
+  associated fn, mangled interface assoc, module-qualified call, primitive
+  (`primMethodNode`) / record instance methods, Array default-fn fallback),
+  user templates, externals, record constructor maps and fun-typed locals. Host
+  templates (`primOpTemplate`) become `seq` nodes (`templateNode`): the template
+  text stays verbatim around the receiver/argument nodes. Heads the backend has
+  always written as spelled (`mod:sym`, mangled atoms, `Var`) use `headCall`.
 - **Mutation through branches and loops** (`mutatingExpr`): a statement-level
   `if` / `loop (xs) { x -> … }` / `xs.forEach({ x -> … })` that reassigns variables
   bound before it (looking through nested `if`/`loop`/`forEach`) returns the new

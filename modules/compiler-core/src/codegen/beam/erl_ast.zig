@@ -60,6 +60,9 @@ pub const Expr = union(enum) {
     fun_clauses: []const Clause,
     /// `Class:Reason` / `Class:Reason:Stack` — a `catch` clause pattern.
     exception: Exception,
+    /// Parts written one after another with no separator — a host template
+    /// (`raw` text around argument nodes).
+    seq: []const Expr,
 
     pub fn v(name: []const u8) Expr {
         return .{ .variable = name };
@@ -147,6 +150,14 @@ pub const Exception = struct {
 pub const Case = struct {
     subject: *const Expr,
     clauses: []const Clause,
+    layout: Layout = .block,
+
+    pub const Layout = enum {
+        /// `case S of` newline, one clause per line, `end` on its own line.
+        block,
+        /// `case S of P1 -> B1; P2 -> B2 end` on one line (clauses inline).
+        inline_,
+    };
 };
 
 pub const Fun = struct {
@@ -276,6 +287,16 @@ pub const Builder = struct {
 
     pub fn caseOf(b: Builder, subject: Expr, clauses: []const Clause) Error!Expr {
         return .{ .case_ = .{ .subject = try b.ptr(subject), .clauses = try b.arena.dupe(Clause, clauses) } };
+    }
+
+    /// `case S of P1 -> B1; … end` on one line.
+    pub fn caseInline(b: Builder, subject: Expr, clauses: []const Clause) Error!Expr {
+        return .{ .case_ = .{ .subject = try b.ptr(subject), .clauses = try b.arena.dupe(Clause, clauses), .layout = .inline_ } };
+    }
+
+    /// `(Fun)(Args)` — applying a parenthesized expression.
+    pub fn applyParen(b: Builder, fun: Expr, args: []const Expr) Error!Expr {
+        return .{ .apply = .{ .fun = try b.ptr(try b.paren(fun)), .args = try b.exprs(args) } };
     }
 
     /// A clause with an expression body; `.inline_` layout unless overridden.
