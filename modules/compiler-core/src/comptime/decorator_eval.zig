@@ -163,7 +163,7 @@ fn emitDeclHandle(buf: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, ha
         if (method.returnType) |rt| {
             // Convert TypeRef to string representation
             switch (rt) {
-                .named => |n| try buf.appendSlice(arena, n.name),
+                .named => |n| try buf.appendSlice(arena, n),
                 .array => try buf.appendSlice(arena, "array"),
                 .optional => try buf.appendSlice(arena, "optional"),
                 else => try buf.appendSlice(arena, "unknown"),
@@ -270,65 +270,62 @@ fn emitExpr(buf: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, e: ast.E
                 .gte => try buf.appendSlice(arena, ">="),
                 .@"and" => try buf.appendSlice(arena, "andalso"),
                 .@"or" => try buf.appendSlice(arena, "orelse"),
-                else => try buf.appendSlice(arena, "+"),
             }
             try buf.appendSlice(arena, " ");
             try emitExpr(buf, arena, binOp.rhs.*);
             try buf.append(arena, ')');
         },
         .call => |call| {
-            // Check for special host functions
-            if (call.callee) |callee| {
-                switch (callee) {
-                    .identifier => |ident| {
-                        switch (ident.kind) {
-                            .ident => |name| {
-                                // fail(msg) → fail(Decl, Msg)
-                                if (std.mem.eql(u8, name, "fail")) {
-                                    try buf.appendSlice(arena, "fail(Decl, ");
-                                    if (call.args.len > 0) {
-                                        try emitExpr(buf, arena, call.args[0]);
-                                    } else {
-                                        try buf.appendSlice(arena, "<<\"unknown error\">>");
-                                    }
-                                    try buf.append(arena, ')');
-                                    return;
-                                }
-                                // @emit(src) → emit(Src)
-                                if (std.mem.eql(u8, name, "emit")) {
-                                    try buf.appendSlice(arena, "emit(");
-                                    if (call.args.len > 0) {
-                                        try emitExpr(buf, arena, call.args[0]);
-                                    }
-                                    try buf.append(arena, ')');
-                                    return;
-                                }
-                                // @compilerError(msg) → compilerError(Msg)
-                                if (std.mem.eql(u8, name, "compilerError")) {
-                                    try buf.appendSlice(arena, "compilerError(");
-                                    if (call.args.len > 0) {
-                                        try emitExpr(buf, arena, call.args[0]);
-                                    }
-                                    try buf.append(arena, ')');
-                                    return;
-                                }
-                            },
-                            else => {},
+            // call is MakeExpr(phase, CallExprOf.Kind), so we need to access call.kind
+            switch (call.kind) {
+                .call => |c| {
+                    // Check for special host functions
+                    const callee = c.callee;
+                    // fail(msg) → fail(Decl, Msg)
+                    if (std.mem.eql(u8, callee, "fail")) {
+                        try buf.appendSlice(arena, "fail(Decl, ");
+                        if (c.args.len > 0) {
+                            try emitExpr(buf, arena, c.args[0].value.*);
+                        } else {
+                            try buf.appendSlice(arena, "<<\"unknown error\">>");
                         }
-                    },
-                    else => {},
-                }
+                        try buf.append(arena, ')');
+                        return;
+                    }
+                    // @emit(src) → emit(Src)
+                    if (std.mem.eql(u8, callee, "emit")) {
+                        try buf.appendSlice(arena, "emit(");
+                        if (c.args.len > 0) {
+                            try emitExpr(buf, arena, c.args[0].value.*);
+                        }
+                        try buf.append(arena, ')');
+                        return;
+                    }
+                    // @compilerError(msg) → compilerError(Msg)
+                    if (std.mem.eql(u8, callee, "compilerError")) {
+                        try buf.appendSlice(arena, "compilerError(");
+                        if (c.args.len > 0) {
+                            try emitExpr(buf, arena, c.args[0].value.*);
+                        }
+                        try buf.append(arena, ')');
+                        return;
+                    }
+                    // Regular function call
+                    try buf.appendSlice(arena, callee);
+                    try buf.append(arena, '(');
+                    for (c.args, 0..) |arg, i| {
+                        if (i > 0) try buf.appendSlice(arena, ", ");
+                        try emitExpr(buf, arena, arg.value.*);
+                    }
+                    try buf.append(arena, ')');
+                },
+                .pipeline => |p| {
+                    // Pipeline: expr |> fn
+                    try emitExpr(buf, arena, p.lhs.*);
+                    try buf.appendSlice(arena, " |> ");
+                    try emitExpr(buf, arena, p.rhs.*);
+                },
             }
-            // Regular function call
-            if (call.callee) |callee| {
-                try emitExpr(buf, arena, callee);
-            }
-            try buf.append(arena, '(');
-            for (call.args, 0..) |arg, i| {
-                if (i > 0) try buf.appendSlice(arena, ", ");
-                try emitExpr(buf, arena, arg);
-            }
-            try buf.append(arena, ')');
         },
         .collection => |coll| {
             switch (coll.kind) {
@@ -356,11 +353,6 @@ fn emitExpr(buf: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, e: ast.E
                 },
             }
         },
-        .grouped => |grouped| {
-            try buf.append(arena, '(');
-            try emitExpr(buf, arena, grouped.expr.*);
-            try buf.append(arena, ')');
-        },
         else => {
             try buf.appendSlice(arena, "undefined");
         },
@@ -369,14 +361,17 @@ fn emitExpr(buf: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, e: ast.E
 
 /// Emit Erlang code for a statement.
 fn emitStmt(buf: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, stmt: ast.Stmt, indent: usize) !void {
-    const ind = try std.fmt.allocPrint(arena, "{s}", .{try std.mem.concat(arena, u8, &.{try std.mem.alloc(arena, indent, ' ')})});
+    const spaces = try arena.alloc(u8, indent);
+    defer arena.free(spaces);
+    @memset(spaces, ' ');
+    const ind = try std.fmt.allocPrint(arena, "{s}", .{spaces});
     defer arena.free(ind);
 
     // Stmt is a struct with an `expr` field of type Expr
     const e = stmt.expr;
     switch (e) {
         .jump => |jump| {
-            switch (jump) {
+            switch (jump.kind) {
                 .@"return" => |ret| {
                     try buf.appendSlice(arena, ind);
                     try buf.appendSlice(arena, "erlang:return(");
@@ -395,17 +390,49 @@ fn emitStmt(buf: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, stmt: as
         },
         .binding => |bind| {
             try buf.appendSlice(arena, ind);
-            // Convert variable name to Erlang (uppercase first letter)
-            var varName = bind.name;
-            if (varName.len > 0) {
-                var first = varName[0];
-                if (first >= 'a' and first <= 'z') {
-                    first = first - 32;
-                }
-                const erlVar = try std.fmt.allocPrint(arena, "{c}{s}", .{ first, varName[1..] });
-                try buf.appendSlice(arena, erlVar);
-                try buf.appendSlice(arena, " = ");
-                try emitExpr(buf, arena, bind.expr.*);
+            // bind is MakeExpr(phase, BindingExprOf.Kind), access bind.kind
+            switch (bind.kind) {
+                .localBind => |lb| {
+                    // Convert variable name to Erlang (uppercase first letter)
+                    var varName = lb.name;
+                    if (varName.len > 0) {
+                        var first = varName[0];
+                        if (first >= 'a' and first <= 'z') {
+                            first = first - 32;
+                        }
+                        const erlVar = try std.fmt.allocPrint(arena, "{c}{s}", .{ first, varName[1..] });
+                        try buf.appendSlice(arena, erlVar);
+                        try buf.appendSlice(arena, " = ");
+                        try emitExpr(buf, arena, lb.value.*);
+                    }
+                },
+                .assign => |a| {
+                    // Assignment: target = value
+                    switch (a.target) {
+                        .name => |n| {
+                            var varName = n;
+                            if (varName.len > 0) {
+                                var first = varName[0];
+                                if (first >= 'a' and first <= 'z') {
+                                    first = first - 32;
+                                }
+                                const erlVar = try std.fmt.allocPrint(arena, "{c}{s}", .{ first, varName[1..] });
+                                try buf.appendSlice(arena, erlVar);
+                                try buf.appendSlice(arena, " = ");
+                                try emitExpr(buf, arena, a.value.*);
+                            }
+                        },
+                        .fieldAccess => |fa| {
+                            // Field assignment: receiver.field = value
+                            try emitExpr(buf, arena, fa.receiver.*);
+                            try buf.appendSlice(arena, " = ");
+                            try emitExpr(buf, arena, a.value.*);
+                        },
+                    }
+                },
+                else => {
+                    try buf.appendSlice(arena, "undefined");
+                },
             }
         },
         else => {
