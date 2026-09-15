@@ -135,8 +135,10 @@ codegen/
   enum members, tuple index `element/2`, primitive length, `'__bp_len'`, map
   field access and `?.` as an applied inline `fun`), binary/unary operators,
   lambdas, grouped/array (with spread)/tuple/range/record/interface literals,
-  jumps, `if`/`try … catch` expressions and `loop`. Calls, binding expressions,
-  comptime forms and `case` still come from `emitExprLegacy`/`emitCase` as `raw`
+  jumps, `if`/`try … catch` expressions, `loop` and `case` (`caseNode`: OR patterns
+  expand to one clause per alternative; `patternNode` for variables, enum-variant
+  atoms, `{tag, Name, …}` variant tuples, list/cons and multi-subject tuples). Calls,
+  binding expressions and comptime forms still come from `emitExprLegacy` as `raw`
   nodes (`legacyAsRaw`). Record literal keys and array spread names are written as
   the source spelled them.
 - **Mutation through branches and loops** (`mutatingExpr`): a statement-level

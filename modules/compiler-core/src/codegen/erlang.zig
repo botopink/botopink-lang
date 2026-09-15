@@ -2943,7 +2943,7 @@ const Emitter = struct {
                     for (tl.elems, 0..) |elem, i| items[i] = try this.exprNode(b, elem);
                     return .{ .tuple = items };
                 },
-                .case => return this.legacyAsRaw(b, e),
+                .case => |c| return this.caseNode(b, c.subjects, c.arms),
                 // `a..b` is half-open `[a, b)` (parity with wasm + `Array.range`),
                 // but erlang's `lists:seq/2` is inclusive — so the upper bound is
                 // `b - 1`; an open range `a..` iterates to `infinity`.
@@ -3051,20 +3051,13 @@ const Emitter = struct {
         return .{ .map = out };
     }
 
-    /// `emitExprLegacy(e)` (or `emitCase` for a `case`) captured at the current
-    /// indentation as a `raw` node.
+    /// `emitExprLegacy(e)` captured at the current indentation as a `raw` node.
     fn legacyAsRaw(this: *Emitter, b: Ast.Builder, e: ast.Expr) anyerror!Ast.Expr {
         var buf: std.Io.Writer.Allocating = .init(b.arena);
         const out = this.out;
         this.out = &buf.writer;
         defer this.out = out;
-        switch (e) {
-            .collection => |col| switch (col.kind) {
-                .case => |c| try this.emitCase(c.subjects, c.arms),
-                else => unreachable,
-            },
-            else => try this.emitExprLegacy(e),
-        }
+        try this.emitExprLegacy(e);
         return Ast.Expr.r(buf.written());
     }
 
@@ -3523,194 +3516,100 @@ const Emitter = struct {
         }
     }
 
-    // ── if branch body (delegates to emitBody) ────────────────────────────────
-
-    fn emitBranchBody(this: *Emitter, body: []const ast.Stmt) !void {
-        try this.emitBody(body);
-    }
-
     // ── case expression ───────────────────────────────────────────────────────
 
-    fn emitCase(this: *Emitter, subjects: []ast.Expr, arms: []ast.CaseArm) !void {
-        try this.w("case ");
-        if (subjects.len == 1) {
-            try this.emitExpr(subjects[0]);
-        } else {
-            try this.w("{");
-            for (subjects, 0..) |s, i| {
-                if (i > 0) try this.w(", ");
-                try this.emitExpr(s);
-            }
-            try this.w("}");
-        }
-        try this.w(" of\n");
-        this.indent += 1;
+    /// `case Subject of Pat -> Body; … end`. A multi-subject case matches a tuple
+    /// of the subjects; an OR pattern expands to one clause per alternative with
+    /// the same body.
+    fn caseNode(this: *Emitter, b: Ast.Builder, subjects: []ast.Expr, arms: []ast.CaseArm) anyerror!Ast.Expr {
+        const subject: Ast.Expr = if (subjects.len == 1)
+            try this.exprNode(b, subjects[0])
+        else blk: {
+            const items = try b.arena.alloc(Ast.Expr, subjects.len);
+            for (subjects, 0..) |subj, i| items[i] = try this.exprNode(b, subj);
+            break :blk .{ .tuple = items };
+        };
+        const body_indent = this.indent + 2;
+        var clauses: std.ArrayListUnmanaged(Ast.Clause) = .empty;
+        for (arms) |arm| switch (arm.pattern) {
+            .@"or" => |pats| for (pats) |pat| {
+                try clauses.append(b.arena, .{
+                    .patterns = try b.exprs(&.{try this.patternNode(b, pat)}),
+                    .body = try this.caseBodyNode(b, arm.body, body_indent),
+                });
+            },
+            else => try clauses.append(b.arena, .{
+                .patterns = try b.exprs(&.{try this.patternNode(b, arm.pattern)}),
+                .body = try this.caseBodyNode(b, arm.body, body_indent),
+            }),
+        };
+        return b.caseOf(subject, clauses.items);
+    }
 
-        var first_clause = true;
-        for (arms) |arm| {
-            // OR patterns expand to multiple Erlang clauses with the same body
-            switch (arm.pattern) {
-                .@"or" => |pats| {
-                    for (pats) |p| {
-                        if (!first_clause) try this.w(";\n");
-                        try this.writeIndent();
-                        try this.emitPattern(p);
-                        try this.w(" ->\n");
-                        this.indent += 1;
-                        try this.emitCaseBody(arm.body);
-                        this.indent -= 1;
-                        first_clause = false;
-                    }
-                },
-                .multi => {
-                    if (!first_clause) try this.w(";\n");
-                    try this.writeIndent();
-                    try this.emitPattern(arm.pattern);
-                    try this.w(" ->\n");
-                    this.indent += 1;
-                    try this.emitCaseBody(arm.body);
-                    this.indent -= 1;
-                    first_clause = false;
-                },
-                else => {
-                    if (!first_clause) try this.w(";\n");
-                    try this.writeIndent();
-                    try this.emitPattern(arm.pattern);
-                    try this.w(" ->\n");
-                    this.indent += 1;
-                    try this.emitCaseBody(arm.body);
-                    this.indent -= 1;
-                    first_clause = false;
-                },
-            }
+    /// A case arm body at `indent`: a lambda block's statements, or the single
+    /// expression.
+    fn caseBodyNode(this: *Emitter, b: Ast.Builder, body: ast.Expr, indent: usize) anyerror!Ast.Body {
+        if (body == .function and body.function.kind.syntax == .lambda) {
+            return this.bodyNode(b, body.function.kind.body, 0, indent);
         }
-
-        this.indent -= 1;
-        try this.w("\n");
-        try this.writeIndent();
-        try this.w("end");
+        const saved = this.indent;
+        this.indent = indent;
+        defer this.indent = saved;
+        return b.body(&.{try this.exprNode(b, body)});
     }
 
     fn emitPattern(this: *Emitter, pat: ast.Pattern) !void {
+        var arena_state = std.heap.ArenaAllocator.init(this.alloc);
+        defer arena_state.deinit();
+        const b: Ast.Builder = .{ .arena = arena_state.allocator() };
+        try erlEmitter.writeExpr(this.out, try this.patternNode(b, pat), this.indent);
+    }
+
+    fn patternNode(this: *Emitter, b: Ast.Builder, pat: ast.Pattern) anyerror!Ast.Expr {
         switch (pat) {
-            .wildcard => try this.w("_"),
-            .ident => |n| {
-                // A bare ident pattern is either a nullary enum variant (→ the
-                // atom `'Lt'`) or a binding (→ an erlang variable `X`). Emitting
-                // the raw name would make a variant match like an unbound var.
-                if (this.enum_variants.contains(n)) {
-                    var ab: [128]u8 = undefined;
-                    try this.w(try atomName(n, &ab));
-                } else {
-                    const vname = try erlangVar(this.alloc, n);
-                    defer this.alloc.free(vname);
-                    try this.w(vname);
+            .wildcard => return Ast.Expr.v("_"),
+            // A bare ident pattern is either a nullary enum variant (→ the atom
+            // `'Lt'`) or a binding (→ an erlang variable `X`).
+            .ident => |n| return if (this.enum_variants.contains(n)) Ast.Expr.a(n) else Ast.Expr.v(try this.arenaVar(b, n)),
+            .numberLit => |n| return .{ .number = n },
+            .stringLit => |str| return .{ .lexeme_binary = str },
+            // Variant patterns match `{tag, Name, …}` with the variant name as written.
+            .variant => |v| {
+                var items: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+                try items.appendSlice(b.arena, &.{ Ast.Expr.a("tag"), Ast.Expr.r(v.name) });
+                switch (v.payload) {
+                    .binding => |binding| try items.append(b.arena, Ast.Expr.v(try this.arenaVar(b, binding))),
+                    .fields => |fields| for (fields) |f| try items.append(b.arena, Ast.Expr.v(try this.arenaVar(b, f))),
+                    .literals => |args| for (args) |arg| try items.append(b.arena, try this.patternNode(b, arg)),
                 }
-            },
-            .numberLit => |n| try this.w(n),
-            .stringLit => |s| try this.emitBinary(s),
-            .variant => |v| switch (v.payload) {
-                .binding => |binding| {
-                    const vname = try erlangVar(this.alloc, binding);
-                    defer this.alloc.free(vname);
-                    try this.fmt("{{tag, {s}, {s}}}", .{ v.name, vname });
-                },
-                .fields => |fields| {
-                    try this.fmt("{{tag, {s}", .{v.name});
-                    for (fields) |bb| {
-                        try this.w(", ");
-                        const vname = try erlangVar(this.alloc, bb);
-                        defer this.alloc.free(vname);
-                        try this.w(vname);
-                    }
-                    try this.w("}");
-                },
-                .literals => |args| {
-                    try this.fmt("{{tag, {s}", .{v.name});
-                    for (args) |arg| {
-                        try this.w(", ");
-                        try this.emitPattern(arg);
-                    }
-                    try this.w("}");
-                },
+                return .{ .tuple = items.items };
             },
             .list => |lp| {
-                if (lp.spread) |sp| {
-                    if (lp.elems.len == 0 and sp.len == 0) {
-                        try this.w("_");
-                    } else {
-                        try this.w("[");
-                        for (lp.elems, 0..) |elem, i| {
-                            if (i > 0) try this.w(", ");
-                            try this.emitListPatElem(elem);
-                        }
-                        if (sp.len > 0) {
-                            if (lp.elems.len > 0) try this.w(" | ");
-                            const vname = try erlangVar(this.alloc, sp);
-                            defer this.alloc.free(vname);
-                            try this.w(vname);
-                        } else {
-                            try this.w(" | _");
-                        }
-                        try this.w("]");
-                    }
-                } else if (lp.elems.len == 0) {
-                    try this.w("[]");
-                } else {
-                    try this.w("[");
-                    for (lp.elems, 0..) |elem, i| {
-                        if (i > 0) try this.w(", ");
-                        try this.emitListPatElem(elem);
-                    }
-                    try this.w("]");
-                }
+                const elems = try b.arena.alloc(Ast.Expr, lp.elems.len);
+                for (lp.elems, 0..) |elem, i| elems[i] = try this.listPatElemNode(b, elem);
+                const sp = lp.spread orelse return .{ .list = elems };
+                if (lp.elems.len == 0 and sp.len == 0) return Ast.Expr.v("_");
+                const tail = if (sp.len > 0) Ast.Expr.v(try this.arenaVar(b, sp)) else Ast.Expr.v("_");
+                // `[Rest]` when only a named spread is present (as the backend has always written it).
+                if (lp.elems.len == 0) return b.list(&.{tail});
+                return b.cons(elems, tail);
             },
-            .@"or" => |pats| {
-                // Should be expanded by emitCase; fallback: emit first
-                if (pats.len > 0) try this.emitPattern(pats[0]);
-            },
+            // Expanded by `caseNode`; elsewhere the first alternative stands in.
+            .@"or" => |pats| return if (pats.len > 0) this.patternNode(b, pats[0]) else Ast.Expr.r(""),
             .multi => |pats| {
-                try this.w("{");
-                for (pats, 0..) |p, i| {
-                    if (i > 0) try this.w(", ");
-                    try this.emitPattern(p);
-                }
-                try this.w("}");
+                const items = try b.arena.alloc(Ast.Expr, pats.len);
+                for (pats, 0..) |p, i| items[i] = try this.patternNode(b, p);
+                return .{ .tuple = items };
             },
         }
     }
 
-    fn emitListPatElem(this: *Emitter, elem: ast.ListPatternElem) !void {
-        switch (elem) {
-            .wildcard => try this.w("_"),
-            .bind => |name| {
-                const vname = try erlangVar(this.alloc, name);
-                defer this.alloc.free(vname);
-                try this.w(vname);
-            },
-            .numberLit => |n| try this.w(n),
-        }
-    }
-
-    fn emitCaseBody(this: *Emitter, body: ast.Expr) !void {
-        switch (body) {
-            .function => |func| switch (func.kind.syntax) {
-                .lambda => {
-                    // Multi-statement block: emitBody handles indentation via this.indent
-                    try this.emitBody(func.kind.body);
-                },
-                .fnExpr => {
-                    // Single expression: emit with current indentation
-                    try this.writeIndent();
-                    try this.emitExpr(body);
-                },
-            },
-            else => {
-                // Single expression: emit with current indentation
-                try this.writeIndent();
-                try this.emitExpr(body);
-            },
-        }
+    fn listPatElemNode(this: *Emitter, b: Ast.Builder, elem: ast.ListPatternElem) anyerror!Ast.Expr {
+        return switch (elem) {
+            .wildcard => Ast.Expr.v("_"),
+            .bind => |name| Ast.Expr.v(try this.arenaVar(b, name)),
+            .numberLit => |n| .{ .number = n },
+        };
     }
 
     // ── builtin-primitive method lowering ─────────────────────────────────────
