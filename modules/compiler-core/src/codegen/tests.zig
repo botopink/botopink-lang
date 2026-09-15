@@ -19,5 +19,6 @@ test {
     _ = @import("tests/comptime_module.zig");
     _ = @import("beam/term.zig");
     _ = @import("beam/erl_emitter.zig");
+    _ = @import("beam/erl_ast.zig");
     _ = @import("beam/beam_emitter.zig");
 }

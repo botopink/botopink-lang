@@ -22,7 +22,7 @@ const std = @import("std");
 const ast = @import("../ast.zig");
 const template = @import("./template.zig");
 const erlang = @import("../codegen/erlang.zig");
-const erlEmitter = @import("../codegen/beam/erl_emitter.zig");
+const Ast = @import("../codegen/beam/erl_ast.zig");
 const Term = @import("../codegen/beam/term.zig").Term;
 const persistent_erl = @import("./runtime/persistent_erl.zig");
 
@@ -126,42 +126,137 @@ const host_records = [_]erlang.HostRecord{
     .{ .name = "Context", .fields = &.{ "source", "text", "multiline" } },
 };
 
-/// Host functions for the capture API plus the reply encoder. A capture is a
-/// map tagged with `'__bp_capture'` (its parameter name); `build`/`custom`/
-/// `expr`/`code` wrap the body's result in a tagged tuple `main/0` dispatches on.
-const host_fns =
-    \\text(#{text := Text}) -> Text.
-    \\parts(#{parts := Parts}) -> Parts.
-    \\source(#{source := Source}) -> Source.
-    \\context(#{context := Context}) -> Context.
-    \\bindings(#{bindings := Bindings}) -> Bindings.
-    \\lookup(#{bindings := Bindings}, Name) ->
-    \\    case [B || B = #{name := N} <- Bindings, N =:= Name] of [Hit | _] -> Hit; [] -> undefined end.
-    \\build(_Capture, Source) -> {'__bp_code', '__bp_text'(Source)}.
-    \\custom(_Capture, Tree, {'__bp_code', Source}) -> {'__bp_custom', Tree, Source}.
-    \\fail(#{'__bp_capture' := Param}, Message) -> erlang:throw({'__bp_template_fail', Message, Param, null}).
-    \\failAt(#{'__bp_capture' := Param}, Span, Message) -> erlang:throw({'__bp_template_fail', Message, Param, Span}).
-    \\compilerError(Message) -> erlang:throw({'__bp_template_fail', Message, null, null}).
-    \\expr(Value) -> {'__bp_value', Value}.
-    \\code(Source) -> {'__bp_code', '__bp_text'(Source)}.
-    \\
-    \\'__bp_text'(Value) when is_binary(Value) -> Value;
-    \\'__bp_text'(Value) -> iolist_to_binary(io_lib:format("~p", [Value])).
-    \\
-    \\%% JSON view of a term: `undefined` is botopink's null.
-    \\'__bp_json'(undefined) -> null;
-    \\'__bp_json'(Map) when is_map(Map) -> maps:map(fun(_, V) -> '__bp_json'(V) end, Map);
-    \\'__bp_json'(List) when is_list(List) -> [ '__bp_json'(V) || V <- List ];
-    \\'__bp_json'(Value) -> Value.
-    \\
-    \\'__bp_reply'({'__bp_code', Source}) -> #{kind => <<"code">>, source => Source};
-    \\'__bp_reply'({'__bp_value', Value}) -> #{kind => <<"value">>, value => '__bp_json'(Value)};
-    \\'__bp_reply'({'__bp_custom', Tree, Source}) -> #{kind => <<"custom">>, source => Source, ast => '__bp_json'(Tree)};
-    \\'__bp_reply'(#{'__bp_capture' := Param}) -> #{kind => <<"capture">>, param => Param};
-    \\'__bp_reply'(Other) -> #{kind => <<"error">>, message => '__bp_text'({unsupported_template_result, Other})}.
-    \\
-    \\
-;
+/// Host functions for the capture API, the reply encoder and `main/0`. A capture
+/// is a map tagged with `'__bp_capture'` (its parameter name); `build`/`custom`/
+/// `expr`/`code` wrap the body's result in a tagged tuple `'__bp_reply'`
+/// dispatches on.
+fn hostForms(
+    b: Ast.Builder,
+    tfn: ast.FnDecl,
+    captures: []const template.CapturedExpr,
+    plainArgs: []const template.PlainArg,
+) EvalError![]const Ast.Form {
+    const V = Ast.Expr.v;
+    const A = Ast.Expr.a;
+    const fail_tag = A("__bp_template_fail");
+    const code_tag = A("__bp_code");
+
+    const args = try b.arena.alloc(Ast.Expr, tfn.params.len);
+    for (tfn.params, 0..) |p, i| args[i] = try paramExpr(b.arena, p.name, i, captures, plainArgs);
+    const invoke: Ast.Expr = .{ .call = .{ .name = tfn.name, .args = args } };
+
+    const throw = struct {
+        fn call(bb: Ast.Builder, items: []const Ast.Expr) Ast.Builder.Error!Ast.Expr {
+            return bb.remote("erlang", "throw", &.{try bb.tuple(items)});
+        }
+    }.call;
+    const json = struct {
+        fn encode(bb: Ast.Builder, fields: []const Ast.MapField) Ast.Builder.Error!Ast.Expr {
+            return bb.remote("json", "encode", &.{try bb.map(fields)});
+        }
+    }.encode;
+
+    // Capture accessors: `text(#{text := Text}) -> Text.` …
+    const accessors = [_][2][]const u8{
+        .{ "text", "Text" },       .{ "parts", "Parts" },       .{ "source", "Source" },
+        .{ "context", "Context" }, .{ "bindings", "Bindings" },
+    };
+    var forms: std.ArrayListUnmanaged(Ast.Form) = .empty;
+    for (accessors) |acc| {
+        try forms.append(b.arena, try b.function(acc[0], &.{try b.map(&.{Ast.exactField(acc[0], V(acc[1]))})}, &.{}, &.{V(acc[1])}));
+    }
+
+    const capture_param = try b.map(&.{.{ .key = A("__bp_capture"), .value = V("Param"), .exact = true }});
+    try forms.appendSlice(b.arena, &.{
+        // lookup(#{bindings := Bindings}, Name) ->
+        //     case [B || B = #{name := N} <- Bindings, N =:= Name] of [Hit | _] -> Hit; [] -> undefined end.
+        try b.function("lookup", &.{ try b.map(&.{Ast.exactField("bindings", V("Bindings"))}), V("Name") }, &.{}, &.{
+            try b.caseOf(.{ .list_comp = .{
+                .element = try b.ptr(V("B")),
+                .qualifiers = try b.arena.dupe(Ast.ListComp.Qualifier, &.{
+                    .{ .generator = .{
+                        .pattern = try b.match(V("B"), try b.map(&.{Ast.exactField("name", V("N"))})),
+                        .list = V("Bindings"),
+                    } },
+                    .{ .filter = .{ .binop = .{ .op = "=:=", .lhs = try b.ptr(V("N")), .rhs = try b.ptr(V("Name")), .parens = false } } },
+                }),
+            } }, &.{
+                try b.clause(&.{try b.cons(&.{V("Hit")}, V("_"))}, &.{}, &.{V("Hit")}),
+                try b.clause(&.{try b.list(&.{})}, &.{}, &.{A("undefined")}),
+            }),
+        }),
+        try b.function("build", &.{ V("_Capture"), V("Source") }, &.{}, &.{
+            try b.tuple(&.{ code_tag, try b.call("__bp_text", &.{V("Source")}) }),
+        }),
+        try b.function("custom", &.{ V("_Capture"), V("Tree"), try b.tuple(&.{ code_tag, V("Source") }) }, &.{}, &.{
+            try b.tuple(&.{ A("__bp_custom"), V("Tree"), V("Source") }),
+        }),
+        try b.function("fail", &.{ capture_param, V("Message") }, &.{}, &.{
+            try throw(b, &.{ fail_tag, V("Message"), V("Param"), A("null") }),
+        }),
+        try b.function("failAt", &.{ capture_param, V("Span"), V("Message") }, &.{}, &.{
+            try throw(b, &.{ fail_tag, V("Message"), V("Param"), V("Span") }),
+        }),
+        try b.function("compilerError", &.{V("Message")}, &.{}, &.{
+            try throw(b, &.{ fail_tag, V("Message"), A("null"), A("null") }),
+        }),
+        try b.function("expr", &.{V("Value")}, &.{}, &.{try b.tuple(&.{ A("__bp_value"), V("Value") })}),
+        try b.function("code", &.{V("Source")}, &.{}, &.{
+            try b.tuple(&.{ code_tag, try b.call("__bp_text", &.{V("Source")}) }),
+        }),
+        try b.functionClauses("__bp_reply", &.{
+            try b.clause(&.{try b.tuple(&.{ code_tag, V("Source") })}, &.{}, &.{
+                try b.map(&.{ Ast.field("kind", Ast.str("code")), Ast.field("source", V("Source")) }),
+            }),
+            try b.clause(&.{try b.tuple(&.{ A("__bp_value"), V("Value") })}, &.{}, &.{
+                try b.map(&.{ Ast.field("kind", Ast.str("value")), Ast.field("value", try b.call("__bp_json", &.{V("Value")})) }),
+            }),
+            try b.clause(&.{try b.tuple(&.{ A("__bp_custom"), V("Tree"), V("Source") })}, &.{}, &.{
+                try b.map(&.{
+                    Ast.field("kind", Ast.str("custom")),
+                    Ast.field("source", V("Source")),
+                    Ast.field("ast", try b.call("__bp_json", &.{V("Tree")})),
+                }),
+            }),
+            try b.clause(&.{capture_param}, &.{}, &.{
+                try b.map(&.{ Ast.field("kind", Ast.str("capture")), Ast.field("param", V("Param")) }),
+            }),
+            try b.clause(&.{V("Other")}, &.{}, &.{
+                try b.map(&.{
+                    Ast.field("kind", Ast.str("error")),
+                    Ast.field("message", try b.call("__bp_text", &.{try b.tuple(&.{ A("unsupported_template_result"), V("Other") })})),
+                }),
+            }),
+        }),
+    });
+
+    const main_body = try b.body(&.{.{ .try_catch = .{
+        .body = try b.body(&.{try b.remote("json", "encode", &.{try b.call("__bp_reply", &.{invoke})})}),
+        .catches = try b.arena.dupe(Ast.Clause, &.{
+            .{
+                .patterns = try b.exprs(&.{try b.exception(A("throw"), try b.tuple(&.{ fail_tag, V("Message"), V("Param"), V("Span") }))}),
+                .body = try b.body(&.{try json(b, &.{
+                    Ast.field("kind", Ast.str("fail")),
+                    Ast.field("message", try b.call("__bp_text", &.{V("Message")})),
+                    Ast.field("param", V("Param")),
+                    Ast.field("span", try b.call("__bp_json", &.{V("Span")})),
+                })}),
+            },
+            .{
+                .patterns = try b.exprs(&.{try b.exception(V("Class"), V("Reason"))}),
+                .body = try b.body(&.{try json(b, &.{
+                    Ast.field("kind", Ast.str("error")),
+                    Ast.field("message", try b.call("__bp_text", &.{try b.tuple(&.{ V("Class"), V("Reason") })})),
+                })}),
+            },
+        }),
+    } }});
+    try forms.append(b.arena, .{ .function = .{
+        .name = "main",
+        .clauses = try b.arena.dupe(Ast.Clause, &.{.{ .patterns = &.{}, .body = main_body }}),
+    } });
+    return forms.items;
+}
 
 fn buildModule(
     arena: std.mem.Allocator,
@@ -169,29 +264,7 @@ fn buildModule(
     captures: []const template.CapturedExpr,
     plainArgs: []const template.PlainArg,
 ) EvalError!Module {
-    var tail: std.Io.Writer.Allocating = .init(arena);
-    const w = &tail.writer;
-    try w.writeAll(host_fns);
-    try w.writeAll(
-        \\main() ->
-        \\    try
-        \\
-    );
-    try w.print("        json:encode('__bp_reply'({f}(", .{erlEmitter.atom(tfn.name)});
-    for (tfn.params, 0..) |p, i| {
-        if (i > 0) try w.writeAll(", ");
-        try writeParam(arena, w, p.name, i, captures, plainArgs);
-    }
-    try w.writeAll(
-        \\)))
-        \\    catch
-        \\        throw:{'__bp_template_fail', Message, Param, Span} ->
-        \\            json:encode(#{kind => <<"fail">>, message => '__bp_text'(Message), param => Param, span => '__bp_json'(Span)});
-        \\        Class:Reason ->
-        \\            json:encode(#{kind => <<"error">>, message => '__bp_text'({Class, Reason})})
-        \\    end.
-        \\
-    );
+    const forms = try hostForms(.{ .arena = arena }, tfn, captures, plainArgs);
 
     const decls = try arena.alloc(ast.DeclKind, 1);
     decls[0] = .{ .@"fn" = tfn };
@@ -199,7 +272,7 @@ fn buildModule(
         .host_enums = &.{ "BindingKind", "DeclKind" },
         .host_records = &host_records,
         .exports = &.{"main/0"},
-        .tail = tail.written(),
+        .forms = forms,
     }) catch return error.EvalFailed;
 
     const module = try std.fmt.allocPrint(arena, "template_{x:0>16}", .{std.hash.Wyhash.hash(0, code)});
@@ -211,22 +284,20 @@ fn buildModule(
 
 /// The argument for parameter `index`: its capture map, its literal plain
 /// argument, or `undefined`.
-fn writeParam(
+fn paramExpr(
     arena: std.mem.Allocator,
-    w: *std.Io.Writer,
     name: []const u8,
     index: usize,
     captures: []const template.CapturedExpr,
     plainArgs: []const template.PlainArg,
-) EvalError!void {
+) EvalError!Ast.Expr {
     for (captures) |*cap| {
-        if (cap.paramIndex != index) continue;
-        return erlEmitter.writeTerm(w, try captureToTerm(arena, cap)) catch return error.EvalFailed;
+        if (cap.paramIndex == index) return Ast.Expr.t(try captureToTerm(arena, cap));
     }
     for (plainArgs) |pa| {
-        if (std.mem.eql(u8, pa.paramName, name)) return pa.writeErl(w);
+        if (std.mem.eql(u8, pa.paramName, name)) return pa.toExpr();
     }
-    try w.writeAll("undefined");
+    return Ast.Expr.a("undefined");
 }
 
 // ── capture ───────────────────────────────────────────────────────────────────

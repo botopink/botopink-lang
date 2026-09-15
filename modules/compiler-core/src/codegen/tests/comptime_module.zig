@@ -34,7 +34,13 @@ test "comptime module: host enum member lowers to an atom, method call to a host
     , .{
         .host_enums = &.{"DeclKind"},
         .exports = &.{"main/0"},
-        .tail = "main() -> service(#{kind => 'Record'}).\n",
+        .forms = &.{.{ .function = .{ .name = "main", .clauses = &.{.{
+            .patterns = &.{},
+            .body = .{ .stmts = &.{.{ .expr = .{ .call = .{ .name = "service", .args = &.{.{ .map = &.{
+                .{ .key = .{ .atom = "kind" }, .value = .{ .atom = "Record" } },
+            } }} } } }} },
+            .layout = .inline_,
+        }} } }},
     });
     try expectContains(out, "-module(decorator_test).");
     try expectContains(out, "-export([main/0]).");
@@ -59,6 +65,8 @@ test "comptime module: `+` and `.len` dispatch at runtime, rebinding versions th
     try expectContains(out, "fail(Decl, Msg@1)");
     try expectContains(out, "'__bp_add'(A, B) when is_binary(A), is_binary(B) -> <<A/binary, B/binary>>;");
     try expectContains(out, "'__bp_len'(X, Field) -> maps:get(Field, X).");
+    try expectContains(out, "'__bp_json'(undefined) -> null;");
+    try expectContains(out, "'__bp_text'(Value) when is_binary(Value) -> Value;");
 }
 
 test "comptime module: forEach with a mutated var fuses into a fold" {

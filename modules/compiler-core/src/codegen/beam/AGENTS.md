@@ -3,10 +3,10 @@
 > Path: `modules/compiler-core/src/codegen/beam/`
 > Parent: [`../AGENTS.md`](../AGENTS.md)
 
-The BEAM term data model and the two emitters that render it. Everything that
-writes an Erlang *value* or *name* for the BEAM VM goes through here, so the
-`.erl` backend, the `.S` backend and the comptime evaluators share one set of
-lexical rules.
+The BEAM term data model, the Erlang code model, and the emitters that render
+them. Everything that writes an Erlang *value*, *name* or *code* for the BEAM VM
+goes through here, so the `.erl` backend, the `.S` backend and the comptime
+evaluators share one set of lexical and layout rules.
 
 ## Tree
 
@@ -14,7 +14,8 @@ lexical rules.
 beam/
 ├── AGENTS.md          ← you are here
 ├── term.zig           ← `Term` — the value model (atom/binary/integer/float/boolean/nil/list/tuple/map)
-├── erl_emitter.zig    ← Term + names → Erlang source
+├── erl_ast.zig        ← Erlang code model (expressions, clauses, functions, forms) + `Builder`
+├── erl_emitter.zig    ← Term + names + erl_ast → Erlang source
 └── beam_emitter.zig   ← Term → BEAM asm (`.S`) operands / instructions
 ```
 
@@ -23,14 +24,16 @@ beam/
 | File | Role |
 |---|---|
 | `term.zig` | `Term` union + `Term.MapEntry { key: Term, value: Term }` and small constructors (`atomOf`, `str`, `int`, `listOf`, `tupleOf`, `mapOf`, `field`). Atoms hold the *unquoted* name; binaries hold raw runtime bytes. Terms borrow their slices — build them in an arena that outlives emission. |
-| `erl_emitter.zig` | Erlang source. **Names:** `isReserved`, `isUnquotedAtom`, `atomText(name, buf)` / `writeAtom` (bare when `[a-z][A-Za-z0-9_@]*` and not reserved, else single-quoted with `'`/`\` escaped; pre-quoted names pass through), `varName` / `writeVar` (`decl` → `Decl`), `moduleName` (`List` → `list`). **Binaries:** `writeBinaryFromBytes` (raw bytes; `"`, `\`, control bytes escaped, bytes ≥ 0x80 as `\x{HH}` so the binary is exact regardless of source encoding) and `writeBinaryFromLexeme` (a string literal's lexer content: botopink escapes map to Erlang's, `\$` → `$`, `\u{…}` → `\x{…}`, raw bytes pass through — the historical `erlang.zig` `emitBinary`). **Terms:** `writeFloat` (always has a `.`), `writeTerm` (lists `[a, b]`, tuples `{a, b}`, maps `#{k => v}`). |
+| `erl_ast.zig` | Erlang code model. `Expr` (`raw`, `term`, `variable`, `atom`, `lexeme_binary`, `call` local/remote, `apply`, `binop`, `unop`, `match`, `tuple`, `list`, `cons`, `map`/`map_update` with `=>`/`:=`, `list_comp`, `case_`, `fun`, `try_catch`, `bin` segments, `exception` `Class:Reason`), `Clause` (patterns, guard sequence, body, `block`/`inline_` layout), `Body` (statements, or a pre-rendered `raw_block`), `Stmt` (expr / comment), `Function`, `Form` (attribute / function / comment / raw). `raw` nodes are the migration bridge for Erlang still produced as text. `Builder` (arena) copies slices and allocates child nodes for trees built from runtime values; `str`/`field`/`exactField` helpers. |
+| `erl_emitter.zig` | Erlang source. **Names:** `isReserved`, `isUnquotedAtom`, `atomText(name, buf)` / `writeAtom` (bare when `[a-z][A-Za-z0-9_@]*` and not reserved, else single-quoted with `'`/`\` escaped; pre-quoted names pass through), `varName` / `writeVar` (`decl` → `Decl`), `moduleName` (`List` → `list`). **Binaries:** `writeBinaryFromBytes` (raw bytes; `"`, `\`, control bytes escaped, bytes ≥ 0x80 as `\x{HH}` so the binary is exact regardless of source encoding) and `writeBinaryFromLexeme` (a string literal's lexer content: botopink escapes map to Erlang's, `\$` → `$`, `\u{…}` → `\x{…}`, raw bytes pass through — the historical `erlang.zig` `emitBinary`). **Terms:** `writeFloat` (always has a `.`), `writeTerm` (lists `[a, b]`, tuples `{a, b}`, maps `#{k => v}`). **Code:** `writeExpr(w, expr, indent)` (multi-line constructs indent relative to `indent`: `case … of` clauses at +1 with block bodies at +2, `fun(…) ->` body at +1, `try`/`catch`), `writeBody` (the backend's statement rules: `,` only between real statements, comments without separator, empty body → `undefined`), `writeFunction` (clauses joined `;\n`, ending `.\n`), `writeForm`. |
 | `beam_emitter.zig` | `.S` operands for the same model: `writeOperand` (`atom` → `{atom, A}`, `boolean` → `{atom, true}`, `integer` → `{integer, N}`, `float` → `{float, F}`, `nil`/empty list → `nil`, binary/list/tuple/map → `{literal, <term>}`), `writeLiteral`, `writeAtomOperand`, `writeLexemeBinaryOperand`, `writeMove(term, dest)` (`    {move, <operand>, {x, D}}.\n`). The inner term syntax of `{literal, …}` is the Erlang source form, so it delegates to `erl_emitter`. |
 
 ## Consumers
 
 - `../erlang.zig` — `atomName`/`fnAtom` = `atomText`, `erlangVar` = `varName`, `erlangModule` = `moduleName`, string literals via `writeBinaryFromLexeme`.
 - `../beam_asm.zig` — `atomName` = `atomText`; string literals (`emitStringLiteral`), `{literal, #{}}`, `put_map_assoc` keys and atom `move`s via `beam_emitter`.
-- `../../comptime/decorator_eval.zig` — the `@Decl` handle is built as a `Term` (`handleToTerm`) and written with `writeTerm`.
+- `../erlang.zig` — `emitComptimeModule` helper functions (`comptime_helper_forms`) and host forms; mutation lowering (`emitMutatingIf`/`emitMutatingFold`) builds `match`/`case_`/`fun` nodes (bodies still legacy-emitted `raw`).
+- `../../comptime/decorator_eval.zig`, `../../comptime/template_eval.zig` — host glue and `main/0` as `Form`s built with `Builder`; the `@Decl` handle and captures are `Term`s.
 
 ## Rules
 

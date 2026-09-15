@@ -16,7 +16,7 @@
 const std = @import("std");
 const ast = @import("../ast.zig");
 const TypeError = @import("./error.zig").TypeError;
-const erlEmitter = @import("../codegen/beam/erl_emitter.zig");
+const ErlAst = @import("../codegen/beam/erl_ast.zig");
 
 // ── scope snapshot ────────────────────────────────────────────────────────────
 
@@ -147,24 +147,21 @@ pub const PlainArg = struct {
     /// The argument's source lexeme (e.g. `42`, `"hi"`, `true`).
     source: []const u8,
 
-    /// The lexeme as an Erlang term: a string literal becomes a binary (botopink
-    /// escapes resolved), `true`/`false` atoms, integers and finite floats
-    /// numbers; anything else (an identifier, an expression) reaches the body
-    /// as its source text.
-    pub fn writeErl(self: PlainArg, w: *std.Io.Writer) std.Io.Writer.Error!void {
+    /// The lexeme as an Erlang expression: a string literal becomes a binary
+    /// (botopink escapes resolved at render), `true`/`false` atoms, integers and
+    /// finite floats numbers; anything else (an identifier, an expression)
+    /// reaches the body as its source text.
+    pub fn toExpr(self: PlainArg) ErlAst.Expr {
         const text = std.mem.trim(u8, self.source, " \t\r\n");
         if (text.len >= 2 and text[0] == '"' and text[text.len - 1] == '"') {
-            return erlEmitter.writeBinaryFromLexeme(w, text[1 .. text.len - 1]);
+            return .{ .lexeme_binary = text[1 .. text.len - 1] };
         }
-        if (std.mem.eql(u8, text, "true") or std.mem.eql(u8, text, "false")) return w.writeAll(text);
-        if (std.fmt.parseInt(i64, text, 10)) |n| return w.print("{d}", .{n}) else |_| {}
+        if (std.mem.eql(u8, text, "true") or std.mem.eql(u8, text, "false")) return .{ .atom = text };
+        if (std.fmt.parseInt(i64, text, 10)) |n| return .{ .term = .{ .integer = n } } else |_| {}
         if (std.fmt.parseFloat(f64, text)) |f| {
-            if (std.math.isFinite(f)) return erlEmitter.writeFloat(w, f) catch |err| switch (err) {
-                error.NonFiniteFloat => unreachable,
-                error.WriteFailed => error.WriteFailed,
-            };
+            if (std.math.isFinite(f)) return .{ .term = .{ .float = f } };
         } else |_| {}
-        return erlEmitter.writeBinaryFromBytes(w, text);
+        return ErlAst.str(text);
     }
 };
 

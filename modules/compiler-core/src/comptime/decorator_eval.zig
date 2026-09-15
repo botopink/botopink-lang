@@ -17,7 +17,7 @@ const std = @import("std");
 const ast = @import("../ast.zig");
 const template = @import("./template.zig");
 const erlang = @import("../codegen/erlang.zig");
-const erlEmitter = @import("../codegen/beam/erl_emitter.zig");
+const Ast = @import("../codegen/beam/erl_ast.zig");
 const Term = @import("../codegen/beam/term.zig").Term;
 const persistent_erl = @import("./runtime/persistent_erl.zig");
 
@@ -96,20 +96,86 @@ const Module = struct {
 
 const placeholder_module = "decorator_module";
 
-/// Host functions the lowered body calls. `fail`/`failAt`/`compilerError`
-/// throw a tagged rejection caught by `main/0`; `emit` accumulates sources in
-/// the process dictionary.
-const host_fns =
-    \\fail(_Decl, Message) -> erlang:throw({'__bp_decorator_fail', Message, null}).
-    \\failAt(_Decl, Span, Message) -> erlang:throw({'__bp_decorator_fail', Message, Span}).
-    \\compilerError(Message) -> erlang:throw({'__bp_decorator_fail', Message, null}).
-    \\emit(Source) -> erlang:put('__bp_emitted', [Source | '__bp_emitted'()]), ok.
-    \\'__bp_emitted'() -> case erlang:get('__bp_emitted') of undefined -> []; Sources -> Sources end.
-    \\'__bp_text'(Value) when is_binary(Value) -> Value;
-    \\'__bp_text'(Value) -> iolist_to_binary(io_lib:format("~p", [Value])).
-    \\
-    \\
-;
+/// Host functions the lowered body calls plus the `main/0` entry.
+/// `fail`/`failAt`/`compilerError` throw a tagged rejection caught by `main/0`;
+/// `emit` accumulates sources in the process dictionary. `main/0` calls the
+/// decorator with the handle and the annotation arguments and replies with JSON.
+fn hostForms(b: Ast.Builder, dfn: ast.FnDecl, handle: Term, plainArgs: []const template.PlainArg) Ast.Builder.Error![]const Ast.Form {
+    const V = Ast.Expr.v;
+    const A = Ast.Expr.a;
+    const fail_tag = A("__bp_decorator_fail");
+    const emitted_key = A("__bp_emitted");
+
+    // <decorator>(Handle, Arg1, …): parameters after the `@Decl` one bind the
+    // annotation's arguments in order; a missing argument is `undefined`.
+    const args = try b.arena.alloc(Ast.Expr, @max(dfn.params.len, 1));
+    args[0] = Ast.Expr.t(handle);
+    for (args[1..], 0..) |*arg, i| {
+        arg.* = if (i < plainArgs.len) plainArgs[i].toExpr() else A("undefined");
+    }
+    const invoke: Ast.Expr = .{ .call = .{ .name = dfn.name, .args = args } };
+
+    const emitted = try b.call("__bp_emitted", &.{});
+    const encode = struct {
+        fn json(bb: Ast.Builder, fields: []const Ast.MapField) Ast.Builder.Error!Ast.Expr {
+            return bb.remote("json", "encode", &.{try bb.map(fields)});
+        }
+    }.json;
+
+    const main_body = try b.body(&.{
+        try b.remote("erlang", "erase", &.{emitted_key}),
+        .{ .try_catch = .{
+            .body = try b.body(&.{
+                invoke,
+                try encode(b, &.{
+                    Ast.field("kind", Ast.str("ok")),
+                    Ast.field("contributions", try b.remote("lists", "reverse", &.{emitted})),
+                }),
+            }),
+            .catches = try b.arena.dupe(Ast.Clause, &.{
+                .{
+                    .patterns = try b.exprs(&.{try b.exception(A("throw"), try b.tuple(&.{ fail_tag, V("Message"), V("Span") }))}),
+                    .body = try b.body(&.{try encode(b, &.{
+                        Ast.field("kind", Ast.str("fail")),
+                        Ast.field("message", try b.call("__bp_text", &.{V("Message")})),
+                        Ast.field("span", V("Span")),
+                    })}),
+                },
+                .{
+                    .patterns = try b.exprs(&.{try b.exception(V("Class"), V("Reason"))}),
+                    .body = try b.body(&.{try encode(b, &.{
+                        Ast.field("kind", Ast.str("error")),
+                        Ast.field("message", try b.call("__bp_text", &.{try b.tuple(&.{ V("Class"), V("Reason") })})),
+                    })}),
+                },
+            }),
+        } },
+    });
+
+    const forms = [_]Ast.Form{
+        try b.function("fail", &.{ V("_Decl"), V("Message") }, &.{}, &.{
+            try b.remote("erlang", "throw", &.{try b.tuple(&.{ fail_tag, V("Message"), A("null") })}),
+        }),
+        try b.function("failAt", &.{ V("_Decl"), V("Span"), V("Message") }, &.{}, &.{
+            try b.remote("erlang", "throw", &.{try b.tuple(&.{ fail_tag, V("Message"), V("Span") })}),
+        }),
+        try b.function("compilerError", &.{V("Message")}, &.{}, &.{
+            try b.remote("erlang", "throw", &.{try b.tuple(&.{ fail_tag, V("Message"), A("null") })}),
+        }),
+        try b.function("emit", &.{V("Source")}, &.{}, &.{
+            try b.remote("erlang", "put", &.{ emitted_key, try b.cons(&.{V("Source")}, emitted) }),
+            A("ok"),
+        }),
+        try b.function("__bp_emitted", &.{}, &.{}, &.{
+            try b.caseOf(try b.remote("erlang", "get", &.{emitted_key}), &.{
+                try b.clause(&.{A("undefined")}, &.{}, &.{try b.list(&.{})}),
+                try b.clause(&.{V("Sources")}, &.{}, &.{V("Sources")}),
+            }),
+        }),
+        .{ .function = .{ .name = "main", .clauses = try b.arena.dupe(Ast.Clause, &.{.{ .patterns = &.{}, .body = main_body }}) } },
+    };
+    return b.arena.dupe(Ast.Form, &forms);
+}
 
 fn buildModule(
     arena: std.mem.Allocator,
@@ -117,43 +183,15 @@ fn buildModule(
     handle: DeclHandle,
     plainArgs: []const template.PlainArg,
 ) EvalError!Module {
-    var tail: std.Io.Writer.Allocating = .init(arena);
-    const w = &tail.writer;
-    try w.writeAll(host_fns);
-    try w.writeAll(
-        \\main() ->
-        \\    erlang:erase('__bp_emitted'),
-        \\    try
-        \\
-    );
-    try w.print("        {f}(", .{erlEmitter.atom(dfn.name)});
-    erlEmitter.writeTerm(w, try handleToTerm(arena, handle)) catch return error.EvalFailed;
-    // Parameters after the `@Decl` one bind the annotation's arguments in order;
-    // a missing argument is `undefined`.
-    if (dfn.params.len > 1) {
-        for (0..dfn.params.len - 1) |i| {
-            try w.writeAll(", ");
-            if (i < plainArgs.len) try plainArgs[i].writeErl(w) else try w.writeAll("undefined");
-        }
-    }
-    try w.writeAll(
-        \\),
-        \\        json:encode(#{kind => <<"ok">>, contributions => lists:reverse('__bp_emitted'())})
-        \\    catch
-        \\        throw:{'__bp_decorator_fail', Message, Span} ->
-        \\            json:encode(#{kind => <<"fail">>, message => '__bp_text'(Message), span => Span});
-        \\        Class:Reason ->
-        \\            json:encode(#{kind => <<"error">>, message => '__bp_text'({Class, Reason})})
-        \\    end.
-        \\
-    );
+    const b: Ast.Builder = .{ .arena = arena };
+    const forms = try hostForms(b, dfn, try handleToTerm(arena, handle), plainArgs);
 
     const decls = try arena.alloc(ast.DeclKind, 1);
     decls[0] = .{ .@"fn" = dfn };
     const code = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, .{
         .host_enums = &.{"DeclKind"},
         .exports = &.{"main/0"},
-        .tail = tail.written(),
+        .forms = forms,
     }) catch return error.EvalFailed;
 
     const module = try std.fmt.allocPrint(arena, "decorator_{x:0>16}", .{std.hash.Wyhash.hash(0, code)});

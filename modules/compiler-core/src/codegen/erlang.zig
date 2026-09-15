@@ -20,6 +20,8 @@ const parserMod = @import("../parser.zig");
 const prelude = @import("std_prelude");
 const primOpTemplate = @import("../comptime/primOpTemplate.zig");
 const erlEmitter = @import("./beam/erl_emitter.zig");
+const Ast = @import("./beam/erl_ast.zig");
+const Term = @import("./beam/term.zig").Term;
 
 const ModuleOutput = moduleOutput.ModuleOutput;
 const ComptimeOutput = comptimeMod.ComptimeOutput;
@@ -425,8 +427,9 @@ pub const ComptimeModule = struct {
     host_records: []const HostRecord = &.{},
     /// Extra `name/arity` exports (the evaluator entry, `main/0`).
     exports: []const []const u8 = &.{},
-    /// Raw Erlang appended after the lowered decls (host fns + entry).
-    tail: []const u8 = "",
+    /// Host forms appended after the lowered decls and the standard helpers
+    /// (host functions, the evaluator entry).
+    forms: []const Ast.Form = &.{},
 };
 
 pub const HostRecord = struct {
@@ -435,10 +438,107 @@ pub const HostRecord = struct {
     fields: []const []const u8,
 };
 
-/// Emit `program` as a comptime-evaluated Erlang module. Bodies are untyped (no
-/// inference ran over them), so type-directed lowerings dispatch at runtime:
-/// `+` → `'__bp_add'/2` (binary concat for strings, arithmetic otherwise) and
-/// `.len`/`.length` → `'__bp_len'/2` (list/string length, else the map field).
+/// Helpers every comptime module carries. Bodies are untyped (no inference ran
+/// over them), so type-directed lowerings dispatch at runtime — `+` →
+/// `'__bp_add'/2` (binary concat for strings, arithmetic otherwise),
+/// `.len`/`.length` → `'__bp_len'/2` (list/string length, else the map field) —
+/// and host glue reports through `'__bp_text'/1` (any term as a binary) and
+/// `'__bp_json'/1` (a term with `undefined` as JSON `null`).
+pub const comptime_helper_forms = [_]Ast.Form{
+    .{ .function = .{ .name = "__bp_add", .clauses = &.{
+        .{
+            .patterns = &.{ Ast.Expr.v("A"), Ast.Expr.v("B") },
+            .guards = &.{ isA("binary", "A"), isA("binary", "B") },
+            .body = Ast.Body.of(&.{.{ .expr = .{ .bin = &.{
+                .{ .value = Ast.Expr.v("A"), .type = "binary" },
+                .{ .value = Ast.Expr.v("B"), .type = "binary" },
+            } } }}),
+            .layout = .inline_,
+        },
+        .{
+            .patterns = &.{ Ast.Expr.v("A"), Ast.Expr.v("B") },
+            .body = Ast.Body.of(&.{.{ .expr = .{ .binop = .{ .op = "+", .lhs = &Ast.Expr.v("A"), .rhs = &Ast.Expr.v("B"), .parens = false } } }}),
+            .layout = .inline_,
+        },
+    } } },
+    .{ .function = .{ .name = "__bp_len", .clauses = &.{
+        .{
+            .patterns = &.{ Ast.Expr.v("X"), Ast.Expr.v("_") },
+            .guards = &.{isA("list", "X")},
+            .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .name = "length", .args = &.{Ast.Expr.v("X")} } } }}),
+            .layout = .inline_,
+        },
+        .{
+            .patterns = &.{ Ast.Expr.v("X"), Ast.Expr.v("_") },
+            .guards = &.{isA("binary", "X")},
+            .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "string", .name = "length", .args = &.{Ast.Expr.v("X")} } } }}),
+            .layout = .inline_,
+        },
+        .{
+            .patterns = &.{ Ast.Expr.v("X"), Ast.Expr.v("Field") },
+            .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "maps", .name = "get", .args = &.{ Ast.Expr.v("Field"), Ast.Expr.v("X") } } } }}),
+            .layout = .inline_,
+        },
+    } } },
+    .{ .function = .{ .name = "__bp_text", .clauses = &.{
+        .{
+            .patterns = &.{Ast.Expr.v("Value")},
+            .guards = &.{isA("binary", "Value")},
+            .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("Value") }}),
+            .layout = .inline_,
+        },
+        .{
+            .patterns = &.{Ast.Expr.v("Value")},
+            .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .name = "iolist_to_binary", .args = &.{.{ .call = .{
+                .module = "io_lib",
+                .name = "format",
+                .args = &.{ Ast.Expr.t(Term.str("~p")), .{ .list = &.{Ast.Expr.v("Value")} } },
+            } }} } } }}),
+            .layout = .inline_,
+        },
+    } } },
+    .{ .function = .{ .name = "__bp_json", .clauses = &.{
+        .{
+            .patterns = &.{Ast.Expr.a("undefined")},
+            .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.a("null") }}),
+            .layout = .inline_,
+        },
+        .{
+            .patterns = &.{Ast.Expr.v("Map")},
+            .guards = &.{isA("map", "Map")},
+            .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "maps", .name = "map", .args = &.{
+                .{ .fun = .{
+                    .params = &.{ Ast.Expr.v("_"), Ast.Expr.v("V") },
+                    .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .name = "__bp_json", .args = &.{Ast.Expr.v("V")} } } }}),
+                } },
+                Ast.Expr.v("Map"),
+            } } } }}),
+            .layout = .inline_,
+        },
+        .{
+            .patterns = &.{Ast.Expr.v("List")},
+            .guards = &.{isA("list", "List")},
+            .body = Ast.Body.of(&.{.{ .expr = .{ .list_comp = .{
+                .element = &Ast.Expr{ .call = .{ .name = "__bp_json", .args = &.{Ast.Expr.v("V")} } },
+                .qualifiers = &.{.{ .generator = .{ .pattern = Ast.Expr.v("V"), .list = Ast.Expr.v("List") } }},
+            } } }}),
+            .layout = .inline_,
+        },
+        .{
+            .patterns = &.{Ast.Expr.v("Value")},
+            .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("Value") }}),
+            .layout = .inline_,
+        },
+    } } },
+};
+
+/// `is_<kind>(Var)` guard test.
+fn isA(comptime kind: []const u8, comptime variable: []const u8) Ast.Expr {
+    return .{ .call = .{ .name = "is_" ++ kind, .args = &.{Ast.Expr.v(variable)} } };
+}
+
+/// Emit `program` as a comptime-evaluated Erlang module: the lowered decls, the
+/// `comptime_helper_forms`, then the host forms of `module`.
 pub fn emitComptimeModule(
     alloc: std.mem.Allocator,
     module_name: []const u8,
@@ -747,18 +847,14 @@ fn emitErlangModule(
     }
 
     if (comptime_module) |cm| {
-        try aw.writer.writeAll(
-            \\
-            \\'__bp_add'(A, B) when is_binary(A), is_binary(B) -> <<A/binary, B/binary>>;
-            \\'__bp_add'(A, B) -> A + B.
-            \\
-            \\'__bp_len'(X, _) when is_list(X) -> length(X);
-            \\'__bp_len'(X, _) when is_binary(X) -> string:length(X);
-            \\'__bp_len'(X, Field) -> maps:get(Field, X).
-            \\
-            \\
-        );
-        try aw.writer.writeAll(cm.tail);
+        for (&comptime_helper_forms) |form| {
+            try aw.writer.writeByte('\n');
+            try erlEmitter.writeForm(&aw.writer, form);
+        }
+        for (cm.forms) |form| {
+            try aw.writer.writeByte('\n');
+            try erlEmitter.writeForm(&aw.writer, form);
+        }
     }
 
     if (emit_entrypoint_wrapper) {
@@ -2405,25 +2501,24 @@ const Emitter = struct {
 
     /// `Name` / `Name@v` for each of `names` at their current versions, as one
     /// variable or a `{A, B}` tuple.
-    fn writeVarGroup(this: *Emitter, names: []const []const u8) anyerror!void {
-        if (names.len > 1) try this.w("{");
+    fn varGroupExpr(this: *Emitter, b: Ast.Builder, names: []const []const u8) anyerror!Ast.Expr {
+        const vars = try b.arena.alloc(Ast.Expr, names.len);
         for (names, 0..) |n, i| {
-            if (i > 0) try this.w(", ");
             const v = try this.varRef(n);
             defer this.alloc.free(v);
-            try this.w(v);
+            vars[i] = Ast.Expr.v(try b.arena.dupe(u8, v));
         }
-        if (names.len > 1) try this.w("}");
+        return if (vars.len == 1) vars[0] else .{ .tuple = vars };
     }
 
-    /// Give every name in `names` a fresh version and write the group.
-    fn bindVarGroup(this: *Emitter, names: []const []const u8) anyerror!void {
+    /// Give every name in `names` a fresh version and return the group.
+    fn bindVarGroupExpr(this: *Emitter, b: Ast.Builder, names: []const []const u8) anyerror!Ast.Expr {
         for (names) |n| {
             const version = (this.var_next.get(n) orelse 0) + 1;
             try this.var_next.put(n, version);
             try this.var_current.put(n, version);
         }
-        try this.writeVarGroup(names);
+        return this.varGroupExpr(b, names);
     }
 
     const VersionSnapshot = std.StringHashMap(u32);
@@ -2434,114 +2529,108 @@ const Emitter = struct {
         while (it.next()) |e| try this.var_current.put(e.key_ptr.*, e.value_ptr.*);
     }
 
+    /// Legacy-emitted statements of `body` at `indent`, as one `raw` statement
+    /// (its first line's indentation stripped — `erl_emitter.writeBody` adds
+    /// it back). Null when `body` has no real statement.
+    fn bodyAsRawStmt(this: *Emitter, b: Ast.Builder, body: []const ast.Stmt, indent: usize) anyerror!?Ast.Stmt {
+        if (lastRealStmt(body) == null) return null;
+        var buf: std.Io.Writer.Allocating = .init(b.arena);
+        const out = this.out;
+        const saved_indent = this.indent;
+        this.out = &buf.writer;
+        this.indent = indent;
+        defer {
+            this.out = out;
+            this.indent = saved_indent;
+        }
+        try this.emitBody(body);
+        const text = buf.written();
+        const prefix = indent * 4;
+        return .{ .expr = Ast.Expr.r(if (text.len >= prefix) text[prefix..] else text) };
+    }
+
+    /// A legacy-emitted expression at the current indentation, as a `raw` node.
+    fn exprAsRaw(this: *Emitter, b: Ast.Builder, e: ast.Expr) anyerror!Ast.Expr {
+        var buf: std.Io.Writer.Allocating = .init(b.arena);
+        const out = this.out;
+        this.out = &buf.writer;
+        defer this.out = out;
+        try this.emitExpr(e);
+        return Ast.Expr.r(buf.written());
+    }
+
+    /// An arm body: the statements, then the group at its post-arm versions.
+    fn armWithGroup(this: *Emitter, b: Ast.Builder, body: []const ast.Stmt, names: []const []const u8, indent: usize) anyerror!Ast.Body {
+        var stmts: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
+        if (try this.bodyAsRawStmt(b, body, indent)) |raw| try stmts.append(b.arena, raw);
+        try stmts.append(b.arena, .{ .expr = try this.varGroupExpr(b, names) });
+        return .{ .stmts = stmts.items };
+    }
+
     /// `Group = case Cond of true -> Then, Group'; _ -> Else, Group'' end`
     /// (the binding form `if (x) { b -> … }` matches `undefined` first).
     fn emitMutatingIf(this: *Emitter, if_node: anytype, names: []const []const u8) anyerror!void {
+        var arena_state = std.heap.ArenaAllocator.init(this.alloc);
+        defer arena_state.deinit();
+        const b: Ast.Builder = .{ .arena = arena_state.allocator() };
         var snapshot = try this.var_current.clone();
         defer snapshot.deinit();
 
-        // The arms are rendered first: the group's fresh versions are only known
-        // once both arms have been emitted, but its binding comes first.
-        var arms: std.Io.Writer.Allocating = .init(this.alloc);
-        defer arms.deinit();
-        const out = this.out;
-        this.out = &arms.writer;
-        defer this.out = out;
+        const subject = try this.exprAsRaw(b, if_node.cond.*);
+        var clauses: std.ArrayListUnmanaged(Ast.Clause) = .empty;
+        const arm_indent = this.indent + 2;
 
-        try this.w("case ");
-        try this.emitExpr(if_node.cond.*);
-        try this.w(" of\n");
-        this.indent += 1;
-        if (if_node.binding) |b| {
-            try this.writeIndent();
-            try this.w("undefined -> ");
-            try this.writeVarGroup(names);
-            try this.w(";\n");
-            try this.writeIndent();
-            const bname = try erlangVar(this.alloc, b);
+        var then_pattern = Ast.Expr.a("true");
+        if (if_node.binding) |name| {
+            try clauses.append(b.arena, try b.clause(&.{Ast.Expr.a("undefined")}, &.{}, &.{try this.varGroupExpr(b, names)}));
+            const bname = try erlangVar(this.alloc, name);
             defer this.alloc.free(bname);
-            try this.fmt("{s} ->\n", .{bname});
-            this.addLocal(b);
-        } else {
-            try this.writeIndent();
-            try this.w("true ->\n");
+            then_pattern = Ast.Expr.v(try b.arena.dupe(u8, bname));
+            this.addLocal(name);
         }
-        try this.emitArmWithGroup(if_node.then_, names);
+        try clauses.append(b.arena, .{
+            .patterns = try b.exprs(&.{then_pattern}),
+            .body = try this.armWithGroup(b, if_node.then_, names, arm_indent),
+        });
         try this.restoreVersions(&snapshot);
-        try this.w(";\n");
-        try this.writeIndent();
-        try this.w("_ ->\n");
-        if (if_node.else_) |els| {
-            try this.emitArmWithGroup(els, names);
+
+        const else_body: Ast.Body = if (if_node.else_) |els| blk: {
+            const body = try this.armWithGroup(b, els, names, arm_indent);
             try this.restoreVersions(&snapshot);
-        } else {
-            this.indent += 1;
-            try this.writeIndent();
-            try this.writeVarGroup(names);
-            this.indent -= 1;
-        }
-        this.indent -= 1;
-        try this.w("\n");
-        try this.writeIndent();
-        try this.w("end");
+            break :blk body;
+        } else try b.body(&.{try this.varGroupExpr(b, names)});
+        try clauses.append(b.arena, .{ .patterns = try b.exprs(&.{Ast.Expr.v("_")}), .body = else_body });
 
-        this.out = out;
-        try this.bindVarGroup(names);
-        try this.w(" = ");
-        try this.w(arms.written());
-    }
-
-    /// One arm body followed by the group at its post-arm versions.
-    fn emitArmWithGroup(this: *Emitter, body: []const ast.Stmt, names: []const []const u8) anyerror!void {
-        this.indent += 1;
-        defer this.indent -= 1;
-        if (lastRealStmt(body) != null) {
-            try this.emitBody(body);
-            try this.w(",\n");
-        }
-        try this.writeIndent();
-        try this.writeVarGroup(names);
+        // The group's fresh versions are only known once both arms were emitted.
+        const target = try this.bindVarGroupExpr(b, names);
+        try erlEmitter.writeExpr(this.out, try b.match(target, try b.caseOf(subject, clauses.items)), this.indent);
     }
 
     /// `Group = lists:foldl(fun(Param, GroupIn) -> Body, GroupOut end, Group, Iter)`.
     fn emitMutatingFold(this: *Emitter, param: []const u8, body: []const ast.Stmt, iter: ast.Expr, names: []const []const u8) anyerror!void {
+        var arena_state = std.heap.ArenaAllocator.init(this.alloc);
+        defer arena_state.deinit();
+        const b: Ast.Builder = .{ .arena = arena_state.allocator() };
         var snapshot = try this.var_current.clone();
         defer snapshot.deinit();
 
-        var fold: std.Io.Writer.Allocating = .init(this.alloc);
-        defer fold.deinit();
-        const out = this.out;
-        this.out = &fold.writer;
-        defer this.out = out;
-
         const pname = try erlangVar(this.alloc, param);
         defer this.alloc.free(pname);
-        try this.fmt("lists:foldl(fun({s}, ", .{pname});
         this.addLocal(param);
         // The accumulator parameter is a fresh version: fun heads always bind.
-        try this.bindVarGroup(names);
-        try this.w(") ->\n");
-        this.indent += 1;
-        if (lastRealStmt(body) != null) {
-            try this.emitBody(body);
-            try this.w(",\n");
-        }
-        try this.writeIndent();
-        try this.writeVarGroup(names);
-        this.indent -= 1;
-        try this.w("\n");
-        try this.writeIndent();
-        try this.w("end, ");
+        const group_in = try this.bindVarGroupExpr(b, names);
+        const fun_body = try this.armWithGroup(b, body, names, this.indent + 1);
         try this.restoreVersions(&snapshot);
-        try this.writeVarGroup(names);
-        try this.w(", ");
-        try this.emitExpr(iter);
-        try this.w(")");
+        const group_init = try this.varGroupExpr(b, names);
+        const iter_expr = try this.exprAsRaw(b, iter);
 
-        this.out = out;
-        try this.bindVarGroup(names);
-        try this.w(" = ");
-        try this.w(fold.written());
+        const fold = try b.remote("lists", "foldl", &.{
+            .{ .fun = .{ .params = try b.exprs(&.{ Ast.Expr.v(try b.arena.dupe(u8, pname)), group_in }), .body = fun_body } },
+            group_init,
+            iter_expr,
+        });
+        const target = try this.bindVarGroupExpr(b, names);
+        try erlEmitter.writeExpr(this.out, try b.match(target, fold), this.indent);
     }
 
     /// True when the last statement of a branch body is a valued `return`.

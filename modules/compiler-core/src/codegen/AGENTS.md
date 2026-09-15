@@ -132,7 +132,10 @@ codegen/
   `Acc@1 = case C of true -> …, Acc@2; _ -> Acc end` and
   `Acc@3 = lists:foldl(fun(X, Acc@1) -> …, Acc@2 end, Acc, Xs)`; several
   variables travel as a tuple. Arms are rendered into a side buffer first (the
-  group's fresh versions are known only afterwards). Arms ending in `return`,
+  group's fresh versions are known only afterwards); the construct is built as
+  `beam/erl_ast.zig` nodes (`match` + `case_` / `lists:foldl` + `fun`) rendered by
+  `erl_emitter.writeExpr`, with the arm bodies still legacy-emitted as `raw`
+  statements. Arms ending in `return`,
   indexed/`await`/yielding loops keep the plain lowering; the older
   `var acc = …; xs.forEach(…)` fold fusion still takes precedence.
 - **Comptime modules:** `emitComptimeModule(alloc, name, program, .{ host_enums,
@@ -140,7 +143,7 @@ codegen/
   the same emitter — `host_enums` join `enum_names` (`DeclKind.Record` →
   `'Record'`), `host_records` (`HostRecord{name, fields}`) join `record_fields`
   so host record constructors build maps, `exports` are prepended to `-export`,
-  `tail` is raw Erlang appended after the
+  `forms` (`[]erl_ast.Form`) are rendered after the
   `'__bp_add'/2` / `'__bp_len'/2` helpers; the `untyped` flag routes `+` to
   `'__bp_add'` (binary concat or arithmetic) and `.len`/`.length` without an
   instance lowering to `'__bp_len'(X, Field)`. Tests: `tests/comptime_module.zig`.
