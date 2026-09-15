@@ -61,4 +61,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+COMPILE ERROR (erlc):
+main.erl:26:12: function slice/3 undefined
 ```

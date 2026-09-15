@@ -55,4 +55,9 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+COMPILE ERROR (erlc):
+main.erl:23:15: variable 'Ok' unsafe in 'case' (line 14, column 12)
+main.erl:23:19: variable 'V' unsafe in 'case' (line 14, column 12)
+main.erl:25:15: variable 'Err' unsafe in 'case' (line 14, column 12)
+main.erl:25:20: variable 'E' unsafe in 'case' (line 14, column 12)
 ```

@@ -54,4 +54,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+COMPILE ERROR (erlc):
+main.erl:31:24: function all/2 undefined
 ```

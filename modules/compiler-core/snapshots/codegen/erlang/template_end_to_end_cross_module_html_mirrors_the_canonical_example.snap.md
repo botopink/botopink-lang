@@ -137,4 +137,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+COMPILE ERROR (erlc):
+main.erl:9:24: variable 'Page' is unbound
 ```

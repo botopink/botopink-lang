@@ -30,4 +30,8 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+COMPILE ERROR (erlc):
+main.erl:8:24: function nor/2 undefined
+main.erl:9:24: function nand/2 undefined
+main.erl:10:24: function exclusiveOr/2 undefined
 ```

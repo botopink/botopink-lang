@@ -78,4 +78,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+COMPILE ERROR (erlc):
+main.erl:6:40: variable 'Cfg' is unbound
 ```

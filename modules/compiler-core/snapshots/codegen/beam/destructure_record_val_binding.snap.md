@@ -80,4 +80,9 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+COMPILE ERROR (erlc +from_asm):
+main:1: function describe/1+8:
+  Internal consistency check failed - please report this bug.
+  Instruction: {get_map_elements,{f,3},{x,1},{list,[{atom,x},{x,0}]}}
+  Error:       {bad_type,{needed,{t_map,any,any}},{actual,any}}:
 ```

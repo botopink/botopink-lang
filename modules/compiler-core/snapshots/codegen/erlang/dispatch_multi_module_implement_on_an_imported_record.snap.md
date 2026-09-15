@@ -58,4 +58,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+COMPILE ERROR (erlc):
+main.erl:14:14: function 'Pato'/1 undefined
 ```

@@ -210,4 +210,9 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+COMPILE ERROR (erlc +from_asm):
+main:1: function main/0+45:
+  Internal consistency check failed - please report this bug.
+  Instruction: {move,{x,1},{x,1}}
+  Error:       {uninitialized_reg,{x,1}}:
 ```

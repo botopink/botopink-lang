@@ -328,8 +328,34 @@ codegen/
 
 - `executeJavaScript` (`node`), `executeErlang` (`erlc` + `erl`),
   `executeBeamAsm` (`erlc +from_asm` + `erl`, assembling sibling `.S` aux modules
-  so cross-module runs link). `executeWat` is currently a stub that returns an
-  empty RUN LOG. Only stdout is captured; a non-zero exit yields `""`.
+  so cross-module runs link). `executeWat` is a stub that returns an empty RUN
+  LOG (a runtime is spec 03 step 2). Captured text is stdout with stderr
+  appended after a newline.
+- **Exit status, never output length** (`runCaptured` → `RunStatus`): a
+  successful `erlc`/`erlc +from_asm` prints nothing and a program that prints
+  nothing is not a failure, so the two can only be told apart by how the process
+  ended. `.ok` = exited 0; `.failed` = ran, non-zero exit (deterministic —
+  recordable and cacheable); `.unavailable` = missing binary, spawn error or
+  timeout (host-dependent — never recorded, never cached, RUN LOG stays empty).
+  Inferring failure from an empty buffer is what kept BEAM from ever executing
+  and made an `erlc` warning swallow the whole run (spec 06 H1/H2).
+- **What makes a RUN LOG**:
+  - compile/assemble exits 0 → run the program, **warnings are dropped**;
+  - compile/assemble exits non-zero → the RUN LOG is
+    `COMPILE ERROR (erlc):` / `COMPILE ERROR (erlc +from_asm):` followed by the
+    diagnostics, so a module a backend emits wrong (loader-validator rejections
+    included) is visible instead of silently empty — error lines only, since
+    `compileFailureLog` filters `Warning:` lines and OTP's `%  7| …` source
+    echo so the block stays stable across OTP releases;
+  - the program exits 0 → its captured output is the RUN LOG;
+  - the program exits non-zero (crash, `badarith`, `init terminating`) → empty
+    RUN LOG: the partial stdout comes with a stack trace not worth pinning.
+- **Determinism**: `erlc`/`erl` are spawned **with the scratch dir as their
+  cwd** (`-o .`, `-pa .`, bare `<module>.erl` / `<module>.S` in argv), so
+  diagnostics quote `main.erl:4:5:` instead of the random
+  `.botopinkbuild/tmp/<hex>/` path, and an `erl_crash.dump` from a crashing
+  fixture lands in the scratch dir that is deleted right after instead of in the
+  repo tree. No absolute path can reach a snapshot.
 - **Scratch layout**: every run mints `<cwd>/.botopinkbuild/tmp/<hex>/` via
   `makeScratchDir` (`TMP_ROOT`); cwd is `modules/compiler-core/` under
   `zig build test`. `build.zig`'s `clean-tmp` step (a dependency of the core
@@ -337,12 +363,17 @@ codegen/
   the layout.
 - **Early bail**: `executeErlang`/`executeBeamAsm` return `""` without spawning
   when the code (entry + aux modules) has no `_botopink_main` or no
-  `io:format`/`io:put_chars`/`io:fwrite` reference.
-- **Output cache** (`CACHE_ROOT = ".botopinkbuild/runtime-cache"`): inputs
-  (target tag, code, aux modules, module name) hash to a SHA256 key; a hit skips
-  the subprocess. Entries are prefixed `OK:` (anything else is a miss). Toolchain
-  versions are not part of the key — delete the cache dir after upgrading
-  node/OTP. `clean-tmp` does not reap it.
+  `io:format`/`io:put_chars`/`io:fwrite` reference — a module that never writes
+  also never reports a compile error.
+- **Output cache** (`CACHE_ROOT = ".botopinkbuild/runtime-cache"`): the key is a
+  SHA256 over `HARNESS_VERSION` + target tag + module name + code + aux modules;
+  a hit skips the subprocess. Entries are prefixed `OK:` (anything else is a
+  miss) and hold the final RUN LOG — an output, a `COMPILE ERROR` block or the
+  empty string of a crash. Bump `HARNESS_VERSION` whenever the harness records
+  something different for unchanged inputs, otherwise a warm cache hides the
+  change. Toolchain versions are **not** part of the key — delete the cache dir
+  after upgrading node/OTP. Nothing reaps it: `clean-tmp` only touches `tmp/`,
+  and CI always runs cold (the directory is git-ignored).
 
 ## Primitive methods
 

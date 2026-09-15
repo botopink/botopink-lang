@@ -40,4 +40,7 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+COMPILE ERROR (erlc):
+main.erl:15:24: function clamp/3 undefined
+main.erl:17:24: function isEven/1 undefined
 ```

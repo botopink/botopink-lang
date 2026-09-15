@@ -62,4 +62,9 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+COMPILE ERROR (erlc +from_asm):
+main:1: function diff/2+8:
+  Internal consistency check failed - please report this bug.
+  Instruction: {gc_bif,'+',{f,0},3,[{x,2},{x,0}],{x,0}}
+  Error:       {{x,2},not_live}:
 ```

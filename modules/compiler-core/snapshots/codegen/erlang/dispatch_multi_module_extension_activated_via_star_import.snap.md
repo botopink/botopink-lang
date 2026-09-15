@@ -58,4 +58,7 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+COMPILE ERROR (erlc):
+main.erl:7:14: function 'Pato'/1 undefined
+main.erl:8:24: function swim/1 undefined
 ```

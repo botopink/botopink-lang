@@ -68,4 +68,9 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+COMPILE ERROR (erlc +from_asm):
+main:1: function main/0+15:
+  Internal consistency check failed - please report this bug.
+  Instruction: {put_list,{x,0},{x,1},{x,0}}
+  Error:       {heap_overflow,{left,0},{wanted,2}}:
 ```
