@@ -6,6 +6,14 @@ val result = comptime {
 };
 ```
 
------ ERLANG -- main.erl
-```erlang
+----- COMPILE DIAGNOSTIC -- main
+```text
+error comptime: expression cannot be evaluated at compile time
+ ┌─ :2:5
+  │
+2 │     val x = 10;
+  │     ^^^^^^^
+
+  'binding' is a runtime identifier
 ```
+

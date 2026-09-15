@@ -5,9 +5,10 @@
 ///
 /// Mirrors `compiler-core/src/comptime/snapshot.zig` but for LSP responses.
 ///
-/// On the **first run** a missing snapshot is created from the actual output.
-/// On subsequent runs the saved file is compared against the new output.
-/// A mismatch writes a `.new` file and returns `error.SnapshotMismatch`.
+/// A missing snapshot **fails** the test (`error.SnapshotMissing`) and writes
+/// the candidate baseline as `<snap>.new`; set `BOTOPINK_SNAP_CREATE=1` to
+/// record it instead. Otherwise the saved file is compared against the new
+/// output; a mismatch writes a `.new` file and returns `error.SnapshotMismatch`.
 ///
 /// Snapshot files: `snapshots/lsp/{slug}.snap.md` (relative to test CWD,
 /// which build.zig sets to `modules/language-server/`).
@@ -40,12 +41,33 @@ pub fn checkText(allocator: std.mem.Allocator, slug: []const u8, text: []const u
     try compareOrCreate(allocator, path, text);
 }
 
+/// `BOTOPINK_SNAP_CREATE=1` — opt in to recording a *missing* snapshot.
+/// Mirrors `compiler-core/src/utils/snap.zig`: without the flag a missing
+/// snapshot fails the test (spec 06 defect H4) and the candidate baseline is
+/// written to `<snap>.new` for review.
+const CREATE_ENV = "BOTOPINK_SNAP_CREATE";
+
+fn createMissingEnabled() bool {
+    return std.process.Environ.containsUnemptyConstant(std.testing.environ, CREATE_ENV);
+}
+
 fn compareOrCreate(allocator: std.mem.Allocator, snap_path: []const u8, got: []const u8) !void {
     const existing = readFile(allocator, snap_path) catch |err| switch (err) {
         error.FileNotFound => {
-            try writeFile(snap_path, got);
-            std.debug.print("snap created: {s}\n", .{snap_path});
-            return;
+            if (createMissingEnabled()) {
+                try writeFile(snap_path, got);
+                std.debug.print("snap created: {s}\n", .{snap_path});
+                return;
+            }
+            const new_path = try std.fmt.allocPrint(allocator, "{s}.new", .{snap_path});
+            defer allocator.free(new_path);
+            try writeFile(new_path, got);
+            std.debug.print(
+                "\nsnap missing: {s}\ncandidate written to: {s}\n" ++
+                    "review it, then re-run with " ++ CREATE_ENV ++ "=1 to record it\n",
+                .{ snap_path, new_path },
+            );
+            return error.SnapshotMissing;
         },
         else => return err,
     };

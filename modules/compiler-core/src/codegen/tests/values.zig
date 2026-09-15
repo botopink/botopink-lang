@@ -29,7 +29,9 @@ test "js: val ---- string literal" {
 test "js: val ---- binary expression" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val sum = 1 + 2;
-        \\@print(sum);
+        \\fn main() {
+        \\    @print(sum);
+        \\}
     );
 }
 
@@ -39,7 +41,9 @@ test "js: fn ---- private function with return" {
         \\    return x * 2;
         \\}
         \\val result = double(5);
-        \\@print(result);
+        \\fn main() {
+        \\    @print(result);
+        \\}
     );
 }
 
@@ -64,7 +68,9 @@ test "js: fn ---- pub exported function" {
         \\    return a + b;
         \\}
         \\val result = add(3, 4);
-        \\@print(result);
+        \\fn main() {
+        \\    @print(result);
+        \\}
     );
 }
 
@@ -75,7 +81,9 @@ test "js: fn ---- with local binding" {
         \\    return result;
         \\}
         \\val output = double(10);
-        \\@print(output);
+        \\fn main() {
+        \\    @print(output);
+        \\}
     );
 }
 
