@@ -11,7 +11,7 @@ Lexer support files. The lexer entry point itself lives at `../lexer.zig`.
 lexer/
 ├── AGENTS.md      ← you are here
 ├── token.zig      ← TokenKind enum + Token struct (lexeme + line/col)
-├── tests.zig      ← barrel for tests/<feature>.zig (currently imports none — see Notes)
+├── tests.zig      ← barrel importing every tests/<feature>.zig
 └── tests/         ← lexer tests, split by feature
     ├── helpers.zig    ← placeholder harness module (no helpers defined)
     ├── basics.zig     ← empty/whitespace/identifier/number basics
@@ -46,6 +46,4 @@ defer l.deinit(alloc);` — `scanAll` returns `[]const Token` owned by the lexer
   `InvalidTripleEqual`).
 - Numeric literals support `1_000_000` digit separators and scientific notation
   (`1.5e-10`, `2E+3`); unary `-` is handled in the parser primary.
-- `tests.zig` is `test {}` — none of the `tests/*.zig` files are imported, so
-  they are not compiled or run by `zig build test`. Register them in
-  `tests.zig` to re-enable them.
+- A new `tests/*.zig` file only runs once it is imported from `tests.zig`.

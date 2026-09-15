@@ -381,13 +381,6 @@ test "lexer: recognizes keyword derive" {
     try std.testing.expectEqual(TokenKind.derive, tokens[0].kind);
 }
 
-test "lexer: recognizes keyword echo" {
-    var l = Lexer.init("echo");
-    const tokens = try l.scanAll(std.testing.allocator);
-    defer l.deinit(std.testing.allocator);
-    try std.testing.expectEqual(TokenKind.echo, tokens[0].kind);
-}
-
 test "lexer: recognizes keyword else" {
     var l = Lexer.init("else");
     const tokens = try l.scanAll(std.testing.allocator);

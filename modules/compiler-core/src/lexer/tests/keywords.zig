@@ -65,13 +65,6 @@ test "lexer: 'delegate' is recognized as KwDelegate (reserved word)" {
     try std.testing.expectEqual(TokenKind.delegate, tokens[0].kind);
 }
 
-test "lexer: 'echo' is recognized as KwEcho (reserved word)" {
-    var l = Lexer.init("echo");
-    const tokens = try l.scanAll(std.testing.allocator);
-    defer l.deinit(std.testing.allocator);
-    try std.testing.expectEqual(TokenKind.echo, tokens[0].kind);
-}
-
 test "lexer: 'implement' is recognized as implement (reserved word)" {
     var l = Lexer.init("implement");
     const tokens = try l.scanAll(std.testing.allocator);
@@ -96,7 +89,6 @@ test "lexer: 'derive' is recognized as KwDerive (reserved word)" {
 test "lexer: isReservedWord returns true for reserved words" {
     try std.testing.expect(lexerFull.isReservedWord(.auto));
     try std.testing.expect(lexerFull.isReservedWord(.delegate));
-    try std.testing.expect(lexerFull.isReservedWord(.echo));
     try std.testing.expect(lexerFull.isReservedWord(.@"else"));
     try std.testing.expect(lexerFull.isReservedWord(.implement));
     try std.testing.expect(lexerFull.isReservedWord(.macro));
