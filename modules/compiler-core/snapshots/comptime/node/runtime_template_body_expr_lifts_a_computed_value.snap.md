@@ -49,6 +49,11 @@ main() ->
 }
 ```
 
+----- BOTOPINK TRANSFORM CODE -- main.bp
+```botopink
+val n = 6;
+```
+
 ----- TYPED AST JSON -- main.json
 ```json
 {

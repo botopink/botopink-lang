@@ -5,6 +5,49 @@ fn classify(x: ?i32) -> string {
     else if (x != 0) { return "nonzero: " + x; }
     else { return "null"; }
 }
-@print(classify(42));
+fn main() {
+    @print(classify(42));
+    @print(classify(null));
+}
+```
+
+----- TYPED AST JSON -- main.json
+```json
+{
+  "declarations": [
+    {
+      "ast": "fn_def",
+      "name": "classify",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "x",
+          "type": "?"
+        }
+      ],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "if (x == 0) { return \"zero\"; }"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "main",
+      "is_pub": false,
+      "params": [],
+      "return_type": "void",
+      "body": [
+        {
+          "source": "@print(classify(42));"
+        },
+        {
+          "source": "@print(classify(null));"
+        }
+      ]
+    }
+  ]
+}
 ```
 

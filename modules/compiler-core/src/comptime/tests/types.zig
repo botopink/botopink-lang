@@ -268,13 +268,16 @@ test "types: assign ---- plusEq on var" {
 
 test "types: self ---- field access in method" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Point = struct {
+        \\record Point {
         \\    x: i32,
         \\    y: i32,
-        \\    fn sum() -> i32 {
+        \\    fn sum(self: Self) -> i32 {
         \\        return self.x + self.y;
-        \\    },
-        \\};
+        \\    }
+        \\}
+        \\fn main() {
+        \\    @print(Point(x: 1, y: 2).sum());
+        \\}
     );
 }
 

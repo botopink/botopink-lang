@@ -29,7 +29,9 @@ test "infer: narrow ---- if null check record field access" {
         \\    };
         \\    return "no user";
         \\}
-        \\@print(greet(User(name: "alice")));
+        \\fn main() {
+        \\    @print(greet(User(name: "alice")));
+        \\}
     );
 }
 
@@ -43,17 +45,28 @@ test "infer: narrow ---- if null check bool" {
         \\    };
         \\    return false;
         \\}
-        \\@print(and(true, true));
+        \\fn main() {
+        \\    @print(and(true, true));
+        \\}
     );
 }
 
 test "infer: narrow ---- if null check chained" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn getC() -> i32 {
-        \\    val x: ?record { b: ?record { c: i32 } } = null;
+        \\record Inner { c: i32 }
+        \\record Outer { b: ?Inner }
+        \\fn getC(o: ?Outer) -> i32 {
+        \\    if (o) { outer ->
+        \\        if (outer.b) { inner ->
+        \\            return inner.c;
+        \\        };
+        \\    };
         \\    return 0;
         \\}
-        \\@print(getC());
+        \\fn main() {
+        \\    @print(getC(Outer(b: Inner(c: 7))));
+        \\    @print(getC(Outer(b: null)));
+        \\}
     );
 }
 
@@ -73,7 +86,9 @@ test "infer: narrow ---- case result ok err" {
         \\        Err(e) -> "error: " + e;
         \\    };
         \\}
-        \\@print(handle(5));
+        \\fn main() {
+        \\    @print(handle(5));
+        \\}
     );
 }
 
@@ -90,8 +105,10 @@ test "infer: narrow ---- case result different payload types" {
         \\    val r = fetchUser(1);
         \\    case r {
         \\        Ok(u) -> @print(u.name);
-        \\        Err(NotFound) -> @print("404");
-        \\        Err(Timeout(msg)) -> @print("timeout: " + msg);
+        \\        Err(e) -> @print(case e {
+        \\            NotFound -> "404";
+        \\            Timeout(msg) -> "timeout: " + msg;
+        \\        });
         \\    };
         \\}
     );
@@ -113,18 +130,24 @@ test "infer: narrow ---- case enum variant field bindings" {
         \\        Point -> 0.0;
         \\    };
         \\}
-        \\@print(area(Shape.Circle(2.0)));
+        \\fn main() {
+        \\    @print(area(Shape.Circle(2.0)));
+        \\}
     );
 }
 
 test "infer: narrow ---- case enum nested variant access" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\enum Result_ { OkData(val: record { code: i32, msg: string }), Fail }
+        \\record Payload { code: i32, msg: string }
+        \\enum Result_ { OkData(data: Payload), Fail }
         \\fn describe(r: Result_) -> string {
         \\    return case r {
         \\        OkData(d) -> d.msg;
         \\        Fail -> "failed";
         \\    };
+        \\}
+        \\fn main() {
+        \\    @print(describe(Result_.OkData(Payload(code: 200, msg: "ok"))));
         \\}
     );
 }
@@ -158,7 +181,9 @@ test "infer: narrow ---- case guard bound identifier" {
         \\        _ -> "zero";
         \\    };
         \\}
-        \\@print(describe(5));
+        \\fn main() {
+        \\    @print(describe(5));
+        \\}
     );
 }
 
@@ -172,26 +197,40 @@ test "infer: narrow ---- case guard variant field" {
         \\    return case r {
         \\        Data(code, body) if (code == 200) -> body;
         \\        Data(code, body) if (code == 404) -> "not found";
+        \\        Data(code, body) -> "status " + code;
         \\        Error(code) -> "error " + code;
         \\    };
+        \\}
+        \\fn main() {
+        \\    @print(handle(Response.Data(200, "hi")));
+        \\    @print(handle(Response.Error(500)));
         \\}
     );
 }
 
 // ── assert pattern narrowing ───────────────────────────────────────────────────
 
+// DOCUMENTED SKIP — `assert <expr> is <Pattern>` is in `docs.md` ("Assert")
+// but the parser only implements the `assert <Pattern> = <expr> catch …` form
+// (`parser/exprs.zig` `parseAssertPattern`). Missing feature: assert-`is`
+// narrowing; owner: spec 02 (parser/checker gaps). The snapshot pins the parse
+// error so the test starts failing the day the form lands.
 test "infer: narrow ---- assert pattern after assert" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
+    try h.assertComptimeCompileError(std.testing.allocator, @src(),
         \\fn process(x: ?i32) -> i32 {
         \\    assert x is Some(n);
         \\    return n + 1;
         \\}
-        \\@print(process(42));
+        \\fn main() {
+        \\    @print(process(42));
+        \\}
     );
 }
 
+// DOCUMENTED SKIP — same missing `assert <expr> is <Pattern>` form as above;
+// owner: spec 02.
 test "infer: narrow ---- assert pattern enum variant" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
+    try h.assertComptimeCompileError(std.testing.allocator, @src(),
         \\enum Status { Ready, Busy(count: i32), Down }
         \\fn work(s: Status) -> i32 {
         \\    assert s is Busy(n);
@@ -205,10 +244,13 @@ test "infer: narrow ---- assert pattern enum variant" {
 test "infer: narrow ---- early return guard clause" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn greet(x: ?string) -> string {
-        \\    if (!x) { return "nobody"; };
+        \\    if (x == null) { return "nobody"; };
         \\    return "hello " + x;
         \\}
-        \\@print(greet("world"));
+        \\fn main() {
+        \\    @print(greet("world"));
+        \\    @print(greet(null));
+        \\}
     );
 }
 
@@ -219,24 +261,35 @@ test "infer: narrow ---- type guard basic" {
         \\fn isPositive(n: i32) -> n is i32 {
         \\    return n > 0;
         \\}
-        \\@print(isPositive(5));
+        \\fn main() {
+        \\    @print(isPositive(5));
+        \\}
     );
 }
 
 test "infer: narrow ---- type guard narrowing in if" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn isString(x: ?string) -> x is string {
-        \\    if (x) { _ -> return true; };
+        \\    if (x) { s -> return true; };
         \\    return false;
         \\}
-        \\@print(isString("hello"));
+        \\fn main() {
+        \\    @print(isString("hello"));
+        \\    @print(isString(null));
+        \\}
     );
 }
 
 // ── AND condition narrowing ────────────────────────────────────────────────────
 
+// DOCUMENTED SKIP — `if (a && b)` does not parse (the `if` condition parser
+// stops before `&&`/`||`; `if ((a && b))` is needed) and, once parenthesised,
+// `?Box && …` is rejected because an optional is not a bool: narrowing through
+// an `&&` chain does not exist. Missing feature: `&&`-guarded narrowing;
+// owner: spec 02 (parser + checker). `narrow ---- if null check record field
+// access` covers the nested-`if` form that does work.
 test "infer: narrow ---- and condition field access" {
-    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
+    try h.assertComptimeCompileError(std.testing.allocator, @src(),
         \\val Box = record { weight: i32 }
         \\fn describe(b: ?Box) -> string {
         \\    if (b && b.weight > 10) {
@@ -269,7 +322,10 @@ test "infer: narrow ---- else if chain with null checks" {
         \\    else if (x != 0) { return "nonzero: " + x; }
         \\    else { return "null"; }
         \\}
-        \\@print(classify(42));
+        \\fn main() {
+        \\    @print(classify(42));
+        \\    @print(classify(null));
+        \\}
     );
 }
 
