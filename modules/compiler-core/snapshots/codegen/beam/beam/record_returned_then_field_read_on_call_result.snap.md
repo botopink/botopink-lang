@@ -28,7 +28,7 @@ fn lineNo() -> i32 {
     {move, {x, 0}, {x, 2}}.
     {move, {integer, 2}, {x, 0}}.
     {move, {x, 0}, {x, 3}}.
-    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 4, {list, [{atom, start}, {x, 1}, {atom, end}, {x, 2}, {atom, line}, {x, 3}]}}.
+    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 4, {list, [{atom, start}, {x, 1}, {atom, 'end'}, {x, 2}, {atom, line}, {x, 3}]}}.
     {deallocate, 0}.
     return.
 

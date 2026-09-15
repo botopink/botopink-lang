@@ -19,6 +19,7 @@ const lexerMod = @import("../lexer.zig");
 const parserMod = @import("../parser.zig");
 const prelude = @import("std_prelude");
 const primOpTemplate = @import("../comptime/primOpTemplate.zig");
+const erlEmitter = @import("./beam/erl_emitter.zig");
 
 const ModuleOutput = moduleOutput.ModuleOutput;
 const ComptimeOutput = comptimeMod.ComptimeOutput;
@@ -410,6 +411,37 @@ pub fn codegenEmit(
     return results;
 }
 
+/// Shape of a standalone module evaluated at compile time (decorator / template
+/// bodies run in the persistent `erl`). The body decls are lowered by the same
+/// emitter as regular modules — only the host glue differs.
+pub const ComptimeModule = struct {
+    /// Enum types the host injects without a declaration (`DeclKind`), so a
+    /// qualified member (`DeclKind.Record`) lowers to its variant atom.
+    host_enums: []const []const u8 = &.{},
+    /// Extra `name/arity` exports (the evaluator entry, `main/0`).
+    exports: []const []const u8 = &.{},
+    /// Raw Erlang appended after the lowered decls (host fns + entry).
+    tail: []const u8 = "",
+};
+
+/// Emit `program` as a comptime-evaluated Erlang module. Bodies are untyped (no
+/// inference ran over them), so `+` dispatches at runtime on its operands
+/// (`'__bp_add'/2`: binary concat for strings, arithmetic otherwise).
+pub fn emitComptimeModule(
+    alloc: std.mem.Allocator,
+    module_name: []const u8,
+    program: ast.Program,
+    module: ComptimeModule,
+) ![]u8 {
+    var comptime_vals = std.StringHashMap([]const u8).init(alloc);
+    defer comptime_vals.deinit();
+    var rewrites = std.AutoHashMap(ast.Loc, []const u8).init(alloc);
+    defer rewrites.deinit();
+    var instance_lowerings = std.AutoHashMap(ast.Loc, envMod.InstanceLowering).init(alloc);
+    defer instance_lowerings.deinit();
+    return emitErlangModule(alloc, module_name, program, comptime_vals, rewrites, instance_lowerings, false, null, module);
+}
+
 // ── top-level emitter ─────────────────────────────────────────────────────────
 
 fn emitErlang(
@@ -422,11 +454,26 @@ fn emitErlang(
     test_mode: bool,
     cross: ?*const CrossModule,
 ) ![]u8 {
+    return emitErlangModule(alloc, module_name, program, comptime_vals, rewrites, instance_lowerings, test_mode, cross, null);
+}
+
+fn emitErlangModule(
+    alloc: std.mem.Allocator,
+    module_name: []const u8,
+    program: ast.Program,
+    comptime_vals: std.StringHashMap([]const u8),
+    rewrites: std.AutoHashMap(ast.Loc, []const u8),
+    instance_lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
+    test_mode: bool,
+    cross: ?*const CrossModule,
+    comptime_module: ?ComptimeModule,
+) ![]u8 {
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
 
     var em = Emitter.init(alloc, &aw.writer, comptime_vals, rewrites);
     em.instance_lowerings = instance_lowerings;
+    em.dynamic_add = comptime_module != null;
     em.test_mode = test_mode;
     em.module_name = module_name;
     em.cross = cross;
@@ -510,6 +557,7 @@ fn emitErlang(
     }
     try em.collectTypeShapes(program);
     try em.collectImportedTypes(program);
+    if (comptime_module) |cm| for (cm.host_enums) |name| try em.enum_names.put(name, {});
     defer {
         var rf_it = em.record_fields.valueIterator();
         while (rf_it.next()) |names| alloc.free(names.*);
@@ -609,10 +657,17 @@ fn emitErlang(
         };
     }
 
+    const host_exports: []const []const u8 = if (comptime_module) |cm| cm.exports else &.{};
+
     // Export other public functions + cross-imported associated fns.
-    if (pub_fns.items.len > 0 or assoc_exports.items.len > 0) {
+    if (pub_fns.items.len > 0 or assoc_exports.items.len > 0 or host_exports.len > 0) {
         try aw.writer.writeAll("-export([");
         var first = true;
+        for (host_exports) |e| {
+            if (!first) try aw.writer.writeAll(", ");
+            first = false;
+            try aw.writer.writeAll(e);
+        }
         var exp_buf: [256]u8 = undefined;
         for (pub_fns.items) |f| {
             if (!first) try aw.writer.writeAll(", ");
@@ -672,6 +727,17 @@ fn emitErlang(
                 try aw.writer.print("{s} {s}\n", .{ prefix, c.text });
             },
         }
+    }
+
+    if (comptime_module) |cm| {
+        try aw.writer.writeAll(
+            \\
+            \\'__bp_add'(A, B) when is_binary(A), is_binary(B) -> <<A/binary, B/binary>>;
+            \\'__bp_add'(A, B) -> A + B.
+            \\
+            \\
+        );
+        try aw.writer.writeAll(cm.tail);
     }
 
     if (emit_entrypoint_wrapper) {
@@ -777,14 +843,8 @@ fn emitErlang(
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-/// Return a heap-allocated copy of `name` with the first byte uppercased.
-/// Caller owns the result.
-fn erlangVar(alloc: std.mem.Allocator, name: []const u8) ![]u8 {
-    if (name.len == 0) return alloc.dupe(u8, name);
-    const buf = try alloc.dupe(u8, name);
-    buf[0] = std.ascii.toUpper(buf[0]);
-    return buf;
-}
+/// Heap-allocated Erlang variable for `name` (`decl` → `Decl`). Caller owns it.
+const erlangVar = erlEmitter.varName;
 
 /// True when `name` looks like a module/type reference (PascalCase) rather than
 /// a local variable. A qualified call whose receiver is such a name maps to an
@@ -800,65 +860,18 @@ fn isModuleRef(name: []const u8) bool {
     return name.len >= 3 and name[0] == '_' and name[1] == '_' and std.ascii.isUpper(name[2]);
 }
 
-/// Return a heap-allocated copy of `name` with the first byte lowercased so it
-/// is a valid unquoted Erlang module atom (`List` → `list`). Inverse of
-/// `erlangVar`. Caller owns the result.
-fn erlangModule(alloc: std.mem.Allocator, name: []const u8) ![]u8 {
-    if (name.len == 0) return alloc.dupe(u8, name);
-    const buf = try alloc.dupe(u8, name);
-    buf[0] = std.ascii.toLower(buf[0]);
-    return buf;
-}
-
-/// Erlang reserved words. A botopink identifier that collides with one of these
-/// (e.g. a fn named `of` or `div`, an HTML builder `div`) is a syntactically
-/// valid *unquoted* atom lexically, yet the parser rejects it as a bare atom —
-/// it must be single-quoted (`'of'`). Used to decide quoting for atoms and
-/// function names alike. Source: Erlang reference manual reserved words.
-const erlang_reserved = std.StaticStringMap(void).initComptime(.{
-    .{"after"}, .{"and"}, .{"andalso"}, .{"band"}, .{"begin"},  .{"bnot"},
-    .{"bor"},   .{"bsl"}, .{"bsr"},     .{"bxor"}, .{"case"},   .{"catch"},
-    .{"cond"},  .{"div"}, .{"end"},     .{"fun"},  .{"if"},     .{"let"},
-    .{"maybe"}, .{"not"}, .{"of"},      .{"or"},   .{"orelse"}, .{"receive"},
-    .{"rem"},   .{"try"}, .{"when"},    .{"xor"},
-});
-
-fn isErlangReserved(name: []const u8) bool {
-    return erlang_reserved.has(name);
-}
+/// Heap-allocated module atom for a type-like name (`List` → `list`). Inverse
+/// of `erlangVar`. Caller owns the result.
+const erlangModule = erlEmitter.moduleName;
 
 /// Render `name` as a valid Erlang atom into `buf` — quoted when it is not a
-/// valid unquoted atom (must start lowercase; only alnum/`_`/`@` after) or when
-/// it collides with a reserved word.
-fn atomName(name: []const u8, buf: []u8) ![]const u8 {
-    var ok = name.len > 0 and name[0] >= 'a' and name[0] <= 'z' and !isErlangReserved(name);
-    if (ok) for (name) |ch| {
-        if (!(std.ascii.isAlphanumeric(ch) or ch == '_' or ch == '@')) {
-            ok = false;
-            break;
-        }
-    };
-    if (ok) return name;
-    return std.fmt.bufPrint(buf, "'{s}'", .{name});
-}
+/// valid bare atom or collides with a reserved word (`of` → `'of'`).
+const atomName = erlEmitter.atomText;
 
-/// Render `name` as a callable Erlang function atom into `buf`. Function names
-/// from botopink are normally valid lowercase identifiers, so this is a no-op
-/// for them; it adds single-quoting when the name collides with a reserved word
-/// (`of` → `'of'`) OR when the name is not a valid bare atom (leading `_` from
-/// decorator-emitted `__rkScan_<Type>` helpers, leading uppercase, leading
-/// digit, or non-alnum/`_`/`@` body bytes).
-fn fnAtom(name: []const u8, buf: []u8) ![]const u8 {
-    var ok = name.len > 0 and name[0] >= 'a' and name[0] <= 'z' and !isErlangReserved(name);
-    if (ok) for (name) |ch| {
-        if (!(std.ascii.isAlphanumeric(ch) or ch == '_' or ch == '@')) {
-            ok = false;
-            break;
-        }
-    };
-    if (ok) return name;
-    return std.fmt.bufPrint(buf, "'{s}'", .{name});
-}
+/// Render `name` as a callable Erlang function atom into `buf`. Same rule as
+/// `atomName`: botopink fn names are normally bare atoms; decorator-emitted
+/// `__rkScan_<Type>` helpers, reserved words and PascalCase names get quoted.
+const fnAtom = erlEmitter.atomText;
 
 /// Mangled atom for an interface associated `default fn` (`Array`.`range` →
 /// `array_range`). The interface's first char is lowercased so the result is a
@@ -959,6 +972,9 @@ const Emitter = struct {
     cv: std.StringHashMap([]const u8),
     indent: usize = 0,
     try_seq: usize = 0,
+    /// Comptime modules lower `+` to the runtime-dispatched `'__bp_add'/2`
+    /// (see `emitComptimeModule`) — their bodies carry no inferred types.
+    dynamic_add: bool = false,
     alloc: std.mem.Allocator,
     /// Static extension dispatch (F6): call-site loc → activated extension symbol.
     /// At these sites `recv.m(args)` lowers to the bare local function `m(Recv, args)`.
@@ -2575,7 +2591,13 @@ const Emitter = struct {
             },
 
             .binaryOp => |bin| switch (bin.op) {
-                .add => try this.emitBinaryOp("+", bin.lhs, bin.rhs),
+                .add => if (this.dynamic_add) {
+                    try this.w("'__bp_add'(");
+                    try this.emitExpr(bin.lhs.*);
+                    try this.w(", ");
+                    try this.emitExpr(bin.rhs.*);
+                    try this.w(")");
+                } else try this.emitBinaryOp("+", bin.lhs, bin.rhs),
                 .sub => try this.emitBinaryOp("-", bin.lhs, bin.rhs),
                 .mul => try this.emitBinaryOp("*", bin.lhs, bin.rhs),
                 .div => try this.emitBinaryOp("div", bin.lhs, bin.rhs),
@@ -3941,52 +3963,9 @@ const Emitter = struct {
 
     // ── binary string helper ─────────────────────────────────────────────────
 
+    /// A string literal's lexeme content as a binary (escapes resolved by
+    /// `erlEmitter.writeBinaryFromLexeme`).
     fn emitBinary(this: *Emitter, s: []const u8) !void {
-        try this.w("<<\"");
-        var i: usize = 0;
-        while (i < s.len) {
-            const c = s[i];
-            // The lexer keeps `\n`/`\t`/… escape sequences verbatim in the
-            // string content (they resolve in the target). Botopink's escapes
-            // map 1:1 onto Erlang's for the common set; `\$` and `\u{…}` are the
-            // two that differ.
-            if (c == '\\' and i + 1 < s.len) {
-                const esc = s[i + 1];
-                switch (esc) {
-                    'n', 'r', 't', '0', '\\', '"' => {
-                        try this.out.writeByte('\\');
-                        try this.out.writeByte(esc);
-                        i += 2;
-                    },
-                    '$' => {
-                        try this.out.writeByte('$');
-                        i += 2;
-                    },
-                    'u' => {
-                        try this.w("\\x{");
-                        i += 3; // skip `\u{`
-                        while (i < s.len and s[i] != '}') : (i += 1) {
-                            try this.out.writeByte(s[i]);
-                        }
-                        if (i < s.len) i += 1; // skip `}`
-                        try this.out.writeByte('}');
-                    },
-                    else => {
-                        try this.out.writeByte(c);
-                        i += 1;
-                    },
-                }
-            } else {
-                switch (c) {
-                    '"' => try this.w("\\\""),
-                    '\n' => try this.w("\\n"),
-                    '\r' => try this.w("\\r"),
-                    '\t' => try this.w("\\t"),
-                    else => try this.out.writeByte(c),
-                }
-                i += 1;
-            }
-        }
-        try this.w("\">>");
+        try erlEmitter.writeBinaryFromLexeme(this.out, s);
     }
 };

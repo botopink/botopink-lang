@@ -16,4 +16,7 @@ test {
     _ = @import("tests/wat.zig");
     _ = @import("tests/dts_skips_templates.zig");
     _ = @import("tests/runtime_scratch.zig");
+    _ = @import("beam/term.zig");
+    _ = @import("beam/erl_emitter.zig");
+    _ = @import("beam/beam_emitter.zig");
 }

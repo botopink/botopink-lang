@@ -28,6 +28,9 @@ const lexerMod = @import("../lexer.zig");
 const parserMod = @import("../parser.zig");
 const prelude = @import("std_prelude");
 const primOpTemplate = @import("../comptime/primOpTemplate.zig");
+const erlEmitter = @import("./beam/erl_emitter.zig");
+const beamEmitter = @import("./beam/beam_emitter.zig");
+const Term = @import("./beam/term.zig").Term;
 
 const ModuleOutput = moduleOutput.ModuleOutput;
 const ComptimeOutput = comptimeMod.ComptimeOutput;
@@ -1092,10 +1095,10 @@ const Emitter = struct {
         }
         var fn_buf: [256]u8 = undefined;
         const fn_atom = try atomName(f.name, &fn_buf);
-        try self.bodyPrint("{{function, {s}, {d}, {d}}}.\n", .{ fn_atom, arity, entry_label });
+        try self.bodyPrint("{{function, {f}, {d}, {d}}}.\n", .{ erlEmitter.atom(fn_atom), arity, entry_label });
         try self.bodyPrint("  {{label, {d}}}.\n", .{func_info_label});
         try self.bodyPrint("    {{line, [{{location, \"{s}.erl\", {d}}}]}}.\n", .{ self.module_name, self.cur_line });
-        try self.bodyPrint("    {{func_info, {{atom, {s}}}, {{atom, {s}}}, {d}}}.\n", .{ self.module_name, fn_atom, arity });
+        try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, {f}}}, {d}}}.\n", .{ erlEmitter.atom(self.module_name), erlEmitter.atom(fn_atom), arity });
         try self.bodyPrint("  {{label, {d}}}.\n", .{entry_label});
 
         try self.emitFrame(arity);
@@ -1220,10 +1223,10 @@ const Emitter = struct {
         }
 
         try self.bodyWrite("\n");
-        try self.bodyPrint("{{function, {s}, {d}, {d}}}.\n", .{ mangled, arity, labels.entry });
+        try self.bodyPrint("{{function, {f}, {d}, {d}}}.\n", .{ erlEmitter.atom(mangled), arity, labels.entry });
         try self.bodyPrint("  {{label, {d}}}.\n", .{labels.func_info});
         try self.bodyPrint("    {{line, [{{location, \"{s}.erl\", {d}}}]}}.\n", .{ self.module_name, self.cur_line });
-        try self.bodyPrint("    {{func_info, {{atom, {s}}}, {{atom, {s}}}, {d}}}.\n", .{ self.module_name, mangled, arity });
+        try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, {f}}}, {d}}}.\n", .{ erlEmitter.atom(self.module_name), erlEmitter.atom(mangled), arity });
         try self.bodyPrint("  {{label, {d}}}.\n", .{labels.entry});
 
         try self.emitFrame(arity);
@@ -1248,10 +1251,10 @@ const Emitter = struct {
         }
 
         try self.bodyWrite("\n");
-        try self.bodyPrint("{{function, {s}, {d}, {d}}}.\n", .{ mangled, arity, labels.entry });
+        try self.bodyPrint("{{function, {f}, {d}, {d}}}.\n", .{ erlEmitter.atom(mangled), arity, labels.entry });
         try self.bodyPrint("  {{label, {d}}}.\n", .{labels.func_info});
         try self.bodyPrint("    {{line, [{{location, \"{s}.erl\", {d}}}]}}.\n", .{ self.module_name, self.cur_line });
-        try self.bodyPrint("    {{func_info, {{atom, {s}}}, {{atom, {s}}}, {d}}}.\n", .{ self.module_name, mangled, arity });
+        try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, {f}}}, {d}}}.\n", .{ erlEmitter.atom(self.module_name), erlEmitter.atom(mangled), arity });
         try self.bodyPrint("  {{label, {d}}}.\n", .{labels.entry});
 
         try self.emitFrame(arity);
@@ -1273,10 +1276,10 @@ const Emitter = struct {
         try self.reg_map.put(g.selfParam.name, .{ .x = 0 });
 
         try self.bodyWrite("\n");
-        try self.bodyPrint("{{function, {s}, 1, {d}}}.\n", .{ mangled, labels.entry });
+        try self.bodyPrint("{{function, {f}, 1, {d}}}.\n", .{ erlEmitter.atom(mangled), labels.entry });
         try self.bodyPrint("  {{label, {d}}}.\n", .{labels.func_info});
         try self.bodyPrint("    {{line, [{{location, \"{s}.erl\", {d}}}]}}.\n", .{ self.module_name, self.cur_line });
-        try self.bodyPrint("    {{func_info, {{atom, {s}}}, {{atom, {s}}}, 1}}.\n", .{ self.module_name, mangled });
+        try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, {f}}}, 1}}.\n", .{ erlEmitter.atom(self.module_name), erlEmitter.atom(mangled) });
         try self.bodyPrint("  {{label, {d}}}.\n", .{labels.entry});
         try self.emitFrame(1);
         self.cur_line += 1;
@@ -1298,10 +1301,10 @@ const Emitter = struct {
         }
 
         try self.bodyWrite("\n");
-        try self.bodyPrint("{{function, {s}, {d}, {d}}}.\n", .{ mangled, arity, labels.entry });
+        try self.bodyPrint("{{function, {f}, {d}, {d}}}.\n", .{ erlEmitter.atom(mangled), arity, labels.entry });
         try self.bodyPrint("  {{label, {d}}}.\n", .{labels.func_info});
         try self.bodyPrint("    {{line, [{{location, \"{s}.erl\", {d}}}]}}.\n", .{ self.module_name, self.cur_line });
-        try self.bodyPrint("    {{func_info, {{atom, {s}}}, {{atom, {s}}}, {d}}}.\n", .{ self.module_name, mangled, arity });
+        try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, {f}}}, {d}}}.\n", .{ erlEmitter.atom(self.module_name), erlEmitter.atom(mangled), arity });
         try self.bodyPrint("  {{label, {d}}}.\n", .{labels.entry});
         try self.emitFrame(arity);
         self.cur_line += 1;
@@ -1322,10 +1325,10 @@ const Emitter = struct {
         self.resetFnState(0);
 
         try self.bodyWrite("\n");
-        try self.bodyPrint("{{function, {s}, 0, {d}}}.\n", .{ v.name, entry_label });
+        try self.bodyPrint("{{function, {f}, 0, {d}}}.\n", .{ erlEmitter.atom(v.name), entry_label });
         try self.bodyPrint("  {{label, {d}}}.\n", .{func_info_label});
         try self.bodyPrint("    {{line, [{{location, \"{s}.erl\", {d}}}]}}.\n", .{ self.module_name, self.cur_line });
-        try self.bodyPrint("    {{func_info, {{atom, {s}}}, {{atom, {s}}}, 0}}.\n", .{ self.module_name, v.name });
+        try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, {f}}}, 0}}.\n", .{ erlEmitter.atom(self.module_name), erlEmitter.atom(v.name) });
         try self.bodyPrint("  {{label, {d}}}.\n", .{entry_label});
         self.cur_line += 1;
 
@@ -1372,7 +1375,7 @@ const Emitter = struct {
         try self.bodyPrint("{{function, '_botopink_main', 0, {d}}}.\n", .{wrapper.entry});
         try self.bodyPrint("  {{label, {d}}}.\n", .{wrapper.func_info});
         try self.bodyPrint("    {{line, [{{location, \"{s}.erl\", {d}}}]}}.\n", .{ self.module_name, self.cur_line });
-        try self.bodyPrint("    {{func_info, {{atom, {s}}}, {{atom, '_botopink_main'}}, 0}}.\n", .{self.module_name});
+        try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, '_botopink_main'}}, 0}}.\n", .{erlEmitter.atom(self.module_name)});
         try self.bodyPrint("  {{label, {d}}}.\n", .{wrapper.entry});
         try self.bodyPrint("    {{call_only, 0, {{f, {d}}}}}.\n", .{main0.entry});
         self.cur_line += 1;
@@ -1382,7 +1385,7 @@ const Emitter = struct {
         try self.bodyPrint("{{function, main, 1, {d}}}.\n", .{main1.entry});
         try self.bodyPrint("  {{label, {d}}}.\n", .{main1.func_info});
         try self.bodyPrint("    {{line, [{{location, \"{s}.erl\", {d}}}]}}.\n", .{ self.module_name, self.cur_line });
-        try self.bodyPrint("    {{func_info, {{atom, {s}}}, {{atom, main}}, 1}}.\n", .{self.module_name});
+        try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, main}}, 1}}.\n", .{erlEmitter.atom(self.module_name)});
         try self.bodyPrint("  {{label, {d}}}.\n", .{main1.entry});
         try self.bodyPrint("    {{call_only, 0, {{f, {d}}}}}.\n", .{wrapper.entry});
         self.cur_line += 1;
@@ -1495,8 +1498,8 @@ const Emitter = struct {
                     try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
                     const fail = self.allocLabel();
                     try self.bodyPrint(
-                        "    {{get_map_elements, {{f, {d}}}, {{x, {d}}}, {{list, [{{atom, {s}}}, {{x, 0}}]}}}}.\n",
-                        .{ fail, scratch, fld.field_name },
+                        "    {{get_map_elements, {{f, {d}}}, {{x, {d}}}, {{list, [{{atom, {f}}}, {{x, 0}}]}}}}.\n",
+                        .{ fail, scratch, erlEmitter.atom(fld.field_name) },
                     );
                     try self.bodyPrint("  {{label, {d}}}.\n", .{fail});
                     const y_idx = self.next_y;
@@ -1570,8 +1573,8 @@ const Emitter = struct {
                 try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
                 try self.lowerExprIntoX0(fa.receiver.*);
                 try self.bodyPrint(
-                    "    {{put_map_exact, {{f, 0}}, {{x, 0}}, {{x, 0}}, {d}, {{list, [{{atom, {s}}}, {{x, {d}}}]}}}}.\n",
-                    .{ scratch + 1, fa.field, scratch },
+                    "    {{put_map_exact, {{f, 0}}, {{x, 0}}, {{x, 0}}, {d}, {{list, [{{atom, {f}}}, {{x, {d}}}]}}}}.\n",
+                    .{ scratch + 1, erlEmitter.atom(fa.field), scratch },
                 );
                 if (self.reg_map.get("self")) |reg| {
                     var buf: [64]u8 = undefined;
@@ -1697,13 +1700,11 @@ const Emitter = struct {
                         try self.bodyPrint("    {{move, {{atom, '{s}'}}, {{x, 0}}}}.\n", .{val});
                         return;
                     }
-                    var nbuf: [256]u8 = undefined;
-                    try self.bodyPrint("    {{move, {{atom, {s}}}, {{x, 0}}}}.\n", .{try atomName(n, &nbuf)});
+                    try beamEmitter.writeMove(self.out, Term.atomOf(n), 0);
                     return;
                 },
                 .dotIdent => |d| {
-                    var dbuf: [256]u8 = undefined;
-                    try self.bodyPrint("    {{move, {{atom, {s}}}, {{x, 0}}}}.\n", .{try atomName(d, &dbuf)});
+                    try beamEmitter.writeMove(self.out, Term.atomOf(d), 0);
                     return;
                 },
                 .identAccess => |ia| {
@@ -2308,8 +2309,7 @@ const Emitter = struct {
                     const recv_term = try reg.format(&rbuf);
                     try self.bodyPrint("    {{move, {s}, {{x, 0}}}}.\n", .{recv_term});
                 } else {
-                    var rnbuf: [256]u8 = undefined;
-                    try self.bodyPrint("    {{move, {{atom, {s}}}, {{x, 0}}}}.\n", .{try atomName(rn, &rnbuf)});
+                    try beamEmitter.writeMove(self.out, Term.atomOf(rn), 0);
                 }
             } else {
                 try self.lowerExprIntoX0(recv_expr.*);
@@ -2854,10 +2854,10 @@ const Emitter = struct {
 
         const fail_l = self.allocLabel();
         try self.bodyWrite("\n");
-        try self.bodyPrint("{{function, {s}, 2, {d}}}.\n", .{ name, labels.entry });
+        try self.bodyPrint("{{function, {f}, 2, {d}}}.\n", .{ erlEmitter.atom(name), labels.entry });
         try self.bodyPrint("  {{label, {d}}}.\n", .{labels.func_info});
         try self.bodyPrint("    {{line, [{{location, \"{s}.erl\", {d}}}]}}.\n", .{ self.module_name, self.cur_line });
-        try self.bodyPrint("    {{func_info, {{atom, {s}}}, {{atom, {s}}}, 2}}.\n", .{ self.module_name, name });
+        try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, {f}}}, 2}}.\n", .{ erlEmitter.atom(self.module_name), erlEmitter.atom(name) });
         try self.bodyPrint("  {{label, {d}}}.\n", .{labels.entry});
         try self.bodyWrite("    {allocate, 2, 2}.\n");
         try self.bodyWrite("    {init_yregs, {list, [{y, 0}, {y, 1}]}}.\n");
@@ -2901,10 +2901,10 @@ const Emitter = struct {
         const empty_l = self.allocLabel();
         const neq_l = self.allocLabel();
         try self.bodyWrite("\n");
-        try self.bodyPrint("{{function, {s}, 3, {d}}}.\n", .{ name, labels.entry });
+        try self.bodyPrint("{{function, {f}, 3, {d}}}.\n", .{ erlEmitter.atom(name), labels.entry });
         try self.bodyPrint("  {{label, {d}}}.\n", .{labels.func_info});
         try self.bodyPrint("    {{line, [{{location, \"{s}.erl\", {d}}}]}}.\n", .{ self.module_name, self.cur_line });
-        try self.bodyPrint("    {{func_info, {{atom, {s}}}, {{atom, {s}}}, 3}}.\n", .{ self.module_name, name });
+        try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, {f}}}, 3}}.\n", .{ erlEmitter.atom(self.module_name), erlEmitter.atom(name) });
         try self.bodyPrint("  {{label, {d}}}.\n", .{labels.entry});
         // No frame — the function uses x-regs only and tail-recurses via
         // `call_only`, so `allocate`/`deallocate` would be wasted work.
@@ -2949,10 +2949,10 @@ const Emitter = struct {
         const not_bin_l = self.allocLabel();
         const not_int_l = self.allocLabel();
         try self.bodyWrite("\n");
-        try self.bodyPrint("{{function, {s}, 1, {d}}}.\n", .{ name, labels.entry });
+        try self.bodyPrint("{{function, {f}, 1, {d}}}.\n", .{ erlEmitter.atom(name), labels.entry });
         try self.bodyPrint("  {{label, {d}}}.\n", .{labels.func_info});
         try self.bodyPrint("    {{line, [{{location, \"{s}.erl\", {d}}}]}}.\n", .{ self.module_name, self.cur_line });
-        try self.bodyPrint("    {{func_info, {{atom, {s}}}, {{atom, {s}}}, 1}}.\n", .{ self.module_name, name });
+        try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, {f}}}, 1}}.\n", .{ erlEmitter.atom(self.module_name), erlEmitter.atom(name) });
         try self.bodyPrint("  {{label, {d}}}.\n", .{labels.entry});
         try self.bodyWrite("    {allocate, 0, 1}.\n");
         try self.bodyPrint("    {{test, is_binary, {{f, {d}}}, [{{x, 0}}]}}.\n", .{not_bin_l});
@@ -2966,7 +2966,7 @@ const Emitter = struct {
         // string in x0, then tail-call `call_ext_last`.
         try self.bodyWrite("    {test_heap, 2, 1}.\n");
         try self.bodyWrite("    {put_list, {x, 0}, nil, {x, 1}}.\n"); // x1 = [E]
-        try self.bodyWrite("    {move, {literal, <<\"~p\">>}, {x, 0}}.\n");
+        try beamEmitter.writeMove(self.out, Term.str("~p"), 0);
         try self.bodyWrite("    {call_ext_last, 2, {extfunc, io_lib, format, 2}, 0}.\n");
 
         self.out = saved_out;
@@ -3058,7 +3058,7 @@ const Emitter = struct {
                 const recv_term = try reg.format(&rbuf);
                 try self.bodyPrint("    {{move, {s}, {{x, 0}}}}.\n", .{recv_term});
             } else {
-                try self.bodyPrint("    {{move, {{atom, {s}}}, {{x, 0}}}}.\n", .{rn});
+                try beamEmitter.writeMove(self.out, Term.atomOf(rn), 0);
             }
         } else {
             try self.lowerExprIntoX0(recv_expr.*);
@@ -3103,7 +3103,7 @@ const Emitter = struct {
     fn lowerRecordConstruct(self: *Emitter, args: anytype, fields: ?[]const []const u8) anyerror!void {
         const n = args.len;
         if (n == 0) {
-            try self.bodyWrite("    {move, {literal, #{}}, {x, 0}}.\n");
+            try beamEmitter.writeMove(self.out, Term.mapOf(&.{}), 0);
             return;
         }
         // Scratch slots start at `max(cur_arity, 1)` — never `{x, 0}`, which each
@@ -3114,15 +3114,14 @@ const Emitter = struct {
             try self.lowerExprIntoX0(arg.value.*);
             try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch + i});
         }
-        try self.bodyPrint(
-            "    {{put_map_assoc, {{f, 0}}, {{literal, #{{}}}}, {{x, 0}}, {d}, {{list, [",
-            .{scratch + n},
-        );
+        try self.bodyWrite("    {put_map_assoc, {f, 0}, ");
+        try beamEmitter.writeLiteral(self.out, Term.mapOf(&.{}));
+        try self.bodyPrint(", {{x, 0}}, {d}, {{list, [", .{scratch + n});
         for (args, 0..) |arg, i| {
             if (i > 0) try self.bodyWrite(", ");
             const key: []const u8 = arg.label orelse if (fields != null and i < fields.?.len) fields.?[i] else "_arg";
-            var kb: [256]u8 = undefined;
-            try self.bodyPrint("{{atom, {s}}}, {{x, {d}}}", .{ try atomName(key, &kb), scratch + i });
+            try beamEmitter.writeAtomOperand(self.out, key);
+            try self.bodyPrint(", {{x, {d}}}", .{scratch + i});
         }
         try self.bodyWrite("]}}.\n");
     }
@@ -3154,7 +3153,7 @@ const Emitter = struct {
     fn lowerBuiltinCall(self: *Emitter, cc: anytype, mode: CallMode) anyerror!void {
         if (std.mem.eql(u8, cc.callee, "todo") or std.mem.eql(u8, cc.callee, "panic")) {
             const atom: []const u8 = if (std.mem.eql(u8, cc.callee, "todo")) "undef" else "panic";
-            try self.bodyPrint("    {{move, {{atom, {s}}}, {{x, 0}}}}.\n", .{atom});
+            try beamEmitter.writeMove(self.out, Term.atomOf(atom), 0);
             const tag: []const u8 = if (mode == .tail) "call_ext_only" else "call_ext";
             try self.bodyPrint("    {{{s}, 1, {{extfunc, erlang, error, 1}}}}.\n", .{tag});
             return;
@@ -3164,7 +3163,7 @@ const Emitter = struct {
                 try self.lowerExprIntoX0(cc.args[0].value.*);
             }
             try self.bodyWrite("    {move, {x, 0}, {x, 1}}.\n");
-            try self.emitStringLiteral("~p~n", 0);
+            try beamEmitter.writeMove(self.out, Term.str("~p~n"), 0);
             try self.bodyWrite("    {test_heap, 2, 2}.\n");
             try self.bodyWrite("    {put_list, {x, 1}, nil, {x, 1}}.\n");
             const tag: []const u8 = if (mode == .tail) "call_ext_only" else "call_ext";
@@ -3211,7 +3210,7 @@ const Emitter = struct {
             try self.lowerExprIntoX0(recv.*);
             try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{disc});
             try self.bodyPrint("    {{test_heap, 3, {d}}}.\n", .{disc + 1});
-            try self.bodyPrint("    {{put_tuple2, {{x, 0}}, {{list, [{{atom, {s}}}, {{x, {d}}}]}}}}.\n", .{ tag, disc });
+            try self.bodyPrint("    {{put_tuple2, {{x, 0}}, {{list, [{{atom, {f}}}, {{x, {d}}}]}}}}.\n", .{ erlEmitter.atom(tag), disc });
             return;
         }
 
@@ -3266,7 +3265,7 @@ const Emitter = struct {
             const false_l = self.allocLabel();
             const end_l = self.allocLabel();
             try self.lowerExprIntoX0(recv.*);
-            try self.bodyPrint("    {{test, is_tagged_tuple, {{f, {d}}}, [{{x, 0}}, 2, {{atom, {s}}}]}}.\n", .{ false_l, want });
+            try self.bodyPrint("    {{test, is_tagged_tuple, {{f, {d}}}, [{{x, 0}}, 2, {{atom, {f}}}]}}.\n", .{ false_l, erlEmitter.atom(want) });
             try self.bodyWrite("    {move, {atom, true}, {x, 0}}.\n");
             try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_l});
             try self.bodyPrint("  {{label, {d}}}.\n", .{false_l});
@@ -3750,10 +3749,10 @@ const Emitter = struct {
         }
 
         try self.bodyWrite("\n");
-        try self.bodyPrint("{{function, {s}, {d}, {d}}}.\n", .{ fun_name, arity, labels.entry });
+        try self.bodyPrint("{{function, {f}, {d}, {d}}}.\n", .{ erlEmitter.atom(fun_name), arity, labels.entry });
         try self.bodyPrint("  {{label, {d}}}.\n", .{labels.func_info});
         try self.bodyPrint("    {{line, [{{location, \"{s}.erl\", {d}}}]}}.\n", .{ self.module_name, self.cur_line });
-        try self.bodyPrint("    {{func_info, {{atom, {s}}}, {{atom, {s}}}, {d}}}.\n", .{ self.module_name, fun_name, arity });
+        try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, {f}}}, {d}}}.\n", .{ erlEmitter.atom(self.module_name), erlEmitter.atom(fun_name), arity });
         try self.bodyPrint("  {{label, {d}}}.\n", .{labels.entry});
         try self.emitFrame(arity);
         try self.emitLambdaBody(lam.body);
@@ -3918,10 +3917,10 @@ const Emitter = struct {
         }
 
         try self.bodyWrite("\n");
-        try self.bodyPrint("{{function, {s}, {d}, {d}}}.\n", .{ fun_name, arity, labels.entry });
+        try self.bodyPrint("{{function, {f}, {d}, {d}}}.\n", .{ erlEmitter.atom(fun_name), arity, labels.entry });
         try self.bodyPrint("  {{label, {d}}}.\n", .{labels.func_info});
         try self.bodyPrint("    {{line, [{{location, \"{s}.erl\", {d}}}]}}.\n", .{ self.module_name, self.cur_line });
-        try self.bodyPrint("    {{func_info, {{atom, {s}}}, {{atom, {s}}}, {d}}}.\n", .{ self.module_name, fun_name, arity });
+        try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, {f}}}, {d}}}.\n", .{ erlEmitter.atom(self.module_name), erlEmitter.atom(fun_name), arity });
         try self.bodyPrint("  {{label, {d}}}.\n", .{labels.entry});
         try self.emitFrame(arity);
 
@@ -3953,19 +3952,13 @@ const Emitter = struct {
         try self.bodyPrint("    {{call_ext, 2, {{extfunc, lists, {s}, 2}}}}.\n", .{func});
     }
 
-    /// Emit a string literal as a BEAM binary into `{x, dest}`.
-    /// For OTP 24+ the simplest approach is `{move, {literal, <<"str">>}, {x, D}}`.
+    /// Emit a string literal's lexeme content as a BEAM binary into `{x, dest}`:
+    /// `{move, {literal, <<"str">>}, {x, D}}` (escapes resolved like the erlang
+    /// backend, via `erlEmitter.writeBinaryFromLexeme`).
     fn emitStringLiteral(self: *Emitter, s: []const u8, dest: u32) !void {
-        try self.bodyPrint("    {{move, {{literal, <<\"", .{});
-        for (s) |c| switch (c) {
-            '"' => try self.bodyWrite("\\\""),
-            '\\' => try self.bodyWrite("\\\\"),
-            '\n' => try self.bodyWrite("\\n"),
-            '\r' => try self.bodyWrite("\\r"),
-            '\t' => try self.bodyWrite("\\t"),
-            else => try self.out.writeByte(c),
-        };
-        try self.bodyPrint("\">>}}, {{x, {d}}}}}.\n", .{dest});
+        try self.bodyWrite("    {move, ");
+        try beamEmitter.writeLexemeBinaryOperand(self.out, s);
+        try self.bodyPrint(", {{x, {d}}}}}.\n", .{dest});
     }
 
     /// Lower `receiver.member` into `{x, dest}` via `{get_map_elements, ...}`.
@@ -3983,9 +3976,7 @@ const Emitter = struct {
             const isPascal = rn.len > 0 and std.ascii.isUpper(rn[0]);
             const isSynth = rn.len >= 3 and rn[0] == '_' and rn[1] == '_' and std.ascii.isUpper(rn[2]);
             if ((isPascal or isSynth) and !self.reg_map.contains(rn) and self.cv.get(rn) == null) {
-                var mbuf: [256]u8 = undefined;
-                const member = try atomName(ia.member, &mbuf);
-                try self.bodyPrint("    {{move, {{atom, {s}}}, {{x, {d}}}}}.\n", .{ member, dest });
+                try beamEmitter.writeMove(self.out, Term.atomOf(ia.member), dest);
                 return;
             }
         }
@@ -4023,8 +4014,8 @@ const Emitter = struct {
             try self.bodyPrint("  {{label, {d}}}.\n", .{present_l});
             try self.bodyPrint("    {{test, is_map, {{f, {d}}}, [{{x, 0}}]}}.\n", .{undef_l});
             try self.bodyPrint(
-                "    {{get_map_elements, {{f, {d}}}, {{x, 0}}, {{list, [{{atom, {s}}}, {{x, {d}}}]}}}}.\n",
-                .{ undef_l, member, dest },
+                "    {{get_map_elements, {{f, {d}}}, {{x, 0}}, {{list, [{{atom, {f}}}, {{x, {d}}}]}}}}.\n",
+                .{ undef_l, erlEmitter.atom(member), dest },
             );
             try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_l});
             try self.bodyPrint("  {{label, {d}}}.\n", .{undef_l});
@@ -4041,8 +4032,8 @@ const Emitter = struct {
         // narrows it; on failure both fall through past the read.
         try self.bodyPrint("    {{test, is_map, {{f, {d}}}, [{{x, 0}}]}}.\n", .{fail_label});
         try self.bodyPrint(
-            "    {{get_map_elements, {{f, {d}}}, {{x, 0}}, {{list, [{{atom, {s}}}, {{x, {d}}}]}}}}.\n",
-            .{ fail_label, member, dest },
+            "    {{get_map_elements, {{f, {d}}}, {{x, 0}}, {{list, [{{atom, {f}}}, {{x, {d}}}]}}}}.\n",
+            .{ fail_label, erlEmitter.atom(member), dest },
         );
         try self.bodyPrint("  {{label, {d}}}.\n", .{fail_label});
     }
@@ -4083,44 +4074,11 @@ const Emitter = struct {
     }
 };
 
-/// True when `name` is a valid *unquoted* Erlang atom: a lowercase letter
-/// followed by letters, digits, `_` or `@`. Anything else must be single-quoted
-/// in the `.S` term syntax — notably PascalCase enum tags (`Circle`), which the
-/// assembler would otherwise parse as an Erlang *variable* (`{atom, Circle}` →
-/// `bad term`).
-fn isUnquotedAtom(name: []const u8) bool {
-    if (name.len == 0) return false;
-    if (!(name[0] >= 'a' and name[0] <= 'z')) return false;
-    for (name[1..]) |c| {
-        if (!(std.ascii.isAlphanumeric(c) or c == '_' or c == '@')) return false;
-    }
-    return true;
-}
-
-/// Render `name` as the inner text of an `{atom, _}` term, single-quoting and
-/// escaping it when it isn't a valid unquoted atom. Lowercase names pass through
-/// unchanged (so `{atom, ok}` stays `ok`). `buf` must be large enough for the
-/// quotes and any escaped characters (2*name.len + 2).
-fn atomName(name: []const u8, buf: []u8) ![]const u8 {
-    // Already single-quoted (e.g. a pre-mangled `'Owner_method'`) — leave as-is
-    // so we don't double-quote it.
-    if (name.len > 0 and name[0] == '\'') return name;
-    if (isUnquotedAtom(name)) return name;
-    var i: usize = 0;
-    buf[i] = '\'';
-    i += 1;
-    for (name) |c| {
-        if (c == '\'' or c == '\\') {
-            buf[i] = '\\';
-            i += 1;
-        }
-        buf[i] = c;
-        i += 1;
-    }
-    buf[i] = '\'';
-    i += 1;
-    return buf[0..i];
-}
+/// Render `name` as the inner text of an `{atom, _}` term — the shared BEAM
+/// rule: bare when valid, otherwise single-quoted and escaped. PascalCase enum
+/// tags (`Circle`) would parse as a variable and reserved words (`end`) as
+/// keywords, so both get quoted; pre-quoted names pass through unchanged.
+const atomName = erlEmitter.atomText;
 
 /// A comparison lowered to a BEAM `test` instruction: the opcode plus whether
 /// the operands must be swapped.

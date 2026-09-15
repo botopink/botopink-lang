@@ -10,6 +10,8 @@
 const std = @import("std");
 const ast = @import("../ast.zig");
 const template = @import("./template.zig");
+const erlEmitter = @import("../codegen/beam/erl_emitter.zig");
+const Term = @import("../codegen/beam/term.zig").Term;
 
 /// Sole comptime runtime.
 pub const Runtime = enum { erl };
@@ -106,111 +108,71 @@ pub fn evaluate(
     return evaluateErl(arena, io, dfn, handle, plainArgs);
 }
 
-/// Emit Erlang code for a DeclHandle as a map literal.
-fn emitDeclHandle(buf: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, handle: DeclHandle) !void {
-    const erl_emitter = @import("./erl_emitter.zig");
-    
-    // Converter DeclHandle para ErlValue map
-    var entries = try arena.alloc(erl_emitter.MapEntry, 6);
-    
-    // kind
-    entries[0] = .{ .key = "kind", .value = .{ .string = handle.kind } };
-    
-    // name
-    entries[1] = .{ .key = "name", .value = .{ .string = handle.name } };
-    
-    // fields
-    var field_values = try arena.alloc(erl_emitter.ErlValue, handle.fields.len);
-    for (handle.fields, 0..) |field, i| {
-        var field_entries = try arena.alloc(erl_emitter.MapEntry, 3);
-        field_entries[0] = .{ .key = "name", .value = .{ .string = field.name } };
-        field_entries[1] = .{ .key = "typeName", .value = .{ .string = field.typeName } };
-        
-        // Converter annotations do field
-        var ann_values = try arena.alloc(erl_emitter.ErlValue, field.annotations.len);
-        for (field.annotations, 0..) |ann, j| {
-            var ann_entries = try arena.alloc(erl_emitter.MapEntry, 2);
-            ann_entries[0] = .{ .key = "name", .value = .{ .string = ann.name } };
-            
-            var arg_values = try arena.alloc(erl_emitter.ErlValue, ann.args.len);
-            for (ann.args, 0..) |arg, k| {
-                arg_values[k] = .{ .string = arg };
-            }
-            ann_entries[1] = .{ .key = "args", .value = .{ .list = arg_values } };
-            
-            ann_values[j] = .{ .map = ann_entries };
-        }
-        field_entries[2] = .{ .key = "annotations", .value = .{ .list = ann_values } };
-        
-        field_values[i] = .{ .map = field_entries };
+/// The `@Decl` handle as a BEAM term — the map the decorator body reads
+/// (`decl.kind`, `decl.fields`, …). `kind` is an atom so it matches the lowering
+/// of `DeclKind.Record` (`'Record'`); names and type names are binaries.
+pub fn handleToTerm(arena: std.mem.Allocator, handle: DeclHandle) std.mem.Allocator.Error!Term {
+    const fields = try arena.alloc(Term, handle.fields.len);
+    for (handle.fields, 0..) |f, i| {
+        const entries = try arena.alloc(Term.MapEntry, 3);
+        entries[0] = Term.field("name", Term.str(f.name));
+        entries[1] = Term.field("typeName", Term.str(f.typeName));
+        entries[2] = Term.field("annotations", try annotationsToTerm(arena, f.annotations));
+        fields[i] = Term.mapOf(entries);
     }
-    entries[2] = .{ .key = "fields", .value = .{ .list = field_values } };
-    
-    // methods
-    var method_values = try arena.alloc(erl_emitter.ErlValue, handle.methods.len);
-    for (handle.methods, 0..) |method, i| {
-        var method_entries = try arena.alloc(erl_emitter.MapEntry, 4);
-        method_entries[0] = .{ .key = "name", .value = .{ .string = method.name } };
-        
-        // Converter params do method
-        var param_values = try arena.alloc(erl_emitter.ErlValue, method.params.len);
-        for (method.params, 0..) |param, j| {
-            var param_entries = try arena.alloc(erl_emitter.MapEntry, 1);
-            param_entries[0] = .{ .key = "name", .value = .{ .string = param.name } };
-            param_values[j] = .{ .map = param_entries };
+
+    const methods = try arena.alloc(Term, handle.methods.len);
+    for (handle.methods, 0..) |m, i| {
+        const params = try arena.alloc(Term, m.params.len);
+        for (m.params, 0..) |p, j| {
+            const pe = try arena.alloc(Term.MapEntry, 1);
+            pe[0] = Term.field("name", Term.str(p.name));
+            params[j] = Term.mapOf(pe);
         }
-        method_entries[1] = .{ .key = "params", .value = .{ .list = param_values } };
-        
-        // Converter returnType
-        const return_type_str = if (method.returnType) |rt| switch (rt) {
+        const return_type: []const u8 = if (m.returnType) |rt| switch (rt) {
             .named => |n| n,
             .array => "array",
             .optional => "optional",
             else => "unknown",
         } else "";
-        method_entries[2] = .{ .key = "returnType", .value = .{ .string = return_type_str } };
-        
-        // Converter annotations do method
-        var m_ann_values = try arena.alloc(erl_emitter.ErlValue, method.annotations.len);
-        for (method.annotations, 0..) |ann, j| {
-            var m_ann_entries = try arena.alloc(erl_emitter.MapEntry, 2);
-            m_ann_entries[0] = .{ .key = "name", .value = .{ .string = ann.name } };
-            
-            var m_arg_values = try arena.alloc(erl_emitter.ErlValue, ann.args.len);
-            for (ann.args, 0..) |arg, k| {
-                m_arg_values[k] = .{ .string = arg };
-            }
-            m_ann_entries[1] = .{ .key = "args", .value = .{ .list = m_arg_values } };
-            
-            m_ann_values[j] = .{ .map = m_ann_entries };
-        }
-        method_entries[3] = .{ .key = "annotations", .value = .{ .list = m_ann_values } };
-        
-        method_values[i] = .{ .map = method_entries };
+        const entries = try arena.alloc(Term.MapEntry, 4);
+        entries[0] = Term.field("name", Term.str(m.name));
+        entries[1] = Term.field("params", Term.listOf(params));
+        entries[2] = Term.field("returnType", Term.str(return_type));
+        entries[3] = Term.field("annotations", try annotationsToTerm(arena, m.annotations));
+        methods[i] = Term.mapOf(entries);
     }
-    entries[3] = .{ .key = "methods", .value = .{ .list = method_values } };
-    
-    // returnType
-    entries[4] = .{ .key = "returnType", .value = .{ .string = handle.returnType } };
-    
-    // annotations
-    var h_ann_values = try arena.alloc(erl_emitter.ErlValue, handle.annotations.len);
-    for (handle.annotations, 0..) |ann, i| {
-        var h_ann_entries = try arena.alloc(erl_emitter.MapEntry, 2);
-        h_ann_entries[0] = .{ .key = "name", .value = .{ .string = ann.name } };
-        
-        var h_arg_values = try arena.alloc(erl_emitter.ErlValue, ann.args.len);
-        for (ann.args, 0..) |arg, j| {
-            h_arg_values[j] = .{ .string = arg };
-        }
-        h_ann_entries[1] = .{ .key = "args", .value = .{ .list = h_arg_values } };
-        
-        h_ann_values[i] = .{ .map = h_ann_entries };
+
+    const entries = try arena.alloc(Term.MapEntry, 6);
+    entries[0] = Term.field("kind", Term.atomOf(handle.kind));
+    entries[1] = Term.field("name", Term.str(handle.name));
+    entries[2] = Term.field("fields", Term.listOf(fields));
+    entries[3] = Term.field("methods", Term.listOf(methods));
+    entries[4] = Term.field("returnType", Term.str(handle.returnType));
+    entries[5] = Term.field("annotations", try annotationsToTerm(arena, handle.annotations));
+    return Term.mapOf(entries);
+}
+
+/// `[#{name => <<"getMapping">>, args => [<<"\"/users\"">>]}]` — args keep their
+/// raw source lexemes (`DeclAnnotation.args` in `builtins.d.bp`).
+fn annotationsToTerm(arena: std.mem.Allocator, anns: []const ast.Annotation) std.mem.Allocator.Error!Term {
+    const items = try arena.alloc(Term, anns.len);
+    for (anns, 0..) |a, i| {
+        const args = try arena.alloc(Term, a.args.len);
+        for (a.args, 0..) |arg, j| args[j] = Term.str(arg);
+        const entries = try arena.alloc(Term.MapEntry, 2);
+        entries[0] = Term.field("name", Term.str(a.name));
+        entries[1] = Term.field("args", Term.listOf(args));
+        items[i] = Term.mapOf(entries);
     }
-    entries[5] = .{ .key = "annotations", .value = .{ .list = h_ann_values } };
-    
-    // Emitir o map usando erl_emitter
-    try erl_emitter.emitMap(buf, arena, "", entries);
+    return Term.listOf(items);
+}
+
+/// Emit the `@Decl` handle as an Erlang map literal.
+fn emitDeclHandle(buf: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, handle: DeclHandle) !void {
+    var aw: std.Io.Writer.Allocating = .init(arena);
+    erlEmitter.writeTerm(&aw.writer, try handleToTerm(arena, handle)) catch return error.EvalFailed;
+    try buf.appendSlice(arena, aw.written());
 }
 
 /// Emit Erlang code for an expression.
