@@ -3028,7 +3028,8 @@ const Emitter = struct {
                     try this.w("#{");
                     for (rl.fields, 0..) |f, i| {
                         if (i > 0) try this.w(", ");
-                        try this.fmt("{s} => ", .{f.name});
+                        var kb: [128]u8 = undefined;
+                        try this.fmt("{s} => ", .{try atomName(f.name, &kb)});
                         try this.emitExpr(f.value.*);
                     }
                     try this.w("}");
@@ -3037,7 +3038,8 @@ const Emitter = struct {
                     try this.w("#{");
                     for (il.fields, 0..) |f, i| {
                         if (i > 0) try this.w(", ");
-                        try this.fmt("{s} => ", .{f.name});
+                        var kb: [128]u8 = undefined;
+                        try this.fmt("{s} => ", .{try atomName(f.name, &kb)});
                         try this.emitExpr(f.value.*);
                     }
                     try this.w("}");

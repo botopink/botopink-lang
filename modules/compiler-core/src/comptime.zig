@@ -1538,3 +1538,131 @@ pub fn compile(
 
     return session;
 }
+
+/// Compile from a pre-built AST directly (skip lex/parse).
+/// Used by decorator_eval to build the AST programmatically without going
+/// through source text. The program is used as-is for type inference.
+pub fn compileFromAst(
+    allocator: std.mem.Allocator,
+    name: []const u8,
+    program: ast.Program,
+    io: std.Io,
+    build_root: ?[]const u8,
+    target_name: ?[]const u8,
+) !ComptimeSession {
+    var session = ComptimeSession{
+        .arena = std.heap.ArenaAllocator.init(allocator),
+        .outputs = .empty,
+    };
+    errdefer session.arena.deinit();
+
+    const arena_alloc = session.arena.allocator();
+    var registry = std.StringHashMap(std.StringHashMap(*T.Type)).init(arena_alloc);
+    var type_decl_registry = std.StringHashMap(std.StringHashMap(ast.DeclKind)).init(arena_alloc);
+    var template_registry = std.StringHashMap(ast.FnDecl).init(arena_alloc);
+    var decorator_registry = std.StringHashMap(ast.FnDecl).init(arena_alloc);
+    var extension_registry = std.StringHashMap(std.StringHashMap(ast.ImplementDecl)).init(arena_alloc);
+
+    var env = try infer.freshEnv(arena_alloc, std.heap.page_allocator);
+    env.modulePath = name;
+    env.target = target_name;
+
+    if (validation.validateComptime(program)) |err_info| {
+        env.deinit();
+        try session.outputs.append(allocator, .{
+            .name = name,
+            .src = "",
+            .outcome = .{ .validationError = err_info },
+        });
+        return session;
+    }
+
+    try resolveImports(&env, program, &registry, &type_decl_registry, &template_registry, &decorator_registry, &extension_registry);
+    const bindings = infer.inferProgramTyped(&env, program) catch |err| switch (err) {
+        error.TypeError => {
+            const te = env.lastError orelse validation.TypeError{ .kind = .{ .unboundVariable = "" } };
+            env.deinit();
+            try session.outputs.append(allocator, .{
+                .name = name,
+                .src = "",
+                .outcome = .{ .typeError = te },
+            });
+            return session;
+        },
+        else => return err,
+    };
+
+    var dispatch_rewrites = std.AutoHashMap(ast.Loc, []const u8).init(arena_alloc);
+    {
+        var rit = env.dispatchRewrites.iterator();
+        while (rit.next()) |e| try dispatch_rewrites.put(e.key_ptr.*, e.value_ptr.*);
+    }
+    var js_method_renames = std.AutoHashMap(ast.Loc, []const u8).init(arena_alloc);
+    {
+        var rit = env.jsMethodRenames.iterator();
+        while (rit.next()) |e| try js_method_renames.put(e.key_ptr.*, e.value_ptr.*);
+    }
+    var instance_lowerings = std.AutoHashMap(ast.Loc, envMod.InstanceLowering).init(arena_alloc);
+    {
+        var rit = env.instanceLowerings.iterator();
+        while (rit.next()) |e| try instance_lowerings.put(e.key_ptr.*, e.value_ptr.*);
+    }
+
+    const ct = try evaluateComptime(arena_alloc, io, bindings, build_root orelse name);
+
+    var fn_decls = std.StringHashMap(ast.FnDecl).init(arena_alloc);
+    var comptime_arrays = std.StringHashMap([]const ast.TypedExpr).init(arena_alloc);
+    {
+        var sit = env.stdlibFnDecls.iterator();
+        while (sit.next()) |e| try fn_decls.put(e.key_ptr.*, e.value_ptr.*);
+    }
+    for (bindings) |b| {
+        if (b.decl == .@"fn") {
+            try fn_decls.put(b.name, b.decl.@"fn");
+        }
+        if (b.typedExpr) |te| {
+            switch (te) {
+                .comptime_ => |ct2| switch (ct2.kind) {
+                    .comptimeExpr => |inner| switch (inner.*) {
+                        .collection => |col| switch (col.kind) {
+                            .arrayLit => |al| try comptime_arrays.put(b.name, al.elems),
+                            else => {},
+                        },
+                        else => {},
+                    },
+                    else => {},
+                },
+                else => {},
+            }
+        }
+    }
+
+    const transformed = try withSynthesisedEnumDecls(
+        arena_alloc,
+        try withUsedAssocInterfaces(arena_alloc, try transform.transform(arena_alloc, program, fn_decls, comptime_arrays, ct.comptime_vals, &env.method_lowerings, &env.templateExpansions, &env.result_jump_lowerings, &env.future_jump_lowerings, &env.stdArrayLowerings, &env.enumSectionRewrites, env.ctorParams), &env),
+        &env,
+    );
+
+    var type_ids = std.StringHashMap(usize).init(arena_alloc);
+    for (bindings) |b| {
+        if (b.typeId) |id| try type_ids.put(b.name, id);
+    }
+
+    try session.outputs.append(allocator, .{
+        .name = name,
+        .src = "",
+        .outcome = .{ .ok = .{
+            .bindings = bindings,
+            .comptime_script = ct.comptime_script,
+            .comptime_vals = ct.comptime_vals,
+            .transformed = transformed,
+            .type_ids = type_ids,
+            .dispatch_rewrites = dispatch_rewrites,
+            .js_method_renames = js_method_renames,
+            .instance_lowerings = instance_lowerings,
+            .custom_ast = try collectCustomAst(arena_alloc, &env),
+        } },
+    });
+
+    return session;
+}
