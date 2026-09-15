@@ -173,9 +173,9 @@ use `--no-verify`.
 
 ### Persistent erl server (`comptime/runtime/persistent_erl.zig`)
 
-Comptime evaluation runs in one long-lived `erl` process speaking length-prefixed
-binary frames over stdin/stdout (`cmd 1` = compile+run `.erl`, `cmd 2` = load+run
-`.beam`).
+Decorator and template bodies run in one long-lived `erl` process speaking
+length-prefixed binary frames over stdin/stdout (`cmd 1` = compile+run `.erl`).
+Comptime `val`s are folded in Zig (`comptime/eval.zig`).
 
 - **`file:read/2` on `standard_io` can return a list, not a binary.** `read_frame/0`
   converts with `list_to_binary/1` before matching `<<Len:32/unsigned-big-integer>>`;
@@ -186,11 +186,10 @@ binary frames over stdin/stdout (`cmd 1` = compile+run `.erl`, `cmd 2` = load+ru
   blocks without a timeout, so a wedged erl process still hangs the caller —
   wrap manual runs in `timeout`.
 - **Server source is a Zig string literal** (`botopink_comptime_server`). It is
-  written and compiled into `.botopinkbuild/tmp/persistent_erl/` at spawn;
-  comptime `.beam` output is cached in `.botopinkbuild/tmp/beam_cache/`. When
-  debugging server changes, delete both:
+  written and compiled into `.botopinkbuild/tmp/persistent_erl/` at spawn. When
+  debugging server changes, delete it:
   ```bash
-  rm -rf .botopinkbuild/tmp/persistent_erl .botopinkbuild/tmp/beam_cache
+  rm -rf .botopinkbuild/tmp/persistent_erl
   ```
 - **Manual testing.** Frame = `struct.pack('>I', len(payload)) + payload`, payload
   = `b'\x01' + b'/path/to/mod.erl'`. Pipe into

@@ -25,6 +25,7 @@ test {
     _ = @import("tests/eval_pipeline.zig");
     _ = @import("primOpTemplate.zig");
     _ = @import("./diagnostics.zig");
+    _ = @import("./eval.zig");
     _ = @import("./template_eval.zig");
     _ = @import("./decorator_eval.zig");
 }

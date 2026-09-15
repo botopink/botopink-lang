@@ -2,7 +2,7 @@
 ///
 /// Builds multi-section snapshot content:
 ///   ----- SOURCE CODE -- name.bp
-///   ----- COMPTIME JAVASCRIPT -- name.js  (optional)
+///   ----- COMPTIME VALUES -- name  (optional: `ct_N = literal` per comptime val)
 ///   ----- JAVASCRIPT -- name.js
 ///   ----- TYPESCRIPT TYPEDEF -- name.d.ts  (optional)
 ///   ----- RUN LOG -----  (optional)
@@ -41,7 +41,7 @@ pub fn buildSnapshot(alloc: std.mem.Allocator, name: []const u8, src: []const u8
         .commonJS => {
             // Comptime JavaScript section (if any)
             if (result.comptime_script) |ct| {
-                const ctHdr = try std.fmt.allocPrint(alloc, "----- COMPTIME JAVASCRIPT -- {s}.js\n```javascript\n", .{name});
+                const ctHdr = try std.fmt.allocPrint(alloc, "----- COMPTIME VALUES -- {s}\n```text\n", .{name});
                 defer alloc.free(ctHdr);
                 try buf.appendSlice(alloc, ctHdr);
                 try buf.appendSlice(alloc, ct);
@@ -76,7 +76,7 @@ pub fn buildSnapshot(alloc: std.mem.Allocator, name: []const u8, src: []const u8
         .erlang => {
             // Comptime Erlang section (if any)
             if (result.comptime_script) |ct| {
-                const ctHdr = try std.fmt.allocPrint(alloc, "----- COMPTIME ERLANG -- {s}.erl\n```erlang\n", .{name});
+                const ctHdr = try std.fmt.allocPrint(alloc, "----- COMPTIME VALUES -- {s}\n```text\n", .{name});
                 defer alloc.free(ctHdr);
                 try buf.appendSlice(alloc, ctHdr);
                 try buf.appendSlice(alloc, ct);
@@ -102,7 +102,7 @@ pub fn buildSnapshot(alloc: std.mem.Allocator, name: []const u8, src: []const u8
         .beam => {
             // Comptime Erlang section (if any) — beam shares the Erlang comptime runtime.
             if (result.comptime_script) |ct| {
-                const ctHdr = try std.fmt.allocPrint(alloc, "----- COMPTIME ERLANG -- {s}.erl\n```erlang\n", .{name});
+                const ctHdr = try std.fmt.allocPrint(alloc, "----- COMPTIME VALUES -- {s}\n```text\n", .{name});
                 defer alloc.free(ctHdr);
                 try buf.appendSlice(alloc, ctHdr);
                 try buf.appendSlice(alloc, ct);
@@ -127,7 +127,7 @@ pub fn buildSnapshot(alloc: std.mem.Allocator, name: []const u8, src: []const u8
         .wasm => {
             // Comptime JavaScript section (if any) — wasm shares the Node comptime runtime.
             if (result.comptime_script) |ct| {
-                const ctHdr = try std.fmt.allocPrint(alloc, "----- COMPTIME JAVASCRIPT -- {s}.js\n```javascript\n", .{name});
+                const ctHdr = try std.fmt.allocPrint(alloc, "----- COMPTIME VALUES -- {s}\n```text\n", .{name});
                 defer alloc.free(ctHdr);
                 try buf.appendSlice(alloc, ctHdr);
                 try buf.appendSlice(alloc, ct);

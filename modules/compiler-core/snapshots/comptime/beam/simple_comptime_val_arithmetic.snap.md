@@ -4,12 +4,10 @@ val x = comptime 10 + 5;
 val y = comptime 42;
 ```
 
------ COMPTIME JAVASCRIPT -- main.js
-```javascript
--module(comptime_321ce357ab06bd3c).
--export([main/0]).
-main() -> "[{\"id\":\"ct_0\",\"value\":15},{\"id\":\"ct_1\",\"value\":42}]".
-
+----- COMPTIME VALUES -- main
+```text
+ct_0 = 15
+ct_1 = 42
 ```
 
 ----- BOTOPINK TRANSFORM CODE -- main.bp

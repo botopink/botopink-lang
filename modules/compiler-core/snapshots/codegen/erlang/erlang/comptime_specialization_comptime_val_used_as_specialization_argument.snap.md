@@ -13,11 +13,9 @@ fn main() {
 }
 ```
 
------ COMPTIME ERLANG -- main.erl
-```erlang
--module(comptime_45af6ab6cf9e497c).
--export([main/0]).
-main() -> "[{\"id\":\"ct_0\",\"value\":15}]".
+----- COMPTIME VALUES -- main
+```text
+ct_0 = 15
 ```
 
 ----- ERLANG -- main.erl

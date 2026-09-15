@@ -5,14 +5,14 @@
 //! the first cost ~2ms (compile:file + code:load_binary + module call).
 //!
 //! Protocol (Zig ↔ erl), length-prefixed binary frames both ways:
-//!   request:  <u32 BE len><cmd:u8><path>   cmd 1 = compile+run `.erl`, 2 = load+run `.beam`
+//!   request:  <u32 BE len><cmd:u8><path>   cmd 1 = compile+run `.erl`
 //!   response: <u32 BE len><payload>        `main/0`'s iodata result, or an error
-//!             payload tagged `__BP_ERL_COMPILE_ERROR__:` / `__BP_ERL_LOAD_ERROR__:` /
+//!             payload tagged `__BP_ERL_COMPILE_ERROR__:` /
 //!             `__BP_ERL_RUNTIME_ERROR__:` (raise, exit, non-iodata result, timeout)
 //!
 //! `main/0` runs in a monitored process with a wall-clock budget
 //! (`eval_timeout_ms`), so a runaway body is killed instead of wedging the server.
-//! `evalDetailed` surfaces the tagged payload; `eval` / `loadBeam` only succeed or fail.
+//! `evalDetailed` returns the reply classified as a `Response`.
 //!
 //! Thread-safety: an atomic spin-lock serialises the pipes; BEAM execution inside
 //! erl stays single-request-at-a-time.
@@ -61,17 +61,6 @@ const server_body =
     \\                    start();
     \\                {error, Errors, Warnings} ->
     \\                    write_frame(io_lib:format("__BP_ERL_COMPILE_ERROR__:~p", [{Errors, Warnings}])),
-    \\                    start()
-    \\            end;
-    \\        {2, PathBin} ->  %% load: execute .beam file
-    \\            Path = binary_to_list(PathBin),
-    \\            case code:load_file(Path) of
-    \\                {module, Mod} ->
-    \\                    Result = safe_call(Mod),
-    \\                    write_frame(Result),
-    \\                    start();
-    \\                {error, Reason} ->
-    \\                    write_frame(io_lib:format("__BP_ERL_LOAD_ERROR__:~p", [Reason])),
     \\                    start()
     \\            end
     \\    end.
@@ -256,8 +245,6 @@ pub const Response = union(enum) {
     ok: []u8,
     /// `compile:file/2` rejected the module (`~p` of `{Errors, Warnings}`).
     compile_error: []u8,
-    /// `code:load_file/1` failed (`loadBeam` only).
-    load_error: []u8,
     /// `main/0` raised, exited, returned non-iodata, or timed out.
     runtime_error: []u8,
 
@@ -269,7 +256,6 @@ pub const Response = union(enum) {
 };
 
 const compile_error_tag = "__BP_ERL_COMPILE_ERROR__:";
-const load_error_tag = "__BP_ERL_LOAD_ERROR__:";
 const runtime_error_tag = "__BP_ERL_RUNTIME_ERROR__:";
 
 /// Send one command and classify the reply. A transport failure (erl died,
@@ -292,7 +278,6 @@ fn request(allocator: std.mem.Allocator, io: Io, cmd: u8, path: []const u8) !Res
 
     const tags = [_]struct { []const u8, std.meta.Tag(Response) }{
         .{ compile_error_tag, .compile_error },
-        .{ load_error_tag, .load_error },
         .{ runtime_error_tag, .runtime_error },
     };
     for (tags) |t| {
@@ -301,18 +286,11 @@ fn request(allocator: std.mem.Allocator, io: Io, cmd: u8, path: []const u8) !Res
         allocator.free(raw);
         return switch (t[1]) {
             .compile_error => .{ .compile_error = message },
-            .load_error => .{ .load_error = message },
             .runtime_error => .{ .runtime_error = message },
             .ok => unreachable,
         };
     }
     return .{ .ok = raw };
-}
-
-/// Load and run a pre-compiled `.beam` (cmd=2). Returns `main/0`'s result, or
-/// `error.PersistentErlCompileError` on a load/runtime failure.
-pub fn loadBeam(allocator: std.mem.Allocator, io: Io, beam_path: []const u8) ![]u8 {
-    return okOrError(allocator, try request(allocator, io, 2, beam_path));
 }
 
 /// Compile and run the comptime module at `erl_path` (cmd=1), keeping the
@@ -321,41 +299,3 @@ pub fn loadBeam(allocator: std.mem.Allocator, io: Io, beam_path: []const u8) ![]
 pub fn evalDetailed(allocator: std.mem.Allocator, io: Io, erl_path: []const u8) !Response {
     return request(allocator, io, 1, erl_path);
 }
-
-/// `evalDetailed` for callers that only need success: returns `main/0`'s result
-/// or `error.PersistentErlCompileError` (detail discarded).
-pub fn eval(allocator: std.mem.Allocator, io: Io, erl_path: []const u8) ![]u8 {
-    return okOrError(allocator, try evalDetailed(allocator, io, erl_path));
-}
-
-fn okOrError(allocator: std.mem.Allocator, response: Response) ![]u8 {
-    switch (response) {
-        .ok => |p| return p,
-        else => {
-            allocator.free(response.payload());
-            return error.PersistentErlCompileError;
-        },
-    }
-}
-
-/// Spawn the persistent erl process and verify it responds to ping.
-/// Idempotent — safe to call multiple times.
-pub fn warm(allocator: std.mem.Allocator, io: Io) !void {
-    try ensureSpawned(io, allocator);
-}
-
-/// True after `eval` or `warm` has spawned the child.
-pub fn isReady() bool {
-    return init_state.load(.acquire) == 2;
-}
-
-/// Error set for persistent erl operations.
-pub const PersistentErlError = error{
-    PersistentErlNotFound,
-    PersistentErlBroken,
-    PersistentErlEof,
-    PersistentErlCompileError,
-    NoStdin,
-    NoStdout,
-    OutOfMemory,
-};

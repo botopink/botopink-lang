@@ -74,7 +74,6 @@ pub fn evaluate(
     return switch (response) {
         .ok => |stdout| parseOutcome(arena, stdout),
         .compile_error => |detail| .{ .err = try errorText(arena, "the decorator module did not compile", detail) },
-        .load_error => |detail| .{ .err = try errorText(arena, "the decorator module did not load", detail) },
         .runtime_error => |detail| .{ .err = try errorText(arena, "the decorator body raised", detail) },
     };
 }

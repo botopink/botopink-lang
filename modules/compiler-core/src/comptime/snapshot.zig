@@ -3,7 +3,7 @@
 /// Converts typed bindings to structured JSON representations and builds
 /// multi-section snapshot content for assertion:
 ///   ----- SOURCE CODE -- name.bp
-///   ----- COMPTIME JAVASCRIPT -- name.js  (if comptime expressions exist)
+///   ----- COMPTIME VALUES -- name  (if comptime expressions exist)
 ///   ----- BOTOPINK TRANSFORM CODE -- name.bp  (if comptime expressions exist)
 ///   ----- TYPED AST JSON -- name.json
 const std = @import("std");
@@ -549,11 +549,11 @@ pub fn buildSnapshot(allocator: std.mem.Allocator, output: comptimeMod.ComptimeO
     switch (output.outcome) {
         .ok => |ok| {
             if (ok.comptime_script) |ct| {
-                const ctHdr = try std.fmt.allocPrint(allocator, "----- COMPTIME JAVASCRIPT -- {s}.js\n```javascript\n", .{output.name});
+                const ctHdr = try std.fmt.allocPrint(allocator, "----- COMPTIME VALUES -- {s}\n```text\n", .{output.name});
                 defer allocator.free(ctHdr);
                 try buf.appendSlice(allocator, ctHdr);
                 try buf.appendSlice(allocator, ct);
-                try buf.appendSlice(allocator, "\n```\n\n");
+                try buf.appendSlice(allocator, "```\n\n");
 
                 const fmtHdr = try std.fmt.allocPrint(allocator, "----- BOTOPINK TRANSFORM CODE -- {s}.bp\n```botopink\n", .{output.name});
                 defer allocator.free(fmtHdr);

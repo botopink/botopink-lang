@@ -5,12 +5,11 @@ val maxVal  = comptime 100 + 1;
 val banner  = comptime "Hello, " + "World";
 ```
 
------ COMPTIME JAVASCRIPT -- main.js
-```javascript
--module(comptime_a6b9abbfb4644982).
--export([main/0]).
-main() -> "[{\"id\":\"ct_0\",\"value\":0},{\"id\":\"ct_1\",\"value\":101},{\"id\":\"ct_2\",\"value\":0}]".
-
+----- COMPTIME VALUES -- main
+```text
+ct_0 = 0
+ct_1 = 101
+ct_2 = 0
 ```
 
 ----- BOTOPINK TRANSFORM CODE -- main.bp

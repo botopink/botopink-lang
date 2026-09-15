@@ -11,11 +11,9 @@ fn main() {
 }
 ```
 
------ COMPTIME JAVASCRIPT -- main.js
-```javascript
--module(comptime_45af6ab6cf9e497c).
--export([main/0]).
-main() -> "[{\"id\":\"ct_0\",\"value\":3}]".
+----- COMPTIME VALUES -- main
+```text
+ct_0 = 3
 ```
 
 ----- WASM TEXT -- main.wat

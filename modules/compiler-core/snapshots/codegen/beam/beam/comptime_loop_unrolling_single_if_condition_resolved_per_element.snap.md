@@ -18,11 +18,9 @@ fn main() {
 }
 ```
 
------ COMPTIME ERLANG -- main.erl
-```erlang
--module(comptime_45af6ab6cf9e497c).
--export([main/0]).
-main() -> "[{\"id\":\"ct_0\",\"value\":[\"calc\",\"noop\",\"help\"]}]".
+----- COMPTIME VALUES -- main
+```text
+ct_0 = ["calc", "noop", "help"]
 ```
 
 ----- BEAM ASSEMBLY -- main.S

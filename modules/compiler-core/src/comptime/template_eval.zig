@@ -96,7 +96,6 @@ pub fn evaluate(
     return switch (response) {
         .ok => |stdout| parseOutcome(arena, stdout),
         .compile_error => |detail| .{ .err = try errorText(arena, "the template module did not compile", detail) },
-        .load_error => |detail| .{ .err = try errorText(arena, "the template module did not load", detail) },
         .runtime_error => |detail| .{ .err = try errorText(arena, "the template body raised", detail) },
     };
 }

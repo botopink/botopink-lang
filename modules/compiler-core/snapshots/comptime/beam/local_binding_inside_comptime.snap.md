@@ -3,12 +3,9 @@
 val hash = comptime { break 6364 + 11; };
 ```
 
------ COMPTIME JAVASCRIPT -- main.js
-```javascript
--module(comptime_45af6ab6cf9e497c).
--export([main/0]).
-main() -> "[{\"id\":\"ct_0\",\"value\":6375}]".
-
+----- COMPTIME VALUES -- main
+```text
+ct_0 = 6375
 ```
 
 ----- BOTOPINK TRANSFORM CODE -- main.bp

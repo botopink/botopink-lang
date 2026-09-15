@@ -1065,14 +1065,11 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
     }
 }
 
-/// Collect comptime entries from `bindings`, evaluate them via the unified
-/// wasm3 runtime, and return the generated script (if any) and the evaluated
-/// values.
+/// Collect the comptime `val` entries of `bindings` and fold them, returning
+/// the value listing (null when there are none) and the evaluated literals.
 pub fn evaluateComptime(
     allocator: std.mem.Allocator,
-    io: std.Io,
     bindings: []const infer.TypedBinding,
-    build_root: []const u8,
 ) !ComptimeEvalResult {
     var entries: std.ArrayListUnmanaged(evalMod.ComptimeEntry) = .empty;
     defer {
@@ -1093,7 +1090,7 @@ pub fn evaluateComptime(
         };
     }
 
-    const result = try evalMod.evaluate(allocator, io, entries.items, build_root);
+    const result = try evalMod.evaluate(allocator, entries.items);
     return .{ .comptime_script = result.script, .comptime_vals = result.values };
 }
 
@@ -1366,7 +1363,7 @@ pub fn compile(
                     // below still reads `succ.env.method_lowerings`. The env is
                     // arena-backed; the session arena reclaims it wholesale.
                 }
-                const ct = try evaluateComptime(arena_alloc, io, succ.bindings, build_root orelse name);
+                const ct = try evaluateComptime(arena_alloc, succ.bindings);
 
                 var fn_decls = std.StringHashMap(ast.FnDecl).init(arena_alloc);
                 var comptime_arrays = std.StringHashMap([]const ast.TypedExpr).init(arena_alloc);
