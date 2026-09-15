@@ -1150,9 +1150,24 @@ pub const Annotation = struct {
     /// True when the annotation was written with a `@` prefix inside `#[…]`
     /// — i.e. `#[@External.<Target>(…)]`. False for user-defined attributes `#[custom()]`.
     is_builtin: bool = false,
+    /// Where the annotation name starts (null for synthesized annotations).
+    /// Diagnostics raised by a decorator body point here.
+    loc: ?Loc = null,
 
     pub fn deinit(this: *Annotation, allocator: std.mem.Allocator) void {
         allocator.free(this.args);
+    }
+
+    /// The location is diagnostic metadata, not part of the serialized AST.
+    pub fn jsonStringify(this: Annotation, jws: anytype) !void {
+        try jws.beginObject();
+        try jws.objectField("name");
+        try jws.write(this.name);
+        try jws.objectField("args");
+        try jws.write(this.args);
+        try jws.objectField("is_builtin");
+        try jws.write(this.is_builtin);
+        try jws.endObject();
     }
 };
 

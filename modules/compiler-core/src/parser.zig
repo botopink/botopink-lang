@@ -754,6 +754,7 @@ pub const Parser = struct {
             .name = name,
             .args = try args.toOwnedSlice(alloc),
             .is_builtin = is_builtin,
+            .loc = .{ .line = name_start.line, .col = name_start.col },
         };
     }
 

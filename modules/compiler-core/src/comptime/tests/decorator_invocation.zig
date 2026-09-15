@@ -2,11 +2,11 @@
 //!
 //! After argument validation, a decorator's body RUNS over the declaration it
 //! annotates: the core serializes that declaration into a `@Decl` handle and
-//! executes the body in the node runtime (host-side comptime, like `@Expr`
-//! templates). `decl.fail(...)` surfaces as a scoped type error; a clean return
-//! accepts the placement. The core has NO lib knowledge — the body holds every
-//! rule. (P1's recognition + generic argument validation live in
-//! `decorators.zig`; these scenarios need the full node pipeline.)
+//! executes the body on the persistent `erl` (host-side comptime, like `@Expr`
+//! templates). `decl.fail(...)` surfaces as a type error at the annotation; a
+//! clean return accepts the placement. The core has NO lib knowledge — the body
+//! holds every rule. (P1's recognition + generic argument validation live in
+//! `decorators.zig`; these scenarios need the full compile pipeline.)
 
 const std = @import("std");
 const comptimeMod = @import("../../comptime.zig");
@@ -32,6 +32,11 @@ fn assertAccepts(comptime loc: std.builtin.SourceLocation, src: []const u8) !voi
 /// type error whose message contains `needle`. The session is kept alive until
 /// after the assertion (its arena backs the error message).
 fn assertRejects(comptime loc: std.builtin.SourceLocation, src: []const u8, needle: []const u8) !void {
+    try assertRejectsAt(loc, src, needle, null);
+}
+
+/// `assertRejects`, also checking the diagnostic's `line:col` when given.
+fn assertRejectsAt(comptime loc: std.builtin.SourceLocation, src: []const u8, needle: []const u8, at: ?[2]usize) !void {
     const io = std.testing.io;
     const build_root = comptime h.buildRootPathFromSrc(loc);
     var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root, null);
@@ -47,6 +52,10 @@ fn assertRejects(comptime loc: std.builtin.SourceLocation, src: []const u8, need
         defer std.testing.allocator.free(desc);
         std.debug.print("\nexpected rejection containing \"{s}\", got:\n{s}\n", .{ needle, desc });
         return error.TestUnexpectedResult;
+    }
+    if (at) |want| {
+        const got = outcome.typeError.loc orelse return error.TestUnexpectedResult;
+        try std.testing.expectEqual(want, [2]usize{ got.line, got.col });
     }
 }
 
@@ -70,6 +79,17 @@ test "decorator invocation: body rejects wrong placement (fn instead of record)"
         \\#[service]
         \\fn notARecord() { }
     , "must annotate a record");
+}
+
+test "decorator invocation: rejection points at the annotation" {
+    try assertRejectsAt(@src(),
+        \\fn service(comptime decl: @Decl) {
+        \\    if (decl.kind != DeclKind.Record) { decl.failAt(Span(0, 1, 1), "#[service] must annotate a record"); }
+        \\}
+        \\
+        \\#[service]
+        \\fn notARecord() { }
+    , "must annotate a record", .{ 5, 3 });
 }
 
 test "decorator invocation: method placement accepted" {

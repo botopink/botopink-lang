@@ -189,6 +189,8 @@ fn buildModule(
     decls[0] = .{ .@"fn" = dfn };
     const code = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, .{
         .host_enums = &.{"DeclKind"},
+        // `decl.failAt(Span(start, end, line), msg)` builds the span map.
+        .host_records = &.{.{ .name = "Span", .fields = &.{ "start", "end", "line" } }},
         .exports = &.{.{ .name = "main", .arity = 0 }},
         .forms = forms,
     }) catch return error.EvalFailed;
