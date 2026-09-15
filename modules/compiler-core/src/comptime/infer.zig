@@ -3330,7 +3330,7 @@ fn expandTemplateCallViaRuntime(
     const outcome = templateEval.evaluate(env.arena, ctx.io, ctx.build_root, tfn, captures, plainArgs) catch {
         env.lastError = TypeError.custom(
             "the template evaluator failed to run",
-            "Template bodies are evaluated by the node runtime at compile time — check that `node` is available.",
+            "Template bodies run in a persistent `erl` process at compile time — check that `erl` and `erlc` are on PATH.",
         ).withLoc(loc);
         return error.TypeError;
     };
@@ -3367,9 +3367,8 @@ fn expandTemplateCallViaRuntime(
                 return error.TypeError;
             };
             substituteHoles(@constCast(parsed), captures);
-            // The `ast` half: use pre-parsed tree from WAT memory if available,
-            // otherwise deserialize from JSON.
-            const root = if (c.root) |r| r else template.parseCustomNodeFromTree(env.arena, c.ast) catch return error.OutOfMemory;
+            // The `ast` half: the reference tree the template built.
+            const root = template.parseCustomNodeFromTree(env.arena, c.ast) catch return error.OutOfMemory;
             const prov: ?*const template.CapturedExpr = if (captures.len > 0) &captures[0] else null;
             env.customAstByLoc.put(loc, .{
                 .callee = tfn.name,

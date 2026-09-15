@@ -418,10 +418,21 @@ pub const ComptimeModule = struct {
     /// Enum types the host injects without a declaration (`DeclKind`), so a
     /// qualified member (`DeclKind.Record`) lowers to its variant atom.
     host_enums: []const []const u8 = &.{},
+    /// Record types the host injects without a declaration (`Span`,
+    /// `CustomNode`), so a constructor call (`Span(5, 9, 1)`,
+    /// `CustomNode(kind: …)`) lowers to the same `#{field => …}` map a declared
+    /// record would.
+    host_records: []const HostRecord = &.{},
     /// Extra `name/arity` exports (the evaluator entry, `main/0`).
     exports: []const []const u8 = &.{},
     /// Raw Erlang appended after the lowered decls (host fns + entry).
     tail: []const u8 = "",
+};
+
+pub const HostRecord = struct {
+    name: []const u8,
+    /// Field names in declaration order (positional constructor arguments).
+    fields: []const []const u8,
 };
 
 /// Emit `program` as a comptime-evaluated Erlang module. Bodies are untyped (no
@@ -560,7 +571,10 @@ fn emitErlangModule(
     }
     try em.collectTypeShapes(program);
     try em.collectImportedTypes(program);
-    if (comptime_module) |cm| for (cm.host_enums) |name| try em.enum_names.put(name, {});
+    if (comptime_module) |cm| {
+        for (cm.host_enums) |name| try em.enum_names.put(name, {});
+        for (cm.host_records) |r| try em.record_fields.put(r.name, try alloc.dupe([]const u8, r.fields));
+    }
     defer {
         var rf_it = em.record_fields.valueIterator();
         while (rf_it.next()) |names| alloc.free(names.*);
@@ -2124,7 +2138,7 @@ const Emitter = struct {
             }
 
             try this.writeIndent();
-            try this.emitBodyStmt(stmt, is_last);
+            if (!try this.emitMutatingStmt(stmt)) try this.emitBodyStmt(stmt, is_last);
             // A real statement takes a trailing `,` only when another real
             // statement follows; comments (and the tail) get a bare newline.
             if (i != body.len - 1) {
@@ -2268,6 +2282,266 @@ const Emitter = struct {
                 try this.w("end");
             },
         }
+    }
+
+    // ── mutation through branches and loops ──────────────────────────────────
+    //
+    // Erlang variables are immutable and a binding made inside a `case` arm or a
+    // `fun` is not visible after it, so a statement-level `if` / `loop` /
+    // `forEach` that reassigns variables bound before it is lowered to an
+    // expression that *returns* the new values:
+    //
+    //   if (c) { acc = acc + 1; }          Acc@1 = case C of true -> Acc@2 = …, Acc@2; _ -> Acc end
+    //   loop (xs) { x -> acc = acc + x; }  Acc@3 = lists:foldl(fun(X, Acc@1) -> Acc@2 = …, Acc@2 end, Acc, Xs)
+    //
+    // Several reassigned variables travel as a tuple. The names are the ones
+    // already bound in the function (`locals`) that the statement assigns,
+    // looking through nested `if`/`loop`/`forEach` bodies.
+
+    /// Lower `stmt` through the mutation-returning shapes above when it
+    /// reassigns outer variables. Returns false (nothing written) otherwise.
+    fn emitMutatingStmt(this: *Emitter, stmt: ast.Stmt) anyerror!bool {
+        var names: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer names.deinit(this.alloc);
+        switch (stmt.expr) {
+            .branch => |br| switch (br.kind) {
+                .if_ => |if_node| {
+                    if (bodyEndsWithReturn(if_node.then_)) return false;
+                    if (if_node.else_) |els| if (bodyEndsWithReturn(els)) return false;
+                    try this.collectMutations(if_node.then_, &.{}, &names);
+                    if (if_node.else_) |els| try this.collectMutations(els, &.{}, &names);
+                    if (if_node.binding) |b| removeName(&names, b);
+                    if (names.items.len == 0) return false;
+                    try this.emitMutatingIf(if_node, names.items);
+                    return true;
+                },
+                else => return false,
+            },
+            .loop => |lp| {
+                if (lp.params.len != 1 or lp.indexRange != null or lp.awaitLoop) return false;
+                for (lp.body) |s| if (s.expr == .jump and s.expr.jump.kind == .yield) return false;
+                try this.collectMutations(lp.body, lp.params, &names);
+                if (names.items.len == 0) return false;
+                try this.emitMutatingFold(lp.params[0], lp.body, lp.iter.*, names.items);
+                return true;
+            },
+            .call => {
+                const each = forEachLambda(stmt.expr) orelse return false;
+                try this.collectMutations(each.body, each.params, &names);
+                if (names.items.len == 0) return false;
+                try this.emitMutatingFold(each.params[0], each.body, each.recv.*, names.items);
+                return true;
+            },
+            else => return false,
+        }
+    }
+
+    const ForEachLambda = struct {
+        recv: *const ast.Expr,
+        params: []const []const u8,
+        body: []const ast.Stmt,
+    };
+
+    /// `recv.forEach({ p -> body })` / `recv.forEach { p -> body }` with a
+    /// single-parameter lambda, or null.
+    fn forEachLambda(e: ast.Expr) ?ForEachLambda {
+        if (e != .call or e.call.kind != .call) return null;
+        const cc = e.call.kind.call;
+        const recv = cc.receiver orelse return null;
+        if (!std.mem.eql(u8, cc.callee, "forEach")) return null;
+        if (cc.args.len == 1 and cc.trailing.len == 0) {
+            const fe = switch (cc.args[0].value.*) {
+                .function => |f| f,
+                else => return null,
+            };
+            if (fe.kind.params.len != 1) return null;
+            return .{ .recv = recv, .params = fe.kind.params, .body = fe.kind.body };
+        }
+        if (cc.args.len == 0 and cc.trailing.len == 1 and cc.trailing[0].params.len == 1) {
+            return .{ .recv = recv, .params = cc.trailing[0].params, .body = cc.trailing[0].body };
+        }
+        return null;
+    }
+
+    /// Append (once each) the outer variables that `stmts` reassigns. `shadowed`
+    /// names are bound by the construct itself (loop/lambda params) and skipped.
+    fn collectMutations(this: *Emitter, stmts: []const ast.Stmt, shadowed: []const []const u8, out: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
+        for (stmts) |s| switch (s.expr) {
+            .binding => |b| switch (b.kind) {
+                .assign => |a| switch (a.target) {
+                    .name => |n| {
+                        if (!this.locals.contains(n)) continue;
+                        if (containsName(shadowed, n) or containsName(out.items, n)) continue;
+                        try out.append(this.alloc, n);
+                    },
+                    else => {},
+                },
+                else => {},
+            },
+            .branch => |br| switch (br.kind) {
+                .if_ => |if_node| {
+                    try this.collectMutations(if_node.then_, shadowed, out);
+                    if (if_node.else_) |els| try this.collectMutations(els, shadowed, out);
+                },
+                else => {},
+            },
+            .loop => |lp| try this.collectMutations(lp.body, lp.params, out),
+            .call => if (forEachLambda(s.expr)) |each| try this.collectMutations(each.body, each.params, out),
+            else => {},
+        };
+    }
+
+    fn containsName(names: []const []const u8, name: []const u8) bool {
+        for (names) |n| if (std.mem.eql(u8, n, name)) return true;
+        return false;
+    }
+
+    fn removeName(names: *std.ArrayListUnmanaged([]const u8), name: []const u8) void {
+        var i: usize = 0;
+        while (i < names.items.len) {
+            if (std.mem.eql(u8, names.items[i], name)) _ = names.orderedRemove(i) else i += 1;
+        }
+    }
+
+    /// `Name` / `Name@v` for each of `names` at their current versions, as one
+    /// variable or a `{A, B}` tuple.
+    fn writeVarGroup(this: *Emitter, names: []const []const u8) anyerror!void {
+        if (names.len > 1) try this.w("{");
+        for (names, 0..) |n, i| {
+            if (i > 0) try this.w(", ");
+            const v = try this.varRef(n);
+            defer this.alloc.free(v);
+            try this.w(v);
+        }
+        if (names.len > 1) try this.w("}");
+    }
+
+    /// Give every name in `names` a fresh version and write the group.
+    fn bindVarGroup(this: *Emitter, names: []const []const u8) anyerror!void {
+        for (names) |n| {
+            const version = (this.var_next.get(n) orelse 0) + 1;
+            try this.var_next.put(n, version);
+            try this.var_current.put(n, version);
+        }
+        try this.writeVarGroup(names);
+    }
+
+    const VersionSnapshot = std.StringHashMap(u32);
+
+    fn restoreVersions(this: *Emitter, snapshot: *const VersionSnapshot) !void {
+        this.var_current.clearRetainingCapacity();
+        var it = snapshot.iterator();
+        while (it.next()) |e| try this.var_current.put(e.key_ptr.*, e.value_ptr.*);
+    }
+
+    /// `Group = case Cond of true -> Then, Group'; _ -> Else, Group'' end`
+    /// (the binding form `if (x) { b -> … }` matches `undefined` first).
+    fn emitMutatingIf(this: *Emitter, if_node: anytype, names: []const []const u8) anyerror!void {
+        var snapshot = try this.var_current.clone();
+        defer snapshot.deinit();
+
+        // The arms are rendered first: the group's fresh versions are only known
+        // once both arms have been emitted, but its binding comes first.
+        var arms: std.Io.Writer.Allocating = .init(this.alloc);
+        defer arms.deinit();
+        const out = this.out;
+        this.out = &arms.writer;
+        defer this.out = out;
+
+        try this.w("case ");
+        try this.emitExpr(if_node.cond.*);
+        try this.w(" of\n");
+        this.indent += 1;
+        if (if_node.binding) |b| {
+            try this.writeIndent();
+            try this.w("undefined -> ");
+            try this.writeVarGroup(names);
+            try this.w(";\n");
+            try this.writeIndent();
+            const bname = try erlangVar(this.alloc, b);
+            defer this.alloc.free(bname);
+            try this.fmt("{s} ->\n", .{bname});
+            this.addLocal(b);
+        } else {
+            try this.writeIndent();
+            try this.w("true ->\n");
+        }
+        try this.emitArmWithGroup(if_node.then_, names);
+        try this.restoreVersions(&snapshot);
+        try this.w(";\n");
+        try this.writeIndent();
+        try this.w("_ ->\n");
+        if (if_node.else_) |els| {
+            try this.emitArmWithGroup(els, names);
+            try this.restoreVersions(&snapshot);
+        } else {
+            this.indent += 1;
+            try this.writeIndent();
+            try this.writeVarGroup(names);
+            this.indent -= 1;
+        }
+        this.indent -= 1;
+        try this.w("\n");
+        try this.writeIndent();
+        try this.w("end");
+
+        this.out = out;
+        try this.bindVarGroup(names);
+        try this.w(" = ");
+        try this.w(arms.written());
+    }
+
+    /// One arm body followed by the group at its post-arm versions.
+    fn emitArmWithGroup(this: *Emitter, body: []const ast.Stmt, names: []const []const u8) anyerror!void {
+        this.indent += 1;
+        defer this.indent -= 1;
+        if (lastRealStmt(body) != null) {
+            try this.emitBody(body);
+            try this.w(",\n");
+        }
+        try this.writeIndent();
+        try this.writeVarGroup(names);
+    }
+
+    /// `Group = lists:foldl(fun(Param, GroupIn) -> Body, GroupOut end, Group, Iter)`.
+    fn emitMutatingFold(this: *Emitter, param: []const u8, body: []const ast.Stmt, iter: ast.Expr, names: []const []const u8) anyerror!void {
+        var snapshot = try this.var_current.clone();
+        defer snapshot.deinit();
+
+        var fold: std.Io.Writer.Allocating = .init(this.alloc);
+        defer fold.deinit();
+        const out = this.out;
+        this.out = &fold.writer;
+        defer this.out = out;
+
+        const pname = try erlangVar(this.alloc, param);
+        defer this.alloc.free(pname);
+        try this.fmt("lists:foldl(fun({s}, ", .{pname});
+        this.addLocal(param);
+        // The accumulator parameter is a fresh version: fun heads always bind.
+        try this.bindVarGroup(names);
+        try this.w(") ->\n");
+        this.indent += 1;
+        if (lastRealStmt(body) != null) {
+            try this.emitBody(body);
+            try this.w(",\n");
+        }
+        try this.writeIndent();
+        try this.writeVarGroup(names);
+        this.indent -= 1;
+        try this.w("\n");
+        try this.writeIndent();
+        try this.w("end, ");
+        try this.restoreVersions(&snapshot);
+        try this.writeVarGroup(names);
+        try this.w(", ");
+        try this.emitExpr(iter);
+        try this.w(")");
+
+        this.out = out;
+        try this.bindVarGroup(names);
+        try this.w(" = ");
+        try this.w(fold.written());
     }
 
     /// True when the last statement of a branch body is a valued `return`.

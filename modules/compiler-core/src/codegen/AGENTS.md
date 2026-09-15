@@ -125,10 +125,22 @@ codegen/
   reset per fn; versions are never reused so separate `case` arms can't
   collide). A version bound inside a `case`/`fun` and read after it is left as an
   Erlang compile error (unsafe/unbound) rather than silently wrong.
+- **Mutation through branches and loops** (`emitMutatingStmt`): a statement-level
+  `if` / `loop (xs) { x -> … }` / `xs.forEach({ x -> … })` that reassigns variables
+  bound before it (looking through nested `if`/`loop`/`forEach`) returns the new
+  values instead of binding them inside a `case` arm or `fun`:
+  `Acc@1 = case C of true -> …, Acc@2; _ -> Acc end` and
+  `Acc@3 = lists:foldl(fun(X, Acc@1) -> …, Acc@2 end, Acc, Xs)`; several
+  variables travel as a tuple. Arms are rendered into a side buffer first (the
+  group's fresh versions are known only afterwards). Arms ending in `return`,
+  indexed/`await`/yielding loops keep the plain lowering; the older
+  `var acc = …; xs.forEach(…)` fold fusion still takes precedence.
 - **Comptime modules:** `emitComptimeModule(alloc, name, program, .{ host_enums,
-  exports, tail })` lowers an untyped decorator/template body with the same
-  emitter — `host_enums` join `enum_names` (`DeclKind.Record` → `'Record'`),
-  `exports` are prepended to `-export`, `tail` is raw Erlang appended after the
+  host_records, exports, tail })` lowers an untyped decorator/template body with
+  the same emitter — `host_enums` join `enum_names` (`DeclKind.Record` →
+  `'Record'`), `host_records` (`HostRecord{name, fields}`) join `record_fields`
+  so host record constructors build maps, `exports` are prepended to `-export`,
+  `tail` is raw Erlang appended after the
   `'__bp_add'/2` / `'__bp_len'/2` helpers; the `untyped` flag routes `+` to
   `'__bp_add'` (binary concat or arithmetic) and `.len`/`.length` without an
   instance lowering to `'__bp_len'(X, Field)`. Tests: `tests/comptime_module.zig`.

@@ -133,7 +133,7 @@ fn buildModule(
     if (dfn.params.len > 1) {
         for (0..dfn.params.len - 1) |i| {
             try w.writeAll(", ");
-            if (i < plainArgs.len) try writeArgument(w, plainArgs[i].jsValue) else try w.writeAll("undefined");
+            if (i < plainArgs.len) try plainArgs[i].writeErl(w) else try w.writeAll("undefined");
         }
     }
     try w.writeAll(
@@ -161,24 +161,6 @@ fn buildModule(
     if (!std.mem.startsWith(u8, code, header)) return error.EvalFailed;
     const renamed = try std.fmt.allocPrint(arena, "-module({s}).{s}", .{ module, code[header.len..] });
     return .{ .module = module, .code = renamed };
-}
-
-/// An annotation argument lexeme (`"/users"`, `42`, `true`) as an Erlang term.
-fn writeArgument(w: *std.Io.Writer, lexeme: []const u8) std.Io.Writer.Error!void {
-    const text = std.mem.trim(u8, lexeme, " \t\r\n");
-    if (text.len >= 2 and text[0] == '"' and text[text.len - 1] == '"') {
-        return erlEmitter.writeBinaryFromLexeme(w, text[1 .. text.len - 1]);
-    }
-    if (std.mem.eql(u8, text, "true") or std.mem.eql(u8, text, "false")) return w.writeAll(text);
-    if (std.fmt.parseInt(i64, text, 10)) |n| return w.print("{d}", .{n}) else |_| {}
-    if (std.fmt.parseFloat(f64, text)) |f| {
-        if (std.math.isFinite(f)) return erlEmitter.writeFloat(w, f) catch |err| switch (err) {
-            error.NonFiniteFloat => unreachable,
-            error.WriteFailed => error.WriteFailed,
-        };
-    } else |_| {}
-    // Anything else (an identifier, an expression) reaches the body as its source text.
-    return erlEmitter.writeBinaryFromBytes(w, text);
 }
 
 // ── handle ────────────────────────────────────────────────────────────────────

@@ -31,26 +31,32 @@ main() ->
 'execute_$0'(Input) ->
     Slug = <<"calc">>,
     Output = 0,
-    lists:foreach(fun(Cmd) ->
-        case (Cmd =:= Slug) of
+    Output@4 = lists:foldl(fun(Cmd, Output@1) ->
+        Output@3 = case (Cmd =:= Slug) of
             true ->
-                Output@1 = (Input * 2);
-            _ -> ok
-        end
-    end, COMMANDS),
-    Output@1.
+                Output@2 = (Input * 2),
+                Output@2;
+            _ ->
+                Output@1
+        end,
+        Output@3
+    end, Output, COMMANDS),
+    Output@4.
 
 'execute_$1'(Input) ->
     Slug = <<"noop">>,
     Output = 0,
-    lists:foreach(fun(Cmd) ->
-        case (Cmd =:= Slug) of
+    Output@4 = lists:foldl(fun(Cmd, Output@1) ->
+        Output@3 = case (Cmd =:= Slug) of
             true ->
-                Output@1 = (Input * 2);
-            _ -> ok
-        end
-    end, COMMANDS),
-    Output@1.
+                Output@2 = (Input * 2),
+                Output@2;
+            _ ->
+                Output@1
+        end,
+        Output@3
+    end, Output, COMMANDS),
+    Output@4.
 
 '_botopink_main'() ->
     COMMANDS = [<<"calc">>, <<"noop">>, <<"help">>],

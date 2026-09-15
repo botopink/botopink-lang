@@ -16,6 +16,7 @@
 const std = @import("std");
 const ast = @import("../ast.zig");
 const TypeError = @import("./error.zig").TypeError;
+const erlEmitter = @import("../codegen/beam/erl_emitter.zig");
 
 // ── scope snapshot ────────────────────────────────────────────────────────────
 
@@ -194,14 +195,34 @@ pub fn contextJsonAlloc(capture: *const CapturedExpr, allocator: std.mem.Allocat
 
 // ── plain comptime arguments ──────────────────────────────────────────────────
 
-/// A non-`@Expr` parameter in a template function that received a literal value
-/// at the call site. Serialized as a plain JS binding in the eval script so the
-/// template body can use it alongside the `@Expr` capture objects.
+/// A non-`@Expr` parameter of a template function (or a decorator argument)
+/// that received a literal at the call site. The evaluators pass it to the
+/// body as an Erlang term (`writeErl`).
 pub const PlainArg = struct {
     /// Name of the parameter as declared in the template function.
     paramName: []const u8,
-    /// The argument's value as a JS literal expression (e.g. `"42"`, `"\"hi\""`, `"true"`).
+    /// The argument's source lexeme (e.g. `42`, `"hi"`, `true`).
     jsValue: []const u8,
+
+    /// The lexeme as an Erlang term: a string literal becomes a binary (botopink
+    /// escapes resolved), `true`/`false` atoms, integers and finite floats
+    /// numbers; anything else (an identifier, an expression) reaches the body
+    /// as its source text.
+    pub fn writeErl(self: PlainArg, w: *std.Io.Writer) std.Io.Writer.Error!void {
+        const text = std.mem.trim(u8, self.jsValue, " \t\r\n");
+        if (text.len >= 2 and text[0] == '"' and text[text.len - 1] == '"') {
+            return erlEmitter.writeBinaryFromLexeme(w, text[1 .. text.len - 1]);
+        }
+        if (std.mem.eql(u8, text, "true") or std.mem.eql(u8, text, "false")) return w.writeAll(text);
+        if (std.fmt.parseInt(i64, text, 10)) |n| return w.print("{d}", .{n}) else |_| {}
+        if (std.fmt.parseFloat(f64, text)) |f| {
+            if (std.math.isFinite(f)) return erlEmitter.writeFloat(w, f) catch |err| switch (err) {
+                error.NonFiniteFloat => unreachable,
+                error.WriteFailed => error.WriteFailed,
+            };
+        } else |_| {}
+        return erlEmitter.writeBinaryFromBytes(w, text);
+    }
 };
 
 // ── span mapping + diagnostics ────────────────────────────────────────────────
@@ -370,11 +391,9 @@ pub fn parseCustomNode(arena: std.mem.Allocator, v: std.json.Value) error{OutOfM
 /// Convert a native CustomNodeTree (from template evaluation) to CustomNode.
 /// Replaces parseCustomNode for the new native struct approach.
 pub fn parseCustomNodeFromTree(arena: std.mem.Allocator, tree: @import("./template_eval.zig").CustomNodeTree) error{OutOfMemory}!CustomNode {
-    const ref: ?NodeBinding = if (tree.ref) |r| blk: {
-        break :blk NodeBinding{
-            .name = try arena.dupe(u8, r),
-            .kind = "",
-        };
+    const ref: ?NodeBinding = if (tree.ref) |r| .{
+        .name = try arena.dupe(u8, r.name),
+        .kind = try arena.dupe(u8, r.kind),
     } else null;
 
     const children = try arena.alloc(CustomNode, tree.children.len);

@@ -1,33 +1,37 @@
-/// Template evaluation — single persistent erl runtime.
+/// Template evaluation in the persistent erl runtime.
 ///
 /// When the V1 classifier in `infer.zig` cannot reduce a template body by
-/// inspection, this module runs the body inside the persistent erl subprocess.
+/// inspection, the body runs here:
 ///
-/// Outcome format:
-///   {"kind":"code","source":"…"}                  ← build() / @code
-///   {"kind":"value","value":<json>}               ← @expr(v)
-///   {"kind":"capture","param":"template"}         ← `return template;`
-///   {"kind":"custom","source":"…","ast":<json>}   ← custom(tree, code)
-///   {"kind":"fail","message","param","span"}      ← fail()/failAt()
-///   {"kind":"error","message"}                    ← anything else thrown
+///   template `FnDecl` ─ codegen/erlang.zig `emitComptimeModule` ─┐
+///   captures + plain args ─ `Term` ─ codegen/beam/erl_emitter ─ `main/0` ──┴→ .erl
+///     → comptime/runtime/persistent_erl `evalDetailed`
+///     → JSON reply → `Outcome`
 ///
-/// NOTE: evaluateErl() returns EvalFailed until erlang.zig gains #[@Host]
-/// method lowering. Methods like Capture.lookup(), Capture.bindings(),
-/// failRaw(), makeExpr(), makeCode() are annotated #[@Host] in
-/// template_runtime.bp and must be redirected to botopink_comptime_prelude
-/// module calls. The persistent erl infrastructure (BEAM cache, binary
-/// protocol, warmup) is fully operational for comptime val evaluation
-/// (beam.zig path).
+/// Reply format (`main/0`):
+///   {"kind":"code","source":"…"}                  ← `q.build(src)` / `@code(src)`
+///   {"kind":"value","value":<json>}               ← `@expr(v)`
+///   {"kind":"capture","param":"q"}                ← `return q`
+///   {"kind":"custom","source":"…","ast":<tree>}   ← `q.custom(tree, code)`
+///   {"kind":"fail","message","param","span"}      ← `q.fail` / `q.failAt` / `@compilerError`
+///   {"kind":"error","message"}                    ← anything else raised
+///
+/// A capture reaches the body as a map; its methods (`q.text()`, `q.parts()`,
+/// `q.lookup(name)`, …) lower to the host functions appended to the module.
 const std = @import("std");
 const ast = @import("../ast.zig");
 const template = @import("./template.zig");
+const erlang = @import("../codegen/erlang.zig");
+const erlEmitter = @import("../codegen/beam/erl_emitter.zig");
+const Term = @import("../codegen/beam/term.zig").Term;
+const persistent_erl = @import("./runtime/persistent_erl.zig");
 
 /// Sole comptime runtime.
 pub const Runtime = enum { erl };
 
-// ── native result structs ─────────────────────────────────────────────────────
+// ── results ───────────────────────────────────────────────────────────────────
 
-/// Typed value returned from template evaluation — replaces std.json.Value.
+/// A value lifted by `@expr(…)`.
 pub const TypedValue = union(enum) {
     integer: i64,
     float: f64,
@@ -43,40 +47,20 @@ pub const TypedValue = union(enum) {
     };
 };
 
-/// Custom node tree returned from custom() calls — replaces std.json.Value.
+/// A `CustomNode` tree returned through `q.custom(tree, code)`.
 pub const CustomNodeTree = struct {
     kind: []const u8,
     span: ?template.Span = null,
     label: ?[]const u8 = null,
-    ref: ?[]const u8 = null,
+    ref: ?template.NodeBinding = null,
     children: []const CustomNodeTree = &.{},
 };
-
-/// Erlang result struct — parsed automatically from JSON.
-const ErlTemplateResult = union(enum) {
-    code: struct { source: []const u8 },
-    value: struct { value: TypedValue },
-    capture: struct { param: []const u8 },
-    custom: struct { source: []const u8, ast: CustomNodeTree },
-    fail: struct {
-        message: []const u8,
-        param: ?[]const u8 = null,
-        span: ?template.Span = null,
-    },
-    err: struct { message: []const u8 },
-};
-
-// ── outcome ───────────────────────────────────────────────────────────────────
 
 pub const Outcome = union(enum) {
     code: []const u8,
     value: TypedValue,
     capture: []const u8,
-    custom: struct {
-        code: []const u8,
-        ast: CustomNodeTree,
-        root: ?template.CustomNode = null,
-    },
+    custom: struct { code: []const u8, ast: CustomNodeTree },
     fail: struct {
         message: []const u8,
         param: ?[]const u8,
@@ -86,6 +70,9 @@ pub const Outcome = union(enum) {
 };
 
 pub const EvalError = error{ OutOfMemory, EvalFailed } || std.Io.Writer.Error;
+
+/// Longest compiler/runtime diagnostic carried into `Outcome.err`.
+const max_error_detail = 4096;
 
 // ── evaluate ──────────────────────────────────────────────────────────────────
 
@@ -98,882 +85,387 @@ pub fn evaluate(
     plainArgs: []const template.PlainArg,
 ) EvalError!Outcome {
     _ = build_root;
-    return evaluateErl(arena, io, tfn, captures, plainArgs);
-}
+    const source = try buildModule(arena, tfn, captures, plainArgs);
 
-pub fn evaluateRuntime(
-    arena: std.mem.Allocator,
-    io: std.Io,
-    build_root: []const u8,
-    tfn: ast.FnDecl,
-    captures: []const template.CapturedExpr,
-    plainArgs: []const template.PlainArg,
-    runtime: Runtime,
-) EvalError!Outcome {
-    _ = runtime;
-    _ = build_root;
-    return evaluateErl(arena, io, tfn, captures, plainArgs);
-}
+    const dir = ".botopinkbuild/tmp/template";
+    std.Io.Dir.cwd().createDirPath(io, dir) catch return error.EvalFailed;
+    const path = try std.fmt.allocPrint(arena, "{s}/{s}.erl", .{ dir, source.module });
+    std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = source.code }) catch return error.EvalFailed;
 
-fn parseOutcome(arena: std.mem.Allocator, stdout: []const u8) !Outcome {
-    const result = std.json.parseFromSliceLeaky(ErlTemplateResult, arena, stdout, .{ .ignore_unknown_fields = true }) catch {
-        return .{ .err = try std.fmt.allocPrint(arena, "template evaluator produced no result", .{}) };
-    };
-
-    return switch (result) {
-        .code => |c| .{ .code = c.source },
-        .value => |v| .{ .value = v.value },
-        .capture => |c| .{ .capture = c.param },
-        .custom => |c| .{ .custom = .{ .code = c.source, .ast = c.ast } },
-        .fail => |f| .{ .fail = .{ .message = f.message, .param = f.param, .span = f.span } },
-        .err => |e| .{ .err = e.message },
+    const response = persistent_erl.evalDetailed(arena, io, path) catch return error.EvalFailed;
+    return switch (response) {
+        .ok => |stdout| parseOutcome(arena, stdout),
+        .compile_error => |detail| .{ .err = try errorText(arena, "the template module did not compile", detail) },
+        .load_error => |detail| .{ .err = try errorText(arena, "the template module did not load", detail) },
+        .runtime_error => |detail| .{ .err = try errorText(arena, "the template body raised", detail) },
     };
 }
 
-fn evaluateErl(
+fn errorText(arena: std.mem.Allocator, what: []const u8, detail: []const u8) ![]const u8 {
+    const shown = detail[0..@min(detail.len, max_error_detail)];
+    const ellipsis = if (detail.len > max_error_detail) " …" else "";
+    return std.fmt.allocPrint(arena, "{s}: {s}{s}", .{ what, shown, ellipsis });
+}
+
+// ── module ────────────────────────────────────────────────────────────────────
+
+const Module = struct {
+    /// Erlang module atom derived from the code's hash.
+    module: []const u8,
+    code: []const u8,
+};
+
+const placeholder_module = "template_module";
+
+/// Records of the `std.syntax` template model a body may construct.
+const host_records = [_]erlang.HostRecord{
+    .{ .name = "Span", .fields = &.{ "start", "end", "line" } },
+    .{ .name = "CustomNode", .fields = &.{ "kind", "span", "label", "ref", "children" } },
+    .{ .name = "Binding", .fields = &.{ "name", "kind" } },
+    .{ .name = "Source", .fields = &.{ "file", "line", "col" } },
+    .{ .name = "Context", .fields = &.{ "source", "text", "multiline" } },
+};
+
+/// Host functions for the capture API plus the reply encoder. A capture is a
+/// map tagged with `'__bp_capture'` (its parameter name); `build`/`custom`/
+/// `expr`/`code` wrap the body's result in a tagged tuple `main/0` dispatches on.
+const host_fns =
+    \\text(#{text := Text}) -> Text.
+    \\parts(#{parts := Parts}) -> Parts.
+    \\source(#{source := Source}) -> Source.
+    \\context(#{context := Context}) -> Context.
+    \\bindings(#{bindings := Bindings}) -> Bindings.
+    \\lookup(#{bindings := Bindings}, Name) ->
+    \\    case [B || B = #{name := N} <- Bindings, N =:= Name] of [Hit | _] -> Hit; [] -> undefined end.
+    \\build(_Capture, Source) -> {'__bp_code', '__bp_text'(Source)}.
+    \\custom(_Capture, Tree, {'__bp_code', Source}) -> {'__bp_custom', Tree, Source}.
+    \\fail(#{'__bp_capture' := Param}, Message) -> erlang:throw({'__bp_template_fail', Message, Param, null}).
+    \\failAt(#{'__bp_capture' := Param}, Span, Message) -> erlang:throw({'__bp_template_fail', Message, Param, Span}).
+    \\compilerError(Message) -> erlang:throw({'__bp_template_fail', Message, null, null}).
+    \\expr(Value) -> {'__bp_value', Value}.
+    \\code(Source) -> {'__bp_code', '__bp_text'(Source)}.
+    \\
+    \\'__bp_text'(Value) when is_binary(Value) -> Value;
+    \\'__bp_text'(Value) -> iolist_to_binary(io_lib:format("~p", [Value])).
+    \\
+    \\%% JSON view of a term: `undefined` is botopink's null.
+    \\'__bp_json'(undefined) -> null;
+    \\'__bp_json'(Map) when is_map(Map) -> maps:map(fun(_, V) -> '__bp_json'(V) end, Map);
+    \\'__bp_json'(List) when is_list(List) -> [ '__bp_json'(V) || V <- List ];
+    \\'__bp_json'(Value) -> Value.
+    \\
+    \\'__bp_reply'({'__bp_code', Source}) -> #{kind => <<"code">>, source => Source};
+    \\'__bp_reply'({'__bp_value', Value}) -> #{kind => <<"value">>, value => '__bp_json'(Value)};
+    \\'__bp_reply'({'__bp_custom', Tree, Source}) -> #{kind => <<"custom">>, source => Source, ast => '__bp_json'(Tree)};
+    \\'__bp_reply'(#{'__bp_capture' := Param}) -> #{kind => <<"capture">>, param => Param};
+    \\'__bp_reply'(Other) -> #{kind => <<"error">>, message => '__bp_text'({unsupported_template_result, Other})}.
+    \\
+    \\
+;
+
+fn buildModule(
     arena: std.mem.Allocator,
-    io: std.Io,
     tfn: ast.FnDecl,
     captures: []const template.CapturedExpr,
     plainArgs: []const template.PlainArg,
-) EvalError!Outcome {
-    _ = captures;
-    // Build synthetic .bp module and compile to Erlang via the full pipeline.
-    var bp_src: std.ArrayListUnmanaged(u8) = .empty;
-    defer bp_src.deinit(arena);
-    for (plainArgs) |pa| {
-        try bp_src.appendSlice(arena, "val ");
-        try bp_src.appendSlice(arena, pa.paramName);
-        try bp_src.appendSlice(arena, " = ");
-        try bp_src.appendSlice(arena, pa.jsValue);
-        try bp_src.appendSlice(arena, ";\n");
-    }
-    try bp_src.appendSlice(arena, "pub fn ");
-    try bp_src.appendSlice(arena, tfn.name);
-    try bp_src.append(arena, '(');
+) EvalError!Module {
+    var tail: std.Io.Writer.Allocating = .init(arena);
+    const w = &tail.writer;
+    try w.writeAll(host_fns);
+    try w.writeAll(
+        \\main() ->
+        \\    try
+        \\
+    );
+    try w.print("        json:encode('__bp_reply'({f}(", .{erlEmitter.atom(tfn.name)});
     for (tfn.params, 0..) |p, i| {
-        if (i > 0) try bp_src.appendSlice(arena, ", ");
-        try bp_src.appendSlice(arena, p.name);
-        try bp_src.appendSlice(arena, ": _");
+        if (i > 0) try w.writeAll(", ");
+        try writeParam(arena, w, p.name, i, captures, plainArgs);
     }
-    try bp_src.appendSlice(arena, ") -> void {\n");
-    try emitBpBody(&bp_src, arena, tfn.body);
-    try bp_src.appendSlice(arena, "}\n");
+    try w.writeAll(
+        \\)))
+        \\    catch
+        \\        throw:{'__bp_template_fail', Message, Param, Span} ->
+        \\            json:encode(#{kind => <<"fail">>, message => '__bp_text'(Message), param => Param, span => '__bp_json'(Span)});
+        \\        Class:Reason ->
+        \\            json:encode(#{kind => <<"error">>, message => '__bp_text'({Class, Reason})})
+        \\    end.
+        \\
+    );
 
-    const comptimeMod = @import("../comptime.zig");
-    const erlang_codegen = @import("../codegen/erlang.zig");
-    var session = comptimeMod.compile(arena, &.{.{ .path = "template_body", .source = bp_src.items }}, io, null, "erlang") catch return error.EvalFailed;
-    defer session.deinit(arena);
+    const decls = try arena.alloc(ast.DeclKind, 1);
+    decls[0] = .{ .@"fn" = tfn };
+    const code = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, .{
+        .host_enums = &.{ "BindingKind", "DeclKind" },
+        .host_records = &host_records,
+        .exports = &.{"main/0"},
+        .tail = tail.written(),
+    }) catch return error.EvalFailed;
 
-    const erl_src: ?[]const u8 = blk: {
-        for (session.outputs.items) |out| {
-            if (out.outcome == .ok) {
-                var outputs = [_]comptimeMod.ComptimeOutput{out};
-                var results = erlang_codegen.codegenEmit(arena, &outputs, .{ .targetSource = .erlang }) catch break :blk null;
-                defer {
-                    for (results.items) |*r| r.result.deinit(arena);
-                    results.deinit(arena);
-                }
-                for (results.items) |r| {
-                    if (r.result.js.len > 0) break :blk r.result.js;
-                }
-            }
-        }
-        break :blk null;
-    };
-    const erl_code = erl_src orelse return error.EvalFailed;
-
-    const hash = std.hash.Wyhash.hash(0, tfn.name);
-    const tmp_dir = try std.fmt.allocPrint(arena, ".botopinkbuild/tmp/template_{x}", .{hash});
-    std.Io.Dir.cwd().createDirPath(io, tmp_dir) catch return error.EvalFailed;
-    const erl_path = try std.fmt.allocPrint(arena, "{s}/template_body.erl", .{tmp_dir});
-    std.Io.Dir.cwd().writeFile(io, .{ .sub_path = erl_path, .data = erl_code }) catch return error.EvalFailed;
-
-    const persistent_erl = @import("./runtime/persistent_erl.zig");
-    const stdout = persistent_erl.eval(arena, io, erl_path) catch return error.EvalFailed;
-    defer arena.free(stdout);
-    return parseOutcome(arena, stdout) catch error.EvalFailed;
+    const module = try std.fmt.allocPrint(arena, "template_{x:0>16}", .{std.hash.Wyhash.hash(0, code)});
+    const header = "-module(" ++ placeholder_module ++ ").";
+    if (!std.mem.startsWith(u8, code, header)) return error.EvalFailed;
+    const renamed = try std.fmt.allocPrint(arena, "-module({s}).{s}", .{ module, code[header.len..] });
+    return .{ .module = module, .code = renamed };
 }
 
-pub fn emitBpBody(buf: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, body: []const ast.Stmt) std.mem.Allocator.Error!void {
-    for (body) |stmt| {
-        try emitBpStmt(buf, arena, stmt);
+/// The argument for parameter `index`: its capture map, its literal plain
+/// argument, or `undefined`.
+fn writeParam(
+    arena: std.mem.Allocator,
+    w: *std.Io.Writer,
+    name: []const u8,
+    index: usize,
+    captures: []const template.CapturedExpr,
+    plainArgs: []const template.PlainArg,
+) EvalError!void {
+    for (captures) |*cap| {
+        if (cap.paramIndex != index) continue;
+        return erlEmitter.writeTerm(w, try captureToTerm(arena, cap)) catch return error.EvalFailed;
     }
+    for (plainArgs) |pa| {
+        if (std.mem.eql(u8, pa.paramName, name)) return pa.writeErl(w);
+    }
+    try w.writeAll("undefined");
 }
 
-pub fn emitBpStmt(buf: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, stmt: ast.Stmt) std.mem.Allocator.Error!void {
-    switch (stmt.expr) {
-        .jump => |j| switch (j.kind) {
-            .@"return" => |r| {
-                try buf.appendSlice(arena, "  return");
-                if (r) |val| {
-                    try buf.append(arena, ' ');
-                    try emitBpExpr(buf, arena, val.*);
-                }
-                try buf.appendSlice(arena, ";\n");
-            },
-            .throw_ => |t| {
-                try buf.appendSlice(arena, "  throw");
-                if (t) |val| {
-                    try buf.append(arena, ' ');
-                    try emitBpExpr(buf, arena, val.*);
-                }
-                try buf.appendSlice(arena, ";\n");
-            },
-            .@"break" => |b| {
-                if (b.label) |lbl| {
-                    try buf.appendSlice(arena, "  break :");
-                    try buf.appendSlice(arena, lbl);
-                } else {
-                    try buf.appendSlice(arena, "  break");
-                }
-                if (b.value) |val| {
-                    try buf.append(arena, ' ');
-                    try emitBpExpr(buf, arena, val.*);
-                }
-                try buf.appendSlice(arena, ";\n");
-            },
-            .@"continue" => {
-                try buf.appendSlice(arena, "  continue;\n");
-            },
-            .yield => |y| {
-                if (y.label) |lbl| {
-                    try buf.appendSlice(arena, "  yield :");
-                    try buf.appendSlice(arena, lbl);
-                } else {
-                    try buf.appendSlice(arena, "  yield");
-                }
-                if (y.value) |val| {
-                    try buf.append(arena, ' ');
-                    try emitBpExpr(buf, arena, val.*);
-                }
-                try buf.appendSlice(arena, ";\n");
-            },
-            .try_ => |t| {
-                try buf.appendSlice(arena, "  try");
-                if (t) |val| {
-                    try buf.append(arena, ' ');
-                    try emitBpExpr(buf, arena, val.*);
-                }
-                try buf.appendSlice(arena, ";\n");
-            },
-            .await_ => |a| {
-                try buf.appendSlice(arena, "  await ");
-                try emitBpExpr(buf, arena, a.*);
-                try buf.appendSlice(arena, ";\n");
-            },
-        },
-        .branch => |br| switch (br.kind) {
-            .if_ => |i| {
-                try buf.appendSlice(arena, "  if (");
-                try emitBpExpr(buf, arena, i.cond.*);
-                try buf.appendSlice(arena, ")");
-                if (i.binding) |b| {
-                    try buf.appendSlice(arena, " { ");
-                    try buf.appendSlice(arena, b);
-                    try buf.appendSlice(arena, " ->");
-                }
-                try buf.appendSlice(arena, " {\n");
-                for (i.then_) |*s| {
-                    try emitBpStmt(buf, arena, s.*);
-                }
-                try buf.appendSlice(arena, "  }");
-                if (i.else_) |els| {
-                    try buf.appendSlice(arena, " else {\n");
-                    for (els) |*s| {
-                        try emitBpStmt(buf, arena, s.*);
-                    }
-                    try buf.appendSlice(arena, "  }");
-                }
-                try buf.appendSlice(arena, ";\n");
-            },
-            .tryCatch => |tc| {
-                try buf.appendSlice(arena, "  try ");
-                try emitBpExpr(buf, arena, tc.expr.*);
-                try buf.appendSlice(arena, " catch ");
-                try emitBpExpr(buf, arena, tc.handler.*);
-                try buf.appendSlice(arena, ";\n");
-            },
-        },
-        .loop => |l| {
-            try buf.appendSlice(arena, "  loop");
-            if (l.label) |lbl| {
-                try buf.appendSlice(arena, " :");
-                try buf.appendSlice(arena, lbl);
-            }
-            if (l.awaitLoop) {
-                try buf.appendSlice(arena, " await");
-            }
-            try buf.appendSlice(arena, " (");
-            try emitBpExpr(buf, arena, l.iter.*);
-            if (l.indexRange) |ir| {
-                try buf.appendSlice(arena, ", ");
-                try emitBpExpr(buf, arena, ir.*);
-            }
-            try buf.appendSlice(arena, ") { ");
-            if (l.params.len > 0) {
-                for (l.params, 0..) |p, idx| {
-                    if (idx > 0) try buf.appendSlice(arena, ", ");
-                    try buf.appendSlice(arena, p);
-                }
-                try buf.appendSlice(arena, " ->");
-            }
-            try buf.appendSlice(arena, "\n");
-            for (l.body) |*s| {
-                try emitBpStmt(buf, arena, s.*);
-            }
-            try buf.appendSlice(arena, "  };\n");
-        },
-        .binding => |b| switch (b.kind) {
-            .localBind => |lb| {
-                try buf.appendSlice(arena, "  ");
-                if (lb.mutable) {
-                    try buf.appendSlice(arena, "var ");
-                } else {
-                    try buf.appendSlice(arena, "val ");
-                }
-                try buf.appendSlice(arena, lb.name);
-                if (lb.typeAnnotation) |ann| {
-                    try buf.appendSlice(arena, ": ");
-                    try emitTypeRef(buf, arena, ann);
-                }
-                try buf.appendSlice(arena, " = ");
-                try emitBpExpr(buf, arena, lb.value.*);
-                try buf.appendSlice(arena, ";\n");
-            },
-            .assign => |a| {
-                try buf.appendSlice(arena, "  ");
-                switch (a.target) {
-                    .name => |n| try buf.appendSlice(arena, n),
-                    .fieldAccess => |fa| {
-                        try emitBpExpr(buf, arena, fa.receiver.*);
-                        try buf.append(arena, '.');
-                        try buf.appendSlice(arena, fa.field);
+// ── capture ───────────────────────────────────────────────────────────────────
+
+/// A capture as the map its host functions read:
+/// `#{'__bp_capture' => Param, text, parts, source, context, bindings}`.
+/// Text is the literal's raw text (escapes unprocessed); in a template with
+/// `${…}` holes each hole appears as its `__bp_hole_<param>_<i>` placeholder,
+/// which `infer.zig` substitutes back when the built code is spliced.
+pub fn captureToTerm(arena: std.mem.Allocator, cap: *const template.CapturedExpr) std.mem.Allocator.Error!Term {
+    var text: std.ArrayListUnmanaged(u8) = .empty;
+    var parts: std.ArrayListUnmanaged(Term) = .empty;
+
+    switch (cap.node.*) {
+        .literal => |lit| switch (lit.kind) {
+            .stringTemplate => |st| {
+                var hole: usize = 0;
+                for (st.parts) |part| switch (part) {
+                    .text => |t| {
+                        const start = text.items.len;
+                        try text.appendSlice(arena, t);
+                        try parts.append(arena, try partTerm(arena, "Text", "text", t, text.items, start));
                     },
-                }
-                try buf.append(arena, ' ');
-                if (a.op == .plusAssign) {
-                    try buf.appendSlice(arena, "+");
-                }
-                try buf.appendSlice(arena, "= ");
-                try emitBpExpr(buf, arena, a.value.*);
-                try buf.appendSlice(arena, ";\n");
+                    .expr => {
+                        const placeholder = try std.fmt.allocPrint(arena, "__bp_hole_{s}_{d}", .{ cap.paramName, hole });
+                        hole += 1;
+                        const start = text.items.len;
+                        try text.appendSlice(arena, placeholder);
+                        try parts.append(arena, try partTerm(arena, "Interp", "code", placeholder, text.items, start));
+                    },
+                };
             },
-            .localBindDestruct => |ld| {
-                try buf.appendSlice(arena, "  ");
-                if (ld.mutable) {
-                    try buf.appendSlice(arena, "var ");
-                } else {
-                    try buf.appendSlice(arena, "val ");
-                }
-                try emitBpDestruct(buf, arena, ld.pattern);
-                try buf.appendSlice(arena, " = ");
-                try emitBpExpr(buf, arena, ld.value.*);
-                try buf.appendSlice(arena, ";\n");
+            else => {
+                const t = cap.text orelse "";
+                try text.appendSlice(arena, t);
+                if (t.len > 0) try parts.append(arena, try partTerm(arena, "Text", "text", t, text.items, 0));
             },
-        },
-        .useHook => |u| {
-            try buf.appendSlice(arena, "  use ");
-            try emitBpExpr(buf, arena, u.kind.inner.*);
-            try buf.appendSlice(arena, ";\n");
         },
         else => {
-            try buf.appendSlice(arena, "  ");
-            try emitBpExpr(buf, arena, stmt.expr);
-            try buf.appendSlice(arena, ";\n");
+            const t = cap.text orelse "";
+            try text.appendSlice(arena, t);
+            if (t.len > 0) try parts.append(arena, try partTerm(arena, "Text", "text", t, text.items, 0));
         },
     }
+
+    const source_entries = try arena.alloc(Term.MapEntry, 3);
+    source_entries[0] = Term.field("file", Term.str(cap.modulePath));
+    source_entries[1] = Term.field("line", Term.int(@intCast(cap.loc.line)));
+    source_entries[2] = Term.field("col", Term.int(@intCast(cap.loc.col)));
+    const source = Term.mapOf(source_entries);
+
+    const context_entries = try arena.alloc(Term.MapEntry, 3);
+    context_entries[0] = Term.field("source", source);
+    context_entries[1] = Term.field("text", Term.str(text.items));
+    context_entries[2] = Term.field("multiline", .{ .boolean = cap.multiline });
+
+    var bindings: std.ArrayListUnmanaged(Term) = .empty;
+    if (cap.scope) |scope| {
+        var it = scope.entries.iterator();
+        while (it.next()) |e| {
+            const be = try arena.alloc(Term.MapEntry, 2);
+            be[0] = Term.field("name", Term.str(e.value_ptr.name));
+            be[1] = Term.field("kind", Term.atomOf(e.value_ptr.kind.variantName()));
+            try bindings.append(arena, Term.mapOf(be));
+        }
+    }
+
+    const entries = try arena.alloc(Term.MapEntry, 6);
+    entries[0] = .{ .key = Term.atomOf("__bp_capture"), .value = Term.str(cap.paramName) };
+    entries[1] = Term.field("text", Term.str(text.items));
+    entries[2] = Term.field("parts", Term.listOf(parts.items));
+    entries[3] = Term.field("source", source);
+    entries[4] = Term.field("context", Term.mapOf(context_entries));
+    entries[5] = Term.field("bindings", Term.listOf(bindings.items));
+    return Term.mapOf(entries);
 }
 
-fn binOpToString(op: anytype) []const u8 {
-    return switch (op) {
-        .lt => "<",
-        .gt => ">",
-        .lte => "<=",
-        .gte => ">=",
-        .eq => "==",
-        .ne => "!=",
-        .add => "+",
-        .sub => "-",
-        .mul => "*",
-        .div => "/",
-        .mod => "%",
-        .@"and" => "&&",
-        .@"or" => "||",
+/// `#{kind => Kind, <field> => Value, span => #{start, end, line}}` for the part
+/// occupying `text[start..]`.
+fn partTerm(arena: std.mem.Allocator, kind: []const u8, field: []const u8, value: []const u8, text: []const u8, start: usize) !Term {
+    const line = 1 + std.mem.count(u8, text[0..start], "\n");
+    const span = try arena.alloc(Term.MapEntry, 3);
+    span[0] = Term.field("start", Term.int(@intCast(start)));
+    span[1] = Term.field("end", Term.int(@intCast(text.len)));
+    span[2] = Term.field("line", Term.int(@intCast(line)));
+    const entries = try arena.alloc(Term.MapEntry, 3);
+    entries[0] = Term.field("kind", Term.str(kind));
+    entries[1] = Term.field(field, Term.str(value));
+    entries[2] = Term.field("span", Term.mapOf(span));
+    return Term.mapOf(entries);
+}
+
+// ── outcome ───────────────────────────────────────────────────────────────────
+
+/// The JSON object `main/0` returns.
+const Reply = struct {
+    kind: []const u8,
+    source: []const u8 = "",
+    param: ?[]const u8 = null,
+    message: []const u8 = "",
+    span: ?template.Span = null,
+    value: std.json.Value = .null,
+    ast: std.json.Value = .null,
+};
+
+fn parseOutcome(arena: std.mem.Allocator, stdout: []const u8) EvalError!Outcome {
+    const reply = std.json.parseFromSliceLeaky(Reply, arena, stdout, .{
+        .ignore_unknown_fields = true,
+        .allocate = .alloc_always,
+    }) catch return .{ .err = try errorText(arena, "the template evaluator returned an unreadable result", stdout) };
+
+    const kind = reply.kind;
+    if (std.mem.eql(u8, kind, "code")) return .{ .code = reply.source };
+    if (std.mem.eql(u8, kind, "value")) return .{ .value = try typedValue(arena, reply.value) };
+    if (std.mem.eql(u8, kind, "capture")) return .{ .capture = reply.param orelse "" };
+    if (std.mem.eql(u8, kind, "custom")) {
+        const tree = (try customTree(arena, reply.ast)) orelse
+            return .{ .err = "`q.custom` received a tree that is not a CustomNode" };
+        return .{ .custom = .{ .code = reply.source, .ast = tree } };
+    }
+    if (std.mem.eql(u8, kind, "fail")) return .{ .fail = .{
+        .message = if (reply.message.len > 0) reply.message else "template rejected the input",
+        .param = reply.param,
+        .span = reply.span,
+    } };
+    return .{ .err = if (reply.message.len > 0) reply.message else "template evaluation failed" };
+}
+
+fn typedValue(arena: std.mem.Allocator, v: std.json.Value) std.mem.Allocator.Error!TypedValue {
+    return switch (v) {
+        .null => .null,
+        .bool => |b| .{ .bool = b },
+        .integer => |n| .{ .integer = n },
+        .float => |f| .{ .float = f },
+        .number_string, .string => |s| .{ .string = s },
+        .array => |items| blk: {
+            const out = try arena.alloc(TypedValue, items.items.len);
+            for (items.items, 0..) |item, i| out[i] = try typedValue(arena, item);
+            break :blk .{ .array = out };
+        },
+        .object => |obj| blk: {
+            const out = try arena.alloc(TypedValue.KeyValuePair, obj.count());
+            var it = obj.iterator();
+            var i: usize = 0;
+            while (it.next()) |e| : (i += 1) {
+                out[i] = .{ .key = e.key_ptr.*, .value = try typedValue(arena, e.value_ptr.*) };
+            }
+            break :blk .{ .object = out };
+        },
     };
 }
 
-pub fn emitBpExpr(buf: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, te: ast.Expr) std.mem.Allocator.Error!void {
-    switch (te) {
-        .literal => |lit| switch (lit.kind) {
-            .stringLit => |s| {
-                try buf.append(arena, '"');
-                try buf.appendSlice(arena, s);
-                try buf.append(arena, '"');
-            },
-            .stringTemplate => |st| {
-                if (st.multiline) {
-                    try buf.appendSlice(arena, "\"\"\"");
-                    for (st.parts) |*part| switch (part.*) {
-                        .text => |t| try buf.appendSlice(arena, t),
-                        .expr => |e| {
-                            try buf.appendSlice(arena, "${");
-                            try emitBpExpr(buf, arena, e.*);
-                            try buf.appendSlice(arena, "}");
-                        },
-                    };
-                    try buf.appendSlice(arena, "\"\"\"");
-                } else {
-                    try buf.append(arena, '"');
-                    for (st.parts) |*part| switch (part.*) {
-                        .text => |t| try buf.appendSlice(arena, t),
-                        .expr => |e| {
-                            try buf.appendSlice(arena, "${");
-                            try emitBpExpr(buf, arena, e.*);
-                            try buf.appendSlice(arena, "}");
-                        },
-                    };
-                    try buf.append(arena, '"');
-                }
-            },
-            .numberLit => |n| try buf.appendSlice(arena, n),
-            .null_ => try buf.appendSlice(arena, "null"),
-            .comment => |c| {
-                switch (c.kind) {
-                    .normal => {
-                        try buf.appendSlice(arena, "//");
-                        try buf.appendSlice(arena, c.text);
-                    },
-                    .doc => {
-                        try buf.appendSlice(arena, "///");
-                        try buf.appendSlice(arena, c.text);
-                    },
-                    .module => {
-                        try buf.appendSlice(arena, "////");
-                        try buf.appendSlice(arena, c.text);
-                    },
-                }
-            },
+fn customTree(arena: std.mem.Allocator, v: std.json.Value) std.mem.Allocator.Error!?CustomNodeTree {
+    const obj = switch (v) {
+        .object => |o| o,
+        else => return null,
+    };
+    const kind = jsonString(obj.get("kind")) orelse return null;
+
+    const span: ?template.Span = if (obj.get("span")) |sv| switch (sv) {
+        .object => |so| .{
+            .start = jsonUsize(so.get("start")) orelse 0,
+            .end = jsonUsize(so.get("end")) orelse 0,
+            .line = jsonUsize(so.get("line")) orelse 1,
         },
-        .identifier => |id| switch (id.kind) {
-            .ident => |name| try buf.appendSlice(arena, name),
-            .dotIdent => |name| {
-                try buf.append(arena, '.');
-                try buf.appendSlice(arena, name);
-            },
-            .identAccess => |ia| {
-                try emitBpExpr(buf, arena, ia.receiver.*);
-                if (ia.optional) {
-                    try buf.appendSlice(arena, "?.");
-                } else {
-                    try buf.append(arena, '.');
+        else => null,
+    } else null;
+
+    const ref: ?template.NodeBinding = if (obj.get("ref")) |rv| switch (rv) {
+        .object => |ro| if (jsonString(ro.get("name"))) |name| .{
+            .name = name,
+            .kind = jsonString(ro.get("kind")) orelse "",
+        } else null,
+        else => null,
+    } else null;
+
+    var children: []const CustomNodeTree = &.{};
+    if (obj.get("children")) |cv| switch (cv) {
+        .array => |items| {
+            const out = try arena.alloc(CustomNodeTree, items.items.len);
+            var n: usize = 0;
+            for (items.items) |item| {
+                if (try customTree(arena, item)) |child| {
+                    out[n] = child;
+                    n += 1;
                 }
-                try buf.appendSlice(arena, ia.member);
-            },
-        },
-        .call => |cc| switch (cc.kind) {
-            .call => |c| {
-                if (c.is_builtin) try buf.append(arena, '@');
-                if (c.receiver) |recv| {
-                    try emitBpExpr(buf, arena, recv.*);
-                    if (c.optional) {
-                        try buf.appendSlice(arena, "?.");
-                    } else {
-                        try buf.append(arena, '.');
-                    }
-                }
-                try buf.appendSlice(arena, c.callee);
-                if (c.is_tagged) {
-                    // tagged call: callee "arg"
-                    try buf.append(arena, ' ');
-                    if (c.args.len > 0) {
-                        try emitBpExpr(buf, arena, c.args[0].value.*);
-                    }
-                } else {
-                    try buf.append(arena, '(');
-                    for (c.args, 0..) |arg, i| {
-                        if (i > 0) try buf.appendSlice(arena, ", ");
-                        if (arg.label) |lbl| {
-                            try buf.appendSlice(arena, lbl);
-                            try buf.appendSlice(arena, ": ");
-                        }
-                        try emitBpExpr(buf, arena, arg.value.*);
-                    }
-                    try buf.append(arena, ')');
-                }
-                for (c.trailing) |*tl| {
-                    try buf.appendSlice(arena, " {");
-                    if (tl.label) |lbl| {
-                        try buf.appendSlice(arena, " ");
-                        try buf.appendSlice(arena, lbl);
-                        try buf.appendSlice(arena, ":");
-                    }
-                    if (tl.params.len > 0) {
-                        try buf.append(arena, ' ');
-                        for (tl.params, 0..) |p, pi| {
-                            if (pi > 0) try buf.appendSlice(arena, ", ");
-                            try buf.appendSlice(arena, p);
-                        }
-                        try buf.appendSlice(arena, " ->");
-                    }
-                    try buf.append(arena, '\n');
-                    for (tl.body) |*s| {
-                        try emitBpStmt(buf, arena, s.*);
-                    }
-                    try buf.appendSlice(arena, "  }");
-                }
-            },
-            .pipeline => |p| {
-                try emitBpExpr(buf, arena, p.lhs.*);
-                try buf.appendSlice(arena, " |> ");
-                try emitBpExpr(buf, arena, p.rhs.*);
-            },
-        },
-        .binaryOp => |b| {
-            try emitBpExpr(buf, arena, b.lhs.*);
-            try buf.append(arena, ' ');
-            try buf.appendSlice(arena, binOpToString(b.op));
-            try buf.append(arena, ' ');
-            try emitBpExpr(buf, arena, b.rhs.*);
-        },
-        .unaryOp => |u| {
-            switch (u.op) {
-                .neg => try buf.appendSlice(arena, "-"),
-                .not => try buf.appendSlice(arena, "not "),
             }
-            try emitBpExpr(buf, arena, u.expr.*);
+            children = out[0..n];
         },
-        .collection => |col| switch (col.kind) {
-            .grouped => |g| {
-                try buf.append(arena, '(');
-                try emitBpExpr(buf, arena, g.*);
-                try buf.append(arena, ')');
-            },
-            .arrayLit => |a| {
-                try buf.append(arena, '[');
-                for (a.elems, 0..) |*e, i| {
-                    if (i > 0) try buf.appendSlice(arena, ", ");
-                    try emitBpExpr(buf, arena, e.*);
-                }
-                if (a.spread) |s| {
-                    if (a.elems.len > 0) try buf.appendSlice(arena, ", ");
-                    try buf.appendSlice(arena, "..");
-                    if (s.len > 0) try buf.appendSlice(arena, s);
-                }
-                if (a.spreadExpr) |se| {
-                    try buf.appendSlice(arena, " ..");
-                    try emitBpExpr(buf, arena, se.*);
-                }
-                try buf.append(arena, ']');
-            },
-            .tupleLit => |t| {
-                try buf.appendSlice(arena, "#(");
-                for (t.elems, 0..) |*e, i| {
-                    if (i > 0) try buf.appendSlice(arena, ", ");
-                    try emitBpExpr(buf, arena, e.*);
-                }
-                try buf.append(arena, ')');
-            },
-            .range => |r| {
-                try emitBpExpr(buf, arena, r.start.*);
-                try buf.appendSlice(arena, "..");
-                if (r.end) |e| try emitBpExpr(buf, arena, e.*);
-            },
-            .case => |c| {
-                try buf.appendSlice(arena, "case ");
-                if (c.subjects.len == 1) {
-                    try emitBpExpr(buf, arena, c.subjects[0]);
-                } else {
-                    for (c.subjects, 0..) |*s, i| {
-                        if (i > 0) try buf.appendSlice(arena, ", ");
-                        try emitBpExpr(buf, arena, s.*);
-                    }
-                }
-                try buf.appendSlice(arena, " {\n");
-                for (c.arms) |*arm| {
-                    try buf.appendSlice(arena, "  ");
-                    try emitBpPattern(buf, arena, arm.pattern);
-                    if (arm.guard) |g| {
-                        try buf.appendSlice(arena, " if ");
-                        try emitBpExpr(buf, arena, g);
-                    }
-                    try buf.appendSlice(arena, " -> ");
-                    try emitBpExpr(buf, arena, arm.body);
-                    try buf.appendSlice(arena, ";\n");
-                }
-                try buf.appendSlice(arena, "}");
-            },
-            .recordLit => |rl| {
-                try buf.appendSlice(arena, "record { ");
-                for (rl.fields, 0..) |*f, i| {
-                    if (i > 0) try buf.appendSlice(arena, ", ");
-                    try buf.appendSlice(arena, f.name);
-                    try buf.appendSlice(arena, ": ");
-                    try emitBpExpr(buf, arena, f.value.*);
-                }
-                try buf.appendSlice(arena, " }");
-            },
-            .interfaceLit => |il| {
-                try buf.appendSlice(arena, "@");
-                try buf.appendSlice(arena, il.name);
-                try buf.appendSlice(arena, "(");
-                for (il.fields, 0..) |*f, i| {
-                    if (i > 0) try buf.appendSlice(arena, ", ");
-                    try buf.appendSlice(arena, f.name);
-                    try buf.appendSlice(arena, ": ");
-                    try emitBpExpr(buf, arena, f.value.*);
-                }
-                try buf.appendSlice(arena, ")");
-            },
-        },
-        .branch => |br| switch (br.kind) {
-            .if_ => |i| {
-                try buf.appendSlice(arena, "if (");
-                try emitBpExpr(buf, arena, i.cond.*);
-                try buf.appendSlice(arena, ")");
-                if (i.binding) |b| {
-                    try buf.appendSlice(arena, " { ");
-                    try buf.appendSlice(arena, b);
-                    try buf.appendSlice(arena, " ->");
-                }
-                try buf.appendSlice(arena, " {\n");
-                for (i.then_) |*s| {
-                    try emitBpStmt(buf, arena, s.*);
-                }
-                try buf.appendSlice(arena, "}");
-                if (i.else_) |els| {
-                    try buf.appendSlice(arena, " else {\n");
-                    for (els) |*s| {
-                        try emitBpStmt(buf, arena, s.*);
-                    }
-                    try buf.appendSlice(arena, "}");
-                }
-            },
-            .tryCatch => |tc| {
-                try buf.appendSlice(arena, "try ");
-                try emitBpExpr(buf, arena, tc.expr.*);
-                try buf.appendSlice(arena, " catch ");
-                try emitBpExpr(buf, arena, tc.handler.*);
-            },
-        },
-        .function => |f| {
-            switch (f.kind.syntax) {
-                .lambda => {
-                    try buf.append(arena, '{');
-                    for (f.kind.params, 0..) |p, i| {
-                        if (i > 0) try buf.appendSlice(arena, ", ");
-                        try buf.appendSlice(arena, p);
-                    }
-                    if (f.kind.params.len > 0) try buf.appendSlice(arena, " ->");
-                    try buf.append(arena, '\n');
-                    for (f.kind.body) |*s| {
-                        try emitBpStmt(buf, arena, s.*);
-                    }
-                    try buf.appendSlice(arena, "}");
-                },
-                .fnExpr => {
-                    try buf.appendSlice(arena, "fn(");
-                    for (f.kind.params, 0..) |p, i| {
-                        if (i > 0) try buf.appendSlice(arena, ", ");
-                        try buf.appendSlice(arena, p);
-                    }
-                    try buf.appendSlice(arena, ") {\n");
-                    for (f.kind.body) |*s| {
-                        try emitBpStmt(buf, arena, s.*);
-                    }
-                    try buf.appendSlice(arena, "}");
-                },
-            }
-        },
-        .binding => |b| switch (b.kind) {
-            .localBind => |lb| {
-                if (lb.mutable) {
-                    try buf.appendSlice(arena, "var ");
-                } else {
-                    try buf.appendSlice(arena, "val ");
-                }
-                try buf.appendSlice(arena, lb.name);
-                if (lb.typeAnnotation) |ann| {
-                    try buf.appendSlice(arena, ": ");
-                    try emitTypeRef(buf, arena, ann);
-                }
-                try buf.appendSlice(arena, " = ");
-                try emitBpExpr(buf, arena, lb.value.*);
-            },
-            .assign => |a| {
-                switch (a.target) {
-                    .name => |n| try buf.appendSlice(arena, n),
-                    .fieldAccess => |fa| {
-                        try emitBpExpr(buf, arena, fa.receiver.*);
-                        try buf.append(arena, '.');
-                        try buf.appendSlice(arena, fa.field);
-                    },
-                }
-                try buf.append(arena, ' ');
-                if (a.op == .plusAssign) {
-                    try buf.appendSlice(arena, "+");
-                }
-                try buf.appendSlice(arena, "= ");
-                try emitBpExpr(buf, arena, a.value.*);
-            },
-            .localBindDestruct => |ld| {
-                if (ld.mutable) {
-                    try buf.appendSlice(arena, "var ");
-                } else {
-                    try buf.appendSlice(arena, "val ");
-                }
-                try emitBpDestruct(buf, arena, ld.pattern);
-                try buf.appendSlice(arena, " = ");
-                try emitBpExpr(buf, arena, ld.value.*);
-            },
-        },
-        .loop => |l| {
-            try buf.appendSlice(arena, "loop");
-            if (l.label) |lbl| {
-                try buf.appendSlice(arena, " :");
-                try buf.appendSlice(arena, lbl);
-            }
-            if (l.awaitLoop) {
-                try buf.appendSlice(arena, " await");
-            }
-            try buf.appendSlice(arena, " (");
-            try emitBpExpr(buf, arena, l.iter.*);
-            if (l.indexRange) |ir| {
-                try buf.appendSlice(arena, ", ");
-                try emitBpExpr(buf, arena, ir.*);
-            }
-            try buf.appendSlice(arena, ") { ");
-            if (l.params.len > 0) {
-                for (l.params, 0..) |p, idx| {
-                    if (idx > 0) try buf.appendSlice(arena, ", ");
-                    try buf.appendSlice(arena, p);
-                }
-                try buf.appendSlice(arena, " ->");
-            }
-            try buf.appendSlice(arena, "\n");
-            for (l.body) |*s| {
-                try emitBpStmt(buf, arena, s.*);
-            }
-            try buf.appendSlice(arena, "}");
-        },
-        .jump => |j| switch (j.kind) {
-            .@"break" => |b| {
-                if (b.label) |lbl| {
-                    try buf.appendSlice(arena, "break :");
-                    try buf.appendSlice(arena, lbl);
-                } else {
-                    try buf.appendSlice(arena, "break");
-                }
-                if (b.value) |val| {
-                    try buf.append(arena, ' ');
-                    try emitBpExpr(buf, arena, val.*);
-                }
-            },
-            .@"continue" => try buf.appendSlice(arena, "continue"),
-            .yield => |y| {
-                if (y.label) |lbl| {
-                    try buf.appendSlice(arena, "yield :");
-                    try buf.appendSlice(arena, lbl);
-                } else {
-                    try buf.appendSlice(arena, "yield");
-                }
-                if (y.value) |val| {
-                    try buf.append(arena, ' ');
-                    try emitBpExpr(buf, arena, val.*);
-                }
-            },
-            else => try buf.appendSlice(arena, "null"),
-        },
-        .comptime_ => |c| switch (c.kind) {
-            .comptimeExpr => |e| {
-                try buf.appendSlice(arena, "comptime ");
-                try emitBpExpr(buf, arena, e.*);
-            },
-            .comptimeBlock => |cb| {
-                try buf.appendSlice(arena, "comptime {\n");
-                for (cb.body) |*s| {
-                    try emitBpStmt(buf, arena, s.*);
-                }
-                try buf.appendSlice(arena, "}");
-            },
-            .assert => |a| {
-                try buf.appendSlice(arena, "assert ");
-                try emitBpExpr(buf, arena, a.condition.*);
-                if (a.message) |msg| {
-                    try buf.appendSlice(arena, ", ");
-                    try emitBpExpr(buf, arena, msg.*);
-                }
-            },
-            .assertPattern => |ap| {
-                try buf.appendSlice(arena, "assert ");
-                try emitBpPattern(buf, arena, ap.pattern);
-                try buf.appendSlice(arena, " = ");
-                try emitBpExpr(buf, arena, ap.expr.*);
-                try buf.appendSlice(arena, " catch ");
-                try emitBpExpr(buf, arena, ap.handler.*);
-            },
-        },
-        else => try buf.appendSlice(arena, "null"),
-    }
+        else => {},
+    };
+
+    return .{ .kind = kind, .span = span, .label = jsonString(obj.get("label")), .ref = ref, .children = children };
 }
 
-pub fn emitBpPattern(buf: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, pat: ast.Pattern) std.mem.Allocator.Error!void {
-    switch (pat) {
-        .wildcard => try buf.append(arena, '_'),
-        .ident => |n| try buf.appendSlice(arena, n),
-        .variant => |v| {
-            try buf.appendSlice(arena, v.name);
-            switch (v.payload) {
-                .binding => |b| {
-                    try buf.append(arena, ' ');
-                    try buf.appendSlice(arena, b);
-                },
-                .fields => |fs| {
-                    try buf.append(arena, '(');
-                    for (fs, 0..) |f, i| {
-                        if (i > 0) try buf.appendSlice(arena, ", ");
-                        try buf.appendSlice(arena, f);
-                    }
-                    try buf.append(arena, ')');
-                },
-                .literals => |ls| {
-                    try buf.append(arena, '(');
-                    for (ls, 0..) |*l, i| {
-                        if (i > 0) try buf.appendSlice(arena, ", ");
-                        try emitBpPattern(buf, arena, l.*);
-                    }
-                    try buf.append(arena, ')');
-                },
-            }
-        },
-        .numberLit => |n| try buf.appendSlice(arena, n),
-        .stringLit => |s| {
-            try buf.append(arena, '"');
-            try buf.appendSlice(arena, s);
-            try buf.append(arena, '"');
-        },
-        .list => |l| {
-            try buf.append(arena, '[');
-            for (l.elems, 0..) |e, i| {
-                if (i > 0) try buf.appendSlice(arena, ", ");
-                switch (e) {
-                    .wildcard => try buf.append(arena, '_'),
-                    .bind => |n| try buf.appendSlice(arena, n),
-                    .numberLit => |n| try buf.appendSlice(arena, n),
-                }
-            }
-            if (l.spread) |s| {
-                if (l.elems.len > 0) try buf.appendSlice(arena, ", ");
-                try buf.appendSlice(arena, "..");
-                if (s.len > 0) try buf.appendSlice(arena, s);
-            }
-            try buf.append(arena, ']');
-        },
-        .@"or" => |pats| {
-            for (pats, 0..) |*p, i| {
-                if (i > 0) try buf.appendSlice(arena, " | ");
-                try emitBpPattern(buf, arena, p.*);
-            }
-        },
-        .multi => |pats| {
-            for (pats, 0..) |*p, i| {
-                if (i > 0) try buf.appendSlice(arena, ", ");
-                try emitBpPattern(buf, arena, p.*);
-            }
-        },
-    }
+fn jsonString(v: ?std.json.Value) ?[]const u8 {
+    return switch (v orelse return null) {
+        .string => |s| s,
+        else => null,
+    };
 }
 
-pub fn emitBpDestruct(buf: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, d: ast.ParamDestruct) std.mem.Allocator.Error!void {
-    switch (d) {
-        .names => |n| {
-            if (n.hasSpread) try buf.appendSlice(arena, "{ ");
-            for (n.fields, 0..) |f, i| {
-                if (i > 0) try buf.appendSlice(arena, ", ");
-                if (!std.mem.eql(u8, f.field_name, f.bind_name)) {
-                    try buf.appendSlice(arena, f.field_name);
-                    try buf.appendSlice(arena, ": ");
-                    try buf.appendSlice(arena, f.bind_name);
-                } else {
-                    try buf.appendSlice(arena, f.bind_name);
-                }
-            }
-            if (n.hasSpread) try buf.appendSlice(arena, " }");
-        },
-        .tuple_ => |t| {
-            try buf.appendSlice(arena, "#(");
-            for (t, 0..) |f, i| {
-                if (i > 0) try buf.appendSlice(arena, ", ");
-                try buf.appendSlice(arena, f);
-            }
-            try buf.append(arena, ')');
-        },
-        .list => |*p| {
-            try emitBpPattern(buf, arena, p.*);
-        },
-        .ctor => |*p| {
-            try emitBpPattern(buf, arena, p.*);
-        },
-    }
+fn jsonUsize(v: ?std.json.Value) ?usize {
+    return switch (v orelse return null) {
+        .integer => |n| if (n >= 0) @intCast(n) else null,
+        else => null,
+    };
 }
 
-pub fn emitTypeRef(buf: *std.ArrayListUnmanaged(u8), arena: std.mem.Allocator, tr: ast.TypeRef) std.mem.Allocator.Error!void {
-    switch (tr) {
-        .named => |n| try buf.appendSlice(arena, n),
-        .array => |a| {
-            try emitTypeRef(buf, arena, a.*);
-            try buf.appendSlice(arena, "[]");
-        },
-        .optional => |o| {
-            try buf.append(arena, '?');
-            try emitTypeRef(buf, arena, o.*);
-        },
-        .tuple_ => |elems| {
-            try buf.appendSlice(arena, "#(");
-            for (elems, 0..) |*e, i| {
-                if (i > 0) try buf.appendSlice(arena, ", ");
-                try emitTypeRef(buf, arena, e.*);
-            }
-            try buf.append(arena, ')');
-        },
-        .function => |f| {
-            try buf.appendSlice(arena, "fn(");
-            for (f.params, 0..) |*p, i| {
-                if (i > 0) try buf.appendSlice(arena, ", ");
-                try emitTypeRef(buf, arena, p.*);
-            }
-            try buf.appendSlice(arena, ") -> ");
-            try emitTypeRef(buf, arena, f.returnType.*);
-        },
-        .generic => |g| {
-            if (g.is_builtin) try buf.append(arena, '@');
-            try buf.appendSlice(arena, g.name);
-            try buf.append(arena, '<');
-            for (g.args, 0..) |*a, i| {
-                if (i > 0) try buf.appendSlice(arena, ", ");
-                try emitTypeRef(buf, arena, a.*);
-            }
-            try buf.append(arena, '>');
-        },
-        .typeparam => |tp| {
-            try buf.appendSlice(arena, "type");
-            if (tp.len > 0) {
-                try buf.append(arena, ' ');
-                for (tp, 0..) |*c, i| {
-                    if (i > 0) try buf.appendSlice(arena, " | ");
-                    try emitTypeRef(buf, arena, c.*);
-                }
-            }
-        },
-        .record_type => |rt| {
-            try buf.appendSlice(arena, "record { ");
-            for (rt, 0..) |*f, i| {
-                if (i > 0) try buf.appendSlice(arena, ", ");
-                try buf.appendSlice(arena, f.name);
-                try buf.appendSlice(arena, ": ");
-                try emitTypeRef(buf, arena, f.typeRef);
-            }
-            try buf.appendSlice(arena, " }");
-        },
-    }
+// ── tests ─────────────────────────────────────────────────────────────────────
+
+test "template outcome: every reply kind" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const code = try parseOutcome(arena, "{\"kind\":\"code\",\"source\":\"\\\"hey!\\\"\"}");
+    try std.testing.expectEqualStrings("\"hey!\"", code.code);
+
+    const value = try parseOutcome(arena, "{\"kind\":\"value\",\"value\":[6,\"x\",null,{\"a\":true}]}");
+    try std.testing.expectEqual(@as(i64, 6), value.value.array[0].integer);
+    try std.testing.expect(value.value.array[2] == .null);
+    try std.testing.expect(value.value.array[3].object[0].value.bool);
+
+    const capture = try parseOutcome(arena, "{\"kind\":\"capture\",\"param\":\"q\"}");
+    try std.testing.expectEqualStrings("q", capture.capture);
+
+    const custom = try parseOutcome(arena,
+        \\{"kind":"custom","source":"41","ast":{"kind":"root","span":{"start":0,"end":6,"line":1},"label":"keyword","ref":null,
+        \\ "children":[{"kind":"leaf","span":{"start":5,"end":9,"line":1},"label":"property","ref":{"name":"Item","kind":"Record_"},"children":[]}]}}
+    );
+    try std.testing.expectEqualStrings("41", custom.custom.code);
+    try std.testing.expect(custom.custom.ast.ref == null);
+    try std.testing.expectEqualStrings("Record_", custom.custom.ast.children[0].ref.?.kind);
+
+    const fail = try parseOutcome(arena, "{\"kind\":\"fail\",\"message\":\"no\",\"param\":\"q\",\"span\":null}");
+    try std.testing.expectEqualStrings("no", fail.fail.message);
+    try std.testing.expectEqualStrings("q", fail.fail.param.?);
+
+    try std.testing.expect((try parseOutcome(arena, "{\"kind\":\"error\",\"message\":\"x\"}")) == .err);
+    try std.testing.expect((try parseOutcome(arena, "garbage")) == .err);
 }
