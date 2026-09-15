@@ -1844,7 +1844,7 @@ const Emitter = struct {
         if (!this.locals.contains(name)) {
             const vname = Ast.Expr.v(try this.arenaVar(b, name));
             this.addLocal(name);
-            return b.match(vname, try this.exprAsRaw(b, value));
+            return b.match(vname, try this.exprNode(b, value));
         }
         const version = (this.var_next.get(name) orelse 0) + 1;
         const base = try erlangVar(this.alloc, name);
@@ -1854,12 +1854,12 @@ const Emitter = struct {
             const old = try this.varRef(name);
             defer this.alloc.free(old);
             const old_var = Ast.Expr.v(try b.arena.dupe(u8, old));
-            const addend = try this.exprAsRaw(b, value);
+            const addend = try this.exprNode(b, value);
             break :blk if (this.untyped)
                 try b.call("__bp_add", &.{ old_var, addend })
             else
                 .{ .binop = .{ .op = "+", .lhs = try b.ptr(old_var), .rhs = try b.ptr(addend), .parens = false } };
-        } else try this.exprAsRaw(b, value);
+        } else try this.exprNode(b, value);
         try this.var_next.put(name, version);
         try this.var_current.put(name, version);
         return b.match(target, rhs);
@@ -2321,23 +2321,23 @@ const Emitter = struct {
         this.indent = saved;
         const fold = try b.remote("lists", "foldl", &.{
             .{ .fun = .{ .params = try b.exprs(&.{ p_var, acc_var }), .body = try b.body(&.{fold_body}) } },
-            try this.exprAsRaw(b, ff.init.*),
-            try this.exprAsRaw(b, ff.recv.*),
+            try this.exprNode(b, ff.init.*),
+            try this.exprNode(b, ff.recv.*),
         });
         return b.match(acc_var, fold);
     }
 
     fn foldBodyExpr(this: *Emitter, b: Ast.Builder, bk: FoldBodyKind, acc_var: Ast.Expr) anyerror!Ast.Expr {
         return switch (bk) {
-            .assign => |e| this.exprAsRaw(b, e.*),
-            .plus_assign => |e| b.binop("+", acc_var, try this.exprAsRaw(b, e.*)),
-            .push => |e| b.binop("++", acc_var, try b.list(&.{try this.exprAsRaw(b, e.*)})),
+            .assign => |e| this.exprNode(b, e.*),
+            .plus_assign => |e| b.binop("+", acc_var, try this.exprNode(b, e.*)),
+            .push => |e| b.binop("++", acc_var, try b.list(&.{try this.exprNode(b, e.*)})),
             .if_assign => |ia| blk: {
-                const cond = try this.exprAsRaw(b, ia.cond.*);
+                const cond = try this.exprNode(b, ia.cond.*);
                 this.indent += 1;
                 defer this.indent -= 1;
-                const then_val = try this.exprAsRaw(b, ia.then_val.*);
-                const else_val = if (ia.else_val) |ev| try this.exprAsRaw(b, ev.*) else acc_var;
+                const then_val = try this.exprNode(b, ia.then_val.*);
+                const else_val = if (ia.else_val) |ev| try this.exprNode(b, ev.*) else acc_var;
                 break :blk b.caseOf(cond, &.{
                     try b.clause(&.{Ast.Expr.a("true")}, &.{}, &.{then_val}),
                     try b.clause(&.{Ast.Expr.v("_")}, &.{}, &.{else_val}),
@@ -2491,16 +2491,6 @@ const Emitter = struct {
         while (it.next()) |e| try this.var_current.put(e.key_ptr.*, e.value_ptr.*);
     }
 
-    /// A legacy-emitted expression at the current indentation, as a `raw` node.
-    fn exprAsRaw(this: *Emitter, b: Ast.Builder, e: ast.Expr) anyerror!Ast.Expr {
-        var buf: std.Io.Writer.Allocating = .init(b.arena);
-        const out = this.out;
-        this.out = &buf.writer;
-        defer this.out = out;
-        try this.emitExpr(e);
-        return Ast.Expr.r(buf.written());
-    }
-
     /// `erlangVar(name)` copied into the builder's arena.
     fn arenaVar(this: *Emitter, b: Ast.Builder, name: []const u8) anyerror![]const u8 {
         const v = try erlangVar(this.alloc, name);
@@ -2525,7 +2515,7 @@ const Emitter = struct {
         var snapshot = try this.var_current.clone();
         defer snapshot.deinit();
 
-        const subject = try this.exprAsRaw(b, if_node.cond.*);
+        const subject = try this.exprNode(b, if_node.cond.*);
         var clauses: std.ArrayListUnmanaged(Ast.Clause) = .empty;
         const arm_indent = this.indent + 2;
 
@@ -2565,7 +2555,7 @@ const Emitter = struct {
         const fun_body = try this.armWithGroup(b, body, names, this.indent + 1);
         try this.restoreVersions(&snapshot);
         const group_init = try this.varGroupExpr(b, names);
-        const iter_expr = try this.exprAsRaw(b, iter);
+        const iter_expr = try this.exprNode(b, iter);
 
         const fold = try b.remote("lists", "foldl", &.{
             .{ .fun = .{ .params = try b.exprs(&.{ pname, group_in }), .body = fun_body } },
@@ -2633,7 +2623,7 @@ const Emitter = struct {
     /// `case Cond of true -> <then-body>; _ -> <body[i+1..]> end` for an `if`
     /// that early-returns, nesting the remaining statements in the false arm.
     fn earlyReturnIfExpr(this: *Emitter, b: Ast.Builder, body: []const ast.Stmt, i: usize, if_node: anytype) anyerror!Ast.Expr {
-        const cond = try this.exprAsRaw(b, if_node.cond.*);
+        const cond = try this.exprNode(b, if_node.cond.*);
         const arm_indent = this.indent + 2;
         return b.caseOf(cond, &.{
             .{ .patterns = try b.exprs(&.{Ast.Expr.a("true")}), .body = try this.bodyNode(b, if_node.then_, 0, arm_indent) },
@@ -2653,7 +2643,7 @@ const Emitter = struct {
         const n = this.try_seq;
         this.try_seq += 1;
 
-        const subject = try this.exprAsRaw(b, inner);
+        const subject = try this.exprNode(b, inner);
         const bound: Ast.Expr = switch (head) {
             .name => |nm| Ast.Expr.v(try this.arenaVar(b, nm)),
             .destruct => |pat| try this.destructPatternExpr(b, pat),
@@ -2702,15 +2692,15 @@ const Emitter = struct {
                     // `__bp_future_rejected(<e>)` to a plain `throw(<e>)` — the
                     // promise wrap is implicit in erlang's sync rendering.
                     if (futureWrapCallNameErl(val.*)) |kind| {
-                        const inner = try this.exprAsRaw(b, val.*.call.kind.call.args[0].value.*);
+                        const inner = try this.exprNode(b, val.*.call.kind.call.args[0].value.*);
                         return switch (kind) {
                             .resolved => inner,
                             .rejected => b.call("throw", &.{inner}),
                         };
                     }
-                    return this.exprAsRaw(b, val.*);
+                    return this.exprNode(b, val.*);
                 },
-                else => return this.exprAsRaw(b, e),
+                else => return this.exprNode(b, e),
             },
             .binding => |bind| switch (bind.kind) {
                 .localBind => |lb| return this.bindExpr(b, lb.name, .bind, lb.value.*),
@@ -2722,14 +2712,14 @@ const Emitter = struct {
                     .fieldAccess => return Ast.Expr.r("%% field assignment is not directly supported in Erlang"),
                 },
                 .localBindDestruct => |lb| {
-                    const value = try this.exprAsRaw(b, lb.value.*);
+                    const value = try this.exprNode(b, lb.value.*);
                     return switch (lb.pattern) {
                         .names, .tuple_ => b.match(try this.destructPatternExpr(b, lb.pattern), value),
                         .list, .ctor => value,
                     };
                 },
             },
-            else => return this.exprAsRaw(b, e),
+            else => return this.exprNode(b, e),
         }
     }
 
@@ -2797,144 +2787,290 @@ const Emitter = struct {
         try this.w(")");
     }
 
+    /// Emit `e` at the current indentation: build its `erl_ast` node and render it.
     fn emitExpr(this: *Emitter, e: ast.Expr) anyerror!void {
+        var arena_state = std.heap.ArenaAllocator.init(this.alloc);
+        defer arena_state.deinit();
+        const b: Ast.Builder = .{ .arena = arena_state.allocator() };
+        try erlEmitter.writeExpr(this.out, try this.exprNode(b, e), this.indent);
+    }
+
+    /// `e` as an `erl_ast` expression rendered at the current indentation.
+    /// Kinds not modelled yet (calls, binding expressions, comptime forms,
+    /// `case`) are captured from `emitExprLegacy` as `raw` text.
+    fn exprNode(this: *Emitter, b: Ast.Builder, e: ast.Expr) anyerror!Ast.Expr {
+        const V = Ast.Expr.v;
+        const A = Ast.Expr.a;
         switch (e) {
-            .literal => |lit| switch (lit.kind) {
-                .numberLit => |n| try this.w(n),
-                .comment => |c| {
-                    const prefix = switch (c.kind) {
+            .literal => |lit| return switch (lit.kind) {
+                .numberLit => |n| .{ .number = n },
+                .comment => |c| Ast.Expr.r(try std.fmt.allocPrint(b.arena, "{s} {s}", .{
+                    switch (c.kind) {
                         .normal => "%",
                         .doc => "%%",
                         .module => "%%%",
-                    };
-                    try this.fmt("{s} {s}", .{ prefix, c.text });
-                },
-                .stringLit => |s| try this.emitBinary(s),
+                    },
+                    c.text,
+                })),
+                .stringLit => |str| .{ .lexeme_binary = str },
                 // Desugared to a `+` chain by the transform pass; never reaches codegen.
                 .stringTemplate => unreachable,
-                .null_ => try this.w("undefined"),
+                .null_ => A("undefined"),
             },
 
             .identifier => |id| switch (id.kind) {
                 .ident => |n| {
                     // Boolean literals are env-bound identifiers in botopink —
                     // they must stay lowercase atoms, never `True`/`False` vars.
-                    if (std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false")) {
-                        try this.w(n);
-                    } else if (!this.locals.contains(n) and this.top_vals.contains(n)) {
-                        // A module-level `val` emitted as a 0-arity function: a bare
-                        // reference is the call `name()`, not a variable. A local of
-                        // the same name shadows it (handled by the `locals` check).
-                        var fb: [256]u8 = undefined;
-                        try this.fmt("{s}()", .{try fnAtom(n, &fb)});
-                    } else {
-                        const vname = try this.varRef(n);
-                        defer this.alloc.free(vname);
-                        try this.w(vname);
-                    }
+                    if (std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false")) return A(n);
+                    // A module-level `val` emitted as a 0-arity function: a bare
+                    // reference is the call `name()`. A local of the same name
+                    // shadows it.
+                    if (!this.locals.contains(n) and this.top_vals.contains(n)) return b.call(n, &.{});
+                    const vname = try this.varRef(n);
+                    defer this.alloc.free(vname);
+                    return V(try b.arena.dupe(u8, vname));
                 },
                 .identAccess => |ia| {
                     // Qualified enum member: `Order.Lt` → the variant atom.
                     if (ia.receiver.* == .identifier and ia.receiver.*.identifier.kind == .ident and
                         this.enum_names.contains(ia.receiver.*.identifier.kind.ident))
                     {
-                        var tag_buf: [128]u8 = undefined;
-                        try this.w(try atomName(ia.member, &tag_buf));
-                        return;
+                        return A(ia.member);
                     }
                     // Tuple index access: `t._N` → `element(N+1, T)` (1-based).
                     if (tupleIndexMember(ia.member)) |digits| {
                         const idx = std.fmt.parseInt(usize, digits, 10) catch 0;
+                        const position = Ast.Expr.t(Term.int(@intCast(idx + 1)));
                         if (ia.optional) {
                             const n = this.try_seq;
                             this.try_seq += 1;
-                            try this.fmt("(fun(undefined) -> undefined; (_Opt{d}) -> element({d}, _Opt{d}) end)(", .{ n, idx + 1, n });
-                            try this.emitExpr(ia.receiver.*);
-                            try this.w(")");
-                        } else {
-                            try this.fmt("element({d}, ", .{idx + 1});
-                            try this.emitExpr(ia.receiver.*);
-                            try this.w(")");
+                            const opt = V(try std.fmt.allocPrint(b.arena, "_Opt{d}", .{n}));
+                            return this.optionalAccess(b, opt, try b.call("element", &.{ position, opt }), ia.receiver.*);
                         }
-                        return;
+                        return b.call("element", &.{ position, try this.exprNode(b, ia.receiver.*) });
                     }
-                    // `arr.length` / `s.length` / `arr.len` recorded by inference
-                    // as a primitive field access → the host length op, not a
-                    // map read (`maps:get(length, …)` would crash on a list).
+                    // `arr.length` / `s.length` / `arr.len` recorded by inference as a
+                    // primitive field access → the host length op, not a map read.
                     if (this.instance_lowerings.get(id.loc)) |il| switch (il) {
                         .prim => |k| {
-                            switch (k) {
-                                .string => try this.w("string:length("),
-                                else => try this.w("length("),
-                            }
-                            try this.emitExpr(ia.receiver.*);
-                            try this.w(")");
-                            return;
+                            const recv = try this.exprNode(b, ia.receiver.*);
+                            return switch (k) {
+                                .string => b.remote("string", "length", &.{recv}),
+                                else => b.call("length", &.{recv}),
+                            };
                         },
                         .record => {},
                     };
                     if (this.untyped and !ia.optional and
                         (std.mem.eql(u8, ia.member, "len") or std.mem.eql(u8, ia.member, "length")))
                     {
-                        try this.w("'__bp_len'(");
-                        try this.emitExpr(ia.receiver.*);
-                        try this.fmt(", {s})", .{ia.member});
-                        return;
+                        return b.call("__bp_len", &.{ try this.exprNode(b, ia.receiver.*), A(ia.member) });
                     }
                     // Record/struct field access — records are maps at runtime.
                     // Optional chaining (`a?.b`) guards on `undefined`.
                     if (ia.optional) {
                         const n = this.try_seq;
                         this.try_seq += 1;
-                        var ab1: [128]u8 = undefined;
-                        try this.fmt("(fun(undefined) -> undefined; (_Opt{d}) -> maps:get({s}, _Opt{d}) end)(", .{ n, try atomName(ia.member, &ab1), n });
-                        try this.emitExpr(ia.receiver.*);
-                        try this.w(")");
-                    } else {
-                        var ab2: [128]u8 = undefined;
-                        try this.fmt("maps:get({s}, ", .{try atomName(ia.member, &ab2)});
-                        try this.emitExpr(ia.receiver.*);
-                        try this.w(")");
+                        const opt = V(try std.fmt.allocPrint(b.arena, "_Opt{d}", .{n}));
+                        return this.optionalAccess(b, opt, try b.remote("maps", "get", &.{ A(ia.member), opt }), ia.receiver.*);
                     }
+                    return b.remote("maps", "get", &.{ A(ia.member), try this.exprNode(b, ia.receiver.*) });
                 },
-                .dotIdent => |n| try this.fmt("{s}", .{n}),
+                .dotIdent => |n| return Ast.Expr.r(n),
             },
 
-            .binaryOp => |bin| switch (bin.op) {
-                .add => if (this.untyped) {
-                    try this.w("'__bp_add'(");
-                    try this.emitExpr(bin.lhs.*);
-                    try this.w(", ");
-                    try this.emitExpr(bin.rhs.*);
-                    try this.w(")");
-                } else try this.emitBinaryOp("+", bin.lhs, bin.rhs),
-                .sub => try this.emitBinaryOp("-", bin.lhs, bin.rhs),
-                .mul => try this.emitBinaryOp("*", bin.lhs, bin.rhs),
-                .div => try this.emitBinaryOp("div", bin.lhs, bin.rhs),
-                .mod => try this.emitBinaryOp("rem", bin.lhs, bin.rhs),
-                .lt => try this.emitBinaryOp("<", bin.lhs, bin.rhs),
-                .gt => try this.emitBinaryOp(">", bin.lhs, bin.rhs),
-                .lte => try this.emitBinaryOp("=<", bin.lhs, bin.rhs),
-                .gte => try this.emitBinaryOp(">=", bin.lhs, bin.rhs),
-                .eq => try this.emitBinaryOp("=:=", bin.lhs, bin.rhs),
-                .ne => try this.emitBinaryOp("=/=", bin.lhs, bin.rhs),
-                .@"and" => try this.emitBinaryOp("and", bin.lhs, bin.rhs),
-                .@"or" => try this.emitBinaryOp("or", bin.lhs, bin.rhs),
+            .binaryOp => |bin| {
+                const op: []const u8 = switch (bin.op) {
+                    .add => if (this.untyped)
+                        return b.call("__bp_add", &.{ try this.exprNode(b, bin.lhs.*), try this.exprNode(b, bin.rhs.*) })
+                    else
+                        "+",
+                    .sub => "-",
+                    .mul => "*",
+                    .div => "div",
+                    .mod => "rem",
+                    .lt => "<",
+                    .gt => ">",
+                    .lte => "=<",
+                    .gte => ">=",
+                    .eq => "=:=",
+                    .ne => "=/=",
+                    .@"and" => "and",
+                    .@"or" => "or",
+                };
+                return b.binop(op, try this.exprNode(b, bin.lhs.*), try this.exprNode(b, bin.rhs.*));
             },
 
-            .unaryOp => |un| switch (un.op) {
-                .not => {
-                    try this.w("(not ");
-                    try this.emitExpr(un.expr.*);
-                    try this.w(")");
+            .unaryOp => |un| return .{ .unop = .{
+                .op = switch (un.op) {
+                    .not => "not ",
+                    .neg => "-",
                 },
-                .neg => {
-                    try this.w("(-");
-                    try this.emitExpr(un.expr.*);
-                    try this.w(")");
+                .operand = try b.ptr(try this.exprNode(b, un.expr.*)),
+            } },
+
+            .function => |func| {
+                const params = try b.arena.alloc(Ast.Expr, func.kind.params.len);
+                for (func.kind.params, 0..) |p, i| {
+                    params[i] = V(try this.arenaVar(b, p));
+                    this.addLocal(p);
+                }
+                return .{ .fun = .{ .params = params, .body = try this.bodyNode(b, func.kind.body, 0, this.indent + 1) } };
+            },
+
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| return b.paren(try this.exprNode(b, inner.*)),
+                .arrayLit => |al| {
+                    var items: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+                    for (al.elems) |elem| try items.append(b.arena, try this.exprNode(b, elem));
+                    // A spread expression concatenates: `[A, B] ++ Rest`.
+                    if (al.spreadExpr) |se| {
+                        return .{ .binop = .{
+                            .op = "++",
+                            .lhs = try b.ptr(.{ .list = items.items }),
+                            .rhs = try b.ptr(try this.exprNode(b, se.*)),
+                            .parens = false,
+                        } };
+                    }
+                    if (al.spread) |name| {
+                        if (name.len > 0) try items.append(b.arena, Ast.Expr.r(name));
+                    }
+                    return .{ .list = items.items };
+                },
+                .tupleLit => |tl| {
+                    const items = try b.arena.alloc(Ast.Expr, tl.elems.len);
+                    for (tl.elems, 0..) |elem, i| items[i] = try this.exprNode(b, elem);
+                    return .{ .tuple = items };
+                },
+                .case => return this.legacyAsRaw(b, e),
+                // `a..b` is half-open `[a, b)` (parity with wasm + `Array.range`),
+                // but erlang's `lists:seq/2` is inclusive — so the upper bound is
+                // `b - 1`; an open range `a..` iterates to `infinity`.
+                .range => |r| return b.remote("lists", "seq", &.{
+                    try this.exprNode(b, r.start.*),
+                    if (r.end) |end| .{ .binop = .{
+                        .op = "-",
+                        .lhs = try b.ptr(try b.paren(try this.exprNode(b, end.*))),
+                        .rhs = try b.ptr(.{ .number = "1" }),
+                        .parens = false,
+                    } } else A("infinity"),
+                }),
+                // Anonymous record / interface literal — an Erlang map (the same
+                // shape named records lower to). Keys are the field names as written.
+                .recordLit => |rl| return this.fieldMap(b, rl.fields),
+                .interfaceLit => |il| return this.fieldMap(b, il.fields),
+            },
+
+            .jump => |j| return switch (j.kind) {
+                .@"return" => |r| if (r) |val| this.exprNode(b, val.*) else Ast.Expr.r(""),
+                .throw_ => |r| if (r) |val| b.remote("erlang", "throw", &.{try this.exprNode(b, val.*)}) else Ast.Expr.r(""),
+                .try_ => |t| if (t) |val| this.exprNode(b, val.*) else Ast.Expr.r(""),
+                .await_ => |av| this.exprNode(b, av.*),
+                .@"break" => |brk| if (brk.value) |bp| this.exprNode(b, bp.*) else Ast.Expr.r(""),
+                .yield => |y| if (y.value) |val| this.exprNode(b, val.*) else Ast.Expr.r(""),
+                .@"continue" => Ast.Expr.r("%% continue"),
+            },
+
+            .branch => |br| switch (br.kind) {
+                .if_ => |i| {
+                    const cond = try this.exprNode(b, i.cond.*);
+                    const arm_indent = this.indent + 2;
+                    var clauses: std.ArrayListUnmanaged(Ast.Clause) = .empty;
+                    var then_pattern = A("true");
+                    if (i.binding) |name| {
+                        // `if (mb) { b -> body }`: bind `b` to the non-`undefined`
+                        // value so the body's references to `b` resolve.
+                        try clauses.append(b.arena, try b.clause(&.{A("undefined")}, &.{}, &.{A("undefined")}));
+                        then_pattern = V(try this.arenaVar(b, name));
+                        this.addLocal(name);
+                    }
+                    try clauses.append(b.arena, .{ .patterns = try b.exprs(&.{then_pattern}), .body = try this.bodyNode(b, i.then_, 0, arm_indent) });
+                    if (i.else_) |els| {
+                        try clauses.append(b.arena, .{ .patterns = try b.exprs(&.{A("false")}), .body = try this.bodyNode(b, els, 0, arm_indent) });
+                    } else {
+                        // No else branch — a catch-all so the case doesn't crash
+                        // when the condition is false.
+                        try clauses.append(b.arena, try b.clause(&.{V("_")}, &.{}, &.{A("ok")}));
+                    }
+                    return b.caseOf(cond, clauses.items);
+                },
+                .tryCatch => |tc| {
+                    // `try expr catch handler` → pattern match on the Result tag:
+                    //   case Expr of {ok, V} -> V; {error, E} -> Handler end
+                    const n = this.try_seq;
+                    this.try_seq += 1;
+                    const subject = try this.exprNode(b, tc.expr.*);
+                    const ok_var = V(try std.fmt.allocPrint(b.arena, "TryV{d}", .{n}));
+                    const err_var = V(try std.fmt.allocPrint(b.arena, "_TryE{d}", .{n}));
+
+                    const saved = this.indent;
+                    this.indent = saved + 2;
+                    const handler_expr = try this.exprNode(b, tc.handler.*);
+                    this.indent = saved;
+                    // A function handler receives the error.
+                    const handler: Ast.Expr = if (tc.handler.* == .function)
+                        .{ .apply = .{ .fun = try b.ptr(handler_expr), .args = try b.exprs(&.{err_var}) } }
+                    else
+                        handler_expr;
+
+                    return b.caseOf(subject, &.{
+                        try b.clause(&.{try b.tuple(&.{ A("ok"), ok_var })}, &.{}, &.{ok_var}),
+                        .{ .patterns = try b.exprs(&.{try b.tuple(&.{ A("error"), err_var })}), .body = try b.body(&.{handler}) },
+                    });
                 },
             },
 
+            .loop => |lp| {
+                const yields = for (lp.body) |stmt| {
+                    if (stmt.expr == .jump and stmt.expr.jump.kind == .yield) break true;
+                } else false;
+                const params = try b.arena.alloc(Ast.Expr, lp.params.len);
+                for (lp.params, 0..) |p, i| params[i] = V(try this.arenaVar(b, p));
+                const fun: Ast.Expr = .{ .fun = .{ .params = params, .body = try this.bodyNode(b, lp.body, 0, this.indent + 1) } };
+                return b.remote("lists", if (yields) "map" else "foreach", &.{ fun, try this.exprNode(b, lp.iter.*) });
+            },
+
+            else => return this.legacyAsRaw(b, e),
+        }
+    }
+
+    /// `(fun(undefined) -> undefined; (Opt) -> Access end)(Receiver)`.
+    fn optionalAccess(this: *Emitter, b: Ast.Builder, opt: Ast.Expr, access: Ast.Expr, receiver: ast.Expr) anyerror!Ast.Expr {
+        const fun: Ast.Expr = .{ .fun_clauses = try b.arena.dupe(Ast.Clause, &.{
+            try b.clause(&.{Ast.Expr.a("undefined")}, &.{}, &.{Ast.Expr.a("undefined")}),
+            try b.clause(&.{opt}, &.{}, &.{access}),
+        }) };
+        return .{ .apply = .{ .fun = try b.ptr(try b.paren(fun)), .args = try b.exprs(&.{try this.exprNode(b, receiver)}) } };
+    }
+
+    /// `#{field => Value, …}` with the field names as written.
+    fn fieldMap(this: *Emitter, b: Ast.Builder, fields: anytype) anyerror!Ast.Expr {
+        const out = try b.arena.alloc(Ast.MapField, fields.len);
+        for (fields, 0..) |f, i| out[i] = .{ .key = Ast.Expr.r(f.name), .value = try this.exprNode(b, f.value.*) };
+        return .{ .map = out };
+    }
+
+    /// `emitExprLegacy(e)` (or `emitCase` for a `case`) captured at the current
+    /// indentation as a `raw` node.
+    fn legacyAsRaw(this: *Emitter, b: Ast.Builder, e: ast.Expr) anyerror!Ast.Expr {
+        var buf: std.Io.Writer.Allocating = .init(b.arena);
+        const out = this.out;
+        this.out = &buf.writer;
+        defer this.out = out;
+        switch (e) {
+            .collection => |col| switch (col.kind) {
+                .case => |c| try this.emitCase(c.subjects, c.arms),
+                else => unreachable,
+            },
+            else => try this.emitExprLegacy(e),
+        }
+        return Ast.Expr.r(buf.written());
+    }
+
+    /// Expressions not yet modelled as `erl_ast` nodes, written as text.
+    fn emitExprLegacy(this: *Emitter, e: ast.Expr) anyerror!void {
+        switch (e) {
             .call => |c| switch (c.kind) {
                 .pipeline => |b| {
                     // Flatten the pipeline chain
@@ -3277,234 +3413,6 @@ const Emitter = struct {
                 },
             },
 
-            .function => |func| {
-                try this.w("fun(");
-                for (func.kind.params, 0..) |p, i| {
-                    if (i > 0) try this.w(", ");
-                    const vname = try erlangVar(this.alloc, p);
-                    defer this.alloc.free(vname);
-                    try this.w(vname);
-                    this.addLocal(p);
-                }
-                try this.w(") ->\n");
-                const lam_saved = this.indent;
-                this.indent = this.indent + 1;
-                try this.emitBody(func.kind.body);
-                this.indent = lam_saved;
-                try this.w("\n");
-                try this.writeIndent();
-                try this.w("end");
-            },
-
-            .collection => |col| switch (col.kind) {
-                .grouped => |inner| {
-                    try this.w("(");
-                    try this.emitExpr(inner.*);
-                    try this.w(")");
-                },
-                .arrayLit => |al| {
-                    // Special handling for spreadExpr: use ++ operator for list concatenation
-                    if (al.spreadExpr) |se| {
-                        // Emit the first part as a list
-                        try this.w("[");
-                        for (al.elems, 0..) |elem, i| {
-                            if (i > 0) try this.w(", ");
-                            try this.emitExpr(elem);
-                        }
-                        try this.w("]");
-
-                        // Use ++ to concatenate with the spread expression
-                        try this.w(" ++ ");
-                        try this.emitExpr(se.*);
-                    } else {
-                        // Normal array literal or simple spread (identifier)
-                        try this.w("[");
-                        for (al.elems, 0..) |elem, i| {
-                            if (i > 0) try this.w(", ");
-                            try this.emitExpr(elem);
-                        }
-                        if (al.spread) |name| {
-                            if (al.elems.len > 0) try this.w(", ");
-                            if (name.len > 0) try this.w(name);
-                        }
-                        try this.w("]");
-                    }
-                },
-                .tupleLit => |tl| {
-                    try this.w("{");
-                    for (tl.elems, 0..) |elem, i| {
-                        if (i > 0) try this.w(", ");
-                        try this.emitExpr(elem);
-                    }
-                    try this.w("}");
-                },
-                .case => |c| try this.emitCase(c.subjects, c.arms),
-                .range => |r| {
-                    // `a..b` is half-open `[a, b)` (parity with wasm + `Array.range`),
-                    // but erlang's `lists:seq/2` is inclusive — so the upper bound is
-                    // `b - 1` (`lists:seq(A, B - 1)`; `B = A` yields `[]`). An open
-                    // range `a..` iterates to `infinity`.
-                    try this.w("lists:seq(");
-                    try this.emitExpr(r.start.*);
-                    try this.w(", ");
-                    if (r.end) |end| {
-                        try this.w("(");
-                        try this.emitExpr(end.*);
-                        try this.w(") - 1");
-                    } else try this.w("infinity");
-                    try this.w(")");
-                },
-                // Anonymous record literal — an Erlang map (the same shape
-                // named records lower to).
-                .recordLit => |rl| {
-                    try this.w("#{");
-                    for (rl.fields, 0..) |f, i| {
-                        if (i > 0) try this.w(", ");
-                        try this.fmt("{s} => ", .{f.name});
-                        try this.emitExpr(f.value.*);
-                    }
-                    try this.w("}");
-                },
-                .interfaceLit => |il| {
-                    try this.w("#{");
-                    for (il.fields, 0..) |f, i| {
-                        if (i > 0) try this.w(", ");
-                        try this.fmt("{s} => ", .{f.name});
-                        try this.emitExpr(f.value.*);
-                    }
-                    try this.w("}");
-                },
-            },
-
-            .jump => |j| switch (j.kind) {
-                .@"return" => |r| if (r) |val| try this.emitExpr(val.*),
-                .throw_ => |r| if (r) |val| {
-                    try this.w("erlang:throw(");
-                    try this.emitExpr(val.*);
-                    try this.w(")");
-                },
-                .try_ => |t| if (t) |val| try this.emitExpr(val.*),
-                .await_ => |av| try this.emitExpr(av.*),
-                .@"break" => |b| if (b.value) |bp| try this.emitExpr(bp.*),
-                .yield => |y| if (y.value) |val| try this.emitExpr(val.*),
-                .@"continue" => try this.w("%% continue"),
-            },
-
-            .branch => |br| switch (br.kind) {
-                .if_ => |i| {
-                    try this.w("case ");
-                    try this.emitExpr(i.cond.*);
-                    try this.w(" of\n");
-                    this.indent += 1;
-                    try this.writeIndent();
-                    if (i.binding) |b| {
-                        // `if (mb) { b -> body }`: bind `b` to the non-`undefined`
-                        // value so the body's references to `b` resolve. Without
-                        // the binding the case arm was `_ ->`, leaving `b`
-                        // unbound — the §B3 "variable 'B' is unbound" LINQ bug.
-                        const bname = try erlangVar(this.alloc, b);
-                        defer this.alloc.free(bname);
-                        try this.w("undefined -> undefined;\n");
-                        try this.writeIndent();
-                        try this.fmt("{s} ->\n", .{bname});
-                        this.addLocal(b);
-                    } else {
-                        try this.w("true ->\n");
-                    }
-                    this.indent += 1;
-                    try this.emitBranchBody(i.then_);
-                    this.indent -= 1;
-                    if (i.else_) |els| {
-                        try this.w(";\n");
-                        try this.writeIndent();
-                        try this.w("false ->\n");
-                        this.indent += 1;
-                        try this.emitBranchBody(els);
-                        this.indent -= 1;
-                    } else {
-                        // No else branch — emit a catch-all so the case
-                        // doesn't crash when the condition is false.
-                        try this.w(";\n");
-                        try this.writeIndent();
-                        try this.w("_ -> ok");
-                    }
-                    this.indent -= 1;
-                    try this.w("\n");
-                    try this.writeIndent();
-                    try this.w("end");
-                },
-                .tryCatch => |tc| {
-                    // `try expr catch handler` → pattern match on the Result tag.
-                    //   case Expr of {ok, V} -> V; {error, E} -> Handler end
-                    const handler = tc.handler.*;
-                    const is_jump = switch (handler) {
-                        .jump => |j| switch (j.kind) {
-                            .throw_, .@"return", .@"break", .@"continue", .yield => true,
-                            else => false,
-                        },
-                        else => false,
-                    };
-                    const is_fun = switch (handler) {
-                        .function => true,
-                        else => false,
-                    };
-                    const n = this.try_seq;
-                    this.try_seq += 1;
-
-                    try this.w("case ");
-                    try this.emitExpr(tc.expr.*);
-                    try this.w(" of\n");
-                    this.indent += 1;
-                    try this.writeIndent();
-                    try this.fmt("{{ok, TryV{d}}} -> TryV{d};\n", .{ n, n });
-                    try this.writeIndent();
-                    try this.fmt("{{error, _TryE{d}}} ->\n", .{n});
-                    this.indent += 1;
-                    try this.writeIndent();
-                    try this.emitExpr(handler);
-                    if (is_fun) {
-                        try this.fmt("(_TryE{d})", .{n});
-                    } else if (is_jump) {
-                        // handler already emitted its own control-flow expression
-                    }
-                    this.indent -= 2;
-                    try this.w("\n");
-                    try this.writeIndent();
-                    try this.w("end");
-                },
-            },
-
-            .loop => |lp| {
-                const has_yield = blk: {
-                    for (lp.body) |stmt| {
-                        if (switch (stmt.expr) {
-                            .jump => |j| j.kind == .yield,
-                            else => false,
-                        }) break :blk true;
-                    }
-                    break :blk false;
-                };
-                const fun_kw = if (has_yield) "lists:map" else "lists:foreach";
-                try this.fmt("{s}(fun(", .{fun_kw});
-                for (lp.params, 0..) |p, i| {
-                    if (i > 0) try this.w(", ");
-                    const vname = try erlangVar(this.alloc, p);
-                    defer this.alloc.free(vname);
-                    try this.w(vname);
-                }
-                try this.w(") ->\n");
-                const fun_body_indent = this.indent + 1;
-                const saved2 = this.indent;
-                this.indent = fun_body_indent;
-                try this.emitBody(lp.body);
-                this.indent = saved2;
-                try this.w("\n");
-                try this.writeIndent();
-                try this.w("end, ");
-                try this.emitExpr(lp.iter.*);
-                try this.w(")");
-            },
-
             .binding => |b| switch (b.kind) {
                 .localBind => |lb| try this.emitBind(lb.name, .bind, lb.value.*),
                 .assign => |a| {
@@ -3611,6 +3519,7 @@ const Emitter = struct {
                     try this.w(" end");
                 },
             },
+            else => unreachable, // modelled in `exprNode`
         }
     }
 

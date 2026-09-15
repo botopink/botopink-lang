@@ -129,9 +129,16 @@ codegen/
   `bodyNode(b, body, start, indent)` and renders it with `erl_emitter.writeBody`.
   Statements (`stmtExpr`: `return`, `bindExpr` for `val`/`=`/`+=` with versioning,
   destructuring, comments) and the body-level lowerings — `propagateTryExpr`,
-  `earlyReturnIfExpr`, `foldFusionExpr`, `mutatingExpr` — are nodes; expressions
-  not yet modelled enter as `raw` via `exprAsRaw` (captured at the indentation the
-  node is rendered at).
+  `earlyReturnIfExpr`, `foldFusionExpr`, `mutatingExpr` — are nodes.
+- **Expressions are `erl_ast` nodes**: `emitExpr` renders `exprNode(b, e)`, which
+  models literals, identifiers (variables with versions, top-level `val` calls,
+  enum members, tuple index `element/2`, primitive length, `'__bp_len'`, map
+  field access and `?.` as an applied inline `fun`), binary/unary operators,
+  lambdas, grouped/array (with spread)/tuple/range/record/interface literals,
+  jumps, `if`/`try … catch` expressions and `loop`. Calls, binding expressions,
+  comptime forms and `case` still come from `emitExprLegacy`/`emitCase` as `raw`
+  nodes (`legacyAsRaw`). Record literal keys and array spread names are written as
+  the source spelled them.
 - **Mutation through branches and loops** (`mutatingExpr`): a statement-level
   `if` / `loop (xs) { x -> … }` / `xs.forEach({ x -> … })` that reassigns variables
   bound before it (looking through nested `if`/`loop`/`forEach`) returns the new

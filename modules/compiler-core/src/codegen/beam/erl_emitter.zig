@@ -347,6 +347,22 @@ pub fn writeExpr(w: *Writer, e: Ast.Expr, indent: usize) Error!void {
             }
             try w.writeAll(">>");
         },
+        .number => |text| try w.writeAll(text),
+        .paren => |inner| {
+            try w.writeByte('(');
+            try writeExpr(w, inner.*, indent);
+            try w.writeByte(')');
+        },
+        .fun_clauses => |clauses| {
+            try w.writeAll("fun");
+            for (clauses, 0..) |c, i| {
+                if (i > 0) try w.writeAll("; ");
+                try writeArgs(w, c.patterns, indent);
+                try w.writeAll(" -> ");
+                try writeInlineBody(w, c.body, indent);
+            }
+            try w.writeAll(" end");
+        },
         .exception => |ex| {
             try writeExpr(w, ex.class.*, indent);
             try w.writeByte(':');

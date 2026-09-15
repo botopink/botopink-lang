@@ -52,6 +52,12 @@ pub const Expr = union(enum) {
     try_catch: TryCatch,
     /// `<<V1/binary, V2>>`.
     bin: []const BinSegment,
+    /// A numeric literal token, written as the source spelled it.
+    number: []const u8,
+    /// `(Expr)`.
+    paren: *const Expr,
+    /// `fun(P1) -> B1; (P2) -> B2 end` on one line — each clause inline.
+    fun_clauses: []const Clause,
     /// `Class:Reason` / `Class:Reason:Stack` — a `catch` clause pattern.
     exception: Exception,
 
@@ -262,6 +268,10 @@ pub const Builder = struct {
 
     pub fn exception(b: Builder, class: Expr, reason: Expr) Error!Expr {
         return .{ .exception = .{ .class = try b.ptr(class), .reason = try b.ptr(reason) } };
+    }
+
+    pub fn paren(b: Builder, inner: Expr) Error!Expr {
+        return .{ .paren = try b.ptr(inner) };
     }
 
     pub fn caseOf(b: Builder, subject: Expr, clauses: []const Clause) Error!Expr {
