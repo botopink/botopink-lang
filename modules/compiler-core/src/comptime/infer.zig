@@ -2258,7 +2258,7 @@ fn runDeclDecorators(
         var plain = try env.arena.alloc(template.PlainArg, a.args.len);
         for (a.args, 0..) |arg, i| {
             const pname = if (i < sig.params.len) sig.params[i].name else "_";
-            plain[i] = .{ .paramName = pname, .jsValue = arg };
+            plain[i] = .{ .paramName = pname, .source = arg };
         }
 
         const outcome = decoratorEval.evaluate(env.arena, ctx.io, ctx.build_root, dfn, handle, plain) catch {
@@ -3317,7 +3317,7 @@ fn expandTemplateCallViaRuntime(
             buf.append(env.arena, 0) catch return error.OutOfMemory;
             buf.appendSlice(env.arena, pa.paramName) catch return error.OutOfMemory;
             buf.append(env.arena, 1) catch return error.OutOfMemory;
-            buf.appendSlice(env.arena, pa.jsValue) catch return error.OutOfMemory;
+            buf.appendSlice(env.arena, pa.source) catch return error.OutOfMemory;
         }
         break :blk buf.toOwnedSlice(env.arena) catch return error.OutOfMemory;
     };
@@ -3535,60 +3535,7 @@ fn holeForPlaceholder(name: []const u8, captures: []const template.CapturedExpr)
     return null;
 }
 
-/// Build a literal expression from a JSON value produced by `@expr(…)` in
-/// the eval runtime (V1: numbers, strings, booleans, null, arrays of those).
-fn literalFromJson(env: *Env, v: std.json.Value, loc: ast.Loc) ?*const ast.Expr {
-    const node = env.arena.create(ast.Expr) catch return null;
-    switch (v) {
-        .integer => |n| {
-            const text = std.fmt.allocPrint(env.arena, "{d}", .{n}) catch return null;
-            node.* = .{ .literal = .{ .loc = loc, .kind = .{ .numberLit = text } } };
-        },
-        .float => |f| {
-            const text = std.fmt.allocPrint(env.arena, "{d}", .{f}) catch return null;
-            node.* = .{ .literal = .{ .loc = loc, .kind = .{ .numberLit = text } } };
-        },
-        .string => |str| {
-            const text = env.arena.dupe(u8, str) catch return null;
-            node.* = .{ .literal = .{ .loc = loc, .kind = .{ .stringLit = text } } };
-        },
-        .bool => |b| {
-            node.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = if (b) "true" else "false" } } };
-        },
-        .null => {
-            node.* = .{ .literal = .{ .loc = loc, .kind = .null_ } };
-        },
-        .array => |items| {
-            const elems = env.arena.alloc(ast.Expr, items.items.len) catch return null;
-            for (items.items, 0..) |item, i| {
-                const elem = literalFromJson(env, item, loc) orelse return null;
-                elems[i] = elem.*;
-            }
-            node.* = .{ .collection = .{ .loc = loc, .kind = .{ .arrayLit = .{ .elems = elems } } } };
-        },
-        .object => |obj| {
-            // A JS object lifts as an anonymous record literal — the yaml
-            // case: the template computes a structure and the caller gets a
-            // fully typed `record { … }`.
-            const fields = env.arena.alloc(ast.RecordLitFieldOf(.untyped), obj.count()) catch return null;
-            var it = obj.iterator();
-            var i: usize = 0;
-            while (it.next()) |entry| : (i += 1) {
-                const value = literalFromJson(env, entry.value_ptr.*, loc) orelse return null;
-                fields[i] = .{
-                    .name = env.arena.dupe(u8, entry.key_ptr.*) catch return null,
-                    .value = @constCast(value),
-                };
-            }
-            node.* = .{ .collection = .{ .loc = loc, .kind = .{ .recordLit = .{ .fields = fields } } } };
-        },
-        else => return null,
-    }
-    return node;
-}
-
 /// Build a literal expression from a TypedValue produced by template evaluation.
-/// Replaces literalFromJson for the new native struct approach.
 fn valueToAstLiteral(env: *Env, v: templateEval.TypedValue, loc: ast.Loc) ?*const ast.Expr {
     const node = env.arena.create(ast.Expr) catch return null;
     switch (v) {
@@ -3703,10 +3650,10 @@ fn parseCodeText(env: *Env, src: []const u8) ?*const ast.Expr {
     return node;
 }
 
-/// Serialize a literal (or bool-identifier) expression as a JS value string for
-/// a plain arg binding in the template evaluator script. Returns null when the
+/// The source lexeme of a literal (or bool-identifier) argument bound to a plain
+/// template parameter (`template.PlainArg.source`). Returns null when the
 /// expression is not a supported constant (string, number, null, true/false).
-fn literalToJsAlloc(arena: std.mem.Allocator, expr: *const ast.Expr) error{OutOfMemory}!?[]const u8 {
+fn literalSourceAlloc(arena: std.mem.Allocator, expr: *const ast.Expr) error{OutOfMemory}!?[]const u8 {
     // Booleans are identifiers in the AST (not literal nodes).
     if (expr.* == .identifier) {
         const name = switch (expr.identifier.kind) {
@@ -3719,12 +3666,9 @@ fn literalToJsAlloc(arena: std.mem.Allocator, expr: *const ast.Expr) error{OutOf
     }
     if (expr.* != .literal) return null;
     return switch (expr.literal.kind) {
-        .stringLit => |s| blk: {
-            var buf: std.ArrayList(u8) = .empty;
-            try template.appendJsonString(&buf, arena, s);
-            break :blk try buf.toOwnedSlice(arena);
-        },
-        // numberLit is stored as raw source text — valid JS numeric literal.
+        // stringLit holds the literal's raw content (escapes unprocessed).
+        .stringLit => |s| try std.fmt.allocPrint(arena, "\"{s}\"", .{s}),
+        // numberLit is stored as raw source text.
         .numberLit => |n| try std.fmt.allocPrint(arena, "{s}", .{n}),
         .null_ => "null",
         else => null,
@@ -7222,7 +7166,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                             try unifyAt(env, paramType, ta.value.getType(), ta.value.getLoc());
                             // For template fns: collect the arg value as a JS literal.
                             if (maybeTfn != null and i < maybeTfn.?.params.len) {
-                                const jsVal = try literalToJsAlloc(env.arena, call.args[i].value) orelse {
+                                const jsVal = try literalSourceAlloc(env.arena, call.args[i].value) orelse {
                                     env.lastError = TypeError.custom(
                                         "non-`@Expr` parameter of a template function must receive a literal value at the call site",
                                         "Pass a string, integer, or boolean literal directly; runtime values have no compile-time meaning (V1).",
@@ -7231,7 +7175,7 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                                 };
                                 try plainArgs.append(env.arena, .{
                                     .paramName = maybeTfn.?.params[i].name,
-                                    .jsValue = jsVal,
+                                    .source = jsVal,
                                 });
                             }
                         }

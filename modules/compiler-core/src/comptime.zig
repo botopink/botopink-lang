@@ -375,88 +375,6 @@ var stdlib_template_env: Env = undefined;
 /// init function runs exactly once, every other caller is read-only.
 var stdlib_template_init: std.atomic.Value(u8) = .init(0);
 
-/// Pre-spawn the persistent erl subprocess used for comptime val evaluation.
-/// Erlang/OTP cold-spawns in ~50ms; pre-warming keeps the first comptime
-/// evaluation's latency honest and prevents the first test from paying the
-/// spawn cost.
-pub fn warmPersistentErlRunner(io: std.Io, gpa: std.mem.Allocator) !void {
-    const erl = @import("./comptime/runtime/persistent_erl.zig");
-    erl.warm(gpa, io) catch return;
-
-    // Compile template_runtime.bp to Erlang and write to the server directory
-    // so Span, CustomNode, Capture, DeclHandle types are available to
-    // template/decorator bodies compiled to Erlang.
-    const erlang_codegen = @import("./codegen/erlang.zig");
-    const session = compile(gpa, &.{.{ .path = "template_runtime", .source = template_runtime_src }}, io, null, "erlang") catch return;
-    defer session.deinit(gpa);
-    for (session.outputs.items) |out| {
-        if (out.outcome == .ok) {
-            var results = erlang_codegen.codegenEmit(gpa, &.{out}, .{ .targetSource = .erlang }) catch continue;
-            defer {
-                for (results.items) |*r| r.result.deinit(gpa);
-                results.deinit(gpa);
-            }
-            for (results.items) |r| {
-                if (r.result.js.len > 0) {
-                    const server_dir = ".botopinkbuild/tmp/persistent_erl";
-                    const tr_path = try std.fs.path.join(gpa, &.{ server_dir, "template_runtime.erl" });
-                    defer gpa.free(tr_path);
-
-                    // Post-process: replace #[@Host] stub bodies with prelude calls.
-                    const patched = try patchHostMethods(gpa, r.result.js);
-                    defer gpa.free(patched);
-                    std.Io.Dir.cwd().writeFile(io, .{ .sub_path = tr_path, .data = patched }) catch break;
-                    _ = std.process.run(gpa, io, .{
-                        .argv = &.{ "erlc", "-o", server_dir, tr_path },
-                    }) catch {};
-                    break;
-                }
-            }
-            break;
-        }
-    }
-}
-
-/// Replace #[@Host] stub bodies in the generated template_runtime Erlang source
-/// with calls to botopink_comptime_prelude. The codegen emits #[@Host] methods as
-/// empty functions (returning `ok`). This patches them to delegate to the prelude.
-fn patchHostMethods(gpa: std.mem.Allocator, erl_src: []const u8) ![]u8 {
-    var result: std.ArrayListUnmanaged(u8) = .empty;
-    try result.ensureTotalCapacity(gpa, erl_src.len + 512);
-
-    var lines = std.mem.splitScalar(u8, erl_src, '\n');
-    while (lines.next()) |line| {
-        const trimmed = std.mem.trim(u8, line, " \t");
-        // Match #[@Host] function stubs and replace bodies.
-        if (std.mem.startsWith(u8, trimmed, "context(")) {
-            try result.appendSlice(gpa, "context(Self) -> botopink_comptime_prelude:context(maps:get(descriptor, Self)).\n");
-        } else if (std.mem.startsWith(u8, trimmed, "lookup(")) {
-            try result.appendSlice(gpa, "lookup(Self, Name) -> botopink_comptime_prelude:lookup(maps:get(descriptor, Self), Name).\n");
-        } else if (std.mem.startsWith(u8, trimmed, "bindings(")) {
-            try result.appendSlice(gpa, "bindings(Self) -> botopink_comptime_prelude:bindings(maps:get(descriptor, Self)).\n");
-        } else if (std.mem.startsWith(u8, trimmed, "parts(")) {
-            try result.appendSlice(gpa, "parts(Self) -> botopink_comptime_prelude:parts(maps:get(descriptor, Self)).\n");
-        } else if (std.mem.startsWith(u8, trimmed, "custom(")) {
-            try result.appendSlice(gpa, "custom(Self, Ast, Code) -> {maps:get(descriptor, Self), Ast, Code}.\n");
-        } else if (std.mem.startsWith(u8, trimmed, "makeExpr(")) {
-            try result.appendSlice(gpa, "makeExpr(V) -> {v, V}.\n");
-        } else if (std.mem.startsWith(u8, trimmed, "makeCode(")) {
-            try result.appendSlice(gpa, "makeCode(S) -> {code, S}.\n");
-        } else if (std.mem.startsWith(u8, trimmed, "fail(")) {
-            try result.appendSlice(gpa, "fail(Self, Msg) -> botopink_comptime_prelude:fail(maps:get(descriptor, Self), Msg).\n");
-        } else if (std.mem.startsWith(u8, trimmed, "failAt(")) {
-            try result.appendSlice(gpa, "failAt(Self, Span, Msg) -> botopink_comptime_prelude:fail_at(maps:get(descriptor, Self), Msg, Span).\n");
-        } else if (std.mem.startsWith(u8, trimmed, "build(")) {
-            try result.appendSlice(gpa, "build(Self, Type) -> botopink_comptime_prelude:build(maps:get(descriptor, Self), Type).\n");
-        } else {
-            try result.appendSlice(gpa, line);
-            try result.append(gpa, '\n');
-        }
-    }
-
-    return result.toOwnedSlice(gpa);
-}
-
 pub fn getStdlibTemplate(gpa: std.mem.Allocator) !*const Env {
     while (true) {
         const s = stdlib_template_init.load(.acquire);
@@ -670,11 +588,6 @@ const type_info_src =
     \\}
 ;
 
-/// Compiler-internal `.bp` source for the wat3 comptime prelude. Re-exports
-/// `std_prelude.template_runtime_src` so `comptime/runtime/wat_runtime.zig`
-/// can read the embedded bp bytes without taking a direct `std_prelude`
-/// import (which would cycle through the lib-agnostic gate).
-pub const template_runtime_src = @import("std_prelude").template_runtime_src;
 
 /// Embedded builtin-type interface declarations. Unlike `std_pkg_modules`
 /// these are flattened into the global type env at infer time (they declare the

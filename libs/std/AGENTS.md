@@ -19,8 +19,6 @@ std/
     ├── primitives.bp        ← primitive interface registry (Number/Integer/Signed/Float, I32…F64, Bool, String, Function, Pair, Array) + inline tests
     ├── builtins.d.bp        ← builtin surface: print, @Result/@Iterator/@Future…, `Target`/`External`/`Host` annotations, std.syntax (`Expr`, `CustomNode`, …), `@Decl` reflection, effect-annotation rules
     ├── builtins_fns.d.bp    ← builtin fns with literal defaults (`todo`, `panic`)
-    │                        — compiler-internal (`std_internal_files` in build.zig):
-    ├── template_runtime.bp  ← comptime runtime records (Capture/DeclHandle/Span/CustomNode/Outcome) with `#[@Host]` methods
     │                        — importable modules (declared in root.bp):
     ├── order.bp  dict.bp  sets.bp  string_builder.bp  queue.bp
     ├── math.bp  asserts.bp  path.bp  random.bp  querystring.bp  time.bp  url.bp

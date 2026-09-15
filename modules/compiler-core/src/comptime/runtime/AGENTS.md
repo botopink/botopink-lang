@@ -12,7 +12,6 @@ process runs comptime val scripts, decorator bodies and template bodies.
 runtime/
 ├── AGENTS.md           ← you are here
 ├── persistent_erl.zig  ← singleton `erl` server: spawn, framed protocol, eval/loadBeam
-├── erl_prelude.zig     ← `botopink_comptime_prelude` Erlang module (descriptor walkers, host fns)
 └── beam.zig            ← comptime val backend: builds a script module, runs it via persistent_erl
 ```
 
@@ -20,8 +19,7 @@ runtime/
 
 | File | Role |
 |---|---|
-| `persistent_erl.zig` | Lazily spawns `erl -noshell -pa .botopinkbuild/tmp/persistent_erl -eval "botopink_comptime_server:start(), halt()."` after `erlc`-compiling the embedded server + prelude. **Protocol:** length-prefixed binary frames both ways — request `<u32 BE len><cmd:u8><path>` (cmd 1 = compile+run `.erl`, 2 = load+run `.beam`), response `<u32 BE len><payload>` = `main/0`'s iodata result or a payload tagged `__BP_ERL_COMPILE_ERROR__:` / `__BP_ERL_LOAD_ERROR__:` / `__BP_ERL_RUNTIME_ERROR__:`. `readExact` loops over short reads. `main/0` runs in a `spawn_monitor`ed process killed after `eval_timeout_ms` (10s); a non-iodata result becomes a runtime-error frame. **API:** `evalDetailed` → `Response { ok, compile_error, load_error, runtime_error }` (payload owned by caller); `eval` / `loadBeam` return the ok payload or `error.PersistentErlCompileError`. A transport failure kills the child and marks the singleton broken; the next request respawns (the failed one is not retried). Pipes are serialised by a spin-lock. |
-| `erl_prelude.zig` | Source of `botopink_comptime_prelude` (compiled next to the server): descriptor binary walkers (`lookup`, `bindings`, `context`, `parts`) and host functions for template bodies. |
+| `persistent_erl.zig` | Lazily spawns `erl -noshell -pa .botopinkbuild/tmp/persistent_erl -eval "botopink_comptime_server:start(), halt()."` after `erlc`-compiling the embedded server module. Decorator and template modules carry their own host functions (see `../decorator_eval.zig`, `../template_eval.zig`). **Protocol:** length-prefixed binary frames both ways — request `<u32 BE len><cmd:u8><path>` (cmd 1 = compile+run `.erl`, 2 = load+run `.beam`), response `<u32 BE len><payload>` = `main/0`'s iodata result or a payload tagged `__BP_ERL_COMPILE_ERROR__:` / `__BP_ERL_LOAD_ERROR__:` / `__BP_ERL_RUNTIME_ERROR__:`. `readExact` loops over short reads. `main/0` runs in a `spawn_monitor`ed process killed after `eval_timeout_ms` (10s); a non-iodata result becomes a runtime-error frame. **API:** `evalDetailed` → `Response { ok, compile_error, load_error, runtime_error }` (payload owned by caller); `eval` / `loadBeam` return the ok payload or `error.PersistentErlCompileError`. A transport failure kills the child and marks the singleton broken; the next request respawns (the failed one is not retried). Pipes are serialised by a spin-lock. |
 | `beam.zig` | `run(entries)` for comptime vals: `renderExprValue` folds each entry in Zig, `buildScript` embeds the resulting JSON as `main() -> "…"`, the script runs through `persistent_erl` (with a `.beam` cache under `.botopinkbuild/tmp/beam_cache/`), and `parseResults` maps it back to `id → literal`. The erl round-trip is redundant (values are already computed in Zig) — slated for removal (step-1 todo F5). |
 
 ## Notes

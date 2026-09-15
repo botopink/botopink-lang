@@ -136,63 +136,6 @@ pub const CapturedExpr = struct {
 
 // ── second-layer context ──────────────────────────────────────────────────────
 
-/// Append `s` to `buf` as a JSON string literal (quoted + escaped).
-/// Also used by `template_eval.zig` to serialize template parts.
-pub fn appendJsonString(buf: *std.ArrayList(u8), allocator: std.mem.Allocator, s: []const u8) !void {
-    try buf.append(allocator, '"');
-    for (s) |c| switch (c) {
-        '"' => try buf.appendSlice(allocator, "\\\""),
-        '\\' => try buf.appendSlice(allocator, "\\\\"),
-        '\n' => try buf.appendSlice(allocator, "\\n"),
-        '\r' => try buf.appendSlice(allocator, "\\r"),
-        '\t' => try buf.appendSlice(allocator, "\\t"),
-        else => if (c < 0x20) {
-            var hex: [6]u8 = undefined;
-            const written = std.fmt.bufPrint(&hex, "\\u{x:0>4}", .{c}) catch unreachable;
-            try buf.appendSlice(allocator, written);
-        } else try buf.append(allocator, c),
-    };
-    try buf.append(allocator, '"');
-}
-
-/// Serialize a capture's second-layer context as one JSON object —
-/// everything a DSL compiler running inside a template function needs:
-/// declaration position (`file`/`line`/`col`), shape (`multiline`), raw
-/// `text` (null when `${…}` holes split it — the parts live on the node),
-/// and the origin `scope`. This is the handle the runtime-backed evaluator
-/// (F6-full) hands to `source()`/`context()`/`bindings()`. Caller owns the
-/// returned slice.
-pub fn contextJsonAlloc(capture: *const CapturedExpr, allocator: std.mem.Allocator) ![]u8 {
-    var buf: std.ArrayList(u8) = .empty;
-    errdefer buf.deinit(allocator);
-
-    var numBuf: [24]u8 = undefined;
-    try buf.appendSlice(allocator, "{\"file\":");
-    try appendJsonString(&buf, allocator, capture.modulePath);
-    try buf.appendSlice(allocator, ",\"line\":");
-    try buf.appendSlice(allocator, std.fmt.bufPrint(&numBuf, "{d}", .{capture.loc.line}) catch unreachable);
-    try buf.appendSlice(allocator, ",\"col\":");
-    try buf.appendSlice(allocator, std.fmt.bufPrint(&numBuf, "{d}", .{capture.loc.col}) catch unreachable);
-    try buf.appendSlice(allocator, ",\"multiline\":");
-    try buf.appendSlice(allocator, if (capture.multiline) "true" else "false");
-    try buf.appendSlice(allocator, ",\"text\":");
-    if (capture.text) |txt| {
-        try appendJsonString(&buf, allocator, txt);
-    } else {
-        try buf.appendSlice(allocator, "null");
-    }
-    try buf.appendSlice(allocator, ",\"scope\":");
-    if (capture.scope) |scope| {
-        const scopeJson = try scope.toJsonAlloc(allocator);
-        defer allocator.free(scopeJson);
-        try buf.appendSlice(allocator, scopeJson);
-    } else {
-        try buf.appendSlice(allocator, "{}");
-    }
-    try buf.append(allocator, '}');
-    return buf.toOwnedSlice(allocator);
-}
-
 // ── plain comptime arguments ──────────────────────────────────────────────────
 
 /// A non-`@Expr` parameter of a template function (or a decorator argument)
@@ -202,14 +145,14 @@ pub const PlainArg = struct {
     /// Name of the parameter as declared in the template function.
     paramName: []const u8,
     /// The argument's source lexeme (e.g. `42`, `"hi"`, `true`).
-    jsValue: []const u8,
+    source: []const u8,
 
     /// The lexeme as an Erlang term: a string literal becomes a binary (botopink
     /// escapes resolved), `true`/`false` atoms, integers and finite floats
     /// numbers; anything else (an identifier, an expression) reaches the body
     /// as its source text.
     pub fn writeErl(self: PlainArg, w: *std.Io.Writer) std.Io.Writer.Error!void {
-        const text = std.mem.trim(u8, self.jsValue, " \t\r\n");
+        const text = std.mem.trim(u8, self.source, " \t\r\n");
         if (text.len >= 2 and text[0] == '"' and text[text.len - 1] == '"') {
             return erlEmitter.writeBinaryFromLexeme(w, text[1 .. text.len - 1]);
         }
@@ -260,136 +203,7 @@ pub const CustomNode = struct {
     children: []const CustomNode,
 };
 
-/// Read a length-prefixed string from WAT linear memory.
-fn readWatString(arena: std.mem.Allocator, mem: []const u8, ptr: u32) error{OutOfMemory}![]const u8 {
-    if (ptr == 0 or ptr + 4 > mem.len) return "";
-    const len = std.mem.readInt(u32, mem[ptr..][0..4], .little);
-    if (ptr + 4 + len > mem.len) return "";
-    return try arena.dupe(u8, mem[ptr + 4 ..][0..len]);
-}
-
-/// Read a CustomNode tree from WAT linear memory. `ptr` points to a
-/// 5-slot record: [kind: i32][span: i32][label: i32][ref: i32][children: i32].
-pub fn readCustomNodeFromMemory(arena: std.mem.Allocator, mem: []const u8, ptr: u32) error{OutOfMemory}!CustomNode {
-    if (ptr == 0 or ptr + 20 > mem.len) return CustomNode{
-        .kind = "", .span = .{ .start = 0, .end = 0, .line = 1 },
-        .label = "", .ref = null, .children = &.{},
-    };
-
-    const kind = try readWatString(arena, mem, std.mem.readInt(u32, mem[ptr..][0..4], .little));
-    const span_ptr = std.mem.readInt(u32, mem[ptr + 4 ..][0..4], .little);
-    const label = try readWatString(arena, mem, std.mem.readInt(u32, mem[ptr + 8 ..][0..4], .little));
-    const ref_ptr = std.mem.readInt(u32, mem[ptr + 12 ..][0..4], .little);
-    const children_ptr = std.mem.readInt(u32, mem[ptr + 16 ..][0..4], .little);
-
-    const span: Span = if (span_ptr != 0 and span_ptr + 12 <= mem.len)
-        .{
-            .start = std.mem.readInt(u32, mem[span_ptr..][0..4], .little),
-            .end = std.mem.readInt(u32, mem[span_ptr + 4 ..][0..4], .little),
-            .line = std.mem.readInt(u32, mem[span_ptr + 8 ..][0..4], .little),
-        }
-    else
-        .{ .start = 0, .end = 0, .line = 1 };
-
-    const ref: ?NodeBinding = if (ref_ptr != 0) blk: {
-        const ref_name = try readWatString(arena, mem, ref_ptr);
-        break :blk NodeBinding{ .name = ref_name, .kind = "" };
-    } else null;
-
-    var children: std.ArrayListUnmanaged(CustomNode) = .empty;
-    if (children_ptr != 0 and children_ptr + 4 <= mem.len) {
-        const child_count = std.mem.readInt(u32, mem[children_ptr..][0..4], .little);
-        if (child_count > 0 and children_ptr + 4 + child_count * 4 <= mem.len) {
-            try children.ensureTotalCapacity(arena, child_count);
-            for (0..child_count) |i| {
-                const child_ptr = std.mem.readInt(u32, mem[children_ptr + 4 + i * 4 ..][0..4], .little);
-                children.appendAssumeCapacity(try readCustomNodeFromMemory(arena, mem, child_ptr));
-            }
-        }
-    }
-
-    return CustomNode{
-        .kind = kind,
-        .span = span,
-        .label = label,
-        .ref = ref,
-        .children = try children.toOwnedSlice(arena),
-    };
-}
-
-fn jsonStr(v: ?std.json.Value) ?[]const u8 {
-    return switch (v orelse return null) {
-        .string => |s| s,
-        else => null,
-    };
-}
-
-fn jsonUsizeField(v: ?std.json.Value) usize {
-    return switch (v orelse return 0) {
-        .integer => |n| if (n >= 0) @intCast(n) else 0,
-        .float => |f| if (f >= 0) @intFromFloat(f) else 0,
-        else => 0,
-    };
-}
-
-fn parseSpanJson(v: ?std.json.Value) Span {
-    const obj = switch (v orelse return .{ .start = 0, .end = 0, .line = 1 }) {
-        .object => |o| o,
-        else => return .{ .start = 0, .end = 0, .line = 1 },
-    };
-    return .{
-        .start = jsonUsizeField(obj.get("start")),
-        .end = jsonUsizeField(obj.get("end")),
-        .line = blk: {
-            const l = jsonUsizeField(obj.get("line"));
-            break :blk if (l == 0) 1 else l;
-        },
-    };
-}
-
-/// Deserialize the JSON `CustomNode` tree a template returned via `q.custom`
-/// into the Zig-side `CustomNode`. Strings are duped into `arena` (the
-/// type-check session). Generic throughout — no sub-language is named.
-pub fn parseCustomNode(arena: std.mem.Allocator, v: std.json.Value) error{OutOfMemory}!CustomNode {
-    const obj = switch (v) {
-        .object => |o| o,
-        else => return CustomNode{ .kind = "", .span = .{ .start = 0, .end = 0, .line = 1 }, .label = "", .ref = null, .children = &.{} },
-    };
-
-    const ref: ?NodeBinding = blk: {
-        const ro = switch (obj.get("ref") orelse break :blk null) {
-            .object => |o| o,
-            else => break :blk null,
-        };
-        const name = jsonStr(ro.get("name")) orelse break :blk null;
-        break :blk NodeBinding{
-            .name = try arena.dupe(u8, name),
-            .kind = try arena.dupe(u8, jsonStr(ro.get("kind")) orelse ""),
-        };
-    };
-
-    var children: []const CustomNode = &.{};
-    if (obj.get("children")) |c| switch (c) {
-        .array => |arr| {
-            const buf = try arena.alloc(CustomNode, arr.items.len);
-            for (arr.items, 0..) |child, i| buf[i] = try parseCustomNode(arena, child);
-            children = buf;
-        },
-        else => {},
-    };
-
-    return CustomNode{
-        .kind = try arena.dupe(u8, jsonStr(obj.get("kind")) orelse ""),
-        .span = parseSpanJson(obj.get("span")),
-        .label = try arena.dupe(u8, jsonStr(obj.get("label")) orelse ""),
-        .ref = ref,
-        .children = children,
-    };
-}
-
-
 /// Convert a native CustomNodeTree (from template evaluation) to CustomNode.
-/// Replaces parseCustomNode for the new native struct approach.
 pub fn parseCustomNodeFromTree(arena: std.mem.Allocator, tree: @import("./template_eval.zig").CustomNodeTree) error{OutOfMemory}!CustomNode {
     const ref: ?NodeBinding = if (tree.ref) |r| .{
         .name = try arena.dupe(u8, r.name),

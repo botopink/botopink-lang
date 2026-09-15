@@ -43,21 +43,6 @@ pub fn build(b: *std.Build) void {
         });
     }
 
-    // Compiler-internal `.bp` sources — NOT user-importable (no `pub mod` entry
-    // in `root.bp`), NOT flattened into the global type env (no entry in the
-    // `pkg_modules` registry above). The wat3 comptime prelude (`template_runtime.bp`)
-    // is the first such file: `wat_runtime.zig` reads the embedded source through
-    // `std_prelude.template_runtime_src`, compiles it through the wat backend, and
-    // splices the post-processed wat into `prelude()` ahead of every template body.
-    const std_internal_files = [_][]const u8{
-        "template_runtime.bp",
-    };
-    for (std_internal_files) |f| {
-        std_prelude.addAnonymousImport(f, .{
-            .root_source_file = b.path(b.fmt("libs/std/src/{s}", .{f})),
-        });
-    }
-
     // "std" package modules — importable via `import {…} from "std"`. The set is
     // derived from the std module tree: `libs/std/src/root.bp` declares one
     // `pub mod <name>;` per module, and the build embeds exactly those. This is

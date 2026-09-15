@@ -9,6 +9,8 @@ const envMod = @import("../env.zig");
 const inferMod = @import("../infer.zig");
 const comptimeMod = @import("../../comptime.zig");
 const template = @import("../template.zig");
+const templateEval = @import("../template_eval.zig");
+const erlEmitter = @import("../../codegen/beam/erl_emitter.zig");
 const Lexer = lexerMod.Lexer;
 const Parser = parserMod.Parser;
 const Env = envMod.Env;
@@ -254,12 +256,25 @@ test "template: context exposes declaration position and scope for second-layer 
         \\""";
     );
 
+    // The capture reaches the template body (`q.context()`, `q.source()`,
+    // `q.bindings()`, …) as this map.
     const captures = try onlyCaptures(&env);
-    const json = try template.contextJsonAlloc(&captures[0], std.testing.allocator);
-    defer std.testing.allocator.free(json);
-    try std.testing.expectEqualStrings(
-        \\{"file":"","line":7,"col":13,"multiline":true,"text":"\n<Button/>\n","scope":{"Button":"Record_","dsl":"Fn","c":"Val"}}
-    , json);
+    var term_out: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer term_out.deinit();
+    try erlEmitter.writeTerm(&term_out.writer, try templateEval.captureToTerm(alloc, &captures[0]));
+    const term = term_out.written();
+    const expected = [_][]const u8{
+        "'__bp_capture' => <<\"template\">>",
+        "source => #{file => <<\"\">>, line => 7, col => 13}",
+        "text => <<\"\\n<Button/>\\n\">>, multiline => true}",
+        "bindings => [#{name => <<\"Button\">>, kind => 'Record_'}, #{name => <<\"dsl\">>, kind => 'Fn'}, #{name => <<\"c\">>, kind => 'Val'}]",
+    };
+    for (expected) |needle| {
+        if (std.mem.indexOf(u8, term, needle) == null) {
+            std.debug.print("\nmissing:\n{s}\nin:\n{s}\n", .{ needle, term });
+            return error.TestExpectedContains;
+        }
+    }
 }
 
 test "infer: context/source/bindings/build methods typecheck against std.syntax" {

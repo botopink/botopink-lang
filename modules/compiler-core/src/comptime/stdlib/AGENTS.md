@@ -23,7 +23,6 @@ stdlib/
 | `primitives` | `primitives.bp` | `registerStdlib` — flattened into the global env |
 | `builtins` | `builtins.d.bp` | doc/tooling surface (not parsed by `registerStdlib`) |
 | `builtin_fns` | `builtins_fns.d.bp` | `registerStdlib` → `env.stdlibFnDecls` |
-| `template_runtime_src` | `template_runtime.bp` | `comptime.zig warmPersistentErlRunner` — compiled to Erlang for template bodies (not user-importable) |
 | `pkg_modules` | generated `std_pkg` module | `comptime.zig std_pkg_modules` — the `import {…} from "std"` registry |
 
 ## Wiring
@@ -31,8 +30,7 @@ stdlib/
 - `build.zig` declares `std_prelude` with `prelude.zig` as root and exposes each
   embedded file as an **anonymous import** (the sources sit outside the module
   root, so a relative `@embedFile` would be rejected): `std_core_files`
-  (primitives / builtins / builtins_fns) and `std_internal_files`
-  (`template_runtime.bp`).
+  (primitives / builtins / builtins_fns).
 - The "std" package modules are derived from `libs/std/src/root.bp` (one
   `pub mod <name>;` per module, read by `stdPkgFilesFromRoot` in the workspace
   root `build.zig`), which generates `std_pkg_modules.zig`

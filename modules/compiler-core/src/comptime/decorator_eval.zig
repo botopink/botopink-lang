@@ -279,7 +279,7 @@ test "decorator module: lowered body, handle term and host glue" {
         .returnType = "",
         .annotations = &.{},
     };
-    const args = [_]template.PlainArg{.{ .paramName = "path", .jsValue = "\"/x\"" }};
+    const args = [_]template.PlainArg{.{ .paramName = "path", .source = "\"/x\"" }};
     const m = try buildModule(arena, dfn, handle, &args);
 
     try std.testing.expect(std.mem.startsWith(u8, m.module, "decorator_"));
