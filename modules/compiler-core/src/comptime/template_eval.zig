@@ -25,15 +25,56 @@ const template = @import("./template.zig");
 /// Sole comptime runtime.
 pub const Runtime = enum { erl };
 
+// ── native result structs ─────────────────────────────────────────────────────
+
+/// Typed value returned from template evaluation — replaces std.json.Value.
+pub const TypedValue = union(enum) {
+    integer: i64,
+    float: f64,
+    string: []const u8,
+    bool: bool,
+    null: void,
+    array: []const TypedValue,
+    object: []const KeyValuePair,
+
+    pub const KeyValuePair = struct {
+        key: []const u8,
+        value: TypedValue,
+    };
+};
+
+/// Custom node tree returned from custom() calls — replaces std.json.Value.
+pub const CustomNodeTree = struct {
+    kind: []const u8,
+    span: ?template.Span = null,
+    label: ?[]const u8 = null,
+    ref: ?[]const u8 = null,
+    children: []const CustomNodeTree = &.{},
+};
+
+/// Erlang result struct — parsed automatically from JSON.
+const ErlTemplateResult = union(enum) {
+    code: struct { source: []const u8 },
+    value: struct { value: TypedValue },
+    capture: struct { param: []const u8 },
+    custom: struct { source: []const u8, ast: CustomNodeTree },
+    fail: struct {
+        message: []const u8,
+        param: ?[]const u8 = null,
+        span: ?template.Span = null,
+    },
+    err: struct { message: []const u8 },
+};
+
 // ── outcome ───────────────────────────────────────────────────────────────────
 
 pub const Outcome = union(enum) {
     code: []const u8,
-    value: std.json.Value,
+    value: TypedValue,
     capture: []const u8,
     custom: struct {
         code: []const u8,
-        ast: std.json.Value,
+        ast: CustomNodeTree,
         root: ?template.CustomNode = null,
     },
     fail: struct {
@@ -75,53 +116,18 @@ pub fn evaluateRuntime(
 }
 
 fn parseOutcome(arena: std.mem.Allocator, stdout: []const u8) !Outcome {
-    const parsed = std.json.parseFromSliceLeaky(std.json.Value, arena, stdout, .{}) catch {
+    const result = std.json.parseFromSliceLeaky(ErlTemplateResult, arena, stdout, .{ .ignore_unknown_fields = true }) catch {
         return .{ .err = try std.fmt.allocPrint(arena, "template evaluator produced no result", .{}) };
     };
-    const obj = switch (parsed) {
-        .object => |o| o,
-        else => return .{ .err = "template evaluator produced a non-object result" },
+
+    return switch (result) {
+        .code => |c| .{ .code = c.source },
+        .value => |v| .{ .value = v.value },
+        .capture => |c| .{ .capture = c.param },
+        .custom => |c| .{ .custom = .{ .code = c.source, .ast = c.ast } },
+        .fail => |f| .{ .fail = .{ .message = f.message, .param = f.param, .span = f.span } },
+        .err => |e| .{ .err = e.message },
     };
-    const kind = switch (obj.get("kind") orelse return .{ .err = "missing result kind" }) {
-        .string => |s| s,
-        else => return .{ .err = "missing result kind" },
-    };
-    if (std.mem.eql(u8, kind, "code")) {
-        const src = switch (obj.get("source") orelse .null) {
-            .string => |s| s,
-            else => return .{ .err = "code result without source text" },
-        };
-        return .{ .code = src };
-    }
-    if (std.mem.eql(u8, kind, "value")) {
-        return .{ .value = obj.get("value") orelse .null };
-    }
-    if (std.mem.eql(u8, kind, "capture")) {
-        const param = switch (obj.get("param") orelse .null) {
-            .string => |s| s,
-            else => return .{ .err = "capture result without param name" },
-        };
-        return .{ .capture = param };
-    }
-    if (std.mem.eql(u8, kind, "custom")) {
-        const src = switch (obj.get("source") orelse .null) {
-            .string => |s| s,
-            else => return .{ .err = "custom result without code source" },
-        };
-        return .{ .custom = .{ .code = src, .ast = obj.get("ast") orelse .null } };
-    }
-    if (std.mem.eql(u8, kind, "fail")) {
-        const message = switch (obj.get("message") orelse .null) {
-            .string => |s| s,
-            else => "template failed",
-        };
-        return .{ .fail = .{ .message = message, .param = null, .span = null } };
-    }
-    const message = switch (obj.get("message") orelse .null) {
-        .string => |s| s,
-        else => "template evaluation failed",
-    };
-    return .{ .err = message };
 }
 
 fn evaluateErl(

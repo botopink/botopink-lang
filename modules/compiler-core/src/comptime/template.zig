@@ -366,6 +366,30 @@ pub fn parseCustomNode(arena: std.mem.Allocator, v: std.json.Value) error{OutOfM
     };
 }
 
+
+/// Convert a native CustomNodeTree (from template evaluation) to CustomNode.
+/// Replaces parseCustomNode for the new native struct approach.
+pub fn parseCustomNodeFromTree(arena: std.mem.Allocator, tree: @import("./template_eval.zig").CustomNodeTree) error{OutOfMemory}!CustomNode {
+    const ref: ?NodeBinding = if (tree.ref) |r| blk: {
+        break :blk NodeBinding{
+            .name = try arena.dupe(u8, r),
+            .kind = "",
+        };
+    } else null;
+
+    const children = try arena.alloc(CustomNode, tree.children.len);
+    for (tree.children, 0..) |child, i| {
+        children[i] = try parseCustomNodeFromTree(arena, child);
+    }
+
+    return CustomNode{
+        .kind = try arena.dupe(u8, tree.kind),
+        .span = tree.span orelse .{ .start = 0, .end = 0, .line = 1 },
+        .label = try arena.dupe(u8, tree.label orelse ""),
+        .ref = ref,
+        .children = children,
+    };
+}
 /// Map a template-relative `span` to a location in the caller's file.
 ///
 /// When the contiguous template text is available, line/column are derived

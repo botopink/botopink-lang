@@ -3371,7 +3371,7 @@ fn expandTemplateCallViaRuntime(
             substituteHoles(@constCast(parsed), captures);
             // The `ast` half: use pre-parsed tree from WAT memory if available,
             // otherwise deserialize from JSON.
-            const root = if (c.root) |r| r else template.parseCustomNode(env.arena, c.ast) catch return error.OutOfMemory;
+            const root = if (c.root) |r| r else template.parseCustomNodeFromTree(env.arena, c.ast) catch return error.OutOfMemory;
             const prov: ?*const template.CapturedExpr = if (captures.len > 0) &captures[0] else null;
             env.customAstByLoc.put(loc, .{
                 .callee = tfn.name,
@@ -3382,7 +3382,7 @@ fn expandTemplateCallViaRuntime(
             }) catch return error.OutOfMemory;
             break :blk parsed;
         },
-        .value => |v| literalFromJson(env, v, loc) orelse {
+        .value => |v| valueToAstLiteral(env, v, loc) orelse {
             env.lastError = TypeError.custom(
                 "the template's `@expr(…)` value cannot be lifted as a literal",
                 "V1 lifts numbers, strings, booleans, null, and arrays of those.",
@@ -3586,6 +3586,55 @@ fn literalFromJson(env: *Env, v: std.json.Value, loc: ast.Loc) ?*const ast.Expr 
             node.* = .{ .collection = .{ .loc = loc, .kind = .{ .recordLit = .{ .fields = fields } } } };
         },
         else => return null,
+    }
+    return node;
+}
+
+/// Build a literal expression from a TypedValue produced by template evaluation.
+/// Replaces literalFromJson for the new native struct approach.
+fn valueToAstLiteral(env: *Env, v: templateEval.TypedValue, loc: ast.Loc) ?*const ast.Expr {
+    const node = env.arena.create(ast.Expr) catch return null;
+    switch (v) {
+        .integer => |n| {
+            const text = std.fmt.allocPrint(env.arena, "{d}", .{n}) catch return null;
+            node.* = .{ .literal = .{ .loc = loc, .kind = .{ .numberLit = text } } };
+        },
+        .float => |f| {
+            const text = std.fmt.allocPrint(env.arena, "{d}", .{f}) catch return null;
+            node.* = .{ .literal = .{ .loc = loc, .kind = .{ .numberLit = text } } };
+        },
+        .string => |str| {
+            const text = env.arena.dupe(u8, str) catch return null;
+            node.* = .{ .literal = .{ .loc = loc, .kind = .{ .stringLit = text } } };
+        },
+        .bool => |b| {
+            node.* = .{ .identifier = .{ .loc = loc, .kind = .{ .ident = if (b) "true" else "false" } } };
+        },
+        .null => {
+            node.* = .{ .literal = .{ .loc = loc, .kind = .null_ } };
+        },
+        .array => |items| {
+            const elems = env.arena.alloc(ast.Expr, items.len) catch return null;
+            for (items, 0..) |item, i| {
+                const elem = valueToAstLiteral(env, item, loc) orelse return null;
+                elems[i] = elem.*;
+            }
+            node.* = .{ .collection = .{ .loc = loc, .kind = .{ .arrayLit = .{ .elems = elems } } } };
+        },
+        .object => |pairs| {
+            // An object lifts as an anonymous record literal — the yaml
+            // case: the template computes a structure and the caller gets a
+            // fully typed `record { … }`.
+            const fields = env.arena.alloc(ast.RecordLitFieldOf(.untyped), pairs.len) catch return null;
+            for (pairs, 0..) |pair, i| {
+                const value = valueToAstLiteral(env, pair.value, loc) orelse return null;
+                fields[i] = .{
+                    .name = env.arena.dupe(u8, pair.key) catch return null,
+                    .value = @constCast(value),
+                };
+            }
+            node.* = .{ .collection = .{ .loc = loc, .kind = .{ .recordLit = .{ .fields = fields } } } };
+        },
     }
     return node;
 }
