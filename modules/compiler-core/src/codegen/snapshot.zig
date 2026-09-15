@@ -154,20 +154,14 @@ pub fn buildSnapshotMulti(alloc: std.mem.Allocator, outputs: []const SnapInput, 
 }
 
 /// Asserts the codegen output against a snapshot file.
-/// The snapshot path is "codegen/{runtimeTag}/{targetSource}/{slug}.snap.md".
-///
-/// `runtimeTag` was the pre-v0.beta.21 `comptimeRuntime` enum tag (one of
-/// node/erlang/wasm/beam). After the four-runtime architecture collapsed into
-/// a single wasm3 path we keep the tag in the snapshot path — purely to leave
-/// the on-disk snapshot tree byte-identical — by deriving it from the
-/// target backend (each target had exactly one comptime runtime historically).
+/// The snapshot path is "codegen/{targetSource}/{slug}.snap.md".
 pub fn assertCodegen(
     alloc: std.mem.Allocator,
     slug: []const u8,
     outputs: []const SnapInput,
     cfg: config.Config,
 ) !void {
-    const snapName = try std.fmt.allocPrint(alloc, "codegen/{s}/{s}/{s}", .{ legacyRuntimeTag(cfg.targetSource), @tagName(cfg.targetSource), slug });
+    const snapName = try std.fmt.allocPrint(alloc, "codegen/{s}/{s}", .{ @tagName(cfg.targetSource), slug });
     defer alloc.free(snapName);
 
     const text = try buildSnapshotMulti(alloc, outputs, cfg);
@@ -177,7 +171,7 @@ pub fn assertCodegen(
 }
 
 /// Asserts a codegen error against a snapshot file.
-/// The snapshot path is "codegen/errors/{comptimeRuntime}/{targetSource}/{slug}.snap.md".
+/// The snapshot path is "codegen/errors/{targetSource}/{slug}.snap.md".
 pub fn assertCodegenError(
     alloc: std.mem.Allocator,
     slug: []const u8,
@@ -192,21 +186,8 @@ pub fn assertCodegenError(
     );
     defer alloc.free(combined);
 
-    const snapName = try std.fmt.allocPrint(alloc, "codegen/errors/{s}/{s}/{s}", .{ legacyRuntimeTag(cfg.targetSource), @tagName(cfg.targetSource), slug });
+    const snapName = try std.fmt.allocPrint(alloc, "codegen/errors/{s}/{s}", .{ @tagName(cfg.targetSource), slug });
     defer alloc.free(snapName);
 
     try snapMod.checkText(alloc, snapName, combined);
-}
-
-/// Returns the pre-v0.beta.21 `comptimeRuntime` tag for `target` — used only to
-/// preserve the on-disk snapshot path layout when the runtime enum disappeared.
-/// The pairing is the same one `helpers.zig::configs` used before the unify:
-/// commonJS ↔ node, erlang ↔ erlang, beam ↔ beam, wasm ↔ wasm.
-fn legacyRuntimeTag(target: config.TargetSource) []const u8 {
-    return switch (target) {
-        .commonJS => "node",
-        .erlang => "erlang",
-        .beam => "beam",
-        .wasm => "wasm",
-    };
 }

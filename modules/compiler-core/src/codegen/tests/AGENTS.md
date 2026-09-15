@@ -12,6 +12,6 @@ For multi-module assertions without a snapshot, `assertConsumerJs(modules, prese
 generates every module (last = consumer `main`) and checks the consumer's JS
 contains/omits given substrings — used by the disk-lib namespace test in
 `features.zig` (`import {Lib} from "Lib"` → `const Lib = require(...)`).
-Golden outputs live in `modules/compiler-core/snapshots/codegen/`.
+Golden outputs live in `modules/compiler-core/snapshots/codegen/<target>/<slug>.snap.md` (`commonJS`, `erlang`, `beam`, `wasm`), comptime validation errors in `codegen/errors/<target>/`.
 
 When adding a test file here, register it in `../tests.zig` or it will not run.

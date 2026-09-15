@@ -71,15 +71,15 @@ out_dir="$botlang_root/build/snap-audit"
 mkdir -p "$out_dir"
 
 # Backend derived from the path component immediately after .../codegen/.
-# The codegen layout is codegen/<backend>/<lang>/<slug>.snap.md, plus a
-# codegen/errors/<backend>/<lang>/<slug>.snap.md tree. The "errors" leg
+# The codegen layout is codegen/<target>/<slug>.snap.md, plus a
+# codegen/errors/<target>/<slug>.snap.md tree. The "errors" leg
 # never carries a RUN LOG by contract — surface it under its own
 # backend label so the coverage pivot stays meaningful.
 backendOf() {
     local p="$1"
     case "$p" in
         */codegen/errors/*) echo errors ;;
-        */codegen/node/*)   echo node ;;
+        */codegen/commonJS/*) echo node ;;
         */codegen/erlang/*) echo erlang ;;
         */codegen/beam/*)   echo beam ;;
         */codegen/wasm/*)   echo wasm ;;
