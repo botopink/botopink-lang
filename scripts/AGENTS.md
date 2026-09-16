@@ -15,6 +15,7 @@ scripts/
 ├── install.ps1        ← Windows one-liner installer
 ├── release-pack.sh    ← per-target archive + sha256 packer (used by release.yml)
 ├── test-libs.sh       ← runtime pre-flight + `botopink-lib-test` wrapper (`zig build test-libs`)
+├── test-vscode.sh     ← locate the sibling vscode-extension, `npm ci` once, `npm test` (`zig build test-vscode`)
 ├── snap_audit.sh      ← read-only audit of every *.snap.md (4 modes)
 └── git-hooks/
     ├── pre-commit                 ← tracked hook (see ../AGENTS.md §Local gate)
@@ -102,6 +103,13 @@ Resolves the core dir (meta layout `repository/botopink-lang/` or this repo's
 root), exits `1` if `zig-out/bin/botopink-lib-test` is not built, warns (without
 gating) for each missing `node`/`escript`/`erlc`/`wasmtime`, then execs the
 runner with forwarded args and returns its exit code.
+
+## test-vscode.sh
+
+Finds the `vscode-extension` checkout (`BOTOPINK_VSCODE_DIR`, else the first
+`<ancestor>/repository/vscode-extension` or `<ancestor>/vscode-extension` walking
+up from this repo), runs `npm ci` when `node_modules/` is absent, then execs
+`npm test`. Exits 1 when the checkout or `npm` is missing — never a silent pass.
 
 ## snap_audit.sh
 

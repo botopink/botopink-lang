@@ -46,10 +46,11 @@ zig build               # botopink + botopink-lsp + botopink-lib-test + bpmp
 zig build test          # compiler-core + language-server + compiler-cli tests
 zig build test -Dtest-filter=<name>   # only tests whose name matches
 zig build run           # build and run the CLI
-zig build test-libs     # every libs/ project's tests per backend
+zig build test-cli      # every modules/compiler-cli/tests/*.sh (command contract, test tooling, recursion, backend parity)
+zig build test-libs     # every visible .bp library's tests per backend (libs/ + sibling repository/*)
 zig build test-backends # beam/wasm/erlang execution parity (modules/compiler-cli/tests/backend_exec.sh)
 zig build test-bpmp     # bpmp unit tests
-zig build test-vscode   # VS Code extension unit tests — runs ../../scripts/test-vscode.sh, which the meta workspace does not currently ship
+zig build test-vscode   # VS Code extension unit tests — scripts/test-vscode.sh finds the sibling checkout
 zig build clean-tmp     # reap scratch dirs older than 1 day (also runs before `zig build test`)
 ```
 

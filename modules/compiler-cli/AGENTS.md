@@ -13,8 +13,8 @@ compiler-cli/
 ├── botopink.json        ← module manifest (`version` drives the auto-tag)
 ├── build.zig            ← standalone build graph + `run` + `test` steps
 ├── build.zig.zon        ← dependency manifest (compiler-core)
-├── tests/               ← end-to-end CLI scripts (NOT in `zig build test`)
-│   ├── std_erlang.sh        ← `botopink test --target erlang` over libs/std
+├── tests/               ← end-to-end CLI scripts — `zig build test-cli` runs all four
+│   ├── cli_contract.sh      ← the command contract (rows C1–C13) against the real binary
 │   ├── mutual_recursion.sh  ← forward-ref + mutual recursion runs on every backend
 │   ├── mutual_recursion/    ← fixture project for the script above
 │   ├── backend_exec.sh      ← backend execution parity (numeric / records /
@@ -36,29 +36,30 @@ compiler-cli/
 zig build               # produce ./zig-out/bin/botopink
 zig build run -- help
 zig build run -- version
-zig build test          # CLI unit tests (config / libs / resolver / migrate / test_cmd)
+zig build test          # CLI unit tests (main.zig parsers / config / libs / resolver / migrate / test_cmd / diagnostics)
 
 # The workspace root `zig build test` also runs these tests (root = src/main.zig,
 # cwd = modules/compiler-cli).
 
-# End-to-end scripts under tests/ build the CLI + spawn runtimes, so they are
-# NOT part of `zig build test` — run them directly:
-bash modules/compiler-cli/tests/std_erlang.sh        # stdlib suite on erlang
+# End-to-end scripts under tests/ spawn the CLI and runtimes, so they are NOT
+# part of `zig build test`. From the workspace root:
+zig build test-cli      # all four scripts, in order, against the installed CLI
+zig build test-backends # backend_exec.sh alone
+
+# Or directly (each builds the CLI unless BOTOPINK_SKIP_BUILD=1 is set;
+# cli_contract.sh also takes BOTOPINK_BIN=<binary> to test another build):
+bash modules/compiler-cli/tests/cli_contract.sh      # command contract C1–C13
+bash modules/compiler-cli/tests/test_tooling.sh      # `botopink test` behaviours
 bash modules/compiler-cli/tests/mutual_recursion.sh  # mutual recursion on every backend
 bash modules/compiler-cli/tests/backend_exec.sh      # numeric/records/modules per backend
-bash modules/compiler-cli/tests/test_tooling.sh      # `botopink test` behaviours
-
-# backend_exec.sh is also a workspace build step (skips any absent runtime;
-# sets BOTOPINK_SKIP_BUILD so it reuses the installed CLI):
-zig build test-backends
 ```
 
-> **Pinned backend reds** in `backend_exec.sh`: the `records` fixture on BEAM
-> (`case` enum dispatch / lambda codegen — `pin_beam_red`: erlc must accept the
-> asm, the run is informational) and `examples/modules` on erlang (cross-module
-> package calls emitted unqualified — `pin_run_red`). Both flag loudly if the red
-> starts passing so the pin can be promoted to a hard assert. BEAM is not run on
-> the `numeric` fixture at all (call-result arithmetic fails `beam_validator`).
+> **Every cell is a hard assert** — there are no pinned reds. A missing runtime
+> skips its cells by name. **Cells not run**, each restored by the front that
+> fixes its backend: `examples/modules` on erlang (cross-module calls emitted
+> unqualified — `function lucky/0 undefined`; the erlang front) and the `numeric`
+> fixture on BEAM (call-result arithmetic fails `beam_validator`; the beam front).
+> The `std` suite on erlang is covered by `zig build test-libs`, not a script.
 
 ## External libs (generic loader)
 

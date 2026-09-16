@@ -3,7 +3,7 @@
 # can't reach because they need the real CLI + commonJS runner:
 #   • an empty `test "x" {}` block passes
 #   • `--filter` matching MULTIPLE tests runs all of them
-#   • `--filter` matching NONE produces a clear report and exits 0
+#   • `--filter` matching NONE produces a clear `0 passed, 0 failed` and exits 0
 #   • a failing `assert cond, "msg"` surfaces the custom message
 #   • a mixed pass/fail run still runs every test AND exits non-zero
 #
@@ -37,12 +37,15 @@ PASS="$SCRIPT_DIR/test_tooling/pass"
 FAIL="$SCRIPT_DIR/test_tooling/fail"
 
 fail() { echo "  ✗ $1" >&2; exit 1; }
+# count_tests <output> — the runner prints one `TEST <file>:<line> <name>` line
+# per test it runs (there is no `running N tests` banner).
+count_tests() { grep -c '^TEST ' <<<"$1" || true; }
 
 # ── empty test + a clean all-pass run ────────────────────────────────────────
 echo "==> [pass] botopink test (4 tests incl. an empty body)"
 out="$( cd "$PASS" && "$BP_BIN" test --target commonJS )"
 echo "$out"
-grep -q "running 4 tests" <<<"$out" || fail "expected 'running 4 tests'"
+[[ "$(count_tests "$out")" -eq 4 ]] || fail "expected 4 TEST lines, got $(count_tests "$out")"
 grep -q "ok   empty body still passes" <<<"$out" || fail "empty test block should pass"
 grep -q "4 passed, 0 failed" <<<"$out" || fail "expected all four to pass"
 
@@ -50,7 +53,7 @@ grep -q "4 passed, 0 failed" <<<"$out" || fail "expected all four to pass"
 echo "==> [pass] botopink test --filter math (matches two tests)"
 out="$( cd "$PASS" && "$BP_BIN" test --target commonJS --filter math )"
 echo "$out"
-grep -q "running 2 tests" <<<"$out" || fail "--filter math should run exactly two tests"
+[[ "$(count_tests "$out")" -eq 2 ]] || fail "--filter math should run exactly two tests, ran $(count_tests "$out")"
 grep -q "2 passed, 0 failed" <<<"$out" || fail "both filtered tests should pass"
 
 # ── --filter matching NONE → a clear report, exit 0 ──────────────────────────
@@ -61,7 +64,8 @@ code=$?
 set -e
 echo "$out"
 [[ $code -eq 0 ]] || fail "a no-match filter should still exit 0 (got $code)"
-grep -q "running 0 tests" <<<"$out" || fail "a no-match filter should report 'running 0 tests'"
+[[ "$(count_tests "$out")" -eq 0 ]] || fail "a no-match filter should run no test"
+grep -q "0 passed, 0 failed" <<<"$out" || fail "a no-match filter should report '0 passed, 0 failed'"
 
 # ── failing assert surfaces its message; mixed run exits non-zero ────────────
 echo "==> [fail] botopink test (one pass, one failing assert with a message)"
