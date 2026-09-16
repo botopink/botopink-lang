@@ -24,17 +24,17 @@ fn main() {
     i32.const 5
     i32.sub
     local.set $n
-    i32.const 0 ;; unresolved call: abs/0
+    unreachable ;; unresolved call: abs/0
     call $__print_i32
-    i32.const 0 ;; unresolved call: min/1
+    unreachable ;; unresolved call: min/1
     call $__print_i32
-    i32.const 0 ;; unresolved call: max/1
+    unreachable ;; unresolved call: max/1
     call $__print_i32
-    i32.const 0 ;; unresolved call: clamp/2
+    unreachable ;; unresolved call: clamp/2
     call $__print_i32
     i32.const 7
     local.set $x
-    i32.const 0 ;; unresolved call: isEven/0
+    unreachable ;; unresolved call: isEven/0
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")

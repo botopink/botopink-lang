@@ -37,7 +37,7 @@ fn main() {
     i32.store
     local.get $__mem0
     local.set $c
-    i32.const 0 ;; unresolved call: atual/0
+    unreachable ;; unresolved call: atual/0
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")

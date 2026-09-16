@@ -3031,7 +3031,11 @@ const Emitter = struct {
             return;
         }
         if (try self.lowerCollectionMethod(cc)) return;
-        try self.emitCf(zero, "unresolved call: {s}/{d}", .{ cc.callee, cc.args.len });
+        // A call this backend cannot lower must NOT fold into a value: a
+        // constant here makes the module load and the program do nothing, and
+        // `print("hi")` then "succeeds" with no output. Trap instead, so the
+        // gap is loud at run time and still leaves a loadable module.
+        try self.emitCf(.@"unreachable", "unresolved call: {s}/{d}", .{ cc.callee, cc.args.len });
     }
 
     /// Instance methods on the built-in array layout (`[len][e0][e1]…`) that

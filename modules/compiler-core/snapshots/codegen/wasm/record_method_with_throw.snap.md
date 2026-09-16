@@ -29,7 +29,7 @@ val Invoice = record {
     return
   )
   (func $Invoice_validate (param $self i32)
-    i32.const 0 ;; unresolved call: Error/1
+    unreachable ;; unresolved call: Error/1
     drop
     unreachable
   )

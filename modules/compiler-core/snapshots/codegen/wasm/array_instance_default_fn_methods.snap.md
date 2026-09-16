@@ -38,13 +38,13 @@ fn main() {
     i32.store offset=12
     local.get $__mem0
     local.set $xs
-    i32.const 0 ;; unresolved call: join/1
+    unreachable ;; unresolved call: join/1
     call $__print_i32
-    i32.const 0 ;; unresolved call: fold/2
+    unreachable ;; unresolved call: fold/2
     call $__print_i32
-    i32.const 0 ;; unresolved call: isEmpty/0
+    unreachable ;; unresolved call: isEmpty/0
     call $__print_i32
-    i32.const 0 ;; unresolved call: all/1
+    unreachable ;; unresolved call: all/1
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")

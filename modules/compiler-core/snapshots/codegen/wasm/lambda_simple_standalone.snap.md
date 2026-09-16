@@ -17,7 +17,7 @@ fn main() -> string {
     (local $func i32)
     i32.const 0 ;; lambda
     local.set $func
-    i32.const 0 ;; unresolved call: func/1
+    unreachable ;; unresolved call: func/1
     return
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")

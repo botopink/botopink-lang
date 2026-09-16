@@ -158,9 +158,9 @@ fn main() {
     return
   )
   (func $main
-    i32.const 0 ;; unresolved call: toInt/1
+    unreachable ;; unresolved call: toInt/1
     call $__print_i32
-    i32.const 0 ;; unresolved call: reverse/1
+    unreachable ;; unresolved call: reverse/1
     call $describe
     call $__print_str
   )

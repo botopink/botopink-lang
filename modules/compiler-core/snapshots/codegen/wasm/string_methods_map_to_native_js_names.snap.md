@@ -20,11 +20,11 @@ fn main() {
     (local $s i32)
     i32.const 256
     local.set $s
-    i32.const 0 ;; unresolved call: toUpper/0
+    unreachable ;; unresolved call: toUpper/0
     call $__print_i32
-    i32.const 0 ;; unresolved call: toLower/0
+    unreachable ;; unresolved call: toLower/0
     call $__print_i32
-    i32.const 0 ;; unresolved call: join/1
+    unreachable ;; unresolved call: join/1
     call $__print_i32
     local.get $s
     i32.const 0

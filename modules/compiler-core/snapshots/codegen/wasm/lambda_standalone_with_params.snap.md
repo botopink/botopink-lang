@@ -25,7 +25,7 @@ fn main() {
   (func $__init_globals
     i32.const 0 ;; lambda
     global.set $add
-    i32.const 0 ;; unresolved call: add/2
+    unreachable ;; unresolved call: add/2
     global.set $result
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")

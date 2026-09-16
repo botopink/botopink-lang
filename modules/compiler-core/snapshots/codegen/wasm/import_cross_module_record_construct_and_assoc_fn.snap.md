@@ -62,11 +62,11 @@ fn main() {
   (func $main
     (local $r i32)
     (local $a i32)
-    i32.const 0 ;; unresolved call: ok/1
+    unreachable ;; unresolved call: ok/1
     local.set $r
     i32.const 0 ;; field access .body (unknown receiver type)
     call $__print_i32
-    i32.const 0 ;; unresolved call: App/2
+    unreachable ;; unresolved call: App/2
     local.set $a
     i32.const 0 ;; field access .port (unknown receiver type)
     call $__print_i32

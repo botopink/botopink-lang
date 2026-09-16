@@ -53,7 +53,7 @@ fn main() {
   )
   (func $main
     (local $__mem0 i32)
-    i32.const 0 ;; unresolved call: join/1
+    unreachable ;; unresolved call: join/1
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")

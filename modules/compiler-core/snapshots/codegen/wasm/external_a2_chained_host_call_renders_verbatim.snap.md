@@ -17,7 +17,7 @@ fn main() {
   (global $__heap_ptr (mut i32) (i32.const 256))
   ;; declare fn b64encode — no wasm implementation (host-backed)
   (func $main
-    i32.const 0 ;; unresolved call: b64encode/1
+    unreachable ;; unresolved call: b64encode/1
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")

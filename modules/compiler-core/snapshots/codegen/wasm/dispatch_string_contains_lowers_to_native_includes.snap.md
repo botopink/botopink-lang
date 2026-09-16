@@ -17,7 +17,7 @@ fn main() {
     (local $hw i32)
     i32.const 256
     local.set $hw
-    i32.const 0 ;; unresolved call: contains/1
+    unreachable ;; unresolved call: contains/1
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")

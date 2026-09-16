@@ -61,7 +61,7 @@ fn main() {
     i32.store offset=12
     local.get $__mem1
     local.set $ys
-    i32.const 0 ;; unresolved call: zip/1
+    unreachable ;; unresolved call: zip/1
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")

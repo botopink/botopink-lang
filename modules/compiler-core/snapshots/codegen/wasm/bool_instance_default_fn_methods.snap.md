@@ -15,13 +15,13 @@ fn main() {
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
   (func $main
-    i32.const 0 ;; unresolved call: negate/0
+    unreachable ;; unresolved call: negate/0
     call $__print_i32
-    i32.const 0 ;; unresolved call: nor/1
+    unreachable ;; unresolved call: nor/1
     call $__print_i32
-    i32.const 0 ;; unresolved call: nand/1
+    unreachable ;; unresolved call: nand/1
     call $__print_i32
-    i32.const 0 ;; unresolved call: exclusiveOr/1
+    unreachable ;; unresolved call: exclusiveOr/1
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")

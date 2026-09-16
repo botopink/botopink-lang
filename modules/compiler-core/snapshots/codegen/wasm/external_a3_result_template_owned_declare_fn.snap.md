@@ -21,7 +21,7 @@ fn main() {
   (func $main
     (local $r i32)
     (local $_res0 i32)
-    i32.const 0 ;; unresolved call: parseInt/1
+    unreachable ;; unresolved call: parseInt/1
     local.set $r
     local.get $r
     local.set $_res0

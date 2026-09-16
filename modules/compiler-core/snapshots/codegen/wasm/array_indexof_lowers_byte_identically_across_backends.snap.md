@@ -15,9 +15,9 @@ fn main() {
   (func $main
     (local $__mem0 i32)
     (local $__mem1 i32)
-    i32.const 0 ;; unresolved call: indexOf/1
+    unreachable ;; unresolved call: indexOf/1
     call $__print_i32
-    i32.const 0 ;; unresolved call: indexOf/1
+    unreachable ;; unresolved call: indexOf/1
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")

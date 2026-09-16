@@ -36,7 +36,7 @@ fn run(p: Parser) -> i32 {
   (func $run (param $p i32) (result i32)
     (local $_try0 i32)
     (local $result i32)
-    i32.const 0 ;; unresolved call: parse/0
+    unreachable ;; unresolved call: parse/0
     local.set $_try0
     local.get $_try0
     i32.load ;; Result tag (0 = Ok, non-zero = Error)

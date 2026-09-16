@@ -18,15 +18,15 @@ fn main() {
   (func $main
     (local $p i32)
     (local $inc i32)
-    i32.const 0 ;; unresolved call: of/2
+    unreachable ;; unresolved call: of/2
     local.set $p
-    i32.const 0 ;; unresolved call: first/1
+    unreachable ;; unresolved call: first/1
     call $__print_i32
-    i32.const 0 ;; unresolved call: identity/1
+    unreachable ;; unresolved call: identity/1
     call $__print_i32
-    i32.const 0 ;; unresolved call: compose/2
+    unreachable ;; unresolved call: compose/2
     local.set $inc
-    i32.const 0 ;; unresolved call: inc/1
+    unreachable ;; unresolved call: inc/1
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")

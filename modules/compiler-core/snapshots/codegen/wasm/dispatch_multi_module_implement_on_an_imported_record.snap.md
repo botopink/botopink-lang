@@ -45,7 +45,7 @@ fn main() {
   )
   (func $main
     (local $donald i32)
-    i32.const 0 ;; unresolved call: Pato/1
+    unreachable ;; unresolved call: Pato/1
     local.set $donald
     local.get $donald
     call $Pato_swim

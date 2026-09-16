@@ -38,7 +38,7 @@ val result = double(21);
   ;; cross-module import not linked (wasm single-module): double from math
   (global $result (mut i32) (i32.const 0))
   (func $__init_globals
-    i32.const 0 ;; unresolved call: double/1
+    unreachable ;; unresolved call: double/1
     global.set $result
   )
 )

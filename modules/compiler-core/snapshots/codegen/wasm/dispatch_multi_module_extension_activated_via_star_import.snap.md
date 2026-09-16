@@ -47,9 +47,9 @@ fn main() {
   ;; cross-module import not linked (wasm single-module): PatoNada from pond
   (func $main
     (local $donald i32)
-    i32.const 0 ;; unresolved call: Pato/1
+    unreachable ;; unresolved call: Pato/1
     local.set $donald
-    i32.const 0 ;; unresolved call: swim/0
+    unreachable ;; unresolved call: swim/0
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")

@@ -23,9 +23,9 @@ fn main() {
   (global $__heap_ptr (mut i32) (i32.const 256))
   (func $main
     (local $p i32)
-    i32.const 0 ;; unresolved call: of/2
+    unreachable ;; unresolved call: of/2
     local.set $p
-    i32.const 0 ;; unresolved call: first/1
+    unreachable ;; unresolved call: first/1
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
