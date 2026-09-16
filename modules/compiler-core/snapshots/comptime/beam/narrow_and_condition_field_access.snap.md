@@ -10,3 +10,13 @@ fn describe(b: ?Box) -> string {
 @print(describe(Box(weight: 20)));
 ```
 
+----- COMPILE DIAGNOSTIC -- main
+```text
+error: parse error (unexpectedToken)
+  ┌─ :3:11
+  │
+3 │     if (b && b.weight > 10) {
+
+  unexpected `&&`
+```
+

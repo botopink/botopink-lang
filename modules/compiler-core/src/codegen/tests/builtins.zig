@@ -244,11 +244,15 @@ test "js: stdlib ---- chain map flatMap unwrapOr types correctly" {
 test "js: builtin ---- @print in if branch" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn check(x: i32) {
-        \\    if x > 0 {
+        \\    if (x > 0) {
         \\        @print("positive");
         \\    } else {
         \\        @print("non-positive");
         \\    }
+        \\}
+        \\fn main() {
+        \\    check(1);
+        \\    check(-1);
         \\}
     );
 }
@@ -265,12 +269,12 @@ test "js: builtin ---- @print with variable" {
 test "js: builtin ---- @print in loop" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn countdown(n: i32) {
-        \\    val i = n;
-        \\    loop {
-        \\        if i <= 0 { break; }
-        \\        @print(i);
-        \\        val i = i - 1;
-        \\    }
+        \\    loop (0..n) { i ->
+        \\        @print(n - i);
+        \\    };
+        \\}
+        \\fn main() {
+        \\    countdown(3);
         \\}
     );
 }

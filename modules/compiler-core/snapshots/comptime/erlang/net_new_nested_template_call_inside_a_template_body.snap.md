@@ -54,6 +54,11 @@ main() ->
 }
 ```
 
+----- BOTOPINK TRANSFORM CODE -- main.bp
+```botopink
+val s = inner();
+```
+
 ----- TYPED AST JSON -- main.json
 ```json
 {

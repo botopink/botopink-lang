@@ -11,7 +11,7 @@ When adding a test file here, register it in `../tests.zig` or it will not run.
 
 | File | Covers |
 |---|---|
-| `helpers.zig` | Shared harness (no tests): `assertComptimeAst`, `assertComptimeAstSingle`, `assertTypeErrorSnap`, `assertInfersOk`. |
+| `helpers.zig` | Shared harness (no tests): `assertComptimeAst`, `assertComptimeAstSingle`, `assertComptimeCompileError`, `assertTypeErrorSnap`, `assertInfersOk`, `renderTypeError`. |
 | `infer_exprs.zig` | Literal / binary / case / control-flow inference. |
 | `infer_decls.zig` | fn / record / interface / implement / test-block inference. |
 | `infer_generics.zig` | Type meta-kind + generic inference (regression guards). |
@@ -32,3 +32,22 @@ When adding a test file here, register it in `../tests.zig` or it will not run.
 | `builtins_typeinfo.zig` | `@typeInfo` / `@TypeOf` / `@makeRecord` / `@RecordKeys` / `@Field` inference. |
 | `std_target_gating.zig` | `from "std"` imports rejected on targets without `@external` coverage. |
 | `eval_pipeline.zig` | Source → infer → `evaluateComptime` for comptime vals. |
+
+## Pass/fail contract (spec 06, H3/H9)
+
+- `assertComptimeAst` / `assertComptimeAstSingle` **fail** with
+  `error.ModuleDidNotCompile` when a module ends in `.parseError`,
+  `.typeError` or `.validationError`, and the snapshot records a
+  `----- COMPILE DIAGNOSTIC -- <module>` section instead of stopping after
+  `SOURCE CODE`. Before this, 39 slugs were source-only snapshots that compared
+  source with source and passed.
+- `assertComptimeCompileError(alloc, @src(), src)` is the opt-in for a test
+  whose point *is* that the program does not compile: it records the diagnostic
+  and fails if the source ever starts compiling. Every call site carries a
+  comment naming the missing feature and the spec that owns it
+  (`DOCUMENTED SKIP —`).
+- `renderTypeError` (the `comptime/*/errors/` snapshots) is a thin wrapper over
+  `comptime/snapshot.zig` `renderTypeErrorBody`, which the diagnostic sections
+  reuse — both texts stay in sync by construction.
+- `BOTOPINK_SNAP_CREATE=1` is required to record a *missing* snapshot
+  (`utils/snap.zig`).

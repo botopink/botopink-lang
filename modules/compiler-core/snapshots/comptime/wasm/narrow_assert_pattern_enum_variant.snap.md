@@ -7,3 +7,13 @@ fn work(s: Status) -> i32 {
 }
 ```
 
+----- COMPILE DIAGNOSTIC -- main
+```text
+error: parse error (unexpectedToken)
+  ┌─ :3:14
+  │
+3 │     assert s is Busy(n);
+
+  unexpected `is`
+```
+

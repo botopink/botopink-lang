@@ -1,9 +1,77 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn getC() -> i32 {
-    val x: ?record { b: ?record { c: i32 } } = null;
+record Inner { c: i32 }
+record Outer { b: ?Inner }
+fn getC(o: ?Outer) -> i32 {
+    if (o) { outer ->
+        if (outer.b) { inner ->
+            return inner.c;
+        };
+    };
     return 0;
 }
-@print(getC());
+fn main() {
+    @print(getC(Outer(b: Inner(c: 7))));
+    @print(getC(Outer(b: null)));
+}
+```
+
+----- TYPED AST JSON -- main.json
+```json
+{
+  "declarations": [
+    {
+      "ast": "record_def",
+      "name": "Inner",
+      "id": 0,
+      "fields": {
+        "c": "i32"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "Outer",
+      "id": 0,
+      "fields": {
+        "b": "?"
+      }
+    },
+    {
+      "ast": "fn_def",
+      "name": "getC",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "o",
+          "type": "?"
+        }
+      ],
+      "return_type": "i32",
+      "body": [
+        {
+          "source": "if (o) { outer ->"
+        },
+        {
+          "source": "return 0;"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "main",
+      "is_pub": false,
+      "params": [],
+      "return_type": "void",
+      "body": [
+        {
+          "source": "@print(getC(Outer(b: Inner(c: 7))));"
+        },
+        {
+          "source": "@print(getC(Outer(b: null)));"
+        }
+      ]
+    }
+  ]
+}
 ```
 
