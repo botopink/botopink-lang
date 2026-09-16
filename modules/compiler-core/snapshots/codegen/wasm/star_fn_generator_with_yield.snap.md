@@ -16,7 +16,9 @@ fn counter() -> @Iterator<i32> {
   ;; #[@future] / #[@asyncGenerator] — eager lowering
   (func $counter (result i32)
     i32.const 1
+    drop
     i32.const 2
+    drop
     i32.const 3
   )
 )

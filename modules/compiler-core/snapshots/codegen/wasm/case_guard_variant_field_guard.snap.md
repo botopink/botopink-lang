@@ -19,8 +19,9 @@ fn big(sh: Shape) -> string {
   (data (i32.const 256) "\0a\00\00\00big circle")
   (global $__heap_ptr (mut i32) (i32.const 272))
   (func $big (param $sh i32) (result i32)
-    local.get $sh
+    (local $r i32)
     (local $__case_0 i32)
+    local.get $sh
     local.set $__case_0
     i32.const 256
     return

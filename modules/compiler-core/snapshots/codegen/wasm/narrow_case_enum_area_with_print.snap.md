@@ -20,14 +20,18 @@ fn main() {
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
   (func $area (param $s i32) (result f64)
-    local.get $s
+    (local $r i32)
     (local $__case_0 i32)
+    local.get $s
     local.set $__case_0
     f32.const 3.14
-    global.get $r
+    local.get $r
+    f32.convert_i32_s
     f32.mul
-    global.get $r
+    local.get $r
+    f32.convert_i32_s
     f32.mul
+    f64.promote_f32
     return
   )
   (func $main
@@ -44,10 +48,10 @@ fn main() {
     i32.store
     local.get $__mem0
     f32.const 2.0
-    i32.store offset=4
+    f32.store offset=4
     local.get $__mem0
     call $area
-    call $__print_i32
+    call $__print_f64
     global.get $__heap_ptr
     local.set $__mem1
     global.get $__heap_ptr
@@ -59,18 +63,57 @@ fn main() {
     i32.store
     local.get $__mem1
     f32.const 3.0
-    i32.store offset=4
+    f32.store offset=4
     local.get $__mem1
     call $area
-    call $__print_i32
+    call $__print_f64
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
   )
+  ;; Scratch layout below the data section (which starts at 256):
+  ;;   0..8  WASI iovec   8  newline byte
+  ;;  16..32 bool text   32..64 float fraction   64..128 i32 digits
+  (func $__write_bytes (param $p i32) (param $n i32)
+    i32.const 0
+    local.get $p
+    i32.store
+    i32.const 4
+    local.get $n
+    i32.store
+    i32.const 1
+    i32.const 0
+    i32.const 1
+    i32.const 8
+    call $fd_write
+    drop
+  )
+  (func $__print_nl
+    i32.const 8
+    i32.const 10
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+  )
+  ;; separator between the arguments of a multi-argument `@print`
+  (func $__print_sp
+    i32.const 8
+    i32.const 32
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+  )
   (func $__print_i32 (param $n i32)
+    local.get $n
+    call $__print_i32_raw
+    call $__print_nl
+  )
+  (func $__print_i32_raw (param $n i32)
     (local $buf i32) (local $len i32) (local $neg i32) (local $d i32)
     (local $i i32) (local $j i32) (local $tmp i32)
-    i32.const 100
+    i32.const 64
     local.set $buf
     local.get $n
     i32.const 0
@@ -155,11 +198,14 @@ fn main() {
       )
     )
     ;; add neg sign + newline
+    ;; shift the digits one byte right to make room for '-'
+    ;; (dst = buf+1, NOT buf+len: the latter moved them `len`
+    ;;  bytes and printed -12 as -21)
     local.get $neg
     (if
       (then
         local.get $buf
-        local.get $len
+        i32.const 1
         i32.add
         local.get $buf
         local.get $len
@@ -175,26 +221,7 @@ fn main() {
     )
     local.get $buf
     local.get $len
-    i32.add
-    i32.const 10
-    i32.store8
-    local.get $len
-    i32.const 1
-    i32.add
-    local.set $len
-    ;; fd_write
-    i32.const 0
-    local.get $buf
-    i32.store
-    i32.const 4
-    local.get $len
-    i32.store
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    i32.const 8
-    call $fd_write
-    drop
+    call $__write_bytes
   )
   (func $__memmove (param $dst i32) (param $src i32) (param $len i32)
     (local $i i32)
@@ -221,6 +248,97 @@ fn main() {
         i32.sub
         local.set $i
         br $loop
+      )
+    )
+  )
+  (func $__print_f64 (param $x f64)
+    local.get $x
+    call $__print_f64_raw
+    call $__print_nl
+  )
+  (func $__print_f64_raw (param $x f64)
+    (local $i i32) (local $frac f64) (local $d i32) (local $k i32) (local $last i32)
+    local.get $x
+    f64.const 0
+    f64.lt
+    (if
+      (then
+        i32.const 32
+        i32.const 45
+        i32.store8
+        i32.const 32
+        i32.const 1
+        call $__write_bytes
+        local.get $x
+        f64.neg
+        local.set $x
+      )
+    )
+    local.get $x
+    i32.trunc_f64_s
+    local.set $i
+    local.get $x
+    local.get $i
+    f64.convert_i32_s
+    f64.sub
+    local.set $frac
+    local.get $i
+    call $__print_i32_raw
+    ;; fractional digits into 34.. ; 33 holds the '.'
+    i32.const 0
+    local.set $k
+    i32.const 0
+    local.set $last
+    (block $fdone
+      (loop $fdigits
+        local.get $k
+        i32.const 6
+        i32.ge_s
+        br_if $fdone
+        local.get $frac
+        f64.const 10
+        f64.mul
+        local.set $frac
+        local.get $frac
+        i32.trunc_f64_s
+        local.set $d
+        local.get $frac
+        local.get $d
+        f64.convert_i32_s
+        f64.sub
+        local.set $frac
+        i32.const 34
+        local.get $k
+        i32.add
+        local.get $d
+        i32.const 48
+        i32.add
+        i32.store8
+        local.get $k
+        i32.const 1
+        i32.add
+        local.set $k
+        local.get $d
+        (if
+          (then
+            local.get $k
+            local.set $last
+          )
+        )
+        br $fdigits
+      )
+    )
+    local.get $last
+    (if
+      (then
+        i32.const 33
+        i32.const 46
+        i32.store8
+        i32.const 33
+        local.get $last
+        i32.const 1
+        i32.add
+        call $__write_bytes
       )
     )
   )

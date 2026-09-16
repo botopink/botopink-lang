@@ -30,12 +30,13 @@ fn run(p: Parser) -> i32 {
     i32.const 256
     i32.store
     local.get $__mem0
+    drop
     unreachable
   )
   (func $run (param $p i32) (result i32)
     (local $_try0 i32)
     (local $result i32)
-    call $parse
+    i32.const 0 ;; unresolved call: parse/0
     local.set $_try0
     local.get $_try0
     i32.load ;; Result tag (0 = Ok, non-zero = Error)

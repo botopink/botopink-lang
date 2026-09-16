@@ -83,6 +83,7 @@ fn pipeline() -> @Result<i32, IoError> {
     (local $_try1 i32)
     (local $a i32)
     (local $b i32)
+    (local $_res0 i32)
     call $step1
     local.set $_try0
     local.get $_try0
@@ -110,7 +111,6 @@ fn pipeline() -> @Result<i32, IoError> {
     local.get $_try1
     i32.load offset=4 ;; Ok payload
     local.set $b
-    (local $_res0 i32)
     global.get $__heap_ptr
     local.set $_res0
     global.get $__heap_ptr

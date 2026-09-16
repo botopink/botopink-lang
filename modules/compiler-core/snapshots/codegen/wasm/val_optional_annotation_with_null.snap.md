@@ -7,8 +7,13 @@ val msg: ?string = null;
 ```wasm
 (module
   (memory (export "memory") 1)
+  (start $__init_globals)
   (global $__heap_ptr (mut i32) (i32.const 256))
   (global $msg (mut i32) (i32.const 0))
+  (func $__init_globals
+    i32.const 0
+    global.set $msg
+  )
 )
 ```
 

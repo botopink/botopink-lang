@@ -13,6 +13,7 @@ fn fail() {
   (global $__heap_ptr (mut i32) (i32.const 280))
   (func $fail
     i32.const 256
+    drop
     unreachable
   )
 )

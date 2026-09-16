@@ -30,13 +30,13 @@ fn main() {
     call $execute_$0
     local.set $r3
   )
-  (func $execute_$0 (param $input i32)
+  (func $execute_$0 (param $input i32) (result i32)
     local.get $input
     i32.const 0
     i32.add
     return
   )
-  (func $execute_$1 (param $input i32)
+  (func $execute_$1 (param $input i32) (result i32)
     local.get $input
     i32.const 0
     i32.add

@@ -34,6 +34,7 @@ fn parse(n: i32) -> @Result<i32, string> {
   ;; #[@future] / #[@asyncGenerator] — eager lowering
   (func $counter (result i32)
     i32.const 1
+    drop
     i32.const 2
   )
   ;; #[@future] / #[@asyncGenerator] — eager lowering
@@ -41,12 +42,13 @@ fn parse(n: i32) -> @Result<i32, string> {
     i32.const 1
   )
   (func $parse (param $n i32) (result i32)
+    (local $_res0 i32)
+    (local $_res1 i32)
     local.get $n
     i32.const 0
     i32.lt_s
     (if (result i32)
       (then
-    (local $_res0 i32)
     global.get $__heap_ptr
     local.set $_res0
     global.get $__heap_ptr
@@ -67,7 +69,6 @@ fn parse(n: i32) -> @Result<i32, string> {
       )
     )
     drop
-    (local $_res1 i32)
     global.get $__heap_ptr
     local.set $_res1
     global.get $__heap_ptr

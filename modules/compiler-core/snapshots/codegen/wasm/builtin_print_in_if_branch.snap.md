@@ -19,84 +19,79 @@ fn main() {
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (data (i32.const 256) "\08\00\00\00positive")
-  (data (i32.const 268) "\01\00\00\00\n")
-  (data (i32.const 276) "\0c\00\00\00non-positive")
-  (global $__heap_ptr (mut i32) (i32.const 292))
+  (data (i32.const 268) "\0c\00\00\00non-positive")
+  (global $__heap_ptr (mut i32) (i32.const 284))
   (func $check (param $x i32)
     local.get $x
     i32.const 0
     i32.gt_s
     (if
       (then
-    i32.const 0
-    i32.const 260
-    i32.store
-    i32.const 4
-    i32.const 8
-    i32.store
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    i32.const 8
-    call $fd_write
-    drop
-    i32.const 0
-    i32.const 272
-    i32.store
-    i32.const 4
-    i32.const 1
-    i32.store
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    i32.const 8
-    call $fd_write
-    drop
+    i32.const 256
+    call $__print_str
       )
       (else
-    i32.const 0
-    i32.const 280
-    i32.store
-    i32.const 4
-    i32.const 12
-    i32.store
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    i32.const 8
-    call $fd_write
-    drop
-    i32.const 0
-    i32.const 272
-    i32.store
-    i32.const 4
-    i32.const 1
-    i32.store
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    i32.const 8
-    call $fd_write
-    drop
+    i32.const 268
+    call $__print_str
       )
     )
   )
-  (func $main
+  (func $main (result i32)
     i32.const 1
     call $check
-    drop
     i32.const 0
     i32.const 1
     i32.sub
     call $check
+    i32.const 0
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
+    drop
+  )
+  ;; Scratch layout below the data section (which starts at 256):
+  ;;   0..8  WASI iovec   8  newline byte
+  ;;  16..32 bool text   32..64 float fraction   64..128 i32 digits
+  (func $__write_bytes (param $p i32) (param $n i32)
+    i32.const 0
+    local.get $p
+    i32.store
+    i32.const 4
+    local.get $n
+    i32.store
+    i32.const 1
+    i32.const 0
+    i32.const 1
+    i32.const 8
+    call $fd_write
+    drop
+  )
+  (func $__print_nl
+    i32.const 8
+    i32.const 10
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+  )
+  ;; separator between the arguments of a multi-argument `@print`
+  (func $__print_sp
+    i32.const 8
+    i32.const 32
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
   )
   (func $__print_i32 (param $n i32)
+    local.get $n
+    call $__print_i32_raw
+    call $__print_nl
+  )
+  (func $__print_i32_raw (param $n i32)
     (local $buf i32) (local $len i32) (local $neg i32) (local $d i32)
     (local $i i32) (local $j i32) (local $tmp i32)
-    i32.const 100
+    i32.const 64
     local.set $buf
     local.get $n
     i32.const 0
@@ -181,11 +176,14 @@ fn main() {
       )
     )
     ;; add neg sign + newline
+    ;; shift the digits one byte right to make room for '-'
+    ;; (dst = buf+1, NOT buf+len: the latter moved them `len`
+    ;;  bytes and printed -12 as -21)
     local.get $neg
     (if
       (then
         local.get $buf
-        local.get $len
+        i32.const 1
         i32.add
         local.get $buf
         local.get $len
@@ -201,26 +199,7 @@ fn main() {
     )
     local.get $buf
     local.get $len
-    i32.add
-    i32.const 10
-    i32.store8
-    local.get $len
-    i32.const 1
-    i32.add
-    local.set $len
-    ;; fd_write
-    i32.const 0
-    local.get $buf
-    i32.store
-    i32.const 4
-    local.get $len
-    i32.store
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    i32.const 8
-    call $fd_write
-    drop
+    call $__write_bytes
   )
   (func $__memmove (param $dst i32) (param $src i32) (param $len i32)
     (local $i i32)
@@ -249,6 +228,19 @@ fn main() {
         br $loop
       )
     )
+  )
+  (func $__print_str_raw (param $s i32)
+    local.get $s
+    i32.const 4
+    i32.add
+    local.get $s
+    i32.load
+    call $__write_bytes
+  )
+  (func $__print_str (param $s i32)
+    local.get $s
+    call $__print_str_raw
+    call $__print_nl
   )
 )
 ```

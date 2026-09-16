@@ -14,7 +14,7 @@ fn countUp(x: i32) {
 (module
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  (func $countUp (param $x i32)
+  (func $countUp (param $x i32) (result i32)
     (local $i i32)
     local.get $x
     local.set $i
@@ -25,6 +25,7 @@ fn countUp(x: i32) {
     i32.gt_s
     (if (result i32)
       (then
+    i32.const 0
       )
       (else
         i32.const 0

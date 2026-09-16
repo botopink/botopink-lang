@@ -23,6 +23,7 @@ fn sumTo(n: i32) -> i32 {
         i32.ge_s
         br_if $__break
     local.get $i
+    drop
         local.get $i
         i32.const 1
         i32.add

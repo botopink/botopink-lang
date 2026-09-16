@@ -17,6 +17,7 @@ fn main() {
   (global $__heap_ptr (mut i32) (i32.const 264))
   (func $parseAge (param $s i32) (result i32)
     unreachable
+    i32.const 0
   )
   (func $main
     (local $r i32)

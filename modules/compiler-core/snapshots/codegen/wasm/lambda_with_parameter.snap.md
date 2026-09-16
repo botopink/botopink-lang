@@ -11,8 +11,7 @@ fn apply(f: syntax fn(x: i32) -> i32) -> i32 {
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
   (func $apply (param $f i32) (result i32)
-    i32.const 10
-    call $f
+    i32.const 0 ;; unresolved call: f/1
     return
   )
 )

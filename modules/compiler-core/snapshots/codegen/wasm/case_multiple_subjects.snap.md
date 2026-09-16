@@ -13,9 +13,9 @@ fn process(a: i32, b: i32) {
 (module
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  (func $process (param $a i32) (param $b i32)
-    local.get $a
+  (func $process (param $a i32) (param $b i32) (result i32)
     (local $__case_0 i32)
+    local.get $a
     local.set $__case_0
     i32.const 0
   )

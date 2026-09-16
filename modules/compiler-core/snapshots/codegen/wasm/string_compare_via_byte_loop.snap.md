@@ -14,16 +14,18 @@ fn sameWord() -> bool {
   (global $__heap_ptr (mut i32) (i32.const 272))
   (func $sameWord (result i32)
     i32.const 256
-    i32.const 3
     i32.const 264
-    i32.const 3
     call $__str_eq
     return
   )
-  (func $__str_eq (param $a i32) (param $alen i32) (param $b i32) (param $blen i32) (result i32)
-    (local $i i32)
+  (func $__str_eq (param $a i32) (param $b i32) (result i32)
+    (local $i i32) (local $alen i32)
+    local.get $a
+    i32.load
+    local.set $alen
     local.get $alen
-    local.get $blen
+    local.get $b
+    i32.load
     i32.ne
     (if
       (then i32.const 0 return)

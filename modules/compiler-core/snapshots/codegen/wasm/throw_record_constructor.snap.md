@@ -14,7 +14,7 @@ fn validate(x: i32) {
   (memory (export "memory") 1)
   (data (i32.const 256) "\08\00\00\00negative")
   (global $__heap_ptr (mut i32) (i32.const 268))
-  (func $validate (param $x i32)
+  (func $validate (param $x i32) (result i32)
     (local $__mem0 i32)
     local.get $x
     i32.const 0
@@ -34,6 +34,7 @@ fn validate(x: i32) {
     i32.const 256
     i32.store offset=4
     local.get $__mem0
+    drop
     unreachable
       )
       (else

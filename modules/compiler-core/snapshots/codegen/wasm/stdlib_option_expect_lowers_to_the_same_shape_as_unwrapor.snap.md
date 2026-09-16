@@ -15,6 +15,7 @@ fn main() {
   (global $__heap_ptr (mut i32) (i32.const 268))
   (func $firstChar (param $s i32) (result i32)
     unreachable
+    i32.const 0
   )
   (func $main
     (local $s i32)
