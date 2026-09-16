@@ -21,4 +21,5 @@ test {
     _ = @import("beam/erl_emitter.zig");
     _ = @import("beam/erl_ast.zig");
     _ = @import("beam/beam_emitter.zig");
+    _ = @import("wat/wat_emitter.zig");
 }
