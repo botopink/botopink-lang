@@ -10,7 +10,7 @@ fn f() {
 -module(main).
 
 f() ->
-    case Greeting of <<"hello">> -> Greeting; _ -> erlang:throw('Error'(<<"not hello">>)) end.
+    case Greeting of <<"hello">> -> Greeting; _ -> erlang:throw({error, <<"not hello">>}) end.
 ```
 
 ----- RUN LOG -----

@@ -17,7 +17,7 @@ fn main() {
 %% external fn stringify (no erlang target)
 
 main() ->
-    io:format("~p~n", [iolist_to_binary(io_lib:format(\"~p\", [42]))]).
+    io:format("~p~n", [iolist_to_binary(io_lib:format("~p", [42]))]).
 
 '_botopink_main'() ->
     main().
@@ -28,8 +28,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:7:57: unterminated string starting with "~p\", [42]))]).\n\n"
-main.erl:2:2: function '_botopink_main'/0 undefined
-main.erl:2:2: function main/1 undefined
+<<"42">>
 ```

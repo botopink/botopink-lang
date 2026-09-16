@@ -24,10 +24,10 @@ fn main() {
 
 area(S) ->
     case S of
-        {tag, Circle, R} ->
+        {'Circle', R} ->
             ((3.14 * R) * R);
-        {tag, Square, S} ->
-            (S * S)
+        {'Square', S@1} ->
+            (S@1 * S@1)
     end.
 
 main() ->
@@ -43,4 +43,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+12.56
+9.0
 ```

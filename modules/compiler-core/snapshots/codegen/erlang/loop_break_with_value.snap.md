@@ -16,11 +16,11 @@ fn main() {
 -export(['_botopink_main'/0, main/1]).
 
 find(Arr) ->
-    lists:foreach(fun(X) ->
+    lists:filtermap(fun(X) ->
         case (X > 10) of
             true ->
-                X;
-            _ -> ok
+                {true, X};
+            _ -> false
         end
     end, Arr).
 
@@ -36,5 +36,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-ok
+[15,20]
 ```

@@ -26,8 +26,8 @@ describe(Opt) ->
     case Opt of
         'None' ->
             <<"empty">>;
-        {tag, Some, V} ->
-            (<<"value: ">> + V)
+        {'Some', V} ->
+            <<"value: ", V/binary>>
     end.
 
 main() ->

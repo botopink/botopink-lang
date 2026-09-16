@@ -15,17 +15,19 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
+precosBrutos() ->
+    [100, 250, 400].
 
-
-main() ->
-    io:format("~p~n", [PrecosComTaxa]).
-
-'_botopink_main'() ->
-    PrecosBrutos = [100, 250, 400],
-    PrecosComTaxa = lists:foreach(fun(Valor) ->
+precosComTaxa() ->
+    lists:map(fun(Valor) ->
         Taxa = (Valor * 0.15),
         (Valor + Taxa)
-    end, PrecosBrutos),
+    end, precosBrutos()).
+
+main() ->
+    io:format("~p~n", [precosComTaxa()]).
+
+'_botopink_main'() ->
     main().
 
 main(_Args) ->
@@ -34,6 +36,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:7:24: variable 'PrecosComTaxa' is unbound
+[115.0,287.5,460.0]
 ```

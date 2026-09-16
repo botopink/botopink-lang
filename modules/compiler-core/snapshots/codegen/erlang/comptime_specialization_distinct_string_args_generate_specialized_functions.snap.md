@@ -23,11 +23,11 @@ main() ->
 
 'build_$0'(Name) ->
     Prefix = <<"INFO">>,
-    ((Prefix + <<": ">>) + Name).
+    <<Prefix/binary, ": ", Name/binary>>.
 
 'build_$1'(Name) ->
     Prefix = <<"WARN">>,
-    ((Prefix + <<": ">>) + Name).
+    <<Prefix/binary, ": ", Name/binary>>.
 
 '_botopink_main'() ->
     main().

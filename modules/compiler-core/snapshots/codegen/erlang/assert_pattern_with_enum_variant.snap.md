@@ -10,7 +10,7 @@ fn f() {
 -module(main).
 
 f() ->
-    case Result of {tag, Ok, Value} -> Result; _ -> erlang:throw('Error'(<<"not ok">>)) end.
+    case Result of {ok, Value} -> Result; _ -> erlang:throw({error, <<"not ok">>}) end.
 ```
 
 ----- RUN LOG -----

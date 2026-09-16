@@ -64,12 +64,13 @@ main() ->
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
+cfg() ->
+    #{port => 8004, debug => true}.
 
 main() ->
-    io:format("~p~n", [(maps:get(port, Cfg) + 1)]).
+    io:format("~p~n", [(maps:get(port, cfg()) + 1)]).
 
 '_botopink_main'() ->
-    Cfg = #{port => 8004, debug => true},
     main().
 
 main(_Args) ->
@@ -78,6 +79,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:6:40: variable 'Cfg' is unbound
+8005
 ```

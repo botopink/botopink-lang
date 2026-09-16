@@ -14,13 +14,18 @@ fn countUp(x: i32) {
 -module(main).
 
 countUp(X) ->
-    lists:foreach(fun(I) ->
-        case (I > 100) of
-            true ->
-                ;
-            _ -> ok
-        end
-    end, lists:seq(X, infinity)).
+    try
+        (fun __Loop(I) ->
+            case (I > 100) of
+                true ->
+                    erlang:throw('__bp_break');
+                _ -> ok
+            end,
+            __Loop(I + 1)
+        end)(X)
+    catch
+        throw:'__bp_break' -> ok
+    end.
 ```
 
 ----- RUN LOG -----

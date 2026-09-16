@@ -31,18 +31,18 @@ fetch(Ok) ->
 main() ->
     R1 = fetch(true),
     Msg1 = case R1 of
-        {tag, Ok, V} ->
-            (<<"OK:">> + V);
-        {tag, Err, E} ->
-            (<<"ERR:">> + E)
+        {ok, V} ->
+            <<"OK:", V/binary>>;
+        {error, E} ->
+            <<"ERR:", E/binary>>
     end,
     io:format("~p~n", [Msg1]),
     R2 = fetch(false),
     Msg2 = case R2 of
-        {tag, Ok, V} ->
-            (<<"OK:">> + V);
-        {tag, Err, E} ->
-            (<<"ERR:">> + E)
+        {ok, V@1} ->
+            <<"OK:", V@1/binary>>;
+        {error, E@1} ->
+            <<"ERR:", E@1/binary>>
     end,
     io:format("~p~n", [Msg2]).
 
@@ -55,9 +55,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:23:15: variable 'Ok' unsafe in 'case' (line 14, column 12)
-main.erl:23:19: variable 'V' unsafe in 'case' (line 14, column 12)
-main.erl:25:15: variable 'Err' unsafe in 'case' (line 14, column 12)
-main.erl:25:20: variable 'E' unsafe in 'case' (line 14, column 12)
+<<"OK:data">>
+<<"ERR:fail">>
 ```

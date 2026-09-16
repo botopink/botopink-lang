@@ -26,11 +26,11 @@ val Shape = enum {
 
 area(Shape) ->
     case Shape of
-        {tag, Circle, Radius} ->
+        {'Circle', Radius} ->
             ((Radius * Radius) * 3.14);
-        {tag, Square, Side} ->
+        {'Square', Side} ->
             (Side * Side);
-        {tag, Triangle, Base, Height} ->
+        {'Triangle', Base, Height} ->
             ((Base * Height) * 0.5);
         _ ->
             0.0

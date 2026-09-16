@@ -20,7 +20,7 @@ fn main() {
 
 describe(P) ->
     {X, Y} = P,
-    io:format("~p~n", [X, Y]),
+    io:format("~p ~p~n", [X, Y]),
     X.
 
 main() ->

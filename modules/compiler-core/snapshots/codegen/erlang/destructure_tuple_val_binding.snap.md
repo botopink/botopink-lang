@@ -13,7 +13,7 @@ fn main() {
 
 main() ->
     {A, B} = {12, <<"hello">>},
-    io:format("~p~n", [A, B]).
+    io:format("~p ~p~n", [A, B]).
 
 '_botopink_main'() ->
     main().
@@ -24,4 +24,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+12 <<"hello">>
 ```

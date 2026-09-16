@@ -14,7 +14,7 @@ fn main() {
 -export(['_botopink_main'/0, main/1]).
 
 both(A, B) ->
-    (A and B).
+    (A andalso B).
 
 main() ->
     io:format("~p~n", [both(true, false)]).

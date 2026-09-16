@@ -178,6 +178,9 @@ pub const Case = struct {
 pub const Fun = struct {
     params: []const Expr,
     body: Body,
+    /// Named fun (`fun Loop(I) -> … end`) — the name is in scope inside the
+    /// body, which is how an unbounded loop recurses. Null for a plain `fun`.
+    name: ?[]const u8 = null,
 };
 
 pub const TryCatch = struct {

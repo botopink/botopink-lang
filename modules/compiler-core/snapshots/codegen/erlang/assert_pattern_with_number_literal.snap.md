@@ -10,7 +10,7 @@ fn f() {
 -module(main).
 
 f() ->
-    case Answer of 42 -> Answer; _ -> erlang:throw('Error'(<<"not 42">>)) end.
+    case Answer of 42 -> Answer; _ -> erlang:throw({error, <<"not 42">>}) end.
 ```
 
 ----- RUN LOG -----

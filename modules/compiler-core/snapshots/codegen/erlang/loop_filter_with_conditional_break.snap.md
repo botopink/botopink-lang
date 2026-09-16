@@ -16,20 +16,22 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
+precosBrutos() ->
+    [100, 250, 400].
 
-
-main() ->
-    io:format("~p~n", [ApenasGrandes]).
-
-'_botopink_main'() ->
-    PrecosBrutos = [100, 250, 400],
-    ApenasGrandes = lists:foreach(fun(Valor) ->
+apenasGrandes() ->
+    lists:filtermap(fun(Valor) ->
         case (Valor > 200) of
             true ->
-                Valor;
-            _ -> ok
+                {true, Valor};
+            _ -> false
         end
-    end, PrecosBrutos),
+    end, precosBrutos()).
+
+main() ->
+    io:format("~p~n", [apenasGrandes()]).
+
+'_botopink_main'() ->
     main().
 
 main(_Args) ->
@@ -38,6 +40,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:7:24: variable 'ApenasGrandes' is unbound
+[250,400]
 ```

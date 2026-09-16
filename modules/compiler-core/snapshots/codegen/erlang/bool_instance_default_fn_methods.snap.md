@@ -22,10 +22,10 @@ main() ->
     io:format("~p~n", [bool_exclusiveOr(true, false)]).
 
 bool_nor(Self, Other) ->
-    (not ((Self or Other))).
+    (not ((Self orelse Other))).
 
 bool_nand(Self, Other) ->
-    (not ((Self and Other))).
+    (not ((Self andalso Other))).
 
 bool_exclusiveOr(Self, Other) ->
     (Self =/= Other).

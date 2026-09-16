@@ -11,12 +11,13 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
+sum() ->
+    (1 + 2).
 
 main() ->
-    io:format("~p~n", [Sum]).
+    io:format("~p~n", [sum()]).
 
 '_botopink_main'() ->
-    Sum = (1 + 2),
     main().
 
 main(_Args) ->
@@ -25,6 +26,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:6:24: variable 'Sum' is unbound
+3
 ```

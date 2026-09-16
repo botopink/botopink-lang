@@ -23,10 +23,12 @@ ct_0: val base = comptime 10 + 5 → 15
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
+base() ->
+    15.
 
 main() ->
-    Doubled = 'scale_$0'(Base),
-    Tripled = 'scale_$1'(Base),
+    Doubled = 'scale_$0'(base()),
+    Tripled = 'scale_$1'(base()),
     DoubledAgain = 'scale_$0'(100).
 
 'scale_$0'(Value) ->
@@ -38,7 +40,6 @@ main() ->
     (Value * Factor).
 
 '_botopink_main'() ->
-    Base = 15,
     main().
 
 main(_Args) ->

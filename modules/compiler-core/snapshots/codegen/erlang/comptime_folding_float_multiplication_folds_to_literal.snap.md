@@ -21,9 +21,11 @@ ct_0: val pi2 = comptime {
 -export(['_botopink_main'/0, main/1]).
 
 %% comptime val pi2
+pi2() ->
+    (3.14 * 2.0).
 
 main() ->
-    io:format("~p~n", [Pi2]).
+    io:format("~p~n", [pi2()]).
 
 '_botopink_main'() ->
     main().
@@ -34,6 +36,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:7:24: variable 'Pi2' is unbound
+6.28
 ```

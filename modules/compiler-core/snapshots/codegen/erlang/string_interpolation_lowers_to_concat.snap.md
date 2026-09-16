@@ -13,7 +13,7 @@ fn main() {
 
 main() ->
     Name = <<"world">>,
-    io:format("~p~n", [((<<"hi ">> + Name) + <<"!">>)]).
+    io:format("~p~n", [<<"hi ", Name/binary, "!">>]).
 
 '_botopink_main'() ->
     main().
@@ -24,4 +24,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+<<"hi world!">>
 ```

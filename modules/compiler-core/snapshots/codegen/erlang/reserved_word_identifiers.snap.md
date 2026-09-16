@@ -17,7 +17,7 @@ fn main() {
 -export([delete/2]).
 
 delete(With, Class) ->
-    Static = (With + Class),
+    Static = <<With/binary, Class/binary>>,
     Static.
 
 main() ->
@@ -32,4 +32,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+<<"ab">>
 ```

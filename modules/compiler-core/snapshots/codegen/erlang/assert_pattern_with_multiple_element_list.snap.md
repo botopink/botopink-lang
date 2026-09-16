@@ -10,7 +10,7 @@ fn f() {
 -module(main).
 
 f() ->
-    case Numbers of [1, 2, 3] -> Numbers; _ -> erlang:throw('Error'(<<"not matching">>)) end.
+    case Numbers of [1, 2, 3] -> Numbers; _ -> erlang:throw({error, <<"not matching">>}) end.
 ```
 
 ----- RUN LOG -----

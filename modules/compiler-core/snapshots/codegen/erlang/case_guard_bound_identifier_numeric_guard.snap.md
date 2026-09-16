@@ -15,7 +15,7 @@ fn classify(n: i32) -> string {
 
 classify(N) ->
     case N of
-        X ->
+        X when (X > 0) ->
             <<"positive">>;
         0 ->
             <<"zero">>;

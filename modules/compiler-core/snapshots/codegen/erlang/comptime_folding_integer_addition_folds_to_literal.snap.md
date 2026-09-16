@@ -16,12 +16,13 @@ ct_0: val v1 = comptime 1 + 1 → 2
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
+v1() ->
+    2.
 
 main() ->
-    io:format("~p~n", [V1]).
+    io:format("~p~n", [v1()]).
 
 '_botopink_main'() ->
-    V1 = 2,
     main().
 
 main(_Args) ->
@@ -30,6 +31,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:6:24: variable 'V1' is unbound
+2
 ```

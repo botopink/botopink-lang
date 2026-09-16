@@ -15,9 +15,9 @@ fn main() {
 
 main() ->
     Messages = [<<"Erro 404">>, <<"Sucesso 200">>, <<"Aviso 500">>],
-    lists:foreach(fun(Msg, I) ->
+    lists:foreach(fun({I, Msg}) ->
         io:format("~p~n", [Msg])
-    end, Messages).
+    end, lists:enumerate(0, Messages)).
 
 '_botopink_main'() ->
     main().
@@ -28,4 +28,7 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+<<"Erro 404">>
+<<"Sucesso 200">>
+<<"Aviso 500">>
 ```

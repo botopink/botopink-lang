@@ -17,12 +17,13 @@ fn main() {
 double(X) ->
     (X * 2).
 
+result() ->
+    double(5).
 
 main() ->
-    io:format("~p~n", [Result]).
+    io:format("~p~n", [result()]).
 
 '_botopink_main'() ->
-    Result = double(5),
     main().
 
 main(_Args) ->
@@ -31,6 +32,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:9:24: variable 'Result' is unbound
+10
 ```

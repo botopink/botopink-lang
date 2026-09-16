@@ -14,16 +14,18 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
+ids() ->
+    [10, 20, 30].
 
+dobrados() ->
+    lists:map(fun(Id) ->
+        (Id * 2)
+    end, ids()).
 
 main() ->
-    io:format("~p~n", [Dobrados]).
+    io:format("~p~n", [dobrados()]).
 
 '_botopink_main'() ->
-    Ids = [10, 20, 30],
-    Dobrados = lists:foreach(fun(Id) ->
-        (Id * 2)
-    end, Ids),
     main().
 
 main(_Args) ->
@@ -32,6 +34,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:7:24: variable 'Dobrados' is unbound
+[20,40,60]
 ```

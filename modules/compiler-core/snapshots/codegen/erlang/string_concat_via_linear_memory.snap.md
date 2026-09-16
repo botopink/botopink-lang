@@ -10,7 +10,7 @@ fn greeting() -> string {
 -module(main).
 
 greeting() ->
-    (<<"Hello, ">> + <<"World">>).
+    <<"Hello, ", "World">>.
 ```
 
 ----- RUN LOG -----

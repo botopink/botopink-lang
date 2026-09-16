@@ -43,7 +43,7 @@ loadUser() ->
         {error, _TryE1} ->
             0
     end,
-    io:format("~p~n", [Name, Age]).
+    io:format("~p ~p~n", [Name, Age]).
 
 main() ->
     loadUser().
@@ -57,4 +57,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+<<"anonymous">> 0
 ```

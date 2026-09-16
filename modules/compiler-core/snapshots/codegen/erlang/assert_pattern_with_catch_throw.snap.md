@@ -10,7 +10,7 @@ fn f() {
 -module(main).
 
 f() ->
-    case R of {tag, Person, Name, Age} -> R; _ -> erlang:throw('Error'(<<"is not person">>)) end.
+    case R of {'Person', Name, Age} -> R; _ -> erlang:throw({error, <<"is not person">>}) end.
 ```
 
 ----- RUN LOG -----
