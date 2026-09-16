@@ -10,10 +10,9 @@
 #
 # Owners are the 1.0.2-beta fronts (specs/1.0.2-beta/fronts.md).
 
-erika     commonJS F1-comptime-dispatch  template body calls primitive methods (split/slice/join) as bare local calls
-erika     erlang   F1-comptime-dispatch  template body calls primitive methods (split/slice/join) as bare local calls
-jhonstart commonJS F1-comptime-dispatch  html template body calls trim/append/split/slice as bare local calls
-onze      commonJS F1-comptime-dispatch  #[mock] decorator body calls push/join/startsWith as bare local calls
+erika     commonJS F5-erlang             comptime template lowers to Erlang with case-arm rebinding errors (9 unbound_var/unsafe_var) — spec names no owner, assigned to F5
+erika     erlang   F5-erlang             comptime template lowers to Erlang with case-arm rebinding errors (9 unbound_var/unsafe_var) — spec names no owner, assigned to F5
+jhonstart commonJS F5-erlang             html template lowers to Erlang with case-arm rebinding errors (5 unbound_var) — spec names no owner, assigned to F5
 rakun     commonJS F12-library-repos     declared dependency 'server' exists under no library root
 std       commonJS F3-std-surface        random.bp: `pick expects a type and field names`; path.bp requires the removed gleam_stdlib.mjs
 std       erlang   F3-std-surface        random.bp: `pick expects a type and field names`; env/os/process emit invalid Erlang
