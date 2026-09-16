@@ -26,11 +26,12 @@ val Point = record {
     {test, is_map, {f, 4}, [{x, 0}]}.
     {get_map_elements, {f, 4}, {x, 0}, {list, [{atom, x}, {x, 0}]}}.
   {label, 4}.
+    {move, {x, 0}, {x, 1}}.
     {move, {atom, self}, {x, 0}}.
     {test, is_map, {f, 5}, [{x, 0}]}.
     {get_map_elements, {f, 5}, {x, 0}, {list, [{atom, y}, {x, 0}]}}.
   {label, 5}.
-    {gc_bif, '+', {f, 0}, 1, [{x, 0}, {x, 0}], {x, 0}}.
+    {gc_bif, '+', {f, 0}, 2, [{x, 1}, {x, 0}], {x, 0}}.
     {deallocate, 0}.
     return.
 ```

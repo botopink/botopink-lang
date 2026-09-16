@@ -21,9 +21,11 @@ fn main() {
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, stringify}, 1}.
   {label, 3}.
-    {allocate, 0, 1}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
     {move, {atom, ok}, {x, 0}}.
-    {deallocate, 0}.
+    {deallocate, 1}.
     return.
 
 {function, main, 0, 5}.

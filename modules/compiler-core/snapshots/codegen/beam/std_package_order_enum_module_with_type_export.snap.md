@@ -70,7 +70,7 @@ test "order case over Order" {
 {module, order}.
 {exports, [{lt, 0}, {eq, 0}, {gt, 0}, {toInt, 1}, {reverse, 1}]}.
 {attributes, []}.
-{labels, 14}.
+{labels, 18}.
 %%% Gleam-style `order` module, inspired by `gleam/order`. A sum type — the
 %%% `enum Order` (type-exported to importers) plus companion functions.
 %%% Construct via the module fns (`order.lt()`); `toInt`/`reverse` operate on
@@ -111,20 +111,24 @@ test "order case over Order" {
     {line, [{location, "order.erl", 4}]}.
     {func_info, {atom, order}, {atom, toInt}, 1}.
   {label, 9}.
-    {allocate, 3, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {allocate, 4, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq, {f, 13}, [{x, 0}, {atom, 'Lt'}]}.
     {move, {integer, -1}, {x, 0}}.
     {jump, {f, 12}}.
-    {move, {x, 0}, {y, 1}}.
+  {label, 13}.
+    {test, is_eq, {f, 14}, [{x, 0}, {atom, 'Eq'}]}.
     {move, {integer, 0}, {x, 0}}.
     {jump, {f, 12}}.
+  {label, 14}.
     {move, {integer, 1}, {x, 0}}.
     {jump, {f, 12}}.
   {label, 12}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {deallocate, 3}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {deallocate, 4}.
     return.
 
 {function, reverse, 1, 11}.
@@ -132,20 +136,24 @@ test "order case over Order" {
     {line, [{location, "order.erl", 5}]}.
     {func_info, {atom, order}, {atom, reverse}, 1}.
   {label, 11}.
-    {allocate, 3, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {allocate, 4, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq, {f, 16}, [{x, 0}, {atom, 'Lt'}]}.
     {move, {atom, 'Gt'}, {x, 0}}.
-    {jump, {f, 13}}.
-    {move, {x, 0}, {y, 1}}.
+    {jump, {f, 15}}.
+  {label, 16}.
+    {test, is_eq, {f, 17}, [{x, 0}, {atom, 'Gt'}]}.
     {move, {atom, 'Lt'}, {x, 0}}.
-    {jump, {f, 13}}.
+    {jump, {f, 15}}.
+  {label, 17}.
     {move, {atom, 'Eq'}, {x, 0}}.
-    {jump, {f, 13}}.
-  {label, 13}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {deallocate, 3}.
+    {jump, {f, 15}}.
+  {label, 15}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {deallocate, 4}.
     return.
 ```
 
@@ -184,20 +192,22 @@ fn main() {
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, describe}, 1}.
   {label, 3}.
-    {allocate, 3, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {allocate, 4, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {x, 0}, {y, 1}}.
     {move, {literal, <<"less">>}, {x, 0}}.
     {jump, {f, 10}}.
-    {move, {x, 0}, {y, 1}}.
+    {move, {x, 0}, {y, 2}}.
     {move, {literal, <<"greater">>}, {x, 0}}.
     {jump, {f, 10}}.
     {move, {literal, <<"equal">>}, {x, 0}}.
     {jump, {f, 10}}.
   {label, 10}.
-    {move, {x, 0}, {y, 2}}.
-    {move, {y, 2}, {x, 0}}.
-    {deallocate, 3}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 3}, {x, 0}}.
+    {deallocate, 4}.
     return.
 
 {function, main, 0, 5}.
@@ -207,8 +217,8 @@ fn main() {
   {label, 5}.
     {allocate, 0, 0}.
     {call_ext, 0, {extfunc, order, lt, 0}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {x, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, order, toInt, 1}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"~p~n">>}, {x, 0}}.
@@ -216,11 +226,11 @@ fn main() {
     {put_list, {x, 1}, nil, {x, 1}}.
     {call_ext, 2, {extfunc, io, format, 2}}.
     {call_ext, 0, {extfunc, order, lt, 0}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {x, 1}, {x, 0}}.
     {call_ext, 1, {extfunc, order, reverse, 1}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {x, 1}, {x, 0}}.
     {call, 1, {f, 3}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"~p~n">>}, {x, 0}}.

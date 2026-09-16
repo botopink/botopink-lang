@@ -23,9 +23,11 @@ fn main() {
     {move, {literal, <<"world">>}, {x, 0}}.
     {move, {x, 0}, {y, 0}}.
     {move, {literal, <<"hi ">>}, {x, 0}}.
-    {gc_bif, '+', {f, 0}, 1, [{x, 0}, {y, 0}], {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {gc_bif, '+', {f, 0}, 2, [{x, 1}, {y, 0}], {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"!">>}, {x, 0}}.
-    {gc_bif, '+', {f, 0}, 1, [{x, 0}, {x, 0}], {x, 0}}.
+    {gc_bif, '+', {f, 0}, 2, [{x, 1}, {x, 0}], {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"~p~n">>}, {x, 0}}.
     {test_heap, 2, 2}.

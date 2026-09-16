@@ -11,7 +11,7 @@ fn n() -> i32 {
 {module, main}.
 {exports, []}.
 {attributes, []}.
-{labels, 5}.
+{labels, 4}.
 
 {function, n, 0, 3}.
   {label, 2}.
@@ -23,9 +23,7 @@ fn n() -> i32 {
     {move, {literal, <<"hello">>}, {x, 0}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_map, {f, 4}, [{x, 0}]}.
-    {get_map_elements, {f, 4}, {x, 0}, {list, [{atom, len}, {x, 0}]}}.
-  {label, 4}.
+    {call_ext, 1, {extfunc, string, length, 1}}.
     {deallocate, 1}.
     return.
 ```

@@ -15,6 +15,7 @@ val x = 42;
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, x}, 0}.
   {label, 3}.
+    {allocate, 0, 0}.
     {move, {integer, 42}, {x, 0}}.
     {deallocate, 0}.
     return.

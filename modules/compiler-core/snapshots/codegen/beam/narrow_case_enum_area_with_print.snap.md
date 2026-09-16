@@ -25,24 +25,26 @@ fn main() {
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, area}, 1}.
   {label, 3}.
-    {allocate, 2, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {allocate, 3, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
     {test, is_tagged_tuple, {f, 11}, [{x, 0}, 2, {atom, 'Circle'}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
-    {move, {x, 1}, {y, 0}}.
-    {gc_bif, '*', {f, 0}, 1, [{float, 3.14}, {y, 0}], {x, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {gc_bif, '*', {f, 0}, 0, [{float, 3.14}, {y, 1}], {x, 0}}.
     {move, {x, 0}, {x, 1}}.
-    {gc_bif, '*', {f, 0}, 2, [{x, 1}, {y, 0}], {x, 0}}.
+    {gc_bif, '*', {f, 0}, 2, [{x, 1}, {y, 1}], {x, 0}}.
     {jump, {f, 10}}.
   {label, 11}.
     {test, is_tagged_tuple, {f, 12}, [{x, 0}, 2, {atom, 'Square'}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
-    {move, {x, 1}, {y, 1}}.
-    {gc_bif, '*', {f, 0}, 1, [{y, 1}, {y, 1}], {x, 0}}.
+    {move, {x, 1}, {y, 2}}.
+    {gc_bif, '*', {f, 0}, 0, [{y, 2}, {y, 2}], {x, 0}}.
     {jump, {f, 10}}.
   {label, 12}.
   {label, 10}.
-    {deallocate, 2}.
+    {deallocate, 3}.
     return.
 
 {function, main, 0, 5}.
@@ -55,8 +57,8 @@ fn main() {
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, 'Circle'}, {x, 1}]}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {x, 1}, {x, 0}}.
     {call, 1, {f, 3}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"~p~n">>}, {x, 0}}.
@@ -67,8 +69,8 @@ fn main() {
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, 'Square'}, {x, 1}]}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {x, 1}, {x, 0}}.
     {call, 1, {f, 3}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"~p~n">>}, {x, 0}}.

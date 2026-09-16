@@ -18,7 +18,10 @@ fn pick(maybe: ?R) -> i32 {
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, pick}, 1}.
   {label, 3}.
-    {allocate, 0, 1}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
     {test, is_eq, {f, 4}, [{x, 0}, {atom, undefined}]}.
     {move, {atom, undefined}, {x, 0}}.
     {jump, {f, 6}}.
@@ -29,7 +32,7 @@ fn pick(maybe: ?R) -> i32 {
   {label, 5}.
     {move, {atom, undefined}, {x, 0}}.
   {label, 6}.
-    {deallocate, 0}.
+    {deallocate, 1}.
     return.
 ```
 

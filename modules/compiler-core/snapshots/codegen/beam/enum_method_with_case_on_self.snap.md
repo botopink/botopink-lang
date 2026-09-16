@@ -19,7 +19,7 @@ val Color = enum {
 {module, main}.
 {exports, []}.
 {attributes, []}.
-{labels, 5}.
+{labels, 8}.
 
 {function, 'Color_name', 0, 3}.
   {label, 2}.
@@ -29,15 +29,18 @@ val Color = enum {
     {allocate, 3, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {atom, self}, {x, 0}}.
-    {move, {x, 0}, {y, 0}}.
+    {test, is_eq, {f, 5}, [{x, 0}, {atom, 'Red'}]}.
     {move, {literal, <<"red">>}, {x, 0}}.
     {jump, {f, 4}}.
-    {move, {x, 0}, {y, 1}}.
+  {label, 5}.
+    {test, is_eq, {f, 6}, [{x, 0}, {atom, 'Green'}]}.
     {move, {literal, <<"green">>}, {x, 0}}.
     {jump, {f, 4}}.
-    {move, {x, 0}, {y, 2}}.
+  {label, 6}.
+    {test, is_eq, {f, 7}, [{x, 0}, {atom, 'Blue'}]}.
     {move, {literal, <<"blue">>}, {x, 0}}.
     {jump, {f, 4}}.
+  {label, 7}.
   {label, 4}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 3}.

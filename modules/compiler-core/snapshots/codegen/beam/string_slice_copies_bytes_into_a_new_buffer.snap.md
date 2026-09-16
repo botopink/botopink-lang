@@ -23,14 +23,14 @@ fn first3() -> string {
     {move, {literal, <<"hello">>}, {x, 0}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
-    {move, {integer, 3}, {x, 0}}.
+    {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {x, 2}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {x, 1}, {x, 1}}.
-    {move, {x, 2}, {x, 2}}.
+    {move, {integer, 3}, {x, 0}}.
+    {move, {x, 0}, {x, 3}}.
+    {move, {x, 1}, {x, 0}}.
+    {move, {x, 2}, {x, 1}}.
+    {move, {x, 3}, {x, 2}}.
     %% unresolved method call: slice/3
     {deallocate, 1}.
     return.

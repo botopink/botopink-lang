@@ -32,7 +32,7 @@ fn main() {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
-    {test, is_eq, {f, 8}, [{y, 1}, {atom, nil}]}.
+    {test, is_eq, {f, 8}, [{y, 1}, {atom, undefined}]}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"~p~n">>}, {x, 0}}.

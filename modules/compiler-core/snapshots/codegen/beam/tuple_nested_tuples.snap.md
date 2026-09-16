@@ -15,22 +15,23 @@ val nested = #(#(1, 2), #(3, 4));
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, nested}, 0}.
   {label, 3}.
+    {allocate, 0, 0}.
     {move, {integer, 1}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
     {move, {integer, 2}, {x, 0}}.
+    {move, {x, 0}, {x, 2}}.
+    {test_heap, 3, 3}.
+    {put_tuple2, {x, 0}, {list, [{x, 1}, {x, 2}]}}.
     {move, {x, 0}, {x, 1}}.
-    {test_heap, 3, 2}.
-    {put_tuple2, {x, 0}, {list, [{x, 0}, {x, 1}]}}.
-    {move, {x, 0}, {x, 0}}.
     {move, {integer, 3}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
+    {move, {x, 0}, {x, 2}}.
     {move, {integer, 4}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {test_heap, 3, 2}.
-    {put_tuple2, {x, 0}, {list, [{x, 0}, {x, 1}]}}.
-    {move, {x, 0}, {x, 1}}.
-    {test_heap, 3, 2}.
-    {put_tuple2, {x, 0}, {list, [{x, 0}, {x, 1}]}}.
+    {move, {x, 0}, {x, 3}}.
+    {test_heap, 3, 4}.
+    {put_tuple2, {x, 0}, {list, [{x, 2}, {x, 3}]}}.
+    {move, {x, 0}, {x, 2}}.
+    {test_heap, 3, 3}.
+    {put_tuple2, {x, 0}, {list, [{x, 1}, {x, 2}]}}.
     {deallocate, 0}.
     return.
 ```

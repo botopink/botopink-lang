@@ -23,21 +23,23 @@ fn main() {
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, classify}, 1}.
   {label, 3}.
-    {allocate, 0, 1}.
-    {test, is_eq, {f, 10}, [{x, 0}, {integer, 0}]}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {test, is_eq, {f, 10}, [{y, 0}, {integer, 0}]}.
     {move, {literal, <<"zero">>}, {x, 0}}.
-    {deallocate, 0}.
+    {deallocate, 1}.
     return.
   {label, 10}.
-    {test, is_ne_exact, {f, 11}, [{x, 0}, {integer, 0}]}.
+    {test, is_ne_exact, {f, 11}, [{y, 0}, {integer, 0}]}.
     {move, {literal, <<"nonzero: ">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
-    {gc_bif, '+', {f, 0}, 2, [{x, 1}, {x, 0}], {x, 0}}.
-    {deallocate, 0}.
+    {gc_bif, '+', {f, 0}, 2, [{x, 1}, {y, 0}], {x, 0}}.
+    {deallocate, 1}.
     return.
   {label, 11}.
     {move, {literal, <<"null">>}, {x, 0}}.
-    {deallocate, 0}.
+    {deallocate, 1}.
     return.
 
 {function, main, 0, 5}.

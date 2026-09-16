@@ -23,6 +23,7 @@ val result = case 42 {
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, result}, 0}.
   {label, 3}.
+    {allocate, 0, 0}.
     {move, {integer, 42}, {x, 0}}.
     {test, is_eq, {f, 5}, [{x, 0}, {integer, 0}]}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.

@@ -27,20 +27,23 @@ fn main() {
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, fetch}, 1}.
   {label, 3}.
-    {allocate, 0, 1}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
     {test, is_eq, {f, 10}, [{x, 0}, {atom, true}]}.
     {move, {literal, <<"data">>}, {x, 0}}.
-    {move, {x, 0}, {x, 2}}.
-    {test_heap, 3, 3}.
-    {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 2}]}}.
-    {deallocate, 0}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
+    {deallocate, 1}.
     return.
   {label, 10}.
     {move, {literal, <<"fail">>}, {x, 0}}.
-    {move, {x, 0}, {x, 2}}.
-    {test_heap, 3, 3}.
-    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 2}]}}.
-    {deallocate, 0}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
+    {deallocate, 1}.
     return.
 
 {function, main, 0, 5}.
@@ -51,8 +54,8 @@ fn main() {
     {allocate, 8, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}, {y, 7}]}}.
     {move, {atom, true}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {x, 1}, {x, 0}}.
     {call, 1, {f, 3}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
@@ -60,14 +63,16 @@ fn main() {
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 1}}.
     {move, {literal, <<"OK:">>}, {x, 0}}.
-    {gc_bif, '+', {f, 0}, 1, [{x, 0}, {y, 1}], {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {gc_bif, '+', {f, 0}, 2, [{x, 1}, {y, 1}], {x, 0}}.
     {jump, {f, 11}}.
   {label, 12}.
     {test, is_tagged_tuple, {f, 13}, [{x, 0}, 2, {atom, 'Err'}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 2}}.
     {move, {literal, <<"ERR:">>}, {x, 0}}.
-    {gc_bif, '+', {f, 0}, 1, [{x, 0}, {y, 2}], {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {gc_bif, '+', {f, 0}, 2, [{x, 1}, {y, 2}], {x, 0}}.
     {jump, {f, 11}}.
   {label, 13}.
   {label, 11}.
@@ -79,8 +84,8 @@ fn main() {
     {put_list, {x, 1}, nil, {x, 1}}.
     {call_ext, 2, {extfunc, io, format, 2}}.
     {move, {atom, false}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {x, 1}, {x, 0}}.
     {call, 1, {f, 3}}.
     {move, {x, 0}, {y, 4}}.
     {move, {y, 4}, {x, 0}}.
@@ -88,14 +93,16 @@ fn main() {
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 5}}.
     {move, {literal, <<"OK:">>}, {x, 0}}.
-    {gc_bif, '+', {f, 0}, 1, [{x, 0}, {y, 5}], {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {gc_bif, '+', {f, 0}, 2, [{x, 1}, {y, 5}], {x, 0}}.
     {jump, {f, 14}}.
   {label, 15}.
     {test, is_tagged_tuple, {f, 16}, [{x, 0}, 2, {atom, 'Err'}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 6}}.
     {move, {literal, <<"ERR:">>}, {x, 0}}.
-    {gc_bif, '+', {f, 0}, 1, [{x, 0}, {y, 6}], {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {gc_bif, '+', {f, 0}, 2, [{x, 1}, {y, 6}], {x, 0}}.
     {jump, {f, 14}}.
   {label, 16}.
   {label, 14}.
@@ -127,9 +134,6 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc +from_asm):
-main:1: function fetch/1+9:
-  Internal consistency check failed - please report this bug.
-  Instruction: {test_heap,3,3}
-  Error:       {{x,1},not_live}:
+{ok,<<"data">>}
+{error,<<"fail">>}
 ```

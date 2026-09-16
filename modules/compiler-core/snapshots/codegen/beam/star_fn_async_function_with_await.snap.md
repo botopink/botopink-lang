@@ -24,8 +24,11 @@ fn loadTwice(x: i32) -> @Future<i32> {
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, fetch}, 1}.
   {label, 3}.
-    {allocate, 0, 1}.
-    {deallocate, 0}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {deallocate, 1}.
     return.
 
 %% #[@future] / #[@asyncGenerator] — eager lowering
@@ -34,13 +37,14 @@ fn loadTwice(x: i32) -> @Future<i32> {
     {line, [{location, "main.erl", 2}]}.
     {func_info, {atom, main}, {atom, loadTwice}, 1}.
   {label, 5}.
-    {allocate, 1, 1}.
-    {init_yregs, {list, [{y, 0}]}}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
     %% unsupported expr in tail position: jump
     {move, {atom, undefined}, {x, 0}}.
-    {move, {x, 0}, {y, 0}}.
-    {gc_bif, '+', {f, 0}, 1, [{y, 0}, {y, 0}], {x, 0}}.
-    {deallocate, 1}.
+    {move, {x, 0}, {y, 1}}.
+    {gc_bif, '+', {f, 0}, 0, [{y, 1}, {y, 1}], {x, 0}}.
+    {deallocate, 2}.
     return.
 ```
 

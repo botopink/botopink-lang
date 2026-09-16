@@ -25,8 +25,9 @@ fn main() {
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {literal, <<"foo">>}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"foo">>}, {x, 0}}.
-    {test, is_eq, {f, 8}, [{x, 0}, {x, 0}]}.
+    {test, is_eq, {f, 8}, [{x, 1}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
     {jump, {f, 9}}.
   {label, 8}.

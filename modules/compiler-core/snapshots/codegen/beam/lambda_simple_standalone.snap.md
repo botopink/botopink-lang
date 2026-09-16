@@ -25,10 +25,10 @@ fn main() -> string {
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 9}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {y, 0}}.
-    {move, {y, 0}, {x, 1}}.
     {move, {literal, <<"hello">>}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {x, 1}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
     {call_fun, 1}.
     {deallocate, 1}.
     return.
@@ -52,8 +52,11 @@ fn main() -> string {
     {line, [{location, "main.erl", 2}]}.
     {func_info, {atom, main}, {atom, '-main/0-fun-0-'}, 1}.
   {label, 9}.
-    {allocate, 0, 1}.
-    {deallocate, 0}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {deallocate, 1}.
     return.
 ```
 

@@ -16,6 +16,7 @@ pub val HOST = "localhost";
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, 'VERSION'}, 0}.
   {label, 3}.
+    {allocate, 0, 0}.
     {move, {integer, 1}, {x, 0}}.
     {deallocate, 0}.
     return.
@@ -25,6 +26,7 @@ pub val HOST = "localhost";
     {line, [{location, "main.erl", 2}]}.
     {func_info, {atom, main}, {atom, 'HOST'}, 0}.
   {label, 5}.
+    {allocate, 0, 0}.
     {move, {literal, <<"localhost">>}, {x, 0}}.
     {deallocate, 0}.
     return.

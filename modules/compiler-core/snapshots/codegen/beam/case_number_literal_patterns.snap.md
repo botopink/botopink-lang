@@ -28,8 +28,10 @@ fn main() {
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, classify}, 1}.
   {label, 3}.
-    {allocate, 1, 1}.
-    {init_yregs, {list, [{y, 0}]}}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
     {test, is_eq, {f, 11}, [{x, 0}, {integer, 0}]}.
     {move, {literal, <<"zero">>}, {x, 0}}.
     {jump, {f, 10}}.
@@ -41,15 +43,15 @@ fn main() {
     {move, {literal, <<"many">>}, {x, 0}}.
     {jump, {f, 10}}.
   {label, 10}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {y, 0}, {x, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"~p~n">>}, {x, 0}}.
     {test_heap, 2, 2}.
     {put_list, {x, 1}, nil, {x, 1}}.
     {call_ext, 2, {extfunc, io, format, 2}}.
-    {move, {y, 0}, {x, 0}}.
-    {deallocate, 1}.
+    {move, {y, 1}, {x, 0}}.
+    {deallocate, 2}.
     return.
 
 {function, main, 0, 5}.

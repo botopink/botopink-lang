@@ -24,9 +24,9 @@ fn main() {
   {label, 3}.
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
-    {move, {atom, nil}, {x, 0}}.
+    {move, {atom, undefined}, {x, 0}}.
     {move, {x, 0}, {y, 0}}.
-    {test, is_eq, {f, 8}, [{y, 0}, {atom, nil}]}.
+    {test, is_eq, {f, 8}, [{y, 0}, {atom, undefined}]}.
     {move, {integer, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"~p~n">>}, {x, 0}}.

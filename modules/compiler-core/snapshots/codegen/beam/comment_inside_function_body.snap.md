@@ -24,7 +24,7 @@ fn main() {
     {init_yregs, {list, [{y, 0}]}}.
     {move, {integer, 1}, {x, 0}}.
     {move, {x, 0}, {y, 0}}.
-    {move, {atom, nil}, {x, 0}}.
+    {move, {atom, undefined}, {x, 0}}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 1}.
     return.

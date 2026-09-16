@@ -20,14 +20,16 @@ fn main() {
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, isPositive}, 1}.
   {label, 3}.
-    {allocate, 0, 1}.
-    {test, is_lt, {f, 10}, [{integer, 0}, {x, 0}]}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {test, is_lt, {f, 10}, [{integer, 0}, {y, 0}]}.
     {move, {atom, true}, {x, 0}}.
     {jump, {f, 11}}.
   {label, 10}.
     {move, {atom, false}, {x, 0}}.
   {label, 11}.
-    {deallocate, 0}.
+    {deallocate, 1}.
     return.
 
 {function, main, 0, 5}.
