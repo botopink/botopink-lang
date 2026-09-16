@@ -17,9 +17,18 @@ fn main() {
 
 main() ->
     io:format("~p~n", [(not true)]),
-    io:format("~p~n", [nor(false, false)]),
-    io:format("~p~n", [nand(true, true)]),
-    io:format("~p~n", [exclusiveOr(true, false)]).
+    io:format("~p~n", [bool_nor(false, false)]),
+    io:format("~p~n", [bool_nand(true, true)]),
+    io:format("~p~n", [bool_exclusiveOr(true, false)]).
+
+bool_nor(Self, Other) ->
+    (not ((Self or Other))).
+
+bool_nand(Self, Other) ->
+    (not ((Self and Other))).
+
+bool_exclusiveOr(Self, Other) ->
+    (Self =/= Other).
 
 '_botopink_main'() ->
     main().
@@ -30,8 +39,8 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:8:24: function nor/2 undefined
-main.erl:9:24: function nand/2 undefined
-main.erl:10:24: function exclusiveOr/2 undefined
+false
+true
+false
+true
 ```

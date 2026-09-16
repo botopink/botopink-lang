@@ -553,7 +553,16 @@ fn emitErlangModule(
         var iface_it = em.interface_assoc.keyIterator();
         while (iface_it.next()) |k| em.alloc.free(k.*);
         em.interface_assoc.deinit();
+        var inst_it = em.iface_instance_defaults.keyIterator();
+        while (inst_it.next()) |k| em.alloc.free(k.*);
+        em.iface_instance_defaults.deinit();
+        // Keys are borrowed from `iface_instance_defaults` — freed above.
+        em.needed_instance_defaults.deinit(em.alloc);
+        var self_it = em.iface_self_returns.keyIterator();
+        while (self_it.next()) |k| em.alloc.free(k.*);
+        em.iface_self_returns.deinit();
     }
+    defer em.nullable_locals.deinit();
     try em.collectPrimErlangDispatch(program);
     try em.collectRecordMethodCollisions(program);
     defer {
@@ -707,6 +716,19 @@ fn emitErlangModule(
                 try exports.append(b.arena, .{ .name = m.name, .arity = m.params.len });
             }
         }
+        // A `pub implement` / `pub extend` another module activates
+        // (`import {PatoNada*} from "pond"`) is reached as a remote call, so the
+        // owner exports each method. Extension methods keep the receiver as
+        // their first parameter, so the arity is the full parameter count.
+        for (program.decls) |decl| {
+            const ext: struct { name: []const u8, is_pub: bool, methods: []const ast.ImplementMethod } = switch (decl) {
+                .implement => |im| .{ .name = im.name, .is_pub = im.isPub, .methods = im.methods },
+                .extend => |ex| .{ .name = ex.name, .is_pub = ex.isPub, .methods = ex.methods },
+                else => continue,
+            };
+            if (!ext.is_pub or !xc.imported.contains(ext.name)) continue;
+            for (ext.methods) |m| try exports.append(b.arena, .{ .name = m.name, .arity = m.params.len });
+        }
     }
     if (exports.items.len > 0) try forms.append(b.arena, .{ .exports = exports.items });
 
@@ -751,6 +773,9 @@ fn emitErlangModule(
             } }),
         }
     }
+
+    // Interface instance `default fn`s reached by some call site above.
+    try em.instanceDefaultForms(b, &forms);
 
     if (comptime_module) |cm| {
         if (!cm.listing) {
@@ -985,6 +1010,22 @@ fn interfaceAssocAtom(buf: []u8, iface: []const u8, method: []const u8) ![]const
     return std.fmt.bufPrint(buf, "{c}{s}_{s}", .{ std.ascii.toLower(iface[0]), iface[1..], method });
 }
 
+/// True when a parameter can hold `undefined` at runtime: it is declared `?T`,
+/// or it defaults to `null` (`end: i32 = null`, the optional-argument form the
+/// arity-dispatch default fns use). `if (p)` on such a parameter is a null test,
+/// not a boolean test.
+fn isNullableParam(p: ast.Param) bool {
+    if (p.typeRef == .optional) return true;
+    const d = p.default orelse return false;
+    return d == .literal and d.literal.kind == .null_;
+}
+
+/// An interface instance `default fn` — a `default fn` whose first parameter is
+/// `self` and which carries a body. Unlike an associated default (`Array.range`)
+/// it is reached through a value receiver (`xs.all(pred)`), so the emitted form
+/// keeps `self` as its first parameter.
+const IfaceDefault = struct { iface: []const u8, method: ast.InterfaceMethod };
+
 /// Tuple positional member (`_0`, `_1`, …) → the digits, else null.
 /// Distinguishes tuple index access from `_`-prefixed record fields.
 fn tupleIndexMember(member: []const u8) ?[]const u8 {
@@ -1155,6 +1196,35 @@ const Emitter = struct {
     /// `Interface.method(...)` call resolves to the local fn, not a remote
     /// `array:range`. Populated by `collectInterfaces`.
     interface_assoc: std.StringHashMap(void),
+    /// Interface INSTANCE `default fn`s (a `self` receiver plus a body), keyed
+    /// `<Iface>.<method>` — `"Bool.nor"`, `"String.slice"`, `"Number.clamp"`.
+    /// Populated by `collectInterfaces` alongside `interface_assoc`.
+    iface_instance_defaults: std.StringHashMap(IfaceDefault),
+    /// The subset of `iface_instance_defaults` a call site actually reached (see
+    /// `ifaceDefaultNode`). Only these are emitted, as `<iface>_<method>(Self,
+    /// …)` forms at the end of the module — emitting every default of every
+    /// inlined primitive interface would bury each module in dead code. Insertion
+    /// ordered so the emitted forms are deterministic; the map grows while it is
+    /// drained (a default body may call another default), so `instanceDefaultForms`
+    /// walks it to a fixpoint.
+    needed_instance_defaults: std.StringArrayHashMapUnmanaged(IfaceDefault) = .empty,
+    /// `<Iface>.<method>` for every interface method declared to return `Self`.
+    /// Inside an instance `default fn` body it is what makes a chained receiver
+    /// (`self.filter(pred).length`) keep the interface's primitive kind.
+    iface_self_returns: std.StringHashMap(void),
+    /// The primitive kind `self` carries while an interface instance
+    /// `default fn` body is being emitted, else null. Inference records no
+    /// lowering for a `Self`-typed receiver (it is generic over every
+    /// implementor), so the emitter re-derives it from the owning interface.
+    self_prim_kind: ?envMod.PrimKind = null,
+    /// True while emitting an inlined interface `default fn` body. Such a body
+    /// may call a std prelude helper (`stringSlice1`) the consuming module never
+    /// declares, so bare callees also resolve against the prelude template index.
+    in_iface_default: bool = false,
+    /// Locals that may hold `undefined` (null): a parameter declared `?T` or
+    /// defaulted to `null`. `if (x)` on one is a null test, not a boolean test.
+    /// Reset per function alongside `locals`.
+    nullable_locals: std.StringHashMap(void),
     /// §A5 annotation-driven prim-method dispatch: `<Iface>.<method>` →
     /// `(host module, host symbol, ordered arg names)` parsed from
     /// `@external(erlang, "mod", "sym(args)")` on a primitive interface method.
@@ -1202,6 +1272,9 @@ const Emitter = struct {
             .var_next = std.StringHashMap(u32).init(alloc),
             .top_vals = std.StringHashMap(void).init(alloc),
             .interface_assoc = std.StringHashMap(void).init(alloc),
+            .iface_instance_defaults = std.StringHashMap(IfaceDefault).init(alloc),
+            .iface_self_returns = std.StringHashMap(void).init(alloc),
+            .nullable_locals = std.StringHashMap(void).init(alloc),
             .prim_erlang_dispatch = std.StringHashMap(PrimErlangCall).init(alloc),
             .builtin_erlang_dispatch = std.StringHashMap(PrimErlangCall).init(alloc),
             .user_erlang_templates = std.StringHashMap(PrimErlangCall).init(alloc),
@@ -1375,6 +1448,20 @@ const Emitter = struct {
         const call = this.builtin_erlang_dispatch.get(callee) orelse return null;
         const template = templateFor(call, cc) orelse return null;
         return try this.templateNode(b, template, null, cc, error.PrimOpRecvInBuiltinTemplate);
+    }
+
+    /// A bare call to a std prelude `declare fn` whose `@External.Erlang` symbol
+    /// is a template (`stringSlice1(self, start, end)` →
+    /// `string:slice(Self, Start, (End - Start))`). The declaration's first
+    /// parameter is named `self`, so the template's `$self` marker is the call's
+    /// FIRST positional argument and `$N` the (N+1)-th — unlike a method call,
+    /// where `$self` is the receiver. Null when the callee has no template.
+    fn preludeHelperNode(this: *Emitter, b: Ast.Builder, callee: []const u8, cc: anytype) anyerror!?Ast.Expr {
+        const call = this.builtin_erlang_dispatch.get(callee) orelse return null;
+        if (cc.args.len == 0) return null;
+        const shifted = .{ .args = cc.args[1..], .trailing = cc.trailing };
+        const template = templateFor(call, shifted) orelse return null;
+        return try this.templateNode(b, template, cc.args[0].value, shifted, error.PrimOpRecvInBuiltinTemplate);
     }
 
     /// The template an annotation renders for this call site: the arity branch
@@ -1612,18 +1699,30 @@ const Emitter = struct {
         return try this.templateNode(b, template, null, cc, error.PrimOpRecvInUserTemplate);
     }
 
-    /// Index interface associated `default fn`s (no `self`, with a body) by their
-    /// qualified name so `Interface.method(...)` resolves to the bare local fn
-    /// `interfaceForms` emits.
+    /// Index an interface's bodied `default fn`s by qualified name. Associated
+    /// ones (no `self`) land in `interface_assoc` so `Interface.method(...)`
+    /// resolves to the bare local fn `interfaceForms` emits; instance ones
+    /// (a `self` receiver) land in `iface_instance_defaults` so a value-receiver
+    /// call (`xs.all(pred)`) resolves to the `<iface>_<method>(Recv, …)` form
+    /// `instanceDefaultForms` emits on demand.
     fn collectInterfaces(this: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| switch (decl) {
             .interface => |i| {
                 for (i.methods) |m| {
+                    if (m.returnType) |rt| {
+                        if (rt == .named and std.mem.eql(u8, rt.named, "Self")) {
+                            const sq = try std.fmt.allocPrint(this.alloc, "{s}.{s}", .{ i.name, m.name });
+                            try this.iface_self_returns.put(sq, {});
+                        }
+                    }
                     if (!m.is_default or m.body == null) continue;
                     const has_self = m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self");
-                    if (has_self) continue;
                     const qn = try std.fmt.allocPrint(this.alloc, "{s}.{s}", .{ i.name, m.name });
-                    try this.interface_assoc.put(qn, {});
+                    if (has_self) {
+                        try this.iface_instance_defaults.put(qn, .{ .iface = i.name, .method = m });
+                    } else {
+                        try this.interface_assoc.put(qn, {});
+                    }
                 }
             },
             else => {},
@@ -1634,6 +1733,57 @@ const Emitter = struct {
         var b: [256]u8 = undefined;
         const qn = std.fmt.bufPrint(&b, "{s}.{s}", .{ iface, method }) catch return false;
         return this.interface_assoc.contains(qn);
+    }
+
+    /// Inverse of `primIfaceForKind`: the primitive kind whose controller
+    /// interface reaches `iface` through its `extends` chain. A method declared
+    /// on a shared parent (`Number.clamp`) answers `.int` — the chain walk from
+    /// either numeric kind passes through `Number`, so the dispatch is the same.
+    fn primKindForIface(this: *const Emitter, iface: []const u8) ?envMod.PrimKind {
+        for ([_]envMod.PrimKind{ .array, .string, .bool, .int, .float }) |k| {
+            const head = primIfaceForKind(k) orelse continue;
+            var iface_walk = PrimIfaceWalker.init(this, head, &this.prim_iface_chain);
+            while (iface_walk.next()) |name| {
+                if (std.mem.eql(u8, name, iface)) return k;
+            }
+        }
+        return null;
+    }
+
+    /// The primitive kind of a `Self`-typed expression inside an interface
+    /// instance `default fn` body — the `self` parameter, or a call on a
+    /// `Self`-typed receiver whose interface method is declared `-> Self`
+    /// (`self.filter(pred)` on `Array`). Null everywhere else, including in
+    /// every ordinary function, where inference records the lowering instead.
+    fn selfPrimKind(this: *const Emitter, e: ast.Expr) ?envMod.PrimKind {
+        const k = this.self_prim_kind orelse return null;
+        switch (e) {
+            .identifier => |id| {
+                const name = switch (id.kind) {
+                    .ident => |n| n,
+                    else => return null,
+                };
+                return if (std.mem.eql(u8, name, "self")) k else null;
+            },
+            .call => |c| {
+                const cc = switch (c.kind) {
+                    .call => |x| x,
+                    else => return null,
+                };
+                if (cc.is_builtin) return null;
+                const recv = cc.receiver orelse return null;
+                if (this.selfPrimKind(recv.*) == null) return null;
+                const head_iface = primIfaceForKind(k) orelse return null;
+                var iface_walk = PrimIfaceWalker.init(this, head_iface, &this.prim_iface_chain);
+                while (iface_walk.next()) |iface_name| {
+                    var key_buf: [256]u8 = undefined;
+                    const key = std.fmt.bufPrint(&key_buf, "{s}.{s}", .{ iface_name, cc.callee }) catch return null;
+                    if (this.iface_self_returns.contains(key)) return k;
+                }
+                return null;
+            },
+            else => return null,
+        }
     }
 
     /// Mark `name` as a function-scoped local (param / `val` / lambda param).
@@ -1648,6 +1798,7 @@ const Emitter = struct {
         this.locals.clearRetainingCapacity();
         this.var_current.clearRetainingCapacity();
         this.var_next.clearRetainingCapacity();
+        this.nullable_locals.clearRetainingCapacity();
     }
 
     /// Heap-allocated Erlang variable for a read of `name` at its current
@@ -1722,7 +1873,15 @@ const Emitter = struct {
                 const name = imp.name();
                 const info = xc.exports.get(name) orelse continue;
                 switch (info.kind) {
-                    .record => {},
+                    .record => {
+                        // Records are maps at runtime, so the consumer inlines
+                        // the same `#{field => V}` literal the owner would build
+                        // — there is no constructor function to call remotely.
+                        if (!self.record_fields.contains(name)) {
+                            try self.record_fields.put(name, try self.alloc.dupe([]const u8, info.fields));
+                        }
+                        try self.imported_types.put(name, crossModule.moduleBasename(info.module));
+                    },
                     .@"enum" => try self.enum_names.put(name, {}),
                     .@"fn", .val => {},
                 }
@@ -1873,6 +2032,7 @@ const Emitter = struct {
             } else if (this.keep_self or !std.mem.eql(u8, p.name, "self")) {
                 try params.append(b.arena, Ast.Expr.v(try this.arenaVar(b, p.name)));
                 this.addLocal(p.name);
+                if (isNullableParam(p)) try this.nullable_locals.put(p.name, {});
             }
         }
         const saved = this.indent;
@@ -2592,6 +2752,20 @@ const Emitter = struct {
                         },
                         .record => {},
                     };
+                    // Same field access on a `Self`-typed receiver inside an
+                    // interface instance `default fn` (`self.length`), which
+                    // inference leaves unlowered.
+                    if (!ia.optional and (std.mem.eql(u8, ia.member, "len") or
+                        std.mem.eql(u8, ia.member, "length") or std.mem.eql(u8, ia.member, "size")))
+                    {
+                        if (this.selfPrimKind(ia.receiver.*)) |k| {
+                            const recv = try this.exprNode(b, ia.receiver.*);
+                            return switch (k) {
+                                .string => b.remote("string", "length", &.{recv}),
+                                else => b.call("length", &.{recv}),
+                            };
+                        }
+                    }
                     if (this.untyped and !ia.optional and
                         (std.mem.eql(u8, ia.member, "len") or std.mem.eql(u8, ia.member, "length")))
                     {
@@ -2704,7 +2878,10 @@ const Emitter = struct {
 
             .branch => |br| switch (br.kind) {
                 .if_ => |i| {
-                    const cond = try this.exprNode(b, i.cond.*);
+                    // The binding form (`if (mb) { b -> … }`) matches on the
+                    // value itself (`undefined -> …; B -> …`), so it keeps the
+                    // raw subject; only the boolean form needs the null test.
+                    const cond = if (i.binding == null) try this.condNode(b, i.cond.*) else try this.exprNode(b, i.cond.*);
                     const arm_indent = this.indent + 2;
                     var clauses: std.ArrayListUnmanaged(Ast.Clause) = .empty;
                     var then_pattern = A("true");
@@ -2771,6 +2948,18 @@ const Emitter = struct {
     }
 
     /// `(fun(undefined) -> undefined; (Opt) -> Access end)(Receiver)`.
+    /// An `if`/`else if` condition. The `case Cond of true -> …; false -> …`
+    /// shape needs a real boolean, so a bare reference to a nullable local
+    /// (`if (end)` where `end: i32 = null`) becomes the null test the botopink
+    /// truthiness rule means: `(End =/= undefined)`. Every other condition
+    /// already evaluates to a boolean and is emitted unchanged.
+    fn condNode(this: *Emitter, b: Ast.Builder, cond: ast.Expr) anyerror!Ast.Expr {
+        const node = try this.exprNode(b, cond);
+        if (cond != .identifier or cond.identifier.kind != .ident) return node;
+        if (!this.nullable_locals.contains(cond.identifier.kind.ident)) return node;
+        return b.binop("=/=", node, Ast.Expr.a("undefined"));
+    }
+
     fn optionalAccess(this: *Emitter, b: Ast.Builder, opt: Ast.Expr, access: Ast.Expr, receiver: ast.Expr) anyerror!Ast.Expr {
         const fun: Ast.Expr = .{ .fun_clauses = try b.arena.dupe(Ast.Clause, &.{
             try b.clause(&.{Ast.Expr.a("undefined")}, &.{}, &.{Ast.Expr.a("undefined")}),
@@ -2808,13 +2997,20 @@ const Emitter = struct {
         }
         try items.append(b.arena, current);
 
-        const stages = try b.arena.alloc(Ast.Expr, items.items.len);
-        var i: usize = items.items.len - 1;
-        while (i > 0) : (i -= 1) stages[i] = try this.exprNode(b, items.items[i]);
+        // A stage that is a bare identifier naming a top-level function is
+        // CALLED (`inc(Acc)`); only a fn-typed local is APPLIED as a fun
+        // variable (`Inc(Acc)`). Erlang has no value for a plain fn name, so
+        // lowering a bare `|> inc` as a variable leaves `Inc` unbound.
         var node = try this.exprNode(b, items.items[0]);
-        for (stages[1..]) |stage| {
-            const args = try b.exprs(&.{node});
-            node = .{ .apply = .{ .fun = try b.ptr(stage), .args = args } };
+        for (items.items[1..]) |stage_expr| {
+            if (identName(stage_expr)) |name| {
+                if (!this.locals.contains(name)) {
+                    node = try b.call(name, &.{node});
+                    continue;
+                }
+            }
+            const stage = try this.exprNode(b, stage_expr);
+            node = .{ .apply = .{ .fun = try b.ptr(stage), .args = try b.exprs(&.{node}) } };
         }
         return node;
     }
@@ -2856,6 +3052,13 @@ const Emitter = struct {
                 if (try this.userTemplateNode(b, cc.callee, cc)) |node| return node;
                 return b.call(cc.callee, try this.callArgs(b, null, cc));
             }
+            // A bare callee inside an inlined interface `default fn` body is a
+            // std prelude helper the consuming module never declares
+            // (`String.slice`'s body calls `stringSlice0`/`stringSlice1`), so it
+            // renders from the `primitives.bp` template index instead.
+            if (this.in_iface_default) {
+                if (try this.preludeHelperNode(b, cc.callee, cc)) |node| return node;
+            }
             // `#[@external(erlang, "module", "symbol")]` fn → `module:symbol(…)`.
             if (this.externals.get(cc.callee)) |ref| {
                 return headCall(b, try qualified(b, ref.module, ref.symbol), try this.callArgs(b, null, cc));
@@ -2892,7 +3095,16 @@ const Emitter = struct {
         }
         // Activated extension dispatch: `recv.m(args)` → the local `m(Recv, args)`
         // emitted by `extensionForms`.
-        if (this.rewrites.get(loc) != null) {
+        if (this.rewrites.get(loc)) |sym| {
+            // The activated block may belong to another module
+            // (`import {PatoNada*} from "pond"`), where the method is emitted as
+            // a bare exported function: reach it remotely.
+            if (!this.ext_names.contains(sym)) {
+                if (this.cross) |xc| if (xc.ownerModuleAtom(sym)) |owner| {
+                    const head = try qualified(b, owner, try this.calleeAtom(b, cc.callee));
+                    return headCall(b, head, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
+                };
+            }
             return b.call(cc.callee, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
         }
         if (mod_name) |name| {
@@ -2943,6 +3155,10 @@ const Emitter = struct {
                 return headCall(b, head, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
             },
         };
+        // Inside an interface instance `default fn` the receiver's type is
+        // `Self`, which inference leaves unlowered (it is generic over every
+        // implementor): dispatch on the owning interface's primitive kind.
+        if (this.selfPrimKind(recv.*)) |k| return this.primMethodNode(b, k, cc.callee, recv, cc);
         // A value receiver with no recorded lowering (inference bailed out, e.g.
         // on a chained call): try the Array primitive defaults and the universal
         // `toString` before the bare `m(Recv, args)` call.
@@ -3063,18 +3279,29 @@ const Emitter = struct {
         };
         const body_indent = this.indent + 2;
         var clauses: std.ArrayListUnmanaged(Ast.Clause) = .empty;
-        for (arms) |arm| switch (arm.pattern) {
-            .@"or" => |pats| for (pats) |pat| {
-                try clauses.append(b.arena, .{
-                    .patterns = try b.exprs(&.{try this.patternNode(b, pat)}),
+        for (arms) |arm| {
+            // `pattern if <guard> -> body` → an erlang clause guard. The arm
+            // only matches when the pattern matches AND the guard holds; a
+            // dropped guard makes the first arm swallow every subject.
+            const guards: []const Ast.Expr = if (arm.guard) |g|
+                try b.exprs(&.{try this.exprNode(b, g)})
+            else
+                &.{};
+            switch (arm.pattern) {
+                .@"or" => |pats| for (pats) |pat| {
+                    try clauses.append(b.arena, .{
+                        .patterns = try b.exprs(&.{try this.patternNode(b, pat)}),
+                        .guards = guards,
+                        .body = try this.caseBodyNode(b, arm.body, body_indent),
+                    });
+                },
+                else => try clauses.append(b.arena, .{
+                    .patterns = try b.exprs(&.{try this.patternNode(b, arm.pattern)}),
+                    .guards = guards,
                     .body = try this.caseBodyNode(b, arm.body, body_indent),
-                });
-            },
-            else => try clauses.append(b.arena, .{
-                .patterns = try b.exprs(&.{try this.patternNode(b, arm.pattern)}),
-                .body = try this.caseBodyNode(b, arm.body, body_indent),
-            }),
-        };
+                }),
+            }
+        }
         return b.caseOf(subject, clauses.items);
     }
 
@@ -3098,15 +3325,20 @@ const Emitter = struct {
             .ident => |n| return if (this.enum_variants.contains(n)) Ast.Expr.a(n) else Ast.Expr.v(try this.arenaVar(b, n)),
             .numberLit => |n| return .{ .number = n },
             .stringLit => |str| return .{ .lexeme_binary = str },
-            // Variant patterns match `{tag, Name, …}` with the variant name as written.
+            // Variant patterns mirror what the constructor builds: the tagged
+            // tuple `{'Rgb', R, G, B}` for a payload, the bare atom `'Lt'`
+            // without one. (The old `{tag, Name, …}` shape both bound `Name` as
+            // a fresh variable and added an element no constructor ever
+            // materialised, so every arm failed with `case_clause`.)
             .variant => |v| {
                 var items: std.ArrayListUnmanaged(Ast.Expr) = .empty;
-                try items.appendSlice(b.arena, &.{ Ast.Expr.a("tag"), Ast.Expr.r(v.name) });
+                try items.append(b.arena, Ast.Expr.a(this.variantTag(v.name)));
                 switch (v.payload) {
                     .binding => |binding| try items.append(b.arena, Ast.Expr.v(try this.arenaVar(b, binding))),
                     .fields => |fields| for (fields) |f| try items.append(b.arena, Ast.Expr.v(try this.arenaVar(b, f))),
                     .literals => |args| for (args) |arg| try items.append(b.arena, try this.patternNode(b, arg)),
                 }
+                if (items.items.len == 1) return Ast.Expr.a(this.variantTag(v.name));
                 return .{ .tuple = items.items };
             },
             .list => |lp| {
@@ -3127,6 +3359,17 @@ const Emitter = struct {
                 return .{ .tuple = items };
             },
         }
+    }
+
+    /// The runtime tag atom of a variant pattern. `@Result` is materialised as
+    /// `{ok, V}` / `{error, E}` by the `#[@result]` transform, so its `Ok`/`Err`
+    /// arms match those lowercase tags. A user enum variant of the same name
+    /// (recorded in `enum_variants`) keeps its own name.
+    fn variantTag(this: *const Emitter, name: []const u8) []const u8 {
+        if (this.enum_variants.contains(name)) return name;
+        if (std.mem.eql(u8, name, "Ok")) return "ok";
+        if (std.mem.eql(u8, name, "Err") or std.mem.eql(u8, name, "Error")) return "error";
+        return name;
     }
 
     fn listPatElemNode(this: *Emitter, b: Ast.Builder, elem: ast.ListPatternElem) anyerror!Ast.Expr {
@@ -3182,10 +3425,59 @@ const Emitter = struct {
         if (k == .array) {
             if (try this.arrayPrimFallbackNode(b, callee, recv, cc)) |node| return node;
         }
+        // Pure-botopink instance `default fn` (`xs.all(pred)`, `n.clamp(lo, hi)`):
+        // the local form emitted on demand at the end of the module.
+        if (try this.ifaceDefaultNode(b, k, callee, recv, cc)) |node| return node;
         var args: std.ArrayListUnmanaged(Ast.Expr) = .empty;
         try args.append(b.arena, try this.exprNode(b, recv.*));
         for (cc.args) |arg| try args.append(b.arena, try this.exprNode(b, arg.value.*));
         return headCall(b, try b.arena.dupe(u8, callee), args.items);
+    }
+
+    /// A value-receiver call that resolves to an interface instance `default fn`
+    /// → the local `<iface>_<method>(Recv, args)` form, and a note that the form
+    /// is needed. Walks the receiver's `extends` chain, so `n.clamp(0, 5)` on an
+    /// `i32` finds `Number.clamp`. Null when no interface in the chain declares
+    /// `callee` as a bodied instance default — the caller then falls back to the
+    /// bare `callee(Recv, args)` call.
+    fn ifaceDefaultNode(this: *Emitter, b: Ast.Builder, k: envMod.PrimKind, callee: []const u8, recv: *const ast.Expr, cc: anytype) anyerror!?Ast.Expr {
+        const head_iface = primIfaceForKind(k) orelse return null;
+        var iface_walk = PrimIfaceWalker.init(this, head_iface, &this.prim_iface_chain);
+        while (iface_walk.next()) |iface_name| {
+            var key_buf: [256]u8 = undefined;
+            const key = std.fmt.bufPrint(&key_buf, "{s}.{s}", .{ iface_name, callee }) catch return null;
+            const hit = this.iface_instance_defaults.getEntry(key) orelse continue;
+            // The key is owned by `iface_instance_defaults`, which outlives the
+            // needed-set, so the borrow is safe.
+            try this.needed_instance_defaults.put(this.alloc, hit.key_ptr.*, hit.value_ptr.*);
+            var mbuf: [256]u8 = undefined;
+            const mangled = interfaceAssocAtom(&mbuf, iface_name, callee) catch return null;
+            const head = try b.arena.dupe(u8, mangled);
+            return try headCall(b, head, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
+        }
+        return null;
+    }
+
+    /// Emit the interface instance `default fn`s some call site reached, as
+    /// `<iface>_<method>(Self, …)` forms. Draining is a fixpoint walk: a default
+    /// body may itself call another default (`String.slice` → nothing, but
+    /// `Array.append` → `Array.slice`), which appends to the same list.
+    fn instanceDefaultForms(this: *Emitter, b: Ast.Builder, out: *Forms) !void {
+        const saved_kind = this.self_prim_kind;
+        const saved_in = this.in_iface_default;
+        defer {
+            this.self_prim_kind = saved_kind;
+            this.in_iface_default = saved_in;
+        }
+        this.in_iface_default = true;
+        var i: usize = 0;
+        while (i < this.needed_instance_defaults.count()) : (i += 1) {
+            const d = this.needed_instance_defaults.values()[i];
+            var mbuf: [256]u8 = undefined;
+            const mangled = interfaceAssocAtom(&mbuf, d.iface, d.method.name) catch continue;
+            this.self_prim_kind = this.primKindForIface(d.iface);
+            try this.methodForms(b, out, try b.arena.dupe(u8, mangled), d.method);
+        }
     }
 
     /// The std Array default fns as erlang BIFs (`forEach`/`fold`/`drop`/

@@ -22,7 +22,7 @@ inc(X) ->
     (X + 1).
 
 main() ->
-    Result = Inc(Double(1)),
+    Result = inc(double(1)),
     io:format("~p~n", [Result]).
 
 '_botopink_main'() ->
@@ -34,7 +34,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:11:14: variable 'Inc' is unbound
-main.erl:11:18: variable 'Double' is unbound
+3
 ```
