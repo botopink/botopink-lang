@@ -12,22 +12,10 @@ const Parser = parserMod.Parser;
 const print = @import("../../print.zig");
 const h = @import("helpers.zig");
 
-test "parser: use void hook" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\fn App() {
-        \\    use effect({ -> cleanup() });
-        \\}
-    );
-}
-
-test "parser: use prefix in val binding" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\fn App() {
-        \\    val doubled = use memo({ -> count * 2 });
-        \\}
-    );
-}
-
+// One test for the three `use` forms (discarded, `val` binding, destructuring
+// `val`) in one static prefix. The single-form tests it replaced produced the
+// same JSON sub-trees with other line numbers (1.0.1-beta review, parser.md
+// `duplicate` row `use_multiple_hooks_in_function`).
 test "parser: use multiple hooks in function" {
     try h.assertParser(std.testing.allocator, @src(),
         \\fn Dashboard() {
@@ -761,4 +749,3 @@ test "parser: interface literal ---- with nested record" {
         \\val decl = @Decl(kind: "Record", name: "Service", fields: [record { name: "x", typeName: "i32", annotations: [] }], methods: [], returnType: "", annotations: [record { name: "addHelper", args: [] }]);
     );
 }
-
