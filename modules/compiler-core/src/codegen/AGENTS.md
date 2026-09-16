@@ -51,7 +51,7 @@ codegen/
     ├── wat.zig                 ← WAT backend codegen
     ├── dts_skips_templates.zig ← `.d.ts` drops `@Expr`/`@ExprCustom` template fns
     ├── runtime_scratch.zig     ← pins the `.botopinkbuild/tmp/<hex>/` scratch layout
-    └── comptime_module.zig     ← `emitComptimeModule` (untyped lowerings, host enums, variable versioning)
+    └── comptime_module.zig     ← `emitComptimeModule` (untyped lowerings, primitive-method shims, host enums, variable versioning)
 ```
 
 ## Files
@@ -192,8 +192,16 @@ codegen/
   are known only afterwards). Arms ending in `return`,
   indexed/`await`/yielding loops keep the plain lowering; the older
   `var acc = …; xs.forEach(…)` fold fusion still takes precedence.
+  A receiver mutation counts as a reassignment (`receiverMutation`): a
+  statement `out.push(x)` on a `var` local (`mutable_locals`; not a parameter
+  or a field access) whose receiver is an Array (the inferred
+  `.prim = .array` lowering, or any local in a comptime body, where the shim
+  answers `push` for lists only) is marked by `collectMutations` and lowered as
+  the rebinding `Out@1 = (Out ++ [X])` — in straight-line position too — so the
+  group-out expression reads the grown list. The mutation is name-driven
+  (`push`); `codegen/beam_asm.zig` has no equivalent yet.
 - **Comptime modules:** `emitComptimeModule(alloc, name, program, .{ host_enums,
-  host_records, exports, forms, listing })` lowers an untyped decorator/template body with
+  host_records, exports, forms, listing, unsupported_method })` lowers an untyped decorator/template body with
   the same emitter — `host_enums` join `enum_names` (`DeclKind.Record` →
   `'Record'`), `host_records` (`HostRecord{name, fields}`) join `record_fields`
   so host record constructors build maps, `exports` (`[]erl_ast.FnRef`) are prepended to `-export`,
@@ -201,8 +209,28 @@ codegen/
   exports or helpers — the `COMPTIME ERLANG` snapshot section, not a compilable
   module), `forms` (`[]erl_ast.Form`) are rendered after the
   `'__bp_add'/2` / `'__bp_len'/2` helpers; the `untyped` flag routes `+` to
-  `'__bp_add'` (binary concat or arithmetic) and `.len`/`.length` without an
-  instance lowering to `'__bp_len'(X, Field)`. Tests: `tests/comptime_module.zig`.
+  `'__bp_add'` (binary concat or arithmetic) and `.len`/`.length`/`.size` without an
+  instance lowering to `'__bp_len'(X, Field)`.
+  **Primitive methods** in a body (`untypedPrimCallNode`, reached from
+  `plainCallNode` after the Array fallbacks): a value-receiver call
+  `recv.m(args)` that a host form defines (`name/argc+1` in `forms` — `q.text()`,
+  `decl.fail(msg)`) stays the bare local call; one that some primitive kind
+  answers becomes `'__bp_prim_m'(Recv, Args…)`. `primShimForms` emits one shim
+  per reached `(m, argc)`, behind the `!listing` gate: a clause per kind in
+  `prim_shim_kinds` (`is_list`/`is_binary`/`is_boolean`/`is_integer`/`is_float`)
+  whose body is the typed path's own lowering (`primHostMethodNode` — annotation,
+  inline cases, Array fallbacks — else `primDefaultShimNode`, which calls the
+  instance `default fn` with omitted trailing params filled from their declared
+  defaults), then a clause raising `{bp_unsupported_method, <<"m">>, Argc, Recv}`
+  (`toString/0` formats through `'__bp_text'` instead). The prelude's bodied
+  instance defaults (`String.slice`, `Array.first`) are indexed for comptime
+  modules by `collectPreludeInstanceDefaults` (the parse lives until the module is
+  rendered); shims and the defaults they reach drain to a fixpoint. So BIF-named
+  methods (`length`, `abs`, `floor`) dispatch on the receiver too. A call nothing
+  answers is recorded in `unsupported_method` (when set, compilable emit only)
+  and the emit fails with `error.UnsupportedComptimeMethod`; the evaluators turn
+  it into a located diagnostic. `primErlangDispatchCount` exposes the size of the
+  prelude's dispatch table for a regression test. Tests: `tests/comptime_module.zig`.
 - **Names**: `atomName`/`fnAtom`/`erlangVar`/`erlangModule` are aliases of
   `beam/erl_emitter.zig`. `erlang.zig` writes no Erlang text itself: the emitter
   builds `erl_ast` nodes and forms and `erl_emitter` renders them (`raw` remains

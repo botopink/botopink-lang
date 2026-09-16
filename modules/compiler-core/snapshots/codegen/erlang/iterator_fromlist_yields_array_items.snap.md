@@ -33,10 +33,11 @@ fromList(Xs) ->
 
 toList(Iter) ->
     Out = [],
-    lists:foreach(fun(Item) ->
-        (Out ++ [Item])
-    end, Iter),
-    Out.
+    Out@3 = lists:foldl(fun(Item, Out@1) ->
+        Out@2 = (Out@1 ++ [Item]),
+        Out@2
+    end, Out, Iter),
+    Out@3.
 
 main() ->
     io:format("~p~n", [iolist_to_binary(lists:join(<<",">>, lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> iolist_to_binary(io_lib:format("~p", [__E])) end end, toList(fromList([1, 2, 3])))))]).
@@ -50,5 +51,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-<<>>
+<<"1,2,3">>
 ```

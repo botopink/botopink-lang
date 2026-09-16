@@ -985,3 +985,105 @@ test "js: enum sections ---- path-access lowers to qualified ctor calls" {
         \\}
     );
 }
+
+// A comptime body has no inferred types, so a primitive method call in it lowers
+// to the runtime-dispatch shim `'__bp_prim_<method>'` (`codegen/erlang.zig`
+// `untypedPrimCallNode`); the `COMPTIME ERLANG` section shows the call sites.
+// The string receivers avoid `indexOf`, whose `string:str/2` host op rejects a
+// binary (a `libs/std/src/primitives.bp` table defect, not a dispatch one).
+// Known-wrong run logs pinned here, owned by the backend fronts: beam prints
+// `s` (an unresolved module-level `val` read as the atom of its name) and wasm
+// prints nothing; the comptime sections and replies are identical everywhere.
+test "js: comptime primitives ---- template body calls string and array methods" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\pub fn shout(comptime q: @Expr<string>) -> @Expr<string> {
+        \\    val t = q.text().trim();
+        \\    val words = t.split(" ").map({ w -> w.toUpper() });
+        \\    val lead = t.slice(0, 5);
+        \\    val rest = t.slice(6, t.length);
+        \\    val all = words.append(["END"]).reverse();
+        \\    val at = if (words.at(1) == "BIG") { "at"; } else { "-"; };
+        \\    val big = if (t.contains("big")) { "contains"; } else { "-"; };
+        \\    val greet = if (lead.startsWith("hel")) { "startsWith"; } else { "-"; };
+        \\    val where = if (words.indexOf("WORLD") == 2) { "indexOf"; } else { "-"; };
+        \\    return q.build("\"" + all.join(",") + "|" + lead + "|" + rest + "|" + at + "|" + big + "|" + greet + "|" + where + "\"");
+        \\}
+        \\
+        \\val s = shout " hello big world ";
+        \\
+        \\fn main() {
+        \\    @print(s);
+        \\}
+    );
+}
+
+// The first decorator `COMPTIME ERLANG` section: the same shims from a decorator
+// body, including `length()`, whose name is an auto-imported Erlang BIF. The
+// wasm run log is empty (a wasm backend gap, not a comptime one).
+test "js: comptime primitives ---- decorator body calls string and array methods" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\pub fn describe(comptime decl: @Decl) {
+        \\    val names = decl.fields.map({ f -> f.name });
+        \\    val upper = names.map({ n -> n.toUpper() }).join("_");
+        \\    val hidden = if (names.contains("secret")) { "hidden"; } else { "open"; };
+        \\    val short = decl.name.slice(0, 3);
+        \\    val size = if (decl.name.length() == 4) { "four"; } else { "other"; };
+        \\    @emit("pub fn describe" + decl.name + "() -> string { return \"" + upper + ":" + hidden + ":" + short + ":" + size + "\"; }");
+        \\}
+        \\
+        \\#[describe]
+        \\record User { name: string, secret: string, age: i32 }
+        \\
+        \\fn main() {
+        \\    @print(describeUser());
+        \\}
+    );
+}
+
+// `out.push(x)` mutates its receiver. On erlang the statement rebinds the local
+// (`Out@2 = (Out@1 ++ [X])`) and a closure that pushes threads the list out
+// through `lists:foldl` like an assignment does — in straight-line position, in
+// a multi-statement `forEach` closure, and in a decorator body (a dependency-injection
+// constructor shape: an inner mutating `forEach`, then the push).
+// Known-wrong run logs pinned here, owned by the backend fronts: beam and wasm
+// print nothing (and `codegen/beam_asm.zig` has no mutation threading at all).
+test "js: receiver mutation ---- push inside a multi-statement closure threads out" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\pub fn component(comptime decl: @Decl) {
+        \\    var args: Array<string> = [];
+        \\    decl.fields.forEach({ f ->
+        \\        var valKey = "";
+        \\        f.annotations.forEach({ a -> if (a.name == "value") { valKey = a.args.join(""); } });
+        \\        val expr = if (valKey != "") {
+        \\            "prop(" + valKey + ")";
+        \\        } else {
+        \\            "make" + f.typeName + "()";
+        \\        };
+        \\        args.push(f.name + ": " + expr);
+        \\    });
+        \\    @emit("pub fn wire" + decl.name + "() -> string { return \"" + decl.name + "(" + args.join(", ") + ")\"; }");
+        \\}
+        \\
+        \\#[component]
+        \\record Service {
+        \\    #[value(port)]
+        \\    port: i32,
+        \\    name: string,
+        \\}
+        \\
+        \\fn collect(xs: Array<i32>) -> Array<string> {
+        \\    var out: Array<string> = [];
+        \\    out.push("start");
+        \\    xs.forEach({ x ->
+        \\        val doubled = x * 2;
+        \\        out.push("v" + doubled.toString());
+        \\    });
+        \\    return out;
+        \\}
+        \\
+        \\fn main() {
+        \\    @print(wireService());
+        \\    @print(collect([1, 2, 3]).join(","));
+        \\}
+    );
+}
