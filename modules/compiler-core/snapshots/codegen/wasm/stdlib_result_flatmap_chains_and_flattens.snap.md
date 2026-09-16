@@ -17,13 +17,16 @@ fn main() {
   (global $__heap_ptr (mut i32) (i32.const 264))
   (func $parseAge (param $s i32) (result i32)
     unreachable
+    i32.const 0
   )
   (func $validate (param $n i32) (result i32)
     unreachable
+    i32.const 0
   )
   (func $main
     (local $r i32)
     (local $_res0 i32)
+    (local $n i32)
     i32.const 256
     call $parseAge
     local.set $_res0
@@ -37,7 +40,6 @@ fn main() {
     local.get $_res0
     i32.load offset=4 ;; Ok payload
     local.set $_res0
-    (local $n i32)
     local.get $_res0
     local.set $n
     local.get $n

@@ -15,8 +15,26 @@ val result = case 42 {
 ```wasm
 (module
   (memory (export "memory") 1)
+  (start $__init_globals)
   (global $__heap_ptr (mut i32) (i32.const 256))
   (global $result (mut i32) (i32.const 0))
+  (func $__init_globals
+    (local $__case_0 i32)
+    i32.const 42
+    local.set $__case_0
+    local.get $__case_0
+    i32.const 0
+    i32.eq
+    (if (result i32)
+      (then
+    i32.const 0 ;; lambda
+      )
+      (else
+    i32.const 1
+      )
+    )
+    global.set $result
+  )
 )
 ```
 

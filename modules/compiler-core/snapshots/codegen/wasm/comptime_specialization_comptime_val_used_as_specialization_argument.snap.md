@@ -23,6 +23,7 @@ ct_0: val base = comptime 10 + 5 → 15
 (module
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
+  (global $base i32 (i32.const 15))
   (func $main
     (local $doubled i32)
     (local $tripled i32)
@@ -37,7 +38,7 @@ ct_0: val base = comptime 10 + 5 → 15
     call $scale_$0
     local.set $doubledAgain
   )
-  (func $scale_$0 (param $value i32)
+  (func $scale_$0 (param $value i32) (result i32)
     (local $factor i32)
     i32.const 2
     local.set $factor
@@ -46,7 +47,7 @@ ct_0: val base = comptime 10 + 5 → 15
     i32.mul
     return
   )
-  (func $scale_$1 (param $value i32)
+  (func $scale_$1 (param $value i32) (result i32)
     (local $factor i32)
     i32.const 3
     local.set $factor

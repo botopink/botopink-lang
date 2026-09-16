@@ -10,7 +10,7 @@ fn f() {
 (module
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  (func $f
+  (func $f (result i32)
     i32.const 0
   )
 )

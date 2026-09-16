@@ -15,10 +15,11 @@ fn getName(name: ?string) -> string {
   (data (i32.const 256) "\07\00\00\00unknown")
   (global $__heap_ptr (mut i32) (i32.const 268))
   (func $getName (param $name i32) (result i32)
+    (local $n i32)
     local.get $name
     (if (result i32)
       (then
-    global.get $n
+    local.get $n
     return
       )
       (else

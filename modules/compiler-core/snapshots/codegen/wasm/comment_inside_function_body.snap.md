@@ -13,16 +13,15 @@ fn main() {
 (module
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  (func $main
+  (func $main (result i32)
     (local $x i32)
-    drop
     i32.const 1
     local.set $x
-    drop
     i32.const 0
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
+    drop
   )
 )
 ```

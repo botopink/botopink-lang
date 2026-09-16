@@ -18,11 +18,13 @@ fn main() {
   (func $run
     unreachable
   )
-  (func $main
+  (func $main (result i32)
     call $run
+    i32.const 0
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
+    drop
   )
 )
 ```

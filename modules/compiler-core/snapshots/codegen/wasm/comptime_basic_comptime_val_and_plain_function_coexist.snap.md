@@ -21,6 +21,7 @@ ct_0: val x = comptime 1 + 2 → 3
 (module
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
+  (global $x i32 (i32.const 3))
   (func $double (param $n i32) (result i32)
     local.get $n
     i32.const 2

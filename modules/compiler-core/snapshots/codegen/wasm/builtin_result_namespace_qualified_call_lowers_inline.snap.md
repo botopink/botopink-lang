@@ -20,12 +20,13 @@ fn main() {
   (data (i32.const 256) "\08\00\00\00negative")
   (global $__heap_ptr (mut i32) (i32.const 268))
   (func $parse (param $n i32) (result i32)
+    (local $_res0 i32)
+    (local $_res1 i32)
     local.get $n
     i32.const 0
     i32.lt_s
     (if (result i32)
       (then
-    (local $_res0 i32)
     global.get $__heap_ptr
     local.set $_res0
     global.get $__heap_ptr
@@ -46,7 +47,6 @@ fn main() {
       )
     )
     drop
-    (local $_res1 i32)
     global.get $__heap_ptr
     local.set $_res1
     global.get $__heap_ptr
@@ -65,6 +65,9 @@ fn main() {
   (func $main
     (local $r i32)
     (local $_res0 i32)
+    (local $x i32)
+    (local $_res1 i32)
+    (local $_res2 i32)
     i32.const 21
     call $parse
     local.set $_res0
@@ -78,10 +81,8 @@ fn main() {
     local.get $_res0
     i32.load offset=4 ;; Ok payload
     local.set $_res0
-    (local $x i32)
     local.get $_res0
     local.set $x
-    (local $_res1 i32)
     global.get $__heap_ptr
     local.set $_res1
     global.get $__heap_ptr
@@ -100,7 +101,6 @@ fn main() {
       )
     )
     local.set $r
-    (local $_res2 i32)
     local.get $r
     local.set $_res2
     local.get $_res2
@@ -119,10 +119,49 @@ fn main() {
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
   )
+  ;; Scratch layout below the data section (which starts at 256):
+  ;;   0..8  WASI iovec   8  newline byte
+  ;;  16..32 bool text   32..64 float fraction   64..128 i32 digits
+  (func $__write_bytes (param $p i32) (param $n i32)
+    i32.const 0
+    local.get $p
+    i32.store
+    i32.const 4
+    local.get $n
+    i32.store
+    i32.const 1
+    i32.const 0
+    i32.const 1
+    i32.const 8
+    call $fd_write
+    drop
+  )
+  (func $__print_nl
+    i32.const 8
+    i32.const 10
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+  )
+  ;; separator between the arguments of a multi-argument `@print`
+  (func $__print_sp
+    i32.const 8
+    i32.const 32
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+  )
   (func $__print_i32 (param $n i32)
+    local.get $n
+    call $__print_i32_raw
+    call $__print_nl
+  )
+  (func $__print_i32_raw (param $n i32)
     (local $buf i32) (local $len i32) (local $neg i32) (local $d i32)
     (local $i i32) (local $j i32) (local $tmp i32)
-    i32.const 100
+    i32.const 64
     local.set $buf
     local.get $n
     i32.const 0
@@ -207,11 +246,14 @@ fn main() {
       )
     )
     ;; add neg sign + newline
+    ;; shift the digits one byte right to make room for '-'
+    ;; (dst = buf+1, NOT buf+len: the latter moved them `len`
+    ;;  bytes and printed -12 as -21)
     local.get $neg
     (if
       (then
         local.get $buf
-        local.get $len
+        i32.const 1
         i32.add
         local.get $buf
         local.get $len
@@ -227,26 +269,7 @@ fn main() {
     )
     local.get $buf
     local.get $len
-    i32.add
-    i32.const 10
-    i32.store8
-    local.get $len
-    i32.const 1
-    i32.add
-    local.set $len
-    ;; fd_write
-    i32.const 0
-    local.get $buf
-    i32.store
-    i32.const 4
-    local.get $len
-    i32.store
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    i32.const 8
-    call $fd_write
-    drop
+    call $__write_bytes
   )
   (func $__memmove (param $dst i32) (param $src i32) (param $len i32)
     (local $i i32)

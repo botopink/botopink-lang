@@ -20,8 +20,8 @@ fn process(x: i32) -> string {
   (data (i32.const 256) "\08\00\00\00non-zero")
   (global $__heap_ptr (mut i32) (i32.const 268))
   (func $process (param $x i32) (result i32)
-    local.get $x
     (local $__case_0 i32)
+    local.get $x
     local.set $__case_0
     local.get $__case_0
     i32.const 0

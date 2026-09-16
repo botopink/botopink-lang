@@ -18,7 +18,7 @@ fn Widget() -> Element {
 (module
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  (func $cleanup
+  (func $cleanup (result i32)
     i32.const 0
   )
   (func $effect (result i32)

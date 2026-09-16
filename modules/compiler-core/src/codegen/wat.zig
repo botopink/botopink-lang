@@ -211,6 +211,10 @@ fn emitWat(
         .@"enum", .interface, .delegate, .mod, .@"test" => {},
     };
 
+    // After every fn is emitted (their signatures are what the initialisers
+    // call) but before the module is assembled (it may intern more strings).
+    try em.emitGlobalInit();
+
     if (has_main_0) try em.emitEntrypointWrapper(main_returns_value);
 
     var aw: std.Io.Writer.Allocating = .init(alloc);
@@ -224,6 +228,11 @@ fn emitWat(
     }
 
     try aw.writer.writeAll("  (memory (export \"memory\") 1)\n");
+
+    // Runs at instantiation, ahead of `_start`: fills in the globals whose
+    // initialiser is not a constant expression.
+    if (em.deferred_globals.items.len > 0)
+        try aw.writer.writeAll("  (start $__init_globals)\n");
 
     for (em.data_segments.items) |seg| {
         try aw.writer.writeAll("  (data (i32.const ");
@@ -278,6 +287,15 @@ fn emitWat(
             \\  (func $__print_nl
             \\    i32.const 8
             \\    i32.const 10
+            \\    i32.store8
+            \\    i32.const 8
+            \\    i32.const 1
+            \\    call $__write_bytes
+            \\  )
+            \\  ;; separator between the arguments of a multi-argument `@print`
+            \\  (func $__print_sp
+            \\    i32.const 8
+            \\    i32.const 32
             \\    i32.store8
             \\    i32.const 8
             \\    i32.const 1
@@ -438,13 +456,17 @@ fn emitWat(
         // then a newline. Printing a string through `$__print_i32` used to emit
         // its *address*.
         try aw.writer.writeAll(
-            \\  (func $__print_str (param $s i32)
+            \\  (func $__print_str_raw (param $s i32)
             \\    local.get $s
             \\    i32.const 4
             \\    i32.add
             \\    local.get $s
             \\    i32.load
             \\    call $__write_bytes
+            \\  )
+            \\  (func $__print_str (param $s i32)
+            \\    local.get $s
+            \\    call $__print_str_raw
             \\    call $__print_nl
             \\  )
             \\
@@ -455,6 +477,11 @@ fn emitWat(
         // `@print(flag)` prints `true` / `false`, matching every other backend.
         try aw.writer.writeAll(
             \\  (func $__print_bool (param $b i32)
+            \\    local.get $b
+            \\    call $__print_bool_raw
+            \\    call $__print_nl
+            \\  )
+            \\  (func $__print_bool_raw (param $b i32)
             \\    local.get $b
             \\    (if
             \\      (then
@@ -479,7 +506,6 @@ fn emitWat(
             \\        call $__write_bytes
             \\      )
             \\    )
-            \\    call $__print_nl
             \\  )
             \\
         );
@@ -490,6 +516,11 @@ fn emitWat(
         // digits with the trailing zeros trimmed — the shape node prints.
         try aw.writer.writeAll(
             \\  (func $__print_f64 (param $x f64)
+            \\    local.get $x
+            \\    call $__print_f64_raw
+            \\    call $__print_nl
+            \\  )
+            \\  (func $__print_f64_raw (param $x f64)
             \\    (local $i i32) (local $frac f64) (local $d i32) (local $k i32) (local $last i32)
             \\    local.get $x
             \\    f64.const 0
@@ -574,7 +605,6 @@ fn emitWat(
             \\        call $__write_bytes
             \\      )
             \\    )
-            \\    call $__print_nl
             \\  )
             \\
         );
@@ -802,6 +832,11 @@ const Emitter = struct {
     /// Module globals: wat value type, plus the string/bool shapes.
     global_types: std.StringHashMap([]const u8),
     str_globals: std.StringHashMap(void),
+    /// Names known to hold an `[len][e0][e1]…` array blob. `loop (xs) {…}`
+    /// only walks the layout for these; anything else keeps the honest
+    /// `;; loop over unknown iterable` no-op rather than reading garbage.
+    arr_locals: std.StringHashMap(void),
+    arr_globals: std.StringHashMap(void),
     bool_globals: std.StringHashMap(void),
     /// Every emitted WAT function symbol → its signature.
     fn_sigs: std.StringHashMap(FnSig),
@@ -815,6 +850,7 @@ const Emitter = struct {
     /// method op uses to hold its receiver (and, for `map`, the rewrapped
     /// result) while the tag/payload are read out.
     res_seq: u32 = 0,
+    loop_seq: u32 = 0,
     /// Sequence counter for the `$__mem{n}` scratch pointers used when building
     /// or destructuring aggregates (tuples, arrays, records, enum payloads).
     mem_seq: u32 = 0,
@@ -847,6 +883,13 @@ const Emitter = struct {
 
     data_segments: std.ArrayListUnmanaged(DataSeg) = .empty,
     next_data_offset: u32 = 256,
+    /// Top-level `val`s whose initialiser is not a wasm constant expression
+    /// (an array/tuple/record literal, a call, a concatenation…). A wasm
+    /// `(global …)` may only be initialised by a constant, so these are
+    /// declared as zeroed mutable globals and filled in by `$__init_globals`,
+    /// which the module's `(start …)` runs before anything else. They used to
+    /// stay at the `(i32.const 0)` placeholder, so every read saw 0.
+    deferred_globals: std.ArrayListUnmanaged(ast.ValDecl) = .empty,
     uses_print: bool = false,
     uses_str_concat: bool = false,
     uses_str_concat_rt: bool = false,
@@ -880,6 +923,8 @@ const Emitter = struct {
             .bool_fns = std.StringHashMap(void).init(alloc),
             .global_types = std.StringHashMap([]const u8).init(alloc),
             .str_globals = std.StringHashMap(void).init(alloc),
+            .arr_locals = std.StringHashMap(void).init(alloc),
+            .arr_globals = std.StringHashMap(void).init(alloc),
             .bool_globals = std.StringHashMap(void).init(alloc),
             .fn_sigs = std.StringHashMap(FnSig).init(alloc),
             .globals = std.StringHashMap(void).init(alloc),
@@ -903,6 +948,8 @@ const Emitter = struct {
         self.bool_fns.deinit();
         self.global_types.deinit();
         self.str_globals.deinit();
+        self.arr_locals.deinit();
+        self.arr_globals.deinit();
         self.bool_globals.deinit();
         self.fn_sigs.deinit();
         self.globals.deinit();
@@ -913,6 +960,7 @@ const Emitter = struct {
         self.fn_return_types.deinit();
         self.reg_arena.deinit();
         self.data_segments.deinit(self.alloc);
+        self.deferred_globals.deinit(self.alloc);
         self.ext_by_name.deinit();
     }
 
@@ -955,6 +1003,7 @@ const Emitter = struct {
                     },
                     else => {},
                 }
+                if (isArrayLit(v.value.*)) try self.arr_globals.put(v.name, {});
             },
             .implement => |im| try self.registerMethodSigs(im.target, im.methods),
             .extend => |ex| try self.registerMethodSigs(ex.target, ex.methods),
@@ -1190,6 +1239,7 @@ const Emitter = struct {
         self.locals.clearRetainingCapacity();
         self.local_types.clearRetainingCapacity();
         self.str_locals.clearRetainingCapacity();
+        self.arr_locals.clearRetainingCapacity();
         self.bool_locals.clearRetainingCapacity();
         self.pending_locals.clearRetainingCapacity();
         self.cur_result = result_type orelse "i32";
@@ -1198,6 +1248,7 @@ const Emitter = struct {
         self.try_seq = 0;
         self.mem_seq = 0;
         self.res_seq = 0;
+        self.loop_seq = 0;
     }
 
     /// Register a local for the current function. Idempotent, and the *only*
@@ -1310,8 +1361,16 @@ const Emitter = struct {
                 try self.bindParamDestructure(p, try self.paramSymbol(p, i));
             }
         }
+        const tail_type: ?[]const u8 = if (self.fn_has_result and body.len > 0)
+            self.wasmTypeOf(body[body.len - 1].expr)
+        else
+            null;
         const tail = try self.emitBody(body, self.fn_has_result);
         if (self.fn_has_result and tail == .none) try self.pushZero();
+        // An implicit tail value has to meet the declared `(result …)` too.
+        if (self.fn_has_result and tail == .value) {
+            if (tail_type) |t| try self.emitConvert(t, self.cur_result);
+        }
         return buf;
     }
 
@@ -1570,6 +1629,13 @@ const Emitter = struct {
                 .pipeline => true,
             },
             .binding => false,
+            // Same statement-form test as `exprTail`/`lowerIfExpr`: a trailing
+            // `if` with two void arms leaves the function empty-handed, so it
+            // must not be given a `(result …)`.
+            .branch => |b| switch (b.kind) {
+                .if_ => |i| !ifIsStatementForm(i),
+                .tryCatch => true,
+            },
             else => true,
         };
     }
@@ -1756,6 +1822,11 @@ const Emitter = struct {
                         .record_ctor, .enum_ctor => 1,
                         else => 0,
                     };
+                    // A method call's receiver is an expression too: `[1,2].at(0)`
+                    // materialises the array into a scratch local before the
+                    // call, and skipping it here left that `local.set $__memN`
+                    // against a name no `(local …)` declared.
+                    if (cc.receiver) |recv| n += self.countMemsExpr(recv.*);
                     for (cc.args) |arg| n += self.countMemsExpr(arg.value.*);
                     for (cc.trailing) |t| n += self.countMems(t.body);
                     break :blk n;
@@ -1830,6 +1901,8 @@ const Emitter = struct {
                             try self.local_types.put(lb.name, rty);
                         }
                         if (self.isStringExpr(lb.value.*)) try self.str_locals.put(lb.name, {});
+                    if (isArrayLit(lb.value.*)) try self.arr_locals.put(lb.name, {});
+                        if (isArrayLit(lb.value.*)) try self.arr_locals.put(lb.name, {});
                         try self.declareLocal(lb.name, t);
                         try self.declareNestedLocals(lb.value.*);
                     },
@@ -1940,16 +2013,25 @@ const Emitter = struct {
         }
     }
 
+    /// The wasm type to declare a local with. Must be the *same* classifier the
+    /// lowering uses, or the value pushed and the slot it is stored into
+    /// disagree: `val taxa = valor * 0.15` lowered to an `f32.mul` but declared
+    /// `(local $taxa i32)`.
     fn inferExprType(self: *Emitter, e: ast.Expr) []const u8 {
-        _ = self;
-        return exprNumType(e);
+        return self.wasmTypeOf(e);
     }
 
     fn emitGlobalVal(self: *Emitter, v: ast.ValDecl) !void {
         const t = self.globalValType(v);
         switch (v.value.*) {
             .literal => |lit| switch (lit.kind) {
-                .numberLit => |n| {
+                // The comptime folder rewrites a folded `val` into a `numberLit`
+                // node carrying the *rendered* value, which is not always a
+                // number: `val COMMANDS = comptime ["calc", …]` arrived here as
+                // the text `["calc", "noop", "help"]` and was emitted as
+                // `(f32.const ["calc", …])` — a parse error that killed the
+                // whole module. Only take the constant path for real numerals.
+                .numberLit => |n| if (isNumericLiteral(n)) {
                     if (v.isPub) {
                         try self.fmt("  (global ${s} (export \"{s}\") {s} ({s}.const {s}))\n", .{ v.name, v.name, t, t, n });
                     } else {
@@ -1966,21 +2048,85 @@ const Emitter = struct {
             },
             else => {},
         }
-        try self.fmt("  (global ${s} (mut i32) (i32.const 0))\n", .{v.name});
+        // Not a constant expression: declare it zeroed and mutable, and fill it
+        // in from `$__init_globals` (see `emitGlobalInit`).
+        try self.fmt("  (global ${s} (mut {s}) ({s}.const 0))\n", .{ v.name, t, t });
+        try self.deferred_globals.append(self.alloc, v);
+    }
+
+    /// Emit `$__init_globals`, the body of the module's `(start …)`: every
+    /// top-level `val` whose initialiser is not a wasm constant expression is
+    /// evaluated here, in source order, before `main` runs.
+    fn emitGlobalInit(self: *Emitter) !void {
+        if (self.deferred_globals.items.len == 0) return;
+        self.resetFnState(null);
+
+        var total_mems: u32 = 0;
+        var total_trys: u32 = 0;
+        for (self.deferred_globals.items) |v| {
+            total_mems += self.countMemsExpr(v.value.*);
+            total_trys += countTrysExpr(v.value.*);
+        }
+        try self.declareScratch("_try", total_trys);
+        try self.declareScratch("__mem", total_mems);
+
+        var buf: std.Io.Writer.Allocating = .init(self.alloc);
+        defer buf.deinit();
+        {
+            const saved = self.out;
+            self.out = &buf.writer;
+            defer self.out = saved;
+            for (self.deferred_globals.items) |v| {
+                try self.lowerCoerced(v.value.*, self.globalValType(v));
+                try self.fmt("    global.set ${s}\n", .{v.name});
+            }
+        }
+
+        try self.w("  (func $__init_globals\n");
+        try self.flushFn(&buf);
+    }
+
+    /// Syntactically an array literal (through parentheses).
+    fn isArrayLit(e: ast.Expr) bool {
+        return switch (e) {
+            .collection => |col| switch (col.kind) {
+                .arrayLit => true,
+                .grouped => |inner| isArrayLit(inner.*),
+                else => false,
+            },
+            else => false,
+        };
+    }
+
+    /// Whether a `numberLit`'s text really is a wasm numeral. Guards against the
+    /// comptime folder's rendered non-numeric values (arrays, records, strings).
+    fn isNumericLiteral(n: []const u8) bool {
+        if (n.len == 0) return false;
+        var i: usize = 0;
+        if (n[0] == '-' or n[0] == '+') i = 1;
+        if (i >= n.len) return false;
+        var seen_digit = false;
+        while (i < n.len) : (i += 1) switch (n[i]) {
+            '0'...'9' => seen_digit = true,
+            '.', 'e', 'E', '+', '-', '_' => {},
+            else => return false,
+        };
+        return seen_digit;
     }
 
     /// The wat value type of a top-level `val`. Without an annotation the
     /// literal's own spelling decides, so `val PI = 3.14` is an `f64` global
     /// rather than an `(global $PI i32 (i32.const 3.14))` parse error.
     fn globalValType(self: *Emitter, v: ast.ValDecl) []const u8 {
-        _ = self;
         if (v.typeAnnotation) |ta| return watType(ta);
         return switch (v.value.*) {
             .literal => |lit| switch (lit.kind) {
-                .numberLit => |n| numLitType(n),
+                .numberLit => |n| if (isNumericLiteral(n)) numLitType(n) else "i32",
                 else => "i32",
             },
-            else => "i32",
+            // Anything the init function computes is a pointer or an i32 unless
+            // the expression is plainly a float.
+            else => self.wasmTypeOf(v.value.*),
         };
     }
 
@@ -2031,10 +2177,17 @@ const Emitter = struct {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| {
                     if (r) |val| {
-                        try self.lowerValue(val.*);
-                        // A `return <expr>` inside a void function must not
-                        // carry a value out of it.
-                        if (!self.fn_has_result) try self.w("    drop\n");
+                        // Coerce to the *declared* result: `fn area(…) -> f64`
+                        // whose body multiplies f32 literals produced an f32
+                        // and the `(result f64)` rejected the whole module.
+                        if (self.fn_has_result)
+                            try self.lowerCoerced(val.*, self.cur_result)
+                        else {
+                            // A `return <expr>` inside a void function must not
+                            // carry a value out of it.
+                            try self.lowerValue(val.*);
+                            try self.w("    drop\n");
+                        }
                     }
                     try self.w("    return\n");
                     return .terminated;
@@ -2078,14 +2231,20 @@ const Emitter = struct {
                 .localBind => |lb| {
                     try self.declareLocal(lb.name, self.inferExprType(lb.value.*));
                     if (self.isStringExpr(lb.value.*)) try self.str_locals.put(lb.name, {});
+                    if (isArrayLit(lb.value.*)) try self.arr_locals.put(lb.name, {});
                     if (self.recordTypeOfExpr(lb.value.*)) |rty| try self.local_types.put(lb.name, rty);
-                    try self.lowerValue(lb.value.*);
+                    // Coerce to the type the local was *actually* declared with:
+                    // `emitLocalDecls` runs before the body, so its guess can
+                    // differ from what lowering ends up pushing.
+                    try self.lowerCoerced(lb.value.*, self.locals.get(lb.name) orelse "i32");
                     try self.fmt("    local.set ${s}\n", .{lb.name});
                 },
                 .assign => |a| switch (a.target) {
                     .name => |name| switch (a.op) {
                         .assign => {
-                            try self.lowerValue(a.value.*);
+                            // The slot's declared type wins over the value's.
+                            try self.lowerCoerced(a.value.*, self.locals.get(name) orelse
+                                self.global_types.get(name) orelse "i32");
                             if (self.locals.contains(name))
                                 try self.fmt("    local.set ${s}\n", .{name})
                             else
@@ -2096,8 +2255,9 @@ const Emitter = struct {
                                 try self.fmt("    local.get ${s}\n", .{name})
                             else
                                 try self.fmt("    global.get ${s}\n", .{name});
-                            try self.lowerValue(a.value.*);
-                            const t = self.locals.get(name) orelse "i32";
+                            const t = self.locals.get(name) orelse
+                                self.global_types.get(name) orelse "i32";
+                            try self.lowerCoerced(a.value.*, t);
                             try self.fmt("    {s}.add\n", .{t});
                             if (self.locals.contains(name))
                                 try self.fmt("    local.set ${s}\n", .{name})
@@ -2242,8 +2402,24 @@ const Emitter = struct {
                 .grouped => |inner| self.exprTail(inner.*),
                 else => .value,
             },
+            // Mirror `lowerIfExpr`: an `if` whose branches all end in a void
+            // call is emitted in statement form and pushes nothing. Reporting
+            // `.value` here made the statement loop `drop` an empty stack and
+            // gave the enclosing `fn` a `(result i32)` it never fills.
+            .branch => |b| switch (b.kind) {
+                .if_ => |i| if (ifIsStatementForm(i)) Tail.none else Tail.value,
+                .tryCatch => .value,
+            },
             else => .value,
         };
+    }
+
+    /// The one predicate `lowerIfExpr`, `exprTail` and `fnHasResult` share:
+    /// both arms void ⇒ no `(result …)` on the `(if …)`, no value pushed.
+    fn ifIsStatementForm(i: anytype) bool {
+        if (!branchIsVoid(i.then_)) return false;
+        const els = i.else_ orelse return false;
+        return branchIsVoid(els);
     }
 
     fn bodyTail(self: *Emitter, body: []const ast.Stmt) Tail {
@@ -2282,8 +2458,18 @@ const Emitter = struct {
             .useHook => |uh| try self.lowerExpr(uh.kind.inner.*),
             .literal => |lit| switch (lit.kind) {
                 .numberLit => |n| {
-                    const t = numLitType(n);
-                    try self.fmt("    {s}.const {s}\n", .{ t, n });
+                    // The comptime folder parks *rendered* values (arrays,
+                    // records, …) in a `numberLit` node, so the text is not
+                    // always a numeral. `f32.const ["calc", …]` is a parse
+                    // error that rejects the module — intern such a value as a
+                    // string constant instead, which at least loads.
+                    if (!isNumericLiteral(n)) {
+                        const seg = try self.internString(n);
+                        try self.fmt("    i32.const {d} ;; folded non-numeric literal\n", .{seg.offset});
+                    } else {
+                        const t = numLitType(n);
+                        try self.fmt("    {s}.const {s}\n", .{ t, n });
+                    }
                 },
                 .null_ => try self.w("    i32.const 0\n"),
                 .stringLit => |s| {
@@ -2471,6 +2657,35 @@ const Emitter = struct {
         try self.w("    i32.load offset=4 ;; Ok payload\n");
     }
 
+    /// One `@print` argument. `last` decides whether the trailing newline is
+    /// emitted here (the `_raw` helpers write the value only). The printer is
+    /// picked from the argument's recovered shape — everything used to go
+    /// through `$__print_i32`, so a string printed as its *address* and a bool
+    /// as `0`/`1`.
+    fn lowerPrintArg(self: *Emitter, arg: ast.Expr, last: bool) anyerror!void {
+        if (self.isStringExpr(arg)) {
+            self.uses_print_str = true;
+            try self.lowerValue(arg);
+            try self.w(if (last) "    call $__print_str\n" else "    call $__print_str_raw\n");
+            return;
+        }
+        if (self.isBoolExpr(arg)) {
+            self.uses_print_bool = true;
+            try self.lowerCoerced(arg, "i32");
+            try self.w(if (last) "    call $__print_bool\n" else "    call $__print_bool_raw\n");
+            return;
+        }
+        const t = self.wasmTypeOf(arg);
+        if (t[0] == 'f') {
+            self.uses_print_f64 = true;
+            try self.lowerCoerced(arg, "f64");
+            try self.w(if (last) "    call $__print_f64\n" else "    call $__print_f64_raw\n");
+            return;
+        }
+        try self.lowerCoerced(arg, "i32");
+        try self.w(if (last) "    call $__print_i32\n" else "    call $__print_i32_raw\n");
+    }
+
     fn lowerBuiltin(self: *Emitter, cc: anytype) anyerror!void {
         if (std.mem.eql(u8, cc.callee, "todo") or std.mem.eql(u8, cc.callee, "panic")) {
             try self.w("    unreachable\n");
@@ -2483,31 +2698,13 @@ const Emitter = struct {
         if (std.mem.eql(u8, cc.callee, "print")) {
             self.uses_print = true;
             if (cc.args.len == 0) return;
-            const arg = cc.args[0].value.*;
-            // Pick the printer by the argument's recovered shape. Everything
-            // used to go through `$__print_i32`, so a string printed as its
-            // address and a bool as `0`/`1`.
-            if (self.isStringExpr(arg)) {
-                self.uses_print_str = true;
-                try self.lowerValue(arg);
-                try self.w("    call $__print_str\n");
-                return;
+            // `@print(a, b, c)` is one line with the parts space-separated, the
+            // shape node and erlang print. Only the first argument used to be
+            // emitted at all.
+            for (cc.args, 0..) |a, i| {
+                if (i > 0) try self.w("    call $__print_sp\n");
+                try self.lowerPrintArg(a.value.*, i + 1 == cc.args.len);
             }
-            if (self.isBoolExpr(arg)) {
-                self.uses_print_bool = true;
-                try self.lowerCoerced(arg, "i32");
-                try self.w("    call $__print_bool\n");
-                return;
-            }
-            const t = self.wasmTypeOf(arg);
-            if (t[0] == 'f') {
-                self.uses_print_f64 = true;
-                try self.lowerCoerced(arg, "f64");
-                try self.w("    call $__print_f64\n");
-                return;
-            }
-            try self.lowerCoerced(arg, "i32");
-            try self.w("    call $__print_i32\n");
             return;
         }
         if (std.mem.startsWith(u8, cc.callee, "__bp_")) {
@@ -2823,7 +3020,7 @@ const Emitter = struct {
         const arm = arms[idx];
         switch (arm.pattern) {
             .wildcard, .ident => {
-                try self.lowerExpr(arm.body);
+                try self.lowerCoerced(arm.body, self.cur_result);
             },
             .numberLit => |n| {
                 try self.fmt("    local.get ${s}\n", .{subj});
@@ -2832,7 +3029,7 @@ const Emitter = struct {
                 try self.fmt("    {s}.eq\n", .{t});
                 try self.fmt("    (if (result {s})\n", .{self.cur_result});
                 try self.w("      (then\n");
-                try self.lowerExpr(arm.body);
+                try self.lowerCoerced(arm.body, self.cur_result);
                 try self.w("      )\n");
                 try self.w("      (else\n");
                 try self.emitCaseArms(arms, subj, idx + 1);
@@ -2843,7 +3040,7 @@ const Emitter = struct {
                 _ = s;
                 try self.fmt("    local.get ${s}\n", .{subj});
                 try self.w("    drop\n");
-                try self.lowerExpr(arm.body);
+                try self.lowerCoerced(arm.body, self.cur_result);
             },
             .@"or" => |pats| {
                 try self.w("    i32.const 0\n");
@@ -2861,7 +3058,7 @@ const Emitter = struct {
                 }
                 try self.fmt("    (if (result {s})\n", .{self.cur_result});
                 try self.w("      (then\n");
-                try self.lowerExpr(arm.body);
+                try self.lowerCoerced(arm.body, self.cur_result);
                 try self.w("      )\n");
                 try self.w("      (else\n");
                 try self.emitCaseArms(arms, subj, idx + 1);
@@ -2869,7 +3066,7 @@ const Emitter = struct {
                 try self.w("    )\n");
             },
             else => {
-                try self.lowerExpr(arm.body);
+                try self.lowerCoerced(arm.body, self.cur_result);
             },
         }
     }
@@ -2904,13 +3101,20 @@ const Emitter = struct {
         return k;
     }
 
+    /// Store one 4-byte slot. A float operand is kept a float — narrowed to
+    /// `f32` so it still fits the slot — and stored with `f32.store`; feeding a
+    /// float to `i32.store` is a validation error that rejected the module.
+    /// KNOWN LIMIT: an `f64` field therefore round-trips at `f32` precision.
     fn storeSlotExpr(self: *Emitter, k: u32, offset: u32, value: ast.Expr) !void {
         try self.fmt("    local.get $__mem{d}\n", .{k});
-        try self.lowerExpr(value);
+        const vt = self.wasmTypeOf(value);
+        const is_float = std.mem.eql(u8, vt, "f32") or std.mem.eql(u8, vt, "f64");
+        if (is_float) try self.lowerCoerced(value, "f32") else try self.lowerCoerced(value, "i32");
+        const op = if (is_float) "f32.store" else "i32.store";
         if (offset == 0)
-            try self.w("    i32.store\n")
+            try self.fmt("    {s}\n", .{op})
         else
-            try self.fmt("    i32.store offset={d}\n", .{offset});
+            try self.fmt("    {s} offset={d}\n", .{ op, offset });
     }
 
     fn storeSlotConst(self: *Emitter, k: u32, offset: u32, value: i64) !void {
@@ -3355,7 +3559,22 @@ const Emitter = struct {
             },
             .collection => |col| switch (col.kind) {
                 .grouped => |inner| self.isStringExpr(inner.*),
+                // A `case`/`if` yielding strings is itself a string. Without
+                // this, `@print(case x { 0 -> "zero"; … })` went through
+                // `$__print_i32` and printed the *pointer* (`256`).
+                .case => |c| blk: {
+                    if (c.arms.len == 0) break :blk false;
+                    for (c.arms) |arm| if (!self.isStringExpr(arm.body)) break :blk false;
+                    break :blk true;
+                },
                 else => false,
+            },
+            .branch => |b| switch (b.kind) {
+                .if_ => |i| blk: {
+                    const els = i.else_ orelse break :blk false;
+                    break :blk self.bodyIsString(i.then_) and self.bodyIsString(els);
+                },
+                .tryCatch => |tc| self.isStringExpr(tc.expr.*) and self.isStringExpr(tc.handler.*),
             },
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
@@ -3371,6 +3590,12 @@ const Emitter = struct {
             .useHook => |uh| self.isStringExpr(uh.kind.inner.*),
             else => false,
         };
+    }
+
+    /// Whether a statement list yields a string (its last statement does).
+    fn bodyIsString(self: *Emitter, body: []const ast.Stmt) bool {
+        if (body.len == 0) return false;
+        return self.isStringExpr(body[body.len - 1].expr);
     }
 
     /// `a + b` on strings → a fresh length-prefixed buffer. Both operands are
@@ -3431,7 +3656,84 @@ const Emitter = struct {
             },
             else => {},
         }
-        try self.w("    i32.const 0 ;; loop over non-range\n");
+        if (self.isArrayExpr(lp.iter.*)) return self.lowerCollectionLoop(lp);
+        // Iterating a lambda-backed iterator or an opaque value has no wasm
+        // lowering yet; a no-op is at least loadable.
+        try self.w("    i32.const 0 ;; loop over unknown iterable\n");
+    }
+
+    /// `x` names an `[len][e0][e1]…` blob: an array literal, or a name bound to
+    /// one. Deliberately narrow — walking the layout of something else would
+    /// read its first word as an element count and trap.
+    fn isArrayExpr(self: *Emitter, e: ast.Expr) bool {
+        return switch (e) {
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| self.arr_locals.contains(n) or self.arr_globals.contains(n),
+                else => false,
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| self.isArrayExpr(inner.*),
+                .arrayLit => true,
+                else => false,
+            },
+            else => false,
+        };
+    }
+
+    /// `loop (xs) { item -> … }` / `loop (xs, 0..) { item, i -> … }` over the
+    /// `[len][e0][e1]…` layout: a counted walk binding each element to the loop
+    /// parameter. The loop itself yields 0 — a `yield`/`break`-accumulating
+    /// comprehension still collects nothing (see codegen/AGENTS.md).
+    fn lowerCollectionLoop(self: *Emitter, lp: anytype) anyerror!void {
+        const ra = self.reg_arena.allocator();
+        const n = self.loop_seq;
+        self.loop_seq += 1;
+        const base = try std.fmt.allocPrint(ra, "__iter{d}", .{n});
+        const cur = try std.fmt.allocPrint(ra, "__idx{d}", .{n});
+        const len = try std.fmt.allocPrint(ra, "__len{d}", .{n});
+        try self.declareLocal(base, "i32");
+        try self.declareLocal(cur, "i32");
+        try self.declareLocal(len, "i32");
+
+        const item = if (lp.params.len > 0) lp.params[0] else "__it";
+        try self.declareLocal(item, "i32");
+        const idx_param: ?[]const u8 = if (lp.params.len > 1) lp.params[1] else null;
+        if (idx_param) |ip| try self.declareLocal(ip, "i32");
+
+        try self.lowerCoerced(lp.iter.*, "i32");
+        try self.fmt("    local.set ${s}\n", .{base});
+        try self.fmt("    local.get ${s}\n", .{base});
+        try self.w("    i32.load ;; element count\n");
+        try self.fmt("    local.set ${s}\n", .{len});
+        try self.w("    i32.const 0\n");
+        try self.fmt("    local.set ${s}\n", .{cur});
+
+        try self.w("    (block $__break\n");
+        try self.w("      (loop $__continue\n");
+        try self.fmt("        local.get ${s}\n", .{cur});
+        try self.fmt("        local.get ${s}\n", .{len});
+        try self.w("        i32.ge_s\n");
+        try self.w("        br_if $__break\n");
+        try self.fmt("        local.get ${s}\n", .{base});
+        try self.fmt("        local.get ${s}\n", .{cur});
+        try self.w("        i32.const 4\n");
+        try self.w("        i32.mul\n");
+        try self.w("        i32.add\n");
+        try self.w("        i32.load offset=4\n");
+        try self.fmt("        local.set ${s}\n", .{item});
+        if (idx_param) |ip| {
+            try self.fmt("        local.get ${s}\n", .{cur});
+            try self.fmt("        local.set ${s}\n", .{ip});
+        }
+        for (lp.body) |stmt| _ = try self.emitStmt(stmt, false);
+        try self.fmt("        local.get ${s}\n", .{cur});
+        try self.w("        i32.const 1\n");
+        try self.w("        i32.add\n");
+        try self.fmt("        local.set ${s}\n", .{cur});
+        try self.w("        br $__continue\n");
+        try self.w("      )\n");
+        try self.w("    )\n");
+        try self.w("    i32.const 0\n");
     }
 
     fn lowerRangeLoop(self: *Emitter, params: []const []const u8, body: []const ast.Stmt, r: anytype) anyerror!void {
@@ -3478,7 +3780,7 @@ const Emitter = struct {
     fn wasmTypeOf(self: *Emitter, e: ast.Expr) []const u8 {
         return switch (e) {
             .literal => |lit| switch (lit.kind) {
-                .numberLit => |n| numLitType(n),
+                .numberLit => |n| if (isNumericLiteral(n)) numLitType(n) else "i32",
                 else => "i32",
             },
             .identifier => |id| switch (id.kind) {
@@ -3495,7 +3797,16 @@ const Emitter = struct {
             },
             .collection => |col| switch (col.kind) {
                 .grouped => |inner| self.wasmTypeOf(inner.*),
+                // `emitCaseArms` emits `(if (result {cur_result}))` and coerces
+                // every arm to it, so that — not `i32` — is what a `case` leaves
+                // on the stack. Saying `i32` made `return case …` in an `f64` fn
+                // append a second, bogus `f64.convert_i32_s`.
+                .case => self.cur_result,
                 else => "i32",
+            },
+            .branch => |b| switch (b.kind) {
+                .if_ => |i| if (ifIsStatementForm(i)) "i32" else self.cur_result,
+                .tryCatch => self.cur_result,
             },
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {

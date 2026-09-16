@@ -49,13 +49,14 @@ fn strict() -> @Result<i32, string> {
   (func $strict (result i32)
     (local $_try0 i32)
     (local $r i32)
+    (local $_res0 i32)
+    (local $_res1 i32)
     call $fetch
     local.set $_try0
     local.get $_try0
     i32.load ;; Result tag (0 = Ok, non-zero = Error)
     (if (result i32)
       (then
-    (local $_res0 i32)
     global.get $__heap_ptr
     local.set $_res0
     global.get $__heap_ptr
@@ -77,7 +78,6 @@ fn strict() -> @Result<i32, string> {
       )
     )
     local.set $r
-    (local $_res1 i32)
     global.get $__heap_ptr
     local.set $_res1
     global.get $__heap_ptr

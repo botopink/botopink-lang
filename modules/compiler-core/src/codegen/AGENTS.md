@@ -291,21 +291,89 @@ codegen/
 
 ### wat
 
+**The emitted module must load.** Every snapshot under
+`snapshots/codegen/wasm/` is expected to pass `wasmtime compile`; a shape the
+backend cannot lower yet emits an honest `;; …` placeholder rather than
+something that fails validation. The four rules that keep it that way:
+
+1. **Locals are hoisted.** `declareLocal` is the *only* way a `(local …)`
+   reaches the output — it queues into `pending_locals`, `renderBody` lowers the
+   body into a detached buffer, and `flushFn` writes the declarations into the
+   function header. WAT forbids a `(local …)` after the first instruction.
+   Scratch names (`$__mem{n}`, `$_try{n}`) are pre-counted by `countMems` /
+   `countTrys`, which must walk **every** sub-expression — a method call's
+   `receiver` included, or `[1,2].at(0)` sets an undeclared `$__mem0`.
+2. **One value discipline** (`Tail` = `value` | `none` | `terminated`).
+   `exprTail` is the single classifier; every arm of `lowerExpr` must agree with
+   it. `emitStmt` normalises to what the context asked for (pushes a zero, or
+   `drop`s). `ifIsStatementForm` is shared by `lowerIfExpr`, `exprTail` and
+   `fnHasResult` so a two-void-arm `if` is emitted without `(result …)`, is not
+   `drop`ped, and does not give its function a `(result …)` it never fills.
+3. **No reference to a symbol the module does not define.** `registerSymbols`
+   records every fn signature and global up front; an unresolved callee becomes
+   an `;; unresolved call: f/N` stub and a bodyless `declare fn` is skipped
+   entirely. A single dangling `call`/`global.get` rejects the whole module.
+4. **Types are recovered and coerced, never assumed.** `wasmTypeOf` recovers a
+   value type from the literal spelling, a local/param/global's declared type or
+   a callee's registered result; `lowerCoerced` + `emitConvert` meet the type
+   the context wants. `return`, the implicit fn tail and every `case` arm coerce
+   to `cur_result`; `storeSlotExpr` picks `f32.store` vs `i32.store`.
+
 - **Coverage**: numerics, locals, calls, assign, `!x`, null, `@todo`/`@panic`,
   globals, case, pipeline (`a |> f` → `call $f`), range loops
-  (`lowerRangeLoop`), `@print` via WASI `fd_write`, `_botopink_main`/`_start`.
-- **Known gaps**: lambdas lower to a `i32.const 0 ;; lambda` placeholder;
-  non-range loops emit `i32.const 0 ;; loop over non-range`; unhandled shapes
-  emit `;; unsupported …` comments.
+  (`lowerRangeLoop`) and array loops (`lowerCollectionLoop`), `@print` via WASI
+  `fd_write`, `_botopink_main`/`_start`.
+- **Known gaps** (loadable, but not yet right):
+  - lambdas as *values* lower to `i32.const 0 ;; lambda` (no table /
+    `call_indirect`); a lambda passed to `map`/`filter`/`@Result` chaining is
+    inlined instead (`inlineLambdaBody`), which is why those work;
+  - `loop` over anything that is not a range or a known array blob emits
+    `i32.const 0 ;; loop over unknown iterable` — `isArrayExpr` is deliberately
+    narrow (array literal, or a name bound to one, via `arr_locals`/
+    `arr_globals`), because walking the layout of a non-array would read its
+    first word as an element count and trap;
+  - a `loop` used as a *comprehension* (`yield`/`break <v>` accumulating into a
+    new array) runs its body but always yields `0`;
+  - `case` only discriminates numeric and `or`-of-numeric patterns; a variant
+    pattern (`Circle(r) ->`) runs the first arm and leaves its payload binding
+    unset;
+  - an `f64` aggregate field round-trips at `f32` precision (4-byte slots), and
+    is read back as a raw `i32.load` unless the field's declared type is known.
+- **Non-constant top-level `val`s** (`emitGlobalVal` → `deferred_globals`): a
+  wasm `(global …)` accepts only a constant initialiser, so an array/tuple/call
+  initialiser declares a zeroed mutable global and is evaluated in
+  `$__init_globals`, which the module's `(start …)` runs ahead of `_start`.
+  These used to stay at the `(i32.const 0)` placeholder, so every read saw `0`.
+- **Folded comptime values are not always numerals**: the comptime pass parks a
+  rendered value (an array, a record) in a `numberLit` node, so
+  `val C = comptime ["a"]` reached codegen as the text `["a"]` and emitted
+  `f32.const ["a"]` — a parse error. `isNumericLiteral` guards every
+  `{t}.const {n}` site; a non-numeric one is interned as a string constant.
 - **Booleans**: `true`/`false` are identifiers lowered to `i32.const 1`/`0`
   (never `global.get $true`, which references an undefined global).
+- **Parameters always have a name**: `paramSymbol` synthesizes `$__p{i}` for a
+  destructuring parameter the source did not name — `(param $ i32)` is a WAT
+  parse error.
 - **Entrypoint** (`emitEntrypointWrapper`): calls `$main` and `drop`s its
   result when `main` returns a value (`main_returns_value`).
 - **Aggregates in linear memory**: tuples/arrays/records/enum payloads are
   contiguous 4-byte slots in the bump heap (`$__heap_ptr`); a type registry from
   `record`/`enum` decls distinguishes construction from calls; construction
   stashes the base in a `$__mem{n}` local; enum payloads are `[tag, …fields]`.
-- **Strings**: literal `+` → `$__str_concat`, literal `==`/`!=` → `$__str_eq`.
+- **Strings** are length-prefixed: the value is a pointer to a 4-byte length
+  word followed by the bytes (`internString`). `+` → `$__str_concat`, `==`/`!=`
+  → `$__str_eq`, slicing → `$__str_slice`. These fire on *any* string-typed
+  operand (`isStringExpr`: literals, `string` params/locals/globals, fns
+  declared `-> string`), not only on literal-vs-literal — when they fired only
+  for literals, `s == "yes"` compared **pointers** (passing by accident because
+  identical literals share an address) and `a + b` added them.
+- **`@print` picks a helper by operand type**: `$__print_str` writes the bytes
+  of a length-prefixed string, `$__print_bool` writes `true`/`false`,
+  `$__print_f64` writes an integer part plus up to 6 trimmed fraction digits,
+  and `$__print_i32` formats digits into scratch memory. Each is emitted only
+  when used (`uses_print_*`). Scratch layout below the data section (which
+  starts at 256): `0..8` the WASI iovec, `8` the newline byte, `16..32` the bool
+  text, `32..64` the float fraction, `64..128` the i32 digits.
 - **Methods**: `implement`/`extend` methods (`emitExtensionMethods`) and record
   methods (`emitInterfaceMethods`) emit as `$<owner>_<method>` with `self` as a
   real `i32` param (synthesized when the body references `self` without

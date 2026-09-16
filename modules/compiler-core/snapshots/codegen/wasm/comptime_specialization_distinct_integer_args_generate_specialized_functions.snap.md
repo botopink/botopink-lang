@@ -30,7 +30,7 @@ fn calculate() {
     call $multiply_$0
     local.set $doubleAgain
   )
-  (func $multiply_$0 (param $x i32)
+  (func $multiply_$0 (param $x i32) (result i32)
     (local $factor i32)
     i32.const 2
     local.set $factor
@@ -39,7 +39,7 @@ fn calculate() {
     i32.mul
     return
   )
-  (func $multiply_$1 (param $x i32)
+  (func $multiply_$1 (param $x i32) (result i32)
     (local $factor i32)
     i32.const 3
     local.set $factor

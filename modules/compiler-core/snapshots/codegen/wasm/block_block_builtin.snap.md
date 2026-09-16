@@ -21,13 +21,14 @@ fn main() -> string {
   (func $main (result i32)
     (local $input i32)
     (local $status i32)
+    (local $calculo i32)
     i32.const 42
     local.set $input
     local.get $input
     i32.const 2
     i32.mul
     local.set $calculo
-    global.get $calculo
+    local.get $calculo
     i32.const 100
     i32.gt_s
     (if (result i32)

@@ -25,10 +25,11 @@ fn main() {
   (data (i32.const 272) "\03\00\00\00OK:")
   (global $__heap_ptr (mut i32) (i32.const 280))
   (func $fetch (param $ok i32) (result i32)
+    (local $_res0 i32)
+    (local $_res1 i32)
     local.get $ok
     (if (result i32)
       (then
-    (local $_res0 i32)
     global.get $__heap_ptr
     local.set $_res0
     global.get $__heap_ptr
@@ -49,7 +50,6 @@ fn main() {
       )
     )
     drop
-    (local $_res1 i32)
     global.get $__heap_ptr
     local.set $_res1
     global.get $__heap_ptr
@@ -68,40 +68,81 @@ fn main() {
   (func $main
     (local $r1 i32)
     (local $msg1 i32)
+    (local $v i32)
+    (local $e i32)
     (local $r2 i32)
     (local $msg2 i32)
+    (local $__case_0 i32)
+    (local $__case_1 i32)
     i32.const 1
     call $fetch
     local.set $r1
     local.get $r1
-    (local $__case_0 i32)
     local.set $__case_0
     i32.const 272
-    global.get $v
-    i32.add
+    local.get $v
+    call $__str_concat
     local.set $msg1
     local.get $msg1
-    call $__print_i32
+    call $__print_str
     i32.const 0
     call $fetch
     local.set $r2
     local.get $r2
-    (local $__case_1 i32)
     local.set $__case_1
     i32.const 272
-    global.get $v
-    i32.add
+    local.get $v
+    call $__str_concat
     local.set $msg2
     local.get $msg2
-    call $__print_i32
+    call $__print_str
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
   )
+  ;; Scratch layout below the data section (which starts at 256):
+  ;;   0..8  WASI iovec   8  newline byte
+  ;;  16..32 bool text   32..64 float fraction   64..128 i32 digits
+  (func $__write_bytes (param $p i32) (param $n i32)
+    i32.const 0
+    local.get $p
+    i32.store
+    i32.const 4
+    local.get $n
+    i32.store
+    i32.const 1
+    i32.const 0
+    i32.const 1
+    i32.const 8
+    call $fd_write
+    drop
+  )
+  (func $__print_nl
+    i32.const 8
+    i32.const 10
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+  )
+  ;; separator between the arguments of a multi-argument `@print`
+  (func $__print_sp
+    i32.const 8
+    i32.const 32
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+  )
   (func $__print_i32 (param $n i32)
+    local.get $n
+    call $__print_i32_raw
+    call $__print_nl
+  )
+  (func $__print_i32_raw (param $n i32)
     (local $buf i32) (local $len i32) (local $neg i32) (local $d i32)
     (local $i i32) (local $j i32) (local $tmp i32)
-    i32.const 100
+    i32.const 64
     local.set $buf
     local.get $n
     i32.const 0
@@ -186,11 +227,14 @@ fn main() {
       )
     )
     ;; add neg sign + newline
+    ;; shift the digits one byte right to make room for '-'
+    ;; (dst = buf+1, NOT buf+len: the latter moved them `len`
+    ;;  bytes and printed -12 as -21)
     local.get $neg
     (if
       (then
         local.get $buf
-        local.get $len
+        i32.const 1
         i32.add
         local.get $buf
         local.get $len
@@ -206,26 +250,7 @@ fn main() {
     )
     local.get $buf
     local.get $len
-    i32.add
-    i32.const 10
-    i32.store8
-    local.get $len
-    i32.const 1
-    i32.add
-    local.set $len
-    ;; fd_write
-    i32.const 0
-    local.get $buf
-    i32.store
-    i32.const 4
-    local.get $len
-    i32.store
-    i32.const 1
-    i32.const 0
-    i32.const 1
-    i32.const 8
-    call $fd_write
-    drop
+    call $__write_bytes
   )
   (func $__memmove (param $dst i32) (param $src i32) (param $len i32)
     (local $i i32)
@@ -254,6 +279,66 @@ fn main() {
         br $loop
       )
     )
+  )
+  (func $__print_str_raw (param $s i32)
+    local.get $s
+    i32.const 4
+    i32.add
+    local.get $s
+    i32.load
+    call $__write_bytes
+  )
+  (func $__print_str (param $s i32)
+    local.get $s
+    call $__print_str_raw
+    call $__print_nl
+  )
+  (func $__str_concat (param $a i32) (param $b i32) (result i32)
+    (local $base i32) (local $alen i32) (local $blen i32)
+    local.get $a
+    i32.load
+    local.set $alen
+    local.get $b
+    i32.load
+    local.set $blen
+    global.get $__heap_ptr
+    local.set $base
+    ;; bump heap by 4 (length prefix) + alen + blen
+    global.get $__heap_ptr
+    i32.const 4
+    local.get $alen
+    i32.add
+    local.get $blen
+    i32.add
+    i32.add
+    global.set $__heap_ptr
+    ;; store combined length prefix
+    local.get $base
+    local.get $alen
+    local.get $blen
+    i32.add
+    i32.store
+    ;; copy a's bytes: base+4 <- a+4
+    local.get $base
+    i32.const 4
+    i32.add
+    local.get $a
+    i32.const 4
+    i32.add
+    local.get $alen
+    memory.copy
+    ;; copy b's bytes: base+4+alen <- b+4
+    local.get $base
+    i32.const 4
+    i32.add
+    local.get $alen
+    i32.add
+    local.get $b
+    i32.const 4
+    i32.add
+    local.get $blen
+    memory.copy
+    local.get $base
   )
 )
 ```

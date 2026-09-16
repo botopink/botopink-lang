@@ -15,6 +15,7 @@ fn range(a: i32, b: i32) -> @Generator<i32> {
   ;; #[@future] / #[@asyncGenerator] — eager lowering
   (func $range (param $a i32) (param $b i32) (result i32)
     local.get $a
+    drop
     local.get $b
   )
 )

@@ -15,6 +15,7 @@ fn stream() -> @AsyncIterator<i32, string> {
   ;; #[@future] / #[@asyncGenerator] — eager lowering
   (func $stream (result i32)
     i32.const 1
+    drop
     i32.const 2
   )
 )

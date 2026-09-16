@@ -22,6 +22,10 @@ fn describe() -> string {
   (func $describe (result i32)
     (local $__mem0 i32)
     (local $items i32)
+    (local $x i32)
+    (local $first i32)
+    (local $rest i32)
+    (local $__case_0 i32)
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
@@ -43,7 +47,6 @@ fn describe() -> string {
     local.get $__mem0
     local.set $items
     local.get $items
-    (local $__case_0 i32)
     local.set $__case_0
     i32.const 280
     return

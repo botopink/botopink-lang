@@ -28,9 +28,7 @@ fn apply(s: State<i32>) -> i32 { s.set(s.value); return s.value; }
     return
   )
   (func $apply (param $s i32) (result i32)
-    local.get $s
-    i32.load ;; .value
-    call $set
+    i32.const 0 ;; unresolved call: set/1
     drop
     local.get $s
     i32.load ;; .value

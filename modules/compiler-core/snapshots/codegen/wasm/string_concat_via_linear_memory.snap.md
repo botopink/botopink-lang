@@ -13,15 +13,19 @@ fn greeting() -> string {
   (data (i32.const 268) "\05\00\00\00World")
   (global $__heap_ptr (mut i32) (i32.const 280))
   (func $greeting (result i32)
-    i32.const 256 ;; "Hello, " ptr
-    i32.const 7 ;; "Hello, " len
-    i32.const 268 ;; "World" ptr
-    i32.const 5 ;; "World" len
+    i32.const 256
+    i32.const 268
     call $__str_concat
     return
   )
-  (func $__str_concat (param $a i32) (param $alen i32) (param $b i32) (param $blen i32) (result i32)
-    (local $base i32)
+  (func $__str_concat (param $a i32) (param $b i32) (result i32)
+    (local $base i32) (local $alen i32) (local $blen i32)
+    local.get $a
+    i32.load
+    local.set $alen
+    local.get $b
+    i32.load
+    local.set $blen
     global.get $__heap_ptr
     local.set $base
     ;; bump heap by 4 (length prefix) + alen + blen

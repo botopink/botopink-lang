@@ -30,11 +30,11 @@ fn main() {
     call $coerce_$0
     local.set $c
   )
-  (func $coerce_$0 (param $x i32)
+  (func $coerce_$0 (param $x i32) (result i32)
     local.get $x
     return
   )
-  (func $coerce_$1 (param $x i32)
+  (func $coerce_$1 (param $x i32) (result i32)
     local.get $x
     return
   )

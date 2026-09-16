@@ -14,10 +14,7 @@ record Pipeline {
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
   (func $Pipeline_run (param $self i32) (param $f i32) (result i32)
-    local.get $self
-    i32.load ;; .items
-    local.get $f
-    call $map
+    i32.const 0 ;; unresolved call: map/2
     return
   )
 )
