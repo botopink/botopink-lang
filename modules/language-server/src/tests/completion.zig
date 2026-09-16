@@ -182,8 +182,14 @@ test "completion: item detail shows inferred type" {
 // Ref: `do_not_show_completions_when_typing_a_number`
 // The binding "result_2" exists and contains "2" in the name, but the cursor is over
 // the literal `2` (not an identifier), so no items are suggested.
+//
+// The guard has two arms (`engine.zig`, "guard: cursor on a numeric literal"):
+// Case B — the prefix is empty and the char *at* the cursor is a digit — is this
+// test; Case A — the prefix itself starts with a digit, i.e. the caret is
+// *after* the digit — is C7b below. One test per arm, so neither arm can rot
+// unnoticed behind the other.
 
-test "completion: number literal at cursor returns empty" {
+test "completion: caret before a number literal returns empty" {
     const gpa = std.testing.allocator;
     // "result_2" is a valid binding — intentionally contains "2" in the name
     // to confirm the guard runs before the prefix filter.
@@ -201,6 +207,38 @@ test "completion: number literal at cursor returns empty" {
     // 0123456789012345
     // col 15 = '2', source[offset] = '2' → numeric guard → empty
     const cursor = h.pos(0, 15);
+    const items = try engine.completion(gpa, source, cursor, bindings);
+    defer {
+        for (items) |it| {
+            gpa.free(it.label);
+            if (it.detail) |d| gpa.free(d);
+        }
+        gpa.free(items);
+    }
+
+    try std.testing.expectEqual(@as(usize, 0), items.len);
+    try snap.assertCompletion(gpa, "completion_before_number", source, cursor, items);
+}
+
+// ── C7b — caret *after* a digit (Case A of the numeric guard) ──
+
+test "completion: caret after a number literal returns empty" {
+    const gpa = std.testing.allocator;
+    // Same binding as C7: `result_2` would match the prefix `2` on a substring
+    // filter, so an empty list here is the guard's doing, not the filter's.
+    const source =
+        \\val result_2 = 2;
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    // val result_2 = 2;
+    // 0         1
+    // 0123456789012345
+    // col 16 = right after the literal `2`, so `prefixAt` yields "2" → Case A.
+    const cursor = h.pos(0, 16);
     const items = try engine.completion(gpa, source, cursor, bindings);
     defer {
         for (items) |it| {
@@ -722,6 +760,14 @@ test "completion: decorator body lists params/locals/closure binder (R1)" {
     try std.testing.expect(hasLabel(items, "decl")); // comptime parameter
     try std.testing.expect(hasLabel(items, "args")); // `var` local
     try std.testing.expect(hasLabel(items, "f")); //    closure binder
+
+    // Documented gap: the enclosing `component` fn is in scope but is NOT
+    // offered. The fixture does not type-check (`items` is unbound), so
+    // `bindings()` is empty and the token walk is all the list has — it sees
+    // locals, never module-level decls. The snapshot below pins the degraded
+    // answer, so this assertion states which half of it is the gap; when the
+    // fallback learns to merge module-level decls, it must be inverted.
+    try std.testing.expect(!hasLabel(items, "component"));
     try snap.assertCompletion(gpa, "completion_decorator_body_locals", source, cursor, items);
 }
 
@@ -747,6 +793,7 @@ test "completion: decorator-bearing record still lists bindings (R2)" {
         \\#[service]
         \\record PostService { name: string, count: i32 }
         \\
+        \\val other = 1;
         \\val usePost = PostService;
     ;
 
@@ -755,7 +802,7 @@ test "completion: decorator-bearing record still lists bindings (R2)" {
     const bindings = c.bindings() orelse &[_]h.comptime_pipeline.TypedBinding{};
 
     // cursor at the start of `PostService` on the last line (empty prefix)
-    const cursor = h.pos(7, 14);
+    const cursor = h.pos(8, 14);
     const items = try engine.completion(gpa, source, cursor, bindings);
     defer {
         for (items) |it| {
@@ -768,5 +815,16 @@ test "completion: decorator-bearing record still lists bindings (R2)" {
     // Not blanked: the record (and the marker fn) are still completable.
     try std.testing.expect(items.len > 0);
     try std.testing.expect(hasLabel(items, "PostService"));
+    // `other` is an unrelated `val`, declared before the cursor and never
+    // touched by the decorator. It exists to tell two readings of the snapshot
+    // apart: "`usePost` is absent because it is the binding being defined" vs
+    // "the degraded path drops every `val`". The answer is the second one —
+    // only `fn`/`record` decls survive here, so `other` is absent too. That is
+    // a gap in the typed bindings the comptime pipeline hands back when the
+    // spliced re-analysis fails (`compiler.zig:bindingsFor` just forwards
+    // `outcome.ok.bindings`), i.e. outside the language server. Inverted the day
+    // the pipeline keeps `val` bindings on the degraded path.
+    try std.testing.expect(!hasLabel(items, "other"));
+    try std.testing.expect(!hasLabel(items, "usePost"));
     try snap.assertCompletion(gpa, "completion_decorator_record", source, cursor, items);
 }

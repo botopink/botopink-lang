@@ -52,3 +52,18 @@ Keep these boundaries strict:
 When adding a new LSP method: add the dispatch arm in `server.zig`, implement it
 in `engine.zig`, add a test in [`tests/`](tests/AGENTS.md) (register it in
 `test_root.zig`) and a snapshot under `../snapshots/lsp/`.
+
+## Gotchas
+
+- `protocol.zig`'s `SemanticTokenTypes` / `SemanticTokenModifiers` indices **are**
+  the legend advertised to the client. Append only — never reorder, and extend
+  the matching `legend` array in the same edit (`async`, bit 3, is the newest
+  modifier: it marks effect fns).
+- `engine.documentSymbols` returns owned names **and owned children**; free a
+  result with `engine.freeSymbol` per symbol, never `gpa.free(sym.name)` alone,
+  or every child leaks.
+- `semanticTokens` is a single token walk with a little state: `fn_params` /
+  `fn_generics` (names in scope for the body being scanned, cleared when it
+  closes), `generic_depth` (only a `<` right after a *declaration name* opens a
+  type-parameter list — everywhere else `<` stays a comparison), and
+  `pending_effect_fn` (set by `*` or a `#[@effect]` attribute before the `fn`).

@@ -7,10 +7,11 @@ fn service(comptime decl: @Decl) {
 #[service]
 record PostService { name: string, count: i32 }
 
+val other = 1;
 val usePost = PostService;
               ↑
 ```
 
------ COMPLETION at (line 7, char 14)
+----- COMPLETION at (line 8, char 14)
 service  [Function]  detail: fn(Decl) -> void
 PostService  [Struct]  detail: record { name: string, count: i32 }

@@ -15,7 +15,7 @@ test "symbols: empty source returns no symbols" {
     const tokens = try h.tokenize(arena.allocator(), "");
     const syms = try engine.documentSymbols(gpa, tokens);
     defer {
-        for (syms) |s| gpa.free(s.name);
+        for (syms) |s| engine.freeSymbol(gpa, s);
         gpa.free(syms);
     }
 
@@ -36,7 +36,7 @@ test "symbols: single val binding" {
     const tokens = try h.tokenize(arena.allocator(), source);
     const syms = try engine.documentSymbols(gpa, tokens);
     defer {
-        for (syms) |s| gpa.free(s.name);
+        for (syms) |s| engine.freeSymbol(gpa, s);
         gpa.free(syms);
     }
 
@@ -58,7 +58,7 @@ test "symbols: single fn binding" {
     const tokens = try h.tokenize(arena.allocator(), source);
     const syms = try engine.documentSymbols(gpa, tokens);
     defer {
-        for (syms) |s| gpa.free(s.name);
+        for (syms) |s| engine.freeSymbol(gpa, s);
         gpa.free(syms);
     }
 
@@ -80,7 +80,7 @@ test "symbols: record declaration" {
     const tokens = try h.tokenize(arena.allocator(), source);
     const syms = try engine.documentSymbols(gpa, tokens);
     defer {
-        for (syms) |s| gpa.free(s.name);
+        for (syms) |s| engine.freeSymbol(gpa, s);
         gpa.free(syms);
     }
 
@@ -101,7 +101,7 @@ test "symbols: enum declaration" {
     const tokens = try h.tokenize(arena.allocator(), source);
     const syms = try engine.documentSymbols(gpa, tokens);
     defer {
-        for (syms) |s| gpa.free(s.name);
+        for (syms) |s| engine.freeSymbol(gpa, s);
         gpa.free(syms);
     }
 
@@ -124,7 +124,7 @@ test "symbols: multiple declarations in order" {
     const tokens = try h.tokenize(arena.allocator(), source);
     const syms = try engine.documentSymbols(gpa, tokens);
     defer {
-        for (syms) |s| gpa.free(s.name);
+        for (syms) |s| engine.freeSymbol(gpa, s);
         gpa.free(syms);
     }
 
@@ -147,7 +147,7 @@ test "symbols: selectionRange.start.line matches declaration line" {
     const tokens = try h.tokenize(arena.allocator(), source);
     const syms = try engine.documentSymbols(gpa, tokens);
     defer {
-        for (syms) |s| gpa.free(s.name);
+        for (syms) |s| engine.freeSymbol(gpa, s);
         gpa.free(syms);
     }
 

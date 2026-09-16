@@ -11,11 +11,10 @@ registered in [`../test_root.zig`](../test_root.zig) — add new suites there.
 ```text
 tests/
 ├── AGENTS.md
-├── root.zig              ← older partial aggregator (not used by the build — see ../test_root.zig)
 ├── _warmup.zig           ← runs first: lazy-inits compiler-core's stdlib template
 ├── helpers.zig           ← assertion + setup helpers (compile, compileEval, multi-module)
-├── snapshot.zig          ← snapshot read/write
-├── snapshot_test.zig     ← shared snapshot test harness
+├── snapshot.zig          ← snapshot read/write + the per-request renderers
+├── snapshot_test.zig     ← unit tests for `snapshot.appendSourceWithCursor`
 ├── messages.zig          ← JSON-RPC frame reader (`messages.readMessage`)
 ├── diagnostics.zig       ← publishDiagnostics
 ├── formatting.zig        ← textDocument/formatting
@@ -69,3 +68,35 @@ Suites that touch **disk** (paths resolved against the test cwd,
   promote it or fix the underlying bug. `*.snap.md.new` is git-ignored.
 - Promote only intentional protocol/output changes; surprise changes usually
   signal a regression.
+- Verify a changed response against the real server before promoting: `zig build`
+  then drive `zig-out/bin/botopink-lsp` over stdio from a scratch project. LSP
+  positions are 0-based — recount the cursor rather than trusting the fixture's
+  comment.
+
+## What the renderers print (spec 06, wave "language server")
+
+A snapshot has to show what the request actually returns, or a test passes on a
+rendering that hides the bug:
+
+- `assertDocumentSymbols` prints `range`, `selectionRange` **and** the children,
+  indented — an enum's variants and a record's fields are part of the outline.
+- `assertCodeActions` prints each action's `documentChanges` edits (range →
+  `newText`), not just kind and title.
+- `assertSemanticTokens` prints the decoded tokens **and** the delta-encoded
+  wire payload (`engine.encodeSemanticTokens`), so an encoding regression shows.
+- `assertDefinitionIn` underlines the result in the file its URI names: pass the
+  dependency's source as a `TargetSource` for a cross-module result. Plain
+  `assertDefinition` underlines the document under the cursor only.
+
+## Tests without a snapshot, on purpose
+
+Some behaviour is an invariant a rendered file cannot state. These tests assert
+it inline and deliberately write no snapshot — do not "restore" one:
+
+- `definition.zig` "returned Location carries the correct URI" (the rendering
+  duplicated `definition_val_usage`; the URI round-trip is the point).
+- `references.zig` "returned ranges match token positions" (a subset of
+  `references_include_decl`; every range is checked end-included instead).
+- `signature_help.zig` "same-typed params get distinct, locatable labels"
+  (`ParameterInformation.label` is highlighted by substring, so two same-typed
+  parameters must not share a label).

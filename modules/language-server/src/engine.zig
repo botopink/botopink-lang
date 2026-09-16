@@ -3048,6 +3048,15 @@ pub fn semanticTokens(
     var in_attribute = false; // between `#[` and its `]`
     var pending_effect_fn = false; // `#[@iterator]` / `*` seen before a `fn`
 
+    // Generic type parameters of the enclosing declaration (`fn q<T>(…)`,
+    // `record Box<T> { … }`). A `T` in the signature or in the body names a
+    // type, not a value, so it must not fall through to `variable`. Cleared
+    // together with `fn_params`.
+    var fn_generics: std.StringHashMapUnmanaged(void) = .empty;
+    defer fn_generics.deinit(arena);
+    var generic_pending = false; // a declaration name whose next token is `<`
+    var generic_depth: u32 = 0; // > 0 while inside that `<…>` list
+
     var i: usize = 0;
     while (i < tokens.len) : (i += 1) {
         const tok = tokens[i];
@@ -3079,6 +3088,7 @@ pub fn semanticTokens(
                 if (fn_body_depth) |d| {
                     if (containers.items.len + 1 == d) {
                         fn_params.clearRetainingCapacity();
+                        fn_generics.clearRetainingCapacity();
                         fn_body_depth = null;
                     }
                 }
@@ -3103,6 +3113,22 @@ pub fn semanticTokens(
                         awaiting_fn_body = true;
                     }
                 }
+                prev_kind = tok.kind;
+                continue;
+            },
+            // `<` / `>` only open a generic parameter list right after a
+            // declaration name; everywhere else they are comparison operators
+            // and stay unclassified (as they were before).
+            .lessThan => {
+                if (generic_pending) {
+                    generic_depth = 1;
+                    generic_pending = false;
+                } else if (generic_depth > 0) generic_depth += 1;
+                prev_kind = tok.kind;
+                continue;
+            },
+            .greaterThan => {
+                if (generic_depth > 0) generic_depth -= 1;
                 prev_kind = tok.kind;
                 continue;
             },
@@ -3146,9 +3172,12 @@ pub fn semanticTokens(
         if (isKeywordKind(tok.kind)) {
             if (tok.kind == .@"fn") {
                 expect_fn_name = true;
-                // A new signature starts: forget the previous fn's params (a
-                // body-less declaration never closes a body block).
-                if (fn_body_depth == null) fn_params.clearRetainingCapacity();
+                // A new signature starts: forget the previous fn's params and
+                // type params (a body-less declaration never closes a body).
+                if (fn_body_depth == null) {
+                    fn_params.clearRetainingCapacity();
+                    fn_generics.clearRetainingCapacity();
+                }
             }
             if (tok.kind == .selfType) {
                 try emitSem(arena, &out, tok, proto.SemanticTokenTypes.type_, proto.SemanticTokenModifiers.defaultLibrary);
@@ -3191,6 +3220,24 @@ pub fn semanticTokens(
                 continue;
             }
 
+            // Inside a declaration's `<…>` list every name is a type: the first
+            // of each entry declares a type parameter (`<T>`, `<T, U>`), the
+            // rest name existing types (a constraint, or a nested application).
+            if (generic_depth > 0) {
+                const declares = pk == .lessThan or pk == .comma;
+                if (declares) try fn_generics.put(arena, tok.lexeme, {});
+                try emitSem(
+                    arena,
+                    &out,
+                    tok,
+                    proto.SemanticTokenTypes.type_,
+                    if (declares) proto.SemanticTokenModifiers.declaration else 0,
+                );
+                prev_kind = tok.kind;
+                saw_comptime = false;
+                continue;
+            }
+
             var type_idx: u32 = proto.SemanticTokenTypes.variable;
             var mods: u32 = 0;
 
@@ -3204,6 +3251,7 @@ pub fn semanticTokens(
                 mods |= proto.SemanticTokenModifiers.declaration;
                 if (pending_effect_fn) mods |= proto.SemanticTokenModifiers.@"async";
                 pending_effect_fn = false;
+                generic_pending = nk == .lessThan;
             } else if (awaiting_fn_body and pk == .colon) {
                 // `fn counter() -> @Iterator<i32> :gen { … }` — the trailing
                 // `:label` of an effect fn is syntax, not a binding.
@@ -3216,12 +3264,18 @@ pub fn semanticTokens(
                     else => proto.SemanticTokenTypes.variable,
                 };
                 mods |= proto.SemanticTokenModifiers.declaration;
+                generic_pending = nk == .lessThan;
             } else if (pk == .dot or pk == .questionDot) {
                 type_idx = if (nk == .leftParenthesis) proto.SemanticTokenTypes.method else proto.SemanticTokenTypes.property;
             } else if (in_params and (pk == .leftParenthesis or pk == .comma or pk == .@"comptime")) {
                 type_idx = proto.SemanticTokenTypes.parameter;
                 if (saw_comptime) mods |= proto.SemanticTokenModifiers.readonly;
                 try fn_params.put(arena, tok.lexeme, {});
+            } else if (paren_depth > 0 and nk == .colon and (pk == .leftParenthesis or pk == .comma)) {
+                // Named argument at a call site: `Span(start: 0, end: 6)`. The
+                // label names the callee's parameter, so `parameter` — not a
+                // binding of the caller's.
+                type_idx = proto.SemanticTokenTypes.parameter;
             } else if (container_top == .@"enum" and paren_depth == 0 and (pk == .leftBrace or pk == .comma)) {
                 type_idx = proto.SemanticTokenTypes.enumMember;
             } else if (container_top == .record and paren_depth == 0 and nk == .colon and
@@ -3231,13 +3285,22 @@ pub fn semanticTokens(
                 type_idx = proto.SemanticTokenTypes.property;
             } else if (fn_params.contains(tok.lexeme)) {
                 type_idx = proto.SemanticTokenTypes.parameter;
+            } else if (fn_generics.contains(tok.lexeme)) {
+                // A use of the enclosing declaration's type parameter.
+                type_idx = proto.SemanticTokenTypes.type_;
             } else if (lookupCategory(bindings, tok.lexeme)) |cat| {
                 type_idx = cat;
             } else if (isPrimitiveType(tok.lexeme)) {
                 type_idx = proto.SemanticTokenTypes.type_;
                 mods |= proto.SemanticTokenModifiers.defaultLibrary;
             } else if (nk == .leftParenthesis) {
-                type_idx = proto.SemanticTokenTypes.function;
+                // An unresolved callee. Botopink functions are camelCase by
+                // convention, so a PascalCase one is a record constructor —
+                // `CustomNode(…)` / `Span(…)` name a type, not a function.
+                type_idx = if (std.ascii.isUpper(tok.lexeme[0]))
+                    proto.SemanticTokenTypes.type_
+                else
+                    proto.SemanticTokenTypes.function;
             }
 
             try emitSem(arena, &out, tok, type_idx, mods);

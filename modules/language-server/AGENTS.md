@@ -41,17 +41,22 @@ The server handles `initialize` / `shutdown`, `didOpen` / `didChange` /
   `definition` (same-file, cross-module, embedded `std` modules, plus type-aware
   member access — see below),
   `typeDefinition`,
-  `documentSymbol` (hierarchical, incl. `test "name"` blocks),
+  `documentSymbol` (hierarchical, incl. `test "name"` blocks; `val X = enum/record/interface`
+  reports the container kind, not `Variable`),
   `completion` (prefix + dot-trigger + std members + builtin interface methods
   on primitive/array/string receivers + labeled args + sortText + module names),
   `references` (cross-module), `rename` (cross-module multi-file, with
   `prepareRename`, rejects keywords),
-  `signatureHelp` (incl. builtin interface methods, `self` dropped),
+  `signatureHelp` (incl. builtin interface methods, `self` dropped; parameter
+  labels are `name: Type`, never the bare type — see below),
   `inlayHint` (inferred `val` types, call-site parameter names, lambda parameter
   types; `workspace/inlayHint/refresh` on edits),
   `semanticTokens/full` + `semanticTokens/range` (legend distinguishing builtin
   types, interface methods vs free fns, the `*fn` effect marker, comptime params,
-  enum members; plus a sub-language overlay inside string literals — see below),
+  enum members, record fields (`property`), generic type parameters, parameter
+  *uses* inside the body, named-argument labels and `true`/`false`; effect fns
+  (`#[@iterator]`, `*fn`) carry the `async` modifier; plus a sub-language overlay
+  inside string literals — see below),
   `codeAction` (add type annotation, remove unused import, add missing case
   patterns, add missing import),
   `foldingRange` (incl. `test` blocks).
@@ -144,6 +149,21 @@ interface; integer literals default to `I32`, `true`/`false` to `Bool`.
 `signatureHelp` drops the leading `self`. Gotcha: an integer *literal* receiver
 (`42.`) only surfaces through the text-based engine path — the lexer reads `42.`
 as a float, so the editor reaches this via a variable (`val n = 42; n.`).
+
+A member's `detail` is a **single-line signature** sliced out of that embedded
+source by `collectInterfaceMembers`. The slice stops at a comment, at
+`default`/`pub`/`private`/`declare`, at a `#[` attribute, at the next `fn`/`val`,
+and at any token on a later line; a `default fn` body is skipped whole, so its
+locals are not mistaken for members. `#` only ends a signature when it opens
+`#[` — a bare `#` is the tuple sigil in `Array<#(T, U)>`. Members whose first
+parameter is not `self` (`Array.range`, `Array.repeat`) are associated fns and
+are hidden from instance completion (`xs.`).
+
+`signatureHelp` builds each `ParameterInformation.label` as `name: Type`, with
+the names recovered from the `fn` declaration in the document
+(`fnDeclParamNames`). Clients highlight a parameter by locating its label as a
+**substring** of the signature label, so two bare `i32` labels would make the
+client underline the first parameter for both.
 
 ### Sub-languages (`@ExprCustom`)
 
