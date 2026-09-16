@@ -56,12 +56,18 @@ test "js: comptime folding ---- multiplication binds tighter than addition" {
     );
 }
 
+// `greeting` is a declared module-level runtime `val`, so the error is the
+// comptime scope rule (a comptime block may not read a runtime binding), not
+// an undeclared name.
 test "js: comptime validation ---- runtime identifier inside comptime raises error" {
     try h.assertJsError(std.testing.allocator, @src(),
+        \\val greeting = "hi";
         \\val msg = comptime {
         \\    break greeting;
         \\};
-        \\@print(msg);
+        \\fn main() {
+        \\    @print(msg);
+        \\}
     );
 }
 
@@ -80,6 +86,8 @@ test "js: comptime val ---- comptime val folds arithmetic to literal" {
     );
 }
 
+// beam records an empty RUN LOG on the two string-specialisation fixtures while
+// string `+` lowers to arithmetic `'+'` (04-beam B3) — known-wrong output.
 test "js: comptime specialization ---- distinct string args generate specialized functions" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn build(prefix comptime: string, name: string) -> string {
@@ -90,6 +98,9 @@ test "js: comptime specialization ---- distinct string args generate specialized
         \\    val r1 = build("INFO", "Sistema iniciado");
         \\    val r2 = build("WARN", "Memória alta");
         \\    val r3 = build("INFO", "Log replicado");
+        \\    @print(r1);
+        \\    @print(r2);
+        \\    @print(r3);
         \\}
     );
 }
@@ -100,14 +111,20 @@ test "js: comptime specialization ---- distinct integer args generate specialize
         \\    return x * factor;
         \\}
         \\
-        \\fn calculate() {
+        \\fn main() {
         \\    val double = multiply(2, 21);
         \\    val triple = multiply(3, 21);
         \\    val doubleAgain = multiply(2, 10);
+        \\    @print(double);
+        \\    @print(triple);
+        \\    @print(doubleAgain);
         \\}
     );
 }
 
+// Every call passes the same comptime `prefix`, so only one specialisation
+// (`build_$0`) may be emitted. (It used to repeat the distinct-args fixture
+// above with the modifier spelled before the name.)
 test "js: comptime specialization ---- same string arg reuses specialized function" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn build(comptime prefix: string, name: string) -> string {
@@ -116,8 +133,9 @@ test "js: comptime specialization ---- same string arg reuses specialized functi
         \\
         \\fn main() {
         \\    val r1 = build("INFO", "Sistema iniciado");
-        \\    val r2 = build("WARN", "Memória alta");
-        \\    val r3 = build("INFO", "Log replicado");
+        \\    val r2 = build("INFO", "Log replicado");
+        \\    @print(r1);
+        \\    @print(r2);
         \\}
     );
 }

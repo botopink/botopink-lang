@@ -8,6 +8,9 @@ fn main() {
     val r1 = build("INFO", "Sistema iniciado");
     val r2 = build("WARN", "Memória alta");
     val r3 = build("INFO", "Log replicado");
+    @print(r1);
+    @print(r2);
+    @print(r3);
 }
 ```
 
@@ -40,6 +43,24 @@ fn main() {
     {move, {x, 1}, {x, 0}}.
     {call, 1, {f, 5}}.
     {move, {x, 0}, {y, 2}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {literal, <<"~p~n">>}, {x, 0}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 1}, nil, {x, 1}}.
+    {call_ext, 2, {extfunc, io, format, 2}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {literal, <<"~p~n">>}, {x, 0}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 1}, nil, {x, 1}}.
+    {call_ext, 2, {extfunc, io, format, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {literal, <<"~p~n">>}, {x, 0}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 1}, nil, {x, 1}}.
+    {call_ext, 2, {extfunc, io, format, 2}}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 3}.
     return.

@@ -8,6 +8,9 @@ fn main() {
     val r1 = build("INFO", "Sistema iniciado");
     val r2 = build("WARN", "Memória alta");
     val r3 = build("INFO", "Log replicado");
+    @print(r1);
+    @print(r2);
+    @print(r3);
 }
 ```
 
@@ -17,6 +20,9 @@ function main() {
     const r1 = build_$0("Sistema iniciado");
     const r2 = build_$1("Memória alta");
     const r3 = build_$0("Log replicado");
+    console.log(r1);
+    console.log(r2);
+    console.log(r3);
 }
 
 function build_$0(name) {
@@ -44,4 +50,7 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
+INFO: Sistema iniciado
+WARN: Memória alta
+INFO: Log replicado
 ```
