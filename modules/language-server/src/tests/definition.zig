@@ -100,12 +100,14 @@ test "definition: returned Location carries the correct URI" {
     const result = try engine.definition(gpa, h.TEST_URI, source, h.pos(1, 8), tokens);
     defer if (result) |loc| gpa.free(loc.uri);
 
-    // Inline verification: URI must match what we passed
-    if (result) |loc| {
-        try std.testing.expectEqualStrings(h.TEST_URI, loc.uri);
-    }
-
-    try snap.assertDefinition(gpa, "definition_uri_preserved", source, h.pos(1, 8), result);
+    // No snapshot: the source, the cursor and the resulting range are identical
+    // to `definition_val_usage` (whose snapshot already prints the URI), so a
+    // second file would only duplicate it. What is specific to this test is the
+    // URI round-trip, and that is asserted inline.
+    const loc = result orelse return error.NoDefinition;
+    try std.testing.expectEqualStrings(h.TEST_URI, loc.uri);
+    try std.testing.expectEqual(@as(u32, 0), loc.range.start.line);
+    try std.testing.expectEqual(@as(u32, 4), loc.range.start.character);
 }
 
 // ── DG6 — enum declaration ────────────────────────────────────────────────────
@@ -133,7 +135,7 @@ test "definition: cursor on enum usage jumps to enum declaration" {
 test "definition: imported symbol jumps to defining module" {
     const gpa = std.testing.allocator;
     const main_src =
-        \\use {double} = @root()
+        \\import { double } from "math";
         \\val r = double(21);
     ;
     const math_uri = "file:///math.bp";
@@ -154,7 +156,10 @@ test "definition: imported symbol jumps to defining module" {
 
     try std.testing.expect(result != null);
     try std.testing.expect(std.mem.eql(u8, result.?.uri, math_uri));
-    try snap.assertDefinition(gpa, "definition_imported_symbol", main_src, h.pos(1, 8), result);
+    // The target lives in math.bp, so the underline must be drawn there.
+    try snap.assertDefinitionIn(gpa, "definition_imported_symbol", main_src, h.pos(1, 8), result, &.{
+        .{ .uri = math_uri, .source = math_src },
+    });
 }
 
 // ── DG8 — std module symbol jumps into the embedded std source ──────────────
@@ -173,7 +178,9 @@ test "definition: std module member jumps into embedded std source" {
 
     // Snapshot com URI pseudo "std/<module>" — o server materializa o path real.
     const snap_loc = proto.Location{ .uri = "std/order", .range = result.?.range };
-    try snap.assertDefinition(gpa, "definition_std_module_member", source, h.pos(1, 14), snap_loc);
+    try snap.assertDefinitionIn(gpa, "definition_std_module_member", source, h.pos(1, 14), snap_loc, &.{
+        .{ .uri = "std/order", .source = result.?.module.source },
+    });
 }
 
 test "definition: bare std module name jumps to top of module" {
@@ -190,7 +197,9 @@ test "definition: bare std module name jumps to top of module" {
     try std.testing.expectEqual(@as(u32, 0), result.?.range.start.line);
 
     const snap_loc = proto.Location{ .uri = "std/order", .range = result.?.range };
-    try snap.assertDefinition(gpa, "definition_std_module_name", source, h.pos(0, 8), snap_loc);
+    try snap.assertDefinitionIn(gpa, "definition_std_module_name", source, h.pos(0, 8), snap_loc, &.{
+        .{ .uri = "std/order", .source = result.?.module.source },
+    });
 }
 
 test "definition: std lookup misses without a std import" {

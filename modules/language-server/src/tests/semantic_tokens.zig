@@ -36,9 +36,13 @@ test "semanticTokens: val binding is a variable declaration" {
     try run(std.testing.allocator, "semantic_tokens_val", source);
 }
 
-// ── ST3 — free fn vs interface method vs #[@iterator] fn distinguished ───────
+// ── ST3 — free fn vs interface method vs effect fn distinguished ─────────────
+//
+// Three kinds, three classifications: `function [declaration]`,
+// `method [declaration]`, and `function [declaration,async]` for the
+// `#[@iterator]` fn (whose `:gen` label is syntax, not a binding).
 
-test "semanticTokens: free fn, interface method, and *fn distinguished" {
+test "semanticTokens: free fn, interface method, and effect fn distinguished" {
     const source =
         \\fn free(a: i32) -> i32 { return a; }
         \\interface Greeter { fn greet(self: Self) -> string }
@@ -79,9 +83,13 @@ test "semanticTokens: comments and keywords" {
 
 // ── ST7 — receiver method call vs property access ─────────────────────────────
 
+// Both halves must appear: `p.x` is a property access and `p.norm()` a method
+// call. With an `i32` receiver and a call-only body the `property` branch of the
+// classifier was never reached, so the test's name outran what it checked.
 test "semanticTokens: method call vs property access" {
     const source =
-        \\fn dist(p: i32) -> i32 { return p.distance(); }
+        \\val Point = record { x: i32, y: i32 };
+        \\fn dist(p: Point) -> i32 { return p.x + p.norm(); }
     ;
     try run(std.testing.allocator, "semantic_tokens_member_access", source);
 }

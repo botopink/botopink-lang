@@ -70,17 +70,33 @@ test "completion: prefix filters to matching bindings" {
 
 test "completion: prefix with no match returns empty" {
     const gpa = std.testing.allocator;
+    // The bindings must come from a source that actually compiles: an
+    // incomplete buffer yields *no* bindings, and an empty list makes the
+    // completion empty whatever the prefix filter does — which would leave this
+    // test asserting nothing.
+    const compile_source =
+        \\val x = 1;
+    ;
+    // The buffer the user is typing in: `zzz` matches no binding.
     const source =
         \\val x = 1;
-        \\val zzz
+        \\val y = zzz
     ;
 
-    var c = try h.compile(gpa, source);
+    var c = try h.compile(gpa, compile_source);
     defer c.deinit(gpa);
-    const bindings = c.bindings() orelse &[_]h.comptime_pipeline.TypedBinding{};
+    const bindings = c.bindings() orelse return error.CompileFailed;
 
-    // col 7 = after "zzz"
-    const cursor = h.pos(1, 7);
+    // Guard: `x` is offered for an empty prefix, so an empty list below is the
+    // filter's doing and not a missing binding set.
+    var has_x = false;
+    for (bindings) |b| {
+        if (std.mem.eql(u8, b.name, "x")) has_x = true;
+    }
+    try std.testing.expect(has_x);
+
+    // col 11 = after "zzz" in `val y = zzz`
+    const cursor = h.pos(1, 11);
     const items = try engine.completion(gpa, source, cursor, bindings);
     defer {
         for (items) |it| {
@@ -90,6 +106,8 @@ test "completion: prefix with no match returns empty" {
         gpa.free(items);
     }
 
+    for (items) |it| try std.testing.expect(!std.mem.eql(u8, it.label, "x"));
+    try std.testing.expectEqual(@as(usize, 0), items.len);
     try snap.assertCompletion(gpa, "completion_no_match", source, cursor, items);
 }
 

@@ -7,5 +7,5 @@ val gx = origin.x;
 ```
 
 ----- COMPLETION at (line 2, char 16)
-x  [Field]  detail: 
-y  [Field]  detail: 
+x  [Field]  detail: f64
+y  [Field]  detail: f64

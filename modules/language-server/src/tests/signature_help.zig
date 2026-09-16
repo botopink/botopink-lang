@@ -145,14 +145,20 @@ test "signature_help: non-function identifier returns null" {
     try snap.assertSignatureHelp(gpa, "sig_non_function_null", scan_source, cursor, result);
 }
 
-// ── SH6 — signature label contains function name ──
+// ── SH6 — every parameter label is separately highlightable ──
+//
+// No snapshot: the rendered output would repeat `sig_first_param`. What this
+// test adds is the invariant behind it — `ParameterInformation.label` is a
+// plain string that clients highlight by *substring*, so two same-typed
+// parameters must not share a label, or the client underlines the first one for
+// both. Bare type labels (`i32` / `i32`) used to violate exactly this.
 
-test "signature_help: signature label contains function name" {
+test "signature_help: same-typed params get distinct, locatable labels" {
     const gpa = std.testing.allocator;
 
     // Bindings from the last successful compilation (definition only).
     const bindings_source =
-        \\fn compute(n: i32) { return n; }
+        \\fn compute(n: i32, m: i32) { return n; }
     ;
     var c = try h.compile(gpa, bindings_source);
     defer c.deinit(gpa);
@@ -163,21 +169,25 @@ test "signature_help: signature label contains function name" {
 
     // Current source (incomplete) — user just typed `compute(`.
     const source =
-        \\fn compute(n: i32) { return n; }
+        \\fn compute(n: i32, m: i32) { return n; }
         \\val r = compute(
     ;
     // col 16 = depois do '(' em "val r = compute("
     const cursor = h.pos(1, 16);
     const result = try engine.signatureHelp(arena.allocator(), source, cursor, bindings);
 
-    if (result) |sh| {
-        if (sh.signatures.len > 0) {
-            try std.testing.expect(
-                std.mem.indexOf(u8, sh.signatures[0].label, "compute") != null,
-            );
-        }
-    }
-    try snap.assertSignatureHelp(gpa, "sig_label_has_name", source, cursor, result);
+    const sh = result orelse return error.NoSignatureHelp;
+    try std.testing.expect(sh.signatures.len > 0);
+    const label = sh.signatures[0].label;
+    try std.testing.expect(std.mem.indexOf(u8, label, "compute") != null);
+
+    const params = sh.signatures[0].parameters orelse return error.NoParams;
+    try std.testing.expectEqual(@as(usize, 2), params.len);
+    try std.testing.expect(!std.mem.eql(u8, params[0].label, params[1].label));
+    // Each label must occur in the signature label, at its own offset.
+    const at0 = std.mem.indexOf(u8, label, params[0].label) orelse return error.LabelNotInSignature;
+    const at1 = std.mem.indexOf(u8, label, params[1].label) orelse return error.LabelNotInSignature;
+    try std.testing.expect(at0 < at1);
 }
 
 // ── SH-F4 — interface method on a builtin receiver (self dropped) ──────────────

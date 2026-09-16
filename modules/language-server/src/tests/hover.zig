@@ -62,10 +62,13 @@ test "hover: keyword val returns null" {
 
 // ── H4 — polymorphic fn ──
 
-test "hover: fn binding shows function type" {
+// Distinct from H5 (`hover_fn_annotated`) on purpose: that one covers a fn
+// whose params carry concrete annotations, this one a *generic* fn, where the
+// rendered signature has to keep the type parameter instead of a concrete type.
+test "hover: generic fn keeps its type parameter" {
     const gpa = std.testing.allocator;
     const source =
-        \\fn f(a: i32) { return a; }
+        \\fn f<T>(a: T) -> T { return a; }
     ;
 
     var c = try h.compile(gpa, source);
@@ -75,6 +78,10 @@ test "hover: fn binding shows function type" {
     // 'f' na col 3
     const result = try engine.hover(gpa, source, h.pos(0, 3), bindings);
     defer if (result) |hov| gpa.free(hov.contents.value);
+
+    const hov = result orelse return error.NoHover;
+    // The hover body must not collapse `T` into a concrete type.
+    try std.testing.expect(std.mem.indexOf(u8, hov.contents.value, "a: T") != null);
 
     try snap.assertHover(gpa, "hover_fn_polymorphic", source, h.pos(0, 3), result);
 }
@@ -211,7 +218,16 @@ test "hover: interface method on array receiver shows signature" {
     defer if (result) |hov| gpa.free(hov.contents.value);
 
     try std.testing.expect(result != null);
-    try std.testing.expect(std.mem.indexOf(u8, result.?.contents.value, "fn filter") != null);
-    try std.testing.expect(std.mem.indexOf(u8, result.?.contents.value, "interface Array") != null);
+    // Exact body: a substring check cannot catch the neighbouring member's doc
+    // comment leaking into the signature (the bug this test now pins down).
+    try std.testing.expectEqualStrings(
+        \\```botopink
+        \\fn filter(self: Self, pred: fn(item: T) -> bool) -> Self
+        \\```
+        \\
+        \\*from `interface Array`*
+    ,
+        result.?.contents.value,
+    );
     try snap.assertHover(gpa, "hover_interface_method_array", source, h.pos(1, 12), result);
 }

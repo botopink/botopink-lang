@@ -25,6 +25,7 @@
 const std = @import("std");
 const proto = @import("../protocol.zig");
 const engine = @import("../engine.zig");
+const helpers = @import("helpers.zig");
 
 pub const SNAP_DIR = "snapshots/lsp";
 
@@ -125,12 +126,30 @@ pub fn assertHover(
 
 // ── Definition ────────────────────────────────────────────────────────────────
 
+/// The source text of a module other than the one under the cursor, so a
+/// cross-file definition result can be underlined in the file it actually
+/// points at.
+pub const TargetSource = struct { uri: []const u8, source: []const u8 };
+
 pub fn assertDefinition(
     gpa: std.mem.Allocator,
     slug: []const u8,
     source: []const u8,
     cursor: proto.Position,
     result: ?proto.Location,
+) !void {
+    return assertDefinitionIn(gpa, slug, source, cursor, result, &.{});
+}
+
+/// Like `assertDefinition`, but `targets` carries the sources of the other
+/// modules in the test so the underline is drawn on the file the result names.
+pub fn assertDefinitionIn(
+    gpa: std.mem.Allocator,
+    slug: []const u8,
+    source: []const u8,
+    cursor: proto.Position,
+    result: ?proto.Location,
+    targets: []const TargetSource,
 ) !void {
     var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(gpa);
@@ -150,12 +169,36 @@ pub fn assertDefinition(
                 loc.range.end.character,
             },
         );
-        try appendSourceWithUnderline(&buf, gpa, source, loc.range);
+        try appendTargetUnderline(&buf, gpa, source, loc, targets);
     } else {
         try buf.appendSlice(gpa, "null\n");
     }
 
     try checkText(gpa, slug, buf.items);
+}
+
+/// Underlines `loc.range` in the source the location's URI names: the document
+/// under the cursor, one of `targets`, or — when the target's text is not
+/// available to the test — nothing but a note. Underlining the caller's source
+/// for a result in another file would show the wrong line entirely.
+fn appendTargetUnderline(
+    buf: *std.ArrayList(u8),
+    gpa: std.mem.Allocator,
+    source: []const u8,
+    loc: proto.Location,
+    targets: []const TargetSource,
+) !void {
+    if (std.mem.eql(u8, loc.uri, helpers.TEST_URI)) {
+        try appendSourceWithUnderline(buf, gpa, source, loc.range);
+        return;
+    }
+    for (targets) |t| {
+        if (!std.mem.eql(u8, t.uri, loc.uri)) continue;
+        try buf.print(gpa, "in {s}:\n", .{t.uri});
+        try appendSourceWithUnderline(buf, gpa, t.source, loc.range);
+        return;
+    }
+    try buf.print(gpa, "(target source not available to the test: {s})\n", .{loc.uri});
 }
 
 // ── Document Symbols ──────────────────────────────────────────────────────────
@@ -172,23 +215,42 @@ pub fn assertDocumentSymbols(
 
     try appendSource(&buf, gpa, source);
     try buf.appendSlice(gpa, "----- DOCUMENT SYMBOLS\n");
+    try appendSymbols(&buf, gpa, symbols, 0);
+    if (symbols.len == 0) try buf.appendSlice(gpa, "(empty)\n");
+
+    try checkText(gpa, slug, buf.items);
+}
+
+/// Renders symbols with their full `range`, their `selectionRange` and their
+/// children (indented). Both the range and the child list are part of what a
+/// client shows in its outline, so both belong in the snapshot.
+fn appendSymbols(
+    buf: *std.ArrayList(u8),
+    gpa: std.mem.Allocator,
+    symbols: []const proto.DocumentSymbol,
+    depth: usize,
+) !void {
     for (symbols) |sym| {
+        var d: usize = 0;
+        while (d < depth) : (d += 1) try buf.appendSlice(gpa, "  ");
         try buf.print(
             gpa,
-            "{s}  [{s}]  selection: ({d},{d})–({d},{d})\n",
+            "{s}  [{s}]  range: ({d},{d})–({d},{d})  selection: ({d},{d})–({d},{d})\n",
             .{
                 sym.name,
                 symbolKindName(sym.kind),
+                sym.range.start.line,
+                sym.range.start.character,
+                sym.range.end.line,
+                sym.range.end.character,
                 sym.selectionRange.start.line,
                 sym.selectionRange.start.character,
                 sym.selectionRange.end.line,
                 sym.selectionRange.end.character,
             },
         );
+        if (sym.children) |kids| try appendSymbols(buf, gpa, kids, depth + 1);
     }
-    if (symbols.len == 0) try buf.appendSlice(gpa, "(empty)\n");
-
-    try checkText(gpa, slug, buf.items);
 }
 
 // ── Completion ────────────────────────────────────────────────────────────────
@@ -366,6 +428,7 @@ pub fn assertSemanticTokens(
                 .{ proto.SemanticTokenModifiers.declaration, "declaration" },
                 .{ proto.SemanticTokenModifiers.readonly, "readonly" },
                 .{ proto.SemanticTokenModifiers.defaultLibrary, "defaultLibrary" },
+                .{ proto.SemanticTokenModifiers.@"async", "async" },
             }) |m| {
                 if (t.mods & m[0] != 0) {
                     if (!first) try buf.appendSlice(gpa, ",");
@@ -378,6 +441,23 @@ pub fn assertSemanticTokens(
         try buf.print(gpa, "  \"{s}\"\n", .{text});
     }
     if (tokens.len == 0) try buf.appendSlice(gpa, "  (none)\n");
+
+    // The wire format is the delta encoding, not the absolute tokens above —
+    // pin it too, so a regression in `encodeSemanticTokens` is visible.
+    var arena_state = std.heap.ArenaAllocator.init(gpa);
+    defer arena_state.deinit();
+    const data = try engine.encodeSemanticTokens(arena_state.allocator(), tokens);
+    try buf.appendSlice(gpa, "----- ENCODED (deltaLine, deltaStart, len, type, mods)\n");
+    if (data.len == 0) {
+        try buf.appendSlice(gpa, "  (none)\n");
+    } else {
+        var idx: usize = 0;
+        while (idx < data.len) : (idx += 5) {
+            try buf.print(gpa, "  {d} {d} {d} {d} {d}\n", .{
+                data[idx], data[idx + 1], data[idx + 2], data[idx + 3], data[idx + 4],
+            });
+        }
+    }
 
     try checkText(gpa, slug, buf.items);
 }
@@ -485,6 +565,28 @@ pub fn assertCodeActions(
     });
     for (actions) |a| {
         try buf.print(gpa, "  [{s}] {s}\n", .{ a.kind orelse "?", a.title });
+        // The edits are the whole point of a code action — a title alone says
+        // nothing about what applying it would do to the buffer.
+        const edit = a.edit orelse {
+            try buf.appendSlice(gpa, "    (no edit)\n");
+            continue;
+        };
+        const changes = edit.documentChanges orelse {
+            try buf.appendSlice(gpa, "    (no documentChanges)\n");
+            continue;
+        };
+        for (changes) |dc| {
+            try buf.print(gpa, "    in {s}\n", .{dc.textDocument.uri});
+            for (dc.edits) |te| {
+                try buf.print(gpa, "      ({d},{d})–({d},{d}) → \"{s}\"\n", .{
+                    te.range.start.line,
+                    te.range.start.character,
+                    te.range.end.line,
+                    te.range.end.character,
+                    te.newText,
+                });
+            }
+        }
     }
     if (actions.len == 0) try buf.appendSlice(gpa, "  (none)\n");
 
@@ -513,7 +615,7 @@ pub fn assertTypeDefinition(
             loc.range.end.line,
             loc.range.end.character,
         });
-        try appendSourceWithUnderline(&buf, gpa, source, loc.range);
+        try appendTargetUnderline(&buf, gpa, source, loc, &.{});
     } else {
         try buf.appendSlice(gpa, "null\n");
     }
@@ -537,7 +639,7 @@ fn appendSource(buf: *std.ArrayList(u8), gpa: std.mem.Allocator, source: []const
 ///   • Source ending with `\n` — the trailing empty segment is stripped.
 ///   • Cursor column beyond line length — spaces extend past visible content.
 ///   • Cursor on the last line (with or without trailing `\n`).
-fn appendSourceWithCursor(
+pub fn appendSourceWithCursor(
     buf: *std.ArrayList(u8),
     gpa: std.mem.Allocator,
     source: []const u8,
@@ -622,6 +724,9 @@ fn symbolKindName(kind: u32) []const u8 {
         proto.SymbolKind.Enum => "Enum",
         proto.SymbolKind.Interface => "Interface",
         proto.SymbolKind.Constant => "Constant",
+        proto.SymbolKind.EnumMember => "EnumMember",
+        proto.SymbolKind.Field => "Field",
+        proto.SymbolKind.Property => "Property",
         else => "?",
     };
 }

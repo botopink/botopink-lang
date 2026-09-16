@@ -15,7 +15,7 @@ val xs = q "select name";
   (0,0) +3  keyword  "pub"
   (0,4) +6  keyword  "record"
   (0,11) +5  type [declaration]  "Users"
-  (0,19) +4  variable  "name"
+  (0,19) +4  property  "name"
   (0,25) +6  type [defaultLibrary]  "string"
   (1,0) +3  keyword  "pub"
   (1,4) +2  keyword  "fn"
@@ -29,7 +29,7 @@ val xs = q "select name";
   (1,54) +1  variable  "T"
   (2,4) +3  keyword  "val"
   (2,8) +4  variable [declaration]  "code"
-  (2,15) +1  variable  "e"
+  (2,15) +1  parameter  "e"
   (2,17) +5  method  "build"
   (3,4) +3  keyword  "val"
   (3,8) +2  variable [declaration]  "kw"
@@ -49,7 +49,7 @@ val xs = q "select name";
   (4,44) +4  function  "Span"
   (4,60) +5  variable  "label"
   (4,79) +3  variable  "ref"
-  (4,84) +1  variable  "e"
+  (4,84) +1  parameter  "e"
   (4,86) +6  method  "lookup"
   (4,103) +8  variable  "children"
   (5,4) +3  keyword  "val"
@@ -65,7 +65,7 @@ val xs = q "select name";
   (5,98) +2  variable  "kw"
   (5,102) +3  variable  "col"
   (6,4) +6  keyword  "return"
-  (6,11) +1  variable  "e"
+  (6,11) +1  parameter  "e"
   (6,13) +6  method  "custom"
   (6,20) +4  variable  "root"
   (6,26) +4  variable  "code"
@@ -74,3 +74,66 @@ val xs = q "select name";
   (8,9) +1  function  "q"
   (8,12) +6  keyword  "select"
   (8,19) +4  property  "name"
+----- ENCODED (deltaLine, deltaStart, len, type, mods)
+  0 0 3 9 0
+  0 4 6 9 0
+  0 7 5 0 1
+  0 8 4 8 0
+  0 6 6 0 4
+  1 0 3 9 0
+  0 4 2 9 0
+  0 3 1 4 1
+  0 2 1 7 0
+  0 3 8 9 0
+  0 9 1 6 2
+  0 3 5 0 4
+  0 6 6 0 4
+  0 12 11 0 4
+  0 12 1 7 0
+  1 4 3 9 0
+  0 4 4 7 1
+  0 7 1 6 0
+  0 2 5 5 0
+  1 4 3 9 0
+  0 4 2 7 1
+  0 5 10 4 0
+  0 11 4 7 0
+  0 12 4 7 0
+  0 6 4 4 0
+  0 15 5 7 0
+  0 18 3 7 0
+  0 5 4 9 0
+  0 6 8 7 0
+  1 4 3 9 0
+  0 4 3 7 1
+  0 6 10 4 0
+  0 11 4 7 0
+  0 13 4 7 0
+  0 6 4 4 0
+  0 16 5 7 0
+  0 19 3 7 0
+  0 5 1 6 0
+  0 2 6 5 0
+  0 17 8 7 0
+  1 4 3 9 0
+  0 4 4 7 1
+  0 7 10 4 0
+  0 11 4 7 0
+  0 14 4 7 0
+  0 6 4 4 0
+  0 15 5 7 0
+  0 15 3 7 0
+  0 5 4 9 0
+  0 6 8 7 0
+  0 11 2 7 0
+  0 4 3 7 0
+  1 4 6 9 0
+  0 7 1 6 0
+  0 2 6 5 0
+  0 7 4 7 0
+  0 6 4 7 0
+  2 0 3 9 0
+  0 4 2 7 1
+  0 5 1 4 0
+  0 3 6 9 0
+  0 7 4 8 0

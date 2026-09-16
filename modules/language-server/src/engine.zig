@@ -154,6 +154,14 @@ fn renderBindingHover(gpa: std.mem.Allocator, b: comptime_pipeline.TypedBinding)
             const isStar = f.effect != null and f.effectAnnotation() == null;
             try buf.appendSlice(gpa, if (isStar) "*fn " else "fn ");
             try buf.appendSlice(gpa, b.name);
+            if (f.genericParams.len > 0) {
+                try buf.append(gpa, '<');
+                for (f.genericParams, 0..) |gp, gi| {
+                    if (gi > 0) try buf.appendSlice(gpa, ", ");
+                    try buf.appendSlice(gpa, gp.name);
+                }
+                try buf.append(gpa, '>');
+            }
             try buf.append(gpa, '(');
             for (f.params, 0..) |p, pi| {
                 if (pi > 0) try buf.appendSlice(gpa, ", ");
@@ -670,6 +678,25 @@ pub fn documentSymbols(
         const name_tok = tokens[j];
         if (name_tok.kind != .identifier) continue;
 
+        // `val Color = enum { … }` / `val Point = record { … }` declare a type,
+        // not a variable: the container keyword after `=` decides the kind (and
+        // the child walk), not the leading `val`.
+        if (decl_kind.? == .val) {
+            var eq = j + 1;
+            while (eq < tokens.len and tokens[eq].kind == .endOfFile) : (eq += 1) {}
+            if (eq < tokens.len and tokens[eq].kind == .equal) {
+                var ct = eq + 1;
+                while (ct < tokens.len and tokens[ct].kind == .endOfFile) : (ct += 1) {}
+                if (ct < tokens.len) switch (tokens[ct].kind) {
+                    .record, .@"enum", .interface => {
+                        decl_kind = tokens[ct].kind;
+                        sym_kind = tokenToSymbolKind(tokens[ct].kind);
+                    },
+                    else => {},
+                };
+            }
+        }
+
         const sel_start = lsp_types.locToPosition(name_tok.line, name_tok.col);
         const sel_end = lsp_types.locToPosition(name_tok.line, name_tok.col + name_tok.lexeme.len);
 
@@ -788,7 +815,7 @@ fn collectChildren(
                         const e = lsp_types.locToPosition(tok.line, tok.col + tok.lexeme.len);
                         try kids.append(gpa, .{
                             .name = try gpa.dupe(u8, tok.lexeme),
-                            .kind = proto.SymbolKind.Variable,
+                            .kind = proto.SymbolKind.Field,
                             .range = .{ .start = s, .end = e },
                             .selectionRange = .{ .start = s, .end = e },
                         });
@@ -2503,22 +2530,36 @@ pub fn signatureHelp(
         if (t.* != .func) continue;
         const func = t.*.func;
 
-        // Build "name(T1, T2) -> R" label.
+        // Parameter labels are `name: Type` whenever the declaration is in this
+        // document. A `ParameterInformation.label` is a plain string that the
+        // client highlights by substring, so bare types would make every `i32`
+        // parameter highlight the first one. The same rendered label goes into
+        // the signature label, so the substring match is exact.
+        const pnames = fnDeclParamNames(arena, source, fn_name) catch null;
+        const plabels = try arena.alloc([]const u8, func.params.len);
+        for (func.params, 0..) |param_ty, pi| {
+            const ps = try renderType(arena, param_ty);
+            plabels[pi] = if (pnames) |ns| blk: {
+                if (pi >= ns.len) break :blk ps;
+                break :blk try std.fmt.allocPrint(arena, "{s}: {s}", .{ ns[pi], ps });
+            } else ps;
+        }
+
+        // Build "name(x: T1, y: T2) -> R" label.
         var lbl: std.ArrayList(u8) = .empty;
         try lbl.appendSlice(arena, fn_name);
         try lbl.append(arena, '(');
-        for (func.params, 0..) |param_ty, pi| {
+        for (plabels, 0..) |pl, pi| {
             if (pi > 0) try lbl.appendSlice(arena, ", ");
-            const ps = try renderType(arena, param_ty);
-            try lbl.appendSlice(arena, ps);
+            try lbl.appendSlice(arena, pl);
         }
         try lbl.appendSlice(arena, ") -> ");
         try lbl.appendSlice(arena, try renderType(arena, func.ret));
 
         // Build ParameterInformation slice.
         const params = try arena.alloc(proto.ParameterInformation, func.params.len);
-        for (func.params, 0..) |param_ty, pi| {
-            params[pi] = .{ .label = try renderType(arena, param_ty) };
+        for (plabels, 0..) |pl, pi| {
+            params[pi] = .{ .label = pl };
         }
 
         const sigs = try arena.alloc(proto.SignatureInformation, 1);
@@ -2626,6 +2667,56 @@ fn builtinMethodSignature(
             .activeSignature = 0,
             .activeParameter = active,
         };
+    }
+    return null;
+}
+
+/// Parameter names of the `fn <name>(…)` declaration in `source`, in order.
+/// The typed bindings carry parameter *types* only, so the names are recovered
+/// from the source text. Returns null when no such declaration is found; the
+/// returned slices borrow `source`.
+fn fnDeclParamNames(
+    arena: std.mem.Allocator,
+    source: []const u8,
+    name: []const u8,
+) !?[]const []const u8 {
+    var lexer = Lexer.init(source);
+    const tokens = lexer.scanAll(arena) catch return null;
+
+    var i: usize = 0;
+    while (i + 1 < tokens.len) : (i += 1) {
+        if (tokens[i].kind != .@"fn") continue;
+        if (tokens[i + 1].kind != .identifier) continue;
+        if (!std.mem.eql(u8, tokens[i + 1].lexeme, name)) continue;
+
+        // Skip any generic parameter list (`<T>`) up to the `(` of the params.
+        var j = i + 2;
+        while (j < tokens.len and tokens[j].kind != .leftParenthesis) : (j += 1) {
+            if (tokens[j].kind == .leftBrace or tokens[j].kind == .semicolon) return null;
+        }
+        if (j >= tokens.len) return null;
+
+        var names: std.ArrayList([]const u8) = .empty;
+        var depth: u32 = 1;
+        var expect_name = true;
+        var k = j + 1;
+        while (k < tokens.len and depth > 0) : (k += 1) {
+            switch (tokens[k].kind) {
+                .leftParenthesis => depth += 1,
+                .rightParenthesis => depth -= 1,
+                .comma => {
+                    if (depth == 1) expect_name = true;
+                },
+                .identifier => {
+                    if (depth == 1 and expect_name) {
+                        try names.append(arena, tokens[k].lexeme);
+                        expect_name = false;
+                    }
+                },
+                else => {},
+            }
+        }
+        return try names.toOwnedSlice(arena);
     }
     return null;
 }
@@ -2945,6 +3036,18 @@ pub fn semanticTokens(
     var saw_comptime = false; // previous significant token was `comptime`
     var prev_kind: ?TokenKind = null; // previous significant (non-trivia) token
 
+    // Parameter names of the fn whose body we are inside, so that a *use* of a
+    // parameter is classified `parameter` and not `variable`. The set is filled
+    // while scanning the param list, and dropped when the body block closes (or
+    // when the next `fn` starts, for a body-less declaration).
+    var fn_params: std.StringHashMapUnmanaged(void) = .empty;
+    defer fn_params.deinit(arena);
+    var awaiting_fn_body = false; // params closed, the next `{` is the body
+    var fn_body_depth: ?usize = null; // containers.len while inside that body
+
+    var in_attribute = false; // between `#[` and its `]`
+    var pending_effect_fn = false; // `#[@iterator]` / `*` seen before a `fn`
+
     var i: usize = 0;
     while (i < tokens.len) : (i += 1) {
         const tok = tokens[i];
@@ -2964,11 +3067,21 @@ pub fn semanticTokens(
             .leftBrace => {
                 try containers.append(arena, pending_container);
                 pending_container = .none;
+                if (awaiting_fn_body) {
+                    fn_body_depth = containers.items.len;
+                    awaiting_fn_body = false;
+                }
                 prev_kind = tok.kind;
                 continue;
             },
             .rightBrace => {
                 if (containers.items.len > 0) _ = containers.pop();
+                if (fn_body_depth) |d| {
+                    if (containers.items.len + 1 == d) {
+                        fn_params.clearRetainingCapacity();
+                        fn_body_depth = null;
+                    }
+                }
                 prev_kind = tok.kind;
                 continue;
             },
@@ -2985,7 +3098,10 @@ pub fn semanticTokens(
             .rightParenthesis => {
                 if (paren_depth > 0) paren_depth -= 1;
                 if (fn_param_depth) |d| {
-                    if (paren_depth == d) fn_param_depth = null;
+                    if (paren_depth == d) {
+                        fn_param_depth = null;
+                        awaiting_fn_body = true;
+                    }
                 }
                 prev_kind = tok.kind;
                 continue;
@@ -3008,17 +3124,32 @@ pub fn semanticTokens(
             else => {},
         }
 
+        // `#[ … ]` attribute block: `#[@iterator]` & friends mark the *next*
+        // `fn` as an effect function.
+        if (tok.kind == .hash and i + 1 < tokens.len and tokens[i + 1].kind == .leftSquareBracket) {
+            in_attribute = true;
+        } else if (tok.kind == .rightSquareBracket and in_attribute) {
+            in_attribute = false;
+        }
+
         // `*` immediately before `fn` is the effect marker of a `*fn`.
         if (tok.kind == .star) {
-            if (nextSignificantKind(tokens, i) == .@"fn")
+            if (nextSignificantKind(tokens, i) == .@"fn") {
                 try emitSem(arena, &out, tok, proto.SemanticTokenTypes.keyword, 0);
+                pending_effect_fn = true;
+            }
             prev_kind = tok.kind;
             saw_comptime = false;
             continue;
         }
 
         if (isKeywordKind(tok.kind)) {
-            if (tok.kind == .@"fn") expect_fn_name = true;
+            if (tok.kind == .@"fn") {
+                expect_fn_name = true;
+                // A new signature starts: forget the previous fn's params (a
+                // body-less declaration never closes a body block).
+                if (fn_body_depth == null) fn_params.clearRetainingCapacity();
+            }
             if (tok.kind == .selfType) {
                 try emitSem(arena, &out, tok, proto.SemanticTokenTypes.type_, proto.SemanticTokenModifiers.defaultLibrary);
             } else {
@@ -3030,6 +3161,13 @@ pub fn semanticTokens(
         }
 
         if (tok.kind == .builtinIdent) {
+            // `#[@iterator]` / `#[@future]` / … : the annotation names an
+            // effect, so the fn it decorates is an effect function.
+            if (in_attribute and tok.lexeme.len >= 2 and
+                ast.EffectKind.fromAnnotationName(tok.lexeme[1..]) != null)
+            {
+                pending_effect_fn = true;
+            }
             // `@Name` (PascalCase) → builtin type; `@name` → builtin fn.
             const is_type = tok.lexeme.len >= 2 and std.ascii.isUpper(tok.lexeme[1]);
             const ty = if (is_type) proto.SemanticTokenTypes.type_ else proto.SemanticTokenTypes.function;
@@ -3044,6 +3182,15 @@ pub fn semanticTokens(
             const nk = nextSignificantKind(tokens, i);
             const in_params = fn_param_depth != null and paren_depth == fn_param_depth.? + 1;
 
+            // `true` / `false` are lexed as identifiers but are literals, not
+            // bindings — paint them like `null` (a keyword token kind).
+            if (std.mem.eql(u8, tok.lexeme, "true") or std.mem.eql(u8, tok.lexeme, "false")) {
+                try emitSem(arena, &out, tok, proto.SemanticTokenTypes.keyword, 0);
+                prev_kind = tok.kind;
+                saw_comptime = false;
+                continue;
+            }
+
             var type_idx: u32 = proto.SemanticTokenTypes.variable;
             var mods: u32 = 0;
 
@@ -3055,6 +3202,12 @@ pub fn semanticTokens(
                     else => proto.SemanticTokenTypes.function,
                 };
                 mods |= proto.SemanticTokenModifiers.declaration;
+                if (pending_effect_fn) mods |= proto.SemanticTokenModifiers.@"async";
+                pending_effect_fn = false;
+            } else if (awaiting_fn_body and pk == .colon) {
+                // `fn counter() -> @Iterator<i32> :gen { … }` — the trailing
+                // `:label` of an effect fn is syntax, not a binding.
+                type_idx = proto.SemanticTokenTypes.keyword;
             } else if (pk == .val or pk == .record or pk == .@"enum" or pk == .interface) {
                 type_idx = lookupCategory(bindings, tok.lexeme) orelse switch (pk.?) {
                     .record => proto.SemanticTokenTypes.type_,
@@ -3068,8 +3221,16 @@ pub fn semanticTokens(
             } else if (in_params and (pk == .leftParenthesis or pk == .comma or pk == .@"comptime")) {
                 type_idx = proto.SemanticTokenTypes.parameter;
                 if (saw_comptime) mods |= proto.SemanticTokenModifiers.readonly;
+                try fn_params.put(arena, tok.lexeme, {});
             } else if (container_top == .@"enum" and paren_depth == 0 and (pk == .leftBrace or pk == .comma)) {
                 type_idx = proto.SemanticTokenTypes.enumMember;
+            } else if (container_top == .record and paren_depth == 0 and nk == .colon and
+                (pk == .leftBrace or pk == .comma or pk == .semicolon))
+            {
+                // Field declaration inside `record { x: i32, … }`.
+                type_idx = proto.SemanticTokenTypes.property;
+            } else if (fn_params.contains(tok.lexeme)) {
+                type_idx = proto.SemanticTokenTypes.parameter;
             } else if (lookupCategory(bindings, tok.lexeme)) |cat| {
                 type_idx = cat;
             } else if (isPrimitiveType(tok.lexeme)) {
@@ -4029,11 +4190,41 @@ fn dotReceiverBefore(source: []const u8, start: usize) ?[]const u8 {
 /// declaration without re-lexing.
 const InterfaceMember = struct {
     is_fn: bool,
+    /// False for associated functions declared without a `self` receiver
+    /// (`Array.range`, `Array.repeat`): they exist on the interface but must
+    /// not be offered on an instance (`xs.`).
+    takes_self: bool,
     name: []const u8,
     sig: []const u8,
     name_line: usize,
     name_col: usize,
 };
+
+/// True for tokens that end a member signature when met at parenthesis depth 0.
+/// Comments are trivia that belongs to the *next* member (the sources put doc
+/// comments above the decl they document), `default`/`pub` introduce the next
+/// member, `{` opens a `default fn` body and `@`/`#[` an attribute block.
+fn endsMemberSignature(tokens: []const Token, idx: usize) bool {
+    return switch (tokens[idx].kind) {
+        .commentNormal,
+        .commentDoc,
+        .commentModule,
+        .leftBrace,
+        .at,
+        .@"fn",
+        .val,
+        .default,
+        .@"pub",
+        .private,
+        .declare,
+        .semicolon,
+        => true,
+        // `#[` opens an attribute; a bare `#` is the tuple-type sigil
+        // (`Array<#(T, U)>`) and stays part of the signature.
+        .hash => idx + 1 < tokens.len and tokens[idx + 1].kind == .leftSquareBracket,
+        else => false,
+    };
+}
 
 /// Collects every `fn`/`val` member declared inside `iface`'s `interface { … }`
 /// block. Slices borrow `iface.source`, which is an embedded compile-time
@@ -4101,6 +4292,19 @@ fn collectInterfaceMembers(
         var k: usize = start;
         while (k < body_end) : (k += 1) {
             const kind = tokens[k].kind;
+
+            // A `default fn` body is a nested `{ … }` block: skip it wholesale
+            // so its locals (`val head = …`) are not mistaken for members.
+            if (kind == .leftBrace) {
+                var bdepth: u32 = 1;
+                var m = k + 1;
+                while (m < body_end and bdepth > 0) : (m += 1) {
+                    if (tokens[m].kind == .leftBrace) bdepth += 1 else if (tokens[m].kind == .rightBrace) bdepth -= 1;
+                }
+                k = m - 1; // the loop's `k += 1` steps past the matching `}`
+                continue;
+            }
+
             if (kind != .@"fn" and kind != .val) continue;
 
             var n = k + 1;
@@ -4109,33 +4313,39 @@ fn collectInterfaceMembers(
             const name = tokens[n].lexeme;
 
             // The signature spans `fn name(params) -> Ret`, stopping at the body
-            // brace (`default fn`), an attribute (`@[…]` / `#[…]`) or the next
+            // brace (`default fn`), an attribute (`#[…]`), a comment or the next
             // member keyword — so trailing comments/attributes that precede the
-            // next method never leak into this member's detail. `sig_end` is the
+            // next member never leak into this member's detail. `sig_end` is the
             // end of the last signature token (not the start of the boundary),
-            // dropping whitespace/comments between sig and next decl. A `fn`
-            // nested in parentheses (function-typed param) is not a boundary.
+            // dropping whitespace/comments between sig and next decl. Tokens
+            // nested in parentheses (a function-typed param, a default value)
+            // are never boundaries.
+            //
+            // Outside parentheses a signature never continues onto another line,
+            // so a token on a later line also ends it. That is what keeps a
+            // receiver-less `val length: i32` from swallowing the attribute
+            // block of the member that follows it.
             const fn_kw = k;
             var e = n + 1;
             var pdepth: i32 = 0;
-            var seen_params = false;
             var last_tok = n;
+            var last_line = tokens[n].line;
+            var params_open: ?usize = null;
             while (e < body_end) : (e += 1) {
                 const ek = tokens[e].kind;
-                if (ek == .leftParenthesis) {
+                if (pdepth > 0) {
+                    if (ek == .leftParenthesis) pdepth += 1;
+                    if (ek == .rightParenthesis) pdepth -= 1;
+                } else if (ek == .leftParenthesis) {
+                    if (params_open == null) params_open = e;
                     pdepth += 1;
-                    last_tok = e;
-                } else if (ek == .rightParenthesis) {
-                    pdepth -= 1;
-                    last_tok = e;
-                    if (pdepth == 0) seen_params = true;
-                } else if (pdepth > 0) {
-                    last_tok = e;
-                } else if (seen_params and (ek == .leftBrace or ek == .at or ek == .hash or ek == .@"fn" or ek == .val)) {
+                } else if (endsMemberSignature(tokens, e)) {
                     break;
-                } else {
-                    last_tok = e;
+                } else if (tokens[e].line > last_line) {
+                    break;
                 }
+                last_tok = e;
+                last_line = tokens[e].line;
             }
             k = n;
             if (seen.contains(name)) continue;
@@ -4146,8 +4356,19 @@ fn collectInterfaceMembers(
             const sig_end = tokenOffset(iface.source, end_tok) + end_tok.lexeme.len;
             const sig = std.mem.trim(u8, iface.source[sig_start..@min(sig_end, iface.source.len)], " \t\r\n");
 
+            // `fn range(start: i32, …)` has no receiver: the first parameter
+            // token is not `self`. Such associated fns belong to the interface,
+            // not to an instance.
+            const takes_self = if (kind != .@"fn") true else blk: {
+                const lp = params_open orelse break :blk false;
+                if (lp + 1 >= body_end) break :blk false;
+                const first = tokens[lp + 1];
+                break :blk first.kind == .identifier and std.mem.eql(u8, first.lexeme, "self");
+            };
+
             try members.append(arena, .{
                 .is_fn = kind == .@"fn",
+                .takes_self = takes_self,
                 .name = name,
                 .sig = sig,
                 .name_line = tokens[n].line,
@@ -4253,6 +4474,9 @@ fn builtinReceiverCompletion(
         items.deinit(gpa);
     }
     for (members) |m| {
+        // `Array.range` / `Array.repeat` take no receiver — they are not
+        // callable on `xs.`.
+        if (!m.takes_self) continue;
         try items.append(gpa, .{
             .label = try gpa.dupe(u8, m.name),
             .kind = if (m.is_fn) proto.CompletionItemKind.Method else proto.CompletionItemKind.Field,
@@ -4337,28 +4561,77 @@ fn appendDeclMembers(
             for (r.fields) |field| try items.append(gpa, .{
                 .label = try gpa.dupe(u8, field.name),
                 .kind = proto.CompletionItemKind.Field,
-                .detail = null,
+                .detail = try typeRefDetail(gpa, field.typeRef),
             });
             for (r.methods) |method| try items.append(gpa, .{
                 .label = try gpa.dupe(u8, method.name),
                 .kind = proto.CompletionItemKind.Method,
-                .detail = null,
+                .detail = try methodDetail(gpa, method),
             });
         },
         .@"enum" => |e| {
             for (e.variants) |v| try items.append(gpa, .{
                 .label = try gpa.dupe(u8, v.name),
                 .kind = proto.CompletionItemKind.EnumMember,
-                .detail = null,
+                .detail = try enumVariantDetail(gpa, e.name, v),
             });
             for (e.methods) |method| try items.append(gpa, .{
                 .label = try gpa.dupe(u8, method.name),
                 .kind = proto.CompletionItemKind.Method,
-                .detail = null,
+                .detail = try methodDetail(gpa, method),
             });
         },
         else => {},
     }
+}
+
+/// `detail` for a record field: its declared type (`f64`, `?Array<T>`).
+fn typeRefDetail(gpa: std.mem.Allocator, tr: ast.TypeRef) ![]u8 {
+    var buf: std.ArrayList(u8) = .empty;
+    errdefer buf.deinit(gpa);
+    try appendTypeRef(gpa, &buf, tr);
+    return buf.toOwnedSlice(gpa);
+}
+
+/// `detail` for a record / enum method: `fn name(a: T) -> R`.
+fn methodDetail(gpa: std.mem.Allocator, method: anytype) ![]u8 {
+    var buf: std.ArrayList(u8) = .empty;
+    errdefer buf.deinit(gpa);
+    try buf.appendSlice(gpa, "fn ");
+    try buf.appendSlice(gpa, method.name);
+    try buf.append(gpa, '(');
+    for (method.params, 0..) |p, pi| {
+        if (pi > 0) try buf.appendSlice(gpa, ", ");
+        try buf.appendSlice(gpa, p.name);
+        try buf.appendSlice(gpa, ": ");
+        try appendTypeRef(gpa, &buf, p.typeRef);
+    }
+    try buf.append(gpa, ')');
+    if (method.returnType) |rt| {
+        try buf.appendSlice(gpa, " -> ");
+        try appendTypeRef(gpa, &buf, rt);
+    }
+    return buf.toOwnedSlice(gpa);
+}
+
+/// `detail` for an enum variant: the owning enum, plus the payload when any.
+fn enumVariantDetail(gpa: std.mem.Allocator, enum_name: []const u8, v: anytype) ![]u8 {
+    var buf: std.ArrayList(u8) = .empty;
+    errdefer buf.deinit(gpa);
+    try buf.appendSlice(gpa, enum_name);
+    try buf.append(gpa, '.');
+    try buf.appendSlice(gpa, v.name);
+    if (v.fields.len > 0) {
+        try buf.append(gpa, '(');
+        for (v.fields, 0..) |f, fi| {
+            if (fi > 0) try buf.appendSlice(gpa, ", ");
+            try buf.appendSlice(gpa, f.name);
+            try buf.appendSlice(gpa, ": ");
+            try appendTypeRef(gpa, &buf, f.typeRef);
+        }
+        try buf.append(gpa, ')');
+    }
+    return buf.toOwnedSlice(gpa);
 }
 
 /// Returns true if `offset` (byte index into `source`) falls inside a

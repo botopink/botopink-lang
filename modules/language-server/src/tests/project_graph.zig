@@ -50,7 +50,9 @@ test "definition: member access on a `from \"<lib>\"` symbol resolves through th
     // Jumped into the lib file, onto `pub fn created` (line 1, 0-based).
     try std.testing.expectEqualStrings(lib_uri, loc.uri);
     try std.testing.expectEqual(@as(u32, 1), loc.range.start.line);
-    try snap.assertDefinition(gpa, "definition_lib_member", app_src, cursor, loc);
+    try snap.assertDefinitionIn(gpa, "definition_lib_member", app_src, cursor, loc, &.{
+        .{ .uri = lib_uri, .source = lib_src },
+    });
 }
 
 fn engine_offsetToPos(source: []const u8, off: usize) proto.Position {

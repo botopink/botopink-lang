@@ -4,7 +4,7 @@ const proto = @import("../protocol.zig");
 const snapshot = @import("snapshot.zig");
 
 test "appendSourceWithCursor - cursor in middle of line" {
-    var gpa = std.testing.allocator;
+    const gpa = std.testing.allocator;
     var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(gpa);
 
@@ -25,7 +25,7 @@ test "appendSourceWithCursor - cursor in middle of line" {
 }
 
 test "appendSourceWithCursor - cursor at end of line" {
-    var gpa = std.testing.allocator;
+    const gpa = std.testing.allocator;
     var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(gpa);
 
@@ -46,7 +46,7 @@ test "appendSourceWithCursor - cursor at end of line" {
 }
 
 test "appendSourceWithCursor - cursor beyond line length" {
-    var gpa = std.testing.allocator;
+    const gpa = std.testing.allocator;
     var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(gpa);
 
@@ -67,7 +67,7 @@ test "appendSourceWithCursor - cursor beyond line length" {
 }
 
 test "appendSourceWithCursor - cursor on last line without trailing newline" {
-    var gpa = std.testing.allocator;
+    const gpa = std.testing.allocator;
     var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(gpa);
 
@@ -89,7 +89,7 @@ test "appendSourceWithCursor - cursor on last line without trailing newline" {
 }
 
 test "appendSourceWithCursor - cursor on last line with trailing newline" {
-    var gpa = std.testing.allocator;
+    const gpa = std.testing.allocator;
     var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(gpa);
 
@@ -111,7 +111,7 @@ test "appendSourceWithCursor - cursor on last line with trailing newline" {
 }
 
 test "appendSourceWithCursor - cursor in empty string" {
-    var gpa = std.testing.allocator;
+    const gpa = std.testing.allocator;
     var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(gpa);
 
@@ -132,7 +132,7 @@ test "appendSourceWithCursor - cursor in empty string" {
 }
 
 test "appendSourceWithCursor - null cursor" {
-    var gpa = std.testing.allocator;
+    const gpa = std.testing.allocator;
     var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(gpa);
 
@@ -152,7 +152,7 @@ test "appendSourceWithCursor - null cursor" {
 }
 
 test "appendSourceWithCursor - cursor in middle of string" {
-    var gpa = std.testing.allocator;
+    const gpa = std.testing.allocator;
     var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(gpa);
 
