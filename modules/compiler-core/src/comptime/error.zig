@@ -348,8 +348,30 @@ fn typeLabel(ty: *T.Type) []const u8 {
 
 // ── Comptime validation ───────────────────────────────────────────────────────
 
+/// The names a `comptime { … }` block has declared so far, innermost first.
+/// Built on the Zig stack as `validateBody` walks a block, so no allocator is
+/// needed; `eval.zig` mirrors it with real values when the block is folded.
+const CtScope = struct {
+    name: []const u8,
+    parent: ?*const CtScope,
+
+    fn has(scope: ?*const CtScope, name: []const u8) bool {
+        var cur = scope;
+        while (cur) |s| : (cur = s.parent) {
+            if (std.mem.eql(u8, s.name, name)) return true;
+        }
+        return false;
+    }
+};
+
+/// Identifiers that always denote a compile-time value.
+fn isLiteralIdent(name: []const u8) bool {
+    return std.mem.eql(u8, name, "true") or std.mem.eql(u8, name, "false") or std.mem.eql(u8, name, "null");
+}
+
 /// Validates that every `comptime` / `comptime { }` expression in `program`
-/// contains only compile-time-evaluable nodes (literals and arithmetic).
+/// contains only compile-time-evaluable nodes: literals, arithmetic and
+/// comparisons, and — inside a block — locals declared by the block itself.
 /// Returns the first offending expression, or null if valid.
 pub fn validateComptime(program: ast.Program) ?ComptimeError {
     for (program.decls) |decl| {
@@ -368,64 +390,96 @@ fn validateDecl(decl: ast.DeclKind) ?ComptimeError {
 fn validateIfComptime(expr: ast.Expr) ?ComptimeError {
     switch (expr) {
         .comptime_ => |a| switch (a.kind) {
-            .comptimeExpr => |e| return validateComptimeExpr(e.*),
-            .comptimeBlock => |cb| {
-                for (cb.body) |stmt| {
-                    if (validateComptimeExpr(stmt.expr)) |err| return err;
-                }
-                return null;
-            },
+            .comptimeExpr => |e| return validateComptimeExpr(e.*, null),
+            .comptimeBlock => |cb| return validateBody(cb.body, null),
             else => return null,
         },
         else => return null,
     }
 }
 
-fn validateComptimeExpr(expr: ast.Expr) ?ComptimeError {
+/// Walk a block's statements, threading the names it declares. A `val`/`var`
+/// validates its initialiser in the scope that precedes it and then validates
+/// the rest of the block with the new name in scope (the recursion is what
+/// carries the scope without an allocator).
+fn validateBody(body: []const ast.Stmt, scope: ?*const CtScope) ?ComptimeError {
+    for (body, 0..) |stmt, i| {
+        if (stmt.expr == .binding) {
+            const bind = stmt.expr.binding;
+            switch (bind.kind) {
+                .localBind => |lb| {
+                    if (validateComptimeExpr(lb.value.*, scope)) |err| return err;
+                    const declared = CtScope{ .name = lb.name, .parent = scope };
+                    return validateBody(body[i + 1 ..], &declared);
+                },
+                .assign => |as| switch (as.target) {
+                    .name => |name| {
+                        if (!CtScope.has(scope, name)) return ComptimeError{ .ident = name, .loc = bind.loc };
+                        if (validateComptimeExpr(as.value.*, scope)) |err| return err;
+                        continue;
+                    },
+                    else => return ComptimeError{ .ident = @tagName(bind.kind), .loc = bind.loc },
+                },
+                else => return ComptimeError{ .ident = @tagName(bind.kind), .loc = bind.loc },
+            }
+        }
+        if (validateComptimeExpr(stmt.expr, scope)) |err| return err;
+    }
+    return null;
+}
+
+fn validateComptimeExpr(expr: ast.Expr, scope: ?*const CtScope) ?ComptimeError {
     switch (expr) {
         .literal => |l| switch (l.kind) {
-            .numberLit, .stringLit => return null,
+            .numberLit, .stringLit, .null_ => return null,
             else => return ComptimeError{ .ident = @tagName(l.kind), .loc = l.loc },
         },
         .binaryOp => |b| switch (b.op) {
-            .add, .sub, .mul, .div, .mod, .lt, .gt, .lte, .gte, .eq, .ne => {
-                if (validateComptimeExpr(b.lhs.*)) |err| return err;
-                return validateComptimeExpr(b.rhs.*);
+            .add, .sub, .mul, .div, .mod, .lt, .gt, .lte, .gte, .eq, .ne, .@"and", .@"or" => {
+                if (validateComptimeExpr(b.lhs.*, scope)) |err| return err;
+                return validateComptimeExpr(b.rhs.*, scope);
             },
-            else => return ComptimeError{ .ident = @tagName(b.op), .loc = b.loc },
         },
+        .unaryOp => |u| return validateComptimeExpr(u.expr.*, scope),
         .call => |c| switch (c.kind) {
             .pipeline => |p| {
-                if (validateComptimeExpr(p.lhs.*)) |err| return err;
-                return validateComptimeExpr(p.rhs.*);
+                if (validateComptimeExpr(p.lhs.*, scope)) |err| return err;
+                return validateComptimeExpr(p.rhs.*, scope);
             },
             else => return ComptimeError{ .ident = @tagName(c.kind), .loc = c.loc },
         },
         .collection => |co| switch (co.kind) {
             .arrayLit => |al| {
                 for (al.elems) |elem| {
-                    if (validateComptimeExpr(elem)) |err| return err;
+                    if (validateComptimeExpr(elem, scope)) |err| return err;
                 }
                 return null;
             },
             else => return ComptimeError{ .ident = @tagName(co.kind), .loc = co.loc },
         },
         .jump => |j| switch (j.kind) {
-            .@"break" => |e| if (e.value) |ep| return validateComptimeExpr(ep.*) else return null,
+            .@"break" => |e| if (e.value) |ep| return validateComptimeExpr(ep.*, scope) else return null,
             else => return ComptimeError{ .ident = @tagName(j.kind), .loc = j.loc },
         },
-        .comptime_ => |a| switch (a.kind) {
-            .comptimeExpr => |e| return validateComptimeExpr(e.*),
-            .comptimeBlock => |cb| {
-                for (cb.body) |stmt| {
-                    if (validateComptimeExpr(stmt.expr)) |err| return err;
-                }
+        .branch => |br| switch (br.kind) {
+            .if_ => |i| {
+                if (validateComptimeExpr(i.cond.*, scope)) |err| return err;
+                if (validateBody(i.then_, scope)) |err| return err;
+                if (i.else_) |body| return validateBody(body, scope);
                 return null;
             },
+            else => return ComptimeError{ .ident = @tagName(br.kind), .loc = br.loc },
+        },
+        .comptime_ => |a| switch (a.kind) {
+            .comptimeExpr => |e| return validateComptimeExpr(e.*, scope),
+            .comptimeBlock => |cb| return validateBody(cb.body, scope),
             else => return ComptimeError{ .ident = @tagName(a.kind), .loc = a.loc },
         },
         .identifier => |i| switch (i.kind) {
-            .ident => |name| return ComptimeError{ .ident = name, .loc = i.loc },
+            .ident => |name| {
+                if (isLiteralIdent(name) or CtScope.has(scope, name)) return null;
+                return ComptimeError{ .ident = name, .loc = i.loc };
+            },
             else => return ComptimeError{ .ident = @tagName(i.kind), .loc = i.loc },
         },
         else => return ComptimeError{ .ident = @tagName(expr), .loc = expr.getLoc() },

@@ -12,12 +12,12 @@ fn main() {
 ```text
 ct_0: val pi2 = comptime {
           break 3.14 * 2.0;
-      } → 0
+      } → 6.28
 ```
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-const pi2 = 0;
+const pi2 = 6.28;
 
 function main() {
     console.log(pi2);
@@ -38,5 +38,5 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
-0
+6.28
 ```

@@ -7,18 +7,18 @@ val banner  = comptime "Hello, " + "World";
 
 ----- COMPTIME VALUES -- main
 ```text
-ct_0: val pi = comptime 3.14 * 2.0 → 0
+ct_0: val pi = comptime 3.14 * 2.0 → 6.28
 ct_1: val maxVal = comptime 100 + 1 → 101
-ct_2: val banner = comptime "Hello, " + "World" → 0
+ct_2: val banner = comptime "Hello, " + "World" → "Hello, World"
 ```
 
 ----- BOTOPINK TRANSFORM CODE -- main.bp
 ```botopink
-val pi = 0;
+val pi = 6.28;
 
 val maxVal = 101;
 
-val banner = 0;
+val banner = "Hello, World";
 ```
 
 ----- TYPED AST JSON -- main.json

@@ -106,6 +106,12 @@ pub const ComptimeOutput = struct {
         /// What each decorator / template evaluation sent to and got back from
         /// the `erl` runtime, in evaluation order (snapshots).
         comptime_traces: []const trace.Entry,
+        /// How many template calls this module expanded, runtime-evaluated ones
+        /// and V1-driver ones (pass-through / `@expr` / `@code`) alike. The
+        /// V1 expansions never reach the `erl` runtime, so they leave no
+        /// `comptime_traces` entry; snapshots use this count to decide that the
+        /// spliced program is worth recording.
+        template_expansions: usize = 0,
     };
 };
 
@@ -1286,6 +1292,7 @@ pub fn compileTypesOnly(
                         .instance_lowerings = instance_lowerings,
                         .custom_ast = try collectCustomAst(arena_alloc, &succ.env),
                         .comptime_traces = succ.env.comptimeTraces.items,
+                        .template_expansions = succ.env.templateExpansions.count(),
                     } },
                 });
             },
@@ -1464,6 +1471,7 @@ pub fn compile(
                         .instance_lowerings = instance_lowerings,
                         .custom_ast = try collectCustomAst(arena_alloc, &succ.env),
                         .comptime_traces = succ.env.comptimeTraces.items,
+                        .template_expansions = succ.env.templateExpansions.count(),
                     } },
                 });
             },

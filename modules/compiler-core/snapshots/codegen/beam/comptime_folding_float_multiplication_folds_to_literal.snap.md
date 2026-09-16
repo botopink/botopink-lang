@@ -12,7 +12,7 @@ fn main() {
 ```text
 ct_0: val pi2 = comptime {
           break 3.14 * 2.0;
-      } → 0
+      } → 6.28
 ```
 
 ----- BEAM ASSEMBLY -- main.S

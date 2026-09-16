@@ -4,16 +4,41 @@ val result = comptime {
     val x = 10;
     break x * 2;
 };
+fn main() {
+    @print(result);
+}
 ```
 
------ COMPILE DIAGNOSTIC -- main
+----- COMPTIME VALUES -- main
 ```text
-error comptime: expression cannot be evaluated at compile time
- ┌─ :2:5
-  │
-2 │     val x = 10;
-  │     ^^^^^^^
-
-  'binding' is a runtime identifier
+ct_0: val result = comptime {
+          val x = 10;
+          break x * 2;
+      } → 20
 ```
 
+----- JAVASCRIPT -- main.js
+```javascript
+const result = 20;
+
+function main() {
+    console.log(result);
+}
+
+function _botopink_main() {
+    main();
+}
+_botopink_main();
+```
+
+----- TYPESCRIPT TYPEDEF -- main.d.ts
+```typescript
+
+
+
+```
+
+----- RUN LOG -----
+```logs
+20
+```

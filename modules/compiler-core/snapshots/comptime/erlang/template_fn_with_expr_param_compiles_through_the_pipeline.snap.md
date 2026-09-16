@@ -8,6 +8,13 @@ val c = html """
 """;
 ```
 
+----- BOTOPINK TRANSFORM CODE -- main.bp
+```botopink
+val c = """
+<p>hello</p>
+""";
+```
+
 ----- TYPED AST JSON -- main.json
 ```json
 {

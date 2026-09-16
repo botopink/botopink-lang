@@ -940,11 +940,14 @@ pub fn buildSnapshot(allocator: std.mem.Allocator, output: comptimeMod.ComptimeO
                 try buf.appendSlice(allocator, "```\n\n");
             }
 
-            // H8 — the spliced program is evidence for *any* comptime work, not
-            // just folded `val`s: a template expansion or a decorator `@emit`
-            // contribution rewrites the program without producing a
+            // H8 / C1 — the spliced program is evidence for *any* comptime work,
+            // not just folded `val`s: a template expansion or a decorator
+            // `@emit` contribution rewrites the program without producing a
             // `comptime_script`, and used to leave no trace of the result here.
-            if (ok.comptime_script != null or ok.comptime_traces.len > 0) {
+            // `template_expansions` covers the V1-driver expansions
+            // (pass-through / `@expr` / `@code`), which never run in the `erl`
+            // runtime and so record no `comptime_traces` entry either.
+            if (ok.comptime_script != null or ok.comptime_traces.len > 0 or ok.template_expansions > 0) {
                 const fmtHdr = try std.fmt.allocPrint(allocator, "----- BOTOPINK TRANSFORM CODE -- {s}.bp\n```botopink\n", .{output.name});
                 defer allocator.free(fmtHdr);
                 try buf.appendSlice(allocator, fmtHdr);
