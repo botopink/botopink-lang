@@ -53,35 +53,39 @@ fn arrayEq() -> bool {
     {line, [{location, "main.erl", 2}]}.
     {func_info, {atom, main}, {atom, arrayEq}, 0}.
   {label, 5}.
-    {allocate, 2, 0}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {allocate, 4, 0}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, nil, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
+    {move, {x, 0}, {y, 0}}.
     {move, {integer, 2}, {x, 0}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {integer, 1}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {y, 0}}.
-    {move, nil, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {integer, 2}, {x, 0}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
     {move, {integer, 1}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
-    {test, is_eq, {f, 8}, [{y, 0}, {y, 1}]}.
+    {move, nil, {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {integer, 1}, {x, 0}}.
+    {move, {y, 2}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 3}}.
+    {test, is_eq, {f, 8}, [{y, 1}, {y, 3}]}.
     {move, {atom, true}, {x, 0}}.
     {jump, {f, 9}}.
   {label, 8}.
     {move, {atom, false}, {x, 0}}.
   {label, 9}.
-    {deallocate, 2}.
+    {deallocate, 4}.
     return.
 ```
 

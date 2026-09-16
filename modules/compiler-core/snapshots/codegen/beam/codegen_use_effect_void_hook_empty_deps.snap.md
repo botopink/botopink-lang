@@ -48,7 +48,8 @@ fn Widget() -> Element {
     {func_info, {atom, main}, {atom, 'Widget'}, 0}.
   {label, 7}.
     {allocate, 0, 0}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {move, nil, {x, 0}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 1}.
     {make_fun3, {f, 9}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 1}, {x, 0}}.

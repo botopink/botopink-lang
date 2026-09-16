@@ -359,6 +359,9 @@ fn countLocalsInExpr(e: ast.Expr, count: *u32) void {
                 }
             },
             .arrayLit => |al| {
+                // One slot for the cons accumulator `lowerArrayLit` parks on
+                // the stack while each element is evaluated.
+                if (al.elems.len > 0) count.* += 1;
                 for (al.elems) |el| countLocalsInExpr(el, count);
                 if (al.spreadExpr) |se| countLocalsInExpr(se.*, count);
             },
@@ -3550,22 +3553,30 @@ const Emitter = struct {
 
         const scratch_base = self.scratchBase();
         const saved_min = self.min_live;
+        // `Live` is a prefix count, so it may only cover x-registers something
+        // has actually written. A simple argument moves straight into its
+        // scratch slot without touching `{x, 0}`, so track whether anything has.
+        var wrote_x0 = self.min_live > 0;
         for (args, 0..) |arg, i| {
             if (terms[i]) |t| {
                 try beamEmitter.writeMoveOp(self.out, t, Dst.xr(scratch_base + i));
             } else {
                 if (i > 0) _ = self.raiseLive(@intCast(scratch_base + i));
                 try self.lowerExprIntoX0(arg.value.*);
+                wrote_x0 = true;
                 try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch_base + i));
             }
         }
         for (trailing, 0..) |trail, j| {
             const slot = scratch_base + args.len + j;
-            // `Live` is a prefix count, so it may only cover x-registers that
-            // something has actually written. Before the first operand nothing
-            // has (`main/0` + a bare trailing lambda → `{{x, 0}, not_live}`);
-            // after it `{x, 0}` always holds the last lowered value.
-            const live: u32 = if (args.len + j == 0) self.min_live else @intCast(slot);
+            if (slot > 0 and !wrote_x0) {
+                // Fill the hole the closure's `test_heap` would otherwise claim
+                // (`calc(2) { a, b -> … }` → `{{x, 0}, not_live}`). The final
+                // shuffle below overwrites it with the real first argument.
+                try beamEmitter.writeMoveOp(self.out, Op.nil, Dst.xr(0));
+                wrote_x0 = true;
+            }
+            const live: u32 = if (slot > 0) @intCast(slot) else self.min_live;
             _ = self.raiseLive(live);
             try self.lowerLambda(trail, live);
             try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(slot));
@@ -3592,19 +3603,21 @@ const Emitter = struct {
             // by the time `put_list` runs (`{heap_overflow, …}` from the
             // loader — `list_literal_of_records_len`).
             const scratch = self.scratchBase();
+            // The tail accumulator is parked on the *stack*, not in an
+            // x-register: an element that calls a function
+            // (`[node(), node()]`) frees the whole x-file, and the half-built
+            // list would be gone by the time `put_list` runs. `countLocalsInExpr`
+            // reserves this slot.
+            const acc_y = self.next_y;
+            self.next_y += 1;
             var i: usize = al.elems.len;
             while (i > 0) {
                 i -= 1;
-                // The tail accumulator is stashed here while the next element is
-                // computed into `x0`; the slot must differ from `x0`, so
-                // `scratchBase` floors it at 1 (a 0-arity fn like `main/0`
-                // would otherwise alias `x0` and cons `[Elem | Elem]`).
-                try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch));
-                const saved_live = self.raiseLive(scratch + 1);
+                try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(acc_y));
                 try self.lowerExprIntoX0(al.elems[i]);
-                self.min_live = saved_live;
-                // `{x, 0}` holds the element and `{x, scratch}` the tail — both
-                // must survive the cons allocation.
+                // `{x, 0}` holds the element and `{x, scratch}` the reloaded
+                // tail — both must survive the cons allocation.
+                try beamEmitter.writeMoveOp(self.out, Op.yr(acc_y), Dst.xr(scratch));
                 try beamEmitter.writeTestHeap(self.out, 2, scratch + 1);
                 try beamEmitter.writePutList(self.out, Op.xr(0), Op.xr(scratch), Dst.xr(0));
             }

@@ -291,9 +291,12 @@ codegen/
   literal reserves one cons cell per element *after* evaluating it — a single
   up-front `test_heap` is lost as soon as an element allocates. A `call` /
   `call_ext` frees every x-register, so a value that must survive one goes to a
-  y-slot (`emitDestructBind`'s tuple subject), and a length read uses the
-  `length` gc_bif rather than `erlang:length/1`. The range loop materializes
-  the iterable before building the body closure.
+  y-slot (`emitDestructBind`'s tuple subject, `lowerArrayLit`'s cons
+  accumulator), and a length read uses the `length` gc_bif rather than
+  `erlang:length/1`. The range loop materializes the iterable before building
+  the body closure. `lowerTupleLit`/`lowerRecordConstruct`/`lowerTaggedTuple`/
+  `materializeCallArgs` still stage in x-registers — visible only with
+  `erlc +from_asm` over a module that exports every function.
 - **Cross-module**: the module atom is the path basename; an imported record
   joins `record_fields` + `imported_types` (`collectRecordShapes`), its
   associated fn lowers to `call_ext` into the owner (`http:'Response_ok'(…)`),

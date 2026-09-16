@@ -39,6 +39,7 @@ fn main() {
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {integer, 2}, {x, 1}}.
+    {move, nil, {x, 0}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
     {make_fun3, {f, 11}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {x, 2}}.

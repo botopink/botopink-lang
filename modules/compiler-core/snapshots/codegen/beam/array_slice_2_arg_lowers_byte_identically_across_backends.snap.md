@@ -18,8 +18,8 @@ fn main() {
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, 'Array_range'}, 2}.
   {label, 3}.
-    {allocate, 3, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {allocate, 4, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {test, is_ge, {f, 12}, [{y, 0}, {y, 1}]}.
@@ -34,12 +34,13 @@ fn main() {
     {move, {x, 1}, {x, 0}}.
     {move, {x, 2}, {x, 1}}.
     {call, 2, {f, 3}}.
-    {move, {x, 0}, {x, 1}}.
+    {move, {x, 0}, {y, 3}}.
     {move, {y, 2}, {x, 0}}.
+    {move, {y, 3}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
   {label, 13}.
-    {deallocate, 3}.
+    {deallocate, 4}.
     return.
 
 {function, 'Array_repeat', 2, 5}.
@@ -47,8 +48,8 @@ fn main() {
     {line, [{location, "main.erl", 2}]}.
     {func_info, {atom, main}, {atom, 'Array_repeat'}, 2}.
   {label, 5}.
-    {allocate, 3, 2}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {allocate, 4, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {test, is_ge, {f, 14}, [{integer, 0}, {y, 1}]}.
@@ -63,12 +64,13 @@ fn main() {
     {move, {x, 1}, {x, 0}}.
     {move, {x, 2}, {x, 1}}.
     {call, 2, {f, 5}}.
-    {move, {x, 0}, {x, 1}}.
+    {move, {x, 0}, {y, 3}}.
     {move, {y, 2}, {x, 0}}.
+    {move, {y, 3}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
   {label, 15}.
-    {deallocate, 3}.
+    {deallocate, 4}.
     return.
 
 {function, main, 0, 7}.
@@ -76,31 +78,36 @@ fn main() {
     {line, [{location, "main.erl", 3}]}.
     {func_info, {atom, main}, {atom, main}, 0}.
   {label, 7}.
-    {allocate, 1, 0}.
-    {init_yregs, {list, [{y, 0}]}}.
+    {allocate, 2, 0}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, nil, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
+    {move, {x, 0}, {y, 0}}.
     {move, {integer, 5}, {x, 0}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {integer, 4}, {x, 0}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {integer, 3}, {x, 0}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {integer, 2}, {x, 0}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {integer, 1}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {y, 0}}.
-    {move, {y, 0}, {x, 0}}.
+    {move, {integer, 4}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {integer, 3}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {integer, 1}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
     {gc_bif, '+', {f, 0}, 1, [{integer, 1}, {integer, 1}], {x, 1}}.
     {gc_bif, '-', {f, 0}, 2, [{integer, 4}, {integer, 1}], {x, 2}}.
     {call_ext, 3, {extfunc, lists, sublist, 3}}.
@@ -110,7 +117,7 @@ fn main() {
     {put_list, {x, 1}, nil, {x, 1}}.
     {call_ext, 2, {extfunc, io, format, 2}}.
     {move, {atom, ok}, {x, 0}}.
-    {deallocate, 1}.
+    {deallocate, 2}.
     return.
 
 {function, '_botopink_main', 0, 9}.
