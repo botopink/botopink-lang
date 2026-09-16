@@ -1055,6 +1055,71 @@ const Emitter = struct {
         self.next_y = 0;
         self.num_y = 0;
         self.cur_arity = arity;
+        self.min_live = 0;
+    }
+
+    /// First x-register free for staging an operand.
+    ///
+    /// `{x, 0}` is the universal result register — every `lowerExprIntoX0`
+    /// writes it — so a scratch slot may never be `{x, 0}`. Above that, the
+    /// only x-registers holding a live value are the ones the *enclosing*
+    /// lowering has already staged, which it records by raising `min_live`
+    /// (a BEAM `Live` count: `x0..x_{min_live-1}` are live). Parameters are
+    /// spilled to y-slots by `bindParams`, so `cur_arity` no longer describes
+    /// any live x-register and must not be used as a scratch base.
+    fn scratchBase(self: *const Emitter) u32 {
+        return @max(self.min_live, 1);
+    }
+
+    /// Raise the live-register floor to `live` for the duration of a nested
+    /// lowering, returning the previous floor for the caller to restore. A
+    /// floor of 0 (nothing staged yet) is left untouched: claiming `{x, 0}`
+    /// live before anything has written it trips the loader's
+    /// `uninitialized_reg` check.
+    fn raiseLive(self: *Emitter, live: u32) u32 {
+        const saved = self.min_live;
+        if (live > 0) self.min_live = @max(self.min_live, live);
+        return saved;
+    }
+
+    /// Bind the incoming parameters to y-slots (`y0..y{n-1}`) and reserve the
+    /// local slots after them.
+    ///
+    /// BEAM x-registers are both caller-clobbered (every `call` destroys them)
+    /// and the codegen's only expression destination, so a parameter left in
+    /// `{x, i}` dies the first time the body evaluates *anything*: a field read
+    /// (`self.x` lands in `{x, 0}`, overwriting `self`), a nested call, a
+    /// staged `gc_bif` operand. Copying every parameter into a stack slot right
+    /// after `allocate` makes the whole x-file free scratch and is what keeps
+    /// `Vec2_lengthSq(self)` able to read `self.y` after `self.x`.
+    ///
+    /// Must be called after `num_y` is known and before the body is emitted;
+    /// `emitParamSpill` writes the actual `{move, {x, i}, {y, i}}` prologue
+    /// after `emitFrame`.
+    fn bindParams(self: *Emitter, names: []const []const u8) !void {
+        for (names, 0..) |n, i| {
+            try self.reg_map.put(n, .{ .y = @intCast(i) });
+        }
+        self.next_y = @intCast(names.len);
+    }
+
+    /// Collect the declared parameter names (in order) into `buf` — the input
+    /// `bindParams` takes, for the param lists that carry a `.name` field.
+    fn paramNames(params: anytype, buf: [][]const u8) []const []const u8 {
+        var n: usize = 0;
+        for (params) |p| {
+            if (n == buf.len) break;
+            buf[n] = p.name;
+            n += 1;
+        }
+        return buf[0..n];
+    }
+
+    /// Emit the `{move, {x, i}, {y, i}}` prologue that backs `bindParams`.
+    fn emitParamSpill(self: *Emitter, count: usize) !void {
+        for (0..count) |i| {
+            try self.bodyPrint("    {{move, {{x, {d}}}, {{y, {d}}}}}.\n", .{ i, i });
+        }
     }
 
     /// Count the y-slots needed for a function body: one slot per `localBind`.
@@ -1063,6 +1128,13 @@ const Emitter = struct {
     fn precountLocals(_: *Emitter, body: []const ast.Stmt) u32 {
         var n: u32 = 0;
         countLocalsRec(body, &n);
+        return n;
+    }
+
+    /// `precountLocals` for a bare expression (a top-level `val`'s value).
+    fn precountLocalsInExpr(_: *Emitter, e: ast.Expr) u32 {
+        var n: u32 = 0;
+        countLocalsInExpr(e, &n);
         return n;
     }
 
@@ -1076,15 +1148,19 @@ const Emitter = struct {
 
         self.resetFnState(@intCast(arity));
         self.cur_fn_name = f.name;
-        self.num_y = self.precountLocals(f.body);
 
-        // Bind params to x0..x{arity-1}.
-        var x: u32 = 0;
+        // Params arrive in `x0..x{arity-1}` and are spilled to `y0..y{arity-1}`
+        // by the prologue below (see `bindParams`).
+        var names_buf: [64][]const u8 = undefined;
+        var nparams: usize = 0;
         for (f.params) |p| {
             if (std.mem.eql(u8, p.name, "self")) continue;
-            try self.reg_map.put(p.name, .{ .x = x });
-            x += 1;
+            if (nparams == names_buf.len) break;
+            names_buf[nparams] = p.name;
+            nparams += 1;
         }
+        self.num_y = @as(u32, @intCast(nparams)) + self.precountLocals(f.body);
+        try self.bindParams(names_buf[0..nparams]);
 
         try self.bodyWrite("\n");
         // An effect fn is async/generator — except `#[@result]` (checked-Result
@@ -1103,6 +1179,7 @@ const Emitter = struct {
         try self.bodyPrint("  {{label, {d}}}.\n", .{entry_label});
 
         try self.emitFrame(arity);
+        try self.emitParamSpill(nparams);
 
         self.cur_line += 1;
         try self.emitBody(f.body);
@@ -1215,13 +1292,10 @@ const Emitter = struct {
         const labels = try self.fnLabelsFor(mangled, arity);
 
         self.resetFnState(@intCast(arity));
-        self.num_y = self.precountLocals(m.body.?);
-
-        var x: u32 = 0;
-        for (m.params) |p| {
-            try self.reg_map.put(p.name, .{ .x = x });
-            x += 1;
-        }
+        var names_buf: [64][]const u8 = undefined;
+        const names = paramNames(m.params, &names_buf);
+        self.num_y = @as(u32, @intCast(names.len)) + self.precountLocals(m.body.?);
+        try self.bindParams(names);
 
         try self.bodyWrite("\n");
         try self.bodyPrint("{{function, {f}, {d}, {d}}}.\n", .{ erlEmitter.atom(mangled), arity, labels.entry });
@@ -1231,6 +1305,7 @@ const Emitter = struct {
         try self.bodyPrint("  {{label, {d}}}.\n", .{labels.entry});
 
         try self.emitFrame(arity);
+        try self.emitParamSpill(names.len);
 
         self.cur_line += 1;
         try self.emitBody(m.body.?);
@@ -1243,13 +1318,10 @@ const Emitter = struct {
         const labels = try self.fnLabelsFor(mangled, arity);
 
         self.resetFnState(@intCast(arity));
-        self.num_y = self.precountLocals(m.body);
-
-        var x: u32 = 0;
-        for (m.params) |p| {
-            try self.reg_map.put(p.name, .{ .x = x });
-            x += 1;
-        }
+        var names_buf: [64][]const u8 = undefined;
+        const names = paramNames(m.params, &names_buf);
+        self.num_y = @as(u32, @intCast(names.len)) + self.precountLocals(m.body);
+        try self.bindParams(names);
 
         try self.bodyWrite("\n");
         try self.bodyPrint("{{function, {f}, {d}, {d}}}.\n", .{ erlEmitter.atom(mangled), arity, labels.entry });
@@ -1259,6 +1331,7 @@ const Emitter = struct {
         try self.bodyPrint("  {{label, {d}}}.\n", .{labels.entry});
 
         try self.emitFrame(arity);
+        try self.emitParamSpill(names.len);
 
         self.cur_line += 1;
         try self.emitBody(m.body);
@@ -1273,8 +1346,8 @@ const Emitter = struct {
         const labels = try self.fnLabelsFor(mangled, 1);
 
         self.resetFnState(1);
-        self.num_y = self.precountLocals(g.body);
-        try self.reg_map.put(g.selfParam.name, .{ .x = 0 });
+        self.num_y = 1 + self.precountLocals(g.body);
+        try self.bindParams(&.{g.selfParam.name});
 
         try self.bodyWrite("\n");
         try self.bodyPrint("{{function, {f}, 1, {d}}}.\n", .{ erlEmitter.atom(mangled), labels.entry });
@@ -1283,6 +1356,7 @@ const Emitter = struct {
         try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, {f}}}, 1}}.\n", .{ erlEmitter.atom(self.module_name), erlEmitter.atom(mangled) });
         try self.bodyPrint("  {{label, {d}}}.\n", .{labels.entry});
         try self.emitFrame(1);
+        try self.emitParamSpill(1);
         self.cur_line += 1;
         try self.emitBody(g.body);
     }
@@ -1294,12 +1368,10 @@ const Emitter = struct {
         const labels = try self.fnLabelsFor(mangled, arity);
 
         self.resetFnState(@intCast(arity));
-        self.num_y = self.precountLocals(s.body);
-        var x: u32 = 0;
-        for (s.params) |p| {
-            try self.reg_map.put(p.name, .{ .x = x });
-            x += 1;
-        }
+        var names_buf: [64][]const u8 = undefined;
+        const names = paramNames(s.params, &names_buf);
+        self.num_y = @as(u32, @intCast(names.len)) + self.precountLocals(s.body);
+        try self.bindParams(names);
 
         try self.bodyWrite("\n");
         try self.bodyPrint("{{function, {f}, {d}, {d}}}.\n", .{ erlEmitter.atom(mangled), arity, labels.entry });
@@ -1308,6 +1380,7 @@ const Emitter = struct {
         try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, {f}}}, {d}}}.\n", .{ erlEmitter.atom(self.module_name), erlEmitter.atom(mangled), arity });
         try self.bodyPrint("  {{label, {d}}}.\n", .{labels.entry});
         try self.emitFrame(arity);
+        try self.emitParamSpill(names.len);
         self.cur_line += 1;
         try self.emitBody(s.body);
     }
@@ -1333,6 +1406,12 @@ const Emitter = struct {
         try self.bodyPrint("  {{label, {d}}}.\n", .{entry_label});
         self.cur_line += 1;
 
+        // `emitReturn` always emits `{deallocate, NumY}`, so the frame has to
+        // exist even for a `val` whose value needs no stack slot — a bare
+        // `{deallocate, 0}` is rejected by the loader with `{allocated, none}`
+        // as soon as the function is reachable.
+        self.num_y = self.precountLocalsInExpr(v.value.*);
+        try self.emitFrame(0);
         try self.lowerExprIntoX0(v.value.*);
         try self.emitReturn();
     }
@@ -1495,7 +1574,7 @@ const Emitter = struct {
         switch (pattern) {
             .names => |n| {
                 for (n.fields) |fld| {
-                    const scratch = self.cur_arity;
+                    const scratch = self.scratchBase();
                     try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
                     const fail = self.allocLabel();
                     try self.bodyPrint(
@@ -1558,7 +1637,7 @@ const Emitter = struct {
                         var reg_buf: [64]u8 = undefined;
                         const reg_term = try reg.format(&reg_buf);
                         try self.lowerExprIntoX0(a.value.*);
-                        const scratch = self.cur_arity;
+                        const scratch = self.scratchBase();
                         try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
                         try self.bodyPrint(
                             "    {{gc_bif, '+', {{f, 0}}, {d}, [{s}, {{x, {d}}}], {{x, 0}}}}.\n",
@@ -1570,9 +1649,11 @@ const Emitter = struct {
             },
             .fieldAccess => |*fa| {
                 try self.lowerExprIntoX0(a.value.*);
-                const scratch = self.cur_arity;
+                const scratch = self.scratchBase();
                 try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
+                const saved_live = self.raiseLive(scratch + 1);
                 try self.lowerExprIntoX0(fa.receiver.*);
+                self.min_live = saved_live;
                 try self.bodyPrint(
                     "    {{put_map_exact, {{f, 0}}, {{x, 0}}, {{x, 0}}, {d}, {{list, [{{atom, {f}}}, {{x, {d}}}]}}}}.\n",
                     .{ scratch + 1, erlEmitter.atom(fa.field), scratch },
@@ -1647,18 +1728,21 @@ const Emitter = struct {
                     lhs_final = lhs_simple.?;
                     rhs_final = rhs_simple.?;
                 } else {
-                    const scratch = self.cur_arity;
+                    const scratch = self.scratchBase();
                     if (lhs_simple) |ls| {
                         try self.bodyPrint("    {{move, {s}, {{x, {d}}}}}.\n", .{ ls, scratch });
                     } else {
                         try self.lowerExprIntoX0(bin.lhs.*);
-                        if (scratch != 0) try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
+                        try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
                     }
                     lhs_final = try std.fmt.bufPrint(&lhs_final_buf, "{{x, {d}}}", .{scratch});
                     if (rhs_simple) |rs| {
                         rhs_final = rs;
                     } else {
+                        // The staged lhs must survive the rhs lowering.
+                        const saved_live = self.raiseLive(scratch + 1);
                         try self.lowerExprIntoX0(bin.rhs.*);
+                        self.min_live = saved_live;
                         rhs_final = try std.fmt.bufPrint(&rhs_final_buf, "{{x, 0}}", .{});
                     }
                 }
@@ -1835,7 +1919,7 @@ const Emitter = struct {
             },
             .function => |f| switch (f.kind.syntax) {
                 .lambda => {
-                    try self.lowerLambda(f.kind, self.cur_arity);
+                    try self.lowerLambda(f.kind, self.min_live);
                     return;
                 },
                 .fnExpr => {
@@ -1873,11 +1957,11 @@ const Emitter = struct {
         if (inner_term) |it| {
             try self.bodyPrint(
                 "    {{gc_bif, '-', {{f, 0}}, {d}, [{{integer, 0}}, {s}], {{x, {d}}}}}.\n",
-                .{ self.cur_arity, it, dest },
+                .{ self.min_live, it, dest },
             );
         } else {
             try self.lowerExprIntoX0(inner);
-            const scratch = self.cur_arity;
+            const scratch = self.scratchBase();
             try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
             var scratch_buf: [64]u8 = undefined;
             const scratch_term = try std.fmt.bufPrint(&scratch_buf, "{{x, {d}}}", .{scratch});
@@ -1971,23 +2055,26 @@ const Emitter = struct {
         if (lhs_simple != null and rhs_simple != null) {
             try self.bodyPrint(
                 "    {{gc_bif, {s}, {{f, 0}}, {d}, [{s}, {s}], {{x, {d}}}}}.\n",
-                .{ bif, @max(self.cur_arity, self.min_live), lhs_simple.?, rhs_simple.?, dest },
+                .{ bif, self.min_live, lhs_simple.?, rhs_simple.?, dest },
             );
             return;
         }
 
-        const scratch = self.cur_arity;
+        const scratch = self.scratchBase();
         if (lhs_simple) |ls| {
             try self.bodyPrint("    {{move, {s}, {{x, {d}}}}}.\n", .{ ls, scratch });
         } else {
             try self.lowerExprIntoX0(bin.lhs.*);
-            if (scratch != 0)
-                try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
+            try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
         }
 
         var rhs_final_buf: [64]u8 = undefined;
         const rhs_final: []const u8 = if (rhs_simple) |rs| rs else blk: {
+            // The staged lhs sits in `{x, scratch}`; a `gc_bif`/call inside the
+            // rhs would otherwise drop it (`not_live`).
+            const saved_live = self.raiseLive(scratch + 1);
             try self.lowerExprIntoX0(bin.rhs.*);
+            self.min_live = saved_live;
             break :blk try std.fmt.bufPrint(&rhs_final_buf, "{{x, 0}}", .{});
         };
 
@@ -2019,19 +2106,21 @@ const Emitter = struct {
             lhs_final = lhs_simple.?;
             rhs_final = rhs_simple.?;
         } else {
-            const scratch = self.cur_arity;
+            const scratch = self.scratchBase();
             if (lhs_simple) |ls| {
                 try self.bodyPrint("    {{move, {s}, {{x, {d}}}}}.\n", .{ ls, scratch });
             } else {
                 try self.lowerExprIntoX0(bin.lhs.*);
-                if (scratch != 0) try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
+                try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
             }
             lhs_final = try std.fmt.bufPrint(&lhs_final_buf, "{{x, {d}}}", .{scratch});
 
             if (rhs_simple) |rs| {
                 rhs_final = rs;
             } else {
+                const saved_live = self.raiseLive(scratch + 1);
                 try self.lowerExprIntoX0(bin.rhs.*);
+                self.min_live = saved_live;
                 rhs_final = try std.fmt.bufPrint(&rhs_final_buf, "{{x, 0}}", .{});
             }
         }
@@ -2054,9 +2143,9 @@ const Emitter = struct {
         const lhs_simple = try self.simpleTerm(bin.lhs.*, &lhs_buf);
         var lhs_final_buf: [64]u8 = undefined;
         const lhs_final: []const u8 = if (lhs_simple) |ls| ls else blk: {
-            const scratch = self.cur_arity;
+            const scratch = self.scratchBase();
             try self.lowerExprIntoX0(bin.lhs.*);
-            if (scratch != 0) try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
+            try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
             break :blk try std.fmt.bufPrint(&lhs_final_buf, "{{x, {d}}}", .{scratch});
         };
         const false_label = self.allocLabel();
@@ -2076,9 +2165,9 @@ const Emitter = struct {
         const lhs_simple = try self.simpleTerm(bin.lhs.*, &lhs_buf);
         var lhs_final_buf: [64]u8 = undefined;
         const lhs_final: []const u8 = if (lhs_simple) |ls| ls else blk: {
-            const scratch = self.cur_arity;
+            const scratch = self.scratchBase();
             try self.lowerExprIntoX0(bin.lhs.*);
-            if (scratch != 0) try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
+            try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
             break :blk try std.fmt.bufPrint(&lhs_final_buf, "{{x, {d}}}", .{scratch});
         };
         const true_label = self.allocLabel();
@@ -2145,7 +2234,7 @@ const Emitter = struct {
                     var nbuf: [256]u8 = undefined;
                     if (self.extMangledName(&nbuf, rn, cc.callee)) |mangled| {
                         const arity = cc.args.len;
-                        try self.materializeCallArgs(cc.args);
+                        try self.materializeCallArgs(cc.args, cc.trailing[0..0]);
                         const labels = self.fnLabelsFor(mangled, arity) catch {
                             try self.bodyPrint("    %% unresolved extension call: {s}/{d}\n", .{ mangled, arity });
                             if (mode == .tail) try self.emitReturn();
@@ -2179,7 +2268,7 @@ const Emitter = struct {
             // backend's `std_imports` path.
             if (recv_name) |rn| {
                 if (self.std_imports.contains(rn)) {
-                    try self.materializeCallArgs(cc.args);
+                    try self.materializeCallArgs(cc.args, cc.trailing);
                     const arity = cc.args.len + cc.trailing.len;
                     var fn_buf: [256]u8 = undefined;
                     const fn_atom = atomName(cc.callee, &fn_buf) catch cc.callee;
@@ -2232,7 +2321,7 @@ const Emitter = struct {
                         const mangled = std.fmt.bufPrint(&nbuf, "'{s}_{s}'", .{ rn, cc.callee }) catch return;
                         const arity = cc.args.len;
                         if (self.imported_types.get(rn)) |owner| {
-                            try self.materializeCallArgs(cc.args);
+                            try self.materializeCallArgs(cc.args, cc.trailing);
                             switch (mode) {
                                 .non_tail => try self.bodyPrint(
                                     "    {{call_ext, {d}, {{extfunc, {s}, {s}, {d}}}}}.\n",
@@ -2246,7 +2335,7 @@ const Emitter = struct {
                             return;
                         }
                         if (self.fnLabelsFor(mangled, arity)) |labels| {
-                            try self.materializeCallArgs(cc.args);
+                            try self.materializeCallArgs(cc.args, cc.trailing);
                             switch (mode) {
                                 .non_tail => try self.bodyPrint("    {{call, {d}, {{f, {d}}}}}.\n", .{ arity, labels.entry }),
                                 .tail => try self.bodyPrint("    {{call_last, {d}, {{f, {d}}}, {d}}}.\n", .{ arity, labels.entry, self.num_y }),
@@ -2263,7 +2352,7 @@ const Emitter = struct {
                         const mangled = std.fmt.bufPrint(&nbuf, "'{s}_{s}'", .{ rn, cc.callee }) catch return;
                         const arity = cc.args.len;
                         if (self.fnLabelsFor(mangled, arity)) |labels| {
-                            try self.materializeCallArgs(cc.args);
+                            try self.materializeCallArgs(cc.args, cc.trailing);
                             switch (mode) {
                                 .non_tail => try self.bodyPrint("    {{call, {d}, {{f, {d}}}}}.\n", .{ arity, labels.entry }),
                                 .tail => try self.bodyPrint("    {{call_last, {d}, {{f, {d}}}, {d}}}.\n", .{ arity, labels.entry, self.num_y }),
@@ -2272,8 +2361,14 @@ const Emitter = struct {
                         } else |_| {}
                     }
                     const total = cc.args.len + cc.trailing.len;
-                    const scratch = self.cur_arity;
+                    const scratch = self.scratchBase();
+                    const saved_live = self.min_live;
                     for (cc.args, 0..) |arg, i| {
+                        // Args already staged (`scratch..scratch+i-1`) must
+                        // survive this one's own calls / gc_bifs. Nothing is
+                        // staged yet for `i == 0`, and claiming `{x, 0}` live
+                        // before anything wrote it is `uninitialized_reg`.
+                        if (i > 0) _ = self.raiseLive(@intCast(scratch + i));
                         try self.lowerExprIntoX0(arg.value.*);
                         try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch + i});
                     }
@@ -2281,9 +2376,11 @@ const Emitter = struct {
                         // Positional args sit in scratch..scratch+args.len-1 and
                         // earlier trailing funs in the slots after — all must
                         // survive the closure's test_heap.
+                        _ = self.raiseLive(@intCast(scratch + cc.args.len + j));
                         try self.lowerLambda(trail, @intCast(scratch + cc.args.len + j));
                         try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch + cc.args.len + j});
                     }
+                    self.min_live = saved_live;
                     for (0..total) |i| {
                         try self.bodyPrint("    {{move, {{x, {d}}}, {{x, {d}}}}}.\n", .{ scratch + i, i });
                     }
@@ -2315,12 +2412,15 @@ const Emitter = struct {
             } else {
                 try self.lowerExprIntoX0(recv_expr.*);
             }
-            const scratch = self.cur_arity;
+            const scratch = self.scratchBase();
             try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
+            const saved_live = self.min_live;
             for (cc.args, 0..) |arg, i| {
+                _ = self.raiseLive(@intCast(scratch + 1 + i));
                 try self.lowerExprIntoX0(arg.value.*);
                 try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch + 1 + i});
             }
+            self.min_live = saved_live;
             try self.bodyPrint("    {{move, {{x, {d}}}, {{x, 0}}}}.\n", .{scratch});
             for (0..cc.args.len) |i| {
                 try self.bodyPrint("    {{move, {{x, {d}}}, {{x, {d}}}}}.\n", .{ scratch + 1 + i, 1 + i });
@@ -2337,19 +2437,14 @@ const Emitter = struct {
             }
             return;
         }
-        if (cc.trailing.len > 0) {
-            for (cc.trailing) |trail| {
-                try self.lowerLambda(trail, self.cur_arity);
-                const scratch = self.cur_arity;
-                try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
-            }
-        }
-
-        const arity = cc.args.len;
+        // Trailing lambdas (`each(xs) { x -> … }`) are positional arguments
+        // after the parenthesised ones, so the callee's arity counts both and
+        // `materializeCallArgs` lays them out together.
+        const arity = cc.args.len + cc.trailing.len;
 
         // A top-level function resolves to a reserved label pair → direct call.
         if (self.fnLabelsFor(cc.callee, arity)) |labels| {
-            try self.materializeCallArgs(cc.args);
+            try self.materializeCallArgs(cc.args, cc.trailing);
             switch (mode) {
                 .non_tail => try self.bodyPrint("    {{call, {d}, {{f, {d}}}}}.\n", .{ arity, labels.entry }),
                 .tail => try self.bodyPrint("    {{call_last, {d}, {{f, {d}}}, {d}}}.\n", .{ arity, labels.entry, self.num_y }),
@@ -2358,15 +2453,15 @@ const Emitter = struct {
         } else |_| {}
 
         // Otherwise, a name bound to a local (a `syntax fn` parameter or a
-        // `val f = {x -> …}`) holds a fun and is applied via `call_fun`. The fun
-        // must be loaded into `{x, arity}` *before* materializing the args — an
-        // argument may target the very register the fun currently occupies (a
-        // fun parameter in `{x, 0}` and a 1-arg call whose arg also lands there).
+        // `val f = {x -> …}`) holds a fun and is applied via `call_fun`. Params
+        // and locals live in y-slots, so the fun is loaded into `{x, arity}`
+        // *after* the arguments are laid out — nothing the arg staging writes
+        // can reach it, and the load itself can't disturb the arg registers.
         if (self.reg_map.get(cc.callee)) |reg| {
             var rbuf: [64]u8 = undefined;
             const fun_term = try reg.format(&rbuf);
+            try self.materializeCallArgs(cc.args, cc.trailing);
             try self.bodyPrint("    {{move, {s}, {{x, {d}}}}}.\n", .{ fun_term, arity });
-            try self.materializeCallArgs(cc.args);
             try self.bodyPrint("    {{call_fun, {d}}}.\n", .{arity});
             if (mode == .tail) try self.emitReturn();
             return;
@@ -2392,7 +2487,7 @@ const Emitter = struct {
             }
         }
 
-        try self.materializeCallArgs(cc.args);
+        try self.materializeCallArgs(cc.args, cc.trailing);
         try self.bodyPrint("    %% unresolved local call: {s}/{d}\n", .{ cc.callee, arity });
         if (mode == .tail) try self.emitReturn();
     }
@@ -3064,12 +3159,15 @@ const Emitter = struct {
         } else {
             try self.lowerExprIntoX0(recv_expr.*);
         }
-        const scratch = self.cur_arity;
+        const scratch = self.scratchBase();
         try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
+        const saved_live = self.min_live;
         for (args, 0..) |arg, i| {
+            _ = self.raiseLive(@intCast(scratch + 1 + i));
             try self.lowerExprIntoX0(arg.value.*);
             try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch + 1 + i});
         }
+        self.min_live = saved_live;
         try self.bodyPrint("    {{move, {{x, {d}}}, {{x, 0}}}}.\n", .{scratch});
         for (0..args.len) |i| {
             try self.bodyPrint("    {{move, {{x, {d}}}, {{x, {d}}}}}.\n", .{ scratch + 1 + i, 1 + i });
@@ -3107,14 +3205,17 @@ const Emitter = struct {
             try beamEmitter.writeMove(self.out, Term.mapOf(&.{}), 0);
             return;
         }
-        // Scratch slots start at `max(cur_arity, 1)` — never `{x, 0}`, which each
-        // `lowerExprIntoX0` overwrites; storing a value there would clobber it as
-        // soon as the next field is evaluated.
-        const scratch = @max(self.cur_arity, 1);
+        // Scratch slots start above every staged register and never at
+        // `{x, 0}`, which each `lowerExprIntoX0` overwrites; storing a value
+        // there would clobber it as soon as the next field is evaluated.
+        const scratch = self.scratchBase();
+        const saved_live = self.min_live;
         for (args, 0..) |arg, i| {
+            if (i > 0) _ = self.raiseLive(@intCast(scratch + i));
             try self.lowerExprIntoX0(arg.value.*);
             try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch + i});
         }
+        self.min_live = saved_live;
         try self.bodyWrite("    {put_map_assoc, {f, 0}, ");
         try beamEmitter.writeLiteral(self.out, Term.mapOf(&.{}));
         try self.bodyPrint(", {{x, 0}}, {d}, {{list, [", .{scratch + n});
@@ -3132,11 +3233,14 @@ const Emitter = struct {
     /// by `is_tagged_tuple` when the variant is pattern-matched. Result in `{x, 0}`.
     fn lowerTaggedTuple(self: *Emitter, tag: []const u8, args: anytype) anyerror!void {
         const n = args.len;
-        const scratch = @max(self.cur_arity, 1);
+        const scratch = self.scratchBase();
+        const saved_live = self.min_live;
         for (args, 0..) |arg, i| {
+            if (i > 0) _ = self.raiseLive(@intCast(scratch + i));
             try self.lowerExprIntoX0(arg.value.*);
             try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch + i});
         }
+        self.min_live = saved_live;
         // A tuple of `n + 1` elements (tag + fields) needs `n + 2` heap words.
         try self.bodyPrint("    {{test_heap, {d}, {d}}}.\n", .{ n + 2, scratch + n });
         var tag_buf: [256]u8 = undefined;
@@ -3201,8 +3305,8 @@ const Emitter = struct {
     fn lowerResultOptionOp(self: *Emitter, callee: []const u8, args: anytype) anyerror!void {
         const recv = args[0].value;
         const arg1: ?*ast.Expr = if (args.len > 1) args[1].value else null;
-        const disc = self.cur_arity + 1;
-        const pstash = self.cur_arity + 2;
+        const disc = self.scratchBase();
+        const pstash = disc + 1;
 
         if (std.mem.eql(u8, callee, "__bp_ok") or std.mem.eql(u8, callee, "__bp_error")) {
             // Result constructor (`return v` / `throw e` in a `-> @Result<…>` fn):
@@ -3225,9 +3329,9 @@ const Emitter = struct {
             // `{x, pstash}` and must survive the closure's `test_heap`, so raise
             // the make_fun3 live floor across the fn lowering.
             try self.bodyPrint("    {{get_tuple_element, {{x, 0}}, 1, {{x, {d}}}}}.\n", .{pstash});
-            self.min_live = pstash + 1;
+            const saved_live = self.raiseLive(pstash + 1);
             try self.lowerFnInto0(arg1);
-            self.min_live = 0;
+            self.min_live = saved_live;
             try self.bodyWrite("    {move, {x, 0}, {x, 1}}.\n");
             try self.bodyPrint("    {{move, {{x, {d}}}, {{x, 0}}}}.\n", .{pstash});
             try self.bodyWrite("    {call_fun, 1}.\n");
@@ -3286,7 +3390,9 @@ const Emitter = struct {
             try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_l});
             try self.bodyPrint("  {{label, {d}}}.\n", .{present_l});
             try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{pstash});
+            const saved_live = self.raiseLive(pstash + 1);
             try self.lowerFnInto0(arg1);
+            self.min_live = saved_live;
             try self.bodyWrite("    {move, {x, 0}, {x, 1}}.\n");
             try self.bodyPrint("    {{move, {{x, {d}}}, {{x, 0}}}}.\n", .{pstash});
             try self.bodyWrite("    {call_fun, 1}.\n");
@@ -3322,17 +3428,26 @@ const Emitter = struct {
         }
     }
 
-    /// Lay out call arguments into `{x, 0}..{x, arity-1}`. Currently expects
-    /// each arg to be a `simpleTerm` (literal/identifier). Composite args go
-    /// to Fase 9 (proper allocation).
-    fn materializeCallArgs(self: *Emitter, args: anytype) anyerror!void {
-        if (args.len > 16) {
+    /// Lay out call arguments into `{x, 0}..{x, arity-1}`, with any trailing
+    /// lambdas (`each(xs) { x -> … }`) following the parenthesised ones.
+    ///
+    /// Arguments that all reduce to a `simpleTerm` (a literal, or a y-resident
+    /// binding) move straight into their final register. Otherwise every
+    /// argument is first staged into a scratch slot above `scratchBase()` and
+    /// only then shuffled down: an argument's own lowering goes through
+    /// `{x, 0}` and would overwrite an earlier argument already parked there.
+    /// While argument `i` is being lowered the live floor is raised to cover
+    /// the `i` slots already staged, so a `gc_bif`/`call`/closure inside it
+    /// cannot drop them.
+    fn materializeCallArgs(self: *Emitter, args: anytype, trailing: anytype) anyerror!void {
+        const total = args.len + trailing.len;
+        if (total > 16) {
             try self.bodyWrite("    %% unsupported: call with > 16 args\n");
             return;
         }
         var bufs: [16][64]u8 = undefined;
         var terms: [16]?[]const u8 = undefined;
-        var has_complex = false;
+        var has_complex = trailing.len > 0;
         for (args, 0..) |arg, i| {
             terms[i] = try self.simpleTerm(arg.value.*, &bufs[i]);
             if (terms[i] == null) has_complex = true;
@@ -3345,24 +3460,25 @@ const Emitter = struct {
             return;
         }
 
-        const scratch_base = self.cur_arity;
+        const scratch_base = self.scratchBase();
+        const saved_min = self.min_live;
         for (args, 0..) |arg, i| {
             if (terms[i]) |t| {
                 try self.bodyPrint("    {{move, {s}, {{x, {d}}}}}.\n", .{ t, scratch_base + i });
             } else {
-                // A complex arg lowered here must not let its inner `gc_bif`/closure
-                // GC-clobber the scratch slots holding the args already
-                // materialized (`scratch_base..scratch_base+i-1`): raise the live
-                // floor so those survive (e.g. `repeat(value, times - 1)` saves
-                // `value` then lowers the `times - 1` gc_bif).
-                const saved_min = self.min_live;
-                self.min_live = @max(self.min_live, @as(u32, @intCast(scratch_base + i)));
+                if (i > 0) _ = self.raiseLive(@intCast(scratch_base + i));
                 try self.lowerExprIntoX0(arg.value.*);
-                self.min_live = saved_min;
                 try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch_base + i});
             }
         }
-        for (args, 0..) |_, i| {
+        for (trailing, 0..) |trail, j| {
+            const slot = scratch_base + args.len + j;
+            if (slot > scratch_base) _ = self.raiseLive(@intCast(slot));
+            try self.lowerLambda(trail, @intCast(slot));
+            try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{slot});
+        }
+        self.min_live = saved_min;
+        for (0..total) |i| {
             try self.bodyPrint("    {{move, {{x, {d}}}, {{x, {d}}}}}.\n", .{ scratch_base + i, i });
         }
     }
@@ -3376,37 +3492,27 @@ const Emitter = struct {
             try self.bodyWrite("    {move, nil, {x, 0}}.\n");
         }
         if (al.elems.len > 0) {
-            // Live x-registers across the cons allocation: `x0` holds the
-            // accumulator (the spread tail, or `nil`), plus any x-register an
-            // element reads in the loop below. A `val` spilled to a y-slot
-            // contributes nothing — which is exactly why the recursive
-            // `[head, ..(recurse(...))]` builders assemble (the recursive call
-            // clobbers the param x-registers, but `head` lives on the stack). The
-            // scratch save slot is written *after* this `test_heap`, so it must
-            // not be claimed live (`cur_arity + 1` over-claimed it → `not_live`).
-            var live: u32 = 1;
-            for (al.elems) |elem| switch (elem) {
-                .identifier => |id| switch (id.kind) {
-                    .ident => |nm| if (self.reg_map.get(nm)) |reg| switch (reg) {
-                        .x => |xi| live = @max(live, xi + 1),
-                        .y => {},
-                    },
-                    else => {},
-                },
-                else => {},
-            };
-            try self.bodyPrint("    {{test_heap, {d}, {d}}}.\n", .{ al.elems.len * 2, live });
+            // One cons cell is reserved per element, *after* that element has
+            // been evaluated. Reserving all `n * 2` words up front only works
+            // when no element allocates: an element that builds a record or
+            // calls a function runs the collector and the reservation is gone
+            // by the time `put_list` runs (`{heap_overflow, …}` from the
+            // loader — `list_literal_of_records_len`).
+            const scratch = self.scratchBase();
             var i: usize = al.elems.len;
             while (i > 0) {
                 i -= 1;
                 // The tail accumulator is stashed here while the next element is
-                // computed into `x0`; the slot must differ from `x0`, so floor it
-                // at 1 (a 0-arity fn like `main/0` would otherwise alias `x0` and
-                // cons `[Elem | Elem]`). No GC runs in this loop — the up-front
-                // `test_heap` reserves every cons cell — so the slot stays live.
-                const scratch = @max(self.cur_arity, 1);
+                // computed into `x0`; the slot must differ from `x0`, so
+                // `scratchBase` floors it at 1 (a 0-arity fn like `main/0`
+                // would otherwise alias `x0` and cons `[Elem | Elem]`).
                 try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
+                const saved_live = self.raiseLive(scratch + 1);
                 try self.lowerExprIntoX0(al.elems[i]);
+                self.min_live = saved_live;
+                // `{x, 0}` holds the element and `{x, scratch}` the tail — both
+                // must survive the cons allocation.
+                try self.bodyPrint("    {{test_heap, 2, {d}}}.\n", .{scratch + 1});
                 try self.bodyPrint(
                     "    {{put_list, {{x, 0}}, {{x, {d}}}, {{x, 0}}}}.\n",
                     .{scratch},
@@ -3418,11 +3524,14 @@ const Emitter = struct {
     /// Build an Erlang tuple from a tuple literal via `{put_tuple2, ...}`.
     fn lowerTupleLit(self: *Emitter, tl: anytype) anyerror!void {
         const n = tl.elems.len;
-        const scratch_base = self.cur_arity;
+        const scratch_base = self.scratchBase();
+        const saved_live = self.min_live;
         for (tl.elems, 0..) |elem, i| {
+            if (i > 0) _ = self.raiseLive(@intCast(scratch_base + i));
             try self.lowerExprIntoX0(elem);
             try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch_base + i});
         }
+        self.min_live = saved_live;
         try self.bodyPrint("    {{test_heap, {d}, {d}}}.\n", .{ n + 1, scratch_base + n });
         try self.bodyPrint("    {{put_tuple2, {{x, 0}}, {{list, [", .{});
         for (0..n) |i| {
@@ -3448,16 +3557,16 @@ const Emitter = struct {
     /// the arm carries no guard, keeping unguarded arms byte-identical.
     fn emitGuardPre(self: *Emitter, guard: ?ast.Expr) !?GuardCtx {
         const g = guard orelse return null;
-        const subj = self.cur_arity;
+        const subj = self.scratchBase();
         try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{subj});
-        self.cur_arity += 1;
+        const saved_live = self.raiseLive(subj + 1);
         const restore = self.allocLabel();
         const lowered = try self.lowerComparisonAsTest(g, restore);
         if (!lowered) {
             try self.lowerExprIntoX0(g);
             try self.bodyPrint("    {{test, is_eq, {{f, {d}}}, [{{x, 0}}, {{atom, true}}]}}.\n", .{restore});
         }
-        self.cur_arity -= 1;
+        self.min_live = saved_live;
         return GuardCtx{ .restore = restore, .subj = subj };
     }
 
@@ -3741,13 +3850,8 @@ const Emitter = struct {
 
         self.next_y = 0;
         self.cur_arity = arity;
-        self.num_y = self.precountLocals(lam.body);
-
-        var x: u32 = 0;
-        for (lam.params) |p| {
-            try self.reg_map.put(p, .{ .x = x });
-            x += 1;
-        }
+        self.num_y = arity + self.precountLocals(lam.body);
+        try self.bindParams(lam.params);
 
         try self.bodyWrite("\n");
         try self.bodyPrint("{{function, {f}, {d}, {d}}}.\n", .{ erlEmitter.atom(fun_name), arity, labels.entry });
@@ -3756,6 +3860,7 @@ const Emitter = struct {
         try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, {f}}}, {d}}}.\n", .{ erlEmitter.atom(self.module_name), erlEmitter.atom(fun_name), arity });
         try self.bodyPrint("  {{label, {d}}}.\n", .{labels.entry});
         try self.emitFrame(arity);
+        try self.emitParamSpill(arity);
         try self.emitLambdaBody(lam.body);
 
         self.reg_map.deinit();
@@ -3800,7 +3905,7 @@ const Emitter = struct {
         // argument floor so neither clobbers the other while evaluating. Floor at
         // 1: a 0-arity fn (`main/0`) would otherwise stash `start` in `x0` and then
         // overwrite it computing `end` (`lists:seq(end-1, end-1)` → `[end-1]`).
-        const base = @max(self.cur_arity, 1);
+        const base = self.scratchBase();
 
         try self.lowerExprIntoX0(r.start.*);
         try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{base});
@@ -3808,7 +3913,9 @@ const Emitter = struct {
         if (r.end) |end| {
             // `a..b` is half-open `[a, b)` (parity with wasm/erlang/`Array.range`),
             // but `lists:seq/2` is inclusive — so the upper bound is `b - 1`.
+            const saved_live = self.raiseLive(base + 1);
             try self.lowerExprIntoX0(end.*);
+            self.min_live = saved_live;
             try self.bodyPrint("    {{gc_bif, '-', {{f, 0}}, {d}, [{{x, 0}}, {{integer, 1}}], {{x, 0}}}}.\n", .{@max(base + 1, self.min_live)});
             try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{base + 1});
         } else {
@@ -3836,15 +3943,25 @@ const Emitter = struct {
             },
             .call => |c| switch (c.kind) {
                 .call => |cc| {
-                    const scratch = self.cur_arity;
+                    // `lhs |> f(a, b)` → `f(lhs, a, b)`. The piped value is
+                    // stashed above the staging area, the declared args are
+                    // staged after it, and only then is everything shuffled
+                    // into `{x, 0}..{x, n}` — materializing the args straight
+                    // into their final registers would overwrite the stash.
+                    const scratch = self.scratchBase();
                     try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
-                    try self.materializeCallArgs(cc.args);
-                    const total = cc.args.len + 1;
-                    var i: usize = cc.args.len;
-                    while (i > 0) : (i -= 1) {
-                        try self.bodyPrint("    {{move, {{x, {d}}}, {{x, {d}}}}}.\n", .{ i - 1, i });
+                    const saved_live = self.min_live;
+                    for (cc.args, 0..) |arg, i| {
+                        _ = self.raiseLive(@intCast(scratch + 1 + i));
+                        try self.lowerExprIntoX0(arg.value.*);
+                        try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch + 1 + i});
                     }
+                    self.min_live = saved_live;
+                    const total = cc.args.len + 1;
                     try self.bodyPrint("    {{move, {{x, {d}}}, {{x, 0}}}}.\n", .{scratch});
+                    for (0..cc.args.len) |i| {
+                        try self.bodyPrint("    {{move, {{x, {d}}}, {{x, {d}}}}}.\n", .{ scratch + 1 + i, 1 + i });
+                    }
                     const labels = self.fnLabelsFor(cc.callee, total) catch {
                         try self.bodyPrint("    %% unresolved pipeline fn: {s}/{d}\n", .{ cc.callee, total });
                         return;
@@ -3908,14 +4025,9 @@ const Emitter = struct {
 
         self.next_y = 0;
         self.cur_arity = arity;
-        self.num_y = self.precountLocals(lp.body);
+        self.num_y = arity + self.precountLocals(lp.body);
         self.in_loop_lambda = true;
-
-        var x: u32 = 0;
-        for (lp.params) |p| {
-            try self.reg_map.put(p, .{ .x = x });
-            x += 1;
-        }
+        try self.bindParams(lp.params);
 
         try self.bodyWrite("\n");
         try self.bodyPrint("{{function, {f}, {d}, {d}}}.\n", .{ erlEmitter.atom(fun_name), arity, labels.entry });
@@ -3924,6 +4036,7 @@ const Emitter = struct {
         try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, {f}}}, {d}}}.\n", .{ erlEmitter.atom(self.module_name), erlEmitter.atom(fun_name), arity });
         try self.bodyPrint("  {{label, {d}}}.\n", .{labels.entry});
         try self.emitFrame(arity);
+        try self.emitParamSpill(arity);
 
         try self.emitBody(lp.body);
 
