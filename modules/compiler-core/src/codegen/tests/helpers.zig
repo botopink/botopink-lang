@@ -13,6 +13,7 @@ const ModuleOutput = @import(".././moduleOutput.zig").ModuleOutput;
 const GenerateResult = @import(".././moduleOutput.zig").GenerateResult;
 const comptimeMod = @import("../../comptime.zig");
 const validation = @import("../../comptime/error.zig");
+const ctSnapshot = @import("../../comptime/snapshot.zig");
 
 pub const configs = [_]config.Config{
     .{
@@ -104,13 +105,92 @@ pub fn freshEnv(arena_alloc: std.mem.Allocator, gpa: Allocator) !comptimeMod.Env
     return env;
 }
 
+/// Whether a codegen snapshot test tolerates a module that does not compile.
+pub const CompileExpectation = enum {
+    /// Default: a parse / type / validation error fails the test (spec 06, H3+H9).
+    must_compile,
+    /// The test is *about* a program that does not compile; the recorded
+    /// `COMPILE DIAGNOSTIC` section is the assertion. Used for documented
+    /// skips — always with a comment naming the missing feature.
+    expect_compile_error,
+};
+
+/// The name `comptime.compile` gives a module (mirrors `comptime.zig`).
+fn moduleName(m: Module) []const u8 {
+    return if (m.path.len > 0) m.path else "main";
+}
+
+const CompileDiagnostic = struct {
+    name: []const u8,
+    src: []const u8,
+    text: []u8,
+};
+
+/// Re-runs the comptime front end for `modules` to recover the diagnostics the
+/// backends discard (`.parseError` / `.typeError` modules are `continue`d, so
+/// `codegen.generate` returns no output at all for them). Only called when a
+/// module is already known to be missing, so the extra compile is off the
+/// happy path. Caller frees each `text`.
+fn collectCompileDiagnostics(
+    allocator: Allocator,
+    modules: []const Module,
+    cfg: config.Config,
+    out: *std.ArrayList(CompileDiagnostic),
+) !void {
+    const io = std.testing.io;
+    const target_name: []const u8 = switch (cfg.targetSource) {
+        .commonJS => "node",
+        .erlang, .beam => "erlang",
+        .wasm => "wasm",
+    };
+    var session = try comptimeMod.compile(allocator, modules, io, cfg.build_root, target_name);
+    defer session.deinit(allocator);
+
+    for (session.outputs.items) |o| {
+        const body = (try ctSnapshot.renderOutcomeDiagnostic(allocator, o.src, o.outcome)) orelse continue;
+        try out.append(allocator, .{ .name = o.name, .src = o.src, .text = body });
+    }
+}
+
 pub fn assertJs(
     allocator: Allocator,
     comptime loc: std.builtin.SourceLocation,
     modules: []const Module,
 ) !void {
+    return assertJsExpecting(allocator, loc, modules, .must_compile);
+}
+
+/// `assertJsSingle` for a source that is known not to compile: the snapshot
+/// records the diagnostic on all four backends and the test passes only while
+/// the program *keeps* failing that way. Document the missing feature at the
+/// call site.
+pub fn assertJsCompileError(
+    allocator: Allocator,
+    comptime loc: std.builtin.SourceLocation,
+    src: []const u8,
+) !void {
+    return assertJsExpecting(
+        allocator,
+        loc,
+        &.{.{ .path = "", .source = src }},
+        .expect_compile_error,
+    );
+}
+
+pub fn assertJsExpecting(
+    allocator: Allocator,
+    comptime loc: std.builtin.SourceLocation,
+    modules: []const Module,
+    expectation: CompileExpectation,
+) !void {
     const io = std.testing.io;
     const build_root_path = comptime buildRootPathFromSrc(loc);
+    const slug = comptime slugFromSrc(loc);
+
+    // H10 — compare every backend before failing, so one suite round writes
+    // every `.snap.md.new` instead of stopping at the first mismatch.
+    var first_err: ?anyerror = null;
+    var any_module_failed = false;
 
     for (configs) |c| {
         var cfg = c;
@@ -137,15 +217,79 @@ pub fn assertJs(
                 .src = o.src,
                 .result = o.result,
             });
+            if (o.result.comptime_err != null) any_module_failed = true;
         }
 
-        const slug = comptime slugFromSrc(loc);
-        try snap.assertCodegen(allocator, slug, snapOutputs.items, c);
+        // H3 — every module the backend dropped (parse / type error) still gets
+        // a section, carrying the diagnostic that stopped it.
+        var diagnostics = std.ArrayList(CompileDiagnostic).empty;
+        defer {
+            for (diagnostics.items) |d| allocator.free(d.text);
+            diagnostics.deinit(allocator);
+        }
+        var missing = false;
+        for (modules) |m| {
+            const name = moduleName(m);
+            var found = false;
+            for (outputs.items) |o| {
+                if (std.mem.eql(u8, o.name, name)) found = true;
+            }
+            if (!found) missing = true;
+        }
+        if (missing) {
+            any_module_failed = true;
+            try collectCompileDiagnostics(allocator, modules, cfg, &diagnostics);
+            for (modules) |m| {
+                const name = moduleName(m);
+                var found = false;
+                for (outputs.items) |o| {
+                    if (std.mem.eql(u8, o.name, name)) found = true;
+                }
+                if (found) continue;
+                var text: []const u8 = "error: the module did not compile (no diagnostic available)\n";
+                for (diagnostics.items) |d| {
+                    if (std.mem.eql(u8, d.name, name)) text = d.text;
+                }
+                try snapOutputs.append(allocator, .{
+                    .name = name,
+                    .src = m.source,
+                    .result = null,
+                    .diagnostic = text,
+                });
+                if (expectation == .must_compile) {
+                    std.debug.print(
+                        "\n{s} [{s}]: module '{s}' did not compile:\n{s}\n" ++
+                            "(use `assertJsCompileError` if the failure is the point of the test)\n",
+                        .{ slug, @tagName(cfg.targetSource), name, text },
+                    );
+                }
+            }
+        }
+
+        snap.assertCodegen(allocator, slug, snapOutputs.items, c) catch |err| {
+            if (first_err == null) first_err = err;
+        };
     }
+
+    // H3/H9 — a program that does not compile must not pass as a snapshot of
+    // "nothing", whichever backend noticed.
+    if (any_module_failed and expectation == .must_compile) {
+        if (first_err == null) first_err = error.ModuleDidNotCompile;
+    }
+    if (!any_module_failed and expectation == .expect_compile_error) {
+        std.debug.print("\n{s}: expected a compile error, but every module compiled\n", .{slug});
+        if (first_err == null) first_err = error.ExpectedCompileError;
+    }
+
+    if (first_err) |err| return err;
 }
 
 pub fn assertJsError(allocator: Allocator, comptime loc: std.builtin.SourceLocation, src: []const u8) !void {
     const io = std.testing.io;
+    const slug = comptime slugFromSrc(loc);
+
+    // H10 — every backend is compared before the first failure is reported.
+    var first_err: ?anyerror = null;
 
     for (configs) |c| {
         var outputs = try codegen.generate(
@@ -169,14 +313,20 @@ pub fn assertJsError(allocator: Allocator, comptime loc: std.builtin.SourceLocat
         if (ct_err_opt == null) {
             ct_err_opt = try extractComptimeValidationError(allocator, src);
         }
-        const ct_err = ct_err_opt orelse return error.ExpectedComptimeError;
+        const ct_err = ct_err_opt orelse {
+            if (first_err == null) first_err = error.ExpectedComptimeError;
+            continue;
+        };
 
         const errText = try ct_err.renderAlloc(allocator, src);
         defer allocator.free(errText);
 
-        const slug = comptime slugFromSrc(loc);
-        try snap.assertCodegenError(allocator, slug, src, errText, c);
+        snap.assertCodegenError(allocator, slug, src, errText, c) catch |err| {
+            if (first_err == null) first_err = err;
+        };
     }
+
+    if (first_err) |err| return err;
 }
 
 pub fn extractComptimeValidationError(allocator: Allocator, src: []const u8) !?comptimeMod.ComptimeError {
@@ -253,13 +403,19 @@ pub fn generateJs(allocator: Allocator, src: []const u8) ![]u8 {
 pub fn assertJsTestMode(allocator: Allocator, comptime loc: std.builtin.SourceLocation, src: []const u8) !void {
     const io = std.testing.io;
     const build_root_path = comptime buildRootPathFromSrc(loc);
+    const slug = comptime slugFromSrc(loc);
+    const modules = [_]Module{.{ .path = "", .source = src }};
+
+    // H10 — both backends are compared before the first failure is reported.
+    var first_err: ?anyerror = null;
+    var any_module_failed = false;
 
     for (configs[0..2]) |c| { // commonJS/node + erlang
         var cfg = c;
         cfg.build_root = build_root_path;
         cfg.test_mode = true;
 
-        var outputs = try codegen.generate(allocator, &.{.{ .path = "", .source = src }}, io, cfg);
+        var outputs = try codegen.generate(allocator, &modules, io, cfg);
         defer {
             for (outputs.items) |*o| o.result.deinit(allocator);
             outputs.deinit(allocator);
@@ -273,11 +429,41 @@ pub fn assertJsTestMode(allocator: Allocator, comptime loc: std.builtin.SourceLo
                 .src = o.src,
                 .result = o.result,
             });
+            if (o.result.comptime_err != null) any_module_failed = true;
         }
 
-        const slug = comptime slugFromSrc(loc);
-        try snap.assertCodegen(allocator, slug, snapOutputs.items, cfg);
+        // H3 — record the diagnostic for a module the backend dropped.
+        var diagnostics = std.ArrayList(CompileDiagnostic).empty;
+        defer {
+            for (diagnostics.items) |d| allocator.free(d.text);
+            diagnostics.deinit(allocator);
+        }
+        if (outputs.items.len == 0) {
+            any_module_failed = true;
+            try collectCompileDiagnostics(allocator, &modules, cfg, &diagnostics);
+            const text: []const u8 = if (diagnostics.items.len > 0)
+                diagnostics.items[0].text
+            else
+                "error: the module did not compile (no diagnostic available)\n";
+            try snapOutputs.append(allocator, .{
+                .name = "main",
+                .src = src,
+                .result = null,
+                .diagnostic = text,
+            });
+            std.debug.print(
+                "\n{s} [{s}, test mode]: the module did not compile:\n{s}\n",
+                .{ slug, @tagName(cfg.targetSource), text },
+            );
+        }
+
+        snap.assertCodegen(allocator, slug, snapOutputs.items, cfg) catch |err| {
+            if (first_err == null) first_err = err;
+        };
     }
+
+    if (any_module_failed and first_err == null) first_err = error.ModuleDidNotCompile;
+    if (first_err) |err| return err;
 }
 
 pub fn assertJsContains(allocator: Allocator, src: []const u8, needles: []const []const u8) !void {

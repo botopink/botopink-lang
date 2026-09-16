@@ -58,12 +58,35 @@ pub fn readSource(allocator: std.mem.Allocator, name: []const u8) ![]u8 {
 
 // ── internals ─────────────────────────────────────────────────────────────────
 
+/// `BOTOPINK_SNAP_CREATE=1` — opt in to recording a *missing* snapshot.
+///
+/// Without it a missing snapshot is a **failure** (`error.SnapshotMissing`):
+/// a first recording that nobody reviewed used to make its test pass silently
+/// (spec 06 defect H4). The would-be baseline is still written next to the
+/// expected path as `<snap>.new` so it can be inspected and promoted.
+const CREATE_ENV = "BOTOPINK_SNAP_CREATE";
+
+fn createMissingEnabled() bool {
+    return std.process.Environ.containsUnemptyConstant(std.testing.environ, CREATE_ENV);
+}
+
 fn compareOrCreate(allocator: std.mem.Allocator, snapPath: []const u8, got: []const u8) !void {
     const existing = readFile(allocator, snapPath) catch |err| switch (err) {
         error.FileNotFound => {
-            try writeFile(snapPath, got);
-            std.debug.print("snap created: {s}\n", .{snapPath});
-            return;
+            if (createMissingEnabled()) {
+                try writeFile(snapPath, got);
+                std.debug.print("snap created: {s}\n", .{snapPath});
+                return;
+            }
+            const new_path = try std.fmt.allocPrint(allocator, "{s}.new", .{snapPath});
+            defer allocator.free(new_path);
+            try writeFile(new_path, got);
+            std.debug.print(
+                "\nsnap missing: {s}\ncandidate written to: {s}\n" ++
+                    "review it, then re-run with " ++ CREATE_ENV ++ "=1 (or rename the .new file) to record it\n",
+                .{ snapPath, new_path },
+            );
+            return error.SnapshotMissing;
         },
         else => return err,
     };

@@ -53,7 +53,9 @@ test "infer: generic record Pair<A, B>" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val Pair = record <A, B> { first: A, second: B };
         \\val p = Pair(first: 42, second: "hello");
-        \\@print(p);
+        \\fn main() {
+        \\    @print(p);
+        \\}
     );
 }
 

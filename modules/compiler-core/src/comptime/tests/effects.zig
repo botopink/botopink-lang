@@ -71,7 +71,7 @@ test "throw check: string matches declared E = string" {
         \\fn parse(s: string) -> @Result<i32, string> {
         \\    if (s == "") {
         \\        throw "empty input";
-        \\    }
+        \\    };
         \\    return 0;
         \\}
     );
@@ -107,10 +107,10 @@ test "throw check: multiple throw sites all match E" {
         \\fn validate(n: i32) -> @Result<i32, string> {
         \\    if (n < 0) {
         \\        throw "negative";
-        \\    }
+        \\    };
         \\    if (n > 100) {
         \\        throw "too big";
-        \\    }
+        \\    };
         \\    return n;
         \\}
     );
