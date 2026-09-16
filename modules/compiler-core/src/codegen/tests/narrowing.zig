@@ -98,6 +98,11 @@ test "js: narrow ---- assert pattern with print" {
 
 // ── type guard narrowing ──────────────────────────────────────────────────────
 
+// A type guard is erased at runtime: it lowers to a plain bool-returning fn,
+// so the snapshot can only prove both results. Expected RUN LOG `true` then
+// `false`. Narrowing at the call site (`if (isText(v)) { … }` with
+// `v: ?string`) is not covered here: at HEAD it fails with `type mismatch —
+// expected bool, found string` on the `if` (registered with 07-checker).
 test "js: narrow ---- type guard basic codegen" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn isPositive(n: i32) -> n is i32 {
@@ -105,6 +110,7 @@ test "js: narrow ---- type guard basic codegen" {
         \\}
         \\fn main() {
         \\    @print(isPositive(5));
+        \\    @print(isPositive(-5));
         \\}
     );
 }

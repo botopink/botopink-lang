@@ -1,8 +1,15 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    val same = "foo" == "foo";
+    val left = "fo" + "o";
+    val same = left == "foo";
+    val diff = "foo" == "bar";
     if (same) {
+        @print(1);
+    } else {
+        @print(0);
+    };
+    if (diff) {
         @print(1);
     } else {
         @print(0);
@@ -13,8 +20,11 @@ fn main() {
 ----- JAVASCRIPT -- main.js
 ```javascript
 function main() {
-    const same = ("foo" === "foo");
+    const left = ("fo" + "o");
+    const same = (left === "foo");
+    const diff = ("foo" === "bar");
     (() => { if (same) { return console.log(1); } else { return console.log(0); } })();
+    (() => { if (diff) { return console.log(1); } else { return console.log(0); } })();
 }
 
 function _botopink_main() {
@@ -31,4 +41,5 @@ _botopink_main();
 ----- RUN LOG -----
 ```logs
 1
+0
 ```

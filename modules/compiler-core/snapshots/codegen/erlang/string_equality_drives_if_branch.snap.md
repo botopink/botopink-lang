@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    val s = "yes";
+    val s = "ye" + "s";
     if (s == "yes") {
         @print(42);
     } else {
@@ -16,7 +16,7 @@ fn main() {
 -export(['_botopink_main'/0, main/1]).
 
 main() ->
-    S = <<"yes">>,
+    S = <<"ye", "s">>,
     case (S =:= <<"yes">>) of
         true ->
             io:format("~p~n", [42]);
