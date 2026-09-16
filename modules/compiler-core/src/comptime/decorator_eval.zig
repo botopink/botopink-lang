@@ -17,6 +17,7 @@ const std = @import("std");
 const ast = @import("../ast.zig");
 const template = @import("./template.zig");
 const erlang = @import("../codegen/erlang.zig");
+const templateEval = @import("./template_eval.zig");
 const Ast = @import("../codegen/beam/erl_ast.zig");
 const Term = @import("../codegen/beam/term.zig").Term;
 const persistent_erl = @import("./runtime/persistent_erl.zig");
@@ -72,10 +73,8 @@ pub fn evaluate(
         else => |e| return e,
     };
 
-    const dir = ".botopinkbuild/tmp/decorator";
-    std.Io.Dir.cwd().createDirPath(io, dir) catch return error.EvalFailed;
-    const path = try std.fmt.allocPrint(arena, "{s}/{s}.erl", .{ dir, source.module });
-    std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = source.code }) catch return error.EvalFailed;
+    // Staged and renamed into place (`template_eval.writeModule`).
+    const path = try templateEval.writeModule(arena, io, ".botopinkbuild/tmp/decorator", source.module, source.code);
 
     const response = persistent_erl.evalDetailed(arena, io, path) catch return error.EvalFailed;
     if (traces) |list| try list.append(arena, .{
