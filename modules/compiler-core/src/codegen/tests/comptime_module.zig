@@ -86,6 +86,42 @@ test "comptime module: forEach with a mutated var fuses into a fold" {
     try expectContains(out, "emit('__bp_add'(");
 }
 
+test "comptime module: push through a local threads out of a multi-statement closure" {
+    // A dependency-injection constructor shape: a 2-statement closure whose inner
+    // `forEach` mutates by assignment and whose `push` mutates the receiver.
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const out = try lower(arena_state.allocator(),
+        \\fn component(comptime decl: @Decl) {
+        \\    var args: Array<string> = [];
+        \\    args.push("first");
+        \\    decl.fields.forEach({ f ->
+        \\        var valKey = "";
+        \\        f.annotations.forEach({ a -> if (a.name == "value") { valKey = a.args.join(""); } });
+        \\        args.push(f.name + ": " + valKey);
+        \\    });
+        \\    @emit(args.join(", "));
+        \\}
+    , .{ .host_enums = &.{"DeclKind"} });
+    // Straight-line position rebinds the local.
+    try expectContains(out, "Args@1 = '__bp_prim_push'(Args, <<\"first\">>),");
+    // The closure's push is threaded out through the fold.
+    try expectContains(out, "Args@4 = lists:foldl(fun(F, Args@2) ->");
+    try expectContains(out, "Args@3 = '__bp_prim_push'(Args@2, '__bp_add'('__bp_add'(maps:get(name, F), <<\": \">>), ValKey)),");
+    try expectContains(out, "end, Args@1, maps:get(fields, Decl)),");
+    try expectContains(out, "emit('__bp_prim_join'(Args@4, <<\", \">>))");
+
+    // A parameter is not rebound: the push keeps its plain lowering.
+    const param = try lower(arena_state.allocator(),
+        \\fn tag(comptime decl: @Decl, names: Array<string>) {
+        \\    names.push(decl.name);
+        \\    @emit(names.join(", "));
+        \\}
+    , .{ .host_enums = &.{"DeclKind"} });
+    try expectContains(param, "    '__bp_prim_push'(Names, maps:get(name, Decl)),");
+    try expectContains(param, "emit('__bp_prim_join'(Names, <<\", \">>))");
+}
+
 // ── primitive methods in a comptime body ──────────────────────────────────────
 //
 // A body has no inferred types, so `recv.m(args)` lowers to the runtime-dispatch

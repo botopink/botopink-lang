@@ -614,6 +614,7 @@ fn emitErlangModule(
     try em.collectStdImports(program);
     defer em.std_imports.deinit();
     defer em.locals.deinit();
+    defer em.mutable_locals.deinit(alloc);
     defer em.var_current.deinit();
     defer em.var_next.deinit();
     defer em.top_vals.deinit();
@@ -1291,6 +1292,10 @@ const Emitter = struct {
     /// a flat per-function set is exact. A no-receiver call whose callee is a
     /// local lowers to a fun application (`F(args)`), not a bare function call.
     locals: std.StringHashMap(void),
+    /// The subset of `locals` declared with `var` in the current function —
+    /// the only receivers a mutating method call (`receiverMutation`) rebinds.
+    /// Reset per function alongside `locals`.
+    mutable_locals: std.StringHashMapUnmanaged(void) = .empty,
     /// Single-assignment versioning. Erlang variables bind once, so a botopink
     /// name rebound in the same function (`count += 1`, `msg = msg + x`) gets a
     /// fresh variable per binding: `Count`, `Count@1`, `Count@2`. `var_current`
@@ -1991,6 +1996,7 @@ const Emitter = struct {
 
     fn resetLocals(this: *Emitter) void {
         this.locals.clearRetainingCapacity();
+        this.mutable_locals.clearRetainingCapacity();
         this.var_current.clearRetainingCapacity();
         this.var_next.clearRetainingCapacity();
         this.nullable_locals.clearRetainingCapacity();
@@ -2606,6 +2612,7 @@ const Emitter = struct {
         const acc_var = Ast.Expr.v(try this.arenaVar(b, ff.acc_name));
         const p_var = Ast.Expr.v(try this.arenaVar(b, ff.param));
         this.addLocal(ff.acc_name);
+        try this.mutable_locals.put(this.alloc, ff.acc_name, {});
         this.addLocal(ff.param);
         const saved = this.indent;
         this.indent = saved + 1;
@@ -2677,6 +2684,11 @@ const Emitter = struct {
                 return try this.mutatingFoldExpr(b, lp.params[0], lp.body, lp.iter.*, names.items);
             },
             .call => {
+                // `out.push(x)` rebinds `out`: `Out@1 = (Out ++ [X])`, so a
+                // group-out expression after it reads the grown list.
+                if (this.receiverMutation(stmt.expr)) |name| {
+                    return try this.bindExpr(b, name, .assign, stmt.expr);
+                }
                 const each = forEachLambda(stmt.expr) orelse return null;
                 try this.collectMutations(b.arena, each.body, each.params, &names);
                 if (names.items.len == 0) return null;
@@ -2684,6 +2696,27 @@ const Emitter = struct {
             },
             else => return null,
         }
+    }
+
+    /// The local a statement-position call mutates through its receiver —
+    /// `out.push(x)` on a `var out` — or null. The receiver must be an Array
+    /// (the inferred `.prim = .array` lowering; in a comptime body any receiver,
+    /// whose shim answers `push` for lists only), so the call's value is the
+    /// grown list. A parameter or a field access (`self.items.push(x)`) keeps
+    /// the plain lowering: rebinding it could not reach the caller anyway.
+    fn receiverMutation(this: *const Emitter, e: ast.Expr) ?[]const u8 {
+        if (e != .call or e.call.kind != .call) return null;
+        const cc = e.call.kind.call;
+        if (cc.is_builtin or !std.mem.eql(u8, cc.callee, "push")) return null;
+        if (cc.args.len + cc.trailing.len != 1) return null;
+        const name = identName((cc.receiver orelse return null).*) orelse return null;
+        if (!this.locals.contains(name) or !this.mutable_locals.contains(name)) return null;
+        if (this.untyped) return name;
+        const il = this.instance_lowerings.get(e.call.loc) orelse return null;
+        return switch (il) {
+            .prim => |k| if (k == .array) name else null,
+            .record => null,
+        };
     }
 
     const ForEachLambda = struct {
@@ -2736,7 +2769,10 @@ const Emitter = struct {
                 else => {},
             },
             .loop => |lp| try this.collectMutations(gpa, lp.body, lp.params, out),
-            .call => if (forEachLambda(s.expr)) |each| try this.collectMutations(gpa, each.body, each.params, out),
+            .call => if (this.receiverMutation(s.expr)) |n| {
+                if (containsName(shadowed, n) or containsName(out.items, n)) continue;
+                try out.append(gpa, n);
+            } else if (forEachLambda(s.expr)) |each| try this.collectMutations(gpa, each.body, each.params, out),
             else => {},
         };
     }
@@ -3017,7 +3053,10 @@ const Emitter = struct {
                 else => return this.exprNode(b, e),
             },
             .binding => |bind| switch (bind.kind) {
-                .localBind => |lb| return this.bindExpr(b, lb.name, .bind, lb.value.*),
+                .localBind => |lb| {
+                    if (lb.mutable) try this.mutable_locals.put(this.alloc, lb.name, {});
+                    return this.bindExpr(b, lb.name, .bind, lb.value.*);
+                },
                 .assign => |a| switch (a.target) {
                     .name => |name| return this.bindExpr(b, name, switch (a.op) {
                         .assign => .assign,
@@ -3727,7 +3766,10 @@ const Emitter = struct {
 
     fn bindingNode(this: *Emitter, b: Ast.Builder, bind: anytype) anyerror!Ast.Expr {
         switch (bind.kind) {
-            .localBind => |lb| return this.bindExpr(b, lb.name, .bind, lb.value.*),
+            .localBind => |lb| {
+                if (lb.mutable) try this.mutable_locals.put(this.alloc, lb.name, {});
+                return this.bindExpr(b, lb.name, .bind, lb.value.*);
+            },
             .assign => |a| switch (a.target) {
                 .name => |name| return this.bindExpr(b, name, switch (a.op) {
                     .assign => .assign,

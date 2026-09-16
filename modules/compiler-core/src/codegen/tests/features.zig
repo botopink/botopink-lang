@@ -1039,3 +1039,51 @@ test "js: comptime primitives ---- decorator body calls string and array methods
         \\}
     );
 }
+
+// `out.push(x)` mutates its receiver. On erlang the statement rebinds the local
+// (`Out@2 = (Out@1 ++ [X])`) and a closure that pushes threads the list out
+// through `lists:foldl` like an assignment does — in straight-line position, in
+// a multi-statement `forEach` closure, and in a decorator body (a dependency-injection
+// constructor shape: an inner mutating `forEach`, then the push).
+// Known-wrong run logs pinned here, owned by the backend fronts: beam and wasm
+// print nothing (and `codegen/beam_asm.zig` has no mutation threading at all).
+test "js: receiver mutation ---- push inside a multi-statement closure threads out" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\pub fn component(comptime decl: @Decl) {
+        \\    var args: Array<string> = [];
+        \\    decl.fields.forEach({ f ->
+        \\        var valKey = "";
+        \\        f.annotations.forEach({ a -> if (a.name == "value") { valKey = a.args.join(""); } });
+        \\        val expr = if (valKey != "") {
+        \\            "prop(" + valKey + ")";
+        \\        } else {
+        \\            "make" + f.typeName + "()";
+        \\        };
+        \\        args.push(f.name + ": " + expr);
+        \\    });
+        \\    @emit("pub fn wire" + decl.name + "() -> string { return \"" + decl.name + "(" + args.join(", ") + ")\"; }");
+        \\}
+        \\
+        \\#[component]
+        \\record Service {
+        \\    #[value(port)]
+        \\    port: i32,
+        \\    name: string,
+        \\}
+        \\
+        \\fn collect(xs: Array<i32>) -> Array<string> {
+        \\    var out: Array<string> = [];
+        \\    out.push("start");
+        \\    xs.forEach({ x ->
+        \\        val doubled = x * 2;
+        \\        out.push("v" + doubled.toString());
+        \\    });
+        \\    return out;
+        \\}
+        \\
+        \\fn main() {
+        \\    @print(wireService());
+        \\    @print(collect([1, 2, 3]).join(","));
+        \\}
+    );
+}

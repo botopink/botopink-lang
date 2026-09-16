@@ -192,6 +192,14 @@ codegen/
   are known only afterwards). Arms ending in `return`,
   indexed/`await`/yielding loops keep the plain lowering; the older
   `var acc = …; xs.forEach(…)` fold fusion still takes precedence.
+  A receiver mutation counts as a reassignment (`receiverMutation`): a
+  statement `out.push(x)` on a `var` local (`mutable_locals`; not a parameter
+  or a field access) whose receiver is an Array (the inferred
+  `.prim = .array` lowering, or any local in a comptime body, where the shim
+  answers `push` for lists only) is marked by `collectMutations` and lowered as
+  the rebinding `Out@1 = (Out ++ [X])` — in straight-line position too — so the
+  group-out expression reads the grown list. The mutation is name-driven
+  (`push`); `codegen/beam_asm.zig` has no equivalent yet.
 - **Comptime modules:** `emitComptimeModule(alloc, name, program, .{ host_enums,
   host_records, exports, forms, listing, unsupported_method })` lowers an untyped decorator/template body with
   the same emitter — `host_enums` join `enum_names` (`DeclKind.Record` →
