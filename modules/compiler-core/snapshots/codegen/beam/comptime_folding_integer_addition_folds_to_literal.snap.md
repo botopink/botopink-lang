@@ -51,4 +51,5 @@ ct_0: val v1 = comptime 1 + 1 → 2
 
 ----- RUN LOG -----
 ```logs
+v1
 ```

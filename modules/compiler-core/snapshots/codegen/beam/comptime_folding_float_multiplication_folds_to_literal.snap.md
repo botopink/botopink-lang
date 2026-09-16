@@ -55,4 +55,5 @@ ct_0: val pi2 = comptime {
 
 ----- RUN LOG -----
 ```logs
+pi2
 ```

@@ -50,4 +50,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+precosComTaxa
 ```

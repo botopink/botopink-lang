@@ -25,4 +25,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+COMPILE ERROR (erlc):
+main.erl:6:24: variable 'Sum' is unbound
 ```

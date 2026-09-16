@@ -244,7 +244,6 @@ pub const Parser = struct {
             decls.deinit(alloc);
         }
         while (!this.check(.endOfFile)) {
-            const current_tok = this.tokens[this.current];
             const decl: DeclKind = if (this.check(.import)) blk: {
                 const d = try this.parseImportDecl(alloc);
                 _ = this.match(.semicolon);
@@ -342,7 +341,8 @@ pub const Parser = struct {
                 if (isReservedWord(this.peek().kind)) {
                     this.reportReservedWordError();
                 }
-                std.debug.print("parser: UnexpectedToken at token[{}] = {s} '{s}'\n", .{ this.current, @tagName(current_tok.kind), current_tok.lexeme });
+                // No stderr from the parser: the error carries the location
+                // (`errorInfo`) and the caller renders it.
                 return ParseError.UnexpectedToken;
             };
             try decls.append(alloc, decl);

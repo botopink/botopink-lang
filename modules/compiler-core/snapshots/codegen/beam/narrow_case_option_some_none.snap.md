@@ -90,4 +90,6 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+<<"empty">>
+<<"empty">>
 ```

@@ -103,4 +103,9 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+COMPILE ERROR (erlc +from_asm):
+main:1: function check/1+10:
+  Internal consistency check failed - please report this bug.
+  Instruction: {test_heap,3,3}
+  Error:       {{x,1},not_live}:
 ```

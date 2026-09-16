@@ -32,4 +32,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+COMPILE ERROR (erlc):
+main.erl:10:24: variable 'Result' is unbound
 ```

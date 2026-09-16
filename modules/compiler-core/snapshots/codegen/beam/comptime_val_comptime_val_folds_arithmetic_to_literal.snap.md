@@ -51,4 +51,5 @@ ct_0: val result = comptime 10 + 20 → 30
 
 ----- RUN LOG -----
 ```logs
+result
 ```

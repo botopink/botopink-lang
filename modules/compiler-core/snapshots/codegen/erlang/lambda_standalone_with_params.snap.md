@@ -32,4 +32,7 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+COMPILE ERROR (erlc):
+main.erl:7:24: variable 'Result' is unbound
+main.erl:13:14: function add/2 undefined
 ```

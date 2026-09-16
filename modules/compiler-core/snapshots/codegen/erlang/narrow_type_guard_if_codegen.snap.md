@@ -35,4 +35,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+false
 ```

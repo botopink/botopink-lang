@@ -46,4 +46,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+sum
 ```

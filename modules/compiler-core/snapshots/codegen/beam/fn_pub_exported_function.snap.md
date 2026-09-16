@@ -59,4 +59,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+result
 ```
