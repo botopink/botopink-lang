@@ -17,6 +17,9 @@ test {
     _ = @import("tests/dts_skips_templates.zig");
     _ = @import("tests/runtime_scratch.zig");
     _ = @import("tests/comptime_module.zig");
+    _ = @import("js/js_ast.zig");
+    _ = @import("js/js_emitter.zig");
+    _ = @import("js/ts_emitter.zig");
     _ = @import("beam/term.zig");
     _ = @import("beam/erl_emitter.zig");
     _ = @import("beam/erl_ast.zig");

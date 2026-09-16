@@ -10,6 +10,8 @@ const primOpTemplate = @import("../comptime/primOpTemplate.zig");
 const lexerMod = @import("../lexer.zig");
 const parserMod = @import("../parser.zig");
 const prelude = @import("std_prelude");
+const js = @import("./js/js_ast.zig");
+const jsEmitter = @import("./js/js_emitter.zig");
 
 /// `prim-op-annotation` builtin dispatch entry (commonJS).
 const BuiltinNodeCall = struct {
@@ -67,7 +69,7 @@ pub fn codegenEmit(
                 // test blocks (a project's `botopink test` runs only its own
                 // tests; the stdlib's inline tests run from `libs/std` itself).
                 const module_test_mode = config.test_mode and !std.mem.startsWith(u8, ct.name, "std/");
-                const js = try emitJs(alloc, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, &ok.js_method_renames, module_test_mode, ct.name, &cross);
+                const js_src = try emitJs(alloc, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, &ok.js_method_renames, module_test_mode, ct.name, &cross);
 
                 // Generate TypeScript typedefs if configured.
                 const typedef: ?[]u8 = if (config.typeDefLanguage) |_|
@@ -79,7 +81,7 @@ pub fn codegenEmit(
                     .name = ct.name,
                     .src = ct.src,
                     .result = .{
-                        .js = js,
+                        .js = js_src,
                         .typedef = typedef,
                         .comptime_script = if (ok.comptime_script) |s| try alloc.dupe(u8, s) else null,
                         .comptime_trace = try comptimeMod.trace.renderAlloc(alloc, ok.comptime_traces),
@@ -115,12 +117,13 @@ fn emitTypeDef(
 
 // ── emit ──────────────────────────────────────────────────────────────────────
 
-/// Zig-native JavaScript emitter for botopink.
+/// Zig-native JavaScript backend for botopink.
 ///
-/// Converts typed bindings directly to JavaScript source — no JSON
-/// intermediate, no Node.js pipeline.  Comptime expression values
-/// (pre-evaluated by running Node.js and capturing stdout) are injected
-/// via `comptime_vals`.
+/// Converts typed bindings directly to a JavaScript code model
+/// (`codegen/js/js_ast.zig`) that `codegen/js/js_emitter.zig` renders — no JSON
+/// intermediate, no Node.js pipeline, and no target text written here. Comptime
+/// expression values (pre-evaluated by running Node.js and capturing stdout)
+/// are injected via `comptime_vals`.
 // ── public surface ────────────────────────────────────────────────────────────
 
 /// Returns true when the top-level typed expression is a comptime node.
@@ -209,37 +212,12 @@ pub fn isJsGlobalNamespace(module: []const u8) bool {
     return false;
 }
 
-/// ES2015+ reserved words that are illegal as JS binding names (plus
-/// `arguments`/`eval`, illegal in strict mode, and contextual keywords like
-/// `of`). A botopink identifier that collides is renamed with a `_` suffix at
-/// emission — `with` → `with_`, `delete` → `delete_` — consistently across
-/// decls, call sites, and exports (the `exports.<name>` property keeps the
-/// original name; property positions accept reserved words).
-///
-/// `true`/`false`/`null`/`this`/`super` are deliberately omitted: botopink
-/// never creates bindings with those names, and in value position they are
-/// legal JS primary expressions (`true`/`false`/`null`) or handled separately
-/// (`self` → `this`). `of` is also omitted — it is only a contextual keyword
-/// (`for…of`), so `function of()` is valid JS and the stdlib relies on it.
-const js_reserved_words = [_][]const u8{
-    "arguments", "await",      "break",    "case",     "catch",
-    "class",     "const",      "continue", "debugger", "default",
-    "delete",    "do",         "else",     "enum",     "eval",
-    "export",    "extends",    "finally",  "for",      "function",
-    "if",        "implements", "import",   "in",       "instanceof",
-    "interface", "let",        "new",      "package",  "private",
-    "protected", "public",     "return",   "static",   "switch",
-    "throw",     "try",        "typeof",   "var",      "void",
-    "while",     "with",       "yield",
-};
-
-/// Sanitized JS binding name: reserved words get a `_` suffix, everything
-/// else passes through unchanged. Returns a static string — no allocation.
+/// Sanitized JS binding name — the reserved-word rename lives in the emitter
+/// (`js/js_emitter.zig`), which applies it to every `ident` node it renders.
+/// This alias stays for the few places that need the final spelling while
+/// *building* (a `require` binding compared against its host symbol).
 pub fn jsIdent(name: []const u8) []const u8 {
-    inline for (js_reserved_words) |w| {
-        if (std.mem.eql(u8, name, w)) return w ++ "_";
-    }
-    return name;
+    return jsEmitter.ident(name);
 }
 
 /// Emit all declarations as JavaScript source.
@@ -248,7 +226,7 @@ pub fn jsIdent(name: []const u8) []const u8 {
 /// strings such as `"6.28"`.
 ///
 /// The `program` is the transformed AST with specialized functions already
-/// injected as regular FnDecl nodes. The emitter just renders what it sees.
+/// injected as regular FnDecl nodes. The backend just lowers what it sees.
 pub fn emitProgram(
     alloc: std.mem.Allocator,
     program: ast.Program,
@@ -276,6 +254,74 @@ pub fn emitProgramOpts(
     return emitProgramOptsX(alloc, program, comptime_vals, rewrites, null, test_mode, module_name, null);
 }
 
+/// The test-mode preamble: a throwing assert helper the runner can catch.
+const assert_helper_source =
+    \\function __bp_assert(cond, msg, loc) {
+    \\    if (!cond) {
+    \\        const e = new Error(msg || "assertion failed");
+    \\        e.__bp_assert_loc = loc;
+    \\        throw e;
+    \\    }
+    \\}
+    \\
+    \\
+;
+
+/// The test-mode runner, appended after the `__bp_tests` registry.
+const test_runner_source =
+    \\async function __bp_run_tests() {
+    \\    const filter = process.argv[2] || null;
+    \\    const tests = filter ? __bp_tests.filter((t) => t.name.includes(filter)) : __bp_tests;
+    \\    let passed = 0, failed = 0;
+    \\    const _write = process.stdout.write.bind(process.stdout);
+    \\    for (const t of tests) {
+    \\        // §T `----- RUN LOG -----` envelope (v0.beta.20 frente-b spec):
+    \\        // each test body produces a `TEST <loc> <name>` header + a fenced
+    \\        // ```logs``` block capturing its stdout. The `async function`
+    \\        // override and restore is per-test so a runtime error inside
+    \\        // t.fn() can never strand the override.
+    \\        _write("TEST " + t.loc + " " + t.name + "\n");
+    \\        _write("----- RUN LOG -----\n```logs\n");
+    \\        let _buf = "";
+    \\        process.stdout.write = (chunk) => {
+    \\            _buf += typeof chunk === "string" ? chunk : chunk.toString();
+    \\            return true;
+    \\        };
+    \\        // §T duration: monotonic millisecond clock around t.fn(); the
+    \\        // delta lands on its own `  duration <ms>ms` line between the
+    \\        // fence close and the ok/FAIL line. Older parsers that don't
+    \\        // recognise the duration line skip it (forward-compatible).
+    \\        const _t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+    \\        let _err = null;
+    \\        // Tests are `async function` (see `emitTestFn`) so the
+    \\        // runner awaits — a `await flush()` / `await fetch(url)`
+    \\        // inside the body resolves before the duration window closes.
+    \\        // A sync test pays no observable cost (a resolved Promise
+    \\        // is returned and awaited).
+    \\        try { await t.fn(); } catch (e) { _err = e; }
+    \\        const _t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+    \\        const _dur_ms = Math.max(0, Math.round(_t1 - _t0));
+    \\        process.stdout.write = _write;
+    \\        _write(_buf);
+    \\        if (_buf.length > 0 && !_buf.endsWith("\n")) _write("\n");
+    \\        _write("```\n");
+    \\        _write("  duration " + _dur_ms + "ms\n");
+    \\        if (_err === null) {
+    \\            _write("  ok   " + t.name + "\n");
+    \\            passed++;
+    \\        } else {
+    \\            const loc = _err.__bp_assert_loc || t.loc;
+    \\            _write("  FAIL " + t.name + "  (" + _err.message + ")  at " + loc + "\n");
+    \\            failed++;
+    \\        }
+    \\    }
+    \\    _write(passed + " passed, " + failed + " failed\n");
+    \\    if (failed > 0) process.exit(1);
+    \\}
+    \\if (require.main === module) __bp_run_tests();
+    \\
+;
+
 fn emitProgramOptsX(
     alloc: std.mem.Allocator,
     program: ast.Program,
@@ -286,9 +332,9 @@ fn emitProgramOptsX(
     module_name: []const u8,
     cross: ?*const CrossModule,
 ) ![]u8 {
-    var aw: std.Io.Writer.Allocating = .init(alloc);
-    defer aw.deinit();
-    var em = Emitter.emitterInit(alloc, &aw.writer, comptime_vals, rewrites);
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    var em = Emitter.emitterInit(alloc, arena.allocator(), comptime_vals, rewrites);
     defer em.deinit();
     em.renames = renames;
     em.test_mode = test_mode;
@@ -299,7 +345,10 @@ fn emitProgramOptsX(
     try em.collectPrimNodeRenames(program);
     try em.collectBuiltinNodeDispatch();
 
-    // Test registry entries collected while emitting decls (test mode only).
+    const arena_alloc = arena.allocator();
+    var items: std.ArrayListUnmanaged(js.Item) = .empty;
+
+    // Test registry entries collected while building decls (test mode only).
     const TestEntry = struct { name: ?[]const u8, line: usize, idx: usize };
     var test_entries: std.ArrayListUnmanaged(TestEntry) = .empty;
     defer test_entries.deinit(alloc);
@@ -352,115 +401,35 @@ fn emitProgramOptsX(
         }
     }
 
-    // Test-mode preamble: a throwing assert helper the runner can catch.
-    if (test_mode) {
-        try aw.writer.writeAll(
-            \\function __bp_assert(cond, msg, loc) {
-            \\    if (!cond) {
-            \\        const e = new Error(msg || "assertion failed");
-            \\        e.__bp_assert_loc = loc;
-            \\        throw e;
-            \\    }
-            \\}
-            \\
-        );
-        try aw.writer.writeByte('\n');
-    }
+    if (test_mode) try items.append(arena_alloc, .{ .runtime = assert_helper_source });
 
-    // Emit declarations from the transformed program.
-    var firstEmitted = true;
+    // Build declarations from the transformed program.
     for (program.decls) |decl| {
         switch (decl) {
             .val => |v| {
                 if (comptime_only.contains(v.name)) {
                     // Emit resolved comptime value if available.
-                    if (val_ct_map.get(v.name)) |ct_id| {
-                        if (comptime_vals.get(ct_id)) |lit| {
-                            if (!firstEmitted) try aw.writer.writeByte('\n');
-                            try em.fmt("const {s} = {s};", .{ jsIdent(v.name), lit });
-                            try aw.writer.writeByte('\n');
-                            firstEmitted = false;
-                        }
-                    }
+                    const ct_id = val_ct_map.get(v.name) orelse continue;
+                    const lit = comptime_vals.get(ct_id) orelse continue;
+                    try items.append(arena_alloc, .{ .stmt = .{ .decl = .{
+                        .pattern = .{ .ident = v.name },
+                        // A pre-evaluated JS literal, already in target syntax.
+                        .value = .{ .name = lit },
+                    } } });
                     continue;
                 }
-                if (!firstEmitted) try aw.writer.writeByte('\n');
-                try em.emitValDecl(v);
-                try aw.writer.writeByte('\n');
-                firstEmitted = false;
+                try items.append(arena_alloc, .{ .stmt = try em.buildValDecl(v) });
             },
-            .@"fn" => |f| {
-                if (!firstEmitted) try aw.writer.writeByte('\n');
-                if (f.isExternal()) {
-                    // §A2 template-form external: no decl alias — the
-                    // template renders inline at every call site (see
-                    // `tryEmitUserTemplate`). Emit a one-line doc breadcrumb
-                    // so the emitted file stays self-documenting.
-                    if (em.user_node_templates.contains(f.name)) {
-                        try em.fmt("// {s}: per-call template (see annotation)", .{f.name});
-                    } else if (em.externals.get(f.name)) |ref| {
-                        const bind_name = jsIdent(f.name);
-                        if (isJsGlobalNamespace(ref.module)) {
-                            // Global namespace (`Math`, `console`, …) —
-                            // reference directly, never `require`.
-                            try em.fmt("const {s} = {s}.{s};", .{ bind_name, ref.module, ref.symbol });
-                        } else if (std.mem.eql(u8, ref.symbol, bind_name)) {
-                            try em.fmt("const {{ {s} }} = require(\"{s}\");", .{ ref.symbol, ref.module });
-                        } else {
-                            try em.fmt("const {{ {s}: {s} }} = require(\"{s}\");", .{ ref.symbol, bind_name, ref.module });
-                        }
-                        if (f.isPub) try em.fmt("\nexports.{s} = {s};", .{ f.name, bind_name });
-                    } else {
-                        try em.fmt("// external fn {s} (no node target)", .{f.name});
-                    }
-                } else {
-                    try em.emitFn(f);
-                }
-                try aw.writer.writeByte('\n');
-                firstEmitted = false;
-            },
-            .record => |r| {
-                if (!firstEmitted) try aw.writer.writeByte('\n');
-                try em.emitRecord(r);
-                try aw.writer.writeByte('\n');
-                firstEmitted = false;
-            },
-            .@"enum" => |e| {
-                if (!firstEmitted) try aw.writer.writeByte('\n');
-                try em.emitEnum(e);
-                try aw.writer.writeByte('\n');
-                firstEmitted = false;
-            },
-            .interface => |i| {
-                if (!firstEmitted) try aw.writer.writeByte('\n');
-                try em.emitInterface(i);
-                try aw.writer.writeByte('\n');
-                firstEmitted = false;
-            },
-            .implement => |im| {
-                if (!firstEmitted) try aw.writer.writeByte('\n');
-                try em.emitImplement(im);
-                try aw.writer.writeByte('\n');
-                firstEmitted = false;
-            },
-            .extend => |ex| {
-                if (!firstEmitted) try aw.writer.writeByte('\n');
-                try em.emitExtend(ex);
-                try aw.writer.writeByte('\n');
-                firstEmitted = false;
-            },
-            .use => |u| {
-                if (!firstEmitted) try aw.writer.writeByte('\n');
-                try em.emitUse(u);
-                try aw.writer.writeByte('\n');
-                firstEmitted = false;
-            },
-            .delegate => |d| {
-                if (!firstEmitted) try aw.writer.writeByte('\n');
-                try em.fmt("// delegate {s}", .{d.name});
-                try aw.writer.writeByte('\n');
-                firstEmitted = false;
-            },
+            .@"fn" => |f| try items.append(arena_alloc, .{ .stmt = try em.buildFnItem(f) }),
+            .record => |r| try items.append(arena_alloc, .{ .stmt = try em.buildRecord(r) }),
+            .@"enum" => |e| try items.append(arena_alloc, .{ .stmt = try em.buildEnum(e) }),
+            .interface => |i| try items.append(arena_alloc, .{ .stmt = try em.buildInterface(i) }),
+            .implement => |im| try items.append(arena_alloc, .{ .stmt = try em.buildImplement(im) }),
+            .extend => |ex| try items.append(arena_alloc, .{ .stmt = try em.buildExtend(ex) }),
+            .use => |u| try items.append(arena_alloc, .{ .stmt = try em.buildUse(u) }),
+            .delegate => |d| try items.append(arena_alloc, .{ .stmt = .{ .comment = .{
+                .text = try std.fmt.allocPrint(arena_alloc, "delegate {s}", .{d.name}),
+            } } }),
             // `mod` declares a submodule in the explicit tree; the submodule is
             // emitted as its own module file, so the declaration emits nothing.
             .mod => {},
@@ -470,31 +439,23 @@ fn emitProgramOptsX(
                 if (!test_mode) continue;
                 const idx = test_entries.items.len;
                 try test_entries.append(alloc, .{ .name = t.name, .line = t.loc.line, .idx = idx });
-                if (!firstEmitted) try aw.writer.writeByte('\n');
-                try em.emitTestFn(t, idx);
-                try aw.writer.writeByte('\n');
-                firstEmitted = false;
+                try items.append(arena_alloc, .{ .stmt = try em.buildTestFn(t, idx) });
             },
-            .comment => |c| {
-                if (!firstEmitted) try aw.writer.writeByte('\n');
-                if (c.is_doc) {
-                    try em.fmt("/** {s} */", .{c.text});
-                } else if (c.is_module) {
-                    try em.fmt("//// {s}", .{c.text});
-                } else {
-                    try em.fmt("// {s}", .{c.text});
-                }
-                try aw.writer.writeByte('\n');
-                firstEmitted = false;
-            },
+            .comment => |c| try items.append(arena_alloc, .{ .stmt = .{ .comment = .{
+                .style = if (c.is_doc) .doc else if (c.is_module) .module else .line,
+                .text = c.text,
+            } } }),
         }
     }
 
     // Auto-invoke entry point when `fn main/0` is defined (never in test mode).
     if (has_main_0 and !test_mode) {
-        if (!firstEmitted) try aw.writer.writeByte('\n');
-        try aw.writer.writeAll("function _botopink_main() {\n    main();\n}\n");
-        try aw.writer.writeAll("_botopink_main();\n");
+        try items.append(arena_alloc, .{ .stmt = try em.b.group(&.{
+            .{ .function = .{ .name = "_botopink_main", .body = .{
+                .stmts = try em.b.stmts(&.{.{ .expr = try em.b.call(.{ .name = "main" }, &.{}) }}),
+            } } },
+            .{ .expr = try em.b.call(.{ .name = "_botopink_main" }, &.{}) },
+        }) });
     }
 
     // Test mode: emit the registry + runner entry.
@@ -515,71 +476,25 @@ fn emitProgramOptsX(
                 }
             }
         }
-        if (!firstEmitted) try aw.writer.writeByte('\n');
-        try aw.writer.writeAll("const __bp_tests = [\n");
-        for (test_entries.items) |t| {
-            if (t.name) |n| {
-                try aw.writer.print("    {{ name: \"{s}\", fn: __bp_test_{d}, loc: \"{s}.bp:{d}\" }},\n", .{ n, t.idx, module_name, t.line });
-            } else {
-                try aw.writer.print("    {{ name: \"test_{d}\", fn: __bp_test_{d}, loc: \"{s}.bp:{d}\" }},\n", .{ t.idx, t.idx, module_name, t.line });
-            }
+        const entries = try arena_alloc.alloc(js.Expr, test_entries.items.len);
+        for (test_entries.items, 0..) |t, i| {
+            const name = t.name orelse try std.fmt.allocPrint(arena_alloc, "test_{d}", .{t.idx});
+            entries[i] = try em.b.object(&.{
+                .{ .kv = .{ .key = "name", .value = .{ .quoted = name } } },
+                .{ .kv = .{ .key = "fn", .value = .{ .name = try std.fmt.allocPrint(arena_alloc, "__bp_test_{d}", .{t.idx}) } } },
+                .{ .kv = .{ .key = "loc", .value = .{ .quoted = try std.fmt.allocPrint(arena_alloc, "{s}.bp:{d}", .{ module_name, t.line }) } } },
+            });
         }
-        try aw.writer.writeAll("];\n");
-        try aw.writer.writeAll(
-            \\async function __bp_run_tests() {
-            \\    const filter = process.argv[2] || null;
-            \\    const tests = filter ? __bp_tests.filter((t) => t.name.includes(filter)) : __bp_tests;
-            \\    let passed = 0, failed = 0;
-            \\    const _write = process.stdout.write.bind(process.stdout);
-            \\    for (const t of tests) {
-            \\        // §T `----- RUN LOG -----` envelope (v0.beta.20 frente-b spec):
-            \\        // each test body produces a `TEST <loc> <name>` header + a fenced
-            \\        // ```logs``` block capturing its stdout. The `async function`
-            \\        // override and restore is per-test so a runtime error inside
-            \\        // t.fn() can never strand the override.
-            \\        _write("TEST " + t.loc + " " + t.name + "\n");
-            \\        _write("----- RUN LOG -----\n```logs\n");
-            \\        let _buf = "";
-            \\        process.stdout.write = (chunk) => {
-            \\            _buf += typeof chunk === "string" ? chunk : chunk.toString();
-            \\            return true;
-            \\        };
-            \\        // §T duration: monotonic millisecond clock around t.fn(); the
-            \\        // delta lands on its own `  duration <ms>ms` line between the
-            \\        // fence close and the ok/FAIL line. Older parsers that don't
-            \\        // recognise the duration line skip it (forward-compatible).
-            \\        const _t0 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-            \\        let _err = null;
-            \\        // Tests are `async function` (see `emitTestFn`) so the
-            \\        // runner awaits — a `await flush()` / `await fetch(url)`
-            \\        // inside the body resolves before the duration window closes.
-            \\        // A sync test pays no observable cost (a resolved Promise
-            \\        // is returned and awaited).
-            \\        try { await t.fn(); } catch (e) { _err = e; }
-            \\        const _t1 = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
-            \\        const _dur_ms = Math.max(0, Math.round(_t1 - _t0));
-            \\        process.stdout.write = _write;
-            \\        _write(_buf);
-            \\        if (_buf.length > 0 && !_buf.endsWith("\n")) _write("\n");
-            \\        _write("```\n");
-            \\        _write("  duration " + _dur_ms + "ms\n");
-            \\        if (_err === null) {
-            \\            _write("  ok   " + t.name + "\n");
-            \\            passed++;
-            \\        } else {
-            \\            const loc = _err.__bp_assert_loc || t.loc;
-            \\            _write("  FAIL " + t.name + "  (" + _err.message + ")  at " + loc + "\n");
-            \\            failed++;
-            \\        }
-            \\    }
-            \\    _write(passed + " passed, " + failed + " failed\n");
-            \\    if (failed > 0) process.exit(1);
-            \\}
-            \\if (require.main === module) __bp_run_tests();
-            \\
-        );
+        try items.append(arena_alloc, .{ .stmt = .{ .decl = .{
+            .pattern = .{ .name = "__bp_tests" },
+            .value = .{ .array = .{ .elems = entries, .layout = .lines } },
+        } } });
+        try items.append(arena_alloc, .{ .runtime = test_runner_source });
     }
 
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    try jsEmitter.writeProgram(&aw.writer, items.items);
     return aw.toOwnedSlice();
 }
 
@@ -587,65 +502,7 @@ fn isComptimeVal(v: ast.ValDecl) bool {
     return if (v.value.* == .comptime_) true else false;
 }
 
-// ── emitter ───────────────────────────────────────────────────────────────────
-
-/// Chainable JS code builder with automatic indentation.
-///
-/// Usage:
-///   b.line("(() => {{"); b.indent(); b.newline();
-///   b.line("const x = 1;"); b.newline();
-///   b.open("if (x === 1)"); b.indent();
-///   b.line("return x;"); b.newline();
-///   b.close(); b.dedent();
-///   b.line("})()");
-const JsBuilder = struct {
-    out: *std.Io.Writer,
-    alloc: std.mem.Allocator,
-    indent_level: usize = 0,
-    tab: []const u8 = "    ",
-
-    pub fn init(alloc: std.mem.Allocator, out: *std.Io.Writer) JsBuilder {
-        return .{ .out = out, .alloc = alloc };
-    }
-
-    pub fn line(self: *JsBuilder, text: []const u8) void {
-        for (0..self.indent_level) |_| self.out.writeAll(self.tab) catch {};
-        self.out.writeAll(text) catch {};
-    }
-    pub fn fmtLine(self: *JsBuilder, comptime f: []const u8, args: anytype) void {
-        for (0..self.indent_level) |_| self.out.writeAll(self.tab) catch {};
-        self.out.print(f, args) catch {};
-    }
-    pub fn newline(self: *JsBuilder) void {
-        self.out.writeByte('\n') catch {};
-    }
-    pub fn raw(self: *JsBuilder, text: []const u8) void {
-        self.out.writeAll(text) catch {};
-    }
-    pub fn indent(self: *JsBuilder) void {
-        self.indent_level += 1;
-    }
-    pub fn dedent(self: *JsBuilder) void {
-        if (self.indent_level > 0) self.indent_level -= 1;
-    }
-    /// Write indent based on current level.
-    pub fn writeIndent(self: *JsBuilder) void {
-        for (0..self.indent_level) |_| self.out.writeAll(self.tab) catch {};
-    }
-    pub fn open(self: *JsBuilder, cond: []const u8) void {
-        if (cond.len > 0) {
-            self.fmtLine("if ({s}) {{", .{cond});
-        } else {
-            self.line("{");
-        }
-        self.newline();
-        self.indent();
-    }
-    pub fn close(self: *JsBuilder) void {
-        self.dedent();
-        self.line("}");
-    }
-};
+// ── backend ───────────────────────────────────────────────────────────────────
 
 /// How `try`/`catch` is shaped once classified — drives statement-level lowering
 /// to `"error" in _r` pattern matching over `{ ok } | { error }` Result values
@@ -670,7 +527,7 @@ const TryForm = union(enum) {
 
 /// Where the unwrapped (Ok) value of a `try` should land at statement position.
 const TryHead = union(enum) {
-    decl: struct { kw: []const u8, name: []const u8 },
+    decl: struct { kw: js.Decl.Kw, name: []const u8 },
     destruct: struct { mutable: bool, pattern: ast.ParamDestruct },
     ret,
     discard,
@@ -692,7 +549,7 @@ fn isJumpHandler(h: ast.Expr) bool {
 const FutureWrapKind = enum { resolved, rejected };
 
 /// Recognise the `__bp_future_resolved(<t>)` / `__bp_future_rejected(<e>)`
-/// builtin marker calls so the commonJS return-statement emitter can strip
+/// builtin marker calls so the commonJS return-statement lowering can strip
 /// them back to native `return <t>;` / `throw <e>;` (the JS `async function`
 /// keyword is the actual promise wrap).
 fn futureWrapCallName(e: ast.Expr) ?FutureWrapKind {
@@ -734,19 +591,102 @@ fn classifyTry(e: ast.Expr) ?TryForm {
 /// node eval runtime — the evaluator's JS prelude supplies the comptime
 /// surface (`__expr`/`__code` and the capture objects' methods).
 pub fn emitFnJs(alloc: std.mem.Allocator, out: *std.Io.Writer, f: ast.FnDecl) !void {
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
     const cv = std.StringHashMap([]const u8).init(alloc);
     const rewrites = std.AutoHashMap(ast.Loc, []const u8).init(alloc);
-    var em = Emitter.emitterInit(alloc, out, cv, rewrites);
+    var em = Emitter.emitterInit(alloc, arena.allocator(), cv, rewrites);
     defer em.deinit();
-    try em.emitFn(f);
+    try jsEmitter.writeStmt(out, try em.buildFn(f), 0);
 }
 
+/// Collects a host template's rendered parts into an `Expr.host` node.
+///
+/// `primOpTemplate.render` streams literal annotation text and hole callbacks;
+/// the literal runs become `.text` parts and each hole an `.expr` part, so the
+/// template's own bytes stay host code and its arguments stay nodes.
+fn HostTemplate(comptime Holes: type) type {
+    return struct {
+        arena: std.mem.Allocator,
+        holes: *Holes,
+        argc: usize,
+        parts: std.ArrayListUnmanaged(js.HostPart) = .empty,
+        buf: std.ArrayListUnmanaged(u8) = .empty,
+
+        const Self = @This();
+
+        pub fn writeByte(self: *Self, ch: u8) anyerror!void {
+            try self.buf.append(self.arena, ch);
+        }
+        pub fn writeAll(self: *Self, s: []const u8) anyerror!void {
+            try self.buf.appendSlice(self.arena, s);
+        }
+        fn flush(self: *Self) !void {
+            if (self.buf.items.len == 0) return;
+            try self.parts.append(self.arena, .{ .text = try self.arena.dupe(u8, self.buf.items) });
+            self.buf.clearRetainingCapacity();
+        }
+        pub fn emitRecv(self: *Self) anyerror!void {
+            try self.flush();
+            try self.parts.append(self.arena, .{ .expr = try self.holes.recvExpr() });
+        }
+        pub fn emitArg(self: *Self, i: usize) anyerror!void {
+            try self.flush();
+            try self.parts.append(self.arena, .{ .expr = try self.holes.argExpr(i) });
+        }
+        fn finish(self: *Self) !js.Expr {
+            try self.flush();
+            return .{ .host = try self.parts.toOwnedSlice(self.arena) };
+        }
+    };
+}
+
+/// Holes filled from a call site's argument expressions. `$self` has no
+/// meaning there — a template with a receiver marker is a declaration error.
+fn CallHoles(comptime CC: type) type {
+    return struct {
+        em: *Emitter,
+        cc: CC,
+        err: anyerror,
+
+        pub fn recvExpr(self: *@This()) anyerror!js.Expr {
+            return self.err;
+        }
+        pub fn argExpr(self: *@This(), i: usize) anyerror!js.Expr {
+            return self.em.buildExpr(self.cc.args[i].value.*);
+        }
+    };
+}
+
+/// Holes filled from a prototype method's parameters: `$self` is the receiver
+/// (unwrapped for a boxed primitive) and `$N` the Nth parameter.
+const MethodHoles = struct {
+    params: []const ast.Param,
+    boxed_recv: bool,
+
+    pub fn recvExpr(self: *@This()) anyerror!js.Expr {
+        return if (self.boxed_recv)
+            js.Expr{ .call = .{ .callee = &boxed_value_of } }
+        else
+            js.Expr.this;
+    }
+    pub fn argExpr(self: *@This(), i: usize) anyerror!js.Expr {
+        return .{ .ident = self.params[i].name };
+    }
+};
+
+const this_expr: js.Expr = .this;
+const boxed_value_of: js.Expr = .{ .member = .{ .object = &this_expr, .name = "valueOf" } };
+
 const Emitter = struct {
-    out: *std.Io.Writer,
+    /// Scratch allocator for the collector hash maps.
+    alloc: std.mem.Allocator,
+    /// Arena the code model is built in — it outlives every build call and is
+    /// freed once the module has been rendered.
+    b: js.Builder,
     cv: std.StringHashMap([]const u8),
     current_indent: usize = 0,
     try_seq: usize = 0,
-    alloc: std.mem.Allocator,
     /// Static extension dispatch: call-site loc → activated extension symbol.
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     /// Type-directed JS method renames: call-site loc → native JS method name to
@@ -756,7 +696,7 @@ const Emitter = struct {
     /// When true, `self.x` lowers to `self.x` (extension methods take `self` as a
     /// real first parameter) instead of the prototype-method `this.x`.
     self_is_param: bool = false,
-    /// True while emitting a generator (`function*`) body. A `return <expr>`
+    /// True while building a generator (`function*`) body. A `return <expr>`
     /// inside an `#[@iterator] fn -> @Iterator<T>` means *delegate the rest of
     /// the iteration* to that iterator, so it lowers to `yield* <expr>;
     /// return;` — a plain `return <gen>` would surface the generator object as
@@ -795,7 +735,7 @@ const Emitter = struct {
     /// driven by the 2-arg `@external(node, "X")` annotation on a primitive
     /// interface method. Consulted at the call site as a fallback when no
     /// per-loc (type-directed) rename was recorded by inference — the latter
-    /// path covers interface default-fn bodies, which are emitted from AST
+    /// path covers interface default-fn bodies, which are lowered from AST
     /// without going through inference. Collisions with a record/struct method
     /// of the same name are excluded (`String.contains`/`Set.contains` →
     /// inference's per-loc rename is the only path; this map omits `contains`).
@@ -818,14 +758,14 @@ const Emitter = struct {
 
     fn emitterInit(
         alloc: std.mem.Allocator,
-        out: *std.Io.Writer,
+        node_arena: std.mem.Allocator,
         cv: std.StringHashMap([]const u8),
         rewrites: std.AutoHashMap(ast.Loc, []const u8),
     ) Emitter {
         var em = Emitter{
-            .out = out,
-            .cv = cv,
             .alloc = alloc,
+            .b = .{ .arena = node_arena },
+            .cv = cv,
             .rewrites = rewrites,
             .externals = std.StringHashMap(ast.ExternalRef).init(alloc),
             .externals_missing = std.StringHashMap(void).init(alloc),
@@ -875,6 +815,12 @@ const Emitter = struct {
         self.user_node_templates.deinit();
     }
 
+    fn arena(self: *Emitter) std.mem.Allocator {
+        return self.b.arena;
+    }
+
+    // ── collectors ────────────────────────────────────────────────────────────
+
     /// `prim-op-annotation` commonJS builtin dispatch collector — mirrors
     /// erlang's; scans `prelude.builtins` for top-level fn decls with
     /// `@external(node, …)` and indexes by callee name.
@@ -901,9 +847,9 @@ const Emitter = struct {
     /// module+symbol entries in `builtin_node_dispatch`. Arity-branched entries
     /// are registered inline via `registerInlineBuiltinDispatch`.
     fn scanDeclareFnExternal(self: *Emitter, target: []const u8, src: []const u8) !void {
-        var arena = std.heap.ArenaAllocator.init(self.alloc);
-        defer arena.deinit();
-        const alloc_arena = arena.allocator();
+        var scan_arena = std.heap.ArenaAllocator.init(self.alloc);
+        defer scan_arena.deinit();
+        const alloc_arena = scan_arena.allocator();
         var lx = lexerMod.Lexer.init(src);
         const tokens = lx.scanAll(alloc_arena) catch return;
         var p = parserMod.Parser.init(tokens);
@@ -919,10 +865,10 @@ const Emitter = struct {
                 for (f.annotations) |a| {
                     if (!std.mem.startsWith(u8, a.name, "External.") or !std.ascii.eqlIgnoreCase(a.name["External.".len..], target)) continue;
                     for (a.args) |raw| {
-                        const b = ast.parseArityBranchArg(raw) orelse continue;
+                        const br = ast.parseArityBranchArg(raw) orelse continue;
                         try branches.append(self.alloc, .{
-                            .argc = b.argc,
-                            .template = try self.alloc.dupe(u8, b.template),
+                            .argc = br.argc,
+                            .template = try self.alloc.dupe(u8, br.template),
                         });
                     }
                 }
@@ -983,159 +929,16 @@ const Emitter = struct {
     fn putInlineBuiltin(self: *Emitter, name: []const u8, branches: []const ast.ArityBranch) !void {
         if (self.builtin_node_dispatch.contains(name)) return;
         const owned = try self.alloc.alloc(ast.ArityBranch, branches.len);
-        for (branches, 0..) |b, i| {
+        for (branches, 0..) |br, i| {
             owned[i] = .{
-                .argc = b.argc,
-                .template = try self.alloc.dupe(u8, b.template),
+                .argc = br.argc,
+                .template = try self.alloc.dupe(u8, br.template),
             };
         }
         try self.builtin_node_dispatch.put(try self.alloc.dupe(u8, name), .{
             .symbol = "",
             .arity_branches = owned,
         });
-    }
-
-    /// Try emitting an `@builtin(…)` call from its `@external(node, …)`
-    /// annotation. Returns false when no annotation is registered.
-    fn tryEmitBuiltinAnnotation(self: *Emitter, callee: []const u8, cc: anytype) anyerror!bool {
-        const call = self.builtin_node_dispatch.get(callee) orelse return false;
-        if (call.arity_branches.len > 0) {
-            const argc = cc.args.len + cc.trailing.len;
-            for (call.arity_branches) |branch| {
-                if (branch.argc != argc) continue;
-                const Ctx = struct {
-                    self: *Emitter,
-                    cc_ref: @TypeOf(cc),
-                    argc: usize,
-                    pub fn writeByte(c: *@This(), ch: u8) anyerror!void {
-                        try c.self.out.writeByte(ch);
-                    }
-                    pub fn writeAll(c: *@This(), s: []const u8) anyerror!void {
-                        try c.self.w(s);
-                    }
-                    pub fn emitRecv(c: *@This()) anyerror!void {
-                        _ = c;
-                        return error.PrimOpRecvInBuiltinTemplate;
-                    }
-                    pub fn emitArg(c: *@This(), i: usize) anyerror!void {
-                        try c.self.emitExpr(c.cc_ref.args[i].value.*);
-                    }
-                };
-                var ctx = Ctx{ .self = self, .cc_ref = cc, .argc = argc };
-                try primOpTemplate.render(branch.template, &ctx);
-                return true;
-            }
-            return false;
-        }
-        if (primOpTemplate.looksLikeTemplate(call.symbol)) {
-            const Ctx = struct {
-                self: *Emitter,
-                cc_ref: @TypeOf(cc),
-                argc: usize,
-                pub fn writeByte(c: *@This(), ch: u8) anyerror!void {
-                    try c.self.out.writeByte(ch);
-                }
-                pub fn writeAll(c: *@This(), s: []const u8) anyerror!void {
-                    try c.self.w(s);
-                }
-                pub fn emitRecv(c: *@This()) anyerror!void {
-                    _ = c;
-                    return error.PrimOpRecvInBuiltinTemplate;
-                }
-                pub fn emitArg(c: *@This(), i: usize) anyerror!void {
-                    try c.self.emitExpr(c.cc_ref.args[i].value.*);
-                }
-            };
-            var ctx = Ctx{ .self = self, .cc_ref = cc, .argc = cc.args.len + cc.trailing.len };
-            try primOpTemplate.render(call.symbol, &ctx);
-            return true;
-        }
-        // module+symbol form: `@External.Node("./mod", "fun")` —
-        // emit `require("<module>").<symbol>(<args>)`.
-        // Trailing lambdas are not supported in this form — declare fn
-        // helpers use fixed arity.
-        if (call.module.len > 0) {
-            try self.w("require(\"");
-            try self.w(call.module);
-            try self.w("\").");
-            try self.w(call.symbol);
-            try self.w("(");
-            for (cc.args, 0..) |arg, i| {
-                if (i > 0) try self.w(", ");
-                try self.emitExpr(arg.value.*);
-            }
-            try self.w(")");
-            return true;
-        }
-        return false;
-    }
-
-    /// §A2 user-fn template dispatch (commonJS): when a `declare fn`'s
-    /// `@external(node, …)` annotation is a template string (with `$0`/`$1`/…
-    /// markers) or an arity-branched `when(argc == N): "<tmpl>"` set,
-    /// render the template at the call site instead of emitting `fn(args)`
-    /// against an aliased symbol (which strips `this` for method-on-global
-    /// chains like `process.cwd()`).
-    ///
-    /// Mirrors `tryEmitBuiltinAnnotation` shape for the
-    /// `panic`/`todo`-style builtin path; the difference is the dispatch
-    /// table (`user_node_templates` vs `builtin_node_dispatch`) and the
-    /// population path (`collectExternals` vs the inline registry +
-    /// best-effort `builtins.d.bp` parse).
-    fn tryEmitUserTemplate(self: *Emitter, callee: []const u8, cc: anytype) anyerror!bool {
-        const call = self.user_node_templates.get(callee) orelse return false;
-        if (call.arity_branches.len > 0) {
-            const argc = cc.args.len + cc.trailing.len;
-            for (call.arity_branches) |branch| {
-                if (branch.argc != argc) continue;
-                const Ctx = struct {
-                    self: *Emitter,
-                    cc_ref: @TypeOf(cc),
-                    argc: usize,
-                    pub fn writeByte(c: *@This(), ch: u8) anyerror!void {
-                        try c.self.out.writeByte(ch);
-                    }
-                    pub fn writeAll(c: *@This(), s: []const u8) anyerror!void {
-                        try c.self.w(s);
-                    }
-                    pub fn emitRecv(c: *@This()) anyerror!void {
-                        _ = c;
-                        return error.PrimOpRecvInUserTemplate;
-                    }
-                    pub fn emitArg(c: *@This(), i: usize) anyerror!void {
-                        try c.self.emitExpr(c.cc_ref.args[i].value.*);
-                    }
-                };
-                var ctx = Ctx{ .self = self, .cc_ref = cc, .argc = argc };
-                try primOpTemplate.render(branch.template, &ctx);
-                return true;
-            }
-            return false;
-        }
-        if (primOpTemplate.looksLikeTemplate(call.symbol)) {
-            const Ctx = struct {
-                self: *Emitter,
-                cc_ref: @TypeOf(cc),
-                argc: usize,
-                pub fn writeByte(c: *@This(), ch: u8) anyerror!void {
-                    try c.self.out.writeByte(ch);
-                }
-                pub fn writeAll(c: *@This(), s: []const u8) anyerror!void {
-                    try c.self.w(s);
-                }
-                pub fn emitRecv(c: *@This()) anyerror!void {
-                    _ = c;
-                    return error.PrimOpRecvInUserTemplate;
-                }
-                pub fn emitArg(c: *@This(), i: usize) anyerror!void {
-                    try c.self.emitExpr(c.cc_ref.args[i].value.*);
-                }
-            };
-            var ctx = Ctx{ .self = self, .cc_ref = cc, .argc = cc.args.len + cc.trailing.len };
-            try primOpTemplate.render(call.symbol, &ctx);
-            return true;
-        }
-        return false;
     }
 
     /// §A4: build the type-naive prim-method rename map from interface
@@ -1185,10 +988,10 @@ const Emitter = struct {
                     for (f.annotations) |a| {
                         if (!std.mem.startsWith(u8, a.name, "External.") or !std.ascii.eqlIgnoreCase(a.name["External.".len..], "node")) continue;
                         for (a.args) |raw| {
-                            const b = ast.parseArityBranchArg(raw) orelse continue;
+                            const br = ast.parseArityBranchArg(raw) orelse continue;
                             try branches.append(self.alloc, .{
-                                .argc = b.argc,
-                                .template = try self.alloc.dupe(u8, b.template),
+                                .argc = br.argc,
+                                .template = try self.alloc.dupe(u8, br.template),
                             });
                         }
                     }
@@ -1221,15 +1024,6 @@ const Emitter = struct {
     /// (`Pair(1, "one")`) can be emitted with `new` — JS classes cannot be
     /// invoked without it. Both `record X { … }` and the `val X = record { … }`
     /// shorthand normalize to `.record` decls in the parser.
-    /// Emit `exports.<name> = <name>;` for a `pub` type that another module
-    /// imports. Scoped to actually-consumed names so single-module programs
-    /// (the vast majority of fixtures) emit no export line and stay unchanged.
-    fn emitCrossExport(self: *Emitter, name: []const u8) !void {
-        const xc = self.cross orelse return;
-        if (!xc.imported.contains(name)) return;
-        try self.fmt("\nexports.{s} = {s};", .{ name, name });
-    }
-
     fn collectClassNames(self: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| switch (decl) {
             .record => |r| try self.class_names.put(r.name, {}),
@@ -1246,12 +1040,20 @@ const Emitter = struct {
         };
     }
 
-    fn w(self: *Emitter, s: []const u8) !void {
-        try self.out.writeAll(s);
+    /// `exports.<name> = <name>;` for a `pub` type that another module
+    /// imports. Scoped to actually-consumed names so single-module programs
+    /// (the vast majority of fixtures) emit no export line and stay unchanged.
+    fn crossExport(self: *Emitter, name: []const u8) !?js.Stmt {
+        const xc = self.cross orelse return null;
+        if (!xc.imported.contains(name)) return null;
+        return js.Stmt{ .expr = try self.b.assign(
+            try self.b.member(.{ .name = "exports" }, name),
+            "=",
+            .{ .name = name },
+        ) };
     }
-    fn fmt(self: *Emitter, comptime f: []const u8, args: anytype) !void {
-        try self.out.print(f, args);
-    }
+
+    // ── helpers ───────────────────────────────────────────────────────────────
 
     /// Tuple positional member (`_0`, `_1`, …) → the digits, else null.
     /// Distinguishes tuple index access from `_`-prefixed record fields
@@ -1280,14 +1082,23 @@ const Emitter = struct {
         };
     }
 
-    fn emitValDecl(self: *Emitter, v: ast.ValDecl) !void {
-        if (isComptimeVal(v)) {
-            // Will be handled via comptime_vals lookup at a higher level.
-            return;
-        }
-        try self.fmt("const {s} = ", .{jsIdent(v.name)});
-        try self.emitExpr(v.value.*);
-        try self.w(";");
+    /// `_try<N>` — a fresh temporary for one `try` lowering.
+    fn tryName(self: *Emitter, n: usize) ![]const u8 {
+        return std.fmt.allocPrint(self.arena(), "_try{d}", .{n});
+    }
+
+    /// `"error" in <temp>` — the Result discriminant test.
+    fn errorIn(self: *Emitter, temp: []const u8) !js.Expr {
+        return self.b.binaryBare("in", .{ .quoted = "error" }, .{ .name = temp });
+    }
+
+    // ── declarations ──────────────────────────────────────────────────────────
+
+    fn buildValDecl(self: *Emitter, v: ast.ValDecl) !js.Stmt {
+        return .{ .decl = .{
+            .pattern = .{ .ident = v.name },
+            .value = try self.buildExpr(v.value.*),
+        } };
     }
 
     /// JS function keyword for a botopink function, driven by its effect kind.
@@ -1309,216 +1120,204 @@ const Emitter = struct {
         };
     }
 
-    fn emitFn(self: *Emitter, f: ast.FnDecl) !void {
+    /// A top-level `fn` decl: an external alias/template breadcrumb, or a real
+    /// function plus its `exports.<name>` line.
+    fn buildFnItem(self: *Emitter, f: ast.FnDecl) !js.Stmt {
+        if (!f.isExternal()) return self.buildFn(f);
+        // §A2 template-form external: no decl alias — the template renders
+        // inline at every call site (see `tryUserTemplate`). Emit a one-line
+        // doc breadcrumb so the emitted file stays self-documenting.
+        if (self.user_node_templates.contains(f.name)) {
+            return .{ .comment = .{
+                .text = try std.fmt.allocPrint(self.arena(), "{s}: per-call template (see annotation)", .{f.name}),
+            } };
+        }
+        const ref = self.externals.get(f.name) orelse return .{ .comment = .{
+            .text = try std.fmt.allocPrint(self.arena(), "external fn {s} (no node target)", .{f.name}),
+        } };
+        const bind_name = jsIdent(f.name);
+        const decl: js.Stmt = if (isJsGlobalNamespace(ref.module))
+            // Global namespace (`Math`, `console`, …) — reference directly,
+            // never `require`.
+            .{ .decl = .{
+                .pattern = .{ .name = bind_name },
+                .value = try self.b.member(.{ .name = ref.module }, ref.symbol),
+            } }
+        else
+            .{ .decl = .{
+                .pattern = .{ .object = .{ .props = try self.arena().dupe(js.ObjectPattern.Prop, &.{.{
+                    .key = ref.symbol,
+                    .bind = if (std.mem.eql(u8, ref.symbol, bind_name)) null else bind_name,
+                }}) } },
+                .value = try self.requireCall(ref.module),
+            } };
+        if (!f.isPub) return decl;
+        return self.b.group(&.{ decl, .{ .expr = try self.b.assign(
+            try self.b.member(.{ .name = "exports" }, f.name),
+            "=",
+            .{ .name = bind_name },
+        ) } });
+    }
+
+    fn requireCall(self: *Emitter, path: []const u8) !js.Expr {
+        return self.b.call(.{ .name = "require" }, &.{.{ .quoted = path }});
+    }
+
+    fn buildFn(self: *Emitter, f: ast.FnDecl) anyerror!js.Stmt {
         self.try_seq = 0;
         const kw = fnKeyword(f);
         const prev_in_generator = self.in_generator;
         self.in_generator = std.mem.endsWith(u8, kw, "function*");
         defer self.in_generator = prev_in_generator;
-        try self.fmt("{s} {s}(", .{ kw, jsIdent(f.name) });
-        try self.emitParams(f.params);
-        try self.w(") {\n");
+        const params = try self.buildParams(f.params);
         const prev_fn_indent = self.current_indent;
         self.current_indent = 1;
         // Each function body gets a fresh reactive-name scope for hook deps.
         self.hook_state.clearRetainingCapacity();
-        for (f.body) |s| {
-            try self.w("    ");
-            try self.emitStmt(s);
-            try self.w("\n");
-        }
+        const body = try self.buildStmts(f.body);
         self.current_indent = prev_fn_indent;
-        try self.w("}");
-        if (f.isPub) try self.fmt("\nexports.{s} = {s};", .{ f.name, jsIdent(f.name) });
+        const decl = js.Stmt{ .function = .{
+            .keyword = kw,
+            .name = f.name,
+            .params = params,
+            .body = .{ .stmts = body },
+        } };
+        if (!f.isPub) return decl;
+        return self.b.group(&.{ decl, .{ .expr = try self.b.assign(
+            try self.b.member(.{ .name = "exports" }, f.name),
+            "=",
+            .{ .ident = f.name },
+        ) } });
     }
 
-    /// Emit a `test { … }` body as `async function __bp_test_<idx>() { … }`.
+    /// A `test { … }` body as `async function __bp_test_<idx>() { … }`.
     /// `async` so the body may `await flush()` / `await fetch(url)` — the
     /// test runner (`__bp_run_tests`) awaits the call. Sync test bodies
     /// pay no observable cost (a resolved Promise is returned and awaited).
-    fn emitTestFn(self: *Emitter, t: ast.TestDecl, idx: usize) !void {
+    fn buildTestFn(self: *Emitter, t: ast.TestDecl, idx: usize) !js.Stmt {
         self.try_seq = 0;
-        try self.fmt("async function __bp_test_{d}() {{\n", .{idx});
         const prev_fn_indent = self.current_indent;
         self.current_indent = 1;
         self.hook_state.clearRetainingCapacity();
-        for (t.body) |s| {
-            try self.w("    ");
-            try self.emitStmt(s);
-            try self.w("\n");
-        }
+        const body = try self.buildStmts(t.body);
         self.current_indent = prev_fn_indent;
-        try self.w("}");
+        return .{ .function = .{
+            .keyword = "async function",
+            .name = try std.fmt.allocPrint(self.arena(), "__bp_test_{d}", .{idx}),
+            .body = .{ .stmts = body },
+        } };
     }
 
-    fn emitStruct(self: *Emitter, s: ast.StructDecl) !void {
-        try self.fmt("class {s} {{\n", .{s.name});
-        // Emit a real constructor that assigns each field, matching `record`
-        // codegen — otherwise `new S(a, b)` ignores its arguments and the
-        // fields read `undefined` at runtime. Field initializers become
-        // parameter defaults so `new S()` still applies them.
-        var hasField = false;
-        for (s.members) |m| if (m == .field) {
-            hasField = true;
-            break;
-        };
-        if (hasField) {
-            try self.w("    constructor(");
-            var firstParam = true;
-            for (s.members) |m| switch (m) {
-                .field => |f| {
-                    if (!firstParam) try self.w(", ");
-                    firstParam = false;
-                    try self.w(f.name);
-                    if (f.init) |init| {
-                        try self.w(" = ");
-                        try self.emitExpr(init);
-                    }
-                },
-                else => {},
-            };
-            try self.w(") {\n");
-            for (s.members) |m| switch (m) {
-                .field => |f| try self.fmt("        this.{s} = {s};\n", .{ f.name, f.name }),
-                else => {},
-            };
-            try self.w("    }\n");
-        }
-        for (s.members) |m| switch (m) {
-            .field => {},
-            .getter => |g| {
-                try self.w("\n");
-                try self.fmt("    get {s}() {{\n", .{g.name});
-                self.current_indent = 2;
-                for (g.body) |st| {
-                    try self.w("        ");
-                    try self.emitStmt(st);
-                    try self.w("\n");
-                }
-                self.current_indent = 0;
-                try self.w("    }\n");
-            },
-            .setter => |sg| {
-                try self.w("\n");
-                const vp = for (sg.params) |p| {
-                    if (!std.mem.eql(u8, p.name, "self")) break p.name;
-                } else "value";
-                try self.fmt("    set {s}({s}) {{\n", .{ sg.name, vp });
-                self.current_indent = 2;
-                for (sg.body) |st| {
-                    try self.w("        ");
-                    try self.emitStmt(st);
-                    try self.w("\n");
-                }
-                self.current_indent = 0;
-                try self.w("    }\n");
-            },
-            .method => |m2| {
-                if (m2.is_declare) continue;
-                try self.w("\n");
-                try self.fmt("    {s}(", .{m2.name});
-                try self.emitParams(m2.params);
-                try self.w(") {\n");
-                self.current_indent = 2;
-                for (m2.body orelse &.{}) |st| {
-                    try self.w("        ");
-                    try self.emitStmt(st);
-                    try self.w("\n");
-                }
-                self.current_indent = 0;
-                try self.w("    }\n");
-            },
-        };
-        try self.w("}");
-    }
-
-    fn emitRecord(self: *Emitter, r: ast.RecordDecl) !void {
-        try self.fmt("class {s} {{\n", .{r.name});
+    fn buildRecord(self: *Emitter, r: ast.RecordDecl) !js.Stmt {
+        var ctor: ?js.Class.Ctor = null;
         if (r.fields.len > 0) {
-            try self.w("    constructor(");
+            const params = try self.arena().alloc(js.Param, r.fields.len);
+            const assigns = try self.arena().alloc(js.Stmt, r.fields.len);
             for (r.fields, 0..) |f, i| {
-                if (i > 0) try self.w(", ");
-                try self.w(f.name);
+                params[i] = .{ .pattern = .{ .name = f.name } };
+                assigns[i] = .{ .expr = try self.b.assign(
+                    try self.b.member(.this, f.name),
+                    "=",
+                    .{ .name = f.name },
+                ) };
             }
-            try self.w(") {\n");
-            for (r.fields) |f| try self.fmt("        this.{s} = {s};\n", .{ f.name, f.name });
-            try self.w("    }\n");
+            ctor = .{ .params = params, .body = .{ .stmts = assigns, .indent = 1 } };
         }
+        var members: std.ArrayListUnmanaged(js.Class.ClassMember) = .empty;
         for (r.methods) |m| {
             if (m.is_declare) continue;
             // A method with no `self` receiver is an associated function
             // (`Response.ok(...)`) — emit it as a `static` method so the call
             // resolves on the class itself, not an instance prototype.
             const has_self = m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self");
-            try self.w("\n");
-            try self.fmt("    {s}{s}(", .{ if (has_self) "" else "static ", m.name });
-            try self.emitParams(m.params);
-            try self.w(") {\n");
+            const params = try self.buildParams(m.params);
             self.current_indent = 2;
-            for (m.body orelse &.{}) |st| {
-                try self.w("        ");
-                try self.emitStmt(st);
-                try self.w("\n");
-            }
+            const body = try self.buildStmts(m.body orelse &.{});
             self.current_indent = 0;
-            try self.w("    }\n");
+            try members.append(self.arena(), .{
+                .kind = if (has_self) .method else .static_method,
+                .name = m.name,
+                .params = params,
+                .body = .{ .stmts = body, .indent = 1 },
+            });
         }
-        try self.w("}");
-        if (r.isPub) try self.emitCrossExport(r.name);
+        const class = js.Stmt{ .class = .{
+            .name = r.name,
+            .ctor = ctor,
+            .members = try members.toOwnedSlice(self.arena()),
+        } };
+        if (!r.isPub) return class;
+        const exp = try self.crossExport(r.name) orelse return class;
+        return self.b.group(&.{ class, exp });
     }
 
-    fn emitEnum(self: *Emitter, e: ast.EnumDecl) !void {
-        try self.fmt("const {s} = Object.freeze({{\n", .{e.name});
+    fn buildEnum(self: *Emitter, e: ast.EnumDecl) !js.Stmt {
+        var props: std.ArrayListUnmanaged(js.Object.Prop) = .empty;
         for (e.variants) |v| {
             if (v.fields.len == 0) {
-                try self.fmt("    {s}: \"{s}\",\n", .{ v.name, v.name });
-            } else {
-                try self.fmt("    {s}: (", .{v.name});
-                for (v.fields, 0..) |f, i| {
-                    if (i > 0) try self.w(", ");
-                    try self.w(f.name);
-                }
-                try self.fmt(") => ({{ tag: \"{s}\"", .{v.name});
-                for (v.fields) |f| try self.fmt(", {s}", .{f.name});
-                try self.w(" }),\n");
+                try props.append(self.arena(), .{ .kv = .{ .key = v.name, .value = .{ .quoted = v.name } } });
+                continue;
             }
+            const params = try self.arena().alloc(js.Param, v.fields.len);
+            const obj_props = try self.arena().alloc(js.Object.Prop, v.fields.len + 1);
+            obj_props[0] = .{ .kv = .{ .key = "tag", .value = .{ .quoted = v.name } } };
+            for (v.fields, 0..) |f, i| {
+                params[i] = .{ .pattern = .{ .name = f.name } };
+                obj_props[i + 1] = .{ .shorthand = f.name };
+            }
+            try props.append(self.arena(), .{ .kv = .{
+                .key = v.name,
+                .value = try self.b.arrowExpr(params, try self.b.paren(.{ .object = .{ .props = obj_props } })),
+            } });
         }
         for (e.methods) |m| {
             if (m.is_declare) continue;
-            try self.fmt("    {s}: function(", .{m.name});
-            try self.emitParams(m.params);
-            try self.w(") {\n");
+            const params = try self.buildParams(m.params);
             self.current_indent = 2;
-            for (m.body orelse &.{}) |st| {
-                try self.w("        ");
-                try self.emitStmt(st);
-                try self.w("\n");
-            }
+            const body = try self.buildStmts(m.body orelse &.{});
             self.current_indent = 0;
-            try self.w("    },\n");
+            try props.append(self.arena(), .{ .kv = .{
+                .key = m.name,
+                .value = .{ .function = .{ .params = params, .body = .{ .stmts = body, .indent = 1 } } },
+            } });
         }
-        try self.w("});");
-        if (e.isPub) try self.emitCrossExport(e.name);
+        const decl = js.Stmt{ .decl = .{
+            .pattern = .{ .name = e.name },
+            .value = try self.b.call(
+                try self.b.member(.{ .name = "Object" }, "freeze"),
+                &.{.{ .object = .{ .props = try props.toOwnedSlice(self.arena()), .layout = .lines } }},
+            ),
+        } };
+        if (!e.isPub) return decl;
+        const exp = try self.crossExport(e.name) orelse return decl;
+        return self.b.group(&.{ decl, exp });
     }
 
-    fn emitInterface(self: *Emitter, i: ast.InterfaceDecl) !void {
+    fn buildInterface(self: *Emitter, i: ast.InterfaceDecl) !js.Stmt {
+        var stmts: std.ArrayListUnmanaged(js.Stmt) = .empty;
+
+        // A doc block naming the interface's shape — the contract itself has no
+        // runtime representation.
+        var head: std.ArrayListUnmanaged(u8) = .empty;
+        try head.print(self.arena(), "interface {s}", .{i.name});
         if (i.extends.len > 0) {
-            try self.fmt("// interface {s} extends ", .{i.name});
+            try head.appendSlice(self.arena(), " extends ");
             for (i.extends, 0..) |ext, j| {
-                if (j > 0) try self.w(", ");
-                try self.w(ext);
-            }
-        } else {
-            try self.fmt("// interface {s}", .{i.name});
-        }
-        for (i.fields) |f| try self.fmt("\n//   {s}: {s}", .{ f.name, f.typeName });
-        for (i.methods) |m| {
-            if (m.is_default) {
-                try self.fmt("\n//   default fn {s}(...)", .{m.name});
-            } else {
-                try self.fmt("\n//   fn {s}(...)", .{m.name});
+                if (j > 0) try head.appendSlice(self.arena(), ", ");
+                try head.appendSlice(self.arena(), ext);
             }
         }
+        try stmts.append(self.arena(), .{ .comment = .{ .text = try head.toOwnedSlice(self.arena()) } });
+        for (i.fields) |f| try stmts.append(self.arena(), .{ .comment = .{
+            .text = try std.fmt.allocPrint(self.arena(), "  {s}: {s}", .{ f.name, f.typeName }),
+        } });
+        for (i.methods) |m| try stmts.append(self.arena(), .{ .comment = .{
+            .text = try std.fmt.allocPrint(
+                self.arena(),
+                "  {s}fn {s}(...)",
+                .{ @as([]const u8, if (m.is_default) "default " else ""), m.name },
+            ),
+        } });
 
         // Associated functions (`default fn` with no `self` receiver, e.g.
         // `Pair.of`, `Function.compose`) materialize as a namespace object so
@@ -1540,24 +1339,25 @@ const Emitter = struct {
             // needs the namespace object.
             const assoc_ns = jsIdent(i.name);
             if (!isJsGlobalNamespace(jsPrototypeOwner(i.name)) and !isJsGlobalNamespace(i.name)) {
-                try self.fmt("\nconst {s} = {{}};", .{assoc_ns});
+                try stmts.append(self.arena(), .{ .decl = .{
+                    .pattern = .{ .name = assoc_ns },
+                    .value = .{ .object = .{} },
+                } });
             }
             for (i.methods) |m| {
                 if (!isAssociatedFn(m)) continue;
-                const body = m.body orelse continue;
-                try self.fmt("\n{s}.{s} = function(", .{ assoc_ns, m.name });
-                try self.emitParams(m.params);
-                try self.w(") {\n");
+                const body_src = m.body orelse continue;
+                const params = try self.buildParams(m.params);
                 const prev = self.current_indent;
                 self.current_indent = 1;
                 self.hook_state.clearRetainingCapacity();
-                for (body) |s| {
-                    try self.w("    ");
-                    try self.emitStmt(s);
-                    try self.w("\n");
-                }
+                const body = try self.buildStmts(body_src);
                 self.current_indent = prev;
-                try self.w("};");
+                try stmts.append(self.arena(), .{ .expr = try self.b.assign(
+                    try self.b.member(.{ .name = assoc_ns }, m.name),
+                    "=",
+                    .{ .function = .{ .params = params, .body = .{ .stmts = body } } },
+                ) });
             }
         }
 
@@ -1583,58 +1383,46 @@ const Emitter = struct {
                 // the 1-arg form has module="" + symbol=<template>, so this
                 // case takes precedence over the §A4 native-prototype skip.
                 if (primOpTemplate.looksLikeTemplate(ref.symbol)) {
-                    try self.fmt("\n{s}.prototype.{s} = function(", .{ owner, m.name });
-                    try self.emitParams(m.params[1..]);
-                    try self.w(") { return ");
-                    const Ctx = struct {
-                        self: *Emitter,
-                        params: []const ast.Param,
-                        boxed_recv: bool,
-                        argc: usize,
-                        pub fn writeByte(c: *@This(), ch: u8) anyerror!void {
-                            try c.self.out.writeByte(ch);
-                        }
-                        pub fn writeAll(c: *@This(), s: []const u8) anyerror!void {
-                            try c.self.w(s);
-                        }
-                        pub fn emitRecv(c: *@This()) anyerror!void {
-                            try c.self.w(if (c.boxed_recv) "this.valueOf()" else "this");
-                        }
-                        pub fn emitArg(c: *@This(), idx: usize) anyerror!void {
-                            try c.self.w(jsIdent(c.params[idx].name));
-                        }
+                    var holes = MethodHoles{ .params = m.params[1..], .boxed_recv = boxed };
+                    var tmpl = HostTemplate(MethodHoles){
+                        .arena = self.arena(),
+                        .holes = &holes,
+                        .argc = m.params.len - 1,
                     };
-                    var ctx = Ctx{ .self = self, .params = m.params[1..], .boxed_recv = boxed, .argc = m.params.len - 1 };
-                    try primOpTemplate.render(ref.symbol, &ctx);
-                    try self.w("; };");
+                    try primOpTemplate.render(ref.symbol, &tmpl);
+                    try stmts.append(self.arena(), try self.prototypeAssign(owner, m.name, .{
+                        .params = try self.buildParams(m.params[1..]),
+                        .body = .{ .stmts = try self.b.stmts(&.{.{ .return_ = try tmpl.finish() }}), .layout = .spaced },
+                    }));
                     continue;
                 }
                 if (ref.module.len == 0) continue; // §A4: native prototype, no patch
             }
 
             if (m.is_default) {
-                const body = m.body orelse continue;
-                try self.fmt("\n{s}.prototype.{s} = function(", .{ owner, m.name });
-                try self.emitParams(m.params[1..]);
-                try self.w(") {\n");
+                const body_src = m.body orelse continue;
+                const params = try self.buildParams(m.params[1..]);
                 const prev = self.current_indent;
                 self.current_indent = 1;
+                var body: std.ArrayListUnmanaged(js.Stmt) = .empty;
                 // Boxed primitives wrap `this` in a (truthy) object — bind `self`
                 // to the unwrapped primitive; arrays use `this` directly.
                 if (boxed) {
-                    try self.w("    const self = this.valueOf();\n");
+                    try body.append(self.arena(), .{ .decl = .{
+                        .pattern = .{ .name = "self" },
+                        .value = try self.b.call(try self.b.member(.this, "valueOf"), &.{}),
+                    } });
                     self.self_is_param = true; // `self`/`self.x` stay `self`
                 } else {
                     self.self_is_param = false; // bare `self` → `this`
                 }
                 self.hook_state.clearRetainingCapacity();
-                for (body) |s| {
-                    try self.w("    ");
-                    try self.emitStmt(s);
-                    try self.w("\n");
-                }
+                for (body_src) |s| try body.append(self.arena(), try self.buildStmt(s));
                 self.current_indent = prev;
-                try self.w("};");
+                try stmts.append(self.arena(), try self.prototypeAssign(owner, m.name, .{
+                    .params = params,
+                    .body = .{ .stmts = try body.toOwnedSlice(self.arena()) },
+                }));
             } else if (m.externalFor("node")) |ref| {
                 // Host-backed instance method via a JS global namespace (`Math`):
                 // `Owner.prototype.m = function(args){ return Mod.sym(self, args); }`.
@@ -1642,71 +1430,97 @@ const Emitter = struct {
                 // the inference, which leaves them to native JS).
                 if (!isJsGlobalNamespace(ref.module)) continue;
                 if (std.mem.indexOfScalar(u8, ref.symbol, '(') != null) continue;
-                try self.fmt("\n{s}.prototype.{s} = function(", .{ owner, m.name });
-                try self.emitParams(m.params[1..]);
-                try self.fmt(") {{ return {s}.{s}(", .{ ref.module, ref.symbol });
-                try self.w(if (boxed) "this.valueOf()" else "this");
-                for (m.params[1..]) |p| try self.fmt(", {s}", .{jsIdent(p.name)});
-                try self.w("); };");
+                var args: std.ArrayListUnmanaged(js.Expr) = .empty;
+                try args.append(self.arena(), if (boxed)
+                    try self.b.call(try self.b.member(.this, "valueOf"), &.{})
+                else
+                    js.Expr.this);
+                for (m.params[1..]) |p| try args.append(self.arena(), .{ .ident = p.name });
+                const call = try self.b.call(
+                    try self.b.member(.{ .name = ref.module }, ref.symbol),
+                    try args.toOwnedSlice(self.arena()),
+                );
+                try stmts.append(self.arena(), try self.prototypeAssign(owner, m.name, .{
+                    .params = try self.buildParams(m.params[1..]),
+                    .body = .{ .stmts = try self.b.stmts(&.{.{ .return_ = call }}), .layout = .spaced },
+                }));
             }
         }
+        return self.b.group(try stmts.toOwnedSlice(self.arena()));
+    }
+
+    /// `Owner.prototype.name = function(params) { … };`
+    fn prototypeAssign(self: *Emitter, owner: []const u8, name: []const u8, f: js.FunctionExpr) !js.Stmt {
+        return .{ .expr = try self.b.assign(
+            try self.b.member(try self.b.member(.{ .name = owner }, "prototype"), name),
+            "=",
+            .{ .function = f },
+        ) };
     }
 
     /// External dispatch: an `implement … for T` block is emitted as a namespace
     /// object whose methods take the receiver as an explicit `self` parameter, so
     /// `obj.m()` can be lowered to `Sym.m(obj)` without patching `T.prototype`.
-    fn emitImplement(self: *Emitter, im: ast.ImplementDecl) !void {
-        try self.w("// implement ");
+    fn buildImplement(self: *Emitter, im: ast.ImplementDecl) !js.Stmt {
+        var head: std.ArrayListUnmanaged(u8) = .empty;
+        try head.appendSlice(self.arena(), "implement ");
         for (im.interfaces, 0..) |iface, i| {
-            if (i > 0) try self.w(", ");
-            try self.w(switch (iface) {
+            if (i > 0) try head.appendSlice(self.arena(), ", ");
+            try head.appendSlice(self.arena(), switch (iface) {
                 .named => |n| n,
                 .generic => |g| g.name,
                 else => "?",
             });
         }
-        try self.fmt(" for {s}\n", .{im.target});
-        try self.emitExtensionNamespace(im.name, im.methods);
+        try head.print(self.arena(), " for {s}", .{im.target});
+
+        var stmts: std.ArrayListUnmanaged(js.Stmt) = .empty;
+        try stmts.append(self.arena(), .{ .comment = .{ .text = try head.toOwnedSlice(self.arena()) } });
+        try stmts.append(self.arena(), try self.buildExtensionNamespace(im.name, im.methods));
         // A `pub` implement consumed by another module (via `import { Name* }`)
         // is exported so the consumer's `require` can bind it for dispatch.
-        if (im.isPub) try self.emitCrossExport(im.name);
+        if (im.isPub) {
+            if (try self.crossExport(im.name)) |exp| try stmts.append(self.arena(), exp);
+        }
+        return self.b.group(try stmts.toOwnedSlice(self.arena()));
     }
 
     /// External dispatch: an `extend T` block emitted as a namespace object.
-    fn emitExtend(self: *Emitter, ex: ast.ExtendDecl) !void {
-        try self.fmt("// extend {s}\n", .{ex.target});
-        try self.emitExtensionNamespace(ex.name, ex.methods);
+    fn buildExtend(self: *Emitter, ex: ast.ExtendDecl) !js.Stmt {
+        return self.b.group(&.{
+            .{ .comment = .{ .text = try std.fmt.allocPrint(self.arena(), "extend {s}", .{ex.target}) } },
+            try self.buildExtensionNamespace(ex.name, ex.methods),
+        });
     }
 
-    fn emitExtensionNamespace(self: *Emitter, name: []const u8, methods: []const ast.ImplementMethod) !void {
-        try self.fmt("const {s} = {{", .{name});
+    fn buildExtensionNamespace(self: *Emitter, name: []const u8, methods: []const ast.ImplementMethod) !js.Stmt {
         const prev_self = self.self_is_param;
         self.self_is_param = true;
         defer self.self_is_param = prev_self;
-        for (methods) |m| {
-            try self.fmt("\n    {s}(", .{m.name});
-            var first = true;
-            for (m.params) |p| {
-                if (!first) try self.w(", ");
-                try self.emitParam(p);
-                first = false;
-            }
-            try self.w(") {\n");
+        const props = try self.arena().alloc(js.Object.Prop, methods.len);
+        for (methods, 0..) |m, i| {
+            // Extension methods keep `self` as a real first parameter.
+            const params = try self.arena().alloc(js.Param, m.params.len);
+            for (m.params, 0..) |p, pi| params[pi] = try self.buildParam(p);
             self.current_indent = 2;
-            for (m.body) |st| {
-                try self.w("        ");
-                try self.emitStmt(st);
-                try self.w("\n");
-            }
+            const body = try self.buildStmts(m.body);
             self.current_indent = 0;
-            try self.w("    },");
+            props[i] = .{ .method = .{
+                .name = m.name,
+                .params = params,
+                .body = .{ .stmts = body, .indent = 1 },
+            } };
         }
-        try self.w("\n};");
+        return .{ .decl = .{
+            .pattern = .{ .name = name },
+            .value = .{ .object = .{ .props = props, .layout = .lines } },
+        } };
     }
 
-    fn emitUse(self: *Emitter, u: ast.ImportDecl) !void {
+    fn buildUse(self: *Emitter, u: ast.ImportDecl) !js.Stmt {
+        var stmts: std.ArrayListUnmanaged(js.Stmt) = .empty;
         // Fallback activation `X*;` has no runtime binding — emit nothing.
-        if (u.activationOnly) return;
+        if (u.activationOnly) return self.b.group(&.{});
 
         // All emitted `require` targets are module paths relative to the OUTPUT
         // ROOT (`std/x`, `<dep>/<mod>`, …), but node resolves a `require` relative
@@ -1719,27 +1533,26 @@ const Emitter = struct {
         const req_prefix: []const u8 = blk: {
             var buf: std.ArrayListUnmanaged(u8) = .empty;
             if (depth == 0) {
-                try buf.appendSlice(self.alloc, "./");
+                try buf.appendSlice(self.arena(), "./");
             } else {
-                for (0..depth) |_| try buf.appendSlice(self.alloc, "../");
+                for (0..depth) |_| try buf.appendSlice(self.arena(), "../");
             }
-            break :blk try buf.toOwnedSlice(self.alloc);
+            break :blk try buf.toOwnedSlice(self.arena());
         };
-        defer self.alloc.free(req_prefix);
         // `"std"` package import: each item binds a whole stdlib module
         // emitted alongside the project (`out/std/<mod>.js`), so qualified
         // calls (`bool.negate(x)`) resolve naturally at runtime.
         if (u.source == .module and std.mem.eql(u8, u.source.module, "std")) {
-            var first = true;
             for (u.imports) |imp| {
                 if (self.seen_imports.contains(imp.name())) continue;
                 try self.seen_imports.put(imp.name(), {});
-                if (!first) try self.w("\n");
-                first = false;
                 const mod = imp.segments[imp.segments.len - 1];
-                try self.fmt("const {s} = require(\"{s}std/{s}.js\");", .{ imp.name(), req_prefix, mod });
+                try stmts.append(self.arena(), .{ .decl = .{
+                    .pattern = .{ .name = imp.name() },
+                    .value = try self.requireCall(try std.fmt.allocPrint(self.arena(), "{s}std/{s}.js", .{ req_prefix, mod })),
+                } });
             }
-            return;
+            return self.b.group(try stmts.toOwnedSlice(self.arena()));
         }
         // Package import (e.g. `from "web"`): resolve each name to the file
         // that actually emits it via the cross-module export index. Names with
@@ -1751,35 +1564,25 @@ const Emitter = struct {
             const xm = &self.cross.?.exports;
             var seen = std.StringHashMap(void).init(self.alloc);
             defer seen.deinit();
-            var first_line = true;
             for (u.imports) |imp| {
                 const info = xm.get(imp.name()) orelse continue;
                 if (seen.contains(info.module)) continue;
                 try seen.put(info.module, {});
                 // Names from this module not already bound here — `const {…}` for
                 // exactly those. If every one is already bound, emit no line.
-                var count: usize = 0;
-                for (u.imports) |imp2| {
-                    const info2 = xm.get(imp2.name()) orelse continue;
-                    if (!std.mem.eql(u8, info2.module, info.module)) continue;
-                    if (self.seen_imports.contains(imp2.name())) continue;
-                    count += 1;
-                }
-                if (count == 0) continue;
-                if (!first_line) try self.w("\n");
-                first_line = false;
-                try self.w("const { ");
-                var firstn = true;
+                var props: std.ArrayListUnmanaged(js.ObjectPattern.Prop) = .empty;
                 for (u.imports) |imp2| {
                     const info2 = xm.get(imp2.name()) orelse continue;
                     if (!std.mem.eql(u8, info2.module, info.module)) continue;
                     if (self.seen_imports.contains(imp2.name())) continue;
                     try self.seen_imports.put(imp2.name(), {});
-                    if (!firstn) try self.w(", ");
-                    firstn = false;
-                    try self.w(imp2.name());
+                    try props.append(self.arena(), .{ .key = imp2.name() });
                 }
-                try self.fmt(" }} = require(\"{s}{s}.js\");", .{ req_prefix, info.module });
+                if (props.items.len == 0) continue;
+                try stmts.append(self.arena(), .{ .decl = .{
+                    .pattern = .{ .object = .{ .props = try props.toOwnedSlice(self.arena()) } },
+                    .value = try self.requireCall(try std.fmt.allocPrint(self.arena(), "{s}{s}.js", .{ req_prefix, info.module })),
+                } });
             }
             // Namespace binding: when the import names the lib itself
             // (`import {Lib} from "Lib"`) and that name has no emitted symbol of
@@ -1819,315 +1622,263 @@ const Emitter = struct {
                             return std.mem.lessThan(u8, a, b);
                         }
                     }.lt);
-                    if (!first_line) try self.w("\n");
-                    first_line = false;
-                    if (mods.items.len == 1) {
-                        try self.fmt("const {s} = require(\"{s}{s}.js\");", .{ jsIdent(lib_name), req_prefix, mods.items[0] });
-                    } else {
-                        try self.fmt("const {s} = Object.assign({{}}", .{jsIdent(lib_name)});
-                        for (mods.items) |m| try self.fmt(", require(\"{s}{s}.js\")", .{ req_prefix, m });
-                        try self.w(");");
-                    }
+                    const value: js.Expr = if (mods.items.len == 1)
+                        try self.requireCall(try std.fmt.allocPrint(self.arena(), "{s}{s}.js", .{ req_prefix, mods.items[0] }))
+                    else blk: {
+                        var args: std.ArrayListUnmanaged(js.Expr) = .empty;
+                        try args.append(self.arena(), .{ .object = .{} });
+                        for (mods.items) |m| try args.append(
+                            self.arena(),
+                            try self.requireCall(try std.fmt.allocPrint(self.arena(), "{s}{s}.js", .{ req_prefix, m })),
+                        );
+                        break :blk try self.b.call(
+                            try self.b.member(.{ .name = "Object" }, "assign"),
+                            try args.toOwnedSlice(self.arena()),
+                        );
+                    };
+                    try stmts.append(self.arena(), .{ .decl = .{
+                        .pattern = .{ .name = jsIdent(lib_name) },
+                        .value = value,
+                    } });
                 }
             }
-            return;
+            return self.b.group(try stmts.toOwnedSlice(self.arena()));
         }
 
-        var count: usize = 0;
-        for (u.imports) |imp| {
-            if (self.seen_imports.contains(imp.name())) continue;
-            count += 1;
-        }
-        if (count == 0) return;
-        try self.w("const { ");
-        var firstn = true;
+        var props: std.ArrayListUnmanaged(js.ObjectPattern.Prop) = .empty;
         for (u.imports) |imp| {
             if (self.seen_imports.contains(imp.name())) continue;
             try self.seen_imports.put(imp.name(), {});
-            if (!firstn) try self.w(", ");
-            firstn = false;
-            try self.w(imp.name());
+            try props.append(self.arena(), .{ .key = imp.name() });
         }
-        try self.w(" } = require(\"");
-        switch (u.source) {
-            .root => try self.fmt("{s}module", .{req_prefix}),
-            .module => |name| try self.w(name),
-        }
-        try self.w("\");");
+        if (props.items.len == 0) return self.b.group(&.{});
+        return .{ .decl = .{
+            .pattern = .{ .object = .{ .props = try props.toOwnedSlice(self.arena()) } },
+            .value = try self.requireCall(switch (u.source) {
+                .root => try std.fmt.allocPrint(self.arena(), "{s}module", .{req_prefix}),
+                .module => |name| name,
+            }),
+        } };
     }
 
-    // ── params ────────────────────────────────────────────────────────────────
+    // ── params & patterns ─────────────────────────────────────────────────────
 
-    fn emitParams(self: *Emitter, params: []const ast.Param) !void {
-        var first = true;
+    fn buildParams(self: *Emitter, params: []const ast.Param) ![]const js.Param {
+        var out: std.ArrayListUnmanaged(js.Param) = .empty;
         for (params) |p| {
             if (std.mem.eql(u8, p.name, "self")) continue;
-            if (!first) try self.w(", ");
-            try self.emitParam(p);
-            first = false;
+            try out.append(self.arena(), try self.buildParam(p));
         }
+        return out.toOwnedSlice(self.arena());
     }
 
-    fn emitPattern(self: *Emitter, pat: ast.Pattern) !void {
+    fn buildParam(self: *Emitter, p: ast.Param) !js.Param {
+        const d = p.destruct orelse return .{ .pattern = .{ .ident = p.name } };
+        return switch (d) {
+            // The object form still carries the `= ` of a destructuring
+            // *assignment* into parameter position, with nothing to assign —
+            // `Expr.missing` pins that (defect JS-2).
+            .names => .{ .pattern = try self.buildNamesPattern(d.names), .default = .missing },
+            .tuple_ => |t| .{ .pattern = try self.buildTuplePattern(t) },
+            .list => |pat| .{ .pattern = try self.buildPattern(pat) },
+            .ctor => |pat| .{ .pattern = try self.buildPattern(pat) },
+        };
+    }
+
+    fn buildNamesPattern(self: *Emitter, n: anytype) !js.Pattern {
+        const props = try self.arena().alloc(js.ObjectPattern.Prop, n.fields.len);
+        for (n.fields, 0..) |nm, i| props[i] = .{ .key = nm.bind_name };
+        return .{ .object = .{
+            .props = props,
+            // The frontend records that a rest is present but not its name.
+            .rest = if (n.hasSpread) .unnamed else null,
+        } };
+    }
+
+    fn buildTuplePattern(self: *Emitter, names: []const []const u8) !js.Pattern {
+        const elems = try self.arena().alloc(js.Pattern, names.len);
+        for (names, 0..) |nm, i| elems[i] = .{ .ident = nm };
+        return .{ .array = .{ .elems = elems, .spaced = true } };
+    }
+
+    fn buildPattern(self: *Emitter, pat: ast.Pattern) anyerror!js.Pattern {
         switch (pat) {
-            .wildcard => try self.w("_"),
-            .ident => |name| try self.w(jsIdent(name)),
-            .variant => |v| switch (v.payload) {
-                .binding => |binding| {
-                    try self.w(v.name);
-                    try self.w(" ");
-                    try self.w(jsIdent(binding));
-                },
-                .fields => |fields| {
-                    try self.w(v.name);
-                    try self.w("(");
-                    for (fields, 0..) |b, i| {
-                        if (i > 0) try self.w(", ");
-                        try self.w(jsIdent(b));
-                    }
-                    try self.w(")");
-                },
-                .literals => |args| {
-                    try self.w(v.name);
-                    try self.w("(");
-                    for (args, 0..) |arg, i| {
-                        if (i > 0) try self.w(", ");
-                        try self.emitPattern(arg);
-                    }
-                    try self.w(")");
+            .wildcard => return .{ .name = "_" },
+            .ident => |name| return .{ .ident = name },
+            .variant => |v| return switch (v.payload) {
+                .binding => |binding| js.Pattern{ .match = .{ .variant_binding = .{ .name = v.name, .binding = binding } } },
+                .fields => |fields| js.Pattern{ .match = .{ .variant_fields = .{ .name = v.name, .fields = fields } } },
+                .literals => |args| blk: {
+                    const out = try self.arena().alloc(js.Pattern, args.len);
+                    for (args, 0..) |arg, i| out[i] = try self.buildPattern(arg);
+                    break :blk js.Pattern{ .match = .{ .variant_patterns = .{ .name = v.name, .args = out } } };
                 },
             },
-            .numberLit => |n| try self.w(n),
-            .stringLit => |s| try self.fmt("\"{s}\"", .{s}),
+            .numberLit => |n| return .{ .match = .{ .number = n } },
+            .stringLit => |s| return .{ .match = .{ .string = s } },
             .list => |l| {
-                try self.w("[");
-                for (l.elems, 0..) |e, i| {
-                    if (i > 0) try self.w(", ");
-                    try self.emitListPatternElem(e);
-                }
-                if (l.spread) |sp| {
-                    if (l.elems.len > 0) try self.w(", ");
-                    try self.w("...");
-                    if (sp.len > 0) try self.w(sp);
-                }
-                try self.w("]");
+                const elems = try self.arena().alloc(js.Pattern, l.elems.len);
+                for (l.elems, 0..) |e, i| elems[i] = switch (e) {
+                    .wildcard => js.Pattern{ .name = "_" },
+                    .bind => |name| js.Pattern{ .ident = name },
+                    .numberLit => |n| js.Pattern{ .match = .{ .number = n } },
+                };
+                return .{ .array = .{
+                    .elems = elems,
+                    .rest = if (l.spread) |sp| (if (sp.len > 0) js.Rest{ .binding = sp } else .unnamed) else null,
+                } };
             },
             .@"or" => |pats| {
-                for (pats, 0..) |p, i| {
-                    if (i > 0) try self.w(" | ");
-                    try self.emitPattern(p);
-                }
+                const out = try self.arena().alloc(js.Pattern, pats.len);
+                for (pats, 0..) |p, i| out[i] = try self.buildPattern(p);
+                return .{ .match = .{ .alt = out } };
             },
             .multi => |pats| {
-                for (pats, 0..) |p, i| {
-                    if (i > 0) try self.w(", ");
-                    try self.emitPattern(p);
-                }
+                const out = try self.arena().alloc(js.Pattern, pats.len);
+                for (pats, 0..) |p, i| out[i] = try self.buildPattern(p);
+                return .{ .match = .{ .multi = out } };
             },
         }
     }
 
-    fn emitListPatternElem(self: *Emitter, elem: ast.ListPatternElem) !void {
-        switch (elem) {
-            .wildcard => try self.w("_"),
-            .bind => |name| try self.w(jsIdent(name)),
-            .numberLit => |n| try self.w(n),
+    /// The binding form of a `localBindDestruct` / a `try` head.
+    fn buildDestructPattern(self: *Emitter, pattern: ast.ParamDestruct) !js.Pattern {
+        return switch (pattern) {
+            .names => try self.buildNamesPattern(pattern.names),
+            .tuple_ => |t| try self.buildTuplePattern(t),
+            .list => |pat| try self.buildPattern(pat),
+            .ctor => |pat| try self.buildPattern(pat),
+        };
+    }
+
+    /// Record the names introduced by a destructuring `use` as reactive deps.
+    fn trackDestructNames(self: *Emitter, pattern: ast.ParamDestruct) !void {
+        switch (pattern) {
+            .names => |n| for (n.fields) |nm| try self.hook_state.append(self.alloc, nm.bind_name),
+            .tuple_ => |t| for (t) |nm| try self.hook_state.append(self.alloc, nm),
+            else => {},
         }
     }
 
-    fn emitPatternCheck(self: *Emitter, pat: *const ast.Pattern, value: []const u8) !void {
-        // Generate JavaScript code to check if value matches pattern
+    /// The runtime test a botopink pattern becomes, over `value`.
+    fn buildPatternCheck(self: *Emitter, pat: *const ast.Pattern, value: []const u8) anyerror!js.Expr {
+        const subject = js.Expr{ .name = value };
         switch (pat.*) {
-            .wildcard => try self.w("true"), // Wildcard matches everything
-            .ident => {
-                // Identifier pattern - check if value is truthy and has the right type
-                try self.fmt("({s} !== null && {s} !== undefined)", .{ value, value });
-            },
-            .variant => |v| switch (v.payload) {
-                // Check if value is an instance of the variant type
-                .binding, .fields => try self.fmt("({s} instanceof {s})", .{ value, v.name }),
+            .wildcard => return .{ .name = "true" }, // Wildcard matches everything
+            // Identifier pattern — the value just has to exist.
+            .ident => return self.b.paren(try self.b.binaryBare(
+                "&&",
+                try self.b.binaryBare("!==", subject, .null_),
+                try self.b.binaryBare("!==", subject, .{ .name = "undefined" }),
+            )),
+            .variant => |v| return switch (v.payload) {
+                // Check if value is an instance of the variant type.
+                .binding, .fields => try self.b.paren(try self.b.binaryBare("instanceof", subject, .{ .name = v.name })),
                 // Literal-argument variants fall back to the generic check below.
-                .literals => try self.w("true"),
+                .literals => js.Expr{ .name = "true" },
             },
-            .numberLit => |n| {
-                try self.fmt("({s} === {s})", .{ value, n });
-            },
-            .stringLit => |s| {
-                try self.fmt("({s} === \"{s}\")", .{ value, s });
-            },
+            .numberLit => |n| return self.b.paren(try self.b.binaryBare("===", subject, .{ .number = n })),
+            .stringLit => |s| return self.b.paren(try self.b.binaryBare("===", subject, .{ .quoted = s })),
             .list => |l| {
-                try self.fmt("(Array.isArray({s})", .{value});
-                if (l.elems.len > 0) {
-                    try self.fmt(" && {s}.length >= {d}", .{ value, l.elems.len });
-                }
-                try self.w(")");
+                const is_array = try self.b.call(try self.b.member(.{ .name = "Array" }, "isArray"), &.{subject});
+                if (l.elems.len == 0) return self.b.paren(is_array);
+                return self.b.paren(try self.b.binaryBare("&&", is_array, try self.b.binaryBare(
+                    ">=",
+                    try self.b.member(subject, "length"),
+                    .{ .number = try std.fmt.allocPrint(self.arena(), "{d}", .{l.elems.len}) },
+                )));
             },
             .@"or" => |patterns| {
-                if (patterns.len == 0) {
-                    try self.w("false");
-                } else {
-                    for (patterns, 0..) |*p, i| {
-                        if (i > 0) try self.w(" || ");
-                        try self.emitPatternCheck(p, value);
-                    }
-                }
+                if (patterns.len == 0) return .{ .name = "false" };
+                var acc = try self.buildPatternCheck(&patterns[0], value);
+                for (patterns[1..]) |*p| acc = try self.b.binaryBare("||", acc, try self.buildPatternCheck(p, value));
+                return acc;
             },
-            else => try self.w("true"), // Fallback for other pattern types
+            else => return .{ .name = "true" }, // Fallback for other pattern types
         }
     }
 
-    fn emitParam(self: *Emitter, p: ast.Param) !void {
-        if (p.destruct) |d| {
-            switch (d) {
-                .names => |*n| {
-                    try self.w("{ ");
-                    for (n.fields, 0..) |nm, i| {
-                        if (i > 0) try self.w(", ");
-                        try self.emitDestructFieldBind(nm.bind_name);
-                    }
-                    if (n.hasSpread) try self.w(", ...");
-                    try self.w(" } = ");
-                },
-                .tuple_ => |t| {
-                    try self.w("[ ");
-                    for (t, 0..) |nm, i| {
-                        if (i > 0) try self.w(", ");
-                        try self.w(jsIdent(nm));
-                    }
-                    try self.w(" ]");
-                },
-                .list => |pat| try self.emitPattern(pat),
-                .ctor => |pat| try self.emitPattern(pat),
-            }
-        } else try self.w(jsIdent(p.name));
+    // ── statements ────────────────────────────────────────────────────────────
+
+    fn buildStmts(self: *Emitter, body: []const ast.Stmt) anyerror![]const js.Stmt {
+        const out = try self.arena().alloc(js.Stmt, body.len);
+        for (body, 0..) |s, i| out[i] = try self.buildStmt(s);
+        return out;
     }
 
-    /// Object-destructure field bind: shorthand `{ name }`, or `{ name: name_ }`
-    /// when the bind name is a JS reserved word (shorthand would be a SyntaxError).
-    fn emitDestructFieldBind(self: *Emitter, name: []const u8) !void {
-        const sanitized = jsIdent(name);
-        if (sanitized.ptr == name.ptr) {
-            try self.w(name);
-        } else {
-            try self.fmt("{s}: {s}", .{ name, sanitized });
-        }
-    }
-
-    // ── statements ──────────────────────────────────────────────────────────────
-
-    fn emitStmt(self: *Emitter, stmt: ast.Stmt) anyerror!void {
+    fn buildStmt(self: *Emitter, stmt: ast.Stmt) anyerror!js.Stmt {
         const e = stmt.expr;
         switch (e) {
             .binding => |b| switch (b.kind) {
                 .localBind => |lb| {
+                    const kw: js.Decl.Kw = if (lb.mutable) .let_ else .const_;
                     if (classifyTry(lb.value.*)) |form| {
-                        const kw: []const u8 = if (lb.mutable) "let" else "const";
-                        try self.emitTryStmt(form, .{ .decl = .{ .kw = kw, .name = lb.name } });
-                        return;
+                        return self.buildTryStmt(form, .{ .decl = .{ .kw = kw, .name = lb.name } });
                     }
-                    const kw: []const u8 = if (lb.mutable) "let" else "const";
-                    try self.fmt("{s} {s} = ", .{ kw, jsIdent(lb.name) });
                     // `val d = use memo { … }` → `const d = useMemo(…, [deps])`.
-                    if (useHookInner(lb.value.*)) |inner| {
-                        try self.emitHookCall(inner.*);
+                    const value = if (useHookInner(lb.value.*)) |inner| blk: {
+                        const hook = try self.buildHookCall(inner.*);
                         try self.hook_state.append(self.alloc, lb.name);
-                    } else {
-                        try self.emitExpr(lb.value.*);
-                    }
-                    try self.w(";");
+                        break :blk hook;
+                    } else try self.buildExpr(lb.value.*);
+                    return .{ .decl = .{ .kw = kw, .pattern = .{ .ident = lb.name }, .value = value } };
                 },
                 .localBindDestruct => |lb| {
                     if (classifyTry(lb.value.*)) |form| {
-                        try self.emitTryStmt(form, .{ .destruct = .{ .mutable = lb.mutable, .pattern = lb.pattern } });
-                        return;
+                        return self.buildTryStmt(form, .{ .destruct = .{ .mutable = lb.mutable, .pattern = lb.pattern } });
                     }
-                    const kw: []const u8 = if (lb.mutable) "let" else "const";
-                    try self.fmt("{s} ", .{kw});
-                    try self.emitDestructHead(lb.pattern);
                     // `val {v, s} = use state(0)` → `const { v, s } = useState(0)`.
-                    if (useHookInner(lb.value.*)) |inner| {
-                        try self.emitHookCall(inner.*);
+                    const value = if (useHookInner(lb.value.*)) |inner| blk: {
+                        const hook = try self.buildHookCall(inner.*);
                         try self.trackDestructNames(lb.pattern);
-                    } else {
-                        try self.emitExpr(lb.value.*);
-                    }
-                    try self.w(";");
+                        break :blk hook;
+                    } else try self.buildExpr(lb.value.*);
+                    return .{ .decl = .{
+                        .kw = if (lb.mutable) .let_ else .const_,
+                        .pattern = try self.buildDestructPattern(lb.pattern),
+                        .value = value,
+                    } };
                 },
-                else => {
-                    try self.emitExpr(e);
-                    try self.w(";");
-                },
+                else => return .{ .expr = try self.buildExpr(e) },
             },
             // A bare `use <hookcall>;` statement is a void hook (e.g. `use effect { … }`).
-            .useHook => |uh| {
-                try self.emitHookCall(uh.kind.inner.*);
-                try self.w(";");
-            },
+            .useHook => |uh| return .{ .expr = try self.buildHookCall(uh.kind.inner.*) },
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| {
-                    if (r) |rp| {
-                        if (classifyTry(rp.*)) |form| {
-                            try self.emitTryStmt(form, .ret);
-                            return;
-                        }
-                        // §1F F4F-T2 — strip the post-transform future markers
-                        // back to native shapes. The `async function` machinery
-                        // is the actual promise wrap; the markers exist for
-                        // backends that need an explicit form (and for uniform
-                        // post-transform AST).
-                        if (futureWrapCallName(rp.*)) |kind| {
-                            const inner = rp.*.call.kind.call.args[0].value.*;
-                            switch (kind) {
-                                .resolved => {
-                                    try self.w("return ");
-                                    try self.emitExpr(inner);
-                                },
-                                .rejected => {
-                                    try self.w("throw ");
-                                    try self.emitExpr(inner);
-                                },
-                            }
-                            try self.w(";");
-                            return;
-                        }
-                        if (self.in_generator) {
-                            // `return <iter>` in an `#[@iterator] fn -> @Iterator`
-                            // delegates: `yield* <iter>; return;` (a plain
-                            // `return <gen>` surfaces the generator object and
-                            // yields nothing).
-                            try self.w("yield* ");
-                            try self.emitExpr(rp.*);
-                            try self.w("; return;");
-                            return;
-                        }
-                        try self.w("return ");
-                        try self.emitExpr(rp.*);
-                    } else {
-                        try self.w("return");
+                    const rp = r orelse return .{ .return_ = null };
+                    if (classifyTry(rp.*)) |form| return self.buildTryStmt(form, .ret);
+                    // §1F F4F-T2 — strip the post-transform future markers
+                    // back to native shapes. The `async function` machinery
+                    // is the actual promise wrap; the markers exist for
+                    // backends that need an explicit form (and for uniform
+                    // post-transform AST).
+                    if (futureWrapCallName(rp.*)) |kind| {
+                        const inner = try self.buildExpr(rp.*.call.kind.call.args[0].value.*);
+                        return switch (kind) {
+                            .resolved => js.Stmt{ .return_ = inner },
+                            .rejected => js.Stmt{ .throw_ = inner },
+                        };
                     }
-                    try self.w(";");
+                    // `return <iter>` in an `#[@iterator] fn -> @Iterator`
+                    // delegates: `yield* <iter>; return;` (a plain
+                    // `return <gen>` surfaces the generator object and
+                    // yields nothing).
+                    if (self.in_generator) return .{ .yield_delegate = try self.buildExpr(rp.*) };
+                    return .{ .return_ = try self.buildExpr(rp.*) };
                 },
                 else => {
-                    if (classifyTry(e)) |form| {
-                        try self.emitTryStmt(form, .discard);
-                        return;
-                    }
-                    try self.emitExpr(e);
-                    try self.w(";");
+                    if (classifyTry(e)) |form| return self.buildTryStmt(form, .discard);
+                    return .{ .expr = try self.buildExpr(e) };
                 },
             },
             else => {
-                if (classifyTry(e)) |form| {
-                    try self.emitTryStmt(form, .discard);
-                    return;
-                }
-                try self.emitExpr(e);
-                try self.w(";");
+                if (classifyTry(e)) |form| return self.buildTryStmt(form, .discard);
+                return .{ .expr = try self.buildExpr(e) };
             },
         }
     }
 
-    // ── use-hooks (React-like target) ───────────────────────────────────────────
+    // ── use-hooks (React-like target) ─────────────────────────────────────────
 
     /// Hooks whose lambda argument is wrapped with an inferred dependency array,
     /// matching React's `useMemo`/`useEffect`/`useCallback` calling convention.
@@ -2137,82 +1888,57 @@ const Emitter = struct {
         return false;
     }
 
-    /// Write a hook's JS name. Bare capability names map by the React convention
+    /// A hook's JS name. Bare capability names map by the React convention
     /// `state` → `useState`, `memo` → `useMemo`. Names already in `useXxx` form
     /// (custom hooks like `useAuth`) pass through unchanged.
-    fn writeHookName(self: *Emitter, callee: []const u8) !void {
+    fn hookName(self: *Emitter, callee: []const u8) ![]const u8 {
         const is_custom = callee.len > 3 and
             std.mem.startsWith(u8, callee, "use") and
             std.ascii.isUpper(callee[3]);
-        if (is_custom) {
-            try self.w(callee);
-            return;
-        }
-        try self.w("use");
-        if (callee.len > 0) {
-            const upper = [_]u8{std.ascii.toUpper(callee[0])};
-            try self.w(&upper);
-            try self.w(callee[1..]);
-        }
+        if (is_custom) return callee;
+        if (callee.len == 0) return "use";
+        return std.fmt.allocPrint(self.arena(), "use{c}{s}", .{ std.ascii.toUpper(callee[0]), callee[1..] });
     }
 
-    /// Emit a `use`-hook's value expression as a React hook call: map the hook
+    /// A `use`-hook's value expression as a React hook call: map the hook
     /// name and, for dependency-taking hooks, append the inferred deps array.
-    fn emitHookCall(self: *Emitter, value: ast.Expr) anyerror!void {
+    fn buildHookCall(self: *Emitter, value: ast.Expr) anyerror!js.Expr {
         const cc = switch (value) {
             .call => |c| switch (c.kind) {
                 .call => |call| call,
-                else => return self.emitExpr(value),
+                else => return self.buildExpr(value),
             },
-            else => return self.emitExpr(value),
+            else => return self.buildExpr(value),
         };
 
-        if (cc.receiver) |recv| {
-            try self.emitExpr(recv.*);
-            try self.w(".");
-            try self.w(cc.callee);
-        } else {
-            try self.writeHookName(cc.callee);
-        }
-        try self.w("(");
-        var first = true;
-        for (cc.args) |arg| {
-            if (!first) try self.w(", ");
-            try self.emitExpr(arg.value.*);
-            first = false;
-        }
-        for (cc.trailing) |tl| {
-            if (!first) try self.w(", ");
-            first = false;
-            try self.emitLambda(tl.params, tl.body);
-        }
+        const callee: js.Expr = if (cc.receiver) |recv|
+            try self.b.member(try self.buildExpr(recv.*), cc.callee)
+        else
+            .{ .name = try self.hookName(cc.callee) };
+
+        var args: std.ArrayListUnmanaged(js.Expr) = .empty;
+        for (cc.args) |arg| try args.append(self.arena(), try self.buildExpr(arg.value.*));
+        for (cc.trailing) |tl| try args.append(self.arena(), try self.buildLambda(tl.params, tl.body));
         if (hookTakesDeps(cc.callee)) {
-            try self.w(", [");
-            try self.emitHookDeps(cc);
-            try self.w("]");
+            try args.append(self.arena(), .{ .array = .{ .elems = try self.buildHookDeps(cc) } });
         }
-        try self.w(")");
+        return self.b.call(callee, try args.toOwnedSlice(self.arena()));
     }
 
-    /// Emit the inferred dependency array contents: the reactive names (bound by
+    /// The inferred dependency array contents: the reactive names (bound by
     /// prior hooks) referenced inside this hook's lambda argument, in source order.
-    fn emitHookDeps(self: *Emitter, cc: anytype) !void {
-        const body = hookLambdaBody(cc) orelse return;
-        var first = true;
+    fn buildHookDeps(self: *Emitter, cc: anytype) ![]const js.Expr {
+        var out: std.ArrayListUnmanaged(js.Expr) = .empty;
+        const body = hookLambdaBody(cc) orelse return out.toOwnedSlice(self.arena());
         for (self.hook_state.items) |name| {
-            var referenced = false;
             for (body) |s| {
                 if (specialize.identInExpr(s.expr, name)) {
-                    referenced = true;
+                    try out.append(self.arena(), .{ .name = name });
                     break;
                 }
             }
-            if (referenced) {
-                if (!first) try self.w(", ");
-                try self.w(name);
-                first = false;
-            }
         }
+        return out.toOwnedSlice(self.arena());
     }
 
     /// Find the lambda body among a hook call's arguments (the dependency source).
@@ -2225,245 +1951,209 @@ const Emitter = struct {
         return null;
     }
 
-    /// Emit a `params => { body }` arrow function (for trailing-lambda hook args).
-    fn emitLambda(self: *Emitter, params: []const []const u8, body: []ast.Stmt) !void {
+    /// A `params => { body }` arrow function (for trailing-lambda hook args).
+    fn buildLambda(self: *Emitter, params: []const []const u8, body: []ast.Stmt) !js.Expr {
         // A nested arrow is not a generator — its `return` stays `return`.
         const prev_in_generator = self.in_generator;
         self.in_generator = false;
         defer self.in_generator = prev_in_generator;
-        try self.w("(");
-        for (params, 0..) |p, i| {
-            if (i > 0) try self.w(", ");
-            try self.w(jsIdent(p));
-        }
-        try self.w(") => {\n");
-        for (body) |st| {
-            try self.w("    ");
-            try self.emitStmt(st);
-            try self.w("\n");
-        }
-        try self.w("}");
+        const ps = try self.arena().alloc(js.Param, params.len);
+        for (params, 0..) |p, i| ps[i] = .{ .pattern = .{ .ident = p } };
+        return self.b.arrowBlock(ps, .{
+            .stmts = try self.buildStmts(body),
+            .layout = .fixed,
+            .indent = self.current_indent,
+        });
     }
 
-    /// Write the destructuring head (`{ a, b } = ` / `[ a, b ] = ` / pattern + ` = `)
-    /// for a `localBindDestruct`. The `const`/`let` keyword is written by the caller.
-    fn emitDestructHead(self: *Emitter, pattern: ast.ParamDestruct) !void {
-        switch (pattern) {
-            .names => |n| {
-                try self.w("{ ");
-                for (n.fields, 0..) |nm, i| {
-                    if (i > 0) try self.w(", ");
-                    try self.emitDestructFieldBind(nm.bind_name);
-                }
-                if (n.hasSpread) try self.w(", ...");
-                try self.w(" } = ");
-            },
-            .tuple_ => |t| {
-                try self.w("[ ");
-                for (t, 0..) |nm, i| {
-                    if (i > 0) try self.w(", ");
-                    try self.w(jsIdent(nm));
-                }
-                try self.w(" ] = ");
-            },
-            .list => |pat| {
-                try self.emitPattern(pat);
-                try self.w(" = ");
-            },
-            .ctor => |pat| {
-                try self.emitPattern(pat);
-                try self.w(" = ");
-            },
+    /// A trailing/inline lambda body: the tail value expression is its result,
+    /// because a JS arrow block does not auto-return.
+    fn buildLambdaBody(self: *Emitter, body: []const ast.Stmt) ![]const js.Stmt {
+        const out = try self.arena().alloc(js.Stmt, body.len);
+        for (body, 0..) |st, i| {
+            if (i == body.len - 1 and isImplicitReturnExpr(st.expr)) {
+                out[i] = .{ .return_ = try self.buildExpr(st.expr) };
+            } else {
+                out[i] = try self.buildStmt(st);
+            }
         }
+        return out;
     }
 
-    /// Record the names introduced by a destructuring `use` as reactive deps.
-    fn trackDestructNames(self: *Emitter, pattern: ast.ParamDestruct) !void {
-        switch (pattern) {
-            .names => |n| for (n.fields) |nm| try self.hook_state.append(self.alloc, nm.bind_name),
-            .tuple_ => |t| for (t) |nm| try self.hook_state.append(self.alloc, nm),
-            else => {},
-        }
+    /// `(params) => { body }` with implicit tail return.
+    fn buildArrow(self: *Emitter, params: []const []const u8, body: []const ast.Stmt) !js.Expr {
+        // A nested arrow is not a generator — its `return` stays `return`.
+        const prev_in_generator = self.in_generator;
+        self.in_generator = false;
+        defer self.in_generator = prev_in_generator;
+        const ps = try self.arena().alloc(js.Param, params.len);
+        for (params, 0..) |p, i| ps[i] = .{ .pattern = .{ .ident = p } };
+        return self.b.arrowBlock(ps, .{
+            .stmts = try self.buildLambdaBody(body),
+            .layout = .fixed,
+            .indent = self.current_indent,
+        });
     }
 
-    /// Newline + current indentation, for continuation lines of a multi-line
-    /// statement (the leading indent of the first line is written by the caller).
-    fn contLine(self: *Emitter) !void {
-        try self.w("\n");
-        for (0..self.current_indent) |_| try self.w("    ");
-    }
+    // ── try/catch lowering ────────────────────────────────────────────────────
 
-    /// Write the binding head that receives the unwrapped Ok value.
-    /// Returns false for `.discard` (no value should be written).
-    fn writeTryHead(self: *Emitter, head: TryHead) !bool {
-        switch (head) {
-            .decl => |d| {
-                try self.fmt("{s} {s} = ", .{ d.kw, d.name });
-                return true;
-            },
-            .destruct => |d| {
-                const kw: []const u8 = if (d.mutable) "let" else "const";
-                try self.fmt("{s} ", .{kw});
-                try self.emitDestructHead(d.pattern);
-                return true;
-            },
-            .ret => {
-                try self.w("return ");
-                return true;
-            },
-            .discard => return false,
-        }
+    /// Wrap `value` in the binding head that receives the unwrapped Ok value.
+    fn tryHeadStmt(self: *Emitter, head: TryHead, value: js.Expr) !js.Stmt {
+        return switch (head) {
+            .decl => |d| js.Stmt{ .decl = .{ .kw = d.kw, .pattern = .{ .name = d.name }, .value = value } },
+            .destruct => |d| js.Stmt{ .decl = .{
+                .kw = if (d.mutable) .let_ else .const_,
+                .pattern = try self.buildDestructPattern(d.pattern),
+                .value = value,
+            } },
+            .ret => js.Stmt{ .return_ = value },
+            .discard => js.Stmt{ .expr = value },
+        };
     }
 
     /// Lower a `try`/`catch` at statement position to `"error" in _r` pattern
     /// matching over the `{ ok: V } | { error: E }` Result value — never JS
     /// try/catch. `head` says where the Ok value lands.
-    fn emitTryStmt(self: *Emitter, form: TryForm, head: TryHead) !void {
+    fn buildTryStmt(self: *Emitter, form: TryForm, head: TryHead) anyerror!js.Stmt {
         const n = self.try_seq;
         self.try_seq += 1;
+        const temp = try self.tryName(n);
 
-        try self.fmt("const _try{d} = ", .{n});
-        try self.emitExpr(form.inner());
-        try self.w(";");
+        var stmts: std.ArrayListUnmanaged(js.Stmt) = .empty;
+        try stmts.append(self.arena(), .{ .decl = .{
+            .pattern = .{ .name = temp },
+            .value = try self.buildExpr(form.inner()),
+        } });
 
         switch (form) {
             .catchValue => |cv| {
-                try self.contLine();
-                _ = try self.writeTryHead(head);
-                try self.fmt("\"error\" in _try{d} ? (", .{n});
-                try self.emitExpr(cv.handler);
-                try self.w(")");
-                if (cv.is_lambda) try self.fmt("(_try{d}.error)", .{n});
-                try self.fmt(" : _try{d}.ok;", .{n});
+                var fallback = try self.b.paren(try self.buildExpr(cv.handler));
+                if (cv.is_lambda) fallback = try self.b.call(fallback, &.{try self.b.member(.{ .name = temp }, "error")});
+                try stmts.append(self.arena(), try self.tryHeadStmt(head, try self.b.ternary(
+                    try self.errorIn(temp),
+                    fallback,
+                    try self.b.member(.{ .name = temp }, "ok"),
+                )));
             },
             .propagate => {
-                try self.contLine();
-                try self.fmt("if (\"error\" in _try{d}) return _try{d};", .{ n, n });
-                try self.writeTryValueLine(head, n);
+                try stmts.append(self.arena(), try self.b.ifStmt(
+                    try self.errorIn(temp),
+                    .{ .return_ = .{ .name = temp } },
+                ));
+                if (try self.tryValueStmt(head, temp)) |s| try stmts.append(self.arena(), s);
             },
             .catchJump => |cj| {
-                try self.contLine();
-                try self.fmt("if (\"error\" in _try{d}) {{ ", .{n});
-                try self.emitExpr(cj.handler);
-                try self.w("; }");
-                try self.writeTryValueLine(head, n);
+                try stmts.append(self.arena(), try self.b.ifStmt(try self.errorIn(temp), .{ .block = .{
+                    .stmts = try self.b.stmts(&.{.{ .expr = try self.buildExpr(cj.handler) }}),
+                    .layout = .spaced,
+                } }));
+                if (try self.tryValueStmt(head, temp)) |s| try stmts.append(self.arena(), s);
             },
         }
+        return self.b.group(try stmts.toOwnedSlice(self.arena()));
     }
 
-    /// Emit `<head>_tryN.ok;` on its own line, unless the value is discarded.
-    fn writeTryValueLine(self: *Emitter, head: TryHead, n: usize) !void {
-        if (head == .discard) return;
-        try self.contLine();
-        _ = try self.writeTryHead(head);
-        try self.fmt("_try{d}.ok;", .{n});
+    /// `<head>_tryN.ok;`, unless the value is discarded.
+    fn tryValueStmt(self: *Emitter, head: TryHead, temp: []const u8) !?js.Stmt {
+        if (head == .discard) return null;
+        return try self.tryHeadStmt(head, try self.b.member(.{ .name = temp }, "ok"));
     }
 
-    /// Emit the last stmt of an if-branch as a value expression.
-    fn emitIfLast(self: *Emitter, stmt: ast.Stmt) !void {
+    /// The last statement of an `if`-expression branch, as a value.
+    fn buildIfLast(self: *Emitter, stmt: ast.Stmt) anyerror!js.Stmt {
         switch (stmt.expr) {
             .jump => |j| switch (j.kind) {
-                .@"return", .throw_ => try self.emitStmt(stmt),
-                else => {
-                    try self.w("return ");
-                    try self.emitExpr(stmt.expr);
-                    try self.w(";");
-                },
+                .@"return", .throw_ => return self.buildStmt(stmt),
+                else => {},
             },
-            else => {
-                try self.w("return ");
-                try self.emitExpr(stmt.expr);
-                try self.w(";");
-            },
+            else => {},
         }
+        return .{ .return_ = try self.buildExpr(stmt.expr) };
     }
 
-    // ── expressions (generic over phase) ─────────────────────────────────────
+    // ── expressions ───────────────────────────────────────────────────────────
 
-    fn emitBinaryOp(self: *Emitter, op: []const u8, lhs: *ast.Expr, rhs: *ast.Expr) !void {
-        try self.w("(");
-        try self.emitExpr(lhs.*);
-        try self.w(" ");
-        try self.w(op);
-        try self.w(" ");
-        try self.emitExpr(rhs.*);
-        try self.w(")");
-    }
-
-    /// Emit the inline CommonJS form for a lowered `@Result`/`@Option` method op.
+    /// The inline CommonJS form for a lowered `@Result`/`@Option` method op.
     /// `args[0]` is the receiver expression; `args[1]` (when present) is the
     /// transform function or default value. An IIFE binds the receiver once so it
     /// is not re-evaluated (important for method chains).
-    fn emitResultOptionOp(self: *Emitter, callee: []const u8, args: []const ast.CallArg) anyerror!void {
-        const recv = args[0].value;
-        const arg1: ?*ast.Expr = if (args.len > 1) args[1].value else null;
+    fn buildResultOptionOp(self: *Emitter, callee: []const u8, args: []const ast.CallArg) anyerror!js.Expr {
+        const recv = try self.buildExpr(args[0].value.*);
+        const arg1: js.Expr = if (args.len > 1) try self.buildExpr(args[1].value.*) else .missing;
+        const r = js.Expr{ .name = "_r" };
+        const o = js.Expr{ .name = "_o" };
+        const r_param = [_]js.Param{.{ .pattern = .{ .name = "_r" } }};
+        const o_param = [_]js.Param{.{ .pattern = .{ .name = "_o" } }};
+        const error_in_r = try self.b.binaryBare("in", .{ .quoted = "error" }, r);
+        const o_present = try self.b.binaryBare("!=", o, .null_);
 
         if (std.mem.eql(u8, callee, "__bp_ok")) {
             // Result constructor: `return v` in a `-> @Result<…>` fn.
-            try self.w("({ ok: ");
-            try self.emitExpr(recv.*);
-            try self.w(" })");
-        } else if (std.mem.eql(u8, callee, "__bp_error")) {
-            // Result constructor: `throw e` in a `-> @Result<…>` fn.
-            try self.w("({ error: ");
-            try self.emitExpr(recv.*);
-            try self.w(" })");
-        } else if (std.mem.eql(u8, callee, "__bp_result_map")) {
-            try self.w("((_r) => \"error\" in _r ? _r : { ok: (");
-            if (arg1) |a| try self.emitExpr(a.*);
-            try self.w(")(_r.ok) })(");
-            try self.emitExpr(recv.*);
-            try self.w(")");
-        } else if (std.mem.eql(u8, callee, "__bp_result_flatMap")) {
-            try self.w("((_r) => \"error\" in _r ? _r : (");
-            if (arg1) |a| try self.emitExpr(a.*);
-            try self.w(")(_r.ok))(");
-            try self.emitExpr(recv.*);
-            try self.w(")");
-        } else if (std.mem.eql(u8, callee, "__bp_result_unwrapOr")) {
-            try self.w("((_r) => \"error\" in _r ? (");
-            if (arg1) |a| try self.emitExpr(a.*);
-            try self.w(") : _r.ok)(");
-            try self.emitExpr(recv.*);
-            try self.w(")");
-        } else if (std.mem.eql(u8, callee, "__bp_result_isOk")) {
-            try self.w("((_r) => !(\"error\" in _r))(");
-            try self.emitExpr(recv.*);
-            try self.w(")");
-        } else if (std.mem.eql(u8, callee, "__bp_result_isError")) {
-            try self.w("((_r) => \"error\" in _r)(");
-            try self.emitExpr(recv.*);
-            try self.w(")");
-        } else if (std.mem.eql(u8, callee, "__bp_option_map") or std.mem.eql(u8, callee, "__bp_option_flatMap")) {
-            try self.w("((_o) => _o != null ? (");
-            if (arg1) |a| try self.emitExpr(a.*);
-            try self.w(")(_o) : null)(");
-            try self.emitExpr(recv.*);
-            try self.w(")");
-        } else if (std.mem.eql(u8, callee, "__bp_option_unwrapOr")) {
-            try self.w("((_o) => _o != null ? _o : (");
-            if (arg1) |a| try self.emitExpr(a.*);
-            try self.w("))(");
-            try self.emitExpr(recv.*);
-            try self.w(")");
+            return self.b.paren(try self.b.object(&.{.{ .kv = .{ .key = "ok", .value = recv } }}));
         }
+        if (std.mem.eql(u8, callee, "__bp_error")) {
+            // Result constructor: `throw e` in a `-> @Result<…>` fn.
+            return self.b.paren(try self.b.object(&.{.{ .kv = .{ .key = "error", .value = recv } }}));
+        }
+        if (std.mem.eql(u8, callee, "__bp_result_map")) {
+            const mapped = try self.b.object(&.{.{ .kv = .{
+                .key = "ok",
+                .value = try self.b.call(try self.b.paren(arg1), &.{try self.b.member(r, "ok")}),
+            } }});
+            return self.applyLambda(&r_param, try self.b.ternary(error_in_r, r, mapped), recv);
+        }
+        if (std.mem.eql(u8, callee, "__bp_result_flatMap")) {
+            const mapped = try self.b.call(try self.b.paren(arg1), &.{try self.b.member(r, "ok")});
+            return self.applyLambda(&r_param, try self.b.ternary(error_in_r, r, mapped), recv);
+        }
+        if (std.mem.eql(u8, callee, "__bp_result_unwrapOr")) {
+            return self.applyLambda(&r_param, try self.b.ternary(
+                error_in_r,
+                try self.b.paren(arg1),
+                try self.b.member(r, "ok"),
+            ), recv);
+        }
+        if (std.mem.eql(u8, callee, "__bp_result_isOk")) {
+            return self.applyLambda(&r_param, try self.b.unary("!", try self.b.paren(error_in_r), false), recv);
+        }
+        if (std.mem.eql(u8, callee, "__bp_result_isError")) {
+            return self.applyLambda(&r_param, error_in_r, recv);
+        }
+        if (std.mem.eql(u8, callee, "__bp_option_map") or std.mem.eql(u8, callee, "__bp_option_flatMap")) {
+            return self.applyLambda(&o_param, try self.b.ternary(
+                o_present,
+                try self.b.call(try self.b.paren(arg1), &.{o}),
+                .null_,
+            ), recv);
+        }
+        if (std.mem.eql(u8, callee, "__bp_option_unwrapOr")) {
+            return self.applyLambda(&o_param, try self.b.ternary(o_present, o, try self.b.paren(arg1)), recv);
+        }
+        // No lowering for this op — the call renders as nothing, as before.
+        return .missing;
     }
 
-    fn emitExpr(self: *Emitter, e: ast.Expr) anyerror!void {
+    /// `((p) => body)(arg)` — bind the receiver once.
+    fn applyLambda(self: *Emitter, params: []const js.Param, body: js.Expr, arg: js.Expr) !js.Expr {
+        return self.b.call(try self.b.paren(try self.b.arrowExpr(params, body)), &.{arg});
+    }
+
+    fn buildExpr(self: *Emitter, e: ast.Expr) anyerror!js.Expr {
         switch (e) {
             .literal => |lit| switch (lit.kind) {
-                .stringLit => |s| try self.emitJsonString(s),
+                .stringLit => |s| return .{ .lexeme_string = s },
                 // Desugared to a `+` chain by the transform pass; never reaches codegen.
                 .stringTemplate => unreachable,
-                .numberLit => |n| try self.w(n),
-                .null_ => try self.w("null"),
-                .comment => |c| {
-                    switch (c.kind) {
-                        .normal => try self.fmt("// {s}", .{c.text}),
-                        .doc => try self.fmt("/** {s} */", .{c.text}),
-                        .module => try self.fmt("//// {s}", .{c.text}),
-                    }
-                },
+                .numberLit => |n| return .{ .number = n },
+                .null_ => return .null_,
+                .comment => |c| return .{ .comment = .{
+                    .style = switch (c.kind) {
+                        .normal => .line,
+                        .doc => .doc,
+                        .module => .module,
+                    },
+                    .text = c.text,
+                } },
             },
 
             .identifier => |id| switch (id.kind) {
@@ -2471,13 +2161,10 @@ const Emitter = struct {
                 // prototype method lowers to `this`; only extension methods keep
                 // `self` as a real parameter (`self_is_param`).
                 .ident => |n| {
-                    if (std.mem.eql(u8, n, "self") and !self.self_is_param) {
-                        try self.w("this");
-                    } else {
-                        try self.w(jsIdent(n));
-                    }
+                    if (std.mem.eql(u8, n, "self") and !self.self_is_param) return .this;
+                    return .{ .ident = n };
                 },
-                .dotIdent => |n| try self.w(n),
+                .dotIdent => |n| return .{ .name = n },
                 .identAccess => |ia| {
                     const isSelf = switch (ia.receiver.*) {
                         .identifier => |recv_id| if (recv_id.kind == .ident)
@@ -2487,167 +2174,83 @@ const Emitter = struct {
                         else => false,
                     };
                     if (isSelf) {
-                        if (self.self_is_param) {
-                            try self.fmt("self.{s}", .{ia.member});
-                        } else {
-                            try self.fmt("this.{s}", .{ia.member});
-                        }
-                        return;
+                        return self.b.member(if (self.self_is_param) js.Expr{ .ident = "self" } else .this, ia.member);
                     }
-                    try self.emitExpr(ia.receiver.*);
+                    const recv = try self.buildExpr(ia.receiver.*);
                     // Tuple index access: `t._N` → `t[N]` (tuples are JS arrays).
                     if (tupleIndexMember(ia.member)) |idx| {
-                        try self.fmt("{s}[{s}]", .{ @as([]const u8, if (ia.optional) "?." else ""), idx });
-                        return;
+                        return self.b.index(recv, .{ .number = idx }, ia.optional);
                     }
                     // Optional chaining maps 1:1 to native JS `?.`.
-                    try self.fmt("{s}{s}", .{ @as([]const u8, if (ia.optional) "?." else "."), ia.member });
+                    return self.b.memberOpt(recv, ia.member, ia.optional);
                 },
             },
 
-            .binaryOp => |bin| switch (bin.op) {
-                .add => try self.emitBinaryOp("+", bin.lhs, bin.rhs),
-                .sub => try self.emitBinaryOp("-", bin.lhs, bin.rhs),
-                .mul => try self.emitBinaryOp("*", bin.lhs, bin.rhs),
-                .div => try self.emitBinaryOp("/", bin.lhs, bin.rhs),
-                .mod => try self.emitBinaryOp("%", bin.lhs, bin.rhs),
-                .lt => try self.emitBinaryOp("<", bin.lhs, bin.rhs),
-                .gt => try self.emitBinaryOp(">", bin.lhs, bin.rhs),
-                .lte => try self.emitBinaryOp("<=", bin.lhs, bin.rhs),
-                .gte => try self.emitBinaryOp(">=", bin.lhs, bin.rhs),
-                // `x == null` / `x != null` lower to loose `==`/`!=` so a `?T`
-                // none represented as `undefined` (e.g. `Array.at()` past the
-                // end) matches the `null` none literal — botopink treats both
-                // as the single none value. All other `==` stay strict `===`.
-                .eq => try self.emitBinaryOp(if (isNullLiteral(bin.lhs.*) or isNullLiteral(bin.rhs.*)) "==" else "===", bin.lhs, bin.rhs),
-                .ne => try self.emitBinaryOp(if (isNullLiteral(bin.lhs.*) or isNullLiteral(bin.rhs.*)) "!=" else "!==", bin.lhs, bin.rhs),
-                .@"and" => try self.emitBinaryOp("&&", bin.lhs, bin.rhs),
-                .@"or" => try self.emitBinaryOp("||", bin.lhs, bin.rhs),
+            .binaryOp => |bin| {
+                const op: []const u8 = switch (bin.op) {
+                    .add => "+",
+                    .sub => "-",
+                    .mul => "*",
+                    .div => "/",
+                    .mod => "%",
+                    .lt => "<",
+                    .gt => ">",
+                    .lte => "<=",
+                    .gte => ">=",
+                    // `x == null` / `x != null` lower to loose `==`/`!=` so a `?T`
+                    // none represented as `undefined` (e.g. `Array.at()` past the
+                    // end) matches the `null` none literal — botopink treats both
+                    // as the single none value. All other `==` stay strict `===`.
+                    .eq => if (isNullLiteral(bin.lhs.*) or isNullLiteral(bin.rhs.*)) "==" else "===",
+                    .ne => if (isNullLiteral(bin.lhs.*) or isNullLiteral(bin.rhs.*)) "!=" else "!==",
+                    .@"and" => "&&",
+                    .@"or" => "||",
+                };
+                return self.b.binary(op, try self.buildExpr(bin.lhs.*), try self.buildExpr(bin.rhs.*));
             },
 
-            .unaryOp => |un| switch (un.op) {
-                .not => {
-                    try self.w("(!");
-                    try self.emitExpr(un.expr.*);
-                    try self.w(")");
-                },
-                .neg => {
-                    try self.w("(-");
-                    try self.emitExpr(un.expr.*);
-                    try self.w(")");
-                },
-            },
+            .unaryOp => |un| return self.b.unary(switch (un.op) {
+                .not => "!",
+                .neg => "-",
+            }, try self.buildExpr(un.expr.*), true),
 
             .jump => |j| switch (j.kind) {
-                .@"return" => |r| if (r) |val| {
-                    try self.w("return ");
-                    try self.emitExpr(val.*);
-                } else {
-                    try self.w("return");
-                },
-                .throw_ => |r| if (r) |val| {
-                    try self.w("throw ");
-                    try self.emitExpr(val.*);
-                } else {
-                    try self.w("throw");
-                },
-                .try_ => |t| if (t) |val| {
+                // A jump is a statement; botopink puts it in expression
+                // position, which only the bridge can express.
+                .@"return" => |r| return self.b.stmtExpr(.{
+                    .return_ = if (r) |val| try self.buildExpr(val.*) else null,
+                }),
+                .throw_ => |r| return self.b.stmtExpr(.{
+                    .throw_ = if (r) |val| try self.buildExpr(val.*) else null,
+                }),
+                .try_ => |t| {
+                    const val = t orelse return .missing;
                     // Nested `try` in expression position: unwrap Ok, propagate Error
                     // out of the surrounding IIFE. (Statement position is lowered in
-                    // emitStmt to a real enclosing-function `return`.)
+                    // `buildStmt` to a real enclosing-function `return`.)
                     const n = self.try_seq;
                     self.try_seq += 1;
-                    try self.fmt("(() => {{ const _try{d} = ", .{n});
-                    try self.emitExpr(val.*);
-                    try self.fmt("; if (\"error\" in _try{d}) return _try{d}; return _try{d}.ok; }})()", .{ n, n, n });
+                    const temp = try self.tryName(n);
+                    return self.b.iife(&.{
+                        .{ .decl = .{ .pattern = .{ .name = temp }, .value = try self.buildExpr(val.*) } },
+                        try self.b.ifStmt(try self.errorIn(temp), .{ .return_ = .{ .name = temp } }),
+                        .{ .return_ = try self.b.member(.{ .name = temp }, "ok") },
+                    });
                 },
-                .await_ => |av| {
-                    try self.w("await ");
-                    try self.emitExpr(av.*);
-                },
-                .@"break" => |b| if (b.value) |val| {
-                    try self.w("return ");
-                    try self.emitExpr(val.*);
-                } else {
-                    try self.w("return");
-                },
-                .yield => |y| if (y.value) |val| {
-                    // Generator `yield` (loop-accumulator yields are lowered at
-                    // the `.loop` site, so reaching here means an `#[@iterator]`
-                    // / `#[@generator]` / `#[@asyncGenerator]` body).
-                    try self.w("yield ");
-                    try self.emitExpr(val.*);
-                } else {
-                    try self.w("yield");
-                },
-                .@"continue" => try self.w("continue"),
+                .await_ => |av| return self.b.await_(try self.buildExpr(av.*)),
+                // A loop-accumulator `break` becomes the lambda's `return`.
+                .@"break" => |br| return self.b.stmtExpr(.{
+                    .return_ = if (br.value) |val| try self.buildExpr(val.*) else null,
+                }),
+                // Generator `yield` (loop-accumulator yields are lowered at
+                // the `.loop` site, so reaching here means an `#[@iterator]`
+                // / `#[@generator]` / `#[@asyncGenerator]` body).
+                .yield => |y| return self.b.yield_(if (y.value) |val| try self.buildExpr(val.*) else null),
+                .@"continue" => return self.b.stmtExpr(.continue_),
             },
 
             .branch => |br| switch (br.kind) {
-                .if_ => |i| {
-                    // Check if the if statement contains a return
-                    const thenContainsReturn = i.then_.len > 0 and
-                        switch (i.then_[i.then_.len - 1].expr) {
-                            .jump => |j| j.kind == .@"return",
-                            else => false,
-                        };
-                    const elseContainsReturn = if (i.else_) |els|
-                        els.len > 0 and switch (els[els.len - 1].expr) {
-                            .jump => |j| j.kind == .@"return",
-                            else => false,
-                        }
-                    else
-                        false;
-                    const containsReturn = thenContainsReturn or elseContainsReturn;
-
-                    if (!containsReturn) {
-                        try self.w("(() => {");
-                    }
-                    if (i.binding) |b| {
-                        try self.fmt(" const {s} = ", .{b});
-                        try self.emitExpr(i.cond.*);
-                        try self.fmt("; if ({s} !== null) {{", .{b});
-                    } else {
-                        try self.w(" if (");
-                        try self.emitExpr(i.cond.*);
-                        try self.w(") {");
-                    }
-                    const then = i.then_;
-                    const head_n = if (then.len > 0) then.len - 1 else 0;
-                    for (then[0..head_n]) |st| {
-                        try self.w(" ");
-                        try self.emitStmt(st);
-                    }
-                    if (then.len > 0) {
-                        try self.w(" ");
-                        if (thenContainsReturn) {
-                            try self.emitStmt(then[then.len - 1]);
-                        } else {
-                            try self.emitIfLast(then[then.len - 1]);
-                        }
-                    }
-                    try self.w(" }");
-                    if (i.else_) |els| {
-                        try self.w(" else {");
-                        const ehead_n = if (els.len > 0) els.len - 1 else 0;
-                        for (els[0..ehead_n]) |st| {
-                            try self.w(" ");
-                            try self.emitStmt(st);
-                        }
-                        if (els.len > 0) {
-                            try self.w(" ");
-                            if (elseContainsReturn) {
-                                try self.emitStmt(els[els.len - 1]);
-                            } else {
-                                try self.emitIfLast(els[els.len - 1]);
-                            }
-                        }
-                        try self.w(" }");
-                    }
-                    if (!containsReturn) {
-                        try self.w(" })()");
-                    }
-                },
+                .if_ => |i| return self.buildIfExpr(i),
                 .tryCatch => |tc| {
                     // `try expr catch handler` in expression position → pattern match
                     // on the `{ ok } | { error }` Result inside an IIFE (never JS
@@ -2655,140 +2258,43 @@ const Emitter = struct {
                     const handler = tc.handler.*;
                     const n = self.try_seq;
                     self.try_seq += 1;
-                    try self.fmt("(() => {{ const _try{d} = ", .{n});
-                    try self.emitExpr(tc.expr.*);
-                    try self.fmt("; if (\"error\" in _try{d}) {{ ", .{n});
-                    if (isJumpHandler(handler)) {
-                        try self.emitExpr(handler);
-                        try self.w("; ");
-                    } else {
-                        try self.w("return (");
-                        try self.emitExpr(handler);
-                        try self.w(")");
-                        switch (handler) {
-                            .function => try self.fmt("(_try{d}.error)", .{n}),
-                            else => {},
+                    const temp = try self.tryName(n);
+                    const handled: js.Stmt = if (isJumpHandler(handler))
+                        .{ .expr = try self.buildExpr(handler) }
+                    else blk: {
+                        var value = try self.b.paren(try self.buildExpr(handler));
+                        if (handler == .function) {
+                            value = try self.b.call(value, &.{try self.b.member(.{ .name = temp }, "error")});
                         }
-                        try self.w("; ");
-                    }
-                    try self.fmt("}} return _try{d}.ok; }})()", .{n});
+                        break :blk js.Stmt{ .return_ = value };
+                    };
+                    return self.b.iife(&.{
+                        .{ .decl = .{ .pattern = .{ .name = temp }, .value = try self.buildExpr(tc.expr.*) } },
+                        try self.b.ifStmt(try self.errorIn(temp), .{ .block = .{
+                            .stmts = try self.b.stmts(&.{handled}),
+                            .layout = .spaced,
+                        } }),
+                        .{ .return_ = try self.b.member(.{ .name = temp }, "ok") },
+                    });
                 },
             },
 
-            .loop => |lp| {
-                const has_yield = blk: {
-                    for (lp.body) |stmt| {
-                        if (switch (stmt.expr) {
-                            .jump => |j| j.kind == .yield,
-                            else => false,
-                        }) break :blk true;
-                    }
-                    break :blk false;
-                };
-
-                if (has_yield and self.in_generator) {
-                    // Inside an `#[@iterator]` / `#[@generator]` /
-                    // `#[@asyncGenerator]` body, `loop (xs) { item -> yield item }`
-                    // is real generator iteration — emit `for…of` with native
-                    // `yield`, NOT `.map()` (which builds a throwaway array and
-                    // yields nothing — the `fromList`/iterator-suite bug).
-                    if (lp.params.len == 1) {
-                        try self.fmt("for (const {s} of ", .{jsIdent(lp.params[0])});
-                        try self.emitExpr(lp.iter.*);
-                        try self.w(") {\n");
-                    } else {
-                        try self.w("for (const [");
-                        var i: usize = lp.params.len;
-                        while (i > 0) {
-                            i -= 1;
-                            try self.w(jsIdent(lp.params[i]));
-                            if (i > 0) try self.w(", ");
-                        }
-                        try self.w("] of (");
-                        try self.emitExpr(lp.iter.*);
-                        try self.w(").entries()) {\n");
-                    }
-                    for (lp.body) |stmt| {
-                        try self.w("    ");
-                        try self.emitStmt(stmt);
-                        try self.w("\n");
-                    }
-                    try self.w("}");
-                } else if (has_yield) {
-                    try self.emitExpr(lp.iter.*);
-                    try self.w(".map((");
-                    for (lp.params, 0..) |p, i| {
-                        if (i > 0) try self.w(", ");
-                        try self.w(jsIdent(p));
-                    }
-                    try self.w(") => {\n");
-                    for (lp.body) |stmt| {
-                        const isYield = switch (stmt.expr) {
-                            .jump => |j| j.kind == .yield,
-                            else => false,
-                        };
-                        if (isYield) {
-                            const yield_val = stmt.expr.jump.kind.yield.value;
-                            if (yield_val) |val| {
-                                try self.w("    return ");
-                                try self.emitExpr(val.*);
-                                try self.w(";\n");
-                            }
-                        } else {
-                            try self.w("    ");
-                            try self.emitStmt(stmt);
-                            try self.w("\n");
-                        }
-                    }
-                    try self.w("})");
-                } else {
-                    // `loop (xs) { x -> … }` binds the ITEM; with two params the
-                    // second is the index (`{ item, i -> … }`). Array.entries()
-                    // yields numeric [index, item] pairs, so the destructure
-                    // order is swapped. (Object.entries gave [stringKey, value],
-                    // which bound the 1-param form to the index — a real bug.)
-                    if (lp.params.len == 1) {
-                        try self.fmt("for (const {s} of ", .{jsIdent(lp.params[0])});
-                        try self.emitExpr(lp.iter.*);
-                        try self.w(") {\n");
-                    } else {
-                        try self.w("for (const [");
-                        var i: usize = lp.params.len;
-                        while (i > 0) {
-                            i -= 1;
-                            try self.w(jsIdent(lp.params[i]));
-                            if (i > 0) try self.w(", ");
-                        }
-                        try self.w("] of (");
-                        try self.emitExpr(lp.iter.*);
-                        try self.w(").entries()) {\n");
-                    }
-                    for (lp.body) |stmt| {
-                        try self.w("    ");
-                        try self.emitStmt(stmt);
-                        try self.w("\n");
-                    }
-                    try self.w("}");
-                }
-            },
+            .loop => |lp| return self.buildLoop(lp),
 
             .binding => |b| switch (b.kind) {
-                .localBind => |lb| {
-                    const kw: []const u8 = if (lb.mutable) "let" else "const";
-                    try self.fmt("{s} {s} = ", .{ kw, jsIdent(lb.name) });
-                    try self.emitExpr(lb.value.*);
-                },
+                .localBind => |lb| return self.b.stmtExpr(.{ .decl = .{
+                    .kw = if (lb.mutable) .let_ else .const_,
+                    .pattern = .{ .ident = lb.name },
+                    .value = try self.buildExpr(lb.value.*),
+                } }),
                 .assign => |a| {
                     const op_str: []const u8 = switch (a.op) {
                         .assign => "=",
                         .plusAssign => "+=",
                     };
-                    switch (a.target) {
-                        .name => |name| {
-                            try self.fmt("{s} {s} ", .{ jsIdent(name), op_str });
-                            try self.emitExpr(a.value.*);
-                        },
-                        .fieldAccess => |*fa| {
+                    const target: js.Expr = switch (a.target) {
+                        .name => |name| .{ .ident = name },
+                        .fieldAccess => |*fa| blk: {
                             const isSelf = switch (fa.receiver.*) {
                                 .identifier => |recv_id| if (recv_id.kind == .ident)
                                     std.mem.eql(u8, recv_id.kind.ident, "self")
@@ -2796,214 +2302,28 @@ const Emitter = struct {
                                     false,
                                 else => false,
                             };
-                            if (isSelf) {
-                                try self.fmt("this.{s} {s} ", .{ fa.field, op_str });
-                            } else {
-                                try self.emitExpr(fa.receiver.*);
-                                try self.fmt(".{s} {s} ", .{ fa.field, op_str });
-                            }
-                            try self.emitExpr(a.value.*);
+                            break :blk try self.b.member(
+                                if (isSelf) js.Expr.this else try self.buildExpr(fa.receiver.*),
+                                fa.field,
+                            );
                         },
-                    }
+                    };
+                    return self.b.assign(target, op_str, try self.buildExpr(a.value.*));
                 },
-                .localBindDestruct => |lb| {
-                    const kw: []const u8 = if (lb.mutable) "let" else "const";
-                    try self.fmt("{s} ", .{kw});
-                    try self.emitDestructHead(lb.pattern);
-                    try self.emitExpr(lb.value.*);
-                },
+                .localBindDestruct => |lb| return self.b.stmtExpr(.{ .decl = .{
+                    .kw = if (lb.mutable) .let_ else .const_,
+                    .pattern = try self.buildDestructPattern(lb.pattern),
+                    .value = try self.buildExpr(lb.value.*),
+                } }),
             },
 
-            // A `use` hook used in value position: emit the underlying hook call.
-            .useHook => |uh| try self.emitHookCall(uh.kind.inner.*),
+            // A `use` hook used in value position: the underlying hook call.
+            .useHook => |uh| return self.buildHookCall(uh.kind.inner.*),
 
             .call => |c| switch (c.kind) {
-                .call => |cc| {
-                    if (cc.is_builtin) {
-                        // `prim-op-annotation` builtin dispatch fires first
-                        // (`@todo` / `@panic` annotated in `builtins.d.bp`).
-                        if (try self.tryEmitBuiltinAnnotation(cc.callee, cc)) return;
-                        // Fallback for `@todo` / `@panic` when the annotation
-                        // dispatch table is empty (builtins.d.bp may stop
-                        // parsing earlier in the file and the collector
-                        // silently swallows the parse error). Keeps the JS
-                        // surface working — same IIFE shape as the original
-                        // hardcoded path the prim-op-annotation commit removed.
-                        const is_todo = std.mem.eql(u8, cc.callee, "todo");
-                        const is_panic = std.mem.eql(u8, cc.callee, "panic");
-                        if (is_todo or is_panic) {
-                            const default_msg: []const u8 = if (is_todo) "not implemented" else "panic";
-                            try self.w("(() => { throw new Error(");
-                            if (cc.args.len > 0) {
-                                try self.emitExpr(cc.args[0].value.*);
-                            } else {
-                                try self.fmt("\"{s}\"", .{default_msg});
-                            }
-                            try self.w(") })()");
-                            return;
-                        }
-                        const is_block = std.mem.eql(u8, cc.callee, "block");
-                        if (is_block) {
-                            // @block can be called as @block(arg) or @block { body }
-                            if (cc.args.len == 1) {
-                                const arg = cc.args[0].value;
-                                const isBlock = switch (arg.*) {
-                                    .function => true,
-                                    else => false,
-                                };
-                                if (!isBlock) return error.InvalidArgs;
-                                try self.emitExpr(arg.*);
-                            } else if (cc.trailing.len == 1 and cc.trailing[0].params.len == 0) {
-                                // @block { body } - trailing lambda with no params
-                                try self.w("(() => {");
-                                for (cc.trailing[0].body, 0..) |stmt, i| {
-                                    if (i > 0) try self.w(" ");
-                                    try self.emitStmt(stmt);
-                                }
-                                try self.w("})()");
-                            } else {
-                                return error.InvalidArgs;
-                            }
-                        } else if (std.mem.startsWith(u8, cc.callee, "__bp_")) {
-                            try self.emitResultOptionOp(cc.callee, cc.args);
-                        } else if (std.mem.eql(u8, cc.callee, "expr") or std.mem.eql(u8, cc.callee, "code") or std.mem.eql(u8, cc.callee, "compilerError") or std.mem.eql(u8, cc.callee, "emit")) {
-                            // `@expr(value)` / `@code(text)` — comptime template
-                            // construction builtins; `@compilerError(msg)` — abort
-                            // compilation from a comptime body. Only reachable when
-                            // the template/decorator evaluator emits the body
-                            // (those fns are dropped before normal codegen); its
-                            // prelude defines `__expr`/`__code`/`__compilerError`.
-                            try self.fmt("__{s}(", .{cc.callee});
-                            for (cc.args, 0..) |arg, i| {
-                                if (i > 0) try self.w(", ");
-                                try self.emitExpr(arg.value.*);
-                            }
-                            try self.w(")");
-                        } else {
-                            try self.w("@");
-                            try self.w(cc.callee);
-                            try self.w("(");
-                            for (cc.args, 0..) |arg, i| {
-                                if (i > 0) try self.w(", ");
-                                try self.emitExpr(arg.value.*);
-                            }
-                            try self.w(")");
-                        }
-                    } else {
-                        // builtin_node_dispatch: `declare fn` with `#[@External.Node]`.
-                        // Handles both template (`$0.method()`) and module+symbol
-                        // (`"./mod", "fun"`) forms discovered from primitives.bp +
-                        // builtins_fns.d.bp.
-                        if (self.builtin_node_dispatch.get(cc.callee)) |call| {
-                            _ = call;
-                            if (try self.tryEmitBuiltinAnnotation(cc.callee, cc)) return;
-                            // Fall through to plain call if annotation dispatch fails.
-                        }
-                        var first = true;
-                        var as_property = false;
-                        if (cc.receiver) |recv| {
-                            // Static extension dispatch: lower `recv.m(args)` to
-                            // `Sym.m(recv, args)` at activated call sites.
-                            if (self.rewrites.get(c.loc)) |sym| {
-                                try self.fmt("{s}.{s}(", .{ sym, cc.callee });
-                                try self.emitExpr(recv.*);
-                                first = false;
-                            } else {
-                                try self.emitExpr(recv.*);
-                                // Optional chaining call maps to native JS `?.`.
-                                // §A4 rename: a 2-arg `@external(node, "X")` on
-                                // a primitive interface method routes
-                                // `recv.callee(args)` to `recv.X(args)`. The
-                                // per-loc `renames` map (populated by inference's
-                                // type-directed lookup) is consulted FIRST so a
-                                // collision-prone name (`String.contains` vs
-                                // `Set.contains`) lands the right rename. The
-                                // type-naive `prim_node_renames` map (built from
-                                // annotations at emitter init) is the fallback
-                                // for calls inference doesn't visit — interface
-                                // default-fn bodies materialised as prototype
-                                // patches (`out.append(inner)` inside `flatten`).
-                                const method = blk: {
-                                    if (self.renames) |r| {
-                                        if (r.get(c.loc)) |loc_rename| break :blk loc_rename;
-                                    }
-                                    if (self.prim_node_renames.get(cc.callee)) |sym| break :blk sym;
-                                    break :blk cc.callee;
-                                };
-                                const dot: []const u8 = if (cc.optional) "?." else ".";
-                                // `arr.len()`/`.size()`/`.length()` & `str.length()`:
-                                // inference renamed these to `length` only for a
-                                // typed array/string receiver — the native `.length`
-                                // is a PROPERTY, so emit it without call parens/args.
-                                const len_prop = cc.args.len == 0 and cc.trailing.len == 0 and
-                                    self.renames != null and
-                                    if (self.renames.?.get(c.loc)) |rn| std.mem.eql(u8, rn, "length") else false;
-                                if (len_prop) {
-                                    try self.fmt("{s}length", .{dot});
-                                    as_property = true;
-                                } else {
-                                    try self.fmt("{s}{s}(", .{ dot, method });
-                                }
-                            }
-                        } else if (self.externals_missing.contains(cc.callee)) {
-                            // External fn with no `node` target — no symbol to
-                            // call on this backend.
-                            return error.MissingExternalTarget;
-                        } else if (self.user_node_templates.contains(cc.callee)) {
-                            // §A2 template-form external — render the host
-                            // shape inline (no `fnname(args)` against an
-                            // aliased symbol; the alias would strip `this`
-                            // for chained-method-on-global calls). Returns
-                            // before any further emit for this call expr.
-                            if (try self.tryEmitUserTemplate(cc.callee, cc)) return;
-                            // Arity didn't match any `when(argc == N)` branch
-                            // — fall back to a plain call so the missing
-                            // branch surfaces as a "fn is not defined" rather
-                            // than silently emitting nothing.
-                            try self.fmt("{s}(", .{jsIdent(cc.callee)});
-                        } else if (self.class_names.contains(cc.callee)) {
-                            // Record/struct constructor — JS classes cannot be
-                            // invoked without `new`.
-                            try self.fmt("new {s}(", .{cc.callee});
-                        } else {
-                            // Plain fn call — sanitize the callee in case the
-                            // fn name is a JS reserved word (`delete` → `delete_`).
-                            try self.fmt("{s}(", .{jsIdent(cc.callee)});
-                        }
-                        for (cc.args) |arg| {
-                            if (!first) try self.w(", ");
-                            try self.emitExpr(arg.value.*);
-                            first = false;
-                        }
-                        for (cc.trailing) |tl| {
-                            if (!first) try self.w(", ");
-                            first = false;
-                            // A trailing arrow is not a generator — `return` stays.
-                            const prev_in_generator = self.in_generator;
-                            self.in_generator = false;
-                            defer self.in_generator = prev_in_generator;
-                            try self.w("(");
-                            for (tl.params, 0..) |p, pi| {
-                                if (pi > 0) try self.w(", ");
-                                try self.w(jsIdent(p));
-                            }
-                            try self.w(") => {\n");
-                            for (tl.body, 0..) |st, si| {
-                                try self.w("    ");
-                                // Tail value expression is the lambda's result.
-                                if (si == tl.body.len - 1 and isImplicitReturnExpr(st.expr)) try self.w("return ");
-                                try self.emitStmt(st);
-                                try self.w("\n");
-                            }
-                            try self.w("}");
-                        }
-                        // A `.length` property access (`as_property`) emitted no
-                        // opening paren, so it must not emit a closing one either.
-                        if (!as_property) try self.w(")");
-                    }
-                },
+                .call => |cc| return self.buildCall(c.loc, cc),
                 .pipeline => |p| {
-                    // Flatten the pipeline chain
+                    // Flatten the pipeline chain.
                     var items: std.ArrayList(ast.Expr) = .empty;
                     defer items.deinit(self.alloc);
                     try items.append(self.alloc, p.lhs.*);
@@ -3020,180 +2340,455 @@ const Emitter = struct {
                     }
                     try items.append(self.alloc, current);
 
-                    // Emit as nested calls: last(items)(...(items[1](items[0])))
-                    try self.w("(");
-                    var i_idx: usize = items.items.len - 1;
-                    while (i_idx > 0) : (i_idx -= 1) {
-                        try self.emitExpr(items.items[i_idx]);
-                        try self.w("(");
+                    // Nested calls: last(…(items[1](items[0]))).
+                    var acc = try self.buildExpr(items.items[0]);
+                    for (items.items[1..]) |step| {
+                        acc = try self.b.call(try self.buildExpr(step), &.{acc});
                     }
-                    try self.emitExpr(items.items[0]);
-                    i_idx = items.items.len - 1;
-                    while (i_idx > 0) : (i_idx -= 1) {
-                        try self.w(")");
-                    }
-                    try self.w(")");
+                    return self.b.paren(acc);
                 },
             },
 
-            .function => |f| {
-                // A nested arrow is not a generator — its `return` stays `return`.
-                const prev_in_generator = self.in_generator;
-                self.in_generator = false;
-                defer self.in_generator = prev_in_generator;
-                try self.w("(");
-                for (f.kind.params, 0..) |p, i| {
-                    if (i > 0) try self.w(", ");
-                    try self.w(jsIdent(p));
-                }
-                try self.w(") => {\n");
-                for (f.kind.body, 0..) |st, si| {
-                    try self.w("    ");
-                    // A bare value expression in tail position is the lambda's
-                    // result — JS arrow blocks don't auto-return it.
-                    if (si == f.kind.body.len - 1 and isImplicitReturnExpr(st.expr)) try self.w("return ");
-                    try self.emitStmt(st);
-                    try self.w("\n");
-                }
-                try self.w("}");
-            },
+            .function => |f| return self.buildArrow(f.kind.params, f.kind.body),
 
             .collection => |col| switch (col.kind) {
                 .arrayLit => |arr| {
-                    try self.w("[");
-                    for (arr.elems, 0..) |elem, i| {
-                        if (i > 0) try self.w(", ");
-                        try self.emitExpr(elem);
-                    }
-                    if (arr.spread) |sp| {
-                        if (arr.elems.len > 0) try self.w(", ");
-                        try self.w("...");
-                        if (sp.len > 0) try self.w(sp);
-                    }
-                    if (arr.spreadExpr) |se| {
-                        if (arr.elems.len > 0) try self.w(", ");
-                        try self.w("...");
-                        try self.emitExpr(se.*);
-                    }
-                    try self.w("]");
+                    const elems = try self.arena().alloc(js.Expr, arr.elems.len);
+                    for (arr.elems, 0..) |elem, i| elems[i] = try self.buildExpr(elem);
+                    const spread: ?js.Spread = if (arr.spread) |sp|
+                        (if (sp.len > 0) js.Spread{ .name = sp } else .unnamed)
+                    else if (arr.spreadExpr) |se|
+                        js.Spread{ .expr = try self.b.ptr(try self.buildExpr(se.*)) }
+                    else
+                        null;
+                    return .{ .array = .{ .elems = elems, .spread = spread } };
                 },
                 .tupleLit => |tuple| {
-                    try self.w("[");
-                    for (tuple.elems, 0..) |elem, i| {
-                        if (i > 0) try self.w(", ");
-                        try self.emitExpr(elem);
-                    }
-                    try self.w("]");
+                    const elems = try self.arena().alloc(js.Expr, tuple.elems.len);
+                    for (tuple.elems, 0..) |elem, i| elems[i] = try self.buildExpr(elem);
+                    return .{ .array = .{ .elems = elems } };
                 },
-                .grouped => |expr| {
-                    try self.w("(");
-                    try self.emitExpr(expr.*);
-                    try self.w(")");
-                },
-                .case => |c| try self.emitCase(c.subjects, c.arms, null),
+                .grouped => |expr| return self.b.paren(try self.buildExpr(expr.*)),
+                .case => |c| return self.buildCase(c.subjects, c.arms),
                 .range => |r| {
                     // `a..b` is the half-open `[a, b)` integer range. JS has no
                     // range literal, so materialize a real array (parity with the
                     // erlang/beam `lists:seq(a, b-1)` and `Array.range`).
-                    if (r.end) |end| {
-                        try self.w("Array.from({length: Math.max(0, (");
-                        try self.emitExpr(end.*);
-                        try self.w(") - (");
-                        try self.emitExpr(r.start.*);
-                        try self.w("))}, (_, __i) => (");
-                        try self.emitExpr(r.start.*);
-                        try self.w(") + __i)");
-                    } else {
+                    const end = r.end orelse
                         // An open-ended `a..` is a lazy infinite range (used only
                         // with `break`); a finite JS array can't represent it.
-                        try self.w("(() => { throw new Error(\"open-ended range unsupported on commonJS\"); })()");
-                    }
+                        return self.b.iife(&.{.{ .throw_ = try self.b.new_(
+                            .{ .name = "Error" },
+                            &.{.{ .quoted = "open-ended range unsupported on commonJS" }},
+                        ) }});
+                    const start = try self.b.paren(try self.buildExpr(r.start.*));
+                    const length = try self.b.call(try self.b.member(.{ .name = "Math" }, "max"), &.{
+                        .{ .number = "0" },
+                        try self.b.binaryBare("-", try self.b.paren(try self.buildExpr(end.*)), start),
+                    });
+                    return self.b.call(try self.b.member(.{ .name = "Array" }, "from"), &.{
+                        .{ .object = .{ .props = try self.b.props(&.{.{ .kv = .{ .key = "length", .value = length } }}), .layout = .tight } },
+                        try self.b.arrowExpr(
+                            &.{ .{ .pattern = .{ .name = "_" } }, .{ .pattern = .{ .name = "__i" } } },
+                            try self.b.binaryBare("+", start, .{ .name = "__i" }),
+                        ),
+                    });
                 },
                 // Anonymous record literal — a plain JS object (parenthesized
                 // so it stays an expression in statement position).
-                .recordLit => |rl| {
-                    try self.w("({ ");
-                    for (rl.fields, 0..) |f, i| {
-                        if (i > 0) try self.w(", ");
-                        try self.fmt("{s}: ", .{f.name});
-                        try self.emitExpr(f.value.*);
-                    }
-                    try self.w(" })");
-                },
-                .interfaceLit => |il| {
-                    try self.w("({ ");
-                    for (il.fields, 0..) |f, i| {
-                        if (i > 0) try self.w(", ");
-                        try self.fmt("{s}: ", .{f.name});
-                        try self.emitExpr(f.value.*);
-                    }
-                    try self.w(" })");
-                },
+                .recordLit => |rl| return self.b.paren(try self.buildFieldObject(rl.fields)),
+                .interfaceLit => |il| return self.b.paren(try self.buildFieldObject(il.fields)),
             },
 
             .comptime_ => |ct| switch (ct.kind) {
-                .comptimeExpr => |expr| try self.emitExpr(expr.*),
+                .comptimeExpr => |expr| return self.buildExpr(expr.*),
                 .comptimeBlock => |cb| {
-                    for (cb.body) |stmt| {
-                        switch (stmt.expr) {
-                            .jump => |j| switch (j.kind) {
-                                .@"break" => |b| if (b.value) |bp| {
-                                    try self.emitExpr(bp.*);
-                                    return;
-                                },
-                                else => {},
-                            },
+                    for (cb.body) |stmt| switch (stmt.expr) {
+                        .jump => |j| switch (j.kind) {
+                            .@"break" => |b| if (b.value) |bp| return self.buildExpr(bp.*),
                             else => {},
-                        }
-                    }
+                        },
+                        else => {},
+                    };
+                    // No `break` value — the block folds to nothing.
+                    return .missing;
                 },
                 .assert => |a| {
+                    const cond = try self.buildExpr(a.condition.*);
                     if (self.test_mode) {
                         // Throwing helper — the test runner catches per test,
                         // records the failure, and continues.
-                        try self.w("__bp_assert(");
-                        try self.emitExpr(a.condition.*);
-                        try self.w(", ");
-                        if (a.message) |msg| {
-                            try self.emitExpr(msg.*);
-                        } else {
-                            try self.w("null");
-                        }
-                        try self.fmt(", \"{s}.bp:{d}\")", .{ self.module_name, ct.loc.line });
-                    } else {
-                        try self.w("console.assert(");
-                        try self.emitExpr(a.condition.*);
-                        if (a.message) |msg| {
-                            try self.w(", ");
-                            try self.emitExpr(msg.*);
-                        }
-                        try self.w(")");
+                        return self.b.call(.{ .name = "__bp_assert" }, &.{
+                            cond,
+                            if (a.message) |msg| try self.buildExpr(msg.*) else .null_,
+                            .{ .quoted = try std.fmt.allocPrint(self.arena(), "{s}.bp:{d}", .{ self.module_name, ct.loc.line }) },
+                        });
                     }
+                    const callee = try self.b.member(.{ .name = "console" }, "assert");
+                    if (a.message) |msg| {
+                        return self.b.call(callee, &.{ cond, try self.buildExpr(msg.*) });
+                    }
+                    return self.b.call(callee, &.{cond});
                 },
                 .assertPattern => |ap| {
-                    try self.w("(() => { ");
-                    try self.w("const _match = ");
-                    try self.emitExpr(ap.expr.*);
-                    try self.w("; ");
-                    try self.w("if (");
-                    try self.emitPatternCheck(&ap.pattern, "_match");
-                    try self.w(") { ");
-                    try self.w("return _match; ");
-                    try self.w("} else { ");
-                    const handlerIsStatement = switch (ap.handler.*) {
+                    const handler_is_statement = switch (ap.handler.*) {
                         .jump => |j| j.kind == .throw_ or j.kind == .@"return",
                         else => false,
                     };
-                    if (!handlerIsStatement) try self.w("return ");
-                    try self.emitExpr(ap.handler.*);
-                    try self.w(";");
-                    try self.w(" } })()");
+                    const handled: js.Stmt = if (handler_is_statement)
+                        .{ .expr = try self.buildExpr(ap.handler.*) }
+                    else
+                        .{ .return_ = try self.buildExpr(ap.handler.*) };
+                    return self.b.iife(&.{
+                        .{ .decl = .{ .pattern = .{ .name = "_match" }, .value = try self.buildExpr(ap.expr.*) } },
+                        try self.b.ifElse(
+                            try self.buildPatternCheck(&ap.pattern, "_match"),
+                            .{ .block = .{ .stmts = try self.b.stmts(&.{.{ .return_ = .{ .name = "_match" } }}), .layout = .spaced } },
+                            .{ .block = .{ .stmts = try self.b.stmts(&.{handled}), .layout = .spaced } },
+                        ),
+                    });
                 },
             },
         }
     }
 
-    // ── case helper ───────────────────────────────────────────────────────────
+    fn buildFieldObject(self: *Emitter, fields: anytype) !js.Expr {
+        const props = try self.arena().alloc(js.Object.Prop, fields.len);
+        for (fields, 0..) |f, i| props[i] = .{ .kv = .{ .key = f.name, .value = try self.buildExpr(f.value.*) } };
+        return .{ .object = .{ .props = props } };
+    }
+
+    /// An `if` used as a value. When neither branch already `return`s, the
+    /// branches are wrapped in an IIFE so the `if` yields a value; when they
+    /// do, the lowering drops the wrapper and leaves the statement where the
+    /// expression was — the `stmt_expr` bridge (defect JS-1).
+    fn buildIfExpr(self: *Emitter, i: anytype) anyerror!js.Expr {
+        const then_returns = i.then_.len > 0 and
+            switch (i.then_[i.then_.len - 1].expr) {
+                .jump => |j| j.kind == .@"return",
+                else => false,
+            };
+        const else_returns = if (i.else_) |els|
+            els.len > 0 and switch (els[els.len - 1].expr) {
+                .jump => |j| j.kind == .@"return",
+                else => false,
+            }
+        else
+            false;
+        const contains_return = then_returns or else_returns;
+
+        var seq: std.ArrayListUnmanaged(js.Stmt) = .empty;
+        const cond: js.Expr = if (i.binding) |b| blk: {
+            try seq.append(self.arena(), .{ .decl = .{
+                .pattern = .{ .name = b },
+                .value = try self.buildExpr(i.cond.*),
+            } });
+            break :blk try self.b.binaryBare("!==", .{ .name = b }, .null_);
+        } else try self.buildExpr(i.cond.*);
+
+        const then_block = js.Stmt{ .block = .{
+            .stmts = try self.buildBranchBody(i.then_, then_returns),
+            .layout = .spaced,
+        } };
+        const else_block: ?js.Stmt = if (i.else_) |els| js.Stmt{ .block = .{
+            .stmts = try self.buildBranchBody(els, else_returns),
+            .layout = .spaced,
+        } } else null;
+
+        try seq.append(self.arena(), if (else_block) |eb|
+            try self.b.ifElse(cond, then_block, eb)
+        else
+            try self.b.ifStmt(cond, then_block));
+
+        const stmts = try seq.toOwnedSlice(self.arena());
+        if (contains_return) {
+            return self.b.stmtExpr(.{ .block = .{ .stmts = stmts, .layout = .bare } });
+        }
+        return self.b.call(
+            try self.b.paren(try self.b.arrowBlock(&.{}, .{ .stmts = stmts, .layout = .spaced })),
+            &.{},
+        );
+    }
+
+    /// One branch of an `if` expression: every statement but the last as-is, the
+    /// last one as the branch's value unless it already transfers control.
+    fn buildBranchBody(self: *Emitter, body: []const ast.Stmt, last_returns: bool) ![]const js.Stmt {
+        if (body.len == 0) return &.{};
+        const out = try self.arena().alloc(js.Stmt, body.len);
+        for (body[0 .. body.len - 1], 0..) |st, i| out[i] = try self.buildStmt(st);
+        const last = body[body.len - 1];
+        out[body.len - 1] = if (last_returns) try self.buildStmt(last) else try self.buildIfLast(last);
+        return out;
+    }
+
+    fn buildLoop(self: *Emitter, lp: anytype) anyerror!js.Expr {
+        var has_yield = false;
+        for (lp.body) |stmt| {
+            if (switch (stmt.expr) {
+                .jump => |j| j.kind == .yield,
+                else => false,
+            }) {
+                has_yield = true;
+                break;
+            }
+        }
+
+        if (has_yield and !self.in_generator) {
+            // Outside a generator body, `loop (xs) { item -> yield item }` is an
+            // accumulator: it maps the collection into a new array.
+            const params = try self.arena().alloc(js.Param, lp.params.len);
+            for (lp.params, 0..) |p, i| params[i] = .{ .pattern = .{ .ident = p } };
+            var body: std.ArrayListUnmanaged(js.Stmt) = .empty;
+            for (lp.body) |stmt| {
+                const is_yield = switch (stmt.expr) {
+                    .jump => |j| j.kind == .yield,
+                    else => false,
+                };
+                if (!is_yield) {
+                    try body.append(self.arena(), try self.buildStmt(stmt));
+                    continue;
+                }
+                // A valueless `yield` contributes no element.
+                const val = stmt.expr.jump.kind.yield.value orelse continue;
+                try body.append(self.arena(), .{ .return_ = try self.buildExpr(val.*) });
+            }
+            return self.b.call(
+                try self.b.member(try self.buildExpr(lp.iter.*), "map"),
+                &.{try self.b.arrowBlock(params, .{
+                    .stmts = try body.toOwnedSlice(self.arena()),
+                    .layout = .fixed,
+                    .indent = self.current_indent,
+                })},
+            );
+        }
+
+        // Real iteration — inside a generator body the native `yield` inside a
+        // `for…of` is what makes `#[@iterator]` recursion work (a `.map()` would
+        // build a throwaway array and yield nothing). A `for` is a statement, so
+        // in expression position it can only be the bridge (defect JS-1).
+        //
+        // `loop (xs) { x -> … }` binds the ITEM; with two params the second is
+        // the index (`{ item, i -> … }`). `Array.entries()` yields numeric
+        // [index, item] pairs, so the destructure order is swapped.
+        // (`Object.entries` gave [stringKey, value], which bound the 1-param
+        // form to the index — a real bug.)
+        const pattern: js.Pattern = if (lp.params.len == 1)
+            .{ .ident = lp.params[0] }
+        else blk: {
+            const elems = try self.arena().alloc(js.Pattern, lp.params.len);
+            for (lp.params, 0..) |p, i| elems[lp.params.len - 1 - i] = .{ .ident = p };
+            break :blk js.Pattern{ .array = .{ .elems = elems } };
+        };
+        const iter: js.Expr = if (lp.params.len == 1)
+            try self.buildExpr(lp.iter.*)
+        else
+            try self.b.call(try self.b.member(try self.b.paren(try self.buildExpr(lp.iter.*)), "entries"), &.{});
+
+        return self.b.stmtExpr(.{ .for_of = .{
+            .pattern = pattern,
+            .iter = iter,
+            .body = .{
+                .stmts = try self.buildStmts(lp.body),
+                .layout = .fixed,
+                .indent = self.current_indent,
+            },
+        } });
+    }
+
+    // ── calls ─────────────────────────────────────────────────────────────────
+
+    /// Try lowering an `@builtin(…)` call from its `@external(node, …)`
+    /// annotation. Returns null when no annotation is registered.
+    fn tryBuiltinAnnotation(self: *Emitter, callee: []const u8, cc: anytype) anyerror!?js.Expr {
+        const call = self.builtin_node_dispatch.get(callee) orelse return null;
+        return self.renderDispatch(call, cc, error.PrimOpRecvInBuiltinTemplate);
+    }
+
+    /// §A2 user-fn template dispatch (commonJS): when a `declare fn`'s
+    /// `@external(node, …)` annotation is a template string (with `$0`/`$1`/…
+    /// markers) or an arity-branched `when(argc == N): "<tmpl>"` set,
+    /// render the template at the call site instead of emitting `fn(args)`
+    /// against an aliased symbol (which strips `this` for method-on-global
+    /// chains like `process.cwd()`).
+    fn tryUserTemplate(self: *Emitter, callee: []const u8, cc: anytype) anyerror!?js.Expr {
+        const call = self.user_node_templates.get(callee) orelse return null;
+        return self.renderDispatch(call, cc, error.PrimOpRecvInUserTemplate);
+    }
+
+    /// Shared body of the two dispatch tables: an arity-branched template, a
+    /// single template, or the `module`+`symbol` require form.
+    fn renderDispatch(self: *Emitter, call: BuiltinNodeCall, cc: anytype, recv_err: anyerror) anyerror!?js.Expr {
+        const argc = cc.args.len + cc.trailing.len;
+        if (call.arity_branches.len > 0) {
+            for (call.arity_branches) |branch| {
+                if (branch.argc != argc) continue;
+                return try self.renderTemplate(branch.template, cc, argc, recv_err);
+            }
+            return null;
+        }
+        if (primOpTemplate.looksLikeTemplate(call.symbol)) {
+            return try self.renderTemplate(call.symbol, cc, argc, recv_err);
+        }
+        // module+symbol form: `@External.Node("./mod", "fun")` —
+        // `require("<module>").<symbol>(<args>)`. Trailing lambdas are not
+        // supported in this form — declare fn helpers use fixed arity.
+        if (call.module.len > 0) {
+            const args = try self.arena().alloc(js.Expr, cc.args.len);
+            for (cc.args, 0..) |arg, i| args[i] = try self.buildExpr(arg.value.*);
+            return try self.b.call(
+                try self.b.member(try self.requireCall(call.module), call.symbol),
+                args,
+            );
+        }
+        return null;
+    }
+
+    fn renderTemplate(self: *Emitter, template: []const u8, cc: anytype, argc: usize, recv_err: anyerror) anyerror!js.Expr {
+        const Holes = CallHoles(@TypeOf(cc));
+        var holes = Holes{ .em = self, .cc = cc, .err = recv_err };
+        var tmpl = HostTemplate(Holes){ .arena = self.arena(), .holes = &holes, .argc = argc };
+        try primOpTemplate.render(template, &tmpl);
+        return tmpl.finish();
+    }
+
+    fn buildCall(self: *Emitter, loc: ast.Loc, cc: anytype) anyerror!js.Expr {
+        if (cc.is_builtin) return self.buildBuiltinCall(cc);
+
+        // builtin_node_dispatch: `declare fn` with `#[@External.Node]`.
+        // Handles both template (`$0.method()`) and module+symbol
+        // (`"./mod", "fun"`) forms discovered from primitives.bp +
+        // builtins_fns.d.bp.
+        if (self.builtin_node_dispatch.contains(cc.callee)) {
+            if (try self.tryBuiltinAnnotation(cc.callee, cc)) |node| return node;
+            // Fall through to a plain call if annotation dispatch fails.
+        }
+
+        var args: std.ArrayListUnmanaged(js.Expr) = .empty;
+        var callee: js.Expr = undefined;
+        var is_new = false;
+
+        if (cc.receiver) |recv| {
+            // Static extension dispatch: lower `recv.m(args)` to
+            // `Sym.m(recv, args)` at activated call sites.
+            if (self.rewrites.get(loc)) |sym| {
+                callee = try self.b.member(.{ .name = sym }, cc.callee);
+                try args.append(self.arena(), try self.buildExpr(recv.*));
+            } else {
+                const recv_node = try self.buildExpr(recv.*);
+                // §A4 rename: a 2-arg `@external(node, "X")` on a primitive
+                // interface method routes `recv.callee(args)` to
+                // `recv.X(args)`. The per-loc `renames` map (populated by
+                // inference's type-directed lookup) is consulted FIRST so a
+                // collision-prone name (`String.contains` vs `Set.contains`)
+                // lands the right rename. The type-naive `prim_node_renames`
+                // map (built from annotations at init) is the fallback for
+                // calls inference doesn't visit — interface default-fn bodies
+                // materialised as prototype patches (`out.append(inner)`
+                // inside `flatten`).
+                const loc_rename: ?[]const u8 = if (self.renames) |r| r.get(loc) else null;
+                const method = loc_rename orelse self.prim_node_renames.get(cc.callee) orelse cc.callee;
+                // `arr.len()`/`.size()`/`.length()` & `str.length()`: inference
+                // renamed these to `length` only for a typed array/string
+                // receiver — the native `.length` is a PROPERTY, so it is a
+                // member access with no call parens or args.
+                const len_prop = cc.args.len == 0 and cc.trailing.len == 0 and
+                    if (loc_rename) |rn| std.mem.eql(u8, rn, "length") else false;
+                if (len_prop) return self.b.memberOpt(recv_node, "length", cc.optional);
+                callee = try self.b.memberOpt(recv_node, method, cc.optional);
+            }
+        } else if (self.externals_missing.contains(cc.callee)) {
+            // External fn with no `node` target — no symbol to call on this
+            // backend.
+            return error.MissingExternalTarget;
+        } else if (self.user_node_templates.contains(cc.callee)) {
+            // §A2 template-form external — render the host shape inline (no
+            // `fnname(args)` against an aliased symbol; the alias would strip
+            // `this` for chained-method-on-global calls).
+            if (try self.tryUserTemplate(cc.callee, cc)) |node| return node;
+            // Arity didn't match any `when(argc == N)` branch — fall back to a
+            // plain call so the missing branch surfaces as a "fn is not
+            // defined" rather than silently emitting nothing.
+            callee = .{ .ident = cc.callee };
+        } else if (self.class_names.contains(cc.callee)) {
+            // Record/struct constructor — JS classes cannot be invoked without
+            // `new`.
+            callee = .{ .name = cc.callee };
+            is_new = true;
+        } else {
+            callee = .{ .ident = cc.callee };
+        }
+
+        for (cc.args) |arg| try args.append(self.arena(), try self.buildExpr(arg.value.*));
+        for (cc.trailing) |tl| try args.append(self.arena(), try self.buildArrow(tl.params, tl.body));
+
+        const arg_slice = try args.toOwnedSlice(self.arena());
+        return if (is_new) self.b.new_(callee, arg_slice) else self.b.call(callee, arg_slice);
+    }
+
+    fn buildBuiltinCall(self: *Emitter, cc: anytype) anyerror!js.Expr {
+        // `prim-op-annotation` builtin dispatch fires first (`@todo` /
+        // `@panic` annotated in `builtins.d.bp`).
+        if (try self.tryBuiltinAnnotation(cc.callee, cc)) |node| return node;
+
+        // Fallback for `@todo` / `@panic` when the annotation dispatch table is
+        // empty (builtins.d.bp may stop parsing earlier in the file and the
+        // collector silently swallows the parse error). Renders the same host
+        // template the annotation would have.
+        const is_todo = std.mem.eql(u8, cc.callee, "todo");
+        const is_panic = std.mem.eql(u8, cc.callee, "panic");
+        if (is_todo or is_panic) {
+            const template: []const u8 = if (cc.args.len > 0)
+                "(() => { throw new Error($0) })()"
+            else if (is_todo)
+                "(() => { throw new Error(\"not implemented\") })()"
+            else
+                "(() => { throw new Error(\"panic\") })()";
+            return self.renderTemplate(template, cc, cc.args.len, error.PrimOpRecvInBuiltinTemplate);
+        }
+
+        if (std.mem.eql(u8, cc.callee, "block")) {
+            // `@block` can be called as `@block(arg)` or `@block { body }`.
+            if (cc.args.len == 1) {
+                const arg = cc.args[0].value;
+                if (arg.* != .function) return error.InvalidArgs;
+                return self.buildExpr(arg.*);
+            }
+            if (cc.trailing.len == 1 and cc.trailing[0].params.len == 0) {
+                // `@block { body }` — a trailing lambda with no params.
+                return self.b.call(
+                    try self.b.paren(try self.b.arrowBlock(&.{}, .{
+                        .stmts = try self.buildStmts(cc.trailing[0].body),
+                        .layout = .tight,
+                    })),
+                    &.{},
+                );
+            }
+            return error.InvalidArgs;
+        }
+
+        if (std.mem.startsWith(u8, cc.callee, "__bp_")) {
+            return self.buildResultOptionOp(cc.callee, cc.args);
+        }
+
+        const args = try self.arena().alloc(js.Expr, cc.args.len);
+        for (cc.args, 0..) |arg, i| args[i] = try self.buildExpr(arg.value.*);
+
+        // `@expr(value)` / `@code(text)` — comptime template construction
+        // builtins; `@compilerError(msg)` — abort compilation from a comptime
+        // body. Only reachable when the template/decorator evaluator emits the
+        // body (those fns are dropped before normal codegen); its prelude
+        // defines `__expr`/`__code`/`__compilerError`.
+        if (std.mem.eql(u8, cc.callee, "expr") or std.mem.eql(u8, cc.callee, "code") or
+            std.mem.eql(u8, cc.callee, "compilerError") or std.mem.eql(u8, cc.callee, "emit"))
+        {
+            return self.b.call(.{ .name = try std.fmt.allocPrint(self.arena(), "__{s}", .{cc.callee}) }, args);
+        }
+        // An unrecognised builtin keeps its `@` so the gap is visible in the
+        // output rather than silently disappearing.
+        return self.b.call(.{ .name = try std.fmt.allocPrint(self.arena(), "@{s}", .{cc.callee}) }, args);
+    }
+
+    // ── case lowering ─────────────────────────────────────────────────────────
 
     fn isLambdaBlock(e: ast.Expr) bool {
         return switch (e) {
@@ -3202,305 +2797,227 @@ const Emitter = struct {
         };
     }
 
-    fn emitCaseBody(self: *Emitter, body: ast.Expr, b: *JsBuilder) !void {
-        if (switch (body) {
-            .function => |f| f.kind.syntax == .lambda,
-            else => false,
-        }) {
-            const l = body.function.kind;
-            self.current_indent = b.indent_level;
-            for (l.body) |st| {
-                b.writeIndent();
-                switch (st.expr) {
-                    .jump => |j| switch (j.kind) {
-                        .@"break" => |br| if (br.value) |bp| {
-                            try self.w("return ");
-                            try self.emitExpr(bp.*);
-                            try self.w(";");
-                        },
-                        else => try self.emitStmt(st),
-                    },
-                    else => try self.emitStmt(st),
-                }
-                b.newline();
-            }
-            self.current_indent = b.indent_level;
-        } else {
-            try self.emitExpr(body);
+    /// The statements of a matched arm body: an inlined lambda block (with a
+    /// loop-accumulator `break` turned into the arm's `return`), or a single
+    /// `return <expr>;`.
+    fn buildCaseBody(self: *Emitter, body: ast.Expr, indent: usize) anyerror![]const js.Stmt {
+        if (!isLambdaBlock(body)) {
+            return self.b.stmts(&.{.{ .return_ = try self.buildExpr(body) }});
         }
-    }
-
-    fn buildCondStr(self: *Emitter, pat: ast.Pattern) ![]const u8 {
-        var buf: std.Io.Writer.Allocating = .init(self.alloc);
-        defer buf.deinit();
-        switch (pat) {
-            .numberLit => |n| try buf.writer.print("_s === {s}", .{n}),
-            .stringLit => |s| {
-                try buf.writer.writeAll("_s === ");
-                var sw = Emitter{ .out = &buf.writer, .alloc = self.alloc, .cv = self.cv, .rewrites = self.rewrites, .externals = self.externals, .externals_missing = self.externals_missing, .class_names = self.class_names, .seen_imports = self.seen_imports, .prim_node_renames = self.prim_node_renames, .builtin_node_dispatch = self.builtin_node_dispatch, .user_node_templates = self.user_node_templates };
-                try sw.emitJsonString(s);
-            },
-            .ident => |n| try buf.writer.print("_s === \"{s}\"", .{n}),
-            .@"or" => |pats| {
-                for (pats, 0..) |p, pi| {
-                    if (pi > 0) try buf.writer.writeAll(" || ");
-                    try self.writePatternCond(&buf.writer, p);
-                }
-            },
-            else => {},
-        }
-        return try buf.toOwnedSlice();
-    }
-
-    fn writePatternCond(self: *Emitter, wr: *std.Io.Writer, pat: ast.Pattern) !void {
-        switch (pat) {
-            .numberLit => |n| try wr.print("_s === {s}", .{n}),
-            .stringLit => |s| {
-                try wr.writeAll("_s === ");
-                var sw = Emitter{ .out = wr, .alloc = self.alloc, .cv = self.cv, .rewrites = self.rewrites, .externals = self.externals, .externals_missing = self.externals_missing, .class_names = self.class_names, .seen_imports = self.seen_imports, .prim_node_renames = self.prim_node_renames, .builtin_node_dispatch = self.builtin_node_dispatch, .user_node_templates = self.user_node_templates };
-                try sw.emitJsonString(s);
-            },
-            .ident => |n| try wr.print("_s === \"{s}\"", .{n}),
-            else => try wr.writeAll("false"),
-        }
-    }
-
-    /// Emit `return <body>;` for a matched arm, gated by the arm's guard when
-    /// present: `if (<guard>) return <body>;`.
-    fn emitGuardedReturn(self: *Emitter, b: *JsBuilder, arm: ast.CaseArm) !void {
-        if (arm.guard) |g| {
-            b.line("if (");
-            try self.emitExpr(g);
-            b.raw(") return ");
-        } else {
-            b.line("return ");
-        }
-        try self.emitExpr(arm.body);
-        b.raw(";");
-        b.newline();
-    }
-
-    /// Emit a matched arm body — either a `return <expr>;` or an inlined lambda
-    /// block — gated by the arm's guard when present.
-    fn emitMatchedBody(self: *Emitter, b: *JsBuilder, arm: ast.CaseArm) !void {
-        if (isLambdaBlock(arm.body)) {
-            if (arm.guard) |g| {
-                b.line("if (");
-                try self.emitExpr(g);
-                b.raw(") {");
-                b.newline();
-                b.indent();
-                try self.emitCaseBody(arm.body, b);
-                b.close();
-                b.newline();
+        const l = body.function.kind;
+        self.current_indent = indent;
+        var out: std.ArrayListUnmanaged(js.Stmt) = .empty;
+        for (l.body) |st| {
+            const br: ?ast.Expr = switch (st.expr) {
+                .jump => |j| switch (j.kind) {
+                    .@"break" => |b| if (b.value) |bp| bp.* else null,
+                    else => null,
+                },
+                else => null,
+            };
+            if (br) |val| {
+                try out.append(self.arena(), .{ .return_ = try self.buildExpr(val) });
             } else {
-                try self.emitCaseBody(arm.body, b);
+                try out.append(self.arena(), try self.buildStmt(st));
             }
-        } else {
-            try self.emitGuardedReturn(b, arm);
+        }
+        self.current_indent = indent;
+        return out.toOwnedSlice(self.arena());
+    }
+
+    /// The `_s === …` test an arm's pattern becomes, or null when the pattern
+    /// has no test — the lowering then leaves the condition empty
+    /// (`Expr.missing`, defect JS-2) or drops the `if` altogether.
+    fn buildCondExpr(self: *Emitter, pat: ast.Pattern) anyerror!?js.Expr {
+        const subject = js.Expr{ .name = "_s" };
+        switch (pat) {
+            .numberLit => |n| return try self.b.binaryBare("===", subject, .{ .number = n }),
+            .stringLit => |s| return try self.b.binaryBare("===", subject, .{ .lexeme_string = s }),
+            .ident => |n| return try self.b.binaryBare("===", subject, .{ .quoted = n }),
+            .@"or" => |pats| {
+                if (pats.len == 0) return null;
+                var acc = try self.patternCond(pats[0]);
+                for (pats[1..]) |p| acc = try self.b.binaryBare("||", acc, try self.patternCond(p));
+                return acc;
+            },
+            else => return null,
         }
     }
 
-    fn emitCase(
+    /// One alternative of an `or` pattern; anything with no test is `false`.
+    fn patternCond(self: *Emitter, pat: ast.Pattern) anyerror!js.Expr {
+        const subject = js.Expr{ .name = "_s" };
+        return switch (pat) {
+            .numberLit => |n| try self.b.binaryBare("===", subject, .{ .number = n }),
+            .stringLit => |s| try self.b.binaryBare("===", subject, .{ .lexeme_string = s }),
+            .ident => |n| try self.b.binaryBare("===", subject, .{ .quoted = n }),
+            else => js.Expr{ .name = "false" },
+        };
+    }
+
+    /// `return <body>;` for a matched arm, gated by the arm's guard when
+    /// present: `if (<guard>) return <body>;`.
+    fn buildGuardedReturn(self: *Emitter, arm: ast.CaseArm) anyerror!js.Stmt {
+        const ret = js.Stmt{ .return_ = try self.buildExpr(arm.body) };
+        const g = arm.guard orelse return ret;
+        return self.b.ifStmt(try self.buildExpr(g), ret);
+    }
+
+    /// A matched arm body — either a `return <expr>;` or an inlined lambda
+    /// block — gated by the arm's guard when present.
+    fn buildMatchedBody(self: *Emitter, arm: ast.CaseArm, indent: usize) anyerror![]const js.Stmt {
+        if (!isLambdaBlock(arm.body)) {
+            return self.b.stmts(&.{try self.buildGuardedReturn(arm)});
+        }
+        const g = arm.guard orelse return self.buildCaseBody(arm.body, indent);
+        return self.b.stmts(&.{try self.b.ifStmt(try self.buildExpr(g), .{ .block = .{
+            .stmts = try self.buildCaseBody(arm.body, indent + 1),
+            .indent = indent,
+        } })});
+    }
+
+    fn buildCase(self: *Emitter, subjects: []ast.Expr, arms: []ast.CaseArm) anyerror!js.Expr {
+        const base = self.current_indent;
+        const indent = base + 1;
+
+        var stmts: std.ArrayListUnmanaged(js.Stmt) = .empty;
+        const subject: js.Expr = if (subjects.len == 1)
+            try self.buildExpr(subjects[0])
+        else blk: {
+            const elems = try self.arena().alloc(js.Expr, subjects.len);
+            for (subjects, 0..) |s, i| elems[i] = try self.buildExpr(s);
+            break :blk js.Expr{ .array = .{ .elems = elems } };
+        };
+        try stmts.append(self.arena(), .{ .decl = .{ .pattern = .{ .name = "_s" }, .value = subject } });
+
+        for (arms) |arm| try stmts.append(self.arena(), try self.buildCaseArm(arm, indent));
+
+        return self.b.call(
+            try self.b.paren(try self.b.arrowBlock(&.{}, .{
+                .stmts = try stmts.toOwnedSlice(self.arena()),
+                .indent = base,
+            })),
+            &.{},
+        );
+    }
+
+    fn buildCaseArm(self: *Emitter, arm: ast.CaseArm, indent: usize) anyerror!js.Stmt {
+        const subject = js.Expr{ .name = "_s" };
+        switch (arm.pattern) {
+            .wildcard => {
+                if (arm.guard != null) {
+                    return self.b.group(try self.buildMatchedBody(arm, indent));
+                }
+                if (isLambdaBlock(arm.body)) {
+                    return .{ .block = .{ .stmts = try self.buildCaseBody(arm.body, indent + 1), .indent = indent } };
+                }
+                return .{ .return_ = try self.buildExpr(arm.body) };
+            },
+
+            .ident, .numberLit, .stringLit, .@"or", .multi => {
+                if (arm.pattern == .ident and arm.guard != null) {
+                    // A guarded identifier binds the subject, then tests the guard.
+                    var body: std.ArrayListUnmanaged(js.Stmt) = .empty;
+                    try body.append(self.arena(), .{ .decl = .{
+                        .pattern = .{ .ident = arm.pattern.ident },
+                        .value = subject,
+                    } });
+                    for (try self.buildMatchedBody(arm, indent + 1)) |s| try body.append(self.arena(), s);
+                    return .{ .block = .{ .stmts = try body.toOwnedSlice(self.arena()), .indent = indent } };
+                }
+                const cond = try self.buildCondExpr(arm.pattern);
+                if (arm.guard != null) {
+                    const body = js.Stmt{ .block = .{
+                        .stmts = try self.buildMatchedBody(arm, indent + 1),
+                        .indent = indent,
+                    } };
+                    // A pattern with no test loses its `if` entirely and leaves
+                    // a bare block, exactly as before.
+                    return if (cond) |c| try self.b.ifStmt(c, body) else body;
+                }
+                if (isLambdaBlock(arm.body)) {
+                    const body = js.Stmt{ .block = .{
+                        .stmts = try self.buildCaseBody(arm.body, indent + 1),
+                        .indent = indent,
+                    } };
+                    return if (cond) |c| try self.b.ifStmt(c, body) else body;
+                }
+                return self.b.ifStmt(cond orelse .missing, .{ .return_ = try self.buildExpr(arm.body) });
+            },
+
+            .variant => |v| {
+                var body: std.ArrayListUnmanaged(js.Stmt) = .empty;
+                switch (v.payload) {
+                    .binding => |binding| try body.append(self.arena(), .{ .decl = .{
+                        .pattern = .{ .ident = binding },
+                        .value = subject,
+                    } }),
+                    .fields => |fields| if (fields.len > 0) {
+                        const props = try self.arena().alloc(js.ObjectPattern.Prop, fields.len);
+                        for (fields, 0..) |bb, bi| props[bi] = .{ .key = bb };
+                        try body.append(self.arena(), .{ .decl = .{
+                            .pattern = .{ .object = .{ .props = props } },
+                            .value = subject,
+                        } });
+                    },
+                    .literals => {},
+                }
+                for (try self.buildMatchedBody(arm, indent + 1)) |s| try body.append(self.arena(), s);
+                return self.b.ifStmt(
+                    try self.b.binaryBare("===", try self.b.member(subject, "tag"), .{ .quoted = v.name }),
+                    .{ .block = .{ .stmts = try body.toOwnedSlice(self.arena()), .indent = indent } },
+                );
+            },
+
+            .list => |lp| {
+                const len_of = try self.b.member(subject, "length");
+                if (lp.spread) |sp| {
+                    if (lp.elems.len == 0 and sp.len == 0) {
+                        return .{ .return_ = try self.buildExpr(arm.body) };
+                    }
+                    var body: std.ArrayListUnmanaged(js.Stmt) = .empty;
+                    if (sp.len > 0) try body.append(self.arena(), .{ .decl = .{
+                        .pattern = .{ .ident = sp },
+                        .value = try self.b.call(try self.b.member(subject, "slice"), &.{
+                            .{ .number = try std.fmt.allocPrint(self.arena(), "{d}", .{lp.elems.len}) },
+                        }),
+                    } });
+                    try self.appendListElemBinds(&body, lp.elems, subject);
+                    try body.append(self.arena(), .{ .return_ = try self.buildExpr(arm.body) });
+                    return self.b.ifStmt(
+                        try self.b.binaryBare(">=", len_of, .{ .number = try std.fmt.allocPrint(self.arena(), "{d}", .{lp.elems.len}) }),
+                        .{ .block = .{ .stmts = try body.toOwnedSlice(self.arena()), .indent = indent } },
+                    );
+                }
+                if (lp.elems.len == 0) {
+                    return self.b.ifStmt(
+                        try self.b.binaryBare("===", len_of, .{ .number = "0" }),
+                        .{ .return_ = try self.buildExpr(arm.body) },
+                    );
+                }
+                var body: std.ArrayListUnmanaged(js.Stmt) = .empty;
+                try self.appendListElemBinds(&body, lp.elems, subject);
+                try body.append(self.arena(), .{ .return_ = try self.buildExpr(arm.body) });
+                return self.b.ifStmt(
+                    try self.b.binaryBare("===", len_of, .{ .number = try std.fmt.allocPrint(self.arena(), "{d}", .{lp.elems.len}) }),
+                    .{ .block = .{ .stmts = try body.toOwnedSlice(self.arena()), .indent = indent } },
+                );
+            },
+        }
+    }
+
+    fn appendListElemBinds(
         self: *Emitter,
-        subjects: []ast.Expr,
-        arms: []ast.CaseArm,
-        _: ?*JsBuilder,
+        body: *std.ArrayListUnmanaged(js.Stmt),
+        elems: []const ast.ListPatternElem,
+        subject: js.Expr,
     ) !void {
-        var b = JsBuilder.init(self.alloc, self.out);
-        b.indent_level = self.current_indent;
-
-        b.raw("(() => {");
-        b.newline();
-        b.indent();
-        if (subjects.len == 1) {
-            b.line("const _s = ");
-            try self.emitExpr(subjects[0]);
-            b.raw(";");
-            b.newline();
-        } else {
-            b.line("const _s = [");
-            for (subjects, 0..) |s, i| {
-                if (i > 0) b.raw(", ");
-                try self.emitExpr(s);
-            }
-            b.raw("];");
-            b.newline();
-        }
-
-        for (arms) |arm| {
-            switch (arm.pattern) {
-                .wildcard => {
-                    if (arm.guard != null) {
-                        try self.emitMatchedBody(&b, arm);
-                    } else if (isLambdaBlock(arm.body)) {
-                        b.open("");
-                        try self.emitCaseBody(arm.body, &b);
-                        b.close();
-                        b.newline();
-                    } else {
-                        b.line("return ");
-                        try self.emitExpr(arm.body);
-                        b.raw(";");
-                        b.newline();
-                    }
-                },
-
-                .ident, .numberLit, .stringLit, .@"or", .multi => {
-                    if (arm.pattern == .ident and arm.guard != null) {
-                        // A guarded identifier binds the subject, then tests the guard.
-                        b.open("");
-                        b.fmtLine("const {s} = _s;", .{jsIdent(arm.pattern.ident)});
-                        b.newline();
-                        try self.emitMatchedBody(&b, arm);
-                        b.close();
-                        b.newline();
-                    } else if (arm.guard != null) {
-                        const cond = try self.buildCondStr(arm.pattern);
-                        defer self.alloc.free(cond);
-                        b.open(cond);
-                        try self.emitMatchedBody(&b, arm);
-                        b.close();
-                        b.newline();
-                    } else {
-                        const cond = try self.buildCondStr(arm.pattern);
-                        defer self.alloc.free(cond);
-                        if (isLambdaBlock(arm.body)) {
-                            b.open(cond);
-                            try self.emitCaseBody(arm.body, &b);
-                            b.close();
-                            b.newline();
-                        } else {
-                            b.fmtLine("if ({s}) return ", .{cond});
-                            try self.emitExpr(arm.body);
-                            b.raw(";");
-                            b.newline();
-                        }
-                    }
-                },
-
-                .variant => |v| {
-                    b.fmtLine("if (_s.tag === \"{s}\") {{", .{v.name});
-                    b.newline();
-                    b.indent();
-                    switch (v.payload) {
-                        .binding => |binding| {
-                            b.fmtLine("const {s} = _s;", .{jsIdent(binding)});
-                            b.newline();
-                        },
-                        .fields => |fields| if (fields.len > 0) {
-                            b.line("const { ");
-                            for (fields, 0..) |bb, bi| {
-                                if (bi > 0) b.raw(", ");
-                                const sanitized = jsIdent(bb);
-                                if (sanitized.ptr == bb.ptr) {
-                                    b.raw(bb);
-                                } else {
-                                    b.raw(bb);
-                                    b.raw(": ");
-                                    b.raw(sanitized);
-                                }
-                            }
-                            b.raw(" } = _s;");
-                            b.newline();
-                        },
-                        .literals => {},
-                    }
-                    try self.emitMatchedBody(&b, arm);
-                    b.close();
-                    b.newline();
-                },
-
-                .list => |lp| {
-                    if (lp.spread) |sp| {
-                        if (lp.elems.len == 0 and sp.len == 0) {
-                            b.line("return ");
-                            try self.emitExpr(arm.body);
-                            b.raw(";");
-                            b.newline();
-                        } else {
-                            b.fmtLine("if (_s.length >= {d}) {{", .{lp.elems.len});
-                            b.newline();
-                            b.indent();
-                            if (sp.len > 0) {
-                                b.fmtLine("const {s} = _s.slice({d});", .{ jsIdent(sp), lp.elems.len });
-                                b.newline();
-                            }
-                            for (lp.elems, 0..) |elem, ei| switch (elem) {
-                                .bind => |bb| {
-                                    b.fmtLine("const {s} = _s[{d}];", .{ jsIdent(bb), ei });
-                                    b.newline();
-                                },
-                                else => {},
-                            };
-                            b.line("return ");
-                            try self.emitExpr(arm.body);
-                            b.raw(";");
-                            b.newline();
-                            b.close();
-                            b.newline();
-                        }
-                    } else if (lp.elems.len == 0) {
-                        b.fmtLine("if (_s.length === 0) return ", .{});
-                        try self.emitExpr(arm.body);
-                        b.raw(";");
-                        b.newline();
-                    } else {
-                        b.fmtLine("if (_s.length === {d}) {{", .{lp.elems.len});
-                        b.newline();
-                        b.indent();
-                        for (lp.elems, 0..) |elem, ei| switch (elem) {
-                            .bind => |bb| {
-                                b.fmtLine("const {s} = _s[{d}];", .{ jsIdent(bb), ei });
-                                b.newline();
-                            },
-                            else => {},
-                        };
-                        b.line("return ");
-                        try self.emitExpr(arm.body);
-                        b.raw(";");
-                        b.newline();
-                        b.close();
-                        b.newline();
-                    }
-                },
-            }
-        }
-
-        b.dedent();
-        b.line("})()");
-    }
-
-    // ── string helper ─────────────────────────────────────────────────────────
-
-    /// Emit a botopink string literal's RAW content as a JS string literal.
-    /// The lexer has already validated every textual escape (`\n`, `\"`,
-    /// `\\`, `\$`, `\u{…}`, …) and the escape set is JS-compatible, so escape
-    /// PAIRS pass through verbatim — re-escaping their backslash would double
-    /// source escapes (`"\n"` would print a literal `\n` at runtime). Only
-    /// real control characters and unescaped quotes (multiline `"""` content)
-    /// need escaping here.
-    fn emitJsonString(self: *Emitter, s: []const u8) !void {
-        try self.out.writeByte('"');
-        var i: usize = 0;
-        while (i < s.len) : (i += 1) {
-            const c = s[i];
-            switch (c) {
-                '\\' => {
-                    // A validated escape — copy the pair verbatim.
-                    try self.out.writeByte('\\');
-                    if (i + 1 < s.len) {
-                        i += 1;
-                        try self.out.writeByte(s[i]);
-                    }
-                },
-                '"' => try self.out.writeAll("\\\""),
-                '\n' => try self.out.writeAll("\\n"),
-                '\r' => try self.out.writeAll("\\r"),
-                '\t' => try self.out.writeAll("\\t"),
-                else => try self.out.writeByte(c),
-            }
-        }
-        try self.out.writeByte('"');
+        for (elems, 0..) |elem, ei| switch (elem) {
+            .bind => |bb| try body.append(self.arena(), .{ .decl = .{
+                .pattern = .{ .ident = bb },
+                .value = try self.b.index(subject, .{ .number = try std.fmt.allocPrint(self.arena(), "{d}", .{ei}) }, false),
+            } }),
+            else => {},
+        };
     }
 };
