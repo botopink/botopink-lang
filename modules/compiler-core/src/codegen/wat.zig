@@ -1,6 +1,9 @@
 /// WebAssembly Text (`.wat`) codegen backend.
 ///
-/// Emits a `(module ...)` form that `wasmtime` can execute directly.
+/// Lowers botopink into the `wat/wat_ast.zig` code model; `wat/wat_emitter.zig`
+/// turns that model into the `(module ...)` text `wasmtime` executes. Nothing
+/// in this file writes target syntax — the same split as `codegen/erlang.zig`
+/// over `codegen/beam/erl_ast.zig`.
 ///
 /// Covers: numeric fn decls, arithmetic, comparisons, if/else, return,
 /// top-level val as globals, fn main/0 wrapper, linear memory with bump
@@ -13,11 +16,52 @@ const moduleOutput = @import("./moduleOutput.zig");
 const configMod = @import("./config.zig");
 const ast = @import("../ast.zig");
 const crossModule = @import("./crossModule.zig");
+const wat = @import("./wat/wat_ast.zig");
+const watEmitter = @import("./wat/wat_emitter.zig");
+const prelude = @import("./wat/wat_prelude.zig");
 
 const CrossModule = crossModule.CrossModule;
 
 const ModuleOutput = moduleOutput.ModuleOutput;
 const ComptimeOutput = comptimeMod.ComptimeOutput;
+
+const Instr = wat.Instr;
+const Line = wat.Line;
+const Seq = wat.Seq;
+const Item = wat.Item;
+const ValType = wat.ValType;
+
+/// The `ValType` a backend-internal type name (`"i32"`, `"f64"`, …) stands for.
+/// Lowering recovers types as spelled strings; the model is an enum, and this
+/// is the one place the two meet.
+fn vt(name: []const u8) ValType {
+    return ValType.parse(name);
+}
+
+/// `i32.const <text>` / `f64.const <text>` — the numeral keeps its spelling.
+fn constOf(ty: []const u8, text: []const u8) Instr {
+    return .{ .@"const" = .{ .ty = vt(ty), .text = text } };
+}
+
+/// `<ty>.<name>` (`i32.add`, `f64.lt`, `i32.eqz`, …).
+fn opOf(ty: []const u8, name: []const u8) Instr {
+    return .{ .op = .{ .ty = vt(ty), .name = name } };
+}
+
+/// `i32.const 0` — the carrier this backend uses for absence, false, a null
+/// pointer and every construct it cannot lower.
+const zero: Instr = .{ .@"const" = .{ .ty = .i32, .text = "0" } };
+
+/// `i32.const 1` — the true carrier.
+const one: Instr = .{ .@"const" = .{ .ty = .i32, .text = "1" } };
+
+/// The bump-allocator pointer every aggregate construction advances.
+const heap_ptr = "__heap_ptr";
+
+/// Comments the Result/Option lowering repeats often enough to name.
+const result_tag = "Result tag (0 = Ok, non-zero = Error)";
+const ok_payload = "Ok payload";
+const option_shape = "Option (0 = None, else Some payload)";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -86,10 +130,14 @@ fn isBoolTypeRef(t: ast.TypeRef) bool {
 pub fn emitFnWat(alloc: std.mem.Allocator, out: *std.Io.Writer, f: ast.FnDecl) !void {
     const cv = std.StringHashMap([]const u8).init(alloc);
     const rewrites = std.AutoHashMap(ast.Loc, []const u8).init(alloc);
-    var em = Emitter.init(alloc, out, cv, rewrites);
+    var em = Emitter.init(alloc, cv, rewrites);
     em.uses_str_concat_rt = true; // template bodies use runtime string concat
     defer em.deinit();
     try em.emitFn(f);
+    // Forms only, no `(module …)` wrapper: the caller concatenates them with
+    // the `wat_runtime` prelude, which is where this fn's `$__str_concat_rt` /
+    // `$__capture` callees are defined.
+    for (em.items.items) |it| try watEmitter.renderItem(out, it);
 }
 
 pub fn codegenEmit(
@@ -155,10 +203,7 @@ fn emitWat(
 ) ![]u8 {
     _ = module_name;
 
-    var fn_buf: std.Io.Writer.Allocating = .init(alloc);
-    defer fn_buf.deinit();
-
-    var em = Emitter.init(alloc, &fn_buf.writer, comptime_vals, rewrites);
+    var em = Emitter.init(alloc, comptime_vals, rewrites);
     defer em.deinit();
     try em.registerTypes(program);
     try em.collectExtensions(program);
@@ -183,7 +228,7 @@ fn emitWat(
         .val => |v| {
             if (!isSyntheticEntrypointVal(v)) try em.emitGlobalVal(v);
         },
-        .comment => |c| try fn_buf.writer.print("  ;; {s}\n", .{c.text}),
+        .comment => |c| try em.itemComment(c.text),
         // Extension methods lower to linear-memory functions named
         // `$<target>_<method>` so activated/qualified dispatch can `call` them.
         .implement => |im| try em.emitExtensionMethods(im.target, im.methods),
@@ -201,8 +246,8 @@ fn emitWat(
         .use => |u| if (cross) |xc| {
             for (u.imports) |imp| {
                 if (xc.exports.get(imp.name())) |info| {
-                    try fn_buf.writer.print(
-                        "  ;; cross-module import not linked (wasm single-module): {s} from {s}\n",
+                    try em.itemCommentF(
+                        "cross-module import not linked (wasm single-module): {s} from {s}",
                         .{ imp.name(), info.module },
                     );
                 }
@@ -217,568 +262,52 @@ fn emitWat(
 
     if (has_main_0) try em.emitEntrypointWrapper(main_returns_value);
 
-    var aw: std.Io.Writer.Allocating = .init(alloc);
-    defer aw.deinit();
+    // ── assemble the module ──────────────────────────────────────────────
+    //
+    // Order is this backend's, not the emitter's: imports, memory, the
+    // instantiation hook, the interned data, the bump-allocator pointer, the
+    // lowered forms, then the runtime helpers the lowering asked for.
+    const ar = em.arena();
+    var items: std.ArrayListUnmanaged(Item) = .empty;
 
-    try aw.writer.writeAll("(module\n");
+    // The print helpers are the only thing that needs a host function, and
+    // `Builder.helper` is the only way to have called one.
+    if (em.b.helpers.print) try items.append(ar, .{ .import = prelude.fd_write_import });
 
-    const has_print = em.uses_print;
-    if (has_print) {
-        try aw.writer.writeAll("  (import \"wasi_snapshot_preview1\" \"fd_write\" (func $fd_write (param i32 i32 i32 i32) (result i32)))\n");
-    }
-
-    try aw.writer.writeAll("  (memory (export \"memory\") 1)\n");
+    try items.append(ar, .{ .memory = .{ .@"export" = "memory", .min_pages = 1 } });
 
     // Runs at instantiation, ahead of `_start`: fills in the globals whose
     // initialiser is not a constant expression.
     if (em.deferred_globals.items.len > 0)
-        try aw.writer.writeAll("  (start $__init_globals)\n");
+        try items.append(ar, .{ .start = "__init_globals" });
 
     for (em.data_segments.items) |seg| {
-        try aw.writer.writeAll("  (data (i32.const ");
-        try aw.writer.print("{d}", .{seg.offset});
-        try aw.writer.writeAll(") \"");
-        // 4-byte little-endian length prefix, then the raw bytes.
-        const lenbytes = [4]u8{
-            @truncate(seg.len),
-            @truncate(seg.len >> 8),
-            @truncate(seg.len >> 16),
-            @truncate(seg.len >> 24),
-        };
-        for (lenbytes) |lc| try aw.writer.print("\\{x:0>2}", .{lc});
-        for (seg.content) |c| switch (c) {
-            '\n' => try aw.writer.writeAll("\\n"),
-            '"' => try aw.writer.writeAll("\\\""),
-            '\\' => try aw.writer.writeAll("\\\\"),
-            '\t' => try aw.writer.writeAll("\\t"),
-            '\r' => try aw.writer.writeAll("\\r"),
-            else => if (c < 0x20)
-                try aw.writer.print("\\{x:0>2}", .{c})
-            else
-                try aw.writer.writeByte(c),
-        };
-        try aw.writer.writeAll("\")\n");
+        try items.append(ar, .{ .data = .{
+            .offset = seg.offset,
+            .len_prefix = seg.len,
+            .bytes = seg.content,
+        } });
     }
 
-    const heap_start = em.next_data_offset;
-    try aw.writer.print("  (global $__heap_ptr (mut i32) (i32.const {d}))\n", .{heap_start});
+    try items.append(ar, .{ .global = .{
+        .name = "__heap_ptr",
+        .ty = .i32,
+        .mutable = true,
+        .init = try std.fmt.allocPrint(ar, "{d}", .{em.next_data_offset}),
+    } });
 
-    try aw.writer.writeAll(fn_buf.written());
+    try items.appendSlice(ar, em.items.items);
 
-    if (has_print) {
-        try aw.writer.writeAll(
-            \\  ;; Scratch layout below the data section (which starts at 256):
-            \\  ;;   0..8  WASI iovec   8  newline byte
-            \\  ;;  16..32 bool text   32..64 float fraction   64..128 i32 digits
-            \\  (func $__write_bytes (param $p i32) (param $n i32)
-            \\    i32.const 0
-            \\    local.get $p
-            \\    i32.store
-            \\    i32.const 4
-            \\    local.get $n
-            \\    i32.store
-            \\    i32.const 1
-            \\    i32.const 0
-            \\    i32.const 1
-            \\    i32.const 8
-            \\    call $fd_write
-            \\    drop
-            \\  )
-            \\  (func $__print_nl
-            \\    i32.const 8
-            \\    i32.const 10
-            \\    i32.store8
-            \\    i32.const 8
-            \\    i32.const 1
-            \\    call $__write_bytes
-            \\  )
-            \\  ;; separator between the arguments of a multi-argument `@print`
-            \\  (func $__print_sp
-            \\    i32.const 8
-            \\    i32.const 32
-            \\    i32.store8
-            \\    i32.const 8
-            \\    i32.const 1
-            \\    call $__write_bytes
-            \\  )
-            \\  (func $__print_i32 (param $n i32)
-            \\    local.get $n
-            \\    call $__print_i32_raw
-            \\    call $__print_nl
-            \\  )
-            \\  (func $__print_i32_raw (param $n i32)
-            \\    (local $buf i32) (local $len i32) (local $neg i32) (local $d i32)
-            \\    (local $i i32) (local $j i32) (local $tmp i32)
-            \\    i32.const 64
-            \\    local.set $buf
-            \\    local.get $n
-            \\    i32.const 0
-            \\    i32.lt_s
-            \\    (if
-            \\      (then
-            \\        i32.const 1
-            \\        local.set $neg
-            \\        i32.const 0
-            \\        local.get $n
-            \\        i32.sub
-            \\        local.set $n
-            \\      )
-            \\    )
-            \\    (block $done
-            \\      (loop $digits
-            \\        local.get $n
-            \\        i32.const 10
-            \\        i32.rem_u
-            \\        i32.const 48
-            \\        i32.add
-            \\        local.set $d
-            \\        local.get $buf
-            \\        local.get $len
-            \\        i32.add
-            \\        local.get $d
-            \\        i32.store8
-            \\        local.get $len
-            \\        i32.const 1
-            \\        i32.add
-            \\        local.set $len
-            \\        local.get $n
-            \\        i32.const 10
-            \\        i32.div_u
-            \\        local.set $n
-            \\        local.get $n
-            \\        i32.const 0
-            \\        i32.gt_u
-            \\        br_if $digits
-            \\      )
-            \\    )
-            \\    ;; reverse
-            \\    i32.const 0
-            \\    local.set $i
-            \\    local.get $len
-            \\    i32.const 1
-            \\    i32.sub
-            \\    local.set $j
-            \\    (block $rdone
-            \\      (loop $rev
-            \\        local.get $i
-            \\        local.get $j
-            \\        i32.ge_u
-            \\        br_if $rdone
-            \\        local.get $buf
-            \\        local.get $i
-            \\        i32.add
-            \\        i32.load8_u
-            \\        local.set $tmp
-            \\        local.get $buf
-            \\        local.get $i
-            \\        i32.add
-            \\        local.get $buf
-            \\        local.get $j
-            \\        i32.add
-            \\        i32.load8_u
-            \\        i32.store8
-            \\        local.get $buf
-            \\        local.get $j
-            \\        i32.add
-            \\        local.get $tmp
-            \\        i32.store8
-            \\        local.get $i
-            \\        i32.const 1
-            \\        i32.add
-            \\        local.set $i
-            \\        local.get $j
-            \\        i32.const 1
-            \\        i32.sub
-            \\        local.set $j
-            \\        br $rev
-            \\      )
-            \\    )
-            \\    ;; add neg sign + newline
-            \\    ;; shift the digits one byte right to make room for '-'
-            \\    ;; (dst = buf+1, NOT buf+len: the latter moved them `len`
-            \\    ;;  bytes and printed -12 as -21)
-            \\    local.get $neg
-            \\    (if
-            \\      (then
-            \\        local.get $buf
-            \\        i32.const 1
-            \\        i32.add
-            \\        local.get $buf
-            \\        local.get $len
-            \\        call $__memmove
-            \\        local.get $buf
-            \\        i32.const 45
-            \\        i32.store8
-            \\        local.get $len
-            \\        i32.const 1
-            \\        i32.add
-            \\        local.set $len
-            \\      )
-            \\    )
-            \\    local.get $buf
-            \\    local.get $len
-            \\    call $__write_bytes
-            \\  )
-            \\  (func $__memmove (param $dst i32) (param $src i32) (param $len i32)
-            \\    (local $i i32)
-            \\    local.get $len
-            \\    i32.const 1
-            \\    i32.sub
-            \\    local.set $i
-            \\    (block $done
-            \\      (loop $loop
-            \\        local.get $i
-            \\        i32.const 0
-            \\        i32.lt_s
-            \\        br_if $done
-            \\        local.get $dst
-            \\        local.get $i
-            \\        i32.add
-            \\        local.get $src
-            \\        local.get $i
-            \\        i32.add
-            \\        i32.load8_u
-            \\        i32.store8
-            \\        local.get $i
-            \\        i32.const 1
-            \\        i32.sub
-            \\        local.set $i
-            \\        br $loop
-            \\      )
-            \\    )
-            \\  )
-            \\
-        );
+    for (prelude.order) |group| {
+        if (em.b.helpers.has(group)) try items.appendSlice(ar, prelude.items(group));
     }
 
-    if (em.uses_print_str) {
-        // `@print(s)` on a length-prefixed string: write the bytes at `s + 4`,
-        // then a newline. Printing a string through `$__print_i32` used to emit
-        // its *address*.
-        try aw.writer.writeAll(
-            \\  (func $__print_str_raw (param $s i32)
-            \\    local.get $s
-            \\    i32.const 4
-            \\    i32.add
-            \\    local.get $s
-            \\    i32.load
-            \\    call $__write_bytes
-            \\  )
-            \\  (func $__print_str (param $s i32)
-            \\    local.get $s
-            \\    call $__print_str_raw
-            \\    call $__print_nl
-            \\  )
-            \\
-        );
-    }
-
-    if (em.uses_print_bool) {
-        // `@print(flag)` prints `true` / `false`, matching every other backend.
-        try aw.writer.writeAll(
-            \\  (func $__print_bool (param $b i32)
-            \\    local.get $b
-            \\    call $__print_bool_raw
-            \\    call $__print_nl
-            \\  )
-            \\  (func $__print_bool_raw (param $b i32)
-            \\    local.get $b
-            \\    (if
-            \\      (then
-            \\        ;; "true" as a little-endian i32
-            \\        i32.const 16
-            \\        i32.const 1702195828
-            \\        i32.store
-            \\        i32.const 16
-            \\        i32.const 4
-            \\        call $__write_bytes
-            \\      )
-            \\      (else
-            \\        ;; "fals" + 'e'
-            \\        i32.const 16
-            \\        i32.const 1936482662
-            \\        i32.store
-            \\        i32.const 16
-            \\        i32.const 101
-            \\        i32.store8 offset=4
-            \\        i32.const 16
-            \\        i32.const 5
-            \\        call $__write_bytes
-            \\      )
-            \\    )
-            \\  )
-            \\
-        );
-    }
-
-    if (em.uses_print_f64) {
-        // `@print(x)` on a float: integer part, `.`, then up to 6 fractional
-        // digits with the trailing zeros trimmed — the shape node prints.
-        try aw.writer.writeAll(
-            \\  (func $__print_f64 (param $x f64)
-            \\    local.get $x
-            \\    call $__print_f64_raw
-            \\    call $__print_nl
-            \\  )
-            \\  (func $__print_f64_raw (param $x f64)
-            \\    (local $i i32) (local $frac f64) (local $d i32) (local $k i32) (local $last i32)
-            \\    local.get $x
-            \\    f64.const 0
-            \\    f64.lt
-            \\    (if
-            \\      (then
-            \\        i32.const 32
-            \\        i32.const 45
-            \\        i32.store8
-            \\        i32.const 32
-            \\        i32.const 1
-            \\        call $__write_bytes
-            \\        local.get $x
-            \\        f64.neg
-            \\        local.set $x
-            \\      )
-            \\    )
-            \\    local.get $x
-            \\    i32.trunc_f64_s
-            \\    local.set $i
-            \\    local.get $x
-            \\    local.get $i
-            \\    f64.convert_i32_s
-            \\    f64.sub
-            \\    local.set $frac
-            \\    local.get $i
-            \\    call $__print_i32_raw
-            \\    ;; fractional digits into 34.. ; 33 holds the '.'
-            \\    i32.const 0
-            \\    local.set $k
-            \\    i32.const 0
-            \\    local.set $last
-            \\    (block $fdone
-            \\      (loop $fdigits
-            \\        local.get $k
-            \\        i32.const 6
-            \\        i32.ge_s
-            \\        br_if $fdone
-            \\        local.get $frac
-            \\        f64.const 10
-            \\        f64.mul
-            \\        local.set $frac
-            \\        local.get $frac
-            \\        i32.trunc_f64_s
-            \\        local.set $d
-            \\        local.get $frac
-            \\        local.get $d
-            \\        f64.convert_i32_s
-            \\        f64.sub
-            \\        local.set $frac
-            \\        i32.const 34
-            \\        local.get $k
-            \\        i32.add
-            \\        local.get $d
-            \\        i32.const 48
-            \\        i32.add
-            \\        i32.store8
-            \\        local.get $k
-            \\        i32.const 1
-            \\        i32.add
-            \\        local.set $k
-            \\        local.get $d
-            \\        (if
-            \\          (then
-            \\            local.get $k
-            \\            local.set $last
-            \\          )
-            \\        )
-            \\        br $fdigits
-            \\      )
-            \\    )
-            \\    local.get $last
-            \\    (if
-            \\      (then
-            \\        i32.const 33
-            \\        i32.const 46
-            \\        i32.store8
-            \\        i32.const 33
-            \\        local.get $last
-            \\        i32.const 1
-            \\        i32.add
-            \\        call $__write_bytes
-            \\      )
-            \\    )
-            \\  )
-            \\
-        );
-    }
-
-    if (em.uses_array_at) {
-        // `xs.at(i)` over the `[len][e0][e1]…` array layout; out of range → 0,
-        // matching the other backends' `undefined`/`nil` carrier.
-        try aw.writer.writeAll(
-            \\  (func $__arr_at (param $xs i32) (param $i i32) (result i32)
-            \\    local.get $i
-            \\    i32.const 0
-            \\    i32.lt_s
-            \\    local.get $i
-            \\    local.get $xs
-            \\    i32.load
-            \\    i32.ge_s
-            \\    i32.or
-            \\    (if (result i32)
-            \\      (then i32.const 0)
-            \\      (else
-            \\        local.get $xs
-            \\        local.get $i
-            \\        i32.const 1
-            \\        i32.add
-            \\        i32.const 4
-            \\        i32.mul
-            \\        i32.add
-            \\        i32.load
-            \\      )
-            \\    )
-            \\  )
-            \\
-        );
-    }
-
-    if (em.uses_str_concat) {
-        try aw.writer.writeAll(
-            \\  (func $__str_concat (param $a i32) (param $b i32) (result i32)
-            \\    (local $base i32) (local $alen i32) (local $blen i32)
-            \\    local.get $a
-            \\    i32.load
-            \\    local.set $alen
-            \\    local.get $b
-            \\    i32.load
-            \\    local.set $blen
-            \\    global.get $__heap_ptr
-            \\    local.set $base
-            \\    ;; bump heap by 4 (length prefix) + alen + blen
-            \\    global.get $__heap_ptr
-            \\    i32.const 4
-            \\    local.get $alen
-            \\    i32.add
-            \\    local.get $blen
-            \\    i32.add
-            \\    i32.add
-            \\    global.set $__heap_ptr
-            \\    ;; store combined length prefix
-            \\    local.get $base
-            \\    local.get $alen
-            \\    local.get $blen
-            \\    i32.add
-            \\    i32.store
-            \\    ;; copy a's bytes: base+4 <- a+4
-            \\    local.get $base
-            \\    i32.const 4
-            \\    i32.add
-            \\    local.get $a
-            \\    i32.const 4
-            \\    i32.add
-            \\    local.get $alen
-            \\    memory.copy
-            \\    ;; copy b's bytes: base+4+alen <- b+4
-            \\    local.get $base
-            \\    i32.const 4
-            \\    i32.add
-            \\    local.get $alen
-            \\    i32.add
-            \\    local.get $b
-            \\    i32.const 4
-            \\    i32.add
-            \\    local.get $blen
-            \\    memory.copy
-            \\    local.get $base
-            \\  )
-            \\
-        );
-    }
-
-    if (em.uses_str_eq) {
-        try aw.writer.writeAll(
-            \\  (func $__str_eq (param $a i32) (param $b i32) (result i32)
-            \\    (local $i i32) (local $alen i32)
-            \\    local.get $a
-            \\    i32.load
-            \\    local.set $alen
-            \\    local.get $alen
-            \\    local.get $b
-            \\    i32.load
-            \\    i32.ne
-            \\    (if
-            \\      (then i32.const 0 return)
-            \\    )
-            \\    (block $done
-            \\      (loop $cmp
-            \\        local.get $i
-            \\        local.get $alen
-            \\        i32.ge_u
-            \\        br_if $done
-            \\        local.get $a
-            \\        local.get $i
-            \\        i32.add
-            \\        i32.load8_u offset=4
-            \\        local.get $b
-            \\        local.get $i
-            \\        i32.add
-            \\        i32.load8_u offset=4
-            \\        i32.ne
-            \\        (if
-            \\          (then i32.const 0 return)
-            \\        )
-            \\        local.get $i
-            \\        i32.const 1
-            \\        i32.add
-            \\        local.set $i
-            \\        br $cmp
-            \\      )
-            \\    )
-            \\    i32.const 1
-            \\  )
-            \\
-        );
-    }
-
-    if (em.uses_str_slice) {
-        try aw.writer.writeAll(
-            \\  (func $__str_slice (param $src i32) (param $start i32) (param $end i32) (result i32)
-            \\    (local $newlen i32) (local $dst i32)
-            \\    local.get $end
-            \\    local.get $start
-            \\    i32.sub
-            \\    local.set $newlen
-            \\    global.get $__heap_ptr
-            \\    local.set $dst
-            \\    ;; bump heap by 4 (length prefix) + newlen
-            \\    global.get $__heap_ptr
-            \\    i32.const 4
-            \\    local.get $newlen
-            \\    i32.add
-            \\    i32.add
-            \\    global.set $__heap_ptr
-            \\    ;; store length prefix
-            \\    local.get $dst
-            \\    local.get $newlen
-            \\    i32.store
-            \\    ;; copy bytes: dst+4 <- src+4+start
-            \\    local.get $dst
-            \\    i32.const 4
-            \\    i32.add
-            \\    local.get $src
-            \\    i32.const 4
-            \\    i32.add
-            \\    local.get $start
-            \\    i32.add
-            \\    local.get $newlen
-            \\    memory.copy
-            \\    local.get $dst
-            \\  )
-            \\
-        );
-    }
-
-    try aw.writer.writeAll(")\n");
-
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    try watEmitter.renderModule(&aw.writer, .{
+        .items = items.items,
+        .externs = em.b.externs.items,
+    });
     return aw.toOwnedSlice();
 }
 
@@ -795,11 +324,21 @@ fn emitWat(
 /// valid: wasm rejects both leftovers at the end of a block and underflows.
 const Tail = enum { value, none, terminated };
 
-/// A hoisted local declaration. WAT requires every `(local …)` to sit between
-/// the signature and the first instruction, so lowering never writes one
-/// directly — it registers it here and the function emitter flushes the list
-/// into the header once the (buffered) body is complete.
+/// A hoisted local declaration. Locals live in the `wat_ast.Func` node, so
+/// there is no way to write one into a body at all: lowering registers them
+/// here and `funcNode` hands the list to the model.
 const LocalDecl = struct { name: []const u8, ty: []const u8 };
+
+/// A detached instruction sink. Lowering a nested body (a function body, an
+/// `if` arm, a `loop` body) redirects `Emitter.cur` into one of these and
+/// `seal`s it into a `wat_ast.Seq` with the stack effect the context expects —
+/// the same buffer-and-swap the writer-based emitter used, minus the text.
+const Capture = struct {
+    lines: std.ArrayListUnmanaged(Line) = .empty,
+    /// The sink to restore on `seal` — null when this capture is the outermost
+    /// one (a function body).
+    saved: ?*std.ArrayListUnmanaged(Line) = null,
+};
 
 /// Signature of an emitted function, keyed by its WAT symbol (already mangled
 /// for extension/record methods). `result` is null for a void function. Call
@@ -809,7 +348,16 @@ const FnSig = struct { params: []const []const u8, result: ?[]const u8 };
 
 const Emitter = struct {
     alloc: std.mem.Allocator,
-    out: *std.Io.Writer,
+    /// Node factory: owns the arena every built node borrows from, the set of
+    /// runtime helpers the lowering has asked for, and the extern symbols it
+    /// called. Set up in `init` once `reg_arena` exists.
+    b: wat.Builder = .{ .arena = undefined },
+    /// Where lowered instructions go. Null outside a function body — emitting
+    /// an instruction there is a bug, not a silently dropped line.
+    cur: ?*std.ArrayListUnmanaged(Line) = null,
+    /// Top-level forms produced so far, in order: the lowered functions, the
+    /// module globals and the comments between them.
+    items: std.ArrayListUnmanaged(Item) = .empty,
     cv: std.StringHashMap([]const u8),
 
     cur_result: []const u8 = "i32",
@@ -890,15 +438,10 @@ const Emitter = struct {
     /// which the module's `(start …)` runs before anything else. They used to
     /// stay at the `(i32.const 0)` placeholder, so every read saw 0.
     deferred_globals: std.ArrayListUnmanaged(ast.ValDecl) = .empty,
-    uses_print: bool = false,
-    uses_str_concat: bool = false,
+    /// Template-body mode: `a + b` on two non-literals is string concatenation
+    /// through the `wat_runtime` prelude rather than a numeric add. Not a
+    /// helper flag — `$__str_concat_rt` lives outside the module.
     uses_str_concat_rt: bool = false,
-    uses_str_eq: bool = false,
-    uses_str_slice: bool = false,
-    uses_print_str: bool = false,
-    uses_print_bool: bool = false,
-    uses_print_f64: bool = false,
-    uses_array_at: bool = false,
 
     /// Static extension dispatch (F6): call-site loc → activated extension symbol.
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
@@ -911,10 +454,9 @@ const Emitter = struct {
 
     const ExtInfo = struct { target: []const u8, methods: []const ast.ImplementMethod };
 
-    fn init(alloc: std.mem.Allocator, out: *std.Io.Writer, cv: std.StringHashMap([]const u8), rewrites: std.AutoHashMap(ast.Loc, []const u8)) Emitter {
-        return .{
+    fn init(alloc: std.mem.Allocator, cv: std.StringHashMap([]const u8), rewrites: std.AutoHashMap(ast.Loc, []const u8)) Emitter {
+        const em: Emitter = .{
             .alloc = alloc,
-            .out = out,
             .cv = cv,
             .locals = std.StringHashMap([]const u8).init(alloc),
             .str_locals = std.StringHashMap(void).init(alloc),
@@ -937,6 +479,22 @@ const Emitter = struct {
             .rewrites = rewrites,
             .ext_by_name = std.StringHashMap(ExtInfo).init(alloc),
         };
+        return em;
+    }
+
+    /// The arena every built node (and every string a node borrows) comes from.
+    /// It outlives the frames that build the tree and dies with the emitter,
+    /// after the module has been rendered.
+    fn arena(self: *Emitter) std.mem.Allocator {
+        return self.reg_arena.allocator();
+    }
+
+    /// The node factory. The arena is re-bound on every use because
+    /// `std.heap.ArenaAllocator.allocator()` closes over the arena's *address*,
+    /// which is only final once the emitter has stopped moving.
+    fn builder(self: *Emitter) *wat.Builder {
+        self.b.arena = self.reg_arena.allocator();
+        return &self.b;
     }
 
     fn deinit(self: *Emitter) void {
@@ -1227,12 +785,89 @@ const Emitter = struct {
         return name;
     }
 
-    fn w(self: *Emitter, s: []const u8) !void {
-        try self.out.writeAll(s);
+    // ── node emission ────────────────────────────────────────────────────
+    //
+    // Lowering appends `Line`s to the open sequence; `wat_emitter.zig` is the
+    // only thing that turns one into text. The default column is the function
+    // body's; `emitAt` is for the few constructs whose arms the historical
+    // layout indents further.
+
+    fn emit(self: *Emitter, instr: Instr) !void {
+        try self.cur.?.append(self.arena(), .{ .instr = instr });
     }
 
-    fn fmt(self: *Emitter, comptime f: []const u8, args: anytype) !void {
-        try self.out.print(f, args);
+    /// An instruction with a trailing `;; comment`.
+    fn emitC(self: *Emitter, instr: Instr, comment: []const u8) !void {
+        try self.cur.?.append(self.arena(), .{ .instr = instr, .comment = comment });
+    }
+
+    fn emitCf(self: *Emitter, instr: Instr, comptime f: []const u8, args: anytype) !void {
+        try self.emitC(instr, try std.fmt.allocPrint(self.arena(), f, args));
+    }
+
+    fn emitAt(self: *Emitter, indent: u8, instr: Instr) !void {
+        try self.cur.?.append(self.arena(), .{ .instr = instr, .indent = indent });
+    }
+
+    fn emitAtC(self: *Emitter, indent: u8, instr: Instr, comment: []const u8) !void {
+        try self.cur.?.append(self.arena(), .{
+            .instr = instr,
+            .indent = indent,
+            .comment = comment,
+        });
+    }
+
+    fn emitAtCf(self: *Emitter, indent: u8, instr: Instr, comptime f: []const u8, args: anytype) !void {
+        try self.emitAtC(indent, instr, try std.fmt.allocPrint(self.arena(), f, args));
+    }
+
+    /// A `;; text` line of its own, inside a body — a construct with no wasm
+    /// lowering, recorded rather than silently dropped.
+    fn note(self: *Emitter, text: []const u8) !void {
+        try self.emit(.{ .comment = text });
+    }
+
+    fn noteF(self: *Emitter, comptime f: []const u8, args: anytype) !void {
+        try self.note(try std.fmt.allocPrint(self.arena(), f, args));
+    }
+
+    /// Append a top-level form.
+    fn item(self: *Emitter, it: Item) !void {
+        try self.items.append(self.arena(), it);
+    }
+
+    /// A `;; text` line between top-level forms.
+    fn itemComment(self: *Emitter, text: []const u8) !void {
+        try self.item(.{ .comment = text });
+    }
+
+    fn itemCommentF(self: *Emitter, comptime f: []const u8, args: anytype) !void {
+        try self.itemComment(try std.fmt.allocPrint(self.arena(), f, args));
+    }
+
+    /// Redirect lowering into `c` until `seal`.
+    fn open(self: *Emitter, c: *Capture) void {
+        c.saved = self.cur;
+        self.cur = &c.lines;
+    }
+
+    /// Close `c` and hand back the sequence, tagged with what it leaves on the
+    /// operand stack. Every consumer of a `Seq` checks that tag against what it
+    /// can accept, which is what makes "a value left behind by a void function"
+    /// unrepresentable rather than merely unlikely.
+    fn seal(self: *Emitter, c: *Capture, stack: wat.Stack) Seq {
+        self.cur = c.saved;
+        return .{ .lines = c.lines.items, .stack = stack };
+    }
+
+    /// The `wat_ast.Stack` a lowered `Tail` stands for. `.value` carries the
+    /// type the context coerced the expression to.
+    fn stackOf(tail: Tail, ty: []const u8) wat.Stack {
+        return switch (tail) {
+            .value => .{ .value = vt(ty) },
+            .none => .none,
+            .terminated => .terminated,
+        };
     }
 
     fn resetFnState(self: *Emitter, result_type: ?[]const u8) void {
@@ -1252,18 +887,56 @@ const Emitter = struct {
     }
 
     /// Register a local for the current function. Idempotent, and the *only*
-    /// way a `(local …)` reaches the output — the declaration is flushed into
-    /// the function header by `flushFn`, never mid-body (WAT forbids that).
+    /// way a `(local …)` reaches the output: the declaration goes into the
+    /// function node, which is the one place WAT accepts it.
     fn declareLocal(self: *Emitter, name: []const u8, ty: []const u8) !void {
         if (self.locals.contains(name)) return;
         try self.locals.put(name, ty);
         try self.pending_locals.append(self.alloc, .{ .name = name, .ty = ty });
     }
 
+    /// The `(local …)` lines of the function being emitted: one declaration per
+    /// line, in registration order.
+    fn localLines(self: *Emitter) ![]const []const wat.Local {
+        const ar = self.arena();
+        const lines = try ar.alloc([]const wat.Local, self.pending_locals.items.len);
+        for (self.pending_locals.items, 0..) |l, i| {
+            const slot = try ar.alloc(wat.Local, 1);
+            slot[0] = .{ .name = l.name, .ty = vt(l.ty) };
+            lines[i] = slot;
+        }
+        return lines;
+    }
+
+    /// `$__mem{k}` — the scratch pointer an aggregate construction or a
+    /// destructuring binding holds its base in.
+    fn memName(self: *Emitter, k: u32) ![]const u8 {
+        return std.fmt.allocPrint(self.arena(), "__mem{d}", .{k});
+    }
+
+    /// `$_res{k}` — the scratch pointer a Result/Option op holds its receiver in.
+    fn resName(self: *Emitter, k: u32) ![]const u8 {
+        return std.fmt.allocPrint(self.arena(), "_res{d}", .{k});
+    }
+
+    /// `$_try{k}` — the scratch pointer a `try`/`try…catch` holds its Result in.
+    fn tryName(self: *Emitter, k: u32) ![]const u8 {
+        return std.fmt.allocPrint(self.arena(), "_try{d}", .{k});
+    }
+
     /// Push `{cur_result}.const 0` — the neutral value used whenever a context
     /// demands a value the lowered expression did not produce.
     fn pushZero(self: *Emitter) !void {
-        try self.fmt("    {s}.const 0\n", .{self.cur_result});
+        try self.emit(constOf(self.cur_result, "0"));
+    }
+
+    /// `i32.const <n>` for a computed number: a data-segment offset, a variant
+    /// tag, a byte count.
+    fn constInt(self: *Emitter, value: anytype) !Instr {
+        return .{ .@"const" = .{
+            .ty = .i32,
+            .text = try std.fmt.allocPrint(self.arena(), "{d}", .{value}),
+        } };
     }
 
     fn internString(self: *Emitter, s: []const u8) !DataSeg {
@@ -1322,17 +995,17 @@ const Emitter = struct {
                         if (std.mem.eql(u8, ft, "string")) try self.str_locals.put(fld.bind_name, {});
                     }
                 }
-                try self.fmt("    local.get ${s}\n", .{symbol});
+                try self.emit(.{ .local_get = symbol });
                 try self.emitLoadOffset(off);
-                try self.fmt("    local.set ${s}\n", .{fld.bind_name});
+                try self.emit(.{ .local_set = fld.bind_name });
             },
             .tuple_ => |names| for (names, 0..) |name, i| {
                 try self.declareLocal(name, "i32");
-                try self.fmt("    local.get ${s}\n", .{symbol});
+                try self.emit(.{ .local_get = symbol });
                 try self.emitLoadOffset(@intCast(i * 4));
-                try self.fmt("    local.set ${s}\n", .{name});
+                try self.emit(.{ .local_set = name });
             },
-            else => try self.w("    ;; unsupported param destructure pattern\n"),
+            else => try self.note("unsupported param destructure pattern"),
         }
     }
 
@@ -1345,16 +1018,16 @@ const Emitter = struct {
         }
     }
 
-    /// Lower a function body into a detached buffer. Locals registered while
-    /// lowering land in `pending_locals` instead of the output, so the caller
-    /// can write them into the function header — WAT only accepts `(local …)`
-    /// there. Returns the buffer; the caller owns and must deinit it.
-    fn renderBody(self: *Emitter, body: []const ast.Stmt, prologue: ?ast.FnDecl) !std.Io.Writer.Allocating {
-        var buf: std.Io.Writer.Allocating = .init(self.alloc);
-        errdefer buf.deinit();
-        const saved = self.out;
-        self.out = &buf.writer;
-        defer self.out = saved;
+    /// Lower a function body into a detached sequence, tagged with what it
+    /// leaves on the operand stack. Locals registered while lowering land in
+    /// `pending_locals`, which the caller hands to the function node.
+    ///
+    /// The tag is what makes a void function with a leftover value — and a
+    /// value-returning one with no `(result …)` — impossible to build: the
+    /// stack here is checked against the signature by `wat_ast.Builder.func`.
+    fn renderBody(self: *Emitter, body: []const ast.Stmt, prologue: ?ast.FnDecl) !Seq {
+        var c: Capture = .{};
+        self.open(&c);
         if (prologue) |f| {
             for (f.params, 0..) |p, i| {
                 if (p.destruct == null) continue;
@@ -1371,16 +1044,15 @@ const Emitter = struct {
         if (self.fn_has_result and tail == .value) {
             if (tail_type) |t| try self.emitConvert(t, self.cur_result);
         }
-        return buf;
-    }
-
-    /// Flush the hoisted `(local …)` declarations, then the buffered body.
-    fn flushFn(self: *Emitter, buf: *std.Io.Writer.Allocating) !void {
-        for (self.pending_locals.items) |l| {
-            try self.fmt("    (local ${s} {s})\n", .{ l.name, l.ty });
-        }
-        try self.w(buf.written());
-        try self.w("  )\n");
+        // `emitBody` normalises: with a result the tail is a value (or the
+        // body terminated), without one it is nothing (or terminated).
+        const stack: wat.Stack = if (tail == .terminated)
+            .terminated
+        else if (self.fn_has_result)
+            .{ .value = vt(self.cur_result) }
+        else
+            .none;
+        return self.seal(&c, stack);
     }
 
     fn emitFn(self: *Emitter, f: ast.FnDecl) !void {
@@ -1389,7 +1061,7 @@ const Emitter = struct {
         // body is invalid, so skip it entirely — call sites fall back to the
         // unresolved-call stub, which is at least honest and loadable.
         if (f.isDeclare or f.body.len == 0) {
-            try self.fmt("  ;; declare fn {s} — no wasm implementation (host-backed)\n", .{f.name});
+            try self.itemCommentF("declare fn {s} — no wasm implementation (host-backed)", .{f.name});
             return;
         }
         const has_result = fnHasResult(f);
@@ -1400,7 +1072,7 @@ const Emitter = struct {
         // here: `@Future<T>` resolves to `T` (`await` is identity); full
         // generator state-machine lowering is not yet implemented.
         if (f.effect != null and f.effect.? != .result) {
-            try self.w("  ;; #[@future] / #[@asyncGenerator] — eager lowering\n");
+            try self.itemComment("#[@future] / #[@asyncGenerator] — eager lowering");
         }
         // Params, and the locals the body needs, are registered *before* the
         // body is rendered so identifier lowering can tell a local from a global.
@@ -1418,21 +1090,22 @@ const Emitter = struct {
         try self.declareScratch("__mem", self.countMems(f.body));
         try self.emitLocalDecls(f.body);
 
-        var buf = try self.renderBody(f.body, f);
-        defer buf.deinit();
+        const body = try self.renderBody(f.body, f);
 
-        try self.w("  (func $");
-        try self.w(f.name);
-        if (f.isPub) {
-            try self.fmt(" (export \"{s}\")", .{f.name});
-        }
+        const ar = self.arena();
+        var params: std.ArrayListUnmanaged(wat.Param) = .empty;
         for (f.params, 0..) |p, i| {
             if (std.mem.eql(u8, p.name, "self")) continue;
-            try self.fmt(" (param ${s} {s})", .{ try self.paramSymbol(p, i), watType(p.typeRef) });
+            try params.append(ar, wat.Builder.param(try self.paramSymbol(p, i), vt(watType(p.typeRef))));
         }
-        if (has_result) try self.fmt(" (result {s})", .{self.cur_result});
-        try self.w("\n");
-        try self.flushFn(&buf);
+        try self.item(.{ .func = try self.builder().func(.{
+            .name = f.name,
+            .exports = if (f.isPub) try ar.dupe([]const u8, &.{f.name}) else &.{},
+            .params = params.items,
+            .result = if (has_result) vt(self.cur_result) else null,
+            .locals = try self.localLines(),
+            .body = body,
+        }) });
     }
 
     /// Emit each `implement`/`extend` method as a linear-memory function
@@ -1466,16 +1139,20 @@ const Emitter = struct {
             try self.declareScratch("__mem", self.countMems(m.body));
             try self.emitLocalDecls(m.body);
 
-            var buf = try self.renderBody(m.body, null);
-            defer buf.deinit();
+            const body = try self.renderBody(m.body, null);
 
-            try self.fmt("  (func ${s}_{s}", .{ qualifier, m.name });
+            const ar = self.arena();
+            var params: std.ArrayListUnmanaged(wat.Param) = .empty;
             for (m.params, 0..) |p, i| {
-                try self.fmt(" (param ${s} i32)", .{try self.paramSymbol(p, i)});
+                try params.append(ar, wat.Builder.param(try self.paramSymbol(p, i), .i32));
             }
-            if (has_result) try self.w(" (result i32)");
-            try self.w("\n");
-            try self.flushFn(&buf);
+            try self.item(.{ .func = try self.builder().func(.{
+                .name = try std.fmt.allocPrint(ar, "{s}_{s}", .{ qualifier, m.name }),
+                .params = params.items,
+                .result = if (has_result) .i32 else null,
+                .locals = try self.localLines(),
+                .body = body,
+            }) });
         }
     }
 
@@ -1538,17 +1215,21 @@ const Emitter = struct {
         try self.declareScratch("__mem", self.countMems(body));
         try self.emitLocalDecls(body);
 
-        var buf = try self.renderBody(body, null);
-        defer buf.deinit();
+        const seq = try self.renderBody(body, null);
 
-        try self.fmt("  (func ${s}_{s}", .{ owner, m.name });
-        if (needs_self) try self.w(" (param $self i32)");
+        const ar = self.arena();
+        var params: std.ArrayListUnmanaged(wat.Param) = .empty;
+        if (needs_self) try params.append(ar, wat.Builder.param("self", .i32));
         for (m.params, 0..) |p, i| {
-            try self.fmt(" (param ${s} i32)", .{try self.paramSymbol(p, i)});
+            try params.append(ar, wat.Builder.param(try self.paramSymbol(p, i), .i32));
         }
-        if (has_result) try self.w(" (result i32)");
-        try self.w("\n");
-        try self.flushFn(&buf);
+        try self.item(.{ .func = try self.builder().func(.{
+            .name = try std.fmt.allocPrint(ar, "{s}_{s}", .{ owner, m.name }),
+            .params = params.items,
+            .result = if (has_result) .i32 else null,
+            .locals = try self.localLines(),
+            .body = seq,
+        }) });
     }
 
     /// True when any `self` identifier appears anywhere in `body` (used to
@@ -2032,16 +1713,22 @@ const Emitter = struct {
                 // `(f32.const ["calc", …])` — a parse error that killed the
                 // whole module. Only take the constant path for real numerals.
                 .numberLit => |n| if (isNumericLiteral(n)) {
-                    if (v.isPub) {
-                        try self.fmt("  (global ${s} (export \"{s}\") {s} ({s}.const {s}))\n", .{ v.name, v.name, t, t, n });
-                    } else {
-                        try self.fmt("  (global ${s} {s} ({s}.const {s}))\n", .{ v.name, t, t, n });
-                    }
+                    try self.item(.{ .global = .{
+                        .name = v.name,
+                        .exports = if (v.isPub) try self.arena().dupe([]const u8, &.{v.name}) else &.{},
+                        .ty = vt(t),
+                        .init = n,
+                    } });
                     return;
                 },
                 .stringLit => |s| {
                     const seg = try self.internString(s);
-                    try self.fmt("  (global ${s} (mut i32) (i32.const {d}))\n", .{ v.name, seg.offset });
+                    try self.item(.{ .global = .{
+                        .name = v.name,
+                        .ty = .i32,
+                        .mutable = true,
+                        .init = try std.fmt.allocPrint(self.arena(), "{d}", .{seg.offset}),
+                    } });
                     return;
                 },
                 else => {},
@@ -2050,7 +1737,12 @@ const Emitter = struct {
         }
         // Not a constant expression: declare it zeroed and mutable, and fill it
         // in from `$__init_globals` (see `emitGlobalInit`).
-        try self.fmt("  (global ${s} (mut {s}) ({s}.const 0))\n", .{ v.name, t, t });
+        try self.item(.{ .global = .{
+            .name = v.name,
+            .ty = vt(t),
+            .mutable = true,
+            .init = "0",
+        } });
         try self.deferred_globals.append(self.alloc, v);
     }
 
@@ -2070,20 +1762,19 @@ const Emitter = struct {
         try self.declareScratch("_try", total_trys);
         try self.declareScratch("__mem", total_mems);
 
-        var buf: std.Io.Writer.Allocating = .init(self.alloc);
-        defer buf.deinit();
-        {
-            const saved = self.out;
-            self.out = &buf.writer;
-            defer self.out = saved;
-            for (self.deferred_globals.items) |v| {
-                try self.lowerCoerced(v.value.*, self.globalValType(v));
-                try self.fmt("    global.set ${s}\n", .{v.name});
-            }
+        var c: Capture = .{};
+        self.open(&c);
+        for (self.deferred_globals.items) |v| {
+            try self.lowerCoerced(v.value.*, self.globalValType(v));
+            try self.emit(.{ .global_set = v.name });
         }
+        const body = self.seal(&c, .none);
 
-        try self.w("  (func $__init_globals\n");
-        try self.flushFn(&buf);
+        try self.item(.{ .func = try self.builder().func(.{
+            .name = "__init_globals",
+            .locals = try self.localLines(),
+            .body = body,
+        }) });
     }
 
     /// Syntactically an array literal (through parentheses).
@@ -2131,12 +1822,21 @@ const Emitter = struct {
     }
 
     fn emitEntrypointWrapper(self: *Emitter, main_returns_value: bool) !void {
-        try self.w("  (func $_botopink_main (export \"_botopink_main\") (export \"_start\")\n");
-        try self.w("    (call $main)\n");
+        var c: Capture = .{};
+        self.open(&c);
+        // The one folded instruction the backend emits, kept for byte-identity
+        // with the historical wrapper.
+        try self.cur.?.append(self.arena(), .{ .instr = .{ .call = "main" }, .folded = true });
         // The wrapper itself returns nothing, so a value-returning `main` would
         // leave its result on the stack — invalid wasm. Discard it.
-        if (main_returns_value) try self.w("    drop\n");
-        try self.w("  )\n");
+        if (main_returns_value) try self.emit(.drop);
+        const body = self.seal(&c, .none);
+
+        try self.item(.{ .func = try self.builder().func(.{
+            .name = "_botopink_main",
+            .exports = &.{ "_botopink_main", "_start" },
+            .body = body,
+        }) });
     }
 
     // ── body ─────────────────────────────────────────────────────────────────
@@ -2166,7 +1866,7 @@ const Emitter = struct {
             return .value;
         }
         if (!keep_value and tail == .value) {
-            try self.w("    drop\n");
+            try self.emit(.drop);
             return .none;
         }
         return tail;
@@ -2186,18 +1886,18 @@ const Emitter = struct {
                             // A `return <expr>` inside a void function must not
                             // carry a value out of it.
                             try self.lowerValue(val.*);
-                            try self.w("    drop\n");
+                            try self.emit(.drop);
                         }
                     }
-                    try self.w("    return\n");
+                    try self.emit(.@"return");
                     return .terminated;
                 },
                 .throw_ => |val| {
                     if (val) |v| {
                         try self.lowerValue(v.*);
-                        try self.w("    drop\n");
+                        try self.emit(.drop);
                     }
-                    try self.w("    unreachable\n");
+                    try self.emit(.@"unreachable");
                     return .terminated;
                 },
                 .try_ => |val| {
@@ -2237,7 +1937,7 @@ const Emitter = struct {
                     // `emitLocalDecls` runs before the body, so its guess can
                     // differ from what lowering ends up pushing.
                     try self.lowerCoerced(lb.value.*, self.locals.get(lb.name) orelse "i32");
-                    try self.fmt("    local.set ${s}\n", .{lb.name});
+                    try self.emit(.{ .local_set = lb.name });
                 },
                 .assign => |a| switch (a.target) {
                     .name => |name| switch (a.op) {
@@ -2245,24 +1945,24 @@ const Emitter = struct {
                             // The slot's declared type wins over the value's.
                             try self.lowerCoerced(a.value.*, self.locals.get(name) orelse
                                 self.global_types.get(name) orelse "i32");
-                            if (self.locals.contains(name))
-                                try self.fmt("    local.set ${s}\n", .{name})
+                            try self.emit(if (self.locals.contains(name))
+                                .{ .local_set = name }
                             else
-                                try self.fmt("    global.set ${s}\n", .{name});
+                                .{ .global_set = name });
                         },
                         .plusAssign => {
-                            if (self.locals.contains(name))
-                                try self.fmt("    local.get ${s}\n", .{name})
+                            try self.emit(if (self.locals.contains(name))
+                                .{ .local_get = name }
                             else
-                                try self.fmt("    global.get ${s}\n", .{name});
+                                .{ .global_get = name });
                             const t = self.locals.get(name) orelse
                                 self.global_types.get(name) orelse "i32";
                             try self.lowerCoerced(a.value.*, t);
-                            try self.fmt("    {s}.add\n", .{t});
-                            if (self.locals.contains(name))
-                                try self.fmt("    local.set ${s}\n", .{name})
+                            try self.emit(opOf(t, "add"));
+                            try self.emit(if (self.locals.contains(name))
+                                .{ .local_set = name }
                             else
-                                try self.fmt("    global.set ${s}\n", .{name});
+                                .{ .global_set = name });
                         },
                     },
                     .fieldAccess => |fa| {
@@ -2276,29 +1976,20 @@ const Emitter = struct {
                             .assign => {
                                 try self.lowerValue(fa.receiver.*);
                                 try self.lowerValue(a.value.*);
-                                if (off == 0)
-                                    try self.fmt("    i32.store ;; .{s} =\n", .{fa.field})
-                                else
-                                    try self.fmt("    i32.store offset={d} ;; .{s} =\n", .{ off, fa.field });
+                                try self.emitCf(.{ .store = .{ .offset = off } }, ".{s} =", .{fa.field});
                             },
                             .plusAssign => {
-                                const k = self.nextMem();
+                                const mem = try self.memName(self.nextMem());
                                 try self.lowerValue(fa.receiver.*);
-                                try self.fmt("    local.set $__mem{d}\n", .{k});
-                                try self.fmt("    local.get $__mem{d}\n", .{k});
-                                try self.fmt("    local.get $__mem{d}\n", .{k});
-                                if (off == 0)
-                                    try self.w("    i32.load\n")
-                                else
-                                    try self.fmt("    i32.load offset={d}\n", .{off});
+                                try self.emit(.{ .local_set = mem });
+                                try self.emit(.{ .local_get = mem });
+                                try self.emit(.{ .local_get = mem });
+                                try self.emit(.{ .load = .{ .offset = off } });
                                 try self.lowerValue(a.value.*);
-                                try self.w("    i32.add\n");
-                                if (off == 0)
-                                    try self.fmt("    i32.store ;; .{s} +=\n", .{fa.field})
-                                else
-                                    try self.fmt("    i32.store offset={d} ;; .{s} +=\n", .{ off, fa.field });
+                                try self.emit(opOf("i32", "add"));
+                                try self.emitCf(.{ .store = .{ .offset = off } }, ".{s} +=", .{fa.field});
                             },
-                        } else try self.w("    ;; field assign (unknown receiver type)\n");
+                        } else try self.note("field assign (unknown receiver type)");
                     },
                 },
                 .localBindDestruct => |lb| {
@@ -2307,30 +1998,30 @@ const Emitter = struct {
                     // patterns walk the record's declared field order so
                     // out-of-order destructuring (`{ b, a } = R(7, 11)`) reads
                     // the right slot.
-                    const k = self.nextMem();
+                    const mem = try self.memName(self.nextMem());
                     try self.lowerValue(lb.value.*);
-                    try self.fmt("    local.set $__mem{d}\n", .{k});
+                    try self.emit(.{ .local_set = mem });
                     switch (lb.pattern) {
                         .names => |n| {
                             const recv_rty = self.recordTypeOfExpr(lb.value.*);
                             for (n.fields, 0..) |fld, i| {
-                                try self.fmt("    local.get $__mem{d}\n", .{k});
+                                try self.emit(.{ .local_get = mem });
                                 const off: u32 = if (recv_rty) |rty|
                                     (self.fieldOffsetIn(rty, fld.field_name) orelse @as(u32, @intCast(i * 4)))
                                 else
                                     @as(u32, @intCast(i * 4));
                                 try self.emitLoadOffset(off);
-                                try self.fmt("    local.set ${s}\n", .{fld.bind_name});
+                                try self.emit(.{ .local_set = fld.bind_name });
                             }
                         },
                         .tuple_ => |bindings| {
                             for (bindings, 0..) |name, i| {
-                                try self.fmt("    local.get $__mem{d}\n", .{k});
+                                try self.emit(.{ .local_get = mem });
                                 try self.emitLoadOffset(@intCast(i * 4));
-                                try self.fmt("    local.set ${s}\n", .{name});
+                                try self.emit(.{ .local_set = name });
                             }
                         },
-                        else => try self.w("    ;; unsupported destructure pattern\n"),
+                        else => try self.note("unsupported destructure pattern"),
                     }
                 },
             },
@@ -2465,16 +2156,15 @@ const Emitter = struct {
                     // string constant instead, which at least loads.
                     if (!isNumericLiteral(n)) {
                         const seg = try self.internString(n);
-                        try self.fmt("    i32.const {d} ;; folded non-numeric literal\n", .{seg.offset});
+                        try self.emitC(try self.constInt(seg.offset), "folded non-numeric literal");
                     } else {
-                        const t = numLitType(n);
-                        try self.fmt("    {s}.const {s}\n", .{ t, n });
+                        try self.emit(constOf(numLitType(n), n));
                     }
                 },
-                .null_ => try self.w("    i32.const 0\n"),
+                .null_ => try self.emit(zero),
                 .stringLit => |s| {
                     const seg = try self.internString(s);
-                    try self.fmt("    i32.const {d}\n", .{seg.offset});
+                    try self.emit(try self.constInt(seg.offset));
                 },
                 // Desugared to a `+` chain by the transform pass; never reaches codegen.
                 .stringTemplate => unreachable,
@@ -2488,28 +2178,28 @@ const Emitter = struct {
                     // would emit `global.get $true`, referencing a global that
                     // is never defined.
                     if (std.mem.eql(u8, n, "true")) {
-                        try self.w("    i32.const 1\n");
+                        try self.emit(one);
                     } else if (std.mem.eql(u8, n, "false")) {
-                        try self.w("    i32.const 0\n");
+                        try self.emit(zero);
                     } else if (self.locals.contains(n)) {
-                        try self.fmt("    local.get ${s}\n", .{n});
+                        try self.emit(.{ .local_get = n });
                     } else if (self.globals.contains(n)) {
-                        try self.fmt("    global.get ${s}\n", .{n});
+                        try self.emit(.{ .global_get = n });
                     } else {
                         // Neither a local nor a module global: a `global.get`
                         // here would make the whole module unloadable
                         // ("unknown global"). Emit the zero carrier instead and
                         // record the gap.
-                        try self.fmt("    i32.const 0 ;; unbound identifier {s}\n", .{n});
+                        try self.emitCf(zero, "unbound identifier {s}", .{n});
                     }
                 },
                 .dotIdent => |name| {
                     // `.Variant` — type inferred from context. Emit the variant
                     // tag if the name uniquely identifies a unit variant.
                     if (self.findVariant(name)) |fv| {
-                        try self.fmt("    i32.const {d} ;; .{s}\n", .{ fv.tag, name });
+                        try self.emitCf(try self.constInt(fv.tag), ".{s}", .{name});
                     } else {
-                        try self.fmt("    i32.const 0 ;; .{s}\n", .{name});
+                        try self.emitCf(zero, ".{s}", .{name});
                     }
                 },
                 .identAccess => |ia| try self.lowerIdentAccess(ia),
@@ -2519,7 +2209,7 @@ const Emitter = struct {
                 .neg => try self.lowerNeg(un.expr.*),
                 .not => {
                     try self.lowerExpr(un.expr.*);
-                    try self.w("    i32.eqz\n");
+                    try self.emit(opOf("i32", "eqz"));
                 },
             },
             .call => |c| switch (c.kind) {
@@ -2546,7 +2236,7 @@ const Emitter = struct {
                                         return;
                                     }
                                 }
-                                try self.w("    i32.const 0 ;; unknown variant\n");
+                                try self.emitC(zero, "unknown variant");
                             } else if (self.findVariant(cc.callee)) |fv| {
                                 try self.lowerEnumCtor(cc, fv.tag, fv.variant);
                             }
@@ -2560,13 +2250,13 @@ const Emitter = struct {
                             .ident => |name| {
                                 if (self.fn_sigs.get(name)) |sig| {
                                     try self.lowerValue(pl.lhs.*);
-                                    try self.fmt("    call ${s}\n", .{name});
+                                    try self.emit(.{ .call = name });
                                     if (sig.result == null) try self.pushZero();
                                 } else {
-                                    try self.fmt("    i32.const 0 ;; unresolved pipeline target {s}\n", .{name});
+                                    try self.emitCf(zero, "unresolved pipeline target {s}", .{name});
                                 }
                             },
-                            else => try self.w("    i32.const 0 ;; unsupported pipeline rhs\n"),
+                            else => try self.emitC(zero, "unsupported pipeline rhs"),
                         },
                         else => try self.lowerValue(pl.rhs.*),
                     }
@@ -2583,16 +2273,16 @@ const Emitter = struct {
                 .arrayLit => |al| try self.lowerArrayLit(al),
                 .recordLit => |rl| try self.lowerRecordLit(rl),
                 .interfaceLit => |il| try self.lowerRecordLit(.{ .fields = il.fields }),
-                .range => try self.w("    i32.const 0 ;; range\n"),
+                .range => try self.emitC(zero, "range"),
             },
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| {
                     if (r) |val| try self.lowerExpr(val.*);
-                    try self.w("    return\n");
+                    try self.emit(.@"return");
                 },
                 .throw_ => |val| {
                     if (val) |v| try self.lowerExpr(v.*);
-                    try self.w("    unreachable\n");
+                    try self.emit(.@"unreachable");
                 },
                 .try_ => |val| {
                     if (val) |v| try self.lowerTryPropagate(v.*);
@@ -2604,12 +2294,12 @@ const Emitter = struct {
                 .yield => |y| {
                     if (y.value) |v| try self.lowerExpr(v.*);
                 },
-                else => try self.fmt("    ;; unsupported jump: {s}\n", .{@tagName(j.kind)}),
+                else => try self.noteF("unsupported jump: {s}", .{@tagName(j.kind)}),
             },
-            .comptime_ => try self.w("    i32.const 0\n"),
-            .function => try self.w("    i32.const 0 ;; lambda\n"),
+            .comptime_ => try self.emit(zero),
+            .function => try self.emitC(zero, "lambda"),
             .loop => |lp| try self.lowerLoop(lp),
-            else => try self.fmt("    ;; unsupported expr: {s}\n", .{@tagName(e)}),
+            else => try self.noteF("unsupported expr: {s}", .{@tagName(e)}),
         }
     }
 
@@ -2620,41 +2310,52 @@ const Emitter = struct {
     /// `try expr catch handler` → load the tag; Ok yields `[ptr+4]`, Error runs
     /// the handler. Leaves the resulting value on the stack.
     fn lowerTryCatch(self: *Emitter, tc: anytype) anyerror!void {
-        const n = self.try_seq;
+        const slot = try self.tryName(self.try_seq);
         self.try_seq += 1;
         try self.lowerExpr(tc.expr.*);
-        try self.fmt("    local.set $_try{d}\n", .{n});
-        try self.fmt("    local.get $_try{d}\n", .{n});
-        try self.w("    i32.load ;; Result tag (0 = Ok, non-zero = Error)\n");
-        try self.fmt("    (if (result {s})\n", .{self.cur_result});
-        try self.w("      (then\n");
+        try self.emit(.{ .local_set = slot });
+        try self.emit(.{ .local_get = slot });
+        try self.emitC(.{ .load = .{} }, result_tag);
+
+        const ty = vt(self.cur_result);
+        var then_c: Capture = .{};
+        self.open(&then_c);
         try self.lowerExpr(tc.handler.*);
-        try self.w("      )\n");
-        try self.w("      (else\n");
-        try self.fmt("    local.get $_try{d}\n", .{n});
-        try self.w("    i32.load offset=4 ;; Ok payload\n");
-        try self.w("      )\n");
-        try self.w("    )\n");
+        const then_seq = self.seal(&then_c, .{ .value = ty });
+
+        var else_c: Capture = .{};
+        self.open(&else_c);
+        try self.emit(.{ .local_get = slot });
+        try self.emitC(.{ .load = .{ .offset = 4 } }, ok_payload);
+        const else_seq = self.seal(&else_c, .{ .value = ty });
+
+        try self.emit(.{ .@"if" = .{
+            .result = ty,
+            .then = .{ .seq = then_seq },
+            .@"else" = .{ .seq = else_seq },
+        } });
     }
 
     /// `try expr` (no catch) → unwrap the Ok payload, or `return` the Result
     /// pointer unchanged to propagate the Error variant up. Leaves the unwrapped
     /// Ok payload on the stack.
     fn lowerTryPropagate(self: *Emitter, inner: ast.Expr) anyerror!void {
-        const n = self.try_seq;
+        const slot = try self.tryName(self.try_seq);
         self.try_seq += 1;
         try self.lowerExpr(inner);
-        try self.fmt("    local.set $_try{d}\n", .{n});
-        try self.fmt("    local.get $_try{d}\n", .{n});
-        try self.w("    i32.load ;; Result tag (0 = Ok, non-zero = Error)\n");
-        try self.w("    (if\n");
-        try self.w("      (then\n");
-        try self.fmt("    local.get $_try{d}\n", .{n});
-        try self.w("    return ;; propagate Error\n");
-        try self.w("      )\n");
-        try self.w("    )\n");
-        try self.fmt("    local.get $_try{d}\n", .{n});
-        try self.w("    i32.load offset=4 ;; Ok payload\n");
+        try self.emit(.{ .local_set = slot });
+        try self.emit(.{ .local_get = slot });
+        try self.emitC(.{ .load = .{} }, result_tag);
+
+        var then_c: Capture = .{};
+        self.open(&then_c);
+        try self.emit(.{ .local_get = slot });
+        try self.emitC(.@"return", "propagate Error");
+        const then_seq = self.seal(&then_c, .terminated);
+
+        try self.emit(.{ .@"if" = .{ .then = .{ .seq = then_seq } } });
+        try self.emit(.{ .local_get = slot });
+        try self.emitC(.{ .load = .{ .offset = 4 } }, ok_payload);
     }
 
     /// One `@print` argument. `last` decides whether the trailing newline is
@@ -2664,31 +2365,28 @@ const Emitter = struct {
     /// as `0`/`1`.
     fn lowerPrintArg(self: *Emitter, arg: ast.Expr, last: bool) anyerror!void {
         if (self.isStringExpr(arg)) {
-            self.uses_print_str = true;
             try self.lowerValue(arg);
-            try self.w(if (last) "    call $__print_str\n" else "    call $__print_str_raw\n");
+            try self.emit(self.builder().helper(if (last) .print_str else .print_str_raw));
             return;
         }
         if (self.isBoolExpr(arg)) {
-            self.uses_print_bool = true;
             try self.lowerCoerced(arg, "i32");
-            try self.w(if (last) "    call $__print_bool\n" else "    call $__print_bool_raw\n");
+            try self.emit(self.builder().helper(if (last) .print_bool else .print_bool_raw));
             return;
         }
         const t = self.wasmTypeOf(arg);
         if (t[0] == 'f') {
-            self.uses_print_f64 = true;
             try self.lowerCoerced(arg, "f64");
-            try self.w(if (last) "    call $__print_f64\n" else "    call $__print_f64_raw\n");
+            try self.emit(self.builder().helper(if (last) .print_f64 else .print_f64_raw));
             return;
         }
         try self.lowerCoerced(arg, "i32");
-        try self.w(if (last) "    call $__print_i32\n" else "    call $__print_i32_raw\n");
+        try self.emit(self.builder().helper(if (last) .print_i32 else .print_i32_raw));
     }
 
     fn lowerBuiltin(self: *Emitter, cc: anytype) anyerror!void {
         if (std.mem.eql(u8, cc.callee, "todo") or std.mem.eql(u8, cc.callee, "panic")) {
-            try self.w("    unreachable\n");
+            try self.emit(.@"unreachable");
             return;
         }
         if (std.mem.eql(u8, cc.callee, "block")) {
@@ -2696,13 +2394,15 @@ const Emitter = struct {
             return;
         }
         if (std.mem.eql(u8, cc.callee, "print")) {
-            self.uses_print = true;
+            // Marks the print helper group even for `@print()` with no
+            // arguments, matching the historical `uses_print` flag.
+            _ = self.builder().helper(.print_nl);
             if (cc.args.len == 0) return;
             // `@print(a, b, c)` is one line with the parts space-separated, the
             // shape node and erlang print. Only the first argument used to be
             // emitted at all.
             for (cc.args, 0..) |a, i| {
-                if (i > 0) try self.w("    call $__print_sp\n");
+                if (i > 0) try self.emit(self.builder().helper(.print_sp));
                 try self.lowerPrintArg(a.value.*, i + 1 == cc.args.len);
             }
             return;
@@ -2712,17 +2412,27 @@ const Emitter = struct {
             return;
         }
         // Decorator builtins — lowered to rawInfra exports.
+        //
+        // KNOWN GAP: `$__emit` / `$__compilerError` / `$__binding_ref` (and
+        // `$__str_concat_rt` in `lowerBinOp`) are defined by the `wat_runtime`
+        // prelude a comptime template module is concatenated with. In the
+        // whole-program path nothing defines them, so a program that reached
+        // one of these arms would emit a `call` to a function the module does
+        // not have. `Builder.externCall` records them in `Module.externs`,
+        // which is honest about the dependency but does not supply it; no
+        // fixture exercises the arms today. Closing it means either lowering
+        // them to a stub outside template mode or shipping the definitions.
         if (std.mem.eql(u8, cc.callee, "emit")) {
             if (cc.args.len > 0) {
                 try self.lowerExpr(cc.args[0].value.*);
-                try self.w("    call $__emit\n");
+                try self.emit(try self.builder().externCall("__emit"));
             }
             return;
         }
         if (std.mem.eql(u8, cc.callee, "compilerError")) {
             if (cc.args.len > 0) {
                 try self.lowerExpr(cc.args[0].value.*);
-                try self.w("    call $__compilerError\n");
+                try self.emit(try self.builder().externCall("__compilerError"));
             }
             return;
         }
@@ -2730,21 +2440,31 @@ const Emitter = struct {
         if (std.mem.eql(u8, cc.callee, "ref")) {
             if (cc.receiver) |recv| {
                 try self.lowerExpr(recv.*);
-                try self.w("    call $__binding_ref\n");
+                try self.emit(try self.builder().externCall("__binding_ref"));
             }
             return;
         }
-        try self.w("    ;; builtin stub\n");
+        try self.note("builtin stub");
     }
 
     /// Reserve and declare the next `$_res{n}` scratch pointer local. Declared
     /// inline (like the `$__case` locals) since the count isn't known up front.
-    fn declRes(self: *Emitter) !u32 {
-        const k = self.res_seq;
+    /// Bump the heap by the two `i32` slots a `@Result` occupies, leaving the
+    /// base pointer in the scratch local `slot`.
+    fn allocResultPair(self: *Emitter, slot: []const u8) !void {
+        try self.emit(.{ .global_get = heap_ptr });
+        try self.emit(.{ .local_set = slot });
+        try self.emit(.{ .global_get = heap_ptr });
+        try self.emit(try self.constInt(8));
+        try self.emit(opOf("i32", "add"));
+        try self.emit(.{ .global_set = heap_ptr });
+    }
+
+    fn declRes(self: *Emitter) ![]const u8 {
+        const name = try self.resName(self.res_seq);
         self.res_seq += 1;
-        const name = try std.fmt.allocPrint(self.reg_arena.allocator(), "_res{d}", .{k});
         try self.declareLocal(name, "i32");
-        return k;
+        return name;
     }
 
     /// True when `arg` is a literal lambda (`{ x -> ... }`), the only fn form a
@@ -2764,8 +2484,8 @@ const Emitter = struct {
         if (lam.params.len == 0) return;
         const p = lam.params[0];
         try self.declareLocal(p, "i32");
-        try self.fmt("    local.get ${s}\n", .{src});
-        try self.fmt("    local.set ${s}\n", .{p});
+        try self.emit(.{ .local_get = src });
+        try self.emit(.{ .local_set = p });
     }
 
     /// Inline a lambda body, leaving its tail value on the stack. An explicit
@@ -2773,7 +2493,7 @@ const Emitter = struct {
     /// exit the *enclosing* function, not the inlined closure).
     fn inlineLambdaBody(self: *Emitter, body: []const ast.Stmt) anyerror!void {
         if (body.len == 0) {
-            try self.w("    i32.const 0\n");
+            try self.emit(zero);
             return;
         }
         for (body[0 .. body.len - 1]) |s| _ = try self.emitStmt(s, false);
@@ -2781,7 +2501,7 @@ const Emitter = struct {
         switch (last.expr) {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| {
-                    if (r) |v| try self.lowerValue(v.*) else try self.w("    i32.const 0\n");
+                    if (r) |v| try self.lowerValue(v.*) else try self.emit(zero);
                     return;
                 },
                 else => {},
@@ -2811,156 +2531,174 @@ const Emitter = struct {
             return;
         }
         if (std.mem.eql(u8, callee, "__bp_future_rejected")) {
-            try self.w("    unreachable ;; @future rejection (wat runtime: Frente A §D-D4)\n");
+            try self.emitC(.@"unreachable", "@future rejection (wat runtime: Frente A §D-D4)");
             return;
         }
         if (std.mem.eql(u8, callee, "__bp_ok") or std.mem.eql(u8, callee, "__bp_error")) {
             // Result constructor (`return v` / `throw e` in a `-> @Result<…>`
             // fn): allocate a fresh `{ tag, payload }` pair (tag 0 = Ok, 1 = Error).
             const tag: u8 = if (std.mem.eql(u8, callee, "__bp_ok")) 0 else 1;
-            const b = try self.declRes();
-            try self.w("    global.get $__heap_ptr\n");
-            try self.fmt("    local.set $_res{d}\n", .{b});
-            try self.w("    global.get $__heap_ptr\n");
-            try self.w("    i32.const 8\n");
-            try self.w("    i32.add\n");
-            try self.w("    global.set $__heap_ptr\n");
-            try self.fmt("    local.get $_res{d}\n", .{b});
-            try self.fmt("    i32.const {d}\n", .{tag});
-            try self.fmt("    i32.store ;; Result tag ({s})\n", .{if (tag == 0) "Ok" else "Error"});
-            try self.fmt("    local.get $_res{d}\n", .{b});
+            const slot = try self.declRes();
+            try self.allocResultPair(slot);
+            try self.emit(.{ .local_get = slot });
+            try self.emit(try self.constInt(tag));
+            try self.emitCf(.{ .store = .{} }, "Result tag ({s})", .{if (tag == 0) "Ok" else "Error"});
+            try self.emit(.{ .local_get = slot });
             try self.lowerExpr(recv.*);
-            try self.w("    i32.store offset=4 ;; payload\n");
-            try self.fmt("    local.get $_res{d}\n", .{b});
+            try self.emitC(.{ .store = .{ .offset = 4 } }, "payload");
+            try self.emit(.{ .local_get = slot });
             return;
         }
 
         if (std.mem.eql(u8, callee, "__bp_result_map") or std.mem.eql(u8, callee, "__bp_result_flatMap")) {
             const is_map = std.mem.eql(u8, callee, "__bp_result_map");
             const le = lambdaArg(arg1) orelse {
-                try self.w("    ;; map/flatMap needs a literal closure on WASM — receiver passed through\n");
+                try self.note("map/flatMap needs a literal closure on WASM — receiver passed through");
                 try self.lowerExpr(recv.*);
                 return;
             };
             const lam = le.function.kind;
-            const a = try self.declRes();
-            var pbuf: [24]u8 = undefined;
-            const aname = try std.fmt.bufPrint(&pbuf, "_res{d}", .{a});
+            const slot = try self.declRes();
             try self.lowerExpr(recv.*);
-            try self.fmt("    local.set $_res{d}\n", .{a});
-            try self.fmt("    local.get $_res{d}\n", .{a});
-            try self.w("    i32.load ;; Result tag (0 = Ok, non-zero = Error)\n");
-            try self.w("    (if (result i32)\n");
-            try self.w("      (then\n");
-            try self.fmt("    local.get $_res{d} ;; Error — propagate unchanged\n", .{a});
-            try self.w("      )\n");
-            try self.w("      (else\n");
+            try self.emit(.{ .local_set = slot });
+            try self.emit(.{ .local_get = slot });
+            try self.emitC(.{ .load = .{} }, result_tag);
+
+            var then_c: Capture = .{};
+            self.open(&then_c);
+            try self.emitC(.{ .local_get = slot }, "Error — propagate unchanged");
+            const then_seq = self.seal(&then_c, .{ .value = .i32 });
+
+            var else_c: Capture = .{};
+            self.open(&else_c);
             // Ok: bind the closure param to the payload, then apply it.
-            try self.fmt("    local.get $_res{d}\n", .{a});
-            try self.w("    i32.load offset=4 ;; Ok payload\n");
-            try self.fmt("    local.set $_res{d}\n", .{a});
-            try self.bindLambdaParam(lam, aname);
+            try self.emit(.{ .local_get = slot });
+            try self.emitC(.{ .load = .{ .offset = 4 } }, ok_payload);
+            try self.emit(.{ .local_set = slot });
+            try self.bindLambdaParam(lam, slot);
             if (is_map) {
                 // Rewrap the mapped value as a fresh `{ tag: 0, payload }` Result.
-                const b = try self.declRes();
-                try self.w("    global.get $__heap_ptr\n");
-                try self.fmt("    local.set $_res{d}\n", .{b});
-                try self.w("    global.get $__heap_ptr\n");
-                try self.w("    i32.const 8\n");
-                try self.w("    i32.add\n");
-                try self.w("    global.set $__heap_ptr\n");
-                try self.fmt("    local.get $_res{d}\n", .{b});
-                try self.w("    i32.const 0\n");
-                try self.w("    i32.store ;; Ok tag\n");
-                try self.fmt("    local.get $_res{d}\n", .{b});
+                const out = try self.declRes();
+                try self.allocResultPair(out);
+                try self.emit(.{ .local_get = out });
+                try self.emit(zero);
+                try self.emitC(.{ .store = .{} }, "Ok tag");
+                try self.emit(.{ .local_get = out });
                 try self.inlineLambdaBody(lam.body);
-                try self.w("    i32.store offset=4 ;; mapped payload\n");
-                try self.fmt("    local.get $_res{d}\n", .{b});
+                try self.emitC(.{ .store = .{ .offset = 4 } }, "mapped payload");
+                try self.emit(.{ .local_get = out });
             } else {
                 // flatMap: the closure already yields a `@Result` pointer.
                 try self.inlineLambdaBody(lam.body);
             }
-            try self.w("      )\n");
-            try self.w("    )\n");
+            const else_seq = self.seal(&else_c, .{ .value = .i32 });
+
+            try self.emit(.{ .@"if" = .{
+                .result = .i32,
+                .then = .{ .seq = then_seq },
+                .@"else" = .{ .seq = else_seq },
+            } });
             return;
         }
 
         if (std.mem.eql(u8, callee, "__bp_result_unwrapOr")) {
-            const a = try self.declRes();
+            const slot = try self.declRes();
             try self.lowerExpr(recv.*);
-            try self.fmt("    local.set $_res{d}\n", .{a});
-            try self.fmt("    local.get $_res{d}\n", .{a});
-            try self.w("    i32.load ;; Result tag (0 = Ok, non-zero = Error)\n");
-            try self.w("    (if (result i32)\n");
-            try self.w("      (then\n");
-            if (arg1) |d| try self.lowerExpr(d.*) else try self.w("    i32.const 0\n");
-            try self.w("      )\n");
-            try self.w("      (else\n");
-            try self.fmt("    local.get $_res{d}\n", .{a});
-            try self.w("    i32.load offset=4 ;; Ok payload\n");
-            try self.w("      )\n");
-            try self.w("    )\n");
+            try self.emit(.{ .local_set = slot });
+            try self.emit(.{ .local_get = slot });
+            try self.emitC(.{ .load = .{} }, result_tag);
+
+            var then_c: Capture = .{};
+            self.open(&then_c);
+            if (arg1) |d| try self.lowerExpr(d.*) else try self.emit(zero);
+            const then_seq = self.seal(&then_c, .{ .value = .i32 });
+
+            var else_c: Capture = .{};
+            self.open(&else_c);
+            try self.emit(.{ .local_get = slot });
+            try self.emitC(.{ .load = .{ .offset = 4 } }, ok_payload);
+            const else_seq = self.seal(&else_c, .{ .value = .i32 });
+
+            try self.emit(.{ .@"if" = .{
+                .result = .i32,
+                .then = .{ .seq = then_seq },
+                .@"else" = .{ .seq = else_seq },
+            } });
             return;
         }
 
         if (std.mem.eql(u8, callee, "__bp_result_isOk")) {
             try self.lowerExpr(recv.*);
-            try self.w("    i32.load ;; Result tag\n");
-            try self.w("    i32.eqz ;; isOk = (tag == 0)\n");
+            try self.emitC(.{ .load = .{} }, "Result tag");
+            try self.emitC(opOf("i32", "eqz"), "isOk = (tag == 0)");
             return;
         }
 
         if (std.mem.eql(u8, callee, "__bp_result_isError")) {
             try self.lowerExpr(recv.*);
-            try self.w("    i32.load ;; Result tag\n");
-            try self.w("    i32.const 0\n");
-            try self.w("    i32.ne ;; isError = (tag != 0)\n");
+            try self.emitC(.{ .load = .{} }, "Result tag");
+            try self.emit(zero);
+            try self.emitC(opOf("i32", "ne"), "isError = (tag != 0)");
             return;
         }
 
         if (std.mem.eql(u8, callee, "__bp_option_map") or std.mem.eql(u8, callee, "__bp_option_flatMap")) {
             const le = lambdaArg(arg1) orelse {
-                try self.w("    ;; map/flatMap needs a literal closure on WASM — receiver passed through\n");
+                try self.note("map/flatMap needs a literal closure on WASM — receiver passed through");
                 try self.lowerExpr(recv.*);
                 return;
             };
             const lam = le.function.kind;
-            const a = try self.declRes();
-            var pbuf: [24]u8 = undefined;
-            const aname = try std.fmt.bufPrint(&pbuf, "_res{d}", .{a});
+            const slot = try self.declRes();
             try self.lowerExpr(recv.*);
-            try self.fmt("    local.set $_res{d}\n", .{a});
-            try self.fmt("    local.get $_res{d} ;; Option (0 = None, else Some payload)\n", .{a});
-            try self.w("    (if (result i32)\n");
-            try self.w("      (then\n");
+            try self.emit(.{ .local_set = slot });
+            try self.emitC(.{ .local_get = slot }, option_shape);
+
+            var then_c: Capture = .{};
+            self.open(&then_c);
             // Some: apply the closure to the present value.
-            try self.bindLambdaParam(lam, aname);
+            try self.bindLambdaParam(lam, slot);
             try self.inlineLambdaBody(lam.body);
-            try self.w("      )\n");
-            try self.w("      (else\n");
-            try self.w("    i32.const 0 ;; None — propagate absence\n");
-            try self.w("      )\n");
-            try self.w("    )\n");
+            const then_seq = self.seal(&then_c, .{ .value = .i32 });
+
+            var else_c: Capture = .{};
+            self.open(&else_c);
+            try self.emitC(zero, "None — propagate absence");
+            const else_seq = self.seal(&else_c, .{ .value = .i32 });
+
+            try self.emit(.{ .@"if" = .{
+                .result = .i32,
+                .then = .{ .seq = then_seq },
+                .@"else" = .{ .seq = else_seq },
+            } });
             return;
         }
 
         if (std.mem.eql(u8, callee, "__bp_option_unwrapOr")) {
-            const a = try self.declRes();
+            const slot = try self.declRes();
             try self.lowerExpr(recv.*);
-            try self.fmt("    local.set $_res{d}\n", .{a});
-            try self.fmt("    local.get $_res{d} ;; Option (0 = None, else Some payload)\n", .{a});
-            try self.w("    (if (result i32)\n");
-            try self.w("      (then\n");
-            try self.fmt("    local.get $_res{d} ;; Some — present value\n", .{a});
-            try self.w("      )\n");
-            try self.w("      (else\n");
-            if (arg1) |d| try self.lowerExpr(d.*) else try self.w("    i32.const 0\n");
-            try self.w("      )\n");
-            try self.w("    )\n");
+            try self.emit(.{ .local_set = slot });
+            try self.emitC(.{ .local_get = slot }, option_shape);
+
+            var then_c: Capture = .{};
+            self.open(&then_c);
+            try self.emitC(.{ .local_get = slot }, "Some — present value");
+            const then_seq = self.seal(&then_c, .{ .value = .i32 });
+
+            var else_c: Capture = .{};
+            self.open(&else_c);
+            if (arg1) |d| try self.lowerExpr(d.*) else try self.emit(zero);
+            const else_seq = self.seal(&else_c, .{ .value = .i32 });
+
+            try self.emit(.{ .@"if" = .{
+                .result = .i32,
+                .then = .{ .seq = then_seq },
+                .@"else" = .{ .seq = else_seq },
+            } });
             return;
         }
 
-        try self.fmt("    ;; unsupported Result/Option op: {s}\n", .{callee});
+        try self.noteF("unsupported Result/Option op: {s}", .{callee});
     }
 
     /// True when `e` evaluates to the 0/1 boolean carrier: the `true`/`false`
@@ -2998,14 +2736,14 @@ const Emitter = struct {
 
     fn lowerCase(self: *Emitter, c: anytype) anyerror!void {
         if (c.subjects.len == 0 or c.arms.len == 0) {
-            try self.w("    i32.const 0\n");
+            try self.emit(zero);
             return;
         }
-        const subj_local = try std.fmt.allocPrint(self.reg_arena.allocator(), "__case_{d}", .{self.case_depth});
+        const subj_local = try std.fmt.allocPrint(self.arena(), "__case_{d}", .{self.case_depth});
         self.case_depth += 1;
         try self.declareLocal(subj_local, "i32");
         try self.lowerCoerced(c.subjects[0], "i32");
-        try self.fmt("    local.set ${s}\n", .{subj_local});
+        try self.emit(.{ .local_set = subj_local });
         const subj_is_str = self.isStringExpr(c.subjects[0]);
         if (subj_is_str) try self.str_locals.put(subj_local, {});
 
@@ -3014,7 +2752,7 @@ const Emitter = struct {
 
     fn emitCaseArms(self: *Emitter, arms: anytype, subj: []const u8, idx: usize) anyerror!void {
         if (idx >= arms.len) {
-            try self.w("    i32.const 0\n");
+            try self.emit(zero);
             return;
         }
         const arm = arms[idx];
@@ -3023,52 +2761,60 @@ const Emitter = struct {
                 try self.lowerCoerced(arm.body, self.cur_result);
             },
             .numberLit => |n| {
-                try self.fmt("    local.get ${s}\n", .{subj});
+                try self.emit(.{ .local_get = subj });
                 const t = numLitType(n);
-                try self.fmt("    {s}.const {s}\n", .{ t, n });
-                try self.fmt("    {s}.eq\n", .{t});
-                try self.fmt("    (if (result {s})\n", .{self.cur_result});
-                try self.w("      (then\n");
-                try self.lowerCoerced(arm.body, self.cur_result);
-                try self.w("      )\n");
-                try self.w("      (else\n");
-                try self.emitCaseArms(arms, subj, idx + 1);
-                try self.w("      )\n");
-                try self.w("    )\n");
+                try self.emit(constOf(t, n));
+                try self.emit(opOf(t, "eq"));
+                try self.emitArmChain(arms, subj, idx, arm.body);
             },
             .stringLit => |s| {
                 _ = s;
-                try self.fmt("    local.get ${s}\n", .{subj});
-                try self.w("    drop\n");
+                try self.emit(.{ .local_get = subj });
+                try self.emit(.drop);
                 try self.lowerCoerced(arm.body, self.cur_result);
             },
             .@"or" => |pats| {
-                try self.w("    i32.const 0\n");
+                try self.emit(zero);
                 for (pats) |p| {
                     switch (p) {
                         .numberLit => |n| {
-                            try self.fmt("    local.get ${s}\n", .{subj});
+                            try self.emit(.{ .local_get = subj });
                             const t = numLitType(n);
-                            try self.fmt("    {s}.const {s}\n", .{ t, n });
-                            try self.fmt("    {s}.eq\n", .{t});
-                            try self.w("    i32.or\n");
+                            try self.emit(constOf(t, n));
+                            try self.emit(opOf(t, "eq"));
+                            try self.emit(opOf("i32", "or"));
                         },
                         else => {},
                     }
                 }
-                try self.fmt("    (if (result {s})\n", .{self.cur_result});
-                try self.w("      (then\n");
-                try self.lowerCoerced(arm.body, self.cur_result);
-                try self.w("      )\n");
-                try self.w("      (else\n");
-                try self.emitCaseArms(arms, subj, idx + 1);
-                try self.w("      )\n");
-                try self.w("    )\n");
+                try self.emitArmChain(arms, subj, idx, arm.body);
             },
             else => {
                 try self.lowerCoerced(arm.body, self.cur_result);
             },
         }
+    }
+
+    /// The `(if (result …) (then <arm body>) (else <rest of the chain>))` a
+    /// tested case arm expands to. The arm's test is already on the stack.
+    fn emitArmChain(self: *Emitter, arms: anytype, subj: []const u8, idx: usize, body: ast.Expr) anyerror!void {
+        const ty = vt(self.cur_result);
+
+        var then_c: Capture = .{};
+        self.open(&then_c);
+        try self.lowerCoerced(body, self.cur_result);
+        const then_seq = self.seal(&then_c, .{ .value = ty });
+
+        var else_c: Capture = .{};
+        self.open(&else_c);
+        try self.emitCaseArms(arms, subj, idx + 1);
+        const else_seq = self.seal(&else_c, .{ .value = ty });
+
+        try self.emit(.{ .@"if" = .{
+            .result = ty,
+            .then = .{ .seq = then_seq },
+            .@"else" = .{ .seq = else_seq },
+        } });
     }
 
     // ── aggregates in linear memory ───────────────────────────────────────────
@@ -3088,61 +2834,54 @@ const Emitter = struct {
 
     /// Bump the heap by `nbytes`, stash the base pointer in a fresh `$__mem{k}`
     /// scratch local, and return `k`.
-    fn allocSlots(self: *Emitter, nbytes: u32) !u32 {
-        const k = self.nextMem();
-        try self.w("    global.get $__heap_ptr\n");
-        try self.fmt("    local.set $__mem{d}\n", .{k});
+    fn allocSlots(self: *Emitter, nbytes: u32) ![]const u8 {
+        const base = try self.memName(self.nextMem());
+        try self.emit(.{ .global_get = heap_ptr });
+        try self.emit(.{ .local_set = base });
         if (nbytes > 0) {
-            try self.w("    global.get $__heap_ptr\n");
-            try self.fmt("    i32.const {d}\n", .{nbytes});
-            try self.w("    i32.add\n");
-            try self.w("    global.set $__heap_ptr\n");
+            try self.emit(.{ .global_get = heap_ptr });
+            try self.emit(try self.constInt(nbytes));
+            try self.emit(opOf("i32", "add"));
+            try self.emit(.{ .global_set = heap_ptr });
         }
-        return k;
+        return base;
     }
 
     /// Store one 4-byte slot. A float operand is kept a float — narrowed to
     /// `f32` so it still fits the slot — and stored with `f32.store`; feeding a
     /// float to `i32.store` is a validation error that rejected the module.
     /// KNOWN LIMIT: an `f64` field therefore round-trips at `f32` precision.
-    fn storeSlotExpr(self: *Emitter, k: u32, offset: u32, value: ast.Expr) !void {
-        try self.fmt("    local.get $__mem{d}\n", .{k});
-        const vt = self.wasmTypeOf(value);
-        const is_float = std.mem.eql(u8, vt, "f32") or std.mem.eql(u8, vt, "f64");
+    fn storeSlotExpr(self: *Emitter, base: []const u8, offset: u32, value: ast.Expr) !void {
+        try self.emit(.{ .local_get = base });
+        const value_ty = self.wasmTypeOf(value);
+        const is_float = std.mem.eql(u8, value_ty, "f32") or std.mem.eql(u8, value_ty, "f64");
         if (is_float) try self.lowerCoerced(value, "f32") else try self.lowerCoerced(value, "i32");
-        const op = if (is_float) "f32.store" else "i32.store";
-        if (offset == 0)
-            try self.fmt("    {s}\n", .{op})
-        else
-            try self.fmt("    {s} offset={d}\n", .{ op, offset });
+        try self.emit(.{ .store = .{
+            .ty = if (is_float) .f32 else .i32,
+            .offset = offset,
+        } });
     }
 
-    fn storeSlotConst(self: *Emitter, k: u32, offset: u32, value: i64) !void {
-        try self.fmt("    local.get $__mem{d}\n", .{k});
-        try self.fmt("    i32.const {d}\n", .{value});
-        if (offset == 0)
-            try self.w("    i32.store\n")
-        else
-            try self.fmt("    i32.store offset={d}\n", .{offset});
+    fn storeSlotConst(self: *Emitter, base: []const u8, offset: u32, value: i64) !void {
+        try self.emit(.{ .local_get = base });
+        try self.emit(try self.constInt(value));
+        try self.emit(.{ .store = .{ .offset = offset } });
     }
 
-    fn loadBase(self: *Emitter, k: u32) !void {
-        try self.fmt("    local.get $__mem{d}\n", .{k});
+    fn loadBase(self: *Emitter, base: []const u8) !void {
+        try self.emit(.{ .local_get = base });
     }
 
-    /// Emit `i32.load` (offset 0) or `i32.load offset=N`. Expects the base
-    /// pointer on the stack.
+    /// `i32.load` at `offset` — the emitter drops a zero `offset=`. Expects the
+    /// base pointer on the stack.
     fn emitLoadOffset(self: *Emitter, offset: u32) !void {
-        if (offset == 0)
-            try self.w("    i32.load\n")
-        else
-            try self.fmt("    i32.load offset={d}\n", .{offset});
+        try self.emit(.{ .load = .{ .offset = offset } });
     }
 
     fn lowerTupleLit(self: *Emitter, tl: anytype) anyerror!void {
-        const k = try self.allocSlots(@intCast(tl.elems.len * 4));
-        for (tl.elems, 0..) |el, i| try self.storeSlotExpr(k, @intCast(i * 4), el);
-        try self.loadBase(k);
+        const base = try self.allocSlots(@intCast(tl.elems.len * 4));
+        for (tl.elems, 0..) |el, i| try self.storeSlotExpr(base, @intCast(i * 4), el);
+        try self.loadBase(base);
     }
 
     /// F4 — list literals over linear memory with an explicit i32 length
@@ -3151,15 +2890,15 @@ const Emitter = struct {
     /// is `i32.load offset=(N+1)*4`. Matches the string layout convention
     /// so `.len` is uniform across both. Spread is still deferred.
     fn lowerArrayLit(self: *Emitter, al: anytype) anyerror!void {
-        if (al.spread != null) try self.w("    ;; note: array spread not lowered\n");
+        if (al.spread != null) try self.note("note: array spread not lowered");
         const total: u32 = @intCast((al.elems.len + 1) * 4);
-        const k = try self.allocSlots(total);
-        try self.storeSlotConst(k, 0, @intCast(al.elems.len));
+        const base = try self.allocSlots(total);
+        try self.storeSlotConst(base, 0, @intCast(al.elems.len));
         for (al.elems, 0..) |el, i| {
             const off: u32 = @intCast((i + 1) * 4);
-            try self.storeSlotExpr(k, off, el);
+            try self.storeSlotExpr(base, off, el);
         }
-        try self.loadBase(k);
+        try self.loadBase(base);
     }
 
     /// `record { a: 1, b: "x" }` → contiguous 4-byte slots in source-text order.
@@ -3176,11 +2915,11 @@ const Emitter = struct {
         // pre-register here so the registry is non-empty by the time a later
         // `recv.field` access fires.
         _ = self.ensureAnonRecordFromLit(rl) catch {};
-        const k = try self.allocSlots(@intCast(rl.fields.len * 4));
+        const base = try self.allocSlots(@intCast(rl.fields.len * 4));
         for (rl.fields, 0..) |f, i| {
-            try self.storeSlotExpr(k, @intCast(i * 4), f.value.*);
+            try self.storeSlotExpr(base, @intCast(i * 4), f.value.*);
         }
-        try self.loadBase(k);
+        try self.loadBase(base);
     }
 
     /// `lowerRecordLit` has no `Loc` in hand (`lowerExpr` calls the arm with
@@ -3203,7 +2942,7 @@ const Emitter = struct {
         if (self.rewrites.get(loc)) |sym| {
             const mangled = self.extMangledName(&nbuf, sym, cc.callee) orelse return false;
             const sig = self.fn_sigs.get(mangled) orelse {
-                try self.fmt("    i32.const 0 ;; unresolved dispatch: {s}\n", .{mangled});
+                try self.emitCf(zero, "unresolved dispatch: {s}", .{mangled});
                 return true;
             };
             var base: usize = 0;
@@ -3212,7 +2951,8 @@ const Emitter = struct {
                 base = 1;
             };
             try self.lowerCallArgs(cc.args, sig, base);
-            try self.fmt("    call ${s}\n", .{mangled});
+            // `mangled` lives in a stack buffer; the node outlives this frame.
+            try self.emit(.{ .call = try self.arena().dupe(u8, mangled) });
             return true;
         }
         // Qualified: `Sym.m(obj, args)` where `Sym` names an extension block —
@@ -3221,11 +2961,11 @@ const Emitter = struct {
             if (self.ext_by_name.contains(rn)) {
                 const mangled = self.extMangledName(&nbuf, rn, cc.callee) orelse return false;
                 const sig = self.fn_sigs.get(mangled) orelse {
-                    try self.fmt("    i32.const 0 ;; unresolved dispatch: {s}\n", .{mangled});
+                    try self.emitCf(zero, "unresolved dispatch: {s}", .{mangled});
                     return true;
                 };
                 try self.lowerCallArgs(cc.args, sig, 0);
-                try self.fmt("    call ${s}\n", .{mangled});
+                try self.emit(.{ .call = try self.arena().dupe(u8, mangled) });
                 return true;
             }
         }
@@ -3241,7 +2981,7 @@ const Emitter = struct {
         }
         var k = base + args.len;
         while (k < sig.params.len) : (k += 1) {
-            try self.fmt("    {s}.const 0 ;; missing argument\n", .{sig.params[k]});
+            try self.emitC(constOf(sig.params[k], "0"), "missing argument");
         }
     }
 
@@ -3278,20 +3018,20 @@ const Emitter = struct {
             }
             for (cc.args, 0..) |arg, i| {
                 if (base + i >= sig.params.len) {
-                    try self.fmt("    ;; extra argument {d} ignored ({s}/{d})\n", .{ i, cc.callee, sig.params.len });
+                    try self.noteF("extra argument {d} ignored ({s}/{d})", .{ i, cc.callee, sig.params.len });
                     break;
                 }
                 try self.lowerCoerced(arg.value.*, sig.params[base + i]);
             }
             var k = base + cc.args.len;
             while (k < sig.params.len) : (k += 1) {
-                try self.fmt("    {s}.const 0 ;; missing argument\n", .{sig.params[k]});
+                try self.emitC(constOf(sig.params[k], "0"), "missing argument");
             }
-            try self.fmt("    call ${s}\n", .{cc.callee});
+            try self.emit(.{ .call = cc.callee });
             return;
         }
         if (try self.lowerCollectionMethod(cc)) return;
-        try self.fmt("    i32.const 0 ;; unresolved call: {s}/{d}\n", .{ cc.callee, cc.args.len });
+        try self.emitCf(zero, "unresolved call: {s}/{d}", .{ cc.callee, cc.args.len });
     }
 
     /// Instance methods on the built-in array layout (`[len][e0][e1]…`) that
@@ -3301,31 +3041,30 @@ const Emitter = struct {
         const recv = cc.receiver orelse return false;
         if (std.mem.eql(u8, cc.callee, "at") and cc.args.len == 1) {
             // `xs.at(i)` → `xs[i]`, or 0 when out of range.
-            self.uses_array_at = true;
             try self.lowerValue(recv.*);
             try self.lowerCoerced(cc.args[0].value.*, "i32");
-            try self.w("    call $__arr_at\n");
+            try self.emit(self.builder().helper(.arr_at));
             return true;
         }
         if (std.mem.eql(u8, cc.callee, "length") and cc.args.len == 0) {
             try self.lowerValue(recv.*);
-            try self.w("    i32.load ;; .length (array/string prefix)\n");
+            try self.emitC(.{ .load = .{} }, ".length (array/string prefix)");
             return true;
         }
         return false;
     }
 
     fn lowerRecordCtor(self: *Emitter, cc: anytype, fields: []const []const u8) anyerror!void {
-        const k = try self.allocSlots(@intCast(fields.len * 4));
+        const base = try self.allocSlots(@intCast(fields.len * 4));
         for (fields, 0..) |fname, i| {
             const off: u32 = @intCast(i * 4);
             if (self.argForField(cc.args, fname, i)) |arg| {
-                try self.storeSlotExpr(k, off, arg.value.*);
+                try self.storeSlotExpr(base, off, arg.value.*);
             } else {
-                try self.storeSlotConst(k, off, 0);
+                try self.storeSlotConst(base, off, 0);
             }
         }
-        try self.loadBase(k);
+        try self.loadBase(base);
     }
 
     /// Pick the call argument that fills field `fname` (declaration index `idx`):
@@ -3346,17 +3085,17 @@ const Emitter = struct {
     /// lives at offset 0; payload fields follow at 4, 8, ...
     fn lowerEnumCtor(self: *Emitter, cc: anytype, tag: u32, variant: ast.EnumVariant) anyerror!void {
         const nslots = 1 + variant.fields.len;
-        const k = try self.allocSlots(@intCast(nslots * 4));
-        try self.storeSlotConst(k, 0, tag);
+        const base = try self.allocSlots(@intCast(nslots * 4));
+        try self.storeSlotConst(base, 0, tag);
         for (variant.fields, 0..) |vf, i| {
             const off: u32 = @intCast((i + 1) * 4);
             if (self.argForField(cc.args, vf.name, i)) |arg| {
-                try self.storeSlotExpr(k, off, arg.value.*);
+                try self.storeSlotExpr(base, off, arg.value.*);
             } else {
-                try self.storeSlotConst(k, off, 0);
+                try self.storeSlotConst(base, off, 0);
             }
         }
-        try self.loadBase(k);
+        try self.loadBase(base);
     }
 
     /// `recv.member` — tuple element (`t._0`), qualified enum unit variant
@@ -3367,7 +3106,7 @@ const Emitter = struct {
         // Codegen is untyped; `.len` is assumed to mean string length here.
         if (std.mem.eql(u8, ia.member, "len")) {
             try self.lowerExpr(ia.receiver.*);
-            try self.w("    i32.load ;; string length\n");
+            try self.emitC(.{ .load = .{} }, "string length");
             return;
         }
         // Tuple element access: `_0`, `_1`, ... → load at `index * 4`.
@@ -3383,7 +3122,7 @@ const Emitter = struct {
                     if (self.enums.get(ename)) |variants| {
                         for (variants, 0..) |v, i| {
                             if (std.mem.eql(u8, v.name, ia.member)) {
-                                try self.fmt("    i32.const {d} ;; {s}.{s}\n", .{ i, ename, ia.member });
+                                try self.emitCf(try self.constInt(i), "{s}.{s}", .{ ename, ia.member });
                                 return;
                             }
                         }
@@ -3413,29 +3152,11 @@ const Emitter = struct {
         if (self.recordTypeOfExpr(ia.receiver.*)) |rty| {
             if (self.fieldOffsetIn(rty, ia.member)) |off| {
                 if (ia.optional) {
-                    const k = self.nextMem();
-                    try self.lowerExpr(ia.receiver.*);
-                    try self.fmt("    local.tee $__mem{d}\n", .{k});
-                    try self.w("    i32.eqz\n");
-                    try self.w("    (if (result i32)\n");
-                    try self.w("      (then\n");
-                    try self.fmt("        i32.const 0 ;; ?.{s} on null\n", .{ia.member});
-                    try self.w("      )\n");
-                    try self.w("      (else\n");
-                    try self.fmt("        local.get $__mem{d}\n", .{k});
-                    if (off == 0)
-                        try self.fmt("        i32.load ;; ?.{s}\n", .{ia.member})
-                    else
-                        try self.fmt("        i32.load offset={d} ;; ?.{s}\n", .{ off, ia.member });
-                    try self.w("      )\n");
-                    try self.w("    )\n");
+                    try self.lowerOptionalField(ia, off, "");
                     return;
                 }
                 try self.lowerExpr(ia.receiver.*);
-                if (off == 0)
-                    try self.fmt("    i32.load ;; .{s}\n", .{ia.member})
-                else
-                    try self.fmt("    i32.load offset={d} ;; .{s}\n", .{ off, ia.member });
+                try self.emitCf(.{ .load = .{ .offset = off } }, ".{s}", .{ia.member});
                 return;
             }
         }
@@ -3444,22 +3165,7 @@ const Emitter = struct {
         // `local.tee` + `i32.eqz` guard as the typed branch above.
         if (self.uniqueFieldOffset(ia.member)) |off| {
             if (ia.optional) {
-                const k = self.nextMem();
-                try self.lowerExpr(ia.receiver.*);
-                try self.fmt("    local.tee $__mem{d}\n", .{k});
-                try self.w("    i32.eqz\n");
-                try self.w("    (if (result i32)\n");
-                try self.w("      (then\n");
-                try self.fmt("        i32.const 0 ;; ?.{s} on null\n", .{ia.member});
-                try self.w("      )\n");
-                try self.w("      (else\n");
-                try self.fmt("        local.get $__mem{d}\n", .{k});
-                if (off == 0)
-                    try self.fmt("        i32.load ;; ?.{s} (unique)\n", .{ia.member})
-                else
-                    try self.fmt("        i32.load offset={d} ;; ?.{s} (unique)\n", .{ off, ia.member });
-                try self.w("      )\n");
-                try self.w("    )\n");
+                try self.lowerOptionalField(ia, off, " (unique)");
                 return;
             }
             try self.lowerExpr(ia.receiver.*);
@@ -3470,10 +3176,37 @@ const Emitter = struct {
         // so wasmtime still executes the surrounding fn. `0` matches the
         // BEAM/erlang null-guard on missing fields.
         if (ia.optional) {
-            try self.fmt("    i32.const 0 ;; optional field access .{s} (unknown receiver type)\n", .{ia.member});
+            try self.emitCf(zero, "optional field access .{s} (unknown receiver type)", .{ia.member});
             return;
         }
-        try self.fmt("    i32.const 0 ;; field access .{s} (unknown receiver type)\n", .{ia.member});
+        try self.emitCf(zero, "field access .{s} (unknown receiver type)", .{ia.member});
+    }
+
+    /// `recv?.field` → stash the receiver, test it for null, and load the slot
+    /// only on the present branch. `suffix` marks which resolution found the
+    /// offset, matching the historical comments.
+    fn lowerOptionalField(self: *Emitter, ia: anytype, off: u32, suffix: []const u8) anyerror!void {
+        const mem = try self.memName(self.nextMem());
+        try self.lowerExpr(ia.receiver.*);
+        try self.emit(.{ .local_tee = mem });
+        try self.emit(opOf("i32", "eqz"));
+
+        var then_c: Capture = .{};
+        self.open(&then_c);
+        try self.emitAtCf(8, zero, "?.{s} on null", .{ia.member});
+        const then_seq = self.seal(&then_c, .{ .value = .i32 });
+
+        var else_c: Capture = .{};
+        self.open(&else_c);
+        try self.emitAt(8, .{ .local_get = mem });
+        try self.emitAtCf(8, .{ .load = .{ .offset = off } }, "?.{s}{s}", .{ ia.member, suffix });
+        const else_seq = self.seal(&else_c, .{ .value = .i32 });
+
+        try self.emit(.{ .@"if" = .{
+            .result = .i32,
+            .then = .{ .seq = then_seq },
+            .@"else" = .{ .seq = else_seq },
+        } });
     }
 
     /// Single-field heuristic for untyped wat codegen: returns the slot offset
@@ -3601,10 +3334,9 @@ const Emitter = struct {
     /// `a + b` on strings → a fresh length-prefixed buffer. Both operands are
     /// plain pointers, so this works for runtime values as well as literals.
     fn lowerStrConcat(self: *Emitter, a: ast.Expr, b: ast.Expr) anyerror!void {
-        self.uses_str_concat = true;
         try self.lowerValue(a);
         try self.lowerValue(b);
-        try self.w("    call $__str_concat\n");
+        try self.emit(self.builder().helper(.str_concat));
     }
 
     /// A `recv.slice(...)` method call. Codegen is untyped, so a `slice` with a
@@ -3617,20 +3349,19 @@ const Emitter = struct {
     /// `[start, end)` of the receiver. A missing `end` slices to the source's
     /// length. Leaves a pointer to the new string on the stack.
     fn lowerStrSlice(self: *Emitter, cc: anytype) anyerror!void {
-        self.uses_str_slice = true;
         try self.lowerExpr(cc.receiver.?.*);
         if (cc.args.len > 0)
             try self.lowerExpr(cc.args[0].value.*)
         else
-            try self.w("    i32.const 0\n");
+            try self.emit(zero);
         if (cc.args.len > 1) {
             try self.lowerExpr(cc.args[1].value.*);
         } else {
             // No end argument: slice to the end (load the source length prefix).
             try self.lowerExpr(cc.receiver.?.*);
-            try self.w("    i32.load ;; source length\n");
+            try self.emitC(.{ .load = .{} }, "source length");
         }
-        try self.w("    call $__str_slice\n");
+        try self.emit(self.builder().helper(.str_slice));
     }
 
     /// `a == b` / `a != b` on strings → byte comparison via `$__str_eq`. The
@@ -3638,11 +3369,10 @@ const Emitter = struct {
     /// agreed with the other backends because identical literals are interned
     /// at the same address.
     fn lowerStrEq(self: *Emitter, a: ast.Expr, b: ast.Expr, negate: bool) anyerror!void {
-        self.uses_str_eq = true;
         try self.lowerValue(a);
         try self.lowerValue(b);
-        try self.w("    call $__str_eq\n");
-        if (negate) try self.w("    i32.eqz\n");
+        try self.emit(self.builder().helper(.str_eq));
+        if (negate) try self.emit(opOf("i32", "eqz"));
     }
 
     fn lowerLoop(self: *Emitter, lp: anytype) anyerror!void {
@@ -3659,7 +3389,7 @@ const Emitter = struct {
         if (self.isArrayExpr(lp.iter.*)) return self.lowerCollectionLoop(lp);
         // Iterating a lambda-backed iterator or an opaque value has no wasm
         // lowering yet; a no-op is at least loadable.
-        try self.w("    i32.const 0 ;; loop over unknown iterable\n");
+        try self.emitC(zero, "loop over unknown iterable");
     }
 
     /// `x` names an `[len][e0][e1]…` blob: an array literal, or a name bound to
@@ -3695,45 +3425,67 @@ const Emitter = struct {
         try self.declareLocal(cur, "i32");
         try self.declareLocal(len, "i32");
 
-        const item = if (lp.params.len > 0) lp.params[0] else "__it";
-        try self.declareLocal(item, "i32");
+        const elem = if (lp.params.len > 0) lp.params[0] else "__it";
+        try self.declareLocal(elem, "i32");
         const idx_param: ?[]const u8 = if (lp.params.len > 1) lp.params[1] else null;
         if (idx_param) |ip| try self.declareLocal(ip, "i32");
 
         try self.lowerCoerced(lp.iter.*, "i32");
-        try self.fmt("    local.set ${s}\n", .{base});
-        try self.fmt("    local.get ${s}\n", .{base});
-        try self.w("    i32.load ;; element count\n");
-        try self.fmt("    local.set ${s}\n", .{len});
-        try self.w("    i32.const 0\n");
-        try self.fmt("    local.set ${s}\n", .{cur});
+        try self.emit(.{ .local_set = base });
+        try self.emit(.{ .local_get = base });
+        try self.emitC(.{ .load = .{} }, "element count");
+        try self.emit(.{ .local_set = len });
+        try self.emit(zero);
+        try self.emit(.{ .local_set = cur });
 
-        try self.w("    (block $__break\n");
-        try self.w("      (loop $__continue\n");
-        try self.fmt("        local.get ${s}\n", .{cur});
-        try self.fmt("        local.get ${s}\n", .{len});
-        try self.w("        i32.ge_s\n");
-        try self.w("        br_if $__break\n");
-        try self.fmt("        local.get ${s}\n", .{base});
-        try self.fmt("        local.get ${s}\n", .{cur});
-        try self.w("        i32.const 4\n");
-        try self.w("        i32.mul\n");
-        try self.w("        i32.add\n");
-        try self.w("        i32.load offset=4\n");
-        try self.fmt("        local.set ${s}\n", .{item});
+        var loop_c: Capture = .{};
+        self.open(&loop_c);
+        try self.emitAt(8, .{ .local_get = cur });
+        try self.emitAt(8, .{ .local_get = len });
+        try self.emitAt(8, opOf("i32", "ge_s"));
+        try self.emitAt(8, .{ .br_if = break_label });
+        try self.emitAt(8, .{ .local_get = base });
+        try self.emitAt(8, .{ .local_get = cur });
+        try self.emitAt(8, try self.constInt(4));
+        try self.emitAt(8, opOf("i32", "mul"));
+        try self.emitAt(8, opOf("i32", "add"));
+        try self.emitAt(8, .{ .load = .{ .offset = 4 } });
+        try self.emitAt(8, .{ .local_set = elem });
         if (idx_param) |ip| {
-            try self.fmt("        local.get ${s}\n", .{cur});
-            try self.fmt("        local.set ${s}\n", .{ip});
+            try self.emitAt(8, .{ .local_get = cur });
+            try self.emitAt(8, .{ .local_set = ip });
         }
         for (lp.body) |stmt| _ = try self.emitStmt(stmt, false);
-        try self.fmt("        local.get ${s}\n", .{cur});
-        try self.w("        i32.const 1\n");
-        try self.w("        i32.add\n");
-        try self.fmt("        local.set ${s}\n", .{cur});
-        try self.w("        br $__continue\n");
-        try self.w("      )\n");
-        try self.w("    )\n");
-        try self.w("    i32.const 0\n");
+        try self.emitAt(8, .{ .local_get = cur });
+        try self.emitAt(8, one);
+        try self.emitAt(8, opOf("i32", "add"));
+        try self.emitAt(8, .{ .local_set = cur });
+        try self.emitAt(8, .{ .br = continue_label });
+        const loop_seq = self.seal(&loop_c, .terminated);
+
+        try self.emitLoopBlock(loop_seq);
+        try self.emit(zero);
+    }
+
+    /// `(block $__break (loop $__continue …))` around a lowered loop body, and
+    /// the labels both jumps use.
+    const break_label = "__break";
+    const continue_label = "__continue";
+
+    fn emitLoopBlock(self: *Emitter, body: Seq) !void {
+        var block_c: Capture = .{};
+        self.open(&block_c);
+        try self.emitAt(6, .{ .block = .{
+            .kind = .loop,
+            .label = continue_label,
+            .body = body,
+        } });
+        const block_seq = self.seal(&block_c, .none);
+        try self.emit(.{ .block = .{
+            .kind = .block,
+            .label = break_label,
+            .body = block_seq,
+        } });
     }
 
     fn lowerRangeLoop(self: *Emitter, params: []const []const u8, body: []const ast.Stmt, r: anytype) anyerror!void {
@@ -3741,30 +3493,30 @@ const Emitter = struct {
         try self.declareLocal(param, "i32");
 
         try self.lowerCoerced(r.start.*, "i32");
-        try self.fmt("    local.set ${s}\n", .{param});
+        try self.emit(.{ .local_set = param });
 
-        try self.w("    (block $__break\n");
-        try self.w("      (loop $__continue\n");
-
+        var loop_c: Capture = .{};
+        self.open(&loop_c);
         if (r.end) |end| {
-            try self.fmt("        local.get ${s}\n", .{param});
+            try self.emitAt(8, .{ .local_get = param });
             try self.lowerExpr(end.*);
-            try self.w("        i32.ge_s\n");
-            try self.w("        br_if $__break\n");
+            try self.emitAt(8, opOf("i32", "ge_s"));
+            try self.emitAt(8, .{ .br_if = break_label });
         }
 
         for (body) |stmt| {
             _ = try self.emitStmt(stmt, false);
         }
 
-        try self.fmt("        local.get ${s}\n", .{param});
-        try self.w("        i32.const 1\n");
-        try self.w("        i32.add\n");
-        try self.fmt("        local.set ${s}\n", .{param});
-        try self.w("        br $__continue\n");
-        try self.w("      )\n");
-        try self.w("    )\n");
-        try self.w("    i32.const 0\n");
+        try self.emitAt(8, .{ .local_get = param });
+        try self.emitAt(8, one);
+        try self.emitAt(8, opOf("i32", "add"));
+        try self.emitAt(8, .{ .local_set = param });
+        try self.emitAt(8, .{ .br = continue_label });
+        const loop_seq = self.seal(&loop_c, .terminated);
+
+        try self.emitLoopBlock(loop_seq);
+        try self.emit(zero);
     }
 
     // ── numeric types ─────────────────────────────────────────────────────────
@@ -3848,7 +3600,7 @@ const Emitter = struct {
                 (if (eq(u8, from, "f64")) "i32.trunc_f64_s" else if (eq(u8, from, "f32")) "i32.trunc_f32_s" else "i32.wrap_i64")
             else
                 null;
-        if (opcode) |o| try self.fmt("    {s}\n", .{o});
+        if (opcode) |o| try self.emit(.{ .convert = o });
     }
 
     /// Lower `e` and convert the result to `want`.
@@ -3875,7 +3627,7 @@ const Emitter = struct {
         if (self.uses_str_concat_rt and op == Op.add and isStrLit(lhs) == null and isStrLit(rhs) == null) {
             try self.lowerValue(lhs);
             try self.lowerValue(rhs);
-            try self.w("    call $__str_concat_rt\n");
+            try self.emit(try self.builder().externCall("__str_concat_rt"));
             return;
         }
         const t = self.unifyNum(self.wasmTypeOf(lhs), self.wasmTypeOf(rhs));
@@ -3900,11 +3652,11 @@ const Emitter = struct {
             Op.@"or" => if (is_float) null else "or",
         };
         if (opname) |on| {
-            try self.fmt("    {s}.{s}\n", .{ t, on });
+            try self.emit(opOf(t, on));
         } else {
             // No opcode for this pair (float `%`, float `&&`): discard the rhs
             // and keep the lhs so the stack stays balanced.
-            try self.fmt("    drop ;; unsupported binary op for {s}\n", .{t});
+            try self.emitCf(.drop, "unsupported binary op for {s}", .{t});
         }
     }
 
@@ -3912,11 +3664,11 @@ const Emitter = struct {
         const t = self.wasmTypeOf(inner);
         if (t[0] == 'f') {
             try self.lowerValue(inner);
-            try self.fmt("    {s}.neg\n", .{t});
+            try self.emit(opOf(t, "neg"));
         } else {
-            try self.fmt("    {s}.const 0\n", .{t});
+            try self.emit(constOf(t, "0"));
             try self.lowerCoerced(inner, t);
-            try self.fmt("    {s}.sub\n", .{t});
+            try self.emit(opOf(t, "sub"));
         }
     }
 
@@ -3931,28 +3683,32 @@ const Emitter = struct {
         const as_stmt = then_void and else_void;
 
         try self.lowerExpr(i.cond.*);
-        if (as_stmt) {
-            try self.w("    (if\n");
-        } else {
-            try self.fmt("    (if (result {s})\n", .{self.cur_result});
-        }
-        try self.w("      (then\n");
-        try self.emitBranchBody(i.then_, as_stmt);
-        try self.w("      )\n");
-        if (i.else_) |els| {
-            try self.w("      (else\n");
-            try self.emitBranchBody(els, as_stmt);
-            try self.w("      )\n");
-        } else if (!as_stmt) {
-            try self.w("      (else\n");
-            try self.fmt("        {s}.const 0\n", .{self.cur_result});
-            try self.w("      )\n");
-        }
-        try self.w("    )\n");
-    }
+        const result: ?ValType = if (as_stmt) null else vt(self.cur_result);
 
-    fn emitBranchBody(self: *Emitter, body: []const ast.Stmt, as_stmt: bool) anyerror!void {
-        _ = try self.emitBody(body, !as_stmt);
+        var then_c: Capture = .{};
+        self.open(&then_c);
+        const then_tail = try self.emitBody(i.then_, !as_stmt);
+        const then_seq = self.seal(&then_c, stackOf(then_tail, self.cur_result));
+
+        var else_seq: ?Seq = null;
+        if (i.else_) |els| {
+            var else_c: Capture = .{};
+            self.open(&else_c);
+            const else_tail = try self.emitBody(els, !as_stmt);
+            else_seq = self.seal(&else_c, stackOf(else_tail, self.cur_result));
+        } else if (!as_stmt) {
+            // A value-form `if` must fill its `(result …)` on both paths.
+            var else_c: Capture = .{};
+            self.open(&else_c);
+            try self.emitAt(8, constOf(self.cur_result, "0"));
+            else_seq = self.seal(&else_c, .{ .value = vt(self.cur_result) });
+        }
+
+        try self.emit(.{ .@"if" = .{
+            .result = result,
+            .then = .{ .seq = then_seq },
+            .@"else" = if (else_seq) |s| .{ .seq = s } else null,
+        } });
     }
 
     /// True when an if-branch body ends in a void expression (a void

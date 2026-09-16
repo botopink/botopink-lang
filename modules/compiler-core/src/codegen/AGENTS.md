@@ -29,7 +29,8 @@ codegen/
 ├── erlang.zig        ← Erlang source emitter (blind)
 ├── beam_asm.zig      ← BEAM Assembly `.S` emitter
 ├── beam/             ← BEAM term model + shared `.erl`/`.S` emitters — see [`beam/AGENTS.md`](beam/AGENTS.md)
-├── wat.zig           ← WebAssembly Text `.wat` emitter
+├── wat.zig           ← WAT backend: lowers to the wat code model, writes no text
+├── wat/              ← WAT code model + emitter + runtime helpers — see [`wat/AGENTS.md`](wat/AGENTS.md)
 ├── typescript.zig    ← TypeScript `.d.ts` typedef generator
 ├── runtime.zig       ← executes generated code in tests (RUN LOG capture)
 ├── snapshot.zig      ← codegen snapshot builder / assertions
@@ -63,11 +64,12 @@ codegen/
 | `commonJS.zig` | CommonJS emitter. See [commonJS](#commonjs) below |
 | `erlang.zig` | Erlang source emitter. See [erlang](#erlang) below |
 | `beam_asm.zig` | BEAM Assembly `.S` emitter, assembled with `erlc +from_asm`. See [beam_asm](#beam_asm) below |
-| `wat.zig` | WebAssembly Text emitter. See [wat](#wat) below |
+| `wat/` | WebAssembly-text code model and the only writer of `.wat`: `wat_ast.zig` (`Module`/`Item`/`Func`/`Seq`/`Instr` + `Builder` + the invariants), `wat_emitter.zig` (s-expression layout, `$` names, data escaping), `wat_prelude.zig` (the runtime helpers as built nodes). See [`wat/AGENTS.md`](wat/AGENTS.md) |
+| `wat.zig` | WAT backend: builds `wat/wat_ast.zig` nodes and hands them to the emitter. See [wat](#wat) below |
 | `typescript.zig` | `.d.ts` typedef generator (optional secondary output, `Config.typeDefLanguage`). Type declarations only — no call lowering. Skips template fns (`TypeRef.isTemplateReturnType()`) and phantom `@Context` structs, erases `@Context<B, R>` to `R`, renders an anonymous `TypeRef.record_type` as `{ f: T; … }` |
 | `runtime.zig` | Test-side execution for the snapshot `----- RUN LOG -----` block. See [runtime](#runtime) below |
 | `snapshot.zig` | `buildSnapshot` / `buildSnapshotMulti` / `assertCodegen` / `assertCodegenError`; `writeComptimeSections` writes `GenerateResult.comptime_trace` (`COMPTIME ERLANG` / `COMPTIME REPLY`, rendered by `comptime/trace.zig`) then `COMPTIME VALUES` for every backend. A `SnapInput` with `result == null` (the module never reached the backend) or with `comptime_err` set writes a `COMPILE DIAGNOSTIC` section instead of the code section — spec 06 H3, which used to leave such snapshots empty |
-| `tests.zig` | Barrel aggregating `tests/<feature>.zig` and the `beam/*.zig` unit tests; harness in `tests/helpers.zig` (`assertJs`, `assertJsSingle`, `assertJsError`, `assertJsTestMode`, `assertJsContains`, `assertConsumerJs`, `configs` — one config per target) |
+| `tests.zig` | Barrel aggregating `tests/<feature>.zig` plus the `beam/*.zig` and `wat/wat_emitter.zig` unit tests; harness in `tests/helpers.zig` (`assertJs`, `assertJsSingle`, `assertJsError`, `assertJsTestMode`, `assertJsContains`, `assertConsumerJs`, `configs` — one config per target) |
 
 ### commonJS
 
@@ -351,28 +353,43 @@ codegen/
 
 ### wat
 
+**The backend builds a model; `wat/wat_emitter.zig` renders it.** Nothing in
+`wat.zig` writes `.wat` text — lowering appends `wat_ast.Line`s to the open
+sequence (`emit`/`emitC`/`emitAt`/`note`), collects top-level forms with `item`,
+and `emitWat` assembles the module and calls `renderModule`. A nested body (an
+`if` arm, a `loop` body) is lowered into a `Capture` and `seal`ed with the stack
+effect its context expects. See [`wat/AGENTS.md`](wat/AGENTS.md) for the model.
+
 **The emitted module must load.** Every snapshot under
 `snapshots/codegen/wasm/` is expected to pass `wasmtime compile`; a shape the
 backend cannot lower yet emits an honest `;; …` placeholder rather than
-something that fails validation. The four rules that keep it that way:
+something that fails validation. The four rules that keep it that way — the
+first three are now enforced by the model, not by discipline:
 
 1. **Locals are hoisted.** `declareLocal` is the *only* way a `(local …)`
-   reaches the output — it queues into `pending_locals`, `renderBody` lowers the
-   body into a detached buffer, and `flushFn` writes the declarations into the
-   function header. WAT forbids a `(local …)` after the first instruction.
-   Scratch names (`$__mem{n}`, `$_try{n}`) are pre-counted by `countMems` /
-   `countTrys`, which must walk **every** sub-expression — a method call's
-   `receiver` included, or `[1,2].at(0)` sets an undeclared `$__mem0`.
+   reaches the output: it queues into `pending_locals`, `renderBody` lowers the
+   body into a detached sequence, and `localLines` hands the declarations to the
+   function node — the model has no local-declaration instruction, so there is
+   nowhere else to put one. Scratch names (`$__mem{n}`, `$_try{n}`) are
+   pre-counted by `countMems` / `countTrys`, which must walk **every**
+   sub-expression — a method call's `receiver` included, or `[1,2].at(0)` sets
+   an undeclared `$__mem0`.
 2. **One value discipline** (`Tail` = `value` | `none` | `terminated`).
    `exprTail` is the single classifier; every arm of `lowerExpr` must agree with
    it. `emitStmt` normalises to what the context asked for (pushes a zero, or
    `drop`s). `ifIsStatementForm` is shared by `lowerIfExpr`, `exprTail` and
    `fnHasResult` so a two-void-arm `if` is emitted without `(result …)`, is not
-   `drop`ped, and does not give its function a `(result …)` it never fills.
+   `drop`ped, and does not give its function a `(result …)` it never fills. The
+   answer is then *carried*: `stackOf` tags each sequence, and
+   `wat_ast.Builder.func` refuses a body that does not match the signature.
 3. **No reference to a symbol the module does not define.** `registerSymbols`
    records every fn signature and global up front; an unresolved callee becomes
    an `;; unresolved call: f/N` stub and a bodyless `declare fn` is skipped
-   entirely. A single dangling `call`/`global.get` rejects the whole module.
+   entirely. A single dangling `call`/`global.get` rejects the whole module, so
+   `renderModule` validates every `call` against the module's functions,
+   imports and declared externs before writing anything. The runtime helpers go
+   further: `Builder.helper` is the only way to name one and marks it for
+   emission in the same act.
 4. **Types are recovered and coerced, never assumed.** `wasmTypeOf` recovers a
    value type from the literal spelling, a local/param/global's declared type or
    a callee's registered result; `lowerCoerced` + `emitConvert` meet the type
@@ -413,7 +430,7 @@ something that fails validation. The four rules that keep it that way:
   (never `global.get $true`, which references an undefined global).
 - **Parameters always have a name**: `paramSymbol` synthesizes `$__p{i}` for a
   destructuring parameter the source did not name — `(param $ i32)` is a WAT
-  parse error.
+  parse error, and `wat_ast.Builder.param` refuses to build one.
 - **Entrypoint** (`emitEntrypointWrapper`): calls `$main` and `drop`s its
   result when `main` returns a value (`main_returns_value`).
 - **Aggregates in linear memory**: tuples/arrays/records/enum payloads are
@@ -430,10 +447,10 @@ something that fails validation. The four rules that keep it that way:
 - **`@print` picks a helper by operand type**: `$__print_str` writes the bytes
   of a length-prefixed string, `$__print_bool` writes `true`/`false`,
   `$__print_f64` writes an integer part plus up to 6 trimmed fraction digits,
-  and `$__print_i32` formats digits into scratch memory. Each is emitted only
-  when used (`uses_print_*`). Scratch layout below the data section (which
-  starts at 256): `0..8` the WASI iovec, `8` the newline byte, `16..32` the bool
-  text, `32..64` the float fraction, `64..128` the i32 digits.
+  and `$__print_i32` formats digits into scratch memory. Each group is emitted
+  exactly when something asked for it — `Builder.helper` hands out the symbol
+  and sets the flag together. The helpers themselves are nodes in
+  `wat/wat_prelude.zig`; the scratch layout they assume is documented there.
 - **Methods**: `implement`/`extend` methods (`emitExtensionMethods`) and record
   methods (`emitInterfaceMethods`) emit as `$<owner>_<method>` with `self` as a
   real `i32` param (synthesized when the body references `self` without
@@ -450,7 +467,13 @@ something that fails validation. The four rules that keep it that way:
 - **Effects**: eager; `__bp_future_rejected` → `unreachable`.
 - **Cross-module**: single-module only. An import resolving to another module's
   export emits `;; cross-module import not linked (wasm single-module)`.
-- `emitFnWat` is a pub single-fn hook (wat analogue of `commonJS.emitFnJs`).
+- `emitFnWat` is a pub single-fn hook (wat analogue of `commonJS.emitFnJs`). It
+  renders *forms*, not a module: the caller concatenates them with the
+  `wat_runtime` prelude, which is where `$__str_concat_rt`, `$__emit`,
+  `$__compilerError` and `$__binding_ref` are defined. Those four are built with
+  `Builder.externCall`, so a module that emits one records it in
+  `Module.externs` rather than tripping the undefined-call check — see the KNOWN
+  GAP note in `wat.zig`: nothing defines them in the whole-program path.
 
 ### runtime
 
