@@ -94,10 +94,7 @@ pub fn evaluate(
         else => |e| return e,
     };
 
-    const dir = ".botopinkbuild/tmp/template";
-    std.Io.Dir.cwd().createDirPath(io, dir) catch return error.EvalFailed;
-    const path = try std.fmt.allocPrint(arena, "{s}/{s}.erl", .{ dir, source.module });
-    std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = source.code }) catch return error.EvalFailed;
+    const path = try writeModule(arena, io, ".botopinkbuild/tmp/template", source.module, source.code);
 
     const response = persistent_erl.evalDetailed(arena, io, path) catch return error.EvalFailed;
     if (traces) |list| try list.append(arena, .{
@@ -115,6 +112,27 @@ pub fn evaluate(
         .compile_error => |detail| .{ .err = try errorText(arena, "the template module did not compile", detail) },
         .runtime_error => |detail| .{ .err = try errorText(arena, "the template body raised", detail) },
     };
+}
+
+/// Write `<dir>/<module>.erl` and return its path. The module is written to a
+/// uniquely named sibling first and renamed into place, so a reader never sees
+/// a partial file: two evaluations of the same body — concurrent tests, or two
+/// compiler processes sharing a working directory — derive the same
+/// content-hashed name, and a plain truncate-and-write let one `compile:file`
+/// read the file mid-rewrite and fail with no usable diagnostic.
+pub fn writeModule(arena: std.mem.Allocator, io: std.Io, dir: []const u8, module: []const u8, code: []const u8) EvalError![]const u8 {
+    const cwd = std.Io.Dir.cwd();
+    cwd.createDirPath(io, dir) catch return error.EvalFailed;
+    const path = try std.fmt.allocPrint(arena, "{s}/{s}.erl", .{ dir, module });
+    var nonce: [8]u8 = undefined;
+    io.random(&nonce);
+    const staging = try std.fmt.allocPrint(arena, "{s}.{x}.tmp", .{ path, std.mem.readInt(u64, &nonce, .little) });
+    cwd.writeFile(io, .{ .sub_path = staging, .data = code }) catch return error.EvalFailed;
+    cwd.rename(staging, cwd, path, io) catch {
+        cwd.deleteFile(io, staging) catch {};
+        return error.EvalFailed;
+    };
+    return path;
 }
 
 fn errorText(arena: std.mem.Allocator, what: []const u8, detail: []const u8) ![]const u8 {
