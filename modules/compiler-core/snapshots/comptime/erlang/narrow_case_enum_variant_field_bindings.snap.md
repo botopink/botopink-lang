@@ -12,6 +12,50 @@ fn area(s: Shape) -> f64 {
         Point -> 0.0;
     };
 }
-@print(area(Shape.Circle(2.0)));
+fn main() {
+    @print(area(Shape.Circle(2.0)));
+}
+```
+
+----- TYPED AST JSON -- main.json
+```json
+{
+  "declarations": [
+    {
+      "ast": "enum_def",
+      "name": "Shape",
+      "id": 0
+    },
+    {
+      "ast": "fn_def",
+      "name": "area",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "s",
+          "type": "Shape"
+        }
+      ],
+      "return_type": "f64",
+      "body": [
+        {
+          "source": "return case s {"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "main",
+      "is_pub": false,
+      "params": [],
+      "return_type": "void",
+      "body": [
+        {
+          "source": "@print(area(Shape.Circle(2.0)));"
+        }
+      ]
+    }
+  ]
+}
 ```
 

@@ -82,10 +82,10 @@ test "exhaustiveness: nested pattern matching" {
         \\    Ok(value: T),
         \\    Err(error: E),
         \\};
-        \\val unwrap_or = fn(r: Result<i32, string>, default: i32) -> i32 {
+        \\val unwrap_or = fn(r: Result<i32, string>, fallback: i32) -> i32 {
         \\    case r {
         \\        Ok(v) -> v,
-        \\        Err(_) -> default,
+        \\        Err(_) -> fallback,
         \\    }
         \\};
     );

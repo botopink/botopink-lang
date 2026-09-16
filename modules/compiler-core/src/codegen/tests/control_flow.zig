@@ -168,7 +168,9 @@ test "js: loop ---- map with break (add tax)" {
         \\    val taxa = valor * 0.15;
         \\    break valor + taxa;
         \\};
-        \\@print(precosComTaxa);
+        \\fn main() {
+        \\    @print(precosComTaxa);
+        \\}
     );
 }
 
@@ -180,7 +182,9 @@ test "js: loop ---- filter with conditional break" {
         \\        break valor;
         \\    };
         \\};
-        \\@print(apenasGrandes);
+        \\fn main() {
+        \\    @print(apenasGrandes);
+        \\}
     );
 }
 
@@ -190,7 +194,9 @@ test "js: loop ---- map with break simple" {
         \\val dobrados = loop (ids) { id ->
         \\    break id * 2;
         \\};
-        \\@print(dobrados);
+        \\fn main() {
+        \\    @print(dobrados);
+        \\}
     );
 }
 
@@ -201,7 +207,9 @@ test "js: loop ---- even numbers with break" {
         \\        break i;
         \\    };
         \\};
-        \\@print(processamento);
+        \\fn main() {
+        \\    @print(processamento);
+        \\}
     );
 }
 
@@ -478,12 +486,17 @@ test "js: try ---- catch with case handler" {
 
 test "js: throw ---- inside case arm" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Status = enum { Ok, Fail }
-        \\fn check(s: Status) -> i32 {
+        \\enum Status { Ok, Fail }
+        \\#[@result]
+        \\fn check(s: Status) -> @Result<i32, string> {
         \\    return case s {
-        \\        Status.Ok -> 1;
-        \\        Status.Fail -> throw "failed";
+        \\        Ok -> 1;
+        \\        Fail -> throw "failed";
         \\    };
+        \\}
+        \\fn main() {
+        \\    @print(check(Status.Ok).isOk());
+        \\    @print(check(Status.Fail).isOk());
         \\}
     );
 }
@@ -510,12 +523,15 @@ test "js: try ---- catch preserves surrounding bindings" {
 
 test "js: throw ---- inside loop body" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn validate(items: i32) {
-        \\    val i = 0;
-        \\    loop {
-        \\        if (i > items) { throw "too many"; };
-        \\        break;
+        \\#[@result]
+        \\fn validate(items: i32) -> @Result<i32, string> {
+        \\    loop (0..items) { i ->
+        \\        if (i > 2) { throw "too many"; };
         \\    };
+        \\    return items;
+        \\}
+        \\fn main() {
+        \\    @print(validate(2).isOk());
         \\}
     );
 }

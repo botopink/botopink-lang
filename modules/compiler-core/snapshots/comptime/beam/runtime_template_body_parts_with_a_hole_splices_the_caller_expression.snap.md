@@ -89,6 +89,13 @@ main() ->
 }
 ```
 
+----- BOTOPINK TRANSFORM CODE -- main.bp
+```botopink
+val name = "world";
+
+val page = "" + "<p>" + name + "</p>";
+```
+
 ----- TYPED AST JSON -- main.json
 ```json
 {

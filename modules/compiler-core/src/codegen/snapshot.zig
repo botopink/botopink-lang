@@ -7,6 +7,12 @@
 ///   ----- TYPESCRIPT TYPEDEF -- name.d.ts  (optional)
 ///   ----- RUN LOG -----  (optional)
 ///
+/// A module that never reached the backend (parse / type error) or that comptime
+/// validation rejected gets, in place of the code section:
+///   ----- COMPILE DIAGNOSTIC -- name
+/// so a program that does not compile can no longer be recorded as an empty
+/// snapshot that compares equal to itself (spec 06 defect H3).
+///
 /// And for error tests:
 ///   ----- SOURCE CODE -- main.bp
 ///   ----- ERROR
@@ -15,14 +21,22 @@ const snapMod = @import("../utils/snap.zig");
 const codegen = @import("../codegen.zig");
 const config = @import("./config.zig");
 const moduleOutput = @import("./moduleOutput.zig");
+const comptimeSnapshot = @import("../comptime/snapshot.zig");
 const Module = codegen.Module;
 const GenerateResult = moduleOutput.GenerateResult;
 
 /// Input data for snapshot generation.
+///
+/// `result` is null for a module that never reached codegen (parse / type
+/// error): the backends drop it from their output list. `diagnostic` then
+/// carries the rendered reason, which `buildSnapshot` records as a
+/// `COMPILE DIAGNOSTIC` section — spec 06 defect H3, where such a module used
+/// to contribute nothing at all and the snapshot compared empty with empty.
 pub const SnapInput = struct {
     name: []const u8,
     src: []const u8,
-    result: GenerateResult,
+    result: ?GenerateResult = null,
+    diagnostic: ?[]const u8 = null,
 };
 
 /// The comptime evidence, shared by every backend: the decorator/template
@@ -38,7 +52,14 @@ fn writeComptimeSections(alloc: std.mem.Allocator, buf: *std.ArrayListUnmanaged(
 }
 
 /// Builds the full snapshot text for a single codegen module output.
-pub fn buildSnapshot(alloc: std.mem.Allocator, name: []const u8, src: []const u8, result: GenerateResult, cfg: config.Config) ![]u8 {
+pub fn buildSnapshot(
+    alloc: std.mem.Allocator,
+    name: []const u8,
+    src: []const u8,
+    result_opt: ?GenerateResult,
+    diagnostic: ?[]const u8,
+    cfg: config.Config,
+) ![]u8 {
     var buf: std.ArrayListUnmanaged(u8) = .empty;
     errdefer buf.deinit(alloc);
 
@@ -48,6 +69,26 @@ pub fn buildSnapshot(alloc: std.mem.Allocator, name: []const u8, src: []const u8
     try buf.appendSlice(alloc, srcHdr);
     try buf.appendSlice(alloc, src);
     try buf.appendSlice(alloc, "\n```\n\n");
+
+    const result = result_opt orelse {
+        // The module never reached the backend — record why.
+        try comptimeSnapshot.appendDiagnosticSection(
+            alloc,
+            &buf,
+            name,
+            diagnostic orelse "error: the module did not compile (no diagnostic available)\n",
+        );
+        return try buf.toOwnedSlice(alloc);
+    };
+
+    // Comptime validation rejected the module: the backends emit an empty
+    // program, so show the diagnostic in place of the (empty) code section.
+    if (result.comptime_err) |ct_err| {
+        const body = try ct_err.renderAlloc(alloc, src);
+        defer alloc.free(body);
+        try comptimeSnapshot.appendDiagnosticSection(alloc, &buf, name, body);
+        return try buf.toOwnedSlice(alloc);
+    }
 
     switch (cfg.targetSource) {
         .commonJS => {
@@ -145,7 +186,7 @@ pub fn buildSnapshotMulti(alloc: std.mem.Allocator, outputs: []const SnapInput, 
 
     for (outputs, 0..) |out, idx| {
         if (idx > 0) try buf.appendSlice(alloc, "\n");
-        const text = try buildSnapshot(alloc, out.name, out.src, out.result, cfg);
+        const text = try buildSnapshot(alloc, out.name, out.src, out.result, out.diagnostic, cfg);
         defer alloc.free(text);
         try buf.appendSlice(alloc, text);
     }

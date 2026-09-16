@@ -11,3 +11,13 @@ val describe = fn(p: Person) -> string {
 };
 ```
 
+----- COMPILE DIAGNOSTIC -- main
+```text
+error: parse error (unexpectedToken)
+  ┌─ :7:27
+  │
+7 │         Person(name, age) as person -> name + " is " + age;
+
+  unexpected `as`
+```
+
