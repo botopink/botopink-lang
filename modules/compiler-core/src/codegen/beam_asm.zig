@@ -30,6 +30,11 @@ const prelude = @import("std_prelude");
 const primOpTemplate = @import("../comptime/primOpTemplate.zig");
 const erlEmitter = @import("./beam/erl_emitter.zig");
 const beamEmitter = @import("./beam/beam_emitter.zig");
+/// Instruction operand / destination shorthands — every `.S` line this backend
+/// writes is built from these and rendered by `beam_emitter.zig`; the backend
+/// never formats target text itself.
+const Op = beamEmitter.Operand;
+const Dst = beamEmitter.Dest;
 const Term = @import("./beam/term.zig").Term;
 
 const ModuleOutput = moduleOutput.ModuleOutput;
@@ -555,10 +560,10 @@ fn emitBeamAsm(
                     try em.emitTopVal(v);
                 }
             },
-            .comment => |c| {
-                const prefix = if (c.is_doc) "%%" else if (c.is_module) "%%%" else "%";
-                try em.bodyPrint("{s} {s}\n", .{ prefix, c.text });
-            },
+            .comment => |c| try beamEmitter.writeSourceComment(em.out, .{
+                .level = if (c.is_module) .module else if (c.is_doc) .doc else .line,
+                .text = c.text,
+            }),
             .record => |r| try em.emitRecord(r),
             .@"enum" => |e| try em.emitEnum(e),
             // An interface's associated `default fn`s (`Array.range`, `Pair.of`)
@@ -625,10 +630,19 @@ const Reg = union(enum) {
     x: u32,
     y: u32,
 
-    fn format(self: Reg, buf: []u8) ![]const u8 {
+    /// The instruction operand this binding reads/writes.
+    fn operand(self: Reg) beamEmitter.Operand {
         return switch (self) {
-            .x => |n| std.fmt.bufPrint(buf, "{{x, {d}}}", .{n}),
-            .y => |n| std.fmt.bufPrint(buf, "{{y, {d}}}", .{n}),
+            .x => |n| beamEmitter.Operand.xr(n),
+            .y => |n| beamEmitter.Operand.yr(n),
+        };
+    }
+
+    /// The destination form of the same register.
+    fn dest(self: Reg) beamEmitter.Dest {
+        return switch (self) {
+            .x => |n| beamEmitter.Dest.xr(n),
+            .y => |n| beamEmitter.Dest.yr(n),
         };
     }
 };
@@ -1054,14 +1068,6 @@ const Emitter = struct {
         return self.fn_labels.get(key) orelse error.UnknownFunction;
     }
 
-    fn bodyPrint(self: *Emitter, comptime fmt: []const u8, args: anytype) !void {
-        try self.out.print(fmt, args);
-    }
-
-    fn bodyWrite(self: *Emitter, s: []const u8) !void {
-        try self.out.writeAll(s);
-    }
-
     // ── per-fn state ─────────────────────────────────────────────────────────
 
     fn resetFnState(self: *Emitter, arity: u32) void {
@@ -1132,7 +1138,7 @@ const Emitter = struct {
     /// Emit the `{move, {x, i}, {y, i}}` prologue that backs `bindParams`.
     fn emitParamSpill(self: *Emitter, count: usize) !void {
         for (0..count) |i| {
-            try self.bodyPrint("    {{move, {{x, {d}}}, {{y, {d}}}}}.\n", .{ i, i });
+            try beamEmitter.writeMoveOp(self.out, Op.xr(i), Dst.yr(i));
         }
     }
 
@@ -1176,21 +1182,21 @@ const Emitter = struct {
         self.num_y = @as(u32, @intCast(nparams)) + self.precountLocals(f.body);
         try self.bindParams(names_buf[0..nparams]);
 
-        try self.bodyWrite("\n");
+        try beamEmitter.writeBlankLine(self.out);
         // An effect fn is async/generator — except `#[@result]` (checked-Result
         // effect), which is a plain function. The BEAM model is processes +
         // message passing (spawn/receive); this backend currently emits the
         // eager body, with full process-based lowering left as future work.
         if (f.effect != null and f.effect.? != .result) {
-            try self.bodyWrite("%% #[@future] / #[@asyncGenerator] — eager lowering\n");
+            try beamEmitter.writeTopComment(self.out, "#[@future] / #[@asyncGenerator] — eager lowering", .{});
         }
         var fn_buf: [256]u8 = undefined;
         const fn_atom = try atomName(f.name, &fn_buf);
-        try self.bodyPrint("{{function, {f}, {d}, {d}}}.\n", .{ erlEmitter.atom(fn_atom), arity, entry_label });
-        try self.bodyPrint("  {{label, {d}}}.\n", .{func_info_label});
-        try self.bodyPrint("    {{line, [{{location, \"{s}.erl\", {d}}}]}}.\n", .{ self.module_name, self.cur_line });
-        try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, {f}}}, {d}}}.\n", .{ erlEmitter.atom(self.module_name), erlEmitter.atom(fn_atom), arity });
-        try self.bodyPrint("  {{label, {d}}}.\n", .{entry_label});
+        try beamEmitter.writeFunctionHeader(self.out, fn_atom, arity, entry_label);
+        try beamEmitter.writeLabel(self.out, func_info_label);
+        try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(self.out, self.module_name, fn_atom, arity);
+        try beamEmitter.writeLabel(self.out, entry_label);
 
         try self.emitFrame(arity);
         try self.emitParamSpill(nparams);
@@ -1311,12 +1317,12 @@ const Emitter = struct {
         self.num_y = @as(u32, @intCast(names.len)) + self.precountLocals(m.body.?);
         try self.bindParams(names);
 
-        try self.bodyWrite("\n");
-        try self.bodyPrint("{{function, {f}, {d}, {d}}}.\n", .{ erlEmitter.atom(mangled), arity, labels.entry });
-        try self.bodyPrint("  {{label, {d}}}.\n", .{labels.func_info});
-        try self.bodyPrint("    {{line, [{{location, \"{s}.erl\", {d}}}]}}.\n", .{ self.module_name, self.cur_line });
-        try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, {f}}}, {d}}}.\n", .{ erlEmitter.atom(self.module_name), erlEmitter.atom(mangled), arity });
-        try self.bodyPrint("  {{label, {d}}}.\n", .{labels.entry});
+        try beamEmitter.writeBlankLine(self.out);
+        try beamEmitter.writeFunctionHeader(self.out, mangled, arity, labels.entry);
+        try beamEmitter.writeLabel(self.out, labels.func_info);
+        try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(self.out, self.module_name, mangled, arity);
+        try beamEmitter.writeLabel(self.out, labels.entry);
 
         try self.emitFrame(arity);
         try self.emitParamSpill(names.len);
@@ -1337,12 +1343,12 @@ const Emitter = struct {
         self.num_y = @as(u32, @intCast(names.len)) + self.precountLocals(m.body);
         try self.bindParams(names);
 
-        try self.bodyWrite("\n");
-        try self.bodyPrint("{{function, {f}, {d}, {d}}}.\n", .{ erlEmitter.atom(mangled), arity, labels.entry });
-        try self.bodyPrint("  {{label, {d}}}.\n", .{labels.func_info});
-        try self.bodyPrint("    {{line, [{{location, \"{s}.erl\", {d}}}]}}.\n", .{ self.module_name, self.cur_line });
-        try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, {f}}}, {d}}}.\n", .{ erlEmitter.atom(self.module_name), erlEmitter.atom(mangled), arity });
-        try self.bodyPrint("  {{label, {d}}}.\n", .{labels.entry});
+        try beamEmitter.writeBlankLine(self.out);
+        try beamEmitter.writeFunctionHeader(self.out, mangled, arity, labels.entry);
+        try beamEmitter.writeLabel(self.out, labels.func_info);
+        try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(self.out, self.module_name, mangled, arity);
+        try beamEmitter.writeLabel(self.out, labels.entry);
 
         try self.emitFrame(arity);
         try self.emitParamSpill(names.len);
@@ -1363,12 +1369,12 @@ const Emitter = struct {
         self.num_y = 1 + self.precountLocals(g.body);
         try self.bindParams(&.{g.selfParam.name});
 
-        try self.bodyWrite("\n");
-        try self.bodyPrint("{{function, {f}, 1, {d}}}.\n", .{ erlEmitter.atom(mangled), labels.entry });
-        try self.bodyPrint("  {{label, {d}}}.\n", .{labels.func_info});
-        try self.bodyPrint("    {{line, [{{location, \"{s}.erl\", {d}}}]}}.\n", .{ self.module_name, self.cur_line });
-        try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, {f}}}, 1}}.\n", .{ erlEmitter.atom(self.module_name), erlEmitter.atom(mangled) });
-        try self.bodyPrint("  {{label, {d}}}.\n", .{labels.entry});
+        try beamEmitter.writeBlankLine(self.out);
+        try beamEmitter.writeFunctionHeader(self.out, mangled, 1, labels.entry);
+        try beamEmitter.writeLabel(self.out, labels.func_info);
+        try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(self.out, self.module_name, mangled, 1);
+        try beamEmitter.writeLabel(self.out, labels.entry);
         try self.emitFrame(1);
         try self.emitParamSpill(1);
         self.cur_line += 1;
@@ -1387,12 +1393,12 @@ const Emitter = struct {
         self.num_y = @as(u32, @intCast(names.len)) + self.precountLocals(s.body);
         try self.bindParams(names);
 
-        try self.bodyWrite("\n");
-        try self.bodyPrint("{{function, {f}, {d}, {d}}}.\n", .{ erlEmitter.atom(mangled), arity, labels.entry });
-        try self.bodyPrint("  {{label, {d}}}.\n", .{labels.func_info});
-        try self.bodyPrint("    {{line, [{{location, \"{s}.erl\", {d}}}]}}.\n", .{ self.module_name, self.cur_line });
-        try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, {f}}}, {d}}}.\n", .{ erlEmitter.atom(self.module_name), erlEmitter.atom(mangled), arity });
-        try self.bodyPrint("  {{label, {d}}}.\n", .{labels.entry});
+        try beamEmitter.writeBlankLine(self.out);
+        try beamEmitter.writeFunctionHeader(self.out, mangled, arity, labels.entry);
+        try beamEmitter.writeLabel(self.out, labels.func_info);
+        try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(self.out, self.module_name, mangled, arity);
+        try beamEmitter.writeLabel(self.out, labels.entry);
         try self.emitFrame(arity);
         try self.emitParamSpill(names.len);
         self.cur_line += 1;
@@ -1412,12 +1418,12 @@ const Emitter = struct {
 
         self.resetFnState(0);
 
-        try self.bodyWrite("\n");
-        try self.bodyPrint("{{function, {f}, 0, {d}}}.\n", .{ erlEmitter.atom(v.name), entry_label });
-        try self.bodyPrint("  {{label, {d}}}.\n", .{func_info_label});
-        try self.bodyPrint("    {{line, [{{location, \"{s}.erl\", {d}}}]}}.\n", .{ self.module_name, self.cur_line });
-        try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, {f}}}, 0}}.\n", .{ erlEmitter.atom(self.module_name), erlEmitter.atom(v.name) });
-        try self.bodyPrint("  {{label, {d}}}.\n", .{entry_label});
+        try beamEmitter.writeBlankLine(self.out);
+        try beamEmitter.writeFunctionHeader(self.out, v.name, 0, entry_label);
+        try beamEmitter.writeLabel(self.out, func_info_label);
+        try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(self.out, self.module_name, v.name, 0);
+        try beamEmitter.writeLabel(self.out, entry_label);
         self.cur_line += 1;
 
         // `emitReturn` always emits `{deallocate, NumY}`, so the frame has to
@@ -1433,8 +1439,8 @@ const Emitter = struct {
     /// Emit `return.`, preceded by `{deallocate, N}.` when the current function
     /// owns a y-stack frame.
     fn emitReturn(self: *Emitter) !void {
-        try self.bodyPrint("    {{deallocate, {d}}}.\n", .{self.num_y});
-        try self.bodyWrite("    return.\n");
+        try beamEmitter.writeDeallocate(self.out, self.num_y);
+        try beamEmitter.writeReturn(self.out);
     }
 
     /// Emit the function-prologue `{allocate, NumY, Arity}` for the current
@@ -1445,16 +1451,8 @@ const Emitter = struct {
     /// loader. (`allocate_zero` was the old shorthand for this but no longer
     /// assembles on current OTP.)
     fn emitFrame(self: *Emitter, arity: usize) !void {
-        try self.bodyPrint("    {{allocate, {d}, {d}}}.\n", .{ self.num_y, arity });
-        if (self.num_y > 0) {
-            try self.bodyWrite("    {init_yregs, {list, [");
-            var k: u32 = 0;
-            while (k < self.num_y) : (k += 1) {
-                if (k > 0) try self.bodyWrite(", ");
-                try self.bodyPrint("{{y, {d}}}", .{k});
-            }
-            try self.bodyWrite("]}}.\n");
-        }
+        try beamEmitter.writeAllocate(self.out, self.num_y, arity);
+        if (self.num_y > 0) try beamEmitter.writeInitYregs(self.out, self.num_y);
     }
 
     // ── entrypoint wrappers when main/0 exists ───────────────────────────────
@@ -1465,23 +1463,23 @@ const Emitter = struct {
         const main0 = try self.fnLabelsFor("main", 0);
 
         // '_botopink_main'/0 → tail-calls main/0.
-        try self.bodyWrite("\n");
-        try self.bodyPrint("{{function, '_botopink_main', 0, {d}}}.\n", .{wrapper.entry});
-        try self.bodyPrint("  {{label, {d}}}.\n", .{wrapper.func_info});
-        try self.bodyPrint("    {{line, [{{location, \"{s}.erl\", {d}}}]}}.\n", .{ self.module_name, self.cur_line });
-        try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, '_botopink_main'}}, 0}}.\n", .{erlEmitter.atom(self.module_name)});
-        try self.bodyPrint("  {{label, {d}}}.\n", .{wrapper.entry});
-        try self.bodyPrint("    {{call_only, 0, {{f, {d}}}}}.\n", .{main0.entry});
+        try beamEmitter.writeBlankLine(self.out);
+        try beamEmitter.writeFunctionHeader(self.out, "'_botopink_main'", 0, wrapper.entry);
+        try beamEmitter.writeLabel(self.out, wrapper.func_info);
+        try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(self.out, self.module_name, "'_botopink_main'", 0);
+        try beamEmitter.writeLabel(self.out, wrapper.entry);
+        try beamEmitter.writeCall(self.out, .only, 0, .{ .local = main0.entry }, 0);
         self.cur_line += 1;
 
         // main/1 → discards argv and tail-calls _botopink_main/0.
-        try self.bodyWrite("\n");
-        try self.bodyPrint("{{function, main, 1, {d}}}.\n", .{main1.entry});
-        try self.bodyPrint("  {{label, {d}}}.\n", .{main1.func_info});
-        try self.bodyPrint("    {{line, [{{location, \"{s}.erl\", {d}}}]}}.\n", .{ self.module_name, self.cur_line });
-        try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, main}}, 1}}.\n", .{erlEmitter.atom(self.module_name)});
-        try self.bodyPrint("  {{label, {d}}}.\n", .{main1.entry});
-        try self.bodyPrint("    {{call_only, 0, {{f, {d}}}}}.\n", .{wrapper.entry});
+        try beamEmitter.writeBlankLine(self.out);
+        try beamEmitter.writeFunctionHeader(self.out, "main", 1, main1.entry);
+        try beamEmitter.writeLabel(self.out, main1.func_info);
+        try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(self.out, self.module_name, "main", 1);
+        try beamEmitter.writeLabel(self.out, main1.entry);
+        try beamEmitter.writeCall(self.out, .only, 0, .{ .local = wrapper.entry }, 0);
         self.cur_line += 1;
     }
 
@@ -1495,7 +1493,7 @@ const Emitter = struct {
         // didn't write an explicit `return`, fall back to returning the atom
         // `ok` so the frame is balanced (deallocate + return).
         if (!bodyExits(body)) {
-            try self.bodyWrite("    {move, {atom, ok}, {x, 0}}.\n");
+            try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
             try self.emitReturn();
         }
     }
@@ -1518,7 +1516,7 @@ const Emitter = struct {
                                 },
                                 .rejected => {
                                     try self.lowerExprIntoX0(inner_arg);
-                                    try self.bodyWrite("    {call_ext_only, 1, {extfunc, erlang, throw, 1}}.\n");
+                                    try beamEmitter.writeCall(self.out, .only, 1, .{ .ext = .{ .module = "erlang", .function = "throw" } }, 0);
                                 },
                             }
                             return;
@@ -1544,9 +1542,9 @@ const Emitter = struct {
                     if (val) |v| {
                         try self.lowerExprIntoX0(v.*);
                     } else {
-                        try self.bodyWrite("    {move, {atom, undef}, {x, 0}}.\n");
+                        try beamEmitter.writeMoveOp(self.out, Op.atom("undef"), Dst.xr(0));
                     }
-                    try self.bodyWrite("    {call_ext_only, 1, {extfunc, erlang, throw, 1}}.\n");
+                    try beamEmitter.writeCall(self.out, .only, 1, .{ .ext = .{ .module = "erlang", .function = "throw" } }, 0);
                 },
                 .@"break" => |br| {
                     if (br.value) |v| {
@@ -1561,10 +1559,10 @@ const Emitter = struct {
                     try self.emitReturn();
                 },
                 .@"continue" => {
-                    try self.bodyWrite("    {move, {atom, ok}, {x, 0}}.\n");
+                    try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
                     try self.emitReturn();
                 },
-                else => |k| try self.bodyPrint("    %% unsupported jump: {s}\n", .{@tagName(k)}),
+                else => |k| try beamEmitter.writeComment(self.out, "unsupported jump: {s}", .{@tagName(k)}),
             },
             .branch => |b| switch (b.kind) {
                 .if_ => |i| try self.emitIf(i),
@@ -1592,34 +1590,31 @@ const Emitter = struct {
                 // on an untyped register (`bad_type, needed t_map`). Same
                 // narrowing `lowerIdentAccess` does for a field read.
                 const scratch = self.scratchBase();
-                try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
+                try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch));
                 const not_map = self.allocLabel();
                 const done = self.allocLabel();
                 const first_y = self.next_y;
-                try self.bodyPrint("    {{test, is_map, {{f, {d}}}, [{{x, {d}}}]}}.\n", .{ not_map, scratch });
+                try beamEmitter.writeTest(self.out, .is_map, not_map, &.{Op.xr(scratch)});
                 for (n.fields) |fld| {
                     const fail = self.allocLabel();
-                    try self.bodyPrint(
-                        "    {{get_map_elements, {{f, {d}}}, {{x, {d}}}, {{list, [{{atom, {f}}}, {{x, 0}}]}}}}.\n",
-                        .{ fail, scratch, erlEmitter.atom(fld.field_name) },
-                    );
-                    try self.bodyPrint("  {{label, {d}}}.\n", .{fail});
+                    try beamEmitter.writeGetMapElements(self.out, fail, Op.xr(scratch), fld.field_name, Dst.xr(0));
+                    try beamEmitter.writeLabel(self.out, fail);
                     const y_idx = self.next_y;
                     self.next_y += 1;
                     try self.reg_map.put(fld.bind_name, .{ .y = y_idx });
-                    try self.bodyPrint("    {{move, {{x, 0}}, {{y, {d}}}}}.\n", .{y_idx});
+                    try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y_idx));
                 }
                 // The not-a-map arm has to write every binding slot too: the
                 // validator merges both paths and rejects a later read of a slot
                 // one of them left unwritten (`{unassigned, {y, 1}}`) — the
                 // function-entry `init_yregs` does not satisfy it.
-                try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{done});
-                try self.bodyPrint("  {{label, {d}}}.\n", .{not_map});
+                try beamEmitter.writeJump(self.out, done);
+                try beamEmitter.writeLabel(self.out, not_map);
                 for (0..n.fields.len) |k| {
-                    try self.bodyPrint("    {{move, {{atom, undefined}}, {{y, {d}}}}}.\n", .{first_y + k});
+                    try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.yr(first_y + k));
                 }
-                try self.bodyPrint("  {{label, {d}}}.\n", .{done});
-                try self.bodyPrint("    {{move, {{x, {d}}}, {{x, 0}}}}.\n", .{scratch});
+                try beamEmitter.writeLabel(self.out, done);
+                try beamEmitter.writeMoveOp(self.out, Op.xr(scratch), Dst.xr(0));
             },
             .tuple_ => |bindings| {
                 // `erlang:element/2` rather than `get_tuple_element`: the
@@ -1630,19 +1625,19 @@ const Emitter = struct {
                 // x-file. `destructYSlots` reserves that extra slot.
                 const subj_y = self.next_y;
                 self.next_y += 1;
-                try self.bodyPrint("    {{move, {{x, 0}}, {{y, {d}}}}}.\n", .{subj_y});
+                try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(subj_y));
                 for (bindings, 0..) |name, i| {
-                    try self.bodyPrint("    {{move, {{integer, {d}}}, {{x, 0}}}}.\n", .{i + 1});
-                    try self.bodyPrint("    {{move, {{y, {d}}}, {{x, 1}}}}.\n", .{subj_y});
-                    try self.bodyWrite("    {call_ext, 2, {extfunc, erlang, element, 2}}.\n");
+                    try beamEmitter.writeMoveOp(self.out, Op.int(i + 1), Dst.xr(0));
+                    try beamEmitter.writeMoveOp(self.out, Op.yr(subj_y), Dst.xr(1));
+                    try beamEmitter.writeCall(self.out, .normal, 2, .{ .ext = .{ .module = "erlang", .function = "element" } }, 0);
                     const y_idx = self.next_y;
                     self.next_y += 1;
                     try self.reg_map.put(name, .{ .y = y_idx });
-                    try self.bodyPrint("    {{move, {{x, 0}}, {{y, {d}}}}}.\n", .{y_idx});
+                    try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y_idx));
                 }
-                try self.bodyPrint("    {{move, {{y, {d}}}, {{x, 0}}}}.\n", .{subj_y});
+                try beamEmitter.writeMoveOp(self.out, Op.yr(subj_y), Dst.xr(0));
             },
-            else => try self.bodyWrite("    %% unsupported destructure pattern\n"),
+            else => try beamEmitter.writeComment(self.out, "unsupported destructure pattern", .{}),
         }
     }
 
@@ -1655,7 +1650,7 @@ const Emitter = struct {
         const y_idx = self.next_y;
         self.next_y += 1;
         try self.reg_map.put(name, .{ .y = y_idx });
-        try self.bodyPrint("    {{move, {{x, 0}}, {{y, {d}}}}}.\n", .{y_idx});
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y_idx));
     }
 
     /// `name = expr` or `name += expr`: evaluate the new value and store
@@ -1664,45 +1659,33 @@ const Emitter = struct {
         switch (a.target) {
             .name => |name| {
                 const reg = self.reg_map.get(name) orelse {
-                    try self.bodyPrint("    %% assign to unknown variable: {s}\n", .{name});
+                    try beamEmitter.writeComment(self.out, "assign to unknown variable: {s}", .{name});
                     return;
                 };
                 switch (a.op) {
                     .assign => {
                         try self.lowerExprIntoX0(a.value.*);
-                        var buf: [64]u8 = undefined;
-                        const term = try reg.format(&buf);
-                        try self.bodyPrint("    {{move, {{x, 0}}, {s}}}.\n", .{term});
+                        try beamEmitter.writeMoveOp(self.out, Op.xr(0), reg.dest());
                     },
                     .plusAssign => {
-                        var reg_buf: [64]u8 = undefined;
-                        const reg_term = try reg.format(&reg_buf);
                         try self.lowerExprIntoX0(a.value.*);
                         const scratch = self.scratchBase();
-                        try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
-                        try self.bodyPrint(
-                            "    {{gc_bif, '+', {{f, 0}}, {d}, [{s}, {{x, {d}}}], {{x, 0}}}}.\n",
-                            .{ scratch + 1, reg_term, scratch },
-                        );
-                        try self.bodyPrint("    {{move, {{x, 0}}, {s}}}.\n", .{reg_term});
+                        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch));
+                        try beamEmitter.writeGcBif(self.out, .add, scratch + 1, &.{ reg.operand(), Op.xr(scratch) }, Dst.xr(0));
+                        try beamEmitter.writeMoveOp(self.out, Op.xr(0), reg.dest());
                     },
                 }
             },
             .fieldAccess => |*fa| {
                 try self.lowerExprIntoX0(a.value.*);
                 const scratch = self.scratchBase();
-                try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
+                try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch));
                 const saved_live = self.raiseLive(scratch + 1);
                 try self.lowerExprIntoX0(fa.receiver.*);
                 self.min_live = saved_live;
-                try self.bodyPrint(
-                    "    {{put_map_exact, {{f, 0}}, {{x, 0}}, {{x, 0}}, {d}, {{list, [{{atom, {f}}}, {{x, {d}}}]}}}}.\n",
-                    .{ scratch + 1, erlEmitter.atom(fa.field), scratch },
-                );
+                try beamEmitter.writePutMap(self.out, true, Op.xr(0), Dst.xr(0), scratch + 1, &.{.{ .key = Op.atom(fa.field), .value = Op.xr(scratch) }});
                 if (self.reg_map.get("self")) |reg| {
-                    var buf: [64]u8 = undefined;
-                    const term = try reg.format(&buf);
-                    try self.bodyPrint("    {{move, {{x, 0}}, {s}}}.\n", .{term});
+                    try beamEmitter.writeMoveOp(self.out, Op.xr(0), reg.dest());
                 }
             },
         }
@@ -1719,7 +1702,7 @@ const Emitter = struct {
         const lowered = try self.lowerComparisonAsTest(i.cond.*, else_label);
         if (!lowered) {
             try self.lowerExprIntoX0(i.cond.*);
-            try self.bodyPrint("    {{test, is_eq, {{f, {d}}}, [{{x, 0}}, {{atom, true}}]}}.\n", .{else_label});
+            try beamEmitter.writeTest(self.out, .is_eq, else_label, &.{ Op.xr(0), Op.atom("true") });
         }
 
         // then branch (cond true).
@@ -1729,10 +1712,10 @@ const Emitter = struct {
         // Skip the unconditional jump-to-end when the then branch already
         // exits via `return.` — otherwise BEAM will see unreachable code.
         const end_label: ?u32 = if (!then_returns) self.allocLabel() else null;
-        if (end_label) |el| try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{el});
+        if (end_label) |el| try beamEmitter.writeJump(self.out, el);
 
         // else branch.
-        try self.bodyPrint("  {{label, {d}}}.\n", .{else_label});
+        try beamEmitter.writeLabel(self.out, else_label);
         if (i.else_) |els| {
             for (els) |s| try self.emitStmt(s);
         }
@@ -1744,7 +1727,7 @@ const Emitter = struct {
         // following statement — e.g. the `return isOdd(n - 1)` tail of a
         // mutually-recursive base-case guard — into unreachable dead code.
 
-        if (end_label) |el| try self.bodyPrint("  {{label, {d}}}.\n", .{el});
+        if (end_label) |el| try beamEmitter.writeLabel(self.out, el);
     }
 
     /// Lower `lhs <op> rhs` (a comparison) as a `{test, is_<op>, {f, F}, [A, B]}.`
@@ -1755,15 +1738,11 @@ const Emitter = struct {
             .binaryOp => |bin| {
                 const cmp = comparisonTestOp(bin.op) orelse return false;
 
-                var lhs_buf: [64]u8 = undefined;
-                var rhs_buf: [64]u8 = undefined;
-                const lhs_simple = try self.simpleTerm(bin.lhs.*, &lhs_buf);
-                const rhs_simple = try self.simpleTerm(bin.rhs.*, &rhs_buf);
+                const lhs_simple = self.simpleTerm(bin.lhs.*);
+                const rhs_simple = self.simpleTerm(bin.rhs.*);
 
-                var lhs_final: []const u8 = undefined;
-                var rhs_final: []const u8 = undefined;
-                var lhs_final_buf: [64]u8 = undefined;
-                var rhs_final_buf: [64]u8 = undefined;
+                var lhs_final: Op = undefined;
+                var rhs_final: Op = undefined;
 
                 if (lhs_simple != null and rhs_simple != null) {
                     lhs_final = lhs_simple.?;
@@ -1771,12 +1750,12 @@ const Emitter = struct {
                 } else {
                     const scratch = self.scratchBase();
                     if (lhs_simple) |ls| {
-                        try self.bodyPrint("    {{move, {s}, {{x, {d}}}}}.\n", .{ ls, scratch });
+                        try beamEmitter.writeMoveOp(self.out, ls, Dst.xr(scratch));
                     } else {
                         try self.lowerExprIntoX0(bin.lhs.*);
-                        try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
+                        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch));
                     }
-                    lhs_final = try std.fmt.bufPrint(&lhs_final_buf, "{{x, {d}}}", .{scratch});
+                    lhs_final = Op.xr(scratch);
                     if (rhs_simple) |rs| {
                         rhs_final = rs;
                     } else {
@@ -1784,16 +1763,13 @@ const Emitter = struct {
                         const saved_live = self.raiseLive(scratch + 1);
                         try self.lowerExprIntoX0(bin.rhs.*);
                         self.min_live = saved_live;
-                        rhs_final = try std.fmt.bufPrint(&rhs_final_buf, "{{x, 0}}", .{});
+                        rhs_final = Op.xr(0);
                     }
                 }
 
                 const a = if (cmp.swap) rhs_final else lhs_final;
                 const b = if (cmp.swap) lhs_final else rhs_final;
-                try self.bodyPrint(
-                    "    {{test, {s}, {{f, {d}}}, [{s}, {s}]}}.\n",
-                    .{ cmp.opcode, fail_label, a, b },
-                );
+                try beamEmitter.writeTest(self.out, cmp.opcode, fail_label, &.{ a, b });
                 return true;
             },
             else => return false,
@@ -1814,16 +1790,16 @@ const Emitter = struct {
                         switch (reg) {
                             .x => |xn| {
                                 if (xn == 0) return;
-                                try self.bodyPrint("    {{move, {{x, {d}}}, {{x, 0}}}}.\n", .{xn});
+                                try beamEmitter.writeMoveOp(self.out, Op.xr(xn), Dst.xr(0));
                             },
                             .y => |yn| {
-                                try self.bodyPrint("    {{move, {{y, {d}}}, {{x, 0}}}}.\n", .{yn});
+                                try beamEmitter.writeMoveOp(self.out, Op.yr(yn), Dst.xr(0));
                             },
                         }
                         return;
                     }
                     if (self.cv.get(n)) |val| {
-                        try self.bodyPrint("    {{move, {{atom, '{s}'}}, {{x, 0}}}}.\n", .{val});
+                        try beamEmitter.writeMoveOp(self.out, .{ .term = Term.atomOf(val) }, Dst.xr(0));
                         return;
                     }
                     // A module-level `val` is emitted as a 0-arity function, so a
@@ -1833,9 +1809,12 @@ const Emitter = struct {
                     if (self.crossOwnerOf(n, .val)) |owner| {
                         var name_buf: [256]u8 = undefined;
                         const val_atom = atomName(n, &name_buf) catch n;
-                        try self.bodyPrint(
-                            "    {{call_ext, 0, {{extfunc, {f}, {s}, 0}}}}.\n",
-                            .{ erlEmitter.atom(owner), val_atom },
+                        try beamEmitter.writeCall(
+                            self.out,
+                            .normal,
+                            0,
+                            .{ .ext = .{ .module = owner, .function = val_atom } },
+                            0,
                         );
                         return;
                     }
@@ -1855,9 +1834,7 @@ const Emitter = struct {
                 // Desugared to a `+` chain by the transform pass; never reaches codegen.
                 .stringTemplate => unreachable,
                 .numberLit => |n| {
-                    var buf: [64]u8 = undefined;
-                    const term = try formatNumberInto(&buf, n);
-                    try self.bodyPrint("    {{move, {s}, {{x, 0}}}}.\n", .{term});
+                    try beamEmitter.writeMoveOp(self.out, Op.num(n), Dst.xr(0));
                     return;
                 },
                 .null_ => {
@@ -1865,7 +1842,7 @@ const Emitter = struct {
                     // and the `@Option` helpers here (and the erlang backend's
                     // `.null_ => A("undefined")`) test absence against
                     // `undefined`.
-                    try self.bodyWrite("    {move, {atom, undefined}, {x, 0}}.\n");
+                    try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
                     return;
                 },
                 .stringLit => |s| {
@@ -1924,13 +1901,13 @@ const Emitter = struct {
                 // Anonymous record literals are a deferred BEAM gap (named
                 // records lower to put_map_assoc maps; same treatment applies).
                 .recordLit => {
-                    try self.bodyWrite("    %% unsupported: record literal\n");
-                    try self.bodyWrite("    {move, {atom, undefined}, {x, 0}}.\n");
+                    try beamEmitter.writeComment(self.out, "unsupported: record literal", .{});
+                    try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
                     return;
                 },
                 .interfaceLit => {
-                    try self.bodyWrite("    %% unsupported: interface literal\n");
-                    try self.bodyWrite("    {move, {atom, undefined}, {x, 0}}.\n");
+                    try beamEmitter.writeComment(self.out, "unsupported: interface literal", .{});
+                    try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
                     return;
                 },
                 .case => |c| {
@@ -1950,7 +1927,7 @@ const Emitter = struct {
                 },
                 .throw_ => |val| {
                     if (val) |v| try self.lowerExprIntoX0(v.*);
-                    try self.bodyWrite("    {call_ext_only, 1, {extfunc, erlang, throw, 1}}.\n");
+                    try beamEmitter.writeCall(self.out, .only, 1, .{ .ext = .{ .module = "erlang", .function = "throw" } }, 0);
                     return;
                 },
                 .try_ => |val| {
@@ -1960,19 +1937,19 @@ const Emitter = struct {
                         try self.lowerExprIntoX0(v.*);
                         const err_label = self.allocLabel();
                         const cont_label = self.allocLabel();
-                        try self.bodyPrint("    {{test, is_tagged_tuple, {{f, {d}}}, [{{x, 0}}, 2, {{atom, ok}}]}}.\n", .{err_label});
-                        try self.bodyWrite("    {get_tuple_element, {x, 0}, 1, {x, 0}}.\n");
-                        try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{cont_label});
-                        try self.bodyPrint("  {{label, {d}}}.\n", .{err_label});
+                        try beamEmitter.writeTest(self.out, .is_tagged_tuple, err_label, &.{ Op.xr(0), .{ .untagged = 2 }, Op.atom("ok") });
+                        try beamEmitter.writeGetTupleElement(self.out, Op.xr(0), 1, Dst.xr(0));
+                        try beamEmitter.writeJump(self.out, cont_label);
+                        try beamEmitter.writeLabel(self.out, err_label);
                         try self.emitReturn();
-                        try self.bodyPrint("  {{label, {d}}}.\n", .{cont_label});
+                        try beamEmitter.writeLabel(self.out, cont_label);
                     }
                     return;
                 },
                 else => {},
             },
             .comptime_ => {
-                try self.bodyWrite("    {move, {atom, undefined}, {x, 0}}.\n");
+                try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
                 return;
             },
             .function => |f| switch (f.kind.syntax) {
@@ -1981,7 +1958,7 @@ const Emitter = struct {
                     return;
                 },
                 .fnExpr => {
-                    try self.bodyWrite("    {move, {atom, undefined}, {x, 0}}.\n");
+                    try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
                     return;
                 },
             },
@@ -1992,8 +1969,8 @@ const Emitter = struct {
             else => {},
         }
 
-        try self.bodyPrint("    %% unsupported expr in tail position: {s}\n", .{@tagName(e)});
-        try self.bodyWrite("    {move, {atom, undefined}, {x, 0}}.\n");
+        try beamEmitter.writeComment(self.out, "unsupported expr in tail position: {s}", .{@tagName(e)});
+        try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
     }
 
     /// Lower `-e` into `{x, dest}`. Constant-folds literal numerics.
@@ -2001,32 +1978,20 @@ const Emitter = struct {
         switch (inner) {
             .literal => |lit| switch (lit.kind) {
                 .numberLit => |n| {
-                    var buf: [64]u8 = undefined;
-                    const term = try formatNegNumberInto(&buf, n);
-                    try self.bodyPrint("    {{move, {s}, {{x, {d}}}}}.\n", .{ term, dest });
+                    try beamEmitter.writeMoveOp(self.out, Op.negNum(n), Dst.xr(dest));
                     return;
                 },
                 else => {},
             },
             else => {},
         }
-        var ibuf: [64]u8 = undefined;
-        const inner_term = try self.simpleTerm(inner, &ibuf);
-        if (inner_term) |it| {
-            try self.bodyPrint(
-                "    {{gc_bif, '-', {{f, 0}}, {d}, [{{integer, 0}}, {s}], {{x, {d}}}}}.\n",
-                .{ self.min_live, it, dest },
-            );
+        if (self.simpleTerm(inner)) |it| {
+            try beamEmitter.writeGcBif(self.out, .sub, self.min_live, &.{ Op.int(0), it }, Dst.xr(dest));
         } else {
             try self.lowerExprIntoX0(inner);
             const scratch = self.scratchBase();
-            try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
-            var scratch_buf: [64]u8 = undefined;
-            const scratch_term = try std.fmt.bufPrint(&scratch_buf, "{{x, {d}}}", .{scratch});
-            try self.bodyPrint(
-                "    {{gc_bif, '-', {{f, 0}}, {d}, [{{integer, 0}}, {s}], {{x, {d}}}}}.\n",
-                .{ scratch + 1, scratch_term, dest },
-            );
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch));
+            try beamEmitter.writeGcBif(self.out, .sub, scratch + 1, &.{ Op.int(0), Op.xr(scratch) }, Dst.xr(dest));
         }
     }
 
@@ -2041,20 +2006,20 @@ const Emitter = struct {
         const lowered = try self.lowerComparisonAsTest(i.cond.*, else_label);
         if (!lowered) {
             try self.lowerExprIntoX0(i.cond.*);
-            try self.bodyPrint("    {{test, is_eq, {{f, {d}}}, [{{x, 0}}, {{atom, true}}]}}.\n", .{else_label});
+            try beamEmitter.writeTest(self.out, .is_eq, else_label, &.{ Op.xr(0), Op.atom("true") });
         }
 
         const end_label = self.allocLabel();
         const then_fell = try self.emitValueBody(i.then_);
-        if (then_fell) try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_label});
+        if (then_fell) try beamEmitter.writeJump(self.out, end_label);
 
-        try self.bodyPrint("  {{label, {d}}}.\n", .{else_label});
+        try beamEmitter.writeLabel(self.out, else_label);
         if (i.else_) |els| {
             _ = try self.emitValueBody(els);
         } else {
-            try self.bodyWrite("    {move, {atom, undefined}, {x, 0}}.\n");
+            try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
         }
-        try self.bodyPrint("  {{label, {d}}}.\n", .{end_label});
+        try beamEmitter.writeLabel(self.out, end_label);
     }
 
     /// Lower a body whose last statement is its value: all but the last are
@@ -2064,7 +2029,7 @@ const Emitter = struct {
     /// that transferred control on its own.
     fn emitValueBody(self: *Emitter, body: []const ast.Stmt) anyerror!bool {
         if (body.len == 0) {
-            try self.bodyWrite("    {move, {atom, undefined}, {x, 0}}.\n");
+            try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
             return true;
         }
         for (body[0 .. body.len - 1]) |stmt| try self.emitStmt(stmt);
@@ -2090,58 +2055,52 @@ const Emitter = struct {
                 .@"and" => try self.lowerAndAsValue(bin, dest),
                 .@"or" => try self.lowerOrAsValue(bin, dest),
             },
-            else => try self.bodyPrint("    %% unsupported in arith position: {s}\n", .{@tagName(e)}),
+            else => try beamEmitter.writeComment(self.out, "unsupported in arith position: {s}", .{@tagName(e)}),
         }
     }
 
     /// Arithmetic via `gc_bif`. Handles non-simple operands by materializing
     /// them into scratch x-registers above `cur_arity`.
     fn lowerArithGcBif(self: *Emitter, bin: anytype, dest: u32) anyerror!void {
-        const bif: []const u8 = switch (bin.op) {
-            .add => "'+'",
-            .sub => "'-'",
-            .mul => "'*'",
-            .div => "'div'",
-            .mod => "'rem'",
+        const bif: beamEmitter.GcBif = switch (bin.op) {
+            .add => .add,
+            .sub => .sub,
+            .mul => .mul,
+            .div => .div_,
+            .mod => .rem,
             else => unreachable,
         };
-        var lhs_buf: [64]u8 = undefined;
-        var rhs_buf: [64]u8 = undefined;
-        const lhs_simple = try self.simpleTerm(bin.lhs.*, &lhs_buf);
-        const rhs_simple = try self.simpleTerm(bin.rhs.*, &rhs_buf);
+        const lhs_simple = self.simpleTerm(bin.lhs.*);
+        const rhs_simple = self.simpleTerm(bin.rhs.*);
 
         if (lhs_simple != null and rhs_simple != null) {
-            try self.bodyPrint(
-                "    {{gc_bif, {s}, {{f, 0}}, {d}, [{s}, {s}], {{x, {d}}}}}.\n",
-                .{ bif, self.min_live, lhs_simple.?, rhs_simple.?, dest },
-            );
+            try beamEmitter.writeGcBif(self.out, bif, self.min_live, &.{ lhs_simple.?, rhs_simple.? }, Dst.xr(dest));
             return;
         }
 
         const scratch = self.scratchBase();
         if (lhs_simple) |ls| {
-            try self.bodyPrint("    {{move, {s}, {{x, {d}}}}}.\n", .{ ls, scratch });
+            try beamEmitter.writeMoveOp(self.out, ls, Dst.xr(scratch));
         } else {
             try self.lowerExprIntoX0(bin.lhs.*);
-            try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch));
         }
 
-        var rhs_final_buf: [64]u8 = undefined;
-        const rhs_final: []const u8 = if (rhs_simple) |rs| rs else blk: {
+        const rhs_final: Op = if (rhs_simple) |rs| rs else blk: {
             // The staged lhs sits in `{x, scratch}`; a `gc_bif`/call inside the
             // rhs would otherwise drop it (`not_live`).
             const saved_live = self.raiseLive(scratch + 1);
             try self.lowerExprIntoX0(bin.rhs.*);
             self.min_live = saved_live;
-            break :blk try std.fmt.bufPrint(&rhs_final_buf, "{{x, 0}}", .{});
+            break :blk Op.xr(0);
         };
 
-        var lhs_final_buf: [64]u8 = undefined;
-        const lhs_final = try std.fmt.bufPrint(&lhs_final_buf, "{{x, {d}}}", .{scratch});
-
-        try self.bodyPrint(
-            "    {{gc_bif, {s}, {{f, 0}}, {d}, [{s}, {s}], {{x, {d}}}}}.\n",
-            .{ bif, @max(scratch + 1, self.min_live), lhs_final, rhs_final, dest },
+        try beamEmitter.writeGcBif(
+            self.out,
+            bif,
+            @max(scratch + 1, self.min_live),
+            &.{ Op.xr(scratch), rhs_final },
+            Dst.xr(dest),
         );
     }
 
@@ -2150,15 +2109,11 @@ const Emitter = struct {
     fn lowerCmpAsValue(self: *Emitter, bin: anytype, dest: u32) anyerror!void {
         const cmp = comparisonTestOp(bin.op) orelse unreachable;
 
-        var lhs_buf: [64]u8 = undefined;
-        var rhs_buf: [64]u8 = undefined;
-        const lhs_simple = try self.simpleTerm(bin.lhs.*, &lhs_buf);
-        const rhs_simple = try self.simpleTerm(bin.rhs.*, &rhs_buf);
+        const lhs_simple = self.simpleTerm(bin.lhs.*);
+        const rhs_simple = self.simpleTerm(bin.rhs.*);
 
-        var lhs_final_buf: [64]u8 = undefined;
-        var rhs_final_buf: [64]u8 = undefined;
-        var lhs_final: []const u8 = undefined;
-        var rhs_final: []const u8 = undefined;
+        var lhs_final: Op = undefined;
+        var rhs_final: Op = undefined;
 
         if (lhs_simple != null and rhs_simple != null) {
             lhs_final = lhs_simple.?;
@@ -2166,12 +2121,12 @@ const Emitter = struct {
         } else {
             const scratch = self.scratchBase();
             if (lhs_simple) |ls| {
-                try self.bodyPrint("    {{move, {s}, {{x, {d}}}}}.\n", .{ ls, scratch });
+                try beamEmitter.writeMoveOp(self.out, ls, Dst.xr(scratch));
             } else {
                 try self.lowerExprIntoX0(bin.lhs.*);
-                try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
+                try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch));
             }
-            lhs_final = try std.fmt.bufPrint(&lhs_final_buf, "{{x, {d}}}", .{scratch});
+            lhs_final = Op.xr(scratch);
 
             if (rhs_simple) |rs| {
                 rhs_final = rs;
@@ -2179,7 +2134,7 @@ const Emitter = struct {
                 const saved_live = self.raiseLive(scratch + 1);
                 try self.lowerExprIntoX0(bin.rhs.*);
                 self.min_live = saved_live;
-                rhs_final = try std.fmt.bufPrint(&rhs_final_buf, "{{x, 0}}", .{});
+                rhs_final = Op.xr(0);
             }
         }
 
@@ -2187,56 +2142,52 @@ const Emitter = struct {
         const end_label = self.allocLabel();
         const a = if (cmp.swap) rhs_final else lhs_final;
         const b = if (cmp.swap) lhs_final else rhs_final;
-        try self.bodyPrint("    {{test, {s}, {{f, {d}}}, [{s}, {s}]}}.\n", .{ cmp.opcode, false_label, a, b });
-        try self.bodyPrint("    {{move, {{atom, true}}, {{x, {d}}}}}.\n", .{dest});
-        try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_label});
-        try self.bodyPrint("  {{label, {d}}}.\n", .{false_label});
-        try self.bodyPrint("    {{move, {{atom, false}}, {{x, {d}}}}}.\n", .{dest});
-        try self.bodyPrint("  {{label, {d}}}.\n", .{end_label});
+        try beamEmitter.writeTest(self.out, cmp.opcode, false_label, &.{ a, b });
+        try beamEmitter.writeMoveOp(self.out, Op.atom("true"), Dst.xr(dest));
+        try beamEmitter.writeJump(self.out, end_label);
+        try beamEmitter.writeLabel(self.out, false_label);
+        try beamEmitter.writeMoveOp(self.out, Op.atom("false"), Dst.xr(dest));
+        try beamEmitter.writeLabel(self.out, end_label);
     }
 
     /// `a && b` → short-circuit: test `a`, if false → false, else evaluate `b`.
     fn lowerAndAsValue(self: *Emitter, bin: anytype, dest: u32) anyerror!void {
-        var lhs_buf: [64]u8 = undefined;
-        const lhs_simple = try self.simpleTerm(bin.lhs.*, &lhs_buf);
-        var lhs_final_buf: [64]u8 = undefined;
-        const lhs_final: []const u8 = if (lhs_simple) |ls| ls else blk: {
+        const lhs_simple = self.simpleTerm(bin.lhs.*);
+        const lhs_final: Op = if (lhs_simple) |ls| ls else blk: {
             const scratch = self.scratchBase();
             try self.lowerExprIntoX0(bin.lhs.*);
-            try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
-            break :blk try std.fmt.bufPrint(&lhs_final_buf, "{{x, {d}}}", .{scratch});
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch));
+            break :blk Op.xr(scratch);
         };
         const false_label = self.allocLabel();
         const end_label = self.allocLabel();
-        try self.bodyPrint("    {{test, is_eq, {{f, {d}}}, [{s}, {{atom, true}}]}}.\n", .{ false_label, lhs_final });
+        try beamEmitter.writeTest(self.out, .is_eq, false_label, &.{ lhs_final, Op.atom("true") });
         try self.lowerExprIntoX0(bin.rhs.*);
-        if (dest != 0) try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{dest});
-        try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_label});
-        try self.bodyPrint("  {{label, {d}}}.\n", .{false_label});
-        try self.bodyPrint("    {{move, {{atom, false}}, {{x, {d}}}}}.\n", .{dest});
-        try self.bodyPrint("  {{label, {d}}}.\n", .{end_label});
+        if (dest != 0) try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(dest));
+        try beamEmitter.writeJump(self.out, end_label);
+        try beamEmitter.writeLabel(self.out, false_label);
+        try beamEmitter.writeMoveOp(self.out, Op.atom("false"), Dst.xr(dest));
+        try beamEmitter.writeLabel(self.out, end_label);
     }
 
     /// `a || b` → short-circuit: test `a`, if true → true, else evaluate `b`.
     fn lowerOrAsValue(self: *Emitter, bin: anytype, dest: u32) anyerror!void {
-        var lhs_buf: [64]u8 = undefined;
-        const lhs_simple = try self.simpleTerm(bin.lhs.*, &lhs_buf);
-        var lhs_final_buf: [64]u8 = undefined;
-        const lhs_final: []const u8 = if (lhs_simple) |ls| ls else blk: {
+        const lhs_simple = self.simpleTerm(bin.lhs.*);
+        const lhs_final: Op = if (lhs_simple) |ls| ls else blk: {
             const scratch = self.scratchBase();
             try self.lowerExprIntoX0(bin.lhs.*);
-            try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
-            break :blk try std.fmt.bufPrint(&lhs_final_buf, "{{x, {d}}}", .{scratch});
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch));
+            break :blk Op.xr(scratch);
         };
         const true_label = self.allocLabel();
         const end_label = self.allocLabel();
-        try self.bodyPrint("    {{test, is_ne_exact, {{f, {d}}}, [{s}, {{atom, true}}]}}.\n", .{ true_label, lhs_final });
+        try beamEmitter.writeTest(self.out, .is_ne_exact, true_label, &.{ lhs_final, Op.atom("true") });
         try self.lowerExprIntoX0(bin.rhs.*);
-        if (dest != 0) try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{dest});
-        try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_label});
-        try self.bodyPrint("  {{label, {d}}}.\n", .{true_label});
-        try self.bodyPrint("    {{move, {{atom, true}}, {{x, {d}}}}}.\n", .{dest});
-        try self.bodyPrint("  {{label, {d}}}.\n", .{end_label});
+        if (dest != 0) try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(dest));
+        try beamEmitter.writeJump(self.out, end_label);
+        try beamEmitter.writeLabel(self.out, true_label);
+        try beamEmitter.writeMoveOp(self.out, Op.atom("true"), Dst.xr(dest));
+        try beamEmitter.writeLabel(self.out, end_label);
     }
 
     /// `!x` → test x against true, produce the opposite atom.
@@ -2244,12 +2195,12 @@ const Emitter = struct {
         try self.lowerExprIntoX0(inner);
         const false_label = self.allocLabel();
         const end_label = self.allocLabel();
-        try self.bodyPrint("    {{test, is_eq, {{f, {d}}}, [{{x, 0}}, {{atom, true}}]}}.\n", .{false_label});
-        try self.bodyPrint("    {{move, {{atom, false}}, {{x, {d}}}}}.\n", .{dest});
-        try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_label});
-        try self.bodyPrint("  {{label, {d}}}.\n", .{false_label});
-        try self.bodyPrint("    {{move, {{atom, true}}, {{x, {d}}}}}.\n", .{dest});
-        try self.bodyPrint("  {{label, {d}}}.\n", .{end_label});
+        try beamEmitter.writeTest(self.out, .is_eq, false_label, &.{ Op.xr(0), Op.atom("true") });
+        try beamEmitter.writeMoveOp(self.out, Op.atom("false"), Dst.xr(dest));
+        try beamEmitter.writeJump(self.out, end_label);
+        try beamEmitter.writeLabel(self.out, false_label);
+        try beamEmitter.writeMoveOp(self.out, Op.atom("true"), Dst.xr(dest));
+        try beamEmitter.writeLabel(self.out, end_label);
     }
 
     // ── calls ────────────────────────────────────────────────────────────────
@@ -2294,13 +2245,13 @@ const Emitter = struct {
                         const arity = cc.args.len;
                         try self.materializeCallArgs(cc.args, cc.trailing[0..0]);
                         const labels = self.fnLabelsFor(mangled, arity) catch {
-                            try self.bodyPrint("    %% unresolved extension call: {s}/{d}\n", .{ mangled, arity });
+                            try beamEmitter.writeComment(self.out, "unresolved extension call: {s}/{d}", .{ mangled, arity });
                             if (mode == .tail) try self.emitReturn();
                             return;
                         };
                         switch (mode) {
-                            .non_tail => try self.bodyPrint("    {{call, {d}, {{f, {d}}}}}.\n", .{ arity, labels.entry }),
-                            .tail => try self.bodyPrint("    {{call_last, {d}, {{f, {d}}}, {d}}}.\n", .{ arity, labels.entry, self.num_y }),
+                            .non_tail => try beamEmitter.writeCall(self.out, .normal, arity, .{ .local = labels.entry }, 0),
+                            .tail => try beamEmitter.writeCall(self.out, .last, arity, .{ .local = labels.entry }, self.num_y),
                         }
                         return;
                     }
@@ -2330,16 +2281,13 @@ const Emitter = struct {
                     const arity = cc.args.len + cc.trailing.len;
                     var fn_buf: [256]u8 = undefined;
                     const fn_atom = atomName(cc.callee, &fn_buf) catch cc.callee;
-                    switch (mode) {
-                        .non_tail => try self.bodyPrint(
-                            "    {{call_ext, {d}, {{extfunc, {s}, {s}, {d}}}}}.\n",
-                            .{ arity, rn, fn_atom, arity },
-                        ),
-                        .tail => try self.bodyPrint(
-                            "    {{call_ext_last, {d}, {{extfunc, {s}, {s}, {d}}}, {d}}}.\n",
-                            .{ arity, rn, fn_atom, arity, self.num_y },
-                        ),
-                    }
+                    try beamEmitter.writeCall(
+                        self.out,
+                        if (mode == .tail) .last else .normal,
+                        arity,
+                        .{ .ext = .{ .module = rn, .function = fn_atom } },
+                        self.num_y,
+                    );
                     return;
                 }
             }
@@ -2380,23 +2328,20 @@ const Emitter = struct {
                         const arity = cc.args.len;
                         if (self.imported_types.get(rn)) |owner| {
                             try self.materializeCallArgs(cc.args, cc.trailing);
-                            switch (mode) {
-                                .non_tail => try self.bodyPrint(
-                                    "    {{call_ext, {d}, {{extfunc, {s}, {s}, {d}}}}}.\n",
-                                    .{ arity, owner, mangled, arity },
-                                ),
-                                .tail => try self.bodyPrint(
-                                    "    {{call_ext_last, {d}, {{extfunc, {s}, {s}, {d}}}, {d}}}.\n",
-                                    .{ arity, owner, mangled, arity, self.num_y },
-                                ),
-                            }
+                            try beamEmitter.writeCall(
+                                self.out,
+                                if (mode == .tail) .last else .normal,
+                                arity,
+                                .{ .ext = .{ .module = owner, .function = mangled } },
+                                self.num_y,
+                            );
                             return;
                         }
                         if (self.fnLabelsFor(mangled, arity)) |labels| {
                             try self.materializeCallArgs(cc.args, cc.trailing);
                             switch (mode) {
-                                .non_tail => try self.bodyPrint("    {{call, {d}, {{f, {d}}}}}.\n", .{ arity, labels.entry }),
-                                .tail => try self.bodyPrint("    {{call_last, {d}, {{f, {d}}}, {d}}}.\n", .{ arity, labels.entry, self.num_y }),
+                                .non_tail => try beamEmitter.writeCall(self.out, .normal, arity, .{ .local = labels.entry }, 0),
+                                .tail => try beamEmitter.writeCall(self.out, .last, arity, .{ .local = labels.entry }, self.num_y),
                             }
                             return;
                         } else |_| {}
@@ -2412,8 +2357,8 @@ const Emitter = struct {
                         if (self.fnLabelsFor(mangled, arity)) |labels| {
                             try self.materializeCallArgs(cc.args, cc.trailing);
                             switch (mode) {
-                                .non_tail => try self.bodyPrint("    {{call, {d}, {{f, {d}}}}}.\n", .{ arity, labels.entry }),
-                                .tail => try self.bodyPrint("    {{call_last, {d}, {{f, {d}}}, {d}}}.\n", .{ arity, labels.entry, self.num_y }),
+                                .non_tail => try beamEmitter.writeCall(self.out, .normal, arity, .{ .local = labels.entry }, 0),
+                                .tail => try beamEmitter.writeCall(self.out, .last, arity, .{ .local = labels.entry }, self.num_y),
                             }
                             return;
                         } else |_| {}
@@ -2428,7 +2373,7 @@ const Emitter = struct {
                         // before anything wrote it is `uninitialized_reg`.
                         if (i > 0) _ = self.raiseLive(@intCast(scratch + i));
                         try self.lowerExprIntoX0(arg.value.*);
-                        try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch + i});
+                        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch + i));
                     }
                     for (cc.trailing, 0..) |trail, j| {
                         // Positional args sit in scratch..scratch+args.len-1 and
@@ -2440,34 +2385,30 @@ const Emitter = struct {
                         const live: u32 = if (cc.args.len + j == 0) self.min_live else @intCast(slot);
                         _ = self.raiseLive(live);
                         try self.lowerLambda(trail, live);
-                        try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{slot});
+                        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(slot));
                     }
                     self.min_live = saved_live;
                     for (0..total) |i| {
-                        try self.bodyPrint("    {{move, {{x, {d}}}, {{x, {d}}}}}.\n", .{ scratch + i, i });
+                        try beamEmitter.writeMoveOp(self.out, Op.xr(scratch + i), Dst.xr(i));
                     }
                     var mbuf: [128]u8 = undefined;
                     @memcpy(mbuf[0..rn.len], rn);
                     mbuf[0] = std.ascii.toLower(mbuf[0]);
                     const mod = mbuf[0..rn.len];
-                    switch (mode) {
-                        .non_tail => try self.bodyPrint(
-                            "    {{call_ext, {d}, {{extfunc, {s}, {s}, {d}}}}}.\n",
-                            .{ total, mod, cc.callee, total },
-                        ),
-                        .tail => try self.bodyPrint(
-                            "    {{call_ext_last, {d}, {{extfunc, {s}, {s}, {d}}}, {d}}}.\n",
-                            .{ total, mod, cc.callee, total, self.num_y },
-                        ),
-                    }
+                    try beamEmitter.writeCall(
+                        self.out,
+                        if (mode == .tail) .last else .normal,
+                        total,
+                        .{ .ext = .{ .module = mod, .function = cc.callee } },
+                        self.num_y,
+                    );
                     return;
                 }
             }
             if (recv_name) |rn| {
                 if (self.reg_map.get(rn)) |reg| {
-                    var rbuf: [64]u8 = undefined;
-                    const recv_term = try reg.format(&rbuf);
-                    try self.bodyPrint("    {{move, {s}, {{x, 0}}}}.\n", .{recv_term});
+                    const recv_term = reg.operand();
+                    try beamEmitter.writeMoveOp(self.out, recv_term, Dst.xr(0));
                 } else {
                     try beamEmitter.writeMove(self.out, Term.atomOf(rn), 0);
                 }
@@ -2475,27 +2416,27 @@ const Emitter = struct {
                 try self.lowerExprIntoX0(recv_expr.*);
             }
             const scratch = self.scratchBase();
-            try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch));
             const saved_live = self.min_live;
             for (cc.args, 0..) |arg, i| {
                 _ = self.raiseLive(@intCast(scratch + 1 + i));
                 try self.lowerExprIntoX0(arg.value.*);
-                try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch + 1 + i});
+                try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch + 1 + i));
             }
             self.min_live = saved_live;
-            try self.bodyPrint("    {{move, {{x, {d}}}, {{x, 0}}}}.\n", .{scratch});
+            try beamEmitter.writeMoveOp(self.out, Op.xr(scratch), Dst.xr(0));
             for (0..cc.args.len) |i| {
-                try self.bodyPrint("    {{move, {{x, {d}}}, {{x, {d}}}}}.\n", .{ scratch + 1 + i, 1 + i });
+                try beamEmitter.writeMoveOp(self.out, Op.xr(scratch + 1 + i), Dst.xr(1 + i));
             }
             const total_arity = 1 + cc.args.len;
             const labels = self.fnLabelsFor(cc.callee, total_arity) catch {
-                try self.bodyPrint("    %% unresolved method call: {s}/{d}\n", .{ cc.callee, total_arity });
+                try beamEmitter.writeComment(self.out, "unresolved method call: {s}/{d}", .{ cc.callee, total_arity });
                 if (mode == .tail) try self.emitReturn();
                 return;
             };
             switch (mode) {
-                .non_tail => try self.bodyPrint("    {{call, {d}, {{f, {d}}}}}.\n", .{ total_arity, labels.entry }),
-                .tail => try self.bodyPrint("    {{call_last, {d}, {{f, {d}}}, {d}}}.\n", .{ total_arity, labels.entry, self.num_y }),
+                .non_tail => try beamEmitter.writeCall(self.out, .normal, total_arity, .{ .local = labels.entry }, 0),
+                .tail => try beamEmitter.writeCall(self.out, .last, total_arity, .{ .local = labels.entry }, self.num_y),
             }
             return;
         }
@@ -2508,8 +2449,8 @@ const Emitter = struct {
         if (self.fnLabelsFor(cc.callee, arity)) |labels| {
             try self.materializeCallArgs(cc.args, cc.trailing);
             switch (mode) {
-                .non_tail => try self.bodyPrint("    {{call, {d}, {{f, {d}}}}}.\n", .{ arity, labels.entry }),
-                .tail => try self.bodyPrint("    {{call_last, {d}, {{f, {d}}}, {d}}}.\n", .{ arity, labels.entry, self.num_y }),
+                .non_tail => try beamEmitter.writeCall(self.out, .normal, arity, .{ .local = labels.entry }, 0),
+                .tail => try beamEmitter.writeCall(self.out, .last, arity, .{ .local = labels.entry }, self.num_y),
             }
             return;
         } else |_| {}
@@ -2520,11 +2461,10 @@ const Emitter = struct {
         // *after* the arguments are laid out — nothing the arg staging writes
         // can reach it, and the load itself can't disturb the arg registers.
         if (self.reg_map.get(cc.callee)) |reg| {
-            var rbuf: [64]u8 = undefined;
-            const fun_term = try reg.format(&rbuf);
+            const fun_term = reg.operand();
             try self.materializeCallArgs(cc.args, cc.trailing);
-            try self.bodyPrint("    {{move, {s}, {{x, {d}}}}}.\n", .{ fun_term, arity });
-            try self.bodyPrint("    {{call_fun, {d}}}.\n", .{arity});
+            try beamEmitter.writeMoveOp(self.out, fun_term, Dst.xr(arity));
+            try beamEmitter.writeCallFun(self.out, arity);
             if (mode == .tail) try self.emitReturn();
             return;
         }
@@ -2557,21 +2497,18 @@ const Emitter = struct {
             try self.materializeCallArgs(cc.args, cc.trailing);
             var name_buf: [256]u8 = undefined;
             const fn_atom = atomName(cc.callee, &name_buf) catch cc.callee;
-            switch (mode) {
-                .non_tail => try self.bodyPrint(
-                    "    {{call_ext, {d}, {{extfunc, {f}, {s}, {d}}}}}.\n",
-                    .{ arity, erlEmitter.atom(owner), fn_atom, arity },
-                ),
-                .tail => try self.bodyPrint(
-                    "    {{call_ext_last, {d}, {{extfunc, {f}, {s}, {d}}}, {d}}}.\n",
-                    .{ arity, erlEmitter.atom(owner), fn_atom, arity, self.num_y },
-                ),
-            }
+            try beamEmitter.writeCall(
+                self.out,
+                if (mode == .tail) .last else .normal,
+                arity,
+                .{ .ext = .{ .module = owner, .function = fn_atom } },
+                self.num_y,
+            );
             return;
         }
 
         try self.materializeCallArgs(cc.args, cc.trailing);
-        try self.bodyPrint("    %% unresolved local call: {s}/{d}\n", .{ cc.callee, arity });
+        try beamEmitter.writeComment(self.out, "unresolved local call: {s}/{d}", .{ cc.callee, arity });
         if (mode == .tail) try self.emitReturn();
     }
 
@@ -2636,7 +2573,7 @@ const Emitter = struct {
                 return true;
             },
             .string => {
-                if (eq(u8, callee, "split")) try self.primRecvThenArgs("string", "split", recv_expr, cc, "{atom, all}", mode) else if (eq(u8, callee, "slice") and cc.args.len + cc.trailing.len == 1) try self.primRecvThenArgs("string", "slice", recv_expr, cc, null, mode) else if (eq(u8, callee, "contains")) try self.primCmpAgainstNomatch("binary", "match", recv_expr, cc, mode) else if (eq(u8, callee, "startsWith")) try self.primCmpAgainstNomatch("string", "prefix", recv_expr, cc, mode) else return false;
+                if (eq(u8, callee, "split")) try self.primRecvThenArgs("string", "split", recv_expr, cc, Op.atom("all"), mode) else if (eq(u8, callee, "slice") and cc.args.len + cc.trailing.len == 1) try self.primRecvThenArgs("string", "slice", recv_expr, cc, null, mode) else if (eq(u8, callee, "contains")) try self.primCmpAgainstNomatch("binary", "match", recv_expr, cc, mode) else if (eq(u8, callee, "startsWith")) try self.primCmpAgainstNomatch("string", "prefix", recv_expr, cc, mode) else return false;
                 return true;
             },
             .bool, .int, .float => return false,
@@ -2736,7 +2673,7 @@ const Emitter = struct {
         while (i > 0) {
             i -= 1;
             try self.lowerPrimArgIntoX0(cc, i);
-            try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{i + 1});
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(i + 1));
         }
         // recv lowers last into x0 (no trailing move). `min_live` is still
         // raised so the lowering itself preserves `x_{1..N}`.
@@ -2753,10 +2690,10 @@ const Emitter = struct {
                 try c.emitter.out.writeAll(s);
             }
             pub fn emitRecv(c: *@This()) anyerror!void {
-                try c.emitter.out.writeAll("{x, 0}");
+                try beamEmitter.writeArg(c.emitter.out, Op.xr(0));
             }
             pub fn emitArg(c: *@This(), idx: usize) anyerror!void {
-                try c.emitter.out.print("{{x, {d}}}", .{idx + 1});
+                try beamEmitter.writeArg(c.emitter.out, Op.xr(idx + 1));
             }
         };
         var ctx = Ctx{ .emitter = self, .argc = argc_usize };
@@ -2793,10 +2730,10 @@ const Emitter = struct {
     /// `recv.prepend(x)` → `[x | recv]` — a single cons cell.
     fn primPrepend(self: *Emitter, recv_expr: *const ast.Expr, cc: anytype, mode: CallMode) anyerror!void {
         try self.lowerExprIntoX0(recv_expr.*); // x0 = recv (the tail)
-        try self.bodyWrite("    {move, {x, 0}, {x, 1}}.\n"); // x1 = tail
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1)); // x1 = tail
         try self.lowerPrimFunArg(cc, 2); // x0 = head (arg 0), min_live=2 keeps x1
-        try self.bodyWrite("    {test_heap, 2, 2}.\n");
-        try self.bodyWrite("    {put_list, {x, 0}, {x, 1}, {x, 0}}.\n");
+        try beamEmitter.writeTestHeap(self.out, 2, 2);
+        try beamEmitter.writePutList(self.out, Op.xr(0), Op.xr(1), Dst.xr(0));
         if (mode == .tail) try self.emitReturn();
     }
 
@@ -2805,7 +2742,7 @@ const Emitter = struct {
     /// `x0` — a simple receiver won't clobber `x1`.
     fn primAppendList(self: *Emitter, recv_expr: *const ast.Expr, cc: anytype, mode: CallMode) anyerror!void {
         try self.lowerPrimFunArg(cc, 1); // x0 = the list to append
-        try self.bodyWrite("    {move, {x, 0}, {x, 1}}.\n"); // x1 = that list
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1)); // x1 = that list
         try self.lowerExprIntoX0(recv_expr.*); // x0 = recv
         try self.emitPrimCallExt("lists", "append", 2, mode);
     }
@@ -2813,14 +2750,14 @@ const Emitter = struct {
     /// `recv.push(x)` → `recv ++ [x]` (`lists:append/2`).
     fn primAppendElem(self: *Emitter, recv_expr: *const ast.Expr, cc: anytype, mode: CallMode) anyerror!void {
         try self.lowerExprIntoX0(recv_expr.*); // x0 = recv
-        try self.bodyWrite("    {move, {x, 0}, {x, 1}}.\n"); // x1 = recv
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1)); // x1 = recv
         try self.lowerPrimFunArg(cc, 2); // x0 = the element, min_live=2 keeps x1
-        try self.bodyWrite("    {test_heap, 2, 2}.\n");
-        try self.bodyWrite("    {put_list, {x, 0}, nil, {x, 0}}.\n"); // x0 = [elem]
+        try beamEmitter.writeTestHeap(self.out, 2, 2);
+        try beamEmitter.writePutList(self.out, Op.xr(0), Op.nil, Dst.xr(0)); // x0 = [elem]
         // Want `lists:append(Recv, [elem])` → x0 = Recv, x1 = [elem].
-        try self.bodyWrite("    {move, {x, 0}, {x, 2}}.\n"); // x2 = [elem]
-        try self.bodyWrite("    {move, {x, 1}, {x, 0}}.\n"); // x0 = recv
-        try self.bodyWrite("    {move, {x, 2}, {x, 1}}.\n"); // x1 = [elem]
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(2)); // x2 = [elem]
+        try beamEmitter.writeMoveOp(self.out, Op.xr(1), Dst.xr(0)); // x0 = recv
+        try beamEmitter.writeMoveOp(self.out, Op.xr(2), Dst.xr(1)); // x1 = [elem]
         try self.emitPrimCallExt("lists", "append", 2, mode);
     }
 
@@ -2829,12 +2766,12 @@ const Emitter = struct {
         try self.lowerExprIntoX0(recv_expr.*); // x0 = recv
         const not_empty = self.allocLabel();
         const end_l = self.allocLabel();
-        try self.bodyPrint("    {{test, is_eq, {{f, {d}}}, [{{x, 0}}, nil]}}.\n", .{not_empty});
-        try self.bodyWrite("    {move, {atom, true}, {x, 0}}.\n");
-        try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_l});
-        try self.bodyPrint("  {{label, {d}}}.\n", .{not_empty});
-        try self.bodyWrite("    {move, {atom, false}, {x, 0}}.\n");
-        try self.bodyPrint("  {{label, {d}}}.\n", .{end_l});
+        try beamEmitter.writeTest(self.out, .is_eq, not_empty, &.{ Op.xr(0), Op.nil });
+        try beamEmitter.writeMoveOp(self.out, Op.atom("true"), Dst.xr(0));
+        try beamEmitter.writeJump(self.out, end_l);
+        try beamEmitter.writeLabel(self.out, not_empty);
+        try beamEmitter.writeMoveOp(self.out, Op.atom("false"), Dst.xr(0));
+        try beamEmitter.writeLabel(self.out, end_l);
         if (mode == .tail) try self.emitReturn();
     }
 
@@ -2847,20 +2784,24 @@ const Emitter = struct {
     /// returns `false` so the caller falls through to the local-call path.
     /// Matches the erlang template `lists:sublist($self, ($0)+1, (($1)-($0)))`.
     fn primArraySlice2(self: *Emitter, recv_expr: *const ast.Expr, cc: anytype, mode: CallMode) anyerror!bool {
-        var start_buf: [64]u8 = undefined;
-        var end_buf: [64]u8 = undefined;
-        const start_term = try self.simpleTerm(cc.args[0].value.*, &start_buf) orelse return false;
-        const end_term = try self.simpleTerm(cc.args[1].value.*, &end_buf) orelse return false;
+        const start_term = self.simpleTerm(cc.args[0].value.*) orelse return false;
+        const end_term = self.simpleTerm(cc.args[1].value.*) orelse return false;
         try self.lowerExprIntoX0(recv_expr.*);
         // x1 = start + 1, preserving x0 (live=1 keeps recv across gc_bif).
-        try self.bodyPrint(
-            "    {{gc_bif, '+', {{f, 0}}, {d}, [{s}, {{integer, 1}}], {{x, 1}}}}.\n",
-            .{@max(1, self.min_live), start_term},
+        try beamEmitter.writeGcBif(
+            self.out,
+            .add,
+            @max(1, self.min_live),
+            &.{ start_term, Op.int(1) },
+            Dst.xr(1),
         );
         // x2 = end - start, preserving x0+x1 (live=2 keeps recv and start+1).
-        try self.bodyPrint(
-            "    {{gc_bif, '-', {{f, 0}}, {d}, [{s}, {s}], {{x, 2}}}}.\n",
-            .{@max(2, self.min_live), end_term, start_term},
+        try beamEmitter.writeGcBif(
+            self.out,
+            .sub,
+            @max(2, self.min_live),
+            &.{ end_term, start_term },
+            Dst.xr(2),
         );
         try self.emitPrimCallExt("lists", "sublist", 3, mode);
         return true;
@@ -2880,20 +2821,19 @@ const Emitter = struct {
     /// / `(string:prefix($self, $0) =/= nomatch)` byte-for-byte.
     fn primCmpAgainstNomatch(self: *Emitter, mod: []const u8, fn_name: []const u8, recv_expr: *const ast.Expr, cc: anytype, mode: CallMode) anyerror!void {
         if (cc.args.len + cc.trailing.len != 1) {
-            try self.bodyPrint("    %% prim method not lowered on beam (bad arity): {s}/{d}\n", .{ fn_name, cc.args.len + cc.trailing.len });
+            try beamEmitter.writeComment(self.out, "prim method not lowered on beam (bad arity): {s}/{d}", .{ fn_name, cc.args.len + cc.trailing.len });
             if (mode == .tail) try self.emitReturn();
             return;
         }
         try self.lowerExprIntoX0(recv_expr.*);
         // Load the needle/prefix into {x, 1} without clobbering the receiver.
         const arg = cc.args[0].value.*;
-        var simple_buf: [64]u8 = undefined;
         if (arg == .literal and arg.literal.kind == .stringLit) {
             try self.emitStringLiteral(arg.literal.kind.stringLit, 1);
-        } else if (try self.simpleTerm(arg, &simple_buf)) |t| {
-            try self.bodyPrint("    {{move, {s}, {{x, 1}}}}.\n", .{t});
+        } else if (self.simpleTerm(arg)) |t| {
+            try beamEmitter.writeMoveOp(self.out, t, Dst.xr(1));
         } else {
-            try self.bodyPrint("    %% prim method not lowered on beam (complex arg): {s}/2\n", .{fn_name});
+            try beamEmitter.writeComment(self.out, "prim method not lowered on beam (complex arg): {s}/2", .{fn_name});
             if (mode == .tail) try self.emitReturn();
             return;
         }
@@ -2904,12 +2844,12 @@ const Emitter = struct {
         //   • jump-taken (result != nomatch, i.e. found) → true
         const found_l = self.allocLabel();
         const end_l = self.allocLabel();
-        try self.bodyPrint("    {{test, is_eq, {{f, {d}}}, [{{x, 0}}, {{atom, nomatch}}]}}.\n", .{found_l});
-        try self.bodyWrite("    {move, {atom, false}, {x, 0}}.\n");
-        try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_l});
-        try self.bodyPrint("  {{label, {d}}}.\n", .{found_l});
-        try self.bodyWrite("    {move, {atom, true}, {x, 0}}.\n");
-        try self.bodyPrint("  {{label, {d}}}.\n", .{end_l});
+        try beamEmitter.writeTest(self.out, .is_eq, found_l, &.{ Op.xr(0), Op.atom("nomatch") });
+        try beamEmitter.writeMoveOp(self.out, Op.atom("false"), Dst.xr(0));
+        try beamEmitter.writeJump(self.out, end_l);
+        try beamEmitter.writeLabel(self.out, found_l);
+        try beamEmitter.writeMoveOp(self.out, Op.atom("true"), Dst.xr(0));
+        try beamEmitter.writeLabel(self.out, end_l);
         if (mode == .tail) try self.emitReturn();
     }
 
@@ -2926,10 +2866,9 @@ const Emitter = struct {
     /// true -> lists:nth(__I + 1, __L); false -> undefined end end)($self, $0)`.
     fn primAt(self: *Emitter, recv_expr: *const ast.Expr, cc: anytype, mode: CallMode) anyerror!void {
         try self.lowerExprIntoX0(recv_expr.*); // x0 = list
-        var idx_buf: [64]u8 = undefined;
         const idx = cc.args[0].value.*;
-        if (try self.simpleTerm(idx, &idx_buf)) |t| {
-            try self.bodyPrint("    {{move, {s}, {{x, 1}}}}.\n", .{t});
+        if (self.simpleTerm(idx)) |t| {
+            try beamEmitter.writeMoveOp(self.out, t, Dst.xr(1));
         } else if (idx == .literal and idx.literal.kind == .numberLit) {
             // Fall-through: `simpleTerm` already handles numeric literals.
             unreachable;
@@ -2937,15 +2876,15 @@ const Emitter = struct {
             // Complex idx — would need a stash slot across the lowering of
             // both ops. Falls back to the local-call path so the snapshot
             // records a `%% unresolved` comment instead of mis-emitting.
-            try self.bodyPrint("    %% prim method not lowered on beam (complex idx): at/2\n", .{});
+            try beamEmitter.writeComment(self.out, "prim method not lowered on beam (complex idx): at/2", .{});
             if (mode == .tail) try self.emitReturn();
             return;
         }
         const helper = try self.ensureAtHelper();
         const labels = try self.fnLabelsFor(helper, 2);
         switch (mode) {
-            .non_tail => try self.bodyPrint("    {{call, 2, {{f, {d}}}}}.\n", .{labels.entry}),
-            .tail => try self.bodyPrint("    {{call_last, 2, {{f, {d}}}, {d}}}.\n", .{ labels.entry, self.num_y }),
+            .non_tail => try beamEmitter.writeCall(self.out, .normal, 2, .{ .local = labels.entry }, 0),
+            .tail => try beamEmitter.writeCall(self.out, .last, 2, .{ .local = labels.entry }, self.num_y),
         }
     }
 
@@ -2963,23 +2902,22 @@ const Emitter = struct {
     /// -1 end, __Find(0, __L) end)($self, $0)`.
     fn primIndexOf(self: *Emitter, recv_expr: *const ast.Expr, cc: anytype, mode: CallMode) anyerror!void {
         try self.lowerExprIntoX0(recv_expr.*); // x0 = list
-        var item_buf: [64]u8 = undefined;
         const item = cc.args[0].value.*;
-        if (try self.simpleTerm(item, &item_buf)) |t| {
-            try self.bodyPrint("    {{move, {s}, {{x, 1}}}}.\n", .{t});
+        if (self.simpleTerm(item)) |t| {
+            try beamEmitter.writeMoveOp(self.out, t, Dst.xr(1));
         } else if (item == .literal and item.literal.kind == .stringLit) {
             try self.emitStringLiteral(item.literal.kind.stringLit, 1);
         } else {
-            try self.bodyPrint("    %% prim method not lowered on beam (complex item): indexOf/2\n", .{});
+            try beamEmitter.writeComment(self.out, "prim method not lowered on beam (complex item): indexOf/2", .{});
             if (mode == .tail) try self.emitReturn();
             return;
         }
-        try self.bodyWrite("    {move, {integer, 0}, {x, 2}}.\n"); // x2 = starting index
+        try beamEmitter.writeMoveOp(self.out, Op.int(0), Dst.xr(2)); // x2 = starting index
         const helper = try self.ensureIndexOfHelper();
         const labels = try self.fnLabelsFor(helper, 3);
         switch (mode) {
-            .non_tail => try self.bodyPrint("    {{call, 3, {{f, {d}}}}}.\n", .{labels.entry}),
-            .tail => try self.bodyPrint("    {{call_last, 3, {{f, {d}}}, {d}}}.\n", .{ labels.entry, self.num_y }),
+            .non_tail => try beamEmitter.writeCall(self.out, .normal, 3, .{ .local = labels.entry }, 0),
+            .tail => try beamEmitter.writeCall(self.out, .last, 3, .{ .local = labels.entry }, self.num_y),
         }
     }
 
@@ -2997,32 +2935,31 @@ const Emitter = struct {
     /// __E; true -> io_lib:format("~p", [__E]) end end, $self)))`.
     fn primJoin(self: *Emitter, recv_expr: *const ast.Expr, cc: anytype, mode: CallMode) anyerror!void {
         if (cc.args.len + cc.trailing.len != 1) {
-            try self.bodyPrint("    %% prim method not lowered on beam (bad arity): join/{d}\n", .{cc.args.len + cc.trailing.len});
+            try beamEmitter.writeComment(self.out, "prim method not lowered on beam (bad arity): join/{d}", .{cc.args.len + cc.trailing.len});
             if (mode == .tail) try self.emitReturn();
             return;
         }
         try self.lowerExprIntoX0(recv_expr.*); // x0 = list
-        try self.bodyWrite("    {move, {x, 0}, {x, 1}}.\n"); // x1 = list
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1)); // x1 = list
         const helper = try self.ensureStringifyHelper();
         const helper_labels = try self.fnLabelsFor(helper, 1);
         // x0 = stringify closure (`make_fun3` writes x0; live=2 preserves x1).
         try self.emitMakeFun(helper_labels.entry, 2);
         // lists:map(Fun, List) → x0 = mapped iolist pieces.
-        try self.bodyWrite("    {call_ext, 2, {extfunc, lists, map, 2}}.\n");
+        try beamEmitter.writeCall(self.out, .normal, 2, .{ .ext = .{ .module = "lists", .function = "map" } }, 0);
         // Stage the call to lists:join(Sep, MappedList): mapped → x1, sep → x0.
-        try self.bodyWrite("    {move, {x, 0}, {x, 1}}.\n"); // x1 = mapped list
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1)); // x1 = mapped list
         const sep = cc.args[0].value.*;
-        var sep_buf: [64]u8 = undefined;
         if (sep == .literal and sep.literal.kind == .stringLit) {
             try self.emitStringLiteral(sep.literal.kind.stringLit, 0);
-        } else if (try self.simpleTerm(sep, &sep_buf)) |t| {
-            try self.bodyPrint("    {{move, {s}, {{x, 0}}}}.\n", .{t});
+        } else if (self.simpleTerm(sep)) |t| {
+            try beamEmitter.writeMoveOp(self.out, t, Dst.xr(0));
         } else {
-            try self.bodyPrint("    %% prim method not lowered on beam (complex sep): join/2\n", .{});
+            try beamEmitter.writeComment(self.out, "prim method not lowered on beam (complex sep): join/2", .{});
             if (mode == .tail) try self.emitReturn();
             return;
         }
-        try self.bodyWrite("    {call_ext, 2, {extfunc, lists, join, 2}}.\n");
+        try beamEmitter.writeCall(self.out, .normal, 2, .{ .ext = .{ .module = "lists", .function = "join" } }, 0);
         // Flatten the joined iolist into a single binary — the type the
         // method's surface signature promises.
         try self.emitPrimCallExt("erlang", "iolist_to_binary", 1, mode);
@@ -3045,27 +2982,27 @@ const Emitter = struct {
         self.out = &buf.writer;
 
         const fail_l = self.allocLabel();
-        try self.bodyWrite("\n");
-        try self.bodyPrint("{{function, {f}, 2, {d}}}.\n", .{ erlEmitter.atom(name), labels.entry });
-        try self.bodyPrint("  {{label, {d}}}.\n", .{labels.func_info});
-        try self.bodyPrint("    {{line, [{{location, \"{s}.erl\", {d}}}]}}.\n", .{ self.module_name, self.cur_line });
-        try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, {f}}}, 2}}.\n", .{ erlEmitter.atom(self.module_name), erlEmitter.atom(name) });
-        try self.bodyPrint("  {{label, {d}}}.\n", .{labels.entry});
-        try self.bodyWrite("    {allocate, 2, 2}.\n");
-        try self.bodyWrite("    {init_yregs, {list, [{y, 0}, {y, 1}]}}.\n");
-        try self.bodyWrite("    {move, {x, 0}, {y, 1}}.\n"); // y1 = list
-        try self.bodyWrite("    {move, {x, 1}, {y, 0}}.\n"); // y0 = index
-        try self.bodyPrint("    {{test, is_ge, {{f, {d}}}, [{{y, 0}}, {{integer, 0}}]}}.\n", .{fail_l});
-        try self.bodyWrite("    {move, {y, 1}, {x, 0}}.\n");
-        try self.bodyWrite("    {call_ext, 1, {extfunc, erlang, length, 1}}.\n"); // x0 = length
-        try self.bodyPrint("    {{test, is_lt, {{f, {d}}}, [{{y, 0}}, {{x, 0}}]}}.\n", .{fail_l});
-        try self.bodyWrite("    {gc_bif, '+', {f, 0}, 0, [{y, 0}, {integer, 1}], {x, 0}}.\n"); // x0 = I+1
-        try self.bodyWrite("    {move, {y, 1}, {x, 1}}.\n"); // x1 = list
-        try self.bodyWrite("    {call_ext_last, 2, {extfunc, lists, nth, 2}, 2}.\n");
-        try self.bodyPrint("  {{label, {d}}}.\n", .{fail_l});
-        try self.bodyWrite("    {move, {atom, undefined}, {x, 0}}.\n");
-        try self.bodyWrite("    {deallocate, 2}.\n");
-        try self.bodyWrite("    return.\n");
+        try beamEmitter.writeBlankLine(self.out);
+        try beamEmitter.writeFunctionHeader(self.out, name, 2, labels.entry);
+        try beamEmitter.writeLabel(self.out, labels.func_info);
+        try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(self.out, self.module_name, name, 2);
+        try beamEmitter.writeLabel(self.out, labels.entry);
+        try beamEmitter.writeAllocate(self.out, 2, 2);
+        try beamEmitter.writeInitYregs(self.out, 2);
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(1)); // y1 = list
+        try beamEmitter.writeMoveOp(self.out, Op.xr(1), Dst.yr(0)); // y0 = index
+        try beamEmitter.writeTest(self.out, .is_ge, fail_l, &.{ Op.yr(0), Op.int(0) });
+        try beamEmitter.writeMoveOp(self.out, Op.yr(1), Dst.xr(0));
+        try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "length" } }, 0); // x0 = length
+        try beamEmitter.writeTest(self.out, .is_lt, fail_l, &.{ Op.yr(0), Op.xr(0) });
+        try beamEmitter.writeGcBif(self.out, .add, 0, &.{ Op.yr(0), Op.int(1) }, Dst.xr(0)); // x0 = I+1
+        try beamEmitter.writeMoveOp(self.out, Op.yr(1), Dst.xr(1)); // x1 = list
+        try beamEmitter.writeCall(self.out, .last, 2, .{ .ext = .{ .module = "lists", .function = "nth" } }, 2);
+        try beamEmitter.writeLabel(self.out, fail_l);
+        try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
+        try beamEmitter.writeDeallocate(self.out, 2);
+        try beamEmitter.writeReturn(self.out);
 
         self.out = saved_out;
         try self.deferred_lambdas.append(self.alloc, try buf.toOwnedSlice());
@@ -3092,26 +3029,26 @@ const Emitter = struct {
 
         const empty_l = self.allocLabel();
         const neq_l = self.allocLabel();
-        try self.bodyWrite("\n");
-        try self.bodyPrint("{{function, {f}, 3, {d}}}.\n", .{ erlEmitter.atom(name), labels.entry });
-        try self.bodyPrint("  {{label, {d}}}.\n", .{labels.func_info});
-        try self.bodyPrint("    {{line, [{{location, \"{s}.erl\", {d}}}]}}.\n", .{ self.module_name, self.cur_line });
-        try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, {f}}}, 3}}.\n", .{ erlEmitter.atom(self.module_name), erlEmitter.atom(name) });
-        try self.bodyPrint("  {{label, {d}}}.\n", .{labels.entry});
+        try beamEmitter.writeBlankLine(self.out);
+        try beamEmitter.writeFunctionHeader(self.out, name, 3, labels.entry);
+        try beamEmitter.writeLabel(self.out, labels.func_info);
+        try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(self.out, self.module_name, name, 3);
+        try beamEmitter.writeLabel(self.out, labels.entry);
         // No frame — the function uses x-regs only and tail-recurses via
         // `call_only`, so `allocate`/`deallocate` would be wasted work.
-        try self.bodyPrint("    {{test, is_nonempty_list, {{f, {d}}}, [{{x, 0}}]}}.\n", .{empty_l});
-        try self.bodyWrite("    {get_list, {x, 0}, {x, 3}, {x, 4}}.\n"); // x3 = head, x4 = tail
-        try self.bodyPrint("    {{test, is_eq, {{f, {d}}}, [{{x, 3}}, {{x, 1}}]}}.\n", .{neq_l});
-        try self.bodyWrite("    {move, {x, 2}, {x, 0}}.\n"); // return index
-        try self.bodyWrite("    return.\n");
-        try self.bodyPrint("  {{label, {d}}}.\n", .{neq_l});
-        try self.bodyWrite("    {move, {x, 4}, {x, 0}}.\n"); // x0 = tail
-        try self.bodyWrite("    {gc_bif, '+', {f, 0}, 3, [{x, 2}, {integer, 1}], {x, 2}}.\n"); // x2 = I+1
-        try self.bodyPrint("    {{call_only, 3, {{f, {d}}}}}.\n", .{labels.entry});
-        try self.bodyPrint("  {{label, {d}}}.\n", .{empty_l});
-        try self.bodyWrite("    {move, {integer, -1}, {x, 0}}.\n");
-        try self.bodyWrite("    return.\n");
+        try beamEmitter.writeTest(self.out, .is_nonempty_list, empty_l, &.{Op.xr(0)});
+        try beamEmitter.writeGetList(self.out, Op.xr(0), Dst.xr(3), Dst.xr(4)); // x3 = head, x4 = tail
+        try beamEmitter.writeTest(self.out, .is_eq, neq_l, &.{ Op.xr(3), Op.xr(1) });
+        try beamEmitter.writeMoveOp(self.out, Op.xr(2), Dst.xr(0)); // return index
+        try beamEmitter.writeReturn(self.out);
+        try beamEmitter.writeLabel(self.out, neq_l);
+        try beamEmitter.writeMoveOp(self.out, Op.xr(4), Dst.xr(0)); // x0 = tail
+        try beamEmitter.writeGcBif(self.out, .add, 3, &.{ Op.xr(2), Op.int(1) }, Dst.xr(2)); // x2 = I+1
+        try beamEmitter.writeCall(self.out, .only, 3, .{ .local = labels.entry }, 0);
+        try beamEmitter.writeLabel(self.out, empty_l);
+        try beamEmitter.writeMoveOp(self.out, Op.int(-1), Dst.xr(0));
+        try beamEmitter.writeReturn(self.out);
 
         self.out = saved_out;
         try self.deferred_lambdas.append(self.alloc, try buf.toOwnedSlice());
@@ -3140,26 +3077,26 @@ const Emitter = struct {
 
         const not_bin_l = self.allocLabel();
         const not_int_l = self.allocLabel();
-        try self.bodyWrite("\n");
-        try self.bodyPrint("{{function, {f}, 1, {d}}}.\n", .{ erlEmitter.atom(name), labels.entry });
-        try self.bodyPrint("  {{label, {d}}}.\n", .{labels.func_info});
-        try self.bodyPrint("    {{line, [{{location, \"{s}.erl\", {d}}}]}}.\n", .{ self.module_name, self.cur_line });
-        try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, {f}}}, 1}}.\n", .{ erlEmitter.atom(self.module_name), erlEmitter.atom(name) });
-        try self.bodyPrint("  {{label, {d}}}.\n", .{labels.entry});
-        try self.bodyWrite("    {allocate, 0, 1}.\n");
-        try self.bodyPrint("    {{test, is_binary, {{f, {d}}}, [{{x, 0}}]}}.\n", .{not_bin_l});
-        try self.bodyWrite("    {deallocate, 0}.\n");
-        try self.bodyWrite("    return.\n");
-        try self.bodyPrint("  {{label, {d}}}.\n", .{not_bin_l});
-        try self.bodyPrint("    {{test, is_integer, {{f, {d}}}, [{{x, 0}}]}}.\n", .{not_int_l});
-        try self.bodyWrite("    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.\n");
-        try self.bodyPrint("  {{label, {d}}}.\n", .{not_int_l});
+        try beamEmitter.writeBlankLine(self.out);
+        try beamEmitter.writeFunctionHeader(self.out, name, 1, labels.entry);
+        try beamEmitter.writeLabel(self.out, labels.func_info);
+        try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(self.out, self.module_name, name, 1);
+        try beamEmitter.writeLabel(self.out, labels.entry);
+        try beamEmitter.writeAllocate(self.out, 0, 1);
+        try beamEmitter.writeTest(self.out, .is_binary, not_bin_l, &.{Op.xr(0)});
+        try beamEmitter.writeDeallocate(self.out, 0);
+        try beamEmitter.writeReturn(self.out);
+        try beamEmitter.writeLabel(self.out, not_bin_l);
+        try beamEmitter.writeTest(self.out, .is_integer, not_int_l, &.{Op.xr(0)});
+        try beamEmitter.writeCall(self.out, .last, 1, .{ .ext = .{ .module = "erlang", .function = "integer_to_binary" } }, 0);
+        try beamEmitter.writeLabel(self.out, not_int_l);
         // io_lib:format("~p", [E]) — build the `[E]` cons in x1, format
         // string in x0, then tail-call `call_ext_last`.
-        try self.bodyWrite("    {test_heap, 2, 1}.\n");
-        try self.bodyWrite("    {put_list, {x, 0}, nil, {x, 1}}.\n"); // x1 = [E]
+        try beamEmitter.writeTestHeap(self.out, 2, 1);
+        try beamEmitter.writePutList(self.out, Op.xr(0), Op.nil, Dst.xr(1)); // x1 = [E]
         try beamEmitter.writeMove(self.out, Term.str("~p"), 0);
-        try self.bodyWrite("    {call_ext_last, 2, {extfunc, io_lib, format, 2}, 0}.\n");
+        try beamEmitter.writeCall(self.out, .last, 2, .{ .ext = .{ .module = "io_lib", .function = "format" } }, 0);
 
         self.out = saved_out;
         try self.deferred_lambdas.append(self.alloc, try buf.toOwnedSlice());
@@ -3172,7 +3109,7 @@ const Emitter = struct {
     /// the closure (a positional fun arg or a trailing lambda) in `x0`.
     fn primFunThenList(self: *Emitter, mod: []const u8, fn_name: []const u8, recv_expr: *const ast.Expr, cc: anytype, mode: CallMode) anyerror!void {
         try self.lowerExprIntoX0(recv_expr.*); // x0 = List
-        try self.bodyWrite("    {move, {x, 0}, {x, 1}}.\n"); // x1 = List (x0 still List)
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1)); // x1 = List (x0 still List)
         try self.lowerPrimFunArg(cc, 2); // x0 = Fun (closure live=2 keeps x1)
         try self.emitPrimCallExt(mod, fn_name, 2, mode);
     }
@@ -3180,7 +3117,7 @@ const Emitter = struct {
     /// `fn(Arg, Recv)` — `lists:member`. List in `x1`, the data arg in `x0`.
     fn primArgThenList(self: *Emitter, mod: []const u8, fn_name: []const u8, recv_expr: *const ast.Expr, cc: anytype, mode: CallMode) anyerror!void {
         try self.lowerExprIntoX0(recv_expr.*); // x0 = List
-        try self.bodyWrite("    {move, {x, 0}, {x, 1}}.\n"); // x1 = List
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1)); // x1 = List
         try self.lowerPrimFunArg(cc, 2); // x0 = Arg
         try self.emitPrimCallExt(mod, fn_name, 2, mode);
     }
@@ -3188,20 +3125,19 @@ const Emitter = struct {
     /// `fn(Recv, Arg [, Lit])` — receiver stays in `x0`; the (simple) arg goes to
     /// `x1`, with an optional literal in `x2` (`string:split(S, Sep, all)`). A
     /// non-simple arg would need to clobber `x0`, so it falls back to the limit.
-    fn primRecvThenArgs(self: *Emitter, mod: []const u8, fn_name: []const u8, recv_expr: *const ast.Expr, cc: anytype, extra_lit: ?[]const u8, mode: CallMode) anyerror!void {
+    fn primRecvThenArgs(self: *Emitter, mod: []const u8, fn_name: []const u8, recv_expr: *const ast.Expr, cc: anytype, extra_lit: ?Op, mode: CallMode) anyerror!void {
         try self.lowerExprIntoX0(recv_expr.*); // x0 = Recv
-        var buf: [64]u8 = undefined;
         if (cc.args.len > 0) {
-            const t = try self.simpleTerm(cc.args[0].value.*, &buf) orelse {
-                try self.bodyPrint("    %% prim method not lowered on beam (complex arg): {s}/{d}\n", .{ fn_name, cc.args.len + 1 });
+            const t = self.simpleTerm(cc.args[0].value.*) orelse {
+                try beamEmitter.writeComment(self.out, "prim method not lowered on beam (complex arg): {s}/{d}", .{ fn_name, cc.args.len + 1 });
                 if (mode == .tail) try self.emitReturn();
                 return;
             };
-            try self.bodyPrint("    {{move, {s}, {{x, 1}}}}.\n", .{t});
+            try beamEmitter.writeMoveOp(self.out, t, Dst.xr(1));
         }
         var arity: usize = 1 + cc.args.len;
         if (extra_lit) |lit| {
-            try self.bodyPrint("    {{move, {s}, {{x, 2}}}}.\n", .{lit});
+            try beamEmitter.writeMoveOp(self.out, lit, Dst.xr(2));
             arity += 1;
         }
         try self.emitPrimCallExt(mod, fn_name, arity, mode);
@@ -3221,15 +3157,18 @@ const Emitter = struct {
         } else if (cc.trailing.len > 0) {
             try self.lowerLambda(cc.trailing[0], live);
         } else {
-            try self.bodyWrite("    {move, nil, {x, 0}}.\n");
+            try beamEmitter.writeMoveOp(self.out, Op.nil, Dst.xr(0));
         }
     }
 
     fn emitPrimCallExt(self: *Emitter, mod: []const u8, fn_name: []const u8, arity: usize, mode: CallMode) anyerror!void {
-        switch (mode) {
-            .non_tail => try self.bodyPrint("    {{call_ext, {d}, {{extfunc, {s}, {s}, {d}}}}}.\n", .{ arity, mod, fn_name, arity }),
-            .tail => try self.bodyPrint("    {{call_ext_last, {d}, {{extfunc, {s}, {s}, {d}}}, {d}}}.\n", .{ arity, mod, fn_name, arity, self.num_y }),
-        }
+        try beamEmitter.writeCall(
+            self.out,
+            if (mode == .tail) .last else .normal,
+            arity,
+            .{ .ext = .{ .module = mod, .function = fn_name } },
+            self.num_y,
+        );
     }
 
     /// Activated extension dispatch: lower the receiver into `{x, 0}` and the
@@ -3246,9 +3185,8 @@ const Emitter = struct {
         };
         if (recv_name) |rn| {
             if (self.reg_map.get(rn)) |reg| {
-                var rbuf: [64]u8 = undefined;
-                const recv_term = try reg.format(&rbuf);
-                try self.bodyPrint("    {{move, {s}, {{x, 0}}}}.\n", .{recv_term});
+                const recv_term = reg.operand();
+                try beamEmitter.writeMoveOp(self.out, recv_term, Dst.xr(0));
             } else {
                 try beamEmitter.writeMove(self.out, Term.atomOf(rn), 0);
             }
@@ -3256,27 +3194,27 @@ const Emitter = struct {
             try self.lowerExprIntoX0(recv_expr.*);
         }
         const scratch = self.scratchBase();
-        try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch));
         const saved_live = self.min_live;
         for (args, 0..) |arg, i| {
             _ = self.raiseLive(@intCast(scratch + 1 + i));
             try self.lowerExprIntoX0(arg.value.*);
-            try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch + 1 + i});
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch + 1 + i));
         }
         self.min_live = saved_live;
-        try self.bodyPrint("    {{move, {{x, {d}}}, {{x, 0}}}}.\n", .{scratch});
+        try beamEmitter.writeMoveOp(self.out, Op.xr(scratch), Dst.xr(0));
         for (0..args.len) |i| {
-            try self.bodyPrint("    {{move, {{x, {d}}}, {{x, {d}}}}}.\n", .{ scratch + 1 + i, 1 + i });
+            try beamEmitter.writeMoveOp(self.out, Op.xr(scratch + 1 + i), Dst.xr(1 + i));
         }
         const total_arity = 1 + args.len;
         const labels = self.fnLabelsFor(mangled, total_arity) catch {
-            try self.bodyPrint("    %% unresolved extension call: {s}/{d}\n", .{ mangled, total_arity });
+            try beamEmitter.writeComment(self.out, "unresolved extension call: {s}/{d}", .{ mangled, total_arity });
             if (mode == .tail) try self.emitReturn();
             return;
         };
         switch (mode) {
-            .non_tail => try self.bodyPrint("    {{call, {d}, {{f, {d}}}}}.\n", .{ total_arity, labels.entry }),
-            .tail => try self.bodyPrint("    {{call_last, {d}, {{f, {d}}}, {d}}}.\n", .{ total_arity, labels.entry, self.num_y }),
+            .non_tail => try beamEmitter.writeCall(self.out, .normal, total_arity, .{ .local = labels.entry }, 0),
+            .tail => try beamEmitter.writeCall(self.out, .last, total_arity, .{ .local = labels.entry }, self.num_y),
         }
     }
 
@@ -3309,19 +3247,22 @@ const Emitter = struct {
         for (args, 0..) |arg, i| {
             if (i > 0) _ = self.raiseLive(@intCast(scratch + i));
             try self.lowerExprIntoX0(arg.value.*);
-            try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch + i});
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch + i));
         }
         self.min_live = saved_live;
-        try self.bodyWrite("    {put_map_assoc, {f, 0}, ");
-        try beamEmitter.writeLiteral(self.out, Term.mapOf(&.{}));
-        try self.bodyPrint(", {{x, 0}}, {d}, {{list, [", .{scratch + n});
+        var pairs: [16]beamEmitter.MapPair = undefined;
         for (args, 0..) |arg, i| {
-            if (i > 0) try self.bodyWrite(", ");
             const key: []const u8 = arg.label orelse if (fields != null and i < fields.?.len) fields.?[i] else "_arg";
-            try beamEmitter.writeAtomOperand(self.out, key);
-            try self.bodyPrint(", {{x, {d}}}", .{scratch + i});
+            pairs[i] = .{ .key = Op.atom(key), .value = Op.xr(scratch + i) };
         }
-        try self.bodyWrite("]}}.\n");
+        try beamEmitter.writePutMap(
+            self.out,
+            false,
+            .{ .term = Term.mapOf(&.{}) },
+            Dst.xr(0),
+            scratch + n,
+            pairs[0..n],
+        );
     }
 
     /// Build a tagged tuple `{Tag, Field0, …}` from an enum variant constructor
@@ -3334,18 +3275,17 @@ const Emitter = struct {
         for (args, 0..) |arg, i| {
             if (i > 0) _ = self.raiseLive(@intCast(scratch + i));
             try self.lowerExprIntoX0(arg.value.*);
-            try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch + i});
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch + i));
         }
         self.min_live = saved_live;
         // A tuple of `n + 1` elements (tag + fields) needs `n + 2` heap words.
-        try self.bodyPrint("    {{test_heap, {d}, {d}}}.\n", .{ n + 2, scratch + n });
+        try beamEmitter.writeTestHeap(self.out, n + 2, scratch + n);
         var tag_buf: [256]u8 = undefined;
         const tag_atom = try atomName(tag, &tag_buf);
-        try self.bodyPrint("    {{put_tuple2, {{x, 0}}, {{list, [{{atom, {s}}}", .{tag_atom});
-        for (0..n) |i| {
-            try self.bodyPrint(", {{x, {d}}}", .{scratch + i});
-        }
-        try self.bodyWrite("]}}.\n");
+        var elems: [17]Op = undefined;
+        elems[0] = Op.atom(tag_atom);
+        for (0..n) |i| elems[i + 1] = Op.xr(scratch + i);
+        try beamEmitter.writePutTuple2(self.out, Dst.xr(0), elems[0 .. n + 1]);
     }
 
     /// Builtins (`@print`, `@todo`, …) map to specific BEAM call_ext targets.
@@ -3355,12 +3295,17 @@ const Emitter = struct {
         if (std.mem.eql(u8, cc.callee, "todo") or std.mem.eql(u8, cc.callee, "panic")) {
             const atom: []const u8 = if (std.mem.eql(u8, cc.callee, "todo")) "undef" else "panic";
             try beamEmitter.writeMove(self.out, Term.atomOf(atom), 0);
-            const tag: []const u8 = if (mode == .tail) "call_ext_only" else "call_ext";
-            try self.bodyPrint("    {{{s}, 1, {{extfunc, erlang, error, 1}}}}.\n", .{tag});
+            try beamEmitter.writeCall(
+                self.out,
+                if (mode == .tail) .only else .normal,
+                1,
+                .{ .ext = .{ .module = "erlang", .function = "error" } },
+                0,
+            );
             return;
         }
         if (std.mem.eql(u8, cc.callee, "print")) {
-            const tag: []const u8 = if (mode == .tail) "call_ext_only" else "call_ext";
+            const io_kind: beamEmitter.CallKind = if (mode == .tail) .only else .normal;
             // `@print(a, b, …)` prints every argument, space-separated (parity
             // with the commonJS backend's `console.log`). Only the single-arg
             // shape keeps the original instruction sequence, so the 200-odd
@@ -3372,22 +3317,19 @@ const Emitter = struct {
                 for (cc.args, 0..) |arg, i| {
                     if (i > 0) _ = self.raiseLive(@intCast(base + i));
                     try self.lowerExprIntoX0(arg.value.*);
-                    try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{base + i});
+                    try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(base + i));
                 }
                 self.min_live = saved_live;
                 // Every cons cell is reserved at once: nothing between this
                 // `test_heap` and the last `put_list` can run the collector.
-                try self.bodyPrint("    {{test_heap, {d}, {d}}}.\n", .{ n * 2, base + n });
-                try self.bodyWrite("    {move, nil, {x, 0}}.\n");
+                try beamEmitter.writeTestHeap(self.out, n * 2, base + n);
+                try beamEmitter.writeMoveOp(self.out, Op.nil, Dst.xr(0));
                 var i = n;
                 while (i > 0) {
                     i -= 1;
-                    try self.bodyPrint(
-                        "    {{put_list, {{x, {d}}}, {{x, 0}}, {{x, 0}}}}.\n",
-                        .{base + i},
-                    );
+                    try beamEmitter.writePutList(self.out, Op.xr(base + i), Op.xr(0), Dst.xr(0));
                 }
-                try self.bodyWrite("    {move, {x, 0}, {x, 1}}.\n");
+                try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1));
                 var fmt_buf: [16 * 3 + 2]u8 = undefined;
                 var w: usize = 0;
                 for (0..n) |k| {
@@ -3401,17 +3343,17 @@ const Emitter = struct {
                 @memcpy(fmt_buf[w..][0..2], "~n");
                 w += 2;
                 try beamEmitter.writeMove(self.out, Term.str(fmt_buf[0..w]), 0);
-                try self.bodyPrint("    {{{s}, 2, {{extfunc, io, format, 2}}}}.\n", .{tag});
+                try beamEmitter.writeCall(self.out, io_kind, 2, .{ .ext = .{ .module = "io", .function = "format" } }, 0);
                 return;
             }
             if (cc.args.len > 0) {
                 try self.lowerExprIntoX0(cc.args[0].value.*);
             }
-            try self.bodyWrite("    {move, {x, 0}, {x, 1}}.\n");
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1));
             try beamEmitter.writeMove(self.out, Term.str("~p~n"), 0);
-            try self.bodyWrite("    {test_heap, 2, 2}.\n");
-            try self.bodyWrite("    {put_list, {x, 1}, nil, {x, 1}}.\n");
-            try self.bodyPrint("    {{{s}, 2, {{extfunc, io, format, 2}}}}.\n", .{tag});
+            try beamEmitter.writeTestHeap(self.out, 2, 2);
+            try beamEmitter.writePutList(self.out, Op.xr(1), Op.nil, Dst.xr(1));
+            try beamEmitter.writeCall(self.out, io_kind, 2, .{ .ext = .{ .module = "io", .function = "format" } }, 0);
             return;
         }
         if (std.mem.eql(u8, cc.callee, "block")) {
@@ -3426,7 +3368,7 @@ const Emitter = struct {
             if (mode == .tail) try self.emitReturn();
             return;
         }
-        try self.bodyPrint("    %% unsupported builtin: @{s} (Fase 3+)\n", .{cc.callee});
+        try beamEmitter.writeComment(self.out, "unsupported builtin: @{s} (Fase 3+)", .{cc.callee});
     }
 
     /// Lower a `__bp_<domain>_<op>(receiver, arg?)` Result/Option method op into
@@ -3452,9 +3394,9 @@ const Emitter = struct {
             // build the idiomatic `{ok, V}` / `{error, E}` pair.
             const tag: []const u8 = if (std.mem.eql(u8, callee, "__bp_ok")) "ok" else "error";
             try self.lowerExprIntoX0(recv.*);
-            try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{disc});
-            try self.bodyPrint("    {{test_heap, 3, {d}}}.\n", .{disc + 1});
-            try self.bodyPrint("    {{put_tuple2, {{x, 0}}, {{list, [{{atom, {f}}}, {{x, {d}}}]}}}}.\n", .{ erlEmitter.atom(tag), disc });
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(disc));
+            try beamEmitter.writeTestHeap(self.out, 3, disc + 1);
+            try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom(tag), Op.xr(disc) });
             return;
         }
 
@@ -3463,7 +3405,7 @@ const Emitter = struct {
             const else_l = self.allocLabel();
             const end_l = self.allocLabel();
             try self.lowerExprIntoX0(recv.*);
-            try self.bodyPrint("    {{test, is_tagged_tuple, {{f, {d}}}, [{{x, 0}}, 2, {{atom, ok}}]}}.\n", .{else_l});
+            try beamEmitter.writeTest(self.out, .is_tagged_tuple, else_l, &.{ Op.xr(0), .{ .untagged = 2 }, Op.atom("ok") });
             // Ok: extract the payload, apply the fn to it. The payload sits in
             // `{x, pstash}` and must survive the closure's `test_heap`, so raise
             // the make_fun3 live floor across the fn lowering. A BEAM `Live`
@@ -3471,28 +3413,28 @@ const Emitter = struct {
             // register below it — so `{x, disc}` is filled with the subject
             // first; leaving the hole made the closure's `test_heap` report
             // `{{x, 1}, not_live}`.
-            try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{disc});
-            try self.bodyPrint("    {{get_tuple_element, {{x, 0}}, 1, {{x, {d}}}}}.\n", .{pstash});
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(disc));
+            try beamEmitter.writeGetTupleElement(self.out, Op.xr(0), 1, Dst.xr(pstash));
             const saved_live = self.raiseLive(pstash + 1);
             try self.lowerFnInto0(arg1);
             self.min_live = saved_live;
-            try self.bodyWrite("    {move, {x, 0}, {x, 1}}.\n");
-            try self.bodyPrint("    {{move, {{x, {d}}}, {{x, 0}}}}.\n", .{pstash});
-            try self.bodyWrite("    {call_fun, 1}.\n");
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1));
+            try beamEmitter.writeMoveOp(self.out, Op.xr(pstash), Dst.xr(0));
+            try beamEmitter.writeCallFun(self.out, 1);
             if (is_result_map) {
                 // `map` rewraps the result as `{ok, Result}`; `flatMap` expects
                 // the fn to already return a `@Result`, so it passes through.
                 // Stash the result in `disc` (`{x, cur_arity+1}`) — contiguous with
                 // `{x, 0}` — so the rewrap `test_heap` Live count covers only live
                 // registers (`x1` above it is dead after `call_fun`).
-                try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{disc});
-                try self.bodyPrint("    {{test_heap, 3, {d}}}.\n", .{disc + 1});
-                try self.bodyPrint("    {{put_tuple2, {{x, 0}}, {{list, [{{atom, ok}}, {{x, {d}}}]}}}}.\n", .{disc});
+                try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(disc));
+                try beamEmitter.writeTestHeap(self.out, 3, disc + 1);
+                try beamEmitter.writePutTuple2(self.out, Dst.xr(0), &.{ Op.atom("ok"), Op.xr(disc) });
             }
-            try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_l});
+            try beamEmitter.writeJump(self.out, end_l);
             // Not Ok: the `{error, E}` tuple is still in `{x, 0}` — propagate untouched.
-            try self.bodyPrint("  {{label, {d}}}.\n", .{else_l});
-            try self.bodyPrint("  {{label, {d}}}.\n", .{end_l});
+            try beamEmitter.writeLabel(self.out, else_l);
+            try beamEmitter.writeLabel(self.out, end_l);
             return;
         }
 
@@ -3500,12 +3442,12 @@ const Emitter = struct {
             const else_l = self.allocLabel();
             const end_l = self.allocLabel();
             try self.lowerExprIntoX0(recv.*);
-            try self.bodyPrint("    {{test, is_tagged_tuple, {{f, {d}}}, [{{x, 0}}, 2, {{atom, ok}}]}}.\n", .{else_l});
-            try self.bodyWrite("    {get_tuple_element, {x, 0}, 1, {x, 0}}.\n");
-            try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_l});
-            try self.bodyPrint("  {{label, {d}}}.\n", .{else_l});
+            try beamEmitter.writeTest(self.out, .is_tagged_tuple, else_l, &.{ Op.xr(0), .{ .untagged = 2 }, Op.atom("ok") });
+            try beamEmitter.writeGetTupleElement(self.out, Op.xr(0), 1, Dst.xr(0));
+            try beamEmitter.writeJump(self.out, end_l);
+            try beamEmitter.writeLabel(self.out, else_l);
             try self.lowerFnInto0(arg1);
-            try self.bodyPrint("  {{label, {d}}}.\n", .{end_l});
+            try beamEmitter.writeLabel(self.out, end_l);
             return;
         }
 
@@ -3514,12 +3456,12 @@ const Emitter = struct {
             const false_l = self.allocLabel();
             const end_l = self.allocLabel();
             try self.lowerExprIntoX0(recv.*);
-            try self.bodyPrint("    {{test, is_tagged_tuple, {{f, {d}}}, [{{x, 0}}, 2, {{atom, {f}}}]}}.\n", .{ false_l, erlEmitter.atom(want) });
-            try self.bodyWrite("    {move, {atom, true}, {x, 0}}.\n");
-            try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_l});
-            try self.bodyPrint("  {{label, {d}}}.\n", .{false_l});
-            try self.bodyWrite("    {move, {atom, false}, {x, 0}}.\n");
-            try self.bodyPrint("  {{label, {d}}}.\n", .{end_l});
+            try beamEmitter.writeTest(self.out, .is_tagged_tuple, false_l, &.{ Op.xr(0), .{ .untagged = 2 }, Op.atom(want) });
+            try beamEmitter.writeMoveOp(self.out, Op.atom("true"), Dst.xr(0));
+            try beamEmitter.writeJump(self.out, end_l);
+            try beamEmitter.writeLabel(self.out, false_l);
+            try beamEmitter.writeMoveOp(self.out, Op.atom("false"), Dst.xr(0));
+            try beamEmitter.writeLabel(self.out, end_l);
             return;
         }
 
@@ -3529,21 +3471,21 @@ const Emitter = struct {
             const present_l = self.allocLabel();
             const end_l = self.allocLabel();
             try self.lowerExprIntoX0(recv.*);
-            try self.bodyPrint("    {{test, is_eq, {{f, {d}}}, [{{x, 0}}, {{atom, undefined}}]}}.\n", .{present_l});
+            try beamEmitter.writeTest(self.out, .is_eq, present_l, &.{ Op.xr(0), Op.atom("undefined") });
             // None: `{x, 0}` already holds `undefined`.
-            try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_l});
-            try self.bodyPrint("  {{label, {d}}}.\n", .{present_l});
+            try beamEmitter.writeJump(self.out, end_l);
+            try beamEmitter.writeLabel(self.out, present_l);
             // `{x, disc}` is filled so the prefix `Live` count raised below has
             // no uninitialized hole (see the result `map`/`flatMap` path).
-            try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{disc});
-            try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{pstash});
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(disc));
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(pstash));
             const saved_live = self.raiseLive(pstash + 1);
             try self.lowerFnInto0(arg1);
             self.min_live = saved_live;
-            try self.bodyWrite("    {move, {x, 0}, {x, 1}}.\n");
-            try self.bodyPrint("    {{move, {{x, {d}}}, {{x, 0}}}}.\n", .{pstash});
-            try self.bodyWrite("    {call_fun, 1}.\n");
-            try self.bodyPrint("  {{label, {d}}}.\n", .{end_l});
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1));
+            try beamEmitter.writeMoveOp(self.out, Op.xr(pstash), Dst.xr(0));
+            try beamEmitter.writeCallFun(self.out, 1);
+            try beamEmitter.writeLabel(self.out, end_l);
             return;
         }
 
@@ -3551,17 +3493,17 @@ const Emitter = struct {
             const present_l = self.allocLabel();
             const end_l = self.allocLabel();
             try self.lowerExprIntoX0(recv.*);
-            try self.bodyPrint("    {{test, is_eq, {{f, {d}}}, [{{x, 0}}, {{atom, undefined}}]}}.\n", .{present_l});
+            try beamEmitter.writeTest(self.out, .is_eq, present_l, &.{ Op.xr(0), Op.atom("undefined") });
             // None: evaluate the default into `{x, 0}`.
             try self.lowerFnInto0(arg1);
-            try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_l});
-            try self.bodyPrint("  {{label, {d}}}.\n", .{present_l});
+            try beamEmitter.writeJump(self.out, end_l);
+            try beamEmitter.writeLabel(self.out, present_l);
             // Present: `{x, 0}` already holds the value.
-            try self.bodyPrint("  {{label, {d}}}.\n", .{end_l});
+            try beamEmitter.writeLabel(self.out, end_l);
             return;
         }
 
-        try self.bodyPrint("    %% unsupported Result/Option op: {s}\n", .{callee});
+        try beamEmitter.writeComment(self.out, "unsupported Result/Option op: {s}", .{callee});
     }
 
     /// Lower the fn/default argument of a Result/Option op into `{x, 0}`. A
@@ -3571,7 +3513,7 @@ const Emitter = struct {
         if (arg) |a| {
             try self.lowerExprIntoX0(a.*);
         } else {
-            try self.bodyWrite("    {move, {atom, undefined}, {x, 0}}.\n");
+            try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
         }
     }
 
@@ -3589,20 +3531,19 @@ const Emitter = struct {
     fn materializeCallArgs(self: *Emitter, args: anytype, trailing: anytype) anyerror!void {
         const total = args.len + trailing.len;
         if (total > 16) {
-            try self.bodyWrite("    %% unsupported: call with > 16 args\n");
+            try beamEmitter.writeComment(self.out, "unsupported: call with > 16 args", .{});
             return;
         }
-        var bufs: [16][64]u8 = undefined;
-        var terms: [16]?[]const u8 = undefined;
+        var terms: [16]?Op = undefined;
         var has_complex = trailing.len > 0;
         for (args, 0..) |arg, i| {
-            terms[i] = try self.simpleTerm(arg.value.*, &bufs[i]);
+            terms[i] = self.simpleTerm(arg.value.*);
             if (terms[i] == null) has_complex = true;
         }
 
         if (!has_complex) {
             for (args, 0..) |_, i| {
-                try self.bodyPrint("    {{move, {s}, {{x, {d}}}}}.\n", .{ terms[i].?, i });
+                try beamEmitter.writeMoveOp(self.out, terms[i].?, Dst.xr(i));
             }
             return;
         }
@@ -3611,11 +3552,11 @@ const Emitter = struct {
         const saved_min = self.min_live;
         for (args, 0..) |arg, i| {
             if (terms[i]) |t| {
-                try self.bodyPrint("    {{move, {s}, {{x, {d}}}}}.\n", .{ t, scratch_base + i });
+                try beamEmitter.writeMoveOp(self.out, t, Dst.xr(scratch_base + i));
             } else {
                 if (i > 0) _ = self.raiseLive(@intCast(scratch_base + i));
                 try self.lowerExprIntoX0(arg.value.*);
-                try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch_base + i});
+                try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch_base + i));
             }
         }
         for (trailing, 0..) |trail, j| {
@@ -3627,11 +3568,11 @@ const Emitter = struct {
             const live: u32 = if (args.len + j == 0) self.min_live else @intCast(slot);
             _ = self.raiseLive(live);
             try self.lowerLambda(trail, live);
-            try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{slot});
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(slot));
         }
         self.min_live = saved_min;
         for (0..total) |i| {
-            try self.bodyPrint("    {{move, {{x, {d}}}, {{x, {d}}}}}.\n", .{ scratch_base + i, i });
+            try beamEmitter.writeMoveOp(self.out, Op.xr(scratch_base + i), Dst.xr(i));
         }
     }
 
@@ -3641,7 +3582,7 @@ const Emitter = struct {
         if (al.spreadExpr) |se| {
             try self.lowerExprIntoX0(se.*);
         } else {
-            try self.bodyWrite("    {move, nil, {x, 0}}.\n");
+            try beamEmitter.writeMoveOp(self.out, Op.nil, Dst.xr(0));
         }
         if (al.elems.len > 0) {
             // One cons cell is reserved per element, *after* that element has
@@ -3658,17 +3599,14 @@ const Emitter = struct {
                 // computed into `x0`; the slot must differ from `x0`, so
                 // `scratchBase` floors it at 1 (a 0-arity fn like `main/0`
                 // would otherwise alias `x0` and cons `[Elem | Elem]`).
-                try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
+                try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch));
                 const saved_live = self.raiseLive(scratch + 1);
                 try self.lowerExprIntoX0(al.elems[i]);
                 self.min_live = saved_live;
                 // `{x, 0}` holds the element and `{x, scratch}` the tail — both
                 // must survive the cons allocation.
-                try self.bodyPrint("    {{test_heap, 2, {d}}}.\n", .{scratch + 1});
-                try self.bodyPrint(
-                    "    {{put_list, {{x, 0}}, {{x, {d}}}, {{x, 0}}}}.\n",
-                    .{scratch},
-                );
+                try beamEmitter.writeTestHeap(self.out, 2, scratch + 1);
+                try beamEmitter.writePutList(self.out, Op.xr(0), Op.xr(scratch), Dst.xr(0));
             }
         }
     }
@@ -3681,16 +3619,13 @@ const Emitter = struct {
         for (tl.elems, 0..) |elem, i| {
             if (i > 0) _ = self.raiseLive(@intCast(scratch_base + i));
             try self.lowerExprIntoX0(elem);
-            try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch_base + i});
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch_base + i));
         }
         self.min_live = saved_live;
-        try self.bodyPrint("    {{test_heap, {d}, {d}}}.\n", .{ n + 1, scratch_base + n });
-        try self.bodyPrint("    {{put_tuple2, {{x, 0}}, {{list, [", .{});
-        for (0..n) |i| {
-            if (i > 0) try self.bodyWrite(", ");
-            try self.bodyPrint("{{x, {d}}}", .{scratch_base + i});
-        }
-        try self.bodyWrite("]}}.\n");
+        try beamEmitter.writeTestHeap(self.out, n + 1, scratch_base + n);
+        var elems: [16]Op = undefined;
+        for (0..n) |i| elems[i] = Op.xr(scratch_base + i);
+        try beamEmitter.writePutTuple2(self.out, Dst.xr(0), elems[0..n]);
     }
 
     /// Bookkeeping for a guarded case arm: the label that restores the subject
@@ -3710,13 +3645,13 @@ const Emitter = struct {
     fn emitGuardPre(self: *Emitter, guard: ?ast.Expr) !?GuardCtx {
         const g = guard orelse return null;
         const subj = self.scratchBase();
-        try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{subj});
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(subj));
         const saved_live = self.raiseLive(subj + 1);
         const restore = self.allocLabel();
         const lowered = try self.lowerComparisonAsTest(g, restore);
         if (!lowered) {
             try self.lowerExprIntoX0(g);
-            try self.bodyPrint("    {{test, is_eq, {{f, {d}}}, [{{x, 0}}, {{atom, true}}]}}.\n", .{restore});
+            try beamEmitter.writeTest(self.out, .is_eq, restore, &.{ Op.xr(0), Op.atom("true") });
         }
         self.min_live = saved_live;
         return GuardCtx{ .restore = restore, .subj = subj };
@@ -3728,8 +3663,8 @@ const Emitter = struct {
     /// into the next arm's pattern test.
     fn emitGuardPost(self: *Emitter, ctx: ?GuardCtx) !void {
         const c = ctx orelse return;
-        try self.bodyPrint("  {{label, {d}}}.\n", .{c.restore});
-        try self.bodyPrint("    {{move, {{x, {d}}}, {{x, 0}}}}.\n", .{c.subj});
+        try beamEmitter.writeLabel(self.out, c.restore);
+        try beamEmitter.writeMoveOp(self.out, Op.xr(c.subj), Dst.xr(0));
     }
 
     /// Lower a `case expr { pat -> body; ... }` into a chain of BEAM test
@@ -3737,7 +3672,7 @@ const Emitter = struct {
     /// guards are honoured via `emitGuardPre`/`emitGuardPost`.
     fn lowerCase(self: *Emitter, subjects: anytype, arms: anytype) anyerror!void {
         if (subjects.len == 0) {
-            try self.bodyWrite("    {move, {atom, undefined}, {x, 0}}.\n");
+            try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
             return;
         }
         try self.lowerExprIntoX0(subjects[0]);
@@ -3746,18 +3681,13 @@ const Emitter = struct {
         for (arms) |arm| {
             switch (arm.pattern) {
                 .numberLit => |n| {
-                    var buf: [64]u8 = undefined;
-                    const term = try formatNumberInto(&buf, n);
                     const next = self.allocLabel();
-                    try self.bodyPrint(
-                        "    {{test, is_eq, {{f, {d}}}, [{{x, 0}}, {s}]}}.\n",
-                        .{ next, term },
-                    );
+                    try beamEmitter.writeTest(self.out, .is_eq, next, &.{ Op.xr(0), Op.num(n) });
                     const guard_ctx = try self.emitGuardPre(arm.guard);
                     try self.lowerExprIntoX0(arm.body);
-                    try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_label});
+                    try beamEmitter.writeJump(self.out, end_label);
                     try self.emitGuardPost(guard_ctx);
-                    try self.bodyPrint("  {{label, {d}}}.\n", .{next});
+                    try beamEmitter.writeLabel(self.out, next);
                 },
                 .stringLit => |s| {
                     const next = self.allocLabel();
@@ -3768,21 +3698,18 @@ const Emitter = struct {
                     // compare literal-against-literal (`case_string_literal_patterns`
                     // printed `hello/hi/hi`).
                     const subj = self.scratchBase();
-                    try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{subj});
+                    try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(subj));
                     const saved_live = self.raiseLive(subj + 1);
                     try self.emitStringLiteral(s, 0);
                     self.min_live = saved_live;
-                    try self.bodyPrint(
-                        "    {{test, is_eq, {{f, {d}}}, [{{x, {d}}}, {{x, 0}}]}}.\n",
-                        .{ next, subj },
-                    );
-                    try self.bodyPrint("    {{move, {{x, {d}}}, {{x, 0}}}}.\n", .{subj});
+                    try beamEmitter.writeTest(self.out, .is_eq, next, &.{ Op.xr(subj), Op.xr(0) });
+                    try beamEmitter.writeMoveOp(self.out, Op.xr(subj), Dst.xr(0));
                     const guard_ctx = try self.emitGuardPre(arm.guard);
                     try self.lowerExprIntoX0(arm.body);
-                    try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_label});
+                    try beamEmitter.writeJump(self.out, end_label);
                     try self.emitGuardPost(guard_ctx);
-                    try self.bodyPrint("  {{label, {d}}}.\n", .{next});
-                    try self.bodyPrint("    {{move, {{x, {d}}}, {{x, 0}}}}.\n", .{subj});
+                    try beamEmitter.writeLabel(self.out, next);
+                    try beamEmitter.writeMoveOp(self.out, Op.xr(subj), Dst.xr(0));
                 },
                 .ident => |name| {
                     if (self.enum_variants.contains(name)) {
@@ -3793,35 +3720,32 @@ const Emitter = struct {
                         var vbuf: [256]u8 = undefined;
                         const vatom = try atomName(name, &vbuf);
                         const next = self.allocLabel();
-                        try self.bodyPrint(
-                            "    {{test, is_eq, {{f, {d}}}, [{{x, 0}}, {{atom, {s}}}]}}.\n",
-                            .{ next, vatom },
-                        );
+                        try beamEmitter.writeTest(self.out, .is_eq, next, &.{ Op.xr(0), Op.atom(vatom) });
                         const guard_ctx = try self.emitGuardPre(arm.guard);
                         try self.lowerExprIntoX0(arm.body);
-                        try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_label});
+                        try beamEmitter.writeJump(self.out, end_label);
                         try self.emitGuardPost(guard_ctx);
-                        try self.bodyPrint("  {{label, {d}}}.\n", .{next});
+                        try beamEmitter.writeLabel(self.out, next);
                     } else if (std.mem.eql(u8, name, "_")) {
                         const guard_ctx = try self.emitGuardPre(arm.guard);
                         try self.lowerExprIntoX0(arm.body);
-                        try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_label});
+                        try beamEmitter.writeJump(self.out, end_label);
                         try self.emitGuardPost(guard_ctx);
                     } else {
                         const y_idx = self.next_y;
                         self.next_y += 1;
                         try self.reg_map.put(name, .{ .y = y_idx });
-                        try self.bodyPrint("    {{move, {{x, 0}}, {{y, {d}}}}}.\n", .{y_idx});
+                        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y_idx));
                         const guard_ctx = try self.emitGuardPre(arm.guard);
                         try self.lowerExprIntoX0(arm.body);
-                        try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_label});
+                        try beamEmitter.writeJump(self.out, end_label);
                         try self.emitGuardPost(guard_ctx);
                     }
                 },
                 .wildcard => {
                     const guard_ctx = try self.emitGuardPre(arm.guard);
                     try self.lowerExprIntoX0(arm.body);
-                    try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_label});
+                    try beamEmitter.writeJump(self.out, end_label);
                     try self.emitGuardPost(guard_ctx);
                 },
                 .@"or" => |pats| {
@@ -3829,92 +3753,87 @@ const Emitter = struct {
                     for (pats) |p| {
                         switch (p) {
                             .numberLit => |n| {
-                                var buf: [64]u8 = undefined;
-                                const term = try formatNumberInto(&buf, n);
-                                try self.bodyPrint(
-                                    "    {{test, is_ne_exact, {{f, {d}}}, [{{x, 0}}, {s}]}}.\n",
-                                    .{ arm_label, term },
-                                );
+                                try beamEmitter.writeTest(self.out, .is_ne_exact, arm_label, &.{ Op.xr(0), Op.num(n) });
                             },
                             else => {},
                         }
                     }
                     const next = self.allocLabel();
-                    try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{next});
-                    try self.bodyPrint("  {{label, {d}}}.\n", .{arm_label});
+                    try beamEmitter.writeJump(self.out, next);
+                    try beamEmitter.writeLabel(self.out, arm_label);
                     const guard_ctx = try self.emitGuardPre(arm.guard);
                     try self.lowerExprIntoX0(arm.body);
-                    try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_label});
+                    try beamEmitter.writeJump(self.out, end_label);
                     try self.emitGuardPost(guard_ctx);
-                    try self.bodyPrint("  {{label, {d}}}.\n", .{next});
+                    try beamEmitter.writeLabel(self.out, next);
                 },
                 .variant => |v| switch (v.payload) {
                     .fields => |fields| {
                         const next = self.allocLabel();
                         var vbuf: [256]u8 = undefined;
                         const vatom = try atomName(v.name, &vbuf);
-                        try self.bodyPrint("    {{test, is_tagged_tuple, {{f, {d}}}, [{{x, 0}}, {d}, {{atom, {s}}}]}}.\n", .{ next, fields.len + 1, vatom });
+                        try beamEmitter.writeTest(self.out, .is_tagged_tuple, next, &.{ Op.xr(0), .{ .untagged = @intCast(fields.len + 1) }, Op.atom(vatom) });
                         for (fields, 0..) |bname, i| {
-                            try self.bodyPrint("    {{get_tuple_element, {{x, 0}}, {d}, {{x, 1}}}}.\n", .{i + 1});
+                            try beamEmitter.writeGetTupleElement(self.out, Op.xr(0), i + 1, Dst.xr(1));
                             const y_idx = self.next_y;
                             self.next_y += 1;
                             try self.reg_map.put(bname, .{ .y = y_idx });
-                            try self.bodyPrint("    {{move, {{x, 1}}, {{y, {d}}}}}.\n", .{y_idx});
+                            try beamEmitter.writeMoveOp(self.out, Op.xr(1), Dst.yr(y_idx));
                         }
                         const guard_ctx = try self.emitGuardPre(arm.guard);
                         try self.lowerExprIntoX0(arm.body);
-                        try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_label});
+                        try beamEmitter.writeJump(self.out, end_label);
                         try self.emitGuardPost(guard_ctx);
-                        try self.bodyPrint("  {{label, {d}}}.\n", .{next});
+                        try beamEmitter.writeLabel(self.out, next);
                     },
                     .binding => |binding| {
                         const next = self.allocLabel();
                         var vbuf: [256]u8 = undefined;
                         const vatom = try atomName(v.name, &vbuf);
-                        try self.bodyPrint("    {{test, is_tuple, {{f, {d}}}, [{{x, 0}}]}}.\n", .{next});
-                        try self.bodyPrint("    {{get_tuple_element, {{x, 0}}, 0, {{x, 1}}}}.\n", .{});
-                        try self.bodyPrint("    {{test, is_eq, {{f, {d}}}, [{{x, 1}}, {{atom, {s}}}]}}.\n", .{ next, vatom });
+                        try beamEmitter.writeTest(self.out, .is_tuple, next, &.{Op.xr(0)});
+                        try beamEmitter.writeGetTupleElement(self.out, Op.xr(0), 0, Dst.xr(1));
+                        try beamEmitter.writeTest(self.out, .is_eq, next, &.{ Op.xr(1), Op.atom(vatom) });
                         const y_idx = self.next_y;
                         self.next_y += 1;
                         try self.reg_map.put(binding, .{ .y = y_idx });
-                        try self.bodyPrint("    {{move, {{x, 0}}, {{y, {d}}}}}.\n", .{y_idx});
+                        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y_idx));
                         const guard_ctx = try self.emitGuardPre(arm.guard);
                         try self.lowerExprIntoX0(arm.body);
-                        try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_label});
+                        try beamEmitter.writeJump(self.out, end_label);
                         try self.emitGuardPost(guard_ctx);
-                        try self.bodyPrint("  {{label, {d}}}.\n", .{next});
+                        try beamEmitter.writeLabel(self.out, next);
                     },
                     .literals => {
                         // Literal-argument variants are not lowered specially yet.
                         const guard_ctx = try self.emitGuardPre(arm.guard);
                         try self.lowerExprIntoX0(arm.body);
-                        try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_label});
+                        try beamEmitter.writeJump(self.out, end_label);
                         try self.emitGuardPost(guard_ctx);
                     },
                 },
                 .list => |lst| {
                     const next = self.allocLabel();
                     if (lst.elems.len == 0 and lst.spread == null) {
-                        try self.bodyPrint("    {{test, is_nil, {{f, {d}}}, [{{x, 0}}]}}.\n", .{next});
+                        try beamEmitter.writeTest(self.out, .is_nil, next, &.{Op.xr(0)});
                     } else {
                         for (lst.elems) |_| {
-                            try self.bodyPrint("    {{test, is_nonempty_list, {{f, {d}}}, [{{x, 0}}]}}.\n", .{next});
-                            try self.bodyWrite("    {get_list, {x, 0}, {x, 1}, {x, 0}}.\n");
+                            try beamEmitter.writeTest(self.out, .is_nonempty_list, next, &.{Op.xr(0)});
+                            try beamEmitter.writeGetList(self.out, Op.xr(0), Dst.xr(1), Dst.xr(0));
                         }
                         if (lst.spread) |spread_name| {
                             if (spread_name.len > 0) {
                                 const y_idx = self.next_y;
                                 self.next_y += 1;
                                 try self.reg_map.put(spread_name, .{ .y = y_idx });
-                                try self.bodyPrint("    {{move, {{x, 0}}, {{y, {d}}}}}.\n", .{y_idx});
+                                try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y_idx));
                             }
                         }
                     }
                     const guard_ctx = try self.emitGuardPre(arm.guard);
                     try self.lowerExprIntoX0(arm.body);
-                    try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_label});
+                    try beamEmitter.writeJump(self.out, end_label);
                     try self.emitGuardPost(guard_ctx);
-                    try self.bodyPrint("  {{label, {d}}}.\n", .{next});
+                    try beamEmitter.writeLabel(self.out, next);
                 },
                 .multi => |pats| {
                     const next = self.allocLabel();
@@ -3922,14 +3841,11 @@ const Emitter = struct {
                         if (i < subjects.len) {
                             switch (p) {
                                 .numberLit => |n| {
-                                    var buf: [64]u8 = undefined;
-                                    const term = try formatNumberInto(&buf, n);
-                                    var subj_buf: [64]u8 = undefined;
-                                    const subj_term = try self.simpleTerm(subjects[i], &subj_buf) orelse blk: {
+                                    const subj_term = self.simpleTerm(subjects[i]) orelse blk: {
                                         try self.lowerExprIntoX0(subjects[i]);
-                                        break :blk try std.fmt.bufPrint(&subj_buf, "{{x, 0}}", .{});
+                                        break :blk Op.xr(0);
                                     };
-                                    try self.bodyPrint("    {{test, is_eq, {{f, {d}}}, [{s}, {s}]}}.\n", .{ next, subj_term, term });
+                                    try beamEmitter.writeTest(self.out, .is_eq, next, &.{ subj_term, Op.num(n) });
                                 },
                                 .wildcard => {},
                                 .ident => |name| {
@@ -3938,7 +3854,7 @@ const Emitter = struct {
                                         const y_idx = self.next_y;
                                         self.next_y += 1;
                                         try self.reg_map.put(name, .{ .y = y_idx });
-                                        try self.bodyPrint("    {{move, {{x, 0}}, {{y, {d}}}}}.\n", .{y_idx});
+                                        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y_idx));
                                     }
                                 },
                                 else => {},
@@ -3947,13 +3863,13 @@ const Emitter = struct {
                     }
                     const guard_ctx = try self.emitGuardPre(arm.guard);
                     try self.lowerExprIntoX0(arm.body);
-                    try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_label});
+                    try beamEmitter.writeJump(self.out, end_label);
                     try self.emitGuardPost(guard_ctx);
-                    try self.bodyPrint("  {{label, {d}}}.\n", .{next});
+                    try beamEmitter.writeLabel(self.out, next);
                 },
             }
         }
-        try self.bodyPrint("  {{label, {d}}}.\n", .{end_label});
+        try beamEmitter.writeLabel(self.out, end_label);
     }
 
     /// Emit a lambda body. When the final statement is a bare value-producing
@@ -3989,8 +3905,8 @@ const Emitter = struct {
     /// is 0. Omitting the preceding `test_heap` fails the loader with
     /// `{heap_overflow, …, {wanted, {1, funs}}}`.
     fn emitMakeFun(self: *Emitter, entry_label: u32, live: u32) !void {
-        try self.bodyPrint("    {{test_heap, {{alloc, [{{words, 0}}, {{floats, 0}}, {{funs, 1}}]}}, {d}}}.\n", .{@max(live, self.min_live)});
-        try self.bodyPrint("    {{make_fun3, {{f, {d}}}, 0, 0, {{x, 0}}, {{list, []}}}}.\n", .{entry_label});
+        try beamEmitter.writeTestHeapAlloc(self.out, 0, 1, @max(live, self.min_live));
+        try beamEmitter.writeMakeFun3(self.out, entry_label);
     }
 
     /// Lower a lambda `{ params -> body }` into a deferred BEAM function and
@@ -4028,12 +3944,12 @@ const Emitter = struct {
         self.num_y = arity + self.precountLocals(lam.body);
         try self.bindParams(lam.params);
 
-        try self.bodyWrite("\n");
-        try self.bodyPrint("{{function, {f}, {d}, {d}}}.\n", .{ erlEmitter.atom(fun_name), arity, labels.entry });
-        try self.bodyPrint("  {{label, {d}}}.\n", .{labels.func_info});
-        try self.bodyPrint("    {{line, [{{location, \"{s}.erl\", {d}}}]}}.\n", .{ self.module_name, self.cur_line });
-        try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, {f}}}, {d}}}.\n", .{ erlEmitter.atom(self.module_name), erlEmitter.atom(fun_name), arity });
-        try self.bodyPrint("  {{label, {d}}}.\n", .{labels.entry});
+        try beamEmitter.writeBlankLine(self.out);
+        try beamEmitter.writeFunctionHeader(self.out, fun_name, arity, labels.entry);
+        try beamEmitter.writeLabel(self.out, labels.func_info);
+        try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(self.out, self.module_name, fun_name, arity);
+        try beamEmitter.writeLabel(self.out, labels.entry);
         try self.emitFrame(arity);
         try self.emitParamSpill(arity);
         try self.emitLambdaBody(lam.body);
@@ -4063,13 +3979,13 @@ const Emitter = struct {
         const end_label = self.allocLabel();
 
         // {ok, V}: fall through and unwrap; otherwise jump to the Error branch.
-        try self.bodyPrint("    {{test, is_tagged_tuple, {{f, {d}}}, [{{x, 0}}, 2, {{atom, ok}}]}}.\n", .{err_label});
-        try self.bodyWrite("    {get_tuple_element, {x, 0}, 1, {x, 0}}.\n");
-        try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_label});
+        try beamEmitter.writeTest(self.out, .is_tagged_tuple, err_label, &.{ Op.xr(0), .{ .untagged = 2 }, Op.atom("ok") });
+        try beamEmitter.writeGetTupleElement(self.out, Op.xr(0), 1, Dst.xr(0));
+        try beamEmitter.writeJump(self.out, end_label);
 
-        try self.bodyPrint("  {{label, {d}}}.\n", .{err_label});
+        try beamEmitter.writeLabel(self.out, err_label);
         try self.lowerExprIntoX0(tc.handler.*);
-        try self.bodyPrint("  {{label, {d}}}.\n", .{end_label});
+        try beamEmitter.writeLabel(self.out, end_label);
     }
 
     /// Lower `start..end` → `lists:seq(Start, End)`. An open-ended range
@@ -4083,7 +3999,7 @@ const Emitter = struct {
         const base = self.scratchBase();
 
         try self.lowerExprIntoX0(r.start.*);
-        try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{base});
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(base));
 
         if (r.end) |end| {
             // `a..b` is half-open `[a, b)` (parity with wasm/erlang/`Array.range`),
@@ -4091,15 +4007,15 @@ const Emitter = struct {
             const saved_live = self.raiseLive(base + 1);
             try self.lowerExprIntoX0(end.*);
             self.min_live = saved_live;
-            try self.bodyPrint("    {{gc_bif, '-', {{f, 0}}, {d}, [{{x, 0}}, {{integer, 1}}], {{x, 0}}}}.\n", .{@max(base + 1, self.min_live)});
-            try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{base + 1});
+            try beamEmitter.writeGcBif(self.out, .sub, @max(base + 1, self.min_live), &.{ Op.xr(0), Op.int(1) }, Dst.xr(0));
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(base + 1));
         } else {
-            try self.bodyPrint("    {{move, {{atom, infinity}}, {{x, {d}}}}}.\n", .{base + 1});
+            try beamEmitter.writeMoveOp(self.out, Op.atom("infinity"), Dst.xr(base + 1));
         }
 
-        try self.bodyPrint("    {{move, {{x, {d}}}, {{x, 0}}}}.\n", .{base});
-        try self.bodyPrint("    {{move, {{x, {d}}}, {{x, 1}}}}.\n", .{base + 1});
-        try self.bodyWrite("    {call_ext, 2, {extfunc, lists, seq, 2}}.\n");
+        try beamEmitter.writeMoveOp(self.out, Op.xr(base), Dst.xr(0));
+        try beamEmitter.writeMoveOp(self.out, Op.xr(base + 1), Dst.xr(1));
+        try beamEmitter.writeCall(self.out, .normal, 2, .{ .ext = .{ .module = "lists", .function = "seq" } }, 0);
     }
 
     /// Lower `lhs |> rhs`: evaluate lhs, then call rhs as function with result.
@@ -4109,12 +4025,12 @@ const Emitter = struct {
             .identifier => |id| switch (id.kind) {
                 .ident => |name| {
                     const labels = self.fnLabelsFor(name, 1) catch {
-                        try self.bodyPrint("    %% unresolved pipeline fn: {s}/1\n", .{name});
+                        try beamEmitter.writeComment(self.out, "unresolved pipeline fn: {s}/1", .{name});
                         return;
                     };
-                    try self.bodyPrint("    {{call, 1, {{f, {d}}}}}.\n", .{labels.entry});
+                    try beamEmitter.writeCall(self.out, .normal, 1, .{ .local = labels.entry }, 0);
                 },
-                else => try self.bodyWrite("    %% unsupported pipeline rhs\n"),
+                else => try beamEmitter.writeComment(self.out, "unsupported pipeline rhs", .{}),
             },
             .call => |c| switch (c.kind) {
                 .call => |cc| {
@@ -4124,30 +4040,30 @@ const Emitter = struct {
                     // into `{x, 0}..{x, n}` — materializing the args straight
                     // into their final registers would overwrite the stash.
                     const scratch = self.scratchBase();
-                    try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
+                    try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch));
                     const saved_live = self.min_live;
                     for (cc.args, 0..) |arg, i| {
                         _ = self.raiseLive(@intCast(scratch + 1 + i));
                         try self.lowerExprIntoX0(arg.value.*);
-                        try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch + 1 + i});
+                        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch + 1 + i));
                     }
                     self.min_live = saved_live;
                     const total = cc.args.len + 1;
-                    try self.bodyPrint("    {{move, {{x, {d}}}, {{x, 0}}}}.\n", .{scratch});
+                    try beamEmitter.writeMoveOp(self.out, Op.xr(scratch), Dst.xr(0));
                     for (0..cc.args.len) |i| {
-                        try self.bodyPrint("    {{move, {{x, {d}}}, {{x, {d}}}}}.\n", .{ scratch + 1 + i, 1 + i });
+                        try beamEmitter.writeMoveOp(self.out, Op.xr(scratch + 1 + i), Dst.xr(1 + i));
                     }
                     const labels = self.fnLabelsFor(cc.callee, total) catch {
-                        try self.bodyPrint("    %% unresolved pipeline fn: {s}/{d}\n", .{ cc.callee, total });
+                        try beamEmitter.writeComment(self.out, "unresolved pipeline fn: {s}/{d}", .{ cc.callee, total });
                         return;
                     };
-                    try self.bodyPrint("    {{call, {d}, {{f, {d}}}}}.\n", .{ total, labels.entry });
+                    try beamEmitter.writeCall(self.out, .normal, total, .{ .local = labels.entry }, 0);
                 },
                 .pipeline => |inner_pl| {
                     try self.lowerPipeline(inner_pl);
                 },
             },
-            else => try self.bodyWrite("    %% unsupported pipeline rhs\n"),
+            else => try beamEmitter.writeComment(self.out, "unsupported pipeline rhs", .{}),
         }
     }
 
@@ -4204,12 +4120,12 @@ const Emitter = struct {
         self.in_loop_lambda = true;
         try self.bindParams(lp.params);
 
-        try self.bodyWrite("\n");
-        try self.bodyPrint("{{function, {f}, {d}, {d}}}.\n", .{ erlEmitter.atom(fun_name), arity, labels.entry });
-        try self.bodyPrint("  {{label, {d}}}.\n", .{labels.func_info});
-        try self.bodyPrint("    {{line, [{{location, \"{s}.erl\", {d}}}]}}.\n", .{ self.module_name, self.cur_line });
-        try self.bodyPrint("    {{func_info, {{atom, {f}}}, {{atom, {f}}}, {d}}}.\n", .{ erlEmitter.atom(self.module_name), erlEmitter.atom(fun_name), arity });
-        try self.bodyPrint("  {{label, {d}}}.\n", .{labels.entry});
+        try beamEmitter.writeBlankLine(self.out);
+        try beamEmitter.writeFunctionHeader(self.out, fun_name, arity, labels.entry);
+        try beamEmitter.writeLabel(self.out, labels.func_info);
+        try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(self.out, self.module_name, fun_name, arity);
+        try beamEmitter.writeLabel(self.out, labels.entry);
         try self.emitFrame(arity);
         try self.emitParamSpill(arity);
 
@@ -4234,20 +4150,18 @@ const Emitter = struct {
         // the list lands in `x1` (and stays in `x0` too), so the closure's
         // `make_fun3` — which always writes `x0` — keeps the list live in `x1`.
         try self.lowerExprIntoX0(lp.iter.*);
-        try self.bodyWrite("    {move, {x, 0}, {x, 1}}.\n");
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1));
         try self.emitMakeFun(labels.entry, 2);
 
         const func = if (has_map) "map" else "foreach";
-        try self.bodyPrint("    {{call_ext, 2, {{extfunc, lists, {s}, 2}}}}.\n", .{func});
+        try beamEmitter.writeCall(self.out, .normal, 2, .{ .ext = .{ .module = "lists", .function = func } }, 0);
     }
 
     /// Emit a string literal's lexeme content as a BEAM binary into `{x, dest}`:
     /// `{move, {literal, <<"str">>}, {x, D}}` (escapes resolved like the erlang
     /// backend, via `erlEmitter.writeBinaryFromLexeme`).
     fn emitStringLiteral(self: *Emitter, s: []const u8, dest: u32) !void {
-        try self.bodyWrite("    {move, ");
-        try beamEmitter.writeLexemeBinaryOperand(self.out, s);
-        try self.bodyPrint(", {{x, {d}}}}}.\n", .{dest});
+        try beamEmitter.writeMoveOp(self.out, .{ .lexeme = s }, Dst.xr(dest));
     }
 
     /// Lower `receiver.member` into `{x, dest}` via `{get_map_elements, ...}`.
@@ -4281,16 +4195,19 @@ const Emitter = struct {
                     // `string:length/1` counts graphemes, so it has to stay a
                     // real call (parity with the erlang backend).
                     .string => {
-                        try self.bodyWrite("    {call_ext, 1, {extfunc, string, length, 1}}.\n");
-                        if (dest != 0) try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{dest});
+                        try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "string", .function = "length" } }, 0);
+                        if (dest != 0) try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(dest));
                     },
                     // `length/1` is a gc_bif, not a call: a `call_ext` here would
                     // clobber the caller-saved x-registers an enclosing argument
                     // staging is holding (`xs.slice(1, xs.length)` lost both
                     // staged args → `uninitialized_reg {x, 1}`).
-                    else => try self.bodyPrint(
-                        "    {{gc_bif, length, {{f, 0}}, {d}, [{{x, 0}}], {{x, {d}}}}}.\n",
-                        .{ @max(self.min_live, 1), dest },
+                    else => try beamEmitter.writeGcBif(
+                        self.out,
+                        .length,
+                        @max(self.min_live, 1),
+                        &.{Op.xr(0)},
+                        Dst.xr(dest),
                     ),
                 }
                 return;
@@ -4306,10 +4223,10 @@ const Emitter = struct {
         // cross-module result), and `is_tuple` alone leaves the arity unknown, so
         // `get_tuple_element` fails the loader (`bad_type, needed t_tuple,1`).
         if (tupleIndexMember(ia.member)) |idx| {
-            try self.bodyWrite("    {move, {x, 0}, {x, 1}}.\n"); // tuple → x1
-            try self.bodyPrint("    {{move, {{integer, {d}}}, {{x, 0}}}}.\n", .{idx + 1}); // index → x0
-            try self.bodyWrite("    {call_ext, 2, {extfunc, erlang, element, 2}}.\n");
-            if (dest != 0) try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{dest});
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1)); // tuple → x1
+            try beamEmitter.writeMoveOp(self.out, Op.int(idx + 1), Dst.xr(0)); // index → x0
+            try beamEmitter.writeCall(self.out, .normal, 2, .{ .ext = .{ .module = "erlang", .function = "element" } }, 0);
+            if (dest != 0) try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(dest));
             return;
         }
 
@@ -4325,20 +4242,17 @@ const Emitter = struct {
             const present_l = self.allocLabel();
             const undef_l = self.allocLabel();
             const end_l = self.allocLabel();
-            try self.bodyPrint("    {{test, is_eq, {{f, {d}}}, [{{x, 0}}, {{atom, undefined}}]}}.\n", .{present_l});
+            try beamEmitter.writeTest(self.out, .is_eq, present_l, &.{ Op.xr(0), Op.atom("undefined") });
             // Receiver IS `undefined` (test fell through) → result is `undefined`.
-            try self.bodyPrint("    {{move, {{atom, undefined}}, {{x, {d}}}}}.\n", .{dest});
-            try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_l});
-            try self.bodyPrint("  {{label, {d}}}.\n", .{present_l});
-            try self.bodyPrint("    {{test, is_map, {{f, {d}}}, [{{x, 0}}]}}.\n", .{undef_l});
-            try self.bodyPrint(
-                "    {{get_map_elements, {{f, {d}}}, {{x, 0}}, {{list, [{{atom, {f}}}, {{x, {d}}}]}}}}.\n",
-                .{ undef_l, erlEmitter.atom(member), dest },
-            );
-            try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_l});
-            try self.bodyPrint("  {{label, {d}}}.\n", .{undef_l});
-            try self.bodyPrint("    {{move, {{atom, undefined}}, {{x, {d}}}}}.\n", .{dest});
-            try self.bodyPrint("  {{label, {d}}}.\n", .{end_l});
+            try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(dest));
+            try beamEmitter.writeJump(self.out, end_l);
+            try beamEmitter.writeLabel(self.out, present_l);
+            try beamEmitter.writeTest(self.out, .is_map, undef_l, &.{Op.xr(0)});
+            try beamEmitter.writeGetMapElements(self.out, undef_l, Op.xr(0), member, Dst.xr(dest));
+            try beamEmitter.writeJump(self.out, end_l);
+            try beamEmitter.writeLabel(self.out, undef_l);
+            try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(dest));
+            try beamEmitter.writeLabel(self.out, end_l);
             return;
         }
 
@@ -4348,39 +4262,32 @@ const Emitter = struct {
         // (`Response.ok(...)`) is typed `any` — the BEAM loader then rejects a
         // bare `get_map_elements` (`bad_type, needed t_map`). The `is_map` test
         // narrows it; on failure both fall through past the read.
-        try self.bodyPrint("    {{test, is_map, {{f, {d}}}, [{{x, 0}}]}}.\n", .{fail_label});
-        try self.bodyPrint(
-            "    {{get_map_elements, {{f, {d}}}, {{x, 0}}, {{list, [{{atom, {f}}}, {{x, {d}}}]}}}}.\n",
-            .{ fail_label, erlEmitter.atom(member), dest },
-        );
-        try self.bodyPrint("  {{label, {d}}}.\n", .{fail_label});
+        try beamEmitter.writeTest(self.out, .is_map, fail_label, &.{Op.xr(0)});
+        try beamEmitter.writeGetMapElements(self.out, fail_label, Op.xr(0), member, Dst.xr(dest));
+        try beamEmitter.writeLabel(self.out, fail_label);
     }
 
     /// Render a "simple" expression (literal number or identifier already
     /// mapped to a register) as a BEAM term in `buf`. Returns the rendered
     /// slice or null if the expression is too complex.
-    fn simpleTerm(self: *Emitter, e: ast.Expr, buf: []u8) !?[]const u8 {
+    fn simpleTerm(self: *Emitter, e: ast.Expr) ?Op {
         switch (e) {
             .identifier => |id| switch (id.kind) {
                 .ident => |n| {
-                    if (self.reg_map.get(n)) |reg| {
-                        return try reg.format(buf);
-                    }
+                    if (self.reg_map.get(n)) |reg| return reg.operand();
                     return null;
                 },
                 else => return null,
             },
             .literal => |lit| switch (lit.kind) {
-                .numberLit => |n| {
-                    return try formatNumberInto(buf, n);
-                },
-                .null_ => return try std.fmt.bufPrint(buf, "{{atom, undefined}}", .{}),
+                .numberLit => |n| return Op.num(n),
+                .null_ => return Op.atom("undefined"),
                 else => return null,
             },
             .unaryOp => |un| switch (un.op) {
                 .neg => switch (un.expr.*) {
                     .literal => |lit| switch (lit.kind) {
-                        .numberLit => |n| return try formatNegNumberInto(buf, n),
+                        .numberLit => |n| return Op.negNum(n),
                         else => return null,
                     },
                     else => return null,
@@ -4400,7 +4307,7 @@ const atomName = erlEmitter.atomText;
 
 /// A comparison lowered to a BEAM `test` instruction: the opcode plus whether
 /// the operands must be swapped.
-const CmpTest = struct { opcode: []const u8, swap: bool };
+const CmpTest = struct { opcode: beamEmitter.TestOp, swap: bool };
 
 /// Map a comparison operator to a *valid* BEAM test instruction. BEAM provides
 /// only `is_lt` and `is_ge` for ordering — there is no `is_gt`/`is_le` opcode
@@ -4409,38 +4316,12 @@ const CmpTest = struct { opcode: []const u8, swap: bool };
 /// operators that are not comparisons.
 fn comparisonTestOp(op: anytype) ?CmpTest {
     return switch (op) {
-        .lt => .{ .opcode = "is_lt", .swap = false },
-        .gt => .{ .opcode = "is_lt", .swap = true },
-        .lte => .{ .opcode = "is_ge", .swap = true },
-        .gte => .{ .opcode = "is_ge", .swap = false },
-        .eq => .{ .opcode = "is_eq", .swap = false },
-        .ne => .{ .opcode = "is_ne_exact", .swap = false },
+        .lt => .{ .opcode = .is_lt, .swap = false },
+        .gt => .{ .opcode = .is_lt, .swap = true },
+        .lte => .{ .opcode = .is_ge, .swap = true },
+        .gte => .{ .opcode = .is_ge, .swap = false },
+        .eq => .{ .opcode = .is_eq, .swap = false },
+        .ne => .{ .opcode = .is_ne_exact, .swap = false },
         else => null,
     };
-}
-
-/// Render a numeric literal into `buf`. Returns the populated slice.
-fn formatNumberInto(buf: []u8, n: []const u8) ![]const u8 {
-    var has_dot = false;
-    for (n) |c| if (c == '.' or c == 'e' or c == 'E') {
-        has_dot = true;
-        break;
-    };
-    if (has_dot) {
-        return std.fmt.bufPrint(buf, "{{float, {s}}}", .{n});
-    }
-    return std.fmt.bufPrint(buf, "{{integer, {s}}}", .{n});
-}
-
-/// Render the negation of a numeric literal as `{integer, -N}` / `{float, -F}`.
-fn formatNegNumberInto(buf: []u8, n: []const u8) ![]const u8 {
-    var has_dot = false;
-    for (n) |c| if (c == '.' or c == 'e' or c == 'E') {
-        has_dot = true;
-        break;
-    };
-    if (has_dot) {
-        return std.fmt.bufPrint(buf, "{{float, -{s}}}", .{n});
-    }
-    return std.fmt.bufPrint(buf, "{{integer, -{s}}}", .{n});
 }

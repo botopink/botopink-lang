@@ -253,8 +253,12 @@ codegen/
   (`lowerResultOptionOp`: `{ok, V}`/`{error, E}` and bare value / `undefined`,
   mirroring erlang), optional chaining (`lowerIdentAccess`: `is_eq` on
   `undefined`, then `is_map` + `get_map_elements`).
-- **Names**: `atomName` = `erlEmitter.atomText`; string literals, atom moves and
-  function names go through `beam/beam_emitter.zig` and `erlEmitter.atom(...)`.
+- **Emission**: `beam_asm.zig` writes no target text. It builds typed operands
+  (`Op`/`Dst` = `beamEmitter.Operand`/`Dest`) and calls one `beam_emitter.write*`
+  function per `.S` line; that file owns atom quoting, operand shape, indentation
+  and the trailing `.` (see [`beam/AGENTS.md`](beam/AGENTS.md)). A missing
+  instruction is added to the emitter's vocabulary, never printed at the call
+  site. The single verbatim passthrough is a `#[@External.Beam]` template body.
 - **Closures** (`emitMakeFun`): `test_heap` with `{alloc, [{funs, 1}]}` +
   `make_fun3` into `{x, 0}` (`make_fun2` is rejected by `+from_asm`). `Live`
   honours the `min_live` floor so scratch x-registers survive the allocation;

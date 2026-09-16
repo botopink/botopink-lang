@@ -26,17 +26,35 @@ beam/
 | `term.zig` | `Term` union + `Term.MapEntry { key: Term, value: Term }` and small constructors (`atomOf`, `str`, `int`, `listOf`, `tupleOf`, `mapOf`, `field`). Atoms hold the *unquoted* name; binaries hold raw runtime bytes. Terms borrow their slices — build them in an arena that outlives emission. |
 | `erl_ast.zig` | Erlang code model. `Expr` (`raw`, `term`, `variable`, `atom`, `lexeme_binary`, `call` local/remote, `apply`, `binop`, `unop`, `match`, `tuple`, `list`, `cons`, `map`/`map_update` with `=>`/`:=`, `list_comp`, `case_` (`block` or one-line `inline_` layout), `fun`, `try_catch`, `bin` segments, `exception` `Class:Reason`, `number` (verbatim token), `paren`, `fun_clauses` (one-line multi-clause `fun`), `string` (character list), `fun_ref` (`fun f/N`), `list_block` (one element per line), `comment` (in expression position), `seq` (parts written back to back — host templates)), `Clause` (patterns, guard sequence, body, `block`/`inline_` layout), `Body` (statements, or a pre-rendered `raw_block`), `Stmt` (expr / comment), `Comment` (`level` `line`/`doc`/`module` → `%`/`%%`/`%%%`, text; `Comment.doc(text)`), `Function`, `FnRef` (`name/arity`), `Form` (`module`, `exports`, `no_auto_import`, attribute, function, comment, `blank`, raw). `raw` nodes are the migration bridge for Erlang still produced as text. `Builder` (arena, with `caseInline`/`applyParen`) copies slices and allocates child nodes for trees built from runtime values; `str`/`field`/`exactField` helpers. |
 | `erl_emitter.zig` | Erlang source. **Names:** `isReserved`, `isUnquotedAtom`, `atomText(name, buf)` / `writeAtom` (bare when `[a-z][A-Za-z0-9_@]*` and not reserved, else single-quoted with `'`/`\` escaped; pre-quoted names pass through), `varName` / `writeVar` (`decl` → `Decl`), `moduleName` (`List` → `list`). **Binaries:** `writeBinaryFromBytes` (raw bytes; `"`, `\`, control bytes escaped, bytes ≥ 0x80 as `\x{HH}` so the binary is exact regardless of source encoding) and `writeBinaryFromLexeme` (a string literal's lexer content: botopink escapes map to Erlang's, `\$` → `$`, `\u{…}` → `\x{…}`, raw bytes pass through — the historical `erlang.zig` `emitBinary`). **Terms:** `writeFloat` (always has a `.`), `writeTerm` (lists `[a, b]`, tuples `{a, b}`, maps `#{k => v}`). **Code:** `writeExpr(w, expr, indent)` (multi-line constructs indent relative to `indent`: `case … of` clauses at +1 with block bodies at +2, `fun(…) ->` body at +1, `try`/`catch`), `writeBody` (the backend's statement rules: `,` only between real statements, comments without separator, empty body → `undefined`), `writeFunction` (clauses joined `;\n`, ending `.\n`), `writeForm`/`writeForms`; `writeString` for character lists; `writeComment` (prefix by level, one space, text). |
-| `beam_emitter.zig` | `.S` operands for the same model: `writeOperand` (`atom` → `{atom, A}`, `boolean` → `{atom, true}`, `integer` → `{integer, N}`, `float` → `{float, F}`, `nil`/empty list → `nil`, binary/list/tuple/map → `{literal, <term>}`), `writeLiteral`, `writeAtomOperand`, `writeLexemeBinaryOperand`, `writeMove(term, dest)` (`    {move, <operand>, {x, D}}.\n`). The inner term syntax of `{literal, …}` is the Erlang source form, so it delegates to `erl_emitter`. |
+| `beam_emitter.zig` | `.S` operands **and instructions**. *Operands:* `Operand` (`.x`/`.y` registers, `.f` label, `.term`, `.lexeme`, `.untagged` bare int, `.number` source-token numeric) with constructors `xr`/`yr`/`lbl`/`atom`/`int`/`str`/`num`/`negNum`/`nil`; `Dest` (`.x`/`.y`); `writeArg`, plus the term-level `writeOperand` (`atom` -> `{atom, A}`, `boolean` -> `{atom, true}`, `integer` -> `{integer, N}`, `float` -> `{float, F}`, `nil`/empty list -> `nil`, binary/list/tuple/map -> `{literal, <term>}`), `writeLiteral`, `writeAtomOperand`, `writeLexemeBinaryOperand`. *Selectors:* `TestOp`, `GcBif`, `Callee` (`.local` label / `.ext` module+function), `CallKind` (`normal`/`last`/`only`). *Instructions* (each writes one full line, indentation and trailing `.` included): `writeMove`/`writeMoveOp`, `writeLabel`, `writeJump`, `writeReturn`, `writeAllocate`, `writeDeallocate`, `writeInitYregs`, `writeTest`, `writeTestHeap`, `writeTestHeapAlloc`, `writeGcBif`, `writeCall`, `writeCallFun`, `writeMakeFun3`, `writePutList`, `writePutTuple2`, `writeGetTupleElement`, `writeGetList`, `writeGetMapElements`, `writePutMap` (+`MapPair`), `writeFunctionHeader`, `writeFuncInfo`, `writeLine`, `writeBlankLine`, `writeComment`/`writeTopComment`/`writeSourceComment`. The inner term syntax of `{literal, ...}` is the Erlang source form, so it delegates to `erl_emitter`. |
 
 ## Consumers
 
 - `../erlang.zig` — `atomName`/`fnAtom` = `atomText`, `erlangVar` = `varName`, `erlangModule` = `moduleName`, string literals via `writeBinaryFromLexeme`.
-- `../beam_asm.zig` — `atomName` = `atomText`; string literals (`emitStringLiteral`), `{literal, #{}}`, `put_map_assoc` keys and atom `move`s via `beam_emitter`.
+- `../beam_asm.zig` — `atomName` = `atomText`; **every** `.S` line it writes goes
+  through `beam_emitter`, so it has no `print`/`writeAll` of target syntax of its
+  own. The one exception is a `#[@External.Beam]` template body, which is
+  author-written `.S` spliced verbatim — and even there the `$self`/`$N`
+  substitutions are rendered with `writeArg`.
 - `../erlang.zig` — `emitComptimeModule` helper functions (`comptime_helper_forms`) and host forms; function/lambda/branch bodies (`bodyNode`), expressions (`exprNode`) and calls (`callNode`) are nodes; declarations and the module header are forms (`emitErlangModule` renders them with `writeForms`).
 - `../../comptime/decorator_eval.zig`, `../../comptime/template_eval.zig` — host glue and `main/0` as `Form`s built with `Builder`; the `@Decl` handle and captures are `Term`s.
 
 ## Rules
 
+- **The backend builds, the emitter renders.** `beam_asm.zig` owns register
+  allocation, live counts, label numbering and every lowering decision; this
+  directory owns how those decisions are spelled — operand shape, atom quoting,
+  literal wrapping, indentation, the trailing `.`. A backend that formats target
+  text itself is how a raw node slipped into a tuple and how template escapes
+  leaked, so the instruction functions take `Operand`/`Dest`/`TestOp`/`GcBif`/
+  `Callee`, never a preformatted string. When an instruction is missing, add it
+  here rather than printing it at the call site.
+- A numeric literal travels as `Operand.num(token)` — its *source token*, so
+  `1.70` and `1e3` reach the `.S` unchanged instead of round-tripping through an
+  `f64`.
+- A BEAM `Live` count is a prefix over `x0..x_{Live-1}`; the emitter takes it as a
+  number and never checks it. Deciding it — and keeping every register in that
+  range written — is the backend's job.
 - One quoting rule for both backends. Reserved words (`end`, `of`, `div`, …) and
   non-lowercase names are always quoted — an unquoted `{atom, end}` or
   `{atom, HOST}` does not parse.
