@@ -74,12 +74,15 @@ run_wasm() {
   fi
 }
 
-# `botopink run` a package and assert each expected line is in its output.
+# `botopink run` a package and assert each expected line is in its output. The
+# artifacts go to a temporary `--out`, so a tracked example tree stays clean.
 run_package() {
   local dir="$1" target="$2"; shift 2
   echo "==> [$(basename "$dir")] run --target $target"
-  local out
-  out="$( cd "$dir" && "$BP_BIN" run --target "$target" )"
+  local out out_dir
+  out_dir="$(mktemp -d "${TMPDIR:-/tmp}/botopink-backend-exec.XXXXXX")"
+  out="$( cd "$dir" && "$BP_BIN" run --target "$target" --out "$out_dir" )"
+  rm -rf "$out_dir"
   echo "$out"
   for needle in "$@"; do
     if ! grep -qx "$needle" <<<"$out"; then
