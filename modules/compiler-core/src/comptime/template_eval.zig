@@ -88,7 +88,11 @@ pub fn evaluate(
     traces: ?*std.ArrayListUnmanaged(trace.Entry),
 ) EvalError!Outcome {
     _ = build_root;
-    const source = try buildModule(arena, tfn, captures, plainArgs);
+    var unsupported: erlang.UnsupportedMethod = .{};
+    const source = buildModule(arena, tfn, captures, plainArgs, &unsupported) catch |err| switch (err) {
+        error.UnsupportedMethod => return .{ .err = try unsupportedText(arena, "template", tfn.name, unsupported) },
+        else => |e| return e,
+    };
 
     const dir = ".botopinkbuild/tmp/template";
     std.Io.Dir.cwd().createDirPath(io, dir) catch return error.EvalFailed;
@@ -117,6 +121,15 @@ fn errorText(arena: std.mem.Allocator, what: []const u8, detail: []const u8) ![]
     const shown = detail[0..@min(detail.len, max_error_detail)];
     const ellipsis = if (detail.len > max_error_detail) " …" else "";
     return std.fmt.allocPrint(arena, "{s}: {s}{s}", .{ what, shown, ellipsis });
+}
+
+/// The diagnostic for a body method call nothing answers (`erlang.UnsupportedMethod`).
+fn unsupportedText(arena: std.mem.Allocator, host: []const u8, name: []const u8, m: erlang.UnsupportedMethod) ![]const u8 {
+    return std.fmt.allocPrint(
+        arena,
+        "the {s} `{s}` calls `.{s}(…)` with {d} argument(s) at {d}:{d}, which no primitive type (string, array, int, float, bool) and no {s} host function provides",
+        .{ host, name, m.callee, m.argc, m.loc.line, m.loc.col, host },
+    );
 }
 
 // ── module ────────────────────────────────────────────────────────────────────
@@ -284,7 +297,8 @@ fn buildModule(
     tfn: ast.FnDecl,
     captures: []const template.CapturedExpr,
     plainArgs: []const template.PlainArg,
-) EvalError!Module {
+    unsupported: *erlang.UnsupportedMethod,
+) (EvalError || error{UnsupportedMethod})!Module {
     const forms = try hostForms(.{ .arena = arena }, tfn, captures, plainArgs);
 
     const decls = try arena.alloc(ast.DeclKind, 1);
@@ -294,8 +308,10 @@ fn buildModule(
         .host_records = &host_records,
         .exports = &.{.{ .name = "main", .arity = 0 }},
         .forms = forms,
+        .unsupported_method = unsupported,
     };
-    const code = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, config) catch return error.EvalFailed;
+    const code = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, config) catch |err|
+        return if (err == error.UnsupportedComptimeMethod) error.UnsupportedMethod else error.EvalFailed;
     // What snapshots show: the lowered body and `main/0` (the last host form).
     config.forms = forms[forms.len - 1 ..];
     config.listing = true;

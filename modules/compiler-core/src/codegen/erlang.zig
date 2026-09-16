@@ -367,7 +367,27 @@ pub const ComptimeModule = struct {
     /// Render only the lowered decls and `forms` — no module header, exports or
     /// helper forms. Not a compilable module: the listing snapshots show.
     listing: bool = false,
+    /// When set, a method call that no primitive type answers and no host form
+    /// defines is rejected at emit time: the call is recorded here and the emit
+    /// fails with `error.UnsupportedComptimeMethod`, so the evaluator reports a
+    /// located diagnostic instead of `erl_lint`'s `{undefined_function,…}`.
+    /// Only honoured on the compilable (non-`listing`) emit, where `forms`
+    /// carries every host function.
+    unsupported_method: ?*UnsupportedMethod = null,
 };
+
+/// The first method call of a comptime body nothing can answer (see
+/// `ComptimeModule.unsupported_method`). `callee` borrows from the body's AST.
+pub const UnsupportedMethod = struct {
+    callee: []const u8 = "",
+    /// Positional arguments plus trailing lambdas — the receiver excluded.
+    argc: usize = 0,
+    loc: ast.Loc = .{ .line = 0, .col = 0 },
+};
+
+/// The runtime-dispatch shim a comptime-body method call lowers to:
+/// `'__bp_prim_<method>'(Recv, Args…)` (see `Emitter.primShimForms`).
+const prim_shim_prefix = "__bp_prim_";
 
 /// The atom a bare `break` throws and its loop's `try` catches.
 const break_signal = "__bp_break";
@@ -496,6 +516,42 @@ pub fn emitComptimeModule(
     return emitErlangModule(alloc, module_name, program, comptime_vals, rewrites, instance_lowerings, false, null, module);
 }
 
+/// How many `<Iface>.<method>` entries the primitive dispatch table holds for a
+/// module that declares nothing — i.e. what the embedded `primitives.bp`
+/// contributes. `collectPrimErlangDispatch` swallows a prelude parse failure,
+/// which would silently empty the table for every module; tests pin this.
+pub fn primErlangDispatchCount(alloc: std.mem.Allocator) !usize {
+    var comptime_vals = std.StringHashMap([]const u8).init(alloc);
+    defer comptime_vals.deinit();
+    var rewrites = std.AutoHashMap(ast.Loc, []const u8).init(alloc);
+    defer rewrites.deinit();
+    var em = Emitter.init(alloc, comptime_vals, rewrites);
+    var no_decls = [_]ast.DeclKind{};
+    try em.collectPrimErlangDispatch(.{ .decls = &no_decls });
+    defer {
+        var pit = em.prim_iface_chain.iterator();
+        while (pit.next()) |entry| {
+            alloc.free(entry.key_ptr.*);
+            alloc.free(entry.value_ptr.*);
+        }
+        em.prim_iface_chain.deinit();
+        var dit = em.prim_erlang_dispatch.iterator();
+        while (dit.next()) |entry| {
+            alloc.free(entry.key_ptr.*);
+            alloc.free(entry.value_ptr.module);
+            alloc.free(entry.value_ptr.symbol);
+            if (entry.value_ptr.args) |args| {
+                for (args) |a| alloc.free(a);
+                alloc.free(args);
+            }
+            for (entry.value_ptr.arity_branches) |br| alloc.free(br.template);
+            if (entry.value_ptr.arity_branches.len > 0) alloc.free(entry.value_ptr.arity_branches);
+        }
+        em.prim_erlang_dispatch.deinit();
+    }
+    return em.prim_erlang_dispatch.count();
+}
+
 // ── top-level emitter ─────────────────────────────────────────────────────────
 
 fn emitErlang(
@@ -525,6 +581,14 @@ fn emitErlangModule(
     var em = Emitter.init(alloc, comptime_vals, rewrites);
     em.instance_lowerings = instance_lowerings;
     em.untyped = comptime_module != null;
+    if (comptime_module) |cm| {
+        em.host_forms = cm.forms;
+        if (!cm.listing) em.unsupported_method = cm.unsupported_method;
+    }
+    defer {
+        for (em.prim_shims.keys()) |k| alloc.free(k);
+        em.prim_shims.deinit(alloc);
+    }
     em.test_mode = test_mode;
     em.module_name = module_name;
     em.cross = cross;
@@ -571,6 +635,13 @@ fn emitErlangModule(
     defer em.string_locals.deinit();
     defer em.string_names.deinit();
     try em.collectPrimErlangDispatch(program);
+    // A comptime body is one decl: the primitive interfaces' bodied instance
+    // `default fn`s (`String.slice`, `Array.first`) are not in it, so they are
+    // indexed from the embedded prelude. The parse lives until the module is
+    // rendered — the reached bodies are lowered from it and borrow its strings.
+    var prelude_arena = std.heap.ArenaAllocator.init(alloc);
+    defer prelude_arena.deinit();
+    if (comptime_module != null) try em.collectPreludeInstanceDefaults(prelude_arena.allocator());
     try em.collectRecordMethodCollisions(program);
     defer {
         var rit = em.record_method_collisions.iterator();
@@ -804,6 +875,7 @@ fn emitErlangModule(
 
     if (comptime_module) |cm| {
         if (!cm.listing) {
+            try em.primShimForms(b, &forms);
             for (&comptime_helper_forms) |form| try forms.appendSlice(b.arena, &.{ .blank, form });
         }
         for (cm.forms) |form| try forms.appendSlice(b.arena, &.{ .blank, form });
@@ -1055,6 +1127,20 @@ fn isNullableParam(p: ast.Param) bool {
 /// keeps `self` as its first parameter.
 const IfaceDefault = struct { iface: []const u8, method: ast.InterfaceMethod };
 
+/// One `'__bp_prim_<callee>'/<argc + 1>` runtime-dispatch shim a comptime body
+/// reached. `callee` borrows from the body's AST.
+const PrimShim = struct { callee: []const u8, argc: usize };
+
+/// The primitive kinds a shim dispatches on, in clause order, with the guard
+/// BIF that recognises each one's runtime representation.
+const prim_shim_kinds = [_]struct { kind: envMod.PrimKind, guard: Ast.Expr }{
+    .{ .kind = .array, .guard = isA("list", "Recv") },
+    .{ .kind = .string, .guard = isA("binary", "Recv") },
+    .{ .kind = .bool, .guard = isA("boolean", "Recv") },
+    .{ .kind = .int, .guard = isA("integer", "Recv") },
+    .{ .kind = .float, .guard = isA("float", "Recv") },
+};
+
 /// Tuple positional member (`_0`, `_1`, …) → the digits, else null.
 /// Distinguishes tuple index access from `_`-prefixed record fields.
 fn tupleIndexMember(member: []const u8) ?[]const u8 {
@@ -1250,6 +1336,17 @@ const Emitter = struct {
     /// may call a std prelude helper (`stringSlice1`) the consuming module never
     /// declares, so bare callees also resolve against the prelude template index.
     in_iface_default: bool = false,
+    /// Comptime modules only: the `(method, argc)` runtime-dispatch shims the
+    /// body's method calls reached (see `untypedPrimCallNode`), keyed
+    /// `"<method>/<argc>"` (owned) and insertion ordered so the emitted forms
+    /// are deterministic. Drained by `primShimForms`.
+    prim_shims: std.StringArrayHashMapUnmanaged(PrimShim) = .empty,
+    /// Comptime modules only: the host forms appended after the body
+    /// (`ComptimeModule.forms`). A method call whose `(name, argc + 1)` one of
+    /// them defines stays the bare local call (`q.text()` → `text(Q)`).
+    host_forms: []const Ast.Form = &.{},
+    /// Comptime modules only: `ComptimeModule.unsupported_method`.
+    unsupported_method: ?*UnsupportedMethod = null,
     /// Locals that may hold `undefined` (null): a parameter declared `?T` or
     /// defaulted to `null`. `if (x)` on one is a null test, not a boolean test.
     /// Reset per function alongside `locals`.
@@ -1796,6 +1893,35 @@ const Emitter = struct {
             },
             else => {},
         };
+    }
+
+    /// Comptime modules: index the embedded prelude's primitive interfaces the
+    /// way `collectInterfaces` indexes a program's — the bodied instance
+    /// `default fn`s and the `-> Self` methods — so a shim clause reaches
+    /// `String.slice` / `Array.first`. `arena` owns the parsed prelude and must
+    /// outlive the emit. A name the program already declares keeps its entry.
+    fn collectPreludeInstanceDefaults(this: *Emitter, arena: std.mem.Allocator) !void {
+        var lx = lexerMod.Lexer.init(prelude.primitives);
+        const tokens = try lx.scanAll(arena);
+        var p = parserMod.Parser.init(tokens);
+        const prim_program = try p.parse(arena);
+        for (prim_program.decls) |decl| {
+            if (decl != .interface) continue;
+            const i = decl.interface;
+            for (i.methods) |m| {
+                var key_buf: [256]u8 = undefined;
+                const key = std.fmt.bufPrint(&key_buf, "{s}.{s}", .{ i.name, m.name }) catch continue;
+                if (m.returnType) |rt| {
+                    if (rt == .named and std.mem.eql(u8, rt.named, "Self") and !this.iface_self_returns.contains(key)) {
+                        try this.iface_self_returns.put(try this.alloc.dupe(u8, key), {});
+                    }
+                }
+                if (!m.is_default or m.body == null) continue;
+                if (m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self")) continue;
+                if (this.iface_instance_defaults.contains(key)) continue;
+                try this.iface_instance_defaults.put(try this.alloc.dupe(u8, key), .{ .iface = i.name, .method = m });
+            }
+        }
     }
 
     fn isInterfaceAssoc(this: *Emitter, iface: []const u8, method: []const u8) bool {
@@ -3050,7 +3176,8 @@ const Emitter = struct {
                         }
                     }
                     if (this.untyped and !ia.optional and
-                        (std.mem.eql(u8, ia.member, "len") or std.mem.eql(u8, ia.member, "length")))
+                        (std.mem.eql(u8, ia.member, "len") or std.mem.eql(u8, ia.member, "length") or
+                            std.mem.eql(u8, ia.member, "size")))
                     {
                         return b.call("__bp_len", &.{ try this.exprNode(b, ia.receiver.*), A(ia.member) });
                     }
@@ -3567,6 +3694,10 @@ const Emitter = struct {
         // on a chained call): try the Array primitive defaults and the universal
         // `toString` before the bare `m(Recv, args)` call.
         if (try this.arrayPrimFallbackNode(b, cc.callee, recv, cc)) |node| return node;
+        // A comptime body has no types at all: dispatch on the receiver at runtime.
+        if (this.untyped) {
+            if (try this.untypedPrimCallNode(b, loc, recv, cc)) |node| return node;
+        }
         if (std.mem.eql(u8, cc.callee, "toString") and cc.args.len == 0) return this.formatNode(b, recv);
         return b.call(cc.callee, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
     }
@@ -3827,23 +3958,7 @@ const Emitter = struct {
     /// unmapped method is a bare local `m(Recv, args)` call (a clear runtime
     /// error if truly unsupported) rather than invalid `Recv:m(args)` syntax.
     fn primMethodNode(this: *Emitter, b: Ast.Builder, k: envMod.PrimKind, callee: []const u8, recv: *const ast.Expr, cc: anytype) anyerror!Ast.Expr {
-        const eq = std.mem.eql;
-        if (try this.primAnnotationNode(b, k, callee, recv, cc)) |node| return node;
-        switch (k) {
-            .array => if (eq(u8, callee, "len") or eq(u8, callee, "length") or eq(u8, callee, "size")) {
-                return b.call("length", &.{try this.exprNode(b, recv.*)});
-            },
-            // `toString` is declared on `Integer`/`Float` with host annotations;
-            // this covers a numeric receiver the interface chain doesn't know.
-            .int => if (eq(u8, callee, "toString")) return b.call("integer_to_binary", &.{try this.exprNode(b, recv.*)}),
-            .float => if (eq(u8, callee, "toString")) return b.call("float_to_binary", &.{try this.exprNode(b, recv.*)}),
-            .string, .bool => {},
-        }
-        // Array default fns without an `@external` annotation (or a chained call
-        // the inferer didn't tag) use the canonical host op directly.
-        if (k == .array) {
-            if (try this.arrayPrimFallbackNode(b, callee, recv, cc)) |node| return node;
-        }
+        if (try this.primHostMethodNode(b, k, callee, recv, cc)) |node| return node;
         // Pure-botopink instance `default fn` (`xs.all(pred)`, `n.clamp(lo, hi)`):
         // the local form emitted on demand at the end of the module.
         if (try this.ifaceDefaultNode(b, k, callee, recv, cc)) |node| return node;
@@ -3851,6 +3966,218 @@ const Emitter = struct {
         try args.append(b.arena, try this.exprNode(b, recv.*));
         for (cc.args) |arg| try args.append(b.arena, try this.exprNode(b, arg.value.*));
         return headCall(b, try b.arena.dupe(u8, callee), args.items);
+    }
+
+    /// The host-op half of `primMethodNode`: the `@external(erlang, …)`
+    /// annotation, the inline cases and the Array fallbacks — null when none
+    /// answers (an instance `default fn` or nothing).
+    fn primHostMethodNode(this: *Emitter, b: Ast.Builder, k: envMod.PrimKind, callee: []const u8, recv: *const ast.Expr, cc: anytype) anyerror!?Ast.Expr {
+        const eq = std.mem.eql;
+        if (try this.primAnnotationNode(b, k, callee, recv, cc)) |node| return node;
+        switch (k) {
+            .array => if (eq(u8, callee, "len") or eq(u8, callee, "length") or eq(u8, callee, "size")) {
+                return try b.call("length", &.{try this.exprNode(b, recv.*)});
+            },
+            // `toString` is declared on `Integer`/`Float` with host annotations;
+            // this covers a numeric receiver the interface chain doesn't know.
+            .int => if (eq(u8, callee, "toString")) return try b.call("integer_to_binary", &.{try this.exprNode(b, recv.*)}),
+            .float => if (eq(u8, callee, "toString")) return try b.call("float_to_binary", &.{try this.exprNode(b, recv.*)}),
+            .string, .bool => {},
+        }
+        // Array default fns without an `@external` annotation (or a chained call
+        // the inferer didn't tag) use the canonical host op directly.
+        if (k == .array) {
+            if (try this.arrayPrimFallbackNode(b, callee, recv, cc)) |node| return node;
+        }
+        return null;
+    }
+
+    // ── comptime-body primitive dispatch ──────────────────────────────────────
+    //
+    // A comptime body (`emitComptimeModule`) has no inferred types, so a method
+    // call's receiver kind is unknown when it is lowered. `recv.m(args)` becomes
+    // `'__bp_prim_m'(Recv, Args…)`, and one shim per reached `(m, argc)` carries
+    // a clause per primitive kind that answers `m` — the clause body is
+    // `primMethodNode`'s own lowering of that kind, guarded by the kind's runtime
+    // test (`is_list`, `is_binary`, …) — then a clause that raises. The typed
+    // tables (`prim_erlang_dispatch`, the prelude's instance defaults) stay the
+    // single source of truth.
+
+    /// The call a shim clause lowers: the receiver `recv` and the positional
+    /// arguments `arg0…` (→ `Recv`, `Arg0…`).
+    const ShimCall = struct {
+        recv: *ast.Expr,
+        args: []const ast.CallArg,
+        trailing: []const ast.TrailingLambda = &.{},
+    };
+
+    fn shimIdent(b: Ast.Builder, name: []const u8) !*ast.Expr {
+        const e = try b.arena.create(ast.Expr);
+        e.* = .{ .identifier = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .ident = name } } };
+        return e;
+    }
+
+    fn shimCall(b: Ast.Builder, argc: usize) !ShimCall {
+        const args = try b.arena.alloc(ast.CallArg, argc);
+        for (args, 0..) |*arg, i| arg.* = .{
+            .label = null,
+            .value = try shimIdent(b, try std.fmt.allocPrint(b.arena, "arg{d}", .{i})),
+        };
+        return .{ .recv = try shimIdent(b, "recv"), .args = args };
+    }
+
+    /// The instance `default fn` kind `k` answers `callee` with, when it accepts
+    /// `argc` arguments (the ones past `argc` all carry a default).
+    fn primDefaultFor(this: *const Emitter, k: envMod.PrimKind, callee: []const u8, argc: usize) ?IfaceDefault {
+        const head_iface = primIfaceForKind(k) orelse return null;
+        var iface_walk = PrimIfaceWalker.init(this, head_iface, &this.prim_iface_chain);
+        while (iface_walk.next()) |iface_name| {
+            var key_buf: [256]u8 = undefined;
+            const key = std.fmt.bufPrint(&key_buf, "{s}.{s}", .{ iface_name, callee }) catch return null;
+            const d = this.iface_instance_defaults.get(key) orelse continue;
+            const params = d.method.params[1..];
+            if (argc > params.len) return null;
+            for (params[argc..]) |p| if (p.default == null) return null;
+            return d;
+        }
+        return null;
+    }
+
+    /// True when some primitive kind lowers `callee` called with `argc`
+    /// arguments. Builds (and drops) the lowering, so it agrees with the shim.
+    fn primMethodAnswered(this: *Emitter, b: Ast.Builder, callee: []const u8, argc: usize) anyerror!bool {
+        const call = try shimCall(b, argc);
+        for (prim_shim_kinds) |pk| {
+            if (try this.primHostMethodNode(b, pk.kind, callee, call.recv, call) != null) return true;
+            if (this.primDefaultFor(pk.kind, callee, argc) != null) return true;
+        }
+        return false;
+    }
+
+    /// True when a host form defines `name/arity`.
+    fn isHostFunction(this: *const Emitter, name: []const u8, arity: usize) bool {
+        for (this.host_forms) |form| switch (form) {
+            .function => |f| {
+                if (!std.mem.eql(u8, f.name, name)) continue;
+                for (f.clauses) |c| if (c.patterns.len == arity) return true;
+            },
+            else => {},
+        };
+        return false;
+    }
+
+    /// A comptime body's value-receiver method call: the shim call when some
+    /// primitive kind answers it; null when a host form defines it (`q.text()`,
+    /// `decl.fail(msg)`) or nothing does. In the latter case, when the module
+    /// asked for it (`ComptimeModule.unsupported_method`), the call is recorded
+    /// and the emit fails instead.
+    fn untypedPrimCallNode(this: *Emitter, b: Ast.Builder, loc: ast.Loc, recv: *const ast.Expr, cc: anytype) anyerror!?Ast.Expr {
+        const argc = cc.args.len + cc.trailing.len;
+        if (this.isHostFunction(cc.callee, argc + 1)) return null;
+        if (!try this.primMethodAnswered(b, cc.callee, argc)) {
+            if (this.unsupported_method) |slot| {
+                slot.* = .{ .callee = cc.callee, .argc = argc, .loc = loc };
+                return error.UnsupportedComptimeMethod;
+            }
+            return null;
+        }
+        const key = try std.fmt.allocPrint(this.alloc, "{s}/{d}", .{ cc.callee, argc });
+        const entry = try this.prim_shims.getOrPut(this.alloc, key);
+        if (entry.found_existing) {
+            this.alloc.free(key);
+        } else {
+            entry.value_ptr.* = .{ .callee = cc.callee, .argc = argc };
+        }
+        const name = try std.fmt.allocPrint(b.arena, prim_shim_prefix ++ "{s}", .{cc.callee});
+        return try b.call(name, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
+    }
+
+    /// Emit every shim the body reached, and the instance `default fn`s their
+    /// clauses reach. A default body may itself reach a new shim
+    /// (`out.append(x)` on a local), so both lists are drained to a fixpoint.
+    fn primShimForms(this: *Emitter, b: Ast.Builder, out: *Forms) !void {
+        var next_shim: usize = 0;
+        // Defaults a call site reached were already emitted above the host block.
+        var next_default = this.needed_instance_defaults.count();
+        while (true) {
+            if (next_shim < this.prim_shims.count()) {
+                const shim = this.prim_shims.values()[next_shim];
+                next_shim += 1;
+                try out.appendSlice(b.arena, &.{ .blank, try this.primShimForm(b, shim) });
+            } else if (next_default < this.needed_instance_defaults.count()) {
+                const d = this.needed_instance_defaults.values()[next_default];
+                next_default += 1;
+                try this.instanceDefaultForm(b, out, d);
+            } else break;
+        }
+    }
+
+    /// `'__bp_prim_<callee>'(Recv, Arg0, …)`: one guarded clause per primitive
+    /// kind that answers the call, then a clause that raises
+    /// `{bp_unsupported_method, <<"callee">>, Argc, Recv}` — or, for `toString/0`,
+    /// formats any other term the way `'__bp_text'/1` does.
+    fn primShimForm(this: *Emitter, b: Ast.Builder, shim: PrimShim) !Ast.Form {
+        this.resetLocals();
+        const call = try shimCall(b, shim.argc);
+        const patterns = try b.arena.alloc(Ast.Expr, shim.argc + 1);
+        patterns[0] = Ast.Expr.v("Recv");
+        this.addLocal("recv");
+        for (call.args, 1..) |arg, i| {
+            const name = arg.value.identifier.kind.ident;
+            patterns[i] = Ast.Expr.v(try this.arenaVar(b, name));
+            this.addLocal(name);
+        }
+        const saved_indent = this.indent;
+        this.indent = 1;
+        defer this.indent = saved_indent;
+
+        var clauses: std.ArrayListUnmanaged(Ast.Clause) = .empty;
+        for (prim_shim_kinds) |pk| {
+            const node = (try this.primHostMethodNode(b, pk.kind, shim.callee, call.recv, call)) orelse
+                (try this.primDefaultShimNode(b, pk.kind, shim, call)) orelse continue;
+            try clauses.append(b.arena, .{
+                .patterns = patterns,
+                .guards = try b.exprs(&.{pk.guard}),
+                .body = try b.body(&.{node}),
+            });
+        }
+
+        const fallback_patterns = try b.arena.alloc(Ast.Expr, shim.argc + 1);
+        fallback_patterns[0] = Ast.Expr.v("Recv");
+        for (fallback_patterns[1..]) |*p| p.* = Ast.Expr.v("_");
+        const fallback = if (std.mem.eql(u8, shim.callee, "toString") and shim.argc == 0)
+            try b.call("__bp_text", &.{Ast.Expr.v("Recv")})
+        else
+            try b.remote("erlang", "error", &.{try b.tuple(&.{
+                Ast.Expr.a("bp_unsupported_method"),
+                Ast.str(shim.callee),
+                Ast.Expr.t(Term.int(@intCast(shim.argc))),
+                Ast.Expr.v("Recv"),
+            })});
+        try clauses.append(b.arena, .{ .patterns = fallback_patterns, .body = try b.body(&.{fallback}) });
+
+        const name = try std.fmt.allocPrint(b.arena, prim_shim_prefix ++ "{s}", .{shim.callee});
+        return b.functionClauses(name, clauses.items);
+    }
+
+    /// A shim clause reaching an instance `default fn`: `<Iface>_<method>(Recv,
+    /// Arg0, …)` with every omitted trailing parameter filled from its declared
+    /// default (`s.slice(1)` → `'String_slice'(Recv, Arg0, undefined)`).
+    fn primDefaultShimNode(this: *Emitter, b: Ast.Builder, k: envMod.PrimKind, shim: PrimShim, call: ShimCall) anyerror!?Ast.Expr {
+        const d = this.primDefaultFor(k, shim.callee, shim.argc) orelse return null;
+        const params = d.method.params[1..];
+        const args = try b.arena.alloc(ast.CallArg, params.len);
+        for (args, 0..) |*arg, i| {
+            if (i < shim.argc) {
+                arg.* = call.args[i];
+                continue;
+            }
+            const value = try b.arena.create(ast.Expr);
+            value.* = params[i].default.?;
+            arg.* = .{ .label = null, .value = value };
+        }
+        const padded: ShimCall = .{ .recv = call.recv, .args = args };
+        return this.ifaceDefaultNode(b, k, shim.callee, padded.recv, padded);
     }
 
     /// A value-receiver call that resolves to an interface instance `default fn`
@@ -3882,6 +4209,15 @@ const Emitter = struct {
     /// body may itself call another default (`String.slice` → nothing, but
     /// `Array.append` → `Array.slice`), which appends to the same list.
     fn instanceDefaultForms(this: *Emitter, b: Ast.Builder, out: *Forms) !void {
+        var i: usize = 0;
+        while (i < this.needed_instance_defaults.count()) : (i += 1) {
+            try this.instanceDefaultForm(b, out, this.needed_instance_defaults.values()[i]);
+        }
+    }
+
+    /// One reached instance `default fn` as its `<iface>_<method>(Self, …)`
+    /// form, lowered with `self` known to be the interface's primitive kind.
+    fn instanceDefaultForm(this: *Emitter, b: Ast.Builder, out: *Forms, d: IfaceDefault) !void {
         const saved_kind = this.self_prim_kind;
         const saved_in = this.in_iface_default;
         defer {
@@ -3889,14 +4225,10 @@ const Emitter = struct {
             this.in_iface_default = saved_in;
         }
         this.in_iface_default = true;
-        var i: usize = 0;
-        while (i < this.needed_instance_defaults.count()) : (i += 1) {
-            const d = this.needed_instance_defaults.values()[i];
-            var mbuf: [256]u8 = undefined;
-            const mangled = interfaceAssocAtom(&mbuf, d.iface, d.method.name) catch continue;
-            this.self_prim_kind = this.primKindForIface(d.iface);
-            try this.methodForms(b, out, try b.arena.dupe(u8, mangled), d.method);
-        }
+        var mbuf: [256]u8 = undefined;
+        const mangled = interfaceAssocAtom(&mbuf, d.iface, d.method.name) catch return;
+        this.self_prim_kind = this.primKindForIface(d.iface);
+        try this.methodForms(b, out, try b.arena.dupe(u8, mangled), d.method);
     }
 
     /// The std Array default fns as erlang BIFs (`forEach`/`fold`/`drop`/
