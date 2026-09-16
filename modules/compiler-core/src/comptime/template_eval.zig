@@ -199,6 +199,13 @@ fn hostForms(
                 try b.clause(&.{try b.list(&.{})}, &.{}, &.{A("undefined")}),
             }),
         }),
+        // ref(#{name := Name}) -> {'__bp_code', __bp_text(Name)}.
+        // `Binding.ref()` splices the caller-scope binding back into the
+        // expansion as a bare reference, so `return b.ref();` for a hit on
+        // `greeting` expands to the identifier `greeting`, not to its value.
+        try b.function("ref", &.{try b.map(&.{Ast.exactField("name", V("Name"))})}, &.{}, &.{
+            try b.tuple(&.{ code_tag, try b.call("__bp_text", &.{V("Name")}) }),
+        }),
         try b.function("build", &.{ V("_Capture"), V("Source") }, &.{}, &.{
             try b.tuple(&.{ code_tag, try b.call("__bp_text", &.{V("Source")}) }),
         }),

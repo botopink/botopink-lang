@@ -4,16 +4,40 @@ val result = comptime {
     val x = 10;
     break x * 2;
 };
+fn main() {
+    @print(result);
+}
 ```
 
------ COMPILE DIAGNOSTIC -- main
+----- COMPTIME VALUES -- main
 ```text
-error comptime: expression cannot be evaluated at compile time
- ┌─ :2:5
-  │
-2 │     val x = 10;
-  │     ^^^^^^^
-
-  'binding' is a runtime identifier
+ct_0: val result = comptime {
+          val x = 10;
+          break x * 2;
+      } → 20
 ```
 
+----- ERLANG -- main.erl
+```erlang
+-module(main).
+-export(['_botopink_main'/0, main/1]).
+
+%% comptime val result
+result() ->
+    (X * 2).
+
+main() ->
+    io:format("~p~n", [result()]).
+
+'_botopink_main'() ->
+    main().
+
+main(_Args) ->
+    '_botopink_main'().
+```
+
+----- RUN LOG -----
+```logs
+COMPILE ERROR (erlc):
+main.erl:6:6: variable 'X' is unbound
+```

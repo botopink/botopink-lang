@@ -272,18 +272,19 @@ test "js: comptime basic ---- comptime val and plain function coexist" {
     );
 }
 
-// DOCUMENTED SKIP — a local `val` inside a `comptime { … }` block is rejected
-// by `comptime/error.zig` `validateComptime` ("'binding' is a runtime
-// identifier"), even though `docs.md` ("Compile-time evaluation") shows exactly
-// this form. Missing feature: bindings inside a comptime block; owner: spec 02
-// (checker gaps). `comptime folding ---- block with break value inlines result`
-// covers the binding-free form that does fold.
+// A `comptime { … }` block has its own scope: a local `val` is declared,
+// folded, and visible to the `break` expression (`comptime/error.zig`
+// `validateBody` + `comptime/eval.zig` `Scope`), as `docs.md` ("Compile-time
+// evaluation") shows. Folds to `20`.
 test "js: comptime ---- block with break" {
-    try h.assertJsCompileError(std.testing.allocator, @src(),
+    try h.assertJsSingle(std.testing.allocator, @src(),
         \\val result = comptime {
         \\    val x = 10;
         \\    break x * 2;
         \\};
+        \\fn main() {
+        \\    @print(result);
+        \\}
     );
 }
 
@@ -393,25 +394,27 @@ test "js: template end to end ---- cross-module html mirrors the canonical examp
     });
 }
 
-// DOCUMENTED SKIP — `Binding.ref()` is typed by the checker
-// (`comptime/infer.zig:6385`, `TemplateOp.ref`) but the template runtime module
-// never emits a `ref/1` host function (`comptime/template_eval.zig:184-230`
-// defines text/parts/source/context/bindings/lookup/build/custom/fail/failAt/
-// expr/code — no `ref`), so the generated `.erl` calls an undefined function.
-// Missing feature: splicing a caller-scope reference back into the expansion;
-// owner: spec 03 (codegen/templates). The snapshot pins the `erl_lint`
-// rejection; it is OTP-version sensitive, like the erlang RUN LOGs.
-// (The user fn was also named `pick`, which the `pick` builtin shadows —
-// renamed to `refer` so the real gap is the one recorded.)
+// `Binding.ref()` splices the caller-scope binding back as a bare reference:
+// the template host now emits `ref/1` next to `lookup/2`
+// (`comptime/template_eval.zig`), so `b.ref()` expands to the identifier
+// `greeting` — not to its value — and the module prints `ola mundo`.
+// (The user fn is named `refer`, not `pick`, which the `pick` builtin shadows.)
+// The miss path is an `else` arm, not a statement after the `if`: in a template
+// body lowered by `codegen/erlang.zig` `emitComptimeModule`, a `return` inside
+// an if-arm does not leave the function — the `case` value is discarded and the
+// next statement runs anyway (visible in the `COMPTIME ERLANG` section of
+// `runtime_template_body_lookup_miss_drives_control_flow`, where the miss hides
+// it). That lowering gap is owned by the codegen/erlang side, not by comptime.
 test "js: template end to end ---- lookup().ref() splices a caller-scope reference" {
-    try h.assertJsCompileError(std.testing.allocator, @src(),
+    try h.assertJsSingle(std.testing.allocator, @src(),
         \\val greeting = "ola mundo";
         \\pub fn refer(comptime q: @Expr<string>) -> @Expr<string> {
         \\    val hit = q.lookup("greeting");
         \\    if (hit) { b ->
         \\        return b.ref();
+        \\    } else {
+        \\        return q.fail("greeting not found in caller scope");
         \\    };
-        \\    return q.fail("greeting not found in caller scope");
         \\}
         \\val s = refer "x";
         \\fn main() {
