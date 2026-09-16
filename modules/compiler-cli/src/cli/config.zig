@@ -75,8 +75,11 @@ pub const ProjectConfig = struct {
     /// Owned by the same arena as the rest of the config.
     dep_diagnostics: []const DepDiagnostic = &.{},
 
-    pub fn parsedTarget(self: ProjectConfig) Target {
-        return Target.fromString(self.target) orelse .commonJS;
+    /// The manifest's `target`, or null when it names a target the compiler
+    /// does not support. Never degrades an unknown target to commonJS — the
+    /// caller reports it (`reportUnsupportedTarget`) and fails.
+    pub fn parsedTarget(self: ProjectConfig) ?Target {
+        return Target.fromString(self.target);
     }
 
     /// Convenience: flatten `dependencies` to just the names — the shape the

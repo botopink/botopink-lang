@@ -292,7 +292,11 @@ fn loadOne(
         }
         if (lib_dir != null) break;
     }
-    const dir = lib_dir orelse return error.LibNotFound;
+    const dir = lib_dir orelse {
+        // Name the dependency here — the caller only sees the error tag.
+        std.debug.print("\x1b[1m\x1b[31merror\x1b[0m: dependency '{s}' was not found under any library root\n", .{dep});
+        return error.LibNotFound;
+    };
     const manifest = std.json.parseFromSliceLeaky(LibManifest, arena, data, .{
         .ignore_unknown_fields = true,
     }) catch return error.LibManifestInvalid;
