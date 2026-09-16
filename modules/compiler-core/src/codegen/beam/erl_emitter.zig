@@ -132,6 +132,29 @@ pub fn writeBinaryFromBytes(w: *Writer, bytes: []const u8) Writer.Error!void {
     try w.writeAll("\">>");
 }
 
+/// A binary-literal segment of a binary construction (`<<"a">>/binary`) is
+/// written as the plain string it holds (`"a"`) — the same bytes, and far
+/// easier to read than the nested `<<<<"a">>/binary, …>>`. False for every
+/// other segment, which the caller then renders the general way.
+fn writeBinLiteralSegment(w: *Writer, seg: Ast.BinSegment) Writer.Error!bool {
+    const ty = seg.type orelse return false;
+    if (!std.mem.eql(u8, ty, "binary")) return false;
+    switch (seg.value) {
+        .lexeme_binary => |lexeme| {
+            try writeStringFromLexeme(w, lexeme);
+            return true;
+        },
+        .term => |t| switch (t) {
+            .binary => |bytes| {
+                try writeString(w, bytes);
+                return true;
+            },
+            else => return false,
+        },
+        else => return false,
+    }
+}
+
 /// `"…"` — an Erlang string literal (character list) from raw bytes, escaped
 /// like `writeBinaryFromBytes`.
 pub fn writeString(w: *Writer, bytes: []const u8) Writer.Error!void {
@@ -157,7 +180,15 @@ fn writeEscaped(w: *Writer, bytes: []const u8) Writer.Error!void {
 /// set (`\n \r \t \0 \\ \"`), `\$` becomes `$`, and `\u{…}` becomes `\x{…}`.
 /// Raw bytes pass through unchanged.
 pub fn writeBinaryFromLexeme(w: *Writer, s: []const u8) Writer.Error!void {
-    try w.writeAll("<<\"");
+    try w.writeAll("<<");
+    try writeStringFromLexeme(w, s);
+    try w.writeAll(">>");
+}
+
+/// `"…"` — the same escaping as `writeBinaryFromLexeme` without the `<<>>`
+/// wrapper, for a string literal used as a binary-construction segment.
+pub fn writeStringFromLexeme(w: *Writer, s: []const u8) Writer.Error!void {
+    try w.writeByte('"');
     var i: usize = 0;
     while (i < s.len) {
         const c = s[i];
@@ -198,7 +229,7 @@ pub fn writeBinaryFromLexeme(w: *Writer, s: []const u8) Writer.Error!void {
             i += 1;
         }
     }
-    try w.writeAll("\">>");
+    try w.writeByte('"');
 }
 
 // ── terms ────────────────────────────────────────────────────────────────────
@@ -404,6 +435,7 @@ pub fn writeExpr(w: *Writer, e: Ast.Expr, indent: usize) Error!void {
         },
         .fun => |f| {
             try w.writeAll("fun");
+            if (f.name) |n| try w.print(" {s}", .{n});
             try writeArgs(w, f.params, indent);
             try w.writeAll(" ->\n");
             try writeBody(w, f.body, indent + 1);
@@ -415,6 +447,7 @@ pub fn writeExpr(w: *Writer, e: Ast.Expr, indent: usize) Error!void {
             try w.writeAll("<<");
             for (segments, 0..) |seg, i| {
                 if (i > 0) try w.writeAll(", ");
+                if (try writeBinLiteralSegment(w, seg)) continue;
                 try writeExpr(w, seg.value, indent);
                 if (seg.type) |ty| try w.print("/{s}", .{ty});
             }

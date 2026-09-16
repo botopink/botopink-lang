@@ -10,7 +10,7 @@ fn label(a: string, b: string) -> string {
 -module(main).
 
 label(A, B) ->
-    (((<<"">> + A) + <<"-">>) + B).
+    <<A/binary, "-", B/binary>>.
 ```
 
 ----- RUN LOG -----

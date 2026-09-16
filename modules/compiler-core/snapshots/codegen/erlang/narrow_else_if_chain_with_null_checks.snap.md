@@ -23,7 +23,7 @@ classify(X) ->
         false ->
             case (X =/= 0) of
                 true ->
-                    (<<"nonzero: ">> + X);
+                    <<"nonzero: ", X/binary>>;
                 false ->
                     <<"null">>
             end

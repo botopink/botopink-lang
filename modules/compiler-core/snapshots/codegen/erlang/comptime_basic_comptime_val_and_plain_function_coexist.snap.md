@@ -21,6 +21,8 @@ ct_0: val x = comptime 1 + 2 → 3
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
+x() ->
+    3.
 
 double(N) ->
     (N * 2).
@@ -29,7 +31,6 @@ main() ->
     R = double(21).
 
 '_botopink_main'() ->
-    X = 3,
     main().
 
 main(_Args) ->

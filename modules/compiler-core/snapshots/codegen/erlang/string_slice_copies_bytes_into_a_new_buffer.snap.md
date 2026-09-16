@@ -14,7 +14,15 @@ fn first3() -> string {
 
 first3() ->
     S = <<"hello">>,
-    slice(S, 0, 3).
+    string_slice(S, 0, 3).
+
+string_slice(Self, Start, End) ->
+    case (End =/= undefined) of
+        true ->
+            string:slice(Self, Start, ((End) - (Start)));
+        false ->
+            string:slice(Self, Start)
+    end.
 ```
 
 ----- RUN LOG -----

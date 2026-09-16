@@ -42,7 +42,7 @@ array_repeat(Value, Times) ->
 
 firstAndRest(Xs) ->
     Head = (fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)(Xs, 0),
-    Rest = slice(Xs, 1, length(Xs)),
+    Rest = array_slice(Xs, 1, length(Xs)),
     {Rest, Head}.
 
 main() ->
@@ -51,6 +51,14 @@ main() ->
     io:format("~p~n", [(fun(O) -> case O of undefined -> ((-1)); V -> V end end)(Head)]),
     Empty = firstAndRest([]),
     io:format("~p~n", [(element(2, Empty) =:= undefined)]).
+
+array_slice(Self, Start, End) ->
+    case (End =/= undefined) of
+        true ->
+            lists:sublist(Self, (Start) + 1, ((End) - (Start)));
+        false ->
+            lists:nthtail(Start, Self)
+    end.
 
 '_botopink_main'() ->
     main().
@@ -61,6 +69,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:26:12: function slice/3 undefined
+1
+true
 ```

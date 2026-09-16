@@ -22,7 +22,7 @@ total(Self) ->
     (maps:get(subtotal, Self) + (maps:get(subtotal, Self) * maps:get(taxRate, Self))).
 
 validate(Self) ->
-    erlang:throw('Error'(<<"invalid invoice">>)).
+    erlang:throw({error, <<"invalid invoice">>}).
 ```
 
 ----- RUN LOG -----

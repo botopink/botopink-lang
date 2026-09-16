@@ -46,7 +46,7 @@ swim(Self) ->
     maps:get(id, Self).
 
 main() ->
-    Donald = 'Pato'(2),
+    Donald = #{id => 2},
     io:format("~p~n", [swim(Donald)]).
 
 '_botopink_main'() ->
@@ -58,6 +58,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:14:14: function 'Pato'/1 undefined
+2
 ```

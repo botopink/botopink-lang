@@ -33,7 +33,15 @@ array_repeat(Value, Times) ->
 
 main() ->
     Xs = [1, 2, 3, 4, 5],
-    io:format("~p~n", [slice(Xs, 1, 4)]).
+    io:format("~p~n", [array_slice(Xs, 1, 4)]).
+
+array_slice(Self, Start, End) ->
+    case (End =/= undefined) of
+        true ->
+            lists:sublist(Self, (Start) + 1, ((End) - (Start)));
+        false ->
+            lists:nthtail(Start, Self)
+    end.
 
 '_botopink_main'() ->
     main().
@@ -44,6 +52,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:26:24: function slice/3 undefined
+[2,3,4]
 ```

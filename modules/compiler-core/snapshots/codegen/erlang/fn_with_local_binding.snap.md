@@ -19,12 +19,13 @@ double(X) ->
     Result = (X * 2),
     Result.
 
+output() ->
+    double(10).
 
 main() ->
-    io:format("~p~n", [Output]).
+    io:format("~p~n", [output()]).
 
 '_botopink_main'() ->
-    Output = double(10),
     main().
 
 main(_Args) ->
@@ -33,6 +34,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:10:24: variable 'Output' is unbound
+20
 ```

@@ -12,7 +12,7 @@ fn main() {
 -export(['_botopink_main'/0, main/1]).
 
 main() ->
-    S = (<<"hi ">> + <<"there">>),
+    S = <<"hi ", "there">>,
     io:format("~p~n", [string:length(S)]).
 
 '_botopink_main'() ->
@@ -24,4 +24,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+8
 ```

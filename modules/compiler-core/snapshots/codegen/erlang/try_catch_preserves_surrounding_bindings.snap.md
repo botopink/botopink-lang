@@ -35,7 +35,7 @@ process() ->
             0
     end,
     Suffix = 20,
-    io:format("~p~n", [Prefix, Data, Suffix]),
+    io:format("~p ~p ~p~n", [Prefix, Data, Suffix]),
     ((Prefix + Data) + Suffix).
 
 main() ->
@@ -50,4 +50,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+10 0 20
+30
 ```

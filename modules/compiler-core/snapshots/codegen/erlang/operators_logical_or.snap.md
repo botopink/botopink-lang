@@ -14,7 +14,7 @@ fn main() {
 -export(['_botopink_main'/0, main/1]).
 
 either(A, B) ->
-    (A or B).
+    (A orelse B).
 
 main() ->
     io:format("~p~n", [either(false, true)]).

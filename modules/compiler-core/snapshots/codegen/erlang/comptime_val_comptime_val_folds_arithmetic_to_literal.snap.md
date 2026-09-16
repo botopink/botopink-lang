@@ -16,12 +16,13 @@ ct_0: val result = comptime 10 + 20 → 30
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
+result() ->
+    30.
 
 main() ->
-    io:format("~p~n", [Result]).
+    io:format("~p~n", [result()]).
 
 '_botopink_main'() ->
-    Result = 30,
     main().
 
 main(_Args) ->
@@ -30,6 +31,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:6:24: variable 'Result' is unbound
+30
 ```

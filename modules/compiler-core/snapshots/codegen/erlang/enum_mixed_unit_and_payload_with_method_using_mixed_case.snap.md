@@ -24,7 +24,7 @@ check(M) ->
     case M of
         'Nothing' ->
             <<"nothing">>;
-        {tag, Just, Value} ->
+        {'Just', Value} ->
             <<"just">>
     end.
 ```

@@ -50,9 +50,9 @@ fn main() {
 %% import Response, App
 
 main() ->
-    R = response:ok(<<"hi">>),
+    R = http:ok(<<"hi">>),
     io:format("~p~n", [maps:get(body, R)]),
-    A = 'App'(8080, <<"/">>),
+    A = #{port => 8080, path => <<"/">>},
     io:format("~p~n", [maps:get(port, A)]).
 
 '_botopink_main'() ->
@@ -64,6 +64,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:9:9: function 'App'/2 undefined
+<<"hi">>
+8080
 ```

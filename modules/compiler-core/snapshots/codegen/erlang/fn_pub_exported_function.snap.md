@@ -18,12 +18,13 @@ fn main() {
 add(A, B) ->
     (A + B).
 
+result() ->
+    add(3, 4).
 
 main() ->
-    io:format("~p~n", [Result]).
+    io:format("~p~n", [result()]).
 
 '_botopink_main'() ->
-    Result = add(3, 4),
     main().
 
 main(_Args) ->
@@ -32,6 +33,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:10:24: variable 'Result' is unbound
+7
 ```

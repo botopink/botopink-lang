@@ -20,7 +20,7 @@ greet(X) ->
         true ->
             <<"nobody">>;
         _ ->
-            (<<"hello ">> + X)
+            <<"hello ", X/binary>>
     end.
 
 main() ->
@@ -36,4 +36,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+<<"hello world">>
+<<"nobody">>
 ```

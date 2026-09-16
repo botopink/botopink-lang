@@ -21,7 +21,15 @@ main() ->
     io:format("~p~n", [string:uppercase(S)]),
     io:format("~p~n", [string:lowercase(S)]),
     io:format("~p~n", [iolist_to_binary(lists:join(<<"|">>, lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> iolist_to_binary(io_lib:format("~p", [__E])) end end, string:split(S, <<",">>, all))))]),
-    io:format("~p~n", [slice(S, 0, 5)]).
+    io:format("~p~n", [string_slice(S, 0, 5)]).
+
+string_slice(Self, Start, End) ->
+    case (End =/= undefined) of
+        true ->
+            string:slice(Self, Start, ((End) - (Start)));
+        false ->
+            string:slice(Self, Start)
+    end.
 
 '_botopink_main'() ->
     main().
@@ -32,6 +40,8 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:11:24: function slice/3 undefined
+<<"HELLO,WORLD">>
+<<"hello,world">>
+<<"Hello|World">>
+<<"Hello">>
 ```

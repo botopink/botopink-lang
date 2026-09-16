@@ -27,7 +27,7 @@ greet(P) ->
     (fun(O) -> case O of undefined -> (<<"Hello stranger">>); V -> V end end)((fun(O) -> case O of undefined -> undefined; V -> (fun(N) ->
         shout(N)
     end)(V) end end)((fun(O) -> case O of undefined -> undefined; V -> (fun(N) ->
-        (<<"Hello ">> + N)
+        <<"Hello ", N/binary>>
     end)(V) end end)(firstName(P)))).
 ```
 

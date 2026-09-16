@@ -10,7 +10,7 @@ fn f() {
 -module(main).
 
 f() ->
-    case Items of [First | _] -> Items; _ -> erlang:throw('Error'(<<"not a list">>)) end.
+    case Items of [First | _] -> Items; _ -> erlang:throw({error, <<"not a list">>}) end.
 ```
 
 ----- RUN LOG -----

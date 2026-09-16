@@ -22,7 +22,7 @@ fn big(sh: Shape) -> string {
 
 big(Sh) ->
     case Sh of
-        {tag, Circle, R} ->
+        {'Circle', R} when (R > 10) ->
             <<"big circle">>;
         _ ->
             <<"other">>

@@ -10,7 +10,7 @@ fn f() {
 -module(main).
 
 f() ->
-    case List of [] -> List; _ -> erlang:throw('Error'(<<"not empty">>)) end.
+    case List of [] -> List; _ -> erlang:throw({error, <<"not empty">>}) end.
 ```
 
 ----- RUN LOG -----

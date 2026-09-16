@@ -98,14 +98,16 @@ main() ->
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
+name() ->
+    <<"world">>.
 
+page() ->
+    <<"<p>", (name())/binary, "</p>">>.
 
 main() ->
-    io:format("~p~n", [Page]).
+    io:format("~p~n", [page()]).
 
 '_botopink_main'() ->
-    Name = <<"world">>,
-    Page = (((<<"">> + <<"<p>">>) + Name) + <<"</p>">>),
     main().
 
 main(_Args) ->
@@ -114,6 +116,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:7:24: variable 'Page' is unbound
+<<"<p>world</p>">>
 ```

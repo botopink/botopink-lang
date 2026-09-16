@@ -15,18 +15,19 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-
-main() ->
-    io:format("~p~n", [Processamento]).
-
-'_botopink_main'() ->
-    Processamento = lists:foreach(fun(I) ->
+processamento() ->
+    lists:filtermap(fun(I) ->
         case ((I rem 2) =:= 0) of
             true ->
-                I;
-            _ -> ok
+                {true, I};
+            _ -> false
         end
-    end, lists:seq(0, (10) - 1)),
+    end, lists:seq(0, (10) - 1)).
+
+main() ->
+    io:format("~p~n", [processamento()]).
+
+'_botopink_main'() ->
     main().
 
 main(_Args) ->
@@ -35,6 +36,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:6:24: variable 'Processamento' is unbound
+[0,2,4,6,8]
 ```

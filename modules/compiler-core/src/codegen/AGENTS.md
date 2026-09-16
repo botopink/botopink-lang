@@ -123,12 +123,16 @@ codegen/
   or a shadowing `val i = i - 1` lowers to `Count@1 = Count + 1` and later reads
   resolve to the current version (`emitBind`/`varRef`, `var_current`/`var_next`
   reset per fn; versions are never reused so separate `case` arms can't
-  collide). A version bound inside a `case`/`fun` and read after it is left as an
-  Erlang compile error (unsafe/unbound) rather than silently wrong.
+  collide). **Pattern bindings version too** (`patternBindVar`): erlang patterns
+  do not shadow, so `case sh { Square(s) -> … }` with `s` already a parameter
+  would MATCH against it (`{'Square', S@1}` is the binding), and a name bound by
+  one clause of an earlier `case` is "unsafe" in a later one. A version bound
+  inside a `case`/`fun` and read after it is left as an Erlang compile error
+  (unsafe/unbound) rather than silently wrong.
 - **Modules are `erl_ast` forms**: `emitErlangModule` builds every form in one
   arena and renders them with `erl_emitter.writeForms`: `-module`,
   `-compile({no_auto_import,…})` (`noAutoImportRefs`), `-export`s, then each
-  declaration after a `.blank` — `topValForms`, `fnForms` (parameters, destructured
+  declaration after a `.blank` — `topValForms` (see **Module-level `val`s** below), `fnForms` (parameters, destructured
   tuples, plain `yield` generators as lists), `recordForms`/`enumForms`/
   `interfaceForms`/`implementForms`/`extendForms` (a `%%` comment plus method
   functions), `use`/`delegate`/external-fn comments, `testFunction` — the comptime
@@ -146,12 +150,15 @@ codegen/
   field access and `?.` as an applied inline `fun`), binary/unary operators,
   lambdas, grouped/array (with spread)/tuple/range/record/interface literals,
   jumps, `if`/`try … catch` expressions, `loop` and `case` (`caseNode`: OR patterns
-  expand to one clause per alternative; `patternNode` for variables, enum-variant
-  atoms, `{tag, Name, …}` variant tuples, list/cons and multi-subject tuples),
-  binding expressions (`bindingNode`), `use` and comptime forms (`comptimeNode`:
-  `assert` as an inline `case` in test mode, `assertPattern`). Record/interface
-  literal keys are atoms (quoted when PascalCase or reserved); array spread names
-  are written as the source spelled them.
+  expand to one clause per alternative; the pattern is lowered BEFORE the guard and
+  the body so both read the names it binds (`armGuards`); `patternNode` for
+  variables, enum-variant atoms, variant tuples `{'Circle', R}` (or the bare atom
+  `'Lt'` for a payload-less variant — exactly what the constructor builds), list/cons
+  and multi-subject tuples), binding expressions (`bindingNode`), `use` and comptime
+  forms (`comptimeNode`: `assert` as an inline `case` in test mode, `assertPattern`).
+  Record/interface literal keys are atoms (quoted when PascalCase or reserved); an
+  array spread concatenates (`[1, 2] ++ Rest`, `nameRefNode` for the spread name);
+  a leading-dot enum shorthand (`.Black`) is the variant atom.
 - **Calls are `erl_ast` nodes** (`callNode`): pipelines apply inside out
   (`pipelineNode`); builtins (`builtinCallNode`) render their `@external(erlang, …)`
   template, `@block` as an applied `fun`, or the `__bp_*` result/option ops
@@ -207,7 +214,41 @@ codegen/
   application `F(args)`.
 - **Control flow**: `try`/`catch` → `case … of {ok, V} -> …; {error, E} -> … end`;
   an `if` whose then-branch returns nests the rest of the body in the false arm
-  (`emitEarlyReturnIf`). `a..b` → `lists:seq(A, B - 1)`.
+  (`emitEarlyReturnIf`). `a..b` → `lists:seq(A, B - 1)`. `&&`/`||` are
+  `andalso`/`orelse` — botopink short-circuits, erlang's `and`/`or` do not.
+  `if (x)` on a nullable local (`?T`, or a parameter defaulting to `null`) is the
+  null test `(X =/= undefined)`, not a boolean test (`condNode`).
+- **Loops** lower by shape, not by name:
+  - a body producing a value per item (`yield`, or `break <expr>`) → `lists:map`;
+  - a body that is one `else`-less `if` ending in `break <expr>` → `lists:filtermap`
+    with `{true, V}` / `false` (`filterMapFunBody`) — the filter+map botopink means;
+  - `loop (xs, 0..) { item, i -> … }` → `lists:enumerate(Start, Xs)` and a single
+    `{I, Item}` tuple parameter (`lists:map/foreach` pass ONE element, so two fun
+    parameters never matched);
+  - an open-ended range `loop (x..)` → a named fun that counts up and recurses
+    (`fun __Loop(I) -> …, __Loop(I + 1) end`), since `lists:seq/2` has no `infinity`;
+  - everything else → `lists:foreach`.
+  A value-less `break` is `erlang:throw('__bp_break')` and its loop is wrapped in
+  the `try … catch throw:'__bp_break' -> ok end` that ends it (`loopBreakCatch`,
+  `hasBareBreak`).
+- **Module-level `val`s** (`topValForms`): erlang has no module-level storage, so a
+  NAMED `val` is always a 0-arity function and a bare reference to it is the call
+  `name()` (`top_vals`); a lambda-valued one applies what it answers,
+  `(add())(10, 20)`. A comptime `val` keeps its `%% comptime val x` header and
+  carries the folded expression as its body. Only the `_`-named synthetic
+  statements (top-level expression statements) stay inside `'_botopink_main'/0`,
+  where they keep their single, ordered evaluation. The trade-off is that a named
+  `val`'s initialiser runs once per read.
+- **Strings**: `+` over a `string` is binary concatenation, flattened into ONE
+  construction — `a + b + c` → `<<"a", (b())/binary, C/binary>>` (`stringConcatNode`).
+  `isStringExpr` decides: a string literal, a `+` chain with a string operand, a
+  parameter declared `string` or a `val` bound to a string (`string_locals`), and a
+  module-level `fn`/`val` that answers one (`string_names`, `collectStringNames`).
+  Everything it cannot prove stays arithmetic. Binary-literal segments render as
+  plain strings (`beam/erl_emitter.zig`), non-simple ones are parenthesised.
+- **`@Result` constructors and patterns** share one tag table (`resultTag`):
+  `Ok(v)` → `{ok, V}`, `Err(e)` / `new Error(msg)` → `{error, E}`, and the `Ok`/`Err`
+  case arms match those tags. A user enum variant of the same name wins.
 - **Static extension dispatch**: `implement`/`extend` methods are local functions
   keeping `self` as the first param (`keep_self`); activated `recv.m(args)`
   (`dispatch_rewrites`) and qualified `Sym.m(obj)` (`ext_names`) lower to
@@ -215,15 +256,34 @@ codegen/
 - **Externals**: `#[@External.Erlang("module", "symbol")]` fns emit no decl and
   calls lower to `module:symbol(Args)` (`externals`); `$`-marker / `when(…)`
   symbols render inline (`user_erlang_templates`); no `erlang` target →
-  `MissingExternalTarget`.
+  `MissingExternalTarget`. A template is the string literal's raw LEXEME and goes
+  into the `.erl` verbatim, so `dupeTemplate` resolves `\"` to `"` first (an
+  `io_lib:format(\"~p\", …)` template used to open an unterminated string).
+  `builtinAnnotationNode` widens a fixed format string paired with the variadic
+  `$args` marker to one control sequence per argument, so `@print(a, b, c)` is
+  `io:format("~p ~p ~p~n", [A, B, C])` and not a `badarg`.
 - **Cross-module**: an imported record joins `record_fields` + `imported_types`
-  (`collectImportedTypes`), so construction inlines the owner's map shape and
+  (`collectImportedTypes`), so construction inlines the owner's map shape
+  (records are maps — there is no constructor function to call remotely) and
   `Response.ok(…)` calls into the owner module atom (`http:ok(…)`); the owner
-  exports a `pub` type's associated fns when another module imports it.
+  exports a `pub` type's associated fns when another module imports it, and a
+  `pub implement`/`extend` another module activates (`import {PatoNada*} …`) is
+  exported too and reached remotely (`pond:swim(Donald)`).
 - **Interface associated `default fn`s** (`Array.range`, `Pair.of`):
   `interfaceForms` emits each no-`self` body as a local function
   (`collectInterfaces`); `Interface.method(...)` calls it (reserved words quoted,
   e.g. `'of'`).
+- **Interface INSTANCE `default fn`s** (`xs.all(pred)`, `n.clamp(lo, hi)`,
+  `b.nor(other)`): a `default fn` with a `self` receiver and a body lands in
+  `iface_instance_defaults`; a value-receiver call walks the receiver's `extends`
+  chain and lowers to the mangled local `bool_nor(Self, Other)`, noting the form as
+  needed. `instanceDefaultForms` drains that set to a fixpoint at the end of the
+  module (a default body may call another), so only the defaults a call site
+  actually reached are emitted. Inside such a body the receiver's type is `Self`,
+  which inference leaves unlowered: `selfPrimKind` re-derives the primitive kind
+  from the owning interface (following `-> Self` methods through chained calls) and
+  bare callees also resolve against the std prelude template index
+  (`preludeHelperNode`, `in_iface_default`).
 - **Value-receiver instance methods**: record/enum/struct methods keep `self`
   (`isAssocMethod` gates `keep_self`); `recv.m(args)` lowers via the loc-keyed
   `instance_lowerings` table — `.record` → local (or `owner:`) call, `.prim` →

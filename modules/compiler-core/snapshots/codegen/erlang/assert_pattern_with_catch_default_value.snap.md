@@ -10,7 +10,7 @@ fn f() {
 -module(main).
 
 f() ->
-    case R of {tag, Person, Name, Age} -> R; _ -> 'Person'(<<"bob">>, 12) end.
+    case R of {'Person', Name, Age} -> R; _ -> 'Person'(<<"bob">>, 12) end.
 ```
 
 ----- RUN LOG -----

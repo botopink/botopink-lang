@@ -10,7 +10,7 @@ fn allThree(a: bool, b: bool, c: bool) -> bool {
 -module(main).
 
 allThree(A, B, C) ->
-    ((A and B) and C).
+    ((A andalso B) andalso C).
 ```
 
 ----- RUN LOG -----

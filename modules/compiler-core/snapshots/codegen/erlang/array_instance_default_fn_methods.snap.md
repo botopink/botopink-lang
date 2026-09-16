@@ -41,9 +41,12 @@ main() ->
         (A + X)
     end)(__A, __X) end, 0, Xs)]),
     io:format("~p~n", [(Xs =:= [])]),
-    io:format("~p~n", [all(Xs, fun(X) ->
+    io:format("~p~n", [array_all(Xs, fun(X) ->
         (X > 0)
     end)]).
+
+array_all(Self, Pred) ->
+    (length(lists:filter(Pred, Self)) =:= length(Self)).
 
 '_botopink_main'() ->
     main().
@@ -54,6 +57,8 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:31:24: function all/2 undefined
+<<"0,1,2,3">>
+6
+false
+true
 ```

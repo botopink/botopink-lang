@@ -27,9 +27,15 @@ main() ->
     io:format("~p~n", [abs(N)]),
     io:format("~p~n", [erlang:min(N, 3)]),
     io:format("~p~n", [erlang:max(N, 10)]),
-    io:format("~p~n", [clamp(N, 0, 5)]),
+    io:format("~p~n", [number_clamp(N, 0, 5)]),
     X = 7,
-    io:format("~p~n", [isEven(X)]).
+    io:format("~p~n", [integer_isEven(X)]).
+
+number_clamp(Self, Lo, Hi) ->
+    erlang:min(erlang:max(Self, Lo), Hi).
+
+integer_isEven(Self) ->
+    ((Self rem 2) =:= 0).
 
 '_botopink_main'() ->
     main().
@@ -40,7 +46,9 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:15:24: function clamp/3 undefined
-main.erl:17:24: function isEven/1 undefined
+5
+-5
+10
+0
+false
 ```

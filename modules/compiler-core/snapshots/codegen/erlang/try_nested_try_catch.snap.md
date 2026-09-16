@@ -44,7 +44,7 @@ process() ->
         {error, _TryE1} ->
             A
     end,
-    io:format("~p~n", [A, B]),
+    io:format("~p ~p~n", [A, B]),
     (A + B).
 
 main() ->
@@ -59,4 +59,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+0 0
+0
 ```

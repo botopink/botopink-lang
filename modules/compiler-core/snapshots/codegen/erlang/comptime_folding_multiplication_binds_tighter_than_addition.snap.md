@@ -21,9 +21,11 @@ ct_0: val n = comptime {
 -export(['_botopink_main'/0, main/1]).
 
 %% comptime val n
+n() ->
+    (2 + (3 * 4)).
 
 main() ->
-    io:format("~p~n", [N]).
+    io:format("~p~n", [n()]).
 
 '_botopink_main'() ->
     main().
@@ -34,6 +36,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:7:24: variable 'N' is unbound
+14
 ```

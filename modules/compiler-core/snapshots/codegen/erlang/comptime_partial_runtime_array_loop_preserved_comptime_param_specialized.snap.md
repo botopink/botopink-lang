@@ -23,6 +23,8 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
+'COMMANDS'() ->
+    [<<"calc">>, <<"noop">>, <<"help">>].
 
 main() ->
     R1 = 'execute_$0'(10),
@@ -40,7 +42,7 @@ main() ->
                 Output@1
         end,
         Output@3
-    end, Output, COMMANDS),
+    end, Output, 'COMMANDS'()),
     Output@4.
 
 'execute_$1'(Input) ->
@@ -55,11 +57,10 @@ main() ->
                 Output@1
         end,
         Output@3
-    end, Output, COMMANDS),
+    end, Output, 'COMMANDS'()),
     Output@4.
 
 '_botopink_main'() ->
-    COMMANDS = [<<"calc">>, <<"noop">>, <<"help">>],
     main().
 
 main(_Args) ->

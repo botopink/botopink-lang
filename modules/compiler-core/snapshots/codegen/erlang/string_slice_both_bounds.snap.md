@@ -16,8 +16,16 @@ fn main() {
 
 main() ->
     S = <<"hello">>,
-    Mid = slice(S, 1, 4),
+    Mid = string_slice(S, 1, 4),
     io:format("~p~n", [string:length(Mid)]).
+
+string_slice(Self, Start, End) ->
+    case (End =/= undefined) of
+        true ->
+            string:slice(Self, Start, ((End) - (Start)));
+        false ->
+            string:slice(Self, Start)
+    end.
 
 '_botopink_main'() ->
     main().
@@ -28,6 +36,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:8:11: function slice/3 undefined
+3
 ```
