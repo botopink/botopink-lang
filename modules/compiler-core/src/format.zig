@@ -1673,6 +1673,44 @@ pub const Formatter = struct {
         });
     }
 
+    /// One enum variant: a unit name (`Red`), a numeric section leaf (`500`,
+    /// whose name is the digit string verbatim) or a payload variant
+    /// (`Rgb(r: i32, g: i32)`).
+    fn fmtEnumVariant(this: *Formatter, v: ast.EnumVariant) !*const Doc {
+        if (v.fields.len == 0) return this.text(v.name);
+        var fieldDocs = try this.arena.alloc(*const Doc, v.fields.len);
+        for (v.fields, 0..) |f, fi| {
+            fieldDocs[fi] = try this.concatAll(&.{
+                try this.text(f.name),
+                try this.text(": "),
+                try this.fmtTypeRef(f.typeRef),
+            });
+        }
+        return this.concat(
+            try this.text(v.name),
+            try this.commaList("(", fieldDocs, ")"),
+        );
+    }
+
+    /// An enum section: `Color { Red, Blue }`, holding bare variants and
+    /// nested sections (arbitrarily deep). Always rendered broken, and never
+    /// followed by a comma — the closing brace ends the item.
+    fn fmtEnumSection(this: *Formatter, s: ast.EnumSection) !*const Doc {
+        const items = try this.arena.alloc(*const Doc, s.variants.len + s.sections.len);
+        for (s.variants, 0..) |v, i|
+            items[i] = try this.concat(try this.fmtEnumVariant(v), try this.text(","));
+        for (s.sections, 0..) |sub, i|
+            items[s.variants.len + i] = try this.fmtEnumSection(sub);
+
+        const body = if (items.len == 0)
+            try this.text("{}")
+        else blk: {
+            const inner = try this.join(items, this.hardline());
+            break :blk try this.surroundBreak("{", inner, "}");
+        };
+        return this.concatAll(&.{ try this.text(s.name), try this.text(" "), body });
+    }
+
     fn fmtEnum(this: *Formatter, e: ast.EnumDecl) !*const Doc {
         // Check if there are any methods
         var hasMethods = false;
@@ -1682,35 +1720,30 @@ pub const Formatter = struct {
         }
 
         var variantDocs = try this.arena.alloc(*const Doc, e.variants.len);
-        for (e.variants, 0..) |v, i| {
-            if (v.fields.len == 0) {
-                variantDocs[i] = try this.text(v.name);
-            } else {
-                var fieldDocs = try this.arena.alloc(*const Doc, v.fields.len);
-                for (v.fields, 0..) |f, fi| {
-                    fieldDocs[fi] = try this.concatAll(&.{
-                        try this.text(f.name),
-                        try this.text(": "),
-                        try this.fmtTypeRef(f.typeRef),
-                    });
-                }
-                variantDocs[i] = try this.concat(
-                    try this.text(v.name),
-                    try this.commaList("(", fieldDocs, ")"),
-                );
-            }
-        }
+        for (e.variants, 0..) |v, i| variantDocs[i] = try this.fmtEnumVariant(v);
+
+        // Sections (`Color { Red, Blue }`) are a separate slice on EnumDecl.
+        // They used to be skipped here, which SILENTLY DELETED them from the
+        // formatted file. Sections always render on their own line, without a
+        // separating comma (the closing brace terminates the item).
+        var sectionDocs = try this.arena.alloc(*const Doc, e.sections.len);
+        for (e.sections, 0..) |s, i| sectionDocs[i] = try this.fmtEnumSection(s);
 
         var methodDocs = try this.arena.alloc(*const Doc, e.methods.len);
         for (e.methods, 0..) |m, i| methodDocs[i] = try this.fmtInterfaceMethod(m);
 
-        const allItems = try this.arena.alloc(*const Doc, variantDocs.len + methodDocs.len);
+        const allItems = try this.arena.alloc(*const Doc, variantDocs.len + sectionDocs.len + methodDocs.len);
         @memcpy(allItems[0..variantDocs.len], variantDocs);
-        @memcpy(allItems[variantDocs.len..], methodDocs);
+        @memcpy(allItems[variantDocs.len..][0..sectionDocs.len], sectionDocs);
+        @memcpy(allItems[variantDocs.len + sectionDocs.len ..], methodDocs);
+        // Items that must NOT be followed by a comma: the sections.
+        const commaFreeFrom = variantDocs.len;
+        const commaFreeTo = variantDocs.len + sectionDocs.len;
 
         // Always use shorthand form: val Name = enum { ... }
-        // Use multiline if has trailing comma in source or has methods (methods require trailing comma on last variant)
-        const useMultiline = hasMethods or e.trailingComma;
+        // Use multiline if has trailing comma in source, has methods (methods
+        // require trailing comma on last variant) or has sections.
+        const useMultiline = hasMethods or e.trailingComma or sectionDocs.len > 0;
         const body = if (allItems.len == 0)
             try this.text("{}")
         else if (!useMultiline) blk: {
@@ -1731,7 +1764,8 @@ pub const Formatter = struct {
             const withCommas = try this.arena.alloc(*const Doc, allItems.len);
             for (allItems, 0..) |item, i| {
                 const isLast = i == allItems.len - 1;
-                withCommas[i] = if (!isLast or (isLast and addTrailingComma))
+                const isSection = i >= commaFreeFrom and i < commaFreeTo;
+                withCommas[i] = if (!isSection and (!isLast or addTrailingComma))
                     try this.concat(item, try this.text(","))
                 else
                     item;
@@ -1843,8 +1877,25 @@ pub const Formatter = struct {
         // `[pub] fn ` — the effect is carried by a `#[@<effect>]` annotation
         // (emitted by `fmtAnnotations`). The deprecated `*fn` prefix was removed
         // in v0.beta.19, so there is no longer a star-derived effect to print.
+        // An FFI declaration (`#[@External.…] pub declare fn f(…) -> T;`) is a
+        // `declare fn` with NO body: it must keep the `declare` keyword and
+        // end in `;`. Printing it as `pub fn f(…) -> T {}` (what this did
+        // before) silently turned every host-backed declaration into an empty
+        // implementation.
         const pubKw: []const u8 = if (f.isPub) "pub " else "";
-        const prefix = try this.text(try std.fmt.allocPrint(this.arena, "{s}fn ", .{pubKw}));
+        const declareKw: []const u8 = if (f.isDeclare) "declare " else "";
+        const prefix = try this.text(try std.fmt.allocPrint(this.arena, "{s}{s}fn ", .{ pubKw, declareKw }));
+        if (f.isDeclare and f.body.len == 0) {
+            return this.concatAll(&.{
+                try this.fmtAnnotations(f.annotations),
+                prefix,
+                try this.text(f.name),
+                try this.fmtGenericParams(f.genericParams),
+                try this.fmtParams(f.params),
+                try this.fmtReturnTypeRef(f.returnType, f.typeGuardParam),
+                try this.text(";"),
+            });
+        }
 
         // Optional generator label after the return type: ` :gen`.
         const labelDoc: *const Doc = if (f.label) |lbl|

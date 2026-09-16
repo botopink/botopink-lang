@@ -8,6 +8,7 @@ const token = @import("../lexer/token.zig");
 
 const This = parser.Parser;
 const ParseError = parser.ParseError;
+const ParseErrorInfo = parser.ParseErrorInfo;
 const ImportDecl = parser.ImportDecl;
 const ImportSource = parser.ImportSource;
 const ImportPath = parser.ImportPath;
@@ -79,14 +80,7 @@ pub fn parseParamList(this: *This, alloc: std.mem.Allocator) ParseError![]Param 
             params.items[params.items.len - 2].default != null and
             params.items[params.items.len - 1].default == null)
         {
-            this.parseError = .{
-                .kind = .fnParamDefaultTrailingOnly,
-                .start = param_tok.col - 1,
-                .end = param_tok.col - 1 + param_tok.lexeme.len,
-                .lexeme = param_tok.lexeme,
-                .line = param_tok.line,
-                .col = param_tok.col,
-            };
+            this.parseError = ParseErrorInfo.fromToken(.fnParamDefaultTrailingOnly, param_tok);
             return ParseError.UnexpectedToken;
         }
         if (!this.match(.comma)) break;
@@ -167,14 +161,7 @@ pub fn parseValDecl(this: *This, alloc: std.mem.Allocator) ParseError!ValDecl {
     // Regular val declaration
     if (!this.check(.identifier)) {
         const tok = this.peek();
-        this.parseError = .{
-            .kind = .unexpectedToken,
-            .start = tok.col - 1,
-            .end = tok.col - 1 + tok.lexeme.len,
-            .lexeme = tok.lexeme,
-            .line = tok.line,
-            .col = tok.col,
-        };
+        this.parseError = ParseErrorInfo.fromToken(.unexpectedToken, tok);
         return ParseError.UnexpectedToken;
     }
     const name = this.advance().lexeme;
@@ -334,15 +321,7 @@ pub fn parseFnDeclFromVal(this: *This, alloc: std.mem.Allocator) ParseError!FnDe
 /// deprecation window. The carets cover `*fn` (3 chars).
 fn failDeprecatedStarFn(this: *This) ParseError {
     const tok = this.peek();
-    const start = tok.col - 1;
-    this.parseError = .{
-        .kind = .deprecatedStarFn,
-        .start = start,
-        .end = start + 3,
-        .lexeme = tok.lexeme,
-        .line = tok.line,
-        .col = tok.col,
-    };
+    this.parseError = ParseErrorInfo.fromTokenSpan(.deprecatedStarFn, tok, "*fn".len);
     return ParseError.UnexpectedToken;
 }
 
@@ -404,15 +383,7 @@ pub fn parseFnBody(
     // R5 (§2) — at most one builtin `#[@<effect>]` annotation per fn.
     if (firstDuplicateEffect(annotations)) |dup| {
         const tok = this.peek();
-        this.parseError = .{
-            .kind = .effectDuplicateAnnotation,
-            .start = tok.col - 1,
-            .end = tok.col - 1 + tok.lexeme.len,
-            .lexeme = tok.lexeme,
-            .line = tok.line,
-            .col = tok.col,
-            .detail = dup,
-        };
+        this.parseError = ParseErrorInfo.fromTokenDetail(.effectDuplicateAnnotation, tok, dup);
         return ParseError.UnexpectedToken;
     }
 
@@ -438,15 +409,7 @@ pub fn parseFnBody(
             hasAnyExternalAnnotation(annotations);
         if (!isTemplateOwned) {
             const tok = this.peek();
-            this.parseError = .{
-                .kind = .effectOnDeclareForbidden,
-                .start = tok.col - 1,
-                .end = tok.col - 1 + tok.lexeme.len,
-                .lexeme = tok.lexeme,
-                .line = tok.line,
-                .col = tok.col,
-                .detail = effect.?.annotationName(),
-            };
+            this.parseError = ParseErrorInfo.fromTokenDetail(.effectOnDeclareForbidden, tok, effect.?.annotationName());
             return ParseError.UnexpectedToken;
         }
     }
@@ -654,15 +617,7 @@ pub fn parseInterfaceBody(this: *This, alloc: std.mem.Allocator, name: []const u
                 for (memberAnnotations) |*ann| ann.deinit(alloc);
                 alloc.free(memberAnnotations);
                 const tok = this.peek();
-                this.parseError = .{
-                    .kind = .effectOnInterfaceMethodForbidden,
-                    .start = tok.col - 1,
-                    .end = tok.col - 1 + tok.lexeme.len,
-                    .lexeme = tok.lexeme,
-                    .line = tok.line,
-                    .col = tok.col,
-                    .detail = k.annotationName(),
-                };
+                this.parseError = ParseErrorInfo.fromTokenDetail(.effectOnInterfaceMethodForbidden, tok, k.annotationName());
                 return ParseError.UnexpectedToken;
             }
             const is_default = this.match(.default);
@@ -1119,14 +1074,7 @@ pub fn parseEnumBody(this: *This, alloc: std.mem.Allocator, name: []const u8, an
 /// `UnexpectedToken` ParseError. Used by enum-section diagnostics where the
 /// offending token is the *next* one rather than a `consume` mismatch.
 fn raiseUnexpected(this: *This, tok: Token) ParseError {
-    this.parseError = .{
-        .kind = .unexpectedToken,
-        .start = tok.col - 1,
-        .end = tok.col - 1 + tok.lexeme.len,
-        .lexeme = tok.lexeme,
-        .line = tok.line,
-        .col = tok.col,
-    };
+    this.parseError = ParseErrorInfo.fromToken(.unexpectedToken, tok);
     return ParseError.UnexpectedToken;
 }
 
@@ -1388,14 +1336,7 @@ pub fn parseParam(this: *This, alloc: std.mem.Allocator) ParseError!Param {
     // (`@Expr<…>` params get the same rule as a semantic check in inference.)
     if (typeRef == .typeparam and modifier != .@"comptime") {
         typeRef.deinit(alloc);
-        this.parseError = .{
-            .kind = .metaKindRequiresComptime,
-            .start = nameTok.col - 1,
-            .end = nameTok.col - 1 + nameTok.lexeme.len,
-            .lexeme = nameTok.lexeme,
-            .line = nameTok.line,
-            .col = nameTok.col,
-        };
+        this.parseError = ParseErrorInfo.fromToken(.metaKindRequiresComptime, nameTok);
         return ParseError.UnexpectedToken;
     }
     // Optional default value: `name: Type = <expr>` — unified with record

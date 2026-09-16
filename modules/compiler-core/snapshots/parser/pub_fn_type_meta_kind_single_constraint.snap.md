@@ -3,7 +3,7 @@
   "decls": [
     {
       "fn": {
-        "isPub": false,
+        "isPub": true,
         "effect": null,
         "isDeclare": false,
         "isDefault": false,

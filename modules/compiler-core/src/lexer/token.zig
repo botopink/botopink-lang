@@ -116,8 +116,14 @@ pub const TokenKind = enum {
 pub const Token = struct {
     kind: TokenKind,
     lexeme: []const u8,
-    /// Line number, 1-based.
+    /// Line on which the token STARTS, 1-based. A token that spans several
+    /// lines (`"""…"""`, a `\\ …` line string) keeps its opening line.
     line: usize,
-    /// Column of the first byte of this token, 1-based.
+    /// Column of the first byte of this token, 1-based, measured from the
+    /// start of `line` (never from an earlier line).
     col: usize,
+    /// Byte offset of the first byte of this token in the original source.
+    /// `source[offset..offset + lexeme.len]` is the token's text, so this is
+    /// the value diagnostics and LSP ranges are built from.
+    offset: usize = 0,
 };

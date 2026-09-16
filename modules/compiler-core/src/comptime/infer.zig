@@ -3103,9 +3103,11 @@ fn captureExprArg(
     var text: ?[]const u8 = null;
     var multiline = false;
     var isLiteral = false;
-    // The lexer stamps a multiline literal with the line of its *closing*
-    // `"""`; subtract the content's newlines to recover the opening line so
-    // span mapping starts from where the template begins.
+    // `newlines` only decides `multiline` for a hole-less literal: the lexer
+    // stamps every token with the line it STARTS on, so a multiline literal's
+    // loc is already its opening `"""` and needs no adjustment. (It used to
+    // carry the CLOSING line, which this function compensated for by
+    // subtracting the content's newlines.)
     var newlines: usize = 0;
     if (rawArg.* == .literal) {
         switch (rawArg.literal.kind) {
@@ -3143,7 +3145,7 @@ fn captureExprArg(
         .node = rawArg,
         .text = text,
         .multiline = multiline,
-        .loc = .{ .line = litLoc.line -| newlines, .col = litLoc.col },
+        .loc = litLoc,
         .modulePath = env.modulePath,
         .scope = env.scopeSnapshot,
     };

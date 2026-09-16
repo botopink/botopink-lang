@@ -27,7 +27,7 @@
                       "identifier": {
                         "loc": {
                           "line": 1,
-                          "col": 1
+                          "col": 14
                         },
                         "kind": {
                           "ident": "x"

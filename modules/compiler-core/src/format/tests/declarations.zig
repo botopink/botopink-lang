@@ -467,3 +467,38 @@ test "format: Expr builtin type ---- generic return round-trip" {
         \\}
     );
 }
+
+// The formatter used to DROP enum sections entirely (`Token { Text { … } }`
+// came back as `val Token = enum { Hover(inner: Token) };`) and to rewrite a
+// bodyless `declare fn` as `pub fn f() -> i32 {}`. Both erased source.
+test "format: enum ---- section with bare variants is preserved" {
+    try h.assertFormat(std.testing.allocator,
+        \\val Token = enum {
+        \\    Hover(inner: Token),
+        \\    Text {
+        \\        Bold,
+        \\        Italic,
+        \\    }
+        \\};
+    );
+}
+
+test "format: enum ---- nested sections with numeric leaves are preserved" {
+    try h.assertFormat(std.testing.allocator,
+        \\val Color = enum {
+        \\    Palette {
+        \\        Red {
+        \\            100,
+        \\            500,
+        \\        }
+        \\    }
+        \\};
+    );
+}
+
+test "format: declare fn ---- external declaration keeps `declare` and stays bodyless" {
+    try h.assertFormat(std.testing.allocator,
+        \\#[@External.Erlang("string", "length")]
+        \\pub declare fn length(s: string) -> i32;
+    );
+}

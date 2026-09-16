@@ -28,10 +28,26 @@ lexer/
 Token {
     kind:   TokenKind,
     lexeme: []const u8,  // exact slice of source for this token
-    line:   usize,       // 1-based
-    col:    usize,       // 1-based
+    line:   usize,       // 1-based, the line the token STARTS on
+    col:    usize,       // 1-based, measured from the start of `line`
+    offset: usize,       // byte offset of the token's first byte in the source
 }
 ```
+
+`source[offset..offset + lexeme.len]` is the token's text. Diagnostics and LSP
+ranges are built from `offset` (`ParseErrorInfo.fromToken`), never from `col`.
+
+### A token's location is where it STARTS
+
+Multi-line tokens (`"""…"""`, `\\ …` line strings) advance the scanner's
+`line`/`lineStart` as they consume embedded newlines. `scanAll` snapshots both
+into `tokenLine`/`tokenLineStart` before each token, and `addToken` stamps
+those — so a `"""` literal is located at its opening quotes, not at its
+closing ones. `newlineAt()` is the single place that advances `line` +
+`lineStart` together for a newline the scanner walks over inside a literal;
+before it existed, `line` moved but `lineStart` did not, and every token on the
+closing line of a multi-line literal got a column counted from the opening
+line.
 
 Usage: `var l = Lexer.init(source); const tokens = try l.scanAll(alloc);
 defer l.deinit(alloc);` — `scanAll` returns `[]const Token` owned by the lexer.

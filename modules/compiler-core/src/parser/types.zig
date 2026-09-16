@@ -8,6 +8,7 @@ const ast = @import("../ast.zig");
 
 const This = parser.Parser;
 const ParseError = parser.ParseError;
+const ParseErrorInfo = parser.ParseErrorInfo;
 const TokenKind = parser.TokenKind;
 const TypeRef = parser.TypeRef;
 const GenericParam = parser.GenericParam;
@@ -26,14 +27,7 @@ pub fn parseTypeRef(this: *This, alloc: std.mem.Allocator) ParseError!ast.TypeRe
     const ref = try this.parseBaseTypeRef(alloc);
     if (this.check(.bang)) {
         const tok = this.peek();
-        this.parseError = .{
-            .kind = .removedErrorUnion,
-            .start = tok.col - 1,
-            .end = tok.col - 1 + tok.lexeme.len,
-            .lexeme = tok.lexeme,
-            .line = tok.line,
-            .col = tok.col,
-        };
+        this.parseError = ParseErrorInfo.fromToken(.removedErrorUnion, tok);
         return ParseError.UnexpectedToken;
     }
     return ref;
@@ -130,14 +124,7 @@ pub fn parseBaseTypeRef(this: *This, alloc: std.mem.Allocator) ParseError!ast.Ty
         const tok = this.advance();
         const name = tok.lexeme[1..];
         if (this.check(.leftParenthesis)) {
-            this.parseError = .{
-                .kind = .removedBuiltinType,
-                .start = tok.col - 1,
-                .end = tok.col - 1 + tok.lexeme.len,
-                .lexeme = tok.lexeme,
-                .line = tok.line,
-                .col = tok.col,
-            };
+            this.parseError = ParseErrorInfo.fromToken(.removedBuiltinType, tok);
             return ParseError.UnexpectedToken;
         }
         // `@Decl` (the annotation-processor reflection handle) is the one builtin
@@ -165,14 +152,7 @@ pub fn parseBaseTypeRef(this: *This, alloc: std.mem.Allocator) ParseError!ast.Ty
             // contiguous trailing range.
             if (this.check(.comma) or this.checkGenericClose()) {
                 const slot = this.peek();
-                this.parseError = .{
-                    .kind = .genericArgSkipForbidden,
-                    .start = slot.col - 1,
-                    .end = slot.col - 1 + slot.lexeme.len,
-                    .lexeme = slot.lexeme,
-                    .line = slot.line,
-                    .col = slot.col,
-                };
+                this.parseError = ParseErrorInfo.fromToken(.genericArgSkipForbidden, slot);
                 return ParseError.UnexpectedToken;
             }
         }
@@ -213,14 +193,7 @@ pub fn parseBaseTypeRef(this: *This, alloc: std.mem.Allocator) ParseError!ast.Ty
             // RG4 (§1G) — see the matching `@Name<…>` path above.
             if (this.check(.comma) or this.checkGenericClose()) {
                 const slot = this.peek();
-                this.parseError = .{
-                    .kind = .genericArgSkipForbidden,
-                    .start = slot.col - 1,
-                    .end = slot.col - 1 + slot.lexeme.len,
-                    .lexeme = slot.lexeme,
-                    .line = slot.line,
-                    .col = slot.col,
-                };
+                this.parseError = ParseErrorInfo.fromToken(.genericArgSkipForbidden, slot);
                 return ParseError.UnexpectedToken;
             }
         }
@@ -263,15 +236,7 @@ pub fn parseGenericParams(this: *This, alloc: std.mem.Allocator) ParseError![]Ge
         }
         // R16 / RG1 — a required parameter cannot follow a defaulted one.
         if (seen_default and default == null) {
-            this.parseError = .{
-                .kind = .genericDefaultBeforeRequired,
-                .start = nameTok.col - 1,
-                .end = nameTok.col - 1 + nameTok.lexeme.len,
-                .lexeme = nameTok.lexeme,
-                .line = nameTok.line,
-                .col = nameTok.col,
-                .detail = nameTok.lexeme,
-            };
+            this.parseError = ParseErrorInfo.fromTokenDetail(.genericDefaultBeforeRequired, nameTok, nameTok.lexeme);
             return ParseError.UnexpectedToken;
         }
         if (default != null) seen_default = true;

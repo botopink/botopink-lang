@@ -31,6 +31,7 @@ const prec = This.prec;
 const locFromToken = This.locFromToken;
 const commentText = This.commentText;
 const makeCall = This.makeCall;
+const makeCallAt = This.makeCallAt;
 const isReservedWord = This.isReservedWord;
 
 /// One operator token and the AST op it maps to, at a given precedence level.
@@ -67,15 +68,7 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         const identTok = this.advance();
         if (this.check(.colon)) {
             // "x: Int = 4" without val/var ---- NovalBinding error
-            this.parseError = .{
-                .kind = .novalBinding,
-                .start = identTok.col - 1,
-                .end = identTok.col - 1 + identTok.lexeme.len,
-                .lexeme = identTok.lexeme,
-                .line = identTok.line,
-                .col = identTok.col,
-                .detail = identTok.lexeme,
-            };
+            this.parseError = ParseErrorInfo.fromTokenDetail(.novalBinding, identTok, identTok.lexeme);
             return ParseError.UnexpectedToken;
         }
         if (this.match(.equal)) {
@@ -248,15 +241,7 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         // v0.beta.19; use `break <C>` (or bare `break`) instead.
         if (this.check(.@"break")) {
             const breakTok = this.peek();
-            this.parseError = .{
-                .kind = .yieldBreakRemoved,
-                .start = breakTok.col - 1,
-                .end = breakTok.col - 1 + breakTok.lexeme.len,
-                .lexeme = breakTok.lexeme,
-                .line = breakTok.line,
-                .col = breakTok.col,
-                .detail = null,
-            };
+            this.parseError = ParseErrorInfo.fromToken(.yieldBreakRemoved, breakTok);
             return ParseError.UnexpectedToken;
         }
         // Optional `:label` disambiguating the target generator/loop scope.
@@ -720,7 +705,10 @@ pub fn parsePipelineExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr 
                         alloc.free(trailing);
                     }
                     const recvPtr = try this.boxExpr(alloc, Expr{ .identifier = .{ .loc = locFromToken(nameTok), .kind = .{ .ident = nameTok.lexeme } } });
-                    break :rhs_blk makeCall(nameTok, recvPtr, methodTok.lexeme, false, args, trailing);
+                    // The pipeline RHS `Recv.method(args)` is a method call:
+                    // like every other method-call link it is located at the
+                    // METHOD, so it does not share the receiver's loc key.
+                    break :rhs_blk makeCall(methodTok, recvPtr, methodTok.lexeme, false, args, trailing);
                 } else {
                     this.current = saved;
                 }
@@ -747,14 +735,7 @@ pub fn parseBinaryExpr(this: *This, alloc: std.mem.Allocator, comptime level: us
         } else break;
         const opTok = this.tokens[this.current - 1];
         if (entry.nakedRightCheck and (this.check(.val) or this.check(.endOfFile))) {
-            this.parseError = .{
-                .kind = .opNakedRight,
-                .start = opTok.col - 1,
-                .end = opTok.col - 1 + opTok.lexeme.len,
-                .lexeme = opTok.lexeme,
-                .line = opTok.line,
-                .col = opTok.col,
-            };
+            this.parseError = ParseErrorInfo.fromToken(.opNakedRight, opTok);
             return ParseError.UnexpectedToken;
         }
         const rhs = try this.parseBinaryExpr(alloc, level + 1);
@@ -992,15 +973,7 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     // top-level path uses.)
     if (this.check(.star) and this.peekAt(1).kind == .@"fn") {
         const tok = this.peek();
-        const start = tok.col - 1;
-        this.parseError = .{
-            .kind = .deprecatedStarFn,
-            .start = start,
-            .end = start + 3,
-            .lexeme = tok.lexeme,
-            .line = tok.line,
-            .col = tok.col,
-        };
+        this.parseError = ParseErrorInfo.fromTokenSpan(.deprecatedStarFn, tok, "*fn".len);
         return ParseError.UnexpectedToken;
     }
     if (this.check(.@"fn")) {
@@ -1029,15 +1002,7 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     // Detect reserved word used as expression
     if (isReservedWord(this.peek().kind)) {
         const tok = this.peek();
-        this.parseError = .{
-            .kind = .reservedWord,
-            .start = tok.col - 1,
-            .end = tok.col - 1 + tok.lexeme.len,
-            .lexeme = tok.lexeme,
-            .line = tok.line,
-            .col = tok.col,
-            .detail = tok.lexeme,
-        };
+        this.parseError = ParseErrorInfo.fromTokenDetail(.reservedWord, tok, tok.lexeme);
         return ParseError.UnexpectedToken;
     }
 
@@ -1112,8 +1077,14 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
                     var args = try alloc.alloc(CallArg, 1);
                     args[0] = .{ .label = null, .value = argPtr, .comments = &.{} };
                     base = switch (base.identifier.kind) {
+                        // `html """…"""` — the head identifier IS the callee.
                         .ident => |name| makeCall(tok, null, name, false, args, try alloc.alloc(TrailingLambda, 0)),
-                        .identAccess => |ia| makeCall(tok, ia.receiver, ia.member, false, args, try alloc.alloc(TrailingLambda, 0)),
+                        // `db.sql "…"` — the callee is the member, so the call
+                        // takes the member's loc (as ordinary method-call links
+                        // do). Using the head token here gave the call and its
+                        // receiver the same loc, and loc-keyed method lowering
+                        // then collided on it.
+                        .identAccess => |ia| makeCallAt(base.identifier.loc, ia.receiver, ia.member, false, args, try alloc.alloc(TrailingLambda, 0)),
                         .dotIdent => unreachable,
                     };
                     base.call.kind.call.is_tagged = true;
@@ -1515,14 +1486,7 @@ pub fn parseCallArgs(this: *This, alloc: std.mem.Allocator) ParseError![]CallArg
         };
 
         if (label == null and saw_named) {
-            this.parseError = .{
-                .kind = .fnParamPositionalAfterNamed,
-                .start = arg_tok.col - 1,
-                .end = arg_tok.col - 1 + arg_tok.lexeme.len,
-                .lexeme = arg_tok.lexeme,
-                .line = arg_tok.line,
-                .col = arg_tok.col,
-            };
+            this.parseError = ParseErrorInfo.fromToken(.fnParamPositionalAfterNamed, arg_tok);
             return ParseError.UnexpectedToken;
         }
         if (label != null) saw_named = true;
@@ -1724,10 +1688,76 @@ fn findInterpEnd(s: []const u8, open: usize) ?usize {
     return null;
 }
 
-/// Builds either a plain `stringLit` or, when the content contains `${…}`
-/// interpolations, a `stringTemplate` whose holes are parsed expressions.
-/// Hole sources are sub-lexed/sub-parsed in place; their locs are relative
-/// to the hole slice (good enough until F6 maps spans into the template).
+/// Absolute source position of one byte of a string literal's content.
+const ContentPos = struct { line: usize, col: usize, offset: usize };
+
+/// Maps byte `idx` of a string literal's CONTENT back to its position in the
+/// source file. "Content" is the literal minus its delimiters (`"…"`,
+/// `"""…"""`) or, for a `\\ …` line string, the materialised join of its
+/// lines. In both cases content line `k` is source line `tok.line + k`; only
+/// the column base differs, because a `\\` line's indent and prefix are not
+/// part of the content.
+///
+/// This is what lets an interpolation hole (`${name}`) be parsed on its own
+/// and still report absolute locations: a hole token's offset inside the hole
+/// slice is also its displacement inside the content.
+fn contentPos(tok: Token, content: []const u8, idx: usize) ContentPos {
+    // Content line index of `idx` and the byte column within that line.
+    var lineIdx: usize = 0;
+    var lineBegin: usize = 0;
+    var i: usize = 0;
+    const stop = @min(idx, content.len);
+    while (i < stop) : (i += 1) {
+        if (content[i] == '\n') {
+            lineIdx += 1;
+            lineBegin = i + 1;
+        }
+    }
+    const colInLine = @min(idx, content.len) - lineBegin;
+
+    if (tok.kind != .linesStringLiteral) {
+        // The content is a verbatim slice of the source, so offsets are
+        // linear and every line after the first starts at column 1.
+        const prefix: usize = if (tok.kind == .multilineStringLiteral) 3 else 1;
+        return .{
+            .line = tok.line + lineIdx,
+            .col = (if (lineIdx == 0) tok.col + prefix else 1) + colInLine,
+            .offset = tok.offset + prefix + idx,
+        };
+    }
+
+    // `\\ …` line string: content line k is the text after line k's
+    // `<indent>\\` prefix, which `materializeLineString` stripped.
+    var lexLineStart: usize = 0;
+    var it = std.mem.splitScalar(u8, tok.lexeme, '\n');
+    var k: usize = 0;
+    while (it.next()) |line| : (k += 1) {
+        if (k == lineIdx) {
+            const indent = line.len - std.mem.trimStart(u8, line, " \t\r").len;
+            const base = indent + "\\\\".len;
+            return .{
+                .line = tok.line + lineIdx,
+                .col = (if (lineIdx == 0) tok.col else 1) + base + colInLine,
+                .offset = tok.offset + lexLineStart + base + colInLine,
+            };
+        }
+        lexLineStart += line.len + 1;
+    }
+    return .{ .line = tok.line, .col = tok.col, .offset = tok.offset };
+}
+
+/// Rewrites a sub-lexed hole's tokens from hole-relative to absolute source
+/// positions. `holeStart` is the index of the hole's first byte (just past
+/// `${`) inside `content`.
+fn retargetHoleTokens(holeTokens: []Token, tok: Token, content: []const u8, holeStart: usize) void {
+    for (holeTokens) |*ht| {
+        const pos = contentPos(tok, content, holeStart + ht.offset);
+        ht.line = pos.line;
+        ht.col = pos.col;
+        ht.offset = pos.offset;
+    }
+}
+
 /// Materialize a `\\ …` line string's content: strip each line's leading
 /// whitespace + `\\` prefix and join the remainders with newlines. The
 /// content then follows the same conventions as `"""` literals (escape
@@ -1747,19 +1777,17 @@ fn materializeLineString(alloc: std.mem.Allocator, lexeme: []const u8) ParseErro
     return buf.toOwnedSlice(alloc);
 }
 
+/// Builds either a plain `stringLit` or, when the content contains `${…}`
+/// interpolations, a `stringTemplate` whose holes are parsed expressions.
+/// Hole sources are sub-lexed/sub-parsed on their own; `retargetHoleTokens`
+/// then maps the sub-lexer's hole-relative positions back onto the source, so
+/// a hole's AST locs are absolute like every other node's.
 fn makeStringExpr(this: *This, alloc: std.mem.Allocator, tok: Token, content: []const u8, multiline: bool) ParseError!Expr {
     const loc = locFromToken(tok);
     if (findInterpStart(content, 0) == null)
         return Expr{ .literal = .{ .loc = loc, .kind = .{ .stringLit = content } } };
 
-    const badInterp = ParseErrorInfo{
-        .kind = .badInterpolation,
-        .start = tok.col - 1,
-        .end = tok.col - 1 + tok.lexeme.len,
-        .lexeme = tok.lexeme,
-        .line = tok.line,
-        .col = tok.col,
-    };
+    const badInterp = ParseErrorInfo.fromToken(.badInterpolation, tok);
 
     var parts: std.ArrayList(ast.StringTemplatePartOf(.untyped)) = .empty;
     errdefer {
@@ -1790,6 +1818,7 @@ fn makeStringExpr(this: *This, alloc: std.mem.Allocator, tok: Token, content: []
             this.parseError = badInterp;
             return ParseError.UnexpectedToken;
         };
+        retargetHoleTokens(sublex.tokens.items, tok, content, start + "${".len);
         var sub = parser.Parser.init(holeTokens);
         const holePtr = try alloc.create(Expr);
         errdefer alloc.destroy(holePtr);

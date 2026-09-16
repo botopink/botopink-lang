@@ -116,11 +116,19 @@ pub const ParseErrorType = enum {
     /// named-arg form, the remaining args must also be named (the
     /// `..base` spread is allowed anywhere).
     fnParamPositionalAfterNamed,
+    /// The retired `@[…]` annotation-block opener (spec 05 §5.12). Annotation
+    /// blocks are written `#[…]`; the builtin marker `@` belongs on the
+    /// annotation name (`#[@external(…)]`), not on the block.
+    retiredAnnotationBlock,
 };
 
 pub const ParseErrorInfo = struct {
     kind: ParseErrorType,
-    /// Byte offset of the start of the problematic token in the original source
+    /// Byte offset of the start of the problematic token in the original
+    /// source. `print.render` resolves the rendered line from it and
+    /// `lsp_types.spanToRange` builds the LSP range from it, so it MUST be a
+    /// byte offset — never a column. Use `fromToken` rather than filling the
+    /// fields by hand.
     start: usize,
     /// Byte offset of the end (exclusive)
     end: usize,
@@ -132,6 +140,38 @@ pub const ParseErrorInfo = struct {
     col: usize = 1,
     /// Extra context (e.g. the reserved word name)
     detail: ?[]const u8 = null,
+
+    /// Builds the diagnostic for `tok`: the span covers the whole token and
+    /// `start`/`end` are the byte offsets the renderer and the LSP expect.
+    /// This is the single place the location contract is applied — the
+    /// per-site `.start = tok.col - 1` spelling it replaced reported every
+    /// multi-line source's errors on line 1.
+    pub fn fromToken(kind: ParseErrorType, tok: Token) ParseErrorInfo {
+        return .{
+            .kind = kind,
+            .start = tok.offset,
+            .end = tok.offset + tok.lexeme.len,
+            .lexeme = tok.lexeme,
+            .line = tok.line,
+            .col = tok.col,
+        };
+    }
+
+    /// `fromToken` plus `detail` (e.g. the offending reserved word).
+    pub fn fromTokenDetail(kind: ParseErrorType, tok: Token, detail: []const u8) ParseErrorInfo {
+        var info = fromToken(kind, tok);
+        info.detail = detail;
+        return info;
+    }
+
+    /// `fromToken` with a span of exactly `len` bytes from the token's start
+    /// — for diagnostics whose carets cover a fixed surface (`*fn`) rather
+    /// than the token's own lexeme.
+    pub fn fromTokenSpan(kind: ParseErrorType, tok: Token, len: usize) ParseErrorInfo {
+        var info = fromToken(kind, tok);
+        info.end = info.start + len;
+        return info;
+    }
 };
 
 pub const ParseError = error{ UnexpectedToken, OutOfMemory };
@@ -340,6 +380,19 @@ pub const Parser = struct {
                 }
                 if (isReservedWord(this.peek().kind)) {
                     this.reportReservedWordError();
+                    return ParseError.UnexpectedToken;
+                }
+                // `name = <expr>` at top level: a binding that forgot its
+                // `val`/`var`. `parseExpr` raises the same diagnostic for the
+                // annotated form (`name: T = …`); without this arm the top
+                // level returned an UnexpectedToken with NO `parseError`, so
+                // nothing was rendered at all.
+                if (this.check(.identifier) and
+                    (this.peekAt(1).kind == .equal or this.peekAt(1).kind == .plusEqual))
+                {
+                    const tok = this.peek();
+                    this.parseError = ParseErrorInfo.fromTokenDetail(.novalBinding, tok, tok.lexeme);
+                    return ParseError.UnexpectedToken;
                 }
                 // No stderr from the parser: the error carries the location
                 // (`errorInfo`) and the caller renders it.
@@ -508,14 +561,7 @@ pub const Parser = struct {
             if (opts.useAfterBranchGuard) {
                 if (seenBranch and this.check(.use)) {
                     const tok = this.peek();
-                    this.parseError = .{
-                        .kind = .useAfterBranch,
-                        .start = tok.col - 1,
-                        .end = tok.col - 1 + tok.lexeme.len,
-                        .lexeme = tok.lexeme,
-                        .line = tok.line,
-                        .col = tok.col,
-                    };
+                    this.parseError = ParseErrorInfo.fromToken(.useAfterBranch, tok);
                     return ParseError.UnexpectedToken;
                 }
                 if (this.check(.@"if") or this.check(.@"return") or this.check(.loop) or this.check(.case))
@@ -609,13 +655,16 @@ pub const Parser = struct {
 
     /// Parses zero or more annotation blocks at the current position.
     ///
-    /// Primary form (new): `#[@builtin(arg, arg), custom()]`
+    /// The only form is `#[@builtin(arg, arg), custom()]`:
     ///   - `@name` prefix marks a compiler-known (builtin) attribute;
     ///   - plain `name` is a user-defined attribute;
     ///   - comma-separated list of any mix.
     ///
-    /// Legacy form (kept for migration): `@[name(…), name(…)]`
-    ///   - all annotations inside are treated as builtin (`is_builtin = true`).
+    /// The retired `@[name(…)]` opener (spec 05 §5.12) is REJECTED here, with
+    /// a diagnostic naming its `#[@name(…)]` replacement. It is still detected
+    /// by the lookaheads (`skipAnnotationsLookaheadFrom`, the interface-member
+    /// check) so a stale `@[` reaches this diagnostic instead of a bare
+    /// "unexpected token".
     ///
     /// Returns an owned slice (empty when no annotations are present).
     pub fn parseAnnotations(this: *This, alloc: std.mem.Allocator) ParseError![]Annotation {
@@ -625,13 +674,14 @@ pub const Parser = struct {
             list.deinit(alloc);
         }
         while ((this.check(.hash) or this.check(.at)) and this.peekAt(1).kind == .leftSquareBracket) {
-            const isLegacyAtBlock = this.check(.at);
-            _ = this.advance(); // `#` or `@`
+            if (this.check(.at)) {
+                this.parseError = ParseErrorInfo.fromTokenSpan(.retiredAnnotationBlock, this.peek(), "@[".len);
+                return ParseError.UnexpectedToken;
+            }
+            _ = this.advance(); // `#`
             _ = try this.consume(.leftSquareBracket);
             while (true) {
-                var ann = try this.parseAnnotationCall(alloc);
-                // In the legacy `@[…]` form every annotation is implicitly builtin.
-                if (isLegacyAtBlock) ann.is_builtin = true;
+                const ann = try this.parseAnnotationCall(alloc);
                 try list.append(alloc, ann);
                 if (!this.match(.comma)) break;
             }
@@ -837,7 +887,22 @@ pub const Parser = struct {
         args: []CallArg,
         trailing: []TrailingLambda,
     ) Expr {
-        return Expr{ .call = .{ .loc = locFromToken(tok), .kind = .{ .call = .{
+        return makeCallAt(locFromToken(tok), receiver, callee, is_builtin, args, trailing);
+    }
+
+    /// `makeCall` for callers that already hold the callee's `Loc` rather than
+    /// its token (the tagged-call sugar, which rebuilds a method call from an
+    /// `identAccess` node). Call locs are keyed by location downstream, so the
+    /// loc must be the CALLEE's — never the receiver's.
+    pub fn makeCallAt(
+        loc: Loc,
+        receiver: ?*Expr,
+        callee: []const u8,
+        is_builtin: bool,
+        args: []CallArg,
+        trailing: []TrailingLambda,
+    ) Expr {
+        return Expr{ .call = .{ .loc = loc, .kind = .{ .call = .{
             .receiver = receiver,
             .callee = callee,
             .is_builtin = is_builtin,
@@ -902,15 +967,7 @@ pub const Parser = struct {
     /// Reports a reserved word error for the current token.
     pub fn reportReservedWordError(this: *This) void {
         const tok = this.peek();
-        this.parseError = .{
-            .kind = .reservedWord,
-            .start = tok.col - 1,
-            .end = tok.col - 1 + tok.lexeme.len,
-            .lexeme = tok.lexeme,
-            .line = tok.line,
-            .col = tok.col,
-            .detail = tok.lexeme,
-        };
+        this.parseError = ParseErrorInfo.fromTokenDetail(.reservedWord, tok, tok.lexeme);
     }
 
     // ── val decl ─────────────────────────────────────────────────────────────
@@ -994,15 +1051,7 @@ pub const Parser = struct {
     /// Reports an anonymous-implement/extend error for the current token.
     pub fn reportAnonImplExtendError(this: *This) void {
         const tok = this.peek();
-        this.parseError = .{
-            .kind = .anonymousImplExtend,
-            .start = tok.col - 1,
-            .end = tok.col - 1 + tok.lexeme.len,
-            .lexeme = tok.lexeme,
-            .line = tok.line,
-            .col = tok.col,
-            .detail = tok.lexeme,
-        };
+        this.parseError = ParseErrorInfo.fromTokenDetail(.anonymousImplExtend, tok, tok.lexeme);
     }
 
     pub const parseImplementMethod = decl_grammar.parseImplementMethod;

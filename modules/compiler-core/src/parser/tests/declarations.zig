@@ -175,7 +175,7 @@ test "parser: implement with two interfaces and qualified methods" {
     );
 }
 
-test "parser: interface with multiple abstract methods (Canvas)" {
+test "parser: interface ---- members comma-separated with trailing comma" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val Canvas = interface {
         \\    fn clear(self: Self),
@@ -185,7 +185,7 @@ test "parser: interface with multiple abstract methods (Canvas)" {
     );
 }
 
-test "parser: record with two fields and a toString method" {
+test "parser: record with two fields and a non-pub toString method" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val GPSCoordinates = record {
         \\    lat: number,
@@ -207,7 +207,7 @@ test "parser: implement single interface with method body" {
     );
 }
 
-test "parser: implement two interfaces with qualified method disambiguation" {
+test "parser: implement two interfaces, qualified methods calling a builtin" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val CameraPowerCharger = implement UsbCharger, SolarCharger for SmartCamera {
         \\    fn UsbCharger.Connect(self: Self) {
@@ -396,7 +396,7 @@ test "parser: annotation ---- interface shorthand" {
 test "parser: annotation block ---- hash bracket builtin" {
     try h.assertParser(std.testing.allocator, @src(),
         \\#[@External.Erlang( "string", "length"),
-        \\  @external(node, "./gleam_stdlib.mjs", "string_length")]
+        \\  @External.Node("./gleam_stdlib.mjs", "string_length")]
         \\pub declare fn length(s: string) -> i32;
     );
 }
@@ -404,10 +404,10 @@ test "parser: annotation block ---- hash bracket builtin" {
 test "parser: annotation block ---- external decl then next decl" {
     try h.assertParser(std.testing.allocator, @src(),
         \\#[@External.Erlang( "erlang", "abs")]
-        \\pub declare fn absolute_value(n: i32) -> i32;
+        \\pub declare fn absoluteValue(n: i32) -> i32;
         \\
         \\fn main() {
-        \\    absolute_value(-5);
+        \\    absoluteValue(-5);
         \\}
     );
 }
@@ -492,7 +492,7 @@ test "parser: pub fn ---- type meta-kind no constraint" {
 
 test "parser: pub fn ---- type meta-kind single constraint" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\fn render(comptime tag: type string, props: i32) -> string {
+        \\pub fn render(comptime tag: type string, props: i32) -> string {
         \\    @todo();
         \\}
     );
@@ -500,7 +500,7 @@ test "parser: pub fn ---- type meta-kind single constraint" {
 
 test "parser: pub fn ---- type meta-kind multiple pipe constraints" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\fn coerce(comptime v: type string | int | bool, x: i32) -> i32 {
+        \\pub fn coerce(comptime v: type string | int | bool, x: i32) -> i32 {
         \\    @todo();
         \\}
     );
@@ -596,7 +596,7 @@ test "parser: interface with default method and external declare member" {
         \\        return self.length == 0;
         \\    }
         \\    #[@External.Erlang( "lists", "reverse"),
-        \\      @external(node, "./bp_stdlib.mjs", "list_reverse")]
+        \\      @External.Node("./bp_stdlib.mjs", "list_reverse")]
         \\    declare fn reverse(self: Self) -> Array<T>;
         \\}
     );
@@ -631,7 +631,7 @@ test "parser: external ---- node prototype shorthand (module omitted)" {
 // implements `@Annotation`). The parser stores the full path as the name; the
 // `External` enum is registered as an annotation type by inference, so each
 // variant becomes a separate decorator sig keyed `"External.<Variant>"`.
-test "parser: external ---- qualified enum-variant annotation form" {
+test "parser: external ---- qualified enum variant with inline: true flag" {
     try h.assertParser(std.testing.allocator, @src(),
         \\#[@External.Erlang("lists", "search", inline: true),
         \\  @External.Node("./gleam_stdlib.mjs", "index_of")]
@@ -640,7 +640,9 @@ test "parser: external ---- qualified enum-variant annotation form" {
 }
 
 // Semantic check: every spelling of the extended vocabulary resolves to the same
-// `(module, symbol)` via `externalFor`, and the back-compat bare form still works.
+// `(module, symbol)` via `externalFor` — including the keyword-argument form,
+// whose labels the parser drops (they land positionally), so no snapshot can
+// show that it was read as `module:`/`method:`.
 test "ast: externalFor resolves extended @external vocabulary" {
     const alloc = std.testing.allocator;
     const src =
@@ -649,6 +651,8 @@ test "ast: externalFor resolves extended @external vocabulary" {
         \\pub declare fn zip(self: Array<i32>, other: Array<i32>) -> Array<i32>;
         \\#[@External.Erlang( "lists", "reverse")]
         \\pub declare fn rev(self: Array<i32>) -> Array<i32>;
+        \\#[@External.Erlang( module: "lists", method: "reverse(self)")]
+        \\pub declare fn kwrev(self: Array<i32>) -> Array<i32>;
     ;
     var l = Lexer.init(src);
     const tokens = try l.scanAll(alloc);
@@ -659,15 +663,18 @@ test "ast: externalFor resolves extended @external vocabulary" {
 
     var zip: ?ast.FnDecl = null;
     var rev: ?ast.FnDecl = null;
+    var kwrev: ?ast.FnDecl = null;
     for (program.decls) |d| switch (d) {
         .@"fn" => |f| {
             if (std.mem.eql(u8, f.name, "zip")) zip = f;
             if (std.mem.eql(u8, f.name, "rev")) rev = f;
+            if (std.mem.eql(u8, f.name, "kwrev")) kwrev = f;
         },
         else => {},
     };
     try std.testing.expect(zip != null);
     try std.testing.expect(rev != null);
+    try std.testing.expect(kwrev != null);
 
     // Qualified `Target.Erlang` target + call template carried in the symbol slot.
     const erl = zip.?.externalFor("erlang").?;
@@ -679,11 +686,18 @@ test "ast: externalFor resolves extended @external vocabulary" {
     try std.testing.expectEqualStrings("", nod.module);
     try std.testing.expectEqualStrings("zip", nod.symbol);
 
-    // Back-compat: bare lowercase target still resolves; a missing target is null.
+    // A second `@External.Erlang` spelling resolves the same way; a target the
+    // fn does not declare is null.
     const rerl = rev.?.externalFor("erlang").?;
     try std.testing.expectEqualStrings("lists", rerl.module);
     try std.testing.expectEqualStrings("reverse", rerl.symbol);
     try std.testing.expect(rev.?.externalFor("node") == null);
+
+    // Keyword-argument form (`module:` / `method:`): the labels are cosmetic,
+    // so it must resolve exactly like the positional spelling.
+    const kw = kwrev.?.externalFor("erlang").?;
+    try std.testing.expectEqualStrings("lists", kw.module);
+    try std.testing.expectEqualStrings("reverse(self)", kw.symbol);
 }
 
 // Splits the symbol slot into `(host symbol, ordered arg names)`. The bare
@@ -870,15 +884,19 @@ test "parser: enum section ---- ES2 bare variant collides with earlier section r
 test "parser: declare fn ---- bodyless param with default literal (fn-param-default-expansion)" {
     // §1G / frente-b fn-param-default-expansion: `declare fn` must accept
     // `param: type = expr` defaults so std/erlang BIFs (and other host-
-    // backed surfaces) collapse N arity overloads into a single decl. The
-    // parser path is shared with `fn`, so the only thing to lock down is
-    // that the bodyless declare-form does not reject the trailing default.
+    // backed surfaces) collapse N arity overloads into a single decl.
+    // NOTE: an UNANNOTATED `declare fn` is parsed as a DelegateDecl (a
+    // single-method interface alias — `parser.zig`'s `checkShorthandDelegate`
+    // branch), not as an `fn`; the snapshot below is a `delegate` node with a
+    // raw-string return type. The FFI `fn` path (`isDeclare = true`) is the
+    // ANNOTATED form, covered by "declare fn ---- external + param default".
     try h.assertParser(std.testing.allocator, @src(),
         \\pub declare fn slice(s: string, start: i32, end: i32 = -1) -> string;
     );
 }
 
-test "parser: declare fn ---- multiple trailing defaults" {
+// Same delegate path as above (no annotation), with two defaulted params.
+test "parser: delegate ---- bodyless declare fn multiple trailing defaults" {
     try h.assertParser(std.testing.allocator, @src(),
         \\pub declare fn open(path: string, mode: string = "r", buffer: i32 = 4096) -> i32;
     );
@@ -915,5 +933,80 @@ test "parser: type guard ---- basic" {
 test "parser: type guard ---- snapshot round-trip" {
     try h.assertParser(std.testing.allocator, @src(),
         \\fn isString(x: ?string) -> x is string { return true; }
+    );
+}
+
+// Effect fns (`#[@<effect>]`). These lived in imports.zig under "star fn"
+// names — the `*fn` surface they were named after was removed in
+// v0.beta.19 (see errors.zig's deprecated-*fn test) and the sources had
+// already been migrated to the annotation form.
+
+test "parser: effect fn ---- #[@future] declaration" {
+    try h.assertParser(std.testing.allocator, @src(),
+        \\#[@future]
+        \\fn fetch(url: string) -> @Future<Response> {
+        \\    return download(url);
+        \\}
+    );
+}
+
+test "parser: effect fn ---- #[@iterator] declaration" {
+    try h.assertParser(std.testing.allocator, @src(),
+        \\#[@iterator]
+        \\fn fib() -> @Iterator<Int> {
+        \\    yield 1;
+        \\}
+    );
+}
+
+test "parser: effect fn ---- #[@asyncGenerator] declaration" {
+    try h.assertParser(std.testing.allocator, @src(),
+        \\#[@asyncGenerator]
+        \\pub fn stream() -> @AsyncIterator<Int, Error> {
+        \\    yield 1;
+        \\}
+    );
+}
+
+test "parser: effect fn ---- #[@iterator] label after return type" {
+    try h.assertParser(std.testing.allocator, @src(),
+        \\#[@iterator]
+        \\fn gen() -> @Iterator<Int> :gen {
+        \\    yield :gen 1;
+        \\}
+    );
+}
+
+// `nextId` is a PER-KIND counter (`parser.zig`), so two records are 1 and 2
+// while an interface declared between them restarts at 1. Every other
+// snapshot holds a single id-carrying decl, so no test showed the counter
+// moving at all (spec 06 snapshot review, cross-cutting note 2).
+test "parser: decl ids ---- per-kind counters increment independently" {
+    try h.assertParser(std.testing.allocator, @src(),
+        \\val A = record { x: i32 }
+        \\val I = interface { fn go(self: Self) }
+        \\val B = record { y: i32 }
+        \\val E = enum { One, Two }
+    );
+}
+
+// Comment attachment had no snapshot coverage at all. What it records: at top
+// level a comment is its OWN decl (`DeclKind.comment`, with `is_module` /
+// `is_doc` flags) and the `docComment` / `comment` / `moduleComment` fields on
+// the following declaration stay null — the parser never attaches them there.
+// Inside a fn body a comment is a statement (a `comment` literal expr) and so
+// carries a loc.
+test "parser: comments ---- doc, module and normal comments attach to decls" {
+    try h.assertParser(std.testing.allocator, @src(),
+        \\//// module header
+        \\/// documents the record
+        \\// a plain note
+        \\val Point = record { x: i32 }
+        \\
+        \\/// documents the fn
+        \\fn go() {
+        \\    // inside the body
+        \\    @todo();
+        \\}
     );
 }

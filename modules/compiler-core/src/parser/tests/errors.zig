@@ -44,12 +44,17 @@ test "parser: anonymous extend rejected" {
     );
 }
 
+// The offending `use` is on line 3: this is the regression test for the
+// location contract (`ParseErrorInfo.start` is a BYTE OFFSET, not a column).
+// While the parser stored `tok.col - 1` there, `print.findLocation` read the
+// column as an offset and every diagnostic in a multi-line file rendered on
+// line 1 — this one pointed at `pp(` of `fn App() {`.
 test "parser error: use after return (static prefix violation)" {
     try h.expectParseError(std.testing.allocator,
         \\error: `use` must be in static prefix
-        \\ --> <test>:1:5
+        \\ --> <test>:3:5
         \\  |
-        \\1 | fn App() {
+        \\3 |     use state(0);
         \\  |     ^^^ `use` must be in static prefix
         \\  |
         \\  = hint: Move all `use` statements to the top of the function body, before any `if`, `case`, `loop`, or `return`
@@ -65,7 +70,7 @@ test "parser error: use after return (static prefix violation)" {
 
 test "parser error: assignment without val" {
     try h.expectParseError(std.testing.allocator,
-        \\error comptime: syntax error
+        \\error: There must be a 'val' or 'var' to bind a variable to a value
         \\ --> <test>:1:1
         \\  |
         \\1 | wibble = 4
@@ -75,6 +80,26 @@ test "parser error: assignment without val" {
         \\
         \\
     , "wibble = 4");
+}
+
+// Same diagnostic from a non-first line, so it also covers the location
+// contract on the top-level `ident =` path.
+test "parser error: assignment without val on a later line" {
+    try h.expectParseError(std.testing.allocator,
+        \\error: There must be a 'val' or 'var' to bind a variable to a value
+        \\ --> <test>:3:1
+        \\  |
+        \\3 | wibble = 4
+        \\  | ^^^^^^ There must be a 'val' or 'var' to bind a variable to a value
+        \\  |
+        \\  = hint: Use `val <n> = <value>` for bindings.
+        \\
+        \\
+    ,
+        \\val a = 1;
+        \\val b = 2;
+        \\wibble = 4
+    );
 }
 
 test "parser error: reserved word at top-level" {
@@ -91,18 +116,46 @@ test "parser error: reserved word at top-level" {
     , "auto");
 }
 
+// A real reserved word (`auto`) in a real expression position — `echo` was
+// used here before, but it is a plain identifier (the keyword was removed;
+// see `expressions.zig`'s "echo is a plain identifier" test), so the parse
+// failed with no `parseError` and the comparison never ran.
 test "parser error: reserved word in expression" {
     try h.expectParseError(std.testing.allocator,
         \\error: This is a reserved word and cannot be used as a name
-        \\ --> <test>:1:1
+        \\ --> <test>:2:13
         \\  |
-        \\1 | echo
-        \\  | ^^^^ This is a reserved word and cannot be used as a name
+        \\2 |     val x = auto;
+        \\  |             ^^^^ This is a reserved word and cannot be used as a name
         \\  |
         \\  = hint: Choose a different identifier.
         \\
         \\
-    , "echo");
+    ,
+        \\fn f() {
+        \\    val x = auto;
+        \\}
+    );
+}
+
+// The retired `@[…]` annotation opener (spec 05 §5.12) is rejected, not
+// silently accepted as a synonym of `#[…]`.
+test "parser error: retired @[ annotation block" {
+    try h.expectParseError(std.testing.allocator,
+        \\error: the `@[…]` annotation block was retired
+        \\ --> <test>:2:1
+        \\  |
+        \\2 | @[external(node, "m.mjs", "f")]
+        \\  | ^^ write `#[…]` instead
+        \\  |
+        \\  = hint: An annotation block opens with `#[`; the `@` marks a builtin annotation INSIDE it, e.g. `#[@External.Node("./m.mjs", "f")]`.
+        \\
+        \\
+    ,
+        \\val a = 1;
+        \\@[external(node, "m.mjs", "f")]
+        \\pub declare fn f() -> i32;
+    );
 }
 
 test "parser error: removed error union syntax T!E" {
