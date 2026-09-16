@@ -116,9 +116,8 @@
                 "is_builtin": true
               },
               {
-                "name": "external",
+                "name": "External.Node",
                 "args": [
-                  "node",
                   "\"./bp_stdlib.mjs\"",
                   "\"list_reverse\""
                 ],

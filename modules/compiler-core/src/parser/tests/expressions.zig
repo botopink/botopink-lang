@@ -38,7 +38,9 @@ test "parser: use multiple hooks in function" {
     );
 }
 
-test "parser: lambda: plain positional call ---- print(\"hello\")" {
+// Not a lambda test: a plain positional call. (Renamed from the "lambda"
+// group, which it never belonged to — the AST has an empty `trailing`.)
+test "parser: call: plain positional ---- print(\"hello\")" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val Test = interface {
         \\    default fn run() {
@@ -48,7 +50,7 @@ test "parser: lambda: plain positional call ---- print(\"hello\")" {
     );
 }
 
-test "parser: lambda: named argument call ---- calcular(fator: 2)" {
+test "parser: call: named argument ---- calcular(fator: 2)" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val Test = interface {
         \\    default fn run() {
@@ -100,7 +102,7 @@ test "parser: lambda: method call with two-param trailing lambda ---- precos.for
     );
 }
 
-test "parser: lambda: binary addition ---- a + b" {
+test "parser: expression: binary addition ---- a + b" {
     try h.assertParser(std.testing.allocator, @src(),
         \\val Test = interface {
         \\    default fn run() {
@@ -682,7 +684,7 @@ test "parser: optional chaining method call" {
     try h.assertParser(std.testing.allocator, @src(),
         \\fn main() {
         \\    val s: ?string = "abc";
-        \\    val up = s?.to_upper();
+        \\    val up = s?.toUpper();
         \\}
     );
 }

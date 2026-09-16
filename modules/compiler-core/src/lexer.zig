@@ -59,6 +59,13 @@ pub const Lexer = struct {
     line: usize,
     /// Byte offset where the current line started (for column computation).
     lineStart: usize,
+    /// `line` as it was when the current token started. Multi-line tokens
+    /// (`"""…"""`, `\\ …` line strings) advance `line` while scanning, so
+    /// `addToken` stamps this instead: a token's location is where it STARTS.
+    tokenLine: usize,
+    /// `lineStart` as it was when the current token started — the base the
+    /// token's column is measured from.
+    tokenLineStart: usize,
     tokens: std.ArrayList(Token),
     /// Populated when scanAll returns LexerError.LexicalError
     lexError: ?LexicalError,
@@ -70,6 +77,8 @@ pub const Lexer = struct {
             .current = 0,
             .line = 1,
             .lineStart = 0,
+            .tokenLine = 1,
+            .tokenLineStart = 0,
             .tokens = .empty,
             .lexError = null,
         };
@@ -82,9 +91,17 @@ pub const Lexer = struct {
     pub fn scanAll(self: *Lexer, allocator: std.mem.Allocator) LexerError![]const Token {
         while (!self.isAtEnd()) {
             self.start = self.current;
+            self.tokenLine = self.line;
+            self.tokenLineStart = self.lineStart;
             try self.scanToken(allocator);
         }
-        try self.tokens.append(allocator, .{ .kind = .endOfFile, .lexeme = "", .line = self.line, .col = self.current - self.lineStart + 1 });
+        try self.tokens.append(allocator, .{
+            .kind = .endOfFile,
+            .lexeme = "",
+            .line = self.line,
+            .col = self.current - self.lineStart + 1,
+            .offset = self.current,
+        });
         return self.tokens.items;
     }
 
@@ -126,8 +143,9 @@ pub const Lexer = struct {
             // Each `\\`-prefixed line contributes the rest of the line;
             // consecutive lines join with newlines. The token spans every
             // line; the parser strips the prefixes and materializes the
-            // content. Like `"""` scanning, `lineStart` is NOT advanced so
-            // the token's col stays at the opening `\\`.
+            // content. `line`/`lineStart` follow the embedded newlines (so
+            // the tokens AFTER the literal are located correctly); the token
+            // itself is stamped at its opening `\\` from `tokenLine`.
             '\\' => {
                 if (!self.matchChar('\\')) return LexerError.UnexpectedCharacter;
                 while (!self.isAtEnd() and self.peek() != '\n') _ = self.advance();
@@ -140,6 +158,7 @@ pub const Lexer = struct {
                     if (look + 1 >= self.source.len or self.source[look] != '\\' or self.source[look + 1] != '\\') break;
                     _ = self.advance(); // the newline
                     self.line += 1;
+                    self.lineStart = self.current;
                     while (self.peek() == ' ' or self.peek() == '\t' or self.peek() == '\r') _ = self.advance();
                     _ = self.advance(); // first backslash
                     _ = self.advance(); // second backslash
@@ -314,7 +333,7 @@ pub const Lexer = struct {
         var depth: usize = 1;
         while (!self.isAtEnd() and depth > 0) {
             const ch = self.peek();
-            if (ch == '\n') self.line += 1;
+            if (ch == '\n') self.newlineAt();
             if (ch == '{') {
                 depth += 1;
             } else if (ch == '}') {
@@ -322,7 +341,7 @@ pub const Lexer = struct {
             } else if (ch == '"') {
                 _ = self.advance(); // opening '"'
                 while (!self.isAtEnd() and self.peek() != '"') {
-                    if (self.peek() == '\n') self.line += 1;
+                    if (self.peek() == '\n') self.newlineAt();
                     if (self.peek() == '\\') _ = self.advance();
                     if (self.isAtEnd()) return LexerError.UnterminatedString;
                     _ = self.advance();
@@ -340,7 +359,7 @@ pub const Lexer = struct {
                 try self.scanInterpolation();
                 continue;
             }
-            if (self.peek() == '\n') self.line += 1;
+            if (self.peek() == '\n') self.newlineAt();
             if (self.peek() == '\\') {
                 _ = self.advance(); // consume '\'
                 if (self.isAtEnd()) return LexerError.UnterminatedString;
@@ -385,7 +404,7 @@ pub const Lexer = struct {
                 try self.scanInterpolation();
                 continue;
             }
-            if (self.peek() == '\n') self.line += 1;
+            if (self.peek() == '\n') self.newlineAt();
             if (self.peek() == '\\') {
                 _ = self.advance(); // consume '\'
                 if (self.isAtEnd()) return LexerError.UnterminatedString;
@@ -616,12 +635,27 @@ pub const Lexer = struct {
         return self.current >= self.source.len;
     }
 
+    /// Records the newline sitting at `current` (not consumed yet) as a line
+    /// break: the next line starts one byte later. Called from the scanners
+    /// that walk over embedded newlines (`"…"`, `"""…"""`, `${…}`) so that
+    /// every token following a multi-line literal still gets a column
+    /// measured from ITS own line.
+    fn newlineAt(self: *Lexer) void {
+        self.line += 1;
+        self.lineStart = self.current + 1;
+    }
+
+    /// Appends the token that spans `start..current`. Its location is where it
+    /// STARTS (`tokenLine`/`tokenLineStart`, snapshotted by `scanAll` before
+    /// the token was scanned), so a `"""…"""` or `\\ …` literal that advanced
+    /// `line` while scanning is still stamped with its opening line.
     fn addToken(self: *Lexer, kind: TokenKind, allocator: std.mem.Allocator) LexerError!void {
         try self.tokens.append(allocator, .{
             .kind = kind,
             .lexeme = self.source[self.start..self.current],
-            .line = self.line,
-            .col = self.start - self.lineStart + 1,
+            .line = self.tokenLine,
+            .col = self.start - self.tokenLineStart + 1,
+            .offset = self.start,
         });
     }
 

@@ -38,8 +38,8 @@ parser/
 ├── tests.zig      ← barrel: aggregates tests/<feature>.zig for test_root.zig
 └── tests/         ← parser tests, split by feature
     ├── helpers.zig       ← shared harness (`assertParser`/`expectParseError`/…)
-    ├── imports.zig       ← import/activate/delegate/star declarations
-    ├── declarations.zig  ← record/enum/interface/implement, val/pub/fn, test blocks
+    ├── imports.zig       ← import/activate/delegate declarations
+    ├── declarations.zig  ← record/enum/interface/implement, val/pub/fn, effect fns, test blocks
     ├── expressions.zig   ← operator/lambda/array/tuple/case/builtin/control-flow
     ├── destructuring.zig ← destructure/shorthand/assign
     ├── errors.zig        ← parse errors & cross-stage error-message units
@@ -55,7 +55,7 @@ test "import decl" {
 ```
 
 - Snapshot path: `modules/compiler-core/snapshots/parser/<slug>.snap.md` (slug from the test name)
-- Error tests: `expectParseError(alloc, "expected rendered message", source)`; `expectParseFails(alloc, source)` only checks that parsing fails
+- Error tests: `expectParseError(alloc, "expected rendered message", source)` — it FAILS when the parse produced no `parseError` (nothing would be rendered), so the expected text is always compared; `expectParseFails(alloc, source)` only checks that parsing fails
 
 ## Type-ref grammar (`types.zig`)
 
@@ -83,6 +83,42 @@ the access loc), so two links sharing a loc collide — `self.pairs.length` woul
 emit `length(length(Self))`. `parsePostfixChain` and the identifier postfix loop
 both use `locFromToken(fieldTok)` for this reason.
 
+## Error locations (`ParseErrorInfo`)
+
+Build every diagnostic with `ParseErrorInfo.fromToken(kind, tok)` (or
+`fromTokenDetail` / `fromTokenSpan`) — never by filling the struct inline.
+`start`/`end` are **byte offsets**: `print.render` resolves the rendered line
+by scanning the source up to `start`, and `lsp_types.spanToRange` builds the
+LSP range from the same pair. The 20 sites used to store `tok.col - 1` there,
+so every error in a file with more than one line rendered on line 1 with the
+carets under whatever happened to sit at that column.
+
+`line`/`col` are carried too, for callers that have no source text.
+
+## `${…}` interpolation holes
+
+A hole's source is sub-lexed and sub-parsed on its own (`makeStringExpr` in
+`exprs.zig`), so its tokens come back positioned from 1:1 of the hole slice.
+`retargetHoleTokens` maps them back through `contentPos` before the sub-parse:
+a hole token's offset inside the hole is its displacement inside the literal's
+content, and content line `k` is source line `tok.line + k` (for a `\\ …` line
+string, plus that line's stripped `<indent>\\` prefix). Without it every
+interpolated expression claimed 1:1.
+
+## Tagged calls
+
+`html """…"""` lowers to a call located at the head identifier; `db.sql "…"`
+lowers to a call located at the **member** (`sql`), via `makeCallAt`, exactly
+like an ordinary method-call link — see "Postfix-chain locs" above. The same
+rule applies to the pipeline RHS `|> Recv.method(args)`.
+
+## Retired surface
+
+The `@[name(…)]` annotation-block opener (spec 05 §5.12) is **rejected** with
+`ParseErrorType.retiredAnnotationBlock`. The lookaheads still recognise `@[`
+so the stale form reaches that diagnostic instead of a bare unexpected-token
+error. Annotation blocks are `#[…]`; `@` marks a builtin annotation inside one.
+
 ## Annotations (`parseAnnotationCall`)
 
 The annotation name may be a qualified path — `@External.Erlang(…)` lands as
@@ -99,6 +135,15 @@ shapes (vocabulary in `libs/std/AGENTS.md`):
 - **Enum/member chains** — `.Erlang`, `Target.Erlang`: adjacent `.`/identifier
   tokens fold into one lexeme spanning the source bytes. A bare identifier or
   string literal goes through unchanged.
+
+## Comments and declaration ids
+
+At top level a comment is its **own** declaration (`DeclKind.comment`, with
+`is_module` / `is_doc`); the `docComment` / `comment` / `moduleComment` fields
+on the neighbouring declaration are left null by this path. Inside a fn body a
+comment is a statement carrying a loc. `nextId` is a **per-kind** counter, so
+record/interface/enum ids each start at 1 and advance independently.
+Both are pinned by snapshots (`comments_…`, `decl_ids_…`).
 
 ## Notes
 

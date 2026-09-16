@@ -121,6 +121,11 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "fn-param-default-trailing-only: a defaulted parameter must be followed only by other defaulted parameters.",
             .hint = "Move the defaulted parameter to the end of the list, or give the following parameter a default too.",
         },
+        .retiredAnnotationBlock => .{
+            .message = "the `@[…]` annotation block was retired",
+            .caretCaption = "write `#[…]` instead",
+            .hint = "An annotation block opens with `#[`; the `@` marks a builtin annotation INSIDE it, e.g. `#[@External.Node(\"./m.mjs\", \"f\")]`.",
+        },
         .fnParamPositionalAfterNamed => .{
             .message = "fn-param-positional-after-named: positional argument supplied after a named one.",
             .hint = "Convert the trailing positional arg to a named one (`name: value`), or move the named argument to the end of the call.",
