@@ -29,4 +29,5 @@ test {
     _ = @import("./trace.zig");
     _ = @import("./template_eval.zig");
     _ = @import("./decorator_eval.zig");
+    _ = @import("./runtime/persistent_erl.zig");
 }

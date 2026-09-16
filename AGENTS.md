@@ -181,6 +181,12 @@ Comptime `val`s are folded in Zig (`comptime/eval.zig`).
   converts with `list_to_binary/1` before matching `<<Len:32/unsigned-big-integer>>`;
   keep that conversion when editing the server, or the server silently treats
   the frame as EOF and the Zig side blocks.
+- **stdout is the frame channel only.** The server moves the default logger
+  handler to `standard_error` and runs `main/0` with `standard_error` as its
+  group leader, so `io:format/1` in a comptime body and a SIGTERM notice go to
+  `.botopinkbuild/tmp/persistent_erl/erl.stderr.log` (write-only, truncated at
+  each spawn). A reply length above `max_frame_len` (16 MiB) fails as
+  `error.PersistentErlFrameTooLarge` with a message in `lastTransportError()`.
 - **Timeouts.** `main/0` runs under `EVAL_TIMEOUT_MS` (10 s) inside erl; the
   server's `erlc` compile is bounded at 120 s. The Zig-side `readFrame` itself
   blocks without a timeout, so a wedged erl process still hangs the caller —
@@ -221,7 +227,9 @@ Comptime `val`s are folded in Zig (`comptime/eval.zig`).
 ### General
 
 - **Stale processes.** Hung tests leave orphan `erl`/`node` processes:
-  `pkill -f botopink_comptime_server`.
+  `pkill -f botopink_comptime_server`. The SIGTERM notice goes to
+  `erl.stderr.log`, not the frame stream: a live compiler's in-flight request
+  fails as a transport error and the next one respawns the server.
 - **Scratch dirs.** Safe to delete manually: `rm -rf .botopinkbuild/tmp/[0-9a-f]*`.
 - **Snapshot mismatches** write `<slug>.snap.md.new` next to the snapshot; do not
   commit `.snap.md.new` files.
