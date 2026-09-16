@@ -73,17 +73,25 @@ codegen/
 
 ### commonJS
 
+- **Model, not text**: every `build*` method returns a `js/js_ast.zig` node and
+  `js/js_emitter.zig` renders the module (`writeProgram`). The backend owns the
+  lowering decisions listed below; quoting, the reserved-word rename, string
+  escaping, parenthesisation, indentation and semicolons belong to the emitter.
+  Nodes are built in one arena that is freed once the module is rendered. The
+  only text this file still composes is a comment's wording, a `require` path
+  and the fixed test-harness source (`Item.runtime`).
 - **`@Result`** is `{ ok: V } | { error: E }`; `__bp_ok`/`__bp_error` build it for
   `return`/`throw` in `#[@result]` fns; `try`/`catch` lower to `"error" in _r`
   pattern matching.
 - **Static extension dispatch**: `implement`/`extend` blocks emit as namespace
-  objects (`emitExtensionNamespace`: `const Sym = { m(self){…} }`, no prototype
+  objects (`buildExtensionNamespace`: `const Sym = { m(self){…} }`, no prototype
   patching); an activated `obj.m(args)` lowers to `Sym.m(obj, args)` via the
   loc-keyed `dispatch_rewrites` map.
 - **Method renames**: the loc-keyed `js_method_renames` map (from inference) is
   consulted first, then the annotation-derived `prim_node_renames`
   (`s.contains` → `s.includes`). A rename to `length` on a no-arg call emits
-  the native `.length` **property** without parens (`as_property`); inference
+  the native `.length` **property** without parens (a `member` node, not a
+  `call`); inference
   records it only for typed array/string receivers, so a record `length()`
   method is untouched.
 - **Externals**: `#[@External.Node("module", "symbol")]` fns (`collectExternals`)
@@ -101,7 +109,7 @@ codegen/
   another module imports.
 - **Lib namespace object**: when an import names the lib itself
   (`import {Lib} from "Lib"`) and that name has no emitted symbol, `emitUse`
-  binds the lib's module object (`const Lib = require(…)`, or
+  binds the lib's module object (`buildUse`: `const Lib = require(…)`, or
   `Object.assign({}, …)` across several modules) so `Lib.member(...)` resolves.
 - **Import dedup**: `seen_imports` lowers each binding name to at most one
   `const { … } = require(…)` per module (repeated imports, e.g. from several

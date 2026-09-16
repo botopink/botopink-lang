@@ -200,10 +200,7 @@ pub fn writeExpr(w: *Writer, e: Ast.Expr, indent: usize) Error!void {
         .comment => |c| try writeComment(w, c),
         // BRIDGE: the statement is written without its own terminator, which
         // is what the caller's context supplies (`return <stmt>;`).
-        .stmt_expr => |se| {
-            if (se.leading_space) try w.writeByte(' ');
-            try writeStmtCore(w, se.stmt.*, indent, false);
-        },
+        .stmt_expr => |s| try writeStmtCore(w, s.*, indent, false),
         // BRIDGE: nothing at all.
         .missing => {},
     }
@@ -450,9 +447,12 @@ fn writeStmtCore(w: *Writer, s: Ast.Stmt, indent: usize, semi: bool) Error!void 
             }
             if (semi) try w.writeByte(';');
         },
-        .throw_ => |e| {
-            try w.writeAll("throw ");
-            try writeExpr(w, e, indent);
+        .throw_ => |v| {
+            try w.writeAll("throw");
+            if (v) |e| {
+                try w.writeByte(' ');
+                try writeExpr(w, e, indent);
+            }
             if (semi) try w.writeByte(';');
         },
         .continue_ => {
@@ -536,6 +536,11 @@ pub fn writeBlock(w: *Writer, blk: Ast.Block) Error!void {
                 try writeStmt(w, s, blk.indent);
             }
             try w.writeByte('}');
+        },
+        // No braces: the `if`-expression body that lost its IIFE wrapper.
+        .bare => for (blk.stmts) |s| {
+            try w.writeByte(' ');
+            try writeStmt(w, s, blk.indent);
         },
     }
 }
@@ -793,7 +798,7 @@ test "js_emitter: a module separates declarations with a blank line" {
 
 test "js_emitter: the bridges render the shapes the model would otherwise forbid" {
     // A statement in expression position keeps no terminator of its own.
-    try expectStmt("return continue;", .{ .return_ = .{ .stmt_expr = .{ .stmt = &continue_stmt } } });
+    try expectStmt("return continue;", .{ .return_ = .{ .stmt_expr = &continue_stmt } });
     // A missing expression renders as nothing.
     try expectStmt("const x = ;", .{ .decl = .{ .pattern = .{ .ident = "x" }, .value = .missing } });
     // An unnamed rest renders the bare `...` the frontend still asks for.

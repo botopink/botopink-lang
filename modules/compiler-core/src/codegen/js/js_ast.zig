@@ -16,15 +16,17 @@
 //!
 //! ## Bridges
 //!
-//! Four nodes exist only to keep shapes the current lowering still produces but
+//! Six forms exist only to keep shapes the current lowering still produces but
 //! that the model would otherwise forbid. They are the complete list of ways a
 //! JS backend can still emit something illegal, each one has to be named
 //! explicitly at the build site, and each is documented in `AGENTS.md`:
 //!
-//! * `Expr.stmt_expr`  — a statement used where JS needs an expression.
-//! * `Expr.missing`    — an expression the lowering did not produce.
-//! * `Rest.unnamed`    — a rest element with no binding.
-//! * `Pattern.match`   — a botopink match pattern used as a binding target.
+//! * `Expr.stmt_expr`             — a statement where JS needs an expression.
+//! * `Expr.missing`               — an expression the lowering did not produce.
+//! * `Rest.unnamed`/`Spread.unnamed` — a rest or spread with no binding.
+//! * `Pattern.match`              — a match pattern used as a binding target.
+//! * `Stmt.throw_ == null`        — a `throw` with no operand.
+//! * `TsType.missing`             — a `.d.ts` position with no type.
 //!
 //! Nodes borrow their slices: build them in an arena that outlives rendering.
 
@@ -83,7 +85,7 @@ pub const Expr = union(enum) {
     /// expressions), so the current lowering still reaches this. It renders
     /// the statement without its own terminator, which is how `return for (…)`
     /// and `return return x` get emitted. See `AGENTS.md` (defect JS-1).
-    stmt_expr: StmtExpr,
+    stmt_expr: *const Stmt,
     /// BRIDGE — an expression the lowering did not produce. Renders as
     /// nothing, which is how `if () …` and `({ a } = )` get emitted. See
     /// `AGENTS.md` (defect JS-2).
@@ -101,15 +103,6 @@ pub const Expr = union(enum) {
     pub fn str(text: []const u8) Expr {
         return .{ .quoted = text };
     }
-};
-
-/// See `Expr.stmt_expr`.
-pub const StmtExpr = struct {
-    stmt: *const Stmt,
-    /// The legacy lowering writes a space before the statement when it skipped
-    /// the IIFE wrapper it would otherwise have put around it (an `if` whose
-    /// branches already `return`). Kept so the refactor is byte-identical.
-    leading_space: bool = false,
 };
 
 /// `obj.name` / `obj?.name`. The property is written verbatim: a property
@@ -322,8 +315,10 @@ pub const Stmt = union(enum) {
     decl: Decl,
     /// `return;` / `return <expr>;`
     return_: ?Expr,
-    /// `throw <expr>;`
-    throw_: Expr,
+    /// `throw <expr>;` — `null` is BRIDGE JS-6, a `throw` with no operand
+    /// (`throw;` is a JS SyntaxError), which the jump lowering still produces
+    /// for a botopink `throw` with no value.
+    throw_: ?Expr,
     /// `continue;`
     continue_,
     /// `yield* <expr>; return;` — delegating the rest of an iteration.
@@ -397,6 +392,11 @@ pub const Block = struct {
         spaced,
         /// `{a; b;}` — one line, statements separated by a space.
         tight,
+        /// ` a; b;` — one line, each statement preceded by a space, with **no
+        /// braces**. The body of an `if` expression whose branches already
+        /// `return`, which the lowering emits without its IIFE wrapper: it is
+        /// only ever reached through `Expr.stmt_expr`.
+        bare,
     };
 };
 
@@ -685,12 +685,7 @@ pub const Builder = struct {
 
     /// BRIDGE — see `Expr.stmt_expr`.
     pub fn stmtExpr(b: Builder, s: Stmt) Error!Expr {
-        return .{ .stmt_expr = .{ .stmt = try b.stmtPtr(s) } };
-    }
-
-    /// BRIDGE — see `Expr.stmt_expr`; the space-prefixed form.
-    pub fn stmtExprSpaced(b: Builder, s: Stmt) Error!Expr {
-        return .{ .stmt_expr = .{ .stmt = try b.stmtPtr(s), .leading_space = true } };
+        return .{ .stmt_expr = try b.stmtPtr(s) };
     }
 
     pub fn await_(b: Builder, e: Expr) Error!Expr {
