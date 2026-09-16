@@ -66,7 +66,7 @@ codegen/
 | `wat.zig` | WebAssembly Text emitter. See [wat](#wat) below |
 | `typescript.zig` | `.d.ts` typedef generator (optional secondary output, `Config.typeDefLanguage`). Type declarations only — no call lowering. Skips template fns (`TypeRef.isTemplateReturnType()`) and phantom `@Context` structs, erases `@Context<B, R>` to `R`, renders an anonymous `TypeRef.record_type` as `{ f: T; … }` |
 | `runtime.zig` | Test-side execution for the snapshot `----- RUN LOG -----` block. See [runtime](#runtime) below |
-| `snapshot.zig` | `buildSnapshot` / `buildSnapshotMulti` / `assertCodegen` / `assertCodegenError`; `writeComptimeSections` writes `GenerateResult.comptime_trace` (`COMPTIME ERLANG` / `COMPTIME REPLY`, rendered by `comptime/trace.zig`) then `COMPTIME VALUES` for every backend |
+| `snapshot.zig` | `buildSnapshot` / `buildSnapshotMulti` / `assertCodegen` / `assertCodegenError`; `writeComptimeSections` writes `GenerateResult.comptime_trace` (`COMPTIME ERLANG` / `COMPTIME REPLY`, rendered by `comptime/trace.zig`) then `COMPTIME VALUES` for every backend. A `SnapInput` with `result == null` (the module never reached the backend) or with `comptime_err` set writes a `COMPILE DIAGNOSTIC` section instead of the code section — spec 06 H3, which used to leave such snapshots empty |
 | `tests.zig` | Barrel aggregating `tests/<feature>.zig` and the `beam/*.zig` unit tests; harness in `tests/helpers.zig` (`assertJs`, `assertJsSingle`, `assertJsError`, `assertJsTestMode`, `assertJsContains`, `assertConsumerJs`, `configs` — one config per target) |
 
 ### commonJS

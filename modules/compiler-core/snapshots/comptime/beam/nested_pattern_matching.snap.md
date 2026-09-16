@@ -4,11 +4,49 @@ val Result = enum <T, E> {
     Ok(value: T),
     Err(error: E),
 };
-val unwrap_or = fn(r: Result<i32, string>, default: i32) -> i32 {
+val unwrap_or = fn(r: Result<i32, string>, fallback: i32) -> i32 {
     case r {
         Ok(v) -> v,
-        Err(_) -> default,
+        Err(_) -> fallback,
     }
 };
+```
+
+----- TYPED AST JSON -- main.json
+```json
+{
+  "declarations": [
+    {
+      "ast": "enum_def",
+      "name": "Result",
+      "id": 0,
+      "generic": [
+        "T",
+        "E"
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "unwrap_or",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "r",
+          "type": "?"
+        },
+        {
+          "name": "fallback",
+          "type": "i32"
+        }
+      ],
+      "return_type": "i32",
+      "body": [
+        {
+          "source": "case r {"
+        }
+      ]
+    }
+  ]
+}
 ```
 

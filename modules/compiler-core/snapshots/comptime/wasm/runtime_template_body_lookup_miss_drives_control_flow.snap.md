@@ -65,6 +65,15 @@ main() ->
 }
 ```
 
+----- BOTOPINK TRANSFORM CODE -- main.bp
+```botopink
+pub val Button = record {
+    label: string,
+};
+
+val r = "ok";
+```
+
 ----- TYPED AST JSON -- main.json
 ```json
 {

@@ -94,7 +94,8 @@ test "TypeOf: string literal returns string" {
 
 test "TypeOf: record value returns record type" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val p = record { x: 1, y: 2 };
+        \\record Point { x: i32, y: i32 }
+        \\val p = Point(x: 1, y: 2);
         \\val PType = @TypeOf(p);
     );
 }
@@ -145,7 +146,8 @@ test "RecordKeys: single field record returns string array" {
 
 test "field: record value field access" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val p = record { x: 1, y: 2 };
+        \\record Point { x: i32, y: i32 }
+        \\val p = Point(x: 1, y: 2);
         \\val xVal = @field(p, "x");
     );
 }

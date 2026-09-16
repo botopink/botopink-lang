@@ -18,6 +18,70 @@ pub fn label(d: Direction) -> string {
     return result;
 }
 val n = label(Direction.North);
-@print(n);
+fn main() {
+    @print(n);
+}
+```
+
+----- TYPED AST JSON -- main.json
+```json
+{
+  "declarations": [
+    {
+      "ast": "enum_def",
+      "name": "Direction",
+      "id": 0
+    },
+    {
+      "ast": "fn_def",
+      "name": "label",
+      "is_pub": true,
+      "params": [
+        {
+          "name": "d",
+          "type": "Direction"
+        }
+      ],
+      "return_type": "string",
+      "body": [
+        {
+          "source": "val result = case d {"
+        },
+        {
+          "source": "@print(result);"
+        },
+        {
+          "source": "return result;"
+        }
+      ]
+    },
+    {
+      "ast": "val",
+      "indent": "n",
+      "return_type": "string",
+      "expr": {
+        "ast": "call",
+        "params": [
+          {
+            "value": "Direction"
+          }
+        ],
+        "return_type": "string"
+      }
+    },
+    {
+      "ast": "fn_def",
+      "name": "main",
+      "is_pub": false,
+      "params": [],
+      "return_type": "void",
+      "body": [
+        {
+          "source": "@print(n);"
+        }
+      ]
+    }
+  ]
+}
 ```
 

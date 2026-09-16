@@ -597,7 +597,9 @@ test "js: lambda ---- standalone with params" {
         \\    x + y;
         \\};
         \\val result = add(10, 20);
-        \\@print(result);
+        \\fn main() {
+        \\    @print(result);
+        \\}
     );
 }
 

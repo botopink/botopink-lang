@@ -60,7 +60,12 @@ Suites that touch **disk** (paths resolved against the test cwd,
 ## Snapshot workflow
 
 - Snapshots live under `../../snapshots/lsp/`.
+- A **missing** snapshot fails the test (`error.SnapshotMissing`) and writes the
+  candidate baseline as `<name>.snap.md.new`; set `BOTOPINK_SNAP_CREATE=1` to
+  record it. Before spec 06 step 1 a first recording was accepted silently and
+  nobody reviewed it (defect H4). Same contract as
+  `compiler-core/src/utils/snap.zig`.
 - On mismatch a `<name>.snap.md.new` is written — review the diff and either
-  promote it or fix the underlying bug.
+  promote it or fix the underlying bug. `*.snap.md.new` is git-ignored.
 - Promote only intentional protocol/output changes; surprise changes usually
   signal a regression.

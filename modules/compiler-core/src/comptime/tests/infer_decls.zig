@@ -34,7 +34,9 @@ test "infer: record constructor" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val Point = record { x: i32, y: i32 };
         \\val p = Point(x: 1, y: 2);
-        \\@print(p);
+        \\fn main() {
+        \\    @print(p);
+        \\}
     );
 }
 
@@ -57,7 +59,9 @@ test "infer: pub fn basic ---- greet returns string" {
         \\    return "Hello, " + name;
         \\}
         \\val msg = greet("world");
-        \\@print(msg);
+        \\fn main() {
+        \\    @print(msg);
+        \\}
     );
 }
 
@@ -69,7 +73,9 @@ test "infer: pub fn with local val binding in body" {
         \\    return doubled;
         \\}
         \\val result = compute(21);
-        \\@print(result);
+        \\fn main() {
+        \\    @print(result);
+        \\}
     );
 }
 
@@ -102,7 +108,9 @@ test "infer: pub fn using enum + case in body" {
         \\    return result;
         \\}
         \\val n = label(Direction.North);
-        \\@print(n);
+        \\fn main() {
+        \\    @print(n);
+        \\}
     );
 }
 
