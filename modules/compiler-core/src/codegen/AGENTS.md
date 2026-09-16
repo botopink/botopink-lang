@@ -244,7 +244,9 @@ codegen/
 - **Coverage**: numerics, locals, calls, booleans, assign, throw, strings,
   `@print`, field access/assign, arrays, tuples, records/structs
   (`put_map_assoc` maps), case (all patterns + guards via
-  `emitGuardPre`/`emitGuardPost`), `if` as value (`emitValueIf`) and as
+  `emitGuardPre`/`emitGuardPost`; a bare `.ident` arm naming a nullary enum
+  variant is a match test against that atom, not a binding — `enum_variants`),
+  `if` as value (`emitValueIf`) and as
   statement (`emitIf` — the false branch falls through, never an early
   `return`), try/catch (`is_tagged_tuple`), ranges (`lists:seq(A, B - 1)`),
   loops, pipeline, closures, `call_fun`, `@Result`/`@Option` ops
@@ -270,20 +272,39 @@ codegen/
   `is_gt`/`is_le` — operands swap, `comparisonTestOp`); `{allocate, N, A}` is
   followed by `{init_yregs, …}` (`emitFrame`); `countLocalsRec` counts case-arm
   and destructure bindings so the frame is sized correctly.
-- **Register-liveness gotchas**: the array-literal `test_heap` counts only the
-  x-registers an element reads; `gc_bif` and `materializeCallArgs` honour
-  `min_live` so already-materialized args survive; the range loop materializes
-  the iterable before building the body closure (a `lists:seq` call would
-  clobber the stashed fun); a `val` bound before a recursive call spills to a
-  y-slot and survives the call.
+- **Registers**: parameters are spilled to `y0..y{arity-1}` by `bindParams` +
+  `emitParamSpill` right after `allocate`, so the whole x-file is scratch and a
+  `self.field` read cannot overwrite `self`. Every staging site takes its slot
+  from `scratchBase()` (`max(min_live, 1)` — never `{x, 0}`, which each
+  `lowerExprIntoX0` overwrites) and raises the floor with `raiseLive` while a
+  nested lowering runs, so a `gc_bif`/closure inside operand *i* cannot drop
+  operands `0..i-1`.
+- **Register-liveness gotchas**: a BEAM `Live` count is a *prefix* — claiming
+  `{x, 2}` claims `{x, 0}` and `{x, 1}` too, and an unwritten register in that
+  range is `not_live`/`uninitialized_reg`; before the first operand is lowered
+  nothing has written `{x, 0}`, so the floor there stays at `min_live`
+  (`lowerResultOptionOp` fills `{x, disc}` for the same reason). An array
+  literal reserves one cons cell per element *after* evaluating it — a single
+  up-front `test_heap` is lost as soon as an element allocates. A `call` /
+  `call_ext` frees every x-register, so a value that must survive one goes to a
+  y-slot (`emitDestructBind`'s tuple subject), and a length read uses the
+  `length` gc_bif rather than `erlang:length/1`. The range loop materializes
+  the iterable before building the body closure.
 - **Cross-module**: the module atom is the path basename; an imported record
   joins `record_fields` + `imported_types` (`collectRecordShapes`), its
   associated fn lowers to `call_ext` into the owner (`http:'Response_ok'(…)`),
   and the owner exports `'Type_method'/arity` when imported elsewhere. A field
   read on a `call_ext` result emits `is_map` before `get_map_elements` (the
-  result is typed `any`, which the loader rejects otherwise).
-- **Builtins**: `lowerBuiltinCall` hardcodes `@print` (`io:format("~p~n", …)`),
-  `@todo`/`@panic` (`erlang:error/1`) and `__bp_*` ops at register level.
+  result is typed `any`, which the loader rejects otherwise). An imported
+  `pub fn`/`pub val` resolves through `crossOwnerOf` to a remote `call_ext` (a
+  `pub val` is a 0-arity function, so a bare reference is a call). A
+  destructure emits the same `is_map` narrowing, and writes every binding slot
+  on *both* arms of the test — the validator reports `{unassigned, {y, N}}`
+  after the merge otherwise.
+- **Builtins**: `lowerBuiltinCall` hardcodes `@print`
+  (`io:format("~p~n", [V])`, or one `~p` per argument space-separated for
+  `@print(a, b, …)`), `@todo`/`@panic` (`erlang:error/1`) and `__bp_*` ops at
+  register level.
 - **Effects**: non-`#[@result]` effect fns get an eager body;
   `__bp_future_rejected` → `erlang:throw/1`.
 - Unhandled shapes emit `%% unsupported: …` / `%% unresolved …` /

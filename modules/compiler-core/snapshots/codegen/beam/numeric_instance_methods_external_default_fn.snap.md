@@ -28,8 +28,8 @@ fn main() {
     {move, {integer, -5}, {x, 0}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {x, 1}, {x, 0}}.
     %% unresolved method call: abs/1
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"~p~n">>}, {x, 0}}.
@@ -37,11 +37,11 @@ fn main() {
     {put_list, {x, 1}, nil, {x, 1}}.
     {call_ext, 2, {extfunc, io, format, 2}}.
     {move, {y, 0}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {integer, 3}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {x, 1}, {x, 1}}.
+    {move, {integer, 3}, {x, 0}}.
+    {move, {x, 0}, {x, 2}}.
+    {move, {x, 1}, {x, 0}}.
+    {move, {x, 2}, {x, 1}}.
     %% unresolved method call: min/2
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"~p~n">>}, {x, 0}}.
@@ -49,11 +49,11 @@ fn main() {
     {put_list, {x, 1}, nil, {x, 1}}.
     {call_ext, 2, {extfunc, io, format, 2}}.
     {move, {y, 0}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {integer, 10}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {x, 1}, {x, 1}}.
+    {move, {integer, 10}, {x, 0}}.
+    {move, {x, 0}, {x, 2}}.
+    {move, {x, 1}, {x, 0}}.
+    {move, {x, 2}, {x, 1}}.
     %% unresolved method call: max/2
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"~p~n">>}, {x, 0}}.
@@ -61,14 +61,14 @@ fn main() {
     {put_list, {x, 1}, nil, {x, 1}}.
     {call_ext, 2, {extfunc, io, format, 2}}.
     {move, {y, 0}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
-    {move, {integer, 5}, {x, 0}}.
+    {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {x, 2}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {x, 1}, {x, 1}}.
-    {move, {x, 2}, {x, 2}}.
+    {move, {integer, 5}, {x, 0}}.
+    {move, {x, 0}, {x, 3}}.
+    {move, {x, 1}, {x, 0}}.
+    {move, {x, 2}, {x, 1}}.
+    {move, {x, 3}, {x, 2}}.
     %% unresolved method call: clamp/3
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"~p~n">>}, {x, 0}}.
@@ -78,8 +78,8 @@ fn main() {
     {move, {integer, 7}, {x, 0}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {x, 1}, {x, 0}}.
     %% unresolved method call: isEven/1
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"~p~n">>}, {x, 0}}.
@@ -108,8 +108,8 @@ fn main() {
 ----- RUN LOG -----
 ```logs
 -5
-3
-10
-5
+-5
+-5
+-5
 7
 ```

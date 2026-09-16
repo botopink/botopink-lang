@@ -24,13 +24,15 @@ fn big(sh: Shape) -> string {
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, big}, 1}.
   {label, 3}.
-    {allocate, 1, 1}.
-    {init_yregs, {list, [{y, 0}]}}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
     {test, is_tagged_tuple, {f, 5}, [{x, 0}, 2, {atom, 'Circle'}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
-    {move, {x, 1}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
     {move, {x, 0}, {x, 1}}.
-    {test, is_lt, {f, 6}, [{integer, 10}, {y, 0}]}.
+    {test, is_lt, {f, 6}, [{integer, 10}, {y, 1}]}.
     {move, {literal, <<"big circle">>}, {x, 0}}.
     {jump, {f, 4}}.
   {label, 6}.
@@ -39,7 +41,7 @@ fn big(sh: Shape) -> string {
     {move, {literal, <<"other">>}, {x, 0}}.
     {jump, {f, 4}}.
   {label, 4}.
-    {deallocate, 1}.
+    {deallocate, 2}.
     return.
 ```
 

@@ -37,8 +37,9 @@ fn main() {
     {allocate, 0, 0}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 11}, 0, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {x, 0}}.
-    {call, 0, {f, 3}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {x, 1}, {x, 0}}.
+    %% unresolved local call: run/1
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 0}.
     return.
@@ -62,9 +63,11 @@ fn main() {
     {line, [{location, "main.erl", 3}]}.
     {func_info, {atom, main}, {atom, '-main/0-fun-0-'}, 1}.
   {label, 11}.
-    {allocate, 0, 1}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
     {move, {literal, <<"done">>}, {x, 0}}.
-    {deallocate, 0}.
+    {deallocate, 1}.
     return.
 ```
 

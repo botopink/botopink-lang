@@ -21,6 +21,7 @@ val parity = case 5 {
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, parity}, 0}.
   {label, 3}.
+    {allocate, 0, 0}.
     {move, {integer, 5}, {x, 0}}.
     {test, is_ne_exact, {f, 5}, [{x, 0}, {integer, 0}]}.
     {test, is_ne_exact, {f, 5}, [{x, 0}, {integer, 2}]}.

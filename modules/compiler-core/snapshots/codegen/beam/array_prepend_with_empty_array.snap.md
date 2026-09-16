@@ -15,10 +15,11 @@ val list1 = [1, ..[]];
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, list1}, 0}.
   {label, 3}.
+    {allocate, 0, 0}.
     {move, nil, {x, 0}}.
-    {test_heap, 2, 1}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 1}, {x, 0}}.
+    {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {deallocate, 0}.
     return.

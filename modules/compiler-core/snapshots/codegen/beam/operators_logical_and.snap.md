@@ -20,14 +20,17 @@ fn main() {
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, both}, 2}.
   {label, 3}.
-    {allocate, 0, 2}.
-    {test, is_eq, {f, 10}, [{x, 0}, {atom, true}]}.
-    {move, {x, 1}, {x, 0}}.
+    {allocate, 2, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {test, is_eq, {f, 10}, [{y, 0}, {atom, true}]}.
+    {move, {y, 1}, {x, 0}}.
     {jump, {f, 11}}.
   {label, 10}.
     {move, {atom, false}, {x, 0}}.
   {label, 11}.
-    {deallocate, 0}.
+    {deallocate, 2}.
     return.
 
 {function, main, 0, 5}.
@@ -37,11 +40,11 @@ fn main() {
   {label, 5}.
     {allocate, 0, 0}.
     {move, {atom, true}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {atom, false}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {x, 1}, {x, 1}}.
+    {move, {atom, false}, {x, 0}}.
+    {move, {x, 0}, {x, 2}}.
+    {move, {x, 1}, {x, 0}}.
+    {move, {x, 2}, {x, 1}}.
     {call, 2, {f, 3}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"~p~n">>}, {x, 0}}.

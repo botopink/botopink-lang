@@ -22,8 +22,8 @@ fn main() {
   {label, 3}.
     {allocate, 0, 0}.
     {move, {atom, true}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {x, 1}, {x, 0}}.
     %% unresolved method call: negate/1
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"~p~n">>}, {x, 0}}.
@@ -31,11 +31,11 @@ fn main() {
     {put_list, {x, 1}, nil, {x, 1}}.
     {call_ext, 2, {extfunc, io, format, 2}}.
     {move, {atom, false}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {atom, false}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {x, 1}, {x, 1}}.
+    {move, {atom, false}, {x, 0}}.
+    {move, {x, 0}, {x, 2}}.
+    {move, {x, 1}, {x, 0}}.
+    {move, {x, 2}, {x, 1}}.
     %% unresolved method call: nor/2
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"~p~n">>}, {x, 0}}.
@@ -43,11 +43,11 @@ fn main() {
     {put_list, {x, 1}, nil, {x, 1}}.
     {call_ext, 2, {extfunc, io, format, 2}}.
     {move, {atom, true}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {atom, true}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {x, 1}, {x, 1}}.
+    {move, {atom, true}, {x, 0}}.
+    {move, {x, 0}, {x, 2}}.
+    {move, {x, 1}, {x, 0}}.
+    {move, {x, 2}, {x, 1}}.
     %% unresolved method call: nand/2
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"~p~n">>}, {x, 0}}.
@@ -55,11 +55,11 @@ fn main() {
     {put_list, {x, 1}, nil, {x, 1}}.
     {call_ext, 2, {extfunc, io, format, 2}}.
     {move, {atom, true}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {atom, false}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {x, 1}, {x, 1}}.
+    {move, {atom, false}, {x, 0}}.
+    {move, {x, 0}, {x, 2}}.
+    {move, {x, 1}, {x, 0}}.
+    {move, {x, 2}, {x, 1}}.
     %% unresolved method call: exclusiveOr/2
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"~p~n">>}, {x, 0}}.
@@ -90,5 +90,5 @@ fn main() {
 true
 false
 true
-false
+true
 ```

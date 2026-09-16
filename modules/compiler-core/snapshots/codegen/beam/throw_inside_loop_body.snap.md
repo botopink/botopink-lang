@@ -24,9 +24,12 @@ fn main() {
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, validate}, 1}.
   {label, 3}.
-    {allocate, 0, 1}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
+    {move, {y, 0}, {x, 0}}.
     {gc_bif, '-', {f, 0}, 2, [{x, 0}, {integer, 1}], {x, 0}}.
     {move, {x, 0}, {x, 2}}.
     {move, {x, 1}, {x, 0}}.
@@ -36,10 +39,11 @@ fn main() {
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
     {make_fun3, {f, 11}, 0, 0, {x, 0}, {list, []}}.
     {call_ext, 2, {extfunc, lists, foreach, 2}}.
-    {move, {x, 0}, {x, 2}}.
-    {test_heap, 3, 3}.
-    {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 2}]}}.
-    {deallocate, 0}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
+    {deallocate, 1}.
     return.
 
 {function, main, 0, 5}.
@@ -84,29 +88,23 @@ fn main() {
     {line, [{location, "main.erl", 2}]}.
     {func_info, {atom, main}, {atom, '-validate/1-fun-0-'}, 1}.
   {label, 11}.
-    {allocate, 0, 1}.
-    {test, is_lt, {f, 12}, [{integer, 2}, {x, 0}]}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {test, is_lt, {f, 12}, [{integer, 2}, {y, 0}]}.
     {move, {literal, <<"too many">>}, {x, 0}}.
-    {move, {x, 0}, {x, 2}}.
-    {test_heap, 3, 3}.
-    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 2}]}}.
-    {deallocate, 0}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
+    {deallocate, 1}.
     return.
   {label, 12}.
     {move, {atom, ok}, {x, 0}}.
-    {deallocate, 0}.
+    {deallocate, 1}.
     return.
 ```
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc +from_asm):
-main:1: function '-validate/1-fun-0-'/1+9:
-  Internal consistency check failed - please report this bug.
-  Instruction: {test_heap,3,3}
-  Error:       {{x,1},not_live}:
-main:1: function validate/1+16:
-  Internal consistency check failed - please report this bug.
-  Instruction: {test_heap,3,3}
-  Error:       {{x,1},not_live}:
+true
 ```

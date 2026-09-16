@@ -20,18 +20,21 @@ fn main() {
   {label, 3}.
     {allocate, 0, 0}.
     {move, nil, {x, 0}}.
-    {test_heap, 8, 1}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 4}, {x, 0}}.
+    {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 3}, {x, 0}}.
+    {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 2}, {x, 0}}.
+    {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 1}, {x, 0}}.
+    {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {integer, 3}, {x, 1}}.
     {move, {integer, 0}, {x, 2}}.
@@ -42,15 +45,17 @@ fn main() {
     {put_list, {x, 1}, nil, {x, 1}}.
     {call_ext, 2, {extfunc, io, format, 2}}.
     {move, nil, {x, 0}}.
-    {test_heap, 6, 1}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 3}, {x, 0}}.
+    {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 2}, {x, 0}}.
+    {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 1}, {x, 0}}.
+    {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {integer, 99}, {x, 1}}.
     {move, {integer, 0}, {x, 2}}.

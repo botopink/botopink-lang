@@ -18,28 +18,31 @@ fn main() {
 {module, main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
-{labels, 12}.
+{labels, 13}.
 
 {function, describe, 1, 3}.
   {label, 2}.
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, describe}, 1}.
   {label, 3}.
-    {allocate, 2, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {allocate, 3, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq, {f, 11}, [{x, 0}, {atom, 'None'}]}.
     {move, {literal, <<"empty">>}, {x, 0}}.
     {jump, {f, 10}}.
-    {test, is_tagged_tuple, {f, 11}, [{x, 0}, 2, {atom, 'Some'}]}.
+  {label, 11}.
+    {test, is_tagged_tuple, {f, 12}, [{x, 0}, 2, {atom, 'Some'}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 1}}.
     {move, {literal, <<"value: ">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {gc_bif, '+', {f, 0}, 2, [{x, 1}, {y, 1}], {x, 0}}.
     {jump, {f, 10}}.
-  {label, 11}.
+  {label, 12}.
   {label, 10}.
-    {deallocate, 2}.
+    {deallocate, 3}.
     return.
 
 {function, main, 0, 5}.
@@ -52,8 +55,8 @@ fn main() {
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, 'Some'}, {x, 1}]}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {x, 1}, {x, 0}}.
     {call, 1, {f, 3}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"~p~n">>}, {x, 0}}.
@@ -61,8 +64,8 @@ fn main() {
     {put_list, {x, 1}, nil, {x, 1}}.
     {call_ext, 2, {extfunc, io, format, 2}}.
     {move, {atom, 'None'}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {x, 1}, {x, 0}}.
     {call, 1, {f, 3}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"~p~n">>}, {x, 0}}.
@@ -90,6 +93,4 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-<<"empty">>
-<<"empty">>
 ```

@@ -19,31 +19,35 @@ fn main() {
 {module, main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
-{labels, 15}.
+{labels, 17}.
 
 {function, check, 1, 3}.
   {label, 2}.
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, check}, 1}.
   {label, 3}.
-    {allocate, 2, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {allocate, 3, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq, {f, 11}, [{x, 0}, {atom, 'Ok'}]}.
     {move, {integer, 1}, {x, 0}}.
     {jump, {f, 10}}.
-    {move, {x, 0}, {y, 1}}.
+  {label, 11}.
+    {test, is_eq, {f, 12}, [{x, 0}, {atom, 'Fail'}]}.
     {move, {literal, <<"failed">>}, {x, 0}}.
-    {move, {x, 0}, {x, 2}}.
-    {test_heap, 3, 3}.
-    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 2}]}}.
-    {deallocate, 2}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
+    {deallocate, 3}.
     return.
     {jump, {f, 10}}.
+  {label, 12}.
   {label, 10}.
-    {move, {x, 0}, {x, 2}}.
-    {test_heap, 3, 3}.
-    {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 2}]}}.
-    {deallocate, 2}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
+    {deallocate, 3}.
     return.
 
 {function, main, 0, 5}.
@@ -53,23 +57,8 @@ fn main() {
   {label, 5}.
     {allocate, 0, 0}.
     {move, {atom, 'Ok'}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
-    {call, 1, {f, 3}}.
-    {test, is_tagged_tuple, {f, 11}, [{x, 0}, 2, {atom, ok}]}.
-    {move, {atom, true}, {x, 0}}.
-    {jump, {f, 12}}.
-  {label, 11}.
-    {move, {atom, false}, {x, 0}}.
-  {label, 12}.
     {move, {x, 0}, {x, 1}}.
-    {move, {literal, <<"~p~n">>}, {x, 0}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 1}, nil, {x, 1}}.
-    {call_ext, 2, {extfunc, io, format, 2}}.
-    {move, {atom, 'Fail'}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
+    {move, {x, 1}, {x, 0}}.
     {call, 1, {f, 3}}.
     {test, is_tagged_tuple, {f, 13}, [{x, 0}, 2, {atom, ok}]}.
     {move, {atom, true}, {x, 0}}.
@@ -77,6 +66,21 @@ fn main() {
   {label, 13}.
     {move, {atom, false}, {x, 0}}.
   {label, 14}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {literal, <<"~p~n">>}, {x, 0}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 1}, nil, {x, 1}}.
+    {call_ext, 2, {extfunc, io, format, 2}}.
+    {move, {atom, 'Fail'}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {x, 1}, {x, 0}}.
+    {call, 1, {f, 3}}.
+    {test, is_tagged_tuple, {f, 15}, [{x, 0}, 2, {atom, ok}]}.
+    {move, {atom, true}, {x, 0}}.
+    {jump, {f, 16}}.
+  {label, 15}.
+    {move, {atom, false}, {x, 0}}.
+  {label, 16}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"~p~n">>}, {x, 0}}.
     {test_heap, 2, 2}.
@@ -103,9 +107,6 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc +from_asm):
-main:1: function check/1+10:
-  Internal consistency check failed - please report this bug.
-  Instruction: {test_heap,3,3}
-  Error:       {{x,1},not_live}:
+true
+false
 ```

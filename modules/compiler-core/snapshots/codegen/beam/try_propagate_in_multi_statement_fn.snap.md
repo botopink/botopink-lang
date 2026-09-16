@@ -44,14 +44,16 @@ fn pipeline() -> @Result<i32, IoError> {
     {line, [{location, "main.erl", 2}]}.
     {func_info, {atom, main}, {atom, step2}, 1}.
   {label, 5}.
-    {allocate, 0, 1}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
     {move, {literal, <<"/out">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 2, {list, [{atom, path}, {x, 1}]}}.
-    {move, {x, 0}, {x, 2}}.
-    {test_heap, 3, 3}.
-    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 2}]}}.
-    {deallocate, 0}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
+    {deallocate, 1}.
     return.
 
 {function, pipeline, 0, 7}.

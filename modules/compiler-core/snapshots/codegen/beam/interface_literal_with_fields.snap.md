@@ -12,7 +12,7 @@ fn main() {
 {module, main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
-{labels, 10}.
+{labels, 9}.
 
 {function, main, 0, 3}.
   {label, 2}.
@@ -31,9 +31,7 @@ fn main() {
     {test, is_map, {f, 8}, [{x, 0}]}.
     {get_map_elements, {f, 8}, {x, 0}, {list, [{atom, fields}, {x, 0}]}}.
   {label, 8}.
-    {test, is_map, {f, 9}, [{x, 0}]}.
-    {get_map_elements, {f, 9}, {x, 0}, {list, [{atom, length}, {x, 0}]}}.
-  {label, 9}.
+    {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"~p~n">>}, {x, 0}}.
     {test_heap, 2, 2}.
@@ -60,5 +58,4 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-undefined
 ```

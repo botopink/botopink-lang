@@ -76,7 +76,8 @@ main() ->
     {test, is_map, {f, 8}, [{x, 0}]}.
     {get_map_elements, {f, 8}, {x, 0}, {list, [{atom, port}, {x, 0}]}}.
   {label, 8}.
-    {gc_bif, '+', {f, 0}, 1, [{x, 0}, {integer, 1}], {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {gc_bif, '+', {f, 0}, 2, [{x, 1}, {integer, 1}], {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"~p~n">>}, {x, 0}}.
     {test_heap, 2, 2}.

@@ -15,7 +15,8 @@ val nothing = null;
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, nothing}, 0}.
   {label, 3}.
-    {move, {atom, nil}, {x, 0}}.
+    {allocate, 0, 0}.
+    {move, {atom, undefined}, {x, 0}}.
     {deallocate, 0}.
     return.
 ```

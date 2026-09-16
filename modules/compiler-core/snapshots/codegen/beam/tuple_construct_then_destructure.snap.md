@@ -19,28 +19,34 @@ fn main() {
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, main}, 0}.
   {label, 3}.
-    {allocate, 3, 0}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {allocate, 4, 0}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
     {move, {integer, 10}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {integer, 20}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
-    {test_heap, 3, 2}.
-    {put_tuple2, {x, 0}, {list, [{x, 0}, {x, 1}]}}.
+    {move, {integer, 20}, {x, 0}}.
+    {move, {x, 0}, {x, 2}}.
+    {test_heap, 3, 3}.
+    {put_tuple2, {x, 0}, {list, [{x, 1}, {x, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {get_tuple_element, {x, 0}, 0, {x, 1}}.
-    {move, {x, 1}, {y, 1}}.
-    {get_tuple_element, {x, 0}, 1, {x, 1}}.
-    {move, {x, 1}, {y, 2}}.
-    {gc_bif, '+', {f, 0}, 0, [{y, 1}, {y, 2}], {x, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {integer, 1}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {move, {x, 0}, {y, 3}}.
+    {move, {y, 1}, {x, 0}}.
+    {gc_bif, '+', {f, 0}, 0, [{y, 2}, {y, 3}], {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"~p~n">>}, {x, 0}}.
     {test_heap, 2, 2}.
     {put_list, {x, 1}, nil, {x, 1}}.
     {call_ext, 2, {extfunc, io, format, 2}}.
     {move, {atom, ok}, {x, 0}}.
-    {deallocate, 3}.
+    {deallocate, 4}.
     return.
 
 {function, '_botopink_main', 0, 5}.
@@ -60,5 +66,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-40
+30
 ```

@@ -26,9 +26,9 @@ fn main() {
     {init_yregs, {list, [{y, 0}]}}.
     {move, {literal, <<"yes">>}, {x, 0}}.
     {move, {x, 0}, {y, 0}}.
-    {move, {y, 0}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
     {move, {literal, <<"yes">>}, {x, 0}}.
-    {test, is_eq, {f, 8}, [{x, 0}, {x, 0}]}.
+    {test, is_eq, {f, 8}, [{x, 1}, {x, 0}]}.
     {move, {integer, 42}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"~p~n">>}, {x, 0}}.

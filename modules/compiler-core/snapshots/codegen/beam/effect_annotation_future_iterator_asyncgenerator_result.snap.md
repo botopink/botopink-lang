@@ -33,8 +33,11 @@ fn parse(n: i32) -> @Result<i32, string> {
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, fetch}, 1}.
   {label, 3}.
-    {allocate, 0, 1}.
-    {deallocate, 0}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {deallocate, 1}.
     return.
 
 %% #[@future] / #[@asyncGenerator] — eager lowering
@@ -67,19 +70,22 @@ fn parse(n: i32) -> @Result<i32, string> {
     {line, [{location, "main.erl", 4}]}.
     {func_info, {atom, main}, {atom, parse}, 1}.
   {label, 9}.
-    {allocate, 0, 1}.
-    {test, is_lt, {f, 10}, [{x, 0}, {integer, 0}]}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {test, is_lt, {f, 10}, [{y, 0}, {integer, 0}]}.
     {move, {literal, <<"negative">>}, {x, 0}}.
-    {move, {x, 0}, {x, 2}}.
-    {test_heap, 3, 3}.
-    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 2}]}}.
-    {deallocate, 0}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
+    {deallocate, 1}.
     return.
   {label, 10}.
-    {move, {x, 0}, {x, 2}}.
-    {test_heap, 3, 3}.
-    {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 2}]}}.
-    {deallocate, 0}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
+    {deallocate, 1}.
     return.
 ```
 

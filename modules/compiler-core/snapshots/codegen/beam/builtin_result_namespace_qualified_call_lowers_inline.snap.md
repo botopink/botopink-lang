@@ -24,19 +24,22 @@ fn main() {
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, parse}, 1}.
   {label, 3}.
-    {allocate, 0, 1}.
-    {test, is_lt, {f, 10}, [{x, 0}, {integer, 0}]}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {test, is_lt, {f, 10}, [{y, 0}, {integer, 0}]}.
     {move, {literal, <<"negative">>}, {x, 0}}.
-    {move, {x, 0}, {x, 2}}.
-    {test_heap, 3, 3}.
-    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 2}]}}.
-    {deallocate, 0}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
+    {deallocate, 1}.
     return.
   {label, 10}.
-    {move, {x, 0}, {x, 2}}.
-    {test_heap, 3, 3}.
-    {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 2}]}}.
-    {deallocate, 0}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
+    {deallocate, 1}.
     return.
 
 {function, main, 0, 5}.
@@ -49,6 +52,7 @@ fn main() {
     {move, {integer, 21}, {x, 0}}.
     {call, 1, {f, 3}}.
     {test, is_tagged_tuple, {f, 11}, [{x, 0}, 2, {atom, ok}]}.
+    {move, {x, 0}, {x, 1}}.
     {get_tuple_element, {x, 0}, 1, {x, 2}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 3}.
     {make_fun3, {f, 14}, 0, 0, {x, 0}, {list, []}}.
@@ -97,21 +101,15 @@ fn main() {
     {line, [{location, "main.erl", 3}]}.
     {func_info, {atom, main}, {atom, '-main/0-fun-0-'}, 1}.
   {label, 14}.
-    {allocate, 0, 1}.
-    {gc_bif, '*', {f, 0}, 1, [{x, 0}, {integer, 2}], {x, 0}}.
-    {deallocate, 0}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {gc_bif, '*', {f, 0}, 0, [{y, 0}, {integer, 2}], {x, 0}}.
+    {deallocate, 1}.
     return.
 ```
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc +from_asm):
-main:1: function main/0+11:
-  Internal consistency check failed - please report this bug.
-  Instruction: {test_heap,{alloc,[{words,0},{floats,0},{funs,1}]},3}
-  Error:       {{x,1},not_live}:
-main:1: function parse/1+9:
-  Internal consistency check failed - please report this bug.
-  Instruction: {test_heap,3,3}
-  Error:       {{x,1},not_live}:
+42
 ```

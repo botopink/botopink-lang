@@ -19,15 +19,17 @@ fn main() {
   {label, 3}.
     {allocate, 0, 0}.
     {move, nil, {x, 0}}.
-    {test_heap, 6, 1}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 30}, {x, 0}}.
+    {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 20}, {x, 0}}.
+    {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 10}, {x, 0}}.
+    {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.

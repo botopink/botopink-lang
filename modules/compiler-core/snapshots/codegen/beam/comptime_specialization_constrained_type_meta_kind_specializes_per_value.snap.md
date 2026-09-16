@@ -43,8 +43,11 @@ fn main() {
     {line, [{location, "main.erl", 2}]}.
     {func_info, {atom, main}, {atom, 'coerce_$0'}, 1}.
   {label, 5}.
-    {allocate, 0, 1}.
-    {deallocate, 0}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {deallocate, 1}.
     return.
 
 {function, 'coerce_$1', 1, 7}.
@@ -52,8 +55,11 @@ fn main() {
     {line, [{location, "main.erl", 3}]}.
     {func_info, {atom, main}, {atom, 'coerce_$1'}, 1}.
   {label, 7}.
-    {allocate, 0, 1}.
-    {deallocate, 0}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {deallocate, 1}.
     return.
 
 {function, '_botopink_main', 0, 9}.

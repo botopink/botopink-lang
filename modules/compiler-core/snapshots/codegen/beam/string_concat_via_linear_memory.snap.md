@@ -19,8 +19,9 @@ fn greeting() -> string {
   {label, 3}.
     {allocate, 0, 0}.
     {move, {literal, <<"Hello, ">>}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"World">>}, {x, 0}}.
-    {gc_bif, '+', {f, 0}, 1, [{x, 0}, {x, 0}], {x, 0}}.
+    {gc_bif, '+', {f, 0}, 2, [{x, 1}, {x, 0}], {x, 0}}.
     {deallocate, 0}.
     return.
 ```

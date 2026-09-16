@@ -52,14 +52,15 @@ ct_0: val COMMANDS = comptime ["calc", "noop", "help"] → ["calc", "noop", "hel
     {line, [{location, "main.erl", 2}]}.
     {func_info, {atom, main}, {atom, 'execute_$0'}, 1}.
   {label, 5}.
-    {allocate, 1, 1}.
-    {init_yregs, {list, [{y, 0}]}}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
     {move, {integer, 0}, {x, 0}}.
-    {move, {x, 0}, {y, 0}}.
-    {gc_bif, '*', {f, 0}, 1, [{x, 0}, {integer, 2}], {x, 0}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {y, 0}, {x, 0}}.
-    {deallocate, 1}.
+    {move, {x, 0}, {y, 1}}.
+    {gc_bif, '*', {f, 0}, 0, [{y, 0}, {integer, 2}], {x, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {deallocate, 2}.
     return.
 
 {function, 'execute_$1', 1, 7}.
@@ -67,14 +68,15 @@ ct_0: val COMMANDS = comptime ["calc", "noop", "help"] → ["calc", "noop", "hel
     {line, [{location, "main.erl", 3}]}.
     {func_info, {atom, main}, {atom, 'execute_$1'}, 1}.
   {label, 7}.
-    {allocate, 1, 1}.
-    {init_yregs, {list, [{y, 0}]}}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
     {move, {integer, 0}, {x, 0}}.
-    {move, {x, 0}, {y, 0}}.
-    {gc_bif, '*', {f, 0}, 1, [{x, 0}, {integer, 2}], {x, 0}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {y, 0}, {x, 0}}.
-    {deallocate, 1}.
+    {move, {x, 0}, {y, 1}}.
+    {gc_bif, '*', {f, 0}, 0, [{y, 0}, {integer, 2}], {x, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {deallocate, 2}.
     return.
 
 {function, '_botopink_main', 0, 9}.

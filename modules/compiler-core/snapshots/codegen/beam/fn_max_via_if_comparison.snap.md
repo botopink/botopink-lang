@@ -24,13 +24,17 @@ fn main() {
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, max}, 2}.
   {label, 3}.
-    {allocate, 0, 2}.
-    {test, is_lt, {f, 10}, [{x, 0}, {x, 1}]}.
-    {move, {x, 1}, {x, 0}}.
-    {deallocate, 0}.
+    {allocate, 2, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {test, is_lt, {f, 10}, [{y, 0}, {y, 1}]}.
+    {move, {y, 1}, {x, 0}}.
+    {deallocate, 2}.
     return.
   {label, 10}.
-    {deallocate, 0}.
+    {move, {y, 0}, {x, 0}}.
+    {deallocate, 2}.
     return.
 
 {function, main, 0, 5}.

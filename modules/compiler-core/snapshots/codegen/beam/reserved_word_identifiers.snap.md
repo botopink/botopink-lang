@@ -22,12 +22,14 @@ fn main() {
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, delete}, 2}.
   {label, 3}.
-    {allocate, 1, 2}.
-    {init_yregs, {list, [{y, 0}]}}.
-    {gc_bif, '+', {f, 0}, 2, [{x, 0}, {x, 1}], {x, 0}}.
+    {allocate, 3, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
-    {move, {y, 0}, {x, 0}}.
-    {deallocate, 1}.
+    {move, {x, 1}, {y, 1}}.
+    {gc_bif, '+', {f, 0}, 0, [{y, 0}, {y, 1}], {x, 0}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {deallocate, 3}.
     return.
 
 {function, main, 0, 5}.
@@ -37,11 +39,11 @@ fn main() {
   {label, 5}.
     {allocate, 0, 0}.
     {move, {literal, <<"a">>}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {literal, <<"b">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {x, 1}, {x, 1}}.
+    {move, {literal, <<"b">>}, {x, 0}}.
+    {move, {x, 0}, {x, 2}}.
+    {move, {x, 1}, {x, 0}}.
+    {move, {x, 2}, {x, 1}}.
     {call, 2, {f, 3}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"~p~n">>}, {x, 0}}.

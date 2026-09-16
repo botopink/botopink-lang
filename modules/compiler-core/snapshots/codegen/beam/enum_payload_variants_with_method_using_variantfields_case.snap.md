@@ -27,28 +27,30 @@ val Shape = enum {
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, 'Shape_area'}, 1}.
   {label, 3}.
-    {allocate, 4, 1}.
-    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
+    {allocate, 5, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
     {test, is_tagged_tuple, {f, 5}, [{x, 0}, 2, {atom, 'Circle'}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
-    {move, {x, 1}, {y, 0}}.
-    {gc_bif, '*', {f, 0}, 1, [{y, 0}, {y, 0}], {x, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {gc_bif, '*', {f, 0}, 0, [{y, 1}, {y, 1}], {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {gc_bif, '*', {f, 0}, 2, [{x, 1}, {float, 3.14}], {x, 0}}.
     {jump, {f, 4}}.
   {label, 5}.
     {test, is_tagged_tuple, {f, 6}, [{x, 0}, 2, {atom, 'Square'}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
-    {move, {x, 1}, {y, 1}}.
-    {gc_bif, '*', {f, 0}, 1, [{y, 1}, {y, 1}], {x, 0}}.
+    {move, {x, 1}, {y, 2}}.
+    {gc_bif, '*', {f, 0}, 0, [{y, 2}, {y, 2}], {x, 0}}.
     {jump, {f, 4}}.
   {label, 6}.
     {test, is_tagged_tuple, {f, 7}, [{x, 0}, 3, {atom, 'Triangle'}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
-    {move, {x, 1}, {y, 2}}.
-    {get_tuple_element, {x, 0}, 2, {x, 1}}.
     {move, {x, 1}, {y, 3}}.
-    {gc_bif, '*', {f, 0}, 1, [{y, 2}, {y, 3}], {x, 0}}.
+    {get_tuple_element, {x, 0}, 2, {x, 1}}.
+    {move, {x, 1}, {y, 4}}.
+    {gc_bif, '*', {f, 0}, 0, [{y, 3}, {y, 4}], {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {gc_bif, '*', {f, 0}, 2, [{x, 1}, {float, 0.5}], {x, 0}}.
     {jump, {f, 4}}.
@@ -56,7 +58,7 @@ val Shape = enum {
     {move, {float, 0.0}, {x, 0}}.
     {jump, {f, 4}}.
   {label, 4}.
-    {deallocate, 4}.
+    {deallocate, 5}.
     return.
 ```
 

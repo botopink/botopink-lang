@@ -26,20 +26,23 @@ fn main() {
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, maybeFail}, 1}.
   {label, 3}.
-    {allocate, 0, 1}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
     {test, is_eq, {f, 10}, [{x, 0}, {atom, true}]}.
     {move, {literal, <<"boom">>}, {x, 0}}.
-    {move, {x, 0}, {x, 2}}.
-    {test_heap, 3, 3}.
-    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 2}]}}.
-    {deallocate, 0}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
+    {deallocate, 1}.
     return.
   {label, 10}.
     {move, {integer, 42}, {x, 0}}.
-    {move, {x, 0}, {x, 2}}.
-    {test_heap, 3, 3}.
-    {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 2}]}}.
-    {deallocate, 0}.
+    {move, {x, 0}, {x, 1}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{atom, ok}, {x, 1}]}}.
+    {deallocate, 1}.
     return.
 
 {function, main, 0, 5}.
@@ -50,8 +53,8 @@ fn main() {
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {atom, false}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {x, 1}, {x, 0}}.
     {call, 1, {f, 3}}.
     {test, is_tagged_tuple, {f, 11}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
@@ -87,9 +90,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc +from_asm):
-main:1: function maybeFail/1+9:
-  Internal consistency check failed - please report this bug.
-  Instruction: {test_heap,3,3}
-  Error:       {{x,1},not_live}:
+42
 ```

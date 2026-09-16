@@ -36,32 +36,36 @@ fn isOdd(n: i32) -> bool {
     {line, [{location, "main.erl", 2}]}.
     {func_info, {atom, main}, {atom, isEven}, 1}.
   {label, 5}.
-    {allocate, 0, 1}.
-    {test, is_eq, {f, 12}, [{x, 0}, {integer, 0}]}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {test, is_eq, {f, 12}, [{y, 0}, {integer, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {deallocate, 0}.
+    {deallocate, 1}.
     return.
   {label, 12}.
-    {gc_bif, '-', {f, 0}, 1, [{x, 0}, {integer, 1}], {x, 0}}.
+    {gc_bif, '-', {f, 0}, 0, [{y, 0}, {integer, 1}], {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 1}, {x, 0}}.
-    {call_last, 1, {f, 7}, 0}.
+    {call_last, 1, {f, 7}, 1}.
 
 {function, isOdd, 1, 7}.
   {label, 6}.
     {line, [{location, "main.erl", 3}]}.
     {func_info, {atom, main}, {atom, isOdd}, 1}.
   {label, 7}.
-    {allocate, 0, 1}.
-    {test, is_eq, {f, 13}, [{x, 0}, {integer, 0}]}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {test, is_eq, {f, 13}, [{y, 0}, {integer, 0}]}.
     {move, {atom, false}, {x, 0}}.
-    {deallocate, 0}.
+    {deallocate, 1}.
     return.
   {label, 13}.
-    {gc_bif, '-', {f, 0}, 1, [{x, 0}, {integer, 1}], {x, 0}}.
+    {gc_bif, '-', {f, 0}, 0, [{y, 0}, {integer, 1}], {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 1}, {x, 0}}.
-    {call_last, 1, {f, 5}, 0}.
+    {call_last, 1, {f, 5}, 1}.
 
 {function, '_botopink_main', 0, 9}.
   {label, 8}.

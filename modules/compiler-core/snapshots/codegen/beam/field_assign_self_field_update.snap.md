@@ -22,9 +22,9 @@ val Counter = record {
   {label, 3}.
     {allocate, 0, 0}.
     {move, {integer, 1}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
     {move, {atom, self}, {x, 0}}.
-    {put_map_exact, {f, 0}, {x, 0}, {x, 0}, 1, {list, [{atom, count}, {x, 0}]}}.
+    {put_map_exact, {f, 0}, {x, 0}, {x, 0}, 2, {list, [{atom, count}, {x, 1}]}}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 0}.
     return.

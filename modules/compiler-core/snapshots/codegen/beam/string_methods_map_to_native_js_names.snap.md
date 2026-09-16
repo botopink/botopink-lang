@@ -55,14 +55,14 @@ fn main() {
     {put_list, {x, 1}, nil, {x, 1}}.
     {call_ext, 2, {extfunc, io, format, 2}}.
     {move, {y, 0}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
-    {move, {integer, 5}, {x, 0}}.
+    {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {x, 2}}.
-    {move, {x, 0}, {x, 0}}.
-    {move, {x, 1}, {x, 1}}.
-    {move, {x, 2}, {x, 2}}.
+    {move, {integer, 5}, {x, 0}}.
+    {move, {x, 0}, {x, 3}}.
+    {move, {x, 1}, {x, 0}}.
+    {move, {x, 2}, {x, 1}}.
+    {move, {x, 3}, {x, 2}}.
     %% unresolved method call: slice/3
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"~p~n">>}, {x, 0}}.

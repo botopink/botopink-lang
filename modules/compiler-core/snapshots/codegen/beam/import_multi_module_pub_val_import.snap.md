@@ -16,6 +16,7 @@ pub val HOST = "localhost";
     {line, [{location, "config.erl", 1}]}.
     {func_info, {atom, config}, {atom, 'PORT'}, 0}.
   {label, 3}.
+    {allocate, 0, 0}.
     {move, {integer, 8080}, {x, 0}}.
     {deallocate, 0}.
     return.
@@ -25,6 +26,7 @@ pub val HOST = "localhost";
     {line, [{location, "config.erl", 2}]}.
     {func_info, {atom, config}, {atom, 'HOST'}, 0}.
   {label, 5}.
+    {allocate, 0, 0}.
     {move, {literal, <<"localhost">>}, {x, 0}}.
     {deallocate, 0}.
     return.
@@ -53,7 +55,8 @@ val port = PORT;
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, addr}, 0}.
   {label, 3}.
-    {move, {atom, 'HOST'}, {x, 0}}.
+    {allocate, 0, 0}.
+    {call_ext, 0, {extfunc, config, 'HOST', 0}}.
     {deallocate, 0}.
     return.
 
@@ -62,7 +65,8 @@ val port = PORT;
     {line, [{location, "main.erl", 2}]}.
     {func_info, {atom, main}, {atom, port}, 0}.
   {label, 5}.
-    {move, {atom, 'PORT'}, {x, 0}}.
+    {allocate, 0, 0}.
+    {call_ext, 0, {extfunc, config, 'PORT', 0}}.
     {deallocate, 0}.
     return.
 ```

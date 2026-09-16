@@ -17,11 +17,13 @@ fn process(f: syntax fn(x: i32) -> i32) -> i32 {
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, process}, 1}.
   {label, 3}.
-    {allocate, 0, 1}.
-    {move, {x, 0}, {x, 1}}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
     {move, {integer, 5}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
     {call_fun, 1}.
-    {deallocate, 0}.
+    {deallocate, 1}.
     return.
 ```
 

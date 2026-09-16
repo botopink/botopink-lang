@@ -25,16 +25,19 @@ fn process(x: i32) -> string {
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, process}, 1}.
   {label, 3}.
-    {allocate, 0, 1}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
     {test, is_eq, {f, 5}, [{x, 0}, {integer, 0}]}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 1}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 7}, 0, 0, {x, 0}, {list, []}}.
     {jump, {f, 4}}.
   {label, 5}.
     {move, {literal, <<"non-zero">>}, {x, 0}}.
     {jump, {f, 4}}.
   {label, 4}.
-    {deallocate, 0}.
+    {deallocate, 1}.
     return.
 
 {function, '-process/1-fun-0-', 0, 7}.

@@ -23,7 +23,10 @@ fn main() {
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, getValue}, 1}.
   {label, 3}.
-    {allocate, 0, 1}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
     {test, is_map, {f, 10}, [{x, 0}]}.
     {get_map_elements, {f, 10}, {x, 0}, {list, [{atom, inner}, {x, 0}]}}.
   {label, 10}.
@@ -37,7 +40,7 @@ fn main() {
   {label, 12}.
     {move, {atom, undefined}, {x, 0}}.
   {label, 13}.
-    {deallocate, 0}.
+    {deallocate, 1}.
     return.
 
 {function, main, 0, 5}.

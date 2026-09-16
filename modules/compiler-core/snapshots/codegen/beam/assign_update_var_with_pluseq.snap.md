@@ -24,8 +24,8 @@ fn main() {
     {move, {integer, 0}, {x, 0}}.
     {move, {x, 0}, {y, 0}}.
     {move, {integer, 1}, {x, 0}}.
-    {move, {x, 0}, {x, 0}}.
-    {gc_bif, '+', {f, 0}, 1, [{y, 0}, {x, 0}], {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {gc_bif, '+', {f, 0}, 2, [{y, 0}, {x, 1}], {x, 0}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.

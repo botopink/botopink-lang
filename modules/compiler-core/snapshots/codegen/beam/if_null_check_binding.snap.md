@@ -20,14 +20,17 @@ fn getName(name: ?string) -> string {
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, getName}, 1}.
   {label, 3}.
-    {allocate, 0, 1}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
     {test, is_eq, {f, 4}, [{x, 0}, {atom, true}]}.
     {move, {atom, n}, {x, 0}}.
-    {deallocate, 0}.
+    {deallocate, 1}.
     return.
   {label, 4}.
     {move, {literal, <<"unknown">>}, {x, 0}}.
-    {deallocate, 0}.
+    {deallocate, 1}.
     return.
 ```
 

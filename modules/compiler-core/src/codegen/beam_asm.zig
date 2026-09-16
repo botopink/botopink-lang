@@ -264,7 +264,10 @@ fn collectExtensionExports(
 fn destructYSlots(pattern: ast.ParamDestruct) u32 {
     return switch (pattern) {
         .names => |n| @intCast(n.fields.len),
-        .tuple_ => |bindings| @intCast(bindings.len),
+        // One extra slot: the tuple itself is parked on the stack while
+        // `erlang:element/2` is called once per binding (a `call_ext` frees
+        // every x-register, so an x-scratch would not survive the first one).
+        .tuple_ => |bindings| @intCast(bindings.len + 1),
         else => 0,
     };
 }
@@ -697,6 +700,11 @@ const Emitter = struct {
     /// receiver names one (`Response.ok(...)`) lowers to a remote `call_ext`
     /// into the owner (`http:'Response_ok'(...)`).
     imported_types: std.StringHashMap([]const u8),
+    /// Nullary enum variant names (`Lt`, `Ok`, …) declared in this module. A
+    /// bare `.ident` case pattern naming one is a match test against the
+    /// variant atom; anything else is a binding. Populated by
+    /// `collectRecordShapes`.
+    enum_variants: std.StringHashMap(void),
     /// Interface associated `default fn` qualified names (`"Array.range"`). Pure
     /// botopink, emitted as local mangled fns (`'Array_range'`) since the
     /// interface decl is inlined into each consuming module; an
@@ -753,6 +761,7 @@ const Emitter = struct {
             .ext_by_name = std.StringHashMap(ExtInfo).init(alloc),
             .record_fields = std.StringHashMap([]const []const u8).init(alloc),
             .imported_types = std.StringHashMap([]const u8).init(alloc),
+            .enum_variants = std.StringHashMap(void).init(alloc),
             .interface_assoc = std.StringHashMap(void).init(alloc),
             .prim_erlang_dispatch = std.StringHashMap(PrimErlangCall).init(alloc),
             .prim_beam_templates = std.StringHashMap([]const u8).init(alloc),
@@ -772,6 +781,7 @@ const Emitter = struct {
         while (rf.next()) |names| self.alloc.free(names.*);
         self.record_fields.deinit();
         self.imported_types.deinit();
+        self.enum_variants.deinit();
         var ia = self.interface_assoc.keyIterator();
         while (ia.next()) |k| self.alloc.free(k.*);
         self.interface_assoc.deinit();
@@ -989,6 +999,10 @@ const Emitter = struct {
                 for (r.fields, 0..) |f, i| fields[i] = f.name;
                 try self.record_fields.put(r.name, fields);
             },
+            // A nullary enum variant is an atom, so a bare `Lt ->` case arm is a
+            // *test* against that atom, not a binding. Parity with the erlang
+            // backend's `enum_variants` (`erlang.zig` `collectTypeShapes`).
+            .@"enum" => |e| for (e.variants) |v| try self.enum_variants.put(v.name, {}),
             else => {},
         };
         const xc = self.cross orelse return;
@@ -1573,9 +1587,17 @@ const Emitter = struct {
         try self.lowerExprIntoX0(value);
         switch (pattern) {
             .names => |n| {
+                // `is_map` first: the subject is typed `any` whenever it comes
+                // from a call, and the loader rejects a bare `get_map_elements`
+                // on an untyped register (`bad_type, needed t_map`). Same
+                // narrowing `lowerIdentAccess` does for a field read.
+                const scratch = self.scratchBase();
+                try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
+                const not_map = self.allocLabel();
+                const done = self.allocLabel();
+                const first_y = self.next_y;
+                try self.bodyPrint("    {{test, is_map, {{f, {d}}}, [{{x, {d}}}]}}.\n", .{ not_map, scratch });
                 for (n.fields) |fld| {
-                    const scratch = self.scratchBase();
-                    try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch});
                     const fail = self.allocLabel();
                     try self.bodyPrint(
                         "    {{get_map_elements, {{f, {d}}}, {{x, {d}}}, {{list, [{{atom, {f}}}, {{x, 0}}]}}}}.\n",
@@ -1586,20 +1608,39 @@ const Emitter = struct {
                     self.next_y += 1;
                     try self.reg_map.put(fld.bind_name, .{ .y = y_idx });
                     try self.bodyPrint("    {{move, {{x, 0}}, {{y, {d}}}}}.\n", .{y_idx});
-                    try self.bodyPrint("    {{move, {{x, {d}}}, {{x, 0}}}}.\n", .{scratch});
                 }
+                // The not-a-map arm has to write every binding slot too: the
+                // validator merges both paths and rejects a later read of a slot
+                // one of them left unwritten (`{unassigned, {y, 1}}`) — the
+                // function-entry `init_yregs` does not satisfy it.
+                try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{done});
+                try self.bodyPrint("  {{label, {d}}}.\n", .{not_map});
+                for (0..n.fields.len) |k| {
+                    try self.bodyPrint("    {{move, {{atom, undefined}}, {{y, {d}}}}}.\n", .{first_y + k});
+                }
+                try self.bodyPrint("  {{label, {d}}}.\n", .{done});
+                try self.bodyPrint("    {{move, {{x, {d}}}, {{x, 0}}}}.\n", .{scratch});
             },
             .tuple_ => |bindings| {
+                // `erlang:element/2` rather than `get_tuple_element`: the
+                // subject is typed `any` whenever it comes from a call, and the
+                // loader wants a statically known tuple arity for the raw
+                // instruction (`bad_type, needed t_tuple`). The subject is
+                // parked in a y-slot because each `call_ext` frees the whole
+                // x-file. `destructYSlots` reserves that extra slot.
+                const subj_y = self.next_y;
+                self.next_y += 1;
+                try self.bodyPrint("    {{move, {{x, 0}}, {{y, {d}}}}}.\n", .{subj_y});
                 for (bindings, 0..) |name, i| {
-                    try self.bodyPrint(
-                        "    {{get_tuple_element, {{x, 0}}, {d}, {{x, 1}}}}.\n",
-                        .{i},
-                    );
+                    try self.bodyPrint("    {{move, {{integer, {d}}}, {{x, 0}}}}.\n", .{i + 1});
+                    try self.bodyPrint("    {{move, {{y, {d}}}, {{x, 1}}}}.\n", .{subj_y});
+                    try self.bodyWrite("    {call_ext, 2, {extfunc, erlang, element, 2}}.\n");
                     const y_idx = self.next_y;
                     self.next_y += 1;
                     try self.reg_map.put(name, .{ .y = y_idx });
-                    try self.bodyPrint("    {{move, {{x, 1}}, {{y, {d}}}}}.\n", .{y_idx});
+                    try self.bodyPrint("    {{move, {{x, 0}}, {{y, {d}}}}}.\n", .{y_idx});
                 }
+                try self.bodyPrint("    {{move, {{y, {d}}}, {{x, 0}}}}.\n", .{subj_y});
             },
             else => try self.bodyWrite("    %% unsupported destructure pattern\n"),
         }
@@ -1785,6 +1826,19 @@ const Emitter = struct {
                         try self.bodyPrint("    {{move, {{atom, '{s}'}}, {{x, 0}}}}.\n", .{val});
                         return;
                     }
+                    // A module-level `val` is emitted as a 0-arity function, so a
+                    // bare reference is a call — local for this module's own
+                    // vals, remote for an imported `pub val` (which used to
+                    // lower to the bare atom `'HOST'`).
+                    if (self.crossOwnerOf(n, .val)) |owner| {
+                        var name_buf: [256]u8 = undefined;
+                        const val_atom = atomName(n, &name_buf) catch n;
+                        try self.bodyPrint(
+                            "    {{call_ext, 0, {{extfunc, {f}, {s}, 0}}}}.\n",
+                            .{ erlEmitter.atom(owner), val_atom },
+                        );
+                        return;
+                    }
                     try beamEmitter.writeMove(self.out, Term.atomOf(n), 0);
                     return;
                 },
@@ -1793,7 +1847,7 @@ const Emitter = struct {
                     return;
                 },
                 .identAccess => |ia| {
-                    try self.lowerIdentAccess(ia, 0);
+                    try self.lowerIdentAccess(ia, id.loc, 0);
                     return;
                 },
             },
@@ -1807,7 +1861,11 @@ const Emitter = struct {
                     return;
                 },
                 .null_ => {
-                    try self.bodyWrite("    {move, {atom, nil}, {x, 0}}.\n");
+                    // `undefined`, not `nil`: `nil` is the empty *list* on BEAM,
+                    // and the `@Option` helpers here (and the erlang backend's
+                    // `.null_ => A("undefined")`) test absence against
+                    // `undefined`.
+                    try self.bodyWrite("    {move, {atom, undefined}, {x, 0}}.\n");
                     return;
                 },
                 .stringLit => |s| {
@@ -2375,10 +2433,14 @@ const Emitter = struct {
                     for (cc.trailing, 0..) |trail, j| {
                         // Positional args sit in scratch..scratch+args.len-1 and
                         // earlier trailing funs in the slots after — all must
-                        // survive the closure's test_heap.
-                        _ = self.raiseLive(@intCast(scratch + cc.args.len + j));
-                        try self.lowerLambda(trail, @intCast(scratch + cc.args.len + j));
-                        try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{scratch + cc.args.len + j});
+                        // survive the closure's test_heap. `Live` is a prefix
+                        // count, so before the first operand it may only be
+                        // whatever the caller already claimed.
+                        const slot = scratch + cc.args.len + j;
+                        const live: u32 = if (cc.args.len + j == 0) self.min_live else @intCast(slot);
+                        _ = self.raiseLive(live);
+                        try self.lowerLambda(trail, live);
+                        try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{slot});
                     }
                     self.min_live = saved_live;
                     for (0..total) |i| {
@@ -2487,9 +2549,43 @@ const Emitter = struct {
             }
         }
 
+        // An imported `pub fn` has no local label — it lives in the exporting
+        // module, so the call is remote (`math:double/1`). Without this the site
+        // recorded a `%% unresolved local call` comment and silently left the
+        // last staged argument in `{x, 0}`.
+        if (self.crossOwnerOf(cc.callee, .@"fn")) |owner| {
+            try self.materializeCallArgs(cc.args, cc.trailing);
+            var name_buf: [256]u8 = undefined;
+            const fn_atom = atomName(cc.callee, &name_buf) catch cc.callee;
+            switch (mode) {
+                .non_tail => try self.bodyPrint(
+                    "    {{call_ext, {d}, {{extfunc, {f}, {s}, {d}}}}}.\n",
+                    .{ arity, erlEmitter.atom(owner), fn_atom, arity },
+                ),
+                .tail => try self.bodyPrint(
+                    "    {{call_ext_last, {d}, {{extfunc, {f}, {s}, {d}}}, {d}}}.\n",
+                    .{ arity, erlEmitter.atom(owner), fn_atom, arity, self.num_y },
+                ),
+            }
+            return;
+        }
+
         try self.materializeCallArgs(cc.args, cc.trailing);
         try self.bodyPrint("    %% unresolved local call: {s}/{d}\n", .{ cc.callee, arity });
         if (mode == .tail) try self.emitReturn();
+    }
+
+    /// Owning module atom for a cross-module export of the given kind, or null
+    /// when the name is local, shadowed by a register, or exported with a
+    /// different shape.
+    fn crossOwnerOf(self: *const Emitter, name: []const u8, kind: crossModule.ExportKind) ?[]const u8 {
+        const xc = self.cross orelse return null;
+        const info = xc.exports.get(name) orelse return null;
+        if (info.kind != kind) return null;
+        const owner = crossModule.moduleBasename(info.module);
+        // A module never calls into itself remotely.
+        if (std.mem.eql(u8, owner, self.module_name)) return null;
+        return owner;
     }
 
     // ── primitive-receiver method lowering ────────────────────────────────────
@@ -3264,6 +3360,50 @@ const Emitter = struct {
             return;
         }
         if (std.mem.eql(u8, cc.callee, "print")) {
+            const tag: []const u8 = if (mode == .tail) "call_ext_only" else "call_ext";
+            // `@print(a, b, …)` prints every argument, space-separated (parity
+            // with the commonJS backend's `console.log`). Only the single-arg
+            // shape keeps the original instruction sequence, so the 200-odd
+            // one-argument snapshots stay byte-identical.
+            if (cc.args.len > 1 and cc.args.len <= 16) {
+                const n = cc.args.len;
+                const base = self.scratchBase();
+                const saved_live = self.min_live;
+                for (cc.args, 0..) |arg, i| {
+                    if (i > 0) _ = self.raiseLive(@intCast(base + i));
+                    try self.lowerExprIntoX0(arg.value.*);
+                    try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{base + i});
+                }
+                self.min_live = saved_live;
+                // Every cons cell is reserved at once: nothing between this
+                // `test_heap` and the last `put_list` can run the collector.
+                try self.bodyPrint("    {{test_heap, {d}, {d}}}.\n", .{ n * 2, base + n });
+                try self.bodyWrite("    {move, nil, {x, 0}}.\n");
+                var i = n;
+                while (i > 0) {
+                    i -= 1;
+                    try self.bodyPrint(
+                        "    {{put_list, {{x, {d}}}, {{x, 0}}, {{x, 0}}}}.\n",
+                        .{base + i},
+                    );
+                }
+                try self.bodyWrite("    {move, {x, 0}, {x, 1}}.\n");
+                var fmt_buf: [16 * 3 + 2]u8 = undefined;
+                var w: usize = 0;
+                for (0..n) |k| {
+                    if (k > 0) {
+                        fmt_buf[w] = ' ';
+                        w += 1;
+                    }
+                    @memcpy(fmt_buf[w..][0..2], "~p");
+                    w += 2;
+                }
+                @memcpy(fmt_buf[w..][0..2], "~n");
+                w += 2;
+                try beamEmitter.writeMove(self.out, Term.str(fmt_buf[0..w]), 0);
+                try self.bodyPrint("    {{{s}, 2, {{extfunc, io, format, 2}}}}.\n", .{tag});
+                return;
+            }
             if (cc.args.len > 0) {
                 try self.lowerExprIntoX0(cc.args[0].value.*);
             }
@@ -3271,7 +3411,6 @@ const Emitter = struct {
             try beamEmitter.writeMove(self.out, Term.str("~p~n"), 0);
             try self.bodyWrite("    {test_heap, 2, 2}.\n");
             try self.bodyWrite("    {put_list, {x, 1}, nil, {x, 1}}.\n");
-            const tag: []const u8 = if (mode == .tail) "call_ext_only" else "call_ext";
             try self.bodyPrint("    {{{s}, 2, {{extfunc, io, format, 2}}}}.\n", .{tag});
             return;
         }
@@ -3327,7 +3466,12 @@ const Emitter = struct {
             try self.bodyPrint("    {{test, is_tagged_tuple, {{f, {d}}}, [{{x, 0}}, 2, {{atom, ok}}]}}.\n", .{else_l});
             // Ok: extract the payload, apply the fn to it. The payload sits in
             // `{x, pstash}` and must survive the closure's `test_heap`, so raise
-            // the make_fun3 live floor across the fn lowering.
+            // the make_fun3 live floor across the fn lowering. A BEAM `Live`
+            // count is a *prefix* — claiming `{x, pstash}` also claims every
+            // register below it — so `{x, disc}` is filled with the subject
+            // first; leaving the hole made the closure's `test_heap` report
+            // `{{x, 1}, not_live}`.
+            try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{disc});
             try self.bodyPrint("    {{get_tuple_element, {{x, 0}}, 1, {{x, {d}}}}}.\n", .{pstash});
             const saved_live = self.raiseLive(pstash + 1);
             try self.lowerFnInto0(arg1);
@@ -3389,6 +3533,9 @@ const Emitter = struct {
             // None: `{x, 0}` already holds `undefined`.
             try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_l});
             try self.bodyPrint("  {{label, {d}}}.\n", .{present_l});
+            // `{x, disc}` is filled so the prefix `Live` count raised below has
+            // no uninitialized hole (see the result `map`/`flatMap` path).
+            try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{disc});
             try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{pstash});
             const saved_live = self.raiseLive(pstash + 1);
             try self.lowerFnInto0(arg1);
@@ -3473,8 +3620,13 @@ const Emitter = struct {
         }
         for (trailing, 0..) |trail, j| {
             const slot = scratch_base + args.len + j;
-            if (slot > scratch_base) _ = self.raiseLive(@intCast(slot));
-            try self.lowerLambda(trail, @intCast(slot));
+            // `Live` is a prefix count, so it may only cover x-registers that
+            // something has actually written. Before the first operand nothing
+            // has (`main/0` + a bare trailing lambda → `{{x, 0}, not_live}`);
+            // after it `{x, 0}` always holds the last lowered value.
+            const live: u32 = if (args.len + j == 0) self.min_live else @intCast(slot);
+            _ = self.raiseLive(live);
+            try self.lowerLambda(trail, live);
             try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{slot});
         }
         self.min_live = saved_min;
@@ -3609,25 +3761,48 @@ const Emitter = struct {
                 },
                 .stringLit => |s| {
                     const next = self.allocLabel();
-                    try self.bodyPrint("    {{move, {{x, 0}}, {{x, 1}}}}.\n", .{});
+                    // The subject is stashed above the live floor while `{x, 0}`
+                    // is overwritten with the literal for the comparison, and is
+                    // moved back on *both* edges: falling through to the next arm
+                    // with the literal still in `{x, 0}` made every later arm
+                    // compare literal-against-literal (`case_string_literal_patterns`
+                    // printed `hello/hi/hi`).
+                    const subj = self.scratchBase();
+                    try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{subj});
+                    const saved_live = self.raiseLive(subj + 1);
                     try self.emitStringLiteral(s, 0);
+                    self.min_live = saved_live;
                     try self.bodyPrint(
-                        "    {{test, is_eq, {{f, {d}}}, [{{x, 1}}, {{x, 0}}]}}.\n",
-                        .{next},
+                        "    {{test, is_eq, {{f, {d}}}, [{{x, {d}}}, {{x, 0}}]}}.\n",
+                        .{ next, subj },
                     );
-                    // On a match the subject is still in {x, 1} (saved above)
-                    // while {x, 0} holds the string literal from the test. A
-                    // guard stashes {x, 0} as the subject, so restore the real
-                    // subject first; unguarded arms skip this (no churn).
-                    if (arm.guard != null) try self.bodyWrite("    {move, {x, 1}, {x, 0}}.\n");
+                    try self.bodyPrint("    {{move, {{x, {d}}}, {{x, 0}}}}.\n", .{subj});
                     const guard_ctx = try self.emitGuardPre(arm.guard);
                     try self.lowerExprIntoX0(arm.body);
                     try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_label});
                     try self.emitGuardPost(guard_ctx);
                     try self.bodyPrint("  {{label, {d}}}.\n", .{next});
+                    try self.bodyPrint("    {{move, {{x, {d}}}, {{x, 0}}}}.\n", .{subj});
                 },
                 .ident => |name| {
-                    if (std.mem.eql(u8, name, "_")) {
+                    if (self.enum_variants.contains(name)) {
+                        // A nullary enum variant (`Lt ->`) is an atom to test
+                        // against, not a name to bind. Without the test the
+                        // first arm swallowed every subject
+                        // (`HttpMethod_name('Post')` returned `<<"GET">>`).
+                        var vbuf: [256]u8 = undefined;
+                        const vatom = try atomName(name, &vbuf);
+                        const next = self.allocLabel();
+                        try self.bodyPrint(
+                            "    {{test, is_eq, {{f, {d}}}, [{{x, 0}}, {{atom, {s}}}]}}.\n",
+                            .{ next, vatom },
+                        );
+                        const guard_ctx = try self.emitGuardPre(arm.guard);
+                        try self.lowerExprIntoX0(arm.body);
+                        try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_label});
+                        try self.emitGuardPost(guard_ctx);
+                        try self.bodyPrint("  {{label, {d}}}.\n", .{next});
+                    } else if (std.mem.eql(u8, name, "_")) {
                         const guard_ctx = try self.emitGuardPre(arm.guard);
                         try self.lowerExprIntoX0(arm.body);
                         try self.bodyPrint("    {{jump, {{f, {d}}}}}.\n", .{end_label});
@@ -4077,7 +4252,7 @@ const Emitter = struct {
 
     /// Lower `receiver.member` into `{x, dest}` via `{get_map_elements, ...}`.
     /// The receiver is evaluated into x0, then the field is extracted.
-    fn lowerIdentAccess(self: *Emitter, ia: anytype, dest: u32) anyerror!void {
+    fn lowerIdentAccess(self: *Emitter, ia: anytype, loc: ast.Loc, dest: u32) anyerror!void {
         // §enum-sections F4 — `<EnumName>.<UnitVariant>` resolves to the
         // variant atom (`'__500'`), not a map read on the type name. Detect
         // the shape syntactically: receiver is a bare ident, name is
@@ -4094,6 +4269,35 @@ const Emitter = struct {
                 return;
             }
         }
+        // `xs.len` / `s.length` on a primitive: inference records the receiver's
+        // primitive kind at this loc, and the member is the host length op, not
+        // a map key. Without this the `get_map_elements` path below fails its
+        // `is_map` test and falls through leaving the *receiver* in `dest`
+        // (`pts.len` printed the whole list).
+        if (self.instance_lowerings.get(loc)) |il| switch (il) {
+            .prim => |k| {
+                try self.lowerExprIntoX0(ia.receiver.*);
+                switch (k) {
+                    // `string:length/1` counts graphemes, so it has to stay a
+                    // real call (parity with the erlang backend).
+                    .string => {
+                        try self.bodyWrite("    {call_ext, 1, {extfunc, string, length, 1}}.\n");
+                        if (dest != 0) try self.bodyPrint("    {{move, {{x, 0}}, {{x, {d}}}}}.\n", .{dest});
+                    },
+                    // `length/1` is a gc_bif, not a call: a `call_ext` here would
+                    // clobber the caller-saved x-registers an enclosing argument
+                    // staging is holding (`xs.slice(1, xs.length)` lost both
+                    // staged args → `uninitialized_reg {x, 1}`).
+                    else => try self.bodyPrint(
+                        "    {{gc_bif, length, {{f, 0}}, {d}, [{{x, 0}}], {{x, {d}}}}}.\n",
+                        .{ @max(self.min_live, 1), dest },
+                    ),
+                }
+                return;
+            },
+            .record => {},
+        };
+
         try self.lowerExprIntoX0(ia.receiver.*);
 
         // `t._N` is a tuple-element access (`#(a, b)._0`), not a map field. Use the
@@ -4170,7 +4374,7 @@ const Emitter = struct {
                 .numberLit => |n| {
                     return try formatNumberInto(buf, n);
                 },
-                .null_ => return try std.fmt.bufPrint(buf, "{{atom, nil}}", .{}),
+                .null_ => return try std.fmt.bufPrint(buf, "{{atom, undefined}}", .{}),
                 else => return null,
             },
             .unaryOp => |un| switch (un.op) {

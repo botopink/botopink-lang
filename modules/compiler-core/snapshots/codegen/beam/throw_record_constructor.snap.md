@@ -20,8 +20,10 @@ fn validate(x: i32) {
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, validate}, 1}.
   {label, 3}.
-    {allocate, 0, 1}.
-    {test, is_lt, {f, 4}, [{x, 0}, {integer, 0}]}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {test, is_lt, {f, 4}, [{y, 0}, {integer, 0}]}.
     {move, {integer, 400}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"negative">>}, {x, 0}}.
@@ -32,7 +34,7 @@ fn validate(x: i32) {
   {label, 4}.
   {label, 5}.
     {move, {atom, ok}, {x, 0}}.
-    {deallocate, 0}.
+    {deallocate, 1}.
     return.
 ```
 

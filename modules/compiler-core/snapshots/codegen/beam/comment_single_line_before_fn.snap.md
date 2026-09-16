@@ -20,7 +20,7 @@ fn main() {
     {func_info, {atom, main}, {atom, main}, 0}.
   {label, 3}.
     {allocate, 0, 0}.
-    {move, {atom, nil}, {x, 0}}.
+    {move, {atom, undefined}, {x, 0}}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 0}.
     return.

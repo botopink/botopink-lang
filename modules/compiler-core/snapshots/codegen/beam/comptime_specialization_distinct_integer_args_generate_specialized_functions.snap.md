@@ -43,12 +43,13 @@ fn calculate() {
     {line, [{location, "main.erl", 2}]}.
     {func_info, {atom, main}, {atom, 'multiply_$0'}, 1}.
   {label, 5}.
-    {allocate, 1, 1}.
-    {init_yregs, {list, [{y, 0}]}}.
-    {move, {integer, 2}, {x, 0}}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
-    {gc_bif, '*', {f, 0}, 1, [{x, 0}, {y, 0}], {x, 0}}.
-    {deallocate, 1}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {gc_bif, '*', {f, 0}, 0, [{y, 0}, {y, 1}], {x, 0}}.
+    {deallocate, 2}.
     return.
 
 {function, 'multiply_$1', 1, 7}.
@@ -56,12 +57,13 @@ fn calculate() {
     {line, [{location, "main.erl", 3}]}.
     {func_info, {atom, main}, {atom, 'multiply_$1'}, 1}.
   {label, 7}.
-    {allocate, 1, 1}.
-    {init_yregs, {list, [{y, 0}]}}.
-    {move, {integer, 3}, {x, 0}}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
-    {gc_bif, '*', {f, 0}, 1, [{x, 0}, {y, 0}], {x, 0}}.
-    {deallocate, 1}.
+    {move, {integer, 3}, {x, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {gc_bif, '*', {f, 0}, 0, [{y, 0}, {y, 1}], {x, 0}}.
+    {deallocate, 2}.
     return.
 ```
 
