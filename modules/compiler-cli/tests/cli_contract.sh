@@ -1,0 +1,259 @@
+#!/usr/bin/env bash
+# The CLI command contract, end to end (specs/1.0.2-beta/02-cli-gate,
+# command-contract.md rows C1–C13). Each row builds a throwaway project, runs
+# the real `botopink` binary against it and asserts the exit code, the output
+# and what is (or is not) on disk. The flag-parser rows (C8, C10–C12, C14) also
+# have unit tests in `src/main.zig`; they are repeated here against the binary.
+#
+# Every assertion is a hard assert. A row that needs a runtime which is absent
+# (node for `botopink test`, a non-root user for the undeletable-directory row)
+# is skipped by name — never silently.
+#
+# Exit 0 = every reachable row held.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+
+# BOTOPINK_BIN points the script at another binary (e.g. one built from the
+# commit before a fix, to prove a row reds there); it implies no build.
+if [[ -z "${BOTOPINK_SKIP_BUILD:-}" && -z "${BOTOPINK_BIN:-}" ]]; then
+  echo "==> building botopink CLI"
+  ( cd "$REPO_ROOT" && zig build )
+fi
+BP="${BOTOPINK_BIN:-$REPO_ROOT/zig-out/bin/botopink}"
+if [[ ! -x "$BP" ]]; then
+  echo "error: CLI binary not found at $BP" >&2
+  exit 1
+fi
+
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/botopink-cli-contract.XXXXXX")"
+cleanup() { chmod -R u+w "$WORK" 2>/dev/null || true; rm -rf "$WORK"; }
+trap cleanup EXIT
+
+failures=0
+fail() { echo "  ✗ $*" >&2; failures=$((failures + 1)); }
+ok() { echo "  ✓ $*"; }
+skip() { echo "  ~ SKIPPED: $*"; }
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# run <dir> <args…> — runs the CLI in <dir>, captures combined output in $OUT
+# and the exit code in $CODE (never aborts the script).
+run() {
+  local dir="$1"; shift
+  set +e
+  OUT="$(cd "$dir" && "$BP" "$@" 2>&1)"
+  CODE=$?
+  set -e
+}
+
+expect_code() { # <want> <label>
+  if [[ "$CODE" -eq "$1" ]]; then ok "$2 (exit $CODE)"; else fail "$2: expected exit $1, got $CODE"; echo "$OUT" | sed 's/^/      /' >&2; fi
+}
+expect_out() { # <fixed-string> <label>
+  if grep -qF -- "$1" <<<"$OUT"; then ok "$2"; else fail "$2: output lacks '$1'"; echo "$OUT" | sed 's/^/      /' >&2; fi
+}
+expect_no_out() { # <fixed-string> <label>
+  if grep -qF -- "$1" <<<"$OUT"; then fail "$2: output unexpectedly has '$1'"; else ok "$2"; fi
+}
+
+# project <name> [target] — a fresh project directory with a botopink.json.
+project() {
+  local dir="$WORK/$1"
+  rm -rf "$dir"; mkdir -p "$dir/src"
+  printf '{ "name": "%s", "version": "0.1.0", "target": "%s" }\n' "$1" "${2:-commonJS}" >"$dir/botopink.json"
+  echo "$dir"
+}
+
+MAIN_OK='pub fn main() {
+    print("hello");
+}
+'
+BROKEN='pub fn f() {
+    noSuchFunction();
+}
+'
+
+# ── C1 — build fails, naming the module that produced no artifact ────────────
+echo "==> C1 build exits 1 after a module fails to type-check"
+P="$(project c1)"
+printf 'pub mod broken;\n\n%s' "$MAIN_OK" >"$P/src/main.bp"
+printf '%s' "$BROKEN" >"$P/src/broken.bp"
+run "$P" build
+expect_code 1 "build"
+expect_out "failed to compile: broken" "names the dropped module"
+expect_out "src/broken.bp:2:5" "locates the diagnostic"
+expect_out "unbound variable 'noSuchFunction'" "renders the type error"
+
+# ── C2 — no stale artifact survives a failed build ───────────────────────────
+echo "==> C2 a failed rebuild leaves no stale artifact for run"
+P="$(project c2)"
+printf 'pub fn main() {\n    print("stale build v1");\n}\n' >"$P/src/main.bp"
+run "$P" build
+expect_code 0 "v1 build"
+printf 'pub fn main() {\n    noSuchFunction();\n}\n' >"$P/src/main.bp"
+run "$P" build
+expect_code 1 "broken rebuild"
+[[ ! -e "$P/out/main.js" ]] && ok "out/main.js removed" || fail "out/main.js from v1 survived the failed build"
+run "$P" run
+expect_code 1 "run after a failed build"
+expect_no_out "stale build v1" "run does not execute the stale artifact"
+
+# ── C5 / C6 / C7 — check covers test/, lex and parse errors are located ──────
+echo "==> C6 a lex error renders with file, line and excerpt on build/check/test"
+P="$(project c6)"
+printf 'pub fn main() {\n    print("unterminated);\n}\n' >"$P/src/main.bp"
+for cmd in build check test; do
+  run "$P" "$cmd"
+  expect_code 1 "$cmd on a lex error"
+  expect_out "src/main.bp:2:11" "$cmd locates the lex error"
+  expect_out 'print("unterminated);' "$cmd quotes the source line"
+done
+
+echo "==> C7 a parse error renders with file, line and excerpt on build/check/test"
+P="$(project c7)"
+printf 'pub fn main() {\n    print((1);\n}\n' >"$P/src/main.bp"
+for cmd in build check test; do
+  run "$P" "$cmd"
+  expect_code 1 "$cmd on a parse error"
+  expect_out "src/main.bp:2:" "$cmd locates the parse error"
+  expect_out "print((1);" "$cmd quotes the source line"
+done
+
+echo "==> C5 check loads test/ as well as src/"
+P="$(project c5)"
+printf '%s' "$MAIN_OK" >"$P/src/main.bp"
+mkdir -p "$P/test"
+printf 'test "broken" {\n    assert nope();\n}\n' >"$P/test/broken_test.bp"
+run "$P" check
+expect_code 1 "check on a broken test/ module"
+expect_out "test/broken_test.bp:2:12" "check locates the test/ diagnostic"
+
+# ── C3 / C4 — test runs what compiles and still fails the run ────────────────
+if have node; then
+  echo "==> C3 test runs the healthy tests and exits 1 on a broken module"
+  P="$(project c3)"
+  printf '%s\ntest "one" {\n    assert 1 == 1;\n}\n\ntest "two" {\n    assert 2 == 2;\n}\n' "$MAIN_OK" >"$P/src/main.bp"
+  mkdir -p "$P/test"
+  printf 'test "broken" {\n    assert nope();\n}\n' >"$P/test/broken_test.bp"
+  mkdir -p "$P/.botopinkbuild/test-out" && echo 'stale' >"$P/.botopinkbuild/test-out/stale.js"
+  run "$P" test
+  expect_code 1 "test"
+  expect_out "ok   one" "healthy test one ran"
+  expect_out "ok   two" "healthy test two ran"
+  expect_out "failed to compile: broken_test" "names the broken module"
+  expect_out "test/broken_test.bp:2:12" "prints the located diagnostic, not a count"
+  [[ ! -e "$P/.botopinkbuild/test-out/stale.js" ]] && ok "previous test-out artifacts removed" || fail "stale test-out artifact survived"
+
+  echo "==> C4 a from \"std\" import does not mask a broken module"
+  P="$(project c4)"
+  printf 'import {math} from "std";\npub mod broken;\n\n%s\ntest "passes" {\n    assert 1 == 1;\n}\n' "$MAIN_OK" >"$P/src/main.bp"
+  printf '%s' "$BROKEN" >"$P/src/broken.bp"
+  run "$P" test
+  expect_code 1 "test with one std import and one broken module"
+  expect_out "failed to compile: broken" "names the broken module"
+
+  echo "==> C4 no test blocks on a project that does not compile still reds"
+  P="$(project c4b)"
+  printf 'pub mod broken;\n\n%s' "$MAIN_OK" >"$P/src/main.bp"
+  printf '%s' "$BROKEN" >"$P/src/broken.bp"
+  run "$P" test
+  expect_code 1 "test without test blocks"
+else
+  skip "C3/C4 (node not on PATH — botopink test runs commonJS through node)"
+fi
+
+# ── build / check / test agree ───────────────────────────────────────────────
+echo "==> build, check and test agree on the same tree"
+P="$(project agree)"
+printf 'pub mod broken;\n\n%s' "$MAIN_OK" >"$P/src/main.bp"
+printf '%s' "$BROKEN" >"$P/src/broken.bp"
+codes=""
+for cmd in build check test; do run "$P" "$cmd"; codes="$codes$CODE"; done
+[[ "$codes" == "111" ]] && ok "broken tree: all three exit 1" || fail "broken tree: build/check/test exited $codes"
+printf '%s' "$MAIN_OK" >"$P/src/main.bp"; rm "$P/src/broken.bp"
+codes=""
+for cmd in build check test; do run "$P" "$cmd"; codes="$codes$CODE"; done
+[[ "$codes" == "000" ]] && ok "healthy tree: all three exit 0" || fail "healthy tree: build/check/test exited $codes"
+
+# ── C8 — migrate --dry-run writes nothing, wherever the flag appears ─────────
+echo "==> C8 migrate --dry-run writes nothing"
+P="$(project c8)"
+printf '%s' "$MAIN_OK" >"$P/src/main.bp"
+mkdir -p "$P/src/shapes" && printf 'pub fn area() -> i32 {\n    return 1;\n}\n' >"$P/src/shapes/circle.bp"
+before="$(cd "$P" && find src -type f | sort | xargs cat | cksum)"
+run "$P" migrate src --dry-run
+expect_code 1 "migrate with a positional is a usage error"
+run "$P" migrate --dry-run
+expect_code 0 "migrate --dry-run"
+after="$(cd "$P" && find src -type f | sort | xargs cat | cksum)"
+[[ "$before" == "$after" ]] && [[ ! -e "$P/src/shapes/mod.bp" ]] && ok "src/ untouched" || fail "migrate --dry-run wrote into src/"
+
+# ── C9 — format / format --check count an unparseable file as an error ──────
+echo "==> C9 format and format --check fail on unlexable or unparseable source"
+P="$(project c9)"
+printf 'pub fn main() {\n    print((1);\n}\n' >"$P/src/main.bp"
+run "$P" format --check
+expect_code 1 "format --check on a parse error"
+expect_out "src/main.bp:2:" "format --check locates the parse error"
+run "$P" format
+expect_code 1 "format on a parse error"
+printf 'pub fn main() {\n    print("unterminated);\n}\n' >"$P/src/main.bp"
+run "$P" format --check
+expect_code 1 "format --check on a lex error"
+
+# ── C10 — check <path> ───────────────────────────────────────────────────────
+echo "==> C10 check forwards its path argument"
+P="$(project c10)"
+printf '%s' "$BROKEN" >"$P/src/main.bp"
+run "$WORK" check /nonexistent/botopink/path
+expect_code 1 "check on a missing path"
+expect_out "/nonexistent/botopink/path" "names the path it could not enter"
+run "$WORK" check "$P"
+expect_code 1 "check <broken project>"
+expect_out "noSuchFunction" "checks the named project, not the cwd"
+
+# ── C11 — unknown flags and --flag=value ─────────────────────────────────────
+echo "==> C11 flags are never silently dropped"
+P="$(project c11)"
+printf '%s' "$MAIN_OK" >"$P/src/main.bp"
+run "$P" build --frobnicate
+expect_code 1 "build --frobnicate"
+expect_out "unknown flag '--frobnicate'" "names the unknown flag"
+run "$P" build --target=erlang --out out-eq
+expect_code 0 "build --target=erlang"
+[[ -f "$P/out-eq/main.erl" && ! -e "$P/out-eq/main.js" ]] && ok "--target=erlang honoured" || fail "--target=erlang did not produce out-eq/main.erl"
+run "$P" test --target wasm2
+expect_code 1 "test --target wasm2"
+
+# ── C12 — new --target and an unsupported manifest target ────────────────────
+echo "==> C12 unsupported targets are rejected"
+run "$WORK" new badtarget --target frobnicate
+expect_code 1 "new --target frobnicate"
+[[ ! -e "$WORK/badtarget" ]] && ok "nothing scaffolded" || fail "new scaffolded a project with an unsupported target"
+P="$(project c12 frobnicate)"
+printf '%s' "$MAIN_OK" >"$P/src/main.bp"
+run "$P" build
+expect_code 1 "build with \"target\": \"frobnicate\""
+expect_out "unsupported target 'frobnicate'" "names the manifest target"
+[[ ! -e "$P/out/main.js" ]] && ok "no commonJS fallback artifact" || fail "unsupported manifest target degraded to commonJS"
+
+# ── C13 — clean reports a failed delete ──────────────────────────────────────
+echo "==> C13 clean exits 1 when a delete fails"
+if [[ "$(id -u)" -eq 0 ]]; then
+  skip "C13 (running as root — permissions cannot make a directory undeletable)"
+else
+  P="$WORK/c13"; mkdir -p "$P/out/sub"
+  chmod 555 "$P/out"
+  run "$P" clean
+  chmod 755 "$P/out"
+  expect_code 1 "clean with an undeletable out/"
+  expect_no_out "Removed out/" "does not claim out/ was removed"
+fi
+
+echo
+if [[ "$failures" -gt 0 ]]; then
+  echo "==> cli contract: $failures assertion(s) FAILED" >&2
+  exit 1
+fi
+echo "==> cli contract: OK"

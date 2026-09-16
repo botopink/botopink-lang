@@ -14,6 +14,8 @@ const config = @import("./config.zig");
 const scanner = @import("./scanner.zig");
 const sources = @import("./sources.zig");
 const libs = @import("./libs.zig");
+const build_cmd = @import("./build.zig");
+const diagnostics = @import("./diagnostics.zig");
 
 // ── Options ───────────────────────────────────────────────────────────────────
 
@@ -55,7 +57,10 @@ pub fn run(
         return 1;
     };
 
-    const target = opts.target orelse proj.parsedTarget();
+    const target = opts.target orelse proj.parsedTarget() orelse {
+        build_cmd.reportUnsupportedTarget(proj.target);
+        return 1;
+    };
     if (target != .commonJS and target != .erlang) {
         reporter.errMsg("`botopink test` currently supports only the commonJS and erlang targets");
         reporter.hintMsg("run with `--target commonJS` or set \"target\": \"commonJS\" in botopink.json");
@@ -84,15 +89,7 @@ pub fn run(
     // compiled first (their types/exports must resolve before the project), but
     // their OWN `test {}` blocks are not run — only the project's are.
     const dep_modules = libs.loadDependencies(gpa, io, proj.dependencies, env_map) catch |err| {
-        switch (err) {
-            error.LibsRootNotFound => {
-                reporter.errMsg("project declares dependencies but no libs/ directory was found in this or any parent directory");
-                reporter.hintMsg("if your botopink.json uses the new object form ({\"<name>\": {\"git\": ...}}), run `bpmp install` to fetch deps into $BPMP_HOME first");
-            },
-            error.LibNotFound => reporter.errMsg("a declared dependency was not found under the libs root"),
-            error.LibManifestInvalid => reporter.errMsg("a dependency's botopink.json is invalid"),
-            else => reporter.errMsg("failed to load project dependencies"),
-        }
+        build_cmd.reportDependencyError(err);
         return 1;
     };
     defer libs.freeModules(gpa, dep_modules);
@@ -107,9 +104,14 @@ pub fn run(
         if (!d.declaration) try real_deps.append(arena, d);
     }
 
-    const modules = try std.mem.concat(arena, bp.Module, &.{ real_deps.items, src_modules, test_modules });
+    const all_modules = try std.mem.concat(arena, bp.Module, &.{ real_deps.items, src_modules, test_modules });
 
-    reporter.compiling(modules.len);
+    reporter.compiling(all_modules.len);
+
+    // A module that does not lex or parse is reported with its location and
+    // left out, so every module that does compile still has its tests run.
+    const pre = try diagnostics.preflight(arena, gpa, io, all_modules);
+    const modules = pre.ok;
 
     // Build codegen config in test mode.
     const cfg = bp.codegen.Config{
@@ -132,29 +134,20 @@ pub fn run(
         outputs.deinit(gpa);
     }
 
-    // Check for comptime errors in outputs.
-    var had_error = false;
-    for (outputs.items) |o| {
-        if (o.result.comptime_err) |ce| {
-            had_error = true;
-            const rendered = ce.renderAlloc(gpa, o.src) catch continue;
-            defer gpa.free(rendered);
-            std.debug.print("{s}", .{rendered});
-        }
+    // The guard compares the *named* module set handed to the compiler with the
+    // named set it returned — a count would be inflated by every `from "std"`
+    // module `generate` pulls in, which is how a broken module used to pass. A
+    // module that failed is diagnosed here (file, line, excerpt) but does not
+    // stop the modules that compiled from running their tests.
+    const missing = try diagnostics.missingOutputs(arena, modules, outputs.items);
+    if (missing.len > 0) {
+        diagnostics.explainFailures(gpa, io, arena, modules, diagnostics.comptimeTargetName(target));
     }
-    if (had_error) return 1;
+    const failed = try std.mem.concat(arena, []const u8, &.{ pre.failed, missing });
 
-    // Modules with parse/type errors produce no output at all — surface that
-    // instead of silently skipping their tests.
-    if (outputs.items.len < modules.len) {
-        const msg = try std.fmt.allocPrint(
-            arena,
-            "{d} module(s) failed to compile — run `botopink check` for diagnostics",
-            .{modules.len - outputs.items.len},
-        );
-        reporter.errMsg(msg);
-        return 1;
-    }
+    // Start from an empty artifact tree: a previous run's artifact of a module
+    // that no longer compiles must not be found (or run) by this one.
+    std.Io.Dir.cwd().deleteTree(io, TEST_OUT_DIR) catch {};
 
     // Write every module's test-mode artifact (test modules `require` their
     // sibling modules on commonJS), then run each module that contains tests.
@@ -175,6 +168,7 @@ pub fn run(
     };
 
     for (outputs.items) |o| {
+        if (o.result.comptime_err != null) continue;
         const sub_path = try std.fmt.allocPrint(arena, TEST_OUT_DIR ++ "/{s}{s}", .{ o.name, ext });
         if (std.fs.path.dirname(sub_path)) |parent| {
             std.Io.Dir.cwd().createDirPath(io, parent) catch |err| switch (err) {
@@ -211,6 +205,7 @@ pub fn run(
             // mid-aggregator-build — the circular `require("./module")` would then
             // see an empty object and its side effects would crash. Exclude them.
             if (isTestModule(o.name, test_modules)) continue;
+            if (o.result.comptime_err != null) continue;
             try agg.appendSlice(arena, ", require(\"./");
             try agg.appendSlice(arena, o.name);
             try agg.appendSlice(arena, ".js\")");
@@ -253,6 +248,7 @@ pub fn run(
         // Dependency modules are compiled for their exports, not tested here —
         // run only the project's own `test {}` blocks.
         if (isDepModule(o.name, real_deps.items)) continue;
+        if (o.result.comptime_err != null) continue;
         // Modules without test blocks have no runner — skip them.
         if (std.mem.indexOf(u8, o.result.js, "__bp_run_tests") == null) continue;
         any_tests = true;
@@ -327,9 +323,14 @@ pub fn run(
         std.Io.File.stdout().writeStreamingAll(io, buf.items) catch {};
     }
 
-    if (!any_tests) {
-        reporter.stdout(io, "no test blocks found\n");
-        return 0;
+    diagnostics.reportOrphans(arena, src_loaded.orphans.len);
+
+    if (!any_tests) reporter.stdout(io, "no test blocks found\n");
+
+    // A module that failed to compile fails the run, whatever the tests did.
+    if (failed.len > 0) {
+        diagnostics.reportFailedModules(arena, failed);
+        return 1;
     }
 
     return exit_code;

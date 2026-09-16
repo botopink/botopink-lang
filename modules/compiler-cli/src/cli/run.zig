@@ -11,6 +11,8 @@ const libs = @import("./libs.zig");
 pub const Options = struct {
     target: ?config.Target = null,
     module: []const u8 = "main",
+    /// Output directory `build` writes and `run` executes from.
+    out_dir: []const u8 = "out",
     extra_args: []const []const u8 = &.{},
 };
 
@@ -36,19 +38,17 @@ pub fn run(
         return 1;
     };
 
-    const target = opts.target orelse proj.parsedTarget();
+    const target = opts.target orelse proj.parsedTarget() orelse {
+        build_cmd.reportUnsupportedTarget(proj.target);
+        return 1;
+    };
 
-    // Build first.
-    const build_exit = try build_cmd.run(gpa, io, .{ .target = target }, env_map);
+    // Build first, into the same directory the entry point is read from.
+    const build_exit = try build_cmd.run(gpa, io, .{ .target = target, .out_dir = opts.out_dir }, env_map);
     if (build_exit != 0) return build_exit;
 
     // Resolve the entry-point file path.
-    const entry_path = switch (target) {
-        .commonJS => try std.fmt.allocPrint(arena, "out/{s}.js", .{opts.module}),
-        .erlang => try std.fmt.allocPrint(arena, "out/{s}.erl", .{opts.module}),
-        .beam => try std.fmt.allocPrint(arena, "out/{s}.S", .{opts.module}),
-        .wasm => try std.fmt.allocPrint(arena, "out/{s}.wat", .{opts.module}),
-    };
+    const entry_path = try std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ opts.out_dir, opts.module, build_cmd.artifactExt(target) });
 
     // BEAM assembly is an artifact — direct execution requires `erlc +from_asm`
     // followed by an `erl` invocation. Tooling integration arrives in Fase 9.

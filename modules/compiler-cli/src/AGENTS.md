@@ -20,16 +20,22 @@ src/
 
 | File | Role |
 |---|---|
-| `main.zig` | Parses `botopink <command> [options]` and calls into `cli/<command>.zig`. Owns `VERSION` and the `HELP` text. Commands: `build`, `check`, `run`, `test`, `format` (alias `fmt`), `new`, `clean`, `migrate`, `help` (`--help`/`-h`), `version` (`--version`/`-v`). |
+| `main.zig` | Parses `botopink <command> [options]` and calls into `cli/<command>.zig`. Owns `VERSION` and the `HELP` text. Commands: `build`, `check`, `run`, `test`, `format` (alias `fmt`), `new`, `clean`, `migrate`, `help` (`--help`/`-h`), `version` (`--version`/`-v`). Carries the unit tests for every parser (contract rows C8, C10–C12, C14). |
 
 ## Development notes
 
-- `main.zig` keeps a `parseXxxOpts(...)` helper per command with options
-  (`parseBuildOpts`, `parseRunOpts`, `parseTestOpts`, `parseFormatOpts`,
-  `parseNewOpts`; `migrate` reads `--dry-run` inline) — keep them deterministic
-  and side-effect free.
-- When command flags change, update **both** the parser and the `HELP` block
-  in `main.zig` together (e.g. `test --json` is parsed but not yet listed in `HELP`).
+- `main.zig` keeps a `parseXxxOpts(...)` helper per command (`parseBuildOpts`,
+  `parseCheckOpts`, `parseRunOpts`, `parseTestOpts`, `parseFormatOpts`,
+  `parseNewOpts`, `parseMigrateOpts`, `parseNoOpts` for `clean`) — pure: they
+  return `ArgError` with the offending token in `ArgDiag`, and `usageError`
+  prints it (exit 1). **No parser drops a token**: an unknown flag, an
+  unexpected positional or an unsupported target is an error. `--flag=value`
+  is accepted wherever `--flag value` is.
+- Parsed option lists (`run` extra args, `format` files) are allocated in the
+  process arena, so no command frees them and the parsers run leak-free under
+  `std.testing.allocator`.
+- When command flags change, update **both** the parser, its unit test and the
+  `HELP` block in `main.zig` together.
 - User-facing output flows through `cli/reporter.zig` (`reporter.stdout`,
   `errMsg`, `hintMsg`, …).
 - `main.zig` is also the root of the CLI test module, so every `test {}` block
