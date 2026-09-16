@@ -52,7 +52,38 @@ fn createMissingEnabled() bool {
     return std.process.Environ.containsUnemptyConstant(std.testing.environ, CREATE_ENV);
 }
 
+/// `BOTOPINK_SNAP_TRACE=<file>` — mirrors `compiler-core/src/utils/snap.zig`:
+/// append `<absolute snapshot path> TAB - TAB -` for every checked snapshot
+/// (`O_APPEND`, one `write` per line, so it shares the file with the
+/// compiler-core test binary running at the same time). The LSP asserts take a
+/// literal slug instead of `@src()`, so the test location is `-`;
+/// `scripts/snap_audit.sh --mode=review` resolves it from the slug literal.
+const TRACE_ENV = "BOTOPINK_SNAP_TRACE";
+
+fn traceRecord(allocator: std.mem.Allocator, snap_path: []const u8) !void {
+    if (@import("builtin").os.tag == .windows) return;
+    const trace_path = std.testing.environ.getPosix(TRACE_ENV) orelse return;
+    if (trace_path.len == 0) return;
+
+    const io = std.testing.io;
+    const cwd = try std.process.currentPathAlloc(io, allocator);
+    defer allocator.free(cwd);
+    const line = try std.fmt.allocPrint(allocator, "{s}/{s}\t-\t-\n", .{ cwd, snap_path });
+    defer allocator.free(line);
+
+    const fd = try std.posix.openat(std.posix.AT.FDCWD, trace_path, .{
+        .ACCMODE = .WRONLY,
+        .CREAT = true,
+        .APPEND = true,
+        .CLOEXEC = true,
+    }, 0o644);
+    const file: std.Io.File = .{ .handle = fd, .flags = .{ .nonblocking = false } };
+    defer file.close(io);
+    try file.writeStreamingAll(io, line);
+}
+
 fn compareOrCreate(allocator: std.mem.Allocator, snap_path: []const u8, got: []const u8) !void {
+    try traceRecord(allocator, snap_path);
     const existing = readFile(allocator, snap_path) catch |err| switch (err) {
         error.FileNotFound => {
             if (createMissingEnabled()) {
@@ -450,7 +481,7 @@ pub fn assertSemanticTokens(
                 .{ proto.SemanticTokenModifiers.declaration, "declaration" },
                 .{ proto.SemanticTokenModifiers.readonly, "readonly" },
                 .{ proto.SemanticTokenModifiers.defaultLibrary, "defaultLibrary" },
-                .{ proto.SemanticTokenModifiers.@"async", "async" },
+                .{ proto.SemanticTokenModifiers.async, "async" },
             }) |m| {
                 if (t.mods & m[0] != 0) {
                     if (!first) try buf.appendSlice(gpa, ",");

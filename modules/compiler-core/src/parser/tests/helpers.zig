@@ -74,6 +74,8 @@ pub fn slugFromSrc(comptime loc: std.builtin.SourceLocation) []const u8 {
 }
 
 pub fn assertParser(allocator: Allocator, comptime loc: std.builtin.SourceLocation, src: []const u8) !void {
+    const trace_prev = snapMod.traceEnter(loc);
+    defer snapMod.traceLeave(trace_prev);
     var l = Lexer.init(src);
     const tokens = try l.scanAll(allocator);
     defer l.deinit(allocator);

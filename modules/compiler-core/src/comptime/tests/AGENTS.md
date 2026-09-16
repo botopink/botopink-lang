@@ -51,3 +51,7 @@ When adding a test file here, register it in `../tests.zig` or it will not run.
   reuse — both texts stay in sync by construction.
 - `BOTOPINK_SNAP_CREATE=1` is required to record a *missing* snapshot
   (`utils/snap.zig`).
+- `assertComptimeAstExpecting` and `assertTypeErrorSnap` (and the one direct
+  `checkText` in `templates.zig`) wrap their snapshot calls in
+  `snapMod.traceEnter(loc)`/`traceLeave`, so `BOTOPINK_SNAP_TRACE=<file>` records
+  the test `file:line`. A new snapshot-writing helper must do the same.
