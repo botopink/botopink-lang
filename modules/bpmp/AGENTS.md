@@ -41,8 +41,9 @@ modules/bpmp/
     ├── lockfile.zig     ← botopink.lock.json read/write (schema-versioned)
     ├── lock.zig         ← botopink.lock read/write (object-form libs)
     ├── dep/spec.zig     ← DepSpec / DepEntry mirror of compiler-cli `config.zig`
-    ├── dep/clone.zig    ← `git clone --depth 1 [--branch …]` + atomic rename into the store
-    ├── dep/resolver.zig ← plan one Action per DepEntry (clone / reuse_cas / path_symlink / skip_legacy)
+    ├── dep/clone.zig    ← `git clone --quiet [--depth 1] [--branch …]` (+ checkout for `rev:`) + atomic rename into the store
+    ├── dep/resolver.zig ← plan one Action per DepEntry (clone / reuse_cas / path_symlink / skip_legacy);
+    │                      probes the store for pinned commits; each Action carries its `ref`
     ├── storage.zig      ← $BPMP_HOME layout resolution + mkdir-p
     ├── sha256.zig       ← file/byte hashing + sidecar verify
     ├── registry.zig     ← github.com URL shapes + tag/release lookups
@@ -59,7 +60,7 @@ modules/bpmp/
         ├── use.zig             ← `bpmp use botopink <ver>|latest|dev --from <dir>`
         ├── list.zig            ← `bpmp list [--installed]`
         ├── pack.zig            ← `bpmp pack`
-        ├── sync.zig            ← `bpmp sync [--update]`
+        ├── sync.zig            ← `bpmp sync` (per-dep source from `git:`; no `--update`)
         ├── run.zig             ← `bpmp run [-- <args>]`
         ├── self_update.zig     ← `bpmp self update [--check] [--toolchain]`
         ├── self_uninstall.zig  ← `bpmp self uninstall [--yes]`
@@ -77,7 +78,13 @@ zig build test-bpmp        # bpmp unit tests (manifest / lockfile / semver / sha
 ```
 
 `test-bpmp` is **not** part of `zig build test` (the network surface — registry,
-download — has no hermetic fixtures).
+download — has no hermetic fixtures). Whether it joins the gate is a `build.zig`
+decision owned by the cli-gate front (1.0.2-beta F2); until then run it by hand
+whenever `modules/bpmp/**` changes. Tests that need a scratch directory use
+`.botopinkbuild/bpmp-tests/<test>/` under the test cwd (`modules/bpmp`,
+git-ignored). The `install.zig` clone tests build a local fixture repo with
+`git` (hermetic: identity, signing and hooks overridden per call) and clone it
+over `file://`; they skip when `git` is not installed.
 
 ## Storage layout (`$BPMP_HOME`)
 
@@ -126,6 +133,7 @@ bpmp itself reads:
 | `HOME` / `USERPROFILE` | Fallback for the default install root.              |
 | `XDG_CACHE_HOME` | Store root fallback for object-form deps when `BPMP_HOME` is unset. |
 | `GITHUB_TOKEN`  | Sent as `Authorization: Bearer` on api.github.com calls (auth'd rate limit). |
+| `BPMP_DEFAULT_ORG` | `bpmp sync` only: GitHub owner for a bare-name dependency (`<org>/<name>`). Unset ⇒ such deps are reported as having no source. No org is built in. |
 | `SHELL`         | `bpmp env` shell auto-detection (override via `--shell`).   |
 
 ## Lockfile schema (`botopink.lock.json`, schema 1)
@@ -149,8 +157,8 @@ bpmp itself reads:
   time, so `bpmp list` can show *why* a pin was chosen.
 - `sha256` is verified on fetch and on cache hit — mismatch is a hard error
   with both digests in the message.
-- Schema mismatch ⇒ explicit "run `bpmp sync --update`" hint (no
-  auto-migration).
+- Schema mismatch ⇒ explicit hint to move the lockfile aside and re-add each
+  package with `bpmp install <name>` (no auto-migration).
 
 ## Lockfile schema (`botopink.lock`, version 1)
 
@@ -190,8 +198,8 @@ tarball + extract" flow for the binary-installing commands.
 | Command        | Behaviour                                                             |
 | -------------- | --------------------------------------------------------------------- |
 | `init`         | offline                                                               |
-| `install` / `install <name>` with object-form deps in `botopink.json` | plans each dep (`dep/resolver.zig`): reuse the store entry pinned by `botopink.lock`, symlink a `path` dep, or `git clone` (network); symlinks under `.botopinkbuild/deps/`; writes `botopink.lock`. `<name>` restricts to one declared dep. |
-| `install --frozen` | object-form path; errors with **DEP-004** if any dep is missing from `botopink.lock` (CI mode) |
+| `install` / `install <name>` with object-form deps in `botopink.json` | plans each dep (`dep/resolver.zig`): reuse the store entry pinned by `botopink.lock` (or a spec `rev:`) **when `<store>/<name>/<rev>/` exists**, otherwise clone that exact rev; symlink a `path` dep (resolved against the project root); or `git clone` the entry's own `branch:`/`tag:` (default HEAD only when it names no ref). Symlinks under `.botopinkbuild/deps/` — never to a target that does not exist; writes `botopink.lock`. `<name>` restricts to one declared dep. |
+| `install --frozen` | object-form path, never clones (CI mode); errors naming the dep with **DEP-004** when it has no `botopink.lock` entry (and no spec `rev:`), and **DEP-005** when its pinned commit is not in the store |
 | `install --update` | object-form path; ignores the existing `botopink.lock` and re-resolves |
 | `install --dry-run` | object-form path; prints planned actions, no IO |
 | `install <name>[@<spec>]` (no object-form deps) | offline manifest mutation only (`dependencies` + `requires`); prints a hint that pinning commit + sha256 is not wired yet |
@@ -202,7 +210,7 @@ tarball + extract" flow for the binary-installing commands.
 | `use botopink <ver>` / `use botopink latest` | **online** — `release.installOne` for each of the 4 binaries; writes the `stable` sentinel |
 | `list` / `version` / `env`      | offline                                              |
 | `pack`         | offline (writes `dist/<name>-<ver>.tar.gz` + `.sha256` sidecar)       |
-| `sync`         | **online** — `registry.liveTags` per dep; reports drift; `--update` only prints a "not yet implemented" hint (no lockfile rewrite) |
+| `sync`         | **online** — reads each dep's tags from its own `git:` source (GitHub only; `path:` deps and other hosts are skipped with a note; bare names need `BPMP_DEFAULT_ORG`); reports drift against `botopink.lock.json`, exit 1 on drift. Never rewrites the lockfile; `--update` is refused. |
 | `run`          | offline — computes `BOTOPINK_LIB_ROOTS` and the active compiler path and prints the command it *would* exec (no spawn yet) |
 | `self update`  | **online** — `registry.fetchLatestRelease`; downloads the bpmp asset; POSIX atomic rename; Windows prints the manual swap line. `--toolchain` only hints `bpmp use botopink latest`. |
 | `self uninstall` | offline                                                             |
