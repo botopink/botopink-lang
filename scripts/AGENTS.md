@@ -3,8 +3,8 @@
 > Path: `scripts/`
 > Parent: [`../AGENTS.md`](../AGENTS.md)
 
-Installers, the release packaging helper, the lib-test wrapper, the snapshot
-audit tool, and the tracked git hooks.
+Installers, the release packaging helper, the gate, the lib-test and
+vscode-test wrappers, the snapshot audit tool, and the tracked git hooks.
 
 ## Tree
 
@@ -14,12 +14,15 @@ scripts/
 ├── install.sh         ← POSIX one-liner installer
 ├── install.ps1        ← Windows one-liner installer
 ├── release-pack.sh    ← per-target archive + sha256 packer (used by release.yml)
-├── test-libs.sh       ← runtime pre-flight + `botopink-lib-test` wrapper (`zig build test-libs`)
+├── gate.sh            ← the ordered local gate (staged checks, build, test, test-cli, test-libs)
+├── install-hooks.sh   ← install the pre-commit shim into the repository's hooks dir
+├── test-libs.sh       ← runtime pre-flight + `botopink-lib-test` wrapper with known reds (`zig build test-libs`)
+├── known-red-libs.txt ← library cells known red, each with its owning front
 ├── test-vscode.sh     ← locate the sibling vscode-extension, `npm ci` once, `npm test` (`zig build test-vscode`)
 ├── snap_audit.sh      ← read-only audit of every *.snap.md (4 modes)
 └── git-hooks/
     ├── pre-commit                 ← tracked hook (see ../AGENTS.md §Local gate)
-    └── lib/runner-standalone.sh   ← gate used when this repo is cloned standalone
+    └── lib/runner-standalone.sh   ← standalone runner → `gate.sh --staged`
 ```
 
 ## Installers — contract
@@ -97,12 +100,38 @@ straight into `$BPMP_HOME/botopink/versions/<v>/`.
 See [`../AGENTS.md`](../AGENTS.md) §Release pipeline and
 [`../.github/workflows/release.yml`](../.github/workflows/release.yml).
 
+## gate.sh
+
+`scripts/gate.sh [--cold] [--staged]` — one ordered run, stopping at the first
+failing stage: staged-file checks (`--staged`: conflict markers, `zig fmt
+--check` on staged `.zig`), `zig build`, `zig build test` (`--cold` deletes
+`modules/compiler-core/.botopinkbuild/runtime-cache` first), `zig build
+test-cli`, `zig build test-libs`. The pre-commit hook runs `--staged`; the run
+that decides a merge adds `--cold`.
+
+## install-hooks.sh
+
+Writes `<git common dir>/hooks/pre-commit`, a shim that execs the tracked
+`scripts/git-hooks/pre-commit` of the committing checkout (the hooks dir is
+shared across worktrees). Refuses to overwrite a foreign hook without `--force`.
+
 ## test-libs.sh
 
 Resolves the core dir (meta layout `repository/botopink-lang/` or this repo's
 root), exits `1` if `zig-out/bin/botopink-lib-test` is not built, warns (without
-gating) for each missing `node`/`escript`/`erlc`/`wasmtime`, then execs the
-runner with forwarded args and returns its exit code.
+gating) for each missing `node`/`escript`/`erlc`/`wasmtime`, then runs the runner
+in `--json` mode and prints one line per cell — `pass`, `FAIL`, `known red — <front>
+<reason>`, `skipped — <reason>`, `no tests` — after that cell's diagnostics, and a
+count summary. Exit `1` when an unlisted cell fails or a listed known red passes;
+otherwise `0` (or the runner's own error exit). An explicit `--json` argument
+bypasses all of this and execs the runner raw. `BOTOPINK_KNOWN_RED_LIBS`
+overrides the list path.
+
+## known-red-libs.txt
+
+`<lib> <target> <owner> <reason…>` per line, `#` comments. The owning front
+deletes its line in the commit that turns the cell green, which makes the cell
+a hard assert.
 
 ## test-vscode.sh
 

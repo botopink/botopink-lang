@@ -67,8 +67,14 @@ invocation). See
 (`runtime.zig` row) for the layout contract.
 
 `test-libs` is the lib ecosystem gate (`botopink-lib-test`): it runs
-`botopink test --target <t>` in each lib and exits non-zero iff any cell fails.
-It is **not** part of `zig build test` — it needs host runtimes on `PATH`:
+`botopink test --target <t>` in `libs/std` and in every sibling library the
+checkout can see (`<ancestor>/repository/*` — the meta workspace, or the repos CI
+checks out), and reports each cell as pass, FAIL (with the failing module's
+diagnostic), known red, skipped (with the reason) or no tests. A cell listed in
+[`scripts/known-red-libs.txt`](scripts/known-red-libs.txt) is named with its
+owning front and does not fail the run; an unlisted failure does, and so does a
+listed cell that passes (delete its line). It is **not** part of `zig build
+test` — it needs host runtimes on `PATH`:
 
 | Backend    | Tool                     | Install hint                                     |
 | ---------- | ------------------------ | ------------------------------------------------ |
@@ -107,7 +113,7 @@ does not mirror them. Entry points:
 
 | Workflow | Trigger | What |
 | --- | --- | --- |
-| `.github/workflows/test.yml` | push / PR to `main`, `feat` | `zig build test` on ubuntu-22.04 + macos-14 (hard gate) and windows-2022 (allowed to fail); `zig build test-libs -- --target commonJS` on the same runners. |
+| `.github/workflows/test.yml` | push / PR to `main`, `feat` | job `test`: `zig build test` from a cold runtime cache, then `zig build test-cli`, on ubuntu-22.04 + macos-14 (hard gate) and windows-2022 (allowed to fail). Job `libs` (ubuntu, after `test`): checks out emilia/erika/jhonstart/onze/rakun at `feat` into `repository/<name>/` and runs `zig build test-libs` over every runnable target. |
 | `.github/workflows/release.yml` | tag push `v*` | 5-target matrix (`linux-{x86_64,aarch64}`, `macos-{x86_64,aarch64}`, `windows-x86_64`) → `scripts/release-pack.sh` writes `dist/<binary>-<tag>-<target>.<ext>` + `.sha256` → `softprops/action-gh-release@v2` uploads to one Release. Prerelease iff the tag contains `-`. |
 
 Asset naming (the contract bpmp and the install scripts rely on):
@@ -159,16 +165,24 @@ Library resolution (`modules/compiler-cli/src/cli/libs.zig`): roots from
 
 ## Local gate
 
+**The gate every front runs before landing is `zig build test && zig build
+test-libs`**, with `zig build test` from a cold runtime cache. The full ordered
+run is [`scripts/gate.sh`](scripts/gate.sh):
+
+1. `--staged`: conflict markers and `zig fmt --check` on staged files;
+2. `zig build`;
+3. `zig build test` (`--cold` deletes `modules/compiler-core/.botopinkbuild/runtime-cache` first — required for the run that decides a merge);
+4. `zig build test-cli` (the CLI contract, test tooling, recursion and backend execution scripts);
+5. `zig build test-libs` (every visible library, known reds named).
+
 `scripts/git-hooks/pre-commit` is the tracked pre-commit hook. It delegates to the
 superproject's `scripts/git-hooks/lib/test-runner.sh` when that file exists;
-otherwise it sources `scripts/git-hooks/lib/runner-standalone.sh`, which runs:
-
-1. a conflict-marker scan and `zig fmt --check` on staged files;
-2. `zig build` then `zig build test`;
-3. `zig-out/bin/botopink test` in every `libs/<name>/` with `.bp` sources.
-
-`zig build test-libs` is not in the gate (it needs node/escript/wasmtime). Do not
-use `--no-verify`.
+otherwise it sources `scripts/git-hooks/lib/runner-standalone.sh`, which runs
+`scripts/gate.sh --staged`. Install it once per clone with
+`scripts/install-hooks.sh` (the hooks directory is shared by every worktree; the
+installed shim runs the tracked hook of whichever checkout is committing). The
+gate needs `node`, `erl`/`erlc`/`escript` and `wasmtime` on `PATH`. Do not use
+`--no-verify`.
 
 ## Debugging tips & gotchas
 
