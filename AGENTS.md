@@ -207,14 +207,17 @@ Comptime `val`s are folded in Zig (`comptime/eval.zig`).
   blocks without a timeout, so a wedged erl process still hangs the caller —
   wrap manual runs in `timeout`.
 - **Server source is a Zig string literal** (`botopink_comptime_server`). It is
-  written and compiled into `.botopinkbuild/tmp/persistent_erl/` at spawn. When
-  debugging server changes, delete it:
+  compiled once into `.botopinkbuild/tmp/persistent_erl/<hash>/`, keyed by the
+  source's hash, so editing the server invalidates the build by itself and a warm
+  directory skips `erlc`. The build happens in a uniquely named staging
+  directory renamed onto `<hash>/`, so compiler processes or test binaries
+  sharing a cwd never compile or load a half-written file. Clearing it is safe:
   ```bash
   rm -rf .botopinkbuild/tmp/persistent_erl
   ```
 - **Manual testing.** Frame = `struct.pack('>I', len(payload)) + payload`, payload
   = `b'\x01' + b'/path/to/mod.erl'`. Pipe into
-  `erl -noshell -pa <server_dir> -eval 'botopink_comptime_server:start()'`.
+  `erl -noshell -pa .botopinkbuild/tmp/persistent_erl/<hash> -eval 'botopink_comptime_server:start()'`.
   Never use `-noinput` — it disables stdin reading.
 
 ### Comptime specialization (`comptime/transform.zig`)

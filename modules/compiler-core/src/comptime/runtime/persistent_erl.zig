@@ -144,8 +144,17 @@ const eval_timeout_ms = 10_000;
 /// 1 028 214 342 bytes), so it fails as a transport error, not an allocation.
 pub const max_frame_len: u32 = 16 * 1024 * 1024;
 
-/// Where the server module is written and compiled, relative to the cwd.
+/// Root of the runtime's files, relative to the cwd.
 const server_dir = ".botopinkbuild/tmp/persistent_erl";
+
+/// The compiled server lives in `<server_dir>/<server_hash>/`, keyed by the
+/// server source: a warm directory skips `erlc`, and a changed server never
+/// loads a stale `.beam`.
+const server_hash = blk: {
+    @setEvalBranchQuota(100_000);
+    break :blk std.fmt.comptimePrint("{x:0>16}", .{std.hash.Wyhash.hash(0, server_erl)});
+};
+const server_module_file = "botopink_comptime_server";
 
 /// erl's stderr: the logger's output and everything a comptime body prints.
 /// Truncated at every spawn; nothing reads it back — transport errors name it.
@@ -173,8 +182,8 @@ fn unlock() void {
     io_mu.store(0, .release);
 }
 
-/// Lazy-spawn the persistent `erl` process. Compiles the server module to
-/// `.botopinkbuild/tmp/persistent_erl/` and starts `erl` with it on the code path.
+/// Lazy-spawn the persistent `erl` process. `prepareServer` builds the server into
+/// `.botopinkbuild/tmp/persistent_erl/<server_hash>/`; `erl` starts with it on the code path.
 fn ensureSpawned(io: Io, allocator: std.mem.Allocator) !void {
     while (true) {
         const s = init_state.load(.acquire);
@@ -187,24 +196,8 @@ fn ensureSpawned(io: Io, allocator: std.mem.Allocator) !void {
             if (init_state.cmpxchgStrong(0, 1, .acquire, .acquire)) |_| continue;
             errdefer init_state.store(3, .release);
 
-            // Ensure the server module dir exists under .botopinkbuild/tmp/.
-            try std.Io.Dir.cwd().createDirPath(io, server_dir);
-            const server_path = try std.fs.path.join(allocator, &.{ server_dir, "botopink_comptime_server.erl" });
-            defer allocator.free(server_path);
-            try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = server_path, .data = server_erl });
-
-            const compile_result = std.process.run(allocator, io, .{
-                .argv = &.{ "erlc", "-o", server_dir, server_path },
-                .timeout = .{ .duration = .{ .raw = .{ .nanoseconds = 120 * std.time.ns_per_s }, .clock = .real } },
-            }) catch |err| switch (err) {
-                error.FileNotFound => return error.PersistentErlNotFound,
-                else => return error.PersistentErlBroken,
-            };
-            defer allocator.free(compile_result.stdout);
-            defer allocator.free(compile_result.stderr);
-            if (compile_result.term != .exited or compile_result.term.exited != 0) {
-                return error.PersistentErlCompileError;
-            }
+            const beam_dir = try prepareServer(io, allocator, server_dir);
+            defer allocator.free(beam_dir);
 
             // Spawn erl with the server module on its code path. `halt()` after
             // `start()` returns (stdin EOF — the parent exited) ends the VM;
@@ -215,7 +208,7 @@ fn ensureSpawned(io: Io, allocator: std.mem.Allocator) !void {
             const stderr_log = try std.Io.Dir.cwd().createFile(io, stderr_log_path, .{});
             defer stderr_log.close(io);
             const child = try std.process.spawn(io, .{
-                .argv = &.{ "erl", "-noshell", "-pa", server_dir, "-eval", "botopink_comptime_server:start(), halt()." },
+                .argv = &.{ "erl", "-noshell", "-pa", beam_dir, "-eval", "botopink_comptime_server:start(), halt()." },
                 .stdin = .pipe,
                 .stdout = .pipe,
                 .stderr = .{ .file = stderr_log },
@@ -230,6 +223,54 @@ fn ensureSpawned(io: Io, allocator: std.mem.Allocator) !void {
         }
         std.atomic.spinLoopHint();
     }
+}
+
+/// Compile the server module into `<base>/<server_hash>/` unless it is already
+/// there, and return that directory (owned by the caller). Several compiler
+/// processes can share one cwd, so nothing is written in place: the source and
+/// `.beam` are built in a uniquely named staging directory that is renamed onto
+/// the final one. A process that loses the rename race uses the winner's
+/// (identical) `.beam`; a truncated server source or `.beam` is never visible.
+fn prepareServer(io: Io, allocator: std.mem.Allocator, base: []const u8) ![]u8 {
+    const cwd = std.Io.Dir.cwd();
+    const dir = try std.fs.path.join(allocator, &.{ base, server_hash });
+    errdefer allocator.free(dir);
+    const beam = try std.fs.path.join(allocator, &.{ dir, server_module_file ++ ".beam" });
+    defer allocator.free(beam);
+    if (cwd.access(io, beam, .{})) |_| return dir else |_| {}
+
+    var nonce: [8]u8 = undefined;
+    io.random(&nonce);
+    const staging = try std.fmt.allocPrint(allocator, "{s}.{x:0>16}.tmp", .{ dir, std.mem.readInt(u64, &nonce, .little) });
+    defer allocator.free(staging);
+    try cwd.createDirPath(io, staging);
+    // After a successful rename `staging` no longer exists; this only reaps a
+    // failed build or a lost race.
+    defer cwd.deleteTree(io, staging) catch {};
+
+    const source = try std.fs.path.join(allocator, &.{ staging, server_module_file ++ ".erl" });
+    defer allocator.free(source);
+    try cwd.writeFile(io, .{ .sub_path = source, .data = server_erl });
+
+    const compile_result = std.process.run(allocator, io, .{
+        .argv = &.{ "erlc", "-o", staging, source },
+        .timeout = .{ .duration = .{ .raw = .{ .nanoseconds = 120 * std.time.ns_per_s }, .clock = .real } },
+    }) catch |err| switch (err) {
+        error.FileNotFound => return error.PersistentErlNotFound,
+        else => return error.PersistentErlBroken,
+    };
+    defer allocator.free(compile_result.stdout);
+    defer allocator.free(compile_result.stderr);
+    if (compile_result.term != .exited or compile_result.term.exited != 0) {
+        return error.PersistentErlCompileError;
+    }
+
+    cwd.rename(staging, cwd, dir, io) catch {
+        // Another process renamed its build in first (a non-empty target
+        // refuses the rename); anything else leaves no `.beam` behind.
+        cwd.access(io, beam, .{}) catch return error.PersistentErlBroken;
+    };
+    return dir;
 }
 
 /// Fill `buf` completely from `src`. `readStreaming` may return short reads (a
@@ -441,6 +482,52 @@ test "persistent_erl: a reply frame over the length cap is a transport error, th
     try std.testing.expect(std.mem.indexOf(u8, message, stderr_log_path) != null);
 
     try expectOk("clean reply", noisy_path);
+}
+
+const PrepareRace = struct {
+    base: []const u8,
+    dir: ?[]u8 = null,
+    err: ?anyerror = null,
+
+    fn run(self: *PrepareRace) void {
+        self.dir = prepareServer(std.testing.io, std.heap.page_allocator, self.base) catch |err| {
+            self.err = err;
+            return;
+        };
+    }
+};
+
+test "persistent_erl: concurrent server builds in one cwd all get a complete .beam" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{ .iterate = true });
+    defer tmp.cleanup();
+    const base = try std.fs.path.join(std.testing.allocator, &.{ ".zig-cache", "tmp", &tmp.sub_path });
+    defer std.testing.allocator.free(base);
+
+    // Cold directory, several builders at once — the shape of parallel test
+    // binaries (or compiler runs) sharing a working directory.
+    var races: [6]PrepareRace = @splat(.{ .base = base });
+    var threads: [races.len]std.Thread = undefined;
+    for (&races, &threads) |*race, *thread| thread.* = try std.Thread.spawn(.{}, PrepareRace.run, .{race});
+    for (threads) |thread| thread.join();
+
+    defer for (races) |race| if (race.dir) |dir| std.heap.page_allocator.free(dir);
+    for (races) |race| if (race.err) |err| return err;
+    for (races) |race| try std.testing.expectEqualStrings(races[0].dir.?, race.dir.?);
+
+    // Warm: the cached build is reused, and no staging directory is left.
+    const again = try prepareServer(io, std.testing.allocator, base);
+    defer std.testing.allocator.free(again);
+    const beam = try std.fs.path.join(std.testing.allocator, &.{ again, server_module_file ++ ".beam" });
+    defer std.testing.allocator.free(beam);
+    try std.Io.Dir.cwd().access(io, beam, .{});
+    var it = tmp.dir.iterate();
+    var entries: usize = 0;
+    while (try it.next(io)) |entry| {
+        try std.testing.expectEqualStrings(server_hash, entry.name);
+        entries += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 1), entries);
 }
 
 test "persistent_erl: readFrame rejects a stray =INFO REPORT before allocating" {
