@@ -19,7 +19,7 @@ scripts/
 ├── test-libs.sh       ← runtime pre-flight + `botopink-lib-test` wrapper with known reds (`zig build test-libs`)
 ├── known-red-libs.txt ← library cells known red, each with its owning front
 ├── test-vscode.sh     ← locate the sibling vscode-extension, `npm ci` once, `npm test` (`zig build test-vscode`)
-├── snap_audit.sh      ← read-only audit of every *.snap.md (4 modes)
+├── snap_audit.sh      ← read-only audit of every *.snap.md (6 modes)
 └── git-hooks/
     ├── pre-commit                 ← tracked hook (see ../AGENTS.md §Local gate)
     └── lib/runner-standalone.sh   ← standalone runner → `gate.sh --staged`
@@ -142,7 +142,8 @@ up from this repo), runs `npm ci` when `node_modules/` is absent, then execs
 
 ## snap_audit.sh
 
-`scripts/snap_audit.sh --mode={runlog,legacy,values,coverage}` — pure shell +
+`scripts/snap_audit.sh --mode={runlog,legacy,values,coverage}`, and
+`--mode={orphans,review} --trace=<file> [--reports=<dir>]` — pure shell +
 `awk` + `grep`, read-only, no build needed. Reports go to
 `build/snap-audit/<mode>.tsv` (git-ignored).
 
@@ -152,6 +153,24 @@ up from this repo), runs `npm ci` when `node_modules/` is absent, then execs
 | `legacy`   | Grep every snapshot's SOURCE block for retired surface (`*fn`, legacy `@external(<target>, …)`, `@[name]`, `when($argc==N)`, `string.length()`, `value:length()`). |
 | `values`   | Dump `(backend, source_sha1, path, runlog_text)` for observable codegen snapshots with a non-empty RUN LOG, for cross-checking against an external runner. |
 | `coverage` | Pivot of `runlog` by backend × label × state; printed and saved. |
+| `orphans`  | `kind\tpath` for every `*.snap.md` on disk (compiler-core + language-server) that no test checked in the traced run (`orphan`), and every traced path absent from disk (`missing`). Exits 3 when either list is non-empty. |
+| `review`   | The review worksheet, `suite\tslug\ttest\tpaths\tverdict`, one row per unique snapshot: codegen per target, the four `comptime/<runtime>/` copies collapsed into one row with every path. `test` is the test `file:line` from the trace (comma-joined when several tests write the same path — a slug collision); a snapshot traced without a location falls back to the test-source string literal that names it (the LSP asserts take a literal slug); `ORPHAN` when no test checked it. `verdict` is seeded from the 1.0.1-beta review reports (`--reports=<dir>`, default `../../specs/1.0.1-beta/06-snapshot-review` from the bot-lang root): every table row whose `verdict` column — located by its header cell, never by index — names the slug, restricted to the row's backend cell, as `<verdict> [report:line]`; `-` when no report names it. Report rows with a verdict that name no snapshot on disk (renamed or deleted tests, tests without a snapshot, harness-level rows) go to `review-unmatched.tsv`. Exits 3 when a row has no test `file:line`. |
+
+### The trace (`BOTOPINK_SNAP_TRACE`)
+
+`orphans` and `review` read the file a full, unfiltered
+`BOTOPINK_SNAP_TRACE=/abs/trace zig build test` appended to — one line per
+checked snapshot, written by `modules/compiler-core/src/utils/snap.zig` and
+`modules/language-server/src/tests/snapshot.zig` (format and append-safety in
+[`modules/compiler-core/src/utils/AGENTS.md`](../modules/compiler-core/src/utils/AGENTS.md#snapshot-trace-botopink_snap_trace)).
+A filtered run makes every skipped snapshot look like an orphan.
+
+```sh
+rm -f /tmp/snap.trace
+BOTOPINK_SNAP_TRACE=/tmp/snap.trace zig build test
+scripts/snap_audit.sh --mode=orphans --trace=/tmp/snap.trace
+scripts/snap_audit.sh --mode=review  --trace=/tmp/snap.trace
+```
 
 ## See also
 

@@ -1,8 +1,15 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    val same = "foo" == "foo";
+    val left = "fo" + "o";
+    val same = left == "foo";
+    val diff = "foo" == "bar";
     if (same) {
+        @print(1);
+    } else {
+        @print(0);
+    };
+    if (diff) {
         @print(1);
     } else {
         @print(0);
@@ -16,8 +23,16 @@ fn main() {
 -export(['_botopink_main'/0, main/1]).
 
 main() ->
-    Same = (<<"foo">> =:= <<"foo">>),
+    Left = <<"fo", "o">>,
+    Same = (Left =:= <<"foo">>),
+    Diff = (<<"foo">> =:= <<"bar">>),
     case Same of
+        true ->
+            io:format("~p~n", [1]);
+        false ->
+            io:format("~p~n", [0])
+    end,
+    case Diff of
         true ->
             io:format("~p~n", [1]);
         false ->
@@ -34,4 +49,5 @@ main(_Args) ->
 ----- RUN LOG -----
 ```logs
 1
+0
 ```

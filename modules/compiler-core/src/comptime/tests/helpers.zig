@@ -120,6 +120,8 @@ pub fn assertComptimeAstExpecting(
     modules: []const Module,
     expectation: CompileExpectation,
 ) !void {
+    const trace_prev = snapMod.traceEnter(loc);
+    defer snapMod.traceLeave(trace_prev);
     const io = std.testing.io;
     const base_slug = comptime slugFromSrc(loc);
 
@@ -220,12 +222,13 @@ pub fn renderTypeError(
     return try out.toOwnedSlice(allocator);
 }
 
-
 pub fn assertTypeErrorSnap(
     allocator: std.mem.Allocator,
     comptime loc: std.builtin.SourceLocation,
     src: []const u8,
 ) !void {
+    const trace_prev = snapMod.traceEnter(loc);
+    defer snapMod.traceLeave(trace_prev);
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const alloc = arena.allocator();

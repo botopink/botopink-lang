@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    val s = "yes";
+    val s = "ye" + "s";
     if (s == "yes") {
         @print(42);
     } else {
@@ -24,7 +24,10 @@ fn main() {
   {label, 3}.
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
-    {move, {literal, <<"yes">>}, {x, 0}}.
+    {move, {literal, <<"ye">>}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {literal, <<"s">>}, {x, 0}}.
+    {gc_bif, '+', {f, 0}, 2, [{x, 1}, {x, 0}], {x, 0}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 1}}.
     {move, {literal, <<"yes">>}, {x, 0}}.
@@ -65,5 +68,4 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-42
 ```

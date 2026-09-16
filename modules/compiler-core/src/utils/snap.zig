@@ -70,7 +70,73 @@ fn createMissingEnabled() bool {
     return std.process.Environ.containsUnemptyConstant(std.testing.environ, CREATE_ENV);
 }
 
+/// `BOTOPINK_SNAP_TRACE=<file>` — opt in to recording every checked snapshot.
+///
+/// When set, `compareOrCreate` appends one line per call, whatever its outcome:
+///
+///     <absolute snapshot path> TAB <test file:line or -> TAB <test fn name or ->
+///
+/// The test location comes from `traceEnter`, which the test-side helpers
+/// (`codegen/tests`, `comptime/tests`, `parser/tests`) call with the `@src()`
+/// they derive the slug from. A snapshot checked outside such a scope records
+/// `-`; `scripts/snap_audit.sh --mode=review` then resolves it by searching the
+/// test sources for the name.
+///
+/// The file is opened with `O_APPEND` and each line is one `write`, so the
+/// compiler-core and language-server test binaries (which `zig build test`
+/// runs concurrently) can share one trace file. Use an absolute path: each test
+/// binary runs in its own module directory. Unset, nothing is opened or
+/// written. Not supported on Windows (the variable is ignored there).
+pub const TRACE_ENV = "BOTOPINK_SNAP_TRACE";
+
+/// Directory, relative to the test binary's cwd, that `SourceLocation.file`
+/// is relative to (`build.zig` roots every test module at `src/test_root.zig`
+/// and sets the cwd to the module directory).
+const TRACE_SRC_ROOT = "src";
+
+threadlocal var trace_source: ?SourceLocation = null;
+
+/// Attribute the snapshots checked from now on to the test at `loc`. Returns
+/// the previous scope; restore it with `traceLeave` (`defer`), so nested
+/// helpers keep the innermost location and nothing leaks into the next test.
+pub fn traceEnter(loc: SourceLocation) ?SourceLocation {
+    const prev = trace_source;
+    trace_source = loc;
+    return prev;
+}
+
+pub fn traceLeave(prev: ?SourceLocation) void {
+    trace_source = prev;
+}
+
+fn traceRecord(allocator: std.mem.Allocator, snapPath: []const u8) !void {
+    if (!newIo or @import("builtin").os.tag == .windows) return;
+    const trace_path = std.testing.environ.getPosix(TRACE_ENV) orelse return;
+    if (trace_path.len == 0) return;
+
+    const io = std.testing.io;
+    const cwd = try std.process.currentPathAlloc(io, allocator);
+    defer allocator.free(cwd);
+
+    const line = if (trace_source) |loc|
+        try std.fmt.allocPrint(allocator, "{s}/{s}\t{s}/" ++ TRACE_SRC_ROOT ++ "/{s}:{d}\t{s}\n", .{ cwd, snapPath, cwd, loc.file, loc.line, loc.fn_name })
+    else
+        try std.fmt.allocPrint(allocator, "{s}/{s}\t-\t-\n", .{ cwd, snapPath });
+    defer allocator.free(line);
+
+    const fd = try std.posix.openat(std.posix.AT.FDCWD, trace_path, .{
+        .ACCMODE = .WRONLY,
+        .CREAT = true,
+        .APPEND = true,
+        .CLOEXEC = true,
+    }, 0o644);
+    const file: std.Io.File = .{ .handle = fd, .flags = .{ .nonblocking = false } };
+    defer file.close(io);
+    try file.writeStreamingAll(io, line);
+}
+
 fn compareOrCreate(allocator: std.mem.Allocator, snapPath: []const u8, got: []const u8) !void {
+    try traceRecord(allocator, snapPath);
     const existing = readFile(allocator, snapPath) catch |err| switch (err) {
         error.FileNotFound => {
             if (createMissingEnabled()) {
@@ -222,11 +288,11 @@ fn lineLooksLikePath(line: []const u8) bool {
     if (!has_backslash) return false;
 
     const markers = [_][]const u8{
-        ".bp",         ".erl",         ".js",          ".wat",
-        ".wasm",       ".snap.md",     ".escript",     ".beam",
-        "snapshots/",  "snapshots\\",  "modules/",     "modules\\",
-        "src/",        "src\\",        "test-out/",    "test-out\\",
-        "libs/",       "libs\\",       "repository/",  "repository\\",
+        ".bp",        ".erl",        ".js",         ".wat",
+        ".wasm",      ".snap.md",    ".escript",    ".beam",
+        "snapshots/", "snapshots\\", "modules/",    "modules\\",
+        "src/",       "src\\",       "test-out/",   "test-out\\",
+        "libs/",      "libs\\",      "repository/", "repository\\",
     };
     inline for (markers) |m| {
         if (std.mem.indexOf(u8, line, m) != null) return true;

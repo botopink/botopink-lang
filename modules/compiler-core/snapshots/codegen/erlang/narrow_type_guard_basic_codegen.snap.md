@@ -5,6 +5,7 @@ fn isPositive(n: i32) -> n is i32 {
 }
 fn main() {
     @print(isPositive(5));
+    @print(isPositive(-5));
 }
 ```
 
@@ -17,7 +18,8 @@ isPositive(N) ->
     (N > 0).
 
 main() ->
-    io:format("~p~n", [isPositive(5)]).
+    io:format("~p~n", [isPositive(5)]),
+    io:format("~p~n", [isPositive((-5))]).
 
 '_botopink_main'() ->
     main().
@@ -29,4 +31,5 @@ main(_Args) ->
 ----- RUN LOG -----
 ```logs
 true
+false
 ```

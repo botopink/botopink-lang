@@ -64,6 +64,11 @@ Suites that touch **disk** (paths resolved against the test cwd,
   record it. Before spec 06 step 1 a first recording was accepted silently and
   nobody reviewed it (defect H4). Same contract as
   `compiler-core/src/utils/snap.zig`.
+- `BOTOPINK_SNAP_TRACE=<file>` appends every checked snapshot path to the same
+  trace as `compiler-core/src/utils/snap.zig`. The asserts take a literal slug,
+  not `@src()`, so the location column is `-`; `scripts/snap_audit.sh
+  --mode=review` resolves the test from the slug literal — keep one literal per
+  slug.
 - On mismatch a `<name>.snap.md.new` is written — review the diff and either
   promote it or fix the underlying bug. `*.snap.md.new` is git-ignored.
 - Promote only intentional protocol/output changes; surprise changes usually

@@ -16,6 +16,8 @@ fn outer(should_fail: bool) -> @Result<i32, string> {
 fn main() {
     val r = try outer(false) catch -1;
     @print(r);
+    val r2 = try outer(true) catch -1;
+    @print(r2);
 }
 ```
 
@@ -45,7 +47,13 @@ main() ->
         {error, _TryE0} ->
             (-1)
     end,
-    io:format("~p~n", [R]).
+    io:format("~p~n", [R]),
+    R2 = case outer(true) of
+        {ok, TryV1} -> TryV1;
+        {error, _TryE1} ->
+            (-1)
+    end,
+    io:format("~p~n", [R2]).
 
 '_botopink_main'() ->
     main().
@@ -57,4 +65,5 @@ main(_Args) ->
 ----- RUN LOG -----
 ```logs
 8
+-1
 ```

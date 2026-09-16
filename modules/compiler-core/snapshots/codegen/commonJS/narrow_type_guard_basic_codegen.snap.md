@@ -5,6 +5,7 @@ fn isPositive(n: i32) -> n is i32 {
 }
 fn main() {
     @print(isPositive(5));
+    @print(isPositive(-5));
 }
 ```
 
@@ -16,6 +17,7 @@ function isPositive(n) {
 
 function main() {
     console.log(isPositive(5));
+    console.log(isPositive((-5)));
 }
 
 function _botopink_main() {
@@ -34,4 +36,5 @@ _botopink_main();
 ----- RUN LOG -----
 ```logs
 true
+false
 ```

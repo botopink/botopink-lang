@@ -16,6 +16,8 @@ fn outer(should_fail: bool) -> @Result<i32, string> {
 fn main() {
     val r = try outer(false) catch -1;
     @print(r);
+    val r2 = try outer(true) catch -1;
+    @print(r2);
 }
 ```
 
@@ -102,7 +104,9 @@ fn main() {
   )
   (func $main
     (local $_try0 i32)
+    (local $_try1 i32)
     (local $r i32)
+    (local $r2 i32)
     i32.const 0
     call $outer
     local.set $_try0
@@ -121,6 +125,25 @@ fn main() {
     )
     local.set $r
     local.get $r
+    call $__print_i32
+    i32.const 1
+    call $outer
+    local.set $_try1
+    local.get $_try1
+    i32.load ;; Result tag (0 = Ok, non-zero = Error)
+    (if (result i32)
+      (then
+    i32.const 0
+    i32.const 1
+    i32.sub
+      )
+      (else
+    local.get $_try1
+    i32.load offset=4 ;; Ok payload
+      )
+    )
+    local.set $r2
+    local.get $r2
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")

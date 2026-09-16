@@ -6,8 +6,9 @@ fn build(comptime prefix: string, name: string) -> string {
 
 fn main() {
     val r1 = build("INFO", "Sistema iniciado");
-    val r2 = build("WARN", "Memória alta");
-    val r3 = build("INFO", "Log replicado");
+    val r2 = build("INFO", "Log replicado");
+    @print(r1);
+    @print(r2);
 }
 ```
 
@@ -18,15 +19,12 @@ fn main() {
 
 main() ->
     R1 = 'build_$0'(<<"Sistema iniciado">>),
-    R2 = 'build_$1'(<<"Memória alta">>),
-    R3 = 'build_$0'(<<"Log replicado">>).
+    R2 = 'build_$0'(<<"Log replicado">>),
+    io:format("~p~n", [R1]),
+    io:format("~p~n", [R2]).
 
 'build_$0'(Name) ->
     Prefix = <<"INFO">>,
-    <<Prefix/binary, ": ", Name/binary>>.
-
-'build_$1'(Name) ->
-    Prefix = <<"WARN">>,
     <<Prefix/binary, ": ", Name/binary>>.
 
 '_botopink_main'() ->
@@ -38,4 +36,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+<<"INFO: Sistema iniciado">>
+<<"INFO: Log replicado">>
 ```

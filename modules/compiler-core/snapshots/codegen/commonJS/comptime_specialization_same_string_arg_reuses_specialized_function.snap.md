@@ -6,8 +6,9 @@ fn build(comptime prefix: string, name: string) -> string {
 
 fn main() {
     val r1 = build("INFO", "Sistema iniciado");
-    val r2 = build("WARN", "Memória alta");
-    val r3 = build("INFO", "Log replicado");
+    val r2 = build("INFO", "Log replicado");
+    @print(r1);
+    @print(r2);
 }
 ```
 
@@ -15,17 +16,13 @@ fn main() {
 ```javascript
 function main() {
     const r1 = build_$0("Sistema iniciado");
-    const r2 = build_$1("Memória alta");
-    const r3 = build_$0("Log replicado");
+    const r2 = build_$0("Log replicado");
+    console.log(r1);
+    console.log(r2);
 }
 
 function build_$0(name) {
     const prefix = "INFO";
-    return ((prefix + ": ") + name);
-}
-
-function build_$1(name) {
-    const prefix = "WARN";
     return ((prefix + ": ") + name);
 }
 
@@ -44,4 +41,6 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
+INFO: Sistema iniciado
+INFO: Log replicado
 ```

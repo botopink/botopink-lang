@@ -16,6 +16,8 @@ fn outer(should_fail: bool) -> @Result<i32, string> {
 fn main() {
     val r = try outer(false) catch -1;
     @print(r);
+    val r2 = try outer(true) catch -1;
+    @print(r2);
 }
 ```
 
@@ -24,7 +26,7 @@ fn main() {
 {module, main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
-{labels, 17}.
+{labels, 19}.
 
 {function, inner, 1, 3}.
   {label, 2}.
@@ -80,8 +82,8 @@ fn main() {
     {line, [{location, "main.erl", 3}]}.
     {func_info, {atom, main}, {atom, main}, 0}.
   {label, 7}.
-    {allocate, 1, 0}.
-    {init_yregs, {list, [{y, 0}]}}.
+    {allocate, 2, 0}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {atom, false}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 1}, {x, 0}}.
@@ -99,8 +101,25 @@ fn main() {
     {test_heap, 2, 2}.
     {put_list, {x, 1}, nil, {x, 1}}.
     {call_ext, 2, {extfunc, io, format, 2}}.
+    {move, {atom, true}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {x, 1}, {x, 0}}.
+    {call, 1, {f, 5}}.
+    {test, is_tagged_tuple, {f, 17}, [{x, 0}, 2, {atom, ok}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 0}}.
+    {jump, {f, 18}}.
+  {label, 17}.
+    {move, {integer, -1}, {x, 0}}.
+  {label, 18}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {literal, <<"~p~n">>}, {x, 0}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 1}, nil, {x, 1}}.
+    {call_ext, 2, {extfunc, io, format, 2}}.
     {move, {atom, ok}, {x, 0}}.
-    {deallocate, 1}.
+    {deallocate, 2}.
     return.
 
 {function, '_botopink_main', 0, 9}.
@@ -121,4 +140,5 @@ fn main() {
 ----- RUN LOG -----
 ```logs
 8
+-1
 ```

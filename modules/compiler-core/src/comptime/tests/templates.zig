@@ -215,6 +215,8 @@ test "template: fail span maps into the caller's template" {
 
     const desc = try h.renderTypeError(std.testing.allocator, src, err);
     defer std.testing.allocator.free(desc);
+    const trace_prev = snapMod.traceEnter(@src());
+    defer snapMod.traceLeave(trace_prev);
     try snapMod.checkText(std.testing.allocator, "comptime/templates/fail_span_in_template", desc);
 }
 

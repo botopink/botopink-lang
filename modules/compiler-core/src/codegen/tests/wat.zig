@@ -79,10 +79,12 @@ test "wat: string slice copies bytes into a new buffer" {
     );
 }
 
-// DOCUMENTED SKIP — a one-argument `.slice(start)` does not exist: `slice` is
-// declared `slice(self, start, end)` in `libs/std/src/primitives.bp`, with no
-// default for `end`. Missing feature: defaulted `end` on `slice`; owner:
-// spec 02 (stdlib signature / checker). The snapshot pins the arity error.
+// DOCUMENTED SKIP — `libs/std/src/primitives.bp` declares
+// `default fn slice(self, start: i32, end: i32 = null)`, so the one-argument
+// call is legal, but the call-site arity check in `comptime/infer.zig` does not
+// count trailing defaults. Missing feature: trailing defaults at the call site;
+// owner: 07-checker (analysed in 01-comptime-dispatch/trailing-defaults.md).
+// The snapshot pins the arity error.
 test "wat: string slice without end arg slices to source length" {
     try h.assertJsCompileError(std.testing.allocator, @src(),
         \\fn main() {
@@ -302,12 +304,22 @@ test "wat: string concat of two literals" {
     );
 }
 
-// F3.2 — equality of two literals (true case).
-test "wat: string equality literals true" {
+// F3.2 — equality compares content, not identity. `left` is built at runtime,
+// so it is not the interned "foo" pointer; `diff` is the false case. Expected
+// RUN LOG `1` then `0`. beam's RUN LOG is empty while string `+` lowers to an
+// arithmetic `'+'` (04-beam B3) — known-wrong output, pinned until that lands.
+test "wat: string equality compares content not identity" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
-        \\    val same = "foo" == "foo";
+        \\    val left = "fo" + "o";
+        \\    val same = left == "foo";
+        \\    val diff = "foo" == "bar";
         \\    if (same) {
+        \\        @print(1);
+        \\    } else {
+        \\        @print(0);
+        \\    };
+        \\    if (diff) {
         \\        @print(1);
         \\    } else {
         \\        @print(0);
@@ -337,11 +349,13 @@ test "wat: string length after concat" {
     );
 }
 
-// F3.5 — `if (s == lit)` branch lights up the equality path inside an if.
+// F3.5 — `if (s == lit)` branch lights up the equality path inside an if. `s`
+// is built at runtime so a pointer-identity compare could not pass. Expected
+// RUN LOG `42`; beam's is empty while string `+` is arithmetic (04-beam B3).
 test "wat: string equality drives if branch" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
-        \\    val s = "yes";
+        \\    val s = "ye" + "s";
         \\    if (s == "yes") {
         \\        @print(42);
         \\    } else {
@@ -460,6 +474,8 @@ test "wat: try propagation in result fn" {
         \\fn main() {
         \\    val r = try outer(false) catch -1;
         \\    @print(r);
+        \\    val r2 = try outer(true) catch -1;
+        \\    @print(r2);
         \\}
     );
 }

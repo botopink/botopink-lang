@@ -8,6 +8,9 @@ fn main() {
     val r1 = build("INFO", "Sistema iniciado");
     val r2 = build("WARN", "Memória alta");
     val r3 = build("INFO", "Log replicado");
+    @print(r1);
+    @print(r2);
+    @print(r3);
 }
 ```
 
@@ -19,7 +22,10 @@ fn main() {
 main() ->
     R1 = 'build_$0'(<<"Sistema iniciado">>),
     R2 = 'build_$1'(<<"Memória alta">>),
-    R3 = 'build_$0'(<<"Log replicado">>).
+    R3 = 'build_$0'(<<"Log replicado">>),
+    io:format("~p~n", [R1]),
+    io:format("~p~n", [R2]),
+    io:format("~p~n", [R3]).
 
 'build_$0'(Name) ->
     Prefix = <<"INFO">>,
@@ -38,4 +44,7 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+<<"INFO: Sistema iniciado">>
+<<"WARN: Memória alta">>
+<<"INFO: Log replicado">>
 ```
