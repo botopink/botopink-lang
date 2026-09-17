@@ -1275,9 +1275,8 @@ const PrimErlangCall = struct {
 
 /// Map a primitive `PrimKind` to its controller interface name in
 /// `primitives.d.bp`. Mirrors `comptime/infer.zig`'s `primitiveInterfaceName`.
-/// `.int` / `.float` map to the widest interface that carries the host-
-/// backed methods (`Integer` for both signed + unsigned widths,
-/// `Float` for f32/f64) — the concrete `I32`/`I64`/`U32`/`U64`/`F32`/`F64`
+/// `.int` maps to `Signed` (its chain reaches `Integer` and `Number`) and
+/// `.float` to `Float` — the concrete `I32`/`I64`/`U32`/`U64`/`F32`/`F64`
 /// interfaces are empty markers that extend their parent, so a method
 /// declared on `Integer` (e.g. `toString → erlang:integer_to_binary`)
 /// reaches any concrete-width receiver through `walkPrimIfaceChain`.
@@ -1286,7 +1285,11 @@ fn primIfaceForKind(k: envMod.PrimKind) ?[]const u8 {
         .array => "Array",
         .string => "String",
         .bool => "Bool",
-        .int => "Integer",
+        // `Signed` extends `Integer`, so a walk from it reaches both: `abs`,
+        // declared on `Signed`, was never found from `Integer` and fell through
+        // to the auto-imported `abs/1`. The checker already rejected `abs` on an
+        // unsigned receiver, so starting from the signed interface is safe.
+        .int => "Signed",
         .float => "Float",
     };
 }

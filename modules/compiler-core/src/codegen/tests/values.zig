@@ -378,3 +378,16 @@ test "js: operators ---- plus on untyped operands and division of floats" {
         \\}
     );
 }
+
+test "js: operators ---- abs on an i32 receiver reaches Signed" {
+    // `abs` is declared on `Signed`, below `Integer`: the erlang lowering used
+    // to walk from `Integer`, miss it, and emit the auto-imported `abs/1`.
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn mag(n: i32) -> i32 {
+        \\    return n.abs();
+        \\}
+        \\fn main() {
+        \\    @print(mag(-7));
+        \\}
+    );
+}

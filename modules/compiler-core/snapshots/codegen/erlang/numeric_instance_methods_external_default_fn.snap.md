@@ -24,7 +24,7 @@ fn main() {
 
 main() ->
     N = (-5),
-    '__bp_print'([abs(N)]),
+    '__bp_print'([erlang:abs(N)]),
     '__bp_print'([erlang:min(N, 3)]),
     '__bp_print'([erlang:max(N, 10)]),
     '__bp_print'([number_clamp(N, 0, 5)]),

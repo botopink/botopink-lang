@@ -671,7 +671,9 @@ Primitive-receiver methods (`xs.map(f)`, `s.toUpper()`) are tagged `.prim` in
 
 1. **Annotation-driven first** — `tryEmitPrimAnnotation` looks up the
    interface method's `#[@External.<Target>(…)]` annotation in
-   `libs/std/src/primitives.bp` (walking `extends` chains). A plain
+   `libs/std/src/primitives.bp` (walking `extends` chains; erlang starts an
+   integer receiver's walk at `Signed`, which reaches `Integer` and `Number` —
+   from `Integer` it never found `Signed.abs`). A plain
    `("mod", "sym")` pair becomes a host call; a symbol with markers is rendered
    by `comptime/primOpTemplate.zig` (`$self`, `$0..$N`, `$args`,
    `$stringify(…)`, `when($argc == N)` arity branches, `"""…"""` raw bodies).
