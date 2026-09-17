@@ -410,12 +410,15 @@ pub const HelperGroup = enum {
     arr_join_i32,
     /// `$__print_arr_i32` `$__print_arr_i32_raw`.
     print_arr_i32,
+    /// `$__print_arr_f32` `$__print_arr_f32_raw`.
+    print_arr_f32,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
         return switch (g) {
             .print_str, .print_bool, .print_f64 => &.{.print},
             .print_arr_i32 => &.{.print},
+            .print_arr_f32 => &.{ .print, .print_f64 },
             .i32_to_str, .str_case, .str_repeat, .arr_new => &.{.alloc},
             .f64_to_str => &.{ .i32_to_str, .alloc },
             .str_index_of, .str_starts_with, .str_ends_with => &.{.mem_eq},
@@ -478,6 +481,8 @@ pub const Helper = enum {
     arr_join_i32,
     print_arr_i32,
     print_arr_i32_raw,
+    print_arr_f32,
+    print_arr_f32_raw,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {
@@ -492,6 +497,7 @@ pub const Helper = enum {
             .print_bool, .print_bool_raw => .print_bool,
             .print_f64, .print_f64_raw => .print_f64,
             .print_arr_i32, .print_arr_i32_raw => .print_arr_i32,
+            .print_arr_f32, .print_arr_f32_raw => .print_arr_f32,
             inline else => |t| @field(HelperGroup, @tagName(t)),
         };
     }

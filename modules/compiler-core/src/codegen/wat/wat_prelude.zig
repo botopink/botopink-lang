@@ -36,6 +36,7 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         .str_eq => &str_eq_items,
         .str_slice => &str_slice_items,
         .print_arr_i32 => &.{ .{ .func = print_arr_i32_raw }, .{ .func = print_arr_i32 } },
+        .print_arr_f32 => &.{ .{ .func = print_arr_f32_raw }, .{ .func = print_arr_f32 } },
         inline else => |t| &.{.{ .func = @field(@This(), @tagName(t)) }},
     };
 }
@@ -1212,3 +1213,15 @@ const f64_to_str = typedFunc("__f64_to_str", &.{.{ .name = "x", .ty = .f64 }}, .
     get("pos"),                                                                            get("ip"),                                     load(0),                                                                                                op("add"),
     set("pos"),                                                                            get("last"),                                   when(&.{ get("pos"), c32(46), store8(0), get("pos"), c32(1), op("add"), c32(168), get("last"), copy }), get("p"),
 });
+
+/// `[115,287.5,460]` — the elements of an f32 array, printed like `$__print_f64`.
+const print_arr_f32_raw = func("__print_arr_f32_raw", &.{"xs"}, null, i32s(&.{ "n", "i" }), &(putByte('[') ++ .{call("__write_bytes")} ++ [_]Instr{
+    get("xs"), load(0), set("n"),
+    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk, get("i"), when(&(putByte(',') ++ .{call("__write_bytes")})) } ++ slot("xs", "i") ++ [_]Instr{
+        .{ .load = .{ .ty = .f32 } }, .{ .convert = "f64.promote_f32" }, call("__print_f64_raw"),
+        get("i"),                     c32(1),                            op("add"),
+        set("i"),                     again,
+    })),
+} ++ putByte(']') ++ .{call("__write_bytes")}));
+
+const print_arr_f32 = func("__print_arr_f32", &.{"xs"}, null, &.{}, &.{ get("xs"), call("__print_arr_f32_raw"), call("__print_nl") });

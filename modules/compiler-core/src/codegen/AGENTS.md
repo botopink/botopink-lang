@@ -345,6 +345,15 @@ codegen/
 
 ### beam_asm
 
+- **Comprehensions** (`lowerLoop`, `emitYield`): a `loop` whose body `yield`s
+  or `break`s with a value (directly or in an `if`/`case` arm, not in a nested
+  loop or lambda) appends each value to a fresh array (`$__arr_push`; a float
+  as its f32 bits), and that array is the loop's value — the erlang reading
+  of `break <v>`. An `#[@iterator]`/`#[@generator]` fn body that yields runs
+  eagerly into one fn-level array it returns (`renderAccumulatingBody`); a
+  `@Iterator<T>` is then an array of `T`. A bare `break` branches out of the
+  loop, `continue` out of the iteration's `(block $__next …)`. An f32 array
+  prints as `[115,287.5,460]` (`$__print_arr_f32`).
 - **Coverage**: numerics, locals, calls, booleans, assign, throw, strings,
   `@print`, field access/assign, arrays, tuples, records/structs
   (`put_map_assoc` maps), case (all patterns + guards via
@@ -476,8 +485,6 @@ first three are now enforced by the model, not by discipline:
     narrow (array literal, or a name bound to one, via `arr_locals`/
     `arr_globals`), because walking the layout of a non-array would read its
     first word as an element count and trap;
-  - a `loop` used as a *comprehension* (`yield`/`break <v>` accumulating into a
-    new array) runs its body but always yields `0`;
   - an `f64` aggregate field round-trips at `f32` precision (4-byte slots), and
     is read back as a raw `i32.load` unless the field's declared type is known.
 - **Non-constant top-level `val`s** (`emitGlobalVal` → `deferred_globals`): a

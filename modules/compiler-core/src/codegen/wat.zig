@@ -495,6 +495,11 @@ const Emitter = struct {
     /// result) while the tag/payload are read out.
     res_seq: u32 = 0,
     loop_seq: u32 = 0,
+    /// The array local a comprehension's `yield`/`break <v>` appends to.
+    yield_target: ?[]const u8 = null,
+    /// How many loops enclose the code being lowered: `break`/`continue`
+    /// branch only inside one.
+    loop_depth: u32 = 0,
     /// Sequence counter for the `$__mem{n}` scratch pointers used when building
     /// or destructuring aggregates (tuples, arrays, records, enum payloads).
     mem_seq: u32 = 0,
@@ -748,7 +753,7 @@ const Emitter = struct {
                     if (self.isBoolExpr(v.value.*)) try self.bool_globals.put(v.name, {});
                 }
                 if (self.recordTypeOfExpr(v.value.*)) |rty| try self.global_rec_types.put(v.name, rty);
-                if (isArrayLit(v.value.*)) {
+                if (self.isArrayExpr(v.value.*)) {
                     try self.arr_globals.put(v.name, {});
                     try self.arr_elem_globals.put(v.name, self.elemKindOf(v.value.*));
                 }
@@ -1112,6 +1117,8 @@ const Emitter = struct {
         self.mem_seq = 0;
         self.res_seq = 0;
         self.loop_seq = 0;
+        self.yield_target = null;
+        self.loop_depth = 0;
     }
 
     /// Register a local for the current function. Idempotent, and the *only*
@@ -1276,6 +1283,24 @@ const Emitter = struct {
         return self.seal(&c, stack);
     }
 
+    fn renderAccumulatingBody(self: *Emitter, body: []const ast.Stmt) !Seq {
+        var c: Capture = .{};
+        self.open(&c);
+        const tgt = "__yield_fn";
+        try self.declareLocal(tgt, "i32");
+        try self.emit(zero);
+        try self.emit(self.builder().helper(.arr_new));
+        try self.emit(.{ .local_set = tgt });
+        self.yield_target = tgt;
+        defer self.yield_target = null;
+        const tail = try self.emitBody(body, false);
+        if (tail != .terminated) {
+            try self.emitC(.{ .local_get = tgt }, "everything the body yielded");
+            try self.emitConvert("i32", self.cur_result);
+        }
+        return self.seal(&c, if (tail == .terminated) .terminated else .{ .value = vt(self.cur_result) });
+    }
+
     fn emitFn(self: *Emitter, f: ast.FnDecl) !void {
         // A bodyless `declare fn` (host-backed FFI, `#[@External.…]`) has no
         // wasm implementation. Emitting `(func $f (result f64))` with an empty
@@ -1313,7 +1338,13 @@ const Emitter = struct {
         try self.declareScratch("__mem", self.countMems(f.body));
         try self.emitLocalDecls(f.body);
 
-        const body = try self.renderBody(f.body, f);
+        // An `#[@iterator]` / `#[@generator]` body runs eagerly: every `yield`
+        // is appended to one array, which is what the fn returns.
+        const accumulates = if (f.effect) |e|
+            (e == .iterator or e == .generator or e == .asyncGenerator) and has_result and bodyYieldsDeep(f.body)
+        else
+            false;
+        const body = if (accumulates) try self.renderAccumulatingBody(f.body) else try self.renderBody(f.body, f);
 
         const ar = self.arena();
         var params: std.ArrayListUnmanaged(wat.Param) = .empty;
@@ -2148,19 +2179,37 @@ const Emitter = struct {
                 },
                 .@"break" => |br| {
                     if (br.value) |v| {
+                        if (self.yield_target != null) {
+                            try self.emitYield(v.*);
+                            return .none;
+                        }
                         try self.lowerValue(v.*);
                         return .value;
+                    }
+                    if (self.loop_depth > 0) {
+                        try self.emit(.{ .br = break_label });
+                        return .terminated;
                     }
                     return .none;
                 },
                 .yield => |y| {
                     if (y.value) |v| {
+                        if (self.yield_target != null) {
+                            try self.emitYield(v.*);
+                            return .none;
+                        }
                         try self.lowerValue(v.*);
                         return .value;
                     }
                     return .none;
                 },
-                .@"continue" => return .none,
+                .@"continue" => {
+                    if (self.loop_depth > 0) {
+                        try self.emit(.{ .br = next_label });
+                        return .terminated;
+                    }
+                    return .none;
+                },
             },
             .binding => |b| switch (b.kind) {
                 .localBind => |lb| {
@@ -2329,9 +2378,12 @@ const Emitter = struct {
             },
             .jump => |j| switch (j.kind) {
                 .@"return", .throw_ => .terminated,
-                .@"continue" => .none,
+                .@"continue" => if (self.loop_depth > 0) Tail.terminated else Tail.none,
                 .try_ => |v| if (v != null) Tail.value else Tail.none,
-                inline .@"break", .yield => |jl| if (jl.value != null) Tail.value else Tail.none,
+                .@"break" => |jl| if (jl.value != null)
+                    (if (self.yield_target != null) Tail.none else Tail.value)
+                else if (self.loop_depth > 0) Tail.terminated else Tail.none,
+                .yield => |jl| if (jl.value != null and self.yield_target == null) Tail.value else Tail.none,
                 .await_ => |a| self.exprTail(a.*),
             },
             .collection => |col| switch (col.kind) {
@@ -2550,12 +2602,19 @@ const Emitter = struct {
                 },
                 .await_ => |av| try self.lowerExpr(av.*),
                 .@"break" => |br| {
-                    if (br.value) |v| try self.lowerExpr(v.*);
+                    if (br.value) |v| {
+                        if (self.yield_target != null) try self.emitYield(v.*) else try self.lowerExpr(v.*);
+                    } else if (self.loop_depth > 0) try self.emit(.{ .br = break_label });
                 },
                 .yield => |y| {
-                    if (y.value) |v| try self.lowerExpr(v.*);
+                    if (y.value) |v| {
+                        if (self.yield_target != null) try self.emitYield(v.*) else try self.lowerExpr(v.*);
+                    }
                 },
-                else => try self.noteF("unsupported jump: {s}", .{@tagName(j.kind)}),
+                .@"continue" => if (self.loop_depth > 0)
+                    try self.emit(.{ .br = next_label })
+                else
+                    try self.note("continue outside a loop"),
             },
             .comptime_ => try self.emit(zero),
             .function => |f| try self.lowerLambdaValue(f.kind.params, f.kind.body),
@@ -2662,11 +2721,19 @@ const Emitter = struct {
             try self.emit(self.builder().helper(if (last) .print_bool else .print_bool_raw));
             return;
         }
-        if (self.isArrayExpr(arg) and self.elemKindOf(arg) == .i32) {
-            try self.lowerCoerced(arg, "i32");
-            try self.emit(self.builder().helper(if (last) .print_arr_i32 else .print_arr_i32_raw));
-            return;
-        }
+        if (self.isArrayExpr(arg)) switch (self.elemKindOf(arg)) {
+            .i32 => {
+                try self.lowerCoerced(arg, "i32");
+                try self.emit(self.builder().helper(if (last) .print_arr_i32 else .print_arr_i32_raw));
+                return;
+            },
+            .f32 => {
+                try self.lowerCoerced(arg, "i32");
+                try self.emit(self.builder().helper(if (last) .print_arr_f32 else .print_arr_f32_raw));
+                return;
+            },
+            .str => {},
+        };
         const t = self.wasmTypeOf(arg);
         if (t[0] == 'f') {
             try self.lowerCoerced(arg, "f64");
@@ -4039,7 +4106,12 @@ const Emitter = struct {
     fn arrayElemOfTypeRef(t: ast.TypeRef) ?ElemKind {
         const elem: ast.TypeRef = switch (t) {
             .array => |inner| inner.*,
-            .generic => |g| if (std.mem.eql(u8, g.name, "Array") and g.args.len == 1) g.args[0] else return null,
+            // An iterator runs eagerly here: it is the array of what it yields.
+            .generic => |g| if (g.args.len == 1 and (std.mem.eql(u8, g.name, "Array") or
+                std.mem.eql(u8, g.name, "Iterator") or std.mem.eql(u8, g.name, "AsyncIterator")))
+                g.args[0]
+            else
+                return null,
             .optional => |inner| return arrayElemOfTypeRef(inner.*),
             else => return null,
         };
@@ -4090,6 +4162,7 @@ const Emitter = struct {
                 },
                 else => .i32,
             },
+            .loop => |lp| self.yieldElemKind(lp.body),
             .collection => |col| switch (col.kind) {
                 .grouped => |inner| self.elemKindOf(inner.*),
                 .arrayLit => |al| blk: {
@@ -4438,6 +4511,57 @@ const Emitter = struct {
             .useHook => |uh| try self.collectIdents(uh.kind.inner.*, out),
             else => {},
         }
+    }
+
+    /// Element shape of what a comprehension body yields: the first
+    /// `yield`/`break` value found. Loop parameters are not bound yet, so a
+    /// float is recognised by its literal or arithmetic, a string by a literal.
+    fn yieldElemKind(self: *Emitter, body: []const ast.Stmt) ElemKind {
+        // `val taxa = valor * 0.15; break valor + taxa;` — the body's own float
+        // locals make the yielded value a float.
+        var floats: std.ArrayListUnmanaged([]const u8) = .empty;
+        for (body) |st| {
+            switch (st.expr) {
+                .binding => |b| switch (b.kind) {
+                    .localBind => |lb| if (self.wasmTypeOf(lb.value.*)[0] == 'f' or self.mentionsAny(lb.value.*, floats.items))
+                        floats.append(self.reg_arena.allocator(), lb.name) catch {},
+                    else => {},
+                },
+                else => {},
+            }
+            if (self.yieldValue(st.expr)) |v| {
+                if (self.isStringExpr(v)) return .str;
+                if (self.wasmTypeOf(v)[0] == 'f' or self.mentionsAny(v, floats.items)) return .f32;
+                return .i32;
+            }
+        }
+        return .i32;
+    }
+
+    fn mentionsAny(self: *Emitter, e: ast.Expr, names: []const []const u8) bool {
+        if (names.len == 0) return false;
+        var seen: std.ArrayListUnmanaged([]const u8) = .empty;
+        self.collectIdents(e, &seen) catch return false;
+        for (seen.items) |n| for (names) |m| if (std.mem.eql(u8, n, m)) return true;
+        return false;
+    }
+
+    fn yieldValue(self: *Emitter, e: ast.Expr) ?ast.Expr {
+        return switch (e) {
+            .jump => |j| switch (j.kind) {
+                inline .@"break", .yield => |jl| if (jl.value) |v| v.* else null,
+                else => null,
+            },
+            .branch => |b| switch (b.kind) {
+                .if_ => |i| blk: {
+                    for (i.then_) |st| if (self.yieldValue(st.expr)) |v| break :blk v;
+                    if (i.else_) |els| for (els) |st| if (self.yieldValue(st.expr)) |v| break :blk v;
+                    break :blk null;
+                },
+                else => null,
+            },
+            else => null,
+        };
     }
 
     // ── record inherent methods ──────────────────────────────────────────────
@@ -4953,20 +5077,103 @@ const Emitter = struct {
     }
 
     fn lowerLoop(self: *Emitter, lp: anytype) anyerror!void {
+        // A loop whose body `yield`s (or `break`s with a value) is a
+        // comprehension: every such value is appended to a fresh array, which
+        // is the loop's value. Inside an `#[@iterator]`/`#[@generator]` fn the
+        // fn's own accumulator (`emitFn`) collects them instead.
+        const saved_target = self.yield_target;
+        defer self.yield_target = saved_target;
+        var result: ?[]const u8 = null;
+        if (self.yield_target == null and bodyYields(lp.body)) {
+            const tgt = try std.fmt.allocPrint(self.reg_arena.allocator(), "__yield{d}", .{self.loop_seq});
+            try self.declareLocal(tgt, "i32");
+            try self.emit(zero);
+            try self.emit(self.builder().helper(.arr_new));
+            try self.emit(.{ .local_set = tgt });
+            self.yield_target = tgt;
+            result = tgt;
+        }
         switch (lp.iter.*) {
             .collection => |col| switch (col.kind) {
                 .range => |r| {
-                    try self.lowerRangeLoop(lp.params, lp.body, r);
+                    try self.lowerRangeLoop(lp.params, lp.body, r, result);
                     return;
                 },
                 else => {},
             },
             else => {},
         }
-        if (self.isArrayExpr(lp.iter.*)) return self.lowerCollectionLoop(lp);
+        if (self.isArrayExpr(lp.iter.*)) return self.lowerCollectionLoop(lp, result);
         // Iterating a lambda-backed iterator or an opaque value has no wasm
         // lowering yet; a no-op is at least loadable.
         try self.emitC(zero, "loop over unknown iterable");
+    }
+
+    /// Whether a loop body `yield`s or `break`s with a value — directly or in a
+    /// nested `if`/`case` arm, but not inside a nested loop or lambda, whose
+    /// values are their own.
+    fn bodyYields(body: []const ast.Stmt) bool {
+        for (body) |st| if (exprYields(st.expr)) return true;
+        return false;
+    }
+
+    fn exprYields(e: ast.Expr) bool {
+        return switch (e) {
+            .jump => |j| switch (j.kind) {
+                inline .@"break", .yield => |jl| jl.value != null,
+                else => false,
+            },
+            .branch => |b| switch (b.kind) {
+                .if_ => |i| bodyYields(i.then_) or (if (i.else_) |els| bodyYields(els) else false),
+                else => false,
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| exprYields(inner.*),
+                .case => |c| blk: {
+                    for (c.arms) |arm| if (exprYields(arm.body)) break :blk true;
+                    break :blk false;
+                },
+                else => false,
+            },
+            .call => |c| switch (c.kind) {
+                .call => |cc| cc.is_builtin and std.mem.eql(u8, cc.callee, "block") and cc.trailing.len > 0 and bodyYields(cc.trailing[0].body),
+                else => false,
+            },
+            else => false,
+        };
+    }
+
+    /// Any `yield` with a value anywhere in a fn body, loops included (not
+    /// lambdas) — what makes an `#[@iterator]` body an accumulator.
+    fn bodyYieldsDeep(body: []const ast.Stmt) bool {
+        for (body) |st| {
+            if (exprYields(st.expr)) return true;
+            switch (st.expr) {
+                .loop => |lp| if (bodyYieldsDeep(lp.body)) return true,
+                .jump => |j| switch (j.kind) {
+                    .@"return" => |r| if (r) |v| switch (v.*) {
+                        .loop => |lp| if (bodyYieldsDeep(lp.body)) return true,
+                        else => {},
+                    },
+                    else => {},
+                },
+                else => {},
+            }
+        }
+        return false;
+    }
+
+    /// `yield v` / `break v` inside a comprehension: append `v` to the
+    /// accumulator. A float is appended as its f32 bits.
+    fn emitYield(self: *Emitter, v: ast.Expr) anyerror!void {
+        const tgt = self.yield_target.?;
+        try self.emit(.{ .local_get = tgt });
+        if (self.wasmTypeOf(v)[0] == 'f') {
+            try self.lowerCoerced(v, "f32");
+            try self.emit(.{ .convert = "i32.reinterpret_f32" });
+        } else try self.lowerCoerced(v, "i32");
+        try self.emit(self.builder().helper(.arr_push));
+        try self.emit(.{ .local_set = tgt });
     }
 
     /// `x` names an `[len][e0][e1]…` blob: an array literal, or a name bound to
@@ -4983,6 +5190,7 @@ const Emitter = struct {
                 .arrayLit => true,
                 else => false,
             },
+            .loop => |lp| bodyYields(lp.body),
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
                     if (self.primKindAt(cc, c.loc)) |k| break :blk primCallRes(k, cc) == .arr;
@@ -4999,7 +5207,7 @@ const Emitter = struct {
     /// `[len][e0][e1]…` layout: a counted walk binding each element to the loop
     /// parameter. The loop itself yields 0 — a `yield`/`break`-accumulating
     /// comprehension still collects nothing (see codegen/AGENTS.md).
-    fn lowerCollectionLoop(self: *Emitter, lp: anytype) anyerror!void {
+    fn lowerCollectionLoop(self: *Emitter, lp: anytype, result: ?[]const u8) anyerror!void {
         const ra = self.reg_arena.allocator();
         const n = self.loop_seq;
         self.loop_seq += 1;
@@ -5041,7 +5249,7 @@ const Emitter = struct {
             try self.emitAt(8, .{ .local_get = cur });
             try self.emitAt(8, .{ .local_set = ip });
         }
-        for (lp.body) |stmt| _ = try self.emitStmt(stmt, false);
+        try self.emitIterationBody(lp.body);
         try self.emitAt(8, .{ .local_get = cur });
         try self.emitAt(8, one);
         try self.emitAt(8, opOf("i32", "add"));
@@ -5050,13 +5258,49 @@ const Emitter = struct {
         const loop_seq = self.seal(&loop_c, .terminated);
 
         try self.emitLoopBlock(loop_seq);
-        try self.emit(zero);
+        if (result) |r| try self.emit(.{ .local_get = r }) else try self.emit(zero);
+    }
+
+    /// One iteration's statements. A body that `continue`s is wrapped in
+    /// `(block $__next …)` so the jump lands on the step; `loop_depth` lets
+    /// `break`/`continue` branch at all.
+    fn emitIterationBody(self: *Emitter, body: []const ast.Stmt) anyerror!void {
+        self.loop_depth += 1;
+        defer self.loop_depth -= 1;
+        if (!bodyContinues(body)) {
+            for (body) |stmt| _ = try self.emitStmt(stmt, false);
+            return;
+        }
+        var c: Capture = .{};
+        self.open(&c);
+        for (body) |stmt| _ = try self.emitStmt(stmt, false);
+        const seq = self.seal(&c, .none);
+        try self.emitAt(8, .{ .block = .{ .kind = .block, .label = next_label, .body = seq } });
+    }
+
+    fn bodyContinues(body: []const ast.Stmt) bool {
+        for (body) |st| if (exprContinues(st.expr)) return true;
+        return false;
+    }
+
+    fn exprContinues(e: ast.Expr) bool {
+        return switch (e) {
+            .jump => |j| j.kind == .@"continue",
+            .branch => |b| switch (b.kind) {
+                .if_ => |i| bodyContinues(i.then_) or (if (i.else_) |els| bodyContinues(els) else false),
+                else => false,
+            },
+            else => false,
+        };
     }
 
     /// `(block $__break (loop $__continue …))` around a lowered loop body, and
     /// the labels both jumps use.
     const break_label = "__break";
     const continue_label = "__continue";
+    /// The block around one iteration's body; `continue` branches out of it
+    /// to the step.
+    const next_label = "__next";
 
     fn emitLoopBlock(self: *Emitter, body: Seq) !void {
         var block_c: Capture = .{};
@@ -5074,7 +5318,7 @@ const Emitter = struct {
         } });
     }
 
-    fn lowerRangeLoop(self: *Emitter, params: []const []const u8, body: []const ast.Stmt, r: anytype) anyerror!void {
+    fn lowerRangeLoop(self: *Emitter, params: []const []const u8, body: []const ast.Stmt, r: anytype, result: ?[]const u8) anyerror!void {
         const param = if (params.len > 0) params[0] else "__i";
         try self.declareLocal(param, "i32");
 
@@ -5090,9 +5334,7 @@ const Emitter = struct {
             try self.emitAt(8, .{ .br_if = break_label });
         }
 
-        for (body) |stmt| {
-            _ = try self.emitStmt(stmt, false);
-        }
+        try self.emitIterationBody(body);
 
         try self.emitAt(8, .{ .local_get = param });
         try self.emitAt(8, one);
@@ -5102,7 +5344,7 @@ const Emitter = struct {
         const loop_seq = self.seal(&loop_c, .terminated);
 
         try self.emitLoopBlock(loop_seq);
-        try self.emit(zero);
+        if (result) |res| try self.emit(.{ .local_get = res }) else try self.emit(zero);
     }
 
     // ── numeric types ─────────────────────────────────────────────────────────

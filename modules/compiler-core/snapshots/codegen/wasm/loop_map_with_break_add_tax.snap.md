@@ -21,10 +21,11 @@ fn main() {
   (global $precosComTaxa (mut i32) (i32.const 0))
   (func $main
     global.get $precosComTaxa
-    call $__print_i32
+    call $__print_arr_f32
   )
   (func $__init_globals
     (local $__mem0 i32)
+    (local $__yield0 i32)
     (local $__iter0 i32)
     (local $__idx0 i32)
     (local $__len0 i32)
@@ -50,6 +51,9 @@ fn main() {
     i32.store offset=12
     local.get $__mem0
     global.set $precosBrutos
+    i32.const 0
+    call $__arr_new
+    local.set $__yield0
     global.get $precosBrutos
     local.set $__iter0
     local.get $__iter0
@@ -75,11 +79,14 @@ fn main() {
     f32.const 0.15
     f32.mul
     local.set $taxa
+    local.get $__yield0
     local.get $valor
     f32.convert_i32_s
     local.get $taxa
     f32.add
-    drop
+    i32.reinterpret_f32
+    call $__arr_push
+    local.set $__yield0
         local.get $__idx0
         i32.const 1
         i32.add
@@ -87,7 +94,7 @@ fn main() {
         br $__continue
       )
     )
-    i32.const 0
+    local.get $__yield0
     global.set $precosComTaxa
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
@@ -272,6 +279,213 @@ fn main() {
         br $loop
       )
     )
+  )
+  (func $__print_f64 (param $x f64)
+    local.get $x
+    call $__print_f64_raw
+    call $__print_nl
+  )
+  (func $__print_f64_raw (param $x f64)
+    (local $i i32) (local $frac f64) (local $d i32) (local $k i32) (local $last i32)
+    local.get $x
+    f64.const 0
+    f64.lt
+    (if
+      (then
+        i32.const 32
+        i32.const 45
+        i32.store8
+        i32.const 32
+        i32.const 1
+        call $__write_bytes
+        local.get $x
+        f64.neg
+        local.set $x
+      )
+    )
+    local.get $x
+    i32.trunc_f64_s
+    local.set $i
+    local.get $x
+    local.get $i
+    f64.convert_i32_s
+    f64.sub
+    local.set $frac
+    local.get $i
+    call $__print_i32_raw
+    ;; fractional digits into 34.. ; 33 holds the '.'
+    i32.const 0
+    local.set $k
+    i32.const 0
+    local.set $last
+    (block $fdone
+      (loop $fdigits
+        local.get $k
+        i32.const 6
+        i32.ge_s
+        br_if $fdone
+        local.get $frac
+        f64.const 10
+        f64.mul
+        local.set $frac
+        local.get $frac
+        i32.trunc_f64_s
+        local.set $d
+        local.get $frac
+        local.get $d
+        f64.convert_i32_s
+        f64.sub
+        local.set $frac
+        i32.const 34
+        local.get $k
+        i32.add
+        local.get $d
+        i32.const 48
+        i32.add
+        i32.store8
+        local.get $k
+        i32.const 1
+        i32.add
+        local.set $k
+        local.get $d
+        (if
+          (then
+            local.get $k
+            local.set $last
+          )
+        )
+        br $fdigits
+      )
+    )
+    local.get $last
+    (if
+      (then
+        i32.const 33
+        i32.const 46
+        i32.store8
+        i32.const 33
+        local.get $last
+        i32.const 1
+        i32.add
+        call $__write_bytes
+      )
+    )
+  )
+  (func $__alloc (param $n i32) (result i32)
+    (local $p i32)
+    global.get $__heap_ptr
+    local.set $p
+    global.get $__heap_ptr
+    local.get $n
+    i32.add
+    i32.const 3
+    i32.add
+    i32.const -4
+    i32.and
+    global.set $__heap_ptr
+    local.get $p
+  )
+  (func $__arr_new (param $n i32) (result i32)
+    (local $p i32)
+    local.get $n
+    i32.const 1
+    i32.add
+    i32.const 4
+    i32.mul
+    call $__alloc
+    local.set $p
+    local.get $p
+    local.get $n
+    i32.store
+    local.get $p
+  )
+  (func $__arr_push (param $xs i32) (param $x i32) (result i32)
+    (local $n i32) (local $p i32)
+    local.get $xs
+    i32.load
+    local.set $n
+    local.get $n
+    i32.const 1
+    i32.add
+    call $__arr_new
+    local.set $p
+    local.get $p
+    i32.const 4
+    i32.add
+    local.get $xs
+    i32.const 4
+    i32.add
+    local.get $n
+    i32.const 4
+    i32.mul
+    memory.copy
+    local.get $p
+    i32.const 4
+    i32.add
+    local.get $n
+    i32.const 4
+    i32.mul
+    i32.add
+    local.get $x
+    i32.store
+    local.get $p
+  )
+  (func $__print_arr_f32_raw (param $xs i32)
+    (local $n i32) (local $i i32)
+    i32.const 8
+    i32.const 91
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+    local.get $xs
+    i32.load
+    local.set $n
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $i
+        (if
+          (then
+            i32.const 8
+            i32.const 44
+            i32.store8
+            i32.const 8
+            i32.const 1
+            call $__write_bytes
+          )
+        )
+        local.get $xs
+        i32.const 4
+        i32.add
+        local.get $i
+        i32.const 4
+        i32.mul
+        i32.add
+        f32.load
+        f64.promote_f32
+        call $__print_f64_raw
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    i32.const 8
+    i32.const 93
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+  )
+  (func $__print_arr_f32 (param $xs i32)
+    local.get $xs
+    call $__print_arr_f32_raw
+    call $__print_nl
   )
 )
 ```
