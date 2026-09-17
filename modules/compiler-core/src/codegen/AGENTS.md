@@ -119,6 +119,13 @@ codegen/
   `call`); inference
   records it only for typed array/string receivers, so a record `length()`
   method is untouched.
+- **The only external spelling is `#[@External.<Target>(…)]`.** `FnDecl.isExternal`
+  (`ast.zig`) matches on the `External.` prefix, so the retired lowercase
+  `#[@external(<target>, …)]` and the retired bracket form `@[external(…)]` match
+  nothing: a declaration carrying one parses, type-checks and is silently
+  host-less — every backend then reports the fn as unbound. Turning the
+  lowercase spelling into a located parse error is a parser change and belongs
+  to front 06; until then, the form is inert, not supported.
 - **Externals**: `#[@External.Node("module", "symbol")]` fns (`collectExternals`)
   lower to `const { symbol: name } = require("module");` (a JS global such as
   `Math` is referenced directly). A symbol carrying `$` markers or
@@ -294,7 +301,7 @@ codegen/
   array spread concatenates (`[1, 2] ++ Rest`, `nameRefNode` for the spread name);
   a leading-dot enum shorthand (`.Black`) is the variant atom.
 - **Calls are `erl_ast` nodes** (`callNode`): pipelines apply inside out
-  (`pipelineNode`); builtins (`builtinCallNode`) render their `@external(erlang, …)`
+  (`pipelineNode`); builtins (`builtinCallNode`) render their `#[@External.Erlang(…)]`
   template, `@block` as an applied `fun`, or the `__bp_*` result/option ops
   (`resultOptionNode`, inline `fun`+`case`); `plainCallNode` does receiver dispatch
   (std module, activated extension, enum constructor tuple, imported/local

@@ -916,7 +916,7 @@ test "js: bool instance default-fn methods" {
 }
 
 test "js: numeric instance methods (external + default-fn)" {
-    // Numeric `@[external]` methods backed by a JS global (`Math`) lower to
+    // Numeric `#[@External.Node(…)]` methods backed by a JS global (`Math`) lower to
     // `Number.prototype.<m> = function(a){ return Math.<sym>(this.valueOf(), a); }`;
     // `default fn`s like `clamp`/`isEven` materialize and call them.
     try h.assertJsSingle(std.testing.allocator, @src(),

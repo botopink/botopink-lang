@@ -43,7 +43,7 @@ const CrossModule = crossModule.CrossModule;
 
 /// §A5 annotation-driven prim-method dispatch entry shared with the erlang
 /// backend (same data, different consumer). Parsed from
-/// `@external(erlang, "mod", "sym[(args)]")` on a primitive interface method.
+/// `#[@External.Erlang("mod", "sym[(args)]")]` on a primitive behavior method.
 /// `arity_branches` (`prim-op-annotation`) is non-empty when the annotation
 /// carries `when($argc == N): "..."` clauses; BEAM short-circuits these
 /// (still owned by the inline switch below).
@@ -1383,7 +1383,7 @@ const Emitter = struct {
         if (self.stringify_helper_name) |n| self.alloc.free(n);
     }
 
-    /// §A5: collect `@external(erlang, …)` annotations on primitive interface
+    /// §A5: collect `#[@External.Erlang(…)]` annotations on primitive behavior
     /// methods into `prim_erlang_dispatch`. Scans `program.decls` first and
     /// reparses the embedded `primitives.bp` so the table sees every prim
     /// interface (`Array`/`String`/`Bool`) even when none made it into the
@@ -3587,7 +3587,7 @@ const Emitter = struct {
     // a `%% unresolved` comment instead of mis-emitting.
     fn emitPrimMethod(self: *Emitter, k: envMod.PrimKind, callee: []const u8, recv_expr: *const ast.Expr, cc: anytype, mode: CallMode) anyerror!bool {
         // §A5 annotation-driven path: if the receiver's interface method carries
-        // a recognisable `@external(erlang, "mod", "sym[(args)]")` shape (1-arg
+        // a recognisable `#[@External.Erlang("mod", "sym[(args)]")]` shape (1-arg
         // self / 2-arg self-first / 2-arg arg-first), lower via the matching
         // x-register pattern and return. The inline switch below handles the
         // BEAM-irreducible cases (`++` ops, inline funs, custom heap shapes,
@@ -3928,7 +3928,7 @@ const Emitter = struct {
         return name;
     }
 
-    /// §A5 BEAM dispatch: emit a primitive method call from its `@external(erlang,
+    /// §A5 BEAM dispatch: emit a primitive method call from its `#[@External.Erlang(
     /// "mod", "sym[(args)]")` annotation. Recognises three template shapes:
     /// `[self]` (1-arg call, `primRecvOnly`), `[X, self]` (2-arg with the
     /// receiver second, `primFunThenList` — fun or value, same byte shape) and

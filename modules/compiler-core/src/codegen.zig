@@ -68,7 +68,7 @@ pub fn generateWith(
     config: Config,
     options: Options,
 ) !std.ArrayListUnmanaged(ModuleOutput) {
-    // STD-001 — lookup name the `@external(target, …)` parser expects for
+    // STD-001 — lookup name the `#[@External.<Target>(…)]` parser expects for
     // each codegen target. BEAM consumes the Erlang vocabulary (matches the
     // `externalFor("erlang")` calls in `beam_asm.zig`).
     const target_name: []const u8 = switch (config.targetSource) {

@@ -59,7 +59,7 @@ pub declare fn fetch(url: string) -> @Future<Response>;
 // per-backend lib-test runners do not provide. The surface is exercised
 // indirectly through the parser §A3 + infer §A3 acceptance gates
 // (`modules/compiler-core/src/parser/tests/effect_rejections.zig`)
-// which pin `#[@future] declare fn` with `@external` as accepted.
+// which pin `#[@future] declare fn` with `#[@External.<Target>(…)]` as accepted.
 //
 // A compile-only smoke fixture lives below to ensure callers can
 // `await fetch(url)` from a `#[@future]` body without the type checker

@@ -468,7 +468,7 @@ fn analyzeSource(
     env.skipDecoratorInvoke = skip_invoke;
     // STD-001 — codegen-path target name (null in LSP / tests). Consumed by
     // `markStdImports` to red imports of `from "std"` modules whose
-    // host-bound declares lack an `@external(<target>, …)` match.
+    // host-bound declares lack an `#[@External.<Target>(…)]` match.
     env.target = target_name;
 
     var lexer = Lexer.init(source);

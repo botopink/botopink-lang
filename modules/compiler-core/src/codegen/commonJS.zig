@@ -206,7 +206,7 @@ const js_global_namespaces = [_][]const u8{
     "Set",        "WeakMap", "WeakSet", "Atomics", "process",
 };
 
-/// True when an `@[external(node, module, …)]` module name is a JS global
+/// True when an `#[@External.Node(module, …)]` module name is a JS global
 /// namespace rather than a requirable module.
 pub fn isJsGlobalNamespace(module: []const u8) bool {
     for (js_global_namespaces) |g| {
@@ -785,11 +785,11 @@ const Emitter = struct {
     /// Module name, used for `<module>.bp:<line>` source locations in
     /// test-mode assert failures.
     module_name: []const u8 = "main",
-    /// `@[external(node, "module", "symbol")]` fns: name → host import.
+    /// `#[@External.Node("module", "symbol")]` fns: name → host import.
     /// The decl lowers to `const { symbol: name } = require("module");`,
     /// or `const name = Module.symbol;` for JS global namespaces (`Math`, …).
     externals: std.StringHashMap(ast.ExternalRef),
-    /// `@[external(…)]` fns with no `node` target — calling one is an error.
+    /// `#[@External.<Target>(…)]` fns with no `Node` target — calling one is an error.
     externals_missing: std.StringHashMap(void),
     /// Names that emit as JS classes (record/struct decls, incl. the
     /// `val X = record { … }` shorthand) — constructor calls need `new`.
@@ -834,7 +834,7 @@ const Emitter = struct {
     /// twice is a JS `SyntaxError`. Tracked per module; reset in `emitterInit`.
     seen_imports: std.StringHashMap(void),
     /// §A4 type-naive prim-method rename: method name → JS prototype symbol,
-    /// driven by the 2-arg `@external(node, "X")` annotation on a primitive
+    /// driven by the 2-arg `#[@External.Node("X")]` annotation on a primitive
     /// interface method. Consulted at the call site as a fallback when no
     /// per-loc (type-directed) rename was recorded by inference — the latter
     /// path covers interface default-fn bodies, which are lowered from AST
@@ -843,10 +843,10 @@ const Emitter = struct {
     /// inference's per-loc rename is the only path; this map omits `contains`).
     prim_node_renames: std.StringHashMap([]const u8),
     /// `prim-op-annotation` builtin dispatch (node): callees from
-    /// `builtins.d.bp` with `@external(node, …)`. Keyed by callee name.
+    /// `builtins.d.bp` with `#[@External.Node(…)]`. Keyed by callee name.
     builtin_node_dispatch: std.StringHashMap(BuiltinNodeCall),
     /// §A2 user-fn per-callee template dispatch (node): a `declare fn`
-    /// whose `@external(node, "<template>")` symbol contains `$0`/`$1`/…
+    /// whose `#[@External.Node("<template>")]` symbol contains `$0`/`$1`/…
     /// or whose annotation list carries `when(argc == N): "..."` branches
     /// renders at the call site instead of being aliased at the decl
     /// (the `const fn = Mod.method;` shape strips the receiver, so chained
@@ -945,7 +945,7 @@ const Emitter = struct {
 
     /// `prim-op-annotation` commonJS builtin dispatch collector — mirrors
     /// erlang's; scans `prelude.builtins` for top-level fn decls with
-    /// `@external(node, …)` and indexes by callee name.
+    /// `#[@External.Node(…)]` and indexes by callee name.
     ///
     /// `libs/std/src/builtins.d.bp` is the *documented* surface for compiler
     /// builtins and not strictly parseable (it carries forms the parser does
@@ -1030,7 +1030,7 @@ const Emitter = struct {
     }
 
     /// Hand-rolls the `panic` / `todo` dispatch entries that `libs/std/src/
-    /// builtins.d.bp` documents. Mirrors the `@external(node, when(argc == N))`
+    /// builtins.d.bp` documents. Mirrors the `#[@External.Node(when(argc == N))]`
     /// annotation literally — kept here because the documented surface file
     /// is intentionally not parseable, but the dispatch needs these two
     /// callees registered to lower `@panic(…)` / `@todo(…)`.
@@ -1078,7 +1078,7 @@ const Emitter = struct {
 
     /// §A4: build the type-naive prim-method rename map from interface
     /// annotations. For each interface method carrying a 2-arg
-    /// `@external(node, "X")` annotation whose symbol `X` differs from the
+    /// `#[@External.Node("X")]` annotation whose symbol `X` differs from the
     /// method name, register `name → X` — UNLESS a record/struct in the program
     /// declares a method with the same name (a collision would silently rename
     /// the record call, e.g. `Set.contains` → `Set.includes`). The per-loc
@@ -1106,7 +1106,7 @@ const Emitter = struct {
         }
     }
 
-    /// Indexes every `@[external(…)]` fn by name: with a `node` target it
+    /// Indexes every `#[@External.<Target>(…)]` fn by name: with a `Node` target it
     /// goes to `externals` (alias form: `const fn = require(…);`) or
     /// `user_node_templates` (§A2 template form: `$0`/`$1`/… or
     /// `when(argc == N)` branches — rendered at each call site instead of
@@ -1681,7 +1681,7 @@ const Emitter = struct {
         // Instance default fns (`self` receiver) materialize as prototype methods
         // on the type's JS constructor (`Array.prototype.contains`), so
         // `value.method(...)` resolves at runtime. §A4: a 2-arg
-        // `@external(node, "X")` annotation means "this method already exists on
+        // `#[@External.Node("X")]` annotation means "this method already exists on
         // the engine's prototype (possibly under a different name `X`) — don't
         // patch", and is the single skip-rule. The call-site rename map routes
         // `recv.method(args)` to `recv.X(args)` for the same call.
@@ -3356,7 +3356,7 @@ const Emitter = struct {
 
     // ── calls ─────────────────────────────────────────────────────────────────
 
-    /// Try lowering an `@builtin(…)` call from its `@external(node, …)`
+    /// Try lowering an `@builtin(…)` call from its `#[@External.Node(…)]`
     /// annotation. Returns null when no annotation is registered.
     fn tryBuiltinAnnotation(self: *Emitter, callee: []const u8, cc: anytype) anyerror!?js.Expr {
         const call = self.builtin_node_dispatch.get(callee) orelse return null;
@@ -3364,7 +3364,7 @@ const Emitter = struct {
     }
 
     /// §A2 user-fn template dispatch (commonJS): when a `declare fn`'s
-    /// `@external(node, …)` annotation is a template string (with `$0`/`$1`/…
+    /// `#[@External.Node(…)]` annotation is a template string (with `$0`/`$1`/…
     /// markers) or an arity-branched `when(argc == N): "<tmpl>"` set,
     /// render the template at the call site instead of emitting `fn(args)`
     /// against an aliased symbol (which strips `this` for method-on-global
@@ -3464,7 +3464,7 @@ const Emitter = struct {
                 try args.append(self.arena(), try self.buildExpr(recv.*));
             } else {
                 const recv_node = try self.buildExpr(recv.*);
-                // §A4 rename: a 2-arg `@external(node, "X")` on a primitive
+                // §A4 rename: a 2-arg `#[@External.Node("X")]` on a primitive
                 // interface method routes `recv.callee(args)` to
                 // `recv.X(args)`. The per-loc `renames` map (populated by
                 // inference's type-directed lookup) is consulted FIRST so a

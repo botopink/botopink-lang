@@ -86,53 +86,65 @@ fn add(x: i32, y: i32) -> i32 {
 `i32`, `i64`, `u32`, `u64`, `f32`, `f64`, `string`, `bool`, `void`.
 Their methods are declared in `libs/std/src/primitives.bp`.
 
-### Record
+### type — records
+
+A `type` whose fields are written in parentheses is a record: the declaration
+mirrors construction.
 
 ```botopink
-record Point { x: i32, y: i32 }
+type Point(x: i32, y: i32)
 
 val p = Point(x: 1, y: 2);
 val px = p.x;
 ```
 
-Records can carry methods:
+A body adds methods:
 
 ```botopink
-record Counter {
-    n: i32,
+type Counter(n: i32) {
     fn current(self: Self) -> i32 {
         return self.n;
     }
 }
 ```
 
-Anonymous records bind to a `val`:
+An anonymous group of values is a tuple, not a type declaration. A tuple is
+positional at run time; a label is a compile-time name, lent by the variable
+used to build it or written in the type:
 
 ```botopink
-val Inner = record { value: i32 }
+fn box() -> #(value: i32) {
+    val value = 1;
+    return #(value);    // the variable lends the label
+}
+
+fn read() -> i32 {
+    val inner = box();
+    return inner.value;    // same element as inner.0
+}
 ```
 
-### Enum
+### type — enums
+
+A `type` whose body lists variants is an enum:
 
 ```botopink
-enum Color { Red, Green, Blue }
+type Color { Red, Green, Blue }
 
-enum Shape {
+type Shape {
     Circle(radius: f64),
     Square(side: f64),
 }
 ```
 
-### Interface
+### behavior
 
 ```botopink
-interface Printable {
-    fn print(self: Self),
+behavior Printable {
+    fn print(self: Self);
 }
 
-record Person { name: string }
-
-implement Printable for Person {
+type Person(name: string) implement Printable {
     fn print(self: Self) {
         @print(self.name);
     }
@@ -144,7 +156,7 @@ implement Printable for Person {
 ```botopink
 fn identity<T>(x: T) -> T { return x; }
 
-enum Tree<T> {
+type Tree<T> {
     Leaf(value: T),
     Node(left: Tree<T>, right: Tree<T>),
 }
@@ -278,7 +290,7 @@ A `#[@result]` function returns `@Result<D, E>`; `throw` produces the error,
 fn parse(s: string) -> @Result<i32, string> {
     if (s == "") {
         throw "empty input";
-    }
+    };
     return 0;
 }
 
@@ -317,7 +329,9 @@ lifts a comptime value back into code.
 ```botopink
 pub fn conf<T>(comptime q: @Expr<string>) -> @Expr<T> {
     val t = q.text();
-    return @expr(record { port: 8000 + t.length, debug: true });
+    val port = 8000 + t.length;
+    val debug = true;
+    return @expr(#(port, debug));    // the labels come from the variable names
 }
 ```
 

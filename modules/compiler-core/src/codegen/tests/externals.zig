@@ -116,7 +116,7 @@ test "js: external ---- A2 chained host call renders verbatim" {
     );
 }
 
-// §A2: an `@external(node, …)` template that resolves a method on a
+// §A2: an `#[@External.Node(…)]` template that resolves a method on a
 // non-static global keeps the receiver bound (the legacy alias shape
 // `const fn = JSON.stringify` would strip `this` on a method-on-class
 // chain; the §A2 template renders the chain inline at every call).
