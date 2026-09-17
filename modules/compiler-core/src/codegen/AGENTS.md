@@ -456,8 +456,8 @@ first three are now enforced by the model, not by discipline:
    records every fn signature and global up front; an unresolved callee becomes
    an `;; unresolved call: f/N` stub and a bodyless `declare fn` is skipped
    entirely. A single dangling `call`/`global.get` rejects the whole module, so
-   `renderModule` validates every `call` against the module's functions,
-   imports and declared externs before writing anything. The runtime helpers go
+   `renderModule` validates every `call` against the module's functions and
+   imports before writing anything. The runtime helpers go
    further: `Builder.helper` is the only way to name one and marks it for
    emission in the same act.
 4. **Types are recovered and coerced, never assumed.** `wasmTypeOf` recovers a
@@ -537,13 +537,12 @@ first three are now enforced by the model, not by discipline:
 - **Effects**: eager; `__bp_future_rejected` → `unreachable`.
 - **Cross-module**: single-module only. An import resolving to another module's
   export emits `;; cross-module import not linked (wasm single-module)`.
-- `emitFnWat` is a pub single-fn hook (wat analogue of `commonJS.emitFnJs`). It
-  renders *forms*, not a module: the caller concatenates them with the
-  `wat_runtime` prelude, which is where `$__str_concat_rt`, `$__emit`,
-  `$__compilerError` and `$__binding_ref` are defined. Those four are built with
-  `Builder.externCall`, so a module that emits one records it in
-  `Module.externs` rather than tripping the undefined-call check — see the KNOWN
-  GAP note in `wat.zig`: nothing defines them in the whole-program path.
+- **Comptime-only builtins** (`@emit`, `@compilerError`, `Binding.ref`) have
+  no wasm lowering: they only run inside comptime bodies, which the comptime
+  pass evaluates on `erl`. A program module that reaches one traps
+  (`unreachable ;; comptime-only builtin: <name>`). The single-fn `emitFnWat`
+  hook, the `wat_runtime` prelude it was concatenated with and
+  `Module.externs` were deleted with it — nothing called them.
 
 ### runtime
 
@@ -634,7 +633,7 @@ Primitive-receiver methods (`xs.map(f)`, `s.toUpper()`) are tagged `.prim` in
   transform pass has already resolved everything.
 - `fn main()` triggers an entry-point wrapper (`_botopink_main()` in JS;
   quoted `'_botopink_main'/0` in Erlang — plain atoms can't start with `_`).
-- `commonJS.emitFnJs` / `wat.emitFnWat` are pub single-fn emission hooks with no
+- `commonJS.emitFnJs` is a pub single-fn emission hook with no
   program context. `emitJsonString` copies validated escape pairs verbatim
   (re-escaping would double source escapes); only real control chars and
   unescaped quotes (multiline content) are escaped.

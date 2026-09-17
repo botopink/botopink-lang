@@ -118,28 +118,6 @@ fn isBoolTypeRef(t: ast.TypeRef) bool {
 
 // ── public entry ─────────────────────────────────────────────────────────────
 
-/// Emit a single function declaration as WAT inside a fresh `(module ...)`
-/// wrapper, with no program context (no comptime vals, no dispatch rewrites,
-/// no cross-module link table). Wat-side analogue of `commonJS.emitFnJs`.
-///
-/// The comptime template evaluator (`comptime/template_eval.zig` F8 path)
-/// calls into here when assembling the per-template wasm module: the
-/// `wat_runtime` prelude supplies the comptime surface (`__expr`/`__code`
-/// / `__capture` and friends), and this fn emits the template body as a
-/// pub callable. The combined source then runs through `wasm3_host.runWat`.
-pub fn emitFnWat(alloc: std.mem.Allocator, out: *std.Io.Writer, f: ast.FnDecl) !void {
-    const cv = std.StringHashMap([]const u8).init(alloc);
-    const rewrites = std.AutoHashMap(ast.Loc, []const u8).init(alloc);
-    var em = Emitter.init(alloc, cv, rewrites);
-    em.uses_str_concat_rt = true; // template bodies use runtime string concat
-    defer em.deinit();
-    try em.emitFn(f);
-    // Forms only, no `(module …)` wrapper: the caller concatenates them with
-    // the `wat_runtime` prelude, which is where this fn's `$__str_concat_rt` /
-    // `$__capture` callees are defined.
-    for (em.items.items) |it| try watEmitter.renderItem(out, it);
-}
-
 pub fn codegenEmit(
     alloc: std.mem.Allocator,
     outputs: []ComptimeOutput,
@@ -304,10 +282,7 @@ fn emitWat(
 
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
-    try watEmitter.renderModule(&aw.writer, .{
-        .items = items.items,
-        .externs = em.b.externs.items,
-    });
+    try watEmitter.renderModule(&aw.writer, .{ .items = items.items });
     return aw.toOwnedSlice();
 }
 
@@ -348,9 +323,9 @@ const FnSig = struct { params: []const []const u8, result: ?[]const u8 };
 
 const Emitter = struct {
     alloc: std.mem.Allocator,
-    /// Node factory: owns the arena every built node borrows from, the set of
-    /// runtime helpers the lowering has asked for, and the extern symbols it
-    /// called. Set up in `init` once `reg_arena` exists.
+    /// Node factory: owns the arena every built node borrows from and the set
+    /// of runtime helpers the lowering has asked for. Set up in `init` once
+    /// `reg_arena` exists.
     b: wat.Builder = .{ .arena = undefined },
     /// Where lowered instructions go. Null outside a function body — emitting
     /// an instruction there is a bug, not a silently dropped line.
@@ -438,10 +413,6 @@ const Emitter = struct {
     /// which the module's `(start …)` runs before anything else. They used to
     /// stay at the `(i32.const 0)` placeholder, so every read saw 0.
     deferred_globals: std.ArrayListUnmanaged(ast.ValDecl) = .empty,
-    /// Template-body mode: `a + b` on two non-literals is string concatenation
-    /// through the `wat_runtime` prelude rather than a numeric add. Not a
-    /// helper flag — `$__str_concat_rt` lives outside the module.
-    uses_str_concat_rt: bool = false,
 
     /// Static extension dispatch (F6): call-site loc → activated extension symbol.
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
@@ -960,13 +931,6 @@ const Emitter = struct {
     }
 
     // ── fn ───────────────────────────────────────────────────────────────────
-
-    // ── public single-fn surface ─────────────────────────────────────────
-    // `emitFnWat` is the wat-side analogue of `commonJS.emitFnJs`. The
-    // comptime template evaluator (`comptime/template_eval.zig` F8 path)
-    // calls into here when building the per-template wasm module — the
-    // wat_runtime prelude supplies the comptime surface (`__expr`/`__code`
-    // / `__capture` etc.), and this fn emits the template body itself.
 
     /// Synthetic name for a parameter the source did not name (a destructuring
     /// param such as `fn greet({ name, .. }: Person)`). Emitting `(param $ i32)`
@@ -1582,7 +1546,7 @@ const Emitter = struct {
                             try self.local_types.put(lb.name, rty);
                         }
                         if (self.isStringExpr(lb.value.*)) try self.str_locals.put(lb.name, {});
-                    if (isArrayLit(lb.value.*)) try self.arr_locals.put(lb.name, {});
+                        if (isArrayLit(lb.value.*)) try self.arr_locals.put(lb.name, {});
                         if (isArrayLit(lb.value.*)) try self.arr_locals.put(lb.name, {});
                         try self.declareLocal(lb.name, t);
                         try self.declareNestedLocals(lb.value.*);
@@ -2411,37 +2375,16 @@ const Emitter = struct {
             try self.lowerResultOptionOp(cc.callee, cc.args);
             return;
         }
-        // Decorator builtins — lowered to rawInfra exports.
-        //
-        // KNOWN GAP: `$__emit` / `$__compilerError` / `$__binding_ref` (and
-        // `$__str_concat_rt` in `lowerBinOp`) are defined by the `wat_runtime`
-        // prelude a comptime template module is concatenated with. In the
-        // whole-program path nothing defines them, so a program that reached
-        // one of these arms would emit a `call` to a function the module does
-        // not have. `Builder.externCall` records them in `Module.externs`,
-        // which is honest about the dependency but does not supply it; no
-        // fixture exercises the arms today. Closing it means either lowering
-        // them to a stub outside template mode or shipping the definitions.
-        if (std.mem.eql(u8, cc.callee, "emit")) {
-            if (cc.args.len > 0) {
-                try self.lowerExpr(cc.args[0].value.*);
-                try self.emit(try self.builder().externCall("__emit"));
-            }
-            return;
-        }
-        if (std.mem.eql(u8, cc.callee, "compilerError")) {
-            if (cc.args.len > 0) {
-                try self.lowerExpr(cc.args[0].value.*);
-                try self.emit(try self.builder().externCall("__compilerError"));
-            }
-            return;
-        }
-        // Template builtins: Binding.ref(entry) → __binding_ref.
-        if (std.mem.eql(u8, cc.callee, "ref")) {
-            if (cc.receiver) |recv| {
-                try self.lowerExpr(recv.*);
-                try self.emit(try self.builder().externCall("__binding_ref"));
-            }
+        // Decorator / template builtins (`@emit`, `@compilerError`,
+        // `Binding.ref`) only exist inside comptime bodies, which never reach
+        // this backend: the comptime pass runs them on `erl`. There is nothing
+        // in a program module to call, so a program that reaches one traps —
+        // the same honest shape as an unresolved call.
+        if (std.mem.eql(u8, cc.callee, "emit") or
+            std.mem.eql(u8, cc.callee, "compilerError") or
+            std.mem.eql(u8, cc.callee, "ref"))
+        {
+            try self.emitCf(.@"unreachable", "comptime-only builtin: {s}", .{cc.callee});
             return;
         }
         try self.note("builtin stub");
@@ -3626,14 +3569,6 @@ const Emitter = struct {
             Op.ne => return self.lowerStrEq(lhs, rhs, true),
             else => {},
         };
-        // Runtime string concatenation: for template bodies, assume + on
-        // non-literal operands is string concat.
-        if (self.uses_str_concat_rt and op == Op.add and isStrLit(lhs) == null and isStrLit(rhs) == null) {
-            try self.lowerValue(lhs);
-            try self.lowerValue(rhs);
-            try self.emit(try self.builder().externCall("__str_concat_rt"));
-            return;
-        }
         const t = self.unifyNum(self.wasmTypeOf(lhs), self.wasmTypeOf(rhs));
         try self.lowerCoerced(lhs, t);
         try self.lowerCoerced(rhs, t);

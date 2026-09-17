@@ -16,8 +16,9 @@
 //!      with the declared `(result …)`. The same check runs on every `If` arm.
 //!   3. **`(param $ i32)`** — `Param.name` is checked non-empty when the node is
 //!      built; an unnamed parameter cannot be constructed.
-//!   4. **A `call` to a function the module never defines** — `Module.declared`
-//!      is validated against every `call` before a single byte is written, and
+//!   4. **A `call` to a function the module never defines** — every `call` is
+//!      checked against the module's own functions and imports before a single
+//!      byte is written, and
 //!      the runtime helpers can only be *named* through `Builder.helper`, which
 //!      marks the helper for emission in the same act.
 //!   5. **A specialised function with no result type** — same check as (2): a
@@ -262,10 +263,6 @@ pub const Item = union(enum) {
 
 pub const Module = struct {
     items: []const Item = &.{},
-    /// Symbols this module may `call` without defining them: the `wat_runtime`
-    /// prelude a comptime template module is concatenated with. Empty for a
-    /// program module.
-    externs: []const []const u8 = &.{},
 };
 
 // ── invariants ───────────────────────────────────────────────────────────────
@@ -281,7 +278,7 @@ pub const Invalid = error{
     BranchMismatch,
     /// A value-form `if` with no `(else …)`.
     MissingElse,
-    /// `call $x` where `x` is neither defined nor imported nor declared extern.
+    /// `call $x` where `x` is neither defined nor imported.
     UndefinedCall,
 };
 
@@ -315,12 +312,10 @@ fn validateInstr(i: Instr) Invalid!void {
     }
 }
 
-/// Every symbol the module can legally `call`: its own functions, its imports
-/// and its declared externs.
+/// Every symbol the module can legally `call`: its own functions and its
+/// imports. There is no third category — a symbol nothing defines cannot be
+/// called.
 pub fn declaresCall(m: Module, name: []const u8) bool {
-    for (m.externs) |e| {
-        if (std.mem.eql(u8, e, name)) return true;
-    }
     for (m.items) |it| switch (it) {
         .func => |f| if (std.mem.eql(u8, f.name, name)) return true,
         .import => |im| if (std.mem.eql(u8, im.func, name)) return true,
@@ -491,8 +486,6 @@ pub const Builder = struct {
     arena: std.mem.Allocator,
     /// Helper groups requested so far — see `helper`.
     helpers: HelperSet = .{},
-    /// Symbols called but defined elsewhere (`wat_runtime`'s comptime surface).
-    externs: std.ArrayListUnmanaged([]const u8) = .empty,
 
     pub const Error = std.mem.Allocator.Error;
 
@@ -557,15 +550,5 @@ pub const Builder = struct {
     pub fn helper(b: *Builder, h: Helper) Instr {
         b.helpers.require(h.group());
         return .{ .call = h.symbol() };
-    }
-
-    /// `call $<name>` for a symbol defined outside this module — the comptime
-    /// template prelude. Recorded so `validateModule` accepts it.
-    pub fn externCall(b: *Builder, name: []const u8) Error!Instr {
-        for (b.externs.items) |e| {
-            if (std.mem.eql(u8, e, name)) return .{ .call = name };
-        }
-        try b.externs.append(b.arena, name);
-        return .{ .call = name };
     }
 };

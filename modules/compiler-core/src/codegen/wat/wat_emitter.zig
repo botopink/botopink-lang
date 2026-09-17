@@ -27,27 +27,15 @@ pub fn renderModule(w: *Writer, m: ast.Module) Error!void {
     try w.writeAll(")\n");
 }
 
-/// Render a bare `(func …)` form with no module around it — the single-function
-/// surface `wat.emitFnWat` hands to the comptime template evaluator, whose
-/// prelude supplies the module wrapper.
-pub fn renderFunc(w: *Writer, f: ast.Func) Error!void {
-    try ast.validateFunc(f);
-    try func(w, f);
-}
-
-/// Render one top-level form (used by `emitFnWat`, whose output is a sequence
-/// of forms rather than a module).
-pub fn renderItem(w: *Writer, it: ast.Item) Error!void {
+/// One top-level form, in the module's two-space item column.
+fn renderItem(w: *Writer, it: ast.Item) Error!void {
     switch (it) {
         .import => |im| try import(w, im),
         .memory => |mem| try memory(w, mem),
         .start => |name| try w.print("  (start ${s})\n", .{name}),
         .data => |d| try dataSegment(w, d),
         .global => |g| try global(w, g),
-        .func => |f| {
-            try ast.validateFunc(f);
-            try func(w, f);
-        },
+        .func => |f| try func(w, f),
         .comment => |text| try w.print("  ;; {s}\n", .{text}),
     }
 }
@@ -346,11 +334,12 @@ test "a call to a function the module does not declare is refused" {
     var discard: std.Io.Writer.Discarding = .init(&.{});
     try std.testing.expectError(error.UndefinedCall, renderModule(&discard.writer, calls_missing));
 
-    // The same call is fine once the module declares the symbol as an extern —
-    // the comptime template prelude's surface.
-    var ok = calls_missing;
-    ok.externs = &.{"nope"};
-    try renderModule(&discard.writer, ok);
+    // The same call is fine once the module defines the symbol.
+    const defines_it: ast.Module = .{ .items = &.{
+        calls_missing.items[0],
+        .{ .func = .{ .name = "nope" } },
+    } };
+    try renderModule(&discard.writer, defines_it);
 }
 
 test "a body's stack has to match the signature" {

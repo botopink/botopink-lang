@@ -41,8 +41,8 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
 /// The order groups are appended to a module. `print` first: the others call
 /// into it.
 pub const order = [_]ast.HelperGroup{
-    .print, .print_str, .print_bool, .print_f64,
-    .arr_at, .str_concat, .str_eq, .str_slice,
+    .print,  .print_str,  .print_bool, .print_f64,
+    .arr_at, .str_concat, .str_eq,     .str_slice,
 };
 
 /// `fd_write`, the one host function the print helpers need.
@@ -100,7 +100,7 @@ const print_sp = ast.Func{
 
 const print_i32 = ast.Func{
     .name = "__print_i32",
-    .params = &.{ .{ .name = "n", .ty = .i32 } },
+    .params = &.{.{ .name = "n", .ty = .i32 }},
     .body = .{ .stack = .none, .lines = &.{
         .{ .indent = 4, .instr = .{ .local_get = "n" } },
         .{ .indent = 4, .instr = .{ .call = "__print_i32_raw" } },
@@ -110,7 +110,7 @@ const print_i32 = ast.Func{
 
 const print_i32_raw = ast.Func{
     .name = "__print_i32_raw",
-    .params = &.{ .{ .name = "n", .ty = .i32 } },
+    .params = &.{.{ .name = "n", .ty = .i32 }},
     .locals = &.{ &.{ .{ .name = "buf", .ty = .i32 }, .{ .name = "len", .ty = .i32 }, .{ .name = "neg", .ty = .i32 }, .{ .name = "d", .ty = .i32 } }, &.{ .{ .name = "i", .ty = .i32 }, .{ .name = "j", .ty = .i32 }, .{ .name = "tmp", .ty = .i32 } } },
     .body = .{ .stack = .none, .lines = &.{
         .{ .indent = 4, .instr = .{ .@"const" = .{ .ty = .i32, .text = "64" } } },
@@ -120,13 +120,13 @@ const print_i32_raw = ast.Func{
         .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "lt_s" } } },
         .{ .indent = 4, .instr = .{ .@"if" = .{
             .then = .{ .seq = .{ .stack = .none, .lines = &.{
-                    .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "1" } } },
-                    .{ .indent = 8, .instr = .{ .local_set = "neg" } },
-                    .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "0" } } },
-                    .{ .indent = 8, .instr = .{ .local_get = "n" } },
-                    .{ .indent = 8, .instr = .{ .op = .{ .ty = .i32, .name = "sub" } } },
-                    .{ .indent = 8, .instr = .{ .local_set = "n" } },
-                } } },
+                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "1" } } },
+                .{ .indent = 8, .instr = .{ .local_set = "neg" } },
+                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "0" } } },
+                .{ .indent = 8, .instr = .{ .local_get = "n" } },
+                .{ .indent = 8, .instr = .{ .op = .{ .ty = .i32, .name = "sub" } } },
+                .{ .indent = 8, .instr = .{ .local_set = "n" } },
+            } } },
         } } },
         .{ .indent = 4, .instr = .{ .block = .{
             .kind = .block,
@@ -220,20 +220,20 @@ const print_i32_raw = ast.Func{
         .{ .indent = 4, .instr = .{ .local_get = "neg" } },
         .{ .indent = 4, .instr = .{ .@"if" = .{
             .then = .{ .seq = .{ .stack = .none, .lines = &.{
-                    .{ .indent = 8, .instr = .{ .local_get = "buf" } },
-                    .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "1" } } },
-                    .{ .indent = 8, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
-                    .{ .indent = 8, .instr = .{ .local_get = "buf" } },
-                    .{ .indent = 8, .instr = .{ .local_get = "len" } },
-                    .{ .indent = 8, .instr = .{ .call = "__memmove" } },
-                    .{ .indent = 8, .instr = .{ .local_get = "buf" } },
-                    .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "45" } } },
-                    .{ .indent = 8, .instr = .{ .store = .{ .ty = .i32, .width = .byte } } },
-                    .{ .indent = 8, .instr = .{ .local_get = "len" } },
-                    .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "1" } } },
-                    .{ .indent = 8, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
-                    .{ .indent = 8, .instr = .{ .local_set = "len" } },
-                } } },
+                .{ .indent = 8, .instr = .{ .local_get = "buf" } },
+                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "1" } } },
+                .{ .indent = 8, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
+                .{ .indent = 8, .instr = .{ .local_get = "buf" } },
+                .{ .indent = 8, .instr = .{ .local_get = "len" } },
+                .{ .indent = 8, .instr = .{ .call = "__memmove" } },
+                .{ .indent = 8, .instr = .{ .local_get = "buf" } },
+                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "45" } } },
+                .{ .indent = 8, .instr = .{ .store = .{ .ty = .i32, .width = .byte } } },
+                .{ .indent = 8, .instr = .{ .local_get = "len" } },
+                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "1" } } },
+                .{ .indent = 8, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
+                .{ .indent = 8, .instr = .{ .local_set = "len" } },
+            } } },
         } } },
         .{ .indent = 4, .instr = .{ .local_get = "buf" } },
         .{ .indent = 4, .instr = .{ .local_get = "len" } },
@@ -244,7 +244,7 @@ const print_i32_raw = ast.Func{
 const memmove = ast.Func{
     .name = "__memmove",
     .params = &.{ .{ .name = "dst", .ty = .i32 }, .{ .name = "src", .ty = .i32 }, .{ .name = "len", .ty = .i32 } },
-    .locals = &.{ &.{ .{ .name = "i", .ty = .i32 } } },
+    .locals = &.{&.{.{ .name = "i", .ty = .i32 }}},
     .body = .{ .stack = .none, .lines = &.{
         .{ .indent = 4, .instr = .{ .local_get = "len" } },
         .{ .indent = 4, .instr = .{ .@"const" = .{ .ty = .i32, .text = "1" } } },
@@ -284,7 +284,7 @@ const memmove = ast.Func{
 
 const print_str_raw = ast.Func{
     .name = "__print_str_raw",
-    .params = &.{ .{ .name = "s", .ty = .i32 } },
+    .params = &.{.{ .name = "s", .ty = .i32 }},
     .body = .{ .stack = .none, .lines = &.{
         .{ .indent = 4, .instr = .{ .local_get = "s" } },
         .{ .indent = 4, .instr = .{ .@"const" = .{ .ty = .i32, .text = "4" } } },
@@ -297,7 +297,7 @@ const print_str_raw = ast.Func{
 
 const print_str = ast.Func{
     .name = "__print_str",
-    .params = &.{ .{ .name = "s", .ty = .i32 } },
+    .params = &.{.{ .name = "s", .ty = .i32 }},
     .body = .{ .stack = .none, .lines = &.{
         .{ .indent = 4, .instr = .{ .local_get = "s" } },
         .{ .indent = 4, .instr = .{ .call = "__print_str_raw" } },
@@ -307,7 +307,7 @@ const print_str = ast.Func{
 
 const print_bool = ast.Func{
     .name = "__print_bool",
-    .params = &.{ .{ .name = "b", .ty = .i32 } },
+    .params = &.{.{ .name = "b", .ty = .i32 }},
     .body = .{ .stack = .none, .lines = &.{
         .{ .indent = 4, .instr = .{ .local_get = "b" } },
         .{ .indent = 4, .instr = .{ .call = "__print_bool_raw" } },
@@ -317,38 +317,38 @@ const print_bool = ast.Func{
 
 const print_bool_raw = ast.Func{
     .name = "__print_bool_raw",
-    .params = &.{ .{ .name = "b", .ty = .i32 } },
+    .params = &.{.{ .name = "b", .ty = .i32 }},
     .body = .{ .stack = .none, .lines = &.{
         .{ .indent = 4, .instr = .{ .local_get = "b" } },
         .{ .indent = 4, .instr = .{ .@"if" = .{
             .then = .{ .seq = .{ .stack = .none, .lines = &.{
-                    .{ .indent = 8, .instr = .{ .comment = "\"true\" as a little-endian i32" } },
-                    .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "16" } } },
-                    .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "1702195828" } } },
-                    .{ .indent = 8, .instr = .{ .store = .{ .ty = .i32 } } },
-                    .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "16" } } },
-                    .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "4" } } },
-                    .{ .indent = 8, .instr = .{ .call = "__write_bytes" } },
-                } } },
+                .{ .indent = 8, .instr = .{ .comment = "\"true\" as a little-endian i32" } },
+                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "16" } } },
+                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "1702195828" } } },
+                .{ .indent = 8, .instr = .{ .store = .{ .ty = .i32 } } },
+                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "16" } } },
+                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "4" } } },
+                .{ .indent = 8, .instr = .{ .call = "__write_bytes" } },
+            } } },
             .@"else" = .{ .seq = .{ .stack = .none, .lines = &.{
-                    .{ .indent = 8, .instr = .{ .comment = "\"fals\" + 'e'" } },
-                    .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "16" } } },
-                    .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "1936482662" } } },
-                    .{ .indent = 8, .instr = .{ .store = .{ .ty = .i32 } } },
-                    .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "16" } } },
-                    .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "101" } } },
-                    .{ .indent = 8, .instr = .{ .store = .{ .ty = .i32, .width = .byte, .offset = 4 } } },
-                    .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "16" } } },
-                    .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "5" } } },
-                    .{ .indent = 8, .instr = .{ .call = "__write_bytes" } },
-                } } },
+                .{ .indent = 8, .instr = .{ .comment = "\"fals\" + 'e'" } },
+                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "16" } } },
+                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "1936482662" } } },
+                .{ .indent = 8, .instr = .{ .store = .{ .ty = .i32 } } },
+                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "16" } } },
+                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "101" } } },
+                .{ .indent = 8, .instr = .{ .store = .{ .ty = .i32, .width = .byte, .offset = 4 } } },
+                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "16" } } },
+                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "5" } } },
+                .{ .indent = 8, .instr = .{ .call = "__write_bytes" } },
+            } } },
         } } },
     } },
 };
 
 const print_f64 = ast.Func{
     .name = "__print_f64",
-    .params = &.{ .{ .name = "x", .ty = .f64 } },
+    .params = &.{.{ .name = "x", .ty = .f64 }},
     .body = .{ .stack = .none, .lines = &.{
         .{ .indent = 4, .instr = .{ .local_get = "x" } },
         .{ .indent = 4, .instr = .{ .call = "__print_f64_raw" } },
@@ -358,24 +358,24 @@ const print_f64 = ast.Func{
 
 const print_f64_raw = ast.Func{
     .name = "__print_f64_raw",
-    .params = &.{ .{ .name = "x", .ty = .f64 } },
-    .locals = &.{ &.{ .{ .name = "i", .ty = .i32 }, .{ .name = "frac", .ty = .f64 }, .{ .name = "d", .ty = .i32 }, .{ .name = "k", .ty = .i32 }, .{ .name = "last", .ty = .i32 } } },
+    .params = &.{.{ .name = "x", .ty = .f64 }},
+    .locals = &.{&.{ .{ .name = "i", .ty = .i32 }, .{ .name = "frac", .ty = .f64 }, .{ .name = "d", .ty = .i32 }, .{ .name = "k", .ty = .i32 }, .{ .name = "last", .ty = .i32 } }},
     .body = .{ .stack = .none, .lines = &.{
         .{ .indent = 4, .instr = .{ .local_get = "x" } },
         .{ .indent = 4, .instr = .{ .@"const" = .{ .ty = .f64, .text = "0" } } },
         .{ .indent = 4, .instr = .{ .op = .{ .ty = .f64, .name = "lt" } } },
         .{ .indent = 4, .instr = .{ .@"if" = .{
             .then = .{ .seq = .{ .stack = .none, .lines = &.{
-                    .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "32" } } },
-                    .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "45" } } },
-                    .{ .indent = 8, .instr = .{ .store = .{ .ty = .i32, .width = .byte } } },
-                    .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "32" } } },
-                    .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "1" } } },
-                    .{ .indent = 8, .instr = .{ .call = "__write_bytes" } },
-                    .{ .indent = 8, .instr = .{ .local_get = "x" } },
-                    .{ .indent = 8, .instr = .{ .op = .{ .ty = .f64, .name = "neg" } } },
-                    .{ .indent = 8, .instr = .{ .local_set = "x" } },
-                } } },
+                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "32" } } },
+                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "45" } } },
+                .{ .indent = 8, .instr = .{ .store = .{ .ty = .i32, .width = .byte } } },
+                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "32" } } },
+                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "1" } } },
+                .{ .indent = 8, .instr = .{ .call = "__write_bytes" } },
+                .{ .indent = 8, .instr = .{ .local_get = "x" } },
+                .{ .indent = 8, .instr = .{ .op = .{ .ty = .f64, .name = "neg" } } },
+                .{ .indent = 8, .instr = .{ .local_set = "x" } },
+            } } },
         } } },
         .{ .indent = 4, .instr = .{ .local_get = "x" } },
         .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "trunc_f64_s" } } },
@@ -430,9 +430,9 @@ const print_f64_raw = ast.Func{
                         .{ .indent = 8, .instr = .{ .local_get = "d" } },
                         .{ .indent = 8, .instr = .{ .@"if" = .{
                             .then = .{ .seq = .{ .stack = .none, .lines = &.{
-                                    .{ .indent = 12, .instr = .{ .local_get = "k" } },
-                                    .{ .indent = 12, .instr = .{ .local_set = "last" } },
-                                } } },
+                                .{ .indent = 12, .instr = .{ .local_get = "k" } },
+                                .{ .indent = 12, .instr = .{ .local_set = "last" } },
+                            } } },
                         } } },
                         .{ .indent = 8, .instr = .{ .br = "fdigits" } },
                     } },
@@ -442,15 +442,15 @@ const print_f64_raw = ast.Func{
         .{ .indent = 4, .instr = .{ .local_get = "last" } },
         .{ .indent = 4, .instr = .{ .@"if" = .{
             .then = .{ .seq = .{ .stack = .none, .lines = &.{
-                    .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "33" } } },
-                    .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "46" } } },
-                    .{ .indent = 8, .instr = .{ .store = .{ .ty = .i32, .width = .byte } } },
-                    .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "33" } } },
-                    .{ .indent = 8, .instr = .{ .local_get = "last" } },
-                    .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "1" } } },
-                    .{ .indent = 8, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
-                    .{ .indent = 8, .instr = .{ .call = "__write_bytes" } },
-                } } },
+                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "33" } } },
+                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "46" } } },
+                .{ .indent = 8, .instr = .{ .store = .{ .ty = .i32, .width = .byte } } },
+                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "33" } } },
+                .{ .indent = 8, .instr = .{ .local_get = "last" } },
+                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "1" } } },
+                .{ .indent = 8, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
+                .{ .indent = 8, .instr = .{ .call = "__write_bytes" } },
+            } } },
         } } },
     } },
 };
@@ -470,17 +470,17 @@ const arr_at = ast.Func{
         .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "or" } } },
         .{ .indent = 4, .instr = .{ .@"if" = .{
             .result = .i32,
-            .then = .{ .layout = .inline_, .seq = .{ .stack = .{ .value = .i32 }, .lines = &.{ .{ .instr = .{ .@"const" = .{ .ty = .i32, .text = "0" } } } } } },
+            .then = .{ .layout = .inline_, .seq = .{ .stack = .{ .value = .i32 }, .lines = &.{.{ .instr = .{ .@"const" = .{ .ty = .i32, .text = "0" } } }} } },
             .@"else" = .{ .seq = .{ .stack = .{ .value = .i32 }, .lines = &.{
-                    .{ .indent = 8, .instr = .{ .local_get = "xs" } },
-                    .{ .indent = 8, .instr = .{ .local_get = "i" } },
-                    .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "1" } } },
-                    .{ .indent = 8, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
-                    .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "4" } } },
-                    .{ .indent = 8, .instr = .{ .op = .{ .ty = .i32, .name = "mul" } } },
-                    .{ .indent = 8, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
-                    .{ .indent = 8, .instr = .{ .load = .{ .ty = .i32 } } },
-                } } },
+                .{ .indent = 8, .instr = .{ .local_get = "xs" } },
+                .{ .indent = 8, .instr = .{ .local_get = "i" } },
+                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "1" } } },
+                .{ .indent = 8, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
+                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "4" } } },
+                .{ .indent = 8, .instr = .{ .op = .{ .ty = .i32, .name = "mul" } } },
+                .{ .indent = 8, .instr = .{ .op = .{ .ty = .i32, .name = "add" } } },
+                .{ .indent = 8, .instr = .{ .load = .{ .ty = .i32 } } },
+            } } },
         } } },
     } },
 };
@@ -489,7 +489,7 @@ const str_concat = ast.Func{
     .name = "__str_concat",
     .params = &.{ .{ .name = "a", .ty = .i32 }, .{ .name = "b", .ty = .i32 } },
     .result = .i32,
-    .locals = &.{ &.{ .{ .name = "base", .ty = .i32 }, .{ .name = "alen", .ty = .i32 }, .{ .name = "blen", .ty = .i32 } } },
+    .locals = &.{&.{ .{ .name = "base", .ty = .i32 }, .{ .name = "alen", .ty = .i32 }, .{ .name = "blen", .ty = .i32 } }},
     .body = .{ .stack = .{ .value = .i32 }, .lines = &.{
         .{ .indent = 4, .instr = .{ .local_get = "a" } },
         .{ .indent = 4, .instr = .{ .load = .{ .ty = .i32 } } },
@@ -542,7 +542,7 @@ const str_eq = ast.Func{
     .name = "__str_eq",
     .params = &.{ .{ .name = "a", .ty = .i32 }, .{ .name = "b", .ty = .i32 } },
     .result = .i32,
-    .locals = &.{ &.{ .{ .name = "i", .ty = .i32 }, .{ .name = "alen", .ty = .i32 } } },
+    .locals = &.{&.{ .{ .name = "i", .ty = .i32 }, .{ .name = "alen", .ty = .i32 } }},
     .body = .{ .stack = .{ .value = .i32 }, .lines = &.{
         .{ .indent = 4, .instr = .{ .local_get = "a" } },
         .{ .indent = 4, .instr = .{ .load = .{ .ty = .i32 } } },
@@ -595,7 +595,7 @@ const str_slice = ast.Func{
     .name = "__str_slice",
     .params = &.{ .{ .name = "src", .ty = .i32 }, .{ .name = "start", .ty = .i32 }, .{ .name = "end", .ty = .i32 } },
     .result = .i32,
-    .locals = &.{ &.{ .{ .name = "newlen", .ty = .i32 }, .{ .name = "dst", .ty = .i32 } } },
+    .locals = &.{&.{ .{ .name = "newlen", .ty = .i32 }, .{ .name = "dst", .ty = .i32 } }},
     .body = .{ .stack = .{ .value = .i32 }, .lines = &.{
         .{ .indent = 4, .instr = .{ .local_get = "end" } },
         .{ .indent = 4, .instr = .{ .local_get = "start" } },

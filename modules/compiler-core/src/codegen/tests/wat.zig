@@ -413,11 +413,8 @@ test "wat: list literal of records len" {
 // F5 — Structured throw/catch surface. WAT models `@Result`-style
 // try/catch over a `[tag, payload]` linear-memory pair (tag 0 = Ok,
 // non-zero = Error). `@panic`/`@todo`/`throw` collapse to `unreachable`
-// — wasm3 doesn't implement the exceptions proposal, and the F0-audited
-// templates use the failRaw pattern through `wat_runtime.zig` (F6),
-// not host exceptions. The 3 fixtures below pin the `@Result`-based
-// shape that templates actually consume; the unwind-via-runtime path
-// lands in F6's prelude.
+// — the backend does not use the exceptions proposal. The 3 fixtures
+// below pin the `@Result`-based shape.
 
 // F5.1 — try a `#[@result]` fn, catch the error and yield a default.
 test "wat: try catch on result with default fallback" {
