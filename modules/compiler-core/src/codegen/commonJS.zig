@@ -53,8 +53,7 @@ pub fn codegenEmit(
 
     for (outputs) |*ct| {
         switch (ct.outcome) {
-            .parseError => continue,
-            .typeError => continue,
+            .parseError, .typeError => try results.append(alloc, try ModuleOutput.failedModule(alloc, ct.*)),
             .validationError => |verr| {
                 try results.append(alloc, .{
                     .name = ct.name,

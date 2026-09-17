@@ -141,10 +141,12 @@ Cross-command rules:
   carries its located diagnostic in `ComptimeOutput.outcome` — a lex or parse
   error included (`.parseError` holds the `SyntaxError`; a lex error no longer
   aborts the session, so the other modules still compile and get diagnosed).
-  `build`/`test` use a guard that compares the **named** module set handed to
-  `codegen.generateWith` with the named set it returned — never counts, which
-  `from "std"` expansion inflates; when a module is missing, the comptime
-  pipeline is re-run on the failure path only to render its diagnostic.
+  `build`/`test` read the same diagnostic from `codegen.generateWith`'s result:
+  every module comes back, a failed one with `result.diagnostic` (lex, parse,
+  type) or `result.comptime_err` (validation), and `diagnostics.failedOutputs`
+  renders each and names the failed non-declaration modules (a module with no
+  entry at all is named too). No command re-runs the comptime pipeline to
+  explain a failure.
 - **Orphans.** A `.bp` file no `mod` path reaches is warned per file and counted
   once (`N module(s) not reached by any `mod` path were not compiled`).
 - **Compiling does not execute.** `build` and `test` call
@@ -159,13 +161,6 @@ Cross-command rules:
   located at the entry in the dependency's `botopink.json`
   (`--> <lib>/botopink.json:L:C`), and the commands add nothing after it.
   Pinned by `tests/cli_contract.sh`.
-
-Open (not the CLI's files):
-
-- **The diagnostic is re-derived, not carried, by `build`/`test`.** The four
-  backends' `codegenEmit` still `continue` on `.parseError`/`.typeError`, so the
-  driver compares module sets and re-runs comptime (`explainFailures`) —
-  1.0.4-beta cli-residuals step 2.
 
 ### `botopink test` output format
 

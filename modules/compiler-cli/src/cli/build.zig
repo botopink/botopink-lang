@@ -102,15 +102,10 @@ pub fn run(
 
     const t1 = std.Io.Timestamp.now(io, .awake);
 
-    // Every module handed to the compiler must come back with an artifact. The
-    // backends drop a module that fails to type-check without a trace (and a
-    // comptime validation error comes back with no artifact), so compare the
-    // named sets and, when one is missing, re-derive every diagnostic.
-    const missing = try diagnostics.missingOutputs(arena, modules, outputs.items);
-    if (missing.len > 0) {
-        diagnostics.explainFailures(gpa, io, arena, modules, diagnostics.comptimeTargetName(target));
-    }
-    const failed = missing;
+    // Every module comes back from the compiler; one that did not lex, parse,
+    // type-check or pass comptime validation carries its diagnostic instead of
+    // an artifact, rendered here.
+    const failed = try diagnostics.failedOutputs(gpa, io, arena, modules, outputs.items);
 
     // Write what compiled; remove any previous artifact of a module that did not,
     // so nothing stale is left claiming to be current.
@@ -190,7 +185,7 @@ fn writeOutputs(
 
     for (outputs) |o| {
         // A validation error carries no artifact.
-        if (o.result.comptime_err != null) continue;
+        if (o.result.failed()) continue;
         // Create subdirectories if the module path contains slashes.
         const sub_path = try std.fmt.allocPrint(gpa, "{s}/{s}{s}", .{ out_dir, o.name, ext });
         defer gpa.free(sub_path);

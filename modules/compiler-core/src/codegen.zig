@@ -32,17 +32,35 @@ pub const Options = struct {
 /// The codegen snapshot harness's entry (`codegen/tests/helpers.zig`): emit
 /// **and execute** every module. Drivers call `generateWith` with
 /// `.execute = false`.
+///
+/// Returns only the modules that reached codegen or failed comptime
+/// validation: an entry carrying a lex/parse/type `diagnostic` is dropped,
+/// because the harness derives those diagnostics from its own comptime run
+/// and renders a section for every entry it is given.
 pub fn generate(
     allocator: std.mem.Allocator,
     modules: []const Module,
     io: std.Io,
     config: Config,
 ) !std.ArrayListUnmanaged(ModuleOutput) {
-    return generateWith(allocator, modules, io, config, .{ .execute = true });
+    var outputs = try generateWith(allocator, modules, io, config, .{ .execute = true });
+    var kept: usize = 0;
+    for (outputs.items) |*o| {
+        if (o.result.diagnostic != null) {
+            o.result.deinit(allocator);
+            continue;
+        }
+        outputs.items[kept] = o.*;
+        kept += 1;
+    }
+    outputs.shrinkRetainingCapacity(kept);
+    return outputs;
 }
 
 /// Compile `modules` for `config.targetSource`. Executes the emitted modules
-/// only when `options.execute` is set.
+/// only when `options.execute` is set. Every module comes back: one that did
+/// not lex, parse or type-check carries its `result.diagnostic`, one that
+/// failed comptime validation its `result.comptime_err`.
 pub fn generateWith(
     allocator: std.mem.Allocator,
     modules: []const Module,
@@ -75,14 +93,14 @@ pub fn generateWith(
     var aux_files: std.ArrayListUnmanaged(runtime.AuxFile) = .empty;
     defer aux_files.deinit(allocator);
     for (outputs.items) |o| {
-        if (o.result.comptime_err == null and o.name.len > 0) {
+        if (!o.result.failed() and o.name.len > 0) {
             try aux_files.append(allocator, .{ .name = o.name, .code = o.result.js });
         }
     }
 
     // Execute generated code and capture output
     for (outputs.items) |*output| {
-        if (output.result.comptime_err == null) {
+        if (!output.result.failed()) {
             output.result.run_output = switch (config.targetSource) {
                 .commonJS => runtime.executeJavaScript(allocator, output.result.js, aux_files.items, io) catch |err| blk: {
                     const err_msg = try std.fmt.allocPrint(allocator, "Execution error: {}", .{err});

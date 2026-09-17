@@ -4,16 +4,10 @@
 /// a lex or parse error (`SyntaxError`, rendered by `printSyntaxError`), a type
 /// error or a comptime validation error. A module that fails to lex or parse no
 /// longer aborts the session, so the others still compile and get diagnosed.
-/// The backends still drop a failed module from `codegen.generateWith`'s
-/// result (they `continue` past it), so every command answers "which modules
-/// did not compile, and where" the same way:
-///
-///   * `missingOutputs` compares the *named* set of modules handed to
-///     `codegen.generateWith` with the named set it returned — never counts,
-///     which `from "std"` expansion inflates.
-///   * `explainFailures` re-runs the comptime pipeline over the same modules
-///     (only on the failure path) and renders the located diagnostic of every
-///     module that did not compile.
+/// `check` renders the comptime outcomes (`renderOutcome`); `build` and `test`
+/// read the same diagnostic from `codegen.generateWith`'s result, where every
+/// backend returns a failed module with it (`failedOutputs`), so no command
+/// re-runs the pipeline to explain a failure.
 const std = @import("std");
 const bp = @import("botopink");
 const reporter = @import("./reporter.zig");
@@ -200,25 +194,70 @@ pub fn printParseError(gpa: std.mem.Allocator, parser: *const bp.Parser, err: an
 
 // ── Named module-set guard ────────────────────────────────────────────────────
 
-/// Names of the non-declaration `modules` for which `outputs` holds no entry
-/// (or only a validation-error entry). Compares named sets, never counts:
-/// `codegen.generate` adds one output per `from "std"` module it pulls in.
-pub fn missingOutputs(
+/// Render the diagnostic of every module `codegen.generateWith` returned
+/// without an artifact, and answer the names of the failed non-declaration
+/// modules. Every module comes back from `generateWith`: a lex/parse/type
+/// failure carries `result.diagnostic`, a comptime validation failure
+/// `result.comptime_err`. A non-declaration module with no entry at all is
+/// named too (no diagnostic to render). Nothing is printed when no
+/// non-declaration module failed — a broken declaration file alone does not
+/// fail the command.
+pub fn failedOutputs(
+    gpa: std.mem.Allocator,
+    io: std.Io,
     arena: std.mem.Allocator,
     modules: []const Module,
     outputs: []const bp.codegen.ModuleOutput,
 ) ![]const []const u8 {
-    var produced = std.StringHashMap(void).init(arena);
-    for (outputs) |o| {
-        if (o.result.comptime_err == null) try produced.put(o.name, {});
+    var declarations = std.StringHashMap(void).init(arena);
+    var returned = std.StringHashMap(void).init(arena);
+    for (modules) |m| {
+        if (m.declaration) try declarations.put(moduleName(m), {});
     }
-    var missing: std.ArrayListUnmanaged([]const u8) = .empty;
+    var failed: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (outputs) |o| {
+        try returned.put(o.name, {});
+        if (o.result.failed() and !declarations.contains(o.name)) try failed.append(arena, o.name);
+    }
     for (modules) |m| {
         if (m.declaration) continue;
         const name = moduleName(m);
-        if (!produced.contains(name)) try missing.append(arena, name);
+        if (!returned.contains(name)) try failed.append(arena, name);
     }
-    return missing.items;
+    if (failed.items.len > 0) {
+        for (outputs) |o| _ = renderResult(gpa, io, arena, o);
+    }
+    return failed.items;
+}
+
+/// Render the diagnostic a `generateWith` entry carries. Returns true when the
+/// entry is a failure.
+pub fn renderResult(gpa: std.mem.Allocator, io: std.Io, arena: std.mem.Allocator, o: bp.codegen.ModuleOutput) bool {
+    if (o.result.comptime_err) |ce| {
+        renderValidationError(gpa, ce, o.src);
+        return true;
+    }
+    const d = o.result.diagnostic orelse return false;
+    const file = fileLabel(arena, io, o.name);
+    switch (d) {
+        .syntax => |se| printSyntaxError(gpa, se, o.src, file),
+        .type => |t| printTypeError(gpa, t.message, t.loc, o.src, file),
+    }
+    return true;
+}
+
+fn renderValidationError(gpa: std.mem.Allocator, ce: anytype, source: []const u8) void {
+    const rendered = ce.renderAlloc(gpa, source) catch return;
+    defer gpa.free(rendered);
+    std.debug.print("{s}", .{rendered});
+}
+
+fn printTypeError(gpa: std.mem.Allocator, msg: []const u8, loc: anytype, source: []const u8, file: []const u8) void {
+    if (loc) |l| {
+        printLocated(gpa, msg, file, source, l.line, l.col, 1);
+    } else {
+        std.debug.print("error: {s}\n --> {s}\n\n", .{ msg, file });
+    }
 }
 
 // ── Type diagnostics ──────────────────────────────────────────────────────────
@@ -233,42 +272,16 @@ pub fn renderOutcome(gpa: std.mem.Allocator, io: std.Io, arena: std.mem.Allocato
             return true;
         },
         .validationError => |ce| {
-            const rendered = ce.renderAlloc(gpa, o.src) catch return true;
-            defer gpa.free(rendered);
-            std.debug.print("{s}", .{rendered});
+            renderValidationError(gpa, ce, o.src);
             return true;
         },
         .typeError => |te| {
             const msg = te.message(gpa) catch return true;
             defer gpa.free(msg);
-            const file = fileLabel(arena, io, o.name);
-            if (te.loc) |loc| {
-                printLocated(gpa, msg, file, o.src, loc.line, loc.col, 1);
-            } else {
-                std.debug.print("error: {s}\n --> {s}\n\n", .{ msg, file });
-            }
+            printTypeError(gpa, msg, te.loc, o.src, fileLabel(arena, io, o.name));
             return true;
         },
     }
-}
-
-/// Re-run the comptime pipeline over `modules` and render the diagnostic of
-/// every module that failed. Called only on the failure path of `build`/`test`,
-/// after `codegen.generate` dropped a module without saying why.
-pub fn explainFailures(
-    gpa: std.mem.Allocator,
-    io: std.Io,
-    arena: std.mem.Allocator,
-    modules: []const Module,
-    target_name: []const u8,
-) void {
-    var session = bp.comptime_pipeline.compile(gpa, modules, io, ".botopinkbuild", target_name) catch |err| {
-        var buf: [128]u8 = undefined;
-        reporter.errMsg(std.fmt.bufPrint(&buf, "type-check failed: {s}", .{@errorName(err)}) catch "type-check failed");
-        return;
-    };
-    defer session.deinit(gpa);
-    for (session.outputs.items) |o| _ = renderOutcome(gpa, io, arena, o);
 }
 
 /// The target vocabulary the comptime pipeline takes (`codegen.generate` threads
@@ -353,23 +366,26 @@ test "lineColOf and humanize" {
     try std.testing.expectEqualStrings("unterminated string", humanize(&buf, "UnterminatedString"));
 }
 
-test "missingOutputs compares named sets, not counts" {
+test "failedOutputs names diagnosed and absent modules, never a declaration file or a std output" {
     var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_inst.deinit();
     const arena = arena_inst.allocator();
     const modules = [_]Module{
         .{ .path = "main", .source = "" },
         .{ .path = "broken", .source = "" },
+        .{ .path = "gone", .source = "" },
         .{ .path = "decls", .source = "", .declaration = true },
     };
-    // One `from "std"` output masks the missing `broken` under a count guard.
     var js_a = "a".*;
     var js_b = "b".*;
+    var js_c = "".*;
     const outputs = [_]bp.codegen.ModuleOutput{
         .{ .name = "std/list", .src = "", .result = .{ .js = &js_a, .comptime_script = null } },
         .{ .name = "main", .src = "", .result = .{ .js = &js_b, .comptime_script = null } },
+        .{ .name = "broken", .src = "val x = ;", .result = .{ .js = &js_c, .comptime_script = null, .diagnostic = .{ .syntax = .{ .parse = null } } } },
     };
-    const missing = try missingOutputs(arena, &modules, &outputs);
-    try std.testing.expectEqual(@as(usize, 1), missing.len);
-    try std.testing.expectEqualStrings("broken", missing[0]);
+    const failed = try failedOutputs(std.testing.allocator, std.testing.io, arena, &modules, &outputs);
+    try std.testing.expectEqual(@as(usize, 2), failed.len);
+    try std.testing.expectEqualStrings("broken", failed[0]);
+    try std.testing.expectEqualStrings("gone", failed[1]);
 }

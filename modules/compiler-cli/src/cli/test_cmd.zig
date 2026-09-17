@@ -134,16 +134,10 @@ pub fn run(
         outputs.deinit(gpa);
     }
 
-    // The guard compares the *named* module set handed to the compiler with the
-    // named set it returned — a count would be inflated by every `from "std"`
-    // module `generate` pulls in, which is how a broken module used to pass. A
-    // module that failed is diagnosed here (file, line, excerpt) but does not
-    // stop the modules that compiled from running their tests.
-    const missing = try diagnostics.missingOutputs(arena, modules, outputs.items);
-    if (missing.len > 0) {
-        diagnostics.explainFailures(gpa, io, arena, modules, diagnostics.comptimeTargetName(target));
-    }
-    const failed = missing;
+    // Every module comes back from the compiler; one that failed carries its
+    // diagnostic, rendered here (file, line, excerpt). It does not stop the
+    // modules that compiled from running their tests.
+    const failed = try diagnostics.failedOutputs(gpa, io, arena, modules, outputs.items);
 
     // Start from an empty artifact tree: a previous run's artifact of a module
     // that no longer compiles must not be found (or run) by this one.
@@ -168,7 +162,7 @@ pub fn run(
     };
 
     for (outputs.items) |o| {
-        if (o.result.comptime_err != null) continue;
+        if (o.result.failed()) continue;
         const sub_path = try std.fmt.allocPrint(arena, TEST_OUT_DIR ++ "/{s}{s}", .{ o.name, ext });
         if (std.fs.path.dirname(sub_path)) |parent| {
             std.Io.Dir.cwd().createDirPath(io, parent) catch |err| switch (err) {
@@ -205,7 +199,7 @@ pub fn run(
             // mid-aggregator-build — the circular `require("./module")` would then
             // see an empty object and its side effects would crash. Exclude them.
             if (isTestModule(o.name, test_modules)) continue;
-            if (o.result.comptime_err != null) continue;
+            if (o.result.failed()) continue;
             try agg.appendSlice(arena, ", require(\"./");
             try agg.appendSlice(arena, o.name);
             try agg.appendSlice(arena, ".js\")");
@@ -221,6 +215,8 @@ pub fn run(
         var seen_dirs = std.StringHashMap(void).init(arena);
         for (outputs.items) |o| {
             if (std.mem.startsWith(u8, o.name, "std/")) continue;
+            // A module that did not lex, parse or type-check is written nowhere.
+            if (o.result.diagnostic != null) continue;
             const dir = std.fs.path.dirname(o.name) orelse continue; // null → top level
             if (seen_dirs.contains(dir)) continue;
             try seen_dirs.put(dir, {});
@@ -248,7 +244,7 @@ pub fn run(
         // Dependency modules are compiled for their exports, not tested here —
         // run only the project's own `test {}` blocks.
         if (isDepModule(o.name, real_deps.items)) continue;
-        if (o.result.comptime_err != null) continue;
+        if (o.result.failed()) continue;
         // Modules without test blocks have no runner — skip them.
         if (std.mem.indexOf(u8, o.result.js, "__bp_run_tests") == null) continue;
         any_tests = true;

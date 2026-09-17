@@ -43,7 +43,7 @@ src/
 | `comptime.zig` | Comptime façade — `ComptimeSession`, `compile`, `compileTypesOnly`, `evaluateComptime`, `registerStdlib`. A module that does not lex or parse is an `Outcome.parseError` carrying a located `SyntaxError` (`.lex` / `.parse`), never a session-wide error |
 | `format.zig` | Wadler-Lindig formatter |
 | `print.zig` | rustc-style error renderer |
-| `codegen.zig` | Public codegen API over the `codegen/` backends: `generateWith(alloc, modules, io, config, .{ .execute })` compiles and, only when `execute` is set, runs each emitted module (`run_output`); `generate` is the snapshot harness's executing entry — drivers (the CLI) pass `.execute = false` |
+| `codegen.zig` | Public codegen API over the `codegen/` backends: `generateWith(alloc, modules, io, config, .{ .execute })` compiles and, only when `execute` is set, runs each emitted module (`run_output`). Every module comes back: one that did not lex, parse or type-check carries `result.diagnostic`, one that failed comptime validation `result.comptime_err` (`result.failed()`). `generate` is the snapshot harness's executing entry and drops the `diagnostic` entries (the harness derives those from its own comptime run) — drivers (the CLI) call `generateWith` with `.execute = false` |
 
 ## Subdirectories
 
