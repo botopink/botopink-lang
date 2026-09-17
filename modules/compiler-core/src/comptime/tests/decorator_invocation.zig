@@ -64,7 +64,7 @@ fn assertRejectsAt(comptime loc: std.builtin.SourceLocation, src: []const u8, ne
 test "decorator invocation: body accepts a record" {
     try assertAccepts(@src(),
         \\fn service(comptime decl: @Decl) {
-        \\    if (decl.kind != DeclKind.Record) { decl.fail("#[service] must annotate a record"); }
+        \\    if (decl.kind != DeclKind.Type) { decl.fail("#[service] must annotate a record"); }
         \\}
         \\#[service]
         \\record UserService { name: string }
@@ -74,7 +74,7 @@ test "decorator invocation: body accepts a record" {
 test "decorator invocation: body rejects wrong placement (fn instead of record)" {
     try assertRejects(@src(),
         \\fn service(comptime decl: @Decl) {
-        \\    if (decl.kind != DeclKind.Record) { decl.fail("#[service] must annotate a record"); }
+        \\    if (decl.kind != DeclKind.Type) { decl.fail("#[service] must annotate a record"); }
         \\}
         \\#[service]
         \\fn notARecord() { }
@@ -84,7 +84,7 @@ test "decorator invocation: body rejects wrong placement (fn instead of record)"
 test "decorator invocation: rejection points at the annotation" {
     try assertRejectsAt(@src(),
         \\fn service(comptime decl: @Decl) {
-        \\    if (decl.kind != DeclKind.Record) { decl.failAt(Span(0, 1, 1), "#[service] must annotate a record"); }
+        \\    if (decl.kind != DeclKind.Type) { decl.failAt(Span(0, 1, 1), "#[service] must annotate a record"); }
         \\}
         \\
         \\#[service]
@@ -129,7 +129,7 @@ test "decorator invocation: @compilerError rejects wrong placement" {
     // surfaces as a scoped rejection when the body runs.
     try assertRejects(@src(),
         \\fn service(comptime decl: @Decl) {
-        \\    if (decl.kind != DeclKind.Record) { @compilerError("#[service] must annotate a record"); }
+        \\    if (decl.kind != DeclKind.Type) { @compilerError("#[service] must annotate a record"); }
         \\}
         \\#[service]
         \\fn notARecord() { }
@@ -139,7 +139,7 @@ test "decorator invocation: @compilerError rejects wrong placement" {
 test "decorator invocation: @compilerError body accepts the right placement" {
     try assertAccepts(@src(),
         \\fn service(comptime decl: @Decl) {
-        \\    if (decl.kind != DeclKind.Record) { @compilerError("#[service] must annotate a record"); }
+        \\    if (decl.kind != DeclKind.Type) { @compilerError("#[service] must annotate a record"); }
         \\}
         \\#[service]
         \\record UserService { name: string }
@@ -196,7 +196,7 @@ test "decorator invocation: interface-level marker runs over the interface" {
     // (previously interface-level markers were silently skipped).
     try assertRejects(@src(),
         \\fn onlyRecords(comptime decl: @Decl) {
-        \\    if (decl.kind == DeclKind.Interface) { decl.fail("marker is not allowed on an interface"); }
+        \\    if (decl.kind == DeclKind.Behavior) { decl.fail("marker is not allowed on an interface"); }
         \\}
         \\#[onlyRecords]
         \\interface Repo { fn find(self: Self, id: i32) -> string }

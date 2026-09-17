@@ -232,16 +232,16 @@ fn isZeroArgMainCall(e: ast.Expr) bool {
     };
 }
 
-/// Arity for an `InterfaceMethod` (`self` is always present in member methods
+/// Arity for an `BehaviorMethod` (`self` is always present in member methods
 /// and gets x0; we count it just like a regular fn param). A method whose body
 /// reads `self` without declaring it (`fn inc() { self.count += 1; }`) takes the
 /// receiver as an implicit first parameter.
-fn methodArity(m: ast.InterfaceMethod) usize {
+fn methodArity(m: ast.BehaviorMethod) usize {
     return m.params.len + @intFromBool(hasImplicitSelf(m));
 }
 
 /// True when `m` reads `self` but does not declare it as its first parameter.
-fn hasImplicitSelf(m: ast.InterfaceMethod) bool {
+fn hasImplicitSelf(m: ast.BehaviorMethod) bool {
     if (m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self")) return false;
     const body = m.body orelse return false;
     return bodyMentionsSelf(body);
@@ -250,7 +250,7 @@ fn hasImplicitSelf(m: ast.InterfaceMethod) bool {
 /// True when a record/struct/enum method is an associated fn — no `self`
 /// receiver, so it's reachable as `Type.method(...)` and, across modules, as a
 /// remote `call_ext` into the owner.
-fn isAssocMethod(m: ast.InterfaceMethod) bool {
+fn isAssocMethod(m: ast.BehaviorMethod) bool {
     if (hasImplicitSelf(m)) return false;
     return m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self");
 }
@@ -307,7 +307,7 @@ fn collectMethodExports(
     exports: *std.ArrayListUnmanaged(ExportEntry),
     owned: *std.ArrayListUnmanaged([]u8),
     owner: []const u8,
-    methods: []const ast.InterfaceMethod,
+    methods: []const ast.BehaviorMethod,
     force_assoc: bool,
 ) !void {
     for (methods) |m| {
@@ -925,9 +925,11 @@ fn emitBeamAsm(
             } else if (has_main_0 and !isSyntheticMainCall(v)) {
                 try em.entry_stmts.append(alloc, v);
             },
-            .record => |r| try em.reserveRecordMethods(r),
-            .@"enum" => |e| try em.reserveEnumMethods(e),
-            .interface => |i| try em.reserveInterfaceMethods(i),
+            .type_ => |tdecl| switch (tdecl.shape) {
+                .record => try em.reserveRecordMethods(tdecl),
+                .enum_ => try em.reserveEnumMethods(tdecl),
+            },
+            .behavior => |i| try em.reserveInterfaceMethods(i),
             .implement => |im| try em.reserveImplementMethods(im),
             .extend => |ex| try em.reserveExtendMethods(ex),
             else => {},
@@ -962,8 +964,10 @@ fn emitBeamAsm(
             .val => |v| if (v.isPub and !isSyntheticEntrypointVal(v)) {
                 try exports.append(alloc, .{ .name = v.name, .arity = 0 });
             },
-            .record => |r| try collectMethodExports(alloc, &exports, &owned_export_names, r.name, r.methods, isCrossImported(cross, r.name)),
-            .@"enum" => |e| try collectMethodExports(alloc, &exports, &owned_export_names, e.name, e.methods, isCrossImported(cross, e.name)),
+            .type_ => |tdecl| switch (tdecl.shape) {
+                .record => try collectMethodExports(alloc, &exports, &owned_export_names, tdecl.name, tdecl.methods, isCrossImported(cross, tdecl.name)),
+                .enum_ => try collectMethodExports(alloc, &exports, &owned_export_names, tdecl.name, tdecl.methods, isCrossImported(cross, tdecl.name)),
+            },
             .implement => |im| try collectImplementExports(alloc, &exports, &owned_export_names, im),
             .extend => |ex| try collectExtendExports(alloc, &exports, &owned_export_names, ex),
             else => {},
@@ -983,11 +987,13 @@ fn emitBeamAsm(
                 .level = if (c.is_module) .module else if (c.is_doc) .doc else .line,
                 .text = c.text,
             }),
-            .record => |r| try em.emitRecord(r),
-            .@"enum" => |e| try em.emitEnum(e),
+            .type_ => |tdecl| switch (tdecl.shape) {
+                .record => try em.emitRecord(tdecl),
+                .enum_ => try em.emitEnum(tdecl),
+            },
             // An interface's associated `default fn`s (`Array.range`, `Pair.of`)
             // are pure botopink — emit them as local mangled fns (`'Array_range'`).
-            .interface => |i| try em.emitInterfaceAssoc(i),
+            .behavior => |i| try em.emitInterfaceAssoc(i),
             .implement => |im| try em.emitImplement(im),
             .extend => |ex| try em.emitExtend(ex),
             // Purely abstract decls (delegate), module-graph metadata (use), and
@@ -1242,7 +1248,7 @@ const Emitter = struct {
     const ExtInfo = struct { target: []const u8, methods: []const ast.ImplementMethod };
 
     /// An interface instance `default fn` and the interface declaring it.
-    const IfaceDefault = struct { iface: []const u8, method: ast.InterfaceMethod };
+    const IfaceDefault = struct { iface: []const u8, method: ast.BehaviorMethod };
 
     fn init(alloc: std.mem.Allocator, module_name: []const u8, out: *std.Io.Writer, cv: std.StringHashMap([]const u8), rewrites: std.AutoHashMap(ast.Loc, []const u8)) Emitter {
         return .{
@@ -1344,8 +1350,8 @@ const Emitter = struct {
     /// translates the template shape into its own emission convention.
     fn collectPrimErlangDispatch(self: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| {
-            if (decl != .interface) continue;
-            try self.collectIfaceErlangDispatch(decl.interface);
+            if (decl != .behavior) continue;
+            try self.collectIfaceErlangDispatch(decl.behavior);
         }
         const arena = self.prelude_arena.allocator();
         var lx = lexerMod.Lexer.init(prelude.primitives);
@@ -1353,8 +1359,8 @@ const Emitter = struct {
         var p = parserMod.Parser.init(tokens);
         const prim_program = p.parse(arena) catch return;
         for (prim_program.decls) |decl| {
-            if (decl != .interface) continue;
-            try self.collectIfaceErlangDispatch(decl.interface);
+            if (decl != .behavior) continue;
+            try self.collectIfaceErlangDispatch(decl.behavior);
         }
         // The program's own declarations win; the prelude fills the rest.
         try self.collectDefaultsAndExternals(program.decls);
@@ -1366,7 +1372,7 @@ const Emitter = struct {
     fn collectDefaultsAndExternals(self: *Emitter, decls: []const ast.DeclKind) !void {
         const arena = self.prelude_arena.allocator();
         for (decls) |decl| switch (decl) {
-            .interface => |i| for (i.methods) |m| {
+            .behavior => |i| for (i.methods) |m| {
                 const key = try std.fmt.allocPrint(arena, "{s}.{s}", .{ i.name, m.name });
                 if (m.returnType) |rt| {
                     if (rt == .named and std.mem.eql(u8, rt.named, "Self")) try self.self_returns.put(key, {});
@@ -1383,7 +1389,7 @@ const Emitter = struct {
         };
     }
 
-    fn collectIfaceErlangDispatch(self: *Emitter, iface: ast.InterfaceDecl) !void {
+    fn collectIfaceErlangDispatch(self: *Emitter, iface: ast.BehaviorDecl) !void {
         var slots: [16][]const u8 = undefined;
         for (iface.methods) |m| {
             // §A6 BEAM-target template path (v0.beta.22 front 03): an
@@ -1484,7 +1490,7 @@ const Emitter = struct {
     /// emits — parity with the erlang backend.
     fn collectInterfaces(self: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| switch (decl) {
-            .interface => |i| {
+            .behavior => |i| {
                 for (i.methods) |m| {
                     if (!m.is_default or m.body == null or !isAssocMethod(m)) continue;
                     const qn = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ i.name, m.name });
@@ -1522,7 +1528,7 @@ const Emitter = struct {
     }
 
     /// Reserve labels for an interface's associated `default fn`s (pass 1).
-    fn reserveInterfaceMethods(self: *Emitter, i: ast.InterfaceDecl) !void {
+    fn reserveInterfaceMethods(self: *Emitter, i: ast.BehaviorDecl) !void {
         for (i.methods) |m| {
             if (!m.is_default or m.body == null or !isAssocMethod(m)) continue;
             try self.reserveMethod(i.name, m.name, methodArity(m));
@@ -1530,7 +1536,7 @@ const Emitter = struct {
     }
 
     /// Emit an interface's associated `default fn`s as local mangled fns (pass 2).
-    fn emitInterfaceAssoc(self: *Emitter, i: ast.InterfaceDecl) !void {
+    fn emitInterfaceAssoc(self: *Emitter, i: ast.BehaviorDecl) !void {
         for (i.methods) |m| {
             if (!m.is_default or m.body == null or !isAssocMethod(m)) continue;
             try self.emitMethodAsFn(i.name, m);
@@ -1551,15 +1557,17 @@ const Emitter = struct {
     /// associated-fn call can `call_ext` into it.
     fn collectRecordShapes(self: *Emitter, program: ast.Program, all_outputs: []const ComptimeOutput) !void {
         for (program.decls) |decl| switch (decl) {
-            .record => |r| {
-                const fields = try self.alloc.alloc([]const u8, r.fields.len);
-                for (r.fields, 0..) |f, i| fields[i] = f.name;
-                try self.record_fields.put(r.name, fields);
+            .type_ => |tdecl| switch (tdecl.shape) {
+                .record => {
+                    const fields = try self.alloc.alloc([]const u8, tdecl.recordFields().len);
+                    for (tdecl.recordFields(), 0..) |f, i| fields[i] = f.name;
+                    try self.record_fields.put(tdecl.name, fields);
+                },
+                .enum_ => for (tdecl.variants()) |v| try self.enum_variants.put(v.name, {}),
             },
             // A nullary enum variant is an atom, so a bare `Lt ->` case arm is a
             // *test* against that atom, not a binding. Parity with the erlang
             // backend's `enum_variants` (`erlang.zig` `collectTypeShapes`).
-            .@"enum" => |e| for (e.variants) |v| try self.enum_variants.put(v.name, {}),
             else => {},
         };
         // A `from "std"` module import (`import {order} from "std"`) brings the
@@ -1580,7 +1588,7 @@ const Emitter = struct {
                             else => continue,
                         };
                         for (ok.transformed.decls) |d| switch (d) {
-                            .@"enum" => |e| for (e.variants) |v| try self.enum_variants.put(v.name, {}),
+                            .type_ => |e| for (e.variants()) |v| try self.enum_variants.put(v.name, {}),
                             else => {},
                         };
                     }
@@ -1613,8 +1621,8 @@ const Emitter = struct {
                             else => continue,
                         };
                         for (ok.transformed.decls) |d| switch (d) {
-                            .@"enum" => |e| if (std.mem.eql(u8, e.name, name)) {
-                                for (e.variants) |v| try self.enum_variants.put(v.name, {});
+                            .type_ => |e| if (!e.isRecord() and std.mem.eql(u8, e.name, name)) {
+                                for (e.variants()) |v| try self.enum_variants.put(v.name, {});
                             },
                             else => {},
                         };
@@ -1795,7 +1803,7 @@ const Emitter = struct {
                 .ident => |n| nums.get(n) orelse self.num_names.get(n),
                 .identAccess => |ia| if (self.instanceLowering(id.loc, ia.receiver.*)) |il| switch (il) {
                     .prim => .int,
-                    .record => null,
+                    .type_ => null,
                 } else null,
                 else => null,
             },
@@ -2008,7 +2016,7 @@ const Emitter = struct {
         try self.reserveFn(mangled, arity);
     }
 
-    fn reserveRecordMethods(self: *Emitter, r: ast.RecordDecl) !void {
+    fn reserveRecordMethods(self: *Emitter, r: ast.TypeDecl) !void {
         for (r.methods) |m| {
             if (m.body == null or m.is_declare) continue;
             try self.reserveMethod(r.name, m.name, methodArity(m));
@@ -2030,7 +2038,7 @@ const Emitter = struct {
         };
     }
 
-    fn reserveEnumMethods(self: *Emitter, e: ast.EnumDecl) !void {
+    fn reserveEnumMethods(self: *Emitter, e: ast.TypeDecl) !void {
         for (e.methods) |m| {
             if (m.body == null or m.is_declare) continue;
             try self.reserveMethod(e.name, m.name, methodArity(m));
@@ -2054,7 +2062,7 @@ const Emitter = struct {
         }
     }
 
-    fn emitRecord(self: *Emitter, r: ast.RecordDecl) !void {
+    fn emitRecord(self: *Emitter, r: ast.TypeDecl) !void {
         for (r.methods) |m| {
             if (m.body == null or m.is_declare) continue;
             try self.emitMethodAsFn(r.name, m);
@@ -2073,7 +2081,7 @@ const Emitter = struct {
         };
     }
 
-    fn emitEnum(self: *Emitter, e: ast.EnumDecl) !void {
+    fn emitEnum(self: *Emitter, e: ast.TypeDecl) !void {
         for (e.methods) |m| {
             if (m.body == null or m.is_declare) continue;
             try self.emitMethodAsFn(e.name, m);
@@ -2094,7 +2102,7 @@ const Emitter = struct {
         }
     }
 
-    fn emitMethodAsFn(self: *Emitter, owner: []const u8, m: ast.InterfaceMethod) !void {
+    fn emitMethodAsFn(self: *Emitter, owner: []const u8, m: ast.BehaviorMethod) !void {
         const arity = methodArity(m);
         var name_buf: [256]u8 = undefined;
         const mangled = try std.fmt.bufPrint(&name_buf, "'{s}_{s}'", .{ owner, m.name });
@@ -3192,7 +3200,7 @@ const Emitter = struct {
                 },
                 // A record/struct/enum receiver: its method is the mangled
                 // `'<Type>_<method>'` function taking the receiver first.
-                .record => |type_name| {
+                .type_ => |type_name| {
                     var nbuf: [256]u8 = undefined;
                     if (std.fmt.bufPrint(&nbuf, "'{s}_{s}'", .{ type_name, cc.callee })) |mangled| {
                         if (self.fnLabelsFor(mangled, 1 + cc.args.len)) |_| {
@@ -3314,7 +3322,7 @@ const Emitter = struct {
             const labels = self.fnLabelsFor(cc.callee, total_arity) catch {
                 // A record field holding a fun (`s.set(v)` on
                 // `record State { set: fn(next: T) }`): read it, apply it.
-                const fun_field = if (self.instanceLowering(loc, recv_expr.*)) |il| il == .record else self.someRecordHasField(cc.callee);
+                const fun_field = if (self.instanceLowering(loc, recv_expr.*)) |il| il == .type_ else self.someRecordHasField(cc.callee);
                 {
                     if (fun_field) {
                         var read: ast.Expr = .{ .identifier = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .identAccess = .{ .receiver = @constCast(recv_expr), .member = cc.callee } } } };
@@ -6162,7 +6170,7 @@ const Emitter = struct {
                 }
                 return;
             },
-            .record => {},
+            .type_ => {},
         };
 
         try self.lowerExprIntoX0(ia.receiver.*);

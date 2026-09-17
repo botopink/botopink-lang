@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "enum": {
+      "type_": {
         "name": "Option",
         "id": 1,
         "isPub": true,
@@ -17,29 +17,34 @@
           }
         ],
         "implement": [],
-        "variants": [
-          {
-            "name": "None",
-            "fields": [],
-            "numeric": false
-          },
-          {
-            "name": "Some",
-            "fields": [
+        "shape": {
+          "enum_": {
+            "variants": [
               {
-                "name": "value",
-                "typeRef": {
-                  "named": "T"
-                },
-                "default": null
+                "name": "None",
+                "fields": [],
+                "numeric": false
+              },
+              {
+                "name": "Some",
+                "fields": [
+                  {
+                    "name": "value",
+                    "typeRef": {
+                      "named": "T"
+                    },
+                    "default": null,
+                    "annotations": []
+                  }
+                ],
+                "numeric": false
               }
             ],
-            "numeric": false
+            "sections": []
           }
-        ],
+        },
         "trailingComma": true,
-        "methods": [],
-        "sections": []
+        "methods": []
       }
     }
   ]

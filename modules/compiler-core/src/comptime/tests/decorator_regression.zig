@@ -121,7 +121,7 @@ test "decorator regression: loop in body accepts a clean record through lists:fo
 
 const conditional_decorator =
     \\fn checkFields(comptime decl: @Decl) {
-    \\    if (decl.kind == DeclKind.Record) {
+    \\    if (decl.kind == DeclKind.Type) {
     \\        if (decl.fields.len > 5) {
     \\            decl.fail("too many fields");
     \\        }

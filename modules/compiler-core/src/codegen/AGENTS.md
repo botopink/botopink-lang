@@ -334,7 +334,7 @@ codegen/
   plain application.
 - **Comptime modules:** `emitComptimeModule(alloc, name, program, .{ host_enums,
   host_records, exports, forms, listing, unsupported_method })` lowers an untyped decorator/template body with
-  the same emitter — `host_enums` join `enum_names` (`DeclKind.Record` →
+  the same emitter — `host_enums` join `enum_names` (`DeclKind.Type` →
   `'Record'`), `host_records` (`HostRecord{name, fields}`) join `record_fields`
   so host record constructors build maps, `exports` (`[]erl_ast.FnRef`) are prepended to `-export`,
   `listing = true` renders only the lowered decls and `forms` (no header,

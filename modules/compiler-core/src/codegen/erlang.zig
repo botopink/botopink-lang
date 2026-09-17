@@ -38,7 +38,7 @@ fn fnArityNoSelf(f: ast.FnDecl) usize {
 /// True when a record/struct/enum method is an associated fn — no `self`
 /// receiver, so it's callable as `Type.method(...)` (and across modules as a
 /// remote call). Its Erlang arity is just `params.len` (no `self` to drop).
-fn isAssocMethod(m: ast.InterfaceMethod) bool {
+fn isAssocMethod(m: ast.BehaviorMethod) bool {
     return m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self");
 }
 
@@ -281,11 +281,13 @@ fn noAutoImportRefs(b: Ast.Builder, decls: []ast.DeclKind, bif_table: []const Au
         .@"fn" => |f| try Collect.run(b.arena, &refs, bif_table, f.name, f.params.len),
         // Record / enum methods keep `params.len` as the erlang arity (instance
         // methods include the receiver); `is_declare` methods emit no body.
-        .record => |r| for (r.methods) |m| {
-            if (!m.is_declare) try Collect.run(b.arena, &refs, bif_table, m.name, m.params.len);
-        },
-        .@"enum" => |e| for (e.methods) |m| {
-            if (!m.is_declare) try Collect.run(b.arena, &refs, bif_table, m.name, m.params.len);
+        .type_ => |tdecl| switch (tdecl.shape) {
+            .record => for (tdecl.methods) |m| {
+                if (!m.is_declare) try Collect.run(b.arena, &refs, bif_table, m.name, m.params.len);
+            },
+            .enum_ => for (tdecl.methods) |m| {
+                if (!m.is_declare) try Collect.run(b.arena, &refs, bif_table, m.name, m.params.len);
+            },
         },
         // Extension methods always keep the receiver as the first param.
         .extend => |ex| for (ex.methods) |m| try Collect.run(b.arena, &refs, bif_table, m.name, m.params.len),
@@ -321,7 +323,7 @@ pub fn codegenEmit(
             else => continue,
         };
         for (ok.transformed.decls) |decl| switch (decl) {
-            .@"enum" => |e| if (e.isPub) try enum_exports.append(alloc, .{ .module = ct.name, .name = e.name, .variants = e.variants }),
+            .type_ => |e| if (!e.isRecord() and e.isPub) try enum_exports.append(alloc, .{ .module = ct.name, .name = e.name, .variants = e.variants() }),
             else => {},
         };
     }
@@ -367,7 +369,7 @@ pub fn codegenEmit(
 /// emitter as regular modules — only the host glue differs.
 pub const ComptimeModule = struct {
     /// Enum types the host injects without a declaration (`DeclKind`), so a
-    /// qualified member (`DeclKind.Record`) lowers to its variant atom.
+    /// qualified member (`DeclKind.Type`) lowers to its variant atom.
     host_enums: []const []const u8 = &.{},
     /// Record types the host injects without a declaration (`Span`,
     /// `CustomNode`), so a constructor call (`Span(5, 9, 1)`,
@@ -979,8 +981,10 @@ fn emitErlangModule(
     if (cross) |xc| {
         for (program.decls) |decl| {
             const methods = switch (decl) {
-                .record => |r| if (xc.imported.contains(r.name)) r.methods else continue,
-                .@"enum" => |e| if (xc.imported.contains(e.name)) e.methods else continue,
+                .type_ => |tdecl| switch (tdecl.shape) {
+                    .record => if (xc.imported.contains(tdecl.name)) tdecl.methods else continue,
+                    .enum_ => if (xc.imported.contains(tdecl.name)) tdecl.methods else continue,
+                },
                 else => continue,
             };
             for (methods) |m| {
@@ -1025,9 +1029,11 @@ fn emitErlangModule(
                     try std.fmt.allocPrint(b.arena, "external fn {s} (no erlang target)", .{f.name});
                 try forms.append(b.arena, .{ .comment = Ast.Comment.doc(text) });
             },
-            .record => |r| try em.recordForms(b, &forms, r),
-            .@"enum" => |e| try em.enumForms(b, &forms, e),
-            .interface => |i| try em.interfaceForms(b, &forms, i),
+            .type_ => |tdecl| switch (tdecl.shape) {
+                .record => try em.recordForms(b, &forms, tdecl),
+                .enum_ => try em.enumForms(b, &forms, tdecl),
+            },
+            .behavior => |i| try em.interfaceForms(b, &forms, i),
             .implement => |im| try em.implementForms(b, &forms, im),
             .extend => |ex| try em.extendForms(b, &forms, ex),
             .use => |u| try forms.append(b.arena, .{ .comment = Ast.Comment.doc(try useComment(b, u)) }),
@@ -1311,7 +1317,7 @@ fn isNullableParam(p: ast.Param) bool {
 /// `self` and which carries a body. Unlike an associated default (`Array.range`)
 /// it is reached through a value receiver (`xs.all(pred)`), so the emitted form
 /// keeps `self` as its first parameter.
-const IfaceDefault = struct { iface: []const u8, method: ast.InterfaceMethod };
+const IfaceDefault = struct { iface: []const u8, method: ast.BehaviorMethod };
 
 /// One `'__bp_prim_<callee>'/<argc + 1>` runtime-dispatch shim a comptime body
 /// reached. `callee` borrows from the body's AST.
@@ -1653,7 +1659,7 @@ const Emitter = struct {
     /// Pre-pass: detect record/struct method names that appear on more than
     /// one nominal type with the same arity. Those collisions get mangled
     /// at emit time (`Query.count` → `query_count`) and at the call site
-    /// (`.record => |"Query"|` of `count` routes to `query_count`),
+    /// (`.type_ => |"Query"|` of `count` routes to `query_count`),
     /// because erlang's top-level fn namespace has no record-scoped
     /// disambiguation.
     fn collectRecordMethodCollisions(this: *Emitter, program: ast.Program) !void {
@@ -1667,11 +1673,11 @@ const Emitter = struct {
         var seen = std.StringHashMap(FirstOf).init(aa);
         for (program.decls) |decl| {
             const type_name: []const u8 = switch (decl) {
-                .record => |r| r.name,
+                .type_ => |r| if (r.isRecord()) r.name else continue,
                 else => continue,
             };
-            const methods: []const ast.InterfaceMethod = switch (decl) {
-                .record => |r| r.methods,
+            const methods: []const ast.BehaviorMethod = switch (decl) {
+                .type_ => |r| if (r.isRecord()) r.methods else continue,
                 else => continue,
             };
             for (methods) |m| {
@@ -1898,9 +1904,9 @@ const Emitter = struct {
     /// would survive, but the parsed arg list lives on a scratch buffer).
     fn collectPrimErlangDispatch(this: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| {
-            if (decl != .interface) continue;
-            try this.collectIfaceErlangDispatch(decl.interface);
-            try this.collectIfaceExtendsChain(decl.interface);
+            if (decl != .behavior) continue;
+            try this.collectIfaceErlangDispatch(decl.behavior);
+            try this.collectIfaceExtendsChain(decl.behavior);
         }
         // Reparse `primitives.d.bp` from the embedded prelude so the dispatch
         // map sees `String`/`Bool`/numeric interfaces even when the module
@@ -1918,9 +1924,9 @@ const Emitter = struct {
         var prim_program = p.parse(alloc_arena) catch return;
         defer prim_program.deinit(alloc_arena);
         for (prim_program.decls) |decl| {
-            if (decl != .interface) continue;
-            try this.collectIfaceErlangDispatch(decl.interface);
-            try this.collectIfaceExtendsChain(decl.interface);
+            if (decl != .behavior) continue;
+            try this.collectIfaceErlangDispatch(decl.behavior);
+            try this.collectIfaceExtendsChain(decl.behavior);
         }
     }
 
@@ -1930,7 +1936,7 @@ const Emitter = struct {
     /// `program.decls` lands before the embedded `primitives.d.bp`
     /// re-parse). We only record the first parent — multi-inheritance is
     /// not used by `primitives.d.bp` at v1.
-    fn collectIfaceExtendsChain(this: *Emitter, iface: ast.InterfaceDecl) !void {
+    fn collectIfaceExtendsChain(this: *Emitter, iface: ast.BehaviorDecl) !void {
         if (iface.extends.len == 0) return;
         if (this.prim_iface_chain.contains(iface.name)) return;
         const child = try this.alloc.dupe(u8, iface.name);
@@ -1944,7 +1950,7 @@ const Emitter = struct {
     /// the same shape. A key already present wins on first-write (the in-program
     /// decl overrides the embedded primitive — useful for tests that shadow a
     /// stdlib interface to inject a custom dispatch).
-    fn collectIfaceErlangDispatch(this: *Emitter, iface: ast.InterfaceDecl) !void {
+    fn collectIfaceErlangDispatch(this: *Emitter, iface: ast.BehaviorDecl) !void {
         var slots: [16][]const u8 = undefined;
         for (iface.methods) |m| {
             // `prim-op-annotation` arity-branch form takes precedence: when the
@@ -2077,7 +2083,7 @@ const Emitter = struct {
     /// `instanceDefaultForms` emits on demand.
     fn collectInterfaces(this: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| switch (decl) {
-            .interface => |i| {
+            .behavior => |i| {
                 for (i.methods) |m| {
                     if (m.returnType) |rt| {
                         if (rt == .named and std.mem.eql(u8, rt.named, "Self")) {
@@ -2110,8 +2116,8 @@ const Emitter = struct {
         var p = parserMod.Parser.init(tokens);
         const prim_program = try p.parse(arena);
         for (prim_program.decls) |decl| {
-            if (decl != .interface) continue;
-            const i = decl.interface;
+            if (decl != .behavior) continue;
+            const i = decl.behavior;
             for (i.methods) |m| {
                 var key_buf: [256]u8 = undefined;
                 const key = std.fmt.bufPrint(&key_buf, "{s}.{s}", .{ i.name, m.name }) catch continue;
@@ -2399,7 +2405,7 @@ const Emitter = struct {
                     (if (!this.locals.contains(n)) this.num_names.get(n) else null),
                 .identAccess => if (this.instance_lowerings.get(id.loc)) |il| switch (il) {
                     .prim => .int,
-                    .record => null,
+                    .type_ => null,
                 } else null,
                 else => null,
             },
@@ -2510,14 +2516,16 @@ const Emitter = struct {
     /// field-access, and enum-member lowering.
     fn collectTypeShapes(self: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| switch (decl) {
-            .record => |r| {
-                var names = try self.alloc.alloc([]const u8, r.fields.len);
-                for (r.fields, 0..) |f, i| names[i] = f.name;
-                try self.record_fields.put(r.name, names);
-            },
-            .@"enum" => |e| {
-                try self.enum_names.put(e.name, {});
-                for (e.variants) |v| try self.enum_variants.put(v.name, {});
+            .type_ => |tdecl| switch (tdecl.shape) {
+                .record => {
+                    var names = try self.alloc.alloc([]const u8, tdecl.recordFields().len);
+                    for (tdecl.recordFields(), 0..) |f, i| names[i] = f.name;
+                    try self.record_fields.put(tdecl.name, names);
+                },
+                .enum_ => {
+                    try self.enum_names.put(tdecl.name, {});
+                    for (tdecl.variants()) |v| try self.enum_variants.put(v.name, {});
+                },
             },
             else => {},
         };
@@ -2581,8 +2589,10 @@ const Emitter = struct {
     fn collectLocalFnArities(self: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| switch (decl) {
             .@"fn" => |f| try self.putLocalFn(f.name, fnArityNoSelf(f)),
-            .record => |r| for (r.methods) |m| try self.putLocalFn(m.name, m.params.len),
-            .@"enum" => |e| for (e.methods) |m| try self.putLocalFn(m.name, m.params.len),
+            .type_ => |tdecl| switch (tdecl.shape) {
+                .record => for (tdecl.methods) |m| try self.putLocalFn(m.name, m.params.len),
+                .enum_ => for (tdecl.methods) |m| try self.putLocalFn(m.name, m.params.len),
+            },
             .implement => |im| for (im.methods) |m| try self.putLocalFn(m.name, m.params.len),
             .extend => |ex| for (ex.methods) |m| try self.putLocalFn(m.name, m.params.len),
             else => {},
@@ -3085,7 +3095,7 @@ const Emitter = struct {
         const il = this.instance_lowerings.get(e.call.loc) orelse return null;
         return switch (il) {
             .prim => |k| if (k == .array) name else null,
-            .record => null,
+            .type_ => null,
         };
     }
 
@@ -3715,7 +3725,7 @@ const Emitter = struct {
                                 else => b.call("length", &.{recv}),
                             };
                         },
-                        .record => {},
+                        .type_ => {},
                     };
                     // Same field access on a `Self`-typed receiver inside an
                     // interface instance `default fn` (`self.length`), which
@@ -4283,7 +4293,7 @@ const Emitter = struct {
             // first — local `m(Recv, args)`, or `owner:m(Recv, args)` for an
             // imported type. A method name shared by two records is mangled to
             // `<recordtype>_<method>` so the flat fn namespace stays unambiguous.
-            .record => |tn| {
+            .type_ => |tn| {
                 var mn_buf: [256]u8 = undefined;
                 const mn: []const u8 = if (this.isRecordMethodCollision(tn, cc.callee))
                     try b.arena.dupe(u8, try recordMethodAtom(&mn_buf, tn, cc.callee))
@@ -4907,12 +4917,12 @@ const Emitter = struct {
         });
     }
 
-    fn recordForms(this: *Emitter, b: Ast.Builder, out: *Forms, r: ast.RecordDecl) !void {
+    fn recordForms(this: *Emitter, b: Ast.Builder, out: *Forms, r: ast.TypeDecl) !void {
         // Records are maps at runtime (`#{field => V}`) — no decl needed.
         // (`-record(PascalCase, …)` is invalid Erlang: a capitalised bare atom.)
         var text: std.ArrayListUnmanaged(u8) = .empty;
         try text.appendSlice(b.arena, try std.fmt.allocPrint(b.arena, "record {s}: ", .{r.name}));
-        for (r.fields, 0..) |f, i| {
+        for (r.recordFields(), 0..) |f, i| {
             if (i > 0) try text.appendSlice(b.arena, ", ");
             try text.appendSlice(b.arena, f.name);
         }
@@ -4932,9 +4942,9 @@ const Emitter = struct {
         }
     }
 
-    fn enumForms(this: *Emitter, b: Ast.Builder, out: *Forms, e: ast.EnumDecl) !void {
+    fn enumForms(this: *Emitter, b: Ast.Builder, out: *Forms, e: ast.TypeDecl) !void {
         try out.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "enum {s}", .{e.name})) });
-        for (e.variants) |v| {
+        for (e.variants()) |v| {
             var text: std.ArrayListUnmanaged(u8) = .empty;
             try text.appendSlice(b.arena, try std.fmt.allocPrint(b.arena, "  {s}", .{v.name}));
             if (v.fields.len > 0) {
@@ -4953,7 +4963,7 @@ const Emitter = struct {
         }
     }
 
-    fn interfaceForms(this: *Emitter, b: Ast.Builder, out: *Forms, i: ast.InterfaceDecl) !void {
+    fn interfaceForms(this: *Emitter, b: Ast.Builder, out: *Forms, i: ast.BehaviorDecl) !void {
         try out.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "interface {s}", .{i.name})) });
         // Associated `default fn`s (no `self`) are pure botopink — local
         // functions so `Interface.method(...)` resolves locally (the interface

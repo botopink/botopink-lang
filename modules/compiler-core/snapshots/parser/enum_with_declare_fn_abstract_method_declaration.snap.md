@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "enum": {
+      "type_": {
         "name": "Direction",
         "id": 1,
         "isPub": false,
@@ -12,18 +12,23 @@
         "annotations": [],
         "genericParams": [],
         "implement": [],
-        "variants": [
-          {
-            "name": "North",
-            "fields": [],
-            "numeric": false
-          },
-          {
-            "name": "South",
-            "fields": [],
-            "numeric": false
+        "shape": {
+          "enum_": {
+            "variants": [
+              {
+                "name": "North",
+                "fields": [],
+                "numeric": false
+              },
+              {
+                "name": "South",
+                "fields": [],
+                "numeric": false
+              }
+            ],
+            "sections": []
           }
-        ],
+        },
         "trailingComma": false,
         "methods": [
           {
@@ -51,8 +56,7 @@
             "is_declare": true,
             "isPub": false
           }
-        ],
-        "sections": []
+        ]
       }
     }
   ]

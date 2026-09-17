@@ -1,8 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    val DeclKind = record { Record: "Record", Fn: "Fn" };
-    val decl = @Decl(kind: DeclKind.Record, name: "Service", fields: [], methods: [], returnType: "", annotations: []);
+    val DeclKind = record { Type: "Type", Fn: "Fn" };
+    val decl = @Decl(kind: DeclKind.Type, name: "Service", fields: [], methods: [], returnType: "", annotations: []);
     @print(decl.name);
 }
 ```
@@ -21,14 +21,14 @@ fn main() {
   {label, 3}.
     {allocate, 2, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
-    {move, {literal, <<"Record">>}, {x, 0}}.
+    {move, {literal, <<"Type">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"Fn">>}, {x, 0}}.
-    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 2, {list, [{atom, 'Record'}, {x, 1}, {atom, 'Fn'}, {x, 0}]}}.
+    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 2, {list, [{atom, 'Type'}, {x, 1}, {atom, 'Fn'}, {x, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {test, is_map, {f, 8}, [{x, 0}]}.
-    {get_map_elements, {f, 8}, {x, 0}, {list, [{atom, 'Record'}, {x, 0}]}}.
+    {get_map_elements, {f, 8}, {x, 0}, {list, [{atom, 'Type'}, {x, 0}]}}.
   {label, 8}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"Service">>}, {x, 0}}.

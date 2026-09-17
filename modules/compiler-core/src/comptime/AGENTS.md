@@ -308,7 +308,7 @@ dependency arrays; other targets treat `use` as a transparent prefix). Phantom
 
 ## Enum sections
 
-`registerEnum` desugars `EnumDecl.sections` into enum-of-enum form: each section
+`registerEnum` desugars an enum `TypeDecl`'s `sections()` into enum-of-enum form: each section
 becomes a synthesised inner enum registered as `__<EnumName>__<SectionPath>`
 (segments joined by `__`), and the parent gains one wrapper variant per
 top-level section (`Section(_inner: __EnumName__Section)`). `registerEnumSection`
@@ -328,7 +328,7 @@ synthesised nodes carry loc `{line=0, col=0}` so the rewrite is not re-triggered
 
 `comptime.zig withSynthesisedEnumDecls` (after `transform` /
 `withUsedAssocInterfaces`) prepends every `env.synthesisedEnumDecls` entry as a
-top-level `EnumDecl` and adds the section-wrapper variants to each parent enum,
+top-level enum `TypeDecl` and adds the section-wrapper variants to each parent enum,
 so backends emit them through the normal enum path.
 
 Parser-side invariants (`parser/decls.zig parseEnumItem` → `raiseUnexpected`):

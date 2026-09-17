@@ -1,8 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    val DeclKind = record { Record: "Record", Fn: "Fn" };
-    val decl = @Decl(kind: DeclKind.Record, name: "Service", fields: [record { name: "x", typeName: "i32", annotations: [] }], methods: [], returnType: "", annotations: []);
+    val DeclKind = record { Type: "Type", Fn: "Fn" };
+    val decl = @Decl(kind: DeclKind.Type, name: "Service", fields: [record { name: "x", typeName: "i32", annotations: [] }], methods: [], returnType: "", annotations: []);
     @print(decl.fields.length);
 }
 ```
@@ -29,8 +29,8 @@ function __bp_print() {
 }
 
 function main() {
-    const DeclKind = ({ Record: "Record", Fn: "Fn" });
-    const decl = ({ kind: DeclKind.Record, name: "Service", fields: [({ name: "x", typeName: "i32", annotations: [] })], methods: [], returnType: "", annotations: [] });
+    const DeclKind = ({ Type: "Type", Fn: "Fn" });
+    const decl = ({ kind: DeclKind.Type, name: "Service", fields: [({ name: "x", typeName: "i32", annotations: [] })], methods: [], returnType: "", annotations: [] });
     __bp_print(decl.fields.length);
 }
 

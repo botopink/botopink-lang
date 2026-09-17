@@ -29,7 +29,7 @@ pub const TypeVar = union(enum) {
 };
 
 /// One field of an anonymous structural record type.
-pub const RecordField = struct {
+pub const Field = struct {
     name: []const u8,
     type_: *Type,
 };
@@ -55,7 +55,7 @@ pub const Type = union(enum) {
     /// Anonymous structural record: the type of a `record { name: value, … }`
     /// literal. Two records unify field-by-field (same field set, V1 — no
     /// width subtyping yet). Fields are sorted by declaration order.
-    record: []RecordField,
+    record: []Field,
 
     /// Follow all `.link` chains and return the innermost non-link type.
     /// Never allocates; safe to call on any type.

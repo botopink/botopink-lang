@@ -937,7 +937,7 @@ pub const Pattern = union(enum) {
 // ── interface decl ────────────────────────────────────────────────────────────────
 
 /// A field declared inside a interface: `val name: Type`
-pub const InterfaceField = struct {
+pub const BehaviorField = struct {
     name: []const u8,
     typeName: []const u8,
 };
@@ -1026,7 +1026,7 @@ pub const Param = struct {
     fnType: ?FnType = null,
     /// null for plain params; set for destructuring params.
     destruct: ?ParamDestruct = null,
-    /// Default value expression for the param. Unified with `RecordField.default`
+    /// Default value expression for the param. Unified with `Field.default`
     /// / struct-field init / enum-variant-field default so call sites,
     /// annotations, record constructors, and enum-variant constructors all
     /// consume the same fallback shape (see infer.zig arity check + the
@@ -1056,7 +1056,7 @@ pub const GenericParam = struct {
 
 /// A method declared inside a interface.
 /// If `body` is null the method is abstract (no default implementation).
-pub const InterfaceMethod = struct {
+pub const BehaviorMethod = struct {
     name: []const u8,
     /// `@[external(target, "module", "symbol")]` annotations on a `declare fn`
     /// member — host-backed interface methods (per-target lowering).
@@ -1076,7 +1076,7 @@ pub const InterfaceMethod = struct {
 
     /// True when the method is a host-backed `#[@External.<Target>(…)]`
     /// declaration.
-    pub fn isExternal(this: InterfaceMethod) bool {
+    pub fn isExternal(this: BehaviorMethod) bool {
         for (this.annotations) |a| {
             if (std.mem.startsWith(u8, a.name, "External.") and a.name.len > "External.".len) return true;
         }
@@ -1085,7 +1085,7 @@ pub const InterfaceMethod = struct {
 
     /// True when the method carries `#[builtin]` — the host/raw-infra provides
     /// the real body; the bp body is a stub and codegen skips it.
-    pub fn isHost(this: InterfaceMethod) bool {
+    pub fn isHost(this: BehaviorMethod) bool {
         for (this.annotations) |a| {
             if (std.mem.eql(u8, a.name, "Host")) return true;
         }
@@ -1094,7 +1094,7 @@ pub const InterfaceMethod = struct {
 
     /// The `(module, symbol)` of the `external` annotation targeting `target`
     /// (e.g. "node", "erlang"), or null when none matches.
-    pub fn externalFor(this: InterfaceMethod, target: []const u8) ?ExternalRef {
+    pub fn externalFor(this: BehaviorMethod, target: []const u8) ?ExternalRef {
         for (this.annotations) |a| {
             if (!std.mem.startsWith(u8, a.name, "External.")) continue;
             if (!std.ascii.eqlIgnoreCase(a.name["External.".len..], target)) continue;
@@ -1106,7 +1106,7 @@ pub const InterfaceMethod = struct {
         return null;
     }
 
-    pub fn deinit(this: *InterfaceMethod, allocator: std.mem.Allocator) void {
+    pub fn deinit(this: *BehaviorMethod, allocator: std.mem.Allocator) void {
         for (this.annotations) |*ann| ann.deinit(allocator);
         if (this.annotations.len > 0) allocator.free(this.annotations);
         for (this.genericParams) |*gp| gp.deinit(allocator);
@@ -1191,7 +1191,7 @@ pub const ExternalCall = struct {
 /// ordered arg-name list. `"sym(a, self)"` → `("sym", ["a", "self"])`;
 /// `"sym"` → `("sym", null)`. The arg list is empty for `"sym()"`.
 /// `slots_out` must have capacity for at least one slot per `,` plus one — the
-/// caller (`InterfaceMethod.callTemplateFor`/`FnDecl.callTemplateFor`) reuses a
+/// caller (`BehaviorMethod.callTemplateFor`/`FnDecl.callTemplateFor`) reuses a
 /// stack-allocated buffer so we never allocate just to read an annotation.
 pub fn parseExternalCallTemplate(
     symbol: []const u8,
@@ -1346,9 +1346,9 @@ pub fn externalArityBranchFor(annotations: []const Annotation, target: []const u
 }
 
 /// `val Name = interface { ... }`  or  `val Name = interface <T> { ... }`
-pub const InterfaceDecl = struct {
+pub const BehaviorDecl = struct {
     name: []const u8,
-    /// Auto-generated unique ID counter, formatted as `"interface_{id:0>4}"` when rendered.
+    /// Auto-generated unique ID counter, formatted as `"behavior_{id:0>4}"` when rendered.
     id: u32 = 0,
     isPub: bool = false,
     docComment: ?[]const u8 = null,
@@ -1361,12 +1361,12 @@ pub const InterfaceDecl = struct {
     genericParams: []GenericParam = &.{},
     /// Super-interfaces listed in `extends T1, T2` clause. Empty when absent.
     extends: []const []const u8 = &.{},
-    fields: []InterfaceField,
+    fields: []BehaviorField,
     /// Whether the last field/method had a trailing comma in the source.
     trailingComma: bool = false,
-    methods: []InterfaceMethod,
+    methods: []BehaviorMethod,
 
-    pub fn deinit(this: *InterfaceDecl, allocator: std.mem.Allocator) void {
+    pub fn deinit(this: *BehaviorDecl, allocator: std.mem.Allocator) void {
         for (this.annotations) |*ann| ann.deinit(allocator);
         allocator.free(this.annotations);
         for (this.genericParams) |*gp| gp.deinit(allocator);
@@ -1380,19 +1380,6 @@ pub const InterfaceDecl = struct {
 
 // ── enum decl ─────────────────────────────────────────────────────────────────
 
-/// A named field inside an enum variant with a payload: `r: Int` or `reason: ?string`
-pub const EnumVariantField = struct {
-    name: []const u8,
-    typeRef: TypeRef,
-    /// Optional default value, mirrors `RecordField.default` and `Param.default`.
-    default: ?Expr = null,
-
-    pub fn deinit(this: *EnumVariantField, allocator: std.mem.Allocator) void {
-        this.typeRef.deinit(allocator);
-        if (this.default) |*d| d.deinit(allocator);
-    }
-};
-
 /// One variant of an enum.
 /// Simple:  `Red`
 /// Payload: `Rgb(r: Int, g: Int, b: Int)`
@@ -1401,7 +1388,7 @@ pub const EnumVariantField = struct {
 pub const EnumVariant = struct {
     name: []const u8,
     /// Empty for simple (unit) variants; non-empty for payload variants.
-    fields: []EnumVariantField,
+    fields: []Field,
     /// True iff the variant name is a pure-digit literal. Only legal inside an
     /// enum-section body (top-level enum body still rejects digit names).
     numeric: bool = false,
@@ -1427,47 +1414,6 @@ pub const EnumSection = struct {
     pub fn deinit(this: *EnumSection, allocator: std.mem.Allocator) void {
         for (this.variants) |*v| v.deinit(allocator);
         allocator.free(this.variants);
-        for (this.sections) |*s| s.deinit(allocator);
-        allocator.free(this.sections);
-    }
-};
-
-/// `val Color = enum { Red, Green, Rgb(r: Int, g: Int, b: Int) }` or `val Option = enum <T> { ... }`
-pub const EnumDecl = struct {
-    name: []const u8,
-    /// Auto-generated unique ID counter, formatted as `"enum_{id:0>4}"` when rendered.
-    id: u32 = 0,
-    isPub: bool = false,
-    docComment: ?[]const u8 = null,
-    /// `//` regular comment (last one before the declaration)
-    comment: ?[]const u8 = null,
-    /// `////` module-level documentation
-    moduleComment: ?[]const u8 = null,
-    annotations: []Annotation = &.{},
-    genericParams: []GenericParam = &.{},
-    /// Inline interface implementations: `enum implement I1 { }`.
-    implement: []TypeRef = &.{},
-    variants: []EnumVariant,
-    /// Whether the last variant had a trailing comma in the source.
-    trailingComma: bool = false,
-    /// Methods declared after the variant list (may include `declare fn` abstract slots).
-    methods: []InterfaceMethod = &.{},
-    /// Top-level sections (recursive groupings) declared inside the body. The
-    /// comptime desugars each section into a synthesised inner enum with a
-    /// mangled name encoding the path. Empty for plain enums.
-    sections: []EnumSection = &.{},
-
-    pub fn deinit(this: *EnumDecl, allocator: std.mem.Allocator) void {
-        for (this.annotations) |*ann| ann.deinit(allocator);
-        allocator.free(this.annotations);
-        for (this.genericParams) |*gp| gp.deinit(allocator);
-        allocator.free(this.genericParams);
-        for (this.implement) |*im| im.deinit(allocator);
-        allocator.free(this.implement);
-        for (this.variants) |*v| v.deinit(allocator);
-        allocator.free(this.variants);
-        for (this.methods) |*m| m.deinit(allocator);
-        allocator.free(this.methods);
         for (this.sections) |*s| s.deinit(allocator);
         allocator.free(this.sections);
     }
@@ -1619,14 +1565,13 @@ pub const TestDecl = struct {
 };
 
 pub const DeclKind = union(enum) {
-    record: RecordDecl,
+    type_: TypeDecl,
     implement: ImplementDecl,
     extend: ExtendDecl,
     use: ImportDecl,
     mod: ModDecl,
-    interface: InterfaceDecl,
+    behavior: BehaviorDecl,
     delegate: DelegateDecl,
-    @"enum": EnumDecl,
     @"fn": FnDecl,
     val: ValDecl,
     @"test": TestDecl,
@@ -1642,12 +1587,11 @@ pub const DeclKind = union(enum) {
                 for (u.imports) |imp| allocator.free(imp.segments);
                 allocator.free(u.imports);
             },
-            .interface => |*t| t.deinit(allocator),
+            .behavior => |*t| t.deinit(allocator),
             .delegate => |*d| d.deinit(allocator),
-            .record => |*r| r.deinit(allocator),
+            .type_ => |*t| t.deinit(allocator),
             .implement => |*i| i.deinit(allocator),
             .extend => |*x| x.deinit(allocator),
-            .@"enum" => |*e| e.deinit(allocator),
             .@"fn" => |*f| f.deinit(allocator),
             .val => |*v| v.deinit(allocator),
             .@"test" => |*t| t.deinit(allocator),
@@ -1816,10 +1760,11 @@ pub const FnDecl = struct {
     }
 };
 
-// ── record decl ───────────────────────────────────────────────────────────────
+// ── type decl ───────────────────────────────────────────────────────────────────
 
-/// A field in a record's parameter list: `name: Type` or `name: ?Type = default`
-pub const RecordField = struct {
+/// One field — of a record field list or of an enum variant payload:
+/// `name: Type` or `name: ?Type = default`.
+pub const Field = struct {
     name: []const u8,
     typeRef: TypeRef,
     /// Optional default value, e.g. `= null` or `= 0`.
@@ -1827,7 +1772,7 @@ pub const RecordField = struct {
     /// Member-level decorators on the field (`#[inject] repo: …`).
     annotations: []Annotation = &.{},
 
-    pub fn deinit(this: *RecordField, allocator: std.mem.Allocator) void {
+    pub fn deinit(this: *Field, allocator: std.mem.Allocator) void {
         this.typeRef.deinit(allocator);
         if (this.default) |*d| d.deinit(allocator);
         for (this.annotations) |*ann| ann.deinit(allocator);
@@ -1835,11 +1780,42 @@ pub const RecordField = struct {
     }
 };
 
-/// `val Name = record(val f1: T1, val f2: T2) { fn ... }`
-/// or `val Name = record <T>(val item: T) { fn ... }`
-pub const RecordDecl = struct {
+/// The body shape of a `TypeDecl`: a field list (record) or variants and
+/// sections (enum).
+pub const TypeShape = union(enum) {
+    /// Inline fields declared in the parameter list.
+    record: []Field,
+    enum_: EnumShape,
+
+    pub const EnumShape = struct {
+        variants: []EnumVariant,
+        /// Top-level sections (recursive groupings) declared inside the body. The
+        /// comptime desugars each section into a synthesised inner enum with a
+        /// mangled name encoding the path. Empty for plain enums.
+        sections: []EnumSection = &.{},
+    };
+
+    pub fn deinit(this: *TypeShape, allocator: std.mem.Allocator) void {
+        switch (this.*) {
+            .record => |fields| {
+                for (fields) |*f| f.deinit(allocator);
+                allocator.free(fields);
+            },
+            .enum_ => |*e| {
+                for (e.variants) |*v| v.deinit(allocator);
+                allocator.free(e.variants);
+                for (e.sections) |*sec| sec.deinit(allocator);
+                allocator.free(e.sections);
+            },
+        }
+    }
+};
+
+/// A named type: a record (`val Name = record(val f: T) { fn ... }`) or an
+/// enum (`val Color = enum { Red, Rgb(r: Int) }`). The shape tells them apart.
+pub const TypeDecl = struct {
     name: []const u8,
-    /// Auto-generated unique ID counter, formatted as `"record_{id:0>4}"` when rendered.
+    /// Auto-generated unique ID counter, formatted as `"type_{id:0>4}"` when rendered.
     id: u32 = 0,
     isPub: bool = false,
     docComment: ?[]const u8 = null,
@@ -1848,26 +1824,53 @@ pub const RecordDecl = struct {
     /// `////` module-level documentation
     moduleComment: ?[]const u8 = null,
     annotations: []Annotation = &.{},
-    /// Generic type parameters on the record, e.g. `<T>`.
+    /// Generic type parameters, e.g. `<T>`.
     genericParams: []GenericParam = &.{},
-    /// Inline interface implementations: `record(...) implement I1 { }`.
+    /// Inline behavior implementations: `record(...) implement I1 { }`.
     implement: []TypeRef = &.{},
-    /// Inline fields declared in the parameter list.
-    fields: []RecordField,
-    /// Whether the last field had a trailing comma in the source.
+    shape: TypeShape,
+    /// Whether the last field/variant had a trailing comma in the source.
     trailingComma: bool = false,
-    /// Methods declared in the body (use InterfaceMethod; body is always present).
-    methods: []InterfaceMethod,
+    /// Methods declared in the body (may include `declare fn` abstract slots).
+    methods: []BehaviorMethod = &.{},
 
-    pub fn deinit(this: *RecordDecl, allocator: std.mem.Allocator) void {
+    /// True for the record shape (a field list).
+    pub fn isRecord(this: TypeDecl) bool {
+        return this.shape == .record;
+    }
+
+    /// The record fields; empty for an enum.
+    pub fn recordFields(this: TypeDecl) []Field {
+        return switch (this.shape) {
+            .record => |f| f,
+            .enum_ => &.{},
+        };
+    }
+
+    /// The enum variants; empty for a record.
+    pub fn variants(this: TypeDecl) []EnumVariant {
+        return switch (this.shape) {
+            .record => &.{},
+            .enum_ => |e| e.variants,
+        };
+    }
+
+    /// The enum sections; empty for a record.
+    pub fn sections(this: TypeDecl) []EnumSection {
+        return switch (this.shape) {
+            .record => &.{},
+            .enum_ => |e| e.sections,
+        };
+    }
+
+    pub fn deinit(this: *TypeDecl, allocator: std.mem.Allocator) void {
         for (this.annotations) |*ann| ann.deinit(allocator);
         allocator.free(this.annotations);
         for (this.genericParams) |*gp| gp.deinit(allocator);
         allocator.free(this.genericParams);
         for (this.implement) |*im| im.deinit(allocator);
         allocator.free(this.implement);
-        for (this.fields) |*f| f.deinit(allocator);
-        allocator.free(this.fields);
+        this.shape.deinit(allocator);
         for (this.methods) |*m| m.deinit(allocator);
         allocator.free(this.methods);
     }

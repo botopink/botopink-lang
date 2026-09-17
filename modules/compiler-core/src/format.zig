@@ -1371,10 +1371,9 @@ pub const Formatter = struct {
             // Extract docComment from each declaration type
             const docComment: ?[]const u8 = switch (d) {
                 .use => |v| v.docComment,
-                .interface => |v| v.docComment,
+                .behavior => |v| v.docComment,
                 .delegate => |v| v.docComment,
-                .record => |v| v.docComment,
-                .@"enum" => |v| v.docComment,
+                .type_ => |v| v.docComment,
                 .implement => |v| v.docComment,
                 .extend => |v| v.docComment,
                 .@"fn" => |v| v.docComment,
@@ -1389,9 +1388,8 @@ pub const Formatter = struct {
                 .@"fn" => false,
                 .@"test" => false,
                 .val => true,
-                .record => true,
-                .@"enum" => true,
-                .interface => true,
+                .type_ => true,
+                .behavior => true,
                 .use, .delegate, .implement, .extend => true,
                 .mod => true,
                 .comment => false,
@@ -1437,10 +1435,9 @@ pub const Formatter = struct {
     fn fmtDecl(this: *Formatter, decl: ast.DeclKind) !*const Doc {
         return switch (decl) {
             .use => |u| this.fmtUse(u),
-            .interface => |iface| this.fmtInterface(iface),
+            .behavior => |iface| this.fmtInterface(iface),
             .delegate => |d| this.fmtDelegate(d),
-            .record => |r| this.fmtRecord(r),
-            .@"enum" => |e| this.fmtEnum(e),
+            .type_ => |t| if (t.isRecord()) this.fmtRecord(t) else this.fmtEnum(t),
             .implement => |impl| this.fmtImplement(impl),
             .extend => |ext| this.fmtExtend(ext),
             .@"fn" => |f| this.fmtFnDecl(f),
@@ -1527,7 +1524,7 @@ pub const Formatter = struct {
         return this.concat(annsDoc, this.hardline());
     }
 
-    fn fmtInterface(this: *Formatter, iface: ast.InterfaceDecl) !*const Doc {
+    fn fmtInterface(this: *Formatter, iface: ast.BehaviorDecl) !*const Doc {
         var members: std.ArrayList(*const Doc) = .empty;
 
         for (iface.fields) |f| {
@@ -1572,7 +1569,7 @@ pub const Formatter = struct {
         });
     }
 
-    fn fmtInterfaceMethod(this: *Formatter, m: ast.InterfaceMethod) !*const Doc {
+    fn fmtInterfaceMethod(this: *Formatter, m: ast.BehaviorMethod) !*const Doc {
         const pub_prefix: *const Doc = if (m.isPub) try this.text("pub ") else try this.text("");
         const fn_kw = if (m.is_default)
             try this.text("default fn ")
@@ -1599,7 +1596,7 @@ pub const Formatter = struct {
         return this.concat(sig, try this.text(";"));
     }
 
-    fn fmtRecord(this: *Formatter, r: ast.RecordDecl) !*const Doc {
+    fn fmtRecord(this: *Formatter, r: ast.TypeDecl) !*const Doc {
         // Check if there are any methods
         var hasMethods = false;
         for (r.methods) |_| {
@@ -1607,8 +1604,8 @@ pub const Formatter = struct {
             break;
         }
 
-        var fieldDocs = try this.arena.alloc(*const Doc, r.fields.len);
-        for (r.fields, 0..) |f, i| {
+        var fieldDocs = try this.arena.alloc(*const Doc, r.recordFields().len);
+        for (r.recordFields(), 0..) |f, i| {
             const typeDoc = try this.fmtTypeRef(f.typeRef);
             fieldDocs[i] = try this.concatAll(&.{
                 try this.text(f.name),
@@ -1711,7 +1708,7 @@ pub const Formatter = struct {
         return this.concatAll(&.{ try this.text(s.name), try this.text(" "), body });
     }
 
-    fn fmtEnum(this: *Formatter, e: ast.EnumDecl) !*const Doc {
+    fn fmtEnum(this: *Formatter, e: ast.TypeDecl) !*const Doc {
         // Check if there are any methods
         var hasMethods = false;
         for (e.methods) |_| {
@@ -1719,15 +1716,15 @@ pub const Formatter = struct {
             break;
         }
 
-        var variantDocs = try this.arena.alloc(*const Doc, e.variants.len);
-        for (e.variants, 0..) |v, i| variantDocs[i] = try this.fmtEnumVariant(v);
+        var variantDocs = try this.arena.alloc(*const Doc, e.variants().len);
+        for (e.variants(), 0..) |v, i| variantDocs[i] = try this.fmtEnumVariant(v);
 
-        // Sections (`Color { Red, Blue }`) are a separate slice on EnumDecl.
+        // Sections (`Color { Red, Blue }`) are a separate slice on the enum shape.
         // They used to be skipped here, which SILENTLY DELETED them from the
         // formatted file. Sections always render on their own line, without a
         // separating comma (the closing brace terminates the item).
-        var sectionDocs = try this.arena.alloc(*const Doc, e.sections.len);
-        for (e.sections, 0..) |s, i| sectionDocs[i] = try this.fmtEnumSection(s);
+        var sectionDocs = try this.arena.alloc(*const Doc, e.sections().len);
+        for (e.sections(), 0..) |s, i| sectionDocs[i] = try this.fmtEnumSection(s);
 
         var methodDocs = try this.arena.alloc(*const Doc, e.methods.len);
         for (e.methods, 0..) |m, i| methodDocs[i] = try this.fmtInterfaceMethod(m);

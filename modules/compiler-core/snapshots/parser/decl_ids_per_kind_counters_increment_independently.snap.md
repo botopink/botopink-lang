@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "record": {
+      "type_": {
         "name": "A",
         "id": 1,
         "isPub": false,
@@ -12,22 +12,24 @@
         "annotations": [],
         "genericParams": [],
         "implement": [],
-        "fields": [
-          {
-            "name": "x",
-            "typeRef": {
-              "named": "i32"
-            },
-            "default": null,
-            "annotations": []
-          }
-        ],
+        "shape": {
+          "record": [
+            {
+              "name": "x",
+              "typeRef": {
+                "named": "i32"
+              },
+              "default": null,
+              "annotations": []
+            }
+          ]
+        },
         "trailingComma": false,
         "methods": []
       }
     },
     {
-      "interface": {
+      "behavior": {
         "name": "I",
         "id": 1,
         "isPub": false,
@@ -67,7 +69,7 @@
       }
     },
     {
-      "record": {
+      "type_": {
         "name": "B",
         "id": 2,
         "isPub": false,
@@ -77,24 +79,26 @@
         "annotations": [],
         "genericParams": [],
         "implement": [],
-        "fields": [
-          {
-            "name": "y",
-            "typeRef": {
-              "named": "i32"
-            },
-            "default": null,
-            "annotations": []
-          }
-        ],
+        "shape": {
+          "record": [
+            {
+              "name": "y",
+              "typeRef": {
+                "named": "i32"
+              },
+              "default": null,
+              "annotations": []
+            }
+          ]
+        },
         "trailingComma": false,
         "methods": []
       }
     },
     {
-      "enum": {
+      "type_": {
         "name": "E",
-        "id": 1,
+        "id": 3,
         "isPub": false,
         "docComment": null,
         "comment": null,
@@ -102,21 +106,25 @@
         "annotations": [],
         "genericParams": [],
         "implement": [],
-        "variants": [
-          {
-            "name": "One",
-            "fields": [],
-            "numeric": false
-          },
-          {
-            "name": "Two",
-            "fields": [],
-            "numeric": false
+        "shape": {
+          "enum_": {
+            "variants": [
+              {
+                "name": "One",
+                "fields": [],
+                "numeric": false
+              },
+              {
+                "name": "Two",
+                "fields": [],
+                "numeric": false
+              }
+            ],
+            "sections": []
           }
-        ],
+        },
         "trailingComma": false,
-        "methods": [],
-        "sections": []
+        "methods": []
       }
     }
   ]

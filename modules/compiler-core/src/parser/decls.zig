@@ -12,23 +12,21 @@ const ParseErrorInfo = parser.ParseErrorInfo;
 const ImportDecl = parser.ImportDecl;
 const ImportSource = parser.ImportSource;
 const ImportPath = parser.ImportPath;
-const InterfaceDecl = parser.InterfaceDecl;
-const InterfaceField = parser.InterfaceField;
-const InterfaceMethod = parser.InterfaceMethod;
+const BehaviorDecl = parser.BehaviorDecl;
+const BehaviorField = parser.BehaviorField;
+const BehaviorMethod = parser.BehaviorMethod;
 const Param = parser.Param;
 const Stmt = parser.Stmt;
 const Expr = parser.Expr;
-const RecordDecl = parser.RecordDecl;
-const RecordField = parser.RecordField;
+const TypeDecl = parser.TypeDecl;
+const Field = parser.Field;
 const ImplementDecl = parser.ImplementDecl;
 const ExtendDecl = parser.ExtendDecl;
 const ImplementMethod = parser.ImplementMethod;
 const DeclKind = parser.DeclKind;
 const GenericParam = parser.GenericParam;
 const ParamModifier = parser.ParamModifier;
-const EnumDecl = parser.EnumDecl;
 const EnumVariant = parser.EnumVariant;
-const EnumVariantField = parser.EnumVariantField;
 const FnDecl = parser.FnDecl;
 const ValDecl = parser.ValDecl;
 const DelegateDecl = parser.DelegateDecl;
@@ -348,9 +346,9 @@ pub fn parseFnBody(
     var typeGuardParam: ?[]const u8 = null;
     if (this.match(.rightArrow)) {
         // Type guard: `-> param is NarrowedType`
-        if (this.check(.identifier) and this.peekAt(1).kind == .@"is") {
+        if (this.check(.identifier) and this.peekAt(1).kind == .is) {
             typeGuardParam = this.advance().lexeme;
-            _ = try this.consume(.@"is");
+            _ = try this.consume(.is);
             returnType = try this.parseTypeRef(alloc);
         } else {
             returnType = try this.parseTypeRef(alloc);
@@ -548,7 +546,7 @@ pub fn parseDelegateParams(this: *This, alloc: std.mem.Allocator, name: []const 
     };
 }
 
-pub fn parseInterfaceDecl(this: *This, alloc: std.mem.Allocator) ParseError!InterfaceDecl {
+pub fn parseInterfaceDecl(this: *This, alloc: std.mem.Allocator) ParseError!BehaviorDecl {
     // val-form: the `extends` clause (if any) follows the `interface` keyword.
     const p = try this.parseDeclPreamble(alloc, .interface, false);
     errdefer freeAnnotations(alloc, p.annotations);
@@ -556,7 +554,7 @@ pub fn parseInterfaceDecl(this: *This, alloc: std.mem.Allocator) ParseError!Inte
     return this.parseInterfaceBody(alloc, p.name, extendsSlice, p.annotations, p.isPub);
 }
 
-pub fn parseShorthandInterfaceDecl(this: *This, alloc: std.mem.Allocator) ParseError!InterfaceDecl {
+pub fn parseShorthandInterfaceDecl(this: *This, alloc: std.mem.Allocator) ParseError!BehaviorDecl {
     // shorthand: the `extends` clause (if any) follows the interface name.
     const p = try this.parseDeclPreamble(alloc, .interface, true);
     errdefer freeAnnotations(alloc, p.annotations);
@@ -577,15 +575,15 @@ pub fn parseExtendsClause(this: *This, alloc: std.mem.Allocator) ParseError![]co
     return list.toOwnedSlice(alloc);
 }
 
-pub fn parseInterfaceBody(this: *This, alloc: std.mem.Allocator, name: []const u8, extendsSlice: []const []const u8, annotations: []Annotation, isPub: bool) ParseError!InterfaceDecl {
+pub fn parseInterfaceBody(this: *This, alloc: std.mem.Allocator, name: []const u8, extendsSlice: []const []const u8, annotations: []Annotation, isPub: bool) ParseError!BehaviorDecl {
     const genericParams = try this.parseGenericParams(alloc);
     errdefer alloc.free(genericParams);
     _ = try this.consume(.leftBrace);
 
-    var fields: std.ArrayList(InterfaceField) = .empty;
+    var fields: std.ArrayList(BehaviorField) = .empty;
     errdefer fields.deinit(alloc);
 
-    var methods: std.ArrayList(InterfaceMethod) = .empty;
+    var methods: std.ArrayList(BehaviorMethod) = .empty;
     errdefer {
         for (methods.items) |*m| m.deinit(alloc);
         methods.deinit(alloc);
@@ -634,9 +632,9 @@ pub fn parseInterfaceBody(this: *This, alloc: std.mem.Allocator, name: []const u
 
     _ = try this.consume(.rightBrace);
 
-    return InterfaceDecl{
+    return BehaviorDecl{
         .name = name,
-        .id = this.nextId("interface"),
+        .id = this.nextId("behavior"),
         .isPub = isPub,
         .annotations = annotations,
         .genericParams = genericParams,
@@ -647,7 +645,7 @@ pub fn parseInterfaceBody(this: *This, alloc: std.mem.Allocator, name: []const u
     };
 }
 
-pub fn parseInterfaceMethod(this: *This, alloc: std.mem.Allocator, is_default: bool) ParseError!InterfaceMethod {
+pub fn parseInterfaceMethod(this: *This, alloc: std.mem.Allocator, is_default: bool) ParseError!BehaviorMethod {
     _ = try this.consume(.@"fn");
     const name = (try this.consume(.identifier)).lexeme;
 
@@ -669,7 +667,7 @@ pub fn parseInterfaceMethod(this: *This, alloc: std.mem.Allocator, is_default: b
 
     if (!is_default) {
         _ = this.match(.semicolon);
-        return InterfaceMethod{
+        return BehaviorMethod{
             .name = name,
             .genericParams = genericParams,
             .params = params,
@@ -680,7 +678,7 @@ pub fn parseInterfaceMethod(this: *This, alloc: std.mem.Allocator, is_default: b
     }
 
     const body = try this.parseSimpleBodyStmts(alloc);
-    return InterfaceMethod{
+    return BehaviorMethod{
         .name = name,
         .genericParams = genericParams,
         .params = params,
@@ -693,7 +691,7 @@ pub fn parseInterfaceMethod(this: *This, alloc: std.mem.Allocator, is_default: b
 /// Parse a method inside a struct, record, or enum body.
 /// `is_declare fn ` → abstract slot (no body, `is_declare = true`).
 /// Plain `fn` → always requires a body.
-pub fn parseMethodDecl(this: *This, alloc: std.mem.Allocator, is_declare: bool, isPub: bool) ParseError!InterfaceMethod {
+pub fn parseMethodDecl(this: *This, alloc: std.mem.Allocator, is_declare: bool, isPub: bool) ParseError!BehaviorMethod {
     _ = try this.consume(.@"fn");
     const name = (try this.consume(.identifier)).lexeme;
 
@@ -715,7 +713,7 @@ pub fn parseMethodDecl(this: *This, alloc: std.mem.Allocator, is_declare: bool, 
 
     if (is_declare) {
         _ = try this.consume(.semicolon);
-        return InterfaceMethod{
+        return BehaviorMethod{
             .name = name,
             .genericParams = genericParams,
             .params = params,
@@ -728,7 +726,7 @@ pub fn parseMethodDecl(this: *This, alloc: std.mem.Allocator, is_declare: bool, 
     }
 
     const body = try this.parseMethodBodyStmts(alloc);
-    return InterfaceMethod{
+    return BehaviorMethod{
         .name = name,
         .genericParams = genericParams,
         .params = params,
@@ -740,19 +738,19 @@ pub fn parseMethodDecl(this: *This, alloc: std.mem.Allocator, is_declare: bool, 
     };
 }
 
-pub fn parseRecordDecl(this: *This, alloc: std.mem.Allocator) ParseError!RecordDecl {
+pub fn parseRecordDecl(this: *This, alloc: std.mem.Allocator) ParseError!TypeDecl {
     const p = try this.parseDeclPreamble(alloc, .record, false);
     errdefer freeAnnotations(alloc, p.annotations);
     return this.parseRecordBody(alloc, p.name, p.annotations, p.isPub);
 }
 
-pub fn parseShorthandRecordDecl(this: *This, alloc: std.mem.Allocator) ParseError!RecordDecl {
+pub fn parseShorthandRecordDecl(this: *This, alloc: std.mem.Allocator) ParseError!TypeDecl {
     const p = try this.parseDeclPreamble(alloc, .record, true);
     errdefer freeAnnotations(alloc, p.annotations);
     return this.parseRecordBody(alloc, p.name, p.annotations, p.isPub);
 }
 
-pub fn parseRecordBody(this: *This, alloc: std.mem.Allocator, name: []const u8, annotations: []Annotation, isPub: bool) ParseError!RecordDecl {
+pub fn parseRecordBody(this: *This, alloc: std.mem.Allocator, name: []const u8, annotations: []Annotation, isPub: bool) ParseError!TypeDecl {
     const genericParams = try this.parseGenericParams(alloc);
     errdefer alloc.free(genericParams);
     const implementList = try this.parseImplementClause(alloc);
@@ -762,13 +760,13 @@ pub fn parseRecordBody(this: *This, alloc: std.mem.Allocator, name: []const u8, 
     }
     _ = try this.consume(.leftBrace);
 
-    var fields: std.ArrayList(RecordField) = .empty;
+    var fields: std.ArrayList(Field) = .empty;
     errdefer {
         for (fields.items) |*f| f.deinit(alloc);
         fields.deinit(alloc);
     }
 
-    var methods: std.ArrayList(InterfaceMethod) = .empty;
+    var methods: std.ArrayList(BehaviorMethod) = .empty;
     errdefer {
         for (methods.items) |*m| m.deinit(alloc);
         methods.deinit(alloc);
@@ -780,7 +778,7 @@ pub fn parseRecordBody(this: *This, alloc: std.mem.Allocator, name: []const u8, 
         if (this.check(.rightBrace) or this.check(.endOfFile)) break;
         // Member-level decorators: `#[getMapping("/")] fn index(…)`. Parsed here
         // so annotation processors reach record methods (field-site is a separate
-        // follow-up — `RecordField` carries no annotations yet).
+        // follow-up — `Field` carries no annotations yet).
         const memberAnnotations = try this.parseAnnotations(alloc);
         // Check if this is a method (fn/pub/declare)
         if (this.check(.@"pub") or this.check(.declare) or this.check(.@"fn")) {
@@ -819,14 +817,14 @@ pub fn parseRecordBody(this: *This, alloc: std.mem.Allocator, name: []const u8, 
     }
     _ = try this.consume(.rightBrace);
 
-    return RecordDecl{
+    return TypeDecl{
         .name = name,
-        .id = this.nextId("record"),
+        .id = this.nextId("type"),
         .isPub = isPub,
         .annotations = annotations,
         .genericParams = genericParams,
         .implement = implementList,
-        .fields = try fields.toOwnedSlice(alloc),
+        .shape = .{ .record = try fields.toOwnedSlice(alloc) },
         .trailingComma = trailingComma,
         .methods = try methods.toOwnedSlice(alloc),
     };
@@ -998,19 +996,19 @@ pub fn parseImplementMethod(this: *This, alloc: std.mem.Allocator) ParseError!Im
     };
 }
 
-pub fn parseEnumDecl(this: *This, alloc: std.mem.Allocator) ParseError!EnumDecl {
+pub fn parseEnumDecl(this: *This, alloc: std.mem.Allocator) ParseError!TypeDecl {
     const p = try this.parseDeclPreamble(alloc, .@"enum", false);
     errdefer freeAnnotations(alloc, p.annotations);
     return this.parseEnumBody(alloc, p.name, p.annotations, p.isPub);
 }
 
-pub fn parseShorthandEnumDecl(this: *This, alloc: std.mem.Allocator) ParseError!EnumDecl {
+pub fn parseShorthandEnumDecl(this: *This, alloc: std.mem.Allocator) ParseError!TypeDecl {
     const p = try this.parseDeclPreamble(alloc, .@"enum", true);
     errdefer freeAnnotations(alloc, p.annotations);
     return this.parseEnumBody(alloc, p.name, p.annotations, p.isPub);
 }
 
-pub fn parseEnumBody(this: *This, alloc: std.mem.Allocator, name: []const u8, annotations: []Annotation, isPub: bool) ParseError!EnumDecl {
+pub fn parseEnumBody(this: *This, alloc: std.mem.Allocator, name: []const u8, annotations: []Annotation, isPub: bool) ParseError!TypeDecl {
     const genericParams = try this.parseGenericParams(alloc);
     errdefer alloc.free(genericParams);
     const implementList = try this.parseImplementClause(alloc);
@@ -1032,7 +1030,7 @@ pub fn parseEnumBody(this: *This, alloc: std.mem.Allocator, name: []const u8, an
         sections.deinit(alloc);
     }
 
-    var methods: std.ArrayList(InterfaceMethod) = .empty;
+    var methods: std.ArrayList(BehaviorMethod) = .empty;
     errdefer {
         for (methods.items) |*m| m.deinit(alloc);
         methods.deinit(alloc);
@@ -1056,17 +1054,18 @@ pub fn parseEnumBody(this: *This, alloc: std.mem.Allocator, name: []const u8, an
 
     _ = try this.consume(.rightBrace);
 
-    return EnumDecl{
+    const variantSlice = try variants.toOwnedSlice(alloc);
+    const sectionSlice = try sections.toOwnedSlice(alloc);
+    return TypeDecl{
         .name = name,
-        .id = this.nextId("enum"),
+        .id = this.nextId("type"),
         .isPub = isPub,
         .annotations = annotations,
         .genericParams = genericParams,
         .implement = implementList,
-        .variants = try variants.toOwnedSlice(alloc),
+        .shape = .{ .enum_ = .{ .variants = variantSlice, .sections = sectionSlice } },
         .trailingComma = trailingComma,
         .methods = try methods.toOwnedSlice(alloc),
-        .sections = try sections.toOwnedSlice(alloc),
     };
 }
 
@@ -1158,7 +1157,7 @@ fn parseEnumItem(
     // Variant with payload: `Variant(field: T, ...)`.
     if (this.check(.leftParenthesis)) {
         _ = this.advance(); // consume '('
-        var fields: std.ArrayList(EnumVariantField) = .empty;
+        var fields: std.ArrayList(Field) = .empty;
         errdefer {
             for (fields.items) |*f| f.deinit(alloc);
             fields.deinit(alloc);

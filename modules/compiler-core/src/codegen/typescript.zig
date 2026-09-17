@@ -46,9 +46,8 @@ const Builder = struct {
             .val => |v| try self.val(v.name, v.isPub, bd.type_),
             .@"fn" => |f| try self.fnDecl(f),
             // Phantom `@Context` base structs are erased from the typedef too.
-            .record => |r| try self.record(r),
-            .@"enum" => |e| try self.enumDecl(e),
-            .interface => |i| try self.interface(i),
+            .type_ => |t| if (t.isRecord()) try self.record(t) else try self.enumDecl(t),
+            .behavior => |i| try self.interface(i),
             .implement => |im| try self.implement(im),
             // `extend` dispatch/codegen is handled in a later phase
             // (extension-dispatch).
@@ -79,16 +78,16 @@ const Builder = struct {
         } };
     }
 
-    fn record(self: *Builder, r: ast.RecordDecl) Error!js.TsDecl {
+    fn record(self: *Builder, r: ast.TypeDecl) Error!js.TsDecl {
         if (!r.isPub) return .none;
         var members: std.ArrayListUnmanaged(js.TsMember) = .empty;
-        for (r.fields) |f| try members.append(self.b.arena, .{ .field = .{
+        for (r.recordFields()) |f| try members.append(self.b.arena, .{ .field = .{
             .modifier = "readonly ",
             .name = f.name,
             .type = try self.typeRef(f.typeRef),
         } });
-        const ctor_params = try self.b.arena.alloc(js.TsParam, r.fields.len);
-        for (r.fields, 0..) |f, i| ctor_params[i] = .{ .name = f.name, .type = try self.typeRef(f.typeRef) };
+        const ctor_params = try self.b.arena.alloc(js.TsParam, r.recordFields().len);
+        for (r.recordFields(), 0..) |f, i| ctor_params[i] = .{ .name = f.name, .type = try self.typeRef(f.typeRef) };
         try members.append(self.b.arena, .{ .ctor = .{ .params = ctor_params } });
         for (r.methods) |m| {
             if (m.is_declare) continue;
@@ -102,24 +101,24 @@ const Builder = struct {
         return .{ .class = .{ .name = r.name, .members = try members.toOwnedSlice(self.b.arena) } };
     }
 
-    fn enumDecl(self: *Builder, e: ast.EnumDecl) Error!js.TsDecl {
+    fn enumDecl(self: *Builder, e: ast.TypeDecl) Error!js.TsDecl {
         if (!e.isPub) return .none;
         // Unit variants become a TypeScript enum; payload variants a
         // discriminated union type.
         var has_payload = false;
-        for (e.variants) |v| {
+        for (e.variants()) |v| {
             if (v.fields.len > 0) {
                 has_payload = true;
                 break;
             }
         }
         if (!has_payload) {
-            const members = try self.b.arena.alloc(js.TsMember, e.variants.len);
-            for (e.variants, 0..) |v, i| members[i] = .{ .enum_member = .{ .name = v.name, .value = v.name } };
+            const members = try self.b.arena.alloc(js.TsMember, e.variants().len);
+            for (e.variants(), 0..) |v, i| members[i] = .{ .enum_member = .{ .name = v.name, .value = v.name } };
             return .{ .enum_ = .{ .name = e.name, .members = members } };
         }
-        const arms = try self.b.arena.alloc(js.TsType, e.variants.len);
-        for (e.variants, 0..) |v, i| {
+        const arms = try self.b.arena.alloc(js.TsType, e.variants().len);
+        for (e.variants(), 0..) |v, i| {
             const fields = try self.b.arena.alloc(js.TsField, v.fields.len + 1);
             fields[0] = .{ .name = "tag", .type = .{ .literal = v.name } };
             for (v.fields, 0..) |f, fi| fields[fi + 1] = .{ .name = f.name, .type = try self.typeRef(f.typeRef) };
@@ -128,7 +127,7 @@ const Builder = struct {
         return .{ .type_alias = .{ .name = e.name, .type = .{ .union_ = arms } } };
     }
 
-    fn interface(self: *Builder, i: ast.InterfaceDecl) Error!js.TsDecl {
+    fn interface(self: *Builder, i: ast.BehaviorDecl) Error!js.TsDecl {
         if (!i.isPub) return .none;
         var members: std.ArrayListUnmanaged(js.TsMember) = .empty;
         for (i.fields) |f| try members.append(self.b.arena, .{ .field = .{

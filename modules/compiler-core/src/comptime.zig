@@ -185,14 +185,14 @@ fn withUsedAssocInterfaces(arena: std.mem.Allocator, prog: ast.Program, env: *co
         const name = k.*;
         var already = false;
         for (prog.decls) |d| {
-            if (d == .interface and std.mem.eql(u8, d.interface.name, name)) {
+            if (d == .behavior and std.mem.eql(u8, d.behavior.name, name)) {
                 already = true;
                 break;
             }
         }
         if (already) continue;
         if (env.assocInterfaceDecls.get(name)) |decl| {
-            try extra.append(arena, .{ .interface = decl });
+            try extra.append(arena, .{ .behavior = decl });
         }
     }
     if (extra.items.len == 0) return prog;
@@ -221,7 +221,7 @@ fn withSynthesisedEnumDecls(arena: std.mem.Allocator, prog: ast.Program, env: *c
     var extra: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
     var it = env.synthesisedEnumDecls.iterator();
     while (it.next()) |entry| {
-        try extra.append(arena, .{ .@"enum" = entry.value_ptr.* });
+        try extra.append(arena, .{ .type_ = entry.value_ptr.* });
     }
     if (extra.items.len == 0) return prog;
 
@@ -231,12 +231,12 @@ fn withSynthesisedEnumDecls(arena: std.mem.Allocator, prog: ast.Program, env: *c
     @memcpy(new_decls[0..extra.items.len], extra.items);
     for (prog.decls, 0..) |d, i| {
         switch (d) {
-            .@"enum" => |e| {
-                if (e.sections.len == 0) {
+            .type_ => |e| {
+                if (e.sections().len == 0) {
                     new_decls[extra.items.len + i] = d;
                 } else {
                     const enriched = try enrichEnumWithSectionWrappers(arena, e);
-                    new_decls[extra.items.len + i] = .{ .@"enum" = enriched };
+                    new_decls[extra.items.len + i] = .{ .type_ = enriched };
                 }
             },
             else => new_decls[extra.items.len + i] = d,
@@ -246,17 +246,17 @@ fn withSynthesisedEnumDecls(arena: std.mem.Allocator, prog: ast.Program, env: *c
 }
 
 /// §enum-sections F4 — synthesise the section-wrapper variants for a parent
-/// `EnumDecl` so codegen sees `Color(_inner: __Enum__Color)` alongside the
-/// user-written variants. The parent's `EnumDecl.sections` carry the section
+/// enum `TypeDecl` so codegen sees `Color(_inner: __Enum__Color)` alongside the
+/// user-written variants. The parent's `sections()` carry the section
 /// names; the wrapper payload's type-ref points at the mangled inner enum
 /// name (matching `registerEnumSection`'s `__<Enum>__<Path>` convention).
-/// Returns a new EnumDecl with `.variants` set to (original variants ++
+/// Returns a new enum TypeDecl with its variants set to (original variants ++
 /// synthesised wrappers).
-fn enrichEnumWithSectionWrappers(arena: std.mem.Allocator, e: ast.EnumDecl) !ast.EnumDecl {
-    const wrappers = try arena.alloc(ast.EnumVariant, e.sections.len);
-    for (e.sections, 0..) |sec, i| {
+fn enrichEnumWithSectionWrappers(arena: std.mem.Allocator, e: ast.TypeDecl) !ast.TypeDecl {
+    const wrappers = try arena.alloc(ast.EnumVariant, e.sections().len);
+    for (e.sections(), 0..) |sec, i| {
         const mangled = try std.fmt.allocPrint(arena, "__{s}__{s}", .{ e.name, sec.name });
-        const fields = try arena.alloc(ast.EnumVariantField, 1);
+        const fields = try arena.alloc(ast.Field, 1);
         fields[0] = .{
             .name = "_inner",
             .typeRef = .{ .named = mangled },
@@ -264,11 +264,12 @@ fn enrichEnumWithSectionWrappers(arena: std.mem.Allocator, e: ast.EnumDecl) !ast
         };
         wrappers[i] = .{ .name = sec.name, .fields = fields, .numeric = false };
     }
-    const merged = try arena.alloc(ast.EnumVariant, e.variants.len + wrappers.len);
-    @memcpy(merged[0..e.variants.len], e.variants);
-    @memcpy(merged[e.variants.len..], wrappers);
+    const variants = e.variants();
+    const merged = try arena.alloc(ast.EnumVariant, variants.len + wrappers.len);
+    @memcpy(merged[0..variants.len], variants);
+    @memcpy(merged[variants.len..], wrappers);
     var out = e;
-    out.variants = merged;
+    out.shape = .{ .enum_ = .{ .variants = merged, .sections = e.sections() } };
     return out;
 }
 
@@ -573,7 +574,7 @@ pub const std_pkg_modules = @import("std_prelude").pkg_modules;
 /// object `decorator_eval.zig` binds, so a body's `decl.fields`/`decl.kind`/
 /// `decl.fail(…)` type-check against the same data the runtime provides.
 const decl_reflection_src =
-    \\pub enum DeclKind { Record, Struct, Enum, Interface, Fn, Method, Field }
+    \\pub enum DeclKind { Type, Behavior, Fn, Method, Field }
     \\pub record Span { val start: i32, val end: i32, val line: i32 }
     \\pub record Annotation { val name: string, val args: string[] }
     \\pub record Param { val name: string, val typeName: string }
@@ -881,8 +882,7 @@ fn registerExports(
             // `pub`-only. Non-pub types still export their constructor (above)
             // for value use, but carry no cross-module `TypeDef`.
             switch (b.decl) {
-                .record => |r| if (r.isPub) try typeDecls.put(b.name, b.decl),
-                .@"enum" => |e| if (e.isPub) try typeDecls.put(b.name, b.decl),
+                .type_ => |t| if (t.isPub) try typeDecls.put(b.name, b.decl),
                 else => {},
             }
             // Template fns export their declaration too — importing modules
@@ -1071,8 +1071,7 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
             var type_decls: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
             for (program.decls) |decl| {
                 const is_pub_type = switch (decl) {
-                    .record => |r| r.isPub,
-                    .@"enum" => |e2| e2.isPub,
+                    .type_ => |t| t.isPub,
                     else => false,
                 };
                 if (is_pub_type) try type_decls.append(env.arena, decl);

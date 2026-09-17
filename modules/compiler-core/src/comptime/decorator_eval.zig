@@ -31,7 +31,7 @@ pub const DeclHandle = struct {
     kind: []const u8,
     name: []const u8,
     fields: []const FieldHandle,
-    methods: []const ast.InterfaceMethod,
+    methods: []const ast.BehaviorMethod,
     returnType: []const u8,
     annotations: []const ast.Annotation,
 };
@@ -241,7 +241,7 @@ fn buildModule(
 
 /// The `@Decl` handle as a BEAM term — the map the decorator body reads
 /// (`decl.kind`, `decl.fields`, …). `kind` is an atom so it matches the lowering
-/// of `DeclKind.Record` (`'Record'`); names and type names are binaries.
+/// of `DeclKind.Type` (`'Type'`); names and type names are binaries.
 pub fn handleToTerm(arena: std.mem.Allocator, handle: DeclHandle) std.mem.Allocator.Error!Term {
     const fields = try arena.alloc(Term, handle.fields.len);
     for (handle.fields, 0..) |f, i| {
@@ -346,7 +346,7 @@ test "decorator module: lowered body, handle term and host glue" {
     const dfn = program.decls[0].@"fn";
 
     const handle: DeclHandle = .{
-        .kind = "Record",
+        .kind = "Type",
         .name = "Nope",
         .fields = &.{},
         .methods = &.{},
@@ -364,7 +364,7 @@ test "decorator module: lowered body, handle term and host glue" {
         "(maps:get(kind, Decl) =/= 'Method')",
         "fail(Decl, <<\"#[getMapping] must annotate a method\">>)",
         \\        getMapping(#{
-        \\            kind => 'Record',
+        \\            kind => 'Type',
         \\            name => <<"Nope">>,
         \\            fields => [],
         \\            methods => [],

@@ -277,10 +277,10 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
 /// bodies of their own here. Interfaces that are not declared in this program
 /// (e.g. stdlib interfaces) are skipped — their method sets are not visible.
 fn validateProgram(env: *Env, program: ast.Program) InferError!void {
-    var interfaces = std.StringHashMap(ast.InterfaceDecl).init(env.arena);
+    var interfaces = std.StringHashMap(ast.BehaviorDecl).init(env.arena);
     defer interfaces.deinit();
     for (program.decls) |decl| switch (decl) {
-        .interface => |d| try interfaces.put(d.name, d),
+        .behavior => |d| try interfaces.put(d.name, d),
         else => {},
     };
 
@@ -291,7 +291,7 @@ fn validateProgram(env: *Env, program: ast.Program) InferError!void {
 }
 
 /// True when interface `d` declares a method named `name` (abstract or default).
-fn interfaceHasMethod(d: ast.InterfaceDecl, name: []const u8) bool {
+fn interfaceHasMethod(d: ast.BehaviorDecl, name: []const u8) bool {
     for (d.methods) |m| {
         if (std.mem.eql(u8, m.name, name)) return true;
     }
@@ -320,7 +320,7 @@ fn implementsInterface(impl: ast.ImplementDecl, name: []const u8) bool {
 fn validateImplement(
     env: *Env,
     impl: ast.ImplementDecl,
-    interfaces: std.StringHashMap(ast.InterfaceDecl),
+    interfaces: std.StringHashMap(ast.BehaviorDecl),
 ) InferError!void {
     // Per-method checks: qualifier validity, method existence, ambiguity.
     for (impl.methods) |m| {
@@ -464,25 +464,27 @@ fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
             try env.bind(f.name, ty);
             return .{ .name = f.name, .type_ = ty, .typedExpr = null, .decl = decl };
         },
-        .record => |r| {
-            const typeName = try buildRecordDeclName(env, r);
-            const typeId = if (env.lookupTypeDef(r.name)) |td| switch (td) {
-                .record => |rec| rec.id,
-                else => null,
-            } else null;
-            try inferTypeMethods(env, r.name, r.genericParams, r.methods);
-            return .{ .name = r.name, .type_ = try env.namedType(typeName), .typedExpr = null, .decl = decl, .typeId = typeId };
+        .type_ => |tdecl| switch (tdecl.shape) {
+            .record => {
+                const typeName = try buildRecordDeclName(env, tdecl);
+                const typeId = if (env.lookupTypeDef(tdecl.name)) |td| switch (td) {
+                    .record => |rec| rec.id,
+                    else => null,
+                } else null;
+                try inferTypeMethods(env, tdecl.name, tdecl.genericParams, tdecl.methods);
+                return .{ .name = tdecl.name, .type_ = try env.namedType(typeName), .typedExpr = null, .decl = decl, .typeId = typeId };
+            },
+            .enum_ => {
+                const typeName = try buildEnumDeclName(env, tdecl);
+                const typeId = if (env.lookupTypeDef(tdecl.name)) |td| switch (td) {
+                    .enum_ => |en| en.id,
+                    else => null,
+                } else null;
+                try inferTypeMethods(env, tdecl.name, tdecl.genericParams, tdecl.methods);
+                return .{ .name = tdecl.name, .type_ = try env.namedType(typeName), .typedExpr = null, .decl = decl, .typeId = typeId };
+            },
         },
-        .@"enum" => |e| {
-            const typeName = try buildEnumDeclName(env, e);
-            const typeId = if (env.lookupTypeDef(e.name)) |td| switch (td) {
-                .enum_ => |en| en.id,
-                else => null,
-            } else null;
-            try inferTypeMethods(env, e.name, e.genericParams, e.methods);
-            return .{ .name = e.name, .type_ = try env.namedType(typeName), .typedExpr = null, .decl = decl, .typeId = typeId };
-        },
-        .interface => |d| {
+        .behavior => |d| {
             const typeName = try buildInterfaceDeclName(env, d);
             try registerInterfaceAssociatedFns(env, d);
             return .{ .name = d.name, .type_ = try env.namedType(typeName), .typedExpr = null, .decl = decl };
@@ -507,8 +509,10 @@ fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
 
 fn registerTypeDecl(env: *Env, decl: ast.DeclKind) InferError!void {
     switch (decl) {
-        .record => |r| try registerRecord(env, r),
-        .@"enum" => |e| try registerEnum(env, e),
+        .type_ => |tdecl| switch (tdecl.shape) {
+            .record => try registerRecord(env, tdecl),
+            .enum_ => try registerEnum(env, tdecl),
+        },
         else => {},
     }
 }
@@ -530,7 +534,10 @@ fn registerFnSignatures(env: *Env, program: ast.Program) InferError!void {
             if (f.typeGuardParam) |paramName| {
                 var paramIndex: usize = 0;
                 for (f.params, 0..) |p, i| {
-                    if (std.mem.eql(u8, p.name, paramName)) { paramIndex = i; break; }
+                    if (std.mem.eql(u8, p.name, paramName)) {
+                        paramIndex = i;
+                        break;
+                    }
                 }
                 const narrowedName: []const u8 = if (f.returnType) |rt| switch (rt) {
                     .named => |n| n,
@@ -609,7 +616,7 @@ fn implementsAnnotation(impls: []const ast.TypeRef) bool {
 /// so the annotation argument validator applies them on a missing positional /
 /// named arg — the same rule a fn-param default uses. The synthetic param
 /// list lives in `env.arena`, so it outlives the registration call.
-fn recordFieldsAsParams(env: *Env, fields: []const ast.RecordField) ![]ast.Param {
+fn recordFieldsAsParams(env: *Env, fields: []const ast.Field) ![]ast.Param {
     var out = try env.arena.alloc(ast.Param, fields.len);
     for (fields, 0..) |f, i| {
         out[i] = .{
@@ -662,18 +669,20 @@ fn enumVariantAsParams(env: *Env, variant: ast.EnumVariant) ![]ast.Param {
 /// @Decl` decorator path keeps working untouched.
 pub fn registerAnnotationTypes(env: *Env, program: ast.Program) InferError!void {
     for (program.decls) |decl| switch (decl) {
-        .record => |r| {
-            if (!implementsAnnotation(r.implement)) continue;
-            const params = try recordFieldsAsParams(env, r.fields);
-            env.decorators.put(r.name, .{ .params = params, .fn_decl = null }) catch {};
-        },
-        .@"enum" => |e| {
-            if (!implementsAnnotation(e.implement)) continue;
-            for (e.variants) |v| {
-                const params = try enumVariantAsParams(env, v);
-                const qname = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ e.name, v.name });
-                env.decorators.put(qname, .{ .params = params, .fn_decl = null }) catch {};
-            }
+        .type_ => |tdecl| switch (tdecl.shape) {
+            .record => {
+                if (!implementsAnnotation(tdecl.implement)) continue;
+                const params = try recordFieldsAsParams(env, tdecl.recordFields());
+                env.decorators.put(tdecl.name, .{ .params = params, .fn_decl = null }) catch {};
+            },
+            .enum_ => {
+                if (!implementsAnnotation(tdecl.implement)) continue;
+                for (tdecl.variants()) |v| {
+                    const params = try enumVariantAsParams(env, v);
+                    const qname = try std.fmt.allocPrint(env.arena, "{s}.{s}", .{ tdecl.name, v.name });
+                    env.decorators.put(qname, .{ .params = params, .fn_decl = null }) catch {};
+                }
+            },
         },
         else => {},
     };
@@ -740,8 +749,10 @@ fn registerExtensions(env: *Env, program: ast.Program) InferError!void {
     // Inherent methods + extension entries.
     for (program.decls) |decl| {
         switch (decl) {
-            .record => |r| for (r.methods) |im| try env.addInherentMethod(r.name, im.name),
-            .@"enum" => |e| for (e.methods) |im| try env.addInherentMethod(e.name, im.name),
+            .type_ => |tdecl| switch (tdecl.shape) {
+                .record => for (tdecl.methods) |im| try env.addInherentMethod(tdecl.name, im.name),
+                .enum_ => for (tdecl.methods) |im| try env.addInherentMethod(tdecl.name, im.name),
+            },
             .implement => |im| {
                 try env.extensions.put(im.name, .{
                     .name = im.name,
@@ -803,9 +814,11 @@ fn buildScopeSnapshot(env: *Env, program: ast.Program) InferError!void {
     for (program.decls) |decl| switch (decl) {
         .@"fn" => |f| try snap.put(f.name, .fn_, false),
         .val => |v| try snap.put(v.name, .val, false),
-        .record => |r| try snap.put(r.name, .struct_, false),
-        .@"enum" => |e| try snap.put(e.name, .enum_, false),
-        .interface => |i| try snap.put(i.name, .interface, false),
+        .type_ => |tdecl| switch (tdecl.shape) {
+            .record => try snap.put(tdecl.name, .struct_, false),
+            .enum_ => try snap.put(tdecl.name, .enum_, false),
+        },
+        .behavior => |i| try snap.put(i.name, .interface, false),
         .use => |u| for (u.imports) |imp| {
             const name = imp.name();
             const kind: template.BindingKind = blk: {
@@ -912,7 +925,7 @@ fn bindingSourceType(ty: *T.Type) *T.Type {
     };
 }
 
-fn registerRecord(env: *Env, r: ast.RecordDecl) InferError!void {
+fn registerRecord(env: *Env, r: ast.TypeDecl) InferError!void {
     // Build generic param map: each param name → fresh generic type var.
     var genericMap = std.StringHashMap(*T.Type).init(env.arena);
     defer genericMap.deinit();
@@ -924,8 +937,8 @@ fn registerRecord(env: *Env, r: ast.RecordDecl) InferError!void {
     }
 
     // Resolve each field's type.
-    var fields = try env.arena.alloc(envMod.FieldDef, r.fields.len);
-    for (r.fields, 0..) |f, i| {
+    var fields = try env.arena.alloc(envMod.FieldDef, r.recordFields().len);
+    for (r.recordFields(), 0..) |f, i| {
         fields[i] = .{
             .name = f.name,
             .type_ = try resolveTypeRefInContext(env, f.typeRef, genericMap),
@@ -960,7 +973,7 @@ fn registerRecord(env: *Env, r: ast.RecordDecl) InferError!void {
     // Build constructor function type: `fn(T1, T2, ...) -> RecordName<A,B,...>`.
     // The return type carries the generic type vars so that after call-site
     // unification `typeNameOf` can display the instantiated form, e.g. `Pair<Int,String>`.
-    var paramTypes = try env.arena.alloc(*T.Type, r.fields.len);
+    var paramTypes = try env.arena.alloc(*T.Type, r.recordFields().len);
     for (fields, 0..) |f, i| paramTypes[i] = f.type_;
     var retArgs = try env.arena.alloc(*T.Type, r.genericParams.len);
     for (r.genericParams, 0..) |gp, i| retArgs[i] = genericMap.get(gp.name).?;
@@ -972,7 +985,7 @@ fn registerRecord(env: *Env, r: ast.RecordDecl) InferError!void {
     // is also a ctor param; expose its `default` Expr to the transform pass so
     // `expandTrailingDefaults` injects missing trailing defaults at the
     // `Config(...)` call site. Same rule as fn-decl call defaults.
-    try env.ctorParams.put(r.name, try recordFieldsAsParams(env, r.fields));
+    try env.ctorParams.put(r.name, try recordFieldsAsParams(env, r.recordFields()));
 
     // Inherent method signatures (self = the record instance type).
     try registerInherentMethodTypes(env, r.name, retType, &genericMap, r.methods);
@@ -990,7 +1003,7 @@ fn registerInherentMethodTypes(
     typeName: []const u8,
     instanceType: *T.Type,
     typeGenerics: *const std.StringHashMap(*T.Type),
-    methods: []const ast.InterfaceMethod,
+    methods: []const ast.BehaviorMethod,
 ) InferError!void {
     for (methods) |im| {
         // Register the method NAME for dispatch. This runs from registerRecord/
@@ -1040,7 +1053,7 @@ fn registerInherentMethodTypes(
 /// (let-polymorphism, same as top-level generic fns). Methods that take a `self`
 /// receiver are instance methods (handled by the inherent-method machinery) and
 /// are skipped here.
-fn registerInterfaceAssociatedFns(env: *Env, d: ast.InterfaceDecl) InferError!void {
+fn registerInterfaceAssociatedFns(env: *Env, d: ast.BehaviorDecl) InferError!void {
     // Record EVERY interface decl so codegen can emit its namespace/prototype
     // when used, and the dispatch can follow the `extends` chain (markers like
     // `I32 extends Signed` carry no methods but link the tower).
@@ -1197,7 +1210,7 @@ fn registerStruct(env: *Env, s: ast.StructDecl) InferError!void {
 
     // Inherent method signatures (self = the struct instance, bare name to
     // match the constructor's return type).
-    var structMethods: std.ArrayListUnmanaged(ast.InterfaceMethod) = .empty;
+    var structMethods: std.ArrayListUnmanaged(ast.BehaviorMethod) = .empty;
     defer structMethods.deinit(env.arena);
     for (s.members) |m| switch (m) {
         .method => |im| try structMethods.append(env.arena, im),
@@ -1206,7 +1219,7 @@ fn registerStruct(env: *Env, s: ast.StructDecl) InferError!void {
     try registerInherentMethodTypes(env, s.name, retType, &genericMap, structMethods.items);
 }
 
-fn registerEnum(env: *Env, e: ast.EnumDecl) InferError!void {
+fn registerEnum(env: *Env, e: ast.TypeDecl) InferError!void {
     var genericMap = std.StringHashMap(*T.Type).init(env.arena);
     defer genericMap.deinit();
     var genericIds = try env.arena.alloc([]const u8, e.genericParams.len);
@@ -1222,8 +1235,8 @@ fn registerEnum(env: *Env, e: ast.EnumDecl) InferError!void {
     // enums live in the type-def table only — their constructor names are NOT
     // bound at the top level; path-access (`.Section.Inner.Leaf`) lowers to the
     // wrapped form during expression inference (F2).
-    var section_wrappers = try env.arena.alloc(envMod.VariantDef, e.sections.len);
-    for (e.sections, 0..) |sec, si| {
+    var section_wrappers = try env.arena.alloc(envMod.VariantDef, e.sections().len);
+    for (e.sections(), 0..) |sec, si| {
         const inner_name = try registerEnumSection(env, e.name, &.{}, sec);
         const wrapper_field = try env.arena.alloc(envMod.FieldDef, 1);
         wrapper_field[0] = .{ .name = "_inner", .type_ = try env.namedType(inner_name) };
@@ -1244,8 +1257,8 @@ fn registerEnum(env: *Env, e: ast.EnumDecl) InferError!void {
     else
         try env.namedTypeArgs(e.name, ctorRetArgs);
 
-    var variants = try env.arena.alloc(envMod.VariantDef, e.variants.len + section_wrappers.len);
-    for (e.variants, 0..) |v, vi| {
+    var variants = try env.arena.alloc(envMod.VariantDef, e.variants().len + section_wrappers.len);
+    for (e.variants(), 0..) |v, vi| {
         var fields = try env.arena.alloc(envMod.FieldDef, v.fields.len);
         for (v.fields, 0..) |f, fi| {
             fields[fi] = .{
@@ -1278,7 +1291,7 @@ fn registerEnum(env: *Env, e: ast.EnumDecl) InferError!void {
     // Append the section wrappers after the bare variants — order is irrelevant
     // for type-def semantics, but stable for snapshot determinism.
     for (section_wrappers, 0..) |w, wi| {
-        variants[e.variants.len + wi] = w;
+        variants[e.variants().len + wi] = w;
     }
 
     // §1G — resolve generic defaults against the same map.
@@ -1384,7 +1397,7 @@ fn registerEnumSection(
         .contextBase = null,
     } });
 
-    // §enum-sections F4 — also build the matching AST EnumDecl so the
+    // §enum-sections F4 — also build the matching AST enum TypeDecl so the
     // post-inference `withSynthesisedEnumDecls` pass can prepend it to
     // `program.decls`, giving codegen a top-level enum to emit (mirroring
     // the manually-written enum-of-enum form, byte-identical at codegen).
@@ -1393,7 +1406,7 @@ fn registerEnumSection(
     return mangled;
 }
 
-/// §enum-sections F4 — assemble the AST `EnumDecl` for a synthesised inner
+/// §enum-sections F4 — assemble the AST enum `TypeDecl` for a synthesised inner
 /// enum (the one `registerEnumSection` just registered under `mangled`). The
 /// decl carries the section's bare/payload variants (`sec.variants`, with the
 /// `_` prefix on numeric leaves matching the F1 mangling) followed by one
@@ -1421,7 +1434,7 @@ fn registerSynthesisedEnumDecl(
         // Copy the variant fields (the AST owns them by slice, so we reslice
         // through the arena to keep ownership clean even though the source
         // EnumSection still references them).
-        const fields = try env.arena.alloc(ast.EnumVariantField, v.fields.len);
+        const fields = try env.arena.alloc(ast.Field, v.fields.len);
         for (v.fields, 0..) |f, fi| fields[fi] = f;
         ast_variants[i] = .{ .name = variant_name, .fields = fields, .numeric = v.numeric };
     }
@@ -1433,7 +1446,7 @@ fn registerSynthesisedEnumDecl(
         std.debug.assert(w.fields.len == 1);
         const inner_type = w.fields[0].type_.deref();
         std.debug.assert(inner_type.* == .named);
-        const fields = try env.arena.alloc(ast.EnumVariantField, 1);
+        const fields = try env.arena.alloc(ast.Field, 1);
         fields[0] = .{
             .name = "_inner",
             .typeRef = .{ .named = inner_type.named.name },
@@ -1445,10 +1458,10 @@ fn registerSynthesisedEnumDecl(
             .numeric = false,
         };
     }
-    const enum_decl = ast.EnumDecl{
+    const enum_decl = ast.TypeDecl{
         .name = mangled,
         .isPub = false,
-        .variants = ast_variants,
+        .shape = .{ .enum_ = .{ .variants = ast_variants } },
     };
     try env.synthesisedEnumDecls.put(mangled, enum_decl);
 }
@@ -1757,7 +1770,7 @@ fn looksNumeric(s: []const u8) bool {
 
 /// Build a signature name for a record declaration binding.
 /// Format: `"record { f1: T1, f2: T2 }"` ---- fields inline, body omitted.
-fn buildRecordDeclName(env: *Env, r: ast.RecordDecl) ![]const u8 {
+fn buildRecordDeclName(env: *Env, r: ast.TypeDecl) ![]const u8 {
     var buf: std.ArrayList(u8) = .empty;
     try buf.appendSlice(env.arena, "record");
     if (r.genericParams.len > 0) {
@@ -1769,7 +1782,7 @@ fn buildRecordDeclName(env: *Env, r: ast.RecordDecl) ![]const u8 {
         try buf.append(env.arena, '>');
     }
     try buf.appendSlice(env.arena, " { ");
-    for (r.fields, 0..) |f, i| {
+    for (r.recordFields(), 0..) |f, i| {
         if (i > 0) try buf.appendSlice(env.arena, ", ");
         try buf.appendSlice(env.arena, f.name);
         try buf.appendSlice(env.arena, ": ");
@@ -1816,7 +1829,7 @@ fn buildStructDeclName(env: *Env, s: ast.StructDecl) ![]const u8 {
 
 /// Build a signature name for an interface declaration binding.
 /// Format: `"interface {\n    fn method(params)\n}"` ---- methods and fields.
-fn buildInterfaceDeclName(env: *Env, d: ast.InterfaceDecl) ![]const u8 {
+fn buildInterfaceDeclName(env: *Env, d: ast.BehaviorDecl) ![]const u8 {
     var buf: std.ArrayList(u8) = .empty;
     try buf.appendSlice(env.arena, "interface");
     if (d.genericParams.len > 0) {
@@ -1859,7 +1872,7 @@ fn buildInterfaceDeclName(env: *Env, d: ast.InterfaceDecl) ![]const u8 {
 
 /// Build a signature name for an enum declaration binding.
 /// Format: `"enum {\n    Variant,\n    Variant(field: Type),\n}\n"`
-fn buildEnumDeclName(env: *Env, e: ast.EnumDecl) ![]const u8 {
+fn buildEnumDeclName(env: *Env, e: ast.TypeDecl) ![]const u8 {
     var buf: std.ArrayList(u8) = .empty;
     try buf.appendSlice(env.arena, "enum");
     if (e.genericParams.len > 0) {
@@ -1871,7 +1884,7 @@ fn buildEnumDeclName(env: *Env, e: ast.EnumDecl) ![]const u8 {
         try buf.append(env.arena, '>');
     }
     try buf.appendSlice(env.arena, " {\n");
-    for (e.variants) |v| {
+    for (e.variants()) |v| {
         try buf.appendSlice(env.arena, "    ");
         try buf.appendSlice(env.arena, v.name);
         if (v.fields.len > 0) {
@@ -1997,15 +2010,17 @@ fn inferDecl(env: *Env, decl: ast.DeclKind) InferError!?Binding {
             return .{ .name = f.name, .type_ = try env.namedType(sigName) };
         },
         // Type declarations produce a binding whose type name encodes the body.
-        .record => |r| {
-            const typeName = try buildRecordDeclName(env, r);
-            return .{ .name = r.name, .type_ = try env.namedType(typeName) };
+        .type_ => |tdecl| switch (tdecl.shape) {
+            .record => {
+                const typeName = try buildRecordDeclName(env, tdecl);
+                return .{ .name = tdecl.name, .type_ = try env.namedType(typeName) };
+            },
+            .enum_ => {
+                const typeName = try buildEnumDeclName(env, tdecl);
+                return .{ .name = tdecl.name, .type_ = try env.namedType(typeName) };
+            },
         },
-        .@"enum" => |e| {
-            const typeName = try buildEnumDeclName(env, e);
-            return .{ .name = e.name, .type_ = try env.namedType(typeName) };
-        },
-        .interface => |d| {
+        .behavior => |d| {
             const typeName = try buildInterfaceDeclName(env, d);
             try registerInterfaceAssociatedFns(env, d);
             return .{ .name = d.name, .type_ = try env.namedType(typeName) };
@@ -2132,16 +2147,18 @@ fn validateDecorators(env: *Env, program: ast.Program) InferError!void {
     if (env.decorators.count() == 0) return;
     for (program.decls) |decl| switch (decl) {
         .@"fn" => |f| try checkDecoratorAnnotations(env, f.annotations, f.name),
-        .record => |r| {
-            try checkDecoratorAnnotations(env, r.annotations, r.name);
-            for (r.fields) |fld| try checkDecoratorAnnotations(env, fld.annotations, fld.name);
-            for (r.methods) |m| try checkDecoratorAnnotations(env, m.annotations, m.name);
+        .type_ => |tdecl| switch (tdecl.shape) {
+            .record => {
+                try checkDecoratorAnnotations(env, tdecl.annotations, tdecl.name);
+                for (tdecl.recordFields()) |fld| try checkDecoratorAnnotations(env, fld.annotations, fld.name);
+                for (tdecl.methods) |m| try checkDecoratorAnnotations(env, m.annotations, m.name);
+            },
+            .enum_ => {
+                try checkDecoratorAnnotations(env, tdecl.annotations, tdecl.name);
+                for (tdecl.methods) |m| try checkDecoratorAnnotations(env, m.annotations, m.name);
+            },
         },
-        .@"enum" => |e| {
-            try checkDecoratorAnnotations(env, e.annotations, e.name);
-            for (e.methods) |m| try checkDecoratorAnnotations(env, m.annotations, m.name);
-        },
-        .interface => |i| {
+        .behavior => |i| {
             try checkDecoratorAnnotations(env, i.annotations, i.name);
             for (i.methods) |m| try checkDecoratorAnnotations(env, m.annotations, m.name);
         },
@@ -2155,7 +2172,7 @@ fn validateDecorators(env: *Env, program: ast.Program) InferError!void {
 /// in `inferFnDecl`.)
 fn validateEffectAnnotations(env: *Env, program: ast.Program) InferError!void {
     for (program.decls) |decl| switch (decl) {
-        .interface => |i| {
+        .behavior => |i| {
             for (i.methods) |m| {
                 if (effectAnnotationOf(m.annotations) != null) {
                     env.lastError = TypeError.custom(
@@ -2241,7 +2258,6 @@ fn declTypeName(tr: ast.TypeRef) []const u8 {
     };
 }
 
-
 /// Run every body-carrying decorator applied to one declaration over its handle.
 fn runDeclDecorators(
     env: *Env,
@@ -2303,71 +2319,73 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
             };
             try runDeclDecorators(env, ctx, f.annotations, h);
         },
-        .record => |r| {
-            var fields = try env.arena.alloc(decoratorEval.FieldHandle, r.fields.len);
-            for (r.fields, 0..) |fld, i| {
-                fields[i] = .{
-                    .name = fld.name,
-                    .typeName = declTypeName(fld.typeRef),
-                    .annotations = fld.annotations,
+        .type_ => |tdecl| switch (tdecl.shape) {
+            .record => {
+                var fields = try env.arena.alloc(decoratorEval.FieldHandle, tdecl.recordFields().len);
+                for (tdecl.recordFields(), 0..) |fld, i| {
+                    fields[i] = .{
+                        .name = fld.name,
+                        .typeName = declTypeName(fld.typeRef),
+                        .annotations = fld.annotations,
+                    };
+                }
+                const h = decoratorEval.DeclHandle{
+                    .kind = "Type",
+                    .name = tdecl.name,
+                    .fields = fields,
+                    .methods = tdecl.methods,
+                    .returnType = "",
+                    .annotations = tdecl.annotations,
                 };
-            }
-            const h = decoratorEval.DeclHandle{
-                .kind = "Record",
-                .name = r.name,
-                .fields = fields,
-                .methods = r.methods,
-                .returnType = "",
-                .annotations = r.annotations,
-            };
-            try runDeclDecorators(env, ctx, r.annotations, h);
-            for (r.fields) |fld| {
-                const fh = decoratorEval.DeclHandle{
-                    .kind = "Field",
-                    .name = fld.name,
+                try runDeclDecorators(env, ctx, tdecl.annotations, h);
+                for (tdecl.recordFields()) |fld| {
+                    const fh = decoratorEval.DeclHandle{
+                        .kind = "Field",
+                        .name = fld.name,
+                        .fields = &.{},
+                        .methods = &.{},
+                        .returnType = declTypeName(fld.typeRef),
+                        .annotations = fld.annotations,
+                    };
+                    try runDeclDecorators(env, ctx, fld.annotations, fh);
+                }
+                for (tdecl.methods) |m| {
+                    const mh = decoratorEval.DeclHandle{
+                        .kind = "Method",
+                        .name = m.name,
+                        .fields = &.{},
+                        .methods = &.{},
+                        .returnType = if (m.returnType) |rt| declTypeName(rt) else "",
+                        .annotations = m.annotations,
+                    };
+                    try runDeclDecorators(env, ctx, m.annotations, mh);
+                }
+            },
+            .enum_ => {
+                const h = decoratorEval.DeclHandle{
+                    .kind = "Type",
+                    .name = tdecl.name,
                     .fields = &.{},
-                    .methods = &.{},
-                    .returnType = declTypeName(fld.typeRef),
-                    .annotations = fld.annotations,
+                    .methods = tdecl.methods,
+                    .returnType = "",
+                    .annotations = tdecl.annotations,
                 };
-                try runDeclDecorators(env, ctx, fld.annotations, fh);
-            }
-            for (r.methods) |m| {
-                const mh = decoratorEval.DeclHandle{
-                    .kind = "Method",
-                    .name = m.name,
-                    .fields = &.{},
-                    .methods = &.{},
-                    .returnType = if (m.returnType) |rt| declTypeName(rt) else "",
-                    .annotations = m.annotations,
-                };
-                try runDeclDecorators(env, ctx, m.annotations, mh);
-            }
+                try runDeclDecorators(env, ctx, tdecl.annotations, h);
+                for (tdecl.methods) |m| {
+                    const mh = decoratorEval.DeclHandle{
+                        .kind = "Method",
+                        .name = m.name,
+                        .fields = &.{},
+                        .methods = &.{},
+                        .returnType = if (m.returnType) |rt| declTypeName(rt) else "",
+                        .annotations = m.annotations,
+                    };
+                    try runDeclDecorators(env, ctx, m.annotations, mh);
+                }
+            },
         },
-        .@"enum" => |e| {
-            const h = decoratorEval.DeclHandle{
-                .kind = "Enum",
-                .name = e.name,
-                .fields = &.{},
-                .methods = e.methods,
-                .returnType = "",
-                .annotations = e.annotations,
-            };
-            try runDeclDecorators(env, ctx, e.annotations, h);
-            for (e.methods) |m| {
-                const mh = decoratorEval.DeclHandle{
-                    .kind = "Method",
-                    .name = m.name,
-                    .fields = &.{},
-                    .methods = &.{},
-                    .returnType = if (m.returnType) |rt| declTypeName(rt) else "",
-                    .annotations = m.annotations,
-                };
-                try runDeclDecorators(env, ctx, m.annotations, mh);
-            }
-        },
-        .interface => |i| {
-            // Interface-level markers (`#[mock]`) reflect with kind `Interface`,
+        .behavior => |i| {
+            // Behavior-level markers (`#[mock]`) reflect with kind `Behavior`,
             // exposing the interface's fields + method signatures. Its methods also
             // reflect individually (`#[getMapping]` on a route) as `Method`.
             var fields = try env.arena.alloc(decoratorEval.FieldHandle, i.fields.len);
@@ -2379,7 +2397,7 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                 };
             }
             const h = decoratorEval.DeclHandle{
-                .kind = "Interface",
+                .kind = "Behavior",
                 .name = i.name,
                 .fields = fields,
                 .methods = i.methods,
@@ -2543,7 +2561,7 @@ fn instantiateType(env: *Env, ty: *T.Type, seen: *std.AutoHashMap(*T.TypeCell, *
             return node;
         },
         .record => |fields| {
-            const copies = try env.arena.alloc(T.RecordField, fields.len);
+            const copies = try env.arena.alloc(T.Field, fields.len);
             for (fields, 0..) |f, i| copies[i] = .{ .name = f.name, .type_ = try instantiateType(env, f.type_, seen, mode) };
             const node = try env.arena.create(T.Type);
             node.* = .{ .record = copies };
@@ -2615,8 +2633,7 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
             if (e != .result and e != .future) break :blk false;
             var hasExternal = false;
             for (f.annotations) |a| {
-                if (std.mem.startsWith(u8, a.name, "External.") and a.name.len > "External.".len)
-                {
+                if (std.mem.startsWith(u8, a.name, "External.") and a.name.len > "External.".len) {
                     hasExternal = true;
                     break;
                 }
@@ -2917,7 +2934,7 @@ fn inferTypeMethods(
     env: *Env,
     typeName: []const u8,
     typeGenerics: []const ast.GenericParam,
-    methods: []const ast.InterfaceMethod,
+    methods: []const ast.BehaviorMethod,
 ) InferError!void {
     for (methods) |m| {
         const body = m.body orelse continue;
@@ -4136,7 +4153,10 @@ fn resolveMergeRecords(env: *Env, typedArgs: []ast.CallArgOf(.typed), loc: ast.L
     for (fieldsB) |fb| {
         var duplicate = false;
         for (fieldsA) |fa| {
-            if (std.mem.eql(u8, fa.name, fb.name)) { duplicate = true; break; }
+            if (std.mem.eql(u8, fa.name, fb.name)) {
+                duplicate = true;
+                break;
+            }
         }
         if (!duplicate) try mergedFields.append(env.arena, fb);
     }
@@ -4437,7 +4457,7 @@ fn makeSyntheticRecordType(env: *Env, fields: []envMod.FieldDef) !TypedExpr {
     const syntheticName = try std.fmt.allocPrint(env.arena, "#synth_{d}", .{typeId});
 
     // Build the record Type (anonymous structural record).
-    var recordFields = try env.arena.alloc(T.RecordField, fields.len);
+    var recordFields = try env.arena.alloc(T.Field, fields.len);
     for (fields, 0..) |f, i| {
         recordFields[i] = .{ .name = f.name, .type_ = f.type_ };
     }
@@ -4733,7 +4753,7 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
         // unifies field-by-field with a `record { … }` literal (same field set,
         // declaration order; see unify.zig).
         .record_type => |flds| {
-            const fields = try env.arena.alloc(T.RecordField, flds.len);
+            const fields = try env.arena.alloc(T.Field, flds.len);
             for (flds, 0..) |f, i| {
                 fields[i] = .{
                     .name = f.name,
@@ -6613,7 +6633,7 @@ fn recordInstanceCall(env: *Env, loc: ast.Loc, typeName: []const u8) InferError!
     if (primKindOfName(typeName)) |k| {
         try env.instanceLowerings.put(loc, .{ .prim = k });
     } else {
-        try env.instanceLowerings.put(loc, .{ .record = typeName });
+        try env.instanceLowerings.put(loc, .{ .type_ = typeName });
     }
 }
 
@@ -6666,7 +6686,7 @@ fn primMethodNodeRename(env: *Env, recvTy: *T.Type, callee: []const u8) InferErr
     return null;
 }
 
-const FoundMethod = struct { method: ast.InterfaceMethod, owner: []const u8 };
+const FoundMethod = struct { method: ast.BehaviorMethod, owner: []const u8 };
 
 /// Find an instance method (`self` receiver) named `callee` in interface
 /// `ifaceName`, following its `extends` chain. Matches `default fn` methods (their
@@ -7487,7 +7507,7 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
             // Anonymous structural record: each field types independently;
             // the literal's type is `Type.record` in declaration order.
             const typedFields = try env.arena.alloc(ast.RecordLitFieldOf(.typed), rl.fields.len);
-            const fieldTypes = try env.arena.alloc(T.RecordField, rl.fields.len);
+            const fieldTypes = try env.arena.alloc(T.Field, rl.fields.len);
             for (rl.fields, 0..) |f, i| {
                 const typedValue = try inferExprTyped(env, f.value.*);
                 typedFields[i] = .{ .name = f.name, .value = try makeTypedPtr(env, typedValue) };

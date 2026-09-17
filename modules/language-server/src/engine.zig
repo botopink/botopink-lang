@@ -187,32 +187,34 @@ fn renderBindingHover(gpa: std.mem.Allocator, b: comptime_pipeline.TypedBinding)
             try buf.appendSlice(gpa, " : ");
             try buf.appendSlice(gpa, type_str);
         },
-        .record => |r| {
-            if (r.isPub) try buf.appendSlice(gpa, "pub ");
-            try buf.appendSlice(gpa, "record ");
-            try buf.appendSlice(gpa, b.name);
-            try buf.appendSlice(gpa, " { ");
-            for (r.fields, 0..) |field, fi| {
-                if (fi > 0) try buf.appendSlice(gpa, ", ");
-                try buf.appendSlice(gpa, field.name);
-                try buf.appendSlice(gpa, ": ");
-                try appendTypeRef(gpa, &buf, field.typeRef);
-            }
-            try buf.appendSlice(gpa, " }");
+        .type_ => |tdecl| switch (tdecl.shape) {
+            .record => {
+                if (tdecl.isPub) try buf.appendSlice(gpa, "pub ");
+                try buf.appendSlice(gpa, "record ");
+                try buf.appendSlice(gpa, b.name);
+                try buf.appendSlice(gpa, " { ");
+                for (tdecl.recordFields(), 0..) |field, fi| {
+                    if (fi > 0) try buf.appendSlice(gpa, ", ");
+                    try buf.appendSlice(gpa, field.name);
+                    try buf.appendSlice(gpa, ": ");
+                    try appendTypeRef(gpa, &buf, field.typeRef);
+                }
+                try buf.appendSlice(gpa, " }");
+            },
+            .enum_ => {
+                if (tdecl.isPub) try buf.appendSlice(gpa, "pub ");
+                try buf.appendSlice(gpa, "enum ");
+                try buf.appendSlice(gpa, b.name);
+                try buf.appendSlice(gpa, " { ");
+                for (tdecl.variants(), 0..) |v, vi| {
+                    if (vi > 0) try buf.appendSlice(gpa, ", ");
+                    try buf.appendSlice(gpa, v.name);
+                    if (v.fields.len > 0) try buf.appendSlice(gpa, "(...)");
+                }
+                try buf.appendSlice(gpa, " }");
+            },
         },
-        .@"enum" => |e| {
-            if (e.isPub) try buf.appendSlice(gpa, "pub ");
-            try buf.appendSlice(gpa, "enum ");
-            try buf.appendSlice(gpa, b.name);
-            try buf.appendSlice(gpa, " { ");
-            for (e.variants, 0..) |v, vi| {
-                if (vi > 0) try buf.appendSlice(gpa, ", ");
-                try buf.appendSlice(gpa, v.name);
-                if (v.fields.len > 0) try buf.appendSlice(gpa, "(...)");
-            }
-            try buf.appendSlice(gpa, " }");
-        },
-        .interface => {
+        .behavior => {
             try buf.appendSlice(gpa, "interface ");
             try buf.appendSlice(gpa, b.name);
         },
@@ -344,9 +346,8 @@ fn getDeclDocComment(decl: ast.DeclKind) ?[]const u8 {
     return switch (decl) {
         .@"fn" => |f| f.docComment,
         .val => |v| v.docComment,
-        .record => |r| r.docComment,
-        .@"enum" => |e| e.docComment,
-        .interface => |i| i.docComment,
+        .type_ => |t| t.docComment,
+        .behavior => |i| i.docComment,
         .delegate => |d| d.docComment,
         .implement => |i| i.docComment,
         else => null,
@@ -1381,8 +1382,8 @@ fn stepField(
     for (bindings) |b| {
         if (!std.mem.eql(u8, b.name, tname)) continue;
         switch (b.decl) {
-            .record => |r| {
-                for (r.fields) |f| {
+            .type_ => |r| if (r.isRecord()) {
+                for (r.recordFields()) |f| {
                     if (std.mem.eql(u8, f.name, field)) return typeRefState(f.typeRef);
                 }
             },
@@ -2075,16 +2076,16 @@ fn addMissingCasePatternsActions(
         const subject_name = tokens[j].lexeme;
 
         // Find the subject's type via bindings.
-        var enum_decl: ?ast.EnumDecl = null;
+        var enum_decl: ?ast.TypeDecl = null;
         for (bindings) |b| {
             if (!std.mem.eql(u8, b.name, subject_name)) continue;
             const t = b.type_.deref();
             if (t.* != .named) break;
             // Look up the enum declaration by type name.
             for (bindings) |tb| {
-                if (tb.decl != .@"enum") continue;
+                if (tb.decl != .type_ or tb.decl.type_.isRecord()) continue;
                 if (std.mem.eql(u8, tb.name, t.named.name)) {
-                    enum_decl = tb.decl.@"enum";
+                    enum_decl = tb.decl.type_;
                     break;
                 }
             }
@@ -2125,7 +2126,7 @@ fn addMissingCasePatternsActions(
         // Find missing variants.
         var missing: std.ArrayList([]const u8) = .empty;
         defer missing.deinit(gpa);
-        for (ed.variants) |v| {
+        for (ed.variants()) |v| {
             var found = false;
             for (covered.items) |c| {
                 if (std.mem.eql(u8, c, v.name)) {
@@ -3249,7 +3250,7 @@ pub fn semanticTokens(
                     else => proto.SemanticTokenTypes.function,
                 };
                 mods |= proto.SemanticTokenModifiers.declaration;
-                if (pending_effect_fn) mods |= proto.SemanticTokenModifiers.@"async";
+                if (pending_effect_fn) mods |= proto.SemanticTokenModifiers.async;
                 pending_effect_fn = false;
                 generic_pending = nk == .lessThan;
             } else if (awaiting_fn_body and pk == .colon) {
@@ -3546,9 +3547,11 @@ fn lookupCategory(bindings: []const comptime_pipeline.TypedBinding, name: []cons
         if (!std.mem.eql(u8, b.name, name)) continue;
         return switch (b.decl) {
             .@"fn" => proto.SemanticTokenTypes.function,
-            .record => proto.SemanticTokenTypes.type_,
-            .@"enum" => proto.SemanticTokenTypes.@"enum",
-            .interface => proto.SemanticTokenTypes.interface,
+            .type_ => |tdecl| switch (tdecl.shape) {
+                .record => proto.SemanticTokenTypes.type_,
+                .enum_ => proto.SemanticTokenTypes.@"enum",
+            },
+            .behavior => proto.SemanticTokenTypes.interface,
             .val => proto.SemanticTokenTypes.variable,
             else => null,
         };
@@ -4606,7 +4609,7 @@ fn stdSignatureDetail(
 /// can be completed after a `.`.
 fn isTypeDecl(decl: anytype) bool {
     return switch (decl) {
-        .record, .@"enum" => true,
+        .type_ => true,
         else => false,
     };
 }
@@ -4619,29 +4622,31 @@ fn appendDeclMembers(
     decl: anytype,
 ) !void {
     switch (decl) {
-        .record => |r| {
-            for (r.fields) |field| try items.append(gpa, .{
-                .label = try gpa.dupe(u8, field.name),
-                .kind = proto.CompletionItemKind.Field,
-                .detail = try typeRefDetail(gpa, field.typeRef),
-            });
-            for (r.methods) |method| try items.append(gpa, .{
-                .label = try gpa.dupe(u8, method.name),
-                .kind = proto.CompletionItemKind.Method,
-                .detail = try methodDetail(gpa, method),
-            });
-        },
-        .@"enum" => |e| {
-            for (e.variants) |v| try items.append(gpa, .{
-                .label = try gpa.dupe(u8, v.name),
-                .kind = proto.CompletionItemKind.EnumMember,
-                .detail = try enumVariantDetail(gpa, e.name, v),
-            });
-            for (e.methods) |method| try items.append(gpa, .{
-                .label = try gpa.dupe(u8, method.name),
-                .kind = proto.CompletionItemKind.Method,
-                .detail = try methodDetail(gpa, method),
-            });
+        .type_ => |tdecl| switch (tdecl.shape) {
+            .record => {
+                for (tdecl.recordFields()) |field| try items.append(gpa, .{
+                    .label = try gpa.dupe(u8, field.name),
+                    .kind = proto.CompletionItemKind.Field,
+                    .detail = try typeRefDetail(gpa, field.typeRef),
+                });
+                for (tdecl.methods) |method| try items.append(gpa, .{
+                    .label = try gpa.dupe(u8, method.name),
+                    .kind = proto.CompletionItemKind.Method,
+                    .detail = try methodDetail(gpa, method),
+                });
+            },
+            .enum_ => {
+                for (tdecl.variants()) |v| try items.append(gpa, .{
+                    .label = try gpa.dupe(u8, v.name),
+                    .kind = proto.CompletionItemKind.EnumMember,
+                    .detail = try enumVariantDetail(gpa, tdecl.name, v),
+                });
+                for (tdecl.methods) |method| try items.append(gpa, .{
+                    .label = try gpa.dupe(u8, method.name),
+                    .kind = proto.CompletionItemKind.Method,
+                    .detail = try methodDetail(gpa, method),
+                });
+            },
         },
         else => {},
     }
@@ -4776,9 +4781,11 @@ fn tupleMemberIndex(member: []const u8) ?usize {
 fn bindingCompletionKind(b: comptime_pipeline.TypedBinding) u32 {
     return switch (b.decl) {
         .@"fn" => proto.CompletionItemKind.Function,
-        .record => proto.CompletionItemKind.Struct,
-        .@"enum" => proto.CompletionItemKind.Enum,
-        .interface => proto.CompletionItemKind.Interface,
+        .type_ => |tdecl| switch (tdecl.shape) {
+            .record => proto.CompletionItemKind.Struct,
+            .enum_ => proto.CompletionItemKind.Enum,
+        },
+        .behavior => proto.CompletionItemKind.Interface,
         else => proto.CompletionItemKind.Variable,
     };
 }
@@ -4787,9 +4794,11 @@ fn bindingSortText(b: comptime_pipeline.TypedBinding) []const u8 {
     return switch (b.decl) {
         .@"fn" => "0",
         .val => "1",
-        .record => "2",
-        .@"enum" => "2",
-        .interface => "3",
+        .type_ => |tdecl| switch (tdecl.shape) {
+            .record => "2",
+            .enum_ => "2",
+        },
+        .behavior => "3",
         else => "4",
     };
 }

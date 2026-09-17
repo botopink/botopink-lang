@@ -231,9 +231,8 @@ fn declName(d: ast.DeclKind) ?[]const u8 {
     return switch (d) {
         .@"fn" => |f| f.name,
         .val => |v| v.name,
-        .record => |r| r.name,
-        .@"enum" => |e| e.name,
-        .interface => |i| i.name,
+        .type_ => |t| t.name,
+        .behavior => |i| i.name,
         .implement => |im| im.name,
         .extend => |ex| ex.name,
         else => null,
@@ -615,7 +614,7 @@ const Emitter = struct {
     /// Interface associated `default fn`s (`Pair.of`), by WAT symbol
     /// (`Pair_of`), and the ones some call reached (emitted by
     /// `emitPendingFns`).
-    iface_assoc: std.StringHashMap(ast.InterfaceMethod),
+    iface_assoc: std.StringHashMap(ast.BehaviorMethod),
     /// Bodyless `declare fn`s — host-backed (`#[@External.<Target>(…)]`). wasm
     /// has no host to bind them to; a call traps (see `lowerPlainCall`).
     host_fns: std.StringHashMap(void),
@@ -671,7 +670,7 @@ const Emitter = struct {
             .arr_elem_globals = std.StringHashMap(ElemKind).init(alloc),
             .fn_arr_elem = std.StringHashMap(ElemKind).init(alloc),
             .fn_refs = std.StringHashMap(u32).init(alloc),
-            .iface_assoc = std.StringHashMap(ast.InterfaceMethod).init(alloc),
+            .iface_assoc = std.StringHashMap(ast.BehaviorMethod).init(alloc),
             .host_fns = std.StringHashMap(void).init(alloc),
             .aliases = std.StringHashMap([]const u8).init(alloc),
             .pattern_locals = std.StringHashMap(void).init(alloc),
@@ -764,10 +763,10 @@ const Emitter = struct {
             // extension methods (same `$<target>_<method>` mangling); `self` is the
             // record pointer + a method body's `self.field` walks the declared
             // layout via `self_type`.
-            .record => |r| try self.emitInterfaceMethods(r.name, r.methods),
+            .type_ => |r| if (r.isRecord()) try self.emitInterfaceMethods(r.name, r.methods),
             // An import is linked statically: `emitWat` has already put the
             // owner's declarations in front of this module's.
-            .use, .@"enum", .interface, .delegate, .mod, .@"test" => {},
+            .use, .behavior, .delegate, .mod, .@"test" => {},
         }
     }
 
@@ -842,8 +841,8 @@ const Emitter = struct {
             },
             .implement => |im| try self.registerMethodSigs(im.target, im.methods),
             .extend => |ex| try self.registerMethodSigs(ex.target, ex.methods),
-            .record => |r| try self.registerInterfaceSigs(r.name, r.methods),
-            .interface => |i| for (i.methods) |m| {
+            .type_ => |r| if (r.isRecord()) try self.registerInterfaceSigs(r.name, r.methods),
+            .behavior => |i| for (i.methods) |m| {
                 const body = m.body orelse continue;
                 if (!m.is_default or m.is_declare or m.isExternal() or m.isHost()) continue;
                 if (m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self")) continue;
@@ -879,7 +878,7 @@ const Emitter = struct {
         }
     }
 
-    fn registerInterfaceSigs(self: *Emitter, owner: []const u8, methods: []const ast.InterfaceMethod) !void {
+    fn registerInterfaceSigs(self: *Emitter, owner: []const u8, methods: []const ast.BehaviorMethod) !void {
         const ra = self.reg_arena.allocator();
         for (methods) |m| {
             const body = m.body orelse continue;
@@ -928,24 +927,26 @@ const Emitter = struct {
     fn registerTypes(self: *Emitter, program: ast.Program) !void {
         const ra = self.reg_arena.allocator();
         for (program.decls) |decl| switch (decl) {
-            .record => |r| {
-                for (r.methods) |m| if (m.returnType) |rt| {
-                    const tn = typeRefName(rt);
-                    if (tn.len > 0) try self.fn_return_types.put(try std.fmt.allocPrint(ra, "{s}_{s}", .{ r.name, m.name }), if (std.mem.eql(u8, tn, "Self")) r.name else tn);
-                };
-                const names = try ra.alloc([]const u8, r.fields.len);
-                const types = try ra.alloc([]const u8, r.fields.len);
-                const trefs = try ra.alloc(ast.TypeRef, r.fields.len);
-                for (r.fields, 0..) |f, i| {
-                    names[i] = f.name;
-                    types[i] = typeRefName(f.typeRef);
-                    trefs[i] = f.typeRef;
-                }
-                try self.record_field_typerefs.put(r.name, trefs);
-                try self.records.put(r.name, names);
-                try self.record_field_types.put(r.name, types);
+            .type_ => |tdecl| switch (tdecl.shape) {
+                .record => {
+                    for (tdecl.methods) |m| if (m.returnType) |rt| {
+                        const tn = typeRefName(rt);
+                        if (tn.len > 0) try self.fn_return_types.put(try std.fmt.allocPrint(ra, "{s}_{s}", .{ tdecl.name, m.name }), if (std.mem.eql(u8, tn, "Self")) tdecl.name else tn);
+                    };
+                    const names = try ra.alloc([]const u8, tdecl.recordFields().len);
+                    const types = try ra.alloc([]const u8, tdecl.recordFields().len);
+                    const trefs = try ra.alloc(ast.TypeRef, tdecl.recordFields().len);
+                    for (tdecl.recordFields(), 0..) |f, i| {
+                        names[i] = f.name;
+                        types[i] = typeRefName(f.typeRef);
+                        trefs[i] = f.typeRef;
+                    }
+                    try self.record_field_typerefs.put(tdecl.name, trefs);
+                    try self.records.put(tdecl.name, names);
+                    try self.record_field_types.put(tdecl.name, types);
+                },
+                .enum_ => try self.enums.put(tdecl.name, tdecl.variants()),
             },
-            .@"enum" => |e| try self.enums.put(e.name, e.variants),
             .@"fn" => |f| {
                 if (f.returnType) |rt| {
                     const tn = typeRefName(rt);
@@ -1546,7 +1547,7 @@ const Emitter = struct {
     /// memory fns. `self` becomes an i32 record-pointer param, so `self.field`
     /// in the body reads the slot at the declared offset. Skipped: bodyless
     /// declarations (`declare fn`) and `#[@External.<targert>(...)]` host-backed methods.
-    fn emitInterfaceMethods(self: *Emitter, owner: []const u8, methods: []const ast.InterfaceMethod) !void {
+    fn emitInterfaceMethods(self: *Emitter, owner: []const u8, methods: []const ast.BehaviorMethod) !void {
         for (methods) |m| {
             if (m.is_declare or m.body == null or m.isExternal() or m.isHost()) continue;
             try self.emitMemberFn(owner, m);
@@ -1563,7 +1564,7 @@ const Emitter = struct {
         };
     }
 
-    fn emitMemberFn(self: *Emitter, owner: []const u8, m: ast.InterfaceMethod) !void {
+    fn emitMemberFn(self: *Emitter, owner: []const u8, m: ast.BehaviorMethod) !void {
         const body = m.body orelse return;
         const has_result = m.returnType != null or methodHasResult(body);
         self.resetFnState(if (has_result) "i32" else null);
@@ -3848,7 +3849,7 @@ const Emitter = struct {
         const il = self.instance_lowerings.get(loc) orelse return null;
         return switch (il) {
             .prim => |k| k,
-            .record => null,
+            .type_ => null,
         };
     }
 
@@ -5251,7 +5252,7 @@ const Emitter = struct {
         if (cc.receiver == null or cc.is_builtin) return null;
         const il = self.instance_lowerings.get(loc) orelse return null;
         const rec = switch (il) {
-            .record => |r| r,
+            .type_ => |r| r,
             .prim => return null,
         };
         const sym = std.fmt.bufPrint(&self.sym_buf, "{s}_{s}", .{ rec, cc.callee }) catch return null;

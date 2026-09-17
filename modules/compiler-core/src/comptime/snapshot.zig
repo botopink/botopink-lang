@@ -434,9 +434,9 @@ fn bindingToRepr(
             } };
         },
 
-        .record => |r| blk: {
+        .type_ => |r| if (r.isRecord()) blk: {
             var entries: std.ArrayList(FieldMap.Entry) = .empty;
-            for (r.fields) |fld| {
+            for (r.recordFields()) |fld| {
                 try entries.append(allocator, .{ .name = fld.name, .value = typeNameFromTypeRef(fld.typeRef) });
             }
             const gens = try genericNames(allocator, r.genericParams);
@@ -447,9 +447,8 @@ fn bindingToRepr(
                 .generic = if (gens.len > 0) gens else null,
                 .fields = .{ .entries = try entries.toOwnedSlice(allocator) },
             } };
-        },
-
-        .@"enum" => |e| blk: {
+        } else blk: {
+            const e = r;
             const gens = try genericNames(allocator, e.genericParams);
             break :blk .{ .enum_ = .{
                 .ast = "enum_def",
@@ -459,7 +458,7 @@ fn bindingToRepr(
             } };
         },
 
-        .interface => |i| blk: {
+        .behavior => |i| blk: {
             const gens = try genericNames(allocator, i.genericParams);
             break :blk .{ .interface = .{
                 .ast = "interface_def",

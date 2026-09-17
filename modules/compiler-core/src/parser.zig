@@ -17,9 +17,9 @@ pub const TokenKind = token.TokenKind;
 pub const ImportDecl = ast.ImportDecl;
 pub const ImportSource = ast.ImportSource;
 pub const ImportPath = ast.ImportPath;
-pub const InterfaceDecl = ast.InterfaceDecl;
-pub const InterfaceField = ast.InterfaceField;
-pub const InterfaceMethod = ast.InterfaceMethod;
+pub const BehaviorDecl = ast.BehaviorDecl;
+pub const BehaviorField = ast.BehaviorField;
+pub const BehaviorMethod = ast.BehaviorMethod;
 pub const Param = ast.Param;
 pub const Stmt = ast.Stmt;
 pub const Expr = ast.Expr;
@@ -29,8 +29,9 @@ pub const BranchExpr = ast.BranchExpr;
 pub const LoopExpr = ast.LoopExprOf(.untyped);
 pub const FunctionExpr = ast.FunctionExpr;
 pub const Loc = ast.Loc;
-pub const RecordDecl = ast.RecordDecl;
-pub const RecordField = ast.RecordField;
+pub const TypeDecl = ast.TypeDecl;
+pub const TypeShape = ast.TypeShape;
+pub const Field = ast.Field;
 pub const ImplementDecl = ast.ImplementDecl;
 pub const ExtendDecl = ast.ExtendDecl;
 pub const ImplementMethod = ast.ImplementMethod;
@@ -40,9 +41,7 @@ pub const GenericParam = ast.GenericParam;
 pub const ParamModifier = ast.ParamModifier;
 pub const CallArg = ast.CallArg;
 pub const TrailingLambda = ast.TrailingLambda;
-pub const EnumDecl = ast.EnumDecl;
 pub const EnumVariant = ast.EnumVariant;
-pub const EnumVariantField = ast.EnumVariantField;
 pub const EnumSection = ast.EnumSection;
 pub const FnDecl = ast.FnDecl;
 pub const ValDecl = ast.ValDecl;
@@ -196,10 +195,8 @@ pub const Parser = struct {
     pending_gt: bool = false,
     /// Auto-incrementing counters for unique IDs per declaration type.
     id_counters: struct {
-        interface: u32 = 0,
-        @"struct": u32 = 0,
-        record: u32 = 0,
-        @"enum": u32 = 0,
+        behavior: u32 = 0,
+        type: u32 = 0,
     } = .{},
     const This = @This();
 
@@ -319,11 +316,11 @@ pub const Parser = struct {
             } else if (this.checkShorthand(.@"enum")) blk: {
                 const d = try this.parseShorthandEnumDecl(alloc);
                 _ = this.match(.semicolon);
-                break :blk .{ .@"enum" = d };
+                break :blk .{ .type_ = d };
             } else if (this.checkShorthand(.record)) blk: {
                 const d = try this.parseShorthandRecordDecl(alloc);
                 _ = this.match(.semicolon);
-                break :blk .{ .record = d };
+                break :blk .{ .type_ = d };
             } else if (this.checkShorthandDelegate()) blk: {
                 const d = try this.parseShorthandDelegateDecl(alloc);
                 _ = this.match(.semicolon);
@@ -331,7 +328,7 @@ pub const Parser = struct {
             } else if (this.checkShorthand(.interface)) blk: {
                 const d = try this.parseShorthandInterfaceDecl(alloc);
                 _ = this.match(.semicolon);
-                break :blk .{ .interface = d };
+                break :blk .{ .behavior = d };
             } else if (this.checkNamedDecl(.implement)) blk: {
                 const d = try this.parseShorthandImplementDecl(alloc);
                 _ = this.match(.semicolon);
@@ -365,9 +362,9 @@ pub const Parser = struct {
                 const eff = if (isPub) this.peekAt(annEnd + 1).kind else tok;
                 const decl: DeclKind = switch (eff) {
                     .@"fn", .star => DeclKind{ .@"fn" = try this.parseFnDecl(alloc) },
-                    .@"enum" => DeclKind{ .@"enum" = try this.parseShorthandEnumDecl(alloc) },
-                    .record => DeclKind{ .record = try this.parseShorthandRecordDecl(alloc) },
-                    .interface => DeclKind{ .interface = try this.parseShorthandInterfaceDecl(alloc) },
+                    .@"enum" => DeclKind{ .type_ = try this.parseShorthandEnumDecl(alloc) },
+                    .record => DeclKind{ .type_ = try this.parseShorthandRecordDecl(alloc) },
+                    .interface => DeclKind{ .behavior = try this.parseShorthandInterfaceDecl(alloc) },
                     // An ANNOTATED `declare fn` is the FFI declaration form
                     // (`@[external(…)] pub declare fn …;`), not a delegate.
                     .declare => DeclKind{ .@"fn" = try this.parseFnDecl(alloc) },
@@ -456,15 +453,15 @@ pub const Parser = struct {
         const body = this.peekAt(adjustedOffset).kind;
         const bodyNext = this.peekAt(adjustedOffset + 1).kind;
         return switch (body) {
-            .record => .{ .record = try this.parseRecordDecl(alloc) },
+            .record => .{ .type_ = try this.parseRecordDecl(alloc) },
             .implement => .{ .implement = try this.parseImplementDecl(alloc) },
             .extend => .{ .extend = try this.parseExtendDecl(alloc) },
-            .@"enum" => .{ .@"enum" = try this.parseEnumDecl(alloc) },
+            .@"enum" => .{ .type_ = try this.parseEnumDecl(alloc) },
             .declare => .{ .delegate = try this.parseDelegateDecl(alloc) },
             .interface => if (bodyNext == .@"fn")
                 .{ .delegate = try this.parseDelegateDecl(alloc) }
             else
-                .{ .interface = try this.parseInterfaceDecl(alloc) },
+                .{ .behavior = try this.parseInterfaceDecl(alloc) },
             .@"fn" => .{ .@"fn" = try this.parseFnDeclFromVal(alloc) },
             else => .{ .val = try this.parseValDecl(alloc) },
         };
@@ -788,7 +785,7 @@ pub const Parser = struct {
                 // assignment, `inline = true`) separators are accepted, keeping
                 // annotation args close to how fn params are written. The label is
                 // cosmetic at this layer; the value lands positionally so each
-                // annotation's reader (`FnDecl.externalFor` / `InterfaceMethod.externalFor`
+                // annotation's reader (`FnDecl.externalFor` / `BehaviorMethod.externalFor`
                 // + `hasExternalInline`, `parseExternalCallTemplate`, …) interprets it. See the
                 // `#[@External.<targert>(...)]` vocabulary in `libs/std/AGENTS.md`.
                 if (this.check(.identifier) and

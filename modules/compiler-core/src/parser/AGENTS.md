@@ -141,8 +141,13 @@ shapes (vocabulary in `libs/std/AGENTS.md`):
 At top level a comment is its **own** declaration (`DeclKind.comment`, with
 `is_module` / `is_doc`); the `docComment` / `comment` / `moduleComment` fields
 on the neighbouring declaration are left null by this path. Inside a fn body a
-comment is a statement carrying a loc. `nextId` is a **per-kind** counter, so
-record/interface/enum ids each start at 1 and advance independently.
+comment is a statement carrying a loc. `nextId` is a **per-kind** counter:
+records and enums are both `TypeDecl`s and share the `type` counter;
+interfaces are `BehaviorDecl`s on the `behavior` counter. Each starts at 1.
+Records and enums parse into one `DeclKind.type_` (`TypeDecl`, whose `shape` is
+`.record` fields or `.enum_` variants + sections); interfaces into
+`DeclKind.behavior` (`BehaviorDecl`). The surface syntax is still
+`record`/`enum`/`interface` (1.0.4-beta front 12 step 1).
 Both are pinned by snapshots (`comments_…`, `decl_ids_…`).
 
 ## Notes
@@ -162,7 +167,7 @@ Both are pinned by snapshots (`comments_…`, `decl_ids_…`).
 - **Enum sections**: an `Identifier { … }` item
   inside an enum body declares a *section* — a named grouping of nested
   variants — captured as `EnumSection { name, variants, sections }` and stored
-  on `EnumDecl.sections` alongside the flat `variants` slot. Sections nest
+  on the enum shape of the `TypeDecl` (`TypeShape.enum_.sections`) alongside the flat `variants` slot. Sections nest
   arbitrarily deep; inside a section body, pure-digit tokens (`100`, `4`) are
   permitted as terminal variant leaves (`EnumVariant.numeric = true`) — they
   cannot open further sections nor carry payload. Top-level enum bodies reject

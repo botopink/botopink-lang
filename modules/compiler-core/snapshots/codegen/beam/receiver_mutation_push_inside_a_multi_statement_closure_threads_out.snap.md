@@ -64,7 +64,7 @@ main() ->
     erlang:erase('__bp_emitted'),
     try
         component(#{
-            kind => 'Record',
+            kind => 'Type',
             name => <<"Service">>,
             fields => [
                 #{

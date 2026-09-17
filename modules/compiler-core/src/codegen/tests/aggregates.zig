@@ -231,8 +231,8 @@ test "js: call ---- Children coercion (list / single / text)" {
 test "js: interface literal ---- basic" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
-        \\    val DeclKind = record { Record: "Record", Fn: "Fn" };
-        \\    val decl = @Decl(kind: DeclKind.Record, name: "Service", fields: [], methods: [], returnType: "", annotations: []);
+        \\    val DeclKind = record { Type: "Type", Fn: "Fn" };
+        \\    val decl = @Decl(kind: DeclKind.Type, name: "Service", fields: [], methods: [], returnType: "", annotations: []);
         \\    @print(decl.name);
         \\}
     );
@@ -241,8 +241,8 @@ test "js: interface literal ---- basic" {
 test "js: interface literal ---- with fields" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
-        \\    val DeclKind = record { Record: "Record", Fn: "Fn" };
-        \\    val decl = @Decl(kind: DeclKind.Record, name: "Service", fields: [record { name: "x", typeName: "i32", annotations: [] }], methods: [], returnType: "", annotations: []);
+        \\    val DeclKind = record { Type: "Type", Fn: "Fn" };
+        \\    val decl = @Decl(kind: DeclKind.Type, name: "Service", fields: [record { name: "x", typeName: "i32", annotations: [] }], methods: [], returnType: "", annotations: []);
         \\    @print(decl.fields.length);
         \\}
     );

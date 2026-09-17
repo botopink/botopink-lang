@@ -407,10 +407,8 @@ pub interface Expr<E> {
 
 // Which kind of top-level declaration the annotation sits on.
 pub enum DeclKind {
-    Record,
-    Struct,
-    Enum,
-    Interface,
+    Type,
+    Behavior,
     Fn,
     Method,
     Field,

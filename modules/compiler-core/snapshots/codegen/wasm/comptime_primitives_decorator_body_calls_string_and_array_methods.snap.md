@@ -45,7 +45,7 @@ main() ->
     erlang:erase('__bp_emitted'),
     try
         describe(#{
-            kind => 'Record',
+            kind => 'Type',
             name => <<"User">>,
             fields => [
                 #{name => <<"name">>, typeName => <<"string">>, annotations => []},

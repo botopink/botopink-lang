@@ -29,7 +29,7 @@ test "comptime module: host enum member lowers to an atom, method call to a host
     defer arena_state.deinit();
     const out = try lower(arena_state.allocator(),
         \\fn service(comptime decl: @Decl) {
-        \\    if (decl.kind != DeclKind.Record) { decl.fail("must annotate a record"); }
+        \\    if (decl.kind != DeclKind.Type) { decl.fail("must annotate a record"); }
         \\}
     , .{
         .host_enums = &.{"DeclKind"},
@@ -37,16 +37,16 @@ test "comptime module: host enum member lowers to an atom, method call to a host
         .forms = &.{.{ .function = .{ .name = "main", .clauses = &.{.{
             .patterns = &.{},
             .body = .{ .stmts = &.{.{ .expr = .{ .call = .{ .name = "service", .args = &.{.{ .map = &.{
-                .{ .key = .{ .atom = "kind" }, .value = .{ .atom = "Record" } },
+                .{ .key = .{ .atom = "kind" }, .value = .{ .atom = "Type" } },
             } }} } } }} },
             .layout = .inline_,
         }} } }},
     });
     try expectContains(out, "-module(decorator_test).");
     try expectContains(out, "-export([main/0]).");
-    try expectContains(out, "(maps:get(kind, Decl) =/= 'Record')");
+    try expectContains(out, "(maps:get(kind, Decl) =/= 'Type')");
     try expectContains(out, "fail(Decl, <<\"must annotate a record\">>)");
-    try expectContains(out, "main() -> service(#{kind => 'Record'}).");
+    try expectContains(out, "main() -> service(#{kind => 'Type'}).");
 }
 
 test "comptime module: `+` and `.len` dispatch at runtime, rebinding versions the variable" {
