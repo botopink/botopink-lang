@@ -5,3 +5,30 @@
 # Every line names the row of the front that makes it pass. A listed test that
 # passes fails the run ("delete its line"); a path-only entry is for a file that
 # does not compile. `*` is for reject/ files (target-independent).
+#
+# Classified against botopink-lang fix/surface-cutover fe72c0e (front 12 steps 1–3c).
+
+# ── §5 case arms `Pattern { body }`, `when`, `..`, `.Variant` — not parsed yet ────
+commonJS | test/case_arms.bp          | 06 N22 | case arms `Pattern { body }` do not parse (Unexpected token)
+erlang   | test/case_arms.bp          | 06 N22 | case arms `Pattern { body }` do not parse (Unexpected token)
+commonJS | test/case_variants.bp      | 06 N22 | case arms, `..`, `.Variant` do not parse
+erlang   | test/case_variants.bp      | 06 N22 | case arms, `..`, `.Variant` do not parse
+commonJS | test/case_tuples.bp        | 06 N22 | case arms and tuple patterns do not parse
+erlang   | test/case_tuples.bp        | 06 N22 | case arms and tuple patterns do not parse
+commonJS | test/case_guards.bp        | 06 N22 | case arms and `when (…)` guards do not parse
+erlang   | test/case_guards.bp        | 06 N22 | case arms and `when (…)` guards do not parse
+commonJS | test/case_exhaustive.bp    | 06 N22, 06 N20 | case arms do not parse; union types `A | B` do not parse
+erlang   | test/case_exhaustive.bp    | 06 N22, 06 N20 | case arms do not parse; union types `A | B` do not parse
+commonJS | test/case_unknown.bp       | 06 N22, 06 N19, 06 N21 | case arms, `unknown` narrowing and `is` do not parse/type
+erlang   | test/case_unknown.bp       | 06 N22, 06 N19, 06 N21 | case arms, `unknown` narrowing and `is` do not parse/type
+commonJS | run/case_values.bp         | 06 N22 | case arms and guards do not parse
+erlang   | run/case_values.bp         | 06 N22 | case arms and guards do not parse
+*        | reject/case_bare_name_arm.bp          | 06 N22 | rejected only as a parse error, without the `use _ { n -> … }` diagnostic
+*        | reject/case_constant_pattern.bp       | 06 N22 | rejected only as a parse error, without the `use _ when (…)` diagnostic
+*        | reject/case_tuple_label.bp            | 06 N22 | rejected only as a parse error, without the tuple-pattern diagnostic
+*        | reject/case_missing_variant.bp        | 06 N22 | rejected only as a parse error; no exhaustiveness check
+*        | reject/case_unknown_without_wildcard.bp | 06 N22, 06 N19 | rejected only as a parse error; no exhaustiveness check over unknown
+*        | reject/case_only_guarded_arms.bp      | 06 N22 | rejected only as a parse error; guarded arms not checked for exhaustiveness
+*        | reject/case_shorthand_on_unknown.bp   | 06 N22 | rejected only as a parse error, without the "full name" diagnostic
+*        | reject/case_arity_without_rest.bp     | 06 N22 | rejected only as a parse error, without the missing-field diagnostic
+*        | reject/case_literals_only.bp          | 06 N22 | rejected only as a parse error; literal arms not checked for exhaustiveness

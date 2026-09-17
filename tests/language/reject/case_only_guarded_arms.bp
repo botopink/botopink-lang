@@ -1,0 +1,10 @@
+//// Decision 8 §5.3, §5.4 — guarded arms never make a case exhaustive.
+
+pub fn main() {
+    val x = 0;
+    val y = case x {
+        i32 when (x > 0) { "positive" }
+        i32 when (x <= 0) { "not positive" }
+    };
+    @print(y);
+}

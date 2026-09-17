@@ -1,0 +1,63 @@
+//// Decision 8 §2, §4, §5.1 P5, §5.3, §5.4 — `case` over `unknown`: type arms test
+//// the value (by range for numbers), `_` is required, `is` in a guard narrows,
+//// a variant's bound variable is `unknown`.
+
+type Maybe<T> {
+    Some(value: T),
+    None,
+}
+
+fn describe(x: unknown) -> string {
+    return case x {
+        i32 { n -> "number " + n.toString() }
+        string when (x == "") { "empty text" }
+        string { s -> "text " + s }
+        _ { "other" }
+    };
+}
+
+fn innerLength(b: unknown) -> i32 {
+    return case b {
+        Maybe.Some(value: v) when (v is string) { v.length }
+        Maybe.Some(value: v) { -1 }
+        _ { -2 }
+    };
+}
+
+test "§4.1 §5.2 an i32 arm matches 3.0 by value, converted" {
+    val a: unknown = 3.0;
+    assert describe(a) == "number 3";
+}
+
+test "§4.1 2.5 does not match an i32 arm" {
+    val a: unknown = 2.5;
+    assert describe(a) == "other";
+}
+
+test "§5.3 a guarded string arm, then the unguarded one" {
+    val e: unknown = "";
+    val t: unknown = "hi";
+    assert describe(e) == "empty text";
+    assert describe(t) == "text hi";
+}
+
+test "§5.4 _ receives any other value" {
+    val b: unknown = true;
+    assert describe(b) == "other";
+}
+
+test "§5.3 is in a guard narrows a variable bound as unknown" {
+    val s: unknown = Maybe.Some(value: "abc");
+    val n: unknown = Maybe.Some(value: 5);
+    val x: unknown = 1;
+    assert innerLength(s) == 3;
+    assert innerLength(n) == -1;
+    assert innerLength(x) == -2;
+}
+
+test "§4.1 if (x is i32) narrows and converts inside the block" {
+    val a: unknown = 2.0;
+    var got = 0;
+    if (a is i32) { got = a + 1; };
+    assert got == 3;
+}

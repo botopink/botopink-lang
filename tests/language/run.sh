@@ -101,6 +101,8 @@ json_tests() {
 }
 
 strip() { sed -r 's/\x1b\[[0-9;]*m//g'; }
+# progress lines (`Checking 1 module(s)...`) would satisfy an .expect like `..`
+quiet() { strip | grep -vE '^[[:space:]]*(Checking|Checked|Compiling|Compiled) ' || true; }
 
 project() { # <dir> <kind>
     mkdir -p "$1/src" "$1/test"
@@ -146,7 +148,7 @@ run_one() { # <path> <target>
             cp "$here/$path" "$dir/src/main.bp"
             (cd "$dir" && timeout 300 "$compiler" check >"$dir/o.txt" 2>"$dir/e.txt")
             local code=$?
-            strip <"$dir/o.txt" >"$dir/all.txt"; strip <"$dir/e.txt" >>"$dir/all.txt"
+            quiet <"$dir/o.txt" >"$dir/all.txt"; quiet <"$dir/e.txt" >>"$dir/all.txt"
             if [ ! -f "$expect" ]; then
                 printf '*\t%s\t%s\t%s\n' "$path" fail "missing ${path%.bp}.expect" >"$out"
             else
@@ -166,7 +168,7 @@ run_one() { # <path> <target>
         *) printf '*\t%s\t%s\t%s\n' "$path" fail "not under test/, run/ or reject/" >"$work/r-$slug" ;;
     esac
 }
-export -f run_one json_tests strip project
+export -f run_one json_tests strip quiet project
 export here work compiler lib_root
 
 # ── dispatch ──────────────────────────────────────────────────────────────────

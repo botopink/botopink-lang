@@ -1,0 +1,15 @@
+//// Decision 8 §5.1 P8 — `.Variant` needs the matched value's type; on unknown write the full name.
+
+type Maybe<T> {
+    Some(value: T),
+    None,
+}
+
+pub fn main() {
+    val x: unknown = Maybe.Some(value: 1);
+    val y = case x {
+        .Some(v) { "some" }
+        _ { "other" }
+    };
+    @print(y);
+}

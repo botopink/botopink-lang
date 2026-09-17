@@ -1,0 +1,50 @@
+//// Decision 8 §5.3 — guards `when (…)`; guarded arms never make a `case`
+//// exhaustive, so a general arm is always present.
+
+type Shape {
+    Circle(radius: i32),
+    Rect(width: i32, height: i32),
+}
+
+fn sign(x: i32) -> string {
+    return case x {
+        i32 when (x > 0) { "positive" }
+        i32 when (x < 0) { "negative" }
+        _ { "zero" }
+    };
+}
+
+fn kind(s: Shape) -> string {
+    return case s {
+        .Rect(width: w, height: h) when (w == h) { "square" }
+        .Rect(..) { "rect" }
+        .Circle(..) { "circle" }
+    };
+}
+
+fn bucket(n: i32) -> string {
+    return case n {
+        _ when (n % 2 == 0) { v -> "even " + v.toString() }
+        _ { v -> "odd " + v.toString() }
+    };
+}
+
+test "§5.3 a guard selects among arms of the same pattern" {
+    assert sign(5) == "positive";
+    assert sign(-2) == "negative";
+}
+
+test "§5.3 §5.4 a value no guard accepts falls to the general arm" {
+    assert sign(0) == "zero";
+}
+
+test "§5.3 a guard reads the variables its pattern bound" {
+    assert kind(Shape.Rect(width: 2, height: 2)) == "square";
+    assert kind(Shape.Rect(width: 2, height: 3)) == "rect";
+    assert kind(Shape.Circle(radius: 1)) == "circle";
+}
+
+test "§5.3 a guard on _ with a whole-value binding" {
+    assert bucket(4) == "even 4";
+    assert bucket(3) == "odd 3";
+}
