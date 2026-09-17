@@ -58,6 +58,14 @@ beam/
 - One quoting rule for both backends. Reserved words (`end`, `of`, `div`, …) and
   non-lowercase names are always quoted — an unquoted `{atom, end}` or
   `{atom, HOST}` does not parse.
+- **`erl_ast.Expr.raw` has exactly one producer**: `erlang.zig`'s `templateNode`,
+  for the text of a host template — an `#[@External.Erlang("…")]` body (or a
+  primitive/builtin annotation) written by the program or library author, which
+  the compiler has no business restructuring; the receiver/argument holes around
+  it are real nodes (`seq`). Everything the compiler itself decides — calls,
+  heads, the `$stringify(…)` wrap, missing values — is a node. Do not add a
+  second `raw`: a value `raw("")` rendered as nothing and produced modules that
+  did not compile, and a pre-spelled call head skipped atom quoting.
 - Use `writeBinaryFromBytes` for runtime data (handles, comptime values) and
   `writeBinaryFromLexeme` only for string literal lexemes straight from the parser.
 - Tests are inline in each file and aggregated by `../tests.zig`.

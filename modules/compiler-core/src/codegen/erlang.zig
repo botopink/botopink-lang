@@ -1960,7 +1960,7 @@ const Emitter = struct {
             try args.append(b.arena, try this.exprNode(b, recv.*));
             for (cc.args) |arg| try args.append(b.arena, try this.exprNode(b, arg.value.*));
         }
-        return try headCall(b, try qualified(b, call.module, call.symbol), args.items);
+        return try b.remote(call.module, call.symbol, args.items);
     }
 
     /// §A2 erlang twin: a top-level user `declare fn` whose `@external(erlang, …)`
@@ -3564,7 +3564,7 @@ const Emitter = struct {
                 try b.clause(&.{V("V")}, &.{}, &.{V("V")}),
             };
         } else {
-            return Ast.Expr.r("");
+            return error.UnknownResultOptionOp;
         }
         const fun: Ast.Expr = .{ .fun_clauses = try b.arena.dupe(Ast.Clause, &.{
             try b.clause(&.{subject}, &.{}, &.{try b.caseInline(subject, &clauses)}),
@@ -3574,7 +3574,8 @@ const Emitter = struct {
 
     /// The fn/default argument of a `@Result`/`@Option` op (empty when absent).
     fn opArg(this: *Emitter, b: Ast.Builder, args: []const ast.CallArg) anyerror!Ast.Expr {
-        return if (args.len > 1) this.exprNode(b, args[1].value.*) else Ast.Expr.r("");
+        if (args.len < 2) return error.MissingResultOptionArgument;
+        return this.exprNode(b, args[1].value.*);
     }
 
     /// `e` as an `erl_ast` expression rendered at the current indentation.
@@ -4095,7 +4096,7 @@ const Emitter = struct {
             }
             // `#[@external(erlang, "module", "symbol")]` fn → `module:symbol(…)`.
             if (this.externals.get(cc.callee)) |ref| {
-                return headCall(b, try qualified(b, ref.module, ref.symbol), try this.callArgs(b, null, cc));
+                return b.remote(ref.module, ref.symbol, try this.callArgs(b, null, cc));
             }
             // External fn with no `erlang` target — no symbol to call here.
             if (this.externals_missing.contains(cc.callee)) return error.MissingExternalTarget;
@@ -4123,7 +4124,10 @@ const Emitter = struct {
             // A fn-typed local (parameter, `val`, lambda binding) is applied as a
             // fun variable (`Pred(X)`), not called as a module function.
             if (this.locals.contains(cc.callee)) {
-                return headCall(b, try this.arenaVar(b, cc.callee), try this.callArgs(b, null, cc));
+                return .{ .apply = .{
+                    .fun = try b.ptr(Ast.Expr.v(try this.arenaVar(b, cc.callee))),
+                    .args = try this.callArgs(b, null, cc),
+                } };
             }
             // A module-level `val` holding a lambda (`val add = { x, y -> … }`)
             // is a 0-arity function RETURNING the fun, so the call applies what
@@ -4145,7 +4149,7 @@ const Emitter = struct {
         // `"std"` package call: a lowercase receiver naming an imported std
         // module lowers to the remote `option:map(Args)`.
         if (recv.* == .identifier and recv.identifier.kind == .ident and this.std_imports.contains(recv.identifier.kind.ident)) {
-            return headCall(b, try qualified(b, recv.identifier.kind.ident, try this.calleeAtom(b, cc.callee)), try this.callArgs(b, null, cc));
+            return b.remote(recv.identifier.kind.ident, cc.callee, try this.callArgs(b, null, cc));
         }
         // Activated extension dispatch: `recv.m(args)` → the local `m(Recv, args)`
         // emitted by `extensionForms`.
@@ -4155,8 +4159,7 @@ const Emitter = struct {
             // a bare exported function: reach it remotely.
             if (!this.ext_names.contains(sym)) {
                 if (this.cross) |xc| if (xc.ownerModuleAtom(sym)) |owner| {
-                    const head = try qualified(b, owner, try this.calleeAtom(b, cc.callee));
-                    return headCall(b, head, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
+                    return b.remote(owner, cc.callee, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
                 };
             }
             return b.call(cc.callee, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
@@ -4176,7 +4179,7 @@ const Emitter = struct {
             // Associated fn of an IMPORTED record (`Response.ok(...)` from
             // `"web"`): a remote call into the owning module (`http:ok(...)`).
             if (this.imported_types.get(name)) |owner| {
-                return headCall(b, try qualified(b, owner, try this.calleeAtom(b, cc.callee)), try this.callArgs(b, null, cc));
+                return b.remote(owner, cc.callee, try this.callArgs(b, null, cc));
             }
             // Associated fn of a LOCAL record: a local function of this module.
             if (this.record_fields.contains(name)) return b.call(cc.callee, try this.callArgs(b, null, cc));
@@ -4184,13 +4187,13 @@ const Emitter = struct {
             // local `'<Interface>_<method>'` that `interfaceForms` emits.
             if (this.isInterfaceAssoc(name, cc.callee)) {
                 var mraw: [256]u8 = undefined;
-                const mname = interfaceAssocAtom(&mraw, name, cc.callee) catch return Ast.Expr.r("");
-                return headCall(b, try b.arena.dupe(u8, mname), try this.callArgs(b, null, cc));
+                const mname = try interfaceAssocAtom(&mraw, name, cc.callee);
+                return b.call(try b.arena.dupe(u8, mname), try this.callArgs(b, null, cc));
             }
             // Any other PascalCase receiver is a module: `List.map(xs, f)` →
             // `list:map(Xs, F)`.
             const mod = try erlangModule(b.arena, name);
-            return headCall(b, try qualified(b, mod, try this.calleeAtom(b, cc.callee)), try this.callArgs(b, null, cc));
+            return b.remote(mod, cc.callee, try this.callArgs(b, null, cc));
         }
         if (this.instance_lowerings.get(loc)) |il| switch (il) {
             // Builtin-primitive method (`xs.map(f)`, `s.split(sep)`): the host op.
@@ -4202,11 +4205,11 @@ const Emitter = struct {
             .record => |tn| {
                 var mn_buf: [256]u8 = undefined;
                 const mn: []const u8 = if (this.isRecordMethodCollision(tn, cc.callee))
-                    try recordMethodAtom(&mn_buf, tn, cc.callee)
+                    try b.arena.dupe(u8, try recordMethodAtom(&mn_buf, tn, cc.callee))
                 else
-                    try this.calleeAtom(b, cc.callee);
-                const head = if (this.imported_types.get(tn)) |owner| try qualified(b, owner, mn) else try b.arena.dupe(u8, mn);
-                return headCall(b, head, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
+                    cc.callee;
+                const args = try this.callArgs(b, try this.exprNode(b, recv.*), cc);
+                return if (this.imported_types.get(tn)) |owner| b.remote(owner, mn, args) else b.call(mn, args);
             },
         };
         // Inside an interface instance `default fn` the receiver's type is
@@ -4238,13 +4241,6 @@ const Emitter = struct {
         for (cc.args) |arg| try out.append(b.arena, try this.exprNode(b, arg.value.*));
         for (cc.trailing) |tl| try out.append(b.arena, try this.trailingFunNode(b, tl));
         return out.items;
-    }
-
-    /// The callee as an atom (quoted when reserved), copied into the arena.
-    fn calleeAtom(this: *Emitter, b: Ast.Builder, callee: []const u8) anyerror![]const u8 {
-        _ = this;
-        var buf: [256]u8 = undefined;
-        return b.arena.dupe(u8, try fnAtom(callee, &buf));
     }
 
     /// `iolist_to_binary(io_lib:format("~p", [Value]))` — any value as text.
@@ -4340,16 +4336,6 @@ const Emitter = struct {
                 });
             },
         }
-    }
-
-    /// `module:name` spelled as written, in the arena.
-    fn qualified(b: Ast.Builder, module: []const u8, name: []const u8) anyerror![]const u8 {
-        return std.fmt.allocPrint(b.arena, "{s}:{s}", .{ module, name });
-    }
-
-    /// `Head(Args)` with an already-spelled head (`Var`, `mod:fn`, a mangled atom).
-    fn headCall(b: Ast.Builder, head: []const u8, args: []const Ast.Expr) anyerror!Ast.Expr {
-        return .{ .apply = .{ .fun = try b.ptr(Ast.Expr.r(head)), .args = try b.exprs(args) } };
     }
 
     // ── case expression ───────────────────────────────────────────────────────
@@ -4449,7 +4435,7 @@ const Emitter = struct {
                 return b.cons(elems, tail);
             },
             // Expanded by `caseNode`; elsewhere the first alternative stands in.
-            .@"or" => |pats| return if (pats.len > 0) this.patternNode(b, pats[0]) else Ast.Expr.r(""),
+            .@"or" => |pats| return if (pats.len > 0) this.patternNode(b, pats[0]) else error.EmptyOrPattern,
             .multi => |pats| {
                 const items = try b.arena.alloc(Ast.Expr, pats.len);
                 for (pats, 0..) |p, i| items[i] = try this.patternNode(b, p);
@@ -4518,7 +4504,7 @@ const Emitter = struct {
         var args: std.ArrayListUnmanaged(Ast.Expr) = .empty;
         try args.append(b.arena, try this.exprNode(b, recv.*));
         for (cc.args) |arg| try args.append(b.arena, try this.exprNode(b, arg.value.*));
-        return headCall(b, try b.arena.dupe(u8, callee), args.items);
+        return b.call(callee, args.items);
     }
 
     /// The host-op half of `primMethodNode`: the `@external(erlang, …)`
@@ -4752,7 +4738,7 @@ const Emitter = struct {
             var mbuf: [256]u8 = undefined;
             const mangled = interfaceAssocAtom(&mbuf, iface_name, callee) catch return null;
             const head = try b.arena.dupe(u8, mangled);
-            return try headCall(b, head, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
+            return try b.call(head, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
         }
         return null;
     }

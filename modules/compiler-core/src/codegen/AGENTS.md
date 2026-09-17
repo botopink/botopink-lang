@@ -187,8 +187,11 @@ codegen/
   (`primMethodNode`) / record instance methods, Array default-fn fallback),
   user templates, externals, record constructor maps and fun-typed locals. Host
   templates (`primOpTemplate`) become `seq` nodes (`templateNode`): the template
-  text stays verbatim around the receiver/argument nodes. Heads the backend has
-  always written as spelled (`mod:sym`, mangled atoms, `Var`) use `headCall`.
+  text stays verbatim around the receiver/argument nodes. Every other call is a
+  `call` node (`module:name`, a mangled atom — quoted by `writeAtom` when it has
+  to be) or an `apply` of a variable (a fn-typed local); a state that cannot
+  happen (an unknown `__bp_*` op, an empty OR pattern) is an emit error, never an
+  empty `raw`.
 - **Mutation through branches and loops** (`mutatingExpr`): a statement-level
   `if` / `loop (xs) { x -> … }` / `xs.forEach({ x -> … })` that reassigns variables
   bound before it (looking through nested `if`/`loop`/`forEach`) returns the new
@@ -256,7 +259,7 @@ codegen/
 - **Names**: `atomName`/`fnAtom`/`erlangVar`/`erlangModule` are aliases of
   `beam/erl_emitter.zig`. `erlang.zig` writes no Erlang text itself: the emitter
   builds `erl_ast` nodes and forms and `erl_emitter` renders them (`raw` remains
-  only for host template text and names written as spelled). Comments are
+  only for host template text — see [`beam/AGENTS.md`](beam/AGENTS.md)). Comments are
   `erl_ast.Comment` nodes: source comments keep their level (`//` → `%`, `///` →
   `%%`, `////` → `%%%`, `commentNode`), and the `%%` notes the backend writes
   (declaration headers, `continue`, unsupported field assignment) carry only
