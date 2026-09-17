@@ -86,6 +86,26 @@ test "comptime module: forEach with a mutated var fuses into a fold" {
     try expectContains(out, "emit('__bp_add'(");
 }
 
+test "comptime module: a two-parameter loop folds over lists:enumerate" {
+    // A query template's `loop (xs) { x, i -> }` reassigning outer vars. It used
+    // to hand a 2-arity fun to `lists:foreach/2` and lose every reassignment.
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const out = try lower(arena_state.allocator(),
+        \\fn pick(comptime decl: @Decl) {
+        \\    var first = "";
+        \\    loop (decl.fields) { f, idx ->
+        \\        if (idx == 0) { first = f.name; };
+        \\    };
+        \\    @emit(first);
+        \\}
+    , .{ .host_enums = &.{"DeclKind"} });
+    try expectContains(out, "First@4 = lists:foldl(fun({Idx, F}, First@1) ->");
+    try expectContains(out, "end, First, lists:enumerate(0, maps:get(fields, Decl))),");
+    try expectContains(out, "emit(First@4)");
+    if (std.mem.indexOf(u8, out, "lists:foreach") != null) return error.TestUnexpectedForeach;
+}
+
 test "comptime module: push through a local threads out of a multi-statement closure" {
     // A dependency-injection constructor shape: a 2-statement closure whose inner
     // `forEach` mutates by assignment and whose `push` mutates the receiver.

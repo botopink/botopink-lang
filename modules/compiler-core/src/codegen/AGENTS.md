@@ -284,9 +284,12 @@ codegen/
   - a body producing a value per item (`yield`, or `break <expr>`) → `lists:map`;
   - a body that is one `else`-less `if` ending in `break <expr>` → `lists:filtermap`
     with `{true, V}` / `false` (`filterMapFunBody`) — the filter+map botopink means;
-  - `loop (xs, 0..) { item, i -> … }` → `lists:enumerate(Start, Xs)` and a single
-    `{I, Item}` tuple parameter (`lists:map/foreach` pass ONE element, so two fun
-    parameters never matched);
+  - a two-parameter loop — `loop (xs, 1..) { item, i -> … }`, or `loop (xs) { item, i -> … }`
+    counting from 0 — → `lists:enumerate(Start, Xs)` and a single `{I, Item}` tuple
+    parameter (`lists:map/foreach/foldl` pass ONE element, so two fun parameters
+    never matched). A two-parameter loop that reassigns outer variables folds over
+    the same enumeration (`mutatingFoldExpr` with a `FoldIndex`), so its
+    reassignments survive the loop;
   - an open-ended range `loop (x..)` → a named fun that counts up and recurses
     (`fun __Loop(I) -> …, __Loop(I + 1) end`), since `lists:seq/2` has no `infinity`;
   - everything else → `lists:foreach`.

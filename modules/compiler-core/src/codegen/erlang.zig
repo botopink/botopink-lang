@@ -2745,11 +2745,15 @@ const Emitter = struct {
                 else => return null,
             },
             .loop => |lp| {
-                if (lp.params.len != 1 or lp.indexRange != null or lp.awaitLoop) return null;
+                // One loop parameter, or two — `loop (xs) { x, i -> … }` /
+                // `loop (xs, 0..) { … }` — whose second one is the index.
+                if (lp.params.len == 0 or lp.params.len > 2 or lp.awaitLoop) return null;
+                if (lp.indexRange != null and lp.params.len != 2) return null;
                 for (lp.body) |s| if (s.expr == .jump and s.expr.jump.kind == .yield) return null;
                 try this.collectMutations(b.arena, lp.body, lp.params, &names);
                 if (names.items.len == 0) return null;
-                return try this.mutatingFoldExpr(b, lp.params[0], lp.body, lp.iter.*, names.items);
+                const index: ?FoldIndex = if (lp.params.len == 2) .{ .name = lp.params[1], .range = lp.indexRange } else null;
+                return try this.mutatingFoldExpr(b, lp.params[0], index, lp.body, lp.iter.*, names.items);
             },
             .call => {
                 // `out.push(x)` rebinds `out`: `Out@1 = (Out ++ [X])`, so a
@@ -2760,7 +2764,7 @@ const Emitter = struct {
                 const each = forEachLambda(stmt.expr) orelse return null;
                 try this.collectMutations(b.arena, each.body, each.params, &names);
                 if (names.items.len == 0) return null;
-                return try this.mutatingFoldExpr(b, each.params[0], each.body, each.recv.*, names.items);
+                return try this.mutatingFoldExpr(b, each.params[0], null, each.body, each.recv.*, names.items);
             },
             else => return null,
         }
@@ -2971,19 +2975,36 @@ const Emitter = struct {
         return b.match(target, try b.caseOf(subject, clauses.items));
     }
 
+    /// The index parameter of a two-parameter loop and the range it counts
+    /// (`loop (xs, 1..) { x, i -> }`); `range` is null for `loop (xs) { x, i -> }`,
+    /// which counts from 0.
+    const FoldIndex = struct { name: []const u8, range: ?*const ast.Expr };
+
     /// `Group = lists:foldl(fun(Param, GroupIn) -> Body, GroupOut end, Group, Iter)`.
-    fn mutatingFoldExpr(this: *Emitter, b: Ast.Builder, param: []const u8, body: []const ast.Stmt, iter: ast.Expr, names: []const []const u8) anyerror!Ast.Expr {
+    /// With an index the fold walks `lists:enumerate(Start, Iter)` and the item
+    /// parameter is the `{Index, Item}` pair — `lists:foldl` passes one element,
+    /// so two fun parameters would never match.
+    fn mutatingFoldExpr(this: *Emitter, b: Ast.Builder, param: []const u8, index: ?FoldIndex, body: []const ast.Stmt, iter: ast.Expr, names: []const []const u8) anyerror!Ast.Expr {
         var snapshot = try this.var_current.clone();
         defer snapshot.deinit();
 
-        const pname = Ast.Expr.v(try this.arenaVar(b, param));
+        // Fun heads shadow: the parameters take the bare names.
+        const item = Ast.Expr.v(try this.arenaVar(b, param));
         this.addLocal(param);
+        const pname = if (index) |ix| blk: {
+            const idx = Ast.Expr.v(try this.arenaVar(b, ix.name));
+            this.addLocal(ix.name);
+            break :blk try b.tuple(&.{ idx, item });
+        } else item;
         // The accumulator parameter is a fresh version: fun heads always bind.
         const group_in = try this.bindVarGroupExpr(b, names);
         const fun_body = try this.armWithGroup(b, body, names, this.indent + 1);
         try this.restoreVersions(&snapshot);
         const group_init = try this.varGroupExpr(b, names);
-        const iter_expr = try this.exprNode(b, iter);
+        const iter_expr = if (index) |ix| try b.remote("lists", "enumerate", &.{
+            if (ix.range) |r| try this.indexRangeStart(b, r.*) else Ast.Expr.t(Term.int(0)),
+            try this.exprNode(b, iter),
+        }) else try this.exprNode(b, iter);
 
         const fold = try b.remote("lists", "foldl", &.{
             .{ .fun = .{ .params = try b.exprs(&.{ pname, group_in }), .body = fun_body } },
@@ -3548,7 +3569,8 @@ const Emitter = struct {
                 // index range walks alongside the collection, which is exactly
                 // `lists:enumerate/2` — a list of `{Index, Item}` pairs matched by
                 // a single tuple parameter.
-                if (lp.indexRange != null and lp.params.len == 2) {
+                // `loop (xs) { item, i -> … }` (no written range) counts from 0.
+                if (lp.params.len == 2) {
                     const idx = V(try this.arenaVar(b, lp.params[1]));
                     this.addLocal(lp.params[1]);
                     const item = V(try this.arenaVar(b, lp.params[0]));
@@ -3559,7 +3581,7 @@ const Emitter = struct {
                         .body = try this.bodyNode(b, lp.body, 0, this.indent + 1),
                     } };
                     const enumerated = try b.remote("lists", "enumerate", &.{
-                        try this.indexRangeStart(b, lp.indexRange.?.*),
+                        if (lp.indexRange) |r| try this.indexRangeStart(b, r.*) else Ast.Expr.t(Term.int(0)),
                         try this.exprNode(b, lp.iter.*),
                     });
                     return b.remote("lists", op, &.{ fun, enumerated });

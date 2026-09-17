@@ -151,6 +151,34 @@ test "js: loop ---- side-effect print in iterator" {
     );
 }
 
+test "js: loop ---- two-parameter loop threads reassigned vars out" {
+    // `loop (xs) { x, i -> … }` names the index without writing a range. Its
+    // reassignments of outer `var`s must survive the loop like the
+    // one-parameter form's (a library's lexer written as a counter loop).
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn pick(xs: Array<string>) -> string {
+        \\    var first = "";
+        \\    var last = "";
+        \\    loop (xs) { x, i ->
+        \\        if (i == 0) { first = x; };
+        \\        last = x;
+        \\    };
+        \\    return first + "-" + last;
+        \\}
+        \\fn weigh(xs: Array<i32>) -> i32 {
+        \\    var total = 0;
+        \\    loop (xs, 1..) { x, i ->
+        \\        total = total + x * i;
+        \\    };
+        \\    return total;
+        \\}
+        \\fn main() {
+        \\    @print(pick(["a", "b", "c"]));
+        \\    @print(weigh([10, 20, 30]));
+        \\}
+    );
+}
+
 test "js: loop ---- side-effect over range" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
