@@ -323,10 +323,28 @@ well-typed one binds, so the language server still lists it.
 A `case` is typed from its arms (`caseTypeFromArms`): arms that agree unify, arms of different
 types make a union (decision 8 §3.2). A jump arm and a statement arm (`void`, a block without a
 top-level `break <value>`) contribute nothing; a block arm's value is its `break` value. A block
-arm keeps the enclosing fn's return target (`env.keepReturnTarget`). A `comptime { … }` block is
+arm keeps the enclosing fn's return target (`env.keepReturnTarget`).
+
+Pattern bindings are typed (06 C8, `bindPatternNamesForSubject`): a binder is the subject type; a
+variant payload binding takes the variant field's type instantiated against the subject's generic
+args (`variantPayloadTypes`; `@Result<R, E>` `Ok` → R, `Err`/`Error` → E; `?T` `Some` → T); list
+elements take the element type and the spread the array type; an OR pattern unifies a name across
+its alternatives. An unknown subject type leaves the bindings fresh. A `comptime { … }` block is
 typed as its `break <value>`, `void` without one.
 
+A section of an enum-shaped `type` is a type named by its path (06 N28, decision 8 §5.3b):
+`Token.Text`, `Token.Text.Size` resolve in type position through `Env.resolveTypeName`, which
+mangles the dotted path to the `__Token__Text` name `registerEnumSection` files the typedef under.
+The parser carries the dotted spelling in `TypeRef.named` (`parser/types.zig`). The pre-decision flat
+spelling (`TokenText`) reds with a hint naming the path (`Env.sectionPathForFlatName`). A section
+declares no methods — `EnumSection` has no slot for them and nothing needs one yet.
+
 ## `case` exhaustiveness + reachability
+
+A match *into* a section (`Text(Bold)`) refines the arm: it never counts as covering the wrapper
+variant, so the `case` still has to handle the section's other values or end in `_` (decision 8
+§5.4). `variantPayloadIrrefutable` decides this — a payload name is a binder unless it names a
+variant of the payload's own type.
 
 `checkCaseExhaustiveness` (infer.zig) checks a single-subject `case` on an
 **enum** or **string** subject after the arms are typed:

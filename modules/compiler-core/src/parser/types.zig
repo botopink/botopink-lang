@@ -191,6 +191,23 @@ pub fn parseBaseTypeRef(this: *This, alloc: std.mem.Allocator) ParseError!ast.Ty
 
     // Plain named type, possibly followed by <T1, T2> and/or []
     const nameTok = try this.consumeTypeName();
+    // N28 — a section of an enum-shaped `type` is named by its path
+    // (`Token.Text`, `Token.Text.Size`, decision 8 §5.3b), the same path its
+    // values use. The dotted spelling travels in `.named`; `resolveTypeName`
+    // maps it to the section's typedef. No other type position is followed by
+    // a `.`, so this is unambiguous.
+    var pathName: []const u8 = nameTok.lexeme;
+    if (this.check(.dot)) {
+        var buf: std.ArrayList(u8) = .empty;
+        errdefer buf.deinit(alloc);
+        try buf.appendSlice(alloc, nameTok.lexeme);
+        while (this.match(.dot)) {
+            const seg = try this.consumeTypeName();
+            try buf.append(alloc, '.');
+            try buf.appendSlice(alloc, seg.lexeme);
+        }
+        pathName = try buf.toOwnedSlice(alloc);
+    }
     var ref: ast.TypeRef = undefined;
     if (this.check(.lessThan)) {
         _ = this.advance();
@@ -210,9 +227,9 @@ pub fn parseBaseTypeRef(this: *This, alloc: std.mem.Allocator) ParseError!ast.Ty
             }
         }
         try this.consumeGenericClose();
-        ref = ast.TypeRef{ .generic = .{ .name = nameTok.lexeme, .args = try args.toOwnedSlice(alloc), .is_builtin = false } };
+        ref = ast.TypeRef{ .generic = .{ .name = pathName, .args = try args.toOwnedSlice(alloc), .is_builtin = false } };
     } else {
-        ref = ast.TypeRef{ .named = nameTok.lexeme };
+        ref = ast.TypeRef{ .named = pathName };
     }
     // T[] — zero or more array wraps
     while (this.check(.leftSquareBracket) and this.peekAt(1).kind == .rightSquareBracket) {

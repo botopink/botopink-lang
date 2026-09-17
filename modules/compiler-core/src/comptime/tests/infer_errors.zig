@@ -759,3 +759,99 @@ test "infer: case ---- a block arm's return leaves the enclosing fn" {
         \\}
     );
 }
+
+// ── C8 — pattern bindings take the matched value's types ─────────────────────
+
+test "infer error: pattern ---- a variant payload binding has the field's type" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type E { A(v: i32), B }
+        \\fn f(s: string) -> string { return s; }
+        \\fn g(e: E) -> string { return case e { A(v) -> f(v); B -> "b"; }; }
+    );
+}
+
+test "infer error: pattern ---- an OR pattern binds the same field type in every alternative" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type Pet { Dog(name: i32), Cat(name: i32) }
+        \\fn f(s: string) -> string { return s; }
+        \\fn g(p: Pet) -> string { return case p { Dog(b) | Cat(b) -> f(b); }; }
+    );
+}
+
+test "infer error: pattern ---- a guarded binder is the subject type" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn f(s: string) -> string { return s; }
+        \\fn g(x: i32) -> string { return case x { y if (y > 0) -> f(y); _ -> "n"; }; }
+    );
+}
+
+test "infer error: pattern ---- Ok binds the R of a @Result" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type Oops(msg: string)
+        \\#[@result]
+        \\fn parse(s: string) -> @Result<i32, Oops> { return 1; }
+        \\fn f(s: string) -> string { return s; }
+        \\fn g() -> string { return case parse("1") { Ok(v) -> f(v); Err(e) -> "e"; }; }
+    );
+}
+
+test "infer error: pattern ---- a list pattern binds the element type" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn f(s: string) -> string { return s; }
+        \\fn g(xs: i32[]) -> string { return case xs { [first, ..rest] -> f(first); _ -> "n"; }; }
+    );
+}
+
+test "infer: pattern ---- a generic enum payload is instantiated against the subject" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type Box<T> { Full(v: T), Empty }
+        \\fn g(b: Box<string>) -> string { return case b { Full(v) -> v; Empty -> ""; }; }
+    );
+}
+
+// ── N28 — a section of an enum-shaped `type` is a type named by its path ──────
+
+test "infer: section ---- a section path types an annotation, a parameter and a return" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type Token { Text { Bold, Size { Xs, Sm } }, Color { Red }, Hover(inner: Token[]) }
+        \\fn sizeToCss(s: Token.Text.Size) -> string { return case s { Xs -> "xs"; Sm -> "sm"; }; }
+        \\fn textToCss(t: Token.Text) -> string {
+        \\    return case t { Bold -> "bold"; Size(s) -> sizeToCss(s); };
+        \\}
+        \\fn tokenToCss(t: Token) -> string {
+        \\    return case t { Text(i) -> textToCss(i); Color(c) -> "c"; Hover(h) -> "h"; };
+        \\}
+    );
+}
+
+test "infer error: section ---- an unknown section path is not a type" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type Token { Text { Bold }, Hover(inner: Token[]) }
+        \\fn f(t: Token.Nope) -> string { return "x"; }
+    );
+}
+
+test "infer error: section ---- the flat spelling names the path to write" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type Token { Text { Bold }, Hover(inner: Token[]) }
+        \\fn f(t: TokenText) -> string { return "x"; }
+    );
+}
+
+test "infer: section ---- a nested section pattern refines the arm, it does not cover it" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type Token { Text { Bold, Italic }, Hover(inner: Token[]) }
+        \\fn f(t: Token) -> string {
+        \\    return case t { Text(Bold) -> "b"; Text(i) -> "t"; Hover(h) -> "h"; };
+        \\}
+    );
+}
+
+test "infer error: section ---- a refined section arm leaves the wrapper uncovered" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type Token { Text { Bold, Italic }, Hover(inner: Token[]) }
+        \\fn f(t: Token) -> string {
+        \\    return case t { Text(Bold) -> "b"; Hover(h) -> "h"; };
+        \\}
+    );
+}

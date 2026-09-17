@@ -918,6 +918,44 @@ pub const Env = struct {
 
     /// Resolve a string type name (from AST) to a *Type.
     /// Generic parameters are looked up in `genericMap` first.
+    /// N28 — `Token.Text.Size` → `__Token__Text__Size`, the name
+    /// `registerEnumSection` files a section's typedef under. The dotted form is
+    /// what the author writes; the mangled one never appears in source.
+    pub fn mangleSectionPath(self: *Env, path: []const u8) ![]const u8 {
+        var buf: std.ArrayList(u8) = .empty;
+        var it = std.mem.splitScalar(u8, path, '.');
+        while (it.next()) |seg| {
+            try buf.appendSlice(self.arena, "__");
+            try buf.appendSlice(self.arena, seg);
+        }
+        return buf.toOwnedSlice(self.arena);
+    }
+
+    /// N28 — the dotted path of a registered section whose segments, run
+    /// together, spell `flat` (`TokenText` → `Token.Text`), or null. Lets an
+    /// annotation written in the pre-decision flat spelling say what to write.
+    fn sectionPathForFlatName(self: *Env, flat: []const u8) !?[]const u8 {
+        var it = self.typeDefs.iterator();
+        while (it.next()) |e| {
+            const key = e.key_ptr.*;
+            if (!std.mem.startsWith(u8, key, "__")) continue;
+            var run: std.ArrayList(u8) = .empty;
+            defer run.deinit(self.arena);
+            var dotted: std.ArrayList(u8) = .empty;
+            var segs = std.mem.splitSequence(u8, key[2..], "__");
+            var first = true;
+            while (segs.next()) |seg| {
+                try run.appendSlice(self.arena, seg);
+                if (!first) try dotted.append(self.arena, '.');
+                try dotted.appendSlice(self.arena, seg);
+                first = false;
+            }
+            if (std.mem.eql(u8, run.items, flat)) return try dotted.toOwnedSlice(self.arena);
+            dotted.deinit(self.arena);
+        }
+        return null;
+    }
+
     pub fn resolveTypeName(
         self: *Env,
         name: []const u8,
@@ -925,6 +963,16 @@ pub const Env = struct {
     ) !*T.Type {
         // Generic parameters bound in the current function/type
         if (genericMap.get(name)) |ty| return ty;
+        // N28 — a section of an enum-shaped `type` is named by its path
+        // (`Token.Text`, `Token.Text.Size`, decision 8 §5.3b). The section's
+        // typedef is registered under the mangled `__Token__Text` form by
+        // `registerEnumSection`; the dotted spelling is the written one.
+        if (std.mem.indexOfScalar(u8, name, '.') != null) {
+            const mangled = try self.mangleSectionPath(name);
+            if (self.typeDefs.get(mangled)) |_| return self.namedType(mangled);
+            self.lastError = @import("error.zig").TypeError.unknownTypeName(name);
+            return error.TypeError;
+        }
         // Registered user-defined types — bare name on a generic typeDef
         // (`r: Result`, `-> Pair`) means "any args". Produce `Name<fresh, …>`
         // so it unifies with the constructor's `Name<T_cell, …>` return type;
@@ -954,6 +1002,16 @@ pub const Env = struct {
                 return self.namedType(name);
             }
             return ty;
+        }
+        // N28 — the flat spelling of a section type (`TokenText` for
+        // `Token.Text`) is a name the author had to guess from a mangling the
+        // language never showed. It is not a type: name the path instead.
+        if (try self.sectionPathForFlatName(name)) |dotted| {
+            self.lastError = @import("error.zig").TypeError.custom(
+                try std.fmt.allocPrint(self.arena, "the type '{s}' is not defined in this scope", .{name}),
+                try std.fmt.allocPrint(self.arena, "a section is named by its path: use `{s}`", .{dotted}),
+            );
+            return error.TypeError;
         }
         // Fallback: treat as an opaque named type (forward reference, etc.)
         return self.namedType(name);

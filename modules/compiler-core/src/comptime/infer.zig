@@ -5129,39 +5129,125 @@ fn bindPatternNamesForSubject(
         .wildcard, .numberLit, .stringLit => {},
         .ident => |name| {
             if (isEnumVariantNameForSubject(env, subjectType, name)) return;
-            try saveAndBindPatternName(env, snapshots, name, try env.freshVar());
+            // C8 — a binder names the matched value itself.
+            try saveAndBindPatternName(env, snapshots, name, subjectType);
         },
-        .variant => |v| switch (v.payload) {
-            .binding => |binding| {
-                try saveAndBindPatternName(env, snapshots, binding, try env.freshVar());
-            },
-            .fields => |fields| {
-                for (fields) |binding| {
-                    try saveAndBindPatternName(env, snapshots, binding, try env.freshVar());
-                }
-            },
-            .literals => |args| {
-                for (args) |arg| {
-                    try bindPatternNamesForSubject(env, arg, try env.freshVar(), snapshots);
-                }
-            },
+        .variant => |v| {
+            // C8 — each payload binding takes the variant field's declared type,
+            // instantiated against the subject's generic args.
+            const payload = try variantPayloadTypes(env, subjectType, v.name);
+            switch (v.payload) {
+                .binding => |binding| {
+                    const ty = if (payload) |p| (if (p.len == 1) p[0] else try env.freshVar()) else try env.freshVar();
+                    try saveAndBindPatternName(env, snapshots, binding, ty);
+                },
+                .fields => |fields| {
+                    for (fields, 0..) |binding, i| {
+                        const ty = if (payload) |p| (if (p.len == fields.len) p[i] else try env.freshVar()) else try env.freshVar();
+                        try saveAndBindPatternName(env, snapshots, binding, ty);
+                    }
+                },
+                .literals => |args| {
+                    for (args, 0..) |arg, i| {
+                        const ty = if (payload) |p| (if (p.len == args.len) p[i] else try env.freshVar()) else try env.freshVar();
+                        try bindPatternNamesForSubject(env, arg, ty, snapshots);
+                    }
+                },
+            }
         },
         .list => |lst| {
+            // C8 — elements take the array's element type, the spread the array type.
+            const st = subjectType.deref();
+            const elemTy: ?*T.Type = if (st.* == .named and std.mem.eql(u8, st.named.name, "array") and st.named.args.len == 1) st.named.args[0] else null;
             for (lst.elems) |elem| {
                 switch (elem) {
-                    .bind => |name| try saveAndBindPatternName(env, snapshots, name, try env.freshVar()),
+                    .bind => |name| try saveAndBindPatternName(env, snapshots, name, elemTy orelse try env.freshVar()),
                     else => {},
                 }
             }
             if (lst.spread) |name| {
-                if (name.len > 0) try saveAndBindPatternName(env, snapshots, name, try env.freshVar());
+                if (name.len > 0) try saveAndBindPatternName(env, snapshots, name, if (elemTy != null) subjectType else try env.freshVar());
             }
         },
         .@"or" => |patterns| {
-            if (patterns.len > 0) try bindPatternNamesForSubject(env, patterns[0], subjectType, snapshots);
+            if (patterns.len == 0) return;
+            const before = snapshots.items.len;
+            try bindPatternNamesForSubject(env, patterns[0], subjectType, snapshots);
+            // C8 — a name bound by every alternative is the unification of its
+            // types across them; disagreeing alternatives red.
+            for (patterns[1..]) |alt| {
+                var local: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
+                defer local.deinit(env.arena);
+                try bindPatternNamesForSubject(env, alt, subjectType, &local);
+                for (local.items) |ls| {
+                    const newTy = env.lookup(ls.name) orelse continue;
+                    var inFirst = false;
+                    for (snapshots.items[before..]) |fs| {
+                        if (std.mem.eql(u8, fs.name, ls.name)) inFirst = true;
+                    }
+                    if (inFirst) {
+                        if (ls.previous) |prev| {
+                            try unify(env, prev, newTy);
+                            try env.bind(ls.name, prev);
+                        }
+                    } else {
+                        try snapshots.append(env.arena, ls);
+                    }
+                }
+            }
         },
         .multi => {},
     }
+}
+
+/// C8 — the declared payload field types of `variantName` for a value of
+/// `subjectType`, instantiated against the subject's generic args; null when
+/// the subject's type or the variant is not known (the bindings stay fresh).
+/// `@Result<R, E>`: `Ok` → [R], `Err`/`Error` → [E]; `?T`: `Some` → [T].
+fn variantPayloadTypes(env: *Env, subjectType: *T.Type, variantName: []const u8) InferError!?[]*T.Type {
+    const st = subjectType.deref();
+    if (st.* != .named) return null;
+    const n = st.named;
+    const eq = std.mem.eql;
+    if (eq(u8, n.name, "Result") and n.args.len >= 2) {
+        if (eq(u8, variantName, "Ok")) return try env.arena.dupe(*T.Type, n.args[0..1]);
+        if (eq(u8, variantName, "Err") or eq(u8, variantName, "Error")) return try env.arena.dupe(*T.Type, n.args[1..2]);
+        return null;
+    }
+    if (eq(u8, n.name, "optional") and n.args.len == 1) {
+        if (eq(u8, variantName, "Some")) return try env.arena.dupe(*T.Type, n.args[0..1]);
+        return null;
+    }
+    const td = env.lookupTypeDef(n.name) orelse return null;
+    if (td != .enum_) return null;
+    const en = td.enum_;
+    var fields: ?[]envMod.FieldDef = null;
+    for (en.variants) |vd| {
+        if (eq(u8, vd.name, variantName)) fields = vd.fields;
+    }
+    const fs = fields orelse return null;
+    const out = try env.arena.alloc(*T.Type, fs.len);
+    // The registration cells of a generic enum are the args of any of its
+    // variant constructors' result type (`Enum<A_cell, …>`).
+    var seen = std.AutoHashMap(*T.TypeCell, *T.Type).init(env.arena);
+    defer seen.deinit();
+    if (en.genericParams.len > 0 and n.args.len == en.genericParams.len) {
+        for (en.variants) |vd| {
+            const ctor = env.lookup(vd.name) orelse continue;
+            const cd = ctor.deref();
+            const ret = if (cd.* == .func) cd.func.ret.deref() else cd;
+            if (ret.* != .named or !eq(u8, ret.named.name, en.name) or ret.named.args.len != n.args.len) continue;
+            for (ret.named.args, n.args) |cellTy, inst| {
+                const cr = cellTy.deref();
+                if (cr.* == .typeVar) try seen.put(cr.typeVar, inst);
+            }
+            break;
+        }
+    }
+    for (fs, 0..) |f, i| {
+        out[i] = if (seen.count() > 0) try instantiateType(env, f.type_, &seen, .allVars) else f.type_;
+    }
+    return out;
 }
 
 fn bindCaseArmPatternNames(
@@ -5211,13 +5297,45 @@ fn patternIsCatchAll(env: *Env, pattern: ast.Pattern, subjectType: *T.Type) bool
 /// True when a variant pattern's payload matches *every* value of that variant,
 /// so the variant is fully covered. Refined payloads like `Ok(1)` do not; a
 /// payload of only bindings / wildcards (e.g. `Err(_)`, `Rgb(r, g, b)`) does.
-fn variantPayloadIrrefutable(payload: anytype) bool {
+fn variantPayloadIrrefutable(
+    env: *Env,
+    subjectType: *T.Type,
+    variantName: []const u8,
+    payload: anytype,
+) InferError!bool {
     return switch (payload) {
-        .binding, .fields => true,
+        // A single-name payload (`Text(Bold)`) is a binder unless the name is a
+        // variant of the payload's own type — inside a section wrapper it is a
+        // refinement, not a binding.
+        .binding => |name| blk: {
+            const payloadTypes = try variantPayloadTypes(env, subjectType, variantName);
+            if (payloadTypes) |p| {
+                if (p.len == 1 and isEnumVariantNameForSubject(env, p[0], name)) break :blk false;
+            }
+            break :blk true;
+        },
+        .fields => |names| blk: {
+            const payloadTypes = try variantPayloadTypes(env, subjectType, variantName);
+            if (payloadTypes) |p| {
+                for (names, 0..) |name, i| {
+                    if (i < p.len and isEnumVariantNameForSubject(env, p[i], name)) break :blk false;
+                }
+            }
+            break :blk true;
+        },
         .literals => |args| blk: {
-            for (args) |a| {
+            // N28 — an `.ident` arg is a binder (`Ok(v)`, irrefutable) *unless*
+            // it names a variant of the payload's own type, as it does inside a
+            // section wrapper (`Text(Bold)`). That match refines the section,
+            // so the wrapper variant stays open: counting it as full coverage
+            // would let a `case` skip the section's other variants in silence
+            // (decision 8 §5.4).
+            const payloadTypes = try variantPayloadTypes(env, subjectType, variantName);
+            for (args, 0..) |a, i| {
                 const ok = switch (a) {
-                    .wildcard, .ident => true,
+                    .wildcard => true,
+                    .ident => |nm| !(payloadTypes != null and i < payloadTypes.?.len and
+                        isEnumVariantNameForSubject(env, payloadTypes.?[i], nm)),
                     else => false,
                 };
                 if (!ok) break :blk false;
@@ -5243,7 +5361,7 @@ fn collectFullyCoveredVariants(
             }
         },
         .variant => |v| {
-            if (variantPayloadIrrefutable(v.payload) and !namesContain(covered.items, v.name)) {
+            if (try variantPayloadIrrefutable(env, subjectType, v.name, v.payload) and !namesContain(covered.items, v.name)) {
                 try covered.append(env.arena, v.name);
             }
         },
@@ -5262,13 +5380,13 @@ fn alreadyCoveredVariant(
     pattern: ast.Pattern,
     subjectType: *T.Type,
     covered: []const []const u8,
-) ?[]const u8 {
+) InferError!?[]const u8 {
     switch (pattern) {
         .ident => |name| {
             if (isEnumVariantNameForSubject(env, subjectType, name) and namesContain(covered, name)) return name;
         },
         .variant => |v| {
-            if (variantPayloadIrrefutable(v.payload) and namesContain(covered, v.name)) return v.name;
+            if (try variantPayloadIrrefutable(env, subjectType, v.name, v.payload) and namesContain(covered, v.name)) return v.name;
         },
         else => {},
     }
@@ -5329,7 +5447,7 @@ fn checkCaseExhaustiveness(
             continue;
         }
 
-        if (alreadyCoveredVariant(env, arm.pattern, resolved, covered.items)) |dup| {
+        if (try alreadyCoveredVariant(env, arm.pattern, resolved, covered.items)) |dup| {
             const desc = try std.fmt.allocPrint(env.arena, "variant '{s}'", .{dup});
             env.lastError = TypeError.redundantPattern(typeName, desc).withLoc(arm.body.getLoc());
             return error.TypeError;
