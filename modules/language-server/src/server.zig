@@ -603,6 +603,33 @@ pub const Server = struct {
 
     // ── textDocument/completion ───────────────────────────────────────────────
 
+    /// Everything `textDocument/completion` answers, minus the frame write: the
+    /// items for `uri` at `pos`. Compiles the document with its project graph and
+    /// completes against the module's typed bindings — **or against none when the
+    /// module does not type-check**, where `engine.completion` falls back to the
+    /// token walk. Answering nothing in that state was the defect: any type error,
+    /// and a file mid-edit (`val x = oth▮`), left the editor with no completion at
+    /// all (front 14 step 1).
+    ///
+    /// Caller owns the items: free each `label`/`detail`/`insertText`, then the
+    /// slice. Exposed so the server's own path is testable without the JSON frame.
+    pub fn completionItems(
+        self: *Server,
+        uri: []const u8,
+        source: []const u8,
+        pos: proto.Position,
+    ) ![]proto.CompletionItem {
+        // Inside `from "…"` the answer is a module list, not a binding list.
+        if (try engine.moduleCompletion(self.gpa, source, pos, &self.index)) |mod_items|
+            return mod_items;
+
+        var result = self.compileWithGraph(uri, source) catch
+            return engine.completion(self.gpa, source, pos, &.{});
+        defer result.deinit(self.gpa);
+
+        return engine.completion(self.gpa, source, pos, result.bindingsFor(uri));
+    }
+
     fn handleCompletion(self: *Server, msg: *messages.Message) !void {
         const uri = self.uriFromTextDocument(msg) orelse {
             return messages.writeResponse(self.io, self.gpa, msg.id(), null);
@@ -616,30 +643,7 @@ pub const Server = struct {
         };
         defer self.gpa.free(source);
 
-        var result = self.compileWithGraph(uri, source) catch {
-            return messages.writeResponse(self.io, self.gpa, msg.id(), null);
-        };
-        defer result.deinit(self.gpa);
-
-        const bindings = blk: {
-            for (result.session.outputs.items) |output| {
-                if (!std.mem.eql(u8, output.name, lsp_types.uriToPath(uri))) continue;
-                if (output.outcome == .ok) break :blk output.outcome.ok.bindings;
-            }
-            return messages.writeResponse(self.io, self.gpa, msg.id(), null);
-        };
-
-        // Try module completion first (inside `from "..."`).
-        if (try engine.moduleCompletion(self.gpa, source, pos, &self.index)) |mod_items| {
-            defer {
-                for (mod_items) |it| self.gpa.free(it.label);
-                self.gpa.free(mod_items);
-            }
-            const list = proto.CompletionList{ .isIncomplete = false, .items = mod_items };
-            return messages.writeResponse(self.io, self.gpa, msg.id(), list);
-        }
-
-        const items = try engine.completion(self.gpa, source, pos, bindings);
+        const items = try self.completionItems(uri, source, pos);
         defer {
             for (items) |it| {
                 self.gpa.free(it.label);

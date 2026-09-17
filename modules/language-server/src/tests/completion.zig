@@ -443,17 +443,22 @@ test "completion: cursor at end of comment returns empty" {
 
 // ── C6 — empty bindings ──────────────────────────────────────────────────────
 
-test "completion: empty bindings returns empty list" {
+test "completion: no bindings falls back to the module's own declarations" {
     const gpa = std.testing.allocator;
     const source =
         \\val x = 1;
     ;
 
+    // No typed bindings is the state of every module that does not type-check.
+    // The answer is no longer empty: the module's declarations are read off the
+    // token stream so the file's own names stay completable (front 14).
     const cursor = h.pos(0, 10);
     const items = try engine.completion(gpa, source, cursor, &.{});
-    defer gpa.free(items);
+    defer freeItems(gpa, items);
 
-    try std.testing.expectEqual(@as(usize, 0), items.len);
+    try std.testing.expectEqual(@as(usize, 1), items.len);
+    try std.testing.expectEqualStrings("x", items[0].label);
+    try std.testing.expectEqualStrings("val", items[0].detail.?);
     try snap.assertCompletion(gpa, "completion_empty_bindings", source, cursor, items);
 }
 
@@ -731,6 +736,17 @@ fn hasLabel(items: []const proto.CompletionItem, name: []const u8) bool {
     return false;
 }
 
+/// Frees a completion list the way the server does (label, detail, insertText,
+/// then the slice).
+fn freeItems(gpa: std.mem.Allocator, items: []const proto.CompletionItem) void {
+    for (items) |it| {
+        gpa.free(it.label);
+        if (it.detail) |d| gpa.free(d);
+        if (it.insertText) |t| gpa.free(t);
+    }
+    gpa.free(items);
+}
+
 test "completion: decorator body lists params/locals/closure binder (R1)" {
     const gpa = std.testing.allocator;
     const source =
@@ -761,13 +777,11 @@ test "completion: decorator body lists params/locals/closure binder (R1)" {
     try std.testing.expect(hasLabel(items, "args")); // `var` local
     try std.testing.expect(hasLabel(items, "f")); //    closure binder
 
-    // Documented gap: the enclosing `component` fn is in scope but is NOT
-    // offered. The fixture does not type-check (`items` is unbound), so
-    // `bindings()` is empty and the token walk is all the list has — it sees
-    // locals, never module-level decls. The snapshot below pins the degraded
-    // answer, so this assertion states which half of it is the gap; when the
-    // fallback learns to merge module-level decls, it must be inverted.
-    try std.testing.expect(!hasLabel(items, "component"));
+    // The gap this test used to document is closed (front 14): the fixture does
+    // not type-check (`items` is unbound), so `bindings()` is empty — and the
+    // fallback now reads the module's own declarations off the token stream, so
+    // the enclosing `component` fn is offered too.
+    try std.testing.expect(hasLabel(items, "component"));
     try snap.assertCompletion(gpa, "completion_decorator_body_locals", source, cursor, items);
 }
 
@@ -817,9 +831,10 @@ test "completion: decorator-bearing record still lists bindings (R2)" {
     try std.testing.expect(hasLabel(items, "PostService"));
     // `other` is an unrelated `val` declared before the cursor, never touched
     // by the decorator. The degraded path (the spliced re-analysis failed) keeps
-    // every well-typed `val` binding since 06 N23, so `other` and `usePost` are
-    // both completable.
+    // every well-typed `val` binding since 06 N23, so `other` is completable.
     try std.testing.expect(hasLabel(items, "other"));
-    try std.testing.expect(hasLabel(items, "usePost"));
+    // `usePost` is the binding this very line is defining — the cursor sits in
+    // its initialiser, where the name is not in scope yet (front 14).
+    try std.testing.expect(!hasLabel(items, "usePost"));
     try snap.assertCompletion(gpa, "completion_decorator_record", source, cursor, items);
 }

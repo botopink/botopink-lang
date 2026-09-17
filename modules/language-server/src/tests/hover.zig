@@ -195,7 +195,9 @@ test "hover: interface method on integer receiver shows signature" {
 
     try std.testing.expect(result != null);
     try std.testing.expect(std.mem.indexOf(u8, result.?.contents.value, "fn abs") != null);
-    try std.testing.expect(std.mem.indexOf(u8, result.?.contents.value, "interface I32") != null);
+    // `abs` is written in `Signed`; `I32 extends Signed` only inherits it. The
+    // footer names the declaring behavior and the receiver's (front 14).
+    try std.testing.expect(std.mem.indexOf(u8, result.?.contents.value, "behavior Signed` (via I32)") != null);
     try snap.assertHover(gpa, "hover_interface_method", source, h.pos(0, 12), result);
 }
 
@@ -225,7 +227,7 @@ test "hover: interface method on array receiver shows signature" {
         \\fn filter(self: Self, pred: fn(item: T) -> bool) -> Self
         \\```
         \\
-        \\*from `interface Array`*
+        \\*from `behavior Array`*
     ,
         result.?.contents.value,
     );
