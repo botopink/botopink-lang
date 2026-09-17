@@ -16,13 +16,11 @@
 //!
 //! ## Bridges
 //!
-//! Five forms exist only to keep shapes the current lowering still produces but
+//! Three forms exist only to keep shapes the current lowering still produces but
 //! that the model would otherwise forbid. They are the complete list of ways a
 //! JS backend can still emit something illegal, each one has to be named
 //! explicitly at the build site, and each is documented in `AGENTS.md`:
 //!
-//! * `Expr.missing`               — an expression the lowering did not produce.
-//! * `Rest.unnamed`/`Spread.unnamed` — a rest or spread with no binding.
 //! * `Pattern.match`              — a match pattern used as a binding target.
 //! * `Stmt.throw_ == null`        — a `throw` with no operand.
 //! * `TsType.missing`             — a `.d.ts` position with no type.
@@ -78,11 +76,6 @@ pub const Expr = union(enum) {
     yield_: ?*const Expr,
     /// A comment in expression position: it is the whole expression.
     comment: Comment,
-
-    /// BRIDGE — an expression the lowering did not produce. Renders as
-    /// nothing, which is how `if () …` and `({ a } = )` get emitted. See
-    /// `AGENTS.md` (defect JS-2).
-    missing,
 
     pub fn id(n: []const u8) Expr {
         return .{ .ident = n };
@@ -192,9 +185,6 @@ pub const Spread = union(enum) {
     name: []const u8,
     /// `...expr`.
     expr: *const Expr,
-    /// BRIDGE — `...` with nothing after it, a JS SyntaxError. The array
-    /// spread reached codegen without a name. See `AGENTS.md` (defect JS-3).
-    unnamed,
 };
 
 pub const Object = struct {
@@ -244,10 +234,6 @@ pub const Pattern = union(enum) {
 pub const Rest = union(enum) {
     /// `...name`.
     binding: []const u8,
-    /// BRIDGE — `...` with no binding, a JS SyntaxError. The frontend's
-    /// destructuring pattern carries the *presence* of a rest but not its
-    /// name. See `AGENTS.md` (defect JS-3).
-    unnamed,
 };
 
 pub const ObjectPattern = struct {

@@ -13,8 +13,8 @@ fn process(a: i32, b: i32) {
 function process(a, b) {
     (() => {
         const _s = [a, b];
-        if () return null;
-        if () return null;
+        if (_s[0] === 0 && _s[1] === 0) return null;
+        return null;
     })();
 }
 ```
@@ -26,9 +26,4 @@ function process(a, b) {
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (node --check):
-main.js:4
-        if () return null;
-            ^
-SyntaxError: Unexpected token ')'
 ```

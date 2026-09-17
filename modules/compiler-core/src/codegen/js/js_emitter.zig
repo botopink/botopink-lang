@@ -198,8 +198,6 @@ pub fn writeExpr(w: *Writer, e: Ast.Expr, indent: usize) Error!void {
             }
         },
         .comment => |c| try writeComment(w, c),
-        // BRIDGE: nothing at all.
-        .missing => {},
     }
 }
 
@@ -244,8 +242,6 @@ fn writeSpread(w: *Writer, sp: Ast.Spread, indent: usize) Error!void {
     switch (sp) {
         .name => |n| try w.writeAll(n),
         .expr => |e| try writeExpr(w, e.*, indent),
-        // BRIDGE: `...` with no binding.
-        .unnamed => {},
     }
 }
 
@@ -367,8 +363,6 @@ fn writeRest(w: *Writer, r: Ast.Rest) Error!void {
     try w.writeAll("...");
     switch (r) {
         .binding => |n| try w.writeAll(ident(n)),
-        // BRIDGE: `...` with no binding.
-        .unnamed => {},
     }
 }
 
@@ -798,13 +792,6 @@ test "js_emitter: a module separates declarations with a blank line" {
 }
 
 test "js_emitter: the bridges render the shapes the model would otherwise forbid" {
-    // A missing expression renders as nothing.
-    try expectStmt("const x = ;", .{ .decl = .{ .pattern = .{ .ident = "x" }, .value = .missing } });
-    // An unnamed rest renders the bare `...` the frontend still asks for.
-    try expectStmt("const { a, ... } = p;", .{ .decl = .{
-        .pattern = .{ .object = .{ .props = &.{.{ .key = "a" }}, .rest = .unnamed } },
-        .value = Ast.Expr.id("p"),
-    } });
     // A botopink match pattern used as a binding target.
     try expectStmt("const Circle(r) = p;", .{ .decl = .{
         .pattern = .{ .match = .{ .variant_fields = .{ .name = "Circle", .fields = &.{"r"} } } },

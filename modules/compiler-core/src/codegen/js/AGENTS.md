@@ -54,16 +54,14 @@ js/
 
 ## Bridges (the known defects, pinned)
 
-Five forms exist only because the current lowering still produces shapes the
+Three forms exist only because the current lowering still produces shapes the
 model would otherwise forbid. They are the **complete** list of ways a JS
 backend can emit something illegal; each has to be named explicitly at the
-build site, so `rg '\.missing|\.unnamed|\.match|throw_ = null'`
+build site, so `rg '\.missing|\.match|throw_ = null'`
 finds every one. Fixing a defect means deleting its build site, not its node.
 
 | Bridge | Renders | Defect |
 |---|---|---|
-| `Expr.missing` | nothing | **JS-2** an expression the lowering never produced: `({ a, … } = )` in a parameter list, `if () return …;` for a `case` arm with a multi-pattern |
-| `Rest.unnamed` / `Spread.unnamed` | a bare `...` | **JS-3** a rest/spread whose binding name the frontend does not carry: `{ name, ... }` |
 | `Pattern.match` | botopink's own pattern spelling | **JS-4** a match pattern used as a JS binding target (`const Circle(r) = …`) |
 | `TsType.missing` | nothing | **JS-5** a `.d.ts` parameter whose type the frontend does not carry: `f(s: )` |
 | `Stmt.throw_ = null` | a bare `throw` | **JS-6** a botopink `throw` with no value; `throw;` is a JS SyntaxError |

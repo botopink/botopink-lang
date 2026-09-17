@@ -1736,10 +1736,8 @@ const Emitter = struct {
     fn buildParam(self: *Emitter, p: ast.Param) !js.Param {
         const d = p.destruct orelse return .{ .pattern = .{ .ident = p.name } };
         return switch (d) {
-            // The object form still carries the `= ` of a destructuring
-            // *assignment* into parameter position, with nothing to assign —
-            // `Expr.missing` pins that (defect JS-2).
-            .names => .{ .pattern = try self.buildNamesPattern(d.names), .default = .missing },
+            // A destructuring parameter takes no default.
+            .names => .{ .pattern = try self.buildNamesPattern(d.names) },
             .tuple_ => |t| .{ .pattern = try self.buildTuplePattern(t) },
             .list => |pat| .{ .pattern = try self.buildPattern(pat) },
             .ctor => |pat| .{ .pattern = try self.buildPattern(pat) },
@@ -1749,13 +1747,10 @@ const Emitter = struct {
     fn buildNamesPattern(self: *Emitter, n: anytype) !js.Pattern {
         const props = try self.arena().alloc(js.ObjectPattern.Prop, n.fields.len);
         for (n.fields, 0..) |nm, i| props[i] = .{ .key = nm.bind_name };
-        return .{
-            .object = .{
-                .props = props,
-                // The frontend records that a rest is present but not its name.
-                .rest = if (n.hasSpread) .unnamed else null,
-            },
-        };
+        // `{ x, .. }` ignores the rest (the parser has no named record rest),
+        // and JS object destructuring already ignores unlisted keys, so the
+        // `..` emits nothing (JS-3).
+        return .{ .object = .{ .props = props } };
     }
 
     fn buildTuplePattern(self: *Emitter, names: []const []const u8) !js.Pattern {
@@ -1786,10 +1781,14 @@ const Emitter = struct {
                     .bind => |name| js.Pattern{ .ident = name },
                     .numberLit => |n| js.Pattern{ .match = .{ .number = n } },
                 };
-                return .{ .array = .{
-                    .elems = elems,
-                    .rest = if (l.spread) |sp| (if (sp.len > 0) js.Rest{ .binding = sp } else .unnamed) else null,
-                } };
+                return .{
+                    .array = .{
+                        .elems = elems,
+                        // A nameless `..` ignores the trailing elements, which JS
+                        // array destructuring already does: no rest element.
+                        .rest = if (l.spread) |sp| (if (sp.len > 0) js.Rest{ .binding = sp } else null) else null,
+                    },
+                };
             },
             .@"or" => |pats| {
                 const out = try self.arena().alloc(js.Pattern, pats.len);
@@ -2197,7 +2196,9 @@ const Emitter = struct {
     /// is not re-evaluated (important for method chains).
     fn buildResultOptionOp(self: *Emitter, callee: []const u8, args: []const ast.CallArg) anyerror!js.Expr {
         const recv = try self.buildExpr(args[0].value.*);
-        const arg1: js.Expr = if (args.len > 1) try self.buildExpr(args[1].value.*) else .missing;
+        // Only the transform / default-value ops read a second argument, and
+        // the transform always supplies it for them.
+        const arg1: js.Expr = if (args.len > 1) try self.buildExpr(args[1].value.*) else js.Expr.null_;
         const r = js.Expr{ .name = "_r" };
         const o = js.Expr{ .name = "_o" };
         const r_param = [_]js.Param{.{ .pattern = .{ .name = "_r" } }};
@@ -2247,8 +2248,11 @@ const Emitter = struct {
         if (std.mem.eql(u8, callee, "__bp_option_unwrapOr")) {
             return self.applyLambda(&o_param, try self.b.ternary(o_present, o, try self.b.paren(arg1)), recv);
         }
-        // No lowering for this op — the call renders as nothing, as before.
-        return .missing;
+        // The `#[@future]` markers outside a `return` (which strips them in
+        // `buildStmt`): resolving is the value, rejecting throws.
+        if (std.mem.eql(u8, callee, "__bp_future_resolved")) return recv;
+        if (std.mem.eql(u8, callee, "__bp_future_rejected")) return self.b.iife(&.{.{ .throw_ = recv }});
+        return error.UnknownResultOptionOp;
     }
 
     /// `((p) => body)(arg)` — bind the receiver once.
@@ -2353,7 +2357,8 @@ const Emitter = struct {
                     .throw_ = if (r) |val| try self.buildExpr(val.*) else null,
                 }}),
                 .try_ => |t| {
-                    const val = t orelse return .missing;
+                    // The parser always gives `try` an operand.
+                    const val = t orelse return error.TryWithoutOperand;
                     // Nested `try` in expression position: unwrap Ok, propagate Error
                     // out of the surrounding IIFE. (Statement position is lowered in
                     // `buildStmt` to a real enclosing-function `return`.)
@@ -2476,8 +2481,10 @@ const Emitter = struct {
                 .arrayLit => |arr| {
                     const elems = try self.arena().alloc(js.Expr, arr.elems.len);
                     for (arr.elems, 0..) |elem, i| elems[i] = try self.buildExpr(elem);
+                    // `[a, b, ..]` — a nameless spread in a literal the parser
+                    // accepts contributes no elements: no spread element.
                     const spread: ?js.Spread = if (arr.spread) |sp|
-                        (if (sp.len > 0) js.Spread{ .name = sp } else .unnamed)
+                        (if (sp.len > 0) js.Spread{ .name = sp } else null)
                     else if (arr.spreadExpr) |se|
                         js.Spread{ .expr = try self.b.ptr(try self.buildExpr(se.*)) }
                     else
@@ -2531,8 +2538,9 @@ const Emitter = struct {
                         },
                         else => {},
                     };
-                    // No `break` value — the block folds to nothing.
-                    return .missing;
+                    // No `break` value: a block's value comes only from
+                    // `break <e>`, so it is `undefined` (erlang's twin is E5).
+                    return .{ .name = "undefined" };
                 },
                 .assert => |a| {
                     const cond = try self.buildExpr(a.condition.*);
@@ -3115,34 +3123,43 @@ const Emitter = struct {
         return out.toOwnedSlice(self.arena());
     }
 
-    /// The `_s === …` test an arm's pattern becomes, or null when the pattern
-    /// has no test — the lowering then leaves the condition empty
-    /// (`Expr.missing`, defect JS-2) or drops the `if` altogether.
+    /// The test an arm's pattern becomes over the `case` subject `_s`, or null
+    /// when the pattern matches anything — the arm then has no `if` at all.
     fn buildCondExpr(self: *Emitter, pat: ast.Pattern) anyerror!?js.Expr {
-        const subject = js.Expr{ .name = "_s" };
+        return self.patternTest(pat, .{ .name = "_s" });
+    }
+
+    /// The test `pat` becomes over `subject`, or null when it matches anything
+    /// (`_`, or an alternative that is `_`). A multi-subject pattern
+    /// (`case a, b { 0, 0 -> … }`, whose subject is the array `[a, b]`) is the
+    /// conjunction of its per-position tests over `_s[i]`; an alternation is
+    /// their disjunction. A shape this lowering has no test for is `false`.
+    fn patternTest(self: *Emitter, pat: ast.Pattern, subject: js.Expr) anyerror!?js.Expr {
         switch (pat) {
+            .wildcard => return null,
             .numberLit => |n| return try self.b.binaryBare("===", subject, .{ .number = n }),
             .stringLit => |s| return try self.b.binaryBare("===", subject, .{ .lexeme_string = s }),
             .ident => |n| return try self.b.binaryBare("===", subject, .{ .quoted = n }),
             .@"or" => |pats| {
-                if (pats.len == 0) return null;
-                var acc = try self.patternCond(pats[0]);
-                for (pats[1..]) |p| acc = try self.b.binaryBare("||", acc, try self.patternCond(p));
+                if (pats.len == 0) return js.Expr{ .name = "false" };
+                var acc: ?js.Expr = null;
+                for (pats) |p| {
+                    const t = try self.patternTest(p, subject) orelse return null;
+                    acc = if (acc) |a| try self.b.binaryBare("||", a, t) else t;
+                }
                 return acc;
             },
-            else => return null,
+            .multi => |pats| {
+                var acc: ?js.Expr = null;
+                for (pats, 0..) |p, i| {
+                    const at = try self.b.index(subject, .{ .number = try std.fmt.allocPrint(self.arena(), "{d}", .{i}) }, false);
+                    const t = try self.patternTest(p, at) orelse continue;
+                    acc = if (acc) |a| try self.b.binaryBare("&&", a, t) else t;
+                }
+                return acc;
+            },
+            .variant, .list => return js.Expr{ .name = "false" },
         }
-    }
-
-    /// One alternative of an `or` pattern; anything with no test is `false`.
-    fn patternCond(self: *Emitter, pat: ast.Pattern) anyerror!js.Expr {
-        const subject = js.Expr{ .name = "_s" };
-        return switch (pat) {
-            .numberLit => |n| try self.b.binaryBare("===", subject, .{ .number = n }),
-            .stringLit => |s| try self.b.binaryBare("===", subject, .{ .lexeme_string = s }),
-            .ident => |n| try self.b.binaryBare("===", subject, .{ .quoted = n }),
-            else => js.Expr{ .name = "false" },
-        };
     }
 
     /// `return <body>;` for a matched arm, gated by the arm's guard when
@@ -3298,7 +3315,7 @@ const Emitter = struct {
                         .indent = indent,
                     } };
                     // A pattern with no test loses its `if` entirely and leaves
-                    // a bare block, exactly as before.
+                    // a bare block.
                     return if (cond) |c| try self.b.ifStmt(c, body) else body;
                 }
                 if (isLambdaBlock(arm.body)) {
@@ -3308,7 +3325,8 @@ const Emitter = struct {
                     } };
                     return if (cond) |c| try self.b.ifStmt(c, body) else body;
                 }
-                return self.b.ifStmt(cond orelse .missing, try self.armReturn(arm.body));
+                const ret = try self.armReturn(arm.body);
+                return if (cond) |c| try self.b.ifStmt(c, ret) else ret;
             },
 
             .variant => |v| {

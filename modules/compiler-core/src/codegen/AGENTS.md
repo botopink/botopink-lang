@@ -135,6 +135,16 @@ codegen/
   `Array`/`String`/numeric/`Bool`), where they become statics on the existing
   global (`Array.range = function…`) — `const Array = {}` would shadow the
   global.
+- **Destructuring**: a destructuring parameter takes no default
+  (`function greet({ name })`); a nameless `..` in a record or list pattern
+  ignores the rest, which JS destructuring already does, so it emits no rest
+  element — and a nameless `..` in an array *literal* contributes nothing.
+- **Case tests** (`patternTest`): a pattern that matches anything (`_`, an
+  alternative that is `_`) has no `if`; a multi-subject arm (`case a, b { 0, 0
+  -> … }`, subject `[a, b]`) tests the conjunction over `_s[i]`; a shape with
+  no test is `false`.
+- **`comptime { … }` with no `break <e>`** in value position is `undefined`
+  (a block's value comes only from `break`).
 - **Ranges**: `a..b` materializes `Array.from({length: Math.max(0, b - a)}, …)`;
   an open-ended `a..` throws at runtime.
 - **Effects**: `fnKeyword` picks `async function` / `function*` /
