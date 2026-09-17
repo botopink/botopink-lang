@@ -5494,9 +5494,11 @@ const Emitter = struct {
 
     /// Returns N for a tuple-accessor member of the form `_N` (e.g. `_0`).
     fn tupleIndex(member: []const u8) ?u32 {
-        if (member.len < 2 or member[0] != '_') return null;
+        // `t._N` and the bare `t.N` both read element N.
+        const digits = if (member.len > 0 and member[0] == '_') member[1..] else member;
+        if (digits.len == 0) return null;
         var n: u32 = 0;
-        for (member[1..]) |c| {
+        for (digits) |c| {
             if (!std.ascii.isDigit(c)) return null;
             n = n * 10 + (c - '0');
         }

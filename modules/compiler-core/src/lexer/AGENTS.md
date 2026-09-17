@@ -63,3 +63,10 @@ defer l.deinit(alloc);` — `scanAll` returns `[]const Token` owned by the lexer
 - Numeric literals support `1_000_000` digit separators and scientific notation
   (`1.5e-10`, `2E+3`); unary `-` is handled in the parser primary.
 - A new `tests/*.zig` file only runs once it is imported from `tests.zig`.
+
+## A digit after a member `.` is a positional index
+
+`scanNumber` checks the previous token: a number that starts right after a `.`
+(adjacent, `prev.offset + 1 == start`) scans integer digits only. `t.0.1` is
+`t . 0 . 1` (two tuple indexes), not `t . 0.1`, and `p.0.toString()` is not the
+float `0.`. Every other number keeps the decimal / radix / exponent rules.

@@ -185,11 +185,27 @@ test "js: record ---- a method named print is called on the record" {
     );
 }
 
+// `t.0.1` lexes as two positional indexes (not the float `0.1`) and
+// `p.0.toString()` calls a method on an element; erlang and beam read tuple
+// elements with `element/2`. Prints `2`, `x` and `7`. KNOWN: wasm prints the
+// string element of an unannotated local tuple as its address (`256`).
+test "js: tuple ---- chained positional access and a method on an element" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    val t = #(#(1, 2), "x");
+        \\    @print(t.0.1);
+        \\    @print(t.1);
+        \\    val p = #(7, "x");
+        \\    @print(p.0.toString());
+        \\}
+    );
+}
+
 // `pair.0` is the tuple index `pair._0` (commonJS emitted `pair.0` verbatim, a
 // SyntaxError), and `.map` on the `?T` a `find` answers is the Option map, not
-// `Array.prototype.map` over the found tuple. KNOWN: `2` then `true`; erlang
-// crashes (`pair.0` lowers to `maps:get('0', Pair)` on a tuple), beam prints
-// `undefined` for the first line and wasm traps (1.0.4-beta 01 erlang/beam/wasm).
+// `Array.prototype.map` over the found tuple. Prints `2` then `true` on
+// commonJS, erlang and beam (the bare `pair.0` is `element/2` since front 12
+// step 4). KNOWN: wasm still traps (the `?T` map over a found tuple).
 // The same `?T.map` inside a record method body is not lowered on commonJS
 // either: inference records no Option lowering there (06-checker).
 test "js: tuple ---- a bare digit index and an option map over a found pair" {

@@ -492,6 +492,15 @@ pub const Lexer = struct {
     // ── number scanning with 0b, 0o, 0x support ──────────────────────────────
 
     fn scanNumber(self: *Lexer, firstDigit: u8, allocator: std.mem.Allocator) LexerError!void {
+        // A digit right after a member `.` is a positional index (`t.0.1`,
+        // `p.0.toString()`): integer digits only, never a float or a radix.
+        if (self.tokens.items.len > 0) {
+            const prev = self.tokens.items[self.tokens.items.len - 1];
+            if (prev.kind == .dot and prev.offset + 1 == self.start) {
+                while (!self.isAtEnd() and isDigit(self.peek())) _ = self.advance();
+                return self.addToken(.numberLiteral, allocator);
+            }
+        }
         if (firstDigit == '0' and !self.isAtEnd()) {
             const prefix = self.peek();
             switch (prefix) {

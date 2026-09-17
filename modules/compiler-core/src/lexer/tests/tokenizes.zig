@@ -154,3 +154,19 @@ test "lexer: tokenizes qualified implement method name" {
     };
     for (expected, tokens) |exp, tok| try std.testing.expectEqual(exp, tok.kind);
 }
+
+test "lexer: a digit after a member dot is a positional index, not a float" {
+    var l = Lexer.init("t.0.1 + p.0.toString() + 1.5");
+    const tokens = try l.scanAll(std.testing.allocator);
+    defer l.deinit(std.testing.allocator);
+    const expected = [_]TokenKind{
+        .identifier,       .dot,  .numberLiteral, .dot,
+        .numberLiteral,    .plus, .identifier,    .dot,
+        .numberLiteral,    .dot,  .identifier,    .leftParenthesis,
+        .rightParenthesis, .plus, .numberLiteral, .endOfFile,
+    };
+    for (expected, tokens) |exp, tok| try std.testing.expectEqual(exp, tok.kind);
+    try std.testing.expectEqualStrings("0", tokens[2].lexeme);
+    try std.testing.expectEqualStrings("1", tokens[4].lexeme);
+    try std.testing.expectEqualStrings("1.5", tokens[14].lexeme);
+}

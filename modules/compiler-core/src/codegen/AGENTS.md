@@ -382,7 +382,7 @@ codegen/
   their text.
 - **Records are maps**: constructors lower to `#{field => V, …}` (positional args
   use the declared field order from `collectTypeShapes`); field access is
-  `maps:get(field, Recv)`; tuple index `t._N` → `element(N+1, T)`. No `-record`
+  `maps:get(field, Recv)`; tuple index `t._N` and the bare `t.N` → `element(N+1, T)`. No `-record`
   declarations are emitted. Optional chaining `?.` guards on `undefined` via an
   immediate fun. A record destructuring (`val { x, y } = p`, a `{ name, .. }`
   parameter, a `try` head) is therefore the exact map pattern

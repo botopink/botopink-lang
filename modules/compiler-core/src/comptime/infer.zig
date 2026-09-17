@@ -2483,11 +2483,13 @@ fn tupleLabelIndex(labels: []const []const u8, label: []const u8) ?usize {
 /// Parse a tuple-index member name (`_0`, `_1`, …) into its integer index.
 /// Returns null for any other member name. Mirrors codegen's tupleIndexMember.
 fn tupleMemberIndex(member: []const u8) ?usize {
-    if (member.len < 2 or member[0] != '_') return null;
-    for (member[1..]) |ch| {
+    // `t._N` and the bare `t.N` both name element N.
+    const digits = if (member.len > 0 and member[0] == '_') member[1..] else member;
+    if (digits.len == 0) return null;
+    for (digits) |ch| {
         if (!std.ascii.isDigit(ch)) return null;
     }
-    return std.fmt.parseInt(usize, member[1..], 10) catch null;
+    return std.fmt.parseInt(usize, digits, 10) catch null;
 }
 
 /// True when `name` names a registered type definition with generic params.

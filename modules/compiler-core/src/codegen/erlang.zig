@@ -1336,11 +1336,13 @@ const prim_shim_kinds = [_]struct { kind: envMod.PrimKind, guard: Ast.Expr }{
 /// Tuple positional member (`_0`, `_1`, …) → the digits, else null.
 /// Distinguishes tuple index access from `_`-prefixed record fields.
 fn tupleIndexMember(member: []const u8) ?[]const u8 {
-    if (member.len < 2 or member[0] != '_') return null;
-    for (member[1..]) |ch| {
+    // `t._N` and the bare `t.N` both read element N.
+    const digits = if (member.len > 0 and member[0] == '_') member[1..] else member;
+    if (digits.len == 0) return null;
+    for (digits) |ch| {
         if (!std.ascii.isDigit(ch)) return null;
     }
-    return member[1..];
+    return digits;
 }
 
 /// §A5 annotation-driven prim-method dispatch entry: the host module + symbol +
