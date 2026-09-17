@@ -251,10 +251,9 @@ fn emitWat(
     own_instance_lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
     linked: []const Linked,
 ) ![]u8 {
-    _ = module_name;
-
     var em = Emitter.init(alloc, comptime_vals, rewrites);
     defer em.deinit();
+    em.module_name = module_name;
     em.instance_lowerings = own_instance_lowerings;
 
     // `val x = comptime { … break v; }` was folded by the comptime pass into
@@ -525,6 +524,8 @@ const Emitter = struct {
     /// result) while the tag/payload are read out.
     res_seq: u32 = 0,
     loop_seq: u32 = 0,
+    /// The module path, for the `file:line` an `assert` failure names.
+    module_name: []const u8 = "",
     /// The array local a comprehension's `yield`/`break <v>` appends to.
     yield_target: ?[]const u8 = null,
     /// How many loops enclose the code being lowered: `break`/`continue`
@@ -1623,6 +1624,7 @@ const Emitter = struct {
                 .pipeline => true,
             },
             .binding => false,
+            .comptime_ => |ct| ct.kind != .assert,
             // Same statement-form test as `exprTail`/`lowerIfExpr`: a trailing
             // `if` with two void arms leaves the function empty-handed, so it
             // must not be given a `(result …)`.
@@ -2490,6 +2492,10 @@ const Emitter = struct {
                 .grouped => |inner| self.exprTail(inner.*),
                 else => .value,
             },
+            .comptime_ => |ct| switch (ct.kind) {
+                .assert => .none,
+                else => .value,
+            },
             // Mirror `lowerIfExpr`: an `if` whose branches all end in a void
             // call is emitted in statement form and pushes nothing. Reporting
             // `.value` here made the statement loop `drop` an empty stack and
@@ -2716,7 +2722,10 @@ const Emitter = struct {
                 else
                     try self.note("continue outside a loop"),
             },
-            .comptime_ => try self.emit(zero),
+            .comptime_ => |ct| switch (ct.kind) {
+                .assert => |a| try self.lowerAssert(a, ct.loc),
+                else => try self.emit(zero),
+            },
             .function => |f| try self.lowerLambdaValue(f.kind.params, f.kind.body),
             .loop => |lp| try self.lowerLoop(lp),
             else => try self.noteF("unsupported expr: {s}", .{@tagName(e)}),
@@ -2729,6 +2738,24 @@ const Emitter = struct {
 
     /// `try expr catch handler` → load the tag; Ok yields `[ptr+4]`, Error runs
     /// the handler. Leaves the resulting value on the stack.
+    /// `assert cond[, msg]` — always fatal (decision 4 of the 1.0.2-beta
+    /// semantics decisions): when `cond` is false the module writes
+    /// `<module>.bp:<line>: assertion failed[: <msg>]` to stderr and traps.
+    fn lowerAssert(self: *Emitter, a: anytype, loc: ast.Loc) anyerror!void {
+        try self.lowerCoerced(a.condition.*, "i32");
+        try self.emit(opOf("i32", "eqz"));
+        var then_c: Capture = .{};
+        self.open(&then_c);
+        const file = if (self.module_name.len > 0) self.module_name else "main";
+        const where = try self.internString(try std.fmt.allocPrint(self.arena(), "{s}.bp:{d}", .{ file, loc.line }));
+        try self.emit(try self.constInt(where.offset));
+        if (a.message) |m| try self.lowerCoerced(m.*, "i32") else try self.emit(zero);
+        try self.emit(self.builder().helper(.assert_fail));
+        try self.emit(.@"unreachable");
+        const then_seq = self.seal(&then_c, .terminated);
+        try self.emit(.{ .@"if" = .{ .then = .{ .seq = then_seq } } });
+    }
+
     /// `throw e`. Inside a fn that returns a `@Result` the transform rewrites
     /// the common forms into `return __bp_error(e)`; one it left behind (inside
     /// a `case` arm, say) still returns the Error rather than trapping. Anywhere

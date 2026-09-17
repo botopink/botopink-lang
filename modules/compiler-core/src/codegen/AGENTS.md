@@ -526,6 +526,11 @@ first three are now enforced by the model, not by discipline:
   (`lowerConcatOperand`): an integer through `$__i32_to_str`, a float through
   `$__f64_to_str` (the same digits `$__print_f64` writes), a bool as
   `true`/`false` — the rule erlang's E2 fix follows (`integer_to_binary/1`).
+- **`assert cond[, msg]` is always fatal** (decision 4 of the 1.0.2-beta
+  semantics decisions): a false condition writes
+  `<module>.bp:<line>: assertion failed[: <msg>]` to stderr
+  (`$__assert_fail` over `$__write_err`, fd 2) and traps. The harness records
+  both as the `RUNTIME TRAP (wasmtime):` block. It used to lower to nothing.
 - **`throw` inside a fn returning `@Result`** returns an Error Result
   (`lowerThrow`) — the transform rewrites the common forms into
   `return __bp_error(…)`, but a `throw` inside a `case` arm reaches the

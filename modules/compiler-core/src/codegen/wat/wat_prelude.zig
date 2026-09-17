@@ -37,6 +37,7 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         .str_slice => &str_slice_items,
         .print_arr_i32 => &.{ .{ .func = print_arr_i32_raw }, .{ .func = print_arr_i32 } },
         .print_arr_f32 => &.{ .{ .func = print_arr_f32_raw }, .{ .func = print_arr_f32 } },
+        .assert_fail => &.{ .{ .func = write_err }, .{ .func = assert_fail } },
         .print_opt => &.{
             .{ .func = print_undefined },    .{ .func = print_opt_i32_raw }, .{ .func = print_opt_i32 },
             .{ .func = print_opt_bool_raw }, .{ .func = print_opt_bool },    .{ .func = print_opt_str_raw },
@@ -1269,3 +1270,27 @@ const print_opt_str_raw = func("__print_opt_str_raw", &.{"s"}, null, &.{}, &.{
     whenElse(&.{call("__print_undefined")}, &.{ get("s"), call("__print_str_raw") }),
 });
 const print_opt_str = func("__print_opt_str", &.{"s"}, null, &.{}, &.{ get("s"), call("__print_opt_str_raw"), call("__print_nl") });
+
+/// `$__write_bytes` to stderr (fd 2), through the same iovec scratch.
+const write_err = func("__write_err", &.{ "p", "n" }, null, &.{}, &.{
+    c32(0), get("p"),         store(0),
+    c32(4), get("n"),         store(0),
+    c32(2), c32(0),           c32(1),
+    c32(8), call("fd_write"), .drop,
+});
+
+/// `<where>: assertion failed[: <msg>]` and a newline on stderr. `where` and
+/// `msg` are length-prefixed strings; `msg` 0 when the assert has none. The
+/// literal text goes through scratch `188..208`.
+const assert_fail = func("__assert_fail", &.{ "where", "msg" }, null, &.{}, &.{
+    get("where"), c32(4),                                                          op("add"),                     get("where"), load(0),                                                         call("__write_err"),
+    // ": assertion failed" — 18 bytes as two i64 words and a u16
+    c32(188),     .{ .@"const" = .{ .ty = .i64, .text = "8390880602276044858" } }, .{ .store = .{ .ty = .i64 } }, c32(196),     .{ .@"const" = .{ .ty = .i64, .text = "7811882119909502825" } }, .{ .store = .{ .ty = .i64 } },
+    c32(204),     c32(101),                                                        store8(0),                     c32(205),     c32(100),                                                        store8(0),
+    c32(188),     c32(18),                                                         call("__write_err"),           get("msg"),
+    when(&.{
+        c32(188),   c32(8250), .{ .store = .{} }, c32(188),   c32(2),  call("__write_err"),
+        get("msg"), c32(4),    op("add"),         get("msg"), load(0), call("__write_err"),
+    }),
+    c32(188),     c32(10),                                                         store8(0),                     c32(188),     c32(1),                                                          call("__write_err"),
+});
