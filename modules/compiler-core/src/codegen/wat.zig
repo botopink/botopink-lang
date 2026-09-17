@@ -486,6 +486,8 @@ const Emitter = struct {
     result_shape_fns: std.StringHashMap(ResultShape),
     result_shape_locals: std.StringHashMap(ResultShape),
     result_subjects: std.StringHashMap(ResultShape),
+    /// Locals bound to an optional no declaration names (an else-less `if`).
+    opt_locals: std.StringHashMap(OptInfo),
     /// Declared types the optional carrier needs to see: a fn's return type and
     /// parameter types, a local's / global's annotation (or the declared type
     /// of the call it was bound from), and every record field's type.
@@ -627,6 +629,7 @@ const Emitter = struct {
             .global_rec_types = std.StringHashMap([]const u8).init(alloc),
             .folded_globals = std.StringHashMap([]const u8).init(alloc),
             .fn_ret_typerefs = std.StringHashMap(ast.TypeRef).init(alloc),
+            .opt_locals = std.StringHashMap(OptInfo).init(alloc),
             .fn_param_typerefs = std.StringHashMap([]const ast.TypeRef).init(alloc),
             .local_typerefs = std.StringHashMap(ast.TypeRef).init(alloc),
             .global_typerefs = std.StringHashMap(ast.TypeRef).init(alloc),
@@ -688,6 +691,7 @@ const Emitter = struct {
         self.global_rec_types.deinit();
         self.folded_globals.deinit();
         self.fn_ret_typerefs.deinit();
+        self.opt_locals.deinit();
         self.fn_param_typerefs.deinit();
         self.local_typerefs.deinit();
         self.global_typerefs.deinit();
@@ -1163,6 +1167,7 @@ const Emitter = struct {
         self.aliases.clearRetainingCapacity();
         self.pattern_locals.clearRetainingCapacity();
         self.local_typerefs.clearRetainingCapacity();
+        self.opt_locals.clearRetainingCapacity();
         self.cur_ret_typeref = null;
         self.bool_locals.clearRetainingCapacity();
         self.pending_locals.clearRetainingCapacity();
@@ -2313,6 +2318,7 @@ const Emitter = struct {
                 .localBind => |lb| {
                     try self.declareLocal(lb.name, self.inferExprType(lb.value.*));
                     if (lb.typeAnnotation orelse self.typeRefOf(lb.value.*)) |tr| try self.local_typerefs.put(lb.name, tr);
+                    if (lb.typeAnnotation == null) if (self.optInfoOf(lb.value.*)) |oi| try self.opt_locals.put(lb.name, oi);
                     if (self.isStringExpr(lb.value.*)) try self.str_locals.put(lb.name, {});
                     if (self.isBoolExpr(lb.value.*)) try self.bool_locals.put(lb.name, {});
                     try self.noteArrayLocal(lb.name, lb.value.*);
@@ -4808,6 +4814,16 @@ const Emitter = struct {
     /// The optional an expression evaluates to, when it is one.
     fn optInfoOf(self: *Emitter, e: ast.Expr) ?OptInfo {
         switch (e) {
+            // An `if` with no `else` in value position: absent when the
+            // condition is false (its value when false is the language
+            // question decision 2 answers; the `0` here is none).
+            .branch => |b| switch (b.kind) {
+                .if_ => |i| if (i.else_ == null and !ifIsStatementForm(i) and !branchIsVoid(i.then_)) {
+                    if (self.bodyIsString(i.then_)) return .{ .boxed = false, .str = true };
+                },
+                else => {},
+            },
+
             .call => |c| switch (c.kind) {
                 .call => |cc| if (self.primKindAt(cc, c.loc)) |k| if (k == .array and
                     (std.mem.eql(u8, cc.callee, "at") or std.mem.eql(u8, cc.callee, "first")))
@@ -4820,6 +4836,7 @@ const Emitter = struct {
                 else => {},
             },
             .identifier => |id| switch (id.kind) {
+                .ident => |n| if (self.opt_locals.get(self.resolveName(n))) |oi| return oi,
                 // `recv?.field` of a scalar field is a boxed optional
                 .identAccess => |ia| if (ia.optional) {
                     const rty = self.recordTypeOfExpr(ia.receiver.*) orelse return null;

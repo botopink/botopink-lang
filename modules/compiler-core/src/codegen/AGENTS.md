@@ -628,7 +628,9 @@ first three are now enforced by the model, not by discipline:
   prints `undefined`), a `==`/`!=` against a value (none equals nothing),
   string `+` (none renders `undefined`) and `unwrapOr`/`map`/`flatMap` (a
   scalar `map` result is boxed again). `x == null` compares the offset with 0
-  whatever `x` holds. Which declarations say "optional" is read from the
+  whatever `x` holds. An `if` with no `else` whose arm yields a string is a
+  `?string` (absent when the condition is false) — what that value should be
+  is decision 2's question, not settled here. Which declarations say "optional" is read from the
   declared `TypeRef`s (`typeRefOf`: params, return types, annotations, record
   fields, tuple elements); an `__bp_option_*` receiver of unknown type is
   taken as boxed unless its default is a string, record or array.
