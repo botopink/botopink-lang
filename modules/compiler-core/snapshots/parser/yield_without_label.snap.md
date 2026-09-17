@@ -54,6 +54,10 @@
                 "params": [
                   "item"
                 ],
+                "paramsLoc": {
+                  "line": 2,
+                  "col": 20
+                },
                 "body": [
                   {
                     "expr": {

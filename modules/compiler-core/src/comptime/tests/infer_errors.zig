@@ -667,3 +667,14 @@ test "infer error: record update ---- a wrong value type reds at the value (C11)
         \\val b = Person(..alice, age: "x");
     );
 }
+
+test "infer error: loop ---- a condition loop takes no parameter (N26)" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn f() {
+        \\    var i = 0;
+        \\    loop (i < 3) { x ->
+        \\        i = i + 1;
+        \\    };
+        \\}
+    );
+}

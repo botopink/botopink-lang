@@ -1495,17 +1495,24 @@ fn tryResolveEnumSectionPath(
     // `dotIdent` whose name is the FIRST segment.
     var segs: std.ArrayList([]const u8) = .empty;
     defer segs.deinit(env.arena);
+    // The location of each segment's node, parallel to `segs` (N17 — the
+    // caret of an unresolved path points at the offending segment).
+    var segLocs: std.ArrayList(ast.Loc) = .empty;
+    defer segLocs.deinit(env.arena);
     try segs.append(env.arena, leaf_member);
+    try segLocs.append(env.arena, loc);
     var cur: *const ast.Expr = leaf_receiver;
     while (true) {
         if (cur.* != .identifier) return null;
         switch (cur.*.identifier.kind) {
             .identAccess => |sub| {
                 try segs.append(env.arena, sub.member);
+                try segLocs.append(env.arena, cur.*.getLoc());
                 cur = sub.receiver;
             },
             .dotIdent => |name| {
                 try segs.append(env.arena, name);
+                try segLocs.append(env.arena, cur.*.getLoc());
                 break;
             },
             .ident => return null, // a regular `Color.Red.X` chain — not a section path
@@ -1513,6 +1520,7 @@ fn tryResolveEnumSectionPath(
     }
     // segs is leaf→head; reverse to head→leaf for path walking.
     std.mem.reverse([]const u8, segs.items);
+    std.mem.reverse(ast.Loc, segLocs.items);
     if (segs.items.len < 2) return null;
 
     // Search every registered enum for one whose top-level variant matches
@@ -1522,6 +1530,7 @@ fn tryResolveEnumSectionPath(
     // raise ES4 with a focused message instead of bubbling a confusing
     // generic "unknown field" error from the fall-through code.
     var enum_with_head: ?[]const u8 = null;
+    var enum_def_with_head: ?envMod.TypeDef.Enum = null;
     var it = env.typeDefs.iterator();
     while (it.next()) |entry| {
         const td = entry.value_ptr.*;
@@ -1543,6 +1552,7 @@ fn tryResolveEnumSectionPath(
         // bad tail is an ES4 candidate.
         if (enum_with_head == null and headSectionVariantOn(en, segs.items[0])) {
             enum_with_head = en.name;
+            enum_def_with_head = en;
         }
     }
 
@@ -1564,10 +1574,38 @@ fn tryResolveEnumSectionPath(
             "enum \"{s}\" has no path \"{s}\" (ES4 — enum-sections path resolution)",
             .{ owner, path_text },
         );
-        env.lastError = TypeError.custom(msg, "Check the section/variant chain against the enum declaration's `sections` tree; numeric leaves are matched under their declared digit form (`.Color.Red.500`).").withLoc(loc);
+        const bad = firstUnresolvedSectionSegment(env, enum_def_with_head.?, segs.items);
+        const badLoc = if (bad < segLocs.items.len) segLocs.items[bad] else loc;
+        env.lastError = TypeError.custom(msg, "Check the section/variant chain against the enum declaration's `sections` tree; numeric leaves are matched under their declared digit form (`.Color.Red.500`).").withLoc(badLoc);
         return error.TypeError;
     }
     return null;
+}
+
+/// Index of the first segment of `path` that does not name a variant or a
+/// section wrapper on the way down `en`'s section tree.
+fn firstUnresolvedSectionSegment(env: *Env, en: envMod.TypeDef.Enum, path: []const []const u8) usize {
+    var current = en;
+    for (path, 0..) |seg, i| {
+        var matched: ?envMod.VariantDef = null;
+        for (current.variants) |v| {
+            if (std.mem.eql(u8, v.name, seg) or
+                (looksNumeric(seg) and v.name.len > 1 and v.name[0] == '_' and v.name[1] == '_' and std.mem.eql(u8, v.name[2..], seg)))
+            {
+                matched = v;
+                break;
+            }
+        }
+        const variant = matched orelse return i;
+        if (i + 1 == path.len) return path.len;
+        if (variant.fields.len != 1 or !std.mem.eql(u8, variant.fields[0].name, "_inner")) return i + 1;
+        const inner_type = variant.fields[0].type_.deref();
+        if (inner_type.* != .named) return i + 1;
+        const inner_def = env.lookupTypeDef(inner_type.named.name) orelse return i + 1;
+        if (inner_def != .enum_) return i + 1;
+        current = inner_def.enum_;
+    }
+    return path.len;
 }
 
 /// True iff `enum_def` has a section-wrapper variant named `head`. Used
@@ -6074,6 +6112,16 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
             ).withLoc(loc);
             return error.TypeError;
         }
+    }
+
+    // Decision 8 §10: `loop (condition) { … }` repeats while the condition
+    // holds and binds nothing — a parameter on it is an error at the parameter.
+    if (!lp.awaitLoop and lp.indexRange == null and iterTyped.getType().deref().isNamed("bool") and lp.params.len > 0) {
+        env.lastError = TypeError.custom(
+            "a condition loop takes no parameter",
+            "`loop (condition) { … }` binds nothing; iterate a collection with `loop (xs) { x -> … }`.",
+        ).withLoc(lp.paramsLoc);
+        return error.TypeError;
     }
 
     for (lp.params) |p| {

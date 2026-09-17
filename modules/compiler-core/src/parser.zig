@@ -131,6 +131,10 @@ pub const ParseErrorType = enum {
     removedKeywordInterface,
     /// `record { x: 1 }` — anonymous records are tuples in 1.0.3.
     removedRecordLiteral,
+    /// `while (cond) { … }` — `while` is not part of the language (decision 8 §10).
+    removedKeywordWhile,
+    /// `throw new Error(…)` — `new` is not a keyword (06 N27).
+    removedKeywordNew,
     /// `{ x: i32 }` in type position — anonymous record types are tuples in 1.0.3.
     removedRecordType,
     /// `type P()` — an empty field list; a record with no fields omits `()`.

@@ -59,9 +59,11 @@ tests/language/run.sh --compiler <botopink> --only test/case_arms.bp
 Coverage: 31 files besides the three smoke files — `case` (§5) 6 test + 1 run + 9 reject, tuples (§6)
 5 test + 1 run + 2 reject, `loop` (§10) 5 test + 2 reject.
 
-Classification at `botopink-lang` `feat` `ed575b5` (front 12 landed): both targets together, 63
-results pass and 33 are expected failures — 06 N19–N22 and N26 (the `case`-arm syntax, unions,
-`unknown`, `is`, `loop (condition)`, `while`), 01 step 6 (tuple equality on commonJS, the print text).
+Classification at `botopink-lang` `fix/checker` step 1 (06 G0 on top of `aa24146`): both targets
+together, 65 results pass and 35 are expected failures — 06 N19–N22 (the `case`-arm syntax, unions,
+`unknown`, `is`), 01 step 6 (tuple equality on commonJS, the print text, and the run-time lowering of
+`loop (condition)` / `loop { … }`, which 06 N26 now parses and checks; `while` and a parameter on a
+condition loop are refused).
 Front 12 step 4 closed its two rows (`.N` on erlang, `t.0.1`).
 
 `zig build test-language` is a stage of `scripts/gate.sh` (after `test-libs`) and a step of the CI

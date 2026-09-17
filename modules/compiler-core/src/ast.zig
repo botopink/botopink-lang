@@ -505,6 +505,8 @@ pub fn LoopExprOf(comptime phase: Phase) type {
         iter: *ExprOf(phase),
         indexRange: ?*ExprOf(phase),
         params: []const []const u8,
+        /// Location of the first parameter (the loop's own location when it has none).
+        paramsLoc: Loc = .{ .line = 0, .col = 0 },
         body: []StmtOf(phase),
         /// `loop await (iter) { ... }` ---- iterate an `@AsyncIterator`, awaiting each item.
         awaitLoop: bool = false,

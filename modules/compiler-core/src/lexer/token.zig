@@ -67,9 +67,7 @@ pub const TokenKind = enum {
     auto,
     await,
     case,
-    @"const", // reserved, not used in surface syntax
     default,
-    delegate,
     derive,
     @"else",
     /// `record`, `enum`, `interface`: NOT produced by the lexer since 1.0.3 —
@@ -89,7 +87,6 @@ pub const TokenKind = enum {
     import,
     macro,
     mod,
-    new,
     @"opaque",
     private,
     @"pub",

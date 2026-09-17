@@ -707,7 +707,6 @@ pub const Lexer = struct {
         if (std.mem.eql(u8, text, "case")) return .case;
         // 'const' is not a surface keyword in botopink; use 'val' instead.
         if (std.mem.eql(u8, text, "default")) return .default;
-        if (std.mem.eql(u8, text, "delegate")) return .delegate;
         if (std.mem.eql(u8, text, "else")) return .@"else";
         if (std.mem.eql(u8, text, "extend")) return .extend;
         if (std.mem.eql(u8, text, "extends")) return .extends;
@@ -720,7 +719,6 @@ pub const Lexer = struct {
         if (std.mem.eql(u8, text, "import")) return .import;
         // `let` is an alias for `val` (immutable binding)
         if (std.mem.eql(u8, text, "mod")) return .mod;
-        if (std.mem.eql(u8, text, "new")) return .new;
         if (std.mem.eql(u8, text, "pub")) return .@"pub";
         if (std.mem.eql(u8, text, "return")) return .@"return";
         if (std.mem.eql(u8, text, "Self")) return .selfType;
@@ -754,7 +752,6 @@ pub const Lexer = struct {
 /// used as an identifier in botopink.
 pub fn isReservedWord(kind: TokenKind) bool {
     return switch (kind) {
-        .delegate,
         .@"else",
         .implement,
         .@"test",
@@ -766,7 +763,6 @@ pub fn isReservedWord(kind: TokenKind) bool {
 /// Returns the lexeme string for a reserved word TokenKind.
 pub fn reservedWordLexeme(kind: TokenKind) []const u8 {
     return switch (kind) {
-        .delegate => "delegate",
         .@"else" => "else",
         .implement => "implement",
         .@"test" => "test",

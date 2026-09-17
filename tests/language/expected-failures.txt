@@ -40,9 +40,11 @@ commonJS | run/tuple_print.bp         | 01 step 6 | prints decision 1a's text wi
 erlang   | run/tuple_print.bp         | 01 step 6 | prints decision 1a's text without spaces (`#(1,"a")`); §7 wants `#(1, "a")`
 
 # ── §10 loop ──────────────────────────────────────────────────────────────────
-commonJS | test/loop_condition.bp     | 06 N26 | `loop (condition) { … }` does not parse
-erlang   | test/loop_condition.bp     | 06 N26 | `loop (condition) { … }` does not parse
-commonJS | test/loop_break.bp         | 06 N26 | `loop { … break; }` and `loop (condition)` do not parse
-erlang   | test/loop_break.bp         | 06 N26 | `loop { … break; }` and `loop (condition)` do not parse
-*        | reject/loop_while.bp                  | 06 N26 | `while (…)` is reported as "unbound variable 'while'", not "use loop (condition)"
-*        | reject/loop_condition_parameter.bp    | 06 N26 | a parameter on a condition loop is accepted (read as a loop over a bool)
+commonJS | test/loop_condition.bp::§10 a condition loop repeats while true | 01 step 6 | `loop (condition)` checks (06 N26) but commonJS still iterates the bool (`.entries is not a function`)
+commonJS | test/loop_condition.bp::§10 a condition false on entry runs no iteration | 01 step 6 | same: no run-time lowering of `loop (condition)` yet
+commonJS | test/loop_condition.bp::§10 several outer vars reassigned inside a condition loop | 01 step 6 | same: no run-time lowering of `loop (condition)` yet
+erlang   | test/loop_condition.bp     | 01 step 6 | `loop (condition)` checks (06 N26); the erlang module does not compile — no lowering of a loop over a bool yet
+commonJS | test/loop_break.bp::§10 an unconditioned loop stops at break | 01 step 6 | `loop { … }` checks (06 N26) as `loop (true)`; commonJS iterates the bool
+commonJS | test/loop_break.bp::§10 break inside a condition loop | 01 step 6 | same: no run-time lowering of `loop (condition)` yet
+commonJS | test/loop_break.bp::§10 break leaves only the inner loop | 01 step 6 | same: no run-time lowering of `loop (condition)` yet
+erlang   | test/loop_break.bp         | 01 step 6 | `loop { … }` / `loop (condition)` check (06 N26); the erlang module does not compile — no lowering yet

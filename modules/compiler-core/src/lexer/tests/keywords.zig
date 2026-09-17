@@ -51,11 +51,13 @@ test "lexer: standalone semicolon is tokenized" {
     try std.testing.expectEqual(TokenKind.semicolon, tokens[0].kind);
 }
 
-test "lexer: 'delegate' is recognized as KwDelegate (reserved word)" {
-    var l = Lexer.init("delegate");
-    const tokens = try l.scanAll(std.testing.allocator);
-    defer l.deinit(std.testing.allocator);
-    try std.testing.expectEqual(TokenKind.delegate, tokens[0].kind);
+test "lexer: 'delegate', 'new' and 'const' are identifiers (06 N27)" {
+    for ([_][]const u8{ "delegate", "new", "const" }) |word| {
+        var l = Lexer.init(word);
+        const tokens = try l.scanAll(std.testing.allocator);
+        defer l.deinit(std.testing.allocator);
+        try std.testing.expectEqual(TokenKind.identifier, tokens[0].kind);
+    }
 }
 
 test "lexer: 'implement' is recognized as implement (reserved word)" {
@@ -66,7 +68,6 @@ test "lexer: 'implement' is recognized as implement (reserved word)" {
 }
 
 test "lexer: isReservedWord returns true for reserved words" {
-    try std.testing.expect(lexerFull.isReservedWord(.delegate));
     try std.testing.expect(lexerFull.isReservedWord(.@"else"));
     try std.testing.expect(lexerFull.isReservedWord(.implement));
     try std.testing.expect(lexerFull.isReservedWord(.@"test"));
@@ -75,7 +76,6 @@ test "lexer: isReservedWord returns true for reserved words" {
 test "lexer: isReservedWord returns false for normal identifiers" {
     try std.testing.expect(!lexerFull.isReservedWord(.identifier));
     try std.testing.expect(!lexerFull.isReservedWord(.@"var"));
-    try std.testing.expect(!lexerFull.isReservedWord(.@"const"));
     try std.testing.expect(!lexerFull.isReservedWord(.@"fn"));
     try std.testing.expect(!lexerFull.isReservedWord(.val));
 }
