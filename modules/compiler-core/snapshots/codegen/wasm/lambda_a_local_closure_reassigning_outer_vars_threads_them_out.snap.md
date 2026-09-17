@@ -65,10 +65,22 @@ fn main() {
     local.get $emit
     local.set $__fnv0
     local.get $__fnv0
+    local.get $out
+    i32.store offset=4 ;; sync out into env
+    local.get $__fnv0
+    local.get $count
+    i32.store offset=8 ;; sync count into env
+    local.get $__fnv0
     i32.const 260
     local.get $__fnv0
     i32.load ;; table index
     call_indirect (param i32 i32) (result i32)
+    local.get $__fnv0
+    i32.load offset=4 ;; sync out from env
+    local.set $out
+    local.get $__fnv0
+    i32.load offset=8 ;; sync count from env
+    local.set $count
     drop
     local.get $words
     local.set $__iter1
@@ -93,10 +105,22 @@ fn main() {
     local.get $emit
     local.set $__fnv2
     local.get $__fnv2
+    local.get $out
+    i32.store offset=4 ;; sync out into env
+    local.get $__fnv2
+    local.get $count
+    i32.store offset=8 ;; sync count into env
+    local.get $__fnv2
     local.get $w
     local.get $__fnv2
     i32.load ;; table index
     call_indirect (param i32 i32) (result i32)
+    local.get $__fnv2
+    i32.load offset=4 ;; sync out from env
+    local.set $out
+    local.get $__fnv2
+    i32.load offset=8 ;; sync count from env
+    local.set $count
     drop
         local.get $__idx1
         i32.const 1
@@ -149,15 +173,20 @@ fn main() {
     i32.const 296
     call $__str_concat
     local.get $w
-    call $__i32_to_str
     call $__str_concat
     i32.const 304
     call $__str_concat
     local.set $out
+    local.get $__env
+    local.get $out
+    i32.store offset=4 ;; write out back to env
     local.get $count
     i32.const 1
     i32.add
     local.set $count
+    local.get $__env
+    local.get $count
+    i32.store offset=8 ;; write count back to env
     i32.const 0
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
@@ -498,5 +527,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
- 0
+<start><a><b> 3
 ```
