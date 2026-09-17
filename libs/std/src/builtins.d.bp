@@ -442,14 +442,17 @@ pub record Method {
     annotations: DeclAnnotation[],
 }
 
-// The reflection handle. `kind`/`name`/`fields`/`methods`/`returnType`/
+// The reflection handle. `kind`/`name`/`fields`/`variants`/`methods`/`returnType`/
 // `annotations` are read-only data (serialized like a template's capture);
+// `variants` lists an enum-shaped `type`'s variant and section names and is
+// empty otherwise — `kind == DeclKind.Type && variants.length == 0` is a record;
 // `fail`/`failAt` emit a scoped diagnostic at the annotated declaration, reusing
 // the template diagnostic surface.
 pub interface Decl {
     val kind: DeclKind
     val name: string
     val fields: Field[]
+    val variants: string[]
     val methods: Method[]
     val returnType: string
     val annotations: DeclAnnotation[]

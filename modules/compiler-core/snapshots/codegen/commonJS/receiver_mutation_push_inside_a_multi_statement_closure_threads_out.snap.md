@@ -74,6 +74,7 @@ main() ->
                 },
                 #{name => <<"name">>, typeName => <<"string">>, annotations => []}
             ],
+            variants => [],
             methods => [],
             returnType => <<"">>,
             annotations => [#{name => <<"component">>, args => []}]

@@ -52,6 +52,7 @@ main() ->
                 #{name => <<"secret">>, typeName => <<"string">>, annotations => []},
                 #{name => <<"age">>, typeName => <<"i32">>, annotations => []}
             ],
+            variants => [],
             methods => [],
             returnType => <<"">>,
             annotations => [#{name => <<"describe">>, args => []}]

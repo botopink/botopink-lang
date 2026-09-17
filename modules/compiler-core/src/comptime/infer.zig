@@ -2362,10 +2362,16 @@ fn invokeDecorators(env: *Env, program: ast.Program) InferError!void {
                 }
             },
             .enum_ => {
+                const vs = tdecl.variants();
+                const secs = tdecl.sections();
+                const names = try env.arena.alloc([]const u8, vs.len + secs.len);
+                for (vs, 0..) |v, i| names[i] = v.name;
+                for (secs, 0..) |sec, i| names[vs.len + i] = sec.name;
                 const h = decoratorEval.DeclHandle{
                     .kind = "Type",
                     .name = tdecl.name,
                     .fields = &.{},
+                    .variants = names,
                     .methods = tdecl.methods,
                     .returnType = "",
                     .annotations = tdecl.annotations,

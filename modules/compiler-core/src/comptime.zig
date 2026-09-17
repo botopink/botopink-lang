@@ -584,6 +584,7 @@ const decl_reflection_src =
     \\    val kind: DeclKind,
     \\    val name: string,
     \\    val fields: Field[],
+    \\    val variants: string[],
     \\    val methods: Method[],
     \\    val returnType: string,
     \\    val annotations: Annotation[],

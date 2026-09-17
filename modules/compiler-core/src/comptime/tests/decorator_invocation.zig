@@ -146,6 +146,30 @@ test "decorator invocation: @compilerError body accepts the right placement" {
     );
 }
 
+test "decorator invocation: decl.variants tells an enum-shaped type from a record" {
+    // `DeclKind.Type` covers both shapes; `decl.variants` is empty for a record
+    // and lists the variant names of an enum.
+    try assertRejects(@src(),
+        \\fn service(comptime decl: @Decl) {
+        \\    if (decl.kind != DeclKind.Type) { decl.fail("#[service] must annotate a record"); };
+        \\    if (decl.variants.length > 0) { decl.fail("#[service] must annotate a record"); }
+        \\}
+        \\#[service]
+        \\enum Mode { Fast, Slow }
+    , "must annotate a record");
+}
+
+test "decorator invocation: decl.variants is empty on a record" {
+    try assertAccepts(@src(),
+        \\fn service(comptime decl: @Decl) {
+        \\    if (decl.kind != DeclKind.Type) { decl.fail("#[service] must annotate a record"); };
+        \\    if (decl.variants.length > 0) { decl.fail("#[service] must annotate a record"); }
+        \\}
+        \\#[service]
+        \\record UserService { name: string }
+    );
+}
+
 // ── wiring contribution: a body emits generated declarations (P3) ──────────────
 
 test "decorator invocation: @emit contributes a top-level declaration" {
