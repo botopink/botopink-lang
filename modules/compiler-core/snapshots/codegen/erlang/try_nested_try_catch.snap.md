@@ -34,12 +34,20 @@ outer() ->
     {error, #{msg => <<"timeout">>}}.
 
 process() ->
-    A = case inner() of
+    A = case try
+        inner()
+    catch
+        error:_TryR0 -> {error, _TryR0}
+    end of
         {ok, TryV0} -> TryV0;
         {error, _TryE0} ->
             0
     end,
-    B = case outer() of
+    B = case try
+        outer()
+    catch
+        error:_TryR1 -> {error, _TryR1}
+    end of
         {ok, TryV1} -> TryV1;
         {error, _TryE1} ->
             A

@@ -24,7 +24,11 @@ parse(Self) ->
     erlang:throw(#{msg => <<"bad input">>}).
 
 run(P) ->
-    Result = case parse(P) of
+    Result = case try
+        parse(P)
+    catch
+        error:_TryR0 -> {error, _TryR0}
+    end of
         {ok, TryV0} -> TryV0;
         {error, _TryE0} ->
             0

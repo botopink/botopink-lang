@@ -42,13 +42,21 @@ outer(Should_fail) ->
     end.
 
 main() ->
-    R = case outer(false) of
+    R = case try
+        outer(false)
+    catch
+        error:_TryR0 -> {error, _TryR0}
+    end of
         {ok, TryV0} -> TryV0;
         {error, _TryE0} ->
             (-1)
     end,
     '__bp_print'([R]),
-    R2 = case outer(true) of
+    R2 = case try
+        outer(true)
+    catch
+        error:_TryR1 -> {error, _TryR1}
+    end of
         {ok, TryV1} -> TryV1;
         {error, _TryE1} ->
             (-1)

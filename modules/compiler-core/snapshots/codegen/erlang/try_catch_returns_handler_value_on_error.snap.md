@@ -28,7 +28,11 @@ maybeFail(Should_fail) ->
     end.
 
 main() ->
-    V = case maybeFail(true) of
+    V = case try
+        maybeFail(true)
+    catch
+        error:_TryR0 -> {error, _TryR0}
+    end of
         {ok, TryV0} -> TryV0;
         {error, _TryE0} ->
             (-1)

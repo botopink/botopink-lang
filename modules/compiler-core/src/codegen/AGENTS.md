@@ -260,7 +260,9 @@ codegen/
   remote `list:map(…)`; a receiver naming a local record calls the local
   associated fn. A no-receiver call to a fn-typed local (`locals`) is a fun
   application `F(args)`.
-- **Control flow**: `try`/`catch` → `case … of {ok, V} -> …; {error, E} -> … end`;
+- **Control flow**: `try`/`catch` → `case … of {ok, V} -> …; {error, E} -> … end`,
+  whose subject runs inside `try … catch error:R -> {error, R} end` — `@todo()` /
+  `@panic` in a `#[@result]` callee raise, and a `case` alone cannot catch that;
   an `if` whose then-branch returns nests the rest of the body in the false arm
   (`emitEarlyReturnIf`). `a..b` → `lists:seq(A, B - 1)`. `&&`/`||` are
   `andalso`/`orelse` — botopink short-circuits, erlang's `and`/`or` do not.

@@ -23,7 +23,11 @@ fetch() ->
     {error, 'NotFound'}.
 
 handle() ->
-    R = case fetch() of
+    R = case try
+        fetch()
+    catch
+        error:_TryR0 -> {error, _TryR0}
+    end of
         {ok, TryV0} -> TryV0;
         {error, _TryE0} ->
             0
