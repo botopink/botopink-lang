@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record LoadError { msg: string }
+type LoadError(msg: string)
 #[@result]
 fn load() -> @Result<i32, LoadError> {
     throw LoadError(msg: "not found");
@@ -22,7 +22,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% record LoadError: msg
+%% type LoadError: msg
 
 load() ->
     {error, #{msg => <<"not found">>}}.

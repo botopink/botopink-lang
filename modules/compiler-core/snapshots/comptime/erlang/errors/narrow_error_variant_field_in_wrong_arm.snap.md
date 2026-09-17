@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-enum Shape {
+type Shape {
     Circle(radius: f64),
     Square(side: f64),
 }

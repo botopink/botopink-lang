@@ -21,7 +21,7 @@ pub declare fn debug(value: string);
 
 // ── result type ──────────────────────────────────────────────────────────────
 
-pub enum Result<R, E> {
+pub type Result<R, E> {
     Ok(result: R),
     Error(error: E),
 }
@@ -85,52 +85,52 @@ pub enum Result<R, E> {
 // is the lazy pull-based protocol — each call returns one of the three
 // variants below. F4I-tail's `transform.zig → @IteratorStep` rewrite
 // targets this same enum.
-pub interface Iterator<T, E = any, C = void> {
-    fn next(self: Self) -> IteratorStep<T, E, C>
+pub behavior Iterator<T, E = any, C = void> {
+    fn next(self: Self) -> IteratorStep<T, E, C>;
 }
 
-pub enum IteratorStep<T, E, C> {
+pub type IteratorStep<T, E, C> {
     Yield(value: T),
     Done(completion: C),
     Error(error: E),
 }
 
-pub interface Iterable<T, E = any, C = void> {
-    fn iter(self: Self) -> Iterator<T, E, C>
+pub behavior Iterable<T, E = any, C = void> {
+    fn iter(self: Self) -> Iterator<T, E, C>;
 }
 
 // ── generator ────────────────────────────────────────────────────────────────
 
-pub enum Yield<T, R> {
+pub type Yield<T, R> {
     Yielded(value: T),
     Done(result: R),
 }
 
-pub interface Generator<T, R> {
-    fn next(self: Self) -> Yield<T, R>
+pub behavior Generator<T, R> {
+    fn next(self: Self) -> Yield<T, R>;
 }
 
 // ── async ────────────────────────────────────────────────────────────────────
 
-pub interface Future<T, E = any> {
-    fn await(self: Self) -> Result<T, E>
-    fn map<R>(self: Self, transform: fn(value: T) -> R) -> Future<R, E>
-    fn flatMap<R>(self: Self, transform: fn(value: T) -> Future<R, E>) -> Future<R, E>
+pub behavior Future<T, E = any> {
+    fn await(self: Self) -> Result<T, E>;
+    fn map<R>(self: Self, transform: fn(value: T) -> R) -> Future<R, E>;
+    fn flatMap<R>(self: Self, transform: fn(value: T) -> Future<R, E>) -> Future<R, E>;
 }
 
 // ── async iterator ───────────────────────────────────────────────────────────
 
-pub interface AsyncIterator<T, E = any, C = void> {
-    fn next(self: Self) -> Future<IteratorStep<T, E, C>, E>
+pub behavior AsyncIterator<T, E = any, C = void> {
+    fn next(self: Self) -> Future<IteratorStep<T, E, C>, E>;
 }
 
 // ── context (hooks) ──────────────────────────────────────────────────────────
 
-pub interface Context<ContextBase, Return> { }
+pub behavior Context<ContextBase, Return> { }
 
 // ── annotation marker ────────────────────────────────────────────────────────
 //
-// Any `record`/`struct`/`enum` whose `implement` clause lists `Annotation` may
+// Any `type` whose `implement` clause lists `Annotation` may
 // be used as a builtin-style annotation: `#[MyMarker(field: value, …)]` on a
 // declaration is checked as a constructor call to the type — the same arity,
 // named-arg, default-value rules that govern any fn parameter list. For an
@@ -144,7 +144,7 @@ pub interface Context<ContextBase, Return> { }
 // annotation, and its codegen-side meaning is what readers (lib/framework
 // code) make of it.
 
-pub interface Annotation {
+pub behavior Annotation {
     default fn checkAnnotation(self: Self, comptime decl: Decl) { }
 }
 
@@ -152,21 +152,22 @@ pub interface Annotation {
 //
 // One variant per target. The single `template` string is interpreted by the
 // codegen renderer (`comptime/primOpTemplate.zig`): if it contains `$`, it's a
-// template with substitution markers (`$self`/`$0`/`$1`/`$stringify(...)`);
+// template with positional markers over the declared parameters (`$0` is `self`
+// on a method, then `$1`, … — decision 5) and `$stringify(...)`;
 // otherwise it's a bare host symbol (`"mod:sym"`/`"propertyName"`) the backend
 // wraps as `mod:sym(args, self)` or `recv.propertyName(args)`.
 //
 // Usage:
 //
-//   #[External.Erlang("lists:member($0, $self)"),
-//     External.Node("$self.includes($0)")]
+//   #[External.Erlang("lists:member($1, $0)"),
+//     External.Node("$0.includes($1)")]
 //   fn contains(self: Array<T>, x: T) -> bool
 //
 // The `inline` flag opts a `(target, method)` pair out of the dispatch table
 // so the backend's hand-coded shape keeps emitting (used only for arms whose
 // lowering escapes the template grammar — list-cons / BIF aliases / etc.).
 
-pub enum External implement Annotation {
+pub type External implement Annotation {
     Erlang(template: string, inline: bool = false),
     Node(template: string, inline: bool = false),
     Beam(template: string, inline: bool = false),
@@ -202,7 +203,7 @@ fn module() module
 
 // ── target enum ──────────────────────────────────────────────────────────────
 
-pub enum Target { Node, Typescript, Erlang, Beam, Wasm }
+pub type Target { Node, Typescript, Erlang, Beam, Wasm }
 
 // ── effect annotations ─────────────────────────────────────────────────────
 //
@@ -278,7 +279,7 @@ pub enum Target { Node, Typescript, Erlang, Beam, Wasm }
 //
 // Usage:
 //   #[@Host] pub fn failRaw(message: i32, param: i32, span: i32) {}
-pub enum Host implement Annotation {
+pub type Host implement Annotation {
     /// The function body is provided by the host's raw-infra WAT block.
     host,
 }
@@ -307,22 +308,22 @@ fn getContex<T>(comptime _: type) Context<T, any>
 // the companion types are top-level declarations (siblings of `Expr<E>`), not
 // nested members.
 
-pub record Span {
+pub type Span(
     start: i32,
     end: i32,
     line: i32,
-}
+)
 
 // One segment of a template: raw text, or a `${…}` interpolation hole whose
 // expression was already type-checked in the caller's scope (string holes —
 // interpolation follows the language's `+` coercion).
-pub enum Part {
+pub type Part {
     Text(text: string, span: Span),
     Interp(hole: Expr<string>, span: Span),
 }
 
 // What kind of top-level declaration a scope lookup resolved to.
-pub enum BindingKind {
+pub type BindingKind {
     Fn,
     Val,
     Record_,
@@ -332,29 +333,29 @@ pub enum BindingKind {
 
 // A name resolved in an expression's origin scope (V1: the caller module's
 // top-level declarations + imports — function locals are not visible).
-pub record Binding {
+pub type Binding(
     name: string,
     kind: BindingKind,
-}
+)
 
 // Where an expression was written: the declaration position in the origin file.
 // `file` is the module path ("" for main); `line`/`col` point at the template
 // literal's opening quote (1-based).
-pub record Source {
+pub type Source(
     file: string,
     line: i32,
     col: i32,
-}
+)
 
 // Everything a second-layer language (a DSL compiler running inside a template
 // function) needs about its input in one object: where the template was
 // declared, its raw text, and its shape. The origin scope is reached via
 // `lookup`/`bindings`; the segmented view via `parts`.
-pub record Context {
+pub type Context(
     source: Source,
     text: string,
     multiline: bool,
-}
+)
 
 // ── ExprCustom carrier (expr-custom) ─────────────────────────────────────────
 // A node of ANY embedded sub-language, in one canonical shape the core and the
@@ -364,36 +365,36 @@ pub record Context {
 // `kind`/`label` are opaque tags the lib picks; `span` indexes the
 // `Expr<string>` source text; `ref` optionally ties a node (a queried
 // collection, a column, …) to a caller-scope symbol via a `lookup` result.
-pub record CustomNode {
+pub type CustomNode(
     kind: string,             // lib-chosen tag: "select" / "field" / "predicate" / "literal" …
     span: Span,               // offsets into the template's source text
     label: string,            // tooling token category: "keyword"/"property"/"string"/"number"/"operator"
     ref: ?Binding,            // optional association to an origin-scope symbol
     children: CustomNode[],
-}
+)
 
 // What `ExprCustom<T>` carries: the executable expression plus the reference
 // tree. The `code` half travels the ordinary `Expr<T>` expansion path (spliced,
 // lowered to every backend — runtime behaviour is unchanged); the `ast` half is
 // stored by call-location and is reference-only (the language server reads it).
-pub record CustomExpr<T> {
+pub type CustomExpr<T>(
     code: Expr<T>,            // the botopink expression that actually runs
     ast: CustomNode,          // the sub-language tree, reference only
-}
+)
 
-pub interface Expr<E> {
-    fn text(self: Self) -> string
-    fn parts(self: Self) -> Part[]
-    fn source(self: Self) -> Source
-    fn context(self: Self) -> Context
-    fn lookup(self: Self, name: string) -> ?Binding
-    fn bindings(self: Self) -> Binding[]
-    fn build<R>(self: Self, source: string) -> Expr<R>
+pub behavior Expr<E> {
+    fn text(self: Self) -> string;
+    fn parts(self: Self) -> Part[];
+    fn source(self: Self) -> Source;
+    fn context(self: Self) -> Context;
+    fn lookup(self: Self, name: string) -> ?Binding;
+    fn bindings(self: Self) -> Binding[];
+    fn build<R>(self: Self, source: string) -> Expr<R>;
     // Pack a reference tree + the executable code into the custom return — a
     // template fn opts into tooling visibility by returning `ExprCustom<T>`.
-    fn custom<R>(self: Self, ast: CustomNode, code: Expr<R>) -> CustomExpr<R>
-    fn fail(self: Self, message: string)
-    fn failAt(self: Self, span: Span, message: string)
+    fn custom<R>(self: Self, ast: CustomNode, code: Expr<R>) -> CustomExpr<R>;
+    fn fail(self: Self, message: string);
+    fn failAt(self: Self, span: Span, message: string);
 }
 
 // ── Decl reflection model (annotation processors) ────────────────────────────
@@ -406,11 +407,9 @@ pub interface Expr<E> {
 // wiring. The core only provides the protocol (recognize → reflect → invoke).
 
 // Which kind of top-level declaration the annotation sits on.
-pub enum DeclKind {
-    Record,
-    Struct,
-    Enum,
-    Interface,
+pub type DeclKind {
+    Type,
+    Behavior,
     Fn,
     Method,
     Field,
@@ -418,46 +417,49 @@ pub enum DeclKind {
 
 // One annotation entry on a reflected declaration (`#[name(args…)]`). `args`
 // holds the raw argument lexemes in source order.
-pub record DeclAnnotation {
+pub type DeclAnnotation(
     name: string,
     args: string[],
-}
+)
 
 // One parameter of a reflected method/fn.
-pub record Param {
+pub type Param(
     name: string,
     typeName: string,
-}
+)
 
 // One field of a reflected record/struct, with its own annotations.
-pub record Field {
+pub type Field(
     name: string,
     typeName: string,
     annotations: DeclAnnotation[],
-}
+)
 
 // One method of a reflected record/struct/enum, with its own annotations.
-pub record Method {
+pub type Method(
     name: string,
     params: Param[],
     returnType: string,
     annotations: DeclAnnotation[],
-}
+)
 
-// The reflection handle. `kind`/`name`/`fields`/`methods`/`returnType`/
+// The reflection handle. `kind`/`name`/`fields`/`variants`/`methods`/`returnType`/
 // `annotations` are read-only data (serialized like a template's capture);
+// `variants` lists an enum-shaped `type`'s variant and section names and is
+// empty otherwise — `kind == DeclKind.Type && variants.length == 0` is a record;
 // `fail`/`failAt` emit a scoped diagnostic at the annotated declaration, reusing
 // the template diagnostic surface.
-pub interface Decl {
-    val kind: DeclKind
-    val name: string
-    val fields: Field[]
-    val methods: Method[]
-    val returnType: string
-    val annotations: DeclAnnotation[]
+pub behavior Decl {
+    val kind: DeclKind;
+    val name: string;
+    val fields: Field[];
+    val variants: string[];
+    val methods: Method[];
+    val returnType: string;
+    val annotations: DeclAnnotation[];
 
-    fn fail(self: Self, message: string)
-    fn failAt(self: Self, span: Span, message: string)
+    fn fail(self: Self, message: string);
+    fn failAt(self: Self, span: Span, message: string);
 }
 
 

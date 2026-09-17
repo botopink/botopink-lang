@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn make() -> i32 {
-    val r = record { a: 7, b: 11 };
+    val r = #(7, 11);
     return r;
 }
 ```
@@ -20,7 +20,8 @@ fn make() -> i32 {
   {label, 3}.
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
-    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 0, {list, [{atom, a}, {integer, 7}, {atom, b}, {integer, 11}]}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{integer, 7}, {integer, 11}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {deallocate, 1}.

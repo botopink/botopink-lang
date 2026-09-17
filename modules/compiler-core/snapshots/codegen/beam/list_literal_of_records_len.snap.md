@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record P { x: i32, y: i32 }
+type P(x: i32, y: i32)
 fn main() {
     val pts = [P(x: 1, y: 2), P(x: 3, y: 4)];
     @print(pts.len);

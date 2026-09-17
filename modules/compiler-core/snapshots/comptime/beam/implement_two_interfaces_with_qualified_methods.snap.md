@@ -1,12 +1,12 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val UsbCharger = interface {
-    fn Connect(self: Self),
+val UsbCharger = behavior {
+    fn Connect(self: Self);
 };
-val SolarCharger = interface {
-    fn Connect(self: Self),
+val SolarCharger = behavior {
+    fn Connect(self: Self);
 };
-val SmartCamera = record { batteryLevel: i32 };
+val SmartCamera = type(batteryLevel: i32);
 val CameraPowerCharger = implement UsbCharger, SolarCharger for SmartCamera {
     fn UsbCharger.Connect(self: Self) {
         @print("Connected via USB");

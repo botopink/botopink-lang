@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- models.bp
 ```botopink
-record Point { x: i32, y: i32 }
+type Point(x: i32, y: i32)
 ```
 
 ----- TYPED AST JSON -- models.json

@@ -52,11 +52,28 @@ pub fn parseBaseTypeRef(this: *This, alloc: std.mem.Allocator) ParseError!ast.Ty
             for (elems.items) |*e| e.deinit(alloc);
             elems.deinit(alloc);
         }
+        // `#(name: T, …)` — a labeled tuple type (decision 8 §6): every element
+        // carries a label, or none does.
+        const labeled = this.check(.identifier) and this.peekAt(1).kind == .colon;
+        var labels: std.ArrayList([]const u8) = .empty;
+        errdefer labels.deinit(alloc);
         while (!this.check(.rightParenthesis) and !this.check(.endOfFile)) {
+            if (labeled) {
+                if (!(this.check(.identifier) and this.peekAt(1).kind == .colon)) {
+                    this.parseError = ParseErrorInfo.fromToken(.unexpectedToken, this.peek());
+                    return ParseError.UnexpectedToken;
+                }
+                try labels.append(alloc, this.advance().lexeme);
+                _ = this.advance(); // ':'
+            }
             try elems.append(alloc, try this.parseTypeRef(alloc));
             if (!this.match(.comma)) break;
         }
         _ = try this.consume(.rightParenthesis);
+        if (labeled) return ast.TypeRef{ .labeledTuple = .{
+            .elems = try elems.toOwnedSlice(alloc),
+            .labels = try labels.toOwnedSlice(alloc),
+        } };
         return ast.TypeRef{ .tuple_ = try elems.toOwnedSlice(alloc) };
     }
     // fn(T1, T2) -> R ---- function type
@@ -69,15 +86,19 @@ pub fn parseBaseTypeRef(this: *This, alloc: std.mem.Allocator) ParseError!ast.Ty
             for (params.items) |*p| p.deinit(alloc);
             params.deinit(alloc);
         }
+        var names: std.ArrayList([]const u8) = .empty;
+        errdefer names.deinit(alloc);
+        var anyName = false;
 
         while (!this.check(.rightParenthesis) and !this.check(.endOfFile)) {
             // Optional `name:` prefix — `fn(next: T)` is accepted alongside the
-            // bare `fn(T)` form. The parameter name is documentation-only here
-            // (function types are positional), so it is parsed and discarded.
+            // bare `fn(T)` form. The name is documentation-only (function types
+            // are positional); it is kept for the formatter.
             if (this.check(.identifier) and this.peekAt(1).kind == .colon) {
-                _ = this.advance(); // name
+                try names.append(alloc, this.advance().lexeme); // name
                 _ = this.advance(); // ':'
-            }
+                anyName = true;
+            } else try names.append(alloc, "");
             try params.append(alloc, try this.parseTypeRef(alloc));
             if (!this.match(.comma)) break;
         }
@@ -96,28 +117,19 @@ pub fn parseBaseTypeRef(this: *This, alloc: std.mem.Allocator) ParseError!ast.Ty
         const returnPtr = try alloc.create(ast.TypeRef);
         returnPtr.* = returnType;
 
+        const nameSlice: []const []const u8 = if (anyName) try names.toOwnedSlice(alloc) else blk: {
+            names.deinit(alloc);
+            break :blk &.{};
+        };
         return ast.TypeRef{ .function = .{
             .params = paramsSlice,
             .returnType = returnPtr,
+            .paramNames = nameSlice,
         } };
     }
-    // { name: T, ... } — anonymous record type
+    // `{ name: T, … }` — the removed anonymous record type (1.0.3: a tuple type).
     if (this.check(.leftBrace)) {
-        _ = this.advance(); // consume '{'
-        var fields: std.ArrayList(ast.RecordTypeField) = .empty;
-        errdefer {
-            for (fields.items) |*f| f.typeRef.deinit(alloc);
-            fields.deinit(alloc);
-        }
-        while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
-            const nameTok = try this.consumeMemberName();
-            _ = try this.consume(.colon);
-            const fieldType = try this.parseTypeRef(alloc);
-            try fields.append(alloc, .{ .name = nameTok.lexeme, .typeRef = fieldType });
-            if (!this.match(.comma)) break;
-        }
-        _ = try this.consume(.rightBrace);
-        return ast.TypeRef{ .record_type = try fields.toOwnedSlice(alloc) };
+        return this.failRemovedAt(.removedRecordType, 0);
     }
     // @Name<T1, T2> — builtin type constructor
     if (this.check(.builtinIdent)) {

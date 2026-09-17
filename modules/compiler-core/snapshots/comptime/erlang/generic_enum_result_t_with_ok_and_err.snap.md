@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Result = enum <T> {
+val Result = type <T> {
     Ok(value: T),
     Err(message: string),
 };

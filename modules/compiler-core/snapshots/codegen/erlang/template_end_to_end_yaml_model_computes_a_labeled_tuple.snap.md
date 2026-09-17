@@ -2,7 +2,9 @@
 ```botopink
 pub fn conf<T>(comptime q: @Expr<string>) -> @Expr<T> {
     val t = q.text();
-    return @expr(record { port: 8000 + t.length, debug: true });
+    val port = 8000 + t.length;
+    val debug = true;
+    return @expr(#(port, debug));
 }
 val cfg = conf "yaml";
 fn main() {
@@ -14,7 +16,9 @@ fn main() {
 ```erlang
 conf(Q) ->
     T = text(Q),
-    expr(#{port => '__bp_add'(8000, '__bp_len'(T, length)), debug => true}).
+    Port = '__bp_add'(8000, '__bp_len'(T, length)),
+    Debug = true,
+    expr({Port, Debug}).
 
 main() ->
     try
@@ -28,9 +32,9 @@ main() ->
                     span => #{start => 0, 'end' => 4, line => 1}
                 }
             ],
-            source => #{file => <<"">>, line => 5, col => 16},
+            source => #{file => <<"">>, line => 7, col => 16},
             context => #{
-                source => #{file => <<"">>, line => 5, col => 16},
+                source => #{file => <<"">>, line => 7, col => 16},
                 text => <<"yaml">>,
                 multiline => false
             },
@@ -52,53 +56,41 @@ main() ->
 ```json
 {
   "value": {
-    "port": 8004,
-    "debug": true
+    "$tuple": [
+      8004,
+      true
+    ]
   },
   "kind": "value"
 }
 ```
 
------ JAVASCRIPT -- main.js
-```javascript
-function __bp_show(v, s, top, a) {
-    if ((typeof v === "string")) {
-        a.push(top ? v : (("\"" + Array.from(v, (c) => ((c === "\"") || (c === "\\")) ? ("\\" + c) : (c === "\n") ? "\\n" : (c === "\r") ? "\\r" : (c === "\t") ? "\\t" : c).join("")) + "\""));
-        return "%s";
-    }
-    if (Array.isArray(v)) {
-        const t = ((s != null) && (s[0] === "#"));
-        return (((t ? "#(" : "[") + v.map((e, i) => __bp_show(e, (s == null) ? null : t ? s[i + 1] : s[1], false, a)).join(",")) + (t ? ")" : "]"));
-    }
-    a.push(v);
-    return "%O";
-}
+----- ERLANG -- main.erl
+```erlang
+-module(main).
+-export(['_botopink_main'/0, main/1]).
 
-function __bp_print() {
-    const a = [];
-    const f = Array.from(arguments, (v, i) => __bp_show(v, null, true, a)).join(" ");
-    console.log.apply(console, [f, ...a]);
-}
+cfg() ->
+    {8004, true}.
 
-const cfg = ({ port: 8004, debug: true });
+main() ->
+    '__bp_print'([(element(1, cfg()) + 1)]).
 
-function main() {
-    __bp_print((cfg.port + 1));
-}
+'__bp_print'(Values) ->
+    io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
 
-function _botopink_main() {
-    main();
-}
-_botopink_main();
-```
+'__bp_show'(V, true) when is_binary(V) -> V;
+'__bp_show'(V, _) when is_binary(V) -> [$", [case C of $" -> "\\\""; $\\ -> "\\\\"; $\n -> "\\n"; $\r -> "\\r"; $\t -> "\\t"; _ -> C end || C <- unicode:characters_to_list(V)], $"];
+'__bp_show'(V, _) when is_list(V) -> [$[, lists:join(",", ['__bp_show'(E, false) || E <- V]), $]];
+'__bp_show'(V, _) when is_tuple(V), tuple_size(V) > 0, is_atom(element(1, V)), element(1, V) =/= true, element(1, V) =/= false, element(1, V) =/= undefined -> io_lib:format("~p", [V]);
+'__bp_show'(V, _) when is_tuple(V) -> ["#(", lists:join(",", ['__bp_show'(E, false) || E <- tuple_to_list(V)]), $)];
+'__bp_show'(V, _) -> io_lib:format("~p", [V]).
 
------ TYPESCRIPT TYPEDEF -- main.d.ts
-```typescript
+'_botopink_main'() ->
+    main().
 
-
-
-
-
+main(_Args) ->
+    '_botopink_main'().
 ```
 
 ----- RUN LOG -----

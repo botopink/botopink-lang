@@ -71,7 +71,7 @@ test "symbols: single fn binding" {
 test "symbols: record declaration" {
     const gpa = std.testing.allocator;
     const source =
-        \\val Point = record { x: i32, y: i32 };
+        \\val Point = type(x: i32, y: i32);
     ;
 
     var arena = std.heap.ArenaAllocator.init(gpa);
@@ -92,7 +92,7 @@ test "symbols: record declaration" {
 test "symbols: enum declaration" {
     const gpa = std.testing.allocator;
     const source =
-        \\val Color = enum { Red, Green, Blue };
+        \\val Color = type { Red, Green, Blue };
     ;
 
     var arena = std.heap.ArenaAllocator.init(gpa);
@@ -115,7 +115,7 @@ test "symbols: multiple declarations in order" {
     const source =
         \\val x = 1;
         \\fn f(a: i32) { return a; }
-        \\val Color = enum { Red };
+        \\val Color = type { Red };
     ;
 
     var arena = std.heap.ArenaAllocator.init(gpa);

@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record Config { port: i32, host: string }
+type Config(port: i32, host: string)
 val PartialCfg = partial(Config);
 ```
 

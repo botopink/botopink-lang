@@ -30,7 +30,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-// interface Function
+// behavior Function
 //   default fn identity(...)
 //   default fn compose(...)
 //   default fn flip(...)
@@ -55,7 +55,7 @@ Function.constant = function(x) {
 };
 };
 
-// interface Pair
+// behavior Pair
 //   default fn of(...)
 //   default fn first(...)
 //   default fn second(...)

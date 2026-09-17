@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record Person { name: string }
+type Person(name: string)
 fn firstName(p: Person) -> ?string { @todo(); }
 fn shout(s: string) -> ?string { @todo(); }
 fn greet(p: Person) -> string {
@@ -15,7 +15,7 @@ fn greet(p: Person) -> string {
 ```erlang
 -module(main).
 
-%% record Person: name
+%% type Person: name
 
 firstName(P) ->
     erlang:error({todo, <<"not implemented">>}).

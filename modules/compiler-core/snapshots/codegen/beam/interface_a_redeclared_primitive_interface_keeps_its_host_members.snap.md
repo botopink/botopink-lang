@@ -1,8 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-interface Number {
-    fn min(self: Self, other: Self) -> Self,
-    fn max(self: Self, other: Self) -> Self,
+behavior Number {
+    fn min(self: Self, other: Self) -> Self;
+    fn max(self: Self, other: Self) -> Self;
 
     default fn clamp(self: Self, lo: Self, hi: Self) -> Self {
         return self.max(lo).min(hi);

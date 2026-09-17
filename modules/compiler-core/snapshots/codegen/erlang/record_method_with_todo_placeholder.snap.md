@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record Unimplemented { id: i32,
+type Unimplemented(id: i32) {
     fn process(self: Self) -> string {
         return @todo();
     }
@@ -11,7 +11,7 @@ record Unimplemented { id: i32,
 ```erlang
 -module(main).
 
-%% record Unimplemented: id
+%% type Unimplemented: id
 
 process(Self) ->
     erlang:error({todo, "not implemented"}).

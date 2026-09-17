@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record RiskError { level: i32 }
+type RiskError(level: i32)
 #[@result]
 fn risky() -> @Result<i32, RiskError> {
     throw RiskError(level: 5);
@@ -14,7 +14,7 @@ fn safe() -> i32 {
 ```erlang
 -module(main).
 
-%% record RiskError: level
+%% type RiskError: level
 
 risky() ->
     {error, #{level => 5}}.

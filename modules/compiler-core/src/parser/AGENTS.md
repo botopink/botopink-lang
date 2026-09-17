@@ -32,7 +32,16 @@ parser/
 ├── AGENTS.md      ← you are here
 ├── types.zig      ← type-ref sub-grammar: parseTypeRef/BaseTypeRef/GenericParams/ImplementClause
 ├── patterns.zig   ← case/pattern sub-grammar: parseCaseExpr/parsePattern/SimplePattern/ListPattern
-├── decls.zig      ← declaration sub-grammar: val/fn/test/record/enum/interface/implement/extend/delegate/import + params
+├── decls.zig      ← declaration sub-grammar: val/fn/test/type/behavior/implement/extend/delegate/import + params;
+│                     the 1.0.3 `type`/`behavior` declarations: `parseTypeDecl`/`parseShorthandTypeDecl`
+│                     (shared `parseFieldList`, shape resolution, `type-*` diagnostics), `parseBehaviorDecl`/`parseShorthandBehaviorDecl`
+│                     (member separators: bodyless members end with `;` — `member-comma-separator` / `member-missing-semicolon`)
+├── template_markers.zig ← decision 5: `@External` template markers are positional over the declared parameters
+│                     (`$0` is `self` on a method). `Parser.parse` runs `normalizeProgram` once: it translates each
+│                     template to the renderers' receiver convention (`primOpTemplate.receiver_marker`, `$N` shifted;
+│                     `self`-first top-level fns on Erlang/Beam too), keeps the source in `Annotation.source_args`
+│                     (formatter, AST dump), and refuses `$self` / an out-of-range `$N` with a located
+│                     `template-self-marker` / `template-marker-out-of-range`
 ├── exprs.zig      ← expression sub-grammar: precedence climbing, primary/pipeline/local-bind/lambda/loop/range,
 │                     string templates (`${…}` re-scan), tagged calls
 ├── tests.zig      ← barrel: aggregates tests/<feature>.zig for test_root.zig
@@ -43,6 +52,7 @@ parser/
     ├── expressions.zig   ← operator/lambda/array/tuple/case/builtin/control-flow
     ├── destructuring.zig ← destructure/shorthand/assign
     ├── errors.zig        ← parse errors & cross-stage error-message units
+    ├── surface.zig       ← the 1.0.3 surface: `type` shapes, the field list, `behavior`, separators, and old-vs-new AST equality
     └── effect_rejections.zig ← parser-level `#[@<effect>]` rejections (R1/R2/R5…)
 ```
 
@@ -66,9 +76,9 @@ two additions for record/builder ergonomics:
 - **Function-type params may be named** — `fn(next: T)` parses alongside the
   bare `fn(T)`; the name is documentation-only (function types are positional)
   and is discarded.
-- **Anonymous record types** — `{ value: T, set: fn(T) }` parses to
-  `TypeRef.record_type` (a `[]RecordTypeField`), usable as any annotation /
-  return type; inference resolves it to a structural `Type.record`.
+- **The removed anonymous record type** — `{ value: T, … }` in type position
+  raises `removed-record-type` at the `{` (1.0.3: a labeled tuple type
+  `#(value: T, …)`).
 
 A non-`syntax` `name: fn(…)` param is parsed through `parseTypeRef` (a
 `TypeRef.function`, so its return may be an array — `fn() -> T[]`);
@@ -141,8 +151,13 @@ shapes (vocabulary in `libs/std/AGENTS.md`):
 At top level a comment is its **own** declaration (`DeclKind.comment`, with
 `is_module` / `is_doc`); the `docComment` / `comment` / `moduleComment` fields
 on the neighbouring declaration are left null by this path. Inside a fn body a
-comment is a statement carrying a loc. `nextId` is a **per-kind** counter, so
-record/interface/enum ids each start at 1 and advance independently.
+comment is a statement carrying a loc. `nextId` is a **per-kind** counter:
+records and enums are both `TypeDecl`s and share the `type` counter;
+interfaces are `BehaviorDecl`s on the `behavior` counter. Each starts at 1.
+Records and enums parse into one `DeclKind.type_` (`TypeDecl`, whose `shape` is
+`.record` fields or `.enum_` variants + sections); interfaces into
+`DeclKind.behavior` (`BehaviorDecl`). The surface syntax is still
+`record`/`enum`/`interface` (1.0.4-beta front 12 step 1).
 Both are pinned by snapshots (`comments_…`, `decl_ids_…`).
 
 ## Notes
@@ -162,7 +177,7 @@ Both are pinned by snapshots (`comments_…`, `decl_ids_…`).
 - **Enum sections**: an `Identifier { … }` item
   inside an enum body declares a *section* — a named grouping of nested
   variants — captured as `EnumSection { name, variants, sections }` and stored
-  on `EnumDecl.sections` alongside the flat `variants` slot. Sections nest
+  on the enum shape of the `TypeDecl` (`TypeShape.enum_.sections`) alongside the flat `variants` slot. Sections nest
   arbitrarily deep; inside a section body, pure-digit tokens (`100`, `4`) are
   permitted as terminal variant leaves (`EnumVariant.numeric = true`) — they
   cannot open further sections nor carry payload. Top-level enum bodies reject
@@ -170,3 +185,15 @@ Both are pinned by snapshots (`comments_…`, `decl_ids_…`).
   `(` = payload, `,`/`}` = bare). The comptime desugars the tree into the
   enum-of-enum form with mangled inner names; the parser only records the
   structure.
+
+## The removed 1.0.2 surface (front 12 step 4)
+
+`record`, `enum` and `interface` lex as identifiers. Where a declaration would
+start — top level, after annotations, after `pub`, or as a val-form body —
+`Parser.removedDeclKeywordAt` recognises the word when a name, `{`, `<` or `fn`
+follows, and `failRemovedDeclKeyword` records a located diagnostic:
+`removed-keyword-record`, `removed-keyword-enum`, `removed-keyword-interface`.
+`record {` in an expression (and `val lower = record { … }`) is
+`removed-record-literal`; `{` in type position is `removed-record-type`. The
+messages (`print.zig`) name the 1.0.3 spelling. The words stay usable as
+ordinary identifiers (`val record = 1`).

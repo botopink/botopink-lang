@@ -10,6 +10,7 @@ const types = @import("parser/types.zig");
 const patterns = @import("parser/patterns.zig");
 const decl_grammar = @import("parser/decls.zig");
 const exprs = @import("parser/exprs.zig");
+const template_markers = @import("parser/template_markers.zig");
 
 pub const Token = token.Token;
 pub const TokenKind = token.TokenKind;
@@ -17,9 +18,9 @@ pub const TokenKind = token.TokenKind;
 pub const ImportDecl = ast.ImportDecl;
 pub const ImportSource = ast.ImportSource;
 pub const ImportPath = ast.ImportPath;
-pub const InterfaceDecl = ast.InterfaceDecl;
-pub const InterfaceField = ast.InterfaceField;
-pub const InterfaceMethod = ast.InterfaceMethod;
+pub const BehaviorDecl = ast.BehaviorDecl;
+pub const BehaviorField = ast.BehaviorField;
+pub const BehaviorMethod = ast.BehaviorMethod;
 pub const Param = ast.Param;
 pub const Stmt = ast.Stmt;
 pub const Expr = ast.Expr;
@@ -29,8 +30,9 @@ pub const BranchExpr = ast.BranchExpr;
 pub const LoopExpr = ast.LoopExprOf(.untyped);
 pub const FunctionExpr = ast.FunctionExpr;
 pub const Loc = ast.Loc;
-pub const RecordDecl = ast.RecordDecl;
-pub const RecordField = ast.RecordField;
+pub const TypeDecl = ast.TypeDecl;
+pub const TypeShape = ast.TypeShape;
+pub const Field = ast.Field;
 pub const ImplementDecl = ast.ImplementDecl;
 pub const ExtendDecl = ast.ExtendDecl;
 pub const ImplementMethod = ast.ImplementMethod;
@@ -40,9 +42,7 @@ pub const GenericParam = ast.GenericParam;
 pub const ParamModifier = ast.ParamModifier;
 pub const CallArg = ast.CallArg;
 pub const TrailingLambda = ast.TrailingLambda;
-pub const EnumDecl = ast.EnumDecl;
 pub const EnumVariant = ast.EnumVariant;
-pub const EnumVariantField = ast.EnumVariantField;
 pub const EnumSection = ast.EnumSection;
 pub const FnDecl = ast.FnDecl;
 pub const ValDecl = ast.ValDecl;
@@ -94,7 +94,7 @@ pub const ParseErrorType = enum {
     effectOnDeclareForbidden,
     /// R2 (§2) — `interface I { #[@<effect>] fn … }`: interface methods are
     /// declarative — they express the effect through the return wrapper alone.
-    effectOnInterfaceMethodForbidden,
+    effectOnBehaviorMethodForbidden,
     /// R5 (§2) — more than one `#[@<effect>]` annotation on the same fn.
     effectDuplicateAnnotation,
     /// R16 / RG1 (§1G) — a generic parameter without a default follows one
@@ -120,6 +120,36 @@ pub const ParseErrorType = enum {
     /// blocks are written `#[…]`; the builtin marker `@` belongs on the
     /// annotation name (`#[@external(…)]`), not on the block.
     retiredAnnotationBlock,
+    /// `type P(x: i32) { A }` — a field list and a variant in the same
+    /// declaration: a `type` is a record (fields) or an enum (variants).
+    typeRecordWithVariants,
+    /// `record P { … }` — `record` was replaced by `type` in 1.0.3.
+    removedKeywordRecord,
+    /// `enum E { … }` — `enum` was replaced by `type` in 1.0.3.
+    removedKeywordEnum,
+    /// `interface I { … }` — `interface` was renamed to `behavior` in 1.0.3.
+    removedKeywordInterface,
+    /// `record { x: 1 }` — anonymous records are tuples in 1.0.3.
+    removedRecordLiteral,
+    /// `{ x: i32 }` in type position — anonymous record types are tuples in 1.0.3.
+    removedRecordType,
+    /// `type P()` — an empty field list; a record with no fields omits `()`.
+    typeEmptyFieldList,
+    /// `type S { fn f(self: Self) {} A }` — variants come before methods.
+    typeVariantAfterMethod,
+    /// `type P(val x: i32)` — the field list takes no `val` prefix.
+    typeFieldValPrefix,
+    /// A `,` after a member of a `type`/`behavior` body: members end with `;`
+    /// (bodyless) or `}` (with a body), never with `,`.
+    memberCommaSeparator,
+    /// A bodyless member of a `behavior` (`fn f(self: Self) -> i32`, `val x: T`)
+    /// without its terminating `;`.
+    memberMissingSemicolon,
+    /// `$self` in an `@External` template: markers are positional (decision 5),
+    /// `$0` is the first declared parameter — `self` on a method.
+    templateSelfMarker,
+    /// `$N` in an `@External` template past the declaration's parameters.
+    templateMarkerOutOfRange,
 };
 
 pub const ParseErrorInfo = struct {
@@ -196,10 +226,8 @@ pub const Parser = struct {
     pending_gt: bool = false,
     /// Auto-incrementing counters for unique IDs per declaration type.
     id_counters: struct {
-        interface: u32 = 0,
-        @"struct": u32 = 0,
-        record: u32 = 0,
-        @"enum": u32 = 0,
+        behavior: u32 = 0,
+        type: u32 = 0,
     } = .{},
     const This = @This();
 
@@ -283,12 +311,26 @@ pub const Parser = struct {
         // an expression (`print((1);`) does not, so record the token the
         // parser stopped on — callers render the location instead of a bare
         // error name.
-        return this.parseDecls(alloc) catch |err| {
+        var program = this.parseDecls(alloc) catch |err| {
             if (err == ParseError.UnexpectedToken and this.parseError == null) {
                 this.parseError = ParseErrorInfo.fromToken(.unexpectedToken, this.peek());
             }
             return err;
         };
+        // Decision 5: positional `@External` template markers, translated for
+        // the renderers; `$self` and an out-of-range `$N` are refused here.
+        if (template_markers.normalizeProgram(alloc, this.tokens, &program) catch |err| {
+            program.deinit(alloc);
+            return err;
+        }) |failure| {
+            program.deinit(alloc);
+            this.parseError = ParseErrorInfo.fromToken(switch (failure.kind) {
+                .selfMarker => .templateSelfMarker,
+                .indexOutOfRange => .templateMarkerOutOfRange,
+            }, failure.tok);
+            return ParseError.UnexpectedToken;
+        }
+        return program;
     }
 
     fn parseDecls(this: *This, alloc: std.mem.Allocator) ParseError!Program {
@@ -297,7 +339,14 @@ pub const Parser = struct {
             for (decls.items) |*d| d.deinit(alloc);
             decls.deinit(alloc);
         }
+        var blankBefore: std.ArrayList(bool) = .empty;
+        errdefer blankBefore.deinit(alloc);
         while (!this.check(.endOfFile)) {
+            const blank = if (this.current > 0) blk: {
+                const prev = this.tokens[this.current - 1];
+                break :blk this.peek().line > prev.line + std.mem.count(u8, prev.lexeme, "\n") + 1;
+            } else false;
+            try blankBefore.append(alloc, blank);
             const decl: DeclKind = if (this.check(.import)) blk: {
                 const d = try this.parseImportDecl(alloc);
                 _ = this.match(.semicolon);
@@ -316,22 +365,22 @@ pub const Parser = struct {
                 const d = try this.parseFnDecl(alloc);
                 _ = this.match(.semicolon);
                 break :blk .{ .@"fn" = d };
-            } else if (this.checkShorthand(.@"enum")) blk: {
-                const d = try this.parseShorthandEnumDecl(alloc);
+            } else if (this.checkShorthandNamed(.type)) blk: {
+                const d = try this.parseShorthandTypeDecl(alloc);
                 _ = this.match(.semicolon);
-                break :blk .{ .@"enum" = d };
-            } else if (this.checkShorthand(.record)) blk: {
-                const d = try this.parseShorthandRecordDecl(alloc);
+                break :blk .{ .type_ = d };
+            } else if (this.checkShorthand(.behavior)) blk: {
+                const d = try this.parseShorthandBehaviorDecl(alloc);
                 _ = this.match(.semicolon);
-                break :blk .{ .record = d };
+                break :blk .{ .behavior = d };
+            } else if (this.removedDeclKeywordAt(0) != null or
+                (this.check(.@"pub") and this.removedDeclKeywordAt(1) != null))
+            {
+                return this.failRemovedDeclKeyword(if (this.check(.@"pub")) 1 else 0);
             } else if (this.checkShorthandDelegate()) blk: {
                 const d = try this.parseShorthandDelegateDecl(alloc);
                 _ = this.match(.semicolon);
                 break :blk .{ .delegate = d };
-            } else if (this.checkShorthand(.interface)) blk: {
-                const d = try this.parseShorthandInterfaceDecl(alloc);
-                _ = this.match(.semicolon);
-                break :blk .{ .interface = d };
             } else if (this.checkNamedDecl(.implement)) blk: {
                 const d = try this.parseShorthandImplementDecl(alloc);
                 _ = this.match(.semicolon);
@@ -365,9 +414,13 @@ pub const Parser = struct {
                 const eff = if (isPub) this.peekAt(annEnd + 1).kind else tok;
                 const decl: DeclKind = switch (eff) {
                     .@"fn", .star => DeclKind{ .@"fn" = try this.parseFnDecl(alloc) },
-                    .@"enum" => DeclKind{ .@"enum" = try this.parseShorthandEnumDecl(alloc) },
-                    .record => DeclKind{ .record = try this.parseShorthandRecordDecl(alloc) },
-                    .interface => DeclKind{ .interface = try this.parseShorthandInterfaceDecl(alloc) },
+                    .identifier => {
+                        const off = if (isPub) annEnd + 1 else annEnd;
+                        if (this.removedDeclKeywordAt(off) != null) return this.failRemovedDeclKeyword(off);
+                        return ParseError.UnexpectedToken;
+                    },
+                    .type => DeclKind{ .type_ = try this.parseShorthandTypeDecl(alloc) },
+                    .behavior => DeclKind{ .behavior = try this.parseShorthandBehaviorDecl(alloc) },
                     // An ANNOTATED `declare fn` is the FFI declaration form
                     // (`@[external(…)] pub declare fn …;`), not a delegate.
                     .declare => DeclKind{ .@"fn" = try this.parseFnDecl(alloc) },
@@ -377,11 +430,13 @@ pub const Parser = struct {
                 _ = this.match(.semicolon);
                 break :blk decl;
             } else if (this.check(.commentNormal) or this.check(.commentDoc) or this.check(.commentModule)) blk: {
+                const trailing = decls.items.len > 0 and this.onPreviousTokenLine();
                 const tok = this.advance();
                 break :blk DeclKind{ .comment = .{
                     .text = commentText(tok.lexeme),
                     .is_module = tok.kind == .commentModule,
                     .is_doc = tok.kind == .commentDoc,
+                    .trailing = trailing,
                 } };
             } else {
                 // A bare `implement …` / `extend …` (optionally `pub`) with no name:
@@ -414,7 +469,12 @@ pub const Parser = struct {
             };
             try decls.append(alloc, decl);
         }
-        return Program{ .decls = try decls.toOwnedSlice(alloc) };
+        const declSlice = try decls.toOwnedSlice(alloc);
+        errdefer {
+            for (declSlice) |*d| d.deinit(alloc);
+            alloc.free(declSlice);
+        }
+        return Program{ .decls = declSlice, .blankLineBefore = try blankBefore.toOwnedSlice(alloc) };
     }
 
     /// Parses a top-level `mod Name;` / `pub mod Name;` module declaration.
@@ -455,24 +515,75 @@ pub const Parser = struct {
         const adjustedOffset = this.skipAnnotationsLookaheadFrom(baseOffset);
         const body = this.peekAt(adjustedOffset).kind;
         const bodyNext = this.peekAt(adjustedOffset + 1).kind;
+        if (body == .identifier and this.removedDeclKeywordAt(adjustedOffset) != null) {
+            const lexeme = this.peekAt(adjustedOffset).lexeme;
+            // `val x = record { a: 1 }` in a lower-case binding is the removed
+            // anonymous record literal; `val Point = record { … }` the removed
+            // declaration form. `val Name = interface fn(…)` was a delegate.
+            if (std.mem.eql(u8, lexeme, "record") and bodyNext == .leftBrace and this.valFormNameIsLower()) {
+                return this.failRemovedAt(.removedRecordLiteral, adjustedOffset);
+            }
+            return this.failRemovedDeclKeyword(adjustedOffset);
+        }
         return switch (body) {
-            .record => .{ .record = try this.parseRecordDecl(alloc) },
             .implement => .{ .implement = try this.parseImplementDecl(alloc) },
             .extend => .{ .extend = try this.parseExtendDecl(alloc) },
-            .@"enum" => .{ .@"enum" = try this.parseEnumDecl(alloc) },
             .declare => .{ .delegate = try this.parseDelegateDecl(alloc) },
-            .interface => if (bodyNext == .@"fn")
-                .{ .delegate = try this.parseDelegateDecl(alloc) }
-            else
-                .{ .interface = try this.parseInterfaceDecl(alloc) },
+            .type => switch (bodyNext) {
+                .lessThan, .leftParenthesis, .leftBrace, .implement => .{ .type_ = try this.parseTypeDecl(alloc) },
+                else => .{ .val = try this.parseValDecl(alloc) },
+            },
+            .behavior => .{ .behavior = try this.parseBehaviorDecl(alloc) },
             .@"fn" => .{ .@"fn" = try this.parseFnDeclFromVal(alloc) },
             else => .{ .val = try this.parseValDecl(alloc) },
         };
     }
 
+    /// The removed 1.0.2 declaration keyword at `offset` — `record`, `enum` or
+    /// `interface`, which lex as identifiers since 1.0.3 — when it is followed
+    /// by what a declaration would take (a name, `{`, `<` or `fn`). Null
+    /// otherwise, so the three words stay free as ordinary identifiers.
+    pub fn removedDeclKeywordAt(this: *This, offset: usize) ?ParseErrorType {
+        const tok = this.peekAt(offset);
+        if (tok.kind != .identifier) return null;
+        const next = this.peekAt(offset + 1).kind;
+        if (next != .identifier and next != .leftBrace and next != .lessThan and next != .@"fn") return null;
+        if (std.mem.eql(u8, tok.lexeme, "record")) return .removedKeywordRecord;
+        if (std.mem.eql(u8, tok.lexeme, "enum")) return .removedKeywordEnum;
+        if (std.mem.eql(u8, tok.lexeme, "interface")) return .removedKeywordInterface;
+        return null;
+    }
+
+    /// Records the targeted removed-keyword diagnostic at the keyword token.
+    pub fn failRemovedDeclKeyword(this: *This, offset: usize) ParseError {
+        const kind = this.removedDeclKeywordAt(offset) orelse .unexpectedToken;
+        return this.failRemovedAt(kind, offset);
+    }
+
+    pub fn failRemovedAt(this: *This, kind: ParseErrorType, offset: usize) ParseError {
+        const tok = this.peekAt(offset);
+        this.parseError = ParseErrorInfo.fromTokenSpan(kind, tok, tok.lexeme.len);
+        return ParseError.UnexpectedToken;
+    }
+
+    /// `val name = …` / `pub val name = …`: the bound name starts lower-case.
+    fn valFormNameIsLower(this: *This) bool {
+        const off: usize = if (this.check(.@"pub")) 2 else 1;
+        const name = this.peekAt(off).lexeme;
+        return name.len > 0 and std.ascii.isLower(name[0]);
+    }
+
     /// true if the current token is `kind`, or `pub` followed by `kind`.
     pub inline fn checkShorthand(this: *This, kind: TokenKind) bool {
         return this.check(kind) or (this.check(.@"pub") and this.peekAt(1).kind == kind);
+    }
+
+    /// true if `kind Name` or `pub kind Name` is next — for keywords that also
+    /// have a non-declaration meaning (`type` is the kind of types too).
+    pub inline fn checkShorthandNamed(this: *This, kind: TokenKind) bool {
+        if (this.check(kind)) return this.peekAt(1).kind == .identifier;
+        if (this.check(.@"pub")) return this.peekAt(1).kind == kind and this.peekAt(2).kind == .identifier;
+        return false;
     }
 
     /// true for a named shorthand decl `Name <kind> …` or `pub Name <kind> …`,
@@ -751,7 +862,7 @@ pub const Parser = struct {
                 // `prim-op-annotation` arity-branch label: `when($argc == N): "..."`
                 // is recognised before label-strip and spans through balanced parens
                 // + the `:` separator + the value, landing as one arg lexeme
-                // (`when($argc == 1): "lists:nthtail($0, $self)"`). Readers
+                // (`when($argc == 1): "lists:nthtail($1, $0)"`). Readers
                 // (`ast.externalArityBranchFor`) detect the `when(` prefix.
                 if (this.check(.identifier) and
                     std.mem.eql(u8, this.peek().lexeme, "when") and
@@ -788,7 +899,7 @@ pub const Parser = struct {
                 // assignment, `inline = true`) separators are accepted, keeping
                 // annotation args close to how fn params are written. The label is
                 // cosmetic at this layer; the value lands positionally so each
-                // annotation's reader (`FnDecl.externalFor` / `InterfaceMethod.externalFor`
+                // annotation's reader (`FnDecl.externalFor` / `BehaviorMethod.externalFor`
                 // + `hasExternalInline`, `parseExternalCallTemplate`, …) interprets it. See the
                 // `#[@External.<targert>(...)]` vocabulary in `libs/std/AGENTS.md`.
                 if (this.check(.identifier) and
@@ -934,8 +1045,18 @@ pub const Parser = struct {
     /// If the current token is a comment, consumes it and appends it as a comment
     /// literal statement to `stmts`, returning true. Otherwise returns false.
     /// `emptyLinesBefore` is recorded on the appended statement.
+    /// The current token starts on the line where the previous token ends —
+    /// a comment there is a trailing comment (`f(); // note`). False after `{`.
+    pub fn onPreviousTokenLine(this: *This) bool {
+        if (this.current == 0) return false;
+        const prev = this.tokens[this.current - 1];
+        if (prev.kind == .leftBrace) return false;
+        return this.peek().line == prev.line + std.mem.count(u8, prev.lexeme, "\n");
+    }
+
     pub fn tryParseCommentStmt(this: *This, alloc: std.mem.Allocator, stmts: *std.ArrayList(Stmt), emptyLinesBefore: u32) ParseError!bool {
         if (!this.check(.commentNormal) and !this.check(.commentDoc) and !this.check(.commentModule)) return false;
+        const trailing = this.onPreviousTokenLine() and stmts.items.len > 0;
         const tok = this.advance();
         const kind: ast.CommentKind = if (tok.kind == .commentDoc)
             .{ .doc = "" }
@@ -945,7 +1066,7 @@ pub const Parser = struct {
             .{ .normal = "" };
         const text = try alloc.dupe(u8, commentText(tok.lexeme));
         try stmts.append(alloc, .{
-            .expr = Expr{ .literal = .{ .loc = locFromToken(tok), .kind = .{ .comment = .{ .kind = kind, .text = text } } } },
+            .expr = Expr{ .literal = .{ .loc = locFromToken(tok), .kind = .{ .comment = .{ .kind = kind, .text = text, .trailing = trailing } } } },
             .emptyLinesBefore = emptyLinesBefore,
         });
         return true;
@@ -1026,25 +1147,21 @@ pub const Parser = struct {
 
     // ── interface decl ───────────────────────────────────────────────────────────
 
-    pub const parseInterfaceDecl = decl_grammar.parseInterfaceDecl;
-
-    pub const parseShorthandInterfaceDecl = decl_grammar.parseShorthandInterfaceDecl;
-
     pub const parseExtendsClause = decl_grammar.parseExtendsClause;
-
-    pub const parseInterfaceBody = decl_grammar.parseInterfaceBody;
-
-    pub const parseInterfaceMethod = decl_grammar.parseInterfaceMethod;
 
     pub const parseMethodDecl = decl_grammar.parseMethodDecl;
 
     // ── record decl ──────────────────────────────────────────────────────────
 
-    pub const parseRecordDecl = decl_grammar.parseRecordDecl;
+    pub const parseTypeDecl = decl_grammar.parseTypeDecl;
 
-    pub const parseShorthandRecordDecl = decl_grammar.parseShorthandRecordDecl;
+    pub const parseShorthandTypeDecl = decl_grammar.parseShorthandTypeDecl;
 
-    pub const parseRecordBody = decl_grammar.parseRecordBody;
+    pub const parseTypeDeclRest = decl_grammar.parseTypeDeclRest;
+
+    pub const parseBehaviorDecl = decl_grammar.parseBehaviorDecl;
+
+    pub const parseShorthandBehaviorDecl = decl_grammar.parseShorthandBehaviorDecl;
 
     // ── implement decl ────────────────────────────────────────────────────────────
 
@@ -1071,12 +1188,6 @@ pub const Parser = struct {
     pub const parseImplementMethod = decl_grammar.parseImplementMethod;
 
     // ── enum decl ─────────────────────────────────────────────────────────────
-
-    pub const parseEnumDecl = decl_grammar.parseEnumDecl;
-
-    pub const parseShorthandEnumDecl = decl_grammar.parseShorthandEnumDecl;
-
-    pub const parseEnumBody = decl_grammar.parseEnumBody;
 
     // ── case / pattern matching ────────────────────────────────────────────────
 
@@ -1295,4 +1406,8 @@ pub fn printListSpreadError(err: ListSpreadError, path: []const u8, line: usize,
     stderr.print(" {s}\n\n", .{msgs.message}) catch return;
     for (0..lineW + 1) |_| stderr.writeByte(' ') catch return;
     stderr.print("hint: {s}\n\n", .{msgs.hint}) catch return;
+}
+
+test {
+    _ = template_markers;
 }

@@ -46,9 +46,9 @@
 // Internal: read the host's current millisecond clock. The `unit`
 // argument is `1000` for millis; Node `Date.now` ignores it, Erlang
 // `erlang:system_time/1` uses it as the divisor selector.
-#[@External.Node("Date", "now"),
-  @External.Erlang("erlang", "system_time"),
-  @External.Beam("erlang", "system_time")]
+#[@External.Node("Date", "now")]
+#[@External.Erlang("erlang", "system_time")]
+#[@External.Beam("erlang", "system_time")]
 declare fn systemTimeWithUnit(unit: i32) -> i64;
 
 // Milliseconds since the Unix epoch. Monotonic across reasonable clock
@@ -65,9 +65,9 @@ pub fn nowMillis() -> i64 {
 // performance.now` and stripped `this`, reding with `Value of "this"
 // must be of type Performance` at the first call site. The template
 // renders inline at every call to `monotonicTimeWithUnit(N)`.
-#[@External.Node("performance.now($0)"),
-  @External.Erlang("erlang", "monotonic_time"),
-  @External.Beam("erlang", "monotonic_time")]
+#[@External.Node("performance.now($0)")]
+#[@External.Erlang("erlang", "monotonic_time")]
+#[@External.Beam("erlang", "monotonic_time")]
 declare fn monotonicTimeWithUnit(unit: i32) -> i64;
 
 // Monotonic milliseconds — the host's monotonic clock, suitable for
@@ -87,8 +87,8 @@ pub fn monotonicMillis() -> i64 {
 // the divisor lifts the i64 millis into whole seconds before the BIF
 // runs; the resulting binary lacks the millisecond fraction Node always
 // emits.
-#[@External.Node("""(new Date($0).toISOString())"""),
-  @External.Erlang("""list_to_binary(calendar:system_time_to_rfc3339($0 div 1000, [{unit, second}]))""")]
+#[@External.Node("""(new Date($0).toISOString())""")]
+#[@External.Erlang("""list_to_binary(calendar:system_time_to_rfc3339($0 div 1000, [{unit, second}]))""")]
 pub declare fn formatIso8601(epochMillis: i64) -> string;
 
 // Measure how long `body` takes to evaluate, in milliseconds. Returns
@@ -123,7 +123,9 @@ test "time.monotonicMillis is non-decreasing across two reads" {
 }
 
 test "time.measureMillis returns body result and non-negative elapsed" {
-    val pair = measureMillis({ -> 42 });
+    val pair = measureMillis({ ->
+            42;
+        });
     assert pair._0 == 42;
     assert pair._1 >= 0;
 }

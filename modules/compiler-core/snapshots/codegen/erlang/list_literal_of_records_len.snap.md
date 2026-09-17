@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record P { x: i32, y: i32 }
+type P(x: i32, y: i32)
 fn main() {
     val pts = [P(x: 1, y: 2), P(x: 3, y: 4)];
     @print(pts.len);
@@ -12,7 +12,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% record P: x, y
+%% type P: x, y
 
 main() ->
     Pts = [#{x => 1, y => 2}, #{x => 3, y => 4}],

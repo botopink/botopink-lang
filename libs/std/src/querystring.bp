@@ -17,20 +17,14 @@
 
 // Strip an optional leading `?` from a URL's query portion. Idempotent.
 fn stripPrefix(query: string) -> string {
-    if (query.startsWith("?")) {
-        return query.slice(1, query.length);
-    };
+    if (query.startsWith("?")) return query.slice(1, query.length);
     return query;
 }
 
 fn parsePair(chunk: string) -> #(string, string) {
     val parts = chunk.split("=");
     val key = parts.at(0).unwrapOr("");
-    val value = if (parts.length >= 2) {
-        parts.at(1).unwrapOr("");
-    } else {
-        "";
-    };
+    val value = if (parts.length >= 2) parts.at(1).unwrapOr("") else "";
     return #(key, value);
 }
 
@@ -40,12 +34,10 @@ fn parsePair(chunk: string) -> #(string, string) {
 // caller and reads with `Dict<string, string>.fromList`).
 pub fn parse(query: string) -> Array<#(string, string)> {
     val body = stripPrefix(query);
-    if (body == "") {
-        return [];
-    };
-    return body.split("&")
-        .filter({ chunk -> chunk != "" })
-        .map({ chunk -> parsePair(chunk) });
+    if (body == "") return [];
+    return body.split("&").filter({ chunk -> chunk != "" }).map({ chunk -> parsePair(
+            chunk
+        ) });
 }
 
 fn joinPair(p: #(string, string)) -> string {
@@ -56,9 +48,7 @@ fn joinPair(p: #(string, string)) -> string {
 // urlencoded string. Empty input yields `""`; the result has no leading
 // `?` (the caller adds it when composing a URL).
 pub fn stringify(pairs: Array<#(string, string)>) -> string {
-    return pairs
-        .map({ p -> joinPair(p) })
-        .join("&");
+    return pairs.map({ p -> joinPair(p) }).join("&");
 }
 
 // ── tests ────────────────────────────────────────────────────────────────────

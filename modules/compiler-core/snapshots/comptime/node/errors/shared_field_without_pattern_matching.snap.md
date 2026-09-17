@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-val Result = enum {
+val Result = type {
     Ok(value: i32),
     Error(message: string),
 };

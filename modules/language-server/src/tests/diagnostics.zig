@@ -78,7 +78,7 @@ test "diagnostics: parse error on unclosed expression" {
 test "diagnostics: struct declaration compiles without errors" {
     const gpa = std.testing.allocator;
     var c = try h.compile(gpa,
-        \\val Point = record { x: i32, y: i32 };
+        \\val Point = type(x: i32, y: i32);
         \\val p = Point(x: 1, y: 2);
     );
     defer c.deinit(gpa);
@@ -90,7 +90,7 @@ test "diagnostics: struct declaration compiles without errors" {
 test "diagnostics: enum declaration compiles without errors" {
     const gpa = std.testing.allocator;
     var c = try h.compile(gpa,
-        \\val Color = enum { Red, Green, Blue };
+        \\val Color = type { Red, Green, Blue };
         \\val c = Color.Red;
     );
     defer c.deinit(gpa);

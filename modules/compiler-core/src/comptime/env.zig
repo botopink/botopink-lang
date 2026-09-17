@@ -293,7 +293,8 @@ pub const PrimKind = enum { array, string, bool, int, float };
 ///                (`owner:method(Recv, args)`) from its own import index.
 pub const InstanceLowering = union(enum) {
     prim: PrimKind,
-    record: []const u8,
+    /// A method on a named type (record or enum) — the type's name.
+    type_: []const u8,
 };
 
 /// A recognized decorator's signature, minus its leading `comptime _: @Decl`
@@ -454,7 +455,7 @@ pub const Env = struct {
     /// so codegen emits each one as a top-level enum (the user-written outer
     /// enum already names its section wrappers via `_inner: __Enum__Section`
     /// payload type — these decls bind the referenced names).
-    synthesisedEnumDecls: std.StringHashMap(ast.EnumDecl),
+    synthesisedEnumDecls: std.StringHashMap(ast.TypeDecl),
     /// §enum-sections F2 — untyped AST rewrites for a path-access expression
     /// (`.Color.Red.500`). The F2 resolver in `infer.zig` populates this map
     /// keyed by the outermost identAccess loc when the chain matches an
@@ -468,7 +469,7 @@ pub const Env = struct {
     /// no `self`), keyed by name. Includes stdlib primitives (`Pair`, `Function`,
     /// `Array`) registered before user inference. Used to emit their namespace
     /// objects into the codegen output when a call site uses them.
-    assocInterfaceDecls: std.StringHashMap(ast.InterfaceDecl),
+    assocInterfaceDecls: std.StringHashMap(ast.BehaviorDecl),
     /// Interface names actually used as an associated-fn call receiver
     /// (`Pair.of(...)`), recorded during inference so codegen emits only the
     /// namespaces that are needed.
@@ -583,9 +584,9 @@ pub const Env = struct {
             .activations = std.StringHashMap(void).init(arena),
             .inherentMethods = std.StringHashMap(std.StringHashMap(void)).init(arena),
             .inherentMethodTypes = std.StringHashMap(std.StringHashMap(*T.Type)).init(arena),
-            .synthesisedEnumDecls = std.StringHashMap(ast.EnumDecl).init(arena),
+            .synthesisedEnumDecls = std.StringHashMap(ast.TypeDecl).init(arena),
             .enumSectionRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
-            .assocInterfaceDecls = std.StringHashMap(ast.InterfaceDecl).init(arena),
+            .assocInterfaceDecls = std.StringHashMap(ast.BehaviorDecl).init(arena),
             .usedAssocInterfaces = std.StringHashMap(void).init(arena),
             .dispatchRewrites = std.AutoHashMap(ast.Loc, []const u8).init(arena),
             .jsMethodRenames = std.AutoHashMap(ast.Loc, []const u8).init(arena),
@@ -853,7 +854,7 @@ pub const Env = struct {
     pub fn registerBuiltins(self: *Env) !void {
         const primitives = [_][]const u8{
             // integer types
-            "i8",  "u8",  "i16",  "u16",    "i32",  "u32",  "i64",  "u64", "isize", "usize",
+            "i8",  "u8",  "i16",  "u16",    "i32",  "u32",  "i64", "u64",  "isize", "usize",
             // float types
             "f32", "f64",
             // other primitives

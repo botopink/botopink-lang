@@ -20,7 +20,7 @@ const h = @import("helpers.zig");
 
 test "@Result: try unwraps Result to D" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\record AppError { msg: string }
+        \\type AppError(msg: string)
         \\#[@result]
         \\fn fetch() -> @Result<i32, AppError> {
         \\    throw AppError(msg: "fail");
@@ -34,7 +34,7 @@ test "@Result: try unwraps Result to D" {
 
 test "@Result: try propagates without catch" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\record IoError { path: string }
+        \\type IoError(path: string)
         \\#[@result]
         \\fn load() -> @Result<string, IoError> {
         \\    throw IoError(path: "/data");
@@ -49,7 +49,7 @@ test "@Result: try propagates without catch" {
 
 test "@Result: multiple catch with different types" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\record UserError { msg: string }
+        \\type UserError(msg: string)
         \\#[@result]
         \\fn getName() -> @Result<string, UserError> {
         \\    throw UserError(msg: "missing");
@@ -79,7 +79,7 @@ test "throw check: string matches declared E = string" {
 
 test "throw check: record matches declared E = ErrorRecord" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\record AppError { code: i32, msg: string }
+        \\type AppError(code: i32, msg: string)
         \\#[@result]
         \\fn load() -> @Result<string, AppError> {
         \\    throw AppError(code: 500, msg: "boom");
@@ -154,7 +154,7 @@ test "infer: net-new ---- @Result as a record field" {
     try h.assertInfersOk(std.testing.allocator,
         \\#[@result]
         \\fn parse(n: i32) -> @Result<i32, string> { return n; }
-        \\record Cell { value: @Result<i32, string> }
+        \\type Cell(value: @Result<i32, string>)
         \\fn main() {
         \\    val c = Cell(value: parse(2));
         \\    val v: i32 = c.value.unwrapOr(0);
@@ -166,7 +166,7 @@ test "infer: net-new ---- @Result as a record field" {
 // `unwrapOr` collapses back to a concrete value.
 test "infer: net-new ---- optional chain yields an Option resolved by unwrapOr" {
     try h.assertInfersOk(std.testing.allocator,
-        \\record User { name: ?string }
+        \\type User(name: ?string)
         \\fn nameOf(u: ?User) -> string {
         \\    return u?.name.unwrapOr("anon");
         \\}
@@ -191,7 +191,7 @@ test "infer: net-new ---- val x = try f() binds the unwrapped Ok value" {
 // fn's declared `E = <that enum>` — including a payload-carrying variant.
 test "infer: net-new ---- throw of an enum error variant unifies with E" {
     try h.assertInfersOk(std.testing.allocator,
-        \\enum LoadError {
+        \\type LoadError {
         \\    NotFound,
         \\    Invalid(reason: string),
         \\}
@@ -209,8 +209,8 @@ test "infer: net-new ---- throw of an enum error variant unifies with E" {
 // method's declared `E`.
 test "infer: net-new ---- effect marker on a record method" {
     try h.assertInfersOk(std.testing.allocator,
-        \\record Fetcher {
-        \\    url: string,
+        \\type Fetcher(
+        \\    url: string) {
         \\    #[@result]
         \\    fn load(self: Self) -> @Result<string, string> {
         \\        throw self.url;
@@ -266,7 +266,7 @@ test "context: use void hook with discard binding passes" {
 
 test "context: record implement @Context resolved via inline impl passes" {
     try h.assertInfersOk(std.testing.allocator,
-        \\val Element = record implement @Context<Element, Element> { }
+        \\val Element = type implement @Context<Element, Element> { }
         \\fn state(initial: i32) -> @Context<Element, i32> {
         \\    initial;
         \\}
@@ -279,10 +279,10 @@ test "context: record implement @Context resolved via inline impl passes" {
 
 test "context: custom hook propagates ContextBase transitively passes" {
     try h.assertInfersOk(std.testing.allocator,
-        \\val Element = record implement @Context<Element, Element> { }
-        \\val AuthState = record implement @Context<Element, AuthState> {
+        \\val Element = type implement @Context<Element, Element> { }
+        \\val AuthState = type(
         \\    loggedIn: bool
-        \\}
+        \\) implement @Context<Element, AuthState>
         \\fn state(initial: i32) -> @Context<Element, i32> {
         \\    initial;
         \\}
@@ -326,7 +326,7 @@ test "context error: ContextBase mismatch Element vs Http" {
 
 test "context error: record without @Context impl used with use" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Plain = record { x: i32 }
+        \\val Plain = type(x: i32)
         \\fn make() -> Plain {
         \\    Plain(x: 0);
         \\}
@@ -347,7 +347,7 @@ test "context error: record without @Context impl used with use" {
 // soft keyword, valid as a field name.
 test "context: record with a fn-typed field parses" {
     try h.assertInfersOk(std.testing.allocator,
-        \\record State<T> { value: T, set: fn(next: T) }
+        \\type State<T>(value: T, set: fn(next: T))
     );
 }
 
@@ -357,7 +357,7 @@ test "context: fn() -> T[] parses" {
         \\fn rows() -> i32[] { rows(); }
         \\fn grid() -> i32[][] { grid(); }
         \\fn maybe() -> ?i32[] { maybe(); }
-        \\record Builder { make: fn() -> i32[] }
+        \\type Builder(make: fn() -> i32[])
     );
 }
 
@@ -365,8 +365,8 @@ test "context: fn() -> T[] parses" {
 // fn-typed `set`, and a component uses it (`s.set(s.value)`).
 test "context: {value, set} hook shape type-checks" {
     try h.assertInfersOk(std.testing.allocator,
-        \\val Element = record implement @Context<Element, Element> { }
-        \\record State<T> { value: T, set: fn(next: T) }
+        \\val Element = type implement @Context<Element, Element> { }
+        \\type State<T>(value: T, set: fn(next: T))
         \\fn state<T>(initial: T) -> @Context<Element, State<T>> {
         \\    State(value: initial, set: { n -> });
         \\}
@@ -382,8 +382,8 @@ test "context: {value, set} hook shape type-checks" {
 // `record { … }` literal unifies with it field-by-field.
 test "context: anonymous record type as return annotation" {
     try h.assertInfersOk(std.testing.allocator,
-        \\fn mk() -> { value: i32, set: fn(next: i32) } {
-        \\    record { value: 0, set: { n -> } };
+        \\fn mk() -> #(value: i32, set: fn(next: i32)) {
+        \\    #(0, { n -> });
         \\}
     );
 }
@@ -392,7 +392,7 @@ test "context: anonymous record type as return annotation" {
 // model `div([a, b])`); a single `Element` and a `string` coerce too.
 test "context: Element[] coerces into Children" {
     try h.assertInfersOk(std.testing.allocator,
-        \\val Element = record implement @Context<Element, Element> { }
+        \\val Element = type implement @Context<Element, Element> { }
         \\fn div(children: Children) -> Element { Element(); }
         \\fn a() -> Element { Element(); }
         \\val list = div([a(), a()]);

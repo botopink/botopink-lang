@@ -268,9 +268,9 @@ test "types: assign ---- plusEq on var" {
 
 test "types: self ---- field access in method" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\record Point {
+        \\type Point(
         \\    x: i32,
-        \\    y: i32,
+        \\    y: i32) {
         \\    fn sum(self: Self) -> i32 {
         \\        return self.x + self.y;
         \\    }

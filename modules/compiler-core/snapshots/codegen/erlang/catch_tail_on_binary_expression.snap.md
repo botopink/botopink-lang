@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record CalcError { msg: string }
+type CalcError(msg: string)
 #[@result]
 fn getA() -> @Result<i32, CalcError> {
     throw CalcError(msg: "overflow");
@@ -15,7 +15,7 @@ fn compute() -> i32 {
 ```erlang
 -module(main).
 
-%% record CalcError: msg
+%% type CalcError: msg
 
 getA() ->
     {error, #{msg => <<"overflow">>}}.

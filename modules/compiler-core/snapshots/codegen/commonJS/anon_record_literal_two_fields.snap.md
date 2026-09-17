@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn make() -> i32 {
-    val r = record { a: 7, b: 11 };
+    val r = #(7, 11);
     return r;
 }
 ```
@@ -9,7 +9,7 @@ fn make() -> i32 {
 ----- JAVASCRIPT -- main.js
 ```javascript
 function make() {
-    const r = ({ a: 7, b: 11 });
+    const r = [7, 11];
     return r;
 }
 ```

@@ -153,7 +153,7 @@ pub fn isNullLiteral(e: ast.Expr) bool {
 
 /// True when an interface method is an associated function — `default fn` with
 /// no `self` receiver (callable as `Interface.method(...)`, not on a value).
-pub fn isAssociatedFn(m: ast.InterfaceMethod) bool {
+pub fn isAssociatedFn(m: ast.BehaviorMethod) bool {
     if (!m.is_default) return false;
     return m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self");
 }
@@ -431,9 +431,11 @@ fn emitProgramOptsX(
                 try items.append(arena_alloc, .{ .stmt = try em.buildValDecl(v) });
             },
             .@"fn" => |f| try items.append(arena_alloc, .{ .stmt = try em.buildFnItem(f) }),
-            .record => |r| try items.append(arena_alloc, .{ .stmt = try em.buildRecord(r) }),
-            .@"enum" => |e| try items.append(arena_alloc, .{ .stmt = try em.buildEnum(e) }),
-            .interface => |i| try items.append(arena_alloc, .{ .stmt = try em.buildInterface(i) }),
+            .type_ => |tdecl| switch (tdecl.shape) {
+                .record => try items.append(arena_alloc, .{ .stmt = try em.buildRecord(tdecl) }),
+                .enum_ => try items.append(arena_alloc, .{ .stmt = try em.buildEnum(tdecl) }),
+            },
+            .behavior => |i| try items.append(arena_alloc, .{ .stmt = try em.buildInterface(i) }),
             .implement => |im| try items.append(arena_alloc, .{ .stmt = try em.buildImplement(im) }),
             .extend => |ex| try items.append(arena_alloc, .{ .stmt = try em.buildExtend(ex) }),
             .use => |u| try items.append(arena_alloc, .{ .stmt = try em.buildUse(u) }),
@@ -662,7 +664,7 @@ fn HostTemplate(comptime Holes: type) type {
     };
 }
 
-/// Holes filled from a call site's argument expressions. `$self` has no
+/// Holes filled from a call site's argument expressions. The receiver marker has no
 /// meaning there — a template with a receiver marker is a declaration error.
 fn CallHoles(comptime CC: type) type {
     return struct {
@@ -679,7 +681,7 @@ fn CallHoles(comptime CC: type) type {
     };
 }
 
-/// Holes filled from a prototype method's parameters: `$self` is the receiver
+/// Holes filled from a prototype method's parameters: the receiver marker is the receiver
 /// (unwrapped for a boxed primitive) and `$N` the Nth parameter.
 const MethodHoles = struct {
     params: []const ast.Param,
@@ -710,7 +712,7 @@ const LoopCtx = union(enum) {
 };
 
 /// Holes filled from a wrapper function's own parameters: `$N` is the Nth
-/// declared parameter, or `arguments[N]` past the declared list; `$self` has
+/// declared parameter, or `arguments[N]` past the declared list; the receiver marker has
 /// no meaning in a plain function.
 const ParamHoles = struct {
     b: js.Builder,
@@ -815,7 +817,7 @@ const Emitter = struct {
     /// Every interface this module declares, by name. A user interface has no
     /// JS object to patch, so its instance `default fn`s are copied into each
     /// local record that implements it (`buildRecord`).
-    local_interfaces: std.StringHashMap(ast.InterfaceDecl),
+    local_interfaces: std.StringHashMap(ast.BehaviorDecl),
     /// Top-level fn name → declared return type, for `printShape`.
     fn_return_types: std.StringHashMap(ast.TypeRef),
     /// Local / parameter name → the static print shape of its value, when it
@@ -843,7 +845,7 @@ const Emitter = struct {
     /// `builtins.d.bp` with `@external(node, …)`. Keyed by callee name.
     builtin_node_dispatch: std.StringHashMap(BuiltinNodeCall),
     /// §A2 user-fn per-callee template dispatch (node): a `declare fn`
-    /// whose `@external(node, "<template>")` symbol contains `$0`/`$self`/…
+    /// whose `@external(node, "<template>")` symbol contains `$0`/`$1`/…
     /// or whose annotation list carries `when(argc == N): "..."` branches
     /// renders at the call site instead of being aliased at the decl
     /// (the `const fn = Mod.method;` shape strips the receiver, so chained
@@ -874,7 +876,7 @@ const Emitter = struct {
             .enum_recv_methods = std.StringHashMap(void).init(alloc),
             .imported_enums = std.StringHashMap(void).init(alloc),
             .prelude_iface_externals = std.StringHashMap(ast.ExternalRef).init(alloc),
-            .local_interfaces = std.StringHashMap(ast.InterfaceDecl).init(alloc),
+            .local_interfaces = std.StringHashMap(ast.BehaviorDecl).init(alloc),
             .fn_return_types = std.StringHashMap(ast.TypeRef).init(alloc),
             .print_shapes = std.StringHashMap(js.Expr).init(alloc),
             .seen_imports = std.StringHashMap(void).init(alloc),
@@ -977,8 +979,8 @@ const Emitter = struct {
         var program = p.parse(alloc_arena) catch return;
         defer program.deinit(alloc_arena);
         for (program.decls) |decl| {
-            if (decl == .interface) {
-                const iface = decl.interface;
+            if (decl == .behavior) {
+                const iface = decl.behavior;
                 for (iface.methods) |m| {
                     const ref = m.externalFor(target) orelse continue;
                     const key = try std.fmt.allocPrint(self.arena(), "{s}.{s}", .{ iface.name, m.name });
@@ -1089,12 +1091,12 @@ const Emitter = struct {
         var record_methods = std.StringHashMap(void).init(self.alloc);
         defer record_methods.deinit();
         for (program.decls) |decl| switch (decl) {
-            .record => |r| for (r.methods) |m| try record_methods.put(m.name, {}),
+            .type_ => |r| if (r.isRecord()) for (r.methods) |m| try record_methods.put(m.name, {}),
             else => {},
         };
         for (program.decls) |decl| {
-            if (decl != .interface) continue;
-            for (decl.interface.methods) |m| {
+            if (decl != .behavior) continue;
+            for (decl.behavior.methods) |m| {
                 const ref = m.externalFor("node") orelse continue;
                 if (ref.module.len != 0) continue;
                 if (std.mem.indexOfScalar(u8, ref.symbol, '(') != null) continue;
@@ -1107,7 +1109,7 @@ const Emitter = struct {
 
     /// Indexes every `@[external(…)]` fn by name: with a `node` target it
     /// goes to `externals` (alias form: `const fn = require(…);`) or
-    /// `user_node_templates` (§A2 template form: `$0`/`$self`/… or
+    /// `user_node_templates` (§A2 template form: `$0`/`$1`/… or
     /// `when(argc == N)` branches — rendered at each call site instead of
     /// aliased); without a node target it goes to `externals_missing` (so a
     /// call can fail with a clear error instead of an undefined identifier).
@@ -1164,7 +1166,7 @@ const Emitter = struct {
     /// shorthand normalize to `.record` decls in the parser.
     fn collectClassNames(self: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| switch (decl) {
-            .record => |r| try self.class_names.put(r.name, {}),
+            .type_ => |r| if (r.isRecord()) try self.class_names.put(r.name, {}),
             // An imported record is a class in its own module — a
             // construction here (`App(8080, "/")`) still needs `new`.
             .use => |u| if (self.cross) |xc| {
@@ -1188,8 +1190,8 @@ const Emitter = struct {
                 try self.user_fn_names.put(f.name, {});
                 if (f.returnType) |rt| try self.fn_return_types.put(f.name, rt);
             },
-            .@"enum" => |e| {
-                for (e.variants) |v| {
+            .type_ => |e| if (!e.isRecord()) {
+                for (e.variants()) |v| {
                     if (v.fields.len == 0) continue;
                     const names = try self.arena().alloc([]const u8, v.fields.len);
                     for (v.fields, 0..) |f, i| names[i] = f.name;
@@ -1200,7 +1202,7 @@ const Emitter = struct {
                     try self.enum_recv_methods.put(try std.fmt.allocPrint(self.arena(), "{s}.{s}", .{ e.name, m.name }), {});
                 }
             },
-            .interface => |i| try self.local_interfaces.put(i.name, i),
+            .behavior => |i| try self.local_interfaces.put(i.name, i),
             .use => |u| if (self.cross) |xc| {
                 for (u.imports) |imp| {
                     const info = xc.exports.get(imp.name()) orelse continue;
@@ -1214,7 +1216,7 @@ const Emitter = struct {
     /// An enum method takes the receiver as its first parameter when that
     /// parameter is `self` or is typed `Self`; any other method is an
     /// associated fn called on the enum object itself.
-    fn enumMethodTakesReceiver(m: ast.InterfaceMethod) bool {
+    fn enumMethodTakesReceiver(m: ast.BehaviorMethod) bool {
         if (m.params.len == 0) return false;
         const first = m.params[0];
         if (std.mem.eql(u8, first.name, "self")) return true;
@@ -1227,7 +1229,7 @@ const Emitter = struct {
     fn enumMethodOwner(self: *Emitter, loc: ast.Loc, method: []const u8) !?[]const u8 {
         const lw = self.lowerings orelse return null;
         const type_name = switch (lw.get(loc) orelse return null) {
-            .record => |n| n,
+            .type_ => |n| n,
             .prim => return null,
         };
         if (self.imported_enums.contains(type_name)) return type_name;
@@ -1383,7 +1385,7 @@ const Emitter = struct {
     /// `function name(params) { return <template>; }` for a `pub` template
     /// external: the template's `$N` holes are the declared parameters. An
     /// arity-branched template tests `arguments.length` per branch. Null when
-    /// the template names a receiver (`$self`), which a plain function has not.
+    /// the template names a receiver (its `self` parameter), which a plain function has not.
     fn buildTemplateWrapper(self: *Emitter, f: ast.FnDecl, call: BuiltinNodeCall) !?js.Stmt {
         var names: std.ArrayListUnmanaged([]const u8) = .empty;
         var params: std.ArrayListUnmanaged(js.Param) = .empty;
@@ -1473,12 +1475,12 @@ const Emitter = struct {
         } };
     }
 
-    fn buildRecord(self: *Emitter, r: ast.RecordDecl) !js.Stmt {
+    fn buildRecord(self: *Emitter, r: ast.TypeDecl) !js.Stmt {
         var ctor: ?js.Class.Ctor = null;
-        if (r.fields.len > 0) {
-            const params = try self.arena().alloc(js.Param, r.fields.len);
-            const assigns = try self.arena().alloc(js.Stmt, r.fields.len);
-            for (r.fields, 0..) |f, i| {
+        if (r.recordFields().len > 0) {
+            const params = try self.arena().alloc(js.Param, r.recordFields().len);
+            const assigns = try self.arena().alloc(js.Stmt, r.recordFields().len);
+            for (r.recordFields(), 0..) |f, i| {
                 params[i] = .{ .pattern = .{ .name = f.name } };
                 assigns[i] = .{ .expr = try self.b.assign(
                     try self.b.member(.this, f.name),
@@ -1558,9 +1560,9 @@ const Emitter = struct {
         for (iface.extends) |parent| try self.appendInterfaceDefaults(members, parent, depth + 1);
     }
 
-    fn buildEnum(self: *Emitter, e: ast.EnumDecl) !js.Stmt {
+    fn buildEnum(self: *Emitter, e: ast.TypeDecl) !js.Stmt {
         var props: std.ArrayListUnmanaged(js.Object.Prop) = .empty;
-        for (e.variants) |v| {
+        for (e.variants()) |v| {
             if (v.fields.len == 0) {
                 try props.append(self.arena(), .{ .kv = .{ .key = v.name, .value = .{ .quoted = v.name } } });
                 continue;
@@ -1610,13 +1612,13 @@ const Emitter = struct {
         return self.b.group(&.{ decl, try self.pubExport(e.name) });
     }
 
-    fn buildInterface(self: *Emitter, i: ast.InterfaceDecl) !js.Stmt {
+    fn buildInterface(self: *Emitter, i: ast.BehaviorDecl) !js.Stmt {
         var stmts: std.ArrayListUnmanaged(js.Stmt) = .empty;
 
-        // A doc block naming the interface's shape — the contract itself has no
+        // A doc block naming the behavior's shape — the contract itself has no
         // runtime representation.
         var head: std.ArrayListUnmanaged(u8) = .empty;
-        try head.print(self.arena(), "interface {s}", .{i.name});
+        try head.print(self.arena(), "behavior {s}", .{i.name});
         if (i.extends.len > 0) {
             try head.appendSlice(self.arena(), " extends ");
             for (i.extends, 0..) |ext, j| {
@@ -1697,7 +1699,7 @@ const Emitter = struct {
             else
                 null;
             if (node_ref) |ref| {
-                // Template-form annotation (`$self`/`$0`/… markers): render the
+                // Template-form annotation (`$0`/`$1`/… markers): render the
                 // template into a prototype-method body so `recv.method(args)`
                 // dispatches at runtime without a hand-rolled `lowerXxx` arm.
                 // §F1-commonJS of `prim-op-template-instance-methods` —
@@ -2797,8 +2799,7 @@ const Emitter = struct {
                 },
                 // Anonymous record literal — a plain JS object (parenthesized
                 // so it stays an expression in statement position).
-                .recordLit => |rl| return self.b.paren(try self.buildFieldObject(rl.fields)),
-                .interfaceLit => |il| return self.b.paren(try self.buildFieldObject(il.fields)),
+                .behaviorLit => |il| return self.b.paren(try self.buildFieldObject(il.fields)),
             },
 
             .comptime_ => |ct| switch (ct.kind) {
@@ -3280,7 +3281,7 @@ const Emitter = struct {
                             .string => "String",
                             else => break :blk null,
                         },
-                        .record => break :blk null,
+                        .type_ => break :blk null,
                     };
                     const iface = self.local_interfaces.get(iface_name) orelse break :blk null;
                     for (iface.methods) |m| {
@@ -3298,7 +3299,8 @@ const Emitter = struct {
     /// The print shape a declared type spells (see `printShape`).
     fn typeShape(self: *Emitter, t: ast.TypeRef) anyerror!?js.Expr {
         return switch (t) {
-            .tuple_ => |elems| blk: {
+            .tuple_, .labeledTuple => blk: {
+                const elems = t.tupleElems().?;
                 const out = try self.arena().alloc(js.Expr, elems.len + 1);
                 out[0] = .{ .quoted = "#" };
                 for (elems, 0..) |el, i| out[i + 1] = (try self.typeShape(el)) orelse .null_;
@@ -3378,7 +3380,7 @@ const Emitter = struct {
         const il = lw.get(loc) orelse return null;
         const kind = switch (il) {
             .prim => |k| k,
-            .record => return null,
+            .type_ => return null,
         };
         const receiver: jsPrelude.Receiver = switch (kind) {
             .string => .string,
@@ -3410,7 +3412,7 @@ const Emitter = struct {
         // Handles both template (`$0.method()`) and module+symbol
         // (`"./mod", "fun"`) forms discovered from primitives.bp +
         // builtins_fns.d.bp. Those are free functions: their templates have
-        // no `$self` hole, so a method call `recv.print()` is never one — it
+        // no receiver hole, so a method call `recv.print()` is never one — it
         // used to render `console.log()` and drop the receiver.
         if (cc.receiver == null and self.builtin_node_dispatch.contains(cc.callee)) {
             if (try self.tryBuiltinAnnotation(cc.callee, cc)) |node| return node;

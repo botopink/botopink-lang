@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-enum Token {
+type Token {
     Color {
         Red { 500 }
     }

@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-val Subject = enum {
+val Subject = type {
     Person(name: string, age: i32),
     Animal(species: string),
 };

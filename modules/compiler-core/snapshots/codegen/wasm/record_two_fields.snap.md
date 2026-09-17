@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Point = record { x: i32, y: i32 }
+val Point = type(x: i32, y: i32)
 ```
 
 ----- WASM TEXT -- main.wat

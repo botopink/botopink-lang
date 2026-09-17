@@ -1,8 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record Doc {
+type Doc(
     title: string,
-
+) {
     fn print(self: Self) -> string {
         return "doc:" + self.title;
     }
@@ -19,7 +19,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% record Doc: title
+%% type Doc: title
 
 print(Self) ->
     <<"doc:", ('__bp_text'(maps:get(title, Self)))/binary>>.

@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record User { name: string, id: i32 }
-record Timestamps { createdAt: string, updatedAt: string }
+type User(name: string, id: i32)
+type Timestamps(createdAt: string, updatedAt: string)
 val Merged = mergeRecords(User, Timestamps);
 ```
 

@@ -1,8 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub record Button {
+pub type Button(
     label: string,
-}
+)
 pub fn need(comptime t: @Expr<string>) -> @Expr<string> {
     val hit = t.lookup("Buttom");
     if (hit) { b ->
@@ -66,9 +66,9 @@ main() ->
 
 ----- BOTOPINK TRANSFORM CODE -- main.bp
 ```botopink
-pub val Button = record {
+pub type Button(
     label: string,
-};
+)
 
 val r = "ok";
 ```

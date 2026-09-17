@@ -85,13 +85,15 @@ pub fn build(alloc: std.mem.Allocator, outputs: []ComptimeOutput) !CrossModule {
             else => continue,
         };
         for (ok.transformed.decls) |decl| switch (decl) {
-            .record => |r| if (r.isPub) {
-                const fields = try alloc.alloc([]const u8, r.fields.len);
-                for (r.fields, 0..) |f, i| fields[i] = f.name;
-                try field_arrays.append(alloc, fields);
-                try exports.put(r.name, .{ .module = ct.name, .kind = .record, .is_class = true, .fields = fields });
+            .type_ => |r| if (r.isPub) switch (r.shape) {
+                .record => |record_fields| {
+                    const fields = try alloc.alloc([]const u8, record_fields.len);
+                    for (record_fields, 0..) |f, i| fields[i] = f.name;
+                    try field_arrays.append(alloc, fields);
+                    try exports.put(r.name, .{ .module = ct.name, .kind = .record, .is_class = true, .fields = fields });
+                },
+                .enum_ => try exports.put(r.name, .{ .module = ct.name, .kind = .@"enum", .is_class = false }),
             },
-            .@"enum" => |e| if (e.isPub) try exports.put(e.name, .{ .module = ct.name, .kind = .@"enum", .is_class = false }),
             // `pub fn` exports — including host-backed `#[@External.<targert>(...)]` declarations.
             // An external fn's owning module re-exports the host symbol under the
             // fn name (`exports.regItem = regItem`), so a consumer that imports it

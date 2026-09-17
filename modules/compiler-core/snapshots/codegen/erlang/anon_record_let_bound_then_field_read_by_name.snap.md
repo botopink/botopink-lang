@@ -1,7 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    val r = record { code: 7, kind: 11 };
+    val code = 7;
+    val kind = 11;
+    val r = #(code, kind);
     @print(r.kind);
 }
 ```
@@ -12,8 +14,10 @@ fn main() {
 -export(['_botopink_main'/0, main/1]).
 
 main() ->
-    R = #{code => 7, kind => 11},
-    '__bp_print'([maps:get(kind, R)]).
+    Code = 7,
+    Kind = 11,
+    R = {Code, Kind},
+    '__bp_print'([element(2, R)]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

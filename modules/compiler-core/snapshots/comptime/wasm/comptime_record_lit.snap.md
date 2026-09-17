@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record RecordField { name: string, typeName: string }
+type RecordField(name: string, typeName: string)
 val f = comptime RecordField(name: "x", typeName: "i32");
 ```
 

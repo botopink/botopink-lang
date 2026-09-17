@@ -90,7 +90,8 @@ codegen/
   tuple `#(a,b)` with no spaces, anything else `util.inspect` (records, enums and
   maps keep `console.log`'s text). A tuple is a JS array, so the call site passes
   the static shape when one argument holds a tuple:
-  `__bp_print_as([["#", null, null]], p)` (`printShape`/`typeShape`: a tuple or
+  `__bp_print_as([["#", null, null]], p)` (`printShape`/`typeShape`: a tuple (a
+  labeled `#(name: T, …)` type included) or
   array literal, a local or parameter bound to one — `print_shapes` — a top-level
   fn's declared return type, a primitive method's declared return type such as
   `zip` → `Array<#(T, U)>`). A tuple whose shape nothing recovers prints as an
@@ -127,7 +128,7 @@ codegen/
   verbatim — neither emits an import binding or a `require(…)`. A `pub`
   template fn is also emitted as a real function whose `$N` holes are its
   parameters (`buildTemplateWrapper`; an arity-branched one tests
-  `arguments.length`, a `$self` template gets none) plus `exports.<name>`, so a
+  `arguments.length`, a template naming a `self` receiver gets none) plus `exports.<name>`, so a
   cross-module call through the module object (`env.write(…)` after
   `import {env} from "std"`) resolves; calls in the owning module still inline
   the template. A fn with no `node` target raises
@@ -202,8 +203,8 @@ codegen/
   every local record that implements it and does not define the method
   (`appendInterfaceDefaults`, following `extends`); nothing is patched onto
   `Iface.prototype`. An implementer in another module does not get them yet.
-  A module that redeclares a primitive interface (`interface Number { fn
-  max(self: Self, other: Self) -> Self, … }`) replaces the prelude's
+  A module that redeclares a primitive interface (`behavior Number { fn
+  max(self: Self, other: Self) -> Self; … }`) replaces the prelude's
   declaration; a bodyless member without its own `@External.Node` takes the
   prelude's (`prelude_iface_externals`), so `Number.prototype.max` is still
   patched.
@@ -334,7 +335,7 @@ codegen/
   plain application.
 - **Comptime modules:** `emitComptimeModule(alloc, name, program, .{ host_enums,
   host_records, exports, forms, listing, unsupported_method })` lowers an untyped decorator/template body with
-  the same emitter — `host_enums` join `enum_names` (`DeclKind.Record` →
+  the same emitter — `host_enums` join `enum_names` (`DeclKind.Type` →
   `'Record'`), `host_records` (`HostRecord{name, fields}`) join `record_fields`
   so host record constructors build maps, `exports` (`[]erl_ast.FnRef`) are prepended to `-export`,
   `listing = true` renders only the lowered decls and `forms` (no header,
@@ -381,7 +382,7 @@ codegen/
   their text.
 - **Records are maps**: constructors lower to `#{field => V, …}` (positional args
   use the declared field order from `collectTypeShapes`); field access is
-  `maps:get(field, Recv)`; tuple index `t._N` → `element(N+1, T)`. No `-record`
+  `maps:get(field, Recv)`; tuple index `t._N` and the bare `t.N` → `element(N+1, T)`. No `-record`
   declarations are emitted. Optional chaining `?.` guards on `undefined` via an
   immediate fun. A record destructuring (`val { x, y } = p`, a `{ name, .. }`
   parameter, a `try` head) is therefore the exact map pattern
@@ -547,9 +548,9 @@ codegen/
   loop, `continue` out of the iteration's `(block $__next …)`. An f32 array
   prints as `[115,287.5,460]` (`$__print_arr_f32`).
 - **Coverage**: numerics, locals, calls, booleans, assign, throw, strings,
-  `@print`, field access/assign, arrays, tuples, records/structs and anonymous
-  `record { … }` / interface literals (all `put_map_assoc` maps keyed by field
-  name), case (all patterns + guards via
+  `@print`, field access/assign, arrays, tuples, records/structs and behavior
+  literals (all `put_map_assoc` maps keyed by field name; the anonymous
+  `record { … }` literal is gone since front 12 step 4), case (all patterns + guards via
   `emitGuardPre`/`emitGuardPost`; a bare `.ident` arm naming a nullary enum
   variant — local, imported by name, or from a `from "std"` module — is a match
   test against that atom, not a binding — `enum_variants`; `Ok`/`Err` arms test
@@ -880,7 +881,7 @@ first three are now enforced by the model, not by discipline:
   type, a fn's declared return type (a type guard `-> x is T` is a bool; a
   `-> @Result<string, …>` makes `try f()` / `f() catch …` a string), a fn body
   that returns a string when the specialisation pass cleared its return type,
-  an anonymous record literal's field values, a tuple literal's element (for
+  a tuple literal's element (for
   `val #(a, b) = #(…)`), an array's element shape (for a loop parameter) and a
   top-level `val`'s initialiser (`str_globals`, `global_rec_types`). A value
   whose shape nothing recovers still prints through `$__print_i32`.
@@ -889,8 +890,8 @@ first three are now enforced by the model, not by discipline:
   interns a shape string (`i` i32, `f` f32 slot, `b` bool, `s` string, `[X` array
   of `X`, `(XY…)` tuple) recovered by `printShapeOf` from a tuple / array
   literal, a local bound to one (`print_shape_locals`), `zip`, and a declared type
-  that spells a tuple (`typeRefShape` over a parameter, a fn result or an
-  annotation); nested strings print quoted with the source escapes
+  that spells a tuple, labeled or not (`typeRefShape` over a parameter, a fn
+  result or an annotation; `ast.TypeRef.tupleElems`); nested strings print quoted with the source escapes
   (`$__print_quoted_raw`). A flat `i32`/`f32` array keeps `$__print_arr_*`.
 - **String literals are unescaped at interning** (`literalBytes`): the lexer keeps
   `\"`, `\\`, `\n`, `\r`, `\t`, `\0`, `\$`, `\u{…}` verbatim, and the data segment
@@ -1093,14 +1094,15 @@ Primitive-receiver methods (`xs.map(f)`, `s.toUpper()`) are tagged `.prim` in
    integer receiver's walk at `Signed`, which reaches `Integer` and `Number` —
    from `Integer` it never found `Signed.abs`). A plain
    `("mod", "sym")` pair becomes a host call; a symbol with markers is rendered
-   by `comptime/primOpTemplate.zig` (`$self`, `$0..$N`, `$args`,
+   by `comptime/primOpTemplate.zig` (the receiver, `$0..$N`, `$args` — the source's
+   positional markers translated by `parser/template_markers.zig`, decision 5 —
    `$stringify(…)`, `when($argc == N)` arity branches, `"""…"""` raw bodies).
    commonJS and erlang also route builtins (`print`, `todo`, `panic`, …) through
    `tryEmitBuiltinAnnotation`.
 2. **BEAM templates** — `#[@External.Beam("""<.S body>""")]` registers in
    `prim_beam_templates`; `renderBeamTemplate` pre-loads each positional arg into
    `{x, i+1}` (reverse order) and the receiver into `{x, 0}` last
-   (`min_live = argc + 1`), then renders `$self` → `{x, 0}`, `$N` → `{x, N+1}`,
+   (`min_live = argc + 1`), then renders the receiver → `{x, 0}`, `$N` → `{x, N+1}`,
    `$args` → `{x, 1..N}`. In tail position it emits `call_ext` + `return`
    rather than `call_ext_last`. A BEAM template wins over the erlang-derived
    dispatch and the inline switch.
@@ -1161,3 +1163,10 @@ Effect rejection diagnostics (R*, RF*, RI*, RC*, RG* codes) live in
 `comptime/diagnostics.zig`; `comptime/infer.zig`'s `inEffectContext` uses the
 `effect` field of `comptime/env.zig`'s `StarFnCtx` so each family's rejections
 fire only inside the right effect body.
+
+## Tuple labels (decision 8 §6)
+
+No backend reads a tuple label. `row.label` reaches codegen already rewritten to
+`row._N` by the checker (`comptime/AGENTS.md`), and a labeled tuple type
+(`ast.TypeRef.labeledTuple`) is the positional tuple everywhere: `.d.ts` tuple
+(`typescript.zig`), commonJS/wasm print shapes via `TypeRef.tupleElems`.

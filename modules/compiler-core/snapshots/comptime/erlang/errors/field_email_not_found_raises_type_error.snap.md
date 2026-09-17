@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-record User { id: i32, name: string }
+type User(id: i32, name: string)
 val BadPick = pick(User, ["email"]);
 
 ----- ERROR

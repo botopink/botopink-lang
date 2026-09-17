@@ -38,7 +38,7 @@ fn fnArityNoSelf(f: ast.FnDecl) usize {
 /// True when a record/struct/enum method is an associated fn — no `self`
 /// receiver, so it's callable as `Type.method(...)` (and across modules as a
 /// remote call). Its Erlang arity is just `params.len` (no `self` to drop).
-fn isAssocMethod(m: ast.InterfaceMethod) bool {
+fn isAssocMethod(m: ast.BehaviorMethod) bool {
     return m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self");
 }
 
@@ -281,11 +281,13 @@ fn noAutoImportRefs(b: Ast.Builder, decls: []ast.DeclKind, bif_table: []const Au
         .@"fn" => |f| try Collect.run(b.arena, &refs, bif_table, f.name, f.params.len),
         // Record / enum methods keep `params.len` as the erlang arity (instance
         // methods include the receiver); `is_declare` methods emit no body.
-        .record => |r| for (r.methods) |m| {
-            if (!m.is_declare) try Collect.run(b.arena, &refs, bif_table, m.name, m.params.len);
-        },
-        .@"enum" => |e| for (e.methods) |m| {
-            if (!m.is_declare) try Collect.run(b.arena, &refs, bif_table, m.name, m.params.len);
+        .type_ => |tdecl| switch (tdecl.shape) {
+            .record => for (tdecl.methods) |m| {
+                if (!m.is_declare) try Collect.run(b.arena, &refs, bif_table, m.name, m.params.len);
+            },
+            .enum_ => for (tdecl.methods) |m| {
+                if (!m.is_declare) try Collect.run(b.arena, &refs, bif_table, m.name, m.params.len);
+            },
         },
         // Extension methods always keep the receiver as the first param.
         .extend => |ex| for (ex.methods) |m| try Collect.run(b.arena, &refs, bif_table, m.name, m.params.len),
@@ -321,7 +323,7 @@ pub fn codegenEmit(
             else => continue,
         };
         for (ok.transformed.decls) |decl| switch (decl) {
-            .@"enum" => |e| if (e.isPub) try enum_exports.append(alloc, .{ .module = ct.name, .name = e.name, .variants = e.variants }),
+            .type_ => |e| if (!e.isRecord() and e.isPub) try enum_exports.append(alloc, .{ .module = ct.name, .name = e.name, .variants = e.variants() }),
             else => {},
         };
     }
@@ -367,7 +369,7 @@ pub fn codegenEmit(
 /// emitter as regular modules — only the host glue differs.
 pub const ComptimeModule = struct {
     /// Enum types the host injects without a declaration (`DeclKind`), so a
-    /// qualified member (`DeclKind.Record`) lowers to its variant atom.
+    /// qualified member (`DeclKind.Type`) lowers to its variant atom.
     host_enums: []const []const u8 = &.{},
     /// Record types the host injects without a declaration (`Span`,
     /// `CustomNode`), so a constructor call (`Span(5, 9, 1)`,
@@ -625,39 +627,58 @@ pub const comptime_helper_forms = [_]Ast.Form{
     add_helper_form,
     len_helper_form,
     text_helper_form,
-    .{ .function = .{ .name = "__bp_json", .clauses = &.{
-        .{
-            .patterns = &.{Ast.Expr.a("undefined")},
-            .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.a("null") }}),
-            .layout = .inline_,
+    .{
+        .function = .{
+            .name = "__bp_json",
+            .clauses = &.{
+                .{
+                    .patterns = &.{Ast.Expr.a("undefined")},
+                    .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.a("null") }}),
+                    .layout = .inline_,
+                },
+                .{
+                    .patterns = &.{Ast.Expr.v("Map")},
+                    .guards = &.{isA("map", "Map")},
+                    .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "maps", .name = "map", .args = &.{
+                        .{ .fun = .{
+                            .params = &.{ Ast.Expr.v("_"), Ast.Expr.v("V") },
+                            .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .name = "__bp_json", .args = &.{Ast.Expr.v("V")} } } }}),
+                        } },
+                        Ast.Expr.v("Map"),
+                    } } } }}),
+                    .layout = .inline_,
+                },
+                .{
+                    .patterns = &.{Ast.Expr.v("List")},
+                    .guards = &.{isA("list", "List")},
+                    .body = Ast.Body.of(&.{.{ .expr = .{ .list_comp = .{
+                        .element = &Ast.Expr{ .call = .{ .name = "__bp_json", .args = &.{Ast.Expr.v("V")} } },
+                        .qualifiers = &.{.{ .generator = .{ .pattern = Ast.Expr.v("V"), .list = Ast.Expr.v("List") } }},
+                    } } }}),
+                    .layout = .inline_,
+                },
+                .{
+                    // A tuple has no JSON form: `{"$tuple": [...]}`, read back by
+                    // template_eval's `typedValue`.
+                    .patterns = &.{Ast.Expr.v("Tuple")},
+                    .guards = &.{isA("tuple", "Tuple")},
+                    .body = Ast.Body.of(&.{.{ .expr = .{ .map = &.{.{
+                        .key = .{ .lexeme_binary = "$tuple" },
+                        .value = .{ .list_comp = .{
+                            .element = &Ast.Expr{ .call = .{ .name = "__bp_json", .args = &.{Ast.Expr.v("V")} } },
+                            .qualifiers = &.{.{ .generator = .{ .pattern = Ast.Expr.v("V"), .list = .{ .call = .{ .module = "erlang", .name = "tuple_to_list", .args = &.{Ast.Expr.v("Tuple")} } } } }},
+                        } },
+                    }} } }}),
+                    .layout = .inline_,
+                },
+                .{
+                    .patterns = &.{Ast.Expr.v("Value")},
+                    .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("Value") }}),
+                    .layout = .inline_,
+                },
+            },
         },
-        .{
-            .patterns = &.{Ast.Expr.v("Map")},
-            .guards = &.{isA("map", "Map")},
-            .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "maps", .name = "map", .args = &.{
-                .{ .fun = .{
-                    .params = &.{ Ast.Expr.v("_"), Ast.Expr.v("V") },
-                    .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .name = "__bp_json", .args = &.{Ast.Expr.v("V")} } } }}),
-                } },
-                Ast.Expr.v("Map"),
-            } } } }}),
-            .layout = .inline_,
-        },
-        .{
-            .patterns = &.{Ast.Expr.v("List")},
-            .guards = &.{isA("list", "List")},
-            .body = Ast.Body.of(&.{.{ .expr = .{ .list_comp = .{
-                .element = &Ast.Expr{ .call = .{ .name = "__bp_json", .args = &.{Ast.Expr.v("V")} } },
-                .qualifiers = &.{.{ .generator = .{ .pattern = Ast.Expr.v("V"), .list = Ast.Expr.v("List") } }},
-            } } }}),
-            .layout = .inline_,
-        },
-        .{
-            .patterns = &.{Ast.Expr.v("Value")},
-            .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("Value") }}),
-            .layout = .inline_,
-        },
-    } } },
+    },
 };
 
 /// `is_<kind>(Var)` guard test.
@@ -979,8 +1000,10 @@ fn emitErlangModule(
     if (cross) |xc| {
         for (program.decls) |decl| {
             const methods = switch (decl) {
-                .record => |r| if (xc.imported.contains(r.name)) r.methods else continue,
-                .@"enum" => |e| if (xc.imported.contains(e.name)) e.methods else continue,
+                .type_ => |tdecl| switch (tdecl.shape) {
+                    .record => if (xc.imported.contains(tdecl.name)) tdecl.methods else continue,
+                    .enum_ => if (xc.imported.contains(tdecl.name)) tdecl.methods else continue,
+                },
                 else => continue,
             };
             for (methods) |m| {
@@ -1025,9 +1048,11 @@ fn emitErlangModule(
                     try std.fmt.allocPrint(b.arena, "external fn {s} (no erlang target)", .{f.name});
                 try forms.append(b.arena, .{ .comment = Ast.Comment.doc(text) });
             },
-            .record => |r| try em.recordForms(b, &forms, r),
-            .@"enum" => |e| try em.enumForms(b, &forms, e),
-            .interface => |i| try em.interfaceForms(b, &forms, i),
+            .type_ => |tdecl| switch (tdecl.shape) {
+                .record => try em.recordForms(b, &forms, tdecl),
+                .enum_ => try em.enumForms(b, &forms, tdecl),
+            },
+            .behavior => |i| try em.interfaceForms(b, &forms, i),
             .implement => |im| try em.implementForms(b, &forms, im),
             .extend => |ex| try em.extendForms(b, &forms, ex),
             .use => |u| try forms.append(b.arena, .{ .comment = Ast.Comment.doc(try useComment(b, u)) }),
@@ -1311,7 +1336,7 @@ fn isNullableParam(p: ast.Param) bool {
 /// `self` and which carries a body. Unlike an associated default (`Array.range`)
 /// it is reached through a value receiver (`xs.all(pred)`), so the emitted form
 /// keeps `self` as its first parameter.
-const IfaceDefault = struct { iface: []const u8, method: ast.InterfaceMethod };
+const IfaceDefault = struct { iface: []const u8, method: ast.BehaviorMethod };
 
 /// One `'__bp_prim_<callee>'/<argc + 1>` runtime-dispatch shim a comptime body
 /// reached. `callee` borrows from the body's AST.
@@ -1330,11 +1355,13 @@ const prim_shim_kinds = [_]struct { kind: envMod.PrimKind, guard: Ast.Expr }{
 /// Tuple positional member (`_0`, `_1`, …) → the digits, else null.
 /// Distinguishes tuple index access from `_`-prefixed record fields.
 fn tupleIndexMember(member: []const u8) ?[]const u8 {
-    if (member.len < 2 or member[0] != '_') return null;
-    for (member[1..]) |ch| {
+    // `t._N` and the bare `t.N` both read element N.
+    const digits = if (member.len > 0 and member[0] == '_') member[1..] else member;
+    if (digits.len == 0) return null;
+    for (digits) |ch| {
         if (!std.ascii.isDigit(ch)) return null;
     }
-    return member[1..];
+    return digits;
 }
 
 /// §A5 annotation-driven prim-method dispatch entry: the host module + symbol +
@@ -1440,7 +1467,7 @@ const Emitter = struct {
     externals_missing: std.StringHashMap(void),
     /// §A2 user-fn per-callee template dispatch (erlang twin of the
     /// commonJS `user_node_templates`): a `declare fn` whose
-    /// `@external(erlang, …)` symbol is a template (contains `$0`/`$self`/…)
+    /// `@external(erlang, …)` symbol is a template (contains `$0`/`$1`/…)
     /// or whose annotation list carries `when(argc == N): "..."` branches.
     /// The decl emits no `module:symbol` reference at the top level — the
     /// template renders inline at every call site, matching how the
@@ -1653,7 +1680,7 @@ const Emitter = struct {
     /// Pre-pass: detect record/struct method names that appear on more than
     /// one nominal type with the same arity. Those collisions get mangled
     /// at emit time (`Query.count` → `query_count`) and at the call site
-    /// (`.record => |"Query"|` of `count` routes to `query_count`),
+    /// (`.type_ => |"Query"|` of `count` routes to `query_count`),
     /// because erlang's top-level fn namespace has no record-scoped
     /// disambiguation.
     fn collectRecordMethodCollisions(this: *Emitter, program: ast.Program) !void {
@@ -1667,11 +1694,11 @@ const Emitter = struct {
         var seen = std.StringHashMap(FirstOf).init(aa);
         for (program.decls) |decl| {
             const type_name: []const u8 = switch (decl) {
-                .record => |r| r.name,
+                .type_ => |r| if (r.isRecord()) r.name else continue,
                 else => continue,
             };
-            const methods: []const ast.InterfaceMethod = switch (decl) {
-                .record => |r| r.methods,
+            const methods: []const ast.BehaviorMethod = switch (decl) {
+                .type_ => |r| if (r.isRecord()) r.methods else continue,
                 else => continue,
             };
             for (methods) |m| {
@@ -1807,9 +1834,9 @@ const Emitter = struct {
     /// A bare call to a std prelude `declare fn` whose `@External.Erlang` symbol
     /// is a template (`stringSlice1(self, start, end)` →
     /// `string:slice(Self, Start, (End - Start))`). The declaration's first
-    /// parameter is named `self`, so the template's `$self` marker is the call's
+    /// parameter is named `self`, so the template's receiver marker (the source's `$0`) is the call's
     /// FIRST positional argument and `$N` the (N+1)-th — unlike a method call,
-    /// where `$self` is the receiver. Null when the callee has no template.
+    /// where the receiver marker is the receiver. Null when the callee has no template.
     fn preludeHelperNode(this: *Emitter, b: Ast.Builder, callee: []const u8, cc: anytype) anyerror!?Ast.Expr {
         const call = this.builtin_erlang_dispatch.get(callee) orelse return null;
         if (cc.args.len == 0) return null;
@@ -1832,9 +1859,9 @@ const Emitter = struct {
     }
 
     /// A host template (`comptime/primOpTemplate.zig`) as a `seq` node: the
-    /// template text is kept verbatim around the receiver (`$self`) and argument
+    /// template text is kept verbatim around the receiver and argument
     /// (`$N`, `$args`) nodes. `no_recv` is raised when the template names
-    /// `$self` but the call has no receiver.
+    /// the receiver but the call has no receiver.
     fn templateNode(this: *Emitter, b: Ast.Builder, template: []const u8, recv: ?*const ast.Expr, cc: anytype, no_recv: anyerror) anyerror!Ast.Expr {
         const Ctx = struct {
             self: *Emitter,
@@ -1898,9 +1925,9 @@ const Emitter = struct {
     /// would survive, but the parsed arg list lives on a scratch buffer).
     fn collectPrimErlangDispatch(this: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| {
-            if (decl != .interface) continue;
-            try this.collectIfaceErlangDispatch(decl.interface);
-            try this.collectIfaceExtendsChain(decl.interface);
+            if (decl != .behavior) continue;
+            try this.collectIfaceErlangDispatch(decl.behavior);
+            try this.collectIfaceExtendsChain(decl.behavior);
         }
         // Reparse `primitives.d.bp` from the embedded prelude so the dispatch
         // map sees `String`/`Bool`/numeric interfaces even when the module
@@ -1918,9 +1945,9 @@ const Emitter = struct {
         var prim_program = p.parse(alloc_arena) catch return;
         defer prim_program.deinit(alloc_arena);
         for (prim_program.decls) |decl| {
-            if (decl != .interface) continue;
-            try this.collectIfaceErlangDispatch(decl.interface);
-            try this.collectIfaceExtendsChain(decl.interface);
+            if (decl != .behavior) continue;
+            try this.collectIfaceErlangDispatch(decl.behavior);
+            try this.collectIfaceExtendsChain(decl.behavior);
         }
     }
 
@@ -1930,7 +1957,7 @@ const Emitter = struct {
     /// `program.decls` lands before the embedded `primitives.d.bp`
     /// re-parse). We only record the first parent — multi-inheritance is
     /// not used by `primitives.d.bp` at v1.
-    fn collectIfaceExtendsChain(this: *Emitter, iface: ast.InterfaceDecl) !void {
+    fn collectIfaceExtendsChain(this: *Emitter, iface: ast.BehaviorDecl) !void {
         if (iface.extends.len == 0) return;
         if (this.prim_iface_chain.contains(iface.name)) return;
         const child = try this.alloc.dupe(u8, iface.name);
@@ -1944,7 +1971,7 @@ const Emitter = struct {
     /// the same shape. A key already present wins on first-write (the in-program
     /// decl overrides the embedded primitive — useful for tests that shadow a
     /// stdlib interface to inject a custom dispatch).
-    fn collectIfaceErlangDispatch(this: *Emitter, iface: ast.InterfaceDecl) !void {
+    fn collectIfaceErlangDispatch(this: *Emitter, iface: ast.BehaviorDecl) !void {
         var slots: [16][]const u8 = undefined;
         for (iface.methods) |m| {
             // `prim-op-annotation` arity-branch form takes precedence: when the
@@ -1987,7 +2014,7 @@ const Emitter = struct {
             }
             // `prim-op-annotation` template form: a `$`-bearing symbol is a raw
             // template body — store it verbatim and skip `parseExternalCallTemplate`
-            // (which would interpret `($self ++ $0)` as a `f(arg)` shape with an
+            // (which would interpret `($0 ++ $1)` as a `f(arg)` shape with an
             // empty head and one bogus arg). `primAnnotationNode` runs the same
             // `looksLikeTemplate` discriminator and renders via
             // `comptime/primOpTemplate.zig`.
@@ -2028,7 +2055,8 @@ const Emitter = struct {
             if (this.prim_erlang_dispatch.get(key)) |hit| break hit;
         } else return null;
         // Arity-branched (`when($argc == N): "…"`) or single-string template:
-        // `$self` ⇒ the receiver, `$N` ⇒ the N-th argument. An arity-branched
+        // The receiver marker ⇒ the receiver, `$N` ⇒ the N-th argument (the
+        // parser translated the source's positional markers, decision 5). An arity-branched
         // annotation with no branch for this argument count falls through.
         if (call.arity_branches.len > 0 or primOpTemplate.looksLikeTemplate(call.symbol)) {
             const template = templateFor(call, cc) orelse return null;
@@ -2077,7 +2105,7 @@ const Emitter = struct {
     /// `instanceDefaultForms` emits on demand.
     fn collectInterfaces(this: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| switch (decl) {
-            .interface => |i| {
+            .behavior => |i| {
                 for (i.methods) |m| {
                     if (m.returnType) |rt| {
                         if (rt == .named and std.mem.eql(u8, rt.named, "Self")) {
@@ -2110,8 +2138,8 @@ const Emitter = struct {
         var p = parserMod.Parser.init(tokens);
         const prim_program = try p.parse(arena);
         for (prim_program.decls) |decl| {
-            if (decl != .interface) continue;
-            const i = decl.interface;
+            if (decl != .behavior) continue;
+            const i = decl.behavior;
             for (i.methods) |m| {
                 var key_buf: [256]u8 = undefined;
                 const key = std.fmt.bufPrint(&key_buf, "{s}.{s}", .{ i.name, m.name }) catch continue;
@@ -2399,7 +2427,7 @@ const Emitter = struct {
                     (if (!this.locals.contains(n)) this.num_names.get(n) else null),
                 .identAccess => if (this.instance_lowerings.get(id.loc)) |il| switch (il) {
                     .prim => .int,
-                    .record => null,
+                    .type_ => null,
                 } else null,
                 else => null,
             },
@@ -2510,14 +2538,16 @@ const Emitter = struct {
     /// field-access, and enum-member lowering.
     fn collectTypeShapes(self: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| switch (decl) {
-            .record => |r| {
-                var names = try self.alloc.alloc([]const u8, r.fields.len);
-                for (r.fields, 0..) |f, i| names[i] = f.name;
-                try self.record_fields.put(r.name, names);
-            },
-            .@"enum" => |e| {
-                try self.enum_names.put(e.name, {});
-                for (e.variants) |v| try self.enum_variants.put(v.name, {});
+            .type_ => |tdecl| switch (tdecl.shape) {
+                .record => {
+                    var names = try self.alloc.alloc([]const u8, tdecl.recordFields().len);
+                    for (tdecl.recordFields(), 0..) |f, i| names[i] = f.name;
+                    try self.record_fields.put(tdecl.name, names);
+                },
+                .enum_ => {
+                    try self.enum_names.put(tdecl.name, {});
+                    for (tdecl.variants()) |v| try self.enum_variants.put(v.name, {});
+                },
             },
             else => {},
         };
@@ -2581,8 +2611,10 @@ const Emitter = struct {
     fn collectLocalFnArities(self: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| switch (decl) {
             .@"fn" => |f| try self.putLocalFn(f.name, fnArityNoSelf(f)),
-            .record => |r| for (r.methods) |m| try self.putLocalFn(m.name, m.params.len),
-            .@"enum" => |e| for (e.methods) |m| try self.putLocalFn(m.name, m.params.len),
+            .type_ => |tdecl| switch (tdecl.shape) {
+                .record => for (tdecl.methods) |m| try self.putLocalFn(m.name, m.params.len),
+                .enum_ => for (tdecl.methods) |m| try self.putLocalFn(m.name, m.params.len),
+            },
             .implement => |im| for (im.methods) |m| try self.putLocalFn(m.name, m.params.len),
             .extend => |ex| for (ex.methods) |m| try self.putLocalFn(m.name, m.params.len),
             else => {},
@@ -3085,7 +3117,7 @@ const Emitter = struct {
         const il = this.instance_lowerings.get(e.call.loc) orelse return null;
         return switch (il) {
             .prim => |k| if (k == .array) name else null,
-            .record => null,
+            .type_ => null,
         };
     }
 
@@ -3715,7 +3747,7 @@ const Emitter = struct {
                                 else => b.call("length", &.{recv}),
                             };
                         },
-                        .record => {},
+                        .type_ => {},
                     };
                     // Same field access on a `Self`-typed receiver inside an
                     // interface instance `default fn` (`self.length`), which
@@ -3866,8 +3898,7 @@ const Emitter = struct {
                 }),
                 // Anonymous record / interface literal — an Erlang map (the same
                 // shape named records lower to). Keys are the field names as written.
-                .recordLit => |rl| return this.fieldMap(b, rl.fields),
-                .interfaceLit => |il| return this.fieldMap(b, il.fields),
+                .behaviorLit => |il| return this.fieldMap(b, il.fields),
             },
 
             .jump => |j| return switch (j.kind) {
@@ -4283,7 +4314,7 @@ const Emitter = struct {
             // first — local `m(Recv, args)`, or `owner:m(Recv, args)` for an
             // imported type. A method name shared by two records is mangled to
             // `<recordtype>_<method>` so the flat fn namespace stays unambiguous.
-            .record => |tn| {
+            .type_ => |tn| {
                 var mn_buf: [256]u8 = undefined;
                 const mn: []const u8 = if (this.isRecordMethodCollision(tn, cc.callee))
                     try b.arena.dupe(u8, try recordMethodAtom(&mn_buf, tn, cc.callee))
@@ -4907,12 +4938,12 @@ const Emitter = struct {
         });
     }
 
-    fn recordForms(this: *Emitter, b: Ast.Builder, out: *Forms, r: ast.RecordDecl) !void {
+    fn recordForms(this: *Emitter, b: Ast.Builder, out: *Forms, r: ast.TypeDecl) !void {
         // Records are maps at runtime (`#{field => V}`) — no decl needed.
         // (`-record(PascalCase, …)` is invalid Erlang: a capitalised bare atom.)
         var text: std.ArrayListUnmanaged(u8) = .empty;
-        try text.appendSlice(b.arena, try std.fmt.allocPrint(b.arena, "record {s}: ", .{r.name}));
-        for (r.fields, 0..) |f, i| {
+        try text.appendSlice(b.arena, try std.fmt.allocPrint(b.arena, "type {s}: ", .{r.name}));
+        for (r.recordFields(), 0..) |f, i| {
             if (i > 0) try text.appendSlice(b.arena, ", ");
             try text.appendSlice(b.arena, f.name);
         }
@@ -4932,9 +4963,9 @@ const Emitter = struct {
         }
     }
 
-    fn enumForms(this: *Emitter, b: Ast.Builder, out: *Forms, e: ast.EnumDecl) !void {
-        try out.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "enum {s}", .{e.name})) });
-        for (e.variants) |v| {
+    fn enumForms(this: *Emitter, b: Ast.Builder, out: *Forms, e: ast.TypeDecl) !void {
+        try out.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "type {s}", .{e.name})) });
+        for (e.variants()) |v| {
             var text: std.ArrayListUnmanaged(u8) = .empty;
             try text.appendSlice(b.arena, try std.fmt.allocPrint(b.arena, "  {s}", .{v.name}));
             if (v.fields.len > 0) {
@@ -4953,8 +4984,8 @@ const Emitter = struct {
         }
     }
 
-    fn interfaceForms(this: *Emitter, b: Ast.Builder, out: *Forms, i: ast.InterfaceDecl) !void {
-        try out.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "interface {s}", .{i.name})) });
+    fn interfaceForms(this: *Emitter, b: Ast.Builder, out: *Forms, i: ast.BehaviorDecl) !void {
+        try out.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "behavior {s}", .{i.name})) });
         // Associated `default fn`s (no `self`) are pure botopink — local
         // functions so `Interface.method(...)` resolves locally (the interface
         // decl is inlined into each consuming module). The name is mangled

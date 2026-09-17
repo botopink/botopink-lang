@@ -16,7 +16,7 @@ const h = @import("helpers.zig");
 
 test "wat: record construct two fields" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record Point { x: i32, y: i32 }
+        \\type Point(x: i32, y: i32)
         \\fn make() -> Point {
         \\    return Point(x: 3, y: 4);
         \\}
@@ -35,7 +35,7 @@ test "wat: tuple construct then destructure" {
 
 test "wat: enum payload construct as tagged struct" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\enum Shape {
+        \\type Shape {
         \\    Circle(r: i32),
         \\    Square(side: i32),
         \\}
@@ -121,7 +121,7 @@ test "wat: string slice result length is readable" {
 test "wat: anon record literal two fields" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn make() -> i32 {
-        \\    val r = record { a: 7, b: 11 };
+        \\    val r = #(7, 11);
         \\    return r;
         \\}
     );
@@ -130,7 +130,7 @@ test "wat: anon record literal two fields" {
 test "wat: anon record literal nested" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn make() -> i32 {
-        \\    val outer = record { span: record { start: 1, end: 2 }, kind: 3 };
+        \\    val outer = #(#(1, 2), 3);
         \\    return outer;
         \\}
     );
@@ -142,7 +142,7 @@ test "wat: anon record literal nested" {
 // layout. A second record sharing no field names doesn't perturb the lookup.
 test "wat: record field access via unique name" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record Point { x: i32, y: i32 }
+        \\type Point(x: i32, y: i32)
         \\fn first(p: Point) -> i32 {
         \\    return p.x;
         \\}
@@ -154,7 +154,7 @@ test "wat: record field access via unique name" {
 
 test "wat: record returned then field read on call result" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record Span { start: i32, end: i32, line: i32 }
+        \\type Span(start: i32, end: i32, line: i32)
         \\fn span() -> Span {
         \\    return Span(start: 4, end: 9, line: 2);
         \\}
@@ -168,7 +168,7 @@ test "wat: record returned then field read on call result" {
 // `recordTypeOfExpr`). Same spec scenario, runs under wasmtime + prints `11`.
 test "wat: record field access by name loads at declared offset" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record R { a: i32, b: i32 }
+        \\type R(a: i32, b: i32)
         \\fn main() {
         \\    val r = R(a: 7, b: 11);
         \\    @print(r.b);
@@ -181,7 +181,7 @@ test "wat: record field access by name loads at declared offset" {
 // `local.tee` + `i32.eqz` + `(if (result i32) ...)` guard.
 test "wat: optional chaining on record null returns zero" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record R { a: i32, b: i32 }
+        \\type R(a: i32, b: i32)
         \\fn pick(maybe: ?R) -> i32 {
         \\    return maybe?.b;
         \\}
@@ -195,7 +195,9 @@ test "wat: optional chaining on record null returns zero" {
 test "wat: anon record let-bound then field read by name" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
-        \\    val r = record { code: 7, kind: 11 };
+        \\    val code = 7;
+        \\    val kind = 11;
+        \\    val r = #(code, kind);
         \\    @print(r.kind);
         \\}
     );
@@ -208,7 +210,11 @@ test "wat: anon record let-bound then field read by name" {
 test "wat: nested anon record chained field read" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
-        \\    val outer = record { span: record { start: 5, end: 9 }, kind: 3 };
+        \\    val start = 5;
+        \\    val end = 9;
+        \\    val span = #(start, end);
+        \\    val kind = 3;
+        \\    val outer = #(span, kind);
         \\    @print(outer.span.start);
         \\}
     );
@@ -241,7 +247,7 @@ test "wat: optional local equals null" {
 // F2.2 — Optional fn return — null arm.
 test "wat: optional fn return null path" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record R { kind: i32 }
+        \\type R(kind: i32)
         \\fn choose(present: bool) -> ?R {
         \\    if (present) {
         \\        return R(kind: 7);
@@ -258,7 +264,7 @@ test "wat: optional fn return null path" {
 // F2.3 — Optional fn return — value path with `?.`.
 test "wat: optional fn return present path with optional chaining" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record R { kind: i32 }
+        \\type R(kind: i32)
         \\fn choose(present: bool) -> ?R {
         \\    if (present) {
         \\        return R(kind: 7);
@@ -275,7 +281,7 @@ test "wat: optional fn return present path with optional chaining" {
 // F2.4 — Branch on `x == null`, deref through `?.` on the present arm.
 test "wat: optional branch on equality and chained deref" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record R { kind: i32 }
+        \\type R(kind: i32)
         \\fn main() {
         \\    val r = R(kind: 11);
         \\    val maybe: ?R = r;
@@ -402,7 +408,7 @@ test "wat: list literal of strings len" {
 // F4.4 — list literal of records (each element is a base pointer).
 test "wat: list literal of records len" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record P { x: i32, y: i32 }
+        \\type P(x: i32, y: i32)
         \\fn main() {
         \\    val pts = [P(x: 1, y: 2), P(x: 3, y: 4)];
         \\    @print(pts.len);

@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-record Pato { id: i32 }
+type Pato(id: i32)
 val PatoVoa = extend Pato {
     fn fly(self: Self) {
         return self.id;
@@ -7,7 +7,7 @@ val PatoVoa = extend Pato {
 }
 
 ----- ERROR
-error: extend requires an interface
+error: extend requires a behavior
 
   `extend Pato` adds methods without a contract
-  hint: use `implement <Interface> for Pato` so the methods satisfy an interface
+  hint: use `implement <Behavior> for Pato` so the methods satisfy a behavior

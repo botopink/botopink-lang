@@ -118,24 +118,24 @@ test "format: doc comment ---- multiline before fn" {
     );
 }
 
-test "format: doc comment ---- before struct" {
+test "format: doc comment ---- before a record with no fields" {
     try h.assertFormat(std.testing.allocator,
         \\/// User account structure
-        \\val Account = record {};
+        \\type Account
     );
 }
 
-test "format: doc comment ---- before enum" {
+test "format: doc comment ---- before an enum-shaped type" {
     try h.assertFormat(std.testing.allocator,
         \\/// Color enumeration
-        \\val Color = enum { Red, Blue };
+        \\type Color { Red, Blue }
     );
 }
 
-test "format: doc comment ---- before interface" {
+test "format: doc comment ---- before a behavior" {
     try h.assertFormat(std.testing.allocator,
-        \\/// Drawable interface
-        \\val Drawable = interface {};
+        \\/// Drawable behavior
+        \\behavior Drawable {}
     );
 }
 
@@ -185,5 +185,48 @@ test "format: todo ---- with message and comment" {
         \\fn main() {
         \\    @todo("wibble");
         \\}
+    );
+}
+
+test "format: comments ---- member comments and blank lines in a behavior body are kept" {
+    try h.assertFormat(std.testing.allocator,
+        \\// ── numbers ──
+        \\
+        \\pub behavior Router {
+        \\    // the path the router resolved
+        \\    fn pathname(self: Self) -> string;
+        \\
+        \\    // two lines of
+        \\    // explanation
+        \\    fn params(self: Self) -> string;
+        \\
+        \\    default fn describe(self: Self) -> string {
+        \\        return self.pathname();
+        \\    }
+        \\    // a closing note
+        \\}
+        \\
+        \\// ── records ──
+        \\
+        \\type Point(x: i32, y: i32) {
+        \\    // the sum
+        \\    fn sum(self: Self) -> i32 {
+        \\        return self.x + self.y;
+        \\    }
+        \\
+        \\    fn twice(self: Self) -> i32 {
+        \\        return self.sum() * 2;
+        \\    }
+        \\}
+    );
+}
+
+test "format: comments ---- an empty module comment line has no trailing space" {
+    try h.assertFormat(std.testing.allocator,
+        \\//// A module.
+        \\////
+        \\//// More.
+        \\
+        \\fn main() {}
     );
 }

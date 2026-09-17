@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-enum Shape {
+type Shape {
     Circle(radius: f64),
     Rectangle(w: f64, h: f64),
     Point,

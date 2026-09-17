@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record ParseError { msg: string }
-val Parser = record {
+type ParseError(msg: string)
+val Parser = type {
     fn parse(self: Self) -> @Result<i32, ParseError> {
         throw ParseError(msg: "bad input");
     }
@@ -16,9 +16,9 @@ fn run(p: Parser) -> i32 {
 ```erlang
 -module(main).
 
-%% record ParseError: msg
+%% type ParseError: msg
 
-%% record Parser: 
+%% type Parser: 
 
 parse(Self) ->
     erlang:throw(#{msg => <<"bad input">>}).

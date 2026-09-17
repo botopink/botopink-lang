@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn make() -> i32 {
-    val outer = record { span: record { start: 1, end: 2 }, kind: 3 };
+    val outer = #(#(1, 2), 3);
     return outer;
 }
 ```
@@ -20,8 +20,10 @@ fn make() -> i32 {
   {label, 3}.
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
-    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 0, {list, [{atom, start}, {integer, 1}, {atom, 'end'}, {integer, 2}]}}.
-    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 1, {list, [{atom, span}, {x, 0}, {atom, kind}, {integer, 3}]}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{integer, 1}, {integer, 2}]}}.
+    {test_heap, 3, 1}.
+    {put_tuple2, {x, 0}, {list, [{x, 0}, {integer, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {deallocate, 1}.

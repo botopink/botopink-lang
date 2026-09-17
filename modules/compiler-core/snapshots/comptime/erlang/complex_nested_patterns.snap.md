@@ -1,10 +1,10 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Result = enum <T, E> {
+val Result = type <T, E> {
     Ok(value: T),
     Err(error: E),
 };
-val Container = enum {
+val Container = type {
     Single(Result<i32, string>),
     Multiple(Result<i32, string>[]),
 };

@@ -1,9 +1,9 @@
 ----- SOURCE CODE -- pond.bp
 ```botopink
-val Swimmer = interface {
+val Swimmer = behavior {
     fn swim(self: Self);
 }
-pub record Pato { id: i32 }
+pub type Pato(id: i32)
 pub val PatoNada = implement Swimmer for Pato {
     fn swim(self: Self) {
         return self.id;
@@ -13,7 +13,7 @@ pub val PatoNada = implement Swimmer for Pato {
 
 ----- JAVASCRIPT -- pond.js
 ```javascript
-// interface Swimmer
+// behavior Swimmer
 //   fn swim(...)
 
 class Pato {

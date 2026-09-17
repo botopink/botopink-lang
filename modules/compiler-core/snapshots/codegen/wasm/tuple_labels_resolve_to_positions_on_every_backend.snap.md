@@ -1,61 +1,27 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub fn conf<T>(comptime q: @Expr<string>) -> @Expr<T> {
-    val t = q.text();
-    return @expr(record { port: 8000 + t.length, debug: true });
+fn load() -> #(name: string, pop: i32) {
+    val name = "SP";
+    val pop = 12;
+    return #(name, pop);
 }
-val cfg = conf "yaml";
+
+fn show(r: #(city: string, pop: i32)) -> i32 {
+    return r.pop;
+}
+
 fn main() {
-    @print(cfg.port + 1);
-}
-```
-
------ COMPTIME ERLANG -- template conf
-```erlang
-conf(Q) ->
-    T = text(Q),
-    expr(#{port => '__bp_add'(8000, '__bp_len'(T, length)), debug => true}).
-
-main() ->
-    try
-        json:encode('__bp_reply'(conf(#{
-            '__bp_capture' => <<"q">>,
-            text => <<"yaml">>,
-            parts => [
-                #{
-                    kind => <<"Text">>,
-                    text => <<"yaml">>,
-                    span => #{start => 0, 'end' => 4, line => 1}
-                }
-            ],
-            source => #{file => <<"">>, line => 5, col => 16},
-            context => #{
-                source => #{file => <<"">>, line => 5, col => 16},
-                text => <<"yaml">>,
-                multiline => false
-            },
-            bindings => [
-                #{name => <<"conf">>, kind => 'Fn'},
-                #{name => <<"cfg">>, kind => 'Val'},
-                #{name => <<"main">>, kind => 'Fn'}
-            ]
-        })))
-    catch
-        throw:{'__bp_template_fail', Message, Param, Span} ->
-            json:encode(#{kind => <<"fail">>, message => '__bp_text'(Message), param => Param, span => '__bp_json'(Span)});
-        Class:Reason ->
-            json:encode(#{kind => <<"error">>, message => '__bp_text'({Class, Reason})})
-    end.
-```
-
------ COMPTIME REPLY -- template conf
-```json
-{
-  "value": {
-    "port": 8004,
-    "debug": true
-  },
-  "kind": "value"
+    val row = load();
+    @print(row.name);
+    @print(row.pop + 1);
+    val a = "RJ";
+    val b = 7;
+    val local = #(a, b);
+    @print(local.a);
+    @print(show(#("BH", 3)));
+    @print(show(row));
+    val typed: #(x: i32, y: i32) = #(1, 2);
+    @print(typed.y);
 }
 ```
 
@@ -64,18 +30,18 @@ main() ->
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (start $__init_globals)
-  (global $__heap_ptr (mut i32) (i32.const 256))
-  (global $cfg (mut i32) (i32.const 0))
-  (func $main
-    global.get $cfg
-    i32.load ;; .port
-    i32.const 1
-    i32.add
-    call $__print_i32
-  )
-  (func $__init_globals
+  (data (i32.const 256) "\02\00\00\00SP")
+  (data (i32.const 264) "\02\00\00\00RJ")
+  (data (i32.const 272) "\02\00\00\00BH")
+  (global $__heap_ptr (mut i32) (i32.const 280))
+  (func $load (result i32)
     (local $__mem0 i32)
+    (local $name i32)
+    (local $pop i32)
+    i32.const 256
+    local.set $name
+    i32.const 12
+    local.set $pop
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
@@ -83,13 +49,94 @@ main() ->
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 8004
+    local.get $name
     i32.store
     local.get $__mem0
-    i32.const 1
+    local.get $pop
     i32.store offset=4
     local.get $__mem0
-    global.set $cfg
+    return
+  )
+  (func $show (param $r i32) (result i32)
+    local.get $r
+    i32.load offset=4
+    return
+  )
+  (func $main
+    (local $__mem0 i32)
+    (local $__mem1 i32)
+    (local $__mem2 i32)
+    (local $row i32)
+    (local $a i32)
+    (local $b i32)
+    (local $local i32)
+    (local $typed i32)
+    call $load
+    local.set $row
+    local.get $row
+    i32.load
+    call $__print_i32
+    local.get $row
+    i32.load offset=4
+    i32.const 1
+    i32.add
+    call $__print_i32
+    i32.const 264
+    local.set $a
+    i32.const 7
+    local.set $b
+    global.get $__heap_ptr
+    local.set $__mem0
+    global.get $__heap_ptr
+    i32.const 8
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem0
+    local.get $a
+    i32.store
+    local.get $__mem0
+    local.get $b
+    i32.store offset=4
+    local.get $__mem0
+    local.set $local
+    local.get $local
+    i32.load
+    call $__print_i32
+    global.get $__heap_ptr
+    local.set $__mem1
+    global.get $__heap_ptr
+    i32.const 8
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem1
+    i32.const 272
+    i32.store
+    local.get $__mem1
+    i32.const 3
+    i32.store offset=4
+    local.get $__mem1
+    call $show
+    call $__print_i32
+    local.get $row
+    call $show
+    call $__print_i32
+    global.get $__heap_ptr
+    local.set $__mem2
+    global.get $__heap_ptr
+    i32.const 8
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem2
+    i32.const 1
+    i32.store
+    local.get $__mem2
+    i32.const 2
+    i32.store offset=4
+    local.get $__mem2
+    local.set $typed
+    local.get $typed
+    i32.load offset=4
+    call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
@@ -279,5 +326,10 @@ main() ->
 
 ----- RUN LOG -----
 ```logs
-8005
+256
+13
+264
+3
+12
+2
 ```

@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record Contador {
-    n: i32,
+type Contador(
+    n: i32) {
     fn atual(self: Self) {
         return self.n;
     }
@@ -17,7 +17,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% record Contador: n
+%% type Contador: n
 
 atual(Self) ->
     maps:get(n, Self).

@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub enum Shape {
+pub type Shape {
     Circle(radius: i32),
     Square(side: i32),
 
@@ -24,7 +24,7 @@ pub fn main() {
 -export(['_botopink_main'/0, main/1]).
 -export([main/0]).
 
-%% enum Shape
+%% type Shape
 %%   Circle(radius)
 %%   Square(side)
 

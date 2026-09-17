@@ -4,8 +4,8 @@
 import {name} from "shapes.circle";
 import {secret} from "shapes.helpers";
 
-pub mod circle;   // public: shapes.circle is reachable from outside shapes
-mod helpers;      // private: shapes.helpers is reachable only inside this subtree
+pub mod circle; // public: shapes.circle is reachable from outside shapes
+mod helpers; // private: shapes.helpers is reachable only inside this subtree
 
 pub fn describe() -> string {
     return name();

@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record A { x: i32, y: string }
-record B { x: i32, z: bool }
+type A(x: i32, y: string)
+type B(x: i32, z: bool)
 val Merged = mergeRecords(A, B);
 ```
 

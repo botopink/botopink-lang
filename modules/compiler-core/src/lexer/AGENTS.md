@@ -10,7 +10,7 @@ Lexer support files. The lexer entry point itself lives at `../lexer.zig`.
 ```text
 lexer/
 ├── AGENTS.md      ← you are here
-├── token.zig      ← TokenKind enum + Token struct (lexeme + line/col)
+├── token.zig      ← TokenKind enum + Token struct (lexeme + line/col); `record`/`enum`/`interface` are no longer lexed (declaration-kind tags for the language server only)
 ├── tests.zig      ← barrel importing every tests/<feature>.zig
 └── tests/         ← lexer tests, split by feature
     ├── helpers.zig    ← placeholder harness module (no helpers defined)
@@ -63,3 +63,10 @@ defer l.deinit(alloc);` — `scanAll` returns `[]const Token` owned by the lexer
 - Numeric literals support `1_000_000` digit separators and scientific notation
   (`1.5e-10`, `2E+3`); unary `-` is handled in the parser primary.
 - A new `tests/*.zig` file only runs once it is imported from `tests.zig`.
+
+## A digit after a member `.` is a positional index
+
+`scanNumber` checks the previous token: a number that starts right after a `.`
+(adjacent, `prev.offset + 1 == start`) scans integer digits only. `t.0.1` is
+`t . 0 . 1` (two tuple indexes), not `t . 0.1`, and `p.0.toString()` is not the
+float `0.`. Every other number keeps the decimal / radix / exponent rules.

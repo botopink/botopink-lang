@@ -97,8 +97,8 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "effect-on-declare-forbidden: a #[@<effect>] annotation marks an IMPLEMENTATION (a fn with a body); `declare fn` declarations express the effect through the return wrapper alone.",
             .hint = "Drop the #[@<effect>] annotation — the return-type wrapper (@Result/@Future/…) already carries the effect on a `declare fn`.",
         },
-        .effectOnInterfaceMethodForbidden => .{
-            .message = "effect-on-interface-method-forbidden: interface methods are declarative — they express the effect through the return wrapper alone, never via #[@<effect>].",
+        .effectOnBehaviorMethodForbidden => .{
+            .message = "effect-on-behavior-method-forbidden: behavior methods are declarative — they express the effect through the return wrapper alone, never via #[@<effect>].",
             .hint = "Drop the #[@<effect>] annotation; the implementing fn carries it.",
         },
         .effectDuplicateAnnotation => .{
@@ -125,6 +125,81 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "the `@[…]` annotation block was retired",
             .caretCaption = "write `#[…]` instead",
             .hint = "An annotation block opens with `#[`; the `@` marks a builtin annotation INSIDE it, e.g. `#[@External.Node(\"./m.mjs\", \"f\")]`.",
+        },
+        .removedKeywordRecord => .{
+            .code = "removed-keyword-record",
+            .message = "`record` was replaced by `type` in 1.0.3",
+            .caretCaption = "write `type Name(fields) { methods }`",
+            .hint = "A record is `type Point(x: i32, y: i32) { fn … }`; a record with no fields is `type Name { methods }`.",
+        },
+        .removedKeywordEnum => .{
+            .code = "removed-keyword-enum",
+            .message = "`enum` was replaced by `type` in 1.0.3",
+            .caretCaption = "write `type Name { variants }`",
+            .hint = "An enum is `type Color { Red, Green, Rgb(r: i32, g: i32, b: i32) }`.",
+        },
+        .removedKeywordInterface => .{
+            .code = "removed-keyword-interface",
+            .message = "`interface` was renamed to `behavior` in 1.0.3",
+            .caretCaption = "write `behavior`",
+            .hint = "`behavior Printable { fn print(self: Self) -> string; }`; a delegate is `declare fn`.",
+        },
+        .removedRecordLiteral => .{
+            .code = "removed-record-literal",
+            .message = "anonymous records are tuples in 1.0.3",
+            .caretCaption = "write a tuple `#(…)`",
+            .hint = "Build `#(x, y)` from variables (their names become the labels), or `#(1, 2)` and give the destination a labeled type `#(x: i32, y: i32)`.",
+        },
+        .removedRecordType => .{
+            .code = "removed-record-type",
+            .message = "anonymous record types are tuples in 1.0.3",
+            .caretCaption = "write a tuple type `#(…)`",
+            .hint = "A labeled tuple type: `#(x: i32, y: i32)`.",
+        },
+        .typeRecordWithVariants => .{
+            .code = "type-record-with-variants",
+            .message = "a `type` with a field list cannot also declare variants",
+            .hint = "A record is `type Name(fields) { methods }`; an enum is `type Name { Variant, … }`. Split the declaration in two.",
+        },
+        .typeEmptyFieldList => .{
+            .code = "type-empty-field-list",
+            .message = "an empty field list `()`",
+            .hint = "A record with no fields omits the parentheses: `type Name { methods }`.",
+        },
+        .typeVariantAfterMethod => .{
+            .code = "type-variant-after-method",
+            .message = "a variant after a method",
+            .hint = "Declare every variant (and section) before the first method.",
+        },
+        .typeFieldValPrefix => .{
+            .code = "type-field-val-prefix",
+            .message = "a field list takes no `val` prefix",
+            .caretCaption = "remove `val`",
+            .hint = "Fields are immutable already: `type Point(x: i32, y: i32)`.",
+        },
+        .memberCommaSeparator => .{
+            .code = "member-comma-separator",
+            .message = "members end with `;`, not `,`",
+            .caretCaption = "replace `,` with `;` (or nothing after a `}`)",
+            .hint = "A bodyless member (`fn f(self: Self) -> i32;`, `val x: T;`) ends with `;`; a member with a body ends with `}`.",
+        },
+        .memberMissingSemicolon => .{
+            .code = "member-missing-semicolon",
+            .message = "a bodyless member must end with `;`",
+            .caretCaption = "add `;`",
+            .hint = "Write `fn name(self: Self) -> T;` or `val name: T;`.",
+        },
+        .templateSelfMarker => .{
+            .code = "template-self-marker",
+            .message = "`$self` is not a template marker",
+            .caretCaption = "use `$0`",
+            .hint = "Markers are positional over the declared parameters: on a method `$0` is `self`, `$1` the next parameter.",
+        },
+        .templateMarkerOutOfRange => .{
+            .code = "template-marker-out-of-range",
+            .message = "a template marker names a parameter the declaration does not have",
+            .caretCaption = "past the last parameter",
+            .hint = "`$0` is the first declared parameter; the highest marker is one less than the parameter count.",
         },
         .fnParamPositionalAfterNamed => .{
             .message = "fn-param-positional-after-named: positional argument supplied after a named one.",

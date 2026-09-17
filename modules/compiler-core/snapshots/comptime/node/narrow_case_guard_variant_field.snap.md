@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-enum Response {
+type Response {
     Data(code: i32, body: string),
     Error(code: i32),
 }

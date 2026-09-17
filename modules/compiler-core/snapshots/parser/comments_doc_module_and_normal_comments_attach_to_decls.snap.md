@@ -10,7 +10,7 @@
     },
     {
       "comment": {
-        "text": "documents the record",
+        "text": "documents the type",
         "is_module": false,
         "is_doc": true
       }
@@ -23,7 +23,7 @@
       }
     },
     {
-      "record": {
+      "type_": {
         "name": "Point",
         "id": 1,
         "isPub": false,
@@ -33,16 +33,18 @@
         "annotations": [],
         "genericParams": [],
         "implement": [],
-        "fields": [
-          {
-            "name": "x",
-            "typeRef": {
-              "named": "i32"
-            },
-            "default": null,
-            "annotations": []
-          }
-        ],
+        "shape": {
+          "record": [
+            {
+              "name": "x",
+              "typeRef": {
+                "named": "i32"
+              },
+              "default": null,
+              "annotations": []
+            }
+          ]
+        },
         "trailingComma": false,
         "methods": []
       }

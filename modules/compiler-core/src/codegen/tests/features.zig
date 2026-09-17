@@ -103,7 +103,7 @@ test "js: effect annotation ---- generator lowers to function*" {
 
 test "js: enum ---- unit variants" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Direction = enum {
+        \\val Direction = type {
         \\    North,
         \\    South,
         \\    East,
@@ -114,7 +114,7 @@ test "js: enum ---- unit variants" {
 
 test "js: enum ---- payload variant" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Color = enum {
+        \\val Color = type {
         \\    Red,
         \\    Rgb(r: i32, g: i32, b: i32),
         \\}
@@ -123,7 +123,7 @@ test "js: enum ---- payload variant" {
 
 test "js: enum ---- payload variants with method using variantFields case" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Shape = enum {
+        \\val Shape = type {
         \\    Circle(radius: f64),
         \\    Square(side: f64),
         \\    Triangle(base: f64, height: f64),
@@ -141,7 +141,7 @@ test "js: enum ---- payload variants with method using variantFields case" {
 
 test "js: enum ---- unit variants with method using ident case" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val HttpMethod = enum {
+        \\val HttpMethod = type {
         \\    Get,
         \\    Post,
         \\    Put,
@@ -161,7 +161,7 @@ test "js: enum ---- unit variants with method using ident case" {
 
 test "js: enum ---- mixed unit and payload with method using mixed case" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Maybe = enum {
+        \\val Maybe = type {
         \\    Nothing,
         \\    Just(value: string),
         \\    fn check(m: Self) -> string {
@@ -176,7 +176,7 @@ test "js: enum ---- mixed unit and payload with method using mixed case" {
 
 test "js: enum ---- method using qualified enum member" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Status = enum {
+        \\val Status = type {
         \\    Active,
         \\    Inactive,
         \\    fn isDefault(s: Self) -> string {
@@ -195,7 +195,7 @@ test "js: import ---- named imports" {
 
 test "codegen ---- use object destructure state to useState" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = record implement @Context<Element, Element> { }
+        \\val Element = type implement @Context<Element, Element> { }
         \\fn state(initial: i32) -> @Context<Element, i32> {
         \\    initial;
         \\}
@@ -208,7 +208,7 @@ test "codegen ---- use object destructure state to useState" {
 
 test "codegen ---- use tuple destructure state to useState" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = record implement @Context<Element, Element> { }
+        \\val Element = type implement @Context<Element, Element> { }
         \\fn state(initial: i32) -> @Context<Element, i32> {
         \\    initial;
         \\}
@@ -221,7 +221,7 @@ test "codegen ---- use tuple destructure state to useState" {
 
 test "codegen ---- use memo infers dependency array" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = record implement @Context<Element, Element> { }
+        \\val Element = type implement @Context<Element, Element> { }
         \\fn state(initial: i32) -> @Context<Element, i32> {
         \\    initial;
         \\}
@@ -238,7 +238,7 @@ test "codegen ---- use memo infers dependency array" {
 
 test "codegen ---- use effect void hook empty deps" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = record implement @Context<Element, Element> { }
+        \\val Element = type implement @Context<Element, Element> { }
         \\fn cleanup() {
         \\    0;
         \\}
@@ -254,7 +254,7 @@ test "codegen ---- use effect void hook empty deps" {
 
 test "codegen ---- inline implement context base erased at runtime" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Element = record implement @Context<Element, Element> { }
+        \\val Element = type implement @Context<Element, Element> { }
         \\fn render() -> Element {
         \\    Element();
         \\}
@@ -263,7 +263,7 @@ test "codegen ---- inline implement context base erased at runtime" {
 
 test "js: destructure ---- record val binding" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record Point { x: i32, y: i32 }
+        \\type Point(x: i32, y: i32)
         \\fn describe(p: Point) -> i32 {
         \\    val { x, y } = p;
         \\    @print(x, y);
@@ -277,7 +277,7 @@ test "js: destructure ---- record val binding" {
 
 test "js: destructure ---- record val binding with spread" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record Point { x: i32, y: i32, z: i32 }
+        \\type Point(x: i32, y: i32, z: i32)
         \\fn describe(p: Point) -> i32 {
         \\    val { x, .. } = p;
         \\    return x;
@@ -287,7 +287,7 @@ test "js: destructure ---- record val binding with spread" {
 
 test "js: destructure ---- record parameter in fn" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record Person { name: string, age: i32 }
+        \\type Person(name: string, age: i32)
         \\fn greet({ name, .. }: Person) -> string {
         \\    @print(name);
         \\    return name;
@@ -336,7 +336,7 @@ test "js: destructure ---- tuple with long names" {
 
 test "js: destructure ---- tuple with try-catch" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record Error { msg: string }
+        \\type Error(msg: string)
         \\#[@result]
         \\fn fetch() -> @Result<#(i32, i32), Error> {
         \\    throw Error(msg: "boom");
@@ -349,7 +349,7 @@ test "js: destructure ---- tuple with try-catch" {
 
 test "js: enum ---- shorthand declaration without val Name =" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\enum Direction {
+        \\type Direction {
         \\    North,
         \\    South,
         \\    East,
@@ -395,17 +395,17 @@ test "js: import ---- cross-module record construct and assoc fn" {
     // atom + build the owner's map. (wasm stays single-module — see wat.zig.)
     try h.assertJs(std.testing.allocator, @src(), &.{
         .{ .path = "http", .source =
-        \\pub record Response {
-        \\    body: string,
+        \\pub type Response(
+        \\    body: string) {
         \\    fn ok(body: string) -> Response {
         \\        return Response(body: body);
         \\    }
         \\}
         \\
-        \\pub record App {
+        \\pub type App(
         \\    port: i32,
         \\    path: string,
-        \\}
+        \\)
         },
         .{ .path = "", .source =
         \\import {Response, App} from "http";
@@ -560,7 +560,7 @@ test "js: negation ---- in expression" {
 
 test "js: enum ---- method with case on self" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Color = enum {
+        \\val Color = type {
         \\    Red,
         \\    Green,
         \\    Blue,
@@ -582,7 +582,7 @@ test "js: enum ---- method with case on self" {
 // then `12`; wasm traps (1.0.4-beta 01 wasm).
 test "js: enum ---- a method is called on a variant value" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\pub enum Shape {
+        \\pub type Shape {
         \\    Circle(radius: i32),
         \\    Square(side: i32),
         \\
@@ -687,7 +687,7 @@ test "js: lambda ---- string-typed annotation infers params" {
 
 test "js: optional chaining ---- member access short-circuits null" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record User { name: string }
+        \\type User(name: string)
         \\
         \\fn main() {
         \\    val u: ?User = User(name: "ana");
@@ -831,7 +831,7 @@ test "js: interface associated fn namespace" {
     // An interface's associated functions (`default fn` with no `self`) emit as
     // a namespace object so `Interface.method(...)` resolves at runtime.
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\interface Pairish<A, B> {
+        \\behavior Pairish<A, B> {
         \\    default fn of(first: A, second: B) -> #(A, B) {
         \\        return #(first, second);
         \\    }
@@ -993,7 +993,7 @@ test "beam template path: endsWith lowers via @External.Beam single-line body" {
 
 test "js: enum sections ---- section emits as synthesised inner enum decl" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\enum Token {
+        \\type Token {
         \\    Text {
         \\        Bold, Italic, Underline,
         \\    }
@@ -1004,7 +1004,7 @@ test "js: enum sections ---- section emits as synthesised inner enum decl" {
 
 test "js: enum sections ---- nested sections with numeric leaves emit decls" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\enum Token {
+        \\type Token {
         \\    Color {
         \\        Red { 100, 500 }
         \\        Hex(value: string),
@@ -1019,7 +1019,7 @@ test "js: enum sections ---- path-access lowers to qualified ctor calls" {
     // __Token__Color__Red._500))` so codegen emits proper variant accesses
     // rather than the bare source-text fallback (`Color.Red.500`).
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\enum Token {
+        \\type Token {
         \\    Color {
         \\        Red { 100, 500 }
         \\    }
@@ -1076,7 +1076,7 @@ test "js: comptime primitives ---- decorator body calls string and array methods
         \\}
         \\
         \\#[describe]
-        \\record User { name: string, secret: string, age: i32 }
+        \\type User(name: string, secret: string, age: i32)
         \\
         \\fn main() {
         \\    @print(describeUser());
@@ -1109,11 +1109,11 @@ test "js: receiver mutation ---- push inside a multi-statement closure threads o
         \\}
         \\
         \\#[component]
-        \\record Service {
+        \\type Service(
         \\    #[value(port)]
         \\    port: i32,
         \\    name: string,
-        \\}
+        \\)
         \\
         \\fn collect(xs: Array<i32>) -> Array<string> {
         \\    var out: Array<string> = [];
@@ -1128,6 +1128,44 @@ test "js: receiver mutation ---- push inside a multi-statement closure threads o
         \\fn main() {
         \\    @print(wireService());
         \\    @print(collect([1, 2, 3]).join(","));
+        \\}
+    );
+}
+
+// ── the removed 1.0.2 surface (front 12 step 4) ──────────────────────────────
+// `record`, `enum` and `interface` lex as identifiers; each removed form gets
+// its targeted diagnostic, located at the removed word or brace.
+
+test "js: removed surface ---- a record declaration" {
+    try h.assertJsCompileError(std.testing.allocator, @src(),
+        \\record Point { x: i32, y: i32 }
+    );
+}
+
+test "js: removed surface ---- an enum declaration" {
+    try h.assertJsCompileError(std.testing.allocator, @src(),
+        \\enum Color { Red, Green }
+    );
+}
+
+test "js: removed surface ---- an interface declaration" {
+    try h.assertJsCompileError(std.testing.allocator, @src(),
+        \\interface Printable {}
+    );
+}
+
+test "js: removed surface ---- an anonymous record literal" {
+    try h.assertJsCompileError(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    val p = record { x: 1 };
+        \\}
+    );
+}
+
+test "js: removed surface ---- an anonymous record type" {
+    try h.assertJsCompileError(std.testing.allocator, @src(),
+        \\fn f(p: { x: i32 }) -> i32 {
+        \\    return 1;
         \\}
     );
 }

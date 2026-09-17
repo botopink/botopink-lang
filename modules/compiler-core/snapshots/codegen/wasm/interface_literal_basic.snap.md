@@ -1,8 +1,10 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    val DeclKind = record { Record: "Record", Fn: "Fn" };
-    val decl = @Decl(kind: DeclKind.Record, name: "Service", fields: [], methods: [], returnType: "", annotations: []);
+    val Type = "Type";
+    val Fn = "Fn";
+    val kinds = #(Type, Fn);
+    val decl = @Decl(kind: kinds.Type, name: "Service", fields: [], methods: [], returnType: "", annotations: []);
     @print(decl.name);
 }
 ```
@@ -12,19 +14,25 @@ fn main() {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\06\00\00\00Record")
-  (data (i32.const 268) "\02\00\00\00Fn")
-  (data (i32.const 276) "\07\00\00\00Service")
-  (data (i32.const 288) "\00\00\00\00")
-  (global $__heap_ptr (mut i32) (i32.const 292))
+  (data (i32.const 256) "\04\00\00\00Type")
+  (data (i32.const 264) "\02\00\00\00Fn")
+  (data (i32.const 272) "\07\00\00\00Service")
+  (data (i32.const 284) "\00\00\00\00")
+  (global $__heap_ptr (mut i32) (i32.const 288))
   (func $main
     (local $__mem0 i32)
     (local $__mem1 i32)
     (local $__mem2 i32)
     (local $__mem3 i32)
     (local $__mem4 i32)
-    (local $DeclKind i32)
+    (local $Type i32)
+    (local $Fn i32)
+    (local $kinds i32)
     (local $decl i32)
+    i32.const 256
+    local.set $Type
+    i32.const 264
+    local.set $Fn
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
@@ -32,13 +40,13 @@ fn main() {
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 256
+    local.get $Type
     i32.store
     local.get $__mem0
-    i32.const 268
+    local.get $Fn
     i32.store offset=4
     local.get $__mem0
-    local.set $DeclKind
+    local.set $kinds
     global.get $__heap_ptr
     local.set $__mem1
     global.get $__heap_ptr
@@ -46,11 +54,11 @@ fn main() {
     i32.add
     global.set $__heap_ptr
     local.get $__mem1
-    local.get $DeclKind
-    i32.load ;; .Record
+    local.get $kinds
+    i32.load
     i32.store
     local.get $__mem1
-    i32.const 276
+    i32.const 272
     i32.store offset=4
     local.get $__mem1
     global.get $__heap_ptr
@@ -77,7 +85,7 @@ fn main() {
     local.get $__mem3
     i32.store offset=12
     local.get $__mem1
-    i32.const 288
+    i32.const 284
     i32.store offset=16
     local.get $__mem1
     global.get $__heap_ptr

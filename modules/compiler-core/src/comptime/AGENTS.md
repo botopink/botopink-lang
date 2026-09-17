@@ -26,7 +26,7 @@ comptime/
 ├── template.zig       ← `@Expr` templates: CapturedExpr, PlainArg, ScopeSnapshot, CustomNode, fail diagnostics
 ├── template_eval.zig  ← runtime-backed template body evaluation (erl)
 ├── decorator_eval.zig ← runtime-backed decorator body invocation (erl)
-├── primOpTemplate.zig ← shared `#[@External.<Target>("…")]` template renderer ($self / $N / $args / $stringify)
+├── primOpTemplate.zig ← shared `#[@External.<Target>("…")]` template renderer (receiver marker / $N / $args / $stringify)
 ├── snapshot.zig       ← comptime snapshot helpers
 ├── trace.zig          ← decorator/template runtime exchanges shown in snapshots
 ├── tests.zig          ← barrel: aggregates tests/<feature>.zig
@@ -51,8 +51,8 @@ comptime/
 | `transform.zig` | `Aggregator` — drives specialize + rewrite + inline + dead-code. Applies `method_lowerings` (`__bp_<domain>_<op>(…)`), `result_jump_lowerings` (`tryLowerResultJump`), `templateExpansions`, and `enumSectionRewrites` (`rewriteExpr`). Walks `fn` and `test { … }` bodies, including `assert` subexpressions. **Default-value expansion** (`expandTrailingDefaults` / `expandTrailingDefaultsWithParams`): when a call supplies fewer args than the callee's params and every missing trailing param has a `.default`, it appends `is_default_inj` args pointing at the param's own default Expr (no new Exprs materialized) — for free-fn calls (`fn_decls`, which also includes `env.stdlibFnDecls`) and record/enum-variant ctor calls (`ctor_params` from `env.ctorParams`; variants registered under bare and `Enum.Variant` names). Drops template fns and decorator fns from the output decls. |
 | `template.zig` | `@Expr` template infrastructure: `CapturedExpr` (argument bound to a `comptime p: @Expr<T>` param, captured unevaluated with provenance), `PlainArg` (`{ paramName, source }` — a non-`@Expr` param or decorator argument that received a literal; `toExpr` turns its lexeme into an `erl_ast` expression), `ScopeSnapshot` (origin scope: caller's top-level decls + imports; `toJsonAlloc` feeds the memo key), `CustomNode` + `parseCustomNodeFromTree` (from `template_eval.CustomNodeTree`), and `mapSpanToLoc`/`failDiagnostic` (rustc-style `fail`/`failAt` diagnostics inside the caller's `"""…"""`). With contiguous text `mapSpanToLoc` counts newlines up to `span.start`; for holed multiline templates it falls back to `capture.loc.line + span.line - 1` (`span.line` is 1-based, line 1 = opening `"""` line). |
 | `template_eval.zig` | Runs a template body that the V1 classifier cannot reduce. `buildModule` lowers the template `FnDecl` with `codegen/erlang.zig` `emitComptimeModule` (untyped mode; host enums `BindingKind`/`DeclKind`; host records `Span`/`CustomNode`/`Binding`/`Source`/`Context`, so `Span(5, 9, 1)` / `CustomNode(kind: …)` build maps) and passes the host glue + `main/0` as `erl_ast` forms (`hostForms`). Each `@Expr` parameter receives `captureToTerm(capture)` — a map tagged `'__bp_capture' => Param` with `text` (raw literal text; holes appear as their `__bp_hole_<param>_<i>` placeholder), `parts` (`#{kind => <<"Text">>, text, span}` / `#{kind => <<"Interp">>, code => Placeholder, span}`), `source`, `context` and `bindings` (`#{name, kind => 'Record_'}`); plain parameters receive `PlainArg.toExpr`. Host functions: `text/1`, `parts/1`, `source/1`, `context/1`, `bindings/1`, `lookup/2` (binding map or `undefined`), `ref/1` (`Binding.ref()` — replies with the binding's **name** as code, so a hit splices a bare caller-scope reference instead of a value), `build/2`, `custom/3`, `fail/2`, `failAt/3`, `compilerError/1`, `expr/1`, `code/1`. `main/0` replies with JSON by result shape — `code`, `value` (`@expr`), `custom` (tree + code), `capture` (`return q`), `fail` (message/param/span), `error` — with `undefined` mapped to `null`. The module atom and file (`.botopinkbuild/tmp/template/template_<hash>.erl`) come from the code's hash; `writeModule` stages the file under a random sibling name and renames it into place, so concurrent evaluations of the same body (parallel tests, two processes sharing a cwd) never compile a half-written file (`decorator_eval.zig` uses it too); `persistent_erl.evalDetailed` runs it; `parseOutcome` maps the reply to `Outcome` (`value` → `TypedValue`, `ast` → `CustomNodeTree` with `ref: ?NodeBinding{name, kind}`), and compile/runtime failures become `err` with the Erlang diagnostic. A body method call that no primitive type and no host function answers (`emitComptimeModule`'s `unsupported_method` slot) becomes `err` naming the method, its argument count and its `line:col` in the body. Every run appends a `trace.Entry` (`evaluate`'s `traces` argument). Inline tests cover reply parsing. |
-| `decorator_eval.zig` | Runs a decorator body over the declaration it annotates. Input: a native `DeclHandle` (`kind`/`name`/`fields: []FieldHandle`/`methods`/`returnType`/`annotations`) built by `infer.zig`. `buildModule` lowers the decorator `FnDecl` with `codegen/erlang.zig` `emitComptimeModule` (untyped mode, `DeclKind` as host enum, `Span` as host record, `main/0` exported) and passes the host glue as `codegen/beam/erl_ast.zig` forms built with `Ast.Builder` (`hostForms`): `fail/2`, `failAt/3`, `compilerError/1` (throw a tagged rejection), `emit/1` (process-dictionary accumulator) and `main/0`, which calls the decorator with `handleToTerm(handle)` (a `codegen/beam/term.zig` map — `kind` as atom, names as binaries, annotation args as raw lexemes) plus the annotation arguments (`template.PlainArg.toExpr`: string/number/bool lexeme → expression; missing → `undefined`) and replies with JSON `{kind: ok, contributions} \| {kind: fail, message, span} \| {kind: error, message}`. The module atom and file (`.botopinkbuild/tmp/decorator/decorator_<hash>.erl`) come from the code's hash. `persistent_erl.evalDetailed` runs it; `parseOutcome` maps the reply to `Outcome` (`ok` / `fail{message, span}` / `err`), and compile/runtime failures become `err` with the Erlang diagnostic (truncated to 4 KiB). A body method call that no primitive type and no host function answers becomes `err` naming the method, its argument count and its `line:col`. Every run appends a `trace.Entry` (`evaluate`'s `traces` argument). Inline tests cover the module shape and reply parsing. |
-| `primOpTemplate.zig` | Shared renderer for `#[@External.<Target>("<template>")]` primitive-op templates. Substitutes `$self` (receiver), `$<N>` (positional arg), `$args` (all positional args, comma-separated) and `$stringify(<inner>)` (recursive render bracketed by the backend's `emitStringifyOpen`/`emitStringifyClose`, e.g. erlang `iolist_to_binary(io_lib:format("~p", [`…`]))`, node `JSON.stringify(`…`)`) through a backend-supplied ctx (`writeByte`/`writeAll`/`emitRecv`/`emitArg`/`argc`); other bytes pass through verbatim. Errors: `PrimOpArgIndexOutOfRange`, `PrimOpStringifyMalformed`, `PrimOpStringifyUnsupported`. `looksLikeTemplate(s)` (`$`-bearing) separates a template from the `module:symbol` form in erlang's `tryEmitPrimAnnotation`. **Arity branching** (`when(argc == N): "<template>"`): `parser.zig parseAnnotationCall` keeps each clause as one arg, `ast.parseArityBranchArg` extracts `{argc, template}`, the backend picks the matching branch (no match → falls through). **Triple-quoted** bodies: `ast.zig unquoteAnnotationArg` strips the fences plus one leading and one trailing newline. **BEAM consumer**: `codegen/beam_asm.zig renderBeamTemplate` uses the same walker with `emitRecv` → `{x, 0}` and `emitArg(i)` → `{x, i+1}` after pre-loading receiver/args; BEAM bodies are `#[@External.Beam("""<.S body>""")]` and are detected by `bref.module.len == 0`, not `looksLikeTemplate` (a body may have no `$` marker). |
+| `decorator_eval.zig` | Runs a decorator body over the declaration it annotates. Input: a native `DeclHandle` (`kind`/`name`/`fields: []FieldHandle`/`variants`/`methods`/`returnType`/`annotations`; `variants` lists an enum-shaped `type`'s variant and section names and is empty otherwise — with `DeclKind.Type` covering both shapes it is how a decorator tells a record from an enum) built by `infer.zig`. `buildModule` lowers the decorator `FnDecl` with `codegen/erlang.zig` `emitComptimeModule` (untyped mode, `DeclKind` as host enum, `Span` as host record, `main/0` exported) and passes the host glue as `codegen/beam/erl_ast.zig` forms built with `Ast.Builder` (`hostForms`): `fail/2`, `failAt/3`, `compilerError/1` (throw a tagged rejection), `emit/1` (process-dictionary accumulator) and `main/0`, which calls the decorator with `handleToTerm(handle)` (a `codegen/beam/term.zig` map — `kind` as atom, names as binaries, annotation args as raw lexemes) plus the annotation arguments (`template.PlainArg.toExpr`: string/number/bool lexeme → expression; missing → `undefined`) and replies with JSON `{kind: ok, contributions} \| {kind: fail, message, span} \| {kind: error, message}`. The module atom and file (`.botopinkbuild/tmp/decorator/decorator_<hash>.erl`) come from the code's hash. `persistent_erl.evalDetailed` runs it; `parseOutcome` maps the reply to `Outcome` (`ok` / `fail{message, span}` / `err`), and compile/runtime failures become `err` with the Erlang diagnostic (truncated to 4 KiB). A body method call that no primitive type and no host function answers becomes `err` naming the method, its argument count and its `line:col`. Every run appends a `trace.Entry` (`evaluate`'s `traces` argument). Inline tests cover the module shape and reply parsing. |
+| `primOpTemplate.zig` | Shared renderer for `#[@External.<Target>("<template>")]` primitive-op templates. Substitutes `receiver_marker` (the receiver — written only by `parser/template_markers.zig`, which translates the source's positional markers, decision 5; `$self` is no marker), `$<N>` (positional arg after the receiver), `$args` (all positional args, comma-separated) and `$stringify(<inner>)` (recursive render bracketed by the backend's `emitStringifyOpen`/`emitStringifyClose`, e.g. erlang `iolist_to_binary(io_lib:format("~p", [`…`]))`, node `JSON.stringify(`…`)`) through a backend-supplied ctx (`writeByte`/`writeAll`/`emitRecv`/`emitArg`/`argc`); other bytes pass through verbatim. Errors: `PrimOpArgIndexOutOfRange`, `PrimOpStringifyMalformed`, `PrimOpStringifyUnsupported`. `looksLikeTemplate(s)` (`$`-bearing) separates a template from the `module:symbol` form in erlang's `tryEmitPrimAnnotation`. **Arity branching** (`when(argc == N): "<template>"`): `parser.zig parseAnnotationCall` keeps each clause as one arg, `ast.parseArityBranchArg` extracts `{argc, template}`, the backend picks the matching branch (no match → falls through). **Triple-quoted** bodies: `ast.zig unquoteAnnotationArg` strips the fences plus one leading and one trailing newline. **BEAM consumer**: `codegen/beam_asm.zig renderBeamTemplate` uses the same walker with `emitRecv` → `{x, 0}` and `emitArg(i)` → `{x, i+1}` after pre-loading receiver/args; BEAM bodies are `#[@External.Beam("""<.S body>""")]` and are detected by `bref.module.len == 0`, not `looksLikeTemplate` (a body may have no `$` marker). |
 | `snapshot.zig` | Snapshot helpers. Section order: `SOURCE CODE`, `COMPTIME ERLANG` / `COMPTIME REPLY` per runtime evaluation, `COMPTIME VALUES` (when comptime vals exist), `BOTOPINK TRANSFORM CODE` (whenever a comptime val folded, a template/decorator ran, **or** the module expanded a template at all — `OkData.template_expansions`, so the V1-driver pass-through / `@expr` / `@code` expansions that never reach the `erl` runtime are recorded too; spec 06 H8/C1), `TYPED AST JSON`. A module whose outcome is not `.ok` writes a `COMPILE DIAGNOSTIC` section instead of stopping after `SOURCE CODE` (H3). Also owns the shared diagnostic renderers `renderTypeErrorBody` / `renderParseErrorBody` / `renderOutcomeDiagnostic` / `appendDiagnosticSection`, reused by `comptime/tests/helpers.zig` (`renderTypeError`) and by the codegen harness. |
 | `trace.zig` | `Entry{kind: template/decorator, name, erl, reply}` — one per `template_eval`/`decorator_eval` run, appended to `Env.comptimeTraces` (surfaced as `OkData.comptime_traces`; `analyzeModule` keeps pass-1 decorator traces across the `@emit` re-analysis). `erl` is the `listing` build of the module (lowered body + `main/0`); `reply` is the JSON `main/0` printed, or `compile error: …` / `runtime error: …`. `render`/`renderAlloc` write the `COMPTIME ERLANG` and `COMPTIME REPLY` sections (JSON re-indented). |
 | `tests.zig` | Barrel aggregating `tests/<feature>.zig` (plus the inline tests of `eval.zig`, `trace.zig`, `primOpTemplate.zig`, `diagnostics.zig`, `template_eval.zig`, `decorator_eval.zig`, `runtime/persistent_erl.zig`); harness in `tests/helpers.zig`. |
@@ -121,7 +121,7 @@ caller and captured **unevaluated**:
 - `inferTemplateMethod` resolves the comptime-only methods on `@Expr` receivers
   (`value`/`text`/`parts`/`source`/`context`/`lookup`/`bindings`/`build`/
   `custom`/`fail`/`failAt`) and `ref()` on `Binding`, recording
-  `env.templateLowerings`. The contract is `interface Expr<E>` in
+  `env.templateLowerings`. The contract is `behavior Expr<E>` in
   `libs/std/src/builtins.d.bp`, alongside `Span`/`Part`/`Binding`/`Source`/
   `Context` and the `@ExprCustom` carrier.
 - Construction is **explicit**: `@expr(value)` (lift a comptime value) and
@@ -138,7 +138,7 @@ passed) — otherwise the V1 "cannot expand" error. The runtime path requires
 values in `env.templateEvalCache` (holed captures and `@ExprCustom` calls are
 never memoized), and maps the outcome: `code` → `parseCodeText` +
 `substituteHoles`; `capture` → the captured node; `value` → `valueToAstLiteral`
-(`TypedValue` → literal / array / anonymous record); `custom` → `code` spliced
+(`TypedValue` → literal / array / tuple — a tuple takes the labels its template body gives it: `liftShapeOf` reads `return @expr(#(server, debug))` and the `val server = #(host, port)` bindings before it, so the lifted `tupleLit.labels` make `cfg.server.port` resolve; an Erlang tuple crosses the bridge as `{"$tuple": [...]}` (`'__bp_json'/1`), a host map lifts as a tuple labeled by its keys); `custom` → `code` spliced
 like `code`, tree via `template.parseCustomNodeFromTree` into
 `env.customAstByLoc`; `fail` → `failDiagnostic`.
 `finishExpansion` re-infers the expansion in the caller's env, unifies against a
@@ -203,8 +203,8 @@ recognize → reflect → invoke → apply; marker meaning lives in the lib body
 - `registerFnSignatures` calls `registerDecoratorSig` for every top-level `fn`
   and `delegate`, recording the trailing params and the body-carrying `FnDecl`
   in `env.decorators`.
-- The reflection cluster (`enum DeclKind { Record, Struct, Enum, Interface, Fn,
-  Method, Field }` + `record Decl`/`Field`/`Method`/`Param`/`Annotation`/`Span`)
+- The reflection cluster (`type DeclKind { Type, Behavior, Fn, Method, Field }` +
+  `type Decl`/`Field`/`Method`/`Param`/`Annotation`/`Span`)
   is registered by `registerStdlib` from `decl_reflection_src` (a mirror of
   `libs/std/src/builtins.d.bp` — keep in sync). `Decl` is a record so the array
   members `fields`/`methods`/`annotations` resolve.
@@ -226,7 +226,8 @@ recognize → reflect → invoke → apply; marker meaning lives in the lib body
   markers stay lenient.
 - **Invocation:** `invokeDecorators` (skipped when `env.skipDecoratorInvoke` or
   no `env.templateEval`) builds a `decorator_eval.DeclHandle` per annotated
-  decl — `Fn`, `Record` (with `FieldHandle`s), `Enum`, `Interface`, plus
+  decl — `Fn`, `Type` (a record shape with `FieldHandle`s, an enum shape with
+  `variants`), `Behavior`, plus
   per-`Field` and per-`Method` handles — and `runDeclDecorators` calls
   `decoratorEval.evaluate` for each body-carrying decorator (annotation args
   become `PlainArg`s). `fail` and `err` become a `TypeError` at the annotation
@@ -281,11 +282,11 @@ Codegen lowers `use` per target (commonJS → React hooks with inferred
 dependency arrays; other targets treat `use` as a transparent prefix). Phantom
 `@Context` base structs are erased — see `codegen/AGENTS.md`.
 
-## Anonymous record types + `Children` coercion
+## `Children` coercion
 
-- `resolveTypeRefInContext` lowers `TypeRef.record_type` (`{ f: T, … }`) to a
-  structural `Type.record`, unified field-by-field (same field set + order)
-  with a `record { … }` literal.
+- The anonymous record type `{ f: T }` and literal `record { … }` left the
+  surface in front 12 step 4 (they are tuples, decision 8 §6); `Type.record`
+  stays in the type model for the structural types inference still builds.
 - `childrenCoercion` (checked in `unifyAt`, target-first) lets an argument bind
   to a `Children` parameter when it is `Children`, any array, a `string` (text
   child), or a single `@Context` value (one-element list). One-directional.
@@ -308,7 +309,7 @@ dependency arrays; other targets treat `use` as a transparent prefix). Phantom
 
 ## Enum sections
 
-`registerEnum` desugars `EnumDecl.sections` into enum-of-enum form: each section
+`registerEnum` desugars an enum `TypeDecl`'s `sections()` into enum-of-enum form: each section
 becomes a synthesised inner enum registered as `__<EnumName>__<SectionPath>`
 (segments joined by `__`), and the parent gains one wrapper variant per
 top-level section (`Section(_inner: __EnumName__Section)`). `registerEnumSection`
@@ -326,9 +327,18 @@ builds the equivalent untyped ctor chain into `env.enumSectionRewrites` (keyed b
 the outer identAccess loc) and `transform.zig rewriteExpr` substitutes it;
 synthesised nodes carry loc `{line=0, col=0}` so the rewrite is not re-triggered.
 
+Tuple labels (decision 8 §6) ride the same map: a `tuple` type carries
+`named.labels` (from a written `#(name: T, …)` type — `ast.TypeRef.labeledTuple`
+— or, T1, from the plain variables a `#(…)` literal is built from; `unify` never
+compares them). `row.label` on a labeled tuple resolves the element type and puts
+`row._N` into `env.enumSectionRewrites` under the access loc, so every backend
+sees a positional access; an unknown or ambiguous label is a located error naming
+the positional form. The name-mismatch warning (T7) is not implemented — the
+checker has no warning channel (06).
+
 `comptime.zig withSynthesisedEnumDecls` (after `transform` /
 `withUsedAssocInterfaces`) prepends every `env.synthesisedEnumDecls` entry as a
-top-level `EnumDecl` and adds the section-wrapper variants to each parent enum,
+top-level enum `TypeDecl` and adds the section-wrapper variants to each parent enum,
 so backends emit them through the normal enum path.
 
 Parser-side invariants (`parser/decls.zig parseEnumItem` → `raiseUnexpected`):

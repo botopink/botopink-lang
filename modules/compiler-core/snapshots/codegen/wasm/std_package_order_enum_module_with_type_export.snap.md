@@ -1,11 +1,11 @@
 ----- SOURCE CODE -- std/order.bp
 ```botopink
 //// Gleam-style `order` module, inspired by `gleam/order`. A sum type — the
-//// `enum Order` (type-exported to importers) plus companion functions.
+//// `type Order` (type-exported to importers) plus companion functions.
 //// Construct via the module fns (`order.lt()`); `toInt`/`reverse` operate on
 //// an `Order`. Enums are concrete types, not interfaces.
 
-pub enum Order {
+pub type Order {
     Lt,
     Eq,
     Gt,
@@ -71,7 +71,7 @@ test "order case over Order" {
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
   ;; Gleam-style `order` module, inspired by `gleam/order`. A sum type — the
-  ;; `enum Order` (type-exported to importers) plus companion functions.
+  ;; `type Order` (type-exported to importers) plus companion functions.
   ;; Construct via the module fns (`order.lt()`); `toInt`/`reverse` operate on
   ;; an `Order`. Enums are concrete types, not interfaces.
   (func $lt (export "lt") (result i32)

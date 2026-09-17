@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-record Box<A, B> { first: A, second: B }
+type Box<A, B>(first: A, second: B)
 
 fn main() {
     val b = Box(first: 1, second: "one");

@@ -93,7 +93,7 @@ test "decorator regression: loop in body" {
     try assertRejects(@src(), loop_decorator ++
         \\
         \\#[validate]
-        \\record HasBad { bad: string, good: i32 }
+        \\type HasBad(bad: string, good: i32)
     , "field 'bad' not allowed");
 }
 
@@ -101,7 +101,7 @@ test "decorator regression: loop in body visits the last element" {
     try assertRejects(@src(), loop_decorator ++
         \\
         \\#[validate]
-        \\record HasBadLast { good: i32, other: i32, bad: string }
+        \\type HasBadLast(good: i32, other: i32, bad: string)
     , "field 'bad' not allowed");
 }
 
@@ -109,7 +109,7 @@ test "decorator regression: loop in body accepts a clean record through lists:fo
     try assertAccepts(@src(), loop_decorator ++
         \\
         \\#[validate]
-        \\record AllGood { good: i32, fine: string }
+        \\type AllGood(good: i32, fine: string)
     , "lists:foreach(");
 }
 
@@ -121,7 +121,7 @@ test "decorator regression: loop in body accepts a clean record through lists:fo
 
 const conditional_decorator =
     \\fn checkFields(comptime decl: @Decl) {
-    \\    if (decl.kind == DeclKind.Record) {
+    \\    if (decl.kind == DeclKind.Type) {
     \\        if (decl.fields.len > 5) {
     \\            decl.fail("too many fields");
     \\        }
@@ -133,7 +133,7 @@ test "decorator regression: conditional in body" {
     try assertRejects(@src(), conditional_decorator ++
         \\
         \\#[checkFields]
-        \\record TooMany { a: i32, b: i32, c: i32, d: i32, e: i32, f: i32 }
+        \\type TooMany(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32)
     , "too many fields");
 }
 
@@ -141,7 +141,7 @@ test "decorator regression: conditional in body accepts exactly five fields" {
     try assertAccepts(@src(), conditional_decorator ++
         \\
         \\#[checkFields]
-        \\record Five { a: i32, b: i32, c: i32, d: i32, e: i32 }
+        \\type Five(a: i32, b: i32, c: i32, d: i32, e: i32)
     , "'__bp_len'(");
 }
 
@@ -149,7 +149,7 @@ test "decorator regression: conditional in body accepts three fields" {
     try assertAccepts(@src(), conditional_decorator ++
         \\
         \\#[checkFields]
-        \\record Three { a: i32, b: i32, c: i32 }
+        \\type Three(a: i32, b: i32, c: i32)
     , "'__bp_len'(");
 }
 
@@ -171,7 +171,7 @@ test "decorator regression: string concat in body" {
     try assertRejects(@src(), concat_decorator ++
         \\
         \\#[nameCheck]
-        \\record Forbidden { x: i32 }
+        \\type Forbidden(x: i32)
     , "invalid name: Forbidden");
 }
 
@@ -179,7 +179,7 @@ test "decorator regression: string concat in body accepts another name through '
     try assertAccepts(@src(), concat_decorator ++
         \\
         \\#[nameCheck]
-        \\record Allowed { x: i32 }
+        \\type Allowed(x: i32)
     , "'__bp_add'(");
 }
 
@@ -195,7 +195,7 @@ test "decorator regression: @emit in body" {
         \\    @emit("pub fn helper_" + decl.name + "() -> i32 { return 42; }");
         \\}
         \\#[addHelper]
-        \\record Service { x: i32 }
+        \\type Service(x: i32)
         \\fn useHelper() -> i32 { return helper_Service(); }
     , "'__bp_add'(",
         \\{"kind":"ok","contributions":["pub fn helper_Service() -> i32 { return 42; }"]}
@@ -221,7 +221,7 @@ test "decorator regression: fold fusion counts every element" {
     try assertRejects(@src(), fold_decorator ++
         \\
         \\#[countFields]
-        \\record TooMany { a: i32, b: i32, c: i32, d: i32, e: i32, f: i32 }
+        \\type TooMany(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32)
     , "too many fields");
 }
 
@@ -229,6 +229,6 @@ test "decorator regression: fold fusion accepts five fields through lists:foldl"
     try assertAccepts(@src(), fold_decorator ++
         \\
         \\#[countFields]
-        \\record Five { a: i32, b: i32, c: i32, d: i32, e: i32 }
+        \\type Five(a: i32, b: i32, c: i32, d: i32, e: i32)
     , "lists:foldl(");
 }

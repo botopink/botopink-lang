@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-enum Token {
+type Token {
     Text {
         Bold, Italic, Underline,
     }
@@ -12,12 +12,12 @@ enum Token {
 ```erlang
 -module(main).
 
-%% enum __Token__Text
+%% type __Token__Text
 %%   Bold
 %%   Italic
 %%   Underline
 
-%% enum Token
+%% type Token
 %%   Hover(inner)
 %%   Text(_inner)
 ```

@@ -1,6 +1,6 @@
 ----- SOURCE
 ```botopink
-pub record Users { name: string }
+pub type Users(name: string)
 pub fn q<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
     val code = e.build("[1, 2]");
     val kw = CustomNode(kind: "kw", span: Span(0, 6, 1), label: "keyword", ref: null, children: []);
@@ -13,10 +13,10 @@ val xs = q "select name";
 
 ----- SEMANTIC TOKENS
   (0,0) +3  keyword  "pub"
-  (0,4) +6  keyword  "record"
-  (0,11) +5  type [declaration]  "Users"
-  (0,19) +4  property  "name"
-  (0,25) +6  type [defaultLibrary]  "string"
+  (0,4) +4  keyword  "type"
+  (0,9) +5  type [declaration]  "Users"
+  (0,15) +4  property  "name"
+  (0,21) +6  type [defaultLibrary]  "string"
   (1,0) +3  keyword  "pub"
   (1,4) +2  keyword  "fn"
   (1,7) +1  function [declaration]  "q"
@@ -76,9 +76,9 @@ val xs = q "select name";
   (8,19) +4  property  "name"
 ----- ENCODED (deltaLine, deltaStart, len, type, mods)
   0 0 3 9 0
-  0 4 6 9 0
-  0 7 5 0 1
-  0 8 4 8 0
+  0 4 4 9 0
+  0 5 5 0 1
+  0 6 4 8 0
   0 6 6 0 4
   1 0 3 9 0
   0 4 2 9 0

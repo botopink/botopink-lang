@@ -462,7 +462,7 @@ test "completion: empty bindings returns empty list" {
 test "completion: dot completes record fields" {
     const gpa = std.testing.allocator;
     const source =
-        \\val Point = record { x: f64, y: f64 };
+        \\val Point = type(x: f64, y: f64);
         \\val origin = Point(x: 0.0, y: 0.0);
         \\val gx = origin.x;
     ;
@@ -497,7 +497,7 @@ test "completion: dot completes record fields" {
 test "completion: dot completes enum variants" {
     const gpa = std.testing.allocator;
     const source =
-        \\val Status = enum { Active, Inactive };
+        \\val Status = type { Active, Inactive };
         \\val s = Status.Active;
     ;
 
@@ -791,7 +791,7 @@ test "completion: decorator-bearing record still lists bindings (R2)" {
         \\}
         \\
         \\#[service]
-        \\record PostService { name: string, count: i32 }
+        \\type PostService(name: string, count: i32)
         \\
         \\val other = 1;
         \\val usePost = PostService;

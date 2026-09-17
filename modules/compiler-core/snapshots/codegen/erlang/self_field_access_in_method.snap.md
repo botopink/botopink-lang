@@ -1,8 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Point = record {
+val Point = type(
     x: i32,
-    y: i32,
+    y: i32) {
     fn sum() -> i32 {
         return self.x + self.y;
     }
@@ -13,7 +13,7 @@ val Point = record {
 ```erlang
 -module(main).
 
-%% record Point: x, y
+%% type Point: x, y
 
 sum() ->
     '__bp_add'(maps:get(x, Self), maps:get(y, Self)).

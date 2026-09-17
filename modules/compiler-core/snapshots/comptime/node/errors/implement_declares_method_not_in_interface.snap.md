@@ -1,8 +1,8 @@
 ----- SOURCE CODE
-val Swimmer = interface {
+val Swimmer = behavior {
     fn swim(self: Self);
 }
-record Pato { id: i32 }
+type Pato(id: i32)
 val PatoNada = implement Swimmer for Pato {
     fn swim(self: Self) {
         return self.id;
@@ -15,4 +15,4 @@ val PatoNada = implement Swimmer for Pato {
 ----- ERROR
 error: unknown method
 
-  'fly' is not declared in any interface implemented for 'Pato'
+  'fly' is not declared in any behavior implemented for 'Pato'

@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-enum Direction {
+type Direction {
     North,
     South,
     East,

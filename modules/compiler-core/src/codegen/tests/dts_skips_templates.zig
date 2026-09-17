@@ -59,9 +59,9 @@ test ".d.ts: free fn returning @Expr<T> is skipped" {
 
 test ".d.ts: interface method returning @Expr<T> is skipped" {
     try assertNoExprInDts(
-        \\pub interface Tpl {
-        \\    fn render(self: Self) -> @Expr<string>
-        \\    fn name(self: Self) -> string
+        \\pub behavior Tpl {
+        \\    fn render(self: Self) -> @Expr<string>;
+        \\    fn name(self: Self) -> string;
         \\}
     , &.{ "export declare interface Tpl {", "name(): string;" }, &.{"render("});
 }

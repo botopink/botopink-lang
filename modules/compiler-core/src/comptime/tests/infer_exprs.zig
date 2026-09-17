@@ -56,7 +56,7 @@ test "infer: local binding inside comptime" {
 
 test "infer: case on enum variants ---- all arms return string" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Color = enum {
+        \\val Color = type {
         \\    Red,
         \\    Green,
         \\    Blue,
@@ -97,7 +97,7 @@ test "infer: case with OR patterns" {
 
 test "infer: case with variant field bindings ---- body does not use bound vars" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Shape = enum {
+        \\val Shape = type {
         \\    Circle(radius: f64),
         \\    Square(side: f64),
         \\    Point,

@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record Pipeline {
-    items: i32[],
+type Pipeline(
+    items: i32[]) {
     fn doubled(self: Self) -> i32[] {
         return List.map(self.items) { x ->
             return x * 2;

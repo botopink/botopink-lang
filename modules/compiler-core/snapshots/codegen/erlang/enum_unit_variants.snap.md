@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Direction = enum {
+val Direction = type {
     North,
     South,
     East,
@@ -12,7 +12,7 @@ val Direction = enum {
 ```erlang
 -module(main).
 
-%% enum Direction
+%% type Direction
 %%   North
 %%   South
 %%   East

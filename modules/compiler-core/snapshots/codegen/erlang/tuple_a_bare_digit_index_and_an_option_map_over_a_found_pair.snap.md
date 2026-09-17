@@ -16,7 +16,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% interface Array
+%% behavior Array
 
 array_range(Start, Stop) ->
     case (Start >= Stop) of
@@ -38,9 +38,9 @@ array_repeat(Value, Times) ->
 
 lookup(Pairs, Key) ->
     (fun(O) -> case O of undefined -> undefined; V -> (fun(Pair) ->
-        maps:get('1', Pair)
+        element(2, Pair)
     end)(V) end end)(array_find(Pairs, fun(Pair) ->
-        (maps:get('0', Pair) =:= Key)
+        (element(1, Pair) =:= Key)
     end)).
 
 main() ->
@@ -70,4 +70,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+2
+true
 ```

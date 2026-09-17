@@ -11,9 +11,9 @@
 //// seed/state surface needs a userland PRNG; ship that in a follow-up
 //// once the test infra is ready for reproducible draws.
 
-#[@External.Node("Math", "random"),
-  @External.Erlang("rand", "uniform"),
-  @External.Beam("rand", "uniform")]
+#[@External.Node("Math", "random")]
+#[@External.Erlang("rand", "uniform")]
+#[@External.Beam("rand", "uniform")]
 pub declare fn float() -> f64;
 
 // Seed the Node-side userland PRNG (Mulberry32) shipped via the sidecar
@@ -25,8 +25,8 @@ pub declare fn float() -> f64;
 // shipper copies the `.mjs` next to the emitted module.
 // Erlang: `rand:seed/2` with the `exsplus` algorithm + a `{S, S, S}`
 // triple. `S` is folded to an integer via the i64 input.
-#[@External.Node("""require('./sidecars/random.mjs').seed($0)"""),
-  @External.Erlang("""(fun(__S) -> rand:seed(exsplus, {__S, __S, __S}) end)($0)""")]
+#[@External.Node("""require('./sidecars/random.mjs').seed($0)""")]
+#[@External.Erlang("""(fun(__S) -> rand:seed(exsplus, {__S, __S, __S}) end)($0)""")]
 pub declare fn seed(s: i32) -> unit;
 
 // Draw from the seeded PRNG when a `seed` call has been made; otherwise
@@ -34,8 +34,8 @@ pub declare fn seed(s: i32) -> unit;
 // module reads from the process dictionary's seed state directly, so
 // the same `rand:uniform/0` call after `seed` produces the reproducible
 // stream automatically.
-#[@External.Node("""require('./sidecars/random.mjs').seededFloat()"""),
-  @External.Erlang("rand", "uniform")]
+#[@External.Node("""require('./sidecars/random.mjs').seededFloat()""")]
+#[@External.Erlang("rand", "uniform")]
 pub declare fn seededFloat() -> f64;
 
 // 50/50 boolean draw. `float() >= 0.5` picks the upper half of the
@@ -57,9 +57,7 @@ pub fn bool() -> bool {
 // alternative is to `@panic`, which the @assert-style tests would
 // rather catch at the call site).
 pub fn intInRange(lo: i32, hi: i32) -> i32 {
-    if (lo >= hi) {
-        return lo;
-    };
+    if (lo >= hi) return lo;
     val span = (hi - lo) + 1;
     val product = float() * span;
     val offset = floorWalk(0, 1.0, product, span);
@@ -72,9 +70,7 @@ pub fn intInRange(lo: i32, hi: i32) -> i32 {
 // the body stays self-contained.
 pub fn pick<T>(xs: Array<T>) -> ?T {
     val n = xs.length;
-    if (n == 0) {
-        return null;
-    };
+    if (n == 0) return null;
     // `float() * n` mixes f64 × i32 — inference promotes to f64.
     val product = float() * n;
     val idx = floorWalk(0, 1.0, product, n);
@@ -86,12 +82,8 @@ pub fn pick<T>(xs: Array<T>) -> ?T {
 // `product`. O(upper) — fine for the small `Array<T>` arities `pick`
 // targets in tests.
 fn floorWalk(start: i32, threshold: f64, product: f64, upper: i32) -> i32 {
-    if (start + 1 > upper) {
-        return start;
-    };
-    if (threshold > product) {
-        return start;
-    };
+    if (start + 1 > upper) return start;
+    if (threshold > product) return start;
     return floorWalk(start + 1, threshold + 1.0, product, upper);
 }
 
@@ -119,8 +111,8 @@ fn floorWalk(start: i32, threshold: f64, product: f64, upper: i32) -> i32 {
 // `Math.random` equivalent in wat3); the matrix will report
 // `MissingExternalTarget` on a `shuffle(...)` call from those backends
 // until the corresponding shim lands.
-#[@External.Node("""(function(__A){ var __O = __A.slice(); for (var __I = __O.length - 1; __I > 0; __I--) { var __J = Math.floor(Math.random() * (__I + 1)); var __T = __O[__I]; __O[__I] = __O[__J]; __O[__J] = __T; } return __O; })($0)"""),
-  @External.Erlang("""[__X || {_, __X} <- lists:sort([{rand:uniform(), __Y} || __Y <- $0])]""")]
+#[@External.Node("""(function(__A){ var __O = __A.slice(); for (var __I = __O.length - 1; __I > 0; __I--) { var __J = Math.floor(Math.random() * (__I + 1)); var __T = __O[__I]; __O[__I] = __O[__J]; __O[__J] = __T; } return __O; })($0)""")]
+#[@External.Erlang("""[__X || {_, __X} <- lists:sort([{rand:uniform(), __Y} || __Y <- $0])]""")]
 pub declare fn shuffle<T>(xs: Array<T>) -> Array<T>;
 
 // ── tests ────────────────────────────────────────────────────────────────────
@@ -192,7 +184,9 @@ test "random.shuffle preserves the multiset (sum)" {
     val ys = shuffle(xs);
     // Sum is permutation-invariant — every element still appears once.
     var s = 0;
-    ys.forEach({ y -> s = s + y; });
+    ys.forEach({ y ->
+            s = s + y;
+        });
     assert s == 15;
 }
 

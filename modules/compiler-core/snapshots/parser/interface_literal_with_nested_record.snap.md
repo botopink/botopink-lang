@@ -16,7 +16,7 @@
               "col": 12
             },
             "kind": {
-              "interfaceLit": {
+              "behaviorLit": {
                 "name": "Decl",
                 "fields": [
                   {
@@ -59,49 +59,58 @@
                           "arrayLit": {
                             "elems": [
                               {
-                                "collection": {
+                                "call": {
                                   "loc": {
                                     "line": 1,
                                     "col": 60
                                   },
                                   "kind": {
-                                    "recordLit": {
-                                      "fields": [
+                                    "call": {
+                                      "receiver": null,
+                                      "callee": "Field",
+                                      "is_builtin": false,
+                                      "is_tagged": false,
+                                      "optional": false,
+                                      "args": [
                                         {
-                                          "name": "name",
+                                          "label": "name",
                                           "value": {
                                             "literal": {
                                               "loc": {
                                                 "line": 1,
-                                                "col": 75
+                                                "col": 72
                                               },
                                               "kind": {
                                                 "stringLit": "x"
                                               }
                                             }
-                                          }
+                                          },
+                                          "comments": [],
+                                          "is_default_inj": false
                                         },
                                         {
-                                          "name": "typeName",
+                                          "label": "typeName",
                                           "value": {
                                             "literal": {
                                               "loc": {
                                                 "line": 1,
-                                                "col": 90
+                                                "col": 87
                                               },
                                               "kind": {
                                                 "stringLit": "i32"
                                               }
                                             }
-                                          }
+                                          },
+                                          "comments": [],
+                                          "is_default_inj": false
                                         },
                                         {
-                                          "name": "annotations",
+                                          "label": "annotations",
                                           "value": {
                                             "collection": {
                                               "loc": {
                                                 "line": 1,
-                                                "col": 110
+                                                "col": 107
                                               },
                                               "kind": {
                                                 "arrayLit": {
@@ -114,9 +123,12 @@
                                                 }
                                               }
                                             }
-                                          }
+                                          },
+                                          "comments": [],
+                                          "is_default_inj": false
                                         }
-                                      ]
+                                      ],
+                                      "trailing": []
                                     }
                                   }
                                 }
@@ -138,7 +150,7 @@
                       "collection": {
                         "loc": {
                           "line": 1,
-                          "col": 126
+                          "col": 122
                         },
                         "kind": {
                           "arrayLit": {
@@ -159,7 +171,7 @@
                       "literal": {
                         "loc": {
                           "line": 1,
-                          "col": 142
+                          "col": 138
                         },
                         "kind": {
                           "stringLit": ""
@@ -173,41 +185,48 @@
                       "collection": {
                         "loc": {
                           "line": 1,
-                          "col": 159
+                          "col": 155
                         },
                         "kind": {
                           "arrayLit": {
                             "elems": [
                               {
-                                "collection": {
+                                "call": {
                                   "loc": {
                                     "line": 1,
-                                    "col": 160
+                                    "col": 156
                                   },
                                   "kind": {
-                                    "recordLit": {
-                                      "fields": [
+                                    "call": {
+                                      "receiver": null,
+                                      "callee": "Annotation",
+                                      "is_builtin": false,
+                                      "is_tagged": false,
+                                      "optional": false,
+                                      "args": [
                                         {
-                                          "name": "name",
+                                          "label": "name",
                                           "value": {
                                             "literal": {
                                               "loc": {
                                                 "line": 1,
-                                                "col": 175
+                                                "col": 173
                                               },
                                               "kind": {
                                                 "stringLit": "addHelper"
                                               }
                                             }
-                                          }
+                                          },
+                                          "comments": [],
+                                          "is_default_inj": false
                                         },
                                         {
-                                          "name": "args",
+                                          "label": "args",
                                           "value": {
                                             "collection": {
                                               "loc": {
                                                 "line": 1,
-                                                "col": 194
+                                                "col": 192
                                               },
                                               "kind": {
                                                 "arrayLit": {
@@ -220,9 +239,12 @@
                                                 }
                                               }
                                             }
-                                          }
+                                          },
+                                          "comments": [],
+                                          "is_default_inj": false
                                         }
-                                      ]
+                                      ],
+                                      "trailing": []
                                     }
                                   }
                                 }

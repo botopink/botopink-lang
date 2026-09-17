@@ -43,11 +43,11 @@ test "infer error: type ---- arg violates constraint" {
 
 test "infer error: implement missing a required interface method" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Drawable = interface {
-        \\    fn draw(self: Self),
-        \\    fn erase(self: Self),
+        \\val Drawable = behavior {
+        \\    fn draw(self: Self);
+        \\    fn erase(self: Self);
         \\};
-        \\val Circle = record { radius: f64 };
+        \\val Circle = type(radius: f64);
         \\val CircleDrawing = implement Drawable for Circle {
         \\    fn draw(self: Self) {
         \\        @print("draw");
@@ -58,10 +58,10 @@ test "infer error: implement missing a required interface method" {
 
 test "infer error: implement method not declared in the interface" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Drawable = interface {
-        \\    fn draw(self: Self),
+        \\val Drawable = behavior {
+        \\    fn draw(self: Self);
         \\};
-        \\val Circle = record { radius: f64 };
+        \\val Circle = type(radius: f64);
         \\val CircleDrawing = implement Drawable for Circle {
         \\    fn draw(self: Self) {
         \\        @print("draw");
@@ -75,10 +75,10 @@ test "infer error: implement method not declared in the interface" {
 
 test "infer error: implement qualified prefix is not a declared interface" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Drawable = interface {
-        \\    fn draw(self: Self),
+        \\val Drawable = behavior {
+        \\    fn draw(self: Self);
         \\};
-        \\val Circle = record { radius: f64 };
+        \\val Circle = type(radius: f64);
         \\val CircleDrawing = implement Drawable for Circle {
         \\    fn Renderable.draw(self: Self) {
         \\        @print("draw");
@@ -89,13 +89,13 @@ test "infer error: implement qualified prefix is not a declared interface" {
 
 test "infer error: duplicate method across interfaces without qualification" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val UsbCharger = interface {
-        \\    fn connect(self: Self),
+        \\val UsbCharger = behavior {
+        \\    fn connect(self: Self);
         \\};
-        \\val SolarCharger = interface {
-        \\    fn connect(self: Self),
+        \\val SolarCharger = behavior {
+        \\    fn connect(self: Self);
         \\};
-        \\val Camera = record { battery: i32 };
+        \\val Camera = type(battery: i32);
         \\val CameraCharger = implement UsbCharger, SolarCharger for Camera {
         \\    fn connect(self: Self) {
         \\        @print("connect");
@@ -206,7 +206,7 @@ test "infer error: import of val ---- unbound variable" {
 
 test "infer error: extend without an interface ---- requires implement" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\record Pato { id: i32 }
+        \\type Pato(id: i32)
         \\val PatoVoa = extend Pato {
         \\    fn fly(self: Self) {
         \\        return self.id;
@@ -217,10 +217,10 @@ test "infer error: extend without an interface ---- requires implement" {
 
 test "infer error: redundant local activation ---- star is for imports" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Swimmer = interface {
+        \\val Swimmer = behavior {
         \\    fn swim(self: Self);
         \\}
-        \\record Pato { id: i32 }
+        \\type Pato(id: i32)
         \\val PatoNada = implement Swimmer for Pato {
         \\    fn swim(self: Self) {
         \\        return self.id;
@@ -232,13 +232,13 @@ test "infer error: redundant local activation ---- star is for imports" {
 
 test "infer error: extension method ambiguous ---- two local impls" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Swimmer = interface {
+        \\val Swimmer = behavior {
         \\    fn swim(self: Self);
         \\}
-        \\val Diver = interface {
+        \\val Diver = behavior {
         \\    fn swim(self: Self);
         \\}
-        \\record Pato { id: i32 }
+        \\type Pato(id: i32)
         \\val PatoNada = implement Swimmer for Pato {
         \\    fn swim(self: Self) {
         \\        return self.id;
@@ -256,17 +256,17 @@ test "infer error: extension method ambiguous ---- two local impls" {
 
 test "infer error: activation of non-extension symbol" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\record Pato { id: i32 }
+        \\type Pato(id: i32)
         \\Pato*;
     );
 }
 
 test "infer error: implement declares method not in interface" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Swimmer = interface {
+        \\val Swimmer = behavior {
         \\    fn swim(self: Self);
         \\}
-        \\record Pato { id: i32 }
+        \\type Pato(id: i32)
         \\val PatoNada = implement Swimmer for Pato {
         \\    fn swim(self: Self) {
         \\        return self.id;
@@ -365,7 +365,7 @@ test "infer error: #[@future] body using yield" {
 }
 
 // R1, R2, R5 (§2 of frente-b-rules-tooling.md) — effect-on-declare /
-// effect-on-interface-method / effect-duplicate-annotation now reject at the
+// effect-on-behavior-method / effect-duplicate-annotation now reject at the
 // parser layer (see `parser/tests/effect_rejections.zig`). The comptime
 // inference path keeps a defense-in-depth check for direct AST construction.
 
@@ -548,7 +548,7 @@ test "infer error: RI3 ---- break <expr> with C=void reds iterator-break-without
 
 test "infer error: RC5 ---- @getContex outside #[@context] fn reds context-getcontex-outside-context-fn" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\record User { id: i32 }
+        \\type User(id: i32)
         \\fn lookup() -> User {
         \\    return @getContex(User);
         \\}
@@ -557,7 +557,7 @@ test "infer error: RC5 ---- @getContex outside #[@context] fn reds context-getco
 
 test "infer error: RC4 ---- @getContex(<value>) reds context-getcontex-expects-type" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\record User { id: i32 }
+        \\type User(id: i32)
         \\#[@context]
         \\fn lookup() -> @Context<User, User> {
         \\    return @getContex(42);
@@ -567,7 +567,7 @@ test "infer error: RC4 ---- @getContex(<value>) reds context-getcontex-expects-t
 
 test "infer error: RC6 ---- use of non-context fn reds use-of-non-context-fn" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\record User { id: i32 }
+        \\type User(id: i32)
         \\fn plain() -> User { return User(id: 1); }
         \\#[@context]
         \\fn lookup() -> @Context<User, User> {
@@ -582,9 +582,9 @@ test "infer error: RC3 ---- @getContex(T) outside enclosing Anchor tree reds con
     // Anchor is `RootB`. No `use` chain rooted at `RootA` can ever provide
     // `LeafB`, so the request is statically out of reach (RC3).
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\record RootA { name: string }
-        \\record RootB { name: string }
-        \\record LeafB implement @Context<RootB, RootB> { v: i32 }
+        \\type RootA(name: string)
+        \\type RootB(name: string)
+        \\type LeafB(v: i32) implement @Context<RootB, RootB>
         \\#[@context]
         \\fn pickA() -> @Context<RootA, RootA> {
         \\    return @getContex(LeafB);
@@ -608,6 +608,39 @@ test "infer error: RF5 ---- let-binding Future.resolved inside #[@future] reds f
         \\fn fetch() -> @Future<i32, string> {
         \\    val f = Future.resolved(value: 42);
         \\    return 0;
+        \\}
+    );
+}
+
+// ── tuple labels (decision 8 §6) ──────────────────────────────────────────────
+
+test "infer: tuple label ---- an unknown label is an error naming the positional form" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn loadTyped() -> #(string, i32) {
+        \\    return #("SP", 12);
+        \\}
+        \\val n = loadTyped().name;
+    );
+}
+
+test "infer: tuple label ---- labels come from the written type and from construction variables" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn load() -> #(name: string, pop: i32) {
+        \\    val name = "SP";
+        \\    val pop = 12;
+        \\    return #(name, pop);
+        \\}
+        \\fn show(r: #(city: string, pop: i32)) -> i32 {
+        \\    return r.pop;
+        \\}
+        \\fn main() -> i32 {
+        \\    val row = load();
+        \\    val a = "RJ";
+        \\    val b = 7;
+        \\    val local = #(a, b);
+        \\    val s: string = local.a;
+        \\    val typed: #(x: i32, y: i32) = #(1, 2);
+        \\    return show(row) + show(#("BH", 3)) + typed.y + row.pop;
         \\}
     );
 }

@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Color = enum {
+val Color = type {
     Red,
     Green,
     Blue,
@@ -18,7 +18,7 @@ val Color = enum {
 ```erlang
 -module(main).
 
-%% enum Color
+%% type Color
 %%   Red
 %%   Green
 %%   Blue

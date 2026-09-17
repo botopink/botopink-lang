@@ -32,7 +32,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-// interface Number
+// behavior Number
 //   fn min(...)
 //   fn max(...)
 //   default fn clamp(...)
@@ -43,11 +43,11 @@ Number.prototype.clamp = function(lo, hi) {
     return self.max(lo).min(hi);
 };
 
-// interface Signed extends Integer
+// behavior Signed extends Integer
 //   fn abs(...)
 Number.prototype.abs = function() { return Math.abs(this.valueOf()); };
 
-// interface Integer extends Number
+// behavior Integer extends Number
 //   fn toString(...)
 //   default fn isEven(...)
 //   default fn isOdd(...)

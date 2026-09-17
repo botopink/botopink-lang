@@ -1,8 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val GPSCoordinates = record {
+val GPSCoordinates = type(
     lat: f64,
-    lon: f64,
+    lon: f64) {
     fn toString(self: Self) -> string {
         return "Lat: " + self.lat + " Lon: " + self.lon;
     }

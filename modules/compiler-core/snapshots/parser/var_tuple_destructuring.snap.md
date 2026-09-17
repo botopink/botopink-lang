@@ -91,7 +91,8 @@
                               }
                             ],
                             "comments": [],
-                            "commentsPerElem": []
+                            "commentsPerElem": [],
+                            "labels": []
                           }
                         }
                       }

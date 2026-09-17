@@ -69,7 +69,7 @@ test "§1 happy path — bare return + throw inside #[@result] type-checks" {
     // the typed-AST view here only asserts inference reaches the body's
     // tail without firing any R11/R12.
     try h.assertInfersOk(std.testing.allocator,
-        \\record AppError { msg: string }
+        \\type AppError(msg: string)
         \\#[@result]
         \\fn parse(n: i32) -> @Result<i32, AppError> {
         \\    if (n < 0) { throw AppError(msg: "negative"); };
@@ -80,7 +80,7 @@ test "§1 happy path — bare return + throw inside #[@result] type-checks" {
 
 test "§1 happy path — `try` unwraps @Result<D, E> to D" {
     try h.assertInfersOk(std.testing.allocator,
-        \\record AppError { msg: string }
+        \\type AppError(msg: string)
         \\#[@result]
         \\fn parse(n: i32) -> @Result<i32, AppError> {
         \\    if (n < 0) { throw AppError(msg: "negative"); };
@@ -95,7 +95,7 @@ test "§1 happy path — `try` unwraps @Result<D, E> to D" {
 
 test "§1 happy path — nested `#[@result]` call propagates Error via `try`" {
     try h.assertInfersOk(std.testing.allocator,
-        \\record AppError { msg: string }
+        \\type AppError(msg: string)
         \\#[@result]
         \\fn parse(n: i32) -> @Result<i32, AppError> {
         \\    if (n < 0) { throw AppError(msg: "negative"); };

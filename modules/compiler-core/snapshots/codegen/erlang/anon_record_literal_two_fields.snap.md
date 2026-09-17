@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn make() -> i32 {
-    val r = record { a: 7, b: 11 };
+    val r = #(7, 11);
     return r;
 }
 ```
@@ -11,7 +11,7 @@ fn make() -> i32 {
 -module(main).
 
 make() ->
-    R = #{a => 7, b => 11},
+    R = {7, 11},
     R.
 ```
 

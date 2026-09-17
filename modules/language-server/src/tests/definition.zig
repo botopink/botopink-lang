@@ -69,7 +69,7 @@ test "definition: cursor on integer literal" {
 test "definition: cursor on record type usage" {
     const gpa = std.testing.allocator;
     const source =
-        \\val Point = record { x: i32, y: i32 };
+        \\val Point = type(x: i32, y: i32);
         \\val p = Point(x: 1, y: 2);
     ;
 
@@ -115,7 +115,7 @@ test "definition: returned Location carries the correct URI" {
 test "definition: cursor on enum usage jumps to enum declaration" {
     const gpa = std.testing.allocator;
     const source =
-        \\val Color = enum { Red, Green, Blue };
+        \\val Color = type { Red, Green, Blue };
         \\val c = Color.Red;
     ;
 
@@ -365,8 +365,8 @@ fn sliceAt(source: []const u8, range: proto.Range) []const u8 {
 /// erika-shaped fixture: a `Query` record over an `Array<i32>` with fields and
 /// methods that reproduce R2–R6.
 const member_source =
-    \\pub record Query {
-    \\    items: Array<i32>,
+    \\pub type Query(
+    \\    items: Array<i32>) {
     \\    pub fn reverse(self: Self) -> Query {
     \\        return Query(items: self.items.reverse());
     \\    }
@@ -455,8 +455,8 @@ test "definition: self.field jumps to the field declaration (R4)" {
 /// whose arg is a type parameter, not a concrete type) — exercises R2/R4 the way
 /// `libs/erika/src/erika.bp` actually declares them.
 const generic_source =
-    \\pub record Query<T> {
-    \\    items: Array<T>,
+    \\pub type Query<T>(
+    \\    items: Array<T>) {
     \\    pub fn reverse(self: Self) -> Query<T> {
     \\        return Query(items: self.items.reverse());
     \\    }
@@ -513,12 +513,12 @@ test "definition: generic record — self.field on Array<T> field jumps to the f
 /// Two records with a same-named method — `.tag` must land on the *receiver's*
 /// record, not the first `fn tag` in the file.
 const r5_source =
-    \\pub record A {
-    \\    n: i32,
+    \\pub type A(
+    \\    n: i32) {
     \\    pub fn tag(self: Self) -> i32 { return self.n; }
     \\}
-    \\pub record B {
-    \\    m: i32,
+    \\pub type B(
+    \\    m: i32) {
     \\    pub fn tag(self: Self) -> i32 { return self.m; }
     \\}
     \\val b = B(m: 5);
@@ -601,9 +601,9 @@ test "definition: cross-module field jumps into the declaring module (F5)" {
     const gpa = std.testing.allocator;
     const dep_uri = "file:///dep_0.bp";
     const dep_src =
-        \\pub record Box {
+        \\pub type Box(
         \\    value: i32,
-        \\}
+        \\)
     ;
     const main_src =
         \\import { Box } from "dep";
@@ -640,9 +640,9 @@ test "definition: cross-module field jumps into the declaring module (F5)" {
 /// type. A request ON `_N` itself returns null (no source-declared name),
 /// but a chained `t._N.field` lands on `field` against element N's record.
 const tuple_source =
-    \\pub record Box {
+    \\pub type Box(
     \\    value: i32,
-    \\}
+    \\)
     \\val pair = #(Box(value: 7), 42);
     \\val v = pair._0.value;
 ;
@@ -651,7 +651,7 @@ test "definition: interface assoc-fn cross-module — Iface.method jumps to defa
     const gpa = std.testing.allocator;
     const dep_uri = "file:///dep_e2.bp";
     const dep_src =
-        \\pub interface Show<T> {
+        \\pub behavior Show<T> {
         \\    default fn show(x: T) -> string { return "stub"; }
         \\}
     ;

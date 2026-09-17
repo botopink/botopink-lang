@@ -24,7 +24,7 @@ test "eval pipeline: simple comptime val arithmetic" {
 // The snapshot pins the validation error.
 test "eval pipeline: comptime record lit" {
     try h.assertComptimeCompileError(std.testing.allocator, @src(),
-        \\record RecordField { name: string, typeName: string }
+        \\type RecordField(name: string, typeName: string)
         \\val f = comptime RecordField(name: "x", typeName: "i32");
     );
 }

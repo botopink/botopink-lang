@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val ErrorKind = enum { NotFound, Timeout }
+val ErrorKind = type { NotFound, Timeout }
 #[@result]
 fn fetch() -> @Result<i32, ErrorKind> {
     throw ErrorKind.NotFound;
@@ -15,7 +15,7 @@ fn handle() -> i32 {
 ```erlang
 -module(main).
 
-%% enum ErrorKind
+%% type ErrorKind
 %%   NotFound
 %%   Timeout
 
