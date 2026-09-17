@@ -28,7 +28,7 @@ fn main() {
   (func $average (param $xs i32) (result f64)
     (local $total f32)
     (local $n f32)
-    (local $x i32)
+    (local $x f32)
     (local $__iter0 i32)
     (local $__idx0 i32)
     (local $__len0 i32)
@@ -54,11 +54,10 @@ fn main() {
         i32.const 4
         i32.mul
         i32.add
-        i32.load offset=4
+        f32.load offset=4
         local.set $x
     local.get $total
     local.get $x
-    f32.convert_i32_s
     f32.add
     local.set $total
     local.get $n
@@ -104,7 +103,7 @@ fn main() {
     local.get $__fnv0
     i32.load ;; table index
     call_indirect (param i32 i32 i32) (result i32)
-    call $__print_i32
+    call $__print_str
     global.get $__heap_ptr
     local.set $__mem1
     global.get $__heap_ptr
@@ -130,7 +129,7 @@ fn main() {
   (func $__lambda0 (param $__env i32) (param $x i32) (param $y i32) (result i32)
     local.get $x
     local.get $y
-    i32.add
+    call $__str_concat
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
@@ -315,6 +314,19 @@ fn main() {
       )
     )
   )
+  (func $__print_str_raw (param $s i32)
+    local.get $s
+    i32.const 4
+    i32.add
+    local.get $s
+    i32.load
+    call $__write_bytes
+  )
+  (func $__print_str (param $s i32)
+    local.get $s
+    call $__print_str_raw
+    call $__print_nl
+  )
   (func $__print_f64 (param $x f64)
     local.get $x
     call $__print_f64_raw
@@ -406,11 +418,58 @@ fn main() {
       )
     )
   )
+  (func $__str_concat (param $a i32) (param $b i32) (result i32)
+    (local $base i32) (local $alen i32) (local $blen i32)
+    local.get $a
+    i32.load
+    local.set $alen
+    local.get $b
+    i32.load
+    local.set $blen
+    global.get $__heap_ptr
+    local.set $base
+    ;; bump heap by 4 (length prefix) + alen + blen
+    global.get $__heap_ptr
+    i32.const 4
+    local.get $alen
+    i32.add
+    local.get $blen
+    i32.add
+    i32.add
+    global.set $__heap_ptr
+    ;; store combined length prefix
+    local.get $base
+    local.get $alen
+    local.get $blen
+    i32.add
+    i32.store
+    ;; copy a's bytes: base+4 <- a+4
+    local.get $base
+    i32.const 4
+    i32.add
+    local.get $a
+    i32.const 4
+    i32.add
+    local.get $alen
+    memory.copy
+    ;; copy b's bytes: base+4+alen <- b+4
+    local.get $base
+    i32.const 4
+    i32.add
+    local.get $alen
+    i32.add
+    local.get $b
+    i32.const 4
+    i32.add
+    local.get $blen
+    memory.copy
+    local.get $base
+  )
 )
 ```
 
 ----- RUN LOG -----
 ```logs
-520
-1082480000
+abcd
+5
 ```

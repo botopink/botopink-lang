@@ -708,7 +708,10 @@ first three are now enforced by the model, not by discipline:
 
 - **Coverage**: numerics, locals, calls, assign, `!x`, null, `@todo`/`@panic`,
   `assert`, globals, case, pipeline (`a |> f` → `call $f`), range loops
-  (`lowerRangeLoop`) and array loops (`lowerCollectionLoop`), comprehensions,
+  (`lowerRangeLoop`) and array loops (`lowerCollectionLoop` — the index of
+  `loop (xs, 1..) { x, i -> … }` counts from the range's start, as erlang's
+  `lists:enumerate(Start, Xs)`; a float array's element is an `f32` slot, bound
+  to an `f32` local), comprehensions,
   primitive methods, function values, `@print` via WASI `fd_write`,
   `_botopink_main`/`_start`.
 - **Known gaps** (loadable, but not yet right):
@@ -720,7 +723,19 @@ first three are now enforced by the model, not by discipline:
     would read its first word as an element count and trap;
   - an array of tuples/records prints as the element addresses (no printer);
   - every function value's parameters and result are `i32`;
-  - a lambda lifted into a function captures a snapshot of the locals it uses;
+  - a lifted lambda's captures are threaded only through calls on the closure
+    local it was bound to (`val f = { … }; f(x)`): a closure passed as an
+    argument, stored in a field or returned still works on the snapshot it was
+    made with, and a capture it only reads is that snapshot too;
+  - **shapes with no lowering anywhere** — `List.map(xs, f)` and
+    `List.map(xs) { … }` (`call_qualified_module_call_resolves_arity`,
+    `call_qualified_module_call_with_trailing_lambda_arity`): `List` is
+    declared nowhere, `libs/std` included. commonJS emits `List.map(…)` against
+    an unbound `List`, erlang `list:map/2` and beam `call_ext list:map/2` (no
+    such module; `lists` is not what the source names), wasm traps
+    `unreachable ;; unresolved call: map/N`. The fixtures pin the call's arity
+    and have no `main`; the shape needs a `List` to exist before any backend
+    can lower it;
   - an `f64` aggregate field round-trips at `f32` precision (4-byte slots), and
     is read back as a raw `i32.load` unless the field's declared type is known.
 - **Non-constant top-level `val`s** (`emitGlobalVal` → `deferred_globals`): a
@@ -771,6 +786,12 @@ first three are now enforced by the model, not by discipline:
   (`lowerThrow`) — the transform rewrites the common forms into
   `return __bp_error(…)`, but a `throw` inside a `case` arm reaches the
   backend as a `throw`. Anywhere else a `throw` traps.
+- **`Ok(v)` / `Err(e)` / `new Error(msg)` the transform left as calls** build
+  the same `[tag, payload]` pair as `__bp_ok` / `__bp_error` (`lowerPlainCall`),
+  the lowering beam and erlang give them (`{error, Msg}`); a user enum variant
+  of the same name wins. `throw new Error("…")` in a fn that does not return a
+  `@Result` used to trap on `unresolved call: Error/1` before reaching its own
+  trap.
 - **Aggregates in linear memory**: tuples/arrays/records/enum payloads are
   contiguous 4-byte slots in the bump heap (`$__heap_ptr`); a type registry from
   `record`/`enum` decls distinguishes construction from calls; construction
@@ -817,10 +838,21 @@ first three are now enforced by the model, not by discipline:
 - **Function values** (`lowerLambdaValue`, `lowerValueCall`): a lambda used as
   a value is lifted into `$__lambda{n}(env, a0, …) -> i32` and listed in the
   module's `(table funcref (elem …))`; the value is a pointer to an environment
-  cell — `[table index][captured local]…`, the captures copied at creation (a
-  snapshot: assigning an outer local inside a lifted lambda does not change
-  it). `f(a)` on a local/global/record field holding one is `call_indirect`
-  with the cell as the first argument. A top-level fn used as a value is a
+  cell — `[table index][captured local]…`, the captures copied at creation.
+  `f(a)` on a local/global/record field holding one is `call_indirect`
+  with the cell as the first argument. **A capture the lambda assigns is
+  threaded** (`Captured.threaded`, `bodyAssigns`): inside the lifted lambda
+  every `=`/`+=` to it is written back to its environment slot
+  (`writeBackCapture`, `env_slots`), and a call through the local the closure
+  was bound to (`closure_locals`) copies the caller's local into the slot
+  before the call and back out after (`syncCaptures`) — a markup template's
+  `val emit = { w -> out = out + w; }` called directly and from a loop. The
+  **parameters' shapes** come from those same calls: an argument proven a
+  string makes the parameter a string inside the lifted body
+  (`Lifted.param_str`), and `isStringExpr` judges a call through the closure
+  local by the body with each parameter taking its argument's shape
+  (`closureCallIsString`), so `val cat = { x, y -> x + y }; cat("ab", "cd")`
+  concatenates and prints a string (it used to add the two pointers). A top-level fn used as a value is a
   closure over a trampoline `$__fnref_<fn>`. Every parameter and the result are
   `i32`. A lambda passed straight to an array method or a `@Result`/`@Option`
   op is inlined instead, which is what lets `forEach` assign outer locals.

@@ -592,6 +592,17 @@ const Emitter = struct {
     fn_arr_elem: std.StringHashMap(ElemKind),
     /// Lambdas lifted into functions, in table order — see `lowerLambdaValue`.
     lambdas: std.ArrayListUnmanaged(Lifted) = .empty,
+    /// Local name → the lifted lambda a `val f = { … }` bound it to (cleared
+    /// per fn). A call through the name threads the captures the lambda
+    /// assigns (`lowerValueCall`) and recovers its parameters' shapes.
+    closure_locals: std.StringHashMap(u32),
+    /// Inside a lifted lambda: a captured name the body assigns → its slot in
+    /// the environment cell, written back after every assignment (cleared per
+    /// fn).
+    env_slots: std.StringHashMap(u32),
+    /// While `isStringExpr` judges a lifted lambda's body for one call: the
+    /// lambda's parameters and whether that call's argument is a string.
+    param_shape: ?ParamShape = null,
     /// Some `call_indirect` was emitted: the module needs a table even when it
     /// lifted no lambda of its own (a function value that came in as a
     /// parameter).
@@ -662,6 +673,8 @@ const Emitter = struct {
             .aliases = std.StringHashMap([]const u8).init(alloc),
             .pattern_locals = std.StringHashMap(void).init(alloc),
             .assoc_emitted = std.StringHashMap(void).init(alloc),
+            .closure_locals = std.StringHashMap(u32).init(alloc),
+            .env_slots = std.StringHashMap(u32).init(alloc),
         };
         return em;
     }
@@ -727,6 +740,8 @@ const Emitter = struct {
         self.pattern_locals.deinit();
         self.assoc_needed.deinit(self.alloc);
         self.assoc_emitted.deinit();
+        self.closure_locals.deinit();
+        self.env_slots.deinit();
     }
 
     /// Lower one top-level declaration into module items.
@@ -1173,6 +1188,8 @@ const Emitter = struct {
         self.opt_locals.clearRetainingCapacity();
         self.cur_ret_typeref = null;
         self.bool_locals.clearRetainingCapacity();
+        self.closure_locals.clearRetainingCapacity();
+        self.env_slots.clearRetainingCapacity();
         self.pending_locals.clearRetainingCapacity();
         self.cur_result = result_type orelse "i32";
         self.fn_has_result = result_type != null;
@@ -1968,7 +1985,13 @@ const Emitter = struct {
                 },
             },
             .loop => |lp| {
-                for (lp.params) |p| try self.declareLocal(p, "i32");
+                // A walk over a float array binds its element as an f32
+                // (`lowerCollectionLoop`); a range or an index is an i32.
+                const is_range = lp.iter.* == .collection and lp.iter.collection.kind == .range;
+                for (lp.params, 0..) |p, i| {
+                    const float_elem = i == 0 and !is_range and self.isArrayExpr(lp.iter.*) and self.elemKindOf(lp.iter.*) == .f32;
+                    try self.declareLocal(p, if (float_elem) "f32" else "i32");
+                }
                 try self.emitLocalDecls(lp.body);
             },
             .collection => |col| switch (col.kind) {
@@ -2330,11 +2353,16 @@ const Emitter = struct {
                     // Coerce to the type the local was *actually* declared with:
                     // `emitLocalDecls` runs before the body, so its guess can
                     // differ from what lowering ends up pushing.
+                    const lambda_idx: u32 = @intCast(self.lambdas.items.len);
                     if (self.boxesInto(lb.typeAnnotation, lb.value.*))
                         try self.lowerBoxed(lb.value.*)
                     else
                         try self.lowerCoerced(lb.value.*, self.locals.get(lb.name) orelse "i32");
                     try self.emit(.{ .local_set = lb.name });
+                    if (lb.value.* == .function and self.lambdas.items.len > lambda_idx)
+                        try self.closure_locals.put(lb.name, lambda_idx)
+                    else
+                        _ = self.closure_locals.remove(lb.name);
                 },
                 .assign => |a| switch (a.target) {
                     .name => |name| switch (a.op) {
@@ -2346,6 +2374,7 @@ const Emitter = struct {
                                 .{ .local_set = name }
                             else
                                 .{ .global_set = name });
+                            try self.writeBackCapture(name);
                         },
                         .plusAssign => {
                             try self.emit(if (self.locals.contains(name))
@@ -2360,6 +2389,7 @@ const Emitter = struct {
                                 .{ .local_set = name }
                             else
                                 .{ .global_set = name });
+                            try self.writeBackCapture(name);
                         },
                     },
                     .fieldAccess => |fa| {
@@ -3727,6 +3757,17 @@ const Emitter = struct {
             try self.emitCf(.@"unreachable", "host-backed declare fn {s}/{d}: no wasm host", .{ cc.callee, cc.args.len });
             return;
         }
+        // `Ok(v)` / `Err(e)` / `new Error(msg)` outside the `#[@result]`
+        // transform build the same `[tag, payload]` pair as `__bp_ok` /
+        // `__bp_error` — the lowering beam and erlang give them (`{error, Msg}`).
+        // A user enum variant of the same name was matched before this.
+        if (cc.receiver == null and cc.args.len == 1 and cc.trailing.len == 0 and self.findVariant(cc.callee) == null) {
+            if (self.variantRef(cc.callee)) |ref| switch (ref) {
+                .result_ok => return self.lowerResultOptionOp("__bp_ok", cc.args),
+                .result_err => return self.lowerResultOptionOp("__bp_error", cc.args),
+                .user => {},
+            };
+        }
         try self.emitCf(.@"unreachable", "unresolved call: {s}/{d}", .{ cc.callee, cc.args.len });
     }
 
@@ -4392,13 +4433,23 @@ const Emitter = struct {
         str: bool,
         record: ?[]const u8,
         arr_elem: ?ElemKind,
+        /// The lambda body assigns it: the environment slot is the variable
+        /// while the lambda runs, and a call through a known closure local
+        /// copies it in before the call and back out after.
+        threaded: bool = false,
     };
+
+    const ParamShape = struct { names: []const []const u8, str: []const bool };
 
     const Lifted = struct {
         name: []const u8,
         params: []const []const u8,
         body: []const ast.Stmt,
         captures: []const Captured,
+        /// Per parameter: some call through a closure local passed a string
+        /// (`lowerValueCall`). The program type-checked, so one proven string
+        /// argument makes the parameter a string.
+        param_str: []bool = &.{},
         /// Set for a trampoline standing for a top-level fn used as a value.
         fn_ref: ?[]const u8 = null,
     };
@@ -4418,14 +4469,18 @@ const Emitter = struct {
                 .str = self.str_locals.contains(n),
                 .record = self.local_types.get(n),
                 .arr_elem = self.arr_elem_locals.get(n),
+                .threaded = bodyAssigns(body, n),
             });
         }
         const idx: u32 = @intCast(self.lambdas.items.len);
+        const param_str = try ra.alloc(bool, params.len);
+        @memset(param_str, false);
         try self.lambdas.append(self.alloc, .{
             .name = try std.fmt.allocPrint(ra, "__lambda{d}", .{idx}),
             .params = params,
             .body = body,
             .captures = caps.items,
+            .param_str = param_str,
         });
         try self.emitClosureCell(idx, caps.items);
     }
@@ -4487,11 +4542,119 @@ const Emitter = struct {
             try self.emit(.{ .global_get = cc.callee });
         }
         try self.emit(.{ .local_set = tmp });
+        const closure: ?Lifted = if (cc.receiver == null and self.locals.contains(cc.callee))
+            if (self.closure_locals.get(cc.callee)) |li| self.lambdas.items[li] else null
+        else
+            null;
+        if (closure) |l| {
+            for (cc.args, 0..) |a, i| {
+                if (i < l.param_str.len and self.isStringExpr(a.value.*)) l.param_str[i] = true;
+            }
+            try self.syncCaptures(tmp, l.captures, .into_env);
+        }
         try self.emit(.{ .local_get = tmp });
         for (cc.args) |a| try self.lowerCoerced(a.value.*, "i32");
         for (cc.trailing) |t| try self.lowerLambdaValue(t.params, t.body);
         try self.emitIndirect(tmp, cc.args.len + cc.trailing.len);
+        if (closure) |l| try self.syncCaptures(tmp, l.captures, .out_of_env);
         return true;
+    }
+
+    /// Around a call through a closure local, copy each capture the lambda
+    /// assigns into its environment slot (the caller may have changed it since
+    /// the closure was made) or back out of it (the lambda may have changed
+    /// it). The call's result stays on the stack underneath.
+    fn syncCaptures(self: *Emitter, env: []const u8, caps: []const Captured, dir: enum { into_env, out_of_env }) anyerror!void {
+        for (caps, 0..) |cp, i| {
+            if (!cp.threaded) continue;
+            const ty = self.locals.get(cp.name) orelse continue;
+            const is_float = cp.ty[0] == 'f';
+            const slot: wat.MemArg = .{ .ty = if (is_float) .f32 else .i32, .offset = @intCast((i + 1) * 4) };
+            switch (dir) {
+                .into_env => {
+                    try self.emit(.{ .local_get = env });
+                    try self.emit(.{ .local_get = cp.name });
+                    try self.emitConvert(ty, if (is_float) "f32" else "i32");
+                    try self.emitCf(.{ .store = slot }, "sync {s} into env", .{cp.name});
+                },
+                .out_of_env => {
+                    try self.emit(.{ .local_get = env });
+                    try self.emitCf(.{ .load = slot }, "sync {s} from env", .{cp.name});
+                    try self.emitConvert(if (is_float) "f32" else "i32", ty);
+                    try self.emit(.{ .local_set = cp.name });
+                },
+            }
+        }
+    }
+
+    /// Inside a lifted lambda, after `name` was assigned: when it is a
+    /// threaded capture, store it back into the environment cell.
+    fn writeBackCapture(self: *Emitter, name: []const u8) anyerror!void {
+        const off = self.env_slots.get(name) orelse return;
+        const ty = self.locals.get(name) orelse return;
+        const is_float = ty[0] == 'f';
+        try self.emit(.{ .local_get = "__env" });
+        try self.emit(.{ .local_get = name });
+        try self.emitConvert(ty, if (is_float) "f32" else "i32");
+        try self.emitCf(.{ .store = .{ .ty = if (is_float) .f32 else .i32, .offset = off } }, "write {s} back to env", .{name});
+    }
+
+    /// Whether a statement list assigns the plain name `n` (`n = …`, `n += …`),
+    /// in nested branches, loops, arms and lambdas included.
+    fn bodyAssigns(body: []const ast.Stmt, n: []const u8) bool {
+        for (body) |st| if (exprAssigns(st.expr, n)) return true;
+        return false;
+    }
+
+    fn exprAssigns(e: ast.Expr, n: []const u8) bool {
+        return switch (e) {
+            .binding => |b| switch (b.kind) {
+                .assign => |a| switch (a.target) {
+                    .name => |t| std.mem.eql(u8, t, n) or exprAssigns(a.value.*, n),
+                    .fieldAccess => exprAssigns(a.value.*, n),
+                },
+                .localBind => |lb| exprAssigns(lb.value.*, n),
+                .localBindDestruct => |lb| exprAssigns(lb.value.*, n),
+            },
+            .branch => |b| switch (b.kind) {
+                .if_ => |i| bodyAssigns(i.then_, n) or (if (i.else_) |els| bodyAssigns(els, n) else false),
+                .tryCatch => |tc| exprAssigns(tc.expr.*, n) or exprAssigns(tc.handler.*, n),
+            },
+            .loop => |lp| bodyAssigns(lp.body, n),
+            .function => |f| bodyAssigns(f.kind.body, n),
+            .call => |c| switch (c.kind) {
+                .call => |cc| blk: {
+                    for (cc.args) |a| if (exprAssigns(a.value.*, n)) break :blk true;
+                    for (cc.trailing) |t| if (bodyAssigns(t.body, n)) break :blk true;
+                    break :blk false;
+                },
+                .pipeline => false,
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| exprAssigns(inner.*, n),
+                .case => |cs| blk: {
+                    for (cs.arms) |arm| if (exprAssigns(arm.body, n)) break :blk true;
+                    break :blk false;
+                },
+                else => false,
+            },
+            else => false,
+        };
+    }
+
+    /// Whether a call through the closure local bound to lifted lambda `li`
+    /// yields a string: its body is judged with each parameter taking the
+    /// shape of this call's argument (`{ x, y -> x + y }` over two strings).
+    fn closureCallIsString(self: *Emitter, li: u32, cc: anytype) bool {
+        const l = self.lambdas.items[li];
+        if (l.fn_ref != null) return false;
+        const flags = self.arena().alloc(bool, l.params.len) catch return false;
+        for (flags, 0..) |*f, i| f.* = (i < l.param_str.len and l.param_str[i]) or
+            (i < cc.args.len and self.isStringExpr(cc.args[i].value.*));
+        const saved = self.param_shape;
+        defer self.param_shape = saved;
+        self.param_shape = .{ .names = l.params, .str = flags };
+        return self.bodyIsString(l.body);
     }
 
     /// With the environment and `argc` arguments on the stack, call the
@@ -4549,12 +4712,14 @@ const Emitter = struct {
             try self.emit(.{ .call = target });
             if (sig.result) |r| try self.emitConvert(r, "i32") else try self.emit(zero);
         } else {
-            for (l.params) |p| {
+            for (l.params, 0..) |p, i| {
                 try params.append(ar, wat.Builder.param(p, .i32));
                 try self.locals.put(p, "i32");
+                if (i < l.param_str.len and l.param_str[i]) try self.str_locals.put(p, {});
             }
             for (l.captures, 0..) |cp, i| {
                 try self.declareLocal(cp.name, cp.ty);
+                if (cp.threaded) try self.env_slots.put(cp.name, @intCast((i + 1) * 4));
                 if (cp.str) try self.str_locals.put(cp.name, {});
                 if (cp.record) |r| try self.local_types.put(cp.name, r);
                 if (cp.arr_elem) |ek| {
@@ -5202,7 +5367,12 @@ const Emitter = struct {
                 else => false,
             },
             .identifier => |id| switch (id.kind) {
-                .ident => |n| self.str_locals.contains(self.resolveName(n)) or self.str_globals.contains(n),
+                .ident => |n| blk: {
+                    if (self.param_shape) |ps| for (ps.names, 0..) |pn, i| {
+                        if (std.mem.eql(u8, pn, n)) break :blk ps.str[i];
+                    };
+                    break :blk self.str_locals.contains(self.resolveName(n)) or self.str_globals.contains(n);
+                },
                 .identAccess => |ia| blk: {
                     // A record field declared `string`.
                     const rty = self.recordTypeOfExpr(ia.receiver.*) orelse break :blk false;
@@ -5244,6 +5414,9 @@ const Emitter = struct {
                     if (self.primKindAt(cc, c.loc)) |k| break :blk primCallRes(k, cc) == .str;
                     if (isStrSlice(cc)) break :blk true;
                     if (cc.is_builtin) break :blk false;
+                    if (cc.receiver == null and self.locals.contains(cc.callee)) {
+                        if (self.closure_locals.get(cc.callee)) |li| break :blk self.closureCallIsString(li, cc);
+                    }
                     if (self.calleeSymbol(cc, c.loc)) |sym| {
                         if (self.str_fns.contains(sym)) break :blk true;
                     }
@@ -5596,10 +5769,16 @@ const Emitter = struct {
         try self.declareLocal(len, "i32");
 
         const elem = if (lp.params.len > 0) lp.params[0] else "__it";
-        try self.declareLocal(elem, "i32");
-        if (self.elemKindOf(lp.iter.*) == .str) try self.str_locals.put(elem, {});
+        const elem_kind = self.elemKindOf(lp.iter.*);
+        // A float element is an f32 slot: loading it as an i32 read its bits
+        // as an integer (`[2.0, 4.0, 9.0]` averaged to `1082480000`).
+        const elem_ty = if (elem_kind == .f32) "f32" else "i32";
+        try self.declareLocal(elem, elem_ty);
+        if (elem_kind == .str) try self.str_locals.put(elem, {});
         const idx_param: ?[]const u8 = if (lp.params.len > 1) lp.params[1] else null;
         if (idx_param) |ip| try self.declareLocal(ip, "i32");
+        // `loop (xs, 1..) { x, i -> … }` counts `i` from the range's start.
+        const start = try self.indexRangeStart(lp.indexRange, n);
 
         try self.lowerCoerced(lp.iter.*, "i32");
         try self.emit(.{ .local_set = base });
@@ -5620,10 +5799,21 @@ const Emitter = struct {
         try self.emitAt(8, try self.constInt(4));
         try self.emitAt(8, opOf("i32", "mul"));
         try self.emitAt(8, opOf("i32", "add"));
-        try self.emitAt(8, .{ .load = .{ .offset = 4 } });
+        try self.emitAt(8, .{ .load = .{ .ty = vt(elem_ty), .offset = 4 } });
         try self.emitAt(8, .{ .local_set = elem });
         if (idx_param) |ip| {
             try self.emitAt(8, .{ .local_get = cur });
+            switch (start) {
+                .zero => {},
+                .constant => |k| {
+                    try self.emitAt(8, k);
+                    try self.emitAt(8, opOf("i32", "add"));
+                },
+                .local => |l| {
+                    try self.emitAt(8, .{ .local_get = l });
+                    try self.emitAt(8, opOf("i32", "add"));
+                },
+            }
             try self.emitAt(8, .{ .local_set = ip });
         }
         try self.emitIterationBody(lp.body);
@@ -5636,6 +5826,39 @@ const Emitter = struct {
 
         try self.emitLoopBlock(loop_seq);
         if (result) |r| try self.emit(.{ .local_get = r }) else try self.emit(zero);
+    }
+
+    const IndexStart = union(enum) { zero, constant: Instr, local: []const u8 };
+
+    /// The first index of `loop (xs, <range>)`: the range's lower bound (`0`
+    /// without one, as erlang's `lists:enumerate(Start, Xs)`). An integer
+    /// literal is added as a constant; anything else is evaluated once, before
+    /// the walk, into `__start<n>`.
+    fn indexRangeStart(self: *Emitter, range: anytype, n: u32) anyerror!IndexStart {
+        const r = range orelse return .zero;
+        const start_expr = switch (r.*) {
+            .collection => |col| switch (col.kind) {
+                .range => |rg| rg.start.*,
+                else => return .zero,
+            },
+            else => return .zero,
+        };
+        switch (start_expr) {
+            .literal => |lit| switch (lit.kind) {
+                .numberLit => |text| if (isNumericLiteral(text) and numLitType(text)[0] == 'i') {
+                    const k = std.fmt.parseInt(i64, text, 10) catch return .zero;
+                    if (k == 0) return .zero;
+                    return .{ .constant = try self.constInt(k) };
+                },
+                else => {},
+            },
+            else => {},
+        }
+        const name = try std.fmt.allocPrint(self.reg_arena.allocator(), "__start{d}", .{n});
+        try self.declareLocal(name, "i32");
+        try self.lowerCoerced(start_expr, "i32");
+        try self.emit(.{ .local_set = name });
+        return .{ .local = name };
     }
 
     /// One iteration's statements. A body that `continue`s is wrapped in

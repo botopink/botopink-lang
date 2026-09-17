@@ -129,6 +129,8 @@ fn main() {
         i32.load offset=4
         local.set $x
         local.get $__idx0
+        i32.const 1
+        i32.add
         local.set $i
     local.get $total
     local.get $x
@@ -443,5 +445,5 @@ fn main() {
 ----- RUN LOG -----
 ```logs
 a-c
-80
+140
 ```
