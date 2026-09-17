@@ -181,10 +181,10 @@ pub fn relative(src: string, dst: string) -> string {
 // plus whether the resolved-so-far path is absolute. The record carries
 // the state through the tail-recursive `resolveAll` so no `var` is
 // needed.
-record PathAccum {
+type PathAccum(
     isAbs: bool,
     parts: string[],
-}
+)
 
 // Internal: apply each component of one segment (post-split) to the
 // accumulator, popping for `..` and appending the rest. Head/tail

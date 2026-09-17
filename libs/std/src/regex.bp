@@ -60,10 +60,10 @@ pub declare fn splitOn(pattern: string, input: string) -> string[];
 
 // A single match site — the matched text and its 0-based start position
 // in the input.
-pub record Match {
+pub type Match(
     value: string,
     index: i32,
-}
+)
 
 // First non-overlapping match, or null when `pattern` matches nothing.
 // Node materialises `null` from a missing match; Erlang's `re:run`

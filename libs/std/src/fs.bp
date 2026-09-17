@@ -17,11 +17,11 @@
 //// template wraps the call in try/catch and lifts the error to the
 //// `{error, <message>}` channel.
 
-pub record FileStat {
+pub type FileStat(
     size: i64,
     mtime: i64,
     isDir: bool,
-}
+)
 
 // Read the entire file as a UTF-8 string. Reds with the host's I/O
 // error message on missing file / permission denied / etc.

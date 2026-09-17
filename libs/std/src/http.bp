@@ -28,10 +28,10 @@
 //// external diagnostic at codegen time, matching the spec wave's
 //// scope.
 
-pub record Response {
+pub type Response(
     status: i32,
     body: string,
-}
+)
 
 // Issue a GET request and resolve with the response body.
 //

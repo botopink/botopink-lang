@@ -1,4 +1,4 @@
-//// Gleam-inspired `dict` module — a `record Dict<K, V>` wrapping an
+//// Gleam-inspired `dict` module — a `type Dict<K, V>` wrapping an
 //// association list `pairs: Array<#(K, V)>` for full backend portability
 //// (no host-backing). O(n) lookup; camelCase convention.
 ////
@@ -10,9 +10,9 @@
 //// the common case). API naming note: `new`/`get` are keyword tokens — use
 //// `empty`/`lookup`.
 
-pub record Dict<K, V> {
+pub type Dict<K, V>(
     pairs: Array<#(K, V)>,
-
+) {
     pub fn lookup(self: Self, key: K) -> ?V {
         // NOTE: written with `forEach` + accumulator rather than
         // `.at(0).map(…)` — chained method dispatch on a `?T` (option-map) is

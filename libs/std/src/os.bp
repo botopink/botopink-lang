@@ -55,10 +55,10 @@ pub declare fn tmpdir() -> string;
 // `USER` env var (falling back to `<<"unknown">>`) and reads the uid
 // from `process_info` — best-effort, the Erlang side stays informative
 // without claiming POSIX-grade accuracy.
-pub record UserInfo {
+pub type UserInfo(
     uid: i32,
     username: string,
-}
+)
 
 #[@External.Node("""(() => { const __u = require('os').userInfo(); return { uid: __u.uid, username: __u.username } })()"""),
   @External.Erlang("""(fun() -> __U = case os:getenv("USER") of false -> <<"unknown">>; __V -> list_to_binary(__V) end, #{uid => 0, username => __U} end)()""")]

@@ -57,7 +57,7 @@ pub fn firstCodepoint(s: string) -> ?i32 {
 pub declare fn codepoints(s: string) -> Array<i32>;
 
 // Which Unicode normalization form to apply (NFC, NFD, NFKC, NFKD).
-pub enum NormalizationForm { NFC, NFD, NFKC, NFKD }
+pub type NormalizationForm { NFC, NFD, NFKC, NFKD }
 
 #[@External.Node("""($0.normalize('NFC'))"""),
   @External.Erlang("unicode:characters_to_nfc_binary($0)")]

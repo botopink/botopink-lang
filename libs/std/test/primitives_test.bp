@@ -253,7 +253,7 @@ test "function constant ignores arg" {
 // `?T` builtin surface (map/flatMap/unwrapOr) + optional chaining `?.`.
 // Migrated from option_test.bp. No `option` module/namespace — `?` syntax only.
 
-record User { name: string }
+type User(name: string)
 
 test "option map and unwrapOr" {
     val x: ?i32 = 3;

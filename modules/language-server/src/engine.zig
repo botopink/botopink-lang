@@ -1549,7 +1549,7 @@ fn findInterfaceMethodInTokens(
 ) !?proto.Location {
     var i: usize = 0;
     while (i < tokens.len) : (i += 1) {
-        if (tokens[i].kind != .interface) continue;
+        if (tokens[i].kind != .interface and tokens[i].kind != .behavior) continue;
         if (require_pub and (i == 0 or tokens[i - 1].kind != .@"pub")) continue;
 
         var j = i + 1;
@@ -4331,7 +4331,7 @@ fn collectInterfaceMembers(
         var i: usize = 0;
         var body_start: ?usize = null;
         while (i < tokens.len) : (i += 1) {
-            if (tokens[i].kind != .interface) continue;
+            if (tokens[i].kind != .interface and tokens[i].kind != .behavior) continue;
             var j = i + 1;
             while (j < tokens.len and tokens[j].kind == .endOfFile) : (j += 1) {}
             if (j >= tokens.len or tokens[j].kind != .identifier) continue;

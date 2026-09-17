@@ -20,7 +20,7 @@ std/
 └── src/
     ├── root.bp              ← module-tree root: one `pub mod <name>;` per importable std module
     │                        — core files flattened into the global type env (`std_core_files` in build.zig):
-    ├── primitives.bp        ← primitive interface registry (Number/Integer/Signed/Float, I32…F64, Bool, String, Function, Pair, Array); no tests (see `test/`)
+    ├── primitives.bp        ← primitive behavior registry (Number/Integer/Signed/Float, I32…F64, Bool, String, Function, Pair, Array); no tests (see `test/`)
     ├── builtins.d.bp        ← builtin surface: print, @Result/@Iterator/@Future…, `Target`/`External`/`Host` annotations, std.syntax (`Expr`, `CustomNode`, …), `@Decl` reflection, effect-annotation rules
     ├── builtins_fns.d.bp    ← builtin fns with literal defaults (`todo`, `panic`)
     │                        — importable modules (declared in root.bp):
@@ -37,29 +37,29 @@ std/
 
 | Module | Surface |
 |---|---|
-| `order` | `enum Order`, `lt`, `eq`, `gt`, `toInt`, `reverse` |
-| `dict` | `record Dict<K, V>` (association list): `empty`, `lookup`, `hasKey`, `insert`, `delete`, `size`, `isEmpty`, `keys`, `values`, `fold`, `merge`, `mapValues` |
-| `sets` | `record Set<T>`: `empty`, `fromList`, `contains`, `size`, `isEmpty`, `insert`, `delete`, `toList`, `union`, `intersection`, `difference` (named `sets` — `set` is a keyword) |
-| `string_builder` | `record StringBuilder`: `empty`, `fromString`, `fromStrings`, `append`, `prepend`, `toString`, `length`, `isEmpty` |
-| `queue` | `record Queue<T>` (FIFO): `empty`, `fromList`, `size`, `isEmpty`, `enqueue`, `dequeue`, `peek`, `toList` |
+| `order` | `type Order`, `lt`, `eq`, `gt`, `toInt`, `reverse` |
+| `dict` | `type Dict<K, V>` (association list): `empty`, `lookup`, `hasKey`, `insert`, `delete`, `size`, `isEmpty`, `keys`, `values`, `fold`, `merge`, `mapValues` |
+| `sets` | `type Set<T>`: `empty`, `fromList`, `contains`, `size`, `isEmpty`, `insert`, `delete`, `toList`, `union`, `intersection`, `difference` (named `sets` — `set` is a keyword) |
+| `string_builder` | `type StringBuilder`: `empty`, `fromString`, `fromStrings`, `append`, `prepend`, `toString`, `length`, `isEmpty` |
+| `queue` | `type Queue<T>` (FIFO): `empty`, `fromList`, `size`, `isEmpty`, `enqueue`, `dequeue`, `peek`, `toList` |
 | `math` | constants `pi`/`e`/`tau`/`sqrt2`/`ln2`/`ln10`/`log2e`/`log10e`; `abs`/`floor`/`round`/`trunc`/`ceil`/`sign`/`minF`/`maxF`/`clamp`; `sqrt`/`pow`/`cbrt`/`exp`/`ln`/`log2`/`log10`/`hypot`; trig + hyperbolic |
-| `asserts` | `truthy`, `falsy`, `equal`, `notEqual`, `approxEqual`, `contains`, `throws`, `matches`, `record AssertError` (named `asserts` — `assert` is a keyword) |
+| `asserts` | `truthy`, `falsy`, `equal`, `notEqual`, `approxEqual`, `contains`, `throws`, `matches`, `type AssertError` (named `asserts` — `assert` is a keyword) |
 | `path` | `separator`, `delimiter`, `split`, `isAbsolute`, `basename`, `dirname`, `extname`, `join`, `normalize`, `relative(src, dst)`, `resolve` (posix only) |
 | `random` | `float`, `coin`, `bool`, `intInRange`, `pick`, `shuffle`, `seed`, `seededFloat` |
 | `querystring` | `parse`, `stringify` |
 | `time` | `nowMillis`, `monotonicMillis`, `measureMillis`, `formatIso8601` |
-| `url` | `record Url`, `parse`, `serialize` |
+| `url` | `type Url`, `parse`, `serialize` |
 | `base64` | `encode`, `decode`, `encodeUrlSafe`, `decodeUrlSafe` |
-| `unicode` | `fromCodepoint`, `firstCodepoint`, `codepoints`, `enum NormalizationForm`, `normalize` |
+| `unicode` | `fromCodepoint`, `firstCodepoint`, `codepoints`, `type NormalizationForm`, `normalize` |
 | `process` | `exit`, `cwd`, `platform`, `arch`, `pid` |
-| `os` | `hostname`, `arch`, `cpuCount`, `tmpdir`, `userInfo` (`record UserInfo`), `eol` |
+| `os` | `hostname`, `arch`, `cpuCount`, `tmpdir`, `userInfo` (`type UserInfo`), `eol` |
 | `env` | `read`, `write`, `clear`, `args`, `vars` (`get`/`set` are keywords) |
 | `crypto` | `sha256`, `sha512`, `md5`, `hmacSha256`, `randomBytes` (hex strings) |
-| `regex` | `matches`, `replace`, `replaceAll`, `splitOn`, `record Match`, `match`, `matchAll` |
+| `regex` | `matches`, `replace`, `replaceAll`, `splitOn`, `type Match`, `match`, `matchAll` |
 | `erlang` | Erlang BIF bindings (`abs`, `element`, `spawn`, `send`, …); the erlang codegen reads this file to know which names are BIFs |
 | `json` | `parse`, `stringify` (validate + canonical re-encode, `@Result<string, string>`) |
-| `fs` | `record FileStat`, `readText`, `writeText`, `exists`, `list`, `mkdir`, `rm`, `copy`, `stat` (fallible ops return `@Result`) |
-| `http` | `record Response`, `fetch`, `fetchStatus` (`@Future`) |
+| `fs` | `type FileStat`, `readText`, `writeText`, `exists`, `list`, `mkdir`, `rm`, `copy`, `stat` (fallible ops return `@Result`) |
+| `http` | `type Response`, `fetch`, `fetchStatus` (`@Future`) |
 
 `mergeRecords(A, B)`, `partial(T)`, `omit(T, "f")` and `pick(T, ["f"])` are
 comptime type functions implemented in the compiler
@@ -80,13 +80,13 @@ matching `@External` raises `STD-001` (`comptime/tests/std_target_gating.zig`).
 ## `#[@External.<Target>(...)]` — host bindings
 
 `#[@External.<Target>(...)]` plus the signature define how a declaration lowers.
-Targets come from `enum Target { Node, Typescript, Erlang, Beam, Wasm }` in
+Targets come from `type Target { Node, Typescript, Erlang, Beam, Wasm }` in
 `builtins.d.bp`. Several annotations combine in one `#[…]`, comma-separated.
 
 - **Module + symbol** — `#[@External.Erlang("erlang", "abs")]`: call
   `module:symbol(args)` with args in declaration order.
 - **Single string** — `module` comes back empty from `externalFor` (`ast.zig`).
-  On an interface method it names the native method (`#[@External.Node("reverse")]`,
+  On a behavior method it names the native method (`#[@External.Node("reverse")]`,
   a call-site rename when it differs from the method name, never a prototype
   patch). On a `declare fn` it is a host expression
   (`#[@External.Node("process.cwd()")]`) that commonJS renders verbatim at each
@@ -94,7 +94,7 @@ Targets come from `enum Target { Node, Typescript, Erlang, Beam, Wasm }` in
   `:expr()()`, which does not compile (owned by F5 erlang), so `env`, `os` and
   `process` do not build on erlang yet.
 - **Relative module file** — `#[@External.Node("./file.mjs", "symbol")]` is
-  **not a supported form in `libs/std`**. On an interface method both inference
+  **not a supported form in `libs/std`**. On a behavior method both inference
   and the commonJS emitter skip it and the native JS method of the same name
   runs; on a `declare fn` it emits `require("./file.mjs")`, which throws unless
   the file is shipped next to the emitted module. Name the native method, write
@@ -126,7 +126,7 @@ the whole file with an unlocated `LexicalError`.
 
 A template on a `declare fn` names its arguments positionally: commonJS numbers
 them from `$0`, while erlang binds the first parameter of a `primitives.bp`
-helper to `$self` (see `stringSlice0/1`). A template on an interface method
+helper to `$self` (see `stringSlice0/1`). A template on a behavior method
 becomes a `<Owner>.prototype.<m>` patch on commonJS, so it must not call the
 native method of the same name (the patch would call itself), and a
 `default fn` body is patched the same way — `stringSlice*`/`arraySlice*`
@@ -160,7 +160,7 @@ Known red (the `std` cells in `scripts/known-red-libs.txt`):
 
 | Target | What fails | Owner |
 |---|---|---|
-| commonJS | `test/primitives_gaps_test.bp`: `array chunked partitions`, `array sliding window of 2` — `while` inside an interface `default fn` lowers to an undefined `while_` | F8 js-bridges |
+| commonJS | `test/primitives_gaps_test.bp`: `array chunked partitions`, `array sliding window of 2` — `while` inside a behavior `default fn` lowers to an undefined `while_` | F8 js-bridges |
 | erlang | `env`, `os`, `process` do not compile — a marker-less 1-arg `@External.Erlang` on a `declare fn` lowers to `:expr()()` | F5 erlang |
 | erlang | `test/primitives_gaps_test.bp` does not compile — a method call on an `Array.range(…)` result is not lowered (`join/2`, `map/2`, `filter/2` undefined, `.length` as `maps:get`), and `chunked`/`sliding` lower `while` to `while/2` | F5 erlang |
 
@@ -168,7 +168,7 @@ Also known, not a red cell: `n.abs()` on an `i32` receiver resolves on
 erlang only because `abs/1` is an auto-imported BIF — the erlang backend maps
 an int receiver to `Integer` and walks up its `extends` chain, never down to
 `Signed` — and beam leaves it `%% unresolved` (numeric receivers map to no
-interface). Owned by F5 erlang and F4 beam.
+behavior). Owned by F5 erlang and F4 beam.
 
 ## Sidecars
 
@@ -199,7 +199,7 @@ documented in the effect-annotations block of `src/builtins.d.bp`.
 - No Zig in `libs/std/` — loader/glue changes belong in `build.zig` / `compiler-core`.
 - `new`/`get`/`set`/`test`/`from`/`assert` are keywords — pick other names (`empty`/`lookup`/`insert`, `matches`, `src`, `asserts`).
 - Array equality in assertions uses `.join(...)` (`==` on arrays is reference equality in JS).
-- A trailing default on an interface method is not expanded at the call site
+- A trailing default on a behavior method is not expanded at the call site
   yet: `s.slice(1)` fails to check (`'slice' expects 2 argument(s)`); pass both
   bounds.
 - A `val` bound to a generic call is not generalised: `val f = Function.constant(42)`

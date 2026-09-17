@@ -8,7 +8,7 @@
 
 import {dict, queue, sets, order} from "std";
 
-record Point { x: i32, y: i32 }
+type Point(x: i32, y: i32)
 
 // ── tour: dict ────────────────────────────────────────────────────────────────
 

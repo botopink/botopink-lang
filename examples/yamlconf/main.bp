@@ -11,5 +11,5 @@ val cfg = conf
 fn main() {
     @print(cfg.server.port + 1);   // ok: i32 — structure revealed at expansion
     @print(cfg.debug);             // ok: bool
-    // @print(cfg.server.prot);    // COMPILE ERROR: 'record' has no field 'prot'
+    // @print(cfg.server.prot);    // COMPILE ERROR: the tuple has no label 'prot'
 }

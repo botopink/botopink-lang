@@ -73,11 +73,11 @@ pub fn contains(haystack: string, needle: string) {
 // (the value is delivered verbatim — the panic stays the host-level
 // exit mechanism). `throws`/`matches` will produce these once the
 // host-level catch hook lands (see the deferral note below).
-pub record AssertError {
+pub type AssertError(
     message: string,
     file: string,
     line: i32,
-}
+)
 
 // Private host-level try/catch wrapper (§A3 — `#[@result] declare fn`
 // template-owned). Runs `body` (no-arg fn returning a discardable `i32`

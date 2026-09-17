@@ -574,20 +574,20 @@ pub const std_pkg_modules = @import("std_prelude").pkg_modules;
 /// object `decorator_eval.zig` binds, so a body's `decl.fields`/`decl.kind`/
 /// `decl.fail(…)` type-check against the same data the runtime provides.
 const decl_reflection_src =
-    \\pub enum DeclKind { Type, Behavior, Fn, Method, Field }
-    \\pub record Span { val start: i32, val end: i32, val line: i32 }
-    \\pub record Annotation { val name: string, val args: string[] }
-    \\pub record Param { val name: string, val typeName: string }
-    \\pub record Field { val name: string, val typeName: string, val annotations: Annotation[] }
-    \\pub record Method { val name: string, val params: Param[], val returnType: string, val annotations: Annotation[] }
-    \\pub record Decl {
-    \\    val kind: DeclKind,
-    \\    val name: string,
-    \\    val fields: Field[],
-    \\    val variants: string[],
-    \\    val methods: Method[],
-    \\    val returnType: string,
-    \\    val annotations: Annotation[],
+    \\pub type DeclKind { Type, Behavior, Fn, Method, Field }
+    \\pub type Span(start: i32, end: i32, line: i32)
+    \\pub type Annotation(name: string, args: string[])
+    \\pub type Param(name: string, typeName: string)
+    \\pub type Field(name: string, typeName: string, annotations: Annotation[])
+    \\pub type Method(name: string, params: Param[], returnType: string, annotations: Annotation[])
+    \\pub type Decl(
+    \\    kind: DeclKind,
+    \\    name: string,
+    \\    fields: Field[],
+    \\    variants: string[],
+    \\    methods: Method[],
+    \\    returnType: string,
+    \\    annotations: Annotation[]) {
     \\    declare fn fail(self: Self, message: string);
     \\    declare fn failAt(self: Self, span: Span, message: string);
     \\}
@@ -601,13 +601,13 @@ const decl_reflection_src =
 /// `Span` field type resolves. `Binding` (the `ref` field) is the same opaque
 /// type `q.lookup` yields. Generic — the core never inspects `kind`/`label`.
 const custom_ast_reflection_src =
-    \\pub record CustomNode {
-    \\    val kind: string,
-    \\    val span: Span,
-    \\    val label: string,
-    \\    val ref: ?Binding,
-    \\    val children: CustomNode[],
-    \\}
+    \\pub type CustomNode(
+    \\    kind: string,
+    \\    span: Span,
+    \\    label: string,
+    \\    ref: ?Binding,
+    \\    children: CustomNode[],
+    \\)
 ;
 
 /// Comptime type introspection types (§1.0.0-beta): `@typeInfo` returns a
@@ -616,19 +616,19 @@ const custom_ast_reflection_src =
 /// introspection results. Mirrors the surface documented in
 /// `libs/std/src/builtins.d.bp`; registered like the `@Decl` cluster.
 const type_info_src =
-    \\pub record RecordField {
-    \\    val name: string,
-    \\    val typeName: string,
-    \\}
+    \\pub type RecordField(
+    \\    name: string,
+    \\    typeName: string,
+    \\)
     \\
-    \\pub record EnumVariant {
-    \\    val name: string,
-    \\    val fields: RecordField[],
-    \\}
+    \\pub type EnumVariant(
+    \\    name: string,
+    \\    fields: RecordField[],
+    \\)
     \\
-    \\pub enum TypeInfoKind { Int, Float, Bool, String, Array, Record, Enum, Fn, Optional, Generic }
+    \\pub type TypeInfoKind { Int, Float, Bool, String, Array, Record, Enum, Fn, Optional, Generic }
     \\
-    \\pub enum TypeInfo {
+    \\pub type TypeInfo {
     \\    Int,
     \\    Float,
     \\    Bool,

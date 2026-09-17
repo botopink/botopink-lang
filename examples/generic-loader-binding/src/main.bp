@@ -14,7 +14,7 @@
 
 import {of, erika} from "erika";
 
-record City { name: string, pop: i32 }
+type City(name: string, pop: i32)
 
 val cities = [
     City(name: "Lyon",  pop: 5),

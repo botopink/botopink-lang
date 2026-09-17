@@ -14,7 +14,7 @@
 //// `""` (string fields) or `0` (port). URI percent-encoding is NOT
 //// applied here — pair this with `querystring` for form values.
 
-pub record Url {
+pub type Url(
     scheme: string,
     user: string,
     password: string,
@@ -23,7 +23,7 @@ pub record Url {
     path: string,
     query: string,
     fragment: string,
-}
+)
 
 // Internal: split `s` at the first occurrence of `delim`. Returns
 // `#(head, tail)` where `tail` excludes the delimiter. If `delim` is
