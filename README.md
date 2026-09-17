@@ -71,4 +71,4 @@ Install the [Botopink extension](https://marketplace.visualstudio.com/items?item
 
 ## License
 
-MIT
+MIT — see [`LICENSE`](LICENSE).
