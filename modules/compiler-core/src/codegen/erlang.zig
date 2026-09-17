@@ -424,6 +424,30 @@ pub const HostRecord = struct {
     fields: []const []const u8,
 };
 
+/// `'__bp_len'/2`: `.len`/`.length`/`.size` on a receiver of unknown type — a
+/// list's length, a binary's length, else the map field. Every comptime module
+/// carries it; a typed module emits it when inference recorded no lowering for
+/// such a field read.
+const len_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_len", .clauses = &.{
+    .{
+        .patterns = &.{ Ast.Expr.v("X"), Ast.Expr.v("_") },
+        .guards = &.{isA("list", "X")},
+        .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .name = "length", .args = &.{Ast.Expr.v("X")} } } }}),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ Ast.Expr.v("X"), Ast.Expr.v("_") },
+        .guards = &.{isA("binary", "X")},
+        .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "string", .name = "length", .args = &.{Ast.Expr.v("X")} } } }}),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ Ast.Expr.v("X"), Ast.Expr.v("Field") },
+        .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "maps", .name = "get", .args = &.{ Ast.Expr.v("Field"), Ast.Expr.v("X") } } } }}),
+        .layout = .inline_,
+    },
+} } };
+
 /// `'__bp_text'/1`: any term as a binary — a binary is itself, anything else
 /// its `~p` rendering. Every comptime module carries it; a typed module emits it
 /// when a string `+` has an operand that is not provably a string
@@ -498,25 +522,7 @@ pub const comptime_helper_forms = [_]Ast.Form{
             .layout = .inline_,
         },
     } } },
-    .{ .function = .{ .name = "__bp_len", .clauses = &.{
-        .{
-            .patterns = &.{ Ast.Expr.v("X"), Ast.Expr.v("_") },
-            .guards = &.{isA("list", "X")},
-            .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .name = "length", .args = &.{Ast.Expr.v("X")} } } }}),
-            .layout = .inline_,
-        },
-        .{
-            .patterns = &.{ Ast.Expr.v("X"), Ast.Expr.v("_") },
-            .guards = &.{isA("binary", "X")},
-            .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "string", .name = "length", .args = &.{Ast.Expr.v("X")} } } }}),
-            .layout = .inline_,
-        },
-        .{
-            .patterns = &.{ Ast.Expr.v("X"), Ast.Expr.v("Field") },
-            .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "maps", .name = "get", .args = &.{ Ast.Expr.v("Field"), Ast.Expr.v("X") } } } }}),
-            .layout = .inline_,
-        },
-    } } },
+    len_helper_form,
     text_helper_form,
     .{ .function = .{ .name = "__bp_json", .clauses = &.{
         .{
@@ -678,6 +684,11 @@ fn emitErlangModule(
     defer em.locals.deinit();
     defer em.mutable_locals.deinit(alloc);
     defer em.mutating_closures.deinit(alloc);
+    defer {
+        var kit = em.local_fn_arities.keyIterator();
+        while (kit.next()) |k| alloc.free(k.*);
+        em.local_fn_arities.deinit(alloc);
+    }
     defer em.var_current.deinit();
     defer em.var_next.deinit();
     defer em.top_vals.deinit();
@@ -757,6 +768,7 @@ fn emitErlangModule(
     try em.collectTypeShapes(program);
     try em.collectImportedTypes(program);
     try em.collectStringNames(program);
+    try em.collectLocalFnArities(program);
     if (comptime_module) |cm| {
         for (cm.host_enums) |name| try em.enum_names.put(name, {});
         for (cm.host_records) |r| try em.record_fields.put(r.name, try alloc.dupe([]const u8, r.fields));
@@ -940,7 +952,17 @@ fn emitErlangModule(
     // Runtime helpers a lowering reached. A comptime module always carries
     // `'__bp_text'/1` (`comptime_helper_forms`); a listing renders no helper.
     const listing_only = if (comptime_module) |cm| cm.listing else false;
+    if (comptime_module == null) {
+        // Runtime-dispatch shims a typed call site reached (no recorded
+        // lowering); their fallback clause for `toString` formats through
+        // `'__bp_text'/1`.
+        if (em.prim_shims.count() > 0) {
+            try em.primShimForms(b, &forms);
+            if (em.prim_shims.contains("toString/0")) em.needs_text_helper = true;
+        }
+    }
     if (!listing_only) {
+        if (em.needs_len_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, len_helper_form });
         if (em.needs_text_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, text_helper_form });
         if (em.needs_print_helper) try forms.appendSlice(b.arena, &.{ .blank, print_helper_form });
     }
@@ -1484,6 +1506,13 @@ const Emitter = struct {
     /// Set when `@print`/`@println`/`@debug` lowered to `'__bp_print'/1`; the
     /// module then emits `print_helper_form`.
     needs_print_helper: bool = false,
+    /// Set when a typed-module field read fell back to `'__bp_len'/2`.
+    needs_len_helper: bool = false,
+    /// `name/arity` of every function this module defines by name — top-level
+    /// fns, record/enum methods, extension methods. A value-receiver call with
+    /// no recorded lowering stays the bare local call when one of these answers
+    /// it, and dispatches on the receiver at runtime otherwise.
+    local_fn_arities: std.StringHashMapUnmanaged(void) = .empty,
 
     fn init(alloc: std.mem.Allocator, cv: std.StringHashMap([]const u8), rewrites: std.AutoHashMap(ast.Loc, []const u8)) Emitter {
         return .{
@@ -1915,7 +1944,10 @@ const Emitter = struct {
     /// chained-host-call shapes). Null when no template matches.
     fn userTemplateNode(this: *Emitter, b: Ast.Builder, callee: []const u8, cc: anytype) anyerror!?Ast.Expr {
         const call = this.user_erlang_templates.get(callee) orelse return null;
-        const template = templateFor(call, cc) orelse return null;
+        // A marker-less host expression (module-less 1-arg annotation) is its
+        // own template text.
+        const template = templateFor(call, cc) orelse
+            (if (call.arity_branches.len == 0 and call.symbol.len > 0) call.symbol else return null);
         return try this.templateNode(b, template, null, cc, error.PrimOpRecvInUserTemplate);
     }
 
@@ -2337,6 +2369,32 @@ const Emitter = struct {
         };
     }
 
+    /// True when some record of the module declares a field named `name`.
+    fn isRecordField(self: *const Emitter, name: []const u8) bool {
+        var it = self.record_fields.valueIterator();
+        while (it.next()) |fields| for (fields.*) |f| if (std.mem.eql(u8, f, name)) return true;
+        return false;
+    }
+
+    /// Index `local_fn_arities`: every function the module emits under its own
+    /// name, with its Erlang arity.
+    fn collectLocalFnArities(self: *Emitter, program: ast.Program) !void {
+        for (program.decls) |decl| switch (decl) {
+            .@"fn" => |f| try self.putLocalFn(f.name, fnArityNoSelf(f)),
+            .record => |r| for (r.methods) |m| try self.putLocalFn(m.name, m.params.len),
+            .@"enum" => |e| for (e.methods) |m| try self.putLocalFn(m.name, m.params.len),
+            .implement => |im| for (im.methods) |m| try self.putLocalFn(m.name, m.params.len),
+            .extend => |ex| for (ex.methods) |m| try self.putLocalFn(m.name, m.params.len),
+            else => {},
+        };
+    }
+
+    fn putLocalFn(self: *Emitter, name: []const u8, arity: usize) !void {
+        const key = try std.fmt.allocPrint(self.alloc, "{s}/{d}", .{ name, arity });
+        const gop = try self.local_fn_arities.getOrPut(self.alloc, key);
+        if (gop.found_existing) self.alloc.free(key);
+    }
+
     /// Records every module name imported from the "std" package.
     fn collectStdImports(this: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| switch (decl) {
@@ -2419,8 +2477,11 @@ const Emitter = struct {
                     // §A2 single-template form (`"$0.method(...)"`,
                     // `"erlang:something($0, $1)"` with `$` markers) — the
                     // symbol carries `$` → render at the call site, never
-                    // emit `module:symbol`.
-                    if (primOpTemplate.looksLikeTemplate(ref.symbol)) {
+                    // emit `module:symbol`. A 1-arg form without markers
+                    // (`"list_to_integer(os:getpid())"`) names no module: it is
+                    // a bare host expression and renders verbatim too — as a
+                    // `module:symbol` call it came out `:expr()()`.
+                    if (primOpTemplate.looksLikeTemplate(ref.symbol) or ref.module.len == 0) {
                         try this.user_erlang_templates.put(try this.alloc.dupe(u8, f.name), .{
                             .module = "",
                             .symbol = try this.dupeTemplate(ref.symbol),
@@ -2775,6 +2836,11 @@ const Emitter = struct {
                 else => return null,
             },
             .call => {
+                // `while (cond) { … }` reassigning outer variables returns them.
+                if (whileLoop(stmt.expr)) |wl| {
+                    try this.collectMutations(b.arena, wl.body, &.{}, &names);
+                    return try this.whileNode(b, wl, names.items);
+                }
                 // `emit(x)` on a closure that reassigns outer variables rebinds
                 // them from what it answers: `Tokens@2 = Emit(X, Tokens@1)`.
                 if (this.closureMutation(stmt.expr)) |cm| {
@@ -2820,6 +2886,64 @@ const Emitter = struct {
             .prim => |k| if (k == .array) name else null,
             .record => null,
         };
+    }
+
+    const WhileLoop = struct {
+        cond: *const ast.Expr,
+        body: []const ast.Stmt,
+    };
+
+    /// `while (cond) { body }` — parsed as a call of `while` with one argument
+    /// and a parameterless trailing block — or null.
+    fn whileLoop(e: ast.Expr) ?WhileLoop {
+        if (e != .call or e.call.kind != .call) return null;
+        const cc = e.call.kind.call;
+        if (cc.is_builtin or cc.receiver != null or !std.mem.eql(u8, cc.callee, "while")) return null;
+        if (cc.args.len != 1 or cc.trailing.len != 1 or cc.trailing[0].params.len != 0) return null;
+        return .{ .cond = cc.args[0].value, .body = cc.trailing[0].body };
+    }
+
+    /// A `while` loop as a named fun that tests, runs the body and recurses:
+    /// `Group' = (fun __Loop(GroupIn) -> case Cond of true -> Body, __Loop(GroupOut);
+    /// _ -> GroupIn end end)(Group)`. The variables the body reassigns (`names`)
+    /// travel as the fun's parameter and come back as its value; with none the
+    /// fun takes nothing and answers `ok`.
+    fn whileNode(this: *Emitter, b: Ast.Builder, wl: WhileLoop, names: []const []const u8) anyerror!Ast.Expr {
+        var snapshot = try this.var_current.clone();
+        defer snapshot.deinit();
+        const group_in: ?Ast.Expr = if (names.len > 0) try this.bindVarGroupExpr(b, names) else null;
+        var in_versions = try this.var_current.clone();
+        defer in_versions.deinit();
+        const arm_indent = this.indent + 3;
+        const saved = this.indent;
+        this.indent = arm_indent;
+        const cond = try this.condNode(b, wl.cond.*);
+        this.indent = saved;
+        var body: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
+        try body.appendSlice(b.arena, (try this.bodyNode(b, wl.body, 0, arm_indent)).stmts);
+        const again: Ast.Expr = .{ .apply = .{
+            .fun = try b.ptr(Ast.Expr.v(loop_fun_var)),
+            .args = if (group_in != null) try b.exprs(&.{try this.varGroupExpr(b, names)}) else &.{},
+        } };
+        try body.append(b.arena, .{ .expr = again });
+        try this.restoreVersions(&in_versions);
+        const done = if (group_in) |_| try this.varGroupExpr(b, names) else Ast.Expr.a("ok");
+        try this.restoreVersions(&snapshot);
+        const case = try b.caseOf(cond, &.{
+            .{ .patterns = try b.exprs(&.{Ast.Expr.a("true")}), .body = .{ .stmts = body.items } },
+            try b.clause(&.{Ast.Expr.v("_")}, &.{}, &.{done}),
+        });
+        const fun: Ast.Expr = .{ .fun = .{
+            .name = loop_fun_var,
+            .params = if (group_in) |g| try b.exprs(&.{g}) else &.{},
+            .body = try b.body(&.{case}),
+        } };
+        const call: Ast.Expr = .{ .apply = .{
+            .fun = try b.ptr(try b.paren(fun)),
+            .args = if (group_in != null) try b.exprs(&.{try this.varGroupExpr(b, names)}) else &.{},
+        } };
+        if (group_in == null) return call;
+        return b.match(try this.bindVarGroupExpr(b, names), call);
     }
 
     const ClosureMutation = struct {
@@ -2908,7 +3032,9 @@ const Emitter = struct {
                 else => {},
             },
             .loop => |lp| try this.collectMutations(gpa, lp.body, lp.params, out),
-            .call => if (this.closureMutation(s.expr)) |cm| {
+            .call => if (whileLoop(s.expr)) |wl| {
+                try this.collectMutations(gpa, wl.body, shadowed, out);
+            } else if (this.closureMutation(s.expr)) |cm| {
                 for (cm.names) |n| {
                     if (!this.locals.contains(n) or containsName(shadowed, n) or containsName(out.items, n)) continue;
                     try out.append(gpa, n);
@@ -3413,10 +3539,18 @@ const Emitter = struct {
                             };
                         }
                     }
-                    if (this.untyped and !ia.optional and
+                    // A comptime body has no types; a typed module whose inference
+                    // recorded nothing here (a chained or generic receiver:
+                    // `Array.range(0, 5)`'s result) does not know either, unless
+                    // some record of the module declares the field. Both
+                    // dispatch at runtime: a list's or binary's length, else the
+                    // map field.
+                    if (!ia.optional and
                         (std.mem.eql(u8, ia.member, "len") or std.mem.eql(u8, ia.member, "length") or
-                            std.mem.eql(u8, ia.member, "size")))
+                            std.mem.eql(u8, ia.member, "size")) and
+                        (this.untyped or (this.instance_lowerings.get(id.loc) == null and !this.isRecordField(ia.member))))
                     {
+                        if (!this.untyped) this.needs_len_helper = true;
                         return b.call("__bp_len", &.{ try this.exprNode(b, ia.receiver.*), A(ia.member) });
                     }
                     // Record/struct field access — records are maps at runtime.
@@ -3822,6 +3956,10 @@ const Emitter = struct {
     /// plain local call. Reserved-word callees (`of`, `div`) are quoted atoms.
     fn plainCallNode(this: *Emitter, b: Ast.Builder, loc: anytype, cc: anytype) anyerror!Ast.Expr {
         const recv = cc.receiver orelse {
+            // `while (cond) { … }` in value position: nothing reassigned escapes.
+            if (std.mem.eql(u8, cc.callee, "while") and cc.args.len == 1 and cc.trailing.len == 1 and cc.trailing[0].params.len == 0) {
+                return this.whileNode(b, .{ .cond = cc.args[0].value, .body = cc.trailing[0].body }, &.{});
+            }
             if (this.user_erlang_templates.contains(cc.callee)) {
                 // §A2 per-callee template / arity-branched annotation. With no
                 // matching branch, the bare local call surfaces the gap as an
@@ -3961,7 +4099,12 @@ const Emitter = struct {
         // `toString` before the bare `m(Recv, args)` call.
         if (try this.arrayPrimFallbackNode(b, cc.callee, recv, cc)) |node| return node;
         // A comptime body has no types at all: dispatch on the receiver at runtime.
-        if (this.untyped) {
+        // A comptime body has no types at all, and a typed module whose inference
+        // recorded no lowering here (a method on `Array.range(0, 5)`'s result, a
+        // local inside an inlined interface default) does not know the receiver
+        // either: dispatch on it at runtime — unless the module defines a
+        // function of that name taking the receiver first.
+        if (this.untyped or !this.local_fn_arities.contains(try std.fmt.allocPrint(b.arena, "{s}/{d}", .{ cc.callee, cc.args.len + cc.trailing.len + 1 }))) {
             if (try this.untypedPrimCallNode(b, loc, recv, cc)) |node| return node;
         }
         if (std.mem.eql(u8, cc.callee, "toString") and cc.args.len == 0) return this.formatNode(b, recv);

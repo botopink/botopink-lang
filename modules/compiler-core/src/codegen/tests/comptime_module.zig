@@ -127,6 +127,31 @@ test "comptime module: a closure reassigning outer vars takes and answers them" 
     try expectContains(out, "emit('__bp_prim_join'(Toks@6, <<\",\">>))");
 }
 
+test "comptime module: a while loop threads the variables its body reassigns" {
+    // `while (cond) { … }` is not in scope for checked code; the prelude's
+    // bodied interface defaults (`Array.chunked`/`sliding`) write it, and they
+    // are lowered without inference — like a comptime body.
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const out = try lower(arena_state.allocator(),
+        \\fn count(comptime decl: @Decl) {
+        \\    var i = 0;
+        \\    var names = "";
+        \\    while (i < 3) {
+        \\        names = names + decl.name;
+        \\        i = i + 1;
+        \\    };
+        \\    @emit(names);
+        \\}
+    , .{ .host_enums = &.{"DeclKind"} });
+    try expectContains(out, "{Names@3, I@3} = (fun __Loop({Names@1, I@1}) ->");
+    try expectContains(out, "case (I@1 < 3) of");
+    try expectContains(out, "__Loop({Names@2, I@2});");
+    try expectContains(out, "_ -> {Names@1, I@1}");
+    try expectContains(out, "end)({Names, I}),");
+    try expectContains(out, "emit(Names@3)");
+}
+
 test "comptime module: push through a local threads out of a multi-statement closure" {
     // A dependency-injection constructor shape: a 2-statement closure whose inner
     // `forEach` mutates by assignment and whose `push` mutates the receiver.

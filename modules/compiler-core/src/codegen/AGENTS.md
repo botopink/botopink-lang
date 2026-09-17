@@ -245,7 +245,14 @@ codegen/
   answers is recorded in `unsupported_method` (when set, compilable emit only)
   and the emit fails with `error.UnsupportedComptimeMethod`; the evaluators turn
   it into a located diagnostic. `primErlangDispatchCount` exposes the size of the
-  prelude's dispatch table for a regression test. Tests: `tests/comptime_module.zig`.
+  prelude's dispatch table for a regression test.
+  **A typed module uses the same shims** where inference recorded no lowering
+  for a value-receiver call (a method on `Array.range(0, 5)`'s result, a local
+  inside an inlined interface default) and the module defines no
+  `callee/argc+1` function of its own (`local_fn_arities`): the shims are
+  emitted after the reached instance defaults. A `.len`/`.length`/`.size` read
+  with no lowering, on a field no record of the module declares, is
+  `'__bp_len'(X, Field)` (`len_helper_form`, emitted on demand). Tests: `tests/comptime_module.zig`.
 - **Names**: `atomName`/`fnAtom`/`erlangVar`/`erlangModule` are aliases of
   `beam/erl_emitter.zig`. `erlang.zig` writes no Erlang text itself: the emitter
   builds `erl_ast` nodes and forms and `erl_emitter` renders them (`raw` remains
@@ -301,6 +308,12 @@ codegen/
   - an open-ended range `loop (x..)` → a named fun that counts up and recurses
     (`fun __Loop(I) -> …, __Loop(I + 1) end`), since `lists:seq/2` has no `infinity`;
   - everything else → `lists:foreach`.
+  - `while (cond) { … }` — not in scope for checked code, but the prelude's
+    bodied interface defaults (`Array.chunked`/`sliding`) write it and are lowered
+    without inference — is a named fun that tests, runs the body and recurses
+    (`whileNode`): `{Out@3, I@3} = (fun __Loop({Out@1, I@1}) -> case Cond of
+    true -> …, __Loop({Out@2, I@2}); _ -> {Out@1, I@1} end end)({Out, I})`,
+    threading the variables the body reassigns; with none it answers `ok`.
   A value-less `break` is `erlang:throw('__bp_break')` and its loop is wrapped in
   the `try … catch throw:'__bp_break' -> ok end` that ends it (`loopBreakCatch`,
   `hasBareBreak`).
@@ -339,7 +352,10 @@ codegen/
   `m(recv, args)`.
 - **Externals**: `#[@External.Erlang("module", "symbol")]` fns emit no decl and
   calls lower to `module:symbol(Args)` (`externals`); `$`-marker / `when(…)`
-  symbols render inline (`user_erlang_templates`); no `erlang` target →
+  symbols render inline (`user_erlang_templates`), and so does a 1-arg form
+  without markers (`#[@External.Erlang("list_to_integer(os:getpid())")]`) — a bare
+  host expression names no module, and as `module:symbol` it came out
+  `:expr()()`; no `erlang` target →
   `MissingExternalTarget`. A template is the string literal's raw LEXEME and goes
   into the `.erl` verbatim, so `dupeTemplate` resolves `\"` to `"` first (an
   `io_lib:format(\"~p\", …)` template used to open an unterminated string).
