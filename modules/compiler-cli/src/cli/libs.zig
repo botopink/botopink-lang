@@ -254,13 +254,13 @@ pub fn resolveFallbackRoots(gpa: std.mem.Allocator, io: std.Io, env_map: EnvMap)
 pub fn resolveBpmpStoreRoot(gpa: std.mem.Allocator, env_map: EnvMap) !?[]u8 {
     if (env_map) |m| {
         if (m.get("BPMP_HOME")) |v| {
-            if (v.len > 0) return std.fs.path.join(gpa, &.{ v, "store" });
+            if (v.len > 0) return try std.fs.path.join(gpa, &.{ v, "store" });
         }
         if (m.get("XDG_CACHE_HOME")) |v| {
-            if (v.len > 0) return std.fs.path.join(gpa, &.{ v, "bpmp", "store" });
+            if (v.len > 0) return try std.fs.path.join(gpa, &.{ v, "bpmp", "store" });
         }
         if (m.get("HOME")) |v| {
-            if (v.len > 0) return std.fs.path.join(gpa, &.{ v, ".cache", "bpmp", "store" });
+            if (v.len > 0) return try std.fs.path.join(gpa, &.{ v, ".cache", "bpmp", "store" });
         }
     }
     return null;

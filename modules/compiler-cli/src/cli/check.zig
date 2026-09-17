@@ -3,9 +3,8 @@
 /// Loads the same module set `botopink test` compiles — `src/` through the
 /// module tree **and** the flat `test/` suite — plus the declared dependencies,
 /// so a module `test` reports as broken is one `check` diagnoses. Every failing
-/// module is rendered with file, line and excerpt: lex and parse errors by the
-/// preflight in `diagnostics.zig`, type and validation errors from the comptime
-/// outcome.
+/// module is rendered with file, line and excerpt from its comptime outcome —
+/// lex and parse errors included (`diagnostics.printSyntaxError`).
 const std = @import("std");
 const bp = @import("botopink");
 const reporter = @import("./reporter.zig");
@@ -80,16 +79,14 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, opts: Options, env_map: libs.EnvM
     reporter.checking(all_modules.len);
     const t0 = std.Io.Timestamp.now(io, .awake);
 
-    const pre = try diagnostics.preflight(arena, gpa, io, all_modules);
     var failed: std.ArrayListUnmanaged([]const u8) = .empty;
-    try failed.appendSlice(arena, pre.failed);
 
     // STD-001 — same target-name vocabulary `codegen.generate` threads in,
     // so `botopink check` reds on the same `from "std"` imports `botopink build`
     // would have aborted on.
     var session = bp.comptime_pipeline.compile(
         gpa,
-        pre.ok,
+        all_modules,
         io,
         ".botopinkbuild",
         diagnostics.comptimeTargetName(target),

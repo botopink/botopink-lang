@@ -73,10 +73,9 @@ pub fn run(
     reporter.compiling(all_modules.len);
     const t0 = std.Io.Timestamp.now(io, .awake);
 
-    // A module that does not lex or parse is reported with its location and
-    // left out of compilation, so the rest still compile and get diagnosed.
-    const pre = try diagnostics.preflight(arena, gpa, io, all_modules);
-    const modules = pre.ok;
+    // A module that does not lex, parse or type-check is reported with its
+    // location (below); the rest still compile.
+    const modules = all_modules;
 
     // Build codegen config.
     const cfg = bp.codegen.Config{
@@ -111,7 +110,7 @@ pub fn run(
     if (missing.len > 0) {
         diagnostics.explainFailures(gpa, io, arena, modules, diagnostics.comptimeTargetName(target));
     }
-    const failed = try std.mem.concat(arena, []const u8, &.{ pre.failed, missing });
+    const failed = missing;
 
     // Write what compiled; remove any previous artifact of a module that did not,
     // so nothing stale is left claiming to be current.

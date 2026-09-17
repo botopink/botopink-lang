@@ -143,8 +143,23 @@ printf 'pub fn main() {\n    print((1);\n}\n' >"$P/src/main.bp"
 for cmd in build check test; do
   run "$P" "$cmd"
   expect_code 1 "$cmd on a parse error"
-  expect_out "src/main.bp:2:" "$cmd locates the parse error"
+  expect_out "src/main.bp:2:14" "$cmd locates the parse error at the token it stopped on"
   expect_out "print((1);" "$cmd quotes the source line"
+done
+
+echo "==> C6/C7 lex, parse and type errors in three modules are all located in one run"
+P="$(project c67)"
+printf 'pub mod lexbad;\npub mod parsebad;\npub mod typebad;\n\n%s' "$MAIN_OK" >"$P/src/main.bp"
+printf 'pub fn g() {\n    print("abc);\n}\n' >"$P/src/lexbad.bp"
+printf 'pub fn h() {\n    print((1);\n}\n' >"$P/src/parsebad.bp"
+printf '%s' "$BROKEN" >"$P/src/typebad.bp"
+for cmd in build check test; do
+  run "$P" "$cmd"
+  expect_code 1 "$cmd on three broken modules"
+  expect_out "src/lexbad.bp:2:11" "$cmd locates the lex error"
+  expect_out "src/parsebad.bp:2:14" "$cmd locates the parse error"
+  expect_out "src/typebad.bp:2:5" "$cmd still type-checks past the lex and parse errors"
+  expect_out "3 module(s) failed to compile: lexbad, parsebad, typebad" "$cmd names all three"
 done
 
 echo "==> C5 check loads test/ as well as src/"

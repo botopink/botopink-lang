@@ -108,10 +108,9 @@ pub fn run(
 
     reporter.compiling(all_modules.len);
 
-    // A module that does not lex or parse is reported with its location and
-    // left out, so every module that does compile still has its tests run.
-    const pre = try diagnostics.preflight(arena, gpa, io, all_modules);
-    const modules = pre.ok;
+    // A module that does not lex, parse or type-check is reported with its
+    // location (below); every module that does compile still has its tests run.
+    const modules = all_modules;
 
     // Build codegen config in test mode.
     const cfg = bp.codegen.Config{
@@ -144,7 +143,7 @@ pub fn run(
     if (missing.len > 0) {
         diagnostics.explainFailures(gpa, io, arena, modules, diagnostics.comptimeTargetName(target));
     }
-    const failed = try std.mem.concat(arena, []const u8, &.{ pre.failed, missing });
+    const failed = missing;
 
     // Start from an empty artifact tree: a previous run's artifact of a module
     // that no longer compiles must not be found (or run) by this one.

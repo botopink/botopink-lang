@@ -36,7 +36,8 @@ compiler-cli/
 zig build               # produce ./zig-out/bin/botopink
 zig build run -- help
 zig build run -- version
-zig build test          # CLI unit tests (main.zig parsers / config / libs / resolver / migrate / test_cmd / diagnostics)
+zig build test          # CLI unit tests (main.zig parsers / config / libs / resolver / migrate / test_cmd / diagnostics / clean);
+                        # main.zig's `test { _ = @import(...) }` block pulls every cli/ file in — a file not listed there has its tests silently skipped
 
 # The workspace root `zig build test` also runs these tests (root = src/main.zig,
 # cwd = modules/compiler-cli).
@@ -136,12 +137,14 @@ Cross-command rules:
   whose `target` is unsupported fails the command instead of degrading to
   commonJS (`ProjectConfig.parsedTarget` returns `null`).
 - **`build`, `check` and `test` agree**: on the same tree either all three exit
-  0 or all three exit 1. They share `cli/diagnostics.zig`: a lex/parse preflight
-  (located errors, the module is left out so the rest still compile), and a
-  guard that compares the **named** module set handed to `codegen.generateWith` with
-  the named set it returned — never counts, which `from "std"` expansion
-  inflates. When a module is missing, the comptime pipeline is re-run on the
-  failure path only to render its diagnostic.
+  0 or all three exit 1. They share `cli/diagnostics.zig`. Every failed module
+  carries its located diagnostic in `ComptimeOutput.outcome` — a lex or parse
+  error included (`.parseError` holds the `SyntaxError`; a lex error no longer
+  aborts the session, so the other modules still compile and get diagnosed).
+  `build`/`test` use a guard that compares the **named** module set handed to
+  `codegen.generateWith` with the named set it returned — never counts, which
+  `from "std"` expansion inflates; when a module is missing, the comptime
+  pipeline is re-run on the failure path only to render its diagnostic.
 - **Orphans.** A `.bp` file no `mod` path reaches is warned per file and counted
   once (`N module(s) not reached by any `mod` path were not compiled`).
 - **Compiling does not execute.** `build` and `test` call
@@ -155,11 +158,10 @@ Cross-command rules:
 
 Open (not the CLI's files):
 
-- **The diagnostic is re-derived, not carried.** The four backends' `codegenEmit`
-  still `continue` on `.parseError`/`.typeError`, and `ComptimeOutput.outcome`'s
-  `parseError` carries no payload (a lex error aborts the session). The CLI works
-  around both (preflight + `explainFailures`); the root fix belongs to the
-  backend and comptime owners.
+- **The diagnostic is re-derived, not carried, by `build`/`test`.** The four
+  backends' `codegenEmit` still `continue` on `.parseError`/`.typeError`, so the
+  driver compares module sets and re-runs comptime (`explainFailures`) —
+  1.0.4-beta cli-residuals step 2.
 
 ### `botopink test` output format
 

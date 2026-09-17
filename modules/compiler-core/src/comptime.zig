@@ -11,6 +11,8 @@ const format = @import("./format.zig");
 pub const trace = @import("./comptime/trace.zig");
 const Lexer = @import("./lexer.zig").Lexer;
 const Parser = @import("./parser.zig").Parser;
+const LexicalError = @import("./lexer.zig").LexicalError;
+const ParseErrorInfo = @import("./parser.zig").ParseErrorInfo;
 const Env = @import("./comptime/env.zig").Env;
 const envMod = @import("./comptime/env.zig");
 const template = @import("./comptime/template.zig");
@@ -63,6 +65,28 @@ pub const CustomAstEntry = struct {
     col: usize,
 };
 
+/// Why a module did not lex or did not parse — the `Outcome.parseError`
+/// payload, located so every caller (CLI, snapshots, the language server)
+/// can render file, line and excerpt without re-running the lexer or parser.
+pub const SyntaxError = union(enum) {
+    /// `Lexer.scanAll` failed.
+    lex: LexFailure,
+    /// `Parser.parse` returned `UnexpectedToken`; the parser records a
+    /// located `ParseErrorInfo` for every one it returns.
+    parse: ?ParseErrorInfo,
+
+    pub const LexFailure = struct {
+        /// `@errorName` of the error `scanAll` returned (`UnterminatedString`,
+        /// `UnexpectedCharacter`, `LexicalError`).
+        name: []const u8,
+        /// The structured error, when the lexer recorded one (`Lexer.lexError`).
+        info: ?LexicalError,
+        /// Byte span the lexer was scanning when it stopped (`start`..`current`).
+        start: usize,
+        end: usize,
+    };
+};
+
 pub const ComptimeOutput = struct {
     name: []const u8,
     src: []const u8,
@@ -74,8 +98,9 @@ pub const ComptimeOutput = struct {
         /// Type inference failed (e.g. a type mismatch). Carries the located
         /// error so editors can render a diagnostic squiggle.
         typeError: TypeError,
-        /// Source failed to parse (e.g. incomplete input during LSP editing).
-        parseError: void,
+        /// Source failed to lex or parse (e.g. incomplete input during LSP
+        /// editing). Carries the located lexer / parser error.
+        parseError: SyntaxError,
     };
 
     pub const OkData = struct {
@@ -259,7 +284,7 @@ const AnalysisResult = union(enum) {
         info: ComptimeError,
     },
     typeError: TypeError,
-    parseError: void,
+    parseError: SyntaxError,
 };
 
 fn analyzeModule(
@@ -446,13 +471,23 @@ fn analyzeSource(
     env.target = target_name;
 
     var lexer = Lexer.init(source);
-    const tokens = try lexer.scanAll(arena);
+    const tokens = lexer.scanAll(arena) catch |err| switch (err) {
+        error.OutOfMemory => return err,
+        // A lex error is an outcome of this module, not a failure of the
+        // whole session: the other modules still compile and get diagnosed.
+        else => return .{ .parseError = .{ .lex = .{
+            .name = @errorName(err),
+            .info = lexer.lexError,
+            .start = lexer.start,
+            .end = lexer.current,
+        } } },
+    };
 
     var parser = Parser.init(tokens);
     const program = parser.parse(arena) catch |err| switch (err) {
         // The caller renders the diagnostic (`ComptimeOutput.parseError`); a
         // library call must not write to stderr — a test runner reads it.
-        error.UnexpectedToken => return .parseError,
+        error.UnexpectedToken => return .{ .parseError = .{ .parse = parser.parseError } },
         else => return err,
     };
 
@@ -604,7 +639,6 @@ const type_info_src =
     \\    Generic(name: string, params: string[]),
     \\}
 ;
-
 
 /// Embedded builtin-type interface declarations. Unlike `std_pkg_modules`
 /// these are flattened into the global type env at infer time (they declare the
@@ -1165,11 +1199,11 @@ pub fn compileTypesOnly(
         const analysis = try analyzeModule(arena_alloc, mod, &registry, &type_decl_registry, &template_registry, &decorator_registry, &extension_registry, eval_ctx, true, null);
 
         switch (analysis) {
-            .parseError => {
+            .parseError => |se| {
                 try session.outputs.append(allocator, .{
                     .name = name,
                     .src = mod.source,
-                    .outcome = .parseError,
+                    .outcome = .{ .parseError = se },
                 });
             },
             .validationError => |verr| {
@@ -1344,11 +1378,11 @@ pub fn compile(
         }, false, target_name);
 
         switch (analysis) {
-            .parseError => {
+            .parseError => |se| {
                 try session.outputs.append(allocator, .{
                     .name = name,
                     .src = mod.source,
-                    .outcome = .parseError,
+                    .outcome = .{ .parseError = se },
                 });
             },
             .validationError => |verr| {
