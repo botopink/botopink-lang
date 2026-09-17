@@ -12,7 +12,7 @@ exposes them to the compiler.
 ```text
 std/
 ├── AGENTS.md
-├── botopink.json
+├── botopink.json            ← `files` lists the three core files below
 ├── test/                    ← compiled in test mode against the global env (no `mod` needed)
 │   ├── result_test.bp       ← `@Result` method surface
 │   ├── primitives_test.bp   ← tests of the `primitives.bp` interfaces (green on commonJS + erlang)
@@ -28,9 +28,6 @@ std/
     ├── math.bp  asserts.bp  path.bp  random.bp  querystring.bp  time.bp  url.bp
     ├── base64.bp  unicode.bp  process.bp  os.bp  env.bp  crypto.bp  regex.bp
     ├── erlang.bp  json.bp  fs.bp  http.bp
-    │                        — not declared in root.bp, not referenced by build.zig:
-    ├── reflect.bp           ← `mergeRecords`
-    ├── types.bp             ← `mapFields`, `partial`, `omit`, `pick`
     └── sidecars/random.mjs  ← Mulberry32 PRNG used by `random`
 ```
 
@@ -63,6 +60,12 @@ std/
 | `json` | `parse`, `stringify` (validate + canonical re-encode, `@Result<string, string>`) |
 | `fs` | `record FileStat`, `readText`, `writeText`, `exists`, `list`, `mkdir`, `rm`, `copy`, `stat` (fallible ops return `@Result`) |
 | `http` | `record Response`, `fetch`, `fetchStatus` (`@Future`) |
+
+`mergeRecords(A, B)`, `partial(T)`, `omit(T, "f")` and `pick(T, ["f"])` are
+comptime type functions implemented in the compiler
+(`comptime/infer.zig` `tryResolveTypeManipulationCall`), not std source; a
+declaration of the same name in scope wins over them (`random.pick`).
+`mapFields` does not exist.
 
 Adding an importable module:
 1. Create `libs/std/src/<name>.bp`.
