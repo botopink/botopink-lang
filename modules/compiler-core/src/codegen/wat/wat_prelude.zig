@@ -37,6 +37,11 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         .str_slice => &str_slice_items,
         .print_arr_i32 => &.{ .{ .func = print_arr_i32_raw }, .{ .func = print_arr_i32 } },
         .print_arr_f32 => &.{ .{ .func = print_arr_f32_raw }, .{ .func = print_arr_f32 } },
+        .print_opt => &.{
+            .{ .func = print_undefined },    .{ .func = print_opt_i32_raw }, .{ .func = print_opt_i32 },
+            .{ .func = print_opt_bool_raw }, .{ .func = print_opt_bool },    .{ .func = print_opt_str_raw },
+            .{ .func = print_opt_str },
+        },
         inline else => |t| &.{.{ .func = @field(@This(), @tagName(t)) }},
     };
 }
@@ -1225,3 +1230,42 @@ const print_arr_f32_raw = func("__print_arr_f32_raw", &.{"xs"}, null, i32s(&.{ "
 } ++ putByte(']') ++ .{call("__write_bytes")}));
 
 const print_arr_f32 = func("__print_arr_f32", &.{"xs"}, null, &.{}, &.{ get("xs"), call("__print_arr_f32_raw"), call("__print_nl") });
+
+/// A `?T` box: a fresh 4-byte cell holding `v`.
+const box_i32 = func("__box_i32", &.{"v"}, .i32, i32s(&.{"p"}), &.{
+    c32(4),   call("__alloc"), set("p"),
+    get("p"), get("v"),        store(0),
+    get("p"),
+});
+
+/// `xs.at(i)` as a `?T`: a box holding the element, or 0 out of range.
+const arr_at_box = func("__arr_at_box", &.{ "xs", "i" }, .i32, &.{}, &([_]Instr{
+    get("i"),                c32(0), op("lt_s"), get("i"), get("xs"), load(0), op("ge_s"), op("or"),
+    when(&.{ c32(0), ret }),
+} ++ slot("xs", "i") ++ [_]Instr{ load(0), call("__box_i32") }));
+
+/// `undefined` — what none prints as on the other targets. Written through
+/// scratch `176..185`.
+const print_undefined = func("__print_undefined", &.{}, null, &.{}, &.{
+    c32(176), .{ .@"const" = .{ .ty = .i64, .text = "7308895133777555061" } }, .{ .store = .{ .ty = .i64 } },
+    c32(184), c32(100),                                                        store8(0),
+    c32(176), c32(9),                                                          call("__write_bytes"),
+});
+
+const print_opt_i32_raw = func("__print_opt_i32_raw", &.{"p"}, null, &.{}, &.{
+    get("p"),                                                                                  op("eqz"),
+    whenElse(&.{call("__print_undefined")}, &.{ get("p"), load(0), call("__print_i32_raw") }),
+});
+const print_opt_i32 = func("__print_opt_i32", &.{"p"}, null, &.{}, &.{ get("p"), call("__print_opt_i32_raw"), call("__print_nl") });
+
+const print_opt_bool_raw = func("__print_opt_bool_raw", &.{"p"}, null, &.{}, &.{
+    get("p"),                                                                                   op("eqz"),
+    whenElse(&.{call("__print_undefined")}, &.{ get("p"), load(0), call("__print_bool_raw") }),
+});
+const print_opt_bool = func("__print_opt_bool", &.{"p"}, null, &.{}, &.{ get("p"), call("__print_opt_bool_raw"), call("__print_nl") });
+
+const print_opt_str_raw = func("__print_opt_str_raw", &.{"s"}, null, &.{}, &.{
+    get("s"),                                                                         op("eqz"),
+    whenElse(&.{call("__print_undefined")}, &.{ get("s"), call("__print_str_raw") }),
+});
+const print_opt_str = func("__print_opt_str", &.{"s"}, null, &.{}, &.{ get("s"), call("__print_opt_str_raw"), call("__print_nl") });

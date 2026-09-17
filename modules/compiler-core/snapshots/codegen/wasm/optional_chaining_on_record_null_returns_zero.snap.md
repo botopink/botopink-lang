@@ -23,9 +23,34 @@ fn pick(maybe: ?R) -> i32 {
       (else
         local.get $__mem0
         i32.load offset=4 ;; ?.b
+        call $__box_i32
       )
     )
     return
+  )
+  (func $__alloc (param $n i32) (result i32)
+    (local $p i32)
+    global.get $__heap_ptr
+    local.set $p
+    global.get $__heap_ptr
+    local.get $n
+    i32.add
+    i32.const 3
+    i32.add
+    i32.const -4
+    i32.and
+    global.set $__heap_ptr
+    local.get $p
+  )
+  (func $__box_i32 (param $v i32) (result i32)
+    (local $p i32)
+    i32.const 4
+    call $__alloc
+    local.set $p
+    local.get $p
+    local.get $v
+    i32.store
+    local.get $p
   )
 )
 ```

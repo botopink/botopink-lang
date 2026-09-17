@@ -55,9 +55,10 @@ fn main() {
       (else
         local.get $__mem1
         i32.load ;; ?.kind
+        call $__box_i32
       )
     )
-    call $__print_i32
+    call $__print_opt_i32
       )
     )
   )
@@ -243,6 +244,141 @@ fn main() {
         br $loop
       )
     )
+  )
+  (func $__print_str_raw (param $s i32)
+    local.get $s
+    i32.const 4
+    i32.add
+    local.get $s
+    i32.load
+    call $__write_bytes
+  )
+  (func $__print_str (param $s i32)
+    local.get $s
+    call $__print_str_raw
+    call $__print_nl
+  )
+  (func $__print_bool (param $b i32)
+    local.get $b
+    call $__print_bool_raw
+    call $__print_nl
+  )
+  (func $__print_bool_raw (param $b i32)
+    local.get $b
+    (if
+      (then
+        ;; "true" as a little-endian i32
+        i32.const 16
+        i32.const 1702195828
+        i32.store
+        i32.const 16
+        i32.const 4
+        call $__write_bytes
+      )
+      (else
+        ;; "fals" + 'e'
+        i32.const 16
+        i32.const 1936482662
+        i32.store
+        i32.const 16
+        i32.const 101
+        i32.store8 offset=4
+        i32.const 16
+        i32.const 5
+        call $__write_bytes
+      )
+    )
+  )
+  (func $__alloc (param $n i32) (result i32)
+    (local $p i32)
+    global.get $__heap_ptr
+    local.set $p
+    global.get $__heap_ptr
+    local.get $n
+    i32.add
+    i32.const 3
+    i32.add
+    i32.const -4
+    i32.and
+    global.set $__heap_ptr
+    local.get $p
+  )
+  (func $__box_i32 (param $v i32) (result i32)
+    (local $p i32)
+    i32.const 4
+    call $__alloc
+    local.set $p
+    local.get $p
+    local.get $v
+    i32.store
+    local.get $p
+  )
+  (func $__print_undefined
+    i32.const 176
+    i64.const 7308895133777555061
+    i64.store
+    i32.const 184
+    i32.const 100
+    i32.store8
+    i32.const 176
+    i32.const 9
+    call $__write_bytes
+  )
+  (func $__print_opt_i32_raw (param $p i32)
+    local.get $p
+    i32.eqz
+    (if
+      (then
+        call $__print_undefined
+      )
+      (else
+        local.get $p
+        i32.load
+        call $__print_i32_raw
+      )
+    )
+  )
+  (func $__print_opt_i32 (param $p i32)
+    local.get $p
+    call $__print_opt_i32_raw
+    call $__print_nl
+  )
+  (func $__print_opt_bool_raw (param $p i32)
+    local.get $p
+    i32.eqz
+    (if
+      (then
+        call $__print_undefined
+      )
+      (else
+        local.get $p
+        i32.load
+        call $__print_bool_raw
+      )
+    )
+  )
+  (func $__print_opt_bool (param $p i32)
+    local.get $p
+    call $__print_opt_bool_raw
+    call $__print_nl
+  )
+  (func $__print_opt_str_raw (param $s i32)
+    local.get $s
+    i32.eqz
+    (if
+      (then
+        call $__print_undefined
+      )
+      (else
+        local.get $s
+        call $__print_str_raw
+      )
+    )
+  )
+  (func $__print_opt_str (param $s i32)
+    local.get $s
+    call $__print_opt_str_raw
+    call $__print_nl
   )
 )
 ```

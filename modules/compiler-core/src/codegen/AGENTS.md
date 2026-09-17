@@ -608,10 +608,32 @@ first three are now enforced by the model, not by discipline:
   `local_types`, `record_field_types` and `self_type`; an unknown receiver emits
   `i32.const 0` with `;; (unknown receiver type)`. `?.` on records tests the
   pointer for `0` (none).
-- **`@Result`/`@Option`**: a `@Result` is a pointer to `[tag, payload]` (tag `0`
-  = Ok); a `@Option` is the bare value with `0` = none. `map`/`flatMap` inline a
-  literal lambda body (param bound to a `$_res{n}` local). `try`/`catch` → `if`
-  on the tag.
+- **`@Result`**: a pointer to `[tag, payload]` (tag `0` = Ok). `map`/`flatMap`
+  inline a literal lambda body (param bound to a `$_res{n}` local).
+  `try`/`catch` → `if` on the tag.
+- **`?T` / `@Option` — the carrier (decision 3 of the 1.0.2-beta semantics
+  decisions: box, `0` is null)**: an optional is an i32 offset into linear
+  memory, `0` = none. A pointer-shaped `T` (string, record, array) is its own
+  offset; a scalar `T` (integer, bool, float) lives in a 4-byte box
+  (`$__box_i32`), so a present `0` is not none. The box is made where a `T`
+  flows into a declared `?T` — a `return` from a `-> ?T` fn, an annotated
+  binding or global, an argument for a `?T` parameter, a `?T` record field —
+  and by `xs.at(i)`/`first()` (`$__arr_at_box`) and `recv?.scalarField`. The
+  payload is read by `if (x) { v -> … }`, `@print` (`$__print_opt_*`: none
+  prints `undefined`), a `==`/`!=` against a value (none equals nothing),
+  string `+` (none renders `undefined`) and `unwrapOr`/`map`/`flatMap` (a
+  scalar `map` result is boxed again). `x == null` compares the offset with 0
+  whatever `x` holds. Which declarations say "optional" is read from the
+  declared `TypeRef`s (`typeRefOf`: params, return types, annotations, record
+  fields, tuple elements); an `__bp_option_*` receiver of unknown type is
+  taken as boxed unless its default is a string, record or array.
+
+| Backend | `null` / none | present `?T` |
+|---|---|---|
+| commonJS | `null` | the value |
+| erlang | `undefined` | the value |
+| beam | `{atom, undefined}` | the value |
+| wasm | `i32.const 0` | a pointer `T` itself; a scalar `T` boxed in a 4-byte cell |
 - **Effects**: eager; `__bp_future_rejected` → `unreachable`.
 - **Cross-module: static linking** (`collectLinks`): wasm has no module linking
   at run time, so a module that imports from another gets the owner's

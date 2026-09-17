@@ -16,9 +16,13 @@ fn getName(name: ?string) -> string {
   (global $__heap_ptr (mut i32) (i32.const 268))
   (func $getName (param $name i32) (result i32)
     (local $n i32)
+    (local $__opt0 i32)
     local.get $name
+    local.tee $__opt0
     (if (result i32)
       (then
+    local.get $__opt0
+    local.set $n
     local.get $n
     return
       )

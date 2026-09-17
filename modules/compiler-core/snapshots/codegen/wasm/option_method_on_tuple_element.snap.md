@@ -27,7 +27,7 @@ fn main() {
     (local $rest i32)
     local.get $xs
     i32.const 0
-    call $__arr_at
+    call $__arr_at_box
     local.set $head
     local.get $xs
     i32.const 1
@@ -87,6 +87,7 @@ fn main() {
     (if (result i32)
       (then
     local.get $_res0 ;; Some — present value
+    i32.load ;; optional payload
       )
       (else
     i32.const 0
@@ -327,29 +328,6 @@ fn main() {
       )
     )
   )
-  (func $__arr_at (param $xs i32) (param $i i32) (result i32)
-    local.get $i
-    i32.const 0
-    i32.lt_s
-    local.get $i
-    local.get $xs
-    i32.load
-    i32.ge_s
-    i32.or
-    (if (result i32)
-      (then i32.const 0)
-      (else
-        local.get $xs
-        local.get $i
-        i32.const 1
-        i32.add
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load
-      )
-    )
-  )
   (func $__alloc (param $n i32) (result i32)
     (local $p i32)
     global.get $__heap_ptr
@@ -476,6 +454,41 @@ fn main() {
     i32.mul
     memory.copy
     local.get $p
+  )
+  (func $__box_i32 (param $v i32) (result i32)
+    (local $p i32)
+    i32.const 4
+    call $__alloc
+    local.set $p
+    local.get $p
+    local.get $v
+    i32.store
+    local.get $p
+  )
+  (func $__arr_at_box (param $xs i32) (param $i i32) (result i32)
+    local.get $i
+    i32.const 0
+    i32.lt_s
+    local.get $i
+    local.get $xs
+    i32.load
+    i32.ge_s
+    i32.or
+    (if
+      (then
+        i32.const 0
+        return
+      )
+    )
+    local.get $xs
+    i32.const 4
+    i32.add
+    local.get $i
+    i32.const 4
+    i32.mul
+    i32.add
+    i32.load
+    call $__box_i32
   )
 )
 ```

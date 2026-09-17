@@ -17,12 +17,14 @@ fn main() {
   (memory (export "memory") 1)
   (data (i32.const 256) "\06\00\00\00nobody")
   (data (i32.const 268) "\06\00\00\00hello ")
-  (data (i32.const 280) "\05\00\00\00world")
-  (global $__heap_ptr (mut i32) (i32.const 292))
+  (data (i32.const 280) "\09\00\00\00undefined")
+  (data (i32.const 296) "\05\00\00\00world")
+  (global $__heap_ptr (mut i32) (i32.const 308))
   (func $greet (param $x i32) (result i32)
+    (local $__opt0 i32)
     local.get $x
     i32.const 0
-    call $__str_eq
+    i32.eq
     (if (result i32)
       (then
     i32.const 256
@@ -35,11 +37,21 @@ fn main() {
     drop
     i32.const 268
     local.get $x
+    local.tee $__opt0
+    i32.eqz
+    (if (result i32)
+      (then
+    i32.const 280
+      )
+      (else
+    local.get $__opt0
+      )
+    )
     call $__str_concat
     return
   )
   (func $main
-    i32.const 280
+    i32.const 296
     call $greet
     call $__print_str
     i32.const 0
@@ -288,45 +300,6 @@ fn main() {
     local.get $blen
     memory.copy
     local.get $base
-  )
-  (func $__str_eq (param $a i32) (param $b i32) (result i32)
-    (local $i i32) (local $alen i32)
-    local.get $a
-    i32.load
-    local.set $alen
-    local.get $alen
-    local.get $b
-    i32.load
-    i32.ne
-    (if
-      (then i32.const 0 return)
-    )
-    (block $done
-      (loop $cmp
-        local.get $i
-        local.get $alen
-        i32.ge_u
-        br_if $done
-        local.get $a
-        local.get $i
-        i32.add
-        i32.load8_u offset=4
-        local.get $b
-        local.get $i
-        i32.add
-        i32.load8_u offset=4
-        i32.ne
-        (if
-          (then i32.const 0 return)
-        )
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cmp
-      )
-    )
-    i32.const 1
   )
 )
 ```

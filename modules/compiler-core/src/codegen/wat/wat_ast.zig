@@ -412,6 +412,10 @@ pub const HelperGroup = enum {
     print_arr_i32,
     /// `$__print_arr_f32` `$__print_arr_f32_raw`.
     print_arr_f32,
+    box_i32,
+    arr_at_box,
+    /// `$__print_undefined`, and `$__print_opt_{i32,bool,str}` (+`_raw`).
+    print_opt,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
@@ -419,6 +423,9 @@ pub const HelperGroup = enum {
             .print_str, .print_bool, .print_f64 => &.{.print},
             .print_arr_i32 => &.{.print},
             .print_arr_f32 => &.{ .print, .print_f64 },
+            .box_i32 => &.{.alloc},
+            .arr_at_box => &.{.box_i32},
+            .print_opt => &.{ .print, .print_bool, .print_str },
             .i32_to_str, .str_case, .str_repeat, .arr_new => &.{.alloc},
             .f64_to_str => &.{ .i32_to_str, .alloc },
             .str_index_of, .str_starts_with, .str_ends_with => &.{.mem_eq},
@@ -483,6 +490,15 @@ pub const Helper = enum {
     print_arr_i32_raw,
     print_arr_f32,
     print_arr_f32_raw,
+    box_i32,
+    arr_at_box,
+    print_undefined,
+    print_opt_i32,
+    print_opt_i32_raw,
+    print_opt_bool,
+    print_opt_bool_raw,
+    print_opt_str,
+    print_opt_str_raw,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {
@@ -498,6 +514,7 @@ pub const Helper = enum {
             .print_f64, .print_f64_raw => .print_f64,
             .print_arr_i32, .print_arr_i32_raw => .print_arr_i32,
             .print_arr_f32, .print_arr_f32_raw => .print_arr_f32,
+            .print_undefined, .print_opt_i32, .print_opt_i32_raw, .print_opt_bool, .print_opt_bool_raw, .print_opt_str, .print_opt_str_raw => .print_opt,
             inline else => |t| @field(HelperGroup, @tagName(t)),
         };
     }

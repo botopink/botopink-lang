@@ -18,12 +18,26 @@ fn main() {
   (memory (export "memory") 1)
   (data (i32.const 256) "\04\00\00\00zero")
   (data (i32.const 264) "\09\00\00\00nonzero: ")
-  (data (i32.const 280) "\04\00\00\00null")
-  (global $__heap_ptr (mut i32) (i32.const 288))
+  (data (i32.const 280) "\09\00\00\00undefined")
+  (data (i32.const 296) "\04\00\00\00null")
+  (global $__heap_ptr (mut i32) (i32.const 304))
   (func $classify (param $x i32) (result i32)
+    (local $__opt0 i32)
+    (local $__opt1 i32)
+    (local $__opt2 i32)
     local.get $x
+    local.tee $__opt0
+    (if (result i32)
+      (then
+    local.get $__opt0
+    i32.load ;; optional payload
     i32.const 0
     i32.eq
+      )
+      (else
+    i32.const 0 ;; none equals no value
+      )
+    )
     (if (result i32)
       (then
     i32.const 256
@@ -31,18 +45,40 @@ fn main() {
       )
       (else
     local.get $x
+    local.tee $__opt1
+    (if (result i32)
+      (then
+    local.get $__opt1
+    i32.load ;; optional payload
     i32.const 0
-    i32.ne
+    i32.eq
+      )
+      (else
+    i32.const 0 ;; none equals no value
+      )
+    )
+    i32.eqz
     (if (result i32)
       (then
     i32.const 264
     local.get $x
+    local.tee $__opt2
+    i32.eqz
+    (if (result i32)
+      (then
+    i32.const 280
+      )
+      (else
+    local.get $__opt2
+    i32.load
     call $__i32_to_str
+      )
+    )
     call $__str_concat
     return
       )
       (else
-    i32.const 280
+    i32.const 296
     return
       )
     )
@@ -51,9 +87,11 @@ fn main() {
   )
   (func $main
     i32.const 42
+    call $__box_i32
     call $classify
     call $__print_str
     i32.const 0
+    call $__box_i32
     call $classify
     call $__print_str
   )
@@ -388,6 +426,16 @@ fn main() {
     local.get $pos
     local.get $len
     memory.copy
+    local.get $p
+  )
+  (func $__box_i32 (param $v i32) (result i32)
+    (local $p i32)
+    i32.const 4
+    call $__alloc
+    local.set $p
+    local.get $p
+    local.get $v
+    i32.store
     local.get $p
   )
 )
