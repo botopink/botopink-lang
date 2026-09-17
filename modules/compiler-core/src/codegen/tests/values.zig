@@ -357,3 +357,24 @@ test "js: net-new ---- record equality vs array equality across backends" {
         \\}
     );
 }
+
+test "js: operators ---- plus on untyped operands and division of floats" {
+    // A lambda parameter carries no type: `x + y` over two strings concatenates
+    // and `/` over floats divides — erlang's `+` and `div` raised `badarith`.
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn average(xs: Array<f64>) -> f64 {
+        \\    var total = 0.0;
+        \\    var n = 0.0;
+        \\    loop (xs) { x ->
+        \\        total = total + x;
+        \\        n = n + 1.0;
+        \\    };
+        \\    return total / n;
+        \\}
+        \\fn main() {
+        \\    val cat = { x, y -> x + y };
+        \\    @print(cat("ab", "cd"));
+        \\    @print(average([2.0, 4.0, 9.0]));
+        \\}
+    );
+}

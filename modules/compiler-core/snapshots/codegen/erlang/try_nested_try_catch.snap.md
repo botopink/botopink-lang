@@ -53,10 +53,13 @@ process() ->
             A
     end,
     '__bp_print'([A, B]),
-    (A + B).
+    '__bp_add'(A, B).
 
 main() ->
     '__bp_print'([process()]).
+
+'__bp_add'(A, B) when is_binary(A), is_binary(B) -> <<A/binary, B/binary>>;
+'__bp_add'(A, B) -> A + B.
 
 '__bp_print'(Values) ->
     io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).

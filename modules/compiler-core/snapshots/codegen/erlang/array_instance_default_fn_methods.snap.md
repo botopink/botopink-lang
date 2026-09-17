@@ -38,7 +38,7 @@ main() ->
     Xs = [1, 2, 3],
     '__bp_print'([iolist_to_binary(lists:join(<<",">>, lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> iolist_to_binary(io_lib:format("~p", [__E])) end end, [0 | Xs])))]),
     '__bp_print'([lists:foldl(fun(__X, __A) -> (fun(A, X) ->
-        (A + X)
+        '__bp_add'(A, X)
     end)(__A, __X) end, 0, Xs)]),
     '__bp_print'([(Xs =:= [])]),
     '__bp_print'([array_all(Xs, fun(X) ->
@@ -47,6 +47,9 @@ main() ->
 
 array_all(Self, Pred) ->
     (length(lists:filter(Pred, Self)) =:= length(Self)).
+
+'__bp_add'(A, B) when is_binary(A), is_binary(B) -> <<A/binary, B/binary>>;
+'__bp_add'(A, B) -> A + B.
 
 '__bp_print'(Values) ->
     io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).

@@ -335,7 +335,15 @@ codegen/
   `isStringExpr` decides: a string literal, a `+` chain with a string operand, a
   parameter declared `string` or a `val` bound to a string (`string_locals`), and a
   module-level `fn`/`val` that answers one (`string_names`, `collectStringNames`).
-  Everything it cannot prove stays arithmetic. Inside a chain proven to be a string,
+  Otherwise `+` is arithmetic when either operand is provably a number (`numKind`:
+  number literals, parameters declared with a numeric type and `val`s bound to a
+  numeric expression — `num_locals`/`num_names` —, primitive length reads, and
+  `-`/`*`/`/`/`%` results), and `'__bp_add'(A, B)` when neither operand is proven
+  either way (a generic lambda's `{ acc, s -> acc + s }`): two binaries
+  concatenate at runtime, anything else adds (`add_helper_form`, emitted on
+  demand). `s += x` follows the same three-way rule. `/` is `div` unless an
+  operand is provably a float, where it is `/` (`div` raises `badarith` on a
+  float). Inside a chain proven to be a string,
   an operand that is not itself provably a string (`"value: " + v`, `v: i32`) is
   the segment `('__bp_text'(V))/binary` — `'__bp_text'/1` answers a binary as
   itself and anything else as its `~p` rendering, emitted once per module when a

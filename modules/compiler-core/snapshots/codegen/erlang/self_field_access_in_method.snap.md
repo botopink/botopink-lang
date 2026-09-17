@@ -16,7 +16,10 @@ val Point = record {
 %% record Point: x, y
 
 sum() ->
-    (maps:get(x, Self) + maps:get(y, Self)).
+    '__bp_add'(maps:get(x, Self), maps:get(y, Self)).
+
+'__bp_add'(A, B) when is_binary(A), is_binary(B) -> <<A/binary, B/binary>>;
+'__bp_add'(A, B) -> A + B.
 ```
 
 ----- RUN LOG -----

@@ -401,6 +401,10 @@ pub const UnsupportedMethod = struct {
     loc: ast.Loc = .{ .line = 0, .col = 0 },
 };
 
+/// A number's representation: an erlang integer, a float, or a number whose
+/// precision is unknown (the result of `*` on operands of unknown type).
+const NumKind = enum { int, float, number };
+
 /// The runtime-dispatch shim a comptime-body method call lowers to:
 /// `'__bp_prim_<method>'(Recv, Args…)` (see `Emitter.primShimForms`).
 const prim_shim_prefix = "__bp_prim_";
@@ -423,6 +427,26 @@ pub const HostRecord = struct {
     /// Field names in declaration order (positional constructor arguments).
     fields: []const []const u8,
 };
+
+/// `'__bp_add'/2`: `+` on operands of unknown type — two binaries concatenate,
+/// anything else is arithmetic. Every comptime module carries it; a typed module
+/// emits it when neither operand of a `+` is provably a number or a string.
+const add_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_add", .clauses = &.{
+    .{
+        .patterns = &.{ Ast.Expr.v("A"), Ast.Expr.v("B") },
+        .guards = &.{ isA("binary", "A"), isA("binary", "B") },
+        .body = Ast.Body.of(&.{.{ .expr = .{ .bin = &.{
+            .{ .value = Ast.Expr.v("A"), .type = "binary" },
+            .{ .value = Ast.Expr.v("B"), .type = "binary" },
+        } } }}),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ Ast.Expr.v("A"), Ast.Expr.v("B") },
+        .body = Ast.Body.of(&.{.{ .expr = .{ .binop = .{ .op = "+", .lhs = &Ast.Expr.v("A"), .rhs = &Ast.Expr.v("B"), .parens = false } } }}),
+        .layout = .inline_,
+    },
+} } };
 
 /// `'__bp_len'/2`: `.len`/`.length`/`.size` on a receiver of unknown type — a
 /// list's length, a binary's length, else the map field. Every comptime module
@@ -506,22 +530,7 @@ const print_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_print", .cla
 /// and host glue reports through `'__bp_text'/1` (any term as a binary) and
 /// `'__bp_json'/1` (a term with `undefined` as JSON `null`).
 pub const comptime_helper_forms = [_]Ast.Form{
-    .{ .function = .{ .name = "__bp_add", .clauses = &.{
-        .{
-            .patterns = &.{ Ast.Expr.v("A"), Ast.Expr.v("B") },
-            .guards = &.{ isA("binary", "A"), isA("binary", "B") },
-            .body = Ast.Body.of(&.{.{ .expr = .{ .bin = &.{
-                .{ .value = Ast.Expr.v("A"), .type = "binary" },
-                .{ .value = Ast.Expr.v("B"), .type = "binary" },
-            } } }}),
-            .layout = .inline_,
-        },
-        .{
-            .patterns = &.{ Ast.Expr.v("A"), Ast.Expr.v("B") },
-            .body = Ast.Body.of(&.{.{ .expr = .{ .binop = .{ .op = "+", .lhs = &Ast.Expr.v("A"), .rhs = &Ast.Expr.v("B"), .parens = false } } }}),
-            .layout = .inline_,
-        },
-    } } },
+    add_helper_form,
     len_helper_form,
     text_helper_form,
     .{ .function = .{ .name = "__bp_json", .clauses = &.{
@@ -709,6 +718,8 @@ fn emitErlangModule(
     defer em.nullable_locals.deinit();
     defer em.string_locals.deinit();
     defer em.string_names.deinit();
+    defer em.num_locals.deinit(alloc);
+    defer em.num_names.deinit(alloc);
     try em.collectPrimErlangDispatch(program);
     // A comptime body is one decl: the primitive interfaces' bodied instance
     // `default fn`s (`String.slice`, `Array.first`) are not in it, so they are
@@ -962,6 +973,7 @@ fn emitErlangModule(
         }
     }
     if (!listing_only) {
+        if (em.needs_add_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, add_helper_form });
         if (em.needs_len_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, len_helper_form });
         if (em.needs_text_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, text_helper_form });
         if (em.needs_print_helper) try forms.appendSlice(b.arena, &.{ .blank, print_helper_form });
@@ -1471,6 +1483,16 @@ const Emitter = struct {
     /// `-> string` and a top-level `val` bound to a string expression (both are
     /// reached as 0-arity/`n`-arity local calls). Module-wide, never reset.
     string_names: std.StringHashMap(void),
+    /// Locals statically known to hold a number, with its kind: a parameter
+    /// declared with a numeric type, or a `val`/`var` bound to a numeric
+    /// expression (`numKind`). Decides `+` (arithmetic vs `'__bp_add'/2`) and
+    /// `/` (`div` vs `/`). Reset per function alongside `locals`.
+    num_locals: std.StringHashMapUnmanaged(NumKind) = .empty,
+    /// Module-level names answering a number: a `fn` declared with a numeric
+    /// return type, a top-level `val` bound to a numeric expression.
+    num_names: std.StringHashMapUnmanaged(NumKind) = .empty,
+    /// Set when a typed `+` fell back to `'__bp_add'/2`.
+    needs_add_helper: bool = false,
     /// §A5 annotation-driven prim-method dispatch: `<Iface>.<method>` →
     /// `(host module, host symbol, ordered arg names)` parsed from
     /// `@external(erlang, "mod", "sym(args)")` on a primitive interface method.
@@ -2083,6 +2105,7 @@ const Emitter = struct {
         this.var_next.clearRetainingCapacity();
         this.nullable_locals.clearRetainingCapacity();
         this.string_locals.clearRetainingCapacity();
+        this.num_locals.clearRetainingCapacity();
     }
 
     /// True when `t` is the `string` primitive.
@@ -2098,11 +2121,17 @@ const Emitter = struct {
     fn collectStringNames(this: *Emitter, program: ast.Program) !void {
         // Two passes: a `val` may be initialised by a `fn` declared later.
         for (program.decls) |decl| switch (decl) {
-            .@"fn" => |f| if (isStringType(f.returnType)) try this.string_names.put(f.name, {}),
+            .@"fn" => |f| {
+                if (isStringType(f.returnType)) try this.string_names.put(f.name, {});
+                if (numTypeKind(f.returnType)) |k| try this.num_names.put(this.alloc, f.name, k);
+            },
             else => {},
         };
         for (program.decls) |decl| switch (decl) {
-            .val => |v| if (this.isStringExpr(v.value.*)) try this.string_names.put(v.name, {}),
+            .val => |v| {
+                if (this.isStringExpr(v.value.*)) try this.string_names.put(v.name, {});
+                if (this.numKind(v.value.*)) |k| try this.num_names.put(this.alloc, v.name, k);
+            },
             else => {},
         };
     }
@@ -2242,6 +2271,71 @@ const Emitter = struct {
         try out.append(b.arena, .{ .value = value, .type = "binary" });
     }
 
+    /// The numeric kind a type names (`i32` → int, `f64` → float), or null.
+    fn numTypeKind(t: ?ast.TypeRef) ?NumKind {
+        const ty = t orelse return null;
+        if (ty != .named) return null;
+        const n = ty.named;
+        if (n.len < 2) return null;
+        for (n[1..]) |ch| if (!std.ascii.isDigit(ch)) {
+            return if (std.mem.eql(u8, n, "isize") or std.mem.eql(u8, n, "usize")) .int else null;
+        };
+        return switch (n[0]) {
+            'i', 'u' => .int,
+            'f' => .float,
+            else => null,
+        };
+    }
+
+    /// The numeric kind `e` statically has, or null when it cannot be proven
+    /// (`.number` when it is a number of unknown precision):
+    /// a number literal (a float when it has a `.` or an exponent), a numeric
+    /// local/parameter/module name, a length read, and arithmetic over them (a
+    /// float operand makes a float; `%` is an integer).
+    fn numKind(this: *const Emitter, e: ast.Expr) ?NumKind {
+        return switch (e) {
+            .literal => |lit| switch (lit.kind) {
+                .numberLit => |n| if (std.mem.startsWith(u8, n, "0x") or std.mem.startsWith(u8, n, "0b") or std.mem.startsWith(u8, n, "0o"))
+                    .int
+                else if (std.mem.indexOfAny(u8, n, ".eE") != null) .float else .int,
+                else => null,
+            },
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| this.num_locals.get(n) orelse
+                    (if (!this.locals.contains(n)) this.num_names.get(n) else null),
+                .identAccess => if (this.instance_lowerings.get(id.loc)) |il| switch (il) {
+                    .prim => .int,
+                    .record => null,
+                } else null,
+                else => null,
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| this.numKind(inner.*),
+                else => null,
+            },
+            .unaryOp => |un| if (un.op == .neg) this.numKind(un.expr.*) else null,
+            .binaryOp => |bin| switch (bin.op) {
+                .add => if (this.isStringExpr(e)) null else combineNum(this.numKind(bin.lhs.*), this.numKind(bin.rhs.*)),
+                // `-`, `*` and `/` only ever answer a number in erlang.
+                .sub, .mul, .div => combineNum(this.numKind(bin.lhs.*), this.numKind(bin.rhs.*)) orelse .number,
+                .mod => .int,
+                else => null,
+            },
+            .call => |c| switch (c.kind) {
+                .call => |cc| if (cc.receiver == null and !cc.is_builtin and !this.locals.contains(cc.callee)) this.num_names.get(cc.callee) else null,
+                else => null,
+            },
+            else => null,
+        };
+    }
+
+    fn combineNum(a: ?NumKind, b: ?NumKind) ?NumKind {
+        if (a == .float or b == .float) return .float;
+        if (a == .int and b == .int) return .int;
+        if (a != null or b != null) return .number;
+        return null;
+    }
+
     /// True when `e` is statically a botopink `string`, so a `+` over it is
     /// binary concatenation and not arithmetic. Conservative: anything it cannot
     /// prove stays arithmetic, which is the pre-existing behaviour.
@@ -2282,6 +2376,9 @@ const Emitter = struct {
     fn bindExpr(this: *Emitter, b: Ast.Builder, name: []const u8, op: BindOp, value: ast.Expr) anyerror!Ast.Expr {
         // Remember string-valued bindings so a later `+` on them concatenates.
         if (op != .plus_assign and this.isStringExpr(value)) try this.string_locals.put(name, {});
+        if (op != .plus_assign) {
+            if (this.numKind(value)) |k| try this.num_locals.put(this.alloc, name, k);
+        }
         if (!this.locals.contains(name)) {
             const vname = Ast.Expr.v(try this.arenaVar(b, name));
             this.addLocal(name);
@@ -2295,11 +2392,20 @@ const Emitter = struct {
             const old = try this.varRef(name);
             defer this.alloc.free(old);
             const old_var = Ast.Expr.v(try b.arena.dupe(u8, old));
+            // `s += x` on a string concatenates; on a number it adds; on a
+            // name of unknown type it dispatches at runtime.
+            if (!this.untyped and (this.string_locals.contains(name) or this.isStringExpr(value))) {
+                var segs: std.ArrayListUnmanaged(Ast.BinSegment) = .empty;
+                try segs.append(b.arena, .{ .value = old_var, .type = "binary" });
+                try this.concatSegments(b, &segs, value);
+                break :blk .{ .bin = segs.items };
+            }
             const addend = try this.exprNode(b, value);
-            break :blk if (this.untyped)
-                try b.call("__bp_add", &.{ old_var, addend })
-            else
-                .{ .binop = .{ .op = "+", .lhs = try b.ptr(old_var), .rhs = try b.ptr(addend), .parens = false } };
+            if (this.untyped or (!this.num_locals.contains(name) and this.numKind(value) == null)) {
+                if (!this.untyped) this.needs_add_helper = true;
+                break :blk try b.call("__bp_add", &.{ old_var, addend });
+            }
+            break :blk .{ .binop = .{ .op = "+", .lhs = try b.ptr(old_var), .rhs = try b.ptr(addend), .parens = false } };
         } else try this.exprNode(b, value);
         try this.var_next.put(name, version);
         try this.var_current.put(name, version);
@@ -2563,6 +2669,7 @@ const Emitter = struct {
                 this.addLocal(p.name);
                 if (isNullableParam(p)) try this.nullable_locals.put(p.name, {});
                 if (isStringType(p.typeRef)) try this.string_locals.put(p.name, {});
+                if (numTypeKind(p.typeRef)) |k| try this.num_locals.put(this.alloc, p.name, k);
             }
         }
         const saved = this.indent;
@@ -3578,11 +3685,20 @@ const Emitter = struct {
                         // String `+` is concatenation: erlang binaries have no
                         // arithmetic, so `"a" + b` used to raise `badarith`.
                         return this.stringConcatNode(b, e)
-                    else
-                        "+",
+                    else if (this.numKind(bin.lhs.*) != null or this.numKind(bin.rhs.*) != null)
+                        "+"
+                    else {
+                        // Neither operand is provably a number or a string (a
+                        // generic lambda's `{ acc, s -> acc + s }`): two binaries
+                        // concatenate at runtime, anything else adds.
+                        this.needs_add_helper = true;
+                        return b.call("__bp_add", &.{ try this.exprNode(b, bin.lhs.*), try this.exprNode(b, bin.rhs.*) });
+                    },
                     .sub => "-",
                     .mul => "*",
-                    .div => "div",
+                    // `div` is integer division and raises `badarith` on a float;
+                    // an operand known to be a float takes `/`.
+                    .div => if (this.numKind(bin.lhs.*) == .float or this.numKind(bin.rhs.*) == .float) "/" else "div",
                     .mod => "rem",
                     .lt => "<",
                     .gt => ">",
