@@ -3955,12 +3955,37 @@ fn inferBuiltinCallReturnType(
     // `@RecordKeys(T: type) -> string[]` — returns field name strings of a
     // record type. Comptime-only.
     if (std.mem.eql(u8, callee, "RecordKeys")) {
-        return try env.namedTypeArgs("Array", &.{try env.namedType("string")});
+        // C6: the same `array` type a `string[]` annotation resolves to.
+        return try env.namedTypeArgs("array", &.{try env.namedType("string")});
     }
     // `@Field(value: any, comptime name: string) -> any` — field access by
     // compile-time-known name. Comptime-only.
     if (std.mem.eql(u8, callee, "field")) {
-        if (typedArgs.len > 0) return typedArgs[0].value.getType();
+        // C6: `@field(v, "x")` has the type of v's field `x` when the receiver
+        // is a known non-generic record and the name is a literal; otherwise it
+        // stays open (a fresh var), never the receiver's type.
+        if (typedArgs.len >= 2) fieldBlk: {
+            const recv = typedArgs[0].value.getType().deref();
+            if (recv.* != .named) break :fieldBlk;
+            const nameLit = switch (typedArgs[1].value.*) {
+                .literal => |l| switch (l.kind) {
+                    .stringLit => |str| str,
+                    else => break :fieldBlk,
+                },
+                else => break :fieldBlk,
+            };
+            const td = env.lookupTypeDef(recv.named.name) orelse break :fieldBlk;
+            const fields = switch (td) {
+                .record => |r| if (r.genericParams.len == 0) r.fields else break :fieldBlk,
+                .struct_ => |st| if (st.genericParams.len == 0) st.fields else break :fieldBlk,
+                .enum_ => break :fieldBlk,
+            };
+            for (fields) |fd| {
+                if (std.mem.eql(u8, fd.name, nameLit)) return fd.type_;
+            }
+            env.lastError = TypeError.unknownField(recv.named.name, nameLit).withLoc(typedArgs[1].value.getLoc());
+            return error.TypeError;
+        }
         return env.freshVar();
     }
     // `@emit(source)` — a comptime body (a decorator) contributes generated
@@ -5327,7 +5352,16 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                                     env.lastError = TypeError.unknownField(receiverName, ia.member).withLoc(loc);
                                     return error.TypeError;
                                 }
-                                const ty = try env.namedType(receiverName);
+                                // C7: a generic enum's unit variant carries one
+                                // fresh var per declared generic param, so
+                                // `val n: Option<i32> = Option.None` unifies.
+                                const ty = if (en.genericParams.len == 0)
+                                    try env.namedType(receiverName)
+                                else blk: {
+                                    const args = try env.arena.alloc(*T.Type, en.genericParams.len);
+                                    for (args) |*a| a.* = try env.freshVar();
+                                    break :blk try env.namedTypeArgs(receiverName, args);
+                                };
                                 const recvTyped = try makeTypedPtr(env, TypedExpr{ .identifier = .{
                                     .loc = ia.receiver.*.getLoc(),
                                     .type_ = ty,
@@ -7326,6 +7360,43 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                         break :blk f.ret;
                     }
 
+                    // C11: a call carrying a `..` spread on a record constructor
+                    // is a record *update*: the spread must be that record, and
+                    // each labelled arg is matched to the field its label names.
+                    if (spreadCount == 1) updBlk: {
+                        const td = env.lookupTypeDef(call.callee) orelse break :updBlk;
+                        const fields = switch (td) {
+                            .record => |r| r.fields,
+                            .struct_ => |st| st.fields,
+                            .enum_ => break :updBlk,
+                        };
+                        if (fields.len != f.params.len) break :updBlk;
+                        for (typedArgs, 0..) |ta, ai| {
+                            const lbl = ta.label orelse {
+                                // Positional args beside a spread have no field to name.
+                                env.lastError = TypeError.custom(
+                                    "a record update names its fields",
+                                    "Write `Name(..base, field: value)`.",
+                                ).withLoc(ta.value.getLoc());
+                                return error.TypeError;
+                            };
+                            if (std.mem.eql(u8, lbl, "..")) {
+                                try unifyAt(env, f.ret, ta.value.getType(), ta.value.getLoc());
+                                continue;
+                            }
+                            const idx = for (fields, 0..) |fd, fi| {
+                                if (std.mem.eql(u8, fd.name, lbl)) break fi;
+                            } else {
+                                const vloc = call.args[ai].value.getLoc();
+                                const labelCol = if (vloc.col > lbl.len + 2) vloc.col - lbl.len - 2 else vloc.col;
+                                env.lastError = TypeError.unknownField(call.callee, lbl).withLoc(.{ .line = vloc.line, .col = labelCol });
+                                return error.TypeError;
+                            };
+                            try unifyAt(env, f.params[idx], ta.value.getType(), ta.value.getLoc());
+                        }
+                        break :blk f.ret;
+                    }
+
                     // Keep the historical spread behavior (and snapshots) for narrow update/error cases.
                     if (spreadCount != 1 or nonSpreadCount < 2) {
                         if (f.params.len != call.args.len) {
@@ -7383,13 +7454,18 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                 const resolved = calleeType.deref();
                 const retType: *T.Type = switch (resolved.*) {
                     .func => |f| blk: {
-                        const totalArgs = call.args.len + 1;
-                        if (f.params.len == totalArgs) {
-                            try unifyAt(env, f.params[0], lhsTyped.getType(), loc);
-                            for (call.args, 1..) |arg, i| {
-                                const argTyped = try inferExprTyped(env, arg.value.*);
-                                try unifyAt(env, f.params[i], argTyped.getType(), loc);
-                            }
+                        const totalArgs = call.args.len + 1 + call.trailing.len;
+                        // C12: a pipeline whose RHS does not take the piped
+                        // value plus its own arguments is an arity error at
+                        // the RHS, not a silently skipped unification.
+                        if (f.params.len != totalArgs) {
+                            env.lastError = TypeError.arityMismatch(call.callee, f.params.len, totalArgs).withLoc(p.rhs.*.getLoc());
+                            return error.TypeError;
+                        }
+                        try unifyAt(env, f.params[0], lhsTyped.getType(), loc);
+                        for (call.args, 1..) |arg, i| {
+                            const argTyped = try inferExprTyped(env, arg.value.*);
+                            try unifyAt(env, f.params[i], argTyped.getType(), loc);
                         }
                         break :blk f.ret;
                     },
@@ -7418,7 +7494,27 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             }
             const rhsTyped = try inferExprTyped(env, p.rhs.*);
             const rhsPtr = try makeTypedPtr(env, rhsTyped);
-            return TypedExpr{ .call = .{ .loc = loc, .type_ = rhsTyped.getType(), .kind = .{ .pipeline = .{
+            // C12: `lhs |> f` with `f` a function is the call `f(lhs)`: its
+            // type is `f`'s return, and `f` must take exactly one argument.
+            const pipeType: *T.Type = switch (rhsTyped.getType().deref().*) {
+                .func => |f| blk: {
+                    if (f.params.len != 1) {
+                        const name = switch (p.rhs.*) {
+                            .identifier => |id| switch (id.kind) {
+                                .ident => |n| n,
+                                else => "|>",
+                            },
+                            else => "|>",
+                        };
+                        env.lastError = TypeError.arityMismatch(name, f.params.len, 1).withLoc(p.rhs.*.getLoc());
+                        return error.TypeError;
+                    }
+                    try unifyAt(env, f.params[0], lhsTyped.getType(), loc);
+                    break :blk f.ret;
+                },
+                else => rhsTyped.getType(),
+            };
+            return TypedExpr{ .call = .{ .loc = loc, .type_ = pipeType, .kind = .{ .pipeline = .{
                 .lhs = lhsPtr,
                 .rhs = rhsPtr,
                 .comment = p.comment,

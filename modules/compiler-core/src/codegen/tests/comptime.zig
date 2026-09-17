@@ -456,3 +456,15 @@ test "js: template end to end ---- yaml model computes a labeled tuple" {
         \\}
     );
 }
+
+test "js: comptime ---- a constant division by zero is a located comptime error (C4b)" {
+    try h.assertJsError(std.testing.allocator, @src(),
+        \\val q = comptime 1 / 0;
+    );
+}
+
+test "js: comptime ---- negating a string is a located comptime error (C4b)" {
+    try h.assertJsError(std.testing.allocator, @src(),
+        \\val q = comptime -"s";
+    );
+}

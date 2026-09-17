@@ -7,11 +7,10 @@ val alice = Person(name: "Alice", age: 30);
 val bob = Person(..alice, nickname: "Bobby");
 
 ----- ERROR
-error: type mismatch
-  ┌─ :6:20
+error: unknown field
+  ┌─ :6:27
   │
 6 │ val bob = Person(..alice, nickname: "Bobby");
-  │                    ^
+  │                           ^
 
-  expected: string
-  found:    Person
+  'Person' has no field 'nickname'

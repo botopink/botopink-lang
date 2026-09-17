@@ -365,3 +365,40 @@ test "infer: generic-inference-finalize ---- linq join builds tuple element type
         \\}
     );
 }
+
+test "infer: generic enum unit variant ---- annotated destination fixes its type argument (C7)" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type Option2<T> { Some(v: T), None }
+        \\val n: Option2<i32> = Option2.None;
+    );
+}
+
+test "infer: pipeline ---- a function RHS is the call and has its return type (C12)" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn double(x: i32) -> i32 { return x * 2; }
+        \\val r: i32 = 1 |> double;
+    );
+}
+
+test "infer: @RecordKeys ---- has the type a string[] annotation resolves to (C6)" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type P(x: i32, y: i32)
+        \\val k: string[] = @RecordKeys(P);
+    );
+}
+
+test "infer: @field ---- has the named field's type, not the receiver's (C6)" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type P(x: string)
+        \\val p = P(x: "a");
+        \\val xv: string = @field(p, "x");
+    );
+}
+
+test "infer: record update ---- a spread with a labelled field checks (C11)" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type Person(name: string, age: i32)
+        \\val alice = Person(name: "a", age: 1);
+        \\val b = Person(..alice, age: 25);
+    );
+}

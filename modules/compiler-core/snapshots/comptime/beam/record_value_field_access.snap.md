@@ -40,7 +40,7 @@ val xVal = @field(p, "x");
     {
       "ast": "val",
       "indent": "xVal",
-      "return_type": "Point",
+      "return_type": "i32",
       "expr": {
         "ast": "call",
         "params": [
@@ -51,7 +51,7 @@ val xVal = @field(p, "x");
             "value": "string"
           }
         ],
-        "return_type": "Point"
+        "return_type": "i32"
       }
     }
   ]
