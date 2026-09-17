@@ -16,8 +16,9 @@
 //!      with the declared `(result …)`. The same check runs on every `If` arm.
 //!   3. **`(param $ i32)`** — `Param.name` is checked non-empty when the node is
 //!      built; an unnamed parameter cannot be constructed.
-//!   4. **A `call` to a function the module never defines** — `Module.declared`
-//!      is validated against every `call` before a single byte is written, and
+//!   4. **A `call` to a function the module never defines** — every `call` is
+//!      checked against the module's own functions and imports before a single
+//!      byte is written, and
 //!      the runtime helpers can only be *named* through `Builder.helper`, which
 //!      marks the helper for emission in the same act.
 //!   5. **A specialised function with no result type** — same check as (2): a
@@ -109,6 +110,9 @@ pub const Instr = union(enum) {
     /// `call $<func>` — the symbol must be one the module declares (see
     /// `Module.validate`).
     call: []const u8,
+    /// `call_indirect (param …) (result …)` — a call through the module's
+    /// function table. The table index is the last operand.
+    call_indirect: FuncType,
     br: []const u8,
     br_if: []const u8,
     drop,
@@ -253,6 +257,9 @@ pub const Item = union(enum) {
     memory: Memory,
     /// `(start $name)`.
     start: []const u8,
+    /// `(table funcref (elem $f0 $f1 …))` — the functions a `call_indirect`
+    /// can reach, by table index.
+    table: []const []const u8,
     data: DataSegment,
     global: Global,
     func: Func,
@@ -262,10 +269,6 @@ pub const Item = union(enum) {
 
 pub const Module = struct {
     items: []const Item = &.{},
-    /// Symbols this module may `call` without defining them: the `wat_runtime`
-    /// prelude a comptime template module is concatenated with. Empty for a
-    /// program module.
-    externs: []const []const u8 = &.{},
 };
 
 // ── invariants ───────────────────────────────────────────────────────────────
@@ -281,7 +284,8 @@ pub const Invalid = error{
     BranchMismatch,
     /// A value-form `if` with no `(else …)`.
     MissingElse,
-    /// `call $x` where `x` is neither defined nor imported nor declared extern.
+    /// `call $x` where `x` is neither defined nor imported, or a table entry
+    /// naming a function the module does not define.
     UndefinedCall,
 };
 
@@ -315,12 +319,10 @@ fn validateInstr(i: Instr) Invalid!void {
     }
 }
 
-/// Every symbol the module can legally `call`: its own functions, its imports
-/// and its declared externs.
+/// Every symbol the module can legally `call`: its own functions and its
+/// imports. There is no third category — a symbol nothing defines cannot be
+/// called.
 pub fn declaresCall(m: Module, name: []const u8) bool {
-    for (m.externs) |e| {
-        if (std.mem.eql(u8, e, name)) return true;
-    }
     for (m.items) |it| switch (it) {
         .func => |f| if (std.mem.eql(u8, f.name, name)) return true,
         .import => |im| if (std.mem.eql(u8, im.func, name)) return true,
@@ -336,6 +338,9 @@ pub fn validateModule(m: Module) Invalid!void {
         .func => |f| {
             try validateFunc(f);
             try checkCalls(m, f.body);
+        },
+        .table => |names| for (names) |n| {
+            if (!declaresCall(m, n)) return error.UndefinedCall;
         },
         else => {},
     };
@@ -357,7 +362,8 @@ fn checkCalls(m: Module, s: Seq) Invalid!void {
 
 /// The functions the backend synthesises into a module to serve constructs wasm
 /// has no opcode for. They come in *groups*: a group is emitted whole or not at
-/// all, because its members call each other.
+/// all, because its members call each other. A group that calls into another
+/// group names it in `deps`.
 pub const HelperGroup = enum {
     /// `$__write_bytes` `$__print_nl` `$__print_sp` `$__print_i32`
     /// `$__print_i32_raw` `$__memmove`, plus the `fd_write` import.
@@ -376,11 +382,71 @@ pub const HelperGroup = enum {
     str_eq,
     /// `$__str_slice`.
     str_slice,
+    // ── one helper per group from here on: the group is named after it ──
+    alloc,
+    mem_eq,
+    i32_abs,
+    i32_min,
+    i32_max,
+    i32_to_str,
+    f64_to_str,
+    str_case,
+    str_index_of,
+    str_starts_with,
+    str_ends_with,
+    str_trim,
+    str_split,
+    str_repeat,
+    arr_new,
+    arr_slice,
+    arr_reverse,
+    arr_prepend,
+    arr_push,
+    arr_concat,
+    arr_zip,
+    arr_index_of_i32,
+    arr_index_of_str,
+    arr_join_str,
+    arr_join_i32,
+    /// `$__print_arr_i32` `$__print_arr_i32_raw`.
+    print_arr_i32,
+    /// `$__print_arr_f32` `$__print_arr_f32_raw`.
+    print_arr_f32,
+    box_i32,
+    arr_at_box,
+    /// `$__print_undefined`, and `$__print_opt_{i32,bool,str}` (+`_raw`).
+    print_opt,
+    /// `$__write_err` `$__assert_fail`.
+    assert_fail,
+
+    /// The groups `g`'s functions call into.
+    pub fn deps(g: HelperGroup) []const HelperGroup {
+        return switch (g) {
+            .print_str, .print_bool, .print_f64 => &.{.print},
+            .print_arr_i32 => &.{.print},
+            .print_arr_f32 => &.{ .print, .print_f64 },
+            .box_i32 => &.{.alloc},
+            .arr_at_box => &.{.box_i32},
+            .print_opt => &.{ .print, .print_bool, .print_str },
+            .assert_fail => &.{.print},
+            .i32_to_str, .str_case, .str_repeat, .arr_new => &.{.alloc},
+            .f64_to_str => &.{ .i32_to_str, .alloc },
+            .str_index_of, .str_starts_with, .str_ends_with => &.{.mem_eq},
+            .str_trim => &.{.str_slice},
+            .str_split => &.{ .arr_new, .mem_eq, .str_slice },
+            .arr_slice, .arr_reverse, .arr_prepend, .arr_push, .arr_concat => &.{.arr_new},
+            .arr_zip => &.{ .arr_new, .alloc },
+            .arr_index_of_str => &.{.str_eq},
+            .arr_join_str => &.{.alloc},
+            .arr_join_i32 => &.{ .arr_new, .i32_to_str, .arr_join_str },
+            else => &.{},
+        };
+    }
 };
 
 /// A callable runtime helper. A `call` to one is only obtainable through
 /// `Builder.helper`, which marks its group for emission — so the module can
-/// never call a helper it does not also define.
+/// never call a helper it does not also define. Every symbol is `__<tag>`.
 pub const Helper = enum {
     write_bytes,
     print_nl,
@@ -398,25 +464,50 @@ pub const Helper = enum {
     str_concat,
     str_eq,
     str_slice,
+    alloc,
+    mem_eq,
+    i32_abs,
+    i32_min,
+    i32_max,
+    i32_to_str,
+    f64_to_str,
+    str_case,
+    str_index_of,
+    str_starts_with,
+    str_ends_with,
+    str_trim,
+    str_split,
+    str_repeat,
+    arr_new,
+    arr_slice,
+    arr_reverse,
+    arr_prepend,
+    arr_push,
+    arr_concat,
+    arr_zip,
+    arr_index_of_i32,
+    arr_index_of_str,
+    arr_join_str,
+    arr_join_i32,
+    print_arr_i32,
+    print_arr_i32_raw,
+    print_arr_f32,
+    print_arr_f32_raw,
+    box_i32,
+    arr_at_box,
+    print_undefined,
+    print_opt_i32,
+    print_opt_i32_raw,
+    print_opt_bool,
+    print_opt_bool_raw,
+    print_opt_str,
+    print_opt_str_raw,
+    write_err,
+    assert_fail,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {
-            .write_bytes => "__write_bytes",
-            .print_nl => "__print_nl",
-            .print_sp => "__print_sp",
-            .print_i32 => "__print_i32",
-            .print_i32_raw => "__print_i32_raw",
-            .memmove => "__memmove",
-            .print_str => "__print_str",
-            .print_str_raw => "__print_str_raw",
-            .print_bool => "__print_bool",
-            .print_bool_raw => "__print_bool_raw",
-            .print_f64 => "__print_f64",
-            .print_f64_raw => "__print_f64_raw",
-            .arr_at => "__arr_at",
-            .str_concat => "__str_concat",
-            .str_eq => "__str_eq",
-            .str_slice => "__str_slice",
+            inline else => |t| "__" ++ @tagName(t),
         };
     }
 
@@ -426,59 +517,28 @@ pub const Helper = enum {
             .print_str, .print_str_raw => .print_str,
             .print_bool, .print_bool_raw => .print_bool,
             .print_f64, .print_f64_raw => .print_f64,
-            .arr_at => .arr_at,
-            .str_concat => .str_concat,
-            .str_eq => .str_eq,
-            .str_slice => .str_slice,
+            .print_arr_i32, .print_arr_i32_raw => .print_arr_i32,
+            .print_arr_f32, .print_arr_f32_raw => .print_arr_f32,
+            .write_err, .assert_fail => .assert_fail,
+            .print_undefined, .print_opt_i32, .print_opt_i32_raw, .print_opt_bool, .print_opt_bool_raw, .print_opt_str, .print_opt_str_raw => .print_opt,
+            inline else => |t| @field(HelperGroup, @tagName(t)),
         };
     }
 };
 
-/// Which helper groups a module needs. `print_str` / `print_bool` / `print_f64`
-/// all end in `$__print_nl`, so requesting one pulls in `print` too.
+/// Which helper groups a module needs. Requiring a group requires its `deps`
+/// too, so a module that calls a helper also defines everything it calls.
 pub const HelperSet = struct {
-    print: bool = false,
-    print_str: bool = false,
-    print_bool: bool = false,
-    print_f64: bool = false,
-    arr_at: bool = false,
-    str_concat: bool = false,
-    str_eq: bool = false,
-    str_slice: bool = false,
+    groups: std.EnumSet(HelperGroup) = .initEmpty(),
 
     pub fn require(self: *HelperSet, g: HelperGroup) void {
-        switch (g) {
-            .print => self.print = true,
-            .print_str => {
-                self.print_str = true;
-                self.print = true;
-            },
-            .print_bool => {
-                self.print_bool = true;
-                self.print = true;
-            },
-            .print_f64 => {
-                self.print_f64 = true;
-                self.print = true;
-            },
-            .arr_at => self.arr_at = true,
-            .str_concat => self.str_concat = true,
-            .str_eq => self.str_eq = true,
-            .str_slice => self.str_slice = true,
-        }
+        if (self.groups.contains(g)) return;
+        self.groups.insert(g);
+        for (g.deps()) |d| self.require(d);
     }
 
     pub fn has(self: HelperSet, g: HelperGroup) bool {
-        return switch (g) {
-            .print => self.print,
-            .print_str => self.print_str,
-            .print_bool => self.print_bool,
-            .print_f64 => self.print_f64,
-            .arr_at => self.arr_at,
-            .str_concat => self.str_concat,
-            .str_eq => self.str_eq,
-            .str_slice => self.str_slice,
-        };
+        return self.groups.contains(g);
     }
 };
 
@@ -491,8 +551,6 @@ pub const Builder = struct {
     arena: std.mem.Allocator,
     /// Helper groups requested so far — see `helper`.
     helpers: HelperSet = .{},
-    /// Symbols called but defined elsewhere (`wat_runtime`'s comptime surface).
-    externs: std.ArrayListUnmanaged([]const u8) = .empty,
 
     pub const Error = std.mem.Allocator.Error;
 
@@ -557,15 +615,5 @@ pub const Builder = struct {
     pub fn helper(b: *Builder, h: Helper) Instr {
         b.helpers.require(h.group());
         return .{ .call = h.symbol() };
-    }
-
-    /// `call $<name>` for a symbol defined outside this module — the comptime
-    /// template prelude. Recorded so `validateModule` accepts it.
-    pub fn externCall(b: *Builder, name: []const u8) Error!Instr {
-        for (b.externs.items) |e| {
-            if (std.mem.eql(u8, e, name)) return .{ .call = name };
-        }
-        try b.externs.append(b.arena, name);
-        return .{ .call = name };
     }
 };

@@ -19,18 +19,47 @@ fn main() {
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (data (i32.const 256) "\05\00\00\00empty")
-  (global $__heap_ptr (mut i32) (i32.const 268))
+  (data (i32.const 268) "\07\00\00\00value: ")
+  (global $__heap_ptr (mut i32) (i32.const 280))
   (func $describe (param $opt i32) (result i32)
-    (local $None i32)
     (local $v i32)
     (local $__case_0 i32)
     local.get $opt
     local.set $__case_0
+    local.get $__case_0
+    i32.load ;; variant tag
+    i32.const 0 ;; None
+    i32.eq
+    (if (result i32)
+      (then
     i32.const 256
+      )
+      (else
+    local.get $__case_0
+    i32.load ;; variant tag
+    i32.const 1 ;; Some
+    i32.eq
+    (if (result i32)
+      (then
+    local.get $__case_0
+    i32.load offset=4
+    local.set $v
+    i32.const 268
+    local.get $v
+    call $__i32_to_str
+    call $__str_concat
+      )
+      (else
+    i32.const 0
+      )
+    )
+      )
+    )
     return
   )
   (func $main
     (local $__mem0 i32)
+    (local $__mem1 i32)
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
@@ -46,7 +75,16 @@ fn main() {
     local.get $__mem0
     call $describe
     call $__print_str
-    i32.const 0 ;; Opt.None
+    global.get $__heap_ptr
+    local.set $__mem1
+    global.get $__heap_ptr
+    i32.const 4
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem1
+    i32.const 0
+    i32.store
+    local.get $__mem1
     call $describe
     call $__print_str
   )
@@ -246,9 +284,148 @@ fn main() {
     call $__print_str_raw
     call $__print_nl
   )
+  (func $__str_concat (param $a i32) (param $b i32) (result i32)
+    (local $base i32) (local $alen i32) (local $blen i32)
+    local.get $a
+    i32.load
+    local.set $alen
+    local.get $b
+    i32.load
+    local.set $blen
+    global.get $__heap_ptr
+    local.set $base
+    ;; bump heap by 4 (length prefix) + alen + blen
+    global.get $__heap_ptr
+    i32.const 4
+    local.get $alen
+    i32.add
+    local.get $blen
+    i32.add
+    i32.add
+    global.set $__heap_ptr
+    ;; store combined length prefix
+    local.get $base
+    local.get $alen
+    local.get $blen
+    i32.add
+    i32.store
+    ;; copy a's bytes: base+4 <- a+4
+    local.get $base
+    i32.const 4
+    i32.add
+    local.get $a
+    i32.const 4
+    i32.add
+    local.get $alen
+    memory.copy
+    ;; copy b's bytes: base+4+alen <- b+4
+    local.get $base
+    i32.const 4
+    i32.add
+    local.get $alen
+    i32.add
+    local.get $b
+    i32.const 4
+    i32.add
+    local.get $blen
+    memory.copy
+    local.get $base
+  )
+  (func $__alloc (param $n i32) (result i32)
+    (local $p i32)
+    global.get $__heap_ptr
+    local.set $p
+    global.get $__heap_ptr
+    local.get $n
+    i32.add
+    i32.const 3
+    i32.add
+    i32.const -4
+    i32.and
+    global.set $__heap_ptr
+    local.get $p
+  )
+  (func $__i32_to_str (param $n i32) (result i32)
+    (local $u i64) (local $pos i32) (local $len i32) (local $p i32) (local $neg i32)
+    i32.const 160
+    local.set $pos
+    local.get $n
+    i32.const 0
+    i32.lt_s
+    local.set $neg
+    local.get $n
+    i64.extend_i32_s
+    local.set $u
+    local.get $neg
+    (if
+      (then
+        i64.const 0
+        local.get $u
+        i64.sub
+        local.set $u
+      )
+    )
+    (block $brk
+      (loop $cont
+        local.get $pos
+        i32.const 1
+        i32.sub
+        local.set $pos
+        local.get $pos
+        local.get $u
+        i64.const 10
+        i64.rem_u
+        i32.wrap_i64
+        i32.const 48
+        i32.add
+        i32.store8
+        local.get $u
+        i64.const 10
+        i64.div_u
+        local.set $u
+        local.get $u
+        i64.eqz
+        br_if $brk
+        br $cont
+      )
+    )
+    local.get $neg
+    (if
+      (then
+        local.get $pos
+        i32.const 1
+        i32.sub
+        local.set $pos
+        local.get $pos
+        i32.const 45
+        i32.store8
+      )
+    )
+    i32.const 160
+    local.get $pos
+    i32.sub
+    local.set $len
+    local.get $len
+    i32.const 4
+    i32.add
+    call $__alloc
+    local.set $p
+    local.get $p
+    local.get $len
+    i32.store
+    local.get $p
+    i32.const 4
+    i32.add
+    local.get $pos
+    local.get $len
+    memory.copy
+    local.get $p
+  )
 )
 ```
 
 ----- RUN LOG -----
 ```logs
+value: 42
+empty
 ```

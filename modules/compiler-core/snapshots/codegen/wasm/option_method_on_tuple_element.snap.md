@@ -27,12 +27,13 @@ fn main() {
     (local $rest i32)
     local.get $xs
     i32.const 0
-    call $__arr_at
+    call $__arr_at_box
     local.set $head
     local.get $xs
     i32.const 1
-    i32.const 0 ;; field access .length (unknown receiver type)
-    call $__str_slice
+    local.get $xs
+    i32.load ;; .length
+    call $__arr_slice
     local.set $rest
     global.get $__heap_ptr
     local.set $__mem0
@@ -86,6 +87,7 @@ fn main() {
     (if (result i32)
       (then
     local.get $_res0 ;; Some — present value
+    i32.load ;; optional payload
       )
       (else
     i32.const 0
@@ -326,7 +328,144 @@ fn main() {
       )
     )
   )
-  (func $__arr_at (param $xs i32) (param $i i32) (result i32)
+  (func $__alloc (param $n i32) (result i32)
+    (local $p i32)
+    global.get $__heap_ptr
+    local.set $p
+    global.get $__heap_ptr
+    local.get $n
+    i32.add
+    i32.const 3
+    i32.add
+    i32.const -4
+    i32.and
+    global.set $__heap_ptr
+    local.get $p
+  )
+  (func $__arr_new (param $n i32) (result i32)
+    (local $p i32)
+    local.get $n
+    i32.const 1
+    i32.add
+    i32.const 4
+    i32.mul
+    call $__alloc
+    local.set $p
+    local.get $p
+    local.get $n
+    i32.store
+    local.get $p
+  )
+  (func $__arr_slice (param $xs i32) (param $a i32) (param $b i32) (result i32)
+    (local $n i32) (local $cnt i32) (local $p i32)
+    local.get $xs
+    i32.load
+    local.set $n
+    local.get $a
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+        local.get $n
+        local.get $a
+        i32.add
+        local.set $a
+        local.get $a
+        i32.const 0
+        i32.lt_s
+        (if
+          (then
+            i32.const 0
+            local.set $a
+          )
+        )
+      )
+      (else
+        local.get $a
+        local.get $n
+        i32.gt_s
+        (if
+          (then
+            local.get $n
+            local.set $a
+          )
+        )
+      )
+    )
+    local.get $b
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+        local.get $n
+        local.get $b
+        i32.add
+        local.set $b
+        local.get $b
+        i32.const 0
+        i32.lt_s
+        (if
+          (then
+            i32.const 0
+            local.set $b
+          )
+        )
+      )
+      (else
+        local.get $b
+        local.get $n
+        i32.gt_s
+        (if
+          (then
+            local.get $n
+            local.set $b
+          )
+        )
+      )
+    )
+    local.get $b
+    local.get $a
+    i32.sub
+    local.set $cnt
+    local.get $cnt
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+        i32.const 0
+        local.set $cnt
+      )
+    )
+    local.get $cnt
+    call $__arr_new
+    local.set $p
+    local.get $p
+    i32.const 4
+    i32.add
+    local.get $xs
+    i32.const 4
+    i32.add
+    local.get $a
+    i32.const 4
+    i32.mul
+    i32.add
+    local.get $cnt
+    i32.const 4
+    i32.mul
+    memory.copy
+    local.get $p
+  )
+  (func $__box_i32 (param $v i32) (result i32)
+    (local $p i32)
+    i32.const 4
+    call $__alloc
+    local.set $p
+    local.get $p
+    local.get $v
+    i32.store
+    local.get $p
+  )
+  (func $__arr_at_box (param $xs i32) (param $i i32) (result i32)
     local.get $i
     i32.const 0
     i32.lt_s
@@ -335,55 +474,27 @@ fn main() {
     i32.load
     i32.ge_s
     i32.or
-    (if (result i32)
-      (then i32.const 0)
-      (else
-        local.get $xs
-        local.get $i
-        i32.const 1
-        i32.add
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load
+    (if
+      (then
+        i32.const 0
+        return
       )
     )
-  )
-  (func $__str_slice (param $src i32) (param $start i32) (param $end i32) (result i32)
-    (local $newlen i32) (local $dst i32)
-    local.get $end
-    local.get $start
-    i32.sub
-    local.set $newlen
-    global.get $__heap_ptr
-    local.set $dst
-    ;; bump heap by 4 (length prefix) + newlen
-    global.get $__heap_ptr
-    i32.const 4
-    local.get $newlen
-    i32.add
-    i32.add
-    global.set $__heap_ptr
-    ;; store length prefix
-    local.get $dst
-    local.get $newlen
-    i32.store
-    ;; copy bytes: dst+4 <- src+4+start
-    local.get $dst
+    local.get $xs
     i32.const 4
     i32.add
-    local.get $src
+    local.get $i
     i32.const 4
+    i32.mul
     i32.add
-    local.get $start
-    i32.add
-    local.get $newlen
-    memory.copy
-    local.get $dst
+    i32.load
+    call $__box_i32
   )
 )
 ```
 
 ----- RUN LOG -----
 ```logs
+1
+true
 ```

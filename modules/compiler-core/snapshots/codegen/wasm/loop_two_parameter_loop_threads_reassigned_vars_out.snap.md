@@ -38,11 +38,59 @@ fn main() {
     (local $last i32)
     (local $x i32)
     (local $i i32)
+    (local $__iter0 i32)
+    (local $__idx0 i32)
+    (local $__len0 i32)
     i32.const 256
     local.set $first
     i32.const 256
     local.set $last
-    i32.const 0 ;; loop over unknown iterable
+    local.get $xs
+    local.set $__iter0
+    local.get $__iter0
+    i32.load ;; element count
+    local.set $__len0
+    i32.const 0
+    local.set $__idx0
+    (block $__break
+      (loop $__continue
+        local.get $__idx0
+        local.get $__len0
+        i32.ge_s
+        br_if $__break
+        local.get $__iter0
+        local.get $__idx0
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load offset=4
+        local.set $x
+        local.get $__idx0
+        local.set $i
+    local.get $i
+    i32.const 0
+    i32.eq
+    (if (result i32)
+      (then
+    local.get $x
+    local.set $first
+    i32.const 0
+      )
+      (else
+        i32.const 0
+      )
+    )
+    drop
+    local.get $x
+    local.set $last
+        local.get $__idx0
+        i32.const 1
+        i32.add
+        local.set $__idx0
+        br $__continue
+      )
+    )
+    i32.const 0
     drop
     local.get $first
     i32.const 260
@@ -55,9 +103,47 @@ fn main() {
     (local $total i32)
     (local $x i32)
     (local $i i32)
+    (local $__iter0 i32)
+    (local $__idx0 i32)
+    (local $__len0 i32)
     i32.const 0
     local.set $total
-    i32.const 0 ;; loop over unknown iterable
+    local.get $xs
+    local.set $__iter0
+    local.get $__iter0
+    i32.load ;; element count
+    local.set $__len0
+    i32.const 0
+    local.set $__idx0
+    (block $__break
+      (loop $__continue
+        local.get $__idx0
+        local.get $__len0
+        i32.ge_s
+        br_if $__break
+        local.get $__iter0
+        local.get $__idx0
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load offset=4
+        local.set $x
+        local.get $__idx0
+        local.set $i
+    local.get $total
+    local.get $x
+    local.get $i
+    i32.mul
+    i32.add
+    local.set $total
+        local.get $__idx0
+        i32.const 1
+        i32.add
+        local.set $__idx0
+        br $__continue
+      )
+    )
+    i32.const 0
     drop
     local.get $total
     return
@@ -356,4 +442,6 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+a-c
+80
 ```

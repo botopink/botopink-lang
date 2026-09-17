@@ -15,14 +15,23 @@ fn main() {
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
   (func $main
-    unreachable ;; unresolved call: negate/0
-    call $__print_i32
-    unreachable ;; unresolved call: nor/1
-    call $__print_i32
-    unreachable ;; unresolved call: nand/1
-    call $__print_i32
-    unreachable ;; unresolved call: exclusiveOr/1
-    call $__print_i32
+    i32.const 1
+    i32.eqz
+    call $__print_bool
+    i32.const 0
+    i32.const 0
+    i32.or
+    i32.eqz
+    call $__print_bool
+    i32.const 1
+    i32.const 1
+    i32.and
+    i32.eqz
+    call $__print_bool
+    i32.const 1
+    i32.const 0
+    i32.ne
+    call $__print_bool
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
@@ -207,9 +216,44 @@ fn main() {
       )
     )
   )
+  (func $__print_bool (param $b i32)
+    local.get $b
+    call $__print_bool_raw
+    call $__print_nl
+  )
+  (func $__print_bool_raw (param $b i32)
+    local.get $b
+    (if
+      (then
+        ;; "true" as a little-endian i32
+        i32.const 16
+        i32.const 1702195828
+        i32.store
+        i32.const 16
+        i32.const 4
+        call $__write_bytes
+      )
+      (else
+        ;; "fals" + 'e'
+        i32.const 16
+        i32.const 1936482662
+        i32.store
+        i32.const 16
+        i32.const 101
+        i32.store8 offset=4
+        i32.const 16
+        i32.const 5
+        call $__write_bytes
+      )
+    )
+  )
 )
 ```
 
 ----- RUN LOG -----
 ```logs
+false
+true
+false
+true
 ```

@@ -20,6 +20,8 @@ fn classify(n: i32) -> string {
     (local $__case_0 i32)
     local.get $n
     local.set $__case_0
+    local.get $__case_0
+    local.set $x
     i32.const 256
     return
   )

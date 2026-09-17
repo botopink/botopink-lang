@@ -88,26 +88,62 @@ test "order case over Order" {
   )
   (func $toInt (export "toInt") (param $o i32) (result i32)
     (local $n i32)
-    (local $Lt i32)
-    (local $Eq i32)
     (local $__case_0 i32)
     local.get $o
     local.set $__case_0
+    local.get $__case_0
+    i32.const 0 ;; Lt
+    i32.eq
+    (if (result i32)
+      (then
     i32.const 0
     i32.const 1
     i32.sub
+      )
+      (else
+    local.get $__case_0
+    i32.const 1 ;; Eq
+    i32.eq
+    (if (result i32)
+      (then
+    i32.const 0
+      )
+      (else
+    i32.const 1
+      )
+    )
+      )
+    )
     local.set $n
     local.get $n
     return
   )
   (func $reverse (export "reverse") (param $o i32) (result i32)
     (local $r i32)
-    (local $Lt i32)
-    (local $Gt i32)
     (local $__case_0 i32)
     local.get $o
     local.set $__case_0
+    local.get $__case_0
+    i32.const 0 ;; Lt
+    i32.eq
+    (if (result i32)
+      (then
     i32.const 2 ;; Order.Gt
+      )
+      (else
+    local.get $__case_0
+    i32.const 2 ;; Gt
+    i32.eq
+    (if (result i32)
+      (then
+    i32.const 0 ;; Order.Lt
+      )
+      (else
+    i32.const 1 ;; Order.Eq
+      )
+    )
+      )
+    )
     local.set $r
     local.get $r
     return
@@ -144,23 +180,119 @@ fn main() {
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (data (i32.const 256) "\04\00\00\00less")
-  (global $__heap_ptr (mut i32) (i32.const 264))
-  (func $describe (param $o i32) (result i32)
-    (local $s i32)
-    (local $Lt i32)
-    (local $Gt i32)
+  (data (i32.const 264) "\07\00\00\00greater")
+  (data (i32.const 276) "\05\00\00\00equal")
+  (global $__heap_ptr (mut i32) (i32.const 288))
+  (func $lt (result i32)
+    i32.const 0 ;; Order.Lt
+    return
+  )
+  (func $eq (result i32)
+    i32.const 1 ;; Order.Eq
+    return
+  )
+  (func $gt (result i32)
+    i32.const 2 ;; Order.Gt
+    return
+  )
+  (func $toInt (param $o i32) (result i32)
+    (local $n i32)
     (local $__case_0 i32)
     local.get $o
     local.set $__case_0
+    local.get $__case_0
+    i32.const 0 ;; Lt
+    i32.eq
+    (if (result i32)
+      (then
+    i32.const 0
+    i32.const 1
+    i32.sub
+      )
+      (else
+    local.get $__case_0
+    i32.const 1 ;; Eq
+    i32.eq
+    (if (result i32)
+      (then
+    i32.const 0
+      )
+      (else
+    i32.const 1
+      )
+    )
+      )
+    )
+    local.set $n
+    local.get $n
+    return
+  )
+  (func $reverse (param $o i32) (result i32)
+    (local $r i32)
+    (local $__case_0 i32)
+    local.get $o
+    local.set $__case_0
+    local.get $__case_0
+    i32.const 0 ;; Lt
+    i32.eq
+    (if (result i32)
+      (then
+    i32.const 2 ;; Order.Gt
+      )
+      (else
+    local.get $__case_0
+    i32.const 2 ;; Gt
+    i32.eq
+    (if (result i32)
+      (then
+    i32.const 0 ;; Order.Lt
+      )
+      (else
+    i32.const 1 ;; Order.Eq
+      )
+    )
+      )
+    )
+    local.set $r
+    local.get $r
+    return
+  )
+  (func $describe (param $o i32) (result i32)
+    (local $s i32)
+    (local $__case_0 i32)
+    local.get $o
+    local.set $__case_0
+    local.get $__case_0
+    i32.const 0 ;; Lt
+    i32.eq
+    (if (result i32)
+      (then
     i32.const 256
+      )
+      (else
+    local.get $__case_0
+    i32.const 2 ;; Gt
+    i32.eq
+    (if (result i32)
+      (then
+    i32.const 264
+      )
+      (else
+    i32.const 276
+      )
+    )
+      )
+    )
     local.set $s
     local.get $s
     return
   )
   (func $main
-    unreachable ;; unresolved call: toInt/1
+    call $lt
+    call $toInt
     call $__print_i32
-    unreachable ;; unresolved call: reverse/1
+    call $lt
+    call $reverse
     call $describe
     call $__print_str
   )
@@ -365,4 +497,6 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+-1
+greater
 ```

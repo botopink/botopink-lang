@@ -79,7 +79,7 @@ main() ->
   (global $s (mut i32) (i32.const 0))
   (func $main
     global.get $s
-    call $__print_i32
+    call $__print_str
   )
   (func $__init_globals
     global.get $greeting
@@ -268,9 +268,23 @@ main() ->
       )
     )
   )
+  (func $__print_str_raw (param $s i32)
+    local.get $s
+    i32.const 4
+    i32.add
+    local.get $s
+    i32.load
+    call $__write_bytes
+  )
+  (func $__print_str (param $s i32)
+    local.get $s
+    call $__print_str_raw
+    call $__print_nl
+  )
 )
 ```
 
 ----- RUN LOG -----
 ```logs
+ola mundo
 ```

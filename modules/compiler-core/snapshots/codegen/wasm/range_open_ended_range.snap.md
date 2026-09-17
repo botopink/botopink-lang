@@ -25,7 +25,7 @@ fn countUp(x: i32) {
     i32.gt_s
     (if (result i32)
       (then
-    i32.const 0
+    br $__break
       )
       (else
         i32.const 0

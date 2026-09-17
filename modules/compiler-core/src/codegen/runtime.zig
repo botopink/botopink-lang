@@ -2,7 +2,7 @@
 //!
 //! Provides functions to execute generated JavaScript (via Node.js),
 //! Erlang code (via erlc + erl), BEAM assembly (via erlc +from_asm + erl),
-//! and WebAssembly (currently a stub), capturing the runtime output for
+//! and WebAssembly text (via `wasmtime run`), capturing the runtime output for
 //! inclusion in the codegen snapshots' `----- RUN LOG -----` block.
 //!
 //! ## RUN LOG capture contract
@@ -40,6 +40,11 @@
 //!     backend emits wrong is never mistaken for a program that printed
 //!     nothing. A module that parses always runs, so checking only after a
 //!     failed run sees every unparseable module and costs a successful run
+//!     nothing.
+//!   - **Execute wasm** (`wasmtime run`): `.ok` records the output; `.failed`
+//!     (a trap) records what the module printed plus a
+//!     `RUNTIME TRAP (wasmtime):` block with the trap message — never an
+//!     empty log, which would read like a program that ran and printed
 //!     nothing.
 //!
 //! Determinism: `erlc`/`erl` are spawned with the per-execution scratch dir
@@ -154,6 +159,57 @@ fn compileFailureLog(allocator: std.mem.Allocator, tool: []const u8, diagnostics
     return out.toOwnedSlice(allocator);
 }
 
+/// RUN LOG text for a wasm module that trapped: what it printed before the
+/// trap, then a marker line the snapshot review can grep for, then the trap
+/// itself — the `wasm trap: …` line wasmtime reports. A trap must never read
+/// like a program that ran and printed nothing, which is what an empty log
+/// would say.
+///
+/// `combined` is stdout followed directly by stderr (`executeWat`). wasmtime's stderr
+/// is an error chain (`Error: failed to run main module …`, `Caused by:`, the
+/// wasm backtrace with code offsets, the trap); only the trap line is kept,
+/// because the backtrace offsets change with every lowering. When no
+/// `wasm trap:` line is present (a non-trap failure), the last line of the
+/// chain is kept instead.
+fn runtimeTrapLog(allocator: std.mem.Allocator, tool: []const u8, combined: []const u8) ![]u8 {
+    const err_marker = "Error: failed to run main module";
+    const split = if (std.mem.startsWith(u8, combined, err_marker))
+        0
+    else if (std.mem.indexOf(u8, combined, "\n" ++ err_marker)) |i| i + 1 else combined.len;
+    const printed = combined[0..split];
+    const chain = combined[split..];
+
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer out.deinit(allocator);
+    if (printed.len > 0) {
+        try out.appendSlice(allocator, printed);
+        if (printed[printed.len - 1] != '\n') try out.append(allocator, '\n');
+    }
+    try out.appendSlice(allocator, "RUNTIME TRAP (");
+    try out.appendSlice(allocator, tool);
+    try out.appendSlice(allocator, "):\n");
+
+    var last: []const u8 = "";
+    var trap: ?[]const u8 = null;
+    var lines = std.mem.splitScalar(u8, chain, '\n');
+    while (lines.next()) |raw| {
+        const line = std.mem.trim(u8, raw, &std.ascii.whitespace);
+        if (line.len == 0) continue;
+        if (std.mem.indexOf(u8, line, "wasm trap:")) |i| {
+            trap = line[i..];
+        }
+        // `2: <cause>` — the error chain numbers its causes.
+        const colon = std.mem.indexOfScalar(u8, line, ':') orelse 0;
+        const numbered = colon > 0 and for (line[0..colon]) |c| {
+            if (!std.ascii.isDigit(c)) break false;
+        } else true;
+        last = if (numbered) std.mem.trimStart(u8, line[colon + 1 ..], " ") else line;
+    }
+    try out.appendSlice(allocator, trap orelse last);
+    try out.append(allocator, '\n');
+    return out.toOwnedSlice(allocator);
+}
+
 /// Single root for every per-test scratch dir. Lives under the
 /// build dir (`.botopinkbuild/`) so the umbrella `.gitignore` rule
 /// already swallows it — no separate `.tmp-exec-*/` line needed.
@@ -179,7 +235,7 @@ pub const CACHE_ROOT = ".botopinkbuild/runtime-cache";
 /// (the exit-status contract, compile-error capture, the cwd of the spawns).
 /// Folded into `cacheKey` so entries written by an older harness miss instead
 /// of masking the change — a warm cache must never hide a harness defect.
-pub const HARNESS_VERSION = "2-exit-status";
+pub const HARNESS_VERSION = "3-wasm-runs";
 
 /// Hash (harness version + target_tag + module_name + code + aux entries)
 /// into a 64-char hex SHA256 key. Each component is length-prefixed so two
@@ -625,17 +681,91 @@ pub fn executeBeamAsm(allocator: std.mem.Allocator, asm_code: []const u8, module
     return ran.output;
 }
 
-/// WebAssembly Text execution — **a stub**: every wasm RUN LOG is empty
-/// until a runtime is wired back in (spec 03 step 2). The embedded wasm3
-/// interpreter it used to call was removed with `vendor/wasm3`.
+/// Execute WebAssembly text: write `<module>.wat` and `wasmtime run` it, which
+/// invokes the `_start` export the wasm backend emits for a module with
+/// `fn main` (a module without one instantiates, runs its start function if
+/// any, and exits 0).
 ///
-/// `wat_code` / `module_name` / `io` are kept for parity with the sibling
-/// `executeJavaScript` / `executeErlang` signatures.
+/// Returns the module's output on a 0 exit, and on a trap what it printed
+/// followed by `RUNTIME TRAP (wasmtime):` and the trap message
+/// (`runtimeTrapLog`). A missing `wasmtime` behaves like a missing `erl`: an
+/// empty RUN LOG, never cached. There is no early bail on modules that print
+/// nothing — a module that prints nothing can still trap, and that is what the
+/// log must show — and no aux modules: the wasm backend links imports into the
+/// module statically.
 pub fn executeWat(allocator: std.mem.Allocator, wat_code: []const u8, module_name: []const u8, io: anytype) ![]u8 {
-    _ = wat_code;
-    _ = module_name;
-    _ = io;
-    return allocator.dupe(u8, "");
+    var key: [64]u8 = undefined;
+    cacheKey(&key, "wasm", module_name, wat_code, &.{});
+    if (cacheRead(allocator, io, &key)) |hit| return hit;
+
+    var dir_buf: [96]u8 = undefined;
+    const tmp_dir = try makeScratchDir(io, &dir_buf);
+    defer std.Io.Dir.cwd().deleteTree(io, tmp_dir) catch {};
+
+    const basename = try std.fmt.allocPrint(allocator, "{s}.wat", .{erlModuleName(if (module_name.len > 0) module_name else "main")});
+    defer allocator.free(basename);
+    const path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ tmp_dir, basename });
+    defer allocator.free(path);
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = wat_code });
+
+    // stdout and stderr are concatenated as written, with no separator: a
+    // module's stderr (an `assert` message) and wasmtime's error chain both
+    // end their own lines.
+    const result = std.process.run(allocator, io, .{
+        .argv = &.{ "wasmtime", "run", basename },
+        .cwd = .{ .path = tmp_dir },
+        .timeout = .{ .duration = .{ .raw = .{ .nanoseconds = RUNTIME_TIMEOUT_NS }, .clock = .real } },
+    }) catch return allocator.dupe(u8, "");
+    defer allocator.free(result.stdout);
+    defer allocator.free(result.stderr);
+    const combined = try std.mem.concat(allocator, u8, &.{ result.stdout, result.stderr });
+    if (isProcessSuccess(result.term)) {
+        cacheWrite(io, allocator, &key, combined);
+        return combined;
+    }
+    defer allocator.free(combined);
+    const log = try runtimeTrapLog(allocator, "wasmtime", combined);
+    cacheWrite(io, allocator, &key, log);
+    return log;
+}
+
+test "runtimeTrapLog keeps the printed text and the trap, drops the backtrace" {
+    const alloc = std.testing.allocator;
+    const combined =
+        \\hello
+        \\Error: failed to run main module `main.wat`
+        \\
+        \\Caused by:
+        \\    0: failed to invoke command default
+        \\    1: error while executing at wasm backtrace:
+        \\           0:   0x2a - <unknown>!main
+        \\    2: wasm trap: wasm `unreachable` instruction executed
+        \\
+    ;
+    const log = try runtimeTrapLog(alloc, "wasmtime", combined);
+    defer alloc.free(log);
+    try std.testing.expectEqualStrings(
+        "hello\nRUNTIME TRAP (wasmtime):\nwasm trap: wasm `unreachable` instruction executed\n",
+        log,
+    );
+}
+
+test "runtimeTrapLog on a module that printed nothing" {
+    const alloc = std.testing.allocator;
+    const combined =
+        \\Error: failed to run main module `main.wat`
+        \\
+        \\Caused by:
+        \\    0: failed to invoke command default
+        \\    1: wasm trap: out of bounds memory access
+        \\
+    ;
+    const log = try runtimeTrapLog(alloc, "wasmtime", combined);
+    defer alloc.free(log);
+    try std.testing.expectEqualStrings(
+        "RUNTIME TRAP (wasmtime):\nwasm trap: out of bounds memory access\n",
+        log,
+    );
 }
 
 test "compileFailureLog keeps the errors, drops warnings and the source echo" {

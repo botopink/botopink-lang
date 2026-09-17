@@ -68,7 +68,7 @@ fn main() {
         local.get $__idx0
         local.set $i
     local.get $msg
-    call $__print_i32
+    call $__print_str
         local.get $__idx0
         i32.const 1
         i32.add
@@ -262,9 +262,25 @@ fn main() {
       )
     )
   )
+  (func $__print_str_raw (param $s i32)
+    local.get $s
+    i32.const 4
+    i32.add
+    local.get $s
+    i32.load
+    call $__write_bytes
+  )
+  (func $__print_str (param $s i32)
+    local.get $s
+    call $__print_str_raw
+    call $__print_nl
+  )
 )
 ```
 
 ----- RUN LOG -----
 ```logs
+Erro 404
+Sucesso 200
+Aviso 500
 ```

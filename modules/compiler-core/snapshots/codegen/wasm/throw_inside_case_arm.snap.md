@@ -19,12 +19,12 @@ fn main() {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (data (i32.const 256) "\06\00\00\00failed")
+  (global $__heap_ptr (mut i32) (i32.const 268))
   (func $check (param $s i32) (result i32)
-    (local $Ok i32)
-    (local $Fail i32)
     (local $_res0 i32)
     (local $__case_0 i32)
+    (local $_res1 i32)
     global.get $__heap_ptr
     local.set $_res0
     global.get $__heap_ptr
@@ -37,7 +37,40 @@ fn main() {
     local.get $_res0
     local.get $s
     local.set $__case_0
+    local.get $__case_0
+    i32.const 0 ;; Ok
+    i32.eq
+    (if (result i32)
+      (then
     i32.const 1
+      )
+      (else
+    local.get $__case_0
+    i32.const 1 ;; Fail
+    i32.eq
+    (if (result i32)
+      (then
+    global.get $__heap_ptr
+    local.set $_res1
+    global.get $__heap_ptr
+    i32.const 8
+    i32.add
+    global.set $__heap_ptr
+    local.get $_res1
+    i32.const 1
+    i32.store ;; Result tag (Error)
+    local.get $_res1
+    i32.const 256
+    i32.store offset=4 ;; payload
+    local.get $_res1
+    return
+      )
+      (else
+    i32.const 0
+      )
+    )
+      )
+    )
     i32.store offset=4 ;; payload
     local.get $_res0
     return
@@ -47,12 +80,12 @@ fn main() {
     call $check
     i32.load ;; Result tag
     i32.eqz ;; isOk = (tag == 0)
-    call $__print_i32
+    call $__print_bool
     i32.const 1 ;; Status.Fail
     call $check
     i32.load ;; Result tag
     i32.eqz ;; isOk = (tag == 0)
-    call $__print_i32
+    call $__print_bool
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
@@ -237,9 +270,42 @@ fn main() {
       )
     )
   )
+  (func $__print_bool (param $b i32)
+    local.get $b
+    call $__print_bool_raw
+    call $__print_nl
+  )
+  (func $__print_bool_raw (param $b i32)
+    local.get $b
+    (if
+      (then
+        ;; "true" as a little-endian i32
+        i32.const 16
+        i32.const 1702195828
+        i32.store
+        i32.const 16
+        i32.const 4
+        call $__write_bytes
+      )
+      (else
+        ;; "fals" + 'e'
+        i32.const 16
+        i32.const 1936482662
+        i32.store
+        i32.const 16
+        i32.const 101
+        i32.store8 offset=4
+        i32.const 16
+        i32.const 5
+        call $__write_bytes
+      )
+    )
+  )
 )
 ```
 
 ----- RUN LOG -----
 ```logs
+true
+false
 ```

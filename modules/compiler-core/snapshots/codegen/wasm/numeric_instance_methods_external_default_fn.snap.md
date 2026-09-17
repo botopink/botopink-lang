@@ -24,18 +24,30 @@ fn main() {
     i32.const 5
     i32.sub
     local.set $n
-    unreachable ;; unresolved call: abs/0
+    local.get $n
+    call $__i32_abs
     call $__print_i32
-    unreachable ;; unresolved call: min/1
+    local.get $n
+    i32.const 3
+    call $__i32_min
     call $__print_i32
-    unreachable ;; unresolved call: max/1
+    local.get $n
+    i32.const 10
+    call $__i32_max
     call $__print_i32
-    unreachable ;; unresolved call: clamp/2
+    local.get $n
+    i32.const 0
+    call $__i32_max
+    i32.const 5
+    call $__i32_min
     call $__print_i32
     i32.const 7
     local.set $x
-    unreachable ;; unresolved call: isEven/0
-    call $__print_i32
+    local.get $x
+    i32.const 2
+    i32.rem_s
+    i32.eqz
+    call $__print_bool
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
@@ -220,9 +232,83 @@ fn main() {
       )
     )
   )
+  (func $__print_bool (param $b i32)
+    local.get $b
+    call $__print_bool_raw
+    call $__print_nl
+  )
+  (func $__print_bool_raw (param $b i32)
+    local.get $b
+    (if
+      (then
+        ;; "true" as a little-endian i32
+        i32.const 16
+        i32.const 1702195828
+        i32.store
+        i32.const 16
+        i32.const 4
+        call $__write_bytes
+      )
+      (else
+        ;; "fals" + 'e'
+        i32.const 16
+        i32.const 1936482662
+        i32.store
+        i32.const 16
+        i32.const 101
+        i32.store8 offset=4
+        i32.const 16
+        i32.const 5
+        call $__write_bytes
+      )
+    )
+  )
+  (func $__i32_abs (param $n i32) (result i32)
+    local.get $n
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+        i32.const 0
+        local.get $n
+        i32.sub
+        return
+      )
+    )
+    local.get $n
+  )
+  (func $__i32_min (param $a i32) (param $b i32) (result i32)
+    local.get $a
+    local.get $b
+    i32.lt_s
+    (if
+      (then
+        local.get $a
+        return
+      )
+    )
+    local.get $b
+  )
+  (func $__i32_max (param $a i32) (param $b i32) (result i32)
+    local.get $a
+    local.get $b
+    i32.gt_s
+    (if
+      (then
+        local.get $a
+        return
+      )
+    )
+    local.get $b
+  )
 )
 ```
 
 ----- RUN LOG -----
 ```logs
+5
+-5
+10
+0
+false
 ```

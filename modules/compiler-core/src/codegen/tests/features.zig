@@ -862,6 +862,12 @@ test "js: array zip via @External.Node template" {
     // template-form prim-method dispatch (not just default-fn) — see the
     // `looksLikeTemplate` branch in `findInterfaceDefaultFn` — so a program
     // calling ONLY `xs.zip(ys)` triggers the prototype-patch emission.
+    //
+    // KNOWN-WRONG wasm RUN LOG (pinned, 06-wasm): `[328,336,344]` — `zip`
+    // builds the array of 2-slot tuples, but wasm has no printer for an array
+    // of tuples, so `@print` writes the tuple addresses. commonJS and erlang
+    // print two different spellings (`[ [ 1, 'a' ], … ]` / `[{1,<<"a">>}, …]`),
+    // so there is no agreed text to print yet.
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val xs = [1, 2, 3];

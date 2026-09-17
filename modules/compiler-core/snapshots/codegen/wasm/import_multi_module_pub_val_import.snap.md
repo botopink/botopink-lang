@@ -31,15 +31,16 @@ val port = PORT;
 (module
   (memory (export "memory") 1)
   (start $__init_globals)
-  (global $__heap_ptr (mut i32) (i32.const 256))
-  ;; cross-module import not linked (wasm single-module): PORT from config
-  ;; cross-module import not linked (wasm single-module): HOST from config
+  (data (i32.const 256) "\09\00\00\00localhost")
+  (global $__heap_ptr (mut i32) (i32.const 272))
+  (global $PORT i32 (i32.const 8080))
+  (global $HOST (mut i32) (i32.const 256))
   (global $addr (mut i32) (i32.const 0))
   (global $port (mut i32) (i32.const 0))
   (func $__init_globals
-    i32.const 0 ;; unbound identifier HOST
+    global.get $HOST
     global.set $addr
-    i32.const 0 ;; unbound identifier PORT
+    global.get $PORT
     global.set $port
   )
 )

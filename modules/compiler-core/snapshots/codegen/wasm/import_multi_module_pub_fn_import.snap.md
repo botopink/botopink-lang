@@ -35,10 +35,16 @@ val result = double(21);
   (memory (export "memory") 1)
   (start $__init_globals)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  ;; cross-module import not linked (wasm single-module): double from math
+  (func $double (param $x i32) (result i32)
+    local.get $x
+    i32.const 2
+    i32.mul
+    return
+  )
   (global $result (mut i32) (i32.const 0))
   (func $__init_globals
-    unreachable ;; unresolved call: double/1
+    i32.const 21
+    call $double
     global.set $result
   )
 )

@@ -95,7 +95,7 @@ fn main() {
     local.set $decl
     local.get $decl
     i32.load offset=4 ;; .name
-    call $__print_i32
+    call $__print_str
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
@@ -280,9 +280,23 @@ fn main() {
       )
     )
   )
+  (func $__print_str_raw (param $s i32)
+    local.get $s
+    i32.const 4
+    i32.add
+    local.get $s
+    i32.load
+    call $__write_bytes
+  )
+  (func $__print_str (param $s i32)
+    local.get $s
+    call $__print_str_raw
+    call $__print_nl
+  )
 )
 ```
 
 ----- RUN LOG -----
 ```logs
+Service
 ```

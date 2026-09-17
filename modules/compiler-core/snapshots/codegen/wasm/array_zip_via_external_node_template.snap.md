@@ -61,8 +61,10 @@ fn main() {
     i32.store offset=12
     local.get $__mem1
     local.set $ys
-    unreachable ;; unresolved call: zip/1
-    call $__print_i32
+    local.get $xs
+    local.get $ys
+    call $__arr_zip
+    call $__print_arr_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
@@ -247,9 +249,160 @@ fn main() {
       )
     )
   )
+  (func $__alloc (param $n i32) (result i32)
+    (local $p i32)
+    global.get $__heap_ptr
+    local.set $p
+    global.get $__heap_ptr
+    local.get $n
+    i32.add
+    i32.const 3
+    i32.add
+    i32.const -4
+    i32.and
+    global.set $__heap_ptr
+    local.get $p
+  )
+  (func $__arr_new (param $n i32) (result i32)
+    (local $p i32)
+    local.get $n
+    i32.const 1
+    i32.add
+    i32.const 4
+    i32.mul
+    call $__alloc
+    local.set $p
+    local.get $p
+    local.get $n
+    i32.store
+    local.get $p
+  )
+  (func $__arr_zip (param $a i32) (param $b i32) (result i32)
+    (local $n i32) (local $i i32) (local $p i32) (local $t i32)
+    local.get $a
+    i32.load
+    local.set $n
+    local.get $b
+    i32.load
+    local.get $n
+    i32.lt_u
+    (if
+      (then
+        local.get $b
+        i32.load
+        local.set $n
+      )
+    )
+    local.get $n
+    call $__arr_new
+    local.set $p
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        i32.const 8
+        call $__alloc
+        local.set $t
+        local.get $t
+        local.get $a
+        i32.const 4
+        i32.add
+        local.get $i
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load
+        i32.store
+        local.get $t
+        local.get $b
+        i32.const 4
+        i32.add
+        local.get $i
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load
+        i32.store offset=4
+        local.get $p
+        i32.const 4
+        i32.add
+        local.get $i
+        i32.const 4
+        i32.mul
+        i32.add
+        local.get $t
+        i32.store
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $p
+  )
+  (func $__print_arr_i32_raw (param $xs i32)
+    (local $n i32) (local $i i32)
+    i32.const 8
+    i32.const 91
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+    local.get $xs
+    i32.load
+    local.set $n
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $i
+        (if
+          (then
+            i32.const 8
+            i32.const 44
+            i32.store8
+            i32.const 8
+            i32.const 1
+            call $__write_bytes
+          )
+        )
+        local.get $xs
+        i32.const 4
+        i32.add
+        local.get $i
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load
+        call $__print_i32_raw
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    i32.const 8
+    i32.const 93
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+  )
+  (func $__print_arr_i32 (param $xs i32)
+    local.get $xs
+    call $__print_arr_i32_raw
+    call $__print_nl
+  )
 )
 ```
 
 ----- RUN LOG -----
 ```logs
+[328,336,344]
 ```

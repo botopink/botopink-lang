@@ -21,16 +21,58 @@ fn main() {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (table funcref (elem $__lambda0))
+  (data (i32.const 256) "\02\00\00\00ab")
+  (data (i32.const 264) "\02\00\00\00cd")
+  (global $__heap_ptr (mut i32) (i32.const 272))
   (func $average (param $xs i32) (result f64)
     (local $total f32)
     (local $n f32)
     (local $x i32)
+    (local $__iter0 i32)
+    (local $__idx0 i32)
+    (local $__len0 i32)
     f32.const 0.0
     local.set $total
     f32.const 0.0
     local.set $n
-    i32.const 0 ;; loop over unknown iterable
+    local.get $xs
+    local.set $__iter0
+    local.get $__iter0
+    i32.load ;; element count
+    local.set $__len0
+    i32.const 0
+    local.set $__idx0
+    (block $__break
+      (loop $__continue
+        local.get $__idx0
+        local.get $__len0
+        i32.ge_s
+        br_if $__break
+        local.get $__iter0
+        local.get $__idx0
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load offset=4
+        local.set $x
+    local.get $total
+    local.get $x
+    f32.convert_i32_s
+    f32.add
+    local.set $total
+    local.get $n
+    f32.const 1.0
+    f32.add
+    local.set $n
+        local.get $__idx0
+        i32.const 1
+        i32.add
+        local.set $__idx0
+        br $__continue
+      )
+    )
+    i32.const 0
     drop
     local.get $total
     local.get $n
@@ -41,31 +83,54 @@ fn main() {
   (func $main
     (local $__mem0 i32)
     (local $cat i32)
-    i32.const 0 ;; lambda
-    local.set $cat
-    unreachable ;; unresolved call: cat/2
-    call $__print_i32
+    (local $__fnv0 i32)
+    (local $__mem1 i32)
     global.get $__heap_ptr
     local.set $__mem0
+    global.get $__heap_ptr
+    i32.const 4
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem0
+    i32.const 0
+    i32.store
+    local.get $__mem0
+    local.set $cat
+    local.get $cat
+    local.set $__fnv0
+    local.get $__fnv0
+    i32.const 256
+    i32.const 264
+    local.get $__fnv0
+    i32.load ;; table index
+    call_indirect (param i32 i32 i32) (result i32)
+    call $__print_i32
+    global.get $__heap_ptr
+    local.set $__mem1
     global.get $__heap_ptr
     i32.const 16
     i32.add
     global.set $__heap_ptr
-    local.get $__mem0
+    local.get $__mem1
     i32.const 3
     i32.store
-    local.get $__mem0
+    local.get $__mem1
     f32.const 2.0
     f32.store offset=4
-    local.get $__mem0
+    local.get $__mem1
     f32.const 4.0
     f32.store offset=8
-    local.get $__mem0
+    local.get $__mem1
     f32.const 9.0
     f32.store offset=12
-    local.get $__mem0
+    local.get $__mem1
     call $average
     call $__print_f64
+  )
+  (func $__lambda0 (param $__env i32) (param $x i32) (param $y i32) (result i32)
+    local.get $x
+    local.get $y
+    i32.add
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
@@ -346,4 +411,6 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+520
+1082480000
 ```

@@ -220,4 +220,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+unreachable
 ```

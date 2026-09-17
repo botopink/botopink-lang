@@ -18,12 +18,26 @@ fn main() {
   (memory (export "memory") 1)
   (data (i32.const 256) "\04\00\00\00zero")
   (data (i32.const 264) "\09\00\00\00nonzero: ")
-  (data (i32.const 280) "\04\00\00\00null")
-  (global $__heap_ptr (mut i32) (i32.const 288))
+  (data (i32.const 280) "\09\00\00\00undefined")
+  (data (i32.const 296) "\04\00\00\00null")
+  (global $__heap_ptr (mut i32) (i32.const 304))
   (func $classify (param $x i32) (result i32)
+    (local $__opt0 i32)
+    (local $__opt1 i32)
+    (local $__opt2 i32)
     local.get $x
+    local.tee $__opt0
+    (if (result i32)
+      (then
+    local.get $__opt0
+    i32.load ;; optional payload
     i32.const 0
     i32.eq
+      )
+      (else
+    i32.const 0 ;; none equals no value
+      )
+    )
     (if (result i32)
       (then
     i32.const 256
@@ -31,17 +45,40 @@ fn main() {
       )
       (else
     local.get $x
+    local.tee $__opt1
+    (if (result i32)
+      (then
+    local.get $__opt1
+    i32.load ;; optional payload
     i32.const 0
-    i32.ne
+    i32.eq
+      )
+      (else
+    i32.const 0 ;; none equals no value
+      )
+    )
+    i32.eqz
     (if (result i32)
       (then
     i32.const 264
     local.get $x
+    local.tee $__opt2
+    i32.eqz
+    (if (result i32)
+      (then
+    i32.const 280
+      )
+      (else
+    local.get $__opt2
+    i32.load
+    call $__i32_to_str
+      )
+    )
     call $__str_concat
     return
       )
       (else
-    i32.const 280
+    i32.const 296
     return
       )
     )
@@ -50,9 +87,11 @@ fn main() {
   )
   (func $main
     i32.const 42
+    call $__box_i32
     call $classify
     call $__print_str
     i32.const 0
+    call $__box_i32
     call $classify
     call $__print_str
   )
@@ -299,9 +338,111 @@ fn main() {
     memory.copy
     local.get $base
   )
+  (func $__alloc (param $n i32) (result i32)
+    (local $p i32)
+    global.get $__heap_ptr
+    local.set $p
+    global.get $__heap_ptr
+    local.get $n
+    i32.add
+    i32.const 3
+    i32.add
+    i32.const -4
+    i32.and
+    global.set $__heap_ptr
+    local.get $p
+  )
+  (func $__i32_to_str (param $n i32) (result i32)
+    (local $u i64) (local $pos i32) (local $len i32) (local $p i32) (local $neg i32)
+    i32.const 160
+    local.set $pos
+    local.get $n
+    i32.const 0
+    i32.lt_s
+    local.set $neg
+    local.get $n
+    i64.extend_i32_s
+    local.set $u
+    local.get $neg
+    (if
+      (then
+        i64.const 0
+        local.get $u
+        i64.sub
+        local.set $u
+      )
+    )
+    (block $brk
+      (loop $cont
+        local.get $pos
+        i32.const 1
+        i32.sub
+        local.set $pos
+        local.get $pos
+        local.get $u
+        i64.const 10
+        i64.rem_u
+        i32.wrap_i64
+        i32.const 48
+        i32.add
+        i32.store8
+        local.get $u
+        i64.const 10
+        i64.div_u
+        local.set $u
+        local.get $u
+        i64.eqz
+        br_if $brk
+        br $cont
+      )
+    )
+    local.get $neg
+    (if
+      (then
+        local.get $pos
+        i32.const 1
+        i32.sub
+        local.set $pos
+        local.get $pos
+        i32.const 45
+        i32.store8
+      )
+    )
+    i32.const 160
+    local.get $pos
+    i32.sub
+    local.set $len
+    local.get $len
+    i32.const 4
+    i32.add
+    call $__alloc
+    local.set $p
+    local.get $p
+    local.get $len
+    i32.store
+    local.get $p
+    i32.const 4
+    i32.add
+    local.get $pos
+    local.get $len
+    memory.copy
+    local.get $p
+  )
+  (func $__box_i32 (param $v i32) (result i32)
+    (local $p i32)
+    i32.const 4
+    call $__alloc
+    local.set $p
+    local.get $p
+    local.get $v
+    i32.store
+    local.get $p
+  )
 )
 ```
 
 ----- RUN LOG -----
 ```logs
+nonzero: 42
+zero
 ```

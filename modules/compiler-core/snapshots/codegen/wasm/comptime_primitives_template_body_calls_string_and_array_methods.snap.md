@@ -309,4 +309,5 @@ main() ->
 
 ----- RUN LOG -----
 ```logs
+END,WORLD,BIG,HELLO|hello|big world|at|contains|startsWith|indexOf
 ```

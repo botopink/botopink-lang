@@ -14,6 +14,7 @@ fn main() {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
+  (table funcref (elem $__lambda0))
   (start $__init_globals)
   (global $__heap_ptr (mut i32) (i32.const 256))
   (global $add (mut i32) (i32.const 0))
@@ -23,10 +24,33 @@ fn main() {
     call $__print_i32
   )
   (func $__init_globals
-    i32.const 0 ;; lambda
+    (local $__mem0 i32)
+    (local $__fnv0 i32)
+    global.get $__heap_ptr
+    local.set $__mem0
+    global.get $__heap_ptr
+    i32.const 4
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem0
+    i32.const 0
+    i32.store
+    local.get $__mem0
     global.set $add
-    unreachable ;; unresolved call: add/2
+    global.get $add
+    local.set $__fnv0
+    local.get $__fnv0
+    i32.const 10
+    i32.const 20
+    local.get $__fnv0
+    i32.load ;; table index
+    call_indirect (param i32 i32 i32) (result i32)
     global.set $result
+  )
+  (func $__lambda0 (param $__env i32) (param $x i32) (param $y i32) (result i32)
+    local.get $x
+    local.get $y
+    i32.add
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
@@ -216,4 +240,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+30
 ```

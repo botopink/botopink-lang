@@ -238,4 +238,6 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+RUNTIME TRAP (wasmtime):
+wasm trap: wasm `unreachable` instruction executed
 ```

@@ -20,18 +20,49 @@ fn main() {
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
   (func $area (param $s i32) (result f64)
-    (local $r i32)
+    (local $r f64)
     (local $__case_0 i32)
+    (local $s__0 f64)
     local.get $s
     local.set $__case_0
-    f32.const 3.14
-    local.get $r
-    f32.convert_i32_s
-    f32.mul
-    local.get $r
-    f32.convert_i32_s
-    f32.mul
+    local.get $__case_0
+    i32.load ;; variant tag
+    i32.const 0 ;; Circle
+    i32.eq
+    (if (result f64)
+      (then
+    local.get $__case_0
+    f32.load offset=4
     f64.promote_f32
+    local.set $r
+    f32.const 3.14
+    f64.promote_f32
+    local.get $r
+    f64.mul
+    local.get $r
+    f64.mul
+      )
+      (else
+    local.get $__case_0
+    i32.load ;; variant tag
+    i32.const 1 ;; Square
+    i32.eq
+    (if (result f64)
+      (then
+    local.get $__case_0
+    f32.load offset=4
+    f64.promote_f32
+    local.set $s__0
+    local.get $s__0
+    local.get $s__0
+    f64.mul
+      )
+      (else
+    f64.const 0
+      )
+    )
+      )
+    )
     return
   )
   (func $main
@@ -347,4 +378,6 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+12.56
+9
 ```

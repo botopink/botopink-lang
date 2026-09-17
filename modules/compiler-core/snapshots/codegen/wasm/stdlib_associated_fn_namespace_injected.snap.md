@@ -14,20 +14,136 @@ fn main() {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (table funcref (elem $__lambda0 $__lambda1 $__lambda2))
+  (data (i32.const 256) "\03\00\00\00one")
+  (global $__heap_ptr (mut i32) (i32.const 264))
   (func $main
     (local $p i32)
     (local $inc i32)
-    unreachable ;; unresolved call: of/2
+    (local $__mem0 i32)
+    (local $__mem1 i32)
+    (local $__fnv0 i32)
+    i32.const 1
+    i32.const 256
+    call $Pair_of
     local.set $p
-    unreachable ;; unresolved call: first/1
+    local.get $p
+    call $Pair_first
     call $__print_i32
-    unreachable ;; unresolved call: identity/1
+    i32.const 42
+    call $Function_identity
     call $__print_i32
-    unreachable ;; unresolved call: compose/2
+    global.get $__heap_ptr
+    local.set $__mem0
+    global.get $__heap_ptr
+    i32.const 4
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem0
+    i32.const 0
+    i32.store
+    local.get $__mem0
+    global.get $__heap_ptr
+    local.set $__mem1
+    global.get $__heap_ptr
+    i32.const 4
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem1
+    i32.const 1
+    i32.store
+    local.get $__mem1
+    call $Function_compose
     local.set $inc
-    unreachable ;; unresolved call: inc/1
+    local.get $inc
+    local.set $__fnv0
+    local.get $__fnv0
+    i32.const 10
+    local.get $__fnv0
+    i32.load ;; table index
+    call_indirect (param i32 i32) (result i32)
     call $__print_i32
+  )
+  (func $__lambda0 (param $__env i32) (param $x i32) (result i32)
+    local.get $x
+    i32.const 1
+    i32.add
+  )
+  (func $__lambda1 (param $__env i32) (param $y i32) (result i32)
+    local.get $y
+    i32.const 2
+    i32.mul
+  )
+  (func $Pair_of (param $first i32) (param $second i32) (result i32)
+    (local $__mem0 i32)
+    global.get $__heap_ptr
+    local.set $__mem0
+    global.get $__heap_ptr
+    i32.const 8
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem0
+    local.get $first
+    i32.store
+    local.get $__mem0
+    local.get $second
+    i32.store offset=4
+    local.get $__mem0
+    return
+  )
+  (func $Pair_first (param $p i32) (result i32)
+    local.get $p
+    i32.load
+    return
+  )
+  (func $Function_identity (param $x i32) (result i32)
+    local.get $x
+    return
+  )
+  (func $Function_compose (param $f i32) (param $g i32) (result i32)
+    (local $__mem0 i32)
+    global.get $__heap_ptr
+    local.set $__mem0
+    global.get $__heap_ptr
+    i32.const 12
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem0
+    i32.const 2
+    i32.store
+    local.get $__mem0
+    local.get $g
+    i32.store offset=4 ;; capture g
+    local.get $__mem0
+    local.get $f
+    i32.store offset=8 ;; capture f
+    local.get $__mem0
+    return
+  )
+  (func $__lambda2 (param $__env i32) (param $a i32) (result i32)
+    (local $g i32)
+    (local $f i32)
+    (local $__fnv0 i32)
+    (local $__fnv1 i32)
+    local.get $__env
+    i32.load offset=4
+    local.set $g
+    local.get $__env
+    i32.load offset=8
+    local.set $f
+    local.get $g
+    local.set $__fnv0
+    local.get $__fnv0
+    local.get $f
+    local.set $__fnv1
+    local.get $__fnv1
+    local.get $a
+    local.get $__fnv1
+    i32.load ;; table index
+    call_indirect (param i32 i32) (result i32)
+    local.get $__fnv0
+    i32.load ;; table index
+    call_indirect (param i32 i32) (result i32)
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
@@ -217,4 +333,7 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+1
+42
+22
 ```

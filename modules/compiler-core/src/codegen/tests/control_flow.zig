@@ -70,6 +70,10 @@ test "js: case ---- or patterns with numbers" {
     );
 }
 
+// DIVERGENT wasm RUN LOG, second line (pinned, 06-wasm): `undefined` — the
+// value of an `if` with no `else` when the condition is false. commonJS prints
+// `undefined`, erlang `ok`; decision 2 (a block's value comes from `break`)
+// makes this program a checker error, 07-checker's to land.
 test "js: if ---- simple conditional in fn body" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn sign(n: i32) -> string {
@@ -155,6 +159,8 @@ test "js: loop ---- two-parameter loop threads reassigned vars out" {
     // `loop (xs) { x, i -> … }` names the index without writing a range. Its
     // reassignments of outer `var`s must survive the loop like the
     // one-parameter form's (a library's lexer written as a counter loop).
+    // KNOWN: `weigh` is 140; commonJS and wasm print 80 (the `1..` start is
+    // ignored — 04-js-bridges, 03-wasm) and beam prints nothing (01-beam).
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn pick(xs: Array<string>) -> string {
         \\    var first = "";
@@ -181,8 +187,9 @@ test "js: loop ---- two-parameter loop threads reassigned vars out" {
 
 test "js: lambda ---- a local closure reassigning outer vars threads them out" {
     // A markup template's shape: a named closure appends to an outer `var`, and
-    // is called both directly and from inside a loop. KNOWN: beam prints ` 0` —
-    // its closures do not thread reassigned outer vars out yet (1.0.4-beta 01-beam).
+    // is called both directly and from inside a loop. KNOWN: beam and wasm print
+    // ` 0` — their closures do not thread reassigned outer vars out yet
+    // (1.0.4-beta 01-beam, 03-wasm).
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn render(words: Array<string>) -> string {
         \\    var out = "";
@@ -298,6 +305,10 @@ test "js: case ---- nested case in block arm" {
     );
 }
 
+// KNOWN-WRONG wasm RUN LOG (pinned, 06-wasm W4): `288` — the loop collects
+// its `break` values into an array (erlang prints `[15,20]`), but `find` is
+// declared `-> i32`, so `@print` formats the array's address. Which of the two
+// the program means is the checker front's question (07-checker, beam B7).
 test "js: loop ---- break with value" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn find(arr: i32[]) -> i32 {

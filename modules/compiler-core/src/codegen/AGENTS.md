@@ -491,6 +491,15 @@ codegen/
 
 ### beam_asm
 
+- **Comprehensions** (`lowerLoop`, `emitYield`): a `loop` whose body `yield`s
+  or `break`s with a value (directly or in an `if`/`case` arm, not in a nested
+  loop or lambda) appends each value to a fresh array (`$__arr_push`; a float
+  as its f32 bits), and that array is the loop's value — the erlang reading
+  of `break <v>`. An `#[@iterator]`/`#[@generator]` fn body that yields runs
+  eagerly into one fn-level array it returns (`renderAccumulatingBody`); a
+  `@Iterator<T>` is then an array of `T`. A bare `break` branches out of the
+  loop, `continue` out of the iteration's `(block $__next …)`. An f32 array
+  prints as `[115,287.5,460]` (`$__print_arr_f32`).
 - **Coverage**: numerics, locals, calls, booleans, assign, throw, strings,
   `@print`, field access/assign, arrays, tuples, records/structs and anonymous
   `record { … }` / interface literals (all `put_map_assoc` maps keyed by field
@@ -671,7 +680,9 @@ first three are now enforced by the model, not by discipline:
    nowhere else to put one. Scratch names (`$__mem{n}`, `$_try{n}`) are
    pre-counted by `countMems` / `countTrys`, which must walk **every**
    sub-expression — a method call's `receiver` included, or `[1,2].at(0)` sets
-   an undeclared `$__mem0`.
+   an undeclared `$__mem0`. `nextMem` and the try lowerings also declare the
+   slot they take (idempotent), so a construct the counters do not walk — an
+   inlined lambda body — still gets one.
 2. **One value discipline** (`Tail` = `value` | `none` | `terminated`).
    `exprTail` is the single classifier; every arm of `lowerExpr` must agree with
    it. `emitStmt` normalises to what the context asked for (pushes a zero, or
@@ -681,11 +692,12 @@ first three are now enforced by the model, not by discipline:
    answer is then *carried*: `stackOf` tags each sequence, and
    `wat_ast.Builder.func` refuses a body that does not match the signature.
 3. **No reference to a symbol the module does not define.** `registerSymbols`
-   records every fn signature and global up front; an unresolved callee becomes
-   an `;; unresolved call: f/N` stub and a bodyless `declare fn` is skipped
-   entirely. A single dangling `call`/`global.get` rejects the whole module, so
-   `renderModule` validates every `call` against the module's functions,
-   imports and declared externs before writing anything. The runtime helpers go
+   records every fn signature and global up front; a callee nothing resolves
+   traps as `unreachable ;; unresolved call: f/N` (never a folded value — a
+   program that needs it fails loudly), a bodyless `declare fn` is skipped and
+   its calls trap as a host-backed declare fn. A single dangling `call`/`global.get` rejects the whole module, so
+   `renderModule` validates every `call` against the module's functions and
+   imports before writing anything. The runtime helpers go
    further: `Builder.helper` is the only way to name one and marks it for
    emission in the same act.
 4. **Types are recovered and coerced, never assumed.** `wasmTypeOf` recovers a
@@ -695,23 +707,20 @@ first three are now enforced by the model, not by discipline:
    to `cur_result`; `storeSlotExpr` picks `f32.store` vs `i32.store`.
 
 - **Coverage**: numerics, locals, calls, assign, `!x`, null, `@todo`/`@panic`,
-  globals, case, pipeline (`a |> f` → `call $f`), range loops
-  (`lowerRangeLoop`) and array loops (`lowerCollectionLoop`), `@print` via WASI
-  `fd_write`, `_botopink_main`/`_start`.
+  `assert`, globals, case, pipeline (`a |> f` → `call $f`), range loops
+  (`lowerRangeLoop`) and array loops (`lowerCollectionLoop`), comprehensions,
+  primitive methods, function values, `@print` via WASI `fd_write`,
+  `_botopink_main`/`_start`.
 - **Known gaps** (loadable, but not yet right):
-  - lambdas as *values* lower to `i32.const 0 ;; lambda` (no table /
-    `call_indirect`); a lambda passed to `map`/`filter`/`@Result` chaining is
-    inlined instead (`inlineLambdaBody`), which is why those work;
-  - `loop` over anything that is not a range or a known array blob emits
-    `i32.const 0 ;; loop over unknown iterable` — `isArrayExpr` is deliberately
-    narrow (array literal, or a name bound to one, via `arr_locals`/
-    `arr_globals`), because walking the layout of a non-array would read its
-    first word as an element count and trap;
-  - a `loop` used as a *comprehension* (`yield`/`break <v>` accumulating into a
-    new array) runs its body but always yields `0`;
-  - `case` only discriminates numeric and `or`-of-numeric patterns; a variant
-    pattern (`Circle(r) ->`) runs the first arm and leaves its payload binding
-    unset;
+  - `loop` over anything that is not a range or a known array emits
+    `i32.const 0 ;; loop over unknown iterable` — `isArrayExpr` accepts an array
+    literal, a name bound to an array, an `Array<T>`/`T[]`/`@Iterator<T>`
+    parameter or fn result, an array-returning primitive method and a
+    comprehension, and nothing else, because walking the layout of a non-array
+    would read its first word as an element count and trap;
+  - an array of tuples/records prints as the element addresses (no printer);
+  - every function value's parameters and result are `i32`;
+  - a lambda lifted into a function captures a snapshot of the locals it uses;
   - an `f64` aggregate field round-trips at `f32` precision (4-byte slots), and
     is read back as a raw `i32.load` unless the field's declared type is known.
 - **Non-constant top-level `val`s** (`emitGlobalVal` → `deferred_globals`): a
@@ -719,6 +728,12 @@ first three are now enforced by the model, not by discipline:
   initialiser declares a zeroed mutable global and is evaluated in
   `$__init_globals`, which the module's `(start …)` runs ahead of `_start`.
   These used to stay at the `(i32.const 0)` placeholder, so every read saw `0`.
+- **`val x = comptime { … break v; }`** (`folded_globals`): the comptime pass
+  folds the block into `comptime_vals["ct_<N>"]`, N counting the module's
+  `val`s and `fn`s in order (commonJS reads it the same way). A folded numeral
+  is a constant global — `f64` when it has a fraction or exponent — and a
+  folded `"…"` string an interned one; the block itself never reaches
+  `$__init_globals`, which used to leave the global at `0`.
 - **Folded comptime values are not always numerals**: the comptime pass parks a
   rendered value (an array, a record) in a `numberLit` node, so
   `val C = comptime ["a"]` reached codegen as the text `["a"]` and emitted
@@ -731,6 +746,31 @@ first three are now enforced by the model, not by discipline:
   parse error, and `wat_ast.Builder.param` refuses to build one.
 - **Entrypoint** (`emitEntrypointWrapper`): calls `$main` and `drop`s its
   result when `main` returns a value (`main_returns_value`).
+- **`case` patterns** (`emitPatternTest` + `bindPattern`): numbers, strings
+  (`$__str_eq`), `or`, and variants. A variant of an all-unit enum is its tag;
+  a variant of an enum with any payload is a `[tag, …fields]` pointer — its
+  unit variants are allocated as a one-slot `[tag]` cell (`emitUnitVariant`),
+  so the tag is always the first word. `Ok(v)`/`Err(e)` read a `@Result`'s
+  `[tag, payload]`. A bare name that is a variant of some enum (`Lt ->`) is a
+  tag test, not a binding. Payload bindings take the variant field's type (a
+  float field is an `f32` slot). List and multi-subject patterns have no test
+  yet and run their arm.
+- **A pattern binding that shadows a local of another type** (`Square(s)`
+  inside `fn area(s: Shape)`) is stored in a fresh `s__<n>` local; the arm's
+  uses resolve to it (`resolveName`) until the arm ends.
+- **String `+` with a non-string operand** renders the operand first
+  (`lowerConcatOperand`): an integer through `$__i32_to_str`, a float through
+  `$__f64_to_str` (the same digits `$__print_f64` writes), a bool as
+  `true`/`false` — the rule erlang's E2 fix follows (`integer_to_binary/1`).
+- **`assert cond[, msg]` is always fatal** (decision 4 of the 1.0.2-beta
+  semantics decisions): a false condition writes
+  `<module>.bp:<line>: assertion failed[: <msg>]` to stderr
+  (`$__assert_fail` over `$__write_err`, fd 2) and traps. The harness records
+  both as the `RUNTIME TRAP (wasmtime):` block. It used to lower to nothing.
+- **`throw` inside a fn returning `@Result`** returns an Error Result
+  (`lowerThrow`) — the transform rewrites the common forms into
+  `return __bp_error(…)`, but a `throw` inside a `case` arm reaches the
+  backend as a `throw`. Anywhere else a `throw` traps.
 - **Aggregates in linear memory**: tuples/arrays/records/enum payloads are
   contiguous 4-byte slots in the bump heap (`$__heap_ptr`); a type registry from
   `record`/`enum` decls distinguishes construction from calls; construction
@@ -742,6 +782,15 @@ first three are now enforced by the model, not by discipline:
   declared `-> string`), not only on literal-vs-literal — when they fired only
   for literals, `s == "yes"` compared **pointers** (passing by accident because
   identical literals share an address) and `a + b` added them.
+- **Shapes are recovered where the value is made, and carried by name**: a
+  string/bool/record/array shape comes from a literal, a parameter's declared
+  type, a fn's declared return type (a type guard `-> x is T` is a bool; a
+  `-> @Result<string, …>` makes `try f()` / `f() catch …` a string), a fn body
+  that returns a string when the specialisation pass cleared its return type,
+  an anonymous record literal's field values, a tuple literal's element (for
+  `val #(a, b) = #(…)`), an array's element shape (for a loop parameter) and a
+  top-level `val`'s initialiser (`str_globals`, `global_rec_types`). A value
+  whose shape nothing recovers still prints through `$__print_i32`.
 - **`@print` picks a helper by operand type**: `$__print_str` writes the bytes
   of a length-prefixed string, `$__print_bool` writes `true`/`false`,
   `$__print_f64` writes an integer part plus up to 6 trimmed fraction digits,
@@ -749,6 +798,48 @@ first three are now enforced by the model, not by discipline:
   exactly when something asked for it — `Builder.helper` hands out the symbol
   and sets the flag together. The helpers themselves are nodes in
   `wat/wat_prelude.zig`; the scratch layout they assume is documented there.
+- **Primitive instance methods** (`lowerPrimMethod`): `emitWat` is handed
+  `instance_lowerings`, the receiver family inference recorded per call loc
+  (`array`/`string`/`bool`/`int`/`float`). `primCallRes` is the one table of
+  what wasm lowers and what each leaves on the stack — `exprTail`,
+  `wasmTypeOf`, `isStringExpr`, `isBoolExpr` and `isArrayExpr` all read it. A
+  method lowers to an opcode (`f64.floor`, `i32.rem_s`), a runtime helper
+  (`$__str_case`, `$__arr_join_i32`, …), or — for `map`/`filter`/`forEach`/
+  `fold`/`all`/`any`/`count`/`findIndex` over a literal lambda — a counted walk
+  of the array blob with the lambda's parameters bound to locals and its body
+  inlined (`lowerArrayHof`). `xs.push(v)` rebinds the receiver (a name or a
+  record field) to a grown copy. A method the table does not list traps:
+  `unreachable ;; prim method not lowered on wasm: <kind>.<name>/<n>`.
+  Element shape (`ElemKind`: `i32`/`f32`/`str`) is recovered from array
+  literals, `T[]`/`Array<T>` annotations and the op that produced the array;
+  `join`/`indexOf`/`contains` and a lambda's element parameter use it. An
+  `i32` array prints as `[1,2,3]` (`$__print_arr_i32`).
+- **Function values** (`lowerLambdaValue`, `lowerValueCall`): a lambda used as
+  a value is lifted into `$__lambda{n}(env, a0, …) -> i32` and listed in the
+  module's `(table funcref (elem …))`; the value is a pointer to an environment
+  cell — `[table index][captured local]…`, the captures copied at creation (a
+  snapshot: assigning an outer local inside a lifted lambda does not change
+  it). `f(a)` on a local/global/record field holding one is `call_indirect`
+  with the cell as the first argument. A top-level fn used as a value is a
+  closure over a trampoline `$__fnref_<fn>`. Every parameter and the result are
+  `i32`. A lambda passed straight to an array method or a `@Result`/`@Option`
+  op is inlined instead, which is what lets `forEach` assign outer locals.
+- **Interface associated `default fn`s** (`Pair.of`, `Function.compose`) are
+  registered as `$<Iface>_<name>` and emitted only when a call reaches them
+  (`emitPendingFns`, after the declarations and `$__init_globals`). A record's
+  own fn called on the type (`Response.ok(…)`) calls `$<Record>_<fn>`.
+- **Host-backed `declare fn`** (`#[@External.<Target>(…)]`, no body) — *the
+  decision*: wasm has no host to bind one to, and no WASI call stands in for an
+  arbitrary host symbol, so a call to one is a **documented trap**:
+  `unreachable ;; host-backed declare fn <name>/<n>: no wasm host`. Not a
+  compile-time error: the other three targets compile the same module, and a
+  program that never reaches the call still runs. The primitive methods
+  `libs/std/src/primitives.bp` declares host-backed (`toUpper`, `join`, …) are
+  not in this class — they are lowered natively (`lowerPrimMethod`).
+- **Record inherent methods** (`lowerRecordMethod`): a call inference tagged
+  `.record` lowers to `call $<Record>_<method>` with the receiver as `self`. A
+  record method with a declared return type always has a `(result …)`, even
+  when its body only throws.
 - **Methods**: `implement`/`extend` methods (`emitExtensionMethods`) and record
   methods (`emitInterfaceMethods`) emit as `$<owner>_<method>` with `self` as a
   real `i32` param (synthesized when the body references `self` without
@@ -758,28 +849,72 @@ first three are now enforced by the model, not by discipline:
   `local_types`, `record_field_types` and `self_type`; an unknown receiver emits
   `i32.const 0` with `;; (unknown receiver type)`. `?.` on records tests the
   pointer for `0` (none).
-- **`@Result`/`@Option`**: a `@Result` is a pointer to `[tag, payload]` (tag `0`
-  = Ok); a `@Option` is the bare value with `0` = none. `map`/`flatMap` inline a
-  literal lambda body (param bound to a `$_res{n}` local). `try`/`catch` → `if`
-  on the tag.
+- **`@Result`**: a pointer to `[tag, payload]` (tag `0` = Ok). `map`/`flatMap`
+  inline a literal lambda body (param bound to a `$_res{n}` local).
+  `try`/`catch` → `if` on the tag.
+- **`?T` / `@Option` — the carrier (decision 3 of the 1.0.2-beta semantics
+  decisions: box, `0` is null)**: an optional is an i32 offset into linear
+  memory, `0` = none. A pointer-shaped `T` (string, record, array) is its own
+  offset; a scalar `T` (integer, bool, float) lives in a 4-byte box
+  (`$__box_i32`), so a present `0` is not none. The box is made where a `T`
+  flows into a declared `?T` — a `return` from a `-> ?T` fn, an annotated
+  binding or global, an argument for a `?T` parameter, a `?T` record field —
+  and by `xs.at(i)`/`first()` (`$__arr_at_box`) and `recv?.scalarField`. The
+  payload is read by `if (x) { v -> … }`, `@print` (`$__print_opt_*`: none
+  prints `undefined`), a `==`/`!=` against a value (none equals nothing),
+  string `+` (none renders `undefined`) and `unwrapOr`/`map`/`flatMap` (a
+  scalar `map` result is boxed again). `x == null` compares the offset with 0
+  whatever `x` holds. An `if` with no `else` whose arm yields a string is a
+  `?string` (absent when the condition is false) — what that value should be
+  is decision 2's question, not settled here. Which declarations say "optional" is read from the
+  declared `TypeRef`s (`typeRefOf`: params, return types, annotations, record
+  fields, tuple elements); an `__bp_option_*` receiver of unknown type is
+  taken as boxed unless its default is a string, record or array.
+
+| Backend | `null` / none | present `?T` |
+|---|---|---|
+| commonJS | `null` | the value |
+| erlang | `undefined` | the value |
+| beam | `{atom, undefined}` | the value |
+| wasm | `i32.const 0` | a pointer `T` itself; a scalar `T` boxed in a 4-byte cell |
 - **Effects**: eager; `__bp_future_rejected` → `unreachable`.
-- **Cross-module**: single-module only. An import resolving to another module's
-  export emits `;; cross-module import not linked (wasm single-module)`.
-- `emitFnWat` is a pub single-fn hook (wat analogue of `commonJS.emitFnJs`). It
-  renders *forms*, not a module: the caller concatenates them with the
-  `wat_runtime` prelude, which is where `$__str_concat_rt`, `$__emit`,
-  `$__compilerError` and `$__binding_ref` are defined. Those four are built with
-  `Builder.externCall`, so a module that emits one records it in
-  `Module.externs` rather than tripping the undefined-call check — see the KNOWN
-  GAP note in `wat.zig`: nothing defines them in the whole-program path.
+- **Cross-module: static linking** (`collectLinks`): wasm has no module linking
+  at run time, so a module that imports from another gets the owner's
+  declarations emitted into it — transitively, dependencies first, minus the
+  owner's `main`, tests and any name the consumer defines, and without the
+  owner's exports. An import resolves through the export index
+  (`import {double} from "math"`) or by module basename
+  (`import {order} from "std"`). Each linked declaration is lowered with its
+  own module's loc-keyed tables (`rewrites`, `instance_lowerings`).
+- **Comptime-only builtins** (`@emit`, `@compilerError`, `Binding.ref`) have
+  no wasm lowering: they only run inside comptime bodies, which the comptime
+  pass evaluates on `erl`. A program module that reaches one traps
+  (`unreachable ;; comptime-only builtin: <name>`). The single-fn `emitFnWat`
+  hook, the `wat_runtime` prelude it was concatenated with and
+  `Module.externs` were deleted with it — nothing called them.
 
 ### runtime
 
 - `executeJavaScript` (`node`), `executeErlang` (`erlc` + `erl`),
   `executeBeamAsm` (`erlc +from_asm` + `erl`, assembling sibling `.S` aux modules
-  so cross-module runs link). `executeWat` is a stub that returns an empty RUN
-  LOG (a runtime is spec 03 step 2). Captured text is stdout with stderr
-  appended after a newline.
+  so cross-module runs link), `executeWat` (`wasmtime run <module>.wat`).
+  Captured text is stdout with stderr appended after a newline (wasm: stdout
+  then stderr, no separator).
+- **`executeWat` — the decision (06-wasm step 3): it executes.** It was turned
+  on once a trap became a visible block and W1 had closed, so reaching
+  `unreachable` means the program aborted rather than the backend giving up. It
+  runs `wasmtime run` on the `.wat` text in a scratch dir (the `_start` export),
+  through the content-keyed cache, with no aux leg (imports are linked into the
+  module statically) and **no** early bail on modules that print nothing (a
+  silent module can still trap, and the trap must show). A missing `wasmtime`
+  is an empty, uncached log. `HARNESS_VERSION` was bumped with it. Every wasm
+  RUN LOG was re-recorded against a direct `wasmtime run` of the module and
+  compared with commonJS/erlang; the known-wrong ones are pinned with a comment
+  in their test.
+- **A wasm trap is a visible block** (`runtimeTrapLog`): what the module
+  printed, then `RUNTIME TRAP (wasmtime):` and the `wasm trap: …` line — never
+  an empty log, and never the backtrace (its code offsets move with every
+  lowering). Same shape as `COMPILE ERROR (<tool>):`.
 - **Exit status, never output length** (`runCaptured` → `RunStatus`): a
   successful `erlc`/`erlc +from_asm` prints nothing and a program that prints
   nothing is not a failure, so the two can only be told apart by how the process
@@ -871,7 +1006,7 @@ Primitive-receiver methods (`xs.map(f)`, `s.toUpper()`) are tagged `.prim` in
   transform pass has already resolved everything.
 - `fn main()` triggers an entry-point wrapper (`_botopink_main()` in JS;
   quoted `'_botopink_main'/0` in Erlang — plain atoms can't start with `_`).
-- `commonJS.emitFnJs` / `wat.emitFnWat` are pub single-fn emission hooks with no
+- `commonJS.emitFnJs` is a pub single-fn emission hook with no
   program context. `emitJsonString` copies validated escape pairs verbatim
   (re-escaping would double source escapes); only real control chars and
   unescaped quotes (multiline content) are escaped.

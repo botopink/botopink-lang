@@ -17,7 +17,7 @@ fn main() {
   (global $__heap_ptr (mut i32) (i32.const 256))
   ;; declare fn pid — no wasm implementation (host-backed)
   (func $main
-    unreachable ;; unresolved call: pid/0
+    unreachable ;; host-backed declare fn pid/0: no wasm host
     i32.const 0
     i32.gt_s
     call $__print_bool
@@ -241,4 +241,6 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+RUNTIME TRAP (wasmtime):
+wasm trap: wasm `unreachable` instruction executed
 ```

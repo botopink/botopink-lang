@@ -15,7 +15,8 @@ fn main() {
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
   (func $mag (param $n i32) (result i32)
-    unreachable ;; unresolved call: abs/0
+    local.get $n
+    call $__i32_abs
     return
   )
   (func $main
@@ -208,9 +209,24 @@ fn main() {
       )
     )
   )
+  (func $__i32_abs (param $n i32) (result i32)
+    local.get $n
+    i32.const 0
+    i32.lt_s
+    (if
+      (then
+        i32.const 0
+        local.get $n
+        i32.sub
+        return
+      )
+    )
+    local.get $n
+  )
 )
 ```
 
 ----- RUN LOG -----
 ```logs
+7
 ```

@@ -18,9 +18,13 @@ fn main() {
   (global $__heap_ptr (mut i32) (i32.const 268))
   (func $isString (param $x i32) (result i32)
     (local $s i32)
+    (local $__opt0 i32)
     local.get $x
+    local.tee $__opt0
     (if (result i32)
       (then
+    local.get $__opt0
+    local.set $s
     i32.const 1
     return
       )
@@ -35,7 +39,7 @@ fn main() {
   (func $main
     i32.const 256
     call $isString
-    call $__print_str
+    call $__print_bool
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
@@ -220,22 +224,41 @@ fn main() {
       )
     )
   )
-  (func $__print_str_raw (param $s i32)
-    local.get $s
-    i32.const 4
-    i32.add
-    local.get $s
-    i32.load
-    call $__write_bytes
-  )
-  (func $__print_str (param $s i32)
-    local.get $s
-    call $__print_str_raw
+  (func $__print_bool (param $b i32)
+    local.get $b
+    call $__print_bool_raw
     call $__print_nl
+  )
+  (func $__print_bool_raw (param $b i32)
+    local.get $b
+    (if
+      (then
+        ;; "true" as a little-endian i32
+        i32.const 16
+        i32.const 1702195828
+        i32.store
+        i32.const 16
+        i32.const 4
+        call $__write_bytes
+      )
+      (else
+        ;; "fals" + 'e'
+        i32.const 16
+        i32.const 1936482662
+        i32.store
+        i32.const 16
+        i32.const 101
+        i32.store8 offset=4
+        i32.const 16
+        i32.const 5
+        call $__write_bytes
+      )
+    )
   )
 )
 ```
 
 ----- RUN LOG -----
 ```logs
+true
 ```

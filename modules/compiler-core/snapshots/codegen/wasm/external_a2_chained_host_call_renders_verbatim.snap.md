@@ -17,7 +17,7 @@ fn main() {
   (global $__heap_ptr (mut i32) (i32.const 256))
   ;; declare fn b64encode — no wasm implementation (host-backed)
   (func $main
-    unreachable ;; unresolved call: b64encode/1
+    unreachable ;; host-backed declare fn b64encode/1: no wasm host
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
@@ -208,4 +208,6 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+RUNTIME TRAP (wasmtime):
+wasm trap: wasm `unreachable` instruction executed
 ```

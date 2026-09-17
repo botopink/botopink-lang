@@ -20,13 +20,39 @@ fn main() {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (data (i32.const 256) "\03\00\00\00one")
+  (global $__heap_ptr (mut i32) (i32.const 264))
   (func $main
     (local $p i32)
-    unreachable ;; unresolved call: of/2
+    i32.const 1
+    i32.const 256
+    call $Pairish_of
     local.set $p
-    unreachable ;; unresolved call: first/1
+    local.get $p
+    call $Pairish_first
     call $__print_i32
+  )
+  (func $Pairish_of (param $first i32) (param $second i32) (result i32)
+    (local $__mem0 i32)
+    global.get $__heap_ptr
+    local.set $__mem0
+    global.get $__heap_ptr
+    i32.const 8
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem0
+    local.get $first
+    i32.store
+    local.get $__mem0
+    local.get $second
+    i32.store offset=4
+    local.get $__mem0
+    return
+  )
+  (func $Pairish_first (param $p i32) (result i32)
+    local.get $p
+    i32.load
+    return
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
@@ -216,4 +242,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+1
 ```
