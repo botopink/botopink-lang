@@ -7,10 +7,17 @@
 
 const std = @import("std");
 const Ast = @import("js_ast.zig");
+const js_ident = @import("js_emitter.zig").ident;
 
 const Writer = std.Io.Writer;
 
 pub const Error = Writer.Error;
+
+/// Sanitized TS binding name: delegates to the JS emitter's reserved-word
+/// escape so declarations and implementations agree.
+pub fn ident(name: []const u8) []const u8 {
+    return js_ident(name);
+}
 
 // ── types ────────────────────────────────────────────────────────────────────
 
@@ -72,7 +79,7 @@ fn writeParams(w: *Writer, params: []const Ast.TsParam) Error!void {
     for (params, 0..) |p, i| {
         if (i > 0) try w.writeAll(", ");
         if (p.name) |n| {
-            try w.writeAll(n);
+            try w.writeAll(ident(n));
             try w.writeAll(": ");
         }
         try writeType(w, p.type);
@@ -133,14 +140,14 @@ pub fn writeDecl(w: *Writer, d: Ast.TsDecl) Error!void {
         .none => {},
         .const_ => |c| {
             try w.writeAll("export declare const ");
-            try w.writeAll(c.name);
+            try w.writeAll(ident(c.name));
             try w.writeAll(": ");
             try writeType(w, c.type);
             try w.writeAll(";\n");
         },
         .func => |f| {
             try w.writeAll("export declare function ");
-            try w.writeAll(f.name);
+            try w.writeAll(ident(f.name));
             try writeParams(w, f.params);
             try w.writeAll(": ");
             try writeType(w, f.ret);
@@ -148,14 +155,14 @@ pub fn writeDecl(w: *Writer, d: Ast.TsDecl) Error!void {
         },
         .class => |c| {
             try w.writeAll("export declare class ");
-            try w.writeAll(c.name);
+            try w.writeAll(ident(c.name));
             try w.writeAll(" {\n");
             for (c.members) |m| try writeMember(w, m);
             try w.writeAll("}\n");
         },
         .interface => |i| {
             try w.writeAll("export declare interface ");
-            try w.writeAll(i.name);
+            try w.writeAll(ident(i.name));
             if (i.extends.len > 0) {
                 try w.writeAll(" extends ");
                 for (i.extends, 0..) |ext, j| {
@@ -169,7 +176,7 @@ pub fn writeDecl(w: *Writer, d: Ast.TsDecl) Error!void {
         },
         .enum_ => |e| {
             try w.writeAll("export declare enum ");
-            try w.writeAll(e.name);
+            try w.writeAll(ident(e.name));
             try w.writeAll(" {\n");
             for (e.members) |m| try writeMember(w, m);
             try w.writeAll("}\n");

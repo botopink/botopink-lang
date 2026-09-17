@@ -694,13 +694,11 @@ pub const Lexer = struct {
         if (std.mem.eql(u8, text, "_")) return .underscore;
         if (std.mem.eql(u8, text, "as")) return .as;
         if (std.mem.eql(u8, text, "assert")) return .assert;
-        if (std.mem.eql(u8, text, "auto")) return .auto;
         if (std.mem.eql(u8, text, "await")) return .await;
         if (std.mem.eql(u8, text, "case")) return .case;
         // 'const' is not a surface keyword in botopink; use 'val' instead.
         if (std.mem.eql(u8, text, "default")) return .default;
         if (std.mem.eql(u8, text, "delegate")) return .delegate;
-        if (std.mem.eql(u8, text, "derive")) return .derive;
         if (std.mem.eql(u8, text, "else")) return .@"else";
         if (std.mem.eql(u8, text, "enum")) return .@"enum";
         if (std.mem.eql(u8, text, "extend")) return .extend;
@@ -708,21 +706,16 @@ pub const Lexer = struct {
         if (std.mem.eql(u8, text, "fn")) return .@"fn";
         if (std.mem.eql(u8, text, "for")) return .@"for";
         if (std.mem.eql(u8, text, "from")) return .from;
-        if (std.mem.eql(u8, text, "get")) return .get;
         if (std.mem.eql(u8, text, "if")) return .@"if";
         if (std.mem.eql(u8, text, "implement")) return .implement;
         if (std.mem.eql(u8, text, "is")) return .@"is";
         if (std.mem.eql(u8, text, "import")) return .import;
         // `let` is an alias for `val` (immutable binding)
-        if (std.mem.eql(u8, text, "macro")) return .macro;
         if (std.mem.eql(u8, text, "mod")) return .mod;
         if (std.mem.eql(u8, text, "new")) return .new;
-        if (std.mem.eql(u8, text, "opaque")) return .@"opaque";
-        if (std.mem.eql(u8, text, "private")) return .private;
         if (std.mem.eql(u8, text, "pub")) return .@"pub";
         if (std.mem.eql(u8, text, "return")) return .@"return";
         if (std.mem.eql(u8, text, "Self")) return .selfType;
-        if (std.mem.eql(u8, text, "set")) return .set;
         if (std.mem.eql(u8, text, "test")) return .@"test";
         if (std.mem.eql(u8, text, "throw")) return .throw;
         if (std.mem.eql(u8, text, "interface")) return .interface;
@@ -752,13 +745,10 @@ pub const Lexer = struct {
 /// used as an identifier in botopink.
 pub fn isReservedWord(kind: TokenKind) bool {
     return switch (kind) {
-        .auto,
         .delegate,
         .@"else",
         .implement,
-        .macro,
         .@"test",
-        .derive,
         => true,
         else => false,
     };
@@ -767,13 +757,10 @@ pub fn isReservedWord(kind: TokenKind) bool {
 /// Returns the lexeme string for a reserved word TokenKind.
 pub fn reservedWordLexeme(kind: TokenKind) []const u8 {
     return switch (kind) {
-        .auto => "auto",
         .delegate => "delegate",
         .@"else" => "else",
         .implement => "implement",
-        .macro => "macro",
         .@"test" => "test",
-        .derive => "derive",
         else => "<unknown>",
     };
 }

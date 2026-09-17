@@ -1093,14 +1093,12 @@ pub const Parser = struct {
 
     /// True when `kind` may be used as a record field / member name. `get` and
     /// `set` are soft keywords: they introduce struct getters/setters only at
-    /// the start of a struct member, and are otherwise ordinary names (a hook
-    /// returns the shape `{ value, set }` where `set` is a function field).
+    /// Consume a record field / member name — an `identifier`.
     pub fn isMemberName(kind: TokenKind) bool {
-        return kind == .identifier or kind == .get or kind == .set;
+        return kind == .identifier;
     }
 
-    /// Consume a record field / member name — an `identifier`, or the soft
-    /// keywords `get` / `set`.
+    /// Consume a record field / member name — an `identifier`.
     pub fn consumeMemberName(this: *This) ParseError!Token {
         if (isMemberName(this.peek().kind)) return this.advance();
         return ParseError.UnexpectedToken;

@@ -107,16 +107,16 @@ test "parser error: reserved word at top-level" {
         \\error: This is a reserved word and cannot be used as a name
         \\ --> <test>:1:1
         \\  |
-        \\1 | auto
+        \\1 | else
         \\  | ^^^^ This is a reserved word and cannot be used as a name
         \\  |
         \\  = hint: Choose a different identifier.
         \\
         \\
-    , "auto");
+    , "else");
 }
 
-// A real reserved word (`auto`) in a real expression position — `echo` was
+// A real reserved word (`else`) in a real expression position — `echo` was
 // used here before, but it is a plain identifier (the keyword was removed;
 // see `expressions.zig`'s "echo is a plain identifier" test), so the parse
 // failed with no `parseError` and the comparison never ran.
@@ -125,7 +125,7 @@ test "parser error: reserved word in expression" {
         \\error: This is a reserved word and cannot be used as a name
         \\ --> <test>:2:13
         \\  |
-        \\2 |     val x = auto;
+        \\2 |     val x = else;
         \\  |             ^^^^ This is a reserved word and cannot be used as a name
         \\  |
         \\  = hint: Choose a different identifier.
@@ -133,7 +133,7 @@ test "parser error: reserved word in expression" {
         \\
     ,
         \\fn f() {
-        \\    val x = auto;
+        \\    val x = else;
         \\}
     );
 }
@@ -230,11 +230,11 @@ test "parser: ParseErrorInfo has all expected fields" {
         .kind = .reservedWord,
         .start = 0,
         .end = 4,
-        .lexeme = "auto",
-        .detail = "auto",
+        .lexeme = "else",
+        .detail = "else",
     };
     try std.testing.expectEqual(ParseErrorType.reservedWord, info.kind);
-    try std.testing.expectEqualStrings("auto", info.lexeme);
+    try std.testing.expectEqualStrings("else", info.lexeme);
     try std.testing.expectEqual(@as(usize, 0), info.start);
     try std.testing.expectEqual(@as(usize, 4), info.end);
 }

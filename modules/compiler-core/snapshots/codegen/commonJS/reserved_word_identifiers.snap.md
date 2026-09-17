@@ -30,7 +30,7 @@ _botopink_main();
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-export declare function delete(with: , class: ): string;
+export declare function delete_(with_: , class_: ): string;
 
 
 

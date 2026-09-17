@@ -353,13 +353,6 @@ test "lexer: recognizes keyword assert" {
     try std.testing.expectEqual(TokenKind.assert, tokens[0].kind);
 }
 
-test "lexer: recognizes keyword auto" {
-    var l = Lexer.init("auto");
-    const tokens = try l.scanAll(std.testing.allocator);
-    defer l.deinit(std.testing.allocator);
-    try std.testing.expectEqual(TokenKind.auto, tokens[0].kind);
-}
-
 test "lexer: recognizes keyword case" {
     var l = Lexer.init("case");
     const tokens = try l.scanAll(std.testing.allocator);
@@ -372,13 +365,6 @@ test "lexer: recognizes keyword delegate" {
     const tokens = try l.scanAll(std.testing.allocator);
     defer l.deinit(std.testing.allocator);
     try std.testing.expectEqual(TokenKind.delegate, tokens[0].kind);
-}
-
-test "lexer: recognizes keyword derive" {
-    var l = Lexer.init("derive");
-    const tokens = try l.scanAll(std.testing.allocator);
-    defer l.deinit(std.testing.allocator);
-    try std.testing.expectEqual(TokenKind.derive, tokens[0].kind);
 }
 
 test "lexer: recognizes keyword else" {
@@ -402,13 +388,6 @@ test "lexer: recognizes keyword fn" {
     try std.testing.expectEqual(TokenKind.@"fn", tokens[0].kind);
 }
 
-test "lexer: recognizes keyword get" {
-    var l = Lexer.init("get");
-    const tokens = try l.scanAll(std.testing.allocator);
-    defer l.deinit(std.testing.allocator);
-    try std.testing.expectEqual(TokenKind.get, tokens[0].kind);
-}
-
 test "lexer: recognizes keyword if" {
     var l = Lexer.init("if");
     const tokens = try l.scanAll(std.testing.allocator);
@@ -430,32 +409,11 @@ test "lexer: recognizes keyword import" {
     try std.testing.expectEqual(TokenKind.import, tokens[0].kind);
 }
 
-test "lexer: recognizes keyword macro" {
-    var l = Lexer.init("macro");
-    const tokens = try l.scanAll(std.testing.allocator);
-    defer l.deinit(std.testing.allocator);
-    try std.testing.expectEqual(TokenKind.macro, tokens[0].kind);
-}
-
 test "lexer: recognizes keyword new" {
     var l = Lexer.init("new");
     const tokens = try l.scanAll(std.testing.allocator);
     defer l.deinit(std.testing.allocator);
     try std.testing.expectEqual(TokenKind.new, tokens[0].kind);
-}
-
-test "lexer: recognizes keyword opaque" {
-    var l = Lexer.init("opaque");
-    const tokens = try l.scanAll(std.testing.allocator);
-    defer l.deinit(std.testing.allocator);
-    try std.testing.expectEqual(TokenKind.@"opaque", tokens[0].kind);
-}
-
-test "lexer: recognizes keyword private" {
-    var l = Lexer.init("private");
-    const tokens = try l.scanAll(std.testing.allocator);
-    defer l.deinit(std.testing.allocator);
-    try std.testing.expectEqual(TokenKind.private, tokens[0].kind);
 }
 
 test "lexer: recognizes keyword pub" {
@@ -470,13 +428,6 @@ test "lexer: recognizes keyword return" {
     const tokens = try l.scanAll(std.testing.allocator);
     defer l.deinit(std.testing.allocator);
     try std.testing.expectEqual(TokenKind.@"return", tokens[0].kind);
-}
-
-test "lexer: recognizes keyword set" {
-    var l = Lexer.init("set");
-    const tokens = try l.scanAll(std.testing.allocator);
-    defer l.deinit(std.testing.allocator);
-    try std.testing.expectEqual(TokenKind.set, tokens[0].kind);
 }
 
 test "lexer: recognizes keyword test" {

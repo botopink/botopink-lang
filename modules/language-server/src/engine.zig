@@ -821,9 +821,9 @@ fn collectChildren(
                         });
                     }
                 }
-                // Methods/getters/setters.
-                if (tok.kind == .@"fn" or tok.kind == .get or tok.kind == .set) {
-                    const child_kind: u32 = if (tok.kind == .@"fn") proto.SymbolKind.Function else proto.SymbolKind.Variable;
+                // Methods.
+                if (tok.kind == .@"fn") {
+                    const child_kind: u32 = proto.SymbolKind.Function;
                     var j = i + 1;
                     while (j < end and tokens[j].kind == .endOfFile) : (j += 1) {}
                     if (j < end and tokens[j].kind == .identifier) {
@@ -3583,7 +3583,7 @@ fn isPrimitiveType(name: []const u8) bool {
 /// reclassified as a type by the caller).
 fn isKeywordKind(kind: TokenKind) bool {
     return switch (kind) {
-        .as, .assert, .auto, .await, .case, .@"const", .default, .delegate, .derive, .@"else", .@"enum", .extend, .extends, .@"fn", .@"for", .from, .get, .@"if", .implement, .import, .macro, .new, .@"opaque", .private, .@"pub", .@"return", .selfType, .set, .@"test", .throw, .interface, .type, .record, .use, .val, .@"var", .@"comptime", .syntax, .@"break", .loop, .@"continue", .yield, .declare, .null, .@"try", .@"catch" => true,
+        .as, .assert, .await, .case, .@"const", .default, .delegate, .@"else", .@"enum", .extend, .extends, .@"fn", .@"for", .from, .@"if", .implement, .import, .new, .@"pub", .@"return", .selfType, .@"test", .throw, .interface, .type, .record, .use, .val, .@"var", .@"comptime", .syntax, .@"break", .loop, .@"continue", .yield, .declare, .null, .@"try", .@"catch" => true,
         else => false,
     };
 }
@@ -4278,7 +4278,6 @@ fn endsMemberSignature(tokens: []const Token, idx: usize) bool {
         .val,
         .default,
         .@"pub",
-        .private,
         .declare,
         .semicolon,
         => true,

@@ -99,16 +99,6 @@ test "lexer: tokenizes struct field declaration" {
     for (expected, tokens) |exp, tok| try std.testing.expectEqual(exp, tok.kind);
 }
 
-test "lexer: tokenizes getter signature" {
-    var l = Lexer.init("get balance(self: Self): number");
-    const tokens = try l.scanAll(std.testing.allocator);
-    defer l.deinit(std.testing.allocator);
-    const expected = [_]TokenKind{
-        .get, .identifier, .leftParenthesis, .identifier, .colon, .selfType, .rightParenthesis, .colon, .identifier, .endOfFile,
-    };
-    for (expected, tokens) |exp, tok| try std.testing.expectEqual(exp, tok.kind);
-}
-
 test "lexer: tokenizes self field plus-eq" {
     var l = Lexer.init("self._balance += amount");
     const tokens = try l.scanAll(std.testing.allocator);
