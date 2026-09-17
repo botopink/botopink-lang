@@ -13,6 +13,7 @@ const prelude = @import("std_prelude");
 const js = @import("./js/js_ast.zig");
 const envMod = @import("../comptime/env.zig");
 const jsEmitter = @import("./js/js_emitter.zig");
+const jsPrelude = @import("./js/js_prelude.zig");
 
 /// `prim-op-annotation` builtin dispatch entry (commonJS).
 const BuiltinNodeCall = struct {
@@ -501,6 +502,17 @@ fn emitProgramOptsX(
         try items.append(arena_alloc, .{ .runtime = test_runner_source });
     }
 
+    // The prelude helpers the module called, ahead of every declaration (after
+    // the test-mode assert helper) — only the ones actually used.
+    {
+        var at: usize = if (test_mode) 1 else 0;
+        for (jsPrelude.order) |hp| {
+            if (!em.helpers.contains(hp)) continue;
+            try items.insert(arena_alloc, at, .{ .stmt = jsPrelude.decl(hp) });
+            at += 1;
+        }
+    }
+
     var aw: std.Io.Writer.Allocating = .init(alloc);
     defer aw.deinit();
     try jsEmitter.writeProgram(&aw.writer, items.items);
@@ -750,6 +762,9 @@ const Emitter = struct {
     /// wherever a JS function boundary starts (an arrow, an IIFE), because a
     /// jump cannot cross one.
     loop_ctx: LoopCtx = .none,
+    /// The `js/js_prelude.zig` helpers this module calls — marked by `helper`,
+    /// which is the only way a call site gets a helper's name.
+    helpers: std.EnumSet(jsPrelude.Helper) = .initEmpty(),
     /// Set while the arms of a `return __bp_ok(case …)` are lowered as
     /// statements (`buildReturnCaseStmt`): a value arm then returns
     /// `({ ok: v })`, while an arm that already returns keeps its own value.
@@ -880,6 +895,12 @@ const Emitter = struct {
 
     fn arena(self: *Emitter) std.mem.Allocator {
         return self.b.arena;
+    }
+
+    /// A prelude helper's name, marking it for emission in this module.
+    fn helper(self: *Emitter, h: jsPrelude.Helper) js.Expr {
+        self.helpers.insert(h);
+        return .{ .name = jsPrelude.name(h) };
     }
 
     // ── collectors ────────────────────────────────────────────────────────────
@@ -3047,6 +3068,24 @@ const Emitter = struct {
         return null;
     }
 
+    /// The prelude helper for `recv.method(args)` on a typed primitive
+    /// receiver, from inference's per-call-site `.prim` record.
+    fn primHelper(self: *Emitter, loc: ast.Loc, cc: anytype) ?jsPrelude.Helper {
+        if (cc.trailing.len != 0) return null;
+        const lw = self.lowerings orelse return null;
+        const il = lw.get(loc) orelse return null;
+        const kind = switch (il) {
+            .prim => |k| k,
+            .record => return null,
+        };
+        const receiver: jsPrelude.Receiver = switch (kind) {
+            .string => .string,
+            .array => .array,
+            else => .other,
+        };
+        return jsPrelude.forMethod(receiver, cc.callee, cc.args.len);
+    }
+
     fn renderTemplate(self: *Emitter, template: []const u8, cc: anytype, argc: usize, recv_err: anyerror) anyerror!js.Expr {
         const Holes = CallHoles(@TypeOf(cc));
         var holes = Holes{ .em = self, .cc = cc, .err = recv_err };
@@ -3083,6 +3122,11 @@ const Emitter = struct {
             // `Sym.m(recv, args)` at activated call sites.
             if (self.rewrites.get(loc)) |sym| {
                 callee = try self.b.member(.{ .name = sym }, cc.callee);
+                try args.append(self.arena(), try self.buildExpr(recv.*));
+            } else if (self.primHelper(loc, cc)) |hp| {
+                // A primitive method whose native JS method disagrees with
+                // the signature: `__bp_helper(recv, args)` (`js/js_prelude.zig`).
+                callee = self.helper(hp);
                 try args.append(self.arena(), try self.buildExpr(recv.*));
             } else {
                 const recv_node = try self.buildExpr(recv.*);

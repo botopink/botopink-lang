@@ -902,6 +902,20 @@ test "js: numeric instance methods (external + default-fn)" {
     );
 }
 
+// `String.charAt -> ?string`: native JS answers `""` out of range, so commonJS
+// calls the `__bp_string_char_at` prelude helper, emitted only into the module
+// that uses it. RUN LOG asserted without a snapshot (commonJS-only behaviour).
+test "js: string charAt out of range is null" {
+    try h.assertJsRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    val s = "ab";
+        \\    @print(s.charAt(1));
+        \\    @print(s.charAt(2));
+        \\    @print(s.charAt(-1));
+        \\}
+    , "b\nnull\nnull\n");
+}
+
 test "js: string methods map to native JS names" {
     // `String` host-backed methods whose name differs from the native JS one are
     // mapped (`toUpper`→`toUpperCase`, `toLower`→`toLowerCase`); same-named ones

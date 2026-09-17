@@ -119,6 +119,13 @@ codegen/
   `import {env} from "std"`) resolves; calls in the owning module still inline
   the template. A fn with no `node` target raises
   `MissingExternalTarget` when called.
+- **Prelude helpers** (`js/js_prelude.zig`): a call `recv.m(args)` whose
+  receiver inference recorded as a primitive (`instance_lowerings` `.prim`)
+  and whose native JS method disagrees with the declaration calls a helper
+  instead — `s.charAt(i)` is `__bp_string_char_at(s, i)` (`null` out of
+  range). `Emitter.helper` marks it, and only marked helpers are declared at
+  the top of the module. Interface default-fn bodies are not inferred, so a
+  `charAt` inside one stays native.
 - **Duplicate test names**: two `test "x"` blocks in one module print
   `warning: duplicate test name "x" in <mod>.bp:<line>` to stderr; both run.
 - **Cross-module linking** (`crossModule.zig`): `from "<pkg>"` imports become
