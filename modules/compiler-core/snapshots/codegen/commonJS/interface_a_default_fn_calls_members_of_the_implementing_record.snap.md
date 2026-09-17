@@ -48,7 +48,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-// interface Bounded
+// behavior Bounded
 //   fn min(...)
 //   fn max(...)
 //   default fn clamp(...)

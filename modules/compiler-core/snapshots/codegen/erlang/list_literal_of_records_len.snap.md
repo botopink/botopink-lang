@@ -12,7 +12,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% record P: x, y
+%% type P: x, y
 
 main() ->
     Pts = [#{x => 1, y => 2}, #{x => 3, y => 4}],

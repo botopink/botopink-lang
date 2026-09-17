@@ -1131,3 +1131,41 @@ test "js: receiver mutation ---- push inside a multi-statement closure threads o
         \\}
     );
 }
+
+// ── the removed 1.0.2 surface (front 12 step 4) ──────────────────────────────
+// `record`, `enum` and `interface` lex as identifiers; each removed form gets
+// its targeted diagnostic, located at the removed word or brace.
+
+test "js: removed surface ---- a record declaration" {
+    try h.assertJsCompileError(std.testing.allocator, @src(),
+        \\record Point { x: i32, y: i32 }
+    );
+}
+
+test "js: removed surface ---- an enum declaration" {
+    try h.assertJsCompileError(std.testing.allocator, @src(),
+        \\enum Color { Red, Green }
+    );
+}
+
+test "js: removed surface ---- an interface declaration" {
+    try h.assertJsCompileError(std.testing.allocator, @src(),
+        \\interface Printable {}
+    );
+}
+
+test "js: removed surface ---- an anonymous record literal" {
+    try h.assertJsCompileError(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    val p = record { x: 1 };
+        \\}
+    );
+}
+
+test "js: removed surface ---- an anonymous record type" {
+    try h.assertJsCompileError(std.testing.allocator, @src(),
+        \\fn f(p: { x: i32 }) -> i32 {
+        \\    return 1;
+        \\}
+    );
+}

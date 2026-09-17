@@ -595,7 +595,7 @@ pub fn renderTypeErrorBody(
         .methodNotActive => "method not active",
         .ambiguousExtension => "ambiguous extension method",
         .notAnExtension => "not an extension symbol",
-        .extendRequiresInterface => "extend requires an interface",
+        .extendRequiresInterface => "extend requires a behavior",
         .redundantActivation => "redundant activation",
         .useNotAllowed => "use-of-non-context-fn: `use` not allowed",
         .useNotContext => "use-of-non-context-fn: `use` requires @Context",
@@ -715,7 +715,7 @@ pub fn renderTypeErrorBody(
         .extendRequiresInterface => |t| {
             try out.appendSlice(allocator, try std.fmt.allocPrint(
                 tmp,
-                "\n  `extend {s}` adds methods without a contract\n  hint: use `implement <Interface> for {s}` so the methods satisfy an interface\n",
+                "\n  `extend {s}` adds methods without a contract\n  hint: use `implement <Behavior> for {s}` so the methods satisfy a behavior\n",
                 .{ t, t },
             ));
         },
@@ -753,21 +753,21 @@ pub fn renderTypeErrorBody(
         .missingMethod => |m| {
             try out.appendSlice(allocator, try std.fmt.allocPrint(
                 tmp,
-                "\n  '{s}' does not implement '{s}' required by interface '{s}'\n",
+                "\n  '{s}' does not implement '{s}' required by behavior '{s}'\n",
                 .{ m.typeName, m.method, m.interfaceName },
             ));
         },
         .unknownMethod => |m| {
             try out.appendSlice(allocator, try std.fmt.allocPrint(
                 tmp,
-                "\n  '{s}' is not declared in any interface implemented for '{s}'\n",
+                "\n  '{s}' is not declared in any behavior implemented for '{s}'\n",
                 .{ m.method, m.typeName },
             ));
         },
         .unknownInterface => |u| {
             try out.appendSlice(allocator, try std.fmt.allocPrint(
                 tmp,
-                "\n  '{s}' is not an interface implemented here (method '{s}')\n",
+                "\n  '{s}' is not a behavior implemented here (method '{s}')\n",
                 .{ u.qualifier, u.method },
             ));
         },

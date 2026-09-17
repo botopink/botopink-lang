@@ -82,9 +82,9 @@ main() ->
 -export(['_botopink_main'/0, main/1]).
 -export([describeUser/0]).
 
-%% interface String
+%% behavior String
 
-%% interface Array
+%% behavior Array
 
 array_range(Start, Stop) ->
     case (Start >= Stop) of
@@ -104,7 +104,7 @@ array_repeat(Value, Times) ->
             [Head] ++ (array_repeat(Value, (Times - 1)))
     end.
 
-%% record User: name, secret, age
+%% type User: name, secret, age
 
 main() ->
     '__bp_print'([describeUser()]).

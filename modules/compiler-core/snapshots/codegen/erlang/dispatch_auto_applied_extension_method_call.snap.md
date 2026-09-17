@@ -20,9 +20,9 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% interface Swimmer
+%% behavior Swimmer
 
-%% record Pato: id
+%% type Pato: id
 
 %% implement Swimmer for Pato
 

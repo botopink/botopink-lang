@@ -40,6 +40,8 @@ pub const TypedValue = union(enum) {
     bool: bool,
     null: void,
     array: []const TypedValue,
+    /// An Erlang tuple, sent as `{"$tuple": [...]}` by `'__bp_json'/1`.
+    tuple: []const TypedValue,
     object: []const KeyValuePair,
 
     pub const KeyValuePair = struct {
@@ -499,6 +501,13 @@ fn typedValue(arena: std.mem.Allocator, v: std.json.Value) std.mem.Allocator.Err
             break :blk .{ .array = out };
         },
         .object => |obj| blk: {
+            if (obj.count() == 1) {
+                if (obj.get("$tuple")) |items| if (items == .array) {
+                    const out = try arena.alloc(TypedValue, items.array.items.len);
+                    for (items.array.items, 0..) |item, i| out[i] = try typedValue(arena, item);
+                    break :blk .{ .tuple = out };
+                };
+            }
             const out = try arena.alloc(TypedValue.KeyValuePair, obj.count());
             var it = obj.iterator();
             var i: usize = 0;

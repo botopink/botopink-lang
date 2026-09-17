@@ -158,7 +158,7 @@ test "decorator body: @compilerError aborts compilation" {
     try h.assertInfersOk(std.testing.allocator,
         \\fn service(comptime decl: @Decl) {
         \\    if (decl.kind != .Record) {
-        \\        @compilerError("#[service] must annotate a record");
+        \\        @compilerError("#[service] must annotate a type with fields");
         \\    }
         \\}
         \\
@@ -173,7 +173,7 @@ test "decorator body: reads decl.kind and calls decl.fail" {
     try h.assertInfersOk(std.testing.allocator,
         \\fn service(comptime decl: @Decl) {
         \\    if (decl.kind != .Record) {
-        \\        decl.fail("#[service] must annotate a record");
+        \\        decl.fail("#[service] must annotate a type with fields");
         \\    }
         \\}
         \\

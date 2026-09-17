@@ -13,7 +13,7 @@ val PersonPrintable = implement Printable for Person {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-// interface Printable
+// behavior Printable
 //   fn print(...)
 
 class Person {

@@ -97,8 +97,8 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "effect-on-declare-forbidden: a #[@<effect>] annotation marks an IMPLEMENTATION (a fn with a body); `declare fn` declarations express the effect through the return wrapper alone.",
             .hint = "Drop the #[@<effect>] annotation — the return-type wrapper (@Result/@Future/…) already carries the effect on a `declare fn`.",
         },
-        .effectOnInterfaceMethodForbidden => .{
-            .message = "effect-on-interface-method-forbidden: interface methods are declarative — they express the effect through the return wrapper alone, never via #[@<effect>].",
+        .effectOnBehaviorMethodForbidden => .{
+            .message = "effect-on-behavior-method-forbidden: behavior methods are declarative — they express the effect through the return wrapper alone, never via #[@<effect>].",
             .hint = "Drop the #[@<effect>] annotation; the implementing fn carries it.",
         },
         .effectDuplicateAnnotation => .{
@@ -125,6 +125,36 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "the `@[…]` annotation block was retired",
             .caretCaption = "write `#[…]` instead",
             .hint = "An annotation block opens with `#[`; the `@` marks a builtin annotation INSIDE it, e.g. `#[@External.Node(\"./m.mjs\", \"f\")]`.",
+        },
+        .removedKeywordRecord => .{
+            .code = "removed-keyword-record",
+            .message = "`record` was replaced by `type` in 1.0.3",
+            .caretCaption = "write `type Name(fields) { methods }`",
+            .hint = "A record is `type Point(x: i32, y: i32) { fn … }`; a record with no fields is `type Name { methods }`.",
+        },
+        .removedKeywordEnum => .{
+            .code = "removed-keyword-enum",
+            .message = "`enum` was replaced by `type` in 1.0.3",
+            .caretCaption = "write `type Name { variants }`",
+            .hint = "An enum is `type Color { Red, Green, Rgb(r: i32, g: i32, b: i32) }`.",
+        },
+        .removedKeywordInterface => .{
+            .code = "removed-keyword-interface",
+            .message = "`interface` was renamed to `behavior` in 1.0.3",
+            .caretCaption = "write `behavior`",
+            .hint = "`behavior Printable { fn print(self: Self) -> string; }`; a delegate is `declare fn`.",
+        },
+        .removedRecordLiteral => .{
+            .code = "removed-record-literal",
+            .message = "anonymous records are tuples in 1.0.3",
+            .caretCaption = "write a tuple `#(…)`",
+            .hint = "Build `#(x, y)` from variables (their names become the labels), or `#(1, 2)` and give the destination a labeled type `#(x: i32, y: i32)`.",
+        },
+        .removedRecordType => .{
+            .code = "removed-record-type",
+            .message = "anonymous record types are tuples in 1.0.3",
+            .caretCaption = "write a tuple type `#(…)`",
+            .hint = "A labeled tuple type: `#(x: i32, y: i32)`.",
         },
         .typeRecordWithVariants => .{
             .code = "type-record-with-variants",

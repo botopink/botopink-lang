@@ -134,7 +134,7 @@ test "format: doc comment ---- before an enum-shaped type" {
 
 test "format: doc comment ---- before a behavior" {
     try h.assertFormat(std.testing.allocator,
-        \\/// Drawable interface
+        \\/// Drawable behavior
         \\behavior Drawable {}
     );
 }

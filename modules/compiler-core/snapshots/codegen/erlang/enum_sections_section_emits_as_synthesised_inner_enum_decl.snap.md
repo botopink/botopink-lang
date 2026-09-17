@@ -12,12 +12,12 @@ type Token {
 ```erlang
 -module(main).
 
-%% enum __Token__Text
+%% type __Token__Text
 %%   Bold
 %%   Italic
 %%   Underline
 
-%% enum Token
+%% type Token
 %%   Hover(inner)
 %%   Text(_inner)
 ```

@@ -8,7 +8,7 @@ fn first3() -> string {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-// interface String
+// behavior String
 //   fn length(...)
 //   fn split(...)
 //   fn toUpper(...)

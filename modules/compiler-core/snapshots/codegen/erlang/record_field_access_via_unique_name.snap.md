@@ -13,7 +13,7 @@ fn second(p: Point) -> i32 {
 ```erlang
 -module(main).
 
-%% record Point: x, y
+%% type Point: x, y
 
 first(P) ->
     maps:get(x, P).

@@ -16,9 +16,9 @@ pub val PatoNada = implement Swimmer for Pato {
 -module(pond).
 -export([swim/1]).
 
-%% interface Swimmer
+%% behavior Swimmer
 
-%% record Pato: id
+%% type Pato: id
 
 %% implement Swimmer for Pato
 

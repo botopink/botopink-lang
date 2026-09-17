@@ -24,8 +24,8 @@ const std = @import("std");
 /// R1 — `#[@<effect>] declare fn …` (annotation on a bodyless declaration).
 pub const effect_on_declare_forbidden: []const u8 = "effect-on-declare-forbidden";
 
-/// R2 — `interface I { #[@<effect>] fn … }` (annotation on an interface method).
-pub const effect_on_interface_method_forbidden: []const u8 = "effect-on-interface-method-forbidden";
+/// R2 — `behavior I { #[@<effect>] fn … }` (annotation on a behavior method).
+pub const effect_on_behavior_method_forbidden: []const u8 = "effect-on-behavior-method-forbidden";
 
 /// R3 — annotation effect kind disagrees with the return wrapper kind.
 pub const effect_wrapper_mismatch: []const u8 = "effect-wrapper-mismatch";
@@ -222,7 +222,7 @@ pub const fn_param_arity_exceeded: []const u8 = "fn-param-arity-exceeded";
 
 pub const all_codes = [_][]const u8{
     effect_on_declare_forbidden,
-    effect_on_interface_method_forbidden,
+    effect_on_behavior_method_forbidden,
     effect_wrapper_mismatch,
     effect_missing_wrapper,
     effect_duplicate_annotation,

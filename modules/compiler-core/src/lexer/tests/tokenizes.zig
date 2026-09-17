@@ -119,14 +119,14 @@ test "lexer: tokenizes throw new expression" {
     for (expected, tokens) |exp, tok| try std.testing.expectEqual(exp, tok.kind);
 }
 
-test "lexer: tokenizes record header" {
-    var l = Lexer.init("val GPSCoordinates = record { lat: number, lon: number }");
+test "lexer: tokenizes type header" {
+    var l = Lexer.init("type GPSCoordinates(lat: number, lon: number)");
     const tokens = try l.scanAll(std.testing.allocator);
     defer l.deinit(std.testing.allocator);
     const expected = [_]TokenKind{
-        .val,        .identifier, .equal,      .record,    .leftBrace,
-        .identifier, .colon,      .identifier, .comma,     .identifier,
-        .colon,      .identifier, .rightBrace, .endOfFile,
+        .type,             .identifier, .leftParenthesis, .identifier, .colon,
+        .identifier,       .comma,      .identifier,      .colon,      .identifier,
+        .rightParenthesis, .endOfFile,
     };
     for (expected, tokens) |exp, tok| try std.testing.expectEqual(exp, tok.kind);
 }

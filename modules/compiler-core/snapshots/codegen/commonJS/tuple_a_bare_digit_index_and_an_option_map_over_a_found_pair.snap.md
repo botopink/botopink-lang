@@ -32,7 +32,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-// interface Array
+// behavior Array
 //   length: i32
 //   fn at(...)
 //   fn push(...)

@@ -7,7 +7,7 @@ val Point = type(x: i32, y: i32)
 ```erlang
 -module(main).
 
-%% record Point: x, y
+%% type Point: x, y
 ```
 
 ----- RUN LOG -----

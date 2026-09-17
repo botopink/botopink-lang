@@ -15,7 +15,7 @@ fn safe() -> i32 {
 ```erlang
 -module(main).
 
-%% record FetchError: url
+%% type FetchError: url
 
 fetch() ->
     {error, #{url => <<"/api">>}}.

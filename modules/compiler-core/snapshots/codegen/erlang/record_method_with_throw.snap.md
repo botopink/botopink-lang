@@ -16,7 +16,7 @@ val Invoice = type(
 ```erlang
 -module(main).
 
-%% record Invoice: subtotal, taxRate
+%% type Invoice: subtotal, taxRate
 
 total(Self) ->
     (maps:get(subtotal, Self) + (maps:get(subtotal, Self) * maps:get(taxRate, Self))).

@@ -13,7 +13,7 @@ val Point = type(
 ```erlang
 -module(main).
 
-%% record Point: x, y
+%% type Point: x, y
 
 sum() ->
     '__bp_add'(maps:get(x, Self), maps:get(y, Self)).

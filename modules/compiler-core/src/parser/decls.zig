@@ -546,22 +546,6 @@ pub fn parseDelegateParams(this: *This, alloc: std.mem.Allocator, name: []const 
     };
 }
 
-pub fn parseInterfaceDecl(this: *This, alloc: std.mem.Allocator) ParseError!BehaviorDecl {
-    // val-form: the `extends` clause (if any) follows the `interface` keyword.
-    const p = try this.parseDeclPreamble(alloc, .interface, false);
-    errdefer freeAnnotations(alloc, p.annotations);
-    const extendsSlice = try this.parseExtendsClause(alloc);
-    return this.parseInterfaceBody(alloc, p.name, extendsSlice, p.annotations, p.isPub);
-}
-
-pub fn parseShorthandInterfaceDecl(this: *This, alloc: std.mem.Allocator) ParseError!BehaviorDecl {
-    // shorthand: the `extends` clause (if any) follows the interface name.
-    const p = try this.parseDeclPreamble(alloc, .interface, true);
-    errdefer freeAnnotations(alloc, p.annotations);
-    const extendsSlice = try this.parseExtendsClause(alloc);
-    return this.parseInterfaceBody(alloc, p.name, extendsSlice, p.annotations, p.isPub);
-}
-
 /// Parses an optional `extends T1, T2, T3` clause.
 /// Returns an owned slice (may be empty). The caller owns the memory.
 pub fn parseExtendsClause(this: *This, alloc: std.mem.Allocator) ParseError![]const []const u8 {
@@ -573,119 +557,6 @@ pub fn parseExtendsClause(this: *This, alloc: std.mem.Allocator) ParseError![]co
         try list.append(alloc, (try this.consume(.identifier)).lexeme);
     }
     return list.toOwnedSlice(alloc);
-}
-
-pub fn parseInterfaceBody(this: *This, alloc: std.mem.Allocator, name: []const u8, extendsSlice: []const []const u8, annotations: []Annotation, isPub: bool) ParseError!BehaviorDecl {
-    const genericParams = try this.parseGenericParams(alloc);
-    errdefer alloc.free(genericParams);
-    _ = try this.consume(.leftBrace);
-
-    var fields: std.ArrayList(BehaviorField) = .empty;
-    errdefer fields.deinit(alloc);
-
-    var methods: std.ArrayList(BehaviorMethod) = .empty;
-    errdefer {
-        for (methods.items) |*m| m.deinit(alloc);
-        methods.deinit(alloc);
-    }
-
-    var trailingComma = false;
-    while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
-        this.skipComments();
-        if (this.check(.rightBrace) or this.check(.endOfFile)) break;
-        if (this.check(.val)) {
-            _ = this.match(.@"pub");
-            _ = try this.consume(.val);
-            const fieldName = (try this.consume(.identifier)).lexeme;
-            _ = try this.consume(.colon);
-            const typeName = (try this.consume(.identifier)).lexeme;
-            trailingComma = this.match(.comma);
-            try fields.append(alloc, .{ .name = fieldName, .typeName = typeName });
-        } else if (this.check(.default) or this.check(.@"fn") or this.check(.declare) or
-            this.check(.hash) or (this.check(.at) and this.peekAt(1).kind == .leftSquareBracket))
-        {
-            // `default fn … { body }` (default method), `declare fn …;`
-            // (abstract/host-backed member), optionally preceded by an
-            // `@[external(…)]` annotation block.
-            const memberAnnotations = try this.parseAnnotations(alloc);
-            // R2 (§2) — interface methods are declarative: they express the
-            // effect through the return wrapper alone, never via a
-            // `#[@<effect>]` marker.
-            if (effectFromAnnotations(memberAnnotations)) |k| {
-                for (memberAnnotations) |*ann| ann.deinit(alloc);
-                alloc.free(memberAnnotations);
-                const tok = this.peek();
-                this.parseError = ParseErrorInfo.fromTokenDetail(.effectOnInterfaceMethodForbidden, tok, k.annotationName());
-                return ParseError.UnexpectedToken;
-            }
-            const is_default = this.match(.default);
-            const is_declare = this.match(.declare);
-            var method = try this.parseInterfaceMethod(alloc, is_default);
-            method.annotations = memberAnnotations;
-            method.is_declare = is_declare;
-            trailingComma = this.match(.comma);
-            try methods.append(alloc, method);
-        } else {
-            return ParseError.UnexpectedToken;
-        }
-    }
-
-    _ = try this.consume(.rightBrace);
-
-    return BehaviorDecl{
-        .name = name,
-        .id = this.nextId("behavior"),
-        .isPub = isPub,
-        .annotations = annotations,
-        .genericParams = genericParams,
-        .extends = extendsSlice,
-        .fields = try fields.toOwnedSlice(alloc),
-        .trailingComma = trailingComma,
-        .methods = try methods.toOwnedSlice(alloc),
-    };
-}
-
-pub fn parseInterfaceMethod(this: *This, alloc: std.mem.Allocator, is_default: bool) ParseError!BehaviorMethod {
-    _ = try this.consume(.@"fn");
-    const name = (try this.consume(.identifier)).lexeme;
-
-    const genericParams = try this.parseGenericParams(alloc);
-    errdefer alloc.free(genericParams);
-
-    _ = try this.consume(.leftParenthesis);
-    const params = try this.parseParamList(alloc);
-    errdefer {
-        for (params) |*p| p.deinit(alloc);
-        alloc.free(params);
-    }
-
-    var returnType: ?ast.TypeRef = null;
-    if (this.match(.rightArrow)) {
-        returnType = try this.parseTypeRef(alloc);
-    }
-    errdefer if (returnType) |*rt| rt.deinit(alloc);
-
-    if (!is_default) {
-        _ = this.match(.semicolon);
-        return BehaviorMethod{
-            .name = name,
-            .genericParams = genericParams,
-            .params = params,
-            .returnType = returnType,
-            .body = null,
-            .is_default = false,
-        };
-    }
-
-    const body = try this.parseSimpleBodyStmts(alloc);
-    return BehaviorMethod{
-        .name = name,
-        .genericParams = genericParams,
-        .params = params,
-        .returnType = returnType,
-        .body = body,
-        .is_default = true,
-    };
 }
 
 /// Parse a method inside a struct, record, or enum body.
@@ -735,98 +606,6 @@ pub fn parseMethodDecl(this: *This, alloc: std.mem.Allocator, is_declare: bool, 
         .is_default = false,
         .is_declare = false,
         .isPub = isPub,
-    };
-}
-
-pub fn parseRecordDecl(this: *This, alloc: std.mem.Allocator) ParseError!TypeDecl {
-    const p = try this.parseDeclPreamble(alloc, .record, false);
-    errdefer freeAnnotations(alloc, p.annotations);
-    return this.parseRecordBody(alloc, p.name, p.annotations, p.isPub);
-}
-
-pub fn parseShorthandRecordDecl(this: *This, alloc: std.mem.Allocator) ParseError!TypeDecl {
-    const p = try this.parseDeclPreamble(alloc, .record, true);
-    errdefer freeAnnotations(alloc, p.annotations);
-    return this.parseRecordBody(alloc, p.name, p.annotations, p.isPub);
-}
-
-pub fn parseRecordBody(this: *This, alloc: std.mem.Allocator, name: []const u8, annotations: []Annotation, isPub: bool) ParseError!TypeDecl {
-    const genericParams = try this.parseGenericParams(alloc);
-    errdefer alloc.free(genericParams);
-    const implementList = try this.parseImplementClause(alloc);
-    errdefer {
-        for (implementList) |*im| @constCast(im).deinit(alloc);
-        alloc.free(implementList);
-    }
-    _ = try this.consume(.leftBrace);
-
-    var fields: std.ArrayList(Field) = .empty;
-    errdefer {
-        for (fields.items) |*f| f.deinit(alloc);
-        fields.deinit(alloc);
-    }
-
-    var methods: std.ArrayList(BehaviorMethod) = .empty;
-    errdefer {
-        for (methods.items) |*m| m.deinit(alloc);
-        methods.deinit(alloc);
-    }
-
-    var trailingComma = false;
-    while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
-        this.skipComments();
-        if (this.check(.rightBrace) or this.check(.endOfFile)) break;
-        // Member-level decorators: `#[getMapping("/")] fn index(…)`. Parsed here
-        // so annotation processors reach record methods (field-site is a separate
-        // follow-up — `Field` carries no annotations yet).
-        const memberAnnotations = try this.parseAnnotations(alloc);
-        // Check if this is a method (fn/pub/declare)
-        if (this.check(.@"pub") or this.check(.declare) or this.check(.@"fn")) {
-            const is_pub = this.match(.@"pub");
-            const is_iface = this.match(.declare);
-            var method = try this.parseMethodDecl(alloc, is_iface, is_pub);
-            method.annotations = memberAnnotations;
-            trailingComma = false;
-            try methods.append(alloc, method);
-        } else if (this.check(.val) or This.isMemberName(this.peek().kind)) {
-            // Could be a field: [val] name: Type [= expr]. `get`/`set` are valid
-            // record field names (records have no getters/setters).
-            const nextIdx = this.current + 1;
-            const nextToken = if (nextIdx < this.tokens.len) this.tokens[nextIdx] else token.Token{ .kind = .endOfFile, .lexeme = "", .line = 0, .col = 0 };
-
-            // If next token is '(', it's a method
-            if (nextToken.kind == .leftParenthesis) {
-                return ParseError.UnexpectedToken;
-            }
-
-            // It's a field: [val] name: Type [= expr]
-            if (this.check(.val)) _ = this.advance();
-            const fieldName = (try this.consumeMemberName()).lexeme;
-            _ = try this.consume(.colon);
-            var fieldType = try this.parseTypeRef(alloc);
-            errdefer fieldType.deinit(alloc);
-            var defaultExpr: ?Expr = null;
-            if (this.match(.equal)) {
-                defaultExpr = try this.parseBinaryExpr(alloc, prec.equality);
-            }
-            trailingComma = this.match(.comma);
-            try fields.append(alloc, .{ .name = fieldName, .typeRef = fieldType, .default = defaultExpr, .annotations = memberAnnotations });
-        } else {
-            return ParseError.UnexpectedToken;
-        }
-    }
-    _ = try this.consume(.rightBrace);
-
-    return TypeDecl{
-        .name = name,
-        .id = this.nextId("type"),
-        .isPub = isPub,
-        .annotations = annotations,
-        .genericParams = genericParams,
-        .implement = implementList,
-        .shape = .{ .record = try fields.toOwnedSlice(alloc) },
-        .trailingComma = trailingComma,
-        .methods = try methods.toOwnedSlice(alloc),
     };
 }
 
@@ -993,79 +772,6 @@ pub fn parseImplementMethod(this: *This, alloc: std.mem.Allocator) ParseError!Im
         .name = methodName,
         .params = params,
         .body = body,
-    };
-}
-
-pub fn parseEnumDecl(this: *This, alloc: std.mem.Allocator) ParseError!TypeDecl {
-    const p = try this.parseDeclPreamble(alloc, .@"enum", false);
-    errdefer freeAnnotations(alloc, p.annotations);
-    return this.parseEnumBody(alloc, p.name, p.annotations, p.isPub);
-}
-
-pub fn parseShorthandEnumDecl(this: *This, alloc: std.mem.Allocator) ParseError!TypeDecl {
-    const p = try this.parseDeclPreamble(alloc, .@"enum", true);
-    errdefer freeAnnotations(alloc, p.annotations);
-    return this.parseEnumBody(alloc, p.name, p.annotations, p.isPub);
-}
-
-pub fn parseEnumBody(this: *This, alloc: std.mem.Allocator, name: []const u8, annotations: []Annotation, isPub: bool) ParseError!TypeDecl {
-    const genericParams = try this.parseGenericParams(alloc);
-    errdefer alloc.free(genericParams);
-    const implementList = try this.parseImplementClause(alloc);
-    errdefer {
-        for (implementList) |*im| @constCast(im).deinit(alloc);
-        alloc.free(implementList);
-    }
-    _ = try this.consume(.leftBrace);
-
-    var variants: std.ArrayList(EnumVariant) = .empty;
-    errdefer {
-        for (variants.items) |*v| v.deinit(alloc);
-        variants.deinit(alloc);
-    }
-
-    var sections: std.ArrayList(parser.EnumSection) = .empty;
-    errdefer {
-        for (sections.items) |*s| s.deinit(alloc);
-        sections.deinit(alloc);
-    }
-
-    var methods: std.ArrayList(BehaviorMethod) = .empty;
-    errdefer {
-        for (methods.items) |*m| m.deinit(alloc);
-        methods.deinit(alloc);
-    }
-
-    var trailingComma = false;
-    while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
-        if (this.check(.@"pub") or this.check(.@"fn") or this.check(.declare)) {
-            trailingComma = false;
-            const is_pub = this.match(.@"pub");
-            const is_iface = this.match(.declare);
-            const method = try this.parseMethodDecl(alloc, is_iface, is_pub);
-            try methods.append(alloc, method);
-            continue;
-        }
-
-        // Top-level enum body: numeric variant names are rejected (sections only).
-        const consumed_trailing = try parseEnumItem(this, alloc, &variants, &sections, false);
-        trailingComma = consumed_trailing;
-    }
-
-    _ = try this.consume(.rightBrace);
-
-    const variantSlice = try variants.toOwnedSlice(alloc);
-    const sectionSlice = try sections.toOwnedSlice(alloc);
-    return TypeDecl{
-        .name = name,
-        .id = this.nextId("type"),
-        .isPub = isPub,
-        .annotations = annotations,
-        .genericParams = genericParams,
-        .implement = implementList,
-        .shape = .{ .enum_ = .{ .variants = variantSlice, .sections = sectionSlice } },
-        .trailingComma = trailingComma,
-        .methods = try methods.toOwnedSlice(alloc),
     };
 }
 
@@ -1639,7 +1345,7 @@ fn parseBehaviorBody(this: *This, alloc: std.mem.Allocator, name: []const u8, ex
             if (effectFromAnnotations(memberAnnotations)) |k| {
                 freeAnnotations(alloc, memberAnnotations);
                 const tok = this.peek();
-                this.parseError = ParseErrorInfo.fromTokenDetail(.effectOnInterfaceMethodForbidden, tok, k.annotationName());
+                this.parseError = ParseErrorInfo.fromTokenDetail(.effectOnBehaviorMethodForbidden, tok, k.annotationName());
                 return ParseError.UnexpectedToken;
             }
             const is_default = this.match(.default);

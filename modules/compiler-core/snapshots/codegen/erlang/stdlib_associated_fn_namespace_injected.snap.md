@@ -14,7 +14,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% interface Function
+%% behavior Function
 
 function_identity(X) ->
     X.
@@ -34,7 +34,7 @@ function_constant(X) ->
         X
     end.
 
-%% interface Pair
+%% behavior Pair
 
 pair_of(First, Second) ->
     {First, Second}.

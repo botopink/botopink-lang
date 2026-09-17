@@ -22,7 +22,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% record LoadError: msg
+%% type LoadError: msg
 
 load() ->
     {error, #{msg => <<"not found">>}}.

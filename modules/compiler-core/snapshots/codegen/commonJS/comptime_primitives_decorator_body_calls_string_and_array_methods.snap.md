@@ -97,7 +97,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-// interface String
+// behavior String
 //   fn length(...)
 //   fn split(...)
 //   fn toUpper(...)
@@ -131,7 +131,7 @@ String.prototype.lines = function() { return this.valueOf().split(/\r?\n/); };
 String.prototype.words = function() { return this.valueOf().split(/[ \t\n\r]+/).filter(__w => __w.length > 0); };
 String.prototype.charCodeAt = function(index) { return ((this.valueOf().charCodeAt(index) ?? -1) | 0); };
 
-// interface Array
+// behavior Array
 //   length: i32
 //   fn at(...)
 //   fn push(...)

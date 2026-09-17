@@ -12,15 +12,15 @@ type Token {
 ```erlang
 -module(main).
 
-%% enum __Token__Color
+%% type __Token__Color
 %%   Hex(value)
 %%   Red(_inner)
 
-%% enum __Token__Color__Red
+%% type __Token__Color__Red
 %%   __100
 %%   __500
 
-%% enum Token
+%% type Token
 %%   Color(_inner)
 ```
 

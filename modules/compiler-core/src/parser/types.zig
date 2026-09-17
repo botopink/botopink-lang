@@ -118,23 +118,9 @@ pub fn parseBaseTypeRef(this: *This, alloc: std.mem.Allocator) ParseError!ast.Ty
             .returnType = returnPtr,
         } };
     }
-    // { name: T, ... } — anonymous record type
+    // `{ name: T, … }` — the removed anonymous record type (1.0.3: a tuple type).
     if (this.check(.leftBrace)) {
-        _ = this.advance(); // consume '{'
-        var fields: std.ArrayList(ast.RecordTypeField) = .empty;
-        errdefer {
-            for (fields.items) |*f| f.typeRef.deinit(alloc);
-            fields.deinit(alloc);
-        }
-        while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
-            const nameTok = try this.consumeMemberName();
-            _ = try this.consume(.colon);
-            const fieldType = try this.parseTypeRef(alloc);
-            try fields.append(alloc, .{ .name = nameTok.lexeme, .typeRef = fieldType });
-            if (!this.match(.comma)) break;
-        }
-        _ = try this.consume(.rightBrace);
-        return ast.TypeRef{ .record_type = try fields.toOwnedSlice(alloc) };
+        return this.failRemovedAt(.removedRecordType, 0);
     }
     // @Name<T1, T2> — builtin type constructor
     if (this.check(.builtinIdent)) {

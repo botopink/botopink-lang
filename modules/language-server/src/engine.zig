@@ -424,16 +424,6 @@ fn appendTypeRef(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), tr: ast.TypeRe
                 try appendTypeRef(gpa, buf, c);
             }
         },
-        .record_type => |flds| {
-            try buf.appendSlice(gpa, "{ ");
-            for (flds, 0..) |f, i| {
-                if (i > 0) try buf.appendSlice(gpa, ", ");
-                try buf.appendSlice(gpa, f.name);
-                try buf.appendSlice(gpa, ": ");
-                try appendTypeRef(gpa, buf, f.typeRef);
-            }
-            try buf.appendSlice(gpa, " }");
-        },
     }
 }
 

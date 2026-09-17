@@ -12,4 +12,4 @@ val CircleDrawing = implement Drawable for Circle {
 ----- ERROR
 error: unknown interface
 
-  'Renderable' is not an interface implemented here (method 'draw')
+  'Renderable' is not a behavior implemented here (method 'draw')

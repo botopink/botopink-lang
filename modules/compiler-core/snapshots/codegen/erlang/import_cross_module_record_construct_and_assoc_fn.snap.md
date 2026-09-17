@@ -18,12 +18,12 @@ pub type App(
 -module(http).
 -export([ok/1]).
 
-%% record Response: body
+%% type Response: body
 
 ok(Body) ->
     #{body => Body}.
 
-%% record App: port, path
+%% type App: port, path
 ```
 
 ----- RUN LOG -----

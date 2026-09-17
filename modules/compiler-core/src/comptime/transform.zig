@@ -760,9 +760,6 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             },
             // A labeled access (`kinds.kind`) inside a literal's field values
             // is rewritten like anywhere else (decision 8 §6 T4).
-            .recordLit => |rl| {
-                for (rl.fields) |f| rewriteExpr(agg, fn_decls, comptime_arrays, f.value) catch return ScanError.OutOfMemory;
-            },
             .behaviorLit => |bl| {
                 for (bl.fields) |f| rewriteExpr(agg, fn_decls, comptime_arrays, f.value) catch return ScanError.OutOfMemory;
             },

@@ -493,7 +493,6 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
             else => {},
         },
         .collection => |col| switch (col.kind) {
-            .recordLit => |rl| countFieldStaging(em, rl.fields, count),
             .behaviorLit => |il| countFieldStaging(em, il.fields, count),
             .grouped => |inner| countLocalsInExpr(em, inner.*, count),
             .case => |c| {
@@ -776,7 +775,6 @@ fn collectNamesInExpr(ctx: anytype, e: ast.Expr) anyerror!void {
                 }
             },
             .grouped => |g| try walk(ctx, g.*),
-            .recordLit => |rl| for (rl.fields) |f| try walk(ctx, f.value.*),
             .behaviorLit => |il| for (il.fields) |f| try walk(ctx, f.value.*),
         },
         .comptime_ => |ct| switch (ct.kind) {
@@ -2797,10 +2795,6 @@ const Emitter = struct {
                 // An anonymous `record { a: 1 }` and an interface literal
                 // (`@Decl(kind: …, name: …)`) are maps keyed by field name —
                 // the same shape a declared record's constructor builds.
-                .recordLit => |rl| {
-                    try self.lowerFieldMap(rl.fields);
-                    return;
-                },
                 .behaviorLit => |il| {
                     try self.lowerFieldMap(il.fields);
                     return;
@@ -4906,10 +4900,6 @@ const Emitter = struct {
                 },
                 .tupleLit => |tl| blk: {
                     for (tl.elems) |el| if (self.exprMayCall(strings, el)) break :blk true;
-                    break :blk false;
-                },
-                .recordLit => |rl| blk: {
-                    for (rl.fields) |f| if (self.exprMayCall(strings, f.value.*)) break :blk true;
                     break :blk false;
                 },
                 .behaviorLit => |il| blk: {

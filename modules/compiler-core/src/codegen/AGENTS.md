@@ -548,9 +548,9 @@ codegen/
   loop, `continue` out of the iteration's `(block $__next …)`. An f32 array
   prints as `[115,287.5,460]` (`$__print_arr_f32`).
 - **Coverage**: numerics, locals, calls, booleans, assign, throw, strings,
-  `@print`, field access/assign, arrays, tuples, records/structs and anonymous
-  `record { … }` / interface literals (all `put_map_assoc` maps keyed by field
-  name), case (all patterns + guards via
+  `@print`, field access/assign, arrays, tuples, records/structs and behavior
+  literals (all `put_map_assoc` maps keyed by field name; the anonymous
+  `record { … }` literal is gone since front 12 step 4), case (all patterns + guards via
   `emitGuardPre`/`emitGuardPost`; a bare `.ident` arm naming a nullary enum
   variant — local, imported by name, or from a `from "std"` module — is a match
   test against that atom, not a binding — `enum_variants`; `Ok`/`Err` arms test
@@ -881,7 +881,7 @@ first three are now enforced by the model, not by discipline:
   type, a fn's declared return type (a type guard `-> x is T` is a bool; a
   `-> @Result<string, …>` makes `try f()` / `f() catch …` a string), a fn body
   that returns a string when the specialisation pass cleared its return type,
-  an anonymous record literal's field values, a tuple literal's element (for
+  a tuple literal's element (for
   `val #(a, b) = #(…)`), an array's element shape (for a loop parameter) and a
   top-level `val`'s initialiser (`str_globals`, `global_rec_types`). A value
   whose shape nothing recovers still prints through `$__print_i32`.

@@ -870,7 +870,7 @@ test "erl_emitter: module forms" {
         .{ .no_auto_import = &.{.{ .name = "abs", .arity = 1 }} },
         .{ .exports = &.{ .{ .name = "main", .arity = 1 }, .{ .name = "of", .arity = 0 } } },
         .blank,
-        .{ .comment = Ast.Comment.doc("record R: a") },
+        .{ .comment = Ast.Comment.doc("type R: a") },
         .{ .comment = .{ .level = .module, .text = "module doc" } },
         .{ .function = .{ .name = "t", .clauses = &.{.{ .patterns = &.{}, .body = Ast.Body.of(&.{.{ .expr = .{ .list_block = &tests } }}) }} } },
     });
@@ -879,7 +879,7 @@ test "erl_emitter: module forms" {
         \\-compile({no_auto_import,[abs/1]}).
         \\-export([main/1, 'of'/0]).
         \\
-        \\%% record R: a
+        \\%% type R: a
         \\%%% module doc
         \\t() ->
         \\    [

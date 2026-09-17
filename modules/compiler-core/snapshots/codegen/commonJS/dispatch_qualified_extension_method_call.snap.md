@@ -36,7 +36,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-// interface Swimmer
+// behavior Swimmer
 //   fn swim(...)
 
 class Pato {

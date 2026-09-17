@@ -1985,16 +1985,6 @@ fn appendTypeRefStr(buf: *std.ArrayListUnmanaged(u8), allocator: std.mem.Allocat
                 try appendTypeRefStr(buf, allocator, c);
             }
         },
-        .record_type => |flds| {
-            try buf.appendSlice(allocator, "{ ");
-            for (flds, 0..) |f, i| {
-                if (i > 0) try buf.appendSlice(allocator, ", ");
-                try buf.appendSlice(allocator, f.name);
-                try buf.appendSlice(allocator, ": ");
-                try appendTypeRefStr(buf, allocator, f.typeRef);
-            }
-            try buf.appendSlice(allocator, " }");
-        },
     }
 }
 
@@ -2187,7 +2177,7 @@ fn validateEffectAnnotations(env: *Env, program: ast.Program) InferError!void {
                 if (effectAnnotationOf(m.annotations) != null) {
                     env.lastError = TypeError.custom(
                         "effect annotations mark an implementation; declare the effect in the return type",
-                        "An interface method expresses its effect through the return wrapper (e.g. `-> @Future<T>`), with no annotation.",
+                        "A behavior method expresses its effect through the return wrapper (e.g. `-> @Future<T>`), with no annotation.",
                     );
                     return error.TypeError;
                 }
@@ -3427,7 +3417,7 @@ fn expandTemplateCallViaRuntime(
             }) catch return error.OutOfMemory;
             break :blk parsed;
         },
-        .value => |v| valueToAstLiteral(env, v, loc) orelse {
+        .value => |v| valueToAstLiteral(env, v, loc, liftShapeOf(env, tfn)) orelse {
             env.lastError = TypeError.custom(
                 "the template's `@expr(…)` value cannot be lifted as a literal",
                 "V1 lifts numbers, strings, booleans, null, and arrays of those.",
@@ -3583,8 +3573,67 @@ fn holeForPlaceholder(name: []const u8, captures: []const template.CapturedExpr)
     return null;
 }
 
+/// The labels of a tuple a template lifts (decision 8 §6), read from the
+/// template body: `return @expr(#(server, debug))` labels its elements
+/// `server` and `debug`, and `val server = #(host, port)` earlier in the body
+/// labels the nested tuple. Children follow the elements; null = unlabeled.
+const LiftShape = struct {
+    labels: []const []const u8,
+    children: []const ?*const LiftShape,
+};
+
+/// The shape of the value `tfn` lifts through `return @expr(E)` — the first
+/// such return in the body — or null when the body builds no labeled tuple.
+fn liftShapeOf(env: *Env, tfn: ast.FnDecl) ?*const LiftShape {
+    for (tfn.body) |stmt| {
+        if (stmt.expr != .jump or stmt.expr.jump.kind != .@"return") continue;
+        const ret = stmt.expr.jump.kind.@"return" orelse continue;
+        if (ret.* != .call or ret.call.kind != .call) continue;
+        const cc = ret.call.kind.call;
+        if (!cc.is_builtin or cc.args.len != 1 or !std.mem.eql(u8, cc.callee, "expr")) continue;
+        return shapeOfExpr(env, tfn.body, cc.args[0].value.*, 0);
+    }
+    return null;
+}
+
+fn shapeOfExpr(env: *Env, body: []const ast.Stmt, e: ast.Expr, depth: usize) ?*const LiftShape {
+    if (depth > 16) return null;
+    switch (e) {
+        .identifier => |id| {
+            if (id.kind != .ident) return null;
+            // The last `val`/`var` binding of that name in the body.
+            var bound: ?*const ast.Expr = null;
+            for (body) |stmt| {
+                if (stmt.expr == .binding and stmt.expr.binding.kind == .localBind) {
+                    const lb = stmt.expr.binding.kind.localBind;
+                    if (std.mem.eql(u8, lb.name, id.kind.ident)) bound = lb.value;
+                }
+            }
+            return if (bound) |b| shapeOfExpr(env, body, b.*, depth + 1) else null;
+        },
+        .collection => |col| switch (col.kind) {
+            .grouped => |g| return shapeOfExpr(env, body, g.*, depth + 1),
+            .tupleLit => |tl| {
+                const labels = env.arena.alloc([]const u8, tl.elems.len) catch return null;
+                const children = env.arena.alloc(?*const LiftShape, tl.elems.len) catch return null;
+                for (tl.elems, 0..) |elem, i| {
+                    labels[i] = if (elem == .identifier and elem.identifier.kind == .ident) elem.identifier.kind.ident else "";
+                    children[i] = shapeOfExpr(env, body, elem, depth + 1);
+                }
+                const shape = env.arena.create(LiftShape) catch return null;
+                shape.* = .{ .labels = labels, .children = children };
+                return shape;
+            },
+            else => return null,
+        },
+        else => return null,
+    }
+}
+
 /// Build a literal expression from a TypedValue produced by template evaluation.
-fn valueToAstLiteral(env: *Env, v: templateEval.TypedValue, loc: ast.Loc) ?*const ast.Expr {
+/// A tuple takes the labels `shape` names; an object (a map the host built)
+/// lifts as a tuple labeled by its keys.
+fn valueToAstLiteral(env: *Env, v: templateEval.TypedValue, loc: ast.Loc, shape: ?*const LiftShape) ?*const ast.Expr {
     const node = env.arena.create(ast.Expr) catch return null;
     switch (v) {
         .integer => |n| {
@@ -3608,24 +3657,36 @@ fn valueToAstLiteral(env: *Env, v: templateEval.TypedValue, loc: ast.Loc) ?*cons
         .array => |items| {
             const elems = env.arena.alloc(ast.Expr, items.len) catch return null;
             for (items, 0..) |item, i| {
-                const elem = valueToAstLiteral(env, item, loc) orelse return null;
+                const elem = valueToAstLiteral(env, item, loc, null) orelse return null;
                 elems[i] = elem.*;
             }
             node.* = .{ .collection = .{ .loc = loc, .kind = .{ .arrayLit = .{ .elems = elems } } } };
         },
-        .object => |pairs| {
-            // An object lifts as an anonymous record literal — the yaml
-            // case: the template computes a structure and the caller gets a
-            // fully typed `record { … }`.
-            const fields = env.arena.alloc(ast.RecordLitFieldOf(.untyped), pairs.len) catch return null;
-            for (pairs, 0..) |pair, i| {
-                const value = valueToAstLiteral(env, pair.value, loc) orelse return null;
-                fields[i] = .{
-                    .name = env.arena.dupe(u8, pair.key) catch return null,
-                    .value = @constCast(value),
-                };
+        .tuple => |items| {
+            // The yaml case: the template computes a structure and the caller
+            // gets a fully typed tuple whose labels come from the body.
+            const matches = if (shape) |sh| sh.labels.len == items.len else false;
+            const elems = env.arena.alloc(ast.Expr, items.len) catch return null;
+            for (items, 0..) |item, i| {
+                const child: ?*const LiftShape = if (matches) shape.?.children[i] else null;
+                const elem = valueToAstLiteral(env, item, loc, child) orelse return null;
+                elems[i] = elem.*;
             }
-            node.* = .{ .collection = .{ .loc = loc, .kind = .{ .recordLit = .{ .fields = fields } } } };
+            node.* = .{ .collection = .{ .loc = loc, .kind = .{ .tupleLit = .{
+                .elems = elems,
+                .labels = if (matches) shape.?.labels else &.{},
+            } } } };
+        },
+        .object => |pairs| {
+            // A map built by host code lifts as a tuple labeled by its keys.
+            const elems = env.arena.alloc(ast.Expr, pairs.len) catch return null;
+            const labels = env.arena.alloc([]const u8, pairs.len) catch return null;
+            for (pairs, 0..) |pair, i| {
+                const value = valueToAstLiteral(env, pair.value, loc, null) orelse return null;
+                elems[i] = value.*;
+                labels[i] = env.arena.dupe(u8, pair.key) catch return null;
+            }
+            node.* = .{ .collection = .{ .loc = loc, .kind = .{ .tupleLit = .{ .elems = elems, .labels = labels } } } };
         },
     }
     return node;
@@ -3772,10 +3833,6 @@ fn isV1Liftable(e: *const ast.Expr) bool {
             },
             .tupleLit => |tl| blk: {
                 for (tl.elems) |*elem| if (!isV1Liftable(elem)) break :blk false;
-                break :blk true;
-            },
-            .recordLit => |rl| blk: {
-                for (rl.fields) |f| if (!isV1Liftable(f.value)) break :blk false;
                 break :blk true;
             },
             else => false,
@@ -4789,18 +4846,6 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
         // Anonymous record type `{ f: T, … }` — a structural `Type.record` that
         // unifies field-by-field with a `record { … }` literal (same field set,
         // declaration order; see unify.zig).
-        .record_type => |flds| {
-            const fields = try env.arena.alloc(T.Field, flds.len);
-            for (flds, 0..) |f, i| {
-                fields[i] = .{
-                    .name = f.name,
-                    .type_ = try resolveTypeRefInContext(env, f.typeRef, genericMap),
-                };
-            }
-            const ty = try env.arena.create(T.Type);
-            ty.* = .{ .record = fields };
-            return ty;
-        },
     }
 }
 
@@ -7482,13 +7527,20 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
             const typedElems = try env.arena.alloc(ast.TypedExpr, tl.elems.len);
             const elemTypes = try env.arena.alloc(*T.Type, tl.elems.len);
             // Decision 8 §6 T1: an element that is a plain variable lends its
-            // name as the element's label (`#(name, pop)`); others stay unlabeled.
+            // name as the element's label (`#(name, pop)`); others stay
+            // unlabeled. A compiler-built literal (a lifted template value)
+            // carries its labels already.
             const labels = try env.arena.alloc([]const u8, tl.elems.len);
             var anyLabel = false;
             for (tl.elems, 0..) |elem, i| {
                 typedElems[i] = try inferExprTyped(env, elem);
                 elemTypes[i] = typedElems[i].getType();
-                labels[i] = if (elem == .identifier and elem.identifier.kind == .ident) elem.identifier.kind.ident else "";
+                labels[i] = if (tl.labels.len == tl.elems.len)
+                    tl.labels[i]
+                else if (elem == .identifier and elem.identifier.kind == .ident)
+                    elem.identifier.kind.ident
+                else
+                    "";
                 if (labels[i].len > 0) anyLabel = true;
             }
             const tupleType = try env.namedTypeArgs("tuple", elemTypes);
@@ -7564,23 +7616,6 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
 
         .grouped => |e| {
             return try inferExprTyped(env, e.*);
-        },
-
-        .recordLit => |rl| {
-            // Anonymous structural record: each field types independently;
-            // the literal's type is `Type.record` in declaration order.
-            const typedFields = try env.arena.alloc(ast.RecordLitFieldOf(.typed), rl.fields.len);
-            const fieldTypes = try env.arena.alloc(T.Field, rl.fields.len);
-            for (rl.fields, 0..) |f, i| {
-                const typedValue = try inferExprTyped(env, f.value.*);
-                typedFields[i] = .{ .name = f.name, .value = try makeTypedPtr(env, typedValue) };
-                fieldTypes[i] = .{ .name = f.name, .type_ = typedValue.getType() };
-            }
-            const recTy = try env.arena.create(T.Type);
-            recTy.* = .{ .record = fieldTypes };
-            return TypedExpr{ .collection = .{ .loc = loc, .type_ = recTy, .kind = .{ .recordLit = .{
-                .fields = typedFields,
-            } } } };
         },
 
         .behaviorLit => |il| {

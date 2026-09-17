@@ -16,7 +16,7 @@ val Vec2 = type(
 ```erlang
 -module(main).
 
-%% record Vec2: x, y
+%% type Vec2: x, y
 
 lengthSq(Self) ->
     ((maps:get(x, Self) * maps:get(x, Self)) + (maps:get(y, Self) * maps:get(y, Self))).

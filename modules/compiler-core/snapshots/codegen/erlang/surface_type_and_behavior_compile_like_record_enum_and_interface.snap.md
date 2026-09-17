@@ -31,14 +31,14 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% interface Shape
+%% behavior Shape
 
-%% record Square: side
+%% type Square: side
 
 area(Self) ->
     (maps:get(side, Self) * maps:get(side, Self)).
 
-%% enum Size
+%% type Size
 %%   Small
 %%   Large(n)
 

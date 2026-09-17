@@ -17,7 +17,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% record Contador: n
+%% type Contador: n
 
 atual(Self) ->
     maps:get(n, Self).

@@ -21,7 +21,7 @@ val HttpMethod = type {
 ```erlang
 -module(main).
 
-%% enum HttpMethod
+%% type HttpMethod
 %%   Get
 %%   Post
 %%   Put

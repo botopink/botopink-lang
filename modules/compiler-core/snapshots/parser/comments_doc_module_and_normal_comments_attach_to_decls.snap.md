@@ -10,7 +10,7 @@
     },
     {
       "comment": {
-        "text": "documents the record",
+        "text": "documents the type",
         "is_module": false,
         "is_doc": true
       }

@@ -8,7 +8,7 @@ val Drawable = behavior {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-// interface Drawable
+// behavior Drawable
 //   color: string
 //   fn draw(...)
 ```

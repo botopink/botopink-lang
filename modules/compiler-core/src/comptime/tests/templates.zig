@@ -634,7 +634,7 @@ test "infer error: unknown field on an anonymous record" {
     );
 }
 
-test "comptime: yaml model ---- static record lift reveals the structure (V1 driver)" {
+test "comptime: yaml model ---- a lifted tuple reveals its element types (V1 driver)" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -643,11 +643,11 @@ test "comptime: yaml model ---- static record lift reveals the structure (V1 dri
 
     try inferInto(&env, alloc,
         \\pub fn conf<T>(comptime q: @Expr<string>) -> @Expr<T> {
-        \\    return @expr(record { port: 8080, debug: true });
+        \\    return @expr(#(8080, true));
         \\}
         \\val cfg = conf "server:";
-        \\val p = cfg.port + 1;
-        \\val d = cfg.debug;
+        \\val p = cfg.0 + 1;
+        \\val d = cfg.1;
     );
     try std.testing.expectEqualStrings("i32", env.lookup("p").?.deref().named.name);
     try std.testing.expectEqualStrings("bool", env.lookup("d").?.deref().named.name);

@@ -16,7 +16,7 @@ val Maybe = type {
 ```erlang
 -module(main).
 
-%% enum Maybe
+%% type Maybe
 %%   Nothing
 %%   Just(value)
 

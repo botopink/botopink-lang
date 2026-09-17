@@ -12,7 +12,7 @@ type Pipeline(
 ```erlang
 -module(main).
 
-%% record Pipeline: items
+%% type Pipeline: items
 
 run(Self, F) ->
     list:map(maps:get(items, Self), F).

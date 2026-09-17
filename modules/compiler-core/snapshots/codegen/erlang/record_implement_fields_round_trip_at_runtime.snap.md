@@ -14,7 +14,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% record E: tag, n
+%% type E: tag, n
 
 mk() ->
     #{tag => <<"x">>, n => 5}.

@@ -15,4 +15,4 @@ val CircleDrawing = implement Drawable for Circle {
 ----- ERROR
 error: unknown method
 
-  'explode' is not declared in any interface implemented for 'Circle'
+  'explode' is not declared in any behavior implemented for 'Circle'

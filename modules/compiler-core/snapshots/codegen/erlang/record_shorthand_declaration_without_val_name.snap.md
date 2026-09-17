@@ -13,7 +13,7 @@ type Vec2(
 ```erlang
 -module(main).
 
-%% record Vec2: x, y
+%% type Vec2: x, y
 
 dot(Self, Other) ->
     ((maps:get(x, Self) * maps:get(x, Other)) + (maps:get(y, Self) * maps:get(y, Other))).

@@ -78,7 +78,7 @@ test "order case over Order" {
 
 %%% an `Order`. Enums are concrete types, not interfaces.
 
-%% enum Order
+%% type Order
 %%   Lt
 %%   Eq
 %%   Gt

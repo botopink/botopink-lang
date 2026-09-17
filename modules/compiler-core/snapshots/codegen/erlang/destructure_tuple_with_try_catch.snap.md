@@ -14,7 +14,7 @@ fn f() {
 ```erlang
 -module(main).
 
-%% record Error: msg
+%% type Error: msg
 
 fetch() ->
     {error, #{msg => <<"boom">>}}.

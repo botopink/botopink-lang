@@ -17,7 +17,7 @@ fn arrayEq() -> bool {
 ```erlang
 -module(main).
 
-%% record Point: x, y
+%% type Point: x, y
 
 recordEq() ->
     A = #{x => 1, y => 2},

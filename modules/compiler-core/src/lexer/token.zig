@@ -72,6 +72,10 @@ pub const TokenKind = enum {
     delegate,
     derive,
     @"else",
+    /// `record`, `enum`, `interface`: NOT produced by the lexer since 1.0.3 —
+    /// the words lex as identifiers. The variants stay as declaration-kind
+    /// tags the language server's token scanners key on (`engine.zig`
+    /// `declKindAt` maps `type`/`behavior` onto them).
     @"enum",
     extend,
     extends,
@@ -95,8 +99,7 @@ pub const TokenKind = enum {
     @"test",
     throw,
     interface,
-    /// `behavior Name { … }` — the 1.0.3 spelling of `interface` (both parse
-    /// during the front-12 dual grammar).
+    /// `behavior Name { … }` — `interface` was renamed in 1.0.3.
     behavior,
     type,
     record,

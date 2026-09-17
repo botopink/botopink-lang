@@ -12,7 +12,7 @@ type Direction {
 ```erlang
 -module(main).
 
-%% enum Direction
+%% type Direction
 %%   North
 %%   South
 %%   East

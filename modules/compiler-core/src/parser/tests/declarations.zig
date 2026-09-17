@@ -21,7 +21,7 @@ test "parser: whitespace-only source" {
 }
 
 test "parser: empty interface" {
-    try h.assertParser(std.testing.allocator, @src(), "val Drawable = interface {}");
+    try h.assertParser(std.testing.allocator, @src(), "val Drawable = behavior {}");
 }
 
 test "parser: #[@future] annotation sets FnDecl.effect" {
@@ -49,15 +49,15 @@ test "parser: a plain fn has no effect" {
 }
 
 test "parser: interface with one field" {
-    try h.assertParser(std.testing.allocator, @src(), "val Drawable = interface { val color: string }");
+    try h.assertParser(std.testing.allocator, @src(), "val Drawable = behavior { val color: string; }");
 }
 
 test "parser: abstract method with 1 param (self: Self)" {
-    try h.assertParser(std.testing.allocator, @src(), "val Drawable = interface { fn draw(self: Self) }");
+    try h.assertParser(std.testing.allocator, @src(), "val Drawable = behavior { fn draw(self: Self); }");
 }
 
 test "parser: abstract method with multiple params" {
-    try h.assertParser(std.testing.allocator, @src(), "val Positionable = interface { fn moveTo(self: Self, x: i32, y: i32) }");
+    try h.assertParser(std.testing.allocator, @src(), "val Positionable = behavior { fn moveTo(self: Self, x: i32, y: i32); }");
 }
 
 test "parser: interface with methods of varying param counts" {
@@ -105,11 +105,11 @@ test "parser: record with inline implement" {
 }
 
 test "parser: empty record (no fields, no methods)" {
-    try h.assertParser(std.testing.allocator, @src(), "val Point = record {}");
+    try h.assertParser(std.testing.allocator, @src(), "val Point = type {}");
 }
 
 test "parser: record with two fields and no methods" {
-    try h.assertParser(std.testing.allocator, @src(), "val Point = record { x: number, y: number }");
+    try h.assertParser(std.testing.allocator, @src(), "val Point = type(x: number, y: number)");
 }
 
 test "parser: record with one method" {
@@ -999,7 +999,7 @@ test "parser: decl ids ---- per-kind counters increment independently" {
 test "parser: comments ---- doc, module and normal comments attach to decls" {
     try h.assertParser(std.testing.allocator, @src(),
         \\//// module header
-        \\/// documents the record
+        \\/// documents the type
         \\// a plain note
         \\val Point = type(x: i32)
         \\

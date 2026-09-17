@@ -104,7 +104,7 @@ main() ->
 -export(['_botopink_main'/0, main/1]).
 -export([wireService/0]).
 
-%% record Service: port, name
+%% type Service: port, name
 
 collect(Xs) ->
     Out = [],

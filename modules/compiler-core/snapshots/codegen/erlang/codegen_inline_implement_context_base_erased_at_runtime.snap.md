@@ -10,7 +10,7 @@ fn render() -> Element {
 ```erlang
 -module(main).
 
-%% record Element: 
+%% type Element: 
 
 render() ->
     #{}.

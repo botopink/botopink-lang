@@ -1615,10 +1615,10 @@ const Emitter = struct {
     fn buildInterface(self: *Emitter, i: ast.BehaviorDecl) !js.Stmt {
         var stmts: std.ArrayListUnmanaged(js.Stmt) = .empty;
 
-        // A doc block naming the interface's shape — the contract itself has no
+        // A doc block naming the behavior's shape — the contract itself has no
         // runtime representation.
         var head: std.ArrayListUnmanaged(u8) = .empty;
-        try head.print(self.arena(), "interface {s}", .{i.name});
+        try head.print(self.arena(), "behavior {s}", .{i.name});
         if (i.extends.len > 0) {
             try head.appendSlice(self.arena(), " extends ");
             for (i.extends, 0..) |ext, j| {
@@ -2799,7 +2799,6 @@ const Emitter = struct {
                 },
                 // Anonymous record literal — a plain JS object (parenthesized
                 // so it stays an expression in statement position).
-                .recordLit => |rl| return self.b.paren(try self.buildFieldObject(rl.fields)),
                 .behaviorLit => |il| return self.b.paren(try self.buildFieldObject(il.fields)),
             },
 

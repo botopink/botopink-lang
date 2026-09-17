@@ -2,7 +2,9 @@
 ```botopink
 pub fn conf<T>(comptime q: @Expr<string>) -> @Expr<T> {
     val t = q.text();
-    return @expr(record { port: 8000 + t.length, debug: true });
+    val port = 8000 + t.length;
+    val debug = true;
+    return @expr(#(port, debug));
 }
 val cfg = conf "yaml";
 fn main() {
@@ -14,7 +16,9 @@ fn main() {
 ```erlang
 conf(Q) ->
     T = text(Q),
-    expr(#{port => '__bp_add'(8000, '__bp_len'(T, length)), debug => true}).
+    Port = '__bp_add'(8000, '__bp_len'(T, length)),
+    Debug = true,
+    expr({Port, Debug}).
 
 main() ->
     try
@@ -28,9 +32,9 @@ main() ->
                     span => #{start => 0, 'end' => 4, line => 1}
                 }
             ],
-            source => #{file => <<"">>, line => 5, col => 16},
+            source => #{file => <<"">>, line => 7, col => 16},
             context => #{
-                source => #{file => <<"">>, line => 5, col => 16},
+                source => #{file => <<"">>, line => 7, col => 16},
                 text => <<"yaml">>,
                 multiline => false
             },
@@ -52,8 +56,10 @@ main() ->
 ```json
 {
   "value": {
-    "port": 8004,
-    "debug": true
+    "$tuple": [
+      8004,
+      true
+    ]
   },
   "kind": "value"
 }
@@ -69,7 +75,7 @@ main() ->
   (global $cfg (mut i32) (i32.const 0))
   (func $main
     global.get $cfg
-    i32.load ;; .port
+    i32.load
     i32.const 1
     i32.add
     call $__print_i32

@@ -14,7 +14,7 @@ fn safe() -> i32 {
 ```erlang
 -module(main).
 
-%% record RiskError: level
+%% type RiskError: level
 
 risky() ->
     {error, #{level => 5}}.

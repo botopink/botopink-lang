@@ -13,7 +13,7 @@ fn lineNo() -> i32 {
 ```erlang
 -module(main).
 
-%% record Span: start, end, line
+%% type Span: start, end, line
 
 span() ->
     #{start => 4, 'end' => 9, line => 2}.

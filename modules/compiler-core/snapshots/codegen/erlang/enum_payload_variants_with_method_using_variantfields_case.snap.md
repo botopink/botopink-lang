@@ -19,7 +19,7 @@ val Shape = type {
 ```erlang
 -module(main).
 
-%% enum Shape
+%% type Shape
 %%   Circle(radius)
 %%   Square(side)
 %%   Triangle(base, height)

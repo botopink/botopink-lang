@@ -18,7 +18,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% record R: kind
+%% type R: kind
 
 choose(Present) ->
     case Present of

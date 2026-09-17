@@ -16,7 +16,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% record Point: x, y
+%% type Point: x, y
 
 describe(P) ->
     #{x := X, y := Y} = P,

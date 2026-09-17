@@ -13,7 +13,7 @@ val Account = type(name: string, email: string);
 
 %% Holds name and email
 
-%% record Account: name, email
+%% type Account: name, email
 ```
 
 ----- RUN LOG -----

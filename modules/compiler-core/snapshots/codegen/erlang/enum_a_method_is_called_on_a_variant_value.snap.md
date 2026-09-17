@@ -24,7 +24,7 @@ pub fn main() {
 -export(['_botopink_main'/0, main/1]).
 -export([main/0]).
 
-%% enum Shape
+%% type Shape
 %%   Circle(radius)
 %%   Square(side)
 

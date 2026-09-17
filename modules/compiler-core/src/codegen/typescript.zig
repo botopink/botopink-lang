@@ -298,11 +298,6 @@ const Builder = struct {
             // A comptime typeparam is erased after specialization; surface it
             // as `any`.
             .typeparam => return .{ .name = "any" },
-            .record_type => |flds| {
-                const fs = try self.b.arena.alloc(js.TsField, flds.len);
-                for (flds, 0..) |f, i| fs[i] = .{ .name = f.name, .type = try self.typeRef(f.typeRef) };
-                return .{ .object = .{ .fields = fs } };
-            },
         }
     }
 

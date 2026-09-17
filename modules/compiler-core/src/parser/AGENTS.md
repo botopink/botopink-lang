@@ -32,8 +32,8 @@ parser/
 ├── AGENTS.md      ← you are here
 ├── types.zig      ← type-ref sub-grammar: parseTypeRef/BaseTypeRef/GenericParams/ImplementClause
 ├── patterns.zig   ← case/pattern sub-grammar: parseCaseExpr/parsePattern/SimplePattern/ListPattern
-├── decls.zig      ← declaration sub-grammar: val/fn/test/record/enum/interface/implement/extend/delegate/import + params;
-│                     the 1.0.3 `type`/`behavior` spellings (front 12 dual grammar): `parseTypeDecl`/`parseShorthandTypeDecl`
+├── decls.zig      ← declaration sub-grammar: val/fn/test/type/behavior/implement/extend/delegate/import + params;
+│                     the 1.0.3 `type`/`behavior` declarations: `parseTypeDecl`/`parseShorthandTypeDecl`
 │                     (shared `parseFieldList`, shape resolution, `type-*` diagnostics), `parseBehaviorDecl`/`parseShorthandBehaviorDecl`
 │                     (member separators: bodyless members end with `;` — `member-comma-separator` / `member-missing-semicolon`)
 ├── template_markers.zig ← decision 5: `@External` template markers are positional over the declared parameters
@@ -76,9 +76,9 @@ two additions for record/builder ergonomics:
 - **Function-type params may be named** — `fn(next: T)` parses alongside the
   bare `fn(T)`; the name is documentation-only (function types are positional)
   and is discarded.
-- **Anonymous record types** — `{ value: T, set: fn(T) }` parses to
-  `TypeRef.record_type` (a `[]RecordTypeField`), usable as any annotation /
-  return type; inference resolves it to a structural `Type.record`.
+- **The removed anonymous record type** — `{ value: T, … }` in type position
+  raises `removed-record-type` at the `{` (1.0.3: a labeled tuple type
+  `#(value: T, …)`).
 
 A non-`syntax` `name: fn(…)` param is parsed through `parseTypeRef` (a
 `TypeRef.function`, so its return may be an array — `fn() -> T[]`);
@@ -185,3 +185,15 @@ Both are pinned by snapshots (`comments_…`, `decl_ids_…`).
   `(` = payload, `,`/`}` = bare). The comptime desugars the tree into the
   enum-of-enum form with mangled inner names; the parser only records the
   structure.
+
+## The removed 1.0.2 surface (front 12 step 4)
+
+`record`, `enum` and `interface` lex as identifiers. Where a declaration would
+start — top level, after annotations, after `pub`, or as a val-form body —
+`Parser.removedDeclKeywordAt` recognises the word when a name, `{`, `<` or `fn`
+follows, and `failRemovedDeclKeyword` records a located diagnostic:
+`removed-keyword-record`, `removed-keyword-enum`, `removed-keyword-interface`.
+`record {` in an expression (and `val lower = record { … }`) is
+`removed-record-literal`; `{` in type position is `removed-record-type`. The
+messages (`print.zig`) name the 1.0.3 spelling. The words stay usable as
+ordinary identifiers (`val record = 1`).

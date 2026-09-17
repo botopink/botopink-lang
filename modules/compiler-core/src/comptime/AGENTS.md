@@ -138,7 +138,7 @@ passed) — otherwise the V1 "cannot expand" error. The runtime path requires
 values in `env.templateEvalCache` (holed captures and `@ExprCustom` calls are
 never memoized), and maps the outcome: `code` → `parseCodeText` +
 `substituteHoles`; `capture` → the captured node; `value` → `valueToAstLiteral`
-(`TypedValue` → literal / array / anonymous record); `custom` → `code` spliced
+(`TypedValue` → literal / array / tuple — a tuple takes the labels its template body gives it: `liftShapeOf` reads `return @expr(#(server, debug))` and the `val server = #(host, port)` bindings before it, so the lifted `tupleLit.labels` make `cfg.server.port` resolve; an Erlang tuple crosses the bridge as `{"$tuple": [...]}` (`'__bp_json'/1`), a host map lifts as a tuple labeled by its keys); `custom` → `code` spliced
 like `code`, tree via `template.parseCustomNodeFromTree` into
 `env.customAstByLoc`; `fail` → `failDiagnostic`.
 `finishExpansion` re-infers the expansion in the caller's env, unifies against a
@@ -282,11 +282,11 @@ Codegen lowers `use` per target (commonJS → React hooks with inferred
 dependency arrays; other targets treat `use` as a transparent prefix). Phantom
 `@Context` base structs are erased — see `codegen/AGENTS.md`.
 
-## Anonymous record types + `Children` coercion
+## `Children` coercion
 
-- `resolveTypeRefInContext` lowers `TypeRef.record_type` (`{ f: T, … }`) to a
-  structural `Type.record`, unified field-by-field (same field set + order)
-  with a `record { … }` literal.
+- The anonymous record type `{ f: T }` and literal `record { … }` left the
+  surface in front 12 step 4 (they are tuples, decision 8 §6); `Type.record`
+  stays in the type model for the structural types inference still builds.
 - `childrenCoercion` (checked in `unifyAt`, target-first) lets an argument bind
   to a `Children` parameter when it is `Children`, any array, a `string` (text
   child), or a single `@Context` value (one-element list). One-directional.

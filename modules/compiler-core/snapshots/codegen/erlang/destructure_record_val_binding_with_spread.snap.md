@@ -11,7 +11,7 @@ fn describe(p: Point) -> i32 {
 ```erlang
 -module(main).
 
-%% record Point: x, y, z
+%% type Point: x, y, z
 
 describe(P) ->
     #{x := X} = P,

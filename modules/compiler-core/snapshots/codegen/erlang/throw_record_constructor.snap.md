@@ -12,7 +12,7 @@ fn validate(x: i32) {
 ```erlang
 -module(main).
 
-%% record AppError: code, msg
+%% type AppError: code, msg
 
 validate(X) ->
     case (X < 0) of

@@ -11,7 +11,7 @@ type Unimplemented(id: i32) {
 ```erlang
 -module(main).
 
-%% record Unimplemented: id
+%% type Unimplemented: id
 
 process(Self) ->
     erlang:error({todo, "not implemented"}).

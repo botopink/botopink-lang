@@ -36,7 +36,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-// interface Pairish
+// behavior Pairish
 //   default fn of(...)
 //   default fn first(...)
 const Pairish = {};

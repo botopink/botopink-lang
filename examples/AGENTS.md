@@ -37,10 +37,9 @@ examples/
     └── main.bp                caller gets the structural type (`cfg.server.port`)
 ```
 
-**Known gap (front 12 step 3):** `yamlconf` lifts a tuple through `@expr(#(server, debug))`, but the
-comptime bridge (`'__bp_json'/1` → `typedValue`) transports no tuple and the lifted type carries no
-labels, so `cfg.server.port` no longer resolves — the old `record { … }` literal has no
-label-preserving equivalent yet (`{error,{unsupported_type,…}}` at expansion). Tracked for front 06.
+`yamlconf` lifts a tuple through `@expr(#(server, debug))`: the tuple crosses the comptime bridge
+(`'__bp_json'/1` → `{"$tuple": [...]}`) and takes the labels its template body gives it
+(`liftShapeOf`), so `cfg.server.port` resolves and `cfg.server.prot` is a located compile error.
 
 `generic-loader-binding` resolves `from "erika"` through the multi-root lib
 resolver to the sibling `repository/erika/` project, so it needs that submodule

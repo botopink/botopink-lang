@@ -21,7 +21,7 @@ fn pipeline() -> @Result<i32, IoError> {
 ```erlang
 -module(main).
 
-%% record IoError: path
+%% type IoError: path
 
 step1() ->
     {error, #{path => <<"/data">>}}.

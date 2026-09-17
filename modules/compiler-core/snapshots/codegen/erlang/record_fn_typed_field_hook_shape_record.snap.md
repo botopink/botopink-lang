@@ -9,7 +9,7 @@ fn apply(s: State<i32>) -> i32 { s.set(s.value); return s.value; }
 ```erlang
 -module(main).
 
-%% record State: value, set
+%% type State: value, set
 
 make() ->
     #{value => 0, set => fun(N) ->

@@ -17,7 +17,7 @@ fn Widget() -> Element {
 ```erlang
 -module(main).
 
-%% record Element: 
+%% type Element: 
 
 cleanup() ->
     0.

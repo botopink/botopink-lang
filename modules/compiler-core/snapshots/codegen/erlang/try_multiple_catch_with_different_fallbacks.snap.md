@@ -24,7 +24,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% record UserError: msg
+%% type UserError: msg
 
 fetchName() ->
     {error, #{msg => <<"name missing">>}}.

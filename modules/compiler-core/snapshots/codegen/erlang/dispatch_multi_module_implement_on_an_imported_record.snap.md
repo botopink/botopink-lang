@@ -7,7 +7,7 @@ pub type Pato(id: i32)
 ```erlang
 -module(pond).
 
-%% record Pato: id
+%% type Pato: id
 ```
 
 ----- RUN LOG -----
@@ -38,7 +38,7 @@ fn main() {
 
 %% import Pato
 
-%% interface Swimmer
+%% behavior Swimmer
 
 %% implement Swimmer for Pato
 

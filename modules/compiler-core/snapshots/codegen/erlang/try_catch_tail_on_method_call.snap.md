@@ -16,9 +16,9 @@ fn run(p: Parser) -> i32 {
 ```erlang
 -module(main).
 
-%% record ParseError: msg
+%% type ParseError: msg
 
-%% record Parser: 
+%% type Parser: 
 
 parse(Self) ->
     erlang:throw(#{msg => <<"bad input">>}).

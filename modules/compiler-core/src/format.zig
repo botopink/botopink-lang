@@ -648,16 +648,6 @@ pub const Formatter = struct {
                     try this.text(")"),
                 }),
                 // `record { name: value, … }` — anonymous record literal.
-                .recordLit => |rl| blk: {
-                    var doc: *const Doc = try this.text("record { ");
-                    for (rl.fields, 0..) |f, i| {
-                        if (i > 0) doc = try this.concat(doc, try this.text(", "));
-                        doc = try this.concat(doc, try this.text(f.name));
-                        doc = try this.concat(doc, try this.text(": "));
-                        doc = try this.concat(doc, try this.fmtExpr(f.value.*));
-                    }
-                    break :blk try this.concat(doc, try this.text(" }"));
-                },
                 .behaviorLit => |il| blk: {
                     var doc: *const Doc = try this.text("@");
                     doc = try this.concat(doc, try this.text(il.name));
@@ -1980,20 +1970,6 @@ pub const Formatter = struct {
                     try this.text("type "),
                     try this.join(docs, try this.text(" | ")),
                 );
-            },
-            .record_type => |flds| blk: {
-                if (flds.len == 0) break :blk this.text("{}");
-                var docs = try this.arena.alloc(*const Doc, flds.len);
-                for (flds, 0..) |f, i| docs[i] = try this.concatAll(&.{
-                    try this.text(f.name),
-                    try this.text(": "),
-                    try this.fmtTypeRef(f.typeRef),
-                });
-                break :blk this.concatAll(&.{
-                    try this.text("{ "),
-                    try this.join(docs, try this.text(", ")),
-                    try this.text(" }"),
-                });
             },
         };
     }

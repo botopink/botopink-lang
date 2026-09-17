@@ -10,7 +10,7 @@ fn pick(maybe: ?R) -> i32 {
 ```erlang
 -module(main).
 
-%% record R: a, b
+%% type R: a, b
 
 pick(Maybe) ->
     (fun(undefined) -> undefined; (_Opt0) -> maps:get(b, _Opt0) end)(Maybe).

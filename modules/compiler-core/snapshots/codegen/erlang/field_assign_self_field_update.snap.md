@@ -12,7 +12,7 @@ val Counter = type(
 ```erlang
 -module(main).
 
-%% record Counter: count
+%% type Counter: count
 
 inc() ->
     %% field assignment is not directly supported in Erlang.

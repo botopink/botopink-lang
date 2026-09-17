@@ -2,7 +2,9 @@
 ```botopink
 pub fn conf<T>(comptime q: @Expr<string>) -> @Expr<T> {
     val t = q.text();
-    return @expr(record { port: 8000 + t.length, debug: true });
+    val port = 8000 + t.length;
+    val debug = true;
+    return @expr(#(port, debug));
 }
 val cfg = conf "yaml";
 fn main() {
@@ -14,7 +16,9 @@ fn main() {
 ```erlang
 conf(Q) ->
     T = text(Q),
-    expr(#{port => '__bp_add'(8000, '__bp_len'(T, length)), debug => true}).
+    Port = '__bp_add'(8000, '__bp_len'(T, length)),
+    Debug = true,
+    expr({Port, Debug}).
 
 main() ->
     try
@@ -28,9 +32,9 @@ main() ->
                     span => #{start => 0, 'end' => 4, line => 1}
                 }
             ],
-            source => #{file => <<"">>, line => 5, col => 16},
+            source => #{file => <<"">>, line => 7, col => 16},
             context => #{
-                source => #{file => <<"">>, line => 5, col => 16},
+                source => #{file => <<"">>, line => 7, col => 16},
                 text => <<"yaml">>,
                 multiline => false
             },
@@ -52,8 +56,10 @@ main() ->
 ```json
 {
   "value": {
-    "port": 8004,
-    "debug": true
+    "$tuple": [
+      8004,
+      true
+    ]
   },
   "kind": "value"
 }
@@ -64,7 +70,7 @@ main() ->
 {module, main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
-{labels, 20}.
+{labels, 19}.
 
 {function, cfg, 0, 3}.
   {label, 2}.
@@ -73,7 +79,8 @@ main() ->
   {label, 3}.
     {allocate, 0, 0}.
     {move, {atom, true}, {x, 0}}.
-    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 1, {list, [{atom, port}, {integer, 8004}, {atom, debug}, {x, 0}]}}.
+    {test_heap, 3, 1}.
+    {put_tuple2, {x, 0}, {list, [{integer, 8004}, {x, 0}]}}.
     {deallocate, 0}.
     return.
 
@@ -84,13 +91,13 @@ main() ->
   {label, 5}.
     {allocate, 0, 0}.
     {call, 0, {f, 3}}.
-    {test, is_map, {f, 10}, [{x, 0}]}.
-    {get_map_elements, {f, 10}, {x, 0}, {list, [{atom, port}, {x, 0}]}}.
-  {label, 10}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 1}, {x, 0}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
     {gc_bif, '+', {f, 0}, 1, [{x, 0}, {integer, 1}], {x, 0}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
-    {call, 1, {f, 12}}.
+    {call, 1, {f, 11}}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 0}.
     return.
@@ -109,59 +116,59 @@ main() ->
   {label, 9}.
     {call_only, 0, {f, 7}}.
 
-{function, '__bp_print', 1, 12}.
-  {label, 11}.
+{function, '__bp_print', 1, 11}.
+  {label, 10}.
     {line, [{location, "main.erl", 3}]}.
     {func_info, {atom, main}, {atom, '__bp_print'}, 1}.
-  {label, 12}.
+  {label, 11}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
-    {call, 1, {f, 14}}.
+    {call, 1, {f, 13}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext_last, 2, {extfunc, io, format, 2}, 1}.
 
-{function, '__bp_print_fmt', 1, 14}.
-  {label, 13}.
+{function, '__bp_print_fmt', 1, 13}.
+  {label, 12}.
     {line, [{location, "main.erl", 3}]}.
     {func_info, {atom, main}, {atom, '__bp_print_fmt'}, 1}.
-  {label, 14}.
-    {test, is_nonempty_list, {f, 17}, [{x, 0}]}.
+  {label, 13}.
+    {test, is_nonempty_list, {f, 16}, [{x, 0}]}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {get_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 1}, {y, 0}}.
-    {call, 1, {f, 16}}.
-    {test, is_binary, {f, 18}, [{y, 0}]}.
+    {call, 1, {f, 15}}.
+    {test, is_binary, {f, 17}, [{y, 0}]}.
     {test_heap, 6, 1}.
     {put_list, {integer, 115}, {x, 0}, {x, 0}}.
     {put_list, {integer, 116}, {x, 0}, {x, 0}}.
     {put_list, {integer, 126}, {x, 0}, {x, 0}}.
     {deallocate, 1}.
     return.
-  {label, 18}.
+  {label, 17}.
     {test_heap, 4, 1}.
     {put_list, {integer, 112}, {x, 0}, {x, 0}}.
     {put_list, {integer, 126}, {x, 0}, {x, 0}}.
     {deallocate, 1}.
     return.
-  {label, 17}.
+  {label, 16}.
     {move, {literal, [126, 110]}, {x, 0}}.
     return.
 
-{function, '__bp_print_sep', 1, 16}.
-  {label, 15}.
+{function, '__bp_print_sep', 1, 15}.
+  {label, 14}.
     {line, [{location, "main.erl", 3}]}.
     {func_info, {atom, main}, {atom, '__bp_print_sep'}, 1}.
-  {label, 16}.
-    {test, is_nonempty_list, {f, 19}, [{x, 0}]}.
+  {label, 15}.
+    {test, is_nonempty_list, {f, 18}, [{x, 0}]}.
     {allocate, 0, 1}.
-    {call, 1, {f, 14}}.
+    {call, 1, {f, 13}}.
     {test_heap, 2, 1}.
     {put_list, {integer, 32}, {x, 0}, {x, 0}}.
     {deallocate, 0}.
     return.
-  {label, 19}.
+  {label, 18}.
     {move, {literal, [126, 110]}, {x, 0}}.
     return.
 ```

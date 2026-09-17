@@ -10,7 +10,7 @@ val Color = type {
 ```erlang
 -module(main).
 
-%% enum Color
+%% type Color
 %%   Red
 %%   Rgb(r, g, b)
 ```

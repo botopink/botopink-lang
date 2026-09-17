@@ -15,7 +15,7 @@ fn safe() -> i32 {
 ```erlang
 -module(main).
 
-%% record NetError: code
+%% type NetError: code
 
 fetch() ->
     {error, #{code => 500}}.

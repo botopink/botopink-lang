@@ -15,7 +15,7 @@ fn compute() -> i32 {
 ```erlang
 -module(main).
 
-%% record CalcError: msg
+%% type CalcError: msg
 
 getA() ->
     {error, #{msg => <<"overflow">>}}.

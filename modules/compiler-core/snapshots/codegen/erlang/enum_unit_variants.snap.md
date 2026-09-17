@@ -12,7 +12,7 @@ val Direction = type {
 ```erlang
 -module(main).
 
-%% enum Direction
+%% type Direction
 %%   North
 %%   South
 %%   East

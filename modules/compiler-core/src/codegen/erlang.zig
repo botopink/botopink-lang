@@ -627,39 +627,58 @@ pub const comptime_helper_forms = [_]Ast.Form{
     add_helper_form,
     len_helper_form,
     text_helper_form,
-    .{ .function = .{ .name = "__bp_json", .clauses = &.{
-        .{
-            .patterns = &.{Ast.Expr.a("undefined")},
-            .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.a("null") }}),
-            .layout = .inline_,
+    .{
+        .function = .{
+            .name = "__bp_json",
+            .clauses = &.{
+                .{
+                    .patterns = &.{Ast.Expr.a("undefined")},
+                    .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.a("null") }}),
+                    .layout = .inline_,
+                },
+                .{
+                    .patterns = &.{Ast.Expr.v("Map")},
+                    .guards = &.{isA("map", "Map")},
+                    .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "maps", .name = "map", .args = &.{
+                        .{ .fun = .{
+                            .params = &.{ Ast.Expr.v("_"), Ast.Expr.v("V") },
+                            .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .name = "__bp_json", .args = &.{Ast.Expr.v("V")} } } }}),
+                        } },
+                        Ast.Expr.v("Map"),
+                    } } } }}),
+                    .layout = .inline_,
+                },
+                .{
+                    .patterns = &.{Ast.Expr.v("List")},
+                    .guards = &.{isA("list", "List")},
+                    .body = Ast.Body.of(&.{.{ .expr = .{ .list_comp = .{
+                        .element = &Ast.Expr{ .call = .{ .name = "__bp_json", .args = &.{Ast.Expr.v("V")} } },
+                        .qualifiers = &.{.{ .generator = .{ .pattern = Ast.Expr.v("V"), .list = Ast.Expr.v("List") } }},
+                    } } }}),
+                    .layout = .inline_,
+                },
+                .{
+                    // A tuple has no JSON form: `{"$tuple": [...]}`, read back by
+                    // template_eval's `typedValue`.
+                    .patterns = &.{Ast.Expr.v("Tuple")},
+                    .guards = &.{isA("tuple", "Tuple")},
+                    .body = Ast.Body.of(&.{.{ .expr = .{ .map = &.{.{
+                        .key = .{ .lexeme_binary = "$tuple" },
+                        .value = .{ .list_comp = .{
+                            .element = &Ast.Expr{ .call = .{ .name = "__bp_json", .args = &.{Ast.Expr.v("V")} } },
+                            .qualifiers = &.{.{ .generator = .{ .pattern = Ast.Expr.v("V"), .list = .{ .call = .{ .module = "erlang", .name = "tuple_to_list", .args = &.{Ast.Expr.v("Tuple")} } } } }},
+                        } },
+                    }} } }}),
+                    .layout = .inline_,
+                },
+                .{
+                    .patterns = &.{Ast.Expr.v("Value")},
+                    .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("Value") }}),
+                    .layout = .inline_,
+                },
+            },
         },
-        .{
-            .patterns = &.{Ast.Expr.v("Map")},
-            .guards = &.{isA("map", "Map")},
-            .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "maps", .name = "map", .args = &.{
-                .{ .fun = .{
-                    .params = &.{ Ast.Expr.v("_"), Ast.Expr.v("V") },
-                    .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .name = "__bp_json", .args = &.{Ast.Expr.v("V")} } } }}),
-                } },
-                Ast.Expr.v("Map"),
-            } } } }}),
-            .layout = .inline_,
-        },
-        .{
-            .patterns = &.{Ast.Expr.v("List")},
-            .guards = &.{isA("list", "List")},
-            .body = Ast.Body.of(&.{.{ .expr = .{ .list_comp = .{
-                .element = &Ast.Expr{ .call = .{ .name = "__bp_json", .args = &.{Ast.Expr.v("V")} } },
-                .qualifiers = &.{.{ .generator = .{ .pattern = Ast.Expr.v("V"), .list = Ast.Expr.v("List") } }},
-            } } }}),
-            .layout = .inline_,
-        },
-        .{
-            .patterns = &.{Ast.Expr.v("Value")},
-            .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("Value") }}),
-            .layout = .inline_,
-        },
-    } } },
+    },
 };
 
 /// `is_<kind>(Var)` guard test.
@@ -3879,7 +3898,6 @@ const Emitter = struct {
                 }),
                 // Anonymous record / interface literal — an Erlang map (the same
                 // shape named records lower to). Keys are the field names as written.
-                .recordLit => |rl| return this.fieldMap(b, rl.fields),
                 .behaviorLit => |il| return this.fieldMap(b, il.fields),
             },
 
@@ -4924,7 +4942,7 @@ const Emitter = struct {
         // Records are maps at runtime (`#{field => V}`) — no decl needed.
         // (`-record(PascalCase, …)` is invalid Erlang: a capitalised bare atom.)
         var text: std.ArrayListUnmanaged(u8) = .empty;
-        try text.appendSlice(b.arena, try std.fmt.allocPrint(b.arena, "record {s}: ", .{r.name}));
+        try text.appendSlice(b.arena, try std.fmt.allocPrint(b.arena, "type {s}: ", .{r.name}));
         for (r.recordFields(), 0..) |f, i| {
             if (i > 0) try text.appendSlice(b.arena, ", ");
             try text.appendSlice(b.arena, f.name);
@@ -4946,7 +4964,7 @@ const Emitter = struct {
     }
 
     fn enumForms(this: *Emitter, b: Ast.Builder, out: *Forms, e: ast.TypeDecl) !void {
-        try out.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "enum {s}", .{e.name})) });
+        try out.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "type {s}", .{e.name})) });
         for (e.variants()) |v| {
             var text: std.ArrayListUnmanaged(u8) = .empty;
             try text.appendSlice(b.arena, try std.fmt.allocPrint(b.arena, "  {s}", .{v.name}));
@@ -4967,7 +4985,7 @@ const Emitter = struct {
     }
 
     fn interfaceForms(this: *Emitter, b: Ast.Builder, out: *Forms, i: ast.BehaviorDecl) !void {
-        try out.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "interface {s}", .{i.name})) });
+        try out.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "behavior {s}", .{i.name})) });
         // Associated `default fn`s (no `self`) are pure botopink — local
         // functions so `Interface.method(...)` resolves locally (the interface
         // decl is inlined into each consuming module). The name is mangled

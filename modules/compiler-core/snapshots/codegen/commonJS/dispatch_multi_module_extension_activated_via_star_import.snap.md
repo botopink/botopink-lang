@@ -13,7 +13,7 @@ pub val PatoNada = implement Swimmer for Pato {
 
 ----- JAVASCRIPT -- pond.js
 ```javascript
-// interface Swimmer
+// behavior Swimmer
 //   fn swim(...)
 
 class Pato {

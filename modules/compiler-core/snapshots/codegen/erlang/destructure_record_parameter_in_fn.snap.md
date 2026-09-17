@@ -15,7 +15,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% record Person: name, age
+%% type Person: name, age
 
 greet(#{name := Name}) ->
     '__bp_print'([Name]),

@@ -14,7 +14,7 @@ type Pipeline(
 ```erlang
 -module(main).
 
-%% record Pipeline: items
+%% type Pipeline: items
 
 doubled(Self) ->
     list:map(maps:get(items, Self), fun(X) ->

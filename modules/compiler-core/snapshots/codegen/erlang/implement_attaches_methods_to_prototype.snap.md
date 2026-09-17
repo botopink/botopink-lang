@@ -15,9 +15,9 @@ val PersonPrintable = implement Printable for Person {
 ```erlang
 -module(main).
 
-%% interface Printable
+%% behavior Printable
 
-%% record Person: name
+%% type Person: name
 
 %% implement Printable for Person
 

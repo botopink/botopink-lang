@@ -16,7 +16,7 @@ fn strict() -> @Result<i32, string> {
 ```erlang
 -module(main).
 
-%% record ApiError: msg
+%% type ApiError: msg
 
 fetch() ->
     {error, #{msg => <<"not found">>}}.

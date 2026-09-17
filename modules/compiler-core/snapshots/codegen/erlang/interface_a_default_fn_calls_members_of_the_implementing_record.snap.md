@@ -33,9 +33,9 @@ fn main() {
 -compile({no_auto_import,[min/2, max/2]}).
 -export(['_botopink_main'/0, main/1]).
 
-%% interface Bounded
+%% behavior Bounded
 
-%% record Money: cents
+%% type Money: cents
 
 min(Self, Other) ->
     case (maps:get(cents, Self) < maps:get(cents, Other)) of

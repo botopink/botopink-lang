@@ -15,7 +15,7 @@ fn handle() -> i32 {
 ```erlang
 -module(main).
 
-%% enum ErrorKind
+%% type ErrorKind
 %%   NotFound
 %%   Timeout
 

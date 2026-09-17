@@ -20,7 +20,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% interface Pairish
+%% behavior Pairish
 
 pairish_of(First, Second) ->
     {First, Second}.

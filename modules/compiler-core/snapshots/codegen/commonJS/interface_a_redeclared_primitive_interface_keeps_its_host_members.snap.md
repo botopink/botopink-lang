@@ -36,7 +36,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-// interface Number
+// behavior Number
 //   fn min(...)
 //   fn max(...)
 //   default fn clamp(...)

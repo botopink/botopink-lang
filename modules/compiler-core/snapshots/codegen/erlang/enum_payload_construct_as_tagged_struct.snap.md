@@ -13,7 +13,7 @@ fn makeCircle() -> Shape {
 ```erlang
 -module(main).
 
-%% enum Shape
+%% type Shape
 %%   Circle(r)
 %%   Square(side)
 

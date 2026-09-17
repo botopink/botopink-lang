@@ -10,7 +10,7 @@ val Drawable = behavior {
 ```erlang
 -module(main).
 
-%% interface Drawable
+%% behavior Drawable
 ```
 
 ----- RUN LOG -----

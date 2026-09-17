@@ -13,4 +13,4 @@ val CircleDrawing = implement Drawable for Circle {
 ----- ERROR
 error: missing interface method
 
-  'Circle' does not implement 'erase' required by interface 'Drawable'
+  'Circle' does not implement 'erase' required by behavior 'Drawable'

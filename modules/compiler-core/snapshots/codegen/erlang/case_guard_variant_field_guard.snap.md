@@ -16,7 +16,7 @@ fn big(sh: Shape) -> string {
 ```erlang
 -module(main).
 
-%% enum Shape
+%% type Shape
 %%   Circle(r)
 %%   Square(s)
 

@@ -94,7 +94,7 @@ pub const ParseErrorType = enum {
     effectOnDeclareForbidden,
     /// R2 (§2) — `interface I { #[@<effect>] fn … }`: interface methods are
     /// declarative — they express the effect through the return wrapper alone.
-    effectOnInterfaceMethodForbidden,
+    effectOnBehaviorMethodForbidden,
     /// R5 (§2) — more than one `#[@<effect>]` annotation on the same fn.
     effectDuplicateAnnotation,
     /// R16 / RG1 (§1G) — a generic parameter without a default follows one
@@ -123,6 +123,16 @@ pub const ParseErrorType = enum {
     /// `type P(x: i32) { A }` — a field list and a variant in the same
     /// declaration: a `type` is a record (fields) or an enum (variants).
     typeRecordWithVariants,
+    /// `record P { … }` — `record` was replaced by `type` in 1.0.3.
+    removedKeywordRecord,
+    /// `enum E { … }` — `enum` was replaced by `type` in 1.0.3.
+    removedKeywordEnum,
+    /// `interface I { … }` — `interface` was renamed to `behavior` in 1.0.3.
+    removedKeywordInterface,
+    /// `record { x: 1 }` — anonymous records are tuples in 1.0.3.
+    removedRecordLiteral,
+    /// `{ x: i32 }` in type position — anonymous record types are tuples in 1.0.3.
+    removedRecordType,
     /// `type P()` — an empty field list; a record with no fields omits `()`.
     typeEmptyFieldList,
     /// `type S { fn f(self: Self) {} A }` — variants come before methods.
@@ -356,22 +366,14 @@ pub const Parser = struct {
                 const d = try this.parseShorthandBehaviorDecl(alloc);
                 _ = this.match(.semicolon);
                 break :blk .{ .behavior = d };
-            } else if (this.checkShorthand(.@"enum")) blk: {
-                const d = try this.parseShorthandEnumDecl(alloc);
-                _ = this.match(.semicolon);
-                break :blk .{ .type_ = d };
-            } else if (this.checkShorthand(.record)) blk: {
-                const d = try this.parseShorthandRecordDecl(alloc);
-                _ = this.match(.semicolon);
-                break :blk .{ .type_ = d };
+            } else if (this.removedDeclKeywordAt(0) != null or
+                (this.check(.@"pub") and this.removedDeclKeywordAt(1) != null))
+            {
+                return this.failRemovedDeclKeyword(if (this.check(.@"pub")) 1 else 0);
             } else if (this.checkShorthandDelegate()) blk: {
                 const d = try this.parseShorthandDelegateDecl(alloc);
                 _ = this.match(.semicolon);
                 break :blk .{ .delegate = d };
-            } else if (this.checkShorthand(.interface)) blk: {
-                const d = try this.parseShorthandInterfaceDecl(alloc);
-                _ = this.match(.semicolon);
-                break :blk .{ .behavior = d };
             } else if (this.checkNamedDecl(.implement)) blk: {
                 const d = try this.parseShorthandImplementDecl(alloc);
                 _ = this.match(.semicolon);
@@ -405,9 +407,11 @@ pub const Parser = struct {
                 const eff = if (isPub) this.peekAt(annEnd + 1).kind else tok;
                 const decl: DeclKind = switch (eff) {
                     .@"fn", .star => DeclKind{ .@"fn" = try this.parseFnDecl(alloc) },
-                    .@"enum" => DeclKind{ .type_ = try this.parseShorthandEnumDecl(alloc) },
-                    .record => DeclKind{ .type_ = try this.parseShorthandRecordDecl(alloc) },
-                    .interface => DeclKind{ .behavior = try this.parseShorthandInterfaceDecl(alloc) },
+                    .identifier => {
+                        const off = if (isPub) annEnd + 1 else annEnd;
+                        if (this.removedDeclKeywordAt(off) != null) return this.failRemovedDeclKeyword(off);
+                        return ParseError.UnexpectedToken;
+                    },
                     .type => DeclKind{ .type_ = try this.parseShorthandTypeDecl(alloc) },
                     .behavior => DeclKind{ .behavior = try this.parseShorthandBehaviorDecl(alloc) },
                     // An ANNOTATED `declare fn` is the FFI declaration form
@@ -497,24 +501,62 @@ pub const Parser = struct {
         const adjustedOffset = this.skipAnnotationsLookaheadFrom(baseOffset);
         const body = this.peekAt(adjustedOffset).kind;
         const bodyNext = this.peekAt(adjustedOffset + 1).kind;
+        if (body == .identifier and this.removedDeclKeywordAt(adjustedOffset) != null) {
+            const lexeme = this.peekAt(adjustedOffset).lexeme;
+            // `val x = record { a: 1 }` in a lower-case binding is the removed
+            // anonymous record literal; `val Point = record { … }` the removed
+            // declaration form. `val Name = interface fn(…)` was a delegate.
+            if (std.mem.eql(u8, lexeme, "record") and bodyNext == .leftBrace and this.valFormNameIsLower()) {
+                return this.failRemovedAt(.removedRecordLiteral, adjustedOffset);
+            }
+            return this.failRemovedDeclKeyword(adjustedOffset);
+        }
         return switch (body) {
-            .record => .{ .type_ = try this.parseRecordDecl(alloc) },
             .implement => .{ .implement = try this.parseImplementDecl(alloc) },
             .extend => .{ .extend = try this.parseExtendDecl(alloc) },
-            .@"enum" => .{ .type_ = try this.parseEnumDecl(alloc) },
             .declare => .{ .delegate = try this.parseDelegateDecl(alloc) },
             .type => switch (bodyNext) {
                 .lessThan, .leftParenthesis, .leftBrace, .implement => .{ .type_ = try this.parseTypeDecl(alloc) },
                 else => .{ .val = try this.parseValDecl(alloc) },
             },
             .behavior => .{ .behavior = try this.parseBehaviorDecl(alloc) },
-            .interface => if (bodyNext == .@"fn")
-                .{ .delegate = try this.parseDelegateDecl(alloc) }
-            else
-                .{ .behavior = try this.parseInterfaceDecl(alloc) },
             .@"fn" => .{ .@"fn" = try this.parseFnDeclFromVal(alloc) },
             else => .{ .val = try this.parseValDecl(alloc) },
         };
+    }
+
+    /// The removed 1.0.2 declaration keyword at `offset` — `record`, `enum` or
+    /// `interface`, which lex as identifiers since 1.0.3 — when it is followed
+    /// by what a declaration would take (a name, `{`, `<` or `fn`). Null
+    /// otherwise, so the three words stay free as ordinary identifiers.
+    pub fn removedDeclKeywordAt(this: *This, offset: usize) ?ParseErrorType {
+        const tok = this.peekAt(offset);
+        if (tok.kind != .identifier) return null;
+        const next = this.peekAt(offset + 1).kind;
+        if (next != .identifier and next != .leftBrace and next != .lessThan and next != .@"fn") return null;
+        if (std.mem.eql(u8, tok.lexeme, "record")) return .removedKeywordRecord;
+        if (std.mem.eql(u8, tok.lexeme, "enum")) return .removedKeywordEnum;
+        if (std.mem.eql(u8, tok.lexeme, "interface")) return .removedKeywordInterface;
+        return null;
+    }
+
+    /// Records the targeted removed-keyword diagnostic at the keyword token.
+    pub fn failRemovedDeclKeyword(this: *This, offset: usize) ParseError {
+        const kind = this.removedDeclKeywordAt(offset) orelse .unexpectedToken;
+        return this.failRemovedAt(kind, offset);
+    }
+
+    pub fn failRemovedAt(this: *This, kind: ParseErrorType, offset: usize) ParseError {
+        const tok = this.peekAt(offset);
+        this.parseError = ParseErrorInfo.fromTokenSpan(kind, tok, tok.lexeme.len);
+        return ParseError.UnexpectedToken;
+    }
+
+    /// `val name = …` / `pub val name = …`: the bound name starts lower-case.
+    fn valFormNameIsLower(this: *This) bool {
+        const off: usize = if (this.check(.@"pub")) 2 else 1;
+        const name = this.peekAt(off).lexeme;
+        return name.len > 0 and std.ascii.isLower(name[0]);
     }
 
     /// true if the current token is `kind`, or `pub` followed by `kind`.
@@ -1081,15 +1123,7 @@ pub const Parser = struct {
 
     // ── interface decl ───────────────────────────────────────────────────────────
 
-    pub const parseInterfaceDecl = decl_grammar.parseInterfaceDecl;
-
-    pub const parseShorthandInterfaceDecl = decl_grammar.parseShorthandInterfaceDecl;
-
     pub const parseExtendsClause = decl_grammar.parseExtendsClause;
-
-    pub const parseInterfaceBody = decl_grammar.parseInterfaceBody;
-
-    pub const parseInterfaceMethod = decl_grammar.parseInterfaceMethod;
 
     pub const parseMethodDecl = decl_grammar.parseMethodDecl;
 
@@ -1104,12 +1138,6 @@ pub const Parser = struct {
     pub const parseBehaviorDecl = decl_grammar.parseBehaviorDecl;
 
     pub const parseShorthandBehaviorDecl = decl_grammar.parseShorthandBehaviorDecl;
-
-    pub const parseRecordDecl = decl_grammar.parseRecordDecl;
-
-    pub const parseShorthandRecordDecl = decl_grammar.parseShorthandRecordDecl;
-
-    pub const parseRecordBody = decl_grammar.parseRecordBody;
 
     // ── implement decl ────────────────────────────────────────────────────────────
 
@@ -1136,12 +1164,6 @@ pub const Parser = struct {
     pub const parseImplementMethod = decl_grammar.parseImplementMethod;
 
     // ── enum decl ─────────────────────────────────────────────────────────────
-
-    pub const parseEnumDecl = decl_grammar.parseEnumDecl;
-
-    pub const parseShorthandEnumDecl = decl_grammar.parseShorthandEnumDecl;
-
-    pub const parseEnumBody = decl_grammar.parseEnumBody;
 
     // ── case / pattern matching ────────────────────────────────────────────────
 

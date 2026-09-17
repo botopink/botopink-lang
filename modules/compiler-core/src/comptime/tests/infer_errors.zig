@@ -365,7 +365,7 @@ test "infer error: #[@future] body using yield" {
 }
 
 // R1, R2, R5 (§2 of frente-b-rules-tooling.md) — effect-on-declare /
-// effect-on-interface-method / effect-duplicate-annotation now reject at the
+// effect-on-behavior-method / effect-duplicate-annotation now reject at the
 // parser layer (see `parser/tests/effect_rejections.zig`). The comptime
 // inference path keeps a defense-in-depth check for direct AST construction.
 

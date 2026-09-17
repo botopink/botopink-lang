@@ -47,7 +47,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-// interface Shape
+// behavior Shape
 //   fn area(...)
 
 class Square {

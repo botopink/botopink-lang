@@ -14,7 +14,7 @@ val Status = type {
 ```erlang
 -module(main).
 
-%% enum Status
+%% type Status
 %%   Active
 %%   Inactive
 

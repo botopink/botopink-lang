@@ -19,7 +19,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% enum Status
+%% type Status
 %%   Ok
 %%   Fail
 

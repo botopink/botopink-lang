@@ -10,7 +10,7 @@ fn make() -> Point {
 ```erlang
 -module(main).
 
-%% record Point: x, y
+%% type Point: x, y
 
 make() ->
     #{x => 3, y => 4}.

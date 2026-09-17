@@ -717,6 +717,12 @@ pub fn CollectionExprOf(comptime phase: Phase) type {
             /// Number of comments before each element, then trailing.
             /// Length = elems.len + 1 (or 0 when no comments).
             commentsPerElem: []const u32 = &.{},
+            /// Element labels the COMPILER attaches (decision 8 §6) — never set
+            /// by the parser: construction has no labels. A value lifted from a
+            /// template (`@expr(…)`) carries the labels of the structure it was
+            /// built from, so `cfg.server.port` resolves. "" = unlabeled.
+            /// Arena-owned; not freed by `deinit`.
+            labels: []const []const u8 = &.{},
         },
         /// `start..end` or `start..` ---- integer range (end=null means open)
         range: struct {
@@ -732,11 +738,6 @@ pub fn CollectionExprOf(comptime phase: Phase) type {
         },
         /// `(expr)` ---- grouped expression (parentheses for precedence)
         grouped: *ExprOf(phase),
-        /// `record { name: value, … }` ---- anonymous structural record literal.
-        /// Types as an anonymous record (`Type.record`); nests freely.
-        recordLit: struct {
-            fields: []RecordLitFieldOf(phase),
-        },
         /// `@BehaviorName(field: value, …)` ---- behavior literal instantiation.
         /// Creates a value of the named behavior type with the given fields.
         behaviorLit: struct {
@@ -783,13 +784,6 @@ pub fn CollectionExprOf(comptime phase: Phase) type {
                 .grouped => |e| {
                     e.deinit(allocator);
                     allocator.destroy(e);
-                },
-                .recordLit => |rl| {
-                    for (rl.fields) |f| {
-                        f.value.deinit(allocator);
-                        allocator.destroy(f.value);
-                    }
-                    allocator.free(rl.fields);
                 },
                 .behaviorLit => |il| {
                     for (il.fields) |f| {
@@ -1436,11 +1430,6 @@ pub const EnumSection = struct {
 // ── type reference ────────────────────────────────────────────────────────────
 
 /// One field of an anonymous record TYPE: `name: Type` in `{ value: T, set: fn(T) }`.
-pub const RecordTypeField = struct {
-    name: []const u8,
-    typeRef: TypeRef,
-};
-
 /// A type annotation expression, e.g. `Int`, `string[]`, `#(Int, string)`, `?T`.
 pub const TypeRef = union(enum) {
     /// Plain named type: `Int`, `string`, `Self`. Slice into source — not heap-owned.
@@ -1465,9 +1454,6 @@ pub const TypeRef = union(enum) {
     /// means the typeparam is unconstrained and accepts any type. Owns the constraints.
     /// Surface syntax (post-F0): `type` / `type string | int | bool`.
     typeparam: []TypeRef,
-    /// Anonymous structural record type: `{ value: T, set: fn(T) }`, usable as a
-    /// return type or annotation without a named `record`. Owns the fields.
-    record_type: []RecordTypeField,
 
     /// The element types of a tuple type, labeled or not; null otherwise.
     pub fn tupleElems(this: TypeRef) ?[]TypeRef {
@@ -1481,10 +1467,6 @@ pub const TypeRef = union(enum) {
     pub fn deinit(this: *TypeRef, allocator: std.mem.Allocator) void {
         switch (this.*) {
             .named => {},
-            .record_type => |flds| {
-                for (flds) |*f| f.typeRef.deinit(allocator);
-                allocator.free(flds);
-            },
             .array => |elem| {
                 elem.deinit(allocator);
                 allocator.destroy(elem);

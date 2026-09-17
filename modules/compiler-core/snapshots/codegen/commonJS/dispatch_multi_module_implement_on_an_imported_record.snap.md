@@ -66,7 +66,7 @@ function __bp_print() {
 
 const { Pato } = require("./pond.js");
 
-// interface Swimmer
+// behavior Swimmer
 //   fn swim(...)
 
 // implement Swimmer for Pato

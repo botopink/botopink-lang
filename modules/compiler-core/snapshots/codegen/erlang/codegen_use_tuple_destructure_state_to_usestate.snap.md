@@ -14,7 +14,7 @@ fn Counter() -> Element {
 ```erlang
 -module(main).
 
-%% record Element: 
+%% type Element: 
 
 state(Initial) ->
     Initial.

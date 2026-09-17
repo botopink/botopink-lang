@@ -15,4 +15,4 @@ val PatoNada = implement Swimmer for Pato {
 ----- ERROR
 error: unknown method
 
-  'fly' is not declared in any interface implemented for 'Pato'
+  'fly' is not declared in any behavior implemented for 'Pato'

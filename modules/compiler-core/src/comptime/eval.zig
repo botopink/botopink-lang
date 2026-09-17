@@ -170,10 +170,6 @@ fn valueOf(arena: std.mem.Allocator, scope: *Scope, te: ast.TypedExpr) EvalError
                 for (al.elems, 0..) |item, i| items[i] = try valueOf(arena, scope, item);
                 return .{ .list = items };
             },
-            .recordLit => |rl| {
-                for (rl.fields) |f| _ = try valueOf(arena, scope, f.value.*);
-                return .object;
-            },
             .behaviorLit => |il| {
                 for (il.fields) |f| _ = try valueOf(arena, scope, f.value.*);
                 return .object;

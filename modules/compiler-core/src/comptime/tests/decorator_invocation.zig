@@ -64,7 +64,7 @@ fn assertRejectsAt(comptime loc: std.builtin.SourceLocation, src: []const u8, ne
 test "decorator invocation: body accepts a record" {
     try assertAccepts(@src(),
         \\fn service(comptime decl: @Decl) {
-        \\    if (decl.kind != DeclKind.Type) { decl.fail("#[service] must annotate a record"); }
+        \\    if (decl.kind != DeclKind.Type) { decl.fail("#[service] must annotate a type with fields"); }
         \\}
         \\#[service]
         \\type UserService(name: string)
@@ -74,22 +74,22 @@ test "decorator invocation: body accepts a record" {
 test "decorator invocation: body rejects wrong placement (fn instead of record)" {
     try assertRejects(@src(),
         \\fn service(comptime decl: @Decl) {
-        \\    if (decl.kind != DeclKind.Type) { decl.fail("#[service] must annotate a record"); }
+        \\    if (decl.kind != DeclKind.Type) { decl.fail("#[service] must annotate a type with fields"); }
         \\}
         \\#[service]
         \\fn notARecord() { }
-    , "must annotate a record");
+    , "must annotate a type with fields");
 }
 
 test "decorator invocation: rejection points at the annotation" {
     try assertRejectsAt(@src(),
         \\fn service(comptime decl: @Decl) {
-        \\    if (decl.kind != DeclKind.Type) { decl.failAt(Span(0, 1, 1), "#[service] must annotate a record"); }
+        \\    if (decl.kind != DeclKind.Type) { decl.failAt(Span(0, 1, 1), "#[service] must annotate a type with fields"); }
         \\}
         \\
         \\#[service]
         \\fn notARecord() { }
-    , "must annotate a record", .{ 5, 3 });
+    , "must annotate a type with fields", .{ 5, 3 });
 }
 
 test "decorator invocation: method placement accepted" {
@@ -129,17 +129,17 @@ test "decorator invocation: @compilerError rejects wrong placement" {
     // surfaces as a scoped rejection when the body runs.
     try assertRejects(@src(),
         \\fn service(comptime decl: @Decl) {
-        \\    if (decl.kind != DeclKind.Type) { @compilerError("#[service] must annotate a record"); }
+        \\    if (decl.kind != DeclKind.Type) { @compilerError("#[service] must annotate a type with fields"); }
         \\}
         \\#[service]
         \\fn notARecord() { }
-    , "must annotate a record");
+    , "must annotate a type with fields");
 }
 
 test "decorator invocation: @compilerError body accepts the right placement" {
     try assertAccepts(@src(),
         \\fn service(comptime decl: @Decl) {
-        \\    if (decl.kind != DeclKind.Type) { @compilerError("#[service] must annotate a record"); }
+        \\    if (decl.kind != DeclKind.Type) { @compilerError("#[service] must annotate a type with fields"); }
         \\}
         \\#[service]
         \\type UserService(name: string)
@@ -151,19 +151,19 @@ test "decorator invocation: decl.variants tells an enum-shaped type from a recor
     // and lists the variant names of an enum.
     try assertRejects(@src(),
         \\fn service(comptime decl: @Decl) {
-        \\    if (decl.kind != DeclKind.Type) { decl.fail("#[service] must annotate a record"); };
-        \\    if (decl.variants.length > 0) { decl.fail("#[service] must annotate a record"); }
+        \\    if (decl.kind != DeclKind.Type) { decl.fail("#[service] must annotate a type with fields"); };
+        \\    if (decl.variants.length > 0) { decl.fail("#[service] must annotate a type with fields"); }
         \\}
         \\#[service]
         \\type Mode { Fast, Slow }
-    , "must annotate a record");
+    , "must annotate a type with fields");
 }
 
 test "decorator invocation: decl.variants is empty on a record" {
     try assertAccepts(@src(),
         \\fn service(comptime decl: @Decl) {
-        \\    if (decl.kind != DeclKind.Type) { decl.fail("#[service] must annotate a record"); };
-        \\    if (decl.variants.length > 0) { decl.fail("#[service] must annotate a record"); }
+        \\    if (decl.kind != DeclKind.Type) { decl.fail("#[service] must annotate a type with fields"); };
+        \\    if (decl.variants.length > 0) { decl.fail("#[service] must annotate a type with fields"); }
         \\}
         \\#[service]
         \\type UserService(name: string)
@@ -220,11 +220,11 @@ test "decorator invocation: interface-level marker runs over the interface" {
     // (previously interface-level markers were silently skipped).
     try assertRejects(@src(),
         \\fn onlyRecords(comptime decl: @Decl) {
-        \\    if (decl.kind == DeclKind.Behavior) { decl.fail("marker is not allowed on an interface"); }
+        \\    if (decl.kind == DeclKind.Behavior) { decl.fail("marker is not allowed on a behavior"); }
         \\}
         \\#[onlyRecords]
         \\behavior Repo { fn find(self: Self, id: i32) -> string; }
-    , "not allowed on an interface");
+    , "not allowed on a behavior");
 }
 
 test "decorator invocation: mock-style synthesis from an interface compiles" {

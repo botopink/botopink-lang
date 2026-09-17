@@ -1,9 +1,8 @@
 //! parser: the 1.0.3 surface — `type`, `behavior`, the shared field list and
 //! the member separators (front 12 step 2, dual grammar). The acceptance cases
 //! of specs/1.0.4-beta/12-surface-cutover/type-grammar.md, behavior.md and
-//! separators.md that do not involve a removed keyword. During the dual grammar
-//! the old and the new spelling of a declaration must build the same AST, so
-//! several tests compare the two JSON dumps directly.
+//! separators.md, and the targeted diagnostics of the removed 1.0.2 keywords
+//! (front 12 step 4).
 
 const std = @import("std");
 const lexerMod = @import("../../lexer.zig");
@@ -11,6 +10,7 @@ const parserMod = @import("../../parser.zig");
 const ast = @import("../../ast.zig");
 const pretty = @import("../../utils/pretty.zig");
 const receiver_marker = @import("../../comptime/primOpTemplate.zig").receiver_marker;
+const printMod = @import("../../print.zig");
 
 const ParseErrorType = parserMod.ParseErrorType;
 
@@ -61,19 +61,6 @@ fn expectError(src: []const u8, kind: ParseErrorType, line: usize, col: usize) !
     const pe = p.parseError orelse return error.TestParseErrorInfoMissing;
     try std.testing.expectEqual(kind, pe.kind);
     try std.testing.expectEqual([2]usize{ line, col }, [2]usize{ pe.line, pe.col });
-}
-
-/// The old and the new spelling parse to the same AST (same JSON dump).
-fn expectSameAst(old: []const u8, new: []const u8) !void {
-    var po = try parse(old);
-    defer po.deinit();
-    var pn = try parse(new);
-    defer pn.deinit();
-    const jo = try pretty.formatAlloc(std.testing.allocator, po.program);
-    defer std.testing.allocator.free(jo);
-    const jn = try pretty.formatAlloc(std.testing.allocator, pn.program);
-    defer std.testing.allocator.free(jn);
-    try std.testing.expectEqualStrings(jo, jn);
 }
 
 // ── type: shape resolution ────────────────────────────────────────────────────
@@ -242,32 +229,64 @@ test "surface: a comma after a type method is member-comma-separator" {
     try expectError("type S { A, fn f(self: Self) {}, }", .memberCommaSeparator, 1, 32);
 }
 
-// ── old and new spelling: the same nodes ──────────────────────────────────────
+// ── the removed 1.0.2 surface ─────────────────────────────────────────────────
 
-test "surface: record and type build the same AST" {
-    try expectSameAst(
-        \\record Point { x: i32, y: i32,
-        \\fn sum(self: Self) -> i32 { return self.x + self.y; } }
-    ,
-        \\type Point(x: i32, y: i32) {
-        \\fn sum(self: Self) -> i32 { return self.x + self.y; } }
-    );
+test "surface: record Point { … } is removed-keyword-record at the keyword" {
+    try expectError("record Point { x: i32 }", .removedKeywordRecord, 1, 1);
+    try expectError("pub record Point { x: i32 }", .removedKeywordRecord, 1, 5);
+    try expectError("#[service] record Point { x: i32 }", .removedKeywordRecord, 1, 12);
+    try expectError("val Point = record { x: i32 }", .removedKeywordRecord, 1, 13);
 }
 
-test "surface: enum and type build the same AST" {
-    try expectSameAst(
-        \\enum Shape { Circle(radius: f64), Square(side: f64) }
-    ,
-        \\type Shape { Circle(radius: f64), Square(side: f64) }
-    );
+test "surface: enum E { A } is removed-keyword-enum at the keyword" {
+    try expectError("enum E { A }", .removedKeywordEnum, 1, 1);
+    try expectError("pub enum E<T> { A(v: T) }", .removedKeywordEnum, 1, 5);
+    try expectError("val E = enum { A, B }", .removedKeywordEnum, 1, 9);
 }
 
-test "surface: interface and behavior build the same AST" {
-    try expectSameAst(
-        \\interface Printable { fn print(self: Self) -> string; }
-    ,
-        \\behavior Printable { fn print(self: Self) -> string; }
+test "surface: interface I {} is removed-keyword-interface at the keyword" {
+    try expectError("interface I {}", .removedKeywordInterface, 1, 1);
+    try expectError("#[mock] interface I { fn f(self: Self) -> i32; }", .removedKeywordInterface, 1, 9);
+    try expectError("val I = interface { }", .removedKeywordInterface, 1, 9);
+    try expectError("val Cb = interface fn(x: i32);", .removedKeywordInterface, 1, 10);
+}
+
+test "surface: record { x: 1 } is removed-record-literal" {
+    try expectError("val p = record { x: 1 }", .removedRecordLiteral, 1, 9);
+    try expectError("fn f() { val p = record { x: 1 }; }", .removedRecordLiteral, 1, 18);
+    try expectError("fn f() { g(record { x: 1 }); }", .removedRecordLiteral, 1, 12);
+}
+
+test "surface: fn f(p: { x: i32 }) is removed-record-type" {
+    try expectError("fn f(p: { x: i32 }) {}", .removedRecordType, 1, 9);
+    try expectError("fn f() -> { x: i32 } { }", .removedRecordType, 1, 11);
+}
+
+test "surface: record, enum and interface are ordinary identifiers elsewhere" {
+    var parsed = try parse(
+        \\val record = 1;
+        \\val enum = 2;
+        \\fn interface(x: i32) -> i32 { return x + record + enum; }
     );
+    defer parsed.deinit();
+    try std.testing.expectEqual(@as(usize, 3), parsed.program.decls.len);
+}
+
+test "surface: a removed-keyword diagnostic renders its code, the location and the 1.0.3 spelling" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const src = "record Point { x: i32 }";
+    var l = lexerMod.Lexer.init(src);
+    const tokens = try l.scanAll(a);
+    var p = parserMod.Parser.initWithSource(tokens, src);
+    if (p.parse(a)) |_| return error.TestExpectedParseError else |_| {}
+    var out: std.Io.Writer.Allocating = .init(a);
+    try printMod.render(&out.writer, p.parseError.?, src, "main.bp");
+    const text = out.written();
+    try std.testing.expect(std.mem.indexOf(u8, text, "error[removed-keyword-record]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "--> main.bp:1:1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "type Name(fields)") != null);
 }
 
 // ── behavior ──────────────────────────────────────────────────────────────────
@@ -342,11 +361,8 @@ test "surface: val fields, signatures and default methods with the separator rul
     try std.testing.expectEqual(@as(usize, 2), b.methods.len);
 }
 
-test "surface: old interface bodies keep their lenient separators" {
-    var parsed = try parse("interface B { fn f(self: Self) -> i32, fn g(self: Self) -> i32 }");
-    defer parsed.deinit();
-    const b = try onlyBehavior(parsed);
-    try std.testing.expectEqual(@as(usize, 2), b.methods.len);
+test "surface: a behavior member separated by a comma is member-comma-separator" {
+    try expectError("behavior B { fn f(self: Self) -> i32, fn g(self: Self) -> i32; }", .memberCommaSeparator, 1, 37);
 }
 
 // ── template markers (decision 5) ─────────────────────────────────────────────

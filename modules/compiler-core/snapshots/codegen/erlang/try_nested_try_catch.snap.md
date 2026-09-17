@@ -25,7 +25,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% record DbError: msg
+%% type DbError: msg
 
 inner() ->
     {error, #{msg => <<"conn refused">>}}.

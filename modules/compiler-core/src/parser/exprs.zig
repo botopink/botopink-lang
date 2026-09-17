@@ -62,6 +62,14 @@ const precedence_table = [_]PrecedenceLevel{
 };
 
 pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
+    // The removed `record { … }` literal, before the call-chain path reads
+    // `record { … }` as a call with a trailing lambda (see `parsePrimary`).
+    if (this.check(.identifier) and std.mem.eql(u8, this.peek().lexeme, "record") and
+        this.peekAt(1).kind == .leftBrace)
+    {
+        return this.failRemovedAt(.removedRecordLiteral, 0);
+    }
+
     // ── Detect: identifier = expr or identifier : Type = expr ────────────
     if (this.check(.identifier)) {
         const saved = this.current;
@@ -786,6 +794,15 @@ fn parsePostfixChain(this: *This, alloc: std.mem.Allocator, base_in: Expr) Parse
 }
 
 pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
+    // `record { … }` ---- the removed anonymous record literal (1.0.3: a tuple).
+    // `record` lexes as an identifier; followed by `{` it gets its targeted
+    // diagnostic instead of a generic syntax error.
+    if (this.check(.identifier) and std.mem.eql(u8, this.peek().lexeme, "record") and
+        this.peekAt(1).kind == .leftBrace)
+    {
+        return this.failRemovedAt(.removedRecordLiteral, 0);
+    }
+
     // Unary `-` — negation of any expression (-x, -123, -(a+b), etc.)
     if (this.check(.minus)) {
         const opTok = this.advance();
@@ -1110,37 +1127,6 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     if (this.check(.leftSquareBracket)) {
         const lit = Expr{ .collection = try this.parseArrayLitExpr(alloc) };
         return parsePostfixChain(this, alloc, lit);
-    }
-
-    // record { name: value, … } ---- anonymous structural record literal.
-    // The `record` keyword in expression position followed by `{`. NOTE: a
-    // TOP-LEVEL `val X = record { … }` is the named-record DECLARATION
-    // shorthand (consumed earlier by parseValForm) — at top level the
-    // literal needs parentheses (`val x = (record { … });`); every other
-    // expression position (locals, args, nested fields, @expr) parses here.
-    if (this.check(.record) and this.peekAt(1).kind == .leftBrace) {
-        const recTok = this.advance(); // record
-        _ = this.advance(); // {
-        var fields: std.ArrayList(ast.RecordLitFieldOf(.untyped)) = .empty;
-        errdefer {
-            for (fields.items) |f| {
-                f.value.deinit(alloc);
-                alloc.destroy(f.value);
-            }
-            fields.deinit(alloc);
-        }
-        while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
-            const nameTok = try this.consumeMemberName();
-            _ = try this.consume(.colon);
-            const value = try this.parseExpr(alloc);
-            const valuePtr = try this.boxExpr(alloc, value);
-            try fields.append(alloc, .{ .name = nameTok.lexeme, .value = valuePtr });
-            if (!this.match(.comma)) break;
-        }
-        _ = try this.consume(.rightBrace);
-        return Expr{ .collection = .{ .loc = locFromToken(recTok), .kind = .{ .recordLit = .{
-            .fields = try fields.toOwnedSlice(alloc),
-        } } } };
     }
 
     // `(expr)` ---- grouped expression (parentheses for precedence)

@@ -1042,7 +1042,6 @@ const Emitter = struct {
                 else => null,
             },
             .collection => |c| switch (c.kind) {
-                .recordLit => |rl| self.ensureAnonRecord(c.loc, rl) catch null,
                 .behaviorLit => |il| self.ensureAnonRecord(c.loc, .{ .fields = il.fields }) catch null,
                 .grouped => |inner| self.recordTypeOfExpr(inner.*),
                 else => null,
@@ -1051,7 +1050,7 @@ const Emitter = struct {
         };
     }
 
-    /// Register an anonymous `record { ... }` literal under a synthetic name
+    /// Register a behavior literal's fields under a synthetic name
     /// `__anon_L{line}_C{col}` so `recordTypeOfExpr` + `fieldOffsetIn` can
     /// resolve field reads against it. Idempotent: subsequent encounters of
     /// the same literal return the existing entry. Field-type recovery for
@@ -1067,22 +1066,9 @@ const Emitter = struct {
         const types = try ra.alloc([]const u8, rl.fields.len);
         for (rl.fields, 0..) |f, i| {
             names[i] = f.name;
-            // Anon-record field type recovery for nested literals (`{ inner:
-            // record { ... } }`): drill in so chained `outer.inner.field`
-            // resolves. For non-anon values (literals, calls), leave empty —
-            // the existing chained-recovery already handles those via
-            // `recordTypeOfExpr` on the receiver.
+            // Field type recovery from the value's shape; empty when unknown —
+            // the chained-recovery handles those via `recordTypeOfExpr`.
             types[i] = blk: {
-                switch (f.value.*) {
-                    .collection => |c2| switch (c2.kind) {
-                        .recordLit => |rl2| {
-                            const inner = try self.ensureAnonRecord(f.value.getLoc(), rl2);
-                            break :blk inner;
-                        },
-                        else => {},
-                    },
-                    else => {},
-                }
                 if (self.isStringExpr(f.value.*)) break :blk "string";
                 if (self.isBoolExpr(f.value.*)) break :blk "bool";
                 if (self.wasmTypeOf(f.value.*)[0] == 'f') break :blk "f64";
@@ -1934,11 +1920,6 @@ const Emitter = struct {
                     if (r.end) |end| n += self.countMemsExpr(end.*);
                     break :blk n;
                 },
-                .recordLit => |rl| blk: {
-                    var n: u32 = 1;
-                    for (rl.fields) |f| n += self.countMemsExpr(f.value.*);
-                    break :blk n;
-                },
                 .behaviorLit => |il| blk: {
                     var n: u32 = 1;
                     for (il.fields) |f| n += self.countMemsExpr(f.value.*);
@@ -2781,7 +2762,6 @@ const Emitter = struct {
                 .case => |c| try self.lowerCase(c),
                 .tupleLit => |tl| try self.lowerTupleLit(tl),
                 .arrayLit => |al| try self.lowerArrayLit(al),
-                .recordLit => |rl| try self.lowerRecordLit(rl),
                 .behaviorLit => |il| try self.lowerRecordLit(.{ .fields = il.fields }),
                 .range => try self.emitC(zero, "range"),
             },
@@ -5002,7 +4982,6 @@ const Emitter = struct {
                 },
                 .tupleLit => |tl| for (tl.elems) |el| try self.collectIdents(el, out),
                 .arrayLit => |al| for (al.elems) |el| try self.collectIdents(el, out),
-                .recordLit => |rl| for (rl.fields) |f| try self.collectIdents(f.value.*, out),
                 .behaviorLit => |il| for (il.fields) |f| try self.collectIdents(f.value.*, out),
                 .range => |r| {
                     try self.collectIdents(r.start.*, out);

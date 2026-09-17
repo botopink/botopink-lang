@@ -20,7 +20,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% interface Array
+%% behavior Array
 
 array_range(Start, Stop) ->
     case (Start >= Stop) of
