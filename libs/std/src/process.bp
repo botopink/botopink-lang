@@ -25,7 +25,7 @@
 #[@External.Node("process", "exit")]
 #[@External.Erlang("erlang", "halt")]
 #[@External.Beam("erlang", "halt")]
-pub declare fn exit(code: i32) -> unit;
+pub declare fn exit(code: i32) -> void;
 
 // Current working directory of the host process.
 // Node: `process.cwd()` (method on `process` — §A2 template).

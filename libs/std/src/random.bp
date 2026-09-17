@@ -27,7 +27,7 @@ pub declare fn float() -> f64;
 // triple. `S` is folded to an integer via the i64 input.
 #[@External.Node("""require('./sidecars/random.mjs').seed($0)""")]
 #[@External.Erlang("""(fun(__S) -> rand:seed(exsplus, {__S, __S, __S}) end)($0)""")]
-pub declare fn seed(s: i32) -> unit;
+pub declare fn seed(s: i32) -> void;
 
 // Draw from the seeded PRNG when a `seed` call has been made; otherwise
 // falls through to the unseeded `float()` baseline. Erlang's `rand`
