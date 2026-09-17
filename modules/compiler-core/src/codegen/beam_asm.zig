@@ -445,7 +445,7 @@ pub fn codegenEmit(
 
 // ── top-level emitter ────────────────────────────────────────────────────────
 
-const ExportEntry = struct { name: []const u8, arity: usize };
+const ExportEntry = beamEmitter.Export;
 
 fn emitBeamAsm(
     alloc: std.mem.Allocator,
@@ -597,27 +597,22 @@ fn emitBeamAsm(
     // and remote calls carry an explicit `{extfunc, mod, fn, N}` triple,
     // so there is no name-resolution stage that could prefer a BIF over a
     // user fn. The `erlc +from_asm` pipeline does not re-resolve names.
-    var aw: std.Io.Writer.Allocating = .init(alloc);
-    defer aw.deinit();
+    var header: std.Io.Writer.Allocating = .init(alloc);
+    defer header.deinit();
+    try beamEmitter.writeModuleForm(&header.writer, module_atom);
+    try beamEmitter.writeExports(&header.writer, exports.items);
+    try beamEmitter.writeAttributes(&header.writer);
+    try beamEmitter.writeLabels(&header.writer, em.next_label);
 
-    try aw.writer.print("{{module, {s}}}.\n", .{module_atom});
-
-    try aw.writer.writeAll("{exports, [");
-    for (exports.items, 0..) |e, i| {
-        if (i > 0) try aw.writer.writeAll(", ");
-        var ename_buf: [256]u8 = undefined;
-        try aw.writer.print("{{{s}, {d}}}", .{ try atomName(e.name, &ename_buf), e.arity });
-    }
-    try aw.writer.writeAll("]}.\n");
-    try aw.writer.writeAll("{attributes, []}.\n");
-    try aw.writer.print("{{labels, {d}}}.\n", .{em.next_label});
-
-    try aw.writer.writeAll(body_buf.written());
-    for (em.deferred_lambdas.items) |lambda_code| {
-        try aw.writer.writeAll(lambda_code);
-    }
-
-    return aw.toOwnedSlice();
+    // The module is the rendered preamble, the function forms, then the
+    // deferred lambda/helper forms — already-rendered sections joined, not
+    // target text written here.
+    var sections: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer sections.deinit(alloc);
+    try sections.append(alloc, header.written());
+    try sections.append(alloc, body_buf.written());
+    try sections.appendSlice(alloc, em.deferred_lambdas.items);
+    return std.mem.concat(alloc, u8, sections.items);
 }
 
 // ── Emitter ──────────────────────────────────────────────────────────────────

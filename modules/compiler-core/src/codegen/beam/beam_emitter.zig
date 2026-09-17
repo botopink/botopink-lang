@@ -250,6 +250,45 @@ fn writeField(w: *Writer, o: Operand) Error!void {
     try writeArg(w, o);
 }
 
+// ── module preamble ──────────────────────────────────────────────────────────
+//
+// The four forms ahead of the first `{function, …}`: `{module, M}.`,
+// `{exports, […]}.`, `{attributes, […]}.` and `{labels, N}.`. The backend
+// decides the module atom, which functions are exported and the label count;
+// these write them.
+
+/// One `{Name, Arity}` entry of the `{exports, …}` form.
+pub const Export = struct { name: []const u8, arity: usize };
+
+/// `{module, Module}.`
+pub fn writeModuleForm(w: *Writer, module: []const u8) Error!void {
+    try w.writeAll("{module, ");
+    try erl.writeAtom(w, module);
+    try w.writeAll("}.\n");
+}
+
+/// `{exports, [{Name, Arity}, …]}.` — each name with the shared atom quoting.
+pub fn writeExports(w: *Writer, exports: []const Export) Error!void {
+    try w.writeAll("{exports, [");
+    for (exports, 0..) |e, i| {
+        if (i > 0) try w.writeAll(", ");
+        try w.writeAll("{");
+        try erl.writeAtom(w, e.name);
+        try w.print(", {d}}}", .{e.arity});
+    }
+    try w.writeAll("]}.\n");
+}
+
+/// `{attributes, []}.` — the backend emits no module attributes.
+pub fn writeAttributes(w: *Writer) Error!void {
+    try w.writeAll("{attributes, []}.\n");
+}
+
+/// `{labels, N}.` — one past the highest label the module uses.
+pub fn writeLabels(w: *Writer, count: usize) Error!void {
+    try w.print("{{labels, {d}}}.\n", .{count});
+}
+
 /// `  {label, N}.`
 pub fn writeLabel(w: *Writer, n: usize) Error!void {
     try w.print("  {{label, {d}}}.\n", .{n});
@@ -594,6 +633,26 @@ test "beam_emitter: tests, bifs and calls" {
             try writeCall(w, .normal, 1, .{ .ext = .{ .module = "http", .function = "'Response_ok'" } }, 0);
         }
     }.f);
+}
+
+test "beam_emitter: module preamble" {
+    var aw: Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    try writeModuleForm(&aw.writer, "main");
+    try writeExports(&aw.writer, &.{
+        .{ .name = "'_botopink_main'", .arity = 0 },
+        .{ .name = "main", .arity = 1 },
+        .{ .name = "Counter_inc", .arity = 1 },
+    });
+    try writeAttributes(&aw.writer);
+    try writeLabels(&aw.writer, 12);
+    try std.testing.expectEqualStrings(
+        \\{module, main}.
+        \\{exports, [{'_botopink_main', 0}, {main, 1}, {'Counter_inc', 1}]}.
+        \\{attributes, []}.
+        \\{labels, 12}.
+        \\
+    , aw.written());
 }
 
 test "beam_emitter: aggregate instructions" {
