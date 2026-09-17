@@ -9,7 +9,3 @@
 # the cell into a hard assert. An unlisted cell that fails always fails the gate.
 #
 # Owners are the 1.0.2-beta fronts (specs/1.0.2-beta/fronts.md).
-
-erika     commonJS F3-std-surface         String.split("") answers the whole string on erlang (string:split/3, empty separator): the comptime query lexer sees one token — "unknown collection '' in scope"
-erika     erlang   F3-std-surface         String.split("") answers the whole string on erlang (string:split/3, empty separator): the comptime query lexer sees one token — "unknown collection '' in scope"
-jhonstart commonJS F3-std-surface         String.split("") answers the whole string on erlang (string:split/3, empty separator): the html template measures every tag as length 1 — "mismatched closing tag </>"

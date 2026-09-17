@@ -2,16 +2,21 @@
 //// Host-backed I/O primitives — declaration-only, no pure implementation.
 //// Each target backend supplies the concrete symbol via `#[External.<Target>(...)]`.
 
+// On erlang and beam, `@print`, `@println` and `@debug` lower to the
+// `'__bp_print'/1` helper the backend emits once per module (it prints a
+// binary with `~ts` and any other value with `~p`); the codegen intercepts the
+// call before any `@External.Erlang` template, so the templates below only
+// name that helper.
 #[External.Node("console.log($args)"),
-  External.Erlang("io:format(\"~p~n\", [$args])")]
+  External.Erlang("'__bp_print'([$args])")]
 pub declare fn print(message: string);
 
 #[External.Node("console.log($args)"),
-  External.Erlang("io:format(\"~p~n\", [$args])")]
+  External.Erlang("'__bp_print'([$args])")]
 pub declare fn println(message: string);
 
 #[External.Node("console.debug($args)"),
-  External.Erlang("io:format(\"~p~n\", [$args])")]
+  External.Erlang("'__bp_print'([$args])")]
 pub declare fn debug(value: string);
 
 // ── result type ──────────────────────────────────────────────────────────────

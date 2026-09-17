@@ -122,7 +122,11 @@ interface String {
       @External.Node("length")]
     fn length(self: Self) -> i32
 
-    #[@External.Erlang("string:split($self, $0, all)"),
+    // `string:split/3` answers the whole string for an empty separator, while
+    // JS `split("")` answers one element per character. The erlang form
+    // matches the empty separator first and cuts the binary into UTF-8
+    // codepoints (`"".split("")` answers `[]`, as on JS).
+    #[@External.Erlang("""(fun(__S, <<>>) -> [<<__C/utf8>> || <<__C/utf8>> <= __S]; (__S, __X) -> string:split(__S, __X, all) end)($self, $0)"""),
       @External.Node("split")]
     fn split(self: Self, sep: string) -> string[]
 
