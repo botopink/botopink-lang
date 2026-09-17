@@ -29,6 +29,7 @@ botopink-lang/                 ← language core (this project)
 ├── libs/                      ← bundled .bp libraries — see libs/AGENTS.md
 │   └── std/                   ← standard library
 ├── examples/                  ← non-framework .bp example programs
+├── tests/language/            ← botopink language tests of decision 8 (case, tuples, loop) — see tests/language/AGENTS.md
 └── scripts/                   ← installers, release packing, snapshot audit, git hooks
 ```
 
@@ -49,6 +50,7 @@ zig build test-libs     # every visible .bp library's tests per backend (libs/ +
 zig build test-backends # beam/wasm/erlang execution parity (modules/compiler-cli/tests/backend_exec.sh)
 zig build test-bpmp     # bpmp unit tests
 zig build test-vscode   # VS Code extension unit tests — scripts/test-vscode.sh finds the sibling checkout
+zig build test-language # botopink language tests (tests/language/run.sh; `-- --compiler <botopink>` to run another binary)
 zig build clean-tmp     # reap scratch dirs older than 1 day (also runs before `zig build test`)
 ```
 

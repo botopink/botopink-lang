@@ -319,6 +319,22 @@ pub fn build(b: *std.Build) void {
     const test_vscode_step = b.step("test-vscode", "Run the VS Code extension unit tests");
     test_vscode_step.dependOn(&test_vscode_run.step);
 
+    // `zig build test-language` — the language tests of decision 8 (front 15):
+    // `case` and patterns, tuples and labels, `loop`, written in botopink under
+    // `tests/language/` and run by `tests/language/run.sh` on commonJS and
+    // erlang against the installed `botopink`, with the expected failures in
+    // `tests/language/expected-failures.txt`. Forwards `--` args, e.g.
+    //   zig build test-language -- --target erlang --compiler <botopink>
+    // NOT wired into `zig build test` (spawns node/erl per file).
+    const test_language_run = b.addSystemCommand(&.{ "bash", "tests/language/run.sh" });
+    test_language_run.step.dependOn(b.getInstallStep());
+    test_language_run.setCwd(b.path("."));
+    test_language_run.has_side_effects = true; // spawns child compilers — never cache
+    if (b.args) |args| test_language_run.addArgs(args);
+
+    const test_language_step = b.step("test-language", "Run the botopink language tests (tests/language)");
+    test_language_step.dependOn(&test_language_run.step);
+
     // `zig build test-backends` — the single build step that reaches BEAM + wasm
     // *execution* (not just codegen snapshots): builds the CLI, then runs the
     // backend-execution harness against `node`/`escript`/`erlc`+`erl`/`wasmtime`,

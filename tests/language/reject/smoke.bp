@@ -1,0 +1,5 @@
+//// Runner smoke test: proves the `reject/` path checks message and location.
+
+pub fn main() {
+    val x: i32 = "not a number";
+}

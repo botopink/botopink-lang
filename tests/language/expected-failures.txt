@@ -1,0 +1,7 @@
+# Expected failures of the language tests (front 15).
+#
+#   <target: commonJS | erlang | *> | <path>[::<test name>] | <owner row> | <reason>
+#
+# Every line names the row of the front that makes it pass. A listed test that
+# passes fails the run ("delete its line"); a path-only entry is for a file that
+# does not compile. `*` is for reject/ files (target-independent).
