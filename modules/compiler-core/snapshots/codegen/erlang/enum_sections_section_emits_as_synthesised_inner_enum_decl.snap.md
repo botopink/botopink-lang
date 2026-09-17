@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-enum Token {
+type Token {
     Text {
         Bold, Italic, Underline,
     }

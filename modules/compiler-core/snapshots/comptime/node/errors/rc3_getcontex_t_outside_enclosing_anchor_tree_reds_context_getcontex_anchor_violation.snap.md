@@ -1,7 +1,7 @@
 ----- SOURCE CODE
-record RootA { name: string }
-record RootB { name: string }
-record LeafB implement @Context<RootB, RootB> { v: i32 }
+type RootA(name: string)
+type RootB(name: string)
+type LeafB(v: i32) implement @Context<RootB, RootB>
 #[@context]
 fn pickA() -> @Context<RootA, RootA> {
     return @getContex(LeafB);

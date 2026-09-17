@@ -59,43 +59,53 @@
                           "arrayLit": {
                             "elems": [
                               {
-                                "collection": {
+                                "call": {
                                   "loc": {
                                     "line": 1,
                                     "col": 60
                                   },
                                   "kind": {
-                                    "recordLit": {
-                                      "fields": [
+                                    "call": {
+                                      "receiver": null,
+                                      "callee": "Field",
+                                      "is_builtin": false,
+                                      "is_tagged": false,
+                                      "optional": false,
+                                      "args": [
                                         {
-                                          "name": "name",
+                                          "label": "name",
                                           "value": {
                                             "literal": {
                                               "loc": {
                                                 "line": 1,
-                                                "col": 75
+                                                "col": 72
                                               },
                                               "kind": {
                                                 "stringLit": "x"
                                               }
                                             }
-                                          }
+                                          },
+                                          "comments": [],
+                                          "is_default_inj": false
                                         },
                                         {
-                                          "name": "typeName",
+                                          "label": "typeName",
                                           "value": {
                                             "literal": {
                                               "loc": {
                                                 "line": 1,
-                                                "col": 90
+                                                "col": 87
                                               },
                                               "kind": {
                                                 "stringLit": "i32"
                                               }
                                             }
-                                          }
+                                          },
+                                          "comments": [],
+                                          "is_default_inj": false
                                         }
-                                      ]
+                                      ],
+                                      "trailing": []
                                     }
                                   }
                                 }

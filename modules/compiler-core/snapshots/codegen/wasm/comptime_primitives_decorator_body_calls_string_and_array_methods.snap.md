@@ -10,7 +10,7 @@ pub fn describe(comptime decl: @Decl) {
 }
 
 #[describe]
-record User { name: string, secret: string, age: i32 }
+type User(name: string, secret: string, age: i32)
 
 fn main() {
     @print(describeUser());

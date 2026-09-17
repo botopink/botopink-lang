@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record ApiError { msg: string }
+type ApiError(msg: string)
 #[@result]
 fn fetch() -> @Result<i32, ApiError> {
     throw ApiError(msg: "not found");

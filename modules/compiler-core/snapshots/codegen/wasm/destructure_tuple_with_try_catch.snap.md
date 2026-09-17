@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record Error { msg: string }
+type Error(msg: string)
 #[@result]
 fn fetch() -> @Result<#(i32, i32), Error> {
     throw Error(msg: "boom");

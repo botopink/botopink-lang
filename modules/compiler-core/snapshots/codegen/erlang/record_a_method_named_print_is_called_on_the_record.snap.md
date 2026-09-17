@@ -1,8 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record Doc {
+type Doc(
     title: string,
-
+) {
     fn print(self: Self) -> string {
         return "doc:" + self.title;
     }

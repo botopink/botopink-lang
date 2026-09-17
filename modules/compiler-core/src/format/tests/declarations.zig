@@ -586,9 +586,9 @@ test "format: behavior ---- pub, generics and extends round-trip" {
 
 test "format: the old surface prints as the new one" {
     try h.assertFormatAs(std.testing.allocator,
-        \\record Point { x: i32, y: i32 }
-        \\enum Color { Red, Green }
-        \\interface Shape { fn area(self: Self) -> f64 }
+        \\type Point(x: i32, y: i32)
+        \\type Color { Red, Green }
+        \\behavior Shape { fn area(self: Self) -> f64; }
     ,
         \\type Point(x: i32, y: i32)
         \\

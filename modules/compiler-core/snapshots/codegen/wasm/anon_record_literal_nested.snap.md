@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn make() -> i32 {
-    val outer = record { span: record { start: 1, end: 2 }, kind: 3 };
+    val outer = #(#(1, 2), 3);
     return outer;
 }
 ```

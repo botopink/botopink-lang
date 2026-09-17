@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record R { kind: i32 }
+type R(kind: i32)
 fn main() {
     val r = R(kind: 11);
     val maybe: ?R = r;

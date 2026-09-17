@@ -71,7 +71,7 @@ fn expectParseOk(src: []const u8) !void {
 
 test "§1G RG1 — struct: <T = i32, U> rejected" {
     try expectParseKind(
-        \\record Container<T = i32, U>(val item: T)
+        \\type Container<T = i32, U>(item: T)
     , .genericDefaultBeforeRequired);
 }
 
@@ -103,7 +103,7 @@ test "§1G — trailing defaulted parameters are accepted (canonical form)" {
 
 test "§1G — defaulted struct trailing param is accepted" {
     try expectParseOk(
-        \\val Container = record <T, U = string> { item: T, tag: U };
+        \\val Container = type <T, U = string>(item: T, tag: U);
     );
 }
 
@@ -196,7 +196,7 @@ test "§1G resolution — @Generator<i32> resolves with R = void" {
 
 test "§1G F4G — user record default fills omitted trailing arg" {
     try h.assertInfersOk(std.testing.allocator,
-        \\record Container<A, B = string> { primary: A, label: B }
+        \\type Container<A, B = string>(primary: A, label: B)
         \\fn make() -> Container<i32> {
         \\    return Container(primary: 0, label: "default");
         \\}
@@ -209,7 +209,7 @@ test "§1G F4G — user record default with chained-param reference" {
     // types use, so `U` binds to `T`'s fresh var; the literal then
     // instantiates both to the same concrete type.
     try h.assertInfersOk(std.testing.allocator,
-        \\record Sym<T, U = T> { left: T, right: U }
+        \\type Sym<T, U = T>(left: T, right: U)
         \\fn pair() -> Sym<i32> {
         \\    return Sym(left: 1, right: 2);
         \\}
@@ -224,7 +224,7 @@ test "§1G F4G — user enum default fills omitted trailing arg" {
     // the registered default, the unifier matches arity, and E_cell gets
     // pinned to `string` via a single fresh-var <-> string unification.
     try h.assertInfersOk(std.testing.allocator,
-        \\enum Result2<T, E = string> { Yes(value: T), No(message: E) }
+        \\type Result2<T, E = string> { Yes(value: T), No(message: E) }
         \\fn pick() -> Result2<i32> {
         \\    return Result2.Yes(value: 42);
         \\}
@@ -237,7 +237,7 @@ test "§1G F4G — user enum default with chained-param reference" {
     // time. The annotation `Sym2<i32>` resolves the default, pinning both
     // slots to i32 via a single arity-matching unification.
     try h.assertInfersOk(std.testing.allocator,
-        \\enum Sym2<T, U = T> { L(value: T), R(value: U) }
+        \\type Sym2<T, U = T> { L(value: T), R(value: U) }
         \\fn left() -> Sym2<i32> {
         \\    return Sym2.L(value: 7);
         \\}

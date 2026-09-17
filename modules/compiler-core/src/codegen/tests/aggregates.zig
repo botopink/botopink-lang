@@ -20,7 +20,7 @@ test "js: record implement ---- fields round-trip at runtime" {
     // runtime instead of `undefined`. Runs on every backend (node + erlang
     // parity captured in each RUN LOG).
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val E = record implement @Context<E, E> { tag: string, n: i32 }
+        \\val E = type(tag: string, n: i32) implement @Context<E, E>
         \\fn mk() -> E {
         \\    return E(tag: "x", n: 5);
         \\}
@@ -32,15 +32,15 @@ test "js: record implement ---- fields round-trip at runtime" {
 
 test "js: record ---- two fields" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Point = record { x: i32, y: i32 }
+        \\val Point = type(x: i32, y: i32)
     );
 }
 
 test "js: record ---- methods using self fields in arithmetic" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Vec2 = record {
+        \\val Vec2 = type(
         \\    x: f64,
-        \\    y: f64,
+        \\    y: f64) {
         \\    fn lengthSq(self: Self) -> f64 {
         \\        return self.x * self.x + self.y * self.y;
         \\    }
@@ -53,9 +53,9 @@ test "js: record ---- methods using self fields in arithmetic" {
 
 test "js: record ---- method with throw" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Invoice = record {
+        \\val Invoice = type(
         \\    subtotal: f64,
-        \\    taxRate: f64,
+        \\    taxRate: f64) {
         \\    fn total(self: Self) -> f64 {
         \\        return self.subtotal + self.subtotal * self.taxRate;
         \\    }
@@ -68,7 +68,7 @@ test "js: record ---- method with throw" {
 
 test "js: record ---- method with todo placeholder" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record Unimplemented { id: i32,
+        \\type Unimplemented(id: i32) {
         \\    fn process(self: Self) -> string {
         \\        return @todo();
         \\    }
@@ -78,9 +78,9 @@ test "js: record ---- method with todo placeholder" {
 
 test "js: record ---- shorthand declaration without val Name =" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record Vec2 {
+        \\type Vec2(
         \\    x: f64,
-        \\    y: f64,
+        \\    y: f64) {
         \\    fn dot(self: Self, other: Vec2) -> f64 {
         \\        return self.x * other.x + self.y * other.y;
         \\    }
@@ -170,9 +170,9 @@ test "js: tuple ---- access elements" {
 // result is printed as an i32 — 1.0.4-beta 01 wasm).
 test "js: record ---- a method named print is called on the record" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record Doc {
+        \\type Doc(
         \\    title: string,
-        \\
+        \\) {
         \\    fn print(self: Self) -> string {
         \\        return "doc:" + self.title;
         \\    }
@@ -210,7 +210,7 @@ test "js: tuple ---- a bare digit index and an option map over a found pair" {
 // field — the closure is stored in the constructor.
 test "js: record ---- fn-typed field (hook-shape record)" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record State<T> { value: T, set: fn(next: T) }
+        \\type State<T>(value: T, set: fn(next: T))
         \\fn make() -> State<i32> { return State(value: 0, set: { n -> }); }
         \\fn apply(s: State<i32>) -> i32 { s.set(s.value); return s.value; }
     );
@@ -231,8 +231,10 @@ test "js: call ---- Children coercion (list / single / text)" {
 test "js: interface literal ---- basic" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
-        \\    val DeclKind = record { Type: "Type", Fn: "Fn" };
-        \\    val decl = @Decl(kind: DeclKind.Type, name: "Service", fields: [], methods: [], returnType: "", annotations: []);
+        \\    val Type = "Type";
+        \\    val Fn = "Fn";
+        \\    val kinds = #(Type, Fn);
+        \\    val decl = @Decl(kind: kinds.Type, name: "Service", fields: [], methods: [], returnType: "", annotations: []);
         \\    @print(decl.name);
         \\}
     );
@@ -241,8 +243,10 @@ test "js: interface literal ---- basic" {
 test "js: interface literal ---- with fields" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
-        \\    val DeclKind = record { Type: "Type", Fn: "Fn" };
-        \\    val decl = @Decl(kind: DeclKind.Type, name: "Service", fields: [record { name: "x", typeName: "i32", annotations: [] }], methods: [], returnType: "", annotations: []);
+        \\    val Type = "Type";
+        \\    val Fn = "Fn";
+        \\    val kinds = #(Type, Fn);
+        \\    val decl = @Decl(kind: kinds.Type, name: "Service", fields: [#("x", "i32", [])], methods: [], returnType: "", annotations: []);
         \\    @print(decl.fields.length);
         \\}
     );

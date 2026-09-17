@@ -22,7 +22,7 @@ const h = @import("helpers.zig");
 
 test "infer: narrow ---- if null check record field access" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\record User { name: string }
+        \\type User(name: string)
         \\fn greet(maybeUser: ?User) -> string {
         \\    if (maybeUser) { u ->
         \\        return "hello " + u.name;
@@ -53,8 +53,8 @@ test "infer: narrow ---- if null check bool" {
 
 test "infer: narrow ---- if null check chained" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\record Inner { c: i32 }
-        \\record Outer { b: ?Inner }
+        \\type Inner(c: i32)
+        \\type Outer(b: ?Inner)
         \\fn getC(o: ?Outer) -> i32 {
         \\    if (o) { outer ->
         \\        if (outer.b) { inner ->
@@ -94,8 +94,8 @@ test "infer: narrow ---- case result ok err" {
 
 test "infer: narrow ---- case result different payload types" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\record User { name: string }
-        \\enum AppError { NotFound, Timeout(msg: string) }
+        \\type User(name: string)
+        \\type AppError { NotFound, Timeout(msg: string) }
         \\#[@result]
         \\fn fetchUser(id: i32) -> @Result<User, AppError> {
         \\    if (id == 0) { throw AppError.NotFound; };
@@ -118,7 +118,7 @@ test "infer: narrow ---- case result different payload types" {
 
 test "infer: narrow ---- case enum variant field bindings" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\enum Shape {
+        \\type Shape {
         \\    Circle(radius: f64),
         \\    Rectangle(w: f64, h: f64),
         \\    Point,
@@ -138,8 +138,8 @@ test "infer: narrow ---- case enum variant field bindings" {
 
 test "infer: narrow ---- case enum nested variant access" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\record Payload { code: i32, msg: string }
-        \\enum Result_ { OkData(data: Payload), Fail }
+        \\type Payload(code: i32, msg: string)
+        \\type Result_ { OkData(data: Payload), Fail }
         \\fn describe(r: Result_) -> string {
         \\    return case r {
         \\        OkData(d) -> d.msg;
@@ -156,7 +156,7 @@ test "infer: narrow ---- case enum nested variant access" {
 
 test "infer: narrow ---- case or patterns shared bindings" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\enum Animal {
+        \\type Animal {
         \\    Dog(breed: string),
         \\    Cat(breed: string),
         \\    Fish,
@@ -189,7 +189,7 @@ test "infer: narrow ---- case guard bound identifier" {
 
 test "infer: narrow ---- case guard variant field" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\enum Response {
+        \\type Response {
         \\    Data(code: i32, body: string),
         \\    Error(code: i32),
         \\}
@@ -231,7 +231,7 @@ test "infer: narrow ---- assert pattern after assert" {
 // owner: spec 02.
 test "infer: narrow ---- assert pattern enum variant" {
     try h.assertComptimeCompileError(std.testing.allocator, @src(),
-        \\enum Status { Ready, Busy(count: i32), Down }
+        \\type Status { Ready, Busy(count: i32), Down }
         \\fn work(s: Status) -> i32 {
         \\    assert s is Busy(n);
         \\    return n;
@@ -290,7 +290,7 @@ test "infer: narrow ---- type guard narrowing in if" {
 // access` covers the nested-`if` form that does work.
 test "infer: narrow ---- and condition field access" {
     try h.assertComptimeCompileError(std.testing.allocator, @src(),
-        \\val Box = record { weight: i32 }
+        \\val Box = type(weight: i32)
         \\fn describe(b: ?Box) -> string {
         \\    if (b && b.weight > 10) {
         \\        return "heavy";
@@ -305,8 +305,8 @@ test "infer: narrow ---- and condition field access" {
 
 test "infer: narrow ---- optional chaining field access" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Inner = record { value: i32 }
-        \\val Outer = record { inner: ?Inner }
+        \\val Inner = type(value: i32)
+        \\val Outer = type(inner: ?Inner)
         \\fn getValue(o: Outer) -> ?i32 {
         \\    return o.inner?.value;
         \\}
@@ -333,7 +333,7 @@ test "infer: narrow ---- else if chain with null checks" {
 
 test "infer: narrow ---- error variant field in wrong arm" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\enum Shape {
+        \\type Shape {
         \\    Circle(radius: f64),
         \\    Square(side: f64),
         \\}

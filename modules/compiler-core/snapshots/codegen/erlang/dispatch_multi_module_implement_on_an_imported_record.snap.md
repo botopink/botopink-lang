@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- pond.bp
 ```botopink
-pub record Pato { id: i32 }
+pub type Pato(id: i32)
 ```
 
 ----- ERLANG -- pond.erl
@@ -17,7 +17,7 @@ pub record Pato { id: i32 }
 ----- SOURCE CODE -- main.bp
 ```botopink
 import {Pato} from "pond";
-val Swimmer = interface {
+val Swimmer = behavior {
     fn swim(self: Self);
 }
 val PatoNada = implement Swimmer for Pato {

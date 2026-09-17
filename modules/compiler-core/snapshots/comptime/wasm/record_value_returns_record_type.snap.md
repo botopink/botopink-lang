@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record Point { x: i32, y: i32 }
+type Point(x: i32, y: i32)
 val p = Point(x: 1, y: 2);
 val PType = @TypeOf(p);
 ```

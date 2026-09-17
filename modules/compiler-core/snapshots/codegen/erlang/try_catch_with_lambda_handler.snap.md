@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record FetchError { url: string }
+type FetchError(url: string)
 #[@result]
 fn fetch() -> @Result<i32, FetchError> {
     throw FetchError(url: "/api");

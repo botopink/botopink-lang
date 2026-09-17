@@ -1,8 +1,10 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    val DeclKind = record { Type: "Type", Fn: "Fn" };
-    val decl = @Decl(kind: DeclKind.Type, name: "Service", fields: [], methods: [], returnType: "", annotations: []);
+    val Type = "Type";
+    val Fn = "Fn";
+    val kinds = #(Type, Fn);
+    val decl = @Decl(kind: kinds.Type, name: "Service", fields: [], methods: [], returnType: "", annotations: []);
     @print(decl.name);
 }
 ```
@@ -23,8 +25,14 @@ fn main() {
     (local $__mem2 i32)
     (local $__mem3 i32)
     (local $__mem4 i32)
-    (local $DeclKind i32)
+    (local $Type i32)
+    (local $Fn i32)
+    (local $kinds i32)
     (local $decl i32)
+    i32.const 256
+    local.set $Type
+    i32.const 264
+    local.set $Fn
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
@@ -32,13 +40,13 @@ fn main() {
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 256
+    local.get $Type
     i32.store
     local.get $__mem0
-    i32.const 264
+    local.get $Fn
     i32.store offset=4
     local.get $__mem0
-    local.set $DeclKind
+    local.set $kinds
     global.get $__heap_ptr
     local.set $__mem1
     global.get $__heap_ptr
@@ -46,8 +54,8 @@ fn main() {
     i32.add
     global.set $__heap_ptr
     local.get $__mem1
-    local.get $DeclKind
-    i32.load ;; .Type
+    local.get $kinds
+    i32.load
     i32.store
     local.get $__mem1
     i32.const 272

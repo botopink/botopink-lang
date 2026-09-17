@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-record Pato { id: i32 }
+type Pato(id: i32)
 val PatoVoa = extend Pato {
     fn fly(self: Self) {
         return self.id;

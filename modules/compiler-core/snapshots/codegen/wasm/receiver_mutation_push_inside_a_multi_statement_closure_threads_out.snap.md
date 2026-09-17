@@ -16,11 +16,11 @@ pub fn component(comptime decl: @Decl) {
 }
 
 #[component]
-record Service {
+type Service(
     #[value(port)]
     port: i32,
     name: string,
-}
+)
 
 fn collect(xs: Array<i32>) -> Array<string> {
     var out: Array<string> = [];

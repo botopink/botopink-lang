@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-interface Pairish<A, B> {
+behavior Pairish<A, B> {
     default fn of(first: A, second: B) -> #(A, B) {
         return #(first, second);
     }

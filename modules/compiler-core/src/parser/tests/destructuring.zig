@@ -14,7 +14,7 @@ const h = @import("helpers.zig");
 
 test "parser: shorthand enum ---- simple" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\enum Direction {
+        \\type Direction {
         \\    North,
         \\    South,
         \\}
@@ -23,7 +23,7 @@ test "parser: shorthand enum ---- simple" {
 
 test "parser: shorthand enum ---- pub with generics and payload" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\pub enum Option <T> {
+        \\pub type Option <T> {
         \\    None,
         \\    Some(value: T),
         \\}
@@ -32,28 +32,28 @@ test "parser: shorthand enum ---- pub with generics and payload" {
 
 test "parser: shorthand record ---- simple" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\record Point { x: i32, y: i32 }
+        \\type Point(x: i32, y: i32)
     );
 }
 
 test "parser: shorthand record ---- pub with generics" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\pub record Pair <T> { first: T, second: T }
+        \\pub type Pair <T>(first: T, second: T)
     );
 }
 
 test "parser: shorthand interface ---- simple" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\interface Drawable {
-        \\    fn draw()
+        \\behavior Drawable {
+        \\    fn draw();
         \\}
     );
 }
 
 test "parser: shorthand interface ---- pub with generics" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\pub interface Container <T> {
-        \\    fn size() -> Int
+        \\pub behavior Container <T> {
+        \\    fn size() -> Int;
         \\}
     );
 }

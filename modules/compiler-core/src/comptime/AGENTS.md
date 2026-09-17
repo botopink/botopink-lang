@@ -121,7 +121,7 @@ caller and captured **unevaluated**:
 - `inferTemplateMethod` resolves the comptime-only methods on `@Expr` receivers
   (`value`/`text`/`parts`/`source`/`context`/`lookup`/`bindings`/`build`/
   `custom`/`fail`/`failAt`) and `ref()` on `Binding`, recording
-  `env.templateLowerings`. The contract is `interface Expr<E>` in
+  `env.templateLowerings`. The contract is `behavior Expr<E>` in
   `libs/std/src/builtins.d.bp`, alongside `Span`/`Part`/`Binding`/`Source`/
   `Context` and the `@ExprCustom` carrier.
 - Construction is **explicit**: `@expr(value)` (lift a comptime value) and
@@ -203,8 +203,8 @@ recognize → reflect → invoke → apply; marker meaning lives in the lib body
 - `registerFnSignatures` calls `registerDecoratorSig` for every top-level `fn`
   and `delegate`, recording the trailing params and the body-carrying `FnDecl`
   in `env.decorators`.
-- The reflection cluster (`enum DeclKind { Record, Struct, Enum, Interface, Fn,
-  Method, Field }` + `record Decl`/`Field`/`Method`/`Param`/`Annotation`/`Span`)
+- The reflection cluster (`type DeclKind { Type, Behavior, Fn, Method, Field }` +
+  `type Decl`/`Field`/`Method`/`Param`/`Annotation`/`Span`)
   is registered by `registerStdlib` from `decl_reflection_src` (a mirror of
   `libs/std/src/builtins.d.bp` — keep in sync). `Decl` is a record so the array
   members `fields`/`methods`/`annotations` resolve.

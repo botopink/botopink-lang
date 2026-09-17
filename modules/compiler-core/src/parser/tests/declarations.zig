@@ -62,19 +62,19 @@ test "parser: abstract method with multiple params" {
 
 test "parser: interface with methods of varying param counts" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val Canvas = interface {
-        \\    fn clear(self: Self)
-        \\    fn drawLine(self: Self, x1: i32, y1: i32)
-        \\    fn drawRect(self: Self, x: i32, y: i32, color: string)
+        \\val Canvas = behavior {
+        \\    fn clear(self: Self);
+        \\    fn drawLine(self: Self, x1: i32, y1: i32);
+        \\    fn drawRect(self: Self, x: i32, y: i32, color: string);
         \\}
     );
 }
 
 test "parser: full Drawable interface (field + abstract + default method)" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val Drawable = interface {
-        \\    val color: string,
-        \\    fn draw(self: Self),
+        \\val Drawable = behavior {
+        \\    val color: string;
+        \\    fn draw(self: Self);
         \\    default fn log(self: Self) {
         \\        Console.WriteLine("Rendering object with color: " + self.color);
         \\    }
@@ -86,7 +86,7 @@ test "parser: implement generic interface for type" {
     // G6: a standalone `implement <generic-iface> for <Type>` must parse, both
     // for a builtin generic (`@Context<…>`) and a user generic (`Foo<A, B>`).
     try h.assertParser(std.testing.allocator, @src(),
-        \\record E { tag: string }
+        \\type E(tag: string)
         \\val C = implement @Context<E, E> for E {}
         \\val D = implement Foo<E, E> for E {}
     );
@@ -94,13 +94,13 @@ test "parser: implement generic interface for type" {
 
 test "parser: enum with inline implement" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val Color = enum implement Printable { Red, Green, Blue }
+        \\val Color = type implement Printable { Red, Green, Blue }
     );
 }
 
 test "parser: record with inline implement" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val Point = record implement Serializable { x: number, y: number }
+        \\val Point = type(x: number, y: number) implement Serializable
     );
 }
 
@@ -114,8 +114,8 @@ test "parser: record with two fields and no methods" {
 
 test "parser: record with one method" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val Point = record {
-        \\    x: number,
+        \\val Point = type(
+        \\    x: number) {
         \\    fn show(self: Self) {
         \\        return self.x;
         \\    }
@@ -125,9 +125,9 @@ test "parser: record with one method" {
 
 test "parser: full GPSCoordinates record (two fields + toString method)" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val GPSCoordinates = record {
+        \\val GPSCoordinates = type(
         \\    lat: number,
-        \\    lon: number,
+        \\    lon: number) {
         \\    pub fn toString(self: Self) -> string {
         \\        return "Lat: " + self.lat + " Lon: " + self.lon;
         \\    }
@@ -137,8 +137,8 @@ test "parser: full GPSCoordinates record (two fields + toString method)" {
 
 test "parser: record with declare fn (abstract method declaration)" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val X = record {
-        \\    value: string,
+        \\val X = type(
+        \\    value: string) {
         \\    declare fn foo(self: Self);
         \\}
     );
@@ -146,7 +146,7 @@ test "parser: record with declare fn (abstract method declaration)" {
 
 test "parser: enum with declare fn (abstract method declaration)" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val Direction = enum {
+        \\val Direction = type {
         \\    North,
         \\    South,
         \\    declare fn label(self: Self) -> string;
@@ -177,19 +177,19 @@ test "parser: implement with two interfaces and qualified methods" {
 
 test "parser: interface ---- members comma-separated with trailing comma" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val Canvas = interface {
-        \\    fn clear(self: Self),
-        \\    fn drawLine(self: Self, x1: i32, y1: i32),
-        \\    fn drawRect(self: Self, x: i32, y: i32, color: string),
+        \\val Canvas = behavior {
+        \\    fn clear(self: Self);
+        \\    fn drawLine(self: Self, x1: i32, y1: i32);
+        \\    fn drawRect(self: Self, x: i32, y: i32, color: string);
         \\}
     );
 }
 
 test "parser: record with two fields and a non-pub toString method" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val GPSCoordinates = record {
+        \\val GPSCoordinates = type(
         \\    lat: number,
-        \\    lon: number,
+        \\    lon: number) {
         \\    fn toString(self: Self) -> string {
         \\        return "Lat: " + self.lat + " Lon: " + self.lon;
         \\    }
@@ -284,7 +284,7 @@ test "parser: reserved words are not identifier tokens" {
 
 test "parser: enum ---- simple unit variants" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val Direction = enum {
+        \\val Direction = type {
         \\    North,
         \\    South,
         \\    East,
@@ -295,7 +295,7 @@ test "parser: enum ---- simple unit variants" {
 
 test "parser: enum ---- with payload variant" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val Color = enum {
+        \\val Color = type {
         \\    Red,
         \\    Green,
         \\    Blue,
@@ -306,37 +306,37 @@ test "parser: enum ---- with payload variant" {
 
 test "parser: interface extends ---- val form single" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val I1 = interface extends T2 {}
+        \\val I1 = behavior extends T2 {}
     );
 }
 
 test "parser: interface extends ---- val form multiple" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val I1 = interface extends T2, T3, T4 {}
+        \\val I1 = behavior extends T2, T3, T4 {}
     );
 }
 
 test "parser: interface extends ---- pub val form multiple" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\pub val I1 = interface extends T2, T3, T4 {}
+        \\pub val I1 = behavior extends T2, T3, T4 {}
     );
 }
 
 test "parser: interface extends ---- shorthand single" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\interface I1 extends T2 {}
+        \\behavior I1 extends T2 {}
     );
 }
 
 test "parser: interface extends ---- shorthand multiple" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\interface I1 extends T2, T3, T4 {}
+        \\behavior I1 extends T2, T3, T4 {}
     );
 }
 
 test "parser: interface extends ---- pub shorthand multiple" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\pub interface I1 extends T2, T3, T4 {}
+        \\pub behavior I1 extends T2, T3, T4 {}
     );
 }
 
@@ -371,14 +371,14 @@ test "parser: annotation ---- val form fn" {
 test "parser: annotation ---- record shorthand" {
     try h.assertParser(std.testing.allocator, @src(),
         \\#[derive(Eq)]
-        \\record Person { name: string }
+        \\type Person(name: string)
     );
 }
 
 test "parser: annotation ---- enum shorthand" {
     try h.assertParser(std.testing.allocator, @src(),
         \\#[target(.beam)]
-        \\enum Color {
+        \\type Color {
         \\    Red,
         \\    Green,
         \\    Blue,
@@ -389,7 +389,7 @@ test "parser: annotation ---- enum shorthand" {
 test "parser: annotation ---- interface shorthand" {
     try h.assertParser(std.testing.allocator, @src(),
         \\#[target(.erlang)]
-        \\interface Printable {}
+        \\behavior Printable {}
     );
 }
 
@@ -591,7 +591,7 @@ test "parser: Expr builtin type ---- composed type position" {
 
 test "parser: interface with default method and external declare member" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\pub interface List<T> {
+        \\pub behavior List<T> {
         \\    default fn isEmpty(self: Self) -> bool {
         \\        return self.length == 0;
         \\    }
@@ -758,13 +758,13 @@ test "parser: fn-decl multiple trailing defaults" {
 
 test "parser: record field default mirrors fn-param default" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val Config = record { host: string = "localhost", port: i32 = 8080 }
+        \\val Config = type(host: string = "localhost", port: i32 = 8080)
     );
 }
 
 test "parser: enum variant field default" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val Level = enum {
+        \\val Level = type {
         \\    Info(message: string = "info"),
         \\    Warn(message: string = "warning"),
         \\}
@@ -785,7 +785,7 @@ test "parser: fn-decl param default + External.<Target> annotation" {
 
 test "parser: enum section ---- single section + sibling bare variant" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\enum Token {
+        \\type Token {
         \\    Text {
         \\        Bold,
         \\        Italic,
@@ -798,7 +798,7 @@ test "parser: enum section ---- single section + sibling bare variant" {
 
 test "parser: enum section ---- nested sections + numeric leaves" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\enum Token {
+        \\type Token {
         \\    Color {
         \\        Red { 100, 500, 700 }
         \\        Blue { 100, 500 }
@@ -814,7 +814,7 @@ test "parser: enum section ---- nested sections + numeric leaves" {
 
 test "parser: enum section ---- top-level numeric variant rejected" {
     try h.expectParseFails(std.testing.allocator,
-        \\enum Bad {
+        \\type Bad {
         \\    100,
         \\    200,
         \\}
@@ -823,7 +823,7 @@ test "parser: enum section ---- top-level numeric variant rejected" {
 
 test "parser: enum section ---- numeric variant with payload rejected" {
     try h.expectParseFails(std.testing.allocator,
-        \\enum Bad {
+        \\type Bad {
         \\    Color {
         \\        500(value: string),
         \\    }
@@ -833,7 +833,7 @@ test "parser: enum section ---- numeric variant with payload rejected" {
 
 test "parser: enum section ---- numeric variant opening section rejected" {
     try h.expectParseFails(std.testing.allocator,
-        \\enum Bad {
+        \\type Bad {
         \\    Color {
         \\        500 { Red, Blue }
         \\    }
@@ -854,7 +854,7 @@ test "parser: enum section ---- path access dot chain `.Color.Red.500`" {
 
 test "parser: enum section ---- ES1 duplicate section name rejected" {
     try h.expectParseFails(std.testing.allocator,
-        \\enum Bad {
+        \\type Bad {
         \\    Color { Red }
         \\    Color { Blue }
         \\}
@@ -863,7 +863,7 @@ test "parser: enum section ---- ES1 duplicate section name rejected" {
 
 test "parser: enum section ---- ES2 section name collides with bare variant rejected" {
     try h.expectParseFails(std.testing.allocator,
-        \\enum Bad {
+        \\type Bad {
         \\    Color,
         \\    Color { Red, Blue }
         \\}
@@ -872,7 +872,7 @@ test "parser: enum section ---- ES2 section name collides with bare variant reje
 
 test "parser: enum section ---- ES2 bare variant collides with earlier section rejected" {
     try h.expectParseFails(std.testing.allocator,
-        \\enum Bad {
+        \\type Bad {
         \\    Color { Red, Blue }
         \\    Color,
         \\}
@@ -983,10 +983,10 @@ test "parser: effect fn ---- #[@iterator] label after return type" {
 // moving at all (spec 06 snapshot review, cross-cutting note 2).
 test "parser: decl ids ---- per-kind counters increment independently" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val A = record { x: i32 }
-        \\val I = interface { fn go(self: Self) }
-        \\val B = record { y: i32 }
-        \\val E = enum { One, Two }
+        \\val A = type(x: i32)
+        \\val I = behavior { fn go(self: Self); }
+        \\val B = type(y: i32)
+        \\val E = type { One, Two }
     );
 }
 
@@ -1001,7 +1001,7 @@ test "parser: comments ---- doc, module and normal comments attach to decls" {
         \\//// module header
         \\/// documents the record
         \\// a plain note
-        \\val Point = record { x: i32 }
+        \\val Point = type(x: i32)
         \\
         \\/// documents the fn
         \\fn go() {

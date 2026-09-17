@@ -23,7 +23,7 @@
                 "literal": {
                   "loc": {
                     "line": 1,
-                    "col": 38
+                    "col": 34
                   },
                   "kind": {
                     "stringLit": "localhost"
@@ -41,7 +41,7 @@
                 "literal": {
                   "loc": {
                     "line": 1,
-                    "col": 63
+                    "col": 59
                   },
                   "kind": {
                     "numberLit": "8080"

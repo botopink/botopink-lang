@@ -1,7 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    val outer = record { span: record { start: 5, end: 9 }, kind: 3 };
+    val start = 5;
+    val end = 9;
+    val span = #(start, end);
+    val kind = 3;
+    val outer = #(span, kind);
     @print(outer.span.start);
 }
 ```
@@ -15,7 +19,15 @@ fn main() {
   (func $main
     (local $__mem0 i32)
     (local $__mem1 i32)
+    (local $start i32)
+    (local $end i32)
+    (local $span i32)
+    (local $kind i32)
     (local $outer i32)
+    i32.const 5
+    local.set $start
+    i32.const 9
+    local.set $end
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
@@ -23,6 +35,15 @@ fn main() {
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
+    local.get $start
+    i32.store
+    local.get $__mem0
+    local.get $end
+    i32.store offset=4
+    local.get $__mem0
+    local.set $span
+    i32.const 3
+    local.set $kind
     global.get $__heap_ptr
     local.set $__mem1
     global.get $__heap_ptr
@@ -30,21 +51,16 @@ fn main() {
     i32.add
     global.set $__heap_ptr
     local.get $__mem1
-    i32.const 5
+    local.get $span
     i32.store
     local.get $__mem1
-    i32.const 9
+    local.get $kind
     i32.store offset=4
     local.get $__mem1
-    i32.store
-    local.get $__mem0
-    i32.const 3
-    i32.store offset=4
-    local.get $__mem0
     local.set $outer
     local.get $outer
-    i32.load ;; .span
-    i32.load ;; .start
+    i32.load
+    i32.load
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")

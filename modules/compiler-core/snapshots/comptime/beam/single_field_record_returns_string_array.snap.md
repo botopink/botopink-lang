@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Box = record { value: i32 };
+val Box = type(value: i32);
 val keys = @RecordKeys(Box);
 ```
 

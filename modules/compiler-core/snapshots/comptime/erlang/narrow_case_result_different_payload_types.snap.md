@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record User { name: string }
-enum AppError { NotFound, Timeout(msg: string) }
+type User(name: string)
+type AppError { NotFound, Timeout(msg: string) }
 #[@result]
 fn fetchUser(id: i32) -> @Result<User, AppError> {
     if (id == 0) { throw AppError.NotFound; };

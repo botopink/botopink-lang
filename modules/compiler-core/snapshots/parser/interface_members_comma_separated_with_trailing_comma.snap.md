@@ -13,7 +13,7 @@
         "genericParams": [],
         "extends": [],
         "fields": [],
-        "trailingComma": true,
+        "trailingComma": false,
         "methods": [
           {
             "name": "clear",

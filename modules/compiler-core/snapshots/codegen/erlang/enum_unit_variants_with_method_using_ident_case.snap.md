@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val HttpMethod = enum {
+val HttpMethod = type {
     Get,
     Post,
     Put,

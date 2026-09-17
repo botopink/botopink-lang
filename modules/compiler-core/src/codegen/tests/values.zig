@@ -89,8 +89,8 @@ test "js: fn ---- with local binding" {
 
 test "js: call ---- qualified module call resolves arity" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record Pipeline {
-        \\    items: i32[],
+        \\type Pipeline(
+        \\    items: i32[]) {
         \\    fn run(self: Self, f: fn(item: i32) -> i32) -> i32[] {
         \\        return List.map(self.items, f);
         \\    }
@@ -100,8 +100,8 @@ test "js: call ---- qualified module call resolves arity" {
 
 test "js: call ---- qualified module call with trailing lambda arity" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record Pipeline {
-        \\    items: i32[],
+        \\type Pipeline(
+        \\    items: i32[]) {
         \\    fn doubled(self: Self) -> i32[] {
         \\        return List.map(self.items) { x ->
         \\            return x * 2;
@@ -254,7 +254,7 @@ test "js: doc comment ---- multiline before struct" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\/// User account structure
         \\/// Holds name and email
-        \\val Account = record { name: string, email: string };
+        \\val Account = type(name: string, email: string);
     );
 }
 
@@ -281,8 +281,8 @@ test "js: assign ---- update var with plusEq" {
 
 test "js: field assign ---- self.field update" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Counter = record {
-        \\    count: i32 = 0,
+        \\val Counter = type(
+        \\    count: i32 = 0) {
         \\    fn inc() {
         \\        self.count += 1;
         \\    }
@@ -292,9 +292,9 @@ test "js: field assign ---- self.field update" {
 
 test "js: self ---- field access in method" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Point = record {
+        \\val Point = type(
         \\    x: i32,
-        \\    y: i32,
+        \\    y: i32) {
         \\    fn sum() -> i32 {
         \\        return self.x + self.y;
         \\    }
@@ -344,7 +344,7 @@ test "js: net-new ---- interpolation with two holes lowers on every backend" {
 // special structural `==` that arrays lack.
 test "js: net-new ---- record equality vs array equality across backends" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record Point { x: i32, y: i32 }
+        \\type Point(x: i32, y: i32)
         \\fn recordEq() -> bool {
         \\    val a = Point(x: 1, y: 2);
         \\    val b = Point(x: 1, y: 2);

@@ -7,12 +7,11 @@ const parserMod = @import("../../parser.zig");
 const formatMod = @import("../../format.zig");
 const h = @import("helpers.zig");
 
-
 test "format: idempotent ---- full Drawable interface" {
     try h.assertIdempotent(std.testing.allocator,
-        \\val Drawable = interface {
-        \\    val color: string,
-        \\    fn draw(self: Self),
+        \\val Drawable = behavior {
+        \\    val color: string;
+        \\    fn draw(self: Self);
         \\    default fn log(self: Self) {
         \\        Console.WriteLine("Rendering object with color: " + self.color);
         \\    }
@@ -22,7 +21,7 @@ test "format: idempotent ---- full Drawable interface" {
 
 test "format: idempotent ---- enum with payload" {
     try h.assertIdempotent(std.testing.allocator,
-        \\val Color = enum {
+        \\val Color = type {
         \\    Red,
         \\    Green,
         \\    Blue,
@@ -79,12 +78,11 @@ test "format: idempotent ---- nested case expressions" {
     );
 }
 
-
 test "format: idempotent ---- interface with default method" {
     try h.assertIdempotent(std.testing.allocator,
-        \\val Drawable = interface {
-        \\    val color: string,
-        \\    fn draw(self: Self),
+        \\val Drawable = behavior {
+        \\    val color: string;
+        \\    fn draw(self: Self);
         \\    default fn log(self: Self) {
         \\        Console.WriteLine("Rendering object with color: " + self.color);
         \\    }
@@ -94,7 +92,7 @@ test "format: idempotent ---- interface with default method" {
 
 test "format: idempotent ---- enum with payload variants" {
     try h.assertIdempotent(std.testing.allocator,
-        \\val Color = enum {
+        \\val Color = type {
         \\    Red,
         \\    Green,
         \\    Blue,

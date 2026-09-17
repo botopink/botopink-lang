@@ -203,8 +203,8 @@ codegen/
   every local record that implements it and does not define the method
   (`appendInterfaceDefaults`, following `extends`); nothing is patched onto
   `Iface.prototype`. An implementer in another module does not get them yet.
-  A module that redeclares a primitive interface (`interface Number { fn
-  max(self: Self, other: Self) -> Self, … }`) replaces the prelude's
+  A module that redeclares a primitive interface (`behavior Number { fn
+  max(self: Self, other: Self) -> Self; … }`) replaces the prelude's
   declaration; a bodyless member without its own `@External.Node` takes the
   prelude's (`prelude_iface_externals`), so `Number.prototype.max` is still
   patched.

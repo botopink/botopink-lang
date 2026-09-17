@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-val Plain = record { x: i32 }
+val Plain = type(x: i32)
 fn make() -> Plain {
     Plain(x: 0);
 }

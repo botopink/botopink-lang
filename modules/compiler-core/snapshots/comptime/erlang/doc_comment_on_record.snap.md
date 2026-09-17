@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 //// A point in 2D space
-val Point = record { x: i32, y: i32 };
+val Point = type(x: i32, y: i32);
 ```
 
 ----- TYPED AST JSON -- main.json

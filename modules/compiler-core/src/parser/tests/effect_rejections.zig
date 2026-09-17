@@ -60,16 +60,16 @@ test "R1 §A3 — #[@future] declare fn with @external accepted at parse" {
 
 test "R2 — #[@future] inside interface method rejected" {
     try expectKind(
-        \\val AsyncSource = interface {
+        \\val AsyncSource = behavior {
         \\    #[@future]
-        \\    fn next(self: Self) -> @Future<i32>
+        \\    fn next(self: Self) -> @Future<i32>;
         \\}
     , .effectOnInterfaceMethodForbidden);
 }
 
 test "R2 — #[@result] on default interface method rejected" {
     try expectKind(
-        \\val Parser = interface {
+        \\val Parser = behavior {
         \\    #[@result]
         \\    default fn parse(self: Self) -> @Result<i32, string> { return 0; }
         \\}
@@ -115,7 +115,7 @@ test "RI6 — bare `yield break` is also rejected" {
 
 test "RG1 — record with default before required is rejected" {
     try expectKind(
-        \\record Container<T = i32, U>(val item: T)
+        \\type Container<T = i32, U>(item: T)
     , .genericDefaultBeforeRequired);
 }
 

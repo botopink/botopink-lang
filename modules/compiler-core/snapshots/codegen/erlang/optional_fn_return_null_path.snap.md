@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record R { kind: i32 }
+type R(kind: i32)
 fn choose(present: bool) -> ?R {
     if (present) {
         return R(kind: 7);

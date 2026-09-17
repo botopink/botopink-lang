@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-enum Animal {
+type Animal {
     Dog(breed: string),
     Cat(breed: string),
     Fish,

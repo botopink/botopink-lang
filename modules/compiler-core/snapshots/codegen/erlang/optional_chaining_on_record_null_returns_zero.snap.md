@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record R { a: i32, b: i32 }
+type R(a: i32, b: i32)
 fn pick(maybe: ?R) -> i32 {
     return maybe?.b;
 }

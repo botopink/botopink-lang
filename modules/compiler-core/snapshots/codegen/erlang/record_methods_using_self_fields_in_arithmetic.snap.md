@@ -1,8 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Vec2 = record {
+val Vec2 = type(
     x: f64,
-    y: f64,
+    y: f64) {
     fn lengthSq(self: Self) -> f64 {
         return self.x * self.x + self.y * self.y;
     }

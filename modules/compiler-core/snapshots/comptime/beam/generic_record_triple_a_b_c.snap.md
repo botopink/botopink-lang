@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Triple = record <A, B, C> { first: A, second: B, third: C };
+val Triple = type <A, B, C>(first: A, second: B, third: C);
 val t = Triple(first: 1, second: "x", third: 3.14);
 ```
 

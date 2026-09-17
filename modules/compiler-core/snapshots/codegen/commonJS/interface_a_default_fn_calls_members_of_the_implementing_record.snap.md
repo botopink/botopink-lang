@@ -1,17 +1,17 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-interface Bounded {
-    fn min(self: Self, other: Self) -> Self,
-    fn max(self: Self, other: Self) -> Self,
+behavior Bounded {
+    fn min(self: Self, other: Self) -> Self;
+    fn max(self: Self, other: Self) -> Self;
 
     default fn clamp(self: Self, lo: Self, hi: Self) -> Self {
         return self.max(lo).min(hi);
     }
 }
 
-record Money implement Bounded {
+type Money(
     cents: i32,
-
+) implement Bounded {
     fn min(self: Self, other: Self) -> Self {
         return if (self.cents < other.cents) { self; } else { other; };
     }

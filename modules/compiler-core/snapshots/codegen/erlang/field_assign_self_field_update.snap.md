@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Counter = record {
-    count: i32 = 0,
+val Counter = type(
+    count: i32 = 0) {
     fn inc() {
         self.count += 1;
     }

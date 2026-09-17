@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record Person { name: string, age: i32 }
+type Person(name: string, age: i32)
 fn greet({ name, .. }: Person) -> string {
     @print(name);
     return name;

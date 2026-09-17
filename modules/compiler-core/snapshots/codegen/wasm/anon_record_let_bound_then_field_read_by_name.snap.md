@@ -1,7 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    val r = record { code: 7, kind: 11 };
+    val code = 7;
+    val kind = 11;
+    val r = #(code, kind);
     @print(r.kind);
 }
 ```
@@ -14,7 +16,13 @@ fn main() {
   (global $__heap_ptr (mut i32) (i32.const 256))
   (func $main
     (local $__mem0 i32)
+    (local $code i32)
+    (local $kind i32)
     (local $r i32)
+    i32.const 7
+    local.set $code
+    i32.const 11
+    local.set $kind
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
@@ -22,15 +30,15 @@ fn main() {
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 7
+    local.get $code
     i32.store
     local.get $__mem0
-    i32.const 11
+    local.get $kind
     i32.store offset=4
     local.get $__mem0
     local.set $r
     local.get $r
-    i32.load offset=4 ;; .kind
+    i32.load offset=4
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")

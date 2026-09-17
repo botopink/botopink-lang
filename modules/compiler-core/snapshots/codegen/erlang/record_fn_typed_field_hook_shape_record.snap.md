@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record State<T> { value: T, set: fn(next: T) }
+type State<T>(value: T, set: fn(next: T))
 fn make() -> State<i32> { return State(value: 0, set: { n -> }); }
 fn apply(s: State<i32>) -> i32 { s.set(s.value); return s.value; }
 ```

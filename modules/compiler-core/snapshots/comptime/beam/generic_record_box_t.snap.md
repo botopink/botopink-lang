@@ -1,8 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Box = record <T> {
+val Box = type <T>(
     value: T = todo,
-};
+);
 val b = Box(42);
 ```
 

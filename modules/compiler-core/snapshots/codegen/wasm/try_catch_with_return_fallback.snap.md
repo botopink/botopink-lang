@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record NetError { code: i32 }
+type NetError(code: i32)
 #[@result]
 fn fetch() -> @Result<i32, NetError> {
     throw NetError(code: 500);

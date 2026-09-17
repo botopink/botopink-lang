@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Drawable = interface {
-    val color: string,
+val Drawable = behavior {
+    val color: string;
     fn draw(self: Self);
 }
 ```

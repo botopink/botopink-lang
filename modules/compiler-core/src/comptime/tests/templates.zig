@@ -114,9 +114,9 @@ test "template: scope snapshot lookup ---- hit and miss" {
     defer env.deinit();
 
     try inferInto(&env, alloc,
-        \\pub record Button {
+        \\pub type Button(
         \\    label: string,
-        \\}
+        \\)
         \\pub fn html(comptime template: @Expr<string>) -> @Expr<string> {
         \\    return template;
         \\}
@@ -247,9 +247,9 @@ test "template: context exposes declaration position and scope for second-layer 
     defer env.deinit();
 
     try inferInto(&env, alloc,
-        \\pub record Button {
+        \\pub type Button(
         \\    label: string,
-        \\}
+        \\)
         \\pub fn dsl(comptime template: @Expr<string>) -> @Expr<string> {
         \\    return template;
         \\}
@@ -421,9 +421,9 @@ test "comptime: runtime template body ---- text() + build() end to end" {
 
 test "comptime: runtime template body ---- lookup miss drives control flow" {
     const src =
-        \\pub record Button {
+        \\pub type Button(
         \\    label: string,
-        \\}
+        \\)
         \\pub fn need(comptime t: @Expr<string>) -> @Expr<string> {
         \\    val hit = t.lookup("Buttom");
         \\    if (hit) { b ->
@@ -523,7 +523,7 @@ test "infer: a fn returning @ExprCustom<T> is recognized as a template fn" {
 
 test "comptime: q.custom executes `code` identically + the tree is retrievable by loc" {
     const src =
-        \\pub record Item { id: i32 }
+        \\pub type Item(id: i32)
         \\pub fn dsl<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
         \\    val code = e.build("41");
         \\    val leaf = CustomNode(kind: "field", span: Span(5, 9, 1), label: "property", ref: e.lookup("Item"), children: []);
@@ -615,7 +615,10 @@ test "infer: anonymous record literal types structurally and fields resolve" {
     defer env.deinit();
 
     try inferInto(&env, alloc,
-        \\val cfg = (record { server: record { port: 8080 }, debug: true });
+        \\val port = 8080;
+        \\val server = #(port);
+        \\val debug = true;
+        \\val cfg = #(server, debug);
         \\val p = cfg.server.port;
         \\val d = cfg.debug;
     );
@@ -625,7 +628,8 @@ test "infer: anonymous record literal types structurally and fields resolve" {
 
 test "infer error: unknown field on an anonymous record" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val cfg = (record { port: 8080 });
+        \\val port = 8080;
+        \\val cfg = #(port);
         \\val x = cfg.prot;
     );
 }
@@ -840,7 +844,7 @@ test "comptime: net-new ---- nested template call inside a template body" {
 
 test "template: markup DSL ---- <Component/> tags resolve to calls" {
     try assertCompilesOk(@src(),
-        \\val Element = record implement @Context<Element, Element> { }
+        \\val Element = type implement @Context<Element, Element> { }
         \\fn fragment(items: Element[]) -> Element { Element(); }
         \\fn Page1() -> Element { Element(); }
         \\fn Page2() -> Element { Element(); }
@@ -853,7 +857,7 @@ test "template: markup DSL ---- <Component/> tags resolve to calls" {
 
 test "template: markup DSL ---- ${expr} splices as a text child" {
     try assertCompilesOk(@src(),
-        \\val Element = record implement @Context<Element, Element> { }
+        \\val Element = type implement @Context<Element, Element> { }
         \\fn fragment(items: Element[]) -> Element { Element(); }
         \\fn text(value: string) -> Element { Element(); }
         \\pub fn html(comptime q: @Expr<string>) -> @Expr<Element> {

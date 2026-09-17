@@ -29,7 +29,7 @@
             "sections": []
           }
         },
-        "trailingComma": false,
+        "trailingComma": true,
         "methods": [
           {
             "name": "label",

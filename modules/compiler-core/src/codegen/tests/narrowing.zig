@@ -29,7 +29,7 @@ test "js: narrow ---- if null check with print" {
 
 test "js: narrow ---- case enum area with print" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\enum Shape { Circle(radius: f64), Square(side: f64) }
+        \\type Shape { Circle(radius: f64), Square(side: f64) }
         \\fn area(s: Shape) -> f64 {
         \\    return case s {
         \\        Circle(r) -> 3.14 * r * r;
@@ -131,7 +131,7 @@ test "js: narrow ---- type guard if codegen" {
 
 test "js: narrow ---- case option some none" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\enum Opt { None, Some(value: i32) }
+        \\type Opt { None, Some(value: i32) }
         \\fn describe(opt: Opt) -> string {
         \\    return case opt {
         \\        None -> "empty";
@@ -154,7 +154,7 @@ test "js: narrow ---- case option some none" {
 // nested/guard form that does work.
 test "js: narrow ---- and condition field access" {
     try h.assertJsCompileError(std.testing.allocator, @src(),
-        \\val Box = record { weight: i32 }
+        \\val Box = type(weight: i32)
         \\fn describe(b: ?Box) -> string {
         \\    if (b && b.weight > 10) {
         \\        return "heavy";
@@ -171,8 +171,8 @@ test "js: narrow ---- and condition field access" {
 
 test "js: narrow ---- optional chaining field access" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Inner = record { value: i32 }
-        \\val Outer = record { inner: ?Inner }
+        \\val Inner = type(value: i32)
+        \\val Outer = type(inner: ?Inner)
         \\fn getValue(o: Outer) -> ?i32 {
         \\    return o.inner?.value;
         \\}

@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-record User { id: i32 }
+type User(id: i32)
 #[@context]
 fn lookup() -> @Context<User, User> {
     return @getContex(42);

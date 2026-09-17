@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record User { name: string }
+type User(name: string)
 fn greet(maybeUser: ?User) -> string {
     if (maybeUser) { u ->
         return "hello " + u.name;

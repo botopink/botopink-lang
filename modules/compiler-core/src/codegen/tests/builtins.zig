@@ -226,7 +226,7 @@ test "js: stdlib ---- Result.isOk and isError predicates" {
 
 test "js: stdlib ---- Option map, flatMap and unwrapOr mirror Result" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record Person { name: string }
+        \\type Person(name: string)
         \\fn firstName(p: Person) -> ?string { @todo(); }
         \\fn shout(s: string) -> ?string { @todo(); }
         \\fn greet(p: Person) -> string {

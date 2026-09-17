@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record Payload { code: i32, msg: string }
-enum Result_ { OkData(data: Payload), Fail }
+type Payload(code: i32, msg: string)
+type Result_ { OkData(data: Payload), Fail }
 fn describe(r: Result_) -> string {
     return case r {
         OkData(d) -> d.msg;

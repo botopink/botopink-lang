@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Box = record { weight: i32 }
+val Box = type(weight: i32)
 fn describe(b: ?Box) -> string {
     if (b && b.weight > 10) {
         return "heavy";

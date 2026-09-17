@@ -1,16 +1,16 @@
 ----- SOURCE CODE -- http.bp
 ```botopink
-pub record Response {
-    body: string,
+pub type Response(
+    body: string) {
     fn ok(body: string) -> Response {
         return Response(body: body);
     }
 }
 
-pub record App {
+pub type App(
     port: i32,
     path: string,
-}
+)
 ```
 
 ----- BEAM ASSEMBLY -- http.S

@@ -1,9 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Drawable = interface {
-    fn draw(self: Self),
+val Drawable = behavior {
+    fn draw(self: Self);
 };
-val Circle = record { radius: f64 };
+val Circle = type(radius: f64);
 val CircleDrawing = implement Drawable for Circle {
     fn draw(self: Self) {
         @print("Drawing circle");

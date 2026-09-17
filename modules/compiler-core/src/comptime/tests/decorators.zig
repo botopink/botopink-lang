@@ -53,7 +53,7 @@ test "decorator: marker with no trailing args applies to a record" {
         \\fn service(comptime decl: @Decl) { }
         \\
         \\#[service]
-        \\record UserService { name: string }
+        \\type UserService(name: string)
     );
 }
 
@@ -61,9 +61,9 @@ test "decorator: string-arg marker on a method (interface site)" {
     try h.assertInfersOk(std.testing.allocator,
         \\fn getMapping(comptime decl: @Decl, path: string) { }
         \\
-        \\interface Routes {
+        \\behavior Routes {
         \\    #[getMapping("/users")]
-        \\    fn index(self: Self) -> string
+        \\    fn index(self: Self) -> string;
         \\}
     );
 }
@@ -72,8 +72,8 @@ test "decorator: string-arg marker on a record method (P3 method-site)" {
     try h.assertInfersOk(std.testing.allocator,
         \\fn getMapping(comptime decl: @Decl, path: string) { }
         \\
-        \\record Controller {
-        \\    name: string,
+        \\type Controller(
+        \\    name: string) {
         \\    #[getMapping("/users")]
         \\    fn index(self: Self) -> string { return self.name; }
         \\}
@@ -84,8 +84,8 @@ test "decorator: marker on a struct method (P3 method-site)" {
     try h.assertInfersOk(std.testing.allocator,
         \\fn tag(comptime decl: @Decl, label: string) { }
         \\
-        \\record Sb {
-        \\    val x: i32,
+        \\type Sb(
+        \\    x: i32) {
         \\    #[tag("a")]
         \\    fn m(self: Self) -> i32 { return self.x; }
         \\}
@@ -96,11 +96,11 @@ test "decorator: marker on a record field (P3 field-site)" {
     try h.assertInfersOk(std.testing.allocator,
         \\fn inject(comptime decl: @Decl) { }
         \\
-        \\record UserService {
+        \\type UserService(
         \\    #[inject]
         \\    repo: string,
         \\    name: string
-        \\}
+        \\)
     );
 }
 
@@ -108,10 +108,10 @@ test "decorator: string-arg marker on a struct field (P3 field-site)" {
     try h.assertInfersOk(std.testing.allocator,
         \\fn value(comptime decl: @Decl, key: string) { }
         \\
-        \\record Config {
+        \\type Config(
         \\    #[value("port")]
-        \\    val port: i32
-        \\}
+        \\    port: i32
+        \\)
     );
 }
 
@@ -122,7 +122,7 @@ test "decorator: declared as a `declare fn` marker (delegate form)" {
         \\declare fn component(comptime decl: @Decl);
         \\
         \\#[component]
-        \\record Widget { id: i32 }
+        \\type Widget(id: i32)
     );
 }
 
@@ -131,10 +131,10 @@ test "decorator: applies on struct, enum and fn sites" {
         \\fn tag(comptime decl: @Decl, label: string) { }
         \\
         \\#[tag("a")]
-        \\record Sa { val x: i32 }
+        \\type Sa(x: i32)
         \\
         \\#[tag("b")]
-        \\enum Color { Red, Green }
+        \\type Color { Red, Green }
         \\
         \\#[tag("c")]
         \\fn handler() -> i32 { return 1; }
@@ -146,7 +146,7 @@ test "decorator: an unknown marker is left untouched (no decorator loaded)" {
     // so the core stays lenient — a lib that defines it may simply be absent.
     try h.assertInfersOk(std.testing.allocator,
         \\#[unknownMarker("anything", 1, 2, 3)]
-        \\record A { x: i32 }
+        \\type A(x: i32)
     );
 }
 
@@ -163,7 +163,7 @@ test "decorator body: @compilerError aborts compilation" {
         \\}
         \\
         \\#[service]
-        \\record UserService { name: string }
+        \\type UserService(name: string)
     );
 }
 
@@ -178,7 +178,7 @@ test "decorator body: reads decl.kind and calls decl.fail" {
         \\}
         \\
         \\#[service]
-        \\record UserService { name: string }
+        \\type UserService(name: string)
     );
 }
 
@@ -190,7 +190,7 @@ test "decorator body: reads decl.name and decl.returnType" {
         \\}
         \\
         \\#[describe]
-        \\record Point { x: i32, y: i32 }
+        \\type Point(x: i32, y: i32)
     );
 }
 
@@ -205,7 +205,7 @@ test "decorator body: reads the aggregate members (fields/methods/annotations)" 
         \\}
         \\
         \\#[component]
-        \\record Service { repo: string }
+        \\type Service(repo: string)
     );
 }
 
@@ -216,7 +216,7 @@ test "decorator error: too few arguments" {
         \\fn getMapping(comptime decl: @Decl, path: string) { }
         \\
         \\#[getMapping]
-        \\record A { x: i32 }
+        \\type A(x: i32)
     , "expects 1 argument");
 }
 
@@ -225,7 +225,7 @@ test "decorator error: too many arguments" {
         \\fn service(comptime decl: @Decl) { }
         \\
         \\#[service("oops")]
-        \\record A { x: i32 }
+        \\type A(x: i32)
     , "expects 0 argument");
 }
 
@@ -234,7 +234,7 @@ test "decorator error: argument type mismatch (number where string expected)" {
         \\fn value(comptime decl: @Decl, key: string) { }
         \\
         \\#[value(123)]
-        \\record A { x: i32 }
+        \\type A(x: i32)
     , "must be string");
 }
 
@@ -256,7 +256,7 @@ test "infer: an @emit-ing module still yields source-decl TypedBindings (R2)" {
         \\fn service(comptime decl: @Decl) { }
         \\
         \\#[service]
-        \\record PostService { name: string }
+        \\type PostService(name: string)
     ;
     var lx = Lexer.init(src);
     const tokens = try lx.scanAll(alloc);

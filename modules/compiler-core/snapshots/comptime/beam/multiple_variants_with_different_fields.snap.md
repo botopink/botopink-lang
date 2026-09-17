@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Shape = enum {
+val Shape = type {
     Circle(radius: f64),
     Rectangle(width: f64, height: f64),
     Point,

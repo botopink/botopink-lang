@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record AppError { code: i32, msg: string }
+type AppError(code: i32, msg: string)
 fn validate(x: i32) {
     if (x < 0) {
         throw AppError(code: 400, msg: "negative");

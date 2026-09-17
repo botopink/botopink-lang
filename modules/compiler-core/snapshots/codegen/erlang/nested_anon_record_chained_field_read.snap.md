@@ -1,7 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    val outer = record { span: record { start: 5, end: 9 }, kind: 3 };
+    val start = 5;
+    val end = 9;
+    val span = #(start, end);
+    val kind = 3;
+    val outer = #(span, kind);
     @print(outer.span.start);
 }
 ```
@@ -12,8 +16,12 @@ fn main() {
 -export(['_botopink_main'/0, main/1]).
 
 main() ->
-    Outer = #{span => #{start => 5, 'end' => 9}, kind => 3},
-    '__bp_print'([maps:get(start, maps:get(span, Outer))]).
+    Start = 5,
+    End = 9,
+    Span = {Start, End},
+    Kind = 3,
+    Outer = {Span, Kind},
+    '__bp_print'([element(1, element(1, Outer))]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

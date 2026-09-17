@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub enum Shape {
+pub type Shape {
     Circle(radius: i32),
     Square(side: i32),
 
