@@ -13,7 +13,7 @@ fn main() -> i32 {
 {module, main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
-{labels, 10}.
+{labels, 13}.
 
 {function, main, 0, 3}.
   {label, 2}.
@@ -46,6 +46,21 @@ fn main() -> i32 {
   {label, 7}.
     {call_only, 0, {f, 5}}.
 
+{function, '__bp_add', 2, 11}.
+  {label, 10}.
+    {line, [{location, "main.erl", 2}]}.
+    {func_info, {atom, main}, {atom, '__bp_add'}, 2}.
+  {label, 11}.
+    {test, is_binary, {f, 12}, [{x, 0}]}.
+    {test, is_binary, {f, 12}, [{x, 1}]}.
+    {test_heap, 4, 2}.
+    {put_list, {x, 1}, nil, {x, 1}}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {call_ext_only, 1, {extfunc, erlang, iolist_to_binary, 1}}.
+  {label, 12}.
+    {gc_bif, '+', {f, 0}, 2, [{x, 0}, {x, 1}], {x, 0}}.
+    return.
+
 {function, '-main/0-fun-0-', 2, 9}.
   {label, 8}.
     {line, [{location, "main.erl", 2}]}.
@@ -55,7 +70,9 @@ fn main() -> i32 {
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
-    {gc_bif, '+', {f, 0}, 0, [{y, 0}, {y, 1}], {x, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call, 2, {f, 11}}.
     {deallocate, 2}.
     return.
 ```

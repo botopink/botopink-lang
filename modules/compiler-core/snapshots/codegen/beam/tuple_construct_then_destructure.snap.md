@@ -12,7 +12,7 @@ fn main() {
 {module, main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
-{labels, 17}.
+{labels, 20}.
 
 {function, main, 0, 3}.
   {label, 2}.
@@ -35,10 +35,12 @@ fn main() {
     {call_ext, 2, {extfunc, erlang, element, 2}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 1}, {x, 0}}.
-    {gc_bif, '+', {f, 0}, 0, [{y, 2}, {y, 3}], {x, 0}}.
+    {move, {y, 2}, {x, 0}}.
+    {move, {y, 3}, {x, 1}}.
+    {call, 2, {f, 9}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
-    {call, 1, {f, 9}}.
+    {call, 1, {f, 12}}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 4}.
     return.
@@ -57,59 +59,74 @@ fn main() {
   {label, 7}.
     {call_only, 0, {f, 5}}.
 
-{function, '__bp_print', 1, 9}.
+{function, '__bp_add', 2, 9}.
   {label, 8}.
     {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, '__bp_print'}, 1}.
+    {func_info, {atom, main}, {atom, '__bp_add'}, 2}.
   {label, 9}.
+    {test, is_binary, {f, 10}, [{x, 0}]}.
+    {test, is_binary, {f, 10}, [{x, 1}]}.
+    {test_heap, 4, 2}.
+    {put_list, {x, 1}, nil, {x, 1}}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {call_ext_only, 1, {extfunc, erlang, iolist_to_binary, 1}}.
+  {label, 10}.
+    {gc_bif, '+', {f, 0}, 2, [{x, 0}, {x, 1}], {x, 0}}.
+    return.
+
+{function, '__bp_print', 1, 12}.
+  {label, 11}.
+    {line, [{location, "main.erl", 2}]}.
+    {func_info, {atom, main}, {atom, '__bp_print'}, 1}.
+  {label, 12}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
-    {call, 1, {f, 11}}.
+    {call, 1, {f, 14}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext_last, 2, {extfunc, io, format, 2}, 1}.
 
-{function, '__bp_print_fmt', 1, 11}.
-  {label, 10}.
+{function, '__bp_print_fmt', 1, 14}.
+  {label, 13}.
     {line, [{location, "main.erl", 2}]}.
     {func_info, {atom, main}, {atom, '__bp_print_fmt'}, 1}.
-  {label, 11}.
-    {test, is_nonempty_list, {f, 14}, [{x, 0}]}.
+  {label, 14}.
+    {test, is_nonempty_list, {f, 17}, [{x, 0}]}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {get_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 1}, {y, 0}}.
-    {call, 1, {f, 13}}.
-    {test, is_binary, {f, 15}, [{y, 0}]}.
+    {call, 1, {f, 16}}.
+    {test, is_binary, {f, 18}, [{y, 0}]}.
     {test_heap, 6, 1}.
     {put_list, {integer, 115}, {x, 0}, {x, 0}}.
     {put_list, {integer, 116}, {x, 0}, {x, 0}}.
     {put_list, {integer, 126}, {x, 0}, {x, 0}}.
     {deallocate, 1}.
     return.
-  {label, 15}.
+  {label, 18}.
     {test_heap, 4, 1}.
     {put_list, {integer, 112}, {x, 0}, {x, 0}}.
     {put_list, {integer, 126}, {x, 0}, {x, 0}}.
     {deallocate, 1}.
     return.
-  {label, 14}.
+  {label, 17}.
     {move, {literal, [126, 110]}, {x, 0}}.
     return.
 
-{function, '__bp_print_sep', 1, 13}.
-  {label, 12}.
+{function, '__bp_print_sep', 1, 16}.
+  {label, 15}.
     {line, [{location, "main.erl", 2}]}.
     {func_info, {atom, main}, {atom, '__bp_print_sep'}, 1}.
-  {label, 13}.
-    {test, is_nonempty_list, {f, 16}, [{x, 0}]}.
+  {label, 16}.
+    {test, is_nonempty_list, {f, 19}, [{x, 0}]}.
     {allocate, 0, 1}.
-    {call, 1, {f, 11}}.
+    {call, 1, {f, 14}}.
     {test_heap, 2, 1}.
     {put_list, {integer, 32}, {x, 0}, {x, 0}}.
     {deallocate, 0}.
     return.
-  {label, 16}.
+  {label, 19}.
     {move, {literal, [126, 110]}, {x, 0}}.
     return.
 ```

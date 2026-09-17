@@ -130,6 +130,8 @@ pub const GcBif = enum {
     sub,
     mul,
     div_,
+    /// `'/'` — float division (`div_` is integer division).
+    fdiv,
     rem,
     length,
 
@@ -139,6 +141,7 @@ pub const GcBif = enum {
             .sub => "'-'",
             .mul => "'*'",
             .div_ => "'div'",
+            .fdiv => "'/'",
             .rem => "'rem'",
             .length => "length",
         };
@@ -648,6 +651,11 @@ test "beam_emitter: tests, bifs and calls" {
     try expectLine("    {gc_bif, '+', {f, 0}, 2, [{x, 1}, {integer, 1}], {x, 0}}.\n", struct {
         fn f(w: *Writer) Error!void {
             try writeGcBif(w, .add, 2, &.{ Operand.xr(1), Operand.int(1) }, Dest.xr(0));
+        }
+    }.f);
+    try expectLine("    {gc_bif, '/', {f, 0}, 0, [{y, 1}, {y, 2}], {x, 0}}.\n", struct {
+        fn f(w: *Writer) Error!void {
+            try writeGcBif(w, .fdiv, 0, &.{ Operand.yr(1), Operand.yr(2) }, Dest.xr(0));
         }
     }.f);
     try expectLine("    {call_last, 2, {f, 5}, 3}.\n", struct {

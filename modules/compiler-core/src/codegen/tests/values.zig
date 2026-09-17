@@ -362,7 +362,7 @@ test "js: operators ---- plus on untyped operands and division of floats" {
     // A lambda parameter carries no type: `x + y` over two strings concatenates
     // and `/` over floats divides — erlang's `+` and `div` raised `badarith`.
     // KNOWN: wasm prints `520` and `1082480000` (untyped `+` adds pointers, the
-    // float is printed as i32 bits — 03-wasm) and beam prints nothing (01-beam).
+    // float is printed as i32 bits — 03-wasm).
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn average(xs: Array<f64>) -> f64 {
         \\    var total = 0.0;

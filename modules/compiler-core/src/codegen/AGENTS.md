@@ -574,16 +574,30 @@ codegen/
   `make_fun3`'s environment (`test_heap` with `{words, NumFree}`) and arrive
   as extra parameters after the fun's own, spilled to stack slots like params.
   `Live` honours the `min_live` floor; lambda bodies reset it to 0.
-- **Mutation threading** (`lowerMutatingFold`): a statement `loop (xs) { x -> … }`
+- **Mutation threading** (`lowerMutatingFold`, `emitGroupFun`): a statement
+  `loop (xs) { x -> … }`, `loop (xs) { x, i -> … }` / `loop (xs, 1..) { … }`
   or `xs.forEach({ x -> … })` whose body reassigns names of the enclosing frame
-  (`=`, `+=`, `out.push(v)`, nested `if`/`loop`/`forEach`) lowers to
-  `lists:foldl/3` with those names as the accumulator (one value, or a tuple),
-  unpacked back into the caller's slots; `break`/`continue` return the group. A
-  statement `out.push(v)` on a local Array stores the grown list back into its
-  slot (`receiverMutation`).
-- **Loops**: `loop (xs, 0..) { item, i -> … }` iterates
-  `lists:enumerate(Start, Xs)` and binds both names from the pair with the
-  `element/2` guard BIF; the comprehension shape (a single else-less `if` whose
+  (`=`, `+=`, `out.push(v)`, a mutating closure call, nested
+  `if`/`loop`/`forEach`) lowers to `lists:foldl/3` with those names as the
+  accumulator (one value, or a tuple), unpacked back into the caller's slots
+  (`unpackGroupFromX0`); `break`/`continue` return the group. The two-parameter
+  form folds over `lists:enumerate(Start, Xs)` (`lowerEnumerateIntoX0`; 0
+  without a written range) and binds item and index from the `{Index, Item}`
+  pair. A statement `out.push(v)` on a local Array stores the grown list back
+  into its slot (`receiverMutation`).
+- **Mutating closures** (`lowerMutatingClosure`, `mutating_closures`): a local
+  `val emit = { w -> out = out + w; }` whose body reassigns names of the
+  enclosing frame takes them as one extra argument after its own (the group)
+  and answers their new values — a fun cannot write its caller's stack slots.
+  A statement-position call (`closureMutation`, `lowerClosureMutationCall`)
+  passes the group, applies the fun and stores what it answers back, and counts
+  as a mutation for an enclosing `loop`/`forEach`, so the fold threads the
+  names on out. Parity with erlang's `mutatingClosureExpr`: a call whose value
+  is used keeps the plain application (and raises `badarity`).
+- **Loops**: `loop (xs, 0..) { item, i -> … }` (or `loop (xs) { item, i -> … }`,
+  counting from 0) iterates `lists:enumerate(Start, Xs)` and binds both names
+  from the pair with the `element/2` guard BIF; the comprehension shape (a
+  single else-less `if` whose
   branch ends in `break v`) lowers through `lists:filtermap/2`; an eager
   `#[@iterator]` body ending in a yielding loop returns that loop's list.
 - **Calls**: module-qualified `List.map(…)` → `call_ext`/`call_ext_last`
@@ -602,7 +616,9 @@ codegen/
   `@External.Erlang("mod", "sym")` is a `call_ext`; an `@External.Erlang`
   template (`"base64:encode($0)"`, arity branches included) is Erlang source,
   evaluated at run time by the synthesised `'__bp_erl_eval'(Source, Bindings)`
-  (`erl_scan` → `erl_parse` → `erl_eval`, markers bound as `__BpSelf`/`__BpAN`).
+  (`erl_scan` → `erl_parse` → `erl_eval`, markers bound as `__BpSelf`/`__BpAN`)
+  — correct but interpreted on every call (≈ 50× a direct call); its cost and
+  the open keep-or-compile decision are in [`beam/AGENTS.md`](beam/AGENTS.md).
   No beam or erlang target raises `MissingExternalTarget`. A call to an
   external another module declares lowers the same way.
 - **Primitive methods** (`emitPrimMethod`), walking the receiver kind's
@@ -626,6 +642,16 @@ codegen/
   `'-bp_stringify-'/1` (a binary is itself, an integer `integer_to_binary`,
   anything else its `~p` text), flattened by `iolist_to_binary/1`; a non-string
   operand concatenates as text instead of raising `badarith`. String `+=` too.
+- **Numbers** (`numKind`, `NumKind`, `num_locals`/`count_nums`/`num_names`,
+  parity with erlang): an operand is provably numeric when it is a number
+  literal, a local/param/module name bound or declared numeric, a primitive
+  member read (`s.length`), a call to a `fn` declared numeric, or arithmetic
+  over them. A `+` with such an operand is the `'+'` gc_bif; a `+` proven
+  neither string nor number (`{ x, y -> x + y }`, record fields, destructured
+  values — `addIsDynamic`) calls the synthesised `'__bp_add'/2` (two binaries
+  → `iolist_to_binary([A, B])`, anything else `'+'`), and so does `x += v` on a
+  name and value both unproven. `/` is the `'/'` gc_bif when an operand is
+  provably a float, `'div'` otherwise. `exprMayCall` counts the helper call.
 - **`erlc +from_asm` invariants**: comparisons use only `is_lt`/`is_ge` (no
   `is_gt`/`is_le` — operands swap, `comparisonTestOp`); `{allocate, N, A}` is
   followed by `{init_yregs, …}` (`emitFrame`); `countLocalsRec` counts every

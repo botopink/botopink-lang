@@ -160,7 +160,7 @@ test "js: loop ---- two-parameter loop threads reassigned vars out" {
     // reassignments of outer `var`s must survive the loop like the
     // one-parameter form's (a library's lexer written as a counter loop).
     // KNOWN: `weigh` is 140; wasm prints 80 (the `1..` start is ignored —
-    // 03-wasm) and beam prints nothing (01-beam).
+    // 03-wasm).
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn pick(xs: Array<string>) -> string {
         \\    var first = "";
@@ -187,9 +187,9 @@ test "js: loop ---- two-parameter loop threads reassigned vars out" {
 
 test "js: lambda ---- a local closure reassigning outer vars threads them out" {
     // A markup template's shape: a named closure appends to an outer `var`, and
-    // is called both directly and from inside a loop. KNOWN: beam and wasm print
-    // ` 0` — their closures do not thread reassigned outer vars out yet
-    // (1.0.4-beta 01-beam, 03-wasm).
+    // is called both directly and from inside a loop. KNOWN: wasm prints ` 0` —
+    // its closures do not thread reassigned outer vars out yet (1.0.4-beta
+    // 03-wasm).
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn render(words: Array<string>) -> string {
         \\    var out = "";

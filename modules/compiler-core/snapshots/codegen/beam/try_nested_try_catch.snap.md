@@ -25,7 +25,7 @@ fn main() {
 {module, main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
-{labels, 29}.
+{labels, 32}.
 
 {function, inner, 0, 3}.
   {label, 2}.
@@ -98,7 +98,9 @@ fn main() {
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {call, 1, {f, 21}}.
-    {gc_bif, '+', {f, 0}, 0, [{y, 1}, {y, 3}], {x, 0}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {y, 3}, {x, 1}}.
+    {call, 2, {f, 30}}.
     {deallocate, 5}.
     return.
 
@@ -184,6 +186,21 @@ fn main() {
     return.
   {label, 28}.
     {move, {literal, [126, 110]}, {x, 0}}.
+    return.
+
+{function, '__bp_add', 2, 30}.
+  {label, 29}.
+    {line, [{location, "main.erl", 4}]}.
+    {func_info, {atom, main}, {atom, '__bp_add'}, 2}.
+  {label, 30}.
+    {test, is_binary, {f, 31}, [{x, 0}]}.
+    {test, is_binary, {f, 31}, [{x, 1}]}.
+    {test_heap, 4, 2}.
+    {put_list, {x, 1}, nil, {x, 1}}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {call_ext_only, 1, {extfunc, erlang, iolist_to_binary, 1}}.
+  {label, 31}.
+    {gc_bif, '+', {f, 0}, 2, [{x, 0}, {x, 1}], {x, 0}}.
     return.
 ```
 
