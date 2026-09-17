@@ -207,6 +207,14 @@ codegen/
   the rebinding `Out@1 = (Out ++ [X])` — in straight-line position too — so the
   group-out expression reads the grown list. The mutation is name-driven
   (`push`); `codegen/beam_asm.zig` has no equivalent yet.
+  A local closure whose body reassigns variables of the enclosing function
+  (`val emit = { t -> toks = toks.append([t]); }`) cannot rebind what it
+  captured, so it is lowered with those variables as an extra last parameter and
+  answers their new values (`mutatingClosureExpr`, `mutating_closures`):
+  `Emit = fun(T, Toks@1) -> …, Toks@2 end`. A statement-position call rebinds
+  them — `Toks@3 = Emit(X, Toks)` — and counts as a mutation for an enclosing
+  `if`/`loop`/`forEach` (`closureMutation`). A call whose value is used keeps the
+  plain application.
 - **Comptime modules:** `emitComptimeModule(alloc, name, program, .{ host_enums,
   host_records, exports, forms, listing, unsupported_method })` lowers an untyped decorator/template body with
   the same emitter — `host_enums` join `enum_names` (`DeclKind.Record` →

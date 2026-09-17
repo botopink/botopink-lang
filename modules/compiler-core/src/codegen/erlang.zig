@@ -677,6 +677,7 @@ fn emitErlangModule(
     defer em.std_imports.deinit();
     defer em.locals.deinit();
     defer em.mutable_locals.deinit(alloc);
+    defer em.mutating_closures.deinit(alloc);
     defer em.var_current.deinit();
     defer em.var_next.deinit();
     defer em.top_vals.deinit();
@@ -1373,6 +1374,12 @@ const Emitter = struct {
     /// the only receivers a mutating method call (`receiverMutation`) rebinds.
     /// Reset per function alongside `locals`.
     mutable_locals: std.StringHashMapUnmanaged(void) = .empty,
+    /// Local closures (`val emit = { x -> tokens = tokens.append([x]); }`) whose
+    /// body reassigns variables of the enclosing function, keyed by the closure
+    /// name, valued by those variables. Such a closure takes the variables as an
+    /// extra last argument and answers their new values (`mutatingClosureExpr`);
+    /// a statement-position call rebinds them. Reset with `locals`.
+    mutating_closures: std.StringHashMapUnmanaged([]const []const u8) = .empty,
     /// Single-assignment versioning. Erlang variables bind once, so a botopink
     /// name rebound in the same function (`count += 1`, `msg = msg + x`) gets a
     /// fresh variable per binding: `Count`, `Count@1`, `Count@2`. `var_current`
@@ -2039,6 +2046,7 @@ const Emitter = struct {
     fn resetLocals(this: *Emitter) void {
         this.locals.clearRetainingCapacity();
         this.mutable_locals.clearRetainingCapacity();
+        this.mutating_closures.clearRetainingCapacity();
         this.var_current.clearRetainingCapacity();
         this.var_next.clearRetainingCapacity();
         this.nullable_locals.clearRetainingCapacity();
@@ -2755,7 +2763,30 @@ const Emitter = struct {
                 const index: ?FoldIndex = if (lp.params.len == 2) .{ .name = lp.params[1], .range = lp.indexRange } else null;
                 return try this.mutatingFoldExpr(b, lp.params[0], index, lp.body, lp.iter.*, names.items);
             },
+            .binding => |bind| switch (bind.kind) {
+                .localBind => |lb| {
+                    if (lb.value.* != .function or this.locals.contains(lb.name)) return null;
+                    const fe = lb.value.function;
+                    try this.collectMutations(b.arena, fe.kind.body, fe.kind.params, &names);
+                    if (names.items.len == 0) return null;
+                    if (lb.mutable) try this.mutable_locals.put(this.alloc, lb.name, {});
+                    return try this.mutatingClosureExpr(b, lb.name, fe.kind.params, fe.kind.body, names.items);
+                },
+                else => return null,
+            },
             .call => {
+                // `emit(x)` on a closure that reassigns outer variables rebinds
+                // them from what it answers: `Tokens@2 = Emit(X, Tokens@1)`.
+                if (this.closureMutation(stmt.expr)) |cm| {
+                    var args: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+                    try args.appendSlice(b.arena, try this.callArgs(b, null, cm.cc));
+                    try args.append(b.arena, try this.varGroupExpr(b, cm.names));
+                    const call: Ast.Expr = .{ .apply = .{
+                        .fun = try b.ptr(try this.nameRefNode(b, cm.cc.callee)),
+                        .args = args.items,
+                    } };
+                    return try b.match(try this.bindVarGroupExpr(b, cm.names), call);
+                }
                 // `out.push(x)` rebinds `out`: `Out@1 = (Out ++ [X])`, so a
                 // group-out expression after it reads the grown list.
                 if (this.receiverMutation(stmt.expr)) |name| {
@@ -2789,6 +2820,42 @@ const Emitter = struct {
             .prim => |k| if (k == .array) name else null,
             .record => null,
         };
+    }
+
+    const ClosureMutation = struct {
+        cc: @FieldType(@FieldType(ast.CallExprOf(.untyped), "kind"), "call"),
+        names: []const []const u8,
+    };
+
+    /// A statement-position call of a local closure recorded in
+    /// `mutating_closures`, or null.
+    fn closureMutation(this: *const Emitter, e: ast.Expr) ?ClosureMutation {
+        if (e != .call or e.call.kind != .call) return null;
+        const cc = e.call.kind.call;
+        if (cc.is_builtin or cc.receiver != null or !this.locals.contains(cc.callee)) return null;
+        const names = this.mutating_closures.get(cc.callee) orelse return null;
+        return .{ .cc = cc, .names = names };
+    }
+
+    /// `Name = fun(Params…, GroupIn) -> Body, GroupOut end` for a closure whose
+    /// body reassigns `names` of the enclosing function. An erlang fun cannot
+    /// rebind what it captured, so the variables travel in as the last argument
+    /// and out as the value; every statement-position call rebinds them.
+    fn mutatingClosureExpr(this: *Emitter, b: Ast.Builder, name: []const u8, params: []const []const u8, body: []const ast.Stmt, names: []const []const u8) anyerror!Ast.Expr {
+        var snapshot = try this.var_current.clone();
+        defer snapshot.deinit();
+        const fun_params = try b.arena.alloc(Ast.Expr, params.len + 1);
+        for (params, 0..) |p, i| {
+            fun_params[i] = Ast.Expr.v(try this.arenaVar(b, p));
+            this.addLocal(p);
+        }
+        fun_params[params.len] = try this.bindVarGroupExpr(b, names);
+        const fun_body = try this.armWithGroup(b, body, names, this.indent + 1);
+        try this.restoreVersions(&snapshot);
+        try this.mutating_closures.put(this.alloc, name, try b.arena.dupe([]const u8, names));
+        const target = Ast.Expr.v(try this.arenaVar(b, name));
+        this.addLocal(name);
+        return b.match(target, .{ .fun = .{ .params = fun_params, .body = fun_body } });
     }
 
     const ForEachLambda = struct {
@@ -2841,7 +2908,12 @@ const Emitter = struct {
                 else => {},
             },
             .loop => |lp| try this.collectMutations(gpa, lp.body, lp.params, out),
-            .call => if (this.receiverMutation(s.expr)) |n| {
+            .call => if (this.closureMutation(s.expr)) |cm| {
+                for (cm.names) |n| {
+                    if (!this.locals.contains(n) or containsName(shadowed, n) or containsName(out.items, n)) continue;
+                    try out.append(gpa, n);
+                }
+            } else if (this.receiverMutation(s.expr)) |n| {
                 if (containsName(shadowed, n) or containsName(out.items, n)) continue;
                 try out.append(gpa, n);
             } else if (forEachLambda(s.expr)) |each| try this.collectMutations(gpa, each.body, each.params, out),

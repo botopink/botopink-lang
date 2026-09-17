@@ -179,6 +179,27 @@ test "js: loop ---- two-parameter loop threads reassigned vars out" {
     );
 }
 
+test "js: lambda ---- a local closure reassigning outer vars threads them out" {
+    // A markup template's shape: a named closure appends to an outer `var`, and
+    // is called both directly and from inside a loop.
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn render(words: Array<string>) -> string {
+        \\    var out = "";
+        \\    var count = 0;
+        \\    val emit = { w ->
+        \\        out = out + "<" + w + ">";
+        \\        count = count + 1;
+        \\    };
+        \\    emit("start");
+        \\    loop (words) { w -> emit(w); };
+        \\    return out + " " + count.toString();
+        \\}
+        \\fn main() {
+        \\    @print(render(["a", "b"]));
+        \\}
+    );
+}
+
 test "js: loop ---- side-effect over range" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
