@@ -35,14 +35,12 @@ stdlib/
   `pub mod <name>;` per module, read by `stdPkgFilesFromRoot` in the workspace
   root `build.zig`), which generates `std_pkg_modules.zig`
   (`pkg_modules: []{ path = "std/<name>", source }`) as the `std_pkg` module that
-  `prelude.zig` re-exports. `modules/compiler-core/build.zig` keeps its own
-  hard-coded `std_core_files` / `std_pkg_files` lists — keep both in sync.
+  `prelude.zig` re-exports. It is the only list of std modules.
 
 ## Conventions
 
 - Adding a std package module: drop `libs/std/src/<name>.bp` and add
-  `pub mod <name>;` to `root.bp` (plus the list in
-  `modules/compiler-core/build.zig`). Nothing under this directory changes.
+  `pub mod <name>;` to `root.bp`. Nothing under this directory changes.
 - Adding a core/internal file: add it to the matching list in `build.zig` and a
   `pub const … = @embedFile(…)` here.
 - No stdlib logic here — only embedding. Parsing/registration stays in

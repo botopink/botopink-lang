@@ -41,8 +41,9 @@ runtime/
   allocation.
 - **`erl.stderr.log` is a write-only debug log, by decision.** It holds erl's own
   stderr, the logger's output and everything comptime bodies print. It is
-  truncated at every spawn (processes sharing a cwd share it, so it is
-  best-effort), nothing in the compiler reads it back, and it is not
-  surfaced into diagnostics (a comptime failure already carries its Erlang
+  truncated at every spawn and has one path per cwd, not per spawn: processes
+  running in the same cwd (parallel test binaries, two builds) interleave and
+  truncate each other's output, so it is best-effort. Nothing in the compiler
+  reads it back, and it is not surfaced into diagnostics (a comptime failure already carries its Erlang
   diagnostic in the reply frame); the transport-error message names the path so
   a broken stream points at it. Read it by hand when a comptime body misbehaves.
