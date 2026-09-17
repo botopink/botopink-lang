@@ -513,6 +513,9 @@ const Emitter = struct {
     /// only walks the layout for these; anything else keeps the honest
     /// `;; loop over unknown iterable` no-op rather than reading garbage.
     arr_locals: std.StringHashMap(void),
+    /// Local name → the `$__print_shaped_raw` shape of its value, when it is
+    /// an array or a tuple (`printShapeOf`).
+    print_shape_locals: std.StringHashMap([]const u8),
     arr_globals: std.StringHashMap(void),
     bool_globals: std.StringHashMap(void),
     /// Every emitted WAT function symbol → its signature.
@@ -651,6 +654,7 @@ const Emitter = struct {
             .global_types = std.StringHashMap([]const u8).init(alloc),
             .str_globals = std.StringHashMap(void).init(alloc),
             .arr_locals = std.StringHashMap(void).init(alloc),
+            .print_shape_locals = std.StringHashMap([]const u8).init(alloc),
             .arr_globals = std.StringHashMap(void).init(alloc),
             .bool_globals = std.StringHashMap(void).init(alloc),
             .fn_sigs = std.StringHashMap(FnSig).init(alloc),
@@ -715,6 +719,7 @@ const Emitter = struct {
         self.global_types.deinit();
         self.str_globals.deinit();
         self.arr_locals.deinit();
+        self.print_shape_locals.deinit();
         self.arr_globals.deinit();
         self.bool_globals.deinit();
         self.fn_sigs.deinit();
@@ -1178,6 +1183,7 @@ const Emitter = struct {
         self.local_types.clearRetainingCapacity();
         self.str_locals.clearRetainingCapacity();
         self.arr_locals.clearRetainingCapacity();
+        self.print_shape_locals.clearRetainingCapacity();
         self.arr_elem_locals.clearRetainingCapacity();
         self.result_shape_locals.clearRetainingCapacity();
         self.result_subjects.clearRetainingCapacity();
@@ -1253,6 +1259,49 @@ const Emitter = struct {
             .ty = .i32,
             .text = try std.fmt.allocPrint(self.arena(), "{d}", .{value}),
         } };
+    }
+
+    /// The bytes a string literal stands for. The lexer keeps a literal's
+    /// escape sequences verbatim (`q\"t`); a data segment holds the value
+    /// (`q"t`), so `@print` writes the same bytes as commonJS and erlang.
+    /// `\n \r \t \0 \\ \"` map to their byte, `\$` to `$`, `\u{hex}` to UTF-8.
+    fn literalBytes(self: *Emitter, lexeme: []const u8) ![]const u8 {
+        if (std.mem.indexOfScalar(u8, lexeme, '\\') == null) return lexeme;
+        var out: std.ArrayListUnmanaged(u8) = .empty;
+        var i: usize = 0;
+        while (i < lexeme.len) : (i += 1) {
+            const ch = lexeme[i];
+            if (ch != '\\' or i + 1 >= lexeme.len) {
+                try out.append(self.arena(), ch);
+                continue;
+            }
+            i += 1;
+            switch (lexeme[i]) {
+                'n' => try out.append(self.arena(), '\n'),
+                'r' => try out.append(self.arena(), '\r'),
+                't' => try out.append(self.arena(), '\t'),
+                '0' => try out.append(self.arena(), 0),
+                'u' => if (i + 1 < lexeme.len and lexeme[i + 1] == '{') {
+                    const close = std.mem.indexOfScalarPos(u8, lexeme, i + 2, '}') orelse {
+                        try out.appendSlice(self.arena(), "\\u");
+                        continue;
+                    };
+                    const cp = std.fmt.parseInt(u21, lexeme[i + 2 .. close], 16) catch {
+                        try out.appendSlice(self.arena(), "\\u");
+                        continue;
+                    };
+                    var buf: [4]u8 = undefined;
+                    const n = std.unicode.utf8Encode(cp, &buf) catch {
+                        try out.appendSlice(self.arena(), "\\u");
+                        continue;
+                    };
+                    try out.appendSlice(self.arena(), buf[0..n]);
+                    i = close;
+                } else try out.appendSlice(self.arena(), "\\u"),
+                else => |esc| try out.append(self.arena(), esc),
+            }
+        }
+        return out.items;
     }
 
     fn internString(self: *Emitter, s: []const u8) !DataSeg {
@@ -2102,7 +2151,7 @@ const Emitter = struct {
                     return;
                 },
                 .stringLit => |s| {
-                    const seg = try self.internString(s);
+                    const seg = try self.internString(try self.literalBytes(s));
                     try self.item(.{ .global = .{
                         .name = v.name,
                         .ty = .i32,
@@ -2604,7 +2653,7 @@ const Emitter = struct {
                 },
                 .null_ => try self.emit(zero),
                 .stringLit => |s| {
-                    const seg = try self.internString(s);
+                    const seg = try self.internString(try self.literalBytes(s));
                     try self.emit(try self.constInt(seg.offset));
                 },
                 // Desugared to a `+` chain by the transform pass; never reaches codegen.
@@ -2897,6 +2946,18 @@ const Emitter = struct {
             try self.emit(self.builder().helper(if (last) .print_bool else .print_bool_raw));
             return;
         }
+        // An array of strings, a tuple, an array of tuples: the shape-driven
+        // printer (semantics decision 1a). A flat i32/f32 array keeps its own.
+        if (try self.printShapeOf(arg)) |shape| if (!std.mem.eql(u8, shape, "[i") and !std.mem.eql(u8, shape, "[f")) {
+            try self.lowerCoerced(arg, "i32");
+            const seg = try self.internString(shape);
+            try self.emit(try self.constInt(seg.offset + 4));
+            try self.emit(try self.constInt(1));
+            try self.emit(self.builder().helper(.print_shaped_raw));
+            try self.emit(.drop);
+            if (last) try self.emit(self.builder().helper(.print_nl));
+            return;
+        };
         if (self.isArrayExpr(arg)) switch (self.elemKindOf(arg)) {
             .i32 => {
                 try self.lowerCoerced(arg, "i32");
@@ -3352,7 +3413,7 @@ const Emitter = struct {
                 try self.emit(opOf("i32", "eq"));
             },
             .stringLit => |lit| {
-                const seg = try self.internString(lit);
+                const seg = try self.internString(try self.literalBytes(lit));
                 try self.emit(.{ .local_get = subj });
                 try self.emit(try self.constInt(seg.offset));
                 try self.emit(self.builder().helper(.str_eq));
@@ -4347,9 +4408,119 @@ const Emitter = struct {
     /// A local bound to something `isArrayExpr` recognises is an array too,
     /// with the element shape of its initialiser.
     fn noteArrayLocal(self: *Emitter, name: []const u8, value: ast.Expr) !void {
+        if (try self.printShapeOf(value)) |shape| try self.print_shape_locals.put(name, shape);
         if (!self.isArrayExpr(value)) return;
         try self.arr_locals.put(name, {});
         try self.arr_elem_locals.put(name, self.elemKindOf(value));
+    }
+
+    /// The shape `$__print_shaped_raw` walks for `e` (semantics decision 1a):
+    /// `i` an i32, `f` an f32 slot, `b` a bool, `s` a string, `[X` an array of
+    /// `X`, `(XY…)` a tuple. Null when `e` is not known to be an array or a
+    /// tuple.
+    fn printShapeOf(self: *Emitter, e: ast.Expr) anyerror!?[]const u8 {
+        switch (e) {
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| if (self.print_shape_locals.get(self.resolveName(n))) |shape| return shape,
+                else => {},
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| return self.printShapeOf(inner.*),
+                .tupleLit => |tl| {
+                    var out: std.ArrayListUnmanaged(u8) = .empty;
+                    try out.append(self.arena(), '(');
+                    for (tl.elems) |el| try out.appendSlice(self.arena(), try self.valueShapeOf(el));
+                    try out.append(self.arena(), ')');
+                    return out.items;
+                },
+                .arrayLit => |al| if (al.elems.len > 0) {
+                    if (try self.printShapeOf(al.elems[0])) |inner| return try std.fmt.allocPrint(self.arena(), "[{s}", .{inner});
+                },
+                else => {},
+            },
+            .call => |c| switch (c.kind) {
+                .call => |cc| if (std.mem.eql(u8, cc.callee, "zip") and cc.args.len == 1 and cc.receiver != null) {
+                    if (self.primKindAt(cc, c.loc) == .array) return try std.fmt.allocPrint(self.arena(), "[({c}{c})", .{
+                        elemCode(self.elemKindOf(cc.receiver.?.*)),
+                        elemCode(self.elemKindOf(cc.args[0].value.*)),
+                    });
+                },
+                else => {},
+            },
+            else => {},
+        }
+        // A parameter, a fn result or a local whose declared type spells a tuple.
+        if (self.typeRefOf(e)) |tr| if (try self.typeRefShape(tr)) |shape| return shape;
+        if (!self.isArrayExpr(e)) return null;
+        return switch (self.elemKindOf(e)) {
+            .i32 => "[i",
+            .f32 => "[f",
+            .str => "[s",
+        };
+    }
+
+    /// The print shape a declared type spells, when it holds a tuple or a
+    /// string somewhere inside an array or a tuple; null for anything the
+    /// shape codes cannot describe (a record, an enum, a map).
+    fn typeRefShape(self: *Emitter, t: ast.TypeRef) anyerror!?[]const u8 {
+        switch (t) {
+            .tuple_ => |elems| {
+                var out: std.ArrayListUnmanaged(u8) = .empty;
+                try out.append(self.arena(), '(');
+                for (elems) |el| {
+                    if (try self.typeRefShape(el)) |inner| {
+                        try out.appendSlice(self.arena(), inner);
+                        continue;
+                    }
+                    try out.append(self.arena(), scalarCode(el) orelse return null);
+                }
+                try out.append(self.arena(), ')');
+                return out.items;
+            },
+            .array => |inner| return self.arrayTypeShape(inner.*),
+            .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array")) return self.arrayTypeShape(g.args[0]),
+            else => {},
+        }
+        return null;
+    }
+
+    fn arrayTypeShape(self: *Emitter, elem: ast.TypeRef) anyerror!?[]const u8 {
+        if (try self.typeRefShape(elem)) |inner| return try std.fmt.allocPrint(self.arena(), "[{s}", .{inner});
+        return switch (scalarCode(elem) orelse return null) {
+            's' => "[s",
+            else => null,
+        };
+    }
+
+    /// The shape code of a scalar named type: `i` an integer, `f` a float, `b`
+    /// a bool, `s` a string.
+    fn scalarCode(t: ast.TypeRef) ?u8 {
+        const n = switch (t) {
+            .named => |n| n,
+            else => return null,
+        };
+        if (std.mem.eql(u8, n, "string")) return 's';
+        if (std.mem.eql(u8, n, "bool")) return 'b';
+        if (std.mem.eql(u8, n, "i32") or std.mem.eql(u8, n, "int") or std.mem.eql(u8, n, "Int")) return 'i';
+        if (std.mem.eql(u8, n, "f32") or std.mem.eql(u8, n, "f64") or std.mem.eql(u8, n, "float")) return 'f';
+        return null;
+    }
+
+    /// The shape of one element of a tuple.
+    fn valueShapeOf(self: *Emitter, e: ast.Expr) anyerror![]const u8 {
+        if (try self.printShapeOf(e)) |shape| return shape;
+        if (self.isStringExpr(e)) return "s";
+        if (self.isBoolExpr(e)) return "b";
+        if (self.wasmTypeOf(e)[0] == 'f') return "f";
+        return "i";
+    }
+
+    fn elemCode(k: ElemKind) u8 {
+        return switch (k) {
+            .i32 => 'i',
+            .f32 => 'f',
+            .str => 's',
+        };
     }
 
     /// Best-effort element shape of an array-valued expression. `i32` covers

@@ -375,13 +375,47 @@ test "js: assert ---- failing assertion outside test mode is fatal" {
     );
 }
 
-// Semantics decision 1: `@print` writes a string as its text and every other
-// value through `~p`, space-separated, on one line.
+// Semantics decisions 1 and 1a: `@print` writes a top-level string as its
+// text and an array as `[1,2]`, space-separated, on one line.
 test "js: builtin ---- @print mixes strings and terms as text" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val name = "ana";
         \\    @print("hi", name, 42, [1, 2]);
+        \\}
+    );
+}
+
+// Semantics decision 1a: an array is `[a,b]` with no spaces, and a string
+// nested in it is quoted with the source escapes; a top-level string stays
+// bare. KNOWN: beam prints its own `~p` text (PR3, deferred after 06).
+test "js: builtin ---- @print quotes the strings of an array" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    val words = ["plain", "say \"hi\"", "back\\slash", "two\nlines"];
+        \\    @print(words);
+        \\    @print("top", words);
+        \\}
+    );
+}
+
+// Semantics decision 1a: a tuple is `#(a,b)` — from a literal, a nested tuple,
+// an array of tuples, a fn's declared result and a parameter's declared type.
+// KNOWN: beam prints its own `~p` text (PR3, deferred after 06).
+test "js: builtin ---- @print writes tuples as #(a,b)" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn pairOf(a: i32, b: string) -> #(i32, string) {
+        \\    return #(a, b);
+        \\}
+        \\fn show(p: #(i32, string)) {
+        \\    @print(p);
+        \\}
+        \\fn main() {
+        \\    @print(#(true, 1));
+        \\    @print(#(#(1, 2), "x"));
+        \\    @print([#(1, 2), #(17, 1)]);
+        \\    @print(pairOf(7, "s"));
+        \\    show(#(3, "z"));
         \\}
     );
 }

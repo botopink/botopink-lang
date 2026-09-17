@@ -38,6 +38,7 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         .print_arr_i32 => &.{ .{ .func = print_arr_i32_raw }, .{ .func = print_arr_i32 } },
         .print_arr_f32 => &.{ .{ .func = print_arr_f32_raw }, .{ .func = print_arr_f32 } },
         .assert_fail => &.{ .{ .func = write_err }, .{ .func = assert_fail } },
+        .print_shaped => &.{ .{ .func = print_quoted_raw }, .{ .func = print_shaped_raw } },
         .print_opt => &.{
             .{ .func = print_undefined },    .{ .func = print_opt_i32_raw }, .{ .func = print_opt_i32 },
             .{ .func = print_opt_bool_raw }, .{ .func = print_opt_bool },    .{ .func = print_opt_str_raw },
@@ -1231,6 +1232,86 @@ const print_arr_f32_raw = func("__print_arr_f32_raw", &.{"xs"}, null, i32s(&.{ "
 } ++ putByte(']') ++ .{call("__write_bytes")}));
 
 const print_arr_f32 = func("__print_arr_f32", &.{"xs"}, null, &.{}, &.{ get("xs"), call("__print_arr_f32_raw"), call("__print_nl") });
+
+/// Writes the byte in local `name` through the newline scratch cell at 8.
+fn putLocalByte(comptime name: []const u8) [6]Instr {
+    return .{ c32(8), get(name), store8(0), c32(8), c32(1), call("__write_bytes") };
+}
+
+/// `"text"` — a string nested in an array or a tuple, quoted with the source
+/// escapes `\"`, `\\`, `\n`, `\r`, `\t` (semantics decision 1a).
+const print_quoted_raw = func("__print_quoted_raw", &.{"s"}, null, i32s(&.{ "n", "i", "ch", "e" }), &(putByte('"') ++ [_]Instr{call("__write_bytes")} ++ [_]Instr{
+    get("s"), load(0), set("n"),
+    loop(&([_]Instr{
+        get("i"),                        get("n"),  op("ge_u"),                                                                                              brk,
+        get("s"),                        c32(4),    op("add"),                                                                                               get("i"),
+        op("add"),                       load8(0),  set("ch"),                                                                                               c32(0),
+        set("e"),                        get("ch"), c32('"'),                                                                                                op("eq"),
+        get("ch"),                       c32('\\'), op("eq"),                                                                                                op("or"),
+        when(&.{ get("ch"), set("e") }), get("ch"), c32('\n'),                                                                                               op("eq"),
+        when(&.{ c32('n'), set("e") }),  get("ch"), c32('\r'),                                                                                               op("eq"),
+        when(&.{ c32('r'), set("e") }),  get("ch"), c32('\t'),                                                                                               op("eq"),
+        when(&.{ c32('t'), set("e") }),  get("e"),  whenElse(&(putByte('\\') ++ [_]Instr{call("__write_bytes")} ++ putLocalByte("e")), &putLocalByte("ch")), get("i"),
+        c32(1),                          op("add"), set("i"),                                                                                                again,
+    })),
+} ++ putByte('"') ++ [_]Instr{call("__write_bytes")}));
+
+/// The text of `v` by the shape at `sh`, answering the address just past that
+/// shape (semantics decision 1a). Shape codes: `i` an i32, `b` a bool, `f` an
+/// f32 slot, `s` a string (quoted), `[X` an array of `X` — `[e1,e2]` —, and
+/// `(XY…)` a tuple — `#(e1,e2)`. With `go` = 0 nothing is written and nothing
+/// is read through `v`: the call only measures a shape, which is how an array
+/// finds the end of its element shape when it has no element.
+const print_shaped_raw = func("__print_shaped_raw", &.{ "v", "sh", "go" }, .i32, i32s(&.{ "c", "n", "i", "p", "e" }), &.{
+    get("sh"),                                                                                                  load8(0),                                                                                                 set("c"),
+    get("c"),                                                                                                   c32('i'),                                                                                                 op("eq"),
+    when(&.{ get("go"), when(&.{ get("v"), call("__print_i32_raw") }), get("sh"), c32(1), op("add"), ret }),    get("c"),                                                                                                 c32('b'),
+    op("eq"),                                                                                                   when(&.{ get("go"), when(&.{ get("v"), call("__print_bool_raw") }), get("sh"), c32(1), op("add"), ret }), get("c"),
+    c32('f'),                                                                                                   op("eq"),
+    when(&.{
+        get("go"),
+        when(&.{ get("v"), .{ .convert = "f32.reinterpret_i32" }, .{ .convert = "f64.promote_f32" }, call("__print_f64_raw") }),
+        get("sh"),
+        c32(1),
+        op("add"),
+        ret,
+    }),
+    get("c"),                                                                                                   c32('s'),                                                                                                 op("eq"),
+    when(&.{ get("go"), when(&.{ get("v"), call("__print_quoted_raw") }), get("sh"), c32(1), op("add"), ret }), get("c"),                                                                                                 c32('['),
+    op("eq"),
+    when(&([_]Instr{
+        get("go"),                               when(&(putByte('[') ++ [_]Instr{call("__write_bytes")})),
+        get("sh"),                               c32(1),
+        op("add"),                               set("e"),
+        c32(0),                                  get("e"),
+        c32(0),                                  call("__print_shaped_raw"),
+        set("p"),                                get("go"),
+        when(&.{ get("v"), load(0), set("n") }),
+        loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk, get("i"), when(&(putByte(',') ++ [_]Instr{call("__write_bytes")})) } ++ slot("v", "i") ++ [_]Instr{
+            load(0),  get("e"), c32(1),    call("__print_shaped_raw"), .drop,
+            get("i"), c32(1),   op("add"), set("i"),                   again,
+        })),
+        get("go"),                               when(&(putByte(']') ++ [_]Instr{call("__write_bytes")})),
+        get("p"),                                ret,
+    })),
+    get("c"),                                                                                                   c32('('),                                                                                                 op("eq"),
+    when(&([_]Instr{
+        get("go"), when(&(putByte('#') ++ [_]Instr{call("__write_bytes")} ++ putByte('(') ++ [_]Instr{call("__write_bytes")})),
+        get("sh"), c32(1),
+        op("add"), set("p"),
+        loop(&[_]Instr{
+            get("p"),                   load8(0),                                                                       c32(')'), op("eq"), brk,
+            get("go"),                  when(&.{ get("i"), when(&(putByte(',') ++ [_]Instr{call("__write_bytes")})) }), get("v"), get("i"), c32(4),
+            op("mul"),                  op("add"),                                                                      load(0),  get("p"), get("go"),
+            call("__print_shaped_raw"), set("p"),                                                                       get("i"), c32(1),   op("add"),
+            set("i"),                   again,
+        }),
+        get("go"), when(&(putByte(')') ++ [_]Instr{call("__write_bytes")})),
+        get("p"),  c32(1),
+        op("add"), ret,
+    })),
+    get("sh"),                                                                                                  c32(1),                                                                                                   op("add"),
+});
 
 /// A `?T` box: a fresh 4-byte cell holding `v`.
 const box_i32 = func("__box_i32", &.{"v"}, .i32, i32s(&.{"p"}), &.{

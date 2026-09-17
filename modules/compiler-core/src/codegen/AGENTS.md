@@ -83,6 +83,18 @@ codegen/
   Nodes are built in one arena that is freed once the module is rendered. The
   only text this file still composes is a comment's wording, a `require` path
   and the fixed test-harness source (`Item.runtime`).
+- **`@print` / `@println` / `@debug`** (semantics decisions 1 and 1a,
+  `buildPrintCall`) lower to the on-demand prelude helper `__bp_print(a, b)`, not
+  to `console.log`: each argument is written by `__bp_show` — a top-level string
+  bare, a nested string quoted with the source escapes, an array `[a,b]` and a
+  tuple `#(a,b)` with no spaces, anything else `util.inspect` (records, enums and
+  maps keep `console.log`'s text). A tuple is a JS array, so the call site passes
+  the static shape when one argument holds a tuple:
+  `__bp_print_as([["#", null, null]], p)` (`printShape`/`typeShape`: a tuple or
+  array literal, a local or parameter bound to one — `print_shapes` — a top-level
+  fn's declared return type, a primitive method's declared return type such as
+  `zip` → `Array<#(T, U)>`). A tuple whose shape nothing recovers prints as an
+  array.
 - **`@Result`** is `{ ok: V } | { error: E }`; `__bp_ok`/`__bp_error` build it for
   `return`/`throw` in `#[@result]` fns; `try`/`catch` lower to `"error" in _r`
   pattern matching. A `case` arm `Ok(v)` / `Err(e)` / `Error(e)` that names no
@@ -473,13 +485,19 @@ codegen/
   `MissingExternalTarget`. A template is the string literal's raw LEXEME and goes
   into the `.erl` verbatim, so `dupeTemplate` resolves `\"` to `"` first (an
   `io_lib:format(\"~p\", …)` template used to open an unterminated string).
-- **`@print` / `@println` / `@debug`** (cross-backend semantics decision 1) lower to
-  `'__bp_print'([A, B, …])`, not to a template: the helper (`print_helper_form`,
-  emitted once per module that prints, typed and comptime alike) builds the format
-  at runtime — `~ts` for a binary, `~p` for anything else, one verb per argument
-  joined by a space, then `~n` — so a string prints as its text (`hi`, not
-  `<<"hi">>`) exactly as commonJS does. Numeric formatting stays divergent by
-  design: `~p` of `1.0` is `1.0` where `console.log` writes `1`.
+- **`@print` / `@println` / `@debug`** (cross-backend semantics decisions 1 and 1a)
+  lower to `'__bp_print'([A, B, …])`, not to a template: the helper
+  (`print_helper_form`, emitted once per module that prints, typed and comptime
+  alike, together with `'__bp_show'/2` — `show_helper_form`) prints each argument
+  as `'__bp_show'(V, true)` renders it, joined by a space, then `~n`. The text is
+  picked at run time: a top-level binary is its text (`hi`, not `<<"hi">>`); a
+  nested binary is quoted with the source escapes (`"say \"hi\""`); a list is
+  `[E1,E2]` and a tuple `#(E1,E2)`, no spaces; a tuple opened by an atom other than
+  `true`/`false`/`undefined` (an enum variant `{'Circle', R}`, a Result `{ok, V}`)
+  and every other term keep `~p` — records, enums and maps are not decided by 1a.
+  A plain tuple whose first element is a payload-less enum variant (an atom) is
+  therefore printed as `~p` too. Numeric formatting stays divergent by design:
+  `~p` of `1.0` is `1.0` where commonJS writes `1`.
 - **Cross-module**: an imported record joins `record_fields` + `imported_types`
   (`collectImportedTypes`), so construction inlines the owner's map shape
   (records are maps — there is no constructor function to call remotely) and
@@ -866,6 +884,18 @@ first three are now enforced by the model, not by discipline:
   `val #(a, b) = #(…)`), an array's element shape (for a loop parameter) and a
   top-level `val`'s initialiser (`str_globals`, `global_rec_types`). A value
   whose shape nothing recovers still prints through `$__print_i32`.
+- **`@print` of an array of strings, a tuple or an array of tuples** (semantics
+  decision 1a) goes through `$__print_shaped_raw(v, shape, 1)`: the emitter
+  interns a shape string (`i` i32, `f` f32 slot, `b` bool, `s` string, `[X` array
+  of `X`, `(XY…)` tuple) recovered by `printShapeOf` from a tuple / array
+  literal, a local bound to one (`print_shape_locals`), `zip`, and a declared type
+  that spells a tuple (`typeRefShape` over a parameter, a fn result or an
+  annotation); nested strings print quoted with the source escapes
+  (`$__print_quoted_raw`). A flat `i32`/`f32` array keeps `$__print_arr_*`.
+- **String literals are unescaped at interning** (`literalBytes`): the lexer keeps
+  `\"`, `\\`, `\n`, `\r`, `\t`, `\0`, `\$`, `\u{…}` verbatim, and the data segment
+  holds the bytes they stand for, so `@print("q\"t")` writes `q"t` like commonJS
+  and erlang (it wrote `q\"t` before).
 - **`@print` picks a helper by operand type**: `$__print_str` writes the bytes
   of a length-prefixed string, `$__print_bool` writes `true`/`false`,
   `$__print_f64` writes an integer part plus up to 6 trimmed fraction digits,

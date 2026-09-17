@@ -816,6 +816,11 @@ const Emitter = struct {
     /// JS object to patch, so its instance `default fn`s are copied into each
     /// local record that implements it (`buildRecord`).
     local_interfaces: std.StringHashMap(ast.InterfaceDecl),
+    /// Top-level fn name → declared return type, for `printShape`.
+    fn_return_types: std.StringHashMap(ast.TypeRef),
+    /// Local / parameter name → the static print shape of its value, when it
+    /// holds a tuple somewhere (`printShape`). Rebinding a name overwrites it.
+    print_shapes: std.StringHashMap(js.Expr),
     /// Cross-module link info (null in the standalone `emitProgram` path) —
     /// resolves a `from "<pkg>"` import to the file that emits each name.
     cross: ?*const CrossModule = null,
@@ -870,6 +875,8 @@ const Emitter = struct {
             .imported_enums = std.StringHashMap(void).init(alloc),
             .prelude_iface_externals = std.StringHashMap(ast.ExternalRef).init(alloc),
             .local_interfaces = std.StringHashMap(ast.InterfaceDecl).init(alloc),
+            .fn_return_types = std.StringHashMap(ast.TypeRef).init(alloc),
+            .print_shapes = std.StringHashMap(js.Expr).init(alloc),
             .seen_imports = std.StringHashMap(void).init(alloc),
             .prim_node_renames = std.StringHashMap([]const u8).init(alloc),
             .builtin_node_dispatch = std.StringHashMap(BuiltinNodeCall).init(alloc),
@@ -900,6 +907,8 @@ const Emitter = struct {
         self.imported_enums.deinit();
         self.prelude_iface_externals.deinit();
         self.local_interfaces.deinit();
+        self.fn_return_types.deinit();
+        self.print_shapes.deinit();
         self.seen_imports.deinit();
         self.prim_node_renames.deinit();
         var bit = self.builtin_node_dispatch.iterator();
@@ -1175,7 +1184,10 @@ const Emitter = struct {
     /// top-level variant list is the whole surface.
     fn collectDeclIndexes(self: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| switch (decl) {
-            .@"fn" => |f| try self.user_fn_names.put(f.name, {}),
+            .@"fn" => |f| {
+                try self.user_fn_names.put(f.name, {});
+                if (f.returnType) |rt| try self.fn_return_types.put(f.name, rt);
+            },
             .@"enum" => |e| {
                 for (e.variants) |v| {
                     if (v.fields.len == 0) continue;
@@ -1991,6 +2003,7 @@ const Emitter = struct {
     }
 
     fn buildParam(self: *Emitter, p: ast.Param) !js.Param {
+        try self.notePrintShape(p.name, try self.typeShape(p.typeRef));
         const d = p.destruct orelse return .{ .pattern = .{ .ident = p.name } };
         return switch (d) {
             // A destructuring parameter takes no default.
@@ -2131,6 +2144,7 @@ const Emitter = struct {
             .binding => |b| switch (b.kind) {
                 .localBind => |lb| {
                     const kw: js.Decl.Kw = if (lb.mutable) .let_ else .const_;
+                    try self.notePrintShape(lb.name, if (lb.typeAnnotation) |ta| try self.typeShape(ta) else try self.printShape(lb.value.*));
                     if (classifyTry(lb.value.*)) |form| {
                         return self.buildTryStmt(form, .{ .decl = .{ .kw = kw, .name = lb.name } });
                     }
@@ -3203,6 +3217,109 @@ const Emitter = struct {
         })), &.{});
     }
 
+    // ── @print ────────────────────────────────────────────────────────────────
+
+    /// `@print`/`@println`/`@debug` (semantics decisions 1 and 1a) →
+    /// `__bp_print(a, b)`: each argument's text through the `__bp_show` prelude
+    /// helper, space-separated, one `console.log` line. A tuple is a JS array,
+    /// so when an argument's static shape holds one the call passes the shapes
+    /// first: `__bp_print_as([["#", null, null], null], a, b)`.
+    fn buildPrintCall(self: *Emitter, cc: anytype) anyerror!js.Expr {
+        const args = try self.arena().alloc(js.Expr, cc.args.len + 1);
+        const shapes = try self.arena().alloc(js.Expr, cc.args.len);
+        var shaped = false;
+        for (cc.args, 0..) |a, i| {
+            args[i + 1] = try self.buildExpr(a.value.*);
+            shapes[i] = (try self.printShape(a.value.*)) orelse .null_;
+            if (shapes[i] != .null_) shaped = true;
+        }
+        _ = self.helper(.show);
+        if (!shaped) return self.b.call(self.helper(.print), args[1..]);
+        args[0] = .{ .array = .{ .elems = shapes } };
+        return self.b.call(self.helper(.print_as), args);
+    }
+
+    fn notePrintShape(self: *Emitter, name: []const u8, shape: ?js.Expr) !void {
+        if (shape) |s| try self.print_shapes.put(name, s) else _ = self.print_shapes.remove(name);
+    }
+
+    /// The static print shape of `e` — `["#", s1, s2]` for a tuple, `["[", s]`
+    /// for an array — when a tuple is known to sit somewhere in its value;
+    /// null otherwise (the runtime text of an array or a scalar needs none).
+    /// Known from a tuple literal, an array literal of those, a local or a
+    /// parameter bound to one, a top-level fn's declared return type, and a
+    /// primitive method's declared return type (`zip` → `Array<#(T, U)>`).
+    fn printShape(self: *Emitter, e: ast.Expr) anyerror!?js.Expr {
+        return switch (e) {
+            .collection => |col| switch (col.kind) {
+                .tupleLit => |tl| blk: {
+                    const elems = try self.arena().alloc(js.Expr, tl.elems.len + 1);
+                    elems[0] = .{ .quoted = "#" };
+                    for (tl.elems, 0..) |el, i| elems[i + 1] = (try self.printShape(el)) orelse .null_;
+                    break :blk .{ .array = .{ .elems = elems } };
+                },
+                .arrayLit => |al| if (al.elems.len > 0)
+                    try self.arrayShape(try self.printShape(al.elems[0]))
+                else
+                    null,
+                .grouped => |inner| self.printShape(inner.*),
+                else => null,
+            },
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| self.print_shapes.get(n),
+                else => null,
+            },
+            .call => |c| switch (c.kind) {
+                .call => |cc| blk: {
+                    if (cc.is_builtin) break :blk null;
+                    if (cc.receiver == null) break :blk if (self.fn_return_types.get(cc.callee)) |rt| try self.typeShape(rt) else null;
+                    const lw = self.lowerings orelse break :blk null;
+                    const iface_name: []const u8 = switch (lw.get(c.loc) orelse break :blk null) {
+                        .prim => |k| switch (k) {
+                            .array => "Array",
+                            .string => "String",
+                            else => break :blk null,
+                        },
+                        .record => break :blk null,
+                    };
+                    const iface = self.local_interfaces.get(iface_name) orelse break :blk null;
+                    for (iface.methods) |m| {
+                        if (!std.mem.eql(u8, m.name, cc.callee)) continue;
+                        break :blk if (m.returnType) |rt| try self.typeShape(rt) else null;
+                    }
+                    break :blk null;
+                },
+                else => null,
+            },
+            else => null,
+        };
+    }
+
+    /// The print shape a declared type spells (see `printShape`).
+    fn typeShape(self: *Emitter, t: ast.TypeRef) anyerror!?js.Expr {
+        return switch (t) {
+            .tuple_ => |elems| blk: {
+                const out = try self.arena().alloc(js.Expr, elems.len + 1);
+                out[0] = .{ .quoted = "#" };
+                for (elems, 0..) |el, i| out[i + 1] = (try self.typeShape(el)) orelse .null_;
+                break :blk .{ .array = .{ .elems = out } };
+            },
+            .array => |inner| self.arrayShape(try self.typeShape(inner.*)),
+            .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array"))
+                self.arrayShape(try self.typeShape(g.args[0]))
+            else
+                null,
+            .optional => |inner| self.typeShape(inner.*),
+            else => null,
+        };
+    }
+
+    /// `["[", elem]`, or null when the element shape holds no tuple.
+    fn arrayShape(self: *Emitter, elem: ?js.Expr) !?js.Expr {
+        const s = elem orelse return null;
+        return .{ .array = .{ .elems = try self.b.exprs(&.{ .{ .quoted = "[" }, s }) } };
+    }
+
     // ── calls ─────────────────────────────────────────────────────────────────
 
     /// Try lowering an `@builtin(…)` call from its `@external(node, …)`
@@ -3372,6 +3489,8 @@ const Emitter = struct {
     }
 
     fn buildBuiltinCall(self: *Emitter, cc: anytype) anyerror!js.Expr {
+        if (std.mem.eql(u8, cc.callee, "print") or std.mem.eql(u8, cc.callee, "println") or std.mem.eql(u8, cc.callee, "debug"))
+            return self.buildPrintCall(cc);
         // `prim-op-annotation` builtin dispatch fires first (`@todo` /
         // `@panic` annotated in `builtins.d.bp`).
         if (try self.tryBuiltinAnnotation(cc.callee, cc)) |node| return node;
