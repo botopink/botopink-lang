@@ -128,7 +128,7 @@ codegen/
   receiver inference recorded as a primitive (`instance_lowerings` `.prim`)
   and whose native JS method disagrees with the declaration calls a helper
   instead — `s.charAt(i)` is `__bp_string_char_at(s, i)` (`null` out of
-  range). `Emitter.helper` marks it, and only marked helpers are declared at
+  range). An open-ended range is `__bp_range_from(start)`. `Emitter.helper` marks it, and only marked helpers are declared at
   the top of the module. Interface default-fn bodies are not inferred, so a
   `charAt` inside one stays native.
 - **Duplicate test names**: two `test "x"` blocks in one module print
@@ -170,7 +170,34 @@ codegen/
 - **`comptime { … }` with no `break <e>`** in value position is `undefined`
   (a block's value comes only from `break`).
 - **Ranges**: `a..b` materializes `Array.from({length: Math.max(0, b - a)}, …)`;
-  an open-ended `a..` throws at runtime.
+  an open-ended `a..` is the lazy `__bp_range_from(a)` prelude generator
+  (`function*` counting up forever), so `loop (x..) { i -> … break; }` runs.
+- **Indexed loops**: `loop (xs) { x, i -> … }` and `loop (xs, 0..)` iterate
+  `(xs).entries()`; any other index start pairs each item with it —
+  `Array.from(xs, (__x, __i) => [__i + (start), __x])` — so `loop (xs, 1..)`
+  counts from 1 (erlang's `lists:enumerate(Start, Xs)`).
+- **Enum methods**: variant values carry no methods (a payload variant is a
+  plain `{ tag, … }` object, a nullary one its name). A method whose first
+  parameter is `self` or typed `Self` takes the value as a real first parameter
+  (`area: function(self) {…}`), and a call `recv.area()` whose receiver
+  inference typed as an enum this module declares (`enum_recv_methods`) or
+  imports by name (`imported_enums`) lowers to `Shape.area(recv)`
+  (`enumMethodOwner`). A method with no parameters that reads `self`
+  implicitly keeps the `this` body and is not lowered.
+- **User interface `default fn`s**: an interface that is not a JS global owns
+  no constructor, so its instance defaults are copied as class methods into
+  every local record that implements it and does not define the method
+  (`appendInterfaceDefaults`, following `extends`); nothing is patched onto
+  `Iface.prototype`. An implementer in another module does not get them yet.
+  A module that redeclares a primitive interface (`interface Number { fn
+  max(self: Self, other: Self) -> Self, … }`) replaces the prelude's
+  declaration; a bodyless member without its own `@External.Node` takes the
+  prelude's (`prelude_iface_externals`), so `Number.prototype.max` is still
+  patched.
+- **Builtin dispatch is for free calls**: `builtin_node_dispatch` (`print`,
+  `todo`, …) applies only to a call with no receiver — `d.print()` on a record
+  is the record's method.
+- **Tuple index**: `t._N` and the bare `t.N` are `t[N]`.
 - **Effects**: `fnKeyword` picks `async function` / `function*` /
   `async function*`; inside a generator, `return <iter>` becomes
   `yield* <iter>; return;` and `loop (xs) { x -> yield x }` becomes `for…of`.

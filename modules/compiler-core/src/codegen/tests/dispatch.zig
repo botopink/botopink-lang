@@ -156,6 +156,66 @@ test "js: dispatch ---- multi-module extension activated via star import" {
     });
 }
 
+// A user interface's instance `default fn` calling other members, reached
+// through a record that implements it. commonJS emitted `Bounded.prototype.clamp
+// = …` for an interface that is no JS constructor (`Bounded is not defined` at
+// load); the default is now a method of the implementing class. KNOWN: `120`;
+// erlang does not compile (`function clamp/3 undefined`), beam aborts
+// `{unresolved_method, clamp, 3}` (empty RUN LOG) and wasm traps — none of
+// them reaches a user interface's default through a record yet (1.0.4-beta 01).
+test "js: interface ---- a default fn calls members of the implementing record" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\interface Bounded {
+        \\    fn min(self: Self, other: Self) -> Self,
+        \\    fn max(self: Self, other: Self) -> Self,
+        \\
+        \\    default fn clamp(self: Self, lo: Self, hi: Self) -> Self {
+        \\        return self.max(lo).min(hi);
+        \\    }
+        \\}
+        \\
+        \\record Money implement Bounded {
+        \\    cents: i32,
+        \\
+        \\    fn min(self: Self, other: Self) -> Self {
+        \\        return if (self.cents < other.cents) { self; } else { other; };
+        \\    }
+        \\
+        \\    fn max(self: Self, other: Self) -> Self {
+        \\        return if (self.cents > other.cents) { self; } else { other; };
+        \\    }
+        \\}
+        \\
+        \\fn main() {
+        \\    val m = Money(cents: 500).clamp(Money(cents: 0), Money(cents: 120));
+        \\    @print(m.cents);
+        \\}
+    );
+}
+
+// 1.0.4-beta EXAMPLES.md §9's shape: a module redeclares the primitive
+// `interface Number` with bodyless `min`/`max` and a `default fn` calling them.
+// The redeclaration replaces the prelude's, annotations included; commonJS
+// took the host binding (`Math.max`) from the std prelude's declaration of the
+// same member, so `self.max(lo)` is not `self.max is not a function`.
+test "js: interface ---- a redeclared primitive interface keeps its host members" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\interface Number {
+        \\    fn min(self: Self, other: Self) -> Self,
+        \\    fn max(self: Self, other: Self) -> Self,
+        \\
+        \\    default fn clamp(self: Self, lo: Self, hi: Self) -> Self {
+        \\        return self.max(lo).min(hi);
+        \\    }
+        \\}
+        \\
+        \\fn main() {
+        \\    val n: i32 = 50;
+        \\    @print(n.clamp(0, 10));
+        \\}
+    );
+}
+
 test "js: delegate ---- emits comment" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\declare fn Callback(msg: string) -> void;

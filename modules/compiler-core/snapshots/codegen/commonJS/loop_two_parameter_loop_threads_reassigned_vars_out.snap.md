@@ -36,7 +36,7 @@ function pick(xs) {
 
 function weigh(xs) {
     let total = 0;
-    for (const [i, x] of (xs).entries()) {
+    for (const [i, x] of Array.from(xs, (__x, __i) => [__i + (1), __x])) {
     total = (total + (x * i));
 }
     return total;
@@ -65,5 +65,5 @@ _botopink_main();
 ----- RUN LOG -----
 ```logs
 a-c
-80
+140
 ```
