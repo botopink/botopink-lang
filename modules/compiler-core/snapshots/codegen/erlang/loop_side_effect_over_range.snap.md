@@ -14,8 +14,11 @@ fn main() {
 
 main() ->
     lists:foreach(fun(I) ->
-        io:format("~p~n", [I])
+        '__bp_print'([I])
     end, lists:seq(0, (10) - 1)).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

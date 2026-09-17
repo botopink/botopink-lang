@@ -21,7 +21,10 @@ doubles(Arr) ->
     end, Arr).
 
 main() ->
-    io:format("~p~n", [doubles([1, 2, 3])]).
+    '__bp_print'([doubles([1, 2, 3])]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

@@ -35,11 +35,14 @@ mapFields(N) ->
     (N * 2).
 
 main() ->
-    io:format("~p~n", [pick(1)]),
-    io:format("~p~n", [omit(1)]),
-    io:format("~p~n", [partial(1)]),
-    io:format("~p~n", [mergeRecords(2, 3)]),
-    io:format("~p~n", [mapFields(3)]).
+    '__bp_print'([pick(1)]),
+    '__bp_print'([omit(1)]),
+    '__bp_print'([partial(1)]),
+    '__bp_print'([mergeRecords(2, 3)]),
+    '__bp_print'([mapFields(3)]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

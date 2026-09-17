@@ -23,7 +23,10 @@ result() ->
     (add())(10, 20).
 
 main() ->
-    io:format("~p~n", [result()]).
+    '__bp_print'([result()]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

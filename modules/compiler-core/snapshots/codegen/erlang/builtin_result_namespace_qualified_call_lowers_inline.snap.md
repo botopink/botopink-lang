@@ -29,7 +29,10 @@ main() ->
     R = (fun(R) -> case R of {ok, V} -> {ok, (fun(X) ->
         (X * 2)
     end)(V)}; _ -> R end end)(parse(21)),
-    io:format("~p~n", [(fun(R) -> case R of {ok, V} -> V; _ -> (0) end end)(R)]).
+    '__bp_print'([(fun(R) -> case R of {ok, V} -> V; _ -> (0) end end)(R)]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

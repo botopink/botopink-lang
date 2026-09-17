@@ -56,14 +56,17 @@ pair_mapSecond(P, Transform) ->
 
 main() ->
     P = pair_of(1, <<"one">>),
-    io:format("~p~n", [pair_first(P)]),
-    io:format("~p~n", [function_identity(42)]),
+    '__bp_print'([pair_first(P)]),
+    '__bp_print'([function_identity(42)]),
     Inc = function_compose(fun(X) ->
         (X + 1)
     end, fun(Y) ->
         (Y * 2)
     end),
-    io:format("~p~n", [Inc(10)]).
+    '__bp_print'([Inc(10)]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

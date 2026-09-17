@@ -24,7 +24,10 @@ page() ->
     <<"\n<p>", (name())/binary, "</p>\n">>.
 
 main() ->
-    io:format("~p~n", [page()]).
+    '__bp_print'([page()]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -35,5 +38,7 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-<<"\n<p>world</p>\n">>
+
+<p>world</p>
+
 ```

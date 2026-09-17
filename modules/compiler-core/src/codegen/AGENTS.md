@@ -292,8 +292,14 @@ codegen/
   `isStringExpr` decides: a string literal, a `+` chain with a string operand, a
   parameter declared `string` or a `val` bound to a string (`string_locals`), and a
   module-level `fn`/`val` that answers one (`string_names`, `collectStringNames`).
-  Everything it cannot prove stays arithmetic. Binary-literal segments render as
-  plain strings (`beam/erl_emitter.zig`), non-simple ones are parenthesised.
+  Everything it cannot prove stays arithmetic. Inside a chain proven to be a string,
+  an operand that is not itself provably a string (`"value: " + v`, `v: i32`) is
+  the segment `('__bp_text'(V))/binary` — `'__bp_text'/1` answers a binary as
+  itself and anything else as its `~p` rendering, emitted once per module when a
+  segment reached it (`needs_text_helper`, `text_helper_form`); a bare `V/binary`
+  raised `badarg`. Binary-literal segments render as plain strings
+  (`beam/erl_emitter.zig`), non-simple ones are parenthesised. **beam must render
+  the same bytes** (spec 04-beam B3).
 - **`@Result` constructors and patterns** share one tag table (`resultTag`):
   `Ok(v)` → `{ok, V}`, `Err(e)` / `new Error(msg)` → `{error, E}`, and the `Ok`/`Err`
   case arms match those tags. A user enum variant of the same name wins.
@@ -307,9 +313,13 @@ codegen/
   `MissingExternalTarget`. A template is the string literal's raw LEXEME and goes
   into the `.erl` verbatim, so `dupeTemplate` resolves `\"` to `"` first (an
   `io_lib:format(\"~p\", …)` template used to open an unterminated string).
-  `builtinAnnotationNode` widens a fixed format string paired with the variadic
-  `$args` marker to one control sequence per argument, so `@print(a, b, c)` is
-  `io:format("~p ~p ~p~n", [A, B, C])` and not a `badarg`.
+- **`@print` / `@println` / `@debug`** (cross-backend semantics decision 1) lower to
+  `'__bp_print'([A, B, …])`, not to a template: the helper (`print_helper_form`,
+  emitted once per module that prints, typed and comptime alike) builds the format
+  at runtime — `~ts` for a binary, `~p` for anything else, one verb per argument
+  joined by a space, then `~n` — so a string prints as its text (`hi`, not
+  `<<"hi">>`) exactly as commonJS does. Numeric formatting stays divergent by
+  design: `~p` of `1.0` is `1.0` where `console.log` writes `1`.
 - **Cross-module**: an imported record joins `record_fields` + `imported_types`
   (`collectImportedTypes`), so construction inlines the owner's map shape
   (records are maps — there is no constructor function to call remotely) and

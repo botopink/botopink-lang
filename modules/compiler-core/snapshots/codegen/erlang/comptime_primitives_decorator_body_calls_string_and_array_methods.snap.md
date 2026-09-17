@@ -106,10 +106,13 @@ array_repeat(Value, Times) ->
 %% record User: name, secret, age
 
 main() ->
-    io:format("~p~n", [describeUser()]).
+    '__bp_print'([describeUser()]).
 
 describeUser() ->
     <<"NAME_SECRET_AGE:hidden:Use:four">>.
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -120,5 +123,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-<<"NAME_SECRET_AGE:hidden:Use:four">>
+NAME_SECRET_AGE:hidden:Use:four
 ```

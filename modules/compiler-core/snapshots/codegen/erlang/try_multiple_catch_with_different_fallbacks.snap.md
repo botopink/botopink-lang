@@ -43,10 +43,13 @@ loadUser() ->
         {error, _TryE1} ->
             0
     end,
-    io:format("~p ~p~n", [Name, Age]).
+    '__bp_print'([Name, Age]).
 
 main() ->
     loadUser().
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -57,5 +60,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-<<"anonymous">> 0
+anonymous 0
 ```

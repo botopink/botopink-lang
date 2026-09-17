@@ -16,7 +16,10 @@ fn main() {
 
 main() ->
     P = (8080 + 1),
-    io:format("~p~n", [P]).
+    '__bp_print'([P]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

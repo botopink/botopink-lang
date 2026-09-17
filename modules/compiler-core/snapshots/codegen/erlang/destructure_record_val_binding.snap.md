@@ -20,11 +20,14 @@ fn main() {
 
 describe(P) ->
     #{x := X, y := Y} = P,
-    io:format("~p ~p~n", [X, Y]),
+    '__bp_print'([X, Y]),
     X.
 
 main() ->
     describe(#{x => 3, y => 4}).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

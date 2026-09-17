@@ -160,8 +160,11 @@ describe(O) ->
     S.
 
 main() ->
-    io:format("~p~n", [order:toInt(order:lt())]),
-    io:format("~p~n", [describe(order:reverse(order:lt()))]).
+    '__bp_print'([order:toInt(order:lt())]),
+    '__bp_print'([describe(order:reverse(order:lt()))]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -173,5 +176,5 @@ main(_Args) ->
 ----- RUN LOG -----
 ```logs
 -1
-<<"less">>
+less
 ```

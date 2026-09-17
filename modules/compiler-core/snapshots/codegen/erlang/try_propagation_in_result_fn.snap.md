@@ -47,13 +47,16 @@ main() ->
         {error, _TryE0} ->
             (-1)
     end,
-    io:format("~p~n", [R]),
+    '__bp_print'([R]),
     R2 = case outer(true) of
         {ok, TryV1} -> TryV1;
         {error, _TryE1} ->
             (-1)
     end,
-    io:format("~p~n", [R2]).
+    '__bp_print'([R2]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

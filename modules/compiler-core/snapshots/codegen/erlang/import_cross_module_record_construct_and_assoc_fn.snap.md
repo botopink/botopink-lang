@@ -51,9 +51,12 @@ fn main() {
 
 main() ->
     R = http:ok(<<"hi">>),
-    io:format("~p~n", [maps:get(body, R)]),
+    '__bp_print'([maps:get(body, R)]),
     A = #{port => 8080, path => <<"/">>},
-    io:format("~p~n", [maps:get(port, A)]).
+    '__bp_print'([maps:get(port, A)]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -64,6 +67,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-<<"hi">>
+hi
 8080
 ```

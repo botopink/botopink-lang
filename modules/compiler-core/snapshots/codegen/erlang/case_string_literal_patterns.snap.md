@@ -30,13 +30,16 @@ greet(Lang) ->
         _ ->
             <<"hi">>
     end,
-    io:format("~p~n", [Msg]),
+    '__bp_print'([Msg]),
     Msg.
 
 main() ->
     greet(<<"en">>),
     greet(<<"pt">>),
     greet(<<"fr">>).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -47,7 +50,7 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-<<"hello">>
-<<"ola">>
-<<"hi">>
+hello
+ola
+hi
 ```

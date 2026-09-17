@@ -17,7 +17,10 @@ either(A, B) ->
     (A orelse B).
 
 main() ->
-    io:format("~p~n", [either(false, true)]).
+    '__bp_print'([either(false, true)]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

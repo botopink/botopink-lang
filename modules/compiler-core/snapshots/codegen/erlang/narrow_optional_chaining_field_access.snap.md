@@ -25,7 +25,10 @@ getValue(O) ->
 
 main() ->
     O = #{inner => #{value => 42}},
-    io:format("~p~n", [getValue(O)]).
+    '__bp_print'([getValue(O)]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

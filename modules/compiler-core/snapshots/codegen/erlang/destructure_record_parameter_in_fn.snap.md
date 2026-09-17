@@ -18,11 +18,14 @@ fn main() {
 %% record Person: name, age
 
 greet(#{name := Name}) ->
-    io:format("~p~n", [Name]),
+    '__bp_print'([Name]),
     Name.
 
 main() ->
     greet(#{name => <<"Ana">>, age => 30}).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -33,5 +36,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-<<"Ana">>
+Ana
 ```

@@ -35,11 +35,14 @@ process() ->
             0
     end,
     Suffix = 20,
-    io:format("~p ~p ~p~n", [Prefix, Data, Suffix]),
+    '__bp_print'([Prefix, Data, Suffix]),
     ((Prefix + Data) + Suffix).
 
 main() ->
-    io:format("~p~n", [process()]).
+    '__bp_print'([process()]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

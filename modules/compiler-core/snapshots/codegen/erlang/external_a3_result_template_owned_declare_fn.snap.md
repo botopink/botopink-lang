@@ -20,7 +20,10 @@ fn main() {
 
 main() ->
     R = (fun(__S) -> try {ok, binary_to_integer(__S)} catch _:_ -> {error, <<"not a number">>} end end)(<<"42">>),
-    io:format("~p~n", [(fun(R) -> case R of {ok, V} -> V; _ -> ((-1)) end end)(R)]).
+    '__bp_print'([(fun(R) -> case R of {ok, V} -> V; _ -> ((-1)) end end)(R)]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

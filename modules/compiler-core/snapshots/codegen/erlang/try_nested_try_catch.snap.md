@@ -44,11 +44,14 @@ process() ->
         {error, _TryE1} ->
             A
     end,
-    io:format("~p ~p~n", [A, B]),
+    '__bp_print'([A, B]),
     (A + B).
 
 main() ->
-    io:format("~p~n", [process()]).
+    '__bp_print'([process()]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

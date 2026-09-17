@@ -21,10 +21,13 @@ fetch() ->
 process() ->
     case fetch() of
         {ok, R} ->
-            io:format("~p~n", [R]),
+            '__bp_print'([R]),
             R;
         {error, _TryE0} -> {error, _TryE0}
     end.
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 ```
 
 ----- RUN LOG -----

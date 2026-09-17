@@ -30,13 +30,16 @@ classify(N) ->
         _ ->
             <<"many">>
     end,
-    io:format("~p~n", [Result]),
+    '__bp_print'([Result]),
     Result.
 
 main() ->
     classify(0),
     classify(1),
     classify(7).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -47,7 +50,7 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-<<"zero">>
-<<"one">>
-<<"many">>
+zero
+one
+many
 ```

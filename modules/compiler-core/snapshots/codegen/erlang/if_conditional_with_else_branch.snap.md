@@ -23,8 +23,11 @@ describe(N) ->
     end.
 
 main() ->
-    io:format("~p~n", [describe(5)]),
-    io:format("~p~n", [describe((-3))]).
+    '__bp_print'([describe(5)]),
+    '__bp_print'([describe((-3))]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -35,6 +38,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-<<"positive">>
-<<"non-positive">>
+positive
+non-positive
 ```

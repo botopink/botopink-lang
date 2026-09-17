@@ -68,7 +68,10 @@ cfg() ->
     #{port => 8004, debug => true}.
 
 main() ->
-    io:format("~p~n", [(maps:get(port, cfg()) + 1)]).
+    '__bp_print'([(maps:get(port, cfg()) + 1)]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

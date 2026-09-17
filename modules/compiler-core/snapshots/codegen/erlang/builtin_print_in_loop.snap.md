@@ -17,11 +17,14 @@ fn main() {
 
 countdown(N) ->
     lists:foreach(fun(I) ->
-        io:format("~p~n", [(N - I)])
+        '__bp_print'([(N - I)])
     end, lists:seq(0, (N) - 1)).
 
 main() ->
     countdown(3).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

@@ -17,7 +17,10 @@ fn main() {
 %% external fn floor -> math:floor
 
 main() ->
-    io:format("~p~n", [math:floor(1.7)]).
+    '__bp_print'([math:floor(1.7)]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

@@ -18,7 +18,10 @@ fn main() {
 %% external fn abs -> erlang:abs
 
 main() ->
-    io:format("~p~n", [erlang:abs((-5))]).
+    '__bp_print'([erlang:abs((-5))]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

@@ -16,12 +16,15 @@ fn main() {
 -export(['_botopink_main'/0, main/1]).
 
 log(Msg) ->
-    io:format("~p~n", [Msg]).
+    '__bp_print'([Msg]).
 
 main() ->
     log(<<"started">>),
     X = 42,
     log(<<"done">>).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -32,6 +35,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-<<"started">>
-<<"done">>
+started
+done
 ```

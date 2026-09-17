@@ -27,12 +27,18 @@ describe(Opt) ->
         'None' ->
             <<"empty">>;
         {'Some', V} ->
-            <<"value: ", V/binary>>
+            <<"value: ", ('__bp_text'(V))/binary>>
     end.
 
 main() ->
-    io:format("~p~n", [describe({'Some', 42})]),
-    io:format("~p~n", [describe('None')]).
+    '__bp_print'([describe({'Some', 42})]),
+    '__bp_print'([describe('None')]).
+
+'__bp_text'(Value) when is_binary(Value) -> Value;
+'__bp_text'(Value) -> iolist_to_binary(io_lib:format(<<"~p">>, [Value])).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -43,4 +49,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+value: 42
+empty
 ```

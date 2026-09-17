@@ -13,7 +13,10 @@ fn main() {
 
 main() ->
     X = 10,
-    io:format("~p~n", [(X * 2)]).
+    '__bp_print'([(X * 2)]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

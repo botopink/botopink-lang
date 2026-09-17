@@ -48,9 +48,9 @@ firstAndRest(Xs) ->
 main() ->
     Result = firstAndRest([1, 2, 3]),
     Head = element(2, Result),
-    io:format("~p~n", [(fun(O) -> case O of undefined -> ((-1)); V -> V end end)(Head)]),
+    '__bp_print'([(fun(O) -> case O of undefined -> ((-1)); V -> V end end)(Head)]),
     Empty = firstAndRest([]),
-    io:format("~p~n", [(element(2, Empty) =:= undefined)]).
+    '__bp_print'([(element(2, Empty) =:= undefined)]).
 
 array_slice(Self, Start, End) ->
     case (End =/= undefined) of
@@ -59,6 +59,9 @@ array_slice(Self, Start, End) ->
         false ->
             lists:nthtail(Start, Self)
     end.
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

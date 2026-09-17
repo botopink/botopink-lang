@@ -400,6 +400,57 @@ pub const HostRecord = struct {
     fields: []const []const u8,
 };
 
+/// `'__bp_text'/1`: any term as a binary — a binary is itself, anything else
+/// its `~p` rendering. Every comptime module carries it; a typed module emits it
+/// when a string `+` has an operand that is not provably a string
+/// (`concatSegments`).
+const text_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_text", .clauses = &.{
+    .{
+        .patterns = &.{Ast.Expr.v("Value")},
+        .guards = &.{isA("binary", "Value")},
+        .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("Value") }}),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{Ast.Expr.v("Value")},
+        .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .name = "iolist_to_binary", .args = &.{.{ .call = .{
+            .module = "io_lib",
+            .name = "format",
+            .args = &.{ Ast.Expr.t(Term.str("~p")), .{ .list = &.{Ast.Expr.v("Value")} } },
+        } }} } } }}),
+        .layout = .inline_,
+    },
+} } };
+
+/// `'__bp_print'/1`: the `@print`/`@println`/`@debug` lowering (cross-backend
+/// semantics decision 1). It takes the argument LIST and prints the values on
+/// one line separated by a space: a binary through `~ts` (its text), anything
+/// else through `~p`. The verb is picked at runtime, so the typed and the
+/// untyped (comptime) path print the same bytes.
+const print_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_print", .clauses = &.{.{
+    .patterns = &.{Ast.Expr.v("Values")},
+    .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "io", .name = "format", .args = &.{
+        .{ .call = .{ .module = "lists", .name = "flatten", .args = &.{.{ .list = &.{
+            .{ .call = .{ .module = "lists", .name = "join", .args = &.{
+                .{ .string = " " },
+                .{ .list_comp = .{
+                    .element = &Ast.Expr{ .case_ = .{
+                        .subject = &Ast.Expr{ .call = .{ .name = "is_binary", .args = &.{Ast.Expr.v("V")} } },
+                        .clauses = &.{
+                            .{ .patterns = &.{Ast.Expr.a("true")}, .body = Ast.Body.of(&.{.{ .expr = .{ .string = "~ts" } }}), .layout = .inline_ },
+                            .{ .patterns = &.{Ast.Expr.a("false")}, .body = Ast.Body.of(&.{.{ .expr = .{ .string = "~p" } }}), .layout = .inline_ },
+                        },
+                        .layout = .inline_,
+                    } },
+                    .qualifiers = &.{.{ .generator = .{ .pattern = Ast.Expr.v("V"), .list = Ast.Expr.v("Values") } }},
+                } },
+            } } },
+            .{ .string = "~n" },
+        } }} } },
+        Ast.Expr.v("Values"),
+    } } } }}),
+}} } };
+
 /// Helpers every comptime module carries. Bodies are untyped (no inference ran
 /// over them), so type-directed lowerings dispatch at runtime — `+` →
 /// `'__bp_add'/2` (binary concat for strings, arithmetic otherwise),
@@ -442,23 +493,7 @@ pub const comptime_helper_forms = [_]Ast.Form{
             .layout = .inline_,
         },
     } } },
-    .{ .function = .{ .name = "__bp_text", .clauses = &.{
-        .{
-            .patterns = &.{Ast.Expr.v("Value")},
-            .guards = &.{isA("binary", "Value")},
-            .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("Value") }}),
-            .layout = .inline_,
-        },
-        .{
-            .patterns = &.{Ast.Expr.v("Value")},
-            .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .name = "iolist_to_binary", .args = &.{.{ .call = .{
-                .module = "io_lib",
-                .name = "format",
-                .args = &.{ Ast.Expr.t(Term.str("~p")), .{ .list = &.{Ast.Expr.v("Value")} } },
-            } }} } } }}),
-            .layout = .inline_,
-        },
-    } } },
+    text_helper_form,
     .{ .function = .{ .name = "__bp_json", .clauses = &.{
         .{
             .patterns = &.{Ast.Expr.a("undefined")},
@@ -874,6 +909,14 @@ fn emitErlangModule(
     // Interface instance `default fn`s reached by some call site above.
     try em.instanceDefaultForms(b, &forms);
 
+    // Runtime helpers a lowering reached. A comptime module always carries
+    // `'__bp_text'/1` (`comptime_helper_forms`); a listing renders no helper.
+    const listing_only = if (comptime_module) |cm| cm.listing else false;
+    if (!listing_only) {
+        if (em.needs_text_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, text_helper_form });
+        if (em.needs_print_helper) try forms.appendSlice(b.arena, &.{ .blank, print_helper_form });
+    }
+
     if (comptime_module) |cm| {
         if (!cm.listing) {
             try em.primShimForms(b, &forms);
@@ -1212,6 +1255,11 @@ const PrimIfaceWalker = struct {
     }
 };
 
+/// `@print` / `@println` / `@debug` — the builtins lowered to `'__bp_print'/1`.
+fn isPrintBuiltin(callee: []const u8) bool {
+    return std.mem.eql(u8, callee, "print") or std.mem.eql(u8, callee, "println") or std.mem.eql(u8, callee, "debug");
+}
+
 /// True when any `External.<target>(..., "true")` annotation carries the
 /// inline flag (last arg is the literal `"true"`).
 fn hasExternalInline(annotations: []const ast.Annotation, target: []const u8) bool {
@@ -1393,6 +1441,13 @@ const Emitter = struct {
     /// means no collision detected — every record method stays bare.
     /// Populated by `collectRecordMethodCollisions` before any emit.
     record_method_collisions: std.StringHashMap(void),
+    /// Set when a lowering called `'__bp_text'/1` (a string `+` operand that
+    /// is not provably a string). A typed module then emits `text_helper_form`;
+    /// a comptime module always carries it.
+    needs_text_helper: bool = false,
+    /// Set when `@print`/`@println`/`@debug` lowered to `'__bp_print'/1`; the
+    /// module then emits `print_helper_form`.
+    needs_print_helper: bool = false,
 
     fn init(alloc: std.mem.Allocator, cv: std.StringHashMap([]const u8), rewrites: std.AutoHashMap(ast.Loc, []const u8)) Emitter {
         return .{
@@ -1548,22 +1603,9 @@ const Emitter = struct {
             .{ .argc = 0, .template = "erlang:error({panic, \"panic\"})" },
             .{ .argc = 1, .template = "erlang:error({panic, $0})" },
         });
-        // §D1: `print`/`println`/`debug` lower to
-        // `io:format("~p~n", [$args])` — the host-format pair lives entirely
-        // in the template, the `$args` marker expands to every positional arg
-        // comma-separated. No per-name fork in the call-emitter.
-        try this.putInlineErlangBuiltinTemplate("print", "io:format(\"~p~n\", [$args])");
-        try this.putInlineErlangBuiltinTemplate("println", "io:format(\"~p~n\", [$args])");
-        try this.putInlineErlangBuiltinTemplate("debug", "io:format(\"~p~n\", [$args])");
-    }
-
-    fn putInlineErlangBuiltinTemplate(this: *Emitter, name: []const u8, template: []const u8) !void {
-        if (this.builtin_erlang_dispatch.contains(name)) return;
-        try this.builtin_erlang_dispatch.put(try this.alloc.dupe(u8, name), .{
-            .module = "",
-            .symbol = try this.alloc.dupe(u8, template),
-            .args = null,
-        });
+        // `print`/`println`/`debug` are not templates: they lower to the
+        // `'__bp_print'/1` helper (`builtinCallNode`), whatever the prelude's
+        // `builtins.d.bp` annotation still spells.
     }
 
     fn putInlineErlangBuiltin(this: *Emitter, name: []const u8, branches: []const ast.ArityBranch) !void {
@@ -1589,36 +1631,7 @@ const Emitter = struct {
     fn builtinAnnotationNode(this: *Emitter, b: Ast.Builder, callee: []const u8, cc: anytype) anyerror!?Ast.Expr {
         const call = this.builtin_erlang_dispatch.get(callee) orelse return null;
         const template = templateFor(call, cc) orelse return null;
-        const widened = try widenFormatTemplate(b, template, cc.args.len + cc.trailing.len);
-        return try this.templateNode(b, widened, null, cc, error.PrimOpRecvInBuiltinTemplate);
-    }
-
-    /// `@print(a, b, c)` renders `io:format("~p~n", [$args])`, whose single
-    /// control sequence only consumes the FIRST of the three arguments —
-    /// `io:format` then raises `badarg`. A fixed format string paired with the
-    /// variadic `$args` marker is widened to one control sequence per argument:
-    /// `io:format("~p ~p ~p~n", [$args])`. Templates without that pair, or with
-    /// a single argument, are returned unchanged.
-    fn widenFormatTemplate(b: Ast.Builder, template: []const u8, argc: usize) ![]const u8 {
-        if (argc <= 1) return template;
-        if (std.mem.indexOf(u8, template, "$args") == null) return template;
-        const open = std.mem.indexOfScalar(u8, template, '"') orelse return template;
-        const close = std.mem.indexOfScalarPos(u8, template, open + 1, '"') orelse return template;
-        const fmt = template[open + 1 .. close];
-        // Only the one-control-sequence forms (`"~p~n"`, `"~s"`, …) are widened;
-        // a format the annotation already sized for N arguments is left alone.
-        if (std.mem.count(u8, fmt, "~") != 2) return template;
-        const seq_end = std.mem.lastIndexOfScalar(u8, fmt, '~') orelse return template;
-        const seq = fmt[0..seq_end];
-        var out: std.ArrayListUnmanaged(u8) = .empty;
-        try out.appendSlice(b.arena, template[0 .. open + 1]);
-        for (0..argc) |i| {
-            if (i > 0) try out.append(b.arena, ' ');
-            try out.appendSlice(b.arena, seq);
-        }
-        try out.appendSlice(b.arena, fmt[seq_end..]);
-        try out.appendSlice(b.arena, template[close..]);
-        return out.items;
+        return try this.templateNode(b, template, null, cc, error.PrimOpRecvInBuiltinTemplate);
     }
 
     /// A bare call to a std prelude `declare fn` whose `@External.Erlang` symbol
@@ -2137,11 +2150,19 @@ const Emitter = struct {
             try this.concatSegments(b, out, e.binaryOp.rhs.*);
             return;
         }
-        const node = try this.exprNode(b, e);
+        var node = try this.exprNode(b, e);
         // An empty literal contributes nothing (the comptime template builder
         // starts its concat chain from `""`), so it is dropped rather than
         // written as a `""` segment.
         if (node == .lexeme_binary and node.lexeme_binary.len == 0) return;
+        // A `/binary` segment takes a binary only: `"value: " + v` with `v: i32`
+        // raised `badarg`. An operand not provably a string goes through
+        // `'__bp_text'/1` — itself when it is a binary at runtime, its `~p`
+        // rendering otherwise — so an unproven string still concatenates as text.
+        if (!this.isStringExpr(e)) {
+            this.needs_text_helper = true;
+            node = try b.call("__bp_text", &.{node});
+        }
         // A binary segment only takes a "simple" expression bare; anything else
         // — a call, a `case`, an arithmetic term — has to be parenthesised.
         const value: Ast.Expr = switch (node) {
@@ -3574,6 +3595,13 @@ const Emitter = struct {
     /// one (`todo`/`panic`/`print`/`println`/`debug`), `@block`, the lowered
     /// `__bp_*` result/option ops, else a local call.
     fn builtinCallNode(this: *Emitter, b: Ast.Builder, cc: anytype) anyerror!Ast.Expr {
+        // `@print(a, b)` → `'__bp_print'([A, B])`: the helper picks `~ts` for a
+        // binary and `~p` for anything else at runtime (semantics decision 1),
+        // so a string prints as its text on the typed and the comptime path.
+        if (isPrintBuiltin(cc.callee)) {
+            this.needs_print_helper = true;
+            return b.call("__bp_print", &.{try b.list(try this.callArgs(b, null, cc))});
+        }
         if (try this.builtinAnnotationNode(b, cc.callee, cc)) |node| return node;
         if (std.mem.eql(u8, cc.callee, "block")) {
             // `@block { … }` (or `@block(fn)`) is an immediately-applied fun, so

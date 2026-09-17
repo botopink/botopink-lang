@@ -33,7 +33,7 @@ array_repeat(Value, Times) ->
 
 main() ->
     Xs = [1, 2, 3, 4, 5],
-    io:format("~p~n", [array_slice(Xs, 1, 4)]).
+    '__bp_print'([array_slice(Xs, 1, 4)]).
 
 array_slice(Self, Start, End) ->
     case (End =/= undefined) of
@@ -42,6 +42,9 @@ array_slice(Self, Start, End) ->
         false ->
             lists:nthtail(Start, Self)
     end.
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

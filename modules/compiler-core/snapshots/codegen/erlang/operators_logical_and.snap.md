@@ -17,7 +17,10 @@ both(A, B) ->
     (A andalso B).
 
 main() ->
-    io:format("~p~n", [both(true, false)]).
+    '__bp_print'([both(true, false)]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

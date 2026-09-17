@@ -17,7 +17,10 @@ negate(V) ->
     (not V).
 
 main() ->
-    io:format("~p~n", [negate(true)]).
+    '__bp_print'([negate(true)]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

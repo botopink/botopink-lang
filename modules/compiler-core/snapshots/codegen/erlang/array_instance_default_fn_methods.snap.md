@@ -36,17 +36,20 @@ array_repeat(Value, Times) ->
 
 main() ->
     Xs = [1, 2, 3],
-    io:format("~p~n", [iolist_to_binary(lists:join(<<",">>, lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> iolist_to_binary(io_lib:format("~p", [__E])) end end, [0 | Xs])))]),
-    io:format("~p~n", [lists:foldl(fun(__X, __A) -> (fun(A, X) ->
+    '__bp_print'([iolist_to_binary(lists:join(<<",">>, lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> iolist_to_binary(io_lib:format("~p", [__E])) end end, [0 | Xs])))]),
+    '__bp_print'([lists:foldl(fun(__X, __A) -> (fun(A, X) ->
         (A + X)
     end)(__A, __X) end, 0, Xs)]),
-    io:format("~p~n", [(Xs =:= [])]),
-    io:format("~p~n", [array_all(Xs, fun(X) ->
+    '__bp_print'([(Xs =:= [])]),
+    '__bp_print'([array_all(Xs, fun(X) ->
         (X > 0)
     end)]).
 
 array_all(Self, Pred) ->
     (length(lists:filter(Pred, Self)) =:= length(Self)).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -57,7 +60,7 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-<<"0,1,2,3">>
+0,1,2,3
 6
 false
 true

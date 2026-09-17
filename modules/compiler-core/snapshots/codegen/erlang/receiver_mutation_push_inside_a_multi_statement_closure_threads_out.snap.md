@@ -110,17 +110,23 @@ collect(Xs) ->
     Out@1 = (Out ++ [<<"start">>]),
     Out@4 = lists:foldl(fun(X, Out@2) ->
         Doubled = (X * 2),
-        Out@3 = (Out@2 ++ [<<"v", (erlang:integer_to_binary(Doubled))/binary>>]),
+        Out@3 = (Out@2 ++ [<<"v", ('__bp_text'(erlang:integer_to_binary(Doubled)))/binary>>]),
         Out@3
     end, Out@1, Xs),
     Out@4.
 
 main() ->
-    io:format("~p~n", [wireService()]),
-    io:format("~p~n", [iolist_to_binary(lists:join(<<",">>, lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> iolist_to_binary(io_lib:format("~p", [__E])) end end, collect([1, 2, 3]))))]).
+    '__bp_print'([wireService()]),
+    '__bp_print'([iolist_to_binary(lists:join(<<",">>, lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> iolist_to_binary(io_lib:format("~p", [__E])) end end, collect([1, 2, 3]))))]).
 
 wireService() ->
     <<"Service(port: prop(port), name: makestring())">>.
+
+'__bp_text'(Value) when is_binary(Value) -> Value;
+'__bp_text'(Value) -> iolist_to_binary(io_lib:format(<<"~p">>, [Value])).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -131,6 +137,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-<<"Service(port: prop(port), name: makestring())">>
-<<"start,v2,v4,v6">>
+Service(port: prop(port), name: makestring())
+start,v2,v4,v6
 ```

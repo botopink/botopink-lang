@@ -15,7 +15,10 @@ fn main() {
 main() ->
     DeclKind = #{'Record' => <<"Record">>, 'Fn' => <<"Fn">>},
     Decl = #{kind => maps:get('Record', DeclKind), name => <<"Service">>, fields => [], methods => [], returnType => <<"">>, annotations => []},
-    io:format("~p~n", [maps:get(name, Decl)]).
+    '__bp_print'([maps:get(name, Decl)]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -26,5 +29,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-<<"Service">>
+Service
 ```

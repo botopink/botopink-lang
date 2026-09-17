@@ -23,9 +23,9 @@ main() ->
     R1 = 'build_$0'(<<"Sistema iniciado">>),
     R2 = 'build_$1'(<<"Memória alta">>),
     R3 = 'build_$0'(<<"Log replicado">>),
-    io:format("~p~n", [R1]),
-    io:format("~p~n", [R2]),
-    io:format("~p~n", [R3]).
+    '__bp_print'([R1]),
+    '__bp_print'([R2]),
+    '__bp_print'([R3]).
 
 'build_$0'(Name) ->
     Prefix = <<"INFO">>,
@@ -34,6 +34,9 @@ main() ->
 'build_$1'(Name) ->
     Prefix = <<"WARN">>,
     <<Prefix/binary, ": ", Name/binary>>.
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -44,7 +47,7 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-<<"INFO: Sistema iniciado">>
-<<"WARN: Memória alta">>
-<<"INFO: Log replicado">>
+INFO: Sistema iniciado
+WARN: Memória alta
+INFO: Log replicado
 ```

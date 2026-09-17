@@ -23,9 +23,9 @@ main() ->
     Double = 'multiply_$0'(21),
     Triple = 'multiply_$1'(21),
     DoubleAgain = 'multiply_$0'(10),
-    io:format("~p~n", [Double]),
-    io:format("~p~n", [Triple]),
-    io:format("~p~n", [DoubleAgain]).
+    '__bp_print'([Double]),
+    '__bp_print'([Triple]),
+    '__bp_print'([DoubleAgain]).
 
 'multiply_$0'(X) ->
     Factor = 2,
@@ -34,6 +34,9 @@ main() ->
 'multiply_$1'(X) ->
     Factor = 3,
     (X * Factor).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

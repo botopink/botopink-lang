@@ -17,7 +17,7 @@ fn main() {
 main() ->
     S = <<"abcdef">>,
     Mid = string_slice(S, 1, 5),
-    io:format("~p~n", [string:length(Mid)]).
+    '__bp_print'([string:length(Mid)]).
 
 string_slice(Self, Start, End) ->
     case (End =/= undefined) of
@@ -26,6 +26,9 @@ string_slice(Self, Start, End) ->
         false ->
             string:slice(Self, Start)
     end.
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
