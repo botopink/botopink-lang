@@ -1,0 +1,12 @@
+//// Decision 8 §7 — the printed text of tuples: `#(a, b)`, nested strings quoted,
+//// labels never printed.
+
+pub fn main() {
+    val name = "SP";
+    val pop = 12;
+    @print(#(1, "a"));
+    @print([#(1, "a"), #(2, "b")]);
+    @print(#(name, pop));
+    @print(#(#(1, 2), "x"));
+    @print(#(1, "a\"b"));
+}

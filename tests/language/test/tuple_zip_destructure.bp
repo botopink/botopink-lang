@@ -1,0 +1,27 @@
+//// Decision 8 §6 — `zip` produces `#(T, U)`; a tuple is destructured by position.
+
+test "§6 zip pairs elements into tuples" {
+    val xs = [1, 2, 3];
+    val ys = ["a", "b", "c"];
+    var out = "";
+    loop (xs.zip(ys)) { p ->
+        val n = p.0;
+        out = out + p.1 + n.toString();
+    };
+    assert out == "a1b2c3";
+}
+
+test "§6 val #(a, b) destructures by position" {
+    val #(a, b) = #(1, "x");
+    assert a == 1;
+    assert b == "x";
+}
+
+test "§6 destructuring the pairs of a zip" {
+    var sum = 0;
+    loop ([10, 20].zip([1, 2])) { p ->
+        val #(big, small) = p;
+        sum = sum + big * small;
+    };
+    assert sum == 50;
+}
