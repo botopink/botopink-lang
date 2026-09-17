@@ -272,10 +272,12 @@ pub type Target { Node, Typescript, Erlang, Beam, Wasm }
 //
 // ── Host — raw-infra backed functions ────────────────────────────────────
 //
-// Marks a function whose real body lives in the compiler's raw-infra WAT
-// block (unreachable, fd_write, bump allocator — operations bp can't
-// express). The wat backend skips `#[@Host]` fns during codegen; the
-// raw-infra WAT in `wat_runtime.zig` provides the actual implementation.
+// Marks a function whose real body lives in the wat backend's raw-infra
+// prelude (unreachable, fd_write, bump allocator — operations bp can't
+// express). The wat backend skips `#[@Host]` fns during codegen; the prelude
+// in `codegen/wat/wat_prelude.zig` is what supplies such bodies. Nothing in
+// the tree carries `#[@Host]` today: a `#[@Host]` fn with no matching prelude
+// entry emits nothing and is not diagnosed.
 //
 // Usage:
 //   #[@Host] pub fn failRaw(message: i32, param: i32, span: i32) {}

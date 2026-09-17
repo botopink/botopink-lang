@@ -12,16 +12,12 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // Build-time options exposed to modules via @import("build_options").
-    const build_options_opts = b.addOptions();
-    const build_options_mod = build_options_opts.createModule();
-
-    // wasm3 needs libc; on Linux + system glibc 2.42 (Arch as of 2026-06-17)
-    // Zig 0.16's linker errors on the new `.sframe` sections in the system
-    // crt1.o (`unhandled relocation type R_X86_64_PC64`). The workaround is to
-    // use Zig's bundled glibc + crt1, which we opt into by re-resolving the
-    // target with an explicit glibc version pin. Affects only Linux-gnu
-    // builds; macOS / Windows / musl pass through unchanged.
+    // On Linux + system glibc 2.41 or newer (Arch as of 2026-06-17) Zig 0.16's
+    // linker errors on the new `.sframe` sections in the system crt1.o
+    // (`unhandled relocation type R_X86_64_PC64`). The workaround is to use
+    // Zig's bundled glibc + crt1, which we opt into by re-resolving the target
+    // with an explicit glibc version pin. Affects only Linux-gnu builds;
+    // macOS / Windows / musl pass through unchanged.
     const target_for_libc = libcResolvedTarget(b, target);
 
     // ── std prelude ───────────────────────────────────────────────────────────
@@ -94,9 +90,6 @@ pub fn build(b: *std.Build) void {
             .{ .name = "std_prelude", .module = std_prelude },
         },
     });
-    // wasm3 headers are accessed via `@cImport` in
-    core_mod.addImport("build_options", build_options_mod);
-
     // ── compiler-core tests ───────────────────────────────────────────────────
 
     const core_test_mod = b.addModule("botopink_tests", .{
@@ -106,8 +99,6 @@ pub fn build(b: *std.Build) void {
             .{ .name = "std_prelude", .module = std_prelude },
         },
     });
-
-    core_test_mod.addImport("build_options", build_options_mod);
 
     const test_filters = b.option([]const []const u8, "test-filter", "Only run tests matching filter") orelse &.{};
     const core_tests = b.addTest(.{

@@ -1023,8 +1023,8 @@ first three are now enforced by the model, not by discipline:
   no wasm lowering: they only run inside comptime bodies, which the comptime
   pass evaluates on `erl`. A program module that reaches one traps
   (`unreachable ;; comptime-only builtin: <name>`). The single-fn `emitFnWat`
-  hook, the `wat_runtime` prelude it was concatenated with and
-  `Module.externs` were deleted with it — nothing called them.
+  hook, the raw-WAT prelude it was concatenated with and `Module.externs` were
+  deleted with it — nothing called them.
 
 ### runtime
 

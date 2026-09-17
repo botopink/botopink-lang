@@ -967,9 +967,8 @@ test "js: string methods map to native JS names" {
 // `%% prim method not lowered on beam (complex arg)` placeholder. The
 // pre-load convention (`recv → {x, 0}`, `arg → {x, 1}`) is what the
 // `#[@External.Beam("""    {call_ext, 2, {extfunc, string, suffix, 2}}.""")]`
-// annotation on `String.endsWith` in `libs/std/src/primitives.d.bp`
-// expects — same body the wasm3-evaluated template would produce post
-// `delete-persistent-node` front 01.
+// annotation on `String.endsWith` in `libs/std/src/primitives.bp`
+// expects — the same body the comptime-evaluated template produces.
 test "beam template path: endsWith lowers via @External.Beam single-line body" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
