@@ -117,6 +117,36 @@ fn isStringType(t: ?ast.TypeRef) bool {
     return ty == .named and std.mem.eql(u8, ty.named, "string");
 }
 
+/// The numeric kind an expression statically has: an integer, a float, or a
+/// number of unknown precision. Decides `+` (arithmetic vs `'__bp_add'/2`) and
+/// `/` (`div` vs `'/'`). Parity with the erlang backend's `NumKind`.
+const NumKind = enum { int, float, number };
+
+/// The numeric kind a type names (`i32` → int, `f64` → float), or null.
+fn numTypeKind(t: ?ast.TypeRef) ?NumKind {
+    const ty = t orelse return null;
+    if (ty != .named) return null;
+    const n = ty.named;
+    if (n.len < 2) return null;
+    for (n[1..]) |ch| if (!std.ascii.isDigit(ch)) {
+        return if (std.mem.eql(u8, n, "isize") or std.mem.eql(u8, n, "usize")) .int else null;
+    };
+    return switch (n[0]) {
+        'i', 'u' => .int,
+        'f' => .float,
+        else => null,
+    };
+}
+
+/// A float operand makes a float; two integers an integer; any other known
+/// operand a number.
+fn combineNum(a: ?NumKind, b: ?NumKind) ?NumKind {
+    if (a == .float or b == .float) return .float;
+    if (a == .int and b == .int) return .int;
+    if (a != null or b != null) return .number;
+    return null;
+}
+
 /// True for the builtins that print their arguments (`@print`, `@println`,
 /// `@debug`) — all lowered to `'__bp_print'/1`.
 fn isPrintBuiltin(callee: []const u8) bool {
@@ -413,6 +443,7 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
                 count.* += 1;
                 countLocalsInExpr(em, lb.value.*, count);
                 if (em.isStringExpr(&em.count_strings, lb.value.*)) em.count_strings.put(lb.name, {}) catch {};
+                if (em.numKind(&em.count_strings, lb.value.*)) |k| em.count_nums.put(lb.name, k) catch {};
             },
             .localBindDestruct => |lb| {
                 count.* += destructYSlots(lb.pattern);
@@ -420,6 +451,9 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
             },
             .assign => |a| {
                 countLocalsInExpr(em, a.value.*, count);
+                if (a.op == .assign and a.target == .name) {
+                    if (em.numKind(&em.count_strings, a.value.*)) |k| em.count_nums.put(a.target.name, k) catch {};
+                }
                 if (a.target == .fieldAccess) {
                     const fa = a.target.fieldAccess;
                     var read: ast.Expr = undefined;
@@ -543,7 +577,20 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
             },
         },
         // `.function` (lambda) and `.loop` open their own frames — their inner
-        // bindings don't consume this frame's y-slots.
+        // bindings don't consume this frame's y-slots. A two-parameter loop's
+        // written index start that is neither a literal nor a local is staged
+        // with the iterable (`lowerEnumerateIntoX0`).
+        .loop => |lp| if (lp.params.len == 2) if (lp.indexRange) |ir| {
+            if (ir.* == .collection and ir.collection.kind == .range) {
+                const start = ir.collection.kind.range.start.*;
+                const simple = switch (start) {
+                    .literal => true,
+                    .identifier => |id| id.kind == .ident and !em.top_vals.contains(id.kind.ident),
+                    else => false,
+                };
+                if (!simple) countStaging(em, &.{ start, lp.iter.* }, count);
+            }
+        },
         else => {},
     }
 }
@@ -1141,6 +1188,15 @@ const Emitter = struct {
     /// Module-level names that evaluate to a `string`: `fn … -> string` and
     /// top-level `val`s bound to a string expression.
     string_names: std.StringHashMap(void),
+    /// Locals (and numeric-typed params) statically known to hold a number,
+    /// with its kind (`numKind`). Cleared per function; a lambda/loop body
+    /// inherits it, like `string_locals`.
+    num_locals: std.StringHashMap(NumKind),
+    /// `num_locals` as the count pass (`precountLocals`) sees it.
+    count_nums: std.StringHashMap(NumKind),
+    /// Module-level names answering a number: a `fn` declared with a numeric
+    /// return type, a top-level `val` bound to a numeric expression.
+    num_names: std.StringHashMap(NumKind),
 
     /// Lazily-emitted synth helper fns for the inline prim methods that need
     /// register stashing across calls — `xs.at(i)` (bounds-safe `lists:nth`
@@ -1153,6 +1209,7 @@ const Emitter = struct {
     indexOf_helper_name: ?[]const u8 = null,
     stringify_helper_name: ?[]const u8 = null,
     print_helper_name: ?[]const u8 = null,
+    add_helper_name: ?[]const u8 = null,
     eval_helper_name: ?[]const u8 = null,
     /// Owns the parsed `primitives.bp` prelude (and every key string built for
     /// the tables below) for the whole emission.
@@ -1173,6 +1230,13 @@ const Emitter = struct {
     /// The outer names a `lists:foldl` loop fun threads as its accumulator
     /// while its body is emitted — `break`/`continue` return them.
     fold_group: ?[]const []const u8 = null,
+    /// Local closures (`val emit = { w -> out = out + w; }`) whose body
+    /// reassigns names of the enclosing frame, keyed by the closure name,
+    /// valued by those names (owned by `prelude_arena`). Such a closure takes
+    /// the names as an extra argument after its own and answers their new
+    /// values (`lowerMutatingClosure`); a statement-position call rebinds them
+    /// (`closureMutation`). Cleared per function.
+    mutating_closures: std.StringHashMap([]const []const u8),
     join_helper_name: ?[]const u8 = null,
 
     /// Target type and methods of an `implement`/`extend` block.
@@ -1206,6 +1270,10 @@ const Emitter = struct {
             .string_locals = std.StringHashMap(void).init(alloc),
             .count_strings = std.StringHashMap(void).init(alloc),
             .string_names = std.StringHashMap(void).init(alloc),
+            .num_locals = std.StringHashMap(NumKind).init(alloc),
+            .count_nums = std.StringHashMap(NumKind).init(alloc),
+            .num_names = std.StringHashMap(NumKind).init(alloc),
+            .mutating_closures = std.StringHashMap([]const []const u8).init(alloc),
         };
     }
 
@@ -1250,6 +1318,11 @@ const Emitter = struct {
         self.string_locals.deinit();
         self.count_strings.deinit();
         self.string_names.deinit();
+        self.num_locals.deinit();
+        self.count_nums.deinit();
+        self.num_names.deinit();
+        self.mutating_closures.deinit();
+        if (self.add_helper_name) |n| self.alloc.free(n);
         if (self.print_helper_name) |n| self.alloc.free(n);
         if (self.join_helper_name) |n| self.alloc.free(n);
         if (self.eval_helper_name) |n| self.alloc.free(n);
@@ -1644,6 +1717,8 @@ const Emitter = struct {
         self.cur_arity = arity;
         self.min_live = 0;
         self.string_locals.clearRetainingCapacity();
+        self.num_locals.clearRetainingCapacity();
+        self.mutating_closures.clearRetainingCapacity();
     }
 
     /// Record the string-typed parameters of the function about to be lowered,
@@ -1651,6 +1726,7 @@ const Emitter = struct {
     fn noteStringParams(self: *Emitter, params: []const ast.Param) !void {
         for (params) |p| {
             if (isStringType(p.typeRef)) try self.string_locals.put(p.name, {});
+            if (numTypeKind(p.typeRef)) |k| try self.num_locals.put(p.name, k);
         }
     }
 
@@ -1659,11 +1735,17 @@ const Emitter = struct {
     /// erlang backend's `collectStringNames`.
     fn collectStringNames(self: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| switch (decl) {
-            .@"fn" => |f| if (isStringType(f.returnType)) try self.string_names.put(f.name, {}),
+            .@"fn" => |f| {
+                if (isStringType(f.returnType)) try self.string_names.put(f.name, {});
+                if (numTypeKind(f.returnType)) |k| try self.num_names.put(f.name, k);
+            },
             else => {},
         };
         for (program.decls) |decl| switch (decl) {
-            .val => |v| if (self.isStringExpr(&self.string_locals, v.value.*)) try self.string_names.put(v.name, {}),
+            .val => |v| {
+                if (self.isStringExpr(&self.string_locals, v.value.*)) try self.string_names.put(v.name, {});
+                if (self.numKind(&self.string_locals, v.value.*)) |k| try self.num_names.put(v.name, k);
+            },
             else => {},
         };
     }
@@ -1691,6 +1773,59 @@ const Emitter = struct {
             },
             else => false,
         };
+    }
+
+    /// The numeric kind `e` statically has, or null when it cannot be proven
+    /// (`.number` when it is a number of unknown precision): a number literal
+    /// (a float when it has a `.` or an exponent), a numeric local/parameter/
+    /// module name, a primitive member read (`s.length`), a call to a `fn`
+    /// declared numeric, and arithmetic over them (a float operand makes a
+    /// float; `%` is an integer). `strings` names the pass asking — the
+    /// emission's `string_locals` or the count pass's `count_strings` — and
+    /// selects the matching numeric set. Mirrors the erlang backend.
+    fn numKind(self: *const Emitter, strings: *const std.StringHashMap(void), e: ast.Expr) ?NumKind {
+        const nums = if (strings == &self.count_strings) &self.count_nums else &self.num_locals;
+        return switch (e) {
+            .literal => |lit| switch (lit.kind) {
+                .numberLit => |n| if (std.mem.startsWith(u8, n, "0x") or std.mem.startsWith(u8, n, "0b") or std.mem.startsWith(u8, n, "0o"))
+                    .int
+                else if (std.mem.indexOfAny(u8, n, ".eE") != null) .float else .int,
+                else => null,
+            },
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| nums.get(n) orelse self.num_names.get(n),
+                .identAccess => |ia| if (self.instanceLowering(id.loc, ia.receiver.*)) |il| switch (il) {
+                    .prim => .int,
+                    .record => null,
+                } else null,
+                else => null,
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| self.numKind(strings, inner.*),
+                else => null,
+            },
+            .unaryOp => |un| if (un.op == .neg) self.numKind(strings, un.expr.*) else null,
+            .binaryOp => |bin| switch (bin.op) {
+                .add => if (self.isStringExpr(strings, e)) null else combineNum(self.numKind(strings, bin.lhs.*), self.numKind(strings, bin.rhs.*)),
+                // `-`, `*` and `/` only ever answer a number.
+                .sub, .mul, .div => combineNum(self.numKind(strings, bin.lhs.*), self.numKind(strings, bin.rhs.*)) orelse .number,
+                .mod => .int,
+                else => null,
+            },
+            .call => |c| switch (c.kind) {
+                .call => |cc| if (cc.receiver == null and !cc.is_builtin) self.num_names.get(cc.callee) else null,
+                else => null,
+            },
+            else => null,
+        };
+    }
+
+    /// True when `a + b` is neither a proven string concatenation nor proven
+    /// arithmetic, so it dispatches at run time through `'__bp_add'/2`.
+    fn addIsDynamic(self: *const Emitter, strings: *const std.StringHashMap(void), e: ast.Expr) bool {
+        if (e != .binaryOp or e.binaryOp.op != .add) return false;
+        if (self.isStringExpr(strings, e)) return false;
+        return self.numKind(strings, e.binaryOp.lhs.*) == null and self.numKind(strings, e.binaryOp.rhs.*) == null;
     }
 
     /// First x-register free for staging an operand.
@@ -1772,6 +1907,9 @@ const Emitter = struct {
         self.count_strings.clearRetainingCapacity();
         var it = self.string_locals.keyIterator();
         while (it.next()) |k| self.count_strings.put(k.*, {}) catch {};
+        self.count_nums.clearRetainingCapacity();
+        var nit = self.num_locals.iterator();
+        while (nit.next()) |kv| self.count_nums.put(kv.key_ptr.*, kv.value_ptr.*) catch {};
     }
 
     /// `precountLocals` for a bare expression (a top-level `val`'s value).
@@ -2244,7 +2382,14 @@ const Emitter = struct {
                 .tryCatch => |tc| try self.lowerTryCatch(tc),
             },
             .binding => |b| switch (b.kind) {
-                .localBind => |lb| try self.emitLocalBind(lb.name, lb.value.*),
+                .localBind => |lb| {
+                    // A closure reassigning names of this frame threads them.
+                    if (lb.value.* == .function) {
+                        const fe = lb.value.function;
+                        if (try self.lowerMutatingClosure(lb.name, fe.kind.params, fe.kind.body)) return;
+                    }
+                    try self.emitLocalBind(lb.name, lb.value.*);
+                },
                 .assign => |a| try self.emitAssign(a),
                 .localBindDestruct => |lb| try self.emitDestructBind(lb.pattern, lb.value.*),
             },
@@ -2252,14 +2397,24 @@ const Emitter = struct {
             // threads them through `lists:foldl` (a fun cannot write its
             // caller's stack slots).
             .loop => |lp| {
-                if (lp.params.len == 1 and lp.indexRange == null and !lp.awaitLoop and !hasYieldOrBreakValue(lp.body)) {
-                    if (try self.lowerMutatingFold(lp.params[0], lp.body, lp.iter.*)) return;
+                if (!lp.awaitLoop and !hasYieldOrBreakValue(lp.body)) {
+                    // One parameter, or two — `loop (xs) { x, i -> … }` /
+                    // `loop (xs, 1..) { … }` — whose second one is the index.
+                    if (lp.params.len == 1 and lp.indexRange == null) {
+                        if (try self.lowerMutatingFold(.{ .params = &.{lp.params[0]} }, lp.body, lp.iter.*, null)) return;
+                    } else if (lp.params.len == 2) {
+                        if (try self.lowerMutatingFold(.{ .pair = .{ .item = lp.params[0], .index = lp.params[1] } }, lp.body, lp.iter.*, lp.indexRange)) return;
+                    }
                 }
                 try self.lowerExprIntoX0(stmt.expr);
             },
             .call => {
+                if (self.closureMutation(stmt.expr)) |cm| {
+                    try self.lowerClosureMutationCall(cm);
+                    return;
+                }
                 if (self.forEachLambda(stmt.expr)) |each| {
-                    if (try self.lowerMutatingFold(each.param, each.body, each.recv.*)) return;
+                    if (try self.lowerMutatingFold(.{ .params = &.{each.param} }, each.body, each.recv.*, null)) return;
                 }
                 try self.lowerExprIntoX0(stmt.expr);
                 // `out.push(x)` on a local array rebinds it: the call's value
@@ -2348,6 +2503,7 @@ const Emitter = struct {
     fn emitLocalBind(self: *Emitter, name: []const u8, value: ast.Expr) !void {
         try self.lowerExprIntoX0(value);
         if (self.isStringExpr(&self.string_locals, value)) try self.string_locals.put(name, {});
+        if (self.numKind(&self.string_locals, value)) |k| try self.num_locals.put(name, k);
         const y_idx = self.next_y;
         self.next_y += 1;
         try self.reg_map.put(name, .{ .y = y_idx });
@@ -2367,6 +2523,7 @@ const Emitter = struct {
                     .assign => {
                         try self.lowerExprIntoX0(a.value.*);
                         try beamEmitter.writeMoveOp(self.out, Op.xr(0), reg.dest());
+                        if (self.numKind(&self.string_locals, a.value.*)) |k| try self.num_locals.put(name, k);
                     },
                     .plusAssign => {
                         if (self.string_locals.contains(name) or self.isStringExpr(&self.string_locals, a.value.*)) {
@@ -2376,6 +2533,15 @@ const Emitter = struct {
                             return;
                         }
                         try self.lowerExprIntoX0(a.value.*);
+                        // A name of unknown type plus an unproven value
+                        // dispatches at run time.
+                        if (!self.num_locals.contains(name) and self.numKind(&self.string_locals, a.value.*) == null) {
+                            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1));
+                            try beamEmitter.writeMoveOp(self.out, reg.operand(), Dst.xr(0));
+                            try self.callAddHelper();
+                            try beamEmitter.writeMoveOp(self.out, Op.xr(0), reg.dest());
+                            return;
+                        }
                         const scratch = self.scratchBase();
                         try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch));
                         try beamEmitter.writeGcBif(self.out, .add, scratch + 1, &.{ reg.operand(), Op.xr(scratch) }, Dst.xr(0));
@@ -2838,6 +3004,14 @@ const Emitter = struct {
                 .add => if (self.isStringExpr(&self.string_locals, e)) {
                     try self.lowerStringConcat(e);
                     if (dest != 0) try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(dest));
+                } else if (self.addIsDynamic(&self.string_locals, e)) {
+                    // Neither operand is provably a number or a string (a
+                    // lambda's `{ x, y -> x + y }`): two binaries concatenate
+                    // at run time, anything else adds.
+                    const st = try self.stageOperands(&.{ bin.lhs.*, bin.rhs.* }, &[_]ast.TrailingLambda{});
+                    try self.emitParallelMove(st.slice(), &.{ 0, 1 });
+                    try self.callAddHelper();
+                    if (dest != 0) try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(dest));
                 } else try self.lowerArithGcBif(bin, dest),
                 .sub, .mul, .div, .mod => try self.lowerArithGcBif(bin, dest),
                 .lt, .gt, .lte, .gte, .eq, .ne => try self.lowerCmpAsValue(bin, dest),
@@ -2855,7 +3029,10 @@ const Emitter = struct {
             .add => .add,
             .sub => .sub,
             .mul => .mul,
-            .div => .div_,
+            // `div` is integer division and raises `badarith` on a float; an
+            // operand known to be a float takes `'/'`.
+            .div => if (self.numKind(&self.string_locals, bin.lhs.*) == .float or
+                self.numKind(&self.string_locals, bin.rhs.*) == .float) .fdiv else .div_,
             .mod => .rem,
             else => unreachable,
         };
@@ -4116,6 +4293,50 @@ const Emitter = struct {
     /// `io_lib:format` fallback since BEAM's `iolist_to_binary` accepts
     /// nested iolists either way. Cached on the emitter so a module joining
     /// several arrays shares one stringify helper.
+    /// Call `'__bp_add'/2` on `{x, 0}` and `{x, 1}`; the sum lands in `{x, 0}`.
+    fn callAddHelper(self: *Emitter) anyerror!void {
+        const name = try self.ensureAddHelper();
+        const labels = try self.fnLabelsFor(name, 2);
+        try beamEmitter.writeCall(self.out, .normal, 2, .{ .local = labels.entry }, 0);
+    }
+
+    /// `'__bp_add'(A, B)`: `+` on operands of unknown type — two binaries
+    /// concatenate (`iolist_to_binary([A, B])`), anything else adds. Parity
+    /// with the erlang backend's helper of the same name.
+    fn ensureAddHelper(self: *Emitter) anyerror![]const u8 {
+        if (self.add_helper_name) |n| return n;
+        const name = try self.alloc.dupe(u8, "'__bp_add'");
+        try self.reserveFn(name, 2);
+        const labels = try self.fnLabelsFor(name, 2);
+        var buf: std.Io.Writer.Allocating = .init(self.alloc);
+        const saved_out = self.out;
+        self.out = &buf.writer;
+        const w = self.out;
+
+        const arith_l = self.allocLabel();
+        try beamEmitter.writeBlankLine(w);
+        try beamEmitter.writeFunctionHeader(w, name, 2, labels.entry);
+        try beamEmitter.writeLabel(w, labels.func_info);
+        try beamEmitter.writeLine(w, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(w, self.module_name, name, 2);
+        try beamEmitter.writeLabel(w, labels.entry);
+        try beamEmitter.writeTest(w, .is_binary, arith_l, &.{Op.xr(0)});
+        try beamEmitter.writeTest(w, .is_binary, arith_l, &.{Op.xr(1)});
+        try beamEmitter.writeTestHeap(w, 4, 2);
+        try beamEmitter.writePutList(w, Op.xr(1), Op.nil, Dst.xr(1));
+        try beamEmitter.writePutList(w, Op.xr(0), Op.xr(1), Dst.xr(0));
+        try beamEmitter.writeCall(w, .only, 1, .{ .ext = .{ .module = "erlang", .function = "iolist_to_binary" } }, 0);
+        try beamEmitter.writeLabel(w, arith_l);
+        try beamEmitter.writeGcBif(w, .add, 2, &.{ Op.xr(0), Op.xr(1) }, Dst.xr(0));
+        try beamEmitter.writeReturn(w);
+
+        self.out = saved_out;
+        try self.deferred_lambdas.append(self.alloc, try buf.toOwnedSlice());
+        buf.deinit();
+        self.add_helper_name = name;
+        return name;
+    }
+
     fn ensureStringifyHelper(self: *Emitter) anyerror![]const u8 {
         if (self.stringify_helper_name) |n| return n;
         const name = try self.alloc.dupe(u8, "'-bp_stringify-'");
@@ -4663,7 +4884,7 @@ const Emitter = struct {
                     break :blk false;
                 },
             },
-            .binaryOp => |bin| (bin.op == .add and self.isStringExpr(strings, e)) or
+            .binaryOp => |bin| (bin.op == .add and (self.isStringExpr(strings, e) or self.addIsDynamic(strings, e))) or
                 self.exprMayCall(strings, bin.lhs.*) or self.exprMayCall(strings, bin.rhs.*),
             .unaryOp => |un| self.exprMayCall(strings, un.expr.*),
             .function => false,
@@ -5497,7 +5718,9 @@ const Emitter = struct {
             },
             .loop => |lp| try self.collectMutations(lp.body, lp.params, out),
             .call => {
-                if (self.receiverMutation(s.expr) != null) {
+                if (self.closureMutation(s.expr)) |cm| {
+                    for (cm.names) |n| try self.addMutation(n, shadowed, out);
+                } else if (self.receiverMutation(s.expr) != null) {
                     const name = s.expr.call.kind.call.receiver.?.*.identifier.kind.ident;
                     try self.addMutation(name, shadowed, out);
                 } else if (self.forEachLambda(s.expr)) |each| {
@@ -5515,49 +5738,87 @@ const Emitter = struct {
         try out.append(self.alloc, name);
     }
 
-    /// The group of threaded names as one value in `{x, 0}`: the value itself,
-    /// or a tuple of them.
-    fn emitGroupIntoX0(self: *Emitter, names: []const []const u8) anyerror!void {
+    /// The group of threaded names as one value in `{x, dest}`: the value
+    /// itself, or a tuple of them (`live` x-registers survive its `test_heap`).
+    fn emitGroupInto(self: *Emitter, names: []const []const u8, dest: u32, live: u32) anyerror!void {
         if (names.len == 1) {
-            try beamEmitter.writeMoveOp(self.out, self.reg_map.get(names[0]).?.operand(), Dst.xr(0));
+            try beamEmitter.writeMoveOp(self.out, self.reg_map.get(names[0]).?.operand(), Dst.xr(dest));
             return;
         }
         var elems: [max_staged]Op = undefined;
         for (names, 0..) |n, i| elems[i] = self.reg_map.get(n).?.operand();
-        try beamEmitter.writeTestHeap(self.out, names.len + 1, 0);
-        try beamEmitter.writePutTuple2(self.out, Dst.xr(0), elems[0..names.len]);
+        try beamEmitter.writeTestHeap(self.out, names.len + 1, live);
+        try beamEmitter.writePutTuple2(self.out, Dst.xr(dest), elems[0..names.len]);
     }
 
-    /// `Group = lists:foldl(fun(Param, Group) -> Body, Group end, Group, Iter)`
-    /// for a statement loop over `iter` whose `body` reassigns outer names.
-    /// Returns false (nothing emitted) when it reassigns none.
-    fn lowerMutatingFold(self: *Emitter, param: []const u8, body: []const ast.Stmt, iter: ast.Expr) anyerror!bool {
-        var names: std.ArrayListUnmanaged([]const u8) = .empty;
-        defer names.deinit(self.alloc);
-        try self.collectMutations(body, &.{param}, &names);
-        if (names.items.len == 0 or names.items.len > max_staged) return false;
+    fn emitGroupIntoX0(self: *Emitter, names: []const []const u8) anyerror!void {
+        try self.emitGroupInto(names, 0, 0);
+    }
 
+    /// Store the group a threading fun answered (in `{x, 0}`) back into the
+    /// slots of `names` in this frame.
+    fn unpackGroupFromX0(self: *Emitter, names: []const []const u8) anyerror!void {
+        if (names.len == 1) {
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), self.reg_map.get(names[0]).?.dest());
+            return;
+        }
+        for (names, 0..) |n, i| {
+            try beamEmitter.writeBif(self.out, "element", 0, &.{ Op.int(i + 1), Op.xr(0) }, Dst.xr(1));
+            try beamEmitter.writeMoveOp(self.out, Op.xr(1), self.reg_map.get(n).?.dest());
+        }
+    }
+
+    /// How a threading fun receives its own arguments: plain parameters, or
+    /// the one `{Index, Item}` pair of a `lists:enumerate/2` element, bound to
+    /// the two loop names.
+    const GroupFunHead = union(enum) {
+        params: []const []const u8,
+        pair: struct { item: []const u8, index: []const u8 },
+
+        fn names(h: GroupFunHead, buf: *[2][]const u8) []const []const u8 {
+            return switch (h) {
+                .params => |p| p,
+                .pair => |p| blk: {
+                    buf.* = .{ p.item, p.index };
+                    break :blk buf[0..2];
+                },
+            };
+        }
+    };
+
+    /// Emit, into `deferred_lambdas`, the fun `(Head…, Group, Env…)` whose body
+    /// runs with `names` bound from `Group` and answers the group — so do its
+    /// `break`/`continue`. `env_ops` receives the enclosing frame's operand for
+    /// each captured name (the `make_fun3` free-variable list). Returns the
+    /// fun's entry label.
+    fn emitGroupFun(
+        self: *Emitter,
+        head: GroupFunHead,
+        names: []const []const u8,
+        body: []const ast.Stmt,
+        loop_body: bool,
+        env_ops: *std.ArrayListUnmanaged(Op),
+    ) anyerror!u32 {
         const idx = self.lambda_count;
         self.lambda_count += 1;
 
+        var head_buf: [2][]const u8 = undefined;
+        const head_names = head.names(&head_buf);
         var shadow: std.ArrayListUnmanaged([]const u8) = .empty;
         defer shadow.deinit(self.alloc);
-        try shadow.append(self.alloc, param);
-        try shadow.appendSlice(self.alloc, names.items);
+        try shadow.appendSlice(self.alloc, head_names);
+        try shadow.appendSlice(self.alloc, names);
         var env_names: std.ArrayListUnmanaged([]const u8) = .empty;
         defer env_names.deinit(self.alloc);
-        var env_ops: std.ArrayListUnmanaged(Op) = .empty;
-        defer env_ops.deinit(self.alloc);
-        try self.closureEnv(body, shadow.items, &env_names, &env_ops);
-
-        // The caller's slots for the group, read before the fun's frame
-        // replaces `reg_map`.
-        var outer: [max_staged]Reg = undefined;
-        for (names.items, 0..) |n, i| outer[i] = self.reg_map.get(n).?;
+        try self.closureEnv(body, shadow.items, &env_names, env_ops);
 
         var all_params: std.ArrayListUnmanaged([]const u8) = .empty;
         defer all_params.deinit(self.alloc);
-        try all_params.append(self.alloc, param);
+        switch (head) {
+            .params => |p| try all_params.appendSlice(self.alloc, p),
+            .pair => try all_params.append(self.alloc, ""),
+        }
+        const group_y: u32 = @intCast(all_params.items.len);
         try all_params.append(self.alloc, "");
         try all_params.appendSlice(self.alloc, env_names.items);
         const arity: u32 = @intCast(all_params.items.len);
@@ -5567,89 +5828,174 @@ const Emitter = struct {
         try self.reserveFn(fun_name, arity);
         const labels = try self.fnLabelsFor(fun_name, arity);
 
-        {
-            var lam_buf: std.Io.Writer.Allocating = .init(self.alloc);
-            const saved_out = self.out;
-            self.out = &lam_buf.writer;
-            const saved_reg_map = self.reg_map;
-            self.reg_map = std.StringHashMap(Reg).init(self.alloc);
-            const saved_y = self.next_y;
-            const saved_num_y = self.num_y;
-            const saved_arity = self.cur_arity;
-            const saved_loop_flag = self.in_loop_lambda;
-            const saved_min_live = self.min_live;
-            const saved_group = self.fold_group;
-            defer {
-                self.reg_map.deinit();
-                self.reg_map = saved_reg_map;
-                self.next_y = saved_y;
-                self.num_y = saved_num_y;
-                self.cur_arity = saved_arity;
-                self.in_loop_lambda = saved_loop_flag;
-                self.min_live = saved_min_live;
-                self.fold_group = saved_group;
-                self.out = saved_out;
-            }
-            self.min_live = 0;
-            self.next_y = 0;
-            self.cur_arity = arity;
-            const unpack: u32 = if (names.items.len > 1) @intCast(names.items.len) else 0;
-            self.num_y = arity + unpack + self.precountLocals(body);
-            self.in_loop_lambda = true;
-            self.fold_group = names.items;
-            try self.bindParams(all_params.items);
-
-            try beamEmitter.writeBlankLine(self.out);
-            try beamEmitter.writeFunctionHeader(self.out, fun_name, arity, labels.entry);
-            try beamEmitter.writeLabel(self.out, labels.func_info);
-            try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
-            try beamEmitter.writeFuncInfo(self.out, self.module_name, fun_name, arity);
-            try beamEmitter.writeLabel(self.out, labels.entry);
-            try self.emitFrame(arity);
-            try self.emitParamSpill(arity);
-            // The accumulator arrived in `y1`.
-            if (names.items.len == 1) {
-                try self.reg_map.put(names.items[0], .{ .y = 1 });
-            } else {
-                for (names.items, 0..) |n, i| {
-                    try beamEmitter.writeBif(self.out, "element", 0, &.{ Op.int(i + 1), Op.yr(1) }, Dst.xr(0));
-                    const y = self.next_y;
-                    self.next_y += 1;
-                    try self.reg_map.put(n, .{ .y = y });
-                    try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y));
-                }
-            }
-            for (body) |stmt| try self.emitStmt(stmt);
-            if (!bodyExits(body)) {
-                try self.emitGroupIntoX0(names.items);
-                try self.emitReturn();
-            }
-            try self.deferred_lambdas.append(self.alloc, try lam_buf.toOwnedSlice());
-            lam_buf.deinit();
+        var lam_buf: std.Io.Writer.Allocating = .init(self.alloc);
+        const saved_out = self.out;
+        self.out = &lam_buf.writer;
+        const saved_reg_map = self.reg_map;
+        self.reg_map = std.StringHashMap(Reg).init(self.alloc);
+        const saved_y = self.next_y;
+        const saved_num_y = self.num_y;
+        const saved_arity = self.cur_arity;
+        const saved_loop_flag = self.in_loop_lambda;
+        const saved_min_live = self.min_live;
+        const saved_group = self.fold_group;
+        defer {
+            self.reg_map.deinit();
+            self.reg_map = saved_reg_map;
+            self.next_y = saved_y;
+            self.num_y = saved_num_y;
+            self.cur_arity = saved_arity;
+            self.in_loop_lambda = saved_loop_flag;
+            self.min_live = saved_min_live;
+            self.fold_group = saved_group;
+            self.out = saved_out;
         }
+        self.min_live = 0;
+        self.next_y = 0;
+        self.cur_arity = arity;
+        const unpack: u32 = if (names.len > 1) @intCast(names.len) else 0;
+        const pair_slots: u32 = if (head == .pair) 2 else 0;
+        self.num_y = arity + unpack + pair_slots + self.precountLocals(body);
+        self.in_loop_lambda = loop_body;
+        self.fold_group = names;
+        try self.bindParams(all_params.items);
+
+        try beamEmitter.writeBlankLine(self.out);
+        try beamEmitter.writeFunctionHeader(self.out, fun_name, arity, labels.entry);
+        try beamEmitter.writeLabel(self.out, labels.func_info);
+        try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(self.out, self.module_name, fun_name, arity);
+        try beamEmitter.writeLabel(self.out, labels.entry);
+        try self.emitFrame(arity);
+        try self.emitParamSpill(arity);
+        // `y0` holds the `{Index, Item}` pair: `element/2` is a guard BIF, so
+        // reading it frees no register.
+        if (head == .pair) {
+            for ([_]struct { name: []const u8, pos: i64 }{ .{ .name = head.pair.index, .pos = 1 }, .{ .name = head.pair.item, .pos = 2 } }) |b| {
+                try beamEmitter.writeBif(self.out, "element", 0, &.{ Op.int(b.pos), Op.yr(0) }, Dst.xr(0));
+                const y = self.next_y;
+                self.next_y += 1;
+                try self.reg_map.put(b.name, .{ .y = y });
+                try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y));
+            }
+        }
+        if (names.len == 1) {
+            try self.reg_map.put(names[0], .{ .y = group_y });
+        } else {
+            for (names, 0..) |n, i| {
+                try beamEmitter.writeBif(self.out, "element", 0, &.{ Op.int(i + 1), Op.yr(group_y) }, Dst.xr(0));
+                const y = self.next_y;
+                self.next_y += 1;
+                try self.reg_map.put(n, .{ .y = y });
+                try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y));
+            }
+        }
+        for (body) |stmt| try self.emitStmt(stmt);
+        if (!bodyExits(body)) {
+            try self.emitGroupIntoX0(names);
+            try self.emitReturn();
+        }
+        try self.deferred_lambdas.append(self.alloc, try lam_buf.toOwnedSlice());
+        lam_buf.deinit();
+        return labels.entry;
+    }
+
+    /// `Group = lists:foldl(fun(Param, Group) -> Body, Group end, Group, Iter)`
+    /// for a statement loop over `iter` whose `body` reassigns outer names.
+    /// A `.pair` head walks `lists:enumerate(Start, Iter)` (`index_range` gives
+    /// the start, 0 without one). Returns false (nothing emitted) when the body
+    /// reassigns none.
+    fn lowerMutatingFold(self: *Emitter, head: GroupFunHead, body: []const ast.Stmt, iter: ast.Expr, index_range: ?*const ast.Expr) anyerror!bool {
+        var names: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer names.deinit(self.alloc);
+        var head_buf: [2][]const u8 = undefined;
+        try self.collectMutations(body, head.names(&head_buf), &names);
+        if (names.items.len == 0 or names.items.len > max_staged) return false;
+
+        var env_ops: std.ArrayListUnmanaged(Op) = .empty;
+        defer env_ops.deinit(self.alloc);
+        const entry = try self.emitGroupFun(head, names.items, body, true, &env_ops);
 
         // lists:foldl(Fun, Group, List)
-        try self.lowerExprIntoX0(iter);
-        if (names.items.len == 1) {
-            try beamEmitter.writeMoveOp(self.out, outer[0].operand(), Dst.xr(1));
+        if (head == .pair) {
+            try self.lowerEnumerateIntoX0(iter, index_range);
         } else {
-            var elems: [max_staged]Op = undefined;
-            for (0..names.items.len) |i| elems[i] = outer[i].operand();
-            try beamEmitter.writeTestHeap(self.out, names.items.len + 1, 1);
-            try beamEmitter.writePutTuple2(self.out, Dst.xr(1), elems[0..names.items.len]);
+            try self.lowerExprIntoX0(iter);
         }
+        try self.emitGroupInto(names.items, 1, 1);
         try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(2));
-        try self.emitMakeFun(labels.entry, 3, env_ops.items);
+        try self.emitMakeFun(entry, 3, env_ops.items);
         try beamEmitter.writeCall(self.out, .normal, 3, .{ .ext = .{ .module = "lists", .function = "foldl" } }, 0);
-        if (names.items.len == 1) {
-            try beamEmitter.writeMoveOp(self.out, Op.xr(0), outer[0].dest());
-        } else {
-            for (0..names.items.len) |i| {
-                try beamEmitter.writeBif(self.out, "element", 0, &.{ Op.int(i + 1), Op.xr(0) }, Dst.xr(1));
-                try beamEmitter.writeMoveOp(self.out, Op.xr(1), outer[i].dest());
-            }
-        }
+        try self.unpackGroupFromX0(names.items);
         return true;
+    }
+
+    /// `lists:enumerate(Start, Iter)` into `{x, 0}`: the `{Index, Item}` pairs
+    /// of a two-parameter loop. `index_range` is the written `Start..` (null
+    /// for `loop (xs) { x, i -> … }`, which counts from 0).
+    fn lowerEnumerateIntoX0(self: *Emitter, iter: ast.Expr, index_range: ?*const ast.Expr) anyerror!void {
+        const start_expr: ?ast.Expr = if (index_range) |ir|
+            (if (ir.* == .collection and ir.collection.kind == .range) ir.collection.kind.range.start.* else null)
+        else
+            null;
+        const simple_start: ?Op = if (start_expr) |se| self.simpleTerm(se) else Op.int(0);
+        if (simple_start) |start| {
+            try self.lowerExprIntoX0(iter);
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1));
+            try beamEmitter.writeMoveOp(self.out, start, Dst.xr(0));
+        } else {
+            const st = try self.stageOperands(&.{ start_expr.?, iter }, &[_]ast.TrailingLambda{});
+            try self.emitParallelMove(st.slice(), &.{ 0, 1 });
+        }
+        try beamEmitter.writeCall(self.out, .normal, 2, .{ .ext = .{ .module = "lists", .function = "enumerate" } }, 0);
+    }
+
+    /// A statement-position call of a local closure recorded in
+    /// `mutating_closures`: the call and the names it threads, or null.
+    const ClosureMutation = struct { cc: @FieldType(@FieldType(ast.CallExprOf(.untyped), "kind"), "call"), names: []const []const u8 };
+
+    fn closureMutation(self: *const Emitter, e: ast.Expr) ?ClosureMutation {
+        if (e != .call or e.call.kind != .call) return null;
+        const cc = e.call.kind.call;
+        if (cc.is_builtin or cc.receiver != null or !self.reg_map.contains(cc.callee)) return null;
+        const names = self.mutating_closures.get(cc.callee) orelse return null;
+        return .{ .cc = cc, .names = names };
+    }
+
+    /// `val name = { params -> body }` whose body reassigns names of this frame:
+    /// the fun takes those names as one extra argument after its own and
+    /// answers their new values (a fun cannot write its caller's stack slots).
+    /// Binds `name` like any local. Returns false (nothing emitted) when the
+    /// body reassigns none.
+    fn lowerMutatingClosure(self: *Emitter, name: []const u8, params: []const []const u8, body: []const ast.Stmt) anyerror!bool {
+        if (self.reg_map.contains(name)) return false;
+        var names: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer names.deinit(self.alloc);
+        try self.collectMutations(body, params, &names);
+        if (names.items.len == 0 or names.items.len > max_staged or params.len + 1 >= max_staged) return false;
+
+        var env_ops: std.ArrayListUnmanaged(Op) = .empty;
+        defer env_ops.deinit(self.alloc);
+        const entry = try self.emitGroupFun(.{ .params = params }, names.items, body, false, &env_ops);
+        try self.emitMakeFun(entry, 0, env_ops.items);
+
+        const y_idx = self.next_y;
+        self.next_y += 1;
+        try self.reg_map.put(name, .{ .y = y_idx });
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y_idx));
+        try self.mutating_closures.put(name, try self.prelude_arena.allocator().dupe([]const u8, names.items));
+        return true;
+    }
+
+    /// `emit(a…)` on a closure `lowerMutatingClosure` lowered: pass the group
+    /// after the arguments, apply the fun, store what it answers back.
+    fn lowerClosureMutationCall(self: *Emitter, cm: ClosureMutation) anyerror!void {
+        const arity: u32 = @intCast(cm.cc.args.len + cm.cc.trailing.len);
+        try self.materializeCallArgs(cm.cc.args, cm.cc.trailing);
+        try self.emitGroupInto(cm.names, arity, arity);
+        try beamEmitter.writeMoveOp(self.out, self.reg_map.get(cm.cc.callee).?.operand(), Dst.xr(arity + 1));
+        try beamEmitter.writeCallFun(self.out, arity + 1);
+        try self.unpackGroupFromX0(cm.names);
     }
 
     fn lowerLoop(self: *Emitter, lp: anytype) anyerror!void {
@@ -5657,7 +6003,8 @@ const Emitter = struct {
         const filter_map = filterMapIf(lp);
         // `loop (xs, 0..) { item, i -> … }` iterates `lists:enumerate(Start, Xs)`:
         // the fun takes one `{Index, Item}` pair and binds both names from it.
-        const indexed = lp.indexRange != null and lp.params.len == 2;
+        // Without a written range (`loop (xs) { item, i -> … }`) it counts from 0.
+        const indexed = lp.params.len == 2;
 
         const idx = self.lambda_count;
         self.lambda_count += 1;
@@ -5749,16 +6096,10 @@ const Emitter = struct {
         // x-register beforehand would lose it (`lists:foreach([_],[_])`). Instead
         // the list lands in `x1` (and stays in `x0` too), so the closure's
         // `make_fun3` — which always writes `x0` — keeps the list live in `x1`.
-        try self.lowerExprIntoX0(lp.iter.*);
         if (indexed) {
-            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1));
-            const ir = lp.indexRange.?.*;
-            const start: Op = if (ir == .collection and ir.collection.kind == .range)
-                self.simpleTerm(ir.collection.kind.range.start.*) orelse Op.int(0)
-            else
-                Op.int(0);
-            try beamEmitter.writeMoveOp(self.out, start, Dst.xr(0));
-            try beamEmitter.writeCall(self.out, .normal, 2, .{ .ext = .{ .module = "lists", .function = "enumerate" } }, 0);
+            try self.lowerEnumerateIntoX0(lp.iter.*, lp.indexRange);
+        } else {
+            try self.lowerExprIntoX0(lp.iter.*);
         }
         try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1));
         try self.emitMakeFun(labels.entry, 2, env_ops.items);

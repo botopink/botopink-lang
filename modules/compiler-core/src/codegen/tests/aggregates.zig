@@ -14,9 +14,6 @@ const comptimeMod = @import("../../comptime.zig");
 const validation = @import("../../comptime/error.zig");
 const h = @import("helpers.zig");
 
-
-
-
 test "js: record implement ---- fields round-trip at runtime" {
     // G7 regression: an inline `record implement … { fields }` must emit a real
     // constructor that assigns its fields, so `E(tag: "x", n: 5).n` reads `5` at
@@ -69,7 +66,6 @@ test "js: record ---- method with throw" {
     );
 }
 
-
 test "js: record ---- method with todo placeholder" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\record Unimplemented { id: i32,
@@ -79,7 +75,6 @@ test "js: record ---- method with todo placeholder" {
         \\}
     );
 }
-
 
 test "js: record ---- shorthand declaration without val Name =" {
     try h.assertJsSingle(std.testing.allocator, @src(),
@@ -168,6 +163,49 @@ test "js: tuple ---- access elements" {
     );
 }
 
+// A record method named like a builtin (`print`) is the record's method: a
+// receiver call never reaches the `@print` dispatch. commonJS used to lower
+// `d.print()` to `console.log(console.log())`, dropping the receiver.
+// KNOWN: wasm prints `276`, the string's address (a record method's string
+// result is printed as an i32 — 1.0.4-beta 01 wasm).
+test "js: record ---- a method named print is called on the record" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\record Doc {
+        \\    title: string,
+        \\
+        \\    fn print(self: Self) -> string {
+        \\        return "doc:" + self.title;
+        \\    }
+        \\}
+        \\
+        \\fn main() {
+        \\    val d = Doc(title: "hi");
+        \\    @print(d.print());
+        \\}
+    );
+}
+
+// `pair.0` is the tuple index `pair._0` (commonJS emitted `pair.0` verbatim, a
+// SyntaxError), and `.map` on the `?T` a `find` answers is the Option map, not
+// `Array.prototype.map` over the found tuple. KNOWN: `2` then `true`; erlang
+// crashes (`pair.0` lowers to `maps:get('0', Pair)` on a tuple), beam prints
+// `undefined` for the first line and wasm traps (1.0.4-beta 01 erlang/beam/wasm).
+// The same `?T.map` inside a record method body is not lowered on commonJS
+// either: inference records no Option lowering there (06-checker).
+test "js: tuple ---- a bare digit index and an option map over a found pair" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn lookup(pairs: Array<#(string, i32)>, key: string) -> ?i32 {
+        \\    return pairs.find({ pair -> pair.0 == key }).map({ pair -> pair.1 });
+        \\}
+        \\
+        \\fn main() {
+        \\    val pairs = [#("a", 1), #("b", 2)];
+        \\    @print(lookup(pairs, "b"));
+        \\    @print(lookup(pairs, "z") == null);
+        \\}
+    );
+}
+
 // a record carrying a function-typed field (`set`) codegens like any other
 // field — the closure is stored in the constructor.
 test "js: record ---- fn-typed field (hook-shape record)" {
@@ -209,4 +247,3 @@ test "js: interface literal ---- with fields" {
         \\}
     );
 }
-

@@ -11,8 +11,6 @@ implements the JSON-RPC / LSP protocol.
 ```text
 language-server/
 ├── AGENTS.md          ← you are here
-├── build.zig          ← standalone build graph (`run`, `test`)
-├── build.zig.zon      ← deps (compiler-core)
 ├── src/               ← server + protocol + features + tests — see src/AGENTS.md
 └── snapshots/
     └── lsp/           ← LSP feature snapshots (*.snap.md)
@@ -21,13 +19,10 @@ language-server/
 ## Commands
 
 ```bash
-# from this directory
-zig build               # produce ./zig-out/bin/botopink-lsp
-zig build run           # launch over stdio
-zig build test          # LSP feature tests + snapshots
-
-# from the workspace root, `zig build test` runs these tests too
-# (cwd = modules/language-server)
+# from the workspace root (the package has no build.zig of its own)
+zig build               # produce zig-out/bin/botopink-lsp
+zig build test          # includes the LSP feature tests + snapshots
+                        # (cwd = modules/language-server)
 ```
 
 ## Feature scope

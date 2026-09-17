@@ -19,8 +19,6 @@ botopink-lang/                 ← language core (this project)
 ├── README.md                  ← public-facing intro
 ├── docs.md                    ← language reference (.bp syntax + semantics)
 ├── build.zig                  ← workspace build graph
-├── test_format.zig            ← ad-hoc formatter smoke
-├── test_pub.zig               ← ad-hoc pub-decl smoke
 ├── .github/workflows/         ← test.yml (push/PR) + release.yml (tags)
 ├── modules/                   ← all Zig packages — see modules/AGENTS.md
 │   ├── bpmp/                  ← `bpmp` package + toolchain manager

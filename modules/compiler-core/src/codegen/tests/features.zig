@@ -575,6 +575,32 @@ test "js: enum ---- method with case on self" {
     );
 }
 
+// 1.0.4-beta EXAMPLES.md §5: an enum method called on a variant value. Enum
+// values carry no methods on commonJS (a payload variant is a plain object), so
+// the call passes the value to the enum's method: `Shape.area(Shape.Square(4))`.
+// It used to throw `Shape.Square(...).area is not a function`. KNOWN: `16`
+// then `12`; wasm traps (1.0.4-beta 01 wasm).
+test "js: enum ---- a method is called on a variant value" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\pub enum Shape {
+        \\    Circle(radius: i32),
+        \\    Square(side: i32),
+        \\
+        \\    pub fn area(self: Self) -> i32 {
+        \\        return case self {
+        \\            Circle(r) -> r * r * 3;
+        \\            Square(s) -> s * s;
+        \\        };
+        \\    }
+        \\}
+        \\
+        \\pub fn main() {
+        \\    @print(Shape.Square(side: 4).area());
+        \\    @print(Shape.Circle(radius: 2).area());
+        \\}
+    );
+}
+
 test "js: lambda ---- with parameter" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn apply(f: syntax fn(x: i32) -> i32) -> i32 {

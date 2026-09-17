@@ -11,8 +11,6 @@ Package that builds the `botopink` CLI executable. Depends on `compiler-core`.
 compiler-cli/
 ├── AGENTS.md            ← you are here
 ├── botopink.json        ← module manifest (`version` drives the auto-tag)
-├── build.zig            ← standalone build graph + `run` + `test` steps
-├── build.zig.zon        ← dependency manifest (compiler-core)
 ├── tests/               ← end-to-end CLI scripts — `zig build test-cli` runs all four
 │   ├── cli_contract.sh      ← the command contract (rows C1–C13) against the real binary
 │   ├── mutual_recursion.sh  ← forward-ref + mutual recursion runs on every backend
@@ -34,14 +32,15 @@ compiler-cli/
 ## Commands
 
 ```bash
-zig build               # produce ./zig-out/bin/botopink
+# from the workspace root (the package has no build.zig of its own)
+zig build               # produce zig-out/bin/botopink
 zig build run -- help
 zig build run -- version
-zig build test          # CLI unit tests (main.zig parsers / config / libs / resolver / migrate / test_cmd / diagnostics / clean);
-                        # main.zig's `test { _ = @import(...) }` block pulls every cli/ file in — a file not listed there has its tests silently skipped
-
-# The workspace root `zig build test` also runs these tests (root = src/main.zig,
-# cwd = modules/compiler-cli).
+zig build test          # includes the CLI unit tests (main.zig parsers / config /
+                        # libs / resolver / migrate / test_cmd / diagnostics / clean;
+                        # root = src/main.zig, cwd = modules/compiler-cli) — main.zig's
+                        # `test { _ = @import(...) }` block pulls every cli/ file in; a
+                        # file not listed there has its tests silently skipped
 
 # End-to-end scripts under tests/ spawn the CLI and runtimes, so they are NOT
 # part of `zig build test`. From the workspace root:

@@ -15,22 +15,16 @@ here — it ships and versions separately from the language core.
 modules/
 ├── AGENTS.md                ← you are here
 ├── compiler-cli/            ← `botopink` CLI executable
-│   ├── build.zig
-│   ├── build.zig.zon
 │   ├── src/                 ← main + cli/ (commands)
 │   └── tests/               ← end-to-end shell scripts (not in `zig build test`)
 ├── compiler-core/           ← library: lexer / parser / AST / infer / comptime / codegen
-│   ├── build.zig
-│   ├── build.zig.zon
 │   ├── src/                 ← all compiler stages
 │   └── snapshots/           ← parser / codegen / comptime snapshots
 ├── language-server/         ← `botopink-lsp` LSP executable
-│   ├── build.zig
-│   ├── build.zig.zon
 │   ├── src/                 ← JSON-RPC server + LSP features + tests
 │   └── snapshots/lsp/       ← LSP feature snapshots
 ├── lib-test-runner/         ← `botopink-lib-test` — per-lib/per-backend test gate
-│   ├── build.zig
+│   ├── build.zig            ← only for its unit tests (see Commands)
 │   ├── build.zig.zon
 │   └── src/                 ← discovery + fan-out + matrix (self-contained)
 └── bpmp/                    ← `bpmp` — Boto Pink Package Manager + toolchain manager
@@ -57,7 +51,7 @@ The workspace [`../build.zig`](../build.zig) builds every executable
 ```bash
 zig build                  # build all four executables into zig-out/bin/
 zig build run -- <args>    # build + run the botopink CLI
-zig build test             # compiler-core + language-server + compiler-cli tests
+zig build test             # compiler-core + language-server + compiler-cli + lib-test-runner tests
                            # (+ lib-agnostic grep gate over compiler-core/src)
 zig build test -Dtest-filter=<substr>
 zig build test-bpmp        # bpmp unit tests          (not part of `test`)
@@ -67,9 +61,12 @@ zig build test-backends    # compiler-cli/tests/backend_exec.sh (needs runtimes)
 zig build clean-tmp        # reap compiler-core/.botopinkbuild/tmp dirs older than 1 day
 ```
 
-`compiler-cli`, `compiler-core`, `language-server` and `lib-test-runner` also
-carry a standalone `build.zig` (`zig build` / `zig build test`, plus `run` for
-the executables) usable from inside the package directory. See the root
+`compiler-cli`, `compiler-core` and `language-server` carry no `build.zig` of
+their own: every command runs from the workspace root, which derives the `std`
+module list from `libs/std/src/root.bp` (a second build graph once built a
+compiler with 5 of the std modules). `lib-test-runner` still has a standalone
+`build.zig`; the workspace `zig build test` runs its unit tests too (root
+`src/main.zig`, cwd `modules/lib-test-runner`), so that pair is now redundant. See the root
 [`AGENTS.md`](../AGENTS.md) for top-level commands.
 
 ## Cross-package conventions

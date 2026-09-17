@@ -128,7 +128,7 @@ codegen/
   receiver inference recorded as a primitive (`instance_lowerings` `.prim`)
   and whose native JS method disagrees with the declaration calls a helper
   instead — `s.charAt(i)` is `__bp_string_char_at(s, i)` (`null` out of
-  range). `Emitter.helper` marks it, and only marked helpers are declared at
+  range). An open-ended range is `__bp_range_from(start)`. `Emitter.helper` marks it, and only marked helpers are declared at
   the top of the module. Interface default-fn bodies are not inferred, so a
   `charAt` inside one stays native.
 - **Duplicate test names**: two `test "x"` blocks in one module print
@@ -170,7 +170,34 @@ codegen/
 - **`comptime { … }` with no `break <e>`** in value position is `undefined`
   (a block's value comes only from `break`).
 - **Ranges**: `a..b` materializes `Array.from({length: Math.max(0, b - a)}, …)`;
-  an open-ended `a..` throws at runtime.
+  an open-ended `a..` is the lazy `__bp_range_from(a)` prelude generator
+  (`function*` counting up forever), so `loop (x..) { i -> … break; }` runs.
+- **Indexed loops**: `loop (xs) { x, i -> … }` and `loop (xs, 0..)` iterate
+  `(xs).entries()`; any other index start pairs each item with it —
+  `Array.from(xs, (__x, __i) => [__i + (start), __x])` — so `loop (xs, 1..)`
+  counts from 1 (erlang's `lists:enumerate(Start, Xs)`).
+- **Enum methods**: variant values carry no methods (a payload variant is a
+  plain `{ tag, … }` object, a nullary one its name). A method whose first
+  parameter is `self` or typed `Self` takes the value as a real first parameter
+  (`area: function(self) {…}`), and a call `recv.area()` whose receiver
+  inference typed as an enum this module declares (`enum_recv_methods`) or
+  imports by name (`imported_enums`) lowers to `Shape.area(recv)`
+  (`enumMethodOwner`). A method with no parameters that reads `self`
+  implicitly keeps the `this` body and is not lowered.
+- **User interface `default fn`s**: an interface that is not a JS global owns
+  no constructor, so its instance defaults are copied as class methods into
+  every local record that implements it and does not define the method
+  (`appendInterfaceDefaults`, following `extends`); nothing is patched onto
+  `Iface.prototype`. An implementer in another module does not get them yet.
+  A module that redeclares a primitive interface (`interface Number { fn
+  max(self: Self, other: Self) -> Self, … }`) replaces the prelude's
+  declaration; a bodyless member without its own `@External.Node` takes the
+  prelude's (`prelude_iface_externals`), so `Number.prototype.max` is still
+  patched.
+- **Builtin dispatch is for free calls**: `builtin_node_dispatch` (`print`,
+  `todo`, …) applies only to a call with no receiver — `d.print()` on a record
+  is the record's method.
+- **Tuple index**: `t._N` and the bare `t.N` are `t[N]`.
 - **Effects**: `fnKeyword` picks `async function` / `function*` /
   `async function*`; inside a generator, `return <iter>` becomes
   `yield* <iter>; return;` and `loop (xs) { x -> yield x }` becomes `for…of`.
@@ -547,16 +574,30 @@ codegen/
   `make_fun3`'s environment (`test_heap` with `{words, NumFree}`) and arrive
   as extra parameters after the fun's own, spilled to stack slots like params.
   `Live` honours the `min_live` floor; lambda bodies reset it to 0.
-- **Mutation threading** (`lowerMutatingFold`): a statement `loop (xs) { x -> … }`
+- **Mutation threading** (`lowerMutatingFold`, `emitGroupFun`): a statement
+  `loop (xs) { x -> … }`, `loop (xs) { x, i -> … }` / `loop (xs, 1..) { … }`
   or `xs.forEach({ x -> … })` whose body reassigns names of the enclosing frame
-  (`=`, `+=`, `out.push(v)`, nested `if`/`loop`/`forEach`) lowers to
-  `lists:foldl/3` with those names as the accumulator (one value, or a tuple),
-  unpacked back into the caller's slots; `break`/`continue` return the group. A
-  statement `out.push(v)` on a local Array stores the grown list back into its
-  slot (`receiverMutation`).
-- **Loops**: `loop (xs, 0..) { item, i -> … }` iterates
-  `lists:enumerate(Start, Xs)` and binds both names from the pair with the
-  `element/2` guard BIF; the comprehension shape (a single else-less `if` whose
+  (`=`, `+=`, `out.push(v)`, a mutating closure call, nested
+  `if`/`loop`/`forEach`) lowers to `lists:foldl/3` with those names as the
+  accumulator (one value, or a tuple), unpacked back into the caller's slots
+  (`unpackGroupFromX0`); `break`/`continue` return the group. The two-parameter
+  form folds over `lists:enumerate(Start, Xs)` (`lowerEnumerateIntoX0`; 0
+  without a written range) and binds item and index from the `{Index, Item}`
+  pair. A statement `out.push(v)` on a local Array stores the grown list back
+  into its slot (`receiverMutation`).
+- **Mutating closures** (`lowerMutatingClosure`, `mutating_closures`): a local
+  `val emit = { w -> out = out + w; }` whose body reassigns names of the
+  enclosing frame takes them as one extra argument after its own (the group)
+  and answers their new values — a fun cannot write its caller's stack slots.
+  A statement-position call (`closureMutation`, `lowerClosureMutationCall`)
+  passes the group, applies the fun and stores what it answers back, and counts
+  as a mutation for an enclosing `loop`/`forEach`, so the fold threads the
+  names on out. Parity with erlang's `mutatingClosureExpr`: a call whose value
+  is used keeps the plain application (and raises `badarity`).
+- **Loops**: `loop (xs, 0..) { item, i -> … }` (or `loop (xs) { item, i -> … }`,
+  counting from 0) iterates `lists:enumerate(Start, Xs)` and binds both names
+  from the pair with the `element/2` guard BIF; the comprehension shape (a
+  single else-less `if` whose
   branch ends in `break v`) lowers through `lists:filtermap/2`; an eager
   `#[@iterator]` body ending in a yielding loop returns that loop's list.
 - **Calls**: module-qualified `List.map(…)` → `call_ext`/`call_ext_last`
@@ -575,7 +616,9 @@ codegen/
   `@External.Erlang("mod", "sym")` is a `call_ext`; an `@External.Erlang`
   template (`"base64:encode($0)"`, arity branches included) is Erlang source,
   evaluated at run time by the synthesised `'__bp_erl_eval'(Source, Bindings)`
-  (`erl_scan` → `erl_parse` → `erl_eval`, markers bound as `__BpSelf`/`__BpAN`).
+  (`erl_scan` → `erl_parse` → `erl_eval`, markers bound as `__BpSelf`/`__BpAN`)
+  — correct but interpreted on every call (≈ 50× a direct call); its cost and
+  the open keep-or-compile decision are in [`beam/AGENTS.md`](beam/AGENTS.md).
   No beam or erlang target raises `MissingExternalTarget`. A call to an
   external another module declares lowers the same way.
 - **Primitive methods** (`emitPrimMethod`), walking the receiver kind's
@@ -599,6 +642,16 @@ codegen/
   `'-bp_stringify-'/1` (a binary is itself, an integer `integer_to_binary`,
   anything else its `~p` text), flattened by `iolist_to_binary/1`; a non-string
   operand concatenates as text instead of raising `badarith`. String `+=` too.
+- **Numbers** (`numKind`, `NumKind`, `num_locals`/`count_nums`/`num_names`,
+  parity with erlang): an operand is provably numeric when it is a number
+  literal, a local/param/module name bound or declared numeric, a primitive
+  member read (`s.length`), a call to a `fn` declared numeric, or arithmetic
+  over them. A `+` with such an operand is the `'+'` gc_bif; a `+` proven
+  neither string nor number (`{ x, y -> x + y }`, record fields, destructured
+  values — `addIsDynamic`) calls the synthesised `'__bp_add'/2` (two binaries
+  → `iolist_to_binary([A, B])`, anything else `'+'`), and so does `x += v` on a
+  name and value both unproven. `/` is the `'/'` gc_bif when an operand is
+  provably a float, `'div'` otherwise. `exprMayCall` counts the helper call.
 - **`erlc +from_asm` invariants**: comparisons use only `is_lt`/`is_ge` (no
   `is_gt`/`is_le` — operands swap, `comparisonTestOp`); `{allocate, N, A}` is
   followed by `{init_yregs, …}` (`emitFrame`); `countLocalsRec` counts every
@@ -708,7 +761,10 @@ first three are now enforced by the model, not by discipline:
 
 - **Coverage**: numerics, locals, calls, assign, `!x`, null, `@todo`/`@panic`,
   `assert`, globals, case, pipeline (`a |> f` → `call $f`), range loops
-  (`lowerRangeLoop`) and array loops (`lowerCollectionLoop`), comprehensions,
+  (`lowerRangeLoop`) and array loops (`lowerCollectionLoop` — the index of
+  `loop (xs, 1..) { x, i -> … }` counts from the range's start, as erlang's
+  `lists:enumerate(Start, Xs)`; a float array's element is an `f32` slot, bound
+  to an `f32` local), comprehensions,
   primitive methods, function values, `@print` via WASI `fd_write`,
   `_botopink_main`/`_start`.
 - **Known gaps** (loadable, but not yet right):
@@ -720,7 +776,19 @@ first three are now enforced by the model, not by discipline:
     would read its first word as an element count and trap;
   - an array of tuples/records prints as the element addresses (no printer);
   - every function value's parameters and result are `i32`;
-  - a lambda lifted into a function captures a snapshot of the locals it uses;
+  - a lifted lambda's captures are threaded only through calls on the closure
+    local it was bound to (`val f = { … }; f(x)`): a closure passed as an
+    argument, stored in a field or returned still works on the snapshot it was
+    made with, and a capture it only reads is that snapshot too;
+  - **shapes with no lowering anywhere** — `List.map(xs, f)` and
+    `List.map(xs) { … }` (`call_qualified_module_call_resolves_arity`,
+    `call_qualified_module_call_with_trailing_lambda_arity`): `List` is
+    declared nowhere, `libs/std` included. commonJS emits `List.map(…)` against
+    an unbound `List`, erlang `list:map/2` and beam `call_ext list:map/2` (no
+    such module; `lists` is not what the source names), wasm traps
+    `unreachable ;; unresolved call: map/N`. The fixtures pin the call's arity
+    and have no `main`; the shape needs a `List` to exist before any backend
+    can lower it;
   - an `f64` aggregate field round-trips at `f32` precision (4-byte slots), and
     is read back as a raw `i32.load` unless the field's declared type is known.
 - **Non-constant top-level `val`s** (`emitGlobalVal` → `deferred_globals`): a
@@ -771,6 +839,12 @@ first three are now enforced by the model, not by discipline:
   (`lowerThrow`) — the transform rewrites the common forms into
   `return __bp_error(…)`, but a `throw` inside a `case` arm reaches the
   backend as a `throw`. Anywhere else a `throw` traps.
+- **`Ok(v)` / `Err(e)` / `new Error(msg)` the transform left as calls** build
+  the same `[tag, payload]` pair as `__bp_ok` / `__bp_error` (`lowerPlainCall`),
+  the lowering beam and erlang give them (`{error, Msg}`); a user enum variant
+  of the same name wins. `throw new Error("…")` in a fn that does not return a
+  `@Result` used to trap on `unresolved call: Error/1` before reaching its own
+  trap.
 - **Aggregates in linear memory**: tuples/arrays/records/enum payloads are
   contiguous 4-byte slots in the bump heap (`$__heap_ptr`); a type registry from
   `record`/`enum` decls distinguishes construction from calls; construction
@@ -817,10 +891,21 @@ first three are now enforced by the model, not by discipline:
 - **Function values** (`lowerLambdaValue`, `lowerValueCall`): a lambda used as
   a value is lifted into `$__lambda{n}(env, a0, …) -> i32` and listed in the
   module's `(table funcref (elem …))`; the value is a pointer to an environment
-  cell — `[table index][captured local]…`, the captures copied at creation (a
-  snapshot: assigning an outer local inside a lifted lambda does not change
-  it). `f(a)` on a local/global/record field holding one is `call_indirect`
-  with the cell as the first argument. A top-level fn used as a value is a
+  cell — `[table index][captured local]…`, the captures copied at creation.
+  `f(a)` on a local/global/record field holding one is `call_indirect`
+  with the cell as the first argument. **A capture the lambda assigns is
+  threaded** (`Captured.threaded`, `bodyAssigns`): inside the lifted lambda
+  every `=`/`+=` to it is written back to its environment slot
+  (`writeBackCapture`, `env_slots`), and a call through the local the closure
+  was bound to (`closure_locals`) copies the caller's local into the slot
+  before the call and back out after (`syncCaptures`) — a markup template's
+  `val emit = { w -> out = out + w; }` called directly and from a loop. The
+  **parameters' shapes** come from those same calls: an argument proven a
+  string makes the parameter a string inside the lifted body
+  (`Lifted.param_str`), and `isStringExpr` judges a call through the closure
+  local by the body with each parameter taking its argument's shape
+  (`closureCallIsString`), so `val cat = { x, y -> x + y }; cat("ab", "cd")`
+  concatenates and prints a string (it used to add the two pointers). A top-level fn used as a value is a
   closure over a trampoline `$__fnref_<fn>`. Every parameter and the result are
   `i32`. A lambda passed straight to an array method or a `@Result`/`@Option`
   op is inlined instead, which is what lets `forEach` assign outer locals.

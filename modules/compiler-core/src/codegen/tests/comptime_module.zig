@@ -235,7 +235,7 @@ test "comptime module: template body primitive methods dispatch through shims" {
     try expectContains(out, "'__bp_prim_at'(All, 0)");
     try expectContains(out, "'__bp_prim_join'(All, <<\",\">>)");
     // Shims: one guarded clause per answering kind, from the typed table.
-    try expectContains(out, "'__bp_prim_split'(Recv, Arg0) when is_binary(Recv) ->\n    string:split(Recv, Arg0, all);");
+    try expectContains(out, "'__bp_prim_split'(Recv, Arg0) when is_binary(Recv) ->\n    (fun(__S, <<>>) -> [<<__C/utf8>> || <<__C/utf8>> <= __S]; (__S, __X) -> string:split(__S, __X, all) end)(Recv, Arg0);");
     try expectContains(out, "'__bp_prim_trim'(Recv) when is_binary(Recv) ->\n    string:trim(Recv);");
     try expectContains(out, "'__bp_prim_toUpper'(Recv) when is_binary(Recv) ->\n    string:uppercase(Recv);");
     try expectContains(out, "'__bp_prim_map'(Recv, Arg0) when is_list(Recv) ->\n    lists:map(Arg0, Recv);");

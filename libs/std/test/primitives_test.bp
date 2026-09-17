@@ -198,6 +198,15 @@ test "string split length" {
     assert parts.length == 2;
 }
 
+test "string split on the empty separator answers every character" {
+    val s = "abc";
+    val parts = s.split("");
+    assert parts.length == 3;
+    assert parts.join("|") == "a|b|c";
+    val empty = "";
+    assert empty.split("").length == 0;
+}
+
 test "string trim" {
     val padded = "  hi  ";
     assert padded.trim() == "hi";

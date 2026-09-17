@@ -12,8 +12,6 @@ formatter. Imported as the `botopink` module by `compiler-cli` and
 ```text
 compiler-core/
 ├── AGENTS.md            ← you are here
-├── build.zig            ← build graph (`zig build [run|test]`)
-├── build.zig.zon        ← Zig package manifest
 ├── botopink.json        ← module version (drives auto-tagging)
 ├── src/                 ← all compiler stages — see src/AGENTS.md
 └── snapshots/           ← .snap.md test fixtures
@@ -22,13 +20,15 @@ compiler-core/
     └── comptime/        ← comptime + type-error snapshots (beam/, erlang/, node/, templates/, wasm/)
 ```
 
-## Commands (run from this directory)
+## Commands (run from the workspace root)
+
+The package has no `build.zig` of its own: the workspace `build.zig` builds it
+and derives the embedded `std` modules from `libs/std/src/root.bp`.
 
 ```bash
-zig build               # compile
-zig build test          # run all tests
-zig build run           # run CLI stub (main.zig)
-zig build test -- --test-filter "import decl"
+zig build                                 # compile
+zig build test                            # compiler-core + language-server + CLI tests
+zig build test -Dtest-filter="import decl"
 ```
 
 ## High-level pipeline

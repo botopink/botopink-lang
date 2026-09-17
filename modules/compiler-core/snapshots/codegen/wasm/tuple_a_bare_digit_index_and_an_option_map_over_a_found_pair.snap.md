@@ -1,24 +1,13 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn pick(xs: Array<string>) -> string {
-    var first = "";
-    var last = "";
-    loop (xs) { x, i ->
-        if (i == 0) { first = x; };
-        last = x;
-    };
-    return first + "-" + last;
+fn lookup(pairs: Array<#(string, i32)>, key: string) -> ?i32 {
+    return pairs.find({ pair -> pair.0 == key }).map({ pair -> pair.1 });
 }
-fn weigh(xs: Array<i32>) -> i32 {
-    var total = 0;
-    loop (xs, 1..) { x, i ->
-        total = total + x * i;
-    };
-    return total;
-}
+
 fn main() {
-    @print(pick(["a", "b", "c"]));
-    @print(weigh([10, 20, 30]));
+    val pairs = [#("a", 1), #("b", 2)];
+    @print(lookup(pairs, "b"));
+    @print(lookup(pairs, "z") == null);
 }
 ```
 
@@ -27,174 +16,87 @@ fn main() {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\00\00\00\00")
-  (data (i32.const 260) "\01\00\00\00-")
-  (data (i32.const 268) "\01\00\00\00a")
-  (data (i32.const 276) "\01\00\00\00b")
-  (data (i32.const 284) "\01\00\00\00c")
-  (global $__heap_ptr (mut i32) (i32.const 292))
-  (func $pick (param $xs i32) (result i32)
-    (local $first i32)
-    (local $last i32)
-    (local $x i32)
-    (local $i i32)
-    (local $__iter0 i32)
-    (local $__idx0 i32)
-    (local $__len0 i32)
-    i32.const 256
-    local.set $first
-    i32.const 256
-    local.set $last
-    local.get $xs
-    local.set $__iter0
-    local.get $__iter0
-    i32.load ;; element count
-    local.set $__len0
-    i32.const 0
-    local.set $__idx0
-    (block $__break
-      (loop $__continue
-        local.get $__idx0
-        local.get $__len0
-        i32.ge_s
-        br_if $__break
-        local.get $__iter0
-        local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
-        local.set $x
-        local.get $__idx0
-        local.set $i
-    local.get $i
-    i32.const 0
-    i32.eq
+  (data (i32.const 256) "\01\00\00\00a")
+  (data (i32.const 264) "\01\00\00\00b")
+  (data (i32.const 272) "\01\00\00\00z")
+  (global $__heap_ptr (mut i32) (i32.const 280))
+  (func $lookup (param $pairs i32) (param $key i32) (result i32)
+    (local $_res0 i32)
+    (local $pair i32)
+    unreachable ;; prim method not lowered on wasm: array.find/1
+    local.set $_res0
+    local.get $_res0 ;; Option (0 = None, else Some payload)
     (if (result i32)
       (then
-    local.get $x
-    local.set $first
-    i32.const 0
+    local.get $_res0
+    i32.load ;; optional payload
+    local.set $pair
+    i32.const 0 ;; field access .1 (unknown receiver type)
+    call $__box_i32
       )
       (else
-        i32.const 0
+    i32.const 0 ;; None — propagate absence
       )
     )
-    drop
-    local.get $x
-    local.set $last
-        local.get $__idx0
-        i32.const 1
-        i32.add
-        local.set $__idx0
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    local.get $first
-    i32.const 260
-    call $__str_concat
-    local.get $last
-    call $__str_concat
-    return
-  )
-  (func $weigh (param $xs i32) (result i32)
-    (local $total i32)
-    (local $x i32)
-    (local $i i32)
-    (local $__iter0 i32)
-    (local $__idx0 i32)
-    (local $__len0 i32)
-    i32.const 0
-    local.set $total
-    local.get $xs
-    local.set $__iter0
-    local.get $__iter0
-    i32.load ;; element count
-    local.set $__len0
-    i32.const 0
-    local.set $__idx0
-    (block $__break
-      (loop $__continue
-        local.get $__idx0
-        local.get $__len0
-        i32.ge_s
-        br_if $__break
-        local.get $__iter0
-        local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
-        local.set $x
-        local.get $__idx0
-        i32.const 1
-        i32.add
-        local.set $i
-    local.get $total
-    local.get $x
-    local.get $i
-    i32.mul
-    i32.add
-    local.set $total
-        local.get $__idx0
-        i32.const 1
-        i32.add
-        local.set $__idx0
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    local.get $total
+    call $__box_i32
     return
   )
   (func $main
     (local $__mem0 i32)
     (local $__mem1 i32)
+    (local $__mem2 i32)
+    (local $pairs i32)
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 16
+    i32.const 12
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 3
+    i32.const 2
     i32.store
     local.get $__mem0
-    i32.const 268
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 276
-    i32.store offset=8
-    local.get $__mem0
-    i32.const 284
-    i32.store offset=12
-    local.get $__mem0
-    call $pick
-    call $__print_str
     global.get $__heap_ptr
     local.set $__mem1
     global.get $__heap_ptr
-    i32.const 16
+    i32.const 8
     i32.add
     global.set $__heap_ptr
     local.get $__mem1
-    i32.const 3
+    i32.const 256
     i32.store
     local.get $__mem1
-    i32.const 10
+    i32.const 1
     i32.store offset=4
     local.get $__mem1
-    i32.const 20
+    i32.store offset=4
+    local.get $__mem0
+    global.get $__heap_ptr
+    local.set $__mem2
+    global.get $__heap_ptr
+    i32.const 8
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem2
+    i32.const 264
+    i32.store
+    local.get $__mem2
+    i32.const 2
+    i32.store offset=4
+    local.get $__mem2
     i32.store offset=8
-    local.get $__mem1
-    i32.const 30
-    i32.store offset=12
-    local.get $__mem1
-    call $weigh
-    call $__print_i32
+    local.get $__mem0
+    local.set $pairs
+    local.get $pairs
+    i32.const 264
+    call $lookup
+    call $__print_opt_i32
+    local.get $pairs
+    i32.const 272
+    call $lookup
+    i32.const 0
+    i32.eq
+    call $__print_bool
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
@@ -392,58 +294,133 @@ fn main() {
     call $__print_str_raw
     call $__print_nl
   )
-  (func $__str_concat (param $a i32) (param $b i32) (result i32)
-    (local $base i32) (local $alen i32) (local $blen i32)
-    local.get $a
-    i32.load
-    local.set $alen
+  (func $__print_bool (param $b i32)
     local.get $b
-    i32.load
-    local.set $blen
+    call $__print_bool_raw
+    call $__print_nl
+  )
+  (func $__print_bool_raw (param $b i32)
+    local.get $b
+    (if
+      (then
+        ;; "true" as a little-endian i32
+        i32.const 16
+        i32.const 1702195828
+        i32.store
+        i32.const 16
+        i32.const 4
+        call $__write_bytes
+      )
+      (else
+        ;; "fals" + 'e'
+        i32.const 16
+        i32.const 1936482662
+        i32.store
+        i32.const 16
+        i32.const 101
+        i32.store8 offset=4
+        i32.const 16
+        i32.const 5
+        call $__write_bytes
+      )
+    )
+  )
+  (func $__alloc (param $n i32) (result i32)
+    (local $p i32)
     global.get $__heap_ptr
-    local.set $base
-    ;; bump heap by 4 (length prefix) + alen + blen
+    local.set $p
     global.get $__heap_ptr
-    i32.const 4
-    local.get $alen
+    local.get $n
     i32.add
-    local.get $blen
+    i32.const 3
     i32.add
-    i32.add
+    i32.const -4
+    i32.and
     global.set $__heap_ptr
-    ;; store combined length prefix
-    local.get $base
-    local.get $alen
-    local.get $blen
-    i32.add
+    local.get $p
+  )
+  (func $__box_i32 (param $v i32) (result i32)
+    (local $p i32)
+    i32.const 4
+    call $__alloc
+    local.set $p
+    local.get $p
+    local.get $v
     i32.store
-    ;; copy a's bytes: base+4 <- a+4
-    local.get $base
-    i32.const 4
-    i32.add
-    local.get $a
-    i32.const 4
-    i32.add
-    local.get $alen
-    memory.copy
-    ;; copy b's bytes: base+4+alen <- b+4
-    local.get $base
-    i32.const 4
-    i32.add
-    local.get $alen
-    i32.add
-    local.get $b
-    i32.const 4
-    i32.add
-    local.get $blen
-    memory.copy
-    local.get $base
+    local.get $p
+  )
+  (func $__print_undefined
+    i32.const 176
+    i64.const 7308895133777555061
+    i64.store
+    i32.const 184
+    i32.const 100
+    i32.store8
+    i32.const 176
+    i32.const 9
+    call $__write_bytes
+  )
+  (func $__print_opt_i32_raw (param $p i32)
+    local.get $p
+    i32.eqz
+    (if
+      (then
+        call $__print_undefined
+      )
+      (else
+        local.get $p
+        i32.load
+        call $__print_i32_raw
+      )
+    )
+  )
+  (func $__print_opt_i32 (param $p i32)
+    local.get $p
+    call $__print_opt_i32_raw
+    call $__print_nl
+  )
+  (func $__print_opt_bool_raw (param $p i32)
+    local.get $p
+    i32.eqz
+    (if
+      (then
+        call $__print_undefined
+      )
+      (else
+        local.get $p
+        i32.load
+        call $__print_bool_raw
+      )
+    )
+  )
+  (func $__print_opt_bool (param $p i32)
+    local.get $p
+    call $__print_opt_bool_raw
+    call $__print_nl
+  )
+  (func $__print_opt_str_raw (param $s i32)
+    local.get $s
+    i32.eqz
+    (if
+      (then
+        call $__print_undefined
+      )
+      (else
+        local.get $s
+        call $__print_str_raw
+      )
+    )
+  )
+  (func $__print_opt_str (param $s i32)
+    local.get $s
+    call $__print_opt_str_raw
+    call $__print_nl
   )
 )
 ```
 
 ----- RUN LOG -----
 ```logs
-a-c
-140
+RUNTIME TRAP (wasmtime):
+wasm trap: wasm `unreachable` instruction executed
 ```

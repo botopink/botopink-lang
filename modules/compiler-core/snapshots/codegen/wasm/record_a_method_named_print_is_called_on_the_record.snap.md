@@ -1,24 +1,16 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn pick(xs: Array<string>) -> string {
-    var first = "";
-    var last = "";
-    loop (xs) { x, i ->
-        if (i == 0) { first = x; };
-        last = x;
-    };
-    return first + "-" + last;
+record Doc {
+    title: string,
+
+    fn print(self: Self) -> string {
+        return "doc:" + self.title;
+    }
 }
-fn weigh(xs: Array<i32>) -> i32 {
-    var total = 0;
-    loop (xs, 1..) { x, i ->
-        total = total + x * i;
-    };
-    return total;
-}
+
 fn main() {
-    @print(pick(["a", "b", "c"]));
-    @print(weigh([10, 20, 30]));
+    val d = Doc(title: "hi");
+    @print(d.print());
 }
 ```
 
@@ -27,173 +19,32 @@ fn main() {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\00\00\00\00")
-  (data (i32.const 260) "\01\00\00\00-")
-  (data (i32.const 268) "\01\00\00\00a")
-  (data (i32.const 276) "\01\00\00\00b")
-  (data (i32.const 284) "\01\00\00\00c")
-  (global $__heap_ptr (mut i32) (i32.const 292))
-  (func $pick (param $xs i32) (result i32)
-    (local $first i32)
-    (local $last i32)
-    (local $x i32)
-    (local $i i32)
-    (local $__iter0 i32)
-    (local $__idx0 i32)
-    (local $__len0 i32)
+  (data (i32.const 256) "\04\00\00\00doc:")
+  (data (i32.const 264) "\02\00\00\00hi")
+  (global $__heap_ptr (mut i32) (i32.const 272))
+  (func $Doc_print (param $self i32) (result i32)
     i32.const 256
-    local.set $first
-    i32.const 256
-    local.set $last
-    local.get $xs
-    local.set $__iter0
-    local.get $__iter0
-    i32.load ;; element count
-    local.set $__len0
-    i32.const 0
-    local.set $__idx0
-    (block $__break
-      (loop $__continue
-        local.get $__idx0
-        local.get $__len0
-        i32.ge_s
-        br_if $__break
-        local.get $__iter0
-        local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
-        local.set $x
-        local.get $__idx0
-        local.set $i
-    local.get $i
-    i32.const 0
-    i32.eq
-    (if (result i32)
-      (then
-    local.get $x
-    local.set $first
-    i32.const 0
-      )
-      (else
-        i32.const 0
-      )
-    )
-    drop
-    local.get $x
-    local.set $last
-        local.get $__idx0
-        i32.const 1
-        i32.add
-        local.set $__idx0
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    local.get $first
-    i32.const 260
+    local.get $self
+    i32.load ;; .title
     call $__str_concat
-    local.get $last
-    call $__str_concat
-    return
-  )
-  (func $weigh (param $xs i32) (result i32)
-    (local $total i32)
-    (local $x i32)
-    (local $i i32)
-    (local $__iter0 i32)
-    (local $__idx0 i32)
-    (local $__len0 i32)
-    i32.const 0
-    local.set $total
-    local.get $xs
-    local.set $__iter0
-    local.get $__iter0
-    i32.load ;; element count
-    local.set $__len0
-    i32.const 0
-    local.set $__idx0
-    (block $__break
-      (loop $__continue
-        local.get $__idx0
-        local.get $__len0
-        i32.ge_s
-        br_if $__break
-        local.get $__iter0
-        local.get $__idx0
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load offset=4
-        local.set $x
-        local.get $__idx0
-        i32.const 1
-        i32.add
-        local.set $i
-    local.get $total
-    local.get $x
-    local.get $i
-    i32.mul
-    i32.add
-    local.set $total
-        local.get $__idx0
-        i32.const 1
-        i32.add
-        local.set $__idx0
-        br $__continue
-      )
-    )
-    i32.const 0
-    drop
-    local.get $total
     return
   )
   (func $main
     (local $__mem0 i32)
-    (local $__mem1 i32)
+    (local $d i32)
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 16
+    i32.const 4
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 3
+    i32.const 264
     i32.store
     local.get $__mem0
-    i32.const 268
-    i32.store offset=4
-    local.get $__mem0
-    i32.const 276
-    i32.store offset=8
-    local.get $__mem0
-    i32.const 284
-    i32.store offset=12
-    local.get $__mem0
-    call $pick
-    call $__print_str
-    global.get $__heap_ptr
-    local.set $__mem1
-    global.get $__heap_ptr
-    i32.const 16
-    i32.add
-    global.set $__heap_ptr
-    local.get $__mem1
-    i32.const 3
-    i32.store
-    local.get $__mem1
-    i32.const 10
-    i32.store offset=4
-    local.get $__mem1
-    i32.const 20
-    i32.store offset=8
-    local.get $__mem1
-    i32.const 30
-    i32.store offset=12
-    local.get $__mem1
-    call $weigh
+    local.set $d
+    local.get $d
+    call $Doc_print
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
@@ -379,19 +230,6 @@ fn main() {
       )
     )
   )
-  (func $__print_str_raw (param $s i32)
-    local.get $s
-    i32.const 4
-    i32.add
-    local.get $s
-    i32.load
-    call $__write_bytes
-  )
-  (func $__print_str (param $s i32)
-    local.get $s
-    call $__print_str_raw
-    call $__print_nl
-  )
   (func $__str_concat (param $a i32) (param $b i32) (result i32)
     (local $base i32) (local $alen i32) (local $blen i32)
     local.get $a
@@ -444,6 +282,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-a-c
-140
+276
 ```
