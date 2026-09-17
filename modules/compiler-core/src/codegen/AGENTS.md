@@ -100,7 +100,11 @@ codegen/
   lower to `const { symbol: name } = require("module");` (a JS global such as
   `Math` is referenced directly). A symbol carrying `$` markers or
   `when($argc == N)` branches is a template rendered inline at each call site
-  (`user_node_templates`). A fn with no `node` target raises
+  (`user_node_templates`); so is a 1-arg form without markers
+  (`#[@External.Node("process.cwd()")]`), a bare host expression rendered
+  verbatim — neither emits an import binding or a `require(…)`. A template fn
+  emits no `exports.<name>`, so a cross-module call (`env.read(…)` after
+  `import {env} from "std"`) does not resolve yet. A fn with no `node` target raises
   `MissingExternalTarget` when called.
 - **Duplicate test names**: two `test "x"` blocks in one module print
   `warning: duplicate test name "x" in <mod>.bp:<line>` to stderr; both run.

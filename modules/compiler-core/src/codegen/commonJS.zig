@@ -1004,8 +1004,12 @@ const Emitter = struct {
                 if (f.externalFor("node")) |ref| {
                     // §A2 single-template form (`"$0.method(...)"`,
                     // `"new X($0).y()"`, etc.): the symbol carries `$` markers
-                    // → render at the call site, never alias.
-                    if (primOpTemplate.looksLikeTemplate(ref.symbol)) {
+                    // → render at the call site, never alias. A 1-arg form
+                    // without markers (`"process.cwd()"`) has no module to
+                    // `require` either: it is a bare host expression, so it
+                    // renders at the call site too instead of lowering to
+                    // `const { process.cwd(): cwd } = require("")`.
+                    if (primOpTemplate.looksLikeTemplate(ref.symbol) or ref.module.len == 0) {
                         try self.user_node_templates.put(try self.alloc.dupe(u8, f.name), .{
                             .symbol = try self.alloc.dupe(u8, ref.symbol),
                         });
@@ -2626,7 +2630,9 @@ const Emitter = struct {
             }
             return null;
         }
-        if (primOpTemplate.looksLikeTemplate(call.symbol)) {
+        // A 1-arg form without markers (`"process.cwd()"`, module empty) is a
+        // bare host expression: it renders verbatim, like a template.
+        if (primOpTemplate.looksLikeTemplate(call.symbol) or call.module.len == 0) {
             return try self.renderTemplate(call.symbol, cc, argc, recv_err);
         }
         // module+symbol form: `@External.Node("./mod", "fun")` —
