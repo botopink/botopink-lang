@@ -36,7 +36,7 @@ async function* stream() {
 }
 
 function parse(n) {
-     if ((n < 0)) { return ({ error: "negative" }); };
+    if ((n < 0)) { return ({ error: "negative" }); }
     return ({ ok: n });
 }
 ```

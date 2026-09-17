@@ -16,17 +16,12 @@
 //!
 //! ## Bridges
 //!
-//! Six forms exist only to keep shapes the current lowering still produces but
-//! that the model would otherwise forbid. They are the complete list of ways a
-//! JS backend can still emit something illegal, each one has to be named
-//! explicitly at the build site, and each is documented in `AGENTS.md`:
+//! One form exists only to keep a shape the current lowering still produces but
+//! that the model would otherwise forbid. It is the complete list of ways a
+//! JS backend can still emit something illegal, it has to be named explicitly
+//! at the build site, and it is documented in `AGENTS.md`:
 //!
-//! * `Expr.stmt_expr`             — a statement where JS needs an expression.
-//! * `Expr.missing`               — an expression the lowering did not produce.
-//! * `Rest.unnamed`/`Spread.unnamed` — a rest or spread with no binding.
 //! * `Pattern.match`              — a match pattern used as a binding target.
-//! * `Stmt.throw_ == null`        — a `throw` with no operand.
-//! * `TsType.missing`             — a `.d.ts` position with no type.
 //!
 //! Nodes borrow their slices: build them in an arena that outlives rendering.
 
@@ -79,17 +74,6 @@ pub const Expr = union(enum) {
     yield_: ?*const Expr,
     /// A comment in expression position: it is the whole expression.
     comment: Comment,
-
-    /// BRIDGE — a statement used where JavaScript needs an expression.
-    /// botopink is expression-oriented (a `loop` and a `return` are both
-    /// expressions), so the current lowering still reaches this. It renders
-    /// the statement without its own terminator, which is how `return for (…)`
-    /// and `return return x` get emitted. See `AGENTS.md` (defect JS-1).
-    stmt_expr: *const Stmt,
-    /// BRIDGE — an expression the lowering did not produce. Renders as
-    /// nothing, which is how `if () …` and `({ a } = )` get emitted. See
-    /// `AGENTS.md` (defect JS-2).
-    missing,
 
     pub fn id(n: []const u8) Expr {
         return .{ .ident = n };
@@ -199,9 +183,6 @@ pub const Spread = union(enum) {
     name: []const u8,
     /// `...expr`.
     expr: *const Expr,
-    /// BRIDGE — `...` with nothing after it, a JS SyntaxError. The array
-    /// spread reached codegen without a name. See `AGENTS.md` (defect JS-3).
-    unnamed,
 };
 
 pub const Object = struct {
@@ -251,10 +232,6 @@ pub const Pattern = union(enum) {
 pub const Rest = union(enum) {
     /// `...name`.
     binding: []const u8,
-    /// BRIDGE — `...` with no binding, a JS SyntaxError. The frontend's
-    /// destructuring pattern carries the *presence* of a rest but not its
-    /// name. See `AGENTS.md` (defect JS-3).
-    unnamed,
 };
 
 pub const ObjectPattern = struct {
@@ -315,16 +292,19 @@ pub const Stmt = union(enum) {
     decl: Decl,
     /// `return;` / `return <expr>;`
     return_: ?Expr,
-    /// `throw <expr>;` — `null` is BRIDGE JS-6, a `throw` with no operand
-    /// (`throw;` is a JS SyntaxError), which the jump lowering still produces
-    /// for a botopink `throw` with no value.
-    throw_: ?Expr,
+    /// `throw <expr>;` — the operand is required: `throw;` is a JS
+    /// SyntaxError, and botopink rejects a bare `throw` at parse time.
+    throw_: Expr,
     /// `continue;`
     continue_,
+    /// `break;`
+    break_,
     /// `yield* <expr>; return;` — delegating the rest of an iteration.
     yield_delegate: Expr,
     if_: If,
     for_of: ForOf,
+    /// `while (cond) { … }`
+    while_: While,
     block: Block,
     /// `function name(params) { … }`
     function: FunctionDecl,
@@ -360,6 +340,11 @@ pub const If = struct {
     else_: ?*const Stmt = null,
 };
 
+pub const While = struct {
+    cond: Expr,
+    body: Block,
+};
+
 pub const ForOf = struct {
     /// The loop variable's binding form.
     pattern: Pattern,
@@ -392,11 +377,6 @@ pub const Block = struct {
         spaced,
         /// `{a; b;}` — one line, statements separated by a space.
         tight,
-        /// ` a; b;` — one line, each statement preceded by a space, with **no
-        /// braces**. The body of an `if` expression whose branches already
-        /// `return`, which the lowering emits without its IIFE wrapper: it is
-        /// only ever reached through `Expr.stmt_expr`.
-        bare,
     };
 };
 
@@ -456,8 +436,8 @@ pub const Item = union(enum) {
 // ── typescript ───────────────────────────────────────────────────────────────
 
 /// The `.d.ts` declaration subset. A type is a node, never a bare string: a
-/// parameter carries a `TsType`, so "a parameter with no type" has to be
-/// spelled `.missing` at the build site.
+/// parameter carries a `TsType`, so it cannot be an empty string that renders
+/// as `x: `.
 pub const TsType = union(enum) {
     /// A type name, written verbatim (`string`, `i32`, `Person`).
     name: []const u8,
@@ -476,9 +456,6 @@ pub const TsType = union(enum) {
     /// `{ a: A; b: B }` / `{ a: A, b: B }` — the separator differs between the
     /// inferred-type and the type-reference spellings.
     object: struct { fields: []const TsField, sep: []const u8 = ", " },
-    /// BRIDGE — no type was carried for this position. Renders as nothing,
-    /// which is how `(s: )` gets emitted. See `AGENTS.md` (defect JS-5).
-    missing,
 };
 
 pub const TsField = struct {
@@ -681,11 +658,6 @@ pub const Builder = struct {
 
     pub fn group(b: Builder, items: []const Stmt) Error!Stmt {
         return .{ .group = try b.stmts(items) };
-    }
-
-    /// BRIDGE — see `Expr.stmt_expr`.
-    pub fn stmtExpr(b: Builder, s: Stmt) Error!Expr {
-        return .{ .stmt_expr = try b.stmtPtr(s) };
     }
 
     pub fn await_(b: Builder, e: Expr) Error!Expr {

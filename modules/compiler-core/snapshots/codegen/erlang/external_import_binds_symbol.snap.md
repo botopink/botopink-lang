@@ -1,24 +1,23 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@External.Erlang("erlang", "abs"),
-  @External.Node("./stdlib.mjs", "abs")]
-pub declare fn abs(n: i32) -> i32;
+#[@External.Erlang("filename", "extension"),
+  @External.Node("node:path", "extname")]
+pub declare fn extname(p: string) -> string;
 
 fn main() {
-    @print(abs(-5));
+    @print(extname("docs/readme.md"));
 }
 ```
 
 ----- ERLANG -- main.erl
 ```erlang
 -module(main).
--compile({no_auto_import,[abs/1]}).
 -export(['_botopink_main'/0, main/1]).
 
-%% external fn abs -> erlang:abs
+%% external fn extname -> filename:extension
 
 main() ->
-    '__bp_print'([erlang:abs((-5))]).
+    '__bp_print'([filename:extension(<<"docs/readme.md">>)]).
 
 '__bp_print'(Values) ->
     io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
@@ -32,5 +31,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-5
+.md
 ```

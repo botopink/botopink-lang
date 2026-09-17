@@ -198,11 +198,6 @@ pub fn writeExpr(w: *Writer, e: Ast.Expr, indent: usize) Error!void {
             }
         },
         .comment => |c| try writeComment(w, c),
-        // BRIDGE: the statement is written without its own terminator, which
-        // is what the caller's context supplies (`return <stmt>;`).
-        .stmt_expr => |s| try writeStmtCore(w, s.*, indent, false),
-        // BRIDGE: nothing at all.
-        .missing => {},
     }
 }
 
@@ -247,8 +242,6 @@ fn writeSpread(w: *Writer, sp: Ast.Spread, indent: usize) Error!void {
     switch (sp) {
         .name => |n| try w.writeAll(n),
         .expr => |e| try writeExpr(w, e.*, indent),
-        // BRIDGE: `...` with no binding.
-        .unnamed => {},
     }
 }
 
@@ -370,8 +363,6 @@ fn writeRest(w: *Writer, r: Ast.Rest) Error!void {
     try w.writeAll("...");
     switch (r) {
         .binding => |n| try w.writeAll(ident(n)),
-        // BRIDGE: `...` with no binding.
-        .unnamed => {},
     }
 }
 
@@ -422,14 +413,10 @@ fn writeMatchPattern(w: *Writer, m: Ast.MatchPattern, indent: usize) Error!void 
 /// Render `s` at `indent` — the caller has already written the leading
 /// indentation of the first line.
 pub fn writeStmt(w: *Writer, s: Ast.Stmt, indent: usize) Error!void {
-    return writeStmtCore(w, s, indent, true);
-}
-
-fn writeStmtCore(w: *Writer, s: Ast.Stmt, indent: usize, semi: bool) Error!void {
     switch (s) {
         .expr => |e| {
             try writeExpr(w, e, indent);
-            if (semi) try w.writeByte(';');
+            try w.writeByte(';');
         },
         .decl => |d| {
             try w.writeAll(d.kw.text());
@@ -437,7 +424,7 @@ fn writeStmtCore(w: *Writer, s: Ast.Stmt, indent: usize, semi: bool) Error!void 
             try writePattern(w, d.pattern, indent);
             try w.writeAll(" = ");
             try writeExpr(w, d.value, indent);
-            if (semi) try w.writeByte(';');
+            try w.writeByte(';');
         },
         .return_ => |v| {
             try w.writeAll("return");
@@ -445,20 +432,15 @@ fn writeStmtCore(w: *Writer, s: Ast.Stmt, indent: usize, semi: bool) Error!void 
                 try w.writeByte(' ');
                 try writeExpr(w, e, indent);
             }
-            if (semi) try w.writeByte(';');
+            try w.writeByte(';');
         },
-        .throw_ => |v| {
-            try w.writeAll("throw");
-            if (v) |e| {
-                try w.writeByte(' ');
-                try writeExpr(w, e, indent);
-            }
-            if (semi) try w.writeByte(';');
+        .throw_ => |e| {
+            try w.writeAll("throw ");
+            try writeExpr(w, e, indent);
+            try w.writeByte(';');
         },
-        .continue_ => {
-            try w.writeAll("continue");
-            if (semi) try w.writeByte(';');
-        },
+        .continue_ => try w.writeAll("continue;"),
+        .break_ => try w.writeAll("break;"),
         .yield_delegate => |e| {
             try w.writeAll("yield* ");
             try writeExpr(w, e, indent);
@@ -481,6 +463,12 @@ fn writeStmtCore(w: *Writer, s: Ast.Stmt, indent: usize, semi: bool) Error!void 
             try writeExpr(w, f.iter, indent);
             try w.writeAll(") ");
             try writeBlock(w, f.body);
+        },
+        .while_ => |wh| {
+            try w.writeAll("while (");
+            try writeExpr(w, wh.cond, indent);
+            try w.writeAll(") ");
+            try writeBlock(w, wh.body);
         },
         .block => |blk| try writeBlock(w, blk),
         .function => |f| try writeFunctionDecl(w, f, indent),
@@ -521,27 +509,37 @@ pub fn writeBlock(w: *Writer, blk: Ast.Block) Error!void {
             }
             try w.writeByte('}');
         },
+        // A one-line block keeps a `group` on its line: its statements are
+        // the block's own, written in sequence.
         .spaced => {
             try w.writeByte('{');
-            for (blk.stmts) |s| {
-                try w.writeByte(' ');
-                try writeStmt(w, s, blk.indent);
-            }
+            try writeInline(w, blk.stmts, blk.indent, true);
             try w.writeAll(" }");
         },
         .tight => {
             try w.writeByte('{');
-            for (blk.stmts, 0..) |s, i| {
-                if (i > 0) try w.writeByte(' ');
-                try writeStmt(w, s, blk.indent);
-            }
+            try writeInline(w, blk.stmts, blk.indent, false);
             try w.writeByte('}');
         },
-        // No braces: the `if`-expression body that lost its IIFE wrapper.
-        .bare => for (blk.stmts) |s| {
-            try w.writeByte(' ');
-            try writeStmt(w, s, blk.indent);
-        },
+    }
+}
+
+/// Statements on one line, a `group` flattened into the sequence. `lead`
+/// puts a space before every statement; otherwise only between them.
+fn writeInline(w: *Writer, stmts: []const Ast.Stmt, indent: usize, lead: bool) Error!void {
+    var first = true;
+    for (stmts) |s| {
+        if (s == .group) {
+            for (s.group) |item| {
+                if (lead or !first) try w.writeByte(' ');
+                try writeStmt(w, item, indent);
+                first = false;
+            }
+            continue;
+        }
+        if (lead or !first) try w.writeByte(' ');
+        try writeStmt(w, s, indent);
+        first = false;
     }
 }
 
@@ -708,6 +706,12 @@ test "js_emitter: statements" {
     try expectStmt("let delete_ = 1;", .{ .decl = .{ .kw = .let_, .pattern = .{ .ident = "delete" }, .value = Ast.Expr.num("1") } });
     try expectStmt("return;", .{ .return_ = null });
     try expectStmt("continue;", .continue_);
+    try expectStmt("break;", .break_);
+    try expectStmt(
+        \\while (x) {
+        \\    break;
+        \\}
+    , .{ .while_ = .{ .cond = Ast.Expr.id("x"), .body = .{ .stmts = &.{.break_}, .layout = .fixed } } });
     try expectStmt("yield* xs; return;", .{ .yield_delegate = Ast.Expr.id("xs") });
     try expectStmt("// note", .{ .comment = Ast.Comment.line("note") });
     try expectStmt("/** note */", .{ .comment = .{ .style = .doc, .text = "note" } });
@@ -744,7 +748,6 @@ test "js_emitter: destructuring patterns" {
 }
 
 const this_expr: Ast.Expr = .this;
-const continue_stmt: Ast.Stmt = .continue_;
 
 test "js_emitter: classes" {
     try expectStmt(
@@ -797,15 +800,6 @@ test "js_emitter: a module separates declarations with a blank line" {
 }
 
 test "js_emitter: the bridges render the shapes the model would otherwise forbid" {
-    // A statement in expression position keeps no terminator of its own.
-    try expectStmt("return continue;", .{ .return_ = .{ .stmt_expr = &continue_stmt } });
-    // A missing expression renders as nothing.
-    try expectStmt("const x = ;", .{ .decl = .{ .pattern = .{ .ident = "x" }, .value = .missing } });
-    // An unnamed rest renders the bare `...` the frontend still asks for.
-    try expectStmt("const { a, ... } = p;", .{ .decl = .{
-        .pattern = .{ .object = .{ .props = &.{.{ .key = "a" }}, .rest = .unnamed } },
-        .value = Ast.Expr.id("p"),
-    } });
     // A botopink match pattern used as a binding target.
     try expectStmt("const Circle(r) = p;", .{ .decl = .{
         .pattern = .{ .match = .{ .variant_fields = .{ .name = "Circle", .fields = &.{"r"} } } },

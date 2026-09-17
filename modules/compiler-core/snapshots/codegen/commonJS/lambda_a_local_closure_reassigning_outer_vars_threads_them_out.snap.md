@@ -28,7 +28,7 @@ function render(words) {
     emit("start");
     for (const w of words) {
     emit(w);
-};
+}
     return ((out + " ") + count.toString());
 }
 

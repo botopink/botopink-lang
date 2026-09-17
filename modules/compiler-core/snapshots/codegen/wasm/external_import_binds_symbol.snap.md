@@ -1,11 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@External.Erlang("erlang", "abs"),
-  @External.Node("./stdlib.mjs", "abs")]
-pub declare fn abs(n: i32) -> i32;
+#[@External.Erlang("filename", "extension"),
+  @External.Node("node:path", "extname")]
+pub declare fn extname(p: string) -> string;
 
 fn main() {
-    @print(abs(-5));
+    @print(extname("docs/readme.md"));
 }
 ```
 
@@ -15,9 +15,9 @@ fn main() {
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  ;; declare fn abs — no wasm implementation (host-backed)
+  ;; declare fn extname — no wasm implementation (host-backed)
   (func $main
-    unreachable ;; unresolved call: abs/1
+    unreachable ;; unresolved call: extname/1
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")

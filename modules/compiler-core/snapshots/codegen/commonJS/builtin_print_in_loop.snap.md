@@ -15,7 +15,7 @@ fn main() {
 function countdown(n) {
     for (const i of Array.from({length: Math.max(0, (n) - (0))}, (_, __i) => (0) + __i)) {
     console.log((n - i));
-};
+}
 }
 
 function main() {

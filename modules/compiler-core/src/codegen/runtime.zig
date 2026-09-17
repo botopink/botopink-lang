@@ -34,6 +34,13 @@
 //!     `.failed` (the program crashed) records an empty RUN LOG — the
 //!     snapshot still shows source + generated code, and the crash text
 //!     carries stack frames that are not worth pinning.
+//!   - **Syntax** (`node --check`): a failed `node` run is re-checked with
+//!     `node --check`; a module node cannot parse records
+//!     `COMPILE ERROR (node --check):` plus the SyntaxError, so JavaScript the
+//!     backend emits wrong is never mistaken for a program that printed
+//!     nothing. A module that parses always runs, so checking only after a
+//!     failed run sees every unparseable module and costs a successful run
+//!     nothing.
 //!
 //! Determinism: `erlc`/`erl` are spawned with the per-execution scratch dir
 //! as their cwd, so diagnostics name `<module>.erl` / `<module>.S` instead of
@@ -266,7 +273,9 @@ pub fn executeJavaScript(allocator: std.mem.Allocator, js_code: []const u8, aux:
     // the few aux-bearing fixtures that fall off the persistent_node fast
     // path below.
     var key: [64]u8 = undefined;
-    cacheKey(&key, "node", "", js_code, aux);
+    // `node+check`: entries recorded before the `node --check` capture
+    // existed hold an empty log for an unparseable module and must miss.
+    cacheKey(&key, "node+check", "", js_code, aux);
     if (cacheRead(allocator, io, &key)) |hit| return hit;
 
     // One-shot node spawn for JavaScript execution (~30ms).
@@ -274,6 +283,12 @@ pub fn executeJavaScript(allocator: std.mem.Allocator, js_code: []const u8, aux:
         const ran = try runCaptured(allocator, io, &.{ "node", "-e", js_code }, null, RUNTIME_TIMEOUT_NS);
         if (ran.status != .ok) {
             allocator.free(ran.output);
+            if (ran.status == .failed) {
+                if (try nodeCheckFailure(allocator, io, js_code, aux)) |log| {
+                    cacheWrite(io, allocator, &key, log);
+                    return log;
+                }
+            }
             const empty = try allocator.dupe(u8, "");
             if (ran.status == .failed) cacheWrite(io, allocator, &key, empty);
             return empty;
@@ -303,12 +318,78 @@ pub fn executeJavaScript(allocator: std.mem.Allocator, js_code: []const u8, aux:
     const ran = try runCaptured(allocator, io, &.{ "node", tmp_path }, null, RUNTIME_TIMEOUT_NS);
     if (ran.status != .ok) {
         allocator.free(ran.output);
+        if (ran.status == .failed) {
+            if (try nodeCheckFailure(allocator, io, js_code, aux)) |log| {
+                cacheWrite(io, allocator, &key, log);
+                return log;
+            }
+        }
         const empty = try allocator.dupe(u8, "");
         if (ran.status == .failed) cacheWrite(io, allocator, &key, empty);
         return empty;
     }
     cacheWrite(io, allocator, &key, ran.output);
     return ran.output;
+}
+
+/// `node --check` over a module whose run failed. Returns the
+/// `COMPILE ERROR (node --check):` RUN LOG when node cannot parse it, or null
+/// when it parses (the program itself crashed) or the check could not run.
+///
+/// The module is checked under the name it is emitted as (the `aux` entry
+/// holding the same code, else `main`), from a scratch dir used as the cwd,
+/// so the location line reads `main.js:3` rather than a random absolute path.
+fn nodeCheckFailure(allocator: std.mem.Allocator, io: anytype, js_code: []const u8, aux: []const AuxFile) !?[]u8 {
+    var name: []const u8 = "main";
+    for (aux) |a| {
+        if (std.mem.eql(u8, a.code, js_code)) {
+            name = a.name;
+            break;
+        }
+    }
+
+    var dir_buf: [96]u8 = undefined;
+    const tmp_dir = try makeScratchDir(io, &dir_buf);
+    defer std.Io.Dir.cwd().deleteTree(io, tmp_dir) catch {};
+
+    const rel = try std.fmt.allocPrint(allocator, "{s}.js", .{name});
+    defer allocator.free(rel);
+    const path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ tmp_dir, rel });
+    defer allocator.free(path);
+    if (std.fs.path.dirname(path)) |d| try std.Io.Dir.cwd().createDirPath(io, d);
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = js_code });
+
+    const checked = try runCaptured(allocator, io, &.{ "node", "--check", rel }, tmp_dir, RUNTIME_TIMEOUT_NS);
+    defer allocator.free(checked.output);
+    if (checked.status != .failed) return null;
+    return try nodeCheckFailureLog(allocator, rel, checked.output);
+}
+
+/// RUN LOG text for a module `node --check` rejected: the marker line, the
+/// `<module>.js:<line>` location (the scratch path stripped), node's source
+/// echo and caret, and the `SyntaxError:` line. Node's internal stack frames
+/// (`    at …`) and its trailing `Node.js v…` banner are dropped — they name
+/// the node release, not the module.
+fn nodeCheckFailureLog(allocator: std.mem.Allocator, rel: []const u8, diagnostics: []const u8) ![]u8 {
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer out.deinit(allocator);
+    try out.appendSlice(allocator, "COMPILE ERROR (node --check):");
+
+    var lines = std.mem.splitScalar(u8, diagnostics, '\n');
+    while (lines.next()) |raw| {
+        var line = std.mem.trimEnd(u8, raw, &std.ascii.whitespace);
+        if (line.len == 0) continue;
+        if (std.mem.startsWith(u8, line, "    at ")) continue;
+        if (std.mem.startsWith(u8, line, "Node.js v")) continue;
+        // `/abs/scratch/main.js:3` → `main.js:3`.
+        if (std.mem.indexOf(u8, line, rel)) |at| {
+            if (at > 0 and line[at - 1] == '/' and std.mem.startsWith(u8, line[at + rel.len ..], ":")) line = line[at..];
+        }
+        try out.append(allocator, '\n');
+        try out.appendSlice(allocator, line);
+    }
+    try out.append(allocator, '\n');
+    return try out.toOwnedSlice(allocator);
 }
 
 /// An Erlang module name is the path basename (`std/bool` → `bool`) —

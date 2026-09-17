@@ -34,7 +34,7 @@ exports.pulses = pulses;
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-export declare function loadOne(x: ): Promise<i32>;
+export declare function loadOne(x: i32): Promise<i32>;
 
 
 export declare function count(): IterableIterator<i32>;

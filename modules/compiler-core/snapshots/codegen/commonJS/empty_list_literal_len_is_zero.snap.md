@@ -10,7 +10,7 @@ fn main() {
 ```javascript
 function main() {
     const xs = [];
-    console.log(xs.len);
+    console.log(xs.length);
 }
 
 function _botopink_main() {
@@ -26,5 +26,5 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
-undefined
+0
 ```

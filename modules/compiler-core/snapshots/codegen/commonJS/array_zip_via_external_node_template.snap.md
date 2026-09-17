@@ -55,7 +55,7 @@ Array.repeat = function(value, times) {
     return (() => { if ((times <= 0)) { return []; } else { const head = value; return [head, ...(Array.repeat(value, (times - 1)))]; } })();
 };
 Array.prototype.slice = function(start, end) {
-     if ((end != null)) { return ((__xs, __a, __e) => { const __n = __xs.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return Array.from({ length: Math.max(__f - __b, 0) }, (_, __i) => __xs[__b + __i]); })(this, start, end); } else { return ((__xs, __a) => { const __n = __xs.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return Array.from({ length: __n - __b }, (_, __i) => __xs[__b + __i]); })(this, start); };
+    if ((end != null)) { return ((__xs, __a, __e) => { const __n = __xs.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return Array.from({ length: Math.max(__f - __b, 0) }, (_, __i) => __xs[__b + __i]); })(this, start, end); } else { return ((__xs, __a) => { const __n = __xs.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return Array.from({ length: __n - __b }, (_, __i) => __xs[__b + __i]); })(this, start); }
 };
 Array.prototype.zip = function(other) { return this.map((__x, __i) => [__x, (other)[__i]]).slice(0, Math.min(this.length, (other).length)); };
 Array.prototype.isEmpty = function() {
@@ -132,27 +132,27 @@ Array.prototype.fill = function(value) {
 };
 Array.prototype.chunked = function(n) {
     let out = [];
-     if ((n <= 0)) { return out; };
+    if ((n <= 0)) { return out; }
     let i = 0;
     let len = this.length;
-    while_((i < len), () => {
+    while ((i < len)) {
     const piece = this.slice(i, (i + n));
     out = out.concat([piece]);
     i = (i + n);
-});
+}
     return out;
 };
 Array.prototype.sliding = function(n) {
     let out = [];
-     if ((n <= 0)) { return out; };
+    if ((n <= 0)) { return out; }
     let i = 0;
     let len = this.length;
     let last = (len - n);
-    while_((i <= last), () => {
+    while ((i <= last)) {
     const piece = this.slice(i, (i + n));
     out = out.concat([piece]);
     i = (i + 1);
-});
+}
     return out;
 };
 Array.prototype.unique = function() {

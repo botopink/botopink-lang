@@ -14,6 +14,8 @@ fn main() {
 ----- JAVASCRIPT -- main.js
 ```javascript
 // parseInt: per-call template (see annotation)
+function parseInt(s) { return (() => { const __n = Number(s); return Number.isFinite(__n) ? { ok: __n } : { error: "not a number" } })(); }
+exports.parseInt = parseInt;
 
 function main() {
     const r = (() => { const __n = Number("42"); return Number.isFinite(__n) ? { ok: __n } : { error: "not a number" } })();
@@ -28,7 +30,7 @@ _botopink_main();
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-export declare function parseInt(s: ): { tag: "Ok"; result: i32 } | { tag: "Error"; error: string };
+export declare function parseInt(s: string): { tag: "Ok"; result: i32 } | { tag: "Error"; error: string };
 
 
 

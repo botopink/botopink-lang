@@ -17,7 +17,7 @@ fn main() {
 ----- JAVASCRIPT -- main.js
 ```javascript
 function maybeFail(should_fail) {
-     if (should_fail) { return ({ error: "boom" }); } else { return ({ ok: 42 }); };
+    if (should_fail) { return ({ error: "boom" }); } else { return ({ ok: 42 }); }
 }
 
 function main() {

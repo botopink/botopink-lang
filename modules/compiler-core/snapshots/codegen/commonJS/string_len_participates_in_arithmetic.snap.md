@@ -10,7 +10,7 @@ fn main() {
 ```javascript
 function main() {
     const s = "hello";
-    console.log((s.len + 1));
+    console.log((s.length + 1));
 }
 
 function _botopink_main() {
@@ -26,5 +26,5 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
-NaN
+6
 ```

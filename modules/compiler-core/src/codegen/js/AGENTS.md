@@ -25,6 +25,7 @@ js/
 ├── js_ast.zig      ← the model: JS `Expr`/`Stmt`/`Pattern`/`Block`/`Class`/`Item`,
 │                     the `.d.ts` `TsDecl`/`TsMember`/`TsType`, and `Builder`
 ├── js_emitter.zig  ← the only writer of JavaScript text
+├── js_prelude.zig  ← the runtime helpers a module may call, as built nodes
 └── ts_emitter.zig  ← the only writer of `.d.ts` text
 ```
 
@@ -32,8 +33,9 @@ js/
 
 | File | Role |
 |---|---|
-| `js_ast.zig` | `Expr` (`lexeme_string`, `quoted`, `number`, `null_`, `ident`, `name`, `this`, `member`, `index`, `call`, `new_`, `binary`, `unary`, `ternary`, `assign`, `paren`, `arrow`, `function`, `array`, `object`, `host`, `await_`, `yield_`, `comment`), `Stmt` (`expr`, `decl`, `return_`, `throw_` (optional operand), `continue_`, `yield_delegate`, `if_`, `for_of`, `block`, `function`, `class`, `comment`, `group`), `Pattern` (`ident`, `name`, `object`, `array`, `match`), `Param`, `Block` (+ `Layout`), `Class`, `Comment`, `Item`; the `.d.ts` subset `TsType` / `TsField` / `TsParam` / `TsMember` / `TsDecl`; and `Builder` (arena: `ptr`, `stmtPtr`, `typePtr`, `call`, `member`, `binary`, `ternary`, `arrowBlock`, `iife`, `ifStmt`, `group`, …). |
+| `js_ast.zig` | `Expr` (`lexeme_string`, `quoted`, `number`, `null_`, `ident`, `name`, `this`, `member`, `index`, `call`, `new_`, `binary`, `unary`, `ternary`, `assign`, `paren`, `arrow`, `function`, `array`, `object`, `host`, `await_`, `yield_`, `comment`), `Stmt` (`expr`, `decl`, `return_`, `throw_` (required operand), `continue_`, `break_`, `yield_delegate`, `if_`, `for_of`, `block`, `function`, `class`, `comment`, `group`), `Pattern` (`ident`, `name`, `object`, `array`, `match`), `Param`, `Block` (+ `Layout`), `Class`, `Comment`, `Item`; the `.d.ts` subset `TsType` / `TsField` / `TsParam` / `TsMember` / `TsDecl`; and `Builder` (arena: `ptr`, `stmtPtr`, `typePtr`, `call`, `member`, `binary`, `ternary`, `arrowBlock`, `iife`, `ifStmt`, `group`, …). |
 | `js_emitter.zig` | **Names:** `ident(name)` — the ES reserved-word rename (`delete` → `delete_`); the only place it happens. A property position is never renamed. **Strings:** `writeLexemeString` — a botopink lexeme's escape pairs pass through (the lexer validated them and the escape set is JS-compatible), raw control bytes and unescaped quotes are escaped. **Code:** `writeExpr(w, expr, indent)`, `writeStmt(w, stmt, indent)`, `writeBlock`, `writePattern`, `writeComment`, `writeProgram(w, items)` (generated declarations separated by a blank line; runtime-support source verbatim). |
+| `js_prelude.zig` | The commonJS runtime helpers for primitive methods whose native JS method disagrees with the signature, as built `Stmt.function` nodes — never a shipped file. `Helper` (`assert_fatal`: a non-test `assert` throws with message and `file:line`; `string_char_at`: `String.charAt -> ?string`, `null` out of range), `forMethod(receiver, method, argc)` (the declaration a helper answers), `name`, `decl`, `order`. `commonJS.zig`'s `Emitter.helper` returns the name **and** marks the helper, and only marked helpers are written into the module (the `wat/wat_prelude.zig` shape). |
 | `ts_emitter.zig` | `writeType`, `writeDecl`, `writeProgram(w, decls)` — one declaration per typed binding, separated by a blank line, a binding with no surface (`.none`) still taking its separator. |
 
 ## Model rules
@@ -46,7 +48,8 @@ js/
 - **An `if` carries an `Expr` condition**, so there is no empty condition to
   forget to fill in.
 - **A `.d.ts` parameter carries a `TsType`**, never a string, so a parameter
-  with no type has to be spelled out rather than being an empty string that
+  always has a type: `typescript.zig` builds it from the parameter's
+  `TypeRef` (`any` where the source wrote none), never an empty string that
   renders as `x: `.
 - **Layout is part of the model where the emitted bytes depend on it**
   (`Block.Layout`, `Array.Layout`, `Object.Layout`) — the same rule
@@ -54,20 +57,15 @@ js/
 
 ## Bridges (the known defects, pinned)
 
-Six forms exist only because the current lowering still produces shapes the
-model would otherwise forbid. They are the **complete** list of ways a JS
-backend can emit something illegal; each has to be named explicitly at the
-build site, so `rg 'stmt_expr|\.missing|\.unnamed|\.match|throw_ = null'`
+One form exists only because the current lowering still produces a shape the
+model would otherwise forbid. It is the **complete** list of ways a JS
+backend can emit something illegal; it has to be named explicitly at the
+build site, so `rg '\.match = '`
 finds every one. Fixing a defect means deleting its build site, not its node.
 
 | Bridge | Renders | Defect |
 |---|---|---|
-| `Expr.stmt_expr` | the statement, without its own terminator | **JS-1** a statement in expression position: `return for (const x of xs) {…};`, `return return x;`, `return continue;` |
-| `Expr.missing` | nothing | **JS-2** an expression the lowering never produced: `({ a, … } = )` in a parameter list, `if () return …;` for a `case` arm with a multi-pattern |
-| `Rest.unnamed` / `Spread.unnamed` | a bare `...` | **JS-3** a rest/spread whose binding name the frontend does not carry: `{ name, ... }` |
-| `Pattern.match` | botopink's own pattern spelling | **JS-4** a match pattern used as a JS binding target (`const Circle(r) = …`) |
-| `TsType.missing` | nothing | **JS-5** a `.d.ts` parameter whose type the frontend does not carry: `f(s: )` |
-| `Stmt.throw_ = null` | a bare `throw` | **JS-6** a botopink `throw` with no value; `throw;` is a JS SyntaxError |
+| `Pattern.match` | botopink's own pattern spelling | **JS-4** a match pattern used as a JS binding target (`const Circle(r) = …`). **Blocked (F7 checker):** no program reaches a build site — `val Circle(r) = s;` and `val [a, b] = xs;` parse but the checker leaves the bindings unbound (`error: unbound variable 'r'`), and `assert x is Some(n)` is still a parse error (`narrow_assert_pattern_with_print`). Once they type-check, a `ctor` / `list` destructuring lowers to a real test-plus-destructure and the eight `buildPattern` sites, `MatchPattern` and `writeMatchPattern` go |
 
 `Expr.host` is **not** a bridge: it carries the literal text of an
 `#[@External.Node("…")]` annotation, which is host code by definition — the
@@ -81,10 +79,9 @@ always emitted (`}` at column 0 inside an indented function body). Its `indent`
 field still carries the ambient level, because a statement that spans lines
 (`Stmt.group`, the `try` lowering) indents its continuation lines from there.
 `Block.Layout.indented` is the nesting-correct form used by function, method
-and class bodies. `Block.Layout.bare` writes a statement sequence with **no
-braces**, one space before each statement: the body of an `if` expression whose
-branches already `return`, which the lowering emits without the IIFE wrapper it
-would otherwise add — reachable only through `Expr.stmt_expr`.
+and class bodies. The one-line layouts (`.spaced`, `.tight`) flatten a
+`Stmt.group` into their own statement sequence, so a construct that lowers to
+several statements (`_acc.push(v); continue;`) stays on the line.
 
 ## Rules
 

@@ -40,7 +40,7 @@ exports.App = App;
 export declare class Response {
     readonly body: string;
     constructor(body: string);
-    ok(body: ): Response;
+    ok(body: string): Response;
 }
 
 

@@ -24,7 +24,7 @@ function average(xs) {
     for (const x of xs) {
     total = (total + x);
     n = (n + 1.0);
-};
+}
     return (total / n);
 }
 

@@ -11,7 +11,9 @@ const lexerMod = @import("../lexer.zig");
 const parserMod = @import("../parser.zig");
 const prelude = @import("std_prelude");
 const js = @import("./js/js_ast.zig");
+const envMod = @import("../comptime/env.zig");
 const jsEmitter = @import("./js/js_emitter.zig");
+const jsPrelude = @import("./js/js_prelude.zig");
 
 /// `prim-op-annotation` builtin dispatch entry (commonJS).
 const BuiltinNodeCall = struct {
@@ -69,11 +71,11 @@ pub fn codegenEmit(
                 // test blocks (a project's `botopink test` runs only its own
                 // tests; the stdlib's inline tests run from `libs/std` itself).
                 const module_test_mode = config.test_mode and !std.mem.startsWith(u8, ct.name, "std/");
-                const js_src = try emitJs(alloc, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, &ok.js_method_renames, module_test_mode, ct.name, &cross);
+                const js_src = try emitJs(alloc, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, &ok.js_method_renames, &ok.instance_lowerings, module_test_mode, ct.name, &cross);
 
                 // Generate TypeScript typedefs if configured.
                 const typedef: ?[]u8 = if (config.typeDefLanguage) |_|
-                    try emitTypeDef(alloc, ok.bindings)
+                    try emitTypeDef(alloc, ok.bindings, &cross)
                 else
                     null;
 
@@ -101,18 +103,20 @@ fn emitJs(
     comptime_vals: std.StringHashMap([]const u8),
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     renames: ?*const std.AutoHashMap(ast.Loc, []const u8),
+    lowerings: ?*const std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
     test_mode: bool,
     module_name: []const u8,
     cross: ?*const CrossModule,
 ) ![]u8 {
-    return try emitProgramOptsX(alloc, program, comptime_vals, rewrites, renames, test_mode, module_name, cross);
+    return try emitProgramOptsX(alloc, program, comptime_vals, rewrites, renames, lowerings, test_mode, module_name, cross);
 }
 
 fn emitTypeDef(
     alloc: std.mem.Allocator,
     bindings: []const comptimeMod.TypedBinding,
+    cross: *const CrossModule,
 ) ![]u8 {
-    return try tsEmit.emitProgram(alloc, bindings);
+    return try tsEmit.emitProgram(alloc, bindings, cross);
 }
 
 // ── emit ──────────────────────────────────────────────────────────────────────
@@ -251,7 +255,7 @@ pub fn emitProgramOpts(
     test_mode: bool,
     module_name: []const u8,
 ) ![]u8 {
-    return emitProgramOptsX(alloc, program, comptime_vals, rewrites, null, test_mode, module_name, null);
+    return emitProgramOptsX(alloc, program, comptime_vals, rewrites, null, null, test_mode, module_name, null);
 }
 
 /// The test-mode preamble: a throwing assert helper the runner can catch.
@@ -328,6 +332,7 @@ fn emitProgramOptsX(
     comptime_vals: std.StringHashMap([]const u8),
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     renames: ?*const std.AutoHashMap(ast.Loc, []const u8),
+    lowerings: ?*const std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
     test_mode: bool,
     module_name: []const u8,
     cross: ?*const CrossModule,
@@ -337,11 +342,13 @@ fn emitProgramOptsX(
     var em = Emitter.emitterInit(alloc, arena.allocator(), comptime_vals, rewrites);
     defer em.deinit();
     em.renames = renames;
+    em.lowerings = lowerings;
     em.test_mode = test_mode;
     em.module_name = module_name;
     em.cross = cross;
     try em.collectExternals(program);
     try em.collectClassNames(program);
+    try em.collectDeclIndexes(program);
     try em.collectPrimNodeRenames(program);
     try em.collectBuiltinNodeDispatch();
 
@@ -411,11 +418,15 @@ fn emitProgramOptsX(
                     // Emit resolved comptime value if available.
                     const ct_id = val_ct_map.get(v.name) orelse continue;
                     const lit = comptime_vals.get(ct_id) orelse continue;
-                    try items.append(arena_alloc, .{ .stmt = .{ .decl = .{
-                        .pattern = .{ .ident = v.name },
-                        // A pre-evaluated JS literal, already in target syntax.
-                        .value = .{ .name = lit },
-                    } } });
+                    try items.append(arena_alloc, .{
+                        .stmt = .{
+                            .decl = .{
+                                .pattern = .{ .ident = v.name },
+                                // A pre-evaluated JS literal, already in target syntax.
+                                .value = .{ .name = lit },
+                            },
+                        },
+                    });
                     continue;
                 }
                 try items.append(arena_alloc, .{ .stmt = try em.buildValDecl(v) });
@@ -490,6 +501,17 @@ fn emitProgramOptsX(
             .value = .{ .array = .{ .elems = entries, .layout = .lines } },
         } } });
         try items.append(arena_alloc, .{ .runtime = test_runner_source });
+    }
+
+    // The prelude helpers the module called, ahead of every declaration (after
+    // the test-mode assert helper) — only the ones actually used.
+    {
+        var at: usize = if (test_mode) 1 else 0;
+        for (jsPrelude.order) |hp| {
+            if (!em.helpers.contains(hp)) continue;
+            try items.insert(arena_alloc, at, .{ .stmt = jsPrelude.decl(hp) });
+            at += 1;
+        }
     }
 
     var aw: std.Io.Writer.Allocating = .init(alloc);
@@ -675,6 +697,35 @@ const MethodHoles = struct {
     }
 };
 
+/// What a `break` / `continue` in the body being built binds to.
+const LoopCtx = union(enum) {
+    /// Not inside a loop body (or behind a function boundary).
+    none,
+    /// A `loop` in statement position: a JS `for…of`. `break;` ends it,
+    /// `continue;` skips to the next item, a `break <v>` value is discarded.
+    stmt,
+    /// A `loop` used as a value — a comprehension lowered to an accumulating
+    /// IIFE. `break <v>` / `yield <v>` push `v` onto the named array and move to
+    /// the next item; `break;` ends the iteration.
+    value: []const u8,
+};
+
+/// Holes filled from a wrapper function's own parameters: `$N` is the Nth
+/// declared parameter, or `arguments[N]` past the declared list; `$self` has
+/// no meaning in a plain function.
+const ParamHoles = struct {
+    b: js.Builder,
+    names: []const []const u8,
+
+    pub fn recvExpr(_: *@This()) anyerror!js.Expr {
+        return error.PrimOpRecvInUserTemplate;
+    }
+    pub fn argExpr(self: *@This(), i: usize) anyerror!js.Expr {
+        if (i < self.names.len) return .{ .ident = self.names[i] };
+        return self.b.index(.{ .name = "arguments" }, .{ .number = try std.fmt.allocPrint(self.b.arena, "{d}", .{i}) }, false);
+    }
+};
+
 const this_expr: js.Expr = .this;
 const boxed_value_of: js.Expr = .{ .member = .{ .object = &this_expr, .name = "valueOf" } };
 
@@ -693,6 +744,10 @@ const Emitter = struct {
     /// emit instead of `callee` (e.g. string `contains` → `includes`). Null in the
     /// standalone `emitProgram`/`emitFnJs` paths.
     renames: ?*const std.AutoHashMap(ast.Loc, []const u8) = null,
+    /// Inference's per-site lowering record (`s.len` on a typed string/array →
+    /// `.prim`). commonJS reads it only to spell a primitive `len` as the
+    /// native `.length` property. Null in the standalone paths.
+    lowerings: ?*const std.AutoHashMap(ast.Loc, envMod.InstanceLowering) = null,
     /// When true, `self.x` lowers to `self.x` (extension methods take `self` as a
     /// real first parameter) instead of the prototype-method `this.x`.
     self_is_param: bool = false,
@@ -703,6 +758,18 @@ const Emitter = struct {
     /// the done-value and yield nothing (the iterator-recursion bug behind the
     /// dead `iterator` suite).
     in_generator: bool = false,
+    /// The innermost `loop` whose body is being built, which is what a
+    /// `break` / `continue` / accumulator `yield` binds to. Reset to `.none`
+    /// wherever a JS function boundary starts (an arrow, an IIFE), because a
+    /// jump cannot cross one.
+    loop_ctx: LoopCtx = .none,
+    /// The `js/js_prelude.zig` helpers this module calls — marked by `helper`,
+    /// which is the only way a call site gets a helper's name.
+    helpers: std.EnumSet(jsPrelude.Helper) = .initEmpty(),
+    /// Set while the arms of a `return __bp_ok(case …)` are lowered as
+    /// statements (`buildReturnCaseStmt`): a value arm then returns
+    /// `({ ok: v })`, while an arm that already returns keeps its own value.
+    case_ok_wrap: bool = false,
     /// Names bound by `use` hooks seen so far in the current function body, in
     /// source order. Used to infer the dependency array of `useMemo`/`useEffect`:
     /// a hook's lambda dep list is the reactive names it references.
@@ -722,6 +789,14 @@ const Emitter = struct {
     /// Names that emit as JS classes (record/struct decls, incl. the
     /// `val X = record { … }` shorthand) — constructor calls need `new`.
     class_names: std.StringHashMap(void),
+    /// Every top-level `fn` name the module declares — a user `fn while`
+    /// keeps the call lowering (`whileShape`).
+    user_fn_names: std.StringHashMap(void),
+    /// Payload variant name → its declared field names, in declaration order,
+    /// for every enum declared in this module. A `case` arm `Circle(r)` binds
+    /// positionally, so `r` is read from the declared field (`radius`), never
+    /// from a property named after the binding.
+    variant_fields: std.StringHashMap([]const []const u8),
     /// Cross-module link info (null in the standalone `emitProgram` path) —
     /// resolves a `from "<pkg>"` import to the file that emits each name.
     cross: ?*const CrossModule = null,
@@ -770,6 +845,8 @@ const Emitter = struct {
             .externals = std.StringHashMap(ast.ExternalRef).init(alloc),
             .externals_missing = std.StringHashMap(void).init(alloc),
             .class_names = std.StringHashMap(void).init(alloc),
+            .user_fn_names = std.StringHashMap(void).init(alloc),
+            .variant_fields = std.StringHashMap([]const []const u8).init(alloc),
             .seen_imports = std.StringHashMap(void).init(alloc),
             .prim_node_renames = std.StringHashMap([]const u8).init(alloc),
             .builtin_node_dispatch = std.StringHashMap(BuiltinNodeCall).init(alloc),
@@ -794,6 +871,8 @@ const Emitter = struct {
         self.externals.deinit();
         self.externals_missing.deinit();
         self.class_names.deinit();
+        self.user_fn_names.deinit();
+        self.variant_fields.deinit();
         self.seen_imports.deinit();
         self.prim_node_renames.deinit();
         var bit = self.builtin_node_dispatch.iterator();
@@ -817,6 +896,12 @@ const Emitter = struct {
 
     fn arena(self: *Emitter) std.mem.Allocator {
         return self.b.arena;
+    }
+
+    /// A prelude helper's name, marking it for emission in this module.
+    fn helper(self: *Emitter, h: jsPrelude.Helper) js.Expr {
+        self.helpers.insert(h);
+        return .{ .name = jsPrelude.name(h) };
     }
 
     // ── collectors ────────────────────────────────────────────────────────────
@@ -1044,6 +1129,36 @@ const Emitter = struct {
         };
     }
 
+    /// Indexes the module's top-level fn names (`user_fn_names`) and each
+    /// payload variant's declared field names (`variant_fields`). Enum
+    /// sections are desugared into inner enums before codegen, so the
+    /// top-level variant list is the whole surface.
+    fn collectDeclIndexes(self: *Emitter, program: ast.Program) !void {
+        for (program.decls) |decl| switch (decl) {
+            .@"fn" => |f| try self.user_fn_names.put(f.name, {}),
+            .@"enum" => |e| for (e.variants) |v| {
+                if (v.fields.len == 0) continue;
+                const names = try self.arena().alloc([]const u8, v.fields.len);
+                for (v.fields, 0..) |f, i| names[i] = f.name;
+                try self.variant_fields.put(v.name, names);
+            },
+            else => {},
+        };
+    }
+
+    /// `exports.<name> = <name>;` for a `pub` record or enum. Always emitted,
+    /// like a `pub fn`'s: the module's `.d.ts` declares the class / enum as
+    /// exported, and a consumer reaching it through the module object
+    /// (`order.Order.Lt` after `import {order} from "std"`) finds nothing
+    /// otherwise.
+    fn pubExport(self: *Emitter, name: []const u8) !js.Stmt {
+        return .{ .expr = try self.b.assign(
+            try self.b.member(.{ .name = "exports" }, name),
+            "=",
+            .{ .name = name },
+        ) };
+    }
+
     /// `exports.<name> = <name>;` for a `pub` type that another module
     /// imports. Scoped to actually-consumed names so single-module programs
     /// (the vast majority of fixtures) emit no export line and stay unchanged.
@@ -1129,12 +1244,22 @@ const Emitter = struct {
     fn buildFnItem(self: *Emitter, f: ast.FnDecl) !js.Stmt {
         if (!f.isExternal()) return self.buildFn(f);
         // §A2 template-form external: no decl alias — the template renders
-        // inline at every call site (see `tryUserTemplate`). Emit a one-line
-        // doc breadcrumb so the emitted file stays self-documenting.
-        if (self.user_node_templates.contains(f.name)) {
-            return .{ .comment = .{
+        // inline at every call site in this module (see `tryUserTemplate`).
+        // Emit a one-line doc breadcrumb so the emitted file stays
+        // self-documenting. A `pub` one is also a real exported function, so
+        // another module reaching it through the module object
+        // (`env.write(…)` after `import {env} from "std"`) finds it.
+        if (self.user_node_templates.get(f.name)) |call| {
+            const note = js.Stmt{ .comment = .{
                 .text = try std.fmt.allocPrint(self.arena(), "{s}: per-call template (see annotation)", .{f.name}),
             } };
+            if (!f.isPub) return note;
+            const wrapper = try self.buildTemplateWrapper(f, call) orelse return note;
+            return self.b.group(&.{ note, wrapper, .{ .expr = try self.b.assign(
+                try self.b.member(.{ .name = "exports" }, f.name),
+                "=",
+                .{ .ident = f.name },
+            ) } });
         }
         const ref = self.externals.get(f.name) orelse return .{ .comment = .{
             .text = try std.fmt.allocPrint(self.arena(), "external fn {s} (no node target)", .{f.name}),
@@ -1161,6 +1286,50 @@ const Emitter = struct {
             "=",
             .{ .name = bind_name },
         ) } });
+    }
+
+    /// `function name(params) { return <template>; }` for a `pub` template
+    /// external: the template's `$N` holes are the declared parameters. An
+    /// arity-branched template tests `arguments.length` per branch. Null when
+    /// the template names a receiver (`$self`), which a plain function has not.
+    fn buildTemplateWrapper(self: *Emitter, f: ast.FnDecl, call: BuiltinNodeCall) !?js.Stmt {
+        var names: std.ArrayListUnmanaged([]const u8) = .empty;
+        var params: std.ArrayListUnmanaged(js.Param) = .empty;
+        for (f.params) |p| {
+            if (std.mem.eql(u8, p.name, "self")) continue;
+            try names.append(self.arena(), p.name);
+            try params.append(self.arena(), .{ .pattern = .{ .ident = p.name } });
+        }
+        var holes = ParamHoles{ .b = self.b, .names = names.items };
+        var body: std.ArrayListUnmanaged(js.Stmt) = .empty;
+        if (call.arity_branches.len > 0) {
+            for (call.arity_branches) |branch| {
+                const value = try self.renderParamTemplate(branch.template, &holes, branch.argc) orelse return null;
+                try body.append(self.arena(), try self.b.ifStmt(
+                    try self.b.binaryBare("===", try self.b.member(.{ .name = "arguments" }, "length"), .{
+                        .number = try std.fmt.allocPrint(self.arena(), "{d}", .{branch.argc}),
+                    }),
+                    .{ .return_ = value },
+                ));
+            }
+        } else {
+            const value = try self.renderParamTemplate(call.symbol, &holes, names.items.len) orelse return null;
+            try body.append(self.arena(), .{ .return_ = value });
+        }
+        return .{ .function = .{
+            .name = f.name,
+            .params = params.items,
+            .body = .{ .stmts = try body.toOwnedSlice(self.arena()), .layout = .spaced },
+        } };
+    }
+
+    fn renderParamTemplate(self: *Emitter, template: []const u8, holes: *ParamHoles, argc: usize) !?js.Expr {
+        var tmpl = HostTemplate(ParamHoles){ .arena = self.arena(), .holes = holes, .argc = argc };
+        primOpTemplate.render(template, &tmpl) catch |err| switch (err) {
+            error.PrimOpRecvInUserTemplate => return null,
+            else => return err,
+        };
+        return try tmpl.finish();
     }
 
     fn requireCall(self: *Emitter, path: []const u8) !js.Expr {
@@ -1251,8 +1420,7 @@ const Emitter = struct {
             .members = try members.toOwnedSlice(self.arena()),
         } };
         if (!r.isPub) return class;
-        const exp = try self.crossExport(r.name) orelse return class;
-        return self.b.group(&.{ class, exp });
+        return self.b.group(&.{ class, try self.pubExport(r.name) });
     }
 
     fn buildEnum(self: *Emitter, e: ast.EnumDecl) !js.Stmt {
@@ -1293,8 +1461,7 @@ const Emitter = struct {
             ),
         } };
         if (!e.isPub) return decl;
-        const exp = try self.crossExport(e.name) orelse return decl;
-        return self.b.group(&.{ decl, exp });
+        return self.b.group(&.{ decl, try self.pubExport(e.name) });
     }
 
     fn buildInterface(self: *Emitter, i: ast.InterfaceDecl) !js.Stmt {
@@ -1679,10 +1846,8 @@ const Emitter = struct {
     fn buildParam(self: *Emitter, p: ast.Param) !js.Param {
         const d = p.destruct orelse return .{ .pattern = .{ .ident = p.name } };
         return switch (d) {
-            // The object form still carries the `= ` of a destructuring
-            // *assignment* into parameter position, with nothing to assign —
-            // `Expr.missing` pins that (defect JS-2).
-            .names => .{ .pattern = try self.buildNamesPattern(d.names), .default = .missing },
+            // A destructuring parameter takes no default.
+            .names => .{ .pattern = try self.buildNamesPattern(d.names) },
             .tuple_ => |t| .{ .pattern = try self.buildTuplePattern(t) },
             .list => |pat| .{ .pattern = try self.buildPattern(pat) },
             .ctor => |pat| .{ .pattern = try self.buildPattern(pat) },
@@ -1692,11 +1857,10 @@ const Emitter = struct {
     fn buildNamesPattern(self: *Emitter, n: anytype) !js.Pattern {
         const props = try self.arena().alloc(js.ObjectPattern.Prop, n.fields.len);
         for (n.fields, 0..) |nm, i| props[i] = .{ .key = nm.bind_name };
-        return .{ .object = .{
-            .props = props,
-            // The frontend records that a rest is present but not its name.
-            .rest = if (n.hasSpread) .unnamed else null,
-        } };
+        // `{ x, .. }` ignores the rest (the parser has no named record rest),
+        // and JS object destructuring already ignores unlisted keys, so the
+        // `..` emits nothing (JS-3).
+        return .{ .object = .{ .props = props } };
     }
 
     fn buildTuplePattern(self: *Emitter, names: []const []const u8) !js.Pattern {
@@ -1727,10 +1891,14 @@ const Emitter = struct {
                     .bind => |name| js.Pattern{ .ident = name },
                     .numberLit => |n| js.Pattern{ .match = .{ .number = n } },
                 };
-                return .{ .array = .{
-                    .elems = elems,
-                    .rest = if (l.spread) |sp| (if (sp.len > 0) js.Rest{ .binding = sp } else .unnamed) else null,
-                } };
+                return .{
+                    .array = .{
+                        .elems = elems,
+                        // A nameless `..` ignores the trailing elements, which JS
+                        // array destructuring already does: no rest element.
+                        .rest = if (l.spread) |sp| (if (sp.len > 0) js.Rest{ .binding = sp } else null) else null,
+                    },
+                };
             },
             .@"or" => |pats| {
                 const out = try self.arena().alloc(js.Pattern, pats.len);
@@ -1847,10 +2015,43 @@ const Emitter = struct {
             },
             // A bare `use <hookcall>;` statement is a void hook (e.g. `use effect { … }`).
             .useHook => |uh| return .{ .expr = try self.buildHookCall(uh.kind.inner.*) },
+            // An `if` whose branches jump out (`return`, `break`, `continue`)
+            // is a JS `if` statement: a jump cannot leave the IIFE the value
+            // form wraps it in.
+            .branch => |br| switch (br.kind) {
+                .if_ => |i| if (self.ifJumps(i)) return self.buildIfStmt(i),
+                .tryCatch => {},
+            },
+            .loop => |lp| if (try self.buildLoopStmt(lp)) |st| return st,
+            .call => |c| if (c.kind == .call) if (self.whileShape(c.kind.call)) |w| return self.buildWhileStmt(w.cond, w.body),
+            .jump => |j| switch (j.kind) {
+                .@"break" => |br| return self.buildBreakStmt(br, false),
+                .throw_ => |r| return .{ .throw_ = try self.buildExpr((r orelse return error.ThrowWithoutOperand).*) },
+                .@"continue" => return switch (self.loop_ctx) {
+                    .none => error.JumpOutsideLoop,
+                    .stmt, .value => js.Stmt.continue_,
+                },
+                .yield => |y| if (self.loop_ctx == .value) {
+                    // An accumulator `yield <v>` contributes `v` and moves on;
+                    // a valueless one contributes nothing.
+                    const val = y.value orelse return .continue_;
+                    return self.b.group(&.{ try self.accPush(val.*), .continue_ });
+                },
+                else => {},
+            },
+            else => {},
+        }
+        switch (e) {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| {
                     const rp = r orelse return .{ .return_ = null };
                     if (classifyTry(rp.*)) |form| return self.buildTryStmt(form, .ret);
+                    // `return case … { A -> v; B -> return x; }` — an arm that
+                    // returns from the function cannot sit inside the IIFE a
+                    // `case` value lowers to, so the whole `case` becomes
+                    // statements and every value arm returns (wrapped in
+                    // `{ ok }` when `#[@result]` wrapped the case).
+                    if (try self.buildReturnCaseStmt(rp.*)) |st| return st;
                     // §1F F4F-T2 — strip the post-transform future markers
                     // back to native shapes. The `async function` machinery
                     // is the actual promise wrap; the markers exist for
@@ -1957,10 +2158,19 @@ const Emitter = struct {
 
     /// A `params => { body }` arrow function (for trailing-lambda hook args).
     fn buildLambda(self: *Emitter, params: []const []const u8, body: []ast.Stmt) !js.Expr {
-        // A nested arrow is not a generator — its `return` stays `return`.
+        // A nested arrow is not a generator — its `return` stays `return` —
+        // and no jump crosses it.
         const prev_in_generator = self.in_generator;
+        const prev_ctx = self.loop_ctx;
+        const prev_wrap = self.case_ok_wrap;
         self.in_generator = false;
-        defer self.in_generator = prev_in_generator;
+        self.loop_ctx = .none;
+        self.case_ok_wrap = false;
+        defer {
+            self.in_generator = prev_in_generator;
+            self.loop_ctx = prev_ctx;
+            self.case_ok_wrap = prev_wrap;
+        }
         const ps = try self.arena().alloc(js.Param, params.len);
         for (params, 0..) |p, i| ps[i] = .{ .pattern = .{ .ident = p } };
         return self.b.arrowBlock(ps, .{
@@ -1986,10 +2196,19 @@ const Emitter = struct {
 
     /// `(params) => { body }` with implicit tail return.
     fn buildArrow(self: *Emitter, params: []const []const u8, body: []const ast.Stmt) !js.Expr {
-        // A nested arrow is not a generator — its `return` stays `return`.
+        // A nested arrow is not a generator — its `return` stays `return` —
+        // and no jump crosses it.
         const prev_in_generator = self.in_generator;
+        const prev_ctx = self.loop_ctx;
+        const prev_wrap = self.case_ok_wrap;
         self.in_generator = false;
-        defer self.in_generator = prev_in_generator;
+        self.loop_ctx = .none;
+        self.case_ok_wrap = false;
+        defer {
+            self.in_generator = prev_in_generator;
+            self.loop_ctx = prev_ctx;
+            self.case_ok_wrap = prev_wrap;
+        }
         const ps = try self.arena().alloc(js.Param, params.len);
         for (params, 0..) |p, i| ps[i] = .{ .pattern = .{ .ident = p } };
         return self.b.arrowBlock(ps, .{
@@ -2048,7 +2267,7 @@ const Emitter = struct {
             },
             .catchJump => |cj| {
                 try stmts.append(self.arena(), try self.b.ifStmt(try self.errorIn(temp), .{ .block = .{
-                    .stmts = try self.b.stmts(&.{.{ .expr = try self.buildExpr(cj.handler) }}),
+                    .stmts = try self.b.stmts(&.{try self.buildStmt(.{ .expr = cj.handler })}),
                     .layout = .spaced,
                 } }));
                 if (try self.tryValueStmt(head, temp)) |s| try stmts.append(self.arena(), s);
@@ -2070,6 +2289,11 @@ const Emitter = struct {
                 .@"return", .throw_ => return self.buildStmt(stmt),
                 else => {},
             },
+            // A trailing binding gives the branch no value.
+            .binding => |b| switch (b.kind) {
+                .localBind, .localBindDestruct => return self.buildStmt(stmt),
+                .assign => {},
+            },
             else => {},
         }
         return .{ .return_ = try self.buildExpr(stmt.expr) };
@@ -2083,7 +2307,9 @@ const Emitter = struct {
     /// is not re-evaluated (important for method chains).
     fn buildResultOptionOp(self: *Emitter, callee: []const u8, args: []const ast.CallArg) anyerror!js.Expr {
         const recv = try self.buildExpr(args[0].value.*);
-        const arg1: js.Expr = if (args.len > 1) try self.buildExpr(args[1].value.*) else .missing;
+        // Only the transform / default-value ops read a second argument, and
+        // the transform always supplies it for them.
+        const arg1: js.Expr = if (args.len > 1) try self.buildExpr(args[1].value.*) else js.Expr.null_;
         const r = js.Expr{ .name = "_r" };
         const o = js.Expr{ .name = "_o" };
         const r_param = [_]js.Param{.{ .pattern = .{ .name = "_r" } }};
@@ -2133,8 +2359,11 @@ const Emitter = struct {
         if (std.mem.eql(u8, callee, "__bp_option_unwrapOr")) {
             return self.applyLambda(&o_param, try self.b.ternary(o_present, o, try self.b.paren(arg1)), recv);
         }
-        // No lowering for this op — the call renders as nothing, as before.
-        return .missing;
+        // The `#[@future]` markers outside a `return` (which strips them in
+        // `buildStmt`): resolving is the value, rejecting throws.
+        if (std.mem.eql(u8, callee, "__bp_future_resolved")) return recv;
+        if (std.mem.eql(u8, callee, "__bp_future_rejected")) return self.b.iife(&.{.{ .throw_ = recv }});
+        return error.UnknownResultOptionOp;
     }
 
     /// `((p) => body)(arg)` — bind the receiver once.
@@ -2185,6 +2414,13 @@ const Emitter = struct {
                     if (tupleIndexMember(ia.member)) |idx| {
                         return self.b.index(recv, .{ .number = idx }, ia.optional);
                     }
+                    // `s.len` / `arr.len` on a typed string or array is the
+                    // host length (C3): JS spells it as the `.length` property.
+                    // Inference records the primitive kind only for a typed
+                    // receiver, so a record field named `len` is untouched.
+                    if (std.mem.eql(u8, ia.member, "len")) if (self.lowerings) |lw| if (lw.get(id.loc)) |il| if (il == .prim) {
+                        return self.b.memberOpt(recv, "length", ia.optional);
+                    };
                     // Optional chaining maps 1:1 to native JS `?.`.
                     return self.b.memberOpt(recv, ia.member, ia.optional);
                 },
@@ -2219,16 +2455,23 @@ const Emitter = struct {
             }, try self.buildExpr(un.expr.*), true),
 
             .jump => |j| switch (j.kind) {
-                // A jump is a statement; botopink puts it in expression
-                // position, which only the bridge can express.
-                .@"return" => |r| return self.b.stmtExpr(.{
-                    .return_ = if (r) |val| try self.buildExpr(val.*) else null,
-                }),
-                .throw_ => |r| return self.b.stmtExpr(.{
-                    .throw_ = if (r) |val| try self.buildExpr(val.*) else null,
-                }),
+                // `return` / `break` / `continue` are statements that leave the
+                // enclosing function or loop. Every position that can hold one
+                // (a block statement, an `if` / `case` arm in statement or
+                // return position) is lowered by `buildStmt`; in a value
+                // position the jump would have to cross the IIFE the value is
+                // wrapped in, which JavaScript cannot express.
+                .@"return", .@"break", .@"continue" => return error.JumpInValuePosition,
+                // `throw` leaves by unwinding, which crosses a function
+                // boundary: in value position it is a one-statement IIFE.
+                // The parser gives `throw` an operand (`throw;` is a parse
+                // error), so a missing one is a frontend defect.
+                .throw_ => |r| return self.b.iife(&.{.{
+                    .throw_ = try self.buildExpr((r orelse return error.ThrowWithoutOperand).*),
+                }}),
                 .try_ => |t| {
-                    const val = t orelse return .missing;
+                    // The parser always gives `try` an operand.
+                    const val = t orelse return error.TryWithoutOperand;
                     // Nested `try` in expression position: unwrap Ok, propagate Error
                     // out of the surrounding IIFE. (Statement position is lowered in
                     // `buildStmt` to a real enclosing-function `return`.)
@@ -2242,15 +2485,10 @@ const Emitter = struct {
                     });
                 },
                 .await_ => |av| return self.b.await_(try self.buildExpr(av.*)),
-                // A loop-accumulator `break` becomes the lambda's `return`.
-                .@"break" => |br| return self.b.stmtExpr(.{
-                    .return_ = if (br.value) |val| try self.buildExpr(val.*) else null,
-                }),
                 // Generator `yield` (loop-accumulator yields are lowered at
                 // the `.loop` site, so reaching here means an `#[@iterator]`
                 // / `#[@generator]` / `#[@asyncGenerator]` body).
                 .yield => |y| return self.b.yield_(if (y.value) |val| try self.buildExpr(val.*) else null),
-                .@"continue" => return self.b.stmtExpr(.continue_),
             },
 
             .branch => |br| switch (br.kind) {
@@ -2263,8 +2501,12 @@ const Emitter = struct {
                     const n = self.try_seq;
                     self.try_seq += 1;
                     const temp = try self.tryName(n);
+                    // A jump handler is a statement. In this value position a
+                    // `return` handler returns from the IIFE, i.e. becomes the
+                    // `try`'s value — the statement-position lowering
+                    // (`buildTryStmt`) is the one that leaves the function.
                     const handled: js.Stmt = if (isJumpHandler(handler))
-                        .{ .expr = try self.buildExpr(handler) }
+                        try self.buildStmt(.{ .expr = handler })
                     else blk: {
                         var value = try self.b.paren(try self.buildExpr(handler));
                         if (handler == .function) {
@@ -2286,11 +2528,9 @@ const Emitter = struct {
             .loop => |lp| return self.buildLoop(lp),
 
             .binding => |b| switch (b.kind) {
-                .localBind => |lb| return self.b.stmtExpr(.{ .decl = .{
-                    .kw = if (lb.mutable) .let_ else .const_,
-                    .pattern = .{ .ident = lb.name },
-                    .value = try self.buildExpr(lb.value.*),
-                } }),
+                // A binding is a statement: every block position builds it
+                // through `buildStmt`, and it has no value of its own.
+                .localBind, .localBindDestruct => return error.BindingInValuePosition,
                 .assign => |a| {
                     const op_str: []const u8 = switch (a.op) {
                         .assign => "=",
@@ -2314,11 +2554,6 @@ const Emitter = struct {
                     };
                     return self.b.assign(target, op_str, try self.buildExpr(a.value.*));
                 },
-                .localBindDestruct => |lb| return self.b.stmtExpr(.{ .decl = .{
-                    .kw = if (lb.mutable) .let_ else .const_,
-                    .pattern = try self.buildDestructPattern(lb.pattern),
-                    .value = try self.buildExpr(lb.value.*),
-                } }),
             },
 
             // A `use` hook used in value position: the underlying hook call.
@@ -2359,8 +2594,10 @@ const Emitter = struct {
                 .arrayLit => |arr| {
                     const elems = try self.arena().alloc(js.Expr, arr.elems.len);
                     for (arr.elems, 0..) |elem, i| elems[i] = try self.buildExpr(elem);
+                    // `[a, b, ..]` — a nameless spread in a literal the parser
+                    // accepts contributes no elements: no spread element.
                     const spread: ?js.Spread = if (arr.spread) |sp|
-                        (if (sp.len > 0) js.Spread{ .name = sp } else .unnamed)
+                        (if (sp.len > 0) js.Spread{ .name = sp } else null)
                     else if (arr.spreadExpr) |se|
                         js.Spread{ .expr = try self.b.ptr(try self.buildExpr(se.*)) }
                     else
@@ -2414,8 +2651,9 @@ const Emitter = struct {
                         },
                         else => {},
                     };
-                    // No `break` value — the block folds to nothing.
-                    return .missing;
+                    // No `break` value: a block's value comes only from
+                    // `break <e>`, so it is `undefined` (erlang's twin is E5).
+                    return .{ .name = "undefined" };
                 },
                 .assert => |a| {
                     const cond = try self.buildExpr(a.condition.*);
@@ -2428,11 +2666,14 @@ const Emitter = struct {
                             .{ .quoted = try std.fmt.allocPrint(self.arena(), "{s}.bp:{d}", .{ self.module_name, ct.loc.line }) },
                         });
                     }
-                    const callee = try self.b.member(.{ .name = "console" }, "assert");
-                    if (a.message) |msg| {
-                        return self.b.call(callee, &.{ cond, try self.buildExpr(msg.*) });
-                    }
-                    return self.b.call(callee, &.{cond});
+                    // Outside test mode an `assert` is always fatal and names
+                    // its message and `file:line` (semantics decision 4) — never
+                    // `console.assert`, which prints and carries on.
+                    return self.b.call(self.helper(.assert_fatal), &.{
+                        cond,
+                        if (a.message) |msg| try self.buildExpr(msg.*) else .null_,
+                        .{ .quoted = try std.fmt.allocPrint(self.arena(), "{s}.bp:{d}", .{ self.module_name, ct.loc.line }) },
+                    });
                 },
                 .assertPattern => |ap| {
                     const handler_is_statement = switch (ap.handler.*) {
@@ -2440,7 +2681,7 @@ const Emitter = struct {
                         else => false,
                     };
                     const handled: js.Stmt = if (handler_is_statement)
-                        .{ .expr = try self.buildExpr(ap.handler.*) }
+                        try self.buildStmt(.{ .expr = ap.handler.* })
                     else
                         .{ .return_ = try self.buildExpr(ap.handler.*) };
                     return self.b.iife(&.{
@@ -2462,24 +2703,20 @@ const Emitter = struct {
         return .{ .object = .{ .props = props } };
     }
 
-    /// An `if` used as a value. When neither branch already `return`s, the
-    /// branches are wrapped in an IIFE so the `if` yields a value; when they
-    /// do, the lowering drops the wrapper and leaves the statement where the
-    /// expression was — the `stmt_expr` bridge (defect JS-1).
+    /// An `if` used as a value: the branches are wrapped in an IIFE so the `if`
+    /// yields a value. A branch that jumps out of the enclosing function or
+    /// loop cannot be lowered here — `buildStmt` lowers such an `if` as a
+    /// statement (`buildIfStmt`), and in a value position it is an error.
     fn buildIfExpr(self: *Emitter, i: anytype) anyerror!js.Expr {
-        const then_returns = i.then_.len > 0 and
-            switch (i.then_[i.then_.len - 1].expr) {
-                .jump => |j| j.kind == .@"return",
-                else => false,
-            };
-        const else_returns = if (i.else_) |els|
-            els.len > 0 and switch (els[els.len - 1].expr) {
-                .jump => |j| j.kind == .@"return",
-                else => false,
-            }
-        else
-            false;
-        const contains_return = then_returns or else_returns;
+        if (self.ifJumps(i)) return error.JumpInValuePosition;
+        const prev_ctx = self.loop_ctx;
+        const prev_wrap = self.case_ok_wrap;
+        self.loop_ctx = .none;
+        self.case_ok_wrap = false;
+        defer {
+            self.loop_ctx = prev_ctx;
+            self.case_ok_wrap = prev_wrap;
+        }
 
         var seq: std.ArrayListUnmanaged(js.Stmt) = .empty;
         const cond: js.Expr = if (i.binding) |b| blk: {
@@ -2491,11 +2728,11 @@ const Emitter = struct {
         } else try self.buildExpr(i.cond.*);
 
         const then_block = js.Stmt{ .block = .{
-            .stmts = try self.buildBranchBody(i.then_, then_returns),
+            .stmts = try self.buildBranchBody(i.then_),
             .layout = .spaced,
         } };
         const else_block: ?js.Stmt = if (i.else_) |els| js.Stmt{ .block = .{
-            .stmts = try self.buildBranchBody(els, else_returns),
+            .stmts = try self.buildBranchBody(els),
             .layout = .spaced,
         } } else null;
 
@@ -2504,44 +2741,229 @@ const Emitter = struct {
         else
             try self.b.ifStmt(cond, then_block));
 
-        const stmts = try seq.toOwnedSlice(self.arena());
-        if (contains_return) {
-            return self.b.stmtExpr(.{ .block = .{ .stmts = stmts, .layout = .bare } });
-        }
         return self.b.call(
-            try self.b.paren(try self.b.arrowBlock(&.{}, .{ .stmts = stmts, .layout = .spaced })),
+            try self.b.paren(try self.b.arrowBlock(&.{}, .{ .stmts = try seq.toOwnedSlice(self.arena()), .layout = .spaced })),
             &.{},
         );
     }
 
+    /// An `if` in statement position whose branches jump out: a JS `if`
+    /// statement, each branch a plain statement list. The null-check binding
+    /// form (`if (val e = …)`) keeps its binding in a block of its own so two
+    /// such `if`s in one body do not redeclare it.
+    fn buildIfStmt(self: *Emitter, i: anytype) anyerror!js.Stmt {
+        const cond: js.Expr = if (i.binding) |b|
+            try self.b.binaryBare("!==", .{ .name = b }, .null_)
+        else
+            try self.buildExpr(i.cond.*);
+        const then_block = js.Stmt{ .block = .{ .stmts = try self.buildStmts(i.then_), .layout = .spaced } };
+        const if_stmt = if (i.else_) |els|
+            try self.b.ifElse(cond, then_block, .{ .block = .{ .stmts = try self.buildStmts(els), .layout = .spaced } })
+        else
+            try self.b.ifStmt(cond, then_block);
+        const b = i.binding orelse return if_stmt;
+        return .{ .block = .{
+            .stmts = try self.b.stmts(&.{
+                .{ .decl = .{ .pattern = .{ .name = b }, .value = try self.buildExpr(i.cond.*) } },
+                if_stmt,
+            }),
+            .layout = .spaced,
+        } };
+    }
+
+    /// True when a branch of `i` leaves the enclosing function or loop:
+    /// `return`, or a `break` / `continue` not bound to a loop inside the
+    /// branch — and, inside a comprehension body, an accumulator `yield`.
+    fn ifJumps(self: *Emitter, i: anytype) bool {
+        const acc = self.loop_ctx == .value;
+        if (stmtsJump(i.then_, false, acc)) return true;
+        if (i.else_) |els| if (stmtsJump(els, false, acc)) return true;
+        return false;
+    }
+
+    fn stmtsJump(stmts: []const ast.Stmt, in_loop: bool, acc_yield: bool) bool {
+        for (stmts) |st| if (exprJumps(st.expr, in_loop, acc_yield)) return true;
+        return false;
+    }
+
+    fn exprJumps(e: ast.Expr, in_loop: bool, acc_yield: bool) bool {
+        return switch (e) {
+            .jump => |j| switch (j.kind) {
+                .@"return" => true,
+                .@"break", .@"continue" => !in_loop,
+                .yield => acc_yield and !in_loop,
+                .throw_, .try_, .await_ => false,
+            },
+            .branch => |br| switch (br.kind) {
+                .if_ => |i| stmtsJump(i.then_, in_loop, acc_yield) or
+                    (if (i.else_) |els| stmtsJump(els, in_loop, acc_yield) else false),
+                .tryCatch => false,
+            },
+            // A nested loop's own `break` / `continue` bind to it; a `return`
+            // inside it still leaves the function.
+            .loop => |lp| stmtsJump(lp.body, true, acc_yield),
+            else => false,
+        };
+    }
+
     /// One branch of an `if` expression: every statement but the last as-is, the
     /// last one as the branch's value unless it already transfers control.
-    fn buildBranchBody(self: *Emitter, body: []const ast.Stmt, last_returns: bool) ![]const js.Stmt {
+    fn buildBranchBody(self: *Emitter, body: []const ast.Stmt) ![]const js.Stmt {
         if (body.len == 0) return &.{};
         const out = try self.arena().alloc(js.Stmt, body.len);
         for (body[0 .. body.len - 1], 0..) |st, i| out[i] = try self.buildStmt(st);
-        const last = body[body.len - 1];
-        out[body.len - 1] = if (last_returns) try self.buildStmt(last) else try self.buildIfLast(last);
+        out[body.len - 1] = try self.buildIfLast(body[body.len - 1]);
         return out;
     }
 
-    fn buildLoop(self: *Emitter, lp: anytype) anyerror!js.Expr {
-        var has_yield = false;
-        for (lp.body) |stmt| {
-            if (switch (stmt.expr) {
-                .jump => |j| j.kind == .yield,
-                else => false,
-            }) {
-                has_yield = true;
-                break;
-            }
-        }
+    /// `loop (xs) { x -> … }` iterates the ITEM; with two params the second is
+    /// the index (`{ item, i -> … }`). `Array.entries()` yields numeric
+    /// [index, item] pairs, so the destructure order is swapped.
+    /// (`Object.entries` gave [stringKey, value], which bound the 1-param
+    /// form to the index — a real bug.)
+    fn loopHead(self: *Emitter, lp: anytype) !struct { pattern: js.Pattern, iter: js.Expr } {
+        const pattern: js.Pattern = if (lp.params.len == 1)
+            .{ .ident = lp.params[0] }
+        else blk: {
+            const elems = try self.arena().alloc(js.Pattern, lp.params.len);
+            for (lp.params, 0..) |p, i| elems[lp.params.len - 1 - i] = .{ .ident = p };
+            break :blk js.Pattern{ .array = .{ .elems = elems } };
+        };
+        const iter: js.Expr = if (lp.params.len == 1)
+            try self.buildExpr(lp.iter.*)
+        else
+            try self.b.call(try self.b.member(try self.b.paren(try self.buildExpr(lp.iter.*)), "entries"), &.{});
+        return .{ .pattern = pattern, .iter = iter };
+    }
 
-        if (has_yield and !self.in_generator) {
-            // Outside a generator body, `loop (xs) { item -> yield item }` is an
-            // accumulator: it maps the collection into a new array.
+    fn hasTopLevelYield(body: []const ast.Stmt) bool {
+        for (body) |stmt| switch (stmt.expr) {
+            .jump => |j| if (j.kind == .yield) return true,
+            else => {},
+        };
+        return false;
+    }
+
+    /// A `loop` in statement position: a JS `for…of`. Its `break` / `continue`
+    /// are the native statements, and inside a generator body its `yield` is
+    /// the native one — which is what makes `#[@iterator]` recursion work (a
+    /// `.map()` would build a throwaway array and yield nothing). Null for an
+    /// accumulator `yield` loop outside a generator: that is a comprehension
+    /// whose value is discarded, and it keeps the value lowering.
+    fn buildLoopStmt(self: *Emitter, lp: anytype) anyerror!?js.Stmt {
+        if (!self.in_generator and hasTopLevelYield(lp.body)) return null;
+        const head = try self.loopHead(lp);
+        const prev_ctx = self.loop_ctx;
+        self.loop_ctx = .stmt;
+        defer self.loop_ctx = prev_ctx;
+        return .{ .for_of = .{
+            .pattern = head.pattern,
+            .iter = head.iter,
+            .body = .{
+                .stmts = try self.buildStmts(lp.body),
+                .layout = .fixed,
+                .indent = self.current_indent,
+            },
+        } };
+    }
+
+    /// `while (cond) { body }` — which the parser reads as a call to `while`
+    /// with one argument and a trailing block (there is no `while` keyword and
+    /// no `while` fn in the prelude; std's `chunked`/`sliding` default fns are
+    /// written this way). Recognised only with no receiver, no user fn or
+    /// external named `while` in the module, exactly one argument and one
+    /// parameterless trailing block.
+    fn whileShape(self: *Emitter, cc: anytype) ?struct { cond: ast.Expr, body: []const ast.Stmt } {
+        if (cc.is_builtin or cc.receiver != null) return null;
+        if (!std.mem.eql(u8, cc.callee, "while")) return null;
+        if (self.user_fn_names.contains("while")) return null;
+        if (cc.args.len != 1 or cc.trailing.len != 1 or cc.trailing[0].params.len != 0) return null;
+        return .{ .cond = cc.args[0].value.*, .body = cc.trailing[0].body };
+    }
+
+    /// A JS `while` statement; `break` / `continue` in its body bind to it.
+    fn buildWhileStmt(self: *Emitter, cond: ast.Expr, body: []const ast.Stmt) anyerror!js.Stmt {
+        const c = try self.buildExpr(cond);
+        const prev_ctx = self.loop_ctx;
+        self.loop_ctx = .stmt;
+        defer self.loop_ctx = prev_ctx;
+        return .{ .while_ = .{
+            .cond = c,
+            .body = .{ .stmts = try self.buildStmts(body), .layout = .fixed, .indent = self.current_indent },
+        } };
+    }
+
+    /// `break` in a loop body. In a comprehension, `break <v>` contributes `v`
+    /// and moves to the next item (`is_last` drops the redundant `continue`
+    /// of the body's final statement); `break;` ends the iteration. In a
+    /// statement loop a `break <v>` value is evaluated and discarded.
+    fn buildBreakStmt(self: *Emitter, br: anytype, is_last: bool) anyerror!js.Stmt {
+        const val = br.value orelse return switch (self.loop_ctx) {
+            .none => error.JumpOutsideLoop,
+            .stmt, .value => js.Stmt.break_,
+        };
+        return switch (self.loop_ctx) {
+            .none => error.JumpOutsideLoop,
+            .value => if (is_last)
+                try self.accPush(val.*)
+            else
+                try self.b.group(&.{ try self.accPush(val.*), .continue_ }),
+            .stmt => try self.b.group(&.{ .{ .expr = try self.buildExpr(val.*) }, .continue_ }),
+        };
+    }
+
+    /// `<acc>.push(<v>);` for the comprehension being built.
+    fn accPush(self: *Emitter, val: ast.Expr) anyerror!js.Stmt {
+        const acc = switch (self.loop_ctx) {
+            .value => |name| name,
+            else => return error.JumpOutsideLoop,
+        };
+        return .{ .expr = try self.b.call(try self.b.member(.{ .name = acc }, "push"), &.{try self.buildExpr(val)}) };
+    }
+
+    /// True when a comprehension body needs the accumulating form: a `break`
+    /// or `continue` anywhere in it (outside a nested loop), or a `yield`
+    /// below the top level.
+    fn loopNeedsAccumulator(body: []const ast.Stmt) bool {
+        for (body) |st| switch (st.expr) {
+            .jump => |j| switch (j.kind) {
+                .@"break", .@"continue" => return true,
+                else => {},
+            },
+            .branch => |br| switch (br.kind) {
+                .if_ => |i| if (stmtsJump(i.then_, false, true) or
+                    (if (i.else_) |els| stmtsJump(els, false, true) else false)) return true,
+                .tryCatch => {},
+            },
+            else => {},
+        };
+        return false;
+    }
+
+    /// A `loop` used as a value — a comprehension.
+    ///
+    /// A body whose only contributions are top-level `yield <v>`s maps the
+    /// collection (`xs.map((x) => { …; return v; })`). Any other body —
+    /// `break <v>` contributing a value, `continue` dropping an item, a
+    /// `yield` under an `if` — is an accumulating IIFE:
+    ///
+    ///     (() => {
+    ///         const _acc = [];
+    ///         for (const x of xs) { …; _acc.push(v); }
+    ///         return _acc;
+    ///     })()
+    fn buildLoop(self: *Emitter, lp: anytype) anyerror!js.Expr {
+        if (hasTopLevelYield(lp.body) and !loopNeedsAccumulator(lp.body)) {
             const params = try self.arena().alloc(js.Param, lp.params.len);
             for (lp.params, 0..) |p, i| params[i] = .{ .pattern = .{ .ident = p } };
+            const prev_ctx = self.loop_ctx;
+            const prev_gen = self.in_generator;
+            self.loop_ctx = .none;
+            self.in_generator = false;
+            defer {
+                self.loop_ctx = prev_ctx;
+                self.in_generator = prev_gen;
+            }
             var body: std.ArrayListUnmanaged(js.Stmt) = .empty;
             for (lp.body) |stmt| {
                 const is_yield = switch (stmt.expr) {
@@ -2566,37 +2988,49 @@ const Emitter = struct {
             );
         }
 
-        // Real iteration — inside a generator body the native `yield` inside a
-        // `for…of` is what makes `#[@iterator]` recursion work (a `.map()` would
-        // build a throwaway array and yield nothing). A `for` is a statement, so
-        // in expression position it can only be the bridge (defect JS-1).
-        //
-        // `loop (xs) { x -> … }` binds the ITEM; with two params the second is
-        // the index (`{ item, i -> … }`). `Array.entries()` yields numeric
-        // [index, item] pairs, so the destructure order is swapped.
-        // (`Object.entries` gave [stringKey, value], which bound the 1-param
-        // form to the index — a real bug.)
-        const pattern: js.Pattern = if (lp.params.len == 1)
-            .{ .ident = lp.params[0] }
-        else blk: {
-            const elems = try self.arena().alloc(js.Pattern, lp.params.len);
-            for (lp.params, 0..) |p, i| elems[lp.params.len - 1 - i] = .{ .ident = p };
-            break :blk js.Pattern{ .array = .{ .elems = elems } };
-        };
-        const iter: js.Expr = if (lp.params.len == 1)
-            try self.buildExpr(lp.iter.*)
-        else
-            try self.b.call(try self.b.member(try self.b.paren(try self.buildExpr(lp.iter.*)), "entries"), &.{});
-
-        return self.b.stmtExpr(.{ .for_of = .{
-            .pattern = pattern,
-            .iter = iter,
-            .body = .{
-                .stmts = try self.buildStmts(lp.body),
-                .layout = .fixed,
-                .indent = self.current_indent,
-            },
-        } });
+        const head = try self.loopHead(lp);
+        const acc = "_acc";
+        const base = self.current_indent;
+        const prev_ctx = self.loop_ctx;
+        const prev_gen = self.in_generator;
+        const prev_wrap = self.case_ok_wrap;
+        self.loop_ctx = .{ .value = acc };
+        self.in_generator = false;
+        self.case_ok_wrap = false;
+        self.current_indent = base + 2;
+        defer {
+            self.loop_ctx = prev_ctx;
+            self.in_generator = prev_gen;
+            self.case_ok_wrap = prev_wrap;
+            self.current_indent = base;
+        }
+        const body = try self.arena().alloc(js.Stmt, lp.body.len);
+        for (lp.body, 0..) |st, i| {
+            const last = i == lp.body.len - 1;
+            body[i] = switch (st.expr) {
+                .jump => |j| switch (j.kind) {
+                    .@"break" => |br| try self.buildBreakStmt(br, last),
+                    .yield => |y| if (y.value) |v| (if (last)
+                        try self.accPush(v.*)
+                    else
+                        try self.buildStmt(st)) else try self.buildStmt(st),
+                    else => try self.buildStmt(st),
+                },
+                else => try self.buildStmt(st),
+            };
+        }
+        return self.b.call(try self.b.paren(try self.b.arrowBlock(&.{}, .{
+            .stmts = try self.b.stmts(&.{
+                .{ .decl = .{ .pattern = .{ .name = acc }, .value = .{ .array = .{} } } },
+                .{ .for_of = .{
+                    .pattern = head.pattern,
+                    .iter = head.iter,
+                    .body = .{ .stmts = body, .indent = base + 1 },
+                } },
+                .{ .return_ = .{ .name = acc } },
+            }),
+            .indent = base,
+        })), &.{});
     }
 
     // ── calls ─────────────────────────────────────────────────────────────────
@@ -2649,6 +3083,24 @@ const Emitter = struct {
         return null;
     }
 
+    /// The prelude helper for `recv.method(args)` on a typed primitive
+    /// receiver, from inference's per-call-site `.prim` record.
+    fn primHelper(self: *Emitter, loc: ast.Loc, cc: anytype) ?jsPrelude.Helper {
+        if (cc.trailing.len != 0) return null;
+        const lw = self.lowerings orelse return null;
+        const il = lw.get(loc) orelse return null;
+        const kind = switch (il) {
+            .prim => |k| k,
+            .record => return null,
+        };
+        const receiver: jsPrelude.Receiver = switch (kind) {
+            .string => .string,
+            .array => .array,
+            else => .other,
+        };
+        return jsPrelude.forMethod(receiver, cc.callee, cc.args.len);
+    }
+
     fn renderTemplate(self: *Emitter, template: []const u8, cc: anytype, argc: usize, recv_err: anyerror) anyerror!js.Expr {
         const Holes = CallHoles(@TypeOf(cc));
         var holes = Holes{ .em = self, .cc = cc, .err = recv_err };
@@ -2659,6 +3111,13 @@ const Emitter = struct {
 
     fn buildCall(self: *Emitter, loc: ast.Loc, cc: anytype) anyerror!js.Expr {
         if (cc.is_builtin) return self.buildBuiltinCall(cc);
+        // A `while` used as a value (it has none): the statement in an IIFE.
+        if (self.whileShape(cc)) |w| {
+            const prev_ctx = self.loop_ctx;
+            self.loop_ctx = .none;
+            defer self.loop_ctx = prev_ctx;
+            return self.b.iife(&.{try self.buildWhileStmt(w.cond, w.body)});
+        }
 
         // builtin_node_dispatch: `declare fn` with `#[@External.Node]`.
         // Handles both template (`$0.method()`) and module+symbol
@@ -2678,6 +3137,11 @@ const Emitter = struct {
             // `Sym.m(recv, args)` at activated call sites.
             if (self.rewrites.get(loc)) |sym| {
                 callee = try self.b.member(.{ .name = sym }, cc.callee);
+                try args.append(self.arena(), try self.buildExpr(recv.*));
+            } else if (self.primHelper(loc, cc)) |hp| {
+                // A primitive method whose native JS method disagrees with
+                // the signature: `__bp_helper(recv, args)` (`js/js_prelude.zig`).
+                callee = self.helper(hp);
                 try args.append(self.arena(), try self.buildExpr(recv.*));
             } else {
                 const recv_node = try self.buildExpr(recv.*);
@@ -2808,7 +3272,7 @@ const Emitter = struct {
     /// `return <expr>;`.
     fn buildCaseBody(self: *Emitter, body: ast.Expr, indent: usize) anyerror![]const js.Stmt {
         if (!isLambdaBlock(body)) {
-            return self.b.stmts(&.{.{ .return_ = try self.buildExpr(body) }});
+            return self.b.stmts(&.{try self.armReturn(body)});
         }
         const l = body.function.kind;
         self.current_indent = indent;
@@ -2822,7 +3286,7 @@ const Emitter = struct {
                 else => null,
             };
             if (br) |val| {
-                try out.append(self.arena(), .{ .return_ = try self.buildExpr(val) });
+                try out.append(self.arena(), try self.armReturn(val));
             } else {
                 try out.append(self.arena(), try self.buildStmt(st));
             }
@@ -2831,40 +3295,49 @@ const Emitter = struct {
         return out.toOwnedSlice(self.arena());
     }
 
-    /// The `_s === …` test an arm's pattern becomes, or null when the pattern
-    /// has no test — the lowering then leaves the condition empty
-    /// (`Expr.missing`, defect JS-2) or drops the `if` altogether.
+    /// The test an arm's pattern becomes over the `case` subject `_s`, or null
+    /// when the pattern matches anything — the arm then has no `if` at all.
     fn buildCondExpr(self: *Emitter, pat: ast.Pattern) anyerror!?js.Expr {
-        const subject = js.Expr{ .name = "_s" };
+        return self.patternTest(pat, .{ .name = "_s" });
+    }
+
+    /// The test `pat` becomes over `subject`, or null when it matches anything
+    /// (`_`, or an alternative that is `_`). A multi-subject pattern
+    /// (`case a, b { 0, 0 -> … }`, whose subject is the array `[a, b]`) is the
+    /// conjunction of its per-position tests over `_s[i]`; an alternation is
+    /// their disjunction. A shape this lowering has no test for is `false`.
+    fn patternTest(self: *Emitter, pat: ast.Pattern, subject: js.Expr) anyerror!?js.Expr {
         switch (pat) {
+            .wildcard => return null,
             .numberLit => |n| return try self.b.binaryBare("===", subject, .{ .number = n }),
             .stringLit => |s| return try self.b.binaryBare("===", subject, .{ .lexeme_string = s }),
             .ident => |n| return try self.b.binaryBare("===", subject, .{ .quoted = n }),
             .@"or" => |pats| {
-                if (pats.len == 0) return null;
-                var acc = try self.patternCond(pats[0]);
-                for (pats[1..]) |p| acc = try self.b.binaryBare("||", acc, try self.patternCond(p));
+                if (pats.len == 0) return js.Expr{ .name = "false" };
+                var acc: ?js.Expr = null;
+                for (pats) |p| {
+                    const t = try self.patternTest(p, subject) orelse return null;
+                    acc = if (acc) |a| try self.b.binaryBare("||", a, t) else t;
+                }
                 return acc;
             },
-            else => return null,
+            .multi => |pats| {
+                var acc: ?js.Expr = null;
+                for (pats, 0..) |p, i| {
+                    const at = try self.b.index(subject, .{ .number = try std.fmt.allocPrint(self.arena(), "{d}", .{i}) }, false);
+                    const t = try self.patternTest(p, at) orelse continue;
+                    acc = if (acc) |a| try self.b.binaryBare("&&", a, t) else t;
+                }
+                return acc;
+            },
+            .variant, .list => return js.Expr{ .name = "false" },
         }
-    }
-
-    /// One alternative of an `or` pattern; anything with no test is `false`.
-    fn patternCond(self: *Emitter, pat: ast.Pattern) anyerror!js.Expr {
-        const subject = js.Expr{ .name = "_s" };
-        return switch (pat) {
-            .numberLit => |n| try self.b.binaryBare("===", subject, .{ .number = n }),
-            .stringLit => |s| try self.b.binaryBare("===", subject, .{ .lexeme_string = s }),
-            .ident => |n| try self.b.binaryBare("===", subject, .{ .quoted = n }),
-            else => js.Expr{ .name = "false" },
-        };
     }
 
     /// `return <body>;` for a matched arm, gated by the arm's guard when
     /// present: `if (<guard>) return <body>;`.
     fn buildGuardedReturn(self: *Emitter, arm: ast.CaseArm) anyerror!js.Stmt {
-        const ret = js.Stmt{ .return_ = try self.buildExpr(arm.body) };
+        const ret = try self.armReturn(arm.body);
         const g = arm.guard orelse return ret;
         return self.b.ifStmt(try self.buildExpr(g), ret);
     }
@@ -2882,10 +3355,8 @@ const Emitter = struct {
         } })});
     }
 
-    fn buildCase(self: *Emitter, subjects: []ast.Expr, arms: []ast.CaseArm) anyerror!js.Expr {
-        const base = self.current_indent;
-        const indent = base + 1;
-
+    /// `const _s = <subject>;` then one statement per arm.
+    fn buildCaseStmts(self: *Emitter, subjects: []ast.Expr, arms: []ast.CaseArm, indent: usize) anyerror![]const js.Stmt {
         var stmts: std.ArrayListUnmanaged(js.Stmt) = .empty;
         const subject: js.Expr = if (subjects.len == 1)
             try self.buildExpr(subjects[0])
@@ -2895,16 +3366,94 @@ const Emitter = struct {
             break :blk js.Expr{ .array = .{ .elems = elems } };
         };
         try stmts.append(self.arena(), .{ .decl = .{ .pattern = .{ .name = "_s" }, .value = subject } });
-
         for (arms) |arm| try stmts.append(self.arena(), try self.buildCaseArm(arm, indent));
+        return stmts.toOwnedSlice(self.arena());
+    }
 
+    /// A `case` used as a value: its arms inside an IIFE, each returning the
+    /// arm's value.
+    fn buildCase(self: *Emitter, subjects: []ast.Expr, arms: []ast.CaseArm) anyerror!js.Expr {
+        const base = self.current_indent;
+        const prev_ctx = self.loop_ctx;
+        const prev_wrap = self.case_ok_wrap;
+        self.loop_ctx = .none;
+        self.case_ok_wrap = false;
+        defer {
+            self.loop_ctx = prev_ctx;
+            self.case_ok_wrap = prev_wrap;
+        }
+        const stmts = try self.buildCaseStmts(subjects, arms, base + 1);
         return self.b.call(
-            try self.b.paren(try self.b.arrowBlock(&.{}, .{
-                .stmts = try stmts.toOwnedSlice(self.arena()),
-                .indent = base,
-            })),
+            try self.b.paren(try self.b.arrowBlock(&.{}, .{ .stmts = stmts, .indent = base })),
             &.{},
         );
+    }
+
+    /// `return case … { … }` where an arm returns from the function itself
+    /// (`Fail -> throw "failed"` in a `#[@result]` fn is `return __bp_error(…)`
+    /// after the transform, and the wrap `__bp_ok(case …)` sits around the
+    /// whole `case`). That arm cannot return through the IIFE a `case` value
+    /// lowers to, so the `case` is lowered as statements in a block: a value
+    /// arm returns its value — `({ ok: v })` under the `__bp_ok` wrap — and a
+    /// returning arm keeps its own `return`. Null for any other `return`.
+    fn buildReturnCaseStmt(self: *Emitter, value: ast.Expr) anyerror!?js.Stmt {
+        var inner = value;
+        var wrap_ok = false;
+        if (value == .call and value.call.kind == .call) {
+            const cc = value.call.kind.call;
+            if (cc.is_builtin and cc.args.len == 1 and std.mem.eql(u8, cc.callee, "__bp_ok")) {
+                inner = cc.args[0].value.*;
+                wrap_ok = true;
+            }
+        }
+        if (inner != .collection or inner.collection.kind != .case) return null;
+        const c = inner.collection.kind.case;
+        var any_returns = false;
+        for (c.arms) |arm| {
+            if (armReturns(arm.body)) any_returns = true;
+        }
+        if (!any_returns) return null;
+
+        const base = self.current_indent;
+        const prev_wrap = self.case_ok_wrap;
+        self.case_ok_wrap = wrap_ok;
+        defer self.case_ok_wrap = prev_wrap;
+        return .{ .block = .{ .stmts = try self.buildCaseStmts(c.subjects, c.arms, base + 1), .indent = base } };
+    }
+
+    /// True when an arm body returns from the enclosing function: a `return`
+    /// jump, or a block arm with a `return` statement in it.
+    fn armReturns(body: ast.Expr) bool {
+        return switch (body) {
+            .jump => |j| j.kind == .@"return",
+            .function => |f| f.kind.syntax == .lambda and stmtsReturn(f.kind.body),
+            else => false,
+        };
+    }
+
+    fn stmtsReturn(stmts: []const ast.Stmt) bool {
+        for (stmts) |st| if (exprJumps(st.expr, true, false)) return true;
+        return false;
+    }
+
+    /// `return <arm value>;` — or, for an arm body that is itself a `return`,
+    /// that `return` (only reachable from `buildReturnCaseStmt`; in an IIFE
+    /// `case` it is a value-position jump and an error). Under `case_ok_wrap`
+    /// the value is returned as `({ ok: v })`.
+    fn armReturn(self: *Emitter, body: ast.Expr) anyerror!js.Stmt {
+        if (body == .jump and body.jump.kind == .@"return") {
+            if (!self.case_ok_wrap) return error.JumpInValuePosition;
+            const prev_wrap = self.case_ok_wrap;
+            self.case_ok_wrap = false;
+            defer self.case_ok_wrap = prev_wrap;
+            return self.buildStmt(.{ .expr = body });
+        }
+        const wrap = self.case_ok_wrap;
+        self.case_ok_wrap = false;
+        defer self.case_ok_wrap = wrap;
+        const val = try self.buildExpr(body);
+        if (!wrap) return .{ .return_ = val };
+        return .{ .return_ = try self.b.paren(try self.b.object(&.{.{ .kv = .{ .key = "ok", .value = val } }})) };
     }
 
     fn buildCaseArm(self: *Emitter, arm: ast.CaseArm, indent: usize) anyerror!js.Stmt {
@@ -2917,7 +3466,7 @@ const Emitter = struct {
                 if (isLambdaBlock(arm.body)) {
                     return .{ .block = .{ .stmts = try self.buildCaseBody(arm.body, indent + 1), .indent = indent } };
                 }
-                return .{ .return_ = try self.buildExpr(arm.body) };
+                return try self.armReturn(arm.body);
             },
 
             .ident, .numberLit, .stringLit, .@"or", .multi => {
@@ -2938,7 +3487,7 @@ const Emitter = struct {
                         .indent = indent,
                     } };
                     // A pattern with no test loses its `if` entirely and leaves
-                    // a bare block, exactly as before.
+                    // a bare block.
                     return if (cond) |c| try self.b.ifStmt(c, body) else body;
                 }
                 if (isLambdaBlock(arm.body)) {
@@ -2948,19 +3497,50 @@ const Emitter = struct {
                     } };
                     return if (cond) |c| try self.b.ifStmt(c, body) else body;
                 }
-                return self.b.ifStmt(cond orelse .missing, .{ .return_ = try self.buildExpr(arm.body) });
+                const ret = try self.armReturn(arm.body);
+                return if (cond) |c| try self.b.ifStmt(c, ret) else ret;
             },
 
             .variant => |v| {
                 var body: std.ArrayListUnmanaged(js.Stmt) = .empty;
+                const declared = self.variant_fields.get(v.name);
+                // An `Ok`/`Err`/`Error` arm that names no variant this module
+                // declares matches a `@Result`, which `#[@result]` materialises
+                // as `{ ok }` / `{ error }` — no `tag` (C5). The arm tests the
+                // key, as the `try` lowering does, and binds the payload.
+                if (declared == null) if (resultKey(v.name)) |key| {
+                    switch (v.payload) {
+                        .binding => |binding| try body.append(self.arena(), .{ .decl = .{
+                            .pattern = .{ .ident = binding },
+                            .value = try self.b.member(subject, key),
+                        } }),
+                        .fields => |fields| if (fields.len > 0) try body.append(self.arena(), .{ .decl = .{
+                            .pattern = .{ .ident = fields[0] },
+                            .value = try self.b.member(subject, key),
+                        } }),
+                        .literals => {},
+                    }
+                    for (try self.buildMatchedBody(arm, indent + 1)) |s| try body.append(self.arena(), s);
+                    return self.b.ifStmt(
+                        try self.b.binaryBare("in", .{ .quoted = key }, subject),
+                        .{ .block = .{ .stmts = try body.toOwnedSlice(self.arena()), .indent = indent } },
+                    );
+                };
                 switch (v.payload) {
                     .binding => |binding| try body.append(self.arena(), .{ .decl = .{
                         .pattern = .{ .ident = binding },
                         .value = subject,
                     } }),
+                    // `Circle(r)` binds positionally: each binding reads the
+                    // declared field at its position (`const { radius: r }`),
+                    // never a property named after the binding (C4). A variant
+                    // this module does not declare keeps the binding as key.
                     .fields => |fields| if (fields.len > 0) {
                         const props = try self.arena().alloc(js.ObjectPattern.Prop, fields.len);
-                        for (fields, 0..) |bb, bi| props[bi] = .{ .key = bb };
+                        for (fields, 0..) |bb, bi| {
+                            const key = if (declared) |d| (if (bi < d.len) d[bi] else bb) else bb;
+                            props[bi] = .{ .key = key, .bind = if (std.mem.eql(u8, key, bb)) null else jsIdent(bb) };
+                        }
                         try body.append(self.arena(), .{ .decl = .{
                             .pattern = .{ .object = .{ .props = props } },
                             .value = subject,
@@ -2979,7 +3559,7 @@ const Emitter = struct {
                 const len_of = try self.b.member(subject, "length");
                 if (lp.spread) |sp| {
                     if (lp.elems.len == 0 and sp.len == 0) {
-                        return .{ .return_ = try self.buildExpr(arm.body) };
+                        return try self.armReturn(arm.body);
                     }
                     var body: std.ArrayListUnmanaged(js.Stmt) = .empty;
                     if (sp.len > 0) try body.append(self.arena(), .{ .decl = .{
@@ -2989,7 +3569,7 @@ const Emitter = struct {
                         }),
                     } });
                     try self.appendListElemBinds(&body, lp.elems, subject);
-                    try body.append(self.arena(), .{ .return_ = try self.buildExpr(arm.body) });
+                    try body.append(self.arena(), try self.armReturn(arm.body));
                     return self.b.ifStmt(
                         try self.b.binaryBare(">=", len_of, .{ .number = try std.fmt.allocPrint(self.arena(), "{d}", .{lp.elems.len}) }),
                         .{ .block = .{ .stmts = try body.toOwnedSlice(self.arena()), .indent = indent } },
@@ -2998,18 +3578,26 @@ const Emitter = struct {
                 if (lp.elems.len == 0) {
                     return self.b.ifStmt(
                         try self.b.binaryBare("===", len_of, .{ .number = "0" }),
-                        .{ .return_ = try self.buildExpr(arm.body) },
+                        try self.armReturn(arm.body),
                     );
                 }
                 var body: std.ArrayListUnmanaged(js.Stmt) = .empty;
                 try self.appendListElemBinds(&body, lp.elems, subject);
-                try body.append(self.arena(), .{ .return_ = try self.buildExpr(arm.body) });
+                try body.append(self.arena(), try self.armReturn(arm.body));
                 return self.b.ifStmt(
                     try self.b.binaryBare("===", len_of, .{ .number = try std.fmt.allocPrint(self.arena(), "{d}", .{lp.elems.len}) }),
                     .{ .block = .{ .stmts = try body.toOwnedSlice(self.arena()), .indent = indent } },
                 );
             },
         }
+    }
+
+    /// The `@Result` key a variant arm name stands for: `Ok` → `ok`,
+    /// `Err`/`Error` → `error`.
+    fn resultKey(name: []const u8) ?[]const u8 {
+        if (std.mem.eql(u8, name, "Ok")) return "ok";
+        if (std.mem.eql(u8, name, "Err") or std.mem.eql(u8, name, "Error")) return "error";
+        return null;
     }
 
     fn appendListElemBinds(

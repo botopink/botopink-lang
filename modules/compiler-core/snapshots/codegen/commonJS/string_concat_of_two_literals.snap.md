@@ -10,7 +10,7 @@ fn main() {
 ```javascript
 function main() {
     const s = ("hi " + "there");
-    console.log(s.len);
+    console.log(s.length);
 }
 
 function _botopink_main() {
@@ -26,5 +26,5 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
-undefined
+8
 ```

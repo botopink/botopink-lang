@@ -19,7 +19,7 @@ class Person {
     }
 }
 
-function greet({ name, ... } = ) {
+function greet({ name }) {
     console.log(name);
     return name;
 }
@@ -45,4 +45,5 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
+Ana
 ```

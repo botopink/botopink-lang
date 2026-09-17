@@ -138,7 +138,6 @@ _botopink_main();
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-import { html } from "view";
 
 
 

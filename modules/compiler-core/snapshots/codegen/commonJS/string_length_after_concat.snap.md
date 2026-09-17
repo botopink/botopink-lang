@@ -10,7 +10,7 @@ fn main() {
 ```javascript
 function main() {
     const s = ("ab" + "cdef");
-    console.log(s.len);
+    console.log(s.length);
 }
 
 function _botopink_main() {
@@ -26,5 +26,5 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
-undefined
+6
 ```

@@ -80,6 +80,7 @@ const Order = Object.freeze({
     Eq: "Eq",
     Gt: "Gt",
 });
+exports.Order = Order;
 
 function lt() {
     return Order.Lt;
@@ -137,10 +138,10 @@ export declare function eq(): Order;
 export declare function gt(): Order;
 
 
-export declare function toInt(o: ): i32;
+export declare function toInt(o: Order): i32;
 
 
-export declare function reverse(o: ): Order;
+export declare function reverse(o: Order): Order;
 
 ```
 

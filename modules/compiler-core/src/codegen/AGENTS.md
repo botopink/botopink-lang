@@ -61,14 +61,14 @@ codegen/
 | `config.zig` | `Config` (`targetSource`, `typeDefLanguage`, `build_root`, `test_mode`), `TargetSource` (`commonJS` \| `erlang` \| `beam` \| `wasm`), `TypeDefLang` |
 | `moduleOutput.zig` | `GenerateResult` (`js`, `typedef`, `comptime_script`, `comptime_err`, `run_output`) and `ModuleOutput` — shared between targets. `Module` lives in `../module.zig` |
 | `crossModule.zig` | **Cross-module link index** built once over every module's transformed program (`build(alloc, outputs)`). `exports` maps a `pub` symbol → `ExportInfo{module, kind, is_class, fields}` (emitting module path, decl kind, whether construction needs `new`/the owner's map shape, and a record's declared field order); host-backed `#[@External.<Target>(…)]` fns are indexed too, so a consumer importing one `from "<lib>"` links to the owner like any other export. `imported` is the set of names some module imports. `ownerModuleAtom(name)` / `moduleBasename(path)` give the Erlang/BEAM module atom (`web/http` → `http`). Consumed by commonJS, erlang and beam_asm; wat only uses it to flag unlinkable imports |
-| `js/` | JS/TS code model + emitters shared by `commonJS.zig` and `typescript.zig`: `js_ast.zig` (`Expr`/`Stmt`/`Pattern`/`Block`/`Class`/`Item` + the `.d.ts` `TsDecl`/`TsType` + `Builder`), `js_emitter.zig` (the only writer of JavaScript: reserved-word renaming, string escaping, parenthesisation, indentation, semicolons), `ts_emitter.zig` (the only writer of `.d.ts`). The backends build nodes and write no target text. The four `js_ast` bridges pin the shapes the current lowering still emits illegally. See [`js/AGENTS.md`](js/AGENTS.md) |
+| `js/` | JS/TS code model + emitters shared by `commonJS.zig` and `typescript.zig`: `js_ast.zig` (`Expr`/`Stmt`/`Pattern`/`Block`/`Class`/`Item` + the `.d.ts` `TsDecl`/`TsType` + `Builder`), `js_emitter.zig` (the only writer of JavaScript: reserved-word renaming, string escaping, parenthesisation, indentation, semicolons), `ts_emitter.zig` (the only writer of `.d.ts`). The backends build nodes and write no target text. The remaining `js_ast` bridges pin the shapes the current lowering still emits illegally. See [`js/AGENTS.md`](js/AGENTS.md) |
 | `beam/` | BEAM term model + emitters shared by `erlang.zig`, `beam_asm.zig` and the comptime evaluators: `term.zig` (`Term`), `erl_emitter.zig` (Erlang source: atom quoting incl. reserved words, variables, module names, binaries), `beam_emitter.zig` (`.S` operands and `move`s). One quoting rule for `.erl` and `.S`. See [`beam/AGENTS.md`](beam/AGENTS.md) |
 | `commonJS.zig` | CommonJS backend — builds `js/js_ast.zig` nodes, rendered by `js/js_emitter.zig`. See [commonJS](#commonjs) below |
 | `erlang.zig` | Erlang source emitter. See [erlang](#erlang) below |
 | `beam_asm.zig` | BEAM Assembly `.S` emitter, assembled with `erlc +from_asm`. See [beam_asm](#beam_asm) below |
 | `wat/` | WebAssembly-text code model and the only writer of `.wat`: `wat_ast.zig` (`Module`/`Item`/`Func`/`Seq`/`Instr` + `Builder` + the invariants), `wat_emitter.zig` (s-expression layout, `$` names, data escaping), `wat_prelude.zig` (the runtime helpers as built nodes). See [`wat/AGENTS.md`](wat/AGENTS.md) |
 | `wat.zig` | WAT backend: builds `wat/wat_ast.zig` nodes and hands them to the emitter. See [wat](#wat) below |
-| `typescript.zig` | `.d.ts` typedef backend (optional secondary output, `Config.typeDefLanguage`) — builds `js/js_ast.zig` `TsDecl` nodes, rendered by `js/ts_emitter.zig`. Type declarations only — no call lowering. Skips template fns (`TypeRef.isTemplateReturnType()`) and phantom `@Context` structs, erases `@Context<B, R>` to `R`, renders an anonymous `TypeRef.record_type` as `{ f: T; … }` |
+| `typescript.zig` | `.d.ts` typedef backend (optional secondary output, `Config.typeDefLanguage`) — builds `js/js_ast.zig` `TsDecl` nodes, rendered by `js/ts_emitter.zig`. Type declarations only — no call lowering. A package import in the `.d.ts` keeps only names the owner emits (`CrossModule.exports`): a template fn or a lib namespace handle has no declaration there, so `import { html } from "view"` is dropped instead of dangling. Parameter types come from `Param.typeRef` (the parser leaves the legacy `typeName` empty; an unannotated position is `any`, a zero-argument generic such as `@Decl` is the bare name). Skips template fns (`TypeRef.isTemplateReturnType()`) and phantom `@Context` structs, erases `@Context<B, R>` to `R`, renders an anonymous `TypeRef.record_type` as `{ f: T; … }` |
 | `runtime.zig` | Test-side execution for the snapshot `----- RUN LOG -----` block. See [runtime](#runtime) below |
 | `snapshot.zig` | `buildSnapshot` / `buildSnapshotMulti` / `assertCodegen` / `assertCodegenError`; `writeComptimeSections` writes `GenerateResult.comptime_trace` (`COMPTIME ERLANG` / `COMPTIME REPLY`, rendered by `comptime/trace.zig`) then `COMPTIME VALUES` for every backend. A `SnapInput` with `result == null` (the module never reached the backend) or with `comptime_err` set writes a `COMPILE DIAGNOSTIC` section instead of the code section — spec 06 H3, which used to leave such snapshots empty |
 | `tests.zig` | Barrel aggregating `tests/<feature>.zig` plus the `beam/*.zig` and `wat/wat_emitter.zig` unit tests; harness in `tests/helpers.zig` (`assertJs`, `assertJsSingle`, `assertJsError`, `assertJsTestMode`, `assertJsContains`, `assertConsumerJs`, `configs` — one config per target) |
@@ -84,7 +84,16 @@ codegen/
   and the fixed test-harness source (`Item.runtime`).
 - **`@Result`** is `{ ok: V } | { error: E }`; `__bp_ok`/`__bp_error` build it for
   `return`/`throw` in `#[@result]` fns; `try`/`catch` lower to `"error" in _r`
-  pattern matching.
+  pattern matching. A `case` arm `Ok(v)` / `Err(e)` / `Error(e)` that names no
+  variant the module declares tests the key the same way (`if ("ok" in _s)`,
+  `const v = _s.ok;`), never `_s.tag` — a Result carries no tag (C5).
+- **Variant payload arms**: `collectVariantFields` indexes every local payload
+  variant's declared field names; `Circle(r) ->` binds positionally
+  (`const { radius: r } = _s;`). A variant declared in another module keeps the
+  binding as the key.
+- **`.len`**: `s.len` / `arr.len` on a typed string/array (inference records
+  `.prim` in `instance_lowerings`, threaded in as `Emitter.lowerings`) emits
+  the native `.length` property; a record field named `len` is untouched (C3).
 - **Static extension dispatch**: `implement`/`extend` blocks emit as namespace
   objects (`buildExtensionNamespace`: `const Sym = { m(self){…} }`, no prototype
   patching); an activated `obj.m(args)` lowers to `Sym.m(obj, args)` via the
@@ -102,17 +111,35 @@ codegen/
   `when($argc == N)` branches is a template rendered inline at each call site
   (`user_node_templates`); so is a 1-arg form without markers
   (`#[@External.Node("process.cwd()")]`), a bare host expression rendered
-  verbatim — neither emits an import binding or a `require(…)`. A template fn
-  emits no `exports.<name>`, so a cross-module call (`env.read(…)` after
-  `import {env} from "std"`) does not resolve yet. A fn with no `node` target raises
+  verbatim — neither emits an import binding or a `require(…)`. A `pub`
+  template fn is also emitted as a real function whose `$N` holes are its
+  parameters (`buildTemplateWrapper`; an arity-branched one tests
+  `arguments.length`, a `$self` template gets none) plus `exports.<name>`, so a
+  cross-module call through the module object (`env.write(…)` after
+  `import {env} from "std"`) resolves; calls in the owning module still inline
+  the template. A fn with no `node` target raises
   `MissingExternalTarget` when called.
+- **`assert`** (semantics decision 4): outside test mode it is always fatal —
+  `__bp_assert_fatal(cond, msg, "<module>.bp:<line>")`, a prelude helper that
+  throws `Error("<msg> at <file>:<line>")` (`"assertion failed"` without a
+  message), so node exits non-zero naming both. Test mode is unchanged: the
+  `__bp_assert` harness helper throws for the runner to catch per test.
+- **Prelude helpers** (`js/js_prelude.zig`): a call `recv.m(args)` whose
+  receiver inference recorded as a primitive (`instance_lowerings` `.prim`)
+  and whose native JS method disagrees with the declaration calls a helper
+  instead — `s.charAt(i)` is `__bp_string_char_at(s, i)` (`null` out of
+  range). `Emitter.helper` marks it, and only marked helpers are declared at
+  the top of the module. Interface default-fn bodies are not inferred, so a
+  `charAt` inside one stays native.
 - **Duplicate test names**: two `test "x"` blocks in one module print
   `warning: duplicate test name "x" in <mod>.bp:<line>` to stderr; both run.
 - **Cross-module linking** (`crossModule.zig`): `from "<pkg>"` imports become
   `require("./<path>.js")` of the owning file (declaration-only names such as
   decorators emit nothing); imported records are marked as classes so
-  construction emits `new`; `exports.X` is emitted only for `pub` symbols
-  another module imports.
+  construction emits `new`; a `pub` fn, record or enum always emits
+  `exports.X` (its `.d.ts` declares it exported, and a module-object consumer
+  such as `order.Order` needs it), while a `pub implement` is exported only
+  when another module imports it.
 - **Lib namespace object**: when an import names the lib itself
   (`import {Lib} from "Lib"`) and that name has no emitted symbol, `emitUse`
   binds the lib's module object (`buildUse`: `const Lib = require(…)`, or
@@ -126,11 +153,58 @@ codegen/
   `Array`/`String`/numeric/`Bool`), where they become statics on the existing
   global (`Array.range = function…`) — `const Array = {}` would shadow the
   global.
+- **Bare `throw`** (JS-6, decided): rejected, not a rethrow. The parser
+  requires an operand (`throw [new] <expr>`), so `throw;` is a parse error on
+  every backend (`throw_bare_throw_inside_try_catch_is_rejected` pins it on all
+  four) and `js.Stmt.throw_` carries a required operand; a null operand
+  reaching commonJS is `error.ThrowWithoutOperand`. The erlang twin
+  (`erlang.zig`'s `raw("")` for a null `throw_`) is equally unreachable.
+- **Destructuring**: a destructuring parameter takes no default
+  (`function greet({ name })`); a nameless `..` in a record or list pattern
+  ignores the rest, which JS destructuring already does, so it emits no rest
+  element — and a nameless `..` in an array *literal* contributes nothing.
+- **Case tests** (`patternTest`): a pattern that matches anything (`_`, an
+  alternative that is `_`) has no `if`; a multi-subject arm (`case a, b { 0, 0
+  -> … }`, subject `[a, b]`) tests the conjunction over `_s[i]`; a shape with
+  no test is `false`.
+- **`comptime { … }` with no `break <e>`** in value position is `undefined`
+  (a block's value comes only from `break`).
 - **Ranges**: `a..b` materializes `Array.from({length: Math.max(0, b - a)}, …)`;
   an open-ended `a..` throws at runtime.
 - **Effects**: `fnKeyword` picks `async function` / `function*` /
   `async function*`; inside a generator, `return <iter>` becomes
   `yield* <iter>; return;` and `loop (xs) { x -> yield x }` becomes `for…of`.
+- **Control flow (no statement in expression position)**: a jump is a
+  statement, so every position that can hold one is lowered by `buildStmt`:
+  - an `if` in statement position whose branches `return` / `break` /
+    `continue` (or, inside a comprehension, `yield`) is a JS `if` statement
+    (`buildIfStmt`; the `if (val e = …)` form keeps its binding in a `{ … }`
+    block). Any other `if` stays the value IIFE, and a jumping `if` in a value
+    position is `error.JumpInValuePosition`;
+  - a `loop` in statement position is `for…of` (`buildLoopStmt`, `loop_ctx =
+    .stmt`): `break;` / `continue;` are native, `break <v>` evaluates `v` and
+    continues;
+  - a `loop` used as a value is a comprehension (`buildLoop`): only top-level
+    `yield <v>` → `xs.map(…)`; anything else (`break <v>`, `continue`, a nested
+    `yield`) → an accumulating IIFE `(() => { const _acc = []; for (…) {
+    _acc.push(v); … } return _acc; })()` — `break <v>` contributes `v`,
+    `continue` drops the item, `break;` ends the iteration;
+  - `return case … { … }` where an arm returns from the function (the
+    `#[@result]` wrap puts `__bp_ok(…)` around a whole `case`, so `Fail -> throw
+    e` is `return __bp_error(e)` inside it) lowers the `case` to statements in
+    a block (`buildReturnCaseStmt`): value arms `return ({ ok: v })`, the jump
+    arm keeps its own `return`;
+  - `while (cond) { … }` — parsed as a call to `while` with one argument and
+    a parameterless trailing block; there is no keyword and no prelude fn, and
+    std's `Array` default fns `chunked`/`sliding` are written this way — is a
+    JS `while` statement (`whileShape` / `buildWhileStmt`, `loop_ctx = .stmt`),
+    unless the module declares its own `fn while`. The checker does not know
+    the form (default-fn bodies are not inferred), so outside those bodies it
+    is still an unbound name;
+  - `throw` in value position is a one-statement IIFE; a binding in value
+    position is `error.BindingInValuePosition`. `try x catch return y` in value
+    position still returns from the value IIFE (the `try`'s value becomes `y`);
+    the statement-position lowering is the one that leaves the function.
 
 ### erlang
 
@@ -642,7 +716,14 @@ first three are now enforced by the model, not by discipline:
     echo so the block stays stable across OTP releases;
   - the program exits 0 → its captured output is the RUN LOG;
   - the program exits non-zero (crash, `badarith`, `init terminating`) → empty
-    RUN LOG: the partial stdout comes with a stack trace not worth pinning.
+    RUN LOG: the partial stdout comes with a stack trace not worth pinning;
+  - a `node` run exits non-zero **and** `node --check` rejects the module →
+    the RUN LOG is `COMPILE ERROR (node --check):` followed by
+    `<module>.js:<line>`, node's source echo and caret, and the `SyntaxError:`
+    line (stack frames and the `Node.js v…` banner dropped). A module that
+    parses always runs, so checking only after a failed run sees every
+    unparseable module; the node cache key is tagged `node+check` so entries
+    recorded before this capture miss.
 - **Determinism**: `erlc`/`erl` are spawned **with the scratch dir as their
   cwd** (`-o .`, `-pa .`, bare `<module>.erl` / `<module>.S` in argv), so
   diagnostics quote `main.erl:4:5:` instead of the random

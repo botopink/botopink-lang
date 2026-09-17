@@ -30,7 +30,7 @@ function pick(xs) {
     for (const [i, x] of (xs).entries()) {
     (() => { if ((i === 0)) { return first = x; } })();
     last = x;
-};
+}
     return ((first + "-") + last);
 }
 
@@ -38,7 +38,7 @@ function weigh(xs) {
     let total = 0;
     for (const [i, x] of (xs).entries()) {
     total = (total + (x * i));
-};
+}
     return total;
 }
 

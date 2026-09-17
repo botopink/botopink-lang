@@ -14,7 +14,7 @@ fn main() {
 ----- JAVASCRIPT -- main.js
 ```javascript
 function classify(x) {
-     if ((x === 0)) { return "zero"; } else { return  if ((x !== 0)) { return ("nonzero: " + x); } else { return "null"; }; };
+    if ((x === 0)) { return "zero"; } else { if ((x !== 0)) { return ("nonzero: " + x); } else { return "null"; } }
 }
 
 function main() {
@@ -37,4 +37,6 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
+nonzero: 42
+zero
 ```

@@ -18,7 +18,7 @@ class Point {
 }
 
 function describe(p) {
-    const { x, ... } = p;
+    const { x } = p;
     return x;
 }
 ```

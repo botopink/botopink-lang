@@ -1,11 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@External.Erlang("string", "length"),
-  @External.Node("./gleam_stdlib.mjs", "string_length")]
-pub declare fn str_length(s: string) -> i32;
+#[@External.Erlang("filename", "basename"),
+  @External.Node("node:path", "basename")]
+pub declare fn basename(p: string) -> string;
 
 fn main() {
-    @print(str_length("hello"));
+    @print(basename("/tmp/notes.txt"));
 }
 ```
 
@@ -15,9 +15,9 @@ fn main() {
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  ;; declare fn str_length — no wasm implementation (host-backed)
+  ;; declare fn basename — no wasm implementation (host-backed)
   (func $main
-    unreachable ;; unresolved call: str_length/1
+    unreachable ;; unresolved call: basename/1
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")

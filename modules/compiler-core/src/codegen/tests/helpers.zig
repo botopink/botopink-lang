@@ -498,6 +498,34 @@ pub fn assertJsContains(allocator: Allocator, src: []const u8, needles: []const 
     }
 }
 
+/// Compiles `src` as `main` for commonJS, runs it with node (sibling modules
+/// such as `std/<mod>.js` written next to it) and asserts its RUN LOG equals
+/// `expected`. For behaviour that lives in a module other than the entry, which
+/// a single-module snapshot does not show.
+pub fn assertJsRunLog(allocator: Allocator, src: []const u8, expected: []const u8) !void {
+    const io = std.testing.io;
+    var outputs = try codegen.generate(
+        allocator,
+        &.{.{ .path = "", .source = src }},
+        io,
+        configs[0], // commonJS / node
+    );
+    defer {
+        for (outputs.items) |*o| o.result.deinit(allocator);
+        outputs.deinit(allocator);
+    }
+    for (outputs.items) |o| {
+        if (!std.mem.eql(u8, o.name, "") and !std.mem.eql(u8, o.name, "main")) continue;
+        const got = o.result.run_output orelse "";
+        if (!std.mem.eql(u8, got, expected)) {
+            std.debug.print("\n=== generated JS ===\n{s}\n=== RUN LOG ===\n{s}\n=== expected ===\n{s}\n", .{ o.result.js, got, expected });
+            return error.RunLogMismatch;
+        }
+        return;
+    }
+    return error.ModuleDidNotCompile;
+}
+
 /// Asserts that none of `needles` appear in the generated commonJS output.
 pub fn assertJsNotContains(allocator: Allocator, src: []const u8, needles: []const []const u8) !void {
     const io = std.testing.io;

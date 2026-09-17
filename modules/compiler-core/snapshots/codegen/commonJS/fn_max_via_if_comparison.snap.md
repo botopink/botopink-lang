@@ -15,7 +15,7 @@ fn main() {
 ----- JAVASCRIPT -- main.js
 ```javascript
 function max(a, b) {
-     if ((a < b)) { return b; } else { return a; };
+    if ((a < b)) { return b; } else { return a; }
 }
 exports.max = max;
 
@@ -31,7 +31,7 @@ _botopink_main();
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-export declare function max(a: , b: ): i32;
+export declare function max(a: i32, b: i32): i32;
 
 
 

@@ -6,14 +6,16 @@ const std = @import("std");
 const h = @import("helpers.zig");
 const codegen = @import("../../codegen.zig");
 
+// The module+symbol form names a module that exists on each host (the node
+// builtin `node:path`, OTP's `filename`), so the RUN LOG is the call's value.
 test "js: external ---- call emits module symbol" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@External.Erlang("string", "length"),
-        \\  @External.Node("./gleam_stdlib.mjs", "string_length")]
-        \\pub declare fn str_length(s: string) -> i32;
+        \\#[@External.Erlang("filename", "basename"),
+        \\  @External.Node("node:path", "basename")]
+        \\pub declare fn basename(p: string) -> string;
         \\
         \\fn main() {
-        \\    @print(str_length("hello"));
+        \\    @print(basename("/tmp/notes.txt"));
         \\}
     );
 }
@@ -34,12 +36,12 @@ test "js: external ---- global math" {
 
 test "js: external ---- import binds symbol" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@External.Erlang("erlang", "abs"),
-        \\  @External.Node("./stdlib.mjs", "abs")]
-        \\pub declare fn abs(n: i32) -> i32;
+        \\#[@External.Erlang("filename", "extension"),
+        \\  @External.Node("node:path", "extname")]
+        \\pub declare fn extname(p: string) -> string;
         \\
         \\fn main() {
-        \\    @print(abs(-5));
+        \\    @print(extname("docs/readme.md"));
         \\}
     );
 }
@@ -50,12 +52,12 @@ test "js: external ---- import binds symbol" {
 
 test "js: External.<Target> ---- template equivalent to @external(target, template)" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\#[@External.Erlang("string", "length"),
-        \\  @External.Node("./gleam_stdlib.mjs", "string_length")]
-        \\pub declare fn str_length(s: string) -> i32;
+        \\#[@External.Erlang("filename", "dirname"),
+        \\  @External.Node("node:path", "dirname")]
+        \\pub declare fn dirname(p: string) -> string;
         \\
         \\fn main() {
-        \\    @print(str_length("hello"));
+        \\    @print(dirname("/tmp/notes.txt"));
         \\}
     );
 }

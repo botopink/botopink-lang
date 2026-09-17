@@ -13,9 +13,13 @@ fn main() {
 ----- JAVASCRIPT -- main.js
 ```javascript
 function find(arr) {
-    return for (const x of arr) {
-    (() => { if ((x > 10)) { return return x; } })();
-};
+    return (() => {
+        const _acc = [];
+        for (const x of arr) {
+            if ((x > 10)) { _acc.push(x); continue; }
+        }
+        return _acc;
+    })();
 }
 
 function main() {
@@ -37,4 +41,5 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
+[ 15, 20 ]
 ```

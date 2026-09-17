@@ -1,25 +1,25 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@External.Erlang("erlang", "abs"),
-  @External.Node("./stdlib.mjs", "abs")]
-pub declare fn abs(n: i32) -> i32;
+#[@External.Erlang("filename", "extension"),
+  @External.Node("node:path", "extname")]
+pub declare fn extname(p: string) -> string;
 
 fn main() {
-    @print(abs(-5));
+    @print(extname("docs/readme.md"));
 }
 ```
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, main}.
-{exports, [{'_botopink_main', 0}, {main, 1}, {abs, 1}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {extname, 1}]}.
 {attributes, []}.
 {labels, 10}.
 
-{function, abs, 1, 3}.
+{function, extname, 1, 3}.
   {label, 2}.
     {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, abs}, 1}.
+    {func_info, {atom, main}, {atom, extname}, 1}.
   {label, 3}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -34,7 +34,9 @@ fn main() {
     {func_info, {atom, main}, {atom, main}, 0}.
   {label, 5}.
     {allocate, 0, 0}.
-    {move, {integer, -5}, {x, 0}}.
+    {move, {literal, <<"docs/readme.md">>}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {x, 1}, {x, 0}}.
     {call, 1, {f, 3}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"~p~n">>}, {x, 0}}.

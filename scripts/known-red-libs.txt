@@ -13,4 +13,3 @@
 erika     commonJS F3-std-surface         String.split("") answers the whole string on erlang (string:split/3, empty separator): the comptime query lexer sees one token — "unknown collection '' in scope"
 erika     erlang   F3-std-surface         String.split("") answers the whole string on erlang (string:split/3, empty separator): the comptime query lexer sees one token — "unknown collection '' in scope"
 jhonstart commonJS F3-std-surface         String.split("") answers the whole string on erlang (string:split/3, empty separator): the html template measures every tag as length 1 — "mismatched closing tag </>"
-std       commonJS F8-js-bridges         test/primitives_gaps_test.bp: `while` inside an interface `default fn` lowers to an undefined `while_` (array chunked partitions, array sliding window of 2)

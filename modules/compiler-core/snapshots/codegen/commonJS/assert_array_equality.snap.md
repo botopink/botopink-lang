@@ -7,8 +7,10 @@ fn f() {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
+function __bp_assert_fatal(cond, msg, loc) { if (!cond) { throw new Error((msg ?? "assertion failed") + " at " + loc); } }
+
 function f() {
-    console.assert(([] === []));
+    __bp_assert_fatal(([] === []), null, "main.bp:2");
 }
 ```
 

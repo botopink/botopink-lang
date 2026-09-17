@@ -7,8 +7,10 @@ fn f() {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
+function __bp_assert_fatal(cond, msg, loc) { if (!cond) { throw new Error((msg ?? "assertion failed") + " at " + loc); } }
+
 function f() {
-    console.assert(false, "error message");
+    __bp_assert_fatal(false, "error message", "main.bp:2");
 }
 ```
 

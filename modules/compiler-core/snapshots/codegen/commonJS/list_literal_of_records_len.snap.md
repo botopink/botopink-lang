@@ -18,7 +18,7 @@ class P {
 
 function main() {
     const pts = [new P(1, 2), new P(3, 4)];
-    console.log(pts.len);
+    console.log(pts.length);
 }
 
 function _botopink_main() {
@@ -36,5 +36,5 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
-undefined
+2
 ```

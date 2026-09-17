@@ -1,25 +1,25 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@External.Erlang("string", "length"),
-  @External.Node("./gleam_stdlib.mjs", "string_length")]
-pub declare fn str_length(s: string) -> i32;
+#[@External.Erlang("filename", "basename"),
+  @External.Node("node:path", "basename")]
+pub declare fn basename(p: string) -> string;
 
 fn main() {
-    @print(str_length("hello"));
+    @print(basename("/tmp/notes.txt"));
 }
 ```
 
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, main}.
-{exports, [{'_botopink_main', 0}, {main, 1}, {str_length, 1}]}.
+{exports, [{'_botopink_main', 0}, {main, 1}, {basename, 1}]}.
 {attributes, []}.
 {labels, 10}.
 
-{function, str_length, 1, 3}.
+{function, basename, 1, 3}.
   {label, 2}.
     {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, str_length}, 1}.
+    {func_info, {atom, main}, {atom, basename}, 1}.
   {label, 3}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -34,7 +34,7 @@ fn main() {
     {func_info, {atom, main}, {atom, main}, 0}.
   {label, 5}.
     {allocate, 0, 0}.
-    {move, {literal, <<"hello">>}, {x, 0}}.
+    {move, {literal, <<"/tmp/notes.txt">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 1}, {x, 0}}.
     {call, 1, {f, 3}}.

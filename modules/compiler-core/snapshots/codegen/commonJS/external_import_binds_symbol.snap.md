@@ -1,21 +1,21 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@External.Erlang("erlang", "abs"),
-  @External.Node("./stdlib.mjs", "abs")]
-pub declare fn abs(n: i32) -> i32;
+#[@External.Erlang("filename", "extension"),
+  @External.Node("node:path", "extname")]
+pub declare fn extname(p: string) -> string;
 
 fn main() {
-    @print(abs(-5));
+    @print(extname("docs/readme.md"));
 }
 ```
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-const { abs } = require("./stdlib.mjs");
-exports.abs = abs;
+const { extname } = require("node:path");
+exports.extname = extname;
 
 function main() {
-    console.log(abs((-5)));
+    console.log(extname("docs/readme.md"));
 }
 
 function _botopink_main() {
@@ -26,7 +26,7 @@ _botopink_main();
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-export declare function abs(n: ): i32;
+export declare function extname(p: string): string;
 
 
 
@@ -34,4 +34,5 @@ export declare function abs(n: ): i32;
 
 ----- RUN LOG -----
 ```logs
+.md
 ```
