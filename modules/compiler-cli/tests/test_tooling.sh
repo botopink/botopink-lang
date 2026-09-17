@@ -6,6 +6,8 @@
 #   • `--filter` matching NONE produces a clear `0 passed, 0 failed` and exits 0
 #   • a failing `assert cond, "msg"` surfaces the custom message
 #   • a mixed pass/fail run still runs every test AND exits non-zero
+#   • botopink-lib-test compiles a library with no test block (`–` when it
+#     compiles, `✗` when it does not)
 #
 # Exit 0 = every behaviour held. Recorded (not asserted here): an arbitrary
 # *uncaught* (non-assert) throw → FAIL — pure botopink has no portable
@@ -78,5 +80,34 @@ echo "$out"
 grep -q "ok   this one passes" <<<"$out" || fail "the passing test should still run"
 grep -q "double(2) should be five" <<<"$out" || fail "the custom assert message should surface"
 grep -q "1 passed, 1 failed" <<<"$out" || fail "expected a 1-pass / 1-fail summary"
+
+# ── botopink-lib-test compiles a library that has no test block ──────────────
+echo "==> [libs] a test-less library is still compiled: – when it compiles, ✗ when it does not"
+LIB_TEST_BIN="$REPO_ROOT/zig-out/bin/botopink-lib-test"
+[[ -x "$LIB_TEST_BIN" ]] || fail "botopink-lib-test not found at $LIB_TEST_BIN"
+LIBWORK="$(mktemp -d)"
+trap 'rm -rf "$LIBWORK"' EXIT
+mkdir -p "$LIBWORK/root/quietok/src" "$LIBWORK/root/quietbad/src"
+for lib in quietok quietbad; do
+  printf '{ "name": "%s", "version": "0.0.1", "src": "src/", "files": ["%s.bp"] }\n' "$lib" "$lib" >"$LIBWORK/root/$lib/botopink.json"
+  printf 'pub mod %s;\n' "$lib" >"$LIBWORK/root/$lib/src/root.bp"
+done
+printf 'pub fn quiet() -> i32 {\n    return 1;\n}\n' >"$LIBWORK/root/quietok/src/quietok.bp"
+printf 'pub fn quiet() -> i32 {\n    return (1;\n}\n' >"$LIBWORK/root/quietbad/src/quietbad.bp"
+libtest() { # libtest <lib> — JSON run from a directory with no walk-up roots
+  set +e
+  out="$( cd "$LIBWORK" && "$LIB_TEST_BIN" --json --bin "$BP_BIN" --lib-root "$LIBWORK/root" --target commonJS --lib "$1" 2>&1 )"
+  code=$?
+  set -e
+  echo "$out"
+}
+libtest quietok
+[[ $code -eq 0 ]] || fail "a test-less library that compiles must not fail test-libs (exit $code)"
+grep -q '"lib":"quietok","target":"commonJS","status":"no_tests"' <<<"$out" || fail "quietok should be no_tests"
+[[ -d "$LIBWORK/root/quietok/.botopinkbuild/lib-test-build/commonJS" ]] || fail "quietok was not compiled"
+libtest quietbad
+[[ $code -eq 1 ]] || fail "a test-less library that does not compile must fail test-libs (exit $code)"
+grep -q '"lib":"quietbad","target":"commonJS","status":"fail"' <<<"$out" || fail "quietbad should be fail"
+grep -q 'quietbad.bp' <<<"$out" || fail "the compile diagnostic should name quietbad.bp"
 
 echo "==> test-tooling behaviours: OK"

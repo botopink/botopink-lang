@@ -1,12 +1,15 @@
 # Push/PR CI for botopink-lang — the same gate as the local one
 # (scripts/gate.sh), minus the staged-file checks.
 #
-#   test  `zig build test` from a cold runtime cache, then `zig build test-cli`
-#         (the CLI command contract, test tooling, mutual recursion and backend
-#         execution parity scripts). ubuntu + macos hard, windows allow-fail.
+#   test  `zig build test` from a cold runtime cache, `zig build test-bpmp`,
+#         `scripts/beam_export_audit.sh` (ubuntu + macos), then `zig build
+#         test-cli` (the CLI command contract, test tooling, mutual recursion and
+#         backend execution parity scripts). ubuntu + macos hard, windows
+#         allow-fail.
 #   libs  every sibling library checked out next to botopink-lang
 #         (emilia, erika, jhonstart, onze, rakun at `feat`) plus libs/std,
-#         compiled and tested on every runnable target by `zig build test-libs`.
+#         compiled and tested on every runnable target by `zig build test-libs`
+#         (a library without tests is still compiled).
 #         A failing library fails the job by name, with its diagnostic in the
 #         log; the cells listed in scripts/known-red-libs.txt are reported with
 #         their owning front and do not fail it until they pass.
@@ -127,6 +130,18 @@ jobs:
         run: |
           rm -rf modules/compiler-core/.botopinkbuild/runtime-cache
           zig build test
+
+      - name: zig build test-bpmp
+        shell: bash
+        run: zig build test-bpmp
+
+      # Every beam snapshot module assembled with every function exported: a
+      # rejected module prints `REJECTED <slug> <module>` with the validator's
+      # function, offset and reason. Needs erlc — not installed on windows.
+      - name: beam export audit
+        if: matrix.runner != 'windows-2022'
+        shell: bash
+        run: bash scripts/beam_export_audit.sh
 
       - name: zig build test-cli
         shell: bash

@@ -83,20 +83,78 @@ pub fn runCell(
         .signal, .stopped, .unknown => 1,
     };
 
-    const status: Status = blk: {
-        if (code == 0) break :blk .pass;
-        // Non-zero exit: distinguish a not-yet-runnable backend from a real failure.
-        const unsupported =
-            std.mem.indexOf(u8, result.stdout, UNSUPPORTED_MARK) != null or
-            std.mem.indexOf(u8, result.stderr, UNSUPPORTED_MARK) != null;
-        if (unsupported and !strict) break :blk .skipped_unsupported;
-        break :blk .fail;
-    };
+    // Non-zero exit: distinguish a not-yet-runnable backend from a real failure.
+    const status = classifyWith(.pass, code, result.stdout, result.stderr, strict);
 
     if (json) {
         try emitCellSummary(arena, io, lib_name, target.toString(), status);
     }
     return status;
+}
+
+/// Build directory, relative to the lib's own directory, that `compileCell`
+/// writes to — next to `botopink test`'s `.botopinkbuild/test-out/`.
+const COMPILE_OUT_DIR = ".botopinkbuild/lib-test-build";
+
+/// Compile one cell of a library that has no `test` block: spawn `botopink
+/// build --target <t>` in the lib's directory. A library that never wrote a
+/// test is still compiled per target, so it cannot break silently. Exit 0 →
+/// `.no_tests` (compiled, nothing to run); the unsupported-target mark →
+/// `.skipped_unsupported` (a fail under `--strict`); any other exit → `.fail`.
+///
+/// The child's stdout (status lines) and stderr (diagnostics) are re-emitted
+/// on stderr, so `--json` keeps stdout pure JSONL while a compile error still
+/// reaches the log above the cell's `cell_summary`.
+pub fn compileCell(
+    arena: std.mem.Allocator,
+    io: std.Io,
+    bin: []const u8,
+    lib_dir: []const u8,
+    lib_name: []const u8,
+    target: Target,
+    strict: bool,
+    json: bool,
+) !Status {
+    const out_dir = try std.fmt.allocPrint(arena, "{s}/{s}", .{ COMPILE_OUT_DIR, target.toString() });
+    const argv = [_][]const u8{ bin, "build", "--target", target.toString(), "--out", out_dir };
+
+    if (!json) std.debug.print("\n\x1b[36m── {s} · {s} (no tests: compile only) ──\x1b[0m\n", .{ lib_name, target.toString() });
+
+    const result = std.process.run(arena, io, .{
+        .argv = &argv,
+        .cwd = .{ .path = lib_dir },
+        .stdout_limit = .limited(16 * 1024 * 1024),
+        .stderr_limit = .limited(16 * 1024 * 1024),
+    }) catch |err| {
+        std.debug.print(
+            "\x1b[1m\x1b[31merror\x1b[0m: failed to spawn '{s}': {s}\n",
+            .{ bin, @errorName(err) },
+        );
+        return err;
+    };
+
+    if (result.stdout.len > 0) std.Io.File.stderr().writeStreamingAll(io, result.stdout) catch {};
+    if (result.stderr.len > 0) std.Io.File.stderr().writeStreamingAll(io, result.stderr) catch {};
+
+    const code: u8 = switch (result.term) {
+        .exited => |c| c,
+        .signal, .stopped, .unknown => 1,
+    };
+    const status = classifyWith(.no_tests, code, result.stdout, result.stderr, strict);
+    if (json) try emitCellSummary(arena, io, lib_name, target.toString(), status);
+    return status;
+}
+
+/// A child's verdict from its exit code and output: 0 is `ok_status`'s pass, a
+/// non-zero exit carrying the unsupported-target mark is a skip (unless
+/// `strict`), anything else a failure.
+fn classifyWith(ok_status: Status, code: u8, stdout: []const u8, stderr: []const u8, strict: bool) Status {
+    if (code == 0) return ok_status;
+    const unsupported =
+        std.mem.indexOf(u8, stdout, UNSUPPORTED_MARK) != null or
+        std.mem.indexOf(u8, stderr, UNSUPPORTED_MARK) != null;
+    if (unsupported and !strict) return .skipped_unsupported;
+    return .fail;
 }
 
 /// Splice `"lib":"<name>","target":"<t>"` into each JSONL record from a
@@ -267,4 +325,12 @@ test "statusName covers every Status variant" {
     try testing.expectEqualStrings("fail", statusName(.fail));
     try testing.expectEqualStrings("skipped_unsupported", statusName(.skipped_unsupported));
     try testing.expectEqualStrings("no_tests", statusName(.no_tests));
+}
+
+test "classifyWith: exit 0 is the ok status, the unsupported mark a skip unless strict, else a fail" {
+    try testing.expectEqual(Status.pass, classifyWith(.pass, 0, "", "", false));
+    try testing.expectEqual(Status.no_tests, classifyWith(.no_tests, 0, "", "", false));
+    try testing.expectEqual(Status.fail, classifyWith(.no_tests, 1, "", "error: parse error", false));
+    try testing.expectEqual(Status.skipped_unsupported, classifyWith(.no_tests, 1, "", "botopink test currently supports only commonJS", false));
+    try testing.expectEqual(Status.fail, classifyWith(.pass, 1, "currently supports only", "", true));
 }

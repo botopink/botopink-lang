@@ -21,7 +21,8 @@ compiler-cli/
 │   │                          examples/modules); `zig build test-backends`
 │   ├── backend_exec/        ← numeric + records fixture projects
 │   ├── test_tooling.sh      ← `botopink test` behaviours: empty test, --filter
-│   │                          (multi / none), assert message, mixed pass/fail exit
+│   │                          (multi / none), assert message, mixed pass/fail exit;
+│   │                          `botopink-lib-test` compiles a test-less library
 │   └── test_tooling/        ← pass + fail fixture projects
 └── src/
     ├── AGENTS.md

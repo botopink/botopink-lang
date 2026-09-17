@@ -25,7 +25,7 @@ lib-test-runner/
     ├── main.zig         ← entry: resolve roots/binary → discover → run cells → matrix → exit
     ├── args.zig         ← CLI parsing (Target enum, node alias, =-form, all)  + unit tests
     ├── discovery.zig    ← enumerate <root>/*/ with botopink.json across roots, "has tests" probe + unit tests
-    ├── runner.zig       ← per-(lib,target) `botopink test` spawn + status classification
+    ├── runner.zig       ← per-(lib,target) `botopink test` spawn (or `botopink build` for a test-less lib) + status classification
     └── matrix.zig       ← Status enum, lib×target matrix render, summary + unit tests
 ```
 
@@ -40,7 +40,7 @@ zig build test-libs -- --target all --strict          # supported targets, stric
 
 # from this package:
 zig build               # produce ./zig-out/bin/botopink-lib-test
-zig build test          # arg-parsing + discovery + matrix unit tests
+zig build test          # args + discovery + matrix + runner unit tests (also run by the root `zig build test`)
 ```
 
 ## CLI surface
@@ -74,7 +74,7 @@ botopink-lib-test [--target <t>[,<t>…] | --target all] [--lib <name>]
 |---|---|
 | `✓` | `botopink test` passed |
 | `✗` | a red `.bp` test — the **only** status that fails the run |
-| `–` | lib has no test blocks (green skip, never a failure) |
+| `–` | lib has no test blocks and **compiled** (`botopink build --target <t>`); nothing ran |
 | `~` | target skipped: either not-yet-runnable (beam/wasm), or excluded by the lib's `"targets"` whitelist (see below). `--strict` flips the not-yet-runnable case to fail; the per-lib whitelist always skips. |
 
 ### Per-lib `"targets"` whitelist (`botopink.json`)
@@ -98,8 +98,15 @@ only the runner-side filter.
 Absent `"targets"` → every requested target is attempted. A malformed list (non-array, mixed types) is silently
 dropped to absent — a typo must not narrow the matrix without warning.
 
-**Exit non-zero iff at least one cell is `✗`.** A no-tests lib (`–`) and a
-skipped-unsupported target (`~`) never redden the gate.
+**Exit non-zero iff at least one cell is `✗`.** A skipped target (`~`) never
+reddens the gate. A lib with no `test` block is still **compiled** on each
+target it does not opt out of (`runner.compileCell` spawns `botopink build
+--target <t> --out .botopinkbuild/lib-test-build/<t>` in the lib's directory):
+`–` when it compiles, `✗` when it does not — a library that never wrote a test
+cannot break silently. A project whose `src/` holds no `.bp` file at all (a
+tooling repository carrying a `botopink.json`, e.g. `vscode-extension`) has
+nothing to compile and stays `–`. The build's output goes to stderr, so `--json` stdout
+stays pure JSONL.
 
 ## Test output passthrough
 

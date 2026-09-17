@@ -70,7 +70,9 @@ invocation). See
 `botopink test --target <t>` in `libs/std` and in every sibling library the
 checkout can see (`<ancestor>/repository/*` — the meta workspace, or the repos CI
 checks out), and reports each cell as pass, FAIL (with the failing module's
-diagnostic), known red, skipped (with the reason) or no tests. A cell listed in
+diagnostic), known red, skipped (with the reason) or no tests — a library with
+no `test` block is still compiled (`botopink build --target <t>`), so it fails
+its cell when it does not compile. A cell listed in
 [`scripts/known-red-libs.txt`](scripts/known-red-libs.txt) is named with its
 owning front and does not fail the run; an unlisted failure does, and so does a
 listed cell that passes (delete its line). It is **not** part of `zig build
@@ -171,9 +173,11 @@ run is [`scripts/gate.sh`](scripts/gate.sh):
 
 1. `--staged`: conflict markers and `zig fmt --check` on staged files;
 2. `zig build`;
-3. `zig build test` (`--cold` deletes `modules/compiler-core/.botopinkbuild/runtime-cache` first — required for the run that decides a merge);
-4. `zig build test-cli` (the CLI contract, test tooling, recursion and backend execution scripts);
-5. `zig build test-libs` (every visible library, known reds named).
+3. `zig build test` (compiler-core, language-server, CLI and lib-test-runner unit suites; `--cold` deletes `modules/compiler-core/.botopinkbuild/runtime-cache` first — required for the run that decides a merge);
+4. `zig build test-bpmp` (the package manager's unit suite);
+5. `scripts/beam_export_audit.sh` (every beam snapshot module assembles with every function exported);
+6. `zig build test-cli` (the CLI contract, test tooling, recursion and backend execution scripts);
+7. `zig build test-libs` (every visible library, known reds named; a library without tests is still compiled).
 
 `scripts/git-hooks/pre-commit` is the tracked pre-commit hook. It delegates to the
 superproject's `scripts/git-hooks/lib/test-runner.sh` when that file exists;

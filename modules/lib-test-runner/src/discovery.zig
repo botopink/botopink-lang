@@ -7,9 +7,9 @@
 /// legacy flat `libs/`), finally any `--lib-root` flag entries. The first root
 /// carrying a given name wins, later duplicates are dropped. "Has tests" means
 /// either a `test/` directory with at least one `.bp` suite, or a `src/**/*.bp`
-/// file containing a `test` block. A lib with no tests is reported
-/// (`has_tests = false`) and rendered as a green skip — never a failure,
-/// matching `botopink test`'s own "no test blocks found" → exit 0.
+/// file containing a `test` block. A lib with no tests (`has_tests = false`) is
+/// still compiled per target by the runner (`runner.compileCell`): `–` when it
+/// compiles, `✗` when it does not.
 const std = @import("std");
 
 /// Optional process-environment handle. The runner threads `init.environ_map`
@@ -31,6 +31,10 @@ pub const Lib = struct {
     /// `cwd`. Owned by `gpa`.
     dir: []const u8,
     has_tests: bool,
+    /// The lib has at least one `src/**/*.bp` file (declaration files
+    /// included). A manifest with no botopink source (a tooling project that
+    /// carries a `botopink.json` for its version) has nothing to compile.
+    has_sources: bool = true,
     /// Per-lib supported-target whitelist from `botopink.json` `"targets":
     /// ["commonJS", …]`. `null` means "no whitelist, run every requested
     /// target" — the historic default. A non-null list filters the runner:
@@ -193,6 +197,7 @@ pub fn discover(
                 .name = name,
                 .dir = dir,
                 .has_tests = libHasTests(gpa, io, lib_dir),
+                .has_sources = srcHasBpFile(gpa, io, lib_dir),
                 .targets = targets,
             });
         }
@@ -333,6 +338,22 @@ fn srcHasTestBlock(gpa: std.mem.Allocator, io: std.Io, lib_dir: std.Io.Dir) bool
     return false;
 }
 
+/// Any `src/**/*.bp` file, declaration files included. An IO error answers
+/// false — the lib is then reported `–` without a compile, as before.
+fn srcHasBpFile(gpa: std.mem.Allocator, io: std.Io, lib_dir: std.Io.Dir) bool {
+    var src_dir = lib_dir.openDir(io, "src", .{ .iterate = true }) catch return false;
+    defer src_dir.close(io);
+
+    var walker = src_dir.walk(gpa) catch return false;
+    defer walker.deinit();
+
+    while (walker.next(io) catch return false) |entry| {
+        if (entry.kind != .file) continue;
+        if (std.mem.endsWith(u8, entry.basename, ".bp")) return true;
+    }
+    return false;
+}
+
 // ── Pure helpers ────────────────────────────────────────────────────────────────
 
 /// A runnable `.bp` source file — excludes declaration files (`*.d.bp`), which
@@ -465,14 +486,16 @@ test "resolveRoots: env entry prepends before walk-up roots" {
     try std.Io.Dir.cwd().createDirPath(io, ws ++ "/store/erika");
     try std.Io.Dir.cwd().createDirPath(io, ws ++ "/libs/std");
 
-    var map = std.process.Environ.Map.init(testing.allocator);
-    defer map.deinit();
-    try map.put(ENV_VAR, ws ++ "/store");
-
     // Pretend cwd is ws so the walk-up only sees the local synthetic tree.
     var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
     const cwd_n = try std.process.currentPath(io, &cwd_buf);
     const abs_ws = try std.fs.path.resolve(arena, &.{ cwd_buf[0..cwd_n], ws });
+
+    // A relative env entry resolves against the start dir (`abs_ws` here), so
+    // name the store absolutely.
+    var map = std.process.Environ.Map.init(testing.allocator);
+    defer map.deinit();
+    try map.put(ENV_VAR, try std.fs.path.join(arena, &.{ abs_ws, "store" }));
 
     const roots = try resolveRoots(arena, io, &map, &.{}, abs_ws);
     try testing.expect(roots.len >= 2);

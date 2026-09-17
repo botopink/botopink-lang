@@ -1,7 +1,7 @@
 /// Workspace build — coordinates compiler-core, compiler-cli and language-server.
 ///
 ///   zig build          → builds botopink + botopink-lsp
-///   zig build test     → runs every compiler-core, language-server and CLI unit test
+///   zig build test     → runs every compiler-core, language-server, CLI and lib-test-runner unit test
 ///   zig build test -Dtest-filter=<substr> → runs only matching tests
 ///   zig build test-cli → runs every modules/compiler-cli/tests/*.sh end to end
 ///   zig build test-libs → compiles and tests every visible `.bp` library per target
@@ -140,7 +140,7 @@ pub fn build(b: *std.Build) void {
     // never accumulate beyond a day.
     run_core_tests.step.dependOn(&clean_tmp_run.step);
 
-    const test_step = b.step("test", "Run every test (compiler-core + language-server)");
+    const test_step = b.step("test", "Run every unit test (compiler-core, language-server, CLI, lib-test-runner)");
     test_step.dependOn(&run_core_tests.step);
 
     // ── lib-agnostic gate (annotation-processors P0) ──────────────────────────
@@ -240,6 +240,18 @@ pub fn build(b: *std.Build) void {
     });
 
     b.installArtifact(lib_test_exe);
+
+    // Its unit tests (args, discovery, matrix, runner) run with `zig build test`.
+    const lib_test_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("modules/lib-test-runner/src/main.zig"),
+            .target = target,
+        }),
+        .filters = test_filters,
+    });
+    const run_lib_test_tests = b.addRunArtifact(lib_test_tests);
+    run_lib_test_tests.setCwd(b.path("modules/lib-test-runner"));
+    test_step.dependOn(&run_lib_test_tests.step);
 
     // ── bpmp (Boto Pink Package Manager executable) ───────────────────────────
     // Self-contained — no `compiler-core` import. bpmp *spawns* `botopink`, it
