@@ -26,12 +26,12 @@
 //// annotation grammar; once the `when-argc-removal` keystone lands the
 //// four per-form declares can migrate together.
 
-#[@External.Node("String.fromCodePoint($0)"),
-  @External.Erlang("unicode:characters_to_binary([$0], utf8)")]
+#[@External.Node("String.fromCodePoint($0)")]
+#[@External.Erlang("unicode:characters_to_binary([$0], utf8)")]
 pub declare fn fromCodepoint(cp: i32) -> string;
 
-#[@External.Node("($0.codePointAt(0) ?? 0)"),
-  @External.Erlang("""(fun(__S) -> case unicode:characters_to_list(__S, utf8) of [__C | _] -> __C; _ -> 0 end end)($0)""")]
+#[@External.Node("($0.codePointAt(0) ?? 0)")]
+#[@External.Erlang("""(fun(__S) -> case unicode:characters_to_list(__S, utf8) of [__C | _] -> __C; _ -> 0 end end)($0)""")]
 declare fn firstCodepointOrZero(s: string) -> i32;
 
 // First codepoint of `s`, or `null` for the empty string. Implemented
@@ -39,9 +39,7 @@ declare fn firstCodepointOrZero(s: string) -> i32;
 // keeps the host call to a single template invocation and lets the
 // option wrapping shape match the rest of std.
 pub fn firstCodepoint(s: string) -> ?i32 {
-    if (s.length == 0) {
-        return null;
-    };
+    if (s.length == 0) return null;
     val cp = firstCodepointOrZero(s);
     return cp;
 }
@@ -52,27 +50,27 @@ pub fn firstCodepoint(s: string) -> ?i32 {
 // operator inside the arrow body keeps the expression a single template
 // substitution. Erlang: `unicode:characters_to_list/2` returns an
 // integer list of codepoints when given a UTF-8 binary.
-#[@External.Node("""(Array.from($0).map((__c) => __c.codePointAt(0)))"""),
-  @External.Erlang("unicode:characters_to_list($0, utf8)")]
+#[@External.Node("""(Array.from($0).map((__c) => __c.codePointAt(0)))""")]
+#[@External.Erlang("unicode:characters_to_list($0, utf8)")]
 pub declare fn codepoints(s: string) -> Array<i32>;
 
 // Which Unicode normalization form to apply (NFC, NFD, NFKC, NFKD).
 pub type NormalizationForm { NFC, NFD, NFKC, NFKD }
 
-#[@External.Node("""($0.normalize('NFC'))"""),
-  @External.Erlang("unicode:characters_to_nfc_binary($0)")]
+#[@External.Node("""($0.normalize('NFC'))""")]
+#[@External.Erlang("unicode:characters_to_nfc_binary($0)")]
 declare fn normalizeNfc(s: string) -> string;
 
-#[@External.Node("""($0.normalize('NFD'))"""),
-  @External.Erlang("unicode:characters_to_nfd_binary($0)")]
+#[@External.Node("""($0.normalize('NFD'))""")]
+#[@External.Erlang("unicode:characters_to_nfd_binary($0)")]
 declare fn normalizeNfd(s: string) -> string;
 
-#[@External.Node("""($0.normalize('NFKC'))"""),
-  @External.Erlang("unicode:characters_to_nfkc_binary($0)")]
+#[@External.Node("""($0.normalize('NFKC'))""")]
+#[@External.Erlang("unicode:characters_to_nfkc_binary($0)")]
 declare fn normalizeNfkc(s: string) -> string;
 
-#[@External.Node("""($0.normalize('NFKD'))"""),
-  @External.Erlang("unicode:characters_to_nfkd_binary($0)")]
+#[@External.Node("""($0.normalize('NFKD'))""")]
+#[@External.Erlang("unicode:characters_to_nfkd_binary($0)")]
 declare fn normalizeNfkd(s: string) -> string;
 
 // Render `s` under the selected Unicode normalization form. Each form

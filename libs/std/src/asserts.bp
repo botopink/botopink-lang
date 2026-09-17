@@ -15,32 +15,24 @@
 
 // True-or-panic. Use to guard arbitrary boolean conditions.
 pub fn truthy(condition: bool) {
-    if (condition.negate()) {
-        @panic("asserts.truthy: condition was false");
-    };
+    if (condition.negate()) @panic("asserts.truthy: condition was false");
 }
 
 // False-or-panic. The dual of `truthy` — handy for "this must not happen"
 // branches that you'd otherwise spell as `truthy(!cond)`.
 pub fn falsy(condition: bool) {
-    if (condition) {
-        @panic("asserts.falsy: condition was true");
-    };
+    if (condition) @panic("asserts.falsy: condition was true");
 }
 
 // Strict equality. `a == b` uses the language's structural-equality rule
 // for primitives (numbers / booleans / strings); reference-equality falls
 // back to JS-style `===` on Node and `=:=` on Erlang.
 pub fn equal<T>(a: T, b: T) {
-    if (a != b) {
-        @panic("asserts.equal: values differ");
-    };
+    if (a != b) @panic("asserts.equal: values differ");
 }
 
 pub fn notEqual<T>(a: T, b: T) {
-    if (a == b) {
-        @panic("asserts.notEqual: values match");
-    };
+    if (a == b) @panic("asserts.notEqual: values match");
 }
 
 // Approximate equality for floats: `|a - b| <= tolerance`. The expected
@@ -50,21 +42,13 @@ pub fn notEqual<T>(a: T, b: T) {
 // surface lib-self-contained — pure-botopink, no host hops.
 pub fn approxEqual(a: f64, b: f64, tolerance: f64) {
     val diff = a - b;
-    val absDiff = if (diff >= 0.0) {
-        diff;
-    } else {
-        0.0 - diff;
-    };
-    if (absDiff > tolerance) {
-        @panic("asserts.approxEqual: values differ by more than tolerance");
-    };
+    val absDiff = if (diff >= 0.0) diff else 0.0 - diff;
+    if (absDiff > tolerance) @panic("asserts.approxEqual: values differ by more than tolerance");
 }
 
 // Substring containment over strings (delegates to `String.contains`).
 pub fn contains(haystack: string, needle: string) {
-    if (haystack.contains(needle).negate()) {
-        @panic("asserts.contains: needle not in haystack");
-    };
+    if (haystack.contains(needle).negate()) @panic("asserts.contains: needle not in haystack");
 }
 
 // A structured panic message: the failed assertion's text plus the
@@ -89,8 +73,8 @@ pub type AssertError(
 // unit). Callers wrap the body with a trailing `0;` to satisfy the
 // signature.
 #[@result]
-#[@External.Node("""(() => { try { $0(); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()"""),
-  @External.Erlang("""(fun(__B) -> try __B(), {ok, 0} catch __C:__E -> {error, iolist_to_binary(io_lib:format("~p:~p", [__C, __E]))} end end)($0)""")]
+#[@External.Node("""(() => { try { $0(); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
+#[@External.Erlang("""(fun(__B) -> try __B(), {ok, 0} catch __C:__E -> {error, iolist_to_binary(io_lib:format("~p:~p", [__C, __E]))} end end)($0)""")]
 declare fn tryCatch(body: fn() -> i32) -> @Result<i32, string>;
 
 // `throws(body, message)`: asserts that `body` raises (a `@panic` or any
@@ -102,26 +86,22 @@ declare fn tryCatch(body: fn() -> i32) -> @Result<i32, string>;
 // itself fires).
 pub fn throws(body: fn() -> i32, message: string) {
     val r = tryCatch(body);
-    if (r.isOk()) {
-        @panic("asserts.throws: body did not raise");
-    };
+    if (r.isOk()) @panic("asserts.throws: body did not raise");
 }
 
 // Private regex.matches twin: inlined here rather than via a cross-
 // module call so this file stays self-contained (std-internal modules
 // do not import each other today). The annotation is byte-identical
 // to `regex.matches`.
-#[@External.Node("""(new RegExp($0).test($1))"""),
-  @External.Erlang("""(re:run($1, $0) =/= nomatch)""")]
+#[@External.Node("""(new RegExp($0).test($1))""")]
+#[@External.Erlang("""(re:run($1, $0) =/= nomatch)""")]
 declare fn regexMatches(pattern: string, input: string) -> bool;
 
 // Substring-or-regex match. The `pattern` is a regular expression in
 // the host's native flavour (PCRE-ish on every supported backend); use
 // `contains` when you want a literal needle.
 pub fn matches(pattern: string, actual: string) {
-    if (regexMatches(pattern, actual).negate()) {
-        @panic("asserts.matches: pattern did not match");
-    };
+    if (regexMatches(pattern, actual).negate()) @panic("asserts.matches: pattern did not match");
 }
 
 // ── tests ────────────────────────────────────────────────────────────────────
@@ -167,17 +147,13 @@ test "asserts.matches accepts a literal pattern" {
 
 test "asserts.throws catches a panicking body" {
     throws({ ->
-        @panic("expected");
-        0;
-    }, "expected panic");
+            @panic("expected");
+            0;
+        }, "expected panic");
 }
 
 test "asserts.AssertError carries the failed-assertion shape" {
-    val err = AssertError(
-        message: "expected positive",
-        file: "asserts.bp",
-        line: 0,
-    );
+    val err = AssertError(message: "expected positive", file: "asserts.bp", line: 0);
     assert err.message == "expected positive";
     assert err.file == "asserts.bp";
     assert err.line == 0;

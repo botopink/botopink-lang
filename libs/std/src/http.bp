@@ -50,8 +50,8 @@ pub type Response(
 // formatted into `body`. Callers reading `status >= 200 andalso
 // status < 400` get the same go/no-go gate as the node side.
 #[@future]
-#[@External.Node("""globalThis.fetch($0).then(__r => __r.text().then(__b => ({status: __r.status, body: __b})))"""),
-  @External.Erlang("""(fun(__U) -> (catch inets:start()), (catch ssl:start()), case httpc:request(get, {binary_to_list(__U), []}, [], []) of {ok, {{_, __C, _}, _, __B}} -> #{status => __C, body => iolist_to_binary(__B)}; {error, __R} -> #{status => -1, body => iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
+#[@External.Node("""globalThis.fetch($0).then(__r => __r.text().then(__b => ({status: __r.status, body: __b})))""")]
+#[@External.Erlang("""(fun(__U) -> (catch inets:start()), (catch ssl:start()), case httpc:request(get, {binary_to_list(__U), []}, [], []) of {ok, {{_, __C, _}, _, __B}} -> #{status => __C, body => iolist_to_binary(__B)}; {error, __R} -> #{status => -1, body => iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
 pub declare fn fetch(url: string) -> @Future<Response>;
 
 // ── tests ────────────────────────────────────────────────────────────────────

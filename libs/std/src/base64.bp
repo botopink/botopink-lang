@@ -17,12 +17,12 @@
 //// `std-expansion-tail` §A2); Erlang lowers to the bare `base64`
 //// module symbols.
 
-#[@External.Node("""Buffer.from($0, 'utf8').toString('base64')"""),
-  @External.Erlang("base64", "encode")]
+#[@External.Node("""Buffer.from($0, 'utf8').toString('base64')""")]
+#[@External.Erlang("base64", "encode")]
 pub declare fn encode(s: string) -> string;
 
-#[@External.Node("""Buffer.from($0, 'base64').toString('utf8')"""),
-  @External.Erlang("base64", "decode")]
+#[@External.Node("""Buffer.from($0, 'base64').toString('utf8')""")]
+#[@External.Erlang("base64", "decode")]
 pub declare fn decode(b: string) -> string;
 
 // URL-safe variant: standard base64 uses `+` `/` `=` which collide
@@ -55,11 +55,7 @@ pub fn decodeUrlSafe(b: string) -> string {
 // most 3 iterations regardless of input length.
 fn padToMultipleOfFour(s: string) -> string {
     val remainder = s.length % 4;
-    return if (remainder == 0) {
-        s;
-    } else {
-        padToMultipleOfFour([s, "="].join(""));
-    };
+    return if (remainder == 0) s else padToMultipleOfFour([s, "="].join(""));
 }
 
 // ── tests ────────────────────────────────────────────────────────────────────

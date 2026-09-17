@@ -17,19 +17,16 @@ import {of, erika} from "erika";
 type City(name: string, pop: i32)
 
 val cities = [
-    City(name: "Lyon",  pop: 5),
+    City(name: "Lyon", pop: 5),
     City(name: "Paris", pop: 9),
-    City(name: "Nice",  pop: 3),
+    City(name: "Nice", pop: 3),
 ];
 
 // 1) bare value/fn — `of` is reached unqualified.
 fn adultsByName() -> string {
-    return of(cities)
-        .where({ c -> c.pop >= 5 })
-        .orderBy({ c -> c.name })
-        .select({ c -> c.name })
-        .toArray()
-        .join(", ");
+    return of(cities).where({ c -> c.pop >= 5 }).orderBy({ c -> c.name }).select({ c -> c.name }).toArray().join(
+        ", "
+    );
 }
 
 // 2) bare template fn — `erika "…"` captures the SQL-subset string and expands
@@ -41,17 +38,15 @@ fn bigCities() -> string {
 
 // 3) namespace member — `erika.of(…)` resolves through the lib's namespace object.
 fn squaredEvens() -> string {
-    return erika.of([1, 2, 3, 4, 5, 6])
-        .where({ n -> n % 2 == 0 })
-        .select({ n -> n * n })
-        .toArray()
-        .join("-");
+    return erika.of([1, 2, 3, 4, 5, 6]).where({ n -> n % 2 == 0 }).select({ n -> n * n }).toArray().join(
+        "-"
+    );
 }
 
 fn main() {
-    @print(adultsByName());   // Lyon, Paris
-    @print(bigCities());      // Lyon, Paris
-    @print(squaredEvens());   // 4-16-36
+    @print(adultsByName()); // Lyon, Paris
+    @print(bigCities()); // Lyon, Paris
+    @print(squaredEvens()); // 4-16-36
 }
 
 test "bare value/fn: of(...) runs unqualified" {

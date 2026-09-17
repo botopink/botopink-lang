@@ -17,24 +17,24 @@
 //// `randomBytes(n)` returns the raw byte array — caller hex-encodes
 //// when needed.
 
-#[@External.Node("""require('crypto').createHash('sha256').update($0).digest('hex')"""),
-  @External.Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:hash(sha256, $0))])""")]
+#[@External.Node("""require('crypto').createHash('sha256').update($0).digest('hex')""")]
+#[@External.Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:hash(sha256, $0))])""")]
 pub declare fn sha256(data: string) -> string;
 
-#[@External.Node("""require('crypto').createHash('sha512').update($0).digest('hex')"""),
-  @External.Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:hash(sha512, $0))])""")]
+#[@External.Node("""require('crypto').createHash('sha512').update($0).digest('hex')""")]
+#[@External.Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:hash(sha512, $0))])""")]
 pub declare fn sha512(data: string) -> string;
 
-#[@External.Node("""require('crypto').createHash('md5').update($0).digest('hex')"""),
-  @External.Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:hash(md5, $0))])""")]
+#[@External.Node("""require('crypto').createHash('md5').update($0).digest('hex')""")]
+#[@External.Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:hash(md5, $0))])""")]
 pub declare fn md5(data: string) -> string;
 
 // HMAC-SHA256. `key` is the secret material; `data` is the message.
 // Both lower to the host's keyed-hash primitive — Node's
 // `crypto.createHmac('sha256', key).update(data).digest('hex')` and
 // Erlang's `crypto:mac(hmac, sha256, key, data)`.
-#[@External.Node("""require('crypto').createHmac('sha256', $0).update($1).digest('hex')"""),
-  @External.Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:mac(hmac, sha256, $0, $1))])""")]
+#[@External.Node("""require('crypto').createHmac('sha256', $0).update($1).digest('hex')""")]
+#[@External.Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:mac(hmac, sha256, $0, $1))])""")]
 pub declare fn hmacSha256(key: string, data: string) -> string;
 
 // ── tests ────────────────────────────────────────────────────────────────────
@@ -72,8 +72,8 @@ test "crypto.hmacSha256 produces a 64-hex-char digest" {
 // Node: `require('crypto').randomBytes(n).toString('hex')`.
 // Erlang: `crypto:strong_rand_bytes/1` + the same per-byte hex format
 // string used by the hashes above.
-#[@External.Node("""require('crypto').randomBytes($0).toString('hex')"""),
-  @External.Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:strong_rand_bytes($0))])""")]
+#[@External.Node("""require('crypto').randomBytes($0).toString('hex')""")]
+#[@External.Erlang("""list_to_binary([io_lib:format("~2.16.0b", [__B]) || __B <- binary_to_list(crypto:strong_rand_bytes($0))])""")]
 pub declare fn randomBytes(n: i32) -> string;
 
 test "crypto.randomBytes(16) returns 32 hex chars" {

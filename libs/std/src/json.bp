@@ -31,8 +31,8 @@
 // with `{error, "<reason>"}` on syntax errors; the §A3 template owns
 // the wrapper shape.
 #[@result]
-#[@External.Node("""(() => { try { return { ok: JSON.stringify(JSON.parse($0)) } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()"""),
-  @External.Erlang("""(fun(__S) -> try {ok, iolist_to_binary(json:encode(json:decode(__S)))} catch __C:__E -> {error, iolist_to_binary(io_lib:format("~p:~p", [__C, __E]))} end end)($0)""")]
+#[@External.Node("""(() => { try { return { ok: JSON.stringify(JSON.parse($0)) } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
+#[@External.Erlang("""(fun(__S) -> try {ok, iolist_to_binary(json:encode(json:decode(__S)))} catch __C:__E -> {error, iolist_to_binary(io_lib:format("~p:~p", [__C, __E]))} end end)($0)""")]
 pub declare fn parse(s: string) -> @Result<string, string>;
 
 // Re-encode an already-valid JSON string. Identical to `parse` for V1
@@ -40,8 +40,8 @@ pub declare fn parse(s: string) -> @Result<string, string>;
 // the surface matches the spec's eventual `parse -> JsonValue` +
 // `stringify(JsonValue) -> string` split.
 #[@result]
-#[@External.Node("""(() => { try { return { ok: JSON.stringify(JSON.parse($0)) } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()"""),
-  @External.Erlang("""(fun(__S) -> try {ok, iolist_to_binary(json:encode(json:decode(__S)))} catch __C:__E -> {error, iolist_to_binary(io_lib:format("~p:~p", [__C, __E]))} end end)($0)""")]
+#[@External.Node("""(() => { try { return { ok: JSON.stringify(JSON.parse($0)) } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
+#[@External.Erlang("""(fun(__S) -> try {ok, iolist_to_binary(json:encode(json:decode(__S)))} catch __C:__E -> {error, iolist_to_binary(io_lib:format("~p:~p", [__C, __E]))} end end)($0)""")]
 pub declare fn stringify(s: string) -> @Result<string, string>;
 
 // ── tests ────────────────────────────────────────────────────────────────────
