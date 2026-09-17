@@ -599,3 +599,23 @@ test "format: the old surface prints as the new one" {
         \\}
     );
 }
+
+test "format: declarations ---- a parameter default and fn-type parameter names are kept" {
+    try h.assertFormat(std.testing.allocator,
+        \\behavior Seq<T> {
+        \\    fn slice(self: Self, start: i32, end: i32 = null) -> Self;
+        \\    fn forEach(self: Self, action: fn(item: T));
+        \\    fn fold<A>(self: Self, initial: A, f: fn(acc: A, item: T) -> A) -> A;
+        \\}
+    );
+}
+
+test "format: declarations ---- an if whose then-branch is an if keeps its braces before else" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn f(a: bool, b: bool) -> i32 {
+        \\    return if (a) {
+        \\        if (b) 1 else 2;
+        \\    } else 3;
+        \\}
+    );
+}

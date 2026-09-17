@@ -99,8 +99,9 @@ fn formatFile(
         return .invalid;
     };
 
-    // Format.
-    const formatted = try bp.format.format(arena, program);
+    // Format. A file ends with exactly one newline.
+    const body = try bp.format.format(arena, program);
+    const formatted = if (body.len == 0) body else try std.mem.concat(arena, u8, &.{ std.mem.trimEnd(u8, body, "\n"), "\n" });
 
     if (std.mem.eql(u8, source, formatted)) {
         reporter.formatUnchanged(path);

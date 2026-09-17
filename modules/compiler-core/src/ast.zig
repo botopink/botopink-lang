@@ -145,6 +145,22 @@ pub fn LiteralExprOf(comptime phase: Phase) type {
         comment: struct {
             kind: CommentKind,
             text: []const u8,
+            /// Written at the end of the previous statement's line
+            /// (`f(); // note`); the formatter keeps it there.
+            trailing: bool = false,
+
+            pub fn jsonStringify(this: @This(), jws: anytype) !void {
+                try jws.beginObject();
+                try jws.objectField("kind");
+                try jws.write(this.kind);
+                try jws.objectField("text");
+                try jws.write(this.text);
+                if (this.trailing) {
+                    try jws.objectField("trailing");
+                    try jws.write(true);
+                }
+                try jws.endObject();
+            }
         },
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
@@ -931,9 +947,41 @@ pub const Pattern = union(enum) {
 // ── interface decl ────────────────────────────────────────────────────────────────
 
 /// A field declared inside a interface: `val name: Type`
+/// JSON dump of a struct (the parser snapshots) that leaves out formatting-only
+/// fields: `omitAlways` never appear, `omitIfEmpty` only when their slice is
+/// non-empty — so source layout kept for the formatter does not reach every
+/// snapshot.
+fn stringifyOmitting(value: anytype, jws: anytype, comptime omitAlways: []const []const u8, comptime omitIfEmpty: []const []const u8) !void {
+    const T = @TypeOf(value);
+    try jws.beginObject();
+    inline for (@typeInfo(T).@"struct".fields) |f| {
+        comptime var always = false;
+        comptime var ifEmpty = false;
+        inline for (omitAlways) |name| {
+            if (comptime std.mem.eql(u8, f.name, name)) always = true;
+        }
+        inline for (omitIfEmpty) |name| {
+            if (comptime std.mem.eql(u8, f.name, name)) ifEmpty = true;
+        }
+        if (!always and !(ifEmpty and @field(value, f.name).len == 0)) {
+            try jws.objectField(f.name);
+            try jws.write(@field(value, f.name));
+        }
+    }
+    try jws.endObject();
+}
+
 pub const BehaviorField = struct {
     name: []const u8,
     typeName: []const u8,
+    /// Comment lines written above the member inside the body (the lexemes,
+    /// prefix included), with "" for a blank source line. Owned slice; the
+    /// strings slice into the source. Kept by the formatter.
+    comments: []const []const u8 = &.{},
+
+    pub fn jsonStringify(this: BehaviorField, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{}, &.{"comments"});
+    }
 };
 
 /// Modifier on a parameter type ---- controls how the argument is treated.
@@ -1067,6 +1115,10 @@ pub const BehaviorMethod = struct {
     /// or an interface body (bodyless, typed from the signature)
     is_declare: bool = false,
     isPub: bool = false,
+    /// Comment lines written above the member inside the body (the lexemes,
+    /// prefix included), with "" for a blank source line. Owned slice; the
+    /// strings slice into the source. Kept by the formatter.
+    comments: []const []const u8 = &.{},
 
     /// True when the method is a host-backed `#[@External.<Target>(…)]`
     /// declaration.
@@ -1112,6 +1164,11 @@ pub const BehaviorMethod = struct {
             for (stmts) |*s| s.deinit(allocator);
             allocator.free(stmts);
         }
+        if (this.comments.len > 0) allocator.free(this.comments);
+    }
+
+    pub fn jsonStringify(this: BehaviorMethod, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{}, &.{"comments"});
     }
 };
 
@@ -1373,6 +1430,8 @@ pub const BehaviorDecl = struct {
     /// Whether the last field/method had a trailing comma in the source.
     trailingComma: bool = false,
     methods: []BehaviorMethod,
+    /// Comment lines after the last member, before `}` ("" = blank line). Owned slice.
+    bodyComments: []const []const u8 = &.{},
 
     pub fn deinit(this: *BehaviorDecl, allocator: std.mem.Allocator) void {
         for (this.annotations) |*ann| ann.deinit(allocator);
@@ -1380,9 +1439,15 @@ pub const BehaviorDecl = struct {
         for (this.genericParams) |*gp| gp.deinit(allocator);
         allocator.free(this.genericParams);
         allocator.free(this.extends);
+        for (this.fields) |f| if (f.comments.len > 0) allocator.free(f.comments);
         allocator.free(this.fields);
         for (this.methods) |*m| m.deinit(allocator);
         allocator.free(this.methods);
+        if (this.bodyComments.len > 0) allocator.free(this.bodyComments);
+    }
+
+    pub fn jsonStringify(this: BehaviorDecl, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{}, &.{"bodyComments"});
     }
 };
 
@@ -1446,7 +1511,23 @@ pub const TypeRef = union(enum) {
     /// Optional type: `?T`. Owns the inner type.
     optional: *TypeRef,
     /// Function type: `fn(T1, T2) -> R`. Owns both param types and return type.
-    function: struct { params: []TypeRef, returnType: *TypeRef },
+    function: struct {
+        params: []TypeRef,
+        returnType: *TypeRef,
+        /// The documentation names written in `fn(item: T)` ("" where none), for
+        /// the formatter; function types stay positional. Owned slice; the
+        /// strings slice into the source. Left out of the AST dump.
+        paramNames: []const []const u8 = &.{},
+
+        pub fn jsonStringify(this: @This(), jws: anytype) !void {
+            try jws.beginObject();
+            try jws.objectField("params");
+            try jws.write(this.params);
+            try jws.objectField("returnType");
+            try jws.write(this.returnType);
+            try jws.endObject();
+        }
+    },
     /// Generic type: `@Result<D, E>` (builtin) or `MyType<T>` (user-defined). Owns the argument types.
     generic: struct { name: []const u8, args: []TypeRef, is_builtin: bool },
     /// Comptime type parameter: `typeparam` or `typeparam string | int | bool`.
@@ -1489,6 +1570,7 @@ pub const TypeRef = union(enum) {
                 allocator.free(f.params);
                 f.returnType.deinit(allocator);
                 allocator.destroy(f.returnType);
+                if (f.paramNames.len > 0) allocator.free(f.paramNames);
             },
             .generic => |b| {
                 for (b.args) |*a| a.deinit(allocator);
@@ -1594,7 +1676,29 @@ pub const DeclKind = union(enum) {
     /// `text` is the comment content without the `//` / `///` / `////` prefix.
     /// `is_module` is true for `////` module-level comments.
     /// `is_doc` is true for `///` doc comments.
-    comment: struct { text: []const u8, is_module: bool, is_doc: bool },
+    comment: struct {
+        text: []const u8,
+        is_module: bool,
+        is_doc: bool,
+        /// Written at the end of the previous declaration's line
+        /// (`pub mod geometry; // note`); the formatter keeps it there.
+        trailing: bool = false,
+
+        pub fn jsonStringify(this: @This(), jws: anytype) !void {
+            try jws.beginObject();
+            try jws.objectField("text");
+            try jws.write(this.text);
+            try jws.objectField("is_module");
+            try jws.write(this.is_module);
+            try jws.objectField("is_doc");
+            try jws.write(this.is_doc);
+            if (this.trailing) {
+                try jws.objectField("trailing");
+                try jws.write(true);
+            }
+            try jws.endObject();
+        }
+    },
 
     pub fn deinit(this: *DeclKind, allocator: std.mem.Allocator) void {
         switch (this.*) {
@@ -1618,10 +1722,18 @@ pub const DeclKind = union(enum) {
 
 pub const Program = struct {
     decls: []DeclKind,
+    /// `blankLineBefore[i]`: a blank source line precedes `decls[i]` (empty
+    /// when the program was not parsed from source). The formatter keeps it.
+    blankLineBefore: []const bool = &.{},
 
     pub fn deinit(this: *Program, allocator: std.mem.Allocator) void {
         for (this.decls) |*d| d.deinit(allocator);
         allocator.free(this.decls);
+        if (this.blankLineBefore.len > 0) allocator.free(this.blankLineBefore);
+    }
+
+    pub fn jsonStringify(this: Program, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{"blankLineBefore"}, &.{});
     }
 };
 
@@ -1873,6 +1985,8 @@ pub const TypeDecl = struct {
     trailingComma: bool = false,
     /// Methods declared in the body (may include `declare fn` abstract slots).
     methods: []BehaviorMethod = &.{},
+    /// Comment lines after the last member, before `}` ("" = blank line). Owned slice.
+    bodyComments: []const []const u8 = &.{},
 
     /// True for the record shape (a field list).
     pub fn isRecord(this: TypeDecl) bool {
@@ -1913,6 +2027,11 @@ pub const TypeDecl = struct {
         this.shape.deinit(allocator);
         for (this.methods) |*m| m.deinit(allocator);
         allocator.free(this.methods);
+        if (this.bodyComments.len > 0) allocator.free(this.bodyComments);
+    }
+
+    pub fn jsonStringify(this: TypeDecl, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{}, &.{"bodyComments"});
     }
 };
 

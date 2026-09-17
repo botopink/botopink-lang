@@ -339,7 +339,14 @@ pub const Parser = struct {
             for (decls.items) |*d| d.deinit(alloc);
             decls.deinit(alloc);
         }
+        var blankBefore: std.ArrayList(bool) = .empty;
+        errdefer blankBefore.deinit(alloc);
         while (!this.check(.endOfFile)) {
+            const blank = if (this.current > 0) blk: {
+                const prev = this.tokens[this.current - 1];
+                break :blk this.peek().line > prev.line + std.mem.count(u8, prev.lexeme, "\n") + 1;
+            } else false;
+            try blankBefore.append(alloc, blank);
             const decl: DeclKind = if (this.check(.import)) blk: {
                 const d = try this.parseImportDecl(alloc);
                 _ = this.match(.semicolon);
@@ -423,11 +430,13 @@ pub const Parser = struct {
                 _ = this.match(.semicolon);
                 break :blk decl;
             } else if (this.check(.commentNormal) or this.check(.commentDoc) or this.check(.commentModule)) blk: {
+                const trailing = decls.items.len > 0 and this.onPreviousTokenLine();
                 const tok = this.advance();
                 break :blk DeclKind{ .comment = .{
                     .text = commentText(tok.lexeme),
                     .is_module = tok.kind == .commentModule,
                     .is_doc = tok.kind == .commentDoc,
+                    .trailing = trailing,
                 } };
             } else {
                 // A bare `implement …` / `extend …` (optionally `pub`) with no name:
@@ -460,7 +469,12 @@ pub const Parser = struct {
             };
             try decls.append(alloc, decl);
         }
-        return Program{ .decls = try decls.toOwnedSlice(alloc) };
+        const declSlice = try decls.toOwnedSlice(alloc);
+        errdefer {
+            for (declSlice) |*d| d.deinit(alloc);
+            alloc.free(declSlice);
+        }
+        return Program{ .decls = declSlice, .blankLineBefore = try blankBefore.toOwnedSlice(alloc) };
     }
 
     /// Parses a top-level `mod Name;` / `pub mod Name;` module declaration.
@@ -1031,8 +1045,18 @@ pub const Parser = struct {
     /// If the current token is a comment, consumes it and appends it as a comment
     /// literal statement to `stmts`, returning true. Otherwise returns false.
     /// `emptyLinesBefore` is recorded on the appended statement.
+    /// The current token starts on the line where the previous token ends —
+    /// a comment there is a trailing comment (`f(); // note`). False after `{`.
+    pub fn onPreviousTokenLine(this: *This) bool {
+        if (this.current == 0) return false;
+        const prev = this.tokens[this.current - 1];
+        if (prev.kind == .leftBrace) return false;
+        return this.peek().line == prev.line + std.mem.count(u8, prev.lexeme, "\n");
+    }
+
     pub fn tryParseCommentStmt(this: *This, alloc: std.mem.Allocator, stmts: *std.ArrayList(Stmt), emptyLinesBefore: u32) ParseError!bool {
         if (!this.check(.commentNormal) and !this.check(.commentDoc) and !this.check(.commentModule)) return false;
+        const trailing = this.onPreviousTokenLine() and stmts.items.len > 0;
         const tok = this.advance();
         const kind: ast.CommentKind = if (tok.kind == .commentDoc)
             .{ .doc = "" }
@@ -1042,7 +1066,7 @@ pub const Parser = struct {
             .{ .normal = "" };
         const text = try alloc.dupe(u8, commentText(tok.lexeme));
         try stmts.append(alloc, .{
-            .expr = Expr{ .literal = .{ .loc = locFromToken(tok), .kind = .{ .comment = .{ .kind = kind, .text = text } } } },
+            .expr = Expr{ .literal = .{ .loc = locFromToken(tok), .kind = .{ .comment = .{ .kind = kind, .text = text, .trailing = trailing } } } },
             .emptyLinesBefore = emptyLinesBefore,
         });
         return true;

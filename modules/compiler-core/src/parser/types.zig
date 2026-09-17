@@ -86,15 +86,19 @@ pub fn parseBaseTypeRef(this: *This, alloc: std.mem.Allocator) ParseError!ast.Ty
             for (params.items) |*p| p.deinit(alloc);
             params.deinit(alloc);
         }
+        var names: std.ArrayList([]const u8) = .empty;
+        errdefer names.deinit(alloc);
+        var anyName = false;
 
         while (!this.check(.rightParenthesis) and !this.check(.endOfFile)) {
             // Optional `name:` prefix — `fn(next: T)` is accepted alongside the
-            // bare `fn(T)` form. The parameter name is documentation-only here
-            // (function types are positional), so it is parsed and discarded.
+            // bare `fn(T)` form. The name is documentation-only (function types
+            // are positional); it is kept for the formatter.
             if (this.check(.identifier) and this.peekAt(1).kind == .colon) {
-                _ = this.advance(); // name
+                try names.append(alloc, this.advance().lexeme); // name
                 _ = this.advance(); // ':'
-            }
+                anyName = true;
+            } else try names.append(alloc, "");
             try params.append(alloc, try this.parseTypeRef(alloc));
             if (!this.match(.comma)) break;
         }
@@ -113,9 +117,14 @@ pub fn parseBaseTypeRef(this: *This, alloc: std.mem.Allocator) ParseError!ast.Ty
         const returnPtr = try alloc.create(ast.TypeRef);
         returnPtr.* = returnType;
 
+        const nameSlice: []const []const u8 = if (anyName) try names.toOwnedSlice(alloc) else blk: {
+            names.deinit(alloc);
+            break :blk &.{};
+        };
         return ast.TypeRef{ .function = .{
             .params = paramsSlice,
             .returnType = returnPtr,
+            .paramNames = nameSlice,
         } };
     }
     // `{ name: T, … }` — the removed anonymous record type (1.0.3: a tuple type).

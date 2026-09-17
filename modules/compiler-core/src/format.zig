@@ -280,17 +280,23 @@ pub const Formatter = struct {
             if (p.fnType) |ft| break :blk try this.fmtFnType(ft);
             break :blk try this.fmtTypeRef(p.typeRef);
         } else try this.fmtTypeRef(p.typeRef);
+        const defaultDoc: *const Doc = if (p.default) |d|
+            try this.concat(try this.text(" = "), try this.fmtExpr(d))
+        else
+            this.nil();
         return switch (p.modifier) {
             .none => this.concatAll(&.{
                 try this.text(p.name),
                 try this.text(": "),
                 typeDoc,
+                defaultDoc,
             }),
             .@"comptime" => this.concatAll(&.{
                 try this.text("comptime "),
                 try this.text(p.name),
                 try this.text(": "),
                 typeDoc,
+                defaultDoc,
             }),
             .syntax => this.concatAll(&.{
                 try this.text(p.name),
@@ -334,6 +340,12 @@ pub const Formatter = struct {
         defer items.deinit(this.arena);
 
         for (stmts, 0..) |s, i| {
+            if (i > 0 and s.expr == .literal and s.expr.literal.kind == .comment and s.expr.literal.kind.comment.trailing) {
+                // A trailing comment stays at the end of the previous line.
+                try items.append(this.arena, try this.text(" "));
+                try items.append(this.arena, try this.fmtExpr(s.expr));
+                continue;
+            }
             if (i > 0 and s.emptyLinesBefore > 0) {
                 // Emit plain "\n" (no indent) to create blank lines without trailing spaces
                 for (0..s.emptyLinesBefore) |_| {
@@ -484,8 +496,11 @@ pub const Formatter = struct {
                         });
                         break :blk2 try this.surroundBreak("{", inner, "}");
                     } else blk2: {
-                        // Single expression body — format without braces
-                        if (i.then_.len == 1) {
+                        // Single expression body — format without braces, unless it
+                        // is itself an `if` and an `else` follows (the `else` would
+                        // bind to the inner `if`).
+                        const nestedIf = i.then_.len == 1 and i.then_[0].expr == .branch and i.then_[0].expr.branch.kind == .if_;
+                        if (i.then_.len == 1 and !(nestedIf and i.else_ != null)) {
                             break :blk2 try this.fmtExpr(i.then_[0].expr);
                         }
                         // Multi-statement block: one statement per line, as written.
@@ -581,7 +596,7 @@ pub const Formatter = struct {
             },
             .useHook => |uh| this.concat(try this.text("use "), try this.fmtExpr(uh.kind.inner.*)),
             .function => |func| switch (func.kind.syntax) {
-                .lambda => try this.fmtLambda(func.kind.params, func.kind.body, true),
+                .lambda => try this.fmtLambdaAt(func.loc.line, func.kind.params, func.kind.body, true),
                 .fnExpr => try this.fmtFnExpr(func.kind.params, func.kind.body),
             },
             .call => |c| switch (c.kind) {
@@ -1099,6 +1114,30 @@ pub const Formatter = struct {
     /// `arrow_when_empty`: a parameterless lambda in expression position keeps
     /// its `{ -> … }` arrow — without it the braces re-parse as a block. A
     /// trailing lambda (`f { … }`) needs none.
+    /// A lambda written on one line with a single value expression
+    /// (`{ n -> n * 2 }`) stays on one line; everything else is `fmtLambda`.
+    fn fmtLambdaAt(this: *Formatter, lambdaLine: usize, params: []const []const u8, body: []ast.Stmt, arrow_when_empty: bool) !*const Doc {
+        if (params.len > 0 and body.len == 1 and body[0].expr.getLoc().line == lambdaLine) {
+            const inlineValue = switch (body[0].expr) {
+                .binding, .jump => false,
+                .literal => |lit| lit.kind != .comment,
+                else => true,
+            };
+            if (inlineValue) {
+                var paramDocs = try this.arena.alloc(*const Doc, params.len);
+                for (params, 0..) |p, i| paramDocs[i] = try this.text(p);
+                return this.concatAll(&.{
+                    try this.text("{ "),
+                    try this.join(paramDocs, try this.text(", ")),
+                    try this.text(" -> "),
+                    try this.fmtExpr(body[0].expr),
+                    try this.text(" }"),
+                });
+            }
+        }
+        return this.fmtLambda(params, body, arrow_when_empty);
+    }
+
     fn fmtLambda(this: *Formatter, params: []const []const u8, body: []ast.Stmt, arrow_when_empty: bool) !*const Doc {
         var items: std.ArrayList(*const Doc) = .empty;
         defer items.deinit(this.arena);
@@ -1422,7 +1461,13 @@ pub const Formatter = struct {
             const prevIsModuleComment = prevIsComment and prev.comment.is_module;
             const currIsComment = curr == .comment;
             // Single newline when adjacent to a non-module comment or use declarations.
-            const sep: *const Doc = if (prevIsUse and currIsUse)
+            // A blank source line between two declarations is kept.
+            const sourceBlank = program.blankLineBefore.len == program.decls.len and program.blankLineBefore[i];
+            const sep: *const Doc = if (curr == .comment and curr.comment.trailing)
+                try this.text(" ")
+            else if (sourceBlank)
+                try this.concat(this.hardline(), this.hardline())
+            else if (prevIsUse and currIsUse)
                 this.hardline()
             else if ((prevIsComment and !prevIsModuleComment) or currIsComment)
                 this.hardline()
@@ -1452,6 +1497,7 @@ pub const Formatter = struct {
             )),
             .comment => |c| blk: {
                 const prefix = if (c.is_module) "////" else if (c.is_doc) "///" else "//";
+                if (c.text.len == 0) break :blk this.text(prefix);
                 break :blk this.text(try std.fmt.allocPrint(this.arena, "{s} {s}", .{ prefix, c.text }));
             },
         };
@@ -1532,20 +1578,25 @@ pub const Formatter = struct {
     fn fmtBehavior(this: *Formatter, iface: ast.BehaviorDecl) !*const Doc {
         var members: std.ArrayList(*const Doc) = .empty;
         var groups: std.ArrayList(u8) = .empty;
+        var blanks: std.ArrayList(bool) = .empty;
         for (iface.fields) |f| {
-            try members.append(this.arena, try this.text(
+            const c = try this.withMemberComments(f.comments, try this.text(
                 try std.fmt.allocPrint(this.arena, "val {s}: {s};", .{ f.name, f.typeName }),
             ));
+            try members.append(this.arena, c.doc);
+            try blanks.append(this.arena, c.blank);
             try groups.append(this.arena, 0);
         }
         for (iface.methods) |m| {
-            try members.append(this.arena, try this.concat(
+            const c = try this.withMemberComments(m.comments, try this.concat(
                 try this.fmtAnnotations(m.annotations),
                 try this.fmtInterfaceMethod(m),
             ));
+            try members.append(this.arena, c.doc);
+            try blanks.append(this.arena, c.blank);
             try groups.append(this.arena, if (m.body == null) 1 else 2);
         }
-        const body = try this.fmtMemberBlock(members.items, groups.items);
+        const body = try this.fmtMemberBlock(members.items, groups.items, blanks.items, iface.bodyComments);
 
         var parts: std.ArrayList(*const Doc) = .empty;
         try parts.append(this.arena, try this.fmtAnnotations(iface.annotations));
@@ -1563,19 +1614,67 @@ pub const Formatter = struct {
     }
 
     /// `{ member … }` — one member per line, a blank line wherever the group
-    /// changes; `{}` when empty.
-    fn fmtMemberBlock(this: *Formatter, members: []const *const Doc, groups: []const u8) !*const Doc {
-        if (members.len == 0) return this.text("{}");
+    /// changes or the source had one; the body's trailing comments last; `{}`
+    /// when empty.
+    fn fmtMemberBlock(this: *Formatter, members: []const *const Doc, groups: []const u8, blanks: []const bool, bodyComments: []const []const u8) !*const Doc {
+        const trailing = try this.commentLines(bodyComments);
+        if (members.len == 0 and trailing.items.len == 0) return this.text("{}");
         var parts: std.ArrayList(*const Doc) = .empty;
         for (members, 0..) |m, i| {
             if (i > 0) {
                 // A plain "\n" (no indent) makes the blank line between groups.
-                if (groups[i] != groups[i - 1]) try parts.append(this.arena, try this.text("\n"));
+                if (groups[i] != groups[i - 1] or blanks[i]) try parts.append(this.arena, try this.text("\n"));
                 try parts.append(this.arena, this.hardline());
             }
             try parts.append(this.arena, m);
         }
+        try this.appendCommentLines(&parts, trailing, parts.items.len > 0);
         return this.surroundBreak("{", try this.concatAll(parts.items), "}");
+    }
+
+    const CommentLines = struct { items: []const *const Doc, blanks: []const bool };
+
+    /// Comment lexemes as docs, with a blank-before flag per line ("" entries
+    /// fold into the next line's flag; a trailing "" is dropped).
+    fn commentLines(this: *Formatter, comments: []const []const u8) !CommentLines {
+        var items: std.ArrayList(*const Doc) = .empty;
+        var blanks: std.ArrayList(bool) = .empty;
+        var pending = false;
+        for (comments) |c| {
+            if (c.len == 0) {
+                pending = true;
+                continue;
+            }
+            try items.append(this.arena, try this.text(std.mem.trimEnd(u8, c, " \t\r")));
+            try blanks.append(this.arena, pending);
+            pending = false;
+        }
+        return .{ .items = items.items, .blanks = blanks.items };
+    }
+
+    fn appendCommentLines(this: *Formatter, parts: *std.ArrayList(*const Doc), lines: CommentLines, afterContent: bool) !void {
+        for (lines.items, lines.blanks, 0..) |lineDoc, blank, i| {
+            if (afterContent or i > 0) {
+                if (blank) try parts.append(this.arena, try this.text("\n"));
+                try parts.append(this.arena, this.hardline());
+            }
+            try parts.append(this.arena, lineDoc);
+        }
+    }
+
+    /// A body member preceded by its comment lines. `blank` is whether a blank
+    /// source line comes before the member (or before its first comment).
+    fn withMemberComments(this: *Formatter, comments: []const []const u8, member: *const Doc) !struct { doc: *const Doc, blank: bool } {
+        const lines = try this.commentLines(comments);
+        const leadingBlank = comments.len > 0 and comments[0].len == 0;
+        if (lines.items.len == 0) return .{ .doc = member, .blank = leadingBlank or (comments.len > 0) };
+        var parts: std.ArrayList(*const Doc) = .empty;
+        try this.appendCommentLines(&parts, lines, false);
+        // A blank between the last comment and the member.
+        if (comments[comments.len - 1].len == 0) try parts.append(this.arena, try this.text("\n"));
+        try parts.append(this.arena, this.hardline());
+        try parts.append(this.arena, member);
+        return .{ .doc = try this.concatAll(parts.items), .blank = lines.blanks[0] };
     }
 
     fn fmtInterfaceMethod(this: *Formatter, m: ast.BehaviorMethod) !*const Doc {
@@ -1668,17 +1767,24 @@ pub const Formatter = struct {
         try parts.append(this.arena, try this.fmtGenericParams(t.genericParams));
 
         const methodDocs = try this.arena.alloc(*const Doc, t.methods.len);
-        for (t.methods, 0..) |m, i| methodDocs[i] = try this.concat(
-            try this.fmtAnnotations(m.annotations),
-            try this.fmtInterfaceMethod(m),
-        );
+        const methodBlanks = try this.arena.alloc(bool, t.methods.len);
+        const noGroups = try this.arena.alloc(u8, t.methods.len);
+        for (t.methods, 0..) |m, i| {
+            const c = try this.withMemberComments(m.comments, try this.concat(
+                try this.fmtAnnotations(m.annotations),
+                try this.fmtInterfaceMethod(m),
+            ));
+            methodDocs[i] = c.doc;
+            methodBlanks[i] = c.blank;
+            noGroups[i] = 0;
+        }
 
         if (t.isRecord()) {
             if (t.recordFields().len > 0) try parts.append(this.arena, try this.fmtFieldList(t.recordFields(), t.trailingComma));
             try this.appendImplement(&parts, t.implement);
-            if (methodDocs.len > 0) {
+            if (methodDocs.len > 0 or t.bodyComments.len > 0) {
                 try parts.append(this.arena, try this.text(" "));
-                try parts.append(this.arena, try this.surroundBreak("{", try this.join(methodDocs, this.hardline()), "}"));
+                try parts.append(this.arena, try this.fmtMemberBlock(methodDocs, noGroups, methodBlanks, t.bodyComments));
             }
             return this.concatAll(parts.items);
         }
@@ -1704,7 +1810,15 @@ pub const Formatter = struct {
         for (sections) |sec| try lines.append(this.arena, try this.fmtEnumSection(sec));
         var inner = try this.join(lines.items, this.hardline());
         if (methodDocs.len > 0) {
-            const methods = try this.join(methodDocs, this.hardline());
+            var mparts: std.ArrayList(*const Doc) = .empty;
+            for (methodDocs, 0..) |m, i| {
+                if (i > 0) {
+                    if (methodBlanks[i]) try mparts.append(this.arena, try this.text("\n"));
+                    try mparts.append(this.arena, this.hardline());
+                }
+                try mparts.append(this.arena, m);
+            }
+            const methods = try this.concatAll(mparts.items);
             inner = if (itemCount > 0)
                 try this.concatAll(&.{ inner, try this.text("\n"), this.hardline(), methods })
             else
@@ -1923,16 +2037,24 @@ pub const Formatter = struct {
             },
             .function => |f| blk: {
                 var paramDocs = try this.arena.alloc(*const Doc, f.params.len);
-                for (f.params, 0..) |p, i| paramDocs[i] = try this.fmtTypeRef(p);
+                for (f.params, 0..) |p, i| {
+                    const name = if (f.paramNames.len == f.params.len) f.paramNames[i] else "";
+                    paramDocs[i] = if (name.len > 0)
+                        try this.concat(try this.text(try std.fmt.allocPrint(this.arena, "{s}: ", .{name})), try this.fmtTypeRef(p))
+                    else
+                        try this.fmtTypeRef(p);
+                }
                 const inner = if (f.params.len == 0)
                     this.nil()
                 else
                     try this.join(paramDocs, try this.text(", "));
+                // `fn(T)` with no arrow returns void.
+                const isVoid = f.returnType.* == .named and std.mem.eql(u8, f.returnType.named, "void");
                 break :blk this.concatAll(&.{
                     try this.text("fn("),
                     inner,
-                    try this.text(") -> "),
-                    try this.fmtTypeRef(f.returnType.*),
+                    try this.text(")"),
+                    if (isVoid) this.nil() else try this.concat(try this.text(" -> "), try this.fmtTypeRef(f.returnType.*)),
                 });
             },
             .generic => |b| blk: {

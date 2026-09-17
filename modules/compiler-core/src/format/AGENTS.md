@@ -43,13 +43,27 @@ and running `format` twice in a row must produce identical text.
 | `if` branches | A single-expression branch prints bare; a multi-statement branch prints its statements one per line, each ended by `;` |
 | String literals | `"""…"""` when the content spans lines or holds an unescaped `"`; `"…"` otherwise |
 
-## Known gaps (front 12 step 3, measured on `libs/std` and `examples/`)
+## Layout the formatter keeps (front 12 step 4)
 
-`format` output of every `.bp` in `libs/std` and `examples/` re-parses, compiles and passes
-the same tests, and a second pass is a no-op — but the sources are not reformatted, because
-the output is lossy: `//` comments between members of a `type`/`behavior` body are dropped
-(`libs/std/src/primitives.bp` keeps 40 of 107 comment lines), blank lines between methods
-go, one-line lambdas are opened, and an empty `////` line gains a trailing space.
-`libs/std/src/builtins.d.bp` does not parse (`fn await(…)`, `fn module() module`
-shortforms) — it is documentation, never compiled. `botopink format --check` therefore
-still fails on those trees.
+- **Comments inside a `type`/`behavior` body** — the parser attaches the `//` lines above a
+  member to `BehaviorMethod.comments` / `BehaviorField.comments` (and the lines before `}` to
+  `bodyComments`), with `""` for a blank source line; the formatter prints them above the
+  member (`withMemberComments`, `fmtMemberBlock`).
+- **Blank lines** — between body members (`""` in `comments`) and between top-level
+  declarations (`Program.blankLineBefore`, filled by `parseDecls`).
+- **Trailing comments** — a comment on the line of the previous statement or declaration
+  (`f(); // note`, `pub mod x; // note`) sets `trailing` and stays on that line.
+- **One-line lambdas** — `{ n -> n * 2 }` written on one line with a single value expression
+  stays inline (`fmtLambdaAt`).
+- An empty `////` line prints without a trailing space; `botopink format` (CLI) ends a file with
+  one newline.
+- None of these fields reach the parser snapshots: `jsonStringify` omits them when empty/false
+  (`Program.blankLineBefore` always).
+
+`botopink format --check` passes on `libs/std/**` and `examples/**`, and the formatted sources
+compile and pass the same tests. Canonical rewrites that remain (no content lost): a
+`#[a, b]` annotation list prints as one `#[…]` per annotation, a method chain split over lines
+joins onto one, a single-expression `if` block drops its braces, a `\\` line string prints as
+`"""…"""`. `.d.bp` files are not reached by `format` (the loader never scans them into the
+module tree); `libs/std/src/builtins.d.bp` does not parse (`fn await(…)`, `fn module() module`
+shortforms) and is documentation only.

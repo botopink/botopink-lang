@@ -1196,14 +1196,18 @@ pub fn parseTypeDeclRest(this: *This, alloc: std.mem.Allocator, name: []const u8
     }
 
     var variantTrailingComma = false;
+    var bodyComments: []const []const u8 = &.{};
     if (this.match(.leftBrace)) {
         var sawMethod = false;
         // A bare/payload variant not followed by `,` may only be the last item
         // before `}` or before a method.
         var needSeparator = false;
         while (true) {
-            this.skipComments();
-            if (this.check(.rightBrace) or this.check(.endOfFile)) break;
+            const memberComments = try takeMemberComments(this, alloc);
+            if (this.check(.rightBrace) or this.check(.endOfFile)) {
+                bodyComments = memberComments;
+                break;
+            }
             if (startsTypeMember(this)) {
                 const memberAnnotations = try this.parseAnnotations(alloc);
                 const is_pub = this.match(.@"pub");
@@ -1213,6 +1217,7 @@ pub fn parseTypeDeclRest(this: *This, alloc: std.mem.Allocator, name: []const u8
                     return err;
                 };
                 method.annotations = memberAnnotations;
+                method.comments = memberComments;
                 try methods.append(alloc, method);
                 sawMethod = true;
                 needSeparator = false;
@@ -1258,6 +1263,7 @@ pub fn parseTypeDeclRest(this: *This, alloc: std.mem.Allocator, name: []const u8
         .shape = shape,
         .trailingComma = if (isEnum) variantTrailingComma else fieldTrailingComma,
         .methods = methodSlice,
+        .bodyComments = bodyComments,
     };
 }
 
@@ -1314,6 +1320,25 @@ pub fn parseShorthandBehaviorDecl(this: *This, alloc: std.mem.Allocator) ParseEr
 /// A `behavior` body with the 1.0.3 separator rule: a bodyless member
 /// (`val x: T`, `fn f(…) -> R`, `declare fn …`) ends with `;`; a member with a
 /// body ends with `}`; `,` never separates members.
+/// The comment lines before the next member of a `type`/`behavior` body, with
+/// "" for each run of blank source lines (so the formatter can keep them).
+fn takeMemberComments(this: *This, alloc: std.mem.Allocator) ParseError![]const []const u8 {
+    var out: std.ArrayList([]const u8) = .empty;
+    errdefer out.deinit(alloc);
+    while (true) {
+        const tok = this.peek();
+        if (this.current > 0) {
+            const prev = this.tokens[this.current - 1];
+            const prevEnd = prev.line + std.mem.count(u8, prev.lexeme, "\n");
+            if (tok.line > prevEnd + 1) try out.append(alloc, "");
+        }
+        if (tok.kind != .commentNormal and tok.kind != .commentDoc and tok.kind != .commentModule) break;
+        _ = this.advance();
+        try out.append(alloc, tok.lexeme);
+    }
+    return out.toOwnedSlice(alloc);
+}
+
 fn parseBehaviorBody(this: *This, alloc: std.mem.Allocator, name: []const u8, extendsSlice: []const []const u8, annotations: []Annotation, isPub: bool) ParseError!BehaviorDecl {
     const genericParams = try this.parseGenericParams(alloc);
     errdefer alloc.free(genericParams);
@@ -1327,9 +1352,13 @@ fn parseBehaviorBody(this: *This, alloc: std.mem.Allocator, name: []const u8, ex
         methods.deinit(alloc);
     }
 
+    var bodyComments: []const []const u8 = &.{};
     while (true) {
-        this.skipComments();
-        if (this.check(.rightBrace) or this.check(.endOfFile)) break;
+        const memberComments = try takeMemberComments(this, alloc);
+        if (this.check(.rightBrace) or this.check(.endOfFile)) {
+            bodyComments = memberComments;
+            break;
+        }
         if (this.check(.val) or (this.check(.@"pub") and this.peekAt(1).kind == .val)) {
             _ = this.match(.@"pub");
             _ = try this.consume(.val);
@@ -1337,7 +1366,7 @@ fn parseBehaviorBody(this: *This, alloc: std.mem.Allocator, name: []const u8, ex
             _ = try this.consume(.colon);
             const typeName = (try this.consume(.identifier)).lexeme;
             try expectMemberSemicolon(this);
-            try fields.append(alloc, .{ .name = fieldName, .typeName = typeName });
+            try fields.append(alloc, .{ .name = fieldName, .typeName = typeName, .comments = memberComments });
         } else if (this.check(.default) or this.check(.@"fn") or this.check(.declare) or
             this.check(.hash) or (this.check(.at) and this.peekAt(1).kind == .leftSquareBracket))
         {
@@ -1356,6 +1385,7 @@ fn parseBehaviorBody(this: *This, alloc: std.mem.Allocator, name: []const u8, ex
             };
             method.annotations = memberAnnotations;
             method.is_declare = is_declare;
+            method.comments = memberComments;
             try methods.append(alloc, method);
         } else {
             return failAt(this, .unexpectedToken, this.peek());
@@ -1373,6 +1403,7 @@ fn parseBehaviorBody(this: *This, alloc: std.mem.Allocator, name: []const u8, ex
         .fields = try fields.toOwnedSlice(alloc),
         .trailingComma = false,
         .methods = try methods.toOwnedSlice(alloc),
+        .bodyComments = bodyComments,
     };
 }
 
