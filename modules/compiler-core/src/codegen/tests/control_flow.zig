@@ -183,6 +183,71 @@ test "js: loop ---- two-parameter loop threads reassigned vars out" {
     );
 }
 
+test "js: loop ---- a condition loop repeats while its condition holds and threads reassigned vars out" {
+    // Decision 8 §10: `loop (condition) { … }` re-tests the condition before
+    // every iteration, including a condition false on entry; `continue` skips
+    // to the next test.
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn count(limit: i32) -> i32 {
+        \\    var i = 0;
+        \\    var acc = "";
+        \\    loop (i < limit) {
+        \\        acc = acc + i.toString();
+        \\        i = i + 1;
+        \\    };
+        \\    @print(acc);
+        \\    return i;
+        \\}
+        \\fn evens(limit: i32) -> i32 {
+        \\    var i = 0;
+        \\    var sum = 0;
+        \\    loop (i < limit) {
+        \\        i = i + 1;
+        \\        if (i % 2 == 1) { continue; };
+        \\        sum = sum + i;
+        \\    };
+        \\    return sum;
+        \\}
+        \\fn main() {
+        \\    @print(count(4));
+        \\    @print(count(0));
+        \\    @print(evens(6));
+        \\}
+    );
+}
+
+test "js: loop ---- an unconditioned loop ends at break and a break leaves only the inner loop" {
+    // Decision 8 §10: `loop { … }` repeats until a `break`; a `break` inside a
+    // nested loop ends that loop only; the variables reassigned before the
+    // break survive it.
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn firstSquareOver(n: i32) -> i32 {
+        \\    var k = 0;
+        \\    loop {
+        \\        k = k + 1;
+        \\        if (k * k > n) { break; };
+        \\    };
+        \\    return k;
+        \\}
+        \\fn nested() -> i32 {
+        \\    var outer = 0;
+        \\    var inner = 0;
+        \\    loop (outer < 3) {
+        \\        outer = outer + 1;
+        \\        loop {
+        \\            inner = inner + 1;
+        \\            break;
+        \\        };
+        \\    };
+        \\    return outer * 10 + inner;
+        \\}
+        \\fn main() {
+        \\    @print(firstSquareOver(20));
+        \\    @print(nested());
+        \\}
+    );
+}
+
 test "js: lambda ---- a local closure reassigning outer vars threads them out" {
     // A markup template's shape: a named closure appends to an outer `var`, and
     // is called both directly and from inside a loop.

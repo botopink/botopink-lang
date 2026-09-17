@@ -6116,7 +6116,9 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
 
     // Decision 8 §10: `loop (condition) { … }` repeats while the condition
     // holds and binds nothing — a parameter on it is an error at the parameter.
-    if (!lp.awaitLoop and lp.indexRange == null and iterTyped.getType().deref().isNamed("bool") and lp.params.len > 0) {
+    const isCondition = lp.condition or (!lp.awaitLoop and lp.indexRange == null and iterTyped.getType().deref().isNamed("bool"));
+    if (isCondition and !lp.condition) try env.conditionLoops.put(loc, {});
+    if (isCondition and lp.params.len > 0) {
         env.lastError = TypeError.custom(
             "a condition loop takes no parameter",
             "`loop (condition) { … }` binds nothing; iterate a collection with `loop (xs) { x -> … }`.",
@@ -6148,6 +6150,8 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
         .iter = iterPtr,
         .indexRange = indexRangePtr,
         .params = lp.params,
+        .paramsLoc = lp.paramsLoc,
+        .condition = isCondition,
         .body = typedBody,
         .awaitLoop = lp.awaitLoop,
         .label = lp.label,

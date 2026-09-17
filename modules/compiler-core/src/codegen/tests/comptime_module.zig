@@ -127,11 +127,31 @@ test "comptime module: a closure reassigning outer vars takes and answers them" 
     try expectContains(out, "emit('__bp_prim_join'(Toks@6, <<\",\">>))");
 }
 
+test "comptime module: a condition loop threads the variables its body reassigns" {
+    // `loop (cond) { … }` (decision 8 §10) in a comptime body — untyped, so
+    // the parser marks the loop a condition loop from its boolean shape.
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const out = try lower(arena_state.allocator(),
+        \\fn count(comptime decl: @Decl) {
+        \\    var i = 0;
+        \\    var names = "";
+        \\    loop (i < 3) {
+        \\        names = names + decl.name;
+        \\        i = i + 1;
+        \\    };
+        \\    @emit(names);
+        \\}
+    , .{ .host_enums = &.{"DeclKind"} });
+    try expectContains(out, "{Names@3, I@3} = (fun __Loop({Names@1, I@1}) ->");
+    try expectContains(out, "case (I@1 < 3) of");
+    try expectContains(out, "__Loop({Names@2, I@2});");
+    try expectContains(out, "_ -> {Names@1, I@1}");
+    try expectContains(out, "end)({Names, I}),");
+    try expectContains(out, "emit(Names@3)");
+}
+
 test "comptime module: `while` is refused before lowering (decision 8 §10)" {
-    // `while (cond) { … }` left the language (06 N26): the parser refuses it,
-    // so no comptime body can reach the erlang `while` lowering any more. The
-    // threading assertion this test used to make returns with the lowering of
-    // `loop (condition)` — 01 step 6.
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const result = lower(arena_state.allocator(),

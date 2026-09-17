@@ -507,6 +507,11 @@ pub fn LoopExprOf(comptime phase: Phase) type {
         params: []const []const u8,
         /// Location of the first parameter (the loop's own location when it has none).
         paramsLoc: Loc = .{ .line = 0, .col = 0 },
+        /// Decision 8 §10 — `loop (condition) { … }` / `loop { … }`: repeat while
+        /// `iter` (a `bool`) holds, binding nothing. Set by the parser for
+        /// `loop { … }` and a syntactically boolean condition, and by the
+        /// comptime transform for any `iter` inference typed `bool`.
+        condition: bool = false,
         body: []StmtOf(phase),
         /// `loop await (iter) { ... }` ---- iterate an `@AsyncIterator`, awaiting each item.
         awaitLoop: bool = false,

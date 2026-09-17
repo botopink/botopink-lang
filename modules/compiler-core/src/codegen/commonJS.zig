@@ -709,6 +709,10 @@ const LoopCtx = union(enum) {
     /// IIFE. `break <v>` / `yield <v>` push `v` onto the named array and move to
     /// the next item; `break;` ends the iteration.
     value: []const u8,
+    /// A condition `loop` (decision 8 §10) used as a value: an accumulating
+    /// IIFE around a JS `while`. `yield <v>` pushes; `break <v>` pushes and
+    /// ends the loop (there is no next item to move to); `break;` ends it.
+    cond_value: []const u8,
 };
 
 /// Holes filled from a wrapper function's own parameters: `$N` is the Nth
@@ -790,9 +794,6 @@ const Emitter = struct {
     /// Names that emit as JS classes (record/struct decls, incl. the
     /// `val X = record { … }` shorthand) — constructor calls need `new`.
     class_names: std.StringHashMap(void),
-    /// Every top-level `fn` name the module declares — a user `fn while`
-    /// keeps the call lowering (`whileShape`).
-    user_fn_names: std.StringHashMap(void),
     /// Payload variant name → its declared field names, in declaration order,
     /// for every enum declared in this module. A `case` arm `Circle(r)` binds
     /// positionally, so `r` is read from the declared field (`radius`), never
@@ -871,7 +872,6 @@ const Emitter = struct {
             .externals = std.StringHashMap(ast.ExternalRef).init(alloc),
             .externals_missing = std.StringHashMap(void).init(alloc),
             .class_names = std.StringHashMap(void).init(alloc),
-            .user_fn_names = std.StringHashMap(void).init(alloc),
             .variant_fields = std.StringHashMap([]const []const u8).init(alloc),
             .enum_recv_methods = std.StringHashMap(void).init(alloc),
             .imported_enums = std.StringHashMap(void).init(alloc),
@@ -903,7 +903,6 @@ const Emitter = struct {
         self.externals.deinit();
         self.externals_missing.deinit();
         self.class_names.deinit();
-        self.user_fn_names.deinit();
         self.variant_fields.deinit();
         self.enum_recv_methods.deinit();
         self.imported_enums.deinit();
@@ -1180,14 +1179,13 @@ const Emitter = struct {
         };
     }
 
-    /// Indexes the module's top-level fn names (`user_fn_names`) and each
+    /// Indexes each fn's declared return type (`fn_return_types`) and each
     /// payload variant's declared field names (`variant_fields`). Enum
     /// sections are desugared into inner enums before codegen, so the
     /// top-level variant list is the whole surface.
     fn collectDeclIndexes(self: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| switch (decl) {
             .@"fn" => |f| {
-                try self.user_fn_names.put(f.name, {});
                 if (f.returnType) |rt| try self.fn_return_types.put(f.name, rt);
             },
             .type_ => |e| if (!e.isRecord()) {
@@ -2186,15 +2184,14 @@ const Emitter = struct {
                 .tryCatch => {},
             },
             .loop => |lp| if (try self.buildLoopStmt(lp)) |st| return st,
-            .call => |c| if (c.kind == .call) if (self.whileShape(c.kind.call)) |w| return self.buildWhileStmt(w.cond, w.body),
             .jump => |j| switch (j.kind) {
                 .@"break" => |br| return self.buildBreakStmt(br, false),
                 .throw_ => |r| return .{ .throw_ = try self.buildExpr((r orelse return error.ThrowWithoutOperand).*) },
                 .@"continue" => return switch (self.loop_ctx) {
                     .none => error.JumpOutsideLoop,
-                    .stmt, .value => js.Stmt.continue_,
+                    .stmt, .value, .cond_value => js.Stmt.continue_,
                 },
-                .yield => |y| if (self.loop_ctx == .value) {
+                .yield => |y| if (self.loop_ctx == .value or self.loop_ctx == .cond_value) {
                     // An accumulator `yield <v>` contributes `v` and moves on;
                     // a valueless one contributes nothing.
                     const val = y.value orelse return .continue_;
@@ -2936,7 +2933,7 @@ const Emitter = struct {
     /// `return`, or a `break` / `continue` not bound to a loop inside the
     /// branch — and, inside a comprehension body, an accumulator `yield`.
     fn ifJumps(self: *Emitter, i: anytype) bool {
-        const acc = self.loop_ctx == .value;
+        const acc = self.loop_ctx == .value or self.loop_ctx == .cond_value;
         if (stmtsJump(i.then_, false, acc)) return true;
         if (i.else_) |els| if (stmtsJump(els, false, acc)) return true;
         return false;
@@ -3036,6 +3033,9 @@ const Emitter = struct {
     /// accumulator `yield` loop outside a generator: that is a comprehension
     /// whose value is discarded, and it keeps the value lowering.
     fn buildLoopStmt(self: *Emitter, lp: anytype) anyerror!?js.Stmt {
+        // `loop (condition) { … }` / `loop { … }` (decision 8 §10): a JS `while`
+        // re-testing the condition before every iteration.
+        if (lp.condition and !(!self.in_generator and hasTopLevelYield(lp.body))) return try self.buildWhileStmt(lp.iter.*, lp.body);
         if (!self.in_generator and hasTopLevelYield(lp.body)) return null;
         const head = try self.loopHead(lp);
         const prev_ctx = self.loop_ctx;
@@ -3052,21 +3052,8 @@ const Emitter = struct {
         } };
     }
 
-    /// `while (cond) { body }` — which the parser reads as a call to `while`
-    /// with one argument and a trailing block (there is no `while` keyword and
-    /// no `while` fn in the prelude; std's `chunked`/`sliding` default fns are
-    /// written this way). Recognised only with no receiver, no user fn or
-    /// external named `while` in the module, exactly one argument and one
-    /// parameterless trailing block.
-    fn whileShape(self: *Emitter, cc: anytype) ?struct { cond: ast.Expr, body: []const ast.Stmt } {
-        if (cc.is_builtin or cc.receiver != null) return null;
-        if (!std.mem.eql(u8, cc.callee, "while")) return null;
-        if (self.user_fn_names.contains("while")) return null;
-        if (cc.args.len != 1 or cc.trailing.len != 1 or cc.trailing[0].params.len != 0) return null;
-        return .{ .cond = cc.args[0].value.*, .body = cc.trailing[0].body };
-    }
-
-    /// A JS `while` statement; `break` / `continue` in its body bind to it.
+    /// A condition loop (decision 8 §10) in statement position: a JS `while`;
+    /// `break` / `continue` in its body bind to it.
     fn buildWhileStmt(self: *Emitter, cond: ast.Expr, body: []const ast.Stmt) anyerror!js.Stmt {
         const c = try self.buildExpr(cond);
         const prev_ctx = self.loop_ctx;
@@ -3085,10 +3072,11 @@ const Emitter = struct {
     fn buildBreakStmt(self: *Emitter, br: anytype, is_last: bool) anyerror!js.Stmt {
         const val = br.value orelse return switch (self.loop_ctx) {
             .none => error.JumpOutsideLoop,
-            .stmt, .value => js.Stmt.break_,
+            .stmt, .value, .cond_value => js.Stmt.break_,
         };
         return switch (self.loop_ctx) {
             .none => error.JumpOutsideLoop,
+            .cond_value => try self.b.group(&.{ try self.accPush(val.*), .break_ }),
             .value => if (is_last)
                 try self.accPush(val.*)
             else
@@ -3100,7 +3088,7 @@ const Emitter = struct {
     /// `<acc>.push(<v>);` for the comprehension being built.
     fn accPush(self: *Emitter, val: ast.Expr) anyerror!js.Stmt {
         const acc = switch (self.loop_ctx) {
-            .value => |name| name,
+            .value, .cond_value => |name| name,
             else => return error.JumpOutsideLoop,
         };
         return .{ .expr = try self.b.call(try self.b.member(.{ .name = acc }, "push"), &.{try self.buildExpr(val)}) };
@@ -3138,6 +3126,7 @@ const Emitter = struct {
     ///         return _acc;
     ///     })()
     fn buildLoop(self: *Emitter, lp: anytype) anyerror!js.Expr {
+        if (lp.condition) return self.buildConditionLoopValue(lp);
         if (hasTopLevelYield(lp.body) and !loopNeedsAccumulator(lp.body)) {
             const params = try self.arena().alloc(js.Param, lp.params.len);
             for (lp.params, 0..) |p, i| params[i] = .{ .pattern = .{ .ident = p } };
@@ -3212,6 +3201,49 @@ const Emitter = struct {
                     .iter = head.iter,
                     .body = .{ .stmts = body, .indent = base + 1 },
                 } },
+                .{ .return_ = .{ .name = acc } },
+            }),
+            .indent = base,
+        })), &.{});
+    }
+
+    /// A condition loop used as a value (decision 8 §10):
+    ///
+    ///     (() => { const _acc = []; while (cond) { …; _acc.push(v); } return _acc; })()
+    ///
+    /// `yield <v>` contributes `v`; `break <v>` contributes `v` and ends the loop.
+    fn buildConditionLoopValue(self: *Emitter, lp: anytype) anyerror!js.Expr {
+        const acc = "_acc";
+        const base = self.current_indent;
+        const cond = try self.buildExpr(lp.iter.*);
+        const prev_ctx = self.loop_ctx;
+        const prev_gen = self.in_generator;
+        const prev_wrap = self.case_ok_wrap;
+        self.loop_ctx = .{ .cond_value = acc };
+        self.in_generator = false;
+        self.case_ok_wrap = false;
+        self.current_indent = base + 2;
+        defer {
+            self.loop_ctx = prev_ctx;
+            self.in_generator = prev_gen;
+            self.case_ok_wrap = prev_wrap;
+            self.current_indent = base;
+        }
+        const body = try self.arena().alloc(js.Stmt, lp.body.len);
+        for (lp.body, 0..) |st, i| {
+            body[i] = switch (st.expr) {
+                .jump => |j| switch (j.kind) {
+                    .@"break" => |br| try self.buildBreakStmt(br, false),
+                    .yield => |y| if (y.value) |v| try self.accPush(v.*) else js.Stmt.continue_,
+                    else => try self.buildStmt(st),
+                },
+                else => try self.buildStmt(st),
+            };
+        }
+        return self.b.call(try self.b.paren(try self.b.arrowBlock(&.{}, .{
+            .stmts = try self.b.stmts(&.{
+                .{ .decl = .{ .pattern = .{ .name = acc }, .value = .{ .array = .{} } } },
+                .{ .while_ = .{ .cond = cond, .body = .{ .stmts = body, .indent = base + 1 } } },
                 .{ .return_ = .{ .name = acc } },
             }),
             .indent = base,
@@ -3400,14 +3432,6 @@ const Emitter = struct {
 
     fn buildCall(self: *Emitter, loc: ast.Loc, cc: anytype) anyerror!js.Expr {
         if (cc.is_builtin) return self.buildBuiltinCall(cc);
-        // A `while` used as a value (it has none): the statement in an IIFE.
-        if (self.whileShape(cc)) |w| {
-            const prev_ctx = self.loop_ctx;
-            self.loop_ctx = .none;
-            defer self.loop_ctx = prev_ctx;
-            return self.b.iife(&.{try self.buildWhileStmt(w.cond, w.body)});
-        }
-
         // builtin_node_dispatch: `declare fn` with `#[@External.Node]`.
         // Handles both template (`$0.method()`) and module+symbol
         // (`"./mod", "fun"`) forms discovered from primitives.bp +

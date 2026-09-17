@@ -550,7 +550,8 @@ pub const Formatter = struct {
                     doc = try this.concat(doc, if (i == 0) try this.text(" ") else try this.text(", "));
                     doc = try this.concat(doc, try this.text(p));
                 }
-                doc = try this.concat(doc, try this.text(" ->"));
+                // A condition loop (decision 8 §10) binds nothing: no `->`.
+                if (lp.params.len > 0) doc = try this.concat(doc, try this.text(" ->"));
                 for (lp.body) |stmt| {
                     doc = try this.concat(doc, try this.surroundBreak("", try this.fmtExpr(stmt.expr), ""));
                 }

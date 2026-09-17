@@ -46,7 +46,9 @@ parser/
 │                     string templates (`${…}` re-scan), tagged calls. `loop` has four forms (decision 8 §10):
 │                     `loop (xs) { x -> }`, `loop (0..n) { i -> }`, `loop (cond) { … }` (a body that does not
 │                     open with `name ->` takes no parameter; `LoopExpr.paramsLoc` locates the first one) and
-│                     `loop { … }` (the condition `true`). `while (…)` is `removed-keyword-while` and
+│                     `loop { … }` (the condition `true`). `LoopExpr.condition` is set here for `loop { … }` and a
+│                     syntactically boolean condition (a comparison, `&&`/`||`, `not`, `true`/`false`); the comptime
+│                     transform sets it for any other `iter` inference typed `bool` (`env.conditionLoops`). `while (…)` is `removed-keyword-while` and
 │                     `throw new X(…)` is `removed-keyword-new` (06 N26, N27) — `new`/`delegate`/`const` lex
 │                     as identifiers
 ├── tests.zig      ← barrel: aggregates tests/<feature>.zig for test_root.zig

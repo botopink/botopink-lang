@@ -38,13 +38,3 @@ commonJS | test/tuple_equality.bp::§6 T6 two tuples with the same elements are 
 commonJS | test/tuple_equality.bp::§6 T1 T6 a labeled and an unlabeled tuple with the same elements are equal | 01 step 6 | `==` on tuples compares references on commonJS (arrays)
 commonJS | run/tuple_print.bp         | 01 step 6 | prints decision 1a's text without spaces (`#(1,"a")`); §7 wants `#(1, "a")`
 erlang   | run/tuple_print.bp         | 01 step 6 | prints decision 1a's text without spaces (`#(1,"a")`); §7 wants `#(1, "a")`
-
-# ── §10 loop ──────────────────────────────────────────────────────────────────
-commonJS | test/loop_condition.bp::§10 a condition loop repeats while true | 01 step 6 | `loop (condition)` checks (06 N26) but commonJS still iterates the bool (`.entries is not a function`)
-commonJS | test/loop_condition.bp::§10 a condition false on entry runs no iteration | 01 step 6 | same: no run-time lowering of `loop (condition)` yet
-commonJS | test/loop_condition.bp::§10 several outer vars reassigned inside a condition loop | 01 step 6 | same: no run-time lowering of `loop (condition)` yet
-erlang   | test/loop_condition.bp     | 01 step 6 | `loop (condition)` checks (06 N26); the erlang module does not compile — no lowering of a loop over a bool yet
-commonJS | test/loop_break.bp::§10 an unconditioned loop stops at break | 01 step 6 | `loop { … }` checks (06 N26) as `loop (true)`; commonJS iterates the bool
-commonJS | test/loop_break.bp::§10 break inside a condition loop | 01 step 6 | same: no run-time lowering of `loop (condition)` yet
-commonJS | test/loop_break.bp::§10 break leaves only the inner loop | 01 step 6 | same: no run-time lowering of `loop (condition)` yet
-erlang   | test/loop_break.bp         | 01 step 6 | `loop { … }` / `loop (condition)` check (06 N26); the erlang module does not compile — no lowering yet

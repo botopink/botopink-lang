@@ -1580,8 +1580,10 @@ pub fn parseLoopExpr(this: *This, alloc: std.mem.Allocator) ParseError!LoopExpr 
     // condition loop over `true`.
     var iterPtr: *Expr = undefined;
     var indexPtr: ?*Expr = null;
+    var condition = false;
     if (this.check(.leftBrace)) {
         iterPtr = try this.boxExpr(alloc, Expr{ .identifier = .{ .loc = locFromToken(loopTok), .kind = .{ .ident = "true" } } });
+        condition = true;
     } else {
         _ = try this.consume(.leftParenthesis);
 
@@ -1596,6 +1598,7 @@ pub fn parseLoopExpr(this: *This, alloc: std.mem.Allocator) ParseError!LoopExpr 
         }
 
         _ = try this.consume(.rightParenthesis);
+        condition = indexPtr == null and isSyntacticCondition(iterPtr.*);
     }
     _ = try this.consume(.leftBrace);
 
@@ -1633,9 +1636,31 @@ pub fn parseLoopExpr(this: *This, alloc: std.mem.Allocator) ParseError!LoopExpr 
         .indexRange = indexPtr,
         .params = try params.toOwnedSlice(alloc),
         .paramsLoc = paramsLoc,
+        .condition = condition,
         .body = body,
         .awaitLoop = awaitLoop,
         .label = label,
+    };
+}
+
+/// An expression that is boolean by its shape: a comparison, `&&`/`||`, `not`,
+/// or the literal `true`/`false` (parenthesised or not).
+fn isSyntacticCondition(e: Expr) bool {
+    return switch (e) {
+        .binaryOp => |bin| switch (bin.op) {
+            .eq, .ne, .lt, .gt, .lte, .gte, .@"and", .@"or" => true,
+            else => false,
+        },
+        .unaryOp => |un| un.op == .not,
+        .identifier => |id| switch (id.kind) {
+            .ident => |n| std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false"),
+            else => false,
+        },
+        .collection => |col| switch (col.kind) {
+            .grouped => |inner| isSyntacticCondition(inner.*),
+            else => false,
+        },
+        else => false,
     };
 }
 
