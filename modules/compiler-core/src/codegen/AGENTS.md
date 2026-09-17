@@ -452,7 +452,9 @@ first three are now enforced by the model, not by discipline:
    nowhere else to put one. Scratch names (`$__mem{n}`, `$_try{n}`) are
    pre-counted by `countMems` / `countTrys`, which must walk **every**
    sub-expression — a method call's `receiver` included, or `[1,2].at(0)` sets
-   an undeclared `$__mem0`.
+   an undeclared `$__mem0`. `nextMem` and the try lowerings also declare the
+   slot they take (idempotent), so a construct the counters do not walk — an
+   inlined lambda body — still gets one.
 2. **One value discipline** (`Tail` = `value` | `none` | `terminated`).
    `exprTail` is the single classifier; every arm of `lowerExpr` must agree with
    it. `emitStmt` normalises to what the context asked for (pushes a zero, or
@@ -462,9 +464,10 @@ first three are now enforced by the model, not by discipline:
    answer is then *carried*: `stackOf` tags each sequence, and
    `wat_ast.Builder.func` refuses a body that does not match the signature.
 3. **No reference to a symbol the module does not define.** `registerSymbols`
-   records every fn signature and global up front; an unresolved callee becomes
-   an `;; unresolved call: f/N` stub and a bodyless `declare fn` is skipped
-   entirely. A single dangling `call`/`global.get` rejects the whole module, so
+   records every fn signature and global up front; a callee nothing resolves
+   traps as `unreachable ;; unresolved call: f/N` (never a folded value — a
+   program that needs it fails loudly), a bodyless `declare fn` is skipped and
+   its calls trap as a host-backed declare fn. A single dangling `call`/`global.get` rejects the whole module, so
    `renderModule` validates every `call` against the module's functions and
    imports before writing anything. The runtime helpers go
    further: `Builder.helper` is the only way to name one and marks it for
@@ -476,15 +479,20 @@ first three are now enforced by the model, not by discipline:
    to `cur_result`; `storeSlotExpr` picks `f32.store` vs `i32.store`.
 
 - **Coverage**: numerics, locals, calls, assign, `!x`, null, `@todo`/`@panic`,
-  globals, case, pipeline (`a |> f` → `call $f`), range loops
-  (`lowerRangeLoop`) and array loops (`lowerCollectionLoop`), `@print` via WASI
-  `fd_write`, `_botopink_main`/`_start`.
+  `assert`, globals, case, pipeline (`a |> f` → `call $f`), range loops
+  (`lowerRangeLoop`) and array loops (`lowerCollectionLoop`), comprehensions,
+  primitive methods, function values, `@print` via WASI `fd_write`,
+  `_botopink_main`/`_start`.
 - **Known gaps** (loadable, but not yet right):
-  - `loop` over anything that is not a range or a known array blob emits
-    `i32.const 0 ;; loop over unknown iterable` — `isArrayExpr` is deliberately
-    narrow (array literal, or a name bound to one, via `arr_locals`/
-    `arr_globals`), because walking the layout of a non-array would read its
-    first word as an element count and trap;
+  - `loop` over anything that is not a range or a known array emits
+    `i32.const 0 ;; loop over unknown iterable` — `isArrayExpr` accepts an array
+    literal, a name bound to an array, an `Array<T>`/`T[]`/`@Iterator<T>`
+    parameter or fn result, an array-returning primitive method and a
+    comprehension, and nothing else, because walking the layout of a non-array
+    would read its first word as an element count and trap;
+  - an array of tuples/records prints as the element addresses (no printer);
+  - every function value's parameters and result are `i32`;
+  - a lambda lifted into a function captures a snapshot of the locals it uses;
   - an `f64` aggregate field round-trips at `f32` precision (4-byte slots), and
     is read back as a raw `i32.load` unless the field's declared type is known.
 - **Non-constant top-level `val`s** (`emitGlobalVal` → `deferred_globals`): a

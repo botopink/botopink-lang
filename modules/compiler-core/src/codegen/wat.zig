@@ -6,10 +6,13 @@
 /// over `codegen/beam/erl_ast.zig`.
 ///
 /// Covers: numeric fn decls, arithmetic, comparisons, if/else, return,
-/// top-level val as globals, fn main/0 wrapper, linear memory with bump
-/// allocator, length-prefixed strings (`.len`/`.slice`/concat/compare),
-/// @print via WASI fd_write, case via if-chain, loops via block/loop/br_if,
-/// tuples/arrays in memory, lambdas as i32 indices.
+/// top-level val as globals (folded comptime values included), fn main/0
+/// wrapper, linear memory with a bump allocator, length-prefixed strings,
+/// @print via WASI fd_write, case (numbers, strings, variant and Result tags),
+/// loops and comprehensions via block/loop/br_if, tuples/arrays/records in
+/// memory, primitive methods (`instance_lowerings`), function values through a
+/// funcref table, boxed scalar optionals, `assert`, and imports linked
+/// statically. See `codegen/AGENTS.md` §wat.
 const std = @import("std");
 const comptimeMod = @import("../comptime.zig");
 const moduleOutput = @import("./moduleOutput.zig");
