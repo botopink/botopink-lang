@@ -10,5 +10,3 @@
 #
 # Owners are the 1.0.4-beta fronts (specs/1.0.4-beta/fronts.md).
 
-emilia    commonJS 13-ecosystem-migration  front 06 N28 + C8: a section of an enum-shaped `type` is a type named by its path (decision 8 §5.3b) — emilia.bp still annotates the pre-decision flat names (`TokenText` → `Token.Text`, 27 sites) until 13 migrates it
-emilia    erlang   13-ecosystem-migration  front 06 N28 + C8: a section of an enum-shaped `type` is a type named by its path (decision 8 §5.3b) — emilia.bp still annotates the pre-decision flat names (`TokenText` → `Token.Text`, 27 sites) until 13 migrates it
