@@ -551,6 +551,10 @@ first three are now enforced by the model, not by discipline:
   so cross-module runs link). `executeWat` is a stub that returns an empty RUN
   LOG (a runtime is spec 03 step 2). Captured text is stdout with stderr
   appended after a newline.
+- **A wasm trap is a visible block** (`runtimeTrapLog`): what the module
+  printed, then `RUNTIME TRAP (wasmtime):` and the `wasm trap: …` line — never
+  an empty log, and never the backtrace (its code offsets move with every
+  lowering). Same shape as `COMPILE ERROR (<tool>):`.
 - **Exit status, never output length** (`runCaptured` → `RunStatus`): a
   successful `erlc`/`erlc +from_asm` prints nothing and a program that prints
   nothing is not a failure, so the two can only be told apart by how the process

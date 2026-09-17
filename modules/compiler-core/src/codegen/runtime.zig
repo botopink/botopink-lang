@@ -147,6 +147,57 @@ fn compileFailureLog(allocator: std.mem.Allocator, tool: []const u8, diagnostics
     return out.toOwnedSlice(allocator);
 }
 
+/// RUN LOG text for a wasm module that trapped: what it printed before the
+/// trap, then a marker line the snapshot review can grep for, then the trap
+/// itself — the `wasm trap: …` line wasmtime reports. A trap must never read
+/// like a program that ran and printed nothing, which is what an empty log
+/// would say.
+///
+/// `combined` is `runCaptured`'s text: stdout, then stderr. wasmtime's stderr
+/// is an error chain (`Error: failed to run main module …`, `Caused by:`, the
+/// wasm backtrace with code offsets, the trap); only the trap line is kept,
+/// because the backtrace offsets change with every lowering. When no
+/// `wasm trap:` line is present (a non-trap failure), the last line of the
+/// chain is kept instead.
+fn runtimeTrapLog(allocator: std.mem.Allocator, tool: []const u8, combined: []const u8) ![]u8 {
+    const err_marker = "Error: failed to run main module";
+    const split = if (std.mem.startsWith(u8, combined, err_marker))
+        0
+    else if (std.mem.indexOf(u8, combined, "\n" ++ err_marker)) |i| i + 1 else combined.len;
+    const printed = std.mem.trimEnd(u8, combined[0..split], "\n");
+    const chain = combined[split..];
+
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer out.deinit(allocator);
+    if (printed.len > 0) {
+        try out.appendSlice(allocator, printed);
+        try out.append(allocator, '\n');
+    }
+    try out.appendSlice(allocator, "RUNTIME TRAP (");
+    try out.appendSlice(allocator, tool);
+    try out.appendSlice(allocator, "):\n");
+
+    var last: []const u8 = "";
+    var trap: ?[]const u8 = null;
+    var lines = std.mem.splitScalar(u8, chain, '\n');
+    while (lines.next()) |raw| {
+        const line = std.mem.trim(u8, raw, &std.ascii.whitespace);
+        if (line.len == 0) continue;
+        if (std.mem.indexOf(u8, line, "wasm trap:")) |i| {
+            trap = line[i..];
+        }
+        // `2: <cause>` — the error chain numbers its causes.
+        const colon = std.mem.indexOfScalar(u8, line, ':') orelse 0;
+        const numbered = colon > 0 and for (line[0..colon]) |c| {
+            if (!std.ascii.isDigit(c)) break false;
+        } else true;
+        last = if (numbered) std.mem.trimStart(u8, line[colon + 1 ..], " ") else line;
+    }
+    try out.appendSlice(allocator, trap orelse last);
+    try out.append(allocator, '\n');
+    return out.toOwnedSlice(allocator);
+}
+
 /// Single root for every per-test scratch dir. Lives under the
 /// build dir (`.botopinkbuild/`) so the umbrella `.gitignore` rule
 /// already swallows it — no separate `.tmp-exec-*/` line needed.
@@ -555,6 +606,46 @@ pub fn executeWat(allocator: std.mem.Allocator, wat_code: []const u8, module_nam
     _ = module_name;
     _ = io;
     return allocator.dupe(u8, "");
+}
+
+test "runtimeTrapLog keeps the printed text and the trap, drops the backtrace" {
+    const alloc = std.testing.allocator;
+    const combined =
+        \\hello
+        \\
+        \\Error: failed to run main module `main.wat`
+        \\
+        \\Caused by:
+        \\    0: failed to invoke command default
+        \\    1: error while executing at wasm backtrace:
+        \\           0:   0x2a - <unknown>!main
+        \\    2: wasm trap: wasm `unreachable` instruction executed
+        \\
+    ;
+    const log = try runtimeTrapLog(alloc, "wasmtime", combined);
+    defer alloc.free(log);
+    try std.testing.expectEqualStrings(
+        "hello\nRUNTIME TRAP (wasmtime):\nwasm trap: wasm `unreachable` instruction executed\n",
+        log,
+    );
+}
+
+test "runtimeTrapLog on a module that printed nothing" {
+    const alloc = std.testing.allocator;
+    const combined =
+        \\Error: failed to run main module `main.wat`
+        \\
+        \\Caused by:
+        \\    0: failed to invoke command default
+        \\    1: wasm trap: out of bounds memory access
+        \\
+    ;
+    const log = try runtimeTrapLog(alloc, "wasmtime", combined);
+    defer alloc.free(log);
+    try std.testing.expectEqualStrings(
+        "RUNTIME TRAP (wasmtime):\nwasm trap: out of bounds memory access\n",
+        log,
+    );
 }
 
 test "compileFailureLog keeps the errors, drops warnings and the source echo" {
