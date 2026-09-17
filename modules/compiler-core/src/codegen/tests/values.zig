@@ -357,3 +357,17 @@ test "js: net-new ---- record equality vs array equality across backends" {
         \\}
     );
 }
+
+// A name nothing binds used to become the atom of its own name on beam, so the
+// program printed the word. Here `answer` is never declared (the checker lets
+// the pattern-assert subject through): beam aborts at the read with
+// `{unresolved_identifier, answer}` before `@print` runs, so its RUN LOG is
+// empty. KNOWN: the other backends do not reject it either (F7 checker).
+test "js: identifier ---- unresolved name aborts instead of printing its name" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    val assert 42 = answer catch 0;
+        \\    @print("unreachable");
+        \\}
+    );
+}
