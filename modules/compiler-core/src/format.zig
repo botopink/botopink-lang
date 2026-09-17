@@ -367,7 +367,7 @@ pub const Formatter = struct {
             .literal => |lit| switch (lit.kind) {
                 .stringLit => |s| blk: {
                     // Check if string should be formatted as multiline (contains newlines)
-                    if (std.mem.indexOfScalar(u8, s, '\n') != null) {
+                    if (needsTripleQuotes(s)) {
                         // Format as multiline string with triple quotes
                         // The content already includes the newlines from the source
                         break :blk this.text(try std.fmt.allocPrint(this.arena, "\"\"\"{s}\"\"\"", .{s}));
@@ -475,14 +475,7 @@ pub const Formatter = struct {
                     const condDoc = try this.fmtExpr(i.cond.*);
                     // Build then block: with or without binding
                     const thenDoc = if (i.binding) |b| blk2: {
-                        var items = try this.arena.alloc(*const Doc, i.then_.len);
-                        for (i.then_, 0..) |s, idx| {
-                            items[idx] = try this.concatAll(&.{
-                                try this.text("break "),
-                                try this.fmtExpr(s.expr),
-                            });
-                        }
-                        const body = try this.join(items, this.hardline());
+                        const body = try this.fmtBranchStmts(i.then_);
                         const inner = try this.concatAll(&.{
                             try this.text(b),
                             try this.text(" ->"),
@@ -495,29 +488,15 @@ pub const Formatter = struct {
                         if (i.then_.len == 1) {
                             break :blk2 try this.fmtExpr(i.then_[0].expr);
                         }
-                        // Multi-statement block — add break before each
-                        var items = try this.arena.alloc(*const Doc, i.then_.len);
-                        for (i.then_, 0..) |s, idx| {
-                            items[idx] = try this.concatAll(&.{
-                                try this.text("break "),
-                                try this.fmtExpr(s.expr),
-                            });
-                        }
-                        const inner = try this.join(items, this.hardline());
+                        // Multi-statement block: one statement per line, as written.
+                        const inner = try this.fmtBranchStmts(i.then_);
                         break :blk2 try this.surroundBreak("{", inner, "}");
                     };
                     if (i.else_) |els| {
                         const elseDoc = if (els.len == 1)
                             try this.fmtExpr(els[0].expr)
                         else blk2: {
-                            var items = try this.arena.alloc(*const Doc, els.len);
-                            for (els, 0..) |s, idx| {
-                                items[idx] = try this.concatAll(&.{
-                                    try this.text("break "),
-                                    try this.fmtExpr(s.expr),
-                                });
-                            }
-                            const inner = try this.join(items, this.hardline());
+                            const inner = try this.fmtBranchStmts(els);
                             break :blk2 try this.surroundBreak("{", inner, "}");
                         };
                         break :blk this.concatAll(&.{
@@ -602,7 +581,7 @@ pub const Formatter = struct {
             },
             .useHook => |uh| this.concat(try this.text("use "), try this.fmtExpr(uh.kind.inner.*)),
             .function => |func| switch (func.kind.syntax) {
-                .lambda => try this.fmtLambda(func.kind.params, func.kind.body),
+                .lambda => try this.fmtLambda(func.kind.params, func.kind.body, true),
                 .fnExpr => try this.fmtFnExpr(func.kind.params, func.kind.body),
             },
             .call => |c| switch (c.kind) {
@@ -1105,13 +1084,32 @@ pub const Formatter = struct {
                 try parts.append(this.arena, try this.text(lbl));
                 try parts.append(this.arena, try this.text(": "));
             }
-            try parts.append(this.arena, try this.fmtLambda(tl.params, tl.body));
+            try parts.append(this.arena, try this.fmtLambda(tl.params, tl.body, false));
         }
 
         return this.concatAll(parts.items);
     }
 
-    fn fmtLambda(this: *Formatter, params: []const []const u8, body: []ast.Stmt) !*const Doc {
+    /// The statements of a multi-statement `if` branch, one per line, each
+    /// ended by `;` (a comment takes none) — the block re-parses as written.
+    /// (The branch printer used to prefix each with `break`, which does not
+    /// parse for a `val` and changes the value of every other statement.)
+    fn fmtBranchStmts(this: *Formatter, stmts: []ast.Stmt) !*const Doc {
+        var items = try this.arena.alloc(*const Doc, stmts.len);
+        for (stmts, 0..) |st, idx| {
+            const exprDoc = try this.fmtExpr(st.expr);
+            items[idx] = switch (st.expr) {
+                .literal => |lit| if (lit.kind == .comment) exprDoc else try this.concat(exprDoc, try this.text(";")),
+                else => try this.concat(exprDoc, try this.text(";")),
+            };
+        }
+        return this.join(items, this.hardline());
+    }
+
+    /// `arrow_when_empty`: a parameterless lambda in expression position keeps
+    /// its `{ -> … }` arrow — without it the braces re-parse as a block. A
+    /// trailing lambda (`f { … }`) needs none.
+    fn fmtLambda(this: *Formatter, params: []const []const u8, body: []ast.Stmt, arrow_when_empty: bool) !*const Doc {
         var items: std.ArrayList(*const Doc) = .empty;
         defer items.deinit(this.arena);
         for (body, 0..) |s, i| {
@@ -1130,8 +1128,16 @@ pub const Formatter = struct {
         }
         const inner = try this.concatAll(items.items);
 
-        if (params.len == 0) {
+        if (params.len == 0 and !arrow_when_empty) {
             return this.surroundBreak("{", inner, "}");
+        }
+        if (params.len == 0) {
+            return this.forceBreak(try this.concatAll(&.{
+                try this.text("{ ->"),
+                try this.nest(INDENT, try this.concat(this.hardline(), inner)),
+                this.hardline(),
+                try this.text("}"),
+            }));
         }
 
         // `{ a, b -> ... }`
@@ -1211,7 +1217,12 @@ pub const Formatter = struct {
                 try this.fmtPattern(arm.pattern),
                 guardDoc,
                 try this.text(" -> "),
-                try this.fmtExpr(arm.body),
+                // A block arm body is a parameterless lambda in the AST; it is
+                // written `{ … }`, without the arrow.
+                if (arm.body == .function and arm.body.function.kind.syntax == .lambda and arm.body.function.kind.params.len == 0)
+                    try this.fmtLambda(&.{}, arm.body.function.kind.body, false)
+                else
+                    try this.fmtExpr(arm.body),
                 try this.text(";"),
             }));
         }
@@ -1276,7 +1287,7 @@ pub const Formatter = struct {
             .numberLit => |n| this.text(n),
             .stringLit => |s| blk: {
                 // Check if string should be formatted as multiline (contains newlines)
-                if (std.mem.indexOfScalar(u8, s, '\n') != null) {
+                if (needsTripleQuotes(s)) {
                     // Format as multiline string with triple quotes
                     // The content already includes the newlines from the source
                     break :blk this.text(try std.fmt.allocPrint(this.arena, "\"\"\"{s}\"\"\"", .{s}));
@@ -2174,4 +2185,20 @@ pub fn format(allocator: std.mem.Allocator, program: ast.Program) ![]u8 {
     var fmt = Formatter.init(arena.allocator());
     const doc = try fmt.fmtProgram(program);
     return render(allocator, doc, LINE_WIDTH);
+}
+
+/// A string literal's content (its raw lexeme between the quotes) needs the
+/// `"""` fences when it spans lines or holds an unescaped `"` — a `"…"`
+/// literal cannot carry either.
+fn needsTripleQuotes(s: []const u8) bool {
+    if (std.mem.indexOfScalar(u8, s, '\n') != null) return true;
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) {
+        if (s[i] == '\\') {
+            i += 1;
+            continue;
+        }
+        if (s[i] == '"') return true;
+    }
+    return false;
 }

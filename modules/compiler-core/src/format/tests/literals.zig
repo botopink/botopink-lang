@@ -340,3 +340,11 @@ test "format: interface literal ---- with array" {
         \\}
     );
 }
+
+test "format: a string holding a quote keeps its triple fences" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn main() {
+        \\    val r = parse("""{"a":1}""");
+        \\}
+    );
+}

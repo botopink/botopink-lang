@@ -39,3 +39,17 @@ and running `format` twice in a row must produce identical text.
 | Array / list literals | Trailing comma or comments → multi-line; otherwise inline if it fits |
 | Blank lines | `emptyLinesBefore` on statements and case arms is preserved as blank lines |
 | Test blocks | `test { … }` / `test "name" { … }` — no trailing semicolon, body formatted like a `fn` body |
+| Lambdas | A parameterless lambda in expression position keeps `{ -> … }` (the braces alone re-parse as a block); a trailing lambda `f { … }` and a `case` arm's block body (a parameterless lambda in the AST) print `{ … }` |
+| `if` branches | A single-expression branch prints bare; a multi-statement branch prints its statements one per line, each ended by `;` |
+| String literals | `"""…"""` when the content spans lines or holds an unescaped `"`; `"…"` otherwise |
+
+## Known gaps (front 12 step 3, measured on `libs/std` and `examples/`)
+
+`format` output of every `.bp` in `libs/std` and `examples/` re-parses, compiles and passes
+the same tests, and a second pass is a no-op — but the sources are not reformatted, because
+the output is lossy: `//` comments between members of a `type`/`behavior` body are dropped
+(`libs/std/src/primitives.bp` keeps 40 of 107 comment lines), blank lines between methods
+go, one-line lambdas are opened, and an empty `////` line gains a trailing space.
+`libs/std/src/builtins.d.bp` does not parse (`fn await(…)`, `fn module() module`
+shortforms) — it is documentation, never compiled. `botopink format --check` therefore
+still fails on those trees.
