@@ -6,7 +6,7 @@
 # passes fails the run ("delete its line"); a path-only entry is for a file that
 # does not compile. `*` is for reject/ files (target-independent).
 #
-# Classified against botopink-lang fix/surface-cutover fe72c0e (front 12 steps 1–3c).
+# Classified against botopink-lang fix/surface-cutover 3a7f611 (front 12 steps 1–3e).
 
 # ── §5 case arms `Pattern { body }`, `when`, `..`, `.Variant` — not parsed yet ────
 commonJS | test/case_arms.bp          | 06 N22 | case arms `Pattern { body }` do not parse (Unexpected token)

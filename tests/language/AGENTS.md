@@ -56,13 +56,14 @@ tests/language/run.sh --compiler <botopink> --only test/case_arms.bp
 
 ## Status and the gate
 
-Coverage and classification at `fe72c0e`: 29 test/run/reject files — `case` (§5) 6 test + 1 run +
-9 reject, tuples (§6) 5 test + 1 run + 2 reject, `loop` (§10) 5 test + 2 reject; 53 results pass,
-40 are expected failures (06 N19–N22 and N26: the new syntax; 12 step 4: `.N` on erlang and `t.0.1`;
-01 step 6: tuple equality on commonJS, the print text).
+Coverage and classification at `3a7f611` (front 12 steps 1–3e): 31 files besides the three
+smoke files — `case` (§5) 6 test + 1 run + 9 reject, tuples (§6) 5 test + 1 run + 2 reject, `loop` (§10)
+5 test + 2 reject. Both targets: 53 results pass, 41 are expected failures (commonJS 30 / 24, erlang
+26 / 28; reject files count once per target) — 06 N19–N22 and N26 (the new syntax), 12 step 4 (`.N` on
+erlang, `t.0.1`), 01 step 6 (tuple equality on commonJS, the print text).
 
 Authored before front 12 lands, against the compiler of `fix/surface-cutover`
-at `fe72c0e` (the 1.0.3 surface). `zig build test-language` is **not** in
+at `3a7f611` (the 1.0.3 surface). `zig build test-language` is **not** in
 `scripts/gate.sh` yet: the gate runs the old-surface compiler until 12 lands,
 where every file here fails to parse. The gate stage is added when this front
 lands, after 12 — at that point `expected-failures.txt` is re-classified against
