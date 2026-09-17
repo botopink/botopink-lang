@@ -24,8 +24,6 @@ modules/
 │   ├── src/                 ← JSON-RPC server + LSP features + tests
 │   └── snapshots/lsp/       ← LSP feature snapshots
 ├── lib-test-runner/         ← `botopink-lib-test` — per-lib/per-backend test gate
-│   ├── build.zig            ← only for its unit tests (see Commands)
-│   ├── build.zig.zon
 │   └── src/                 ← discovery + fan-out + matrix (self-contained)
 └── bpmp/                    ← `bpmp` — Boto Pink Package Manager + toolchain manager
     ├── build.zig.zon        ← no own build.zig; built by the workspace build.zig
@@ -61,12 +59,11 @@ zig build test-backends    # compiler-cli/tests/backend_exec.sh (needs runtimes)
 zig build clean-tmp        # reap compiler-core/.botopinkbuild/tmp dirs older than 1 day
 ```
 
-`compiler-cli`, `compiler-core` and `language-server` carry no `build.zig` of
-their own: every command runs from the workspace root, which derives the `std`
-module list from `libs/std/src/root.bp` (a second build graph once built a
-compiler with 5 of the std modules). `lib-test-runner` still has a standalone
-`build.zig`; the workspace `zig build test` runs its unit tests too (root
-`src/main.zig`, cwd `modules/lib-test-runner`), so that pair is now redundant. See the root
+No package carries a `build.zig` of its own (`bpmp` keeps only a `build.zig.zon`):
+every command runs from the workspace root, which derives the `std` module list
+from `libs/std/src/root.bp` (a second build graph once built a compiler with 5 of
+the std modules). The lib-test-runner's unit tests run under the workspace
+`zig build test` (root `src/main.zig`, cwd `modules/lib-test-runner`). See the root
 [`AGENTS.md`](../AGENTS.md) for top-level commands.
 
 ## Cross-package conventions

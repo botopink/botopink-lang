@@ -19,9 +19,7 @@ internals — so it carries **no `compiler-core` dependency**. Its job is discov
 ```text
 lib-test-runner/
 ├── AGENTS.md            ← you are here
-├── build.zig            ← package build graph + `run` + `test` steps
-├── build.zig.zon        ← manifest (no dependencies — self-contained)
-└── src/
+└── src/                 ← built and tested by the workspace build.zig (no build.zig of its own)
     ├── main.zig         ← entry: resolve roots/binary → discover → run cells → matrix → exit
     ├── args.zig         ← CLI parsing (Target enum, node alias, =-form, all)  + unit tests
     ├── discovery.zig    ← enumerate <root>/*/ with botopink.json across roots, "has tests" probe + unit tests
@@ -37,10 +35,8 @@ lib-test-runner/
 zig build test-libs                                   # every lib, commonJS+erlang
 zig build test-libs -- --target erlang --lib rakun    # one target, one lib
 zig build test-libs -- --target all --strict          # supported targets, strict
-
-# from this package:
-zig build               # produce ./zig-out/bin/botopink-lib-test
-zig build test          # args + discovery + matrix + runner unit tests (also run by the root `zig build test`)
+zig build               # produces zig-out/bin/botopink-lib-test among the workspace executables
+zig build test          # includes the args + discovery + matrix + runner unit tests (38)
 ```
 
 ## CLI surface
