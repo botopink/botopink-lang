@@ -19,12 +19,8 @@ fn main() {
   {label, 3}.
     {allocate, 3, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {integer, 10}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {integer, 20}, {x, 0}}.
-    {move, {x, 0}, {x, 2}}.
-    {test_heap, 3, 3}.
-    {put_tuple2, {x, 0}, {list, [{x, 1}, {x, 2}]}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{integer, 10}, {integer, 20}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {integer, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.

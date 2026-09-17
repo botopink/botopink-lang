@@ -346,61 +346,132 @@ codegen/
 ### beam_asm
 
 - **Coverage**: numerics, locals, calls, booleans, assign, throw, strings,
-  `@print`, field access/assign, arrays, tuples, records/structs
-  (`put_map_assoc` maps), case (all patterns + guards via
+  `@print`, field access/assign, arrays, tuples, records/structs and anonymous
+  `record { … }` / interface literals (all `put_map_assoc` maps keyed by field
+  name), case (all patterns + guards via
   `emitGuardPre`/`emitGuardPost`; a bare `.ident` arm naming a nullary enum
-  variant is a match test against that atom, not a binding — `enum_variants`),
+  variant — local, imported by name, or from a `from "std"` module — is a match
+  test against that atom, not a binding — `enum_variants`; `Ok`/`Err` arms test
+  the `ok`/`error` tags — `variantTag`),
   `if` as value (`emitValueIf`) and as
   statement (`emitIf` — the false branch falls through, never an early
-  `return`), try/catch (`is_tagged_tuple`), ranges (`lists:seq(A, B - 1)`),
+  `return`; the binding form `if (x) { v -> … }` runs when `x` is not
+  `undefined` — `emitIfTest`), try/catch (a real `try`/`try_case` section around
+  the subject, then `is_tagged_tuple`), ranges (`lists:seq(A, B - 1)`),
   loops, pipeline, closures, `call_fun`, `@Result`/`@Option` ops
   (`lowerResultOptionOp`: `{ok, V}`/`{error, E}` and bare value / `undefined`,
   mirroring erlang), optional chaining (`lowerIdentAccess`: `is_eq` on
-  `undefined`, then `is_map` + `get_map_elements`).
+  `undefined`, then `is_map` + `get_map_elements`), `comptime` nodes
+  (`lowerComptime`: a folded expression/block is its value).
+- **Module shape**: every *named* top-level `val` is a 0-arity function
+  (reserved, emitted and — when `pub` — exported whether or not the module has a
+  `main/0`), so a read is a local call; a `val` holding a fun is read, parked on
+  the stack and applied with `call_fun`. Only `_`-named synthetic statements run
+  in order inside `'_botopink_main'/0` before it calls `main/0`. Parity with the
+  erlang backend's `topValForms`.
 - **Emission**: `beam_asm.zig` writes no target text. It builds typed operands
   (`Op`/`Dst` = `beamEmitter.Operand`/`Dest`) and calls one `beam_emitter.write*`
-  function per `.S` line; that file owns atom quoting, operand shape, indentation
+  function per `.S` line, the module preamble included (`writeModuleForm` /
+  `writeExports` / `writeAttributes` / `writeLabels`, sections joined with
+  `std.mem.concat`); that file owns atom quoting, operand shape, indentation
   and the trailing `.` (see [`beam/AGENTS.md`](beam/AGENTS.md)). A missing
   instruction is added to the emitter's vocabulary, never printed at the call
   site. The single verbatim passthrough is a `#[@External.Beam]` template body.
-- **Closures** (`emitMakeFun`): `test_heap` with `{alloc, [{funs, 1}]}` +
-  `make_fun3` into `{x, 0}` (`make_fun2` is rejected by `+from_asm`). `Live`
-  honours the `min_live` floor so scratch x-registers survive the allocation;
-  lambda bodies reset `min_live` to 0 for their fresh frame.
+- **Identifiers never become atoms**: a name resolves to a stack slot, a
+  module-level `val` (local call), an imported `pub val` (`call_ext`), or
+  `true`/`false`. Anything else emits `%% unresolved identifier: n` and aborts
+  with `erlang:error({unresolved_identifier, n})` at run time — it used to be
+  the atom of its own name, so the program printed the word. A call nothing
+  defines aborts the same way (`{unresolved_call, F, N}` /
+  `{unresolved_method, F, N}`). (Not a compile error: several fixtures whose
+  source names undefined identifiers still compile on every backend — the
+  checker's gap.)
+- **Closures** (`emitMakeFun`, `closureEnv`): a lambda or loop body's free
+  variables — every name it reads that the enclosing frame binds — travel in
+  `make_fun3`'s environment (`test_heap` with `{words, NumFree}`) and arrive
+  as extra parameters after the fun's own, spilled to stack slots like params.
+  `Live` honours the `min_live` floor; lambda bodies reset it to 0.
+- **Mutation threading** (`lowerMutatingFold`): a statement `loop (xs) { x -> … }`
+  or `xs.forEach({ x -> … })` whose body reassigns names of the enclosing frame
+  (`=`, `+=`, `out.push(v)`, nested `if`/`loop`/`forEach`) lowers to
+  `lists:foldl/3` with those names as the accumulator (one value, or a tuple),
+  unpacked back into the caller's slots; `break`/`continue` return the group. A
+  statement `out.push(v)` on a local Array stores the grown list back into its
+  slot (`receiverMutation`).
+- **Loops**: `loop (xs, 0..) { item, i -> … }` iterates
+  `lists:enumerate(Start, Xs)` and binds both names from the pair with the
+  `element/2` guard BIF; the comprehension shape (a single else-less `if` whose
+  branch ends in `break v`) lowers through `lists:filtermap/2`; an eager
+  `#[@iterator]` body ending in a yielding loop returns that loop's list.
 - **Calls**: module-qualified `List.map(…)` → `call_ext`/`call_ext_last`
   (trailing lambdas materialized as funs); `from "std"` qualified calls
   (`math.floor(x)`) → `call_ext` via `collectStdImports`; interface
   associated `default fn`s emit as mangled locals `'Interface_method'`
-  (`reserveInterfaceMethods`/`emitInterfaceAssoc`).
+  (`reserveInterfaceMethods`/`emitInterfaceAssoc`); a record-typed receiver
+  (`c.atual()`, `.record` instance lowering) calls `'<Type>_<method>'` with the
+  receiver first, or applies a fun-typed field (`s.set(v)`); a record method
+  that reads `self` without declaring it takes it as an implicit first
+  parameter (`hasImplicitSelf`); a destructuring parameter binds its names in
+  the prologue; `Ok(v)`/`Err(e)`/`Error(msg)` build the `@Result` tuple.
+- **Host-backed `declare fn`s** (`lowerExternalCall`; never emitted as local
+  functions): an `@External.Beam` `.S` body renders at the call site; an
+  `@External.Erlang("mod", "sym")` is a `call_ext`; an `@External.Erlang`
+  template (`"base64:encode($0)"`, arity branches included) is Erlang source,
+  evaluated at run time by the synthesised `'__bp_erl_eval'(Source, Bindings)`
+  (`erl_scan` → `erl_parse` → `erl_eval`, markers bound as `__BpSelf`/`__BpAN`).
+  No beam or erlang target raises `MissingExternalTarget`. A call to an
+  external another module declares lowers the same way.
+- **Primitive methods** (`emitPrimMethod`), walking the receiver kind's
+  interface chain (`primIfaceChain`: `I32 → Signed → Integer → Number`, …):
+  an `@External.Beam` template, then an `@External.Erlang("mod", "sym")` host
+  call, then the inline BEAM-irreducible arms (`emitPrimInline`), then an
+  `@External.Erlang` template through `'__bp_erl_eval'/2`, then a bodied
+  interface `default fn` (`Array.fold`, `Number.clamp`) emitted on demand as
+  `'<Iface>_<method>'(Self, …)` (`callIfaceDefault`/`emitNeededDefaults`,
+  omitted trailing params filled from their declared defaults). Inside such a
+  body inference recorded nothing, so `self`'s kind (`self_prim_kind`) drives
+  the lowering of `self.m(…)`/`self.length`.
 - **Static extension dispatch**: `implement`/`extend` methods are emitted and
   exported as `'<target>_<method>'`; activated `recv.m(args)` and qualified
   `Sym.m(obj)` call it with the receiver prepended (`ext_by_name`,
-  `extMangledName`, `lowerExtCall`).
+  `extMangledName`, `lowerExtCall`); a block another module declares (star
+  import) is a `call_ext` into its owner (`importedExtension`).
+- **Strings**: a `+` chain is concatenation when an operand is provably a
+  string (`isStringExpr`: literal, string local/param, string top-level name,
+  `fn … -> string`) — its segments become a list, each rendered by
+  `'-bp_stringify-'/1` (a binary is itself, an integer `integer_to_binary`,
+  anything else its `~p` text), flattened by `iolist_to_binary/1`; a non-string
+  operand concatenates as text instead of raising `badarith`. String `+=` too.
 - **`erlc +from_asm` invariants**: comparisons use only `is_lt`/`is_ge` (no
   `is_gt`/`is_le` — operands swap, `comparisonTestOp`); `{allocate, N, A}` is
-  followed by `{init_yregs, …}` (`emitFrame`); `countLocalsRec` counts case-arm
-  and destructure bindings so the frame is sized correctly.
+  followed by `{init_yregs, …}` (`emitFrame`); `countLocalsRec` counts every
+  stack slot the lowering takes — `val`s, case-arm/destructure/binding-`if`
+  bindings, array-literal and concatenation accumulators, the `try` tag, and
+  `stagingSlots` — so the frame is sized correctly. Every decision the count
+  mirrors (string-ness via `count_strings`, `exprMayCall`) is taken from the
+  same AST and tables in both passes.
 - **Registers**: parameters are spilled to `y0..y{arity-1}` by `bindParams` +
   `emitParamSpill` right after `allocate`, so the whole x-file is scratch and a
-  `self.field` read cannot overwrite `self`. Every staging site takes its slot
-  from `scratchBase()` (`max(min_live, 1)` — never `{x, 0}`, which each
-  `lowerExprIntoX0` overwrites) and raises the floor with `raiseLive` while a
-  nested lowering runs, so a `gc_bif`/closure inside operand *i* cannot drop
-  operands `0..i-1`.
+  `self.field` read cannot overwrite `self`.
+- **Operand staging** (`stageOperands`/`stageCall`/`placeStaged`/
+  `emitParallelMove`): every site that evaluates several operands — call
+  arguments, tuple/record/map construction, `gc_bif` and comparison operands,
+  ranges, pipelines, primitive-method layouts, templates — stages them through
+  one helper. A simple term (literal, stack slot) is read in place; the last
+  non-simple operand stays in `{x, 0}`; the others go to x-registers above
+  `scratchBase()` with `raiseLive` — or to stack slots when a later operand may
+  call (`exprMayCall`), since a `call`/`call_ext`/`call_fun` frees the whole
+  x-file. The final layout is one parallel move. `scripts/beam_export_audit.sh`
+  assembles every snapshot module with every function exported, which is what
+  surfaces a liveness bug in a function nothing exports.
 - **Register-liveness gotchas**: a BEAM `Live` count is a *prefix* — claiming
   `{x, 2}` claims `{x, 0}` and `{x, 1}` too, and an unwritten register in that
-  range is `not_live`/`uninitialized_reg`; before the first operand is lowered
-  nothing has written `{x, 0}`, so the floor there stays at `min_live`
-  (`lowerResultOptionOp` fills `{x, disc}` for the same reason). An array
-  literal reserves one cons cell per element *after* evaluating it — a single
-  up-front `test_heap` is lost as soon as an element allocates. A `call` /
-  `call_ext` frees every x-register, so a value that must survive one goes to a
-  y-slot (`emitDestructBind`'s tuple subject, `lowerArrayLit`'s cons
-  accumulator), and a length read uses the `length` gc_bif rather than
-  `erlang:length/1`. The range loop materializes the iterable before building
-  the body closure. `lowerTupleLit`/`lowerRecordConstruct`/`lowerTaggedTuple`/
-  `materializeCallArgs` still stage in x-registers — visible only with
-  `erlc +from_asm` over a module that exports every function.
+  range is `not_live`/`uninitialized_reg`; a construction's `Live` is
+  `max(min_live, staged.x_top)`, never padded to 1 when nothing was staged. An
+  array literal reserves one cons cell per element *after* evaluating it, with
+  the tail accumulator on the stack. A length read uses the `length` gc_bif
+  rather than `erlang:length/1`. A field assignment is `maps:update/3` (a call,
+  so the receiver needs no static map type).
 - **Cross-module**: the module atom is the path basename; an imported record
   joins `record_fields` + `imported_types` (`collectRecordShapes`), its
   associated fn lowers to `call_ext` into the owner (`http:'Response_ok'(…)`),
@@ -408,18 +479,27 @@ codegen/
   read on a `call_ext` result emits `is_map` before `get_map_elements` (the
   result is typed `any`, which the loader rejects otherwise). An imported
   `pub fn`/`pub val` resolves through `crossOwnerOf` to a remote `call_ext` (a
-  `pub val` is a 0-arity function, so a bare reference is a call). A
-  destructure emits the same `is_map` narrowing, and writes every binding slot
-  on *both* arms of the test — the validator reports `{unassigned, {y, N}}`
-  after the merge otherwise.
-- **Builtins**: `lowerBuiltinCall` hardcodes `@print`
-  (`io:format("~p~n", [V])`, or one `~p` per argument space-separated for
-  `@print(a, b, …)`), `@todo`/`@panic` (`erlang:error/1`) and `__bp_*` ops at
-  register level.
+  `pub val` is a 0-arity function the owner exports, so a bare reference is a
+  call). A destructure emits the same `is_map` narrowing, and writes every
+  binding slot on *both* arms of the test — the validator reports
+  `{unassigned, {y, N}}` after the merge otherwise.
+- **Builtins**: `@print`/`@println`/`@debug` (semantics decision 1) build the
+  argument list and call the synthesised `'__bp_print'/1`, which formats every
+  value on one line, space-separated — a binary through `~ts` (its text),
+  anything else through `~p` — the verb picked at run time, byte-identical to
+  the erlang backend's helper. Numeric formatting stays `~p` (`1.0`, where
+  commonJS prints `1`): an intended divergence. `assert cond[, msg]` (decision
+  4) is always fatal: `erlang:error({bp_assert, Msg, <<"<mod>.bp:<line>">>})`
+  when the condition is not `true`; `assert Pat = e catch h` is a two-arm case
+  whose bindings stay visible. `@todo`/`@panic` → `erlang:error/1`; `__bp_*` ops
+  at register level.
 - **Effects**: non-`#[@result]` effect fns get an eager body;
   `__bp_future_rejected` → `erlang:throw/1`.
-- Unhandled shapes emit `%% unsupported: …` / `%% unresolved …` /
-  `%% prim method not lowered on beam (…)` comments instead of mis-emitting.
+- **Known gaps**: a value-less `if` yields `undefined` (B10, checker's
+  question); a comptime value the transform parks in a number literal but is
+  not a number (a folded array) aborts with `{unlowered_comptime_value, Text}`
+  (the transform's gap); `%% prim method not lowered on beam (…)` comments
+  mark the remaining arity mismatches.
 
 ### wat
 

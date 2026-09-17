@@ -22,13 +22,8 @@ fn sumTo(n: i32) -> i32 {
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
+    {gc_bif, '-', {f, 0}, 0, [{y, 0}, {integer, 1}], {x, 1}}.
     {move, {integer, 0}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {y, 0}, {x, 0}}.
-    {gc_bif, '-', {f, 0}, 2, [{x, 0}, {integer, 1}], {x, 0}}.
-    {move, {x, 0}, {x, 2}}.
-    {move, {x, 1}, {x, 0}}.
-    {move, {x, 2}, {x, 1}}.
     {call_ext, 2, {extfunc, lists, seq, 2}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.

@@ -38,14 +38,13 @@ fn main() {
   {label, 5}.
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
-    {move, {integer, 2}, {x, 1}}.
-    {move, nil, {x, 0}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 11}, 0, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {x, 2}}.
-    {move, {x, 1}, {x, 0}}.
-    {move, {x, 2}, {x, 1}}.
-    %% unresolved local call: calc/2
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 2}, {x, 0}}.
+    %% unresolved_call: calc/2
+    {move, {literal, {unresolved_call, calc, 2}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
     {move, {x, 0}, {y, 0}}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 1}.

@@ -18,12 +18,9 @@ fn apply(s: State<i32>) -> i32 { s.set(s.value); return s.value; }
     {func_info, {atom, main}, {atom, make}, 0}.
   {label, 3}.
     {allocate, 0, 0}.
-    {move, {integer, 0}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 7}, 0, 0, {x, 0}, {list, []}}.
-    {move, {x, 0}, {x, 2}}.
-    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 3, {list, [{atom, value}, {x, 1}, {atom, set}, {x, 2}]}}.
+    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 1, {list, [{atom, value}, {integer, 0}, {atom, set}, {x, 0}]}}.
     {deallocate, 0}.
     return.
 
@@ -36,15 +33,12 @@ fn apply(s: State<i32>) -> i32 { s.set(s.value); return s.value; }
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {y, 0}, {x, 0}}.
     {test, is_map, {f, 8}, [{x, 0}]}.
     {get_map_elements, {f, 8}, {x, 0}, {list, [{atom, value}, {x, 0}]}}.
   {label, 8}.
-    {move, {x, 0}, {x, 2}}.
-    {move, {x, 1}, {x, 0}}.
-    {move, {x, 2}, {x, 1}}.
-    %% unresolved method call: set/2
+    %% unresolved_method: set/2
+    {move, {literal, {unresolved_method, set, 2}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
     {move, {y, 0}, {x, 0}}.
     {test, is_map, {f, 9}, [{x, 0}]}.
     {get_map_elements, {f, 9}, {x, 0}, {list, [{atom, value}, {x, 0}]}}.

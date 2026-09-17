@@ -12,7 +12,7 @@ fn main() {
 {module, main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
-{labels, 9}.
+{labels, 19}.
 
 {function, main, 0, 3}.
   {label, 2}.
@@ -21,22 +21,45 @@ fn main() {
   {label, 3}.
     {allocate, 3, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    %% unsupported: record literal
-    {move, {atom, undefined}, {x, 0}}.
-    {move, {x, 0}, {y, 0}}.
-    %% unsupported: interface literal
-    {move, {atom, undefined}, {x, 0}}.
-    {move, {x, 0}, {y, 1}}.
-    {move, {y, 1}, {x, 0}}.
-    {test, is_map, {f, 8}, [{x, 0}]}.
-    {get_map_elements, {f, 8}, {x, 0}, {list, [{atom, fields}, {x, 0}]}}.
-  {label, 8}.
-    {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
+    {move, {literal, <<"Record">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
-    {move, {literal, <<"~p~n">>}, {x, 0}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 1}, nil, {x, 1}}.
-    {call_ext, 2, {extfunc, io, format, 2}}.
+    {move, {literal, <<"Fn">>}, {x, 0}}.
+    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 2, {list, [{atom, 'Record'}, {x, 1}, {atom, 'Fn'}, {x, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_map, {f, 8}, [{x, 0}]}.
+    {get_map_elements, {f, 8}, {x, 0}, {list, [{atom, 'Record'}, {x, 0}]}}.
+  {label, 8}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {literal, <<"Service">>}, {x, 0}}.
+    {move, {x, 0}, {x, 2}}.
+    {move, nil, {x, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {literal, <<"x">>}, {x, 0}}.
+    {move, {x, 0}, {x, 3}}.
+    {move, {literal, <<"i32">>}, {x, 0}}.
+    {move, {x, 0}, {x, 4}}.
+    {move, nil, {x, 0}}.
+    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 5, {list, [{atom, name}, {x, 3}, {atom, typeName}, {x, 4}, {atom, annotations}, {x, 0}]}}.
+    {move, {y, 1}, {x, 3}}.
+    {test_heap, 2, 4}.
+    {put_list, {x, 0}, {x, 3}, {x, 0}}.
+    {move, {x, 0}, {x, 3}}.
+    {move, nil, {x, 0}}.
+    {move, {x, 0}, {x, 4}}.
+    {move, {literal, <<"">>}, {x, 0}}.
+    {move, {x, 0}, {x, 5}}.
+    {move, nil, {x, 0}}.
+    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 6, {list, [{atom, kind}, {x, 1}, {atom, name}, {x, 2}, {atom, fields}, {x, 3}, {atom, methods}, {x, 4}, {atom, returnType}, {x, 5}, {atom, annotations}, {x, 0}]}}.
+    {move, {x, 0}, {y, 2}}.
+    {move, {y, 2}, {x, 0}}.
+    {test, is_map, {f, 9}, [{x, 0}]}.
+    {get_map_elements, {f, 9}, {x, 0}, {list, [{atom, fields}, {x, 0}]}}.
+  {label, 9}.
+    {gc_bif, length, {f, 0}, 1, [{x, 0}], {x, 0}}.
+    {test_heap, 2, 1}.
+    {put_list, {x, 0}, nil, {x, 0}}.
+    {call, 1, {f, 11}}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 3}.
     return.
@@ -54,8 +77,65 @@ fn main() {
     {func_info, {atom, main}, {atom, main}, 1}.
   {label, 7}.
     {call_only, 0, {f, 5}}.
+
+{function, '__bp_print', 1, 11}.
+  {label, 10}.
+    {line, [{location, "main.erl", 2}]}.
+    {func_info, {atom, main}, {atom, '__bp_print'}, 1}.
+  {label, 11}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {call, 1, {f, 13}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, io, format, 2}, 1}.
+
+{function, '__bp_print_fmt', 1, 13}.
+  {label, 12}.
+    {line, [{location, "main.erl", 2}]}.
+    {func_info, {atom, main}, {atom, '__bp_print_fmt'}, 1}.
+  {label, 13}.
+    {test, is_nonempty_list, {f, 16}, [{x, 0}]}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {get_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 1}, {y, 0}}.
+    {call, 1, {f, 15}}.
+    {test, is_binary, {f, 17}, [{y, 0}]}.
+    {test_heap, 6, 1}.
+    {put_list, {integer, 115}, {x, 0}, {x, 0}}.
+    {put_list, {integer, 116}, {x, 0}, {x, 0}}.
+    {put_list, {integer, 126}, {x, 0}, {x, 0}}.
+    {deallocate, 1}.
+    return.
+  {label, 17}.
+    {test_heap, 4, 1}.
+    {put_list, {integer, 112}, {x, 0}, {x, 0}}.
+    {put_list, {integer, 126}, {x, 0}, {x, 0}}.
+    {deallocate, 1}.
+    return.
+  {label, 16}.
+    {move, {literal, [126, 110]}, {x, 0}}.
+    return.
+
+{function, '__bp_print_sep', 1, 15}.
+  {label, 14}.
+    {line, [{location, "main.erl", 2}]}.
+    {func_info, {atom, main}, {atom, '__bp_print_sep'}, 1}.
+  {label, 15}.
+    {test, is_nonempty_list, {f, 18}, [{x, 0}]}.
+    {allocate, 0, 1}.
+    {call, 1, {f, 13}}.
+    {test_heap, 2, 1}.
+    {put_list, {integer, 32}, {x, 0}, {x, 0}}.
+    {deallocate, 0}.
+    return.
+  {label, 18}.
+    {move, {literal, [126, 110]}, {x, 0}}.
+    return.
 ```
 
 ----- RUN LOG -----
 ```logs
+1
 ```

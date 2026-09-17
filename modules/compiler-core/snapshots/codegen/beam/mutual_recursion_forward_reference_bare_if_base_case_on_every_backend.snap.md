@@ -45,8 +45,6 @@ fn isOdd(n: i32) -> bool {
     return.
   {label, 12}.
     {gc_bif, '-', {f, 0}, 0, [{y, 0}, {integer, 1}], {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {x, 1}, {x, 0}}.
     {call_last, 1, {f, 7}, 1}.
 
 {function, isOdd, 1, 7}.
@@ -63,8 +61,6 @@ fn isOdd(n: i32) -> bool {
     return.
   {label, 13}.
     {gc_bif, '-', {f, 0}, 0, [{y, 0}, {integer, 1}], {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {x, 1}, {x, 0}}.
     {call_last, 1, {f, 5}, 1}.
 
 {function, '_botopink_main', 0, 9}.

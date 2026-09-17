@@ -27,17 +27,9 @@ fn arrayEq() -> bool {
   {label, 3}.
     {allocate, 2, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
-    {move, {integer, 1}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {integer, 2}, {x, 0}}.
-    {move, {x, 0}, {x, 2}}.
-    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 3, {list, [{atom, x}, {x, 1}, {atom, y}, {x, 2}]}}.
+    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 0, {list, [{atom, x}, {integer, 1}, {atom, y}, {integer, 2}]}}.
     {move, {x, 0}, {y, 0}}.
-    {move, {integer, 1}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {integer, 2}, {x, 0}}.
-    {move, {x, 0}, {x, 2}}.
-    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 3, {list, [{atom, x}, {x, 1}, {atom, y}, {x, 2}]}}.
+    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 0, {list, [{atom, x}, {integer, 1}, {atom, y}, {integer, 2}]}}.
     {move, {x, 0}, {y, 1}}.
     {test, is_eq, {f, 6}, [{y, 0}, {y, 1}]}.
     {move, {atom, true}, {x, 0}}.

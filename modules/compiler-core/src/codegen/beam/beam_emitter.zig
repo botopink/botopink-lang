@@ -389,6 +389,20 @@ pub fn writeGcBif(w: *Writer, bif: GcBif, live: usize, args: []const Operand, ds
     try closeInstr(w);
 }
 
+/// `{bif, Name, {f, Fail}, [Args…], Dst}.` — a guard BIF that neither
+/// allocates nor frees any register (`element`, `tuple_size`, …). `fail` 0
+/// raises on a bad argument instead of branching.
+pub fn writeBif(w: *Writer, name: []const u8, fail: usize, args: []const Operand, dst: Dest) Error!void {
+    try openInstr(w, "bif");
+    try w.writeAll(", ");
+    try erl.writeAtom(w, name);
+    try writeField(w, Operand.lbl(fail));
+    try w.writeAll(", ");
+    try writeArgList(w, args);
+    try writeField(w, dst.operand());
+    try closeInstr(w);
+}
+
 fn callName(kind: CallKind, comptime base: []const u8) []const u8 {
     return switch (kind) {
         .normal => base,
@@ -420,15 +434,34 @@ pub fn writeCall(w: *Writer, kind: CallKind, arity: usize, callee: Callee, num_y
     try closeInstr(w);
 }
 
+/// `{'try', {y, Tag}, {f, Catch}}.` — open a catch section whose tag lives in
+/// `{y, Tag}`; a raise inside it jumps to `Catch`.
+pub fn writeTry(w: *Writer, tag_y: usize, catch_label: usize) Error!void {
+    try w.print("    {{'try', {{y, {d}}}, {{f, {d}}}}}.\n", .{ tag_y, catch_label });
+}
+
+/// `{try_end, {y, Tag}}.` — the section completed without a raise.
+pub fn writeTryEnd(w: *Writer, tag_y: usize) Error!void {
+    try w.print("    {{try_end, {{y, {d}}}}}.\n", .{tag_y});
+}
+
+/// `{try_case, {y, Tag}}.` — first instruction at a catch label.
+pub fn writeTryCase(w: *Writer, tag_y: usize) Error!void {
+    try w.print("    {{try_case, {{y, {d}}}}}.\n", .{tag_y});
+}
+
 /// `{call_fun, Arity}.` — the fun sits in `{x, Arity}`.
 pub fn writeCallFun(w: *Writer, arity: usize) Error!void {
     try w.print("    {{call_fun, {d}}}.\n", .{arity});
 }
 
-/// `{make_fun3, {f, L}, 0, 0, {x, 0}, {list, []}}.` — `make_fun2` is rejected
-/// by `erlc +from_asm`.
-pub fn writeMakeFun3(w: *Writer, label: usize) Error!void {
-    try w.print("    {{make_fun3, {{f, {d}}}, 0, 0, {{x, 0}}, {{list, []}}}}.\n", .{label});
+/// `{make_fun3, {f, L}, 0, 0, {x, 0}, {list, [Env…]}}.` — `make_fun2` is
+/// rejected by `erlc +from_asm`. `env` is the captured free variables, passed
+/// to the fun's function after its own parameters.
+pub fn writeMakeFun3(w: *Writer, label: usize, env: []const Operand) Error!void {
+    try w.print("    {{make_fun3, {{f, {d}}}, 0, 0, {{x, 0}}, {{list, ", .{label});
+    try writeArgList(w, env);
+    try w.writeAll("}}.\n");
 }
 
 /// `{put_list, Head, Tail, Dst}.`

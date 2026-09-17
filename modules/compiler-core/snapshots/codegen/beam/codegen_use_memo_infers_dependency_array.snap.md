@@ -68,28 +68,29 @@ fn Counter() -> Element {
     {move, {atom, undefined}, {y, 1}}.
   {label, 9}.
     {move, {x, 1}, {x, 0}}.
-    {move, nil, {x, 0}}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 1}.
-    {make_fun3, {f, 13}, 0, 0, {x, 0}, {list, []}}.
+    {test_heap, {alloc, [{words, 1}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 13}, 0, 0, {x, 0}, {list, [{y, 0}]}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 1}, {x, 0}}.
-    %% unresolved local call: memo/1
+    %% unresolved_call: memo/1
+    {move, {literal, {unresolved_call, memo, 1}}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
     {move, {x, 0}, {y, 2}}.
     {move, {literal, #{}}, {x, 0}}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 3}.
     return.
 
-{function, '-Counter/0-fun-0-', 0, 13}.
+{function, '-Counter/0-fun-0-', 1, 13}.
   {label, 12}.
     {line, [{location, "main.erl", 4}]}.
-    {func_info, {atom, main}, {atom, '-Counter/0-fun-0-'}, 0}.
+    {func_info, {atom, main}, {atom, '-Counter/0-fun-0-'}, 1}.
   {label, 13}.
-    {allocate, 0, 0}.
-    {move, {atom, count}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {gc_bif, '*', {f, 0}, 2, [{x, 1}, {integer, 2}], {x, 0}}.
-    {deallocate, 0}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {gc_bif, '*', {f, 0}, 0, [{y, 0}, {integer, 2}], {x, 0}}.
+    {deallocate, 1}.
     return.
 ```
 

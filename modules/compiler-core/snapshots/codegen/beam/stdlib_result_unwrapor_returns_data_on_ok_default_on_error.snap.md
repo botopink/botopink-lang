@@ -36,8 +36,6 @@ fn main() {
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {literal, <<"42">>}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {x, 1}, {x, 0}}.
     {call, 1, {f, 3}}.
     {test, is_tagged_tuple, {f, 10}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.

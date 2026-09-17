@@ -54,8 +54,6 @@ val txt = box("hi");
     {move, {y, 0}, {x, 1}}.
     {test_heap, 2, 2}.
     {put_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {x, 1}, {x, 0}}.
     {call, 1, {f, 5}}.
     {deallocate, 1}.
     return.
@@ -67,8 +65,6 @@ val txt = box("hi");
   {label, 9}.
     {allocate, 0, 0}.
     {call, 0, {f, 3}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {x, 1}, {x, 0}}.
     {call, 1, {f, 5}}.
     {deallocate, 0}.
     return.
@@ -80,8 +76,6 @@ val txt = box("hi");
   {label, 11}.
     {allocate, 0, 0}.
     {move, {literal, <<"hi">>}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {x, 1}, {x, 0}}.
     {call, 1, {f, 5}}.
     {deallocate, 0}.
     return.

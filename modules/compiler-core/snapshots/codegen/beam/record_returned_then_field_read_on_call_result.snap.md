@@ -22,13 +22,7 @@ fn lineNo() -> i32 {
     {func_info, {atom, main}, {atom, span}, 0}.
   {label, 3}.
     {allocate, 0, 0}.
-    {move, {integer, 4}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {integer, 9}, {x, 0}}.
-    {move, {x, 0}, {x, 2}}.
-    {move, {integer, 2}, {x, 0}}.
-    {move, {x, 0}, {x, 3}}.
-    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 4, {list, [{atom, start}, {x, 1}, {atom, 'end'}, {x, 2}, {atom, line}, {x, 3}]}}.
+    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 0, {list, [{atom, start}, {integer, 4}, {atom, 'end'}, {integer, 9}, {atom, line}, {integer, 2}]}}.
     {deallocate, 0}.
     return.
 

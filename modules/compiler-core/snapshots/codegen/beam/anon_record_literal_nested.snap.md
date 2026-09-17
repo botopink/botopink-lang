@@ -20,8 +20,8 @@ fn make() -> i32 {
   {label, 3}.
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
-    %% unsupported: record literal
-    {move, {atom, undefined}, {x, 0}}.
+    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 0, {list, [{atom, start}, {integer, 1}, {atom, 'end'}, {integer, 2}]}}.
+    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 1, {list, [{atom, span}, {x, 0}, {atom, kind}, {integer, 3}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {deallocate, 1}.

@@ -24,11 +24,8 @@ fn validate(x: i32) {
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {test, is_lt, {f, 4}, [{y, 0}, {integer, 0}]}.
-    {move, {integer, 400}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"negative">>}, {x, 0}}.
-    {move, {x, 0}, {x, 2}}.
-    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 3, {list, [{atom, code}, {x, 1}, {atom, msg}, {x, 2}]}}.
+    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 1, {list, [{atom, code}, {integer, 400}, {atom, msg}, {x, 0}]}}.
     {call_ext_only, 1, {extfunc, erlang, throw, 1}}.
     {jump, {f, 5}}.
   {label, 4}.

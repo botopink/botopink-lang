@@ -1,18 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val pi2 = comptime {
-    break 3.14 * 2.0;
-};
 fn main() {
-    @print(pi2);
+    assert 1 + 1 == 2, "arithmetic";
+    @print("after");
 }
-```
-
------ COMPTIME VALUES -- main
-```text
-ct_0: val pi2 = comptime {
-          break 3.14 * 2.0;
-      } → 6.28
 ```
 
 ----- BEAM ASSEMBLY -- main.S
@@ -22,23 +13,25 @@ ct_0: val pi2 = comptime {
 {attributes, []}.
 {labels, 19}.
 
-{function, pi2, 0, 3}.
+{function, main, 0, 3}.
   {label, 2}.
     {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, pi2}, 0}.
+    {func_info, {atom, main}, {atom, main}, 0}.
   {label, 3}.
     {allocate, 0, 0}.
-    {gc_bif, '*', {f, 0}, 0, [{float, 3.14}, {float, 2.0}], {x, 0}}.
-    {deallocate, 0}.
-    return.
-
-{function, main, 0, 5}.
-  {label, 4}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, main}, 0}.
-  {label, 5}.
-    {allocate, 0, 0}.
-    {call, 0, {f, 3}}.
+    {gc_bif, '+', {f, 0}, 0, [{integer, 1}, {integer, 1}], {x, 0}}.
+    {test, is_eq, {f, 8}, [{x, 0}, {integer, 2}]}.
+    {jump, {f, 9}}.
+  {label, 8}.
+    {move, {literal, <<"arithmetic">>}, {x, 0}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {literal, <<"main.bp:2">>}, {x, 2}}.
+    {test_heap, 4, 3}.
+    {put_tuple2, {x, 0}, {list, [{atom, bp_assert}, {x, 1}, {x, 2}]}}.
+    {call_ext, 1, {extfunc, erlang, error, 1}}.
+  {label, 9}.
+    {move, {atom, ok}, {x, 0}}.
+    {move, {literal, <<"after">>}, {x, 0}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 11}}.
@@ -46,23 +39,23 @@ ct_0: val pi2 = comptime {
     {deallocate, 0}.
     return.
 
-{function, '_botopink_main', 0, 7}.
+{function, '_botopink_main', 0, 5}.
+  {label, 4}.
+    {line, [{location, "main.erl", 2}]}.
+    {func_info, {atom, main}, {atom, '_botopink_main'}, 0}.
+  {label, 5}.
+    {call_only, 0, {f, 3}}.
+
+{function, main, 1, 7}.
   {label, 6}.
     {line, [{location, "main.erl", 3}]}.
-    {func_info, {atom, main}, {atom, '_botopink_main'}, 0}.
+    {func_info, {atom, main}, {atom, main}, 1}.
   {label, 7}.
     {call_only, 0, {f, 5}}.
 
-{function, main, 1, 9}.
-  {label, 8}.
-    {line, [{location, "main.erl", 4}]}.
-    {func_info, {atom, main}, {atom, main}, 1}.
-  {label, 9}.
-    {call_only, 0, {f, 7}}.
-
 {function, '__bp_print', 1, 11}.
   {label, 10}.
-    {line, [{location, "main.erl", 3}]}.
+    {line, [{location, "main.erl", 2}]}.
     {func_info, {atom, main}, {atom, '__bp_print'}, 1}.
   {label, 11}.
     {allocate, 1, 1}.
@@ -74,7 +67,7 @@ ct_0: val pi2 = comptime {
 
 {function, '__bp_print_fmt', 1, 13}.
   {label, 12}.
-    {line, [{location, "main.erl", 3}]}.
+    {line, [{location, "main.erl", 2}]}.
     {func_info, {atom, main}, {atom, '__bp_print_fmt'}, 1}.
   {label, 13}.
     {test, is_nonempty_list, {f, 16}, [{x, 0}]}.
@@ -102,7 +95,7 @@ ct_0: val pi2 = comptime {
 
 {function, '__bp_print_sep', 1, 15}.
   {label, 14}.
-    {line, [{location, "main.erl", 3}]}.
+    {line, [{location, "main.erl", 2}]}.
     {func_info, {atom, main}, {atom, '__bp_print_sep'}, 1}.
   {label, 15}.
     {test, is_nonempty_list, {f, 18}, [{x, 0}]}.
@@ -119,5 +112,5 @@ ct_0: val pi2 = comptime {
 
 ----- RUN LOG -----
 ```logs
-6.28
+after
 ```
