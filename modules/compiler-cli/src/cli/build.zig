@@ -144,6 +144,8 @@ pub fn reportDependencyError(err: anyerror) void {
         },
         error.LibNotFound => reporter.hintMsg("libraries resolve from BOTOPINK_LIB_ROOTS, then <ancestor>/repository/botopink-lang/libs, <ancestor>/repository and <ancestor>/libs, then .botopinkbuild/deps (`bpmp install`)"),
         error.LibManifestInvalid => reporter.errMsg("a dependency's botopink.json is invalid"),
+        // Already rendered with the path and the manifest line.
+        error.LibFileNotFound => {},
         else => reporter.errMsg("failed to load project dependencies"),
     }
 }

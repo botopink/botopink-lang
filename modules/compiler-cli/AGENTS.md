@@ -154,7 +154,11 @@ Cross-command rules:
   executes (`codegen.generate`, which sets the flag). Pinned by
   `tests/cli_contract.sh`.
 - **Dependencies.** A missing dependency is named (`dependency 'server' was not
-  found under any library root`).
+  found under any library root`). A dependency's `files` entry that cannot be
+  read is `LibFileNotFound`: `libs.loadOne` prints the path it looked for,
+  located at the entry in the dependency's `botopink.json`
+  (`--> <lib>/botopink.json:L:C`), and the commands add nothing after it.
+  Pinned by `tests/cli_contract.sh`.
 
 Open (not the CLI's files):
 

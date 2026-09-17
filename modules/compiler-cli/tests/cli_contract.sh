@@ -218,6 +218,24 @@ codes=""
 for cmd in build check test; do run "$P" "$cmd"; codes="$codes$CODE"; done
 [[ "$codes" == "000" ]] && ok "healthy tree: all three exit 0" || fail "healthy tree: build/check/test exited $codes"
 
+# ── a dependency's missing `files` entry is named, with the manifest line ────
+echo "==> a missing files entry of a dependency names the path and the manifest entry"
+P="$(project missingfile)"
+printf '{ "name": "missingfile", "version": "0.1.0", "target": "commonJS", "dependencies": ["gonelib"] }\n' >"$P/botopink.json"
+printf '%s' "$MAIN_OK" >"$P/src/main.bp"
+LIBROOT="$WORK/libroot"; mkdir -p "$LIBROOT/gonelib/src"
+printf '{ "name": "gonelib",\n  "src": "src/",\n  "files": ["gonelib.bp", "gone.bp"] }\n' >"$LIBROOT/gonelib/botopink.json"
+printf 'pub fn g() -> i32 {\n    return 1;\n}\n' >"$LIBROOT/gonelib/src/gonelib.bp"
+for cmd in build check test; do
+  set +e
+  OUT="$(cd "$P" && BOTOPINK_LIB_ROOTS="$LIBROOT" "$BP" "$cmd" 2>&1)"
+  CODE=$?
+  set -e
+  expect_code 1 "$cmd with a missing files entry"
+  expect_out "gonelib/src/gone.bp does not exist" "$cmd names the path it looked for"
+  expect_out "gonelib/botopink.json:3:27" "$cmd locates the manifest entry"
+done
+
 # ── C8 — migrate --dry-run writes nothing, wherever the flag appears ─────────
 echo "==> C8 migrate --dry-run writes nothing"
 P="$(project c8)"
