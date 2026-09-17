@@ -300,3 +300,20 @@ test "lexer: lexicalErrorMessage for InvalidUnicodeEscape InvalidCodepoint" {
             std.mem.indexOf(u8, msg, "Codepoint") != null,
     );
 }
+
+test "parser: $self in an External template names the positional marker" {
+    try h.expectParseError(std.testing.allocator,
+        \\error[template-self-marker]: `$self` is not a template marker
+        \\ --> <test>:1:18
+        \\  |
+        \\1 | #[@External.Node("$self.trim()")]
+        \\  |                  ^^^^^^^^^^^^^^ use `$0`
+        \\  |
+        \\  = hint: Markers are positional over the declared parameters: on a method `$0` is `self`, `$1` the next parameter.
+        \\
+        \\
+    ,
+        \\#[@External.Node("$self.trim()")]
+        \\declare fn trim(self: string) -> string;
+    );
+}

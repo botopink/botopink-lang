@@ -152,14 +152,15 @@ pub behavior Annotation {
 //
 // One variant per target. The single `template` string is interpreted by the
 // codegen renderer (`comptime/primOpTemplate.zig`): if it contains `$`, it's a
-// template with substitution markers (`$self`/`$0`/`$1`/`$stringify(...)`);
+// template with positional markers over the declared parameters (`$0` is `self`
+// on a method, then `$1`, … — decision 5) and `$stringify(...)`;
 // otherwise it's a bare host symbol (`"mod:sym"`/`"propertyName"`) the backend
 // wraps as `mod:sym(args, self)` or `recv.propertyName(args)`.
 //
 // Usage:
 //
-//   #[External.Erlang("lists:member($0, $self)"),
-//     External.Node("$self.includes($0)")]
+//   #[External.Erlang("lists:member($1, $0)"),
+//     External.Node("$0.includes($1)")]
 //   fn contains(self: Array<T>, x: T) -> bool
 //
 // The `inline` flag opts a `(target, method)` pair out of the dispatch table

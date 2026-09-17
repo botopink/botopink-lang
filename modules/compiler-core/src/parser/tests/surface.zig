@@ -10,6 +10,7 @@ const lexerMod = @import("../../lexer.zig");
 const parserMod = @import("../../parser.zig");
 const ast = @import("../../ast.zig");
 const pretty = @import("../../utils/pretty.zig");
+const receiver_marker = @import("../../comptime/primOpTemplate.zig").receiver_marker;
 
 const ParseErrorType = parserMod.ParseErrorType;
 
@@ -346,4 +347,36 @@ test "surface: old interface bodies keep their lenient separators" {
     defer parsed.deinit();
     const b = try onlyBehavior(parsed);
     try std.testing.expectEqual(@as(usize, 2), b.methods.len);
+}
+
+// ── template markers (decision 5) ─────────────────────────────────────────────
+
+test "surface: $self in an External template is template-self-marker" {
+    try expectError(
+        \\behavior S {
+        \\    #[@External.Erlang("string:trim($self)")]
+        \\    fn trim(self: Self) -> Self;
+        \\}
+    , .templateSelfMarker, 2, 24);
+}
+
+test "surface: a marker past the declared parameters is template-marker-out-of-range" {
+    try expectError(
+        \\#[@External.Node("f($0, $1)")]
+        \\declare fn one(x: i32) -> i32;
+    , .templateMarkerOutOfRange, 1, 18);
+}
+
+test "surface: a method's $0 is self and $1 its first argument" {
+    var parsed = try parse(
+        \\behavior S {
+        \\    #[@External.Erlang("lists:member($1, $0)")]
+        \\    fn has(self: Self, x: i32) -> bool;
+        \\}
+    );
+    defer parsed.deinit();
+    const b = try onlyBehavior(parsed);
+    const ann = b.methods[0].annotations[0];
+    try std.testing.expectEqualStrings("\"lists:member($1, $0)\"", ann.writtenArgs()[0]);
+    try std.testing.expectEqualStrings("\"lists:member($0, " ++ receiver_marker ++ ")\"", ann.args[0]);
 }

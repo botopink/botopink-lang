@@ -159,6 +159,18 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "add `;`",
             .hint = "Write `fn name(self: Self) -> T;` or `val name: T;`.",
         },
+        .templateSelfMarker => .{
+            .code = "template-self-marker",
+            .message = "`$self` is not a template marker",
+            .caretCaption = "use `$0`",
+            .hint = "Markers are positional over the declared parameters: on a method `$0` is `self`, `$1` the next parameter.",
+        },
+        .templateMarkerOutOfRange => .{
+            .code = "template-marker-out-of-range",
+            .message = "a template marker names a parameter the declaration does not have",
+            .caretCaption = "past the last parameter",
+            .hint = "`$0` is the first declared parameter; the highest marker is one less than the parameter count.",
+        },
         .fnParamPositionalAfterNamed => .{
             .message = "fn-param-positional-after-named: positional argument supplied after a named one.",
             .hint = "Convert the trailing positional arg to a named one (`name: value`), or move the named argument to the end of the call.",

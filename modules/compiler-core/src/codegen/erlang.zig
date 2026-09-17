@@ -1446,7 +1446,7 @@ const Emitter = struct {
     externals_missing: std.StringHashMap(void),
     /// §A2 user-fn per-callee template dispatch (erlang twin of the
     /// commonJS `user_node_templates`): a `declare fn` whose
-    /// `@external(erlang, …)` symbol is a template (contains `$0`/`$self`/…)
+    /// `@external(erlang, …)` symbol is a template (contains `$0`/`$1`/…)
     /// or whose annotation list carries `when(argc == N): "..."` branches.
     /// The decl emits no `module:symbol` reference at the top level — the
     /// template renders inline at every call site, matching how the
@@ -1813,9 +1813,9 @@ const Emitter = struct {
     /// A bare call to a std prelude `declare fn` whose `@External.Erlang` symbol
     /// is a template (`stringSlice1(self, start, end)` →
     /// `string:slice(Self, Start, (End - Start))`). The declaration's first
-    /// parameter is named `self`, so the template's `$self` marker is the call's
+    /// parameter is named `self`, so the template's receiver marker (the source's `$0`) is the call's
     /// FIRST positional argument and `$N` the (N+1)-th — unlike a method call,
-    /// where `$self` is the receiver. Null when the callee has no template.
+    /// where the receiver marker is the receiver. Null when the callee has no template.
     fn preludeHelperNode(this: *Emitter, b: Ast.Builder, callee: []const u8, cc: anytype) anyerror!?Ast.Expr {
         const call = this.builtin_erlang_dispatch.get(callee) orelse return null;
         if (cc.args.len == 0) return null;
@@ -1838,9 +1838,9 @@ const Emitter = struct {
     }
 
     /// A host template (`comptime/primOpTemplate.zig`) as a `seq` node: the
-    /// template text is kept verbatim around the receiver (`$self`) and argument
+    /// template text is kept verbatim around the receiver and argument
     /// (`$N`, `$args`) nodes. `no_recv` is raised when the template names
-    /// `$self` but the call has no receiver.
+    /// the receiver but the call has no receiver.
     fn templateNode(this: *Emitter, b: Ast.Builder, template: []const u8, recv: ?*const ast.Expr, cc: anytype, no_recv: anyerror) anyerror!Ast.Expr {
         const Ctx = struct {
             self: *Emitter,
@@ -1993,7 +1993,7 @@ const Emitter = struct {
             }
             // `prim-op-annotation` template form: a `$`-bearing symbol is a raw
             // template body — store it verbatim and skip `parseExternalCallTemplate`
-            // (which would interpret `($self ++ $0)` as a `f(arg)` shape with an
+            // (which would interpret `($0 ++ $1)` as a `f(arg)` shape with an
             // empty head and one bogus arg). `primAnnotationNode` runs the same
             // `looksLikeTemplate` discriminator and renders via
             // `comptime/primOpTemplate.zig`.
@@ -2034,7 +2034,8 @@ const Emitter = struct {
             if (this.prim_erlang_dispatch.get(key)) |hit| break hit;
         } else return null;
         // Arity-branched (`when($argc == N): "…"`) or single-string template:
-        // `$self` ⇒ the receiver, `$N` ⇒ the N-th argument. An arity-branched
+        // The receiver marker ⇒ the receiver, `$N` ⇒ the N-th argument (the
+        // parser translated the source's positional markers, decision 5). An arity-branched
         // annotation with no branch for this argument count falls through.
         if (call.arity_branches.len > 0 or primOpTemplate.looksLikeTemplate(call.symbol)) {
             const template = templateFor(call, cc) orelse return null;

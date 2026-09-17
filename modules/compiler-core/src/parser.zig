@@ -10,6 +10,7 @@ const types = @import("parser/types.zig");
 const patterns = @import("parser/patterns.zig");
 const decl_grammar = @import("parser/decls.zig");
 const exprs = @import("parser/exprs.zig");
+const template_markers = @import("parser/template_markers.zig");
 
 pub const Token = token.Token;
 pub const TokenKind = token.TokenKind;
@@ -134,6 +135,11 @@ pub const ParseErrorType = enum {
     /// A bodyless member of a `behavior` (`fn f(self: Self) -> i32`, `val x: T`)
     /// without its terminating `;`.
     memberMissingSemicolon,
+    /// `$self` in an `@External` template: markers are positional (decision 5),
+    /// `$0` is the first declared parameter — `self` on a method.
+    templateSelfMarker,
+    /// `$N` in an `@External` template past the declaration's parameters.
+    templateMarkerOutOfRange,
 };
 
 pub const ParseErrorInfo = struct {
@@ -295,12 +301,26 @@ pub const Parser = struct {
         // an expression (`print((1);`) does not, so record the token the
         // parser stopped on — callers render the location instead of a bare
         // error name.
-        return this.parseDecls(alloc) catch |err| {
+        var program = this.parseDecls(alloc) catch |err| {
             if (err == ParseError.UnexpectedToken and this.parseError == null) {
                 this.parseError = ParseErrorInfo.fromToken(.unexpectedToken, this.peek());
             }
             return err;
         };
+        // Decision 5: positional `@External` template markers, translated for
+        // the renderers; `$self` and an out-of-range `$N` are refused here.
+        if (template_markers.normalizeProgram(alloc, this.tokens, &program) catch |err| {
+            program.deinit(alloc);
+            return err;
+        }) |failure| {
+            program.deinit(alloc);
+            this.parseError = ParseErrorInfo.fromToken(switch (failure.kind) {
+                .selfMarker => .templateSelfMarker,
+                .indexOutOfRange => .templateMarkerOutOfRange,
+            }, failure.tok);
+            return ParseError.UnexpectedToken;
+        }
+        return program;
     }
 
     fn parseDecls(this: *This, alloc: std.mem.Allocator) ParseError!Program {
@@ -786,7 +806,7 @@ pub const Parser = struct {
                 // `prim-op-annotation` arity-branch label: `when($argc == N): "..."`
                 // is recognised before label-strip and spans through balanced parens
                 // + the `:` separator + the value, landing as one arg lexeme
-                // (`when($argc == 1): "lists:nthtail($0, $self)"`). Readers
+                // (`when($argc == 1): "lists:nthtail($1, $0)"`). Readers
                 // (`ast.externalArityBranchFor`) detect the `when(` prefix.
                 if (this.check(.identifier) and
                     std.mem.eql(u8, this.peek().lexeme, "when") and
@@ -1340,4 +1360,8 @@ pub fn printListSpreadError(err: ListSpreadError, path: []const u8, line: usize,
     stderr.print(" {s}\n\n", .{msgs.message}) catch return;
     for (0..lineW + 1) |_| stderr.writeByte(' ') catch return;
     stderr.print("hint: {s}\n\n", .{msgs.hint}) catch return;
+}
+
+test {
+    _ = template_markers;
 }

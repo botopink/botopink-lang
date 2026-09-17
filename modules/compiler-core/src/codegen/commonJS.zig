@@ -664,7 +664,7 @@ fn HostTemplate(comptime Holes: type) type {
     };
 }
 
-/// Holes filled from a call site's argument expressions. `$self` has no
+/// Holes filled from a call site's argument expressions. The receiver marker has no
 /// meaning there — a template with a receiver marker is a declaration error.
 fn CallHoles(comptime CC: type) type {
     return struct {
@@ -681,7 +681,7 @@ fn CallHoles(comptime CC: type) type {
     };
 }
 
-/// Holes filled from a prototype method's parameters: `$self` is the receiver
+/// Holes filled from a prototype method's parameters: the receiver marker is the receiver
 /// (unwrapped for a boxed primitive) and `$N` the Nth parameter.
 const MethodHoles = struct {
     params: []const ast.Param,
@@ -712,7 +712,7 @@ const LoopCtx = union(enum) {
 };
 
 /// Holes filled from a wrapper function's own parameters: `$N` is the Nth
-/// declared parameter, or `arguments[N]` past the declared list; `$self` has
+/// declared parameter, or `arguments[N]` past the declared list; the receiver marker has
 /// no meaning in a plain function.
 const ParamHoles = struct {
     b: js.Builder,
@@ -845,7 +845,7 @@ const Emitter = struct {
     /// `builtins.d.bp` with `@external(node, …)`. Keyed by callee name.
     builtin_node_dispatch: std.StringHashMap(BuiltinNodeCall),
     /// §A2 user-fn per-callee template dispatch (node): a `declare fn`
-    /// whose `@external(node, "<template>")` symbol contains `$0`/`$self`/…
+    /// whose `@external(node, "<template>")` symbol contains `$0`/`$1`/…
     /// or whose annotation list carries `when(argc == N): "..."` branches
     /// renders at the call site instead of being aliased at the decl
     /// (the `const fn = Mod.method;` shape strips the receiver, so chained
@@ -1109,7 +1109,7 @@ const Emitter = struct {
 
     /// Indexes every `@[external(…)]` fn by name: with a `node` target it
     /// goes to `externals` (alias form: `const fn = require(…);`) or
-    /// `user_node_templates` (§A2 template form: `$0`/`$self`/… or
+    /// `user_node_templates` (§A2 template form: `$0`/`$1`/… or
     /// `when(argc == N)` branches — rendered at each call site instead of
     /// aliased); without a node target it goes to `externals_missing` (so a
     /// call can fail with a clear error instead of an undefined identifier).
@@ -1385,7 +1385,7 @@ const Emitter = struct {
     /// `function name(params) { return <template>; }` for a `pub` template
     /// external: the template's `$N` holes are the declared parameters. An
     /// arity-branched template tests `arguments.length` per branch. Null when
-    /// the template names a receiver (`$self`), which a plain function has not.
+    /// the template names a receiver (its `self` parameter), which a plain function has not.
     fn buildTemplateWrapper(self: *Emitter, f: ast.FnDecl, call: BuiltinNodeCall) !?js.Stmt {
         var names: std.ArrayListUnmanaged([]const u8) = .empty;
         var params: std.ArrayListUnmanaged(js.Param) = .empty;
@@ -1699,7 +1699,7 @@ const Emitter = struct {
             else
                 null;
             if (node_ref) |ref| {
-                // Template-form annotation (`$self`/`$0`/… markers): render the
+                // Template-form annotation (`$0`/`$1`/… markers): render the
                 // template into a prototype-method body so `recv.method(args)`
                 // dispatches at runtime without a hand-rolled `lowerXxx` arm.
                 // §F1-commonJS of `prim-op-template-instance-methods` —
@@ -3413,7 +3413,7 @@ const Emitter = struct {
         // Handles both template (`$0.method()`) and module+symbol
         // (`"./mod", "fun"`) forms discovered from primitives.bp +
         // builtins_fns.d.bp. Those are free functions: their templates have
-        // no `$self` hole, so a method call `recv.print()` is never one — it
+        // no receiver hole, so a method call `recv.print()` is never one — it
         // used to render `console.log()` and drop the receiver.
         if (cc.receiver == null and self.builtin_node_dispatch.contains(cc.callee)) {
             if (try self.tryBuiltinAnnotation(cc.callee, cc)) |node| return node;

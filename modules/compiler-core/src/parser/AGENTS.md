@@ -36,6 +36,12 @@ parser/
 │                     the 1.0.3 `type`/`behavior` spellings (front 12 dual grammar): `parseTypeDecl`/`parseShorthandTypeDecl`
 │                     (shared `parseFieldList`, shape resolution, `type-*` diagnostics), `parseBehaviorDecl`/`parseShorthandBehaviorDecl`
 │                     (member separators: bodyless members end with `;` — `member-comma-separator` / `member-missing-semicolon`)
+├── template_markers.zig ← decision 5: `@External` template markers are positional over the declared parameters
+│                     (`$0` is `self` on a method). `Parser.parse` runs `normalizeProgram` once: it translates each
+│                     template to the renderers' receiver convention (`primOpTemplate.receiver_marker`, `$N` shifted;
+│                     `self`-first top-level fns on Erlang/Beam too), keeps the source in `Annotation.source_args`
+│                     (formatter, AST dump), and refuses `$self` / an out-of-range `$N` with a located
+│                     `template-self-marker` / `template-marker-out-of-range`
 ├── exprs.zig      ← expression sub-grammar: precedence climbing, primary/pipeline/local-bind/lambda/loop/range,
 │                     string templates (`${…}` re-scan), tagged calls
 ├── tests.zig      ← barrel: aggregates tests/<feature>.zig for test_root.zig

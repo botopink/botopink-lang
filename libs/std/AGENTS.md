@@ -104,9 +104,8 @@ Targets come from `type Target { Node, Typescript, Erlang, Beam, Wasm }` in
 
 | Marker | Resolution |
 |---|---|
-| `$self` | receiver expression |
-| `$0` … `$N` | N-th positional argument |
-| `$args` | all positional args, comma-separated |
+| `$0` … `$N` | the N-th **declared parameter** — on a method `$0` is `self` (decision 5) |
+| `$args` | every declared parameter, comma-separated (the receiver first on a method) |
 | `$stringify(<inner>)` | text rendering of `<inner>` — Erlang `iolist_to_binary(io_lib:format("~p", [...]))`, Node `JSON.stringify(...)`; unsupported on BEAM/WAT |
 | anything else | passthrough target syntax |
 
@@ -124,9 +123,12 @@ characters `\\n` in the emitted code). The lexer still validates escapes inside
 `"""…"""` — only `\n \r \t \\ \" \0 \$ \u{…}` are accepted, so a JS `\s` fails
 the whole file with an unlocated `LexicalError`.
 
-A template on a `declare fn` names its arguments positionally: commonJS numbers
-them from `$0`, while erlang binds the first parameter of a `primitives.bp`
-helper to `$self` (see `stringSlice0/1`). A template on a behavior method
+Markers are positional over the declared parameters on every target (decision 5):
+`$self` is refused and so is a `$N` past the last parameter, both with a location
+(`template-self-marker`, `template-marker-out-of-range`). The parser maps the
+source form to the renderers' receiver convention (`parser/template_markers.zig`),
+so a helper whose first parameter is `self` (`stringSlice0/1`) reads the same on
+erlang and commonJS. A template on a behavior method
 becomes a `<Owner>.prototype.<m>` patch on commonJS, so it must not call the
 native method of the same name (the patch would call itself), and a
 `default fn` body is patched the same way — `stringSlice*`/`arraySlice*`

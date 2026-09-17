@@ -51,7 +51,7 @@ behavior Signed extends Integer {
 behavior Float extends Number {
     // `float_to_binary/1` prints scientific notation (`1.50000000000000000000e+00`);
     // `short` is the shortest text that reads back as the same float (`1.5`).
-    #[@External.Erlang("float_to_binary($self, [short])"),
+    #[@External.Erlang("float_to_binary($0, [short])"),
       @External.Node("toString")]
     fn toString(self: Self) -> string;
 
@@ -69,7 +69,7 @@ behavior Float extends Number {
 
     // OTP has no `math:round/1`; `floor(x + 0.5)` is `Math.round` (ties round
     // up) and keeps the float type `Self` promises.
-    #[@External.Erlang("math:floor($self + 0.5)"),
+    #[@External.Erlang("math:floor($0 + 0.5)"),
       @External.Node("Math", "round")]
     fn round(self: Self) -> Self;
 
@@ -93,7 +93,7 @@ behavior Bool {
       @External.Node("toString")]
     fn toString(self: Self) -> string;
 
-    #[@External.Erlang("(not $self)")]
+    #[@External.Erlang("(not $0)")]
     default fn negate(self: Self) -> bool {
         return !self;
     }
@@ -126,7 +126,7 @@ behavior String {
     // JS `split("")` answers one element per character. The erlang form
     // matches the empty separator first and cuts the binary into UTF-8
     // codepoints (`"".split("")` answers `[]`, as on JS).
-    #[@External.Erlang("""(fun(__S, <<>>) -> [<<__C/utf8>> || <<__C/utf8>> <= __S]; (__S, __X) -> string:split(__S, __X, all) end)($self, $0)"""),
+    #[@External.Erlang("""(fun(__S, <<>>) -> [<<__C/utf8>> || <<__C/utf8>> <= __S]; (__S, __X) -> string:split(__S, __X, all) end)($0, $1)"""),
       @External.Node("split")]
     fn split(self: Self, sep: string) -> string[];
 
@@ -140,11 +140,11 @@ behavior String {
       @External.Node("toLowerCase")]
     fn toLower(self: Self) -> string;
 
-    #[@External.Erlang("(string:find($self, $0) =/= nomatch)"),
+    #[@External.Erlang("(string:find($0, $1) =/= nomatch)"),
       @External.Node("includes")]
     fn contains(self: Self, sub: string) -> bool;
 
-    #[@External.Erlang("(string:prefix($self, $0) =/= nomatch)"),
+    #[@External.Erlang("(string:prefix($0, $1) =/= nomatch)"),
       @External.Node("startsWith")]
     fn startsWith(self: Self, prefix: string) -> bool;
 
@@ -153,16 +153,16 @@ behavior String {
     // it clamps the start offset to 0 arithmetically (`(D + abs(D)) div 2`);
     // when the suffix is longer than the string the part is the whole string,
     // whose size differs, so the comparison is false.
-    #[@External.Erlang("""(fun(__S, __X) -> __N = byte_size(__S), __M = byte_size(__X), (__M =< __N) andalso (binary:part(__S, __N - __M, __M) =:= __X) end)($self, $0)"""),
-      @External.Beam("""    {gc_bif, byte_size, {f, 0}, 2, [$self], {x, 2}}.
-    {gc_bif, byte_size, {f, 0}, 3, [$0], {x, 3}}.
+    #[@External.Erlang("""(fun(__S, __X) -> __N = byte_size(__S), __M = byte_size(__X), (__M =< __N) andalso (binary:part(__S, __N - __M, __M) =:= __X) end)($0, $1)"""),
+      @External.Beam("""    {gc_bif, byte_size, {f, 0}, 2, [$0], {x, 2}}.
+    {gc_bif, byte_size, {f, 0}, 3, [$1], {x, 3}}.
     {gc_bif, '-', {f, 0}, 4, [{x, 2}, {x, 3}], {x, 3}}.
     {gc_bif, abs, {f, 0}, 4, [{x, 3}], {x, 4}}.
     {gc_bif, '+', {f, 0}, 5, [{x, 3}, {x, 4}], {x, 3}}.
     {gc_bif, 'div', {f, 0}, 4, [{x, 3}, {integer, 2}], {x, 3}}.
     {gc_bif, '-', {f, 0}, 4, [{x, 2}, {x, 3}], {x, 2}}.
-    {gc_bif, binary_part, {f, 0}, 4, [$self, {x, 3}, {x, 2}], {x, 0}}.
-    {bif, '=:=', {f, 0}, [{x, 0}, $0], {x, 0}}."""),
+    {gc_bif, binary_part, {f, 0}, 4, [$0, {x, 3}, {x, 2}], {x, 0}}.
+    {bif, '=:=', {f, 0}, [{x, 0}, $1], {x, 0}}."""),
       @External.Node("endsWith")]
     fn endsWith(self: Self, suffix: string) -> bool;
 
@@ -172,17 +172,17 @@ behavior String {
     fn trim(self: Self) -> string;
 
     // `string:trim/1` strips both ends; `/2` takes the direction.
-    #[@External.Erlang("string:trim($self, leading)"),
+    #[@External.Erlang("string:trim($0, leading)"),
       @External.Node("trimStart")]
     fn trimStart(self: Self) -> string;
 
-    #[@External.Erlang("string:trim($self, trailing)"),
+    #[@External.Erlang("string:trim($0, trailing)"),
       @External.Node("trimEnd")]
     fn trimEnd(self: Self) -> string;
 
     // Replaces the first occurrence, like JS `replace` with a string pattern.
     // `string:replace/3` returns an iolist, so it is flattened to a binary.
-    #[@External.Erlang("iolist_to_binary(string:replace($self, $0, $1))"),
+    #[@External.Erlang("iolist_to_binary(string:replace($0, $1, $2))"),
       @External.Node("replace")]
     fn replace(self: Self, pattern: string, with: string) -> string;
 
@@ -199,13 +199,13 @@ behavior String {
     // says `?string`; a helper that returns `null` needs the commonJS helper
     // mechanism (F8 js-bridges) — a template here would patch the global
     // `String.prototype.charAt`.
-    #[@External.Erlang("""(fun(__S, __I) -> case (__I >= 0) andalso (__I < string:length(__S)) of true -> string:slice(__S, __I, 1); false -> undefined end end)($self, $0)"""),
+    #[@External.Erlang("""(fun(__S, __I) -> case (__I >= 0) andalso (__I < string:length(__S)) of true -> string:slice(__S, __I, 1); false -> undefined end end)($0, $1)"""),
       @External.Node("charAt")]
     fn charAt(self: Self, index: i32) -> ?string;
 
     // `string:str/2` takes charlists and rejects binaries (`function_clause`).
     // `binary:match/2` rejects an empty pattern, which JS finds at 0.
-    #[@External.Erlang("""(fun(__S, __X) -> case __X of <<>> -> 0; _ -> case binary:match(__S, __X) of nomatch -> -1; {__P, _} -> __P end end end)($self, $0)"""),
+    #[@External.Erlang("""(fun(__S, __X) -> case __X of <<>> -> 0; _ -> case binary:match(__S, __X) of nomatch -> -1; {__P, _} -> __P end end end)($0, $1)"""),
       @External.Node("indexOf")]
     fn indexOf(self: Self, sub: string) -> i32;
 
@@ -219,39 +219,39 @@ behavior String {
     // shape that mirrors the semantic. `string:pad/3` is BIF on OTP 27+; we
     // gate behind `binary_to_list`/`list_to_binary` to keep the shape simple.
 
-    #[@External.Erlang("(fun(__S, __L, __P) -> __N = max(__L - byte_size(__S), 0), __PadBin = case __P of <<>> -> <<>>; _ -> list_to_binary(lists:duplicate(__N, binary:first(__P))) end, <<__PadBin/binary, __S/binary>> end)($self, $0, $1)"),
+    #[@External.Erlang("(fun(__S, __L, __P) -> __N = max(__L - byte_size(__S), 0), __PadBin = case __P of <<>> -> <<>>; _ -> list_to_binary(lists:duplicate(__N, binary:first(__P))) end, <<__PadBin/binary, __S/binary>> end)($0, $1, $2)"),
       @External.Node("padStart")]
     fn padStart(self: Self, length: i32, pad: string) -> string;
 
-    #[@External.Erlang("(fun(__S, __L, __P) -> __N = max(__L - byte_size(__S), 0), __PadBin = case __P of <<>> -> <<>>; _ -> list_to_binary(lists:duplicate(__N, binary:first(__P))) end, <<__S/binary, __PadBin/binary>> end)($self, $0, $1)"),
+    #[@External.Erlang("(fun(__S, __L, __P) -> __N = max(__L - byte_size(__S), 0), __PadBin = case __P of <<>> -> <<>>; _ -> list_to_binary(lists:duplicate(__N, binary:first(__P))) end, <<__S/binary, __PadBin/binary>> end)($0, $1, $2)"),
       @External.Node("padEnd")]
     fn padEnd(self: Self, length: i32, pad: string) -> string;
 
-    #[@External.Erlang("binary:copy($self, $0)"),
+    #[@External.Erlang("binary:copy($0, $1)"),
       @External.Node("repeat")]
     fn repeat(self: Self, times: i32) -> string;
 
-    #[@External.Erlang("(fun(__S, __P, __R) -> binary:replace(__S, __P, __R, [global]) end)($self, $0, $1)"),
+    #[@External.Erlang("(fun(__S, __P, __R) -> binary:replace(__S, __P, __R, [global]) end)($0, $1, $2)"),
       @External.Node("replaceAll")]
     fn replaceAll(self: Self, pattern: string, with: string) -> string;
 
-    #[@External.Erlang("[<<__C/utf8>> || __C <- unicode:characters_to_list($self, utf8)]"),
-      @External.Node("(Array.from($self))")]
+    #[@External.Erlang("[<<__C/utf8>> || __C <- unicode:characters_to_list($0, utf8)]"),
+      @External.Node("(Array.from($0))")]
     fn chars(self: Self) -> string[];
 
-    #[@External.Erlang("""binary:split($self, [<<"\r\n">>, <<"\n">>], [global])"""),
-      @External.Node("""$self.split(/\r?\n/)""")]
+    #[@External.Erlang("""binary:split($0, [<<"\r\n">>, <<"\n">>], [global])"""),
+      @External.Node("""$0.split(/\r?\n/)""")]
     fn lines(self: Self) -> string[];
 
-    #[@External.Erlang("""[__W || __W <- binary:split($self, [<<" ">>, <<"\t">>, <<"\n">>, <<"\r">>], [global]), __W =/= <<>>]"""),
-      @External.Node("""$self.split(/[ \t\n\r]+/).filter(__w => __w.length > 0)""")]
+    #[@External.Erlang("""[__W || __W <- binary:split($0, [<<" ">>, <<"\t">>, <<"\n">>, <<"\r">>], [global]), __W =/= <<>>]"""),
+      @External.Node("""$0.split(/[ \t\n\r]+/).filter(__w => __w.length > 0)""")]
     fn words(self: Self) -> string[];
 
-    #[@External.Erlang("(fun(__S, __I) -> case unicode:characters_to_list(__S, utf8) of __L when length(__L) > __I, __I >= 0 -> lists:nth(__I + 1, __L); _ -> -1 end end)($self, $0)"),
-      @External.Node("(($self.charCodeAt($0) ?? -1) | 0)")]
+    #[@External.Erlang("(fun(__S, __I) -> case unicode:characters_to_list(__S, utf8) of __L when length(__L) > __I, __I >= 0 -> lists:nth(__I + 1, __L); _ -> -1 end end)($0, $1)"),
+      @External.Node("(($0.charCodeAt($1) ?? -1) | 0)")]
     fn charCodeAt(self: Self, index: i32) -> i32;
 
-    #[@External.Erlang("(fun(__S, __Sub) -> __L = byte_size(__S), __SL = byte_size(__Sub), __Find = fun __F(__I) -> case __I < 0 of true -> -1; false -> case binary:part(__S, __I, min(__SL, __L - __I)) =:= __Sub of true -> __I; false -> __F(__I - 1) end end end, __Find(__L - __SL) end)($self, $0)"),
+    #[@External.Erlang("(fun(__S, __Sub) -> __L = byte_size(__S), __SL = byte_size(__Sub), __Find = fun __F(__I) -> case __I < 0 of true -> -1; false -> case binary:part(__S, __I, min(__SL, __L - __I)) =:= __Sub of true -> __I; false -> __F(__I - 1) end end end, __Find(__L - __SL) end)($0, $1)"),
       @External.Node("lastIndexOf")]
     fn lastIndexOf(self: Self, sub: string) -> i32;
 }
@@ -260,15 +260,14 @@ behavior String {
 // Host helpers behind `default fn slice`. commonJS patches
 // `String.prototype.slice` with that body, so the Node templates must not call
 // `.slice` (it would call the patch itself): they normalise the bounds the way
-// native `slice` does and cut with `substring`. The commonJS renderer numbers a
-// `declare fn`'s positional args from `$0` (`$0` is the string); the erlang
-// renderer binds the first parameter to `$self`.
+// native `slice` does and cut with `substring`. Markers are positional on every
+// target: `$0` is the string, `$1` the start (decision 5).
 
-#[@External.Erlang("string:slice($self, $0)"),
+#[@External.Erlang("string:slice($0, $1)"),
   @External.Node("""((__s, __a) => { const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return __s.substring(__b); })($0, $1)""")]
 declare fn stringSlice0(self: string, start: i32) -> string
 
-#[@External.Erlang("string:slice($self, $0, (($1) - ($0)))"),
+#[@External.Erlang("string:slice($0, $1, (($2) - ($1)))"),
   @External.Node("""((__s, __a, __e) => { const __n = __s.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return __s.substring(__b, Math.max(__b, __f)); })($0, $1, $2)""")]
 declare fn stringSlice1(self: string, start: i32, end: i32) -> string
 
@@ -337,11 +336,11 @@ behavior Array<T> {
     val length: i32;
 
     // ── host-backed primitives ──
-    #[@External.Erlang("(fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)($self, $0)"),
+    #[@External.Erlang("(fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)($0, $1)"),
       @External.Node("at")]
     fn at(self: Self, index: i32) -> ?T;
 
-    #[@External.Erlang("($self ++ [$0])"),
+    #[@External.Erlang("($0 ++ [$1])"),
       @External.Node("push")]
     fn push(self: Self, item: T);
 
@@ -357,7 +356,7 @@ behavior Array<T> {
         };
     }
 
-    #[@External.Erlang("""iolist_to_binary(lists:join($0, lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> $stringify(__E) end end, $self)))"""),
+    #[@External.Erlang("""iolist_to_binary(lists:join($1, lists:map(fun(__E) -> if is_binary(__E) -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) -> __E; true -> $stringify(__E) end end, $0)))"""),
       @External.Node("join")]
     fn join(self: Self, sep: string) -> string;
 
@@ -366,7 +365,7 @@ behavior Array<T> {
       @External.Node("reverse")]
     fn reverse(self: Self) -> Self;
 
-    #[@External.Erlang("(fun(__L, __X) -> __Find = fun __F(__I, [__H | __T]) -> case (__H =:= __X) of true -> __I; false -> __F(__I + 1, __T) end; __F(_, []) -> -1 end, __Find(0, __L) end)($self, $0)"),
+    #[@External.Erlang("(fun(__L, __X) -> __Find = fun __F(__I, [__H | __T]) -> case (__H =:= __X) of true -> __I; false -> __F(__I + 1, __T) end; __F(_, []) -> -1 end, __Find(0, __L) end)($0, $1)"),
       @External.Node("indexOf")]
     fn indexOf(self: Self, item: T) -> i32;
 
@@ -387,8 +386,8 @@ behavior Array<T> {
     // tuple constructor; node uses an inline `.map` with index lookup +
     // truncation. wat deferred — no native zip primitive (logged as a known
     // gap; falls through to the inline allow-list as today).
-    #[@External.Erlang("lists:zipwith(fun(__X, __Y) -> {__X, __Y} end, lists:sublist($self, length($0)), lists:sublist($0, length($self)))"),
-      @External.Node("$self.map((__x, __i) => [__x, ($0)[__i]]).slice(0, Math.min($self.length, ($0).length))")]
+    #[@External.Erlang("lists:zipwith(fun(__X, __Y) -> {__X, __Y} end, lists:sublist($0, length($1)), lists:sublist($1, length($0)))"),
+      @External.Node("$0.map((__x, __i) => [__x, ($1)[__i]]).slice(0, Math.min($0.length, ($1).length))")]
     fn zip<U>(self: Self, other: Array<U>) -> Array<#(T, U)>;
 
     // ── producers (associated — no receiver) ──
@@ -419,12 +418,12 @@ behavior Array<T> {
     }
 
     // ── derived ops (default implementations over the primitives) ──
-    #[@External.Erlang("($self =:= [])")]
+    #[@External.Erlang("($0 =:= [])")]
     default fn isEmpty(self: Self) -> bool {
         return self.length == 0;
     }
 
-    #[@External.Erlang("lists:member($0, $self)")]
+    #[@External.Erlang("lists:member($1, $0)")]
     default fn contains(self: Self, x: T) -> bool {
         return self.indexOf(x) != -1;
     }
@@ -468,7 +467,7 @@ behavior Array<T> {
         return self.filter(pred).length != 0;
     }
 
-    #[@External.Erlang("($self ++ $0)"),
+    #[@External.Erlang("($0 ++ $1)"),
       @External.Node("concat")]
     default fn append(self: Self, other: Self) -> Self {
         var out = self.slice(0, self.length);
@@ -476,7 +475,7 @@ behavior Array<T> {
         return out;
     }
 
-    #[@External.Erlang("[$0 | $self]")]
+    #[@External.Erlang("[$1 | $0]")]
     default fn prepend(self: Self, item: T) -> Self {
         var out = [item];
         self.forEach({ x -> out.push(x); });
@@ -607,10 +606,10 @@ behavior Array<T> {
 // with `default fn slice`, so the Node templates copy the normalised range
 // without calling `.slice`.
 
-#[@External.Erlang("lists:nthtail($0, $self)"),
+#[@External.Erlang("lists:nthtail($1, $0)"),
   @External.Node("""((__xs, __a) => { const __n = __xs.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); return Array.from({ length: __n - __b }, (_, __i) => __xs[__b + __i]); })($0, $1)""")]
 declare fn arraySlice0<T>(self: Array<T>, start: i32) -> Array<T>
 
-#[@External.Erlang("lists:sublist($self, ($0) + 1, (($1) - ($0)))"),
+#[@External.Erlang("lists:sublist($0, ($1) + 1, (($2) - ($1)))"),
   @External.Node("""((__xs, __a, __e) => { const __n = __xs.length; const __b = __a < 0 ? Math.max(__n + __a, 0) : Math.min(__a, __n); const __f = __e < 0 ? Math.max(__n + __e, 0) : Math.min(__e, __n); return Array.from({ length: Math.max(__f - __b, 0) }, (_, __i) => __xs[__b + __i]); })($0, $1, $2)""")]
 declare fn arraySlice1<T>(self: Array<T>, start: i32, end: i32) -> Array<T>

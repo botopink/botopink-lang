@@ -1153,9 +1153,23 @@ pub const Annotation = struct {
     /// Where the annotation name starts (null for synthesized annotations).
     /// Diagnostics raised by a decorator body point here.
     loc: ?Loc = null,
+    /// The arguments as written, when `args` holds a translation — an
+    /// `@External` template whose positional markers (decision 5) were mapped
+    /// to the renderers' receiver convention (`parser/template_markers.zig`).
+    /// `args` and its strings are then owned; `source_args` borrows the source.
+    source_args: ?[]const []const u8 = null,
 
     pub fn deinit(this: *Annotation, allocator: std.mem.Allocator) void {
+        if (this.source_args) |src| {
+            for (this.args) |a| allocator.free(a);
+            allocator.free(src);
+        }
         allocator.free(this.args);
+    }
+
+    /// The arguments as the author wrote them (see `source_args`).
+    pub fn writtenArgs(this: Annotation) []const []const u8 {
+        return this.source_args orelse this.args;
     }
 
     /// The location is diagnostic metadata, not part of the serialized AST.
@@ -1164,7 +1178,7 @@ pub const Annotation = struct {
         try jws.objectField("name");
         try jws.write(this.name);
         try jws.objectField("args");
-        try jws.write(this.args);
+        try jws.write(this.writtenArgs());
         try jws.objectField("is_builtin");
         try jws.write(this.is_builtin);
         try jws.endObject();

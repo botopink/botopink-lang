@@ -6761,7 +6761,7 @@ fn findInterfaceDefaultFn(env: *Env, ifaceName: []const u8, callee: []const u8) 
             if (m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self")) continue;
             if (m.is_default) return .{ .method = m, .owner = cname };
             if (m.externalFor("node")) |ref| {
-                // Template-form annotation (`$self`/`$0`/… markers): the
+                // Template-form annotation (`$0`/`$1`/… markers): the
                 // commonJS prototype patcher (§F1) renders the template into a
                 // `Owner.prototype.<m>` body, so dispatch resolution should run
                 // here too (marks the interface used so codegen walks it). The

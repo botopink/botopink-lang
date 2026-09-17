@@ -128,7 +128,7 @@ codegen/
   verbatim — neither emits an import binding or a `require(…)`. A `pub`
   template fn is also emitted as a real function whose `$N` holes are its
   parameters (`buildTemplateWrapper`; an arity-branched one tests
-  `arguments.length`, a `$self` template gets none) plus `exports.<name>`, so a
+  `arguments.length`, a template naming a `self` receiver gets none) plus `exports.<name>`, so a
   cross-module call through the module object (`env.write(…)` after
   `import {env} from "std"`) resolves; calls in the owning module still inline
   the template. A fn with no `node` target raises
@@ -1094,14 +1094,15 @@ Primitive-receiver methods (`xs.map(f)`, `s.toUpper()`) are tagged `.prim` in
    integer receiver's walk at `Signed`, which reaches `Integer` and `Number` —
    from `Integer` it never found `Signed.abs`). A plain
    `("mod", "sym")` pair becomes a host call; a symbol with markers is rendered
-   by `comptime/primOpTemplate.zig` (`$self`, `$0..$N`, `$args`,
+   by `comptime/primOpTemplate.zig` (the receiver, `$0..$N`, `$args` — the source's
+   positional markers translated by `parser/template_markers.zig`, decision 5 —
    `$stringify(…)`, `when($argc == N)` arity branches, `"""…"""` raw bodies).
    commonJS and erlang also route builtins (`print`, `todo`, `panic`, …) through
    `tryEmitBuiltinAnnotation`.
 2. **BEAM templates** — `#[@External.Beam("""<.S body>""")]` registers in
    `prim_beam_templates`; `renderBeamTemplate` pre-loads each positional arg into
    `{x, i+1}` (reverse order) and the receiver into `{x, 0}` last
-   (`min_live = argc + 1`), then renders `$self` → `{x, 0}`, `$N` → `{x, N+1}`,
+   (`min_live = argc + 1`), then renders the receiver → `{x, 0}`, `$N` → `{x, N+1}`,
    `$args` → `{x, 1..N}`. In tail position it emits `call_ext` + `return`
    rather than `call_ext_last`. A BEAM template wins over the erlang-derived
    dispatch and the inline switch.

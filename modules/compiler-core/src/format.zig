@@ -1509,12 +1509,12 @@ pub const Formatter = struct {
         defer docs.deinit(this.arena);
         for (annotations) |ann| {
             const prefix: []const u8 = if (ann.is_builtin) "@" else "";
-            if (ann.args.len == 0) {
+            if (ann.writtenArgs().len == 0) {
                 try docs.append(this.arena, try this.text(
                     try std.fmt.allocPrint(this.arena, "#[{s}{s}]", .{ prefix, ann.name }),
                 ));
             } else {
-                const argsStr = try std.mem.join(this.arena, ", ", ann.args);
+                const argsStr = try std.mem.join(this.arena, ", ", ann.writtenArgs());
                 try docs.append(this.arena, try this.text(
                     try std.fmt.allocPrint(this.arena, "#[{s}{s}({s})]", .{ prefix, ann.name, argsStr }),
                 ));
@@ -1614,10 +1614,10 @@ pub const Formatter = struct {
         }
         for (f.annotations) |ann| {
             const prefix: []const u8 = if (ann.is_builtin) "@" else "";
-            const annText = if (ann.args.len == 0)
+            const annText = if (ann.writtenArgs().len == 0)
                 try std.fmt.allocPrint(this.arena, "#[{s}{s}] ", .{ prefix, ann.name })
             else
-                try std.fmt.allocPrint(this.arena, "#[{s}{s}({s})] ", .{ prefix, ann.name, try std.mem.join(this.arena, ", ", ann.args) });
+                try std.fmt.allocPrint(this.arena, "#[{s}{s}({s})] ", .{ prefix, ann.name, try std.mem.join(this.arena, ", ", ann.writtenArgs()) });
             try parts.append(this.arena, try this.text(annText));
         }
         try parts.append(this.arena, try this.text(f.name));

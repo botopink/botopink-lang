@@ -1161,13 +1161,14 @@ const Emitter = struct {
     /// `emitPrimMethod` switch fallback.
     prim_erlang_dispatch: std.StringHashMap(PrimErlangCall),
     /// §A6 BEAM-target template bodies (v0.beta.22 front 03). `<Iface>.<method>`
-    /// → multi-line `.S` body string with `$self` / `$0..$N` / `$args` markers.
+    /// → multi-line `.S` body string with the receiver / `$0..$N` / `$args` markers
+    /// (source templates are positional — the parser maps them, decision 5).
     /// Populated from `#[@External.Beam("""…""")]` (or legacy `external(beam,
     /// """…""")`) annotations on primitive interface methods. The BEAM dispatch
     /// path (`tryEmitPrimAnnotation`) consults this map FIRST — when an entry
     /// exists, the template wins over both the inline `emitPrimMethod` arm and
     /// any erlang-derived dispatch in `prim_erlang_dispatch`. Substitution
-    /// convention: `$self` → `{x, 0}`, `$N` → `{x, N+1}`, `$args` → the
+    /// convention: the receiver marker → `{x, 0}`, `$N` → `{x, N+1}`, `$args` → the
     /// comma-separated `{x, 1..N}` list. The consumer pre-loads `recv` into
     /// `x0` and each positional arg into `x_{i+1}` before rendering.
     prim_beam_templates: std.StringHashMap([]const u8),
@@ -3536,7 +3537,7 @@ const Emitter = struct {
         // BIF aliases).
         if (try self.tryEmitPrimAnnotation(k, callee, recv_expr, cc, mode)) return true;
         if (try self.emitPrimInline(k, callee, recv_expr, cc, mode)) return true;
-        // An `@External.Erlang` template (`"string:trim($self, leading)"`) is
+        // An `@External.Erlang` template (`"string:trim($0, leading)"`) is
         // Erlang source: evaluated at run time through `'__bp_erl_eval'/2`.
         if (self.primErlangTemplate(k, callee, cc.args.len + cc.trailing.len)) |template| {
             var exprs: [max_staged]ast.Expr = undefined;
@@ -3754,7 +3755,7 @@ const Emitter = struct {
     }
 
     /// Evaluate an `@External.Erlang` template at run time: the template, with
-    /// `$self` → `__BpSelf` and `$N` → `__BpAN` (and `$stringify(e)` → its
+    /// the receiver marker → `__BpSelf` and `$N` → `__BpAN` (and `$stringify(e)` → its
     /// `~p` text), goes to `'__bp_erl_eval'(Source, #{'__BpSelf' => …})`,
     /// which scans, parses and evaluates it with `erl_eval`. The Erlang text is
     /// the annotation author's, carried as a binary operand — the backend
@@ -3885,7 +3886,7 @@ const Emitter = struct {
             if (self.prim_beam_templates.contains(kk) or self.prim_erlang_dispatch.contains(kk)) break kk;
         } else return false;
         // §A6 BEAM-target template path (v0.beta.22 front 03): an
-        // `@External.Beam("""…""")` annotation whose body carries `$self` /
+        // `@External.Beam("""…""")` annotation whose body carries the receiver /
         // `$0..$N` / `$args` markers renders as multi-line `.S` after pre-
         // loading `recv` into `x0` and each positional arg into `x_{i+1}`.
         // Wins over both the erlang-derived dispatch below AND the inline
@@ -3936,7 +3937,7 @@ const Emitter = struct {
     /// §A6 BEAM-target template renderer (v0.beta.22 front 03). Stages `recv`
     /// and the positional args (`stageCall`) and places them in `x0` and
     /// `x_{i+1}`, then walks `body` via the shared `comptime/primOpTemplate.zig`
-    /// renderer with a BEAM-aware ctx that substitutes `$self` → `{x, 0}`,
+    /// renderer with a BEAM-aware ctx that substitutes the receiver marker → `{x, 0}`,
     /// `$N` → `{x, N+1}`, and `$args` → the comma-separated `{x, 1..N}` list
     /// (mirroring the BEAM call_ext arg convention).
     ///
@@ -4038,7 +4039,7 @@ const Emitter = struct {
     /// reducible (a reg-resident ident or a literal int); a complex sub-expr
     /// would need a scratch slot for the recv and isn't supported in F4 —
     /// returns `false` so the caller falls through to the local-call path.
-    /// Matches the erlang template `lists:sublist($self, ($0)+1, (($1)-($0)))`.
+    /// Matches the erlang template `lists:sublist($0, ($1)+1, (($2)-($1)))`.
     fn primArraySlice2(self: *Emitter, recv_expr: *const ast.Expr, cc: anytype, mode: CallMode) anyerror!bool {
         const st = try self.stageCall(recv_expr, cc.args, cc.trailing);
         const live = @max(self.min_live, st.x_top);
@@ -4060,8 +4061,8 @@ const Emitter = struct {
     /// The call_ext runs in non-tail mode regardless of the caller — we need
     /// the result alive for the comparison — and an outer `mode == .tail`
     /// adds the trailing `emitReturn` after the boolean lands in `x0`.
-    /// Matches the erlang template `(binary:match($self, $0) =/= nomatch)`
-    /// / `(string:prefix($self, $0) =/= nomatch)` byte-for-byte.
+    /// Matches the erlang template `(binary:match($0, $1) =/= nomatch)`
+    /// / `(string:prefix($0, $1) =/= nomatch)` byte-for-byte.
     fn primCmpAgainstNomatch(self: *Emitter, mod: []const u8, fn_name: []const u8, recv_expr: *const ast.Expr, cc: anytype, mode: CallMode) anyerror!void {
         if (cc.args.len + cc.trailing.len != 1) {
             try beamEmitter.writeComment(self.out, "prim method not lowered on beam (bad arity): {s}/{d}", .{ fn_name, cc.args.len + cc.trailing.len });
@@ -4096,7 +4097,7 @@ const Emitter = struct {
     /// receiver lands in `x0`; both common forms (`val`-bound list, literal /
     /// `val`-bound index) reduce. Matches the erlang template
     /// `(fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of
-    /// true -> lists:nth(__I + 1, __L); false -> undefined end end)($self, $0)`.
+    /// true -> lists:nth(__I + 1, __L); false -> undefined end end)($0, $1)`.
     fn primAt(self: *Emitter, recv_expr: *const ast.Expr, cc: anytype, mode: CallMode) anyerror!void {
         const st = try self.stageCall(recv_expr, cc.args, cc.trailing);
         try self.placeStaged(&st);
@@ -4119,7 +4120,7 @@ const Emitter = struct {
     /// fn is the cleanest equivalent. Matches the erlang template
     /// `(fun(__L, __X) -> __Find = fun __F(__I, [__H | __T]) -> case (__H
     /// =:= __X) of true -> __I; false -> __F(__I + 1, __T) end; __F(_, []) ->
-    /// -1 end, __Find(0, __L) end)($self, $0)`.
+    /// -1 end, __Find(0, __L) end)($0, $1)`.
     fn primIndexOf(self: *Emitter, recv_expr: *const ast.Expr, cc: anytype, mode: CallMode) anyerror!void {
         const st = try self.stageCall(recv_expr, cc.args, cc.trailing);
         try self.placeStaged(&st);
@@ -4143,7 +4144,7 @@ const Emitter = struct {
     /// binary the surface type promises. Matches the erlang template
     /// `iolist_to_binary(lists:join($0, lists:map(fun(__E) -> if is_binary(__E)
     /// -> __E; is_integer(__E) -> integer_to_binary(__E); is_list(__E) ->
-    /// __E; true -> io_lib:format("~p", [__E]) end end, $self)))`.
+    /// __E; true -> io_lib:format("~p", [__E]) end end, $0)))`.
     fn primJoin(self: *Emitter, recv_expr: *const ast.Expr, cc: anytype, mode: CallMode) anyerror!void {
         if (cc.args.len + cc.trailing.len != 1) {
             try beamEmitter.writeComment(self.out, "prim method not lowered on beam (bad arity): join/{d}", .{cc.args.len + cc.trailing.len});
