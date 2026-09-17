@@ -1,11 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@External.Erlang("string", "length"),
-  @External.Node("./gleam_stdlib.mjs", "string_length")]
-pub declare fn str_length(s: string) -> i32;
+#[@External.Erlang("filename", "dirname"),
+  @External.Node("node:path", "dirname")]
+pub declare fn dirname(p: string) -> string;
 
 fn main() {
-    @print(str_length("hello"));
+    @print(dirname("/tmp/notes.txt"));
 }
 ```
 
@@ -14,10 +14,10 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% external fn str_length -> string:length
+%% external fn dirname -> filename:dirname
 
 main() ->
-    io:format("~p~n", [string:length(<<"hello">>)]).
+    io:format("~p~n", [filename:dirname(<<"/tmp/notes.txt">>)]).
 
 '_botopink_main'() ->
     main().
@@ -28,5 +28,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-5
+<<"/tmp">>
 ```

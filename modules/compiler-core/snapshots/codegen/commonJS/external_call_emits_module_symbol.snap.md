@@ -1,21 +1,21 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@External.Erlang("string", "length"),
-  @External.Node("./gleam_stdlib.mjs", "string_length")]
-pub declare fn str_length(s: string) -> i32;
+#[@External.Erlang("filename", "basename"),
+  @External.Node("node:path", "basename")]
+pub declare fn basename(p: string) -> string;
 
 fn main() {
-    @print(str_length("hello"));
+    @print(basename("/tmp/notes.txt"));
 }
 ```
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-const { string_length: str_length } = require("./gleam_stdlib.mjs");
-exports.str_length = str_length;
+const { basename } = require("node:path");
+exports.basename = basename;
 
 function main() {
-    console.log(str_length("hello"));
+    console.log(basename("/tmp/notes.txt"));
 }
 
 function _botopink_main() {
@@ -26,7 +26,7 @@ _botopink_main();
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-export declare function str_length(s: string): i32;
+export declare function basename(p: string): string;
 
 
 
@@ -34,4 +34,5 @@ export declare function str_length(s: string): i32;
 
 ----- RUN LOG -----
 ```logs
+notes.txt
 ```
