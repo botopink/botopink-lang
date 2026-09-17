@@ -492,7 +492,7 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
         },
         .collection => |col| switch (col.kind) {
             .recordLit => |rl| countFieldStaging(em, rl.fields, count),
-            .interfaceLit => |il| countFieldStaging(em, il.fields, count),
+            .behaviorLit => |il| countFieldStaging(em, il.fields, count),
             .grouped => |inner| countLocalsInExpr(em, inner.*, count),
             .case => |c| {
                 for (c.subjects) |s| countLocalsInExpr(em, s, count);
@@ -775,7 +775,7 @@ fn collectNamesInExpr(ctx: anytype, e: ast.Expr) anyerror!void {
             },
             .grouped => |g| try walk(ctx, g.*),
             .recordLit => |rl| for (rl.fields) |f| try walk(ctx, f.value.*),
-            .interfaceLit => |il| for (il.fields) |f| try walk(ctx, f.value.*),
+            .behaviorLit => |il| for (il.fields) |f| try walk(ctx, f.value.*),
         },
         .comptime_ => |ct| switch (ct.kind) {
             .comptimeExpr => |x| try walk(ctx, x.*),
@@ -2798,7 +2798,7 @@ const Emitter = struct {
                     try self.lowerFieldMap(rl.fields);
                     return;
                 },
-                .interfaceLit => |il| {
+                .behaviorLit => |il| {
                     try self.lowerFieldMap(il.fields);
                     return;
                 },
@@ -4909,7 +4909,7 @@ const Emitter = struct {
                     for (rl.fields) |f| if (self.exprMayCall(strings, f.value.*)) break :blk true;
                     break :blk false;
                 },
-                .interfaceLit => |il| blk: {
+                .behaviorLit => |il| blk: {
                     for (il.fields) |f| if (self.exprMayCall(strings, f.value.*)) break :blk true;
                     break :blk false;
                 },

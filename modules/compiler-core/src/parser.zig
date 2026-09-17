@@ -119,6 +119,21 @@ pub const ParseErrorType = enum {
     /// blocks are written `#[…]`; the builtin marker `@` belongs on the
     /// annotation name (`#[@external(…)]`), not on the block.
     retiredAnnotationBlock,
+    /// `type P(x: i32) { A }` — a field list and a variant in the same
+    /// declaration: a `type` is a record (fields) or an enum (variants).
+    typeRecordWithVariants,
+    /// `type P()` — an empty field list; a record with no fields omits `()`.
+    typeEmptyFieldList,
+    /// `type S { fn f(self: Self) {} A }` — variants come before methods.
+    typeVariantAfterMethod,
+    /// `type P(val x: i32)` — the field list takes no `val` prefix.
+    typeFieldValPrefix,
+    /// A `,` after a member of a `type`/`behavior` body: members end with `;`
+    /// (bodyless) or `}` (with a body), never with `,`.
+    memberCommaSeparator,
+    /// A bodyless member of a `behavior` (`fn f(self: Self) -> i32`, `val x: T`)
+    /// without its terminating `;`.
+    memberMissingSemicolon,
 };
 
 pub const ParseErrorInfo = struct {
@@ -313,6 +328,14 @@ pub const Parser = struct {
                 const d = try this.parseFnDecl(alloc);
                 _ = this.match(.semicolon);
                 break :blk .{ .@"fn" = d };
+            } else if (this.checkShorthandNamed(.type)) blk: {
+                const d = try this.parseShorthandTypeDecl(alloc);
+                _ = this.match(.semicolon);
+                break :blk .{ .type_ = d };
+            } else if (this.checkShorthand(.behavior)) blk: {
+                const d = try this.parseShorthandBehaviorDecl(alloc);
+                _ = this.match(.semicolon);
+                break :blk .{ .behavior = d };
             } else if (this.checkShorthand(.@"enum")) blk: {
                 const d = try this.parseShorthandEnumDecl(alloc);
                 _ = this.match(.semicolon);
@@ -365,6 +388,8 @@ pub const Parser = struct {
                     .@"enum" => DeclKind{ .type_ = try this.parseShorthandEnumDecl(alloc) },
                     .record => DeclKind{ .type_ = try this.parseShorthandRecordDecl(alloc) },
                     .interface => DeclKind{ .behavior = try this.parseShorthandInterfaceDecl(alloc) },
+                    .type => DeclKind{ .type_ = try this.parseShorthandTypeDecl(alloc) },
+                    .behavior => DeclKind{ .behavior = try this.parseShorthandBehaviorDecl(alloc) },
                     // An ANNOTATED `declare fn` is the FFI declaration form
                     // (`@[external(…)] pub declare fn …;`), not a delegate.
                     .declare => DeclKind{ .@"fn" = try this.parseFnDecl(alloc) },
@@ -458,6 +483,11 @@ pub const Parser = struct {
             .extend => .{ .extend = try this.parseExtendDecl(alloc) },
             .@"enum" => .{ .type_ = try this.parseEnumDecl(alloc) },
             .declare => .{ .delegate = try this.parseDelegateDecl(alloc) },
+            .type => switch (bodyNext) {
+                .lessThan, .leftParenthesis, .leftBrace, .implement => .{ .type_ = try this.parseTypeDecl(alloc) },
+                else => .{ .val = try this.parseValDecl(alloc) },
+            },
+            .behavior => .{ .behavior = try this.parseBehaviorDecl(alloc) },
             .interface => if (bodyNext == .@"fn")
                 .{ .delegate = try this.parseDelegateDecl(alloc) }
             else
@@ -470,6 +500,14 @@ pub const Parser = struct {
     /// true if the current token is `kind`, or `pub` followed by `kind`.
     pub inline fn checkShorthand(this: *This, kind: TokenKind) bool {
         return this.check(kind) or (this.check(.@"pub") and this.peekAt(1).kind == kind);
+    }
+
+    /// true if `kind Name` or `pub kind Name` is next — for keywords that also
+    /// have a non-declaration meaning (`type` is the kind of types too).
+    pub inline fn checkShorthandNamed(this: *This, kind: TokenKind) bool {
+        if (this.check(kind)) return this.peekAt(1).kind == .identifier;
+        if (this.check(.@"pub")) return this.peekAt(1).kind == kind and this.peekAt(2).kind == .identifier;
+        return false;
     }
 
     /// true for a named shorthand decl `Name <kind> …` or `pub Name <kind> …`,
@@ -1036,6 +1074,16 @@ pub const Parser = struct {
     pub const parseMethodDecl = decl_grammar.parseMethodDecl;
 
     // ── record decl ──────────────────────────────────────────────────────────
+
+    pub const parseTypeDecl = decl_grammar.parseTypeDecl;
+
+    pub const parseShorthandTypeDecl = decl_grammar.parseShorthandTypeDecl;
+
+    pub const parseTypeDeclRest = decl_grammar.parseTypeDeclRest;
+
+    pub const parseBehaviorDecl = decl_grammar.parseBehaviorDecl;
+
+    pub const parseShorthandBehaviorDecl = decl_grammar.parseShorthandBehaviorDecl;
 
     pub const parseRecordDecl = decl_grammar.parseRecordDecl;
 

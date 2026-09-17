@@ -118,24 +118,24 @@ test "format: doc comment ---- multiline before fn" {
     );
 }
 
-test "format: doc comment ---- before struct" {
+test "format: doc comment ---- before a record with no fields" {
     try h.assertFormat(std.testing.allocator,
         \\/// User account structure
-        \\val Account = record {};
+        \\type Account
     );
 }
 
-test "format: doc comment ---- before enum" {
+test "format: doc comment ---- before an enum-shaped type" {
     try h.assertFormat(std.testing.allocator,
         \\/// Color enumeration
-        \\val Color = enum { Red, Blue };
+        \\type Color { Red, Blue }
     );
 }
 
-test "format: doc comment ---- before interface" {
+test "format: doc comment ---- before a behavior" {
     try h.assertFormat(std.testing.allocator,
         \\/// Drawable interface
-        \\val Drawable = interface {};
+        \\behavior Drawable {}
     );
 }
 

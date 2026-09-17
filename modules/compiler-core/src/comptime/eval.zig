@@ -174,7 +174,7 @@ fn valueOf(arena: std.mem.Allocator, scope: *Scope, te: ast.TypedExpr) EvalError
                 for (rl.fields) |f| _ = try valueOf(arena, scope, f.value.*);
                 return .object;
             },
-            .interfaceLit => |il| {
+            .behaviorLit => |il| {
                 for (il.fields) |f| _ = try valueOf(arena, scope, f.value.*);
                 return .object;
             },

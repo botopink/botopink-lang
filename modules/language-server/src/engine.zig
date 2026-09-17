@@ -397,6 +397,16 @@ fn appendTypeRef(gpa: std.mem.Allocator, buf: *std.ArrayList(u8), tr: ast.TypeRe
             }
             try buf.append(gpa, ')');
         },
+        .labeledTuple => |lt| {
+            try buf.appendSlice(gpa, "#(");
+            for (lt.elems, 0..) |elem, ei| {
+                if (ei > 0) try buf.appendSlice(gpa, ", ");
+                try buf.appendSlice(gpa, lt.labels[ei]);
+                try buf.appendSlice(gpa, ": ");
+                try appendTypeRef(gpa, buf, elem);
+            }
+            try buf.append(gpa, ')');
+        },
         .generic => |b| {
             if (b.is_builtin) try buf.append(gpa, '@');
             try buf.appendSlice(gpa, b.name);

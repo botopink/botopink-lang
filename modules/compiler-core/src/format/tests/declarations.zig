@@ -41,93 +41,83 @@ test "format: val ---- multiple top-level vals" {
     );
 }
 
-test "format: interface ---- empty" {
+test "format: behavior ---- empty" {
     try h.assertFormat(std.testing.allocator,
-        \\val Drawable = interface {};
+        \\behavior Drawable {}
     );
 }
 
-test "format: interface ---- one field" {
+test "format: behavior ---- one field" {
     try h.assertFormat(std.testing.allocator,
-        \\val Drawable = interface {
-        \\    val color: string,
-        \\};
+        \\behavior Drawable {
+        \\    val color: string;
+        \\}
     );
 }
 
-test "format: interface ---- abstract method" {
+test "format: behavior ---- abstract method" {
     try h.assertFormat(std.testing.allocator,
-        \\val Drawable = interface {
+        \\behavior Drawable {
         \\    fn draw(self: Self);
-        \\};
+        \\}
     );
 }
 
-test "format: interface ---- full Drawable (field + abstract + default method)" {
+test "format: behavior ---- full Drawable (field + abstract + default method)" {
     try h.assertFormat(std.testing.allocator,
-        \\val Drawable = interface {
-        \\    val color: string,
+        \\behavior Drawable {
+        \\    val color: string;
+        \\
         \\    fn draw(self: Self);
+        \\
         \\    default fn log(self: Self) {
         \\        Console.WriteLine("Rendering object with color: " + self.color);
         \\    }
-        \\};
+        \\}
     );
 }
 
-test "format: interface ---- multiple abstract methods" {
+test "format: behavior ---- multiple abstract methods" {
     try h.assertFormat(std.testing.allocator,
-        \\val Canvas = interface {
+        \\behavior Canvas {
         \\    fn clear(self: Self);
         \\    fn drawLine(self: Self, x1: i32, y1: i32);
         \\    fn drawRect(self: Self, x: i32, y: i32, color: string);
-        \\};
+        \\}
     );
 }
 
-
-
-
-
-
-
-
-
-
-
-test "format: record ---- empty" {
+test "format: type (record) ---- no fields, no body" {
     try h.assertFormat(std.testing.allocator,
-        \\val Point = record {};
+        \\type Point
     );
 }
 
-test "format: record ---- two fields" {
+test "format: type (record) ---- two fields" {
     try h.assertFormat(std.testing.allocator,
-        \\val Point = record { x: number, y: number };
+        \\type Point(x: number, y: number)
     );
 }
 
-test "format: record ---- with method" {
+test "format: type (record) ---- with method" {
     try h.assertFormat(std.testing.allocator,
-        \\val GPSCoordinates = record {
-        \\    lat: number,
-        \\    lon: number,
+        \\type GPSCoordinates(lat: number, lon: number) {
         \\    fn toString(self: Self) {
         \\        return "Lat: " + self.lat + " Lon: " + self.lon;
         \\    }
-        \\};
+        \\}
     );
 }
 
-test "format: enum ---- unit variants" {
+test "format: type (enum) ---- unit variants" {
     try h.assertFormat(std.testing.allocator,
-        \\val Direction = enum { North, South, East, West };
+        \\type Direction { North, South, East, West }
     );
 }
 
-test "format: enum ---- with payload variant" {
+test "format: type (enum) ---- with payload variant" {
     try h.assertFormat(std.testing.allocator,
-        \\val Color = enum { Red, Green, Blue, Rgb(r: i32, g: i32, b: i32) };
+        \\type Color { Red, Green, Blue, Rgb(r: i32, g: i32, b: i32) }
     );
 }
 
@@ -255,7 +245,6 @@ test "format: pub fn ---- comptime param with generic constraint" {
         \\}
     );
 }
-
 
 test "format: fn statement ---- simple" {
     try h.assertFormat(std.testing.allocator,
@@ -471,28 +460,28 @@ test "format: Expr builtin type ---- generic return round-trip" {
 // The formatter used to DROP enum sections entirely (`Token { Text { … } }`
 // came back as `val Token = enum { Hover(inner: Token) };`) and to rewrite a
 // bodyless `declare fn` as `pub fn f() -> i32 {}`. Both erased source.
-test "format: enum ---- section with bare variants is preserved" {
+test "format: type (enum) ---- section with bare variants is preserved" {
     try h.assertFormat(std.testing.allocator,
-        \\val Token = enum {
+        \\type Token {
         \\    Hover(inner: Token),
         \\    Text {
         \\        Bold,
         \\        Italic,
         \\    }
-        \\};
+        \\}
     );
 }
 
-test "format: enum ---- nested sections with numeric leaves are preserved" {
+test "format: type (enum) ---- nested sections with numeric leaves are preserved" {
     try h.assertFormat(std.testing.allocator,
-        \\val Color = enum {
+        \\type Color {
         \\    Palette {
         \\        Red {
         \\            100,
         \\            500,
         \\        }
         \\    }
-        \\};
+        \\}
     );
 }
 
@@ -500,5 +489,113 @@ test "format: declare fn ---- external declaration keeps `declare` and stays bod
     try h.assertFormat(std.testing.allocator,
         \\#[@External.Erlang("string", "length")]
         \\pub declare fn length(s: string) -> i32;
+    );
+}
+
+// ── 1.0.3 surface: the separator rule (specs/1.0.4-beta/12-surface-cutover/separators.md) ──
+
+test "format: type ---- a compact field list stays on one line past the line width" {
+    try h.assertFormat(std.testing.allocator,
+        \\type Point(firstCoordinateOnTheHorizontalAxis: i32, secondCoordinateOnTheVerticalAxis: i32, thirdCoordinate: i32)
+    );
+}
+
+test "format: type ---- a trailing comma opens the field list" {
+    try h.assertFormatAs(std.testing.allocator, "type Point(x: i32, y: i32,)",
+        \\type Point(
+        \\    x: i32,
+        \\    y: i32,
+        \\)
+    );
+}
+
+test "format: type ---- a comment in a compact field list opens it and adds the trailing comma" {
+    try h.assertFormatAs(std.testing.allocator,
+        \\type Config(
+        \\    // where it listens
+        \\    host: string, port: i32)
+    ,
+        \\type Config(
+        \\    // where it listens
+        \\    host: string,
+        \\    port: i32,
+        \\)
+    );
+}
+
+test "format: type ---- annotations and defaults in a field list" {
+    try h.assertFormat(std.testing.allocator,
+        \\type Config(#[value("k")] host: string = "0.0.0.0", port: i32)
+    );
+}
+
+test "format: type ---- compact variants stay compact; a trailing comma opens them" {
+    try h.assertFormat(std.testing.allocator,
+        \\type Color { Red, Green }
+    );
+    try h.assertFormatAs(std.testing.allocator, "type Color { Red, Green, }",
+        \\type Color {
+        \\    Red,
+        \\    Green,
+        \\}
+    );
+}
+
+test "format: type ---- a body with a method is open, with a blank line before the method" {
+    try h.assertFormatAs(std.testing.allocator,
+        \\type Shape { Circle(r: f64), pub fn area(self: Self) -> f64 { return 0.0; } }
+    ,
+        \\type Shape {
+        \\    Circle(r: f64),
+        \\
+        \\    pub fn area(self: Self) -> f64 {
+        \\        return 0.0;
+        \\    }
+        \\}
+    );
+}
+
+test "format: type ---- implement clause and generics" {
+    try h.assertFormat(std.testing.allocator,
+        \\pub type Stack<T>(items: T[]) implement Sized {
+        \\    fn size(self: Self) -> i32 {
+        \\        return 0;
+        \\    }
+        \\}
+    );
+}
+
+test "format: behavior ---- an empty behavior stays {}; one fn member opens it" {
+    try h.assertFormat(std.testing.allocator,
+        \\behavior Marker {}
+    );
+    try h.assertFormatAs(std.testing.allocator, "behavior Printable { fn print(self: Self) -> string; }",
+        \\behavior Printable {
+        \\    fn print(self: Self) -> string;
+        \\}
+    );
+}
+
+test "format: behavior ---- pub, generics and extends round-trip" {
+    try h.assertFormat(std.testing.allocator,
+        \\pub behavior Container<T> extends Sized {
+        \\    fn get(self: Self, i: i32) -> T;
+        \\}
+    );
+}
+
+test "format: the old surface prints as the new one" {
+    try h.assertFormatAs(std.testing.allocator,
+        \\record Point { x: i32, y: i32 }
+        \\enum Color { Red, Green }
+        \\interface Shape { fn area(self: Self) -> f64 }
+    ,
+        \\type Point(x: i32, y: i32)
+        \\
+        \\type Color { Red, Green }
+        \\
+        \\behavior Shape {
+        \\    fn area(self: Self) -> f64;
+        \\}
     );
 }

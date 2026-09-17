@@ -278,6 +278,12 @@ const Builder = struct {
                 for (elems, 0..) |e, i| out[i] = try self.typeRef(e);
                 return .{ .tuple = out };
             },
+            // Labels are compile-time names: the value is the positional tuple.
+            .labeledTuple => |lt| {
+                const out = try self.b.arena.alloc(js.TsType, lt.elems.len);
+                for (lt.elems, 0..) |e, i| out[i] = try self.typeRef(e);
+                return .{ .tuple = out };
+            },
             // `?T` is `T | null`.
             .optional => |inner| return .{ .union_ = try self.b.types(&.{
                 try self.typeRef(inner.*),

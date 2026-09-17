@@ -737,9 +737,9 @@ pub fn CollectionExprOf(comptime phase: Phase) type {
         recordLit: struct {
             fields: []RecordLitFieldOf(phase),
         },
-        /// `@InterfaceName(field: value, …)` ---- interface literal instantiation.
-        /// Creates a value of the named interface type with the given fields.
-        interfaceLit: struct {
+        /// `@BehaviorName(field: value, …)` ---- behavior literal instantiation.
+        /// Creates a value of the named behavior type with the given fields.
+        behaviorLit: struct {
             name: []const u8,
             fields: []RecordLitFieldOf(phase),
         },
@@ -791,7 +791,7 @@ pub fn CollectionExprOf(comptime phase: Phase) type {
                     }
                     allocator.free(rl.fields);
                 },
-                .interfaceLit => |il| {
+                .behaviorLit => |il| {
                     for (il.fields) |f| {
                         f.value.deinit(allocator);
                         allocator.destroy(f.value);
@@ -1435,6 +1435,11 @@ pub const TypeRef = union(enum) {
     array: *TypeRef,
     /// Tuple type: `#(T1, T2, ...)`. Owns the element types.
     tuple_: []TypeRef,
+    /// Tuple type with labels: `#(name: string, pop: i32)` (decision 8 §6). The
+    /// labels are names for the compiler — `row.pop` becomes a positional access
+    /// and the run-time value is the plain tuple. Owns `elems` and the `labels`
+    /// slice (the label strings slice into the source).
+    labeledTuple: struct { elems: []TypeRef, labels: []const []const u8 },
     /// Optional type: `?T`. Owns the inner type.
     optional: *TypeRef,
     /// Function type: `fn(T1, T2) -> R`. Owns both param types and return type.
@@ -1450,6 +1455,15 @@ pub const TypeRef = union(enum) {
     /// return type or annotation without a named `record`. Owns the fields.
     record_type: []RecordTypeField,
 
+    /// The element types of a tuple type, labeled or not; null otherwise.
+    pub fn tupleElems(this: TypeRef) ?[]TypeRef {
+        return switch (this) {
+            .tuple_ => |elems| elems,
+            .labeledTuple => |lt| lt.elems,
+            else => null,
+        };
+    }
+
     pub fn deinit(this: *TypeRef, allocator: std.mem.Allocator) void {
         switch (this.*) {
             .named => {},
@@ -1464,6 +1478,11 @@ pub const TypeRef = union(enum) {
             .tuple_ => |elems| {
                 for (elems) |*e| e.deinit(allocator);
                 allocator.free(elems);
+            },
+            .labeledTuple => |lt| {
+                for (lt.elems) |*e| e.deinit(allocator);
+                allocator.free(lt.elems);
+                allocator.free(lt.labels);
             },
             .optional => |inner| {
                 inner.deinit(allocator);
@@ -1771,12 +1790,37 @@ pub const Field = struct {
     default: ?Expr = null,
     /// Member-level decorators on the field (`#[inject] repo: …`).
     annotations: []Annotation = &.{},
+    /// `//` comments written before the field in a 1.0.3 field list
+    /// (`type Config(\n // where it listens\n host: string)`), text only.
+    /// Owned. Kept so the formatter prints them back.
+    comments: []const []const u8 = &.{},
 
     pub fn deinit(this: *Field, allocator: std.mem.Allocator) void {
         this.typeRef.deinit(allocator);
         if (this.default) |*d| d.deinit(allocator);
         for (this.annotations) |*ann| ann.deinit(allocator);
         if (this.annotations.len > 0) allocator.free(this.annotations);
+        for (this.comments) |c| allocator.free(c);
+        if (this.comments.len > 0) allocator.free(this.comments);
+    }
+
+    /// `comments` is written only when present, so a field without comments
+    /// serializes exactly as before the field list kept them.
+    pub fn jsonStringify(this: Field, jws: anytype) !void {
+        try jws.beginObject();
+        try jws.objectField("name");
+        try jws.write(this.name);
+        try jws.objectField("typeRef");
+        try jws.write(this.typeRef);
+        try jws.objectField("default");
+        try jws.write(this.default);
+        try jws.objectField("annotations");
+        try jws.write(this.annotations);
+        if (this.comments.len > 0) {
+            try jws.objectField("comments");
+            try jws.write(this.comments);
+        }
+        try jws.endObject();
     }
 };
 

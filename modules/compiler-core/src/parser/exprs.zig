@@ -914,7 +914,7 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
                     if (!this.match(.comma)) break;
                 }
                 _ = try this.consume(.rightParenthesis);
-                const lit = Expr{ .collection = .{ .loc = locFromToken(nameTok), .kind = .{ .interfaceLit = .{
+                const lit = Expr{ .collection = .{ .loc = locFromToken(nameTok), .kind = .{ .behaviorLit = .{
                     .name = callee,
                     .fields = try fields.toOwnedSlice(alloc),
                 } } } };

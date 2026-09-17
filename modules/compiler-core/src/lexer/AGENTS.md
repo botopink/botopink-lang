@@ -10,7 +10,7 @@ Lexer support files. The lexer entry point itself lives at `../lexer.zig`.
 ```text
 lexer/
 ├── AGENTS.md      ← you are here
-├── token.zig      ← TokenKind enum + Token struct (lexeme + line/col)
+├── token.zig      ← TokenKind enum + Token struct (lexeme + line/col); `behavior` is a keyword alongside `interface` during the front-12 dual grammar
 ├── tests.zig      ← barrel importing every tests/<feature>.zig
 └── tests/         ← lexer tests, split by feature
     ├── helpers.zig    ← placeholder harness module (no helpers defined)

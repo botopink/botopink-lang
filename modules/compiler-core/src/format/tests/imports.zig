@@ -94,12 +94,12 @@ test "format: multiple statements with import and types" {
         \\import {three};
         \\import {two};
         \\
-        \\pub val One = record {};
+        \\pub type One
         \\
-        \\pub val Two = record {};
+        \\pub type Two
         \\
-        \\pub val Three = record {};
+        \\pub type Three
         \\
-        \\pub val Four = record {};
+        \\pub type Four
     );
 }

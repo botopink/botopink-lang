@@ -81,7 +81,7 @@ pub const TokenKind = enum {
     get,
     @"if",
     implement,
-    @"is",
+    is,
     import,
     macro,
     mod,
@@ -95,6 +95,9 @@ pub const TokenKind = enum {
     @"test",
     throw,
     interface,
+    /// `behavior Name { … }` — the 1.0.3 spelling of `interface` (both parse
+    /// during the front-12 dual grammar).
+    behavior,
     type,
     record,
     use,

@@ -508,7 +508,7 @@ pub fn identInExpr(expr: anytype, name: []const u8) bool {
                 for (rl.fields) |f| if (identInExpr(f.value.*, name)) break :blk true;
                 break :blk false;
             },
-            .interfaceLit => |il| blk: {
+            .behaviorLit => |il| blk: {
                 for (il.fields) |f| if (identInExpr(f.value.*, name)) break :blk true;
                 break :blk false;
             },

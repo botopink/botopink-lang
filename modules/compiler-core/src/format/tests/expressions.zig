@@ -9,31 +9,31 @@ const h = @import("helpers.zig");
 
 test "format: lambda ---- trailing no params" {
     try h.assertFormat(std.testing.allocator,
-        \\val Test = interface {
+        \\behavior Test {
         \\    default fn run() {
         \\        executar {
         \\            ok;
         \\        };
         \\    }
-        \\};
+        \\}
     );
 }
 
 test "format: lambda ---- named arg + trailing with params" {
     try h.assertFormat(std.testing.allocator,
-        \\val Test = interface {
+        \\behavior Test {
         \\    default fn run() {
         \\        calcular(fator: 2) { a, b ->
         \\            a + b;
         \\        };
         \\    }
-        \\};
+        \\}
     );
 }
 
 test "format: lambda ---- two trailing blocks second labeled" {
     try h.assertFormat(std.testing.allocator,
-        \\val Test = interface {
+        \\behavior Test {
         \\    default fn run() {
         \\        executar {
         \\            ok;
@@ -41,7 +41,7 @@ test "format: lambda ---- two trailing blocks second labeled" {
         \\            fail;
         \\        };
         \\    }
-        \\};
+        \\}
     );
 }
 

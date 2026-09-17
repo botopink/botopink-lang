@@ -9,4 +9,7 @@ AST golden snapshots live in `modules/compiler-core/snapshots/parser/`.
 `assertParser` wraps its snapshot call in `utils/snap.zig` `traceEnter(loc)`/`traceLeave`,
 so `BOTOPINK_SNAP_TRACE=<file>` records the test `file:line`.
 
+`surface.zig` holds the front-12 step-2 acceptance cases (`type`, `behavior`, field lists, separators) as structural
+assertions — no snapshots — and compares the JSON dump of each old spelling with its new spelling.
+
 When adding a test file here, register it in `../tests.zig` or it will not run.

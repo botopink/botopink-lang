@@ -48,6 +48,20 @@ pub fn assertFormat(allocator: Allocator, src: []const u8) !void {
     return error.TestOutputMismatch;
 }
 
+/// `format(parse(src))` equals `expected` — for sources that are not in
+/// canonical form (a trailing comma to add, a list to open).
+pub fn assertFormatAs(allocator: Allocator, src: []const u8, expected: []const u8) !void {
+    var l = lexerMod.Lexer.init(src);
+    const tokens = try l.scanAll(allocator);
+    defer l.deinit(allocator);
+    var p = parserMod.Parser.init(tokens);
+    var program = try p.parse(allocator);
+    defer program.deinit(allocator);
+    const actual = try formatMod.format(allocator, program);
+    defer allocator.free(actual);
+    try std.testing.expectEqualStrings(std.mem.trim(u8, expected, "\n\r"), std.mem.trim(u8, actual, "\n\r"));
+}
+
 pub fn assertIdempotent(allocator: Allocator, src: []const u8) !void {
     const pass1 = blk: {
         var l = lexerMod.Lexer.init(src);

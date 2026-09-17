@@ -3877,7 +3877,7 @@ const Emitter = struct {
                 // Anonymous record / interface literal — an Erlang map (the same
                 // shape named records lower to). Keys are the field names as written.
                 .recordLit => |rl| return this.fieldMap(b, rl.fields),
-                .interfaceLit => |il| return this.fieldMap(b, il.fields),
+                .behaviorLit => |il| return this.fieldMap(b, il.fields),
             },
 
             .jump => |j| return switch (j.kind) {

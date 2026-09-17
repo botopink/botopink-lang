@@ -41,6 +41,11 @@ pub const Type = union(enum) {
     named: struct {
         name: []const u8,
         args: []*Type,
+        /// Element labels of a `tuple` (decision 8 §6): names for the compiler
+        /// only — `row.pop` resolves to the element index and the run-time value
+        /// is positional. Empty for an unlabeled tuple and for every other type;
+        /// an empty string marks an unlabeled element. Never compared by `unify`.
+        labels: []const []const u8 = &.{},
     },
     /// Function type: `fn(params...) -> ret`.
     func: struct {

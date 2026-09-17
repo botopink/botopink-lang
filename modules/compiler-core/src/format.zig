@@ -679,7 +679,7 @@ pub const Formatter = struct {
                     }
                     break :blk try this.concat(doc, try this.text(" }"));
                 },
-                .interfaceLit => |il| blk: {
+                .behaviorLit => |il| blk: {
                     var doc: *const Doc = try this.text("@");
                     doc = try this.concat(doc, try this.text(il.name));
                     doc = try this.concat(doc, try this.text("("));
@@ -1388,8 +1388,9 @@ pub const Formatter = struct {
                 .@"fn" => false,
                 .@"test" => false,
                 .val => true,
-                .type_ => true,
-                .behavior => true,
+                // 1.0.3 declarations end with `)` or `}` and take no `;`.
+                .type_ => false,
+                .behavior => false,
                 .use, .delegate, .implement, .extend => true,
                 .mod => true,
                 .comment => false,
@@ -1435,9 +1436,9 @@ pub const Formatter = struct {
     fn fmtDecl(this: *Formatter, decl: ast.DeclKind) !*const Doc {
         return switch (decl) {
             .use => |u| this.fmtUse(u),
-            .behavior => |iface| this.fmtInterface(iface),
+            .behavior => |iface| this.fmtBehavior(iface),
             .delegate => |d| this.fmtDelegate(d),
-            .type_ => |t| if (t.isRecord()) this.fmtRecord(t) else this.fmtEnum(t),
+            .type_ => |t| this.fmtType(t),
             .implement => |impl| this.fmtImplement(impl),
             .extend => |ext| this.fmtExtend(ext),
             .@"fn" => |f| this.fmtFnDecl(f),
@@ -1524,49 +1525,56 @@ pub const Formatter = struct {
         return this.concat(annsDoc, this.hardline());
     }
 
-    fn fmtInterface(this: *Formatter, iface: ast.BehaviorDecl) !*const Doc {
+    /// `#[…] [pub] behavior Name<G> extends A, B { members }` — the 1.0.3
+    /// surface. Bodyless members end with `;`, members with a body with `}`;
+    /// a blank line separates `val` fields, signatures and default methods.
+    fn fmtBehavior(this: *Formatter, iface: ast.BehaviorDecl) !*const Doc {
         var members: std.ArrayList(*const Doc) = .empty;
-
+        var groups: std.ArrayList(u8) = .empty;
         for (iface.fields) |f| {
             try members.append(this.arena, try this.text(
-                try std.fmt.allocPrint(this.arena, "val {s}: {s},", .{ f.name, f.typeName }),
+                try std.fmt.allocPrint(this.arena, "val {s}: {s};", .{ f.name, f.typeName }),
             ));
+            try groups.append(this.arena, 0);
         }
         for (iface.methods) |m| {
-            const methodDoc = try this.fmtInterfaceMethod(m);
-            try members.append(this.arena, methodDoc);
+            try members.append(this.arena, try this.concat(
+                try this.fmtAnnotations(m.annotations),
+                try this.fmtInterfaceMethod(m),
+            ));
+            try groups.append(this.arena, if (m.body == null) 1 else 2);
         }
+        const body = try this.fmtMemberBlock(members.items, groups.items);
 
-        const body = if (members.items.len == 0)
-            try this.text("{}")
-        else blk: {
-            const inner = try this.join(members.items, this.hardline());
-            break :blk try this.surroundBreak("{", inner, "}");
-        };
-
-        const extendsDoc = if (iface.extends.len == 0)
-            try this.text("")
-        else blk: {
-            var parts: std.ArrayList(*const Doc) = .empty;
-            defer parts.deinit(this.arena);
+        var parts: std.ArrayList(*const Doc) = .empty;
+        try parts.append(this.arena, try this.fmtAnnotations(iface.annotations));
+        if (iface.isPub) try parts.append(this.arena, try this.text("pub "));
+        try parts.append(this.arena, try this.text("behavior "));
+        try parts.append(this.arena, try this.text(iface.name));
+        try parts.append(this.arena, try this.fmtGenericParams(iface.genericParams));
+        if (iface.extends.len > 0) {
             try parts.append(this.arena, try this.text(" extends "));
-            for (iface.extends, 0..) |sup, i| {
-                if (i > 0) try parts.append(this.arena, try this.text(", "));
-                try parts.append(this.arena, try this.text(sup));
-            }
-            break :blk try this.concatAll(parts.items);
-        };
+            try parts.append(this.arena, try this.text(try std.mem.join(this.arena, ", ", iface.extends)));
+        }
+        try parts.append(this.arena, try this.text(" "));
+        try parts.append(this.arena, body);
+        return this.concatAll(parts.items);
+    }
 
-        return this.concatAll(&.{
-            try this.fmtAnnotations(iface.annotations),
-            try this.text("val "),
-            try this.text(iface.name),
-            try this.fmtGenericParams(iface.genericParams),
-            try this.text(" = interface"),
-            extendsDoc,
-            try this.text(" "),
-            body,
-        });
+    /// `{ member … }` — one member per line, a blank line wherever the group
+    /// changes; `{}` when empty.
+    fn fmtMemberBlock(this: *Formatter, members: []const *const Doc, groups: []const u8) !*const Doc {
+        if (members.len == 0) return this.text("{}");
+        var parts: std.ArrayList(*const Doc) = .empty;
+        for (members, 0..) |m, i| {
+            if (i > 0) {
+                // A plain "\n" (no indent) makes the blank line between groups.
+                if (groups[i] != groups[i - 1]) try parts.append(this.arena, try this.text("\n"));
+                try parts.append(this.arena, this.hardline());
+            }
+            try parts.append(this.arena, m);
+        }
+        return this.surroundBreak("{", try this.concatAll(parts.items), "}");
     }
 
     fn fmtInterfaceMethod(this: *Formatter, m: ast.BehaviorMethod) !*const Doc {
@@ -1596,78 +1604,121 @@ pub const Formatter = struct {
         return this.concat(sig, try this.text(";"));
     }
 
-    fn fmtRecord(this: *Formatter, r: ast.TypeDecl) !*const Doc {
-        // Check if there are any methods
-        var hasMethods = false;
-        for (r.methods) |_| {
-            hasMethods = true;
-            break;
+    /// One field of a field list: `#[ann] name: Type = default`, preceded by
+    /// its `//` comments (each on its own line).
+    fn fmtField(this: *Formatter, f: ast.Field) !*const Doc {
+        var parts: std.ArrayList(*const Doc) = .empty;
+        for (f.comments) |c| {
+            try parts.append(this.arena, try this.text(try std.fmt.allocPrint(this.arena, "// {s}", .{c})));
+            try parts.append(this.arena, this.hardline());
         }
+        for (f.annotations) |ann| {
+            const prefix: []const u8 = if (ann.is_builtin) "@" else "";
+            const annText = if (ann.args.len == 0)
+                try std.fmt.allocPrint(this.arena, "#[{s}{s}] ", .{ prefix, ann.name })
+            else
+                try std.fmt.allocPrint(this.arena, "#[{s}{s}({s})] ", .{ prefix, ann.name, try std.mem.join(this.arena, ", ", ann.args) });
+            try parts.append(this.arena, try this.text(annText));
+        }
+        try parts.append(this.arena, try this.text(f.name));
+        try parts.append(this.arena, try this.text(": "));
+        try parts.append(this.arena, try this.fmtTypeRef(f.typeRef));
+        if (f.default) |d| {
+            try parts.append(this.arena, try this.text(" = "));
+            try parts.append(this.arena, try this.fmtExpr(d));
+        }
+        return this.concatAll(parts.items);
+    }
 
-        var fieldDocs = try this.arena.alloc(*const Doc, r.recordFields().len);
-        for (r.recordFields(), 0..) |f, i| {
-            const typeDoc = try this.fmtTypeRef(f.typeRef);
-            fieldDocs[i] = try this.concatAll(&.{
-                try this.text(f.name),
-                try this.text(": "),
-                typeDoc,
+    /// `(a: T, b: U)` — the field list of a record or a variant payload.
+    /// Compact on one line without a trailing comma (whatever the width);
+    /// open, one field per line with the trailing comma, when the source had
+    /// one or a field carries a comment.
+    fn fmtFieldList(this: *Formatter, fields: []const ast.Field, trailingComma: bool) !*const Doc {
+        var open = trailingComma;
+        for (fields) |f| {
+            if (f.comments.len > 0) open = true;
+        }
+        const items = try this.arena.alloc(*const Doc, fields.len);
+        for (fields, 0..) |f, i| items[i] = try this.fmtField(f);
+        if (!open) {
+            return this.concatAll(&.{
+                try this.text("("),
+                try this.join(items, try this.text(", ")),
+                try this.text(")"),
             });
-            if (f.default) |d| {
-                fieldDocs[i] = try this.concatAll(&.{
-                    fieldDocs[i],
-                    try this.text(" = "),
-                    try this.fmtExpr(d),
-                });
+        }
+        const withCommas = try this.arena.alloc(*const Doc, items.len);
+        for (items, 0..) |item, i| withCommas[i] = try this.concat(item, try this.text(","));
+        return this.surroundBreak("(", try this.join(withCommas, this.hardline()), ")");
+    }
+
+    /// `#[…] [pub] type Name<G>(fields) implement A { methods }` (record shape)
+    /// or `#[…] [pub] type Name<G> implement A { Variant, …, methods }` (enum
+    /// shape) — the 1.0.3 surface. A record with no methods prints no body;
+    /// variants stay compact on one line unless the source had a trailing
+    /// comma, the body holds a section or a method.
+    fn fmtType(this: *Formatter, t: ast.TypeDecl) !*const Doc {
+        var parts: std.ArrayList(*const Doc) = .empty;
+        try parts.append(this.arena, try this.fmtAnnotations(t.annotations));
+        if (t.isPub) try parts.append(this.arena, try this.text("pub "));
+        try parts.append(this.arena, try this.text("type "));
+        try parts.append(this.arena, try this.text(t.name));
+        try parts.append(this.arena, try this.fmtGenericParams(t.genericParams));
+
+        const methodDocs = try this.arena.alloc(*const Doc, t.methods.len);
+        for (t.methods, 0..) |m, i| methodDocs[i] = try this.concat(
+            try this.fmtAnnotations(m.annotations),
+            try this.fmtInterfaceMethod(m),
+        );
+
+        if (t.isRecord()) {
+            if (t.recordFields().len > 0) try parts.append(this.arena, try this.fmtFieldList(t.recordFields(), t.trailingComma));
+            try this.appendImplement(&parts, t.implement);
+            if (methodDocs.len > 0) {
+                try parts.append(this.arena, try this.text(" "));
+                try parts.append(this.arena, try this.surroundBreak("{", try this.join(methodDocs, this.hardline()), "}"));
             }
+            return this.concatAll(parts.items);
         }
 
-        var methodDocs = try this.arena.alloc(*const Doc, r.methods.len);
-        for (r.methods, 0..) |m, i| methodDocs[i] = try this.fmtInterfaceMethod(m);
+        try this.appendImplement(&parts, t.implement);
+        try parts.append(this.arena, try this.text(" "));
+        const variants = t.variants();
+        const sections = t.sections();
+        const itemCount = variants.len + sections.len;
+        if (itemCount + methodDocs.len == 0) {
+            try parts.append(this.arena, try this.text("{}"));
+            return this.concatAll(parts.items);
+        }
+        const open = t.trailingComma or sections.len > 0 or methodDocs.len > 0;
+        if (!open) {
+            const vdocs = try this.arena.alloc(*const Doc, variants.len);
+            for (variants, 0..) |v, i| vdocs[i] = try this.fmtEnumVariant(v);
+            try parts.append(this.arena, try this.surroundFlat("{", try this.join(vdocs, try this.text(", ")), "}"));
+            return this.concatAll(parts.items);
+        }
+        var lines: std.ArrayList(*const Doc) = .empty;
+        for (variants) |v| try lines.append(this.arena, try this.concat(try this.fmtEnumVariant(v), try this.text(",")));
+        for (sections) |sec| try lines.append(this.arena, try this.fmtEnumSection(sec));
+        var inner = try this.join(lines.items, this.hardline());
+        if (methodDocs.len > 0) {
+            const methods = try this.join(methodDocs, this.hardline());
+            inner = if (itemCount > 0)
+                try this.concatAll(&.{ inner, try this.text("\n"), this.hardline(), methods })
+            else
+                methods;
+        }
+        try parts.append(this.arena, try this.surroundBreak("{", inner, "}"));
+        return this.concatAll(parts.items);
+    }
 
-        const allItems = try this.arena.alloc(*const Doc, fieldDocs.len + methodDocs.len);
-        @memcpy(allItems[0..fieldDocs.len], fieldDocs);
-        @memcpy(allItems[fieldDocs.len..], methodDocs);
-
-        const useMultiline = hasMethods or r.trailingComma;
-        const body = if (allItems.len == 0)
-            try this.text("{}")
-        else if (!useMultiline) blk: {
-            // Single line: record { field: Type, field2: Type }
-            const withCommas = try this.arena.alloc(*const Doc, allItems.len);
-            for (allItems, 0..) |item, i| {
-                const isLast = i == allItems.len - 1;
-                withCommas[i] = if (!isLast)
-                    try this.concat(item, try this.text(","))
-                else
-                    item;
-            }
-            const inner = try this.joinWith(withCommas, try this.text(" "));
-            break :blk try this.surroundFlat("{", inner, "}");
-        } else blk: {
-            const addTrailingComma = r.trailingComma and !hasMethods;
-            const withCommas = try this.arena.alloc(*const Doc, allItems.len);
-            for (allItems, 0..) |item, i| {
-                const isLast = i == allItems.len - 1;
-                withCommas[i] = if (!isLast or (isLast and addTrailingComma))
-                    try this.concat(item, try this.text(","))
-                else
-                    item;
-            }
-            const inner = try this.join(withCommas, this.hardline());
-            break :blk try this.surroundBreak("{", inner, "}");
-        };
-
-        const pubPrefix = if (r.isPub) try this.text("pub ") else try this.text("");
-        return this.concatAll(&.{
-            try this.fmtAnnotations(r.annotations),
-            pubPrefix,
-            try this.text("val "),
-            try this.text(r.name),
-            try this.fmtGenericParams(r.genericParams),
-            try this.text(" = record "),
-            try this.fmtImplementClause(r.implement),
-            body,
-        });
+    fn appendImplement(this: *Formatter, parts: *std.ArrayList(*const Doc), impls: []const ast.TypeRef) !void {
+        if (impls.len == 0) return;
+        const docs = try this.arena.alloc(*const Doc, impls.len);
+        for (impls, 0..) |im, i| docs[i] = try this.fmtTypeRef(im);
+        try parts.append(this.arena, try this.text(" implement "));
+        try parts.append(this.arena, try this.join(docs, try this.text(", ")));
     }
 
     /// One enum variant: a unit name (`Red`), a numeric section leaf (`500`,
@@ -1675,18 +1726,7 @@ pub const Formatter = struct {
     /// (`Rgb(r: i32, g: i32)`).
     fn fmtEnumVariant(this: *Formatter, v: ast.EnumVariant) !*const Doc {
         if (v.fields.len == 0) return this.text(v.name);
-        var fieldDocs = try this.arena.alloc(*const Doc, v.fields.len);
-        for (v.fields, 0..) |f, fi| {
-            fieldDocs[fi] = try this.concatAll(&.{
-                try this.text(f.name),
-                try this.text(": "),
-                try this.fmtTypeRef(f.typeRef),
-            });
-        }
-        return this.concat(
-            try this.text(v.name),
-            try this.commaList("(", fieldDocs, ")"),
-        );
+        return this.concat(try this.text(v.name), try this.fmtFieldList(v.fields, false));
     }
 
     /// An enum section: `Color { Red, Blue }`, holding bare variants and
@@ -1706,82 +1746,6 @@ pub const Formatter = struct {
             break :blk try this.surroundBreak("{", inner, "}");
         };
         return this.concatAll(&.{ try this.text(s.name), try this.text(" "), body });
-    }
-
-    fn fmtEnum(this: *Formatter, e: ast.TypeDecl) !*const Doc {
-        // Check if there are any methods
-        var hasMethods = false;
-        for (e.methods) |_| {
-            hasMethods = true;
-            break;
-        }
-
-        var variantDocs = try this.arena.alloc(*const Doc, e.variants().len);
-        for (e.variants(), 0..) |v, i| variantDocs[i] = try this.fmtEnumVariant(v);
-
-        // Sections (`Color { Red, Blue }`) are a separate slice on the enum shape.
-        // They used to be skipped here, which SILENTLY DELETED them from the
-        // formatted file. Sections always render on their own line, without a
-        // separating comma (the closing brace terminates the item).
-        var sectionDocs = try this.arena.alloc(*const Doc, e.sections().len);
-        for (e.sections(), 0..) |s, i| sectionDocs[i] = try this.fmtEnumSection(s);
-
-        var methodDocs = try this.arena.alloc(*const Doc, e.methods.len);
-        for (e.methods, 0..) |m, i| methodDocs[i] = try this.fmtInterfaceMethod(m);
-
-        const allItems = try this.arena.alloc(*const Doc, variantDocs.len + sectionDocs.len + methodDocs.len);
-        @memcpy(allItems[0..variantDocs.len], variantDocs);
-        @memcpy(allItems[variantDocs.len..][0..sectionDocs.len], sectionDocs);
-        @memcpy(allItems[variantDocs.len + sectionDocs.len ..], methodDocs);
-        // Items that must NOT be followed by a comma: the sections.
-        const commaFreeFrom = variantDocs.len;
-        const commaFreeTo = variantDocs.len + sectionDocs.len;
-
-        // Always use shorthand form: val Name = enum { ... }
-        // Use multiline if has trailing comma in source, has methods (methods
-        // require trailing comma on last variant) or has sections.
-        const useMultiline = hasMethods or e.trailingComma or sectionDocs.len > 0;
-        const body = if (allItems.len == 0)
-            try this.text("{}")
-        else if (!useMultiline) blk: {
-            // Single line: enum { Variant1, Variant2 }
-            const withCommas = try this.arena.alloc(*const Doc, allItems.len);
-            for (allItems, 0..) |item, i| {
-                const isLast = i == allItems.len - 1;
-                withCommas[i] = if (!isLast)
-                    try this.concat(item, try this.text(","))
-                else
-                    item;
-            }
-            const inner = try this.joinWith(withCommas, try this.text(" "));
-            break :blk try this.surroundFlat("{", inner, "}");
-        } else blk: {
-            // Multiline: all non-last items get commas; last item gets comma only if trailingComma and no methods
-            const addTrailingComma = e.trailingComma and !hasMethods;
-            const withCommas = try this.arena.alloc(*const Doc, allItems.len);
-            for (allItems, 0..) |item, i| {
-                const isLast = i == allItems.len - 1;
-                const isSection = i >= commaFreeFrom and i < commaFreeTo;
-                withCommas[i] = if (!isSection and (!isLast or addTrailingComma))
-                    try this.concat(item, try this.text(","))
-                else
-                    item;
-            }
-            const inner = try this.join(withCommas, this.hardline());
-            break :blk try this.surroundBreak("{", inner, "}");
-        };
-
-        const pubPrefix = if (e.isPub) try this.text("pub ") else try this.text("");
-        return this.concatAll(&.{
-            try this.fmtAnnotations(e.annotations),
-            pubPrefix,
-            try this.text("val "),
-            try this.text(e.name),
-            try this.fmtGenericParams(e.genericParams),
-            try this.text(" = enum "),
-            try this.fmtImplementClause(e.implement),
-            body,
-        });
     }
 
     fn fmtImplement(this: *Formatter, impl: ast.ImplementDecl) !*const Doc {
@@ -1940,6 +1904,19 @@ pub const Formatter = struct {
                 break :blk this.concatAll(&.{
                     try this.text("#("),
                     inner,
+                    try this.text(")"),
+                });
+            },
+            .labeledTuple => |lt| blk: {
+                var docs = try this.arena.alloc(*const Doc, lt.elems.len);
+                for (lt.elems, 0..) |e, i| docs[i] = try this.concatAll(&.{
+                    try this.text(lt.labels[i]),
+                    try this.text(": "),
+                    try this.fmtTypeRef(e),
+                });
+                break :blk this.concatAll(&.{
+                    try this.text("#("),
+                    try this.join(docs, try this.text(", ")),
                     try this.text(")"),
                 });
             },

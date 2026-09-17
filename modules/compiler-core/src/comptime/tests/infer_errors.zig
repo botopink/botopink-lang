@@ -611,3 +611,36 @@ test "infer error: RF5 ---- let-binding Future.resolved inside #[@future] reds f
         \\}
     );
 }
+
+// ── tuple labels (decision 8 §6) ──────────────────────────────────────────────
+
+test "infer: tuple label ---- an unknown label is an error naming the positional form" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn loadTyped() -> #(string, i32) {
+        \\    return #("SP", 12);
+        \\}
+        \\val n = loadTyped().name;
+    );
+}
+
+test "infer: tuple label ---- labels come from the written type and from construction variables" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn load() -> #(name: string, pop: i32) {
+        \\    val name = "SP";
+        \\    val pop = 12;
+        \\    return #(name, pop);
+        \\}
+        \\fn show(r: #(city: string, pop: i32)) -> i32 {
+        \\    return r.pop;
+        \\}
+        \\fn main() -> i32 {
+        \\    val row = load();
+        \\    val a = "RJ";
+        \\    val b = 7;
+        \\    val local = #(a, b);
+        \\    val s: string = local.a;
+        \\    val typed: #(x: i32, y: i32) = #(1, 2);
+        \\    return show(row) + show(#("BH", 3)) + typed.y + row.pop;
+        \\}
+    );
+}

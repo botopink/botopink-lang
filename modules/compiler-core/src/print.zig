@@ -126,6 +126,39 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "write `#[…]` instead",
             .hint = "An annotation block opens with `#[`; the `@` marks a builtin annotation INSIDE it, e.g. `#[@External.Node(\"./m.mjs\", \"f\")]`.",
         },
+        .typeRecordWithVariants => .{
+            .code = "type-record-with-variants",
+            .message = "a `type` with a field list cannot also declare variants",
+            .hint = "A record is `type Name(fields) { methods }`; an enum is `type Name { Variant, … }`. Split the declaration in two.",
+        },
+        .typeEmptyFieldList => .{
+            .code = "type-empty-field-list",
+            .message = "an empty field list `()`",
+            .hint = "A record with no fields omits the parentheses: `type Name { methods }`.",
+        },
+        .typeVariantAfterMethod => .{
+            .code = "type-variant-after-method",
+            .message = "a variant after a method",
+            .hint = "Declare every variant (and section) before the first method.",
+        },
+        .typeFieldValPrefix => .{
+            .code = "type-field-val-prefix",
+            .message = "a field list takes no `val` prefix",
+            .caretCaption = "remove `val`",
+            .hint = "Fields are immutable already: `type Point(x: i32, y: i32)`.",
+        },
+        .memberCommaSeparator => .{
+            .code = "member-comma-separator",
+            .message = "members end with `;`, not `,`",
+            .caretCaption = "replace `,` with `;` (or nothing after a `}`)",
+            .hint = "A bodyless member (`fn f(self: Self) -> i32;`, `val x: T;`) ends with `;`; a member with a body ends with `}`.",
+        },
+        .memberMissingSemicolon => .{
+            .code = "member-missing-semicolon",
+            .message = "a bodyless member must end with `;`",
+            .caretCaption = "add `;`",
+            .hint = "Write `fn name(self: Self) -> T;` or `val name: T;`.",
+        },
         .fnParamPositionalAfterNamed => .{
             .message = "fn-param-positional-after-named: positional argument supplied after a named one.",
             .hint = "Convert the trailing positional arg to a named one (`name: value`), or move the named argument to the end of the call.",

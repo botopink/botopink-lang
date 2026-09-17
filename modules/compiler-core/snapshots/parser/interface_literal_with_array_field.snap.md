@@ -16,7 +16,7 @@
               "col": 12
             },
             "kind": {
-              "interfaceLit": {
+              "behaviorLit": {
                 "name": "Decl",
                 "fields": [
                   {

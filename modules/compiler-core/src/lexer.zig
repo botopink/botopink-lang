@@ -708,7 +708,7 @@ pub const Lexer = struct {
         if (std.mem.eql(u8, text, "from")) return .from;
         if (std.mem.eql(u8, text, "if")) return .@"if";
         if (std.mem.eql(u8, text, "implement")) return .implement;
-        if (std.mem.eql(u8, text, "is")) return .@"is";
+        if (std.mem.eql(u8, text, "is")) return .is;
         if (std.mem.eql(u8, text, "import")) return .import;
         // `let` is an alias for `val` (immutable binding)
         if (std.mem.eql(u8, text, "mod")) return .mod;
@@ -719,6 +719,7 @@ pub const Lexer = struct {
         if (std.mem.eql(u8, text, "test")) return .@"test";
         if (std.mem.eql(u8, text, "throw")) return .throw;
         if (std.mem.eql(u8, text, "interface")) return .interface;
+        if (std.mem.eql(u8, text, "behavior")) return .behavior;
         if (std.mem.eql(u8, text, "type")) return .type;
         if (std.mem.eql(u8, text, "record")) return .record;
         if (std.mem.eql(u8, text, "use")) return .use;

@@ -247,3 +247,69 @@ test "js: interface literal ---- with fields" {
         \\}
     );
 }
+
+test "js: tuple ---- labels resolve to positions on every backend" {
+    // Decision 8 §6: labels are compile-time names — from the written type
+    // (`load`'s return, `show`'s parameter, an annotation) or from the variables
+    // a tuple is built from; the value stays the positional tuple.
+    // KNOWN (wasm): `row` and `local` carry no written type, so the wasm printer
+    // has no print type for their string elements and prints the addresses
+    // (`256`, `264`) — the same for a positional `row._0`; a decision-8 printer
+    // concern (01 step 6), not a label one. The annotated `typed.y` prints 2.
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn load() -> #(name: string, pop: i32) {
+        \\    val name = "SP";
+        \\    val pop = 12;
+        \\    return #(name, pop);
+        \\}
+        \\
+        \\fn show(r: #(city: string, pop: i32)) -> i32 {
+        \\    return r.pop;
+        \\}
+        \\
+        \\fn main() {
+        \\    val row = load();
+        \\    @print(row.name);
+        \\    @print(row.pop + 1);
+        \\    val a = "RJ";
+        \\    val b = 7;
+        \\    val local = #(a, b);
+        \\    @print(local.a);
+        \\    @print(show(#("BH", 3)));
+        \\    @print(show(row));
+        \\    val typed: #(x: i32, y: i32) = #(1, 2);
+        \\    @print(typed.y);
+        \\}
+    );
+}
+
+test "js: surface ---- type and behavior compile like record, enum and interface" {
+    // Front 12 step 2 (dual grammar): the 1.0.3 spelling builds the same nodes,
+    // so the generated code is the old spelling's.
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\behavior Shape {
+        \\    fn area(self: Self) -> i32;
+        \\}
+        \\
+        \\type Square(side: i32) implement Shape {
+        \\    fn area(self: Self) -> i32 {
+        \\        return self.side * self.side;
+        \\    }
+        \\}
+        \\
+        \\type Size { Small, Large(n: i32) }
+        \\
+        \\fn weight(s: Size) -> i32 {
+        \\    return case s {
+        \\        Small -> 1;
+        \\        Large(n) -> n;
+        \\    };
+        \\}
+        \\
+        \\fn main() {
+        \\    val sq = Square(side: 3);
+        \\    @print(sq.area());
+        \\    @print(weight(Size.Large(n: 5)) + weight(Size.Small));
+        \\}
+    );
+}

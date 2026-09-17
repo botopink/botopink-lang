@@ -1945,6 +1945,16 @@ fn appendTypeRefStr(buf: *std.ArrayListUnmanaged(u8), allocator: std.mem.Allocat
             }
             try buf.append(allocator, ')');
         },
+        .labeledTuple => |lt| {
+            try buf.appendSlice(allocator, "#(");
+            for (lt.elems, 0..) |e, i| {
+                if (i > 0) try buf.appendSlice(allocator, ", ");
+                try buf.appendSlice(allocator, lt.labels[i]);
+                try buf.appendSlice(allocator, ": ");
+                try appendTypeRefStr(buf, allocator, e);
+            }
+            try buf.append(allocator, ')');
+        },
         .optional => |inner| {
             try buf.append(allocator, '?');
             try appendTypeRefStr(buf, allocator, inner.*);
@@ -2456,6 +2466,18 @@ fn argMatchesType(arg: []const u8, typeName: []const u8) bool {
         return std.ascii.isDigit(c) or c == '-' or c == '+';
     }
     return true; // enum member / named type → lenient (full check is the body's job).
+}
+
+/// The index of the element labeled `label` (decision 8 §6), or null when no
+/// element carries that label or two do (an ambiguous label names nothing).
+fn tupleLabelIndex(labels: []const []const u8, label: []const u8) ?usize {
+    var found: ?usize = null;
+    for (labels, 0..) |l, i| {
+        if (!std.mem.eql(u8, l, label)) continue;
+        if (found != null) return null;
+        found = i;
+    }
+    return found;
 }
 
 /// Parse a tuple-index member name (`_0`, `_1`, …) into its integer index.
@@ -4637,6 +4659,13 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
             for (elems, 0..) |e, i| args[i] = try resolveTypeRefInContext(env, e, genericMap);
             return env.namedTypeArgs("tuple", args);
         },
+        .labeledTuple => |lt| {
+            const args = try env.arena.alloc(*T.Type, lt.elems.len);
+            for (lt.elems, 0..) |e, i| args[i] = try resolveTypeRefInContext(env, e, genericMap);
+            const ty = try env.namedTypeArgs("tuple", args);
+            ty.named.labels = lt.labels;
+            return ty;
+        },
         .optional => |inner| {
             const innerTy = try resolveTypeRefInContext(env, inner.*, genericMap);
             const args = try env.arena.alloc(*T.Type, 1);
@@ -5304,7 +5333,26 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                 const idxStr = if (ia.member.len > 0 and ia.member[0] == '_') ia.member[1..] else ia.member;
                 if (std.fmt.parseInt(usize, idxStr, 10)) |idx| {
                     if (idx < recvType.named.args.len) outType = recvType.named.args[idx];
-                } else |_| {}
+                } else |_| {
+                    // Decision 8 §6 T4: `row.pop` names an element by its label.
+                    // The label exists only here — record the positional rewrite
+                    // (`row._1`) for the transform, so every backend sees an index.
+                    const idx = tupleLabelIndex(recvType.named.labels, ia.member) orelse {
+                        env.lastError = TypeError.custom(
+                            try std.fmt.allocPrint(env.arena, "this tuple has no element labeled `{s}`", .{ia.member}),
+                            "labels come from the tuple's written type or from the variables it was built from; use the position instead: `._0`, `._1`, …",
+                        ).withLoc(loc);
+                        return error.TypeError;
+                    };
+                    outType = recvType.named.args[idx];
+                    const rewrite = try env.arena.create(ast.Expr);
+                    rewrite.* = .{ .identifier = .{ .loc = loc, .kind = .{ .identAccess = .{
+                        .receiver = ia.receiver,
+                        .member = try std.fmt.allocPrint(env.arena, "_{d}", .{idx}),
+                        .optional = ia.optional,
+                    } } } };
+                    try env.enumSectionRewrites.put(loc, rewrite);
+                }
             }
             if (recvType.* == .named) {
                 const recvNamed = recvType.named;
@@ -7431,11 +7479,18 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
         .tupleLit => |tl| {
             const typedElems = try env.arena.alloc(ast.TypedExpr, tl.elems.len);
             const elemTypes = try env.arena.alloc(*T.Type, tl.elems.len);
+            // Decision 8 §6 T1: an element that is a plain variable lends its
+            // name as the element's label (`#(name, pop)`); others stay unlabeled.
+            const labels = try env.arena.alloc([]const u8, tl.elems.len);
+            var anyLabel = false;
             for (tl.elems, 0..) |elem, i| {
                 typedElems[i] = try inferExprTyped(env, elem);
                 elemTypes[i] = typedElems[i].getType();
+                labels[i] = if (elem == .identifier and elem.identifier.kind == .ident) elem.identifier.kind.ident else "";
+                if (labels[i].len > 0) anyLabel = true;
             }
             const tupleType = try env.namedTypeArgs("tuple", elemTypes);
+            if (anyLabel) tupleType.named.labels = labels;
             return TypedExpr{ .collection = .{ .loc = loc, .type_ = tupleType, .kind = .{ .tupleLit = .{
                 .elems = typedElems,
                 .comments = tl.comments,
@@ -7526,7 +7581,7 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
             } } } };
         },
 
-        .interfaceLit => |il| {
+        .behaviorLit => |il| {
             // Interface literal: @InterfaceName(field: value, …).
             // Each field is typed independently; the result type is the named interface.
             const typedFields = try env.arena.alloc(ast.RecordLitFieldOf(.typed), il.fields.len);
@@ -7535,7 +7590,7 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
                 typedFields[i] = .{ .name = f.name, .value = try makeTypedPtr(env, typedValue) };
             }
             const ifaceTy = try env.namedType(il.name);
-            return TypedExpr{ .collection = .{ .loc = loc, .type_ = ifaceTy, .kind = .{ .interfaceLit = .{
+            return TypedExpr{ .collection = .{ .loc = loc, .type_ = ifaceTy, .kind = .{ .behaviorLit = .{
                 .name = il.name,
                 .fields = typedFields,
             } } } };

@@ -90,7 +90,8 @@ codegen/
   tuple `#(a,b)` with no spaces, anything else `util.inspect` (records, enums and
   maps keep `console.log`'s text). A tuple is a JS array, so the call site passes
   the static shape when one argument holds a tuple:
-  `__bp_print_as([["#", null, null]], p)` (`printShape`/`typeShape`: a tuple or
+  `__bp_print_as([["#", null, null]], p)` (`printShape`/`typeShape`: a tuple (a
+  labeled `#(name: T, …)` type included) or
   array literal, a local or parameter bound to one — `print_shapes` — a top-level
   fn's declared return type, a primitive method's declared return type such as
   `zip` → `Array<#(T, U)>`). A tuple whose shape nothing recovers prints as an
@@ -889,8 +890,8 @@ first three are now enforced by the model, not by discipline:
   interns a shape string (`i` i32, `f` f32 slot, `b` bool, `s` string, `[X` array
   of `X`, `(XY…)` tuple) recovered by `printShapeOf` from a tuple / array
   literal, a local bound to one (`print_shape_locals`), `zip`, and a declared type
-  that spells a tuple (`typeRefShape` over a parameter, a fn result or an
-  annotation); nested strings print quoted with the source escapes
+  that spells a tuple, labeled or not (`typeRefShape` over a parameter, a fn
+  result or an annotation; `ast.TypeRef.tupleElems`); nested strings print quoted with the source escapes
   (`$__print_quoted_raw`). A flat `i32`/`f32` array keeps `$__print_arr_*`.
 - **String literals are unescaped at interning** (`literalBytes`): the lexer keeps
   `\"`, `\\`, `\n`, `\r`, `\t`, `\0`, `\$`, `\u{…}` verbatim, and the data segment
@@ -1161,3 +1162,10 @@ Effect rejection diagnostics (R*, RF*, RI*, RC*, RG* codes) live in
 `comptime/diagnostics.zig`; `comptime/infer.zig`'s `inEffectContext` uses the
 `effect` field of `comptime/env.zig`'s `StarFnCtx` so each family's rejections
 fire only inside the right effect body.
+
+## Tuple labels (decision 8 §6)
+
+No backend reads a tuple label. `row.label` reaches codegen already rewritten to
+`row._N` by the checker (`comptime/AGENTS.md`), and a labeled tuple type
+(`ast.TypeRef.labeledTuple`) is the positional tuple everywhere: `.d.ts` tuple
+(`typescript.zig`), commonJS/wasm print shapes via `TypeRef.tupleElems`.

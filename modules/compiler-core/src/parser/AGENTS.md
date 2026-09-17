@@ -32,7 +32,10 @@ parser/
 ├── AGENTS.md      ← you are here
 ├── types.zig      ← type-ref sub-grammar: parseTypeRef/BaseTypeRef/GenericParams/ImplementClause
 ├── patterns.zig   ← case/pattern sub-grammar: parseCaseExpr/parsePattern/SimplePattern/ListPattern
-├── decls.zig      ← declaration sub-grammar: val/fn/test/record/enum/interface/implement/extend/delegate/import + params
+├── decls.zig      ← declaration sub-grammar: val/fn/test/record/enum/interface/implement/extend/delegate/import + params;
+│                     the 1.0.3 `type`/`behavior` spellings (front 12 dual grammar): `parseTypeDecl`/`parseShorthandTypeDecl`
+│                     (shared `parseFieldList`, shape resolution, `type-*` diagnostics), `parseBehaviorDecl`/`parseShorthandBehaviorDecl`
+│                     (member separators: bodyless members end with `;` — `member-comma-separator` / `member-missing-semicolon`)
 ├── exprs.zig      ← expression sub-grammar: precedence climbing, primary/pipeline/local-bind/lambda/loop/range,
 │                     string templates (`${…}` re-scan), tagged calls
 ├── tests.zig      ← barrel: aggregates tests/<feature>.zig for test_root.zig
@@ -43,6 +46,7 @@ parser/
     ├── expressions.zig   ← operator/lambda/array/tuple/case/builtin/control-flow
     ├── destructuring.zig ← destructure/shorthand/assign
     ├── errors.zig        ← parse errors & cross-stage error-message units
+    ├── surface.zig       ← the 1.0.3 surface: `type` shapes, the field list, `behavior`, separators, and old-vs-new AST equality
     └── effect_rejections.zig ← parser-level `#[@<effect>]` rejections (R1/R2/R5…)
 ```
 

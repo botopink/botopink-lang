@@ -52,11 +52,28 @@ pub fn parseBaseTypeRef(this: *This, alloc: std.mem.Allocator) ParseError!ast.Ty
             for (elems.items) |*e| e.deinit(alloc);
             elems.deinit(alloc);
         }
+        // `#(name: T, …)` — a labeled tuple type (decision 8 §6): every element
+        // carries a label, or none does.
+        const labeled = this.check(.identifier) and this.peekAt(1).kind == .colon;
+        var labels: std.ArrayList([]const u8) = .empty;
+        errdefer labels.deinit(alloc);
         while (!this.check(.rightParenthesis) and !this.check(.endOfFile)) {
+            if (labeled) {
+                if (!(this.check(.identifier) and this.peekAt(1).kind == .colon)) {
+                    this.parseError = ParseErrorInfo.fromToken(.unexpectedToken, this.peek());
+                    return ParseError.UnexpectedToken;
+                }
+                try labels.append(alloc, this.advance().lexeme);
+                _ = this.advance(); // ':'
+            }
             try elems.append(alloc, try this.parseTypeRef(alloc));
             if (!this.match(.comma)) break;
         }
         _ = try this.consume(.rightParenthesis);
+        if (labeled) return ast.TypeRef{ .labeledTuple = .{
+            .elems = try elems.toOwnedSlice(alloc),
+            .labels = try labels.toOwnedSlice(alloc),
+        } };
         return ast.TypeRef{ .tuple_ = try elems.toOwnedSlice(alloc) };
     }
     // fn(T1, T2) -> R ---- function type

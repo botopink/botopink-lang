@@ -2800,7 +2800,7 @@ const Emitter = struct {
                 // Anonymous record literal — a plain JS object (parenthesized
                 // so it stays an expression in statement position).
                 .recordLit => |rl| return self.b.paren(try self.buildFieldObject(rl.fields)),
-                .interfaceLit => |il| return self.b.paren(try self.buildFieldObject(il.fields)),
+                .behaviorLit => |il| return self.b.paren(try self.buildFieldObject(il.fields)),
             },
 
             .comptime_ => |ct| switch (ct.kind) {
@@ -3300,7 +3300,8 @@ const Emitter = struct {
     /// The print shape a declared type spells (see `printShape`).
     fn typeShape(self: *Emitter, t: ast.TypeRef) anyerror!?js.Expr {
         return switch (t) {
-            .tuple_ => |elems| blk: {
+            .tuple_, .labeledTuple => blk: {
+                const elems = t.tupleElems().?;
                 const out = try self.arena().alloc(js.Expr, elems.len + 1);
                 out[0] = .{ .quoted = "#" };
                 for (elems, 0..) |el, i| out[i + 1] = (try self.typeShape(el)) orelse .null_;

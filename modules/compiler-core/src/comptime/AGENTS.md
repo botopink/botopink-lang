@@ -327,6 +327,15 @@ builds the equivalent untyped ctor chain into `env.enumSectionRewrites` (keyed b
 the outer identAccess loc) and `transform.zig rewriteExpr` substitutes it;
 synthesised nodes carry loc `{line=0, col=0}` so the rewrite is not re-triggered.
 
+Tuple labels (decision 8 §6) ride the same map: a `tuple` type carries
+`named.labels` (from a written `#(name: T, …)` type — `ast.TypeRef.labeledTuple`
+— or, T1, from the plain variables a `#(…)` literal is built from; `unify` never
+compares them). `row.label` on a labeled tuple resolves the element type and puts
+`row._N` into `env.enumSectionRewrites` under the access loc, so every backend
+sees a positional access; an unknown or ambiguous label is a located error naming
+the positional form. The name-mismatch warning (T7) is not implemented — the
+checker has no warning channel (06).
+
 `comptime.zig withSynthesisedEnumDecls` (after `transform` /
 `withUsedAssocInterfaces`) prepends every `env.synthesisedEnumDecls` entry as a
 top-level enum `TypeDecl` and adds the section-wrapper variants to each parent enum,

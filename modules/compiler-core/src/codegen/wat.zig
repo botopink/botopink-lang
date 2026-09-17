@@ -1043,7 +1043,7 @@ const Emitter = struct {
             },
             .collection => |c| switch (c.kind) {
                 .recordLit => |rl| self.ensureAnonRecord(c.loc, rl) catch null,
-                .interfaceLit => |il| self.ensureAnonRecord(c.loc, .{ .fields = il.fields }) catch null,
+                .behaviorLit => |il| self.ensureAnonRecord(c.loc, .{ .fields = il.fields }) catch null,
                 .grouped => |inner| self.recordTypeOfExpr(inner.*),
                 else => null,
             },
@@ -1939,7 +1939,7 @@ const Emitter = struct {
                     for (rl.fields) |f| n += self.countMemsExpr(f.value.*);
                     break :blk n;
                 },
-                .interfaceLit => |il| blk: {
+                .behaviorLit => |il| blk: {
                     var n: u32 = 1;
                     for (il.fields) |f| n += self.countMemsExpr(f.value.*);
                     break :blk n;
@@ -2782,7 +2782,7 @@ const Emitter = struct {
                 .tupleLit => |tl| try self.lowerTupleLit(tl),
                 .arrayLit => |al| try self.lowerArrayLit(al),
                 .recordLit => |rl| try self.lowerRecordLit(rl),
-                .interfaceLit => |il| try self.lowerRecordLit(.{ .fields = il.fields }),
+                .behaviorLit => |il| try self.lowerRecordLit(.{ .fields = il.fields }),
                 .range => try self.emitC(zero, "range"),
             },
             .jump => |j| switch (j.kind) {
@@ -4465,7 +4465,8 @@ const Emitter = struct {
     /// shape codes cannot describe (a record, an enum, a map).
     fn typeRefShape(self: *Emitter, t: ast.TypeRef) anyerror!?[]const u8 {
         switch (t) {
-            .tuple_ => |elems| {
+            .tuple_, .labeledTuple => {
+                const elems = t.tupleElems().?;
                 var out: std.ArrayListUnmanaged(u8) = .empty;
                 try out.append(self.arena(), '(');
                 for (elems) |el| {
@@ -5002,7 +5003,7 @@ const Emitter = struct {
                 .tupleLit => |tl| for (tl.elems) |el| try self.collectIdents(el, out),
                 .arrayLit => |al| for (al.elems) |el| try self.collectIdents(el, out),
                 .recordLit => |rl| for (rl.fields) |f| try self.collectIdents(f.value.*, out),
-                .interfaceLit => |il| for (il.fields) |f| try self.collectIdents(f.value.*, out),
+                .behaviorLit => |il| for (il.fields) |f| try self.collectIdents(f.value.*, out),
                 .range => |r| {
                     try self.collectIdents(r.start.*, out);
                     if (r.end) |x| try self.collectIdents(x.*, out);
@@ -5122,10 +5123,8 @@ const Emitter = struct {
                 .identAccess => |ia| blk: {
                     if (tupleIndex(ia.member)) |idx| {
                         const rt = self.typeRefOf(ia.receiver.*) orelse break :blk null;
-                        break :blk switch (rt) {
-                            .tuple_ => |elems| if (idx < elems.len) elems[idx] else null,
-                            else => null,
-                        };
+                        const elems = rt.tupleElems() orelse break :blk null;
+                        break :blk if (idx < elems.len) elems[idx] else null;
                     }
                     const rty = self.recordTypeOfExpr(ia.receiver.*) orelse break :blk null;
                     const fields = self.records.get(rty) orelse break :blk null;

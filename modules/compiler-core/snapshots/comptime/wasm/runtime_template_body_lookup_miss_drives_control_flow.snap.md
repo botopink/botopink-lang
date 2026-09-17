@@ -66,9 +66,9 @@ main() ->
 
 ----- BOTOPINK TRANSFORM CODE -- main.bp
 ```botopink
-pub val Button = record {
+pub type Button(
     label: string,
-};
+)
 
 val r = "ok";
 ```

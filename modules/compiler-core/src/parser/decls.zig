@@ -1350,3 +1350,370 @@ pub fn parseParam(this: *This, alloc: std.mem.Allocator) ParseError!Param {
     }
     return Param{ .name = name, .typeRef = typeRef, .modifier = modifier, .default = defaultExpr };
 }
+
+// ── 1.0.3 surface: `type` and `behavior` (front 12 dual grammar) ──────────────
+//
+// Both spellings build the same nodes as `record`/`enum`/`interface`:
+//   type Name<G>(fields) implement B { methods }       → TypeDecl, record shape
+//   type Name<G> implement B { Variant, V(f: T), S { … }, methods } → enum shape
+//   type Name { methods } / type Name                  → record with no fields
+//   behavior Name<G> extends B { val x: T; fn f(self: Self); default fn … { } }
+// Shape resolution and separators: specs/1.0.4-beta/12-surface-cutover/
+// type-grammar.md and separators.md.
+
+fn failAt(this: *This, kind: parser.ParseErrorType, tok: Token) ParseError {
+    this.parseError = ParseErrorInfo.fromToken(kind, tok);
+    return ParseError.UnexpectedToken;
+}
+
+/// True when the current token starts a member of a `type` body (a method,
+/// optionally annotated) rather than a variant or section.
+fn startsTypeMember(this: *This) bool {
+    return this.check(.@"pub") or this.check(.@"fn") or this.check(.declare) or
+        (this.check(.hash) and this.peekAt(1).kind == .leftSquareBracket);
+}
+
+pub const FieldList = struct {
+    fields: []Field,
+    trailingComma: bool,
+};
+
+/// `( field, field, … )` — the field list shared by `type Name(…)` and a
+/// variant payload `Variant(…)`:
+///   field := comment* annotation* Name ':' TypeRef ('=' Expr)?
+/// Comments before a field are kept on it; a trailing comma is allowed.
+pub fn parseFieldList(this: *This, alloc: std.mem.Allocator) ParseError!FieldList {
+    const open = try this.consume(.leftParenthesis);
+    var fields: std.ArrayList(Field) = .empty;
+    errdefer {
+        for (fields.items) |*f| f.deinit(alloc);
+        fields.deinit(alloc);
+    }
+    var trailingComma = false;
+    while (true) {
+        var comments: std.ArrayList([]const u8) = .empty;
+        errdefer {
+            for (comments.items) |c| alloc.free(c);
+            comments.deinit(alloc);
+        }
+        while (this.isComment()) {
+            const c = this.advance();
+            try comments.append(alloc, try alloc.dupe(u8, This.commentText(c.lexeme)));
+        }
+        if (this.check(.rightParenthesis) or this.check(.endOfFile)) {
+            for (comments.items) |c| alloc.free(c);
+            comments.deinit(alloc);
+            break;
+        }
+        const annotations = try this.parseAnnotations(alloc);
+        errdefer freeAnnotations(alloc, annotations);
+        if (this.check(.val)) return failAt(this, .typeFieldValPrefix, this.peek());
+        const nameTok = try this.consumeMemberName();
+        _ = try this.consume(.colon);
+        var fieldType = try this.parseTypeRef(alloc);
+        errdefer fieldType.deinit(alloc);
+        var default: ?Expr = null;
+        if (this.match(.equal)) default = try this.parseBinaryExpr(alloc, prec.equality);
+        const commentSlice = try comments.toOwnedSlice(alloc);
+        try fields.append(alloc, .{
+            .name = nameTok.lexeme,
+            .typeRef = fieldType,
+            .default = default,
+            .annotations = annotations,
+            .comments = commentSlice,
+        });
+        trailingComma = this.match(.comma);
+        if (!trailingComma) break;
+    }
+    this.skipComments();
+    if (fields.items.len == 0) return failAt(this, .typeEmptyFieldList, open);
+    _ = try this.consume(.rightParenthesis);
+    return .{ .fields = try fields.toOwnedSlice(alloc), .trailingComma = trailingComma };
+}
+
+/// Val-form: `[pub] val Name = #[…] type<G>(fields) implement B { … }`.
+pub fn parseTypeDecl(this: *This, alloc: std.mem.Allocator) ParseError!TypeDecl {
+    const p = try this.parseDeclPreamble(alloc, .type, false);
+    errdefer freeAnnotations(alloc, p.annotations);
+    return this.parseTypeDeclRest(alloc, p.name, p.annotations, p.isPub);
+}
+
+/// Shorthand: `#[…] [pub] type Name<G>(fields) implement B { … }`.
+pub fn parseShorthandTypeDecl(this: *This, alloc: std.mem.Allocator) ParseError!TypeDecl {
+    const p = try this.parseDeclPreamble(alloc, .type, true);
+    errdefer freeAnnotations(alloc, p.annotations);
+    return this.parseTypeDeclRest(alloc, p.name, p.annotations, p.isPub);
+}
+
+/// Everything after `type Name` (shorthand) or `type` (val-form): generic
+/// parameters, the optional field list, the `implement` clause and the
+/// optional body. Decides the shape from what it consumed (type-grammar.md
+/// § Shape resolution).
+pub fn parseTypeDeclRest(this: *This, alloc: std.mem.Allocator, name: []const u8, annotations: []Annotation, isPub: bool) ParseError!TypeDecl {
+    const genericParams = try this.parseGenericParams(alloc);
+    errdefer alloc.free(genericParams);
+
+    var fields: []Field = &.{};
+    var hasFieldList = false;
+    var fieldTrailingComma = false;
+    errdefer {
+        for (fields) |*f| f.deinit(alloc);
+        if (fields.len > 0) alloc.free(fields);
+    }
+    if (this.check(.leftParenthesis)) {
+        const fl = try parseFieldList(this, alloc);
+        fields = fl.fields;
+        fieldTrailingComma = fl.trailingComma;
+        hasFieldList = true;
+    }
+
+    const implementList = try this.parseImplementClause(alloc);
+    errdefer {
+        for (implementList) |*im| @constCast(im).deinit(alloc);
+        alloc.free(implementList);
+    }
+
+    var variants: std.ArrayList(EnumVariant) = .empty;
+    errdefer {
+        for (variants.items) |*v| v.deinit(alloc);
+        variants.deinit(alloc);
+    }
+    var sections: std.ArrayList(parser.EnumSection) = .empty;
+    errdefer {
+        for (sections.items) |*s| s.deinit(alloc);
+        sections.deinit(alloc);
+    }
+    var methods: std.ArrayList(BehaviorMethod) = .empty;
+    errdefer {
+        for (methods.items) |*m| m.deinit(alloc);
+        methods.deinit(alloc);
+    }
+
+    var variantTrailingComma = false;
+    if (this.match(.leftBrace)) {
+        var sawMethod = false;
+        // A bare/payload variant not followed by `,` may only be the last item
+        // before `}` or before a method.
+        var needSeparator = false;
+        while (true) {
+            this.skipComments();
+            if (this.check(.rightBrace) or this.check(.endOfFile)) break;
+            if (startsTypeMember(this)) {
+                const memberAnnotations = try this.parseAnnotations(alloc);
+                const is_pub = this.match(.@"pub");
+                const is_declare = this.match(.declare);
+                var method = this.parseMethodDecl(alloc, is_declare, is_pub) catch |err| {
+                    freeAnnotations(alloc, memberAnnotations);
+                    return err;
+                };
+                method.annotations = memberAnnotations;
+                try methods.append(alloc, method);
+                sawMethod = true;
+                needSeparator = false;
+                if (this.check(.comma)) return failAt(this, .memberCommaSeparator, this.peek());
+                continue;
+            }
+            const head = this.peek();
+            if (sawMethod) return failAt(this, .typeVariantAfterMethod, head);
+            if (hasFieldList) return failAt(this, .typeRecordWithVariants, head);
+            if (needSeparator) return failAt(this, .unexpectedToken, head);
+            const isSection = head.kind == .identifier and this.peekAt(1).kind == .leftBrace;
+            const consumedComma = if (head.kind == .identifier and this.peekAt(1).kind == .leftParenthesis)
+                try parsePayloadVariant(this, alloc, &variants, &sections)
+            else
+                try parseEnumItem(this, alloc, &variants, &sections, false);
+            variantTrailingComma = consumedComma;
+            needSeparator = !consumedComma and !isSection;
+        }
+        _ = try this.consume(.rightBrace);
+    }
+
+    const isEnum = variants.items.len > 0 or sections.items.len > 0;
+    const shape: ast.TypeShape = if (isEnum)
+        .{ .enum_ = .{
+            .variants = try variants.toOwnedSlice(alloc),
+            .sections = try sections.toOwnedSlice(alloc),
+        } }
+    else
+        .{ .record = fields };
+    if (isEnum) {
+        // No field list on an enum (rejected above), so `fields` is empty.
+        variants = .empty;
+        sections = .empty;
+    }
+    const methodSlice = try methods.toOwnedSlice(alloc);
+    return TypeDecl{
+        .name = name,
+        .id = this.nextId("type"),
+        .isPub = isPub,
+        .annotations = annotations,
+        .genericParams = genericParams,
+        .implement = implementList,
+        .shape = shape,
+        .trailingComma = if (isEnum) variantTrailingComma else fieldTrailingComma,
+        .methods = methodSlice,
+    };
+}
+
+/// `Variant(field, …)` in a `type` body: the payload is the shared field list.
+/// Returns whether the variant ended with `,`.
+fn parsePayloadVariant(
+    this: *This,
+    alloc: std.mem.Allocator,
+    variants: *std.ArrayList(EnumVariant),
+    sections: *std.ArrayList(parser.EnumSection),
+) ParseError!bool {
+    const head = try this.consume(.identifier);
+    for (sections.items) |existing| {
+        if (std.mem.eql(u8, existing.name, head.lexeme)) return failAt(this, .unexpectedToken, head);
+    }
+    const fl = try parseFieldList(this, alloc);
+    errdefer {
+        for (fl.fields) |*f| f.deinit(alloc);
+        alloc.free(fl.fields);
+    }
+    const consumed = this.match(.comma);
+    try variants.append(alloc, .{ .name = head.lexeme, .fields = fl.fields });
+    return consumed;
+}
+
+/// Val-form: `[pub] val Name = #[…] behavior extends B { … }`.
+pub fn parseBehaviorDecl(this: *This, alloc: std.mem.Allocator) ParseError!BehaviorDecl {
+    const p = try this.parseDeclPreamble(alloc, .behavior, false);
+    errdefer freeAnnotations(alloc, p.annotations);
+    const extendsSlice = try this.parseExtendsClause(alloc);
+    return parseBehaviorBody(this, alloc, p.name, extendsSlice, p.annotations, p.isPub);
+}
+
+/// Shorthand: `#[…] [pub] behavior Name<G> extends B { … }`.
+pub fn parseShorthandBehaviorDecl(this: *This, alloc: std.mem.Allocator) ParseError!BehaviorDecl {
+    const p = try this.parseDeclPreamble(alloc, .behavior, true);
+    errdefer freeAnnotations(alloc, p.annotations);
+    // Generic parameters may follow the name (`behavior Stack<T> { … }`) or,
+    // as with `interface`, the `extends` clause.
+    const early = try this.parseGenericParams(alloc);
+    errdefer alloc.free(early);
+    const extendsSlice = try this.parseExtendsClause(alloc);
+    var decl = try parseBehaviorBody(this, alloc, p.name, extendsSlice, p.annotations, p.isPub);
+    if (early.len > 0) {
+        if (decl.genericParams.len > 0) return failAt(this, .unexpectedToken, this.tokens[this.current - 1]);
+        alloc.free(decl.genericParams);
+        decl.genericParams = early;
+    } else {
+        alloc.free(early);
+    }
+    return decl;
+}
+
+/// A `behavior` body with the 1.0.3 separator rule: a bodyless member
+/// (`val x: T`, `fn f(…) -> R`, `declare fn …`) ends with `;`; a member with a
+/// body ends with `}`; `,` never separates members.
+fn parseBehaviorBody(this: *This, alloc: std.mem.Allocator, name: []const u8, extendsSlice: []const []const u8, annotations: []Annotation, isPub: bool) ParseError!BehaviorDecl {
+    const genericParams = try this.parseGenericParams(alloc);
+    errdefer alloc.free(genericParams);
+    _ = try this.consume(.leftBrace);
+
+    var fields: std.ArrayList(BehaviorField) = .empty;
+    errdefer fields.deinit(alloc);
+    var methods: std.ArrayList(BehaviorMethod) = .empty;
+    errdefer {
+        for (methods.items) |*m| m.deinit(alloc);
+        methods.deinit(alloc);
+    }
+
+    while (true) {
+        this.skipComments();
+        if (this.check(.rightBrace) or this.check(.endOfFile)) break;
+        if (this.check(.val) or (this.check(.@"pub") and this.peekAt(1).kind == .val)) {
+            _ = this.match(.@"pub");
+            _ = try this.consume(.val);
+            const fieldName = (try this.consume(.identifier)).lexeme;
+            _ = try this.consume(.colon);
+            const typeName = (try this.consume(.identifier)).lexeme;
+            try expectMemberSemicolon(this);
+            try fields.append(alloc, .{ .name = fieldName, .typeName = typeName });
+        } else if (this.check(.default) or this.check(.@"fn") or this.check(.declare) or
+            this.check(.hash) or (this.check(.at) and this.peekAt(1).kind == .leftSquareBracket))
+        {
+            const memberAnnotations = try this.parseAnnotations(alloc);
+            if (effectFromAnnotations(memberAnnotations)) |k| {
+                freeAnnotations(alloc, memberAnnotations);
+                const tok = this.peek();
+                this.parseError = ParseErrorInfo.fromTokenDetail(.effectOnInterfaceMethodForbidden, tok, k.annotationName());
+                return ParseError.UnexpectedToken;
+            }
+            const is_default = this.match(.default);
+            const is_declare = this.match(.declare);
+            var method = parseBehaviorMethod(this, alloc, is_default) catch |err| {
+                freeAnnotations(alloc, memberAnnotations);
+                return err;
+            };
+            method.annotations = memberAnnotations;
+            method.is_declare = is_declare;
+            try methods.append(alloc, method);
+        } else {
+            return failAt(this, .unexpectedToken, this.peek());
+        }
+    }
+    _ = try this.consume(.rightBrace);
+
+    return BehaviorDecl{
+        .name = name,
+        .id = this.nextId("behavior"),
+        .isPub = isPub,
+        .annotations = annotations,
+        .genericParams = genericParams,
+        .extends = extendsSlice,
+        .fields = try fields.toOwnedSlice(alloc),
+        .trailingComma = false,
+        .methods = try methods.toOwnedSlice(alloc),
+    };
+}
+
+/// `;` after a bodyless behavior member; `,` there is `member-comma-separator`,
+/// anything else `member-missing-semicolon` (located at the member's last token).
+fn expectMemberSemicolon(this: *This) ParseError!void {
+    if (this.match(.semicolon)) return;
+    if (this.check(.comma)) return failAt(this, .memberCommaSeparator, this.peek());
+    return failAt(this, .memberMissingSemicolon, this.tokens[this.current - 1]);
+}
+
+/// One `fn` member of a `behavior`: a signature ending with `;`, or — for a
+/// `default fn` — a body ending with `}` (no separator after it).
+fn parseBehaviorMethod(this: *This, alloc: std.mem.Allocator, is_default: bool) ParseError!BehaviorMethod {
+    _ = try this.consume(.@"fn");
+    const methodName = (try this.consume(.identifier)).lexeme;
+    const genericParams = try this.parseGenericParams(alloc);
+    errdefer alloc.free(genericParams);
+    _ = try this.consume(.leftParenthesis);
+    const params = try this.parseParamList(alloc);
+    errdefer {
+        for (params) |*p| p.deinit(alloc);
+        alloc.free(params);
+    }
+    var returnType: ?ast.TypeRef = null;
+    if (this.match(.rightArrow)) returnType = try this.parseTypeRef(alloc);
+    errdefer if (returnType) |*rt| rt.deinit(alloc);
+
+    if (!is_default) {
+        try expectMemberSemicolon(this);
+        return BehaviorMethod{
+            .name = methodName,
+            .genericParams = genericParams,
+            .params = params,
+            .returnType = returnType,
+            .body = null,
+            .is_default = false,
+        };
+    }
+    const body = try this.parseSimpleBodyStmts(alloc);
+    if (this.check(.comma)) return failAt(this, .memberCommaSeparator, this.peek());
+    return BehaviorMethod{
+        .name = methodName,
+        .genericParams = genericParams,
+        .params = params,
+        .returnType = returnType,
+        .body = body,
+        .is_default = true,
+    };
+}
