@@ -1495,17 +1495,24 @@ fn tryResolveEnumSectionPath(
     // `dotIdent` whose name is the FIRST segment.
     var segs: std.ArrayList([]const u8) = .empty;
     defer segs.deinit(env.arena);
+    // The location of each segment's node, parallel to `segs` (N17 — the
+    // caret of an unresolved path points at the offending segment).
+    var segLocs: std.ArrayList(ast.Loc) = .empty;
+    defer segLocs.deinit(env.arena);
     try segs.append(env.arena, leaf_member);
+    try segLocs.append(env.arena, loc);
     var cur: *const ast.Expr = leaf_receiver;
     while (true) {
         if (cur.* != .identifier) return null;
         switch (cur.*.identifier.kind) {
             .identAccess => |sub| {
                 try segs.append(env.arena, sub.member);
+                try segLocs.append(env.arena, cur.*.getLoc());
                 cur = sub.receiver;
             },
             .dotIdent => |name| {
                 try segs.append(env.arena, name);
+                try segLocs.append(env.arena, cur.*.getLoc());
                 break;
             },
             .ident => return null, // a regular `Color.Red.X` chain — not a section path
@@ -1513,6 +1520,7 @@ fn tryResolveEnumSectionPath(
     }
     // segs is leaf→head; reverse to head→leaf for path walking.
     std.mem.reverse([]const u8, segs.items);
+    std.mem.reverse(ast.Loc, segLocs.items);
     if (segs.items.len < 2) return null;
 
     // Search every registered enum for one whose top-level variant matches
@@ -1522,6 +1530,7 @@ fn tryResolveEnumSectionPath(
     // raise ES4 with a focused message instead of bubbling a confusing
     // generic "unknown field" error from the fall-through code.
     var enum_with_head: ?[]const u8 = null;
+    var enum_def_with_head: ?envMod.TypeDef.Enum = null;
     var it = env.typeDefs.iterator();
     while (it.next()) |entry| {
         const td = entry.value_ptr.*;
@@ -1543,6 +1552,7 @@ fn tryResolveEnumSectionPath(
         // bad tail is an ES4 candidate.
         if (enum_with_head == null and headSectionVariantOn(en, segs.items[0])) {
             enum_with_head = en.name;
+            enum_def_with_head = en;
         }
     }
 
@@ -1564,10 +1574,38 @@ fn tryResolveEnumSectionPath(
             "enum \"{s}\" has no path \"{s}\" (ES4 — enum-sections path resolution)",
             .{ owner, path_text },
         );
-        env.lastError = TypeError.custom(msg, "Check the section/variant chain against the enum declaration's `sections` tree; numeric leaves are matched under their declared digit form (`.Color.Red.500`).").withLoc(loc);
+        const bad = firstUnresolvedSectionSegment(env, enum_def_with_head.?, segs.items);
+        const badLoc = if (bad < segLocs.items.len) segLocs.items[bad] else loc;
+        env.lastError = TypeError.custom(msg, "Check the section/variant chain against the enum declaration's `sections` tree; numeric leaves are matched under their declared digit form (`.Color.Red.500`).").withLoc(badLoc);
         return error.TypeError;
     }
     return null;
+}
+
+/// Index of the first segment of `path` that does not name a variant or a
+/// section wrapper on the way down `en`'s section tree.
+fn firstUnresolvedSectionSegment(env: *Env, en: envMod.TypeDef.Enum, path: []const []const u8) usize {
+    var current = en;
+    for (path, 0..) |seg, i| {
+        var matched: ?envMod.VariantDef = null;
+        for (current.variants) |v| {
+            if (std.mem.eql(u8, v.name, seg) or
+                (looksNumeric(seg) and v.name.len > 1 and v.name[0] == '_' and v.name[1] == '_' and std.mem.eql(u8, v.name[2..], seg)))
+            {
+                matched = v;
+                break;
+            }
+        }
+        const variant = matched orelse return i;
+        if (i + 1 == path.len) return path.len;
+        if (variant.fields.len != 1 or !std.mem.eql(u8, variant.fields[0].name, "_inner")) return i + 1;
+        const inner_type = variant.fields[0].type_.deref();
+        if (inner_type.* != .named) return i + 1;
+        const inner_def = env.lookupTypeDef(inner_type.named.name) orelse return i + 1;
+        if (inner_def != .enum_) return i + 1;
+        current = inner_def.enum_;
+    }
+    return path.len;
 }
 
 /// True iff `enum_def` has a section-wrapper variant named `head`. Used
@@ -3955,12 +3993,37 @@ fn inferBuiltinCallReturnType(
     // `@RecordKeys(T: type) -> string[]` — returns field name strings of a
     // record type. Comptime-only.
     if (std.mem.eql(u8, callee, "RecordKeys")) {
-        return try env.namedTypeArgs("Array", &.{try env.namedType("string")});
+        // C6: the same `array` type a `string[]` annotation resolves to.
+        return try env.namedTypeArgs("array", &.{try env.namedType("string")});
     }
     // `@Field(value: any, comptime name: string) -> any` — field access by
     // compile-time-known name. Comptime-only.
     if (std.mem.eql(u8, callee, "field")) {
-        if (typedArgs.len > 0) return typedArgs[0].value.getType();
+        // C6: `@field(v, "x")` has the type of v's field `x` when the receiver
+        // is a known non-generic record and the name is a literal; otherwise it
+        // stays open (a fresh var), never the receiver's type.
+        if (typedArgs.len >= 2) fieldBlk: {
+            const recv = typedArgs[0].value.getType().deref();
+            if (recv.* != .named) break :fieldBlk;
+            const nameLit = switch (typedArgs[1].value.*) {
+                .literal => |l| switch (l.kind) {
+                    .stringLit => |str| str,
+                    else => break :fieldBlk,
+                },
+                else => break :fieldBlk,
+            };
+            const td = env.lookupTypeDef(recv.named.name) orelse break :fieldBlk;
+            const fields = switch (td) {
+                .record => |r| if (r.genericParams.len == 0) r.fields else break :fieldBlk,
+                .struct_ => |st| if (st.genericParams.len == 0) st.fields else break :fieldBlk,
+                .enum_ => break :fieldBlk,
+            };
+            for (fields) |fd| {
+                if (std.mem.eql(u8, fd.name, nameLit)) return fd.type_;
+            }
+            env.lastError = TypeError.unknownField(recv.named.name, nameLit).withLoc(typedArgs[1].value.getLoc());
+            return error.TypeError;
+        }
         return env.freshVar();
     }
     // `@emit(source)` — a comptime body (a decorator) contributes generated
@@ -5327,7 +5390,16 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                                     env.lastError = TypeError.unknownField(receiverName, ia.member).withLoc(loc);
                                     return error.TypeError;
                                 }
-                                const ty = try env.namedType(receiverName);
+                                // C7: a generic enum's unit variant carries one
+                                // fresh var per declared generic param, so
+                                // `val n: Option<i32> = Option.None` unifies.
+                                const ty = if (en.genericParams.len == 0)
+                                    try env.namedType(receiverName)
+                                else blk: {
+                                    const args = try env.arena.alloc(*T.Type, en.genericParams.len);
+                                    for (args) |*a| a.* = try env.freshVar();
+                                    break :blk try env.namedTypeArgs(receiverName, args);
+                                };
                                 const recvTyped = try makeTypedPtr(env, TypedExpr{ .identifier = .{
                                     .loc = ia.receiver.*.getLoc(),
                                     .type_ = ty,
@@ -6042,6 +6114,18 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
         }
     }
 
+    // Decision 8 §10: `loop (condition) { … }` repeats while the condition
+    // holds and binds nothing — a parameter on it is an error at the parameter.
+    const isCondition = lp.condition or (!lp.awaitLoop and lp.indexRange == null and iterTyped.getType().deref().isNamed("bool"));
+    if (isCondition and !lp.condition) try env.conditionLoops.put(loc, {});
+    if (isCondition and lp.params.len > 0) {
+        env.lastError = TypeError.custom(
+            "a condition loop takes no parameter",
+            "`loop (condition) { … }` binds nothing; iterate a collection with `loop (xs) { x -> … }`.",
+        ).withLoc(lp.paramsLoc);
+        return error.TypeError;
+    }
+
     for (lp.params) |p| {
         try env.bind(p, awaitItem orelse try env.freshVar());
     }
@@ -6066,6 +6150,8 @@ fn inferLoopExpr(env: *Env, lp: ast.LoopExprOf(.untyped), loc: ast.Loc) InferErr
         .iter = iterPtr,
         .indexRange = indexRangePtr,
         .params = lp.params,
+        .paramsLoc = lp.paramsLoc,
+        .condition = isCondition,
         .body = typedBody,
         .awaitLoop = lp.awaitLoop,
         .label = lp.label,
@@ -7326,6 +7412,43 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                         break :blk f.ret;
                     }
 
+                    // C11: a call carrying a `..` spread on a record constructor
+                    // is a record *update*: the spread must be that record, and
+                    // each labelled arg is matched to the field its label names.
+                    if (spreadCount == 1) updBlk: {
+                        const td = env.lookupTypeDef(call.callee) orelse break :updBlk;
+                        const fields = switch (td) {
+                            .record => |r| r.fields,
+                            .struct_ => |st| st.fields,
+                            .enum_ => break :updBlk,
+                        };
+                        if (fields.len != f.params.len) break :updBlk;
+                        for (typedArgs, 0..) |ta, ai| {
+                            const lbl = ta.label orelse {
+                                // Positional args beside a spread have no field to name.
+                                env.lastError = TypeError.custom(
+                                    "a record update names its fields",
+                                    "Write `Name(..base, field: value)`.",
+                                ).withLoc(ta.value.getLoc());
+                                return error.TypeError;
+                            };
+                            if (std.mem.eql(u8, lbl, "..")) {
+                                try unifyAt(env, f.ret, ta.value.getType(), ta.value.getLoc());
+                                continue;
+                            }
+                            const idx = for (fields, 0..) |fd, fi| {
+                                if (std.mem.eql(u8, fd.name, lbl)) break fi;
+                            } else {
+                                const vloc = call.args[ai].value.getLoc();
+                                const labelCol = if (vloc.col > lbl.len + 2) vloc.col - lbl.len - 2 else vloc.col;
+                                env.lastError = TypeError.unknownField(call.callee, lbl).withLoc(.{ .line = vloc.line, .col = labelCol });
+                                return error.TypeError;
+                            };
+                            try unifyAt(env, f.params[idx], ta.value.getType(), ta.value.getLoc());
+                        }
+                        break :blk f.ret;
+                    }
+
                     // Keep the historical spread behavior (and snapshots) for narrow update/error cases.
                     if (spreadCount != 1 or nonSpreadCount < 2) {
                         if (f.params.len != call.args.len) {
@@ -7383,13 +7506,18 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                 const resolved = calleeType.deref();
                 const retType: *T.Type = switch (resolved.*) {
                     .func => |f| blk: {
-                        const totalArgs = call.args.len + 1;
-                        if (f.params.len == totalArgs) {
-                            try unifyAt(env, f.params[0], lhsTyped.getType(), loc);
-                            for (call.args, 1..) |arg, i| {
-                                const argTyped = try inferExprTyped(env, arg.value.*);
-                                try unifyAt(env, f.params[i], argTyped.getType(), loc);
-                            }
+                        const totalArgs = call.args.len + 1 + call.trailing.len;
+                        // C12: a pipeline whose RHS does not take the piped
+                        // value plus its own arguments is an arity error at
+                        // the RHS, not a silently skipped unification.
+                        if (f.params.len != totalArgs) {
+                            env.lastError = TypeError.arityMismatch(call.callee, f.params.len, totalArgs).withLoc(p.rhs.*.getLoc());
+                            return error.TypeError;
+                        }
+                        try unifyAt(env, f.params[0], lhsTyped.getType(), loc);
+                        for (call.args, 1..) |arg, i| {
+                            const argTyped = try inferExprTyped(env, arg.value.*);
+                            try unifyAt(env, f.params[i], argTyped.getType(), loc);
                         }
                         break :blk f.ret;
                     },
@@ -7418,7 +7546,27 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             }
             const rhsTyped = try inferExprTyped(env, p.rhs.*);
             const rhsPtr = try makeTypedPtr(env, rhsTyped);
-            return TypedExpr{ .call = .{ .loc = loc, .type_ = rhsTyped.getType(), .kind = .{ .pipeline = .{
+            // C12: `lhs |> f` with `f` a function is the call `f(lhs)`: its
+            // type is `f`'s return, and `f` must take exactly one argument.
+            const pipeType: *T.Type = switch (rhsTyped.getType().deref().*) {
+                .func => |f| blk: {
+                    if (f.params.len != 1) {
+                        const name = switch (p.rhs.*) {
+                            .identifier => |id| switch (id.kind) {
+                                .ident => |n| n,
+                                else => "|>",
+                            },
+                            else => "|>",
+                        };
+                        env.lastError = TypeError.arityMismatch(name, f.params.len, 1).withLoc(p.rhs.*.getLoc());
+                        return error.TypeError;
+                    }
+                    try unifyAt(env, f.params[0], lhsTyped.getType(), loc);
+                    break :blk f.ret;
+                },
+                else => rhsTyped.getType(),
+            };
+            return TypedExpr{ .call = .{ .loc = loc, .type_ = pipeType, .kind = .{ .pipeline = .{
                 .lhs = lhsPtr,
                 .rhs = rhsPtr,
                 .comment = p.comment,

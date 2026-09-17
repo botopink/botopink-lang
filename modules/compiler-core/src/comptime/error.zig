@@ -14,6 +14,12 @@ pub const ComptimeError = struct {
     ident: []const u8,
     /// Source location of the offending node.
     loc: ast.Loc,
+    /// Why the expression cannot be evaluated. A runtime identifier is the
+    /// historical case; the other two are structurally legal folds that
+    /// evaluate to an error (C4b) instead of a silent `null`.
+    reason: Reason = .runtimeIdentifier,
+
+    pub const Reason = enum { runtimeIdentifier, divisionByZero, negatedNonNumber };
 
     /// Render the error to an allocated string. Caller owns the result.
     pub fn renderAlloc(this: ComptimeError, allocator: std.mem.Allocator, src: []const u8) ![]u8 {
@@ -39,7 +45,11 @@ pub const ComptimeError = struct {
         try render.padSpaces(writer, this.loc.col - 1);
         for (0..this.ident.len) |_| try writer.writeByte('^');
         try writer.writeAll("\n\n");
-        try writer.print("  '{s}' is a runtime identifier\n", .{this.ident});
+        switch (this.reason) {
+            .runtimeIdentifier => try writer.print("  '{s}' is a runtime identifier\n", .{this.ident}),
+            .divisionByZero => try writer.writeAll("  division by zero\n"),
+            .negatedNonNumber => try writer.writeAll("  only a number can be negated\n"),
+        }
     }
 };
 
@@ -428,6 +438,42 @@ fn validateBody(body: []const ast.Stmt, scope: ?*const CtScope) ?ComptimeError {
     return null;
 }
 
+/// The value of a constant numeric expression (literals and arithmetic over
+/// them), or null when the expression is not a constant number.
+fn constNumber(expr: ast.Expr) ?f64 {
+    switch (expr) {
+        .literal => |l| switch (l.kind) {
+            .numberLit => |n| return std.fmt.parseFloat(f64, n) catch null,
+            else => return null,
+        },
+        .unaryOp => |u| {
+            if (u.op != .neg) return null;
+            const v = constNumber(u.expr.*) orelse return null;
+            return -v;
+        },
+        .binaryOp => |b| {
+            const l = constNumber(b.lhs.*) orelse return null;
+            const r = constNumber(b.rhs.*) orelse return null;
+            return switch (b.op) {
+                .add => l + r,
+                .sub => l - r,
+                .mul => l * r,
+                else => null,
+            };
+        },
+        else => return null,
+    }
+}
+
+/// A string literal, or a concatenation of them.
+fn isConstString(expr: ast.Expr) bool {
+    return switch (expr) {
+        .literal => |l| l.kind == .stringLit,
+        .binaryOp => |b| b.op == .add and isConstString(b.lhs.*) and isConstString(b.rhs.*),
+        else => false,
+    };
+}
+
 fn validateComptimeExpr(expr: ast.Expr, scope: ?*const CtScope) ?ComptimeError {
     switch (expr) {
         .literal => |l| switch (l.kind) {
@@ -437,10 +483,25 @@ fn validateComptimeExpr(expr: ast.Expr, scope: ?*const CtScope) ?ComptimeError {
         .binaryOp => |b| switch (b.op) {
             .add, .sub, .mul, .div, .mod, .lt, .gt, .lte, .gte, .eq, .ne, .@"and", .@"or" => {
                 if (validateComptimeExpr(b.lhs.*, scope)) |err| return err;
-                return validateComptimeExpr(b.rhs.*, scope);
+                if (validateComptimeExpr(b.rhs.*, scope)) |err| return err;
+                // C4b: a constant zero divisor is an error, not a `null` fold.
+                if (b.op == .div or b.op == .mod) {
+                    if (constNumber(b.rhs.*)) |d| if (d == 0) {
+                        const rloc = b.rhs.*.getLoc();
+                        return ComptimeError{ .ident = "0", .loc = rloc, .reason = .divisionByZero };
+                    };
+                }
+                return null;
             },
         },
-        .unaryOp => |u| return validateComptimeExpr(u.expr.*, scope),
+        .unaryOp => |u| {
+            if (validateComptimeExpr(u.expr.*, scope)) |err| return err;
+            // C4b: negating a string (or anything statically non-numeric).
+            if (u.op == .neg and isConstString(u.expr.*)) {
+                return ComptimeError{ .ident = "-", .loc = u.loc, .reason = .negatedNonNumber };
+            }
+            return null;
+        },
         .call => |c| switch (c.kind) {
             .pipeline => |p| {
                 if (validateComptimeExpr(p.lhs.*, scope)) |err| return err;

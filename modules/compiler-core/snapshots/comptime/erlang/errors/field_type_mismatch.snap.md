@@ -8,10 +8,10 @@ val bob = Person(..alice, age: "thirty");
 
 ----- ERROR
 error: type mismatch
-  ┌─ :6:20
+  ┌─ :6:32
   │
 6 │ val bob = Person(..alice, age: "thirty");
-  │                    ^
+  │                                ^
 
-  expected: string
-  found:    Person
+  expected: i32
+  found:    string

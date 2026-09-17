@@ -396,3 +396,35 @@ test "surface: a method's $0 is self and $1 its first argument" {
     try std.testing.expectEqualStrings("\"lists:member($1, $0)\"", ann.writtenArgs()[0]);
     try std.testing.expectEqualStrings("\"lists:member($0, " ++ receiver_marker ++ ")\"", ann.args[0]);
 }
+
+// ── decision 8 §10 and 06 N27 ────────────────────────────────────────────────
+
+test "surface: while (…) is removed-keyword-while at `while`" {
+    try expectError("fn f() { while (true) { }; }", .removedKeywordWhile, 1, 10);
+}
+
+test "surface: throw new Error(…) is removed-keyword-new at `new`" {
+    try expectError("fn f() { throw new Error(\"x\"); }", .removedKeywordNew, 1, 16);
+}
+
+test "surface: new, delegate and const are ordinary identifiers" {
+    var parsed = try parse(
+        \\val new = 1;
+        \\val delegate = 2;
+        \\val const = 3;
+    );
+    defer parsed.deinit();
+    try std.testing.expectEqual(@as(usize, 3), parsed.program.decls.len);
+}
+
+test "surface: loop (condition) and loop { … } parse with no parameter" {
+    var parsed = try parse(
+        \\fn f() {
+        \\    var i = 0;
+        \\    loop (i < 3) { i = i + 1; };
+        \\    loop { i = i + 1; break; };
+        \\}
+    );
+    defer parsed.deinit();
+    try std.testing.expectEqual(@as(usize, 1), parsed.program.decls.len);
+}

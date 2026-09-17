@@ -150,6 +150,18 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "write a tuple `#(…)`",
             .hint = "Build `#(x, y)` from variables (their names become the labels), or `#(1, 2)` and give the destination a labeled type `#(x: i32, y: i32)`.",
         },
+        .removedKeywordWhile => .{
+            .code = "removed-keyword-while",
+            .message = "`while` does not exist — use loop (condition)",
+            .caretCaption = "write `loop (condition) { … }`",
+            .hint = "`loop (attempts < 3) { attempts = attempts + 1; }` repeats while the condition holds; `loop { … break; }` repeats until a break.",
+        },
+        .removedKeywordNew => .{
+            .code = "removed-keyword-new",
+            .message = "`new` is not a keyword — write throw Error(…)",
+            .caretCaption = "remove `new`",
+            .hint = "A constructor is called by name: `throw Error(\"message\")`.",
+        },
         .removedRecordType => .{
             .code = "removed-record-type",
             .message = "anonymous record types are tuples in 1.0.3",

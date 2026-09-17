@@ -465,6 +465,10 @@ pub const Env = struct {
     /// so the codegen — which reads the untyped AST — emits the byte-correct
     /// shape instead of the bare `Color.Red.500` source-text fallback.
     enumSectionRewrites: std.AutoHashMap(ast.Loc, *const ast.Expr),
+    /// Decision 8 §10 — locs of the `loop`s whose `iter` inference typed `bool`
+    /// (`loop (flag) { … }`); the comptime transform marks them
+    /// `LoopExpr.condition` for the backends, which read the untyped AST.
+    conditionLoops: std.AutoHashMap(ast.Loc, void),
     /// Interface declarations that expose associated functions (`default fn` with
     /// no `self`), keyed by name. Includes stdlib primitives (`Pair`, `Function`,
     /// `Array`) registered before user inference. Used to emit their namespace
@@ -586,6 +590,7 @@ pub const Env = struct {
             .inherentMethodTypes = std.StringHashMap(std.StringHashMap(*T.Type)).init(arena),
             .synthesisedEnumDecls = std.StringHashMap(ast.TypeDecl).init(arena),
             .enumSectionRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
+            .conditionLoops = std.AutoHashMap(ast.Loc, void).init(arena),
             .assocInterfaceDecls = std.StringHashMap(ast.BehaviorDecl).init(arena),
             .usedAssocInterfaces = std.StringHashMap(void).init(arena),
             .dispatchRewrites = std.AutoHashMap(ast.Loc, []const u8).init(arena),
@@ -654,6 +659,7 @@ pub const Env = struct {
             .inherentMethodTypes = try cloneNestedTypeMap(tmpl.inherentMethodTypes, arena),
             .synthesisedEnumDecls = try tmpl.synthesisedEnumDecls.cloneWithAllocator(arena),
             .enumSectionRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
+            .conditionLoops = std.AutoHashMap(ast.Loc, void).init(arena),
             .assocInterfaceDecls = try tmpl.assocInterfaceDecls.cloneWithAllocator(arena),
             .usedAssocInterfaces = std.StringHashMap(void).init(arena),
             .dispatchRewrites = std.AutoHashMap(ast.Loc, []const u8).init(arena),

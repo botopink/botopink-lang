@@ -537,6 +537,9 @@ const Emitter = struct {
     /// How many loops enclose the code being lowered: `break`/`continue`
     /// branch only inside one.
     loop_depth: u32 = 0,
+    /// The `loop_depth` of the innermost condition loop (decision 8 §10) used
+    /// as a value: there a `break <v>` contributes `v` and also ends the loop.
+    cond_break_depth: ?u32 = null,
     /// Sequence counter for the `$__mem{n}` scratch pointers used when building
     /// or destructuring aggregates (tuples, arrays, records, enum payloads).
     mem_seq: u32 = 0,
@@ -2340,6 +2343,10 @@ const Emitter = struct {
                     if (br.value) |v| {
                         if (self.yield_target != null) {
                             try self.emitYield(v.*);
+                            if (self.cond_break_depth != null and self.cond_break_depth.? == self.loop_depth) {
+                                try self.emit(.{ .br = break_label });
+                                return .terminated;
+                            }
                             return .none;
                         }
                         try self.lowerValue(v.*);
@@ -2777,7 +2784,10 @@ const Emitter = struct {
                 .await_ => |av| try self.lowerExpr(av.*),
                 .@"break" => |br| {
                     if (br.value) |v| {
-                        if (self.yield_target != null) try self.emitYield(v.*) else try self.lowerExpr(v.*);
+                        if (self.yield_target != null) {
+                            try self.emitYield(v.*);
+                            if (self.cond_break_depth != null and self.cond_break_depth.? == self.loop_depth) try self.emit(.{ .br = break_label });
+                        } else try self.lowerExpr(v.*);
                     } else if (self.loop_depth > 0) try self.emit(.{ .br = break_label });
                 },
                 .yield => |y| {
@@ -5794,6 +5804,7 @@ const Emitter = struct {
             self.yield_target = tgt;
             result = tgt;
         }
+        if (lp.condition) return self.lowerConditionLoop(lp, result);
         switch (lp.iter.*) {
             .collection => |col| switch (col.kind) {
                 .range => |r| {
@@ -6067,6 +6078,26 @@ const Emitter = struct {
             .label = break_label,
             .body = block_seq,
         } });
+    }
+
+    /// `loop (condition) { … }` / `loop { … }` (decision 8 §10): test the
+    /// condition at the top of every iteration, leave when it is false.
+    fn lowerConditionLoop(self: *Emitter, lp: anytype, result: ?[]const u8) anyerror!void {
+        const saved_depth = self.cond_break_depth;
+        self.cond_break_depth = if (result != null) self.loop_depth + 1 else null;
+        defer self.cond_break_depth = saved_depth;
+
+        var loop_c: Capture = .{};
+        self.open(&loop_c);
+        try self.lowerCoerced(lp.iter.*, "i32");
+        try self.emitAt(8, opOf("i32", "eqz"));
+        try self.emitAt(8, .{ .br_if = break_label });
+        try self.emitIterationBody(lp.body);
+        try self.emitAt(8, .{ .br = continue_label });
+        const loop_seq = self.seal(&loop_c, .terminated);
+
+        try self.emitLoopBlock(loop_seq);
+        if (result) |res| try self.emit(.{ .local_get = res }) else try self.emit(zero);
     }
 
     fn lowerRangeLoop(self: *Emitter, params: []const []const u8, body: []const ast.Stmt, r: anytype, result: ?[]const u8) anyerror!void {

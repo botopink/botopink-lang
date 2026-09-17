@@ -3805,7 +3805,7 @@ fn isPrimitiveType(name: []const u8) bool {
 /// reclassified as a type by the caller).
 fn isKeywordKind(kind: TokenKind) bool {
     return switch (kind) {
-        .as, .assert, .await, .case, .@"const", .default, .delegate, .@"else", .@"enum", .extend, .extends, .@"fn", .@"for", .from, .@"if", .implement, .import, .new, .@"pub", .@"return", .selfType, .@"test", .throw, .interface, .behavior, .type, .record, .use, .val, .@"var", .@"comptime", .syntax, .@"break", .loop, .@"continue", .yield, .declare, .null, .@"try", .@"catch" => true,
+        .as, .assert, .await, .case, .default, .@"else", .@"enum", .extend, .extends, .@"fn", .@"for", .from, .@"if", .implement, .import, .@"pub", .@"return", .selfType, .@"test", .throw, .interface, .behavior, .type, .record, .use, .val, .@"var", .@"comptime", .syntax, .@"break", .loop, .@"continue", .yield, .declare, .null, .@"try", .@"catch" => true,
         else => false,
     };
 }

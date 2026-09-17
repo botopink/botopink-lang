@@ -19,7 +19,7 @@ val keys = @RecordKeys(Box);
     {
       "ast": "val",
       "indent": "keys",
-      "return_type": "Array<string>",
+      "return_type": "string[]",
       "expr": {
         "ast": "call",
         "params": [
@@ -27,7 +27,7 @@ val keys = @RecordKeys(Box);
             "value": "Box"
           }
         ],
-        "return_type": "Array<string>"
+        "return_type": "string[]"
       }
     }
   ]

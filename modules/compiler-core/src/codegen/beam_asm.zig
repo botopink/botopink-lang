@@ -175,6 +175,38 @@ fn stmtIsReturn(stmt: ast.Stmt) bool {
     };
 }
 
+/// A condition loop's labels, and the buffer (the frame) it is emitted into.
+const CondLoop = struct { top: u32, exit: u32, out: *std.Io.Writer };
+
+/// True for a `break` / `continue` statement.
+fn stmtIsLoopJump(stmt: ast.Stmt) bool {
+    return switch (stmt.expr) {
+        .jump => |j| j.kind == .@"break" or j.kind == .@"continue",
+        else => false,
+    };
+}
+
+/// True when a condition-loop body yields or breaks with a value — the value
+/// form, which has no beam lowering yet.
+fn condLoopHasValue(body: []const ast.Stmt) bool {
+    for (body) |stmt| switch (stmt.expr) {
+        .jump => |j| switch (j.kind) {
+            .yield => |y| if (y.value != null) return true,
+            .@"break" => |brk| if (brk.value != null) return true,
+            else => {},
+        },
+        .branch => |br| switch (br.kind) {
+            .if_ => |i| {
+                if (condLoopHasValue(i.then_)) return true;
+                if (i.else_) |els| if (condLoopHasValue(els)) return true;
+            },
+            else => {},
+        },
+        else => {},
+    };
+    return false;
+}
+
 /// True if every control-flow path in `body` terminates explicitly (via
 /// `return` or an `if` whose both branches return). Used to decide whether an
 /// implicit `return.` is needed at the end of a fn body.
@@ -581,7 +613,12 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
         // bindings don't consume this frame's y-slots. A two-parameter loop's
         // written index start that is neither a literal nor a local is staged
         // with the iterable (`lowerEnumerateIntoX0`).
-        .loop => |lp| if (lp.params.len == 2) if (lp.indexRange) |ir| {
+        // A condition loop (decision 8 §10) runs in this frame: its condition
+        // and body take this frame's slots.
+        .loop => |lp| if (lp.condition) {
+            countLocalsInExpr(em, lp.iter.*, count);
+            countLocalsRec(em, lp.body, count);
+        } else if (lp.params.len == 2) if (lp.indexRange) |ir| {
             if (ir.* == .collection and ir.collection.kind == .range) {
                 const start = ir.collection.kind.range.start.*;
                 const simple = switch (start) {
@@ -1119,6 +1156,10 @@ const Emitter = struct {
     deferred_lambdas: std.ArrayListUnmanaged([]u8) = .empty,
     /// True when emitting a loop body lambda — makes break emit return.
     in_loop_lambda: bool = false,
+    /// The innermost condition loop (decision 8 §10) being emitted in this
+    /// frame: its `break` jumps to `exit`, its `continue` to `top`. A lambda
+    /// writes to another buffer (`out`), so its jumps never match.
+    cond_loop: ?CondLoop = null,
     /// Static extension dispatch (F6): call-site loc → activated extension symbol.
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     /// Primitive (Array/String/Bool/numeric) receiver method lowering, keyed by
@@ -2362,6 +2403,10 @@ const Emitter = struct {
                     try beamEmitter.writeCall(self.out, .only, 1, .{ .ext = .{ .module = "erlang", .function = "throw" } }, 0);
                 },
                 .@"break" => |br| {
+                    if (self.inCondLoop()) |cl| {
+                        try beamEmitter.writeJump(self.out, cl.exit);
+                        return;
+                    }
                     if (br.value) |v| {
                         try self.lowerExprIntoX0(v.*);
                     } else if (self.fold_group) |names| {
@@ -2376,6 +2421,10 @@ const Emitter = struct {
                     try self.emitReturn();
                 },
                 .@"continue" => {
+                    if (self.inCondLoop()) |cl| {
+                        try beamEmitter.writeJump(self.out, cl.top);
+                        return;
+                    }
                     if (self.fold_group) |names| {
                         try self.emitGroupIntoX0(names);
                     } else {
@@ -2405,6 +2454,11 @@ const Emitter = struct {
             // threads them through `lists:foldl` (a fun cannot write its
             // caller's stack slots).
             .loop => |lp| {
+                if (lp.condition) {
+                    if (condLoopHasValue(lp.body)) return error.ConditionLoopValueUnsupported;
+                    try self.lowerConditionLoop(lp);
+                    return;
+                }
                 if (!lp.awaitLoop and !hasYieldOrBreakValue(lp.body)) {
                     // One parameter, or two — `loop (xs) { x, i -> … }` /
                     // `loop (xs, 1..) { … }` — whose second one is the index.
@@ -2585,7 +2639,8 @@ const Emitter = struct {
 
         // then branch (cond true).
         for (i.then_) |s| try self.emitStmt(s);
-        const then_returns = i.then_.len > 0 and stmtIsReturn(i.then_[i.then_.len - 1]);
+        const then_returns = i.then_.len > 0 and (stmtIsReturn(i.then_[i.then_.len - 1]) or
+            (self.inCondLoop() != null and stmtIsLoopJump(i.then_[i.then_.len - 1])));
 
         // Skip the unconditional jump-to-end when the then branch already
         // exits via `return.` — otherwise BEAM will see unreachable code.
@@ -2857,6 +2912,12 @@ const Emitter = struct {
                 },
             },
             .loop => |lp| {
+                if (lp.condition) {
+                    if (condLoopHasValue(lp.body)) return error.ConditionLoopValueUnsupported;
+                    try self.lowerConditionLoop(lp);
+                    try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
+                    return;
+                }
                 try self.lowerLoop(lp);
                 return;
             },
@@ -5996,6 +6057,36 @@ const Emitter = struct {
         try beamEmitter.writeMoveOp(self.out, self.reg_map.get(cm.cc.callee).?.operand(), Dst.xr(arity + 1));
         try beamEmitter.writeCallFun(self.out, arity + 1);
         try self.unpackGroupFromX0(cm.names);
+    }
+
+    /// The condition loop whose body is being emitted into the current frame.
+    fn inCondLoop(self: *const Emitter) ?CondLoop {
+        const cl = self.cond_loop orelse return null;
+        return if (cl.out == self.out) cl else null;
+    }
+
+    /// `loop (condition) { … }` / `loop { … }` (decision 8 §10) in this frame:
+    ///
+    ///     {label, Top}  <test Cond, else jump Exit>  Body  {jump, {f, Top}}  {label, Exit}
+    ///
+    /// Reassigned variables live in this frame's registers, so they need no
+    /// threading; `break` jumps to `Exit`, `continue` to `Top`.
+    fn lowerConditionLoop(self: *Emitter, lp: anytype) anyerror!void {
+        const top = self.allocLabel();
+        const exit = self.allocLabel();
+        try beamEmitter.writeLabel(self.out, top);
+        if (!try self.lowerComparisonAsTest(lp.iter.*, exit)) {
+            try self.lowerExprIntoX0(lp.iter.*);
+            try beamEmitter.writeTest(self.out, .is_eq_exact, exit, &.{ Op.xr(0), Op.atom("true") });
+        }
+        const saved = self.cond_loop;
+        self.cond_loop = .{ .top = top, .exit = exit, .out = self.out };
+        defer self.cond_loop = saved;
+        for (lp.body) |stmt| try self.emitStmt(stmt);
+        if (!(lp.body.len > 0 and stmtIsLoopJump(lp.body[lp.body.len - 1]))) {
+            try beamEmitter.writeJump(self.out, top);
+        }
+        try beamEmitter.writeLabel(self.out, exit);
     }
 
     fn lowerLoop(self: *Emitter, lp: anytype) anyerror!void {

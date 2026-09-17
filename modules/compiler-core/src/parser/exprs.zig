@@ -93,10 +93,22 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         this.current = saved;
     }
 
-    // throw [new] expr
+    // `while (cond) { … }` is not part of the language (decision 8 §10).
+    if (this.check(.identifier) and std.mem.eql(u8, this.peek().lexeme, "while") and
+        this.peekAt(1).kind == .leftParenthesis)
+    {
+        return this.failRemovedAt(.removedKeywordWhile, 0);
+    }
+
+    // throw expr — `new` is not a keyword (06 N27): `throw new Error(…)` gets
+    // a targeted diagnostic at `new`.
     if (this.check(.throw)) {
         const throwTok = this.advance();
-        _ = this.match(.new); // skip optional `new` keyword
+        if (this.check(.identifier) and std.mem.eql(u8, this.peek().lexeme, "new") and
+            this.peekAt(1).kind == .identifier)
+        {
+            return this.failRemovedAt(.removedKeywordNew, 0);
+        }
         const inner = try this.parseExpr(alloc);
         return this.makeJump(alloc, throwTok, .throw_, inner);
     }
@@ -1564,30 +1576,45 @@ pub fn parseLoopExpr(this: *This, alloc: std.mem.Allocator) ParseError!LoopExpr 
         label = (try this.consume(.identifier)).lexeme;
     }
 
-    _ = try this.consume(.leftParenthesis);
-
-    // Parse primary iterator expression (may be a range or identifier)
-    const iterExpr = try this.parseRangeExpr(alloc);
-    const iterPtr = try this.boxExpr(alloc, iterExpr);
-
-    // Optional index range: `loop (iter, 0..)`
+    // `loop { … break; }` (decision 8 §10) repeats until a break: it is the
+    // condition loop over `true`.
+    var iterPtr: *Expr = undefined;
     var indexPtr: ?*Expr = null;
-    if (this.match(.comma)) {
-        const idxExpr = try this.parseRangeExpr(alloc);
-        indexPtr = try this.boxExpr(alloc, idxExpr);
-    }
+    var condition = false;
+    if (this.check(.leftBrace)) {
+        iterPtr = try this.boxExpr(alloc, Expr{ .identifier = .{ .loc = locFromToken(loopTok), .kind = .{ .ident = "true" } } });
+        condition = true;
+    } else {
+        _ = try this.consume(.leftParenthesis);
 
-    _ = try this.consume(.rightParenthesis);
+        // Parse primary iterator expression (a collection, a range or a condition)
+        const iterExpr = try this.parseRangeExpr(alloc);
+        iterPtr = try this.boxExpr(alloc, iterExpr);
+
+        // Optional index range: `loop (iter, 0..)`
+        if (this.match(.comma)) {
+            const idxExpr = try this.parseRangeExpr(alloc);
+            indexPtr = try this.boxExpr(alloc, idxExpr);
+        }
+
+        _ = try this.consume(.rightParenthesis);
+        condition = indexPtr == null and isSyntacticCondition(iterPtr.*);
+    }
     _ = try this.consume(.leftBrace);
 
-    // Parse parameter list: `param1, param2, ...  ->`
+    // Parameter list `param1, param2 ->` — only when the body opens with
+    // names followed by `->`; a condition loop's body starts with statements.
     var params: std.ArrayList([]const u8) = .empty;
     errdefer params.deinit(alloc);
-    while (this.check(.identifier)) {
-        try params.append(alloc, this.advance().lexeme);
-        if (!this.match(.comma)) break;
+    var paramsLoc = locFromToken(loopTok);
+    if (loopParamsAhead(this)) {
+        paramsLoc = locFromToken(this.peek());
+        while (this.check(.identifier)) {
+            try params.append(alloc, this.advance().lexeme);
+            if (!this.match(.comma)) break;
+        }
+        _ = try this.consume(.rightArrow);
     }
-    _ = try this.consume(.rightArrow);
 
     // Body is already-consumed `{ stmt; ... }`
     var stmts: std.ArrayList(Stmt) = .empty;
@@ -1608,10 +1635,48 @@ pub fn parseLoopExpr(this: *This, alloc: std.mem.Allocator) ParseError!LoopExpr 
         .iter = iterPtr,
         .indexRange = indexPtr,
         .params = try params.toOwnedSlice(alloc),
+        .paramsLoc = paramsLoc,
+        .condition = condition,
         .body = body,
         .awaitLoop = awaitLoop,
         .label = label,
     };
+}
+
+/// An expression that is boolean by its shape: a comparison, `&&`/`||`, `not`,
+/// or the literal `true`/`false` (parenthesised or not).
+fn isSyntacticCondition(e: Expr) bool {
+    return switch (e) {
+        .binaryOp => |bin| switch (bin.op) {
+            .eq, .ne, .lt, .gt, .lte, .gte, .@"and", .@"or" => true,
+            else => false,
+        },
+        .unaryOp => |un| un.op == .not,
+        .identifier => |id| switch (id.kind) {
+            .ident => |n| std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false"),
+            else => false,
+        },
+        .collection => |col| switch (col.kind) {
+            .grouped => |inner| isSyntacticCondition(inner.*),
+            else => false,
+        },
+        else => false,
+    };
+}
+
+/// True when the tokens at the cursor are `name (, name)* ->` — a loop's
+/// parameter list rather than the first statement of its body.
+fn loopParamsAhead(this: *This) bool {
+    var i: usize = 0;
+    while (true) {
+        if (this.peekAt(i).kind != .identifier) return false;
+        i += 1;
+        switch (this.peekAt(i).kind) {
+            .rightArrow => return true,
+            .comma => i += 1,
+            else => return false,
+        }
+    }
 }
 
 /// Parses a range expression `expr..` or `expr..expr`, or falls back to

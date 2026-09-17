@@ -160,25 +160,19 @@ Array.prototype.fill = function(value) {
 Array.prototype.chunked = function(n) {
     let out = [];
     if ((n <= 0)) { return out; }
-    let i = 0;
-    let len = this.length;
-    while ((i < len)) {
-    const piece = this.slice(i, (i + n));
-    out = out.concat([piece]);
-    i = (i + n);
+    const len = this.length;
+    for (const k of Array.from({length: Math.max(0, (len) - (0))}, (_, __i) => (0) + __i)) {
+    (() => { if (((k % n) === 0)) { return out = out.concat([this.slice(k, (k + n))]); } })();
 }
     return out;
 };
 Array.prototype.sliding = function(n) {
     let out = [];
     if ((n <= 0)) { return out; }
-    let i = 0;
-    let len = this.length;
-    let last = (len - n);
-    while ((i <= last)) {
-    const piece = this.slice(i, (i + n));
-    out = out.concat([piece]);
-    i = (i + 1);
+    const windows = ((this.length - n) + 1);
+    if ((windows <= 0)) { return out; }
+    for (const k of Array.from({length: Math.max(0, (windows) - (0))}, (_, __i) => (0) + __i)) {
+    out = out.concat([this.slice(k, (k + n))]);
 }
     return out;
 };

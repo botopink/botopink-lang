@@ -360,13 +360,6 @@ test "lexer: recognizes keyword case" {
     try std.testing.expectEqual(TokenKind.case, tokens[0].kind);
 }
 
-test "lexer: recognizes keyword delegate" {
-    var l = Lexer.init("delegate");
-    const tokens = try l.scanAll(std.testing.allocator);
-    defer l.deinit(std.testing.allocator);
-    try std.testing.expectEqual(TokenKind.delegate, tokens[0].kind);
-}
-
 test "lexer: recognizes keyword else" {
     var l = Lexer.init("else");
     const tokens = try l.scanAll(std.testing.allocator);
@@ -407,13 +400,6 @@ test "lexer: recognizes keyword import" {
     const tokens = try l.scanAll(std.testing.allocator);
     defer l.deinit(std.testing.allocator);
     try std.testing.expectEqual(TokenKind.import, tokens[0].kind);
-}
-
-test "lexer: recognizes keyword new" {
-    var l = Lexer.init("new");
-    const tokens = try l.scanAll(std.testing.allocator);
-    defer l.deinit(std.testing.allocator);
-    try std.testing.expectEqual(TokenKind.new, tokens[0].kind);
 }
 
 test "lexer: recognizes keyword pub" {

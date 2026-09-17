@@ -162,9 +162,9 @@ Known red (the `std` cells in `scripts/known-red-libs.txt`):
 
 | Target | What fails | Owner |
 |---|---|---|
-| commonJS | `test/primitives_gaps_test.bp`: `array chunked partitions`, `array sliding window of 2` — `while` inside a behavior `default fn` lowers to an undefined `while_` | F8 js-bridges |
+| commonJS | `test/primitives_gaps_test.bp`: `array chunked partitions`, `array sliding window of 2` — (`chunked`/`sliding` are written with range loops since 06 N26; `while` left the language — re-check this row) | F8 js-bridges |
 | erlang | `env`, `os`, `process` do not compile — a marker-less 1-arg `@External.Erlang` on a `declare fn` lowers to `:expr()()` | F5 erlang |
-| erlang | `test/primitives_gaps_test.bp` does not compile — a method call on an `Array.range(…)` result is not lowered (`join/2`, `map/2`, `filter/2` undefined, `.length` as `maps:get`), and `chunked`/`sliding` lower `while` to `while/2` | F5 erlang |
+| erlang | `test/primitives_gaps_test.bp` does not compile — a method call on an `Array.range(…)` result is not lowered (`join/2`, `map/2`, `filter/2` undefined, `.length` as `maps:get`) | F5 erlang |
 
 Also known, not a red cell: `n.abs()` on an `i32` receiver resolves on
 erlang only because `abs/1` is an auto-imported BIF — the erlang backend maps
@@ -199,7 +199,7 @@ documented in the effect-annotations block of `src/builtins.d.bp`.
 - Stable, additive signatures — renames force snapshot churn.
 - `.d.bp` files stay declarative (no bodies).
 - No Zig in `libs/std/` — loader/glue changes belong in `build.zig` / `compiler-core`.
-- `new`/`get`/`set`/`test`/`from`/`assert` are keywords — pick other names (`empty`/`lookup`/`insert`, `matches`, `src`, `asserts`).
+- `get`/`set`/`test`/`from`/`assert` are keywords (`new`, `delegate` and `const` are identifiers since 06 N27) — pick other names (`empty`/`lookup`/`insert`, `matches`, `src`, `asserts`).
 - Array equality in assertions uses `.join(...)` (`==` on arrays is reference equality in JS).
 - A trailing default on a behavior method is not expanded at the call site
   yet: `s.slice(1)` fails to check (`'slice' expects 2 argument(s)`); pass both

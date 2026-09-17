@@ -545,12 +545,11 @@ behavior Array<T> {
     default fn chunked(self: Self, n: i32) -> Array<Self> {
         var out = [];
         if (n <= 0) return out;
-        var i = 0;
-        var len = self.length;
-        while(i < len) {
-            val piece = self.slice(i, i + n);
-            out = out.append([piece]);
-            i = i + n;
+        val len = self.length;
+        loop (0..len) { k ->
+            if (k % n == 0) {
+                out = out.append([self.slice(k, k + n)]);
+            };
         };
         return out;
     }
@@ -561,13 +560,10 @@ behavior Array<T> {
     default fn sliding(self: Self, n: i32) -> Array<Self> {
         var out = [];
         if (n <= 0) return out;
-        var i = 0;
-        var len = self.length;
-        var last = len - n;
-        while(i <= last) {
-            val piece = self.slice(i, i + n);
-            out = out.append([piece]);
-            i = i + 1;
+        val windows = self.length - n + 1;
+        if (windows <= 0) return out;
+        loop (0..windows) { k ->
+            out = out.append([self.slice(k, k + n)]);
         };
         return out;
     }

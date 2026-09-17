@@ -109,12 +109,12 @@ test "lexer: tokenizes self field plus-eq" {
     for (expected, tokens) |exp, tok| try std.testing.expectEqual(exp, tok.kind);
 }
 
-test "lexer: tokenizes throw new expression" {
+test "lexer: tokenizes throw new expression — `new` is an identifier (06 N27)" {
     var l = Lexer.init("throw new Error(\"msg\")");
     const tokens = try l.scanAll(std.testing.allocator);
     defer l.deinit(std.testing.allocator);
     const expected = [_]TokenKind{
-        .throw, .new, .identifier, .leftParenthesis, .stringLiteral, .rightParenthesis, .endOfFile,
+        .throw, .identifier, .identifier, .leftParenthesis, .stringLiteral, .rightParenthesis, .endOfFile,
     };
     for (expected, tokens) |exp, tok| try std.testing.expectEqual(exp, tok.kind);
 }

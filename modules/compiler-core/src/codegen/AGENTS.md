@@ -235,13 +235,13 @@ codegen/
     e` is `return __bp_error(e)` inside it) lowers the `case` to statements in
     a block (`buildReturnCaseStmt`): value arms `return ({ ok: v })`, the jump
     arm keeps its own `return`;
-  - `while (cond) { … }` — parsed as a call to `while` with one argument and
-    a parameterless trailing block; there is no keyword and no prelude fn, and
-    std's `Array` default fns `chunked`/`sliding` are written this way — is a
-    JS `while` statement (`whileShape` / `buildWhileStmt`, `loop_ctx = .stmt`),
-    unless the module declares its own `fn while`. The checker does not know
-    the form (default-fn bodies are not inferred), so outside those bodies it
-    is still an unbound name;
+  - a condition loop (decision 8 §10, `LoopExpr.condition`: `loop (cond) { … }` /
+    `loop { … }`) is a JS `while` statement (`buildWhileStmt`, `loop_ctx = .stmt`);
+    used as a value it is an accumulating IIFE around the `while`
+    (`buildConditionLoopValue`, `loop_ctx = .cond_value`) where `yield <v>`
+    contributes and `break <v>` contributes and ends the loop. `while (…)` is not
+    part of the language (a parse error) — the old call-shaped `while` lowering
+    is gone;
   - `throw` in value position is a one-statement IIFE; a binding in value
     position is `error.BindingInValuePosition`. `try x catch return y` in value
     position still returns from the value IIFE (the `try`'s value becomes `y`);
@@ -427,12 +427,17 @@ codegen/
   - an open-ended range `loop (x..)` → a named fun that counts up and recurses
     (`fun __Loop(I) -> …, __Loop(I + 1) end`), since `lists:seq/2` has no `infinity`;
   - everything else → `lists:foreach`.
-  - `while (cond) { … }` — not in scope for checked code, but the prelude's
-    bodied interface defaults (`Array.chunked`/`sliding`) write it and are lowered
-    without inference — is a named fun that tests, runs the body and recurses
-    (`whileNode`): `{Out@3, I@3} = (fun __Loop({Out@1, I@1}) -> case Cond of
-    true -> …, __Loop({Out@2, I@2}); _ -> {Out@1, I@1} end end)({Out, I})`,
-    threading the variables the body reassigns; with none it answers `ok`.
+  - a condition loop (decision 8 §10, `LoopExpr.condition`) is a named fun that
+    tests, runs the body and recurses (`conditionLoopNode`): `{Out@3, I@3} = (fun
+    __Loop({Out@1, I@1}) -> case Cond of true -> …, __Loop({Out@2, I@2}); _ ->
+    {Out@1, I@1} end end)({Out, I})`, threading the variables the body reassigns
+    (with none it answers `ok`; a nested one is `__Loop1`, …). Inside it
+    (`cond_loop`, cleared behind a fun boundary) a `break` throws
+    `{'__bp_cond_break', Group}` caught around the call, and a `continue` throws
+    `{'__bp_cond_continue', Group}` caught around the body, so the recursion
+    carries the variables at the jump; each loop's `catch` binds its own
+    `__BpGroupN`. The value form (a body that `yield`s or `break`s with a value)
+    is `error.ConditionLoopValueUnsupported` — no erlang lowering yet.
   A value-less `break` is `erlang:throw('__bp_break')` and its loop is wrapped in
   the `try … catch throw:'__bp_break' -> ok end` that ends it (`loopBreakCatch`,
   `hasBareBreak`).
@@ -620,6 +625,14 @@ codegen/
   single else-less `if` whose
   branch ends in `break v`) lowers through `lists:filtermap/2`; an eager
   `#[@iterator]` body ending in a yielding loop returns that loop's list.
+  A condition loop (decision 8 §10, `LoopExpr.condition`) runs in the
+  enclosing frame (`lowerConditionLoop`): `{label, Top}`, the condition as a
+  test jumping to `Exit`, the body, `{jump, {f, Top}}`, `{label, Exit}`. The
+  variables it reassigns are this frame's registers, so nothing is threaded;
+  `break` jumps to `Exit` and `continue` to `Top` (`cond_loop`, matched by the
+  output buffer so a lambda's jumps never take it), and its body's slots are
+  counted into the frame (`countLocalsInExpr`). The value form is
+  `error.ConditionLoopValueUnsupported`.
 - **Calls**: module-qualified `List.map(…)` → `call_ext`/`call_ext_last`
   (trailing lambdas materialized as funs); `from "std"` qualified calls
   (`math.floor(x)`) → `call_ext` via `collectStdImports`; interface
@@ -781,7 +794,10 @@ first three are now enforced by the model, not by discipline:
 
 - **Coverage**: numerics, locals, calls, assign, `!x`, null, `@todo`/`@panic`,
   `assert`, globals, case, pipeline (`a |> f` → `call $f`), range loops
-  (`lowerRangeLoop`) and array loops (`lowerCollectionLoop` — the index of
+  (`lowerRangeLoop`), condition loops (`lowerConditionLoop`, decision 8 §10:
+  `i32.eqz` + `br_if $__break` at the top of each iteration; as a value, a
+  `break <v>` also leaves the loop — `cond_break_depth`) and array loops
+  (`lowerCollectionLoop` — the index of
   `loop (xs, 1..) { x, i -> … }` counts from the range's start, as erlang's
   `lists:enumerate(Start, Xs)`; a float array's element is an `f32` slot, bound
   to an `f32` local), comprehensions,

@@ -127,17 +127,16 @@ test "comptime module: a closure reassigning outer vars takes and answers them" 
     try expectContains(out, "emit('__bp_prim_join'(Toks@6, <<\",\">>))");
 }
 
-test "comptime module: a while loop threads the variables its body reassigns" {
-    // `while (cond) { … }` is not in scope for checked code; the prelude's
-    // bodied interface defaults (`Array.chunked`/`sliding`) write it, and they
-    // are lowered without inference — like a comptime body.
+test "comptime module: a condition loop threads the variables its body reassigns" {
+    // `loop (cond) { … }` (decision 8 §10) in a comptime body — untyped, so
+    // the parser marks the loop a condition loop from its boolean shape.
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const out = try lower(arena_state.allocator(),
         \\fn count(comptime decl: @Decl) {
         \\    var i = 0;
         \\    var names = "";
-        \\    while (i < 3) {
+        \\    loop (i < 3) {
         \\        names = names + decl.name;
         \\        i = i + 1;
         \\    };
@@ -150,6 +149,20 @@ test "comptime module: a while loop threads the variables its body reassigns" {
     try expectContains(out, "_ -> {Names@1, I@1}");
     try expectContains(out, "end)({Names, I}),");
     try expectContains(out, "emit(Names@3)");
+}
+
+test "comptime module: `while` is refused before lowering (decision 8 §10)" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const result = lower(arena_state.allocator(),
+        \\fn count(comptime decl: @Decl) {
+        \\    var i = 0;
+        \\    while (i < 3) {
+        \\        i = i + 1;
+        \\    };
+        \\}
+    , .{ .host_enums = &.{"DeclKind"} });
+    try std.testing.expectError(error.UnexpectedToken, result);
 }
 
 test "comptime module: push through a local threads out of a multi-statement closure" {

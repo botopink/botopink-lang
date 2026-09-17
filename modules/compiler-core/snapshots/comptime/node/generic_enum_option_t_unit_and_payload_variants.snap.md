@@ -23,7 +23,7 @@ val s = Option.Some(value: 42);
     {
       "ast": "val",
       "indent": "n",
-      "return_type": "Option"
+      "return_type": "Option<?>"
     },
     {
       "ast": "val",
