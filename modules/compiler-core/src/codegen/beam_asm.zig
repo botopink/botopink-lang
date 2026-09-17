@@ -117,6 +117,36 @@ fn isStringType(t: ?ast.TypeRef) bool {
     return ty == .named and std.mem.eql(u8, ty.named, "string");
 }
 
+/// The numeric kind an expression statically has: an integer, a float, or a
+/// number of unknown precision. Decides `+` (arithmetic vs `'__bp_add'/2`) and
+/// `/` (`div` vs `'/'`). Parity with the erlang backend's `NumKind`.
+const NumKind = enum { int, float, number };
+
+/// The numeric kind a type names (`i32` → int, `f64` → float), or null.
+fn numTypeKind(t: ?ast.TypeRef) ?NumKind {
+    const ty = t orelse return null;
+    if (ty != .named) return null;
+    const n = ty.named;
+    if (n.len < 2) return null;
+    for (n[1..]) |ch| if (!std.ascii.isDigit(ch)) {
+        return if (std.mem.eql(u8, n, "isize") or std.mem.eql(u8, n, "usize")) .int else null;
+    };
+    return switch (n[0]) {
+        'i', 'u' => .int,
+        'f' => .float,
+        else => null,
+    };
+}
+
+/// A float operand makes a float; two integers an integer; any other known
+/// operand a number.
+fn combineNum(a: ?NumKind, b: ?NumKind) ?NumKind {
+    if (a == .float or b == .float) return .float;
+    if (a == .int and b == .int) return .int;
+    if (a != null or b != null) return .number;
+    return null;
+}
+
 /// True for the builtins that print their arguments (`@print`, `@println`,
 /// `@debug`) — all lowered to `'__bp_print'/1`.
 fn isPrintBuiltin(callee: []const u8) bool {
@@ -413,6 +443,7 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
                 count.* += 1;
                 countLocalsInExpr(em, lb.value.*, count);
                 if (em.isStringExpr(&em.count_strings, lb.value.*)) em.count_strings.put(lb.name, {}) catch {};
+                if (em.numKind(&em.count_strings, lb.value.*)) |k| em.count_nums.put(lb.name, k) catch {};
             },
             .localBindDestruct => |lb| {
                 count.* += destructYSlots(lb.pattern);
@@ -420,6 +451,9 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
             },
             .assign => |a| {
                 countLocalsInExpr(em, a.value.*, count);
+                if (a.op == .assign and a.target == .name) {
+                    if (em.numKind(&em.count_strings, a.value.*)) |k| em.count_nums.put(a.target.name, k) catch {};
+                }
                 if (a.target == .fieldAccess) {
                     const fa = a.target.fieldAccess;
                     var read: ast.Expr = undefined;
@@ -1154,6 +1188,15 @@ const Emitter = struct {
     /// Module-level names that evaluate to a `string`: `fn … -> string` and
     /// top-level `val`s bound to a string expression.
     string_names: std.StringHashMap(void),
+    /// Locals (and numeric-typed params) statically known to hold a number,
+    /// with its kind (`numKind`). Cleared per function; a lambda/loop body
+    /// inherits it, like `string_locals`.
+    num_locals: std.StringHashMap(NumKind),
+    /// `num_locals` as the count pass (`precountLocals`) sees it.
+    count_nums: std.StringHashMap(NumKind),
+    /// Module-level names answering a number: a `fn` declared with a numeric
+    /// return type, a top-level `val` bound to a numeric expression.
+    num_names: std.StringHashMap(NumKind),
 
     /// Lazily-emitted synth helper fns for the inline prim methods that need
     /// register stashing across calls — `xs.at(i)` (bounds-safe `lists:nth`
@@ -1166,6 +1209,7 @@ const Emitter = struct {
     indexOf_helper_name: ?[]const u8 = null,
     stringify_helper_name: ?[]const u8 = null,
     print_helper_name: ?[]const u8 = null,
+    add_helper_name: ?[]const u8 = null,
     eval_helper_name: ?[]const u8 = null,
     /// Owns the parsed `primitives.bp` prelude (and every key string built for
     /// the tables below) for the whole emission.
@@ -1226,6 +1270,9 @@ const Emitter = struct {
             .string_locals = std.StringHashMap(void).init(alloc),
             .count_strings = std.StringHashMap(void).init(alloc),
             .string_names = std.StringHashMap(void).init(alloc),
+            .num_locals = std.StringHashMap(NumKind).init(alloc),
+            .count_nums = std.StringHashMap(NumKind).init(alloc),
+            .num_names = std.StringHashMap(NumKind).init(alloc),
             .mutating_closures = std.StringHashMap([]const []const u8).init(alloc),
         };
     }
@@ -1271,7 +1318,11 @@ const Emitter = struct {
         self.string_locals.deinit();
         self.count_strings.deinit();
         self.string_names.deinit();
+        self.num_locals.deinit();
+        self.count_nums.deinit();
+        self.num_names.deinit();
         self.mutating_closures.deinit();
+        if (self.add_helper_name) |n| self.alloc.free(n);
         if (self.print_helper_name) |n| self.alloc.free(n);
         if (self.join_helper_name) |n| self.alloc.free(n);
         if (self.eval_helper_name) |n| self.alloc.free(n);
@@ -1666,6 +1717,7 @@ const Emitter = struct {
         self.cur_arity = arity;
         self.min_live = 0;
         self.string_locals.clearRetainingCapacity();
+        self.num_locals.clearRetainingCapacity();
         self.mutating_closures.clearRetainingCapacity();
     }
 
@@ -1674,6 +1726,7 @@ const Emitter = struct {
     fn noteStringParams(self: *Emitter, params: []const ast.Param) !void {
         for (params) |p| {
             if (isStringType(p.typeRef)) try self.string_locals.put(p.name, {});
+            if (numTypeKind(p.typeRef)) |k| try self.num_locals.put(p.name, k);
         }
     }
 
@@ -1682,11 +1735,17 @@ const Emitter = struct {
     /// erlang backend's `collectStringNames`.
     fn collectStringNames(self: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| switch (decl) {
-            .@"fn" => |f| if (isStringType(f.returnType)) try self.string_names.put(f.name, {}),
+            .@"fn" => |f| {
+                if (isStringType(f.returnType)) try self.string_names.put(f.name, {});
+                if (numTypeKind(f.returnType)) |k| try self.num_names.put(f.name, k);
+            },
             else => {},
         };
         for (program.decls) |decl| switch (decl) {
-            .val => |v| if (self.isStringExpr(&self.string_locals, v.value.*)) try self.string_names.put(v.name, {}),
+            .val => |v| {
+                if (self.isStringExpr(&self.string_locals, v.value.*)) try self.string_names.put(v.name, {});
+                if (self.numKind(&self.string_locals, v.value.*)) |k| try self.num_names.put(v.name, k);
+            },
             else => {},
         };
     }
@@ -1714,6 +1773,59 @@ const Emitter = struct {
             },
             else => false,
         };
+    }
+
+    /// The numeric kind `e` statically has, or null when it cannot be proven
+    /// (`.number` when it is a number of unknown precision): a number literal
+    /// (a float when it has a `.` or an exponent), a numeric local/parameter/
+    /// module name, a primitive member read (`s.length`), a call to a `fn`
+    /// declared numeric, and arithmetic over them (a float operand makes a
+    /// float; `%` is an integer). `strings` names the pass asking — the
+    /// emission's `string_locals` or the count pass's `count_strings` — and
+    /// selects the matching numeric set. Mirrors the erlang backend.
+    fn numKind(self: *const Emitter, strings: *const std.StringHashMap(void), e: ast.Expr) ?NumKind {
+        const nums = if (strings == &self.count_strings) &self.count_nums else &self.num_locals;
+        return switch (e) {
+            .literal => |lit| switch (lit.kind) {
+                .numberLit => |n| if (std.mem.startsWith(u8, n, "0x") or std.mem.startsWith(u8, n, "0b") or std.mem.startsWith(u8, n, "0o"))
+                    .int
+                else if (std.mem.indexOfAny(u8, n, ".eE") != null) .float else .int,
+                else => null,
+            },
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| nums.get(n) orelse self.num_names.get(n),
+                .identAccess => |ia| if (self.instanceLowering(id.loc, ia.receiver.*)) |il| switch (il) {
+                    .prim => .int,
+                    .record => null,
+                } else null,
+                else => null,
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| self.numKind(strings, inner.*),
+                else => null,
+            },
+            .unaryOp => |un| if (un.op == .neg) self.numKind(strings, un.expr.*) else null,
+            .binaryOp => |bin| switch (bin.op) {
+                .add => if (self.isStringExpr(strings, e)) null else combineNum(self.numKind(strings, bin.lhs.*), self.numKind(strings, bin.rhs.*)),
+                // `-`, `*` and `/` only ever answer a number.
+                .sub, .mul, .div => combineNum(self.numKind(strings, bin.lhs.*), self.numKind(strings, bin.rhs.*)) orelse .number,
+                .mod => .int,
+                else => null,
+            },
+            .call => |c| switch (c.kind) {
+                .call => |cc| if (cc.receiver == null and !cc.is_builtin) self.num_names.get(cc.callee) else null,
+                else => null,
+            },
+            else => null,
+        };
+    }
+
+    /// True when `a + b` is neither a proven string concatenation nor proven
+    /// arithmetic, so it dispatches at run time through `'__bp_add'/2`.
+    fn addIsDynamic(self: *const Emitter, strings: *const std.StringHashMap(void), e: ast.Expr) bool {
+        if (e != .binaryOp or e.binaryOp.op != .add) return false;
+        if (self.isStringExpr(strings, e)) return false;
+        return self.numKind(strings, e.binaryOp.lhs.*) == null and self.numKind(strings, e.binaryOp.rhs.*) == null;
     }
 
     /// First x-register free for staging an operand.
@@ -1795,6 +1907,9 @@ const Emitter = struct {
         self.count_strings.clearRetainingCapacity();
         var it = self.string_locals.keyIterator();
         while (it.next()) |k| self.count_strings.put(k.*, {}) catch {};
+        self.count_nums.clearRetainingCapacity();
+        var nit = self.num_locals.iterator();
+        while (nit.next()) |kv| self.count_nums.put(kv.key_ptr.*, kv.value_ptr.*) catch {};
     }
 
     /// `precountLocals` for a bare expression (a top-level `val`'s value).
@@ -2388,6 +2503,7 @@ const Emitter = struct {
     fn emitLocalBind(self: *Emitter, name: []const u8, value: ast.Expr) !void {
         try self.lowerExprIntoX0(value);
         if (self.isStringExpr(&self.string_locals, value)) try self.string_locals.put(name, {});
+        if (self.numKind(&self.string_locals, value)) |k| try self.num_locals.put(name, k);
         const y_idx = self.next_y;
         self.next_y += 1;
         try self.reg_map.put(name, .{ .y = y_idx });
@@ -2407,6 +2523,7 @@ const Emitter = struct {
                     .assign => {
                         try self.lowerExprIntoX0(a.value.*);
                         try beamEmitter.writeMoveOp(self.out, Op.xr(0), reg.dest());
+                        if (self.numKind(&self.string_locals, a.value.*)) |k| try self.num_locals.put(name, k);
                     },
                     .plusAssign => {
                         if (self.string_locals.contains(name) or self.isStringExpr(&self.string_locals, a.value.*)) {
@@ -2416,6 +2533,15 @@ const Emitter = struct {
                             return;
                         }
                         try self.lowerExprIntoX0(a.value.*);
+                        // A name of unknown type plus an unproven value
+                        // dispatches at run time.
+                        if (!self.num_locals.contains(name) and self.numKind(&self.string_locals, a.value.*) == null) {
+                            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1));
+                            try beamEmitter.writeMoveOp(self.out, reg.operand(), Dst.xr(0));
+                            try self.callAddHelper();
+                            try beamEmitter.writeMoveOp(self.out, Op.xr(0), reg.dest());
+                            return;
+                        }
                         const scratch = self.scratchBase();
                         try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(scratch));
                         try beamEmitter.writeGcBif(self.out, .add, scratch + 1, &.{ reg.operand(), Op.xr(scratch) }, Dst.xr(0));
@@ -2878,6 +3004,14 @@ const Emitter = struct {
                 .add => if (self.isStringExpr(&self.string_locals, e)) {
                     try self.lowerStringConcat(e);
                     if (dest != 0) try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(dest));
+                } else if (self.addIsDynamic(&self.string_locals, e)) {
+                    // Neither operand is provably a number or a string (a
+                    // lambda's `{ x, y -> x + y }`): two binaries concatenate
+                    // at run time, anything else adds.
+                    const st = try self.stageOperands(&.{ bin.lhs.*, bin.rhs.* }, &[_]ast.TrailingLambda{});
+                    try self.emitParallelMove(st.slice(), &.{ 0, 1 });
+                    try self.callAddHelper();
+                    if (dest != 0) try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(dest));
                 } else try self.lowerArithGcBif(bin, dest),
                 .sub, .mul, .div, .mod => try self.lowerArithGcBif(bin, dest),
                 .lt, .gt, .lte, .gte, .eq, .ne => try self.lowerCmpAsValue(bin, dest),
@@ -2895,7 +3029,10 @@ const Emitter = struct {
             .add => .add,
             .sub => .sub,
             .mul => .mul,
-            .div => .div_,
+            // `div` is integer division and raises `badarith` on a float; an
+            // operand known to be a float takes `'/'`.
+            .div => if (self.numKind(&self.string_locals, bin.lhs.*) == .float or
+                self.numKind(&self.string_locals, bin.rhs.*) == .float) .fdiv else .div_,
             .mod => .rem,
             else => unreachable,
         };
@@ -4156,6 +4293,50 @@ const Emitter = struct {
     /// `io_lib:format` fallback since BEAM's `iolist_to_binary` accepts
     /// nested iolists either way. Cached on the emitter so a module joining
     /// several arrays shares one stringify helper.
+    /// Call `'__bp_add'/2` on `{x, 0}` and `{x, 1}`; the sum lands in `{x, 0}`.
+    fn callAddHelper(self: *Emitter) anyerror!void {
+        const name = try self.ensureAddHelper();
+        const labels = try self.fnLabelsFor(name, 2);
+        try beamEmitter.writeCall(self.out, .normal, 2, .{ .local = labels.entry }, 0);
+    }
+
+    /// `'__bp_add'(A, B)`: `+` on operands of unknown type — two binaries
+    /// concatenate (`iolist_to_binary([A, B])`), anything else adds. Parity
+    /// with the erlang backend's helper of the same name.
+    fn ensureAddHelper(self: *Emitter) anyerror![]const u8 {
+        if (self.add_helper_name) |n| return n;
+        const name = try self.alloc.dupe(u8, "'__bp_add'");
+        try self.reserveFn(name, 2);
+        const labels = try self.fnLabelsFor(name, 2);
+        var buf: std.Io.Writer.Allocating = .init(self.alloc);
+        const saved_out = self.out;
+        self.out = &buf.writer;
+        const w = self.out;
+
+        const arith_l = self.allocLabel();
+        try beamEmitter.writeBlankLine(w);
+        try beamEmitter.writeFunctionHeader(w, name, 2, labels.entry);
+        try beamEmitter.writeLabel(w, labels.func_info);
+        try beamEmitter.writeLine(w, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(w, self.module_name, name, 2);
+        try beamEmitter.writeLabel(w, labels.entry);
+        try beamEmitter.writeTest(w, .is_binary, arith_l, &.{Op.xr(0)});
+        try beamEmitter.writeTest(w, .is_binary, arith_l, &.{Op.xr(1)});
+        try beamEmitter.writeTestHeap(w, 4, 2);
+        try beamEmitter.writePutList(w, Op.xr(1), Op.nil, Dst.xr(1));
+        try beamEmitter.writePutList(w, Op.xr(0), Op.xr(1), Dst.xr(0));
+        try beamEmitter.writeCall(w, .only, 1, .{ .ext = .{ .module = "erlang", .function = "iolist_to_binary" } }, 0);
+        try beamEmitter.writeLabel(w, arith_l);
+        try beamEmitter.writeGcBif(w, .add, 2, &.{ Op.xr(0), Op.xr(1) }, Dst.xr(0));
+        try beamEmitter.writeReturn(w);
+
+        self.out = saved_out;
+        try self.deferred_lambdas.append(self.alloc, try buf.toOwnedSlice());
+        buf.deinit();
+        self.add_helper_name = name;
+        return name;
+    }
+
     fn ensureStringifyHelper(self: *Emitter) anyerror![]const u8 {
         if (self.stringify_helper_name) |n| return n;
         const name = try self.alloc.dupe(u8, "'-bp_stringify-'");
@@ -4703,7 +4884,7 @@ const Emitter = struct {
                     break :blk false;
                 },
             },
-            .binaryOp => |bin| (bin.op == .add and self.isStringExpr(strings, e)) or
+            .binaryOp => |bin| (bin.op == .add and (self.isStringExpr(strings, e) or self.addIsDynamic(strings, e))) or
                 self.exprMayCall(strings, bin.lhs.*) or self.exprMayCall(strings, bin.rhs.*),
             .unaryOp => |un| self.exprMayCall(strings, un.expr.*),
             .function => false,

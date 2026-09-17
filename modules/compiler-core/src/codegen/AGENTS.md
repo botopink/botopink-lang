@@ -613,6 +613,16 @@ codegen/
   `'-bp_stringify-'/1` (a binary is itself, an integer `integer_to_binary`,
   anything else its `~p` text), flattened by `iolist_to_binary/1`; a non-string
   operand concatenates as text instead of raising `badarith`. String `+=` too.
+- **Numbers** (`numKind`, `NumKind`, `num_locals`/`count_nums`/`num_names`,
+  parity with erlang): an operand is provably numeric when it is a number
+  literal, a local/param/module name bound or declared numeric, a primitive
+  member read (`s.length`), a call to a `fn` declared numeric, or arithmetic
+  over them. A `+` with such an operand is the `'+'` gc_bif; a `+` proven
+  neither string nor number (`{ x, y -> x + y }`, record fields, destructured
+  values — `addIsDynamic`) calls the synthesised `'__bp_add'/2` (two binaries
+  → `iolist_to_binary([A, B])`, anything else `'+'`), and so does `x += v` on a
+  name and value both unproven. `/` is the `'/'` gc_bif when an operand is
+  provably a float, `'div'` otherwise. `exprMayCall` counts the helper call.
 - **`erlc +from_asm` invariants**: comparisons use only `is_lt`/`is_ge` (no
   `is_gt`/`is_le` — operands swap, `comparisonTestOp`); `{allocate, N, A}` is
   followed by `{init_yregs, …}` (`emitFrame`); `countLocalsRec` counts every

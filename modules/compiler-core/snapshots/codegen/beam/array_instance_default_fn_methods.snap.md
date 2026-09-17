@@ -14,7 +14,7 @@ fn main() {
 {module, main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
-{labels, 47}.
+{labels, 50}.
 
 {function, 'Array_range', 2, 3}.
   {label, 2}.
@@ -116,20 +116,20 @@ fn main() {
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 23}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_eq, {f, 35}, [{x, 0}, nil]}.
+    {test, is_eq, {f, 38}, [{x, 0}, nil]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 36}}.
-  {label, 35}.
+    {jump, {f, 39}}.
+  {label, 38}.
     {move, {atom, false}, {x, 0}}.
-  {label, 36}.
+  {label, 39}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 23}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 40}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 43}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {call, 2, {f, 38}}.
+    {call, 2, {f, 41}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 23}}.
@@ -167,18 +167,18 @@ fn main() {
     {move, {y, 3}, {x, 1}}.
     {move, {x, 0}, {x, 2}}.
     {test_heap, {alloc, [{words, 1}, {floats, 0}, {funs, 1}]}, 3}.
-    {make_fun3, {f, 44}, 0, 0, {x, 0}, {list, [{y, 2}]}}.
+    {make_fun3, {f, 47}, 0, 0, {x, 0}, {list, [{y, 2}]}}.
     {call_ext, 3, {extfunc, lists, foldl, 3}}.
     {move, {x, 0}, {y, 3}}.
     {move, {y, 3}, {x, 0}}.
     {deallocate, 4}.
     return.
 
-{function, 'Array_all', 2, 38}.
-  {label, 37}.
+{function, 'Array_all', 2, 41}.
+  {label, 40}.
     {line, [{location, "main.erl", 7}]}.
     {func_info, {atom, main}, {atom, 'Array_all'}, 2}.
-  {label, 38}.
+  {label, 41}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -190,12 +190,12 @@ fn main() {
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {gc_bif, length, {f, 0}, 2, [{x, 0}], {x, 0}}.
-    {test, is_eq, {f, 45}, [{x, 1}, {x, 0}]}.
+    {test, is_eq, {f, 48}, [{x, 1}, {x, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 46}}.
-  {label, 45}.
+    {jump, {f, 49}}.
+  {label, 48}.
     {move, {atom, false}, {x, 0}}.
-  {label, 46}.
+  {label, 49}.
     {deallocate, 2}.
     return.
 
@@ -290,6 +290,21 @@ fn main() {
     {move, {literal, [126, 110]}, {x, 0}}.
     return.
 
+{function, '__bp_add', 2, 36}.
+  {label, 35}.
+    {line, [{location, "main.erl", 4}]}.
+    {func_info, {atom, main}, {atom, '__bp_add'}, 2}.
+  {label, 36}.
+    {test, is_binary, {f, 37}, [{x, 0}]}.
+    {test, is_binary, {f, 37}, [{x, 1}]}.
+    {test_heap, 4, 2}.
+    {put_list, {x, 1}, nil, {x, 1}}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {call_ext_only, 1, {extfunc, erlang, iolist_to_binary, 1}}.
+  {label, 37}.
+    {gc_bif, '+', {f, 0}, 2, [{x, 0}, {x, 1}], {x, 0}}.
+    return.
+
 {function, '-main/0-fun-0-', 2, 34}.
   {label, 33}.
     {line, [{location, "main.erl", 4}]}.
@@ -299,32 +314,34 @@ fn main() {
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
-    {gc_bif, '+', {f, 0}, 0, [{y, 0}, {y, 1}], {x, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call, 2, {f, 36}}.
     {deallocate, 2}.
     return.
 
-{function, '-main/0-fun-1-', 1, 40}.
-  {label, 39}.
+{function, '-main/0-fun-1-', 1, 43}.
+  {label, 42}.
     {line, [{location, "main.erl", 4}]}.
     {func_info, {atom, main}, {atom, '-main/0-fun-1-'}, 1}.
-  {label, 40}.
+  {label, 43}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
-    {test, is_lt, {f, 41}, [{integer, 0}, {y, 0}]}.
+    {test, is_lt, {f, 44}, [{integer, 0}, {y, 0}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 42}}.
-  {label, 41}.
+    {jump, {f, 45}}.
+  {label, 44}.
     {move, {atom, false}, {x, 0}}.
-  {label, 42}.
+  {label, 45}.
     {deallocate, 1}.
     return.
 
-{function, '-fold/3-fun-2-', 3, 44}.
-  {label, 43}.
+{function, '-fold/3-fun-2-', 3, 47}.
+  {label, 46}.
     {line, [{location, "main.erl", 7}]}.
     {func_info, {atom, main}, {atom, '-fold/3-fun-2-'}, 3}.
-  {label, 44}.
+  {label, 47}.
     {allocate, 3, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.

@@ -16,7 +16,7 @@ fn loadTwice(x: i32) -> @Future<i32> {
 {module, main}.
 {exports, []}.
 {attributes, []}.
-{labels, 6}.
+{labels, 9}.
 
 %% #[@future] / #[@asyncGenerator] — eager lowering
 {function, fetch, 1, 3}.
@@ -43,8 +43,25 @@ fn loadTwice(x: i32) -> @Future<i32> {
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 3}}.
     {move, {x, 0}, {y, 1}}.
-    {gc_bif, '+', {f, 0}, 0, [{y, 1}, {y, 1}], {x, 0}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {call, 2, {f, 7}}.
     {deallocate, 2}.
+    return.
+
+{function, '__bp_add', 2, 7}.
+  {label, 6}.
+    {line, [{location, "main.erl", 3}]}.
+    {func_info, {atom, main}, {atom, '__bp_add'}, 2}.
+  {label, 7}.
+    {test, is_binary, {f, 8}, [{x, 0}]}.
+    {test, is_binary, {f, 8}, [{x, 1}]}.
+    {test_heap, 4, 2}.
+    {put_list, {x, 1}, nil, {x, 1}}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {call_ext_only, 1, {extfunc, erlang, iolist_to_binary, 1}}.
+  {label, 8}.
+    {gc_bif, '+', {f, 0}, 2, [{x, 0}, {x, 1}], {x, 0}}.
     return.
 ```
 
