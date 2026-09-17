@@ -80,6 +80,7 @@ const Order = Object.freeze({
     Eq: "Eq",
     Gt: "Gt",
 });
+exports.Order = Order;
 
 function lt() {
     return Order.Lt;

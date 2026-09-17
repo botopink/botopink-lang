@@ -75,7 +75,7 @@ pub fn codegenEmit(
 
                 // Generate TypeScript typedefs if configured.
                 const typedef: ?[]u8 = if (config.typeDefLanguage) |_|
-                    try emitTypeDef(alloc, ok.bindings)
+                    try emitTypeDef(alloc, ok.bindings, &cross)
                 else
                     null;
 
@@ -114,8 +114,9 @@ fn emitJs(
 fn emitTypeDef(
     alloc: std.mem.Allocator,
     bindings: []const comptimeMod.TypedBinding,
+    cross: *const CrossModule,
 ) ![]u8 {
-    return try tsEmit.emitProgram(alloc, bindings);
+    return try tsEmit.emitProgram(alloc, bindings, cross);
 }
 
 // ── emit ──────────────────────────────────────────────────────────────────────
@@ -1145,6 +1146,19 @@ const Emitter = struct {
         };
     }
 
+    /// `exports.<name> = <name>;` for a `pub` record or enum. Always emitted,
+    /// like a `pub fn`'s: the module's `.d.ts` declares the class / enum as
+    /// exported, and a consumer reaching it through the module object
+    /// (`order.Order.Lt` after `import {order} from "std"`) finds nothing
+    /// otherwise.
+    fn pubExport(self: *Emitter, name: []const u8) !js.Stmt {
+        return .{ .expr = try self.b.assign(
+            try self.b.member(.{ .name = "exports" }, name),
+            "=",
+            .{ .name = name },
+        ) };
+    }
+
     /// `exports.<name> = <name>;` for a `pub` type that another module
     /// imports. Scoped to actually-consumed names so single-module programs
     /// (the vast majority of fixtures) emit no export line and stay unchanged.
@@ -1406,8 +1420,7 @@ const Emitter = struct {
             .members = try members.toOwnedSlice(self.arena()),
         } };
         if (!r.isPub) return class;
-        const exp = try self.crossExport(r.name) orelse return class;
-        return self.b.group(&.{ class, exp });
+        return self.b.group(&.{ class, try self.pubExport(r.name) });
     }
 
     fn buildEnum(self: *Emitter, e: ast.EnumDecl) !js.Stmt {
@@ -1448,8 +1461,7 @@ const Emitter = struct {
             ),
         } };
         if (!e.isPub) return decl;
-        const exp = try self.crossExport(e.name) orelse return decl;
-        return self.b.group(&.{ decl, exp });
+        return self.b.group(&.{ decl, try self.pubExport(e.name) });
     }
 
     fn buildInterface(self: *Emitter, i: ast.InterfaceDecl) !js.Stmt {

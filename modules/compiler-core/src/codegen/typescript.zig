@@ -10,15 +10,18 @@ const ast = @import("../ast.zig");
 const comptimeMod = @import("../comptime.zig");
 const js = @import("./js/js_ast.zig");
 const tsEmitter = @import("./js/ts_emitter.zig");
+const crossModule = @import("./crossModule.zig");
 
-/// Emit a TypeScript declaration file for all bindings.
+/// Emit a TypeScript declaration file for all bindings. `cross` (null for a
+/// standalone module) says which imported names another module actually emits.
 pub fn emitProgram(
     alloc: std.mem.Allocator,
     bindings: []const comptimeMod.TypedBinding,
+    cross: ?*const crossModule.CrossModule,
 ) ![]u8 {
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
-    var bld = Builder{ .b = .{ .arena = arena.allocator() } };
+    var bld = Builder{ .b = .{ .arena = arena.allocator() }, .cross = cross };
 
     const decls = try bld.b.arena.alloc(js.TsDecl, bindings.len);
     for (bindings, 0..) |binding, i| decls[i] = try bld.binding(binding);
@@ -32,6 +35,7 @@ pub fn emitProgram(
 /// Builds the `.d.ts` model. Every node it produces lives in `b.arena`.
 const Builder = struct {
     b: js.Builder,
+    cross: ?*const crossModule.CrossModule = null,
 
     const Error = anyerror;
 
@@ -164,10 +168,19 @@ const Builder = struct {
     fn use(self: *Builder, u: ast.ImportDecl) Error!js.TsDecl {
         // Fallback activation `X*;` has no type binding — emit nothing.
         if (u.activationOnly) return .none;
-        const names = try self.b.arena.alloc([]const u8, u.imports.len);
-        for (u.imports, 0..) |imp, i| names[i] = imp.name();
+        var names: std.ArrayListUnmanaged([]const u8) = .empty;
+        for (u.imports) |imp| {
+            // A package import names only what the owner emits: a template fn
+            // (`html`) or a lib namespace handle has no declaration in the
+            // owner's `.d.ts`, so importing it would dangle.
+            if (u.source == .module and self.cross != null and
+                !std.mem.eql(u8, u.source.module, "std") and
+                self.cross.?.exports.get(imp.name()) == null) continue;
+            try names.append(self.b.arena, imp.name());
+        }
+        if (names.items.len == 0) return .none;
         return .{ .import = .{
-            .names = names,
+            .names = names.items,
             .source = switch (u.source) {
                 .root => "./module",
                 .module => |name| name,
