@@ -150,9 +150,9 @@ fn main() {
 
 describe(O) ->
     S = case O of
-        Lt ->
+        'Lt' ->
             <<"less">>;
-        Gt ->
+        'Gt' ->
             <<"greater">>;
         _ ->
             <<"equal">>
@@ -176,5 +176,5 @@ main(_Args) ->
 ----- RUN LOG -----
 ```logs
 -1
-less
+greater
 ```

@@ -18,12 +18,11 @@ val r = need "x";
 need(T) ->
     Hit = lookup(T, <<"Buttom">>),
     case Hit of
-        undefined -> undefined;
+        undefined ->
+            build(T, <<"\"ok\"">>);
         B ->
-            fail(T, <<"should be missing">>);
-        _ -> ok
-    end,
-    build(T, <<"\"ok\"">>).
+            fail(T, <<"should be missing">>)
+    end.
 
 main() ->
     try

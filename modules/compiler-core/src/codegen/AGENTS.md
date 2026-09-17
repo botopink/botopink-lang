@@ -254,7 +254,12 @@ codegen/
   through `patternBindVar` (versioned when already bound).
 - **Enums**: `Order.Lt` → the variant atom; `Color.Rgb(r, g, b)` →
   `{'Rgb', R, G, B}`. A bare `.ident` case pattern is the atom when it names a
-  known variant (`enum_variants`), else a variable. Case arms also lower list
+  known variant (`enum_variants`), else a variable. `enum_variants` also holds
+  the variants of every `pub enum` the module imports — by name, or with its
+  module (`import {order} from "std"` brings `std/order`'s `Lt`/`Eq`/`Gt`);
+  `codegenEmit` indexes them over every module (`EnumExport`), since the
+  cross-module index carries an enum's name only. Without it an imported
+  variant pattern was a fresh variable that matched anything. Case arms also lower list
   patterns (`[]`/`[X]`/`[First | Rest]`).
 - **Calls**: a PascalCase receiver is a module reference (`isModuleRef`) →
   remote `list:map(…)`; a receiver naming a local record calls the local
@@ -264,7 +269,11 @@ codegen/
   whose subject runs inside `try … catch error:R -> {error, R} end` — `@todo()` /
   `@panic` in a `#[@result]` callee raise, and a `case` alone cannot catch that;
   an `if` whose then-branch returns nests the rest of the body in the false arm
-  (`emitEarlyReturnIf`). `a..b` → `lists:seq(A, B - 1)`. `&&`/`||` are
+  (`earlyReturnIfExpr`) — the binding form `if (x) { s -> return …; }` too, as
+  `case X of undefined -> <rest>; S -> <then> end` (its `case` value used to be
+  discarded). A binding-form `if` in any position is exactly those two clauses:
+  `undefined` runs the `else` body (it sat behind an unreachable `false` clause)
+  and no `_ -> ok` catch-all follows. `a..b` → `lists:seq(A, B - 1)`. `&&`/`||` are
   `andalso`/`orelse` — botopink short-circuits, erlang's `and`/`or` do not.
   `if (x)` on a nullable local (`?T`, or a parameter defaulting to `null`) is the
   null test `(X =/= undefined)`, not a boolean test (`condNode`).

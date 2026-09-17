@@ -14,12 +14,11 @@ fn getName(name: ?string) -> string {
 
 getName(Name) ->
     case Name of
-        undefined -> undefined;
+        undefined ->
+            <<"unknown">>;
         N ->
-            N;
-        _ -> ok
-    end,
-    <<"unknown">>.
+            N
+    end.
 ```
 
 ----- RUN LOG -----

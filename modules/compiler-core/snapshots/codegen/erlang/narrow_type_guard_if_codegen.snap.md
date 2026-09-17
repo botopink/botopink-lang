@@ -16,12 +16,11 @@ fn main() {
 
 isString(X) ->
     case X of
-        undefined -> undefined;
+        undefined ->
+            false;
         S ->
-            true;
-        _ -> ok
-    end,
-    false.
+            true
+    end.
 
 main() ->
     '__bp_print'([isString(<<"hello">>)]).
@@ -38,5 +37,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-false
+true
 ```

@@ -16,8 +16,7 @@ main() ->
     case X of
         undefined -> undefined;
         N ->
-            '__bp_print'([N]);
-        _ -> ok
+            '__bp_print'([N])
     end.
 
 '__bp_print'(Values) ->

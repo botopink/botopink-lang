@@ -310,6 +310,22 @@ pub fn codegenEmit(
     var cross = try crossModule.build(alloc, outputs);
     defer cross.deinit();
 
+    // Every module's `pub enum`s with their variants, so a consumer can quote
+    // an imported variant in a case pattern (`collectImportedTypes`). The
+    // cross-module index carries an enum's name only.
+    var enum_exports: std.ArrayListUnmanaged(EnumExport) = .empty;
+    defer enum_exports.deinit(alloc);
+    for (outputs) |*ct| {
+        const ok = switch (ct.outcome) {
+            .ok => |*o| o,
+            else => continue,
+        };
+        for (ok.transformed.decls) |decl| switch (decl) {
+            .@"enum" => |e| if (e.isPub) try enum_exports.append(alloc, .{ .module = ct.name, .name = e.name, .variants = e.variants }),
+            else => {},
+        };
+    }
+
     for (outputs) |*ct| {
         switch (ct.outcome) {
             .parseError => continue,
@@ -329,7 +345,7 @@ pub fn codegenEmit(
                 // `"std"` package copies are dependencies — never emit their
                 // test blocks (mirrors the commonJS rule).
                 const module_test_mode = config.test_mode and !std.mem.startsWith(u8, ct.name, "std/");
-                const code = try emitErlang(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, module_test_mode, &cross);
+                const code = try emitErlang(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, module_test_mode, &cross, enum_exports.items);
                 try results.append(alloc, .{
                     .name = ct.name,
                     .src = ct.src,
@@ -393,6 +409,14 @@ const prim_shim_prefix = "__bp_prim_";
 const break_signal = "__bp_break";
 /// The named-fun variable an unbounded `loop (x..)` recurses through.
 const loop_fun_var = "__Loop";
+
+/// A `pub enum` of some module in the build, with its variants.
+const EnumExport = struct {
+    /// The declaring module's path (`std/order`).
+    module: []const u8,
+    name: []const u8,
+    variants: []const ast.EnumVariant,
+};
 
 pub const HostRecord = struct {
     name: []const u8,
@@ -548,7 +572,7 @@ pub fn emitComptimeModule(
     defer rewrites.deinit();
     var instance_lowerings = std.AutoHashMap(ast.Loc, envMod.InstanceLowering).init(alloc);
     defer instance_lowerings.deinit();
-    return emitErlangModule(alloc, module_name, program, comptime_vals, rewrites, instance_lowerings, false, null, module);
+    return emitErlangModule(alloc, module_name, program, comptime_vals, rewrites, instance_lowerings, false, null, &.{}, module);
 }
 
 /// How many `<Iface>.<method>` entries the primitive dispatch table holds for a
@@ -598,8 +622,9 @@ fn emitErlang(
     instance_lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
     test_mode: bool,
     cross: ?*const CrossModule,
+    enum_exports: []const EnumExport,
 ) ![]u8 {
-    return emitErlangModule(alloc, module_name, program, comptime_vals, rewrites, instance_lowerings, test_mode, cross, null);
+    return emitErlangModule(alloc, module_name, program, comptime_vals, rewrites, instance_lowerings, test_mode, cross, enum_exports, null);
 }
 
 fn emitErlangModule(
@@ -611,9 +636,11 @@ fn emitErlangModule(
     instance_lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
     test_mode: bool,
     cross: ?*const CrossModule,
+    enum_exports: []const EnumExport,
     comptime_module: ?ComptimeModule,
 ) ![]u8 {
     var em = Emitter.init(alloc, comptime_vals, rewrites);
+    em.enum_exports = enum_exports;
     em.instance_lowerings = instance_lowerings;
     em.untyped = comptime_module != null;
     if (comptime_module) |cm| {
@@ -1327,6 +1354,8 @@ const Emitter = struct {
     enum_variants: std.StringHashMap(void),
     /// Cross-module link index (null in the standalone path).
     cross: ?*const CrossModule = null,
+    /// Every module's `pub enum`s (empty in the standalone path).
+    enum_exports: []const EnumExport = &.{},
     /// Imported record/struct name → owning module atom. A qualified call whose
     /// receiver names one (`Response.ok(...)` for an imported `Response`) lowers
     /// to a remote call into the owner (`http:ok(...)`), not a bare local fn.
@@ -2262,6 +2291,21 @@ const Emitter = struct {
     /// Imported enums join `enum_names` (their tagged-tuple / atom shape is
     /// module-independent). No-op without a cross index (standalone path).
     fn collectImportedTypes(self: *Emitter, program: ast.Program) !void {
+        // An imported enum's variants join `enum_variants`, so a case pattern
+        // naming one is the atom (`'Gt'`), not a fresh variable that matches
+        // anything. The enum arrives by name (`import {Order}`) or with its
+        // module (`import {order} from "std"` brings `std/order`'s enums).
+        for (program.decls) |decl| switch (decl) {
+            .use => |u| for (u.imports) |imp| {
+                const name = imp.segments[imp.segments.len - 1];
+                for (self.enum_exports) |ee| {
+                    if (std.mem.eql(u8, ee.module, self.module_name)) continue;
+                    if (!std.mem.eql(u8, ee.name, name) and !std.mem.eql(u8, crossModule.moduleBasename(ee.module), name)) continue;
+                    for (ee.variants) |v| try self.enum_variants.put(v.name, {});
+                }
+            },
+            else => {},
+        };
         const xc = self.cross orelse return;
         for (program.decls) |decl| switch (decl) {
             .use => |u| for (u.imports) |imp| {
@@ -2546,7 +2590,7 @@ const Emitter = struct {
 
             if (!is_last and stmt.expr == .branch and stmt.expr.branch.kind == .if_) {
                 const if_node = stmt.expr.branch.kind.if_;
-                if (if_node.binding == null and if_node.else_ == null and bodyEndsWithReturn(if_node.then_)) {
+                if (if_node.else_ == null and bodyEndsWithReturn(if_node.then_)) {
                     try stmts.append(b.arena, .{ .expr = try this.earlyReturnIfExpr(b, body, i, if_node) });
                     break; // remaining statements are nested inside the false arm
                 }
@@ -2888,16 +2932,27 @@ const Emitter = struct {
         var snapshot = try this.var_current.clone();
         defer snapshot.deinit();
 
-        const subject = try this.exprNode(b, if_node.cond.*);
         var clauses: std.ArrayListUnmanaged(Ast.Clause) = .empty;
         const arm_indent = this.indent + 2;
 
-        var then_pattern = Ast.Expr.a("true");
         if (if_node.binding) |name| {
-            try clauses.append(b.arena, try b.clause(&.{Ast.Expr.a("undefined")}, &.{}, &.{try this.varGroupExpr(b, names)}));
-            then_pattern = Ast.Expr.v(try this.arenaVar(b, name));
-            this.addLocal(name);
+            // The binding form: `undefined` runs the else arm, any other value
+            // binds the name and runs the then arm — no catch-all after them.
+            const subject = try this.exprNode(b, if_node.cond.*);
+            if (if_node.else_) |els| {
+                try clauses.append(b.arena, .{ .patterns = try b.exprs(&.{Ast.Expr.a("undefined")}), .body = try this.armWithGroup(b, els, names, arm_indent) });
+                try this.restoreVersions(&snapshot);
+            } else {
+                try clauses.append(b.arena, try b.clause(&.{Ast.Expr.a("undefined")}, &.{}, &.{try this.varGroupExpr(b, names)}));
+            }
+            const bound = Ast.Expr.v(try this.patternBindVar(b, name));
+            try clauses.append(b.arena, .{ .patterns = try b.exprs(&.{bound}), .body = try this.armWithGroup(b, if_node.then_, names, arm_indent) });
+            try this.restoreVersions(&snapshot);
+            const target = try this.bindVarGroupExpr(b, names);
+            return b.match(target, try b.caseOf(subject, clauses.items));
         }
+        const subject = try this.condNode(b, if_node.cond.*);
+        const then_pattern = Ast.Expr.a("true");
         try clauses.append(b.arena, .{
             .patterns = try b.exprs(&.{then_pattern}),
             .body = try this.armWithGroup(b, if_node.then_, names, arm_indent),
@@ -2996,9 +3051,25 @@ const Emitter = struct {
 
     /// `case Cond of true -> <then-body>; _ -> <body[i+1..]> end` for an `if`
     /// that early-returns, nesting the remaining statements in the false arm.
+    /// The binding form `if (x) { s -> return …; }` matches the value itself:
+    /// `case X of undefined -> <body[i+1..]>; S -> <then-body> end`. Lowered as
+    /// a statement instead, its `case` value was discarded and the function
+    /// answered the fall-through value unconditionally.
     fn earlyReturnIfExpr(this: *Emitter, b: Ast.Builder, body: []const ast.Stmt, i: usize, if_node: anytype) anyerror!Ast.Expr {
-        const cond = try this.exprNode(b, if_node.cond.*);
         const arm_indent = this.indent + 2;
+        if (if_node.binding) |name| {
+            const subject = try this.exprNode(b, if_node.cond.*);
+            var snapshot = try this.var_current.clone();
+            defer snapshot.deinit();
+            const rest = try this.bodyNode(b, body, i + 1, arm_indent);
+            try this.restoreVersions(&snapshot);
+            const bound = Ast.Expr.v(try this.patternBindVar(b, name));
+            return b.caseOf(subject, &.{
+                .{ .patterns = try b.exprs(&.{Ast.Expr.a("undefined")}), .body = rest },
+                .{ .patterns = try b.exprs(&.{bound}), .body = try this.bodyNode(b, if_node.then_, 0, arm_indent) },
+            });
+        }
+        const cond = try this.condNode(b, if_node.cond.*);
         return b.caseOf(cond, &.{
             .{ .patterns = try b.exprs(&.{Ast.Expr.a("true")}), .body = try this.bodyNode(b, if_node.then_, 0, arm_indent) },
             .{ .patterns = try b.exprs(&.{Ast.Expr.v("_")}), .body = try this.bodyNode(b, body, i + 1, arm_indent) },
@@ -3399,15 +3470,18 @@ const Emitter = struct {
                     const cond = if (i.binding == null) try this.condNode(b, i.cond.*) else try this.exprNode(b, i.cond.*);
                     const arm_indent = this.indent + 2;
                     var clauses: std.ArrayListUnmanaged(Ast.Clause) = .empty;
-                    var then_pattern = A("true");
                     if (i.binding) |name| {
-                        // `if (mb) { b -> body }`: bind `b` to the non-`undefined`
-                        // value so the body's references to `b` resolve.
-                        try clauses.append(b.arena, try b.clause(&.{A("undefined")}, &.{}, &.{A("undefined")}));
-                        then_pattern = V(try this.arenaVar(b, name));
-                        this.addLocal(name);
+                        // `if (mb) { b -> body } [else { … }]`: `undefined` takes
+                        // the else body (it used to sit behind an unreachable
+                        // `false` clause), any other value binds `b`. The two
+                        // patterns cover every value, so no catch-all follows.
+                        const undefined_body = if (i.else_) |els| try this.bodyNode(b, els, 0, arm_indent) else try b.body(&.{A("undefined")});
+                        try clauses.append(b.arena, .{ .patterns = try b.exprs(&.{A("undefined")}), .body = undefined_body, .layout = if (i.else_ == null) .inline_ else .block });
+                        const bound = V(try this.patternBindVar(b, name));
+                        try clauses.append(b.arena, .{ .patterns = try b.exprs(&.{bound}), .body = try this.bodyNode(b, i.then_, 0, arm_indent) });
+                        return b.caseOf(cond, clauses.items);
                     }
-                    try clauses.append(b.arena, .{ .patterns = try b.exprs(&.{then_pattern}), .body = try this.bodyNode(b, i.then_, 0, arm_indent) });
+                    try clauses.append(b.arena, .{ .patterns = try b.exprs(&.{A("true")}), .body = try this.bodyNode(b, i.then_, 0, arm_indent) });
                     if (i.else_) |els| {
                         try clauses.append(b.arena, .{ .patterns = try b.exprs(&.{A("false")}), .body = try this.bodyNode(b, els, 0, arm_indent) });
                     } else {
