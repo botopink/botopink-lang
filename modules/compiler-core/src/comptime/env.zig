@@ -415,6 +415,24 @@ pub const Env = struct {
     iterator_jump_lowerings: std.AutoHashMap(ast.Loc, IteratorJumpLowering),
     /// Capability scope of the function body currently being inferred (null at top level).
     fnContext: ?FnContext = null,
+    /// C1 — the type a `return <value>` in the body currently being inferred
+    /// must unify with: the declared return type, or an effect wrapper's inner
+    /// channel (`#[@result]` → R, `#[@future]` → T, `#[@generator]` → R,
+    /// `#[@context]` → X). Null where returns are not checked (no declared
+    /// return type, template fns, top level).
+    returnTarget: ?*T.Type = null,
+    /// C1 — a bare `return;` must unify with `void` (fn decls with a declared
+    /// return type; not lambdas, whose target is a shared fresh var).
+    returnBareIsVoid: bool = false,
+    /// C1 — the fn's whole declared return type, for a returned value that is
+    /// already the wrapper (`return state(start)` in a `-> @Context<B, X>` hook).
+    returnWhole: ?*T.Type = null,
+    /// The generic-param map of the fn body being inferred, so annotations
+    /// inside the body resolve `T` to the fn's own generic var.
+    fnGenericMap: ?*std.StringHashMap(*T.Type) = null,
+    /// C1 — the return targets of the trailing lambdas inferred last, read by
+    /// `@block` to type the block as the value its `return`s carry.
+    lastTrailingReturnTargets: []*T.Type = &.{},
     /// How `throw` is checked in the function body currently being inferred.
     throwContext: ThrowContext = .unchecked,
     /// Active effect-fn context while inferring its body (for `await`/`yield`

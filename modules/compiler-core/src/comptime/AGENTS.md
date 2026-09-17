@@ -282,6 +282,24 @@ Codegen lowers `use` per target (commonJS → React hooks with inferred
 dependency arrays; other targets treat `use` as a transparent prefix). Phantom
 `@Context` base structs are erased — see `codegen/AGENTS.md`.
 
+## `return` checking (06 C1)
+
+Every `return <value>` unifies with the body's **return target** (`env.returnTarget`), located at
+the value:
+- a fn with a declared return type → that type; a type guard (`-> x is T`) → `bool`;
+- an effect body → the wrapper's inner channel: `#[@result]` → `R` of `@Result<R, E>`,
+  `#[@future]` → `T`, `#[@generator]` → `R` of `@Generator<T, R>`; any `-> @Context<B, X>` → `X`;
+- a lambda → its expected return type, else a fresh var shared by its `return`s; a trailing
+  lambda (`@block { … }`, `use memo { -> … }`) owns its `return`s too, and `@block` is typed as the
+  value they carry;
+- no declared return type, a template fn (`-> @Expr<…>`), an iterator effect → unchecked.
+
+A value that already is the declared wrapper (`return state(start)` in a `-> @Context<B, X>` hook,
+a `@Result` / `@Future` passthrough, `try` / `catch` forms) unifies with the whole declared type or
+is left alone. A named type returned where the fn declares a behavior it implements is accepted.
+Body annotations resolve the fn's generic params (`env.fnGenericMap`). A bare `return;` unifies
+with `void` in a fn with a declared return type.
+
 ## `Children` coercion
 
 - The anonymous record type `{ f: T }` and literal `record { … }` left the

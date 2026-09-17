@@ -325,7 +325,7 @@ test "js: destructure ---- tuple var binding" {
 
 test "js: destructure ---- tuple with long names" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn get_coordinates() -> #(f32, f32) {
+        \\fn get_coordinates() -> #(f64, f64) {
         \\    return #(0.0, 0.0);
         \\}
         \\fn extract_coordinates() {
@@ -516,7 +516,7 @@ test "js: pipeline ---- with labeled args" {
 
 test "js: range ---- iterate over range" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn sumTo(n: i32) -> i32 {
+        \\fn sumTo(n: i32) -> i32[] {
         \\    return loop (0..n) { i ->
         \\        yield i;
         \\    };

@@ -239,7 +239,7 @@ test "types: range ---- iterate 0 to n" {
 
 test "types: loop ---- break with value" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn find(arr: i32[]) -> i32 {
+        \\fn find(arr: i32[]) -> i32[] {
         \\    return loop (arr) { x ->
         \\        if (x > 10) { break x; };
         \\    };

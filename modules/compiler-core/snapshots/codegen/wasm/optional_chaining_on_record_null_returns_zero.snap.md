@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 type R(a: i32, b: i32)
-fn pick(maybe: ?R) -> i32 {
+fn pick(maybe: ?R) -> ?i32 {
     return maybe?.b;
 }
 ```

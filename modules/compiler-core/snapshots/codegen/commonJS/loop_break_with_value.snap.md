@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn find(arr: i32[]) -> i32 {
+fn find(arr: i32[]) -> i32[] {
     return loop (arr) { x ->
         if (x > 10) { break x; };
     };

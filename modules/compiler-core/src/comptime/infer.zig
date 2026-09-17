@@ -2940,7 +2940,30 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
         try env.typeGuardFns.put(f.name, .{ .paramIndex = paramIndex, .narrowedTypeName = narrowedName });
     }
 
-    // Infer body (for type checking; we ignore the result for now).
+    // C1 — every `return <value>` in the body unifies with the declared
+    // return type, or with an effect wrapper's inner channel.
+    const savedReturnTarget = env.returnTarget;
+    const savedReturnBareIsVoid = env.returnBareIsVoid;
+    const savedReturnWhole = env.returnWhole;
+    defer {
+        env.returnTarget = savedReturnTarget;
+        env.returnBareIsVoid = savedReturnBareIsVoid;
+        env.returnWhole = savedReturnWhole;
+    }
+    env.returnWhole = if (f.returnType != null) retType else null;
+    env.returnTarget = if (f.typeGuardParam != null)
+        // A type guard (`-> x is T`) returns `bool`; `T` is the narrowed type.
+        try env.namedType("bool")
+    else
+        returnTargetFor(retType, eff, f.returnType != null and !env.inTemplateFn);
+    // Annotations inside the body see the fn's generic params (`var acc:
+    // Array<#(P, O)> = []`), so a `return acc` unifies P with P, not with an
+    // opaque named `P`.
+    const savedFnGenericMap = env.fnGenericMap;
+    env.fnGenericMap = &genericMap;
+    defer env.fnGenericMap = savedFnGenericMap;
+    env.returnBareIsVoid = env.returnTarget != null and (eff == null or eff.? == .result or eff.? == .future);
+
     for (f.body) |stmt| {
         _ = try inferExpr(env, stmt.expr);
     }
@@ -3081,6 +3104,30 @@ fn effectMatchesReturn(eff: ast.EffectKind, retType: *T.Type) bool {
 /// Build the effect body context (drives `await`/`yield` validation) from the
 /// effect kind and its return type. Returns null for effects with no async /
 /// generator body operations (`#[@result]`, `#[@context]`).
+/// C1 — the type a `return <value>` unifies with inside a fn whose declared
+/// return type is `retType`: the wrapper's inner channel for an effect body
+/// (`#[@result]` → R of `@Result<R, E>`, `#[@future]` → T, `#[@generator]` → R of
+/// `@Generator<T, R>`, any `-> @Context<B, X>` → X), the declared type
+/// otherwise. Null when returns are not checked: no declared return type, a
+/// template fn, or an iterator effect (which forbids `return <expr>`).
+fn returnTargetFor(retType: *T.Type, eff: ?ast.EffectKind, checked: bool) ?*T.Type {
+    if (!checked) return null;
+    const t = retType.deref();
+    // A hook returns `@Context<B, X>` with or without `#[@context]`: its body
+    // returns the `X` the `use` prefix binds (a `state` or `memo` hook).
+    if (t.* == .named and std.mem.eql(u8, t.named.name, "Context") and t.named.args.len >= 2) {
+        return t.named.args[1];
+    }
+    const e = eff orelse return retType;
+    if (t.* != .named) return null;
+    const args = t.named.args;
+    return switch (e) {
+        .result, .future => if (args.len >= 1) args[0] else null,
+        .generator, .context => if (args.len >= 2) args[1] else null,
+        .iterator, .asyncGenerator => null,
+    };
+}
+
 fn starCtxFromEffect(eff: ast.EffectKind, retType: *T.Type, fnLabel: ?[]const u8) ?envMod.StarFnCtx {
     const t = retType.deref();
     const item: ?*T.Type = switch (t.*) {
@@ -3918,6 +3965,24 @@ fn unifyAt(env: *Env, a: *T.Type, b: *T.Type, loc: ast.Loc) InferError!void {
     };
 }
 
+/// True when `target` names a behavior and `source` is a named type that
+/// declares `implement <target>` — a `MockCounter` returned where the fn
+/// declares `-> Counter`.
+fn behaviorCoercion(env: *Env, target: *T.Type, source: *T.Type) bool {
+    const t = target.deref();
+    const s = source.deref();
+    if (t.* != .named or s.* != .named) return false;
+    if (std.mem.eql(u8, t.named.name, s.named.name)) return false;
+    const td = env.lookupTypeDef(s.named.name) orelse return false;
+    const impls = switch (td) {
+        .record => |r| r.implements,
+        .struct_ => |st| st.implements,
+        .enum_ => |e| e.implements,
+    };
+    for (impls) |i| if (std.mem.eql(u8, i, t.named.name)) return true;
+    return false;
+}
+
 /// True when `source` coerces into a `Children`-typed `target`. A `Children`
 /// parameter (the builder children model a markup DSL's `div { … }` needs)
 /// accepts another `Children`, any array (`Element[]` — the list form), a
@@ -3942,7 +4007,19 @@ fn inferBuiltinCallReturnType(
     typedArgs: []ast.CallArgOf(.typed),
     typedTrailing: []ast.TrailingLambdaOf(.typed),
 ) InferError!*T.Type {
-    _ = typedTrailing;
+    // `@block { … }` — the value of the block is what its `return`s carry
+    // (C1: those returns target the block, not the enclosing fn); a block
+    // without a valued `return` takes its tail expression's type.
+    if (std.mem.eql(u8, callee, "block") and typedTrailing.len >= 1 and env.lastTrailingReturnTargets.len >= 1) {
+        const target = env.lastTrailingReturnTargets[0];
+        const td = target.deref();
+        if (td.* == .typeVar and td.typeVar.state == .unbound) {
+            const body = typedTrailing[0].body;
+            if (body.len > 0 and body[body.len - 1].expr != .jump) return body[body.len - 1].expr.getType();
+            return env.namedType("void");
+        }
+        return target;
+    }
     // ── `@Expr` construction builtins (expr-templates) ───────────────────────
     // Construction is explicit: `@expr(value)` lifts a comptime value as code
     // and `@code(text)` parses generated source text. Both only make sense
@@ -4914,6 +4991,7 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
 
 /// Resolve an `ast.TypeRef` annotation to a `*T.Type` (no generic context).
 fn resolveTypeRef(env: *Env, ref: ast.TypeRef) InferError!*T.Type {
+    if (env.fnGenericMap) |gm| return resolveTypeRefInContext(env, ref, gm.*);
     var genericMap = std.StringHashMap(*T.Type).init(env.arena);
     defer genericMap.deinit();
     return resolveTypeRefInContext(env, ref, genericMap);
@@ -4952,13 +5030,29 @@ fn inferStmtsTyped(env: *Env, stmts: []const ast.Stmt) InferError![]TypedStmt {
 /// Convert a slice of untyped trailing lambdas to typed ones (arena-allocated).
 fn inferTrailingLambdasTyped(env: *Env, trailing: []const ast.TrailingLambda) InferError![]ast.TrailingLambdaOf(.typed) {
     const out = try env.arena.alloc(ast.TrailingLambdaOf(.typed), trailing.len);
+    // C1 — a trailing lambda's `return`s belong to the lambda (an `@block`,
+    // a `use memo { -> return … }`), never to the enclosing fn.
+    const savedReturnTarget = env.returnTarget;
+    const savedReturnBareIsVoid = env.returnBareIsVoid;
+    const savedReturnWhole = env.returnWhole;
+    defer {
+        env.returnTarget = savedReturnTarget;
+        env.returnBareIsVoid = savedReturnBareIsVoid;
+        env.returnWhole = savedReturnWhole;
+    }
+    env.returnWhole = null;
+    const targets = try env.arena.alloc(*T.Type, trailing.len);
     for (trailing, 0..) |tl, i| {
+        targets[i] = try env.freshVar();
+        env.returnTarget = targets[i];
+        env.returnBareIsVoid = false;
         out[i] = .{
             .label = tl.label,
             .params = tl.params,
             .body = try inferStmtsTyped(env, tl.body),
         };
     }
+    env.lastTrailingReturnTargets = targets;
     return out;
 }
 
@@ -5751,6 +5845,41 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                 };
                 if (!valIsFuture) {
                     try env.future_jump_lowerings.put(loc, .wrap_resolved);
+                }
+            }
+            // C1 — unify the returned value with the body's return target.
+            // A value that is already the wrapper (a `@Result` / `@Future`
+            // passthrough, `try` / `catch` forms) is not unwrapped here.
+            if (env.returnTarget) |target| {
+                if (valPtr) |vp| {
+                    const rv = r.?.*;
+                    const passthrough = blk: {
+                        if (rv == .branch and rv.branch.kind == .tryCatch) break :blk true;
+                        if (rv == .jump and rv.jump.kind == .try_) break :blk true;
+                        const vt = vp.getType().deref();
+                        if (vt.* == .named and (env.throwContext == .result or inEffectContext(env, .future))) {
+                            if (std.mem.eql(u8, vt.named.name, "Result") or std.mem.eql(u8, vt.named.name, "Future")) break :blk true;
+                        }
+                        break :blk false;
+                    };
+                    // A value that is already the declared wrapper (`return
+                    // state(start)` in a `-> @Context<B, X>` hook) unifies with
+                    // the whole declared return type.
+                    const whole: ?*T.Type = blk: {
+                        const w = env.returnWhole orelse break :blk null;
+                        const wd = w.deref();
+                        const vt = vp.getType().deref();
+                        if (wd.* == .named and vt.* == .named and w != target and
+                            std.mem.eql(u8, wd.named.name, vt.named.name)) break :blk w;
+                        break :blk null;
+                    };
+                    if (whole) |w| {
+                        try unifyAt(env, w, vp.getType(), rv.getLoc());
+                    } else if (!passthrough and !behaviorCoercion(env, target, vp.getType())) {
+                        try unifyAt(env, target, vp.getType(), rv.getLoc());
+                    }
+                } else if (env.returnBareIsVoid) {
+                    try unifyAt(env, target, try env.namedType("void"), loc);
                 }
             }
             return TypedExpr{ .jump = .{ .loc = loc, .type_ = try env.namedType("void"), .kind = .{ .@"return" = valPtr } } };
@@ -7627,6 +7756,20 @@ fn inferFunctionExprExpected(env: *Env, func: ast.FunctionExprOf(.untyped), loc:
         params[i] = if (expParams) |ep| ep[i] else try env.freshVar();
         try env.bind(p, params[i]);
     }
+    // C1 — a lambda's `return`s unify with the expected return type, or with
+    // each other through a shared fresh var; it never inherits the enclosing
+    // fn's return target.
+    const savedReturnTarget = env.returnTarget;
+    const savedReturnBareIsVoid = env.returnBareIsVoid;
+    const savedReturnWhole = env.returnWhole;
+    defer {
+        env.returnTarget = savedReturnTarget;
+        env.returnBareIsVoid = savedReturnBareIsVoid;
+        env.returnWhole = savedReturnWhole;
+    }
+    env.returnTarget = expRet orelse try env.freshVar();
+    env.returnBareIsVoid = false;
+    env.returnWhole = null;
     const bodyTyped = try inferStmtsTyped(env, fk.body);
     // The lambda's return type is its tail expression's type; an explicit
     // `return expr` tail types as void, so use the returned value's type.

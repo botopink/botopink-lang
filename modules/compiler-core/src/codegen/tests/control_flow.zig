@@ -366,13 +366,12 @@ test "js: case ---- nested case in block arm" {
     );
 }
 
-// KNOWN-WRONG wasm RUN LOG (pinned, 06-wasm W4): `288` — the loop collects
-// its `break` values into an array (erlang prints `[15,20]`), but `find` is
-// declared `-> i32`, so `@print` formats the array's address. Which of the two
-// the program means is the checker front's question (07-checker, beam B7).
+// The loop collects its `break` values into an array (erlang prints
+// `[15,20]`). `find` was declared `-> i32`; since 06 C1 a `return` unifies with
+// the declared type, so the fixture declares what the loop produces (N12).
 test "js: loop ---- break with value" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn find(arr: i32[]) -> i32 {
+        \\fn find(arr: i32[]) -> i32[] {
         \\    return loop (arr) { x ->
         \\        if (x > 10) { break x; };
         \\    };
@@ -385,7 +384,7 @@ test "js: loop ---- break with value" {
 
 test "js: loop ---- continue in iteration" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn sumEvens(arr: i32[]) -> i32 {
+        \\fn sumEvens(arr: i32[]) -> i32[] {
         \\    return loop (arr) { x ->
         \\        if (x % 2 != 0) { continue; };
         \\        yield x;

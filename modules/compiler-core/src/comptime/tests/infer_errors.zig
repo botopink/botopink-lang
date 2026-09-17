@@ -678,3 +678,60 @@ test "infer error: loop ---- a condition loop takes no parameter (N26)" {
         \\}
     );
 }
+
+// ── C1 — `return` unifies with the declared return type ─────────────────────
+
+test "infer error: return ---- a value that is not the declared return type" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn f() -> i32 { return "s"; }
+    );
+}
+
+test "infer error: return ---- an anonymous fn returns a value that is not its declared type" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val f = fn(x: i32) -> i32 { return "s"; };
+    );
+}
+
+test "infer error: return ---- a result fn returns a value that is not R" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type Oops(msg: string)
+        \\#[@result]
+        \\fn f() -> @Result<i32, Oops> { return "s"; }
+    );
+}
+
+test "infer error: return ---- an @block value flows to the fn's return" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn f() -> i32 {
+        \\    val s = @block{ return "x"; };
+        \\    return s;
+        \\}
+    );
+}
+
+test "infer: return ---- a hook body returns the X of @Context<B, X>, or another hook" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type El(tag: string)
+        \\type Cell<T>(value: T)
+        \\fn state<T>(initial: T) -> @Context<El, Cell<T>> { return Cell(value: initial); }
+        \\fn counter(start: i32) -> @Context<El, Cell<i32>> { return state(start); }
+    );
+}
+
+test "infer: return ---- body annotations see the fn's generic params" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn wrap<P>(xs: Array<P>) -> Array<#(P, P)> {
+        \\    var acc: Array<#(P, P)> = [];
+        \\    return acc;
+        \\}
+        \\val n = wrap([1, 2]);
+        \\val m = wrap(["a"]);
+    );
+}
+
+test "infer: return ---- a type guard body returns bool" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn isPositive(n: i32) -> n is i32 { return n > 0; }
+    );
+}

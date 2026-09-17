@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn find(arr: i32[]) -> i32 {
+fn find(arr: i32[]) -> i32[] {
     return loop (arr) { x ->
         if (x > 10) { break x; };
     };
@@ -96,7 +96,7 @@ fn main() {
     i32.store offset=16
     local.get $__mem0
     call $find
-    call $__print_i32
+    call $__print_arr_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
@@ -340,10 +340,66 @@ fn main() {
     i32.store
     local.get $p
   )
+  (func $__print_arr_i32_raw (param $xs i32)
+    (local $n i32) (local $i i32)
+    i32.const 8
+    i32.const 91
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+    local.get $xs
+    i32.load
+    local.set $n
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $i
+        (if
+          (then
+            i32.const 8
+            i32.const 44
+            i32.store8
+            i32.const 8
+            i32.const 1
+            call $__write_bytes
+          )
+        )
+        local.get $xs
+        i32.const 4
+        i32.add
+        local.get $i
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load
+        call $__print_i32_raw
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    i32.const 8
+    i32.const 93
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+  )
+  (func $__print_arr_i32 (param $xs i32)
+    local.get $xs
+    call $__print_arr_i32_raw
+    call $__print_nl
+  )
 )
 ```
 
 ----- RUN LOG -----
 ```logs
-288
+[15,20]
 ```

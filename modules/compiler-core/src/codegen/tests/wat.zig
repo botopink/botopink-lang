@@ -120,7 +120,7 @@ test "wat: string slice result length is readable" {
 // untyped receivers is the separate uniqueFieldOffset heuristic (below).
 test "wat: anon record literal two fields" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn make() -> i32 {
+        \\fn make() -> #(i32, i32) {
         \\    val r = #(7, 11);
         \\    return r;
         \\}
@@ -129,7 +129,7 @@ test "wat: anon record literal two fields" {
 
 test "wat: anon record literal nested" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn make() -> i32 {
+        \\fn make() -> #(#(i32, i32), i32) {
         \\    val outer = #(#(1, 2), 3);
         \\    return outer;
         \\}
@@ -182,7 +182,7 @@ test "wat: record field access by name loads at declared offset" {
 test "wat: optional chaining on record null returns zero" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type R(a: i32, b: i32)
-        \\fn pick(maybe: ?R) -> i32 {
+        \\fn pick(maybe: ?R) -> ?i32 {
         \\    return maybe?.b;
         \\}
     );

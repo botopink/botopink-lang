@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn make() -> i32 {
+fn make() -> #(i32, i32) {
     val r = #(7, 11);
     return r;
 }

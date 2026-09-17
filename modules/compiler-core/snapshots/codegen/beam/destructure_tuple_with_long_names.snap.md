@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-fn get_coordinates() -> #(f32, f32) {
+fn get_coordinates() -> #(f64, f64) {
     return #(0.0, 0.0);
 }
 fn extract_coordinates() {
