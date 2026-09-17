@@ -42,6 +42,9 @@ and running `format` twice in a row must produce identical text.
 | Lambdas | A parameterless lambda in expression position keeps `{ -> … }` (the braces alone re-parse as a block); a trailing lambda `f { … }` and a `case` arm's block body (a parameterless lambda in the AST) print `{ … }` |
 | `if` branches | A single-expression branch prints bare; a multi-statement branch prints its statements one per line, each ended by `;` |
 | String literals | `"""…"""` when the content spans lines or holds an unescaped `"`; `"…"` otherwise |
+| `loop` body | `loop (…) { x ->` then one statement per line, each ended by `;` (the body shares `fmtStmtSeq` with `fn` and lambda bodies, including a trailing comment on its statement's line) |
+| Imports | `import {a, b} from "m"`; the package-namespace forms keep the handle: `import pkg`, `import pkg from "m"`, `import pkg, {a} from "m"` |
+| One-line lambda value | Rendered flat as one text (it may run past the width); a value that needs a line break of its own prints the open form — so a second `format` pass decides the same way |
 
 ## Layout the formatter keeps (front 12 step 4)
 
@@ -60,10 +63,24 @@ and running `format` twice in a row must produce identical text.
 - None of these fields reach the parser snapshots: `jsonStringify` omits them when empty/false
   (`Program.blankLineBefore` always).
 
-`botopink format --check` passes on `libs/std/**` and `examples/**`, and the formatted sources
-compile and pass the same tests. Canonical rewrites that remain (no content lost): a
+`botopink format --check` passes on `libs/std/**` and `examples/**`, and — since the formatter
+follow-up of 2026-09-17 — on the five sibling libraries under `repository/`: formatted, they compile, pass
+the same tests, and a second pass changes nothing. Canonical rewrites that remain (no content lost): a
 `#[a, b]` annotation list prints as one `#[…]` per annotation, a method chain split over lines
 joins onto one, a single-expression `if` block drops its braces, a `\\` line string prints as
 `"""…"""`. `.d.bp` files are not reached by `format` (the loader never scans them into the
 module tree); `libs/std/src/builtins.d.bp` does not parse (`fn await(…)`, `fn module() module`
 shortforms) and is documentation only.
+
+## Layout the parser does not record (formatter cannot keep)
+
+- **Member order of an enum-shaped `type`** — `TypeShape.EnumShape` keeps `variants` and `sections`
+  in two lists with no position, so the formatter prints every variant before every section
+  (a type whose sections come before its payload variants is reordered; the program is unchanged).
+- **End-of-line comments on a field or an array element** — `parseFieldList` and the array literal
+  attach a comment to the *next* item (the last one's is dropped by `skipComments`), with no line
+  information; the formatter prints it above the next item. Statement trailing comments are kept.
+- **Blank lines inside a `loop` body or an `if` branch** — no `emptyLinesBefore` is recorded there.
+
+Each needs a parser/AST change (`parser/decls.zig`, `parser/exprs.zig`) before the formatter can
+print it back.

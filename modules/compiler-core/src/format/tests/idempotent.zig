@@ -132,3 +132,22 @@ test "format: idempotent ---- array prepend" {
         \\val list3 = [1, 2, ..[3, 4]];
     );
 }
+
+// A one-line lambda whose value is wider than the line: its inner call
+// broke by width on the first pass, and the second pass (the value no
+// longer on the lambda's line) printed the lambda open.
+test "format: idempotent ---- a one-line lambda wider than the line" {
+    try h.assertIdempotent(std.testing.allocator,
+        \\fn lower(q: Query, srcName: string, orGroups: Array<string>, hasWhere: bool) -> string {
+        \\    val known = q.lookup(srcName);
+        \\    if (known) { binding ->
+        \\        var pipe = "of(" + srcName + ")";
+        \\        if (hasWhere) {
+        \\            val orParts = orGroups.map({ andGroup -> andGroup.split(",").map({ cmp -> cmpCode(cmp) }).join(" && ") });
+        \\            pipe = pipe + ".where({ row -> " + orParts.join(" || ") + " })";
+        \\        };
+        \\    };
+        \\    return "";
+        \\}
+    );
+}

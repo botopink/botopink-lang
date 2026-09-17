@@ -448,3 +448,51 @@ test "format: branches re-parse and format to the same text" {
         \\}
     );
 }
+
+// A `loop` body printed each statement without its `;` (and with a
+// whitespace-only line between them), so a loop holding two statements
+// no longer parsed — a library's template lexer after `botopink format`.
+
+// (A blank line inside a loop body is not kept: the parser records no
+// `emptyLinesBefore` for loop-body statements.)
+test "format: a loop body keeps each statement's semicolon" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn f(xs: Array<string>) -> string {
+        \\    var a = "";
+        \\    loop (xs) { x ->
+        \\        if (x == "a") a = a + x;
+        \\        val y = x;
+        \\        a = a + y;
+        \\    };
+        \\    return a;
+        \\}
+    );
+}
+
+test "format: braced ifs inside a loop body format to statements that re-parse" {
+    try h.assertFormatAs(std.testing.allocator,
+        \\fn f(xs: Array<string>) -> string {
+        \\    var a = "";
+        \\    var b = "";
+        \\    loop (xs) { x -> if (x == "a") { a = a + x; }; if (x == "b") { b = b + x; }; };
+        \\    return a + b;
+        \\}
+    ,
+        \\fn f(xs: Array<string>) -> string {
+        \\    var a = "";
+        \\    var b = "";
+        \\    loop (xs) { x ->
+        \\        if (x == "a") a = a + x;
+        \\        if (x == "b") b = b + x;
+        \\    };
+        \\    return a + b;
+        \\}
+    );
+    try h.assertIdempotent(std.testing.allocator,
+        \\fn f(xs: Array<string>) -> string {
+        \\    var a = "";
+        \\    loop (xs) { x -> if (x == "a") { a = a + x; }; if (x == "b") { a = a + x; }; };
+        \\    return a;
+        \\}
+    );
+}

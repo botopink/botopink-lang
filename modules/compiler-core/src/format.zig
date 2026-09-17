@@ -336,6 +336,13 @@ pub const Formatter = struct {
 
     fn fmtBody(this: *Formatter, stmts: []ast.Stmt) !*const Doc {
         if (stmts.len == 0) return this.text("{}");
+        return this.surroundBreak("{", try this.fmtStmtSeq(stmts), "}");
+    }
+
+    /// The statements of a block body — a `fn`, a lambda, a `loop` — one per
+    /// line, each ended by `;` (a comment takes none); a blank source line is
+    /// kept, and a comment written on the previous statement's line stays there.
+    fn fmtStmtSeq(this: *Formatter, stmts: []ast.Stmt) !*const Doc {
         var items: std.ArrayList(*const Doc) = .empty;
         defer items.deinit(this.arena);
 
@@ -363,8 +370,7 @@ pub const Formatter = struct {
             };
             try items.append(this.arena, stmtDoc);
         }
-        const inner = try this.concatAll(items.items);
-        return this.surroundBreak("{", inner, "}");
+        return this.concatAll(items.items);
     }
 
     fn fmtOptionalBody(this: *Formatter, body: ?[]ast.Stmt) !*const Doc {
@@ -551,11 +557,18 @@ pub const Formatter = struct {
                     doc = try this.concat(doc, try this.text(p));
                 }
                 doc = try this.concat(doc, try this.text(" ->"));
-                for (lp.body) |stmt| {
-                    doc = try this.concat(doc, try this.surroundBreak("", try this.fmtExpr(stmt.expr), ""));
+                // Each body statement keeps its `;` — printing them bare made a
+                // loop of two statements unparseable.
+                if (lp.body.len == 0) {
+                    doc = try this.concat(doc, try this.text(" }"));
+                    break :blk doc;
                 }
-                doc = try this.concat(doc, try this.text("}"));
-                break :blk doc;
+                break :blk this.forceBreak(try this.concatAll(&.{
+                    doc,
+                    try this.nest(INDENT, try this.concat(this.hardline(), try this.fmtStmtSeq(lp.body))),
+                    this.hardline(),
+                    try this.text("}"),
+                }));
             },
             .binding => |b| switch (b.kind) {
                 .localBind => |lb| if (lb.typeAnnotation) |ann| this.concatAll(&.{
@@ -1124,38 +1137,30 @@ pub const Formatter = struct {
                 else => true,
             };
             if (inlineValue) {
-                var paramDocs = try this.arena.alloc(*const Doc, params.len);
-                for (params, 0..) |p, i| paramDocs[i] = try this.text(p);
-                return this.concatAll(&.{
-                    try this.text("{ "),
-                    try this.join(paramDocs, try this.text(", ")),
-                    try this.text(" -> "),
-                    try this.fmtExpr(body[0].expr),
-                    try this.text(" }"),
-                });
+                // The value is rendered flat, as one text: letting its groups
+                // break by width split it over lines, and the next pass (the
+                // value no longer on the lambda's line) printed the lambda
+                // open — `format` was not idempotent. A value that needs a
+                // line break of its own prints the open form.
+                const flat = try render(this.arena, try this.fmtExpr(body[0].expr), std.math.maxInt(u32));
+                if (std.mem.indexOfScalar(u8, flat, '\n') == null) {
+                    var paramDocs = try this.arena.alloc(*const Doc, params.len);
+                    for (params, 0..) |p, i| paramDocs[i] = try this.text(p);
+                    return this.concatAll(&.{
+                        try this.text("{ "),
+                        try this.join(paramDocs, try this.text(", ")),
+                        try this.text(" -> "),
+                        try this.text(flat),
+                        try this.text(" }"),
+                    });
+                }
             }
         }
         return this.fmtLambda(params, body, arrow_when_empty);
     }
 
     fn fmtLambda(this: *Formatter, params: []const []const u8, body: []ast.Stmt, arrow_when_empty: bool) !*const Doc {
-        var items: std.ArrayList(*const Doc) = .empty;
-        defer items.deinit(this.arena);
-        for (body, 0..) |s, i| {
-            if (i > 0 and s.emptyLinesBefore > 0) {
-                for (0..s.emptyLinesBefore) |_| {
-                    try items.append(this.arena, try this.text("\n"));
-                }
-            }
-            if (i > 0) try items.append(this.arena, this.hardline());
-            const exprDoc = try this.fmtExpr(s.expr);
-            const stmtDoc = switch (s.expr) {
-                .literal => |lit| if (lit.kind == .comment) exprDoc else try this.concat(exprDoc, try this.text(";")),
-                else => try this.concat(exprDoc, try this.text(";")),
-            };
-            try items.append(this.arena, stmtDoc);
-        }
-        const inner = try this.concatAll(items.items);
+        const inner = try this.fmtStmtSeq(body);
 
         if (params.len == 0 and !arrow_when_empty) {
             return this.surroundBreak("{", inner, "}");
@@ -1526,8 +1531,14 @@ pub const Formatter = struct {
         for (u.imports, 0..) |imp, i| {
             items[i] = try this.fmtImportItem(imp);
         }
-        const importsDoc = try this.commaList("{", items, "}");
-        const head = try this.concatAll(&.{ try this.text("import "), importsDoc });
+        // Package-namespace form: `import pkg [, { … }]` binds `pkg`.
+        const head = if (u.package) |pkg| blk: {
+            if (u.imports.len == 0) break :blk try this.text(try std.fmt.allocPrint(this.arena, "import {s}", .{pkg}));
+            break :blk try this.concatAll(&.{
+                try this.text(try std.fmt.allocPrint(this.arena, "import {s}, ", .{pkg})),
+                try this.commaList("{", items, "}"),
+            });
+        } else try this.concatAll(&.{ try this.text("import "), try this.commaList("{", items, "}") });
         return switch (u.source) {
             .root => head,
             .module => |name| this.concatAll(&.{
