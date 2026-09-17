@@ -19,12 +19,15 @@ const std = @import("std");
 const ast = @import("js_ast.zig");
 
 pub const Helper = enum {
+    /// `assert cond, msg` outside test mode: always fatal, naming the message
+    /// and the `file:line` (cross-backend semantics decision 4).
+    assert_fatal,
     /// `String.charAt(i) -> ?string`: the character, or `null` out of range.
     string_char_at,
 };
 
 /// Emission order of the helpers a module uses.
-pub const order = [_]Helper{.string_char_at};
+pub const order = [_]Helper{ .assert_fatal, .string_char_at };
 
 /// The receiver family of a primitive method call, as inference recorded it.
 pub const Receiver = enum { string, array, other };
@@ -40,6 +43,7 @@ pub fn forMethod(receiver: Receiver, method: []const u8, argc: usize) ?Helper {
 /// The function name a call site uses.
 pub fn name(h: Helper) []const u8 {
     return switch (h) {
+        .assert_fatal => "__bp_assert_fatal",
         .string_char_at => "__bp_string_char_at",
     };
 }
@@ -47,11 +51,39 @@ pub fn name(h: Helper) []const u8 {
 /// The helper's declaration.
 pub fn decl(h: Helper) ast.Stmt {
     return switch (h) {
+        .assert_fatal => assert_fatal,
         .string_char_at => string_char_at,
     };
 }
 
 // ── the helpers ──────────────────────────────────────────────────────────────
+
+const cond: ast.Expr = .{ .name = "cond" };
+const msg: ast.Expr = .{ .name = "msg" };
+const loc: ast.Expr = .{ .name = "loc" };
+
+/// `function __bp_assert_fatal(cond, msg, loc) { if (!cond) { throw new Error((msg ?? "assertion failed") + " at " + loc); } }`
+const assert_fatal: ast.Stmt = .{ .function = .{
+    .name = "__bp_assert_fatal",
+    .params = &.{ .{ .pattern = .{ .name = "cond" } }, .{ .pattern = .{ .name = "msg" } }, .{ .pattern = .{ .name = "loc" } } },
+    .body = .{ .stmts = &.{.{ .if_ = .{
+        .cond = .{ .unary = .{ .op = "!", .operand = &cond, .parens = false } },
+        .then = &.{ .block = .{ .stmts = &.{.{ .throw_ = .{ .new_ = .{
+            .callee = &.{ .name = "Error" },
+            .args = &.{.{ .binary = .{
+                .op = "+",
+                .lhs = &.{ .binary = .{
+                    .op = "+",
+                    .lhs = &.{ .binary = .{ .op = "??", .lhs = &msg, .rhs = &.{ .quoted = "assertion failed" } } },
+                    .rhs = &.{ .quoted = " at " },
+                    .parens = false,
+                } },
+                .rhs = &loc,
+                .parens = false,
+            } }},
+        } } }}, .layout = .spaced } },
+    } }}, .layout = .spaced },
+} };
 
 const s: ast.Expr = .{ .name = "s" };
 const i: ast.Expr = .{ .name = "i" };
@@ -74,6 +106,16 @@ const string_char_at: ast.Stmt = .{ .function = .{
         .else_ = &.null_,
     } } }}, .layout = .spaced },
 } };
+
+test "js_prelude: a failed assert throws with its message and location" {
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    try @import("js_emitter.zig").writeStmt(&aw.writer, decl(.assert_fatal), 0);
+    try std.testing.expectEqualStrings(
+        "function __bp_assert_fatal(cond, msg, loc) { if (!cond) { throw new Error((msg ?? \"assertion failed\") + \" at \" + loc); } }",
+        aw.written(),
+    );
+}
 
 test "js_prelude: charAt answers null out of range" {
     var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);

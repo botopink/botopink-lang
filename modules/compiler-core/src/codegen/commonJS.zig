@@ -2666,11 +2666,14 @@ const Emitter = struct {
                             .{ .quoted = try std.fmt.allocPrint(self.arena(), "{s}.bp:{d}", .{ self.module_name, ct.loc.line }) },
                         });
                     }
-                    const callee = try self.b.member(.{ .name = "console" }, "assert");
-                    if (a.message) |msg| {
-                        return self.b.call(callee, &.{ cond, try self.buildExpr(msg.*) });
-                    }
-                    return self.b.call(callee, &.{cond});
+                    // Outside test mode an `assert` is always fatal and names
+                    // its message and `file:line` (semantics decision 4) — never
+                    // `console.assert`, which prints and carries on.
+                    return self.b.call(self.helper(.assert_fatal), &.{
+                        cond,
+                        if (a.message) |msg| try self.buildExpr(msg.*) else .null_,
+                        .{ .quoted = try std.fmt.allocPrint(self.arena(), "{s}.bp:{d}", .{ self.module_name, ct.loc.line }) },
+                    });
                 },
                 .assertPattern => |ap| {
                     const handler_is_statement = switch (ap.handler.*) {

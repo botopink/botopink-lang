@@ -119,6 +119,11 @@ codegen/
   `import {env} from "std"`) resolves; calls in the owning module still inline
   the template. A fn with no `node` target raises
   `MissingExternalTarget` when called.
+- **`assert`** (semantics decision 4): outside test mode it is always fatal —
+  `__bp_assert_fatal(cond, msg, "<module>.bp:<line>")`, a prelude helper that
+  throws `Error("<msg> at <file>:<line>")` (`"assertion failed"` without a
+  message), so node exits non-zero naming both. Test mode is unchanged: the
+  `__bp_assert` harness helper throws for the runner to catch per test.
 - **Prelude helpers** (`js/js_prelude.zig`): a call `recv.m(args)` whose
   receiver inference recorded as a primitive (`instance_lowerings` `.prim`)
   and whose native JS method disagrees with the declaration calls a helper
