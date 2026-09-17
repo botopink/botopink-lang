@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Element = record implement @Context<Element, Element> { }
+val Element = type implement @Context<Element, Element> { }
 fn state(initial: i32) -> @Context<Element, i32> {
     initial;
 }

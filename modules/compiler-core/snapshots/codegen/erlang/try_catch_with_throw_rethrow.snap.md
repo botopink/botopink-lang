@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record ApiError { msg: string }
+type ApiError(msg: string)
 #[@result]
 fn fetch() -> @Result<i32, ApiError> {
     throw ApiError(msg: "not found");
@@ -16,7 +16,7 @@ fn strict() -> @Result<i32, string> {
 ```erlang
 -module(main).
 
-%% record ApiError: msg
+%% type ApiError: msg
 
 fetch() ->
     {error, #{msg => <<"not found">>}}.

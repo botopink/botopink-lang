@@ -1,8 +1,10 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    val DeclKind = record { Record: "Record", Fn: "Fn" };
-    val decl = @Decl(kind: DeclKind.Record, name: "Service", fields: [record { name: "x", typeName: "i32", annotations: [] }], methods: [], returnType: "", annotations: []);
+    val Type = "Type";
+    val Fn = "Fn";
+    val kinds = #(Type, Fn);
+    val decl = @Decl(kind: kinds.Type, name: "Service", fields: [#("x", "i32", [])], methods: [], returnType: "", annotations: []);
     @print(decl.fields.length);
 }
 ```
@@ -13,8 +15,10 @@ fn main() {
 -export(['_botopink_main'/0, main/1]).
 
 main() ->
-    DeclKind = #{'Record' => <<"Record">>, 'Fn' => <<"Fn">>},
-    Decl = #{kind => maps:get('Record', DeclKind), name => <<"Service">>, fields => [#{name => <<"x">>, typeName => <<"i32">>, annotations => []}], methods => [], returnType => <<"">>, annotations => []},
+    Type = <<"Type">>,
+    Fn = <<"Fn">>,
+    Kinds = {Type, Fn},
+    Decl = #{kind => element(1, Kinds), name => <<"Service">>, fields => [{<<"x">>, <<"i32">>, []}], methods => [], returnType => <<"">>, annotations => []},
     '__bp_print'([length(maps:get(fields, Decl))]).
 
 '__bp_print'(Values) ->

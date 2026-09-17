@@ -45,7 +45,7 @@ test "semanticTokens: val binding is a variable declaration" {
 test "semanticTokens: free fn, interface method, and effect fn distinguished" {
     const source =
         \\fn free(a: i32) -> i32 { return a; }
-        \\interface Greeter { fn greet(self: Self) -> string }
+        \\behavior Greeter { fn greet(self: Self) -> string; }
         \\#[@iterator]
         \\fn counter() -> @Iterator<i32> :gen { yield 1; }
     ;
@@ -65,8 +65,8 @@ test "semanticTokens: builtin @Type is type + defaultLibrary" {
 
 test "semanticTokens: enum variants and record fields" {
     const source =
-        \\val Color = enum { Red, Green, Blue };
-        \\val Point = record { x: i32, y: i32 };
+        \\val Color = type { Red, Green, Blue };
+        \\val Point = type(x: i32, y: i32);
     ;
     try run(std.testing.allocator, "semantic_tokens_enum_record", source);
 }
@@ -88,7 +88,7 @@ test "semanticTokens: comments and keywords" {
 // classifier was never reached, so the test's name outran what it checked.
 test "semanticTokens: method call vs property access" {
     const source =
-        \\val Point = record { x: i32, y: i32 };
+        \\val Point = type(x: i32, y: i32);
         \\fn dist(p: Point) -> i32 { return p.x + p.norm(); }
     ;
     try run(std.testing.allocator, "semantic_tokens_member_access", source);

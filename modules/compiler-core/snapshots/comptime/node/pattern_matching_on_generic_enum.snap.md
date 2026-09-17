@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Option = enum <T> {
+val Option = type <T> {
     Some(value: T),
     None,
 };

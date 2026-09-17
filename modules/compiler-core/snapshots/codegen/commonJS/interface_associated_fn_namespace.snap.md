@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-interface Pairish<A, B> {
+behavior Pairish<A, B> {
     default fn of(first: A, second: B) -> #(A, B) {
         return #(first, second);
     }
@@ -36,7 +36,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-// interface Pairish
+// behavior Pairish
 //   default fn of(...)
 //   default fn first(...)
 const Pairish = {};

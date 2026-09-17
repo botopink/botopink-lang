@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record R { kind: i32 }
+type R(kind: i32)
 fn main() {
     val r = R(kind: 11);
     val maybe: ?R = r;
@@ -17,7 +17,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% record R: kind
+%% type R: kind
 
 main() ->
     R = #{kind => 11},

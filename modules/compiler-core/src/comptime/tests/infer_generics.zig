@@ -51,7 +51,7 @@ test "infer: type ---- no constraint accepts any type" {
 
 test "infer: generic record Pair<A, B>" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Pair = record <A, B> { first: A, second: B };
+        \\val Pair = type <A, B>(first: A, second: B);
         \\val p = Pair(first: 42, second: "hello");
         \\fn main() {
         \\    @print(p);
@@ -61,23 +61,23 @@ test "infer: generic record Pair<A, B>" {
 
 test "infer: generic record Triple<A, B, C>" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Triple = record <A, B, C> { first: A, second: B, third: C };
+        \\val Triple = type <A, B, C>(first: A, second: B, third: C);
         \\val t = Triple(first: 1, second: "x", third: 3.14);
     );
 }
 
 test "infer: generic record Box<T>" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Box = record <T> {
+        \\val Box = type <T>(
         \\    value: T = todo,
-        \\};
+        \\);
         \\val b = Box(42);
     );
 }
 
 test "infer: generic enum Option<T> ---- unit and payload variants" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Option = enum <T> {
+        \\val Option = type <T> {
         \\    None,
         \\    Some(value: T),
         \\};
@@ -88,7 +88,7 @@ test "infer: generic enum Option<T> ---- unit and payload variants" {
 
 test "infer: generic enum Result<T> with Ok and Err" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Result = enum <T> {
+        \\val Result = type <T> {
         \\    Ok(value: T),
         \\    Err(message: string),
         \\};
@@ -149,7 +149,7 @@ test "infer: generic fn ---- referenced as a value instantiates fresh vars" {
 
 test "infer: generic interface Container<T>" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Container = interface <T> {
+        \\val Container = behavior <T> {
         \\    fn fetch(self: Self) -> T;
         \\    fn store(self: Self, value: T);
         \\}
@@ -172,7 +172,7 @@ test "infer: generic record ---- per-use instantiation does not collapse" {
     // `swap` re-constructs with swapped fields (would bind A := B without
     // per-call-site constructor instantiation + per-instance field typing).
     try h.assertInfersOk(std.testing.allocator,
-        \\record Box<A, B> { first: A, second: B }
+        \\type Box<A, B>(first: A, second: B)
         \\
         \\fn swap<A, B>(p: Box<A, B>) -> Box<B, A> {
         \\    return Box(first: p.second, second: p.first);
@@ -189,7 +189,7 @@ test "infer: generic record ---- per-use instantiation does not collapse" {
 
 test "infer error: generic record ---- instantiated field type still checks" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\record Box<A, B> { first: A, second: B }
+        \\type Box<A, B>(first: A, second: B)
         \\
         \\fn main() {
         \\    val b = Box(first: 1, second: "one");
@@ -204,7 +204,7 @@ test "infer error: generic record ---- instantiated field type still checks" {
 // scope: `unbox(Box<i32>)` and `unbox(Box<string>)` each bind `T` fresh.
 test "infer: net-new ---- generic record at two concrete types" {
     try h.assertInfersOk(std.testing.allocator,
-        \\record Box<T> { item: T }
+        \\type Box<T>(item: T)
         \\fn unbox<T>(b: Box<T>) -> T { return b.item; }
         \\fn main() {
         \\    val a: i32 = unbox(Box(item: 7));
@@ -218,7 +218,7 @@ test "infer: net-new ---- generic record at two concrete types" {
 // element type.
 test "infer: net-new ---- recursion through a generic data type" {
     try h.assertInfersOk(std.testing.allocator,
-        \\enum Tree<T> {
+        \\type Tree<T> {
         \\    Leaf(value: T),
         \\    Node(left: Tree<T>, right: Tree<T>),
         \\}
@@ -249,7 +249,7 @@ test "infer: net-new ---- generic return inferred from usage context" {
 // generic call and the `assert` typechecks.
 test "infer: net-new ---- inline test in a generic module resolves" {
     try h.assertInfersOk(std.testing.allocator,
-        \\record Box<T> { item: T }
+        \\type Box<T>(item: T)
         \\fn unbox<T>(b: Box<T>) -> T { return b.item; }
         \\test "unbox round-trips" {
         \\    val n = unbox(Box(item: 7));
@@ -263,7 +263,7 @@ test "infer: net-new ---- inline test in a generic module resolves" {
 // `Element` with no ContextBase drift.
 test "infer: net-new ---- @Context across three hook layers stays Element-based" {
     try h.assertInfersOk(std.testing.allocator,
-        \\val Element = record implement @Context<Element, Element> { }
+        \\val Element = type implement @Context<Element, Element> { }
         \\fn layer1(initial: i32) -> @Context<Element, i32> {
         \\    initial;
         \\}
@@ -287,7 +287,7 @@ test "infer: interface associated fn ---- resolves and instantiates per call" {
     // each call site instantiates fresh generics, so two calls with different
     // concrete types in the same scope never conflict.
     try h.assertInfersOk(std.testing.allocator,
-        \\interface Pair2<A, B> {
+        \\behavior Pair2<A, B> {
         \\    default fn of(first: A, second: B) -> #(A, B) {
         \\        return #(first, second);
         \\    }
@@ -327,7 +327,7 @@ test "infer: generic-inference-finalize ---- chained map().filter() propagates e
 // and reports `.generic TypeError`.
 test "infer: generic-inference-finalize ---- empty<K,V>() infers from annotated binding" {
     try h.assertInfersOk(std.testing.allocator,
-        \\record Dict<K, V> { pairs: Array<#(K, V)> }
+        \\type Dict<K, V>(pairs: Array<#(K, V)>)
         \\fn empty<K, V>() -> Dict<K, V> {
         \\    return Dict(pairs: []);
         \\}
@@ -345,8 +345,8 @@ test "infer: generic-inference-finalize ---- empty<K,V>() infers from annotated 
 // and `p.<field>` / `o.<field>` inside the projection are unbound.
 test "infer: generic-inference-finalize ---- linq join builds tuple element type" {
     try h.assertInfersOk(std.testing.allocator,
-        \\record Person { id: i32, name: string }
-        \\record Order { personId: i32, product: string }
+        \\type Person(id: i32, name: string)
+        \\type Order(personId: i32, product: string)
         \\fn crossJoin<P, O>(left: Array<P>, right: Array<O>, on: fn(p: P, o: O) -> bool) -> Array<#(P, O)> {
         \\    var acc: Array<#(P, O)> = [];
         \\    left.forEach({ p ->

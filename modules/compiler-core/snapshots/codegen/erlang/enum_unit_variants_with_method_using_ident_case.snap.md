@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val HttpMethod = enum {
+val HttpMethod = type {
     Get,
     Post,
     Put,
@@ -21,7 +21,7 @@ val HttpMethod = enum {
 ```erlang
 -module(main).
 
-%% enum HttpMethod
+%% type HttpMethod
 %%   Get
 %%   Post
 %%   Put

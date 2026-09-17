@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record UserError { msg: string }
+type UserError(msg: string)
 #[@result]
 fn fetchName() -> @Result<string, UserError> {
     throw UserError(msg: "name missing");
@@ -24,7 +24,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% record UserError: msg
+%% type UserError: msg
 
 fetchName() ->
     {error, #{msg => <<"name missing">>}}.

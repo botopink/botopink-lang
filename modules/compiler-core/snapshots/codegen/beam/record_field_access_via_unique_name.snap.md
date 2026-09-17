@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record Point { x: i32, y: i32 }
+type Point(x: i32, y: i32)
 fn first(p: Point) -> i32 {
     return p.x;
 }

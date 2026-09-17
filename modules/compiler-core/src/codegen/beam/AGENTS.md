@@ -40,7 +40,7 @@ beam/
   calls (the `Ctx.writeByte`/`Ctx.writeAll` the shared `primOpTemplate` walker
   drives, plus the trailing `writeByte('\n')`): a `#[@External.Beam("""…""")]`
   template body is genuine host `.S` the library author wrote, so it is spliced
-  verbatim — only its `$self`/`$N`/`$args` substitutions are rendered, with
+  verbatim — only its receiver/`$N`/`$args` substitutions are rendered, with
   `writeArg`. `rg -n '\.(print|writeAll|writeByte)\(' ../beam_asm.zig` must
   return exactly those three.
 - `../erlang.zig` — `emitComptimeModule` helper functions (`comptime_helper_forms`) and host forms; function/lambda/branch bodies (`bodyNode`), expressions (`exprNode`) and calls (`callNode`) are nodes; declarations and the module header are forms (`emitErlangModule` renders them with `writeForms`).
@@ -52,11 +52,11 @@ beam/
 `#[@External.Beam("""…""")]` body is `.S` spliced at the call site
 (`renderBeamTemplate`), and an `#[@External.Erlang("mod", "sym")]` pair is a
 plain `call_ext`. An `#[@External.Erlang("…")]` **template** — Erlang *source*
-with `$self`/`$N`/`$stringify(…)` holes (`"base64:encode($0)"`, the arity-branch
+with receiver/`$N`/`$stringify(…)` holes (`"base64:encode($0)"`, the arity-branch
 form, a primitive method's template reached through `primErlangTemplate`) —
 has no `.S` form, so it is **evaluated at run time** (`evalTemplate`):
 
-- at build time the holes become variables (`$self` → `__BpSelf`, `$N` →
+- at build time the holes become variables (the receiver → `__BpSelf`, `$N` →
   `__BpAN`, `$stringify(e)` → `iolist_to_binary(io_lib:format("~p", [e]))`) and
   the text, ended with `.`, is a binary literal operand;
 - at the call site the operands are staged into a bindings map
@@ -76,7 +76,7 @@ It is correct — the ten beam snapshots that reach it print what erlang prints
 - **Speed.** Every call re-scans, re-parses and *interprets* the template;
   nothing is cached. Measured on OTP (2026-09-17, 100 000 calls each):
   `base64:encode(X)` direct ≈ 0.1 µs/call, through the eval path ≈ 5.2 µs/call
-  (≈ 50×); a `string:slice($self, $0, $1 - $0)` template ≈ 6.9 µs/call. In a
+  (≈ 50×); a `string:slice($0, $1, $2 - $1)` template ≈ 6.9 µs/call. In a
   loop over a list (`String.slice` per element) that dominates the run time.
 - **Errors surface late.** A template that does not scan or parse, or names an
   undefined function, compiles cleanly and fails only when the call runs, as

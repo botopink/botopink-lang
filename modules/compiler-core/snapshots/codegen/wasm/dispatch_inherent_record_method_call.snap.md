@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record Contador {
-    n: i32,
+type Contador(
+    n: i32) {
     fn atual(self: Self) {
         return self.n;
     }

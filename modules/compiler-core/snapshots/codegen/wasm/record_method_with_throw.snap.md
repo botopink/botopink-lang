@@ -1,8 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Invoice = record {
+val Invoice = type(
     subtotal: f64,
-    taxRate: f64,
+    taxRate: f64) {
     fn total(self: Self) -> f64 {
         return self.subtotal + self.subtotal * self.taxRate;
     }

@@ -28,7 +28,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-// interface String
+// behavior String
 //   fn length(...)
 //   fn split(...)
 //   fn toUpper(...)

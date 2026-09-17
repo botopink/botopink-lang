@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record Point { x: i32, y: i32 }
+type Point(x: i32, y: i32)
 fn recordEq() -> bool {
     val a = Point(x: 1, y: 2);
     val b = Point(x: 1, y: 2);

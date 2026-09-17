@@ -8,7 +8,7 @@ const engine = @import("../engine.zig");
 test "typeDefinition: val of named type" {
     const gpa = std.testing.allocator;
     const source =
-        \\record Point { x: i32, y: i32 }
+        \\type Point(x: i32, y: i32)
         \\val p = Point(1, 2);
     ;
 
@@ -28,11 +28,11 @@ test "typeDefinition: val of named type" {
     defer if (result) |loc| gpa.free(loc.uri);
 
     const loc = result orelse return error.NoTypeDefinition;
-    // → `record Point` on line 0, chars 7–12.
+    // → `type Point` on line 0, chars 5–10.
     try std.testing.expectEqualStrings(h.TEST_URI, loc.uri);
     try std.testing.expectEqual(@as(u32, 0), loc.range.start.line);
-    try std.testing.expectEqual(@as(u32, 7), loc.range.start.character);
-    try std.testing.expectEqual(@as(u32, 12), loc.range.end.character);
+    try std.testing.expectEqual(@as(u32, 5), loc.range.start.character);
+    try std.testing.expectEqual(@as(u32, 10), loc.range.end.character);
 
     try snap.assertTypeDefinition(gpa, "type_definition_record_val", source, cursor, result);
 }

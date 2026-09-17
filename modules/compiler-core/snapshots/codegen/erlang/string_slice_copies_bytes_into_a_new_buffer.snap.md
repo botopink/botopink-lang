@@ -10,7 +10,7 @@ fn first3() -> string {
 ```erlang
 -module(main).
 
-%% interface String
+%% behavior String
 
 first3() ->
     S = <<"hello">>,

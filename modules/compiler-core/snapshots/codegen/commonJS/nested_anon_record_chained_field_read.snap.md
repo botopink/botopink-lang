@@ -1,7 +1,11 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    val outer = record { span: record { start: 5, end: 9 }, kind: 3 };
+    val start = 5;
+    val end = 9;
+    val span = #(start, end);
+    val kind = 3;
+    val outer = #(span, kind);
     @print(outer.span.start);
 }
 ```
@@ -28,8 +32,12 @@ function __bp_print() {
 }
 
 function main() {
-    const outer = ({ span: ({ start: 5, end: 9 }), kind: 3 });
-    __bp_print(outer.span.start);
+    const start = 5;
+    const end = 9;
+    const span = [start, end];
+    const kind = 3;
+    const outer = [span, kind];
+    __bp_print(outer[0][0]);
 }
 
 function _botopink_main() {

@@ -29,7 +29,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-// interface Signed extends Integer
+// behavior Signed extends Integer
 //   fn abs(...)
 Number.prototype.abs = function() { return Math.abs(this.valueOf()); };
 

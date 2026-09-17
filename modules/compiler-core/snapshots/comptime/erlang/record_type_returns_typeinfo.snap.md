@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Point = record { x: i32, y: string };
+val Point = type(x: i32, y: string);
 val info = @typeInfo(Point);
 ```
 

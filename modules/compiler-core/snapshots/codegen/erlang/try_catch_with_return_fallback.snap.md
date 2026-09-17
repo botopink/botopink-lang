@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record NetError { code: i32 }
+type NetError(code: i32)
 #[@result]
 fn fetch() -> @Result<i32, NetError> {
     throw NetError(code: 500);
@@ -15,7 +15,7 @@ fn safe() -> i32 {
 ```erlang
 -module(main).
 
-%% record NetError: code
+%% type NetError: code
 
 fetch() ->
     {error, #{code => 500}}.

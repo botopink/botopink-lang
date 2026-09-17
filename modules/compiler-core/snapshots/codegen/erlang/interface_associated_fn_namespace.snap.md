@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-interface Pairish<A, B> {
+behavior Pairish<A, B> {
     default fn of(first: A, second: B) -> #(A, B) {
         return #(first, second);
     }
@@ -20,7 +20,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% interface Pairish
+%% behavior Pairish
 
 pairish_of(First, Second) ->
     {First, Second}.

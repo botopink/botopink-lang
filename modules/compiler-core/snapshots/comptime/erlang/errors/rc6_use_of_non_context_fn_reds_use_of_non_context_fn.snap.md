@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-record User { id: i32 }
+type User(id: i32)
 fn plain() -> User { return User(id: 1); }
 #[@context]
 fn lookup() -> @Context<User, User> {

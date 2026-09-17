@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-enum Shape {
+type Shape {
     Circle(r: i32),
     Square(side: i32),
 }
@@ -13,7 +13,7 @@ fn makeCircle() -> Shape {
 ```erlang
 -module(main).
 
-%% enum Shape
+%% type Shape
 %%   Circle(r)
 %%   Square(side)
 

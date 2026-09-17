@@ -30,7 +30,7 @@ test "parser: use multiple hooks in function" {
 // group, which it never belonged to — the AST has an empty `trailing`.)
 test "parser: call: plain positional ---- print(\"hello\")" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val Test = interface {
+        \\val Test = behavior {
         \\    default fn run() {
         \\        print("hello");
         \\    }
@@ -40,7 +40,7 @@ test "parser: call: plain positional ---- print(\"hello\")" {
 
 test "parser: call: named argument ---- calcular(fator: 2)" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val Test = interface {
+        \\val Test = behavior {
         \\    default fn run() {
         \\        calcular(fator: 2);
         \\    }
@@ -50,7 +50,7 @@ test "parser: call: named argument ---- calcular(fator: 2)" {
 
 test "parser: lambda: trailing lambda with no params ---- executar { ok }" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val Test = interface {
+        \\val Test = behavior {
         \\    default fn run() {
         \\        executar { ok; };
         \\    }
@@ -60,7 +60,7 @@ test "parser: lambda: trailing lambda with no params ---- executar { ok }" {
 
 test "parser: lambda: named arg + trailing lambda with two params and addition" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val Test = interface {
+        \\val Test = behavior {
         \\    default fn run() {
         \\        calcular(fator: 2) { a, b ->
         \\            a + b;
@@ -72,7 +72,7 @@ test "parser: lambda: named arg + trailing lambda with two params and addition" 
 
 test "parser: lambda: two trailing lambdas, second labeled ---- executar {} erro: {}" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val Test = interface {
+        \\val Test = behavior {
         \\    default fn run() {
         \\        executar { ok; } erro: { fail; };
         \\    }
@@ -82,7 +82,7 @@ test "parser: lambda: two trailing lambdas, second labeled ---- executar {} erro
 
 test "parser: lambda: method call with two-param trailing lambda ---- precos.forEach { fruta, valor -> fruta }" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val Test = interface {
+        \\val Test = behavior {
         \\    default fn run() {
         \\        precos.forEach { fruta, valor -> fruta; };
         \\    }
@@ -92,7 +92,7 @@ test "parser: lambda: method call with two-param trailing lambda ---- precos.for
 
 test "parser: expression: binary addition ---- a + b" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val Test = interface {
+        \\val Test = behavior {
         \\    default fn run() {
         \\        a + b;
         \\    }
@@ -170,7 +170,7 @@ test "parser: case ---- guard clauses" {
 
 test "parser: operator precedence ---- mul binds tighter than add" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val Test = interface {
+        \\val Test = behavior {
         \\    default fn run() {
         \\        1 + 2 * 3;
         \\    }
@@ -180,7 +180,7 @@ test "parser: operator precedence ---- mul binds tighter than add" {
 
 test "parser: operator precedence ---- left-to-right associativity for add" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val Test = interface {
+        \\val Test = behavior {
         \\    default fn run() {
         \\        1 + 2 + 3;
         \\    }
@@ -190,7 +190,7 @@ test "parser: operator precedence ---- left-to-right associativity for add" {
 
 test "parser: operator precedence ---- add binds tighter than compare" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val Test = interface {
+        \\val Test = behavior {
         \\    default fn run() {
         \\        a + 1 < b + 2;
         \\    }
@@ -200,7 +200,7 @@ test "parser: operator precedence ---- add binds tighter than compare" {
 
 test "parser: operator precedence ---- compare binds tighter than eq" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val Test = interface {
+        \\val Test = behavior {
         \\    default fn run() {
         \\        a < b == c > d;
         \\    }
@@ -210,7 +210,7 @@ test "parser: operator precedence ---- compare binds tighter than eq" {
 
 test "parser: operator precedence ---- all arithmetic operators" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val Test = interface {
+        \\val Test = behavior {
         \\    default fn run() {
         \\        a + b - c * d / e % f;
         \\    }
@@ -220,7 +220,7 @@ test "parser: operator precedence ---- all arithmetic operators" {
 
 test "parser: operator precedence ---- comparison operators" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val Test = interface {
+        \\val Test = behavior {
         \\    default fn run() {
         \\        a < b;
         \\        a > b;
@@ -233,7 +233,7 @@ test "parser: operator precedence ---- comparison operators" {
 
 test "parser: operator precedence ---- equality operators" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val Test = interface {
+        \\val Test = behavior {
         \\    default fn run() {
         \\        a == b;
         \\        a != b;
@@ -244,7 +244,7 @@ test "parser: operator precedence ---- equality operators" {
 
 test "parser: builtin ---- zero-arg call" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val Test = interface {
+        \\val Test = behavior {
         \\    default fn run() {
         \\        @src();
         \\    }
@@ -254,7 +254,7 @@ test "parser: builtin ---- zero-arg call" {
 
 test "parser: builtin ---- single-arg call" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val Test = interface {
+        \\val Test = behavior {
         \\    default fn run() {
         \\        @sizeOf(Int);
         \\        @typeName(Bool);
@@ -266,7 +266,7 @@ test "parser: builtin ---- single-arg call" {
 
 test "parser: builtin ---- multi-arg call" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val Test = interface {
+        \\val Test = behavior {
         \\    default fn run() {
         \\        @min(a, b);
         \\        @max(x, y);
@@ -660,7 +660,7 @@ test "parser: expr stays a plain identifier in expressions" {
 
 test "parser: optional chaining member access" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\record User { name: string }
+        \\type User(name: string)
         \\fn main() {
         \\    val u: ?User = User(name: "ana");
         \\    val n = u?.name;
@@ -740,12 +740,12 @@ test "parser: interface literal ---- multiple fields" {
 
 test "parser: interface literal ---- with array field" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val decl = @Decl(kind: "Record", name: "Service", fields: [record { name: "x", typeName: "i32" }]);
+        \\val decl = @Decl(kind: "Record", name: "Service", fields: [Field(name: "x", typeName: "i32")]);
     );
 }
 
 test "parser: interface literal ---- with nested record" {
     try h.assertParser(std.testing.allocator, @src(),
-        \\val decl = @Decl(kind: "Record", name: "Service", fields: [record { name: "x", typeName: "i32", annotations: [] }], methods: [], returnType: "", annotations: [record { name: "addHelper", args: [] }]);
+        \\val decl = @Decl(kind: "Record", name: "Service", fields: [Field(name: "x", typeName: "i32", annotations: [])], methods: [], returnType: "", annotations: [Annotation(name: "addHelper", args: [])]);
     );
 }

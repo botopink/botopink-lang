@@ -1,11 +1,11 @@
 ----- SOURCE CODE
-val Swimmer = interface {
+val Swimmer = behavior {
     fn swim(self: Self);
 }
-val Diver = interface {
+val Diver = behavior {
     fn swim(self: Self);
 }
-record Pato { id: i32 }
+type Pato(id: i32)
 val PatoNada = implement Swimmer for Pato {
     fn swim(self: Self) {
         return self.id;

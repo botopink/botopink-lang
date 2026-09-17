@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record Inner { c: i32 }
-record Outer { b: ?Inner }
+type Inner(c: i32)
+type Outer(b: ?Inner)
 fn getC(o: ?Outer) -> i32 {
     if (o) { outer ->
         if (outer.b) { inner ->

@@ -758,6 +758,11 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             .tupleLit => |tl| {
                 for (tl.elems) |*e| rewriteExpr(agg, fn_decls, comptime_arrays, e) catch return ScanError.OutOfMemory;
             },
+            // A labeled access (`kinds.kind`) inside a literal's field values
+            // is rewritten like anywhere else (decision 8 §6 T4).
+            .behaviorLit => |bl| {
+                for (bl.fields) |f| rewriteExpr(agg, fn_decls, comptime_arrays, f.value) catch return ScanError.OutOfMemory;
+            },
             .case => |case_node| {
                 for (case_node.subjects) |*s| rewriteExpr(agg, fn_decls, comptime_arrays, s) catch return ScanError.OutOfMemory;
                 for (case_node.arms) |*arm| rewriteExpr(agg, fn_decls, comptime_arrays, &arm.body) catch return ScanError.OutOfMemory;

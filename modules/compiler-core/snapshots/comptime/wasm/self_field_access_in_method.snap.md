@@ -1,8 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record Point {
+type Point(
     x: i32,
-    y: i32,
+    y: i32) {
     fn sum(self: Self) -> i32 {
         return self.x + self.y;
     }

@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record FetchError { url: string }
+type FetchError(url: string)
 #[@result]
 fn fetch() -> @Result<i32, FetchError> {
     throw FetchError(url: "/api");
@@ -15,7 +15,7 @@ fn safe() -> i32 {
 ```erlang
 -module(main).
 
-%% record FetchError: url
+%% type FetchError: url
 
 fetch() ->
     {error, #{url => <<"/api">>}}.

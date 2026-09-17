@@ -16,10 +16,10 @@ const h = @import("helpers.zig");
 
 test "js: implement ---- attaches methods to prototype" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\interface Printable {
-        \\    fn print(self: Self),
+        \\behavior Printable {
+        \\    fn print(self: Self);
         \\}
-        \\record Person { name: string }
+        \\type Person(name: string)
         \\val PersonPrintable = implement Printable for Person {
         \\    fn print(self: Self) {
         \\        return self.name;
@@ -30,8 +30,8 @@ test "js: implement ---- attaches methods to prototype" {
 
 test "js: dispatch ---- inherent record method call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record Contador {
-        \\    n: i32,
+        \\type Contador(
+        \\    n: i32) {
         \\    fn atual(self: Self) {
         \\        return self.n;
         \\    }
@@ -71,10 +71,10 @@ test "js: dispatch ---- string startsWith lowers to native startsWith" {
 
 test "js: dispatch ---- auto-applied extension method call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Swimmer = interface {
+        \\val Swimmer = behavior {
         \\    fn swim(self: Self);
         \\}
-        \\record Pato { id: i32 }
+        \\type Pato(id: i32)
         \\val PatoNada = implement Swimmer for Pato {
         \\    fn swim(self: Self) {
         \\        return self.id;
@@ -89,10 +89,10 @@ test "js: dispatch ---- auto-applied extension method call" {
 
 test "js: dispatch ---- qualified extension method call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Swimmer = interface {
+        \\val Swimmer = behavior {
         \\    fn swim(self: Self);
         \\}
-        \\record Pato { id: i32 }
+        \\type Pato(id: i32)
         \\val PatoNada = implement Swimmer for Pato {
         \\    fn swim(self: Self) {
         \\        return self.id;
@@ -111,11 +111,11 @@ test "js: dispatch ---- multi-module implement on an imported record" {
     // the local symbol with no activation statement.
     try h.assertJs(std.testing.allocator, @src(), &.{
         .{ .path = "pond", .source =
-        \\pub record Pato { id: i32 }
+        \\pub type Pato(id: i32)
         },
         .{ .path = "", .source =
         \\import {Pato} from "pond";
-        \\val Swimmer = interface {
+        \\val Swimmer = behavior {
         \\    fn swim(self: Self);
         \\}
         \\val PatoNada = implement Swimmer for Pato {
@@ -136,10 +136,10 @@ test "js: dispatch ---- multi-module extension activated via star import" {
     // `donald.swim()` lowers to the imported symbol `PatoNada.swim(donald)`.
     try h.assertJs(std.testing.allocator, @src(), &.{
         .{ .path = "pond", .source =
-        \\val Swimmer = interface {
+        \\val Swimmer = behavior {
         \\    fn swim(self: Self);
         \\}
-        \\pub record Pato { id: i32 }
+        \\pub type Pato(id: i32)
         \\pub val PatoNada = implement Swimmer for Pato {
         \\    fn swim(self: Self) {
         \\        return self.id;
@@ -165,18 +165,18 @@ test "js: dispatch ---- multi-module extension activated via star import" {
 // them reaches a user interface's default through a record yet (1.0.4-beta 01).
 test "js: interface ---- a default fn calls members of the implementing record" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\interface Bounded {
-        \\    fn min(self: Self, other: Self) -> Self,
-        \\    fn max(self: Self, other: Self) -> Self,
+        \\behavior Bounded {
+        \\    fn min(self: Self, other: Self) -> Self;
+        \\    fn max(self: Self, other: Self) -> Self;
         \\
         \\    default fn clamp(self: Self, lo: Self, hi: Self) -> Self {
         \\        return self.max(lo).min(hi);
         \\    }
         \\}
         \\
-        \\record Money implement Bounded {
+        \\type Money(
         \\    cents: i32,
-        \\
+        \\) implement Bounded {
         \\    fn min(self: Self, other: Self) -> Self {
         \\        return if (self.cents < other.cents) { self; } else { other; };
         \\    }
@@ -200,9 +200,9 @@ test "js: interface ---- a default fn calls members of the implementing record" 
 // same member, so `self.max(lo)` is not `self.max is not a function`.
 test "js: interface ---- a redeclared primitive interface keeps its host members" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\interface Number {
-        \\    fn min(self: Self, other: Self) -> Self,
-        \\    fn max(self: Self, other: Self) -> Self,
+        \\behavior Number {
+        \\    fn min(self: Self, other: Self) -> Self;
+        \\    fn max(self: Self, other: Self) -> Self;
         \\
         \\    default fn clamp(self: Self, lo: Self, hi: Self) -> Self {
         \\        return self.max(lo).min(hi);
@@ -224,8 +224,8 @@ test "js: delegate ---- emits comment" {
 
 test "js: interface ---- emits comment" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Drawable = interface {
-        \\    val color: string,
+        \\val Drawable = behavior {
+        \\    val color: string;
         \\    fn draw(self: Self);
         \\}
     );

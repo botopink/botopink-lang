@@ -2,7 +2,7 @@
 ```botopink
 /// User account structure
 /// Holds name and email
-val Account = record { name: string, email: string };
+val Account = type(name: string, email: string);
 ```
 
 ----- BEAM ASSEMBLY -- main.S

@@ -1,8 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Invoice = record {
+val Invoice = type(
     subtotal: f64,
-    taxRate: f64,
+    taxRate: f64) {
     fn total(self: Self) -> f64 {
         return self.subtotal + self.subtotal * self.taxRate;
     }
@@ -16,7 +16,7 @@ val Invoice = record {
 ```erlang
 -module(main).
 
-%% record Invoice: subtotal, taxRate
+%% type Invoice: subtotal, taxRate
 
 total(Self) ->
     (maps:get(subtotal, Self) + (maps:get(subtotal, Self) * maps:get(taxRate, Self))).

@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record DbError { msg: string }
+type DbError(msg: string)
 #[@result]
 fn inner() -> @Result<i32, DbError> {
     throw DbError(msg: "conn refused");
@@ -25,7 +25,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% record DbError: msg
+%% type DbError: msg
 
 inner() ->
     {error, #{msg => <<"conn refused">>}}.

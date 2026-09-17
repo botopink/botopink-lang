@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Inner = record { value: i32 }
-val Outer = record { inner: ?Inner }
+val Inner = type(value: i32)
+val Outer = type(inner: ?Inner)
 fn getValue(o: Outer) -> ?i32 {
     return o.inner?.value;
 }

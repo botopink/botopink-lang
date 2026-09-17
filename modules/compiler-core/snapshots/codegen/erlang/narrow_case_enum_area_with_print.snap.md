@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-enum Shape { Circle(radius: f64), Square(side: f64) }
+type Shape { Circle(radius: f64), Square(side: f64) }
 fn area(s: Shape) -> f64 {
     return case s {
         Circle(r) -> 3.14 * r * r;
@@ -18,7 +18,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% enum Shape
+%% type Shape
 %%   Circle(radius)
 %%   Square(side)
 

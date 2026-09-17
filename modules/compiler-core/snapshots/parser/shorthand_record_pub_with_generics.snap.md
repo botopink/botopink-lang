@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "record": {
+      "type_": {
         "name": "Pair",
         "id": 1,
         "isPub": true,
@@ -17,24 +17,26 @@
           }
         ],
         "implement": [],
-        "fields": [
-          {
-            "name": "first",
-            "typeRef": {
-              "named": "T"
+        "shape": {
+          "record": [
+            {
+              "name": "first",
+              "typeRef": {
+                "named": "T"
+              },
+              "default": null,
+              "annotations": []
             },
-            "default": null,
-            "annotations": []
-          },
-          {
-            "name": "second",
-            "typeRef": {
-              "named": "T"
-            },
-            "default": null,
-            "annotations": []
-          }
-        ],
+            {
+              "name": "second",
+              "typeRef": {
+                "named": "T"
+              },
+              "default": null,
+              "annotations": []
+            }
+          ]
+        },
         "trailingComma": false,
         "methods": []
       }

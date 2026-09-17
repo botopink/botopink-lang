@@ -21,7 +21,7 @@ test "definition: member access on a `from \"<lib>\"` symbol resolves through th
     // The lib surface (what `from "rakun"` would bring in): a `pub fn created`.
     const lib_uri = "file:///libs/rakun/http.bp";
     const lib_src =
-        \\pub record Response { code: i32 }
+        \\pub type Response(code: i32)
         \\pub fn created(self: Response, body: string) -> Response {
         \\    return self;
         \\}

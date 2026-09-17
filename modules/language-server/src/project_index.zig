@@ -208,9 +208,10 @@ pub const ProjectIndex = struct {
                 .@"fn" => .function,
                 .val => .value,
                 .record => .record,
-                
                 .@"enum" => .@"enum",
-                .interface => .interface,
+                .interface, .behavior => .interface,
+                // 1.0.3 `type`: its shape decides record or enum.
+                .type => if (typeDeclIsEnum(tokens, j)) |is_enum| (if (is_enum) SymbolDeclKind.@"enum" else SymbolDeclKind.record) else null,
                 else => null,
             };
             if (kind == null) continue;
@@ -234,3 +235,35 @@ pub const ProjectIndex = struct {
         }
     }
 };
+
+/// For a `type` keyword at `kw` followed by a name, whether the declaration is
+/// enum-shaped (no `(…)` field list and a body that starts with a variant).
+/// Null when `type` does not open a declaration here.
+fn typeDeclIsEnum(tokens: []const Token, kw: usize) ?bool {
+    var p = kw + 1;
+    while (p < tokens.len and tokens[p].kind == .endOfFile) : (p += 1) {}
+    if (p >= tokens.len or tokens[p].kind != .identifier) return null;
+    p += 1;
+    var angle: i32 = 0;
+    while (p < tokens.len) : (p += 1) {
+        switch (tokens[p].kind) {
+            .endOfFile => continue,
+            .lessThan => angle += 1,
+            .greaterThan => angle -= 1,
+            .leftParenthesis => if (angle == 0) return false,
+            .leftBrace => if (angle == 0) {
+                var q = p + 1;
+                while (q < tokens.len) : (q += 1) {
+                    switch (tokens[q].kind) {
+                        .endOfFile, .commentNormal, .commentDoc, .commentModule => continue,
+                        .identifier, .numberLiteral => return true,
+                        else => return false,
+                    }
+                }
+                return false;
+            },
+            else => if (angle == 0 and tokens[p].kind != .implement and tokens[p].kind != .identifier and tokens[p].kind != .comma and tokens[p].kind != .at and tokens[p].kind != .builtinIdent) return false,
+        }
+    }
+    return false;
+}

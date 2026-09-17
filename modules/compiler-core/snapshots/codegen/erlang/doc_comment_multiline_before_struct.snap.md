@@ -2,7 +2,7 @@
 ```botopink
 /// User account structure
 /// Holds name and email
-val Account = record { name: string, email: string };
+val Account = type(name: string, email: string);
 ```
 
 ----- ERLANG -- main.erl
@@ -13,7 +13,7 @@ val Account = record { name: string, email: string };
 
 %% Holds name and email
 
-%% record Account: name, email
+%% type Account: name, email
 ```
 
 ----- RUN LOG -----

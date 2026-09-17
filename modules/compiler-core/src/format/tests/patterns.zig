@@ -132,7 +132,7 @@ test "format: pattern ---- constructor" {
 
 test "format: pattern ---- constructor with fields" {
     try h.assertFormat(std.testing.allocator,
-        \\val Result = enum { Ok(value: i32), Error(message: String) };
+        \\type Result { Ok(value: i32), Error(message: String) }
         \\
         \\fn main() {
         \\    val result = Result.Ok(42);
@@ -147,7 +147,7 @@ test "format: pattern ---- constructor with fields" {
 
 test "format: pattern ---- constructor with labeled fields" {
     try h.assertFormat(std.testing.allocator,
-        \\val Person = enum { Person(name: String, age: i32), Dog(name: String, age: i32) };
+        \\type Person { Person(name: String, age: i32), Dog(name: String, age: i32) }
         \\
         \\fn main() {
         \\    val thing = Person.Dog("bob", 121);

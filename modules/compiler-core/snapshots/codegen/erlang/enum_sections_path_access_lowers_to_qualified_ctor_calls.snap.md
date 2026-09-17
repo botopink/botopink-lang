@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-enum Token {
+type Token {
     Color {
         Red { 100, 500 }
     }
@@ -14,14 +14,14 @@ fn red500() -> Token {
 ```erlang
 -module(main).
 
-%% enum __Token__Color
+%% type __Token__Color
 %%   Red(_inner)
 
-%% enum __Token__Color__Red
+%% type __Token__Color__Red
 %%   __100
 %%   __500
 
-%% enum Token
+%% type Token
 %%   Color(_inner)
 
 red500() ->

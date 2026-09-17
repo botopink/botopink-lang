@@ -520,9 +520,8 @@ fn collectModuleRefs(
     for (program.decls) |decl| switch (decl) {
         .@"fn" => |f| if (f.isPub) try registerExport(sa, owner, &exps, f.name, idx),
         .val => |v| if (v.isPub) try registerExport(sa, owner, &exps, v.name, idx),
-        .record => |r| if (r.isPub) try registerExport(sa, owner, &exps, r.name, idx),
-        .@"enum" => |e| if (e.isPub) try registerExport(sa, owner, &exps, e.name, idx),
-        .interface => |it| if (it.isPub) try registerExport(sa, owner, &exps, it.name, idx),
+        .type_ => |t| if (t.isPub) try registerExport(sa, owner, &exps, t.name, idx),
+        .behavior => |it| if (it.isPub) try registerExport(sa, owner, &exps, it.name, idx),
         .use => |u| {
             // `from "a.b"` → slashed logical path "a/b" when it could name a
             // package module; `from "std"`, a lib, or a bare import → null.

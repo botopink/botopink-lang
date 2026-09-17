@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Status = enum {
+val Status = type {
     Active,
     Inactive,
     fn isDefault(s: Self) -> string {
@@ -14,7 +14,7 @@ val Status = enum {
 ```erlang
 -module(main).
 
-%% enum Status
+%% type Status
 %%   Active
 %%   Inactive
 

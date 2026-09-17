@@ -1,9 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Swimmer = interface {
+val Swimmer = behavior {
     fn swim(self: Self);
 }
-record Pato { id: i32 }
+type Pato(id: i32)
 val PatoNada = implement Swimmer for Pato {
     fn swim(self: Self) {
         return self.id;
@@ -20,9 +20,9 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% interface Swimmer
+%% behavior Swimmer
 
-%% record Pato: id
+%% type Pato: id
 
 %% implement Swimmer for Pato
 

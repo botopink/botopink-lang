@@ -434,9 +434,9 @@ fn bindingToRepr(
             } };
         },
 
-        .record => |r| blk: {
+        .type_ => |r| if (r.isRecord()) blk: {
             var entries: std.ArrayList(FieldMap.Entry) = .empty;
-            for (r.fields) |fld| {
+            for (r.recordFields()) |fld| {
                 try entries.append(allocator, .{ .name = fld.name, .value = typeNameFromTypeRef(fld.typeRef) });
             }
             const gens = try genericNames(allocator, r.genericParams);
@@ -447,9 +447,8 @@ fn bindingToRepr(
                 .generic = if (gens.len > 0) gens else null,
                 .fields = .{ .entries = try entries.toOwnedSlice(allocator) },
             } };
-        },
-
-        .@"enum" => |e| blk: {
+        } else blk: {
+            const e = r;
             const gens = try genericNames(allocator, e.genericParams);
             break :blk .{ .enum_ = .{
                 .ast = "enum_def",
@@ -459,7 +458,7 @@ fn bindingToRepr(
             } };
         },
 
-        .interface => |i| blk: {
+        .behavior => |i| blk: {
             const gens = try genericNames(allocator, i.genericParams);
             break :blk .{ .interface = .{
                 .ast = "interface_def",
@@ -596,7 +595,7 @@ pub fn renderTypeErrorBody(
         .methodNotActive => "method not active",
         .ambiguousExtension => "ambiguous extension method",
         .notAnExtension => "not an extension symbol",
-        .extendRequiresInterface => "extend requires an interface",
+        .extendRequiresInterface => "extend requires a behavior",
         .redundantActivation => "redundant activation",
         .useNotAllowed => "use-of-non-context-fn: `use` not allowed",
         .useNotContext => "use-of-non-context-fn: `use` requires @Context",
@@ -716,7 +715,7 @@ pub fn renderTypeErrorBody(
         .extendRequiresInterface => |t| {
             try out.appendSlice(allocator, try std.fmt.allocPrint(
                 tmp,
-                "\n  `extend {s}` adds methods without a contract\n  hint: use `implement <Interface> for {s}` so the methods satisfy an interface\n",
+                "\n  `extend {s}` adds methods without a contract\n  hint: use `implement <Behavior> for {s}` so the methods satisfy a behavior\n",
                 .{ t, t },
             ));
         },
@@ -754,21 +753,21 @@ pub fn renderTypeErrorBody(
         .missingMethod => |m| {
             try out.appendSlice(allocator, try std.fmt.allocPrint(
                 tmp,
-                "\n  '{s}' does not implement '{s}' required by interface '{s}'\n",
+                "\n  '{s}' does not implement '{s}' required by behavior '{s}'\n",
                 .{ m.typeName, m.method, m.interfaceName },
             ));
         },
         .unknownMethod => |m| {
             try out.appendSlice(allocator, try std.fmt.allocPrint(
                 tmp,
-                "\n  '{s}' is not declared in any interface implemented for '{s}'\n",
+                "\n  '{s}' is not declared in any behavior implemented for '{s}'\n",
                 .{ m.method, m.typeName },
             ));
         },
         .unknownInterface => |u| {
             try out.appendSlice(allocator, try std.fmt.allocPrint(
                 tmp,
-                "\n  '{s}' is not an interface implemented here (method '{s}')\n",
+                "\n  '{s}' is not a behavior implemented here (method '{s}')\n",
                 .{ u.qualifier, u.method },
             ));
         },

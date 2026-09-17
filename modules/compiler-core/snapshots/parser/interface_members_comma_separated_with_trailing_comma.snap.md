@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "interface": {
+      "behavior": {
         "name": "Canvas",
         "id": 1,
         "isPub": false,
@@ -13,7 +13,7 @@
         "genericParams": [],
         "extends": [],
         "fields": [],
-        "trailingComma": true,
+        "trailingComma": false,
         "methods": [
           {
             "name": "clear",

@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val E = record implement @Context<E, E> { tag: string, n: i32 }
+val E = type(tag: string, n: i32) implement @Context<E, E>
 fn mk() -> E {
     return E(tag: "x", n: 5);
 }
@@ -14,7 +14,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% record E: tag, n
+%% type E: tag, n
 
 mk() ->
     #{tag => <<"x">>, n => 5}.

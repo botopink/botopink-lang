@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Container = interface <T> {
+val Container = behavior <T> {
     fn fetch(self: Self) -> T;
     fn store(self: Self, value: T);
 }

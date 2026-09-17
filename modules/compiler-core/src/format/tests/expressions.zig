@@ -9,31 +9,31 @@ const h = @import("helpers.zig");
 
 test "format: lambda ---- trailing no params" {
     try h.assertFormat(std.testing.allocator,
-        \\val Test = interface {
+        \\behavior Test {
         \\    default fn run() {
         \\        executar {
         \\            ok;
         \\        };
         \\    }
-        \\};
+        \\}
     );
 }
 
 test "format: lambda ---- named arg + trailing with params" {
     try h.assertFormat(std.testing.allocator,
-        \\val Test = interface {
+        \\behavior Test {
         \\    default fn run() {
         \\        calcular(fator: 2) { a, b ->
         \\            a + b;
         \\        };
         \\    }
-        \\};
+        \\}
     );
 }
 
 test "format: lambda ---- two trailing blocks second labeled" {
     try h.assertFormat(std.testing.allocator,
-        \\val Test = interface {
+        \\behavior Test {
         \\    default fn run() {
         \\        executar {
         \\            ok;
@@ -41,7 +41,7 @@ test "format: lambda ---- two trailing blocks second labeled" {
         \\            fail;
         \\        };
         \\    }
-        \\};
+        \\}
     );
 }
 
@@ -414,5 +414,37 @@ test "format: tagged call ---- interpolated multiline round-trip" {
         \\val component = html """
         \\<Button label=${title}></Button>
         \\""";
+    );
+}
+
+// front 12 step 3 (format --check on libs/std): three shapes the formatter
+// printed as source that no longer parsed.
+
+test "format: a parameterless lambda argument keeps its arrow" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn main() {
+        \\    throws({ ->
+        \\            0;
+        \\        }, "expected");
+        \\}
+    );
+}
+
+test "format: a multi-statement if branch prints its statements, not break" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn pick(xs: Array<i32>) -> i32 {
+        \\    return if (xs.isEmpty()) 0 else {
+        \\        val head = xs.length;
+        \\        head + 1;
+        \\    };
+        \\}
+    );
+}
+
+test "format: branches re-parse and format to the same text" {
+    try h.assertIdempotent(std.testing.allocator,
+        \\fn pick(xs: Array<i32>) -> i32 {
+        \\    return if (xs.isEmpty()) { 0; } else { val head = xs.length; head + 1; };
+        \\}
     );
 }

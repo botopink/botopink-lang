@@ -31,7 +31,8 @@ fn main() {
     local.get $_res0
     i32.load ;; optional payload
     local.set $pair
-    i32.const 0 ;; field access .1 (unknown receiver type)
+    local.get $pair
+    i32.load offset=4
     call $__box_i32
       )
       (else

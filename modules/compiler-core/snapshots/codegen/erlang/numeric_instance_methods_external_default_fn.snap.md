@@ -16,11 +16,11 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% interface Number
+%% behavior Number
 
-%% interface Signed
+%% behavior Signed
 
-%% interface Integer
+%% behavior Integer
 
 main() ->
     N = (-5),

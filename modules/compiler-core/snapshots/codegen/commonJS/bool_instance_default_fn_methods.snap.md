@@ -29,7 +29,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-// interface Bool
+// behavior Bool
 //   fn toString(...)
 //   default fn negate(...)
 //   default fn nor(...)

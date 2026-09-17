@@ -9,4 +9,5 @@ test {
     _ = @import("tests/destructuring.zig");
     _ = @import("tests/errors.zig");
     _ = @import("tests/effect_rejections.zig");
+    _ = @import("tests/surface.zig");
 }

@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record User { name: string }
+type User(name: string)
 
 fn main() {
     val u: ?User = User(name: "ana");
@@ -13,7 +13,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% record User: name
+%% type User: name
 
 main() ->
     U = #{name => <<"ana">>},

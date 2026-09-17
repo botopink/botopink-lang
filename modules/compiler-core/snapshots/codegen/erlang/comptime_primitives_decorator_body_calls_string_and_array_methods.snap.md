@@ -10,7 +10,7 @@ pub fn describe(comptime decl: @Decl) {
 }
 
 #[describe]
-record User { name: string, secret: string, age: i32 }
+type User(name: string, secret: string, age: i32)
 
 fn main() {
     @print(describeUser());
@@ -45,13 +45,14 @@ main() ->
     erlang:erase('__bp_emitted'),
     try
         describe(#{
-            kind => 'Record',
+            kind => 'Type',
             name => <<"User">>,
             fields => [
                 #{name => <<"name">>, typeName => <<"string">>, annotations => []},
                 #{name => <<"secret">>, typeName => <<"string">>, annotations => []},
                 #{name => <<"age">>, typeName => <<"i32">>, annotations => []}
             ],
+            variants => [],
             methods => [],
             returnType => <<"">>,
             annotations => [#{name => <<"describe">>, args => []}]
@@ -81,9 +82,9 @@ main() ->
 -export(['_botopink_main'/0, main/1]).
 -export([describeUser/0]).
 
-%% interface String
+%% behavior String
 
-%% interface Array
+%% behavior Array
 
 array_range(Start, Stop) ->
     case (Start >= Stop) of
@@ -103,7 +104,7 @@ array_repeat(Value, Times) ->
             [Head] ++ (array_repeat(Value, (Times - 1)))
     end.
 
-%% record User: name, secret, age
+%% type User: name, secret, age
 
 main() ->
     '__bp_print'([describeUser()]).

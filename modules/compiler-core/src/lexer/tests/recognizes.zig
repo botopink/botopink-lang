@@ -444,11 +444,11 @@ test "lexer: recognizes keyword throw" {
     try std.testing.expectEqual(TokenKind.throw, tokens[0].kind);
 }
 
-test "lexer: recognizes keyword interface" {
+test "lexer: the removed keyword interface lexes as an identifier" {
     var l = Lexer.init("interface");
     const tokens = try l.scanAll(std.testing.allocator);
     defer l.deinit(std.testing.allocator);
-    try std.testing.expectEqual(TokenKind.interface, tokens[0].kind);
+    try std.testing.expectEqual(TokenKind.identifier, tokens[0].kind);
 }
 
 test "lexer: recognizes keyword type" {
@@ -472,11 +472,11 @@ test "lexer: recognizes keyword val" {
     try std.testing.expectEqual(TokenKind.val, tokens[0].kind);
 }
 
-test "lexer: recognizes keyword record" {
+test "lexer: the removed keyword record lexes as an identifier" {
     var l = Lexer.init("record");
     const tokens = try l.scanAll(std.testing.allocator);
     defer l.deinit(std.testing.allocator);
-    try std.testing.expectEqual(TokenKind.record, tokens[0].kind);
+    try std.testing.expectEqual(TokenKind.identifier, tokens[0].kind);
 }
 
 test "lexer: recognizes keyword implementations" {
@@ -491,4 +491,11 @@ test "lexer: recognizes keyword for" {
     const tokens = try l.scanAll(std.testing.allocator);
     defer l.deinit(std.testing.allocator);
     try std.testing.expectEqual(TokenKind.@"for", tokens[0].kind);
+}
+
+test "lexer: the removed keyword enum lexes as an identifier" {
+    var l = Lexer.init("enum");
+    const tokens = try l.scanAll(std.testing.allocator);
+    defer l.deinit(std.testing.allocator);
+    try std.testing.expectEqual(TokenKind.identifier, tokens[0].kind);
 }

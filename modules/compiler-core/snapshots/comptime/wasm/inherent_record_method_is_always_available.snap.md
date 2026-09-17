@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record Pato {
-    id: i32,
+type Pato(
+    id: i32) {
     fn quack(self: Self) {
         return self.id;
     }

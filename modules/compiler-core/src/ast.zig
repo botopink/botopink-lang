@@ -145,6 +145,22 @@ pub fn LiteralExprOf(comptime phase: Phase) type {
         comment: struct {
             kind: CommentKind,
             text: []const u8,
+            /// Written at the end of the previous statement's line
+            /// (`f(); // note`); the formatter keeps it there.
+            trailing: bool = false,
+
+            pub fn jsonStringify(this: @This(), jws: anytype) !void {
+                try jws.beginObject();
+                try jws.objectField("kind");
+                try jws.write(this.kind);
+                try jws.objectField("text");
+                try jws.write(this.text);
+                if (this.trailing) {
+                    try jws.objectField("trailing");
+                    try jws.write(true);
+                }
+                try jws.endObject();
+            }
         },
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {
@@ -717,6 +733,12 @@ pub fn CollectionExprOf(comptime phase: Phase) type {
             /// Number of comments before each element, then trailing.
             /// Length = elems.len + 1 (or 0 when no comments).
             commentsPerElem: []const u32 = &.{},
+            /// Element labels the COMPILER attaches (decision 8 §6) — never set
+            /// by the parser: construction has no labels. A value lifted from a
+            /// template (`@expr(…)`) carries the labels of the structure it was
+            /// built from, so `cfg.server.port` resolves. "" = unlabeled.
+            /// Arena-owned; not freed by `deinit`.
+            labels: []const []const u8 = &.{},
         },
         /// `start..end` or `start..` ---- integer range (end=null means open)
         range: struct {
@@ -732,14 +754,9 @@ pub fn CollectionExprOf(comptime phase: Phase) type {
         },
         /// `(expr)` ---- grouped expression (parentheses for precedence)
         grouped: *ExprOf(phase),
-        /// `record { name: value, … }` ---- anonymous structural record literal.
-        /// Types as an anonymous record (`Type.record`); nests freely.
-        recordLit: struct {
-            fields: []RecordLitFieldOf(phase),
-        },
-        /// `@InterfaceName(field: value, …)` ---- interface literal instantiation.
-        /// Creates a value of the named interface type with the given fields.
-        interfaceLit: struct {
+        /// `@BehaviorName(field: value, …)` ---- behavior literal instantiation.
+        /// Creates a value of the named behavior type with the given fields.
+        behaviorLit: struct {
             name: []const u8,
             fields: []RecordLitFieldOf(phase),
         },
@@ -784,14 +801,7 @@ pub fn CollectionExprOf(comptime phase: Phase) type {
                     e.deinit(allocator);
                     allocator.destroy(e);
                 },
-                .recordLit => |rl| {
-                    for (rl.fields) |f| {
-                        f.value.deinit(allocator);
-                        allocator.destroy(f.value);
-                    }
-                    allocator.free(rl.fields);
-                },
-                .interfaceLit => |il| {
+                .behaviorLit => |il| {
                     for (il.fields) |f| {
                         f.value.deinit(allocator);
                         allocator.destroy(f.value);
@@ -937,9 +947,41 @@ pub const Pattern = union(enum) {
 // ── interface decl ────────────────────────────────────────────────────────────────
 
 /// A field declared inside a interface: `val name: Type`
-pub const InterfaceField = struct {
+/// JSON dump of a struct (the parser snapshots) that leaves out formatting-only
+/// fields: `omitAlways` never appear, `omitIfEmpty` only when their slice is
+/// non-empty — so source layout kept for the formatter does not reach every
+/// snapshot.
+fn stringifyOmitting(value: anytype, jws: anytype, comptime omitAlways: []const []const u8, comptime omitIfEmpty: []const []const u8) !void {
+    const T = @TypeOf(value);
+    try jws.beginObject();
+    inline for (@typeInfo(T).@"struct".fields) |f| {
+        comptime var always = false;
+        comptime var ifEmpty = false;
+        inline for (omitAlways) |name| {
+            if (comptime std.mem.eql(u8, f.name, name)) always = true;
+        }
+        inline for (omitIfEmpty) |name| {
+            if (comptime std.mem.eql(u8, f.name, name)) ifEmpty = true;
+        }
+        if (!always and !(ifEmpty and @field(value, f.name).len == 0)) {
+            try jws.objectField(f.name);
+            try jws.write(@field(value, f.name));
+        }
+    }
+    try jws.endObject();
+}
+
+pub const BehaviorField = struct {
     name: []const u8,
     typeName: []const u8,
+    /// Comment lines written above the member inside the body (the lexemes,
+    /// prefix included), with "" for a blank source line. Owned slice; the
+    /// strings slice into the source. Kept by the formatter.
+    comments: []const []const u8 = &.{},
+
+    pub fn jsonStringify(this: BehaviorField, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{}, &.{"comments"});
+    }
 };
 
 /// Modifier on a parameter type ---- controls how the argument is treated.
@@ -1026,7 +1068,7 @@ pub const Param = struct {
     fnType: ?FnType = null,
     /// null for plain params; set for destructuring params.
     destruct: ?ParamDestruct = null,
-    /// Default value expression for the param. Unified with `RecordField.default`
+    /// Default value expression for the param. Unified with `Field.default`
     /// / struct-field init / enum-variant-field default so call sites,
     /// annotations, record constructors, and enum-variant constructors all
     /// consume the same fallback shape (see infer.zig arity check + the
@@ -1056,7 +1098,7 @@ pub const GenericParam = struct {
 
 /// A method declared inside a interface.
 /// If `body` is null the method is abstract (no default implementation).
-pub const InterfaceMethod = struct {
+pub const BehaviorMethod = struct {
     name: []const u8,
     /// `@[external(target, "module", "symbol")]` annotations on a `declare fn`
     /// member — host-backed interface methods (per-target lowering).
@@ -1073,10 +1115,14 @@ pub const InterfaceMethod = struct {
     /// or an interface body (bodyless, typed from the signature)
     is_declare: bool = false,
     isPub: bool = false,
+    /// Comment lines written above the member inside the body (the lexemes,
+    /// prefix included), with "" for a blank source line. Owned slice; the
+    /// strings slice into the source. Kept by the formatter.
+    comments: []const []const u8 = &.{},
 
     /// True when the method is a host-backed `#[@External.<Target>(…)]`
     /// declaration.
-    pub fn isExternal(this: InterfaceMethod) bool {
+    pub fn isExternal(this: BehaviorMethod) bool {
         for (this.annotations) |a| {
             if (std.mem.startsWith(u8, a.name, "External.") and a.name.len > "External.".len) return true;
         }
@@ -1085,7 +1131,7 @@ pub const InterfaceMethod = struct {
 
     /// True when the method carries `#[builtin]` — the host/raw-infra provides
     /// the real body; the bp body is a stub and codegen skips it.
-    pub fn isHost(this: InterfaceMethod) bool {
+    pub fn isHost(this: BehaviorMethod) bool {
         for (this.annotations) |a| {
             if (std.mem.eql(u8, a.name, "Host")) return true;
         }
@@ -1094,7 +1140,7 @@ pub const InterfaceMethod = struct {
 
     /// The `(module, symbol)` of the `external` annotation targeting `target`
     /// (e.g. "node", "erlang"), or null when none matches.
-    pub fn externalFor(this: InterfaceMethod, target: []const u8) ?ExternalRef {
+    pub fn externalFor(this: BehaviorMethod, target: []const u8) ?ExternalRef {
         for (this.annotations) |a| {
             if (!std.mem.startsWith(u8, a.name, "External.")) continue;
             if (!std.ascii.eqlIgnoreCase(a.name["External.".len..], target)) continue;
@@ -1106,7 +1152,7 @@ pub const InterfaceMethod = struct {
         return null;
     }
 
-    pub fn deinit(this: *InterfaceMethod, allocator: std.mem.Allocator) void {
+    pub fn deinit(this: *BehaviorMethod, allocator: std.mem.Allocator) void {
         for (this.annotations) |*ann| ann.deinit(allocator);
         if (this.annotations.len > 0) allocator.free(this.annotations);
         for (this.genericParams) |*gp| gp.deinit(allocator);
@@ -1118,6 +1164,11 @@ pub const InterfaceMethod = struct {
             for (stmts) |*s| s.deinit(allocator);
             allocator.free(stmts);
         }
+        if (this.comments.len > 0) allocator.free(this.comments);
+    }
+
+    pub fn jsonStringify(this: BehaviorMethod, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{}, &.{"comments"});
     }
 };
 
@@ -1153,9 +1204,23 @@ pub const Annotation = struct {
     /// Where the annotation name starts (null for synthesized annotations).
     /// Diagnostics raised by a decorator body point here.
     loc: ?Loc = null,
+    /// The arguments as written, when `args` holds a translation — an
+    /// `@External` template whose positional markers (decision 5) were mapped
+    /// to the renderers' receiver convention (`parser/template_markers.zig`).
+    /// `args` and its strings are then owned; `source_args` borrows the source.
+    source_args: ?[]const []const u8 = null,
 
     pub fn deinit(this: *Annotation, allocator: std.mem.Allocator) void {
+        if (this.source_args) |src| {
+            for (this.args) |a| allocator.free(a);
+            allocator.free(src);
+        }
         allocator.free(this.args);
+    }
+
+    /// The arguments as the author wrote them (see `source_args`).
+    pub fn writtenArgs(this: Annotation) []const []const u8 {
+        return this.source_args orelse this.args;
     }
 
     /// The location is diagnostic metadata, not part of the serialized AST.
@@ -1164,7 +1229,7 @@ pub const Annotation = struct {
         try jws.objectField("name");
         try jws.write(this.name);
         try jws.objectField("args");
-        try jws.write(this.args);
+        try jws.write(this.writtenArgs());
         try jws.objectField("is_builtin");
         try jws.write(this.is_builtin);
         try jws.endObject();
@@ -1191,7 +1256,7 @@ pub const ExternalCall = struct {
 /// ordered arg-name list. `"sym(a, self)"` → `("sym", ["a", "self"])`;
 /// `"sym"` → `("sym", null)`. The arg list is empty for `"sym()"`.
 /// `slots_out` must have capacity for at least one slot per `,` plus one — the
-/// caller (`InterfaceMethod.callTemplateFor`/`FnDecl.callTemplateFor`) reuses a
+/// caller (`BehaviorMethod.callTemplateFor`/`FnDecl.callTemplateFor`) reuses a
 /// stack-allocated buffer so we never allocate just to read an annotation.
 pub fn parseExternalCallTemplate(
     symbol: []const u8,
@@ -1346,9 +1411,9 @@ pub fn externalArityBranchFor(annotations: []const Annotation, target: []const u
 }
 
 /// `val Name = interface { ... }`  or  `val Name = interface <T> { ... }`
-pub const InterfaceDecl = struct {
+pub const BehaviorDecl = struct {
     name: []const u8,
-    /// Auto-generated unique ID counter, formatted as `"interface_{id:0>4}"` when rendered.
+    /// Auto-generated unique ID counter, formatted as `"behavior_{id:0>4}"` when rendered.
     id: u32 = 0,
     isPub: bool = false,
     docComment: ?[]const u8 = null,
@@ -1361,37 +1426,32 @@ pub const InterfaceDecl = struct {
     genericParams: []GenericParam = &.{},
     /// Super-interfaces listed in `extends T1, T2` clause. Empty when absent.
     extends: []const []const u8 = &.{},
-    fields: []InterfaceField,
+    fields: []BehaviorField,
     /// Whether the last field/method had a trailing comma in the source.
     trailingComma: bool = false,
-    methods: []InterfaceMethod,
+    methods: []BehaviorMethod,
+    /// Comment lines after the last member, before `}` ("" = blank line). Owned slice.
+    bodyComments: []const []const u8 = &.{},
 
-    pub fn deinit(this: *InterfaceDecl, allocator: std.mem.Allocator) void {
+    pub fn deinit(this: *BehaviorDecl, allocator: std.mem.Allocator) void {
         for (this.annotations) |*ann| ann.deinit(allocator);
         allocator.free(this.annotations);
         for (this.genericParams) |*gp| gp.deinit(allocator);
         allocator.free(this.genericParams);
         allocator.free(this.extends);
+        for (this.fields) |f| if (f.comments.len > 0) allocator.free(f.comments);
         allocator.free(this.fields);
         for (this.methods) |*m| m.deinit(allocator);
         allocator.free(this.methods);
+        if (this.bodyComments.len > 0) allocator.free(this.bodyComments);
+    }
+
+    pub fn jsonStringify(this: BehaviorDecl, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{}, &.{"bodyComments"});
     }
 };
 
 // ── enum decl ─────────────────────────────────────────────────────────────────
-
-/// A named field inside an enum variant with a payload: `r: Int` or `reason: ?string`
-pub const EnumVariantField = struct {
-    name: []const u8,
-    typeRef: TypeRef,
-    /// Optional default value, mirrors `RecordField.default` and `Param.default`.
-    default: ?Expr = null,
-
-    pub fn deinit(this: *EnumVariantField, allocator: std.mem.Allocator) void {
-        this.typeRef.deinit(allocator);
-        if (this.default) |*d| d.deinit(allocator);
-    }
-};
 
 /// One variant of an enum.
 /// Simple:  `Red`
@@ -1401,7 +1461,7 @@ pub const EnumVariantField = struct {
 pub const EnumVariant = struct {
     name: []const u8,
     /// Empty for simple (unit) variants; non-empty for payload variants.
-    fields: []EnumVariantField,
+    fields: []Field,
     /// True iff the variant name is a pure-digit literal. Only legal inside an
     /// enum-section body (top-level enum body still rejects digit names).
     numeric: bool = false,
@@ -1432,55 +1492,9 @@ pub const EnumSection = struct {
     }
 };
 
-/// `val Color = enum { Red, Green, Rgb(r: Int, g: Int, b: Int) }` or `val Option = enum <T> { ... }`
-pub const EnumDecl = struct {
-    name: []const u8,
-    /// Auto-generated unique ID counter, formatted as `"enum_{id:0>4}"` when rendered.
-    id: u32 = 0,
-    isPub: bool = false,
-    docComment: ?[]const u8 = null,
-    /// `//` regular comment (last one before the declaration)
-    comment: ?[]const u8 = null,
-    /// `////` module-level documentation
-    moduleComment: ?[]const u8 = null,
-    annotations: []Annotation = &.{},
-    genericParams: []GenericParam = &.{},
-    /// Inline interface implementations: `enum implement I1 { }`.
-    implement: []TypeRef = &.{},
-    variants: []EnumVariant,
-    /// Whether the last variant had a trailing comma in the source.
-    trailingComma: bool = false,
-    /// Methods declared after the variant list (may include `declare fn` abstract slots).
-    methods: []InterfaceMethod = &.{},
-    /// Top-level sections (recursive groupings) declared inside the body. The
-    /// comptime desugars each section into a synthesised inner enum with a
-    /// mangled name encoding the path. Empty for plain enums.
-    sections: []EnumSection = &.{},
-
-    pub fn deinit(this: *EnumDecl, allocator: std.mem.Allocator) void {
-        for (this.annotations) |*ann| ann.deinit(allocator);
-        allocator.free(this.annotations);
-        for (this.genericParams) |*gp| gp.deinit(allocator);
-        allocator.free(this.genericParams);
-        for (this.implement) |*im| im.deinit(allocator);
-        allocator.free(this.implement);
-        for (this.variants) |*v| v.deinit(allocator);
-        allocator.free(this.variants);
-        for (this.methods) |*m| m.deinit(allocator);
-        allocator.free(this.methods);
-        for (this.sections) |*s| s.deinit(allocator);
-        allocator.free(this.sections);
-    }
-};
-
 // ── type reference ────────────────────────────────────────────────────────────
 
 /// One field of an anonymous record TYPE: `name: Type` in `{ value: T, set: fn(T) }`.
-pub const RecordTypeField = struct {
-    name: []const u8,
-    typeRef: TypeRef,
-};
-
 /// A type annotation expression, e.g. `Int`, `string[]`, `#(Int, string)`, `?T`.
 pub const TypeRef = union(enum) {
     /// Plain named type: `Int`, `string`, `Self`. Slice into source — not heap-owned.
@@ -1489,10 +1503,31 @@ pub const TypeRef = union(enum) {
     array: *TypeRef,
     /// Tuple type: `#(T1, T2, ...)`. Owns the element types.
     tuple_: []TypeRef,
+    /// Tuple type with labels: `#(name: string, pop: i32)` (decision 8 §6). The
+    /// labels are names for the compiler — `row.pop` becomes a positional access
+    /// and the run-time value is the plain tuple. Owns `elems` and the `labels`
+    /// slice (the label strings slice into the source).
+    labeledTuple: struct { elems: []TypeRef, labels: []const []const u8 },
     /// Optional type: `?T`. Owns the inner type.
     optional: *TypeRef,
     /// Function type: `fn(T1, T2) -> R`. Owns both param types and return type.
-    function: struct { params: []TypeRef, returnType: *TypeRef },
+    function: struct {
+        params: []TypeRef,
+        returnType: *TypeRef,
+        /// The documentation names written in `fn(item: T)` ("" where none), for
+        /// the formatter; function types stay positional. Owned slice; the
+        /// strings slice into the source. Left out of the AST dump.
+        paramNames: []const []const u8 = &.{},
+
+        pub fn jsonStringify(this: @This(), jws: anytype) !void {
+            try jws.beginObject();
+            try jws.objectField("params");
+            try jws.write(this.params);
+            try jws.objectField("returnType");
+            try jws.write(this.returnType);
+            try jws.endObject();
+        }
+    },
     /// Generic type: `@Result<D, E>` (builtin) or `MyType<T>` (user-defined). Owns the argument types.
     generic: struct { name: []const u8, args: []TypeRef, is_builtin: bool },
     /// Comptime type parameter: `typeparam` or `typeparam string | int | bool`.
@@ -1500,17 +1535,19 @@ pub const TypeRef = union(enum) {
     /// means the typeparam is unconstrained and accepts any type. Owns the constraints.
     /// Surface syntax (post-F0): `type` / `type string | int | bool`.
     typeparam: []TypeRef,
-    /// Anonymous structural record type: `{ value: T, set: fn(T) }`, usable as a
-    /// return type or annotation without a named `record`. Owns the fields.
-    record_type: []RecordTypeField,
+
+    /// The element types of a tuple type, labeled or not; null otherwise.
+    pub fn tupleElems(this: TypeRef) ?[]TypeRef {
+        return switch (this) {
+            .tuple_ => |elems| elems,
+            .labeledTuple => |lt| lt.elems,
+            else => null,
+        };
+    }
 
     pub fn deinit(this: *TypeRef, allocator: std.mem.Allocator) void {
         switch (this.*) {
             .named => {},
-            .record_type => |flds| {
-                for (flds) |*f| f.typeRef.deinit(allocator);
-                allocator.free(flds);
-            },
             .array => |elem| {
                 elem.deinit(allocator);
                 allocator.destroy(elem);
@@ -1518,6 +1555,11 @@ pub const TypeRef = union(enum) {
             .tuple_ => |elems| {
                 for (elems) |*e| e.deinit(allocator);
                 allocator.free(elems);
+            },
+            .labeledTuple => |lt| {
+                for (lt.elems) |*e| e.deinit(allocator);
+                allocator.free(lt.elems);
+                allocator.free(lt.labels);
             },
             .optional => |inner| {
                 inner.deinit(allocator);
@@ -1528,6 +1570,7 @@ pub const TypeRef = union(enum) {
                 allocator.free(f.params);
                 f.returnType.deinit(allocator);
                 allocator.destroy(f.returnType);
+                if (f.paramNames.len > 0) allocator.free(f.paramNames);
             },
             .generic => |b| {
                 for (b.args) |*a| a.deinit(allocator);
@@ -1619,14 +1662,13 @@ pub const TestDecl = struct {
 };
 
 pub const DeclKind = union(enum) {
-    record: RecordDecl,
+    type_: TypeDecl,
     implement: ImplementDecl,
     extend: ExtendDecl,
     use: ImportDecl,
     mod: ModDecl,
-    interface: InterfaceDecl,
+    behavior: BehaviorDecl,
     delegate: DelegateDecl,
-    @"enum": EnumDecl,
     @"fn": FnDecl,
     val: ValDecl,
     @"test": TestDecl,
@@ -1634,7 +1676,29 @@ pub const DeclKind = union(enum) {
     /// `text` is the comment content without the `//` / `///` / `////` prefix.
     /// `is_module` is true for `////` module-level comments.
     /// `is_doc` is true for `///` doc comments.
-    comment: struct { text: []const u8, is_module: bool, is_doc: bool },
+    comment: struct {
+        text: []const u8,
+        is_module: bool,
+        is_doc: bool,
+        /// Written at the end of the previous declaration's line
+        /// (`pub mod geometry; // note`); the formatter keeps it there.
+        trailing: bool = false,
+
+        pub fn jsonStringify(this: @This(), jws: anytype) !void {
+            try jws.beginObject();
+            try jws.objectField("text");
+            try jws.write(this.text);
+            try jws.objectField("is_module");
+            try jws.write(this.is_module);
+            try jws.objectField("is_doc");
+            try jws.write(this.is_doc);
+            if (this.trailing) {
+                try jws.objectField("trailing");
+                try jws.write(true);
+            }
+            try jws.endObject();
+        }
+    },
 
     pub fn deinit(this: *DeclKind, allocator: std.mem.Allocator) void {
         switch (this.*) {
@@ -1642,12 +1706,11 @@ pub const DeclKind = union(enum) {
                 for (u.imports) |imp| allocator.free(imp.segments);
                 allocator.free(u.imports);
             },
-            .interface => |*t| t.deinit(allocator),
+            .behavior => |*t| t.deinit(allocator),
             .delegate => |*d| d.deinit(allocator),
-            .record => |*r| r.deinit(allocator),
+            .type_ => |*t| t.deinit(allocator),
             .implement => |*i| i.deinit(allocator),
             .extend => |*x| x.deinit(allocator),
-            .@"enum" => |*e| e.deinit(allocator),
             .@"fn" => |*f| f.deinit(allocator),
             .val => |*v| v.deinit(allocator),
             .@"test" => |*t| t.deinit(allocator),
@@ -1659,10 +1722,18 @@ pub const DeclKind = union(enum) {
 
 pub const Program = struct {
     decls: []DeclKind,
+    /// `blankLineBefore[i]`: a blank source line precedes `decls[i]` (empty
+    /// when the program was not parsed from source). The formatter keeps it.
+    blankLineBefore: []const bool = &.{},
 
     pub fn deinit(this: *Program, allocator: std.mem.Allocator) void {
         for (this.decls) |*d| d.deinit(allocator);
         allocator.free(this.decls);
+        if (this.blankLineBefore.len > 0) allocator.free(this.blankLineBefore);
+    }
+
+    pub fn jsonStringify(this: Program, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{"blankLineBefore"}, &.{});
     }
 };
 
@@ -1816,30 +1887,87 @@ pub const FnDecl = struct {
     }
 };
 
-// ── record decl ───────────────────────────────────────────────────────────────
+// ── type decl ───────────────────────────────────────────────────────────────────
 
-/// A field in a record's parameter list: `name: Type` or `name: ?Type = default`
-pub const RecordField = struct {
+/// One field — of a record field list or of an enum variant payload:
+/// `name: Type` or `name: ?Type = default`.
+pub const Field = struct {
     name: []const u8,
     typeRef: TypeRef,
     /// Optional default value, e.g. `= null` or `= 0`.
     default: ?Expr = null,
     /// Member-level decorators on the field (`#[inject] repo: …`).
     annotations: []Annotation = &.{},
+    /// `//` comments written before the field in a 1.0.3 field list
+    /// (`type Config(\n // where it listens\n host: string)`), text only.
+    /// Owned. Kept so the formatter prints them back.
+    comments: []const []const u8 = &.{},
 
-    pub fn deinit(this: *RecordField, allocator: std.mem.Allocator) void {
+    pub fn deinit(this: *Field, allocator: std.mem.Allocator) void {
         this.typeRef.deinit(allocator);
         if (this.default) |*d| d.deinit(allocator);
         for (this.annotations) |*ann| ann.deinit(allocator);
         if (this.annotations.len > 0) allocator.free(this.annotations);
+        for (this.comments) |c| allocator.free(c);
+        if (this.comments.len > 0) allocator.free(this.comments);
+    }
+
+    /// `comments` is written only when present, so a field without comments
+    /// serializes exactly as before the field list kept them.
+    pub fn jsonStringify(this: Field, jws: anytype) !void {
+        try jws.beginObject();
+        try jws.objectField("name");
+        try jws.write(this.name);
+        try jws.objectField("typeRef");
+        try jws.write(this.typeRef);
+        try jws.objectField("default");
+        try jws.write(this.default);
+        try jws.objectField("annotations");
+        try jws.write(this.annotations);
+        if (this.comments.len > 0) {
+            try jws.objectField("comments");
+            try jws.write(this.comments);
+        }
+        try jws.endObject();
     }
 };
 
-/// `val Name = record(val f1: T1, val f2: T2) { fn ... }`
-/// or `val Name = record <T>(val item: T) { fn ... }`
-pub const RecordDecl = struct {
+/// The body shape of a `TypeDecl`: a field list (record) or variants and
+/// sections (enum).
+pub const TypeShape = union(enum) {
+    /// Inline fields declared in the parameter list.
+    record: []Field,
+    enum_: EnumShape,
+
+    pub const EnumShape = struct {
+        variants: []EnumVariant,
+        /// Top-level sections (recursive groupings) declared inside the body. The
+        /// comptime desugars each section into a synthesised inner enum with a
+        /// mangled name encoding the path. Empty for plain enums.
+        sections: []EnumSection = &.{},
+    };
+
+    pub fn deinit(this: *TypeShape, allocator: std.mem.Allocator) void {
+        switch (this.*) {
+            .record => |fields| {
+                for (fields) |*f| f.deinit(allocator);
+                allocator.free(fields);
+            },
+            .enum_ => |*e| {
+                for (e.variants) |*v| v.deinit(allocator);
+                allocator.free(e.variants);
+                for (e.sections) |*sec| sec.deinit(allocator);
+                allocator.free(e.sections);
+            },
+        }
+    }
+};
+
+/// A named type: a record (`val Name = record(val f: T) { fn ... }`) or an
+/// enum (`val Color = enum { Red, Rgb(r: Int) }`). The shape tells them apart.
+pub const TypeDecl = struct {
     name: []const u8,
-    /// Auto-generated unique ID counter, formatted as `"record_{id:0>4}"` when rendered.
+    /// Auto-generated unique ID counter, formatted as `"type_{id:0>4}"` when rendered.
     id: u32 = 0,
     isPub: bool = false,
     docComment: ?[]const u8 = null,
@@ -1848,28 +1976,62 @@ pub const RecordDecl = struct {
     /// `////` module-level documentation
     moduleComment: ?[]const u8 = null,
     annotations: []Annotation = &.{},
-    /// Generic type parameters on the record, e.g. `<T>`.
+    /// Generic type parameters, e.g. `<T>`.
     genericParams: []GenericParam = &.{},
-    /// Inline interface implementations: `record(...) implement I1 { }`.
+    /// Inline behavior implementations: `record(...) implement I1 { }`.
     implement: []TypeRef = &.{},
-    /// Inline fields declared in the parameter list.
-    fields: []RecordField,
-    /// Whether the last field had a trailing comma in the source.
+    shape: TypeShape,
+    /// Whether the last field/variant had a trailing comma in the source.
     trailingComma: bool = false,
-    /// Methods declared in the body (use InterfaceMethod; body is always present).
-    methods: []InterfaceMethod,
+    /// Methods declared in the body (may include `declare fn` abstract slots).
+    methods: []BehaviorMethod = &.{},
+    /// Comment lines after the last member, before `}` ("" = blank line). Owned slice.
+    bodyComments: []const []const u8 = &.{},
 
-    pub fn deinit(this: *RecordDecl, allocator: std.mem.Allocator) void {
+    /// True for the record shape (a field list).
+    pub fn isRecord(this: TypeDecl) bool {
+        return this.shape == .record;
+    }
+
+    /// The record fields; empty for an enum.
+    pub fn recordFields(this: TypeDecl) []Field {
+        return switch (this.shape) {
+            .record => |f| f,
+            .enum_ => &.{},
+        };
+    }
+
+    /// The enum variants; empty for a record.
+    pub fn variants(this: TypeDecl) []EnumVariant {
+        return switch (this.shape) {
+            .record => &.{},
+            .enum_ => |e| e.variants,
+        };
+    }
+
+    /// The enum sections; empty for a record.
+    pub fn sections(this: TypeDecl) []EnumSection {
+        return switch (this.shape) {
+            .record => &.{},
+            .enum_ => |e| e.sections,
+        };
+    }
+
+    pub fn deinit(this: *TypeDecl, allocator: std.mem.Allocator) void {
         for (this.annotations) |*ann| ann.deinit(allocator);
         allocator.free(this.annotations);
         for (this.genericParams) |*gp| gp.deinit(allocator);
         allocator.free(this.genericParams);
         for (this.implement) |*im| im.deinit(allocator);
         allocator.free(this.implement);
-        for (this.fields) |*f| f.deinit(allocator);
-        allocator.free(this.fields);
+        this.shape.deinit(allocator);
         for (this.methods) |*m| m.deinit(allocator);
         allocator.free(this.methods);
+        if (this.bodyComments.len > 0) allocator.free(this.bodyComments);
+    }
+
+    pub fn jsonStringify(this: TypeDecl, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{}, &.{"bodyComments"});
     }
 };
 

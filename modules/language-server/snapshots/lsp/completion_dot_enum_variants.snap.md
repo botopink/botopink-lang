@@ -1,6 +1,6 @@
 ----- SOURCE
 ```botopink
-val Status = enum { Active, Inactive };
+val Status = type { Active, Inactive };
 val s = Status.Active;
                ↑
 ```

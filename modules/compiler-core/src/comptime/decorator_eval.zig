@@ -31,7 +31,12 @@ pub const DeclHandle = struct {
     kind: []const u8,
     name: []const u8,
     fields: []const FieldHandle,
-    methods: []const ast.InterfaceMethod,
+    /// The variant names of an enum-shaped `type` (top-level variants, then
+    /// section names); empty for every other declaration. With `DeclKind.Type`
+    /// covering both shapes, this is how a decorator tells a record from an
+    /// enum (`decl.kind == DeclKind.Type && decl.variants.length == 0`).
+    variants: []const []const u8 = &.{},
+    methods: []const ast.BehaviorMethod,
     returnType: []const u8,
     annotations: []const ast.Annotation,
 };
@@ -241,7 +246,7 @@ fn buildModule(
 
 /// The `@Decl` handle as a BEAM term — the map the decorator body reads
 /// (`decl.kind`, `decl.fields`, …). `kind` is an atom so it matches the lowering
-/// of `DeclKind.Record` (`'Record'`); names and type names are binaries.
+/// of `DeclKind.Type` (`'Type'`); names and type names are binaries.
 pub fn handleToTerm(arena: std.mem.Allocator, handle: DeclHandle) std.mem.Allocator.Error!Term {
     const fields = try arena.alloc(Term, handle.fields.len);
     for (handle.fields, 0..) |f, i| {
@@ -269,13 +274,17 @@ pub fn handleToTerm(arena: std.mem.Allocator, handle: DeclHandle) std.mem.Alloca
         methods[i] = Term.mapOf(entries);
     }
 
-    const entries = try arena.alloc(Term.MapEntry, 6);
+    const variants = try arena.alloc(Term, handle.variants.len);
+    for (handle.variants, 0..) |v, i| variants[i] = Term.str(v);
+
+    const entries = try arena.alloc(Term.MapEntry, 7);
     entries[0] = Term.field("kind", Term.atomOf(handle.kind));
     entries[1] = Term.field("name", Term.str(handle.name));
     entries[2] = Term.field("fields", Term.listOf(fields));
-    entries[3] = Term.field("methods", Term.listOf(methods));
-    entries[4] = Term.field("returnType", Term.str(handle.returnType));
-    entries[5] = Term.field("annotations", try annotationsToTerm(arena, handle.annotations));
+    entries[3] = Term.field("variants", Term.listOf(variants));
+    entries[4] = Term.field("methods", Term.listOf(methods));
+    entries[5] = Term.field("returnType", Term.str(handle.returnType));
+    entries[6] = Term.field("annotations", try annotationsToTerm(arena, handle.annotations));
     return Term.mapOf(entries);
 }
 
@@ -346,7 +355,7 @@ test "decorator module: lowered body, handle term and host glue" {
     const dfn = program.decls[0].@"fn";
 
     const handle: DeclHandle = .{
-        .kind = "Record",
+        .kind = "Type",
         .name = "Nope",
         .fields = &.{},
         .methods = &.{},
@@ -364,9 +373,10 @@ test "decorator module: lowered body, handle term and host glue" {
         "(maps:get(kind, Decl) =/= 'Method')",
         "fail(Decl, <<\"#[getMapping] must annotate a method\">>)",
         \\        getMapping(#{
-        \\            kind => 'Record',
+        \\            kind => 'Type',
         \\            name => <<"Nope">>,
         \\            fields => [],
+        \\            variants => [],
         \\            methods => [],
         \\            returnType => <<"">>,
         \\            annotations => []

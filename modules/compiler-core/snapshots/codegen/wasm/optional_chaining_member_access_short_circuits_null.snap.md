@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record User { name: string }
+type User(name: string)
 
 fn main() {
     val u: ?User = User(name: "ana");

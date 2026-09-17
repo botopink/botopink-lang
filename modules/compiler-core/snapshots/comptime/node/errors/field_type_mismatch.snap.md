@@ -1,8 +1,8 @@
 ----- SOURCE CODE
-val Person = record {
+val Person = type(
     name: string,
     age: i32,
-};
+);
 val alice = Person(name: "Alice", age: 30);
 val bob = Person(..alice, age: "thirty");
 

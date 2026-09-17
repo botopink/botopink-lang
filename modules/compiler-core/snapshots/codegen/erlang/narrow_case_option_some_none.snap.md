@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-enum Opt { None, Some(value: i32) }
+type Opt { None, Some(value: i32) }
 fn describe(opt: Opt) -> string {
     return case opt {
         None -> "empty";
@@ -18,7 +18,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% enum Opt
+%% type Opt
 %%   None
 %%   Some(value)
 

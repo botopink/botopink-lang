@@ -5,7 +5,7 @@ fn service(comptime decl: @Decl) {
 }
 
 #[service]
-record PostService { name: string, count: i32 }
+type PostService(name: string, count: i32)
 
 val other = 1;
 val usePost = PostService;

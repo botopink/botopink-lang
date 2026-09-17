@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Color = enum {
+val Color = type {
     Red,
     Blue,
 };

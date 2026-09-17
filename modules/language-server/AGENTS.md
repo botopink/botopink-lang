@@ -37,7 +37,8 @@ The server handles `initialize` / `shutdown`, `didOpen` / `didChange` /
   member access — see below),
   `typeDefinition`,
   `documentSymbol` (hierarchical, incl. `test "name"` blocks; `val X = enum/record/interface`
-  reports the container kind, not `Variable`),
+  reports the container kind, not `Variable`; a 1.0.3 `type` reports `Struct` or `Enum` by its
+  shape and lists the `(…)` field list's fields),
   `completion` (prefix + dot-trigger + std members + builtin interface methods
   on primitive/array/string receivers + labeled args + sortText + module names),
   `references` (cross-module), `rename` (cross-module multi-file, with
@@ -101,7 +102,7 @@ covers these by reusing the receiver-type machinery of completion/hover:
   `resolveChainType` walks it to a named type (a value binding's inferred type, an
   integer/bool literal, or `self` → the lexically `enclosingTypeName`), narrowing
   through record fields (`stepField`). The member is located by token-scanning
-  that type's `{…}` body (`findMemberInTokens`), so a same-named method on another
+  that type's `{…}` body — and a 1.0.3 `type`'s `(…)` field list (`findMemberInTokens`), so a same-named method on another
   record does not win.
 - **`recv._N` (tuple elements)** — `resolveHead` keeps a tuple binding's element
   types in `ReceiverType.tuple`; `stepField`'s `_<digits>` arm picks element `N`
@@ -110,7 +111,7 @@ covers these by reusing the receiver-type machinery of completion/hover:
   element 0's record.
 - **`Iface.method(...)` (interface assoc-fn)** — when `resolveChainType` returns
   `.unknown`, `findInterfaceMethodAcross` scans the active file then the project
-  graph for `interface <head> { … }` and returns the inner `default fn` /
+  graph for `interface <head> { … }` / `behavior <head> { … }` and returns the inner `default fn` /
   `declare fn` location. Cross-module requires the interface be `pub`.
 - **Builtin receivers** (`xs.reverse()`, `s.split(…)`) route through
   `builtinInterfaceForType` to the embedded std `primitives.bp` and return a
@@ -217,3 +218,13 @@ test under [`src/tests/`](src/tests/AGENTS.md) and a snapshot under
 - Unset / empty value → walk-up roots only.
 - Threaded via `Server.init(environ_map)` → `ProjectGraph.init(env_map)`;
   test code passes `null` (or uses `resolveRootsForTesting`).
+
+## Two declaration surfaces (front 12, until its step 4)
+
+The token scanners accept both spellings: `record`/`enum`/`interface` and the
+1.0.3 `type`/`behavior`. `declKindAt` maps a keyword to the legacy kind the
+scanners key on (`type` by its shape, `behavior` → `.interface`), and
+`typeDeclSpan` gives a `type`'s field list, body and last token — a `type`
+without a body has no `{` to search for, and `comptime T: type` / `-> type`
+open no declaration. Semantic tokens paint a field list's `name:` as
+`property`; `project_index.zig`'s `typeDeclIsEnum` decides a `pub type`'s kind.

@@ -492,6 +492,15 @@ pub const Lexer = struct {
     // ── number scanning with 0b, 0o, 0x support ──────────────────────────────
 
     fn scanNumber(self: *Lexer, firstDigit: u8, allocator: std.mem.Allocator) LexerError!void {
+        // A digit right after a member `.` is a positional index (`t.0.1`,
+        // `p.0.toString()`): integer digits only, never a float or a radix.
+        if (self.tokens.items.len > 0) {
+            const prev = self.tokens.items[self.tokens.items.len - 1];
+            if (prev.kind == .dot and prev.offset + 1 == self.start) {
+                while (!self.isAtEnd() and isDigit(self.peek())) _ = self.advance();
+                return self.addToken(.numberLiteral, allocator);
+            }
+        }
         if (firstDigit == '0' and !self.isAtEnd()) {
             const prefix = self.peek();
             switch (prefix) {
@@ -700,7 +709,6 @@ pub const Lexer = struct {
         if (std.mem.eql(u8, text, "default")) return .default;
         if (std.mem.eql(u8, text, "delegate")) return .delegate;
         if (std.mem.eql(u8, text, "else")) return .@"else";
-        if (std.mem.eql(u8, text, "enum")) return .@"enum";
         if (std.mem.eql(u8, text, "extend")) return .extend;
         if (std.mem.eql(u8, text, "extends")) return .extends;
         if (std.mem.eql(u8, text, "fn")) return .@"fn";
@@ -708,7 +716,7 @@ pub const Lexer = struct {
         if (std.mem.eql(u8, text, "from")) return .from;
         if (std.mem.eql(u8, text, "if")) return .@"if";
         if (std.mem.eql(u8, text, "implement")) return .implement;
-        if (std.mem.eql(u8, text, "is")) return .@"is";
+        if (std.mem.eql(u8, text, "is")) return .is;
         if (std.mem.eql(u8, text, "import")) return .import;
         // `let` is an alias for `val` (immutable binding)
         if (std.mem.eql(u8, text, "mod")) return .mod;
@@ -718,9 +726,10 @@ pub const Lexer = struct {
         if (std.mem.eql(u8, text, "Self")) return .selfType;
         if (std.mem.eql(u8, text, "test")) return .@"test";
         if (std.mem.eql(u8, text, "throw")) return .throw;
-        if (std.mem.eql(u8, text, "interface")) return .interface;
+        // `record`, `enum` and `interface` left the keyword table in 1.0.3: they
+        // lex as identifiers and the parser reports them where a declaration starts.
+        if (std.mem.eql(u8, text, "behavior")) return .behavior;
         if (std.mem.eql(u8, text, "type")) return .type;
-        if (std.mem.eql(u8, text, "record")) return .record;
         if (std.mem.eql(u8, text, "use")) return .use;
         if (std.mem.eql(u8, text, "val")) return .val;
         if (std.mem.eql(u8, text, "var")) return .@"var";

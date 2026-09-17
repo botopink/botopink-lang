@@ -1,6 +1,6 @@
 ----- SOURCE
 ```botopink
-enum Color {
+type Color {
     Red,
     Green,
     Blue,

@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Shape = enum {
+val Shape = type {
     Circle(r: i32),
     Square(s: i32),
 }
@@ -16,7 +16,7 @@ fn big(sh: Shape) -> string {
 ```erlang
 -module(main).
 
-%% enum Shape
+%% type Shape
 %%   Circle(r)
 %%   Square(s)
 

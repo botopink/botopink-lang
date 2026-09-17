@@ -8,15 +8,12 @@
 
 import {dict, queue, sets, order} from "std";
 
-record Point { x: i32, y: i32 }
+type Point(x: i32, y: i32)
 
 // ── tour: dict ────────────────────────────────────────────────────────────────
 
 fn wordCounts() -> Dict<string, i32> {
-    return dict.empty()
-        .insert("ann", 1)
-        .insert("bob", 2)
-        .insert("ann", 3);   // right-biased: overwrites
+    return dict.empty().insert("ann", 1).insert("bob", 2).insert("ann", 3); // right-biased: overwrites
 }
 
 test "dict tour: insert overwrites + lookup returns Option" {
@@ -66,29 +63,23 @@ test "array map/filter/fold compose" {
 // `Order` sum type and threads it through an insertion sort.
 
 fn cmpInt(a: i32, b: i32) -> Order {
-    return if (a < b) {
-        order.lt();
-    } else {
-        if (a > b) { order.gt(); } else { order.eq(); };
-    };
+    return if (a < b) order.lt() else if (a > b) order.gt() else order.eq();
 }
 
 fn insertSorted(x: i32, sorted: Array<i32>) -> Array<i32> {
-    return if (sorted.isEmpty()) {
-        [x];
-    } else {
+    return if (sorted.isEmpty()) [x] else {
         val head = sorted.at(0).unwrapOr(0);
-        if (order.toInt(cmpInt(x, head)) <= 0) {
-            [x].append(sorted);
-        } else {
-            [head].append(insertSorted(x, sorted.slice(1, sorted.length)));
-        };
+        if (order.toInt(cmpInt(x, head)) <= 0) [x].append(sorted) else [head].append(
+            insertSorted(x, sorted.slice(1, sorted.length))
+        );
     };
 }
 
 fn sortInts(xs: Array<i32>) -> Array<i32> {
     var out: Array<i32> = [];
-    xs.forEach({ x -> out = insertSorted(x, out); });
+    xs.forEach({ x ->
+            out = insertSorted(x, out);
+        });
     return out;
 }
 
@@ -102,29 +93,19 @@ test "sort-with-Order: insertion sort driven by an Order comparator" {
 // Graph (DAG):  0 → {1, 2},  1 → {3, 4},  2 → {4},  3/4 → {}
 
 fn neighbors(n: i32) -> Array<i32> {
-    return if (n == 0) {
-        [1, 2];
-    } else {
-        if (n == 1) {
-            [3, 4];
-        } else {
-            if (n == 2) { [4]; } else { []; };
-        };
-    };
+    return if (n == 0) [1, 2] else if (n == 1) [3, 4] else if (n == 2) [4] else [];
 }
 
 fn bfs(q: Queue<i32>, visited: Set<i32>, acc: Array<i32>) -> Array<i32> {
-    return if (q.isEmpty()) {
-        acc;
-    } else {
+    return if (q.isEmpty()) acc else {
         val deq = q.dequeue();
         val rest = deq._0;
         val node = deq._1.unwrapOr(-1);
-        if (visited.contains(node)) {
-            bfs(rest, visited, acc);
-        } else {
+        if (visited.contains(node)) bfs(rest, visited, acc) else {
             var next = rest;
-            neighbors(node).forEach({ m -> next = next.enqueue(m); });
+            neighbors(node).forEach({ m ->
+                    next = next.enqueue(m);
+                });
             bfs(next, visited.insert(node), acc.append([node]));
         };
     };
@@ -160,10 +141,10 @@ test "dict with record keys: identity-keyed (same binding hits, rebuild misses)"
 
 test "set of records: no structural dedup under reference equality" {
     val s = sets.fromList([
-        Point(x: 1, y: 1),
-        Point(x: 1, y: 1),
-        Point(x: 2, y: 2),
-    ]);
+            Point(x: 1, y: 1),
+            Point(x: 1, y: 1),
+            Point(x: 2, y: 2),
+        ]);
     // Three distinct instances → no dedup (would be 2 under structural eq).
     assert s.size() == 3;
 }

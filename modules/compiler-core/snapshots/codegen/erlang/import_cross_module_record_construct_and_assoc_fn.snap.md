@@ -1,16 +1,16 @@
 ----- SOURCE CODE -- http.bp
 ```botopink
-pub record Response {
-    body: string,
+pub type Response(
+    body: string) {
     fn ok(body: string) -> Response {
         return Response(body: body);
     }
 }
 
-pub record App {
+pub type App(
     port: i32,
     path: string,
-}
+)
 ```
 
 ----- ERLANG -- http.erl
@@ -18,12 +18,12 @@ pub record App {
 -module(http).
 -export([ok/1]).
 
-%% record Response: body
+%% type Response: body
 
 ok(Body) ->
     #{body => Body}.
 
-%% record App: port, path
+%% type App: port, path
 ```
 
 ----- RUN LOG -----

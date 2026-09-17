@@ -1,14 +1,14 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Drawable = interface {
-    val color: string,
+val Drawable = behavior {
+    val color: string;
     fn draw(self: Self);
 }
 ```
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-// interface Drawable
+// behavior Drawable
 //   color: string
 //   fn draw(...)
 ```

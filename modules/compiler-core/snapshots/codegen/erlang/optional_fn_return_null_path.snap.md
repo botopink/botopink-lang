@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record R { kind: i32 }
+type R(kind: i32)
 fn choose(present: bool) -> ?R {
     if (present) {
         return R(kind: 7);
@@ -18,7 +18,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% record R: kind
+%% type R: kind
 
 choose(Present) ->
     case Present of

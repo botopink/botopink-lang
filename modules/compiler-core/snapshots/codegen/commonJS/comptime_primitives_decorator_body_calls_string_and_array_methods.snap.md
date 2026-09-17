@@ -10,7 +10,7 @@ pub fn describe(comptime decl: @Decl) {
 }
 
 #[describe]
-record User { name: string, secret: string, age: i32 }
+type User(name: string, secret: string, age: i32)
 
 fn main() {
     @print(describeUser());
@@ -45,13 +45,14 @@ main() ->
     erlang:erase('__bp_emitted'),
     try
         describe(#{
-            kind => 'Record',
+            kind => 'Type',
             name => <<"User">>,
             fields => [
                 #{name => <<"name">>, typeName => <<"string">>, annotations => []},
                 #{name => <<"secret">>, typeName => <<"string">>, annotations => []},
                 #{name => <<"age">>, typeName => <<"i32">>, annotations => []}
             ],
+            variants => [],
             methods => [],
             returnType => <<"">>,
             annotations => [#{name => <<"describe">>, args => []}]
@@ -96,7 +97,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-// interface String
+// behavior String
 //   fn length(...)
 //   fn split(...)
 //   fn toUpper(...)
@@ -130,7 +131,7 @@ String.prototype.lines = function() { return this.valueOf().split(/\r?\n/); };
 String.prototype.words = function() { return this.valueOf().split(/[ \t\n\r]+/).filter(__w => __w.length > 0); };
 String.prototype.charCodeAt = function(index) { return ((this.valueOf().charCodeAt(index) ?? -1) | 0); };
 
-// interface Array
+// behavior Array
 //   length: i32
 //   fn at(...)
 //   fn push(...)

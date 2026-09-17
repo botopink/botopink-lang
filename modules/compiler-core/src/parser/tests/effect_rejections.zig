@@ -1,6 +1,6 @@
 //! Parser-level effect-annotation rejections (frente-b-rules-tooling §2):
 //! R1 — `#[@<effect>] declare fn …` — effect-on-declare-forbidden.
-//! R2 — `interface I { #[@<effect>] fn … }` — effect-on-interface-method-forbidden.
+//! R2 — `behavior I { #[@<effect>] fn … }` — effect-on-behavior-method-forbidden.
 //! R5 — duplicate `#[@<effect>]` annotations — effect-duplicate-annotation.
 
 const std = @import("std");
@@ -60,20 +60,20 @@ test "R1 §A3 — #[@future] declare fn with @external accepted at parse" {
 
 test "R2 — #[@future] inside interface method rejected" {
     try expectKind(
-        \\val AsyncSource = interface {
+        \\val AsyncSource = behavior {
         \\    #[@future]
-        \\    fn next(self: Self) -> @Future<i32>
+        \\    fn next(self: Self) -> @Future<i32>;
         \\}
-    , .effectOnInterfaceMethodForbidden);
+    , .effectOnBehaviorMethodForbidden);
 }
 
 test "R2 — #[@result] on default interface method rejected" {
     try expectKind(
-        \\val Parser = interface {
+        \\val Parser = behavior {
         \\    #[@result]
         \\    default fn parse(self: Self) -> @Result<i32, string> { return 0; }
         \\}
-    , .effectOnInterfaceMethodForbidden);
+    , .effectOnBehaviorMethodForbidden);
 }
 
 test "R5 — two effect markers on one fn rejected" {
@@ -115,7 +115,7 @@ test "RI6 — bare `yield break` is also rejected" {
 
 test "RG1 — record with default before required is rejected" {
     try expectKind(
-        \\record Container<T = i32, U>(val item: T)
+        \\type Container<T = i32, U>(item: T)
     , .genericDefaultBeforeRequired);
 }
 

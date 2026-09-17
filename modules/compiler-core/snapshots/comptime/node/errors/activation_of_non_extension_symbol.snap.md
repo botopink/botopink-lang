@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-record Pato { id: i32 }
+type Pato(id: i32)
 Pato*;
 
 ----- ERROR

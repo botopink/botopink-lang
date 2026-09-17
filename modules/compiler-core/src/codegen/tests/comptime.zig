@@ -442,11 +442,13 @@ test "js: template end to end ---- lookup().ref() splices a caller-scope referen
     );
 }
 
-test "js: template end to end ---- yaml model computes a typed record" {
+test "js: template end to end ---- yaml model computes a labeled tuple" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\pub fn conf<T>(comptime q: @Expr<string>) -> @Expr<T> {
         \\    val t = q.text();
-        \\    return @expr(record { port: 8000 + t.length, debug: true });
+        \\    val port = 8000 + t.length;
+        \\    val debug = true;
+        \\    return @expr(#(port, debug));
         \\}
         \\val cfg = conf "yaml";
         \\fn main() {

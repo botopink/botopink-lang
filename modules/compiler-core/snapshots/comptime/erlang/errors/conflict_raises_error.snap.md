@@ -1,6 +1,6 @@
 ----- SOURCE CODE
-record A { x: i32 }
-record B { x: string }
+type A(x: i32)
+type B(x: string)
 val Merged = mergeRecords(A, B);
 
 ----- ERROR

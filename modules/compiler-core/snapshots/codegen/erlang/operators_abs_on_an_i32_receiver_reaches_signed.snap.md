@@ -13,7 +13,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% interface Signed
+%% behavior Signed
 
 mag(N) ->
     erlang:abs(N).

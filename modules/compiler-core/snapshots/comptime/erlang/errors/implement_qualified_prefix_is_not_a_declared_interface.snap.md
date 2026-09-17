@@ -1,8 +1,8 @@
 ----- SOURCE CODE
-val Drawable = interface {
-    fn draw(self: Self),
+val Drawable = behavior {
+    fn draw(self: Self);
 };
-val Circle = record { radius: f64 };
+val Circle = type(radius: f64);
 val CircleDrawing = implement Drawable for Circle {
     fn Renderable.draw(self: Self) {
         @print("draw");
@@ -12,4 +12,4 @@ val CircleDrawing = implement Drawable for Circle {
 ----- ERROR
 error: unknown interface
 
-  'Renderable' is not an interface implemented here (method 'draw')
+  'Renderable' is not a behavior implemented here (method 'draw')

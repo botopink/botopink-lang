@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-record User { id: i32 }
+type User(id: i32)
 val NoField = omit(User, "email");
 
 ----- ERROR

@@ -105,7 +105,7 @@ test "assertTypeAst: unused dependency does not pollute main bindings" {
 test "assertTypeAst: import record constructor from dependency" {
     try h.assertComptimeAst(std.testing.allocator, @src(), &.{
         .{ .path = "models", .source =
-        \\record Point { x: i32, y: i32 }
+        \\type Point(x: i32, y: i32)
         },
         .{ .path = "", .source =
         \\import {Point} from "models";
@@ -170,7 +170,7 @@ test "infer ast: case ---- nested case in block arm" {
 
 test "variant inference: field access after pattern matching" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Result = enum {
+        \\val Result = type {
         \\    Ok(value: i32),
         \\    Error(message: string),
         \\};
@@ -185,7 +185,7 @@ test "variant inference: field access after pattern matching" {
 
 test "variant inference error: shared field without pattern matching" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Result = enum {
+        \\val Result = type {
         \\    Ok(value: i32),
         \\    Error(message: string),
         \\};
@@ -197,7 +197,7 @@ test "variant inference error: shared field without pattern matching" {
 
 test "variant inference error: variant does not escape clause scope" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Result = enum {
+        \\val Result = type {
         \\    Ok(value: i32),
         \\    Error(message: string),
         \\};
@@ -213,7 +213,7 @@ test "variant inference error: variant does not escape clause scope" {
 
 test "variant inference: multiple variants with different fields" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Shape = enum {
+        \\val Shape = type {
         \\    Circle(radius: f64),
         \\    Rectangle(width: f64, height: f64),
         \\    Point,
@@ -230,11 +230,11 @@ test "variant inference: multiple variants with different fields" {
 
 test "record update: simple field update" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Person = record {
+        \\val Person = type(
         \\    name: string,
         \\    age: i32,
         \\    city: string,
-        \\};
+        \\);
         \\val alice = Person(name: "Alice", age: 30, city: "London");
         \\val bob = Person(..alice, name: "Bob", age: 25);
     );
@@ -242,7 +242,7 @@ test "record update: simple field update" {
 
 test "record update error: variant mismatch" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Subject = enum {
+        \\val Subject = type {
         \\    Person(name: string, age: i32),
         \\    Animal(species: string),
         \\};
@@ -253,10 +253,10 @@ test "record update error: variant mismatch" {
 
 test "record update error: non-existent field" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Person = record {
+        \\val Person = type(
         \\    name: string,
         \\    age: i32,
-        \\};
+        \\);
         \\val alice = Person(name: "Alice", age: 30);
         \\val bob = Person(..alice, nickname: "Bobby");
     );
@@ -264,10 +264,10 @@ test "record update error: non-existent field" {
 
 test "record update error: field type mismatch" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Person = record {
+        \\val Person = type(
         \\    name: string,
         \\    age: i32,
-        \\};
+        \\);
         \\val alice = Person(name: "Alice", age: 30);
         \\val bob = Person(..alice, age: "thirty");
     );
@@ -293,7 +293,7 @@ test "pattern: non-empty list pattern" {
 // spec 02 (parser gaps). The snapshot pins the parse error.
 test "pattern: assign pattern in enum" {
     try h.assertComptimeCompileError(std.testing.allocator, @src(),
-        \\val Result = enum {
+        \\val Result = type {
         \\    Ok(value: i32),
         \\    Err(message: string),
         \\};
@@ -312,7 +312,7 @@ test "pattern: assign pattern in enum" {
 // unify) cannot be expressed until the pattern form parses.
 test "type_unification_does_not_allow_different_variants_to_be_treated_as_safe" {
     try h.assertComptimeCompileError(std.testing.allocator, @src(),
-        \\val Result = enum {
+        \\val Result = type {
         \\    Ok(value: i32),
         \\    Err(message: string),
         \\};
@@ -328,10 +328,10 @@ test "type_unification_does_not_allow_different_variants_to_be_treated_as_safe" 
 // DOCUMENTED SKIP — same missing `<Pattern> as <name>` form; owner: spec 02.
 test "pattern: assign pattern in record" {
     try h.assertComptimeCompileError(std.testing.allocator, @src(),
-        \\val Person = record {
+        \\val Person = type(
         \\    name: string,
         \\    age: i32,
-        \\};
+        \\);
         \\val describe = fn(p: Person) -> string {
         \\    case p {
         \\        Person(name, age) as person -> name + " is " + age;
@@ -346,11 +346,11 @@ test "pattern: assign pattern in record" {
 // Owner: spec 02 (parser gaps). The snapshot pins the parse error.
 test "pattern: complex nested patterns" {
     try h.assertComptimeCompileError(std.testing.allocator, @src(),
-        \\val Result = enum <T, E> {
+        \\val Result = type <T, E> {
         \\    Ok(value: T),
         \\    Err(error: E),
         \\};
-        \\val Container = enum {
+        \\val Container = type {
         \\    Single(Result<i32, string>),
         \\    Multiple(Result<i32, string>[]),
         \\};
@@ -366,7 +366,7 @@ test "pattern: complex nested patterns" {
 
 test "variant inference: access variant-specific field after matching" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Shape = enum {
+        \\val Shape = type {
         \\    Circle(radius: f64),
         \\    Square(side: f64),
         \\};
@@ -381,7 +381,7 @@ test "variant inference: access variant-specific field after matching" {
 
 test "variant inference: pattern matching on generic enum" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Option = enum <T> {
+        \\val Option = type <T> {
         \\    Some(value: T),
         \\    None,
         \\};
@@ -452,7 +452,7 @@ test "@print: string interpolation argument" {
 
 test "enum sections: single section + sibling payload variant type-checks" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\enum Token {
+        \\type Token {
         \\    Text {
         \\        Bold,
         \\        Italic,
@@ -464,7 +464,7 @@ test "enum sections: single section + sibling payload variant type-checks" {
 
 test "enum sections: nested sections with numeric leaves type-check" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\enum Token {
+        \\type Token {
         \\    Color {
         \\        Red { 100, 500 }
         \\        Hex(value: string),
@@ -482,7 +482,7 @@ test "enum sections: nested sections with numeric leaves type-check" {
 
 test "enum sections F2: two-segment path .Hover.Inner resolves to ctor call" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\enum Token {
+        \\type Token {
         \\    Text {
         \\        Bold, Italic,
         \\    }
@@ -496,7 +496,7 @@ test "enum sections F2: two-segment path .Hover.Inner resolves to ctor call" {
 
 test "enum sections F2: three-segment path .Color.Red.500 with numeric leaf" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\enum Token {
+        \\type Token {
         \\    Color {
         \\        Red { 100, 500 }
         \\        Blue { 100, 500 }
@@ -514,7 +514,7 @@ test "enum sections F2: payload sibling .Color.Hex(string) untouched" {
     // leaves that path alone. This test pins that an inline color picker
     // mixing bare paths and a payload variant type-checks together.
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\enum Token {
+        \\type Token {
         \\    Color {
         \\        Red { 500 }
         \\        Hex(value: string),
@@ -531,7 +531,7 @@ test "enum sections F3 ES4: path-access with bad tail raises focused error" {
     // text and the owning enum name, instead of bubbling the generic
     // fall-through error from the regular identAccess path.
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\enum Token {
+        \\type Token {
         \\    Color {
         \\        Red { 500 }
         \\    }

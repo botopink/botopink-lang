@@ -395,7 +395,7 @@ test "js: case ---- nested case in fn body" {
 
 test "js: try ---- catch with throw rethrow" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record ApiError { msg: string }
+        \\type ApiError(msg: string)
         \\#[@result]
         \\fn fetch() -> @Result<i32, ApiError> {
         \\    throw ApiError(msg: "not found");
@@ -410,7 +410,7 @@ test "js: try ---- catch with throw rethrow" {
 
 test "js: try ---- catch with return fallback" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record NetError { code: i32 }
+        \\type NetError(code: i32)
         \\#[@result]
         \\fn fetch() -> @Result<i32, NetError> {
         \\    throw NetError(code: 500);
@@ -424,7 +424,7 @@ test "js: try ---- catch with return fallback" {
 
 test "js: try ---- nested try catch" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record DbError { msg: string }
+        \\type DbError(msg: string)
         \\#[@result]
         \\fn inner() -> @Result<i32, DbError> {
         \\    throw DbError(msg: "conn refused");
@@ -447,8 +447,8 @@ test "js: try ---- nested try catch" {
 
 test "js: try ---- catch tail on method call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record ParseError { msg: string }
-        \\val Parser = record {
+        \\type ParseError(msg: string)
+        \\val Parser = type {
         \\    fn parse(self: Self) -> @Result<i32, ParseError> {
         \\        throw ParseError(msg: "bad input");
         \\    }
@@ -490,7 +490,7 @@ test "js: throw ---- bare throw inside try catch is rejected" {
 
 test "js: throw ---- record constructor" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record AppError { code: i32, msg: string }
+        \\type AppError(code: i32, msg: string)
         \\fn validate(x: i32) {
         \\    if (x < 0) {
         \\        throw AppError(code: 400, msg: "negative");
@@ -501,7 +501,7 @@ test "js: throw ---- record constructor" {
 
 test "js: try ---- propagate in multi-statement fn" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record IoError { path: string }
+        \\type IoError(path: string)
         \\#[@result]
         \\fn step1() -> @Result<i32, IoError> {
         \\    throw IoError(path: "/data");
@@ -521,7 +521,7 @@ test "js: try ---- propagate in multi-statement fn" {
 
 test "js: try ---- catch with lambda handler" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record FetchError { url: string }
+        \\type FetchError(url: string)
         \\#[@result]
         \\fn fetch() -> @Result<i32, FetchError> {
         \\    throw FetchError(url: "/api");
@@ -535,7 +535,7 @@ test "js: try ---- catch with lambda handler" {
 
 test "js: catch ---- tail on binary expression" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record CalcError { msg: string }
+        \\type CalcError(msg: string)
         \\#[@result]
         \\fn getA() -> @Result<i32, CalcError> {
         \\    throw CalcError(msg: "overflow");
@@ -549,7 +549,7 @@ test "js: catch ---- tail on binary expression" {
 
 test "js: try ---- catch with case handler" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val ErrorKind = enum { NotFound, Timeout }
+        \\val ErrorKind = type { NotFound, Timeout }
         \\#[@result]
         \\fn fetch() -> @Result<i32, ErrorKind> {
         \\    throw ErrorKind.NotFound;
@@ -563,7 +563,7 @@ test "js: try ---- catch with case handler" {
 
 test "js: throw ---- inside case arm" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\enum Status { Ok, Fail }
+        \\type Status { Ok, Fail }
         \\#[@result]
         \\fn check(s: Status) -> @Result<i32, string> {
         \\    return case s {
@@ -580,7 +580,7 @@ test "js: throw ---- inside case arm" {
 
 test "js: try ---- catch preserves surrounding bindings" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record LoadError { msg: string }
+        \\type LoadError(msg: string)
         \\#[@result]
         \\fn load() -> @Result<i32, LoadError> {
         \\    throw LoadError(msg: "not found");
@@ -615,7 +615,7 @@ test "js: throw ---- inside loop body" {
 
 test "js: try ---- multiple catch with different fallbacks" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record UserError { msg: string }
+        \\type UserError(msg: string)
         \\#[@result]
         \\fn fetchName() -> @Result<string, UserError> {
         \\    throw UserError(msg: "name missing");
@@ -637,7 +637,7 @@ test "js: try ---- multiple catch with different fallbacks" {
 
 test "js: catch ---- tail on function call no try" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record RiskError { level: i32 }
+        \\type RiskError(level: i32)
         \\#[@result]
         \\fn risky() -> @Result<i32, RiskError> {
         \\    throw RiskError(level: 5);
@@ -667,7 +667,7 @@ test "js: case ---- guard clause on bound identifier" {
 
 test "js: case ---- guard clause on variant fields" {
     try h.assertJsContains(std.testing.allocator,
-        \\val Shape = enum {
+        \\val Shape = type {
         \\    Circle(r: i32),
         \\    Square(s: i32),
         \\}
@@ -701,7 +701,7 @@ test "case guard ---- bound identifier numeric guard" {
 
 test "case guard ---- variant field guard" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Shape = enum {
+        \\val Shape = type {
         \\    Circle(r: i32),
         \\    Square(s: i32),
         \\}

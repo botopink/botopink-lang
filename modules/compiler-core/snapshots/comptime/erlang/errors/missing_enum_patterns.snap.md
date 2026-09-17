@@ -1,5 +1,5 @@
 ----- SOURCE CODE
-val Color = enum {
+val Color = type {
     Red,
     Green,
     Blue,

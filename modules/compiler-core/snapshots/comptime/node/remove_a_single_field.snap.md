@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record FullUser { id: i32, name: string, password: string }
+type FullUser(id: i32, name: string, password: string)
 val PublicUser = omit(FullUser, "password");
 ```
 

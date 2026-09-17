@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-enum Status { Ok, Fail }
+type Status { Ok, Fail }
 #[@result]
 fn check(s: Status) -> @Result<i32, string> {
     return case s {
@@ -19,7 +19,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% enum Status
+%% type Status
 %%   Ok
 %%   Fail
 

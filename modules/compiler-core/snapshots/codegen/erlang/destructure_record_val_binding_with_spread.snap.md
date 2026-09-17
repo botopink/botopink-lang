@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record Point { x: i32, y: i32, z: i32 }
+type Point(x: i32, y: i32, z: i32)
 fn describe(p: Point) -> i32 {
     val { x, .. } = p;
     return x;
@@ -11,7 +11,7 @@ fn describe(p: Point) -> i32 {
 ```erlang
 -module(main).
 
-%% record Point: x, y, z
+%% type Point: x, y, z
 
 describe(P) ->
     #{x := X} = P,

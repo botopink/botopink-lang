@@ -1,7 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    val r = record { code: 7, kind: 11 };
+    val code = 7;
+    val kind = 11;
+    val r = #(code, kind);
     @print(r.kind);
 }
 ```
@@ -28,8 +30,10 @@ function __bp_print() {
 }
 
 function main() {
-    const r = ({ code: 7, kind: 11 });
-    __bp_print(r.kind);
+    const code = 7;
+    const kind = 11;
+    const r = [code, kind];
+    __bp_print(r[1]);
 }
 
 function _botopink_main() {

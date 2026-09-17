@@ -1,12 +1,13 @@
 ----- SOURCE CODE
-val cfg = (record { port: 8080 });
+val port = 8080;
+val cfg = #(port);
 val x = cfg.prot;
 
 ----- ERROR
-error: unknown field
-  ┌─ :2:13
+error: this tuple has no element labeled `prot`
+  ┌─ :3:13
   │
-2 │ val x = cfg.prot;
+3 │ val x = cfg.prot;
   │             ^
 
-  'record' has no field 'prot'
+  hint: labels come from the tuple's written type or from the variables it was built from; use the position instead: `._0`, `._1`, …

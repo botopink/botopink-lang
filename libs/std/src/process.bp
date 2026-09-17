@@ -22,17 +22,17 @@
 // Exit the current process with the given status code.
 // Node: `process.exit(code)` (chained method — §A2 template).
 // Erlang: `erlang:halt(code)` (bare BIF).
-#[@External.Node("process", "exit"),
-  @External.Erlang("erlang", "halt"),
-  @External.Beam("erlang", "halt")]
+#[@External.Node("process", "exit")]
+#[@External.Erlang("erlang", "halt")]
+#[@External.Beam("erlang", "halt")]
 pub declare fn exit(code: i32) -> unit;
 
 // Current working directory of the host process.
 // Node: `process.cwd()` (method on `process` — §A2 template).
 // Erlang: `file:get_cwd()` returns `{ok, Path}` (charlist); the
 // template extracts and stringifies it.
-#[@External.Node("process.cwd()"),
-  @External.Erlang("""(fun() -> {ok, __P} = file:get_cwd(), list_to_binary(__P) end)()""")]
+#[@External.Node("process.cwd()")]
+#[@External.Erlang("""(fun() -> {ok, __P} = file:get_cwd(), list_to_binary(__P) end)()""")]
 pub declare fn cwd() -> string;
 
 // Host platform string — `'linux'`, `'darwin'`, `'win32'`, etc.
@@ -41,24 +41,24 @@ pub declare fn cwd() -> string;
 // `{unix, darwin}`; the template extracts the SECOND element (the
 // flavor, matching the Node `process.platform` shape) and stringifies
 // it. Read-time match — the first element is the family (unix/win32).
-#[@External.Node("process.platform"),
-  @External.Erlang("""(fun() -> {_, __Flavor} = os:type(), atom_to_binary(__Flavor, utf8) end)()""")]
+#[@External.Node("process.platform")]
+#[@External.Erlang("""(fun() -> {_, __Flavor} = os:type(), atom_to_binary(__Flavor, utf8) end)()""")]
 pub declare fn platform() -> string;
 
 // Host CPU architecture string — `'x64'`, `'arm64'`, etc.
 // Node: bare `process.arch` (property).
 // Erlang: `erlang:system_info(system_architecture)` returns a
 // charlist; the template converts it to a binary.
-#[@External.Node("process.arch"),
-  @External.Erlang("list_to_binary(erlang:system_info(system_architecture))")]
+#[@External.Node("process.arch")]
+#[@External.Erlang("list_to_binary(erlang:system_info(system_architecture))")]
 pub declare fn arch() -> string;
 
 // Host process id.
 // Node: `process.pid` (property — i32 in JS, stored as Number).
 // Erlang: `os:getpid()` returns a string list; the template parses
 // it to an integer.
-#[@External.Node("process.pid"),
-  @External.Erlang("list_to_integer(os:getpid())")]
+#[@External.Node("process.pid")]
+#[@External.Erlang("list_to_integer(os:getpid())")]
 pub declare fn pid() -> i32;
 
 // ── tests ────────────────────────────────────────────────────────────────────

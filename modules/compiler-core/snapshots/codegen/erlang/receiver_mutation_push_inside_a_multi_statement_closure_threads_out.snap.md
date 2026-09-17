@@ -16,11 +16,11 @@ pub fn component(comptime decl: @Decl) {
 }
 
 #[component]
-record Service {
+type Service(
     #[value(port)]
     port: i32,
     name: string,
-}
+)
 
 fn collect(xs: Array<i32>) -> Array<string> {
     var out: Array<string> = [];
@@ -64,7 +64,7 @@ main() ->
     erlang:erase('__bp_emitted'),
     try
         component(#{
-            kind => 'Record',
+            kind => 'Type',
             name => <<"Service">>,
             fields => [
                 #{
@@ -74,6 +74,7 @@ main() ->
                 },
                 #{name => <<"name">>, typeName => <<"string">>, annotations => []}
             ],
+            variants => [],
             methods => [],
             returnType => <<"">>,
             annotations => [#{name => <<"component">>, args => []}]
@@ -103,7 +104,7 @@ main() ->
 -export(['_botopink_main'/0, main/1]).
 -export([wireService/0]).
 
-%% record Service: port, name
+%% type Service: port, name
 
 collect(Xs) ->
     Out = [],

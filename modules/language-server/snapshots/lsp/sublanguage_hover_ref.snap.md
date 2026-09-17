@@ -1,6 +1,6 @@
 ----- SOURCE
 ```botopink
-pub record Users { name: string }
+pub type Users(name: string)
 pub fn q<T>(comptime e: @Expr<string>) -> @ExprCustom<T> {
     val code = e.build("[1, 2]");
     val kw = CustomNode(kind: "kw", span: Span(0, 6, 1), label: "keyword", ref: null, children: []);

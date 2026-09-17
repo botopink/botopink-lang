@@ -33,9 +33,13 @@ examples/
 │           ├── circle.bp      public submodule
 │           └── helpers.bp     private submodule
 └── yamlconf/               ← expr-template config (no botopink.json)
-    ├── yamlconf.bp            `conf<T>` lifts a computed `record { … }` structure
+    ├── yamlconf.bp            `conf<T>` lifts a computed labeled tuple `#(server, debug)`
     └── main.bp                caller gets the structural type (`cfg.server.port`)
 ```
+
+`yamlconf` lifts a tuple through `@expr(#(server, debug))`: the tuple crosses the comptime bridge
+(`'__bp_json'/1` → `{"$tuple": [...]}`) and takes the labels its template body gives it
+(`liftShapeOf`), so `cfg.server.port` resolves and `cfg.server.prot` is a located compile error.
 
 `generic-loader-binding` resolves `from "erika"` through the multi-root lib
 resolver to the sibling `repository/erika/` project, so it needs that submodule

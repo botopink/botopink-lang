@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-record IoError { path: string }
+type IoError(path: string)
 #[@result]
 fn load() -> @Result<string, IoError> {
     throw IoError(path: "/data");

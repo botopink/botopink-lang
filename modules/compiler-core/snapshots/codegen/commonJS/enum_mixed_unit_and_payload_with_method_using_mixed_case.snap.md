@@ -1,6 +1,6 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Maybe = enum {
+val Maybe = type {
     Nothing,
     Just(value: string),
     fn check(m: Self) -> string {

@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-val Drawable = interface {
-    val color: string,
+val Drawable = behavior {
+    val color: string;
     fn draw(self: Self);
 }
 ```
@@ -10,7 +10,7 @@ val Drawable = interface {
 ```erlang
 -module(main).
 
-%% interface Drawable
+%% behavior Drawable
 ```
 
 ----- RUN LOG -----
