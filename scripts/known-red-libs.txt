@@ -11,9 +11,6 @@
 # Owners are the 1.0.4-beta fronts (specs/1.0.4-beta/fronts.md).
 
 rakun     commonJS 13-ecosystem-migration  front 12 step 1: the comptime prelude's DeclKind is Type/Behavior (no Record/Enum/Interface aliases); src/decorators.bp's 15 `decl.kind != DeclKind.Record` checks read `DeclKind.Type` once 13 migrates rakun — "unknown field 'Record' on type 'DeclKind'"
-emilia    commonJS 13-ecosystem-migration  front 12 step 4: `record`/`enum`/`interface` left the language — the library still declares `enum Token` (removed-keyword-enum) until 13 migrates it
-emilia    erlang   13-ecosystem-migration  front 12 step 4: `record`/`enum`/`interface` left the language — the library still declares `enum Token` (removed-keyword-enum) until 13 migrates it
 erika     commonJS 13-ecosystem-migration  front 12 step 4: `record`/`enum`/`interface` left the language — erika.bp still declares records and builds `record { … }` literals until 13 migrates it
 erika     erlang   13-ecosystem-migration  front 12 step 4: `record`/`enum`/`interface` left the language — erika.bp still declares records and builds `record { … }` literals until 13 migrates it
-jhonstart commonJS 13-ecosystem-migration  front 12 step 4: `record`/`enum`/`interface` left the language — element/hooks/html still use the 1.0.2 declarations until 13 migrates them
 onze      commonJS 13-ecosystem-migration  front 12 step 4: `record`/`enum`/`interface` left the language — onze.bp still declares `interface`/`record` (mock synthesis) until 13 migrates it
