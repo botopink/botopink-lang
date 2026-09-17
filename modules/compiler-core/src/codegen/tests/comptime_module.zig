@@ -178,7 +178,7 @@ test "comptime module: template body primitive methods dispatch through shims" {
     try expectContains(out, "'__bp_prim_startsWith'(Recv, Arg0) when is_binary(Recv) ->\n    (string:prefix(Recv, Arg0) =/= nomatch);");
     // `indexOf` / `contains` exist on both strings and arrays.
     try expectContains(out, "'__bp_prim_indexOf'(Recv, Arg0) when is_list(Recv) ->");
-    try expectContains(out, "'__bp_prim_indexOf'(Recv, Arg0) when is_binary(Recv) ->\n    string:str(Recv, Arg0);");
+    try expectContains(out, "'__bp_prim_indexOf'(Recv, Arg0) when is_binary(Recv) ->\n    (fun(__S, __X) -> case __X of <<>> -> 0; _ -> case binary:match(__S, __X) of nomatch -> -1; {__P, _} -> __P end end end)(Recv, Arg0);");
     try expectContains(out, "'__bp_prim_contains'(Recv, Arg0) when is_list(Recv) ->\n    lists:member(Arg0, Recv);");
     try expectContains(out, "'__bp_prim_contains'(Recv, Arg0) when is_binary(Recv) ->\n    (string:find(Recv, Arg0) =/= nomatch);");
     try expectContains(out, "'__bp_prim_at'(Recv, Arg0) when is_list(Recv) ->\n    (fun(__L, __I) ->");
