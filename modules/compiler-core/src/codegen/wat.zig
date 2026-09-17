@@ -440,6 +440,9 @@ const Emitter = struct {
     /// Whether the function being emitted has a `(result …)`. Drives the
     /// value/void normalisation of the body's tail and of `return <expr>`.
     fn_has_result: bool = false,
+    /// The function being emitted returns a `@Result` (`#[@result]`, or a
+    /// declared `-> @Result<…>`).
+    fn_returns_result: bool = false,
     locals: std.StringHashMap([]const u8),
     /// Locals to flush into the current function's header, in insertion order.
     pending_locals: std.ArrayListUnmanaged(LocalDecl) = .empty,
@@ -454,6 +457,11 @@ const Emitter = struct {
     str_fns: std.StringHashMap(void),
     /// Functions declared `-> @Result<string, …>`: `try f()` is a string.
     result_str_fns: std.StringHashMap(void),
+    /// Payload shapes of the `@Result` a fn returns / a local holds / a `case`
+    /// subject local holds — so `Ok(v) -> "OK:" + v` knows `v` is a string.
+    result_shape_fns: std.StringHashMap(ResultShape),
+    result_shape_locals: std.StringHashMap(ResultShape),
+    result_subjects: std.StringHashMap(ResultShape),
     /// Top-level `val` → record type name, when recovered (`val cfg = record
     /// { … }`), so `cfg.port` reads the right slot.
     global_rec_types: std.StringHashMap([]const u8),
@@ -570,6 +578,9 @@ const Emitter = struct {
             .bool_locals = std.StringHashMap(void).init(alloc),
             .str_fns = std.StringHashMap(void).init(alloc),
             .result_str_fns = std.StringHashMap(void).init(alloc),
+            .result_shape_fns = std.StringHashMap(ResultShape).init(alloc),
+            .result_shape_locals = std.StringHashMap(ResultShape).init(alloc),
+            .result_subjects = std.StringHashMap(ResultShape).init(alloc),
             .global_rec_types = std.StringHashMap([]const u8).init(alloc),
             .bool_fns = std.StringHashMap(void).init(alloc),
             .global_types = std.StringHashMap([]const u8).init(alloc),
@@ -620,6 +631,9 @@ const Emitter = struct {
         self.bool_locals.deinit();
         self.str_fns.deinit();
         self.result_str_fns.deinit();
+        self.result_shape_fns.deinit();
+        self.result_shape_locals.deinit();
+        self.result_subjects.deinit();
         self.global_rec_types.deinit();
         self.bool_fns.deinit();
         self.global_types.deinit();
@@ -701,6 +715,7 @@ const Emitter = struct {
                     if (isBoolTypeRef(rt)) try self.bool_fns.put(f.name, {});
                     if (arrayElemOfTypeRef(rt)) |ek| try self.fn_arr_elem.put(f.name, ek);
                     if (resultOfString(rt)) try self.result_str_fns.put(f.name, {});
+                    if (resultShapeOfTypeRef(rt)) |shape| try self.result_shape_fns.put(f.name, shape);
                 } else if (self.bodyReturnsString(f.body)) {
                     // The specialisation pass clears the return type of the
                     // fns it injects; a body that returns a string still does.
@@ -1071,10 +1086,13 @@ const Emitter = struct {
         self.str_locals.clearRetainingCapacity();
         self.arr_locals.clearRetainingCapacity();
         self.arr_elem_locals.clearRetainingCapacity();
+        self.result_shape_locals.clearRetainingCapacity();
+        self.result_subjects.clearRetainingCapacity();
         self.bool_locals.clearRetainingCapacity();
         self.pending_locals.clearRetainingCapacity();
         self.cur_result = result_type orelse "i32";
         self.fn_has_result = result_type != null;
+        self.fn_returns_result = false;
         self.case_depth = 0;
         self.try_seq = 0;
         self.mem_seq = 0;
@@ -1255,6 +1273,8 @@ const Emitter = struct {
         }
         const has_result = fnHasResult(f);
         self.resetFnState(if (has_result) watTypeOpt(f.returnType) else null);
+        self.fn_returns_result = (f.effect != null and f.effect.? == .result) or
+            (if (f.returnType) |rt| resultShapeOfTypeRef(rt) != null else false);
 
         // An effect fn is async/generator — except `#[@result]` (checked-Result
         // effect), which is a plain function. WASM is single-threaded and eager
@@ -1370,6 +1390,7 @@ const Emitter = struct {
         const body = m.body orelse return;
         const has_result = m.returnType != null or methodHasResult(body);
         self.resetFnState(if (has_result) "i32" else null);
+        self.fn_returns_result = if (m.returnType) |rt| resultShapeOfTypeRef(rt) != null else false;
         self.self_type = if (self.records.contains(owner)) owner else null;
         defer self.self_type = null;
         // Methods declared inside a record/struct body that reference `self`
@@ -1773,6 +1794,7 @@ const Emitter = struct {
                         if (self.isStringExpr(lb.value.*)) try self.str_locals.put(lb.name, {});
                         if (self.isBoolExpr(lb.value.*)) try self.bool_locals.put(lb.name, {});
                         try self.noteArrayLocal(lb.name, lb.value.*);
+                        if (self.resultShapeOf(lb.value.*)) |shape| try self.result_shape_locals.put(lb.name, shape);
                         try self.declareLocal(lb.name, t);
                         try self.declareNestedLocals(lb.value.*);
                     },
@@ -1864,10 +1886,16 @@ const Emitter = struct {
     /// list-pattern element and rest names).
     fn declarePatternLocals(self: *Emitter, p: ast.Pattern) anyerror!void {
         switch (p) {
-            .ident => |n| try self.declareLocal(n, "i32"),
+            .ident => |n| if (self.findVariant(n) == null) try self.declareLocal(n, "i32"),
             .variant => |v| switch (v.payload) {
                 .binding => |b| try self.declareLocal(b, "i32"),
-                .fields => |fs| for (fs) |f| try self.declareLocal(f, "i32"),
+                .fields => |fs| for (fs, 0..) |f, i| {
+                    const ty = if (self.findVariant(v.name)) |fv|
+                        (if (i < fv.variant.fields.len) watType(fv.variant.fields[i].typeRef) else "i32")
+                    else
+                        "i32";
+                    try self.declareLocal(f, ty);
+                },
                 .literals => |pats| for (pats) |sub| try self.declarePatternLocals(sub),
             },
             .list => |l| {
@@ -2085,11 +2113,7 @@ const Emitter = struct {
                     return .terminated;
                 },
                 .throw_ => |val| {
-                    if (val) |v| {
-                        try self.lowerValue(v.*);
-                        try self.emit(.drop);
-                    }
-                    try self.emit(.@"unreachable");
+                    try self.lowerThrow(val);
                     return .terminated;
                 },
                 .try_ => |val| {
@@ -2125,6 +2149,7 @@ const Emitter = struct {
                     if (self.isStringExpr(lb.value.*)) try self.str_locals.put(lb.name, {});
                     if (self.isBoolExpr(lb.value.*)) try self.bool_locals.put(lb.name, {});
                     try self.noteArrayLocal(lb.name, lb.value.*);
+                    if (self.resultShapeOf(lb.value.*)) |shape| try self.result_shape_locals.put(lb.name, shape);
                     if (self.recordTypeOfExpr(lb.value.*)) |rty| try self.local_types.put(lb.name, rty);
                     // Coerce to the type the local was *actually* declared with:
                     // `emitLocalDecls` runs before the body, so its guess can
@@ -2388,6 +2413,9 @@ const Emitter = struct {
                         try self.emit(.{ .global_get = n });
                     } else if (self.fn_sigs.contains(n)) {
                         try self.lowerFnRef(n);
+                    } else if (self.findVariant(n)) |fv| {
+                        // a bare unit variant (`Lt`)
+                        try self.emitUnitVariant(fv.variants, fv.tag, "", n);
                     } else {
                         // Neither a local nor a module global: a `global.get`
                         // here would make the whole module unloadable
@@ -2400,7 +2428,7 @@ const Emitter = struct {
                     // `.Variant` — type inferred from context. Emit the variant
                     // tag if the name uniquely identifies a unit variant.
                     if (self.findVariant(name)) |fv| {
-                        try self.emitCf(try self.constInt(fv.tag), ".{s}", .{name});
+                        try self.emitUnitVariant(fv.variants, fv.tag, "", name);
                     } else {
                         try self.emitCf(zero, ".{s}", .{name});
                     }
@@ -2496,10 +2524,7 @@ const Emitter = struct {
                     if (r) |val| try self.lowerExpr(val.*);
                     try self.emit(.@"return");
                 },
-                .throw_ => |val| {
-                    if (val) |v| try self.lowerExpr(v.*);
-                    try self.emit(.@"unreachable");
-                },
+                .throw_ => |val| try self.lowerThrow(val),
                 .try_ => |val| {
                     if (val) |v| try self.lowerTryPropagate(v.*);
                 },
@@ -2525,6 +2550,31 @@ const Emitter = struct {
 
     /// `try expr catch handler` → load the tag; Ok yields `[ptr+4]`, Error runs
     /// the handler. Leaves the resulting value on the stack.
+    /// `throw e`. Inside a fn that returns a `@Result` the transform rewrites
+    /// the common forms into `return __bp_error(e)`; one it left behind (inside
+    /// a `case` arm, say) still returns the Error rather than trapping. Anywhere
+    /// else there is nothing to unwind to, so it traps.
+    fn lowerThrow(self: *Emitter, val: ?*ast.Expr) anyerror!void {
+        if (self.fn_returns_result and self.fn_has_result) {
+            const slot = try self.declRes();
+            try self.allocResultPair(slot);
+            try self.emit(.{ .local_get = slot });
+            try self.emit(one);
+            try self.emitC(.{ .store = .{} }, "Result tag (Error)");
+            try self.emit(.{ .local_get = slot });
+            if (val) |v| try self.lowerCoerced(v.*, "i32") else try self.emit(zero);
+            try self.emitC(.{ .store = .{ .offset = 4 } }, "payload");
+            try self.emit(.{ .local_get = slot });
+            try self.emit(.@"return");
+            return;
+        }
+        if (val) |v| {
+            try self.lowerValue(v.*);
+            try self.emit(.drop);
+        }
+        try self.emit(.@"unreachable");
+    }
+
     fn lowerTryCatch(self: *Emitter, tc: anytype) anyerror!void {
         const slot = try self.tryName(self.try_seq);
         self.try_seq += 1;
@@ -2950,53 +3000,204 @@ const Emitter = struct {
         try self.emit(.{ .local_set = subj_local });
         const subj_is_str = self.isStringExpr(c.subjects[0]);
         if (subj_is_str) try self.str_locals.put(subj_local, {});
+        if (self.resultShapeOf(c.subjects[0])) |shape| try self.result_subjects.put(subj_local, shape);
 
         try self.emitCaseArms(c.arms, subj_local, 0);
     }
 
     fn emitCaseArms(self: *Emitter, arms: anytype, subj: []const u8, idx: usize) anyerror!void {
         if (idx >= arms.len) {
-            try self.emit(zero);
+            try self.emit(constOf(self.cur_result, "0"));
             return;
         }
         const arm = arms[idx];
-        switch (arm.pattern) {
-            .wildcard, .ident => {
-                try self.lowerCoerced(arm.body, self.cur_result);
-            },
+        if (self.patternIsIrrefutable(arm.pattern)) {
+            try self.bindPattern(arm.pattern, subj);
+            try self.lowerCoerced(arm.body, self.cur_result);
+            return;
+        }
+        try self.emitPatternTest(arm.pattern, subj);
+        try self.emitArmChain(arms, subj, idx, arm.body);
+    }
+
+    // ── case patterns ────────────────────────────────────────────────────────
+    //
+    // A pattern is a test (`emitPatternTest`, leaves an i32) plus the bindings
+    // its arm sees (`bindPattern`, run at the top of the arm). What a variant
+    // test reads depends on how the subject is laid out:
+    //   * a variant of a user enum whose variants are all units is its tag, an
+    //     i32 (`Color.Red` = 0);
+    //   * a variant of an enum with any payload is a pointer to `[tag, …fields]`
+    //     — unit variants of such an enum are allocated too, so every value of
+    //     the enum has the same shape;
+    //   * `Ok(v)` / `Err(e)` on a `@Result` read the `[tag, payload]` pair
+    //     (tag 0 = Ok).
+    // A bare name that is a variant of some enum is a tag test, not a binding.
+
+    const VariantRef = union(enum) {
+        user: FoundVariant,
+        result_ok,
+        result_err,
+    };
+
+    fn variantRef(self: *Emitter, name: []const u8) ?VariantRef {
+        if (self.findVariant(name)) |fv| return .{ .user = fv };
+        if (std.mem.eql(u8, name, "Ok")) return .result_ok;
+        if (std.mem.eql(u8, name, "Err") or std.mem.eql(u8, name, "Error")) return .result_err;
+        return null;
+    }
+
+    fn enumHasPayload(variants: []const ast.EnumVariant) bool {
+        for (variants) |v| if (v.fields.len > 0) return true;
+        return false;
+    }
+
+    fn patternIsIrrefutable(self: *Emitter, p: ast.Pattern) bool {
+        return switch (p) {
+            .wildcard => true,
+            .ident => |n| self.findVariant(n) == null,
+            // no wasm test for these yet: the arm runs as before
+            .list, .multi => true,
+            else => false,
+        };
+    }
+
+    fn emitPatternTest(self: *Emitter, p: ast.Pattern, subj: []const u8) anyerror!void {
+        switch (p) {
+            .wildcard, .list, .multi => try self.emit(one),
+            .ident => |n| if (self.findVariant(n)) |fv| try self.emitTagTest(.{ .user = fv }, subj) else try self.emit(one),
             .numberLit => |n| {
                 try self.emit(.{ .local_get = subj });
                 const t = numLitType(n);
-                try self.emit(constOf(t, n));
-                try self.emit(opOf(t, "eq"));
-                try self.emitArmChain(arms, subj, idx, arm.body);
+                // the subject local is i32; a float literal is compared as one
+                if (t[0] == 'f') {
+                    try self.emit(constOf("f64", n));
+                    try self.emit(.{ .convert = "i32.trunc_f64_s" });
+                } else try self.emit(constOf(t, n));
+                try self.emit(opOf("i32", "eq"));
             },
-            .stringLit => |s| {
-                _ = s;
+            .stringLit => |lit| {
+                const seg = try self.internString(lit);
                 try self.emit(.{ .local_get = subj });
-                try self.emit(.drop);
-                try self.lowerCoerced(arm.body, self.cur_result);
+                try self.emit(try self.constInt(seg.offset));
+                try self.emit(self.builder().helper(.str_eq));
             },
             .@"or" => |pats| {
                 try self.emit(zero);
-                for (pats) |p| {
-                    switch (p) {
-                        .numberLit => |n| {
-                            try self.emit(.{ .local_get = subj });
-                            const t = numLitType(n);
-                            try self.emit(constOf(t, n));
-                            try self.emit(opOf(t, "eq"));
-                            try self.emit(opOf("i32", "or"));
+                for (pats) |sub| {
+                    try self.emitPatternTest(sub, subj);
+                    try self.emit(opOf("i32", "or"));
+                }
+            },
+            .variant => |v| {
+                const ref = self.variantRef(v.name) orelse {
+                    try self.emitC(zero, "unknown variant pattern");
+                    return;
+                };
+                try self.emitTagTest(ref, subj);
+                switch (v.payload) {
+                    .literals => |lits| for (lits, 0..) |sub, i| {
+                        // test the payload field against a nested pattern
+                        const field = try std.fmt.allocPrint(self.arena(), "__case_{d}", .{self.case_depth});
+                        self.case_depth += 1;
+                        try self.declareLocal(field, "i32");
+                        var then_c: Capture = .{};
+                        self.open(&then_c);
+                        try self.emit(.{ .local_get = subj });
+                        try self.emit(.{ .load = .{ .offset = @intCast((i + 1) * 4) } });
+                        try self.emit(.{ .local_set = field });
+                        try self.emitPatternTest(sub, field);
+                        const then_seq = self.seal(&then_c, .{ .value = .i32 });
+                        var else_c: Capture = .{};
+                        self.open(&else_c);
+                        try self.emit(zero);
+                        const else_seq = self.seal(&else_c, .{ .value = .i32 });
+                        try self.emit(.{ .@"if" = .{ .result = .i32, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
+                    },
+                    else => {},
+                }
+            },
+        }
+    }
+
+    fn emitTagTest(self: *Emitter, ref: VariantRef, subj: []const u8) anyerror!void {
+        switch (ref) {
+            .user => |fv| {
+                try self.emit(.{ .local_get = subj });
+                if (enumHasPayload(fv.variants)) try self.emitC(.{ .load = .{} }, "variant tag");
+                try self.emitCf(try self.constInt(fv.tag), "{s}", .{fv.variant.name});
+                try self.emit(opOf("i32", "eq"));
+            },
+            .result_ok, .result_err => {
+                try self.emit(.{ .local_get = subj });
+                try self.emitC(.{ .load = .{} }, result_tag);
+                if (ref == .result_ok) try self.emit(opOf("i32", "eqz"));
+            },
+        }
+    }
+
+    /// Bind the names a pattern introduces, from the subject held in `subj`.
+    fn bindPattern(self: *Emitter, p: ast.Pattern, subj: []const u8) anyerror!void {
+        switch (p) {
+            .ident => |n| if (self.findVariant(n) == null) {
+                try self.declareLocal(n, "i32");
+                if (self.str_locals.contains(subj)) try self.str_locals.put(n, {});
+                try self.emit(.{ .local_get = subj });
+                try self.emit(.{ .local_set = n });
+            },
+            .variant => |v| {
+                const ref = self.variantRef(v.name) orelse return;
+                const names: []const []const u8 = switch (v.payload) {
+                    .binding => |b| &.{b},
+                    .fields => |fs| fs,
+                    .literals => return,
+                };
+                for (names, 0..) |n, i| {
+                    const field_ty: ?ast.TypeRef = switch (ref) {
+                        .user => |fv| if (i < fv.variant.fields.len) fv.variant.fields[i].typeRef else null,
+                        else => null,
+                    };
+                    const ty = if (field_ty) |t| watType(t) else "i32";
+                    try self.declareLocal(n, ty);
+                    const local_ty = self.locals.get(n) orelse ty;
+                    if (field_ty) |t| {
+                        if (isStringTypeRef(t)) try self.str_locals.put(n, {});
+                        if (isBoolTypeRef(t)) try self.bool_locals.put(n, {});
+                    }
+                    switch (ref) {
+                        .result_ok, .result_err => {
+                            const shape = self.result_subjects.get(subj) orelse ResultShape{};
+                            if ((ref == .result_ok and shape.ok_str) or (ref == .result_err and shape.err_str))
+                                try self.str_locals.put(n, {});
                         },
                         else => {},
                     }
+                    // payload slots are 4 bytes: a float field is an f32
+                    const slot_float = local_ty[0] == 'f';
+                    try self.emit(.{ .local_get = subj });
+                    try self.emit(.{ .load = .{ .ty = if (slot_float) .f32 else .i32, .offset = @intCast((i + 1) * 4) } });
+                    try self.emitConvert(if (slot_float) "f32" else "i32", local_ty);
+                    try self.emit(.{ .local_set = n });
                 }
-                try self.emitArmChain(arms, subj, idx, arm.body);
             },
-            else => {
-                try self.lowerCoerced(arm.body, self.cur_result);
-            },
+            else => {},
         }
+    }
+
+    /// A unit variant value: its tag, or — when the enum has payload variants,
+    /// whose values are `[tag, …fields]` pointers — a one-slot `[tag]` cell, so
+    /// every value of the enum has the same shape.
+    fn emitUnitVariant(self: *Emitter, variants: []const ast.EnumVariant, tag: u32, ename: []const u8, vname: []const u8) anyerror!void {
+        if (!enumHasPayload(variants)) {
+            if (ename.len > 0)
+                try self.emitCf(try self.constInt(tag), "{s}.{s}", .{ ename, vname })
+            else
+                try self.emitCf(try self.constInt(tag), ".{s}", .{vname});
+            return;
+        }
+        const base = try self.allocSlots(4);
+        try self.storeSlotConst(base, 0, tag);
+        try self.loadBase(base);
     }
 
     /// The `(if (result …) (then <arm body>) (else <rest of the chain>))` a
@@ -3006,6 +3207,7 @@ const Emitter = struct {
 
         var then_c: Capture = .{};
         self.open(&then_c);
+        try self.bindPattern(arms[idx].pattern, subj);
         try self.lowerCoerced(body, self.cur_result);
         const then_seq = self.seal(&then_c, .{ .value = ty });
 
@@ -4324,7 +4526,7 @@ const Emitter = struct {
                     if (self.enums.get(ename)) |variants| {
                         for (variants, 0..) |v, i| {
                             if (std.mem.eql(u8, v.name, ia.member)) {
-                                try self.emitCf(try self.constInt(i), "{s}.{s}", .{ ename, ia.member });
+                                try self.emitUnitVariant(variants, @intCast(i), ename, ia.member);
                                 return;
                             }
                         }
@@ -4498,9 +4700,13 @@ const Emitter = struct {
                 // this, `@print(case x { 0 -> "zero"; … })` went through
                 // `$__print_i32` and printed the *pointer* (`256`).
                 .case => |c| blk: {
-                    if (c.arms.len == 0) break :blk false;
-                    for (c.arms) |arm| if (!self.isStringExpr(arm.body)) break :blk false;
-                    break :blk true;
+                    var any = false;
+                    for (c.arms) |arm| {
+                        if (self.exprTail(arm.body) == .terminated) continue;
+                        if (!self.isStringExpr(arm.body)) break :blk false;
+                        any = true;
+                    }
+                    break :blk any;
                 },
                 else => false,
             },
@@ -4548,6 +4754,39 @@ const Emitter = struct {
                 else => false,
             },
             else => false,
+        };
+    }
+
+    const ResultShape = struct { ok_str: bool = false, err_str: bool = false };
+
+    fn resultShapeOfTypeRef(t: ast.TypeRef) ?ResultShape {
+        return switch (t) {
+            .generic => |g| if (std.mem.endsWith(u8, g.name, "Result") and g.args.len == 2) .{
+                .ok_str = isStringTypeRef(g.args[0]),
+                .err_str = isStringTypeRef(g.args[1]),
+            } else null,
+            else => null,
+        };
+    }
+
+    fn resultShapeOf(self: *Emitter, e: ast.Expr) ?ResultShape {
+        return switch (e) {
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| self.result_shape_locals.get(n),
+                else => null,
+            },
+            .call => |c| switch (c.kind) {
+                .call => |cc| blk: {
+                    const sym = self.calleeSymbol(cc, c.loc) orelse break :blk null;
+                    break :blk self.result_shape_fns.get(sym);
+                },
+                else => null,
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| self.resultShapeOf(inner.*),
+                else => null,
+            },
+            else => null,
         };
     }
 

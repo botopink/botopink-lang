@@ -478,9 +478,6 @@ first three are now enforced by the model, not by discipline:
     first word as an element count and trap;
   - a `loop` used as a *comprehension* (`yield`/`break <v>` accumulating into a
     new array) runs its body but always yields `0`;
-  - `case` only discriminates numeric and `or`-of-numeric patterns; a variant
-    pattern (`Circle(r) ->`) runs the first arm and leaves its payload binding
-    unset;
   - an `f64` aggregate field round-trips at `f32` precision (4-byte slots), and
     is read back as a raw `i32.load` unless the field's declared type is known.
 - **Non-constant top-level `val`s** (`emitGlobalVal` → `deferred_globals`): a
@@ -500,6 +497,19 @@ first three are now enforced by the model, not by discipline:
   parse error, and `wat_ast.Builder.param` refuses to build one.
 - **Entrypoint** (`emitEntrypointWrapper`): calls `$main` and `drop`s its
   result when `main` returns a value (`main_returns_value`).
+- **`case` patterns** (`emitPatternTest` + `bindPattern`): numbers, strings
+  (`$__str_eq`), `or`, and variants. A variant of an all-unit enum is its tag;
+  a variant of an enum with any payload is a `[tag, …fields]` pointer — its
+  unit variants are allocated as a one-slot `[tag]` cell (`emitUnitVariant`),
+  so the tag is always the first word. `Ok(v)`/`Err(e)` read a `@Result`'s
+  `[tag, payload]`. A bare name that is a variant of some enum (`Lt ->`) is a
+  tag test, not a binding. Payload bindings take the variant field's type (a
+  float field is an `f32` slot). List and multi-subject patterns have no test
+  yet and run their arm.
+- **`throw` inside a fn returning `@Result`** returns an Error Result
+  (`lowerThrow`) — the transform rewrites the common forms into
+  `return __bp_error(…)`, but a `throw` inside a `case` arm reaches the
+  backend as a `throw`. Anywhere else a `throw` traps.
 - **Aggregates in linear memory**: tuples/arrays/records/enum payloads are
   contiguous 4-byte slots in the bump heap (`$__heap_ptr`); a type registry from
   `record`/`enum` decls distinguishes construction from calls; construction

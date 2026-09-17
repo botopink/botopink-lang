@@ -23,7 +23,8 @@ fn main() {
   (data (i32.const 256) "\04\00\00\00data")
   (data (i32.const 264) "\04\00\00\00fail")
   (data (i32.const 272) "\03\00\00\00OK:")
-  (global $__heap_ptr (mut i32) (i32.const 280))
+  (data (i32.const 280) "\04\00\00\00ERR:")
+  (global $__heap_ptr (mut i32) (i32.const 288))
   (func $fetch (param $ok i32) (result i32)
     (local $_res0 i32)
     (local $_res1 i32)
@@ -79,9 +80,36 @@ fn main() {
     local.set $r1
     local.get $r1
     local.set $__case_0
+    local.get $__case_0
+    i32.load ;; Result tag (0 = Ok, non-zero = Error)
+    i32.eqz
+    (if (result i32)
+      (then
+    local.get $__case_0
+    i32.load offset=4
+    local.set $v
     i32.const 272
     local.get $v
     call $__str_concat
+      )
+      (else
+    local.get $__case_0
+    i32.load ;; Result tag (0 = Ok, non-zero = Error)
+    (if (result i32)
+      (then
+    local.get $__case_0
+    i32.load offset=4
+    local.set $e
+    i32.const 280
+    local.get $e
+    call $__str_concat
+      )
+      (else
+    i32.const 0
+      )
+    )
+      )
+    )
     local.set $msg1
     local.get $msg1
     call $__print_str
@@ -90,9 +118,36 @@ fn main() {
     local.set $r2
     local.get $r2
     local.set $__case_1
+    local.get $__case_1
+    i32.load ;; Result tag (0 = Ok, non-zero = Error)
+    i32.eqz
+    (if (result i32)
+      (then
+    local.get $__case_1
+    i32.load offset=4
+    local.set $v
     i32.const 272
     local.get $v
     call $__str_concat
+      )
+      (else
+    local.get $__case_1
+    i32.load ;; Result tag (0 = Ok, non-zero = Error)
+    (if (result i32)
+      (then
+    local.get $__case_1
+    i32.load offset=4
+    local.set $e
+    i32.const 280
+    local.get $e
+    call $__str_concat
+      )
+      (else
+    i32.const 0
+      )
+    )
+      )
+    )
     local.set $msg2
     local.get $msg2
     call $__print_str

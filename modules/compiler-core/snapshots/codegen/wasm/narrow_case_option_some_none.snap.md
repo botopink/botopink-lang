@@ -19,18 +19,46 @@ fn main() {
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (data (i32.const 256) "\05\00\00\00empty")
-  (global $__heap_ptr (mut i32) (i32.const 268))
+  (data (i32.const 268) "\07\00\00\00value: ")
+  (global $__heap_ptr (mut i32) (i32.const 280))
   (func $describe (param $opt i32) (result i32)
-    (local $None i32)
     (local $v i32)
     (local $__case_0 i32)
     local.get $opt
     local.set $__case_0
+    local.get $__case_0
+    i32.load ;; variant tag
+    i32.const 0 ;; None
+    i32.eq
+    (if (result i32)
+      (then
     i32.const 256
+      )
+      (else
+    local.get $__case_0
+    i32.load ;; variant tag
+    i32.const 1 ;; Some
+    i32.eq
+    (if (result i32)
+      (then
+    local.get $__case_0
+    i32.load offset=4
+    local.set $v
+    i32.const 268
+    local.get $v
+    call $__str_concat
+      )
+      (else
+    i32.const 0
+      )
+    )
+      )
+    )
     return
   )
   (func $main
     (local $__mem0 i32)
+    (local $__mem1 i32)
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
@@ -46,7 +74,16 @@ fn main() {
     local.get $__mem0
     call $describe
     call $__print_str
-    i32.const 0 ;; Opt.None
+    global.get $__heap_ptr
+    local.set $__mem1
+    global.get $__heap_ptr
+    i32.const 4
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem1
+    i32.const 0
+    i32.store
+    local.get $__mem1
     call $describe
     call $__print_str
   )
@@ -245,6 +282,53 @@ fn main() {
     local.get $s
     call $__print_str_raw
     call $__print_nl
+  )
+  (func $__str_concat (param $a i32) (param $b i32) (result i32)
+    (local $base i32) (local $alen i32) (local $blen i32)
+    local.get $a
+    i32.load
+    local.set $alen
+    local.get $b
+    i32.load
+    local.set $blen
+    global.get $__heap_ptr
+    local.set $base
+    ;; bump heap by 4 (length prefix) + alen + blen
+    global.get $__heap_ptr
+    i32.const 4
+    local.get $alen
+    i32.add
+    local.get $blen
+    i32.add
+    i32.add
+    global.set $__heap_ptr
+    ;; store combined length prefix
+    local.get $base
+    local.get $alen
+    local.get $blen
+    i32.add
+    i32.store
+    ;; copy a's bytes: base+4 <- a+4
+    local.get $base
+    i32.const 4
+    i32.add
+    local.get $a
+    i32.const 4
+    i32.add
+    local.get $alen
+    memory.copy
+    ;; copy b's bytes: base+4+alen <- b+4
+    local.get $base
+    i32.const 4
+    i32.add
+    local.get $alen
+    i32.add
+    local.get $b
+    i32.const 4
+    i32.add
+    local.get $blen
+    memory.copy
+    local.get $base
   )
 )
 ```

@@ -66,6 +66,7 @@ fn f() {
     i32.const 264
     i32.store
     local.get $__mem1
+    drop
     unreachable
       )
       (else
