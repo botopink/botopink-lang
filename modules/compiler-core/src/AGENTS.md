@@ -39,11 +39,11 @@ src/
 | `root.zig` | Library entry — re-exports `codegen`, `format`, `print_errors`, `Module`, `comptime_pipeline`, `Lexer`, `Parser`, `ast`, `types`, `CustomNode`/`CustomAstEntry`, … |
 | `ast.zig` | All AST node types |
 | `lexer.zig` | Lexer façade → `lexer/token.zig` |
-| `parser.zig` | Parser struct + cursor + shared helpers; sub-grammars in [`parser/`](parser/AGENTS.md) |
-| `comptime.zig` | Comptime façade — `ComptimeSession`, `compile`, `compileTypesOnly`, `evaluateComptime`, `registerStdlib` |
+| `parser.zig` | Parser struct + cursor + shared helpers; sub-grammars in [`parser/`](parser/AGENTS.md). `parse` records a located `parseError` for every `UnexpectedToken` it returns (the token it stopped on, when no named rejection filled it) |
+| `comptime.zig` | Comptime façade — `ComptimeSession`, `compile`, `compileTypesOnly`, `evaluateComptime`, `registerStdlib`. A module that does not lex or parse is an `Outcome.parseError` carrying a located `SyntaxError` (`.lex` / `.parse`), never a session-wide error |
 | `format.zig` | Wadler-Lindig formatter |
 | `print.zig` | rustc-style error renderer |
-| `codegen.zig` | Public codegen API over the `codegen/` backends |
+| `codegen.zig` | Public codegen API over the `codegen/` backends: `generateWith(alloc, modules, io, config, .{ .execute })` compiles and, only when `execute` is set, runs each emitted module (`run_output`). Every module comes back: one that did not lex, parse or type-check carries `result.diagnostic`, one that failed comptime validation `result.comptime_err` (`result.failed()`). `generate` is the snapshot harness's executing entry and drops the `diagnostic` entries (the harness derives those from its own comptime run) — drivers (the CLI) call `generateWith` with `.execute = false` |
 
 ## Subdirectories
 

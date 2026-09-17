@@ -14,16 +14,15 @@ scripts/
 ├── install.sh         ← POSIX one-liner installer
 ├── install.ps1        ← Windows one-liner installer
 ├── release-pack.sh    ← per-target archive + sha256 packer (used by release.yml)
-├── gate.sh            ← the ordered local gate (staged checks, build, test, test-cli, test-libs)
-├── install-hooks.sh   ← install the pre-commit shim into the repository's hooks dir
+├── gate.sh            ← the ordered local gate (staged checks, build, test, test-bpmp, beam export audit, test-cli, test-libs)
 ├── test-libs.sh       ← runtime pre-flight + `botopink-lib-test` wrapper with known reds (`zig build test-libs`)
 ├── known-red-libs.txt ← library cells known red, each with its owning front
 ├── test-vscode.sh     ← locate the sibling vscode-extension, `npm ci` once, `npm test` (`zig build test-vscode`)
 ├── snap_audit.sh      ← read-only audit of every *.snap.md (6 modes)
 ├── beam_export_audit.sh ← assemble every beam snapshot module with every function exported
 └── git-hooks/
-    ├── pre-commit                 ← tracked hook (see ../AGENTS.md §Local gate)
-    └── lib/runner-standalone.sh   ← standalone runner → `gate.sh --staged`
+    ├── pre-commit                 ← tracked hook, enabled by `git config core.hooksPath scripts/git-hooks` (see ../AGENTS.md §Local gate)
+    └── lib/runner-standalone.sh   ← the hook's runner → `gate.sh --staged`
 ```
 
 ## Installers — contract
@@ -107,14 +106,21 @@ See [`../AGENTS.md`](../AGENTS.md) §Release pipeline and
 failing stage: staged-file checks (`--staged`: conflict markers, `zig fmt
 --check` on staged `.zig`), `zig build`, `zig build test` (`--cold` deletes
 `modules/compiler-core/.botopinkbuild/runtime-cache` first), `zig build
-test-cli`, `zig build test-libs`. The pre-commit hook runs `--staged`; the run
-that decides a merge adds `--cold`.
+test-bpmp`, `scripts/beam_export_audit.sh`, `zig build test-cli`, `zig build
+test-libs`. CI (`.github/workflows/test.yml`) runs the same stages minus the
+staged checks. The pre-commit hook runs `--staged`; the run
+that decides a merge adds `--cold`. After the staged checks the script unsets
+every `git rev-parse --local-env-vars` variable a hook inherits (`GIT_DIR`,
+`GIT_INDEX_FILE`, …): a stage that runs `git` in a scratch repository (bpmp's
+install tests) would otherwise act on the committing repository.
 
-## install-hooks.sh
+## git-hooks/
 
-Writes `<git common dir>/hooks/pre-commit`, a shim that execs the tracked
-`scripts/git-hooks/pre-commit` of the committing checkout (the hooks dir is
-shared across worktrees). Refuses to overwrite a foreign hook without `--force`.
+`git-hooks/pre-commit` is self-contained: it sources
+`git-hooks/lib/runner-standalone.sh`, which runs `gate.sh --staged` of the
+committing checkout. Nothing installs it; a clone enables it with `git config
+core.hooksPath scripts/git-hooks` (the relative path resolves against the
+checkout's root, so every worktree runs its own tracked hook).
 
 ## test-libs.sh
 
@@ -122,7 +128,8 @@ Resolves the core dir (meta layout `repository/botopink-lang/` or this repo's
 root), exits `1` if `zig-out/bin/botopink-lib-test` is not built, warns (without
 gating) for each missing `node`/`escript`/`erlc`/`wasmtime`, then runs the runner
 in `--json` mode and prints one line per cell — `pass`, `FAIL`, `known red — <front>
-<reason>`, `skipped — <reason>`, `no tests` — after that cell's diagnostics, and a
+<reason>`, `skipped — <reason>`, `no tests` (the library has no `test` block and
+compiled; one that does not compile is a `FAIL`) — after that cell's diagnostics, and a
 count summary. Exit `1` when an unlisted cell fails or a listed known red passes;
 otherwise `0` (or the runner's own error exit). An explicit `--json` argument
 bypasses all of this and execs the runner raw. `BOTOPINK_KNOWN_RED_LIBS`
@@ -186,8 +193,8 @@ RUN LOG; this audit makes it a rejection. Each rejected module prints
 `REJECTED <slug> <module>` plus the validator's function, offset and reason;
 the last line is `beam_export_audit: <ok>/<total> modules assembled`. Exit `0`
 when every module assembled, `1` on any rejection, `2` on an argument error or
-a missing `erlc`. Not wired into `gate.sh` — that is the CLI + gate front's
-call.
+a missing `erlc`. Stage 5 of `gate.sh`, and a step of CI's `test` job on
+ubuntu and macos.
 
 ## See also
 

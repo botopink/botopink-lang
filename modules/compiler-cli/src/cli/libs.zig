@@ -14,6 +14,7 @@
 const std = @import("std");
 const bp = @import("botopink");
 const config = @import("./config.zig");
+const diagnostics = @import("./diagnostics.zig");
 
 const Module = bp.Module;
 const DepEntry = config.DepEntry;
@@ -32,6 +33,10 @@ pub const Error = error{
     LibsRootNotFound,
     LibNotFound,
     LibManifestInvalid,
+    /// A `files` entry of a dependency's `botopink.json` could not be read;
+    /// the located diagnostic (the path looked for, the manifest line) has
+    /// already been printed.
+    LibFileNotFound,
 } || std.mem.Allocator.Error;
 
 /// Name of the env var that prepends extra lib roots (drop-in for `PATH`-style
@@ -51,7 +56,7 @@ pub const ENV_VAR = "BOTOPINK_LIB_ROOTS";
 ///      silently when the directory does not exist. This is the hook bpmp uses
 ///      to point the compiler at its package store without symlinking.
 ///   2. **Walk-up roots** — for each ancestor dir `D` of cwd (nearest-first):
-///        * `D/repository/botopink-lang/libs`  — bundled libs (std/client/server)
+///        * `D/repository/botopink-lang/libs`  — bundled libs (std)
 ///        * `D/repository`                     — sibling projects (frameworks)
 ///        * `D/libs`                           — legacy flat tree
 ///
@@ -254,13 +259,13 @@ pub fn resolveFallbackRoots(gpa: std.mem.Allocator, io: std.Io, env_map: EnvMap)
 pub fn resolveBpmpStoreRoot(gpa: std.mem.Allocator, env_map: EnvMap) !?[]u8 {
     if (env_map) |m| {
         if (m.get("BPMP_HOME")) |v| {
-            if (v.len > 0) return std.fs.path.join(gpa, &.{ v, "store" });
+            if (v.len > 0) return try std.fs.path.join(gpa, &.{ v, "store" });
         }
         if (m.get("XDG_CACHE_HOME")) |v| {
-            if (v.len > 0) return std.fs.path.join(gpa, &.{ v, "bpmp", "store" });
+            if (v.len > 0) return try std.fs.path.join(gpa, &.{ v, "bpmp", "store" });
         }
         if (m.get("HOME")) |v| {
-            if (v.len > 0) return std.fs.path.join(gpa, &.{ v, ".cache", "bpmp", "store" });
+            if (v.len > 0) return try std.fs.path.join(gpa, &.{ v, ".cache", "bpmp", "store" });
         }
     }
     return null;
@@ -303,7 +308,16 @@ fn loadOne(
 
     for (manifest.files) |file| {
         const file_path = try std.fs.path.join(arena, &.{ dir, manifest.src, file });
-        const source = try std.Io.Dir.cwd().readFileAlloc(io, file_path, gpa, .unlimited);
+        const source = std.Io.Dir.cwd().readFileAlloc(io, file_path, gpa, .unlimited) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => {
+                const manifest_path = try std.fs.path.join(arena, &.{ dir, "botopink.json" });
+                var aw: std.Io.Writer.Allocating = .init(arena);
+                try renderMissingFile(&aw.writer, err, dep, file, file_path, manifest_path, data);
+                std.debug.print("{s}", .{aw.written()});
+                return error.LibFileNotFound;
+            },
+        };
         errdefer gpa.free(source);
 
         // Module path: `<dep>/<basename without extension>`. The `<dep>/` prefix
@@ -314,6 +328,46 @@ fn loadOne(
 
         try out.append(gpa, .{ .path = mod_path, .source = source, .declaration = isDeclFile(file) });
     }
+}
+
+/// A dependency's `files` entry that could not be read: the path looked for,
+/// located at the entry in the manifest (`--> <lib>/botopink.json:L:C`).
+fn renderMissingFile(
+    w: *std.Io.Writer,
+    err: anyerror,
+    dep: []const u8,
+    entry: []const u8,
+    file_path: []const u8,
+    manifest_path: []const u8,
+    manifest: []const u8,
+) !void {
+    var msg_buf: [1024]u8 = undefined;
+    const message = (if (err == error.FileNotFound)
+        std.fmt.bufPrint(&msg_buf, "dependency '{s}' lists \"{s}\" in `files`, but {s} does not exist", .{ dep, entry, file_path })
+    else
+        std.fmt.bufPrint(&msg_buf, "dependency '{s}' lists \"{s}\" in `files`, but {s} could not be read ({s})", .{ dep, entry, file_path, @errorName(err) })) catch "a dependency's `files` entry could not be read";
+
+    // Locate the quoted entry after the `"files"` key; fall back to the key,
+    // then to the first line.
+    var quoted_buf: [512]u8 = undefined;
+    const quoted = std.fmt.bufPrint(&quoted_buf, "\"{s}\"", .{entry}) catch entry;
+    const key = std.mem.indexOf(u8, manifest, "\"files\"");
+    const offset: usize, const span: usize = blk: {
+        if (key) |k| {
+            if (std.mem.indexOfPos(u8, manifest, k, quoted)) |at| break :blk .{ at, quoted.len };
+            break :blk .{ k, "\"files\"".len };
+        }
+        break :blk .{ 0, 1 };
+    };
+    var line: usize = 1;
+    var line_start: usize = 0;
+    for (manifest[0..offset], 0..) |c, i| {
+        if (c == '\n') {
+            line += 1;
+            line_start = i + 1;
+        }
+    }
+    try diagnostics.renderLocated(w, message, manifest_path, manifest, line, offset - line_start + 1, span);
 }
 
 fn isDeclFile(name: []const u8) bool {
@@ -372,7 +426,7 @@ pub fn shipMjsSidecars(
         const emitted_rel = try std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ out_dir, o.name, ext });
         const emitted_dir = std.fs.path.dirname(emitted_rel) orelse out_dir;
         // The owning lib is the first path segment of a dependency module name
-        // (`server/server` → `server`); a project-own module has no such prefix.
+        // (`rakun/http` → `rakun`); a project-own module has no such prefix.
         const owner: ?[]const u8 = if (std.mem.indexOfScalar(u8, o.name, '/')) |i| o.name[0..i] else null;
 
         var search: usize = 0;
@@ -516,7 +570,7 @@ test "resolveLibRoots: repository workspace yields [bundled libs, repository]" {
     const ws = ".botopinkbuild/roots-repo/ws";
     std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/roots-repo") catch {};
     defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/roots-repo") catch {};
-    try writeFileP(io, ws ++ "/repository/botopink-lang/libs/server/botopink.json", "{}");
+    try writeFileP(io, ws ++ "/repository/botopink-lang/libs/std/botopink.json", "{}");
     try writeFileP(io, ws ++ "/repository/rakun/botopink.json", "{}");
 
     // A consumer under repository/rakun resolves up to `ws`, where both roots fire.
@@ -670,19 +724,19 @@ test "parseEnvRoots: BOTOPINK_LIB_ROOTS set is parsed" {
     try std.testing.expectEqualStrings("/b", roots[1]);
 }
 
-test "loadOne: rakun resolves \"server\" across roots; absent dep is LibNotFound" {
+test "loadOne: std resolves from the bundled root, rakun from the sibling root; absent dep is LibNotFound" {
     const gpa = std.testing.allocator;
     const io = std.testing.io;
 
     const ws = ".botopinkbuild/loadone/ws";
     std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/loadone") catch {};
     defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/loadone") catch {};
-    // `server` is a bundled lib; `rakun` is a sibling project.
-    try writeFileP(io, ws ++ "/repository/botopink-lang/libs/server/botopink.json",
-        \\{ "src": "src/", "files": ["server.bp"] }
+    // `std` is the bundled lib (`libs/std`); `rakun` is a sibling project.
+    try writeFileP(io, ws ++ "/repository/botopink-lang/libs/std/botopink.json",
+        \\{ "src": "src/", "files": ["math.bp"] }
     );
-    try writeFileP(io, ws ++ "/repository/botopink-lang/libs/server/src/server.bp",
-        \\pub fn serverServe() {}
+    try writeFileP(io, ws ++ "/repository/botopink-lang/libs/std/src/math.bp",
+        \\pub fn abs() {}
     );
     try writeFileP(io, ws ++ "/repository/rakun/botopink.json",
         \\{ "src": "src/", "files": ["rakun.bp"] }
@@ -705,11 +759,11 @@ test "loadOne: rakun resolves \"server\" across roots; absent dep is LibNotFound
         out.deinit(gpa);
     }
 
-    try loadOne(gpa, io, &roots, &.{}, "server", &out); // bundled — first root
+    try loadOne(gpa, io, &roots, &.{}, "std", &out); // bundled — first root
     try loadOne(gpa, io, &roots, &.{}, "rakun", &out); // sibling — second root
     try std.testing.expectEqual(@as(usize, 2), out.items.len);
-    try std.testing.expectEqualStrings("server/server", out.items[0].path);
-    try std.testing.expect(std.mem.indexOf(u8, out.items[0].source, "serverServe") != null);
+    try std.testing.expectEqualStrings("std/math", out.items[0].path);
+    try std.testing.expect(std.mem.indexOf(u8, out.items[0].source, "abs") != null);
     try std.testing.expectEqualStrings("rakun/rakun", out.items[1].path);
 
     try std.testing.expectError(error.LibNotFound, loadOne(gpa, io, &roots, &.{}, "absent", &out));
@@ -744,6 +798,52 @@ test "loadOne: falls back to fallback_roots when not in regular roots" {
     try loadOne(gpa, io, &roots, &fb, "jhonstart", &out);
     try std.testing.expectEqual(@as(usize, 1), out.items.len);
     try std.testing.expectEqualStrings("jhonstart/jhonstart", out.items[0].path);
+}
+
+test "loadOne: a files entry that does not exist is LibFileNotFound, located in the manifest" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+
+    const ws = ".botopinkbuild/loadone-missing/ws";
+    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/loadone-missing") catch {};
+    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/loadone-missing") catch {};
+    try writeFileP(io, ws ++ "/repository/rakun/botopink.json",
+        \\{ "src": "src/",
+        \\  "files": ["rakun.bp", "gone.bp"] }
+    );
+    try writeFileP(io, ws ++ "/repository/rakun/src/rakun.bp",
+        \\pub fn run() {}
+    );
+    const roots = [_][]const u8{ws ++ "/repository"};
+
+    var out: std.ArrayListUnmanaged(Module) = .empty;
+    defer {
+        for (out.items) |m| {
+            gpa.free(m.path);
+            gpa.free(m.source);
+        }
+        out.deinit(gpa);
+    }
+    try std.testing.expectError(error.LibFileNotFound, loadOne(gpa, io, &roots, &.{}, "rakun", &out));
+}
+
+test "renderMissingFile names the path it looked for and the manifest entry" {
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    const manifest =
+        \\{ "src": "src/",
+        \\  "files": ["rakun.bp", "gone.bp"] }
+    ;
+    try renderMissingFile(&aw.writer, error.FileNotFound, "rakun", "gone.bp", "libs/rakun/src/gone.bp", "libs/rakun/botopink.json", manifest);
+    try std.testing.expectEqualStrings(
+        \\error: dependency 'rakun' lists "gone.bp" in `files`, but libs/rakun/src/gone.bp does not exist
+        \\ --> libs/rakun/botopink.json:2:25
+        \\  |
+        \\2 |   "files": ["rakun.bp", "gone.bp"] }
+        \\  |                         ^^^^^^^^^
+        \\
+        \\
+    , aw.written());
 }
 
 test "LibManifest parses src + files, ignores unknown fields" {

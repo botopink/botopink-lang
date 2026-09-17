@@ -4,6 +4,8 @@
 # the real `botopink` binary against it and asserts the exit code, the output
 # and what is (or is not) on disk. The flag-parser rows (C8, C10–C12, C14) also
 # have unit tests in `src/main.zig`; they are repeated here against the binary.
+# One row beyond C1–C13 pins that `build` does not execute the program it
+# compiles (no runtime spawn, no runtime-cache entry — 1.0.4-beta cli-residuals).
 #
 # Every assertion is a hard assert. A row that needs a runtime which is absent
 # (node for `botopink test`, a non-root user for the undeletable-directory row)
@@ -99,6 +101,31 @@ run "$P" run
 expect_code 1 "run after a failed build"
 expect_no_out "stale build v1" "run does not execute the stale artifact"
 
+# ── build does not execute the program it compiles ───────────────────────────
+echo "==> build emits without running the program (no runtime spawn, no runtime cache)"
+SHIMS="$WORK/shims"; SPAWNED="$WORK/spawned.log"
+mkdir -p "$SHIMS"; : >"$SPAWNED"
+for tool in node erl erlc escript wasmtime; do
+  printf '#!/bin/sh\necho "%s $*" >>"%s"\nexit 1\n' "$tool" "$SPAWNED" >"$SHIMS/$tool"
+  chmod +x "$SHIMS/$tool"
+done
+for target in commonJS erlang beam wasm; do
+  P="$(project exec-$target "$target")"
+  printf 'pub fn main() {\n    print("side effect at build time");\n}\n' >"$P/src/main.bp"
+  # With the real runtimes on PATH: nothing is executed, so nothing is cached.
+  run "$P" build
+  expect_code 0 "build --target $target"
+  [[ ! -e "$P/.botopinkbuild/runtime-cache" ]] && ok "$target: no runtime-cache entry" || fail "$target: build left .botopinkbuild/runtime-cache ($(ls "$P/.botopinkbuild/runtime-cache" | head -1))"
+  # With recording shims first on PATH: no runtime is spawned at all.
+  rm -rf "$P/out" "$P/.botopinkbuild"
+  set +e
+  OUT="$(cd "$P" && PATH="$SHIMS:$PATH" "$BP" build 2>&1)"
+  CODE=$?
+  set -e
+  expect_code 0 "build --target $target with runtime shims on PATH"
+done
+[[ ! -s "$SPAWNED" ]] && ok "no node/erl/erlc/escript/wasmtime spawned by build" || fail "build spawned a runtime: $(tr '\n' ';' <"$SPAWNED")"
+
 # ── C5 / C6 / C7 — check covers test/, lex and parse errors are located ──────
 echo "==> C6 a lex error renders with file, line and excerpt on build/check/test"
 P="$(project c6)"
@@ -116,8 +143,23 @@ printf 'pub fn main() {\n    print((1);\n}\n' >"$P/src/main.bp"
 for cmd in build check test; do
   run "$P" "$cmd"
   expect_code 1 "$cmd on a parse error"
-  expect_out "src/main.bp:2:" "$cmd locates the parse error"
+  expect_out "src/main.bp:2:14" "$cmd locates the parse error at the token it stopped on"
   expect_out "print((1);" "$cmd quotes the source line"
+done
+
+echo "==> C6/C7 lex, parse and type errors in three modules are all located in one run"
+P="$(project c67)"
+printf 'pub mod lexbad;\npub mod parsebad;\npub mod typebad;\n\n%s' "$MAIN_OK" >"$P/src/main.bp"
+printf 'pub fn g() {\n    print("abc);\n}\n' >"$P/src/lexbad.bp"
+printf 'pub fn h() {\n    print((1);\n}\n' >"$P/src/parsebad.bp"
+printf '%s' "$BROKEN" >"$P/src/typebad.bp"
+for cmd in build check test; do
+  run "$P" "$cmd"
+  expect_code 1 "$cmd on three broken modules"
+  expect_out "src/lexbad.bp:2:11" "$cmd locates the lex error"
+  expect_out "src/parsebad.bp:2:14" "$cmd locates the parse error"
+  expect_out "src/typebad.bp:2:5" "$cmd still type-checks past the lex and parse errors"
+  expect_out "3 module(s) failed to compile: lexbad, parsebad, typebad" "$cmd names all three"
 done
 
 echo "==> C5 check loads test/ as well as src/"
@@ -175,6 +217,24 @@ printf '%s' "$MAIN_OK" >"$P/src/main.bp"; rm "$P/src/broken.bp"
 codes=""
 for cmd in build check test; do run "$P" "$cmd"; codes="$codes$CODE"; done
 [[ "$codes" == "000" ]] && ok "healthy tree: all three exit 0" || fail "healthy tree: build/check/test exited $codes"
+
+# ── a dependency's missing `files` entry is named, with the manifest line ────
+echo "==> a missing files entry of a dependency names the path and the manifest entry"
+P="$(project missingfile)"
+printf '{ "name": "missingfile", "version": "0.1.0", "target": "commonJS", "dependencies": ["gonelib"] }\n' >"$P/botopink.json"
+printf '%s' "$MAIN_OK" >"$P/src/main.bp"
+LIBROOT="$WORK/libroot"; mkdir -p "$LIBROOT/gonelib/src"
+printf '{ "name": "gonelib",\n  "src": "src/",\n  "files": ["gonelib.bp", "gone.bp"] }\n' >"$LIBROOT/gonelib/botopink.json"
+printf 'pub fn g() -> i32 {\n    return 1;\n}\n' >"$LIBROOT/gonelib/src/gonelib.bp"
+for cmd in build check test; do
+  set +e
+  OUT="$(cd "$P" && BOTOPINK_LIB_ROOTS="$LIBROOT" "$BP" "$cmd" 2>&1)"
+  CODE=$?
+  set -e
+  expect_code 1 "$cmd with a missing files entry"
+  expect_out "gonelib/src/gone.bp does not exist" "$cmd names the path it looked for"
+  expect_out "gonelib/botopink.json:3:27" "$cmd locates the manifest entry"
+done
 
 # ── C8 — migrate --dry-run writes nothing, wherever the flag appears ─────────
 echo "==> C8 migrate --dry-run writes nothing"

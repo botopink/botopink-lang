@@ -19,7 +19,8 @@ compiler-cli/
 │   │                          examples/modules); `zig build test-backends`
 │   ├── backend_exec/        ← numeric + records fixture projects
 │   ├── test_tooling.sh      ← `botopink test` behaviours: empty test, --filter
-│   │                          (multi / none), assert message, mixed pass/fail exit
+│   │                          (multi / none), assert message, mixed pass/fail exit;
+│   │                          `botopink-lib-test` compiles a test-less library
 │   └── test_tooling/        ← pass + fail fixture projects
 └── src/
     ├── AGENTS.md
@@ -36,8 +37,10 @@ zig build               # produce zig-out/bin/botopink
 zig build run -- help
 zig build run -- version
 zig build test          # includes the CLI unit tests (main.zig parsers / config /
-                        # libs / resolver / migrate / test_cmd / diagnostics;
-                        # root = src/main.zig, cwd = modules/compiler-cli)
+                        # libs / resolver / migrate / test_cmd / diagnostics / clean;
+                        # root = src/main.zig, cwd = modules/compiler-cli) — main.zig's
+                        # `test { _ = @import(...) }` block pulls every cli/ file in; a
+                        # file not listed there has its tests silently skipped
 
 # End-to-end scripts under tests/ spawn the CLI and runtimes, so they are NOT
 # part of `zig build test`. From the workspace root:
@@ -116,7 +119,7 @@ What each command promises. A row the code does not meet yet is marked
 
 | Command | Reads | Writes | Spawns | Exit 0 | Exit 1 |
 |---|---|---|---|---|---|
-| `build [--target T] [--out D] [--typescript]` | `botopink.json`, the `src/` module tree, each declared dependency | `D/<module>.<ext>` for every module that compiled (+ `.d.ts`, + `.mjs` sidecars on commonJS); the previous artifact of a module that did not compile is deleted | **open:** `codegen.generate` still executes each emitted module (see below) | every module compiled and its artifact is on disk | no project, unsupported target, unresolvable tree or dependency, or **any** module failed — each failing module is rendered (file, line, excerpt) and named in `N module(s) failed to compile: a, b` |
+| `build [--target T] [--out D] [--typescript]` | `botopink.json`, the `src/` module tree, each declared dependency | `D/<module>.<ext>` for every module that compiled (+ `.d.ts`, + `.mjs` sidecars on commonJS); the previous artifact of a module that did not compile is deleted | nothing — `codegen.generateWith(…, .{ .execute = false })` emits without running the program | every module compiled and its artifact is on disk | no project, unsupported target, unresolvable tree or dependency, or **any** module failed — each failing module is rendered (file, line, excerpt) and named in `N module(s) failed to compile: a, b` |
 | `run [--target T] [--module M] [--out D] [-- args…]` | what `build` reads | what `build` writes, into `D` | the target runner on `D/M.<ext>` (`beam` only prints the `erlc +from_asm` hint) | the program's own 0 | `build`'s code, or the program's |
 | `check [<path>]` | `botopink.json`, `src/` **and** `test/`, dependencies — in `<path>` when given | nothing | `erl` (comptime) | every module type-checks | at least one diagnostic, each with file, line and excerpt; failing modules named |
 | `test [--target T] [--filter S] [--json]` | `botopink.json`, `src/`, `test/`, dependencies | `.botopinkbuild/test-out/**`, emptied first | the target runner per module with tests (`node` / `escript`) | every module compiled **and** every test passed | a module failed to compile, or a test failed; the modules that compiled still ran their tests and are reported |
@@ -134,29 +137,30 @@ Cross-command rules:
   whose `target` is unsupported fails the command instead of degrading to
   commonJS (`ProjectConfig.parsedTarget` returns `null`).
 - **`build`, `check` and `test` agree**: on the same tree either all three exit
-  0 or all three exit 1. They share `cli/diagnostics.zig`: a lex/parse preflight
-  (located errors, the module is left out so the rest still compile), and a
-  guard that compares the **named** module set handed to `codegen.generate` with
-  the named set it returned — never counts, which `from "std"` expansion
-  inflates. When a module is missing, the comptime pipeline is re-run on the
-  failure path only to render its diagnostic.
+  0 or all three exit 1. They share `cli/diagnostics.zig`. Every failed module
+  carries its located diagnostic in `ComptimeOutput.outcome` — a lex or parse
+  error included (`.parseError` holds the `SyntaxError`; a lex error no longer
+  aborts the session, so the other modules still compile and get diagnosed).
+  `build`/`test` read the same diagnostic from `codegen.generateWith`'s result:
+  every module comes back, a failed one with `result.diagnostic` (lex, parse,
+  type) or `result.comptime_err` (validation), and `diagnostics.failedOutputs`
+  renders each and names the failed non-declaration modules (a module with no
+  entry at all is named too). No command re-runs the comptime pipeline to
+  explain a failure.
 - **Orphans.** A `.bp` file no `mod` path reaches is warned per file and counted
   once (`N module(s) not reached by any `mod` path were not compiled`).
+- **Compiling does not execute.** `build` and `test` call
+  `codegen.generateWith` with `.execute = false`: no `node`/`erl`/`wasmtime`
+  spawn and no `.botopinkbuild/runtime-cache` entry at build time (`test` runs
+  each test module once, through its runner). Only the codegen snapshot harness
+  executes (`codegen.generate`, which sets the flag). Pinned by
+  `tests/cli_contract.sh`.
 - **Dependencies.** A missing dependency is named (`dependency 'server' was not
-  found under any library root`).
-
-Open (not the CLI's files):
-
-- **`build`/`test` execute the program they compile.** `codegen.generate`
-  (`modules/compiler-core/src/codegen.zig`) runs every emitted module through
-  `runtime.execute*` and stores stdout on `run_output`, which no command reads.
-  The fix is an "execute" flag on `codegen.Config` that the snapshot harness sets
-  and the CLI leaves off — a compiler-core change.
-- **The diagnostic is re-derived, not carried.** The four backends' `codegenEmit`
-  still `continue` on `.parseError`/`.typeError`, and `ComptimeOutput.outcome`'s
-  `parseError` carries no payload (a lex error aborts the session). The CLI works
-  around both (preflight + `explainFailures`); the root fix belongs to the
-  backend and comptime owners.
+  found under any library root`). A dependency's `files` entry that cannot be
+  read is `LibFileNotFound`: `libs.loadOne` prints the path it looked for,
+  located at the entry in the dependency's `botopink.json`
+  (`--> <lib>/botopink.json:L:C`), and the commands add nothing after it.
+  Pinned by `tests/cli_contract.sh`.
 
 ### `botopink test` output format
 

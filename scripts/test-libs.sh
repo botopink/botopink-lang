@@ -17,7 +17,9 @@
 #                 the front that owns the fix; counted, does not fail the run
 #   skipped       with the reason: the target is not runnable by `botopink
 #                 test`, or the library's `targets` list excludes it
-#   no tests      the library has no `test {}` block, so it was not compiled
+#   no tests      the library has no `test {}` block; its `.bp` sources were
+#                 compiled (`botopink build`) and nothing ran — a compile
+#                 error is a FAIL
 #
 # Exit codes:
 #   0  every cell passed, was skipped, or is a listed known red
@@ -127,7 +129,7 @@ while IFS= read -r line; do
                     ;;
                 no_tests)
                     no_tests=$((no_tests + 1))
-                    printf '── %s · %s: no tests — the library has no test {} block and was not compiled\n' "$lib" "$target"
+                    printf '── %s · %s: no tests — the library has no test {} block; its .bp sources, if any, compiled\n' "$lib" "$target"
                     ;;
             esac
             ;;

@@ -278,6 +278,20 @@ pub const Parser = struct {
     }
 
     pub fn parse(this: *This, alloc: std.mem.Allocator) ParseError!Program {
+        // Every `UnexpectedToken` leaves a located `parseError`. The named
+        // rejections fill it at the site; a plain `consume` mismatch deep in
+        // an expression (`print((1);`) does not, so record the token the
+        // parser stopped on — callers render the location instead of a bare
+        // error name.
+        return this.parseDecls(alloc) catch |err| {
+            if (err == ParseError.UnexpectedToken and this.parseError == null) {
+                this.parseError = ParseErrorInfo.fromToken(.unexpectedToken, this.peek());
+            }
+            return err;
+        };
+    }
+
+    fn parseDecls(this: *This, alloc: std.mem.Allocator) ParseError!Program {
         var decls: std.ArrayList(DeclKind) = .empty;
         errdefer {
             for (decls.items) |*d| d.deinit(alloc);

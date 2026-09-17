@@ -391,6 +391,26 @@ fn parseNoOpts(args: []const [:0]const u8, diag: *ArgDiag) ArgError!void {
 // unknown flags and --flag=value, C12 new --target validation, C14 no leaked
 // argument lists (the parsers run under `std.testing.allocator` via an arena).
 
+// Zig runs the tests of an imported file only when a test references it: pull
+// in every `cli/` file so their `test` blocks run under `zig build test`.
+test {
+    _ = @import("./cli/build.zig");
+    _ = @import("./cli/check.zig");
+    _ = @import("./cli/clean.zig");
+    _ = @import("./cli/config.zig");
+    _ = @import("./cli/diagnostics.zig");
+    _ = @import("./cli/format_cmd.zig");
+    _ = @import("./cli/libs.zig");
+    _ = @import("./cli/migrate.zig");
+    _ = @import("./cli/new.zig");
+    _ = @import("./cli/reporter.zig");
+    _ = @import("./cli/resolver.zig");
+    _ = @import("./cli/run.zig");
+    _ = @import("./cli/scanner.zig");
+    _ = @import("./cli/sources.zig");
+    _ = @import("./cli/test_cmd.zig");
+}
+
 fn argv(comptime xs: []const [:0]const u8) []const [:0]const u8 {
     return xs;
 }

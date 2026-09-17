@@ -1,21 +1,13 @@
 /// Compile diagnostics shared by `build`, `check` and `test`.
 ///
-/// The compiler core reports a failed module in three lossy ways today: a lex
-/// error aborts the whole session as a bare Zig error tag, a parse error is an
-/// outcome with no location, and a type error makes `codegen.generate` drop the
-/// module without a trace (the backends `continue` past it). This file closes
-/// that gap from the driver side so every command answers the same question the
-/// same way — "which modules did not compile, and where":
-///
-///   * `preflight` lexes and parses every module before compilation and renders
-///     a located lex or parse error (file, line, excerpt) for each one that
-///     fails; the caller compiles only the modules that passed.
-///   * `missingOutputs` compares the *named* set of modules handed to
-///     `codegen.generate` with the named set it returned — never counts, which
-///     `from "std"` expansion inflates.
-///   * `explainFailures` re-runs the comptime pipeline over the same modules
-///     (only on the failure path) and renders the located diagnostic of every
-///     module that did not type-check.
+/// Every failed module carries a located diagnostic in its comptime outcome:
+/// a lex or parse error (`SyntaxError`, rendered by `printSyntaxError`), a type
+/// error or a comptime validation error. A module that fails to lex or parse no
+/// longer aborts the session, so the others still compile and get diagnosed.
+/// `check` renders the comptime outcomes (`renderOutcome`); `build` and `test`
+/// read the same diagnostic from `codegen.generateWith`'s result, where every
+/// backend returns a failed module with it (`failedOutputs`), so no command
+/// re-runs the pipeline to explain a failure.
 const std = @import("std");
 const bp = @import("botopink");
 const reporter = @import("./reporter.zig");
@@ -127,76 +119,62 @@ fn humanize(buf: []u8, name: []const u8) []const u8 {
     return buf[0..n];
 }
 
-// ── Preflight: lex + parse ────────────────────────────────────────────────────
+// ── Lex and parse errors ──────────────────────────────────────────────────────
 
-pub const Preflight = struct {
-    /// Modules that lexed and parsed (declaration modules pass through), in
-    /// input order.
-    ok: []Module,
-    /// Names of the modules that did not lex or parse, each already rendered.
-    failed: []const []const u8,
-};
+/// The located lex / parse error a module's comptime outcome carries
+/// (`ComptimeOutput.Outcome.parseError`).
+pub const SyntaxError = bp.comptime_pipeline.SyntaxError;
 
-/// Lex and parse every non-declaration module, render a located diagnostic for
-/// each failure, and split the input into the modules that can be compiled and
-/// the names of those that cannot.
-pub fn preflight(arena: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, modules: []const Module) !Preflight {
-    var ok: std.ArrayListUnmanaged(Module) = .empty;
-    var failed: std.ArrayListUnmanaged([]const u8) = .empty;
-    for (modules) |m| {
-        if (m.declaration or lexParse(arena, gpa, io, m)) {
-            try ok.append(arena, m);
+/// Render the lex or parse error a comptime outcome carries.
+pub fn printSyntaxError(gpa: std.mem.Allocator, se: SyntaxError, source: []const u8, file: []const u8) void {
+    switch (se) {
+        .lex => |lf| printLexFailure(gpa, lf, source, file),
+        .parse => |info| if (info) |i| {
+            printParseInfo(gpa, i, source, file);
         } else {
-            try failed.append(arena, moduleName(m));
-        }
+            var buf: [256]u8 = undefined;
+            reporter.errMsg(std.fmt.bufPrint(&buf, "parse error in {s}", .{file}) catch "parse error");
+        },
     }
-    return .{ .ok = ok.items, .failed = failed.items };
 }
 
-/// True when `m` lexes and parses; otherwise renders the located error.
-fn lexParse(arena: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, m: Module) bool {
-    var scratch = std.heap.ArenaAllocator.init(gpa);
-    defer scratch.deinit();
-    const sa = scratch.allocator();
-    const file = fileLabel(arena, io, moduleName(m));
-
-    var lexer = bp.Lexer.init(m.source);
-    const tokens = lexer.scanAll(sa) catch |err| {
-        printLexError(gpa, &lexer, err, m.source, file);
-        return false;
-    };
-
-    var parser = bp.Parser.init(tokens);
-    _ = parser.parse(sa) catch |err| {
-        printParseError(gpa, &parser, err, m.source, file);
-        return false;
-    };
-    return true;
-}
-
-/// Render the error `lexer.scanAll` just failed with, located at the token the
-/// lexer was scanning.
-pub fn printLexError(gpa: std.mem.Allocator, lexer: *const bp.Lexer, err: anyerror, source: []const u8, file: []const u8) void {
+/// Render a lex failure, located at the structured error when the lexer
+/// recorded one, else at the token it was scanning.
+fn printLexFailure(gpa: std.mem.Allocator, lf: SyntaxError.LexFailure, source: []const u8, file: []const u8) void {
     var buf: [128]u8 = undefined;
-    if (lexer.lexError) |le| {
+    if (lf.info) |le| {
         const at = lineColOf(source, le.start);
         const span = if (le.end > le.start) le.end - le.start else 1;
         printLocated(gpa, humanize(&buf, @tagName(le.kind)), file, source, at.line, at.col, span);
     } else {
-        const at = lineColOf(source, lexer.start);
+        const at = lineColOf(source, lf.start);
         const rest_of_line = lineText(source, at.line).len -| (at.col - 1);
-        const span = @max(@min(lexer.current -| lexer.start, rest_of_line), 1);
-        printLocated(gpa, humanize(&buf, @errorName(err)), file, source, at.line, at.col, span);
+        const span = @max(@min(lf.end -| lf.start, rest_of_line), 1);
+        printLocated(gpa, humanize(&buf, lf.name), file, source, at.line, at.col, span);
     }
+}
+
+/// Render the error `lexer.scanAll` just failed with (`format`).
+pub fn printLexError(gpa: std.mem.Allocator, lexer: *const bp.Lexer, err: anyerror, source: []const u8, file: []const u8) void {
+    printLexFailure(gpa, .{
+        .name = @errorName(err),
+        .info = lexer.lexError,
+        .start = lexer.start,
+        .end = lexer.current,
+    }, source, file);
+}
+
+fn printParseInfo(gpa: std.mem.Allocator, info: bp.print_errors.ParseErrorInfo, source: []const u8, file: []const u8) void {
+    var aw: std.Io.Writer.Allocating = .init(gpa);
+    defer aw.deinit();
+    bp.print_errors.render(&aw.writer, info, source, file) catch {};
+    std.debug.print("{s}", .{aw.written()});
 }
 
 /// Render the error `parser.parse` just failed with.
 pub fn printParseError(gpa: std.mem.Allocator, parser: *const bp.Parser, err: anyerror, source: []const u8, file: []const u8) void {
     if (parser.parseError) |info| {
-        var aw: std.Io.Writer.Allocating = .init(gpa);
-        defer aw.deinit();
-        bp.print_errors.render(&aw.writer, info, source, file) catch {};
-        std.debug.print("{s}", .{aw.written()});
+        printParseInfo(gpa, info, source, file);
     } else if (parser.tokens.len > 0) {
         // No structured error recorded: locate the token the parser stopped at.
         const tok = parser.tokens[@min(parser.current, parser.tokens.len - 1)];
@@ -216,25 +194,70 @@ pub fn printParseError(gpa: std.mem.Allocator, parser: *const bp.Parser, err: an
 
 // ── Named module-set guard ────────────────────────────────────────────────────
 
-/// Names of the non-declaration `modules` for which `outputs` holds no entry
-/// (or only a validation-error entry). Compares named sets, never counts:
-/// `codegen.generate` adds one output per `from "std"` module it pulls in.
-pub fn missingOutputs(
+/// Render the diagnostic of every module `codegen.generateWith` returned
+/// without an artifact, and answer the names of the failed non-declaration
+/// modules. Every module comes back from `generateWith`: a lex/parse/type
+/// failure carries `result.diagnostic`, a comptime validation failure
+/// `result.comptime_err`. A non-declaration module with no entry at all is
+/// named too (no diagnostic to render). Nothing is printed when no
+/// non-declaration module failed — a broken declaration file alone does not
+/// fail the command.
+pub fn failedOutputs(
+    gpa: std.mem.Allocator,
+    io: std.Io,
     arena: std.mem.Allocator,
     modules: []const Module,
     outputs: []const bp.codegen.ModuleOutput,
 ) ![]const []const u8 {
-    var produced = std.StringHashMap(void).init(arena);
-    for (outputs) |o| {
-        if (o.result.comptime_err == null) try produced.put(o.name, {});
+    var declarations = std.StringHashMap(void).init(arena);
+    var returned = std.StringHashMap(void).init(arena);
+    for (modules) |m| {
+        if (m.declaration) try declarations.put(moduleName(m), {});
     }
-    var missing: std.ArrayListUnmanaged([]const u8) = .empty;
+    var failed: std.ArrayListUnmanaged([]const u8) = .empty;
+    for (outputs) |o| {
+        try returned.put(o.name, {});
+        if (o.result.failed() and !declarations.contains(o.name)) try failed.append(arena, o.name);
+    }
     for (modules) |m| {
         if (m.declaration) continue;
         const name = moduleName(m);
-        if (!produced.contains(name)) try missing.append(arena, name);
+        if (!returned.contains(name)) try failed.append(arena, name);
     }
-    return missing.items;
+    if (failed.items.len > 0) {
+        for (outputs) |o| _ = renderResult(gpa, io, arena, o);
+    }
+    return failed.items;
+}
+
+/// Render the diagnostic a `generateWith` entry carries. Returns true when the
+/// entry is a failure.
+pub fn renderResult(gpa: std.mem.Allocator, io: std.Io, arena: std.mem.Allocator, o: bp.codegen.ModuleOutput) bool {
+    if (o.result.comptime_err) |ce| {
+        renderValidationError(gpa, ce, o.src);
+        return true;
+    }
+    const d = o.result.diagnostic orelse return false;
+    const file = fileLabel(arena, io, o.name);
+    switch (d) {
+        .syntax => |se| printSyntaxError(gpa, se, o.src, file),
+        .type => |t| printTypeError(gpa, t.message, t.loc, o.src, file),
+    }
+    return true;
+}
+
+fn renderValidationError(gpa: std.mem.Allocator, ce: anytype, source: []const u8) void {
+    const rendered = ce.renderAlloc(gpa, source) catch return;
+    defer gpa.free(rendered);
+    std.debug.print("{s}", .{rendered});
+}
+
+fn printTypeError(gpa: std.mem.Allocator, msg: []const u8, loc: anytype, source: []const u8, file: []const u8) void {
+    if (loc) |l| {
+        printLocated(gpa, msg, file, source, l.line, l.col, 1);
+    } else {
+        std.debug.print("error: {s}\n --> {s}\n\n", .{ msg, file });
+    }
 }
 
 // ── Type diagnostics ──────────────────────────────────────────────────────────
@@ -244,48 +267,21 @@ pub fn missingOutputs(
 pub fn renderOutcome(gpa: std.mem.Allocator, io: std.Io, arena: std.mem.Allocator, o: bp.codegen.ComptimeOutput) bool {
     switch (o.outcome) {
         .ok => return false,
-        .parseError => {
-            // Normally caught by `preflight`; re-lex/parse to locate it.
-            _ = lexParse(arena, gpa, io, .{ .path = o.name, .source = o.src });
+        .parseError => |se| {
+            printSyntaxError(gpa, se, o.src, fileLabel(arena, io, o.name));
             return true;
         },
         .validationError => |ce| {
-            const rendered = ce.renderAlloc(gpa, o.src) catch return true;
-            defer gpa.free(rendered);
-            std.debug.print("{s}", .{rendered});
+            renderValidationError(gpa, ce, o.src);
             return true;
         },
         .typeError => |te| {
             const msg = te.message(gpa) catch return true;
             defer gpa.free(msg);
-            const file = fileLabel(arena, io, o.name);
-            if (te.loc) |loc| {
-                printLocated(gpa, msg, file, o.src, loc.line, loc.col, 1);
-            } else {
-                std.debug.print("error: {s}\n --> {s}\n\n", .{ msg, file });
-            }
+            printTypeError(gpa, msg, te.loc, o.src, fileLabel(arena, io, o.name));
             return true;
         },
     }
-}
-
-/// Re-run the comptime pipeline over `modules` and render the diagnostic of
-/// every module that failed. Called only on the failure path of `build`/`test`,
-/// after `codegen.generate` dropped a module without saying why.
-pub fn explainFailures(
-    gpa: std.mem.Allocator,
-    io: std.Io,
-    arena: std.mem.Allocator,
-    modules: []const Module,
-    target_name: []const u8,
-) void {
-    var session = bp.comptime_pipeline.compile(gpa, modules, io, ".botopinkbuild", target_name) catch |err| {
-        var buf: [128]u8 = undefined;
-        reporter.errMsg(std.fmt.bufPrint(&buf, "type-check failed: {s}", .{@errorName(err)}) catch "type-check failed");
-        return;
-    };
-    defer session.deinit(gpa);
-    for (session.outputs.items) |o| _ = renderOutcome(gpa, io, arena, o);
 }
 
 /// The target vocabulary the comptime pipeline takes (`codegen.generate` threads
@@ -327,11 +323,39 @@ test "renderLocated prints file, line, column, excerpt and caret" {
         \\error: unbound variable 'nope'
         \\ --> src/broken.bp:2:3
         \\  |
-        \\2 | nope()
+        \\2 |   nope()
         \\  |   ^^^^
         \\
         \\
     , aw.written());
+}
+
+test "a lex or parse error is a located outcome, not a session failure" {
+    const gpa = std.testing.allocator;
+    var session = try bp.comptime_pipeline.compileTypesOnly(gpa, &.{
+        .{ .path = "lexbad", .source = "pub fn g() {\n    print(\"abc);\n}\n" },
+        .{ .path = "parsebad", .source = "pub fn h() {\n    print((1);\n}\n" },
+        .{ .path = "ok", .source = "pub fn f() -> i32 {\n    return 1;\n}\n" },
+    }, null);
+    defer session.deinit(gpa);
+
+    const outs = session.outputs.items;
+    try std.testing.expectEqual(@as(usize, 3), outs.len);
+
+    // `print("abc);` — an unterminated string, located at its opening quote.
+    const lf = outs[0].outcome.parseError.lex;
+    try std.testing.expectEqualStrings("UnterminatedString", lf.name);
+    const lex_at = lineColOf(outs[0].src, lf.start);
+    try std.testing.expectEqual(@as(usize, 2), lex_at.line);
+    try std.testing.expectEqual(@as(usize, 11), lex_at.col);
+
+    // `print((1);` — the parser records the `;` it stopped on.
+    const info = outs[1].outcome.parseError.parse orelse return error.TestExpectedParseErrorInfo;
+    try std.testing.expectEqual(@as(usize, 2), info.line);
+    try std.testing.expectEqual(@as(usize, 14), info.col);
+    try std.testing.expectEqualStrings(";", info.lexeme);
+
+    try std.testing.expect(outs[2].outcome == .ok);
 }
 
 test "lineColOf and humanize" {
@@ -342,23 +366,26 @@ test "lineColOf and humanize" {
     try std.testing.expectEqualStrings("unterminated string", humanize(&buf, "UnterminatedString"));
 }
 
-test "missingOutputs compares named sets, not counts" {
+test "failedOutputs names diagnosed and absent modules, never a declaration file or a std output" {
     var arena_inst = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_inst.deinit();
     const arena = arena_inst.allocator();
     const modules = [_]Module{
         .{ .path = "main", .source = "" },
         .{ .path = "broken", .source = "" },
+        .{ .path = "gone", .source = "" },
         .{ .path = "decls", .source = "", .declaration = true },
     };
-    // One `from "std"` output masks the missing `broken` under a count guard.
     var js_a = "a".*;
     var js_b = "b".*;
+    var js_c = "".*;
     const outputs = [_]bp.codegen.ModuleOutput{
         .{ .name = "std/list", .src = "", .result = .{ .js = &js_a, .comptime_script = null } },
         .{ .name = "main", .src = "", .result = .{ .js = &js_b, .comptime_script = null } },
+        .{ .name = "broken", .src = "val x = ;", .result = .{ .js = &js_c, .comptime_script = null, .diagnostic = .{ .syntax = .{ .parse = null } } } },
     };
-    const missing = try missingOutputs(arena, &modules, &outputs);
-    try std.testing.expectEqual(@as(usize, 1), missing.len);
-    try std.testing.expectEqualStrings("broken", missing[0]);
+    const failed = try failedOutputs(std.testing.allocator, std.testing.io, arena, &modules, &outputs);
+    try std.testing.expectEqual(@as(usize, 2), failed.len);
+    try std.testing.expectEqualStrings("broken", failed[0]);
+    try std.testing.expectEqualStrings("gone", failed[1]);
 }

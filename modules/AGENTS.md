@@ -51,7 +51,7 @@ The workspace [`../build.zig`](../build.zig) builds every executable
 ```bash
 zig build                  # build all four executables into zig-out/bin/
 zig build run -- <args>    # build + run the botopink CLI
-zig build test             # compiler-core + language-server + compiler-cli tests
+zig build test             # compiler-core + language-server + compiler-cli + lib-test-runner tests
                            # (+ lib-agnostic grep gate over compiler-core/src)
 zig build test -Dtest-filter=<substr>
 zig build test-bpmp        # bpmp unit tests          (not part of `test`)
@@ -64,9 +64,9 @@ zig build clean-tmp        # reap compiler-core/.botopinkbuild/tmp dirs older th
 `compiler-cli`, `compiler-core` and `language-server` carry no `build.zig` of
 their own: every command runs from the workspace root, which derives the `std`
 module list from `libs/std/src/root.bp` (a second build graph once built a
-compiler with 5 of the std modules). `lib-test-runner` keeps a standalone
-`build.zig` because the workspace `zig build test` does not run its unit tests
-yet — `cd modules/lib-test-runner && zig build test`. See the root
+compiler with 5 of the std modules). `lib-test-runner` still has a standalone
+`build.zig`; the workspace `zig build test` runs its unit tests too (root
+`src/main.zig`, cwd `modules/lib-test-runner`), so that pair is now redundant. See the root
 [`AGENTS.md`](../AGENTS.md) for top-level commands.
 
 ## Cross-package conventions

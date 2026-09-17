@@ -73,10 +73,9 @@ pub fn run(
     reporter.compiling(all_modules.len);
     const t0 = std.Io.Timestamp.now(io, .awake);
 
-    // A module that does not lex or parse is reported with its location and
-    // left out of compilation, so the rest still compile and get diagnosed.
-    const pre = try diagnostics.preflight(arena, gpa, io, all_modules);
-    const modules = pre.ok;
+    // A module that does not lex, parse or type-check is reported with its
+    // location (below); the rest still compile.
+    const modules = all_modules;
 
     // Build codegen config.
     const cfg = bp.codegen.Config{
@@ -90,8 +89,8 @@ pub fn run(
         .build_root = ".botopinkbuild",
     };
 
-    // Run the compiler.
-    var outputs = bp.codegen.generate(gpa, modules, io, cfg) catch |err| {
+    // Run the compiler. `build` emits only: the program is not executed.
+    var outputs = bp.codegen.generateWith(gpa, modules, io, cfg, .{ .execute = false }) catch |err| {
         reporter.errMsg("compilation failed");
         std.debug.print("  {s}\n", .{@errorName(err)});
         return 1;
@@ -103,15 +102,10 @@ pub fn run(
 
     const t1 = std.Io.Timestamp.now(io, .awake);
 
-    // Every module handed to the compiler must come back with an artifact. The
-    // backends drop a module that fails to type-check without a trace (and a
-    // comptime validation error comes back with no artifact), so compare the
-    // named sets and, when one is missing, re-derive every diagnostic.
-    const missing = try diagnostics.missingOutputs(arena, modules, outputs.items);
-    if (missing.len > 0) {
-        diagnostics.explainFailures(gpa, io, arena, modules, diagnostics.comptimeTargetName(target));
-    }
-    const failed = try std.mem.concat(arena, []const u8, &.{ pre.failed, missing });
+    // Every module comes back from the compiler; one that did not lex, parse,
+    // type-check or pass comptime validation carries its diagnostic instead of
+    // an artifact, rendered here.
+    const failed = try diagnostics.failedOutputs(gpa, io, arena, modules, outputs.items);
 
     // Write what compiled; remove any previous artifact of a module that did not,
     // so nothing stale is left claiming to be current.
@@ -145,6 +139,8 @@ pub fn reportDependencyError(err: anyerror) void {
         },
         error.LibNotFound => reporter.hintMsg("libraries resolve from BOTOPINK_LIB_ROOTS, then <ancestor>/repository/botopink-lang/libs, <ancestor>/repository and <ancestor>/libs, then .botopinkbuild/deps (`bpmp install`)"),
         error.LibManifestInvalid => reporter.errMsg("a dependency's botopink.json is invalid"),
+        // Already rendered with the path and the manifest line.
+        error.LibFileNotFound => {},
         else => reporter.errMsg("failed to load project dependencies"),
     }
 }
@@ -189,7 +185,7 @@ fn writeOutputs(
 
     for (outputs) |o| {
         // A validation error carries no artifact.
-        if (o.result.comptime_err != null) continue;
+        if (o.result.failed()) continue;
         // Create subdirectories if the module path contains slashes.
         const sub_path = try std.fmt.allocPrint(gpa, "{s}/{s}{s}", .{ out_dir, o.name, ext });
         defer gpa.free(sub_path);
