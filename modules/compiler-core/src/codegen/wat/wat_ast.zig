@@ -418,6 +418,9 @@ pub const HelperGroup = enum {
     print_opt,
     /// `$__write_err` `$__assert_fail`.
     assert_fail,
+    /// `$__print_quoted_raw` `$__print_shaped_raw` — arrays of strings, tuples
+    /// and arrays of tuples (semantics decision 1a).
+    print_shaped,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
@@ -429,6 +432,7 @@ pub const HelperGroup = enum {
             .arr_at_box => &.{.box_i32},
             .print_opt => &.{ .print, .print_bool, .print_str },
             .assert_fail => &.{.print},
+            .print_shaped => &.{ .print, .print_bool, .print_f64 },
             .i32_to_str, .str_case, .str_repeat, .arr_new => &.{.alloc},
             .f64_to_str => &.{ .i32_to_str, .alloc },
             .str_index_of, .str_starts_with, .str_ends_with => &.{.mem_eq},
@@ -504,6 +508,8 @@ pub const Helper = enum {
     print_opt_str_raw,
     write_err,
     assert_fail,
+    print_quoted_raw,
+    print_shaped_raw,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {
@@ -520,6 +526,7 @@ pub const Helper = enum {
             .print_arr_i32, .print_arr_i32_raw => .print_arr_i32,
             .print_arr_f32, .print_arr_f32_raw => .print_arr_f32,
             .write_err, .assert_fail => .assert_fail,
+            .print_quoted_raw, .print_shaped_raw => .print_shaped,
             .print_undefined, .print_opt_i32, .print_opt_i32_raw, .print_opt_bool, .print_opt_bool_raw, .print_opt_str, .print_opt_str_raw => .print_opt,
             inline else => |t| @field(HelperGroup, @tagName(t)),
         };

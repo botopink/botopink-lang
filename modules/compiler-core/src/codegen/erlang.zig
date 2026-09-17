@@ -494,33 +494,126 @@ const text_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_text", .claus
 } } };
 
 /// `'__bp_print'/1`: the `@print`/`@println`/`@debug` lowering (cross-backend
-/// semantics decision 1). It takes the argument LIST and prints the values on
-/// one line separated by a space: a binary through `~ts` (its text), anything
-/// else through `~p`. The verb is picked at runtime, so the typed and the
-/// untyped (comptime) path print the same bytes.
+/// semantics decisions 1 and 1a). It takes the argument LIST and prints the
+/// values on one line separated by a space, each as `'__bp_show'/2` renders
+/// it. The rendering dispatches at runtime, so the typed and the untyped
+/// (comptime) path print the same bytes.
 const print_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_print", .clauses = &.{.{
     .patterns = &.{Ast.Expr.v("Values")},
     .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "io", .name = "format", .args = &.{
-        .{ .call = .{ .module = "lists", .name = "flatten", .args = &.{.{ .list = &.{
-            .{ .call = .{ .module = "lists", .name = "join", .args = &.{
-                .{ .string = " " },
-                .{ .list_comp = .{
-                    .element = &Ast.Expr{ .case_ = .{
-                        .subject = &Ast.Expr{ .call = .{ .name = "is_binary", .args = &.{Ast.Expr.v("V")} } },
-                        .clauses = &.{
-                            .{ .patterns = &.{Ast.Expr.a("true")}, .body = Ast.Body.of(&.{.{ .expr = .{ .string = "~ts" } }}), .layout = .inline_ },
-                            .{ .patterns = &.{Ast.Expr.a("false")}, .body = Ast.Body.of(&.{.{ .expr = .{ .string = "~p" } }}), .layout = .inline_ },
-                        },
-                        .layout = .inline_,
-                    } },
-                    .qualifiers = &.{.{ .generator = .{ .pattern = Ast.Expr.v("V"), .list = Ast.Expr.v("Values") } }},
-                } },
-            } } },
-            .{ .string = "~n" },
-        } }} } },
-        Ast.Expr.v("Values"),
+        .{ .string = "~ts~n" },
+        .{ .list = &.{.{ .call = .{ .module = "lists", .name = "join", .args = &.{
+            .{ .string = " " },
+            .{ .list_comp = .{
+                .element = &Ast.Expr{ .call = .{ .name = "__bp_show", .args = &.{ Ast.Expr.v("V"), Ast.Expr.a("true") } } },
+                .qualifiers = &.{.{ .generator = .{ .pattern = Ast.Expr.v("V"), .list = Ast.Expr.v("Values") } }},
+            } },
+        } } }} },
     } } } }}),
 }} } };
+
+/// `V` bound to the first element of a tuple, for the tagged-tuple guard.
+const show_first: Ast.Expr = .{ .call = .{ .name = "element", .args = &.{ .{ .number = "1" }, Ast.Expr.v("V") } } };
+
+/// `element(1, V) =/= Atom`.
+fn firstIsNot(comptime atom: []const u8) Ast.Expr {
+    return .{ .binop = .{ .op = "=/=", .lhs = &show_first, .rhs = &Ast.Expr.a(atom), .parens = false } };
+}
+
+/// `'__bp_show'(Elem, false)` over `Elems`, joined by `,`.
+fn showJoined(comptime elems: Ast.Expr) Ast.Expr {
+    return .{ .call = .{ .module = "lists", .name = "join", .args = &.{
+        .{ .string = "," },
+        .{ .list_comp = .{
+            .element = &Ast.Expr{ .call = .{ .name = "__bp_show", .args = &.{ Ast.Expr.v("E"), Ast.Expr.a("false") } } },
+            .qualifiers = &.{.{ .generator = .{ .pattern = Ast.Expr.v("E"), .list = elems } }},
+        } },
+    } } };
+}
+
+/// `$C -> "Escaped"` — one clause of the nested-string escape `case`.
+fn escapeClause(comptime char: []const u8, comptime escaped: []const u8) Ast.Clause {
+    return .{ .patterns = &.{.{ .number = char }}, .body = Ast.Body.of(&.{.{ .expr = .{ .string = escaped } }}), .layout = .inline_ };
+}
+
+/// `'__bp_show'/2`: the text of one printed value as chardata (semantics
+/// decision 1a). `Top` is `true` for an argument of `@print` itself.
+///   - a binary at top level is its text; nested, it is quoted with the source
+///     escapes (`\"`, `\\`, `\n`, `\r`, `\t`);
+///   - a list is `[E1,E2]`, a tuple `#(E1,E2)` — no spaces;
+///   - a tuple tagged by an atom (an enum variant `{'Circle', R}`, a Result
+///     `{ok, V}`) and every other term (numbers, atoms, maps) keep `~p`: the
+///     text of records, enums and maps is not decided by 1a. `true`, `false`
+///     and `undefined` are values, not tags, so a tuple they open is a tuple.
+const show_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_show", .clauses = &.{
+    .{
+        .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.a("true") },
+        .guards = &.{isA("binary", "V")},
+        .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("V") }}),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.v("_") },
+        .guards = &.{isA("binary", "V")},
+        .body = Ast.Body.of(&.{.{ .expr = .{ .list = &.{
+            .{ .number = "$\"" },
+            .{ .list_comp = .{
+                .element = &Ast.Expr{ .case_ = .{
+                    .subject = &Ast.Expr.v("C"),
+                    .clauses = &.{
+                        escapeClause("$\"", "\\\""),
+                        escapeClause("$\\\\", "\\\\"),
+                        escapeClause("$\\n", "\\n"),
+                        escapeClause("$\\r", "\\r"),
+                        escapeClause("$\\t", "\\t"),
+                        .{ .patterns = &.{Ast.Expr.v("_")}, .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("C") }}), .layout = .inline_ },
+                    },
+                    .layout = .inline_,
+                } },
+                .qualifiers = &.{.{ .generator = .{
+                    .pattern = Ast.Expr.v("C"),
+                    .list = .{ .call = .{ .module = "unicode", .name = "characters_to_list", .args = &.{Ast.Expr.v("V")} } },
+                } }},
+            } },
+            .{ .number = "$\"" },
+        } } }}),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.v("_") },
+        .guards = &.{isA("list", "V")},
+        .body = Ast.Body.of(&.{.{ .expr = .{ .list = &.{ .{ .number = "$[" }, showJoined(Ast.Expr.v("V")), .{ .number = "$]" } } } }}),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.v("_") },
+        .guards = &.{
+            isA("tuple", "V"),
+            .{ .binop = .{ .op = ">", .lhs = &Ast.Expr{ .call = .{ .name = "tuple_size", .args = &.{Ast.Expr.v("V")} } }, .rhs = &Ast.Expr{ .number = "0" }, .parens = false } },
+            .{ .call = .{ .name = "is_atom", .args = &.{show_first} } },
+            firstIsNot("true"),
+            firstIsNot("false"),
+            firstIsNot("undefined"),
+        },
+        .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "io_lib", .name = "format", .args = &.{ .{ .string = "~p" }, .{ .list = &.{Ast.Expr.v("V")} } } } } }}),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.v("_") },
+        .guards = &.{isA("tuple", "V")},
+        .body = Ast.Body.of(&.{.{ .expr = .{ .list = &.{
+            .{ .string = "#(" },
+            showJoined(.{ .call = .{ .name = "tuple_to_list", .args = &.{Ast.Expr.v("V")} } }),
+            .{ .number = "$)" },
+        } } }}),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.v("_") },
+        .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "io_lib", .name = "format", .args = &.{ .{ .string = "~p" }, .{ .list = &.{Ast.Expr.v("V")} } } } } }}),
+        .layout = .inline_,
+    },
+} } };
 
 /// Helpers every comptime module carries. Bodies are untyped (no inference ran
 /// over them), so type-directed lowerings dispatch at runtime — `+` →
@@ -975,7 +1068,7 @@ fn emitErlangModule(
         if (em.needs_add_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, add_helper_form });
         if (em.needs_len_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, len_helper_form });
         if (em.needs_text_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, text_helper_form });
-        if (em.needs_print_helper) try forms.appendSlice(b.arena, &.{ .blank, print_helper_form });
+        if (em.needs_print_helper) try forms.appendSlice(b.arena, &.{ .blank, print_helper_form, .blank, show_helper_form });
     }
 
     if (comptime_module) |cm| {
