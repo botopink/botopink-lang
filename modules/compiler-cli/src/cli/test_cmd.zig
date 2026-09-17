@@ -124,7 +124,8 @@ pub fn run(
         .test_mode = true,
     };
 
-    var outputs = bp.codegen.generate(gpa, modules, io, cfg) catch |err| {
+    // Emit only: each test module is run once, below, by its runner.
+    var outputs = bp.codegen.generateWith(gpa, modules, io, cfg, .{ .execute = false }) catch |err| {
         reporter.errMsg("compilation failed");
         std.debug.print("  {s}\n", .{@errorName(err)});
         return 1;

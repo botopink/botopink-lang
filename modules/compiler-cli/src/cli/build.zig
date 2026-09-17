@@ -90,8 +90,8 @@ pub fn run(
         .build_root = ".botopinkbuild",
     };
 
-    // Run the compiler.
-    var outputs = bp.codegen.generate(gpa, modules, io, cfg) catch |err| {
+    // Run the compiler. `build` emits only: the program is not executed.
+    var outputs = bp.codegen.generateWith(gpa, modules, io, cfg, .{ .execute = false }) catch |err| {
         reporter.errMsg("compilation failed");
         std.debug.print("  {s}\n", .{@errorName(err)});
         return 1;

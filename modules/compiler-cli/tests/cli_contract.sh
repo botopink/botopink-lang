@@ -4,6 +4,8 @@
 # the real `botopink` binary against it and asserts the exit code, the output
 # and what is (or is not) on disk. The flag-parser rows (C8, C10–C12, C14) also
 # have unit tests in `src/main.zig`; they are repeated here against the binary.
+# One row beyond C1–C13 pins that `build` does not execute the program it
+# compiles (no runtime spawn, no runtime-cache entry — 1.0.4-beta cli-residuals).
 #
 # Every assertion is a hard assert. A row that needs a runtime which is absent
 # (node for `botopink test`, a non-root user for the undeletable-directory row)
@@ -98,6 +100,31 @@ expect_code 1 "broken rebuild"
 run "$P" run
 expect_code 1 "run after a failed build"
 expect_no_out "stale build v1" "run does not execute the stale artifact"
+
+# ── build does not execute the program it compiles ───────────────────────────
+echo "==> build emits without running the program (no runtime spawn, no runtime cache)"
+SHIMS="$WORK/shims"; SPAWNED="$WORK/spawned.log"
+mkdir -p "$SHIMS"; : >"$SPAWNED"
+for tool in node erl erlc escript wasmtime; do
+  printf '#!/bin/sh\necho "%s $*" >>"%s"\nexit 1\n' "$tool" "$SPAWNED" >"$SHIMS/$tool"
+  chmod +x "$SHIMS/$tool"
+done
+for target in commonJS erlang beam wasm; do
+  P="$(project exec-$target "$target")"
+  printf 'pub fn main() {\n    print("side effect at build time");\n}\n' >"$P/src/main.bp"
+  # With the real runtimes on PATH: nothing is executed, so nothing is cached.
+  run "$P" build
+  expect_code 0 "build --target $target"
+  [[ ! -e "$P/.botopinkbuild/runtime-cache" ]] && ok "$target: no runtime-cache entry" || fail "$target: build left .botopinkbuild/runtime-cache ($(ls "$P/.botopinkbuild/runtime-cache" | head -1))"
+  # With recording shims first on PATH: no runtime is spawned at all.
+  rm -rf "$P/out" "$P/.botopinkbuild"
+  set +e
+  OUT="$(cd "$P" && PATH="$SHIMS:$PATH" "$BP" build 2>&1)"
+  CODE=$?
+  set -e
+  expect_code 0 "build --target $target with runtime shims on PATH"
+done
+[[ ! -s "$SPAWNED" ]] && ok "no node/erl/erlc/escript/wasmtime spawned by build" || fail "build spawned a runtime: $(tr '\n' ';' <"$SPAWNED")"
 
 # ── C5 / C6 / C7 — check covers test/, lex and parse errors are located ──────
 echo "==> C6 a lex error renders with file, line and excerpt on build/check/test"

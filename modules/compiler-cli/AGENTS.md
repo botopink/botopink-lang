@@ -118,7 +118,7 @@ What each command promises. A row the code does not meet yet is marked
 
 | Command | Reads | Writes | Spawns | Exit 0 | Exit 1 |
 |---|---|---|---|---|---|
-| `build [--target T] [--out D] [--typescript]` | `botopink.json`, the `src/` module tree, each declared dependency | `D/<module>.<ext>` for every module that compiled (+ `.d.ts`, + `.mjs` sidecars on commonJS); the previous artifact of a module that did not compile is deleted | **open:** `codegen.generate` still executes each emitted module (see below) | every module compiled and its artifact is on disk | no project, unsupported target, unresolvable tree or dependency, or **any** module failed — each failing module is rendered (file, line, excerpt) and named in `N module(s) failed to compile: a, b` |
+| `build [--target T] [--out D] [--typescript]` | `botopink.json`, the `src/` module tree, each declared dependency | `D/<module>.<ext>` for every module that compiled (+ `.d.ts`, + `.mjs` sidecars on commonJS); the previous artifact of a module that did not compile is deleted | nothing — `codegen.generateWith(…, .{ .execute = false })` emits without running the program | every module compiled and its artifact is on disk | no project, unsupported target, unresolvable tree or dependency, or **any** module failed — each failing module is rendered (file, line, excerpt) and named in `N module(s) failed to compile: a, b` |
 | `run [--target T] [--module M] [--out D] [-- args…]` | what `build` reads | what `build` writes, into `D` | the target runner on `D/M.<ext>` (`beam` only prints the `erlc +from_asm` hint) | the program's own 0 | `build`'s code, or the program's |
 | `check [<path>]` | `botopink.json`, `src/` **and** `test/`, dependencies — in `<path>` when given | nothing | `erl` (comptime) | every module type-checks | at least one diagnostic, each with file, line and excerpt; failing modules named |
 | `test [--target T] [--filter S] [--json]` | `botopink.json`, `src/`, `test/`, dependencies | `.botopinkbuild/test-out/**`, emptied first | the target runner per module with tests (`node` / `escript`) | every module compiled **and** every test passed | a module failed to compile, or a test failed; the modules that compiled still ran their tests and are reported |
@@ -138,22 +138,23 @@ Cross-command rules:
 - **`build`, `check` and `test` agree**: on the same tree either all three exit
   0 or all three exit 1. They share `cli/diagnostics.zig`: a lex/parse preflight
   (located errors, the module is left out so the rest still compile), and a
-  guard that compares the **named** module set handed to `codegen.generate` with
+  guard that compares the **named** module set handed to `codegen.generateWith` with
   the named set it returned — never counts, which `from "std"` expansion
   inflates. When a module is missing, the comptime pipeline is re-run on the
   failure path only to render its diagnostic.
 - **Orphans.** A `.bp` file no `mod` path reaches is warned per file and counted
   once (`N module(s) not reached by any `mod` path were not compiled`).
+- **Compiling does not execute.** `build` and `test` call
+  `codegen.generateWith` with `.execute = false`: no `node`/`erl`/`wasmtime`
+  spawn and no `.botopinkbuild/runtime-cache` entry at build time (`test` runs
+  each test module once, through its runner). Only the codegen snapshot harness
+  executes (`codegen.generate`, which sets the flag). Pinned by
+  `tests/cli_contract.sh`.
 - **Dependencies.** A missing dependency is named (`dependency 'server' was not
   found under any library root`).
 
 Open (not the CLI's files):
 
-- **`build`/`test` execute the program they compile.** `codegen.generate`
-  (`modules/compiler-core/src/codegen.zig`) runs every emitted module through
-  `runtime.execute*` and stores stdout on `run_output`, which no command reads.
-  The fix is an "execute" flag on `codegen.Config` that the snapshot harness sets
-  and the CLI leaves off — a compiler-core change.
 - **The diagnostic is re-derived, not carried.** The four backends' `codegenEmit`
   still `continue` on `.parseError`/`.typeError`, and `ComptimeOutput.outcome`'s
   `parseError` carries no payload (a lex error aborts the session). The CLI works

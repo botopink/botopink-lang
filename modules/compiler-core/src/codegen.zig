@@ -17,11 +17,38 @@ pub const ComptimeOutput = comptimeMod.ComptimeOutput;
 pub const Config = configMod.Config;
 pub const TargetSource = configMod.TargetSource;
 
+/// What `generateWith` does after emitting each module.
+pub const Options = struct {
+    /// Run every emitted module through its target runtime
+    /// (`runtime.execute*`) and keep the program's output on
+    /// `GenerateResult.run_output`. Only the codegen snapshot harness sets it:
+    /// the RUN LOG section is its evidence. `botopink build`, `test` and `run`
+    /// leave it off — compiling a program must not execute it (no `node`,
+    /// `erl` or `wasmtime` spawn, no runtime-cache entry, no side effect at
+    /// build time).
+    execute: bool,
+};
+
+/// The codegen snapshot harness's entry (`codegen/tests/helpers.zig`): emit
+/// **and execute** every module. Drivers call `generateWith` with
+/// `.execute = false`.
 pub fn generate(
     allocator: std.mem.Allocator,
     modules: []const Module,
     io: std.Io,
     config: Config,
+) !std.ArrayListUnmanaged(ModuleOutput) {
+    return generateWith(allocator, modules, io, config, .{ .execute = true });
+}
+
+/// Compile `modules` for `config.targetSource`. Executes the emitted modules
+/// only when `options.execute` is set.
+pub fn generateWith(
+    allocator: std.mem.Allocator,
+    modules: []const Module,
+    io: std.Io,
+    config: Config,
+    options: Options,
 ) !std.ArrayListUnmanaged(ModuleOutput) {
     // STD-001 — lookup name the `@external(target, …)` parser expects for
     // each codegen target. BEAM consumes the Erlang vocabulary (matches the
@@ -40,6 +67,8 @@ pub fn generate(
         .beam => beam_asm.codegenEmit(allocator, session.outputs.items, config),
         .wasm => wat.codegenEmit(allocator, session.outputs.items, config),
     };
+
+    if (!options.execute) return outputs;
 
     // Sibling modules (multi-module compilations, e.g. the "std" package) are
     // written next to each entry so `require`/remote calls resolve at runtime.
