@@ -8,6 +8,9 @@ WAT backend, `externals.zig` for `#[@External.<Target>(…)]` FFI declarations,
 `comptime_module.zig` for `erlang.emitComptimeModule`). Aggregated by the
 sibling barrel `../tests.zig` for `test_root.zig`; shared harness
 (`assertJs`/`assertJsError`/`configs`) lives in `helpers.zig`.
+`assertJsRunLog(src, expected)` compiles `src` for commonJS, runs it and
+compares the entry's RUN LOG — for behaviour that lives in a sibling module
+(`std/<mod>.js`) a single-module snapshot does not show.
 For multi-module assertions without a snapshot, `assertConsumerJs(modules, present, absent)`
 generates every module (last = consumer `main`) and checks the consumer's JS
 contains/omits given substrings — used by the disk-lib namespace test in

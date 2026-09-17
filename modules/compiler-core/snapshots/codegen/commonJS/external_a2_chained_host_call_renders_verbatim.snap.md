@@ -12,6 +12,8 @@ fn main() {
 ----- JAVASCRIPT -- main.js
 ```javascript
 // b64encode: per-call template (see annotation)
+function b64encode(s) { return Buffer.from(s, 'utf8').toString('base64'); }
+exports.b64encode = b64encode;
 
 function main() {
     console.log(Buffer.from("hi", 'utf8').toString('base64'));

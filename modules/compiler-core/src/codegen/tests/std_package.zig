@@ -32,6 +32,25 @@ test "js: builtin result namespace ---- qualified call lowers inline" {
     );
 }
 
+// A `pub` template external reached through its module object: std's
+// `env.write`/`env.read`/`env.clear` are `#[@External.Node("…$0…")]` templates,
+// so the owning module has to export a real function for each (it used to
+// export nothing: "env.write is not a function"). The behaviour lives in
+// `std/env.js`, which the entry's snapshot does not show — so the RUN LOG is
+// asserted directly.
+test "js: std package ---- env template externals resolve through the module object" {
+    try h.assertJsRunLog(std.testing.allocator,
+        \\import {env} from "std";
+        \\
+        \\fn main() {
+        \\    env.write("BOTOPINK_F8_ENV", "hi");
+        \\    @print(env.read("BOTOPINK_F8_ENV"));
+        \\    env.clear("BOTOPINK_F8_ENV");
+        \\    @print(env.read("BOTOPINK_F8_ENV"));
+        \\}
+    , "hi\nnull\n");
+}
+
 test "js: std package ---- order enum module with type export" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\import {order} from "std";

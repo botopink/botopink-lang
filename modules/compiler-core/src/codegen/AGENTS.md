@@ -111,9 +111,13 @@ codegen/
   `when($argc == N)` branches is a template rendered inline at each call site
   (`user_node_templates`); so is a 1-arg form without markers
   (`#[@External.Node("process.cwd()")]`), a bare host expression rendered
-  verbatim — neither emits an import binding or a `require(…)`. A template fn
-  emits no `exports.<name>`, so a cross-module call (`env.read(…)` after
-  `import {env} from "std"`) does not resolve yet. A fn with no `node` target raises
+  verbatim — neither emits an import binding or a `require(…)`. A `pub`
+  template fn is also emitted as a real function whose `$N` holes are its
+  parameters (`buildTemplateWrapper`; an arity-branched one tests
+  `arguments.length`, a `$self` template gets none) plus `exports.<name>`, so a
+  cross-module call through the module object (`env.write(…)` after
+  `import {env} from "std"`) resolves; calls in the owning module still inline
+  the template. A fn with no `node` target raises
   `MissingExternalTarget` when called.
 - **Duplicate test names**: two `test "x"` blocks in one module print
   `warning: duplicate test name "x" in <mod>.bp:<line>` to stderr; both run.

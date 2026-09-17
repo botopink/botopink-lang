@@ -697,6 +697,22 @@ const LoopCtx = union(enum) {
     value: []const u8,
 };
 
+/// Holes filled from a wrapper function's own parameters: `$N` is the Nth
+/// declared parameter, or `arguments[N]` past the declared list; `$self` has
+/// no meaning in a plain function.
+const ParamHoles = struct {
+    b: js.Builder,
+    names: []const []const u8,
+
+    pub fn recvExpr(_: *@This()) anyerror!js.Expr {
+        return error.PrimOpRecvInUserTemplate;
+    }
+    pub fn argExpr(self: *@This(), i: usize) anyerror!js.Expr {
+        if (i < self.names.len) return .{ .ident = self.names[i] };
+        return self.b.index(.{ .name = "arguments" }, .{ .number = try std.fmt.allocPrint(self.b.arena, "{d}", .{i}) }, false);
+    }
+};
+
 const this_expr: js.Expr = .this;
 const boxed_value_of: js.Expr = .{ .member = .{ .object = &this_expr, .name = "valueOf" } };
 
@@ -1193,12 +1209,22 @@ const Emitter = struct {
     fn buildFnItem(self: *Emitter, f: ast.FnDecl) !js.Stmt {
         if (!f.isExternal()) return self.buildFn(f);
         // §A2 template-form external: no decl alias — the template renders
-        // inline at every call site (see `tryUserTemplate`). Emit a one-line
-        // doc breadcrumb so the emitted file stays self-documenting.
-        if (self.user_node_templates.contains(f.name)) {
-            return .{ .comment = .{
+        // inline at every call site in this module (see `tryUserTemplate`).
+        // Emit a one-line doc breadcrumb so the emitted file stays
+        // self-documenting. A `pub` one is also a real exported function, so
+        // another module reaching it through the module object
+        // (`env.write(…)` after `import {env} from "std"`) finds it.
+        if (self.user_node_templates.get(f.name)) |call| {
+            const note = js.Stmt{ .comment = .{
                 .text = try std.fmt.allocPrint(self.arena(), "{s}: per-call template (see annotation)", .{f.name}),
             } };
+            if (!f.isPub) return note;
+            const wrapper = try self.buildTemplateWrapper(f, call) orelse return note;
+            return self.b.group(&.{ note, wrapper, .{ .expr = try self.b.assign(
+                try self.b.member(.{ .name = "exports" }, f.name),
+                "=",
+                .{ .ident = f.name },
+            ) } });
         }
         const ref = self.externals.get(f.name) orelse return .{ .comment = .{
             .text = try std.fmt.allocPrint(self.arena(), "external fn {s} (no node target)", .{f.name}),
@@ -1225,6 +1251,50 @@ const Emitter = struct {
             "=",
             .{ .name = bind_name },
         ) } });
+    }
+
+    /// `function name(params) { return <template>; }` for a `pub` template
+    /// external: the template's `$N` holes are the declared parameters. An
+    /// arity-branched template tests `arguments.length` per branch. Null when
+    /// the template names a receiver (`$self`), which a plain function has not.
+    fn buildTemplateWrapper(self: *Emitter, f: ast.FnDecl, call: BuiltinNodeCall) !?js.Stmt {
+        var names: std.ArrayListUnmanaged([]const u8) = .empty;
+        var params: std.ArrayListUnmanaged(js.Param) = .empty;
+        for (f.params) |p| {
+            if (std.mem.eql(u8, p.name, "self")) continue;
+            try names.append(self.arena(), p.name);
+            try params.append(self.arena(), .{ .pattern = .{ .ident = p.name } });
+        }
+        var holes = ParamHoles{ .b = self.b, .names = names.items };
+        var body: std.ArrayListUnmanaged(js.Stmt) = .empty;
+        if (call.arity_branches.len > 0) {
+            for (call.arity_branches) |branch| {
+                const value = try self.renderParamTemplate(branch.template, &holes, branch.argc) orelse return null;
+                try body.append(self.arena(), try self.b.ifStmt(
+                    try self.b.binaryBare("===", try self.b.member(.{ .name = "arguments" }, "length"), .{
+                        .number = try std.fmt.allocPrint(self.arena(), "{d}", .{branch.argc}),
+                    }),
+                    .{ .return_ = value },
+                ));
+            }
+        } else {
+            const value = try self.renderParamTemplate(call.symbol, &holes, names.items.len) orelse return null;
+            try body.append(self.arena(), .{ .return_ = value });
+        }
+        return .{ .function = .{
+            .name = f.name,
+            .params = params.items,
+            .body = .{ .stmts = try body.toOwnedSlice(self.arena()), .layout = .spaced },
+        } };
+    }
+
+    fn renderParamTemplate(self: *Emitter, template: []const u8, holes: *ParamHoles, argc: usize) !?js.Expr {
+        var tmpl = HostTemplate(ParamHoles){ .arena = self.arena(), .holes = holes, .argc = argc };
+        primOpTemplate.render(template, &tmpl) catch |err| switch (err) {
+            error.PrimOpRecvInUserTemplate => return null,
+            else => return err,
+        };
+        return try tmpl.finish();
     }
 
     fn requireCall(self: *Emitter, path: []const u8) !js.Expr {
