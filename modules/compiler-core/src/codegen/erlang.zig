@@ -3960,9 +3960,10 @@ const Emitter = struct {
             } }, &.{}),
             .assert => |a| {
                 const cond = try b.paren(try this.exprNode(b, a.condition.*));
-                if (!this.test_mode) return b.match(A("true"), cond);
-                // Test mode raises a tagged error the runner catches per test
-                // (it records the failure and continues).
+                // Always fatal, with the message and the `file:line` (semantics
+                // decision 4): a failed assert raises `{bp_assert, Msg, Where}`.
+                // The test runner catches it per test and continues; outside
+                // test mode nothing does. `true = (Cond)` dropped both.
                 const message = if (a.message) |msg| try this.exprNode(b, msg.*) else Ast.str("assertion failed");
                 const where: Ast.Expr = .{ .lexeme_binary = try std.fmt.allocPrint(b.arena, "{s}.bp:{d}", .{ this.module_name, ct.loc.line }) };
                 const raise = try b.remote("erlang", "error", &.{try b.tuple(&.{ A("bp_assert"), message, where })});

@@ -171,7 +171,10 @@ codegen/
   variables, enum-variant atoms, variant tuples `{'Circle', R}` (or the bare atom
   `'Lt'` for a payload-less variant — exactly what the constructor builds), list/cons
   and multi-subject tuples), binding expressions (`bindingNode`), `use` and comptime
-  forms (`comptimeNode`: `assert` as an inline `case` in test mode, `assertPattern`).
+  forms (`comptimeNode`: `assert` as an inline `case` raising
+  `erlang:error({bp_assert, Msg, <<"mod.bp:Line">>})` — always fatal, in and out of
+  test mode (semantics decision 4); the test runner is what catches it —
+  `assertPattern`).
   Record/interface literal keys are atoms (quoted when PascalCase or reserved); an
   array spread concatenates (`[1, 2] ++ Rest`, `nameRefNode` for the spread name);
   a leading-dot enum shorthand (`.Black`) is the variant atom.
