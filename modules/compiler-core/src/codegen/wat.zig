@@ -16,6 +16,7 @@ const moduleOutput = @import("./moduleOutput.zig");
 const configMod = @import("./config.zig");
 const ast = @import("../ast.zig");
 const crossModule = @import("./crossModule.zig");
+const envMod = @import("../comptime/env.zig");
 const wat = @import("./wat/wat_ast.zig");
 const watEmitter = @import("./wat/wat_emitter.zig");
 const prelude = @import("./wat/wat_prelude.zig");
@@ -149,7 +150,7 @@ pub fn codegenEmit(
                 });
             },
             .ok => |*ok| {
-                const code = try emitWat(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, &cross);
+                const code = try emitWat(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, &cross);
                 try results.append(alloc, .{
                     .name = ct.name,
                     .src = ct.src,
@@ -177,12 +178,14 @@ fn emitWat(
     program: ast.Program,
     comptime_vals: std.StringHashMap([]const u8),
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
+    instance_lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
     cross: ?*const CrossModule,
 ) ![]u8 {
     _ = module_name;
 
     var em = Emitter.init(alloc, comptime_vals, rewrites);
     defer em.deinit();
+    em.instance_lowerings = instance_lowerings;
     try em.registerTypes(program);
     try em.collectExtensions(program);
 
@@ -250,7 +253,7 @@ fn emitWat(
 
     // The print helpers are the only thing that needs a host function, and
     // `Builder.helper` is the only way to have called one.
-    if (em.b.helpers.print) try items.append(ar, .{ .import = prelude.fd_write_import });
+    if (em.b.helpers.has(.print)) try items.append(ar, .{ .import = prelude.fd_write_import });
 
     try items.append(ar, .{ .memory = .{ .@"export" = "memory", .min_pages = 1 } });
 
@@ -416,6 +419,18 @@ const Emitter = struct {
 
     /// Static extension dispatch (F6): call-site loc → activated extension symbol.
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
+    /// Value-receiver method calls (and `.length` reads), keyed by call /
+    /// access loc: the receiver's primitive family or record type, recorded by
+    /// inference. The one piece of type information this untyped backend is
+    /// handed; `lowerPrimMethod` and `lowerRecordMethod` lower from it.
+    instance_lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering) = undefined,
+    /// Element shape of names bound to an array blob (locals; cleared per fn)
+    /// and of top-level `val`s. Drives `join`/`indexOf`/`contains` and the
+    /// type of a HOF's element parameter.
+    arr_elem_locals: std.StringHashMap(ElemKind),
+    arr_elem_globals: std.StringHashMap(ElemKind),
+    /// Element shape of the arrays top-level fns are declared to return.
+    fn_arr_elem: std.StringHashMap(ElemKind),
     /// Extension block name → target type + methods (for resolving the mangled
     /// `$<target>_<method>` callee at activated and qualified dispatch sites).
     ext_by_name: std.StringHashMap(ExtInfo),
@@ -449,6 +464,9 @@ const Emitter = struct {
             .fn_return_types = std.StringHashMap([]const u8).init(alloc),
             .rewrites = rewrites,
             .ext_by_name = std.StringHashMap(ExtInfo).init(alloc),
+            .arr_elem_locals = std.StringHashMap(ElemKind).init(alloc),
+            .arr_elem_globals = std.StringHashMap(ElemKind).init(alloc),
+            .fn_arr_elem = std.StringHashMap(ElemKind).init(alloc),
         };
         return em;
     }
@@ -491,6 +509,9 @@ const Emitter = struct {
         self.data_segments.deinit(self.alloc);
         self.deferred_globals.deinit(self.alloc);
         self.ext_by_name.deinit();
+        self.arr_elem_locals.deinit();
+        self.arr_elem_globals.deinit();
+        self.fn_arr_elem.deinit();
     }
 
     /// Pre-pass: record every symbol this module will define — function
@@ -517,6 +538,7 @@ const Emitter = struct {
                 if (f.returnType) |rt| {
                     if (isStringTypeRef(rt)) try self.str_fns.put(f.name, {});
                     if (isBoolTypeRef(rt)) try self.bool_fns.put(f.name, {});
+                    if (arrayElemOfTypeRef(rt)) |ek| try self.fn_arr_elem.put(f.name, ek);
                 }
             },
             .val => |v| if (emit_globals and !isSyntheticEntrypointVal(v)) {
@@ -532,7 +554,14 @@ const Emitter = struct {
                     },
                     else => {},
                 }
-                if (isArrayLit(v.value.*)) try self.arr_globals.put(v.name, {});
+                if (isArrayLit(v.value.*)) {
+                    try self.arr_globals.put(v.name, {});
+                    try self.arr_elem_globals.put(v.name, self.elemKindOf(v.value.*));
+                }
+                if (v.typeAnnotation) |ta| if (arrayElemOfTypeRef(ta)) |ek| {
+                    try self.arr_globals.put(v.name, {});
+                    try self.arr_elem_globals.put(v.name, ek);
+                };
             },
             .implement => |im| try self.registerMethodSigs(im.target, im.methods),
             .extend => |ex| try self.registerMethodSigs(ex.target, ex.methods),
@@ -571,7 +600,7 @@ const Emitter = struct {
             for (params) |*t| t.* = "i32";
             try self.fn_sigs.put(sym, .{
                 .params = params,
-                .result = if (methodHasResult(body)) "i32" else null,
+                .result = if (m.returnType != null or methodHasResult(body)) "i32" else null,
             });
         }
     }
@@ -846,6 +875,7 @@ const Emitter = struct {
         self.local_types.clearRetainingCapacity();
         self.str_locals.clearRetainingCapacity();
         self.arr_locals.clearRetainingCapacity();
+        self.arr_elem_locals.clearRetainingCapacity();
         self.bool_locals.clearRetainingCapacity();
         self.pending_locals.clearRetainingCapacity();
         self.cur_result = result_type orelse "i32";
@@ -1048,7 +1078,7 @@ const Emitter = struct {
             const tn = typeRefName(p.typeRef);
             if (self.resolveRecordName(tn)) |rty|
                 try self.local_types.put(sym, rty);
-            if (isStringTypeRef(p.typeRef)) try self.str_locals.put(sym, {});
+            try self.noteParamShape(sym, p.typeRef);
         }
         try self.declareScratch("_try", countTrys(f.body));
         try self.declareScratch("__mem", self.countMems(f.body));
@@ -1096,7 +1126,7 @@ const Emitter = struct {
                     const tn = typeRefName(p.typeRef);
                     if (self.resolveRecordName(tn)) |rty|
                         try self.local_types.put(sym, rty);
-                    if (isStringTypeRef(p.typeRef)) try self.str_locals.put(sym, {});
+                    try self.noteParamShape(sym, p.typeRef);
                 }
             }
             try self.declareScratch("_try", countTrys(m.body));
@@ -1143,7 +1173,7 @@ const Emitter = struct {
 
     fn emitMemberFn(self: *Emitter, owner: []const u8, m: ast.InterfaceMethod) !void {
         const body = m.body orelse return;
-        const has_result = methodHasResult(body);
+        const has_result = m.returnType != null or methodHasResult(body);
         self.resetFnState(if (has_result) "i32" else null);
         self.self_type = if (self.records.contains(owner)) owner else null;
         defer self.self_type = null;
@@ -1172,7 +1202,7 @@ const Emitter = struct {
                 const tn = typeRefName(p.typeRef);
                 if (self.resolveRecordName(tn)) |rty|
                     try self.local_types.put(sym, rty);
-                if (isStringTypeRef(p.typeRef)) try self.str_locals.put(sym, {});
+                try self.noteParamShape(sym, p.typeRef);
             }
         }
         try self.declareScratch("_try", countTrys(body));
@@ -1546,8 +1576,8 @@ const Emitter = struct {
                             try self.local_types.put(lb.name, rty);
                         }
                         if (self.isStringExpr(lb.value.*)) try self.str_locals.put(lb.name, {});
-                        if (isArrayLit(lb.value.*)) try self.arr_locals.put(lb.name, {});
-                        if (isArrayLit(lb.value.*)) try self.arr_locals.put(lb.name, {});
+                        if (self.isBoolExpr(lb.value.*)) try self.bool_locals.put(lb.name, {});
+                        try self.noteArrayLocal(lb.name, lb.value.*);
                         try self.declareLocal(lb.name, t);
                         try self.declareNestedLocals(lb.value.*);
                     },
@@ -1895,7 +1925,8 @@ const Emitter = struct {
                 .localBind => |lb| {
                     try self.declareLocal(lb.name, self.inferExprType(lb.value.*));
                     if (self.isStringExpr(lb.value.*)) try self.str_locals.put(lb.name, {});
-                    if (isArrayLit(lb.value.*)) try self.arr_locals.put(lb.name, {});
+                    if (self.isBoolExpr(lb.value.*)) try self.bool_locals.put(lb.name, {});
+                    try self.noteArrayLocal(lb.name, lb.value.*);
                     if (self.recordTypeOfExpr(lb.value.*)) |rty| try self.local_types.put(lb.name, rty);
                     // Coerce to the type the local was *actually* declared with:
                     // `emitLocalDecls` runs before the body, so its guess can
@@ -2035,6 +2066,13 @@ const Emitter = struct {
                         }
                         break :blk .value;
                     }
+                    if (self.primKindAt(cc, c.loc)) |k| {
+                        const res = primCallRes(k, cc) orelse break :blk .value;
+                        break :blk if (res == .none) Tail.none else Tail.value;
+                    }
+                    if (self.recordMethodSym(cc, c.loc)) |sym| {
+                        if (self.fn_sigs.get(sym)) |sig| break :blk if (sig.result != null) Tail.value else Tail.none;
+                    }
                     if (self.calleeSymbol(cc, c.loc)) |sym| {
                         if (self.fn_sigs.get(sym)) |sig| {
                             break :blk if (sig.result != null) Tail.value else Tail.none;
@@ -2166,7 +2204,7 @@ const Emitter = struct {
                         try self.emitCf(zero, ".{s}", .{name});
                     }
                 },
-                .identAccess => |ia| try self.lowerIdentAccess(ia),
+                .identAccess => |ia| try self.lowerIdentAccess(ia, id.loc),
             },
             .binaryOp => |bin| try self.lowerBinOp(bin.op, bin.lhs.*, bin.rhs.*),
             .unaryOp => |un| switch (un.op) {
@@ -2182,6 +2220,11 @@ const Emitter = struct {
                     // linear-memory function `$<target>_<method>` before the
                     // ordinary call-kind handling.
                     if (try self.lowerDispatchCall(cc, c.loc)) return;
+                    if (self.primKindAt(cc, c.loc)) |k| {
+                        try self.lowerPrimMethod(k, cc);
+                        return;
+                    }
+                    if (try self.lowerRecordMethod(cc, c.loc)) return;
                     // String slice method (`s.slice(a, b)`) — handled before the
                     // ctor/plain classification (codegen is untyped).
                     if (isStrSlice(cc)) {
@@ -2276,7 +2319,8 @@ const Emitter = struct {
     fn lowerTryCatch(self: *Emitter, tc: anytype) anyerror!void {
         const slot = try self.tryName(self.try_seq);
         self.try_seq += 1;
-        try self.lowerExpr(tc.expr.*);
+        try self.declareLocal(slot, "i32");
+        try self.lowerValue(tc.expr.*);
         try self.emit(.{ .local_set = slot });
         try self.emit(.{ .local_get = slot });
         try self.emitC(.{ .load = .{} }, result_tag);
@@ -2306,7 +2350,8 @@ const Emitter = struct {
     fn lowerTryPropagate(self: *Emitter, inner: ast.Expr) anyerror!void {
         const slot = try self.tryName(self.try_seq);
         self.try_seq += 1;
-        try self.lowerExpr(inner);
+        try self.declareLocal(slot, "i32");
+        try self.lowerValue(inner);
         try self.emit(.{ .local_set = slot });
         try self.emit(.{ .local_get = slot });
         try self.emitC(.{ .load = .{} }, result_tag);
@@ -2336,6 +2381,11 @@ const Emitter = struct {
         if (self.isBoolExpr(arg)) {
             try self.lowerCoerced(arg, "i32");
             try self.emit(self.builder().helper(if (last) .print_bool else .print_bool_raw));
+            return;
+        }
+        if (self.isArrayExpr(arg) and self.elemKindOf(arg) == .i32) {
+            try self.lowerCoerced(arg, "i32");
+            try self.emit(self.builder().helper(if (last) .print_arr_i32 else .print_arr_i32_raw));
             return;
         }
         const t = self.wasmTypeOf(arg);
@@ -2667,6 +2717,7 @@ const Emitter = struct {
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
                     if (cc.is_builtin) break :blk false;
+                    if (self.primKindAt(cc, c.loc)) |k| break :blk primCallRes(k, cc) == .bool_;
                     if (self.calleeSymbol(cc, c.loc)) |sym| break :blk self.bool_fns.contains(sym);
                     break :blk false;
                 },
@@ -2772,6 +2823,11 @@ const Emitter = struct {
     fn nextMem(self: *Emitter) u32 {
         const k = self.mem_seq;
         self.mem_seq += 1;
+        // `countMems` sizes the pool up front; a construct it does not walk
+        // (an inlined lambda body, say) still gets a declared slot. Idempotent,
+        // so a pre-counted slot keeps its place in the local list.
+        const name = self.memName(k) catch return k;
+        self.declareLocal(name, "i32") catch {};
         return k;
     }
 
@@ -2981,6 +3037,673 @@ const Emitter = struct {
         try self.emitCf(.@"unreachable", "unresolved call: {s}/{d}", .{ cc.callee, cc.args.len });
     }
 
+    // ── primitive instance methods ───────────────────────────────────────────
+    //
+    // `xs.join(",")`, `s.toUpper()`, `n.abs()`: inference records the
+    // receiver's primitive family at the call loc (`instance_lowerings`), and
+    // the method lowers to an opcode, a runtime helper from
+    // `wat/wat_prelude.zig`, or — for a higher-order method whose argument is a
+    // literal lambda — a loop over the array blob with the lambda body inlined
+    // (there are no function values to pass). A method with no wasm lowering
+    // traps with `;; prim method not lowered on wasm: …`.
+
+    /// The primitive family of `recv.method(…)`'s receiver, when inference
+    /// recorded one.
+    fn primKindAt(self: *Emitter, cc: anytype, loc: ast.Loc) ?envMod.PrimKind {
+        if (cc.receiver == null or cc.is_builtin) return null;
+        const il = self.instance_lowerings.get(loc) orelse return null;
+        return switch (il) {
+            .prim => |k| k,
+            .record => null,
+        };
+    }
+
+    /// What a primitive method leaves on the stack. Null: no wasm lowering.
+    const PrimRes = enum { i32, f64, bool_, str, arr, none };
+
+    fn primCallRes(k: envMod.PrimKind, cc: anytype) ?PrimRes {
+        const name: []const u8 = cc.callee;
+        const argc = cc.args.len + cc.trailing.len;
+        const Row = struct { []const u8, usize, PrimRes };
+        const rows: []const Row = switch (k) {
+            .array => &.{
+                .{ "length", 0, .i32 },    .{ "at", 1, .i32 },      .{ "first", 0, .i32 },
+                .{ "join", 1, .str },      .{ "indexOf", 1, .i32 }, .{ "contains", 1, .bool_ },
+                .{ "isEmpty", 0, .bool_ }, .{ "reverse", 0, .arr }, .{ "prepend", 1, .arr },
+                .{ "append", 1, .arr },    .{ "push", 1, .none },   .{ "zip", 1, .arr },
+                .{ "slice", 1, .arr },     .{ "slice", 2, .arr },   .{ "rest", 0, .arr },
+                .{ "take", 1, .arr },      .{ "drop", 1, .arr },    .{ "toList", 0, .arr },
+                .{ "map", 1, .arr },       .{ "filter", 1, .arr },  .{ "forEach", 1, .none },
+                .{ "all", 1, .bool_ },     .{ "every", 1, .bool_ }, .{ "any", 1, .bool_ },
+                .{ "some", 1, .bool_ },    .{ "count", 1, .i32 },   .{ "findIndex", 1, .i32 },
+                .{ "fold", 2, .i32 },
+            },
+            .string => &.{
+                .{ "length", 0, .i32 },     .{ "toUpper", 0, .str },      .{ "toLower", 0, .str },
+                .{ "contains", 1, .bool_ }, .{ "startsWith", 1, .bool_ }, .{ "endsWith", 1, .bool_ },
+                .{ "indexOf", 1, .i32 },    .{ "trim", 0, .str },         .{ "trimStart", 0, .str },
+                .{ "trimEnd", 0, .str },    .{ "split", 1, .arr },        .{ "slice", 1, .str },
+                .{ "slice", 2, .str },      .{ "repeat", 1, .str },       .{ "toString", 0, .str },
+            },
+            .bool => &.{
+                .{ "negate", 0, .bool_ },      .{ "nor", 1, .bool_ },          .{ "nand", 1, .bool_ },
+                .{ "exclusiveOr", 1, .bool_ }, .{ "exclusiveNor", 1, .bool_ }, .{ "toString", 0, .str },
+            },
+            .int => &.{
+                .{ "abs", 0, .i32 },      .{ "min", 1, .i32 },      .{ "max", 1, .i32 },
+                .{ "clamp", 2, .i32 },    .{ "isEven", 0, .bool_ }, .{ "isOdd", 0, .bool_ },
+                .{ "toString", 0, .str },
+            },
+            .float => &.{
+                .{ "abs", 0, .f64 },   .{ "min", 1, .f64 },        .{ "max", 1, .f64 },
+                .{ "clamp", 2, .f64 }, .{ "floor", 0, .f64 },      .{ "ceil", 0, .f64 },
+                .{ "round", 0, .f64 }, .{ "squareRoot", 0, .f64 },
+            },
+        };
+        for (rows) |r| {
+            if (r[1] == argc and std.mem.eql(u8, r[0], name)) return r[2];
+        }
+        return null;
+    }
+
+    /// The `i`-th argument of a call, counting trailing lambdas after the
+    /// parenthesised ones.
+    fn callArg(cc: anytype, i: usize) ?ast.Expr {
+        if (i < cc.args.len) return cc.args[i].value.*;
+        return null;
+    }
+
+    /// A lambda written at argument `i` — `xs.map({ x -> … })` or the trailing
+    /// form `xs.map { x -> … }`.
+    const LambdaView = struct { params: []const []const u8, body: []const ast.Stmt };
+
+    fn lambdaAt(cc: anytype, i: usize) ?LambdaView {
+        if (i < cc.args.len) {
+            const a = cc.args[i].value;
+            if (a.* != .function) return null;
+            return .{ .params = a.function.kind.params, .body = a.function.kind.body };
+        }
+        const t = i - cc.args.len;
+        if (t < cc.trailing.len) return .{ .params = cc.trailing[t].params, .body = cc.trailing[t].body };
+        return null;
+    }
+
+    fn primNotLowered(self: *Emitter, k: envMod.PrimKind, cc: anytype) !void {
+        try self.emitCf(.@"unreachable", "prim method not lowered on wasm: {s}.{s}/{d}", .{
+            @tagName(k), cc.callee, cc.args.len + cc.trailing.len,
+        });
+    }
+
+    fn lowerPrimMethod(self: *Emitter, k: envMod.PrimKind, cc: anytype) anyerror!void {
+        if (primCallRes(k, cc) == null) return self.primNotLowered(k, cc);
+        const recv = cc.receiver.?.*;
+        const name: []const u8 = cc.callee;
+        const eq = std.mem.eql;
+        const b = self.builder();
+        switch (k) {
+            .bool => {
+                try self.lowerCoerced(recv, "i32");
+                if (eq(u8, name, "negate")) {
+                    try self.emit(opOf("i32", "eqz"));
+                } else if (eq(u8, name, "toString")) {
+                    const t = try self.internString("true");
+                    const f = try self.internString("false");
+                    var then_c: Capture = .{};
+                    self.open(&then_c);
+                    try self.emit(try self.constInt(t.offset));
+                    const then_seq = self.seal(&then_c, .{ .value = .i32 });
+                    var else_c: Capture = .{};
+                    self.open(&else_c);
+                    try self.emit(try self.constInt(f.offset));
+                    const else_seq = self.seal(&else_c, .{ .value = .i32 });
+                    try self.emit(.{ .@"if" = .{ .result = .i32, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
+                } else {
+                    try self.lowerCoerced(callArg(cc, 0).?, "i32");
+                    if (eq(u8, name, "nor")) {
+                        try self.emit(opOf("i32", "or"));
+                        try self.emit(opOf("i32", "eqz"));
+                    } else if (eq(u8, name, "nand")) {
+                        try self.emit(opOf("i32", "and"));
+                        try self.emit(opOf("i32", "eqz"));
+                    } else if (eq(u8, name, "exclusiveOr")) {
+                        try self.emit(opOf("i32", "ne"));
+                    } else {
+                        try self.emit(opOf("i32", "eq"));
+                    }
+                }
+            },
+            .int => {
+                try self.lowerCoerced(recv, "i32");
+                if (eq(u8, name, "abs")) {
+                    try self.emit(b.helper(.i32_abs));
+                } else if (eq(u8, name, "min") or eq(u8, name, "max")) {
+                    try self.lowerCoerced(callArg(cc, 0).?, "i32");
+                    try self.emit(b.helper(if (eq(u8, name, "min")) .i32_min else .i32_max));
+                } else if (eq(u8, name, "clamp")) {
+                    try self.lowerCoerced(callArg(cc, 0).?, "i32");
+                    try self.emit(b.helper(.i32_max));
+                    try self.lowerCoerced(callArg(cc, 1).?, "i32");
+                    try self.emit(b.helper(.i32_min));
+                } else if (eq(u8, name, "isEven") or eq(u8, name, "isOdd")) {
+                    try self.emit(try self.constInt(2));
+                    try self.emit(opOf("i32", "rem_s"));
+                    try self.emit(opOf("i32", "eqz"));
+                    if (eq(u8, name, "isOdd")) try self.emit(opOf("i32", "eqz"));
+                } else {
+                    try self.emit(b.helper(.i32_to_str));
+                }
+            },
+            .float => {
+                try self.lowerCoerced(recv, "f64");
+                if (eq(u8, name, "min") or eq(u8, name, "max")) {
+                    try self.lowerCoerced(callArg(cc, 0).?, "f64");
+                    try self.emit(opOf("f64", name));
+                } else if (eq(u8, name, "clamp")) {
+                    try self.lowerCoerced(callArg(cc, 0).?, "f64");
+                    try self.emit(opOf("f64", "max"));
+                    try self.lowerCoerced(callArg(cc, 1).?, "f64");
+                    try self.emit(opOf("f64", "min"));
+                } else if (eq(u8, name, "round")) {
+                    // `Math.round`: ties round up — `floor(x + 0.5)`.
+                    try self.emit(constOf("f64", "0.5"));
+                    try self.emit(opOf("f64", "add"));
+                    try self.emit(opOf("f64", "floor"));
+                } else if (eq(u8, name, "squareRoot")) {
+                    try self.emit(opOf("f64", "sqrt"));
+                } else {
+                    // abs / floor / ceil are opcodes of the same name.
+                    try self.emit(opOf("f64", name));
+                }
+            },
+            .string => try self.lowerStringMethod(cc),
+            .array => try self.lowerArrayMethod(cc),
+        }
+    }
+
+    fn lowerStringMethod(self: *Emitter, cc: anytype) anyerror!void {
+        const recv = cc.receiver.?.*;
+        const name: []const u8 = cc.callee;
+        const eq = std.mem.eql;
+        const b = self.builder();
+        if (eq(u8, name, "slice")) return self.lowerStrSlice(cc);
+        try self.lowerCoerced(recv, "i32");
+        if (eq(u8, name, "length")) {
+            try self.emitC(.{ .load = .{} }, "string length");
+        } else if (eq(u8, name, "toUpper") or eq(u8, name, "toLower")) {
+            const upper = eq(u8, name, "toUpper");
+            try self.emit(try self.constInt(if (upper) @as(i32, 'a') else 'A'));
+            try self.emit(try self.constInt(if (upper) @as(i32, 'z') else 'Z'));
+            try self.emit(try self.constInt(if (upper) @as(i32, -32) else 32));
+            try self.emit(b.helper(.str_case));
+        } else if (eq(u8, name, "trim") or eq(u8, name, "trimStart") or eq(u8, name, "trimEnd")) {
+            const mode: i32 = if (eq(u8, name, "trimStart")) 1 else if (eq(u8, name, "trimEnd")) 2 else 3;
+            try self.emit(try self.constInt(mode));
+            try self.emit(b.helper(.str_trim));
+        } else if (eq(u8, name, "toString")) {
+            // already the string
+        } else {
+            try self.lowerCoerced(callArg(cc, 0).?, "i32");
+            if (eq(u8, name, "contains")) {
+                try self.emit(b.helper(.str_index_of));
+                try self.emit(try self.constInt(-1));
+                try self.emit(opOf("i32", "ne"));
+            } else if (eq(u8, name, "indexOf")) {
+                try self.emit(b.helper(.str_index_of));
+            } else if (eq(u8, name, "startsWith")) {
+                try self.emit(b.helper(.str_starts_with));
+            } else if (eq(u8, name, "endsWith")) {
+                try self.emit(b.helper(.str_ends_with));
+            } else if (eq(u8, name, "split")) {
+                try self.emit(b.helper(.str_split));
+            } else {
+                try self.emit(b.helper(.str_repeat));
+            }
+        }
+    }
+
+    fn lowerArrayMethod(self: *Emitter, cc: anytype) anyerror!void {
+        const recv = cc.receiver.?.*;
+        const name: []const u8 = cc.callee;
+        const eq = std.mem.eql;
+        const b = self.builder();
+
+        const Hof = enum { map, filter, for_each, all, any, count, find_index, fold };
+        const hof: ?Hof = if (eq(u8, name, "map")) .map else if (eq(u8, name, "filter")) .filter else if (eq(u8, name, "forEach")) .for_each else if (eq(u8, name, "all") or eq(u8, name, "every")) .all else if (eq(u8, name, "any") or eq(u8, name, "some")) .any else if (eq(u8, name, "count")) .count else if (eq(u8, name, "findIndex")) .find_index else if (eq(u8, name, "fold")) .fold else null;
+        if (hof) |h| {
+            const lam = lambdaAt(cc, if (h == .fold) 1 else 0) orelse {
+                try self.emitCf(.@"unreachable", "{s} needs a literal lambda on wasm (no function values)", .{name});
+                return;
+            };
+            return self.lowerArrayHof(@intFromEnum(h), recv, lam, if (h == .fold) callArg(cc, 0) else null);
+        }
+        if (eq(u8, name, "push")) return self.lowerArrayPush(cc);
+
+        try self.lowerCoerced(recv, "i32");
+        const elem = self.elemKindOf(recv);
+        if (eq(u8, name, "length")) {
+            try self.emitC(.{ .load = .{} }, "element count");
+        } else if (eq(u8, name, "isEmpty")) {
+            try self.emitC(.{ .load = .{} }, "element count");
+            try self.emit(opOf("i32", "eqz"));
+        } else if (eq(u8, name, "at") or eq(u8, name, "first")) {
+            if (eq(u8, name, "first")) try self.emit(zero) else try self.lowerCoerced(callArg(cc, 0).?, "i32");
+            try self.emit(b.helper(.arr_at));
+        } else if (eq(u8, name, "toList")) {
+            // the array itself
+        } else if (eq(u8, name, "reverse")) {
+            try self.emit(b.helper(.arr_reverse));
+        } else if (eq(u8, name, "rest") or eq(u8, name, "take") or eq(u8, name, "drop") or eq(u8, name, "slice")) {
+            // `arr_slice` clamps its bounds, so "to the end" is the largest i32.
+            const whole = try self.constInt(std.math.maxInt(i32));
+            if (eq(u8, name, "rest")) {
+                try self.emit(one);
+                try self.emit(whole);
+            } else if (eq(u8, name, "take")) {
+                try self.emit(zero);
+                try self.lowerCoerced(callArg(cc, 0).?, "i32");
+            } else {
+                try self.lowerCoerced(callArg(cc, 0).?, "i32");
+                if (callArg(cc, 1)) |end| try self.lowerCoerced(end, "i32") else try self.emit(whole);
+            }
+            try self.emit(b.helper(.arr_slice));
+        } else {
+            const arg = callArg(cc, 0).?;
+            if (eq(u8, name, "join")) {
+                try self.lowerCoerced(arg, "i32");
+                try self.emit(b.helper(if (elem == .str) .arr_join_str else .arr_join_i32));
+            } else if (eq(u8, name, "indexOf") or eq(u8, name, "contains")) {
+                try self.lowerCoerced(arg, "i32");
+                try self.emit(b.helper(if (elem == .str or self.isStringExpr(arg)) .arr_index_of_str else .arr_index_of_i32));
+                if (eq(u8, name, "contains")) {
+                    try self.emit(try self.constInt(-1));
+                    try self.emit(opOf("i32", "ne"));
+                }
+            } else {
+                try self.lowerCoerced(arg, "i32");
+                try self.emit(b.helper(if (eq(u8, name, "prepend")) .arr_prepend else if (eq(u8, name, "append")) .arr_concat else .arr_zip));
+            }
+        }
+    }
+
+    /// `xs.push(v)` — the blob has a fixed size, so the receiver is rebound to
+    /// a copy with `v` appended (the erlang backend threads the same way). A
+    /// receiver that is not a name or a record field cannot be rebound.
+    fn lowerArrayPush(self: *Emitter, cc: anytype) anyerror!void {
+        const recv = cc.receiver.?.*;
+        const arg = callArg(cc, 0) orelse {
+            try self.emitC(.@"unreachable", "push without a value");
+            return;
+        };
+        switch (recv) {
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| if (self.locals.contains(n) or self.globals.contains(n)) {
+                    try self.lowerCoerced(recv, "i32");
+                    try self.lowerCoerced(arg, "i32");
+                    try self.emit(self.builder().helper(.arr_push));
+                    try self.emit(if (self.locals.contains(n)) .{ .local_set = n } else .{ .global_set = n });
+                    return;
+                },
+                .identAccess => |ia| if (self.recordTypeOfExpr(ia.receiver.*)) |rty| if (self.fieldOffsetIn(rty, ia.member)) |off| {
+                    const mem = try self.memName(self.nextMem());
+                    try self.lowerValue(ia.receiver.*);
+                    try self.emit(.{ .local_tee = mem });
+                    try self.emit(.{ .local_get = mem });
+                    try self.emit(.{ .load = .{ .offset = off } });
+                    try self.lowerCoerced(arg, "i32");
+                    try self.emit(self.builder().helper(.arr_push));
+                    try self.emitCf(.{ .store = .{ .offset = off } }, ".{s} = push", .{ia.member});
+                    return;
+                },
+                else => {},
+            },
+            else => {},
+        }
+        try self.emitC(.@"unreachable", "push on a receiver that cannot be rebound");
+    }
+
+    /// A higher-order array method over a literal lambda: a counted walk of the
+    /// `[len][e0][e1]…` blob with the lambda's parameters bound to locals and
+    /// its body inlined per element. `hof` is `lowerArrayMethod`'s `Hof`.
+    fn lowerArrayHof(self: *Emitter, hof: u8, recv: ast.Expr, lam: LambdaView, init_expr: ?ast.Expr) anyerror!void {
+        const map = 0;
+        const filter = 1;
+        const for_each = 2;
+        const all = 3;
+        const any = 4;
+        const count = 5;
+        const find_index = 6;
+        const fold = 7;
+
+        const ra = self.reg_arena.allocator();
+        const n = self.loop_seq;
+        self.loop_seq += 1;
+        const base = try std.fmt.allocPrint(ra, "__iter{d}", .{n});
+        const cur = try std.fmt.allocPrint(ra, "__idx{d}", .{n});
+        const len = try std.fmt.allocPrint(ra, "__len{d}", .{n});
+        const acc = try std.fmt.allocPrint(ra, "__acc{d}", .{n});
+        const out = try std.fmt.allocPrint(ra, "__out{d}", .{n});
+        try self.declareLocal(base, "i32");
+        try self.declareLocal(cur, "i32");
+        try self.declareLocal(len, "i32");
+
+        const elem_kind = self.elemKindOf(recv);
+        const elem_ty: []const u8 = if (elem_kind == .f32) "f32" else "i32";
+        // fold binds (acc, item); the others bind (item).
+        const acc_param: ?[]const u8 = if (hof == fold and lam.params.len > 0) lam.params[0] else null;
+        const elem_param: ?[]const u8 = if (hof == fold)
+            (if (lam.params.len > 1) lam.params[1] else null)
+        else if (lam.params.len > 0) lam.params[0] else null;
+        const acc_ty: []const u8 = if (hof == fold) (if (init_expr) |i| self.wasmTypeOf(i) else "i32") else "i32";
+        try self.declareLocal(acc, acc_ty);
+        if (hof == map or hof == filter) try self.declareLocal(out, "i32");
+        if (elem_param) |p| {
+            try self.declareLocal(p, elem_ty);
+            if (elem_kind == .str) try self.str_locals.put(p, {});
+        }
+        if (acc_param) |p| {
+            try self.declareLocal(p, acc_ty);
+            if (init_expr) |i| if (self.isStringExpr(i)) try self.str_locals.put(p, {});
+        }
+
+        try self.lowerCoerced(recv, "i32");
+        try self.emit(.{ .local_set = base });
+        try self.emit(.{ .local_get = base });
+        try self.emitC(.{ .load = .{} }, "element count");
+        try self.emit(.{ .local_set = len });
+        try self.emit(zero);
+        try self.emit(.{ .local_set = cur });
+        switch (hof) {
+            map, filter => {
+                try self.emit(.{ .local_get = len });
+                try self.emit(self.builder().helper(.arr_new));
+                try self.emit(.{ .local_set = out });
+                try self.emit(zero);
+                try self.emit(.{ .local_set = acc });
+            },
+            fold => {
+                try self.lowerCoerced(init_expr.?, acc_ty);
+                try self.emit(.{ .local_set = acc });
+            },
+            all => {
+                try self.emit(one);
+                try self.emit(.{ .local_set = acc });
+            },
+            find_index => {
+                try self.emit(try self.constInt(-1));
+                try self.emit(.{ .local_set = acc });
+            },
+            else => {
+                try self.emit(zero);
+                try self.emit(.{ .local_set = acc });
+            },
+        }
+
+        var loop_c: Capture = .{};
+        self.open(&loop_c);
+        try self.emitAt(8, .{ .local_get = cur });
+        try self.emitAt(8, .{ .local_get = len });
+        try self.emitAt(8, opOf("i32", "ge_s"));
+        try self.emitAt(8, .{ .br_if = break_label });
+        if (hof == find_index) {
+            try self.emitAt(8, .{ .local_get = acc });
+            try self.emitAt(8, try self.constInt(-1));
+            try self.emitAt(8, opOf("i32", "ne"));
+            try self.emitAt(8, .{ .br_if = break_label });
+        }
+        if (elem_param) |p| {
+            try self.emitAt(8, .{ .local_get = base });
+            try self.emitAt(8, .{ .local_get = cur });
+            try self.emitAt(8, try self.constInt(4));
+            try self.emitAt(8, opOf("i32", "mul"));
+            try self.emitAt(8, opOf("i32", "add"));
+            try self.emitAt(8, .{ .load = .{ .ty = vt(elem_ty), .offset = 4 } });
+            try self.emitAt(8, .{ .local_set = p });
+        }
+        if (acc_param) |p| {
+            try self.emitAt(8, .{ .local_get = acc });
+            try self.emitAt(8, .{ .local_set = p });
+        }
+        switch (hof) {
+            for_each => for (lam.body) |stmt| {
+                _ = try self.emitStmt(stmt, false);
+            },
+            map => {
+                const tail_ty = self.lambdaTailType(lam.body);
+                const is_float = tail_ty[0] == 'f';
+                // the slot address first, then the value
+                try self.emit(.{ .local_get = out });
+                try self.emit(.{ .local_get = cur });
+                try self.emit(try self.constInt(4));
+                try self.emit(opOf("i32", "mul"));
+                try self.emit(opOf("i32", "add"));
+                try self.inlineLambdaBody(lam.body);
+                try self.emitConvert(tail_ty, if (is_float) "f32" else "i32");
+                try self.emit(.{ .store = .{ .ty = if (is_float) .f32 else .i32, .offset = 4 } });
+            },
+            fold => {
+                const tail_ty = self.lambdaTailType(lam.body);
+                try self.inlineLambdaBody(lam.body);
+                try self.emitConvert(tail_ty, acc_ty);
+                try self.emit(.{ .local_set = acc });
+            },
+            else => {
+                try self.inlineLambdaBody(lam.body);
+                var then_c: Capture = .{};
+                self.open(&then_c);
+                switch (hof) {
+                    filter => {
+                        try self.emit(.{ .local_get = out });
+                        try self.emit(.{ .local_get = acc });
+                        try self.emit(try self.constInt(4));
+                        try self.emit(opOf("i32", "mul"));
+                        try self.emit(opOf("i32", "add"));
+                        try self.emit(.{ .local_get = base });
+                        try self.emit(.{ .local_get = cur });
+                        try self.emit(try self.constInt(4));
+                        try self.emit(opOf("i32", "mul"));
+                        try self.emit(opOf("i32", "add"));
+                        try self.emit(.{ .load = .{ .offset = 4 } });
+                        try self.emit(.{ .store = .{ .offset = 4 } });
+                        try self.emit(.{ .local_get = acc });
+                        try self.emit(one);
+                        try self.emit(opOf("i32", "add"));
+                        try self.emit(.{ .local_set = acc });
+                    },
+                    all => {
+                        try self.emit(zero);
+                        try self.emit(.{ .local_set = acc });
+                    },
+                    any => {
+                        try self.emit(one);
+                        try self.emit(.{ .local_set = acc });
+                    },
+                    count => {
+                        try self.emit(.{ .local_get = acc });
+                        try self.emit(one);
+                        try self.emit(opOf("i32", "add"));
+                        try self.emit(.{ .local_set = acc });
+                    },
+                    else => {
+                        try self.emit(.{ .local_get = cur });
+                        try self.emit(.{ .local_set = acc });
+                    },
+                }
+                const then_seq = self.seal(&then_c, .none);
+                if (hof == all) try self.emit(opOf("i32", "eqz"));
+                try self.emit(.{ .@"if" = .{ .then = .{ .seq = then_seq } } });
+            },
+        }
+        try self.emitAt(8, .{ .local_get = cur });
+        try self.emitAt(8, one);
+        try self.emitAt(8, opOf("i32", "add"));
+        try self.emitAt(8, .{ .local_set = cur });
+        try self.emitAt(8, .{ .br = continue_label });
+        const loop_seq = self.seal(&loop_c, .terminated);
+        try self.emitLoopBlock(loop_seq);
+
+        switch (hof) {
+            for_each => {},
+            map => try self.emit(.{ .local_get = out }),
+            filter => {
+                try self.emit(.{ .local_get = out });
+                try self.emit(.{ .local_get = acc });
+                try self.emitC(.{ .store = .{} }, "kept count");
+                try self.emit(.{ .local_get = out });
+            },
+            else => try self.emit(.{ .local_get = acc }),
+        }
+    }
+
+    /// The wasm type an inlined lambda body leaves (its tail, or the value of a
+    /// trailing `return`).
+    fn lambdaTailType(self: *Emitter, body: []const ast.Stmt) []const u8 {
+        if (body.len == 0) return "i32";
+        const last = body[body.len - 1].expr;
+        return switch (last) {
+            .jump => |j| switch (j.kind) {
+                .@"return" => |r| if (r) |v| self.wasmTypeOf(v.*) else "i32",
+                else => "i32",
+            },
+            else => self.wasmTypeOf(last),
+        };
+    }
+
+    // ── array element shapes ─────────────────────────────────────────────────
+
+    const ElemKind = enum { i32, f32, str };
+
+    /// The element shape a `T[]` / `Array<T>` type spells, when it is an array.
+    fn arrayElemOfTypeRef(t: ast.TypeRef) ?ElemKind {
+        const elem: ast.TypeRef = switch (t) {
+            .array => |inner| inner.*,
+            .generic => |g| if (std.mem.eql(u8, g.name, "Array") and g.args.len == 1) g.args[0] else return null,
+            .optional => |inner| return arrayElemOfTypeRef(inner.*),
+            else => return null,
+        };
+        return elemKindOfTypeRef(elem);
+    }
+
+    fn elemKindOfTypeRef(t: ast.TypeRef) ElemKind {
+        return switch (t) {
+            .named => |n| if (std.mem.eql(u8, n, "string"))
+                .str
+            else if (std.mem.eql(u8, n, "f32") or std.mem.eql(u8, n, "f64"))
+                .f32
+            else
+                .i32,
+            else => .i32,
+        };
+    }
+
+    /// Record what a parameter's declared type says about its value.
+    fn noteParamShape(self: *Emitter, sym: []const u8, t: ast.TypeRef) !void {
+        if (isStringTypeRef(t)) try self.str_locals.put(sym, {});
+        if (isBoolTypeRef(t)) try self.bool_locals.put(sym, {});
+        if (arrayElemOfTypeRef(t)) |ek| {
+            try self.arr_locals.put(sym, {});
+            try self.arr_elem_locals.put(sym, ek);
+        }
+    }
+
+    /// A local bound to something `isArrayExpr` recognises is an array too,
+    /// with the element shape of its initialiser.
+    fn noteArrayLocal(self: *Emitter, name: []const u8, value: ast.Expr) !void {
+        if (!self.isArrayExpr(value)) return;
+        try self.arr_locals.put(name, {});
+        try self.arr_elem_locals.put(name, self.elemKindOf(value));
+    }
+
+    /// Best-effort element shape of an array-valued expression. `i32` covers
+    /// integers, bools and pointers alike.
+    fn elemKindOf(self: *Emitter, e: ast.Expr) ElemKind {
+        return switch (e) {
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| self.arr_elem_locals.get(n) orelse self.arr_elem_globals.get(n) orelse .i32,
+                .identAccess => |ia| blk: {
+                    const rty = self.recordTypeOfExpr(ia.receiver.*) orelse break :blk .i32;
+                    const fields = self.records.get(rty) orelse break :blk .i32;
+                    _ = fields;
+                    break :blk .i32;
+                },
+                else => .i32,
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| self.elemKindOf(inner.*),
+                .arrayLit => |al| blk: {
+                    if (al.elems.len == 0) break :blk .i32;
+                    const first = al.elems[0];
+                    if (self.isStringExpr(first)) break :blk .str;
+                    if (self.wasmTypeOf(first)[0] == 'f') break :blk .f32;
+                    break :blk .i32;
+                },
+                else => .i32,
+            },
+            .call => |c| switch (c.kind) {
+                .call => |cc| blk: {
+                    if (self.primKindAt(cc, c.loc)) |k| switch (k) {
+                        .string => break :blk .str, // split
+                        .array => {
+                            const recv = cc.receiver.?.*;
+                            if (std.mem.eql(u8, cc.callee, "map")) {
+                                const lam = lambdaAt(cc, 0) orelse break :blk .i32;
+                                if (lam.body.len == 0) break :blk .i32;
+                                const last = lam.body[lam.body.len - 1].expr;
+                                const v = switch (last) {
+                                    .jump => |j| switch (j.kind) {
+                                        .@"return" => |r| if (r) |x| x.* else break :blk .i32,
+                                        else => break :blk .i32,
+                                    },
+                                    else => last,
+                                };
+                                if (self.isStringExpr(v)) break :blk .str;
+                                if (self.wasmTypeOf(v)[0] == 'f') break :blk .f32;
+                                break :blk .i32;
+                            }
+                            break :blk self.elemKindOf(recv);
+                        },
+                        else => break :blk .i32,
+                    };
+                    if (cc.receiver == null and !cc.is_builtin) break :blk self.fn_arr_elem.get(cc.callee) orelse .i32;
+                    break :blk .i32;
+                },
+                else => .i32,
+            },
+            else => .i32,
+        };
+    }
+
+    // ── record inherent methods ──────────────────────────────────────────────
+
+    /// `$<Record>_<method>` for `recv.method(…)` when inference tagged the
+    /// receiver as a record value and the module emitted that method.
+    fn recordMethodSym(self: *Emitter, cc: anytype, loc: ast.Loc) ?[]const u8 {
+        if (cc.receiver == null or cc.is_builtin) return null;
+        const il = self.instance_lowerings.get(loc) orelse return null;
+        const rec = switch (il) {
+            .record => |r| r,
+            .prim => return null,
+        };
+        const sym = std.fmt.bufPrint(&self.sym_buf, "{s}_{s}", .{ rec, cc.callee }) catch return null;
+        if (!self.fn_sigs.contains(sym)) return null;
+        return sym;
+    }
+
+    /// `c.atual()` on a record value → `call $Contador_atual` with the receiver
+    /// as the `self` argument.
+    fn lowerRecordMethod(self: *Emitter, cc: anytype, loc: ast.Loc) anyerror!bool {
+        const sym_tmp = self.recordMethodSym(cc, loc) orelse return false;
+        const sym = try self.arena().dupe(u8, sym_tmp);
+        const sig = self.fn_sigs.get(sym).?;
+        var base: usize = 0;
+        if (sig.params.len == cc.args.len + 1) {
+            try self.lowerCoerced(cc.receiver.?.*, sig.params[0]);
+            base = 1;
+        }
+        try self.lowerCallArgs(cc.args, sig, base);
+        try self.emit(.{ .call = sym });
+        return true;
+    }
+
     /// Instance methods on the built-in array layout (`[len][e0][e1]…`) that
     /// the wasm memory model can serve directly. Returns false when the method
     /// isn't one of them, so the caller can fall back to the stub.
@@ -3047,7 +3770,17 @@ const Emitter = struct {
 
     /// `recv.member` — tuple element (`t._0`), qualified enum unit variant
     /// (`Color.Red`), or a named record field (`r.b` / `self.x`).
-    fn lowerIdentAccess(self: *Emitter, ia: anytype) anyerror!void {
+    fn lowerIdentAccess(self: *Emitter, ia: anytype, loc: ast.Loc) anyerror!void {
+        // `xs.length` / `s.length` on a primitive: inference recorded the
+        // receiver's family at this loc, and both layouts keep the count in the
+        // first word.
+        if (std.mem.eql(u8, ia.member, "length")) {
+            if (self.instance_lowerings.get(loc)) |il| if (il == .prim) {
+                try self.lowerValue(ia.receiver.*);
+                try self.emitC(.{ .load = .{} }, ".length");
+                return;
+            };
+        }
         // `.len` on a string → load the length prefix. Strings are
         // length-prefixed buffers, so the value points at the i32 length word.
         // Codegen is untyped; `.len` is assumed to mean string length here.
@@ -3258,6 +3991,7 @@ const Emitter = struct {
             },
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
+                    if (self.primKindAt(cc, c.loc)) |k| break :blk primCallRes(k, cc) == .str;
                     if (isStrSlice(cc)) break :blk true;
                     if (cc.is_builtin) break :blk false;
                     if (self.calleeSymbol(cc, c.loc)) |sym| {
@@ -3351,6 +4085,14 @@ const Emitter = struct {
             .collection => |col| switch (col.kind) {
                 .grouped => |inner| self.isArrayExpr(inner.*),
                 .arrayLit => true,
+                else => false,
+            },
+            .call => |c| switch (c.kind) {
+                .call => |cc| blk: {
+                    if (self.primKindAt(cc, c.loc)) |k| break :blk primCallRes(k, cc) == .arr;
+                    if (cc.receiver == null and !cc.is_builtin) break :blk self.fn_arr_elem.contains(cc.callee);
+                    break :blk false;
+                },
                 else => false,
             },
             else => false,
@@ -3510,6 +4252,10 @@ const Emitter = struct {
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
                     if (cc.is_builtin) break :blk "i32";
+                    if (self.primKindAt(cc, c.loc)) |k| break :blk if (primCallRes(k, cc) == .f64) "f64" else "i32";
+                    if (self.recordMethodSym(cc, c.loc)) |sym| {
+                        if (self.fn_sigs.get(sym)) |sig| break :blk sig.result orelse "i32";
+                    }
                     if (self.calleeSymbol(cc, c.loc)) |sym| {
                         if (self.fn_sigs.get(sym)) |sig| break :blk sig.result orelse "i32";
                     }

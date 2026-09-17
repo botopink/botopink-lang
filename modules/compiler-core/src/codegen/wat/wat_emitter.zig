@@ -399,12 +399,33 @@ test "an if arm has to fill the result it promises, and an unnamed param is refu
 
 test "a helper can only be named by requesting it" {
     var b: ast.Builder = .{ .arena = std.testing.allocator };
-    try std.testing.expect(!b.helpers.print);
+    try std.testing.expect(!b.helpers.has(.print));
 
     const call = b.helper(.print_str);
     try std.testing.expectEqualStrings("__print_str", call.call);
-    try std.testing.expect(b.helpers.print_str);
+    try std.testing.expect(b.helpers.has(.print_str));
     // `$__print_str` ends in `$__print_nl`, so its group pulls `print` in.
-    try std.testing.expect(b.helpers.print);
-    try std.testing.expect(!b.helpers.str_eq);
+    try std.testing.expect(b.helpers.has(.print));
+    try std.testing.expect(!b.helpers.has(.str_eq));
+}
+
+test "every runtime helper group renders with its deps, and only with them" {
+    const prelude = @import("wat_prelude.zig");
+    const alloc = std.testing.allocator;
+    for (std.enums.values(ast.HelperGroup)) |g| {
+        var set: ast.HelperSet = .{};
+        set.require(g);
+        var items: std.ArrayListUnmanaged(ast.Item) = .empty;
+        defer items.deinit(alloc);
+        if (set.has(.print)) try items.append(alloc, .{ .import = prelude.fd_write_import });
+        try items.append(alloc, .{ .global = .{ .name = "__heap_ptr", .ty = .i32, .mutable = true, .init = "256" } });
+        for (prelude.order) |og| {
+            if (set.has(og)) try items.appendSlice(alloc, prelude.items(og));
+        }
+        var discard: std.Io.Writer.Discarding = .init(&.{});
+        renderModule(&discard.writer, .{ .items = items.items }) catch |err| {
+            std.debug.print("helper group {s}: {s}\n", .{ @tagName(g), @errorName(err) });
+            return err;
+        };
+    }
 }

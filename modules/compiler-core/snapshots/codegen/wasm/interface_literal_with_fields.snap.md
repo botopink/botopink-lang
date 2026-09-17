@@ -124,7 +124,9 @@ fn main() {
     i32.store offset=20
     local.get $__mem1
     local.set $decl
-    i32.const 0 ;; field access .length (unknown receiver type)
+    local.get $decl
+    i32.load offset=8 ;; .fields
+    i32.load ;; .length
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")

@@ -521,6 +521,26 @@ first three are now enforced by the model, not by discipline:
   exactly when something asked for it — `Builder.helper` hands out the symbol
   and sets the flag together. The helpers themselves are nodes in
   `wat/wat_prelude.zig`; the scratch layout they assume is documented there.
+- **Primitive instance methods** (`lowerPrimMethod`): `emitWat` is handed
+  `instance_lowerings`, the receiver family inference recorded per call loc
+  (`array`/`string`/`bool`/`int`/`float`). `primCallRes` is the one table of
+  what wasm lowers and what each leaves on the stack — `exprTail`,
+  `wasmTypeOf`, `isStringExpr`, `isBoolExpr` and `isArrayExpr` all read it. A
+  method lowers to an opcode (`f64.floor`, `i32.rem_s`), a runtime helper
+  (`$__str_case`, `$__arr_join_i32`, …), or — for `map`/`filter`/`forEach`/
+  `fold`/`all`/`any`/`count`/`findIndex` over a literal lambda — a counted walk
+  of the array blob with the lambda's parameters bound to locals and its body
+  inlined (`lowerArrayHof`). `xs.push(v)` rebinds the receiver (a name or a
+  record field) to a grown copy. A method the table does not list traps:
+  `unreachable ;; prim method not lowered on wasm: <kind>.<name>/<n>`.
+  Element shape (`ElemKind`: `i32`/`f32`/`str`) is recovered from array
+  literals, `T[]`/`Array<T>` annotations and the op that produced the array;
+  `join`/`indexOf`/`contains` and a lambda's element parameter use it. An
+  `i32` array prints as `[1,2,3]` (`$__print_arr_i32`).
+- **Record inherent methods** (`lowerRecordMethod`): a call inference tagged
+  `.record` lowers to `call $<Record>_<method>` with the receiver as `self`. A
+  record method with a declared return type always has a `(result …)`, even
+  when its body only throws.
 - **Methods**: `implement`/`extend` methods (`emitExtensionMethods`) and record
   methods (`emitInterfaceMethods`) emit as `$<owner>_<method>` with `self` as a
   real `i32` param (synthesized when the body references `self` without

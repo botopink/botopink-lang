@@ -12,13 +12,18 @@ fn main() {
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (data (i32.const 256) "\0b\00\00\00hello world")
-  (global $__heap_ptr (mut i32) (i32.const 272))
+  (data (i32.const 272) "\05\00\00\00world")
+  (global $__heap_ptr (mut i32) (i32.const 284))
   (func $main
     (local $hw i32)
     i32.const 256
     local.set $hw
-    unreachable ;; unresolved call: contains/1
-    call $__print_i32
+    local.get $hw
+    i32.const 272
+    call $__str_index_of
+    i32.const -1
+    i32.ne
+    call $__print_bool
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
@@ -202,6 +207,110 @@ fn main() {
         br $loop
       )
     )
+  )
+  (func $__print_bool (param $b i32)
+    local.get $b
+    call $__print_bool_raw
+    call $__print_nl
+  )
+  (func $__print_bool_raw (param $b i32)
+    local.get $b
+    (if
+      (then
+        ;; "true" as a little-endian i32
+        i32.const 16
+        i32.const 1702195828
+        i32.store
+        i32.const 16
+        i32.const 4
+        call $__write_bytes
+      )
+      (else
+        ;; "fals" + 'e'
+        i32.const 16
+        i32.const 1936482662
+        i32.store
+        i32.const 16
+        i32.const 101
+        i32.store8 offset=4
+        i32.const 16
+        i32.const 5
+        call $__write_bytes
+      )
+    )
+  )
+  (func $__mem_eq (param $a i32) (param $b i32) (param $n i32) (result i32)
+    (local $i i32)
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $a
+        local.get $i
+        i32.add
+        i32.load8_u
+        local.get $b
+        local.get $i
+        i32.add
+        i32.load8_u
+        i32.ne
+        (if
+          (then
+            i32.const 0
+            return
+          )
+        )
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    i32.const 1
+  )
+  (func $__str_index_of (param $s i32) (param $sub i32) (result i32)
+    (local $n i32) (local $m i32) (local $i i32)
+    local.get $s
+    i32.load
+    local.set $n
+    local.get $sub
+    i32.load
+    local.set $m
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $m
+        i32.add
+        local.get $n
+        i32.gt_u
+        br_if $brk
+        local.get $s
+        i32.const 4
+        i32.add
+        local.get $i
+        i32.add
+        local.get $sub
+        i32.const 4
+        i32.add
+        local.get $m
+        call $__mem_eq
+        (if
+          (then
+            local.get $i
+            return
+          )
+        )
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    i32.const -1
   )
 )
 ```

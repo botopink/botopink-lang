@@ -352,7 +352,8 @@ fn checkCalls(m: Module, s: Seq) Invalid!void {
 
 /// The functions the backend synthesises into a module to serve constructs wasm
 /// has no opcode for. They come in *groups*: a group is emitted whole or not at
-/// all, because its members call each other.
+/// all, because its members call each other. A group that calls into another
+/// group names it in `deps`.
 pub const HelperGroup = enum {
     /// `$__write_bytes` `$__print_nl` `$__print_sp` `$__print_i32`
     /// `$__print_i32_raw` `$__memmove`, plus the `fd_write` import.
@@ -371,11 +372,56 @@ pub const HelperGroup = enum {
     str_eq,
     /// `$__str_slice`.
     str_slice,
+    // ── one helper per group from here on: the group is named after it ──
+    alloc,
+    mem_eq,
+    i32_abs,
+    i32_min,
+    i32_max,
+    i32_to_str,
+    str_case,
+    str_index_of,
+    str_starts_with,
+    str_ends_with,
+    str_trim,
+    str_split,
+    str_repeat,
+    arr_new,
+    arr_slice,
+    arr_reverse,
+    arr_prepend,
+    arr_push,
+    arr_concat,
+    arr_zip,
+    arr_index_of_i32,
+    arr_index_of_str,
+    arr_join_str,
+    arr_join_i32,
+    /// `$__print_arr_i32` `$__print_arr_i32_raw`.
+    print_arr_i32,
+
+    /// The groups `g`'s functions call into.
+    pub fn deps(g: HelperGroup) []const HelperGroup {
+        return switch (g) {
+            .print_str, .print_bool, .print_f64 => &.{.print},
+            .print_arr_i32 => &.{.print},
+            .i32_to_str, .str_case, .str_repeat, .arr_new => &.{.alloc},
+            .str_index_of, .str_starts_with, .str_ends_with => &.{.mem_eq},
+            .str_trim => &.{.str_slice},
+            .str_split => &.{ .arr_new, .mem_eq, .str_slice },
+            .arr_slice, .arr_reverse, .arr_prepend, .arr_push, .arr_concat => &.{.arr_new},
+            .arr_zip => &.{ .arr_new, .alloc },
+            .arr_index_of_str => &.{.str_eq},
+            .arr_join_str => &.{.alloc},
+            .arr_join_i32 => &.{ .arr_new, .i32_to_str, .arr_join_str },
+            else => &.{},
+        };
+    }
 };
 
 /// A callable runtime helper. A `call` to one is only obtainable through
 /// `Builder.helper`, which marks its group for emission — so the module can
-/// never call a helper it does not also define.
+/// never call a helper it does not also define. Every symbol is `__<tag>`.
 pub const Helper = enum {
     write_bytes,
     print_nl,
@@ -393,25 +439,36 @@ pub const Helper = enum {
     str_concat,
     str_eq,
     str_slice,
+    alloc,
+    mem_eq,
+    i32_abs,
+    i32_min,
+    i32_max,
+    i32_to_str,
+    str_case,
+    str_index_of,
+    str_starts_with,
+    str_ends_with,
+    str_trim,
+    str_split,
+    str_repeat,
+    arr_new,
+    arr_slice,
+    arr_reverse,
+    arr_prepend,
+    arr_push,
+    arr_concat,
+    arr_zip,
+    arr_index_of_i32,
+    arr_index_of_str,
+    arr_join_str,
+    arr_join_i32,
+    print_arr_i32,
+    print_arr_i32_raw,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {
-            .write_bytes => "__write_bytes",
-            .print_nl => "__print_nl",
-            .print_sp => "__print_sp",
-            .print_i32 => "__print_i32",
-            .print_i32_raw => "__print_i32_raw",
-            .memmove => "__memmove",
-            .print_str => "__print_str",
-            .print_str_raw => "__print_str_raw",
-            .print_bool => "__print_bool",
-            .print_bool_raw => "__print_bool_raw",
-            .print_f64 => "__print_f64",
-            .print_f64_raw => "__print_f64_raw",
-            .arr_at => "__arr_at",
-            .str_concat => "__str_concat",
-            .str_eq => "__str_eq",
-            .str_slice => "__str_slice",
+            inline else => |t| "__" ++ @tagName(t),
         };
     }
 
@@ -421,59 +478,25 @@ pub const Helper = enum {
             .print_str, .print_str_raw => .print_str,
             .print_bool, .print_bool_raw => .print_bool,
             .print_f64, .print_f64_raw => .print_f64,
-            .arr_at => .arr_at,
-            .str_concat => .str_concat,
-            .str_eq => .str_eq,
-            .str_slice => .str_slice,
+            .print_arr_i32, .print_arr_i32_raw => .print_arr_i32,
+            inline else => |t| @field(HelperGroup, @tagName(t)),
         };
     }
 };
 
-/// Which helper groups a module needs. `print_str` / `print_bool` / `print_f64`
-/// all end in `$__print_nl`, so requesting one pulls in `print` too.
+/// Which helper groups a module needs. Requiring a group requires its `deps`
+/// too, so a module that calls a helper also defines everything it calls.
 pub const HelperSet = struct {
-    print: bool = false,
-    print_str: bool = false,
-    print_bool: bool = false,
-    print_f64: bool = false,
-    arr_at: bool = false,
-    str_concat: bool = false,
-    str_eq: bool = false,
-    str_slice: bool = false,
+    groups: std.EnumSet(HelperGroup) = .initEmpty(),
 
     pub fn require(self: *HelperSet, g: HelperGroup) void {
-        switch (g) {
-            .print => self.print = true,
-            .print_str => {
-                self.print_str = true;
-                self.print = true;
-            },
-            .print_bool => {
-                self.print_bool = true;
-                self.print = true;
-            },
-            .print_f64 => {
-                self.print_f64 = true;
-                self.print = true;
-            },
-            .arr_at => self.arr_at = true,
-            .str_concat => self.str_concat = true,
-            .str_eq => self.str_eq = true,
-            .str_slice => self.str_slice = true,
-        }
+        if (self.groups.contains(g)) return;
+        self.groups.insert(g);
+        for (g.deps()) |d| self.require(d);
     }
 
     pub fn has(self: HelperSet, g: HelperGroup) bool {
-        return switch (g) {
-            .print => self.print,
-            .print_str => self.print_str,
-            .print_bool => self.print_bool,
-            .print_f64 => self.print_f64,
-            .arr_at => self.arr_at,
-            .str_concat => self.str_concat,
-            .str_eq => self.str_eq,
-            .str_slice => self.str_slice,
-        };
+        return self.groups.contains(g);
     }
 };
 

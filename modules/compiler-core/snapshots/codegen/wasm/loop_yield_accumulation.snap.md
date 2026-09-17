@@ -18,7 +18,41 @@ fn main() {
   (global $__heap_ptr (mut i32) (i32.const 256))
   (func $doubles (param $arr i32) (result i32)
     (local $x i32)
-    i32.const 0 ;; loop over unknown iterable
+    (local $__iter0 i32)
+    (local $__idx0 i32)
+    (local $__len0 i32)
+    local.get $arr
+    local.set $__iter0
+    local.get $__iter0
+    i32.load ;; element count
+    local.set $__len0
+    i32.const 0
+    local.set $__idx0
+    (block $__break
+      (loop $__continue
+        local.get $__idx0
+        local.get $__len0
+        i32.ge_s
+        br_if $__break
+        local.get $__iter0
+        local.get $__idx0
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load offset=4
+        local.set $x
+    local.get $x
+    i32.const 2
+    i32.mul
+    drop
+        local.get $__idx0
+        i32.const 1
+        i32.add
+        local.set $__idx0
+        br $__continue
+      )
+    )
+    i32.const 0
     return
   )
   (func $main
@@ -43,7 +77,7 @@ fn main() {
     i32.store offset=12
     local.get $__mem0
     call $doubles
-    call $__print_i32
+    call $__print_arr_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
@@ -227,6 +261,62 @@ fn main() {
         br $loop
       )
     )
+  )
+  (func $__print_arr_i32_raw (param $xs i32)
+    (local $n i32) (local $i i32)
+    i32.const 8
+    i32.const 91
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+    local.get $xs
+    i32.load
+    local.set $n
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $n
+        i32.ge_u
+        br_if $brk
+        local.get $i
+        (if
+          (then
+            i32.const 8
+            i32.const 44
+            i32.store8
+            i32.const 8
+            i32.const 1
+            call $__write_bytes
+          )
+        )
+        local.get $xs
+        i32.const 4
+        i32.add
+        local.get $i
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.load
+        call $__print_i32_raw
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    i32.const 8
+    i32.const 93
+    i32.store8
+    i32.const 8
+    i32.const 1
+    call $__write_bytes
+  )
+  (func $__print_arr_i32 (param $xs i32)
+    local.get $xs
+    call $__print_arr_i32_raw
+    call $__print_nl
   )
 )
 ```
