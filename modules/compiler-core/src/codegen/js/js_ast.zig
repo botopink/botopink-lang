@@ -16,13 +16,12 @@
 //!
 //! ## Bridges
 //!
-//! Three forms exist only to keep shapes the current lowering still produces but
+//! Two forms exist only to keep shapes the current lowering still produces but
 //! that the model would otherwise forbid. They are the complete list of ways a
 //! JS backend can still emit something illegal, each one has to be named
 //! explicitly at the build site, and each is documented in `AGENTS.md`:
 //!
 //! * `Pattern.match`              — a match pattern used as a binding target.
-//! * `Stmt.throw_ == null`        — a `throw` with no operand.
 //! * `TsType.missing`             — a `.d.ts` position with no type.
 //!
 //! Nodes borrow their slices: build them in an arena that outlives rendering.
@@ -294,10 +293,9 @@ pub const Stmt = union(enum) {
     decl: Decl,
     /// `return;` / `return <expr>;`
     return_: ?Expr,
-    /// `throw <expr>;` — `null` is BRIDGE JS-6, a `throw` with no operand
-    /// (`throw;` is a JS SyntaxError), which the jump lowering still produces
-    /// for a botopink `throw` with no value.
-    throw_: ?Expr,
+    /// `throw <expr>;` — the operand is required: `throw;` is a JS
+    /// SyntaxError, and botopink rejects a bare `throw` at parse time.
+    throw_: Expr,
     /// `continue;`
     continue_,
     /// `break;`

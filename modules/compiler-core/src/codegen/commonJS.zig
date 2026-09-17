@@ -1915,7 +1915,7 @@ const Emitter = struct {
             .loop => |lp| if (try self.buildLoopStmt(lp)) |st| return st,
             .jump => |j| switch (j.kind) {
                 .@"break" => |br| return self.buildBreakStmt(br, false),
-                .throw_ => |r| return .{ .throw_ = if (r) |val| try self.buildExpr(val.*) else null },
+                .throw_ => |r| return .{ .throw_ = try self.buildExpr((r orelse return error.ThrowWithoutOperand).*) },
                 .@"continue" => return switch (self.loop_ctx) {
                     .none => error.JumpOutsideLoop,
                     .stmt, .value => js.Stmt.continue_,
@@ -2353,8 +2353,10 @@ const Emitter = struct {
                 .@"return", .@"break", .@"continue" => return error.JumpInValuePosition,
                 // `throw` leaves by unwinding, which crosses a function
                 // boundary: in value position it is a one-statement IIFE.
+                // The parser gives `throw` an operand (`throw;` is a parse
+                // error), so a missing one is a frontend defect.
                 .throw_ => |r| return self.b.iife(&.{.{
-                    .throw_ = if (r) |val| try self.buildExpr(val.*) else null,
+                    .throw_ = try self.buildExpr((r orelse return error.ThrowWithoutOperand).*),
                 }}),
                 .try_ => |t| {
                     // The parser always gives `try` an operand.

@@ -135,6 +135,12 @@ codegen/
   `Array`/`String`/numeric/`Bool`), where they become statics on the existing
   global (`Array.range = function…`) — `const Array = {}` would shadow the
   global.
+- **Bare `throw`** (JS-6, decided): rejected, not a rethrow. The parser
+  requires an operand (`throw [new] <expr>`), so `throw;` is a parse error on
+  every backend (`throw_bare_throw_inside_try_catch_is_rejected` pins it on all
+  four) and `js.Stmt.throw_` carries a required operand; a null operand
+  reaching commonJS is `error.ThrowWithoutOperand`. The erlang twin
+  (`erlang.zig`'s `raw("")` for a null `throw_`) is equally unreachable.
 - **Destructuring**: a destructuring parameter takes no default
   (`function greet({ name })`); a nameless `..` in a record or list pattern
   ignores the rest, which JS destructuring already does, so it emits no rest

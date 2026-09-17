@@ -411,6 +411,26 @@ test "js: throw ---- string literal" {
     );
 }
 
+// A bare `throw;` (no operand) — JS-6 in `codegen/js/AGENTS.md`. Decided
+// semantics: rejected, not a rethrow. The parser requires an operand
+// (`throw [new] <expr>`), so the program never reaches a backend; the
+// snapshot pins the parse error on all four, which is what lets
+// `Stmt.throw_` carry a required operand.
+test "js: throw ---- bare throw inside try catch is rejected" {
+    try h.assertJsCompileError(std.testing.allocator, @src(),
+        \\#[@result]
+        \\fn g(x: i32) -> @Result<i32, string> {
+        \\    if (x > 0) { return x; };
+        \\    throw "neg";
+        \\}
+        \\#[@result]
+        \\fn f(x: i32) -> @Result<i32, string> {
+        \\    val r = try g(x) catch { e -> throw; };
+        \\    return r;
+        \\}
+    );
+}
+
 test "js: throw ---- record constructor" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\record AppError { code: i32, msg: string }

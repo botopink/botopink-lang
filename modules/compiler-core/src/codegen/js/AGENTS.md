@@ -32,7 +32,7 @@ js/
 
 | File | Role |
 |---|---|
-| `js_ast.zig` | `Expr` (`lexeme_string`, `quoted`, `number`, `null_`, `ident`, `name`, `this`, `member`, `index`, `call`, `new_`, `binary`, `unary`, `ternary`, `assign`, `paren`, `arrow`, `function`, `array`, `object`, `host`, `await_`, `yield_`, `comment`), `Stmt` (`expr`, `decl`, `return_`, `throw_` (optional operand), `continue_`, `break_`, `yield_delegate`, `if_`, `for_of`, `block`, `function`, `class`, `comment`, `group`), `Pattern` (`ident`, `name`, `object`, `array`, `match`), `Param`, `Block` (+ `Layout`), `Class`, `Comment`, `Item`; the `.d.ts` subset `TsType` / `TsField` / `TsParam` / `TsMember` / `TsDecl`; and `Builder` (arena: `ptr`, `stmtPtr`, `typePtr`, `call`, `member`, `binary`, `ternary`, `arrowBlock`, `iife`, `ifStmt`, `group`, …). |
+| `js_ast.zig` | `Expr` (`lexeme_string`, `quoted`, `number`, `null_`, `ident`, `name`, `this`, `member`, `index`, `call`, `new_`, `binary`, `unary`, `ternary`, `assign`, `paren`, `arrow`, `function`, `array`, `object`, `host`, `await_`, `yield_`, `comment`), `Stmt` (`expr`, `decl`, `return_`, `throw_` (required operand), `continue_`, `break_`, `yield_delegate`, `if_`, `for_of`, `block`, `function`, `class`, `comment`, `group`), `Pattern` (`ident`, `name`, `object`, `array`, `match`), `Param`, `Block` (+ `Layout`), `Class`, `Comment`, `Item`; the `.d.ts` subset `TsType` / `TsField` / `TsParam` / `TsMember` / `TsDecl`; and `Builder` (arena: `ptr`, `stmtPtr`, `typePtr`, `call`, `member`, `binary`, `ternary`, `arrowBlock`, `iife`, `ifStmt`, `group`, …). |
 | `js_emitter.zig` | **Names:** `ident(name)` — the ES reserved-word rename (`delete` → `delete_`); the only place it happens. A property position is never renamed. **Strings:** `writeLexemeString` — a botopink lexeme's escape pairs pass through (the lexer validated them and the escape set is JS-compatible), raw control bytes and unescaped quotes are escaped. **Code:** `writeExpr(w, expr, indent)`, `writeStmt(w, stmt, indent)`, `writeBlock`, `writePattern`, `writeComment`, `writeProgram(w, items)` (generated declarations separated by a blank line; runtime-support source verbatim). |
 | `ts_emitter.zig` | `writeType`, `writeDecl`, `writeProgram(w, decls)` — one declaration per typed binding, separated by a blank line, a binding with no surface (`.none`) still taking its separator. |
 
@@ -54,17 +54,16 @@ js/
 
 ## Bridges (the known defects, pinned)
 
-Three forms exist only because the current lowering still produces shapes the
+Two forms exist only because the current lowering still produces shapes the
 model would otherwise forbid. They are the **complete** list of ways a JS
 backend can emit something illegal; each has to be named explicitly at the
-build site, so `rg '\.missing|\.match|throw_ = null'`
+build site, so `rg '\.missing|\.match'`
 finds every one. Fixing a defect means deleting its build site, not its node.
 
 | Bridge | Renders | Defect |
 |---|---|---|
 | `Pattern.match` | botopink's own pattern spelling | **JS-4** a match pattern used as a JS binding target (`const Circle(r) = …`) |
 | `TsType.missing` | nothing | **JS-5** a `.d.ts` parameter whose type the frontend does not carry: `f(s: )` |
-| `Stmt.throw_ = null` | a bare `throw` | **JS-6** a botopink `throw` with no value; `throw;` is a JS SyntaxError |
 
 `Expr.host` is **not** a bridge: it carries the literal text of an
 `#[@External.Node("…")]` annotation, which is host code by definition — the

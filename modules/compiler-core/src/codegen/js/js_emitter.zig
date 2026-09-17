@@ -434,12 +434,9 @@ pub fn writeStmt(w: *Writer, s: Ast.Stmt, indent: usize) Error!void {
             }
             try w.writeByte(';');
         },
-        .throw_ => |v| {
-            try w.writeAll("throw");
-            if (v) |e| {
-                try w.writeByte(' ');
-                try writeExpr(w, e, indent);
-            }
+        .throw_ => |e| {
+            try w.writeAll("throw ");
+            try writeExpr(w, e, indent);
             try w.writeByte(';');
         },
         .continue_ => try w.writeAll("continue;"),
