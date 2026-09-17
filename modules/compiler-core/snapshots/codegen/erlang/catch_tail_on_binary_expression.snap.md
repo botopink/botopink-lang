@@ -21,7 +21,11 @@ getA() ->
     {error, #{msg => <<"overflow">>}}.
 
 compute() ->
-    R = case getA() of
+    R = case try
+        getA()
+    catch
+        error:_TryR0 -> {error, _TryR0}
+    end of
         {ok, TryV0} -> TryV0;
         {error, _TryE0} ->
             0

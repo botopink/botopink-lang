@@ -2397,6 +2397,14 @@ const Emitter = struct {
         const saved = this.indent;
         this.indent = 1;
         defer this.indent = saved;
+        // A 0-arity function is its own variable scope.
+        this.resetLocals();
+        // A comptime block is the function body itself: its statements, then
+        // its `break` value.
+        if (v.value.* == .comptime_ and v.value.comptime_.kind == .comptimeBlock) {
+            const body = try this.comptimeBlockBody(b, v.value.comptime_.kind.comptimeBlock.body, 1);
+            return out.append(b.arena, try blockFunction(b, v.name, &.{}, body));
+        }
         try out.append(b.arena, try blockFunction(b, v.name, &.{}, try b.body(&.{try this.exprNode(b, v.value.*)})));
     }
 
@@ -2452,7 +2460,8 @@ const Emitter = struct {
             // Finite generator → eager list of yielded items: `[V1, V2, ...]`.
             const items = try b.arena.alloc(Ast.Expr, f.body.len);
             for (f.body, 0..) |stmt, i| {
-                items[i] = if (stmt.expr.jump.kind.yield.value) |val| try this.exprNode(b, val.*) else Ast.Expr.r("");
+                // A bare `yield;` yields no value: `undefined`, botopink's null.
+                items[i] = if (stmt.expr.jump.kind.yield.value) |val| try this.exprNode(b, val.*) else Ast.Expr.a("undefined");
             }
             break :blk try b.body(&.{.{ .list = items }});
         } else try this.bodyNode(b, f.body, 0, 1);
@@ -3363,9 +3372,14 @@ const Emitter = struct {
             },
 
             .jump => |j| return switch (j.kind) {
-                .@"return" => |r| if (r) |val| this.exprNode(b, val.*) else Ast.Expr.r(""),
-                .throw_ => |r| if (r) |val| b.remote("erlang", "throw", &.{try this.exprNode(b, val.*)}) else Ast.Expr.r(""),
-                .try_ => |t| if (t) |val| this.exprNode(b, val.*) else Ast.Expr.r(""),
+                // A value-less jump has no value to stand for: `return;` and a
+                // bare `try` are `undefined` (null), as `stmtExpr`'s `return`
+                // already was, and a bare `throw;` throws `undefined` rather
+                // than rendering as nothing — a hole `erlc` rejected, or worse,
+                // accepted as the next expression.
+                .@"return" => |r| if (r) |val| this.exprNode(b, val.*) else A("undefined"),
+                .throw_ => |r| b.remote("erlang", "throw", &.{if (r) |val| try this.exprNode(b, val.*) else A("undefined")}),
+                .try_ => |t| if (t) |val| this.exprNode(b, val.*) else A("undefined"),
                 .await_ => |av| this.exprNode(b, av.*),
                 // A bare `break` leaves the enclosing loop. Erlang's list
                 // functions cannot be stopped from inside the fun, so the exit
@@ -3373,7 +3387,7 @@ const Emitter = struct {
                 // used to render as nothing at all, which left a `;` where the
                 // clause body belonged and broke the whole module.
                 .@"break" => |brk| if (brk.value) |bp| this.exprNode(b, bp.*) else b.remote("erlang", "throw", &.{Ast.Expr.a(break_signal)}),
-                .yield => |y| if (y.value) |val| this.exprNode(b, val.*) else Ast.Expr.r(""),
+                .yield => |y| if (y.value) |val| this.exprNode(b, val.*) else A("undefined"),
                 .@"continue" => .{ .comment = Ast.Comment.doc("continue") },
             },
 
@@ -3835,21 +3849,41 @@ const Emitter = struct {
         }
     }
 
+    /// A comptime block's statements up to its first `break`, then the value
+    /// that `break` carries (semantics decision 2: a block's value comes from
+    /// `break`). It used to lower to the `break` expression alone, dropping
+    /// the `val`s it reads — `result() -> (X * 2).` did not compile. A block
+    /// with no `break`, or a bare one, is valueless: `ok`.
+    fn comptimeBlockBody(this: *Emitter, b: Ast.Builder, body: []const ast.Stmt, indent: usize) anyerror!Ast.Body {
+        var end = body.len;
+        var value: ?*const ast.Expr = null;
+        for (body, 0..) |stmt, i| {
+            if (stmt.expr == .jump and stmt.expr.jump.kind == .@"break") {
+                end = i;
+                value = stmt.expr.jump.kind.@"break".value;
+                break;
+            }
+        }
+        var stmts: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
+        try stmts.appendSlice(b.arena, (try this.bodyNode(b, body[0..end], 0, indent)).stmts);
+        const saved = this.indent;
+        this.indent = indent;
+        defer this.indent = saved;
+        try stmts.append(b.arena, .{ .expr = if (value) |v| try this.exprNode(b, v.*) else Ast.Expr.a("ok") });
+        return .{ .stmts = stmts.items };
+    }
+
     fn comptimeNode(this: *Emitter, b: Ast.Builder, ct: anytype) anyerror!Ast.Expr {
         const V = Ast.Expr.v;
         const A = Ast.Expr.a;
         switch (ct.kind) {
             .comptimeExpr => |inner| return this.exprNode(b, inner.*),
-            // A comptime block's value is its `break` value.
-            .comptimeBlock => |cb| {
-                for (cb.body) |stmt| {
-                    if (stmt.expr == .jump and stmt.expr.jump.kind == .@"break") {
-                        const value = stmt.expr.jump.kind.@"break".value orelse return Ast.Expr.r("");
-                        return this.exprNode(b, value.*);
-                    }
-                }
-                return Ast.Expr.r("");
-            },
+            // A comptime block in expression position is an applied fun over
+            // its statements, so the `val`s before its `break` stay bound.
+            .comptimeBlock => |cb| return b.applyParen(.{ .fun = .{
+                .params = &.{},
+                .body = try this.comptimeBlockBody(b, cb.body, this.indent + 1),
+            } }, &.{}),
             .assert => |a| {
                 const cond = try b.paren(try this.exprNode(b, a.condition.*));
                 if (!this.test_mode) return b.match(A("true"), cond);

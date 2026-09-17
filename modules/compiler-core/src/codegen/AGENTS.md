@@ -285,7 +285,12 @@ codegen/
   NAMED `val` is always a 0-arity function and a bare reference to it is the call
   `name()` (`top_vals`); a lambda-valued one applies what it answers,
   `(add())(10, 20)`. A comptime `val` keeps its `%% comptime val x` header and
-  carries the folded expression as its body. Only the `_`-named synthetic
+  carries the expression as its body; a `comptime { … break e; }` block is the
+  function body itself — its statements, then the `break` value
+  (`comptimeBlockBody`; no `break` → `ok`), and in expression position the same
+  body as an applied `fun`. Each val function starts a fresh variable scope.
+  Value-less jumps have a value node: `return;`/bare `try`/bare `yield` →
+  `undefined`, bare `throw;` → `erlang:throw(undefined)`. Only the `_`-named synthetic
   statements (top-level expression statements) stay inside `'_botopink_main'/0`,
   where they keep their single, ordered evaluation. The trade-off is that a named
   `val`'s initialiser runs once per read.

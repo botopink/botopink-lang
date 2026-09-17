@@ -24,6 +24,7 @@ ct_0: val result = comptime {
 
 %% comptime val result
 result() ->
+    X = 10,
     (X * 2).
 
 main() ->
@@ -41,6 +42,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:6:6: variable 'X' is unbound
+20
 ```
