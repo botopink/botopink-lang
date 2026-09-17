@@ -37,4 +37,9 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
+COMPILE ERROR (node --check):
+main.js:2
+     if ((x === 0)) { return "zero"; } else { return  if ((x !== 0)) { return ("nonzero: " + x); } else { return "null"; }; };
+                                                      ^^
+SyntaxError: Unexpected token 'if'
 ```

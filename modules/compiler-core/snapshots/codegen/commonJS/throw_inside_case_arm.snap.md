@@ -51,4 +51,9 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
+COMPILE ERROR (node --check):
+main.js:10
+        if (_s === "Fail") return return ({ error: "failed" });
+                                  ^^^^^^
+SyntaxError: Unexpected token 'return'
 ```

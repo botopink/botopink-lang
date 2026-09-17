@@ -570,7 +570,14 @@ first three are now enforced by the model, not by discipline:
     echo so the block stays stable across OTP releases;
   - the program exits 0 → its captured output is the RUN LOG;
   - the program exits non-zero (crash, `badarith`, `init terminating`) → empty
-    RUN LOG: the partial stdout comes with a stack trace not worth pinning.
+    RUN LOG: the partial stdout comes with a stack trace not worth pinning;
+  - a `node` run exits non-zero **and** `node --check` rejects the module →
+    the RUN LOG is `COMPILE ERROR (node --check):` followed by
+    `<module>.js:<line>`, node's source echo and caret, and the `SyntaxError:`
+    line (stack frames and the `Node.js v…` banner dropped). A module that
+    parses always runs, so checking only after a failed run sees every
+    unparseable module; the node cache key is tagged `node+check` so entries
+    recorded before this capture miss.
 - **Determinism**: `erlc`/`erl` are spawned **with the scratch dir as their
   cwd** (`-o .`, `-pa .`, bare `<module>.erl` / `<module>.S` in argv), so
   diagnostics quote `main.erl:4:5:` instead of the random

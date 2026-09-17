@@ -40,4 +40,9 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
+COMPILE ERROR (node --check):
+main.js:3
+const apenasGrandes = for (const valor of precosBrutos) {
+                      ^^^
+SyntaxError: Unexpected token 'for'
 ```

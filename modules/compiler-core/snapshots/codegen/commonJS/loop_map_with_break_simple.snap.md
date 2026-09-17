@@ -38,4 +38,9 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
+COMPILE ERROR (node --check):
+main.js:3
+const dobrados = for (const id of ids) {
+                 ^^^
+SyntaxError: Unexpected token 'for'
 ```

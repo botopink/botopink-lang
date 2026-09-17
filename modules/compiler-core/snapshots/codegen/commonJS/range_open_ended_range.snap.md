@@ -25,4 +25,9 @@ function countUp(x) {
 
 ----- RUN LOG -----
 ```logs
+COMPILE ERROR (node --check):
+main.js:3
+    (() => { if ((i > 100)) { return return; } })();
+                                     ^^^^^^
+SyntaxError: Unexpected token 'return'
 ```

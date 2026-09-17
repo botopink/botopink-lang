@@ -35,4 +35,9 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
+COMPILE ERROR (node --check):
+main.js:1
+const processamento = for (const i of Array.from({length: Math.max(0, (10) - (0))}, (_, __i) => (0) + __i)) {
+                      ^^^
+SyntaxError: Unexpected token 'for'
 ```

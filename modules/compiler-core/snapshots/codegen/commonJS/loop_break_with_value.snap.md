@@ -37,4 +37,9 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
+COMPILE ERROR (node --check):
+main.js:2
+    return for (const x of arr) {
+           ^^^
+SyntaxError: Unexpected token 'for'
 ```

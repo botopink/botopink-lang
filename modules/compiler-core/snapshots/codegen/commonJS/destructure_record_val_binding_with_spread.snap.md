@@ -32,4 +32,9 @@ function describe(p) {
 
 ----- RUN LOG -----
 ```logs
+COMPILE ERROR (node --check):
+main.js:10
+    const { x, ... } = p;
+                   ^
+SyntaxError: Unexpected token '}'
 ```

@@ -26,4 +26,9 @@ function process(a, b) {
 
 ----- RUN LOG -----
 ```logs
+COMPILE ERROR (node --check):
+main.js:4
+        if () return null;
+            ^
+SyntaxError: Unexpected token ')'
 ```

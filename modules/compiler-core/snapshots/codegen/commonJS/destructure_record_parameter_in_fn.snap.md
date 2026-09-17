@@ -45,4 +45,9 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
+COMPILE ERROR (node --check):
+main.js:8
+function greet({ name, ... } = ) {
+                           ^
+SyntaxError: Unexpected token '}'
 ```

@@ -25,4 +25,9 @@ function sumEvens(arr) {
 
 ----- RUN LOG -----
 ```logs
+COMPILE ERROR (node --check):
+main.js:3
+    (() => { if (((x % 2) !== 0)) { return continue; } })();
+                                           ^^^^^^^^
+SyntaxError: Unexpected token 'continue'
 ```
