@@ -26,7 +26,7 @@ fn main() {
           "return_type": "string"
         }
       ],
-      "return_type": "?"
+      "return_type": "string"
     },
     {
       "ast": "fn_def",

@@ -28,7 +28,7 @@ val label = case 42 {
           "return_type": "string"
         }
       ],
-      "return_type": "?"
+      "return_type": "string"
     }
   ]
 }

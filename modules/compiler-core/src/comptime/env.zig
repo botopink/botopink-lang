@@ -427,6 +427,9 @@ pub const Env = struct {
     /// C1 — the fn's whole declared return type, for a returned value that is
     /// already the wrapper (`return state(start)` in a `-> @Context<B, X>` hook).
     returnWhole: ?*T.Type = null,
+    /// C1 — set while inferring a `case` block arm: its `return`s leave the
+    /// enclosing fn, so the arm's lambda keeps the fn's return target.
+    keepReturnTarget: bool = false,
     /// The generic-param map of the fn body being inferred, so annotations
     /// inside the body resolve `T` to the fn's own generic var.
     fnGenericMap: ?*std.StringHashMap(*T.Type) = null,

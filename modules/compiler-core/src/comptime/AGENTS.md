@@ -311,6 +311,14 @@ with `void` in a fn with a declared return type.
 - A function-typed record field (`set: fn(next: T)`) is an ordinary `Type.func`
   field.
 
+## `case` and `comptime` block types (06 C2)
+
+A `case` is typed from its arms (`caseTypeFromArms`): arms that agree unify, arms of different
+types make a union (decision 8 §3.2). A jump arm and a statement arm (`void`, a block without a
+top-level `break <value>`) contribute nothing; a block arm's value is its `break` value. A block
+arm keeps the enclosing fn's return target (`env.keepReturnTarget`). A `comptime { … }` block is
+typed as its `break <value>`, `void` without one.
+
 ## `case` exhaustiveness + reachability
 
 `checkCaseExhaustiveness` (infer.zig) checks a single-subject `case` on an

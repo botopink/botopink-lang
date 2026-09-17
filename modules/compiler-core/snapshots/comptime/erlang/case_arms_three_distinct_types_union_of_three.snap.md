@@ -28,7 +28,7 @@ val x = case 0 {
           "return_type": "f64"
         }
       ],
-      "return_type": "?"
+      "return_type": "string | i32 | f64"
     }
   ]
 }

@@ -34,7 +34,7 @@ val parity = case 5 {
           "return_type": "void"
         }
       ],
-      "return_type": "?"
+      "return_type": "string"
     }
   ]
 }

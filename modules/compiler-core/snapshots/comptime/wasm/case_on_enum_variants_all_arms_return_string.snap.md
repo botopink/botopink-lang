@@ -49,7 +49,7 @@ val label = case subject {
           "return_type": "string"
         }
       ],
-      "return_type": "?"
+      "return_type": "string"
     }
   ]
 }

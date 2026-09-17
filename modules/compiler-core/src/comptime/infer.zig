@@ -7704,6 +7704,70 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
     };
 }
 
+/// True when an untyped `case` arm body is a block (`_ -> { … }`), which the
+/// parser represents as a zero-parameter lambda.
+fn isBlockArmBody(body: ast.Expr) bool {
+    return body == .function and body.function.kind.syntax == .lambda and body.function.kind.params.len == 0;
+}
+
+/// C2a — the value an arm contributes to its `case`'s type, or null when it
+/// contributes nothing: a jump arm, a `void` arm, a block arm without a
+/// top-level `break <value>` (decision 2: a block's value comes from `break`).
+fn caseArmValueType(env: *Env, body: ast.TypedExpr) InferError!?*T.Type {
+    if (body == .jump) return null;
+    if (body == .function and body.function.kind.syntax == .lambda and body.function.kind.params.len == 0) {
+        var found: ?*T.Type = null;
+        for (body.function.kind.body) |stmt| {
+            const e = stmt.expr;
+            if (e != .jump) continue;
+            switch (e.jump.kind) {
+                .@"break" => |b| if (b.value) |v| {
+                    if (found) |f| try unify(env, f, v.getType()) else found = v.getType();
+                },
+                else => {},
+            }
+        }
+        return found;
+    }
+    const t = body.getType();
+    if (t.deref().* == .named and std.mem.eql(u8, t.deref().named.name, "void")) return null;
+    return t;
+}
+
+/// C2a — unify the arms that agree; distinct named types become union members.
+fn caseTypeFromArms(env: *Env, arms: []const ast.CaseArmOf(.typed)) InferError!*T.Type {
+    var members: std.ArrayListUnmanaged(*T.Type) = .empty;
+    for (arms) |arm| {
+        const t = (try caseArmValueType(env, arm.body)) orelse continue;
+        var merged = false;
+        for (members.items) |m| {
+            if (caseArmTypesAgree(m, t)) {
+                try unify(env, m, t);
+                merged = true;
+                break;
+            }
+        }
+        if (!merged) try members.append(env.arena, t);
+    }
+    return switch (members.items.len) {
+        0 => env.namedType("void"),
+        1 => members.items[0],
+        else => env.unionType(try members.toOwnedSlice(env.arena)),
+    };
+}
+
+/// Two arm types agree (and are unified) when either is still a type
+/// variable or both name the same type constructor with the same arity.
+fn caseArmTypesAgree(a: *T.Type, b: *T.Type) bool {
+    const da = a.deref();
+    const db = b.deref();
+    if (da.* == .typeVar or db.* == .typeVar) return true;
+    if (da.* == .named and db.* == .named) {
+        return std.mem.eql(u8, da.named.name, db.named.name) and da.named.args.len == db.named.args.len;
+    }
+    return false;
+}
+
 /// Infer type for function definition expressions (lambdas and anonymous functions)
 fn inferFunctionExpr(env: *Env, func: ast.FunctionExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
     return inferFunctionExprExpected(env, func, loc, null);
@@ -7767,9 +7831,14 @@ fn inferFunctionExprExpected(env: *Env, func: ast.FunctionExprOf(.untyped), loc:
         env.returnBareIsVoid = savedReturnBareIsVoid;
         env.returnWhole = savedReturnWhole;
     }
-    env.returnTarget = expRet orelse try env.freshVar();
-    env.returnBareIsVoid = false;
-    env.returnWhole = null;
+    // A `case` block arm keeps the enclosing fn's return target.
+    const keep = env.keepReturnTarget;
+    env.keepReturnTarget = false;
+    if (!keep) {
+        env.returnTarget = expRet orelse try env.freshVar();
+        env.returnBareIsVoid = false;
+        env.returnWhole = null;
+    }
     const bodyTyped = try inferStmtsTyped(env, fk.body);
     // The lambda's return type is its tail expression's type; an explicit
     // `return expr` tail types as void, so use the returned value's type.
@@ -7880,10 +7949,15 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
                     guardTyped = gt;
                 }
 
+                // A block arm (`_ -> { … }`) is a zero-param lambda in the AST,
+                // but its `return`s leave the enclosing fn, not the block.
+                env.keepReturnTarget = isBlockArmBody(arm.body);
                 const bodyTyped = inferExprTyped(env, arm.body) catch |err| {
+                    env.keepReturnTarget = false;
                     try restorePatternBindings(env, snapshots.items);
                     return err;
                 };
+                env.keepReturnTarget = false;
                 try restorePatternBindings(env, snapshots.items);
                 typedArms[i] = .{
                     .pattern = arm.pattern,
@@ -7898,7 +7972,12 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
             if (typedSubjects.len == 1) {
                 try checkCaseExhaustiveness(env, typedSubjects[0].getType(), c.arms, loc);
             }
-            return TypedExpr{ .collection = .{ .loc = loc, .type_ = try env.freshVar(), .kind = .{ .case = .{
+            // C2a — the `case` is typed from its arms: arms that agree unify,
+            // arms of different types make a union (decision 8 §3.2). A jump arm
+            // (`return`/`throw`/`break`/`continue`) and a statement arm (`void`, a
+            // block without `break <value>`) contribute nothing.
+            const caseType = try caseTypeFromArms(env, typedArms);
+            return TypedExpr{ .collection = .{ .loc = loc, .type_ = caseType, .kind = .{ .case = .{
                 .subjects = typedSubjects,
                 .arms = typedArms,
                 .trailingComments = c.trailingComments,
@@ -7937,7 +8016,21 @@ fn inferComptimeExpr(env: *Env, ct: ast.ComptimeExprOf(.untyped), loc: ast.Loc) 
 
         .comptimeBlock => |cb| {
             const typedBody = try inferStmtsTyped(env, cb.body);
-            const bodyType = if (typedBody.len > 0) typedBody[typedBody.len - 1].expr.getType() else try env.namedType("void");
+            // C2b — a `comptime { … }` block's value is its `break <value>`
+            // (`eval.zig` `blockValue`'s rule), `void` when there is none.
+            const bodyType = blk: {
+                var found: ?*T.Type = null;
+                for (typedBody) |st| {
+                    if (st.expr != .jump) continue;
+                    switch (st.expr.jump.kind) {
+                        .@"break" => |b| if (b.value) |v| {
+                            if (found) |f| try unifyAt(env, f, v.getType(), v.getLoc()) else found = v.getType();
+                        },
+                        else => {},
+                    }
+                }
+                break :blk found orelse try env.namedType("void");
+            };
             return TypedExpr{ .comptime_ = .{ .loc = loc, .type_ = bodyType, .kind = .{ .comptimeBlock = .{
                 .body = typedBody,
             } } } };

@@ -23,17 +23,17 @@ val result = case 42 {
           "ast": "block",
           "body": [
             {
-              "return_type": "?"
+              "return_type": "i32"
             }
           ],
-          "return_type": "?"
+          "return_type": "i32"
         },
         {
           "ast": "value",
           "return_type": "i32"
         }
       ],
-      "return_type": "?"
+      "return_type": "i32"
     }
   ]
 }

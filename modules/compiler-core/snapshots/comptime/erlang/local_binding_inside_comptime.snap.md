@@ -24,7 +24,7 @@ val hash = comptime {
     {
       "ast": "val",
       "indent": "hash",
-      "return_type": "void"
+      "return_type": "i32"
     }
   ]
 }

@@ -23,7 +23,7 @@ val result = case 42 {
           "return_type": "i32"
         }
       ],
-      "return_type": "?"
+      "return_type": "string | i32"
     }
   ]
 }

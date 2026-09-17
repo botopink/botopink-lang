@@ -735,3 +735,27 @@ test "infer: return ---- a type guard body returns bool" {
         \\fn isPositive(n: i32) -> n is i32 { return n > 0; }
     );
 }
+
+// ── C2 — a `case` is typed from its arms; a `comptime` block from its `break` ──
+
+test "infer error: case ---- its arms' type does not match the annotation" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val a: bool = case 42 { 0 -> "a"; _ -> "b"; };
+    );
+}
+
+test "infer: comptime block ---- its value is the break value" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\val h = comptime { break 1; };
+        \\val z: i32 = h;
+    );
+}
+
+test "infer: case ---- a block arm's return leaves the enclosing fn" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn f(x: i32) -> i32 {
+        \\    val s = case x { 0 -> { return 7; }; _ -> "n"; };
+        \\    return 1;
+        \\}
+    );
+}
