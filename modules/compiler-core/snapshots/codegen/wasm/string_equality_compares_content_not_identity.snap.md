@@ -1,8 +1,15 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    val same = "foo" == "foo";
+    val left = "fo" + "o";
+    val same = left == "foo";
+    val diff = "foo" == "bar";
     if (same) {
+        @print(1);
+    } else {
+        @print(0);
+    };
+    if (diff) {
         @print(1);
     } else {
         @print(0);
@@ -15,15 +22,39 @@ fn main() {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\03\00\00\00foo")
-  (global $__heap_ptr (mut i32) (i32.const 264))
+  (data (i32.const 256) "\02\00\00\00fo")
+  (data (i32.const 264) "\01\00\00\00o")
+  (data (i32.const 272) "\03\00\00\00foo")
+  (data (i32.const 280) "\03\00\00\00bar")
+  (global $__heap_ptr (mut i32) (i32.const 288))
   (func $main
+    (local $left i32)
     (local $same i32)
+    (local $diff i32)
     i32.const 256
-    i32.const 256
+    i32.const 264
+    call $__str_concat
+    local.set $left
+    local.get $left
+    i32.const 272
     call $__str_eq
     local.set $same
+    i32.const 272
+    i32.const 280
+    call $__str_eq
+    local.set $diff
     local.get $same
+    (if
+      (then
+    i32.const 1
+    call $__print_i32
+      )
+      (else
+    i32.const 0
+    call $__print_i32
+      )
+    )
+    local.get $diff
     (if
       (then
     i32.const 1
@@ -217,6 +248,53 @@ fn main() {
         br $loop
       )
     )
+  )
+  (func $__str_concat (param $a i32) (param $b i32) (result i32)
+    (local $base i32) (local $alen i32) (local $blen i32)
+    local.get $a
+    i32.load
+    local.set $alen
+    local.get $b
+    i32.load
+    local.set $blen
+    global.get $__heap_ptr
+    local.set $base
+    ;; bump heap by 4 (length prefix) + alen + blen
+    global.get $__heap_ptr
+    i32.const 4
+    local.get $alen
+    i32.add
+    local.get $blen
+    i32.add
+    i32.add
+    global.set $__heap_ptr
+    ;; store combined length prefix
+    local.get $base
+    local.get $alen
+    local.get $blen
+    i32.add
+    i32.store
+    ;; copy a's bytes: base+4 <- a+4
+    local.get $base
+    i32.const 4
+    i32.add
+    local.get $a
+    i32.const 4
+    i32.add
+    local.get $alen
+    memory.copy
+    ;; copy b's bytes: base+4+alen <- b+4
+    local.get $base
+    i32.const 4
+    i32.add
+    local.get $alen
+    i32.add
+    local.get $b
+    i32.const 4
+    i32.add
+    local.get $blen
+    memory.copy
+    local.get $base
   )
   (func $__str_eq (param $a i32) (param $b i32) (result i32)
     (local $i i32) (local $alen i32)

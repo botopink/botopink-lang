@@ -16,6 +16,8 @@ fn outer(should_fail: bool) -> @Result<i32, string> {
 fn main() {
     val r = try outer(false) catch -1;
     @print(r);
+    val r2 = try outer(true) catch -1;
+    @print(r2);
 }
 ```
 
@@ -36,6 +38,9 @@ function main() {
     const _try0 = outer(false);
     const r = "error" in _try0 ? ((-1)) : _try0.ok;
     console.log(r);
+    const _try1 = outer(true);
+    const r2 = "error" in _try1 ? ((-1)) : _try1.ok;
+    console.log(r2);
 }
 
 function _botopink_main() {
@@ -56,4 +61,5 @@ _botopink_main();
 ----- RUN LOG -----
 ```logs
 8
+-1
 ```

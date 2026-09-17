@@ -5,6 +5,7 @@ fn isPositive(n: i32) -> n is i32 {
 }
 fn main() {
     @print(isPositive(5));
+    @print(isPositive(-5));
 }
 ```
 
@@ -45,6 +46,13 @@ fn main() {
     {test_heap, 2, 2}.
     {put_list, {x, 1}, nil, {x, 1}}.
     {call_ext, 2, {extfunc, io, format, 2}}.
+    {move, {integer, -5}, {x, 0}}.
+    {call, 1, {f, 3}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {literal, <<"~p~n">>}, {x, 0}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 1}, nil, {x, 1}}.
+    {call_ext, 2, {extfunc, io, format, 2}}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 0}.
     return.
@@ -67,4 +75,5 @@ fn main() {
 ----- RUN LOG -----
 ```logs
 true
+false
 ```

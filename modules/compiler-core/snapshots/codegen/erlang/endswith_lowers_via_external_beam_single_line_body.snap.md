@@ -13,7 +13,7 @@ fn main() {
 
 main() ->
     S = <<"foobar">>,
-    io:format("~p~n", [string:suffix(S, <<"bar">>)]).
+    io:format("~p~n", [(fun(__S, __X) -> __N = byte_size(__S), __M = byte_size(__X), (__M =< __N) andalso (binary:part(__S, __N - __M, __M) =:= __X) end)(S, <<"bar">>)]).
 
 '_botopink_main'() ->
     main().
@@ -24,4 +24,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+true
 ```

@@ -25,7 +25,15 @@ fn main() {
     {move, {literal, <<"bar">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {call_ext, 2, {extfunc, string, suffix, 2}}.
+    {gc_bif, byte_size, {f, 0}, 2, [{x, 0}], {x, 2}}.
+    {gc_bif, byte_size, {f, 0}, 3, [{x, 1}], {x, 3}}.
+    {gc_bif, '-', {f, 0}, 4, [{x, 2}, {x, 3}], {x, 3}}.
+    {gc_bif, abs, {f, 0}, 4, [{x, 3}], {x, 4}}.
+    {gc_bif, '+', {f, 0}, 5, [{x, 3}, {x, 4}], {x, 3}}.
+    {gc_bif, 'div', {f, 0}, 4, [{x, 3}, {integer, 2}], {x, 3}}.
+    {gc_bif, '-', {f, 0}, 4, [{x, 2}, {x, 3}], {x, 2}}.
+    {gc_bif, binary_part, {f, 0}, 4, [{x, 0}, {x, 3}, {x, 2}], {x, 0}}.
+    {bif, '=:=', {f, 0}, [{x, 0}, {x, 1}], {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"~p~n">>}, {x, 0}}.
     {test_heap, 2, 2}.
@@ -52,4 +60,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+true
 ```

@@ -5,6 +5,7 @@ fn isPositive(n: i32) -> n is i32 {
 }
 fn main() {
     @print(isPositive(5));
+    @print(isPositive(-5));
 }
 ```
 
@@ -22,6 +23,11 @@ fn main() {
   )
   (func $main
     i32.const 5
+    call $isPositive
+    call $__print_i32
+    i32.const 0
+    i32.const 5
+    i32.sub
     call $isPositive
     call $__print_i32
   )

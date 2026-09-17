@@ -1,23 +1,16 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@result]
-fn inner(should_fail: bool) -> @Result<i32, string> {
-    if (should_fail) {
-        throw "inner-fail";
-    } else {
-        return 7;
-    }
-}
-#[@result]
-fn outer(should_fail: bool) -> @Result<i32, string> {
-    val v = try inner(should_fail);
-    return v + 1;
-}
+fn pick(n: i32) -> i32 { return n + 1; }
+fn omit(n: i32) -> i32 { return n + 2; }
+fn partial(n: i32) -> i32 { return n + 3; }
+fn mergeRecords(a: i32, b: i32) -> i32 { return a + b; }
+fn mapFields(n: i32) -> i32 { return n * 2; }
 fn main() {
-    val r = try outer(false) catch -1;
-    @print(r);
-    val r2 = try outer(true) catch -1;
-    @print(r2);
+    @print(pick(1));
+    @print(omit(1));
+    @print(partial(1));
+    @print(mergeRecords(2, 3));
+    @print(mapFields(3));
 }
 ```
 
@@ -26,124 +19,53 @@ fn main() {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\0a\00\00\00inner-fail")
-  (global $__heap_ptr (mut i32) (i32.const 272))
-  (func $inner (param $should_fail i32) (result i32)
-    (local $_res0 i32)
-    (local $_res1 i32)
-    local.get $should_fail
-    (if (result i32)
-      (then
-    global.get $__heap_ptr
-    local.set $_res0
-    global.get $__heap_ptr
-    i32.const 8
-    i32.add
-    global.set $__heap_ptr
-    local.get $_res0
+  (global $__heap_ptr (mut i32) (i32.const 256))
+  (func $pick (param $n i32) (result i32)
+    local.get $n
     i32.const 1
-    i32.store ;; Result tag (Error)
-    local.get $_res0
-    i32.const 256
-    i32.store offset=4 ;; payload
-    local.get $_res0
-    return
-      )
-      (else
-    global.get $__heap_ptr
-    local.set $_res1
-    global.get $__heap_ptr
-    i32.const 8
     i32.add
-    global.set $__heap_ptr
-    local.get $_res1
-    i32.const 0
-    i32.store ;; Result tag (Ok)
-    local.get $_res1
-    i32.const 7
-    i32.store offset=4 ;; payload
-    local.get $_res1
     return
-      )
-    )
   )
-  (func $outer (param $should_fail i32) (result i32)
-    (local $_try0 i32)
-    (local $v i32)
-    (local $_res0 i32)
-    local.get $should_fail
-    call $inner
-    local.set $_try0
-    local.get $_try0
-    i32.load ;; Result tag (0 = Ok, non-zero = Error)
-    (if
-      (then
-    local.get $_try0
-    return ;; propagate Error
-      )
-    )
-    local.get $_try0
-    i32.load offset=4 ;; Ok payload
-    local.set $v
-    global.get $__heap_ptr
-    local.set $_res0
-    global.get $__heap_ptr
-    i32.const 8
+  (func $omit (param $n i32) (result i32)
+    local.get $n
+    i32.const 2
     i32.add
-    global.set $__heap_ptr
-    local.get $_res0
-    i32.const 0
-    i32.store ;; Result tag (Ok)
-    local.get $_res0
-    local.get $v
-    i32.const 1
+    return
+  )
+  (func $partial (param $n i32) (result i32)
+    local.get $n
+    i32.const 3
     i32.add
-    i32.store offset=4 ;; payload
-    local.get $_res0
+    return
+  )
+  (func $mergeRecords (param $a i32) (param $b i32) (result i32)
+    local.get $a
+    local.get $b
+    i32.add
+    return
+  )
+  (func $mapFields (param $n i32) (result i32)
+    local.get $n
+    i32.const 2
+    i32.mul
     return
   )
   (func $main
-    (local $_try0 i32)
-    (local $_try1 i32)
-    (local $r i32)
-    (local $r2 i32)
-    i32.const 0
-    call $outer
-    local.set $_try0
-    local.get $_try0
-    i32.load ;; Result tag (0 = Ok, non-zero = Error)
-    (if (result i32)
-      (then
-    i32.const 0
     i32.const 1
-    i32.sub
-      )
-      (else
-    local.get $_try0
-    i32.load offset=4 ;; Ok payload
-      )
-    )
-    local.set $r
-    local.get $r
+    call $pick
     call $__print_i32
     i32.const 1
-    call $outer
-    local.set $_try1
-    local.get $_try1
-    i32.load ;; Result tag (0 = Ok, non-zero = Error)
-    (if (result i32)
-      (then
-    i32.const 0
+    call $omit
+    call $__print_i32
     i32.const 1
-    i32.sub
-      )
-      (else
-    local.get $_try1
-    i32.load offset=4 ;; Ok payload
-      )
-    )
-    local.set $r2
-    local.get $r2
+    call $partial
+    call $__print_i32
+    i32.const 2
+    i32.const 3
+    call $mergeRecords
+    call $__print_i32
+    i32.const 3
+    call $mapFields
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")

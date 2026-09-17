@@ -150,3 +150,35 @@ test "js: external ---- A3 result-template-owned declare fn" {
         \\}
     );
 }
+
+// std-surface 6d: a `declare fn` whose `@External.Node` is a template renders
+// at each call site — no import binding, no `require(…)`.
+test "js: external ---- template declare fn emits no require" {
+    const src =
+        \\#[@External.Node("""Math.max($0, $1)""")]
+        \\declare fn biggest(a: i32, b: i32) -> i32;
+        \\
+        \\fn main() {
+        \\    @print(biggest(3, 9));
+        \\}
+    ;
+    try h.assertJsContains(std.testing.allocator, src, &.{"Math.max(3, 9)"});
+    try h.assertJsNotContains(std.testing.allocator, src, &.{"require("});
+}
+
+// std-surface 6d: a 1-arg `@External.Node` without markers on a `declare fn`
+// is a bare host expression (`process.cwd()` in `libs/std/src/process.bp`). It
+// renders verbatim at the call site; it used to lower to the destructuring
+// import `const { process.pid: pid } = require("");`, a SyntaxError.
+test "js: external ---- 1-arg host expression declare fn emits no require" {
+    const src =
+        \\#[@External.Node("process.pid")]
+        \\declare fn pid() -> i32;
+        \\
+        \\fn main() {
+        \\    @print(pid() > 0);
+        \\}
+    ;
+    try h.assertJsContains(std.testing.allocator, src, &.{"process.pid > 0"});
+    try h.assertJsNotContains(std.testing.allocator, src, &.{ "require(", "const { process.pid" });
+}

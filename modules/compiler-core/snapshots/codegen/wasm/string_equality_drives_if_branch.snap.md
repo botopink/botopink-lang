@@ -1,7 +1,7 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    val s = "yes";
+    val s = "ye" + "s";
     if (s == "yes") {
         @print(42);
     } else {
@@ -15,14 +15,18 @@ fn main() {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\03\00\00\00yes")
-  (global $__heap_ptr (mut i32) (i32.const 264))
+  (data (i32.const 256) "\02\00\00\00ye")
+  (data (i32.const 264) "\01\00\00\00s")
+  (data (i32.const 272) "\03\00\00\00yes")
+  (global $__heap_ptr (mut i32) (i32.const 280))
   (func $main
     (local $s i32)
     i32.const 256
+    i32.const 264
+    call $__str_concat
     local.set $s
     local.get $s
-    i32.const 256
+    i32.const 272
     call $__str_eq
     (if
       (then
@@ -217,6 +221,53 @@ fn main() {
         br $loop
       )
     )
+  )
+  (func $__str_concat (param $a i32) (param $b i32) (result i32)
+    (local $base i32) (local $alen i32) (local $blen i32)
+    local.get $a
+    i32.load
+    local.set $alen
+    local.get $b
+    i32.load
+    local.set $blen
+    global.get $__heap_ptr
+    local.set $base
+    ;; bump heap by 4 (length prefix) + alen + blen
+    global.get $__heap_ptr
+    i32.const 4
+    local.get $alen
+    i32.add
+    local.get $blen
+    i32.add
+    i32.add
+    global.set $__heap_ptr
+    ;; store combined length prefix
+    local.get $base
+    local.get $alen
+    local.get $blen
+    i32.add
+    i32.store
+    ;; copy a's bytes: base+4 <- a+4
+    local.get $base
+    i32.const 4
+    i32.add
+    local.get $a
+    i32.const 4
+    i32.add
+    local.get $alen
+    memory.copy
+    ;; copy b's bytes: base+4+alen <- b+4
+    local.get $base
+    i32.const 4
+    i32.add
+    local.get $alen
+    i32.add
+    local.get $b
+    i32.const 4
+    i32.add
+    local.get $blen
+    memory.copy
+    local.get $base
   )
   (func $__str_eq (param $a i32) (param $b i32) (result i32)
     (local $i i32) (local $alen i32)

@@ -5,6 +5,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const codegen = @import("../../codegen.zig");
 const snap = @import(".././snapshot.zig");
+const snapUtil = @import("../../utils/snap.zig");
 const config = @import(".././config.zig");
 const Lexer = @import("../../lexer.zig").Lexer;
 const Parser = @import("../../parser.zig").Parser;
@@ -183,6 +184,8 @@ pub fn assertJsExpecting(
     modules: []const Module,
     expectation: CompileExpectation,
 ) !void {
+    const trace_prev = snapUtil.traceEnter(loc);
+    defer snapUtil.traceLeave(trace_prev);
     const io = std.testing.io;
     const build_root_path = comptime buildRootPathFromSrc(loc);
     const slug = comptime slugFromSrc(loc);
@@ -285,6 +288,8 @@ pub fn assertJsExpecting(
 }
 
 pub fn assertJsError(allocator: Allocator, comptime loc: std.builtin.SourceLocation, src: []const u8) !void {
+    const trace_prev = snapUtil.traceEnter(loc);
+    defer snapUtil.traceLeave(trace_prev);
     const io = std.testing.io;
     const slug = comptime slugFromSrc(loc);
 
@@ -401,6 +406,8 @@ pub fn generateJs(allocator: Allocator, src: []const u8) ![]u8 {
 /// `test { … }` blocks emit as test functions plus a registry + runner
 /// entry, and `assert` lowers to a recoverable per-test failure.
 pub fn assertJsTestMode(allocator: Allocator, comptime loc: std.builtin.SourceLocation, src: []const u8) !void {
+    const trace_prev = snapUtil.traceEnter(loc);
+    defer snapUtil.traceLeave(trace_prev);
     const io = std.testing.io;
     const build_root_path = comptime buildRootPathFromSrc(loc);
     const slug = comptime slugFromSrc(loc);

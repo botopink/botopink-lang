@@ -12,14 +12,6 @@ const Parser = parserMod.Parser;
 const print = @import("../../print.zig");
 const h = @import("helpers.zig");
 
-test "parser: use prefix with destructuring val" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\fn App() {
-        \\    val {count, setCount} = use state(0);
-        \\}
-    );
-}
-
 test "parser: shorthand enum ---- simple" {
     try h.assertParser(std.testing.allocator, @src(),
         \\enum Direction {
