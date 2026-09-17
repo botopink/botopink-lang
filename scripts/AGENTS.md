@@ -107,7 +107,8 @@ failing stage: staged-file checks (`--staged`: conflict markers, `zig fmt
 --check` on staged `.zig`), `zig build`, `zig build test` (`--cold` deletes
 `modules/compiler-core/.botopinkbuild/runtime-cache` first), `zig build
 test-bpmp`, `scripts/beam_export_audit.sh`, `zig build test-cli`, `zig build
-test-libs`. CI (`.github/workflows/test.yml`) runs the same stages minus the
+test-libs`, `zig build test-language` (`tests/language/`, expected failures in
+`tests/language/expected-failures.txt`). CI (`.github/workflows/test.yml`) runs the same stages minus the
 staged checks. The pre-commit hook runs `--staged`; the run
 that decides a merge adds `--cold`. After the staged checks the script unsets
 every `git rev-parse --local-env-vars` variable a hook inherits (`GIT_DIR`,

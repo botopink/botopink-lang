@@ -56,18 +56,20 @@ tests/language/run.sh --compiler <botopink> --only test/case_arms.bp
 
 ## Status and the gate
 
-Coverage and classification at `3a7f611` (front 12 steps 1–3e): 31 files besides the three
-smoke files — `case` (§5) 6 test + 1 run + 9 reject, tuples (§6) 5 test + 1 run + 2 reject, `loop` (§10)
-5 test + 2 reject. Both targets: 53 results pass, 41 are expected failures (commonJS 30 / 24, erlang
-26 / 28; reject files count once per target) — 06 N19–N22 and N26 (the new syntax), 12 step 4 (`.N` on
-erlang, `t.0.1`), 01 step 6 (tuple equality on commonJS, the print text).
+Coverage: 31 files besides the three smoke files — `case` (§5) 6 test + 1 run + 9 reject, tuples (§6)
+5 test + 1 run + 2 reject, `loop` (§10) 5 test + 2 reject.
 
-Authored before front 12 lands, against the compiler of `fix/surface-cutover`
-at `3a7f611` (the 1.0.3 surface). `zig build test-language` is **not** in
-`scripts/gate.sh` yet: the gate runs the old-surface compiler until 12 lands,
-where every file here fails to parse. The gate stage is added when this front
-lands, after 12 — at that point `expected-failures.txt` is re-classified against
-the landed compiler.
+Classification at `botopink-lang` `feat` `ed575b5` (front 12 landed): both targets together, 63
+results pass and 33 are expected failures — 06 N19–N22 and N26 (the `case`-arm syntax, unions,
+`unknown`, `is`, `loop (condition)`, `while`), 01 step 6 (tuple equality on commonJS, the print text).
+Front 12 step 4 closed its two rows (`.N` on erlang, `t.0.1`).
+
+`zig build test-language` is a stage of `scripts/gate.sh` (after `test-libs`) and a step of the CI
+`test` job (ubuntu + macos). When a front makes a listed test pass, the gate fails with "now passes:
+delete its line" — the landing commit of that front deletes the line.
+
+The range pattern `1..9` in a `case` arm: decision 8 does not yet say whether the end is inclusive
+(`loop (0..4)` is exclusive). The tests avoid the edge until the maintainer decides.
 
 beam and wasm are not runnable by `botopink test`/`run`; their decision-8
 coverage stays in the codegen snapshots (01 step 6).

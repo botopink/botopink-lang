@@ -4,7 +4,8 @@
 #   test  `zig build test` from a cold runtime cache, `zig build test-bpmp`,
 #         `scripts/beam_export_audit.sh` (ubuntu + macos), then `zig build
 #         test-cli` (the CLI command contract, test tooling, mutual recursion and
-#         backend execution parity scripts). ubuntu + macos hard, windows
+#         backend execution parity scripts), then `zig build test-language`
+#         (tests/language, ubuntu + macos). ubuntu + macos hard, windows
 #         allow-fail.
 #   libs  every sibling library checked out next to botopink-lang
 #         (emilia, erika, jhonstart, onze, rakun at `feat`) plus libs/std,
@@ -146,6 +147,14 @@ jobs:
       - name: zig build test-cli
         shell: bash
         run: zig build test-cli
+
+      # Decision 8's language tests on commonJS and erlang; the expected
+      # failures in tests/language/expected-failures.txt name their owner.
+      # Needs node and erl — not installed on windows.
+      - name: zig build test-language
+        if: matrix.runner != 'windows-2022'
+        shell: bash
+        run: zig build test-language
 
   libs:
     name: zig build test-libs (sibling libraries, all runnable targets)

@@ -16,6 +16,9 @@
 #   7. zig build test-libs  every `.bp` library the checkout can see, per target
 #                           (a library without tests is still compiled);
 #                           known reds named by scripts/known-red-libs.txt
+#   8. zig build test-language  tests/language — decision 8's `case`, tuples and
+#                           `loop` in botopink, on commonJS and erlang; expected
+#                           failures named by tests/language/expected-failures.txt
 #
 # Usage:
 #   scripts/gate.sh [--cold] [--staged]
@@ -98,5 +101,9 @@ pass "zig build test-cli"
 stage "zig build test-libs"
 zig build test-libs || fail "zig build test-libs"
 pass "zig build test-libs"
+
+stage "zig build test-language"
+zig build test-language || fail "zig build test-language (a FAIL line above names the file, the test and the rule)"
+pass "zig build test-language"
 
 printf "\n${GREEN}gate: every stage passed${NC}\n"

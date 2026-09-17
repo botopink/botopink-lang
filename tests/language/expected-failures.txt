@@ -6,7 +6,7 @@
 # passes fails the run ("delete its line"); a path-only entry is for a file that
 # does not compile. `*` is for reject/ files (target-independent).
 #
-# Classified against botopink-lang fix/surface-cutover 3a7f611 (front 12 steps 1–3e).
+# Classified against botopink-lang feat ed575b5 (front 12 landed).
 
 # ── §5 case arms `Pattern { body }`, `when`, `..`, `.Variant` — not parsed yet ────
 commonJS | test/case_arms.bp          | 06 N22 | case arms `Pattern { body }` do not parse (Unexpected token)
@@ -34,14 +34,6 @@ erlang   | run/case_values.bp         | 06 N22 | case arms and guards do not par
 *        | reject/case_literals_only.bp          | 06 N22 | rejected only as a parse error; literal arms not checked for exhaustiveness
 
 # ── §6 tuples ─────────────────────────────────────────────────────────────────
-erlang   | test/tuple_construct.bp::§6 T1 a tuple is constructed without labels and read by position | 12 step 4 | positional `.N` access on erlang reads the tuple as a map (badmap / wrong value)
-erlang   | test/tuple_construct.bp::§6 a tuple crosses a function as parameter and return | 12 step 4 | positional `.N` access on erlang reads the tuple as a map
-erlang   | test/tuple_construct.bp::§6 tuples as array elements | 12 step 4 | positional `.N` access on erlang: {badmap, {1, <<"a">>}}
-erlang   | test/tuple_construct.bp::§6 a three-element tuple | 12 step 4 | positional `.N` access on erlang: {badmap, …}
-erlang   | test/tuple_labels.bp::§6 T4 a label and its position read the same element | 12 step 4 | positional `.N` access on erlang reads the tuple as a map
-erlang   | test/tuple_zip_destructure.bp::§6 zip pairs elements into tuples | 12 step 4 | positional `.N` access on erlang: {badmap, {1, <<"a">>}}
-commonJS | test/tuple_nested.bp       | 12 step 4 | `t.0.1` / `p.0.toString()` lex `0.1` / `0.` as a float ("no element labeled `0.1`")
-erlang   | test/tuple_nested.bp       | 12 step 4 | `t.0.1` / `p.0.toString()` lex `0.1` / `0.` as a float
 commonJS | test/tuple_equality.bp::§6 T6 two tuples with the same elements are equal | 01 step 6 | `==` on tuples compares references on commonJS (arrays)
 commonJS | test/tuple_equality.bp::§6 T1 T6 a labeled and an unlabeled tuple with the same elements are equal | 01 step 6 | `==` on tuples compares references on commonJS (arrays)
 commonJS | run/tuple_print.bp         | 01 step 6 | prints decision 1a's text without spaces (`#(1,"a")`); §7 wants `#(1, "a")`
