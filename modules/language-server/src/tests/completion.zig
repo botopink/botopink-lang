@@ -815,16 +815,11 @@ test "completion: decorator-bearing record still lists bindings (R2)" {
     // Not blanked: the record (and the marker fn) are still completable.
     try std.testing.expect(items.len > 0);
     try std.testing.expect(hasLabel(items, "PostService"));
-    // `other` is an unrelated `val`, declared before the cursor and never
-    // touched by the decorator. It exists to tell two readings of the snapshot
-    // apart: "`usePost` is absent because it is the binding being defined" vs
-    // "the degraded path drops every `val`". The answer is the second one —
-    // only `fn`/`record` decls survive here, so `other` is absent too. That is
-    // a gap in the typed bindings the comptime pipeline hands back when the
-    // spliced re-analysis fails (`compiler.zig:bindingsFor` just forwards
-    // `outcome.ok.bindings`), i.e. outside the language server. Inverted the day
-    // the pipeline keeps `val` bindings on the degraded path.
-    try std.testing.expect(!hasLabel(items, "other"));
-    try std.testing.expect(!hasLabel(items, "usePost"));
+    // `other` is an unrelated `val` declared before the cursor, never touched
+    // by the decorator. The degraded path (the spliced re-analysis failed) keeps
+    // every well-typed `val` binding since 06 N23, so `other` and `usePost` are
+    // both completable.
+    try std.testing.expect(hasLabel(items, "other"));
+    try std.testing.expect(hasLabel(items, "usePost"));
     try snap.assertCompletion(gpa, "completion_decorator_record", source, cursor, items);
 }

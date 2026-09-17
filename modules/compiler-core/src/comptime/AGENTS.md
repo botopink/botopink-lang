@@ -311,6 +311,13 @@ with `void` in a fn with a declared return type.
 - A function-typed record field (`set: fn(next: T)`) is an ordinary `Type.func`
   field.
 
+## `@emit` fallback bindings (06 N23)
+
+When a decorator `@emit`s code, the spliced re-analysis does the full inference. If it fails, the
+binding list handed back is built tolerantly from imports, type declarations, `fn` signatures **and
+`val`s**: a decl that fails to infer (a `val` referencing a generated decl) contributes nothing, a
+well-typed one binds, so the language server still lists it.
+
 ## `case` and `comptime` block types (06 C2)
 
 A `case` is typed from its arms (`caseTypeFromArms`): arms that agree unify, arms of different

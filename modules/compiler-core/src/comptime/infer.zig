@@ -226,13 +226,25 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
         // type-check standalone (it may reference symbols only resolvable with
         // the project graph). Collect the bindings that don't depend on the
         // not-yet-spliced decls: imports, type declarations, and `fn`
-        // signatures. `val` bodies are skipped — they may reference a generated
-        // decl. A decl that fails to infer is tolerated (it just contributes no
+        // signatures, and `val`s. A decl that fails to infer — a `val` whose body
+        // references a generated decl, say — is tolerated (it just contributes no
         // binding) so one broken body never blanks the whole list. Generic — no
         // decorator framework is named here.
         for (program.decls) |decl| switch (decl) {
             .use => |u| try appendImportBindings(env, &list, decl, u),
-            .val => {},
+            // N23 — a `val` is inferred tolerantly like the other decls: one
+            // that references a not-yet-spliced decl fails and contributes no
+            // binding; a well-typed one still binds (the LSP lists it).
+            .val => {
+                const maybe = inferDeclTyped(env, decl) catch |err| switch (err) {
+                    error.TypeError => blk: {
+                        env.lastError = null;
+                        break :blk null;
+                    },
+                    else => return err,
+                };
+                if (maybe) |b| try list.append(env.arena, b);
+            },
             else => {
                 const maybe = inferDeclTyped(env, decl) catch |err| switch (err) {
                     error.TypeError => null,
