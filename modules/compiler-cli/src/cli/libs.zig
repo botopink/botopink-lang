@@ -406,6 +406,12 @@ pub fn freeModules(gpa: std.mem.Allocator, modules: []Module) void {
 // runtime will look up, and — when nothing is there yet — copies the source
 // `.mjs` (found under the owning lib's `src/`, or the project's own `src/`) into
 // place. Idempotent and lib-agnostic; a no-op when every `.mjs` already resolves.
+//
+// A `require` whose resolved path escapes `out_dir` (onze's `../../src/onze.mjs`
+// from `<out>/onze/onze.js` lands at `<out>/../src/onze.mjs`) is never shipped
+// outside the output: the sidecar goes to `<out>/<owner>/<base>` (a project-own
+// module: `<out>/<base>`) and the emitted module's `require` is rewritten to
+// reach it, so a build writes nothing beside `--out`.
 pub fn shipMjsSidecars(
     gpa: std.mem.Allocator,
     io: std.Io,
@@ -422,8 +428,13 @@ pub fn shipMjsSidecars(
     var roots: ?[][]const u8 = null;
     defer if (roots) |r| freeRoots(gpa, r);
 
+    const out_norm = try std.fs.path.resolve(arena, &.{out_dir});
+
     for (outputs) |o| {
+        if (o.result.failed()) continue;
         const emitted_rel = try std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ out_dir, o.name, ext });
+        // `require` paths of this module to rewrite once the scan is done.
+        var rewrites: std.ArrayListUnmanaged([2][]const u8) = .empty;
         const emitted_dir = std.fs.path.dirname(emitted_rel) orelse out_dir;
         // The owning lib is the first path segment of a dependency module name
         // (`rakun/http` → `rakun`); a project-own module has no such prefix.
@@ -457,11 +468,25 @@ pub fn shipMjsSidecars(
             // and absolutes resolve on their own.
             if (!std.mem.startsWith(u8, req_path, ".")) continue;
 
-            // Where the runtime will look for it (absolute, `..` collapsed).
-            const target = try std.fs.path.resolve(arena, &.{ emitted_dir, req_path });
+            const base = std.fs.path.basename(req_path);
+            // Where the runtime will look for it (`..` collapsed). A path that
+            // escapes the output directory is relocated inside it.
+            const resolved = try std.fs.path.resolve(arena, &.{ emitted_dir, req_path });
+            const escapes = escapesDir(out_norm, resolved);
+            const target = if (escapes)
+                try std.fs.path.join(arena, if (owner) |lib| &.{ out_norm, lib, base } else &.{ out_norm, base })
+            else
+                resolved;
+            if (escapes) {
+                const new_req = try relocatedRequire(arena, o.name, owner, base);
+                var seen = false;
+                for (rewrites.items) |r| {
+                    if (std.mem.eql(u8, r[0], req_path)) seen = true;
+                }
+                if (!seen) try rewrites.append(arena, .{ req_path, new_req });
+            }
             if (fileExists(io, target)) continue;
 
-            const base = std.fs.path.basename(req_path);
             // std-tail F2: when a sidecar lives under `<lib>/src/sidecars/<base>`
             // (the convention for std's `#\[@External\.node(…)]` adapters that
             // need a sibling `.mjs`/`.erl` file), the search also probes that
@@ -494,7 +519,45 @@ pub fn shipMjsSidecars(
             }
             try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = target, .data = data });
         }
+
+        if (rewrites.items.len > 0) {
+            const emitted = std.Io.Dir.cwd().readFileAlloc(io, emitted_rel, arena, .unlimited) catch continue;
+            var text: []const u8 = emitted;
+            for (rewrites.items) |r| {
+                for ([_]u8{ '"', '\'' }) |q| {
+                    const from = try std.fmt.allocPrint(arena, "require({c}{s}{c})", .{ q, r[0], q });
+                    const to = try std.fmt.allocPrint(arena, "require({c}{s}{c})", .{ q, r[1], q });
+                    text = try std.mem.replaceOwned(u8, arena, text, from, to);
+                }
+            }
+            try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = emitted_rel, .data = text });
+        }
     }
+}
+
+/// Whether `path` lies outside `dir` (both already `..`-collapsed by `resolve`).
+fn escapesDir(dir: []const u8, path: []const u8) bool {
+    if (std.mem.eql(u8, dir, ".")) {
+        return std.mem.eql(u8, path, "..") or std.mem.startsWith(u8, path, "../") or std.fs.path.isAbsolute(path);
+    }
+    if (!std.mem.startsWith(u8, path, dir)) return true;
+    return path.len > dir.len and path[dir.len] != '/';
+}
+
+/// The `require` path that reaches a relocated sidecar from module `name`:
+/// `<out>/<owner>/<base>` for a dependency, `<out>/<base>` for a project-own
+/// module; the module is emitted at `<out>/<name>.js`.
+fn relocatedRequire(arena: std.mem.Allocator, name: []const u8, owner: ?[]const u8, base: []const u8) ![]const u8 {
+    const depth = std.mem.count(u8, name, "/");
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    if (depth == 0) try buf.appendSlice(arena, "./");
+    for (0..depth) |_| try buf.appendSlice(arena, "../");
+    if (owner) |lib| {
+        try buf.appendSlice(arena, lib);
+        try buf.append(arena, '/');
+    }
+    try buf.appendSlice(arena, base);
+    return buf.items;
 }
 
 fn fileExists(io: std.Io, path: []const u8) bool {
@@ -503,6 +566,25 @@ fn fileExists(io: std.Io, path: []const u8) bool {
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────
+
+test "escapesDir: a path under the output stays; a parent path escapes" {
+    try std.testing.expect(!escapesDir("out", "out/onze/onze.mjs"));
+    try std.testing.expect(escapesDir("out", "src/onze.mjs"));
+    try std.testing.expect(escapesDir("out", "outer/x.mjs"));
+    try std.testing.expect(escapesDir("/tmp/w/out", "/tmp/w/src/onze.mjs"));
+    try std.testing.expect(!escapesDir("/tmp/w/out", "/tmp/w/out/rakun/runtime.mjs"));
+    try std.testing.expect(!escapesDir(".", "src/x.mjs"));
+    try std.testing.expect(escapesDir(".", "../src/x.mjs"));
+}
+
+test "relocatedRequire reaches <out>/<owner>/<base> from the emitting module" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    try std.testing.expectEqualStrings("../onze/onze.mjs", try relocatedRequire(a, "onze/onze", "onze", "onze.mjs"));
+    try std.testing.expectEqualStrings("../../onze/onze.mjs", try relocatedRequire(a, "onze/sub/mod", "onze", "onze.mjs"));
+    try std.testing.expectEqualStrings("./x.mjs", try relocatedRequire(a, "main", null, "x.mjs"));
+}
 
 test "stripSourceExt strips .d.bp before .bp" {
     try std.testing.expectEqualStrings("rakun", stripSourceExt("rakun.d.bp"));

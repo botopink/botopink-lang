@@ -77,7 +77,10 @@ feeds the lib's modules into compilation prefixed by name (`<name>/<module>`).
 The compiler core never names a lib — it sees ordinary `Module[]` and resolves
 `from "<name>"` through the shared import registry. `std` is embedded and not
 loaded here. `shipMjsSidecars` resolves an owning lib's `.mjs` through the same
-root list.
+root list, and never writes outside the output directory: a `require` whose path
+escapes it (a lib's `../../src/x.mjs` authored for its own build) ships the file to
+`<out>/<lib>/<base>` (project-own: `<out>/<base>`) and rewrites that module's
+`require` to reach it.
 
 **Unknown `botopink.json` fields are ignored.** `LibManifest` reads only `src`
 and `files`; the project loader (`config.zig`) reads `name`/`version`/`target`/

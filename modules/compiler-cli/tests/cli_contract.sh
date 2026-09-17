@@ -236,6 +236,35 @@ for cmd in build check test; do
   expect_out "gonelib/botopink.json:3:27" "$cmd locates the manifest entry"
 done
 
+# ── a dependency's .mjs sidecar ships inside --out, never beside it ─────────
+echo "==> a dependency's .mjs sidecar ships inside --out and the build runs"
+P="$(project sidecar)"
+printf '{ "name": "sidecar", "version": "0.1.0", "target": "commonJS", "dependencies": ["sidelib"] }\n' >"$P/botopink.json"
+printf 'import { greet } from "sidelib";\n\npub fn main() {\n    print(greet());\n}\n' >"$P/src/main.bp"
+LIBROOT="$WORK/sideroot"; mkdir -p "$LIBROOT/sidelib/src"
+printf '{ "name": "sidelib", "src": "src/", "files": ["sidelib.bp"] }\n' >"$LIBROOT/sidelib/botopink.json"
+# Authored relative to the lib's own build output, like onze's `../../src/onze.mjs`.
+printf '#[@External.Node("../../src/side.mjs", "greet")]\npub declare fn greet() -> string;\n' >"$LIBROOT/sidelib/src/sidelib.bp"
+printf 'export function greet() {\n    return "from the sidecar";\n}\n' >"$LIBROOT/sidelib/src/side.mjs"
+OUTDIR="$WORK/sidecar-build/out"; mkdir -p "$WORK/sidecar-build"
+set +e
+OUT="$(cd "$P" && BOTOPINK_LIB_ROOTS="$LIBROOT" "$BP" build --out "$OUTDIR" 2>&1)"
+CODE=$?
+set -e
+expect_code 0 "build with a dependency sidecar"
+[[ -f "$OUTDIR/sidelib/side.mjs" ]] && ok "the sidecar is inside --out" || fail "the sidecar is not at $OUTDIR/sidelib/side.mjs"
+[[ ! -e "$WORK/sidecar-build/src/side.mjs" ]] && ok "nothing is written beside --out" || fail "a sidecar was written beside --out"
+if have node; then
+  set +e
+  OUT="$(cd "$OUTDIR" && node main.js 2>&1)"
+  CODE=$?
+  set -e
+  expect_code 0 "the built program runs"
+  expect_out "from the sidecar" "it reaches the relocated sidecar"
+else
+  skip "node not on PATH"
+fi
+
 # ── C8 — migrate --dry-run writes nothing, wherever the flag appears ─────────
 echo "==> C8 migrate --dry-run writes nothing"
 P="$(project c8)"
