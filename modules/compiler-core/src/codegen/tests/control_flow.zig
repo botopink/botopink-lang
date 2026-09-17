@@ -159,8 +159,8 @@ test "js: loop ---- two-parameter loop threads reassigned vars out" {
     // `loop (xs) { x, i -> … }` names the index without writing a range. Its
     // reassignments of outer `var`s must survive the loop like the
     // one-parameter form's (a library's lexer written as a counter loop).
-    // KNOWN: `weigh` is 140; commonJS and wasm print 80 (the `1..` start is
-    // ignored — 04-js-bridges, 03-wasm) and beam prints nothing (01-beam).
+    // KNOWN: `weigh` is 140; wasm prints 80 (the `1..` start is ignored —
+    // 03-wasm) and beam prints nothing (01-beam).
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn pick(xs: Array<string>) -> string {
         \\    var first = "";

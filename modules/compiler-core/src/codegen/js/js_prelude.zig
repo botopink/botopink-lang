@@ -24,10 +24,13 @@ pub const Helper = enum {
     assert_fatal,
     /// `String.charAt(i) -> ?string`: the character, or `null` out of range.
     string_char_at,
+    /// An open-ended range `a..` used as a value: the lazy, unbounded
+    /// sequence `a, a + 1, …` as a generator (a finite array cannot hold it).
+    range_from,
 };
 
 /// Emission order of the helpers a module uses.
-pub const order = [_]Helper{ .assert_fatal, .string_char_at };
+pub const order = [_]Helper{ .assert_fatal, .string_char_at, .range_from };
 
 /// The receiver family of a primitive method call, as inference recorded it.
 pub const Receiver = enum { string, array, other };
@@ -45,6 +48,7 @@ pub fn name(h: Helper) []const u8 {
     return switch (h) {
         .assert_fatal => "__bp_assert_fatal",
         .string_char_at => "__bp_string_char_at",
+        .range_from => "__bp_range_from",
     };
 }
 
@@ -53,6 +57,7 @@ pub fn decl(h: Helper) ast.Stmt {
     return switch (h) {
         .assert_fatal => assert_fatal,
         .string_char_at => string_char_at,
+        .range_from => range_from,
     };
 }
 
@@ -106,6 +111,33 @@ const string_char_at: ast.Stmt = .{ .function = .{
         .else_ = &.null_,
     } } }}, .layout = .spaced },
 } };
+
+const n: ast.Expr = .{ .name = "n" };
+const one: ast.Expr = .{ .number = "1" };
+
+/// `function* __bp_range_from(n) { while (true) { yield n; n += 1; } }`
+const range_from: ast.Stmt = .{ .function = .{
+    .keyword = "function*",
+    .name = "__bp_range_from",
+    .params = &.{.{ .pattern = .{ .name = "n" } }},
+    .body = .{ .stmts = &.{.{ .while_ = .{
+        .cond = .{ .name = "true" },
+        .body = .{ .stmts = &.{
+            .{ .expr = .{ .yield_ = &n } },
+            .{ .expr = .{ .assign = .{ .target = &n, .op = "+=", .value = &one } } },
+        }, .layout = .spaced },
+    } }}, .layout = .spaced },
+} };
+
+test "js_prelude: an open-ended range counts up lazily" {
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    try @import("js_emitter.zig").writeStmt(&aw.writer, decl(.range_from), 0);
+    try std.testing.expectEqualStrings(
+        "function* __bp_range_from(n) { while (true) { yield n; n += 1; } }",
+        aw.written(),
+    );
+}
 
 test "js_prelude: a failed assert throws with its message and location" {
     var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);

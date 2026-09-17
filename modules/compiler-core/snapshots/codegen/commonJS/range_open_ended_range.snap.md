@@ -11,8 +11,10 @@ fn countUp(x: i32) {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
+function* __bp_range_from(n) { while (true) { yield n; n += 1; } }
+
 function countUp(x) {
-    for (const i of (() => { throw new Error("open-ended range unsupported on commonJS"); })()) {
+    for (const i of __bp_range_from(x)) {
     if ((i > 100)) { break; }
 }
 }
