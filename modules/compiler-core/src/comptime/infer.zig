@@ -6897,9 +6897,14 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             }
             // Comptime type-manipulation functions (§1.0.0-beta Steps 4-6):
             // `mergeRecords`, `mapFields`, `partial`, `omit`, `pick` — resolved
-            // entirely during inference; produce zero runtime code.
-            if (try tryResolveTypeManipulationCall(env, call.callee, typedArgs, typedTrailing, loc)) |result| {
-                return result;
+            // entirely during inference; produce zero runtime code. Only a bare
+            // call the scope does not bind reaches the intercept: a user or std
+            // declaration of the same name (`random.pick`) and a method call
+            // (`xs.pick()`) keep their normal dispatch.
+            if (call.receiver == null and env.lookup(call.callee) == null) {
+                if (try tryResolveTypeManipulationCall(env, call.callee, typedArgs, typedTrailing, loc)) |result| {
+                    return result;
+                }
             }
             // Builtin `result` namespace: `result.map(r, f)`, `result.unwrap(r, 0)`,
             // `result.isOk(r)`… — qualified surface over the built-in

@@ -416,7 +416,8 @@ test "js: template end to end ---- cross-module html mirrors the canonical examp
 // the template host now emits `ref/1` next to `lookup/2`
 // (`comptime/template_eval.zig`), so `b.ref()` expands to the identifier
 // `greeting` — not to its value — and the module prints `ola mundo`.
-// (The user fn is named `refer`, not `pick`, which the `pick` builtin shadows.)
+// (The user fn is named `refer`; a user `pick` would also win over the `pick`
+// type-manipulation builtin since std-surface 6a, but `refer` keeps the slug.)
 // The miss path is an `else` arm, not a statement after the `if`: in a template
 // body lowered by `codegen/erlang.zig` `emitComptimeModule`, a `return` inside
 // an if-arm does not leave the function — the `case` value is discarded and the
