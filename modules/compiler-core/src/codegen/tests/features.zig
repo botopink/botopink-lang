@@ -848,7 +848,7 @@ test "js: interface associated fn namespace" {
 }
 
 test "js: stdlib associated fn namespace injected" {
-    // `Pair`/`Function` are primitives in primitives.d.bp (not in the user
+    // `Pair`/`Function` are primitives in primitives.bp (not in the user
     // program). When their associated fns are used, codegen injects the
     // interface decl so the namespace object is emitted at runtime.
     try h.assertJsSingle(std.testing.allocator, @src(),

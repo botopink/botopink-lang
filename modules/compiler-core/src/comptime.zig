@@ -401,7 +401,7 @@ fn analyzeMerged(
 /// Process-lifetime template Env populated once by `registerBuiltins` +
 /// `registerStdlib`. Each `freshEnv` then clones the (already-inferred)
 /// hashmaps in ~µs instead of re-lexing + re-parsing + re-inferring the
-/// stdlib (`primitives.d.bp` + `@Decl` cluster + `CustomNode` +
+/// stdlib (`primitives.bp` + `@Decl` cluster + `CustomNode` +
 /// `builtins_fns.d.bp`) on every call.
 ///
 /// Before this template was introduced, every `freshEnv` invocation
@@ -648,7 +648,7 @@ const type_info_src =
 /// server — scans these sources to resolve receiver methods such as `42.abs()`,
 /// `true.to_string()`, `xs.map(…)` and `"s".len()`.
 pub const primitive_interfaces_src = @import("std_prelude").primitives;
-// Array<T> and String interfaces live inside primitives.d.bp (the controller)
+// Array<T> and String behaviors live inside primitives.bp (the controller)
 // in the interface model — there are no standalone array/string modules.
 pub const array_interface_src = @import("std_prelude").primitives;
 pub const string_interface_src = @import("std_prelude").primitives;

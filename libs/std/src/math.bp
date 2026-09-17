@@ -31,7 +31,7 @@ pub val log10e: f64 = 0.4342944819032518;
 
 // ── arithmetic + rounding ────────────────────────────────────────────────────
 // `abs` works on `f64`. Integer abs lives on the numeric tower
-// (`primitives.d.bp` Signed). `minF`/`maxF` are the float variants — the
+// (`primitives.bp` Signed). `minF`/`maxF` are the float variants — the
 // generic ones live on `Number`.
 
 #[@External.Node("Math", "abs")]

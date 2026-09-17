@@ -885,7 +885,7 @@ const Emitter = struct {
             .user_node_templates = std.StringHashMap(BuiltinNodeCall).init(alloc),
         };
         // §A4 default prim renames: the three host-name → native-prototype pairs
-        // primitives.d.bp annotates with the 2-arg shorthand. Seeding them here
+        // primitives.bp annotates with the 2-arg shorthand. Seeding them here
         // (instead of relying on `collectPrimNodeRenames` to find the interface
         // decl) lets the standalone `emitFnJs` path — used by the comptime
         // template eval to run a template body — pick up the rename even though

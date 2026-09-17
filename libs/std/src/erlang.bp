@@ -19,7 +19,7 @@
 //// BIF — i.e., when the BIF name is a single word (`abs`, `length`,
 //// `max`, …). Snake-case BIFs (`integer_to_binary`, `atom_to_list`, …)
 //// can't be shadowed by camelCase user fns; they live as primitive
-//// methods on `primitives.d.bp` and don't need a shadow entry here.
+//// methods on `primitives.bp` and don't need a shadow entry here.
 ////
 //// Adding a BIF: add one `#[@External.Erlang("erlang", "<name>")] pub
 //// declare fn <camelCase>(…) -> any;`. Symbol + param count drive the

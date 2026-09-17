@@ -55,7 +55,7 @@ const PrimErlangCall = struct {
 };
 
 /// Map a primitive `PrimKind` to its controller interface name in
-/// `primitives.d.bp`. The BEAM dispatcher only handles three kinds (`Array`,
+/// `primitives.bp`. The BEAM dispatcher only handles three kinds (`Array`,
 /// `String`, `Bool`); numeric methods are not yet lowered on BEAM (recorded as
 /// a backend limit, falls through to the value-receiver path).
 fn primIfaceForKind(k: envMod.PrimKind) ?[]const u8 {
@@ -1385,7 +1385,7 @@ const Emitter = struct {
 
     /// §A5: collect `@external(erlang, …)` annotations on primitive interface
     /// methods into `prim_erlang_dispatch`. Scans `program.decls` first and
-    /// reparses the embedded `primitives.d.bp` so the table sees every prim
+    /// reparses the embedded `primitives.bp` so the table sees every prim
     /// interface (`Array`/`String`/`Bool`) even when none made it into the
     /// transformed program. Mirrors the erlang backend's collector — the same
     /// `PrimErlangCall` type drives both, but the dispatcher in each backend
@@ -1492,7 +1492,7 @@ const Emitter = struct {
             }
             const ref = m.externalFor("erlang") orelse continue;
             // BEAM reads the erlang annotation as its source of truth (no
-            // separate `@external(beam, …)` is used in `primitives.d.bp`), so
+            // separate `#[@External.Beam(…)]` is used in `primitives.bp`), so
             // either an `inline: true` on the erlang annotation OR on an
             // explicit beam one marks the method irreducible on BEAM.
             if (hasExternalInline(m.annotations, "erlang") or
