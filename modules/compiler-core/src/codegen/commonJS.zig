@@ -11,6 +11,7 @@ const lexerMod = @import("../lexer.zig");
 const parserMod = @import("../parser.zig");
 const prelude = @import("std_prelude");
 const js = @import("./js/js_ast.zig");
+const envMod = @import("../comptime/env.zig");
 const jsEmitter = @import("./js/js_emitter.zig");
 
 /// `prim-op-annotation` builtin dispatch entry (commonJS).
@@ -69,7 +70,7 @@ pub fn codegenEmit(
                 // test blocks (a project's `botopink test` runs only its own
                 // tests; the stdlib's inline tests run from `libs/std` itself).
                 const module_test_mode = config.test_mode and !std.mem.startsWith(u8, ct.name, "std/");
-                const js_src = try emitJs(alloc, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, &ok.js_method_renames, module_test_mode, ct.name, &cross);
+                const js_src = try emitJs(alloc, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, &ok.js_method_renames, &ok.instance_lowerings, module_test_mode, ct.name, &cross);
 
                 // Generate TypeScript typedefs if configured.
                 const typedef: ?[]u8 = if (config.typeDefLanguage) |_|
@@ -101,11 +102,12 @@ fn emitJs(
     comptime_vals: std.StringHashMap([]const u8),
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     renames: ?*const std.AutoHashMap(ast.Loc, []const u8),
+    lowerings: ?*const std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
     test_mode: bool,
     module_name: []const u8,
     cross: ?*const CrossModule,
 ) ![]u8 {
-    return try emitProgramOptsX(alloc, program, comptime_vals, rewrites, renames, test_mode, module_name, cross);
+    return try emitProgramOptsX(alloc, program, comptime_vals, rewrites, renames, lowerings, test_mode, module_name, cross);
 }
 
 fn emitTypeDef(
@@ -251,7 +253,7 @@ pub fn emitProgramOpts(
     test_mode: bool,
     module_name: []const u8,
 ) ![]u8 {
-    return emitProgramOptsX(alloc, program, comptime_vals, rewrites, null, test_mode, module_name, null);
+    return emitProgramOptsX(alloc, program, comptime_vals, rewrites, null, null, test_mode, module_name, null);
 }
 
 /// The test-mode preamble: a throwing assert helper the runner can catch.
@@ -328,6 +330,7 @@ fn emitProgramOptsX(
     comptime_vals: std.StringHashMap([]const u8),
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     renames: ?*const std.AutoHashMap(ast.Loc, []const u8),
+    lowerings: ?*const std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
     test_mode: bool,
     module_name: []const u8,
     cross: ?*const CrossModule,
@@ -337,11 +340,13 @@ fn emitProgramOptsX(
     var em = Emitter.emitterInit(alloc, arena.allocator(), comptime_vals, rewrites);
     defer em.deinit();
     em.renames = renames;
+    em.lowerings = lowerings;
     em.test_mode = test_mode;
     em.module_name = module_name;
     em.cross = cross;
     try em.collectExternals(program);
     try em.collectClassNames(program);
+    try em.collectVariantFields(program);
     try em.collectPrimNodeRenames(program);
     try em.collectBuiltinNodeDispatch();
 
@@ -411,11 +416,15 @@ fn emitProgramOptsX(
                     // Emit resolved comptime value if available.
                     const ct_id = val_ct_map.get(v.name) orelse continue;
                     const lit = comptime_vals.get(ct_id) orelse continue;
-                    try items.append(arena_alloc, .{ .stmt = .{ .decl = .{
-                        .pattern = .{ .ident = v.name },
-                        // A pre-evaluated JS literal, already in target syntax.
-                        .value = .{ .name = lit },
-                    } } });
+                    try items.append(arena_alloc, .{
+                        .stmt = .{
+                            .decl = .{
+                                .pattern = .{ .ident = v.name },
+                                // A pre-evaluated JS literal, already in target syntax.
+                                .value = .{ .name = lit },
+                            },
+                        },
+                    });
                     continue;
                 }
                 try items.append(arena_alloc, .{ .stmt = try em.buildValDecl(v) });
@@ -693,6 +702,10 @@ const Emitter = struct {
     /// emit instead of `callee` (e.g. string `contains` → `includes`). Null in the
     /// standalone `emitProgram`/`emitFnJs` paths.
     renames: ?*const std.AutoHashMap(ast.Loc, []const u8) = null,
+    /// Inference's per-site lowering record (`s.len` on a typed string/array →
+    /// `.prim`). commonJS reads it only to spell a primitive `len` as the
+    /// native `.length` property. Null in the standalone paths.
+    lowerings: ?*const std.AutoHashMap(ast.Loc, envMod.InstanceLowering) = null,
     /// When true, `self.x` lowers to `self.x` (extension methods take `self` as a
     /// real first parameter) instead of the prototype-method `this.x`.
     self_is_param: bool = false,
@@ -722,6 +735,11 @@ const Emitter = struct {
     /// Names that emit as JS classes (record/struct decls, incl. the
     /// `val X = record { … }` shorthand) — constructor calls need `new`.
     class_names: std.StringHashMap(void),
+    /// Payload variant name → its declared field names, in declaration order,
+    /// for every enum declared in this module. A `case` arm `Circle(r)` binds
+    /// positionally, so `r` is read from the declared field (`radius`), never
+    /// from a property named after the binding.
+    variant_fields: std.StringHashMap([]const []const u8),
     /// Cross-module link info (null in the standalone `emitProgram` path) —
     /// resolves a `from "<pkg>"` import to the file that emits each name.
     cross: ?*const CrossModule = null,
@@ -770,6 +788,7 @@ const Emitter = struct {
             .externals = std.StringHashMap(ast.ExternalRef).init(alloc),
             .externals_missing = std.StringHashMap(void).init(alloc),
             .class_names = std.StringHashMap(void).init(alloc),
+            .variant_fields = std.StringHashMap([]const []const u8).init(alloc),
             .seen_imports = std.StringHashMap(void).init(alloc),
             .prim_node_renames = std.StringHashMap([]const u8).init(alloc),
             .builtin_node_dispatch = std.StringHashMap(BuiltinNodeCall).init(alloc),
@@ -794,6 +813,7 @@ const Emitter = struct {
         self.externals.deinit();
         self.externals_missing.deinit();
         self.class_names.deinit();
+        self.variant_fields.deinit();
         self.seen_imports.deinit();
         self.prim_node_renames.deinit();
         var bit = self.builtin_node_dispatch.iterator();
@@ -1039,6 +1059,21 @@ const Emitter = struct {
                         if (info.is_class) try self.class_names.put(imp.name(), {});
                     }
                 }
+            },
+            else => {},
+        };
+    }
+
+    /// Indexes each payload variant's declared field names (see
+    /// `variant_fields`). Enum sections are desugared into inner enums before
+    /// codegen, so the top-level variant list is the whole surface.
+    fn collectVariantFields(self: *Emitter, program: ast.Program) !void {
+        for (program.decls) |decl| switch (decl) {
+            .@"enum" => |e| for (e.variants) |v| {
+                if (v.fields.len == 0) continue;
+                const names = try self.arena().alloc([]const u8, v.fields.len);
+                for (v.fields, 0..) |f, i| names[i] = f.name;
+                try self.variant_fields.put(v.name, names);
             },
             else => {},
         };
@@ -1692,11 +1727,13 @@ const Emitter = struct {
     fn buildNamesPattern(self: *Emitter, n: anytype) !js.Pattern {
         const props = try self.arena().alloc(js.ObjectPattern.Prop, n.fields.len);
         for (n.fields, 0..) |nm, i| props[i] = .{ .key = nm.bind_name };
-        return .{ .object = .{
-            .props = props,
-            // The frontend records that a rest is present but not its name.
-            .rest = if (n.hasSpread) .unnamed else null,
-        } };
+        return .{
+            .object = .{
+                .props = props,
+                // The frontend records that a rest is present but not its name.
+                .rest = if (n.hasSpread) .unnamed else null,
+            },
+        };
     }
 
     fn buildTuplePattern(self: *Emitter, names: []const []const u8) !js.Pattern {
@@ -2185,6 +2222,13 @@ const Emitter = struct {
                     if (tupleIndexMember(ia.member)) |idx| {
                         return self.b.index(recv, .{ .number = idx }, ia.optional);
                     }
+                    // `s.len` / `arr.len` on a typed string or array is the
+                    // host length (C3): JS spells it as the `.length` property.
+                    // Inference records the primitive kind only for a typed
+                    // receiver, so a record field named `len` is untouched.
+                    if (std.mem.eql(u8, ia.member, "len")) if (self.lowerings) |lw| if (lw.get(id.loc)) |il| if (il == .prim) {
+                        return self.b.memberOpt(recv, "length", ia.optional);
+                    };
                     // Optional chaining maps 1:1 to native JS `?.`.
                     return self.b.memberOpt(recv, ia.member, ia.optional);
                 },
@@ -2953,14 +2997,44 @@ const Emitter = struct {
 
             .variant => |v| {
                 var body: std.ArrayListUnmanaged(js.Stmt) = .empty;
+                const declared = self.variant_fields.get(v.name);
+                // An `Ok`/`Err`/`Error` arm that names no variant this module
+                // declares matches a `@Result`, which `#[@result]` materialises
+                // as `{ ok }` / `{ error }` — no `tag` (C5). The arm tests the
+                // key, as the `try` lowering does, and binds the payload.
+                if (declared == null) if (resultKey(v.name)) |key| {
+                    switch (v.payload) {
+                        .binding => |binding| try body.append(self.arena(), .{ .decl = .{
+                            .pattern = .{ .ident = binding },
+                            .value = try self.b.member(subject, key),
+                        } }),
+                        .fields => |fields| if (fields.len > 0) try body.append(self.arena(), .{ .decl = .{
+                            .pattern = .{ .ident = fields[0] },
+                            .value = try self.b.member(subject, key),
+                        } }),
+                        .literals => {},
+                    }
+                    for (try self.buildMatchedBody(arm, indent + 1)) |s| try body.append(self.arena(), s);
+                    return self.b.ifStmt(
+                        try self.b.binaryBare("in", .{ .quoted = key }, subject),
+                        .{ .block = .{ .stmts = try body.toOwnedSlice(self.arena()), .indent = indent } },
+                    );
+                };
                 switch (v.payload) {
                     .binding => |binding| try body.append(self.arena(), .{ .decl = .{
                         .pattern = .{ .ident = binding },
                         .value = subject,
                     } }),
+                    // `Circle(r)` binds positionally: each binding reads the
+                    // declared field at its position (`const { radius: r }`),
+                    // never a property named after the binding (C4). A variant
+                    // this module does not declare keeps the binding as key.
                     .fields => |fields| if (fields.len > 0) {
                         const props = try self.arena().alloc(js.ObjectPattern.Prop, fields.len);
-                        for (fields, 0..) |bb, bi| props[bi] = .{ .key = bb };
+                        for (fields, 0..) |bb, bi| {
+                            const key = if (declared) |d| (if (bi < d.len) d[bi] else bb) else bb;
+                            props[bi] = .{ .key = key, .bind = if (std.mem.eql(u8, key, bb)) null else jsIdent(bb) };
+                        }
                         try body.append(self.arena(), .{ .decl = .{
                             .pattern = .{ .object = .{ .props = props } },
                             .value = subject,
@@ -3010,6 +3084,14 @@ const Emitter = struct {
                 );
             },
         }
+    }
+
+    /// The `@Result` key a variant arm name stands for: `Ok` → `ok`,
+    /// `Err`/`Error` → `error`.
+    fn resultKey(name: []const u8) ?[]const u8 {
+        if (std.mem.eql(u8, name, "Ok")) return "ok";
+        if (std.mem.eql(u8, name, "Err") or std.mem.eql(u8, name, "Error")) return "error";
+        return null;
     }
 
     fn appendListElemBinds(

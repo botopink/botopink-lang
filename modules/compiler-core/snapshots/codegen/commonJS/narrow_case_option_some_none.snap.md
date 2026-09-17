@@ -25,7 +25,7 @@ function describe(opt) {
         const _s = opt;
         if (_s === "None") return "empty";
         if (_s.tag === "Some") {
-            const { v } = _s;
+            const { value: v } = _s;
             return ("value: " + v);
         }
     })();
@@ -53,6 +53,6 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
-value: undefined
+value: 42
 empty
 ```

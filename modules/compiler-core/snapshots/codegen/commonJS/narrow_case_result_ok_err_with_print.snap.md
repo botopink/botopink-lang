@@ -26,12 +26,12 @@ function main() {
     const r1 = fetch(true);
     const msg1 = (() => {
         const _s = r1;
-        if (_s.tag === "Ok") {
-            const { v } = _s;
+        if ("ok" in _s) {
+            const v = _s.ok;
             return ("OK:" + v);
         }
-        if (_s.tag === "Err") {
-            const { e } = _s;
+        if ("error" in _s) {
+            const e = _s.error;
             return ("ERR:" + e);
         }
     })();
@@ -39,12 +39,12 @@ function main() {
     const r2 = fetch(false);
     const msg2 = (() => {
         const _s = r2;
-        if (_s.tag === "Ok") {
-            const { v } = _s;
+        if ("ok" in _s) {
+            const v = _s.ok;
             return ("OK:" + v);
         }
-        if (_s.tag === "Err") {
-            const { e } = _s;
+        if ("error" in _s) {
+            const e = _s.error;
             return ("ERR:" + e);
         }
     })();
@@ -66,6 +66,6 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
-undefined
-undefined
+OK:data
+ERR:fail
 ```

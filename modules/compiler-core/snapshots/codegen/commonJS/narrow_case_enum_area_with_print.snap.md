@@ -24,11 +24,11 @@ function area(s) {
     return (() => {
         const _s = s;
         if (_s.tag === "Circle") {
-            const { r } = _s;
+            const { radius: r } = _s;
             return ((3.14 * r) * r);
         }
         if (_s.tag === "Square") {
-            const { s } = _s;
+            const { side: s } = _s;
             return (s * s);
         }
     })();
@@ -56,6 +56,6 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
-NaN
-NaN
+12.56
+9
 ```

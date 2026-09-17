@@ -84,7 +84,16 @@ codegen/
   and the fixed test-harness source (`Item.runtime`).
 - **`@Result`** is `{ ok: V } | { error: E }`; `__bp_ok`/`__bp_error` build it for
   `return`/`throw` in `#[@result]` fns; `try`/`catch` lower to `"error" in _r`
-  pattern matching.
+  pattern matching. A `case` arm `Ok(v)` / `Err(e)` / `Error(e)` that names no
+  variant the module declares tests the key the same way (`if ("ok" in _s)`,
+  `const v = _s.ok;`), never `_s.tag` — a Result carries no tag (C5).
+- **Variant payload arms**: `collectVariantFields` indexes every local payload
+  variant's declared field names; `Circle(r) ->` binds positionally
+  (`const { radius: r } = _s;`). A variant declared in another module keeps the
+  binding as the key.
+- **`.len`**: `s.len` / `arr.len` on a typed string/array (inference records
+  `.prim` in `instance_lowerings`, threaded in as `Emitter.lowerings`) emits
+  the native `.length` property; a record field named `len` is untouched (C3).
 - **Static extension dispatch**: `implement`/`extend` blocks emit as namespace
   objects (`buildExtensionNamespace`: `const Sym = { m(self){…} }`, no prototype
   patching); an activated `obj.m(args)` lowers to `Sym.m(obj, args)` via the

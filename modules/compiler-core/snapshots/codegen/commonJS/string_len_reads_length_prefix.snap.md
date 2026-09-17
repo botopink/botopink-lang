@@ -10,7 +10,7 @@ fn n() -> i32 {
 ```javascript
 function n() {
     const s = "hello";
-    return s.len;
+    return s.length;
 }
 ```
 

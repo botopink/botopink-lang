@@ -46,7 +46,7 @@ String.prototype.charCodeAt = function(index) { return ((this.valueOf().charCode
 function main() {
     const s = "hello";
     const mid = s.slice(1, 4);
-    console.log(mid.len);
+    console.log(mid.length);
 }
 
 function _botopink_main() {
@@ -62,5 +62,5 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
-undefined
+3
 ```
