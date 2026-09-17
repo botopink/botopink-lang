@@ -14,7 +14,7 @@ fn main() {
 ----- JAVASCRIPT -- main.js
 ```javascript
 function classify(x) {
-     if ((x === 0)) { return "zero"; } else { return  if ((x !== 0)) { return ("nonzero: " + x); } else { return "null"; }; };
+    if ((x === 0)) { return "zero"; } else { if ((x !== 0)) { return ("nonzero: " + x); } else { return "null"; } }
 }
 
 function main() {
@@ -37,9 +37,6 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (node --check):
-main.js:2
-     if ((x === 0)) { return "zero"; } else { return  if ((x !== 0)) { return ("nonzero: " + x); } else { return "null"; }; };
-                                                      ^^
-SyntaxError: Unexpected token 'if'
+nonzero: 42
+zero
 ```

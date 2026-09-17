@@ -12,7 +12,7 @@ fn main() {
 ----- JAVASCRIPT -- main.js
 ```javascript
 function isString(x) {
-     const s = x; if (s !== null) { return true; };
+    { const s = x; if (s !== null) { return true; } }
     return false;
 }
 

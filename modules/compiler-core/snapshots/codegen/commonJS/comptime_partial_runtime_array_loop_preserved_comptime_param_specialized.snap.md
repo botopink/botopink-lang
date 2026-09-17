@@ -32,7 +32,7 @@ function execute_$0(input) {
     let output = 0;
     for (const cmd of COMMANDS) {
     (() => { if ((cmd === slug)) { return output = (input * 2); } })();
-};
+}
     return output;
 }
 
@@ -41,7 +41,7 @@ function execute_$1(input) {
     let output = 0;
     for (const cmd of COMMANDS) {
     (() => { if ((cmd === slug)) { return output = (input * 2); } })();
-};
+}
     return output;
 }
 

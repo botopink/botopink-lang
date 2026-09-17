@@ -24,7 +24,7 @@ fn main() {
 ----- JAVASCRIPT -- main.js
 ```javascript
 function inner(should_fail) {
-     if (should_fail) { return ({ error: "inner-fail" }); } else { return ({ ok: 7 }); };
+    if (should_fail) { return ({ error: "inner-fail" }); } else { return ({ ok: 7 }); }
 }
 
 function outer(should_fail) {

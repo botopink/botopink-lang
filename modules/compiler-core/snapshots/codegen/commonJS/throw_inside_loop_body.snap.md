@@ -16,8 +16,8 @@ fn main() {
 ```javascript
 function validate(items) {
     for (const i of Array.from({length: Math.max(0, (items) - (0))}, (_, __i) => (0) + __i)) {
-     if ((i > 2)) { return ({ error: "too many" }); };
-};
+    if ((i > 2)) { return ({ error: "too many" }); }
+}
     return ({ ok: items });
 }
 

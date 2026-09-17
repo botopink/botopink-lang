@@ -15,7 +15,7 @@ fn main() -> string {
 ```javascript
 function main() {
     const input = 42;
-    const status = (() => {const calculo = (input * 2);  if ((calculo > 100)) { return "Alto"; }; return "Baixo";})();
+    const status = (() => {const calculo = (input * 2); if ((calculo > 100)) { return "Alto"; } return "Baixo";})();
     return status;
 }
 

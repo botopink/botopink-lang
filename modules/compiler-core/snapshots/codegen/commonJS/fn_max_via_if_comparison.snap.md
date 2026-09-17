@@ -15,7 +15,7 @@ fn main() {
 ----- JAVASCRIPT -- main.js
 ```javascript
 function max(a, b) {
-     if ((a < b)) { return b; } else { return a; };
+    if ((a < b)) { return b; } else { return a; }
 }
 exports.max = max;
 

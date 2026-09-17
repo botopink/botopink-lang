@@ -12,9 +12,13 @@ fn main() {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-const processamento = for (const i of Array.from({length: Math.max(0, (10) - (0))}, (_, __i) => (0) + __i)) {
-    (() => { if (((i % 2) === 0)) { return return i; } })();
-};
+const processamento = (() => {
+    const _acc = [];
+    for (const i of Array.from({length: Math.max(0, (10) - (0))}, (_, __i) => (0) + __i)) {
+        if (((i % 2) === 0)) { _acc.push(i); continue; }
+    }
+    return _acc;
+})();
 
 function main() {
     console.log(processamento);
@@ -35,9 +39,5 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (node --check):
-main.js:1
-const processamento = for (const i of Array.from({length: Math.max(0, (10) - (0))}, (_, __i) => (0) + __i)) {
-                      ^^^
-SyntaxError: Unexpected token 'for'
+[ 0, 2, 4, 6, 8 ]
 ```

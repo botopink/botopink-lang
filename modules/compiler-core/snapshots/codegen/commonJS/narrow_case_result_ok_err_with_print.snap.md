@@ -18,7 +18,7 @@ fn main() {
 ----- JAVASCRIPT -- main.js
 ```javascript
 function fetch(ok) {
-     if (ok) { return ({ ok: "data" }); };
+    if (ok) { return ({ ok: "data" }); }
     return ({ error: "fail" });
 }
 

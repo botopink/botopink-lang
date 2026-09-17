@@ -14,10 +14,14 @@ fn main() {
 ```javascript
 const precosBrutos = [100, 250, 400];
 
-const precosComTaxa = for (const valor of precosBrutos) {
-    const taxa = (valor * 0.15);
-    return (valor + taxa);
-};
+const precosComTaxa = (() => {
+    const _acc = [];
+    for (const valor of precosBrutos) {
+        const taxa = (valor * 0.15);
+        _acc.push((valor + taxa));
+    }
+    return _acc;
+})();
 
 function main() {
     console.log(precosComTaxa);
@@ -40,9 +44,5 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (node --check):
-main.js:3
-const precosComTaxa = for (const valor of precosBrutos) {
-                      ^^^
-SyntaxError: Unexpected token 'for'
+[ 115, 287.5, 460 ]
 ```

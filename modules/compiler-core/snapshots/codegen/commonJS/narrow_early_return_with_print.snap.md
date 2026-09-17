@@ -13,7 +13,7 @@ fn main() {
 ----- JAVASCRIPT -- main.js
 ```javascript
 function greet(x) {
-     if ((x == null)) { return "nobody"; };
+    if ((x == null)) { return "nobody"; }
     return ("hello " + x);
 }
 

@@ -16,12 +16,11 @@
 //!
 //! ## Bridges
 //!
-//! Six forms exist only to keep shapes the current lowering still produces but
+//! Five forms exist only to keep shapes the current lowering still produces but
 //! that the model would otherwise forbid. They are the complete list of ways a
 //! JS backend can still emit something illegal, each one has to be named
 //! explicitly at the build site, and each is documented in `AGENTS.md`:
 //!
-//! * `Expr.stmt_expr`             — a statement where JS needs an expression.
 //! * `Expr.missing`               — an expression the lowering did not produce.
 //! * `Rest.unnamed`/`Spread.unnamed` — a rest or spread with no binding.
 //! * `Pattern.match`              — a match pattern used as a binding target.
@@ -80,12 +79,6 @@ pub const Expr = union(enum) {
     /// A comment in expression position: it is the whole expression.
     comment: Comment,
 
-    /// BRIDGE — a statement used where JavaScript needs an expression.
-    /// botopink is expression-oriented (a `loop` and a `return` are both
-    /// expressions), so the current lowering still reaches this. It renders
-    /// the statement without its own terminator, which is how `return for (…)`
-    /// and `return return x` get emitted. See `AGENTS.md` (defect JS-1).
-    stmt_expr: *const Stmt,
     /// BRIDGE — an expression the lowering did not produce. Renders as
     /// nothing, which is how `if () …` and `({ a } = )` get emitted. See
     /// `AGENTS.md` (defect JS-2).
@@ -321,6 +314,8 @@ pub const Stmt = union(enum) {
     throw_: ?Expr,
     /// `continue;`
     continue_,
+    /// `break;`
+    break_,
     /// `yield* <expr>; return;` — delegating the rest of an iteration.
     yield_delegate: Expr,
     if_: If,
@@ -392,11 +387,6 @@ pub const Block = struct {
         spaced,
         /// `{a; b;}` — one line, statements separated by a space.
         tight,
-        /// ` a; b;` — one line, each statement preceded by a space, with **no
-        /// braces**. The body of an `if` expression whose branches already
-        /// `return`, which the lowering emits without its IIFE wrapper: it is
-        /// only ever reached through `Expr.stmt_expr`.
-        bare,
     };
 };
 
@@ -681,11 +671,6 @@ pub const Builder = struct {
 
     pub fn group(b: Builder, items: []const Stmt) Error!Stmt {
         return .{ .group = try b.stmts(items) };
-    }
-
-    /// BRIDGE — see `Expr.stmt_expr`.
-    pub fn stmtExpr(b: Builder, s: Stmt) Error!Expr {
-        return .{ .stmt_expr = try b.stmtPtr(s) };
     }
 
     pub fn await_(b: Builder, e: Expr) Error!Expr {

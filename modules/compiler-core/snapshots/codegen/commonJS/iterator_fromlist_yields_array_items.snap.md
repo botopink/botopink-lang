@@ -25,14 +25,14 @@ fn main() {
 function* fromList(xs) {
     for (const item of xs) {
     yield item;
-};
+}
 }
 
 function toList(iter) {
     let out = [];
     for (const item of iter) {
     out.push(item);
-};
+}
     return out;
 }
 

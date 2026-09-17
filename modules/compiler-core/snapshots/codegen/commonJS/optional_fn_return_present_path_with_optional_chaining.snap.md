@@ -22,7 +22,7 @@ class R {
 }
 
 function choose(present) {
-     if (present) { return new R(7); } else { return null; };
+    if (present) { return new R(7); } else { return null; }
 }
 
 function main() {

@@ -11,10 +11,14 @@ fn sumEvens(arr: i32[]) -> i32 {
 ----- JAVASCRIPT -- main.js
 ```javascript
 function sumEvens(arr) {
-    return arr.map((x) => {
-    (() => { if (((x % 2) !== 0)) { return continue; } })();
-    return x;
-});
+    return (() => {
+        const _acc = [];
+        for (const x of arr) {
+            if (((x % 2) !== 0)) { continue; }
+            _acc.push(x);
+        }
+        return _acc;
+    })();
 }
 ```
 
@@ -25,9 +29,4 @@ function sumEvens(arr) {
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (node --check):
-main.js:3
-    (() => { if (((x % 2) !== 0)) { return continue; } })();
-                                           ^^^^^^^^
-SyntaxError: Unexpected token 'continue'
 ```

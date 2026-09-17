@@ -13,9 +13,13 @@ fn main() {
 ----- JAVASCRIPT -- main.js
 ```javascript
 function find(arr) {
-    return for (const x of arr) {
-    (() => { if ((x > 10)) { return return x; } })();
-};
+    return (() => {
+        const _acc = [];
+        for (const x of arr) {
+            if ((x > 10)) { _acc.push(x); continue; }
+        }
+        return _acc;
+    })();
 }
 
 function main() {
@@ -37,9 +41,5 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (node --check):
-main.js:2
-    return for (const x of arr) {
-           ^^^
-SyntaxError: Unexpected token 'for'
+[ 15, 20 ]
 ```

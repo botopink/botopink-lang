@@ -13,9 +13,13 @@ fn main() {
 ```javascript
 const ids = [10, 20, 30];
 
-const dobrados = for (const id of ids) {
-    return (id * 2);
-};
+const dobrados = (() => {
+    const _acc = [];
+    for (const id of ids) {
+        _acc.push((id * 2));
+    }
+    return _acc;
+})();
 
 function main() {
     console.log(dobrados);
@@ -38,9 +42,5 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (node --check):
-main.js:3
-const dobrados = for (const id of ids) {
-                 ^^^
-SyntaxError: Unexpected token 'for'
+[ 20, 40, 60 ]
 ```

@@ -15,9 +15,13 @@ fn main() {
 ```javascript
 const precosBrutos = [100, 250, 400];
 
-const apenasGrandes = for (const valor of precosBrutos) {
-    (() => { if ((valor > 200)) { return return valor; } })();
-};
+const apenasGrandes = (() => {
+    const _acc = [];
+    for (const valor of precosBrutos) {
+        if ((valor > 200)) { _acc.push(valor); continue; }
+    }
+    return _acc;
+})();
 
 function main() {
     console.log(apenasGrandes);
@@ -40,9 +44,5 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (node --check):
-main.js:3
-const apenasGrandes = for (const valor of precosBrutos) {
-                      ^^^
-SyntaxError: Unexpected token 'for'
+[ 250, 400 ]
 ```

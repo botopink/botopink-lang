@@ -13,8 +13,8 @@ fn countUp(x: i32) {
 ```javascript
 function countUp(x) {
     for (const i of (() => { throw new Error("open-ended range unsupported on commonJS"); })()) {
-    (() => { if ((i > 100)) { return return; } })();
-};
+    if ((i > 100)) { break; }
+}
 }
 ```
 
@@ -25,9 +25,4 @@ function countUp(x) {
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (node --check):
-main.js:3
-    (() => { if ((i > 100)) { return return; } })();
-                                     ^^^^^^
-SyntaxError: Unexpected token 'return'
 ```

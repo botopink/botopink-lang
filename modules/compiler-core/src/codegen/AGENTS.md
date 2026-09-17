@@ -61,7 +61,7 @@ codegen/
 | `config.zig` | `Config` (`targetSource`, `typeDefLanguage`, `build_root`, `test_mode`), `TargetSource` (`commonJS` \| `erlang` \| `beam` \| `wasm`), `TypeDefLang` |
 | `moduleOutput.zig` | `GenerateResult` (`js`, `typedef`, `comptime_script`, `comptime_err`, `run_output`) and `ModuleOutput` — shared between targets. `Module` lives in `../module.zig` |
 | `crossModule.zig` | **Cross-module link index** built once over every module's transformed program (`build(alloc, outputs)`). `exports` maps a `pub` symbol → `ExportInfo{module, kind, is_class, fields}` (emitting module path, decl kind, whether construction needs `new`/the owner's map shape, and a record's declared field order); host-backed `#[@External.<Target>(…)]` fns are indexed too, so a consumer importing one `from "<lib>"` links to the owner like any other export. `imported` is the set of names some module imports. `ownerModuleAtom(name)` / `moduleBasename(path)` give the Erlang/BEAM module atom (`web/http` → `http`). Consumed by commonJS, erlang and beam_asm; wat only uses it to flag unlinkable imports |
-| `js/` | JS/TS code model + emitters shared by `commonJS.zig` and `typescript.zig`: `js_ast.zig` (`Expr`/`Stmt`/`Pattern`/`Block`/`Class`/`Item` + the `.d.ts` `TsDecl`/`TsType` + `Builder`), `js_emitter.zig` (the only writer of JavaScript: reserved-word renaming, string escaping, parenthesisation, indentation, semicolons), `ts_emitter.zig` (the only writer of `.d.ts`). The backends build nodes and write no target text. The four `js_ast` bridges pin the shapes the current lowering still emits illegally. See [`js/AGENTS.md`](js/AGENTS.md) |
+| `js/` | JS/TS code model + emitters shared by `commonJS.zig` and `typescript.zig`: `js_ast.zig` (`Expr`/`Stmt`/`Pattern`/`Block`/`Class`/`Item` + the `.d.ts` `TsDecl`/`TsType` + `Builder`), `js_emitter.zig` (the only writer of JavaScript: reserved-word renaming, string escaping, parenthesisation, indentation, semicolons), `ts_emitter.zig` (the only writer of `.d.ts`). The backends build nodes and write no target text. The remaining `js_ast` bridges pin the shapes the current lowering still emits illegally. See [`js/AGENTS.md`](js/AGENTS.md) |
 | `beam/` | BEAM term model + emitters shared by `erlang.zig`, `beam_asm.zig` and the comptime evaluators: `term.zig` (`Term`), `erl_emitter.zig` (Erlang source: atom quoting incl. reserved words, variables, module names, binaries), `beam_emitter.zig` (`.S` operands and `move`s). One quoting rule for `.erl` and `.S`. See [`beam/AGENTS.md`](beam/AGENTS.md) |
 | `commonJS.zig` | CommonJS backend — builds `js/js_ast.zig` nodes, rendered by `js/js_emitter.zig`. See [commonJS](#commonjs) below |
 | `erlang.zig` | Erlang source emitter. See [erlang](#erlang) below |
@@ -140,6 +140,30 @@ codegen/
 - **Effects**: `fnKeyword` picks `async function` / `function*` /
   `async function*`; inside a generator, `return <iter>` becomes
   `yield* <iter>; return;` and `loop (xs) { x -> yield x }` becomes `for…of`.
+- **Control flow (no statement in expression position)**: a jump is a
+  statement, so every position that can hold one is lowered by `buildStmt`:
+  - an `if` in statement position whose branches `return` / `break` /
+    `continue` (or, inside a comprehension, `yield`) is a JS `if` statement
+    (`buildIfStmt`; the `if (val e = …)` form keeps its binding in a `{ … }`
+    block). Any other `if` stays the value IIFE, and a jumping `if` in a value
+    position is `error.JumpInValuePosition`;
+  - a `loop` in statement position is `for…of` (`buildLoopStmt`, `loop_ctx =
+    .stmt`): `break;` / `continue;` are native, `break <v>` evaluates `v` and
+    continues;
+  - a `loop` used as a value is a comprehension (`buildLoop`): only top-level
+    `yield <v>` → `xs.map(…)`; anything else (`break <v>`, `continue`, a nested
+    `yield`) → an accumulating IIFE `(() => { const _acc = []; for (…) {
+    _acc.push(v); … } return _acc; })()` — `break <v>` contributes `v`,
+    `continue` drops the item, `break;` ends the iteration;
+  - `return case … { … }` where an arm returns from the function (the
+    `#[@result]` wrap puts `__bp_ok(…)` around a whole `case`, so `Fail -> throw
+    e` is `return __bp_error(e)` inside it) lowers the `case` to statements in
+    a block (`buildReturnCaseStmt`): value arms `return ({ ok: v })`, the jump
+    arm keeps its own `return`;
+  - `throw` in value position is a one-statement IIFE; a binding in value
+    position is `error.BindingInValuePosition`. `try x catch return y` in value
+    position still returns from the value IIFE (the `try`'s value becomes `y`);
+    the statement-position lowering is the one that leaves the function.
 
 ### erlang
 

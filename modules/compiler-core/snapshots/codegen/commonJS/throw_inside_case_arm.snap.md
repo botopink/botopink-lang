@@ -22,11 +22,11 @@ const Status = Object.freeze({
 });
 
 function check(s) {
-    return ({ ok: (() => {
+    {
         const _s = s;
-        if (_s === "Ok") return 1;
-        if (_s === "Fail") return return ({ error: "failed" });
-    })() });
+        if (_s === "Ok") return ({ ok: 1 });
+        if (_s === "Fail") return ({ error: "failed" });
+    }
 }
 
 function main() {
@@ -51,9 +51,6 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (node --check):
-main.js:10
-        if (_s === "Fail") return return ({ error: "failed" });
-                                  ^^^^^^
-SyntaxError: Unexpected token 'return'
+true
+false
 ```

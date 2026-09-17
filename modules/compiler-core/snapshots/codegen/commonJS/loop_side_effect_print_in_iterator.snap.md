@@ -14,7 +14,7 @@ function main() {
     const messages = ["Erro 404", "Sucesso 200", "Aviso 500"];
     for (const [i, msg] of (messages).entries()) {
     console.log(msg);
-};
+}
 }
 
 function _botopink_main() {

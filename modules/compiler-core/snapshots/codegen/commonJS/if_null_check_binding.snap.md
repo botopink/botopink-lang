@@ -11,7 +11,7 @@ fn getName(name: ?string) -> string {
 ----- JAVASCRIPT -- main.js
 ```javascript
 function getName(name) {
-     const n = name; if (n !== null) { return n; };
+    { const n = name; if (n !== null) { return n; } }
     return "unknown";
 }
 ```
