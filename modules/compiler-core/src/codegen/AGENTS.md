@@ -247,7 +247,11 @@ codegen/
   use the declared field order from `collectTypeShapes`); field access is
   `maps:get(field, Recv)`; tuple index `t._N` → `element(N+1, T)`. No `-record`
   declarations are emitted. Optional chaining `?.` guards on `undefined` via an
-  immediate fun.
+  immediate fun. A record destructuring (`val { x, y } = p`, a `{ name, .. }`
+  parameter, a `try` head) is therefore the exact map pattern
+  `#{x := X, y := Y}` (`destructPatternExpr`) — keys it does not name are
+  ignored, so `..` adds nothing; `#(a, b)` stays a tuple pattern. The names bind
+  through `patternBindVar` (versioned when already bound).
 - **Enums**: `Order.Lt` → the variant atom; `Color.Rgb(r, g, b)` →
   `{'Rgb', R, G, B}`. A bare `.ident` case pattern is the atom when it names a
   known variant (`enum_variants`), else a variable. Case arms also lower list

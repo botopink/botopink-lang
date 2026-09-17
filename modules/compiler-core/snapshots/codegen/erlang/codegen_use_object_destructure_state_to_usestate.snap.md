@@ -20,7 +20,7 @@ state(Initial) ->
     Initial.
 
 'Counter'() ->
-    {Count, SetCount} = state(0),
+    #{count := Count, setCount := SetCount} = state(0),
     #{}.
 ```
 

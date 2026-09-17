@@ -17,7 +17,7 @@ fn main() {
 
 %% record Person: name, age
 
-greet({Name, _}) ->
+greet(#{name := Name}) ->
     io:format("~p~n", [Name]),
     Name.
 
@@ -33,4 +33,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+<<"Ana">>
 ```

@@ -14,7 +14,7 @@ fn describe(p: Point) -> i32 {
 %% record Point: x, y, z
 
 describe(P) ->
-    {X, _} = P,
+    #{x := X} = P,
     X.
 ```
 

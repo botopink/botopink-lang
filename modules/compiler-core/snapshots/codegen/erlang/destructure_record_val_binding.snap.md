@@ -19,7 +19,7 @@ fn main() {
 %% record Point: x, y
 
 describe(P) ->
-    {X, Y} = P,
+    #{x := X, y := Y} = P,
     io:format("~p ~p~n", [X, Y]),
     X.
 
@@ -35,4 +35,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+3 4
 ```

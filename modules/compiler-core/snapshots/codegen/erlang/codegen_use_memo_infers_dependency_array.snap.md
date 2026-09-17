@@ -27,7 +27,7 @@ memo() ->
     0.
 
 'Counter'() ->
-    {Count, SetCount} = state(0),
+    #{count := Count, setCount := SetCount} = state(0),
     Doubled = memo(fun() ->
         (Count * 2)
     end),

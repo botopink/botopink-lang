@@ -2412,14 +2412,8 @@ const Emitter = struct {
         var params: std.ArrayListUnmanaged(Ast.Expr) = .empty;
         for (f.params) |p| {
             if (p.destruct) |d| switch (d) {
-                .names => |n| {
-                    try params.append(b.arena, try this.destructPatternExpr(b, d));
-                    for (n.fields) |fld| this.addLocal(fld.bind_name);
-                },
-                .tuple_ => |t| {
-                    try params.append(b.arena, try this.destructPatternExpr(b, d));
-                    for (t) |nm| this.addLocal(nm);
-                },
+                // `destructPatternExpr` binds each name as a local.
+                .names, .tuple_ => try params.append(b.arena, try this.destructPatternExpr(b, d)),
                 // List / constructor parameter patterns are not lowered yet.
                 .list, .ctor => {},
             } else if (this.keep_self or !std.mem.eql(u8, p.name, "self")) {
@@ -3015,18 +3009,29 @@ const Emitter = struct {
         });
     }
 
-    /// A destructuring pattern (tuple/record names) as an Erlang pattern.
+    /// A destructuring pattern as an Erlang pattern. A record is a map at
+    /// runtime, so `{ x, y }` is the exact map pattern `#{x := X, y := Y}` — the
+    /// tuple `{X, Y}` it used to be never matched a map (`badmatch` on a `val`,
+    /// `function_clause` on a parameter). A map pattern ignores the keys it does
+    /// not name, so `..` needs no element of its own. `#(a, b)` stays a tuple.
+    /// Each name binds through `patternBindVar`, so a destructured name already
+    /// bound in the function takes a fresh version instead of matching.
     fn destructPatternExpr(this: *Emitter, b: Ast.Builder, pattern: ast.ParamDestruct) anyerror!Ast.Expr {
-        var items: std.ArrayListUnmanaged(Ast.Expr) = .empty;
         switch (pattern) {
             .names => |n| {
-                for (n.fields) |fld| try items.append(b.arena, Ast.Expr.v(try this.arenaVar(b, fld.bind_name)));
-                if (n.hasSpread) try items.append(b.arena, Ast.Expr.v("_"));
+                const fields = try b.arena.alloc(Ast.MapField, n.fields.len);
+                for (n.fields, 0..) |fld, i| {
+                    fields[i] = Ast.exactField(fld.field_name, Ast.Expr.v(try this.patternBindVar(b, fld.bind_name)));
+                }
+                return .{ .map = fields };
             },
-            .tuple_ => |t| for (t) |nm| try items.append(b.arena, Ast.Expr.v(try this.arenaVar(b, nm))),
+            .tuple_ => |t| {
+                const items = try b.arena.alloc(Ast.Expr, t.len);
+                for (t, 0..) |nm, i| items[i] = Ast.Expr.v(try this.patternBindVar(b, nm));
+                return .{ .tuple = items };
+            },
             .list, .ctor => return Ast.Expr.v("_"),
         }
-        return .{ .tuple = items.items };
     }
 
     /// A statement inside a function body. `return expr` is the bare expression
@@ -3780,8 +3785,9 @@ const Emitter = struct {
             },
             .localBindDestruct => |lb| switch (lb.pattern) {
                 .names, .tuple_ => {
-                    const pattern = try this.destructPatternExpr(b, lb.pattern);
-                    return b.match(pattern, try this.exprNode(b, lb.value.*));
+                    // The value reads the names BEFORE the pattern rebinds them.
+                    const value = try this.exprNode(b, lb.value.*);
+                    return b.match(try this.destructPatternExpr(b, lb.pattern), value);
                 },
                 // List / constructor patterns are not lowered yet: the value alone.
                 .list, .ctor => return this.exprNode(b, lb.value.*),
