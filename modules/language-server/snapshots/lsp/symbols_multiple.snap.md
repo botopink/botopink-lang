@@ -2,7 +2,7 @@
 ```botopink
 val x = 1;
 fn f(a: i32) { return a; }
-val Color = enum { Red };
+val Color = type { Red };
 ```
 
 ----- DOCUMENT SYMBOLS

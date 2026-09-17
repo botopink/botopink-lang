@@ -458,7 +458,7 @@ fn findDeclLocation(
 ) !?proto.Location {
     // `var` is included so a `var`-declared local resolves on go-to-def; a `var`
     // is never `pub`, so it is naturally absent from the `require_pub` path.
-    const decl_values = [_]TokenKind{ .val, .@"var", .@"fn", .record, .@"enum", .interface };
+    const decl_values = [_]TokenKind{ .val, .@"var", .@"fn", .record, .@"enum", .interface, .type, .behavior };
     var i: usize = 0;
     while (i < tokens.len) : (i += 1) {
         const tok = tokens[i];
@@ -633,7 +633,7 @@ pub fn documentSymbols(
         syms.deinit(gpa);
     }
 
-    const decl_values = [_]TokenKind{ .val, .@"fn", .record, .@"enum", .interface };
+    const decl_values = [_]TokenKind{ .val, .@"fn", .record, .@"enum", .interface, .type, .behavior };
 
     var i: usize = 0;
     while (i < tokens.len) : (i += 1) {
@@ -673,10 +673,16 @@ pub fn documentSymbols(
 
         var sym_kind: ?u32 = null;
         var decl_kind: ?TokenKind = null;
+        // The 1.0.3 `type` declaration: its field list and body (a `type`
+        // without a body has no `{` to find — the next declaration's must not
+        // be taken for it).
+        var type_span: ?TypeDeclSpan = null;
         for (decl_values) |k| {
             if (tok.kind == k) {
-                sym_kind = tokenToSymbolKind(k);
-                decl_kind = k;
+                const kind = if (k == .type or k == .behavior) (declKindAt(tokens, i) orelse break) else k;
+                if (k == .type) type_span = typeDeclSpan(tokens, i);
+                sym_kind = tokenToSymbolKind(kind);
+                decl_kind = kind;
                 break;
             }
         }
@@ -699,9 +705,10 @@ pub fn documentSymbols(
                 var ct = eq + 1;
                 while (ct < tokens.len and tokens[ct].kind == .endOfFile) : (ct += 1) {}
                 if (ct < tokens.len) switch (tokens[ct].kind) {
-                    .record, .@"enum", .interface => {
-                        decl_kind = tokens[ct].kind;
-                        sym_kind = tokenToSymbolKind(tokens[ct].kind);
+                    .record, .@"enum", .interface, .type, .behavior => if (declKindAt(tokens, ct)) |kind| {
+                        decl_kind = kind;
+                        sym_kind = tokenToSymbolKind(kind);
+                        if (tokens[ct].kind == .type) type_span = typeDeclSpan(tokens, ct);
                     },
                     else => {},
                 };
@@ -713,15 +720,20 @@ pub fn documentSymbols(
 
         // Find the full range of the declaration (up to matching `}`).
         var range_end = sel_end;
-        const block_end_idx = findBlockEnd(tokens, j + 1);
+        const block_end_idx: ?usize = if (type_span) |ts|
+            (if (ts.fields != null or ts.body != null) ts.last else null)
+        else
+            findBlockEnd(tokens, j + 1);
         if (block_end_idx) |end_idx| {
             range_end = lsp_types.locToPosition(tokens[end_idx].line, tokens[end_idx].col + 1);
         }
 
-        // Collect children for types with bodies.
+        // Collect children for types with bodies (and a `type`'s field list).
         var children: ?[]proto.DocumentSymbol = null;
         if (block_end_idx) |end_idx| {
-            children = try collectChildren(gpa, tokens, j + 1, end_idx, decl_kind.?);
+            const fields: ?BodyBraces = if (type_span) |ts| ts.fields else null;
+            const body_end = if (type_span) |ts| (if (ts.body) |b| b.close else end_idx) else end_idx;
+            children = try collectChildren(gpa, tokens, j + 1, body_end, decl_kind.?, fields);
         }
 
         try syms.append(gpa, .{
@@ -771,6 +783,9 @@ fn collectChildren(
     start: usize,
     end: usize,
     parent_kind: TokenKind,
+    /// The `(…)` field list of a 1.0.3 `type` record, whose fields sit there
+    /// instead of in the body.
+    field_list: ?BodyBraces,
 ) !?[]proto.DocumentSymbol {
     var kids: std.ArrayList(proto.DocumentSymbol) = .empty;
     errdefer {
@@ -778,10 +793,43 @@ fn collectChildren(
         kids.deinit(gpa);
     }
 
+    if (field_list) |fl| {
+        var depth: i32 = 0;
+        var f = fl.open;
+        while (f <= fl.close) : (f += 1) {
+            switch (tokens[f].kind) {
+                .leftParenthesis, .leftSquareBracket, .leftBrace => depth += 1,
+                .rightParenthesis, .rightSquareBracket, .rightBrace => depth -= 1,
+                .identifier => if (depth == 1) {
+                    const nk = nextSignificantIdx(tokens, f);
+                    const pk = prevSignificantKind(tokens, f);
+                    if (nk != null and tokens[nk.?].kind == .colon and (pk == .leftParenthesis or pk == .comma or pk == .rightSquareBracket)) {
+                        const tok = tokens[f];
+                        const s = lsp_types.locToPosition(tok.line, tok.col);
+                        const e = lsp_types.locToPosition(tok.line, tok.col + tok.lexeme.len);
+                        try kids.append(gpa, .{
+                            .name = try gpa.dupe(u8, tok.lexeme),
+                            .kind = proto.SymbolKind.Field,
+                            .range = .{ .start = s, .end = e },
+                            .selectionRange = .{ .start = s, .end = e },
+                        });
+                    }
+                },
+                else => {},
+            }
+        }
+    }
+
     // Find the opening brace.
-    var i = start;
+    var i = if (field_list) |fl| fl.close + 1 else start;
     while (i < end and tokens[i].kind != .leftBrace) : (i += 1) {}
-    if (i >= end) return null;
+    if (i >= end) {
+        if (kids.items.len == 0) {
+            kids.deinit(gpa);
+            return null;
+        }
+        return try kids.toOwnedSlice(gpa);
+    }
     i += 1; // skip past `{`
 
     while (i < end) : (i += 1) {
@@ -1048,7 +1096,7 @@ pub fn typeDefinition(
         return null;
     };
 
-    const decl_kws = [_]TokenKind{ .record, .@"enum", .interface, .type };
+    const decl_kws = [_]TokenKind{ .record, .@"enum", .interface, .type, .behavior };
     var i: usize = 0;
     while (i < tokens.len) : (i += 1) {
         const tok = tokens[i];
@@ -1434,12 +1482,14 @@ fn enclosingTypeName(source: []const u8, tokens: []const Token, pos: proto.Posit
     while (i < tokens.len) : (i += 1) {
         switch (tokens[i].kind) {
             .record, .@"enum" => {},
+            .type => if (declKindAt(tokens, i) == null) continue,
             else => continue,
         }
         var j = i + 1;
         while (j < tokens.len and tokens[j].kind == .endOfFile) : (j += 1) {}
         if (j >= tokens.len or tokens[j].kind != .identifier) continue;
         const type_name = tokens[j].lexeme;
+        if (tokens[i].kind == .type and typeDeclSpan(tokens, i).?.body == null) continue;
 
         const body = typeBodyBraces(tokens, j) orelse continue;
         const open_off = tokenOffset(source, tokens[body.open]);
@@ -1454,6 +1504,111 @@ fn enclosingTypeName(source: []const u8, tokens: []const Token, pos: proto.Posit
 }
 
 const BodyBraces = struct { open: usize, close: usize };
+
+/// What a `type` declaration spans (1.0.3 surface): an optional `(…)` field
+/// list, an optional `implement` clause and an optional `{…}` body.
+const TypeDeclSpan = struct {
+    /// Index of the name token (`type Name …`), or null for the val-form
+    /// (`val Name = type …`, whose name precedes the keyword).
+    name: ?usize,
+    fields: ?BodyBraces,
+    body: ?BodyBraces,
+    /// Last token of the declaration (`)` or `}`, else the name / generics).
+    last: usize,
+    is_enum: bool,
+};
+
+/// Index of the closer matching the opener at `open` (same-kind nesting).
+fn matchingCloser(tokens: []const Token, open: usize, opener: TokenKind, closer: TokenKind) ?usize {
+    var depth: i32 = 0;
+    var q = open;
+    while (q < tokens.len) : (q += 1) {
+        if (tokens[q].kind == opener) depth += 1;
+        if (tokens[q].kind == closer) {
+            depth -= 1;
+            if (depth == 0) return q;
+        }
+    }
+    return null;
+}
+
+/// When `tokens[kw]` is a `type` keyword that opens a declaration — shorthand
+/// `type Name …` or val-form `val Name = type …` — returns its span; null for
+/// `type` naming the kind of types (`comptime T: type`, `-> type`).
+fn typeDeclSpan(tokens: []const Token, kw: usize) ?TypeDeclSpan {
+    if (tokens[kw].kind != .type) return null;
+    var p = nextSignificantIdx(tokens, kw) orelse return null;
+    var name: ?usize = null;
+    if (tokens[p].kind == .identifier) {
+        name = p;
+    } else {
+        if (prevSignificantKind(tokens, kw) != .equal) return null;
+        switch (tokens[p].kind) {
+            .lessThan, .leftParenthesis, .leftBrace, .implement => {},
+            else => return null,
+        }
+    }
+    var last = name orelse kw;
+    if (name != null) p = nextSignificantIdx(tokens, p) orelse return .{ .name = name, .fields = null, .body = null, .last = last, .is_enum = false };
+    if (tokens[p].kind == .lessThan) {
+        const close = matchingCloser(tokens, p, .lessThan, .greaterThan) orelse return null;
+        last = close;
+        p = nextSignificantIdx(tokens, close) orelse return .{ .name = name, .fields = null, .body = null, .last = last, .is_enum = false };
+    }
+    var fields: ?BodyBraces = null;
+    if (tokens[p].kind == .leftParenthesis) {
+        const close = matchingCloser(tokens, p, .leftParenthesis, .rightParenthesis) orelse return null;
+        fields = .{ .open = p, .close = close };
+        last = close;
+        p = nextSignificantIdx(tokens, close) orelse return .{ .name = name, .fields = fields, .body = null, .last = last, .is_enum = false };
+    }
+    if (tokens[p].kind == .implement) {
+        var q = p + 1;
+        while (q < tokens.len) : (q += 1) {
+            switch (tokens[q].kind) {
+                .identifier, .builtinIdent, .comma, .lessThan, .greaterThan, .dot, .endOfFile, .at, .hash, .leftParenthesis, .rightParenthesis => {},
+                else => break,
+            }
+        }
+        if (q >= tokens.len or tokens[q].kind != .leftBrace) return .{ .name = name, .fields = fields, .body = null, .last = last, .is_enum = false };
+        p = q;
+    }
+    var body: ?BodyBraces = null;
+    var is_enum = false;
+    if (tokens[p].kind == .leftBrace) {
+        const close = matchingCloser(tokens, p, .leftBrace, .rightBrace) orelse return null;
+        body = .{ .open = p, .close = close };
+        last = close;
+        if (fields == null) {
+            // A body whose first member is a name (a variant or a section) is
+            // an enum; one that starts with a method (or is empty) a record.
+            var f = nextSignificantIdx(tokens, p);
+            while (f) |fi| {
+                if (fi >= close) break;
+                if (tokens[fi].kind == .hash) {
+                    const rb = matchingCloser(tokens, fi + 1, .leftSquareBracket, .rightSquareBracket) orelse break;
+                    f = nextSignificantIdx(tokens, rb);
+                    continue;
+                }
+                is_enum = tokens[fi].kind == .identifier or tokens[fi].kind == .numberLiteral;
+                break;
+            }
+        }
+    }
+    return .{ .name = name, .fields = fields, .body = body, .last = last, .is_enum = is_enum };
+}
+
+/// The legacy declaration token kind (`.record`, `.@"enum"`, `.interface`) the
+/// token scanners key on, for either surface: `type` resolves to its shape,
+/// `behavior` to `.interface`. Null when `tokens[i]` opens no declaration.
+fn declKindAt(tokens: []const Token, i: usize) ?TokenKind {
+    return switch (tokens[i].kind) {
+        .record, .@"enum", .interface => tokens[i].kind,
+        .behavior => .interface,
+        .type => if (typeDeclSpan(tokens, i)) |span| (if (span.is_enum) TokenKind.@"enum" else TokenKind.record) else null,
+        else => null,
+    };
+}
 
 /// Given the index of a type's name token, returns the token indices of the
 /// matching `{`…`}` body braces (skipping generic params / a `(…)` field list).
@@ -1604,6 +1759,7 @@ fn findMemberInTokens(
     while (i < tokens.len) : (i += 1) {
         switch (tokens[i].kind) {
             .record, .@"enum" => {},
+            .type => if (declKindAt(tokens, i) == null) continue,
             else => continue,
         }
         if (require_pub and (i == 0 or tokens[i - 1].kind != .@"pub")) continue;
@@ -1613,7 +1769,28 @@ fn findMemberInTokens(
         if (j >= tokens.len or tokens[j].kind != .identifier) continue;
         if (!std.mem.eql(u8, tokens[j].lexeme, type_name)) continue;
 
-        const body = typeBodyBraces(tokens, j) orelse continue;
+        // A 1.0.3 `type` record's fields sit in its `(…)` field list.
+        const span: ?TypeDeclSpan = if (tokens[i].kind == .type) typeDeclSpan(tokens, i) else null;
+        if (span) |sp| if (sp.fields) |fl| {
+            var fdepth: i32 = 0;
+            var f = fl.open;
+            while (f <= fl.close) : (f += 1) {
+                switch (tokens[f].kind) {
+                    .leftParenthesis, .leftSquareBracket, .leftBrace => fdepth += 1,
+                    .rightParenthesis, .rightSquareBracket, .rightBrace => fdepth -= 1,
+                    .identifier => if (fdepth == 1 and std.mem.eql(u8, tokens[f].lexeme, member)) {
+                        if (nextSignificantIdx(tokens, f)) |n| if (tokens[n].kind == .colon)
+                            return try tokenLocation(gpa, uri, tokens[f]);
+                    },
+                    else => {},
+                }
+            }
+        };
+
+        const body = (if (span) |sp| sp.body else typeBodyBraces(tokens, j)) orelse {
+            if (span != null) return null;
+            continue;
+        };
 
         var depth: i32 = 1;
         var q = body.open + 1;
@@ -1742,11 +1919,27 @@ pub fn foldingRanges(
     // implement and `test "name" { … }` blocks. The brace-finder skips the
     // intervening string-literal name, so `test` needs no special handling.
     const block_kws = [_]TokenKind{
-        .@"fn", .record, .@"enum", .interface, .implement, .@"test",
+        .@"fn", .record, .@"enum", .interface, .implement, .@"test", .behavior,
     };
     var i: usize = 0;
     while (i < tokens.len) : (i += 1) {
         const tok = tokens[i];
+        // A 1.0.3 `type` folds from its first opener (`(` of the field list,
+        // or `{`) to its last closer.
+        if (tok.kind == .type) {
+            const span = typeDeclSpan(tokens, i) orelse continue;
+            const first = if (span.fields) |f| f.open else if (span.body) |b| b.open else continue;
+            const open_line = tokens[first].line;
+            const close_line = tokens[span.last].line;
+            if (close_line > open_line) {
+                try ranges.append(gpa, .{
+                    .startLine = @intCast(open_line -| 1),
+                    .endLine = @intCast(close_line -| 1),
+                    .kind = proto.FoldingRangeKind.Region,
+                });
+            }
+            continue;
+        }
         var is_block_kw = false;
         for (block_kws) |k| {
             if (tok.kind == k) {
@@ -2195,7 +2388,7 @@ fn addMissingImportActions(
     idx: *index_mod.ProjectIndex,
 ) !void {
     // Find identifiers on the selected line(s) that are not in bindings.
-    const decl_kws = [_]TokenKind{ .val, .@"fn", .record, .@"enum", .interface, .@"var" };
+    const decl_kws = [_]TokenKind{ .val, .@"fn", .record, .@"enum", .interface, .@"var", .type, .behavior };
 
     var i: usize = 0;
     while (i < tokens.len) : (i += 1) {
@@ -3068,6 +3261,13 @@ pub fn semanticTokens(
     var generic_pending = false; // a declaration name whose next token is `<`
     var generic_depth: u32 = 0; // > 0 while inside that `<…>` list
 
+    // A 1.0.3 `type` declaration: its shape names the declared type (`type_` or
+    // `enum`), and the `(…)` right after its name/generics is a field list
+    // whose `name:` entries are fields, not call-site argument labels.
+    var decl_is_enum = false;
+    var pending_type_fields = false;
+    var type_fields_depth: ?u32 = null;
+
     var i: usize = 0;
     while (i < tokens.len) : (i += 1) {
         const tok = tokens[i];
@@ -3087,6 +3287,7 @@ pub fn semanticTokens(
             .leftBrace => {
                 try containers.append(arena, pending_container);
                 pending_container = .none;
+                pending_type_fields = false;
                 if (awaiting_fn_body) {
                     fn_body_depth = containers.items.len;
                     awaiting_fn_body = false;
@@ -3113,10 +3314,17 @@ pub fn semanticTokens(
                 }
                 expect_fn_name = false;
                 paren_depth += 1;
+                if (pending_type_fields and generic_depth == 0) {
+                    type_fields_depth = paren_depth;
+                    pending_type_fields = false;
+                }
                 prev_kind = tok.kind;
                 continue;
             },
             .rightParenthesis => {
+                if (type_fields_depth) |d| {
+                    if (paren_depth == d) type_fields_depth = null;
+                }
                 if (paren_depth > 0) paren_depth -= 1;
                 if (fn_param_depth) |d| {
                     if (paren_depth == d) {
@@ -3153,9 +3361,14 @@ pub fn semanticTokens(
 
         // Container keywords arm `pending_container` for the next `{`.
         switch (tok.kind) {
-            .interface => pending_container = .interface,
+            .interface, .behavior => pending_container = .interface,
             .record => pending_container = .record,
             .@"enum" => pending_container = .@"enum",
+            .type => if (typeDeclSpan(tokens, i)) |span| {
+                decl_is_enum = span.is_enum;
+                pending_container = if (span.is_enum) .@"enum" else .record;
+                pending_type_fields = span.fields != null;
+            },
             .extend, .extends => pending_container = .extend,
             .implement => pending_container = .implement,
             else => {},
@@ -3267,11 +3480,12 @@ pub fn semanticTokens(
                 // `fn counter() -> @Iterator<i32> :gen { … }` — the trailing
                 // `:label` of an effect fn is syntax, not a binding.
                 type_idx = proto.SemanticTokenTypes.keyword;
-            } else if (pk == .val or pk == .record or pk == .@"enum" or pk == .interface) {
+            } else if (pk == .val or pk == .record or pk == .@"enum" or pk == .interface or pk == .behavior or pk == .type) {
                 type_idx = lookupCategory(bindings, tok.lexeme) orelse switch (pk.?) {
                     .record => proto.SemanticTokenTypes.type_,
                     .@"enum" => proto.SemanticTokenTypes.@"enum",
-                    .interface => proto.SemanticTokenTypes.interface,
+                    .interface, .behavior => proto.SemanticTokenTypes.interface,
+                    .type => if (decl_is_enum) proto.SemanticTokenTypes.@"enum" else proto.SemanticTokenTypes.type_,
                     else => proto.SemanticTokenTypes.variable,
                 };
                 mods |= proto.SemanticTokenModifiers.declaration;
@@ -3282,6 +3496,11 @@ pub fn semanticTokens(
                 type_idx = proto.SemanticTokenTypes.parameter;
                 if (saw_comptime) mods |= proto.SemanticTokenModifiers.readonly;
                 try fn_params.put(arena, tok.lexeme, {});
+            } else if (type_fields_depth != null and paren_depth == type_fields_depth.? and nk == .colon and
+                (pk == .leftParenthesis or pk == .comma or pk == .rightSquareBracket))
+            {
+                // Field declaration inside a `type Name(x: i32, …)` field list.
+                type_idx = proto.SemanticTokenTypes.property;
             } else if (paren_depth > 0 and nk == .colon and (pk == .leftParenthesis or pk == .comma)) {
                 // Named argument at a call site: `Span(start: 0, end: 6)`. The
                 // label names the callee's parameter, so `parameter` — not a
@@ -3596,7 +3815,7 @@ fn isPrimitiveType(name: []const u8) bool {
 /// reclassified as a type by the caller).
 fn isKeywordKind(kind: TokenKind) bool {
     return switch (kind) {
-        .as, .assert, .await, .case, .@"const", .default, .delegate, .@"else", .@"enum", .extend, .extends, .@"fn", .@"for", .from, .@"if", .implement, .import, .new, .@"pub", .@"return", .selfType, .@"test", .throw, .interface, .type, .record, .use, .val, .@"var", .@"comptime", .syntax, .@"break", .loop, .@"continue", .yield, .declare, .null, .@"try", .@"catch" => true,
+        .as, .assert, .await, .case, .@"const", .default, .delegate, .@"else", .@"enum", .extend, .extends, .@"fn", .@"for", .from, .@"if", .implement, .import, .new, .@"pub", .@"return", .selfType, .@"test", .throw, .interface, .behavior, .type, .record, .use, .val, .@"var", .@"comptime", .syntax, .@"break", .loop, .@"continue", .yield, .declare, .null, .@"try", .@"catch" => true,
         else => false,
     };
 }
@@ -4844,7 +5063,7 @@ pub fn references(
         locs.deinit(gpa);
     }
 
-    const decl_values = [_]TokenKind{ .val, .@"fn", .record, .@"enum", .interface };
+    const decl_values = [_]TokenKind{ .val, .@"fn", .record, .@"enum", .interface, .type, .behavior };
 
     for (tokens, 0..) |tok, i| {
         if (tok.kind != .identifier) continue;

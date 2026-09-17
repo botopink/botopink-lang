@@ -1,6 +1,6 @@
 ----- SOURCE
 ```botopink
-val Color = enum { Red, Green, Blue };
+val Color = type { Red, Green, Blue };
 ```
 
 ----- DOCUMENT SYMBOLS
