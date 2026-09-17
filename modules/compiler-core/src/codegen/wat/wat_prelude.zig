@@ -801,10 +801,21 @@ fn func(
     var ps: [params.len]P = undefined;
     for (params, 0..) |n, k| ps[k] = .{ .name = n, .ty = .i32 };
     const params_final = ps;
+    return typedFunc(name, &params_final, result, locals, body);
+}
+
+/// `func` with typed parameters.
+fn typedFunc(
+    comptime name: []const u8,
+    comptime params: []const P,
+    comptime result: ?ast.ValType,
+    comptime locals: []const ast.Local,
+    comptime body: []const Instr,
+) ast.Func {
     const stack: ast.Stack = if (result) |r| .{ .value = r } else .none;
     return .{
         .name = name,
-        .params = &params_final,
+        .params = params,
         .result = result,
         .locals = if (locals.len == 0) &.{} else &.{locals},
         .body = indented(seqOf(body, stack), 4),
@@ -1161,3 +1172,43 @@ const print_arr_i32_raw = func("__print_arr_i32_raw", &.{"xs"}, null, i32s(&.{ "
 } ++ putByte(']') ++ [_]Instr{call("__write_bytes")}));
 
 const print_arr_i32 = func("__print_arr_i32", &.{"xs"}, null, &.{}, &.{ get("xs"), call("__print_arr_i32_raw"), call("__print_nl") });
+
+fn opF(comptime name: []const u8) Instr {
+    return .{ .op = .{ .ty = .f64, .name = name } };
+}
+fn getF(comptime n: []const u8) Instr {
+    return .{ .local_get = n };
+}
+
+/// The text `$__print_f64` writes, as a fresh string: an integer part and up to
+/// six fraction digits with trailing zeros dropped. The fraction digits go to
+/// scratch `168..174` first.
+const f64_to_str = typedFunc("__f64_to_str", &.{.{ .name = "x", .ty = .f64 }}, .i32, &.{
+    .{ .name = "neg", .ty = .i32 }, .{ .name = "frac", .ty = .f64 }, .{ .name = "d", .ty = .i32 },
+    .{ .name = "k", .ty = .i32 },   .{ .name = "last", .ty = .i32 }, .{ .name = "ip", .ty = .i32 },
+    .{ .name = "len", .ty = .i32 }, .{ .name = "p", .ty = .i32 },    .{ .name = "pos", .ty = .i32 },
+}, &.{
+    getF("x"),                                                                             .{ .@"const" = .{ .ty = .f64, .text = "0" } }, opF("lt"),                                                                                              set("neg"),
+    get("neg"),                                                                            when(&.{ getF("x"), opF("neg"), set("x") }),   getF("x"),                                                                                              .{ .convert = "i32.trunc_f64_s" },
+    call("__i32_to_str"),                                                                  set("ip"),                                     getF("x"),                                                                                              getF("x"),
+    opF("floor"),                                                                          opF("sub"),                                    set("frac"),
+    loop(&.{
+        get("k"),                          c32(6),                                         op("ge_s"), brk,
+        getF("frac"),                      .{ .@"const" = .{ .ty = .f64, .text = "10" } }, opF("mul"), set("frac"),
+        getF("frac"),                      .{ .convert = "i32.trunc_f64_s" },              set("d"),   getF("frac"),
+        get("d"),                          .{ .convert = "f64.convert_i32_s" },            opF("sub"), set("frac"),
+        c32(168),                          get("k"),                                       op("add"),  get("d"),
+        c32(48),                           op("add"),                                      store8(0),  get("k"),
+        c32(1),                            op("add"),                                      set("k"),   get("d"),
+        when(&.{ get("k"), set("last") }), again,
+    }),
+    get("ip"),                                                                             load(0),                                       get("neg"),                                                                                             op("add"),
+    set("len"),                                                                            get("last"),                                   when(&.{ get("len"), get("last"), op("add"), c32(1), op("add"), set("len") }),                          get("len"),
+    c32(4),                                                                                op("add"),                                     call("__alloc"),                                                                                        set("p"),
+    get("p"),                                                                              get("len"),                                    store(0),                                                                                               get("p"),
+    c32(4),                                                                                op("add"),                                     set("pos"),                                                                                             get("neg"),
+    when(&.{ get("pos"), c32(45), store8(0), get("pos"), c32(1), op("add"), set("pos") }), get("pos"),                                    get("ip"),                                                                                              c32(4),
+    op("add"),                                                                             get("ip"),                                     load(0),                                                                                                copy,
+    get("pos"),                                                                            get("ip"),                                     load(0),                                                                                                op("add"),
+    set("pos"),                                                                            get("last"),                                   when(&.{ get("pos"), c32(46), store8(0), get("pos"), c32(1), op("add"), c32(168), get("last"), copy }), get("p"),
+});

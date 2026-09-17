@@ -506,6 +506,13 @@ first three are now enforced by the model, not by discipline:
   tag test, not a binding. Payload bindings take the variant field's type (a
   float field is an `f32` slot). List and multi-subject patterns have no test
   yet and run their arm.
+- **A pattern binding that shadows a local of another type** (`Square(s)`
+  inside `fn area(s: Shape)`) is stored in a fresh `s__<n>` local; the arm's
+  uses resolve to it (`resolveName`) until the arm ends.
+- **String `+` with a non-string operand** renders the operand first
+  (`lowerConcatOperand`): an integer through `$__i32_to_str`, a float through
+  `$__f64_to_str` (the same digits `$__print_f64` writes), a bool as
+  `true`/`false` — the rule erlang's E2 fix follows (`integer_to_binary/1`).
 - **`throw` inside a fn returning `@Result`** returns an Error Result
   (`lowerThrow`) — the transform rewrites the common forms into
   `return __bp_error(…)`, but a `throw` inside a `case` arm reaches the

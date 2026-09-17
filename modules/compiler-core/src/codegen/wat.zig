@@ -440,6 +440,13 @@ const Emitter = struct {
     /// Whether the function being emitted has a `(result …)`. Drives the
     /// value/void normalisation of the body's tail and of `return <expr>`.
     fn_has_result: bool = false,
+    /// Names a `case` arm rebinds with a different wasm type than the local
+    /// already declared under that name (a pattern `Square(s)` inside
+    /// `fn area(s: Shape)`): the arm's uses read `s__<n>` instead.
+    aliases: std.StringHashMap([]const u8),
+    /// Locals first declared by a `case` pattern (their type is the pattern's).
+    pattern_locals: std.StringHashMap(void),
+    alias_seq: u32 = 0,
     /// The function being emitted returns a `@Result` (`#[@result]`, or a
     /// declared `-> @Result<…>`).
     fn_returns_result: bool = false,
@@ -604,6 +611,8 @@ const Emitter = struct {
             .fn_refs = std.StringHashMap(u32).init(alloc),
             .iface_assoc = std.StringHashMap(ast.InterfaceMethod).init(alloc),
             .host_fns = std.StringHashMap(void).init(alloc),
+            .aliases = std.StringHashMap([]const u8).init(alloc),
+            .pattern_locals = std.StringHashMap(void).init(alloc),
             .assoc_emitted = std.StringHashMap(void).init(alloc),
         };
         return em;
@@ -659,6 +668,8 @@ const Emitter = struct {
         self.fn_refs.deinit();
         self.iface_assoc.deinit();
         self.host_fns.deinit();
+        self.aliases.deinit();
+        self.pattern_locals.deinit();
         self.assoc_needed.deinit(self.alloc);
         self.assoc_emitted.deinit();
     }
@@ -912,7 +923,8 @@ const Emitter = struct {
     fn recordTypeOfExpr(self: *Emitter, e: ast.Expr) ?[]const u8 {
         return switch (e) {
             .identifier => |id| switch (id.kind) {
-                .ident => |name| blk: {
+                .ident => |name0| blk: {
+                    const name = self.resolveName(name0);
                     if (std.mem.eql(u8, name, "self")) {
                         const st = self.self_type orelse break :blk null;
                         break :blk self.resolveRecordName(st);
@@ -1088,6 +1100,8 @@ const Emitter = struct {
         self.arr_elem_locals.clearRetainingCapacity();
         self.result_shape_locals.clearRetainingCapacity();
         self.result_subjects.clearRetainingCapacity();
+        self.aliases.clearRetainingCapacity();
+        self.pattern_locals.clearRetainingCapacity();
         self.bool_locals.clearRetainingCapacity();
         self.pending_locals.clearRetainingCapacity();
         self.cur_result = result_type orelse "i32";
@@ -1894,7 +1908,12 @@ const Emitter = struct {
                         (if (i < fv.variant.fields.len) watType(fv.variant.fields[i].typeRef) else "i32")
                     else
                         "i32";
-                    try self.declareLocal(f, ty);
+                    // A name already declared (a parameter) keeps its slot and
+                    // the arm binds an alias instead — see `bindName`.
+                    if (!self.locals.contains(f)) {
+                        try self.declareLocal(f, ty);
+                        try self.pattern_locals.put(f, {});
+                    }
                 },
                 .literals => |pats| for (pats) |sub| try self.declarePatternLocals(sub),
             },
@@ -2397,7 +2416,8 @@ const Emitter = struct {
                 .comment => {},
             },
             .identifier => |id| switch (id.kind) {
-                .ident => |n| {
+                .ident => |n0| {
+                    const n = self.resolveName(n0);
                     // `true`/`false` are bound as identifiers (bool builtins),
                     // not literals. wasm has no boolean type — they lower to
                     // the same `i32` 0/1 a comparison yields. Without this they
@@ -2960,7 +2980,7 @@ const Emitter = struct {
         return switch (e) {
             .identifier => |id| switch (id.kind) {
                 .ident => |n| std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false") or
-                    self.bool_locals.contains(n) or self.bool_globals.contains(n),
+                    self.bool_locals.contains(self.resolveName(n)) or self.bool_globals.contains(n),
                 else => false,
             },
             .unaryOp => |un| un.op == .not,
@@ -3014,6 +3034,7 @@ const Emitter = struct {
         if (self.patternIsIrrefutable(arm.pattern)) {
             try self.bindPattern(arm.pattern, subj);
             try self.lowerCoerced(arm.body, self.cur_result);
+            self.aliases.clearRetainingCapacity();
             return;
         }
         try self.emitPatternTest(arm.pattern, subj);
@@ -3136,6 +3157,28 @@ const Emitter = struct {
         }
     }
 
+    fn resolveName(self: *Emitter, n: []const u8) []const u8 {
+        return self.aliases.get(n) orelse n;
+    }
+
+    /// The local a pattern binding `n` of wasm type `ty` is stored in: `n`
+    /// itself, or — when `n` is already a local of another type — a fresh
+    /// alias the arm's uses resolve to (until `emitCaseArms` drops it).
+    fn bindName(self: *Emitter, n: []const u8, ty: []const u8) ![]const u8 {
+        if (self.locals.get(n)) |existing| {
+            if (!std.mem.eql(u8, existing, ty) and !self.pattern_locals.contains(n)) {
+                const alias = try std.fmt.allocPrint(self.arena(), "{s}__{d}", .{ n, self.alias_seq });
+                self.alias_seq += 1;
+                try self.declareLocal(alias, ty);
+                try self.aliases.put(n, alias);
+                return alias;
+            }
+        }
+        _ = self.aliases.remove(n);
+        try self.declareLocal(n, ty);
+        return n;
+    }
+
     /// Bind the names a pattern introduces, from the subject held in `subj`.
     fn bindPattern(self: *Emitter, p: ast.Pattern, subj: []const u8) anyerror!void {
         switch (p) {
@@ -3152,13 +3195,13 @@ const Emitter = struct {
                     .fields => |fs| fs,
                     .literals => return,
                 };
-                for (names, 0..) |n, i| {
+                for (names, 0..) |n0, i| {
                     const field_ty: ?ast.TypeRef = switch (ref) {
                         .user => |fv| if (i < fv.variant.fields.len) fv.variant.fields[i].typeRef else null,
                         else => null,
                     };
                     const ty = if (field_ty) |t| watType(t) else "i32";
-                    try self.declareLocal(n, ty);
+                    const n = try self.bindName(n0, ty);
                     const local_ty = self.locals.get(n) orelse ty;
                     if (field_ty) |t| {
                         if (isStringTypeRef(t)) try self.str_locals.put(n, {});
@@ -3209,6 +3252,7 @@ const Emitter = struct {
         self.open(&then_c);
         try self.bindPattern(arms[idx].pattern, subj);
         try self.lowerCoerced(body, self.cur_result);
+        self.aliases.clearRetainingCapacity();
         const then_seq = self.seal(&then_c, .{ .value = ty });
 
         var else_c: Capture = .{};
@@ -4037,7 +4081,7 @@ const Emitter = struct {
     fn elemKindOf(self: *Emitter, e: ast.Expr) ElemKind {
         return switch (e) {
             .identifier => |id| switch (id.kind) {
-                .ident => |n| self.arr_elem_locals.get(n) orelse self.arr_elem_globals.get(n) orelse .i32,
+                .ident => |n| self.arr_elem_locals.get(self.resolveName(n)) orelse self.arr_elem_globals.get(n) orelse .i32,
                 .identAccess => |ia| blk: {
                     const rty = self.recordTypeOfExpr(ia.receiver.*) orelse break :blk .i32;
                     const fields = self.records.get(rty) orelse break :blk .i32;
@@ -4681,7 +4725,7 @@ const Emitter = struct {
                 else => false,
             },
             .identifier => |id| switch (id.kind) {
-                .ident => |n| self.str_locals.contains(n) or self.str_globals.contains(n),
+                .ident => |n| self.str_locals.contains(self.resolveName(n)) or self.str_globals.contains(n),
                 .identAccess => |ia| blk: {
                     // A record field declared `string`.
                     const rty = self.recordTypeOfExpr(ia.receiver.*) orelse break :blk false;
@@ -4772,7 +4816,7 @@ const Emitter = struct {
     fn resultShapeOf(self: *Emitter, e: ast.Expr) ?ResultShape {
         return switch (e) {
             .identifier => |id| switch (id.kind) {
-                .ident => |n| self.result_shape_locals.get(n),
+                .ident => |n| self.result_shape_locals.get(self.resolveName(n)),
                 else => null,
             },
             .call => |c| switch (c.kind) {
@@ -4837,9 +4881,39 @@ const Emitter = struct {
     /// `a + b` on strings → a fresh length-prefixed buffer. Both operands are
     /// plain pointers, so this works for runtime values as well as literals.
     fn lowerStrConcat(self: *Emitter, a: ast.Expr, b: ast.Expr) anyerror!void {
-        try self.lowerValue(a);
-        try self.lowerValue(b);
+        try self.lowerConcatOperand(a);
+        try self.lowerConcatOperand(b);
         try self.emit(self.builder().helper(.str_concat));
+    }
+
+    /// One operand of a string `+`. A non-string operand is rendered as text
+    /// first — its decimal digits, or `true`/`false` — the rule the erlang
+    /// backend's E2 fix follows (`integer_to_binary/1`). It used to be added as
+    /// if it were a string pointer.
+    fn lowerConcatOperand(self: *Emitter, e: ast.Expr) anyerror!void {
+        if (self.isStringExpr(e)) return self.lowerValue(e);
+        if (self.isBoolExpr(e)) {
+            try self.lowerCoerced(e, "i32");
+            const t = try self.internString("true");
+            const f = try self.internString("false");
+            var then_c: Capture = .{};
+            self.open(&then_c);
+            try self.emit(try self.constInt(t.offset));
+            const then_seq = self.seal(&then_c, .{ .value = .i32 });
+            var else_c: Capture = .{};
+            self.open(&else_c);
+            try self.emit(try self.constInt(f.offset));
+            const else_seq = self.seal(&else_c, .{ .value = .i32 });
+            try self.emit(.{ .@"if" = .{ .result = .i32, .then = .{ .seq = then_seq }, .@"else" = .{ .seq = else_seq } } });
+            return;
+        }
+        if (self.wasmTypeOf(e)[0] == 'f') {
+            try self.lowerCoerced(e, "f64");
+            try self.emit(self.builder().helper(.f64_to_str));
+            return;
+        }
+        try self.lowerCoerced(e, "i32");
+        try self.emit(self.builder().helper(.i32_to_str));
     }
 
     /// A `recv.slice(...)` method call. Codegen is untyped, so a `slice` with a
@@ -4901,7 +4975,7 @@ const Emitter = struct {
     fn isArrayExpr(self: *Emitter, e: ast.Expr) bool {
         return switch (e) {
             .identifier => |id| switch (id.kind) {
-                .ident => |n| self.arr_locals.contains(n) or self.arr_globals.contains(n),
+                .ident => |n| self.arr_locals.contains(self.resolveName(n)) or self.arr_globals.contains(n),
                 else => false,
             },
             .collection => |col| switch (col.kind) {
@@ -5048,7 +5122,7 @@ const Emitter = struct {
                 else => "i32",
             },
             .identifier => |id| switch (id.kind) {
-                .ident => |n| self.locals.get(n) orelse self.global_types.get(n) orelse "i32",
+                .ident => |n| self.locals.get(self.resolveName(n)) orelse self.global_types.get(n) orelse "i32",
                 else => "i32",
             },
             .unaryOp => |un| switch (un.op) {

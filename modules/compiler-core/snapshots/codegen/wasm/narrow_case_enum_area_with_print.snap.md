@@ -22,6 +22,7 @@ fn main() {
   (func $area (param $s i32) (result f64)
     (local $r f64)
     (local $__case_0 i32)
+    (local $s__0 f64)
     local.get $s
     local.set $__case_0
     local.get $__case_0
@@ -49,12 +50,12 @@ fn main() {
     (if (result f64)
       (then
     local.get $__case_0
-    i32.load offset=4
-    local.set $s
-    local.get $s
-    local.get $s
-    i32.mul
-    f64.convert_i32_s
+    f32.load offset=4
+    f64.promote_f32
+    local.set $s__0
+    local.get $s__0
+    local.get $s__0
+    f64.mul
       )
       (else
     f64.const 0
