@@ -471,9 +471,6 @@ first three are now enforced by the model, not by discipline:
   (`lowerRangeLoop`) and array loops (`lowerCollectionLoop`), `@print` via WASI
   `fd_write`, `_botopink_main`/`_start`.
 - **Known gaps** (loadable, but not yet right):
-  - lambdas as *values* lower to `i32.const 0 ;; lambda` (no table /
-    `call_indirect`); a lambda passed to `map`/`filter`/`@Result` chaining is
-    inlined instead (`inlineLambdaBody`), which is why those work;
   - `loop` over anything that is not a range or a known array blob emits
     `i32.const 0 ;; loop over unknown iterable` — `isArrayExpr` is deliberately
     narrow (array literal, or a name bound to one, via `arr_locals`/
@@ -537,6 +534,28 @@ first three are now enforced by the model, not by discipline:
   literals, `T[]`/`Array<T>` annotations and the op that produced the array;
   `join`/`indexOf`/`contains` and a lambda's element parameter use it. An
   `i32` array prints as `[1,2,3]` (`$__print_arr_i32`).
+- **Function values** (`lowerLambdaValue`, `lowerValueCall`): a lambda used as
+  a value is lifted into `$__lambda{n}(env, a0, …) -> i32` and listed in the
+  module's `(table funcref (elem …))`; the value is a pointer to an environment
+  cell — `[table index][captured local]…`, the captures copied at creation (a
+  snapshot: assigning an outer local inside a lifted lambda does not change
+  it). `f(a)` on a local/global/record field holding one is `call_indirect`
+  with the cell as the first argument. A top-level fn used as a value is a
+  closure over a trampoline `$__fnref_<fn>`. Every parameter and the result are
+  `i32`. A lambda passed straight to an array method or a `@Result`/`@Option`
+  op is inlined instead, which is what lets `forEach` assign outer locals.
+- **Interface associated `default fn`s** (`Pair.of`, `Function.compose`) are
+  registered as `$<Iface>_<name>` and emitted only when a call reaches them
+  (`emitPendingFns`, after the declarations and `$__init_globals`). A record's
+  own fn called on the type (`Response.ok(…)`) calls `$<Record>_<fn>`.
+- **Host-backed `declare fn`** (`#[@External.<Target>(…)]`, no body) — *the
+  decision*: wasm has no host to bind one to, and no WASI call stands in for an
+  arbitrary host symbol, so a call to one is a **documented trap**:
+  `unreachable ;; host-backed declare fn <name>/<n>: no wasm host`. Not a
+  compile-time error: the other three targets compile the same module, and a
+  program that never reaches the call still runs. The primitive methods
+  `libs/std/src/primitives.bp` declares host-backed (`toUpper`, `join`, …) are
+  not in this class — they are lowered natively (`lowerPrimMethod`).
 - **Record inherent methods** (`lowerRecordMethod`): a call inference tagged
   `.record` lowers to `call $<Record>_<method>` with the receiver as `self`. A
   record method with a declared return type always has a `(result …)`, even
@@ -555,8 +574,14 @@ first three are now enforced by the model, not by discipline:
   literal lambda body (param bound to a `$_res{n}` local). `try`/`catch` → `if`
   on the tag.
 - **Effects**: eager; `__bp_future_rejected` → `unreachable`.
-- **Cross-module**: single-module only. An import resolving to another module's
-  export emits `;; cross-module import not linked (wasm single-module)`.
+- **Cross-module: static linking** (`collectLinks`): wasm has no module linking
+  at run time, so a module that imports from another gets the owner's
+  declarations emitted into it — transitively, dependencies first, minus the
+  owner's `main`, tests and any name the consumer defines, and without the
+  owner's exports. An import resolves through the export index
+  (`import {double} from "math"`) or by module basename
+  (`import {order} from "std"`). Each linked declaration is lowered with its
+  own module's loc-keyed tables (`rewrites`, `instance_lowerings`).
 - **Comptime-only builtins** (`@emit`, `@compilerError`, `Binding.ref`) have
   no wasm lowering: they only run inside comptime bodies, which the comptime
   pass evaluates on `erl`. A program module that reaches one traps

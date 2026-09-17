@@ -17,7 +17,7 @@ fn main() {
   (global $__heap_ptr (mut i32) (i32.const 256))
   ;; declare fn floor — no wasm implementation (host-backed)
   (func $main
-    unreachable ;; unresolved call: floor/1
+    unreachable ;; host-backed declare fn floor/1: no wasm host
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")

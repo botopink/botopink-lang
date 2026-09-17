@@ -110,6 +110,9 @@ pub const Instr = union(enum) {
     /// `call $<func>` — the symbol must be one the module declares (see
     /// `Module.validate`).
     call: []const u8,
+    /// `call_indirect (param …) (result …)` — a call through the module's
+    /// function table. The table index is the last operand.
+    call_indirect: FuncType,
     br: []const u8,
     br_if: []const u8,
     drop,
@@ -254,6 +257,9 @@ pub const Item = union(enum) {
     memory: Memory,
     /// `(start $name)`.
     start: []const u8,
+    /// `(table funcref (elem $f0 $f1 …))` — the functions a `call_indirect`
+    /// can reach, by table index.
+    table: []const []const u8,
     data: DataSegment,
     global: Global,
     func: Func,
@@ -278,7 +284,8 @@ pub const Invalid = error{
     BranchMismatch,
     /// A value-form `if` with no `(else …)`.
     MissingElse,
-    /// `call $x` where `x` is neither defined nor imported.
+    /// `call $x` where `x` is neither defined nor imported, or a table entry
+    /// naming a function the module does not define.
     UndefinedCall,
 };
 
@@ -331,6 +338,9 @@ pub fn validateModule(m: Module) Invalid!void {
         .func => |f| {
             try validateFunc(f);
             try checkCalls(m, f.body);
+        },
+        .table => |names| for (names) |n| {
+            if (!declaresCall(m, n)) return error.UndefinedCall;
         },
         else => {},
     };

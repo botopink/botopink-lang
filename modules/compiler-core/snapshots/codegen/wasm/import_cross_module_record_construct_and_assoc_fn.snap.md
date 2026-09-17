@@ -56,19 +56,49 @@ fn main() {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
-  ;; cross-module import not linked (wasm single-module): Response from http
-  ;; cross-module import not linked (wasm single-module): App from http
+  (data (i32.const 256) "\02\00\00\00hi")
+  (data (i32.const 264) "\01\00\00\00/")
+  (global $__heap_ptr (mut i32) (i32.const 272))
+  (func $Response_ok (param $body i32) (result i32)
+    (local $__mem0 i32)
+    global.get $__heap_ptr
+    local.set $__mem0
+    global.get $__heap_ptr
+    i32.const 4
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem0
+    local.get $body
+    i32.store
+    local.get $__mem0
+    return
+  )
   (func $main
+    (local $__mem0 i32)
     (local $r i32)
     (local $a i32)
-    unreachable ;; unresolved call: ok/1
+    i32.const 256
+    call $Response_ok
     local.set $r
-    i32.const 0 ;; field access .body (unknown receiver type)
-    call $__print_i32
-    unreachable ;; unresolved call: App/2
+    local.get $r
+    i32.load ;; .body
+    call $__print_str
+    global.get $__heap_ptr
+    local.set $__mem0
+    global.get $__heap_ptr
+    i32.const 8
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem0
+    i32.const 8080
+    i32.store
+    local.get $__mem0
+    i32.const 264
+    i32.store offset=4
+    local.get $__mem0
     local.set $a
-    i32.const 0 ;; field access .port (unknown receiver type)
+    local.get $a
+    i32.load ;; .port
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
@@ -253,6 +283,19 @@ fn main() {
         br $loop
       )
     )
+  )
+  (func $__print_str_raw (param $s i32)
+    local.get $s
+    i32.const 4
+    i32.add
+    local.get $s
+    i32.load
+    call $__write_bytes
+  )
+  (func $__print_str (param $s i32)
+    local.get $s
+    call $__print_str_raw
+    call $__print_nl
   )
 )
 ```

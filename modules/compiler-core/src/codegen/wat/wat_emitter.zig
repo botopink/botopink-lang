@@ -33,6 +33,11 @@ fn renderItem(w: *Writer, it: ast.Item) Error!void {
         .import => |im| try import(w, im),
         .memory => |mem| try memory(w, mem),
         .start => |name| try w.print("  (start ${s})\n", .{name}),
+        .table => |names| {
+            try w.writeAll("  (table funcref (elem");
+            for (names) |n| try w.print(" ${s}", .{n});
+            try w.writeAll("))\n");
+        },
         .data => |d| try dataSegment(w, d),
         .global => |g| try global(w, g),
         .func => |f| try func(w, f),
@@ -208,6 +213,15 @@ fn instr(w: *Writer, i: ast.Instr) Error!void {
             if (m.offset != 0) try w.print(" offset={d}", .{m.offset});
         },
         .call => |n| try w.print("call ${s}", .{n}),
+        .call_indirect => |t| {
+            try w.writeAll("call_indirect");
+            if (t.params.len > 0) {
+                try w.writeAll(" (param");
+                for (t.params) |p| try w.print(" {s}", .{p.text()});
+                try w.writeAll(")");
+            }
+            if (t.result) |r| try w.print(" (result {s})", .{r.text()});
+        },
         .br => |l| try w.print("br ${s}", .{l}),
         .br_if => |l| try w.print("br_if ${s}", .{l}),
         .drop => try w.writeAll("drop"),

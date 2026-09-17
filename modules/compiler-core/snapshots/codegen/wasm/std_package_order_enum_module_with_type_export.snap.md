@@ -145,6 +145,44 @@ fn main() {
   (memory (export "memory") 1)
   (data (i32.const 256) "\04\00\00\00less")
   (global $__heap_ptr (mut i32) (i32.const 264))
+  (func $lt (result i32)
+    i32.const 0 ;; Order.Lt
+    return
+  )
+  (func $eq (result i32)
+    i32.const 1 ;; Order.Eq
+    return
+  )
+  (func $gt (result i32)
+    i32.const 2 ;; Order.Gt
+    return
+  )
+  (func $toInt (param $o i32) (result i32)
+    (local $n i32)
+    (local $Lt i32)
+    (local $Eq i32)
+    (local $__case_0 i32)
+    local.get $o
+    local.set $__case_0
+    i32.const 0
+    i32.const 1
+    i32.sub
+    local.set $n
+    local.get $n
+    return
+  )
+  (func $reverse (param $o i32) (result i32)
+    (local $r i32)
+    (local $Lt i32)
+    (local $Gt i32)
+    (local $__case_0 i32)
+    local.get $o
+    local.set $__case_0
+    i32.const 2 ;; Order.Gt
+    local.set $r
+    local.get $r
+    return
+  )
   (func $describe (param $o i32) (result i32)
     (local $s i32)
     (local $Lt i32)
@@ -158,9 +196,11 @@ fn main() {
     return
   )
   (func $main
-    unreachable ;; unresolved call: toInt/1
+    call $lt
+    call $toInt
     call $__print_i32
-    unreachable ;; unresolved call: reverse/1
+    call $lt
+    call $reverse
     call $describe
     call $__print_str
   )

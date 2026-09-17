@@ -17,7 +17,7 @@ fn main() {
   (global $__heap_ptr (mut i32) (i32.const 256))
   ;; declare fn str_length — no wasm implementation (host-backed)
   (func $main
-    unreachable ;; unresolved call: str_length/1
+    unreachable ;; host-backed declare fn str_length/1: no wasm host
     call $__print_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")

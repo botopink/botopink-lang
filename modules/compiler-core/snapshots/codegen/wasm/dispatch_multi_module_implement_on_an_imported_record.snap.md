@@ -38,14 +38,24 @@ fn main() {
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  ;; cross-module import not linked (wasm single-module): Pato from pond
   (func $Pato_swim (param $self i32) (result i32)
-    i32.const 0 ;; field access .id (unknown receiver type)
+    local.get $self
+    i32.load ;; .id
     return
   )
   (func $main
+    (local $__mem0 i32)
     (local $donald i32)
-    unreachable ;; unresolved call: Pato/1
+    global.get $__heap_ptr
+    local.set $__mem0
+    global.get $__heap_ptr
+    i32.const 4
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem0
+    i32.const 2
+    i32.store
+    local.get $__mem0
     local.set $donald
     local.get $donald
     call $Pato_swim
