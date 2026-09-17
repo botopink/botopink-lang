@@ -3,7 +3,7 @@
 //! It renders the declaration subset of the shared model (`js_ast.zig`):
 //! `TsDecl`, `TsMember`, `TsParam` and `TsType`. A type is always a node, so a
 //! declaration cannot carry a type the backend spelled by hand, and a
-//! parameter with no type has to name the `TsType.missing` bridge explicitly.
+//! parameter always has one (`any` when the source wrote none).
 
 const std = @import("std");
 const Ast = @import("js_ast.zig");
@@ -69,8 +69,6 @@ pub fn writeType(w: *Writer, t: Ast.TsType) Error!void {
             }
             try w.writeAll(" }");
         },
-        // BRIDGE: no type was carried for this position.
-        .missing => {},
     }
 }
 
@@ -265,11 +263,4 @@ test "ts_emitter: declarations" {
         .{ .method = .{ .name = "greet", .params = &.{}, .ret = .{ .name = "string" } } },
     } } });
     try expectDecl("import { a, b } from \"std\";\n", .{ .import = .{ .names = &.{ "a", "b" }, .source = "std" } });
-}
-
-test "ts_emitter: a parameter with no type has to name the bridge" {
-    try expectDecl(
-        "export declare function f(s: ): string;\n",
-        .{ .func = .{ .name = "f", .params = &.{.{ .name = "s", .type = .missing }}, .ret = .{ .name = "string" } } },
-    );
 }

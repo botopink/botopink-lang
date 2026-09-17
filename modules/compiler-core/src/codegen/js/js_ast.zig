@@ -16,13 +16,12 @@
 //!
 //! ## Bridges
 //!
-//! Two forms exist only to keep shapes the current lowering still produces but
-//! that the model would otherwise forbid. They are the complete list of ways a
-//! JS backend can still emit something illegal, each one has to be named
-//! explicitly at the build site, and each is documented in `AGENTS.md`:
+//! One form exists only to keep a shape the current lowering still produces but
+//! that the model would otherwise forbid. It is the complete list of ways a
+//! JS backend can still emit something illegal, it has to be named explicitly
+//! at the build site, and it is documented in `AGENTS.md`:
 //!
 //! * `Pattern.match`              — a match pattern used as a binding target.
-//! * `TsType.missing`             — a `.d.ts` position with no type.
 //!
 //! Nodes borrow their slices: build them in an arena that outlives rendering.
 
@@ -430,8 +429,8 @@ pub const Item = union(enum) {
 // ── typescript ───────────────────────────────────────────────────────────────
 
 /// The `.d.ts` declaration subset. A type is a node, never a bare string: a
-/// parameter carries a `TsType`, so "a parameter with no type" has to be
-/// spelled `.missing` at the build site.
+/// parameter carries a `TsType`, so it cannot be an empty string that renders
+/// as `x: `.
 pub const TsType = union(enum) {
     /// A type name, written verbatim (`string`, `i32`, `Person`).
     name: []const u8,
@@ -450,9 +449,6 @@ pub const TsType = union(enum) {
     /// `{ a: A; b: B }` / `{ a: A, b: B }` — the separator differs between the
     /// inferred-type and the type-reference spellings.
     object: struct { fields: []const TsField, sep: []const u8 = ", " },
-    /// BRIDGE — no type was carried for this position. Renders as nothing,
-    /// which is how `(s: )` gets emitted. See `AGENTS.md` (defect JS-5).
-    missing,
 };
 
 pub const TsField = struct {

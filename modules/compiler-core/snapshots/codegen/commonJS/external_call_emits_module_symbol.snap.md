@@ -26,7 +26,7 @@ _botopink_main();
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-export declare function str_length(s: ): i32;
+export declare function str_length(s: string): i32;
 
 
 

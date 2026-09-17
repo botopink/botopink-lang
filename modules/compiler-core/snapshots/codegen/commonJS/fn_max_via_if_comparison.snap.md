@@ -31,7 +31,7 @@ _botopink_main();
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-export declare function max(a: , b: ): i32;
+export declare function max(a: i32, b: i32): i32;
 
 
 

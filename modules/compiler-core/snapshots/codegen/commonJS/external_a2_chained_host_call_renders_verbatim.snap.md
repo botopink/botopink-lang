@@ -25,7 +25,7 @@ _botopink_main();
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-export declare function b64encode(s: ): string;
+export declare function b64encode(s: string): string;
 
 
 

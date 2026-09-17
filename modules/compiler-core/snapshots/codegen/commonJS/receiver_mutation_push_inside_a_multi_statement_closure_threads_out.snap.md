@@ -134,7 +134,7 @@ _botopink_main();
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-export declare function component(decl: ): void;
+export declare function component(decl: Decl): void;
 
 
 

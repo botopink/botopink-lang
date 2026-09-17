@@ -26,7 +26,7 @@ _botopink_main();
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-export declare function abs(n: ): i32;
+export declare function abs(n: i32): i32;
 
 
 

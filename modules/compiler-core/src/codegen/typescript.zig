@@ -178,7 +178,7 @@ const Builder = struct {
     fn delegate(self: *Builder, d: ast.DelegateDecl) Error!js.TsDecl {
         if (!d.isPub) return .none;
         const ps = try self.b.arena.alloc(js.TsParam, d.params.len);
-        for (d.params, 0..) |p, i| ps[i] = .{ .name = p.name, .type = namedType(p.typeName) };
+        for (d.params, 0..) |p, i| ps[i] = .{ .name = p.name, .type = try self.typeRef(p.typeRef) };
         const ret = try self.b.typePtr(if (d.returnType) |r| namedType(r) else js.TsType{ .name = "void" });
         return .{ .type_alias = .{
             .name = d.name,
@@ -192,7 +192,7 @@ const Builder = struct {
         var out: std.ArrayListUnmanaged(js.TsParam) = .empty;
         for (ps) |p| {
             if (std.mem.eql(u8, p.name, "self")) continue;
-            try out.append(self.b.arena, .{ .name = p.name, .type = namedType(p.typeName) });
+            try out.append(self.b.arena, .{ .name = p.name, .type = try self.typeRef(p.typeRef) });
         }
         return out.toOwnedSlice(self.b.arena);
     }
@@ -203,11 +203,11 @@ const Builder = struct {
 
     // ── types ────────────────────────────────────────────────────────────────
 
-    /// A type the frontend carries as a name. An empty name means the binding
-    /// carries no type at all — the `.missing` bridge, so the gap is visible in
-    /// the model instead of being an empty string nobody notices.
+    /// A type the frontend carries as a name (an interface field, a delegate's
+    /// return). A position with no written type is `any`, TypeScript's own
+    /// spelling of "not constrained" — never an empty `x: `.
     fn namedType(name: []const u8) js.TsType {
-        return if (name.len == 0) .missing else .{ .name = name };
+        return .{ .name = if (name.len == 0) "any" else name };
     }
 
     fn derefType(ty: comptimeMod.Type) comptimeMod.Type {
@@ -258,7 +258,8 @@ const Builder = struct {
     /// A syntactic type reference (`ast.TypeRef`), as `.d.ts` spells it.
     fn typeRef(self: *Builder, tr: ast.TypeRef) Error!js.TsType {
         switch (tr) {
-            .named => |n| return .{ .name = n },
+            // A parameter the source leaves unannotated carries an empty name.
+            .named => |n| return namedType(n),
             .array => |inner| return .{ .array = try self.b.typePtr(try self.typeRef(inner.*)) },
             .tuple_ => |elems| {
                 const out = try self.b.arena.alloc(js.TsType, elems.len);
@@ -314,6 +315,8 @@ const Builder = struct {
         if (host) |h| if (g.args.len >= 1) {
             return .{ .generic = .{ .name = h, .args = try self.b.types(&.{try self.typeRef(g.args[0])}) } };
         };
+        // `@Decl` with no type arguments is the plain name, never `Decl<>`.
+        if (g.args.len == 0) return .{ .name = g.name };
         const args = try self.b.arena.alloc(js.TsType, g.args.len);
         for (g.args, 0..) |a, i| args[i] = try self.typeRef(a);
         return .{ .generic = .{ .name = g.name, .args = args } };

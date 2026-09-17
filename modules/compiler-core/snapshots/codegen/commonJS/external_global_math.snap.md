@@ -26,7 +26,7 @@ _botopink_main();
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-export declare function floor(n: ): f64;
+export declare function floor(n: f64): f64;
 
 
 

@@ -46,7 +46,8 @@ js/
 - **An `if` carries an `Expr` condition**, so there is no empty condition to
   forget to fill in.
 - **A `.d.ts` parameter carries a `TsType`**, never a string, so a parameter
-  with no type has to be spelled out rather than being an empty string that
+  always has a type: `typescript.zig` builds it from the parameter's
+  `TypeRef` (`any` where the source wrote none), never an empty string that
   renders as `x: `.
 - **Layout is part of the model where the emitted bytes depend on it**
   (`Block.Layout`, `Array.Layout`, `Object.Layout`) — the same rule
@@ -54,16 +55,15 @@ js/
 
 ## Bridges (the known defects, pinned)
 
-Two forms exist only because the current lowering still produces shapes the
-model would otherwise forbid. They are the **complete** list of ways a JS
-backend can emit something illegal; each has to be named explicitly at the
-build site, so `rg '\.missing|\.match'`
+One form exists only because the current lowering still produces a shape the
+model would otherwise forbid. It is the **complete** list of ways a JS
+backend can emit something illegal; it has to be named explicitly at the
+build site, so `rg '\.match = '`
 finds every one. Fixing a defect means deleting its build site, not its node.
 
 | Bridge | Renders | Defect |
 |---|---|---|
 | `Pattern.match` | botopink's own pattern spelling | **JS-4** a match pattern used as a JS binding target (`const Circle(r) = …`) |
-| `TsType.missing` | nothing | **JS-5** a `.d.ts` parameter whose type the frontend does not carry: `f(s: )` |
 
 `Expr.host` is **not** a bridge: it carries the literal text of an
 `#[@External.Node("…")]` annotation, which is host code by definition — the
