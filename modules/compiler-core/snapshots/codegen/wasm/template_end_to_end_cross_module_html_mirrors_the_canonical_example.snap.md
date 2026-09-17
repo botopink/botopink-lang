@@ -132,7 +132,7 @@ main() ->
   (global $page (mut i32) (i32.const 0))
   (func $main
     global.get $page
-    call $__print_i32
+    call $__print_str
   )
   (func $__init_globals
     i32.const 268
@@ -326,6 +326,19 @@ main() ->
         br $loop
       )
     )
+  )
+  (func $__print_str_raw (param $s i32)
+    local.get $s
+    i32.const 4
+    i32.add
+    local.get $s
+    i32.load
+    call $__write_bytes
+  )
+  (func $__print_str (param $s i32)
+    local.get $s
+    call $__print_str_raw
+    call $__print_nl
   )
   (func $__str_concat (param $a i32) (param $b i32) (result i32)
     (local $base i32) (local $alen i32) (local $blen i32)

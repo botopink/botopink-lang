@@ -40,11 +40,11 @@ fn main() {
     call $build_$0
     local.set $r3
     local.get $r1
-    call $__print_i32
+    call $__print_str
     local.get $r2
-    call $__print_i32
+    call $__print_str
     local.get $r3
-    call $__print_i32
+    call $__print_str
   )
   (func $build_$0 (param $name i32) (result i32)
     (local $prefix i32)
@@ -250,6 +250,19 @@ fn main() {
         br $loop
       )
     )
+  )
+  (func $__print_str_raw (param $s i32)
+    local.get $s
+    i32.const 4
+    i32.add
+    local.get $s
+    i32.load
+    call $__write_bytes
+  )
+  (func $__print_str (param $s i32)
+    local.get $s
+    call $__print_str_raw
+    call $__print_nl
   )
   (func $__str_concat (param $a i32) (param $b i32) (result i32)
     (local $base i32) (local $alen i32) (local $blen i32)

@@ -116,7 +116,7 @@ fn main() {
     )
     local.set $age
     local.get $name
-    call $__print_i32_raw
+    call $__print_str_raw
     call $__print_sp
     local.get $age
     call $__print_i32
@@ -308,6 +308,19 @@ fn main() {
         br $loop
       )
     )
+  )
+  (func $__print_str_raw (param $s i32)
+    local.get $s
+    i32.const 4
+    i32.add
+    local.get $s
+    i32.load
+    call $__write_bytes
+  )
+  (func $__print_str (param $s i32)
+    local.get $s
+    call $__print_str_raw
+    call $__print_nl
   )
 )
 ```

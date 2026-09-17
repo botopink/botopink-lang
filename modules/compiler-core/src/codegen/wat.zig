@@ -452,6 +452,11 @@ const Emitter = struct {
     bool_locals: std.StringHashMap(void),
     /// Emitted functions declared `-> string` / `-> bool`.
     str_fns: std.StringHashMap(void),
+    /// Functions declared `-> @Result<string, …>`: `try f()` is a string.
+    result_str_fns: std.StringHashMap(void),
+    /// Top-level `val` → record type name, when recovered (`val cfg = record
+    /// { … }`), so `cfg.port` reads the right slot.
+    global_rec_types: std.StringHashMap([]const u8),
     bool_fns: std.StringHashMap(void),
     /// Module globals: wat value type, plus the string/bool shapes.
     global_types: std.StringHashMap([]const u8),
@@ -564,6 +569,8 @@ const Emitter = struct {
             .str_locals = std.StringHashMap(void).init(alloc),
             .bool_locals = std.StringHashMap(void).init(alloc),
             .str_fns = std.StringHashMap(void).init(alloc),
+            .result_str_fns = std.StringHashMap(void).init(alloc),
+            .global_rec_types = std.StringHashMap([]const u8).init(alloc),
             .bool_fns = std.StringHashMap(void).init(alloc),
             .global_types = std.StringHashMap([]const u8).init(alloc),
             .str_globals = std.StringHashMap(void).init(alloc),
@@ -612,6 +619,8 @@ const Emitter = struct {
         self.str_locals.deinit();
         self.bool_locals.deinit();
         self.str_fns.deinit();
+        self.result_str_fns.deinit();
+        self.global_rec_types.deinit();
         self.bool_fns.deinit();
         self.global_types.deinit();
         self.str_globals.deinit();
@@ -691,7 +700,14 @@ const Emitter = struct {
                     if (isStringTypeRef(rt)) try self.str_fns.put(f.name, {});
                     if (isBoolTypeRef(rt)) try self.bool_fns.put(f.name, {});
                     if (arrayElemOfTypeRef(rt)) |ek| try self.fn_arr_elem.put(f.name, ek);
+                    if (resultOfString(rt)) try self.result_str_fns.put(f.name, {});
+                } else if (self.bodyReturnsString(f.body)) {
+                    // The specialisation pass clears the return type of the
+                    // fns it injects; a body that returns a string still does.
+                    try self.str_fns.put(f.name, {});
                 }
+                // `fn isPositive(n: i32) -> n is i32` answers a bool.
+                if (f.typeGuardParam != null) try self.bool_fns.put(f.name, {});
             },
             .val => |v| if (emit_globals and !isSyntheticEntrypointVal(v)) {
                 try self.globals.put(v.name, {});
@@ -699,13 +715,13 @@ const Emitter = struct {
                 if (v.typeAnnotation) |ta| {
                     if (isStringTypeRef(ta)) try self.str_globals.put(v.name, {});
                     if (isBoolTypeRef(ta)) try self.bool_globals.put(v.name, {});
-                } else switch (v.value.*) {
-                    .literal => |lit| switch (lit.kind) {
-                        .stringLit => try self.str_globals.put(v.name, {}),
-                        else => {},
-                    },
-                    else => {},
+                } else {
+                    // A template expansion or a concatenation is a string as
+                    // much as a literal is.
+                    if (self.isStringExpr(v.value.*)) try self.str_globals.put(v.name, {});
+                    if (self.isBoolExpr(v.value.*)) try self.bool_globals.put(v.name, {});
                 }
+                if (self.recordTypeOfExpr(v.value.*)) |rty| try self.global_rec_types.put(v.name, rty);
                 if (isArrayLit(v.value.*)) {
                     try self.arr_globals.put(v.name, {});
                     try self.arr_elem_globals.put(v.name, self.elemKindOf(v.value.*));
@@ -886,7 +902,8 @@ const Emitter = struct {
                         const st = self.self_type orelse break :blk null;
                         break :blk self.resolveRecordName(st);
                     }
-                    const tn = self.local_types.get(name) orelse break :blk null;
+                    const tn = self.local_types.get(name) orelse
+                        (if (self.locals.contains(name)) null else self.global_rec_types.get(name)) orelse break :blk null;
                     break :blk self.resolveRecordName(tn);
                 },
                 .identAccess => |ia| blk: {
@@ -952,6 +969,9 @@ const Emitter = struct {
                     },
                     else => {},
                 }
+                if (self.isStringExpr(f.value.*)) break :blk "string";
+                if (self.isBoolExpr(f.value.*)) break :blk "bool";
+                if (self.wasmTypeOf(f.value.*)[0] == 'f') break :blk "f64";
                 break :blk "";
             };
         }
@@ -1771,7 +1791,10 @@ const Emitter = struct {
                                 }
                             },
                             .tuple_ => |bindings| {
-                                for (bindings) |name| try self.declareLocal(name, "i32");
+                                for (bindings, 0..) |name, i| {
+                                    try self.declareLocal(name, "i32");
+                                    try self.noteTupleElemShape(name, lb.value.*, i);
+                                }
                             },
                             else => {},
                         }
@@ -2186,6 +2209,7 @@ const Emitter = struct {
                         },
                         .tuple_ => |bindings| {
                             for (bindings, 0..) |name, i| {
+                                try self.noteTupleElemShape(name, lb.value.*, i);
                                 try self.emit(.{ .local_get = mem });
                                 try self.emitLoadOffset(@intCast(i * 4));
                                 try self.emit(.{ .local_set = name });
@@ -2901,7 +2925,8 @@ const Emitter = struct {
             },
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
-                    if (cc.is_builtin) break :blk false;
+                    if (cc.is_builtin) break :blk std.mem.eql(u8, cc.callee, "__bp_result_isOk") or
+                        std.mem.eql(u8, cc.callee, "__bp_result_isError");
                     if (self.primKindAt(cc, c.loc)) |k| break :blk primCallRes(k, cc) == .bool_;
                     if (self.calleeSymbol(cc, c.loc)) |sym| break :blk self.bool_fns.contains(sym);
                     break :blk false;
@@ -4484,7 +4509,8 @@ const Emitter = struct {
                     const els = i.else_ orelse break :blk false;
                     break :blk self.bodyIsString(i.then_) and self.bodyIsString(els);
                 },
-                .tryCatch => |tc| self.isStringExpr(tc.expr.*) and self.isStringExpr(tc.handler.*),
+                // Both sides have the payload's type; either one proves it.
+                .tryCatch => |tc| self.isStringExpr(tc.handler.*) or self.resultOfStringCall(tc.expr.*),
             },
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
@@ -4499,8 +4525,68 @@ const Emitter = struct {
                 else => false,
             },
             .useHook => |uh| self.isStringExpr(uh.kind.inner.*),
+            .jump => |j| switch (j.kind) {
+                .try_ => |v| if (v) |x| self.resultOfStringCall(x.*) else false,
+                else => false,
+            },
             else => false,
         };
+    }
+
+    /// `f()` where `f` is declared `-> @Result<string, …>`.
+    fn resultOfStringCall(self: *Emitter, e: ast.Expr) bool {
+        return switch (e) {
+            .call => |c| switch (c.kind) {
+                .call => |cc| blk: {
+                    const sym = self.calleeSymbol(cc, c.loc) orelse break :blk false;
+                    break :blk self.result_str_fns.contains(sym);
+                },
+                else => false,
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| self.resultOfStringCall(inner.*),
+                else => false,
+            },
+            else => false,
+        };
+    }
+
+    /// `@Result<string, E>`.
+    fn resultOfString(t: ast.TypeRef) bool {
+        return switch (t) {
+            .generic => |g| std.mem.endsWith(u8, g.name, "Result") and g.args.len > 0 and isStringTypeRef(g.args[0]),
+            else => false,
+        };
+    }
+
+    /// Whether a body with no declared return type returns a string: some
+    /// `return <e>` or its tail is one, judged on literals and fn results
+    /// (locals are not known yet).
+    fn bodyReturnsString(self: *Emitter, body: []const ast.Stmt) bool {
+        if (body.len == 0) return false;
+        for (body) |st| switch (st.expr) {
+            .jump => |j| switch (j.kind) {
+                .@"return" => |r| if (r) |v| if (self.isStringExpr(v.*)) return true,
+                else => {},
+            },
+            else => {},
+        };
+        return self.isStringExpr(body[body.len - 1].expr);
+    }
+
+    /// `val #(a, b) = #(12, "hello")`: an element of a tuple literal lends its
+    /// shape to the name bound to it.
+    fn noteTupleElemShape(self: *Emitter, name: []const u8, value: ast.Expr, i: usize) !void {
+        const elems = switch (value) {
+            .collection => |col| switch (col.kind) {
+                .tupleLit => |tl| tl.elems,
+                else => return,
+            },
+            else => return,
+        };
+        if (i >= elems.len) return;
+        if (self.isStringExpr(elems[i])) try self.str_locals.put(name, {});
+        if (self.isBoolExpr(elems[i])) try self.bool_locals.put(name, {});
     }
 
     /// Whether a statement list yields a string (its last statement does).
@@ -4613,6 +4699,7 @@ const Emitter = struct {
 
         const elem = if (lp.params.len > 0) lp.params[0] else "__it";
         try self.declareLocal(elem, "i32");
+        if (self.elemKindOf(lp.iter.*) == .str) try self.str_locals.put(elem, {});
         const idx_param: ?[]const u8 = if (lp.params.len > 1) lp.params[1] else null;
         if (idx_param) |ip| try self.declareLocal(ip, "i32");
 

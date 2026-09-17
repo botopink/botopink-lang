@@ -68,7 +68,8 @@ main() ->
   (global $__heap_ptr (mut i32) (i32.const 256))
   (global $cfg (mut i32) (i32.const 0))
   (func $main
-    i32.const 0 ;; field access .port (unknown receiver type)
+    global.get $cfg
+    i32.load ;; .port
     i32.const 1
     i32.add
     call $__print_i32

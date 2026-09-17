@@ -511,6 +511,15 @@ first three are now enforced by the model, not by discipline:
   declared `-> string`), not only on literal-vs-literal — when they fired only
   for literals, `s == "yes"` compared **pointers** (passing by accident because
   identical literals share an address) and `a + b` added them.
+- **Shapes are recovered where the value is made, and carried by name**: a
+  string/bool/record/array shape comes from a literal, a parameter's declared
+  type, a fn's declared return type (a type guard `-> x is T` is a bool; a
+  `-> @Result<string, …>` makes `try f()` / `f() catch …` a string), a fn body
+  that returns a string when the specialisation pass cleared its return type,
+  an anonymous record literal's field values, a tuple literal's element (for
+  `val #(a, b) = #(…)`), an array's element shape (for a loop parameter) and a
+  top-level `val`'s initialiser (`str_globals`, `global_rec_types`). A value
+  whose shape nothing recovers still prints through `$__print_i32`.
 - **`@print` picks a helper by operand type**: `$__print_str` writes the bytes
   of a length-prefixed string, `$__print_bool` writes `true`/`false`,
   `$__print_f64` writes an integer part plus up to 6 trimmed fraction digits,
