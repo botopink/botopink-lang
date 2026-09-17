@@ -65,6 +65,13 @@ if [ "$staged" -eq 1 ]; then
     pass "no conflict markers, staged .zig formatted"
 fi
 
+# A hook runs with the committing repository's GIT_DIR, GIT_INDEX_FILE, … in
+# the environment. Stage 1 needed them; nothing after it may inherit them: a
+# test that runs `git` in a scratch repository (bpmp's install tests) would
+# otherwise commit into, and check out branches of, this repository.
+# shellcheck disable=SC2046
+unset $(git rev-parse --local-env-vars)
+
 stage "zig build"
 zig build || fail "zig build"
 pass "zig build"

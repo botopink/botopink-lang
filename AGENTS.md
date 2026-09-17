@@ -177,14 +177,20 @@ run is [`scripts/gate.sh`](scripts/gate.sh):
 6. `zig build test-cli` (the CLI contract, test tooling, recursion and backend execution scripts);
 7. `zig build test-libs` (every visible library, known reds named; a library without tests is still compiled).
 
-`scripts/git-hooks/pre-commit` is the tracked pre-commit hook. It delegates to the
-superproject's `scripts/git-hooks/lib/test-runner.sh` when that file exists;
-otherwise it sources `scripts/git-hooks/lib/runner-standalone.sh`, which runs
-`scripts/gate.sh --staged`. Install it once per clone with
-`scripts/install-hooks.sh` (the hooks directory is shared by every worktree; the
-installed shim runs the tracked hook of whichever checkout is committing). The
-gate needs `node`, `erl`/`erlc`/`escript` and `wasmtime` on `PATH`. Do not use
-`--no-verify`.
+`scripts/git-hooks/pre-commit` is the tracked pre-commit hook, self-contained in
+every checkout (standalone clone or meta submodule): it sources
+`scripts/git-hooks/lib/runner-standalone.sh`, which runs `scripts/gate.sh
+--staged`. Enable it once per clone:
+
+```sh
+git config core.hooksPath scripts/git-hooks
+```
+
+The setting lives in the repository's shared config, and the relative path
+resolves against the committing checkout's root, so every worktree runs the
+hook its own tree tracks. It is enabled in the maintainer's botopink-lang
+clone. The gate needs `node`, `erl`/`erlc`/`escript` and `wasmtime` on `PATH`.
+Do not use `--no-verify`.
 
 ## Debugging tips & gotchas
 
