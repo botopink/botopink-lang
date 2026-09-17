@@ -908,6 +908,11 @@ fn emitErlangModule(
         em.enum_names.deinit();
         em.enum_variants.deinit();
         em.imported_types.deinit();
+        em.imported_fns.deinit();
+        var ftf_it = em.fn_typed_fields.keyIterator();
+        while (ftf_it.next()) |k| alloc.free(k.*);
+        em.fn_typed_fields.deinit();
+        em.fn_typed_field_names.deinit();
     }
     var top_runtime_vals: std.ArrayListUnmanaged(ast.ValDecl) = .empty;
     defer top_runtime_vals.deinit(alloc);
@@ -1003,16 +1008,27 @@ fn emitErlangModule(
     for (pub_fns.items) |f| try exports.append(b.arena, .{ .name = f.name, .arity = fnArityNoSelf(f) });
     if (cross) |xc| {
         for (program.decls) |decl| {
-            const methods = switch (decl) {
-                .type_ => |tdecl| switch (tdecl.shape) {
-                    .record => if (xc.imported.contains(tdecl.name)) tdecl.methods else continue,
-                    .enum_ => if (xc.imported.contains(tdecl.name)) tdecl.methods else continue,
-                },
+            // A `pub` type's methods are reachable from another module even when
+            // that module never names the type itself (a method called on a
+            // value some imported fn answered), so the owner exports them in any
+            // multi-module build.
+            const tdecl = switch (decl) {
+                .type_ => |t| if (t.isPub or xc.imported.contains(t.name)) t else continue,
                 else => continue,
             };
-            for (methods) |m| {
-                if (m.is_declare or !isAssocMethod(m)) continue;
-                try exports.append(b.arena, .{ .name = m.name, .arity = m.params.len });
+            for (tdecl.methods) |m| {
+                if (m.is_declare) continue;
+                // Both shapes are bare local functions here: an assoc fn takes
+                // only its declared parameters, an instance method takes the
+                // receiver as `params[0]`. A method name two types share is
+                // emitted under its mangled name (`grouping_toArray`), so the
+                // export must name what the module actually defines.
+                var mn_buf: [256]u8 = undefined;
+                const mn: []const u8 = if (em.isRecordMethodCollision(tdecl.name, m.name))
+                    try b.arena.dupe(u8, try Emitter.recordMethodAtom(&mn_buf, tdecl.name, m.name))
+                else
+                    m.name;
+                try exports.append(b.arena, .{ .name = mn, .arity = m.params.len });
             }
         }
         // A `pub implement` / `pub extend` another module activates
@@ -1140,7 +1156,9 @@ fn emitErlangModule(
                 .{ .lexeme_binary = try std.fmt.allocPrint(b.arena, "{s}.bp:{d}", .{ module_name, t.line }) },
             });
         }
-        try testRunnerForms(b, &forms, tests);
+        // Only a module that calls into another needs the sibling loader: a
+        // single-module project's runner stays exactly as it was.
+        try testRunnerForms(b, &forms, tests, em.imported_fns.count() > 0 or em.imported_types.count() > 0);
     }
 
     var aw: std.Io.Writer.Allocating = .init(alloc);
@@ -1188,7 +1206,7 @@ fn comments(b: Ast.Builder, lines: []const []const u8) ![]const Ast.Stmt {
 /// the `----- RUN LOG -----` envelope, `'__bp_run_tests'/1` runs the registry
 /// (`tests`, filtered by name) and halts non-zero on failure, and `main/1` is the
 /// escript entry.
-fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr) !void {
+fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_siblings: bool) !void {
     const V = Ast.Expr.v;
     const A = Ast.Expr.a;
     const monotonic = try b.remote("erlang", "monotonic_time", &.{A("millisecond")});
@@ -1291,8 +1309,44 @@ fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr) !void
         try blockFunction(b, "__bp_run_one", &.{try b.tuple(&.{ V("Name"), V("Fun"), V("Loc") })}, .{ .stmts = run_one.items }),
         .blank,
         try blockFunction(b, "__bp_run_tests", &.{V("Filter")}, run_tests),
+    });
+
+    // `escript <module>.erl` compiles and loads THAT module only, so a call
+    // into a sibling or a dependency (`a:twice(X)`) is `undef` at run time.
+    // Compile and load every other module the runner wrote beside this one,
+    // once, before the tests run. A module that does not compile is skipped:
+    // its own cell reports the error.
+    const main_body = if (load_siblings) blk: {
+        const loader: Ast.Expr = .{ .raw =
+            \\(fun() ->
+            \\        Dir = filename:dirname(escript:script_name()),
+            \\        Self = atom_to_list(?MODULE) ++ ".erl",
+            \\        lists:foreach(fun(Src) ->
+            \\            case filename:basename(Src) =:= Self of
+            \\                true -> ok;
+            \\                false ->
+            \\                    case compile:file(Src, [binary, return_errors, {i, Dir}]) of
+            \\                        {ok, Mod, Bin} -> code:load_binary(Mod, Src, Bin);
+            \\                        _ -> ok
+            \\                    end
+            \\            end
+            \\        end, filelib:wildcard(filename:join([Dir, "**", "*.erl"])))
+            \\    end)()
+        };
+        try forms.appendSlice(b.arena, &.{
+            .blank,
+            try blockFunction(b, "__bp_load_siblings", &.{}, try b.body(&.{loader})),
+        });
+        break :blk try b.body(&.{
+            try b.call("__bp_load_siblings", &.{}),
+            try b.match(V("Filter"), filter),
+            try b.call("__bp_run_tests", &.{V("Filter")}),
+        });
+    } else try b.body(&.{ try b.match(V("Filter"), filter), try b.call("__bp_run_tests", &.{V("Filter")}) });
+
+    try forms.appendSlice(b.arena, &.{
         .blank,
-        try blockFunction(b, "main", &.{V("Args")}, try b.body(&.{ try b.match(V("Filter"), filter), try b.call("__bp_run_tests", &.{V("Filter")}) })),
+        try blockFunction(b, "main", &.{V("Args")}, main_body),
     });
 }
 
@@ -1509,6 +1563,18 @@ const Emitter = struct {
     /// receiver names one (`Response.ok(...)` for an imported `Response`) lowers
     /// to a remote call into the owner (`http:ok(...)`), not a bare local fn.
     imported_types: std.StringHashMap([]const u8),
+    /// Imported function name → owning module atom: a `pub fn` this module
+    /// imports (`import {twice};`) and the methods of an imported record/enum.
+    /// Erlang has no ambient scope, so a call to one of these is a remote call
+    /// (`a:twice(X)`); emitted bare it was `function twice/1 undefined`. A local
+    /// definition of the same name/arity wins (an `@emit`ed mock body defines
+    /// `find/2` next to the imported `find`).
+    imported_fns: std.StringHashMap([]const u8),
+    /// `"<Record>.<field>"` of every field declared with a function type, and
+    /// the bare field names — inference records no instance lowering for a call
+    /// on a field, so the untyped fallback matches on the name alone.
+    fn_typed_fields: std.StringHashMap(void),
+    fn_typed_field_names: std.StringHashMap(void),
     /// Value-receiver instance call lowerings (call loc → record/primitive). A
     /// record method lowers to `method(Recv, args)` (or `owner:method(...)` for
     /// an imported type); a primitive method lowers to the erlang host op.
@@ -1673,6 +1739,9 @@ const Emitter = struct {
             .enum_names = std.StringHashMap(void).init(alloc),
             .enum_variants = std.StringHashMap(void).init(alloc),
             .imported_types = std.StringHashMap([]const u8).init(alloc),
+            .imported_fns = std.StringHashMap([]const u8).init(alloc),
+            .fn_typed_fields = std.StringHashMap(void).init(alloc),
+            .fn_typed_field_names = std.StringHashMap(void).init(alloc),
             .locals = std.StringHashMap(void).init(alloc),
             .var_current = std.StringHashMap(u32).init(alloc),
             .var_next = std.StringHashMap(u32).init(alloc),
@@ -2557,6 +2626,16 @@ const Emitter = struct {
                     var names = try self.alloc.alloc([]const u8, tdecl.recordFields().len);
                     for (tdecl.recordFields(), 0..) |f, i| names[i] = f.name;
                     try self.record_fields.put(tdecl.name, names);
+                    // A field of function type is CALLED like a method
+                    // (`c.set(9)`), and the record emits no `set/2`: remember
+                    // the pair so the call applies the field's value.
+                    for (tdecl.recordFields()) |f| {
+                        if (f.typeRef != .function) continue;
+                        var key_buf: [256]u8 = undefined;
+                        const key = std.fmt.bufPrint(&key_buf, "{s}.{s}", .{ tdecl.name, f.name }) catch continue;
+                        try self.fn_typed_fields.put(try self.alloc.dupe(u8, key), {});
+                        try self.fn_typed_field_names.put(f.name, {});
+                    }
                 },
                 .enum_ => {
                     try self.enum_names.put(tdecl.name, {});
@@ -2608,9 +2687,62 @@ const Emitter = struct {
                     .@"enum" => try self.enum_names.put(name, {}),
                     .@"fn", .val => {},
                 }
+                // Names this module calls but never defines: an imported
+                // `pub fn` (`twice(X)`) and the methods of an imported
+                // record/enum (`stub.thenReturn(v)`, emitted by the owner as a
+                // bare function taking the receiver first). Erlang resolves a
+                // bare call in the calling module, so the call site needs the
+                // owner atom; a local definition of the same name wins.
+                if (std.mem.eql(u8, info.module, self.module_name)) continue;
+                const owner = crossModule.moduleBasename(info.module);
+                switch (info.kind) {
+                    // An FFI declaration emits no function in its owner — the
+                    // template renders at the call site — so it is not reachable
+                    // remotely. Left bare, an unresolved one is a loud compile
+                    // error naming the function (see AGENTS.md).
+                    .@"fn" => if (!info.is_external) try self.imported_fns.put(name, owner),
+                    .record, .@"enum" => for (info.methods) |m| {
+                        const gop = try self.imported_fns.getOrPut(m);
+                        if (!gop.found_existing) gop.value_ptr.* = owner;
+                    },
+                    .val => {},
+                }
+                // A method may belong to a type the consumer never names
+                // (`when(...)` answers onze's `OnzeStub`, whose `thenReturn` is
+                // called on the result): register the methods of every pub type
+                // of a module this one already imports from.
+                var ex_it = xc.exports.iterator();
+                while (ex_it.next()) |e| {
+                    const other = e.value_ptr.*;
+                    if (!std.mem.eql(u8, other.module, info.module)) continue;
+                    if (other.kind != .record and other.kind != .@"enum") continue;
+                    for (other.methods) |m| {
+                        const gop = try self.imported_fns.getOrPut(m);
+                        if (!gop.found_existing) gop.value_ptr.* = owner;
+                    }
+                }
             },
             else => {},
         };
+    }
+
+    /// Owning module atom of an imported function called with `arity`
+    /// arguments, or null when this module defines one of that name and arity
+    /// itself (a local definition shadows the import, as it does in botopink).
+    fn importedFnOwner(self: *const Emitter, name: []const u8, arity: usize) ?[]const u8 {
+        const owner = self.imported_fns.get(name) orelse return null;
+        var key_buf: [256]u8 = undefined;
+        const key = std.fmt.bufPrint(&key_buf, "{s}/{d}", .{ name, arity }) catch return owner;
+        return if (self.local_fn_arities.contains(key)) null else owner;
+    }
+
+    /// True when record `type_name` declares a field `name` of function type —
+    /// `c.set(9)` applies the field, it does not call a `set/2` the record never
+    /// emits.
+    fn fnTypedField(this: *const Emitter, type_name: []const u8, name: []const u8) bool {
+        var key_buf: [256]u8 = undefined;
+        const key = std.fmt.bufPrint(&key_buf, "{s}.{s}", .{ type_name, name }) catch return false;
+        return this.fn_typed_fields.contains(key);
     }
 
     /// True when some record of the module declares a field named `name`.
@@ -4353,6 +4485,13 @@ const Emitter = struct {
                     .args = try this.callArgs(b, null, cc),
                 } };
             }
+            // An imported `pub fn` (`import {twice};`): this module never emits
+            // `twice/1`, so the bare call was `function twice/1 undefined` —
+            // reach the owner (`a:twice(X)`). A local definition of the same
+            // name and arity wins (an `@emit`ed body next to the import).
+            if (this.importedFnOwner(cc.callee, cc.args.len + cc.trailing.len)) |owner| {
+                return b.remote(owner, cc.callee, try this.callArgs(b, null, cc));
+            }
             return b.call(cc.callee, try this.callArgs(b, null, cc));
         };
 
@@ -4417,6 +4556,15 @@ const Emitter = struct {
             // imported type. A method name shared by two records is mangled to
             // `<recordtype>_<method>` so the flat fn namespace stays unambiguous.
             .type_ => |tn| {
+                // A FIELD of function type, called like a method (`c.set(9)` on
+                // `type State<T>(value: T, set: fn(next: T))`): the record has no
+                // `set/2` function — apply what the field holds.
+                if (this.fnTypedField(tn, cc.callee)) {
+                    return .{ .apply = .{
+                        .fun = try b.ptr(try b.paren(try b.remote("maps", "get", &.{ Ast.Expr.a(cc.callee), try this.exprNode(b, recv.*) }))),
+                        .args = try this.callArgs(b, null, cc),
+                    } };
+                }
                 var mn_buf: [256]u8 = undefined;
                 const mn: []const u8 = if (this.isRecordMethodCollision(tn, cc.callee))
                     try b.arena.dupe(u8, try recordMethodAtom(&mn_buf, tn, cc.callee))
@@ -4444,6 +4592,26 @@ const Emitter = struct {
             if (try this.untypedPrimCallNode(b, loc, recv, cc)) |node| return node;
         }
         if (std.mem.eql(u8, cc.callee, "toString") and cc.args.len == 0) return this.formatNode(b, recv);
+        // A field of function type called like a method on a receiver inference
+        // left untyped (`c.set(9)` where some record declares `set: fn(…)`):
+        // apply what the field holds. A function of that name taking the
+        // receiver first wins — that is a real method.
+        if (this.fn_typed_field_names.contains(cc.callee) and
+            this.importedFnOwner(cc.callee, cc.args.len + cc.trailing.len + 1) == null and
+            !this.local_fn_arities.contains(try std.fmt.allocPrint(b.arena, "{s}/{d}", .{ cc.callee, cc.args.len + cc.trailing.len + 1 })))
+        {
+            return .{ .apply = .{
+                .fun = try b.ptr(try b.paren(try b.remote("maps", "get", &.{ Ast.Expr.a(cc.callee), try this.exprNode(b, recv.*) }))),
+                .args = try this.callArgs(b, null, cc),
+            } };
+        }
+        // A method of an IMPORTED record whose receiver inference left untyped
+        // (`when(...).thenReturn(v)` — a method on a call's result): the owner
+        // emits it as a bare function taking the receiver first, so reach it
+        // there instead of calling a local this module never defines.
+        if (this.importedFnOwner(cc.callee, cc.args.len + cc.trailing.len + 1)) |owner| {
+            return b.remote(owner, cc.callee, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
+        }
         return b.call(cc.callee, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
     }
 

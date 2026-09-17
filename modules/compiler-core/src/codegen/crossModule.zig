@@ -32,6 +32,14 @@ pub const ExportInfo = struct {
     kind: ExportKind,
     is_class: bool,
     fields: []const []const u8 = &.{},
+    /// Method names a record/enum export declares (empty otherwise). A consumer
+    /// calling one on an imported value (`stub.thenReturn(v)`) emits no local
+    /// definition of it: erlang resolves the owning module from here.
+    methods: []const []const u8 = &.{},
+    /// A host-backed `declare fn`: its owner emits no function of that name (the
+    /// annotation's template renders at each call site), so it cannot be reached
+    /// by a remote call.
+    is_external: bool = false,
 };
 
 /// Cross-module link info, built once over every module's transformed program.
@@ -85,14 +93,19 @@ pub fn build(alloc: std.mem.Allocator, outputs: []ComptimeOutput) !CrossModule {
             else => continue,
         };
         for (ok.transformed.decls) |decl| switch (decl) {
-            .type_ => |r| if (r.isPub) switch (r.shape) {
-                .record => |record_fields| {
-                    const fields = try alloc.alloc([]const u8, record_fields.len);
-                    for (record_fields, 0..) |f, i| fields[i] = f.name;
-                    try field_arrays.append(alloc, fields);
-                    try exports.put(r.name, .{ .module = ct.name, .kind = .record, .is_class = true, .fields = fields });
-                },
-                .enum_ => try exports.put(r.name, .{ .module = ct.name, .kind = .@"enum", .is_class = false }),
+            .type_ => |r| if (r.isPub) {
+                const methods = try alloc.alloc([]const u8, r.methods.len);
+                for (r.methods, 0..) |m, i| methods[i] = m.name;
+                try field_arrays.append(alloc, methods);
+                switch (r.shape) {
+                    .record => |record_fields| {
+                        const fields = try alloc.alloc([]const u8, record_fields.len);
+                        for (record_fields, 0..) |f, i| fields[i] = f.name;
+                        try field_arrays.append(alloc, fields);
+                        try exports.put(r.name, .{ .module = ct.name, .kind = .record, .is_class = true, .fields = fields, .methods = methods });
+                    },
+                    .enum_ => try exports.put(r.name, .{ .module = ct.name, .kind = .@"enum", .is_class = false, .methods = methods }),
+                }
             },
             // `pub fn` exports — including host-backed `#[@External.<targert>(...)]` declarations.
             // An external fn's owning module re-exports the host symbol under the
@@ -100,7 +113,7 @@ pub fn build(alloc: std.mem.Allocator, outputs: []ComptimeOutput) !CrossModule {
             // `from "<lib>"` must `require` that owner just like any other export;
             // omitting externals here left such imports unresolved at the call site.
             .@"fn" => |f| if (f.isPub)
-                try exports.put(f.name, .{ .module = ct.name, .kind = .@"fn", .is_class = false }),
+                try exports.put(f.name, .{ .module = ct.name, .kind = .@"fn", .is_class = false, .is_external = f.isExternal() }),
             .val => |v| if (v.isPub) try exports.put(v.name, .{ .module = ct.name, .kind = .val, .is_class = false }),
             // A `pub implement` is emitted as a namespace object; a consumer that
             // stars it (`import { Name* }`) references it as a value (`Name.m(x)`).

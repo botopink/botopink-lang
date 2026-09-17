@@ -236,3 +236,57 @@ test "js: delegate ---- declaration" {
         \\declare fn Callback(msg: string) -> void;
     );
 }
+
+// ── imported calls and fn-typed fields (erlang C1/C2) ─────────────────────────
+
+test "js: import ---- a call to an imported fn names its module" {
+    // erlang resolves a bare call in the CALLING module, so `twice(X)` from
+    // `b` was `function twice/1 undefined`; it must reach the owner (`a:twice`).
+    // The owner exports what another module consumes.
+    try h.assertJs(std.testing.allocator, @src(), &.{
+        .{
+            .path = "a",
+            .source =
+            \\pub fn twice(x: i32) -> i32 {
+            \\    return x * 2;
+            \\}
+            ,
+        },
+        .{
+            .path = "b",
+            .source =
+            \\import { twice };
+            \\
+            \\pub fn quad(x: i32) -> i32 {
+            \\    return twice(twice(x));
+            \\}
+            \\
+            \\pub fn main() {
+            \\    @print(quad(3));
+            \\}
+            ,
+        },
+    });
+}
+
+test "js: record ---- a field of function type is called like a method" {
+    // `c.set(9)` on a record whose `set` field holds a lambda: the record emits
+    // no `set/2`, so the call applies what the field holds. erlang read the map
+    // field (`set(C, 9)` → `function set/2 undefined`) before this.
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\type Cell(
+        \\    value: i32,
+        \\    set: fn(next: i32) -> i32,
+        \\)
+        \\
+        \\fn mk(v: i32) -> Cell {
+        \\    return Cell(value: v, set: { next -> next + v });
+        \\}
+        \\
+        \\pub fn main() {
+        \\    val c = mk(5);
+        \\    @print(c.value);
+        \\    @print(c.set(9));
+        \\}
+    );
+}

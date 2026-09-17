@@ -1,44 +1,49 @@
------ SOURCE CODE -- main.bp
+----- SOURCE CODE -- a.bp
 ```botopink
-pub type Shape {
-    Circle(radius: i32),
-    Square(side: i32),
-
-    pub fn area(self: Self) -> i32 {
-        return case self {
-            Circle(r) -> r * r * 3;
-            Square(s) -> s * s;
-        };
-    }
-}
-
-pub fn main() {
-    @print(Shape.Square(side: 4).area());
-    @print(Shape.Circle(radius: 2).area());
+pub fn twice(x: i32) -> i32 {
+    return x * 2;
 }
 ```
 
------ ERLANG -- main.erl
+----- ERLANG -- a.erl
 ```erlang
--module(main).
+-module(a).
+-export([twice/1]).
+
+twice(X) ->
+    (X * 2).
+```
+
+----- RUN LOG -----
+```logs
+```
+
+----- SOURCE CODE -- b.bp
+```botopink
+import { twice };
+
+pub fn quad(x: i32) -> i32 {
+    return twice(twice(x));
+}
+
+pub fn main() {
+    @print(quad(3));
+}
+```
+
+----- ERLANG -- b.erl
+```erlang
+-module(b).
 -export(['_botopink_main'/0, main/1]).
--export([main/0, area/1]).
+-export([quad/1, main/0]).
 
-%% type Shape
-%%   Circle(radius)
-%%   Square(side)
+%% import twice
 
-area(Self) ->
-    case Self of
-        {'Circle', R} ->
-            ((R * R) * 3);
-        {'Square', S} ->
-            (S * S)
-    end.
+quad(X) ->
+    a:twice(a:twice(X)).
 
 main() ->
-    '__bp_print'([area({'Square', 4})]),
-    '__bp_print'([area({'Circle', 2})]).
+    '__bp_print'([quad(3)]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
@@ -59,6 +64,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-16
 12
 ```

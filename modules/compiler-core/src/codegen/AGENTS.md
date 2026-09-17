@@ -61,7 +61,7 @@ codegen/
 |---|---|
 | `config.zig` | `Config` (`targetSource`, `typeDefLanguage`, `build_root`, `test_mode`), `TargetSource` (`commonJS` \| `erlang` \| `beam` \| `wasm`), `TypeDefLang` |
 | `moduleOutput.zig` | `GenerateResult` (`js`, `typedef`, `comptime_script`, `comptime_err`, `diagnostic`, `run_output`; `failed()`) and `ModuleOutput` — shared between targets. A module whose comptime outcome is `.parseError`/`.typeError` is not skipped: every backend's `codegenEmit` appends `ModuleOutput.failedModule`, whose owned `Diagnostic` (`syntax`: the `SyntaxError` with its slices copied; `type`: the rendered message and location) outlives the comptime session. `Module` lives in `../module.zig` |
-| `crossModule.zig` | **Cross-module link index** built once over every module's transformed program (`build(alloc, outputs)`). `exports` maps a `pub` symbol → `ExportInfo{module, kind, is_class, fields}` (emitting module path, decl kind, whether construction needs `new`/the owner's map shape, and a record's declared field order); host-backed `#[@External.<Target>(…)]` fns are indexed too, so a consumer importing one `from "<lib>"` links to the owner like any other export. `imported` is the set of names some module imports. `ownerModuleAtom(name)` / `moduleBasename(path)` give the Erlang/BEAM module atom (`web/http` → `http`). Consumed by commonJS, erlang and beam_asm; wat only uses it to flag unlinkable imports |
+| `crossModule.zig` | **Cross-module link index** built once over every module's transformed program (`build(alloc, outputs)`). `exports` maps a `pub` symbol → `ExportInfo{module, kind, is_class, fields, methods, is_external}` (emitting module path, decl kind, whether construction needs `new`/the owner's map shape, and a record's declared field order, its method names, and whether a `fn` export is host-backed); host-backed `#[@External.<Target>(…)]` fns are indexed too, so a consumer importing one `from "<lib>"` links to the owner like any other export. `imported` is the set of names some module imports. `ownerModuleAtom(name)` / `moduleBasename(path)` give the Erlang/BEAM module atom (`web/http` → `http`). Consumed by commonJS, erlang and beam_asm; wat only uses it to flag unlinkable imports |
 | `js/` | JS/TS code model + emitters shared by `commonJS.zig` and `typescript.zig`: `js_ast.zig` (`Expr`/`Stmt`/`Pattern`/`Block`/`Class`/`Item` + the `.d.ts` `TsDecl`/`TsType` + `Builder`), `js_emitter.zig` (the only writer of JavaScript: reserved-word renaming, string escaping, parenthesisation, indentation, semicolons), `ts_emitter.zig` (the only writer of `.d.ts`). The backends build nodes and write no target text. The remaining `js_ast` bridges pin the shapes the current lowering still emits illegally. See [`js/AGENTS.md`](js/AGENTS.md) |
 | `beam/` | BEAM term model + emitters shared by `erlang.zig`, `beam_asm.zig` and the comptime evaluators: `term.zig` (`Term`), `erl_emitter.zig` (Erlang source: atom quoting incl. reserved words, variables, module names, binaries), `beam_emitter.zig` (`.S` operands and `move`s). One quoting rule for `.erl` and `.S`. See [`beam/AGENTS.md`](beam/AGENTS.md) |
 | `commonJS.zig` | CommonJS backend — builds `js/js_ast.zig` nodes, rendered by `js/js_emitter.zig`. See [commonJS](#commonjs) below |
@@ -256,6 +256,32 @@ codegen/
 
 ### erlang
 
+- **Cross-module calls are remote calls.** Erlang resolves a bare `f(X)` in the
+  CALLING module, so a name this module imports but never defines must name its
+  owner: `imported_fns` (built in `collectImportedTypes` from the cross index)
+  maps an imported `pub fn`, and every method of a `pub` type of a module this
+  one imports from, to the owner atom — `a:twice(X)`, `lib:thenReturn(S, V)`.
+  A local definition of the same name and arity wins (an `@emit`ed body can
+  define `find/2` beside an imported `find`). The owner exports the methods of
+  its `pub` types (under the mangled name where two types share a method name),
+  so the consumer's remote call resolves. **A host-backed `declare fn` is not
+  routed**: it emits no function in its owner (the annotation's template renders
+  at each call site), so an imported one stays a bare call and an unresolved one
+  is a loud compile error — an owner-side wrapper for those is still missing,
+  which is what keeps a library whose host cells are template externals red on
+  erlang.
+- **A field of function type is applied, not called.** `c.set(9)` on
+  `type Cell(value: i32, set: fn(next: i32) -> i32)` reads the map field and
+  applies it (`(maps:get(set, C))(9)`); the record emits no `set/2`.
+  `fn_typed_fields` (built in `collectTypeShapes`) carries the pairs, and the
+  name-only set backs the untyped fallback, where inference records no lowering
+  for a call on a field.
+- **Test mode loads its siblings.** `escript <module>.erl` compiles and loads
+  that module only, so a cross-module call would be `undef` at run time: in test
+  mode a module that imports from another emits `'__bp_load_siblings'/0`, which
+  compiles and loads every other `.erl` the runner wrote beside it before the
+  tests run (a module that does not compile is skipped — its own cell reports
+  it).
 - **Single-assignment versioning:** Erlang variables bind once, so a name already
   bound in the function gets a fresh variable on every later binding — `=`, `+=`
   or a shadowing `val i = i - 1` lowers to `Count@1 = Count + 1` and later reads

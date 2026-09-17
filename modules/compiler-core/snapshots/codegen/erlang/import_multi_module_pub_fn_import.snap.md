@@ -31,7 +31,7 @@ val result = double(21);
 %% import double
 
 result() ->
-    double(21).
+    math:double(21).
 ```
 
 ----- RUN LOG -----

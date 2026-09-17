@@ -17,7 +17,7 @@ make() ->
     end}.
 
 apply(S) ->
-    set(S, maps:get(value, S)),
+    (maps:get(set, S))(maps:get(value, S)),
     maps:get(value, S).
 ```
 

@@ -1,20 +1,18 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
-pub type Shape {
-    Circle(radius: i32),
-    Square(side: i32),
+type Cell(
+    value: i32,
+    set: fn(next: i32) -> i32,
+)
 
-    pub fn area(self: Self) -> i32 {
-        return case self {
-            Circle(r) -> r * r * 3;
-            Square(s) -> s * s;
-        };
-    }
+fn mk(v: i32) -> Cell {
+    return Cell(value: v, set: { next -> next + v });
 }
 
 pub fn main() {
-    @print(Shape.Square(side: 4).area());
-    @print(Shape.Circle(radius: 2).area());
+    val c = mk(5);
+    @print(c.value);
+    @print(c.set(9));
 }
 ```
 
@@ -22,23 +20,19 @@ pub fn main() {
 ```erlang
 -module(main).
 -export(['_botopink_main'/0, main/1]).
--export([main/0, area/1]).
+-export([main/0]).
 
-%% type Shape
-%%   Circle(radius)
-%%   Square(side)
+%% type Cell: value, set
 
-area(Self) ->
-    case Self of
-        {'Circle', R} ->
-            ((R * R) * 3);
-        {'Square', S} ->
-            (S * S)
-    end.
+mk(V) ->
+    #{value => V, set => fun(Next) ->
+        (Next + V)
+    end}.
 
 main() ->
-    '__bp_print'([area({'Square', 4})]),
-    '__bp_print'([area({'Circle', 2})]).
+    C = mk(5),
+    '__bp_print'([maps:get(value, C)]),
+    '__bp_print'([(maps:get(set, C))(9)]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
@@ -59,6 +53,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-16
-12
+5
+14
 ```
