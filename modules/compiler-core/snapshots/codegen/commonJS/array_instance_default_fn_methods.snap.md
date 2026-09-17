@@ -137,11 +137,11 @@ Array.prototype.chunked = function(n) {
     if ((n <= 0)) { return out; }
     let i = 0;
     let len = this.length;
-    while_((i < len), () => {
+    while ((i < len)) {
     const piece = this.slice(i, (i + n));
     out = out.concat([piece]);
     i = (i + n);
-});
+}
     return out;
 };
 Array.prototype.sliding = function(n) {
@@ -150,11 +150,11 @@ Array.prototype.sliding = function(n) {
     let i = 0;
     let len = this.length;
     let last = (len - n);
-    while_((i <= last), () => {
+    while ((i <= last)) {
     const piece = this.slice(i, (i + n));
     out = out.concat([piece]);
     i = (i + 1);
-});
+}
     return out;
 };
 Array.prototype.unique = function() {

@@ -346,7 +346,7 @@ fn emitProgramOptsX(
     em.cross = cross;
     try em.collectExternals(program);
     try em.collectClassNames(program);
-    try em.collectVariantFields(program);
+    try em.collectDeclIndexes(program);
     try em.collectPrimNodeRenames(program);
     try em.collectBuiltinNodeDispatch();
 
@@ -757,6 +757,9 @@ const Emitter = struct {
     /// Names that emit as JS classes (record/struct decls, incl. the
     /// `val X = record { … }` shorthand) — constructor calls need `new`.
     class_names: std.StringHashMap(void),
+    /// Every top-level `fn` name the module declares — a user `fn while`
+    /// keeps the call lowering (`whileShape`).
+    user_fn_names: std.StringHashMap(void),
     /// Payload variant name → its declared field names, in declaration order,
     /// for every enum declared in this module. A `case` arm `Circle(r)` binds
     /// positionally, so `r` is read from the declared field (`radius`), never
@@ -810,6 +813,7 @@ const Emitter = struct {
             .externals = std.StringHashMap(ast.ExternalRef).init(alloc),
             .externals_missing = std.StringHashMap(void).init(alloc),
             .class_names = std.StringHashMap(void).init(alloc),
+            .user_fn_names = std.StringHashMap(void).init(alloc),
             .variant_fields = std.StringHashMap([]const []const u8).init(alloc),
             .seen_imports = std.StringHashMap(void).init(alloc),
             .prim_node_renames = std.StringHashMap([]const u8).init(alloc),
@@ -835,6 +839,7 @@ const Emitter = struct {
         self.externals.deinit();
         self.externals_missing.deinit();
         self.class_names.deinit();
+        self.user_fn_names.deinit();
         self.variant_fields.deinit();
         self.seen_imports.deinit();
         self.prim_node_renames.deinit();
@@ -1086,11 +1091,13 @@ const Emitter = struct {
         };
     }
 
-    /// Indexes each payload variant's declared field names (see
-    /// `variant_fields`). Enum sections are desugared into inner enums before
-    /// codegen, so the top-level variant list is the whole surface.
-    fn collectVariantFields(self: *Emitter, program: ast.Program) !void {
+    /// Indexes the module's top-level fn names (`user_fn_names`) and each
+    /// payload variant's declared field names (`variant_fields`). Enum
+    /// sections are desugared into inner enums before codegen, so the
+    /// top-level variant list is the whole surface.
+    fn collectDeclIndexes(self: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| switch (decl) {
+            .@"fn" => |f| try self.user_fn_names.put(f.name, {}),
             .@"enum" => |e| for (e.variants) |v| {
                 if (v.fields.len == 0) continue;
                 const names = try self.arena().alloc([]const u8, v.fields.len);
@@ -1913,6 +1920,7 @@ const Emitter = struct {
                 .tryCatch => {},
             },
             .loop => |lp| if (try self.buildLoopStmt(lp)) |st| return st,
+            .call => |c| if (c.kind == .call) if (self.whileShape(c.kind.call)) |w| return self.buildWhileStmt(w.cond, w.body),
             .jump => |j| switch (j.kind) {
                 .@"break" => |br| return self.buildBreakStmt(br, false),
                 .throw_ => |r| return .{ .throw_ = try self.buildExpr((r orelse return error.ThrowWithoutOperand).*) },
@@ -2753,6 +2761,32 @@ const Emitter = struct {
         } };
     }
 
+    /// `while (cond) { body }` — which the parser reads as a call to `while`
+    /// with one argument and a trailing block (there is no `while` keyword and
+    /// no `while` fn in the prelude; std's `chunked`/`sliding` default fns are
+    /// written this way). Recognised only with no receiver, no user fn or
+    /// external named `while` in the module, exactly one argument and one
+    /// parameterless trailing block.
+    fn whileShape(self: *Emitter, cc: anytype) ?struct { cond: ast.Expr, body: []const ast.Stmt } {
+        if (cc.is_builtin or cc.receiver != null) return null;
+        if (!std.mem.eql(u8, cc.callee, "while")) return null;
+        if (self.user_fn_names.contains("while")) return null;
+        if (cc.args.len != 1 or cc.trailing.len != 1 or cc.trailing[0].params.len != 0) return null;
+        return .{ .cond = cc.args[0].value.*, .body = cc.trailing[0].body };
+    }
+
+    /// A JS `while` statement; `break` / `continue` in its body bind to it.
+    fn buildWhileStmt(self: *Emitter, cond: ast.Expr, body: []const ast.Stmt) anyerror!js.Stmt {
+        const c = try self.buildExpr(cond);
+        const prev_ctx = self.loop_ctx;
+        self.loop_ctx = .stmt;
+        defer self.loop_ctx = prev_ctx;
+        return .{ .while_ = .{
+            .cond = c,
+            .body = .{ .stmts = try self.buildStmts(body), .layout = .fixed, .indent = self.current_indent },
+        } };
+    }
+
     /// `break` in a loop body. In a comprehension, `break <v>` contributes `v`
     /// and moves to the next item (`is_last` drops the redundant `continue`
     /// of the body's final statement); `break;` ends the iteration. In a
@@ -2953,6 +2987,13 @@ const Emitter = struct {
 
     fn buildCall(self: *Emitter, loc: ast.Loc, cc: anytype) anyerror!js.Expr {
         if (cc.is_builtin) return self.buildBuiltinCall(cc);
+        // A `while` used as a value (it has none): the statement in an IIFE.
+        if (self.whileShape(cc)) |w| {
+            const prev_ctx = self.loop_ctx;
+            self.loop_ctx = .none;
+            defer self.loop_ctx = prev_ctx;
+            return self.b.iife(&.{try self.buildWhileStmt(w.cond, w.body)});
+        }
 
         // builtin_node_dispatch: `declare fn` with `#[@External.Node]`.
         // Handles both template (`$0.method()`) and module+symbol

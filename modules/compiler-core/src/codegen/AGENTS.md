@@ -176,6 +176,13 @@ codegen/
     e` is `return __bp_error(e)` inside it) lowers the `case` to statements in
     a block (`buildReturnCaseStmt`): value arms `return ({ ok: v })`, the jump
     arm keeps its own `return`;
+  - `while (cond) { … }` — parsed as a call to `while` with one argument and
+    a parameterless trailing block; there is no keyword and no prelude fn, and
+    std's `Array` default fns `chunked`/`sliding` are written this way — is a
+    JS `while` statement (`whileShape` / `buildWhileStmt`, `loop_ctx = .stmt`),
+    unless the module declares its own `fn while`. The checker does not know
+    the form (default-fn bodies are not inferred), so outside those bodies it
+    is still an unbound name;
   - `throw` in value position is a one-statement IIFE; a binding in value
     position is `error.BindingInValuePosition`. `try x catch return y` in value
     position still returns from the value IIFE (the `try`'s value becomes `y`);

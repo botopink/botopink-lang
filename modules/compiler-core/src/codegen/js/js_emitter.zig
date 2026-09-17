@@ -464,6 +464,12 @@ pub fn writeStmt(w: *Writer, s: Ast.Stmt, indent: usize) Error!void {
             try w.writeAll(") ");
             try writeBlock(w, f.body);
         },
+        .while_ => |wh| {
+            try w.writeAll("while (");
+            try writeExpr(w, wh.cond, indent);
+            try w.writeAll(") ");
+            try writeBlock(w, wh.body);
+        },
         .block => |blk| try writeBlock(w, blk),
         .function => |f| try writeFunctionDecl(w, f, indent),
         .class => |c| try writeClass(w, c, indent),
@@ -701,6 +707,11 @@ test "js_emitter: statements" {
     try expectStmt("return;", .{ .return_ = null });
     try expectStmt("continue;", .continue_);
     try expectStmt("break;", .break_);
+    try expectStmt(
+        \\while (x) {
+        \\    break;
+        \\}
+    , .{ .while_ = .{ .cond = Ast.Expr.id("x"), .body = .{ .stmts = &.{.break_}, .layout = .fixed } } });
     try expectStmt("yield* xs; return;", .{ .yield_delegate = Ast.Expr.id("xs") });
     try expectStmt("// note", .{ .comment = Ast.Comment.line("note") });
     try expectStmt("/** note */", .{ .comment = .{ .style = .doc, .text = "note" } });

@@ -303,6 +303,8 @@ pub const Stmt = union(enum) {
     yield_delegate: Expr,
     if_: If,
     for_of: ForOf,
+    /// `while (cond) { … }`
+    while_: While,
     block: Block,
     /// `function name(params) { … }`
     function: FunctionDecl,
@@ -336,6 +338,11 @@ pub const If = struct {
     cond: Expr,
     then: *const Stmt,
     else_: ?*const Stmt = null,
+};
+
+pub const While = struct {
+    cond: Expr,
+    body: Block,
 };
 
 pub const ForOf = struct {
