@@ -492,6 +492,12 @@ first three are now enforced by the model, not by discipline:
   initialiser declares a zeroed mutable global and is evaluated in
   `$__init_globals`, which the module's `(start …)` runs ahead of `_start`.
   These used to stay at the `(i32.const 0)` placeholder, so every read saw `0`.
+- **`val x = comptime { … break v; }`** (`folded_globals`): the comptime pass
+  folds the block into `comptime_vals["ct_<N>"]`, N counting the module's
+  `val`s and `fn`s in order (commonJS reads it the same way). A folded numeral
+  is a constant global — `f64` when it has a fraction or exponent — and a
+  folded `"…"` string an interned one; the block itself never reaches
+  `$__init_globals`, which used to leave the global at `0`.
 - **Folded comptime values are not always numerals**: the comptime pass parks a
   rendered value (an array, a record) in a `numberLit` node, so
   `val C = comptime ["a"]` reached codegen as the text `["a"]` and emitted

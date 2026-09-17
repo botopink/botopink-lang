@@ -257,6 +257,24 @@ fn emitWat(
     defer em.deinit();
     em.instance_lowerings = own_instance_lowerings;
 
+    // `val x = comptime { … break v; }` was folded by the comptime pass into
+    // `comptime_vals["ct_<N>"]`, N counting this module's `val`s and `fn`s in
+    // order — the same numbering commonJS reads it by.
+    {
+        var binding_idx: usize = 0;
+        for (own_program.decls) |d| switch (d) {
+            .val => |v| {
+                if (v.value.* == .comptime_) {
+                    const id = try std.fmt.allocPrint(em.arena(), "ct_{d}", .{binding_idx});
+                    if (comptime_vals.get(id)) |text| try em.folded_globals.put(v.name, text);
+                }
+                binding_idx += 1;
+            },
+            .@"fn" => binding_idx += 1,
+            else => {},
+        };
+    }
+
     // The linked modules' declarations come first, minus their entry point,
     // their tests and any name this module defines itself. `owner[i]` is the
     // index into `linked` a declaration came from (`linked.len` = this module).
@@ -469,6 +487,8 @@ const Emitter = struct {
     result_shape_fns: std.StringHashMap(ResultShape),
     result_shape_locals: std.StringHashMap(ResultShape),
     result_subjects: std.StringHashMap(ResultShape),
+    /// Top-level `val` → the text the comptime pass folded its initialiser to.
+    folded_globals: std.StringHashMap([]const u8),
     /// Top-level `val` → record type name, when recovered (`val cfg = record
     /// { … }`), so `cfg.port` reads the right slot.
     global_rec_types: std.StringHashMap([]const u8),
@@ -594,6 +614,7 @@ const Emitter = struct {
             .result_shape_locals = std.StringHashMap(ResultShape).init(alloc),
             .result_subjects = std.StringHashMap(ResultShape).init(alloc),
             .global_rec_types = std.StringHashMap([]const u8).init(alloc),
+            .folded_globals = std.StringHashMap([]const u8).init(alloc),
             .bool_fns = std.StringHashMap(void).init(alloc),
             .global_types = std.StringHashMap([]const u8).init(alloc),
             .str_globals = std.StringHashMap(void).init(alloc),
@@ -649,6 +670,7 @@ const Emitter = struct {
         self.result_shape_locals.deinit();
         self.result_subjects.deinit();
         self.global_rec_types.deinit();
+        self.folded_globals.deinit();
         self.bool_fns.deinit();
         self.global_types.deinit();
         self.str_globals.deinit();
@@ -746,6 +768,9 @@ const Emitter = struct {
                 if (v.typeAnnotation) |ta| {
                     if (isStringTypeRef(ta)) try self.str_globals.put(v.name, {});
                     if (isBoolTypeRef(ta)) try self.bool_globals.put(v.name, {});
+                } else if (self.folded_globals.get(v.name)) |text| {
+                    if (quotedString(text) != null) try self.str_globals.put(v.name, {});
+                    if (std.mem.eql(u8, text, "true") or std.mem.eql(u8, text, "false")) try self.bool_globals.put(v.name, {});
                 } else {
                     // A template expansion or a concatenation is a string as
                     // much as a literal is.
@@ -1974,6 +1999,21 @@ const Emitter = struct {
 
     fn emitGlobalVal(self: *Emitter, v: ast.ValDecl) !void {
         const t = self.globalValType(v);
+        if (self.folded_globals.get(v.name)) |text| {
+            if (isNumericLiteral(text)) {
+                try self.item(.{ .global = .{ .name = v.name, .ty = vt(t), .init = text } });
+                return;
+            }
+            if (quotedString(text)) |str| {
+                const seg = try self.internString(str);
+                try self.item(.{ .global = .{
+                    .name = v.name,
+                    .ty = .i32,
+                    .init = try std.fmt.allocPrint(self.arena(), "{d}", .{seg.offset}),
+                } });
+                return;
+            }
+        }
         switch (v.value.*) {
             .literal => |lit| switch (lit.kind) {
                 // The comptime folder rewrites a folded `val` into a `numberLit`
@@ -2059,6 +2099,15 @@ const Emitter = struct {
         };
     }
 
+    /// The contents of a folded `"…"` value, when the text is one (no escapes
+    /// inside).
+    fn quotedString(text: []const u8) ?[]const u8 {
+        if (text.len < 2 or text[0] != '"' or text[text.len - 1] != '"') return null;
+        const inner = text[1 .. text.len - 1];
+        if (std.mem.indexOfAny(u8, inner, "\\\"") != null) return null;
+        return inner;
+    }
+
     /// Whether a `numberLit`'s text really is a wasm numeral. Guards against the
     /// comptime folder's rendered non-numeric values (arrays, records, strings).
     fn isNumericLiteral(n: []const u8) bool {
@@ -2080,6 +2129,10 @@ const Emitter = struct {
     /// rather than an `(global $PI i32 (i32.const 3.14))` parse error.
     fn globalValType(self: *Emitter, v: ast.ValDecl) []const u8 {
         if (v.typeAnnotation) |ta| return watType(ta);
+        // A folded float is an f64 — the value the comptime pass computed.
+        if (self.folded_globals.get(v.name)) |text| {
+            if (isNumericLiteral(text)) return if (std.mem.indexOfAny(u8, text, ".eE") != null) "f64" else "i32";
+        }
         return switch (v.value.*) {
             .literal => |lit| switch (lit.kind) {
                 .numberLit => |n| if (isNumericLiteral(n)) numLitType(n) else "i32",

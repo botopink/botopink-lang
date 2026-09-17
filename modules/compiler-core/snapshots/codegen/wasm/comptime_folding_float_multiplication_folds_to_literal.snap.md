@@ -20,16 +20,11 @@ ct_0: val pi2 = comptime {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (start $__init_globals)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  (global $pi2 (mut i32) (i32.const 0))
+  (global $pi2 f64 (f64.const 6.28))
   (func $main
     global.get $pi2
-    call $__print_i32
-  )
-  (func $__init_globals
-    i32.const 0
-    global.set $pi2
+    call $__print_f64
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
@@ -211,6 +206,97 @@ ct_0: val pi2 = comptime {
         i32.sub
         local.set $i
         br $loop
+      )
+    )
+  )
+  (func $__print_f64 (param $x f64)
+    local.get $x
+    call $__print_f64_raw
+    call $__print_nl
+  )
+  (func $__print_f64_raw (param $x f64)
+    (local $i i32) (local $frac f64) (local $d i32) (local $k i32) (local $last i32)
+    local.get $x
+    f64.const 0
+    f64.lt
+    (if
+      (then
+        i32.const 32
+        i32.const 45
+        i32.store8
+        i32.const 32
+        i32.const 1
+        call $__write_bytes
+        local.get $x
+        f64.neg
+        local.set $x
+      )
+    )
+    local.get $x
+    i32.trunc_f64_s
+    local.set $i
+    local.get $x
+    local.get $i
+    f64.convert_i32_s
+    f64.sub
+    local.set $frac
+    local.get $i
+    call $__print_i32_raw
+    ;; fractional digits into 34.. ; 33 holds the '.'
+    i32.const 0
+    local.set $k
+    i32.const 0
+    local.set $last
+    (block $fdone
+      (loop $fdigits
+        local.get $k
+        i32.const 6
+        i32.ge_s
+        br_if $fdone
+        local.get $frac
+        f64.const 10
+        f64.mul
+        local.set $frac
+        local.get $frac
+        i32.trunc_f64_s
+        local.set $d
+        local.get $frac
+        local.get $d
+        f64.convert_i32_s
+        f64.sub
+        local.set $frac
+        i32.const 34
+        local.get $k
+        i32.add
+        local.get $d
+        i32.const 48
+        i32.add
+        i32.store8
+        local.get $k
+        i32.const 1
+        i32.add
+        local.set $k
+        local.get $d
+        (if
+          (then
+            local.get $k
+            local.set $last
+          )
+        )
+        br $fdigits
+      )
+    )
+    local.get $last
+    (if
+      (then
+        i32.const 33
+        i32.const 46
+        i32.store8
+        i32.const 33
+        local.get $last
+        i32.const 1
+        i32.add
+        call $__write_bytes
       )
     )
   )

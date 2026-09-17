@@ -20,16 +20,11 @@ ct_0: val t = comptime {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (start $__init_globals)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  (global $t (mut i32) (i32.const 0))
+  (global $t i32 (i32.const 24))
   (func $main
     global.get $t
     call $__print_i32
-  )
-  (func $__init_globals
-    i32.const 0
-    global.set $t
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
