@@ -10,7 +10,7 @@ fn f() {
 -module(main).
 
 f() ->
-    true = (false).
+    case (false) of true -> ok; _ -> erlang:error({bp_assert, <<"error message">>, <<"main.bp:2">>}) end.
 ```
 
 ----- RUN LOG -----

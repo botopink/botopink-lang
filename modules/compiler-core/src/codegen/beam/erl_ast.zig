@@ -7,8 +7,8 @@
 //!
 //! Layout is part of the model where the backend's output depends on it: a
 //! clause body is either a block (`Pat ->` + indented statements) or inline
-//! (`Pat -> Expr`). A `raw` node embeds already-rendered Erlang text; it is the
-//! bridge for code not yet expressed as nodes and is written verbatim.
+//! (`Pat -> Expr`). A `raw` node embeds author-written Erlang text verbatim — a
+//! host template (`#[@External.Erlang("…")]`) and nothing else.
 //!
 //! Nodes borrow their slices: build them in an arena that outlives rendering.
 
@@ -16,8 +16,8 @@ const std = @import("std");
 const Term = @import("term.zig").Term;
 
 pub const Expr = union(enum) {
-    /// Rendered Erlang, written verbatim (multi-line text carries its own
-    /// indentation).
+    /// Host template text, written verbatim (multi-line text carries its own
+    /// indentation). Only a host template produces it — see `beam/AGENTS.md`.
     raw: []const u8,
     /// A value literal.
     term: Term,
@@ -206,11 +206,9 @@ pub const Clause = struct {
     };
 };
 
-/// A sequence of statements, or pre-rendered statement lines.
-pub const Body = union(enum) {
+/// A sequence of statements.
+pub const Body = struct {
     stmts: []const Stmt,
-    /// Already-indented statement lines (no trailing newline).
-    raw_block: []const u8,
 
     pub fn of(stmts: []const Stmt) Body {
         return .{ .stmts = stmts };
@@ -249,15 +247,11 @@ pub const Form = union(enum) {
     exports: []const FnRef,
     /// `-compile({no_auto_import,[f/1]}).`
     no_auto_import: []const FnRef,
-    /// `-name(Value).` with the value already rendered.
-    attribute: struct { name: []const u8, value: []const u8 },
     function: Function,
     /// A comment line.
     comment: Comment,
     /// An empty line.
     blank,
-    /// Rendered form text, written verbatim.
-    raw: []const u8,
 };
 
 /// Arena-backed construction helpers: copy slices and allocate child nodes so a

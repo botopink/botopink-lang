@@ -15,7 +15,10 @@ fn main() {
 main() ->
     DeclKind = #{'Record' => <<"Record">>, 'Fn' => <<"Fn">>},
     Decl = #{kind => maps:get('Record', DeclKind), name => <<"Service">>, fields => [#{name => <<"x">>, typeName => <<"i32">>, annotations => []}], methods => [], returnType => <<"">>, annotations => []},
-    io:format("~p~n", [length(maps:get(fields, Decl))]).
+    '__bp_print'([length(maps:get(fields, Decl))]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

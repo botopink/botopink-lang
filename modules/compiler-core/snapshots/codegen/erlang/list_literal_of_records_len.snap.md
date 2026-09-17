@@ -16,7 +16,10 @@ fn main() {
 
 main() ->
     Pts = [#{x => 1, y => 2}, #{x => 3, y => 4}],
-    io:format("~p~n", [length(Pts)]).
+    '__bp_print'([length(Pts)]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

@@ -13,7 +13,10 @@ fn main() {
 
 main() ->
     R = #{code => 7, kind => 11},
-    io:format("~p~n", [maps:get(kind, R)]).
+    '__bp_print'([maps:get(kind, R)]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

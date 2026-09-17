@@ -24,7 +24,10 @@ atual(Self) ->
 
 main() ->
     C = #{n => 5},
-    io:format("~p~n", [atual(C)]).
+    '__bp_print'([atual(C)]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

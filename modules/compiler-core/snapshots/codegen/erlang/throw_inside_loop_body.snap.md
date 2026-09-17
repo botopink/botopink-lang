@@ -28,7 +28,10 @@ validate(Items) ->
     {ok, Items}.
 
 main() ->
-    io:format("~p~n", [(fun(R) -> case R of {ok, _} -> true; _ -> false end end)(validate(2))]).
+    '__bp_print'([(fun(R) -> case R of {ok, _} -> true; _ -> false end end)(validate(2))]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

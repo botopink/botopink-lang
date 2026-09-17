@@ -29,7 +29,10 @@ choose(Present) ->
     end.
 
 main() ->
-    io:format("~p~n", [(fun(undefined) -> undefined; (_Opt0) -> maps:get(kind, _Opt0) end)(choose(true))]).
+    '__bp_print'([(fun(undefined) -> undefined; (_Opt0) -> maps:get(kind, _Opt0) end)(choose(true))]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

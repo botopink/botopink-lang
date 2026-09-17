@@ -182,3 +182,19 @@ test "js: external ---- 1-arg host expression declare fn emits no require" {
     try h.assertJsContains(std.testing.allocator, src, &.{"process.pid > 0"});
     try h.assertJsNotContains(std.testing.allocator, src, &.{ "require(", "const { process.pid" });
 }
+
+// A 1-arg `@External.Erlang` without markers on a `declare fn` is a bare host
+// expression (`libs/std/src/process.bp`'s `pid`). It renders verbatim at the
+// call site; as a `module:symbol` call with an empty module it came out
+// `:expr()()`, which stopped std's env, os and process from compiling.
+test "js: external ---- 1-arg host expression declare fn renders at the call site" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\#[@External.Node("process.pid"),
+        \\  @External.Erlang("list_to_integer(os:getpid())")]
+        \\declare fn pid() -> i32;
+        \\
+        \\fn main() {
+        \\    @print(pid() > 0);
+        \\}
+    );
+}

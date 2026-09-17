@@ -171,7 +171,10 @@ codegen/
   variables, enum-variant atoms, variant tuples `{'Circle', R}` (or the bare atom
   `'Lt'` for a payload-less variant — exactly what the constructor builds), list/cons
   and multi-subject tuples), binding expressions (`bindingNode`), `use` and comptime
-  forms (`comptimeNode`: `assert` as an inline `case` in test mode, `assertPattern`).
+  forms (`comptimeNode`: `assert` as an inline `case` raising
+  `erlang:error({bp_assert, Msg, <<"mod.bp:Line">>})` — always fatal, in and out of
+  test mode (semantics decision 4); the test runner is what catches it —
+  `assertPattern`).
   Record/interface literal keys are atoms (quoted when PascalCase or reserved); an
   array spread concatenates (`[1, 2] ++ Rest`, `nameRefNode` for the spread name);
   a leading-dot enum shorthand (`.Black`) is the variant atom.
@@ -184,8 +187,11 @@ codegen/
   (`primMethodNode`) / record instance methods, Array default-fn fallback),
   user templates, externals, record constructor maps and fun-typed locals. Host
   templates (`primOpTemplate`) become `seq` nodes (`templateNode`): the template
-  text stays verbatim around the receiver/argument nodes. Heads the backend has
-  always written as spelled (`mod:sym`, mangled atoms, `Var`) use `headCall`.
+  text stays verbatim around the receiver/argument nodes. Every other call is a
+  `call` node (`module:name`, a mangled atom — quoted by `writeAtom` when it has
+  to be) or an `apply` of a variable (a fn-typed local); a state that cannot
+  happen (an unknown `__bp_*` op, an empty OR pattern) is an emit error, never an
+  empty `raw`.
 - **Mutation through branches and loops** (`mutatingExpr`): a statement-level
   `if` / `loop (xs) { x -> … }` / `xs.forEach({ x -> … })` that reassigns variables
   bound before it (looking through nested `if`/`loop`/`forEach`) returns the new
@@ -204,6 +210,14 @@ codegen/
   the rebinding `Out@1 = (Out ++ [X])` — in straight-line position too — so the
   group-out expression reads the grown list. The mutation is name-driven
   (`push`); `codegen/beam_asm.zig` has no equivalent yet.
+  A local closure whose body reassigns variables of the enclosing function
+  (`val emit = { t -> toks = toks.append([t]); }`) cannot rebind what it
+  captured, so it is lowered with those variables as an extra last parameter and
+  answers their new values (`mutatingClosureExpr`, `mutating_closures`):
+  `Emit = fun(T, Toks@1) -> …, Toks@2 end`. A statement-position call rebinds
+  them — `Toks@3 = Emit(X, Toks)` — and counts as a mutation for an enclosing
+  `if`/`loop`/`forEach` (`closureMutation`). A call whose value is used keeps the
+  plain application.
 - **Comptime modules:** `emitComptimeModule(alloc, name, program, .{ host_enums,
   host_records, exports, forms, listing, unsupported_method })` lowers an untyped decorator/template body with
   the same emitter — `host_enums` join `enum_names` (`DeclKind.Record` →
@@ -234,11 +248,19 @@ codegen/
   answers is recorded in `unsupported_method` (when set, compilable emit only)
   and the emit fails with `error.UnsupportedComptimeMethod`; the evaluators turn
   it into a located diagnostic. `primErlangDispatchCount` exposes the size of the
-  prelude's dispatch table for a regression test. Tests: `tests/comptime_module.zig`.
-- **Names**: `atomName`/`fnAtom`/`erlangVar`/`erlangModule` are aliases of
-  `beam/erl_emitter.zig`. `erlang.zig` writes no Erlang text itself: the emitter
+  prelude's dispatch table for a regression test.
+  **A typed module uses the same shims** where inference recorded no lowering
+  for a value-receiver call (a method on `Array.range(0, 5)`'s result, a local
+  inside an inlined interface default) and the module defines no
+  `callee/argc+1` function of its own (`local_fn_arities`): the shims are
+  emitted after the reached instance defaults. A `.len`/`.length`/`.size` read
+  with no lowering, on a field no record of the module declares, is
+  `'__bp_len'(X, Field)` (`len_helper_form`, emitted on demand). Tests: `tests/comptime_module.zig`.
+- **Names**: variables are spelled once, in the module arena, by `varRef` /
+  `versionedVar` (`Count`, `Count@2`) over `beam/erl_emitter.zig`'s `varName`;
+  `erlangModule` aliases its `moduleName`, and atoms are quoted by the emitter. `erlang.zig` writes no Erlang text itself: the emitter
   builds `erl_ast` nodes and forms and `erl_emitter` renders them (`raw` remains
-  only for host template text and names written as spelled). Comments are
+  only for host template text — see [`beam/AGENTS.md`](beam/AGENTS.md)). Comments are
   `erl_ast.Comment` nodes: source comments keep their level (`//` → `%`, `///` →
   `%%`, `////` → `%%%`, `commentNode`), and the `%%` notes the backend writes
   (declaration headers, `continue`, unsupported field assignment) carry only
@@ -247,18 +269,33 @@ codegen/
   use the declared field order from `collectTypeShapes`); field access is
   `maps:get(field, Recv)`; tuple index `t._N` → `element(N+1, T)`. No `-record`
   declarations are emitted. Optional chaining `?.` guards on `undefined` via an
-  immediate fun.
+  immediate fun. A record destructuring (`val { x, y } = p`, a `{ name, .. }`
+  parameter, a `try` head) is therefore the exact map pattern
+  `#{x := X, y := Y}` (`destructPatternExpr`) — keys it does not name are
+  ignored, so `..` adds nothing; `#(a, b)` stays a tuple pattern. The names bind
+  through `patternBindVar` (versioned when already bound).
 - **Enums**: `Order.Lt` → the variant atom; `Color.Rgb(r, g, b)` →
   `{'Rgb', R, G, B}`. A bare `.ident` case pattern is the atom when it names a
-  known variant (`enum_variants`), else a variable. Case arms also lower list
+  known variant (`enum_variants`), else a variable. `enum_variants` also holds
+  the variants of every `pub enum` the module imports — by name, or with its
+  module (`import {order} from "std"` brings `std/order`'s `Lt`/`Eq`/`Gt`);
+  `codegenEmit` indexes them over every module (`EnumExport`), since the
+  cross-module index carries an enum's name only. Without it an imported
+  variant pattern was a fresh variable that matched anything. Case arms also lower list
   patterns (`[]`/`[X]`/`[First | Rest]`).
 - **Calls**: a PascalCase receiver is a module reference (`isModuleRef`) →
   remote `list:map(…)`; a receiver naming a local record calls the local
   associated fn. A no-receiver call to a fn-typed local (`locals`) is a fun
   application `F(args)`.
-- **Control flow**: `try`/`catch` → `case … of {ok, V} -> …; {error, E} -> … end`;
+- **Control flow**: `try`/`catch` → `case … of {ok, V} -> …; {error, E} -> … end`,
+  whose subject runs inside `try … catch error:R -> {error, R} end` — `@todo()` /
+  `@panic` in a `#[@result]` callee raise, and a `case` alone cannot catch that;
   an `if` whose then-branch returns nests the rest of the body in the false arm
-  (`emitEarlyReturnIf`). `a..b` → `lists:seq(A, B - 1)`. `&&`/`||` are
+  (`earlyReturnIfExpr`) — the binding form `if (x) { s -> return …; }` too, as
+  `case X of undefined -> <rest>; S -> <then> end` (its `case` value used to be
+  discarded). A binding-form `if` in any position is exactly those two clauses:
+  `undefined` runs the `else` body (it sat behind an unreachable `false` clause)
+  and no `_ -> ok` catch-all follows. `a..b` → `lists:seq(A, B - 1)`. `&&`/`||` are
   `andalso`/`orelse` — botopink short-circuits, erlang's `and`/`or` do not.
   `if (x)` on a nullable local (`?T`, or a parameter defaulting to `null`) is the
   null test `(X =/= undefined)`, not a boolean test (`condNode`).
@@ -266,12 +303,21 @@ codegen/
   - a body producing a value per item (`yield`, or `break <expr>`) → `lists:map`;
   - a body that is one `else`-less `if` ending in `break <expr>` → `lists:filtermap`
     with `{true, V}` / `false` (`filterMapFunBody`) — the filter+map botopink means;
-  - `loop (xs, 0..) { item, i -> … }` → `lists:enumerate(Start, Xs)` and a single
-    `{I, Item}` tuple parameter (`lists:map/foreach` pass ONE element, so two fun
-    parameters never matched);
+  - a two-parameter loop — `loop (xs, 1..) { item, i -> … }`, or `loop (xs) { item, i -> … }`
+    counting from 0 — → `lists:enumerate(Start, Xs)` and a single `{I, Item}` tuple
+    parameter (`lists:map/foreach/foldl` pass ONE element, so two fun parameters
+    never matched). A two-parameter loop that reassigns outer variables folds over
+    the same enumeration (`mutatingFoldExpr` with a `FoldIndex`), so its
+    reassignments survive the loop;
   - an open-ended range `loop (x..)` → a named fun that counts up and recurses
     (`fun __Loop(I) -> …, __Loop(I + 1) end`), since `lists:seq/2` has no `infinity`;
   - everything else → `lists:foreach`.
+  - `while (cond) { … }` — not in scope for checked code, but the prelude's
+    bodied interface defaults (`Array.chunked`/`sliding`) write it and are lowered
+    without inference — is a named fun that tests, runs the body and recurses
+    (`whileNode`): `{Out@3, I@3} = (fun __Loop({Out@1, I@1}) -> case Cond of
+    true -> …, __Loop({Out@2, I@2}); _ -> {Out@1, I@1} end end)({Out, I})`,
+    threading the variables the body reassigns; with none it answers `ok`.
   A value-less `break` is `erlang:throw('__bp_break')` and its loop is wrapped in
   the `try … catch throw:'__bp_break' -> ok end` that ends it (`loopBreakCatch`,
   `hasBareBreak`).
@@ -279,7 +325,12 @@ codegen/
   NAMED `val` is always a 0-arity function and a bare reference to it is the call
   `name()` (`top_vals`); a lambda-valued one applies what it answers,
   `(add())(10, 20)`. A comptime `val` keeps its `%% comptime val x` header and
-  carries the folded expression as its body. Only the `_`-named synthetic
+  carries the expression as its body; a `comptime { … break e; }` block is the
+  function body itself — its statements, then the `break` value
+  (`comptimeBlockBody`; no `break` → `ok`), and in expression position the same
+  body as an applied `fun`. Each val function starts a fresh variable scope.
+  Value-less jumps have a value node: `return;`/bare `try`/bare `yield` →
+  `undefined`, bare `throw;` → `erlang:throw(undefined)`. Only the `_`-named synthetic
   statements (top-level expression statements) stay inside `'_botopink_main'/0`,
   where they keep their single, ordered evaluation. The trade-off is that a named
   `val`'s initialiser runs once per read.
@@ -288,8 +339,22 @@ codegen/
   `isStringExpr` decides: a string literal, a `+` chain with a string operand, a
   parameter declared `string` or a `val` bound to a string (`string_locals`), and a
   module-level `fn`/`val` that answers one (`string_names`, `collectStringNames`).
-  Everything it cannot prove stays arithmetic. Binary-literal segments render as
-  plain strings (`beam/erl_emitter.zig`), non-simple ones are parenthesised.
+  Otherwise `+` is arithmetic when either operand is provably a number (`numKind`:
+  number literals, parameters declared with a numeric type and `val`s bound to a
+  numeric expression — `num_locals`/`num_names` —, primitive length reads, and
+  `-`/`*`/`/`/`%` results), and `'__bp_add'(A, B)` when neither operand is proven
+  either way (a generic lambda's `{ acc, s -> acc + s }`): two binaries
+  concatenate at runtime, anything else adds (`add_helper_form`, emitted on
+  demand). `s += x` follows the same three-way rule. `/` is `div` unless an
+  operand is provably a float, where it is `/` (`div` raises `badarith` on a
+  float). Inside a chain proven to be a string,
+  an operand that is not itself provably a string (`"value: " + v`, `v: i32`) is
+  the segment `('__bp_text'(V))/binary` — `'__bp_text'/1` answers a binary as
+  itself and anything else as its `~p` rendering, emitted once per module when a
+  segment reached it (`needs_text_helper`, `text_helper_form`); a bare `V/binary`
+  raised `badarg`. Binary-literal segments render as plain strings
+  (`beam/erl_emitter.zig`), non-simple ones are parenthesised. **beam must render
+  the same bytes** (spec 04-beam B3).
 - **`@Result` constructors and patterns** share one tag table (`resultTag`):
   `Ok(v)` → `{ok, V}`, `Err(e)` / `new Error(msg)` → `{error, E}`, and the `Ok`/`Err`
   case arms match those tags. A user enum variant of the same name wins.
@@ -299,13 +364,20 @@ codegen/
   `m(recv, args)`.
 - **Externals**: `#[@External.Erlang("module", "symbol")]` fns emit no decl and
   calls lower to `module:symbol(Args)` (`externals`); `$`-marker / `when(…)`
-  symbols render inline (`user_erlang_templates`); no `erlang` target →
+  symbols render inline (`user_erlang_templates`), and so does a 1-arg form
+  without markers (`#[@External.Erlang("list_to_integer(os:getpid())")]`) — a bare
+  host expression names no module, and as `module:symbol` it came out
+  `:expr()()`; no `erlang` target →
   `MissingExternalTarget`. A template is the string literal's raw LEXEME and goes
   into the `.erl` verbatim, so `dupeTemplate` resolves `\"` to `"` first (an
   `io_lib:format(\"~p\", …)` template used to open an unterminated string).
-  `builtinAnnotationNode` widens a fixed format string paired with the variadic
-  `$args` marker to one control sequence per argument, so `@print(a, b, c)` is
-  `io:format("~p ~p ~p~n", [A, B, C])` and not a `badarg`.
+- **`@print` / `@println` / `@debug`** (cross-backend semantics decision 1) lower to
+  `'__bp_print'([A, B, …])`, not to a template: the helper (`print_helper_form`,
+  emitted once per module that prints, typed and comptime alike) builds the format
+  at runtime — `~ts` for a binary, `~p` for anything else, one verb per argument
+  joined by a space, then `~n` — so a string prints as its text (`hi`, not
+  `<<"hi">>`) exactly as commonJS does. Numeric formatting stays divergent by
+  design: `~p` of `1.0` is `1.0` where `console.log` writes `1`.
 - **Cross-module**: an imported record joins `record_fields` + `imported_types`
   (`collectImportedTypes`), so construction inlines the owner's map shape
   (records are maps — there is no constructor function to call remotely) and
@@ -603,7 +675,9 @@ Primitive-receiver methods (`xs.map(f)`, `s.toUpper()`) are tagged `.prim` in
 
 1. **Annotation-driven first** — `tryEmitPrimAnnotation` looks up the
    interface method's `#[@External.<Target>(…)]` annotation in
-   `libs/std/src/primitives.bp` (walking `extends` chains). A plain
+   `libs/std/src/primitives.bp` (walking `extends` chains; erlang starts an
+   integer receiver's walk at `Signed`, which reaches `Integer` and `Number` —
+   from `Integer` it never found `Signed.abs`). A plain
    `("mod", "sym")` pair becomes a host call; a symbol with markers is rendered
    by `comptime/primOpTemplate.zig` (`$self`, `$0..$N`, `$args`,
    `$stringify(…)`, `when($argc == N)` arity branches, `"""…"""` raw bodies).

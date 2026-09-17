@@ -24,10 +24,14 @@ ct_0: val result = comptime {
 
 %% comptime val result
 result() ->
+    X = 10,
     (X * 2).
 
 main() ->
-    io:format("~p~n", [result()]).
+    '__bp_print'([result()]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -38,6 +42,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:6:6: variable 'X' is unbound
+20
 ```

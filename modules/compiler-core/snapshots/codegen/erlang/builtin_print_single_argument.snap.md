@@ -11,7 +11,10 @@ fn main() {
 -export(['_botopink_main'/0, main/1]).
 
 main() ->
-    io:format("~p~n", [<<"Hello, World!">>]).
+    '__bp_print'([<<"Hello, World!">>]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -22,5 +25,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-<<"Hello, World!">>
+Hello, World!
 ```

@@ -33,20 +33,31 @@ fetchAge() ->
     {error, #{msg => <<"age missing">>}}.
 
 loadUser() ->
-    Name = case fetchName() of
+    Name = case try
+        fetchName()
+    catch
+        error:_TryR0 -> {error, _TryR0}
+    end of
         {ok, TryV0} -> TryV0;
         {error, _TryE0} ->
             <<"anonymous">>
     end,
-    Age = case fetchAge() of
+    Age = case try
+        fetchAge()
+    catch
+        error:_TryR1 -> {error, _TryR1}
+    end of
         {ok, TryV1} -> TryV1;
         {error, _TryE1} ->
             0
     end,
-    io:format("~p ~p~n", [Name, Age]).
+    '__bp_print'([Name, Age]).
 
 main() ->
     loadUser().
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -57,5 +68,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-<<"anonymous">> 0
+anonymous 0
 ```

@@ -23,15 +23,21 @@ classify(X) ->
         false ->
             case (X =/= 0) of
                 true ->
-                    <<"nonzero: ", X/binary>>;
+                    <<"nonzero: ", ('__bp_text'(X))/binary>>;
                 false ->
                     <<"null">>
             end
     end.
 
 main() ->
-    io:format("~p~n", [classify(42)]),
-    io:format("~p~n", [classify(0)]).
+    '__bp_print'([classify(42)]),
+    '__bp_print'([classify(0)]).
+
+'__bp_text'(Value) when is_binary(Value) -> Value;
+'__bp_text'(Value) -> iolist_to_binary(io_lib:format(<<"~p">>, [Value])).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -42,4 +48,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+nonzero: 42
+zero
 ```

@@ -16,15 +16,17 @@ fn main() {
 
 isString(X) ->
     case X of
-        undefined -> undefined;
+        undefined ->
+            false;
         S ->
-            true;
-        _ -> ok
-    end,
-    false.
+            true
+    end.
 
 main() ->
-    io:format("~p~n", [isString(<<"hello">>)]).
+    '__bp_print'([isString(<<"hello">>)]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -35,5 +37,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-false
+true
 ```

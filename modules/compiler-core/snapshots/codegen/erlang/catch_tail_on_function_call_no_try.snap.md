@@ -20,7 +20,11 @@ risky() ->
     {error, #{level => 5}}.
 
 safe() ->
-    case risky() of
+    case try
+        risky()
+    catch
+        error:_TryR0 -> {error, _TryR0}
+    end of
         {ok, TryV0} -> TryV0;
         {error, _TryE0} ->
             (-1)

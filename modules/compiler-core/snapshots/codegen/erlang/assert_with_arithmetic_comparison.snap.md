@@ -10,7 +10,7 @@ fn f() {
 -module(main).
 
 f() ->
-    true = (((1.0 + 2.0) =:= 3.0)).
+    case (((1.0 + 2.0) =:= 3.0)) of true -> ok; _ -> erlang:error({bp_assert, <<"assertion failed">>, <<"main.bp:2">>}) end.
 ```
 
 ----- RUN LOG -----

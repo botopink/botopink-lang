@@ -573,10 +573,7 @@ fn isComment(s: Ast.Stmt) bool {
 /// another real statement follows; comments never do. A body with no real
 /// statement is `undefined` (Erlang has no empty body). No trailing newline.
 pub fn writeBody(w: *Writer, body: Ast.Body, indent: usize) Error!void {
-    const stmts = switch (body) {
-        .raw_block => |text| return w.writeAll(text),
-        .stmts => |s| s,
-    };
+    const stmts = body.stmts;
     var last_real: ?usize = null;
     for (stmts, 0..) |s, i| {
         if (!isComment(s)) last_real = i;
@@ -600,10 +597,7 @@ pub fn writeBody(w: *Writer, body: Ast.Body, indent: usize) Error!void {
 }
 
 fn writeInlineBody(w: *Writer, body: Ast.Body, indent: usize) Error!void {
-    const stmts = switch (body) {
-        .raw_block => |text| return w.writeAll(text),
-        .stmts => |s| s,
-    };
+    const stmts = body.stmts;
     if (stmts.len == 0) return w.writeAll("undefined");
     for (stmts, 0..) |s, i| {
         if (i > 0) try w.writeAll(", ");
@@ -667,13 +661,11 @@ pub fn writeForm(w: *Writer, form: Ast.Form) Error!void {
             try w.writeAll("}).\n");
         },
         .blank => try w.writeByte('\n'),
-        .attribute => |attr| try w.print("-{s}({s}).\n", .{ attr.name, attr.value }),
         .function => |f| try writeFunction(w, f),
         .comment => |c| {
             try writeComment(w, c);
             try w.writeByte('\n');
         },
-        .raw => |text| try w.writeAll(text),
     }
 }
 

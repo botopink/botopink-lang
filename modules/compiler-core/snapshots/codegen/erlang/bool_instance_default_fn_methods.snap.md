@@ -16,10 +16,10 @@ fn main() {
 %% interface Bool
 
 main() ->
-    io:format("~p~n", [(not true)]),
-    io:format("~p~n", [bool_nor(false, false)]),
-    io:format("~p~n", [bool_nand(true, true)]),
-    io:format("~p~n", [bool_exclusiveOr(true, false)]).
+    '__bp_print'([(not true)]),
+    '__bp_print'([bool_nor(false, false)]),
+    '__bp_print'([bool_nand(true, true)]),
+    '__bp_print'([bool_exclusiveOr(true, false)]).
 
 bool_nor(Self, Other) ->
     (not ((Self orelse Other))).
@@ -29,6 +29,9 @@ bool_nand(Self, Other) ->
 
 bool_exclusiveOr(Self, Other) ->
     (Self =/= Other).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

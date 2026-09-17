@@ -18,8 +18,11 @@ isPositive(N) ->
     (N > 0).
 
 main() ->
-    io:format("~p~n", [isPositive(5)]),
-    io:format("~p~n", [isPositive((-1))]).
+    '__bp_print'([isPositive(5)]),
+    '__bp_print'([isPositive((-1))]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

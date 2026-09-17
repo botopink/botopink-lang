@@ -13,7 +13,10 @@ fn main() {
 
 main() ->
     {A, B} = {12, <<"hello">>},
-    io:format("~p ~p~n", [A, B]).
+    '__bp_print'([A, B]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -24,5 +27,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-12 <<"hello">>
+12 hello
 ```

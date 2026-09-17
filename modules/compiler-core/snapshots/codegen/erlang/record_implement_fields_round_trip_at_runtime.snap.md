@@ -20,7 +20,10 @@ mk() ->
     #{tag => <<"x">>, n => 5}.
 
 main() ->
-    io:format("~p~n", [maps:get(n, mk())]).
+    '__bp_print'([maps:get(n, mk())]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

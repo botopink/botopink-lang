@@ -22,7 +22,10 @@ fetch(X) ->
 %% #[@future] / #[@asyncGenerator] — eager lowering
 loadTwice(X) ->
     A = fetch(X),
-    (A + A).
+    '__bp_add'(A, A).
+
+'__bp_add'(A, B) when is_binary(A), is_binary(B) -> <<A/binary, B/binary>>;
+'__bp_add'(A, B) -> A + B.
 ```
 
 ----- RUN LOG -----

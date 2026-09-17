@@ -20,12 +20,18 @@ greet(X) ->
         true ->
             <<"nobody">>;
         _ ->
-            <<"hello ", X/binary>>
+            <<"hello ", ('__bp_text'(X))/binary>>
     end.
 
 main() ->
-    io:format("~p~n", [greet(<<"world">>)]),
-    io:format("~p~n", [greet(undefined)]).
+    '__bp_print'([greet(<<"world">>)]),
+    '__bp_print'([greet(undefined)]).
+
+'__bp_text'(Value) when is_binary(Value) -> Value;
+'__bp_text'(Value) -> iolist_to_binary(io_lib:format(<<"~p">>, [Value])).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -36,6 +42,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-<<"hello world">>
-<<"nobody">>
+hello world
+nobody
 ```

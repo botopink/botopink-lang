@@ -127,7 +127,10 @@ s() ->
     <<"END,WORLD,BIG,HELLO|hello|big world|at|contains|startsWith|indexOf">>.
 
 main() ->
-    io:format("~p~n", [s()]).
+    '__bp_print'([s()]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -138,5 +141,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-<<"END,WORLD,BIG,HELLO|hello|big world|at|contains|startsWith|indexOf">>
+END,WORLD,BIG,HELLO|hello|big world|at|contains|startsWith|indexOf
 ```

@@ -20,11 +20,10 @@ fn main() {
 refer(Q) ->
     Hit = lookup(Q, <<"greeting">>),
     case Hit of
-        undefined -> undefined;
+        undefined ->
+            fail(Q, <<"greeting not found in caller scope">>);
         B ->
-            ref(B);
-        false ->
-            fail(Q, <<"greeting not found in caller scope">>)
+            ref(B)
     end.
 
 main() ->
@@ -80,7 +79,10 @@ s() ->
     greeting().
 
 main() ->
-    io:format("~p~n", [s()]).
+    '__bp_print'([s()]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -91,5 +93,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-<<"ola mundo">>
+ola mundo
 ```

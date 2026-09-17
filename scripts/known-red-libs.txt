@@ -10,8 +10,7 @@
 #
 # Owners are the 1.0.2-beta fronts (specs/1.0.2-beta/fronts.md).
 
-erika     commonJS F5-erlang             two-parameter `loop` lowers to a 2-arity fun that loses the accumulator (9 unbound_var/unsafe_var, spec 12 item 7b)
-erika     erlang   F5-erlang             two-parameter `loop` lowers to a 2-arity fun that loses the accumulator (9 unbound_var/unsafe_var, spec 12 item 7b)
-jhonstart commonJS F5-erlang             html template lowers to Erlang with case-arm rebinding errors (5 unbound_var) — spec names no owner, assigned to F5
+erika     commonJS F3-std-surface         String.split("") answers the whole string on erlang (string:split/3, empty separator): the comptime query lexer sees one token — "unknown collection '' in scope"
+erika     erlang   F3-std-surface         String.split("") answers the whole string on erlang (string:split/3, empty separator): the comptime query lexer sees one token — "unknown collection '' in scope"
+jhonstart commonJS F3-std-surface         String.split("") answers the whole string on erlang (string:split/3, empty separator): the html template measures every tag as length 1 — "mismatched closing tag </>"
 std       commonJS F8-js-bridges         test/primitives_gaps_test.bp: `while` inside an interface `default fn` lowers to an undefined `while_` (array chunked partitions, array sliding window of 2)
-std       erlang   F5-erlang             env/os/process: a marker-less 1-arg @External.Erlang on a declare fn lowers to `:expr()()`; test/primitives_gaps_test.bp: methods on an Array.range(…) result and `while` in chunked/sliding are not lowered

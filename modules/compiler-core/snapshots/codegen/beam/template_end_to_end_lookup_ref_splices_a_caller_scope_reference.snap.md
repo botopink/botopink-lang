@@ -20,11 +20,10 @@ fn main() {
 refer(Q) ->
     Hit = lookup(Q, <<"greeting">>),
     case Hit of
-        undefined -> undefined;
+        undefined ->
+            fail(Q, <<"greeting not found in caller scope">>);
         B ->
-            ref(B);
-        false ->
-            fail(Q, <<"greeting not found in caller scope">>)
+            ref(B)
     end.
 
 main() ->

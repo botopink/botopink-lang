@@ -13,7 +13,10 @@ fn main() {
 
 main() ->
     Outer = #{span => #{start => 5, 'end' => 9}, kind => 3},
-    io:format("~p~n", [maps:get(start, maps:get(span, Outer))]).
+    '__bp_print'([maps:get(start, maps:get(span, Outer))]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

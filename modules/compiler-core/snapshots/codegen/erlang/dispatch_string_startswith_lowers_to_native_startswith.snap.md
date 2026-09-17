@@ -13,7 +13,10 @@ fn main() {
 
 main() ->
     Hw = <<"hello world">>,
-    io:format("~p~n", [(string:prefix(Hw, <<"hello">>) =/= nomatch)]).
+    '__bp_print'([(string:prefix(Hw, <<"hello">>) =/= nomatch)]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

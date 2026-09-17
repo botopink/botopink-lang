@@ -31,8 +31,11 @@ area(S) ->
     end.
 
 main() ->
-    io:format("~p~n", [area({'Circle', 2.0})]),
-    io:format("~p~n", [area({'Square', 3.0})]).
+    '__bp_print'([area({'Circle', 2.0})]),
+    '__bp_print'([area({'Square', 3.0})]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

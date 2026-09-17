@@ -30,7 +30,10 @@ pairish_first(P) ->
 
 main() ->
     P = pairish_of(1, <<"one">>),
-    io:format("~p~n", [pairish_first(P)]).
+    '__bp_print'([pairish_first(P)]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

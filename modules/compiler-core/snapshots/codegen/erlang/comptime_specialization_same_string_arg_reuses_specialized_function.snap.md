@@ -20,12 +20,15 @@ fn main() {
 main() ->
     R1 = 'build_$0'(<<"Sistema iniciado">>),
     R2 = 'build_$0'(<<"Log replicado">>),
-    io:format("~p~n", [R1]),
-    io:format("~p~n", [R2]).
+    '__bp_print'([R1]),
+    '__bp_print'([R2]).
 
 'build_$0'(Name) ->
     Prefix = <<"INFO">>,
     <<Prefix/binary, ": ", Name/binary>>.
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -36,6 +39,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-<<"INFO: Sistema iniciado">>
-<<"INFO: Log replicado">>
+INFO: Sistema iniciado
+INFO: Log replicado
 ```

@@ -24,18 +24,21 @@ fn main() {
 
 main() ->
     N = (-5),
-    io:format("~p~n", [abs(N)]),
-    io:format("~p~n", [erlang:min(N, 3)]),
-    io:format("~p~n", [erlang:max(N, 10)]),
-    io:format("~p~n", [number_clamp(N, 0, 5)]),
+    '__bp_print'([erlang:abs(N)]),
+    '__bp_print'([erlang:min(N, 3)]),
+    '__bp_print'([erlang:max(N, 10)]),
+    '__bp_print'([number_clamp(N, 0, 5)]),
     X = 7,
-    io:format("~p~n", [integer_isEven(X)]).
+    '__bp_print'([integer_isEven(X)]).
 
 number_clamp(Self, Lo, Hi) ->
     erlang:min(erlang:max(Self, Lo), Hi).
 
 integer_isEven(Self) ->
     ((Self rem 2) =:= 0).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

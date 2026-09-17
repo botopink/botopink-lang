@@ -20,7 +20,10 @@ v1() ->
     2.
 
 main() ->
-    io:format("~p~n", [v1()]).
+    '__bp_print'([v1()]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

@@ -16,9 +16,11 @@ main() ->
     case X of
         undefined -> undefined;
         N ->
-            io:format("~p~n", [N]);
-        _ -> ok
+            '__bp_print'([N])
     end.
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

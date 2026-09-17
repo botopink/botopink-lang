@@ -34,21 +34,35 @@ outer() ->
     {error, #{msg => <<"timeout">>}}.
 
 process() ->
-    A = case inner() of
+    A = case try
+        inner()
+    catch
+        error:_TryR0 -> {error, _TryR0}
+    end of
         {ok, TryV0} -> TryV0;
         {error, _TryE0} ->
             0
     end,
-    B = case outer() of
+    B = case try
+        outer()
+    catch
+        error:_TryR1 -> {error, _TryR1}
+    end of
         {ok, TryV1} -> TryV1;
         {error, _TryE1} ->
             A
     end,
-    io:format("~p ~p~n", [A, B]),
-    (A + B).
+    '__bp_print'([A, B]),
+    '__bp_add'(A, B).
 
 main() ->
-    io:format("~p~n", [process()]).
+    '__bp_print'([process()]).
+
+'__bp_add'(A, B) when is_binary(A), is_binary(B) -> <<A/binary, B/binary>>;
+'__bp_add'(A, B) -> A + B.
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

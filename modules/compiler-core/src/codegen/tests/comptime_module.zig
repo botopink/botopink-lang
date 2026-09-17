@@ -86,6 +86,72 @@ test "comptime module: forEach with a mutated var fuses into a fold" {
     try expectContains(out, "emit('__bp_add'(");
 }
 
+test "comptime module: a two-parameter loop folds over lists:enumerate" {
+    // A query template's `loop (xs) { x, i -> }` reassigning outer vars. It used
+    // to hand a 2-arity fun to `lists:foreach/2` and lose every reassignment.
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const out = try lower(arena_state.allocator(),
+        \\fn pick(comptime decl: @Decl) {
+        \\    var first = "";
+        \\    loop (decl.fields) { f, idx ->
+        \\        if (idx == 0) { first = f.name; };
+        \\    };
+        \\    @emit(first);
+        \\}
+    , .{ .host_enums = &.{"DeclKind"} });
+    try expectContains(out, "First@4 = lists:foldl(fun({Idx, F}, First@1) ->");
+    try expectContains(out, "end, First, lists:enumerate(0, maps:get(fields, Decl))),");
+    try expectContains(out, "emit(First@4)");
+    if (std.mem.indexOf(u8, out, "lists:foreach") != null) return error.TestUnexpectedForeach;
+}
+
+test "comptime module: a closure reassigning outer vars takes and answers them" {
+    // An erlang fun cannot rebind what it captured: the reassigned variables go
+    // in as the last argument and come back as the value.
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const out = try lower(arena_state.allocator(),
+        \\fn tags(comptime decl: @Decl) {
+        \\    var toks = [];
+        \\    val emit = { t -> toks = toks.append([t]); };
+        \\    emit("first");
+        \\    decl.fields.forEach({ f -> emit(f.name); });
+        \\    @emit(toks.join(","));
+        \\}
+    , .{ .host_enums = &.{"DeclKind"} });
+    try expectContains(out, "Emit = fun(T, Toks@1) ->");
+    try expectContains(out, "Toks@3 = Emit(<<\"first\">>, Toks),");
+    try expectContains(out, "Toks@6 = lists:foldl(fun(F, Toks@4) ->");
+    try expectContains(out, "Toks@5 = Emit(maps:get(name, F), Toks@4),");
+    try expectContains(out, "emit('__bp_prim_join'(Toks@6, <<\",\">>))");
+}
+
+test "comptime module: a while loop threads the variables its body reassigns" {
+    // `while (cond) { … }` is not in scope for checked code; the prelude's
+    // bodied interface defaults (`Array.chunked`/`sliding`) write it, and they
+    // are lowered without inference — like a comptime body.
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const out = try lower(arena_state.allocator(),
+        \\fn count(comptime decl: @Decl) {
+        \\    var i = 0;
+        \\    var names = "";
+        \\    while (i < 3) {
+        \\        names = names + decl.name;
+        \\        i = i + 1;
+        \\    };
+        \\    @emit(names);
+        \\}
+    , .{ .host_enums = &.{"DeclKind"} });
+    try expectContains(out, "{Names@3, I@3} = (fun __Loop({Names@1, I@1}) ->");
+    try expectContains(out, "case (I@1 < 3) of");
+    try expectContains(out, "__Loop({Names@2, I@2});");
+    try expectContains(out, "_ -> {Names@1, I@1}");
+    try expectContains(out, "end)({Names, I}),");
+    try expectContains(out, "emit(Names@3)");
+}
+
 test "comptime module: push through a local threads out of a multi-statement closure" {
     // A dependency-injection constructor shape: a 2-statement closure whose inner
     // `forEach` mutates by assignment and whose `push` mutates the receiver.

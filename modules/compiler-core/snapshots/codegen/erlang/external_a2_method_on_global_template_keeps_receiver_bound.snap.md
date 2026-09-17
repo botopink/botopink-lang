@@ -17,7 +17,10 @@ fn main() {
 %% external fn stringify (no erlang target)
 
 main() ->
-    io:format("~p~n", [iolist_to_binary(io_lib:format("~p", [42]))]).
+    '__bp_print'([iolist_to_binary(io_lib:format("~p", [42]))]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -28,5 +31,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-<<"42">>
+42
 ```

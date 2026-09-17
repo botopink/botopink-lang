@@ -21,14 +21,17 @@ fn main() {
 check(X) ->
     case (X > 0) of
         true ->
-            io:format("~p~n", [<<"positive">>]);
+            '__bp_print'([<<"positive">>]);
         false ->
-            io:format("~p~n", [<<"non-positive">>])
+            '__bp_print'([<<"non-positive">>])
     end.
 
 main() ->
     check(1),
     check((-1)).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -39,6 +42,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-<<"positive">>
-<<"non-positive">>
+positive
+non-positive
 ```

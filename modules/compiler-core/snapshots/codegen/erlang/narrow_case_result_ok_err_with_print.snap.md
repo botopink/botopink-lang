@@ -32,19 +32,25 @@ main() ->
     R1 = fetch(true),
     Msg1 = case R1 of
         {ok, V} ->
-            <<"OK:", V/binary>>;
+            <<"OK:", ('__bp_text'(V))/binary>>;
         {error, E} ->
-            <<"ERR:", E/binary>>
+            <<"ERR:", ('__bp_text'(E))/binary>>
     end,
-    io:format("~p~n", [Msg1]),
+    '__bp_print'([Msg1]),
     R2 = fetch(false),
     Msg2 = case R2 of
         {ok, V@1} ->
-            <<"OK:", V@1/binary>>;
+            <<"OK:", ('__bp_text'(V@1))/binary>>;
         {error, E@1} ->
-            <<"ERR:", E@1/binary>>
+            <<"ERR:", ('__bp_text'(E@1))/binary>>
     end,
-    io:format("~p~n", [Msg2]).
+    '__bp_print'([Msg2]).
+
+'__bp_text'(Value) when is_binary(Value) -> Value;
+'__bp_text'(Value) -> iolist_to_binary(io_lib:format(<<"~p">>, [Value])).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -55,6 +61,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-<<"OK:data">>
-<<"ERR:fail">>
+OK:data
+ERR:fail
 ```

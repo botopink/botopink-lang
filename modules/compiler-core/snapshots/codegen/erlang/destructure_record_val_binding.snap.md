@@ -19,12 +19,15 @@ fn main() {
 %% record Point: x, y
 
 describe(P) ->
-    {X, Y} = P,
-    io:format("~p ~p~n", [X, Y]),
+    #{x := X, y := Y} = P,
+    '__bp_print'([X, Y]),
     X.
 
 main() ->
     describe(#{x => 3, y => 4}).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -35,4 +38,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+3 4
 ```

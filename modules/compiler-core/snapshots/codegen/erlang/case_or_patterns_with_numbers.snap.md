@@ -29,13 +29,16 @@ classify(Day) ->
         _ ->
             <<"weekday">>
     end,
-    io:format("~p~n", [Kind]),
+    '__bp_print'([Kind]),
     Kind.
 
 main() ->
     classify(3),
     classify(6),
     classify(7).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -46,7 +49,7 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-<<"weekday">>
-<<"weekend">>
-<<"weekend">>
+weekday
+weekend
+weekend
 ```

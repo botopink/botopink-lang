@@ -26,8 +26,11 @@ abs(N) ->
     Result.
 
 main() ->
-    io:format("~p~n", [abs((-5))]),
-    io:format("~p~n", [abs(3)]).
+    '__bp_print'([abs((-5))]),
+    '__bp_print'([abs(3)]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

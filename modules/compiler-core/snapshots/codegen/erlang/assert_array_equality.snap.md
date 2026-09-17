@@ -10,7 +10,7 @@ fn f() {
 -module(main).
 
 f() ->
-    true = (([] =:= [])).
+    case (([] =:= [])) of true -> ok; _ -> erlang:error({bp_assert, <<"assertion failed">>, <<"main.bp:2">>}) end.
 ```
 
 ----- RUN LOG -----

@@ -13,7 +13,10 @@ fn main() {
 
 main() ->
     Labels = [<<"a">>, <<"bb">>, <<"ccc">>],
-    io:format("~p~n", [length(Labels)]).
+    '__bp_print'([length(Labels)]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

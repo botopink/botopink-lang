@@ -18,8 +18,11 @@ isZero(N) ->
     (N =:= 0).
 
 main() ->
-    io:format("~p~n", [isZero(0)]),
-    io:format("~p~n", [isZero(42)]).
+    '__bp_print'([isZero(0)]),
+    '__bp_print'([isZero(42)]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

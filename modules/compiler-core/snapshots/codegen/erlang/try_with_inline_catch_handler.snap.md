@@ -23,16 +23,23 @@ fetch() ->
     erlang:error({todo, <<"not implemented">>}).
 
 safe() ->
-    R = case fetch() of
+    R = case try
+        fetch()
+    catch
+        error:_TryR0 -> {error, _TryR0}
+    end of
         {ok, TryV0} -> TryV0;
         {error, _TryE0} ->
             0
     end,
-    io:format("~p~n", [R]),
+    '__bp_print'([R]),
     R.
 
 main() ->
-    io:format("~p~n", [safe()]).
+    '__bp_print'([safe()]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
@@ -43,4 +50,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
+0
+0
 ```

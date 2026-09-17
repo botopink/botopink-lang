@@ -19,10 +19,13 @@ main() ->
     S = <<"ye", "s">>,
     case (S =:= <<"yes">>) of
         true ->
-            io:format("~p~n", [42]);
+            '__bp_print'([42]);
         false ->
-            io:format("~p~n", [0])
+            '__bp_print'([0])
     end.
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

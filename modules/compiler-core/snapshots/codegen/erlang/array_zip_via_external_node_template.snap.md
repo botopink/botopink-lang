@@ -35,7 +35,10 @@ array_repeat(Value, Times) ->
 main() ->
     Xs = [1, 2, 3],
     Ys = [<<"a">>, <<"b">>, <<"c">>],
-    io:format("~p~n", [lists:zipwith(fun(__X, __Y) -> {__X, __Y} end, lists:sublist(Xs, length(Ys)), lists:sublist(Ys, length(Xs)))]).
+    '__bp_print'([lists:zipwith(fun(__X, __Y) -> {__X, __Y} end, lists:sublist(Xs, length(Ys)), lists:sublist(Ys, length(Xs)))]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().

@@ -17,7 +17,10 @@ diff(X, Y) ->
     (X + (-Y)).
 
 main() ->
-    io:format("~p~n", [diff(10, 3)]).
+    '__bp_print'([diff(10, 3)]).
+
+'__bp_print'(Values) ->
+    io:format(lists:flatten([lists:join(" ", [case is_binary(V) of true -> "~ts"; false -> "~p" end || V <- Values]), "~n"]), Values).
 
 '_botopink_main'() ->
     main().
