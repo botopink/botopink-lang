@@ -48,10 +48,18 @@ tests/language/run.sh --compiler <botopink> --only test/case_arms.bp
   unowned item of `specs/1.0.4-beta/fronts.md`.
 - A path-only entry is for a file that does not compile; a file that compiles lists its failing
   tests by name.
+- A `reject/` `.expect` names a short key phrase of the diagnostic decision 8 sketches (`use _ {`,
+  `not exhaustive`, `use loop (`…) and the location of the offending token. The front that implements
+  the diagnostic fixes its final wording and updates the `.expect` in the same change.
 - The runner fails on: an unlisted failure; a listed test that now passes ("delete its line"); a
   listed path or test that does not exist; a path-only entry on a file that compiles; a malformed line.
 
 ## Status and the gate
+
+Coverage and classification at `fe72c0e`: 29 test/run/reject files — `case` (§5) 6 test + 1 run +
+9 reject, tuples (§6) 5 test + 1 run + 2 reject, `loop` (§10) 5 test + 2 reject; 53 results pass,
+40 are expected failures (06 N19–N22 and N26: the new syntax; 12 step 4: `.N` on erlang and `t.0.1`;
+01 step 6: tuple equality on commonJS, the print text).
 
 Authored before front 12 lands, against the compiler of `fix/surface-cutover`
 at `fe72c0e` (the 1.0.3 surface). `zig build test-language` is **not** in
