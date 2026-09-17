@@ -291,4 +291,5 @@ main() ->
 
 ----- RUN LOG -----
 ```logs
+NAME_SECRET_AGE:hidden:Use:four
 ```

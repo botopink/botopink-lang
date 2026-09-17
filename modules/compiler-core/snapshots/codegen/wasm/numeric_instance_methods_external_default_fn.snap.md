@@ -306,4 +306,9 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+5
+-5
+10
+0
+false
 ```

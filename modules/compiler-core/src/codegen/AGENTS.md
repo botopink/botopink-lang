@@ -661,9 +661,20 @@ first three are now enforced by the model, not by discipline:
 
 - `executeJavaScript` (`node`), `executeErlang` (`erlc` + `erl`),
   `executeBeamAsm` (`erlc +from_asm` + `erl`, assembling sibling `.S` aux modules
-  so cross-module runs link). `executeWat` is a stub that returns an empty RUN
-  LOG (a runtime is spec 03 step 2). Captured text is stdout with stderr
-  appended after a newline.
+  so cross-module runs link), `executeWat` (`wasmtime run <module>.wat`).
+  Captured text is stdout with stderr appended after a newline (wasm: stdout
+  then stderr, no separator).
+- **`executeWat` — the decision (06-wasm step 3): it executes.** It was turned
+  on once a trap became a visible block and W1 had closed, so reaching
+  `unreachable` means the program aborted rather than the backend giving up. It
+  runs `wasmtime run` on the `.wat` text in a scratch dir (the `_start` export),
+  through the content-keyed cache, with no aux leg (imports are linked into the
+  module statically) and **no** early bail on modules that print nothing (a
+  silent module can still trap, and the trap must show). A missing `wasmtime`
+  is an empty, uncached log. `HARNESS_VERSION` was bumped with it. Every wasm
+  RUN LOG was re-recorded against a direct `wasmtime run` of the module and
+  compared with commonJS/erlang; the known-wrong ones are pinned with a comment
+  in their test.
 - **A wasm trap is a visible block** (`runtimeTrapLog`): what the module
   printed, then `RUNTIME TRAP (wasmtime):` and the `wasm trap: …` line — never
   an empty log, and never the backtrace (its code offsets move with every

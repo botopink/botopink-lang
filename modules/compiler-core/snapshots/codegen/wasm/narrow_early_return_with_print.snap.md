@@ -306,4 +306,6 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+hello world
+nobody
 ```

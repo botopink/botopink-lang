@@ -443,4 +443,6 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+nonzero: 42
+zero
 ```

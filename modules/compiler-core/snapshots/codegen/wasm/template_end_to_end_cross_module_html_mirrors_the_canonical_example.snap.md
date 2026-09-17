@@ -392,4 +392,8 @@ main() ->
 
 ----- RUN LOG -----
 ```logs
+<div>
+  <p>world</p>
+  <Page1/>
+</div>
 ```

@@ -254,4 +254,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+Hello 42 true
 ```

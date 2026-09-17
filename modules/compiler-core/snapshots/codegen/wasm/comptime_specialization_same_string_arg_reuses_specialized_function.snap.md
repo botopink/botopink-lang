@@ -295,4 +295,6 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+INFO: Sistema iniciado
+INFO: Log replicado
 ```

@@ -426,4 +426,6 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+value: 42
+empty
 ```

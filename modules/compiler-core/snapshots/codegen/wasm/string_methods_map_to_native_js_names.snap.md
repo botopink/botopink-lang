@@ -661,4 +661,8 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+HELLO,WORLD
+hello,world
+Hello|World
+Hello
 ```

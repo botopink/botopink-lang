@@ -274,4 +274,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+hi world!
 ```

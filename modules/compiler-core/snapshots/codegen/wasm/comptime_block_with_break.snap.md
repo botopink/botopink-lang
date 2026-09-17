@@ -216,4 +216,5 @@ ct_0: val result = comptime {
 
 ----- RUN LOG -----
 ```logs
+20
 ```

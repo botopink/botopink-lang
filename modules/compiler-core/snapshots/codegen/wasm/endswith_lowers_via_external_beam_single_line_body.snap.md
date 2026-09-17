@@ -304,4 +304,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+true
 ```

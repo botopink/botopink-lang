@@ -311,4 +311,7 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+hello
+ola
+hi
 ```

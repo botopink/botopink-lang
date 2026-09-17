@@ -327,4 +327,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+anonymous 0
 ```

@@ -400,4 +400,6 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+OK:data
+ERR:fail
 ```

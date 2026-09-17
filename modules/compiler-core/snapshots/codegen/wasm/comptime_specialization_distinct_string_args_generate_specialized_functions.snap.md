@@ -316,4 +316,7 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+INFO: Sistema iniciado
+WARN: Memória alta
+INFO: Log replicado
 ```

@@ -252,4 +252,8 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+false
+true
+false
+true
 ```

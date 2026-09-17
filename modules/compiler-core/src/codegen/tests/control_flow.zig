@@ -70,6 +70,10 @@ test "js: case ---- or patterns with numbers" {
     );
 }
 
+// DIVERGENT wasm RUN LOG, second line (pinned, 06-wasm): `undefined` — the
+// value of an `if` with no `else` when the condition is false. commonJS prints
+// `undefined`, erlang `ok`; decision 2 (a block's value comes from `break`)
+// makes this program a checker error, 07-checker's to land.
 test "js: if ---- simple conditional in fn body" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn sign(n: i32) -> string {
@@ -248,6 +252,10 @@ test "js: case ---- nested case in block arm" {
     );
 }
 
+// KNOWN-WRONG wasm RUN LOG (pinned, 06-wasm W4): `288` — the loop collects
+// its `break` values into an array (erlang prints `[15,20]`), but `find` is
+// declared `-> i32`, so `@print` formats the array's address. Which of the two
+// the program means is the checker front's question (07-checker, beam B7).
 test "js: loop ---- break with value" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn find(arr: i32[]) -> i32 {

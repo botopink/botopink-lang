@@ -700,4 +700,6 @@ main() ->
 
 ----- RUN LOG -----
 ```logs
+Service(port: prop(port), name: makestring())
+start,v2,v4,v6
 ```

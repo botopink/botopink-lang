@@ -280,4 +280,7 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+Erro 404
+Sucesso 200
+Aviso 500
 ```

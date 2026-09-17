@@ -245,4 +245,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
+12 hello
 ```

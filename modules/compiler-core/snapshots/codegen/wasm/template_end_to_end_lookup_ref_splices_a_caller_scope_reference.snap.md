@@ -287,4 +287,5 @@ main() ->
 
 ----- RUN LOG -----
 ```logs
+ola mundo
 ```
