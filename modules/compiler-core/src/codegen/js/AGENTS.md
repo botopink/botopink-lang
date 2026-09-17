@@ -65,7 +65,7 @@ finds every one. Fixing a defect means deleting its build site, not its node.
 
 | Bridge | Renders | Defect |
 |---|---|---|
-| `Pattern.match` | botopink's own pattern spelling | **JS-4** a match pattern used as a JS binding target (`const Circle(r) = …`) |
+| `Pattern.match` | botopink's own pattern spelling | **JS-4** a match pattern used as a JS binding target (`const Circle(r) = …`). **Blocked (F7 checker):** no program reaches a build site — `val Circle(r) = s;` and `val [a, b] = xs;` parse but the checker leaves the bindings unbound (`error: unbound variable 'r'`), and `assert x is Some(n)` is still a parse error (`narrow_assert_pattern_with_print`). Once they type-check, a `ctor` / `list` destructuring lowers to a real test-plus-destructure and the eight `buildPattern` sites, `MatchPattern` and `writeMatchPattern` go |
 
 `Expr.host` is **not** a bridge: it carries the literal text of an
 `#[@External.Node("…")]` annotation, which is host code by definition — the
