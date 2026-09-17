@@ -35,8 +35,7 @@ val Shape = enum {
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 1}}.
     {gc_bif, '*', {f, 0}, 0, [{y, 1}, {y, 1}], {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {gc_bif, '*', {f, 0}, 2, [{x, 1}, {float, 3.14}], {x, 0}}.
+    {gc_bif, '*', {f, 0}, 1, [{x, 0}, {float, 3.14}], {x, 0}}.
     {jump, {f, 4}}.
   {label, 5}.
     {test, is_tagged_tuple, {f, 6}, [{x, 0}, 2, {atom, 'Square'}]}.
@@ -51,8 +50,7 @@ val Shape = enum {
     {get_tuple_element, {x, 0}, 2, {x, 1}}.
     {move, {x, 1}, {y, 4}}.
     {gc_bif, '*', {f, 0}, 0, [{y, 3}, {y, 4}], {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {gc_bif, '*', {f, 0}, 2, [{x, 1}, {float, 0.5}], {x, 0}}.
+    {gc_bif, '*', {f, 0}, 1, [{x, 0}, {float, 0.5}], {x, 0}}.
     {jump, {f, 4}}.
   {label, 7}.
     {move, {float, 0.0}, {x, 0}}.

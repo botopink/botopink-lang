@@ -22,10 +22,8 @@ fn makeCircle() -> Shape {
     {func_info, {atom, main}, {atom, makeCircle}, 0}.
   {label, 3}.
     {allocate, 0, 0}.
-    {move, {integer, 5}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {test_heap, 3, 2}.
-    {put_tuple2, {x, 0}, {list, [{atom, 'Circle'}, {x, 1}]}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, 'Circle'}, {integer, 5}]}}.
     {deallocate, 0}.
     return.
 ```

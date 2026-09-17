@@ -16,7 +16,7 @@ fn greet(p: Person) -> string {
 {module, main}.
 {exports, []}.
 {attributes, []}.
-{labels, 18}.
+{labels, 22}.
 
 {function, firstName, 1, 3}.
   {label, 2}.
@@ -73,7 +73,7 @@ fn greet(p: Person) -> string {
     {move, {x, 0}, {x, 1}}.
     {move, {x, 0}, {x, 2}}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 3}.
-    {make_fun3, {f, 17}, 0, 0, {x, 0}, {list, []}}.
+    {make_fun3, {f, 21}, 0, 0, {x, 0}, {list, []}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 2}, {x, 0}}.
     {call_fun, 1}.
@@ -86,25 +86,56 @@ fn greet(p: Person) -> string {
     {deallocate, 1}.
     return.
 
+{function, '-bp_stringify-', 1, 17}.
+  {label, 16}.
+    {line, [{location, "main.erl", 4}]}.
+    {func_info, {atom, main}, {atom, '-bp_stringify-'}, 1}.
+  {label, 17}.
+    {allocate, 0, 1}.
+    {test, is_binary, {f, 18}, [{x, 0}]}.
+    {deallocate, 0}.
+    return.
+  {label, 18}.
+    {test, is_integer, {f, 19}, [{x, 0}]}.
+    {call_ext_last, 1, {extfunc, erlang, integer_to_binary, 1}, 0}.
+  {label, 19}.
+    {test_heap, 2, 1}.
+    {put_list, {x, 0}, nil, {x, 1}}.
+    {move, {literal, <<"~p">>}, {x, 0}}.
+    {call_ext_last, 2, {extfunc, io_lib, format, 2}, 0}.
+
 {function, '-greet/1-fun-0-', 1, 15}.
   {label, 14}.
     {line, [{location, "main.erl", 4}]}.
     {func_info, {atom, main}, {atom, '-greet/1-fun-0-'}, 1}.
   {label, 15}.
-    {allocate, 1, 1}.
-    {init_yregs, {list, [{y, 0}]}}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
+    {move, nil, {x, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 0}, {y, 1}}.
     {move, {literal, <<"Hello ">>}, {x, 0}}.
+    {move, {y, 1}, {x, 1}}.
+    {test_heap, 2, 2}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
-    {gc_bif, '+', {f, 0}, 2, [{x, 1}, {y, 0}], {x, 0}}.
-    {deallocate, 1}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 2}.
+    {make_fun3, {f, 17}, 0, 0, {x, 0}, {list, []}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {call_ext, 1, {extfunc, erlang, iolist_to_binary, 1}}.
+    {deallocate, 2}.
     return.
 
-{function, '-greet/1-fun-1-', 1, 17}.
-  {label, 16}.
+{function, '-greet/1-fun-1-', 1, 21}.
+  {label, 20}.
     {line, [{location, "main.erl", 4}]}.
     {func_info, {atom, main}, {atom, '-greet/1-fun-1-'}, 1}.
-  {label, 17}.
+  {label, 21}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.

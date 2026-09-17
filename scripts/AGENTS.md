@@ -20,6 +20,7 @@ scripts/
 ├── known-red-libs.txt ← library cells known red, each with its owning front
 ├── test-vscode.sh     ← locate the sibling vscode-extension, `npm ci` once, `npm test` (`zig build test-vscode`)
 ├── snap_audit.sh      ← read-only audit of every *.snap.md (6 modes)
+├── beam_export_audit.sh ← assemble every beam snapshot module with every function exported
 └── git-hooks/
     ├── pre-commit                 ← tracked hook (see ../AGENTS.md §Local gate)
     └── lib/runner-standalone.sh   ← standalone runner → `gate.sh --staged`
@@ -171,6 +172,22 @@ BOTOPINK_SNAP_TRACE=/tmp/snap.trace zig build test
 scripts/snap_audit.sh --mode=orphans --trace=/tmp/snap.trace
 scripts/snap_audit.sh --mode=review  --trace=/tmp/snap.trace
 ```
+
+## beam_export_audit.sh
+
+`scripts/beam_export_audit.sh [--jobs=N] [--keep=<dir>] [<snap.md>…]` — needs
+`erlc` on `PATH`, read-only. Extracts every `----- BEAM ASSEMBLY -- <m>.S` block
+from `modules/compiler-core/snapshots/codegen/beam/`, rewrites its
+`{exports, […]}` form to name **every** `{function, …}` form, and assembles it
+with `erlc +from_asm`. A recorded module exports only its entrypoints, and
+`erlc +from_asm` drops an unexported function before `beam_validator` runs, so
+a register-liveness bug in a method nothing exports stays invisible in the
+RUN LOG; this audit makes it a rejection. Each rejected module prints
+`REJECTED <slug> <module>` plus the validator's function, offset and reason;
+the last line is `beam_export_audit: <ok>/<total> modules assembled`. Exit `0`
+when every module assembled, `1` on any rejection, `2` on an argument error or
+a missing `erlc`. Not wired into `gate.sh` — that is the CLI + gate front's
+call.
 
 ## See also
 

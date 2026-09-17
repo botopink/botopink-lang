@@ -22,15 +22,14 @@ fn red500() -> Token {
     {line, [{location, "main.erl", 1}]}.
     {func_info, {atom, main}, {atom, red500}, 0}.
   {label, 3}.
-    {allocate, 0, 0}.
+    {allocate, 2, 0}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {atom, '__500'}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {test_heap, 3, 2}.
-    {put_tuple2, {x, 0}, {list, [{atom, 'Red'}, {x, 1}]}}.
-    {move, {x, 0}, {x, 1}}.
-    {test_heap, 3, 2}.
-    {put_tuple2, {x, 0}, {list, [{atom, 'Color'}, {x, 1}]}}.
-    {deallocate, 0}.
+    {test_heap, 3, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, 'Red'}, {x, 0}]}}.
+    {test_heap, 3, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, 'Color'}, {x, 0}]}}.
+    {deallocate, 2}.
     return.
 ```
 

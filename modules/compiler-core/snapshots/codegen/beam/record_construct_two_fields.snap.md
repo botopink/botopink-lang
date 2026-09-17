@@ -19,11 +19,7 @@ fn make() -> Point {
     {func_info, {atom, main}, {atom, make}, 0}.
   {label, 3}.
     {allocate, 0, 0}.
-    {move, {integer, 3}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {integer, 4}, {x, 0}}.
-    {move, {x, 0}, {x, 2}}.
-    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 3, {list, [{atom, x}, {x, 1}, {atom, y}, {x, 2}]}}.
+    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 0, {list, [{atom, x}, {integer, 3}, {atom, y}, {integer, 4}]}}.
     {deallocate, 0}.
     return.
 ```

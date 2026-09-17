@@ -347,3 +347,41 @@ test "codegen: test runner excluded from normal build" {
     try h.assertJsContains(std.testing.allocator, src, &.{"function add"});
     try h.assertJsNotContains(std.testing.allocator, src, &.{ "__bp_test", "__bp_assert", "__bp_run_tests" });
 }
+
+// Semantics decision 4 (1.0.2-beta): `assert` outside test mode is always
+// fatal, carrying its message and `file:line`. A holding assertion lets the
+// program continue on every backend.
+test "js: assert ---- holding assertion lets main continue" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    assert 1 + 1 == 2, "arithmetic";
+        \\    @print("after");
+        \\}
+    );
+}
+
+// A failing assertion aborts the program. beam raises
+// `{bp_assert, <<"boom">>, <<"main.bp:3">>}`, so the process exits non-zero and
+// the RUN LOG is empty (a crash records no output). KNOWN DIVERGENCE: commonJS
+// still lowers to `console.assert` and prints `before`/`after` (F8), erlang to
+// `true = (…)` without message or location (F5).
+test "js: assert ---- failing assertion outside test mode is fatal" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    @print("before");
+        \\    assert 1 == 2, "boom";
+        \\    @print("after");
+        \\}
+    );
+}
+
+// Semantics decision 1: `@print` writes a string as its text and every other
+// value through `~p`, space-separated, on one line.
+test "js: builtin ---- @print mixes strings and terms as text" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    val name = "ana";
+        \\    @print("hi", name, 42, [1, 2]);
+        \\}
+    );
+}

@@ -18,7 +18,7 @@ fn main() {
 {module, main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
-{labels, 13}.
+{labels, 22}.
 
 {function, area, 1, 3}.
   {label, 2}.
@@ -33,8 +33,7 @@ fn main() {
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 1}}.
     {gc_bif, '*', {f, 0}, 0, [{float, 3.14}, {y, 1}], {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {gc_bif, '*', {f, 0}, 2, [{x, 1}, {y, 1}], {x, 0}}.
+    {gc_bif, '*', {f, 0}, 1, [{x, 0}, {y, 1}], {x, 0}}.
     {jump, {f, 10}}.
   {label, 11}.
     {test, is_tagged_tuple, {f, 12}, [{x, 0}, 2, {atom, 'Square'}]}.
@@ -53,30 +52,18 @@ fn main() {
     {func_info, {atom, main}, {atom, main}, 0}.
   {label, 5}.
     {allocate, 0, 0}.
-    {move, {float, 2.0}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {test_heap, 3, 2}.
-    {put_tuple2, {x, 0}, {list, [{atom, 'Circle'}, {x, 1}]}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {x, 1}, {x, 0}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, 'Circle'}, {float, 2.0}]}}.
     {call, 1, {f, 3}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {literal, <<"~p~n">>}, {x, 0}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 1}, nil, {x, 1}}.
-    {call_ext, 2, {extfunc, io, format, 2}}.
-    {move, {float, 3.0}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {test_heap, 3, 2}.
-    {put_tuple2, {x, 0}, {list, [{atom, 'Square'}, {x, 1}]}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {x, 1}, {x, 0}}.
+    {test_heap, 2, 1}.
+    {put_list, {x, 0}, nil, {x, 0}}.
+    {call, 1, {f, 14}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, 'Square'}, {float, 3.0}]}}.
     {call, 1, {f, 3}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {literal, <<"~p~n">>}, {x, 0}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 1}, nil, {x, 1}}.
-    {call_ext, 2, {extfunc, io, format, 2}}.
+    {test_heap, 2, 1}.
+    {put_list, {x, 0}, nil, {x, 0}}.
+    {call, 1, {f, 14}}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 0}.
     return.
@@ -94,6 +81,62 @@ fn main() {
     {func_info, {atom, main}, {atom, main}, 1}.
   {label, 9}.
     {call_only, 0, {f, 7}}.
+
+{function, '__bp_print', 1, 14}.
+  {label, 13}.
+    {line, [{location, "main.erl", 3}]}.
+    {func_info, {atom, main}, {atom, '__bp_print'}, 1}.
+  {label, 14}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {call, 1, {f, 16}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, io, format, 2}, 1}.
+
+{function, '__bp_print_fmt', 1, 16}.
+  {label, 15}.
+    {line, [{location, "main.erl", 3}]}.
+    {func_info, {atom, main}, {atom, '__bp_print_fmt'}, 1}.
+  {label, 16}.
+    {test, is_nonempty_list, {f, 19}, [{x, 0}]}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {get_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 1}, {y, 0}}.
+    {call, 1, {f, 18}}.
+    {test, is_binary, {f, 20}, [{y, 0}]}.
+    {test_heap, 6, 1}.
+    {put_list, {integer, 115}, {x, 0}, {x, 0}}.
+    {put_list, {integer, 116}, {x, 0}, {x, 0}}.
+    {put_list, {integer, 126}, {x, 0}, {x, 0}}.
+    {deallocate, 1}.
+    return.
+  {label, 20}.
+    {test_heap, 4, 1}.
+    {put_list, {integer, 112}, {x, 0}, {x, 0}}.
+    {put_list, {integer, 126}, {x, 0}, {x, 0}}.
+    {deallocate, 1}.
+    return.
+  {label, 19}.
+    {move, {literal, [126, 110]}, {x, 0}}.
+    return.
+
+{function, '__bp_print_sep', 1, 18}.
+  {label, 17}.
+    {line, [{location, "main.erl", 3}]}.
+    {func_info, {atom, main}, {atom, '__bp_print_sep'}, 1}.
+  {label, 18}.
+    {test, is_nonempty_list, {f, 21}, [{x, 0}]}.
+    {allocate, 0, 1}.
+    {call, 1, {f, 16}}.
+    {test_heap, 2, 1}.
+    {put_list, {integer, 32}, {x, 0}, {x, 0}}.
+    {deallocate, 0}.
+    return.
+  {label, 21}.
+    {move, {literal, [126, 110]}, {x, 0}}.
+    return.
 ```
 
 ----- RUN LOG -----

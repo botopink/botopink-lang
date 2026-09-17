@@ -40,8 +40,7 @@ fn sumEvens(arr: i32[]) -> i32 {
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {gc_bif, 'rem', {f, 0}, 0, [{y, 0}, {integer, 2}], {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {test, is_ne_exact, {f, 6}, [{x, 1}, {integer, 0}]}.
+    {test, is_ne_exact, {f, 6}, [{x, 0}, {integer, 0}]}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 1}.
     return.

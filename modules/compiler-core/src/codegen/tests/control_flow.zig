@@ -181,7 +181,8 @@ test "js: loop ---- two-parameter loop threads reassigned vars out" {
 
 test "js: lambda ---- a local closure reassigning outer vars threads them out" {
     // A markup template's shape: a named closure appends to an outer `var`, and
-    // is called both directly and from inside a loop.
+    // is called both directly and from inside a loop. KNOWN: beam prints ` 0` —
+    // its closures do not thread reassigned outer vars out yet (1.0.4-beta 01-beam).
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn render(words: Array<string>) -> string {
         \\    var out = "";

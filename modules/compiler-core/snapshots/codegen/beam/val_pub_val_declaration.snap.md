@@ -7,7 +7,7 @@ pub val HOST = "localhost";
 ----- BEAM ASSEMBLY -- main.S
 ```erlang
 {module, main}.
-{exports, []}.
+{exports, [{'VERSION', 0}, {'HOST', 0}]}.
 {attributes, []}.
 {labels, 6}.
 

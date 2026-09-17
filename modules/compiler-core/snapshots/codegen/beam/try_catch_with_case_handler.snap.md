@@ -16,7 +16,7 @@ fn handle() -> i32 {
 {module, main}.
 {exports, []}.
 {attributes, []}.
-{labels, 8}.
+{labels, 9}.
 
 {function, fetch, 0, 3}.
   {label, 2}.
@@ -36,18 +36,22 @@ fn handle() -> i32 {
     {line, [{location, "main.erl", 2}]}.
     {func_info, {atom, main}, {atom, handle}, 0}.
   {label, 5}.
-    {allocate, 1, 0}.
-    {init_yregs, {list, [{y, 0}]}}.
+    {allocate, 2, 0}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {'try', {y, 0}, {f, 6}}.
     {call, 0, {f, 3}}.
-    {test, is_tagged_tuple, {f, 6}, [{x, 0}, 2, {atom, ok}]}.
+    {try_end, {y, 0}}.
+    {test, is_tagged_tuple, {f, 7}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 7}}.
+    {jump, {f, 8}}.
   {label, 6}.
-    {move, {integer, 0}, {x, 0}}.
+    {try_case, {y, 0}}.
   {label, 7}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {y, 0}, {x, 0}}.
-    {deallocate, 1}.
+    {move, {integer, 0}, {x, 0}}.
+  {label, 8}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {deallocate, 2}.
     return.
 ```
 

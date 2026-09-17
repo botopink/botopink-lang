@@ -23,37 +23,43 @@ ct_0: val base = comptime 10 + 5 → 15
 {module, main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
-{labels, 12}.
+{labels, 14}.
 
-{function, main, 0, 3}.
+{function, base, 0, 3}.
   {label, 2}.
     {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, main}, 0}.
+    {func_info, {atom, main}, {atom, base}, 0}.
   {label, 3}.
+    {allocate, 0, 0}.
+    {move, {integer, 15}, {x, 0}}.
+    {deallocate, 0}.
+    return.
+
+{function, main, 0, 5}.
+  {label, 4}.
+    {line, [{location, "main.erl", 2}]}.
+    {func_info, {atom, main}, {atom, main}, 0}.
+  {label, 5}.
     {allocate, 3, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {move, {atom, base}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {x, 1}, {x, 0}}.
-    {call, 1, {f, 5}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {atom, base}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {x, 1}, {x, 0}}.
+    {call, 0, {f, 3}}.
     {call, 1, {f, 7}}.
+    {move, {x, 0}, {y, 0}}.
+    {call, 0, {f, 3}}.
+    {call, 1, {f, 9}}.
     {move, {x, 0}, {y, 1}}.
     {move, {integer, 100}, {x, 0}}.
-    {call, 1, {f, 5}}.
+    {call, 1, {f, 7}}.
     {move, {x, 0}, {y, 2}}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 3}.
     return.
 
-{function, 'scale_$0', 1, 5}.
-  {label, 4}.
-    {line, [{location, "main.erl", 2}]}.
+{function, 'scale_$0', 1, 7}.
+  {label, 6}.
+    {line, [{location, "main.erl", 3}]}.
     {func_info, {atom, main}, {atom, 'scale_$0'}, 1}.
-  {label, 5}.
+  {label, 7}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -63,11 +69,11 @@ ct_0: val base = comptime 10 + 5 → 15
     {deallocate, 2}.
     return.
 
-{function, 'scale_$1', 1, 7}.
-  {label, 6}.
-    {line, [{location, "main.erl", 3}]}.
+{function, 'scale_$1', 1, 9}.
+  {label, 8}.
+    {line, [{location, "main.erl", 4}]}.
     {func_info, {atom, main}, {atom, 'scale_$1'}, 1}.
-  {label, 7}.
+  {label, 9}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
@@ -77,19 +83,19 @@ ct_0: val base = comptime 10 + 5 → 15
     {deallocate, 2}.
     return.
 
-{function, '_botopink_main', 0, 9}.
-  {label, 8}.
-    {line, [{location, "main.erl", 4}]}.
-    {func_info, {atom, main}, {atom, '_botopink_main'}, 0}.
-  {label, 9}.
-    {call_only, 0, {f, 3}}.
-
-{function, main, 1, 11}.
+{function, '_botopink_main', 0, 11}.
   {label, 10}.
     {line, [{location, "main.erl", 5}]}.
-    {func_info, {atom, main}, {atom, main}, 1}.
+    {func_info, {atom, main}, {atom, '_botopink_main'}, 0}.
   {label, 11}.
-    {call_only, 0, {f, 9}}.
+    {call_only, 0, {f, 5}}.
+
+{function, main, 1, 13}.
+  {label, 12}.
+    {line, [{location, "main.erl", 6}]}.
+    {func_info, {atom, main}, {atom, main}, 1}.
+  {label, 13}.
+    {call_only, 0, {f, 11}}.
 ```
 
 ----- RUN LOG -----

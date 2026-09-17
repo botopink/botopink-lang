@@ -40,8 +40,8 @@ fn loadTwice(x: i32) -> @Future<i32> {
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {x, 0}, {y, 0}}.
-    %% unsupported expr in tail position: jump
-    {move, {atom, undefined}, {x, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {call, 1, {f, 3}}.
     {move, {x, 0}, {y, 1}}.
     {gc_bif, '+', {f, 0}, 0, [{y, 1}, {y, 1}], {x, 0}}.
     {deallocate, 2}.

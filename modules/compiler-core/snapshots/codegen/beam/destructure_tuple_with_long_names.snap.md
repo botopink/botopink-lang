@@ -21,12 +21,8 @@ fn extract_coordinates() {
     {func_info, {atom, main}, {atom, get_coordinates}, 0}.
   {label, 3}.
     {allocate, 0, 0}.
-    {move, {float, 0.0}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {float, 0.0}, {x, 0}}.
-    {move, {x, 0}, {x, 2}}.
-    {test_heap, 3, 3}.
-    {put_tuple2, {x, 0}, {list, [{x, 1}, {x, 2}]}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{float, 0.0}, {float, 0.0}]}}.
     {deallocate, 0}.
     return.
 

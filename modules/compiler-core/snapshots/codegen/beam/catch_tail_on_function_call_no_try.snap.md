@@ -15,7 +15,7 @@ fn safe() -> i32 {
 {module, main}.
 {exports, []}.
 {attributes, []}.
-{labels, 8}.
+{labels, 9}.
 
 {function, risky, 0, 3}.
   {label, 2}.
@@ -23,9 +23,7 @@ fn safe() -> i32 {
     {func_info, {atom, main}, {atom, risky}, 0}.
   {label, 3}.
     {allocate, 0, 0}.
-    {move, {integer, 5}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 2, {list, [{atom, level}, {x, 1}]}}.
+    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 0, {list, [{atom, level}, {integer, 5}]}}.
     {move, {x, 0}, {x, 1}}.
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{atom, error}, {x, 1}]}}.
@@ -37,15 +35,20 @@ fn safe() -> i32 {
     {line, [{location, "main.erl", 2}]}.
     {func_info, {atom, main}, {atom, safe}, 0}.
   {label, 5}.
-    {allocate, 0, 0}.
+    {allocate, 1, 0}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {'try', {y, 0}, {f, 6}}.
     {call, 0, {f, 3}}.
-    {test, is_tagged_tuple, {f, 6}, [{x, 0}, 2, {atom, ok}]}.
+    {try_end, {y, 0}}.
+    {test, is_tagged_tuple, {f, 7}, [{x, 0}, 2, {atom, ok}]}.
     {get_tuple_element, {x, 0}, 1, {x, 0}}.
-    {jump, {f, 7}}.
+    {jump, {f, 8}}.
   {label, 6}.
-    {move, {integer, -1}, {x, 0}}.
+    {try_case, {y, 0}}.
   {label, 7}.
-    {deallocate, 0}.
+    {move, {integer, -1}, {x, 0}}.
+  {label, 8}.
+    {deallocate, 1}.
     return.
 ```
 

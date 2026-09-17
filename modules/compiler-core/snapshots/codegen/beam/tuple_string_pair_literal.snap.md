@@ -19,9 +19,8 @@ val t = #("56454", "85484");
     {move, {literal, <<"56454">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"85484">>}, {x, 0}}.
-    {move, {x, 0}, {x, 2}}.
-    {test_heap, 3, 3}.
-    {put_tuple2, {x, 0}, {list, [{x, 1}, {x, 2}]}}.
+    {test_heap, 3, 2}.
+    {put_tuple2, {x, 0}, {list, [{x, 1}, {x, 0}]}}.
     {deallocate, 0}.
     return.
 ```

@@ -28,9 +28,7 @@ pub record App {
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
-    {move, {y, 0}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 2, {list, [{atom, body}, {x, 1}]}}.
+    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 0, {list, [{atom, body}, {y, 0}]}}.
     {deallocate, 1}.
     return.
 ```
@@ -56,7 +54,7 @@ fn main() {
 {module, main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
-{labels, 10}.
+{labels, 19}.
 
 {function, main, 0, 3}.
   {label, 2}.
@@ -66,35 +64,25 @@ fn main() {
     {allocate, 2, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {literal, <<"hi">>}, {x, 0}}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {x, 1}, {x, 0}}.
-    {call_ext, 1, {extfunc, response, ok, 1}}.
+    {call_ext, 1, {extfunc, http, 'Response_ok', 1}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {test, is_map, {f, 8}, [{x, 0}]}.
     {get_map_elements, {f, 8}, {x, 0}, {list, [{atom, body}, {x, 0}]}}.
   {label, 8}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {literal, <<"~p~n">>}, {x, 0}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 1}, nil, {x, 1}}.
-    {call_ext, 2, {extfunc, io, format, 2}}.
-    {move, {integer, 8080}, {x, 1}}.
+    {test_heap, 2, 1}.
+    {put_list, {x, 0}, nil, {x, 0}}.
+    {call, 1, {f, 10}}.
     {move, {literal, <<"/">>}, {x, 0}}.
-    {move, {x, 0}, {x, 2}}.
-    {move, {x, 1}, {x, 0}}.
-    {move, {x, 2}, {x, 1}}.
-    %% unresolved local call: App/2
+    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 1, {list, [{atom, port}, {integer, 8080}, {atom, path}, {x, 0}]}}.
     {move, {x, 0}, {y, 1}}.
     {move, {y, 1}, {x, 0}}.
-    {test, is_map, {f, 9}, [{x, 0}]}.
-    {get_map_elements, {f, 9}, {x, 0}, {list, [{atom, port}, {x, 0}]}}.
-  {label, 9}.
-    {move, {x, 0}, {x, 1}}.
-    {move, {literal, <<"~p~n">>}, {x, 0}}.
-    {test_heap, 2, 2}.
-    {put_list, {x, 1}, nil, {x, 1}}.
-    {call_ext, 2, {extfunc, io, format, 2}}.
+    {test, is_map, {f, 18}, [{x, 0}]}.
+    {get_map_elements, {f, 18}, {x, 0}, {list, [{atom, port}, {x, 0}]}}.
+  {label, 18}.
+    {test_heap, 2, 1}.
+    {put_list, {x, 0}, nil, {x, 0}}.
+    {call, 1, {f, 10}}.
     {move, {atom, ok}, {x, 0}}.
     {deallocate, 2}.
     return.
@@ -112,8 +100,66 @@ fn main() {
     {func_info, {atom, main}, {atom, main}, 1}.
   {label, 7}.
     {call_only, 0, {f, 5}}.
+
+{function, '__bp_print', 1, 10}.
+  {label, 9}.
+    {line, [{location, "main.erl", 2}]}.
+    {func_info, {atom, main}, {atom, '__bp_print'}, 1}.
+  {label, 10}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {call, 1, {f, 12}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, io, format, 2}, 1}.
+
+{function, '__bp_print_fmt', 1, 12}.
+  {label, 11}.
+    {line, [{location, "main.erl", 2}]}.
+    {func_info, {atom, main}, {atom, '__bp_print_fmt'}, 1}.
+  {label, 12}.
+    {test, is_nonempty_list, {f, 15}, [{x, 0}]}.
+    {allocate, 1, 1}.
+    {init_yregs, {list, [{y, 0}]}}.
+    {get_list, {x, 0}, {x, 1}, {x, 0}}.
+    {move, {x, 1}, {y, 0}}.
+    {call, 1, {f, 14}}.
+    {test, is_binary, {f, 16}, [{y, 0}]}.
+    {test_heap, 6, 1}.
+    {put_list, {integer, 115}, {x, 0}, {x, 0}}.
+    {put_list, {integer, 116}, {x, 0}, {x, 0}}.
+    {put_list, {integer, 126}, {x, 0}, {x, 0}}.
+    {deallocate, 1}.
+    return.
+  {label, 16}.
+    {test_heap, 4, 1}.
+    {put_list, {integer, 112}, {x, 0}, {x, 0}}.
+    {put_list, {integer, 126}, {x, 0}, {x, 0}}.
+    {deallocate, 1}.
+    return.
+  {label, 15}.
+    {move, {literal, [126, 110]}, {x, 0}}.
+    return.
+
+{function, '__bp_print_sep', 1, 14}.
+  {label, 13}.
+    {line, [{location, "main.erl", 2}]}.
+    {func_info, {atom, main}, {atom, '__bp_print_sep'}, 1}.
+  {label, 14}.
+    {test, is_nonempty_list, {f, 17}, [{x, 0}]}.
+    {allocate, 0, 1}.
+    {call, 1, {f, 12}}.
+    {test_heap, 2, 1}.
+    {put_list, {integer, 32}, {x, 0}, {x, 0}}.
+    {deallocate, 0}.
+    return.
+  {label, 17}.
+    {move, {literal, [126, 110]}, {x, 0}}.
+    return.
 ```
 
 ----- RUN LOG -----
 ```logs
+hi
+8080
 ```
