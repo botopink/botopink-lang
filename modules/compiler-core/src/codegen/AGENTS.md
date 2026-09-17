@@ -256,8 +256,9 @@ codegen/
   emitted after the reached instance defaults. A `.len`/`.length`/`.size` read
   with no lowering, on a field no record of the module declares, is
   `'__bp_len'(X, Field)` (`len_helper_form`, emitted on demand). Tests: `tests/comptime_module.zig`.
-- **Names**: `atomName`/`fnAtom`/`erlangVar`/`erlangModule` are aliases of
-  `beam/erl_emitter.zig`. `erlang.zig` writes no Erlang text itself: the emitter
+- **Names**: variables are spelled once, in the module arena, by `varRef` /
+  `versionedVar` (`Count`, `Count@2`) over `beam/erl_emitter.zig`'s `varName`;
+  `erlangModule` aliases its `moduleName`, and atoms are quoted by the emitter. `erlang.zig` writes no Erlang text itself: the emitter
   builds `erl_ast` nodes and forms and `erl_emitter` renders them (`raw` remains
   only for host template text — see [`beam/AGENTS.md`](beam/AGENTS.md)). Comments are
   `erl_ast.Comment` nodes: source comments keep their level (`//` → `%`, `///` →

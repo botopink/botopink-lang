@@ -1118,7 +1118,7 @@ fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr) !void
         .{ .expr = outcome },
         .{ .expr = try b.match(V("T1"), monotonic) },
         .{ .expr = try b.match(V("DurMs"), try b.remote("erlang", "max", &.{
-            .{ .number = "0" },
+            Ast.Expr.t(Term.int(0)),
             .{ .binop = .{ .op = "-", .lhs = try b.ptr(V("T1")), .rhs = try b.ptr(V("T0")), .parens = false } },
         })) },
         .{ .expr = try ioFormat(b, "```~n", &.{}) },
@@ -1154,8 +1154,8 @@ fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr) !void
         try b.match(V("Failed"), try b.call("length", &.{failures})),
         try b.match(V("Passed"), .{ .binop = .{ .op = "-", .lhs = try b.ptr(try b.call("length", &.{V("Results")})), .rhs = try b.ptr(V("Failed")), .parens = false } }),
         try ioFormat(b, "~p passed, ~p failed~n", &.{ V("Passed"), V("Failed") }),
-        try b.caseInline(.{ .binop = .{ .op = ">", .lhs = try b.ptr(V("Failed")), .rhs = try b.ptr(.{ .number = "0" }), .parens = false } }, &.{
-            try b.clause(&.{A("true")}, &.{}, &.{try b.call("halt", &.{.{ .number = "1" }})}),
+        try b.caseInline(.{ .binop = .{ .op = ">", .lhs = try b.ptr(V("Failed")), .rhs = try b.ptr(Ast.Expr.t(Term.int(0))), .parens = false } }, &.{
+            try b.clause(&.{A("true")}, &.{}, &.{try b.call("halt", &.{Ast.Expr.t(Term.int(1))})}),
             try b.clause(&.{A("false")}, &.{}, &.{A("ok")}),
         }),
     });
@@ -1177,9 +1177,6 @@ fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr) !void
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-/// Heap-allocated Erlang variable for `name` (`decl` → `Decl`). Caller owns it.
-const erlangVar = erlEmitter.varName;
-
 /// True when `name` looks like a module/type reference (PascalCase) rather than
 /// a local variable. A qualified call whose receiver is such a name maps to an
 /// Erlang remote call `module:fun(...)`; a lowercase receiver is a value the
@@ -1194,18 +1191,9 @@ fn isModuleRef(name: []const u8) bool {
     return name.len >= 3 and name[0] == '_' and name[1] == '_' and std.ascii.isUpper(name[2]);
 }
 
-/// Heap-allocated module atom for a type-like name (`List` → `list`). Inverse
-/// of `erlangVar`. Caller owns the result.
+/// Module atom for a type-like name (`List` → `list`), allocated by the caller's
+/// allocator.
 const erlangModule = erlEmitter.moduleName;
-
-/// Render `name` as a valid Erlang atom into `buf` — quoted when it is not a
-/// valid bare atom or collides with a reserved word (`of` → `'of'`).
-const atomName = erlEmitter.atomText;
-
-/// Render `name` as a callable Erlang function atom into `buf`. Same rule as
-/// `atomName`: botopink fn names are normally bare atoms; decorator-emitted
-/// `__rkScan_<Type>` helpers, reserved words and PascalCase names get quoted.
-const fnAtom = erlEmitter.atomText;
 
 /// Mangled atom for an interface associated `default fn` (`Array`.`range` →
 /// `array_range`). The interface's first char is lowercased so the result is a
@@ -1765,6 +1753,8 @@ const Emitter = struct {
             no_recv: anyerror,
             parts: std.ArrayListUnmanaged(Ast.Expr) = .empty,
             text: std.ArrayListUnmanaged(u8) = .empty,
+            /// `parts` lengths at each open `$stringify(`.
+            stringify_marks: std.ArrayListUnmanaged(usize) = .empty,
 
             fn flush(c: *@This()) anyerror!void {
                 if (c.text.items.len == 0) return;
@@ -1785,11 +1775,22 @@ const Emitter = struct {
                 try c.flush();
                 try c.parts.append(c.b.arena, try c.self.argNode(c.b, c.cc_ref, i));
             }
+            /// `$stringify(<inner>)`: the parts `<inner>` renders become the
+            /// argument of the compiler's own any-value-as-text call node,
+            /// `iolist_to_binary(io_lib:format("~p", [Inner]))` — not template
+            /// text, which stays the author's only.
             pub fn emitStringifyOpen(c: *@This()) anyerror!void {
-                try c.writeAll("iolist_to_binary(io_lib:format(\"~p\", [");
+                try c.flush();
+                try c.stringify_marks.append(c.b.arena, c.parts.items.len);
             }
             pub fn emitStringifyClose(c: *@This()) anyerror!void {
-                try c.writeAll("]))");
+                try c.flush();
+                const mark = c.stringify_marks.pop() orelse return error.PrimOpStringifyMalformed;
+                const inner_parts = try c.b.arena.dupe(Ast.Expr, c.parts.items[mark..]);
+                c.parts.shrinkRetainingCapacity(mark);
+                const inner: Ast.Expr = if (inner_parts.len == 1) inner_parts[0] else .{ .seq = inner_parts };
+                const format = try c.b.remote("io_lib", "format", &.{ .{ .string = "~p" }, try c.b.list(&.{inner}) });
+                try c.parts.append(c.b.arena, try c.b.call("iolist_to_binary", &.{format}));
             }
         };
         var ctx = Ctx{ .self = this, .b = b, .recv = recv, .cc_ref = cc, .argc = cc.args.len + cc.trailing.len, .no_recv = no_recv };
@@ -2223,16 +2224,14 @@ const Emitter = struct {
         if (e == .collection and e.collection.kind == .range) {
             return this.exprNode(b, e.collection.kind.range.start.*);
         }
-        return .{ .number = "0" };
+        return Ast.Expr.t(Term.int(0));
     }
 
     /// A bare botopink name as a read: the local variable at its current
     /// version, or the call `name()` when it is a module-level `val`.
     fn nameRefNode(this: *Emitter, b: Ast.Builder, name: []const u8) anyerror!Ast.Expr {
         if (!this.locals.contains(name) and this.top_vals.contains(name)) return b.call(name, &.{});
-        const vname = try this.varRef(name);
-        defer this.alloc.free(vname);
-        return Ast.Expr.v(try b.arena.dupe(u8, vname));
+        return Ast.Expr.v(try this.varRef(b, name));
     }
 
     /// A string `+` chain as one flat binary construction:
@@ -2360,14 +2359,18 @@ const Emitter = struct {
         };
     }
 
-    /// Heap-allocated Erlang variable for a read of `name` at its current
-    /// version (`Count` or `Count@2`). Caller owns the result.
-    fn varRef(this: *Emitter, name: []const u8) ![]u8 {
-        const version = this.var_current.get(name) orelse 0;
-        if (version == 0) return erlangVar(this.alloc, name);
-        const base = try erlangVar(this.alloc, name);
-        defer this.alloc.free(base);
-        return std.fmt.allocPrint(this.alloc, "{s}@{d}", .{ base, version });
+    /// The Erlang variable for a read of `name` at its current version
+    /// (`Count` or `Count@2`), spelled once in the builder's arena.
+    fn varRef(this: *Emitter, b: Ast.Builder, name: []const u8) ![]const u8 {
+        return this.versionedVar(b, name, this.var_current.get(name) orelse 0);
+    }
+
+    /// `Name` for version 0, `Name@N` otherwise, in the builder's arena.
+    fn versionedVar(this: *Emitter, b: Ast.Builder, name: []const u8, version: u32) ![]const u8 {
+        _ = this;
+        const base = try erlEmitter.varName(b.arena, name);
+        if (version == 0) return base;
+        return std.fmt.allocPrint(b.arena, "{s}@{d}", .{ base, version });
     }
 
     const BindOp = enum { bind, assign, plus_assign };
@@ -2388,13 +2391,9 @@ const Emitter = struct {
             return b.match(vname, try this.exprNode(b, value));
         }
         const version = (this.var_next.get(name) orelse 0) + 1;
-        const base = try erlangVar(this.alloc, name);
-        defer this.alloc.free(base);
-        const target = Ast.Expr.v(try std.fmt.allocPrint(b.arena, "{s}@{d}", .{ base, version }));
+        const target = Ast.Expr.v(try this.versionedVar(b, name, version));
         const rhs: Ast.Expr = if (op == .plus_assign) blk: {
-            const old = try this.varRef(name);
-            defer this.alloc.free(old);
-            const old_var = Ast.Expr.v(try b.arena.dupe(u8, old));
+            const old_var = Ast.Expr.v(try this.varRef(b, name));
             // `s += x` on a string concatenates; on a number it adds; on a
             // name of unknown type it dispatches at runtime.
             if (!this.untyped and (this.string_locals.contains(name) or this.isStringExpr(value))) {
@@ -3173,11 +3172,7 @@ const Emitter = struct {
     /// variable or a `{A, B}` tuple.
     fn varGroupExpr(this: *Emitter, b: Ast.Builder, names: []const []const u8) anyerror!Ast.Expr {
         const vars = try b.arena.alloc(Ast.Expr, names.len);
-        for (names, 0..) |n, i| {
-            const v = try this.varRef(n);
-            defer this.alloc.free(v);
-            vars[i] = Ast.Expr.v(try b.arena.dupe(u8, v));
-        }
+        for (names, 0..) |n, i| vars[i] = Ast.Expr.v(try this.varRef(b, n));
         return if (vars.len == 1) vars[0] else .{ .tuple = vars };
     }
 
@@ -3199,11 +3194,9 @@ const Emitter = struct {
         while (it.next()) |e| try this.var_current.put(e.key_ptr.*, e.value_ptr.*);
     }
 
-    /// `erlangVar(name)` copied into the builder's arena.
+    /// The bare Erlang variable for `name`, spelled in the builder's arena.
     fn arenaVar(this: *Emitter, b: Ast.Builder, name: []const u8) anyerror![]const u8 {
-        const v = try erlangVar(this.alloc, name);
-        defer this.alloc.free(v);
-        return b.arena.dupe(u8, v);
+        return this.versionedVar(b, name, 0);
     }
 
     /// A variable BOUND by a pattern. Erlang patterns do not shadow: a name that
@@ -3220,11 +3213,9 @@ const Emitter = struct {
             return this.arenaVar(b, name);
         }
         const version = (this.var_next.get(name) orelse 0) + 1;
-        const base = try erlangVar(this.alloc, name);
-        defer this.alloc.free(base);
         try this.var_next.put(name, version);
         try this.var_current.put(name, version);
-        return std.fmt.allocPrint(b.arena, "{s}@{d}", .{ base, version });
+        return this.versionedVar(b, name, version);
     }
 
     /// An arm body at `indent`: its statements (when it has a real one), then
@@ -3601,9 +3592,7 @@ const Emitter = struct {
                     // reference is the call `name()`. A local of the same name
                     // shadows it.
                     if (!this.locals.contains(n) and this.top_vals.contains(n)) return b.call(n, &.{});
-                    const vname = try this.varRef(n);
-                    defer this.alloc.free(vname);
-                    return V(try b.arena.dupe(u8, vname));
+                    return V(try this.varRef(b, n));
                 },
                 .identAccess => |ia| {
                     // Qualified enum member: `Order.Lt` → the variant atom.
@@ -3779,7 +3768,7 @@ const Emitter = struct {
                     if (r.end) |end| .{ .binop = .{
                         .op = "-",
                         .lhs = try b.ptr(try b.paren(try this.exprNode(b, end.*))),
-                        .rhs = try b.ptr(.{ .number = "1" }),
+                        .rhs = try b.ptr(Ast.Expr.t(Term.int(1))),
                         .parens = false,
                     } } else A("infinity"),
                 }),
@@ -3929,7 +3918,7 @@ const Emitter = struct {
                         const next: Ast.Expr = .{ .binop = .{
                             .op = "+",
                             .lhs = try b.ptr(params[0]),
-                            .rhs = try b.ptr(.{ .number = "1" }),
+                            .rhs = try b.ptr(Ast.Expr.t(Term.int(1))),
                             .parens = false,
                         } };
                         try body.append(b.arena, .{ .apply = .{
