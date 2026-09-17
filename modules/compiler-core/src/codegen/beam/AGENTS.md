@@ -46,6 +46,53 @@ beam/
 - `../erlang.zig` — `emitComptimeModule` helper functions (`comptime_helper_forms`) and host forms; function/lambda/branch bodies (`bodyNode`), expressions (`exprNode`) and calls (`callNode`) are nodes; declarations and the module header are forms (`emitErlangModule` renders them with `writeForms`).
 - `../../comptime/decorator_eval.zig`, `../../comptime/template_eval.zig` — host glue and `main/0` as `Form`s built with `Builder`; the `@Decl` handle and captures are `Term`s.
 
+## Run-time evaluation of `@External.Erlang` templates (open decision)
+
+`../beam_asm.zig` lowers a host-backed call three ways. An
+`#[@External.Beam("""…""")]` body is `.S` spliced at the call site
+(`renderBeamTemplate`), and an `#[@External.Erlang("mod", "sym")]` pair is a
+plain `call_ext`. An `#[@External.Erlang("…")]` **template** — Erlang *source*
+with `$self`/`$N`/`$stringify(…)` holes (`"base64:encode($0)"`, the arity-branch
+form, a primitive method's template reached through `primErlangTemplate`) —
+has no `.S` form, so it is **evaluated at run time** (`evalTemplate`):
+
+- at build time the holes become variables (`$self` → `__BpSelf`, `$N` →
+  `__BpAN`, `$stringify(e)` → `iolist_to_binary(io_lib:format("~p", [e]))`) and
+  the text, ended with `.`, is a binary literal operand;
+- at the call site the operands are staged into a bindings map
+  (`put_map_assoc`, `#{'__BpSelf' => Recv, '__BpA0' => A0, …}`) and the
+  module-local `'__bp_erl_eval'(Source, Bindings)` is called — synthesised once
+  per module by `ensureEvalHelper`: `binary_to_list` → `erl_scan:string` →
+  `erl_parse:parse_exprs` → `erl_eval:exprs`, the value of the last expression;
+  a step that does not answer `{ok, …}`/`{value, …}` raises its answer with
+  `erlang:error/1`.
+
+It is correct — the ten beam snapshots that reach it print what erlang prints
+(`string_slice_*`, `external_a2_*`, `external_a3_result_template_owned_declare_fn`,
+`external_1_arg_host_expression_…`, `bool_instance_default_fn_methods`,
+`array_zip_via_external_node_template`, `string_methods_map_to_native_js_names`).
+**Its cost:**
+
+- **Speed.** Every call re-scans, re-parses and *interprets* the template;
+  nothing is cached. Measured on OTP (2026-09-17, 100 000 calls each):
+  `base64:encode(X)` direct ≈ 0.1 µs/call, through the eval path ≈ 5.2 µs/call
+  (≈ 50×); a `string:slice($self, $0, $1 - $0)` template ≈ 6.9 µs/call. In a
+  loop over a list (`String.slice` per element) that dominates the run time.
+- **Errors surface late.** A template that does not scan or parse, or names an
+  undefined function, compiles cleanly and fails only when the call runs, as
+  `erlang:error({error, …})` from inside the helper, not as a located build
+  error.
+- **Code size and dependencies.** Each call site carries its template as a
+  binary literal plus a map build; the module depends on `erl_scan`,
+  `erl_parse` and `erl_eval` (stdlib, always present on a BEAM node).
+
+**Open for the maintainer (1.0.4-beta 01 BR4):** keep it as written here, or
+ask for build-time compilation of the template — lower the template text to
+code once, at build time (for example through the erlang backend's template
+lowering into a helper function or aux module assembled next to the `.S`), so a
+call is a local/remote call with no interpretation. The second answer becomes a
+row in `specs/1.0.4-beta/01-backend-residuals/`.
+
 ## Rules
 
 - **The backend builds, the emitter renders.** `beam_asm.zig` owns register

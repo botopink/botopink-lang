@@ -589,7 +589,9 @@ codegen/
   `@External.Erlang("mod", "sym")` is a `call_ext`; an `@External.Erlang`
   template (`"base64:encode($0)"`, arity branches included) is Erlang source,
   evaluated at run time by the synthesised `'__bp_erl_eval'(Source, Bindings)`
-  (`erl_scan` → `erl_parse` → `erl_eval`, markers bound as `__BpSelf`/`__BpAN`).
+  (`erl_scan` → `erl_parse` → `erl_eval`, markers bound as `__BpSelf`/`__BpAN`)
+  — correct but interpreted on every call (≈ 50× a direct call); its cost and
+  the open keep-or-compile decision are in [`beam/AGENTS.md`](beam/AGENTS.md).
   No beam or erlang target raises `MissingExternalTarget`. A call to an
   external another module declares lowers the same way.
 - **Primitive methods** (`emitPrimMethod`), walking the receiver kind's
