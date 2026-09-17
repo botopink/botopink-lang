@@ -547,16 +547,30 @@ codegen/
   `make_fun3`'s environment (`test_heap` with `{words, NumFree}`) and arrive
   as extra parameters after the fun's own, spilled to stack slots like params.
   `Live` honours the `min_live` floor; lambda bodies reset it to 0.
-- **Mutation threading** (`lowerMutatingFold`): a statement `loop (xs) { x -> … }`
+- **Mutation threading** (`lowerMutatingFold`, `emitGroupFun`): a statement
+  `loop (xs) { x -> … }`, `loop (xs) { x, i -> … }` / `loop (xs, 1..) { … }`
   or `xs.forEach({ x -> … })` whose body reassigns names of the enclosing frame
-  (`=`, `+=`, `out.push(v)`, nested `if`/`loop`/`forEach`) lowers to
-  `lists:foldl/3` with those names as the accumulator (one value, or a tuple),
-  unpacked back into the caller's slots; `break`/`continue` return the group. A
-  statement `out.push(v)` on a local Array stores the grown list back into its
-  slot (`receiverMutation`).
-- **Loops**: `loop (xs, 0..) { item, i -> … }` iterates
-  `lists:enumerate(Start, Xs)` and binds both names from the pair with the
-  `element/2` guard BIF; the comprehension shape (a single else-less `if` whose
+  (`=`, `+=`, `out.push(v)`, a mutating closure call, nested
+  `if`/`loop`/`forEach`) lowers to `lists:foldl/3` with those names as the
+  accumulator (one value, or a tuple), unpacked back into the caller's slots
+  (`unpackGroupFromX0`); `break`/`continue` return the group. The two-parameter
+  form folds over `lists:enumerate(Start, Xs)` (`lowerEnumerateIntoX0`; 0
+  without a written range) and binds item and index from the `{Index, Item}`
+  pair. A statement `out.push(v)` on a local Array stores the grown list back
+  into its slot (`receiverMutation`).
+- **Mutating closures** (`lowerMutatingClosure`, `mutating_closures`): a local
+  `val emit = { w -> out = out + w; }` whose body reassigns names of the
+  enclosing frame takes them as one extra argument after its own (the group)
+  and answers their new values — a fun cannot write its caller's stack slots.
+  A statement-position call (`closureMutation`, `lowerClosureMutationCall`)
+  passes the group, applies the fun and stores what it answers back, and counts
+  as a mutation for an enclosing `loop`/`forEach`, so the fold threads the
+  names on out. Parity with erlang's `mutatingClosureExpr`: a call whose value
+  is used keeps the plain application (and raises `badarity`).
+- **Loops**: `loop (xs, 0..) { item, i -> … }` (or `loop (xs) { item, i -> … }`,
+  counting from 0) iterates `lists:enumerate(Start, Xs)` and binds both names
+  from the pair with the `element/2` guard BIF; the comprehension shape (a
+  single else-less `if` whose
   branch ends in `break v`) lowers through `lists:filtermap/2`; an eager
   `#[@iterator]` body ending in a yielding loop returns that loop's list.
 - **Calls**: module-qualified `List.map(…)` → `call_ext`/`call_ext_last`

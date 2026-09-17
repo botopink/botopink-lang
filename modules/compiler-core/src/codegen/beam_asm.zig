@@ -543,7 +543,20 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
             },
         },
         // `.function` (lambda) and `.loop` open their own frames — their inner
-        // bindings don't consume this frame's y-slots.
+        // bindings don't consume this frame's y-slots. A two-parameter loop's
+        // written index start that is neither a literal nor a local is staged
+        // with the iterable (`lowerEnumerateIntoX0`).
+        .loop => |lp| if (lp.params.len == 2) if (lp.indexRange) |ir| {
+            if (ir.* == .collection and ir.collection.kind == .range) {
+                const start = ir.collection.kind.range.start.*;
+                const simple = switch (start) {
+                    .literal => true,
+                    .identifier => |id| id.kind == .ident and !em.top_vals.contains(id.kind.ident),
+                    else => false,
+                };
+                if (!simple) countStaging(em, &.{ start, lp.iter.* }, count);
+            }
+        },
         else => {},
     }
 }
@@ -1173,6 +1186,13 @@ const Emitter = struct {
     /// The outer names a `lists:foldl` loop fun threads as its accumulator
     /// while its body is emitted — `break`/`continue` return them.
     fold_group: ?[]const []const u8 = null,
+    /// Local closures (`val emit = { w -> out = out + w; }`) whose body
+    /// reassigns names of the enclosing frame, keyed by the closure name,
+    /// valued by those names (owned by `prelude_arena`). Such a closure takes
+    /// the names as an extra argument after its own and answers their new
+    /// values (`lowerMutatingClosure`); a statement-position call rebinds them
+    /// (`closureMutation`). Cleared per function.
+    mutating_closures: std.StringHashMap([]const []const u8),
     join_helper_name: ?[]const u8 = null,
 
     /// Target type and methods of an `implement`/`extend` block.
@@ -1206,6 +1226,7 @@ const Emitter = struct {
             .string_locals = std.StringHashMap(void).init(alloc),
             .count_strings = std.StringHashMap(void).init(alloc),
             .string_names = std.StringHashMap(void).init(alloc),
+            .mutating_closures = std.StringHashMap([]const []const u8).init(alloc),
         };
     }
 
@@ -1250,6 +1271,7 @@ const Emitter = struct {
         self.string_locals.deinit();
         self.count_strings.deinit();
         self.string_names.deinit();
+        self.mutating_closures.deinit();
         if (self.print_helper_name) |n| self.alloc.free(n);
         if (self.join_helper_name) |n| self.alloc.free(n);
         if (self.eval_helper_name) |n| self.alloc.free(n);
@@ -1644,6 +1666,7 @@ const Emitter = struct {
         self.cur_arity = arity;
         self.min_live = 0;
         self.string_locals.clearRetainingCapacity();
+        self.mutating_closures.clearRetainingCapacity();
     }
 
     /// Record the string-typed parameters of the function about to be lowered,
@@ -2244,7 +2267,14 @@ const Emitter = struct {
                 .tryCatch => |tc| try self.lowerTryCatch(tc),
             },
             .binding => |b| switch (b.kind) {
-                .localBind => |lb| try self.emitLocalBind(lb.name, lb.value.*),
+                .localBind => |lb| {
+                    // A closure reassigning names of this frame threads them.
+                    if (lb.value.* == .function) {
+                        const fe = lb.value.function;
+                        if (try self.lowerMutatingClosure(lb.name, fe.kind.params, fe.kind.body)) return;
+                    }
+                    try self.emitLocalBind(lb.name, lb.value.*);
+                },
                 .assign => |a| try self.emitAssign(a),
                 .localBindDestruct => |lb| try self.emitDestructBind(lb.pattern, lb.value.*),
             },
@@ -2252,14 +2282,24 @@ const Emitter = struct {
             // threads them through `lists:foldl` (a fun cannot write its
             // caller's stack slots).
             .loop => |lp| {
-                if (lp.params.len == 1 and lp.indexRange == null and !lp.awaitLoop and !hasYieldOrBreakValue(lp.body)) {
-                    if (try self.lowerMutatingFold(lp.params[0], lp.body, lp.iter.*)) return;
+                if (!lp.awaitLoop and !hasYieldOrBreakValue(lp.body)) {
+                    // One parameter, or two — `loop (xs) { x, i -> … }` /
+                    // `loop (xs, 1..) { … }` — whose second one is the index.
+                    if (lp.params.len == 1 and lp.indexRange == null) {
+                        if (try self.lowerMutatingFold(.{ .params = &.{lp.params[0]} }, lp.body, lp.iter.*, null)) return;
+                    } else if (lp.params.len == 2) {
+                        if (try self.lowerMutatingFold(.{ .pair = .{ .item = lp.params[0], .index = lp.params[1] } }, lp.body, lp.iter.*, lp.indexRange)) return;
+                    }
                 }
                 try self.lowerExprIntoX0(stmt.expr);
             },
             .call => {
+                if (self.closureMutation(stmt.expr)) |cm| {
+                    try self.lowerClosureMutationCall(cm);
+                    return;
+                }
                 if (self.forEachLambda(stmt.expr)) |each| {
-                    if (try self.lowerMutatingFold(each.param, each.body, each.recv.*)) return;
+                    if (try self.lowerMutatingFold(.{ .params = &.{each.param} }, each.body, each.recv.*, null)) return;
                 }
                 try self.lowerExprIntoX0(stmt.expr);
                 // `out.push(x)` on a local array rebinds it: the call's value
@@ -5497,7 +5537,9 @@ const Emitter = struct {
             },
             .loop => |lp| try self.collectMutations(lp.body, lp.params, out),
             .call => {
-                if (self.receiverMutation(s.expr) != null) {
+                if (self.closureMutation(s.expr)) |cm| {
+                    for (cm.names) |n| try self.addMutation(n, shadowed, out);
+                } else if (self.receiverMutation(s.expr) != null) {
                     const name = s.expr.call.kind.call.receiver.?.*.identifier.kind.ident;
                     try self.addMutation(name, shadowed, out);
                 } else if (self.forEachLambda(s.expr)) |each| {
@@ -5515,49 +5557,87 @@ const Emitter = struct {
         try out.append(self.alloc, name);
     }
 
-    /// The group of threaded names as one value in `{x, 0}`: the value itself,
-    /// or a tuple of them.
-    fn emitGroupIntoX0(self: *Emitter, names: []const []const u8) anyerror!void {
+    /// The group of threaded names as one value in `{x, dest}`: the value
+    /// itself, or a tuple of them (`live` x-registers survive its `test_heap`).
+    fn emitGroupInto(self: *Emitter, names: []const []const u8, dest: u32, live: u32) anyerror!void {
         if (names.len == 1) {
-            try beamEmitter.writeMoveOp(self.out, self.reg_map.get(names[0]).?.operand(), Dst.xr(0));
+            try beamEmitter.writeMoveOp(self.out, self.reg_map.get(names[0]).?.operand(), Dst.xr(dest));
             return;
         }
         var elems: [max_staged]Op = undefined;
         for (names, 0..) |n, i| elems[i] = self.reg_map.get(n).?.operand();
-        try beamEmitter.writeTestHeap(self.out, names.len + 1, 0);
-        try beamEmitter.writePutTuple2(self.out, Dst.xr(0), elems[0..names.len]);
+        try beamEmitter.writeTestHeap(self.out, names.len + 1, live);
+        try beamEmitter.writePutTuple2(self.out, Dst.xr(dest), elems[0..names.len]);
     }
 
-    /// `Group = lists:foldl(fun(Param, Group) -> Body, Group end, Group, Iter)`
-    /// for a statement loop over `iter` whose `body` reassigns outer names.
-    /// Returns false (nothing emitted) when it reassigns none.
-    fn lowerMutatingFold(self: *Emitter, param: []const u8, body: []const ast.Stmt, iter: ast.Expr) anyerror!bool {
-        var names: std.ArrayListUnmanaged([]const u8) = .empty;
-        defer names.deinit(self.alloc);
-        try self.collectMutations(body, &.{param}, &names);
-        if (names.items.len == 0 or names.items.len > max_staged) return false;
+    fn emitGroupIntoX0(self: *Emitter, names: []const []const u8) anyerror!void {
+        try self.emitGroupInto(names, 0, 0);
+    }
 
+    /// Store the group a threading fun answered (in `{x, 0}`) back into the
+    /// slots of `names` in this frame.
+    fn unpackGroupFromX0(self: *Emitter, names: []const []const u8) anyerror!void {
+        if (names.len == 1) {
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), self.reg_map.get(names[0]).?.dest());
+            return;
+        }
+        for (names, 0..) |n, i| {
+            try beamEmitter.writeBif(self.out, "element", 0, &.{ Op.int(i + 1), Op.xr(0) }, Dst.xr(1));
+            try beamEmitter.writeMoveOp(self.out, Op.xr(1), self.reg_map.get(n).?.dest());
+        }
+    }
+
+    /// How a threading fun receives its own arguments: plain parameters, or
+    /// the one `{Index, Item}` pair of a `lists:enumerate/2` element, bound to
+    /// the two loop names.
+    const GroupFunHead = union(enum) {
+        params: []const []const u8,
+        pair: struct { item: []const u8, index: []const u8 },
+
+        fn names(h: GroupFunHead, buf: *[2][]const u8) []const []const u8 {
+            return switch (h) {
+                .params => |p| p,
+                .pair => |p| blk: {
+                    buf.* = .{ p.item, p.index };
+                    break :blk buf[0..2];
+                },
+            };
+        }
+    };
+
+    /// Emit, into `deferred_lambdas`, the fun `(Head…, Group, Env…)` whose body
+    /// runs with `names` bound from `Group` and answers the group — so do its
+    /// `break`/`continue`. `env_ops` receives the enclosing frame's operand for
+    /// each captured name (the `make_fun3` free-variable list). Returns the
+    /// fun's entry label.
+    fn emitGroupFun(
+        self: *Emitter,
+        head: GroupFunHead,
+        names: []const []const u8,
+        body: []const ast.Stmt,
+        loop_body: bool,
+        env_ops: *std.ArrayListUnmanaged(Op),
+    ) anyerror!u32 {
         const idx = self.lambda_count;
         self.lambda_count += 1;
 
+        var head_buf: [2][]const u8 = undefined;
+        const head_names = head.names(&head_buf);
         var shadow: std.ArrayListUnmanaged([]const u8) = .empty;
         defer shadow.deinit(self.alloc);
-        try shadow.append(self.alloc, param);
-        try shadow.appendSlice(self.alloc, names.items);
+        try shadow.appendSlice(self.alloc, head_names);
+        try shadow.appendSlice(self.alloc, names);
         var env_names: std.ArrayListUnmanaged([]const u8) = .empty;
         defer env_names.deinit(self.alloc);
-        var env_ops: std.ArrayListUnmanaged(Op) = .empty;
-        defer env_ops.deinit(self.alloc);
-        try self.closureEnv(body, shadow.items, &env_names, &env_ops);
-
-        // The caller's slots for the group, read before the fun's frame
-        // replaces `reg_map`.
-        var outer: [max_staged]Reg = undefined;
-        for (names.items, 0..) |n, i| outer[i] = self.reg_map.get(n).?;
+        try self.closureEnv(body, shadow.items, &env_names, env_ops);
 
         var all_params: std.ArrayListUnmanaged([]const u8) = .empty;
         defer all_params.deinit(self.alloc);
-        try all_params.append(self.alloc, param);
+        switch (head) {
+            .params => |p| try all_params.appendSlice(self.alloc, p),
+            .pair => try all_params.append(self.alloc, ""),
+        }
+        const group_y: u32 = @intCast(all_params.items.len);
         try all_params.append(self.alloc, "");
         try all_params.appendSlice(self.alloc, env_names.items);
         const arity: u32 = @intCast(all_params.items.len);
@@ -5567,89 +5647,174 @@ const Emitter = struct {
         try self.reserveFn(fun_name, arity);
         const labels = try self.fnLabelsFor(fun_name, arity);
 
-        {
-            var lam_buf: std.Io.Writer.Allocating = .init(self.alloc);
-            const saved_out = self.out;
-            self.out = &lam_buf.writer;
-            const saved_reg_map = self.reg_map;
-            self.reg_map = std.StringHashMap(Reg).init(self.alloc);
-            const saved_y = self.next_y;
-            const saved_num_y = self.num_y;
-            const saved_arity = self.cur_arity;
-            const saved_loop_flag = self.in_loop_lambda;
-            const saved_min_live = self.min_live;
-            const saved_group = self.fold_group;
-            defer {
-                self.reg_map.deinit();
-                self.reg_map = saved_reg_map;
-                self.next_y = saved_y;
-                self.num_y = saved_num_y;
-                self.cur_arity = saved_arity;
-                self.in_loop_lambda = saved_loop_flag;
-                self.min_live = saved_min_live;
-                self.fold_group = saved_group;
-                self.out = saved_out;
-            }
-            self.min_live = 0;
-            self.next_y = 0;
-            self.cur_arity = arity;
-            const unpack: u32 = if (names.items.len > 1) @intCast(names.items.len) else 0;
-            self.num_y = arity + unpack + self.precountLocals(body);
-            self.in_loop_lambda = true;
-            self.fold_group = names.items;
-            try self.bindParams(all_params.items);
-
-            try beamEmitter.writeBlankLine(self.out);
-            try beamEmitter.writeFunctionHeader(self.out, fun_name, arity, labels.entry);
-            try beamEmitter.writeLabel(self.out, labels.func_info);
-            try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
-            try beamEmitter.writeFuncInfo(self.out, self.module_name, fun_name, arity);
-            try beamEmitter.writeLabel(self.out, labels.entry);
-            try self.emitFrame(arity);
-            try self.emitParamSpill(arity);
-            // The accumulator arrived in `y1`.
-            if (names.items.len == 1) {
-                try self.reg_map.put(names.items[0], .{ .y = 1 });
-            } else {
-                for (names.items, 0..) |n, i| {
-                    try beamEmitter.writeBif(self.out, "element", 0, &.{ Op.int(i + 1), Op.yr(1) }, Dst.xr(0));
-                    const y = self.next_y;
-                    self.next_y += 1;
-                    try self.reg_map.put(n, .{ .y = y });
-                    try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y));
-                }
-            }
-            for (body) |stmt| try self.emitStmt(stmt);
-            if (!bodyExits(body)) {
-                try self.emitGroupIntoX0(names.items);
-                try self.emitReturn();
-            }
-            try self.deferred_lambdas.append(self.alloc, try lam_buf.toOwnedSlice());
-            lam_buf.deinit();
+        var lam_buf: std.Io.Writer.Allocating = .init(self.alloc);
+        const saved_out = self.out;
+        self.out = &lam_buf.writer;
+        const saved_reg_map = self.reg_map;
+        self.reg_map = std.StringHashMap(Reg).init(self.alloc);
+        const saved_y = self.next_y;
+        const saved_num_y = self.num_y;
+        const saved_arity = self.cur_arity;
+        const saved_loop_flag = self.in_loop_lambda;
+        const saved_min_live = self.min_live;
+        const saved_group = self.fold_group;
+        defer {
+            self.reg_map.deinit();
+            self.reg_map = saved_reg_map;
+            self.next_y = saved_y;
+            self.num_y = saved_num_y;
+            self.cur_arity = saved_arity;
+            self.in_loop_lambda = saved_loop_flag;
+            self.min_live = saved_min_live;
+            self.fold_group = saved_group;
+            self.out = saved_out;
         }
+        self.min_live = 0;
+        self.next_y = 0;
+        self.cur_arity = arity;
+        const unpack: u32 = if (names.len > 1) @intCast(names.len) else 0;
+        const pair_slots: u32 = if (head == .pair) 2 else 0;
+        self.num_y = arity + unpack + pair_slots + self.precountLocals(body);
+        self.in_loop_lambda = loop_body;
+        self.fold_group = names;
+        try self.bindParams(all_params.items);
+
+        try beamEmitter.writeBlankLine(self.out);
+        try beamEmitter.writeFunctionHeader(self.out, fun_name, arity, labels.entry);
+        try beamEmitter.writeLabel(self.out, labels.func_info);
+        try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(self.out, self.module_name, fun_name, arity);
+        try beamEmitter.writeLabel(self.out, labels.entry);
+        try self.emitFrame(arity);
+        try self.emitParamSpill(arity);
+        // `y0` holds the `{Index, Item}` pair: `element/2` is a guard BIF, so
+        // reading it frees no register.
+        if (head == .pair) {
+            for ([_]struct { name: []const u8, pos: i64 }{ .{ .name = head.pair.index, .pos = 1 }, .{ .name = head.pair.item, .pos = 2 } }) |b| {
+                try beamEmitter.writeBif(self.out, "element", 0, &.{ Op.int(b.pos), Op.yr(0) }, Dst.xr(0));
+                const y = self.next_y;
+                self.next_y += 1;
+                try self.reg_map.put(b.name, .{ .y = y });
+                try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y));
+            }
+        }
+        if (names.len == 1) {
+            try self.reg_map.put(names[0], .{ .y = group_y });
+        } else {
+            for (names, 0..) |n, i| {
+                try beamEmitter.writeBif(self.out, "element", 0, &.{ Op.int(i + 1), Op.yr(group_y) }, Dst.xr(0));
+                const y = self.next_y;
+                self.next_y += 1;
+                try self.reg_map.put(n, .{ .y = y });
+                try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y));
+            }
+        }
+        for (body) |stmt| try self.emitStmt(stmt);
+        if (!bodyExits(body)) {
+            try self.emitGroupIntoX0(names);
+            try self.emitReturn();
+        }
+        try self.deferred_lambdas.append(self.alloc, try lam_buf.toOwnedSlice());
+        lam_buf.deinit();
+        return labels.entry;
+    }
+
+    /// `Group = lists:foldl(fun(Param, Group) -> Body, Group end, Group, Iter)`
+    /// for a statement loop over `iter` whose `body` reassigns outer names.
+    /// A `.pair` head walks `lists:enumerate(Start, Iter)` (`index_range` gives
+    /// the start, 0 without one). Returns false (nothing emitted) when the body
+    /// reassigns none.
+    fn lowerMutatingFold(self: *Emitter, head: GroupFunHead, body: []const ast.Stmt, iter: ast.Expr, index_range: ?*const ast.Expr) anyerror!bool {
+        var names: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer names.deinit(self.alloc);
+        var head_buf: [2][]const u8 = undefined;
+        try self.collectMutations(body, head.names(&head_buf), &names);
+        if (names.items.len == 0 or names.items.len > max_staged) return false;
+
+        var env_ops: std.ArrayListUnmanaged(Op) = .empty;
+        defer env_ops.deinit(self.alloc);
+        const entry = try self.emitGroupFun(head, names.items, body, true, &env_ops);
 
         // lists:foldl(Fun, Group, List)
-        try self.lowerExprIntoX0(iter);
-        if (names.items.len == 1) {
-            try beamEmitter.writeMoveOp(self.out, outer[0].operand(), Dst.xr(1));
+        if (head == .pair) {
+            try self.lowerEnumerateIntoX0(iter, index_range);
         } else {
-            var elems: [max_staged]Op = undefined;
-            for (0..names.items.len) |i| elems[i] = outer[i].operand();
-            try beamEmitter.writeTestHeap(self.out, names.items.len + 1, 1);
-            try beamEmitter.writePutTuple2(self.out, Dst.xr(1), elems[0..names.items.len]);
+            try self.lowerExprIntoX0(iter);
         }
+        try self.emitGroupInto(names.items, 1, 1);
         try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(2));
-        try self.emitMakeFun(labels.entry, 3, env_ops.items);
+        try self.emitMakeFun(entry, 3, env_ops.items);
         try beamEmitter.writeCall(self.out, .normal, 3, .{ .ext = .{ .module = "lists", .function = "foldl" } }, 0);
-        if (names.items.len == 1) {
-            try beamEmitter.writeMoveOp(self.out, Op.xr(0), outer[0].dest());
-        } else {
-            for (0..names.items.len) |i| {
-                try beamEmitter.writeBif(self.out, "element", 0, &.{ Op.int(i + 1), Op.xr(0) }, Dst.xr(1));
-                try beamEmitter.writeMoveOp(self.out, Op.xr(1), outer[i].dest());
-            }
-        }
+        try self.unpackGroupFromX0(names.items);
         return true;
+    }
+
+    /// `lists:enumerate(Start, Iter)` into `{x, 0}`: the `{Index, Item}` pairs
+    /// of a two-parameter loop. `index_range` is the written `Start..` (null
+    /// for `loop (xs) { x, i -> … }`, which counts from 0).
+    fn lowerEnumerateIntoX0(self: *Emitter, iter: ast.Expr, index_range: ?*const ast.Expr) anyerror!void {
+        const start_expr: ?ast.Expr = if (index_range) |ir|
+            (if (ir.* == .collection and ir.collection.kind == .range) ir.collection.kind.range.start.* else null)
+        else
+            null;
+        const simple_start: ?Op = if (start_expr) |se| self.simpleTerm(se) else Op.int(0);
+        if (simple_start) |start| {
+            try self.lowerExprIntoX0(iter);
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1));
+            try beamEmitter.writeMoveOp(self.out, start, Dst.xr(0));
+        } else {
+            const st = try self.stageOperands(&.{ start_expr.?, iter }, &[_]ast.TrailingLambda{});
+            try self.emitParallelMove(st.slice(), &.{ 0, 1 });
+        }
+        try beamEmitter.writeCall(self.out, .normal, 2, .{ .ext = .{ .module = "lists", .function = "enumerate" } }, 0);
+    }
+
+    /// A statement-position call of a local closure recorded in
+    /// `mutating_closures`: the call and the names it threads, or null.
+    const ClosureMutation = struct { cc: @FieldType(@FieldType(ast.CallExprOf(.untyped), "kind"), "call"), names: []const []const u8 };
+
+    fn closureMutation(self: *const Emitter, e: ast.Expr) ?ClosureMutation {
+        if (e != .call or e.call.kind != .call) return null;
+        const cc = e.call.kind.call;
+        if (cc.is_builtin or cc.receiver != null or !self.reg_map.contains(cc.callee)) return null;
+        const names = self.mutating_closures.get(cc.callee) orelse return null;
+        return .{ .cc = cc, .names = names };
+    }
+
+    /// `val name = { params -> body }` whose body reassigns names of this frame:
+    /// the fun takes those names as one extra argument after its own and
+    /// answers their new values (a fun cannot write its caller's stack slots).
+    /// Binds `name` like any local. Returns false (nothing emitted) when the
+    /// body reassigns none.
+    fn lowerMutatingClosure(self: *Emitter, name: []const u8, params: []const []const u8, body: []const ast.Stmt) anyerror!bool {
+        if (self.reg_map.contains(name)) return false;
+        var names: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer names.deinit(self.alloc);
+        try self.collectMutations(body, params, &names);
+        if (names.items.len == 0 or names.items.len > max_staged or params.len + 1 >= max_staged) return false;
+
+        var env_ops: std.ArrayListUnmanaged(Op) = .empty;
+        defer env_ops.deinit(self.alloc);
+        const entry = try self.emitGroupFun(.{ .params = params }, names.items, body, false, &env_ops);
+        try self.emitMakeFun(entry, 0, env_ops.items);
+
+        const y_idx = self.next_y;
+        self.next_y += 1;
+        try self.reg_map.put(name, .{ .y = y_idx });
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y_idx));
+        try self.mutating_closures.put(name, try self.prelude_arena.allocator().dupe([]const u8, names.items));
+        return true;
+    }
+
+    /// `emit(a…)` on a closure `lowerMutatingClosure` lowered: pass the group
+    /// after the arguments, apply the fun, store what it answers back.
+    fn lowerClosureMutationCall(self: *Emitter, cm: ClosureMutation) anyerror!void {
+        const arity: u32 = @intCast(cm.cc.args.len + cm.cc.trailing.len);
+        try self.materializeCallArgs(cm.cc.args, cm.cc.trailing);
+        try self.emitGroupInto(cm.names, arity, arity);
+        try beamEmitter.writeMoveOp(self.out, self.reg_map.get(cm.cc.callee).?.operand(), Dst.xr(arity + 1));
+        try beamEmitter.writeCallFun(self.out, arity + 1);
+        try self.unpackGroupFromX0(cm.names);
     }
 
     fn lowerLoop(self: *Emitter, lp: anytype) anyerror!void {
@@ -5657,7 +5822,8 @@ const Emitter = struct {
         const filter_map = filterMapIf(lp);
         // `loop (xs, 0..) { item, i -> … }` iterates `lists:enumerate(Start, Xs)`:
         // the fun takes one `{Index, Item}` pair and binds both names from it.
-        const indexed = lp.indexRange != null and lp.params.len == 2;
+        // Without a written range (`loop (xs) { item, i -> … }`) it counts from 0.
+        const indexed = lp.params.len == 2;
 
         const idx = self.lambda_count;
         self.lambda_count += 1;
@@ -5749,16 +5915,10 @@ const Emitter = struct {
         // x-register beforehand would lose it (`lists:foreach([_],[_])`). Instead
         // the list lands in `x1` (and stays in `x0` too), so the closure's
         // `make_fun3` — which always writes `x0` — keeps the list live in `x1`.
-        try self.lowerExprIntoX0(lp.iter.*);
         if (indexed) {
-            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1));
-            const ir = lp.indexRange.?.*;
-            const start: Op = if (ir == .collection and ir.collection.kind == .range)
-                self.simpleTerm(ir.collection.kind.range.start.*) orelse Op.int(0)
-            else
-                Op.int(0);
-            try beamEmitter.writeMoveOp(self.out, start, Dst.xr(0));
-            try beamEmitter.writeCall(self.out, .normal, 2, .{ .ext = .{ .module = "lists", .function = "enumerate" } }, 0);
+            try self.lowerEnumerateIntoX0(lp.iter.*, lp.indexRange);
+        } else {
+            try self.lowerExprIntoX0(lp.iter.*);
         }
         try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.xr(1));
         try self.emitMakeFun(labels.entry, 2, env_ops.items);
