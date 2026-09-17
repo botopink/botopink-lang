@@ -453,6 +453,7 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
             .@"break" => |v| if (v.value) |vv| countLocalsInExpr(em, vv.*, count),
             .yield => |y| if (y.value) |v| countLocalsInExpr(em, v.*, count),
             .try_ => |v| if (v) |vv| countLocalsInExpr(em, vv.*, count),
+            .await_ => |v| countLocalsInExpr(em, v.*, count),
             else => {},
         },
         .collection => |col| switch (col.kind) {
@@ -1590,6 +1591,15 @@ const Emitter = struct {
         return null;
     }
 
+    /// True when a record/struct this module knows declares a field `name`.
+    fn someRecordHasField(self: *const Emitter, name: []const u8) bool {
+        var it = self.record_fields.valueIterator();
+        while (it.next()) |fields| {
+            for (fields.*) |f| if (std.mem.eql(u8, f, name)) return true;
+        }
+        return false;
+    }
+
     /// Mangled `'<qualifier>_<method>'` name for a dispatch site, written into
     /// `buf`. `sym` is the extension block name from `rewrites`/the receiver;
     /// the qualifier defaults to the target type (matching `emitImplementMethod`).
@@ -2639,6 +2649,11 @@ const Emitter = struct {
                     try beamEmitter.writeCall(self.out, .only, 1, .{ .ext = .{ .module = "erlang", .function = "throw" } }, 0);
                     return;
                 },
+                // `await e` is eager: the value of `e`.
+                .await_ => |inner| {
+                    try self.lowerExprIntoX0(inner.*);
+                    return;
+                },
                 .try_ => |val| {
                     // `try expr` (no catch): unwrap `{ok, V}`, or early-return the
                     // `{error, E}` tuple to propagate it up.
@@ -3123,8 +3138,9 @@ const Emitter = struct {
             const labels = self.fnLabelsFor(cc.callee, total_arity) catch {
                 // A record field holding a fun (`s.set(v)` on
                 // `record State { set: fn(next: T) }`): read it, apply it.
-                if (self.instanceLowering(loc, recv_expr.*)) |il| {
-                    if (il == .record) {
+                const fun_field = if (self.instanceLowering(loc, recv_expr.*)) |il| il == .record else self.someRecordHasField(cc.callee);
+                {
+                    if (fun_field) {
                         var read: ast.Expr = .{ .identifier = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .identAccess = .{ .receiver = @constCast(recv_expr), .member = cc.callee } } } };
                         var exprs: [max_staged]ast.Expr = undefined;
                         for (cc.args, 0..) |arg, i| exprs[i] = arg.value.*;

@@ -10,7 +10,7 @@ fn apply(s: State<i32>) -> i32 { s.set(s.value); return s.value; }
 {module, main}.
 {exports, []}.
 {attributes, []}.
-{labels, 10}.
+{labels, 11}.
 
 {function, make, 0, 3}.
   {label, 2}.
@@ -36,13 +36,19 @@ fn apply(s: State<i32>) -> i32 { s.set(s.value); return s.value; }
     {test, is_map, {f, 8}, [{x, 0}]}.
     {get_map_elements, {f, 8}, {x, 0}, {list, [{atom, value}, {x, 0}]}}.
   {label, 8}.
-    %% unresolved_method: set/2
-    {move, {literal, {unresolved_method, set, 2}}, {x, 0}}.
-    {call_ext, 1, {extfunc, erlang, error, 1}}.
+    {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
     {test, is_map, {f, 9}, [{x, 0}]}.
-    {get_map_elements, {f, 9}, {x, 0}, {list, [{atom, value}, {x, 0}]}}.
+    {get_map_elements, {f, 9}, {x, 0}, {list, [{atom, set}, {x, 0}]}}.
   {label, 9}.
+    {move, {x, 1}, {x, 2}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {x, 2}, {x, 0}}.
+    {call_fun, 1}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_map, {f, 10}, [{x, 0}]}.
+    {get_map_elements, {f, 10}, {x, 0}, {list, [{atom, value}, {x, 0}]}}.
+  {label, 10}.
     {deallocate, 1}.
     return.
 

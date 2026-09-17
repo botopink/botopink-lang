@@ -362,7 +362,8 @@ codegen/
   (`lowerResultOptionOp`: `{ok, V}`/`{error, E}` and bare value / `undefined`,
   mirroring erlang), optional chaining (`lowerIdentAccess`: `is_eq` on
   `undefined`, then `is_map` + `get_map_elements`), `comptime` nodes
-  (`lowerComptime`: a folded expression/block is its value).
+  (`lowerComptime`: a folded expression/block is its value), `await e` (eager:
+  the value of `e`).
 - **Module shape**: every *named* top-level `val` is a 0-arity function
   (reserved, emitted and — when `pub` — exported whether or not the module has a
   `main/0`), so a read is a local call; a `val` holding a fun is read, parked on
@@ -409,7 +410,8 @@ codegen/
   associated `default fn`s emit as mangled locals `'Interface_method'`
   (`reserveInterfaceMethods`/`emitInterfaceAssoc`); a record-typed receiver
   (`c.atual()`, `.record` instance lowering) calls `'<Type>_<method>'` with the
-  receiver first, or applies a fun-typed field (`s.set(v)`); a record method
+  receiver first, or applies a fun-typed field (`s.set(v)` — also when inference
+  recorded no lowering but a known record declares the field); a record method
   that reads `self` without declaring it takes it as an implicit first
   parameter (`hasImplicitSelf`); a destructuring parameter binds its names in
   the prologue; `Ok(v)`/`Err(e)`/`Error(msg)` build the `@Result` tuple.
