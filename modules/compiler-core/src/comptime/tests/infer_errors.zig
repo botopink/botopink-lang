@@ -134,6 +134,20 @@ test "infer error: type mismatch ---- mul with non-numeric" {
     );
 }
 
+// 06 C3 — `*` only unified the two sides with each other, and two strings
+// agree; `-` applied no constraint at all.
+test "infer error: mul with two non-numeric operands" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val bad = "a" * "b";
+    );
+}
+
+test "infer error: negating a string" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val bad = -"s";
+    );
+}
+
 test "infer error: type mismatch ---- function argument wrong type" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\pub fn double(x: i32) -> i32 {

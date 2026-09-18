@@ -5449,6 +5449,26 @@ fn inferTupleLabelCall(
     } } } };
 }
 
+/// 06 C3 — arithmetic constrains its operands to a numeric type, reported at
+/// the offending operand. `"a" * "b"` and `-"s"` used to check: `*` only
+/// unified the two sides with each other (two strings agree) and `-` applied
+/// no constraint at all. Permissive for a type variable an inference gap has
+/// not resolved, and for any named type the env does not know to be
+/// non-numeric — only the types that certainly hold no arithmetic red.
+fn requireNumericOperand(env: *Env, ty: *T.Type, op: []const u8, loc: ast.Loc) InferError!void {
+    const t = ty.deref();
+    if (t.* != .named) return;
+    const n = t.named.name;
+    const eq = std.mem.eql;
+    if (!(eq(u8, n, "string") or eq(u8, n, "bool") or eq(u8, n, "void") or eq(u8, n, "array"))) return;
+    var e = TypeError.custom(
+        try std.fmt.allocPrint(env.arena, "`{s}` takes numbers, not `{s}`", .{ op, n }),
+        "Arithmetic is defined on the integer and float types. `+` also concatenates strings; the other operators do not.",
+    );
+    env.lastError = e.withLoc(loc);
+    return error.TypeError;
+}
+
 /// The named types that hold no variant at all: a variant pattern asserted
 /// against one of them can never match. Every other unregistered name stays
 /// permissive (a forward reference, or an imported type).
@@ -6060,8 +6080,13 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
     const resultType: *T.Type = switch (binop.op) {
         .lt, .gt, .lte, .gte, .eq, .ne => try env.namedType("bool"),
         .@"and", .@"or" => blk: {
-            try unifyAt(env, lhsTyped.getType(), try env.namedType("bool"), loc);
-            try unifyAt(env, rhsTyped.getType(), try env.namedType("bool"), loc);
+            // 06 C3 — `unifyAt(env, a, b, loc)` is TARGET-first: `a` is what
+            // the context expects, `b` what was written
+            // (`typeMismatch(a, b)` renders "expected a, got b"). These two
+            // passed the operand as `a`, so `1 && true` read "expected i32,
+            // got bool". The caret is on the OPERAND, not the whole expression.
+            try unifyAt(env, try env.namedType("bool"), lhsTyped.getType(), binop.lhs.getLoc());
+            try unifyAt(env, try env.namedType("bool"), rhsTyped.getType(), binop.rhs.getLoc());
             break :blk try env.namedType("bool");
         },
         .add => blk: {
@@ -6078,6 +6103,16 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
         .sub, .mul, .div, .mod => blk: {
             const lhsTy = lhsTyped.getType();
             const rhsTy = rhsTyped.getType();
+            // 06 C3 — both operands must be numeric. `unify(lhs, rhs)` alone
+            // accepted `"a" * "b"`: two strings agree with each other.
+            const opName = switch (binop.op) {
+                .sub => "-",
+                .mul => "*",
+                .div => "/",
+                else => "%",
+            };
+            try requireNumericOperand(env, lhsTy, opName, binop.lhs.getLoc());
+            try requireNumericOperand(env, rhsTy, opName, binop.rhs.getLoc());
             if (isFloatType(lhsTy) and isIntType(rhsTy)) break :blk lhsTy;
             if (isIntType(lhsTy) and isFloatType(rhsTy)) break :blk rhsTy;
             try unify(env, lhsTy, rhsTy);
@@ -6099,10 +6134,16 @@ fn inferUnaryOpExpr(env: *Env, unaryop: ast.UnaryOpExprOf(.untyped), loc: ast.Lo
     const operandPtr = try makeTypedPtr(env, operandTyped);
     return switch (unaryop.op) {
         .not => blk: {
-            try unifyAt(env, operandTyped.getType(), try env.namedType("bool"), loc);
+            // 06 C3 — target-first, located at the operand (see the `&&`/`||`
+            // note in `inferBinaryOpExpr`).
+            try unifyAt(env, try env.namedType("bool"), operandTyped.getType(), unaryop.expr.getLoc());
             break :blk TypedExpr{ .unaryOp = .{ .loc = loc, .type_ = try env.namedType("bool"), .op = .not, .expr = operandPtr } };
         },
-        .neg => TypedExpr{ .unaryOp = .{ .loc = loc, .type_ = operandTyped.getType(), .op = .neg, .expr = operandPtr } },
+        // 06 C3 — `-x` applied no constraint at all, so `-"s"` checked.
+        .neg => blk: {
+            try requireNumericOperand(env, operandTyped.getType(), "-", unaryop.expr.getLoc());
+            break :blk TypedExpr{ .unaryOp = .{ .loc = loc, .type_ = operandTyped.getType(), .op = .neg, .expr = operandPtr } };
+        },
     };
 }
 

@@ -1,11 +1,11 @@
 ----- SOURCE CODE
-val bad = 3.14 * "oops";
+val bad = "a" * "b";
 
 ----- ERROR
 error: `*` takes numbers, not `string`
-  ┌─ :1:18
+  ┌─ :1:11
   │
-1 │ val bad = 3.14 * "oops";
-  │                  ^
+1 │ val bad = "a" * "b";
+  │           ^
 
   hint: Arithmetic is defined on the integer and float types. `+` also concatenates strings; the other operators do not.
