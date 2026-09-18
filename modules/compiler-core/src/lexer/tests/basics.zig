@@ -277,3 +277,14 @@ test "lexer: a point with no digit after it is not part of the number" {
     try std.testing.expectEqual(TokenKind.dot, tokens[3].kind);
     try std.testing.expectEqualStrings("first", tokens[4].lexeme);
 }
+
+// ── Front 15 / decision 28 — `??` is a token ─────────────────────────────────
+
+test "lexer: ?? is one token, and ? and ?. are unchanged" {
+    var l = Lexer.init("a ?? b ?. c ?i32");
+    const tokens = try l.scanAll(std.testing.allocator);
+    defer l.deinit(std.testing.allocator);
+    try std.testing.expectEqual(TokenKind.questionQuestion, tokens[1].kind);
+    try std.testing.expectEqual(TokenKind.questionDot, tokens[3].kind);
+    try std.testing.expectEqual(TokenKind.questionMark, tokens[5].kind);
+}

@@ -245,3 +245,36 @@ test "surface R5: an array literal is still an array literal" {
         \\}
     );
 }
+
+// ── R8 — `??`, the nullish default (decision 28) ─────────────────────────────
+//
+// Decision 14 recorded `??` as deliberately absent because it "duplicates
+// `catch` and `?.`". Measured, it does not: `catch` is `@Result`-only
+// (`val b = a catch 0;` on an `a: ?i32` reds with "`try` requires a
+// @Result<D, E> value, found \'optional\'"), and nothing else gives an optional
+// a default. Decision 28 reverses it. `a ?? b` desugars to the optional binding
+// form the language already has.
+
+test "surface R8: the nullish default, chained and in a condition" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn g(n: i32) -> ?i32 { return n; }
+        \\fn f(a: ?i32, b: ?i32, c: ?bool) -> i32 {
+        \\    val x = a ?? 0;
+        \\    val y = a ?? b ?? 0;
+        \\    val z = g(1) ?? 0;
+        \\    if (c ?? false) { println("y"); };
+        \\    return x + y + z;
+        \\}
+    );
+}
+
+test "surface R8: `??` binds tighter than every other binary operator" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn f(a: ?i32, b: ?bool) -> bool {
+        \\    val x = a ?? 0 == 1;
+        \\    val y = a ?? 0 + 1;
+        \\    val z = b ?? false && true;
+        \\    return x;
+        \\}
+    );
+}

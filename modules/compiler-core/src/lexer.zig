@@ -134,6 +134,10 @@ pub const Lexer = struct {
             '?' => {
                 if (self.matchChar('.')) {
                     try self.addToken(.questionDot, allocator);
+                } else if (self.matchChar('?')) {
+                    // `??` — the nullish default (decision 28). Tried before
+                    // the bare `?`, the way `..` is tried before `.`.
+                    try self.addToken(.questionQuestion, allocator);
                 } else {
                     try self.addToken(.questionMark, allocator);
                 }

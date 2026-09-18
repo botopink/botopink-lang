@@ -519,6 +519,10 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
 /// True when the current token is a binary operator from `precedence_table`.
 fn isBinaryOpNext(this: *This) bool {
     const kind = this.peek().kind;
+    // `??` is not in the table — it desugars rather than mapping to a `BinOp`
+    // (see `parseNullishExpr`) — but `g(1) ?? 0` must not end the expression
+    // at the call, so it is named here beside the table's operators.
+    if (kind == .questionQuestion) return true;
     inline for (precedence_table) |lvl| {
         inline for (lvl.ops) |o| {
             if (kind == o.tok) return true;
@@ -812,6 +816,48 @@ pub fn parsePipelineExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr 
     return lhs;
 }
 
+/// `a ?? b` — the nullish default (decision 28): `a` unless it is null, and
+/// then `b`.
+///
+/// It sits at the tightest binary level, just above `is` and a primary, for the
+/// reason `is` does: `a ?? 0 == 1` reads as `(a ?? 0) == 1`, `if (a ?? false)`
+/// needs no parentheses of its own, and there is no "cannot mix `??` with `||`"
+/// rule to learn. **Right-associative**, so `a ?? b ?? c` is `a ?? (b ?? c)` —
+/// the first non-null of the three.
+///
+/// **It desugars rather than adding an operator.** `a ?? b` becomes
+/// `if (a) { <n> -> <n> } else { b }` with `n = ast.nullish_binding_name`: the
+/// optional binding form the language already has, which evaluates `a` once,
+/// narrows it inside the branch, and is already lowered by all four backends.
+/// `ast.zig` says why a `BinOp` variant is not the shape.
+fn parseNullishExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
+    var value = try parseIsExpr(this, alloc);
+    errdefer value.deinit(alloc);
+    if (!this.check(.questionQuestion)) return value;
+    const opTok = this.advance();
+    // Right-associative: the RHS is another `??` chain, not just one operand.
+    const fallback = try parseNullishExpr(this, alloc);
+
+    const condPtr = try this.boxExpr(alloc, value);
+    const fallbackPtr = try this.boxExprOwned(alloc, fallback);
+
+    var then_ = try alloc.alloc(Stmt, 1);
+    then_[0] = .{ .expr = Expr{ .identifier = .{
+        .loc = locFromToken(opTok),
+        .kind = .{ .ident = ast.nullish_binding_name },
+    } } };
+    var else_ = try alloc.alloc(Stmt, 1);
+    else_[0] = .{ .expr = fallbackPtr.* };
+    alloc.destroy(fallbackPtr);
+
+    return Expr{ .branch = .{ .loc = locFromToken(opTok), .kind = .{ .if_ = .{
+        .cond = condPtr,
+        .binding = ast.nullish_binding_name,
+        .then_ = then_,
+        .else_ = else_,
+    } } } };
+}
+
 /// `x is T` — decision 8 §4 (06 N21): tests the VALUE, not its origin.
 ///
 /// The tightest level of the expression grammar, just above a primary, so
@@ -854,7 +900,7 @@ fn parseIsExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
 
 /// Left-associative precedence-climbing parser driven by `precedence_table`.
 pub fn parseBinaryExpr(this: *This, alloc: std.mem.Allocator, comptime level: usize) ParseError!Expr {
-    if (level == precedence_table.len) return parseIsExpr(this, alloc);
+    if (level == precedence_table.len) return parseNullishExpr(this, alloc);
     const entry = precedence_table[level];
 
     var lhs = try this.parseBinaryExpr(alloc, level + 1);

@@ -1702,6 +1702,21 @@ pub const is_builtin_name = "is";
 /// which is the same place `x is T` reached before `04-js` lowered it.
 pub const index_builtin_name = "[]";
 
+/// The binding name the parser gives `a ?? b`'s desugaring (decision 28).
+///
+/// `a ?? b` becomes `if (a) { <this> -> <this> } else { b }` — the optional
+/// binding form the language already has (`if (email) { e -> … }`), which
+/// evaluates `a` once and narrows it inside the branch. There is no `??`
+/// operator in `BinOp` and no new AST node, for the reason `is_builtin_name`
+/// states: no AST union here may gain a variant, and every consumer would have
+/// to grow an arm before the form could parse at all. The desugaring instead
+/// reaches machinery all four backends already lower.
+///
+/// The `__bp` prefix is the codebase's reserved one (`__bp_show`, `__bp_eq`),
+/// so a nested `a ?? (b ?? c)` shadows correctly and no user name collides in
+/// practice.
+pub const nullish_binding_name = "__bp_nullish";
+
 pub const TypeRef = union(enum) {
     /// Plain named type: `Int`, `string`, `Self`. Slice into source — not heap-owned.
     named: []const u8,
