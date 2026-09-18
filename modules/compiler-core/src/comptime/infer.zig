@@ -2622,7 +2622,11 @@ fn instantiateType(env: *Env, ty: *T.Type, seen: *std.AutoHashMap(*T.TypeCell, *
             const args = try env.arena.alloc(*T.Type, n.args.len);
             for (n.args, 0..) |a, i| args[i] = try instantiateType(env, a, seen, mode);
             const node = try env.arena.create(T.Type);
-            node.* = .{ .named = .{ .name = n.name, .args = args } };
+            // 06 N24 — a tuple's element labels (decision 8 §6) live on the
+            // `named` node, so instantiating a generic signature has to carry
+            // them: `fn ref<T>() -> #(current: T)` lost them here and
+            // `r.current` reds "this tuple has no element labeled".
+            node.* = .{ .named = .{ .name = n.name, .args = args, .labels = n.labels } };
             return node;
         },
         .func => |f| {
@@ -2911,6 +2915,24 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
         if (fnLoc) |l| err = err.withLoc(l);
         env.lastError = err;
         return error.TypeError;
+    } else if (isResultFn) {
+        // N25 / decision 8 § 9 — the wrapper without its annotation is an
+        // error too. A plain `fn -> @Result<D, E>` used to be accepted and
+        // given NO special treatment: `return` did not wrap, `throw` stayed a
+        // raw host exception. That is a second, unwritten Result calculus; the
+        // decision leaves one.
+        const msg = try std.fmt.allocPrint(
+            env.arena,
+            "{s}: a function returning `@Result<D, E>` needs `#[@result]`",
+            .{diagnostics.effect_missing_annotation},
+        );
+        var err = TypeError.custom(
+            msg,
+            "Mark it `#[@result]`: `return` then carries the success value and `throw` the error channel's own (decision 8 § 9). Without the annotation the wrapper is not built.",
+        );
+        if (fnLoc) |l| err = err.withLoc(l);
+        env.lastError = err;
+        return error.TypeError;
     }
 
     // Establish the effect context (saved/restored around the body) so nested
@@ -3083,13 +3105,38 @@ fn inferTypeMethods(
         env.fnContext = try contextInfoFromReturn(env, m.returnType);
         defer env.fnContext = savedFnCtx;
 
+        // 06 C9 — a method body is part of the strict contract, like a
+        // `default fn` interface body (`inferInterfaceDefaultBodies`). The walk
+        // used to swallow `error.TypeError` into `lastError = null`, so a real
+        // mismatch inside a method compiled and only failed at run time.
+        var inferredReturn: ?*T.Type = null;
         for (body) |stmt| {
-            // Swallow inference gaps (see the best-effort note above): clear the
-            // stale error and move to the next method so the compile survives.
-            _ = inferExpr(env, stmt.expr) catch {
-                env.lastError = null;
-                break;
-            };
+            const typed = try inferExprTyped(env, stmt.expr);
+            // 06 C9 — the return type of a method that annotates none comes
+            // from its body. `registerInherentMethodTypes` stores a signature
+            // only for an annotated method ("rather than mis-typing them as
+            // `void`"), so `d.get()` fell to the fresh-var fallback and
+            // `val a: string = d.get();` compiled. Every `return <v>` in the
+            // body agrees (they unify), and a bare `return` / no return leaves
+            // it `void`.
+            if (m.returnType == null and stmt.expr == .jump and stmt.expr.jump.kind == .@"return") {
+                if (stmt.expr.jump.kind.@"return" != null) {
+                    const rv = typed.jump.kind.@"return".?;
+                    if (inferredReturn) |prev| {
+                        try unifyAt(env, prev, rv.getType(), rv.getLoc());
+                    } else {
+                        inferredReturn = rv.getType();
+                    }
+                }
+            }
+        }
+        if (m.returnType == null) {
+            const params = try env.arena.alloc(*T.Type, m.params.len);
+            for (m.params, 0..) |p, i| {
+                params[i] = env.lookup(p.name) orelse try env.freshVar();
+            }
+            const ret = inferredReturn orelse try env.namedType("void");
+            try env.setInherentMethodType(typeName, m.name, try env.funcType(params, ret));
         }
     }
 }
@@ -5290,6 +5337,211 @@ fn variantPayloadTypes(env: *Env, subjectType: *T.Type, variantName: []const u8)
     return out;
 }
 
+/// 06 C9 — whether `td` answers `member` by some route other than an inherent
+/// method: a field of function type called like a method (`c.set(9)` on
+/// `#(value, set)`-shaped records), or a `default fn` the type adopts from a
+/// behavior it implements (through that behavior's `extends` chain). Both are
+/// legitimate and neither is registered in `inherentMethods`, so the unknown-
+/// method check has to ask before it reds.
+fn typeAnswersMember(env: *Env, td: envMod.TypeDef, member: []const u8) bool {
+    if (td.fields()) |fs| {
+        for (fs) |f| {
+            if (std.mem.eql(u8, f.name, member)) return true;
+        }
+    }
+    const implements: []const []const u8 = switch (td) {
+        .record => |r| r.implements,
+        .struct_ => |st| st.implements,
+        .enum_ => |e| e.implements,
+    };
+    for (implements) |iface| {
+        if (behaviorDeclaresMember(env, iface, member, 0)) return true;
+    }
+    return false;
+}
+
+/// Whether `iface` — or anything it extends — declares `member`. `depth` bounds
+/// a cyclic `extends` chain.
+fn behaviorDeclaresMember(env: *Env, iface: []const u8, member: []const u8, depth: usize) bool {
+    if (depth >= 16) return false;
+    const decl = env.assocInterfaceDecls.get(iface) orelse return false;
+    for (decl.methods) |m| {
+        if (std.mem.eql(u8, m.name, member)) return true;
+    }
+    for (decl.fields) |f| {
+        if (std.mem.eql(u8, f.name, member)) return true;
+    }
+    for (decl.extends) |parent| {
+        if (behaviorDeclaresMember(env, parent, member, depth + 1)) return true;
+    }
+    return false;
+}
+
+/// Decision 2 — whether a branch's statements end in something that HAS a
+/// value. Every binding expression (an assignment, a `val`/`var`, a
+/// destructuring) and a loop are statements: they end the branch with nothing
+/// for the other branch to agree with.
+fn stmtsYieldValue(stmts: []const ast.StmtOf(.typed)) bool {
+    if (stmts.len == 0) return false;
+    return switch (stmts[stmts.len - 1].expr) {
+        .binding => false,
+        .loop => false,
+        else => true,
+    };
+}
+
+/// 06 N24 / decision 8 §6 — `c.set(9)` where `set` is a LABEL of the tuple
+/// `c`, naming an element of function type. Types the call from that element's
+/// signature and records the positional rewrite the backends need
+/// (`c._1(9)`), the same `enumSectionRewrites` channel the member-access path
+/// uses for `row.pop` → `row._1`. Null when the receiver is not a labelled
+/// tuple, or the callee is not one of its labels — every other dispatch then
+/// runs as before.
+fn inferTupleLabelCall(
+    env: *Env,
+    recvPtr: ?*ast.TypedExpr,
+    recvExpr: ?*ast.Expr,
+    callee: []const u8,
+    typedArgs: []ast.CallArgOf(.typed),
+    typedTrailing: []ast.TrailingLambdaOf(.typed),
+    loc: ast.Loc,
+) InferError!?TypedExpr {
+    const recv = recvPtr orelse return null;
+    const written = recvExpr orelse return null;
+    const rt = recv.getType().deref();
+    if (rt.* != .named or !std.mem.eql(u8, rt.named.name, "tuple")) return null;
+    const idx = tupleLabelIndex(rt.named.labels, callee) orelse return null;
+    if (idx >= rt.named.args.len) return null;
+
+    const elem = rt.named.args[idx].deref();
+    const retType: *T.Type = switch (elem.*) {
+        .func => |f| blk: {
+            const total = typedArgs.len + typedTrailing.len;
+            if (f.params.len != total) {
+                env.lastError = TypeError.arityMismatch(callee, f.params.len, total).withLoc(loc);
+                return error.TypeError;
+            }
+            for (typedArgs, f.params[0..typedArgs.len]) |ta, p| {
+                try unifyAt(env, p, ta.value.getType(), ta.value.getLoc());
+            }
+            break :blk f.ret;
+        },
+        else => try env.freshVar(),
+    };
+
+    const positional = try std.fmt.allocPrint(env.arena, "_{d}", .{idx});
+    const rewrite = try env.arena.create(ast.Expr);
+    rewrite.* = .{ .call = .{ .loc = loc, .kind = .{ .call = .{
+        .receiver = written,
+        .callee = positional,
+        .is_builtin = false,
+        .args = &.{},
+        .trailing = &.{},
+    } } } };
+    try env.enumSectionRewrites.put(loc, rewrite);
+
+    return TypedExpr{ .call = .{ .loc = loc, .type_ = retType, .kind = .{ .call = .{
+        .receiver = recvPtr,
+        .callee = positional,
+        .is_builtin = false,
+        .args = typedArgs,
+        .trailing = typedTrailing,
+    } } } };
+}
+
+/// 06 C3 — arithmetic constrains its operands to a numeric type, reported at
+/// the offending operand. `"a" * "b"` and `-"s"` used to check: `*` only
+/// unified the two sides with each other (two strings agree) and `-` applied
+/// no constraint at all. Permissive for a type variable an inference gap has
+/// not resolved, and for any named type the env does not know to be
+/// non-numeric — only the types that certainly hold no arithmetic red.
+fn requireNumericOperand(env: *Env, ty: *T.Type, op: []const u8, loc: ast.Loc) InferError!void {
+    const t = ty.deref();
+    if (t.* != .named) return;
+    const n = t.named.name;
+    const eq = std.mem.eql;
+    if (!(eq(u8, n, "string") or eq(u8, n, "bool") or eq(u8, n, "void") or eq(u8, n, "array"))) return;
+    var e = TypeError.custom(
+        try std.fmt.allocPrint(env.arena, "`{s}` takes numbers, not `{s}`", .{ op, n }),
+        "Arithmetic is defined on the integer and float types. `+` also concatenates strings; the other operators do not.",
+    );
+    env.lastError = e.withLoc(loc);
+    return error.TypeError;
+}
+
+/// The named types that hold no variant at all: a variant pattern asserted
+/// against one of them can never match. Every other unregistered name stays
+/// permissive (a forward reference, or an imported type).
+const scalar_type_names = [_][]const u8{
+    "i8",    "u8",       "i16", "u16", "i32",  "u32",    "i64",  "u64",
+    "isize", "usize",    "f32", "f64", "bool", "string", "void", "v128",
+    "any",   "noreturn",
+};
+
+/// Decision 8 § 9 — a `val assert` variant pattern must name a variant the
+/// subject's type can actually hold. Permissive while the subject's type is
+/// still an unresolved type variable (an inference gap must not red), and for
+/// every non-variant pattern, whose shapes (`42`, `"hi"`, `[a, ..]`) the
+/// backends test at run time.
+fn checkAssertPatternSubject(
+    env: *Env,
+    pattern: ast.Pattern,
+    subjectType: *T.Type,
+    loc: ast.Loc,
+    fatal: bool,
+) InferError!void {
+    const name = switch (pattern) {
+        .variant => |v| v.name,
+        else => return,
+    };
+    const st = subjectType.deref();
+    if (st.* != .named) return;
+    const eq = std.mem.eql;
+    const n = st.named;
+    // Decision 8 § 9 — `val assert Ok(n) = parse("42") catch 0;` is an error:
+    // `catch` is what turns a `@Result` into its success value, so a `@Result`
+    // subject and a handler cannot both be written. The handler-less form is
+    // the one that asserts a variant, and its failure is fatal.
+    if (!fatal and eq(u8, n.name, "Result")) {
+        var ce = TypeError.custom(
+            "a `val assert` over a `@Result` takes no `catch`",
+            "`catch` already yields the success value, so the pattern would be asserted against the unwrapped one. Write `val assert Ok(n) = parse(s);` — a failure is a fatal assert (decision 8 § 9).",
+        );
+        env.lastError = ce.withLoc(loc);
+        return error.TypeError;
+    }
+    const known = blk: {
+        if (eq(u8, n.name, "Result")) break :blk eq(u8, name, "Ok") or eq(u8, name, "Err") or eq(u8, name, "Error");
+        if (eq(u8, n.name, "optional")) break :blk eq(u8, name, "Some") or eq(u8, name, "None");
+        if (env.lookupTypeDef(n.name)) |td| switch (td) {
+            .enum_ => |en| {
+                for (en.variants) |vd| {
+                    if (eq(u8, vd.name, name)) break :blk true;
+                }
+                break :blk false;
+            },
+            // A record's own constructor is its only "variant"; a struct is
+            // opened by name too.
+            .record => break :blk eq(u8, n.name, name),
+            .struct_ => break :blk eq(u8, n.name, name),
+        };
+        // No typedef: a primitive holds no variant at all, anything else is a
+        // forward reference or an imported type C10 has yet to register — stay
+        // permissive there.
+        for (scalar_type_names) |p| {
+            if (eq(u8, n.name, p)) break :blk false;
+        }
+        return;
+    };
+    if (known) return;
+    var e = TypeError.custom(
+        try std.fmt.allocPrint(env.arena, "`{s}` names no variant of `{s}`", .{ name, n.name }),
+        "The pattern of a `val assert` has to be able to match its subject. After `catch` the value is the unwrapped one, so `val assert Ok(n) = parse(s) catch 0;` asserts `Ok(…)` against an `i32` — drop the `catch` (decision 8 § 9: a failure is a fatal assert).",
+    );
+    env.lastError = e.withLoc(loc);
+    return error.TypeError;
+}
+
 fn bindCaseArmPatternNames(
     env: *Env,
     pattern: ast.Pattern,
@@ -5828,8 +6080,13 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
     const resultType: *T.Type = switch (binop.op) {
         .lt, .gt, .lte, .gte, .eq, .ne => try env.namedType("bool"),
         .@"and", .@"or" => blk: {
-            try unifyAt(env, lhsTyped.getType(), try env.namedType("bool"), loc);
-            try unifyAt(env, rhsTyped.getType(), try env.namedType("bool"), loc);
+            // 06 C3 — `unifyAt(env, a, b, loc)` is TARGET-first: `a` is what
+            // the context expects, `b` what was written
+            // (`typeMismatch(a, b)` renders "expected a, got b"). These two
+            // passed the operand as `a`, so `1 && true` read "expected i32,
+            // got bool". The caret is on the OPERAND, not the whole expression.
+            try unifyAt(env, try env.namedType("bool"), lhsTyped.getType(), binop.lhs.getLoc());
+            try unifyAt(env, try env.namedType("bool"), rhsTyped.getType(), binop.rhs.getLoc());
             break :blk try env.namedType("bool");
         },
         .add => blk: {
@@ -5846,6 +6103,16 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
         .sub, .mul, .div, .mod => blk: {
             const lhsTy = lhsTyped.getType();
             const rhsTy = rhsTyped.getType();
+            // 06 C3 — both operands must be numeric. `unify(lhs, rhs)` alone
+            // accepted `"a" * "b"`: two strings agree with each other.
+            const opName = switch (binop.op) {
+                .sub => "-",
+                .mul => "*",
+                .div => "/",
+                else => "%",
+            };
+            try requireNumericOperand(env, lhsTy, opName, binop.lhs.getLoc());
+            try requireNumericOperand(env, rhsTy, opName, binop.rhs.getLoc());
             if (isFloatType(lhsTy) and isIntType(rhsTy)) break :blk lhsTy;
             if (isIntType(lhsTy) and isFloatType(rhsTy)) break :blk rhsTy;
             try unify(env, lhsTy, rhsTy);
@@ -5867,10 +6134,16 @@ fn inferUnaryOpExpr(env: *Env, unaryop: ast.UnaryOpExprOf(.untyped), loc: ast.Lo
     const operandPtr = try makeTypedPtr(env, operandTyped);
     return switch (unaryop.op) {
         .not => blk: {
-            try unifyAt(env, operandTyped.getType(), try env.namedType("bool"), loc);
+            // 06 C3 — target-first, located at the operand (see the `&&`/`||`
+            // note in `inferBinaryOpExpr`).
+            try unifyAt(env, try env.namedType("bool"), operandTyped.getType(), unaryop.expr.getLoc());
             break :blk TypedExpr{ .unaryOp = .{ .loc = loc, .type_ = try env.namedType("bool"), .op = .not, .expr = operandPtr } };
         },
-        .neg => TypedExpr{ .unaryOp = .{ .loc = loc, .type_ = operandTyped.getType(), .op = .neg, .expr = operandPtr } },
+        // 06 C3 — `-x` applied no constraint at all, so `-"s"` checked.
+        .neg => blk: {
+            try requireNumericOperand(env, operandTyped.getType(), "-", unaryop.expr.getLoc());
+            break :blk TypedExpr{ .unaryOp = .{ .loc = loc, .type_ = operandTyped.getType(), .op = .neg, .expr = operandPtr } };
+        },
     };
 }
 
@@ -6350,7 +6623,20 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
                 break :blk try env.namedType("void");
             } else try env.namedType("void");
 
-            if (elseTyped != null) {
+            // Decision 2 — a block is not a value, so the branches of an `if`
+            // only have to agree when the `if` is used as one. A branch whose
+            // last statement is a STATEMENT (an assignment, a `val`/`var`
+            // binding, a loop) has no value to agree with, and unifying the
+            // two used to red a legitimate shape:
+            //
+            //     if (pred(x)) { out = out.append([x]); } else { taking = false; }
+            //
+            // — "expected array, got bool". A library in this repository
+            // writes it in a `takeWhile` / `skipWhile`, and so does a plain
+            // fn of the same shape. Only the row that removes
+            // block-as-value outright can delete the unification entirely; this
+            // narrows it to the branches that do produce a value.
+            if (elseTyped != null and stmtsYieldValue(thenTyped) and stmtsYieldValue(elseTyped.?)) {
                 try unify(env, bodyType, elseType);
             }
             return TypedExpr{ .branch = .{ .loc = loc, .type_ = bodyType, .kind = .{ .if_ = .{
@@ -7543,6 +7829,16 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                     }
                 }
 
+                // 06 N24 / decision 8 §6 — a tuple element of function type
+                // called like a method (`#(value: i32, set: fn(…))`, `c.set(9)`).
+                // The label→index rewrite the member-access path records
+                // (`row.pop` → `row._1`) never fired for a CALL, so every
+                // backend emitted `c.set(9)` on a value that is a tuple —
+                // `c.set is not a function` on commonJS.
+                if (try inferTupleLabelCall(env, recvPtr, call.receiver, call.callee, typedArgs, typedTrailing, loc)) |dispatched| {
+                    return dispatched;
+                }
+
                 // Builtin `@Result` / `@Option` methods — type-check and record
                 // the lowering decision.
                 if (try inferResultOptionMethod(env, recvPtr, call.callee, typedArgs, typedTrailing, loc)) |dispatched| {
@@ -7611,6 +7907,34 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                             } } } };
                         }
                     }
+                }
+
+                // 06 C9 — a receiver whose type is a nominal the env actually
+                // registered has a closed method surface: nothing above matched,
+                // so the method does not exist. `d.swim()` on a `type D(id: i32)`
+                // used to be typed `freshVar()` and compile.
+                //
+                // Everything else stays permissive, which is what the fresh var
+                // was for: a receiver still an unresolved type variable (an
+                // inference gap must not red), and a named type the env cannot
+                // open — an imported record whose typedef lives in its own
+                // module, a `@Result`/`?T` wrapper, a forward reference.
+                if (nominalName(recvPtr.getType())) |tn| {
+                    if (env.lookupTypeDef(tn)) |td| if (!typeAnswersMember(env, td, call.callee)) {
+                        var ext_err: ?TypeError = null;
+                        var it = env.extensions.iterator();
+                        while (it.next()) |e| {
+                            const entry = e.value_ptr.*;
+                            if (!std.mem.eql(u8, entry.target, tn)) continue;
+                            if (!namesContain(entry.methods, call.callee)) continue;
+                            if (env.isActivated(entry.name)) continue;
+                            ext_err = TypeError.methodNotActive(tn, call.callee, entry.name);
+                            break;
+                        }
+                        var err = ext_err orelse TypeError.unknownMethod(tn, call.callee);
+                        env.lastError = err.withLoc(loc);
+                        return error.TypeError;
+                    };
                 }
 
                 // Other method calls (struct getters, activated extensions) are
@@ -8225,6 +8549,17 @@ fn inferComptimeExpr(env: *Env, ct: ast.ComptimeExprOf(.untyped), loc: ast.Loc) 
             // `answer` bound to nothing and only aborted at run time.
             const exprTyped = try inferExprTyped(env, ap.expr.*);
             const exprPtr = try makeTypedPtr(env, exprTyped);
+            // Decision 8 § 9 — the pattern has to be able to match the
+            // subject. This is what makes
+            // `val assert Ok(n) = parse("42") catch 0;` the error the
+            // decision writes: after `catch` the value is an `i32`, and
+            // `Ok(…)` names no variant of it.
+            try checkAssertPatternSubject(env, ap.pattern, exprTyped.getType(), ap.expr.getLoc(), ap.fatal);
+            // Decision 8 § 9 — the pattern's names are bound in the ENCLOSING
+            // scope (`val assert Ok(n) = parse("42"); @print(n);`), so the
+            // snapshots a case arm would restore are deliberately dropped.
+            var bound: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
+            try bindPatternNamesForSubject(env, ap.pattern, exprTyped.getType(), &bound);
             const handlerExpr = ap.handler.*;
             const handlerTyped = try inferExprTyped(env, handlerExpr);
             const handlerPtr = try makeTypedPtr(env, handlerTyped);
@@ -8232,6 +8567,7 @@ fn inferComptimeExpr(env: *Env, ct: ast.ComptimeExprOf(.untyped), loc: ast.Loc) 
                 .pattern = ap.pattern,
                 .expr = exprPtr,
                 .handler = handlerPtr,
+                .fatal = ap.fatal,
             } } } };
         },
     };

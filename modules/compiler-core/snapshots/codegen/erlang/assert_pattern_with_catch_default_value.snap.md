@@ -15,7 +15,8 @@ fn f() {
 
 f() ->
     R = #{name => <<"ann">>, age => 30},
-    case R of {'Person', Name, Age} -> R; _ -> #{name => <<"bob">>, age => 12} end.
+    BpAssert4_9 = R,
+    {'Person', Name, Age} = case BpAssert4_9 of {'Person', _, _} -> BpAssert4_9; _ -> #{name => <<"bob">>, age => 12} end.
 ```
 
 ----- RUN LOG -----

@@ -856,6 +856,12 @@ pub fn ComptimeExprOf(comptime phase: Phase) type {
             expr: *ExprOf(phase),
             /// catch handler expression (can be throw, return, or a fallback value)
             handler: *ExprOf(phase),
+            /// True for the handler-less `val assert P = e;` of decision 8 § 9,
+            /// whose failure is a fatal assert. The parser still fills
+            /// `handler` — with the `@panic(…)` the form desugars to — so every
+            /// backend's existing lowering emits the fatal path unchanged; the
+            /// flag is what lets the checker tell the two forms apart.
+            fatal: bool = false,
         },
 
         pub fn deinit(this: *@This(), allocator: std.mem.Allocator) void {

@@ -14,6 +14,7 @@ fn f() {
   (func $f (result i32)
     (local $__mem0 i32)
     (local $list i32)
+    (local $__assert_0 i32)
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
@@ -25,6 +26,8 @@ fn f() {
     i32.store
     local.get $__mem0
     local.set $list
+    local.get $list
+    local.set $__assert_0
     i32.const 0
   )
 )

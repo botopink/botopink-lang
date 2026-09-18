@@ -39,11 +39,11 @@ val noise = donald.quack();
     {
       "ast": "val",
       "indent": "noise",
-      "return_type": "?",
+      "return_type": "i32",
       "expr": {
         "ast": "call",
         "params": [],
-        "return_type": "?"
+        "return_type": "i32"
       }
     }
   ]

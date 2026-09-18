@@ -76,9 +76,12 @@ test "js: External.<Target> ---- mixed with @external() in one decl" {
     );
 }
 
-// net-new (A1): an `#[@External.<targert>(...)]` fn that declares a target only for another
-// backend (erlang) has NO node target — calling it while generating commonJS
-// fails with `MissingExternalTarget`.
+// net-new (A1): an `#[@External.<targert>(...)]` fn that declares a target only
+// for another backend (erlang) has NO node target — calling it while generating
+// commonJS fails. 06 C13: the failure is a LOCATED diagnostic naming the
+// function and the backend, carried by the module like a type error, not the
+// bare `error.MissingExternalTarget` that aborted the whole build and printed
+// only its own name.
 test "js: external ---- net-new: no target for the active backend errors" {
     const io = std.testing.io;
     const src =
@@ -90,13 +93,25 @@ test "js: external ---- net-new: no target for the active backend errors" {
         \\}
     ;
     // configs[0] is the commonJS/node target.
-    const result = codegen.generate(
+    // `generate` drops a module carrying a diagnostic; `generateWith` is the
+    // entry that hands every module back, which is how the CLI reads them.
+    var outputs = try codegen.generateWith(
         std.testing.allocator,
         &.{.{ .path = "", .source = src }},
         io,
         h.configs[0],
+        .{ .execute = false },
     );
-    try std.testing.expectError(error.MissingExternalTarget, result);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(std.testing.allocator);
+        outputs.deinit(std.testing.allocator);
+    }
+    try std.testing.expectEqual(@as(usize, 1), outputs.items.len);
+    const diag = outputs.items[0].result.diagnostic orelse return error.TestExpectedDiagnostic;
+    try std.testing.expect(diag == .type);
+    try std.testing.expect(std.mem.indexOf(u8, diag.type.message, "str_length") != null);
+    try std.testing.expect(std.mem.indexOf(u8, diag.type.message, "node") != null);
+    try std.testing.expect(diag.type.loc != null);
 }
 
 // §A2: a chained host-call template (`Buffer.from($0).toString('base64')`)

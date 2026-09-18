@@ -12,7 +12,8 @@ fn f() {
 
 f() ->
     Items = [1, 2, 3],
-    case Items of [First | _] -> Items; _ -> erlang:throw(<<"not a list">>) end.
+    BpAssert3_9 = Items,
+    [First | _] = case BpAssert3_9 of [_ | _] -> BpAssert3_9; _ -> erlang:throw(<<"not a list">>) end.
 ```
 
 ----- RUN LOG -----

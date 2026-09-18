@@ -50,8 +50,6 @@ commonJS | test/case_sections.bp      | 06 N22, 06 N28 | §5.3b section arms do 
 erlang   | test/case_sections.bp      | 06 N22, 06 N28 | §5.3b section arms do not parse; a section is not yet a type named by its path
 
 # ── §6 tuples ─────────────────────────────────────────────────────────────────
-commonJS | test/tuple_fn_field.bp::§6 T4 a labeled function element is called through its label | 06 N24 | a function-typed tuple label is not rewritten to a positional call (`c.bump is not a function`)
-erlang   | test/tuple_fn_field.bp     | 06 N24 | a function-typed tuple label is not rewritten to a positional call (`function bump/2 undefined`)
 
 # ── §7 the formatter ──────────────────────────────────────────────────────────
 commonJS | run/print_formatter.bp     | 01 step 6 | §7 formatter: `f64` prints without its decimal part, arrays/tuples without spaces, records and variants in host shape
@@ -64,8 +62,6 @@ erlang   | test/effect_iterator.bp::§9 an iterator yields its elements in order
 erlang   | test/effect_iterator.bp::§9 an empty iterator runs no iteration | 01 step 6 | `#[@iterator]` compiles on erlang and the generator protocol raises `case_clause` at run time
 erlang   | test/effect_generator.bp::§9 a generator yields its elements in order | 01 step 6 | `#[@generator]` compiles on erlang and the generator protocol raises `case_clause` at run time
 erlang   | test/effect_generator.bp::§9 an empty generator runs no iteration | 01 step 6 | `#[@generator]` compiles on erlang and the generator protocol raises `case_clause` at run time
-commonJS | test/effect_val_assert.bp  | 06 N25 | §9's handler-less `val assert Ok(n) = <@Result>` is refused (`assert-pattern-missing-catch`); the hint says it is not implemented yet
-erlang   | test/effect_val_assert.bp  | 06 N25 | §9's handler-less `val assert Ok(n) = <@Result>` is refused (`assert-pattern-missing-catch`); the hint says it is not implemented yet
 *        | reject/wrapper_without_annotation.bp | 06 N25 | `@Result<…>` without `#[@result]` is reported as a return-type mismatch at the `return`, not as §9's missing-annotation rule
 *        | reject/val_assert_after_catch.bp     | 06 N25 | `val assert Ok(n) = f() catch 0` is accepted (exit 0) and then fails at run time (`Ok is not defined` on commonJS, `variable 'N' unsafe in 'case'` on erlang)
 *        | reject/two_effect_markers.bp         | 06 N25 | the R5 message is right, but its caret points at the body's `{` (5:41) instead of the second annotation

@@ -12,7 +12,8 @@ fn f() {
 
 f() ->
     Items = [1, 2, 3, 4],
-    case Items of [First, Second | Rest] -> Items; _ -> [] end.
+    BpAssert3_9 = Items,
+    [First, Second | Rest] = case BpAssert3_9 of [_, _ | _] -> BpAssert3_9; _ -> [] end.
 ```
 
 ----- RUN LOG -----

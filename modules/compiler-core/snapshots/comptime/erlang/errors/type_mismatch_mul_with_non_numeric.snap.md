@@ -2,7 +2,10 @@
 val bad = 3.14 * "oops";
 
 ----- ERROR
-error: type mismatch
+error: `*` takes numbers, not `string`
+  ┌─ :1:18
+  │
+1 │ val bad = 3.14 * "oops";
+  │                  ^
 
-  expected: f64
-  found:    string
+  hint: Arithmetic is defined on the integer and float types. `+` also concatenates strings; the other operators do not.

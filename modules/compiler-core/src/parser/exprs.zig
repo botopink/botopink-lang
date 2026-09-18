@@ -490,6 +490,26 @@ fn isBinaryOpNext(this: *This) bool {
     return false;
 }
 
+/// The handler a handler-less `val assert P = e;` desugars to: `@panic(…)`,
+/// so the fatal path decision 8 § 9 asks for is the `@panic` lowering every
+/// backend already has. The message is a static literal — the parser owns no
+/// arena and a `Literal.stringLit` is never freed by `deinit`.
+fn assertFatalHandler(alloc: std.mem.Allocator, assertTok: Token) ParseError!Expr {
+    const loc = locFromToken(assertTok);
+    const msgExpr = try alloc.create(Expr);
+    errdefer alloc.destroy(msgExpr);
+    msgExpr.* = .{ .literal = .{ .loc = loc, .kind = .{ .stringLit = "assert pattern did not match" } } };
+    const args = try alloc.alloc(ast.CallArg, 1);
+    args[0] = .{ .label = null, .value = msgExpr };
+    return Expr{ .call = .{ .loc = loc, .kind = .{ .call = .{
+        .receiver = null,
+        .callee = "panic",
+        .is_builtin = true,
+        .args = args,
+        .trailing = &.{},
+    } } } };
+}
+
 /// `val/var name = expr` or any destructuring variant.
 /// Call when current token is `val` or `var`.
 pub fn parseLocalBindExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
@@ -538,9 +558,19 @@ pub fn parseLocalBindExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr
                         .handler = catchExprPtr,
                     } } } };
                 } else {
-                    // 06 C12 — located, and it names the form that compiles.
-                    this.parseError = ParseErrorInfo.fromToken(.assertPatternMissingCatch, this.peek());
-                    return ParseError.UnexpectedToken;
+                    // 06 C12 / decision 8 § 9 — `val assert P = e;` with no
+                    // `catch` is valid: a failure is a fatal assert. The form
+                    // desugars here into the handler `@panic(…)` so the AST
+                    // keeps one shape and every backend's existing lowering
+                    // already emits the fatal path.
+                    const panicExpr = try assertFatalHandler(alloc, assertTok);
+                    const panicPtr = try this.boxExprOwned(alloc, panicExpr);
+                    return Expr{ .comptime_ = .{ .loc = locFromToken(assertTok), .kind = .{ .assertPattern = .{
+                        .pattern = pattern,
+                        .expr = exprPtr,
+                        .handler = panicPtr,
+                        .fatal = true,
+                    } } } };
                 }
             } else {
                 var mutPattern = pattern;

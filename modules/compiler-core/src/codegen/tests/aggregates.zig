@@ -60,7 +60,7 @@ test "js: record ---- method with throw" {
         \\        return self.subtotal + self.subtotal * self.taxRate;
         \\    }
         \\    fn validate(self: Self) {
-        \\        throw Error("invalid invoice");
+        \\        throw "invalid invoice";
         \\    }
         \\}
     );
@@ -122,6 +122,28 @@ test "js: array ---- prepend with identifier" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val rest = [3, 4];
         \\val list = [1, 2, ..rest];
+    );
+}
+
+// 06 N24 / decision 8 §6 — a tuple element of FUNCTION type called by its
+// label. The label→index rewrite only ever fired for a member access
+// (`row.pop` → `row._1`), so `c.set(9)` reached every backend as a method
+// call on a value that is a tuple: `c.set is not a function` on commonJS,
+// `'_1'(C, 9)` (an undefined function) on erlang, `unresolved_method` on beam.
+// KNOWN-WRONG (wasm): wasm has no function values, so the element cannot be
+// applied there — the module traps with `unresolved call: _1/1`, the same gap
+// a lambda stored in any value has.
+test "js: tuple ---- a labeled element of function type is called like a method" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn mk() -> #(value: i32, set: fn(n: i32) -> i32) {
+        \\    val value = 1;
+        \\    val set = { n -> return n * 2; };
+        \\    return #(value, set);
+        \\}
+        \\fn main() {
+        \\    val c = mk();
+        \\    @print(c.set(9));
+        \\}
     );
 }
 

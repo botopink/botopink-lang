@@ -10,7 +10,8 @@ fn f() {
 ```javascript
 function f() {
     const items = [1, 2, 3];
-    (() => { const _match = items; if ((Array.isArray(_match) && _match.length >= 1)) { return _match; } else { throw "not a list"; } })();
+    const _assert0 = (() => { const _match = items; if ((Array.isArray(_match) && _match.length >= 1)) { return _match; } else { throw "not a list"; } })();
+    const first = _assert0[0];
 }
 ```
 

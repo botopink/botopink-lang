@@ -694,6 +694,17 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
             expr_ptr.* = rewrite.*;
         }
     }
+    // 06 N24 — a tuple element of function type called by its LABEL
+    // (`c.set(9)` on `#(value: i32, set: fn(…))`). Inference stashed the
+    // positional callee under the call's loc; only the name moves, the
+    // arguments stay where they are.
+    if (expr_ptr.* == .call and expr_ptr.call.kind == .call) {
+        if (agg.enum_section_rewrites.get(expr_ptr.call.loc)) |rewrite| {
+            if (rewrite.* == .call and rewrite.call.kind == .call) {
+                expr_ptr.call.kind.call.callee = rewrite.call.kind.call.callee;
+            }
+        }
+    }
     // Template-call expansion (F6): substitute the expansion recorded by
     // inference, then fall through so the spliced code is rewritten like
     // ordinary AST (string templates desugar, inner calls lower, …).

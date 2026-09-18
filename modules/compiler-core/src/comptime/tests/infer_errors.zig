@@ -134,6 +134,20 @@ test "infer error: type mismatch ---- mul with non-numeric" {
     );
 }
 
+// 06 C3 — `*` only unified the two sides with each other, and two strings
+// agree; `-` applied no constraint at all.
+test "infer error: mul with two non-numeric operands" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val bad = "a" * "b";
+    );
+}
+
+test "infer error: negating a string" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val bad = -"s";
+    );
+}
+
 test "infer error: type mismatch ---- function argument wrong type" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\pub fn double(x: i32) -> i32 {
@@ -351,6 +365,60 @@ test "infer error: effect annotation does not match the return wrapper" {
         \\#[@future]
         \\fn bad() -> @Result<i32, string> {
         \\    return 0;
+        \\}
+    );
+}
+
+// 06 N25 / decision 8 § 9 — the wrapper without its annotation. A plain
+// `fn -> @Result<D, E>` used to be accepted with no Result treatment at all.
+test "infer error: a @Result return without #[@result]" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn bad() -> @Result<i32, string> {
+        \\    @todo();
+        \\}
+    );
+}
+
+// ── 06 C9 — method bodies join the strict contract ───────────────────────────
+//
+// `inferTypeMethods` used to swallow `error.TypeError` from a method body, an
+// unannotated method got no stored signature, and an unresolved method call
+// fell back to a fresh var. All three made a real mismatch compile.
+
+// `assertTypeErrorSnap` runs the UNTYPED `inferProgram`, whose `inferDecl`
+// never walks a type's method bodies — only the typed `inferDeclTyped` calls
+// `inferTypeMethods`, which is the path `botopink check` takes. The two rows
+// that live inside a method body therefore assert through the typed path.
+test "infer error: a type error inside a method body" {
+    try h.assertComptimeCompileError(std.testing.allocator, @src(),
+        \\type D(id: i32) {
+        \\    fn bad(self: Self) -> string {
+        \\        val z: string = self.id;
+        \\        return z;
+        \\    }
+        \\}
+    );
+}
+
+test "infer error: a method the receiver type does not declare" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type D(id: i32)
+        \\fn main() {
+        \\    val d = D(id: 1);
+        \\    @print(d.swim());
+        \\}
+    );
+}
+
+test "infer error: an unannotated method's return type comes from its body" {
+    try h.assertComptimeCompileError(std.testing.allocator, @src(),
+        \\type D(id: i32) {
+        \\    fn get(self: Self) { return self.id; }
+        \\}
+        \\fn main() {
+        \\    val d = D(id: 1);
+        \\    val a: string = d.get();
+        \\    @print(a);
         \\}
     );
 }
@@ -620,6 +688,21 @@ test "infer: tuple label ---- an unknown label is an error naming the positional
         \\    return #("SP", 12);
         \\}
         \\val n = loadTyped().name;
+    );
+}
+
+// N24 — the labels live on the `named` type node, so instantiating a generic
+// signature has to carry them. `r.current` used to red "this tuple has no
+// element labeled `current`".
+test "infer: tuple label ---- a label survives generic instantiation" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn ref<T>(v: T) -> #(current: T) {
+        \\    return #(v);
+        \\}
+        \\fn main() -> i32 {
+        \\    val r = ref(5);
+        \\    return r.current;
+        \\}
     );
 }
 

@@ -180,11 +180,6 @@ pub const ParseErrorType = enum {
     templateSelfMarker,
     /// `$N` in an `@External` template past the declaration's parameters.
     templateMarkerOutOfRange,
-    /// `val assert <pattern> = <expr>;` with no `catch`. Decision 8 § 9 spells
-    /// this form (a failure is a fatal assert) but nothing lowers it yet, so the
-    /// parser says which form compiles today instead of failing at the `;` with
-    /// a bare "Unexpected token" (06 C12).
-    assertPatternMissingCatch,
 };
 
 pub const ParseErrorInfo = struct {
