@@ -418,7 +418,36 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         // it back and let `parsePrimary` own `a.b.c` so those snapshots stay
         // identical.
         var sawMethodCall = false;
-        while (this.check(.dot) or this.check(.questionDot)) {
+        while (this.check(.dot) or this.check(.questionDot) or this.check(.leftParenthesis)) {
+            // `adder(3)(4)` — calling what a call returned. A `(` reaches this
+            // loop only after the base is already a call or a chain link (the
+            // first `(` after the identifier was taken above), so it is always
+            // a chained call and never the first one. There is no name for the
+            // callee, so it travels as an expression — `ast.CallExpr.call.calleeExpr`.
+            if (this.check(.leftParenthesis)) {
+                const calleeTok = this.peek();
+                const args = try this.parseCallArgs(alloc);
+                errdefer {
+                    for (args) |*a| a.deinit(alloc);
+                    alloc.free(args);
+                }
+                const trailing = if (this.noTrailingLambda) try alloc.alloc(TrailingLambda, 0) else try this.parseTrailingLambdas(alloc);
+                errdefer {
+                    for (trailing) |*t| t.deinit(alloc);
+                    alloc.free(trailing);
+                }
+                const calleePtr = try this.boxExpr(alloc, base);
+                base = Expr{ .call = .{ .loc = locFromToken(calleeTok), .kind = .{ .call = .{
+                    .receiver = null,
+                    .callee = "",
+                    .is_builtin = false,
+                    .args = args,
+                    .trailing = trailing,
+                    .calleeExpr = calleePtr,
+                } } } };
+                sawMethodCall = true;
+                continue;
+            }
             const isOptional = this.check(.questionDot);
             const dotSaved = this.current;
             _ = this.advance(); // '.' / '?.'
@@ -844,7 +873,23 @@ pub fn parseBinaryExpr(this: *This, alloc: std.mem.Allocator, comptime level: us
 /// token's loc so loc-keyed method lowering stays per-link distinct.
 fn parsePostfixChain(this: *This, alloc: std.mem.Allocator, base_in: Expr) ParseError!Expr {
     var base = base_in;
-    while (this.check(.dot) or this.check(.questionDot)) {
+    while (this.check(.dot) or this.check(.questionDot) or this.check(.leftParenthesis)) {
+        // `f(a)(b)` — a function is a value, so calling what a call returned is
+        // a link in the chain like a `.method(…)` is (decision 14). There is no
+        // name to put in `callee`, so the callee travels as an expression; see
+        // `ast.CallExpr.call.calleeExpr`.
+        if (this.check(.leftParenthesis)) {
+            const calleeTok = this.peek();
+            const args = try this.parseCallArgs(alloc);
+            errdefer {
+                for (args) |*a| a.deinit(alloc);
+                alloc.free(args);
+            }
+            const calleePtr = try this.boxExpr(alloc, base);
+            base = makeCall(calleeTok, null, "", false, args, try alloc.alloc(TrailingLambda, 0));
+            base.call.kind.call.calleeExpr = calleePtr;
+            continue;
+        }
         const isOptional = this.check(.questionDot);
         _ = this.advance();
         const fieldTok: Token = if (this.check(.numberLiteral))
@@ -1123,41 +1168,13 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
             base = makeCall(tok, null, tok.lexeme, false, args, try alloc.alloc(TrailingLambda, 0));
         }
 
-        // Loop for chained links: `.field` access, `.method(args)` calls, and
-        // their optional-chaining forms (`?.field`, `?.method(args)`).
-        while (this.check(.dot) or this.check(.questionDot)) {
-            const isOptional = this.check(.questionDot);
-            _ = this.advance();
-            // Accept both identifier and numberLiteral for tuple access; `get`/
-            // `set` are valid member names (`state.set(x)`).
-            const fieldTok: Token = if (this.check(.numberLiteral))
-                this.advance()
-            else
-                try this.consumeMemberName();
-            if (this.check(.leftParenthesis)) {
-                const args = try this.parseCallArgs(alloc);
-                errdefer {
-                    for (args) |*a| a.deinit(alloc);
-                    alloc.free(args);
-                }
-                const recvPtr = try this.boxExpr(alloc, base);
-                // Method-call links use the method token's loc so each chain
-                // link has a distinct location (method lowering is loc-keyed).
-                base = makeCall(fieldTok, recvPtr, fieldTok.lexeme, false, args, try alloc.alloc(TrailingLambda, 0));
-                base.call.kind.call.optional = isOptional;
-            } else {
-                const recvPtr = try this.boxExpr(alloc, base);
-                // Field-access links use the member token's loc (like the
-                // method-call links above) so each chain link has a distinct
-                // location — loc-keyed lowering would otherwise collide on the
-                // shared base loc (e.g. `xs.length` nested in another access).
-                base = Expr{ .identifier = .{ .loc = locFromToken(fieldTok), .kind = .{ .identAccess = .{
-                    .receiver = recvPtr,
-                    .member = fieldTok.lexeme,
-                    .optional = isOptional,
-                } } } };
-            }
-        }
+        // Chained links: `.field`, `.method(args)`, their optional-chaining
+        // forms, and `(args)` on what a call returned. This used to be a
+        // verbatim third copy of `parsePostfixChain`'s loop, which is why
+        // adding the `(` link there closed `("ab").length` and not
+        // `adder(3)(4)`: the two forms reached two copies of one rule. One
+        // rule, one place.
+        base = try parsePostfixChain(this, alloc, base);
 
         // Tagged-call sugar: a string literal immediately after a plain
         // identifier or `a.b` access is a call with that single argument:
@@ -1213,13 +1230,18 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         return parsePostfixChain(this, alloc, lit);
     }
 
-    // `(expr)` ---- grouped expression (parentheses for precedence)
+    // `(expr)` ---- grouped expression (parentheses for precedence).
+    // The eighth literal receiver, and the one that used to `return` instead of
+    // chaining: `("ab").length`, `(a == b).toString()` and `(sql """…""").length`
+    // were `Unexpected token` at the `.` while every other receiver chained
+    // (decision 14).
     if (this.check(.leftParenthesis)) {
         const parenTok = this.advance();
         const inner = try this.parseExpr(alloc);
         _ = try this.consume(.rightParenthesis);
         const innerPtr = try this.boxExpr(alloc, inner);
-        return Expr{ .collection = .{ .loc = locFromToken(parenTok), .kind = .{ .grouped = innerPtr } } };
+        const grouped = Expr{ .collection = .{ .loc = locFromToken(parenTok), .kind = .{ .grouped = innerPtr } } };
+        return parsePostfixChain(this, alloc, grouped);
     }
 
     return ParseError.UnexpectedToken;

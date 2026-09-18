@@ -59,3 +59,46 @@ test "surface R1: the arms that already carried the suffix still do" {
         \\}
     );
 }
+
+// ── R2 — one postfix chain, reached from every receiver ──────────────────────
+//
+// The chain existed in four copies. `parsePrimary`'s grouped arm reached none
+// of them and `return`ed, so `("ab").length` was `Unexpected token` at the `.`;
+// and no copy had a `(` link, so `adder(3)(4)` was `Unexpected token` at the
+// second `(`. The identical copy in `parsePrimary`'s identifier path is gone;
+// the one in `parseExpr`'s call path stays (it consumes trailing lambdas, which
+// `parsePostfixChain` must not) and carries the same `(` link.
+
+test "surface R2: a method on a parenthesised receiver" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn f(a: i32, b: i32) -> i32 {
+        \\    val n = ("ab").length;
+        \\    val s = (a == b).toString();
+        \\    val m = (a + b).toString().length;
+        \\    return n + m;
+        \\}
+    );
+}
+
+test "surface R2: calling what a call returned" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn adder(n: i32) -> fn(x: i32) -> i32 { return { x -> x + n }; }
+        \\fn f() -> i32 {
+        \\    val a = adder(3)(4);
+        \\    val b = adder(3)(4)(5);
+        \\    return a + b;
+        \\}
+    );
+}
+
+test "surface R2: the receivers that already chained still do" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn f(xs: i32[], r: Box) -> i32 {
+        \\    val a = [1, 2].length;
+        \\    val b = "x".toUpperCase().length;
+        \\    val c = r.get().length;
+        \\    val d = r?.get();
+        \\    return a + b + c;
+        \\}
+    );
+}

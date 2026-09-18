@@ -675,9 +675,20 @@ pub fn CallExprOf(comptime phase: Phase) type {
             /// other call. Left out of the AST dump when null, so the slot moved
             /// no snapshot.
             isType: ?TypeRef = null,
+            /// The callee as an **expression** rather than a name — set only
+            /// for `adder(3)(4)`, where what is called is the result of the
+            /// previous call and no name exists to put in `callee` (which is
+            /// then `""`). `receiver` stays null: a chained call is not a
+            /// method call, and a consumer that reads `receiver` to mean "the
+            /// value before the `.`" must not see one here.
+            ///
+            /// Null on every call written today, and left out of the AST dump
+            /// when null, so the slot moved no snapshot. A backend that does
+            /// not read it lowers exactly the calls it lowered before.
+            calleeExpr: ?*ExprOf(phase) = null,
 
             pub fn jsonStringify(this: @This(), jws: anytype) !void {
-                return stringifyOmitting(this, jws, &.{}, &.{"isType"});
+                return stringifyOmitting(this, jws, &.{}, &.{ "isType", "calleeExpr" });
             }
         },
         /// `expr |> fn1 |> fn2` — pipeline operator, left-associative chain
@@ -702,6 +713,10 @@ pub fn CallExprOf(comptime phase: Phase) type {
                     if (c.isType) |t| {
                         var owned = t;
                         owned.deinit(allocator);
+                    }
+                    if (c.calleeExpr) |ce| {
+                        ce.deinit(allocator);
+                        allocator.destroy(ce);
                     }
                 },
                 .pipeline => |p| {

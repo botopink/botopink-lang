@@ -114,6 +114,30 @@ A non-`syntax` `name: fn(…)` param is parsed through `parseTypeRef` (a
 `TypeRef.function`, so its return may be an array — `fn() -> T[]`);
 `Param.fnType` (`ast.FnType`) is set **only** for `syntax fn(…)` params.
 
+## The postfix chain — two copies, and why not one
+
+`.field` / `?.field` / `.method(args)` / `(args)` links are parsed in **two**
+places, and the reason is trailing lambdas:
+
+- `parsePostfixChain` (`exprs.zig`) is the operand-position chain. It does
+  **not** consume a trailing `{ … }` — in an operand a `{` belongs to the
+  enclosing construct. Every literal receiver goes through it, the grouped
+  expression `(…)` included: it used to `return` on its own, which is why
+  `("ab").length` and `(a == b).toString()` were `Unexpected token` at the `.`
+  while `[1, 2].map(f)` parsed (front 15, decision 14). `parsePrimary`'s
+  identifier path calls it too — that path used to carry a **verbatim copy** of
+  the loop, and the copy is gone.
+- `parseExpr`'s call path carries the statement-position chain, which **does**
+  consume trailing lambdas (`xs.forEach { … }`).
+
+**A link added to one must be added to the other.** `adder(3)(4)` is the case
+that proved it: adding the `(` link to `parsePostfixChain` alone closed
+`("ab").length(…)` and not `adder(3)(4)`, because the two forms reach two
+copies. A chained call has no name for its callee, so the callee travels as an
+expression on `ast.CallExpr.call.calleeExpr` with `callee = ""` and
+`receiver = null` — a chained call is **not** a method call, and a consumer that
+reads `receiver` to mean "the value before the `.`" must not see one.
+
 ## Postfix-chain locs
 
 Each link in a `.field` / `?.field` / `.method(args)` postfix chain carries the
