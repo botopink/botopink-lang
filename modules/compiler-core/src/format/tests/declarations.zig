@@ -663,3 +663,44 @@ test "format: declarations ---- the package surface round-trips as a whole" {
         \\}
     );
 }
+
+// ── enum member order (G1) ───────────────────────────────────────────────────
+// `variants` and `sections` are two parallel slices, so before each member
+// carried an `order` the formatter could only print all of one and then all of
+// the other — hoisting every variant written after a section above it (13 of
+// them at 4 sites in emilia's `tokens.bp`). The program did not change; the
+// authored grouping did, unrecoverably.
+
+test "format: declarations ---- a variant written after a section stays after it" {
+    try h.assertFormat(std.testing.allocator,
+        \\type Token {
+        \\    Bold,
+        \\    Size {
+        \\        Sm,
+        \\        Lg,
+        \\    }
+        \\    Italic,
+        \\    Color {
+        \\        Red,
+        \\        Blue,
+        \\    }
+        \\    Under,
+        \\}
+    );
+}
+
+test "format: declarations ---- member order is kept at a nested level too" {
+    try h.assertFormat(std.testing.allocator,
+        \\type Token {
+        \\    Color {
+        \\        White,
+        \\        Shade {
+        \\            Light,
+        \\            Dark,
+        \\        }
+        \\        Hex(value: string),
+        \\    }
+        \\    Plain,
+        \\}
+    );
+}

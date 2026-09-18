@@ -270,3 +270,40 @@ test "format: comments ---- an else-branch keeps a trailing comment on its line"
         \\}
     );
 }
+
+// ── member trivia the parser now records (G2, G3, G4) ────────────────────────
+// Each of these was a comment the formatter deleted or displaced, and each was
+// idempotent afterwards — so `format --check` went green on the thinned file.
+
+test "format: comments ---- an enum variant keeps its leading and trailing comments" {
+    try h.assertFormat(std.testing.allocator,
+        \\type Color {
+        \\    // the warm one
+        \\    Red, // warm
+        \\    Blue,
+        \\}
+    );
+}
+
+test "format: comments ---- a record field keeps its trailing comment, including the last" {
+    try h.assertFormat(std.testing.allocator,
+        \\type Point(
+        \\    x: i32, // the horizontal coordinate
+        \\    y: i32, // the vertical one
+        \\)
+    );
+}
+
+test "format: comments ---- a method keeps its trailing comment on its own line" {
+    try h.assertFormat(std.testing.allocator,
+        \\type Box(n: i32) {
+        \\    fn one(self: Self) -> i32 {
+        \\        return 1;
+        \\    } // trailing on a method
+        \\
+        \\    fn two(self: Self) -> i32 {
+        \\        return 2;
+        \\    }
+        \\}
+    );
+}

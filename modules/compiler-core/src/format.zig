@@ -1632,10 +1632,10 @@ pub const Formatter = struct {
             try groups.append(this.arena, 0);
         }
         for (iface.methods) |m| {
-            const c = try this.withMemberComments(m.comments, try this.concat(
+            const c = try this.withMemberComments(m.comments, try this.withTrailingComment(try this.concat(
                 try this.fmtAnnotations(m.annotations),
                 try this.fmtInterfaceMethod(m),
-            ));
+            ), m.trailingComment));
             try members.append(this.arena, c.doc);
             try blanks.append(this.arena, c.blank);
             try groups.append(this.arena, if (m.body == null) 1 else 2);
@@ -1708,6 +1708,16 @@ pub const Formatter = struct {
 
     /// A body member preceded by its comment lines. `blank` is whether a blank
     /// source line comes before the member (or before its first comment).
+    /// A `//` written on the member's own line, printed back where it was.
+    /// Without it the comment is emitted as a line of its own below the member,
+    /// where it reads as a leading comment of whatever comes next.
+    fn withTrailingComment(this: *Formatter, member: *const Doc, comment: ?[]const u8) !*const Doc {
+        const c = comment orelse return member;
+        return this.concat(member, try this.text(
+            try std.fmt.allocPrint(this.arena, " {s}", .{std.mem.trimEnd(u8, c, " \t\r")}),
+        ));
+    }
+
     fn withMemberComments(this: *Formatter, comments: []const []const u8, member: *const Doc) !struct { doc: *const Doc, blank: bool } {
         const lines = try this.commentLines(comments);
         const leadingBlank = comments.len > 0 and comments[0].len == 0;
@@ -1781,7 +1791,9 @@ pub const Formatter = struct {
     fn fmtFieldList(this: *Formatter, fields: []const ast.Field, trailingComma: bool) !*const Doc {
         var open = trailingComma;
         for (fields) |f| {
-            if (f.comments.len > 0) open = true;
+            // A comment on either side of the field forces the open form: the
+            // compact `(x: i32, y: i32)` has nowhere to put a `//`.
+            if (f.comments.len > 0 or f.trailingComment != null) open = true;
         }
         const items = try this.arena.alloc(*const Doc, fields.len);
         for (fields, 0..) |f, i| items[i] = try this.fmtField(f);
@@ -1792,8 +1804,19 @@ pub const Formatter = struct {
                 try this.text(")"),
             });
         }
+        // The trailing comment goes after the comma, not before it — it was
+        // written at the end of the line, and `x: i32 // horizontal,` is not
+        // what the source said.
         const withCommas = try this.arena.alloc(*const Doc, items.len);
-        for (items, 0..) |item, i| withCommas[i] = try this.concat(item, try this.text(","));
+        for (items, 0..) |item, i| {
+            var doc = try this.concat(item, try this.text(","));
+            if (fields[i].trailingComment) |c| {
+                doc = try this.concat(doc, try this.text(
+                    try std.fmt.allocPrint(this.arena, " // {s}", .{c}),
+                ));
+            }
+            withCommas[i] = doc;
+        }
         return this.surroundBreak("(", try this.join(withCommas, this.hardline()), ")");
     }
 
@@ -1814,10 +1837,10 @@ pub const Formatter = struct {
         const methodBlanks = try this.arena.alloc(bool, t.methods.len);
         const noGroups = try this.arena.alloc(u8, t.methods.len);
         for (t.methods, 0..) |m, i| {
-            const c = try this.withMemberComments(m.comments, try this.concat(
+            const c = try this.withMemberComments(m.comments, try this.withTrailingComment(try this.concat(
                 try this.fmtAnnotations(m.annotations),
                 try this.fmtInterfaceMethod(m),
-            ));
+            ), m.trailingComment));
             methodDocs[i] = c.doc;
             methodBlanks[i] = c.blank;
             noGroups[i] = 0;
@@ -1842,17 +1865,21 @@ pub const Formatter = struct {
             try parts.append(this.arena, try this.text("{}"));
             return this.concatAll(parts.items);
         }
-        const open = t.trailingComma or sections.len > 0 or methodDocs.len > 0;
+        var hasMemberComment = false;
+        for (variants) |v| {
+            if (v.comments.len > 0 or v.trailingComment != null) hasMemberComment = true;
+        }
+        for (sections) |sec| {
+            if (sec.comments.len > 0) hasMemberComment = true;
+        }
+        const open = t.trailingComma or sections.len > 0 or methodDocs.len > 0 or hasMemberComment;
         if (!open) {
             const vdocs = try this.arena.alloc(*const Doc, variants.len);
             for (variants, 0..) |v, i| vdocs[i] = try this.fmtEnumVariant(v);
             try parts.append(this.arena, try this.surroundFlat("{", try this.join(vdocs, try this.text(", ")), "}"));
             return this.concatAll(parts.items);
         }
-        var lines: std.ArrayList(*const Doc) = .empty;
-        for (variants) |v| try lines.append(this.arena, try this.concat(try this.fmtEnumVariant(v), try this.text(",")));
-        for (sections) |sec| try lines.append(this.arena, try this.fmtEnumSection(sec));
-        var inner = try this.join(lines.items, this.hardline());
+        var inner = try this.fmtEnumMembers(variants, sections);
         if (methodDocs.len > 0) {
             var mparts: std.ArrayList(*const Doc) = .empty;
             for (methodDocs, 0..) |m, i| {
@@ -1891,20 +1918,76 @@ pub const Formatter = struct {
     /// An enum section: `Color { Red, Blue }`, holding bare variants and
     /// nested sections (arbitrarily deep). Always rendered broken, and never
     /// followed by a comma — the closing brace ends the item.
-    fn fmtEnumSection(this: *Formatter, s: ast.EnumSection) !*const Doc {
-        const items = try this.arena.alloc(*const Doc, s.variants.len + s.sections.len);
-        for (s.variants, 0..) |v, i|
-            items[i] = try this.concat(try this.fmtEnumVariant(v), try this.text(","));
-        for (s.sections, 0..) |sub, i|
-            items[s.variants.len + i] = try this.fmtEnumSection(sub);
-
-        const body = if (items.len == 0)
+    fn fmtEnumSection(this: *Formatter, s: ast.EnumSection) anyerror!*const Doc {
+        const body = if (s.variants.len + s.sections.len == 0)
             try this.text("{}")
-        else blk: {
-            const inner = try this.join(items, this.hardline());
-            break :blk try this.surroundBreak("{", inner, "}");
-        };
+        else
+            try this.surroundBreak("{", try this.fmtEnumMembers(s.variants, s.sections), "}");
         return this.concatAll(&.{ try this.text(s.name), try this.text(" "), body });
+    }
+
+    /// The members of one enum body, in the order the source wrote them.
+    ///
+    /// `variants` and `sections` are two parallel slices and a body may
+    /// interleave them, so printing all of one and then all of the other hoists
+    /// every variant written after a section above it — 13 of them at 4 sites in
+    /// emilia's `tokens.bp` alone. Each member carries its position in
+    /// `order` (front 16's G1), and both slices are already in source order
+    /// among themselves, so recovering the body is a merge of two sorted lists.
+    ///
+    /// A variant ends in `,`; a section does not — its closing brace ends the
+    /// item. Leading comments print above the member, a `""` among them printing
+    /// as the blank line it stands for, and a variant's trailing comment goes
+    /// after the comma, where it was written.
+    fn fmtEnumMembers(
+        this: *Formatter,
+        variants: []const ast.EnumVariant,
+        sections: []const ast.EnumSection,
+    ) anyerror!*const Doc {
+        var out: std.ArrayList(*const Doc) = .empty;
+        var vi: usize = 0;
+        var si: usize = 0;
+        var first = true;
+        while (vi < variants.len or si < sections.len) {
+            const takeVariant = si >= sections.len or
+                (vi < variants.len and variants[vi].order <= sections[si].order);
+
+            const comments = if (takeVariant) variants[vi].comments else sections[si].comments;
+            const member: *const Doc = if (takeVariant) blk: {
+                var doc = try this.concat(try this.fmtEnumVariant(variants[vi]), try this.text(","));
+                if (variants[vi].trailingComment) |c| {
+                    doc = try this.concat(doc, try this.text(
+                        try std.fmt.allocPrint(this.arena, " {s}", .{std.mem.trimEnd(u8, c, " \t\r")}),
+                    ));
+                }
+                break :blk doc;
+            } else try this.fmtEnumSection(sections[si]);
+
+            const lines = try this.commentLines(comments);
+            if (!first) {
+                // A blank source line before the member, or before its first
+                // comment line, is the `""` the parser recorded.
+                const blank = if (lines.items.len > 0) lines.blanks[0] else (comments.len > 0 and comments[0].len == 0);
+                if (blank) try out.append(this.arena, try this.text("\n"));
+                try out.append(this.arena, this.hardline());
+            }
+            for (lines.items, lines.blanks, 0..) |lineDoc, blank, i| {
+                if (i > 0) {
+                    if (blank) try out.append(this.arena, try this.text("\n"));
+                    try out.append(this.arena, this.hardline());
+                }
+                try out.append(this.arena, lineDoc);
+            }
+            if (lines.items.len > 0) {
+                if (comments[comments.len - 1].len == 0) try out.append(this.arena, try this.text("\n"));
+                try out.append(this.arena, this.hardline());
+            }
+            try out.append(this.arena, member);
+
+            first = false;
+            if (takeVariant) vi += 1 else si += 1;
+        }
+        return this.concatAll(out.items);
     }
 
     fn fmtImplement(this: *Formatter, impl: ast.ImplementDecl) !*const Doc {

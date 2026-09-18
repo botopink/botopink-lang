@@ -58,7 +58,18 @@ and running `format` twice in a row must produce identical text.
 - **Blank lines** — between body members (`""` in `comments`) and between top-level
   declarations (`Program.blankLineBefore`, filled by `parseDecls`).
 - **Trailing comments** — a comment on the line of the previous statement or declaration
-  (`f(); // note`, `pub mod x; // note`) sets `trailing` and stays on that line.
+  (`f(); // note`, `pub mod x; // note`) sets `trailing` and stays on that line. A **member's**
+  is its own slot, `trailingComment` on `Field`, `EnumVariant` and `BehaviorMethod`, filled by the
+  parser's same-line test: `x: i32, // horizontal` keeps its line, where before it was re-attached
+  to the next field — saying something false — and on the last field deleted outright.
+- **Member order of an enum-shaped `type`** — `variants` and `sections` are two parallel slices and
+  a body may interleave them, so each member carries its position in `order` and `fmtEnumMembers`
+  merges the two lists by it. Printing all of one and then all of the other hoisted every variant
+  written after a section above it. Nothing in `src/codegen/` may key on a variant's position in
+  `TypeShape.EnumShape.variants` — `order` is source layout, not a run-time encoding.
+- **Comments on an enum variant or section** — `EnumVariant.comments` / `EnumSection.comments`
+  (leading, `""` for a blank line) and `EnumVariant.trailingComment`. Either one forces the enum
+  body open: the compact `{ Red, Blue }` has nowhere to put a `//`.
 - **One-line lambdas** — `{ n -> n * 2 }` written on one line with a single value expression
   stays inline (`fmtLambdaAt`).
 - An empty `////` line prints without a trailing space; `botopink format` (CLI) ends a file with
@@ -77,12 +88,9 @@ shortforms) and is documentation only.
 
 ## Layout the parser does not record (formatter cannot keep)
 
-- **Member order of an enum-shaped `type`** — `TypeShape.EnumShape` keeps `variants` and `sections`
-  in two lists with no position, so the formatter prints every variant before every section
-  (a type whose sections come before its payload variants is reordered; the program is unchanged).
-- **End-of-line comments on a field or an array element** — `parseFieldList` and the array literal
-  attach a comment to the *next* item (the last one's is dropped by `skipComments`), with no line
-  information; the formatter prints it above the next item. Statement trailing comments are kept.
+- **End-of-line comments on an array element** — the array literal attaches a comment to the *next*
+  item, with no line information, so the formatter prints it above that item. A **field's** is kept
+  (`Field.trailingComment`), and so are a statement's, a variant's and a method's.
 - **Blank lines inside an `if` then-branch or a lambda body — which is every `loop (…) { x -> … }`
   body** — those two blocks carry their own inlined loop in `parser/exprs.zig`, written before
   `parseBlock` grew `trackEmptyLines`/`handleComments`, so no `emptyLinesBefore` is recorded and a
