@@ -72,9 +72,15 @@ tests/language/run.sh --compiler <botopink> --only modules/two_modules
 <target: commonJS | erlang | wasm | *> | <path>[::<test name>] | <owner row> | <reason>
 ```
 
-- The owner row must exist in the specs: `12 step 3|4`, `06 N1`…`06 N30`, `01 step 6`, or an
-  unowned item of `specs/1.0.4-beta/fronts.md`. **A cell whose owner is nobody is reported to the
-  maintainer, not listed against an invented row** — and not committed until the row exists.
+- The owner row must exist in the specs: a front of the current milestone
+  (`specs/1.0.5-beta/fronts.md`) and one of its numbered steps, written `<front> step <n>` —
+  `01 step 4`, `02 step 6`, `04 step 1`, `05 step 3`, `13 step 18`. A line may name more than one
+  row, comma-separated, when the failure needs both to land (`04 step 1, 13 step 18`: the separator
+  half is the backend's, the record and variant halves need a value that knows its own type).
+  **A cell whose owner is nobody is reported to the maintainer, not listed against an invented
+  row** — and not committed until the row exists. When a milestone closes, the next milestone's
+  first landing repoints every line before any front deletes one, so that two commits never touch
+  the same line.
 - A path-only entry is for a cell that does not compile; a cell that compiles lists its failing
   tests by name. A cell may fail differently per target and then carries one line per target, with
   two different owners (`test/loop_break_value.bp` is the worked example).
