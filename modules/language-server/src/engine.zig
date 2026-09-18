@@ -1101,19 +1101,29 @@ fn renderTuple(
 }
 
 /// Renders a Type as a human-readable string, in the surface a user writes:
-/// `i32[]`, not the internal `array<i32>`; `#(name: string, pop: i32)`, not
-/// `tuple<string, i32>`. The caller owns the result.
+/// `i32[]`, not the internal `array<i32>`; `?i32`, not `optional<i32>`;
+/// `#(name: string, pop: i32)`, not `tuple<string, i32>`. The caller owns the
+/// result.
 pub fn renderType(gpa: std.mem.Allocator, ty: *comptime_pipeline.Type) std.mem.Allocator.Error![]u8 {
     const t = ty.deref();
     return switch (t.*) {
         .named => |n| blk: {
             if (n.args.len == 0) break :blk gpa.dupe(u8, n.name);
-            // `array` and `tuple` are how the checker names them; neither has
-            // that spelling in source.
+            // `array`, `optional` and `tuple` are how the checker names them;
+            // none has that spelling in source.
             if (std.mem.eql(u8, n.name, "array") and n.args.len == 1) {
                 const elem = try renderType(gpa, n.args[0]);
                 defer gpa.free(elem);
                 break :blk std.fmt.allocPrint(gpa, "{s}[]", .{elem});
+            }
+            // `?T` — the only spelling the surface has for an optional
+            // (decision 2: `Option<T>` is not one). `optional<T>` still
+            // resolves in a type position, but no source writes it and the
+            // `Add type annotation` code action wrote it into the user's file.
+            if (std.mem.eql(u8, n.name, "optional") and n.args.len == 1) {
+                const inner = try renderType(gpa, n.args[0]);
+                defer gpa.free(inner);
+                break :blk std.fmt.allocPrint(gpa, "?{s}", .{inner});
             }
             if (std.mem.eql(u8, n.name, "tuple")) break :blk renderTuple(gpa, n.args, n.labels);
             var buf: std.ArrayList(u8) = .empty;

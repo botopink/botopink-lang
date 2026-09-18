@@ -72,6 +72,13 @@ Suites that touch **disk** (paths resolved against the test cwd,
 
 `lifecycle.zig` drives the in-memory `FileCache` directly (no runtime, no disk).
 
+Four tests here are **front 11's carve-out**, marked by a
+`front 11 carve-out` banner comment: `hover.zig`'s two optional-rendering tests,
+`signature_help.zig`'s `sig_optional_params` and `code_actions.zig`'s
+`code_action_annotation_optional`. They belong with `engine.renderType`, which is
+front 11's file — every one of them asserts that no rendered type contains
+`optional<`, the checker's name for a type the surface only spells `?T`.
+
 ## Snapshot workflow
 
 - Snapshots live under `../../snapshots/lsp/`.

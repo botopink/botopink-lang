@@ -217,3 +217,33 @@ test "signature_help: interface method on integer receiver drops self" {
     }
     try snap.assertSignatureHelp(gpa, "sig_interface_method", source, cursor, result);
 }
+
+// ── front 11 carve-out: the surface spelling of an optional ────────────────────
+
+test "signature_help: an optional parameter is labelled `?string`" {
+    const gpa = std.testing.allocator;
+
+    const bindings_source =
+        \\fn find(k: ?string, n: i32) -> ?i32 { return null; }
+    ;
+    var c = try h.compile(gpa, bindings_source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+
+    const source =
+        \\fn find(k: ?string, n: i32) -> ?i32 { return null; }
+        \\val r = find(
+    ;
+    // col 13 = right after `(` in "val r = find("
+    const cursor = h.pos(1, 13);
+    const result = try engine.signatureHelp(arena.allocator(), source, cursor, bindings);
+
+    try std.testing.expect(result != null);
+    // The label is read against the declaration one line above it: the two must
+    // spell the same type.
+    try std.testing.expect(std.mem.indexOf(u8, result.?.signatures[0].label, "optional<") == null);
+    try snap.assertSignatureHelp(gpa, "sig_optional_params", source, cursor, result);
+}

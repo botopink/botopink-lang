@@ -408,3 +408,44 @@ test "hover: a labeled tuple type keeps its labels" {
     try std.testing.expect(result != null);
     try snap.assertHover(gpa, "hover_val_labeled_tuple", source, h.pos(1, 4), result);
 }
+
+// ── front 11 carve-out: the surface spelling of an optional ────────────────────
+
+test "hover: an optional type is rendered `?i32`, not `optional<i32>`" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\fn find(k: string) -> ?i32 { return null; }
+        \\val hit = find("a");
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    const result = try engine.hover(gpa, source, h.pos(1, 4), bindings);
+    defer if (result) |hov| gpa.free(hov.contents.value);
+
+    try std.testing.expect(result != null);
+    // The card must be source the user could write back: `optional<i32>` is the
+    // checker's name for it, `?i32` is the only spelling the surface has.
+    try std.testing.expect(std.mem.indexOf(u8, result.?.contents.value, "optional<") == null);
+    try snap.assertHover(gpa, "hover_val_optional", source, h.pos(1, 4), result);
+}
+
+test "hover: an optional of an array keeps both sugars" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\fn rows() -> ?i32[] { return null; }
+        \\val all = rows();
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    const result = try engine.hover(gpa, source, h.pos(1, 4), bindings);
+    defer if (result) |hov| gpa.free(hov.contents.value);
+
+    try std.testing.expect(result != null);
+    try snap.assertHover(gpa, "hover_val_optional_array", source, h.pos(1, 4), result);
+}
