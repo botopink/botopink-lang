@@ -42,7 +42,7 @@ comptime/
 | `types.zig` | All type representations as `union(enum)`. |
 | `env.zig` | Type environment — scopes, builtins + stdlib, `TypeDef.contextBase`, `FnContext`, `TemplateEvalCtx` (`{ io, build_root }`), static-extension-dispatch tables (`extensions`, `activations`, `inherentMethods`, `dispatchRewrites`), the `"std"` package tables (`stdModules`: module → fn exports; `stdModuleTypes`: module → pub type decls, registered into the importer by `markStdImports`; `stdModuleFns`: module → fn decls, used by `markStdImports` to reject a `from "std"` import whose `declare fn`s have no `@external` for `Env.target` (`std-unsupported-on-target`); `stdImports`: names imported via `from "std"`, which win over same-named value bindings like the primitive `bool`), the `decorators` table (name → `DecoratorSig{ params, fn_decl }`), and the loc-keyed lowering maps `method_lowerings` (`@Result`/`@Option` methods + the builtin `result` namespace), `result_jump_lowerings` (`return`/`throw` → `__bp_ok`/`__bp_error` in `#[@result]` fns), `jsMethodRenames` (type-directed JS-only renames, e.g. `string.contains` → `includes`, recorded only when the receiver's static type makes a global rename unsafe — `Set` also declares `contains`), and `instanceLowerings` (see `infer.zig`). |
 | `infer.zig` | Main HM inference: `inferProgramTyped(...) → []TypedBinding`. `registerExtensions` + `resolveReceiverCall` implement static extension dispatch. `registerFnSignatures` (via `buildFnSignatureType`) binds every top-level `fn` signature before any body is inferred, so mutually-recursive / forward-referenced fns resolve. Ends with `validateProgram` — `implement`/interface coverage + getter/setter checks. Top-level `test { … }` bodies type-check like void fn bodies via `inferTestDecl`; `assert cond` unifies `cond` with `bool`. `inferTypeMethods` walks record/enum method bodies (generics, `Self`, params) to type the calls and record their lowerings; it is **strict** (06 C9 — it used to swallow `error.TypeError` into `lastError = null`, so a real mismatch inside a method only failed at run time), and it stores the signature of a method that annotates NO return type, taking the return from its body's `return`s (`registerInherentMethodTypes` stores one only for an annotated method). It runs from the TYPED `inferDeclTyped` only — the untyped `inferDecl` never walks method bodies, which is why a method-body row asserts through `assertComptimeCompileError`, not `assertTypeErrorSnap`. A method call on a receiver whose type is a nominal `Env.lookupTypeDef` knows, that no inherent method, behavior member, fn-typed field or primitive dispatch answers, is `unknownMethod` — or `methodNotActive` when a non-activated `implement` block declares it (`typeAnswersMember` / `behaviorDeclaresMember` are what keep an adopted `default fn` and a `#(value, set)`-shaped fn field legal). Everything else stays the permissive fresh var: an unresolved type variable, and a named type the env cannot open (an imported record, a wrapper, a forward reference). Value-receiver instance calls are recorded in `env.instanceLowerings`: `.record <typeName>` or `.prim <PrimKind>` (array/string/bool/int/float — non-JS backends map it to a host op); commonJS ignores the table. `primMethodReturnTypeFromIface` derives a primitive method's return type from its interface signature so chains (`xs.filter(f).at(0)` → `?T`) keep tracking; `length`/`len`/`size` read the interface field. Generic-inference regression guards live in `tests/infer_generics.zig`. A generic enum's unit variant (`Option.None`) carries one fresh var per generic param (C7). `lhs |> f` with `f` a function value types as `f(lhs)`; a pipeline whose RHS arity does not take the piped value is an `arityMismatch` at the RHS (C12). **Tuple labels** (decision 8 §6, 06 N24) live on the `named` type node (`Type.named.labels`), so `instantiateType` carries them — a generic signature (`fn ref<T>() -> #(current: T)`) used to lose them and `r.current` red "this tuple has no element labeled". `row.pop` records a positional rewrite (`row._1`) under `env.enumSectionRewrites`; `inferTupleLabelCall` does the same for a labelled element of FUNCTION type CALLED like a method (`#(value, set: fn(…))`, `c.set(9)` → `c._1(9)`), which the member-access path never saw, and the backends lower `._N(…)` as an index/`element/2`/`call_fun` apply. A constructor call with a `..` spread is a record update: the spread unifies with the record, each labelled arg with the field it names, an unknown label reds at the label (C11). `@RecordKeys(T)` is `array<string>` and `@field(v, "x")` has the field's type (C6). `&&` / `||` / `!` unify TARGET-first and locate at the OPERAND (06 C3): they passed the operand as `unifyAt`'s `a`, so `1 && true` read "expected i32, got bool" with the caret on the whole expression. `-` and `*`/`/`/`%`/`-` constrain their operands to a numeric type (`requireNumericOperand`, permissive for an unresolved type variable and for any name it does not know to be non-numeric): `"a" * "b"` and `-"s"` used to check, since unifying two strings with each other succeeds and `-` constrained nothing. `+` keeps its string concatenation. The branches of an `if` unify only when BOTH end in something that has a value (`stmtsYieldValue`): decision 2 makes a block not-a-value, and unifying a branch that ends in an assignment or a `val`/`var` reds `if (p) { out = …; } else { taking = false; }` with "expected array, got bool" — a shape a library in this repository writes in a `takeWhile`, and the same in a plain fn. Deleting the unification outright waits for the row that removes block-as-value. A condition loop (`loop (cond)` / `loop { … }`, iter typed `bool`) with a parameter is an error at the parameter (N26); a loop that is one only by its type is recorded in `env.conditionLoops`, which `transform.zig` turns into `LoopExpr.condition` for the backends. An unresolved enum-section path points its caret at the first segment that does not resolve (N17). |
-| `unify.zig` | Unification with substitution + occurs check. |
+| `unify.zig` | Unification with substitution + occurs check. `unify(env, a, b)` is **target-first**: `a` is what the context expects and `b` what was written, which is what makes its two one-way rules sound — an expected `?T` accepting a plain `T`, and decision 8 §2.1's `unknown` (`isUnknown`), which accepts every type **into** it and none **out** of it. The `unknown` rule sits above the kind match because it holds against every kind on the other side, not only `.named`; an unbound variable on either side still links, so inference deciding a type is never mistaken for a use. |
 | `error.zig` | Structured type errors with source ranges and hints (incl. `missingMethod`/`unknownMethod`/`unknownInterface`/`ambiguousMethod`), plus `validateComptime` — the gate that decides what may appear inside `comptime` / `comptime { … }`: literals, arithmetic, comparisons and `&&`/`||`, `not`/`-`, array literals, pipelines, `if`, `break`, and identifiers that the block itself declared. `validateBody` threads that scope on the Zig stack (a `val`/`var` validates its initialiser in the scope before it, then validates the rest of the block with the new name in scope) and mirrors the `Scope` `eval.zig` builds with real values. A ctor or any other call stays rejected on purpose — see the `comptime record lit` skip in `tests/eval_pipeline.zig` for why (one literal text has no cross-backend record form). Two structurally legal folds are refused too, located at the expression (`ComptimeError.reason`): a constant zero divisor (`divisionByZero`, C4b) and negating a string (`negatedNonNumber`). |
 | `diagnostics.zig` | Stable diagnostic-code constants (R1–R21, RF1–RF5, RI1–RI6, RC1–RC6, RG1–RG4, D1–D6, `std-unsupported-on-target`) plus the `all_codes` table. Messages live at the firing site. |
 | `eval.zig` | `ComptimeEntry` / `RunResult` / `evaluate(allocator, entries)` — folds each comptime `val` in Zig (`valueOf`: literals, arithmetic, `not`/`-`, `@TypeOf` name, `@typeInfo`/record literals as objects, a comptime block's / `if`'s / `case`'s / loop's `break` value) and writes the literal backends splice in (`3`, `6.28`, `"text"`, `[1, 2]`, `true`, `null`; objects and nested lists are `null`). **Every operand carries its kind** (`Value`): `binary` folds int arithmetic as int, promotes to `f64` as soon as one side is a float (`3.14 * 2.0 → 6.28`), concatenates two strings on `+`, and returns a `boolean` for `==`/`!=`/`<`/`<=`/`>`/`>=`/`&&`/`||` — so an `if` inside a folded block takes the arm its condition really selects. Anything irreducible (a record operand, a non-constant zero divisor) folds to `null`, never to a stand-in `0`; a constant zero divisor or a negated string never gets here (`validateComptime` refuses it). A `comptime { … }` block has a `Scope`: `blockResult`/`execStmt` declare its `val`/`var` locals, apply `=`/`+=`, and follow an `if` into the arm that `break`s; a nested arm gets a child scope. `RunResult.script` is the listing shown in snapshots as `COMPTIME VALUES`: one `ct_N: <declaration> → literal` per entry, the declaration formatted by `comptime.zig` `evaluateComptime` (`ComptimeEntry.source`; continuation lines aligned). An identifier that is neither a block local nor `true`/`false`/`null` is `error.UnsupportedComptimeValue`. |
@@ -69,6 +69,14 @@ except `#[@result]` / `#[@future]` on a `declare fn` that carries an `@external`
 annotation and returns the matching wrapper (`@Result<R, E>` / `@Future<T, E>`):
 the host template owns the wrapper shape (used by `libs/std/src/asserts.bp`
 `tryCatch` and `libs/std/src/http.bp` `fetch`).
+
+**A lower-case `#[@external(…)]` binds nothing, and says so** (R3, decision 8 §8, decision 15).
+Only the capitalised path form `External.<Target>` is read as host-backed (`FnDecl.isExternal`,
+`ast.zig`'s `startsWith("External.")`), so `#[@external(node, "…")]` fell through as an unknown
+annotation and was dropped — the `declare fn` bound no host and `check` exited 0 in silence.
+`refuseLowerCaseExternal`, called from `inferFnDecl`'s annotation loop, reds at the annotation and
+spells the target capitalised. It fires on the `@`-prefixed builtin form only: `#[external(…)]`
+without the `@` is a user-defined attribute and means something else.
 
 **The wrapper without its annotation is an error too** (06 N25, decision 8 § 9).
 `@Future` / `@Iterator` / `@AsyncIterator` already demanded one; `@Result` did not — a plain
@@ -332,6 +340,129 @@ When a decorator `@emit`s code, the spliced re-analysis does the full inference.
 binding list handed back is built tolerantly from imports, type declarations, `fn` signatures **and
 `val`s**: a decl that fails to infer (a `val` referencing a generated decl) contributes nothing, a
 well-typed one binds, so the language server still lists it.
+
+## `unknown` (decision 8 §2, 1.0.4's 06 N19)
+
+`unknown` reaches inference as `TypeRef.named` under the reserved spelling `ast.unknown_type_name`;
+the lexer makes it a keyword and `isReservedWord` refuses it as a user name, so no source can mean
+anything else by it. `Env.resolveTypeName` answers it before the two-pass `pendingTypeNames` walk —
+it is a type the compiler owns, not one a module declares, and a located annotation (`-> unknown`)
+would otherwise be reported as an undeclared name.
+
+§2.1 is `unify.zig`'s one-way rule (above). §2.2 — what an `unknown` value does **not** answer — is
+`infer.zig` `refuseUnknownUse`, called at four sites, because each of them has a permissive tail that
+would otherwise accept silently:
+
+| Use | Site | Why it needed its own refusal |
+|---|---|---|
+| arithmetic `- * / %` | `requireNumericOperand` | it returns early for any name it does not know to be non-numeric |
+| `+` | the `.add` arm of `inferBinaryOpExpr` | `+` also concatenates, so it never went through `requireNumericOperand` |
+| `<` `>` `<=` `>=` | the ordering arm of `inferBinaryOpExpr` | §2.2 names only `==` / `!=` as allowed; an ordering comparison reads the value's magnitude exactly as `+` does |
+| a field read | `inferIdentifierExpr`'s `identAccess` | no typedef answers `unknown`, so the member fell through to a fresh variable |
+| a method call | the receiver path of `inferCallExpr` | the same permissive fresh-var tail 06 C9 left for imported and wrapper types |
+
+`@print(x)`, `x == y`, `x != y`, assigning to another `unknown` and passing to a generic parameter
+stay allowed, and each reaches inference by a path this is not on.
+
+**Not implemented, and why.** §2.4 (a `pub` declaration whose *inferred* type contains `unknown` is
+an error) and §1.4 (a non-`pub` binding falling to `unknown` **warns**) both need a channel
+`comptime/**` does not have: there is no warning path here at all, only `TypeError`. Indexing —
+§2.2's fourth refusal — has no syntax to refuse: `a[0]` is a parse error in this grammar.
+
+## union types (decision 8 §3, 1.0.4's 06 N20)
+
+`A | B` reaches inference as `TypeRef.generic` under the reserved name
+`ast.union_type_name` (`"|"`), members as arguments, read back with `unionMembers()`.
+`resolveTypeRefInContext` builds a real `T.Type.union_` from them, so a union annotation is a union
+type and no longer a nominal type spelled `|` ("expected |, got i32").
+
+Construction always goes through **`unionOf`** / **`finishUnion`**, never `Env.unionType` directly,
+so every union in the checker is normalised the same way:
+
+- `appendUnionMember` flattens a nested union (`(A | B) | C` is `A | B | C`) and drops a duplicate
+  by `sameTypeShape` — a structural, **non-unifying** comparison, because a probe that unified would
+  leave the alternative it rejected linked and there is no way to roll that back. An **unbound**
+  variable is not a distinct alternative: it unifies with what is already there, so a union never
+  carries a `?` member that says nothing.
+- `finishUnion` collapses a one-member union to that member and applies §3.2's **optional
+  absorption**: an optional member makes the whole union optional over the union of its inner type
+  and every other member, so `if (c) { 1 } else { null }` is `?i32` and — recursively — `?A | ?B` is
+  §3.4's `Option<A | B>`.
+- **No other head joins.** §3.4 also lists `Box`, `@Result` and `Dict`, but a join is sound only
+  when the type's parameter is *read* and never written: joining `Box<i32> | Box<string>` would let
+  a `set(v: T)` store a `string` in what is really a `Box<i32>`. The "only read" member-signature
+  walk is not built; those members stay side by side, which refuses more than §3.4 and is never
+  wrong. Arrays never join — that is §3.4's own rule.
+
+`unify` treats a union one-way, as it does `?T` and `unknown`: a **member** is assignable to the
+union, and the union to a member only after narrowing. `memberAccepting` picks the target member by
+shape (never by trial unification, for the reason above); a member still unbound accepts anything.
+Union-to-union asks that every member the value may be is one the target accepts — the target may be
+wider, never narrower. The arity-for-arity walk this replaced could only accept a union written in
+exactly the same member order.
+
+§3.2's inference sources: a `case` (`caseTypeFromArms`, already there since 06 C2a) and an `if`
+whose two branches both produce a value and disagree — that is a union now, not an error. Branches
+that agree still unify, so one branch pins the other's variables exactly as before.
+
+§3.3's use rule is `refuseUnknownUse`, shared with §2.2 (see above): a union receiver is refused at
+arithmetic, `+`, an ordering comparison, a field read and a method call. §3.3 allows a use every
+member allows; deciding that means re-resolving the operation once per member, which is not built,
+so the refusal is total — more than §3.3 asks, and never wrong. §3.2's two-location diagnostic (the
+use **and** the branch that widened it) is not built either: `TypeError` carries one `Loc`.
+
+`error.zig` `typeLabelAlloc` spells a union out as `A | B` in a mismatch message; every other kind
+is `typeLabel`'s own text, so a message that goes through it renders byte-identically to one that
+does not.
+
+**Gap, not owned here:** `(i32 | string)[]` does not parse — a parenthesised type is not in the
+grammar, so §3.1's "array of the union" has no spelling. `i32 | string[]` binds as `i32` or
+`string[]`, which is right.
+
+## `x is T`, and narrowing (decision 8 §4, 1.0.4's 06 N21)
+
+The parser lands `x is T` as the `is` builtin call (`ast.is_builtin_name`) with the value as its
+only argument and the tested type in the call's `isType` slot. `inferBuiltinCallReturnType` had no
+arm for the name, so the call was typed `void` ("expected bool, got void"). It is intercepted
+**before** that function now, because the slot it needs is on the AST node and not among the typed
+arguments, and the typed node it builds **carries `isType` forward** — the four backends lower their
+run-time test from it.
+
+§4.2 is `checkIsTestableType`: a primitive, a named type's constructor and a tuple are testable as
+they are; a generic type is testable only applied to `unknown`. `Box<i32>` is the section's own
+error — a run-time test can see that a value is a `Box` and cannot see what is in it, so
+`Box<i32>` would be a promise the test does not keep, while `Box<unknown>` says exactly what it can
+answer. Each member of a union is checked in turn.
+
+Narrowing has one channel, not two: `if (x is T)` writes into the same
+`guardArgName` / `guardNarrowedType` pair C5 built for the type-guard fn form (`-> x is T`), so the
+branch rebinds the name exactly as a guard call does. Only a plain **name** narrows — narrowing is a
+rebinding, and there is nothing to rebind for `f().x`.
+
+**Not implemented.** §4.3 (`a is string` on a statically-known `i32` is a *warning*, always false)
+needs the warning channel `comptime/**` does not have — the same gap §2.4 and §1.4 hit. §4.1's
+"an integral `f64` is converted to the tested integer type inside the block" is each backend's
+run-time half. D4 (whether `is` grows a payload pattern) stands as the parser left it: the located
+`is-variant-binding` refusal, with `case` the only reader of a payload.
+
+## a record is immutable (decision 37)
+
+`p.age = 31` and `self.count += 1` both checked and both mutated in place. The decided form is a new
+value — `Person(..p, age: 31)` — which the constructor's `..` spread already builds (06 C11), so
+`refuseRecordFieldAssign` (the `.fieldAccess` target of the `.assign` walk) reds at the assignment
+and spells that form out, naming the receiver when it is a plain name it can spread.
+
+Only a receiver whose type is a record **this module registered** is refused. Everything else keeps
+assigning, for the reasons 06 C9 left its own fresh var: a receiver still an unresolved type
+variable is an inference gap, and a named type the env cannot open — an imported record, a wrapper,
+a host object a library binds — is not something this rule can speak for.
+
+Measured on this HEAD: zero occurrences in `libs/std`, in the three `examples/` projects and in the
+eleven `test-libs` cells, so the rule cost no migration. The one occurrence the 1.0.5-beta spec
+predicted would move, `snapshots/codegen/**/field_assign_self_field_update.snap.md`, **does not**:
+its fixture writes the types-as-values surface (`val Counter = type(count: i32 = 0) { … }`), where
+`self` is never typed as `Counter` and the typedef is not registered, so nothing here reaches it.
+That is R8 / types-as-values A1's ground, not decision 37's.
 
 ## `case` and `comptime` block types (06 C2)
 

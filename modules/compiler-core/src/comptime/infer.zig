@@ -20,7 +20,9 @@ const primOpTemplate = @import("primOpTemplate.zig");
 const templateEval = @import("template_eval.zig");
 const decoratorEval = @import("decorator_eval.zig");
 const specializeMod = @import("specialize.zig");
-const unify = @import("unify.zig").unify;
+const unifyMod = @import("unify.zig");
+const snapshotMod = @import("snapshot.zig");
+const unify = unifyMod.unify;
 const Lexer = @import("../lexer.zig").Lexer;
 const Parser = @import("../parser.zig").Parser;
 const Module = @import("../module.zig").Module;
@@ -2691,9 +2693,103 @@ fn instantiateGenericType(env: *Env, ty: *T.Type) InferError!*T.Type {
     return instantiateType(env, ty, &seen, .genericOnly);
 }
 
+/// R3 (decision 8 §8, decision 15) — `#[@external(node, "…")]` in lower case.
+///
+/// The annotation grammar accepts any `#[@name(…)]`, and only the capitalised
+/// path form `External.<Target>` is read as host-backed (`FnDecl.isExternal`,
+/// `ast.zig`'s `startsWith("External.")`). A lower-case one therefore fell
+/// through as an unknown annotation and was dropped: the `declare fn` bound no
+/// host, `botopink check` exited 0, and nothing was said. Name the spelling
+/// that works, at the annotation.
+///
+/// Only the `@`-prefixed builtin form is caught. `#[external(…)]` without the
+/// `@` is a user-defined attribute — a decorator's own name — and means
+/// something else entirely.
+/// Decision 37 — a record is **immutable**. `p.age = 31` and `self.count += 1`
+/// both checked and both mutated in place; the decided form is a new value,
+/// `Person(..p, age: 31)`, which the constructor's `..` spread already builds
+/// (06 C11).
+///
+/// Only a receiver whose type is a record this module registered is refused.
+/// Everything else keeps assigning: a receiver still an unresolved type
+/// variable is an inference gap and must not red here, and a named type the env
+/// cannot open — an imported record, a `@Result`/`?T` wrapper, a host object a
+/// library binds — is not something this rule can speak for.
+fn refuseRecordFieldAssign(
+    env: *Env,
+    receiver: ast.Expr,
+    receiverType: *T.Type,
+    field: []const u8,
+    loc: ast.Loc,
+) InferError!void {
+    const t = receiverType.deref();
+    if (t.* != .named) return;
+    const typeName = t.named.name;
+    const td = env.lookupTypeDef(typeName) orelse return;
+    if (td != .record) return;
+    // Name the receiver in the hint when it is something the author can spread:
+    // a plain name (`p`, `self`). Anything else gets the shape without it.
+    const spread: []const u8 = switch (receiver) {
+        .identifier => |id| switch (id.kind) {
+            .ident => |n| n,
+            else => "…",
+        },
+        else => "…",
+    };
+    var e = TypeError.custom(
+        try std.fmt.allocPrint(
+            env.arena,
+            "a `{s}` is immutable — its field `{s}` cannot be assigned",
+            .{ typeName, field },
+        ),
+        try std.fmt.allocPrint(
+            env.arena,
+            "Build a new value instead: `{s}(..{s}, {s}: <value>)`.",
+            .{ typeName, spread, field },
+        ),
+    );
+    env.lastError = e.withLoc(loc);
+    return error.TypeError;
+}
+
+fn refuseLowerCaseExternal(env: *Env, a: ast.Annotation) InferError!void {
+    if (!a.is_builtin) return;
+    const misspelled = std.ascii.eqlIgnoreCase(a.name, "external") or
+        (std.ascii.startsWithIgnoreCase(a.name, "external.") and
+            !std.mem.startsWith(u8, a.name, "External."));
+    if (!misspelled) return;
+    // `#[@external(node, "…")]` names its target in the first argument;
+    // `#[@external.node("…")]` in the path. Either way the fix is the same
+    // annotation with the target capitalised, so spell it out.
+    const target: []const u8 = blk: {
+        if (std.mem.indexOfScalar(u8, a.name, '.')) |i| break :blk a.name[i + 1 ..];
+        const args = a.writtenArgs();
+        if (args.len >= 1 and args[0].len > 0 and std.ascii.isAlphabetic(args[0][0])) break :blk args[0];
+        break :blk "Node";
+    };
+    const capitalised = try env.arena.dupe(u8, target);
+    if (capitalised.len > 0) capitalised[0] = std.ascii.toUpper(capitalised[0]);
+    var e = TypeError.custom(
+        try std.fmt.allocPrint(
+            env.arena,
+            "`#[@{s}]` binds no host — an external target is written `External.<Target>`",
+            .{a.name},
+        ),
+        try std.fmt.allocPrint(
+            env.arena,
+            "Write `#[@External.{s}(\"<template>\")]`; only the capitalised path form is read as host-backed.",
+            .{capitalised},
+        ),
+    );
+    if (a.loc) |l| e = e.withLoc(l);
+    env.lastError = e;
+    return error.TypeError;
+}
+
 fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     // ── `@[external(…)]` annotation validation (F1) ─────────────────────────
     for (f.annotations) |a| {
+        try refuseLowerCaseExternal(env, a);
         if (std.mem.startsWith(u8, a.name, "External.") and a.name.len > "External.".len) {
             try validateExternalAnnotation(env, f, a);
         }
@@ -4982,6 +5078,20 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
             return env.funcType(paramTypes, returnType);
         },
         .generic => |b| {
+            // Decision 8 §3 — `A | B` reaches inference as a `generic` under the
+            // reserved name `ast.union_type_name`; `unionMembers()` reads the
+            // members back. It is a union type, not a nominal one called `|`,
+            // which is what the old resolution produced ("expected |, got i32").
+            if (ref.unionMembers()) |members| {
+                var flat: std.ArrayListUnmanaged(*T.Type) = .empty;
+                for (members) |m| {
+                    const mt = try resolveTypeRefInContext(env, m, genericMap);
+                    try appendUnionMember(env, &flat, mt);
+                }
+                // `finishUnion` collapses `A | A` to `A`: the grammar allows the
+                // spelling and nothing downstream should meet a one-member union.
+                return finishUnion(env, flat.items);
+            }
             // RG3 (§1G) — required generic argument missing. Each known builtin
             // wrapper has a fixed required-arg minimum: the parameters before
             // the defaulted trailing range. Catching it here covers the
@@ -5455,9 +5565,106 @@ fn inferTupleLabelCall(
 /// no constraint at all. Permissive for a type variable an inference gap has
 /// not resolved, and for any named type the env does not know to be
 /// non-numeric — only the types that certainly hold no arithmetic red.
+/// The two type kinds decision 8 says must be **narrowed before they are
+/// used**: `unknown` (§2.2) and a union (§3.3). Both carry a set of
+/// possibilities rather than one type, and both reach the same five operations
+/// — arithmetic, `+`, an ordering comparison, a field read and a method call —
+/// through a permissive tail that would otherwise accept silently.
+///
+/// `@print(x)`, `x == y`, `x != y`, assignment and passing to a generic
+/// parameter stay allowed for both, and reach inference by paths this is not on.
+///
+/// §3.3's own rule is narrower than this: a use is allowed when **every**
+/// member allows it. Deciding that means re-resolving the operation once per
+/// member, which this front has not built; refusing the union outright refuses
+/// more than §3.3 and is never wrong, and the fix — narrow first — is the same
+/// sentence either way.
+///
+/// `what` completes "cannot …", so it is a verb phrase.
+fn refuseUnknownUse(env: *Env, ty: *T.Type, loc: ast.Loc, what: []const u8) InferError!void {
+    const t = ty.deref();
+    if (unifyMod.isUnknown(t)) {
+        var e = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, "cannot {s} an `unknown` value", .{what}),
+            "Narrow it first: `if (x is i32) { … }` makes `x` an `i32` inside the block.",
+        );
+        env.lastError = e.withLoc(loc);
+        return error.TypeError;
+    }
+    if (t.* == .union_) {
+        const rendered = try snapshotMod.typeNameOf(env.arena, t);
+        var e = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, "cannot {s} a `{s}` — not every member of the union answers it", .{ what, rendered }),
+            "Narrow it first: a `case` with one arm per member, or `if (v is i32) { … }`.",
+        );
+        env.lastError = e.withLoc(loc);
+        return error.TypeError;
+    }
+}
+
+/// Decision 8 §4.2 — what may stand on the right of `is`: a primitive, a named
+/// type's constructor, a tuple `#(…)`, and a generic type applied to `unknown`
+/// only.
+///
+/// `Box<i32>` is the error the section names: a run-time test can see that a
+/// value is a `Box`, and cannot see what is in it, so `Box<i32>` would be a
+/// promise the test does not keep. `Box<unknown>` says exactly what the test
+/// can answer. A tuple is checkable — arity and each element are — and so are
+/// the other structural spellings the grammar builds out of type refs.
+fn checkIsTestableType(env: *Env, ref: ast.TypeRef, loc: ast.Loc) InferError!void {
+    switch (ref) {
+        .generic => |g| {
+            if (ref.unionMembers()) |members| {
+                for (members) |m| try checkIsTestableType(env, m, loc);
+                return;
+            }
+            for (g.args) |arg| {
+                const isUnknownArg = arg == .named and
+                    std.mem.eql(u8, arg.named, ast.unknown_type_name);
+                if (isUnknownArg) continue;
+                var e = TypeError.custom(
+                    try std.fmt.allocPrint(
+                        env.arena,
+                        "`is` cannot test the type argument of `{s}`",
+                        .{g.name},
+                    ),
+                    "A run-time test sees the type, not what is inside it. Write the argument as `unknown` (`Box<unknown>`) and narrow the contents separately.",
+                );
+                env.lastError = e.withLoc(loc);
+                return error.TypeError;
+            }
+        },
+        else => {},
+    }
+}
+
+/// Decision 8 §4 — the narrowing an `if` condition records: the name it tested
+/// and the type it tested it for. Null when the condition is not one of the
+/// forms that narrow.
+const IsNarrowing = struct { name: []const u8, ref: ast.TypeRef };
+
+/// `x is T` where `x` is a plain name. Only a name can be narrowed: narrowing
+/// rebinds it for the branch, and there is nothing to rebind for `f().x`.
+fn isNarrowingOf(cond: ast.Expr) ?IsNarrowing {
+    if (cond != .call) return null;
+    const c = cond.call.kind;
+    if (c != .call) return null;
+    const cc = c.call;
+    if (!cc.is_builtin or !std.mem.eql(u8, cc.callee, ast.is_builtin_name)) return null;
+    const tested = cc.isType orelse return null;
+    if (cc.args.len != 1) return null;
+    const arg = cc.args[0].value.*;
+    if (arg != .identifier or arg.identifier.kind != .ident) return null;
+    return .{ .name = arg.identifier.kind.ident, .ref = tested };
+}
+
 fn requireNumericOperand(env: *Env, ty: *T.Type, op: []const u8, loc: ast.Loc) InferError!void {
     const t = ty.deref();
     if (t.* != .named) return;
+    // §2.2 — arithmetic is refused on `unknown` for its own reason, not as a
+    // "takes numbers" mismatch: the value may well be a number, and what is
+    // wrong is that nothing has established it.
+    try refuseUnknownUse(env, ty, loc, "do arithmetic on");
     const n = t.named.name;
     const eq = std.mem.eql;
     if (!(eq(u8, n, "string") or eq(u8, n, "bool") or eq(u8, n, "void") or eq(u8, n, "array"))) return;
@@ -5945,6 +6152,10 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                     recvType = recvType.named.args[0].deref();
                 }
             }
+            // Decision 8 §2.2 — an `unknown` receiver has no members. Without
+            // this the field falls through every arm below and lands on a fresh
+            // variable, so `a.x` on an `unknown` checks silently.
+            try refuseUnknownUse(env, recvType, loc, "read a field of");
             var outType: *T.Type = try env.freshVar();
             // Anonymous structural record: resolve the field directly.
             if (recvType.* == .record) {
@@ -6078,7 +6289,16 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
 
     // Determine result type based on operator
     const resultType: *T.Type = switch (binop.op) {
-        .lt, .gt, .lte, .gte, .eq, .ne => try env.namedType("bool"),
+        // §2.2 — `==` and `!=` are the two comparisons an `unknown` answers
+        // (they compare by value, §2.3). An ordering comparison is arithmetic:
+        // it is not in §2.2's allowed list, and it reads the value's magnitude
+        // exactly as `+` does.
+        .lt, .gt, .lte, .gte => blk: {
+            try refuseUnknownUse(env, lhsTyped.getType(), binop.lhs.getLoc(), "compare");
+            try refuseUnknownUse(env, rhsTyped.getType(), binop.rhs.getLoc(), "compare");
+            break :blk try env.namedType("bool");
+        },
+        .eq, .ne => try env.namedType("bool"),
         .@"and", .@"or" => blk: {
             // 06 C3 — `unifyAt(env, a, b, loc)` is TARGET-first: `a` is what
             // the context expects, `b` what was written
@@ -6093,6 +6313,12 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
             // String + anything → string (coercion)
             const lhsTy = lhsTyped.getType();
             const rhsTy = rhsTyped.getType();
+            // §2.2 — `+` is the one arithmetic operator `requireNumericOperand`
+            // below does not guard, because it also concatenates strings. An
+            // `unknown` operand is refused here for both readings at once:
+            // nothing has established that it is either.
+            try refuseUnknownUse(env, lhsTy, binop.lhs.getLoc(), "do arithmetic on");
+            try refuseUnknownUse(env, rhsTy, binop.rhs.getLoc(), "do arithmetic on");
             if (lhsTy.isNamed("string") or rhsTy.isNamed("string")) break :blk try env.namedType("string");
             // Numeric promotion: float wins over int
             if (isFloatType(lhsTy) and isIntType(rhsTy)) break :blk lhsTy;
@@ -6572,6 +6798,15 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
             } else {
                 // Check for type guard call: `if (guardName(arg, ...))`
                 // Narrow the argument's type in the then-branch.
+                // Decision 8 §4 — `if (x is T)` narrows `x` to `T` inside the
+                // branch. It is the same channel C5 built for the type-guard fn
+                // form (`-> x is T`), which is why both write into
+                // `guardArgName` / `guardNarrowedType` rather than growing a
+                // second narrowing mechanism.
+                if (isNarrowingOf(i.cond.*)) |n| {
+                    guardArgName = n.name;
+                    guardNarrowedType = try resolveTypeRef(env, n.ref);
+                }
                 if (i.cond.* == .call) {
                     const ci = i.cond.call.kind.call;
                     if (env.typeGuardFns.get(ci.callee)) |guardInfo| {
@@ -6636,10 +6871,21 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
             // fn of the same shape. Only the row that removes
             // block-as-value outright can delete the unification entirely; this
             // narrows it to the branches that do produce a value.
+            //
+            // Decision 8 §3.2 — when both branches DO produce a value and the
+            // two disagree, that is not an error: the `if` is their union, the
+            // same answer `caseTypeFromArms` already gives a `case`. Branches
+            // that agree still unify, so a branch pins the other's type
+            // variables exactly as before.
+            var ifType = bodyType;
             if (elseTyped != null and stmtsYieldValue(thenTyped) and stmtsYieldValue(elseTyped.?)) {
-                try unify(env, bodyType, elseType);
+                if (caseArmTypesAgree(bodyType, elseType)) {
+                    try unify(env, bodyType, elseType);
+                } else {
+                    ifType = try unionOf(env, &.{ bodyType, elseType });
+                }
             }
-            return TypedExpr{ .branch = .{ .loc = loc, .type_ = bodyType, .kind = .{ .if_ = .{
+            return TypedExpr{ .branch = .{ .loc = loc, .type_ = ifType, .kind = .{ .if_ = .{
                 .cond = condPtr,
                 .binding = i.binding,
                 .then_ = thenTyped,
@@ -6785,6 +7031,7 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
                     },
                     .fieldAccess => |fa| blk: {
                         const recvTyped = try inferExprTyped(env, fa.receiver.*);
+                        try refuseRecordFieldAssign(env, fa.receiver.*, recvTyped.getType(), fa.field, loc);
                         const recvPtr = try makeTypedPtr(env, recvTyped);
                         break :blk .{ .fieldAccess = .{ .receiver = recvPtr, .field = fa.field } };
                     },
@@ -7671,6 +7918,31 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             const typedTrailing = try inferTrailingLambdasTyped(env, call.trailing);
 
             if (call.is_builtin) {
+                // Decision 8 §4 — `x is T`. The parser lands it as the `is`
+                // builtin with the tested type in the call's `isType` slot;
+                // nothing typed it, so `inferBuiltinCallReturnType` had no arm
+                // for the name and the call came out `void`.
+                if (std.mem.eql(u8, call.callee, ast.is_builtin_name)) {
+                    if (call.isType) |tested| try checkIsTestableType(env, tested, loc);
+                    return TypedExpr{
+                        .call = .{
+                            .loc = loc,
+                            .type_ = try env.namedType("bool"),
+                            .kind = .{
+                                .call = .{
+                                    .receiver = null,
+                                    .callee = call.callee,
+                                    .is_builtin = true,
+                                    .args = typedArgs,
+                                    .trailing = typedTrailing,
+                                    // The tested type is what the backends lower the run-time
+                                    // test from; dropping it here left them nothing to read.
+                                    .isType = call.isType,
+                                },
+                            },
+                        },
+                    };
+                }
                 // `@makeRecord(fields)` — when fields is a literal array of RecordField
                 // values, evaluate at inference time and create a synthetic record type.
                 if (std.mem.eql(u8, call.callee, "makeRecord") and call.args.len >= 1) {
@@ -7919,6 +8191,10 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                 // inference gap must not red), and a named type the env cannot
                 // open — an imported record whose typedef lives in its own
                 // module, a `@Result`/`?T` wrapper, a forward reference.
+                // §2.2 — an `unknown` receiver answers no method. It has to be
+                // refused before the permissive fresh-var tail below, which is
+                // what let `a.len()` check.
+                try refuseUnknownUse(env, recvPtr.getType(), loc, "call a method on");
                 if (nominalName(recvPtr.getType())) |tn| {
                     if (env.lookupTypeDef(tn)) |td| if (!typeAnswersMember(env, td, call.callee)) {
                         var ext_err: ?TypeError = null;
@@ -8228,6 +8504,129 @@ fn caseArmValueType(env: *Env, body: ast.TypedExpr) InferError!?*T.Type {
     return t;
 }
 
+/// Decision 8 §3 — add one member to a union under construction, flattening a
+/// nested union (`(A | B) | C` is `A | B | C`) and dropping a duplicate. Union
+/// membership is set-like: the members are what the value may be, and saying
+/// one of them twice says nothing more.
+fn appendUnionMember(
+    env: *Env,
+    into: *std.ArrayListUnmanaged(*T.Type),
+    member: *T.Type,
+) InferError!void {
+    const m = member.deref();
+    if (m.* == .union_) {
+        for (m.union_) |inner| try appendUnionMember(env, into, inner);
+        return;
+    }
+    // A variable inference has not decided is not a distinct alternative. It
+    // joins whatever is already there instead of standing beside it, so a
+    // union never carries a `?` member that says nothing.
+    if (m.isUnbound() and into.items.len > 0) return unify(env, into.items[0], m);
+    for (into.items) |existing| {
+        if (sameTypeShape(existing, m)) return;
+        if (existing.isUnbound()) return unify(env, existing, m);
+    }
+    try into.append(env.arena, m);
+}
+
+/// Decision 8 §3.2/§3.4 — finish a union that `appendUnionMember` has already
+/// flattened and de-duplicated.
+///
+/// `?T` **absorbs**: a `null` branch makes the whole thing optional, so
+/// `if (c) { 1 } else { null }` is `?i32` and not `i32 | ?_`. Recursively, that
+/// is also §3.4's `Option<A> | Option<B>` → `Option<A | B>`.
+///
+/// No other head joins here. §3.4 also lists `Box`, `@Result` and `Dict`, but a
+/// join is only sound when the type's parameter is **read** and never written:
+/// joining `Box<i32> | Box<string>` into `Box<i32 | string>` would let a
+/// `set(v: T)` store a `string` in what is really a `Box<i32>`. The "only read"
+/// test is a member-signature walk this front has not built; until it exists
+/// those members stay side by side, which refuses more than §3.4 and is never
+/// wrong. Arrays never join at all — that is §3.4's own rule.
+fn finishUnion(env: *Env, members: []*T.Type) InferError!*T.Type {
+    if (members.len == 0) return env.namedType("void");
+    if (members.len == 1) return members[0];
+    for (members, 0..) |m, idx| {
+        const d = m.deref();
+        if (d.* != .named) continue;
+        if (!std.mem.eql(u8, d.named.name, "optional") or d.named.args.len != 1) continue;
+        var inner: std.ArrayListUnmanaged(*T.Type) = .empty;
+        try appendUnionMember(env, &inner, d.named.args[0]);
+        for (members, 0..) |other, j| {
+            if (j != idx) try appendUnionMember(env, &inner, other);
+        }
+        // Each step consumes one optional member, so the recursion is finite.
+        const innerTy = try finishUnion(env, inner.items);
+        const args = try env.arena.alloc(*T.Type, 1);
+        args[0] = innerTy;
+        return env.namedTypeArgs("optional", args);
+    }
+    return env.unionType(try env.arena.dupe(*T.Type, members));
+}
+
+/// The union of `members`, flattened, de-duplicated and normalised.
+fn unionOf(env: *Env, members: []const *T.Type) InferError!*T.Type {
+    var flat: std.ArrayListUnmanaged(*T.Type) = .empty;
+    for (members) |m| try appendUnionMember(env, &flat, m);
+    return finishUnion(env, flat.items);
+}
+
+/// Two types are the same union member. Structural and conservative: it decides
+/// membership, so it must never call two members the same when a value could
+/// tell them apart, and it must not unify (a probe that mutated would leave the
+/// failed alternative linked).
+fn sameTypeShape(a: *T.Type, b: *T.Type) bool {
+    const da = a.deref();
+    const db = b.deref();
+    if (da == db) return true;
+    return switch (da.*) {
+        .named => |na| switch (db.*) {
+            .named => |nb| blk: {
+                if (!std.mem.eql(u8, na.name, nb.name)) break :blk false;
+                if (na.args.len != nb.args.len) break :blk false;
+                for (na.args, nb.args) |x, y| {
+                    if (!sameTypeShape(x, y)) break :blk false;
+                }
+                break :blk true;
+            },
+            else => false,
+        },
+        .func => |fa| switch (db.*) {
+            .func => |fb| blk: {
+                if (fa.params.len != fb.params.len) break :blk false;
+                for (fa.params, fb.params) |x, y| {
+                    if (!sameTypeShape(x, y)) break :blk false;
+                }
+                break :blk sameTypeShape(fa.ret, fb.ret);
+            },
+            else => false,
+        },
+        .union_ => |ua| switch (db.*) {
+            .union_ => |ub| blk: {
+                if (ua.len != ub.len) break :blk false;
+                for (ua, ub) |x, y| {
+                    if (!sameTypeShape(x, y)) break :blk false;
+                }
+                break :blk true;
+            },
+            else => false,
+        },
+        .record => |fa| switch (db.*) {
+            .record => |fb| blk: {
+                if (fa.len != fb.len) break :blk false;
+                for (fa, fb) |x, y| {
+                    if (!std.mem.eql(u8, x.name, y.name)) break :blk false;
+                    if (!sameTypeShape(x.type_, y.type_)) break :blk false;
+                }
+                break :blk true;
+            },
+            else => false,
+        },
+        // Two distinct variables are not the same member: nothing has said so.
+        .typeVar => false,
+    };
+}
+
 /// C2a — unify the arms that agree; distinct named types become union members.
 fn caseTypeFromArms(env: *Env, arms: []const ast.CaseArmOf(.typed)) InferError!*T.Type {
     var members: std.ArrayListUnmanaged(*T.Type) = .empty;
@@ -8243,11 +8642,7 @@ fn caseTypeFromArms(env: *Env, arms: []const ast.CaseArmOf(.typed)) InferError!*
         }
         if (!merged) try members.append(env.arena, t);
     }
-    return switch (members.items.len) {
-        0 => env.namedType("void"),
-        1 => members.items[0],
-        else => env.unionType(try members.toOwnedSlice(env.arena)),
-    };
+    return finishUnion(env, members.items);
 }
 
 /// Two arm types agree (and are unified) when either is still a type

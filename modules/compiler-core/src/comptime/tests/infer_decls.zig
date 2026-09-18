@@ -534,10 +534,15 @@ test "infer: anonymous test body typechecks" {
     );
 }
 
+// R3 (decision 8 §8, decision 15) — the second annotation was written
+// `@external(node, …)` in lower case. That form binds no host and is now a
+// located error, so the cell writes the capitalised path; what it asserts —
+// a bodyless `declare fn` carrying MORE THAN ONE external annotation
+// typechecks — is unchanged.
 test "infer: external ---- fn no body typechecks" {
     try h.assertInfersOk(std.testing.allocator,
         \\#[@External.Erlang( "string", "length"),
-        \\  @external(node, "./gleam_stdlib.mjs", "string_length")]
+        \\  @External.Node("./gleam_stdlib.mjs", "string_length")]
         \\pub declare fn str_length(s: string) -> i32;
         \\
         \\fn main() {

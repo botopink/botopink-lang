@@ -72,7 +72,6 @@ erlang   | test/loop_break_value.bp   | 02 step 5 | `ConditionLoopValueUnsupport
 *        | reject/self_without_argument.bp    | 01 step 6 | §1.2: bare `Self` inside a declaration with type parameters is accepted (exit 0)
 
 # ── §8 host externals ─────────────────────────────────────────────────────────
-*        | reject/external_lowercase_target.bp | 01 step 8 | R3, decision 15: a lower-case `#[@external(node, …)]` passes `check`, binds no host and produces no diagnostic; the located error naming the capitalised form is the annotation grammar's, which is 01's
 
 # ── trailing parameter defaults ───────────────────────────────────────────────
 commonJS | test/fn_defaults.bp        | 01 step 7 | trailing parameter defaults are never applied at a call site (`'connect' expects 3 argument(s), got 1`)
@@ -105,9 +104,7 @@ wasm     | modules/std_import         | 05 step 3 | a std `Dict` lookup through 
 # not hide an identity row — each line below names what actually fails today,
 # and the second row is where it lands once the first is fixed.
 erlang   | test/type_identity.bp::§4 two types with the same fields are different values | 13 step 15 | a record is a bare map on erlang, so `Person(name: "Ana", age: 30)` and `Vec(name: "Ana", age: 30)` are the same term and compare equal; the tag has to be in the value. Passes on commonJS, where a record is a class instance
-commonJS | test/type_identity_unknown.bp | 01 step 1, 13 step 17 | does not compile: `unknown` is not §2's type — "type mismatch: expected unknown, got Vec". The `is` assertions behind it are 13's
 erlang   | test/type_identity_unknown.bp | 01 step 1, 13 step 17 | the same — "type mismatch: expected unknown, got Vec"
-commonJS | test/type_identity_union.bp | 01 step 2, 13 step 17 | does not compile: a union annotation is not a union type yet — "type mismatch: expected |, got Person"
 erlang   | test/type_identity_union.bp | 01 step 2, 13 step 17 | the same — "type mismatch: expected |, got Person"
 commonJS | test/type_identity_case.bp | 01 step 4, 13 step 17 | does not compile: an arm body is a lambda the checker does not unwrap — "type mismatch: expected string, got void"
 erlang   | test/type_identity_case.bp | 01 step 4, 13 step 17 | the same — "type mismatch: expected string, got void"

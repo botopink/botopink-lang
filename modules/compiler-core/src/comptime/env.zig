@@ -1005,6 +1005,12 @@ pub const Env = struct {
     ) !*T.Type {
         // Generic parameters bound in the current function/type
         if (genericMap.get(name)) |ty| return ty;
+        // Decision 8 §2 — `unknown` is a type the compiler owns, not a name a
+        // module declares. It has to answer before the two-pass `pendingTypeNames`
+        // walk below, which reds a name nothing declared: an annotation the
+        // parser located (`-> unknown`, `x: unknown`) would otherwise be
+        // reported as an undeclared type.
+        if (std.mem.eql(u8, name, ast.unknown_type_name)) return self.namedType(name);
         // N28 — a section of an enum-shaped `type` is named by its path
         // (`Token.Text`, `Token.Text.Size`, decision 8 §5.3b). The section's
         // typedef is registered under the mangled `__Token__Text` form by
