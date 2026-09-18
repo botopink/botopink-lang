@@ -1037,6 +1037,25 @@ first three are now enforced by the model, not by discipline:
   parse error, and `wat_ast.Builder.param` refuses to build one.
 - **Entrypoint** (`emitEntrypointWrapper`): calls `$main` and `drop`s its
   result when `main` returns a value (`main_returns_value`).
+- **`break <value>` is the loop's value, not one element of an array**
+  (decision 8 §10, `loopIsSearch` + `search_target`). The fork is the body: a
+  `yield` anywhere means the loop **collects** and keeps the `$__yield{n}`
+  accumulator; without one, a condition or infinite `loop` used as a value is a
+  **search** — `break <v>` stores `v` in `$__found{n}` and `br $__break`s, and
+  the loop answers that local (`0` when it never broke, wasm's null carrier).
+  An **iteration** loop (`loop (xs) { x -> … }`) always collects, which is what
+  `fn find(arr: i32[]) -> i32[]` relies on. `isArrayExpr` knows the difference,
+  or a search's value printed through the array printer. Both forms used to
+  answer `[3]` / `[8]`. The commonJS twin is `LoopCtx.search`.
+- **`==` between tuples compares elements** (decision 8 §6 T6; T5 — labels take
+  no part): `tupleEqShape` + `emitTupleEq`. Both sides are pointers into the
+  bump heap, so `i32.eq` on them answered `false` for `#(1, "a") == #(1, "a")`.
+  The print shape is static (`(is)`), so the comparison is emitted element by
+  element — `i`/`b` as an `i32`, `f` as the `f32` the slot holds, `s` through
+  `$__str_eq` (the words are addresses), `(` by recursing through the pointer.
+  A shape holding an array (`[X`) is **not** compared this way and keeps the
+  pointer comparison: `[X` has no closing code and an array's length is only
+  known at run time.
 - **§7 F5 — an `f64` always carries its decimal part** (`$__print_f64_raw`):
   `@print(5.0)` writes `5.0`, `9.0` and `[115.0, 287.5, 460.0]`, where the
   printer used to drop a whole number's fraction entirely (`5`, `9`,

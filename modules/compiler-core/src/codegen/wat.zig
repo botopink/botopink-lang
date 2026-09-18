@@ -537,6 +537,12 @@ const Emitter = struct {
     module_name: []const u8 = "",
     /// The array local a comprehension's `yield`/`break <v>` appends to.
     yield_target: ?[]const u8 = null,
+    /// Decision 8 §10 — the local a **search** loop's `break <v>` writes. A
+    /// condition or infinite `loop` used as a value whose body has no `yield`
+    /// has exactly one value to give, the one its `break` carries, so there is
+    /// no accumulator: `break <v>` stores `v` here and ends the loop, and the
+    /// loop answers this local (`0` when it never broke).
+    search_target: ?[]const u8 = null,
     /// How many loops enclose the code being lowered: `break`/`continue`
     /// branch only inside one.
     loop_depth: u32 = 0,
@@ -2379,6 +2385,13 @@ const Emitter = struct {
                 },
                 .@"break" => |br| {
                     if (br.value) |v| {
+                        // §10: in a search the break's value IS the loop's.
+                        if (self.search_target) |tgt| {
+                            try self.lowerCoerced(v.*, "i32");
+                            try self.emit(.{ .local_set = tgt });
+                            try self.emit(.{ .br = break_label });
+                            return .terminated;
+                        }
                         if (self.yield_target != null) {
                             try self.emitYield(v.*);
                             if (self.cond_break_depth != null and self.cond_break_depth.? == self.loop_depth) {
@@ -6111,16 +6124,34 @@ const Emitter = struct {
         // is the loop's value. Inside an `#[@iterator]`/`#[@generator]` fn the
         // fn's own accumulator (`emitFn`) collects them instead.
         const saved_target = self.yield_target;
-        defer self.yield_target = saved_target;
+        const saved_search = self.search_target;
+        defer {
+            self.yield_target = saved_target;
+            self.search_target = saved_search;
+        }
         var result: ?[]const u8 = null;
         if (self.yield_target == null and bodyYields(lp.body)) {
-            const tgt = try std.fmt.allocPrint(self.reg_arena.allocator(), "__yield{d}", .{self.loop_seq});
-            try self.declareLocal(tgt, "i32");
-            try self.emit(zero);
-            try self.emit(self.builder().helper(.arr_new));
-            try self.emit(.{ .local_set = tgt });
-            self.yield_target = tgt;
-            result = tgt;
+            // Decision 8 §10: the fork is the body. A `yield` anywhere means
+            // the loop **collects**; without one, a condition or infinite loop
+            // used as a value is a **search** and `break <v>` IS its value, not
+            // one element of an array. An iteration loop (`loop (xs) { x -> … }`)
+            // always collects — `fn find(xs) -> i32[]` relies on it.
+            if (loopIsSearch(lp)) {
+                const tgt = try std.fmt.allocPrint(self.reg_arena.allocator(), "__found{d}", .{self.loop_seq});
+                try self.declareLocal(tgt, "i32");
+                try self.emitC(zero, "§10: a search that never breaks has no value");
+                try self.emit(.{ .local_set = tgt });
+                self.search_target = tgt;
+                result = tgt;
+            } else {
+                const tgt = try std.fmt.allocPrint(self.reg_arena.allocator(), "__yield{d}", .{self.loop_seq});
+                try self.declareLocal(tgt, "i32");
+                try self.emit(zero);
+                try self.emit(self.builder().helper(.arr_new));
+                try self.emit(.{ .local_set = tgt });
+                self.yield_target = tgt;
+                result = tgt;
+            }
         }
         if (lp.condition) return self.lowerConditionLoop(lp, result);
         switch (lp.iter.*) {
@@ -6145,6 +6176,46 @@ const Emitter = struct {
     fn bodyYields(body: []const ast.Stmt) bool {
         for (body) |st| if (exprYields(st.expr)) return true;
         return false;
+    }
+
+    /// A `yield` anywhere in the body, `if` branches and `case` arms included —
+    /// what tells a comprehension (which collects) from a search (whose value
+    /// is the one its `break` carries). A nested loop is not descended into:
+    /// its `yield`s are its own.
+    /// Decision 8 §10 — a condition or infinite `loop` used as a value whose
+    /// body holds no `yield`: its value is the one its `break` carries, not a
+    /// collection. An iteration loop always collects.
+    fn loopIsSearch(lp: anytype) bool {
+        return lp.condition and !bodyHasYield(lp.body);
+    }
+
+    fn bodyHasYield(body: []const ast.Stmt) bool {
+        for (body) |st| if (exprHasYield(st.expr)) return true;
+        return false;
+    }
+
+    fn exprHasYield(e: ast.Expr) bool {
+        return switch (e) {
+            .jump => |j| j.kind == .yield,
+            .branch => |b| switch (b.kind) {
+                .if_ => |i| bodyHasYield(i.then_) or (if (i.else_) |els| bodyHasYield(els) else false),
+                else => false,
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| exprHasYield(inner.*),
+                .case => |c| blk: {
+                    for (c.arms) |arm| if (exprHasYield(arm.body)) break :blk true;
+                    break :blk false;
+                },
+                else => false,
+            },
+            .call => |c| switch (c.kind) {
+                .call => |cc| cc.is_builtin and std.mem.eql(u8, cc.callee, "block") and
+                    cc.trailing.len > 0 and bodyHasYield(cc.trailing[0].body),
+                else => false,
+            },
+            else => false,
+        };
     }
 
     fn exprYields(e: ast.Expr) bool {
@@ -6220,7 +6291,8 @@ const Emitter = struct {
                 .arrayLit => true,
                 else => false,
             },
-            .loop => |lp| bodyYields(lp.body),
+            // a search answers the value its `break` carries, not an array
+            .loop => |lp| bodyYields(lp.body) and !loopIsSearch(lp),
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
                     if (self.primKindAt(cc, c.loc)) |k| break :blk primCallRes(k, cc) == .arr;
@@ -6549,6 +6621,78 @@ const Emitter = struct {
         try self.emitConvert(from, want);
     }
 
+    /// The print shape both sides of an `==` share when both are tuples of the
+    /// same shape — the one case this backend can compare element by element
+    /// without a run-time walk, because the shape is static (`(is)` for
+    /// `#(1, "a")`). `null` when either side has no shape, when they differ, or
+    /// when the shape holds an array (`[X` has no closing code, and an array's
+    /// length is only known at run time).
+    fn tupleEqShape(self: *Emitter, lhs: ast.Expr, rhs: ast.Expr) anyerror!?[]const u8 {
+        const ls = try self.printShapeOf(lhs) orelse return null;
+        const rs = try self.printShapeOf(rhs) orelse return null;
+        if (ls.len == 0 or ls[0] != '(') return null;
+        if (!std.mem.eql(u8, ls, rs)) return null;
+        if (std.mem.indexOfScalar(u8, ls, '[') != null) return null;
+        return ls;
+    }
+
+    /// Leave `1`/`0` for "the tuples at `a` and `b` are equal", by the shape
+    /// starting at `shape[start]` (a `(`). Answers the index past its `)`.
+    /// Each element is compared by its own code: `i`/`b` as an `i32`, `f` as
+    /// the `f32` the 4-byte slot holds, `s` through `$__str_eq` — a string
+    /// element is a pointer, so comparing the words would compare addresses —
+    /// and `(` by recursing through the pointer the slot holds.
+    fn emitTupleEq(self: *Emitter, a: []const u8, b: []const u8, shape: []const u8, start: usize) anyerror!usize {
+        var i = start + 1;
+        var slot: u32 = 0;
+        var first = true;
+        while (i < shape.len and shape[i] != ')') {
+            const off: u32 = slot * 4;
+            switch (shape[i]) {
+                '(' => {
+                    const na = try self.declRes();
+                    const nb = try self.declRes();
+                    try self.emit(.{ .local_get = a });
+                    try self.emit(.{ .load = .{ .offset = @intCast(off) } });
+                    try self.emit(.{ .local_set = na });
+                    try self.emit(.{ .local_get = b });
+                    try self.emit(.{ .load = .{ .offset = @intCast(off) } });
+                    try self.emit(.{ .local_set = nb });
+                    i = try self.emitTupleEq(na, nb, shape, i);
+                },
+                'f' => {
+                    try self.emit(.{ .local_get = a });
+                    try self.emit(.{ .load = .{ .ty = .f32, .offset = @intCast(off) } });
+                    try self.emit(.{ .local_get = b });
+                    try self.emit(.{ .load = .{ .ty = .f32, .offset = @intCast(off) } });
+                    try self.emit(opOf("f32", "eq"));
+                    i += 1;
+                },
+                's' => {
+                    try self.emit(.{ .local_get = a });
+                    try self.emit(.{ .load = .{ .offset = @intCast(off) } });
+                    try self.emit(.{ .local_get = b });
+                    try self.emit(.{ .load = .{ .offset = @intCast(off) } });
+                    try self.emit(self.builder().helper(.str_eq));
+                    i += 1;
+                },
+                else => {
+                    try self.emit(.{ .local_get = a });
+                    try self.emit(.{ .load = .{ .offset = @intCast(off) } });
+                    try self.emit(.{ .local_get = b });
+                    try self.emit(.{ .load = .{ .offset = @intCast(off) } });
+                    try self.emit(opOf("i32", "eq"));
+                    i += 1;
+                },
+            }
+            if (!first) try self.emit(opOf("i32", "and"));
+            first = false;
+            slot += 1;
+        }
+        if (first) try self.emitC(one, "an empty tuple equals an empty tuple");
+        return if (i < shape.len) i + 1 else i;
+    }
+
     fn lowerBinOp(self: *Emitter, op: anytype, lhs: ast.Expr, rhs: ast.Expr) anyerror!void {
         const Op = @TypeOf(op);
         // `x == null` compares the carrier with 0, whatever `x` holds — a
@@ -6596,6 +6740,23 @@ const Emitter = struct {
             Op.ne => return self.lowerStrEq(lhs, rhs, true),
             else => {},
         };
+        // Decision 8 §6 T6 — a tuple is positional at run time and `==`
+        // compares its **elements**; T5 — labels take no part. Both sides are
+        // pointers into the bump heap, so `i32.eq` on them answered `false` for
+        // `#(1, "a") == #(1, "a")`.
+        if (op == Op.eq or op == Op.ne) {
+            if (try self.tupleEqShape(lhs, rhs)) |shape| {
+                const a = try self.declRes();
+                const b = try self.declRes();
+                try self.lowerCoerced(lhs, "i32");
+                try self.emit(.{ .local_set = a });
+                try self.lowerCoerced(rhs, "i32");
+                try self.emit(.{ .local_set = b });
+                _ = try self.emitTupleEq(a, b, shape, 0);
+                if (op == Op.ne) try self.emit(opOf("i32", "eqz"));
+                return;
+            }
+        }
         const t = self.unifyNum(self.wasmTypeOf(lhs), self.wasmTypeOf(rhs));
         try self.lowerCoerced(lhs, t);
         try self.lowerCoerced(rhs, t);

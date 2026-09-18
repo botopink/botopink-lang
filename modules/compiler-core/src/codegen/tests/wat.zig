@@ -649,3 +649,84 @@ test "wat: index ---- a float array element is reinterpreted, not read as bits" 
         \\}
     );
 }
+
+// ── decision 8 §10 and §6 T6, the two twins of `04-js` steps 3 and 4 ─────────
+
+// §10 — `break <value>` makes the loop an expression. Both forms answered a
+// one-element array on wasm (`[3]`, `[8]`), because every value-carrying loop
+// was lowered as a comprehension. The fork is the body: a `yield` anywhere
+// means the loop collects; without one a condition or infinite loop is a
+// search, and the break's value IS the loop's. The last two prints hold the
+// other side — a loop with a `yield`, and an iteration loop, both of which
+// still collect.
+//
+// A RUN LOG and not a snapshot, the shape `04-js` used for the same programs:
+// erlang refuses a condition loop used as a value
+// (`ConditionLoopValueUnsupported`), so an all-backend fixture aborts before it
+// can record wasm's answer.
+test "wat: loop ---- break with a value is the loop's value, not a one-element array" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn find(arr: i32[]) -> i32[] {
+        \\    return loop (arr) { x -> if (x > 10) { break x; }; };
+        \\}
+        \\fn main() {
+        \\    var k = 0;
+        \\    val r = loop { k = k + 1; if (k > 2) { break k; }; };
+        \\    @print(r);
+        \\    var i = 0;
+        \\    val found = loop (i < 10) { if (i == 4) { break i * 2; }; i = i + 1; };
+        \\    @print(found);
+        \\    var j = 0;
+        \\    val collected = loop (j < 5) { j = j + 1; yield j; };
+        \\    @print(collected);
+        \\    @print(find([5, 15, 20]));
+        \\}
+    , "3\n8\n[1,2,3,4,5]\n[15,20]\n");
+}
+
+// §10 — a search that never breaks has no value to give: `0`, wasm's null
+// carrier (commonJS answers `null`).
+test "wat: loop ---- a search that never breaks answers no value" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    var m = 0;
+        \\    val none = loop (m < 3) { m = m + 1; if (m > 99) { break m; }; };
+        \\    @print(none);
+        \\}
+    , "0\n");
+}
+
+// §6 T6 — a tuple is positional at run time and `==` compares its elements;
+// T5 — labels take no part. Both sides are pointers into the bump heap, so the
+// `i32.eq` this backend emitted answered `false` for two equal tuples. The
+// shape is static (`(is)`), so the comparison is emitted element by element:
+// a string element through `$__str_eq` (comparing the words would compare
+// addresses), a float as the `f32` its slot holds, a nested tuple by recursing
+// through the pointer.
+test "wat: tuple ---- equality compares elements, and labels take no part" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    val a = #(1, "a");
+        \\    val b = #(1, "a");
+        \\    @print(a == b);
+        \\    @print(a != b);
+        \\    val c = #(1, "b");
+        \\    @print(a == c);
+        \\    val name = "SP";
+        \\    val pop = 12;
+        \\    val labeled = #(name, pop);
+        \\    val plain = #("SP", 12);
+        \\    @print(labeled == plain);
+        \\    val n1 = #(#(1, 2), "x");
+        \\    val n2 = #(#(1, 2), "x");
+        \\    val n3 = #(#(1, 3), "x");
+        \\    @print(n1 == n2);
+        \\    @print(n1 == n3);
+        \\    val f1 = #(1.5, true);
+        \\    val f2 = #(1.5, true);
+        \\    val f3 = #(1.5, false);
+        \\    @print(f1 == f2);
+        \\    @print(f1 == f3);
+        \\}
+    );
+}
