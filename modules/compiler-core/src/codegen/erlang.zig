@@ -4816,6 +4816,20 @@ const Emitter = struct {
             return b.call(cc.callee, try this.callArgs(b, null, cc));
         };
 
+        // 06 N24 — a tuple element of function type applied by its position
+        // (`c._1(9)`, what a labelled `c.set(9)` becomes): a tuple is an erlang
+        // tuple, so the fun is `element(N+1, C)` applied to the arguments —
+        // never a module function named `'_1'`.
+        if (tupleIndexMember(cc.callee)) |digits| {
+            const idx = std.fmt.parseInt(usize, digits, 10) catch 0;
+            const position = Ast.Expr.t(Term.int(@intCast(idx + 1)));
+            const elem = try b.call("element", &.{ position, try this.exprNode(b, recv.*) });
+            return .{ .apply = .{
+                .fun = try b.ptr(elem),
+                .args = try this.callArgs(b, null, cc),
+            } };
+        }
+
         const mod_name: ?[]const u8 = if (recv.* == .identifier and recv.identifier.kind == .ident and isModuleRef(recv.identifier.kind.ident))
             recv.identifier.kind.ident
         else

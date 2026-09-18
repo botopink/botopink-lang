@@ -156,6 +156,11 @@ codegen/
   tests an `Ok`/`Err`/`Error` that no module declares with `"ok" in _match`, the
   same key test the `case` arms use — `_match instanceof Ok` named a class no
   module ever emits, so every `val assert Ok(…)` took its handler.
+- **A tuple element called by position** (`c._1(9)`, what 06 N24's labelled
+  `c.set(9)` becomes) is an INDEX, never a property: `c[1](9)`. erlang applies
+  `element(2, C)`, beam takes the same route as a record field holding a fun
+  (read, then `call_fun`), and wasm cannot apply it at all — it has no function
+  values, so the module traps.
 - **Prelude helpers** (`js/js_prelude.zig`): a call `recv.m(args)` whose
   receiver inference recorded as a primitive (`instance_lowerings` `.prim`)
   and whose native JS method disagrees with the declaration calls a helper

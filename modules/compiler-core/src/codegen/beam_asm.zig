@@ -3380,7 +3380,11 @@ const Emitter = struct {
             const labels = self.fnLabelsFor(cc.callee, total_arity) catch {
                 // A record field holding a fun (`s.set(v)` on
                 // `record State { set: fn(next: T) }`): read it, apply it.
-                const fun_field = if (self.instanceLowering(loc, recv_expr.*)) |il| il == .type_ else self.someRecordHasField(cc.callee);
+                // 06 N24 — `c._1(9)` (what a labelled `c.set(9)` becomes)
+                // takes the same route: read the element, apply it. The
+                // `identAccess` below lowers `._N` through the tuple path.
+                const fun_field = tupleIndexMember(cc.callee) != null or
+                    if (self.instanceLowering(loc, recv_expr.*)) |il| il == .type_ else self.someRecordHasField(cc.callee);
                 {
                     if (fun_field) {
                         var read: ast.Expr = .{ .identifier = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .identAccess = .{ .receiver = @constCast(recv_expr), .member = cc.callee } } } };

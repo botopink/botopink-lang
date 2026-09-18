@@ -3539,6 +3539,15 @@ const Emitter = struct {
                 // calls inference doesn't visit — interface default-fn bodies
                 // materialised as prototype patches (`out.append(inner)`
                 // inside `flatten`).
+                // 06 N24 — a tuple element called by position (`c._1(9)`,
+                // what a labelled `c.set(9)` becomes): a tuple is a JS array,
+                // so the callee is an INDEX, never a property name.
+                if (tupleIndexMember(cc.callee)) |idx| {
+                    const elem = try self.b.index(recv_node, .{ .number = idx }, cc.optional);
+                    for (cc.args) |arg| try args.append(self.arena(), try self.buildExpr(arg.value.*));
+                    for (cc.trailing) |tl| try args.append(self.arena(), try self.buildArrow(tl.params, tl.body));
+                    return self.b.call(elem, try args.toOwnedSlice(self.arena()));
+                }
                 const loc_rename: ?[]const u8 = if (self.renames) |r| r.get(loc) else null;
                 const method = loc_rename orelse self.prim_node_renames.get(cc.callee) orelse cc.callee;
                 // `arr.len()`/`.size()`/`.length()` & `str.length()`: inference

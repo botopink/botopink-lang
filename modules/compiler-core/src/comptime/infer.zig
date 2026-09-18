@@ -2622,7 +2622,11 @@ fn instantiateType(env: *Env, ty: *T.Type, seen: *std.AutoHashMap(*T.TypeCell, *
             const args = try env.arena.alloc(*T.Type, n.args.len);
             for (n.args, 0..) |a, i| args[i] = try instantiateType(env, a, seen, mode);
             const node = try env.arena.create(T.Type);
-            node.* = .{ .named = .{ .name = n.name, .args = args } };
+            // 06 N24 — a tuple's element labels (decision 8 §6) live on the
+            // `named` node, so instantiating a generic signature has to carry
+            // them: `fn ref<T>() -> #(current: T)` lost them here and
+            // `r.current` reds "this tuple has no element labeled".
+            node.* = .{ .named = .{ .name = n.name, .args = args, .labels = n.labels } };
             return node;
         },
         .func => |f| {
@@ -5386,6 +5390,65 @@ fn stmtsYieldValue(stmts: []const ast.StmtOf(.typed)) bool {
     };
 }
 
+/// 06 N24 / decision 8 §6 — `c.set(9)` where `set` is a LABEL of the tuple
+/// `c`, naming an element of function type. Types the call from that element's
+/// signature and records the positional rewrite the backends need
+/// (`c._1(9)`), the same `enumSectionRewrites` channel the member-access path
+/// uses for `row.pop` → `row._1`. Null when the receiver is not a labelled
+/// tuple, or the callee is not one of its labels — every other dispatch then
+/// runs as before.
+fn inferTupleLabelCall(
+    env: *Env,
+    recvPtr: ?*ast.TypedExpr,
+    recvExpr: ?*ast.Expr,
+    callee: []const u8,
+    typedArgs: []ast.CallArgOf(.typed),
+    typedTrailing: []ast.TrailingLambdaOf(.typed),
+    loc: ast.Loc,
+) InferError!?TypedExpr {
+    const recv = recvPtr orelse return null;
+    const written = recvExpr orelse return null;
+    const rt = recv.getType().deref();
+    if (rt.* != .named or !std.mem.eql(u8, rt.named.name, "tuple")) return null;
+    const idx = tupleLabelIndex(rt.named.labels, callee) orelse return null;
+    if (idx >= rt.named.args.len) return null;
+
+    const elem = rt.named.args[idx].deref();
+    const retType: *T.Type = switch (elem.*) {
+        .func => |f| blk: {
+            const total = typedArgs.len + typedTrailing.len;
+            if (f.params.len != total) {
+                env.lastError = TypeError.arityMismatch(callee, f.params.len, total).withLoc(loc);
+                return error.TypeError;
+            }
+            for (typedArgs, f.params[0..typedArgs.len]) |ta, p| {
+                try unifyAt(env, p, ta.value.getType(), ta.value.getLoc());
+            }
+            break :blk f.ret;
+        },
+        else => try env.freshVar(),
+    };
+
+    const positional = try std.fmt.allocPrint(env.arena, "_{d}", .{idx});
+    const rewrite = try env.arena.create(ast.Expr);
+    rewrite.* = .{ .call = .{ .loc = loc, .kind = .{ .call = .{
+        .receiver = written,
+        .callee = positional,
+        .is_builtin = false,
+        .args = &.{},
+        .trailing = &.{},
+    } } } };
+    try env.enumSectionRewrites.put(loc, rewrite);
+
+    return TypedExpr{ .call = .{ .loc = loc, .type_ = retType, .kind = .{ .call = .{
+        .receiver = recvPtr,
+        .callee = positional,
+        .is_builtin = false,
+        .args = typedArgs,
+        .trailing = typedTrailing,
+    } } } };
+}
+
 /// The named types that hold no variant at all: a variant pattern asserted
 /// against one of them can never match. Every other unregistered name stays
 /// permissive (a forward reference, or an imported type).
@@ -7723,6 +7786,16 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                             } } } };
                         }
                     }
+                }
+
+                // 06 N24 / decision 8 §6 — a tuple element of function type
+                // called like a method (`#(value: i32, set: fn(…))`, `c.set(9)`).
+                // The label→index rewrite the member-access path records
+                // (`row.pop` → `row._1`) never fired for a CALL, so every
+                // backend emitted `c.set(9)` on a value that is a tuple —
+                // `c.set is not a function` on commonJS.
+                if (try inferTupleLabelCall(env, recvPtr, call.receiver, call.callee, typedArgs, typedTrailing, loc)) |dispatched| {
+                    return dispatched;
                 }
 
                 // Builtin `@Result` / `@Option` methods — type-check and record

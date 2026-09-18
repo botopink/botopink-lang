@@ -677,6 +677,21 @@ test "infer: tuple label ---- an unknown label is an error naming the positional
     );
 }
 
+// N24 — the labels live on the `named` type node, so instantiating a generic
+// signature has to carry them. `r.current` used to red "this tuple has no
+// element labeled `current`".
+test "infer: tuple label ---- a label survives generic instantiation" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn ref<T>(v: T) -> #(current: T) {
+        \\    return #(v);
+        \\}
+        \\fn main() -> i32 {
+        \\    val r = ref(5);
+        \\    return r.current;
+        \\}
+    );
+}
+
 test "infer: tuple label ---- labels come from the written type and from construction variables" {
     try h.assertInfersOk(std.testing.allocator,
         \\fn load() -> #(name: string, pop: i32) {
