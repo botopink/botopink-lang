@@ -2032,7 +2032,12 @@ const Emitter = struct {
         // no runtime binding. One `require` per distinct source module, and a
         // name already bound in this module (a repeated import) is skipped so it
         // is never redeclared.
-        if (u.source == .module and self.cross != null) {
+        // A shorthand `import { … };` (decision 3 — the form stays, and it
+        // resolves) names no module, so it took the fallback below and emitted
+        // the literal word: `require("./module")`, a path that does not exist.
+        // It resolves the same way a `from "<pkg>"` import does — name by name
+        // through the cross-module export index — so both enter here.
+        if (self.cross != null) {
             const xm = &self.cross.?.exports;
             var seen = std.StringHashMap(void).init(self.alloc);
             defer seen.deinit();
@@ -2063,7 +2068,13 @@ const Emitter = struct {
             // object so `Lib.member(...)` resolves at runtime, parity with the
             // destructured bare form. Generic: the core names no specific lib; the
             // lib is whatever `from "<lib>"` resolved off disk.
-            const lib_name = u.source.module;
+            // A shorthand `import { … };` names no package, so there is no
+            // namespace handle to bind — only the per-name `require`s above.
+            // No import is named `""`, so the block below never fires for it.
+            const lib_name = switch (u.source) {
+                .module => |name| name,
+                .root => "",
+            };
             var names_lib = false;
             for (u.imports) |imp| {
                 if (std.mem.eql(u8, imp.name(), lib_name)) {

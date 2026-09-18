@@ -309,6 +309,46 @@ test "js: import ---- a call to an imported fn names its module" {
     });
 }
 
+test "js: import ---- the shorthand resolves a sibling inside a dependency" {
+    // 1.0.5-beta decision 3: `import { … };` names no module and used to emit
+    // the literal word — `require("./module")` at the project root and
+    // `require("../module")` one level down, neither of which exists, which is
+    // what made two of the shipped examples build and then die at run time. A
+    // module under a package prefix (`web/api`) reaches its sibling back through
+    // the output root, so the path is `../web/shapes.js`. The project-root half
+    // of the row is pinned with a RUN LOG by `import ---- a call to an imported
+    // fn names its module`, whose log was empty until this landed.
+    //
+    // Needles, not a snapshot: the consumer's own module is the only one
+    // `assertConsumerJs` reads, and a four-backend snapshot would record
+    // erlang, beam and wasm baselines this front does not own.
+    try h.assertConsumerJs(
+        std.testing.allocator,
+        &.{
+            .{
+                .path = "web/shapes",
+                .source =
+                \\pub fn mk(v: i32) -> i32 {
+                \\    return v;
+                \\}
+                ,
+            },
+            .{
+                .path = "web/api",
+                .source =
+                \\import { mk };
+                \\
+                \\pub fn serve() -> i32 {
+                \\    return mk(7);
+                \\}
+                ,
+            },
+        },
+        &.{"require(\"../web/shapes.js\")"},
+        &.{"require(\"../module\")"},
+    );
+}
+
 test "js: record ---- a field of function type is called like a method" {
     // `c.set(9)` on a record whose `set` field holds a lambda: the record emits
     // no `set/2`, so the call applies what the field holds. erlang read the map

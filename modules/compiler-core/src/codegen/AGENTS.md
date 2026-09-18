@@ -185,6 +185,14 @@ codegen/
   `exports.X` (its `.d.ts` declares it exported, and a module-object consumer
   such as `order.Order` needs it), while a `pub implement` is exported only
   when another module imports it.
+- **The `import { … };` shorthand** (1.0.5-beta decision 3) names no module, so
+  it resolves exactly the way a `from "<pkg>"` import does: name by name through
+  the cross-module export index, one `require("<prefix><owner>.js")` per owning
+  module. It used to fall through to a branch that wrote the literal word —
+  `require("./module")` at the project root, `require("../module")` under a
+  package prefix — a path nothing emits, so the program built and then died at
+  run time. The namespace-handle block below is skipped for it: the shorthand
+  names no package, so there is no handle to bind.
 - **Lib namespace object**: when an import names the lib itself
   (`import {Lib} from "Lib"`) and that name has no emitted symbol, `emitUse`
   binds the lib's module object (`buildUse`: `const Lib = require(…)`, or

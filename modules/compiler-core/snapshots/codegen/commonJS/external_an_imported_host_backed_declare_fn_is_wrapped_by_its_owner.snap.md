@@ -74,7 +74,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-const { hostKey, hostLen, nodeOnly } = require("./module");
+const { hostKey, hostLen, nodeOnly } = require("./hostlib.js");
 
 function main() {
     __bp_print(hostKey(42));
@@ -105,4 +105,6 @@ export declare function main(): void;
 
 ----- RUN LOG -----
 ```logs
+42
+2
 ```

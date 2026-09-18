@@ -57,7 +57,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-const { twice } = require("./module");
+const { twice } = require("./a.js");
 
 function quad(x) {
     return twice(twice(x));
@@ -89,4 +89,5 @@ export declare function main(): void;
 
 ----- RUN LOG -----
 ```logs
+12
 ```
