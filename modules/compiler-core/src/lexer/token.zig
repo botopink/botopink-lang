@@ -99,6 +99,9 @@ pub const TokenKind = enum {
     /// `behavior Name { … }` — `interface` was renamed in 1.0.3.
     behavior,
     type,
+    /// `unknown` — decision 8 §2's type. A keyword, not an identifier: a
+    /// first-class type no declaration may take as its name.
+    unknown,
     record,
     use,
     val,

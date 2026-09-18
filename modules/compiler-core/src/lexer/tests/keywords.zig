@@ -20,6 +20,16 @@ test "lexer: const is not a reserved keyword (use val instead)" {
     try std.testing.expectEqual(TokenKind.identifier, tokens[0].kind);
 }
 
+test "lexer: unknown is a keyword, not an identifier" {
+    var l = Lexer.init("unknown");
+    const tokens = try l.scanAll(std.testing.allocator);
+    defer l.deinit(std.testing.allocator);
+    // decision 8 §2 (06 N19): `unknown` names the type and nothing else, so it
+    // is a keyword token and `isReservedWord` refuses it as a name.
+    try std.testing.expectEqual(TokenKind.unknown, tokens[0].kind);
+    try std.testing.expect(lexerFull.isReservedWord(.unknown));
+}
+
 test "lexer: Self (uppercase) is KwSelfType" {
     var l = Lexer.init("Self");
     const tokens = try l.scanAll(std.testing.allocator);

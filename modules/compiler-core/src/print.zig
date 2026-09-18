@@ -168,6 +168,12 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "write a tuple type `#(…)`",
             .hint = "A labeled tuple type: `#(x: i32, y: i32)`.",
         },
+        .unknownTakesNoArguments => .{
+            .code = "unknown-takes-no-arguments",
+            .message = "`unknown` takes no type arguments",
+            .caretCaption = "write `unknown` alone",
+            .hint = "`unknown` is one type — anything, checked before it is used (`x is i32`). A container of it is written `unknown[]` or `Box<unknown>`.",
+        },
         .typeRecordWithVariants => .{
             .code = "type-record-with-variants",
             .message = "a `type` with a field list cannot also declare variants",

@@ -728,6 +728,8 @@ pub const Lexer = struct {
         // lex as identifiers and the parser reports them where a declaration starts.
         if (std.mem.eql(u8, text, "behavior")) return .behavior;
         if (std.mem.eql(u8, text, "type")) return .type;
+        // decision 8 §2 — `unknown` is a type, never a name.
+        if (std.mem.eql(u8, text, "unknown")) return .unknown;
         if (std.mem.eql(u8, text, "use")) return .use;
         if (std.mem.eql(u8, text, "val")) return .val;
         if (std.mem.eql(u8, text, "var")) return .@"var";
@@ -755,6 +757,8 @@ pub fn isReservedWord(kind: TokenKind) bool {
         .@"else",
         .implement,
         .@"test",
+        // decision 8 §2 — `unknown` names the type and nothing else.
+        .unknown,
         => true,
         else => false,
     };
@@ -766,6 +770,7 @@ pub fn reservedWordLexeme(kind: TokenKind) []const u8 {
         .@"else" => "else",
         .implement => "implement",
         .@"test" => "test",
+        .unknown => "unknown",
         else => "<unknown>",
     };
 }

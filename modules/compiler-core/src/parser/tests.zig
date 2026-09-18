@@ -10,4 +10,5 @@ test {
     _ = @import("tests/errors.zig");
     _ = @import("tests/effect_rejections.zig");
     _ = @import("tests/surface.zig");
+    _ = @import("tests/decision8.zig");
 }

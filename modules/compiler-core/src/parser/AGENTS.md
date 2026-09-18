@@ -60,6 +60,7 @@ parser/
     ├── destructuring.zig ← destructure/shorthand/assign
     ├── errors.zig        ← parse errors & cross-stage error-message units
     ├── surface.zig       ← the 1.0.3 surface: `type` shapes, the field list, `behavior`, separators, and old-vs-new AST equality
+    ├── decision8.zig     ← decision 8's grammar, one section per row: `unknown` (N19), union types (N20), `is` (N21), `case` arms (N22)
     └── effect_rejections.zig ← parser-level `#[@<effect>]` rejections (R1/R2/R5…)
 ```
 
@@ -99,6 +100,15 @@ is loc-keyed (e.g. `instanceLowerings` records `arr.length` → host length op b
 the access loc), so two links sharing a loc collide — `self.pairs.length` would
 emit `length(length(Self))`. `parsePostfixChain` and the identifier postfix loop
 both use `locFromToken(fieldTok)` for this reason.
+
+## `unknown` in type position (decision 8 §2, 06 N19)
+
+`unknown` arrives as its own keyword token, so `parseBaseTypeRef` handles it
+before `consumeTypeName` and no user type can shadow it. It lands as
+`TypeRef.named = ast.unknown_type_name` (`ast.zig` documents what inference owes
+it) and takes the ordinary `[]` wraps — `unknown[]`, `?unknown`, `Box<unknown>`
+all parse. `unknown<…>` / `unknown(…)` is refused at the `<` / `(` with
+`unknown-takes-no-arguments`: it is one type, not a constructor.
 
 ## Type guards (`-> x is T`)
 

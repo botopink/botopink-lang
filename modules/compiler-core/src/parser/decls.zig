@@ -53,6 +53,7 @@ fn isTypeStart(kind: TokenKind) bool {
         .@"fn",
         .selfType,
         .type,
+        .unknown,
         => true,
         else => false,
     };

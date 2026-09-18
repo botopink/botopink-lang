@@ -1539,6 +1539,20 @@ pub const EnumSection = struct {
 
 /// One field of an anonymous record TYPE: `name: Type` in `{ value: T, set: fn(T) }`.
 /// A type annotation expression, e.g. `Int`, `string[]`, `#(Int, string)`, `?T`.
+/// The reserved `TypeRef.named` spelling of decision 8 §2's `unknown` (06 N19).
+///
+/// `unknown` lexes as a keyword (`TokenKind.unknown`), so no declaration can be
+/// named `unknown` and this spelling can only come from the `unknown` written
+/// in a type position — never from a user type of that name.
+///
+/// **What inference has to do with it** (the checker half of N19): resolve a
+/// `TypeRef.named` equal to this to the `unknown` type instead of looking the
+/// name up, and give that type §2's rules — every value assignable *into* it,
+/// nothing out of it without an `is` check, `@print`/`==`/`!=` and a generic
+/// argument allowed, arithmetic / field access / indexing / method calls
+/// refused, and a `pub` declaration whose *inferred* type contains it an error.
+pub const unknown_type_name = "unknown";
+
 pub const TypeRef = union(enum) {
     /// Plain named type: `Int`, `string`, `Self`. Slice into source — not heap-owned.
     named: []const u8,

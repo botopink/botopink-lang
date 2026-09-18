@@ -76,8 +76,10 @@ in `engine.zig`, add a test in [`tests/`](tests/AGENTS.md) (register it in
   here or a legal rename is refused. `isPrimitiveType` is
   `Env.registerBuiltins` in `comptime/env.zig` minus `Self` — it decides what
   semantic tokens paint `type [defaultLibrary]`, so a name that is registered
-  nowhere must not be in it. `unknown` (decision 8 §2) is painted ahead of front
-  06 registering it; `any` stays while the checker still registers it.
+  nowhere must not be in it. `unknown` (decision 8 §2) became a keyword token with
+  06 N19 — it is in `isKeyword` now, and the keyword branch of the semantic-token
+  walk paints it `type [defaultLibrary]` like `Self`, so `isPrimitiveType` never
+  sees it; `any` stays while the checker still registers it.
 - **Completion hides what the cursor cannot see** (`cursorScope`): the binding
   whose own initialiser the cursor sits in (`val x = ▮` never offers `x`) and
   every `val`/`var` declared below it. A `fn` is not hidden — it may be called

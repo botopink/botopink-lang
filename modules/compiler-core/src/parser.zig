@@ -137,6 +137,9 @@ pub const ParseErrorType = enum {
     removedKeywordNew,
     /// `{ x: i32 }` in type position — anonymous record types are tuples in 1.0.3.
     removedRecordType,
+    /// `unknown<i32>` / `unknown(…)` — decision 8 §2's `unknown` is one type,
+    /// not a constructor: it takes no type arguments (06 N19).
+    unknownTakesNoArguments,
     /// `type P()` — an empty field list; a record with no fields omits `()`.
     typeEmptyFieldList,
     /// `type S { fn f(self: Self) {} A }` — variants come before methods.
