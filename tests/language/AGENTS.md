@@ -28,8 +28,10 @@ start with the decision-8 section they pin (`test "§5.4 …"`) when there is on
 the rule; a capability decision 8 does not legislate gets a plain sentence.
 
 Areas, by filename prefix: `case_*`, `tuple_*`, `loop_*` (decision 8 §5, §6, §10), `effect_*`,
-`comptime_*` / `decorator_*`, `external_*`, `generic_*`, `string_*` / `array_*`, and the singletons
-(`closure_capture`, `recursion`, `optional`, `expr_sugar`, `fn_defaults`). One scenario group per
+`comptime_*` / `decorator_*`, `external_*`, `generic_*`, `string_*` / `array_*`, `type_identity_*`,
+and the singletons (`closure_capture`, `recursion`, `optional`, `expr_sugar`, `fn_defaults`, and the
+decision-28/30/33 cells `nullish_default`, `paren_receiver`, `type_suffix`, `bodyless_fn`,
+`curried_call`, `index_expression`). One scenario group per
 file: a parse error is the blast radius, so nine `#[@External]` declarations in one file mean one
 unparseable annotation hides the other eight.
 
@@ -125,17 +127,17 @@ rows sit in the file while beam stays out of `--target all`.
 
 ## Status and the gate
 
-Counted on disk at `fcc4b5b` + front 12 step 4.1:
+Counted on disk at `7bfecf7` + the decision-28/30/33 cells:
 
 ```bash
-ls test/*.bp    | wc -l   # 44
-ls run/*.bp     | wc -l   #  7   (each with its .out)
-ls reject/*.bp  | wc -l   # 22   (each with its .expect)
+ls test/*.bp    | wc -l   # 49
+ls run/*.bp     | wc -l   #  8   (each with its .out)
+ls reject/*.bp  | wc -l   # 23   (each with its .expect)
 ls -d modules/*/| wc -l   #  3
-find . -name '*.bp' | wc -l   # 80 — 76 cells, plus the 4 extra .bp of the modules/ projects
+find . -name '*.bp' | wc -l   # 87 — 83 cells, plus the 4 extra .bp of the modules/ projects
 ```
 
-**76 cells**, of which three are the `smoke` files (one per single-file kind) — so **73** besides
+**83 cells**, of which three are the `smoke` files (one per single-file kind) — so **80** besides
 them, by area:
 
 | Area | Cells | Total |
@@ -150,22 +152,32 @@ them, by area:
 | printing (§7) | 3 run | 3 |
 | core: closures, recursion, primitives, optionals, sugar, defaults | 8 test | 8 |
 | run-time type identity (§4, §7 — `13-module-identity`) | 4 test + 1 run | 5 |
+| the forms `109f6c9` landed (decisions 28, 30, 33; 15's R1–R3, R5, R8) | 5 test + 1 run + 1 reject | 7 |
 | modules | 3 `modules/` cells | 3 |
 
-Classification at botopink-lang `fcc4b5b` + step 4.1 (node v25.8.0, OTP 29),
+Classification at botopink-lang `7bfecf7` + these cells (node v25.8.0, OTP 29),
 `zig build test-language`, every target of `--target all` together:
 
 ```
-language tests: 206 passed, 64 expected failures, 0 failed
+language tests: 250 passed, 61 expected failures, 0 failed
 ```
 
-All 64 owner cells name a 1.0.5-beta front. By the row that comes first on the line —
-**01-checker 37 · 02-erlang 10 · 04-js 8 · 05-wasm 5 · 13-module-identity 4** — and **15** of them
-name `13-module-identity` as a further row that has to land before the line goes (the §7 formatter's
-record and variant halves, and the identity cells behind a checker row).
-`tests/language/run.sh --target beam` adds 10 results of its own — 2 passing, 8 listed (7 against
+`expected-failures.txt` holds **70** lines: these 61 plus 9 that only `--target beam` exercises (the
+11 `*` reject lines are counted by both runs). Every owner cell names a 1.0.5-beta section, re-checked
+against `specs/1.0.5-beta/` on 2026-09-18. By the row that comes first on the line —
+**01-checker 37 · 02-erlang 12 · 03-beam 8 · 05-wasm 6 · 13-module-identity 4 · 04-js 3**. **19**
+lines name a second row that has to land before the line goes (the §7 formatter's record and variant
+halves, and the identity cells behind a checker row).
+`tests/language/run.sh --target beam` adds 11 results of its own — 2 passing, 9 listed (8 against
 `03-beam`, 1 against `01-checker`, 3 of them naming `13 step 18` too); those lines are skipped by
 `--target all`. See § the targets.
+
+**Where an owner cell is not `<front> step <n>`.** Two of this milestone's rows are *handover
+sections* of a front's README — "Handed over by `15-language-surface`", prose with a heading and no
+step number. The cells that name them read `<front> handover 15`. One row has neither a step nor a
+handover section and the owner cell says so (`04 (no step; reported 2026-09-18)`): front 04 owns
+`commonJS.zig`, so the *front* is certain even though no step names the defect. Both shapes are
+reported to the maintainer rather than papered over with an invented step number.
 
 `zig build test-language` is a stage of `scripts/gate.sh` (after `test-libs`) and a step of the CI
 `test` job (ubuntu + macos). When a front makes a listed test pass, the gate fails with "now passes:
@@ -173,32 +185,69 @@ delete its line" — the landing commit of that front deletes the line.
 
 ## Notes for whoever writes the next cell
 
-Shapes that do not parse, found while writing these cells and **re-measured at `eeff1e1`** with
-`botopink check`. None is a bug filed against a front; each is a form the cells route around.
-Decision 14 of `specs/1.0.5-beta/decisions-taken.md` settled which of them the language wants.
+Shapes that do not parse — **re-measured at `aab5489`** with `botopink check`, after front 15
+(`specs/1.0.5-beta/15-language-surface/README.md`) landed (`109f6c9`). Five of the seven rows this
+table carried are gone: they parse. What is left is two rows and one correction.
 
-| Shape | At `eeff1e1` | Decision |
+| Shape | At `aab5489` | Decision |
 |---|---|---|
-| `adder(3)(4)` — calling the result of a call | `error: There must be a 'val' or 'var' to bind a variable to a value` | **make it parse** (14) — `01-checker`'s grammar tail |
-| `#(a: i32)[]` — an array of labeled tuples | `error: Unexpected token` at the `[` | **make it parse** (14) |
-| `??` | `error: Unexpected token` at the `??` | **deliberately absent** (14) — it duplicates `catch` and `?.`; read an optional with `if (x) { n -> … }`, `?.` and `== null` |
-| a module-level `var` | `error: Unexpected token` at the `var` | **deliberately absent** (14) — a module has no mutable state |
-| `(a == b).toString()` inside an argument | `error: Unexpected token` at the `.` | open — bind the comparison to a `val` first |
-| `(sql """ab""").length` — a method on a template call | needs a dependency to measure; a `val` intermediate works | open |
-| a bare `if` (no `else`) inside a decorator body | must be the **last** statement of the block | open |
+| a module-level `var` | `error: this token cannot appear here` at `1:1`, `var` and `pub var` alike | **still absent.** decision 28 of `specs/1.0.5-beta/decisions-taken.md` lists it as landed at `109f6c9`; it did not — front 15's own closeout says "module-level `var` — measured only", and `fronts.md`'s front-15 row repeats that. It needs a `.@"var"` arm in `parser.zig:441` **and** a `mutable` field on `ast.ValDecl`. A module-level `val` does parse |
+| a block-shaped statement not last in its block | `error: this token cannot appear here` at the statement **after** it — in any block, not only a decorator body: `if (1 > 0) { … }` then `@print("b");` reds at the `@print`. With a `;` after the `}` it checks | **decision 29** — the `;` goes. Front 15 wrote the 76-line parser half and deliberately did not commit it: rejecting the trailing `;` rejects `libs/std`'s embedded prelude, so no single front can land it green. 44 sites in this suite, counted by front 15 |
 
-**Struck, because they now parse:** the §5.1 `Pattern { body }` form
-(`case n { 1 { "one" } _ { "other" } }` → `Checked`) and §5.3b section arms — `test/case_sections.bp`
-parses and fails in inference like every other `case` cell (`expected string, got void`), not at the
-`{`. Both were listed as `06 N22`.
+**Struck, because they now parse.** Each was measured at `aab5489`:
 
-The range pattern in a `case` arm: **decision 20** settled the spelling — `..` is the only range, in
-patterns and in iteration alike, and `...` leaves the grammar. The compiler has not caught up:
-`1..9` in an arm still reds `error[pattern-range-exclusive]: \`..\` is iteration, not a pattern's
-range`, which is the diagnostic that inverts (`01 step 4`; `test/case_arms.bp` is listed against it
-and is right as written). The cells still do **not** assert the endpoint: decision 20 removes the
-second spelling but does not say in so many words whether `..` in a pattern excludes its end the way
-`loop (0..4)` does. One sentence would let a cell assert it.
+| Shape | Was listed as | Now |
+|---|---|---|
+| §5.1 `Pattern { body }` arms, and §5.3b section arms | `06 N22` | parse; `test/case_sections.bp` fails in inference like every other `case` cell (`expected string, got void`), not at the `{` |
+| `adder(3)(4)` — calling the result of a call | "make it parse" (14) | **parses** (15's R2). It does not *check*: `error: unbound variable ''` at the second `(` — the call carries its callee in `calleeExpr` and inference never types it. `test/curried_call.bp` asserts it and carries the two lines |
+| `#(a: i32, b: string)[]` — an array of labeled tuples | "make it parse" (14) | **parses, checks and runs on all four targets** (15's R1), with `@Result<i32, string>[]` and `(i32 \| string)[]`. `test/type_suffix.bp` |
+| `??` | "deliberately absent (14) — it duplicates `catch` and `?.`" | **parses and runs on all four targets** (15's R8, decision 28). The premise was false as well as the verdict: `catch` is `@Result`-only — `val b = a catch 0;` on an `a: ?i32` reds with `` `try` requires a @Result<D, E> value, found 'optional' `` — so nothing else gives an optional a default. `test/nullish_default.bp` |
+| `xs[0]`, `xs[0..2]`, `d["k"]` — an index expression | "there is no index expression in the grammar" | **parses and checks** (15's R5, decision 30). **No backend lowers it**: the form reaches the unrecognised-builtin path, so `run/index_expression.bp` is listed against all four — and beam is the one that fails *silently*, exit 0 with the index dropped |
+| a bodyless `fn` with `-> void` | "a bodyless top-level fn with no return type" — a form nobody wrote a rule for | **parses and runs** (15's R7, decision 33), and the missing return type is now its own named error, `bodyless-fn-needs-return-type`. `test/bodyless_fn.bp` and `reject/bodyless_fn_no_return_type.bp` |
+| `(a == b).toString()`, and `(sql """ab""").length` — a method on a parenthesised expression | open / "needs a dependency to measure" | **one production, and it parses** (15's R3). `(1 == 2).toString()` prints `false` and `("ab").length` prints `2` on commonJS, erlang and wasm; no dependency is needed to measure it. `test/paren_receiver.bp` |
+
+**Two commonJS defects these cells turned up that no step of `04-js`
+(`specs/1.0.5-beta/04-js/README.md`) names.** Both are reported to the maintainer; front 04 owns
+`commonJS.zig`, so the front is certain and only the row is missing.
+
+1. **`42.toString()` — a method on a number literal** (15's R3) checks, and prints `42` on erlang and
+   wasm, but the emitter writes `__bp_print(42.toString())` and node refuses it with
+   `SyntaxError: Invalid or unexpected token`, because `42.` reads as a float. `(42).toString()` is
+   the emitted form that would work. No cell asserts it — `test/paren_receiver.bp` records it in a
+   comment instead, because a listed line needs a row.
+2. **The optional-binding `if` tests `!== null`, and `?.` answers `undefined`.** `if (x) { n -> … }`
+   emits `(() => { const n = …; if (n !== null) { … } })()`, so an absent value arriving from a `?.`
+   chain takes the present branch and binds `undefined`. `o.inner?.v ?? 9` answers `undefined` on
+   commonJS and `9` on erlang and wasm. `test/optional.bp` does not see it because its optionals are
+   explicit `null`s. This one **is** asserted — `test/nullish_default.bp::?? chains after ?.` — with
+   an owner cell that says outright that it has no step.
+
+**A third, with owners.** A tuple label does not survive a generic array method: `rs.at(0).b` on an
+`rs: #(a: i32, b: string)[]` answers `undefined` on commonJS, raises `bad map: {1,<<"x">>}` in
+`map_get/2` on erlang, and answers `0` on wasm. That is §6 T4 and the rows exist — `04 step 2`,
+`02 step 4` — so `test/tuple_labels.bp` asserts it and carries the two lines.
+
+**The range pattern in a `case` arm — both halves are decided and neither has landed, so no cell
+asserts an endpoint.** Decision 20 settled the spelling (`..` is the only range, in patterns and in
+iteration alike; `...` leaves the grammar) and decision 36 settled the meaning (`..` excludes its end
+in a pattern exactly as in a loop). Measured at `aab5489`:
+
+- `1..9` in an arm still reds `error[pattern-range-exclusive]: \`..\` is iteration, not a pattern's
+  range`, recommending `...` — the diagnostic that inverts. `test/case_arms.bp` is listed against
+  `01 step 4` and is right as written.
+- `1...9`, the spelling that diagnostic recommends, parses and checks — and **works on no backend**.
+  Re-measured here, three backends give three different wrong answers to the same program:
+  `val r = case 9 { 1...9 { 1 } _ { 0 } }; @print(r);` prints `undefined` on commonJS, `0` on erlang
+  and `256` — a heap address — on wasm. Front 15 measured the first two; the third is this front's.
+  Write the same `case` where its type is known (`fn f(n: i32) -> i32 { return case n { 1...9 … } }`)
+  and it does not compile at all: `type mismatch: expected i32, got void` at the `case`. A brace-arm
+  of `case` is neither typed nor lowered — the defect already filed with `01-checker`.
+
+So an endpoint cell written today would assert nothing on either spelling. Decision 36's sentence is
+**not yet in decision 8 §5** and its ~10-line parser edit (`parser/patterns.zig`'s
+`finishRangePattern` `:269-274`, plus dropping `dotDotDot` from the lexer) is `01-checker`'s step-4
+grammar, deliberately left by front 15 because it re-records that front's `case` snapshots. The cell
+is owed once 01 step 4 lands, not before.
 
 **Structural equality of two values of the same type is not legislated, so no cell asserts it.**
 `Person(name: "Ana", age: 30) == Person(name: "Ana", age: 30)` answers `false` on commonJS (reference
