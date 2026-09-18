@@ -380,6 +380,15 @@ const Builder = struct {
 
     /// The effect wrappers erase or map onto a host type.
     fn genericTypeRef(self: *Builder, g: anytype) Error!js.TsType {
+        // Decision 8 §3's union `A | B` rides on `TypeRef.generic` under the
+        // reserved name `ast.union_type_name` (`"|"`), which no source can
+        // write. TypeScript spells it the same way botopink does, so it is the
+        // model's own `union_` — not `|<A, B>`, which is not TypeScript.
+        if (std.mem.eql(u8, g.name, ast.union_type_name)) {
+            const members = try self.b.arena.alloc(js.TsType, g.args.len);
+            for (g.args, 0..) |a, i| members[i] = try self.typeRef(a);
+            return .{ .union_ = members };
+        }
         // `@Context<B, R>` is a phantom capability — at the value level a
         // context function yields its Return type `R`. Erase the wrapper.
         if (std.mem.eql(u8, g.name, "Context") and g.args.len == 2) {

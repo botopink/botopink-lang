@@ -125,13 +125,11 @@ wasm     | modules/std_import         | 05 step 3 | a std `Dict` lookup through 
 # over by `15-language-surface`" — not a numbered step, which is what
 # `<front> handover 15` means below. That those sections carry no step number is
 # reported to the maintainer, not papered over with an invented one.
-commonJS | run/index_expression.bp    | 04 handover 15 | decision 30: the index reaches the unrecognised-builtin path, so the emitted JS reads `__bp_print(@[](xs, 0))` and node refuses it with `SyntaxError: Invalid or unexpected token`
 erlang   | run/index_expression.bp    | 02 handover 15 | decision 30: the same node emits a call to `'[]'/2`, which is never defined — `out/main.erl:45:19: function '[]'/2 undefined`
 wasm     | run/index_expression.bp    | 05 handover 15 | decision 30: the same node emits nothing and the module will not validate — `type mismatch: expected i32 but nothing on stack` at `wasm[0]::function[1]::main`
 beam     | run/index_expression.bp    | 03 handover 15 | decision 30: the only target that fails **silently** — exit 0, and the index is dropped rather than emitted: `xs[0]` prints the whole array (`[10,20,30]`), `xs[0..2].length` and `rows[1][0]` print `ok`
 commonJS | test/curried_call.bp       | 01 handover 15 | 15's R2 made `adder(3)(4)` parse; inference does not type it. The call carries its callee in `calleeExpr`, not `callee`, and nothing reads that: the whole cell reds with `unbound variable ''` at the second `(`
 erlang   | test/curried_call.bp       | 01 handover 15 | the same — the cell does not compile, so the failure is the file's, not a test's
-commonJS | test/nullish_default.bp::?? chains after ?. | 04 (no step; reported 2026-09-18) | `a ?? b` desugars into the optional-binding `if`, which commonJS emits as `if (n !== null)`; `?.` on commonJS answers `undefined`, not `null`, so `o.inner?.v ?? 9` answers `undefined` here and `9` on erlang and wasm. `test/optional.bp` does not see it because its optionals are explicit `null`s. Front 04 owns `commonJS.zig`; no step of `04-js` names this row
 
 # ── run-time type identity (front 12 step 4.1) ────────────────────────────────
 # The botopink-level statement of `13-module-identity`: a value knows its own
