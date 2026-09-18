@@ -1105,7 +1105,12 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
 
     if (this.check(.numberLiteral)) {
         const tok = this.advance();
-        return Expr{ .literal = .{ .loc = locFromToken(tok), .kind = .{ .numberLit = tok.lexeme } } };
+        const lit = Expr{ .literal = .{ .loc = locFromToken(tok), .kind = .{ .numberLit = tok.lexeme } } };
+        // A number is a receiver like any other literal — `libs/std` declares
+        // `Integer.toString` and `"ab".toUpperCase()` already chains. The
+        // range `0..4` is unaffected: `..` lexes as `dotDot`, which is not a
+        // chain link.
+        return parsePostfixChain(this, alloc, lit);
     }
 
     if (this.check(.selfType)) {

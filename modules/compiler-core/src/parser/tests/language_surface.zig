@@ -102,3 +102,34 @@ test "surface R2: the receivers that already chained still do" {
         \\}
     );
 }
+
+// ── R3 — a number is a receiver ──────────────────────────────────────────────
+//
+// `lexer.zig`'s number scanner ate the `.` of `42.toString()`, and the number
+// arm of `parsePrimary` did not chain. Both halves are needed: the lexer makes
+// the tokens, the parser makes the link.
+
+test "surface R3: a method on a number literal" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn f() -> i32 {
+        \\    val a = 42.toString().length;
+        \\    val b = 3.0.toString().length;
+        \\    return a + b;
+        \\}
+    );
+}
+
+test "surface R3: the range and the float forms are unchanged" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn f() -> f64 {
+        \\    var s = 0;
+        \\    loop (0..4) { i -> s = s + i; };
+        \\    val a = 1.5;
+        \\    val b = 1_000;
+        \\    val c = 1e10;
+        \\    val d = 0xFF;
+        \\    val e = 1_000.5;
+        \\    return a;
+        \\}
+    );
+}
