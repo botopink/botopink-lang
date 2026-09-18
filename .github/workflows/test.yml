@@ -5,7 +5,8 @@
 #         `scripts/beam_export_audit.sh` (ubuntu + macos), then `zig build
 #         test-cli` (the CLI command contract, test tooling, mutual recursion and
 #         backend execution parity scripts), then `zig build test-language`
-#         (tests/language, ubuntu + macos). ubuntu + macos hard, windows
+#         (tests/language, ubuntu + macos) and `zig build test-docs` (every
+#         `botopink` fence of the user docs). ubuntu + macos hard, windows
 #         allow-fail.
 #   libs  every sibling library checked out next to botopink-lang
 #         (emilia, erika, jhonstart, onze, rakun at `feat`) plus libs/std,
@@ -155,6 +156,12 @@ jobs:
         if: matrix.runner != 'windows-2022'
         shell: bash
         run: zig build test-language
+
+      # Every `botopink` fence in docs.md and README.md compiles
+      # (scripts/check-docs.sh). Needs only the CLI.
+      - name: zig build test-docs
+        shell: bash
+        run: zig build test-docs
 
   libs:
     name: zig build test-libs (sibling libraries, all runnable targets)

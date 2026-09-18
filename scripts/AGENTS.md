@@ -4,7 +4,7 @@
 > Parent: [`../AGENTS.md`](../AGENTS.md)
 
 Installers, the release packaging helper, the gate, the lib-test and
-vscode-test wrappers, the snapshot audit tool, and the tracked git hooks.
+vscode-test wrappers, the snapshot audit tool, the user-docs fence checker, and the tracked git hooks.
 
 ## Tree
 
@@ -14,10 +14,11 @@ scripts/
 ├── install.sh         ← POSIX one-liner installer
 ├── install.ps1        ← Windows one-liner installer
 ├── release-pack.sh    ← per-target archive + sha256 packer (used by release.yml)
-├── gate.sh            ← the ordered local gate (staged checks, build, test, test-bpmp, beam export audit, test-cli, test-libs)
+├── gate.sh            ← the ordered local gate (staged checks, build, test, test-bpmp, beam export audit, test-cli, test-libs, test-language, test-docs)
 ├── test-libs.sh       ← runtime pre-flight + `botopink-lib-test` wrapper with known reds (`zig build test-libs`)
 ├── known-red-libs.txt ← library cells known red, each with its owning front
 ├── test-vscode.sh     ← locate the sibling vscode-extension, `npm ci` once, `npm test` (`zig build test-vscode`)
+├── check-docs.sh      ← compiles every `botopink` fence of docs.md/README.md (`zig build test-docs`)
 ├── snap_audit.sh      ← read-only audit of every *.snap.md (6 modes)
 ├── beam_export_audit.sh ← assemble every beam snapshot module with every function exported
 └── git-hooks/
@@ -108,7 +109,8 @@ failing stage: staged-file checks (`--staged`: conflict markers, `zig fmt
 `modules/compiler-core/.botopinkbuild/runtime-cache` first), `zig build
 test-bpmp`, `scripts/beam_export_audit.sh`, `zig build test-cli`, `zig build
 test-libs`, `zig build test-language` (`tests/language/`, expected failures in
-`tests/language/expected-failures.txt`). CI (`.github/workflows/test.yml`) runs the same stages minus the
+`tests/language/expected-failures.txt`), `zig build test-docs`
+(`check-docs.sh`). CI (`.github/workflows/test.yml`) runs the same stages minus the
 staged checks. The pre-commit hook runs `--staged`; the run
 that decides a merge adds `--cold`. After the staged checks the script unsets
 every `git rev-parse --local-env-vars` variable a hook inherits (`GIT_DIR`,
@@ -141,6 +143,24 @@ overrides the list path.
 `<lib> <target> <owner> <reason…>` per line, `#` comments. The owning front
 deletes its line in the commit that turns the cell green, which makes the cell
 a hard assert.
+
+## check-docs.sh
+
+`scripts/check-docs.sh [--compiler <botopink>] [--doc <file>]… [--list]`
+(`zig build test-docs`) — extracts every ```` ```botopink ```` fence of the user
+docs (default `docs.md README.md`) into a scratch project and runs `botopink
+check` on it. An HTML comment on the line above the fence chooses the treatment:
+none (a whole module), `<!-- docs-check: body -->` (statements wrapped in `fn
+main() { … }`), `<!-- docs-check: project <name> <path> -->` (one file of a
+multi-file project — every fence with the same `<name>` is written at its
+`<path>` and the project is checked once, one of them at `src/main.bp`) and
+`<!-- docs-check: skip <reason> -->` (the only escape, for a fence that is a
+table rather than a module; the reason is required and printed). A failing
+fence, an unknown directive, a `skip` with no reason and a named project with no
+`src/main.bp` each fail the run and name the doc and the fence's line. `--list`
+prints every fence with its directive and compiles nothing. State for a named
+project lives in the scratch tree (`.name`, `.origin`, `src/main.bp`), not in an
+associative array, so the script runs under the macOS runner's bash 3.2.
 
 ## test-vscode.sh
 

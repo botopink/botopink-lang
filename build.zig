@@ -326,6 +326,22 @@ pub fn build(b: *std.Build) void {
     const test_language_step = b.step("test-language", "Run the botopink language tests (tests/language)");
     test_language_step.dependOn(&test_language_run.step);
 
+    // `zig build test-docs` — every `botopink` fence of the user docs compiles
+    // (front 14 step 3). `scripts/check-docs.sh` extracts each fence into a
+    // scratch project and runs `botopink check`; a fence that is a table rather
+    // than a module carries a `<!-- docs-check: skip <reason> -->` comment.
+    // Forwards `--` args, e.g.
+    //   zig build test-docs -- --doc docs.md --list
+    // NOT wired into `zig build test` (spawns a compiler per fence).
+    const test_docs_run = b.addSystemCommand(&.{ "bash", "scripts/check-docs.sh" });
+    test_docs_run.step.dependOn(b.getInstallStep());
+    test_docs_run.setCwd(b.path("."));
+    test_docs_run.has_side_effects = true; // spawns child compilers — never cache
+    if (b.args) |args| test_docs_run.addArgs(args);
+
+    const test_docs_step = b.step("test-docs", "Compile every botopink fence in the user docs");
+    test_docs_step.dependOn(&test_docs_run.step);
+
     // `zig build test-backends` — the single build step that reaches BEAM + wasm
     // *execution* (not just codegen snapshots): builds the CLI, then runs the
     // backend-execution harness against `node`/`escript`/`erlc`+`erl`/`wasmtime`,
