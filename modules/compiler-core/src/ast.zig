@@ -1553,6 +1553,26 @@ pub const EnumSection = struct {
 /// refused, and a `pub` declaration whose *inferred* type contains it an error.
 pub const unknown_type_name = "unknown";
 
+/// The reserved `TypeRef.generic` name that carries decision 8 §3's union type
+/// `A | B` (06 N20): `generic{ .name = union_type_name, .args = <members>,
+/// .is_builtin = false }`, members in source order, never fewer than two.
+///
+/// It is a spelling no source can write — `consumeTypeName` needs an identifier
+/// — so no user type collides with it. It is not a `TypeRef` variant of its own
+/// because one does not compile without edits to `comptime/infer.zig`,
+/// `codegen/typescript.zig`, `format.zig` and the language server, which this
+/// front's checker half owns; promoting it to a variant is a rename away once
+/// both halves are in one tree.
+///
+/// **What inference has to do with it** (the checker half of N20): resolve it to
+/// a union of its members instead of a named type, and give it §3's rules — a
+/// value assignable when it is assignable to one member, only the operations
+/// every member allows, narrowing by `is` and by a `case` arm, the join of
+/// `X<A> | X<B>` for a single-value immutable container and for `Dict` (never
+/// for `T[]`), and the error reported at the *use*, naming the branch that
+/// widened it.
+pub const union_type_name = "|";
+
 pub const TypeRef = union(enum) {
     /// Plain named type: `Int`, `string`, `Self`. Slice into source — not heap-owned.
     named: []const u8,
@@ -1592,6 +1612,14 @@ pub const TypeRef = union(enum) {
     /// means the typeparam is unconstrained and accepts any type. Owns the constraints.
     /// Surface syntax (post-F0): `type` / `type string | int | bool`.
     typeparam: []TypeRef,
+
+    /// The members of a union type `A | B` (`union_type_name`); null otherwise.
+    pub fn unionMembers(this: TypeRef) ?[]TypeRef {
+        return switch (this) {
+            .generic => |g| if (!g.is_builtin and std.mem.eql(u8, g.name, union_type_name)) g.args else null,
+            else => null,
+        };
+    }
 
     /// The element types of a tuple type, labeled or not; null otherwise.
     pub fn tupleElems(this: TypeRef) ?[]TypeRef {

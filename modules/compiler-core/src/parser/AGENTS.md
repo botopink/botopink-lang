@@ -110,6 +110,20 @@ it) and takes the ordinary `[]` wraps — `unknown[]`, `?unknown`, `Box<unknown>
 all parse. `unknown<…>` / `unknown(…)` is refused at the `<` / `(` with
 `unknown-takes-no-arguments`: it is one type, not a constructor.
 
+## Union types `A | B` (decision 8 §3, 06 N20)
+
+`parseTypeRef` is the alternation: it parses one member through
+`parseTypeRefMember` — everything a type can be except a `|` chain — and keeps
+going while a `|` follows. So `|` binds looser than every other type operator:
+`i32 | string[]` is "`i32`, or an array of `string`", and an array of the union
+is written `(i32 | string)[]`. Two or more members land as
+`TypeRef.generic{ .name = ast.union_type_name, .args = <members> }` — a spelling
+no source can write, documented in `ast.zig` with what inference owes it. A `|`
+with nothing usable after it is `union-member-missing`, located at the bar.
+
+The `type A | B` meta-kind keeps its own `|`: `parseGenericParams`' constraint
+loop calls `parseTypeRefMember`, so each constraint stays one type.
+
 ## Type guards (`-> x is T`)
 
 `fn f(x: ?string) -> x is string` parses to `typeGuardParam = "x"`, `typeGuardType = string` and

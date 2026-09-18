@@ -22,8 +22,43 @@ fn startsTypeRef(kind: TokenKind) bool {
     };
 }
 
-/// Parses a full type reference.
+/// Parses a full type reference, union types included (decision 8 §3, 06 N20):
+/// `i32 | string` is one type written as an alternation of its members.
+///
+/// `|` binds looser than every other type operator, so `i32 | string[]` is
+/// "`i32`, or an array of `string`" (§3.1) and a union of arrays is written
+/// `(…)` free — `i32[] | string[]`. The members land in source order on
+/// `ast.union_type_name` (see `ast.zig` for what inference owes them).
 pub fn parseTypeRef(this: *This, alloc: std.mem.Allocator) ParseError!ast.TypeRef {
+    var first = try this.parseTypeRefMember(alloc);
+    if (!this.check(.verticalBar)) return first;
+
+    var members: std.ArrayList(ast.TypeRef) = .empty;
+    errdefer {
+        for (members.items) |*m| m.deinit(alloc);
+        members.deinit(alloc);
+    }
+    errdefer first.deinit(alloc);
+    try members.append(alloc, first);
+    while (this.match(.verticalBar)) {
+        const barTok = this.tokens[this.current - 1];
+        if (!startsTypeRef(this.peek().kind)) {
+            this.parseError = ParseErrorInfo.fromToken(.unionMemberMissing, barTok);
+            return ParseError.UnexpectedToken;
+        }
+        try members.append(alloc, try this.parseTypeRefMember(alloc));
+    }
+    return ast.TypeRef{ .generic = .{
+        .name = ast.union_type_name,
+        .args = try members.toOwnedSlice(alloc),
+        .is_builtin = false,
+    } };
+}
+
+/// One member of a type: everything `parseTypeRef` parses except the `|`
+/// alternation. The `type A | B` meta-kind constraint list parses its members
+/// through this too, so `|` there keeps separating constraints.
+pub fn parseTypeRefMember(this: *This, alloc: std.mem.Allocator) ParseError!ast.TypeRef {
     const ref = try this.parseBaseTypeRef(alloc);
     if (this.check(.bang)) {
         const tok = this.peek();
@@ -205,7 +240,7 @@ pub fn parseBaseTypeRef(this: *This, alloc: std.mem.Allocator) ParseError!ast.Ty
         }
         if (startsTypeRef(this.peek().kind)) {
             while (true) {
-                try constraints.append(alloc, try this.parseTypeRef(alloc));
+                try constraints.append(alloc, try this.parseTypeRefMember(alloc));
                 if (!this.match(.verticalBar)) break;
             }
         }

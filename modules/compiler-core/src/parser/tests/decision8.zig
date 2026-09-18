@@ -46,3 +46,46 @@ test "decision 8 N19: unknown takes no type arguments" {
         \\fn f(x: unknown<i32>) -> i32 { return 1; }
     );
 }
+
+// ── N20 — union types (§3) ────────────────────────────────────────────────────
+
+test "decision 8 N20: a union type in an annotation, a parameter and a return" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn size(v: i32 | string) -> i32 | string {
+        \\    val w: i32 | string | bool = v;
+        \\    return w;
+        \\}
+    );
+}
+
+test "decision 8 N20: | binds looser than [] and reaches into generic arguments" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn f(xs: i32 | string[], b: Box<i32 | string>, o: ?i32 | string) -> i32 {
+        \\    return 1;
+        \\}
+    );
+}
+
+test "decision 8 N20: a union member is missing after the bar" {
+    try expectParseError(std.testing.allocator,
+        \\error[union-member-missing]: a union type needs another type after `|`
+        \\ --> <test>:1:13
+        \\  |
+        \\1 | fn f(x: i32 | ) -> i32 { return 1; }
+        \\  |             ^ add the next member here
+        \\  |
+        \\  = hint: A union is written `i32 | string`, each member a complete type; `(i32 | string)[]` is an array of the union, `i32 | string[]` an `i32` or an array of `string`.
+        \\
+        \\
+    ,
+        \\fn f(x: i32 | ) -> i32 { return 1; }
+    );
+}
+
+test "decision 8 N20: the type meta-kind still separates its constraints with a bar" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn f(comptime T: type string | i32) -> i32 {
+        \\    return 1;
+        \\}
+    );
+}

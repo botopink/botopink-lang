@@ -2070,6 +2070,13 @@ pub const Formatter = struct {
                 });
             },
             .generic => |b| blk: {
+                // A union type `A | B` (decision 8 §3) travels as a `generic`
+                // under `ast.union_type_name`; it is written as its members.
+                if (ref.unionMembers()) |members| {
+                    var memberDocs = try this.arena.alloc(*const Doc, members.len);
+                    for (members, 0..) |m, i| memberDocs[i] = try this.fmtTypeRef(m);
+                    break :blk this.join(memberDocs, try this.text(" | "));
+                }
                 var argDocs = try this.arena.alloc(*const Doc, b.args.len);
                 for (b.args, 0..) |a, i| argDocs[i] = try this.fmtTypeRef(a);
                 const inner = if (b.args.len == 0)

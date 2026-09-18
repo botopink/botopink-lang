@@ -174,6 +174,12 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "write `unknown` alone",
             .hint = "`unknown` is one type — anything, checked before it is used (`x is i32`). A container of it is written `unknown[]` or `Box<unknown>`.",
         },
+        .unionMemberMissing => .{
+            .code = "union-member-missing",
+            .message = "a union type needs another type after `|`",
+            .caretCaption = "add the next member here",
+            .hint = "A union is written `i32 | string`, each member a complete type; `(i32 | string)[]` is an array of the union, `i32 | string[]` an `i32` or an array of `string`.",
+        },
         .typeRecordWithVariants => .{
             .code = "type-record-with-variants",
             .message = "a `type` with a field list cannot also declare variants",

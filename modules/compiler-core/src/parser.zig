@@ -140,6 +140,8 @@ pub const ParseErrorType = enum {
     /// `unknown<i32>` / `unknown(…)` — decision 8 §2's `unknown` is one type,
     /// not a constructor: it takes no type arguments (06 N19).
     unknownTakesNoArguments,
+    /// `i32 | ` — a union type with nothing after the `|` (decision 8 §3, 06 N20).
+    unionMemberMissing,
     /// `type P()` — an empty field list; a record with no fields omits `()`.
     typeEmptyFieldList,
     /// `type S { fn f(self: Self) {} A }` — variants come before methods.
@@ -1138,6 +1140,8 @@ pub const Parser = struct {
     pub const parseTypeRef = types.parseTypeRef;
 
     pub const parseBaseTypeRef = types.parseBaseTypeRef;
+
+    pub const parseTypeRefMember = types.parseTypeRefMember;
 
     // ── import decl ──────────────────────────────────────────────────────────
 
