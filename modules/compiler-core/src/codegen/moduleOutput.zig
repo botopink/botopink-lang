@@ -48,6 +48,33 @@ pub const Diagnostic = union(enum) {
     }
 };
 
+/// The host-backed fn a backend could not lower: it carries no
+/// `#[@External.<Target>(…)]` for the target being emitted. Every backend that
+/// raises `error.MissingExternalTarget` fills one first, so the failure reaches
+/// the driver as a LOCATED diagnostic naming the function and the target
+/// instead of the bare error name (06 C13).
+pub const MissingExternal = struct {
+    /// The called function's name.
+    name: []const u8,
+    /// The backend that has no target for it (`erlang`, `node`, `beam`).
+    target: []const u8,
+    /// The call site.
+    loc: @FieldType(comptimeMod.TypeError, "loc") = null,
+
+    /// This as the diagnostic a failed module carries. The message is owned by
+    /// `allocator`, like every other `Diagnostic.type`.
+    pub fn diagnostic(self: MissingExternal, allocator: std.mem.Allocator) !Diagnostic {
+        return .{ .type = .{
+            .message = try std.fmt.allocPrint(
+                allocator,
+                "`{s}` has no `#[@External.<Target>(…)]` for the {s} backend",
+                .{ self.name, self.target },
+            ),
+            .loc = self.loc,
+        } };
+    }
+};
+
 /// Final per-module output after all pipeline stages.
 /// `js` and `comptime_script` are heap-allocated; call `deinit` when done.
 /// `comptime_err` is set (and `js` is empty) when comptime validation failed.

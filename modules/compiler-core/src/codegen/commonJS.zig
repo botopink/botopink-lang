@@ -71,7 +71,23 @@ pub fn codegenEmit(
                 // test blocks (a project's `botopink test` runs only its own
                 // tests; the stdlib's inline tests run from `libs/std` itself).
                 const module_test_mode = config.test_mode and !std.mem.startsWith(u8, ct.name, "std/");
-                const js_src = try emitJs(alloc, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, &ok.js_method_renames, &ok.instance_lowerings, module_test_mode, ct.name, &cross);
+                // 06 C13 — a host-backed fn with no `node` target reaches the
+                // driver as a located diagnostic naming the function, not as
+                // the bare error name that aborted the whole build.
+                var missing: ?moduleOutput.MissingExternal = null;
+                const js_src = emitJs(alloc, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, &ok.js_method_renames, &ok.instance_lowerings, module_test_mode, ct.name, &cross, &missing) catch |err| {
+                    const me = missing orelse return err;
+                    try results.append(alloc, .{
+                        .name = ct.name,
+                        .src = ct.src,
+                        .result = .{
+                            .js = try alloc.dupe(u8, ""),
+                            .comptime_script = null,
+                            .diagnostic = try me.diagnostic(alloc),
+                        },
+                    });
+                    continue;
+                };
 
                 // Generate TypeScript typedefs if configured.
                 const typedef: ?[]u8 = if (config.typeDefLanguage) |_|
@@ -107,8 +123,10 @@ fn emitJs(
     test_mode: bool,
     module_name: []const u8,
     cross: ?*const CrossModule,
+    /// 06 C13 — set when the emit fails with `error.MissingExternalTarget`.
+    missing: ?*?moduleOutput.MissingExternal,
 ) ![]u8 {
-    return try emitProgramOptsX(alloc, program, comptime_vals, rewrites, renames, lowerings, test_mode, module_name, cross);
+    return try emitProgramOptsX(alloc, program, comptime_vals, rewrites, renames, lowerings, test_mode, module_name, cross, missing);
 }
 
 fn emitTypeDef(
@@ -336,11 +354,15 @@ fn emitProgramOptsX(
     test_mode: bool,
     module_name: []const u8,
     cross: ?*const CrossModule,
+    missing: ?*?moduleOutput.MissingExternal,
 ) ![]u8 {
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
     var em = Emitter.emitterInit(alloc, arena.allocator(), comptime_vals, rewrites);
     defer em.deinit();
+    errdefer if (missing) |slot| {
+        slot.* = em.missing_external;
+    };
     em.renames = renames;
     em.lowerings = lowerings;
     em.test_mode = test_mode;
@@ -746,6 +768,10 @@ const Emitter = struct {
     try_seq: usize = 0,
     /// `_assert<N>` counter — a fresh temporary per `val assert` lowering.
     assert_seq: usize = 0,
+    /// 06 C13 — the host-backed fn whose `#[@External.Node(…)]` is missing,
+    /// filled at the throw site so `codegenEmit` reports the function and its
+    /// call site instead of the bare `MissingExternalTarget`.
+    missing_external: ?moduleOutput.MissingExternal = null,
     /// Static extension dispatch: call-site loc → activated extension symbol.
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     /// Type-directed JS method renames: call-site loc → native JS method name to
@@ -3562,6 +3588,7 @@ const Emitter = struct {
         } else if (self.externals_missing.contains(cc.callee)) {
             // External fn with no `node` target — no symbol to call on this
             // backend.
+            self.missing_external = .{ .name = cc.callee, .target = "node", .loc = loc };
             return error.MissingExternalTarget;
         } else if (self.user_node_templates.contains(cc.callee)) {
             // §A2 template-form external — render the host shape inline (no

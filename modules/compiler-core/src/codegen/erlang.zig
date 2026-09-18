@@ -347,7 +347,24 @@ pub fn codegenEmit(
                 // `"std"` package copies are dependencies — never emit their
                 // test blocks (mirrors the commonJS rule).
                 const module_test_mode = config.test_mode and !std.mem.startsWith(u8, ct.name, "std/");
-                const code = try emitErlang(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, module_test_mode, &cross, enum_exports.items);
+                // 06 C13 — a host-backed fn with no `erlang` target used to
+                // abort the whole build with the bare error name. It reaches
+                // the driver as a located diagnostic naming the function now,
+                // like a type error: only this module fails.
+                var missing: ?moduleOutput.MissingExternal = null;
+                const code = emitErlang(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, module_test_mode, &cross, enum_exports.items, &missing) catch |err| {
+                    const me = missing orelse return err;
+                    try results.append(alloc, .{
+                        .name = ct.name,
+                        .src = ct.src,
+                        .result = .{
+                            .js = try alloc.dupe(u8, ""),
+                            .comptime_script = null,
+                            .diagnostic = try me.diagnostic(alloc),
+                        },
+                    });
+                    continue;
+                };
                 try results.append(alloc, .{
                     .name = ct.name,
                     .src = ct.src,
@@ -705,7 +722,7 @@ pub fn emitComptimeModule(
     defer rewrites.deinit();
     var instance_lowerings = std.AutoHashMap(ast.Loc, envMod.InstanceLowering).init(alloc);
     defer instance_lowerings.deinit();
-    return emitErlangModule(alloc, module_name, program, comptime_vals, rewrites, instance_lowerings, false, null, &.{}, module);
+    return emitErlangModule(alloc, module_name, program, comptime_vals, rewrites, instance_lowerings, false, null, &.{}, module, null);
 }
 
 /// How many `<Iface>.<method>` entries the primitive dispatch table holds for a
@@ -756,8 +773,11 @@ fn emitErlang(
     test_mode: bool,
     cross: ?*const CrossModule,
     enum_exports: []const EnumExport,
+    /// 06 C13 — set when the emit fails with `error.MissingExternalTarget`, so
+    /// the caller reports the function and the call site, not the error name.
+    missing: ?*?moduleOutput.MissingExternal,
 ) ![]u8 {
-    return emitErlangModule(alloc, module_name, program, comptime_vals, rewrites, instance_lowerings, test_mode, cross, enum_exports, null);
+    return emitErlangModule(alloc, module_name, program, comptime_vals, rewrites, instance_lowerings, test_mode, cross, enum_exports, null, missing);
 }
 
 fn emitErlangModule(
@@ -771,8 +791,12 @@ fn emitErlangModule(
     cross: ?*const CrossModule,
     enum_exports: []const EnumExport,
     comptime_module: ?ComptimeModule,
+    missing: ?*?moduleOutput.MissingExternal,
 ) ![]u8 {
     var em = Emitter.init(alloc, comptime_vals, rewrites);
+    errdefer if (missing) |slot| {
+        slot.* = em.missing_external;
+    };
     em.enum_exports = enum_exports;
     em.instance_lowerings = instance_lowerings;
     em.untyped = comptime_module != null;
@@ -1549,6 +1573,10 @@ const Emitter = struct {
     cv: std.StringHashMap([]const u8),
     indent: usize = 0,
     try_seq: usize = 0,
+    /// 06 C13 — the host-backed fn whose `#[@External.Erlang(…)]` is missing,
+    /// filled at the throw site so `codegenEmit` can turn
+    /// `error.MissingExternalTarget` into a located diagnostic naming it.
+    missing_external: ?moduleOutput.MissingExternal = null,
     /// While set, `patternBindVar` renders every binder as `_`: the pattern is
     /// being lowered as a pure test (`assertPatternStmts`'s `case` arm) and
     /// nothing reads its names.
@@ -4766,7 +4794,10 @@ const Emitter = struct {
                 return b.remote(ref.module, ref.symbol, try this.callArgs(b, null, cc));
             }
             // External fn with no `erlang` target — no symbol to call here.
-            if (this.externals_missing.contains(cc.callee)) return error.MissingExternalTarget;
+            if (this.externals_missing.contains(cc.callee)) {
+                this.missing_external = .{ .name = cc.callee, .target = "erlang", .loc = loc };
+                return error.MissingExternalTarget;
+            }
             // Record/struct constructor → `#{field => V, …}` (the runtime shape of
             // the beam backend's `put_map_assoc` maps). Labeled args use their
             // label; positional args follow the declared field order.

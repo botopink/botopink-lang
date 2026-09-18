@@ -860,7 +860,22 @@ pub fn codegenEmit(
                 });
             },
             .ok => |*ok| {
-                const code = try emitBeamAsm(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, &cross, outputs);
+                // 06 C13 — a host-backed fn with no beam or erlang target
+                // reaches the driver as a located diagnostic naming it.
+                var missing: ?moduleOutput.MissingExternal = null;
+                const code = emitBeamAsm(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, &cross, outputs, &missing) catch |err| {
+                    const me = missing orelse return err;
+                    try results.append(alloc, .{
+                        .name = ct.name,
+                        .src = ct.src,
+                        .result = .{
+                            .js = try alloc.dupe(u8, ""),
+                            .comptime_script = null,
+                            .diagnostic = try me.diagnostic(alloc),
+                        },
+                    });
+                    continue;
+                };
                 try results.append(alloc, .{
                     .name = ct.name,
                     .src = ct.src,
@@ -891,6 +906,8 @@ fn emitBeamAsm(
     instance_lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
     cross: ?*const CrossModule,
     all_outputs: []const ComptimeOutput,
+    /// 06 C13 — set when the emit fails with `error.MissingExternalTarget`.
+    missing: ?*?moduleOutput.MissingExternal,
 ) ![]u8 {
     // Three passes:
     //   1. assign entry labels to every fn/top-val so wrappers can refer to
@@ -913,6 +930,9 @@ fn emitBeamAsm(
     const module_atom = crossModule.moduleBasename(module_name);
 
     var em = Emitter.init(alloc, module_atom, &body_buf.writer, comptime_vals, rewrites);
+    errdefer if (missing) |slot| {
+        slot.* = em.missing_external;
+    };
     em.instance_lowerings = instance_lowerings;
     em.cross = cross;
     em.all_outputs = all_outputs;
@@ -1146,6 +1166,10 @@ const Emitter = struct {
     /// x-register holds a value that must survive an inline closure allocation
     /// (e.g. the stashed `@Result` payload in `lowerResultOptionOp`).
     min_live: u32 = 0,
+    /// 06 C13 — the host-backed fn whose beam/erlang target is missing, filled
+    /// at the lowering site so `codegenEmit` reports the function name instead
+    /// of the bare `MissingExternalTarget`.
+    missing_external: ?moduleOutput.MissingExternal = null,
     /// Per-function: bumps the source-location placeholder.
     cur_line: u32 = 1,
     /// Module-wide lambda counter for generating unique fun names.
@@ -3434,7 +3458,7 @@ const Emitter = struct {
 
         // A host-backed `declare fn` lowers to its host target.
         if (self.externalDeclFor(cc.callee)) |f| {
-            try self.lowerExternalCall(f, cc, mode);
+            try self.lowerExternalCall(f, cc, mode, loc);
             return;
         }
 
@@ -3761,7 +3785,11 @@ const Emitter = struct {
     /// a template evaluated through `'__bp_erl_eval'/2`. A fn with no beam or
     /// erlang target fails the lowering (`MissingExternalTarget`), like the
     /// other backends.
-    fn lowerExternalCall(self: *Emitter, f: ast.FnDecl, cc: anytype, mode: CallMode) anyerror!void {
+    fn lowerExternalCall(self: *Emitter, f: ast.FnDecl, cc: anytype, mode: CallMode, loc: ast.Loc) anyerror!void {
+        // 06 C13 — every exit below is `error.MissingExternalTarget`; naming the
+        // fn and the call site here is what turns it into a located diagnostic
+        // upstream.
+        self.missing_external = .{ .name = f.name, .target = "beam", .loc = loc };
         const argc = cc.args.len + cc.trailing.len;
         const self_first = f.params.len > 0 and std.mem.eql(u8, f.params[0].name, "self");
         if (f.externalFor("beam")) |ref| {
