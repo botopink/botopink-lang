@@ -42,10 +42,11 @@ and running `format` twice in a row must produce identical text.
 | Lambdas | A parameterless lambda in expression position keeps `{ -> … }` (the braces alone re-parse as a block); a trailing lambda `f { … }` and a `case` arm's block body (a parameterless lambda in the AST) print `{ … }` |
 | `case` arms | An arm whose body is a lambda prints decision 8 §5.1's `Pattern [when (…)] { body }` — no arrow, no `;`, the whole-value binder kept (`_ { n -> … }`); every other body keeps `pattern [if …] -> value;`. The pre-decision-8 block arm `1 -> { … };` is the same node, so it comes back in decision 8's spelling |
 | Patterns | `ast.PatternShape` decides the spelling: a tuple pattern prints `#(…)`, an inclusive range `A...B`, a payload label `name: p`, and a pattern that ignores the rest ends in `..` |
-| `if` branches | A single-expression branch prints bare; a multi-statement branch prints its statements one per line, each ended by `;` |
+| `if` branches | A single-expression branch prints bare; a multi-statement branch prints its statements through the same `fmtStmtSeq` a `fn`, `test`, `loop` and lambda body use — one per line, each ended by `;`, keeping a blank line and a trailing comment on its own statement's line |
 | String literals | `"""…"""` when the content spans lines or holds an unescaped `"`; `"…"` otherwise |
-| `loop` body | `loop (…) { x ->` then one statement per line, each ended by `;` (the body shares `fmtStmtSeq` with `fn` and lambda bodies, including a trailing comment on its statement's line) |
+| `loop` body | `loop (…) { x ->` then one statement per line, each ended by `;` (the body shares `fmtStmtSeq` with `fn`, lambda and `if`-branch bodies, including a trailing comment on its statement's line) |
 | Imports | `import {a, b} from "m"`; the package-namespace forms keep the handle: `import pkg`, `import pkg from "m"`, `import pkg, {a} from "m"` |
+| Package default | `[pub] default mod Name;` and `[pub] default fn f(…)` keep the `default` keyword, in the parser's order (`pub`, `default`, `declare`). It is not decoration: `default mod` names the package handle `import <pkg>` resolves to and `default fn` names the handler aliased under it (`comptime.zig`'s package-default DSL). Dropping it unbinds every consumer of a package whose handle and handler have different names, and — a deletion being idempotent — `format --check` then reports the broken file as clean |
 | One-line lambda value | Rendered flat as one text (it may run past the width); a value that needs a line break of its own prints the open form — so a second `format` pass decides the same way |
 
 ## Layout the formatter keeps (front 12 step 4)
@@ -57,7 +58,18 @@ and running `format` twice in a row must produce identical text.
 - **Blank lines** — between body members (`""` in `comments`) and between top-level
   declarations (`Program.blankLineBefore`, filled by `parseDecls`).
 - **Trailing comments** — a comment on the line of the previous statement or declaration
-  (`f(); // note`, `pub mod x; // note`) sets `trailing` and stays on that line.
+  (`f(); // note`, `pub mod x; // note`) sets `trailing` and stays on that line. A **member's**
+  is its own slot, `trailingComment` on `Field`, `EnumVariant` and `BehaviorMethod`, filled by the
+  parser's same-line test: `x: i32, // horizontal` keeps its line, where before it was re-attached
+  to the next field — saying something false — and on the last field deleted outright.
+- **Member order of an enum-shaped `type`** — `variants` and `sections` are two parallel slices and
+  a body may interleave them, so each member carries its position in `order` and `fmtEnumMembers`
+  merges the two lists by it. Printing all of one and then all of the other hoisted every variant
+  written after a section above it. Nothing in `src/codegen/` may key on a variant's position in
+  `TypeShape.EnumShape.variants` — `order` is source layout, not a run-time encoding.
+- **Comments on an enum variant or section** — `EnumVariant.comments` / `EnumSection.comments`
+  (leading, `""` for a blank line) and `EnumVariant.trailingComment`. Either one forces the enum
+  body open: the compact `{ Red, Blue }` has nowhere to put a `//`.
 - **One-line lambdas** — `{ n -> n * 2 }` written on one line with a single value expression
   stays inline (`fmtLambdaAt`).
 - An empty `////` line prints without a trailing space; `botopink format` (CLI) ends a file with
@@ -76,13 +88,16 @@ shortforms) and is documentation only.
 
 ## Layout the parser does not record (formatter cannot keep)
 
-- **Member order of an enum-shaped `type`** — `TypeShape.EnumShape` keeps `variants` and `sections`
-  in two lists with no position, so the formatter prints every variant before every section
-  (a type whose sections come before its payload variants is reordered; the program is unchanged).
-- **End-of-line comments on a field or an array element** — `parseFieldList` and the array literal
-  attach a comment to the *next* item (the last one's is dropped by `skipComments`), with no line
-  information; the formatter prints it above the next item. Statement trailing comments are kept.
-- **Blank lines inside a `loop` body or an `if` branch** — no `emptyLinesBefore` is recorded there.
+- **End-of-line comments on an array element** — the array literal attaches a comment to the *next*
+  item, with no line information, so the formatter prints it above that item. A **field's** is kept
+  (`Field.trailingComment`), and so are a statement's, a variant's and a method's.
+- **Blank lines inside an `if` then-branch or a lambda body — which is every `loop (…) { x -> … }`
+  body** — those two blocks carry their own inlined loop in `parser/exprs.zig`, written before
+  `parseBlock` grew `trackEmptyLines`/`handleComments`, so no `emptyLinesBefore` is recorded and a
+  `//` comment there is a parse error. The printer keeps whatever is recorded, so both start
+  round-tripping the moment the loops call `parseStmtListInBraces`. An `if` **else**-branch does
+  reach `parseStmtListInBraces`: its blank lines were recorded and, until the branch printers were
+  merged into `fmtStmtSeq`, silently dropped — they are printed now.
 
 Each needs a parser/AST change (`parser/decls.zig`, `parser/exprs.zig`) before the formatter can
 print it back.
