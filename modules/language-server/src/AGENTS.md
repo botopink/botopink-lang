@@ -62,6 +62,14 @@ in `engine.zig`, add a test in [`tests/`](tests/AGENTS.md) (register it in
 - `engine.documentSymbols` returns owned names **and owned children**; free a
   result with `engine.freeSymbol` per symbol, never `gpa.free(sym.name)` alone,
   or every child leaks.
+- **A section of an enum-shaped `type` is a type, not a member** (decision 8
+  §5.3b): `type Token { Text { Bold, Italic } }` declares `Token.Text`, so
+  `collectChildren` gives `Text` `SymbolKind.Enum` and recurses into its body
+  instead of emitting one `EnumMember` whose contents the nested-block skip threw
+  away. A member position is a PascalCase identifier **outside every `(…)` and
+  right after the body's `{` or a `,`** — the same test the semantic-token walk
+  makes. Without it a method's return type (`-> Color {`) was read as a section
+  and a positional payload element as a variant.
 - **Completion never answers `null` because the module failed to compile.**
   `Server.completionItems` (the testable half of `textDocument/completion`)
   completes against the module's typed bindings when it type-checks and against
@@ -82,6 +90,20 @@ in `engine.zig`, add a test in [`tests/`](tests/AGENTS.md) (register it in
   whose own initialiser the cursor sits in (`val x = ▮` never offers `x`) and
   every `val`/`var` declared below it. A `fn` is not hidden — it may be called
   above the line that defines it.
+- **Completion never offers a member the compiler rejects.** `appendDeclMembers`
+  takes a `DotReceiver`: on the **type name** (`Color.`) an enum-shaped `type`
+  offers its variants and its methods; on a **value** (`c.`) only its methods —
+  `fn a(c: Color) -> Color { return c.Red; }` is
+  `error: unknown field 'Red' on type 'Color'`, and a value receiver used to
+  resolve to its named type and then reuse the type-name list unchanged.
+- **`type` and `behavior` are the only keywords completion offers**, and only
+  where a declaration may start (`atDeclarationStart`: outside every `(…)`/`[…]`,
+  right after nothing, `;`, `{`, `}` or `pub`), sorted after the names in scope.
+  They are the two words the surface cutover introduced; `record`, `enum` and
+  `interface` have never been offered (the "keyword completion list" front 14
+  located at `engine.zig:1847–1855` was `isKeyword`, the rename-refusal list).
+  The rest of the table is deliberately not offered — a front that wants it takes
+  the whole set at once.
 - **A hover card is source the user could write back.** `renderBindingHover`
   renders a declaration in the 1.0.3 surface — `pub type Point(x: i32, y: i32)`
   (a record with no fields keeps no parentheses), `pub type Shape { Circle(...),

@@ -796,6 +796,7 @@ fn completionKindName(kind: u32) []const u8 {
         proto.CompletionItemKind.Property => "Property",
         proto.CompletionItemKind.EnumMember => "EnumMember",
         proto.CompletionItemKind.Module => "Module",
+        proto.CompletionItemKind.Keyword => "Keyword",
         else => "?",
     };
 }

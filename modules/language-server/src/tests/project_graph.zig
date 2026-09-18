@@ -175,3 +175,139 @@ test "ProjectGraph.resolveRoots: env unset is byte-identical to legacy walk-up" 
     }
     try std.testing.expect(saw_ws_libs);
 }
+
+// ── Graph problems: what `catch continue` used to swallow ─────────────────────
+//
+// A dependency no library root carries, and a `files` entry of a resolved
+// library that cannot be read, were both dropped silently: the graph returned a
+// shorter module list and the editor blamed the user's own file (every symbol
+// the library exports "unbound"), never the manifest line that is wrong. The
+// CLI names both (05 step 5); these pin the language-server half — same two
+// messages, located inside the manifest that declares the entry.
+
+test "project graph: a dependency no root carries is a diagnostic on the project manifest" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+
+    const ws = ".botopinkbuild/lsp-graph-missing-dep/ws";
+    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/lsp-graph-missing-dep") catch {};
+    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/lsp-graph-missing-dep") catch {};
+
+    try std.Io.Dir.cwd().createDirPath(io, ws ++ "/src");
+    try std.Io.Dir.cwd().createDirPath(io, ws ++ "/libs");
+    try std.Io.Dir.cwd().writeFile(io, .{
+        .sub_path = ws ++ "/botopink.json",
+        .data =
+        \\{
+        \\  "name": "app",
+        \\  "src": "src/",
+        \\  "dependencies": ["ghostlib"]
+        \\}
+        ,
+    });
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = ws ++ "/src/main.bp", .data = "val x = 1;\n" });
+
+    var g = graph_mod.ProjectGraph.init(gpa, io, null);
+    defer g.deinit();
+
+    const r = (try g.resolve("file://" ++ ws ++ "/src/main.bp")) orelse return error.NoProject;
+
+    try std.testing.expectEqual(@as(usize, 1), r.problems.len);
+    const p = r.problems[0];
+    try std.testing.expectEqualStrings(
+        "dependency 'ghostlib' was not found under any library root",
+        p.message,
+    );
+    try std.testing.expect(std.mem.endsWith(u8, p.uri, ws ++ "/botopink.json"));
+    // `"ghostlib"` sits on the 4th line (0-based 3), after `"dependencies": [`.
+    try std.testing.expectEqual(@as(u32, 3), p.line);
+    try std.testing.expectEqual(@as(u32, 19), p.character);
+    try std.testing.expectEqual(@as(u32, 10), p.length); // `"ghostlib"` with its quotes
+
+    // The project's own `src` tree still loads — a broken dependency degrades
+    // the graph, it does not empty it.
+    try std.testing.expect(r.deps.len > 0);
+}
+
+test "project graph: an unreadable `files` entry is a diagnostic on the library manifest" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+
+    const ws = ".botopinkbuild/lsp-graph-missing-file/ws";
+    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/lsp-graph-missing-file") catch {};
+    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/lsp-graph-missing-file") catch {};
+
+    try std.Io.Dir.cwd().createDirPath(io, ws ++ "/src");
+    try std.Io.Dir.cwd().createDirPath(io, ws ++ "/libs/halflib/src");
+    try std.Io.Dir.cwd().writeFile(io, .{
+        .sub_path = ws ++ "/botopink.json",
+        .data =
+        \\{"name": "app", "src": "src/", "dependencies": ["halflib"]}
+        ,
+    });
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = ws ++ "/src/main.bp", .data = "val x = 1;\n" });
+    try std.Io.Dir.cwd().writeFile(io, .{
+        .sub_path = ws ++ "/libs/halflib/botopink.json",
+        .data =
+        \\{
+        \\  "name": "halflib",
+        \\  "src": "src/",
+        \\  "files": ["there.bp", "gone.bp"]
+        \\}
+        ,
+    });
+    try std.Io.Dir.cwd().writeFile(io, .{
+        .sub_path = ws ++ "/libs/halflib/src/there.bp",
+        .data = "pub val here = 1;\n",
+    });
+
+    var g = graph_mod.ProjectGraph.init(gpa, io, null);
+    defer g.deinit();
+
+    const r = (try g.resolve("file://" ++ ws ++ "/src/main.bp")) orelse return error.NoProject;
+
+    try std.testing.expectEqual(@as(usize, 1), r.problems.len);
+    const p = r.problems[0];
+    try std.testing.expect(std.mem.startsWith(
+        u8,
+        p.message,
+        "dependency 'halflib' lists \"gone.bp\" in `files`, but ",
+    ));
+    try std.testing.expect(std.mem.endsWith(u8, p.message, "/src/gone.bp does not exist"));
+    try std.testing.expect(std.mem.endsWith(u8, p.uri, "/libs/halflib/botopink.json"));
+    // The `"gone.bp"` entry, not the `"files"` key: line 3 (0-based), after
+    // `"there.bp", `.
+    try std.testing.expectEqual(@as(u32, 3), p.line);
+    try std.testing.expectEqual(@as(u32, 24), p.character);
+    try std.testing.expectEqual(@as(u32, 9), p.length);
+
+    // The entry that does exist is still a dependency module.
+    var saw_there = false;
+    for (r.deps) |d| {
+        if (std.mem.indexOf(u8, d.source, "pub val here") != null) saw_there = true;
+    }
+    try std.testing.expect(saw_there);
+}
+
+test "project graph: a healthy project reports no problems" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+
+    const ws = ".botopinkbuild/lsp-graph-healthy/ws";
+    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/lsp-graph-healthy") catch {};
+    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/lsp-graph-healthy") catch {};
+
+    try std.Io.Dir.cwd().createDirPath(io, ws ++ "/src");
+    try std.Io.Dir.cwd().writeFile(io, .{
+        .sub_path = ws ++ "/botopink.json",
+        .data = "{\"name\": \"app\", \"src\": \"src/\"}",
+    });
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = ws ++ "/src/main.bp", .data = "val x = 1;\n" });
+
+    var g = graph_mod.ProjectGraph.init(gpa, io, null);
+    defer g.deinit();
+
+    const r = (try g.resolve("file://" ++ ws ++ "/src/main.bp")) orelse return error.NoProject;
+    try std.testing.expectEqual(@as(usize, 0), r.problems.len);
+    try std.testing.expectEqual(@as(usize, 1), r.deps.len);
+}

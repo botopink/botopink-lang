@@ -456,7 +456,8 @@ test "completion: no bindings falls back to the module's own declarations" {
     const items = try engine.completion(gpa, source, cursor, &.{});
     defer freeItems(gpa, items);
 
-    try std.testing.expectEqual(@as(usize, 1), items.len);
+    // `x`, then the two declaration keywords the cursor may start here.
+    try std.testing.expectEqual(@as(usize, 3), items.len);
     try std.testing.expectEqualStrings("x", items[0].label);
     try std.testing.expectEqualStrings("val", items[0].detail.?);
     try snap.assertCompletion(gpa, "completion_empty_bindings", source, cursor, items);
@@ -837,4 +838,65 @@ test "completion: decorator-bearing record still lists bindings (R2)" {
     // its initialiser, where the name is not in scope yet (front 14).
     try std.testing.expect(!hasLabel(items, "usePost"));
     try snap.assertCompletion(gpa, "completion_decorator_record", source, cursor, items);
+}
+
+// ── C10b — a variant is reached through the type, never through a value ──────
+//
+// `fn a(c: Color) -> Color { return c.Red; }` is
+// `error: unknown field 'Red' on type 'Color'`, yet the list offered every
+// variant there: a value receiver resolved to its named type and then reused
+// the type-name member list unchanged (front 14 step 1).
+
+test "completion: a value of an enum type offers its methods, not its variants" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\val Status = type { Active, Inactive, fn label(self: Self) -> string { return "s"; } };
+        \\val s = Status.Active;
+        \\val n = s.label();
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    // "val n = s." → dot at col 9, cursor right after.
+    const cursor = h.pos(2, 10);
+    const items = try engine.completion(gpa, source, cursor, bindings);
+    defer freeItems(gpa, items);
+
+    var has_variant = false;
+    var has_method = false;
+    for (items) |it| {
+        if (std.mem.eql(u8, it.label, "Active") or std.mem.eql(u8, it.label, "Inactive")) has_variant = true;
+        if (std.mem.eql(u8, it.label, "label")) has_method = true;
+    }
+    try std.testing.expect(!has_variant);
+    try std.testing.expect(has_method);
+    try snap.assertCompletion(gpa, "completion_dot_enum_value_members", source, cursor, items);
+}
+
+test "completion: the enum type itself still offers its variants and methods" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\val Status = type { Active, Inactive, fn label(self: Self) -> string { return "s"; } };
+        \\val s = Status.Active;
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    // "val s = Status." → dot at col 14, cursor right after.
+    const cursor = h.pos(1, 15);
+    const items = try engine.completion(gpa, source, cursor, bindings);
+    defer freeItems(gpa, items);
+
+    var has_active = false;
+    var has_method = false;
+    for (items) |it| {
+        if (std.mem.eql(u8, it.label, "Active")) has_active = true;
+        if (std.mem.eql(u8, it.label, "label")) has_method = true;
+    }
+    try std.testing.expect(has_active);
+    try std.testing.expect(has_method);
 }

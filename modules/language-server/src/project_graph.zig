@@ -62,10 +62,37 @@ const LibManifest = struct {
     files: []const []const u8 = &.{},
 };
 
+/// A dependency the graph could not load, as a located diagnostic.
+///
+/// Both failures used to be `catch continue`: a dependency named in
+/// `botopink.json` that no library root carries, and a `files` entry of a
+/// resolved library that cannot be read. The graph then silently returned a
+/// shorter module list, and the editor blamed the *user's* file — every symbol
+/// the missing library exports reported "unbound", pointing nowhere near the
+/// manifest line that is actually wrong. The CLI names both (05 step 5,
+/// `compiler-cli/src/cli/libs.zig:loadOne` / `renderMissingFile`); this is the
+/// language-server half, with the same two messages.
+///
+/// The location is inside the *manifest* that names the entry — the project's
+/// own `botopink.json` for a missing dependency, the library's for an unreadable
+/// `files` entry — so the server publishes it against that file's URI and the
+/// editor shows it in the Problems panel with a jump to the offending line.
+pub const Problem = struct {
+    /// `file://` URI of the manifest carrying the offending entry.
+    uri: []const u8,
+    /// The message the CLI prints for the same failure.
+    message: []const u8,
+    /// 0-based LSP position of the entry, and its length in bytes.
+    line: u32,
+    character: u32,
+    length: u32,
+};
+
 const CachedProject = struct {
     arena: std.heap.ArenaAllocator,
     root: []const u8,
     deps: []GraphModule,
+    problems: []Problem = &.{},
 
     fn destroy(self: *CachedProject, gpa: std.mem.Allocator) void {
         self.arena.deinit();
@@ -77,6 +104,9 @@ pub const Resolved = struct {
     /// Dependency modules (libs + project `src` files), borrowed from the cache.
     /// Valid until the next `invalidateAll`.
     deps: []const GraphModule,
+    /// Manifest entries the graph could not follow, borrowed from the cache.
+    /// Empty for a healthy project.
+    problems: []const Problem = &.{},
     /// True when these deps came from the cache (no disk walk this call).
     hit: bool,
 };
@@ -131,7 +161,7 @@ pub const ProjectGraph = struct {
 
         if (self.cache.get(root)) |cached| {
             self.gpa.free(root);
-            return .{ .deps = cached.deps, .hit = true };
+            return .{ .deps = cached.deps, .problems = cached.problems, .hit = true };
         }
 
         const cp = self.buildProject(root) catch |err| {
@@ -140,7 +170,7 @@ pub const ProjectGraph = struct {
         };
         // `cp.root` is arena-owned; the cache key is a gpa-owned dup.
         try self.cache.put(root, cp);
-        return .{ .deps = cp.deps, .hit = false };
+        return .{ .deps = cp.deps, .problems = cp.problems, .hit = false };
     }
 
     // ── building ──────────────────────────────────────────────────────────────
@@ -154,10 +184,13 @@ pub const ProjectGraph = struct {
         cp.root = try a.dupe(u8, root);
 
         var deps: std.ArrayListUnmanaged(GraphModule) = .empty;
+        var problems: std.ArrayListUnmanaged(Problem) = .empty;
 
         // Read the project manifest (best effort: a missing/invalid one yields
-        // no lib deps, just the local `src` files).
-        const manifest = self.readManifest(ProjectManifest, a, root, "botopink.json") catch ProjectManifest{};
+        // no lib deps, just the local `src` files). The raw bytes are kept so a
+        // failing entry can be located in them.
+        const manifest_text = self.readManifestText(a, root, "botopink.json") catch "";
+        const manifest = parseManifest(ProjectManifest, a, manifest_text) catch ProjectManifest{};
 
         // 1) Lib dependencies, in declared order, before the project's own files.
         const dep_names = try extractDepNames(a, manifest.dependencies);
@@ -168,7 +201,23 @@ pub const ProjectGraph = struct {
                 self.gpa.free(roots);
             }
             for (dep_names) |dep| {
-                self.loadLib(a, &deps, roots, dep) catch continue;
+                self.loadLib(a, &deps, &problems, roots, dep) catch |err| {
+                    // A dependency no root carries: name it where the project
+                    // declares it, instead of dropping it and letting every
+                    // symbol it exports red in the user's own file.
+                    const message = if (err == error.ManifestNotFound)
+                        try std.fmt.allocPrint(a, "dependency '{s}' was not found under any library root", .{dep})
+                    else
+                        try std.fmt.allocPrint(a, "dependency '{s}' could not be loaded ({s})", .{ dep, @errorName(err) });
+                    try problems.append(a, try self.manifestProblem(
+                        a,
+                        root,
+                        manifest_text,
+                        "\"dependencies\"",
+                        dep,
+                        message,
+                    ));
+                };
             }
         }
 
@@ -179,6 +228,7 @@ pub const ProjectGraph = struct {
         try self.loadSrcTree(a, &deps, src_dir);
 
         cp.deps = try deps.toOwnedSlice(a);
+        cp.problems = try problems.toOwnedSlice(a);
         return cp;
     }
 
@@ -188,17 +238,25 @@ pub const ProjectGraph = struct {
         self: *ProjectGraph,
         a: std.mem.Allocator,
         deps: *std.ArrayListUnmanaged(GraphModule),
+        problems: *std.ArrayListUnmanaged(Problem),
         roots: []const []const u8,
         dep: []const u8,
     ) !void {
         var resolved_dir: ?[]const u8 = null;
         var lib: LibManifest = undefined;
+        var lib_text: []const u8 = "";
         for (roots) |root| {
             const cand = try std.fs.path.join(self.gpa, &.{ root, dep });
-            if (self.readManifest(LibManifest, a, cand, "botopink.json")) |m| {
-                lib = m;
-                resolved_dir = cand;
-                break;
+            if (self.readManifestText(a, cand, "botopink.json")) |text| {
+                if (parseManifest(LibManifest, a, text)) |m| {
+                    lib = m;
+                    lib_text = text;
+                    resolved_dir = cand;
+                    break;
+                } else |err| {
+                    self.gpa.free(cand);
+                    return err;
+                }
             } else |_| self.gpa.free(cand);
         }
         const lib_dir = resolved_dir orelse return error.ManifestNotFound;
@@ -207,13 +265,66 @@ pub const ProjectGraph = struct {
         for (lib.files) |file| {
             const path = try std.fs.path.join(self.gpa, &.{ lib_dir, lib_src, file });
             defer self.gpa.free(path);
-            const source = std.Io.Dir.cwd().readFileAlloc(self.io, path, a, .limited(10 * 1024 * 1024)) catch continue;
+            const source = std.Io.Dir.cwd().readFileAlloc(self.io, path, a, .limited(10 * 1024 * 1024)) catch |err| {
+                // The library exists but one of the modules it publishes does
+                // not: say which entry, and where the library declares it.
+                const message = if (err == error.FileNotFound)
+                    try std.fmt.allocPrint(a, "dependency '{s}' lists \"{s}\" in `files`, but {s} does not exist", .{ dep, file, path })
+                else
+                    try std.fmt.allocPrint(a, "dependency '{s}' lists \"{s}\" in `files`, but {s} could not be read ({s})", .{ dep, file, path, @errorName(err) });
+                try problems.append(a, try self.manifestProblem(a, lib_dir, lib_text, "\"files\"", file, message));
+                continue;
+            };
             try deps.append(a, .{
                 .uri = try lsp_types.pathToUri(a, path),
                 .source = source,
                 .declaration = std.mem.endsWith(u8, file, ".d.bp"),
             });
         }
+    }
+
+    /// Build a `Problem` at the `"<entry>"` string inside `<dir>/botopink.json`,
+    /// searched from `key` (`"dependencies"` / `"files"`) so an entry that also
+    /// appears elsewhere in the manifest is not matched first. Falls back to the
+    /// key, then to the file's first character — the message carries the name
+    /// either way, so a JSON shape this search does not understand degrades to a
+    /// diagnostic on line 1 rather than to no diagnostic at all.
+    fn manifestProblem(
+        self: *ProjectGraph,
+        a: std.mem.Allocator,
+        dir: []const u8,
+        text: []const u8,
+        key: []const u8,
+        entry: []const u8,
+        message: []const u8,
+    ) !Problem {
+        const path = try std.fs.path.join(self.gpa, &.{ dir, "botopink.json" });
+        defer self.gpa.free(path);
+
+        const quoted = try std.fmt.allocPrint(a, "\"{s}\"", .{entry});
+        const offset: usize, const length: usize = blk: {
+            if (std.mem.indexOf(u8, text, key)) |k| {
+                if (std.mem.indexOfPos(u8, text, k, quoted)) |at| break :blk .{ at, quoted.len };
+                break :blk .{ k, key.len };
+            }
+            break :blk .{ 0, @min(text.len, 1) };
+        };
+
+        var line: u32 = 0;
+        var line_start: usize = 0;
+        for (text[0..offset], 0..) |c, i| {
+            if (c == '\n') {
+                line += 1;
+                line_start = i + 1;
+            }
+        }
+        return .{
+            .uri = try lsp_types.pathToUri(a, path),
+            .message = message,
+            .line = line,
+            .character = @intCast(offset - line_start),
+            .length = @intCast(length),
+        };
     }
 
     /// Append every `.bp` under `src_dir` (recursively) as a module.
@@ -245,12 +356,18 @@ pub const ProjectGraph = struct {
 
     // ── filesystem helpers ──────────────────────────────────────────────────────
 
-    /// Parse `<dir>/<name>` into `a` (so its strings live as long as the cache).
-    fn readManifest(self: *ProjectGraph, comptime T: type, a: std.mem.Allocator, dir: []const u8, name: []const u8) !T {
+    /// Read `<dir>/<name>` into `a` (so the bytes live as long as the cache).
+    /// The raw text is kept, not just the parsed value: a `Problem` is located
+    /// by searching it for the entry that failed.
+    fn readManifestText(self: *ProjectGraph, a: std.mem.Allocator, dir: []const u8, name: []const u8) ![]const u8 {
         const path = try std.fs.path.join(self.gpa, &.{ dir, name });
         defer self.gpa.free(path);
-        const data = std.Io.Dir.cwd().readFileAlloc(self.io, path, a, .limited(64 * 1024)) catch return error.ManifestNotFound;
-        return std.json.parseFromSliceLeaky(T, a, data, .{ .ignore_unknown_fields = true }) catch return error.ManifestInvalid;
+        return std.Io.Dir.cwd().readFileAlloc(self.io, path, a, .limited(64 * 1024)) catch error.ManifestNotFound;
+    }
+
+    /// Parse manifest `text` into `a` (so its strings live as long as the cache).
+    fn parseManifest(comptime T: type, a: std.mem.Allocator, text: []const u8) !T {
+        return std.json.parseFromSliceLeaky(T, a, text, .{ .ignore_unknown_fields = true }) catch error.ManifestInvalid;
     }
 
     /// Resolve the ordered list of library roots — directories that directly hold

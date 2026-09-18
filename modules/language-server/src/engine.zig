@@ -853,15 +853,57 @@ fn collectChildren(
     }
     i += 1; // skip past `{`
 
+    // Parenthesis nesting inside the body, so a PascalCase name in a payload
+    // variant's element list (`Hover(Token, Other)`) or in a signature is not
+    // read as a member of the enum.
+    var paren_depth: u32 = 0;
+
     while (i < end) : (i += 1) {
         const tok = tokens[i];
+        switch (tok.kind) {
+            .leftParenthesis => paren_depth += 1,
+            .rightParenthesis => if (paren_depth > 0) {
+                paren_depth -= 1;
+            },
+            else => {},
+        }
 
         switch (parent_kind) {
             .@"enum" => {
-                // Enum variants are PascalCase identifiers at depth 0.
-                if (tok.kind == .identifier and tok.lexeme.len > 0 and tok.lexeme[0] >= 'A' and tok.lexeme[0] <= 'Z') {
+                // A variant / section opens a member position: it is a
+                // PascalCase identifier outside any `(…)`, right after the
+                // body's `{` or after a `,`. The same test the semantic-token
+                // walk makes — without it a return type (`-> Color {`) or a
+                // positional payload element was counted as a variant.
+                const opens_member = paren_depth == 0 and switch (prevSignificantKind(tokens, i) orelse .endOfFile) {
+                    .leftBrace, .comma => true,
+                    else => false,
+                };
+                if (opens_member and tok.kind == .identifier and tok.lexeme.len > 0 and tok.lexeme[0] >= 'A' and tok.lexeme[0] <= 'Z') {
                     const s = lsp_types.locToPosition(tok.line, tok.col);
                     const e = lsp_types.locToPosition(tok.line, tok.col + tok.lexeme.len);
+
+                    // A *section* — `Text { Bold, Italic }` — is a type of its
+                    // own, named by its path (`Token.Text`), and so are the
+                    // sections inside it (decision 8 §5.3b). It is an `Enum`
+                    // symbol carrying its own members, not an `EnumMember`
+                    // whose contents the nested-block skip below threw away.
+                    const open = nextSignificantIdx(tokens, i);
+                    if (open != null and open.? < end and tokens[open.?].kind == .leftBrace) {
+                        const close = matchingCloser(tokens, open.?, .leftBrace, .rightBrace) orelse open.?;
+                        const section_end = @min(close, end - 1);
+                        const range_end = lsp_types.locToPosition(tokens[section_end].line, tokens[section_end].col + 1);
+                        try kids.append(gpa, .{
+                            .name = try gpa.dupe(u8, tok.lexeme),
+                            .kind = proto.SymbolKind.Enum,
+                            .range = .{ .start = s, .end = range_end },
+                            .selectionRange = .{ .start = s, .end = e },
+                            .children = try collectChildren(gpa, tokens, open.?, section_end, .@"enum", null),
+                        });
+                        i = section_end;
+                        continue;
+                    }
+
                     try kids.append(gpa, .{
                         .name = try gpa.dupe(u8, tok.lexeme),
                         .kind = proto.SymbolKind.EnumMember,
@@ -4385,7 +4427,57 @@ pub fn completion(
         }
     }
 
+    // The two words the 1.0.3 surface introduced, where a declaration may start
+    // (front 14 step 1). Nothing else is offered as a keyword: the old surface's
+    // `record`, `enum` and `interface` never reach the user, and the rest of the
+    // table is left to the editor's word completion until a front takes it on.
+    if (atDeclarationStart(local_tokens, pos, prefix.len)) {
+        for ([_][]const u8{ "behavior", "type" }) |kw| {
+            if (!std.mem.startsWith(u8, kw, prefix)) continue;
+            try items.append(gpa, .{
+                .label = try gpa.dupe(u8, kw),
+                .kind = proto.CompletionItemKind.Keyword,
+                .detail = try gpa.dupe(u8, "declaration"),
+                // After the names in scope: a keyword is the rarer intent.
+                .sortText = "9",
+            });
+        }
+    }
+
     return items.toOwnedSlice(gpa);
+}
+
+/// True where a declaration may begin: the cursor is not inside any `(…)` or
+/// `[…]`, and the last significant token before the word being typed opens a
+/// new statement — nothing, `;`, `{`, `}` or `pub`.
+///
+/// This keeps `type` and `behavior` out of expression position (`val x = ty▮`
+/// offers bindings only) without needing the file to type-check, so it works in
+/// the half-typed state completion has to answer in.
+fn atDeclarationStart(tokens: []const Token, pos: proto.Position, prefix_len: usize) bool {
+    // Where the word being typed starts — every token from there on is the
+    // partial word itself, not context.
+    const word_start: u32 = pos.character -| @as(u32, @intCast(prefix_len));
+
+    var depth: i32 = 0;
+    var last: ?TokenKind = null;
+    for (tokens) |tok| {
+        if (isTrivia(tok.kind)) continue;
+        const tl: u32 = @intCast(tok.line -| 1);
+        const tc: u32 = @intCast(tok.col -| 1);
+        if (tl > pos.line or (tl == pos.line and tc >= word_start)) break;
+        switch (tok.kind) {
+            .leftParenthesis, .leftSquareBracket => depth += 1,
+            .rightParenthesis, .rightSquareBracket => depth -= 1,
+            else => {},
+        }
+        last = tok.kind;
+    }
+    if (depth != 0) return false;
+    return switch (last orelse return true) {
+        .semicolon, .leftBrace, .rightBrace, .@"pub" => true,
+        else => false,
+    };
 }
 
 // ── Dot-completion helpers ───────────────────────────────────────────────────
@@ -4515,7 +4607,7 @@ fn dotCompletion(
     for (bindings) |b| {
         if (!std.mem.eql(u8, b.name, receiver_name)) continue;
         if (isTypeDecl(b.decl)) {
-            try appendDeclMembers(gpa, &items, b.decl);
+            try appendDeclMembers(gpa, &items, b.decl, .type_name);
             return items.toOwnedSlice(gpa);
         }
     }
@@ -4548,7 +4640,7 @@ fn dotCompletion(
     if (receiver_type_name) |type_name| {
         for (bindings) |b| {
             if (!std.mem.eql(u8, b.name, type_name)) continue;
-            if (isTypeDecl(b.decl)) try appendDeclMembers(gpa, &items, b.decl);
+            if (isTypeDecl(b.decl)) try appendDeclMembers(gpa, &items, b.decl, .value);
             break;
         }
     }
@@ -5088,12 +5180,24 @@ fn isTypeDecl(decl: anytype) bool {
     };
 }
 
-/// Append the completable members of a type declaration: record fields/methods,
-/// struct fields/methods/getters/setters, or enum variants/methods.
+/// What sits to the left of the dot: the type's own name (`Color.`) or a value
+/// of that type (`c.`). It decides whether the variants of an enum-shaped type
+/// are offered — they are reached through the type, never through a value.
+const DotReceiver = enum { type_name, value };
+
+/// Append the completable members of a type declaration: a record's fields and
+/// methods, an enum's variants and methods.
+///
+/// A variant is offered only on the **type name**. On a value the compiler
+/// rejects it — `fn a(c: Color) -> Color { return c.Red; }` is
+/// `error: unknown field 'Red' on type 'Color'` — and the list used to offer
+/// every variant there, because a value receiver resolved to its named type and
+/// then reused the type-name member list unchanged.
 fn appendDeclMembers(
     gpa: std.mem.Allocator,
     items: *std.ArrayList(proto.CompletionItem),
     decl: anytype,
+    receiver: DotReceiver,
 ) !void {
     switch (decl) {
         .type_ => |tdecl| switch (tdecl.shape) {
@@ -5110,7 +5214,7 @@ fn appendDeclMembers(
                 });
             },
             .enum_ => {
-                for (tdecl.variants()) |v| try items.append(gpa, .{
+                if (receiver == .type_name) for (tdecl.variants()) |v| try items.append(gpa, .{
                     .label = try gpa.dupe(u8, v.name),
                     .kind = proto.CompletionItemKind.EnumMember,
                     .detail = try enumVariantDetail(gpa, tdecl.name, v),
