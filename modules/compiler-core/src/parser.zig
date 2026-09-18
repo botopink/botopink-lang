@@ -744,7 +744,12 @@ pub const Parser = struct {
                     seenBranch = true;
             }
 
-            const expr = try this.parseExpr(alloc);
+            var expr = try this.parseExpr(alloc);
+            // The statement is parsed before the separator is checked, so a
+            // semicolon-policy failure leaves it owned by nobody. It is freed
+            // here rather than leaked; once appended, `stmts`' own errdefer
+            // owns it and this one is discharged.
+            errdefer expr.deinit(alloc);
             switch (opts.semicolonPolicy) {
                 .required => _ = try this.consume(.semicolon),
                 .optional => _ = this.match(.semicolon),

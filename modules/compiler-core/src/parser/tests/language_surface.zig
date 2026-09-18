@@ -315,3 +315,27 @@ test "surface R7: a bodyless fn with no return type at all" {
         \\fn main() -> i32 { return 1; }
     );
 }
+
+// ── R9 — the catch-all names the token it stopped on ─────────────────────────
+//
+// `unexpectedToken` is the only one of the 48 kinds with no rule to name, and
+// every form the language does not have reaches it. Its old text — "Unexpected
+// token" / "Check the syntax around this position." — told a reader nothing
+// they could not already see, which is how seven missing forms were routed
+// around instead of filed.
+
+test "surface R9: the catch-all names the token and says a refusal looks different" {
+    try expectParseError(std.testing.allocator,
+        \\error: this token cannot appear here
+        \\ --> <test>:1:29
+        \\  |
+        \\1 | fn main() -> i32 { return 1 @ 2; }
+        \\  |                             ^ unexpected `@`
+        \\  |
+        \\  = hint: The statement before it may be missing its `;`, or an earlier `(`, `[` or `{` may not be closed. A form the language deliberately refuses reports a NAMED error instead of this one, so if you believe this spelling should work, it is a gap worth filing rather than working around.
+        \\
+        \\
+    ,
+        \\fn main() -> i32 { return 1 @ 2; }
+    );
+}
