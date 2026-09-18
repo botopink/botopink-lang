@@ -2107,17 +2107,29 @@ pub fn prepareRename(
     };
 }
 
+/// True for a word the lexer turns into a keyword token — the words a rename
+/// must refuse and an import quick-fix must skip.
+///
+/// The list is `keywordOrIdent` in `compiler-core/src/lexer.zig`, word for word;
+/// keep the two in step. A word that is *not* there is an ordinary identifier
+/// and may be renamed: `record`, `enum`, `interface`, `new`, `delegate`,
+/// `struct`, `const` and the seven dead keywords `auto`, `derive`, `get`,
+/// `macro`, `opaque`, `private`, `set` all left the table, and refusing to
+/// rename them refused a rename the compiler allows.
+///
+/// `true` and `false` are the exception: the lexer reads them as identifiers and
+/// the parser gives them their meaning (`parser/exprs.zig:1656`), so they are
+/// listed here — renaming a boolean literal is never what the user meant.
 fn isKeyword(name: []const u8) bool {
     const keywords = [_][]const u8{
-        "as",       "assert",    "auto",   "await",    "break",   "case",
-        "catch",    "comptime",  "const",  "continue", "declare", "default",
-        "delegate", "derive",    "echo",   "else",     "enum",    "extends",
-        "fn",       "for",       "from",   "get",      "if",      "implement",
-        "import",   "interface", "loop",   "macro",    "new",     "null",
-        "opaque",   "private",   "pub",    "record",   "return",  "self",
-        "set",      "struct",    "syntax", "test",     "throw",   "todo",
-        "true",     "false",     "try",    "type",     "use",     "val",
-        "var",      "yield",     "Self",
+        "as",        "assert",   "await",    "behavior", "break",   "case",
+        "catch",     "comptime", "continue", "declare",  "default", "else",
+        "extend",    "extends",  "fn",       "for",      "from",    "if",
+        "implement", "import",   "is",       "loop",     "mod",     "null",
+        "pub",       "return",   "Self",     "syntax",   "test",    "throw",
+        "try",       "type",     "use",      "val",      "var",     "yield",
+        // Not lexer keywords, but not renameable identifiers either.
+        "true",      "false",
     };
     for (keywords) |kw| {
         if (std.mem.eql(u8, name, kw)) return true;
@@ -3864,12 +3876,23 @@ fn nextSignificantKind(tokens: []const Token, i: usize) ?TokenKind {
     return null;
 }
 
+/// True for a name the checker registers as a built-in type — what semantic
+/// tokens paint `type [defaultLibrary]`.
+///
+/// The list is `Env.registerBuiltins` in `compiler-core/src/comptime/env.zig`,
+/// minus `Self` (a keyword token of its own). `char`, `byte` and `never` were
+/// painted here and are registered nowhere: the editor marked three words as
+/// standard-library types that no program can name. `any` stays because the
+/// checker still registers it (the unconstrained error channel of
+/// `@Future<T, E = any>`), even though decision 8 §2.5 gives the user no `any`.
+/// `unknown` is decision 8 §2's type; front 06 registers it, and painting it
+/// early costs nothing — no other declaration may be called `unknown`.
 fn isPrimitiveType(name: []const u8) bool {
     const prims = [_][]const u8{
-        "bool", "string", "void",  "char", "byte",
-        "i8",   "i16",    "i32",   "i64",  "isize",
-        "u8",   "u16",    "u32",   "u64",  "usize",
-        "f32",  "f64",    "never", "any",
+        "bool", "string", "void", "v128",    "noreturn",
+        "i8",   "i16",    "i32",  "i64",     "isize",
+        "u8",   "u16",    "u32",  "u64",     "usize",
+        "f32",  "f64",    "any",  "unknown",
     };
     for (prims) |p| if (std.mem.eql(u8, name, p)) return true;
     return false;
@@ -4157,7 +4180,17 @@ fn moduleDecls(arena: std.mem.Allocator, tokens: []const Token) ![]ModuleDecl {
                     .name = nt.lexeme,
                     .kind = switch (tok.kind) {
                         .@"fn" => proto.CompletionItemKind.Function,
-                        .type => proto.CompletionItemKind.Struct,
+                        // A `type` is a record or an enum by its shape, the same
+                        // distinction `documentSymbol` draws — `typeDeclSpan`
+                        // already reads it, so the degraded list draws it too
+                        // instead of calling every `type` a Struct.
+                        .type => if (typeDeclSpan(tokens, i)) |span|
+                            (if (span.is_enum)
+                                proto.CompletionItemKind.Enum
+                            else
+                                proto.CompletionItemKind.Struct)
+                        else
+                            proto.CompletionItemKind.Struct,
                         .behavior => proto.CompletionItemKind.Interface,
                         else => proto.CompletionItemKind.Variable,
                     },

@@ -69,6 +69,15 @@ in `engine.zig`, add a test in [`tests/`](tests/AGENTS.md) (register it in
   walk — locals from `collectLocalScope` plus the module's own declarations from
   `moduleDecls`. Answering `null` there left the editor with no completion for
   any file carrying a type error, or being typed (front 14 step 1).
+- **Two word lists mirror the compiler and must not drift.** `isKeyword` is
+  `keywordOrIdent` in `compiler-core/src/lexer.zig` (plus `true`/`false`, which
+  the lexer reads as identifiers) — it decides what `prepareRename` refuses and
+  what the import quick-fix skips, so a word that left the table must leave it
+  here or a legal rename is refused. `isPrimitiveType` is
+  `Env.registerBuiltins` in `comptime/env.zig` minus `Self` — it decides what
+  semantic tokens paint `type [defaultLibrary]`, so a name that is registered
+  nowhere must not be in it. `unknown` (decision 8 §2) is painted ahead of front
+  06 registering it; `any` stays while the checker still registers it.
 - **Completion hides what the cursor cannot see** (`cursorScope`): the binding
   whose own initialiser the cursor sits in (`val x = ▮` never offers `x`) and
   every `val`/`var` declared below it. A `fn` is not hidden — it may be called

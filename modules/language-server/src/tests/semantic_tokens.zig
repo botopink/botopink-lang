@@ -93,3 +93,18 @@ test "semanticTokens: method call vs property access" {
     ;
     try run(std.testing.allocator, "semantic_tokens_member_access", source);
 }
+
+// ── ST-14 — the builtin-type list is the checker's ────────────────────────────
+//
+// `type [defaultLibrary]` claims a name is a standard-library type. `char`,
+// `byte` and `never` were painted that way and `Env.registerBuiltins` knows
+// none of them; `unknown` is decision 8 §2's type and was painted as nothing.
+// The fixture puts a real builtin, decision 8's `unknown`, and one of the three
+// invented names side by side, so the snapshot shows all three verdicts at once.
+
+test "semanticTokens: unknown is a builtin type, an invented one is not" {
+    const source =
+        \\fn f(a: i32, b: unknown, c: never) { }
+    ;
+    try run(std.testing.allocator, "semantic_tokens_builtin_type_list", source);
+}
