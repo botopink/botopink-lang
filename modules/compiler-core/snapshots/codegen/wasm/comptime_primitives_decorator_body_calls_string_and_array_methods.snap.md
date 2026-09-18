@@ -41,22 +41,10 @@ describe(Decl) ->
     end,
     emit('__bp_add'('__bp_add'('__bp_add'('__bp_add'('__bp_add'('__bp_add'('__bp_add'('__bp_add'('__bp_add'('__bp_add'(<<"pub fn describe">>, maps:get(name, Decl)), <<"() -> string { return \"">>), Upper), <<":">>), Hidden), <<":">>), Short), <<":">>), Size), <<"\"; }">>)).
 
-main() ->
+main({Arg0}) ->
     erlang:erase('__bp_emitted'),
     try
-        describe(#{
-            kind => 'Type',
-            name => <<"User">>,
-            fields => [
-                #{name => <<"name">>, typeName => <<"string">>, annotations => []},
-                #{name => <<"secret">>, typeName => <<"string">>, annotations => []},
-                #{name => <<"age">>, typeName => <<"i32">>, annotations => []}
-            ],
-            variants => [],
-            methods => [],
-            returnType => <<"">>,
-            annotations => [#{name => <<"describe">>, args => []}]
-        }),
+        describe(Arg0),
         json:encode(#{kind => <<"ok">>, contributions => lists:reverse('__bp_emitted'())})
     catch
         throw:{'__bp_decorator_fail', Message, Span} ->
@@ -64,6 +52,21 @@ main() ->
         Class:Reason ->
             json:encode(#{kind => <<"error">>, message => '__bp_text'({Class, Reason})})
     end.
+
+%% main/1 argument — an external term, not part of the module:
+%% Arg0 = #{
+%%     kind => 'Type',
+%%     name => <<"User">>,
+%%     fields => [
+%%         #{name => <<"name">>, typeName => <<"string">>, annotations => []},
+%%         #{name => <<"secret">>, typeName => <<"string">>, annotations => []},
+%%         #{name => <<"age">>, typeName => <<"i32">>, annotations => []}
+%%     ],
+%%     variants => [],
+%%     methods => [],
+%%     returnType => <<"">>,
+%%     annotations => [#{name => <<"describe">>, args => []}]
+%% }
 ```
 
 ----- COMPTIME REPLY -- decorator describe

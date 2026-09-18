@@ -4,9 +4,10 @@
 /// @Decl`. When `#[d(args)]` is applied to a declaration, the core reflects that
 /// declaration into a `DeclHandle` and runs the decorator body over it:
 ///
-///   decorator `FnDecl` ─ codegen/erlang.zig `emitComptimeModule` ─┐
-///   handle + args ─ `Term` ─ codegen/beam/erl_emitter ─ `main/0` ──┴→ .erl
-///     → comptime/runtime/persistent_erl `evalDetailed`
+///   decorator `FnDecl` ─ codegen/erlang.zig `emitComptimeModule` ─ `main/1` → .erl
+///   handle + args ─ `Term` ─ comptime/runtime/etf ─ external term ─┐
+///     → comptime/runtime/persistent_erl `evalWithArg`              │
+///       (compile+load once, then call `<module>:main(<term>)`) ←───┘
 ///     → JSON `{kind, contributions | message | span}` → `Outcome`
 ///
 /// The body is lowered by the regular Erlang backend (untyped mode), so every
@@ -14,7 +15,9 @@
 /// body calls (`decl.fail`, `decl.failAt`, `@compilerError`, `@emit`) are plain
 /// Erlang functions resident in `bp_comptime_decorator`, built once at server
 /// warmup (`runtime/prelude.zig`) and reached by the `-import`
-/// `emitComptimeModule` writes; only `main/0` is generated per evaluation.
+/// `emitComptimeModule` writes; only `main/1` is generated, and it carries nothing
+/// from the declaration it runs over — so one `.erl` serves every declaration a
+/// decorator annotates with the same annotation arguments.
 const std = @import("std");
 const ast = @import("../ast.zig");
 const template = @import("./template.zig");
@@ -24,6 +27,7 @@ const Ast = @import("../codegen/beam/erl_ast.zig");
 const Term = @import("../codegen/beam/term.zig").Term;
 const persistent_erl = @import("./runtime/persistent_erl.zig");
 const preludeMod = @import("./runtime/prelude.zig");
+const etf = @import("./runtime/etf.zig");
 const trace = @import("./trace.zig");
 
 /// Sole comptime runtime.
@@ -81,10 +85,16 @@ pub fn evaluate(
         else => |e| return e,
     };
 
-    // Staged and renamed into place (`template_eval.writeModule`).
-    const path = try templateEval.writeModule(arena, io, ".botopinkbuild/tmp/decorator", source.module, source.code);
+    // Staged and renamed into place once per module (`template_eval.ensureModule`).
+    const path = try templateEval.ensureModule(arena, io, ".botopinkbuild/tmp/decorator", source.module, source.code);
 
-    const response = persistent_erl.evalDetailed(arena, io, path) catch return error.EvalFailed;
+    const response = persistent_erl.evalWithArg(
+        arena,
+        io,
+        path,
+        source.module,
+        try etf.encode(arena, source.argument),
+    ) catch return error.EvalFailed;
     if (traces) |list| try list.append(arena, .{
         .kind = .decorator,
         .name = dfn.name,
@@ -120,22 +130,27 @@ fn unsupportedText(arena: std.mem.Allocator, host: []const u8, name: []const u8,
 // ── module ────────────────────────────────────────────────────────────────────
 
 const Module = struct {
-    /// Erlang module atom, derived from the code's hash (unique per distinct
-    /// evaluation, stable across runs).
+    /// Erlang module atom, derived from the code's hash. The code carries no
+    /// handle, so every declaration a decorator annotates with the same
+    /// annotation arguments derives the same atom.
     module: []const u8,
     code: []const u8,
-    /// The lowered body and `main/0` only (`trace.Entry.erl`).
+    /// The lowered body and `main/1`, with the argument as a comment
+    /// (`trace.Entry.erl`).
     listing: []const u8,
+    /// `main/1`'s argument: the handle, then the annotation arguments.
+    argument: Term,
 };
 
 const placeholder_module = "decorator_module";
 
-/// `main/0` — the one host form whose text depends on the call site: it calls
-/// the decorator with this declaration's handle and the annotation arguments and
-/// replies with JSON. `fail`/`failAt`/`compilerError` (which throw the tagged
-/// rejection caught here) and `emit`/`'__bp_emitted'` are resident
-/// (`runtime/prelude.zig`), reached by the `-import` `emitComptimeModule` writes.
-fn mainForms(b: Ast.Builder, dfn: ast.FnDecl, handle: Term, plainArgs: []const template.PlainArg) Ast.Builder.Error![]const Ast.Form {
+/// `main/1` — the evaluator entry: it destructures the argument tuple, calls the
+/// decorator with it and replies with JSON. `fail`/`failAt`/`compilerError`
+/// (which throw the tagged rejection caught here) and `emit`/`'__bp_emitted'`
+/// are resident (`runtime/prelude.zig`), reached by the `-import`
+/// `emitComptimeModule` writes. Nothing here depends on the declaration it runs
+/// over any more — that is what makes the module's hash a hash of the decorator.
+fn mainForms(b: Ast.Builder, dfn: ast.FnDecl, plans: []const templateEval.ArgPlan) Ast.Builder.Error![]const Ast.Form {
     const V = Ast.Expr.v;
     const A = Ast.Expr.a;
     const fail_tag = A(preludeMod.decorator_fail_tag);
@@ -143,11 +158,8 @@ fn mainForms(b: Ast.Builder, dfn: ast.FnDecl, handle: Term, plainArgs: []const t
 
     // <decorator>(Handle, Arg1, …): parameters after the `@Decl` one bind the
     // annotation's arguments in order; a missing argument is `undefined`.
-    const args = try b.arena.alloc(Ast.Expr, @max(dfn.params.len, 1));
-    args[0] = Ast.Expr.t(handle);
-    for (args[1..], 0..) |*arg, i| {
-        arg.* = if (i < plainArgs.len) plainArgs[i].toExpr() else A("undefined");
-    }
+    const args = try b.arena.alloc(Ast.Expr, plans.len);
+    for (plans, 0..) |plan, i| args[i] = plan.expr;
     const invoke: Ast.Expr = .{ .call = .{ .name = dfn.name, .args = args } };
 
     const emitted = try b.call("__bp_emitted", &.{});
@@ -188,7 +200,10 @@ fn mainForms(b: Ast.Builder, dfn: ast.FnDecl, handle: Term, plainArgs: []const t
     });
 
     const forms = [_]Ast.Form{
-        .{ .function = .{ .name = "main", .clauses = try b.arena.dupe(Ast.Clause, &.{.{ .patterns = &.{}, .body = main_body }}) } },
+        .{ .function = .{ .name = "main", .clauses = try b.arena.dupe(Ast.Clause, &.{.{
+            .patterns = try b.exprs(&.{try templateEval.mainPattern(b, plans)}),
+            .body = main_body,
+        }}) } },
     };
     return b.arena.dupe(Ast.Form, &forms);
 }
@@ -201,7 +216,8 @@ fn buildModule(
     unsupported: *erlang.UnsupportedMethod,
 ) (EvalError || error{UnsupportedMethod})!Module {
     const b: Ast.Builder = .{ .arena = arena };
-    const forms = try mainForms(b, dfn, try handleToTerm(arena, handle), plainArgs);
+    const plans = try argPlans(arena, dfn, handle, plainArgs);
+    const forms = try mainForms(b, dfn, plans);
     const resident = try preludeMod.decoratorForms(b);
 
     const decls = try arena.alloc(ast.DeclKind, 1);
@@ -210,7 +226,7 @@ fn buildModule(
         .host_enums = &.{"DeclKind"},
         // `decl.failAt(Span(start, end, line), msg)` builds the span map.
         .host_records = &.{.{ .name = "Span", .fields = &.{ "start", "end", "line" } }},
-        .exports = &.{.{ .name = "main", .arity = 0 }},
+        .exports = &.{.{ .name = "main", .arity = 1 }},
         .forms = forms,
         .resident = .{
             .module = preludeMod.decorator_module,
@@ -221,17 +237,57 @@ fn buildModule(
     };
     const code = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, config) catch |err|
         return if (err == error.UnsupportedComptimeMethod) error.UnsupportedMethod else error.EvalFailed;
-    // What snapshots show: the lowered body and `main/0`. `resident` stays set:
-    // it decides where a method call lowers, so dropping it would make the
-    // listing diverge from the module that actually ran.
-    config.listing = true;
-    const listing = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, config) catch return error.EvalFailed;
-
+    const argument = try templateEval.argumentTerm(arena, plans);
     const module = try std.fmt.allocPrint(arena, "decorator_{x:0>16}", .{std.hash.Wyhash.hash(0, code)});
     const header = "-module(" ++ placeholder_module ++ ").";
     if (!std.mem.startsWith(u8, code, header)) return error.EvalFailed;
     const renamed = try std.fmt.allocPrint(arena, "-module({s}).{s}", .{ module, code[header.len..] });
-    return .{ .module = module, .code = renamed, .listing = listing };
+
+    // What snapshots show: the lowered body, `main/1` and the argument as a
+    // comment. `resident` stays set: it decides where a method call lowers, so
+    // dropping it would make the listing diverge from the module that ran.
+    // Rendered once per module, not once per annotated declaration.
+    const listing = templateEval.cachedListing(module) orelse blk: {
+        config.listing = true;
+        const fresh = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, config) catch return error.EvalFailed;
+        break :blk try templateEval.rememberListing(module, fresh);
+    };
+    return .{
+        .module = module,
+        .code = renamed,
+        .listing = try templateEval.listingWithArgument(arena, listing, argument),
+        .argument = argument,
+    };
+}
+
+/// How each parameter of `dfn` reaches the body: the `@Decl` handle first, then
+/// the annotation arguments in order. A plain argument whose lexeme has no exact
+/// term (`templateEval.plainArgTerm`) stays a literal in the module; a parameter
+/// the annotation gave nothing is `undefined`.
+fn argPlans(
+    arena: std.mem.Allocator,
+    dfn: ast.FnDecl,
+    handle: DeclHandle,
+    plainArgs: []const template.PlainArg,
+) EvalError![]const templateEval.ArgPlan {
+    const plans = try arena.alloc(templateEval.ArgPlan, @max(dfn.params.len, 1));
+    plans[0] = .{
+        .term = try handleToTerm(arena, handle),
+        .expr = Ast.Expr.v("Arg0"),
+        .bound = true,
+    };
+    for (plans[1..], 0..) |*plan, i| {
+        if (i >= plainArgs.len) {
+            plan.* = .{ .term = Term.undefined_atom, .expr = Ast.Expr.a("undefined"), .bound = false };
+            continue;
+        }
+        const name = try std.fmt.allocPrint(arena, "Arg{d}", .{i + 1});
+        plan.* = if (try templateEval.plainArgTerm(arena, plainArgs[i])) |t|
+            .{ .term = t, .expr = Ast.Expr.v(name), .bound = true }
+        else
+            .{ .term = Term.undefined_atom, .expr = plainArgs[i].toExpr(), .bound = false };
+    }
+    return plans;
 }
 
 // ── handle ────────────────────────────────────────────────────────────────────
@@ -360,20 +416,16 @@ test "decorator module: lowered body, handle term and host glue" {
 
     try std.testing.expect(std.mem.startsWith(u8, m.module, "decorator_"));
     try std.testing.expect(std.mem.startsWith(u8, m.code, "-module(decorator_"));
+    // Nothing about the declaration is in the module: `main/1` takes the handle
+    // and the annotation arguments, the body is called with the bound names, and
+    // the host glue is imported rather than defined.
     const expected = [_][]const u8{
-        "-export([main/0]).",
+        "-export([main/1]).",
+        "-import(bp_comptime_decorator, [fail/2, failAt/3, compilerError/1, emit/1, '__bp_emitted'/0,",
         "(maps:get(kind, Decl) =/= 'Method')",
         "fail(Decl, <<\"#[getMapping] must annotate a method\">>)",
-        \\        getMapping(#{
-        \\            kind => 'Type',
-        \\            name => <<"Nope">>,
-        \\            fields => [],
-        \\            variants => [],
-        \\            methods => [],
-        \\            returnType => <<"">>,
-        \\            annotations => []
-        \\        }, <<"/x">>, undefined),
-        ,
+        "main({Arg0, Arg1, _}) ->",
+        "getMapping(Arg0, Arg1, undefined),",
         "throw:{'__bp_decorator_fail', Message, Span} ->",
     };
     for (expected) |needle| {
@@ -382,6 +434,64 @@ test "decorator module: lowered body, handle term and host glue" {
             return error.TestExpectedContains;
         }
     }
+    // The handle travels as the first element of `main/1`'s argument and the
+    // annotation's `"/x"` as the second; the third parameter got no argument.
+    const argument = m.argument.tuple;
+    try std.testing.expectEqual(@as(usize, 3), argument.len);
+    try std.testing.expectEqualStrings("kind", argument[0].map[0].key.atom);
+    try std.testing.expectEqualStrings("Type", argument[0].map[0].value.atom);
+    try std.testing.expectEqualStrings("Nope", argument[0].map[1].value.binary);
+    try std.testing.expectEqualStrings("/x", argument[1].binary);
+    try std.testing.expectEqualStrings("undefined", argument[2].atom);
+
+    // And the listing still shows it — the snapshots assert the input half of
+    // the evaluation, which is no longer inside the module.
+    try std.testing.expect(std.mem.indexOf(u8, m.listing, "%% main/1 argument") != null);
+    // This handle is short enough to stay on one line; a real one wraps.
+    try std.testing.expect(std.mem.indexOf(u8, m.listing, "name => <<\"Nope\">>,") != null);
+    try std.testing.expect(std.mem.indexOf(u8, m.listing, "%% Arg1 = <<\"/x\">>") != null);
+    try std.testing.expect(std.mem.indexOf(u8, m.listing, "%% Arg2 = undefined") != null);
+}
+
+test "decorator module: one module per decorator, whatever it annotates" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const lexerMod = @import("../lexer.zig");
+    const parserMod = @import("../parser.zig");
+    var lx = lexerMod.Lexer.init(
+        \\fn audit(comptime decl: @Decl) {
+        \\    @emit("pub val seen = 1;");
+        \\}
+    );
+    var p = parserMod.Parser.init(try lx.scanAll(arena));
+    const program = try p.parse(arena);
+    const dfn = program.decls[0].@"fn";
+
+    var unsupported: erlang.UnsupportedMethod = .{};
+    const first = try buildModule(arena, dfn, .{
+        .kind = "Type",
+        .name = "Alpha",
+        .fields = &.{},
+        .methods = &.{},
+        .returnType = "",
+        .annotations = &.{},
+    }, &.{}, &unsupported);
+    const second = try buildModule(arena, dfn, .{
+        .kind = "Type",
+        .name = "Omega",
+        .fields = &.{.{ .name = "x", .typeName = "i32", .annotations = &.{} }},
+        .methods = &.{},
+        .returnType = "",
+        .annotations = &.{},
+    }, &.{}, &unsupported);
+
+    try std.testing.expectEqualStrings(first.module, second.module);
+    try std.testing.expectEqualStrings(first.code, second.code);
+    // Same module, different argument — which is the whole of step 2.
+    try std.testing.expectEqualStrings("Alpha", first.argument.tuple[0].map[1].value.binary);
+    try std.testing.expectEqualStrings("Omega", second.argument.tuple[0].map[1].value.binary);
 }
 
 test "decorator outcome: ok / fail / error replies" {

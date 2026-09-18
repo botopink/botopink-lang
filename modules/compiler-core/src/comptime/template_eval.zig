@@ -3,19 +3,22 @@
 /// When the V1 classifier in `infer.zig` cannot reduce a template body by
 /// inspection, the body runs here:
 ///
-///   template `FnDecl` ─ codegen/erlang.zig `emitComptimeModule` ─┐
-///   captures + plain args ─ `Term` ─ codegen/beam/erl_emitter ─ `main/0` ──┴→ .erl
-///     → comptime/runtime/persistent_erl `evalDetailed`
+///   template `FnDecl` ─ codegen/erlang.zig `emitComptimeModule` ─ `main/1` → .erl
+///   captures + plain args ─ `Term` ─ comptime/runtime/etf ─ external term ─┐
+///     → comptime/runtime/persistent_erl `evalWithArg` (compile+load once,   │
+///       then call `<module>:main(<term>)` per call site) ←─────────────────┘
 ///     → JSON reply → `Outcome`
 ///
 /// The generated module carries the lowered body, the `'__bp_prim_…'` shims its
-/// method calls reached and `main/0` — nothing else. The capture API, the result
+/// method calls reached and `main/1` — nothing else. The capture API, the result
 /// constructors, the failure throws and the reply encoder are resident in
 /// `bp_comptime_template`, built once at server warmup
 /// (`runtime/prelude.zig`), and reached by the `-import` `emitComptimeModule`
-/// writes, so the body's own text is the same either way.
+/// writes, so the body's own text is the same either way. **Nothing in the
+/// module depends on the call site**, so its content hash is a hash of the
+/// declaration: one `.erl` per template however many times it is called.
 ///
-/// Reply format (`main/0`):
+/// Reply format (`main/1`):
 ///   {"kind":"code","source":"…"}                  ← `q.build(src)` / `@code(src)`
 ///   {"kind":"value","value":<json>}               ← `@expr(v)`
 ///   {"kind":"capture","param":"q"}                ← `return q`
@@ -23,16 +26,19 @@
 ///   {"kind":"fail","message","param","span"}      ← `q.fail` / `q.failAt` / `@compilerError`
 ///   {"kind":"error","message"}                    ← anything else raised
 ///
-/// A capture reaches the body as a map; its methods (`q.text()`, `q.parts()`,
-/// `q.lookup(name)`, …) lower to the host functions appended to the module.
+/// A capture reaches the body as a map — `main/1`'s argument, not a literal; its
+/// methods (`q.text()`, `q.parts()`, `q.lookup(name)`, …) lower to the resident
+/// host functions.
 const std = @import("std");
 const ast = @import("../ast.zig");
 const template = @import("./template.zig");
 const erlang = @import("../codegen/erlang.zig");
 const Ast = @import("../codegen/beam/erl_ast.zig");
 const Term = @import("../codegen/beam/term.zig").Term;
+const erlEmitter = @import("../codegen/beam/erl_emitter.zig");
 const persistent_erl = @import("./runtime/persistent_erl.zig");
 const preludeMod = @import("./runtime/prelude.zig");
+const etf = @import("./runtime/etf.zig");
 const trace = @import("./trace.zig");
 
 /// Sole comptime runtime.
@@ -104,9 +110,15 @@ pub fn evaluate(
         else => |e| return e,
     };
 
-    const path = try writeModule(arena, io, ".botopinkbuild/tmp/template", source.module, source.code);
+    const path = try ensureModule(arena, io, ".botopinkbuild/tmp/template", source.module, source.code);
 
-    const response = persistent_erl.evalDetailed(arena, io, path) catch return error.EvalFailed;
+    const response = persistent_erl.evalWithArg(
+        arena,
+        io,
+        path,
+        source.module,
+        try etf.encode(arena, source.argument),
+    ) catch return error.EvalFailed;
     if (traces) |list| try list.append(arena, .{
         .kind = .template,
         .name = tfn.name,
@@ -122,6 +134,87 @@ pub fn evaluate(
         .compile_error => |detail| .{ .err = try errorText(arena, "the template module did not compile", detail) },
         .runtime_error => |detail| .{ .err = try errorText(arena, "the template body raised", detail) },
     };
+}
+
+// ── one module, once per process ──────────────────────────────────────────────
+//
+// After step 2 a module's atom is the hash of code that carries nothing from the
+// call site, so every call site of one declaration derives the same atom, the
+// same bytes on disk and the same listing. `emitComptimeModule` re-parses the
+// embedded `primitives.bp` and `erlang_bifs.d.bp` preludes on every emit
+// (`codegen/erlang.zig`'s `collectPrimErlangDispatch` and
+// `loadAutoImportedBifsFromPrelude`, both documented as throwaway per emit), so
+// re-rendering a module the process has already rendered is the single most
+// expensive thing left in an evaluation: **16.1 ms**, measured over 20
+// `buildModule` calls.
+//
+// This registry removes the repeats. It is keyed by the module atom — the
+// content hash of the compilable module — so a hit is the same text by
+// construction, never a guess about declaration identity. Entries are
+// process-lifetime and bounded by the declarations in the build, not by the call
+// sites.
+
+const Rendered = struct {
+    /// The listing without the argument comment: the part that is the same for
+    /// every call site (`listingWithArgument` adds the rest per evaluation).
+    listing: []const u8,
+};
+
+/// Serialises the registry. An atomic spin-lock, as `runtime/persistent_erl.zig`
+/// uses for the pipes: the critical sections are a hash lookup and an insert,
+/// and parallel test binaries are the only contenders.
+var rendered_lock: std.atomic.Value(u8) = .init(0);
+var rendered_modules: std.StringHashMapUnmanaged(Rendered) = .empty;
+/// Registry storage outlives every caller arena and is never freed.
+const rendered_alloc = std.heap.page_allocator;
+
+fn lockRendered() void {
+    while (rendered_lock.cmpxchgWeak(0, 1, .acquire, .monotonic)) |_| std.atomic.spinLoopHint();
+}
+
+fn unlockRendered() void {
+    rendered_lock.store(0, .release);
+}
+
+/// The cached listing of `module`, or null when this process has not rendered it.
+pub fn cachedListing(module: []const u8) ?[]const u8 {
+    lockRendered();
+    defer unlockRendered();
+    const entry = rendered_modules.get(module) orelse return null;
+    return entry.listing;
+}
+
+/// Record `listing` for `module` and return the stored copy.
+pub fn rememberListing(module: []const u8, listing: []const u8) std.mem.Allocator.Error![]const u8 {
+    const key = try rendered_alloc.dupe(u8, module);
+    errdefer rendered_alloc.free(key);
+    const owned = try rendered_alloc.dupe(u8, listing);
+    errdefer rendered_alloc.free(owned);
+
+    lockRendered();
+    defer unlockRendered();
+    const slot = try rendered_modules.getOrPut(rendered_alloc, key);
+    if (slot.found_existing) {
+        // Another thread rendered the same module first; its text is this text.
+        rendered_alloc.free(key);
+        rendered_alloc.free(owned);
+        return slot.value_ptr.listing;
+    }
+    slot.value_ptr.* = .{ .listing = owned };
+    return owned;
+}
+
+/// Stage `<dir>/<module>.erl` unless it is already there, and return its path
+/// either way. The atom **is** the content's hash, and `writeModule` stages and
+/// renames, so a file at that path is that content, complete — a second call
+/// site of one declaration would rewrite the same bytes. The check is a single
+/// `access`, and asking the filesystem rather than remembering means a cleared
+/// `.botopinkbuild/` or a changed working directory mid-process writes the file
+/// again instead of pointing the node at one that is gone.
+pub fn ensureModule(arena: std.mem.Allocator, io: std.Io, dir: []const u8, module: []const u8, code: []const u8) EvalError![]const u8 {
+    const path = try std.fmt.allocPrint(arena, "{s}/{s}.erl", .{ dir, module });
+    if (std.Io.Dir.cwd().access(io, path, .{})) |_| return path else |_| {}
+    return writeModule(arena, io, dir, module, code);
 }
 
 /// Write `<dir>/<module>.erl` and return its path. The module is written to a
@@ -163,12 +256,147 @@ fn unsupportedText(arena: std.mem.Allocator, host: []const u8, name: []const u8,
 // ── module ────────────────────────────────────────────────────────────────────
 
 const Module = struct {
-    /// Erlang module atom derived from the code's hash.
+    /// Erlang module atom derived from the code's hash. The code carries no
+    /// capture, so every call site of one declaration derives the same atom.
     module: []const u8,
     code: []const u8,
-    /// The lowered body and `main/0` only (`trace.Entry.erl`).
+    /// The lowered body and `main/1`, with the argument as a comment
+    /// (`trace.Entry.erl`).
     listing: []const u8,
+    /// `main/1`'s argument: one tuple element per parameter.
+    argument: Term,
 };
+
+/// How one parameter of the body reaches it.
+pub const ArgPlan = struct {
+    /// The value in `main/1`'s argument tuple.
+    term: Term,
+    /// What the call in `main/1` writes for this parameter — the bound
+    /// `ArgN`, or the literal itself when `term` is a placeholder.
+    expr: Ast.Expr,
+    /// Whether `main/1`'s head binds this slot.
+    bound: bool,
+};
+
+/// `main/1`'s head pattern: `{Arg0, _, Arg2}`, or `_Args` for a body that takes
+/// no parameter at all.
+pub fn mainPattern(b: Ast.Builder, plans: []const ArgPlan) Ast.Builder.Error!Ast.Expr {
+    if (plans.len == 0) return Ast.Expr.v("_Args");
+    const patterns = try b.arena.alloc(Ast.Expr, plans.len);
+    for (plans, 0..) |plan, i| {
+        patterns[i] = if (plan.bound) Ast.Expr.v(try argVar(b.arena, i)) else Ast.Expr.v("_");
+    }
+    return b.tuple(patterns);
+}
+
+/// The term `main/1` is called with: one element per parameter, in order.
+pub fn argumentTerm(arena: std.mem.Allocator, plans: []const ArgPlan) std.mem.Allocator.Error!Term {
+    const items = try arena.alloc(Term, plans.len);
+    for (plans, 0..) |plan, i| items[i] = plan.term;
+    return Term.tupleOf(items);
+}
+
+fn argVar(arena: std.mem.Allocator, index: usize) std.mem.Allocator.Error![]const u8 {
+    return std.fmt.allocPrint(arena, "Arg{d}", .{index});
+}
+
+/// A plain argument as a term, or null when its lexeme cannot be turned into
+/// one exactly — then it stays a literal in the module, which is correct but
+/// keys the module by that literal as well as by the code.
+///
+/// The only such lexeme today is one carrying `\u{…}`: `erl_emitter`'s
+/// `writeStringFromLexeme` renders it as Erlang's `\x{…}`, which inside a plain
+/// `<<"…">>` **truncates the code point to one byte** (`<<"a\x{263A}b">>` is
+/// `<<97,58,98>>`). Reproducing that here would be a second definition of what a
+/// botopink string literal means, and a wrong one; leaving the literal in the
+/// module keeps the single definition in the emitter.
+pub fn plainArgTerm(arena: std.mem.Allocator, pa: template.PlainArg) std.mem.Allocator.Error!?Term {
+    const text = std.mem.trim(u8, pa.source, " \t\r\n");
+    if (text.len >= 2 and text[0] == '"' and text[text.len - 1] == '"') {
+        return if (try lexemeBytes(arena, text[1 .. text.len - 1])) |bytes| Term.str(bytes) else null;
+    }
+    if (std.mem.eql(u8, text, "true")) return .{ .boolean = true };
+    if (std.mem.eql(u8, text, "false")) return .{ .boolean = false };
+    if (std.fmt.parseInt(i64, text, 10)) |n| return Term.int(n) else |_| {}
+    if (std.fmt.parseFloat(f64, text)) |f| {
+        if (std.math.isFinite(f)) return .{ .float = f };
+    } else |_| {}
+    // `PlainArg.toExpr` reaches `Ast.str(text)` here — a binary of the raw
+    // source bytes, which is the same value.
+    return Term.str(text);
+}
+
+/// The bytes a string literal's lexer content stands for — the value side of
+/// `erl_emitter.writeStringFromLexeme`, which writes the same thing as Erlang
+/// source. Null when the lexeme carries `\u{…}` (see `plainArgTerm`).
+fn lexemeBytes(arena: std.mem.Allocator, s: []const u8) std.mem.Allocator.Error!?[]const u8 {
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    var i: usize = 0;
+    while (i < s.len) {
+        if (s[i] != '\\' or i + 1 >= s.len) {
+            try out.append(arena, s[i]);
+            i += 1;
+            continue;
+        }
+        switch (s[i + 1]) {
+            'n' => try out.append(arena, '\n'),
+            'r' => try out.append(arena, '\r'),
+            't' => try out.append(arena, '\t'),
+            '0' => try out.append(arena, 0),
+            '\\' => try out.append(arena, '\\'),
+            '"' => try out.append(arena, '"'),
+            '$' => try out.append(arena, '$'),
+            'u' => return null,
+            // An unknown escape keeps the backslash and re-reads the next byte
+            // as itself, exactly as the emitter does.
+            else => {
+                try out.append(arena, '\\');
+                i += 1;
+                continue;
+            },
+        }
+        i += 2;
+    }
+    return out.items;
+}
+
+/// The listing with `main/1`'s argument under it, one commented `ArgN = …` per
+/// tuple element. The capture is no longer part of the module, and a snapshot
+/// that showed it has to keep showing it — it is the input half of the
+/// evaluation the reply answers.
+///
+/// Each element goes through `writeExpr`, not `writeTerm`: the expression writer
+/// is the one that wraps a map or a list over several lines, so a capture reads
+/// in a snapshot exactly as it read when it was a literal inside `main/0`.
+/// `writeTermAt` does not wrap a tuple, which is why the tuple is unpacked here
+/// rather than printed whole.
+pub fn listingWithArgument(arena: std.mem.Allocator, listing: []const u8, argument: Term) EvalError![]const u8 {
+    var out: std.Io.Writer.Allocating = .init(arena);
+    const w = &out.writer;
+    try w.writeAll(listing);
+    try w.writeAll("\n%% main/1 argument — an external term, not part of the module");
+    if (argument.tuple.len == 0) {
+        try w.writeAll(": {}\n");
+        return out.written();
+    }
+    try w.writeAll(":\n");
+
+    for (argument.tuple, 0..) |element, i| {
+        var text: std.Io.Writer.Allocating = .init(arena);
+        erlEmitter.writeExpr(&text.writer, Ast.Expr.t(element), 0) catch return error.EvalFailed;
+        var lines = std.mem.splitScalar(u8, text.written(), '\n');
+        var first = true;
+        while (lines.next()) |line| {
+            if (first) {
+                try w.print("%% Arg{d} = {s}\n", .{ i, line });
+                first = false;
+            } else {
+                try w.print("%% {s}\n", .{line});
+            }
+        }
+    }
+    return out.written();
+}
 
 const placeholder_module = "template_module";
 
@@ -181,23 +409,19 @@ const host_records = [_]erlang.HostRecord{
     .{ .name = "Context", .fields = &.{ "source", "text", "multiline" } },
 };
 
-/// `main/0` — the one host form whose text depends on the call site: it calls
-/// the body with this evaluation's capture and plain arguments and answers the
-/// JSON reply. The capture API, the result constructors, the failure throws and
-/// `'__bp_reply'/1` are resident (`runtime/prelude.zig`), reached by the
-/// `-import` `emitComptimeModule` writes.
-fn mainForms(
-    b: Ast.Builder,
-    tfn: ast.FnDecl,
-    captures: []const template.CapturedExpr,
-    plainArgs: []const template.PlainArg,
-) EvalError![]const Ast.Form {
+/// `main/1` — the evaluator entry: it destructures the argument tuple, calls the
+/// body with it and answers the JSON reply. The capture API, the result
+/// constructors, the failure throws and `'__bp_reply'/1` are resident
+/// (`runtime/prelude.zig`), reached by the `-import` `emitComptimeModule`
+/// writes. Nothing here depends on the call site any more — that is what makes
+/// the module's hash a hash of the declaration.
+fn mainForms(b: Ast.Builder, tfn: ast.FnDecl, plans: []const ArgPlan) EvalError![]const Ast.Form {
     const V = Ast.Expr.v;
     const A = Ast.Expr.a;
     const fail_tag = A(preludeMod.template_fail_tag);
 
-    const args = try b.arena.alloc(Ast.Expr, tfn.params.len);
-    for (tfn.params, 0..) |p, i| args[i] = try paramExpr(b.arena, p.name, i, captures, plainArgs);
+    const args = try b.arena.alloc(Ast.Expr, plans.len);
+    for (plans, 0..) |plan, i| args[i] = plan.expr;
     const invoke: Ast.Expr = .{ .call = .{ .name = tfn.name, .args = args } };
 
     const json = struct {
@@ -231,7 +455,10 @@ fn mainForms(
     } }});
     try forms.append(b.arena, .{ .function = .{
         .name = "main",
-        .clauses = try b.arena.dupe(Ast.Clause, &.{.{ .patterns = &.{}, .body = main_body }}),
+        .clauses = try b.arena.dupe(Ast.Clause, &.{.{
+            .patterns = try b.exprs(&.{try mainPattern(b, plans)}),
+            .body = main_body,
+        }}),
     } });
     return forms.items;
 }
@@ -244,7 +471,8 @@ fn buildModule(
     unsupported: *erlang.UnsupportedMethod,
 ) (EvalError || error{UnsupportedMethod})!Module {
     const b: Ast.Builder = .{ .arena = arena };
-    const forms = try mainForms(b, tfn, captures, plainArgs);
+    const plans = try argPlans(arena, tfn, captures, plainArgs);
+    const forms = try mainForms(b, tfn, plans);
     const resident = try preludeMod.templateForms(b);
 
     const decls = try arena.alloc(ast.DeclKind, 1);
@@ -252,7 +480,7 @@ fn buildModule(
     var config: erlang.ComptimeModule = .{
         .host_enums = &.{ "BindingKind", "DeclKind" },
         .host_records = &host_records,
-        .exports = &.{.{ .name = "main", .arity = 0 }},
+        .exports = &.{.{ .name = "main", .arity = 1 }},
         .forms = forms,
         .resident = .{
             .module = preludeMod.template_module,
@@ -263,35 +491,64 @@ fn buildModule(
     };
     const code = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, config) catch |err|
         return if (err == error.UnsupportedComptimeMethod) error.UnsupportedMethod else error.EvalFailed;
-    // What snapshots show: the lowered body and `main/0`. `resident` stays set:
-    // it decides where a method call lowers, so dropping it would make the
-    // listing diverge from the module that actually ran.
-    config.listing = true;
-    const listing = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, config) catch return error.EvalFailed;
-
+    const argument = try argumentTerm(arena, plans);
     const module = try std.fmt.allocPrint(arena, "template_{x:0>16}", .{std.hash.Wyhash.hash(0, code)});
     const header = "-module(" ++ placeholder_module ++ ").";
     if (!std.mem.startsWith(u8, code, header)) return error.EvalFailed;
     const renamed = try std.fmt.allocPrint(arena, "-module({s}).{s}", .{ module, code[header.len..] });
-    return .{ .module = module, .code = renamed, .listing = listing };
+
+    // What snapshots show: the lowered body, `main/1` and the argument as a
+    // comment. `resident` stays set: it decides where a method call lowers, so
+    // dropping it would make the listing diverge from the module that ran.
+    // Rendered once per module (`Rendered`), not once per call site.
+    const listing = cachedListing(module) orelse blk: {
+        config.listing = true;
+        const fresh = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, config) catch return error.EvalFailed;
+        break :blk try rememberListing(module, fresh);
+    };
+    return .{
+        .module = module,
+        .code = renamed,
+        .listing = try listingWithArgument(arena, listing, argument),
+        .argument = argument,
+    };
 }
 
-/// The argument for parameter `index`: its capture map, its literal plain
-/// argument, or `undefined`.
-fn paramExpr(
+/// How each parameter of `tfn` reaches the body. A captured `@Expr` is always a
+/// term; a plain argument is one too unless its lexeme has no exact term
+/// (`plainArgTerm`), in which case it stays a literal in the module; a parameter
+/// the call site gave neither is `undefined`.
+fn argPlans(
     arena: std.mem.Allocator,
-    name: []const u8,
-    index: usize,
+    tfn: ast.FnDecl,
     captures: []const template.CapturedExpr,
     plainArgs: []const template.PlainArg,
-) EvalError!Ast.Expr {
-    for (captures) |*cap| {
-        if (cap.paramIndex == index) return Ast.Expr.t(try captureToTerm(arena, cap));
+) EvalError![]const ArgPlan {
+    const plans = try arena.alloc(ArgPlan, tfn.params.len);
+    for (tfn.params, 0..) |p, i| {
+        plans[i] = .{ .term = Term.undefined_atom, .expr = Ast.Expr.a("undefined"), .bound = false };
+        var matched = false;
+        for (captures) |*cap| {
+            if (cap.paramIndex != i) continue;
+            plans[i] = .{
+                .term = try captureToTerm(arena, cap),
+                .expr = Ast.Expr.v(try argVar(arena, i)),
+                .bound = true,
+            };
+            matched = true;
+            break;
+        }
+        if (matched) continue;
+        for (plainArgs) |pa| {
+            if (!std.mem.eql(u8, pa.paramName, p.name)) continue;
+            plans[i] = if (try plainArgTerm(arena, pa)) |t|
+                .{ .term = t, .expr = Ast.Expr.v(try argVar(arena, i)), .bound = true }
+            else
+                .{ .term = Term.undefined_atom, .expr = pa.toExpr(), .bound = false };
+            break;
+        }
     }
-    for (plainArgs) |pa| {
-        if (std.mem.eql(u8, pa.paramName, name)) return pa.toExpr();
-    }
-    return Ast.Expr.a("undefined");
+    return plans;
 }
 
 // ── capture ───────────────────────────────────────────────────────────────────
@@ -509,6 +766,96 @@ fn jsonUsize(v: ?std.json.Value) ?usize {
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────
+
+test "template plain args: the lexeme's bytes, or the literal stays in the module" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const term = struct {
+        fn of(a: std.mem.Allocator, source: []const u8) !?Term {
+            return plainArgTerm(a, .{ .paramName = "p", .source = source });
+        }
+    }.of;
+
+    try std.testing.expectEqualStrings("hi", (try term(arena, "\"hi\"")).?.binary);
+    // The escapes `erl_emitter.writeStringFromLexeme` resolves, resolved to the
+    // same bytes.
+    try std.testing.expectEqualStrings("a\tb", (try term(arena, "\"a\\tb\"")).?.binary);
+    try std.testing.expectEqualStrings("q\"r", (try term(arena, "\"q\\\"r\"")).?.binary);
+    try std.testing.expectEqualStrings("c\\d", (try term(arena, "\"c\\\\d\"")).?.binary);
+    try std.testing.expectEqualStrings("$x", (try term(arena, "\"\\$x\"")).?.binary);
+    // An unknown escape keeps its backslash, as the emitter does.
+    try std.testing.expectEqualStrings("\\qz", (try term(arena, "\"\\qz\"")).?.binary);
+    // `\u{…}` has no exact term: the emitter renders it as Erlang's `\x{…}`,
+    // which truncates to a byte inside a plain binary. The literal stays.
+    try std.testing.expectEqual(@as(?Term, null), try term(arena, "\"a\\u{263A}b\""));
+
+    try std.testing.expectEqual(true, (try term(arena, "true")).?.boolean);
+    try std.testing.expectEqual(false, (try term(arena, " false ")).?.boolean);
+    try std.testing.expectEqual(@as(i64, 42), (try term(arena, "42")).?.integer);
+    try std.testing.expectEqual(@as(f64, 1.5), (try term(arena, "1.5")).?.float);
+    // Anything else reaches the body as its source text, which is what
+    // `PlainArg.toExpr` does with `Ast.str`.
+    try std.testing.expectEqualStrings("someIdent", (try term(arena, "someIdent")).?.binary);
+}
+
+test "template module: one module per declaration, the capture as the argument" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const lexerMod = @import("../lexer.zig");
+    const parserMod = @import("../parser.zig");
+    var lx = lexerMod.Lexer.init(
+        \\pub fn shout(comptime q: @Expr<string>) -> @Expr<string> {
+        \\    return q.build(q.text());
+        \\}
+    );
+    var p = parserMod.Parser.init(try lx.scanAll(arena));
+    const program = try p.parse(arena);
+    const tfn = program.decls[0].@"fn";
+
+    const capture = struct {
+        fn of(a: std.mem.Allocator, text: []const u8) !template.CapturedExpr {
+            const node = try a.create(ast.Expr);
+            node.* = .{ .literal = .{ .loc = .{ .line = 1, .col = 1 }, .kind = .{ .stringLit = text } } };
+            return .{
+                .callee = "shout",
+                .paramIndex = 0,
+                .paramName = "q",
+                .node = node,
+                .text = text,
+                .multiline = false,
+                .loc = .{ .line = 1, .col = 1 },
+                .modulePath = "main",
+                .scope = null,
+            };
+        }
+    }.of;
+
+    var unsupported: erlang.UnsupportedMethod = .{};
+    const one = try capture(arena, "alpha");
+    const two = try capture(arena, "a much longer literal");
+    const first = try buildModule(arena, tfn, &.{one}, &.{}, &unsupported);
+    const second = try buildModule(arena, tfn, &.{two}, &.{}, &unsupported);
+
+    // Two call sites with different literals, one module — the difference is
+    // entirely in `main/1`'s argument.
+    try std.testing.expectEqualStrings(first.module, second.module);
+    try std.testing.expectEqualStrings(first.code, second.code);
+    try std.testing.expect(std.mem.indexOf(u8, first.code, "-export([main/1, shout/1]).") != null);
+    try std.testing.expect(std.mem.indexOf(u8, first.code, "main({Arg0}) ->") != null);
+    try std.testing.expect(std.mem.indexOf(u8, first.code, "shout(Arg0)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, first.code, "alpha") == null);
+
+    try std.testing.expectEqualStrings("q", first.argument.tuple[0].map[0].value.binary);
+    try std.testing.expectEqualStrings("alpha", first.argument.tuple[0].map[1].value.binary);
+    try std.testing.expectEqualStrings("a much longer literal", second.argument.tuple[0].map[1].value.binary);
+    // The listing keeps showing the capture, which is no longer in the module.
+    try std.testing.expect(std.mem.indexOf(u8, first.listing, "%% main/1 argument") != null);
+    try std.testing.expect(std.mem.indexOf(u8, first.listing, "alpha") != null);
+}
 
 test "template outcome: every reply kind" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);

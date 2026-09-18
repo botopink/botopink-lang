@@ -156,10 +156,15 @@ print_total(Rows) ->
     Ok = [R || R <- Rows, element(2, R) =/= error],
     Compile = lists:sum([element(4, R) || R <- Ok]),
     Load = lists:sum([element(5, R) || R <- Ok]),
-    Run = lists:sum([Ms || {_, _, _, _, _, {ok, Ms}, _} <- Ok]),
+    %% `-` when no module exported `main/0`: after step 2 they export `main/1`
+    %% and cannot be run without their argument.
+    Run = case [Ms || {_, _, _, _, _, {ok, Ms}, _} <- Ok] of
+        [] -> none;
+        Runs -> {ok, lists:sum(Runs)}
+    end,
     Beam = lists:sum([element(3, R) || R <- Ok]),
-    io:format("  ~-44s ~6s ~13.3f ~13.3f ~10.3f ~10b~n",
-              ["TOTAL (" ++ integer_to_list(length(Ok)) ++ " modules)", "", Compile, Load, Run, Beam]).
+    io:format("  ~-44s ~6s ~13.3f ~13.3f ~10s ~10b~n",
+              ["TOTAL (" ++ integer_to_list(length(Ok)) ++ " modules)", "", Compile, Load, run_text(Run), Beam]).
 ERL
 
 if [ "$have_erl" -eq 1 ]; then

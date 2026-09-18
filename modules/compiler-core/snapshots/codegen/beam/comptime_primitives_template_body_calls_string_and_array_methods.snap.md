@@ -56,36 +56,39 @@ shout(Q) ->
     end,
     build(Q, '__bp_add'('__bp_add'('__bp_add'('__bp_add'('__bp_add'('__bp_add'('__bp_add'('__bp_add'('__bp_add'('__bp_add'('__bp_add'('__bp_add'('__bp_add'('__bp_add'(<<"\"">>, '__bp_prim_join'(All, <<",">>)), <<"|">>), Lead), <<"|">>), Rest), <<"|">>), At), <<"|">>), Big), <<"|">>), Greet), <<"|">>), Where), <<"\"">>)).
 
-main() ->
+main({Arg0}) ->
     try
-        json:encode('__bp_reply'(shout(#{
-            '__bp_capture' => <<"q">>,
-            text => <<" hello big world ">>,
-            parts => [
-                #{
-                    kind => <<"Text">>,
-                    text => <<" hello big world ">>,
-                    span => #{start => 0, 'end' => 17, line => 1}
-                }
-            ],
-            source => #{file => <<"">>, line => 14, col => 15},
-            context => #{
-                source => #{file => <<"">>, line => 14, col => 15},
-                text => <<" hello big world ">>,
-                multiline => false
-            },
-            bindings => [
-                #{name => <<"shout">>, kind => 'Fn'},
-                #{name => <<"s">>, kind => 'Val'},
-                #{name => <<"main">>, kind => 'Fn'}
-            ]
-        })))
+        json:encode('__bp_reply'(shout(Arg0)))
     catch
         throw:{'__bp_template_fail', Message, Param, Span} ->
             json:encode(#{kind => <<"fail">>, message => '__bp_text'(Message), param => Param, span => '__bp_json'(Span)});
         Class:Reason ->
             json:encode(#{kind => <<"error">>, message => '__bp_text'({Class, Reason})})
     end.
+
+%% main/1 argument — an external term, not part of the module:
+%% Arg0 = #{
+%%     '__bp_capture' => <<"q">>,
+%%     text => <<" hello big world ">>,
+%%     parts => [
+%%         #{
+%%             kind => <<"Text">>,
+%%             text => <<" hello big world ">>,
+%%             span => #{start => 0, 'end' => 17, line => 1}
+%%         }
+%%     ],
+%%     source => #{file => <<"">>, line => 14, col => 15},
+%%     context => #{
+%%         source => #{file => <<"">>, line => 14, col => 15},
+%%         text => <<" hello big world ">>,
+%%         multiline => false
+%%     },
+%%     bindings => [
+%%         #{name => <<"shout">>, kind => 'Fn'},
+%%         #{name => <<"s">>, kind => 'Val'},
+%%         #{name => <<"main">>, kind => 'Fn'}
+%%     ]
+%% }
 ```
 
 ----- COMPTIME REPLY -- template shout

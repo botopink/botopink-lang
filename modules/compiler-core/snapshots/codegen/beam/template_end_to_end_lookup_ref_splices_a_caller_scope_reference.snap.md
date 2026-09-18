@@ -26,37 +26,40 @@ refer(Q) ->
             ref(B)
     end.
 
-main() ->
+main({Arg0}) ->
     try
-        json:encode('__bp_reply'(refer(#{
-            '__bp_capture' => <<"q">>,
-            text => <<"x">>,
-            parts => [
-                #{
-                    kind => <<"Text">>,
-                    text => <<"x">>,
-                    span => #{start => 0, 'end' => 1, line => 1}
-                }
-            ],
-            source => #{file => <<"">>, line => 10, col => 15},
-            context => #{
-                source => #{file => <<"">>, line => 10, col => 15},
-                text => <<"x">>,
-                multiline => false
-            },
-            bindings => [
-                #{name => <<"greeting">>, kind => 'Val'},
-                #{name => <<"refer">>, kind => 'Fn'},
-                #{name => <<"s">>, kind => 'Val'},
-                #{name => <<"main">>, kind => 'Fn'}
-            ]
-        })))
+        json:encode('__bp_reply'(refer(Arg0)))
     catch
         throw:{'__bp_template_fail', Message, Param, Span} ->
             json:encode(#{kind => <<"fail">>, message => '__bp_text'(Message), param => Param, span => '__bp_json'(Span)});
         Class:Reason ->
             json:encode(#{kind => <<"error">>, message => '__bp_text'({Class, Reason})})
     end.
+
+%% main/1 argument — an external term, not part of the module:
+%% Arg0 = #{
+%%     '__bp_capture' => <<"q">>,
+%%     text => <<"x">>,
+%%     parts => [
+%%         #{
+%%             kind => <<"Text">>,
+%%             text => <<"x">>,
+%%             span => #{start => 0, 'end' => 1, line => 1}
+%%         }
+%%     ],
+%%     source => #{file => <<"">>, line => 10, col => 15},
+%%     context => #{
+%%         source => #{file => <<"">>, line => 10, col => 15},
+%%         text => <<"x">>,
+%%         multiline => false
+%%     },
+%%     bindings => [
+%%         #{name => <<"greeting">>, kind => 'Val'},
+%%         #{name => <<"refer">>, kind => 'Fn'},
+%%         #{name => <<"s">>, kind => 'Val'},
+%%         #{name => <<"main">>, kind => 'Fn'}
+%%     ]
+%% }
 ```
 
 ----- COMPTIME REPLY -- template refer
