@@ -312,6 +312,12 @@ codegen/
   narrowed by the arm's pattern.
 - **`comptime { … }` with no `break <e>`** in value position is `undefined`
   (a block's value comes only from `break`).
+- **None is loose**: botopink has one none value and JavaScript spells it two
+  ways (`?.` answers `undefined`, so does `Array.at` past the end), so `==` and
+  `!=` against a `null` literal lower to the loose `==`/`!=` — and so does the
+  **optional-binding** guard (`if (val e = …)`, and the `a ?? b` that desugars
+  into it): `if (n != null)`. Under a strict `!==`, `o.inner?.v ?? 9` answered
+  `undefined` where erlang and wasm answered `9`. Every other `==` is `===`.
 - **Index** (`buildIndexCall`, decision 30): `receiver[index]` reaches the
   backend as the builtin call `ast.index_builtin_name` (`"[]"`) over
   `(receiver, index)`, so one node carries the element read and the slice. A

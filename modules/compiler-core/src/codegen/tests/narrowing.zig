@@ -256,3 +256,44 @@ test "js: narrow ---- else if chain with null checks" {
         \\}
     );
 }
+
+// Reported by front 12's `test/nullish_default.bp::?? chains after ?.` and
+// assigned to this front (it owns `commonJS.zig`; no step of `04-js` names it).
+// `a ?? b` desugars in the parser into the optional-binding `if`, whose guard
+// this backend emitted as the **strict** `n !== null` — and `?.` in JavaScript
+// answers `undefined`, not `null`, so `o.inner?.v ?? 9` took the value branch
+// with `undefined` in hand and answered `undefined` where erlang and wasm
+// answered `9`. The guard is now the loose `!= null`, which is the reading
+// `==`/`!=` against a `null` literal already take here: botopink has one none
+// value and JavaScript spells it two ways.
+//
+// No snapshot: the row is a commonJS operator, and a snapshot would carry this
+// program through all four backends.
+test "js: optional binding ---- the guard is loose, so `?.`'s undefined is none" {
+    const src =
+        \\type Inner(v: i32)
+        \\type Outer(inner: ?Inner)
+        \\fn find(n: i32) -> ?i32 {
+        \\    if (n > 0) { return n; };
+        \\    return null;
+        \\}
+        \\fn main() {
+        \\    @print(find(-1) ?? 7);
+        \\    @print(find(5) ?? 7);
+        \\    @print(find(0) ?? 7);
+        \\    val o = Outer(inner: null);
+        \\    @print(o.inner?.v ?? 9);
+        \\    val p = Outer(inner: Inner(v: 4));
+        \\    @print(p.inner?.v ?? 9);
+        \\}
+    ;
+    try h.assertJsNotContains(std.testing.allocator, src, &.{"!== null"});
+    try h.assertJsRunLog(std.testing.allocator, src,
+        \\7
+        \\5
+        \\7
+        \\9
+        \\4
+        \\
+    );
+}

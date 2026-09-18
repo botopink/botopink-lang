@@ -3123,12 +3123,17 @@ const Emitter = struct {
         }
 
         var seq: std.ArrayListUnmanaged(js.Stmt) = .empty;
+        // The optional-binding guard is the **loose** `!= null`, for the reason
+        // `==`/`!=` against a `null` literal are loose above: botopink has one
+        // none value and JavaScript spells it two ways — `?.` answers
+        // `undefined`, so `o.inner?.v ?? 9` took the value branch with
+        // `undefined` in hand under a strict `!==`.
         const cond: js.Expr = if (i.binding) |b| blk: {
             try seq.append(self.arena(), .{ .decl = .{
                 .pattern = .{ .name = b },
                 .value = try self.buildExpr(i.cond.*),
             } });
-            break :blk try self.b.binaryBare("!==", .{ .name = b }, .null_);
+            break :blk try self.b.binaryBare("!=", .{ .name = b }, .null_);
         } else try self.buildExpr(i.cond.*);
 
         const then_block = js.Stmt{ .block = .{
@@ -3157,7 +3162,7 @@ const Emitter = struct {
     /// such `if`s in one body do not redeclare it.
     fn buildIfStmt(self: *Emitter, i: anytype) anyerror!js.Stmt {
         const cond: js.Expr = if (i.binding) |b|
-            try self.b.binaryBare("!==", .{ .name = b }, .null_)
+            try self.b.binaryBare("!=", .{ .name = b }, .null_)
         else
             try self.buildExpr(i.cond.*);
         const then_block = js.Stmt{ .block = .{ .stmts = try self.buildStmts(i.then_), .layout = .spaced } };
