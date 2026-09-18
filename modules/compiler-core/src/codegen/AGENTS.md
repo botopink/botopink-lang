@@ -860,6 +860,28 @@ codegen/
   omitted trailing params filled from their declared defaults). Inside such a
   body inference recorded nothing, so `self`'s kind (`self_prim_kind`) drives
   the lowering of `self.m(…)`/`self.length`.
+- **A primitive method on an untyped receiver** (`ensurePrimShim`,
+  `emitPrimShimFn`, `primKindDeclares`): a lambda parameter carries no declared
+  type, so inference records no instance lowering for it and
+  `xs.map({ x -> x.toUpper() })` reached the `{unresolved_method, toUpper, 1}`
+  abort at run time while the same call on a named local ran (measured
+  2026-09-18 at `bef762b`; it is front 14 step 3's blocker). Such a call now
+  goes through `'__bp_prim_<callee>'(Recv, Arg0, …)`, one clause per primitive
+  kind that answers it — guarded by that kind's BEAM type test (`is_list`,
+  `is_binary`, `is_boolean`, `is_integer`, `is_float`), bodied by
+  `emitPrimMethod`'s own lowering, so the typed tables stay the single source of
+  truth — then the same `{unresolved_method, …}` abort. The BEAM twin of
+  `erlang.zig`'s `primShimForm`. Three gates keep it off every path that was
+  already right: inference recorded **nothing** for the receiver (a receiver it
+  typed keeps the abort), some primitive interface **declares** the method
+  (`prim_beam_templates` / `prim_erlang_dispatch` / `iface_defaults`, all keyed
+  `<Iface>.<method>`), and the program's own `behavior` declarations do **not**
+  name it (`user_behavior_methods` — `Bounded.clamp` on a record is a user
+  type's method that failed to resolve, not `Number.clamp`). A clause is lowered
+  into a scratch buffer before the guard that jumps past it can be written —
+  `emitPrimMethod` decides whether it can answer while it emits — and dropped
+  whole when it cannot, so the rendered function is a list of sections joined
+  with `std.mem.concat`, never text written at the call site.
 - **Static extension dispatch**: `implement`/`extend` methods are emitted and
   exported as `'<target>_<method>'`; activated `recv.m(args)` and qualified
   `Sym.m(obj)` call it with the receiver prepended (`ext_by_name`,

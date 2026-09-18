@@ -182,6 +182,12 @@ fn armValueTail(e: ast.Expr) bool {
     };
 }
 
+/// A bare identifier expression naming a register the caller already bound —
+/// the receiver and arguments a synthesised shim function hands `emitPrimMethod`.
+fn shimIdent(name: []const u8) ast.Expr {
+    return .{ .identifier = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .ident = name } } };
+}
+
 /// A bodyless `declare fn` backed by an `#[@External.<Target>]` annotation.
 fn isHostDeclare(f: ast.FnDecl) bool {
     return f.isExternal() and f.body.len == 0;
@@ -1105,8 +1111,14 @@ fn emitBeamAsm(
     }
 
     // Interface `default fn`s some call site reached (a default body may reach
-    // another, so the list grows while it is drained).
+    // another, so the list grows while it is drained), then the run-time
+    // primitive dispatch shims. A shim clause is one of those defaults' own
+    // lowerings, so it can add to either list: both are drained to a fixpoint.
     try em.emitNeededDefaults();
+    while (em.needed_prim_shims.count() > em.emitted_prim_shims) {
+        try em.emitNeededPrimShims();
+        try em.emitNeededDefaults();
+    }
 
     // Now build the final output: header + exports + attributes + labels + body.
     //
@@ -1332,6 +1344,16 @@ const Emitter = struct {
     iface_defaults: std.StringHashMap(IfaceDefault),
     /// The defaults some call site reached, in first-use order.
     needed_defaults: std.StringArrayHashMapUnmanaged(IfaceDefault) = .empty,
+    /// The run-time primitive dispatch shims some untyped call site reached,
+    /// keyed `"<callee>/<argc>"`, in first-use order (`ensurePrimShim`).
+    needed_prim_shims: std.StringArrayHashMapUnmanaged(PrimShim) = .empty,
+    /// How many of them have been emitted — the drain's watermark.
+    emitted_prim_shims: usize = 0,
+    /// Method names the program's own `behavior` declarations carry (the
+    /// primitive interfaces excluded). A call to one of these is a user type's
+    /// method that failed to resolve, never a primitive's, so it keeps the
+    /// `{unresolved_method, …}` abort instead of reaching a dispatch shim.
+    user_behavior_methods: std.StringHashMap(void),
     /// `"<Iface>.<method>"` for every interface method declared `-> Self`.
     self_returns: std.StringHashMap(void),
     /// The primitive kind `self` carries while an interface `default fn` body
@@ -1355,6 +1377,10 @@ const Emitter = struct {
     /// An interface instance `default fn` and the interface declaring it.
     const IfaceDefault = struct { iface: []const u8, method: ast.BehaviorMethod };
 
+    /// One `'__bp_prim_<callee>'/<argc + 1>` run-time dispatch shim an untyped
+    /// call site reached. `name` is the quoted atom the call site calls.
+    const PrimShim = struct { callee: []const u8, argc: usize, name: []const u8 };
+
     fn init(alloc: std.mem.Allocator, module_name: []const u8, out: *std.Io.Writer, cv: std.StringHashMap([]const u8), rewrites: std.AutoHashMap(ast.Loc, []const u8)) Emitter {
         return .{
             .alloc = alloc,
@@ -1369,6 +1395,7 @@ const Emitter = struct {
             .imported_types = std.StringHashMap([]const u8).init(alloc),
             .enum_variants = std.StringHashMap(void).init(alloc),
             .interface_assoc = std.StringHashMap(void).init(alloc),
+            .user_behavior_methods = std.StringHashMap(void).init(alloc),
             .prim_erlang_dispatch = std.StringHashMap(PrimErlangCall).init(alloc),
             .prim_beam_templates = std.StringHashMap([]const u8).init(alloc),
             .std_imports = std.StringHashMap(void).init(alloc),
@@ -1439,6 +1466,10 @@ const Emitter = struct {
         self.externals.deinit();
         self.iface_defaults.deinit();
         self.needed_defaults.deinit(self.alloc);
+        self.user_behavior_methods.deinit();
+        for (self.needed_prim_shims.keys()) |k| self.alloc.free(k);
+        for (self.needed_prim_shims.values()) |v| self.alloc.free(v.name);
+        self.needed_prim_shims.deinit(self.alloc);
         self.self_returns.deinit();
         self.prelude_arena.deinit();
         if (self.at_helper_name) |n| self.alloc.free(n);
@@ -1467,6 +1498,13 @@ const Emitter = struct {
             if (decl != .behavior) continue;
             try self.collectIfaceErlangDispatch(decl.behavior);
         }
+        for (program.decls) |decl| switch (decl) {
+            .behavior => |i| {
+                if (primKindForIface(i.name) != null) continue;
+                for (i.methods) |m| try self.user_behavior_methods.put(m.name, {});
+            },
+            else => {},
+        };
         // The program's own declarations win; the prelude fills the rest.
         try self.collectDefaultsAndExternals(program.decls);
         try self.collectDefaultsAndExternals(prim_program.decls);
@@ -3476,6 +3514,26 @@ const Emitter = struct {
                         return;
                     }
                 }
+                // An untyped receiver (`xs.map({ x -> x.toUpper() })`: the
+                // lambda parameter carries no declared type, so inference
+                // recorded no lowering for `x`) whose method some primitive
+                // interface declares: dispatch on the receiver's runtime tag
+                // through `'__bp_prim_<callee>'`, the erlang backend's answer to
+                // the same shape. Only when inference recorded NOTHING — a
+                // receiver it typed and whose method did not lower keeps the
+                // abort, which is this front's documented backstop.
+                if (self.instanceLowering(loc, recv_expr.*) == null) {
+                    if (try self.ensurePrimShim(cc.callee, cc.args.len + cc.trailing.len)) |shim_name| {
+                        const st = try self.stageCall(recv_expr, cc.args, cc.trailing);
+                        try self.placeStaged(&st);
+                        const shim_labels = try self.fnLabelsFor(shim_name, total_arity);
+                        switch (mode) {
+                            .non_tail => try beamEmitter.writeCall(self.out, .normal, total_arity, .{ .local = shim_labels.entry }, 0),
+                            .tail => try beamEmitter.writeCall(self.out, .last, total_arity, .{ .local = shim_labels.entry }, self.num_y),
+                        }
+                        return;
+                    }
+                }
                 try self.materializeCallArgs(cc.args, cc.trailing);
                 try self.emitUnresolvedAbort("unresolved_method", cc.callee, total_arity);
                 if (mode == .tail) try self.emitReturn();
@@ -3759,6 +3817,191 @@ const Emitter = struct {
             .tail => try beamEmitter.writeCall(self.out, .last, 1 + params.len, .{ .local = labels.entry }, self.num_y),
         }
         return true;
+    }
+
+    // ── run-time primitive dispatch (an untyped receiver) ────────────────────
+    //
+    // `xs.map({ x -> x.toUpper() })`: the lambda parameter carries no declared
+    // type, so inference records no instance lowering for `x` and the typed
+    // path above has nothing to dispatch on. Beam used to abort at run time
+    // with `{unresolved_method, toUpper, 1}` (measured 2026-09-18 against
+    // `bef762b`; the same program's straight-line form — `.trim()`, `.split()`,
+    // `.join()` on a named local — runs). The erlang backend answers it with a
+    // guarded shim per `(method, argc)` (`erlang.zig` `primShimForm`); this is
+    // its BEAM twin, and the clause bodies are `emitPrimMethod`'s own
+    // lowerings, so the typed tables stay the single source of truth.
+
+    /// The primitive kinds a shim tests, in the erlang backend's order, with
+    /// the BEAM type test each clause is guarded by.
+    const prim_shim_kinds = [_]struct { kind: envMod.PrimKind, guard: beamEmitter.TestOp }{
+        .{ .kind = .array, .guard = .is_list },
+        .{ .kind = .string, .guard = .is_binary },
+        .{ .kind = .bool, .guard = .is_boolean },
+        .{ .kind = .int, .guard = .is_integer },
+        .{ .kind = .float, .guard = .is_float },
+    };
+
+    /// True when some interface on `k`'s chain declares `callee`. The three
+    /// tables `emitPrimMethod` walks — the `@External.Beam` bodies, the
+    /// erlang-derived dispatch and the bodied `default fn`s — are all keyed
+    /// `"<Iface>.<method>"`, so this asks them without emitting anything.
+    /// Conservative by construction: a name no table names keeps the abort the
+    /// call site already had.
+    fn primKindDeclares(self: *const Emitter, k: envMod.PrimKind, callee: []const u8) bool {
+        var b: [128]u8 = undefined;
+        for (primIfaceChain(k)) |iface_name| {
+            const key = std.fmt.bufPrint(&b, "{s}.{s}", .{ iface_name, callee }) catch return false;
+            if (self.prim_beam_templates.contains(key)) return true;
+            if (self.prim_erlang_dispatch.contains(key)) return true;
+            if (self.iface_defaults.contains(key)) return true;
+        }
+        return false;
+    }
+
+    /// The `'__bp_prim_<callee>'` shim for an untyped `recv.callee(a…)`, or null
+    /// when no primitive interface declares `callee` — then the call site keeps
+    /// its `{unresolved_method, …}` abort, which is the backstop this front's
+    /// notes ask to keep. Reserves the name and queues the body; the body is
+    /// emitted after the enclosing function, because writing it resets the
+    /// per-function register state.
+    fn ensurePrimShim(self: *Emitter, callee: []const u8, argc: usize) anyerror!?[]const u8 {
+        if (self.user_behavior_methods.contains(callee)) return null;
+        var answered = false;
+        for (prim_shim_kinds) |pk| {
+            if (self.primKindDeclares(pk.kind, callee)) answered = true;
+        }
+        if (!answered) return null;
+        var kbuf: [256]u8 = undefined;
+        const key = std.fmt.bufPrint(&kbuf, "{s}/{d}", .{ callee, argc }) catch return null;
+        if (self.needed_prim_shims.get(key)) |s| return s.name;
+        const name = try std.fmt.allocPrint(self.alloc, "'__bp_prim_{s}'", .{callee});
+        try self.reserveFn(name, argc + 1);
+        try self.needed_prim_shims.put(
+            self.alloc,
+            try self.alloc.dupe(u8, key),
+            .{ .callee = callee, .argc = argc, .name = name },
+        );
+        return name;
+    }
+
+    /// Emit every shim a call site reached. A clause body may itself reach an
+    /// interface `default fn` or another shim, so both lists are drained to a
+    /// fixpoint (the caller re-drains `needed_defaults`).
+    fn emitNeededPrimShims(self: *Emitter) anyerror!void {
+        while (self.emitted_prim_shims < self.needed_prim_shims.count()) {
+            const shim = self.needed_prim_shims.values()[self.emitted_prim_shims];
+            self.emitted_prim_shims += 1;
+            try self.emitPrimShimFn(shim);
+        }
+    }
+
+    /// `'__bp_prim_<callee>'(Recv, Arg0, …)`: one clause per primitive kind that
+    /// answers the call, each guarded by that kind's BEAM type test and bodied
+    /// by `emitPrimMethod`'s own lowering, then the `{unresolved_method, …}`
+    /// abort. A clause is lowered into a scratch buffer first — `emitPrimMethod`
+    /// decides whether it can answer while it emits — and dropped whole when it
+    /// cannot, so a kind that declares the method but has no BEAM lowering
+    /// costs nothing.
+    fn emitPrimShimFn(self: *Emitter, shim: PrimShim) anyerror!void {
+        const arity = shim.argc + 1;
+        const labels = try self.fnLabelsFor(shim.name, arity);
+
+        var names_buf: [1 + max_staged][]const u8 = undefined;
+        var arg_names_buf: [max_staged][16]u8 = undefined;
+        names_buf[0] = "recv";
+        for (0..shim.argc) |i| {
+            names_buf[i + 1] = std.fmt.bufPrint(&arg_names_buf[i], "arg{d}", .{i}) catch "arg";
+        }
+        const names = names_buf[0..arity];
+
+        self.resetFnState(@intCast(arity));
+        self.self_prim_kind = null;
+        self.cur_fn_name = shim.callee;
+        // The frame holds exactly the spilled parameters: a clause body is one
+        // expression, which stages through x-registers and takes no stack slot.
+        // A clause that turns out to need one is dropped below.
+        self.num_y = @intCast(arity);
+        try self.bindParams(names);
+
+        // The receiver and the arguments as the identifiers `bindParams` just
+        // bound, so `emitPrimMethod` stages them like any other call's operands.
+        var recv: ast.Expr = shimIdent(names[0]);
+        var arg_exprs: [max_staged]ast.Expr = undefined;
+        var call_args: [max_staged]ast.CallArg = undefined;
+        for (0..shim.argc) |i| {
+            arg_exprs[i] = shimIdent(names[i + 1]);
+            call_args[i] = .{ .label = null, .value = &arg_exprs[i] };
+        }
+        const cc = .{
+            .callee = shim.callee,
+            .args = @as([]const ast.CallArg, call_args[0..shim.argc]),
+            .trailing = @as([]const ast.TrailingLambda, &.{}),
+        };
+
+        // Rendered sections, joined at the end — a clause is lowered before it
+        // is known whether it can be lowered at all, so the guard that jumps
+        // past it cannot be written first.
+        var sections: std.ArrayListUnmanaged([]u8) = .empty;
+        defer {
+            for (sections.items) |sec| self.alloc.free(sec);
+            sections.deinit(self.alloc);
+        }
+        const saved_out = self.out;
+        defer self.out = saved_out;
+
+        for (prim_shim_kinds) |pk| {
+            if (!self.primKindDeclares(pk.kind, shim.callee)) continue;
+            var clause: std.Io.Writer.Allocating = .init(self.alloc);
+            defer clause.deinit();
+            self.out = &clause.writer;
+            self.min_live = 0;
+            const answered = self.emitPrimMethod(pk.kind, shim.callee, &recv, cc, .tail) catch false;
+            if (!answered or self.next_y != arity) {
+                self.next_y = @intCast(arity);
+                continue;
+            }
+            const next = self.allocLabel();
+            var pre: std.Io.Writer.Allocating = .init(self.alloc);
+            defer pre.deinit();
+            self.out = &pre.writer;
+            try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+            try beamEmitter.writeTest(self.out, pk.guard, next, &.{Op.xr(0)});
+            try sections.append(self.alloc, try pre.toOwnedSlice());
+            try sections.append(self.alloc, try clause.toOwnedSlice());
+            var post: std.Io.Writer.Allocating = .init(self.alloc);
+            defer post.deinit();
+            self.out = &post.writer;
+            try beamEmitter.writeLabel(self.out, next);
+            try sections.append(self.alloc, try post.toOwnedSlice());
+        }
+
+        // The head is rendered last because `num_y` is only final now, and
+        // prepended: `allocate` has to name the frame every clause deallocates.
+        var head: std.Io.Writer.Allocating = .init(self.alloc);
+        defer head.deinit();
+        self.out = &head.writer;
+        try beamEmitter.writeBlankLine(self.out);
+        try beamEmitter.writeFunctionHeader(self.out, shim.name, arity, labels.entry);
+        try beamEmitter.writeLabel(self.out, labels.func_info);
+        try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(self.out, self.module_name, shim.name, arity);
+        try beamEmitter.writeLabel(self.out, labels.entry);
+        try self.emitFrame(arity);
+        try self.emitParamSpill(arity);
+        try sections.insert(self.alloc, 0, try head.toOwnedSlice());
+
+        // No kind answered: the receiver is named in the abort, exactly as the
+        // call site used to raise it.
+        var tail: std.Io.Writer.Allocating = .init(self.alloc);
+        defer tail.deinit();
+        self.out = &tail.writer;
+        try self.emitUnresolvedAbort("unresolved_method", shim.callee, arity);
+        try beamEmitter.writeDeallocate(self.out, self.num_y);
+        try beamEmitter.writeReturn(self.out);
+        try sections.append(self.alloc, try tail.toOwnedSlice());
+
+        self.cur_line += 1;
+        try self.deferred_lambdas.append(self.alloc, try std.mem.concat(self.alloc, u8, sections.items));
     }
 
     /// Emit every interface `default fn` a call site reached, with `self`
