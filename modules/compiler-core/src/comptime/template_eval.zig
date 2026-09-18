@@ -118,7 +118,10 @@ pub fn evaluate(
         path,
         source.module,
         try etf.encode(arena, source.argument),
-    ) catch return error.EvalFailed;
+    ) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return transportFailure(arena, "template", err),
+    };
     if (traces) |list| try list.append(arena, .{
         .kind = .template,
         .name = tfn.name,
@@ -236,6 +239,25 @@ pub fn writeModule(arena: std.mem.Allocator, io: std.Io, dir: []const u8, module
         return error.EvalFailed;
     };
     return path;
+}
+
+/// What a failed round trip reports. Every transport failure used to collapse
+/// into `error.EvalFailed`, which left `persistent_erl.lastTransportError()`
+/// dead and the caller's diagnostic — "the template evaluator failed to run" —
+/// with nothing behind it (1.0.4-beta's hygiene front recorded this residual
+/// inside this file and could not sweep it).
+///
+/// Now the message is carried when there is one. When there is not, the failure
+/// is `erl` or `erlc` missing rather than a broken stream, and `error.EvalFailed`
+/// is still the right answer: the caller's hint for that case names PATH, which
+/// is more useful than an error name.
+fn transportFailure(arena: std.mem.Allocator, host: []const u8, err: anyerror) EvalError!Outcome {
+    const detail = persistent_erl.lastTransportError() orelse return error.EvalFailed;
+    return .{ .err = try std.fmt.allocPrint(
+        arena,
+        "the {s} evaluator's erl runtime failed ({s}): {s}",
+        .{ host, @errorName(err), detail },
+    ) };
 }
 
 fn errorText(arena: std.mem.Allocator, what: []const u8, detail: []const u8) ![]const u8 {

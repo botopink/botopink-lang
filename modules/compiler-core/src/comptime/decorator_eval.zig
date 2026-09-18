@@ -94,7 +94,10 @@ pub fn evaluate(
         path,
         source.module,
         try etf.encode(arena, source.argument),
-    ) catch return error.EvalFailed;
+    ) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return transportFailure(arena, "decorator", err),
+    };
     if (traces) |list| try list.append(arena, .{
         .kind = .decorator,
         .name = dfn.name,
@@ -110,6 +113,19 @@ pub fn evaluate(
         .compile_error => |detail| .{ .err = try errorText(arena, "the decorator module did not compile", detail) },
         .runtime_error => |detail| .{ .err = try errorText(arena, "the decorator body raised", detail) },
     };
+}
+
+/// What a failed round trip reports — the decorator twin of
+/// `templateEval.transportFailure`: the transport message when there is one,
+/// `error.EvalFailed` (and with it the caller's PATH hint) when the failure is
+/// `erl`/`erlc` missing rather than a broken stream.
+fn transportFailure(arena: std.mem.Allocator, host: []const u8, err: anyerror) EvalError!Outcome {
+    const detail = persistent_erl.lastTransportError() orelse return error.EvalFailed;
+    return .{ .err = try std.fmt.allocPrint(
+        arena,
+        "the {s} evaluator's erl runtime failed ({s}): {s}",
+        .{ host, @errorName(err), detail },
+    ) };
 }
 
 fn errorText(arena: std.mem.Allocator, what: []const u8, detail: []const u8) ![]const u8 {
