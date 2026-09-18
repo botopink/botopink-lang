@@ -69,10 +69,36 @@ in `engine.zig`, add a test in [`tests/`](tests/AGENTS.md) (register it in
   walk — locals from `collectLocalScope` plus the module's own declarations from
   `moduleDecls`. Answering `null` there left the editor with no completion for
   any file carrying a type error, or being typed (front 14 step 1).
+- **Two word lists mirror the compiler and must not drift.** `isKeyword` is
+  `keywordOrIdent` in `compiler-core/src/lexer.zig` (plus `true`/`false`, which
+  the lexer reads as identifiers) — it decides what `prepareRename` refuses and
+  what the import quick-fix skips, so a word that left the table must leave it
+  here or a legal rename is refused. `isPrimitiveType` is
+  `Env.registerBuiltins` in `comptime/env.zig` minus `Self` — it decides what
+  semantic tokens paint `type [defaultLibrary]`, so a name that is registered
+  nowhere must not be in it. `unknown` (decision 8 §2) is painted ahead of front
+  06 registering it; `any` stays while the checker still registers it.
 - **Completion hides what the cursor cannot see** (`cursorScope`): the binding
   whose own initialiser the cursor sits in (`val x = ▮` never offers `x`) and
   every `val`/`var` declared below it. A `fn` is not hidden — it may be called
   above the line that defines it.
+- **A hover card is source the user could write back.** `renderBindingHover`
+  renders a declaration in the 1.0.3 surface — `pub type Point(x: i32, y: i32)`
+  (a record with no fields keeps no parentheses), `pub type Shape { Circle(...),
+  Square }` (a section prints `Name { ... }`, decision 8 §5.3b) and
+  `pub behavior Mappable<T>` — with the type parameters a written generic type
+  always carries (decision 8 §1.1, `appendGenericParams`). `record`, `enum` and
+  `interface` are parse errors; a card must never print one.
+- **`renderType` writes a type the way the source writes it**, not the way the
+  checker names it: `array<i32>` → `i32[]`, `tuple<…>` → `#(i32, string)` and,
+  with labels, `#(name: string, pop: i32)` (a label is a name for the compiler
+  only — decision 8 §6 — but a written type keeps it). The structural-record
+  shape prints `#(x: i32)` for the same reason: `record { … }` no longer parses.
+  What it cannot fix is a type **name** the checker built: a `type` declaration's
+  constructor binding is *named* `record { name: string, count: i32 }` by
+  `comptime/infer.zig`'s `buildRecordDeclName` (and `enum {` / `interface ` by
+  its two siblings), and `renderType` prints a name verbatim. That is front 06's
+  file — reported, not patched (`completion_decorator_record.snap.md` still shows it).
 - The hover footer of a builtin method names the **declaring** behavior and the
   receiver's when they differ (`*from \`behavior Signed\` (via I32)*`):
   `InterfaceMember.owner` records which link of the `extends` chain declared the

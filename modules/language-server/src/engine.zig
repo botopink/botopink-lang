@@ -132,6 +132,24 @@ pub fn hover(
     return null;
 }
 
+/// Appends `<A, B>` when the declaration has type parameters, nothing when it
+/// has none. Every declaration that can carry them (`fn`, `type`, `behavior`)
+/// writes them the same way, and a written generic type carries all of its type
+/// arguments (decision 8 §1.1), so the card never hides them.
+fn appendGenericParams(
+    gpa: std.mem.Allocator,
+    buf: *std.ArrayList(u8),
+    params: []const ast.GenericParam,
+) !void {
+    if (params.len == 0) return;
+    try buf.append(gpa, '<');
+    for (params, 0..) |gp, i| {
+        if (i > 0) try buf.appendSlice(gpa, ", ");
+        try buf.appendSlice(gpa, gp.name);
+    }
+    try buf.append(gpa, '>');
+}
+
 /// Renders the markdown hover card for a resolved top-level binding. Shared by
 /// `hover` (cursor on a botopink symbol) and `hoverCustomRef` (cursor on a
 /// sub-language node whose `ref` resolves to this binding).
@@ -154,14 +172,7 @@ fn renderBindingHover(gpa: std.mem.Allocator, b: comptime_pipeline.TypedBinding)
             const isStar = f.effect != null and f.effectAnnotation() == null;
             try buf.appendSlice(gpa, if (isStar) "*fn " else "fn ");
             try buf.appendSlice(gpa, b.name);
-            if (f.genericParams.len > 0) {
-                try buf.append(gpa, '<');
-                for (f.genericParams, 0..) |gp, gi| {
-                    if (gi > 0) try buf.appendSlice(gpa, ", ");
-                    try buf.appendSlice(gpa, gp.name);
-                }
-                try buf.append(gpa, '>');
-            }
+            try appendGenericParams(gpa, &buf, f.genericParams);
             try buf.append(gpa, '(');
             for (f.params, 0..) |p, pi| {
                 if (pi > 0) try buf.appendSlice(gpa, ", ");
@@ -187,36 +198,56 @@ fn renderBindingHover(gpa: std.mem.Allocator, b: comptime_pipeline.TypedBinding)
             try buf.appendSlice(gpa, " : ");
             try buf.appendSlice(gpa, type_str);
         },
+        // Both shapes are declared with `type` since 1.0.3; the shape decides
+        // whether the name is followed by a field list or by a variant body.
         .type_ => |tdecl| switch (tdecl.shape) {
             .record => {
                 if (tdecl.isPub) try buf.appendSlice(gpa, "pub ");
-                try buf.appendSlice(gpa, "record ");
+                try buf.appendSlice(gpa, "type ");
                 try buf.appendSlice(gpa, b.name);
-                try buf.appendSlice(gpa, " { ");
-                for (tdecl.recordFields(), 0..) |field, fi| {
-                    if (fi > 0) try buf.appendSlice(gpa, ", ");
-                    try buf.appendSlice(gpa, field.name);
-                    try buf.appendSlice(gpa, ": ");
-                    try appendTypeRef(gpa, &buf, field.typeRef);
+                try appendGenericParams(gpa, &buf, tdecl.genericParams);
+                // A record with no fields has no parentheses (MIGRATION.md).
+                const fields = tdecl.recordFields();
+                if (fields.len > 0) {
+                    try buf.append(gpa, '(');
+                    for (fields, 0..) |field, fi| {
+                        if (fi > 0) try buf.appendSlice(gpa, ", ");
+                        try buf.appendSlice(gpa, field.name);
+                        try buf.appendSlice(gpa, ": ");
+                        try appendTypeRef(gpa, &buf, field.typeRef);
+                    }
+                    try buf.append(gpa, ')');
                 }
-                try buf.appendSlice(gpa, " }");
             },
             .enum_ => {
                 if (tdecl.isPub) try buf.appendSlice(gpa, "pub ");
-                try buf.appendSlice(gpa, "enum ");
+                try buf.appendSlice(gpa, "type ");
                 try buf.appendSlice(gpa, b.name);
+                try appendGenericParams(gpa, &buf, tdecl.genericParams);
                 try buf.appendSlice(gpa, " { ");
-                for (tdecl.variants(), 0..) |v, vi| {
-                    if (vi > 0) try buf.appendSlice(gpa, ", ");
+                var wrote_member = false;
+                for (tdecl.variants()) |v| {
+                    if (wrote_member) try buf.appendSlice(gpa, ", ");
+                    wrote_member = true;
                     try buf.appendSlice(gpa, v.name);
                     if (v.fields.len > 0) try buf.appendSlice(gpa, "(...)");
+                }
+                // A section is a type of its own (decision 8 §5.3b); name it
+                // with a body so the card does not read it as a bare variant.
+                for (tdecl.sections()) |sec| {
+                    if (wrote_member) try buf.appendSlice(gpa, ", ");
+                    wrote_member = true;
+                    try buf.appendSlice(gpa, sec.name);
+                    try buf.appendSlice(gpa, " { ... }");
                 }
                 try buf.appendSlice(gpa, " }");
             },
         },
-        .behavior => {
-            try buf.appendSlice(gpa, "interface ");
+        .behavior => |bdecl| {
+            if (bdecl.isPub) try buf.appendSlice(gpa, "pub ");
+            try buf.appendSlice(gpa, "behavior ");
             try buf.appendSlice(gpa, b.name);
+            try appendGenericParams(gpa, &buf, bdecl.genericParams);
         },
         else => {
             const type_str = try renderType(gpa, b.type_);
@@ -987,12 +1018,49 @@ fn tokenToSymbolKind(kind: TokenKind) u32 {
     };
 }
 
-/// Renders a Type as a human-readable string. The caller owns the result.
-pub fn renderType(gpa: std.mem.Allocator, ty: *comptime_pipeline.Type) ![]u8 {
+/// Renders a tuple type as `#(i32, string)`, or `#(name: string, pop: i32)`
+/// when the type carries labels. A label is a name for the compiler only
+/// (decision 8 §6): it never takes part in type comparison, but a written type
+/// keeps it, so the card has to show it. `labels` is empty for an unlabeled
+/// tuple, and an empty entry marks one unlabeled element of a labeled one.
+fn renderTuple(
+    gpa: std.mem.Allocator,
+    args: []const *comptime_pipeline.Type,
+    labels: []const []const u8,
+) std.mem.Allocator.Error![]u8 {
+    var buf: std.ArrayList(u8) = .empty;
+    errdefer buf.deinit(gpa);
+    try buf.appendSlice(gpa, "#(");
+    for (args, 0..) |arg, idx| {
+        if (idx > 0) try buf.appendSlice(gpa, ", ");
+        if (idx < labels.len and labels[idx].len > 0) {
+            try buf.appendSlice(gpa, labels[idx]);
+            try buf.appendSlice(gpa, ": ");
+        }
+        const s = try renderType(gpa, arg);
+        defer gpa.free(s);
+        try buf.appendSlice(gpa, s);
+    }
+    try buf.append(gpa, ')');
+    return buf.toOwnedSlice(gpa);
+}
+
+/// Renders a Type as a human-readable string, in the surface a user writes:
+/// `i32[]`, not the internal `array<i32>`; `#(name: string, pop: i32)`, not
+/// `tuple<string, i32>`. The caller owns the result.
+pub fn renderType(gpa: std.mem.Allocator, ty: *comptime_pipeline.Type) std.mem.Allocator.Error![]u8 {
     const t = ty.deref();
     return switch (t.*) {
         .named => |n| blk: {
             if (n.args.len == 0) break :blk gpa.dupe(u8, n.name);
+            // `array` and `tuple` are how the checker names them; neither has
+            // that spelling in source.
+            if (std.mem.eql(u8, n.name, "array") and n.args.len == 1) {
+                const elem = try renderType(gpa, n.args[0]);
+                defer gpa.free(elem);
+                break :blk std.fmt.allocPrint(gpa, "{s}[]", .{elem});
+            }
+            if (std.mem.eql(u8, n.name, "tuple")) break :blk renderTuple(gpa, n.args, n.labels);
             var buf: std.ArrayList(u8) = .empty;
             errdefer buf.deinit(gpa);
             try buf.appendSlice(gpa, n.name);
@@ -1027,10 +1095,13 @@ pub fn renderType(gpa: std.mem.Allocator, ty: *comptime_pipeline.Type) ![]u8 {
             .generic => |id| std.fmt.allocPrint(gpa, "T{d}", .{id}),
             .link => |linked| renderType(gpa, linked),
         },
+        // A structural record — the checker's shape for an anonymous field
+        // list. `record { … }` is a parse error since the surface cutover; the
+        // form that carries the same names is a labeled tuple (decision 8 §6).
         .record => |fields| blk: {
             var buf: std.ArrayList(u8) = .empty;
             errdefer buf.deinit(gpa);
-            try buf.appendSlice(gpa, "record { ");
+            try buf.appendSlice(gpa, "#(");
             for (fields, 0..) |f, idx| {
                 if (idx > 0) try buf.appendSlice(gpa, ", ");
                 try buf.appendSlice(gpa, f.name);
@@ -1039,7 +1110,7 @@ pub fn renderType(gpa: std.mem.Allocator, ty: *comptime_pipeline.Type) ![]u8 {
                 defer gpa.free(fs);
                 try buf.appendSlice(gpa, fs);
             }
-            try buf.appendSlice(gpa, " }");
+            try buf.append(gpa, ')');
             break :blk buf.toOwnedSlice(gpa);
         },
         .union_ => |arms| blk: {
@@ -2036,17 +2107,29 @@ pub fn prepareRename(
     };
 }
 
+/// True for a word the lexer turns into a keyword token — the words a rename
+/// must refuse and an import quick-fix must skip.
+///
+/// The list is `keywordOrIdent` in `compiler-core/src/lexer.zig`, word for word;
+/// keep the two in step. A word that is *not* there is an ordinary identifier
+/// and may be renamed: `record`, `enum`, `interface`, `new`, `delegate`,
+/// `struct`, `const` and the seven dead keywords `auto`, `derive`, `get`,
+/// `macro`, `opaque`, `private`, `set` all left the table, and refusing to
+/// rename them refused a rename the compiler allows.
+///
+/// `true` and `false` are the exception: the lexer reads them as identifiers and
+/// the parser gives them their meaning (`parser/exprs.zig:1656`), so they are
+/// listed here — renaming a boolean literal is never what the user meant.
 fn isKeyword(name: []const u8) bool {
     const keywords = [_][]const u8{
-        "as",       "assert",    "auto",   "await",    "break",   "case",
-        "catch",    "comptime",  "const",  "continue", "declare", "default",
-        "delegate", "derive",    "echo",   "else",     "enum",    "extends",
-        "fn",       "for",       "from",   "get",      "if",      "implement",
-        "import",   "interface", "loop",   "macro",    "new",     "null",
-        "opaque",   "private",   "pub",    "record",   "return",  "self",
-        "set",      "struct",    "syntax", "test",     "throw",   "todo",
-        "true",     "false",     "try",    "type",     "use",     "val",
-        "var",      "yield",     "Self",
+        "as",        "assert",   "await",    "behavior", "break",   "case",
+        "catch",     "comptime", "continue", "declare",  "default", "else",
+        "extend",    "extends",  "fn",       "for",      "from",    "if",
+        "implement", "import",   "is",       "loop",     "mod",     "null",
+        "pub",       "return",   "Self",     "syntax",   "test",    "throw",
+        "try",       "type",     "use",      "val",      "var",     "yield",
+        // Not lexer keywords, but not renameable identifiers either.
+        "true",      "false",
     };
     for (keywords) |kw| {
         if (std.mem.eql(u8, name, kw)) return true;
@@ -3793,12 +3876,23 @@ fn nextSignificantKind(tokens: []const Token, i: usize) ?TokenKind {
     return null;
 }
 
+/// True for a name the checker registers as a built-in type — what semantic
+/// tokens paint `type [defaultLibrary]`.
+///
+/// The list is `Env.registerBuiltins` in `compiler-core/src/comptime/env.zig`,
+/// minus `Self` (a keyword token of its own). `char`, `byte` and `never` were
+/// painted here and are registered nowhere: the editor marked three words as
+/// standard-library types that no program can name. `any` stays because the
+/// checker still registers it (the unconstrained error channel of
+/// `@Future<T, E = any>`), even though decision 8 §2.5 gives the user no `any`.
+/// `unknown` is decision 8 §2's type; front 06 registers it, and painting it
+/// early costs nothing — no other declaration may be called `unknown`.
 fn isPrimitiveType(name: []const u8) bool {
     const prims = [_][]const u8{
-        "bool", "string", "void",  "char", "byte",
-        "i8",   "i16",    "i32",   "i64",  "isize",
-        "u8",   "u16",    "u32",   "u64",  "usize",
-        "f32",  "f64",    "never", "any",
+        "bool", "string", "void", "v128",    "noreturn",
+        "i8",   "i16",    "i32",  "i64",     "isize",
+        "u8",   "u16",    "u32",  "u64",     "usize",
+        "f32",  "f64",    "any",  "unknown",
     };
     for (prims) |p| if (std.mem.eql(u8, name, p)) return true;
     return false;
@@ -4086,7 +4180,17 @@ fn moduleDecls(arena: std.mem.Allocator, tokens: []const Token) ![]ModuleDecl {
                     .name = nt.lexeme,
                     .kind = switch (tok.kind) {
                         .@"fn" => proto.CompletionItemKind.Function,
-                        .type => proto.CompletionItemKind.Struct,
+                        // A `type` is a record or an enum by its shape, the same
+                        // distinction `documentSymbol` draws — `typeDeclSpan`
+                        // already reads it, so the degraded list draws it too
+                        // instead of calling every `type` a Struct.
+                        .type => if (typeDeclSpan(tokens, i)) |span|
+                            (if (span.is_enum)
+                                proto.CompletionItemKind.Enum
+                            else
+                                proto.CompletionItemKind.Struct)
+                        else
+                            proto.CompletionItemKind.Struct,
                         .behavior => proto.CompletionItemKind.Interface,
                         else => proto.CompletionItemKind.Variable,
                     },

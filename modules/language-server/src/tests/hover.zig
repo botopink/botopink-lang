@@ -233,3 +233,178 @@ test "hover: interface method on array receiver shows signature" {
     );
     try snap.assertHover(gpa, "hover_interface_method_array", source, h.pos(1, 12), result);
 }
+
+// ── H-14 — a declaration card is written in the 1.0.3 surface ─────────────────
+
+// `record`, `enum` and `interface` are gone (MIGRATION.md): a hover that still
+// printed them taught a form the parser rejects. The card is now the source
+// line the user would write — fields in parentheses, variants in a body,
+// `behavior` for the contract — with the type parameters a written generic type
+// always carries (decision 8 §1.1).
+
+test "hover: a record-shaped type is a `type Name(fields)` card" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\pub type Point(x: i32, y: i32)
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    const result = try engine.hover(gpa, source, h.pos(0, 9), bindings);
+    defer if (result) |hov| gpa.free(hov.contents.value);
+
+    try std.testing.expect(result != null);
+    try std.testing.expectEqualStrings(
+        \\```botopink
+        \\pub type Point(x: i32, y: i32)
+        \\```
+    ,
+        result.?.contents.value,
+    );
+    try snap.assertHover(gpa, "hover_type_record", source, h.pos(0, 9), result);
+}
+
+test "hover: a generic record-shaped type keeps its type parameters" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\type Box<T>(value: T)
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    const result = try engine.hover(gpa, source, h.pos(0, 5), bindings);
+    defer if (result) |hov| gpa.free(hov.contents.value);
+
+    try std.testing.expect(result != null);
+    try std.testing.expectEqualStrings(
+        \\```botopink
+        \\type Box<T>(value: T)
+        \\```
+    ,
+        result.?.contents.value,
+    );
+    try snap.assertHover(gpa, "hover_type_generic_record", source, h.pos(0, 5), result);
+}
+
+test "hover: an enum-shaped type is a `type Name { variants }` card" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\pub type Shape {
+        \\    Circle(radius: f64),
+        \\    Square,
+        \\}
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    const result = try engine.hover(gpa, source, h.pos(0, 9), bindings);
+    defer if (result) |hov| gpa.free(hov.contents.value);
+
+    try std.testing.expect(result != null);
+    try std.testing.expectEqualStrings(
+        \\```botopink
+        \\pub type Shape { Circle(...), Square }
+        \\```
+    ,
+        result.?.contents.value,
+    );
+    try snap.assertHover(gpa, "hover_type_enum", source, h.pos(0, 9), result);
+}
+
+test "hover: a behavior is a `behavior Name` card, not an interface" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\pub behavior Mappable<T> {
+        \\    fn map(self: Self<T>) -> Self<T>;
+        \\}
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    const result = try engine.hover(gpa, source, h.pos(0, 13), bindings);
+    defer if (result) |hov| gpa.free(hov.contents.value);
+
+    try std.testing.expect(result != null);
+    try std.testing.expectEqualStrings(
+        \\```botopink
+        \\pub behavior Mappable<T>
+        \\```
+    ,
+        result.?.contents.value,
+    );
+    try snap.assertHover(gpa, "hover_behavior", source, h.pos(0, 13), result);
+}
+
+// ── H-14b — a rendered type is written the way the source writes it ───────────
+
+// `array` and `tuple` are the checker's own names for two types that have no
+// such spelling in source, and the structural record's `record { … }` is a
+// parse error since the surface cutover. A card that prints one of them cannot
+// be pasted back into the file.
+
+test "hover: an array type is rendered `i32[]`, not `array<i32>`" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\val xs = [1, 2, 3];
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    const result = try engine.hover(gpa, source, h.pos(0, 4), bindings);
+    defer if (result) |hov| gpa.free(hov.contents.value);
+
+    try std.testing.expect(result != null);
+    try std.testing.expectEqualStrings(
+        \\```botopink
+        \\val xs : i32[]
+        \\```
+    ,
+        result.?.contents.value,
+    );
+    try snap.assertHover(gpa, "hover_val_array", source, h.pos(0, 4), result);
+}
+
+test "hover: a tuple type is rendered `#(i32, string)`" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\val row = #(1, "a");
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    const result = try engine.hover(gpa, source, h.pos(0, 4), bindings);
+    defer if (result) |hov| gpa.free(hov.contents.value);
+
+    try std.testing.expect(result != null);
+    try snap.assertHover(gpa, "hover_val_tuple", source, h.pos(0, 4), result);
+}
+
+test "hover: a labeled tuple type keeps its labels" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\fn load() -> #(name: string, pop: i32) { return #("SP", 12); }
+        \\val row = load();
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    const result = try engine.hover(gpa, source, h.pos(1, 4), bindings);
+    defer if (result) |hov| gpa.free(hov.contents.value);
+
+    try std.testing.expect(result != null);
+    try snap.assertHover(gpa, "hover_val_labeled_tuple", source, h.pos(1, 4), result);
+}

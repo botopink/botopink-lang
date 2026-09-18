@@ -228,3 +228,9 @@ scanners key on (`type` by its shape, `behavior` → `.interface`), and
 without a body has no `{` to search for, and `comptime T: type` / `-> type`
 open no declaration. Semantic tokens paint a field list's `name:` as
 `property`; `project_index.zig`'s `typeDeclIsEnum` decides a `pub type`'s kind.
+
+What the scanners accept is **not** what the user is shown. Every text the
+editor renders is written in the 1.0.3 surface only — `renderBindingHover`
+prints `pub type Point(x: i32, y: i32)`, `pub type Shape { Circle(...) }` and
+`pub behavior Mappable<T>`, never `record` / `enum` / `interface`, so a hover
+card is a line the user could paste back into the file (front 14 step 1).

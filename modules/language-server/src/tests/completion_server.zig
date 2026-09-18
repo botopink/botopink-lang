@@ -17,6 +17,12 @@ fn hasLabel(items: []const proto.CompletionItem, name: []const u8) bool {
     return false;
 }
 
+/// The kind of the item labelled `name`, or null when it is not offered.
+fn kindOf(items: []const proto.CompletionItem, name: []const u8) ?u32 {
+    for (items) |it| if (std.mem.eql(u8, it.label, name)) return it.kind;
+    return null;
+}
+
 fn freeItems(gpa: std.mem.Allocator, items: []const proto.CompletionItem) void {
     for (items) |it| {
         gpa.free(it.label);
@@ -162,4 +168,36 @@ test "completion (server): decorator body lists its locals" {
     try std.testing.expect(hasLabel(items, "args")); // `var` local
     try std.testing.expect(hasLabel(items, "f")); //    closure binder
     try std.testing.expect(hasLabel(items, "component")); // module-level fallback
+}
+
+// ── S-14 — a `type`'s completion kind follows its shape, compiling or not ─────
+
+test "completion (server): an enum-shaped type completes as an Enum, a record-shaped one as a Struct" {
+    const gpa = std.testing.allocator;
+    // `oops` is undeclared, so the module does not type-check and the server
+    // completes from the token walk — where every `type` used to be a Struct.
+    const source =
+        \\type Color { Red, Green }
+        \\type Point(x: i32, y: i32)
+        \\behavior Show { fn show(self: Self) -> string; }
+        \\val broken = oops;
+        \\val pick = 
+    ;
+
+    // Cursor past `= `, nothing typed: an empty prefix offers every decl.
+    const items = try completeThroughServer(gpa, source, h.pos(4, 11));
+    defer freeItems(gpa, items);
+
+    try std.testing.expectEqual(
+        @as(?u32, proto.CompletionItemKind.Enum),
+        kindOf(items, "Color"),
+    );
+    try std.testing.expectEqual(
+        @as(?u32, proto.CompletionItemKind.Struct),
+        kindOf(items, "Point"),
+    );
+    try std.testing.expectEqual(
+        @as(?u32, proto.CompletionItemKind.Interface),
+        kindOf(items, "Show"),
+    );
 }
