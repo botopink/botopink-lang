@@ -1,0 +1,18 @@
+//// Decision 8 §7 — one formatter per type, source-shaped, and the same text on
+//// every backend.
+
+type Point(x: i32, y: i32)
+
+type Shape { Square(side: i32), Nothing }
+
+pub fn main() {
+    @print("hi");
+    @print(5.0);
+    @print(true);
+    @print([1, 2]);
+    @print(["a", "b"]);
+    @print(#(1, "a"));
+    @print(Point(x: 1, y: 2));
+    @print(Shape.Square(side: 4));
+    @print(Shape.Nothing);
+}

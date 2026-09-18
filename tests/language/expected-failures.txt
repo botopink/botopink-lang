@@ -81,3 +81,9 @@ erlang   | test/tuple_fn_field.bp     | 06 N24 | a function-typed tuple label is
 commonJS | test/loop_break_value.bp::§10 break with a value is the loop's value | 06 N12 | `break <value>` yields a one-element array instead of the value
 commonJS | test/loop_break_value.bp::§10 break with a value out of a condition loop | 06 N12 | `break <value>` yields a one-element array instead of the value
 erlang   | test/loop_break_value.bp   | 01 step 6 | `ConditionLoopValueUnsupported`: a loop with a value break does not compile
+
+# ── §7 the formatter ──────────────────────────────────────────────────────────
+commonJS | run/print_formatter.bp     | 01 step 6 | §7 formatter: `f64` prints without its decimal part, arrays/tuples without spaces, records and variants in host shape
+erlang   | run/print_formatter.bp     | 01 step 6 | §7 formatter: arrays/tuples print without spaces, records as maps, variants as raw tags
+commonJS | run/display_print.bp       | 01 step 6 | §7: `@print` does not consult a type's `Display` implementation, nested or not
+erlang   | run/display_print.bp       | 01 step 6 | §7: `@print` does not consult a type's `Display` implementation, nested or not
