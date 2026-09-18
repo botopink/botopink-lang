@@ -22,7 +22,8 @@ compiler-cli/
 │   ├── backend_exec/        ← numeric + records fixture projects
 │   ├── test_tooling.sh      ← `botopink test` behaviours: empty test, --filter
 │   │                          (multi / none), assert message, mixed pass/fail exit;
-│   │                          `botopink-lib-test` compiles a test-less library
+│   │                          `botopink-lib-test` compiles a test-less library;
+│   │                          a dependency's erlang host `.erl` is shipped and reached
 │   └── test_tooling/        ← pass + fail fixture projects
 └── src/
     ├── AGENTS.md
@@ -83,6 +84,19 @@ root list, and never writes outside the output directory: a `require` whose path
 escapes it (a lib's `../../src/x.mjs` authored for its own build) ships the file to
 `<out>/<lib>/<base>` (project-own: `<out>/<base>`) and rewrites that module's
 `require` to reach it.
+
+`shipErlSidecars` is the erlang counterpart: a `#[@External.Erlang("host",
+"fn")]` lowers to `host:fn(…)`, and `host` is a module the library authors in
+erlang and keeps beside its `.bp` sources (`<lib>/src/sidecars/<host>.erl`, else
+`<lib>/src/<host>.erl`; a project-own module probes `src/sidecars/` then `src/`).
+It scans every emitted erlang module for `atom:atom(` qualifiers and copies the
+ones it finds a source file for into the output — so a qualifier naming an OTP
+module or another module of this build is a no-op, with no lib names in the
+code. **Wired into `botopink test` only** (`test_cmd.zig`): the test runner's
+`__bp_load_siblings/0` compiles and loads every `.erl` beside the script, so
+copying is all it takes there. `botopink build`/`run` emit no such loader — an
+erlang output's cross-module calls are red for the same reason — so the
+`build.zig` call site is still open.
 
 **Unknown `botopink.json` fields are ignored.** `LibManifest` reads only `src`
 and `files`; the project loader (`config.zig`) reads `name`/`version`/`target`/
