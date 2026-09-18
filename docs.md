@@ -74,12 +74,65 @@ module.
 
 ### Imports
 
+An import either names the module it reads from, or names nothing and resolves
+the sibling module that exports the names. Both forms are the language.
+
+<!-- docs-check: project imports src/main.bp -->
 ```botopink
-import {dict, queue, order} from "std";   // stdlib modules
-import {area} from "geometry";             // module in this package
-import {name} from "shapes.circle";        // nested module path
-import {of, erika} from "erika";           // library dependency
+// src/main.bp
+import {math} from "std";              // a stdlib module
+import {area} from "geometry";         // a module of this package, named
+import {name} from "shapes.circle";    // a nested module path
+import {perimeter};                    // the shorthand — the sibling that exports it
+
+pub mod geometry;
+pub mod shapes;
+
+fn main() {
+    @print(area(3, 4));             // 12
+    @print(name());                 // circle
+    @print(perimeter(3, 4));        // 14
+    @print(math.abs(0.0 - 1.0));    // 1
+}
 ```
+
+<!-- docs-check: project imports src/geometry.bp -->
+```botopink
+// src/geometry.bp
+pub fn area(w: i32, h: i32) -> i32 {
+    return w * h;
+}
+
+pub fn perimeter(w: i32, h: i32) -> i32 {
+    return (w + h) * 2;
+}
+```
+
+<!-- docs-check: project imports src/shapes/mod.bp -->
+```botopink
+// src/shapes/mod.bp
+pub mod circle;
+```
+
+<!-- docs-check: project imports src/shapes/circle.bp -->
+```botopink
+// src/shapes/circle.bp
+pub fn name() -> string {
+    return "circle";
+}
+```
+
+A library is imported the same way, under the name `botopink.json` declares it
+in `dependencies`:
+
+<!-- docs-check: skip a library dependency needs that library declared in `dependencies`; the docs harness builds a scratch project with none -->
+```botopink
+import {of, erika} from "erika";   // a library dependency
+```
+
+A `from` that names neither a module of this package, nor a declared
+dependency, nor `std` is an error — it is reported where it is written, rather
+than binding nothing in silence.
 
 ## Bindings
 
