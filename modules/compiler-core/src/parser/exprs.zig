@@ -166,18 +166,17 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
                 binding = this.advance().lexeme;
                 _ = this.advance(); // consume `->`
             }
-            var stmts: std.ArrayList(Stmt) = .empty;
-            errdefer {
-                for (stmts.items) |*s| s.deinit(alloc);
-                stmts.deinit(alloc);
-            }
-            while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
-                const expr = try this.parseExpr(alloc);
-                if (!this.match(.semicolon) and !this.check(.rightBrace)) return ParseError.UnexpectedToken;
-                try stmts.append(alloc, .{ .expr = expr });
-            }
-            _ = try this.consume(.rightBrace);
-            break :blk try stmts.toOwnedSlice(alloc);
+            // The shared block body — same options as `parseStmtListInBraces`,
+            // which the else-branch below already uses. The `{` and the `x ->`
+            // binding are the prologue this branch reads first; everything
+            // after it is the one block loop, so a `//` comment and a blank
+            // line are recorded here exactly as they are in the else-branch.
+            break :blk try this.parseBlockBody(alloc, .{
+                .trackEmptyLines = true,
+                .handleComments = true,
+                .semicolonPolicy = .requiredExceptLast,
+                .useAfterBranchGuard = true,
+            });
         } else blk: {
             const expr = try this.parseExpr(alloc);
             var stmts: std.ArrayList(Stmt) = .empty;
@@ -418,7 +417,45 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         // it back and let `parsePrimary` own `a.b.c` so those snapshots stay
         // identical.
         var sawMethodCall = false;
-        while (this.check(.dot) or this.check(.questionDot)) {
+        while (this.check(.dot) or this.check(.questionDot) or this.check(.leftParenthesis) or
+            this.check(.leftSquareBracket))
+        {
+            // `xs[0]` — see the matching link in `parsePostfixChain`. The two
+            // chain copies carry the same links; `parser/AGENTS.md` says so.
+            if (this.check(.leftSquareBracket)) {
+                base = try makeIndexExpr(this, alloc, base);
+                sawMethodCall = true;
+                continue;
+            }
+            // `adder(3)(4)` — calling what a call returned. A `(` reaches this
+            // loop only after the base is already a call or a chain link (the
+            // first `(` after the identifier was taken above), so it is always
+            // a chained call and never the first one. There is no name for the
+            // callee, so it travels as an expression — `ast.CallExpr.call.calleeExpr`.
+            if (this.check(.leftParenthesis)) {
+                const calleeTok = this.peek();
+                const args = try this.parseCallArgs(alloc);
+                errdefer {
+                    for (args) |*a| a.deinit(alloc);
+                    alloc.free(args);
+                }
+                const trailing = if (this.noTrailingLambda) try alloc.alloc(TrailingLambda, 0) else try this.parseTrailingLambdas(alloc);
+                errdefer {
+                    for (trailing) |*t| t.deinit(alloc);
+                    alloc.free(trailing);
+                }
+                const calleePtr = try this.boxExpr(alloc, base);
+                base = Expr{ .call = .{ .loc = locFromToken(calleeTok), .kind = .{ .call = .{
+                    .receiver = null,
+                    .callee = "",
+                    .is_builtin = false,
+                    .args = args,
+                    .trailing = trailing,
+                    .calleeExpr = calleePtr,
+                } } } };
+                sawMethodCall = true;
+                continue;
+            }
             const isOptional = this.check(.questionDot);
             const dotSaved = this.current;
             _ = this.advance(); // '.' / '?.'
@@ -482,6 +519,10 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
 /// True when the current token is a binary operator from `precedence_table`.
 fn isBinaryOpNext(this: *This) bool {
     const kind = this.peek().kind;
+    // `??` is not in the table — it desugars rather than mapping to a `BinOp`
+    // (see `parseNullishExpr`) — but `g(1) ?? 0` must not end the expression
+    // at the call, so it is named here beside the table's operators.
+    if (kind == .questionQuestion) return true;
     inline for (precedence_table) |lvl| {
         inline for (lvl.ops) |o| {
             if (kind == o.tok) return true;
@@ -775,6 +816,48 @@ pub fn parsePipelineExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr 
     return lhs;
 }
 
+/// `a ?? b` — the nullish default (decision 28): `a` unless it is null, and
+/// then `b`.
+///
+/// It sits at the tightest binary level, just above `is` and a primary, for the
+/// reason `is` does: `a ?? 0 == 1` reads as `(a ?? 0) == 1`, `if (a ?? false)`
+/// needs no parentheses of its own, and there is no "cannot mix `??` with `||`"
+/// rule to learn. **Right-associative**, so `a ?? b ?? c` is `a ?? (b ?? c)` —
+/// the first non-null of the three.
+///
+/// **It desugars rather than adding an operator.** `a ?? b` becomes
+/// `if (a) { <n> -> <n> } else { b }` with `n = ast.nullish_binding_name`: the
+/// optional binding form the language already has, which evaluates `a` once,
+/// narrows it inside the branch, and is already lowered by all four backends.
+/// `ast.zig` says why a `BinOp` variant is not the shape.
+fn parseNullishExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
+    var value = try parseIsExpr(this, alloc);
+    errdefer value.deinit(alloc);
+    if (!this.check(.questionQuestion)) return value;
+    const opTok = this.advance();
+    // Right-associative: the RHS is another `??` chain, not just one operand.
+    const fallback = try parseNullishExpr(this, alloc);
+
+    const condPtr = try this.boxExpr(alloc, value);
+    const fallbackPtr = try this.boxExprOwned(alloc, fallback);
+
+    var then_ = try alloc.alloc(Stmt, 1);
+    then_[0] = .{ .expr = Expr{ .identifier = .{
+        .loc = locFromToken(opTok),
+        .kind = .{ .ident = ast.nullish_binding_name },
+    } } };
+    var else_ = try alloc.alloc(Stmt, 1);
+    else_[0] = .{ .expr = fallbackPtr.* };
+    alloc.destroy(fallbackPtr);
+
+    return Expr{ .branch = .{ .loc = locFromToken(opTok), .kind = .{ .if_ = .{
+        .cond = condPtr,
+        .binding = ast.nullish_binding_name,
+        .then_ = then_,
+        .else_ = else_,
+    } } } };
+}
+
 /// `x is T` — decision 8 §4 (06 N21): tests the VALUE, not its origin.
 ///
 /// The tightest level of the expression grammar, just above a primary, so
@@ -817,7 +900,7 @@ fn parseIsExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
 
 /// Left-associative precedence-climbing parser driven by `precedence_table`.
 pub fn parseBinaryExpr(this: *This, alloc: std.mem.Allocator, comptime level: usize) ParseError!Expr {
-    if (level == precedence_table.len) return parseIsExpr(this, alloc);
+    if (level == precedence_table.len) return parseNullishExpr(this, alloc);
     const entry = precedence_table[level];
 
     var lhs = try this.parseBinaryExpr(alloc, level + 1);
@@ -836,6 +919,34 @@ pub fn parseBinaryExpr(this: *This, alloc: std.mem.Allocator, comptime level: us
     return lhs;
 }
 
+/// `receiver[index]` — decision 30's index expression, as the reserved builtin
+/// call `ast.index_builtin_name` over `(receiver, index)`. The `[` must be the
+/// current token.
+///
+/// It is a **chain link**, built by both copies of the chain loop, so
+/// `f(1)[0].name` and `d["k"][0]` are one chain and an index composes with
+/// every other link. The index is parsed as an ordinary expression, which is
+/// what makes `xs[0..2]` the same node with a `range` inside it.
+fn makeIndexExpr(this: *This, alloc: std.mem.Allocator, base: Expr) ParseError!Expr {
+    const openTok = this.advance(); // [
+    // `parseRangeExpr`, not `parseExpr`: the index is where `xs[0..2]` puts a
+    // range, and `decision-8:447` says `..` is iteration **and slicing**.
+    const idx = try this.parseRangeExpr(alloc);
+    const idxPtr = try this.boxExpr(alloc, idx);
+    _ = try this.consume(.rightSquareBracket);
+    const recvPtr = try this.boxExpr(alloc, base);
+    var args = try alloc.alloc(CallArg, 2);
+    args[0] = .{ .label = null, .value = recvPtr };
+    args[1] = .{ .label = null, .value = idxPtr };
+    return Expr{ .call = .{ .loc = locFromToken(openTok), .kind = .{ .call = .{
+        .receiver = null,
+        .callee = ast.index_builtin_name,
+        .is_builtin = true,
+        .args = args,
+        .trailing = &.{},
+    } } } };
+}
+
 /// Consume a postfix `.member` / `?.member` / `.method(args)` chain off an
 /// already-parsed `base` expression, so a literal receiver chains the same way
 /// an identifier does (`[1, 2].map(f)`, `"x".contains(y)`). Operand position:
@@ -844,7 +955,32 @@ pub fn parseBinaryExpr(this: *This, alloc: std.mem.Allocator, comptime level: us
 /// token's loc so loc-keyed method lowering stays per-link distinct.
 fn parsePostfixChain(this: *This, alloc: std.mem.Allocator, base_in: Expr) ParseError!Expr {
     var base = base_in;
-    while (this.check(.dot) or this.check(.questionDot)) {
+    while (this.check(.dot) or this.check(.questionDot) or this.check(.leftParenthesis) or
+        this.check(.leftSquareBracket))
+    {
+        // `xs[0]` — an index expression (decision 30), a chain link like
+        // `.field`, so `f(1)[0].name` is one chain. The index is an ordinary
+        // expression, which is what makes `xs[0..2]` the same node.
+        if (this.check(.leftSquareBracket)) {
+            base = try makeIndexExpr(this, alloc, base);
+            continue;
+        }
+        // `f(a)(b)` — a function is a value, so calling what a call returned is
+        // a link in the chain like a `.method(…)` is (decision 14). There is no
+        // name to put in `callee`, so the callee travels as an expression; see
+        // `ast.CallExpr.call.calleeExpr`.
+        if (this.check(.leftParenthesis)) {
+            const calleeTok = this.peek();
+            const args = try this.parseCallArgs(alloc);
+            errdefer {
+                for (args) |*a| a.deinit(alloc);
+                alloc.free(args);
+            }
+            const calleePtr = try this.boxExpr(alloc, base);
+            base = makeCall(calleeTok, null, "", false, args, try alloc.alloc(TrailingLambda, 0));
+            base.call.kind.call.calleeExpr = calleePtr;
+            continue;
+        }
         const isOptional = this.check(.questionDot);
         _ = this.advance();
         const fieldTok: Token = if (this.check(.numberLiteral))
@@ -935,26 +1071,24 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
             }
             _ = try this.consume(.rightArrow);
 
-            // Parse body statements (with semicolons)
-            var stmts: std.ArrayList(Stmt) = .empty;
-            errdefer {
-                for (stmts.items) |*s| s.deinit(alloc);
-                stmts.deinit(alloc);
-            }
-            while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
-                const expr = try this.parseExpr(alloc);
-                try stmts.append(alloc, .{ .expr = expr });
-                // Consume semicolon if present
-                if (this.check(.semicolon)) {
-                    _ = try this.consume(.semicolon);
-                }
-            }
-            _ = try this.consume(.rightBrace);
+            // The shared block body — the `{` and the `a, b ->` parameter list
+            // are this block's prologue. The semicolon policy stays `.optional`,
+            // which is what this body has always applied: `{ x -> a b }` parses
+            // today and tightening it would refuse a program that compiles.
+            // What it gains is comment handling and empty-line tracking, so a
+            // `//` inside a lambda — and so inside every `loop (…) { x -> … }`
+            // body — parses, and a blank line inside one survives the printer.
+            const body = try this.parseBlockBody(alloc, .{
+                .trackEmptyLines = true,
+                .handleComments = true,
+                .semicolonPolicy = .optional,
+                .useAfterBranchGuard = false,
+            });
 
             return Expr{ .function = .{ .loc = locFromToken(braceTok), .kind = .{
                 .syntax = .lambda,
                 .params = try paramList.toOwnedSlice(alloc),
-                .body = try stmts.toOwnedSlice(alloc),
+                .body = body,
             } } };
         } else {
             // { } without -> is not allowed (use @block builtin instead)
@@ -1060,7 +1194,12 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
 
     if (this.check(.numberLiteral)) {
         const tok = this.advance();
-        return Expr{ .literal = .{ .loc = locFromToken(tok), .kind = .{ .numberLit = tok.lexeme } } };
+        const lit = Expr{ .literal = .{ .loc = locFromToken(tok), .kind = .{ .numberLit = tok.lexeme } } };
+        // A number is a receiver like any other literal — `libs/std` declares
+        // `Integer.toString` and `"ab".toUpperCase()` already chains. The
+        // range `0..4` is unaffected: `..` lexes as `dotDot`, which is not a
+        // chain link.
+        return parsePostfixChain(this, alloc, lit);
     }
 
     if (this.check(.selfType)) {
@@ -1123,41 +1262,13 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
             base = makeCall(tok, null, tok.lexeme, false, args, try alloc.alloc(TrailingLambda, 0));
         }
 
-        // Loop for chained links: `.field` access, `.method(args)` calls, and
-        // their optional-chaining forms (`?.field`, `?.method(args)`).
-        while (this.check(.dot) or this.check(.questionDot)) {
-            const isOptional = this.check(.questionDot);
-            _ = this.advance();
-            // Accept both identifier and numberLiteral for tuple access; `get`/
-            // `set` are valid member names (`state.set(x)`).
-            const fieldTok: Token = if (this.check(.numberLiteral))
-                this.advance()
-            else
-                try this.consumeMemberName();
-            if (this.check(.leftParenthesis)) {
-                const args = try this.parseCallArgs(alloc);
-                errdefer {
-                    for (args) |*a| a.deinit(alloc);
-                    alloc.free(args);
-                }
-                const recvPtr = try this.boxExpr(alloc, base);
-                // Method-call links use the method token's loc so each chain
-                // link has a distinct location (method lowering is loc-keyed).
-                base = makeCall(fieldTok, recvPtr, fieldTok.lexeme, false, args, try alloc.alloc(TrailingLambda, 0));
-                base.call.kind.call.optional = isOptional;
-            } else {
-                const recvPtr = try this.boxExpr(alloc, base);
-                // Field-access links use the member token's loc (like the
-                // method-call links above) so each chain link has a distinct
-                // location — loc-keyed lowering would otherwise collide on the
-                // shared base loc (e.g. `xs.length` nested in another access).
-                base = Expr{ .identifier = .{ .loc = locFromToken(fieldTok), .kind = .{ .identAccess = .{
-                    .receiver = recvPtr,
-                    .member = fieldTok.lexeme,
-                    .optional = isOptional,
-                } } } };
-            }
-        }
+        // Chained links: `.field`, `.method(args)`, their optional-chaining
+        // forms, and `(args)` on what a call returned. This used to be a
+        // verbatim third copy of `parsePostfixChain`'s loop, which is why
+        // adding the `(` link there closed `("ab").length` and not
+        // `adder(3)(4)`: the two forms reached two copies of one rule. One
+        // rule, one place.
+        base = try parsePostfixChain(this, alloc, base);
 
         // Tagged-call sugar: a string literal immediately after a plain
         // identifier or `a.b` access is a call with that single argument:
@@ -1213,13 +1324,18 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         return parsePostfixChain(this, alloc, lit);
     }
 
-    // `(expr)` ---- grouped expression (parentheses for precedence)
+    // `(expr)` ---- grouped expression (parentheses for precedence).
+    // The eighth literal receiver, and the one that used to `return` instead of
+    // chaining: `("ab").length`, `(a == b).toString()` and `(sql """…""").length`
+    // were `Unexpected token` at the `.` while every other receiver chained
+    // (decision 14).
     if (this.check(.leftParenthesis)) {
         const parenTok = this.advance();
         const inner = try this.parseExpr(alloc);
         _ = try this.consume(.rightParenthesis);
         const innerPtr = try this.boxExpr(alloc, inner);
-        return Expr{ .collection = .{ .loc = locFromToken(parenTok), .kind = .{ .grouped = innerPtr } } };
+        const grouped = Expr{ .collection = .{ .loc = locFromToken(parenTok), .kind = .{ .grouped = innerPtr } } };
+        return parsePostfixChain(this, alloc, grouped);
     }
 
     return ParseError.UnexpectedToken;
@@ -1613,23 +1729,21 @@ pub fn parseTrailingLambdas(this: *This, alloc: std.mem.Allocator) ParseError![]
             _ = this.advance();
         }
 
-        // Parse body statements
-        var stmts: std.ArrayList(Stmt) = .empty;
-        errdefer {
-            for (stmts.items) |*s| s.deinit(alloc);
-            stmts.deinit(alloc);
-        }
-        while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
-            const expr = try this.parseExpr(alloc);
-            _ = try this.consume(.semicolon);
-            try stmts.append(alloc, .{ .expr = expr });
-        }
-        _ = try this.consume(.rightBrace);
+        // The shared block body — the `{`, the optional label and the
+        // `a, b ->` parameter list are this block's prologue. The semicolon
+        // policy stays `.required`, which a trailing lambda has always applied;
+        // what it gains is comment handling and empty-line tracking.
+        const body = try this.parseBlockBody(alloc, .{
+            .trackEmptyLines = true,
+            .handleComments = true,
+            .semicolonPolicy = .required,
+            .useAfterBranchGuard = false,
+        });
 
         try lambdas.append(alloc, .{
             .label = label,
             .params = try paramList.toOwnedSlice(alloc),
-            .body = try stmts.toOwnedSlice(alloc),
+            .body = body,
         });
     }
 
@@ -1694,19 +1808,17 @@ pub fn parseLoopExpr(this: *This, alloc: std.mem.Allocator) ParseError!LoopExpr 
         _ = try this.consume(.rightArrow);
     }
 
-    // Body is already-consumed `{ stmt; ... }`
-    var stmts: std.ArrayList(Stmt) = .empty;
-    errdefer {
-        for (stmts.items) |*s| s.deinit(alloc);
-        stmts.deinit(alloc);
-    }
-    while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
-        const e = try this.parseExpr(alloc);
-        _ = try this.consume(.semicolon);
-        try stmts.append(alloc, .{ .expr = e });
-    }
-    _ = try this.consume(.rightBrace);
-    const body = try stmts.toOwnedSlice(alloc);
+    // The shared block body — the `{` and the `x, y ->` parameter list are this
+    // block's prologue. The semicolon policy stays `.required`, which is what a
+    // loop body has always applied. What it gains is comment handling and
+    // empty-line tracking: a `//` inside a `loop (…) { x -> … }` body was a
+    // parse error, and a blank line inside one was dropped by the printer.
+    const body = try this.parseBlockBody(alloc, .{
+        .trackEmptyLines = true,
+        .handleComments = true,
+        .semicolonPolicy = .required,
+        .useAfterBranchGuard = false,
+    });
 
     return .{
         .loc = locFromToken(loopTok),
@@ -1772,8 +1884,9 @@ pub fn parseRangeExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         alloc.destroy(startPtr);
     }
     // Optional end: `0..10` vs `0..`
+    // `]` closes an open-ended slice `xs[0..]`, like `)` closes `loop (0..)`.
     const hasEnd = !this.check(.rightParenthesis) and !this.check(.comma) and
-        !this.check(.endOfFile);
+        !this.check(.rightSquareBracket) and !this.check(.endOfFile);
     if (hasEnd) {
         const end = try this.parseBinaryExpr(alloc, prec.equality);
         const endPtr = try this.boxExprOwned(alloc, end);

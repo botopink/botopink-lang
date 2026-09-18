@@ -27,6 +27,11 @@ pub const ErrorMessages = struct {
     /// Optional alternate caption rendered after the `^^^` carets. When null,
     /// the carets caption duplicates `message`.
     caretCaption: ?[]const u8 = null,
+    /// When set, the offending token's lexeme is appended to the caret caption
+    /// in backticks. For the catch-all, which has no rule to name and so has
+    /// only the token itself to say something about. Skipped when the lexeme
+    /// is empty (end of file).
+    lexemeInCaption: bool = false,
     /// Optional `= note: ...` line emitted before `= hint: ...`.
     note: ?[]const u8 = null,
 };
@@ -42,9 +47,19 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "This is a reserved word and cannot be used as a name",
             .hint = "Choose a different identifier.",
         },
+        // The catch-all — the only one of the 48 kinds with no rule to name.
+        // Every form the language does not have reaches it, so its text is
+        // what a reader gets when a spelling is missing, and "Check the syntax
+        // around this position." told them nothing they could not see. It now
+        // names the token it stopped on, names the two things that are usually
+        // wrong, and says that a DELIBERATE refusal looks different — which is
+        // the distinction whose absence let seven missing forms be routed
+        // around instead of filed (front 15).
         .unexpectedToken => .{
-            .message = "Unexpected token",
-            .hint = "Check the syntax around this position.",
+            .message = "this token cannot appear here",
+            .caretCaption = "unexpected",
+            .lexemeInCaption = true,
+            .hint = "The statement before it may be missing its `;`, or an earlier `(`, `[` or `{` may not be closed. A form the language deliberately refuses reports a NAMED error instead of this one, so if you believe this spelling should work, it is a gap worth filing rather than working around.",
         },
         .opNakedRight => .{
             .message = "This operator has no value on its right-hand side",
@@ -273,6 +288,13 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "past the last parameter",
             .hint = "`$0` is the first declared parameter; the highest marker is one less than the parameter count.",
         },
+        .bodylessFnNeedsReturnType => .{
+            .code = "bodyless-fn-needs-return-type",
+            .message = "a declaration with no body must say what it answers",
+            .caretCaption = "add `-> void`, or give the fn a body",
+            .note = "`fn f(x: string) -> void`, `fn f(x: string) void` and `declare fn f(x: string);` are all declarations; `fn f(x: string)` alone says nothing about the result",
+            .hint = "Write `-> void` when the fn answers nothing, `-> T` when it answers a `T`, or add a `{ … }` body.",
+        },
         .fnParamPositionalAfterNamed => .{
             .message = "fn-param-positional-after-named: positional argument supplied after a named one.",
             .hint = "Convert the trailing positional arg to a named one (`name: value`), or move the named argument to the end of the call.",
@@ -339,7 +361,11 @@ pub fn render(
     const spanLen = if (info.end > info.start) info.end - info.start else 1;
     try writePadN(writer, loc.col - 1, ' ');
     try writePadN(writer, spanLen, '^');
-    try writer.print(" {s}\n", .{caption});
+    if (msgs.lexemeInCaption and info.lexeme.len > 0) {
+        try writer.print(" {s} `{s}`\n", .{ caption, info.lexeme });
+    } else {
+        try writer.print(" {s}\n", .{caption});
+    }
 
     // "<gutter>|"  ---- blank line below carets
     try writePad(writer, gutter);

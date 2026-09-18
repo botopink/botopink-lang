@@ -66,7 +66,8 @@ parser/
     ├── errors.zig        ← parse errors & cross-stage error-message units
     ├── surface.zig       ← the 1.0.3 surface: `type` shapes, the field list, `behavior`, separators, and old-vs-new AST equality
     ├── decision8.zig     ← decision 8's grammar, one section per row: `unknown` (N19), union types (N20), `is` (N21), `case` arms (N22)
-    └── effect_rejections.zig ← parser-level `#[@<effect>]` rejections (R1/R2/R5…)
+    ├── effect_rejections.zig ← parser-level `#[@<effect>]` rejections (R1/R2/R5…)
+    └── language_surface.zig  ← front 15's rows: the forms the documents write against the grammar (R1 the `T[]` suffix, R2 the postfix chain, R3 a number as a receiver, R4 the shared block body, R5 the index expression, R7 a bodyless `fn`, R8 `??`)
 ```
 
 ## Testing pattern
@@ -80,11 +81,76 @@ test "import decl" {
 - Snapshot path: `modules/compiler-core/snapshots/parser/<slug>.snap.md` (slug from the test name)
 - Error tests: `expectParseError(alloc, "expected rendered message", source)` — it FAILS when the parse produced no `parseError` (nothing would be rendered), so the expected text is always compared; `expectParseFails(alloc, source)` only checks that parsing fails
 
+## One block body, and the prologue that used to fork it
+
+`parseBlock` consumes the `{` and delegates to **`parseBlockBody`**, which runs
+the statement loop under `BlockParseOptions` (`handleComments`,
+`trackEmptyLines`, `semicolonPolicy`, `useAfterBranchGuard`). A block that reads
+something between the `{` and its first statement — a prologue — consumes the
+`{` itself, reads the prologue, and then calls `parseBlockBody`:
+
+| Block | Prologue | Policy |
+|---|---|---|
+| fn / `test` body, `if` else-branch, `case` arm | — (`parseStmtListInBraces`) | `requiredExceptLast` |
+| `if` then-branch | `{ x -> ` — the branch's value binding | `requiredExceptLast` |
+| lambda `{ a, b -> … }` | the parameter list | `optional` |
+| trailing lambda `f { a -> … }` | an optional `label:` and the parameter list | `required` |
+| `loop (…) { x -> … }` body | the parameter list | `required` |
+
+**Five of those carried their own copy of the loop**, each written before the
+options existed, and each left out comment handling and empty-line tracking — so
+a `//` comment was a parse error in an `if` then-branch, a lambda body, a
+trailing lambda and a `loop` body, while the same comment in a fn body or an
+`if` else-branch parsed, and a blank line in any of them was lost (front 15 R4;
+`16-formatter`'s G5). **A block with a prologue calls `parseBlockBody`; it does
+not copy the loop.** The semicolon policy is per block and is what each copy
+already applied — they are recorded above rather than unified, because
+tightening one would refuse a program that compiles today.
+
+## A bodyless `fn` declares its return type (decision 33 (b))
+
+A top-level `fn` with no `{ … }` body is a **declaration**, and it is accepted
+in three spellings, all promoted to `isDeclare = true` in `parseFnDecl`:
+
+| Spelling | Note |
+|---|---|
+| `fn f(x: string) -> void` | the arrowed form. It used to be a **parse error**, which made decision 33's own remedy ("the declarations gain `-> void`") unwritable |
+| `fn f(x: string) void` | the arrowless `.d.bp` shortform, the convention in `libs/std/src/builtins.d.bp` |
+| `declare fn f(x: string);` | the `declare` keyword, with its own contract; it parses as a `delegate` decl |
+
+`fn f(x: string)` — **no body and no return type at all** — stays a parse error,
+now `bodyless-fn-needs-return-type`, located at the `)` the declaration just
+closed, because "add `-> void`" means *there*. The `)` is captured into
+`closeParenTok` before the return-type parse, since by the time the absence is
+known the cursor has walked on to the next declaration's first token.
+
+The arrowless shortform also stops swallowing a `fn` that is not followed by
+`(`: `fn` begins a `fn(…) -> R` type, so `fn emit(source: string)` followed by
+`fn main() …` used to parse the *next declaration* as this one's return type
+and report the failure there.
+
 ## Type-ref grammar (`types.zig`)
 
-`parseBaseTypeRef` handles `?T`, `#(…)` tuples, `fn(…) -> R` function types,
-`@Name<…>` builtins, `type` meta-kinds, plain names with `<…>`/`[]` wraps, and
-two additions for record/builder ergonomics:
+**The `T[]` suffix is applied once, at the single exit, and never per-arm.**
+`parseBaseTypeRef` is a two-line wrapper: it calls `parseBaseTypeRefArm` for the
+arm and then runs the array-wrap loop for all of them. It used to be written at
+the end of the named-type path and **copied** into the `unknown` arm, so the
+tuple arm and the builtin-generic arm — which `return` before either — refused
+`#(a: i32)[]` and `@Result<i32, E>[]` while `unknown[]` and `Box<i32>[]` parsed
+(front 15, decision 14). **A new arm goes in `parseBaseTypeRefArm` and inherits
+the suffix; never re-add a wrap loop to an arm.**
+
+`parseBaseTypeRefArm` handles `?T`, `#(…)` tuples, `(T)` parenthesised types,
+`fn(…) -> R` function types, `@Name<…>` builtins, `type` meta-kinds, plain names
+with `<…>` wraps, and two additions for record/builder ergonomics:
+
+- **`(T)` is a grouping, not a node** — it returns the inner `TypeRef` unchanged.
+  `|` binds looser than every other type operator, so `decision-8:141` writes
+  `(i32 | string)[]` for an array of a union: the parentheses are what make the
+  suffix apply to the whole alternation. `startsTypeRef` accepts `(` for the
+  same reason, so a union member and an `is` type may be parenthesised too.
+  Since the grouping is dropped, `format.zig` has to re-introduce it when it
+  prints an `array` of a union — front 16's printer arm.
 
 - **Function-type params may be named** — `fn(next: T)` parses alongside the
   bare `fn(T)`; the name is documentation-only (function types are positional)
@@ -97,6 +163,42 @@ A non-`syntax` `name: fn(…)` param is parsed through `parseTypeRef` (a
 `TypeRef.function`, so its return may be an array — `fn() -> T[]`);
 `Param.fnType` (`ast.FnType`) is set **only** for `syntax fn(…)` params.
 
+## The postfix chain — two copies, and why not one
+
+`.field` / `?.field` / `.method(args)` / `(args)` links are parsed in **two**
+places, and the reason is trailing lambdas:
+
+- `parsePostfixChain` (`exprs.zig`) is the operand-position chain. It does
+  **not** consume a trailing `{ … }` — in an operand a `{` belongs to the
+  enclosing construct. Every literal receiver goes through it, the grouped
+  expression `(…)` included: it used to `return` on its own, which is why
+  `("ab").length` and `(a == b).toString()` were `Unexpected token` at the `.`
+  while `[1, 2].map(f)` parsed (front 15, decision 14). `parsePrimary`'s
+  identifier path calls it too — that path used to carry a **verbatim copy** of
+  the loop, and the copy is gone.
+- `parseExpr`'s call path carries the statement-position chain, which **does**
+  consume trailing lambdas (`xs.forEach { … }`).
+
+The links are `.field`, `?.field`, `.method(args)`, `(args)` and `[index]`.
+
+**A link added to one must be added to the other.** `adder(3)(4)` is the case
+that proved it: adding the `(` link to `parsePostfixChain` alone closed
+`("ab").length(…)` and not `adder(3)(4)`, because the two forms reach two
+copies. A chained call has no name for its callee, so the callee travels as an
+expression on `ast.CallExpr.call.calleeExpr` with `callee = ""` and
+`receiver = null` — a chained call is **not** a method call, and a consumer that
+reads `receiver` to mean "the value before the `.`" must not see one.
+
+`xs[i]` is the `[index]` link, built by `makeIndexExpr` for both copies
+(decision 30). It is the reserved builtin call `ast.index_builtin_name` over
+`(receiver, index)` and **not** a new AST variant — `ast.zig` states the rule
+that `x is T` follows for the same reason. The index is parsed with
+`parseRangeExpr`, so `xs[0..2]` and `xs[0..]` are the same node with a `range`
+inside: one node for indexing and for slicing, as `decision-8:447` reads them.
+`parseRangeExpr` stops an open end at `]` the way it already stops it at `)`.
+Typing the call is `01-checker`'s and lowering it is each backend's; until then
+it reaches the same unrecognised-builtin path `x is T` reached.
+
 ## Postfix-chain locs
 
 Each link in a `.field` / `?.field` / `.method(args)` postfix chain carries the
@@ -108,11 +210,11 @@ both use `locFromToken(fieldTok)` for this reason.
 
 ## `unknown` in type position (decision 8 §2, 06 N19)
 
-`unknown` arrives as its own keyword token, so `parseBaseTypeRef` handles it
+`unknown` arrives as its own keyword token, so `parseBaseTypeRefArm` handles it
 before `consumeTypeName` and no user type can shadow it. It lands as
 `TypeRef.named = ast.unknown_type_name` (`ast.zig` documents what inference owes
-it) and takes the ordinary `[]` wraps — `unknown[]`, `?unknown`, `Box<unknown>`
-all parse. `unknown<…>` / `unknown(…)` is refused at the `<` / `(` with
+it) and takes the ordinary `[]` wraps from the shared suffix loop — `unknown[]`,
+`?unknown`, `Box<unknown>` all parse. `unknown<…>` / `unknown(…)` is refused at the `<` / `(` with
 `unknown-takes-no-arguments`: it is one type, not a constructor.
 
 ## Union types `A | B` (decision 8 §3, 06 N20)

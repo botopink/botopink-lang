@@ -180,6 +180,10 @@ pub const ParseErrorType = enum {
     templateSelfMarker,
     /// `$N` in an `@External` template past the declaration's parameters.
     templateMarkerOutOfRange,
+    /// `fn f(x: string)` with no body and no `-> …` — decision 33 (b): a
+    /// declaration without a body says what it answers, even when the answer
+    /// is nothing.
+    bodylessFnNeedsReturnType,
 };
 
 pub const ParseErrorInfo = struct {
@@ -697,6 +701,23 @@ pub const Parser = struct {
     /// Unifies every brace-delimited block in the parser via `BlockParseOptions`.
     pub fn parseBlock(this: *This, alloc: std.mem.Allocator, comptime opts: BlockParseOptions) ParseError![]Stmt {
         _ = try this.consume(.leftBrace);
+        return this.parseBlockBody(alloc, opts);
+    }
+
+    /// The body of a brace-delimited block, `{` **already consumed**, up to and
+    /// including the `}`.
+    ///
+    /// It exists for the two blocks that read something between the `{` and the
+    /// first statement and so cannot call `parseBlock`: the `if` then-branch's
+    /// `{ x -> … }` value binding, and a lambda's `{ a, b -> … }` parameter
+    /// list. Both used to carry their own copy of this loop, written before
+    /// `BlockParseOptions` existed, and each copy left out comment handling and
+    /// empty-line tracking — so a `//` comment was a parse error inside an `if`
+    /// then-branch and inside every `loop (…) { x -> … }` body (which is a
+    /// lambda body), while the same comment in a fn body, a `test` body or an
+    /// `if` **else**-branch parsed. **A block that needs a prologue calls this;
+    /// it does not copy the loop.**
+    pub fn parseBlockBody(this: *This, alloc: std.mem.Allocator, comptime opts: BlockParseOptions) ParseError![]Stmt {
         var stmts: std.ArrayList(Stmt) = .empty;
         errdefer {
             for (stmts.items) |*s| s.deinit(alloc);
@@ -723,7 +744,12 @@ pub const Parser = struct {
                     seenBranch = true;
             }
 
-            const expr = try this.parseExpr(alloc);
+            var expr = try this.parseExpr(alloc);
+            // The statement is parsed before the separator is checked, so a
+            // semicolon-policy failure leaves it owned by nobody. It is freed
+            // here rather than leaked; once appended, `stmts`' own errdefer
+            // owns it and this one is discharged.
+            errdefer expr.deinit(alloc);
             switch (opts.semicolonPolicy) {
                 .required => _ = try this.consume(.semicolon),
                 .optional => _ = this.match(.semicolon),

@@ -134,6 +134,10 @@ pub const Lexer = struct {
             '?' => {
                 if (self.matchChar('.')) {
                     try self.addToken(.questionDot, allocator);
+                } else if (self.matchChar('?')) {
+                    // `??` — the nullish default (decision 28). Tried before
+                    // the bare `?`, the way `..` is tried before `.`.
+                    try self.addToken(.questionQuestion, allocator);
                 } else {
                     try self.addToken(.questionMark, allocator);
                 }
@@ -542,7 +546,16 @@ pub const Lexer = struct {
             if (!isDigit(ch)) break;
             _ = self.advance();
         }
-        if (!self.isAtEnd() and self.peek() == '.' and self.peekNext() != '.') {
+        // A `.` continues the number only when a DIGIT follows it. The guard
+        // used to read `peekNext() != '.'`, which kept `1..9` a range and made
+        // everything else a fractional part — so `42.toString()` lexed as the
+        // number `42.` followed by `toString`, and `"ab".toUpperCase()` parsed
+        // while the integer form did not (front 15, `libs/std` declares
+        // `Integer.toString`). Testing for a digit keeps the `..` range (a `.`
+        // is not a digit) and keeps `1.5`, `1_000.5`, `1e10` and `0xFF`
+        // unchanged; `42.` with nothing after the point is now `42` and a `.`,
+        // which is the tuple-access spelling `t.0.first` needs too.
+        if (!self.isAtEnd() and self.peek() == '.' and isDigit(self.peekNext())) {
             _ = self.advance();
             while (!self.isAtEnd()) {
                 const ch = self.peek();

@@ -26,6 +26,10 @@ pub const TokenKind = enum {
     bang, // !
     questionMark, // ?
     questionDot, // ?. (optional chaining)
+    /// `??` — the nullish default: `a ?? 0` is `a` unless it is null
+    /// (decision 28). Two characters, so `?` for an optional type and `?.` for
+    /// optional chaining are unaffected.
+    questionQuestion, // ??
     semicolon, // ;
     equal, // =
     equalEqual, // ==

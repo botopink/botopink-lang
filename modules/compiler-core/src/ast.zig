@@ -675,9 +675,20 @@ pub fn CallExprOf(comptime phase: Phase) type {
             /// other call. Left out of the AST dump when null, so the slot moved
             /// no snapshot.
             isType: ?TypeRef = null,
+            /// The callee as an **expression** rather than a name — set only
+            /// for `adder(3)(4)`, where what is called is the result of the
+            /// previous call and no name exists to put in `callee` (which is
+            /// then `""`). `receiver` stays null: a chained call is not a
+            /// method call, and a consumer that reads `receiver` to mean "the
+            /// value before the `.`" must not see one here.
+            ///
+            /// Null on every call written today, and left out of the AST dump
+            /// when null, so the slot moved no snapshot. A backend that does
+            /// not read it lowers exactly the calls it lowered before.
+            calleeExpr: ?*ExprOf(phase) = null,
 
             pub fn jsonStringify(this: @This(), jws: anytype) !void {
-                return stringifyOmitting(this, jws, &.{}, &.{"isType"});
+                return stringifyOmitting(this, jws, &.{}, &.{ "isType", "calleeExpr" });
             }
         },
         /// `expr |> fn1 |> fn2` — pipeline operator, left-associative chain
@@ -702,6 +713,10 @@ pub fn CallExprOf(comptime phase: Phase) type {
                     if (c.isType) |t| {
                         var owned = t;
                         owned.deinit(allocator);
+                    }
+                    if (c.calleeExpr) |ce| {
+                        ce.deinit(allocator);
+                        allocator.destroy(ce);
                     }
                 },
                 .pipeline => |p| {
@@ -1661,6 +1676,46 @@ pub const union_type_name = "|";
 /// `Box<i32>` as the tested type is §4.2's error — only `Box<unknown>` is
 /// checkable.
 pub const is_builtin_name = "is";
+
+/// The reserved builtin-call name that carries [decision 30](../../../specs)'s
+/// index expression: `call{ .callee = index_builtin_name, .is_builtin = true,
+/// .args = &.{ <the receiver>, <the index> } }` — the desugaring of `xs[0]`
+/// into `@[](xs, 0)`, for the same reason `is` desugars: **no AST union here
+/// may gain a variant**, and every consumer would otherwise have to grow an arm
+/// before the form can parse at all.
+///
+/// The spelling is not an identifier, like `union_type_name`, so no source can
+/// write this call by hand: `@[](…)` does not lex.
+///
+/// **The index is an ordinary expression**, which is what makes one node serve
+/// indexing *and* slicing: `xs[0..2]` is this call with a `range` second
+/// argument (`decision-8:447` — "`..` belongs to iteration and slicing"), and a
+/// dict read `d["k"]` is this call with a string.
+///
+/// **What inference has to do with it** (`01-checker`): type the call by the
+/// receiver — the element type for an array, the value type for a dict, a
+/// character for a string, the member type for a tuple with a constant index —
+/// decide whether it answers `T` or `?T`, and refuse an index on a receiver
+/// decision 8 §2 says has none (`:112` lists indexing among the operations
+/// `unknown` refuses). **What each backend has to do with it** (fronts 02–05):
+/// lower it. Until then it reaches each backend's unrecognised-builtin path,
+/// which is the same place `x is T` reached before `04-js` lowered it.
+pub const index_builtin_name = "[]";
+
+/// The binding name the parser gives `a ?? b`'s desugaring (decision 28).
+///
+/// `a ?? b` becomes `if (a) { <this> -> <this> } else { b }` — the optional
+/// binding form the language already has (`if (email) { e -> … }`), which
+/// evaluates `a` once and narrows it inside the branch. There is no `??`
+/// operator in `BinOp` and no new AST node, for the reason `is_builtin_name`
+/// states: no AST union here may gain a variant, and every consumer would have
+/// to grow an arm before the form could parse at all. The desugaring instead
+/// reaches machinery all four backends already lower.
+///
+/// The `__bp` prefix is the codebase's reserved one (`__bp_show`, `__bp_eq`),
+/// so a nested `a ?? (b ?? c)` shadows correctly and no user name collides in
+/// practice.
+pub const nullish_binding_name = "__bp_nullish";
 
 pub const TypeRef = union(enum) {
     /// Plain named type: `Int`, `string`, `Self`. Slice into source — not heap-owned.

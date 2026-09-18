@@ -59,6 +59,17 @@ defer l.deinit(alloc);` — `scanAll` returns `[]const Token` owned by the lexer
 stays `dotDot`, iteration and slicing. The scanner tries the third dot before
 settling for `..`, so no source that writes `..` changed meaning.
 
+## `??` is its own token (decision 28)
+
+`??` lexes as `questionQuestion`, tried after `?.` and before the bare `?`, the
+way `..` is tried before `.`. So an optional type `?i32` and optional chaining
+`?.` are untouched, and the only source that writes `??` today does it inside
+`@External.Node` template strings, which are string literals and never lexed as
+botopink tokens.
+
+The parser **desugars** it (`parseNullishExpr`) rather than mapping it to a
+`BinOp`; `ast.nullish_binding_name` says why.
+
 ## `unknown` is a keyword (decision 8 §2, 06 N19)
 
 `unknown` lexes as `TokenKind.unknown` and `isReservedWord` refuses it as a
@@ -84,3 +95,18 @@ into `TypeRef.named = ast.unknown_type_name`; the language server lists it in
 (adjacent, `prev.offset + 1 == start`) scans integer digits only. `t.0.1` is
 `t . 0 . 1` (two tuple indexes), not `t . 0.1`, and `p.0.toString()` is not the
 float `0.`. Every other number keeps the decimal / radix / exponent rules.
+
+## A `.` continues a number only before a **digit**
+
+The fractional guard reads `isDigit(peekNext())`, applied **once at the single
+point** where the decimal part starts. It used to read `peekNext() != '.'` —
+"anything but a second dot is a fraction" — which kept `1..9` a range and made
+every other `.` part of the number: `42.toString()` lexed as `42.` followed by
+`toString`, so an integer literal could not receive a method while a string
+literal could, though `libs/std` declares `Integer.toString` (front 15 R3).
+
+Testing for a digit subsumes the `..` guard (a `.` is not a digit) and leaves
+`1.5`, `1_000.5`, `1e10`, `1.5e-3` and `0xFF` exactly as they were. The one
+spelling that changes meaning is `42.` with nothing after the point: two tokens
+now, `42` and `.`, where it used to be one float — write `42.0`. Asserted in
+`tests/basics.zig`, because this is the riskiest line the front touched.
