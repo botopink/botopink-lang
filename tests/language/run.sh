@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# run.sh — the language tests of decision 8 (front 15): `case` and patterns,
-# tuples and labels, `loop` (`zig build test-language`).
+# run.sh — the botopink language tests (fronts 15 and 17): decision 8's `case`,
+# tuples and `loop`, plus the rest of the language surface — effects, comptime,
+# decorators, externals, generics, closures, modules (`zig build test-language`).
 #
 # Usage:
 #   tests/language/run.sh [--target commonJS|erlang|all] [--compiler <botopink>]
@@ -10,17 +11,21 @@
 #               and `botopink run` execute)
 #   --compiler  the `botopink` binary; default <repo>/zig-out/bin/botopink
 #   --lib-root  where `from "std"` resolves; default <compiler>/../../libs
-#   --only      run one file (e.g. test/case_arms.bp); may repeat
-#   --jobs      parallel files, default 4
+#   --only      run one cell (e.g. test/case_arms.bp, modules/two_modules); may repeat
+#   --jobs      parallel cells, default 4
 #
-# Three kinds, every file in its own scratch project (a parse error fails only
-# that file):
+# Four kinds, every cell in its own scratch project (a parse error fails only
+# that cell):
 #   test/<name>.bp     `botopink test --target <t> --json`; every test must pass
 #   run/<name>.bp      `botopink run --target <t>`; stdout must equal <name>.out
 #   reject/<name>.bp   `botopink check`; must exit non-zero, stderr must contain
 #                      the first line of <name>.expect and ` --> src/main.bp:<L:C>`
 #                      where <L:C> is its second line (target-independent: runs
 #                      once, reported as target `*`)
+#   modules/<name>/    a whole project — its own `botopink.json` and `src/` tree;
+#                      `botopink run --target <t>`; stdout must equal
+#                      <name>/expected.out. The kind for what one file cannot
+#                      express: `pub mod`, `import … from "<module>"`, `from "std"`
 #
 # expected-failures.txt — one line per expected failure, `|`-separated (test
 # names contain spaces):
@@ -62,9 +67,9 @@ while [ $# -gt 0 ]; do
 done
 
 case "$target" in
-    all) targets=(commonJS erlang) ;;
-    commonJS|erlang) targets=("$target") ;;
-    *) echo "run.sh: --target must be commonJS, erlang or all (got '$target')" >&2; exit 2 ;;
+    all) targets=(commonJS erlang wasm) ;;
+    commonJS|erlang|wasm) targets=("$target") ;;
+    *) echo "run.sh: --target must be commonJS, erlang, wasm or all (got '$target')" >&2; exit 2 ;;
 esac
 [ -x "$compiler" ] || { echo "run.sh: compiler not found or not executable: $compiler" >&2; exit 2; }
 compiler="$(cd "$(dirname "$compiler")" && pwd)/$(basename "$compiler")"
@@ -81,7 +86,7 @@ files=()
 if [ ${#only[@]} -gt 0 ]; then
     files=("${only[@]}")
 else
-    while IFS= read -r f; do files+=("$f"); done < <(cd "$here" && ls test/*.bp run/*.bp reject/*.bp 2>/dev/null | sort)
+    while IFS= read -r f; do files+=("$f"); done < <(cd "$here" && { ls test/*.bp run/*.bp reject/*.bp 2>/dev/null; ls -d modules/*/ 2>/dev/null | sed 's:/$::'; } | sort)
 fi
 
 # ── one file, one target → result lines in $work/results ─────────────────────
@@ -106,14 +111,18 @@ quiet() { strip | grep -vE '^[[:space:]]*(Checking|Checked|Compiling|Compiled) '
 
 project() { # <dir> <kind>
     mkdir -p "$1/src" "$1/test"
-    printf '{ "name": "language_tests", "version": "0.0.1", "src": "src/", "targets": ["commonJS", "erlang"] }\n' > "$1/botopink.json"
+    printf '{ "name": "language_tests", "version": "0.0.1", "src": "src/", "targets": ["commonJS", "erlang", "wasm"] }\n' > "$1/botopink.json"
 }
 
 run_one() { # <path> <target>
     local path="$1" t="$2" slug dir out
     slug="$(printf '%s-%s' "$path" "$t" | tr '/.' '__')"
     dir="$work/p-$slug"; out="$work/r-$slug"
-    rm -rf "$dir"; project "$dir"
+    rm -rf "$dir"
+    case "$path" in
+        modules/*) cp -R "$here/$path" "$dir" ;;
+        *) project "$dir" ;;
+    esac
     export BOTOPINK_LIB_ROOTS="$lib_root"
     case "$path" in
         test/*)
@@ -165,7 +174,20 @@ run_one() { # <path> <target>
                     printf '*\t%s\t%s\t\n' "$path" ok >"$out"
                 fi
             fi ;;
-        *) printf '*\t%s\t%s\t%s\n' "$path" fail "not under test/, run/ or reject/" >"$work/r-$slug" ;;
+        modules/*)
+            local expected="$here/$path/expected.out"
+            (cd "$dir" && timeout 300 "$compiler" run --target "$t" >"$dir/stdout.txt" 2>"$dir/e.txt")
+            local code=$?
+            if [ ! -f "$expected" ]; then
+                printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "missing $path/expected.out" >"$out"
+            elif [ $code -eq 0 ] && cmp -s "$dir/stdout.txt" "$expected"; then
+                printf '%s\t%s\t%s\t\n' "$t" "$path" ok >"$out"
+            else
+                local got; got="$(head -c 300 "$dir/stdout.txt" | tr '\n\t' '⏎ ')"
+                local err; err="$(strip <"$dir/e.txt" | grep -m1 -iE 'error' | tr '\t' ' ')"
+                printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "exit $code; stdout: $got ${err:+; $err}" >"$out"
+            fi ;;
+        *) printf '*\t%s\t%s\t%s\n' "$path" fail "not under test/, run/, reject/ or modules/" >"$work/r-$slug" ;;
     esac
 }
 export -f run_one json_tests strip quiet project
@@ -175,11 +197,18 @@ export here work compiler lib_root
 jobs_list="$work/jobs"
 : >"$jobs_list"
 for f in "${files[@]}"; do
-    if [ ! -f "$here/$f" ]; then
-        echo "run.sh: no such file: $f" >&2; exit 2
+    f="${f%/}"
+    if [ ! -f "$here/$f" ] && [ ! -d "$here/$f" ]; then
+        echo "run.sh: no such cell: $f" >&2; exit 2
     fi
     case "$f" in
         reject/*) printf '%s\t*\n' "$f" >>"$jobs_list" ;;
+        # `botopink test` refuses every target but commonJS and erlang, so a
+        # test/ cell never runs on wasm (see AGENTS.md § the targets).
+        test/*) for t in "${targets[@]}"; do
+                    [ "$t" = "wasm" ] && continue
+                    printf '%s\t%s\n' "$f" "$t" >>"$jobs_list"
+                done ;;
         *) for t in "${targets[@]}"; do printf '%s\t%s\n' "$f" "$t" >>"$jobs_list"; done ;;
     esac
 done
