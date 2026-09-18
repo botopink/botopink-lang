@@ -39,7 +39,8 @@ The server handles `initialize` / `shutdown`, `didOpen` / `didChange` /
   `documentSymbol` (hierarchical, incl. `test "name"` blocks; `val X = enum/record/interface`
   reports the container kind, not `Variable`; a 1.0.3 `type` reports `Struct` or `Enum` by its
   shape and lists the `(…)` field list's fields; a **section** of an enum-shaped `type`
-  is itself an `Enum` carrying its own members — decision 8 §5.3b),
+  is itself an `Enum` carrying its own members — decision 8 §5.3b; a method of a `type`, an
+  `enum` or a `behavior` is `Method`, and so is a `test "name"` block — see below),
   `completion` (prefix + dot-trigger + std members + builtin interface methods
   on primitive/array/string receivers + labeled args + sortText + module names),
   `references` (cross-module), `rename` (cross-module multi-file, with
@@ -85,20 +86,39 @@ read from disk. The resolved deps are **cached per project root**
 the file ⇒ single-document compile (isolated buffers and tests). The compiler
 core still names no lib: the resolver feeds it ordinary `(uri, source)` pairs.
 
-**A manifest the graph cannot follow is a diagnostic, not a silent gap.** A
-dependency no root carries and a `files` entry that cannot be read were both
-`catch continue`: the graph returned a shorter module list and the editor blamed
-the *user's* file — every symbol the library exports "unbound", pointing nowhere
-near the wrong manifest line. `ProjectGraph` collects them as `Problem`s (message
-word-for-word the CLI's, from `compiler-cli/src/cli/libs.zig`), located at the
-`"<entry>"` string inside the manifest that declares it — the project's own
-`botopink.json` for a missing dependency, the library's for an unreadable `files`
-entry. `Server.publishGraphProblems` publishes them **against that manifest's
-URI**, not the open document's (the line to fix is the manifest's, and the same
-problem would otherwise repeat on every file of the project), and
-`clearGraphProblems` empties a manifest the server flagged once it is fixed — the
-LSP clears a file only by publishing an empty list for it, and a manifest is
-never a document the client opened.
+**`documentSymbol` gives a member function the kind it has, and the tree is what
+identifies a test.** `collectChildren` emits `proto.SymbolKind.Method` for a
+method of a `type`, of an `enum` (including a §5.3b section) and of a `behavior`,
+and a `test "name"` block is a `Method` too. They are not ambiguous: a `test`
+block is a child of the **file**, a method is a child of the declaration it
+belongs to. Before decision 7 of 1.0.5-beta the three method sites emitted
+`Function` on purpose, because
+[`vscode-extension`](../../../vscode-extension/src/symbolNodes.ts) classified
+every `Method` symbol as a runnable test and the LSP protocol has no `Test`
+kind — the outline was wrong so that the Test Explorer would be right. The
+extension now reads the parent (`isTestSymbolNode(symbol, parent)` /
+`testSymbolNodes`), so **the two repositories move together**: never flip a
+symbol kind here without the consumer's commit in the same sweep.
+
+**A source the graph cannot follow is a diagnostic, not a silent gap.** Three
+reads were `catch continue`: a dependency no root carries, a `files` entry that
+cannot be read, and a `.bp` under the project's own `src` that cannot be read.
+Each left the graph a module short and the editor blamed the *user's* file —
+every symbol the missing module exports "unbound", pointing nowhere near the line
+that is actually wrong. `ProjectGraph` collects all three as `Problem`s; the two
+manifest ones carry the CLI's message word for word
+(`compiler-cli/src/cli/libs.zig`) and are located at the `"<entry>"` string
+inside the manifest that declares it — the project's own `botopink.json` for a
+missing dependency, the library's for an unreadable `files` entry. The third is
+located on **the unreadable file itself**, first character, because no manifest
+line names it (`loadSrcTree`; the walk then continues, so one unreadable file
+does not cost the project the rest of its tree).
+`Server.publishGraphProblems` groups by whatever URI the `Problem` carries and
+publishes **against that URI**, not the open document's (a manifest line to fix
+would otherwise repeat on every file of the project), and `clearGraphProblems`
+empties a file the server flagged once it is fixed — the LSP clears a file only
+by publishing an empty list for it, and a manifest is never a document the client
+opened.
 
 `definition` resolves in tiers: sub-language `ref` (cursor inside a string, see
 below) → **typed member/`mod` path** (`needsTypedDefinition` →

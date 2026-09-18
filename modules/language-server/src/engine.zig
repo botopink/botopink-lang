@@ -662,6 +662,16 @@ pub fn documentSymbols(
 
         // `test "name" { … }` — the name is a string literal, not an
         // identifier, so it gets its own branch (no children).
+        //
+        // Its kind stays `Method`, and a type's methods are `Method` too: the
+        // LSP protocol has no `Test` kind, and decision 7 of 1.0.5-beta settled
+        // that the *extension* tells the two apart by the tree — a `test` block
+        // is a child of the file, a method is a child of its declaration —
+        // rather than the server keeping a wrong kind for every method in the
+        // language so that the Test Explorer's shortcut keeps working. The
+        // consumer is `vscode-extension/src/symbolNodes.ts`
+        // (`isTestSymbolNode` / `testSymbolNodes`); the two repositories land
+        // together.
         if (tok.kind == .@"test") {
             var tj = i + 1;
             while (tj < tokens.len and tokens[tj].kind == .endOfFile) : (tj += 1) {}
@@ -911,7 +921,9 @@ fn collectChildren(
                         .selectionRange = .{ .start = s, .end = e },
                     });
                 }
-                // Methods inside enum.
+                // Methods inside enum. `Method`, not `Function`: a member
+                // function is what the kind means, and a `test "…"` block is
+                // told apart by being a child of the file (decision 7).
                 if (tok.kind == .@"fn") {
                     var j = i + 1;
                     while (j < end and tokens[j].kind == .endOfFile) : (j += 1) {}
@@ -921,7 +933,7 @@ fn collectChildren(
                         const e = lsp_types.locToPosition(nt.line, nt.col + nt.lexeme.len);
                         try kids.append(gpa, .{
                             .name = try gpa.dupe(u8, nt.lexeme),
-                            .kind = proto.SymbolKind.Function,
+                            .kind = proto.SymbolKind.Method,
                             .range = .{ .start = s, .end = e },
                             .selectionRange = .{ .start = s, .end = e },
                         });
@@ -943,9 +955,10 @@ fn collectChildren(
                         });
                     }
                 }
-                // Methods.
+                // Methods. See the `enum` arm: `Method` is the kind a member
+                // function has.
                 if (tok.kind == .@"fn") {
-                    const child_kind: u32 = proto.SymbolKind.Function;
+                    const child_kind: u32 = proto.SymbolKind.Method;
                     var j = i + 1;
                     while (j < end and tokens[j].kind == .endOfFile) : (j += 1) {}
                     if (j < end and tokens[j].kind == .identifier) {
@@ -963,7 +976,7 @@ fn collectChildren(
                 }
             },
             .interface => {
-                // Interface methods.
+                // Interface (`behavior`) methods — `Method`, as above.
                 if (tok.kind == .@"fn") {
                     var j = i + 1;
                     while (j < end and tokens[j].kind == .endOfFile) : (j += 1) {}
@@ -973,7 +986,7 @@ fn collectChildren(
                         const e = lsp_types.locToPosition(nt.line, nt.col + nt.lexeme.len);
                         try kids.append(gpa, .{
                             .name = try gpa.dupe(u8, nt.lexeme),
-                            .kind = proto.SymbolKind.Function,
+                            .kind = proto.SymbolKind.Method,
                             .range = .{ .start = s, .end = e },
                             .selectionRange = .{ .start = s, .end = e },
                         });
