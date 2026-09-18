@@ -3024,7 +3024,11 @@ const Emitter = struct {
             try self.lowerValue(arg);
             const b = self.builder();
             try self.emit(if (oi.boxed)
-                b.helper(if (oi.bool_) (if (last) .print_opt_bool else .print_opt_bool_raw) else if (last) .print_opt_i32 else .print_opt_i32_raw)
+                b.helper(if (oi.bool_)
+                    (if (last) .print_opt_bool else .print_opt_bool_raw)
+                else if (oi.float_)
+                    (if (last) .print_opt_f32 else .print_opt_f32_raw)
+                else if (last) .print_opt_i32 else .print_opt_i32_raw)
             else if (oi.str)
                 b.helper(if (last) .print_opt_str else .print_opt_str_raw)
             else
@@ -4187,11 +4191,17 @@ const Emitter = struct {
                 .{ "fold", 2, .i32 },
             },
             .string => &.{
-                .{ "length", 0, .i32 },     .{ "toUpper", 0, .str },      .{ "toLower", 0, .str },
-                .{ "contains", 1, .bool_ }, .{ "startsWith", 1, .bool_ }, .{ "endsWith", 1, .bool_ },
-                .{ "indexOf", 1, .i32 },    .{ "trim", 0, .str },         .{ "trimStart", 0, .str },
-                .{ "trimEnd", 0, .str },    .{ "split", 1, .arr },        .{ "slice", 1, .str },
-                .{ "slice", 2, .str },      .{ "repeat", 1, .str },       .{ "toString", 0, .str },
+                .{ "length", 0, .i32 },      .{ "toUpper", 0, .str },      .{ "toLower", 0, .str },
+                .{ "contains", 1, .bool_ },  .{ "startsWith", 1, .bool_ }, .{ "endsWith", 1, .bool_ },
+                .{ "indexOf", 1, .i32 },     .{ "trim", 0, .str },         .{ "trimStart", 0, .str },
+                .{ "trimEnd", 0, .str },     .{ "split", 1, .arr },        .{ "slice", 1, .str },
+                .{ "slice", 2, .str },       .{ "repeat", 1, .str },       .{ "toString", 0, .str },
+                // The host spellings `primitives.bp` gives `toUpper`/`toLower`
+                // through `#[@External.Node(…)]`. Source writes them
+                // (`tests/language/test/string_case_conversion.bp`), commonJS
+                // answers them because they are JavaScript's own, and this
+                // backend used to trap on an unlowered primitive method.
+                .{ "toUpperCase", 0, .str }, .{ "toLowerCase", 0, .str },
             },
             .bool => &.{
                 .{ "negate", 0, .bool_ },      .{ "nor", 1, .bool_ },          .{ "nand", 1, .bool_ },
@@ -4337,8 +4347,10 @@ const Emitter = struct {
         try self.lowerCoerced(recv, "i32");
         if (eq(u8, name, "length")) {
             try self.emitC(.{ .load = .{} }, "string length");
-        } else if (eq(u8, name, "toUpper") or eq(u8, name, "toLower")) {
-            const upper = eq(u8, name, "toUpper");
+        } else if (eq(u8, name, "toUpper") or eq(u8, name, "toLower") or
+            eq(u8, name, "toUpperCase") or eq(u8, name, "toLowerCase"))
+        {
+            const upper = eq(u8, name, "toUpper") or eq(u8, name, "toUpperCase");
             try self.emit(try self.constInt(if (upper) @as(i32, 'a') else 'A'));
             try self.emit(try self.constInt(if (upper) @as(i32, 'z') else 'Z'));
             try self.emit(try self.constInt(if (upper) @as(i32, -32) else 32));
@@ -5396,6 +5408,9 @@ const Emitter = struct {
         boxed: bool,
         str: bool = false,
         bool_: bool = false,
+        /// The boxed payload is an `f32` slot, not an integer — a float array's
+        /// `at`/`first`. Read as an `i32` it prints the float's bits.
+        float_: bool = false,
         inner: ?ast.TypeRef = null,
     };
 
@@ -5482,7 +5497,8 @@ const Emitter = struct {
                 {
                     return switch (self.elemKindOf(cc.receiver.?.*)) {
                         .str => .{ .boxed = false, .str = true },
-                        else => .{ .boxed = true },
+                        .f32 => .{ .boxed = true, .float_ = true },
+                        .i32 => .{ .boxed = true },
                     };
                 },
                 else => {},

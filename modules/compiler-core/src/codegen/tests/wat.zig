@@ -638,8 +638,10 @@ test "wat: index ---- an index past the end answers zero" {
 }
 
 // A float array's slots are `f32`, so the four bytes `$__arr_at` answers are
-// the float's *bits*: `fs[0]` reinterprets them, `fs.at(0)` still does not and
-// prints `1069547520` for `1.5` — the primitive-method half of the same gap.
+// the float's *bits*: `fs[0]` reinterprets them. `fs.at(0)` boxes them as a
+// `?T`, and reading that box with `$__print_opt_i32` printed `1069547520` for
+// `1.5` — a wrong value with exit 0. `$__print_opt_f32` is the box's own
+// printer, in its own helper group so no other module's text moves.
 test "wat: index ---- a float array element is reinterpreted, not read as bits" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
@@ -727,6 +729,27 @@ test "wat: tuple ---- equality compares elements, and labels take no part" {
         \\    val f3 = #(1.5, false);
         \\    @print(f1 == f2);
         \\    @print(f1 == f3);
+        \\}
+    );
+}
+
+// ── step 6: the string case primitives ──────────────────────────────────────
+
+// `"aB".toUpperCase()` trapped on wasm (`prim method not lowered on wasm:
+// string.toUpperCase/0`). The language-facing name is `toUpper`; `toUpperCase`
+// is the host spelling `primitives.bp` gives it through
+// `#[@External.Node("toUpperCase")]`, which commonJS answers because it is
+// JavaScript's own. `tests/language/test/string_case_conversion.bp` writes it,
+// so both spellings now reach `$__str_case`. KNOWN-WRONG (erlang): the module
+// does not assemble — `function toUpperCase/1 undefined` — and KNOWN-WRONG
+// (beam): an empty RUN LOG. Both are `02-erlang` step 7.
+test "wat: string ---- toUpperCase and toLowerCase answer, under both spellings" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    @print("aB".toUpperCase());
+        \\    @print("aB".toLowerCase());
+        \\    @print("aB".toUpper());
+        \\    @print("aB".toLower());
         \\}
     );
 }

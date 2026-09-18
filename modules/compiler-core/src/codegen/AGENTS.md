@@ -1037,6 +1037,21 @@ first three are now enforced by the model, not by discipline:
   parse error, and `wat_ast.Builder.param` refuses to build one.
 - **Entrypoint** (`emitEntrypointWrapper`): calls `$main` and `drop`s its
   result when `main` returns a value (`main_returns_value`).
+- **The primitive methods wasm does not lower trap, they never answer.**
+  `primCallRes` is the table; a method missing from it emits
+  `unreachable ;; prim method not lowered on wasm: <kind>.<name>/<argc>`.
+  Audited against `libs/std/src/primitives.bp` on 2026-09-18 — not lowered, each
+  verified to trap under wasmtime: **string** `charAt`, `charCodeAt`, `chars`,
+  `lastIndexOf`, `lines`, `padEnd`, `padStart`, `replace`, `replaceAll`,
+  `words`; **array** `chunked`, `find`, `pop`, `range`, `sliding`, `unique`;
+  **float** `toString`; **Pair** `first`, `of`, `second`, `swap`.
+  `toUpperCase` / `toLowerCase` — the host spellings `primitives.bp` gives
+  `toUpper` / `toLower` through `#[@External.Node(…)]`, which source writes and
+  commonJS answers — used to be in that list and are now lowered to
+  `$__str_case` like their botopink names.
+- **A `?T` box holding an `f32`** (`fs.at(0)` on a float array) prints through
+  `$__print_opt_f32`, its own helper group. Read as a boxed `i32` it printed the
+  float's **bits** — `1069547520` for `1.5`, exit 0, no diagnostic.
 - **`break <value>` is the loop's value, not one element of an array**
   (decision 8 §10, `loopIsSearch` + `search_target`). The fork is the body: a
   `yield` anywhere means the loop **collects** and keeps the `$__yield{n}`

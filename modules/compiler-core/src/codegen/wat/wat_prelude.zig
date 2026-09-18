@@ -39,6 +39,7 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         .print_arr_f32 => &.{ .{ .func = print_arr_f32_raw }, .{ .func = print_arr_f32 } },
         .assert_fail => &.{ .{ .func = write_err }, .{ .func = assert_fail } },
         .print_shaped => &.{ .{ .func = print_quoted_raw }, .{ .func = print_shaped_raw } },
+        .print_opt_f32 => &.{ .{ .func = print_opt_f32_raw }, .{ .func = print_opt_f32 } },
         .print_opt => &.{
             .{ .func = print_undefined },    .{ .func = print_opt_i32_raw }, .{ .func = print_opt_i32 },
             .{ .func = print_opt_bool_raw }, .{ .func = print_opt_bool },    .{ .func = print_opt_str_raw },
@@ -1362,6 +1363,15 @@ const print_opt_str_raw = func("__print_opt_str_raw", &.{"s"}, null, &.{}, &.{
     whenElse(&.{call("__print_undefined")}, &.{ get("s"), call("__print_str_raw") }),
 });
 const print_opt_str = func("__print_opt_str", &.{"s"}, null, &.{}, &.{ get("s"), call("__print_opt_str_raw"), call("__print_nl") });
+
+/// A `?T` box whose payload is an `f32` slot — `fs.at(0)` on a float array.
+/// Reading it with `$__print_opt_i32` printed the float's **bits** (`1069547520`
+/// for `1.5`) with exit 0.
+const print_opt_f32_raw = func("__print_opt_f32_raw", &.{"p"}, null, &.{}, &.{
+    get("p"),                                                                                                                                          op("eqz"),
+    whenElse(&.{call("__print_undefined")}, &.{ get("p"), .{ .load = .{ .ty = .f32 } }, .{ .convert = "f64.promote_f32" }, call("__print_f64_raw") }),
+});
+const print_opt_f32 = func("__print_opt_f32", &.{"p"}, null, &.{}, &.{ get("p"), call("__print_opt_f32_raw"), call("__print_nl") });
 
 /// `$__write_bytes` to stderr (fd 2), through the same iovec scratch.
 const write_err = func("__write_err", &.{ "p", "n" }, null, &.{}, &.{

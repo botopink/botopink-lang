@@ -42,7 +42,7 @@ fn main() {
     local.get $fs
     i32.const 0
     call $__arr_at_box
-    call $__print_opt_i32
+    call $__print_opt_f32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
@@ -510,11 +510,31 @@ fn main() {
     call $__print_opt_str_raw
     call $__print_nl
   )
+  (func $__print_opt_f32_raw (param $p i32)
+    local.get $p
+    i32.eqz
+    (if
+      (then
+        call $__print_undefined
+      )
+      (else
+        local.get $p
+        f32.load
+        f64.promote_f32
+        call $__print_f64_raw
+      )
+    )
+  )
+  (func $__print_opt_f32 (param $p i32)
+    local.get $p
+    call $__print_opt_f32_raw
+    call $__print_nl
+  )
 )
 ```
 
 ----- RUN LOG -----
 ```logs
 1.5
-1069547520
+1.5
 ```
