@@ -342,6 +342,12 @@ pub fn parseFnBody(
         alloc.free(params);
     }
 
+    // The `)` that just closed the parameter list — decision 33 (b)'s
+    // diagnostic points at it, because "add `-> void`" means "right here".
+    // Captured now: by the time the absence is known the cursor has walked on,
+    // and `this.peek()` would be the NEXT declaration's first token.
+    const closeParenTok = this.tokens[this.current - 1];
+
     var returnType: ?ast.TypeRef = null;
     // 06 N30 — where the return-type annotation starts, so an unknown type name
     // reds there instead of at the file.
@@ -365,7 +371,12 @@ pub fn parseFnBody(
         }
     } else if (!this.check(.leftBrace) and !this.check(.semicolon) and
         !this.check(.colon) and !this.check(.endOfFile) and
-        isTypeStart(this.peek().kind))
+        isTypeStart(this.peek().kind) and
+        // A `fn` that is not followed by `(` opens the NEXT declaration, not a
+        // `fn(…) -> R` type. Without this the shortform swallowed it and the
+        // missing return type was reported at the next declaration's `fn`
+        // (decision 33 (b) wants it at the `)` this one just closed).
+        !(this.check(.@"fn") and this.peekAt(1).kind != .leftParenthesis))
     {
         // `.d.bp`-style shortform: `fn name(params) Type` with no `->` and no
         // body — implicit declaration. The arrow-less form is the convention
@@ -423,11 +434,27 @@ pub fn parseFnBody(
         }
     }
 
+    // Decision 33 (b) — a declaration without a body says what it answers,
+    // even when the answer is nothing. `fn f(x: string)` with no body and no
+    // return type at all is refused HERE, at the token a body would have
+    // opened at, instead of failing several tokens later as `Unexpected token`
+    // on the NEXT declaration. `declare fn f(x);` keeps its own contract and
+    // is not this rule's.
+    if (!isDeclare and returnType == null and typeGuardType == null and
+        !this.check(.leftBrace))
+    {
+        this.parseError = ParseErrorInfo.fromToken(.bodylessFnNeedsReturnType, closeParenTok);
+        return ParseError.UnexpectedToken;
+    }
+
     // A `declare fn` omits its body — it is typed from the signature alone.
-    // `@[external(…)]` fns must use this form (validated in inference). The
-    // `.d.bp` shortform `fn name(params) Type` (no `->`, no body) is also
-    // bodyless — promote it to `isDeclare = true` here.
-    if ((isDeclare or (arrowOmitted and !this.check(.leftBrace))) and
+    // `@[external(…)]` fns must use this form (validated in inference). A
+    // bodyless fn that DOES declare its return type is the same thing, whether
+    // it writes the arrow (`fn f(x) -> void`, decision 33's spelling) or omits
+    // it (`fn name(params) Type`, the `.d.bp` shortform) — promote both to
+    // `isDeclare = true` here. The arrowed form used to be a parse error,
+    // which made decision 33's own remedy unwritable.
+    if ((isDeclare or (returnType != null and !this.check(.leftBrace))) and
         !this.check(.leftBrace))
     {
         _ = this.match(.semicolon);

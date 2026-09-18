@@ -180,6 +180,10 @@ pub const ParseErrorType = enum {
     templateSelfMarker,
     /// `$N` in an `@External` template past the declaration's parameters.
     templateMarkerOutOfRange,
+    /// `fn f(x: string)` with no body and no `-> …` — decision 33 (b): a
+    /// declaration without a body says what it answers, even when the answer
+    /// is nothing.
+    bodylessFnNeedsReturnType,
 };
 
 pub const ParseErrorInfo = struct {

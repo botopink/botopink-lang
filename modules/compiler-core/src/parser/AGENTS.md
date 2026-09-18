@@ -67,7 +67,7 @@ parser/
     ├── surface.zig       ← the 1.0.3 surface: `type` shapes, the field list, `behavior`, separators, and old-vs-new AST equality
     ├── decision8.zig     ← decision 8's grammar, one section per row: `unknown` (N19), union types (N20), `is` (N21), `case` arms (N22)
     ├── effect_rejections.zig ← parser-level `#[@<effect>]` rejections (R1/R2/R5…)
-    └── language_surface.zig  ← front 15's rows: the forms the documents write against the grammar (R1 the `T[]` suffix, R2 the postfix chain, R3 a number as a receiver, R4 the shared block body, R5 the index expression, R8 `??`)
+    └── language_surface.zig  ← front 15's rows: the forms the documents write against the grammar (R1 the `T[]` suffix, R2 the postfix chain, R3 a number as a receiver, R4 the shared block body, R5 the index expression, R7 a bodyless `fn`, R8 `??`)
 ```
 
 ## Testing pattern
@@ -106,6 +106,28 @@ trailing lambda and a `loop` body, while the same comment in a fn body or an
 not copy the loop.** The semicolon policy is per block and is what each copy
 already applied — they are recorded above rather than unified, because
 tightening one would refuse a program that compiles today.
+
+## A bodyless `fn` declares its return type (decision 33 (b))
+
+A top-level `fn` with no `{ … }` body is a **declaration**, and it is accepted
+in three spellings, all promoted to `isDeclare = true` in `parseFnDecl`:
+
+| Spelling | Note |
+|---|---|
+| `fn f(x: string) -> void` | the arrowed form. It used to be a **parse error**, which made decision 33's own remedy ("the declarations gain `-> void`") unwritable |
+| `fn f(x: string) void` | the arrowless `.d.bp` shortform, the convention in `libs/std/src/builtins.d.bp` |
+| `declare fn f(x: string);` | the `declare` keyword, with its own contract; it parses as a `delegate` decl |
+
+`fn f(x: string)` — **no body and no return type at all** — stays a parse error,
+now `bodyless-fn-needs-return-type`, located at the `)` the declaration just
+closed, because "add `-> void`" means *there*. The `)` is captured into
+`closeParenTok` before the return-type parse, since by the time the absence is
+known the cursor has walked on to the next declaration's first token.
+
+The arrowless shortform also stops swallowing a `fn` that is not followed by
+`(`: `fn` begins a `fn(…) -> R` type, so `fn emit(source: string)` followed by
+`fn main() …` used to parse the *next declaration* as this one's return type
+and report the failure there.
 
 ## Type-ref grammar (`types.zig`)
 

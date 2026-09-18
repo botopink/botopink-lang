@@ -278,3 +278,40 @@ test "surface R8: `??` binds tighter than every other binary operator" {
         \\}
     );
 }
+
+// ── R7 — a bodyless `fn` declares its return type (decision 33 (b)) ──────────
+//
+// Measured, the surface was not what the front's document recorded: the
+// ARROWLESS form `fn f(x) T` parses (it is the `.d.bp` shortform), and the
+// ARROWED one `fn f(x) -> void` did NOT — so decision 33's own remedy, "the
+// declarations gain `-> void`", was unwritable. The arrowed form now parses,
+// and the form with no return type at all keeps being refused, with a message
+// that says what to write.
+
+test "surface R7: a bodyless fn that declares its return type, arrow or not" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn emit(source: string) -> void
+        \\fn field<T, F>(obj: T, name: string) F
+        \\fn quit(code: i32) -> noreturn
+        \\declare fn print(message: string);
+        \\fn main() -> i32 { return 1; }
+    );
+}
+
+test "surface R7: a bodyless fn with no return type at all" {
+    try expectParseError(std.testing.allocator,
+        \\error[bodyless-fn-needs-return-type]: a declaration with no body must say what it answers
+        \\ --> <test>:1:23
+        \\  |
+        \\1 | fn emit(source: string)
+        \\  |                       ^ add `-> void`, or give the fn a body
+        \\  |
+        \\  = note: `fn f(x: string) -> void`, `fn f(x: string) void` and `declare fn f(x: string);` are all declarations; `fn f(x: string)` alone says nothing about the result
+        \\  = hint: Write `-> void` when the fn answers nothing, `-> T` when it answers a `T`, or add a `{ … }` body.
+        \\
+        \\
+    ,
+        \\fn emit(source: string)
+        \\fn main() -> i32 { return 1; }
+    );
+}

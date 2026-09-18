@@ -273,6 +273,13 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "past the last parameter",
             .hint = "`$0` is the first declared parameter; the highest marker is one less than the parameter count.",
         },
+        .bodylessFnNeedsReturnType => .{
+            .code = "bodyless-fn-needs-return-type",
+            .message = "a declaration with no body must say what it answers",
+            .caretCaption = "add `-> void`, or give the fn a body",
+            .note = "`fn f(x: string) -> void`, `fn f(x: string) void` and `declare fn f(x: string);` are all declarations; `fn f(x: string)` alone says nothing about the result",
+            .hint = "Write `-> void` when the fn answers nothing, `-> T` when it answers a `T`, or add a `{ … }` body.",
+        },
         .fnParamPositionalAfterNamed => .{
             .message = "fn-param-positional-after-named: positional argument supplied after a named one.",
             .hint = "Convert the trailing positional arg to a named one (`name: value`), or move the named argument to the end of the call.",
