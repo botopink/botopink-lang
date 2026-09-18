@@ -21,7 +21,7 @@ std/
     ├── root.bp              ← module-tree root: one `pub mod <name>;` per importable std module
     │                        — core files flattened into the global type env (`std_core_files` in build.zig):
     ├── primitives.bp        ← primitive behavior registry (Number/Integer/Signed/Float, I32…F64, Bool, String, Function, Pair, Array); no tests (see `test/`)
-    ├── builtins.d.bp        ← builtin surface: print, @Result/@Iterator/@Future…, `Target`/`External`/`Host` annotations, std.syntax (`Expr`, `CustomNode`, …), `@Decl` reflection, effect-annotation rules
+    ├── builtins.d.bp        ← builtin surface: print, @Result/@Iterator/@Future…, `Display` (decision 8 §7), `Target`/`External`/`Host` annotations, std.syntax (`Expr`, `CustomNode`, …), `@Decl` reflection, effect-annotation rules
     ├── builtins_fns.d.bp    ← builtin fns with literal defaults (`todo`, `panic`)
     │                        — importable modules (declared in root.bp):
     ├── order.bp  dict.bp  sets.bp  string_builder.bp  queue.bp
@@ -212,3 +212,19 @@ documented in the effect-annotations block of `src/builtins.d.bp`.
   `math:round/1` do not exist in OTP, `string:str/2` rejects binaries,
   `string:trim/1` strips both ends. Every host binding carries a test that
   asserts the value.
+
+## `behavior Display` (decision 8 §7, decision 27)
+
+`builtins.d.bp` declares it, so a type writes `implement Display` with **no import** — `@print` has
+to find a value's `display()` without the author having asked for it, which is the same reason every
+other builtin behavior is ambient rather than a `pub mod`. One declaration, read by the §7 step of
+all four backend fronts.
+
+**`Dict<K, V>` does not implement it yet, and the reason is measured, not forgotten.** §7's own
+example is `Dict("a": 1, "b": 2)` — a string key quoted, any other key bare. `K` is generic, so
+nothing static decides which, and the test has to be `p._0 is string` at run time (decision 8 §4).
+Written that way, `zig build test-libs` gives `std · commonJS: pass` and `std · erlang: FAIL`
+(`escript: There were compilation errors.`): `x is T` has a run-time lowering on commonJS only.
+The implementation lands with `is` on erlang, beam and wasm — `02-erlang`, `03-beam` and `05-wasm`
+step 2 — not before, because a `libs/std` that only compiles on one backend is worse than a `Dict`
+that prints its `pairs`.

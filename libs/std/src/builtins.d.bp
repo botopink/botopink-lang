@@ -124,6 +124,19 @@ pub behavior AsyncIterator<T, E = any, C = void> {
     fn next(self: Self) -> Future<IteratorStep<T, E, C>, E>;
 }
 
+// ── display (decision 8 §7, decision 27) ─────────────────────────────────────
+//
+// `@print` consults a value's own `Display` implementation before it falls back
+// to the per-type formatter: a type that says how it reads says it here, once,
+// and every backend's §7 formatter reads the same declaration. It is ambient —
+// a type writes `implement Display` with no import, exactly as any other
+// builtin behavior — because `@print` has to find it without the author having
+// asked for it.
+
+pub behavior Display {
+    fn display(self: Self) -> string;
+}
+
 // ── context (hooks) ──────────────────────────────────────────────────────────
 
 pub behavior Context<ContextBase, Return> { }
