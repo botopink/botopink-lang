@@ -84,6 +84,21 @@ read from disk. The resolved deps are **cached per project root**
 the file ⇒ single-document compile (isolated buffers and tests). The compiler
 core still names no lib: the resolver feeds it ordinary `(uri, source)` pairs.
 
+**A manifest the graph cannot follow is a diagnostic, not a silent gap.** A
+dependency no root carries and a `files` entry that cannot be read were both
+`catch continue`: the graph returned a shorter module list and the editor blamed
+the *user's* file — every symbol the library exports "unbound", pointing nowhere
+near the wrong manifest line. `ProjectGraph` collects them as `Problem`s (message
+word-for-word the CLI's, from `compiler-cli/src/cli/libs.zig`), located at the
+`"<entry>"` string inside the manifest that declares it — the project's own
+`botopink.json` for a missing dependency, the library's for an unreadable `files`
+entry. `Server.publishGraphProblems` publishes them **against that manifest's
+URI**, not the open document's (the line to fix is the manifest's, and the same
+problem would otherwise repeat on every file of the project), and
+`clearGraphProblems` empties a manifest the server flagged once it is fixed — the
+LSP clears a file only by publishing an empty list for it, and a manifest is
+never a document the client opened.
+
 `definition` resolves in tiers: sub-language `ref` (cursor inside a string, see
 below) → **typed member/`mod` path** (`needsTypedDefinition` →
 `engine.definitionMember`) → local scope → same file → **project graph**

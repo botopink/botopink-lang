@@ -44,6 +44,11 @@ pub const Server = struct {
     /// Per-project dependency graph (lib `from "<lib>"` + `mod` siblings),
     /// resolved from `botopink.json` and cached so a keystroke reuses it.
     graph: graph_mod.ProjectGraph,
+    /// Manifest URIs that currently carry published graph diagnostics. The LSP
+    /// clears a file's diagnostics only by publishing an empty list for it, and
+    /// a manifest is never a document the client opened — so the server
+    /// remembers what it flagged and empties it once the entry is fixed.
+    graph_problem_uris: std.StringHashMapUnmanaged(void),
     initialized: bool,
     shutdown_requested: bool,
     /// Monotonic id for server→client requests (e.g. inlay-hint refresh).
@@ -63,6 +68,7 @@ pub const Server = struct {
             .feedback = feedback_mod.FeedbackBookkeeper.init(gpa),
             .index = index_mod.ProjectIndex.init(gpa, io),
             .graph = graph_mod.ProjectGraph.init(gpa, io, environ_map),
+            .graph_problem_uris = .empty,
             .initialized = false,
             .shutdown_requested = false,
             .next_request_id = 1,
@@ -75,6 +81,9 @@ pub const Server = struct {
         self.feedback.deinit();
         self.index.deinit();
         self.graph.deinit();
+        var gp = self.graph_problem_uris.keyIterator();
+        while (gp.next()) |k| self.gpa.free(k.*);
+        self.graph_problem_uris.deinit(self.gpa);
         if (self.template_root) |r| self.gpa.free(r);
     }
 
@@ -1067,7 +1076,73 @@ pub const Server = struct {
             self.feedback.clear(uri);
         }
 
+        try self.publishGraphProblems(uri);
+
         try self.sendProgress("end", null);
+    }
+
+    /// Publish the project graph's own diagnostics — a dependency no library
+    /// root carries, a `files` entry that cannot be read — against the manifest
+    /// that declares them, and empty the manifests that are no longer at fault.
+    ///
+    /// They belong on the manifest, not on `uri`: the entry the user has to fix
+    /// is a line of `botopink.json`, and the same problem would otherwise be
+    /// repeated on every file of the project.
+    fn publishGraphProblems(self: *Server, uri: []const u8) !void {
+        var arena = std.heap.ArenaAllocator.init(self.gpa);
+        defer arena.deinit();
+        const a = arena.allocator();
+
+        const resolved = (self.graph.resolve(uri) catch null) orelse
+            return self.clearGraphProblems(&.{});
+
+        // Group by manifest URI: one `publishDiagnostics` per file, as the LSP
+        // requires (a second notification for the same URI replaces the first).
+        var by_uri: std.StringArrayHashMapUnmanaged(std.ArrayListUnmanaged(proto.Diagnostic)) = .empty;
+        for (resolved.problems) |p| {
+            const gop = try by_uri.getOrPut(a, p.uri);
+            if (!gop.found_existing) gop.value_ptr.* = .empty;
+            try gop.value_ptr.append(a, .{
+                .range = .{
+                    .start = .{ .line = p.line, .character = p.character },
+                    .end = .{ .line = p.line, .character = p.character + p.length },
+                },
+                .severity = proto.DiagnosticSeverity.Error,
+                .message = p.message,
+                .source = "botopink",
+            });
+        }
+
+        for (by_uri.keys(), by_uri.values()) |manifest_uri, diags| {
+            try self.sendDiagnostics(manifest_uri, diags.items);
+            if (!self.graph_problem_uris.contains(manifest_uri)) {
+                const owned = try self.gpa.dupe(u8, manifest_uri);
+                errdefer self.gpa.free(owned);
+                try self.graph_problem_uris.put(self.gpa, owned, {});
+            }
+        }
+        try self.clearGraphProblems(by_uri.keys());
+    }
+
+    /// Send an empty diagnostics list for every manifest this server flagged
+    /// that is not in `keep`, and forget it.
+    fn clearGraphProblems(self: *Server, keep: []const []const u8) !void {
+        var stale: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer stale.deinit(self.gpa);
+
+        var it = self.graph_problem_uris.keyIterator();
+        while (it.next()) |k| {
+            var still_bad = false;
+            for (keep) |u| {
+                if (std.mem.eql(u8, u, k.*)) still_bad = true;
+            }
+            if (!still_bad) try stale.append(self.gpa, k.*);
+        }
+        for (stale.items) |u| {
+            try self.sendDiagnostics(u, &.{});
+            _ = self.graph_problem_uris.remove(u);
+            self.gpa.free(u);
+        }
     }
 
     fn sendDiagnostics(self: *Server, uri: []const u8, diags: []const proto.Diagnostic) !void {
