@@ -64,3 +64,7 @@ erlang   | test/fn_defaults.bp        | 06 N1 | trailing parameter defaults are 
 
 # ── primitive methods ─────────────────────────────────────────────────────────
 erlang   | test/string_case_conversion.bp | 01 step 6 | `String.toUpperCase` / `String.toLowerCase` emit erlang functions that are never defined
+
+# ── §1 generics ───────────────────────────────────────────────────────────────
+*        | reject/generic_missing_argument.bp | 06 N18 | §1.1: a written generic type without its arguments is accepted (exit 0)
+*        | reject/self_without_argument.bp    | 06 N18 | §1.2: bare `Self` inside a declaration with type parameters is accepted (exit 0)
