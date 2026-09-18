@@ -10,22 +10,29 @@
 # `<front number> step <n>`. The 1.0.4-beta rows (`06 N…`, `01 step 6`) were
 # repointed by front 12 step 1 at `7ab6a55`; every owner cell below was
 # re-checked against `specs/1.0.5-beta/` on 2026-09-18 and each names a section
-# that exists.
+# that exists. Two other shapes appear, both deliberate: `<front> handover 15`
+# names a front's "Handed over by `15-language-surface`" section, which is prose
+# with no step number, and `04 (no step; reported 2026-09-18)` says outright that
+# the front is certain and the row is missing. Neither invents a step.
 #
-# Re-measured at botopink-lang `19a3b01`, node v25.8.0, OTP 29:
+# Measured on `fix/langtests` at `7bfecf7` plus the decision-28/30/33 cells
+# (its base is `feat` `bef762b`), node v25.8.0, OTP 29:
 #
 #   $ tests/language/run.sh                 # commonJS, erlang, wasm
-#   language tests: 218 passed, 53 expected failures, 0 failed
+#   language tests: 250 passed, 61 expected failures, 0 failed
 #   $ tests/language/run.sh --target beam
-#   language tests: 13 passed, 19 expected failures, 0 failed
+#   language tests: 14 passed, 20 expected failures, 0 failed
 #
-# 61 lines: 53 exercised by `--target all`, 8 more only by `--target beam`
+# 70 lines: 61 exercised by `--target all`, 9 more only by `--target beam`
 # (the 11 `*` reject lines are counted by both runs). By the row that comes
-# first on the line: 01-checker 35 · 02-erlang 10 · 03-beam 7 · 05-wasm 5 ·
-# 13-module-identity 4. **04-js has none** — front 04 deleted all seven of its
-# lines in `c253965`, `7b6b5d3` and `17c5f8b`. Nineteen lines name a second row
-# that has to land before the line goes (the §7 formatter's record and variant
-# halves are 13 step 18, not a backend's).
+# first on the line: 01-checker 37 · 02-erlang 12 · 03-beam 8 · 05-wasm 6 ·
+# 13-module-identity 4 · 04-js 3. Nineteen lines name a second row that has to
+# land before the line goes (the §7 formatter's record and variant halves are
+# 13 step 18, not a backend's).
+#
+# For the record, since it changed inside this milestone: 04-js went to **zero**
+# lines when `c253965`, `7b6b5d3` and `17c5f8b` deleted all seven it had; the
+# three it carries now are new rows this front measured, not survivors.
 
 # ── §5 case arms — the grammar landed (1.0.4's 06 N22 parser half); the checker's is open ──
 # `Pattern { body }`, `when (…)`, `.Variant`, tuple/label/rest patterns all parse,
