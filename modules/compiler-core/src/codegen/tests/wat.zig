@@ -593,3 +593,59 @@ test "wat: case ---- a failing guard falls through to the next arm" {
         \\}
     );
 }
+
+// ── decision 30: the index expression ────────────────────────────────────────
+//
+// `15-language-surface` landed `xs[0]` in the parser as the reserved builtin
+// call `ast.index_builtin_name` over `(receiver, index)`, and `xs[0..2]` is the
+// same node with a `range` where the index goes. Until a backend lowers it the
+// form falls into the unrecognised-builtin path, which on wasm left **nothing
+// on the stack**: `wasmtime` refused the module ("expected i32 but nothing on
+// stack at offset 195"). KNOWN-WRONG (commonJS): not lowered — it writes the
+// literal `@[](xs, 0)`, which is not JavaScript, and `node --check` refuses the
+// file. KNOWN-WRONG (erlang): `function '[]'/2 undefined`, so `erlc` refuses it.
+// KNOWN-WRONG (beam): the worst of the three — it **runs**, exit 0, answering
+// the receiver or `ok` where an element belongs (`xs[9]` prints the whole
+// `[10,20,30]`).
+test "wat: index ---- an array element, a string character and a slice" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    val xs = [10, 20, 30];
+        \\    val i = 1;
+        \\    @print(xs[0]);
+        \\    @print(xs[i + 1]);
+        \\    val names = ["ana", "bo"];
+        \\    @print(names[1]);
+        \\    val s = "hello";
+        \\    @print(s[1]);
+        \\    @print(s[1..3]);
+        \\    @print(s[3..]);
+        \\    @print(xs[1..]);
+        \\}
+    );
+}
+
+// An index past the end answers the element type's zero, the rule `$__arr_at`
+// already followed for `xs.at(i)`. Whether decision 30 means `T` or `?T` is
+// `01-checker`'s to settle (`ast.zig:1734`); this pins what wasm answers today.
+test "wat: index ---- an index past the end answers zero" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    val xs = [10, 20, 30];
+        \\    @print(xs[9]);
+        \\}
+    );
+}
+
+// A float array's slots are `f32`, so the four bytes `$__arr_at` answers are
+// the float's *bits*: `fs[0]` reinterprets them, `fs.at(0)` still does not and
+// prints `1069547520` for `1.5` — the primitive-method half of the same gap.
+test "wat: index ---- a float array element is reinterpreted, not read as bits" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    val fs = [1.5, 2.5];
+        \\    @print(fs[0]);
+        \\    @print(fs.at(0));
+        \\}
+    );
+}

@@ -1037,6 +1037,21 @@ first three are now enforced by the model, not by discipline:
   parse error, and `wat_ast.Builder.param` refuses to build one.
 - **Entrypoint** (`emitEntrypointWrapper`): calls `$main` and `drop`s its
   result when `main` returns a value (`main_returns_value`).
+- **Decision 30's index expression** (`lowerIndex`): the parser lands `xs[0]`
+  as the reserved builtin call `ast.index_builtin_name` (`"[]"`) over
+  `(receiver, index)`, and `xs[0..2]` is the same node with a `range` where the
+  index goes. One node, four readings, told apart by the receiver and by whether
+  the index is a range: `xs[i]` → `$__arr_at` (the element, `0` out of range),
+  `xs[a..b]` → `$__arr_slice`, `s[i]` → `$__str_slice(s, i, i+1)` (the one-byte
+  string), `s[a..b]` → `$__str_slice`. A float array's slots are `f32`, so the
+  four bytes `$__arr_at` answers are reinterpreted rather than printed as an
+  integer. `indexArgs` is what `isStringExpr` / `isArrayExpr` / `elemKindOf` /
+  `wasmTypeOf` ask, so `val sub = xs[1..]` is an array local and `s[1]` a string
+  one. **`xs[i]` answers `T`, not `?T`** — which of the two decision 30 means is
+  `01-checker`'s to settle (`ast.zig:1734`); a receiver that is neither an array
+  nor a string (a `Dict`) traps rather than answering a number nothing put there.
+  Before the lowering the form left **nothing on the stack** and `wasmtime`
+  refused the whole module.
 - **A pattern's variant name arrives with the path it was written with**
   (decision 8 §5.1 P8): `Shape.Circle`, `.Circle`. The constructor stores the
   bare `Circle`, so `findVariant` compares against `bareVariantName` — the last

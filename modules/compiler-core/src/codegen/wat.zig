@@ -3086,6 +3086,10 @@ const Emitter = struct {
             }
             return;
         }
+        if (std.mem.eql(u8, cc.callee, ast.index_builtin_name)) {
+            try self.lowerIndex(cc);
+            return;
+        }
         if (std.mem.startsWith(u8, cc.callee, "__bp_")) {
             try self.lowerResultOptionOp(cc.callee, cc.args);
             return;
@@ -3103,6 +3107,108 @@ const Emitter = struct {
             return;
         }
         try self.note("builtin stub");
+    }
+
+    /// Decision 30's index expression, which the parser lands as the reserved
+    /// builtin call `ast.index_builtin_name` over `(receiver, index)`. One node
+    /// serves four readings, told apart by the receiver and by whether the
+    /// index is a range (`decision-8:447` — `..` is iteration **and** slicing):
+    ///
+    /// | Written | Lowering |
+    /// |---|---|
+    /// | `xs[i]` | `$__arr_at` — the element itself, `0` out of range |
+    /// | `xs[a..b]` | `$__arr_slice` — a fresh array, bounds clamped |
+    /// | `s[i]` | `$__str_slice(s, i, i+1)` — the one-byte string |
+    /// | `s[a..b]` | `$__str_slice` |
+    ///
+    /// **`xs[i]` answers `T`, not `?T`** — the reading every other language
+    /// gives it, and the one `$__arr_at` already implements for the `.at()`
+    /// method on a string array. Which of the two decision 30 means is
+    /// `01-checker`'s to settle (`ast.zig:1734`); if it settles on `?T` this is
+    /// one helper swap (`.arr_at` → `.arr_at_box`) and the fixtures move with it.
+    ///
+    /// A receiver that is neither an array nor a string — a `Dict`, above all —
+    /// has no lowering here: `d["k"]` is `Dict.lookup` through a std record, and
+    /// this backend inlines std rather than linking it. It traps rather than
+    /// answering a number nothing put there.
+    /// The `(receiver, index)` of an index call, and whether the index is a
+    /// range — `null` for every other call. The one question the type
+    /// predicates (`isStringExpr`, `isArrayExpr`, `elemKindOf`) ask about it.
+    const IndexArgs = struct { recv: ast.Expr, idx: ast.Expr, is_slice: bool };
+
+    fn indexArgs(self: *Emitter, cc: anytype) ?IndexArgs {
+        _ = self;
+        if (!cc.is_builtin or !std.mem.eql(u8, cc.callee, ast.index_builtin_name)) return null;
+        if (cc.args.len != 2) return null;
+        const idx = cc.args[1].value.*;
+        const is_slice = switch (idx) {
+            .collection => |col| col.kind == .range,
+            else => false,
+        };
+        return .{ .recv = cc.args[0].value.*, .idx = idx, .is_slice = is_slice };
+    }
+
+    fn lowerIndex(self: *Emitter, cc: anytype) anyerror!void {
+        const b = self.builder();
+        const recv = cc.args[0].value.*;
+        const idx = cc.args[1].value.*;
+        const is_str = self.isStringExpr(recv);
+        const is_arr = self.isArrayExpr(recv);
+
+        // `xs[a..b]` — the same node, with a range where the index goes.
+        const range = switch (idx) {
+            .collection => |col| switch (col.kind) {
+                .range => |r| r,
+                else => null,
+            },
+            else => null,
+        };
+        if (range) |r| {
+            if (!is_str and !is_arr) {
+                try self.emitCf(.@"unreachable", "index slice on an unknown receiver", .{});
+                return;
+            }
+            try self.lowerCoerced(recv, "i32");
+            try self.lowerCoerced(r.start.*, "i32");
+            if (r.end) |e| {
+                try self.lowerCoerced(e.*, "i32");
+            } else if (is_str) {
+                // to the end: the source's length prefix
+                try self.lowerCoerced(recv, "i32");
+                try self.emitC(.{ .load = .{} }, "source length");
+            } else {
+                // `$__arr_slice` clamps, so "to the end" is the largest i32
+                try self.emit(try self.constInt(std.math.maxInt(i32)));
+            }
+            try self.emit(b.helper(if (is_str) .str_slice else .arr_slice));
+            return;
+        }
+
+        if (is_str) {
+            // `s[i]` is the one-byte string at `i`, the `char` §7 prints.
+            const at = try self.declRes();
+            try self.lowerCoerced(idx, "i32");
+            try self.emit(.{ .local_set = at });
+            try self.lowerCoerced(recv, "i32");
+            try self.emit(.{ .local_get = at });
+            try self.emit(.{ .local_get = at });
+            try self.emit(one);
+            try self.emit(opOf("i32", "add"));
+            try self.emit(b.helper(.str_slice));
+            return;
+        }
+        if (is_arr) {
+            try self.lowerCoerced(recv, "i32");
+            try self.lowerCoerced(idx, "i32");
+            try self.emit(b.helper(.arr_at));
+            // A float array's slots are `f32`: `$__arr_at` answers the four
+            // bytes, which are the float's *bits*. `fs.at(0)` still prints
+            // them as an integer (`1069547520` for `1.5`) — the same gap, in
+            // the primitive-method path this front's step 6 audits.
+            if (self.elemKindOf(recv) == .f32) try self.emit(.{ .convert = "f32.reinterpret_i32" });
+            return;
+        }
+        try self.emitCf(.@"unreachable", "index on an unknown receiver", .{});
     }
 
     /// Reserve and declare the next `$_res{n}` scratch pointer local. Declared
@@ -4770,6 +4876,8 @@ const Emitter = struct {
                         },
                         else => break :blk .i32,
                     };
+                    // `xs[a..b]` keeps the elements of `xs`
+                    if (self.indexArgs(cc)) |ix| break :blk if (ix.is_slice) self.elemKindOf(ix.recv) else .i32;
                     if (cc.receiver == null and !cc.is_builtin) break :blk self.fn_arr_elem.get(cc.callee) orelse .i32;
                     break :blk .i32;
                 },
@@ -5778,6 +5886,12 @@ const Emitter = struct {
                 .call => |cc| blk: {
                     if (self.primKindAt(cc, c.loc)) |k| break :blk primCallRes(k, cc) == .str;
                     if (isStrSlice(cc)) break :blk true;
+                    // `s[i]` / `s[a..b]` (decision 30) answer a string; an
+                    // array index answers a string when its elements are ones.
+                    if (self.indexArgs(cc)) |ix| break :blk if (self.isStringExpr(ix.recv))
+                        true
+                    else
+                        self.isArrayExpr(ix.recv) and !ix.is_slice and self.elemKindOf(ix.recv) == .str;
                     if (cc.is_builtin) break :blk false;
                     if (cc.receiver == null and self.locals.contains(cc.callee)) {
                         if (self.closure_locals.get(cc.callee)) |li| break :blk self.closureCallIsString(li, cc);
@@ -6110,6 +6224,9 @@ const Emitter = struct {
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
                     if (self.primKindAt(cc, c.loc)) |k| break :blk primCallRes(k, cc) == .arr;
+                    // a slice of an array is an array; `xs[i]` is an element
+                    if (self.indexArgs(cc)) |ix|
+                        break :blk ix.is_slice and self.isArrayExpr(ix.recv);
                     if (cc.receiver == null and !cc.is_builtin) break :blk self.fn_arr_elem.contains(cc.callee);
                     break :blk false;
                 },
@@ -6376,6 +6493,10 @@ const Emitter = struct {
             },
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
+                    // `xs[i]` over a float array reads an `f32` slot
+                    if (self.indexArgs(cc)) |ix|
+                        break :blk if (!ix.is_slice and self.isArrayExpr(ix.recv) and
+                            self.elemKindOf(ix.recv) == .f32) "f32" else "i32";
                     if (cc.is_builtin) break :blk "i32";
                     if (self.primKindAt(cc, c.loc)) |k| break :blk if (primCallRes(k, cc) == .f64) "f64" else "i32";
                     if (self.recordMethodSym(cc, c.loc)) |sym| {
