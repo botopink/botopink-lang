@@ -1,0 +1,22 @@
+//// Comptime parameters and `@Expr<T>` templates: a `comptime` value parameter
+//// folds at the call site, and an `@Expr` parameter receives the call-site text
+//// unevaluated — the mechanism `erika` and `jhonstart` build their sub-languages
+//// on.
+
+pub fn sql(comptime q: @Expr<string>) -> @Expr<string> { return q; }
+
+fn twice(comptime n: i32) -> i32 { return n * 2; }
+
+test "an @Expr parameter captures the call-site text" { assert sql "SELECT 1" == "SELECT 1"; }
+
+test "a multi-line template is captured whole" {
+    val t = sql """ab""";
+    assert t == "ab";
+}
+
+test "a comptime value parameter folds at the call site" { assert twice(21) == 42; }
+
+test "a comptime val folds" {
+    val x = comptime 10 + 5;
+    assert x == 15;
+}
