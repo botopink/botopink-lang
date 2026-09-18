@@ -498,6 +498,29 @@ fn checkImportResolution(
     }
 }
 
+/// Run the import-source check (F4) over a module set that is not a package —
+/// the flat `test/` directory, which `botopink test` and `botopink check`
+/// discover through `scanner.zig` and which therefore never reaches `resolve`.
+///
+/// `mods` must carry **every** module an import in it may name: the project's
+/// already-resolved `src/` tree as well as the flat modules themselves, since
+/// a `*_test.bp` imports the package it tests. `files[i]` is the path `mods[i]`
+/// was read from (`""` when unknown — the diagnostic then carries no location),
+/// and `externals` is the project's declared dependency set (`null` disables
+/// the check). Re-checking the already-resolved modules is free and harmless:
+/// they passed the same predicate in `resolve`.
+pub fn checkSources(
+    sa: std.mem.Allocator,
+    mods: []const Module,
+    files: []const []const u8,
+    externals: ?[]const []const u8,
+    diag_arena: std.mem.Allocator,
+    diag: ?*Diagnostic,
+) Error!void {
+    const analysis = analyzeModules(sa, mods);
+    try checkImportSources(mods, files, analysis, externals, diag_arena, diag);
+}
+
 /// Enforce that an import names something (F4): every `import … from "<name>"`
 /// must resolve to a package module (the `mod` tree, dotted path) or to a
 /// declared dependency — `from "std"` and `from "<dep>[.<module>]"` included.
@@ -988,4 +1011,51 @@ test "orderByDependencies keeps a cycle's modules without crashing" {
     try std.testing.expectEqual(@as(usize, 2), mods.len);
     try std.testing.expect(indexOfPath(&mods, "a") != std.math.maxInt(usize));
     try std.testing.expect(indexOfPath(&mods, "b") != std.math.maxInt(usize));
+}
+
+test "checkSources locates an unresolved import in a flat test module" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const sa = arena.allocator();
+
+    // The shape `botopink test` hands over: the package's resolved `src/`
+    // modules first (no file, already checked), then the flat `test/` ones.
+    var mods = [_]Module{
+        .{ .path = "main", .source = "mod geometry;\npub fn main() {}" },
+        .{ .path = "geometry", .source = "pub fn area() -> i32 { return 1; }" },
+        .{ .path = "x_test", .source =
+        \\import {area} from "geometry";
+        \\import {nothing} from "nowhere";
+        },
+    };
+    const files = [_][]const u8{ "", "", "test/x_test.bp" };
+    var diag: Diagnostic = .{ .kind = Error.RootNotFound };
+    try std.testing.expectError(
+        Error.UnresolvedImportSource,
+        checkSources(sa, &mods, &files, &.{}, sa, &diag),
+    );
+    try std.testing.expectEqualStrings("nowhere", diag.name);
+    try std.testing.expectEqualStrings("x_test", diag.importer);
+    try std.testing.expectEqualStrings("test/x_test.bp", diag.file);
+    try std.testing.expectEqual(@as(usize, 2), diag.line);
+    try std.testing.expectEqual(@as(usize, 23), diag.col);
+}
+
+test "checkSources accepts a test module importing the package it tests" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const sa = arena.allocator();
+
+    var mods = [_]Module{
+        .{ .path = "geometry", .source = "pub fn area() -> i32 { return 1; }" },
+        .{ .path = "x_test", .source =
+        \\import {area} from "geometry";
+        \\import {math} from "std";
+        \\import {q} from "erika";
+        },
+    };
+    const files = [_][]const u8{ "", "test/x_test.bp" };
+    const deps = [_][]const u8{"erika"};
+    var diag: Diagnostic = .{ .kind = Error.RootNotFound };
+    try checkSources(sa, &mods, &files, &deps, sa, &diag); // no error
 }

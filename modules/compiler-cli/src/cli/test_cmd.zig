@@ -75,8 +75,13 @@ pub fn run(
     var src_loaded = sources.load(gpa, io, proj, "src") catch return 1;
     defer src_loaded.free(gpa);
     const src_modules = src_loaded.modules;
-    const test_modules = try scanner.scanSources(gpa, io, "test");
-    defer scanner.freeModules(gpa, test_modules);
+    var test_scan = try scanner.scanSourcesWithFiles(gpa, io, "test");
+    defer test_scan.free(gpa);
+    const test_modules = test_scan.modules;
+
+    // The flat `test/` directory is not a package, so it never reached the
+    // resolver: check its imports here, against the same rule `src/` answers to.
+    sources.checkFlatImports(gpa, proj, src_modules, test_scan) catch return 1;
 
     if (src_modules.len == 0 and test_modules.len == 0) {
         reporter.errMsg("no source files found in src/ or test/");

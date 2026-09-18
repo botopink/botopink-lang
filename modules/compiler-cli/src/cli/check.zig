@@ -49,8 +49,13 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, opts: Options, env_map: libs.EnvM
 
     var loaded = sources.load(gpa, io, proj, "src") catch return 1;
     defer loaded.free(gpa);
-    const test_modules = try scanner.scanSources(gpa, io, "test");
-    defer scanner.freeModules(gpa, test_modules);
+    var test_scan = try scanner.scanSourcesWithFiles(gpa, io, "test");
+    defer test_scan.free(gpa);
+    const test_modules = test_scan.modules;
+
+    // The flat `test/` directory is not a package, so it never reached the
+    // resolver: check its imports here, against the same rule `src/` answers to.
+    sources.checkFlatImports(gpa, proj, loaded.modules, test_scan) catch return 1;
 
     if (loaded.modules.len == 0 and test_modules.len == 0) {
         reporter.errMsg("no source files found in src/ or test/");

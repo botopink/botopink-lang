@@ -177,6 +177,15 @@ Cross-command rules:
   error (`imported symbol is not exported by the named module`), also located.
   Before this, an import naming nothing bound nothing and said nothing: exit 0,
   with code emitted.
+- **Two loaders, one import rule.** `src/` is a package and loads through
+  `sources.load` → `resolver.resolve`, which applies the rule as pass F4. The
+  flat `test/` directory is **not** a package — `check` and `test` discover it
+  with `scanner.scanSourcesWithFiles`, which never calls the resolver — so those
+  two commands run `sources.checkFlatImports` over it, which hands
+  `resolver.checkSources` the resolved `src/` modules together with the flat
+  ones. A `*_test.bp` may therefore import the package it tests, and still
+  cannot name a module that does not exist. `format` scans without checking:
+  it rewrites files and resolves nothing.
 - **Compiling does not execute.** `build` and `test` call
   `codegen.generateWith` with `.execute = false`: no `node`/`erl`/`wasmtime`
   spawn and no `.botopinkbuild/runtime-cache` entry at build time (`test` runs
