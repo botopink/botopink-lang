@@ -619,3 +619,47 @@ test "format: declarations ---- an if whose then-branch is an if keeps its brace
         \\}
     );
 }
+
+// ── the package-default keyword (`pub default mod` / `pub default fn`) ────────
+// Both flags are recorded by the parser and read by `comptime.zig`'s
+// package-default DSL, and the printer had no arm for either: `format` rewrote
+// `pub default mod X;` as `pub mod X;` and `pub default fn f(…)` as
+// `pub fn f(…)`. On a package whose handle and handler have different names that
+// unbinds every consumer — and because a deletion is idempotent, `format --check`
+// reported the broken file as clean.
+
+test "format: declarations ---- `pub default mod` keeps its keyword" {
+    try h.assertFormat(std.testing.allocator,
+        \\pub default mod zeta;
+    );
+}
+
+test "format: declarations ---- a private `default mod` keeps its keyword" {
+    try h.assertFormat(std.testing.allocator,
+        \\default mod zeta;
+    );
+}
+
+test "format: declarations ---- `pub default fn` keeps its keyword" {
+    try h.assertFormat(std.testing.allocator,
+        \\pub default fn query(s: string) -> string {
+        \\    return s;
+        \\}
+    );
+}
+
+test "format: declarations ---- the package surface round-trips as a whole" {
+    try h.assertFormat(std.testing.allocator,
+        \\pub default mod zeta;
+        \\
+        \\pub default fn query(s: string) -> string {
+        \\    return s;
+        \\}
+        \\
+        \\pub mod other;
+        \\
+        \\pub fn plain(s: string) -> string {
+        \\    return s;
+        \\}
+    );
+}

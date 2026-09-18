@@ -1522,10 +1522,19 @@ pub const Formatter = struct {
             .@"fn" => |f| this.fmtFnDecl(f),
             .val => |v| this.fmtValDecl(v),
             .@"test" => |t| this.fmtTestDecl(t),
+            // `[pub] [default] mod Name;`. `default` names the package handle
+            // that `import <pkg>` resolves to (`comptime.zig`'s package-default
+            // DSL); dropping it silently unbinds every consumer of a package
+            // whose handle and handler have different names, and the result is
+            // idempotent, so `format --check` then calls the broken file clean.
             .mod => |m| this.text(try std.fmt.allocPrint(
                 this.arena,
-                "{s}mod {s}",
-                .{ if (m.isPub) "pub " else "", m.name },
+                "{s}{s}mod {s}",
+                .{
+                    if (m.isPub) "pub " else "",
+                    if (m.isDefault) "default " else "",
+                    m.name,
+                },
             )),
             .comment => |c| blk: {
                 const prefix = if (c.is_module) "////" else if (c.is_doc) "///" else "//";
@@ -1996,9 +2005,15 @@ pub const Formatter = struct {
         // end in `;`. Printing it as `pub fn f(…) -> T {}` (what this did
         // before) silently turned every host-backed declaration into an empty
         // implementation.
+        // `default` names the package's DSL handler, the fn aliased under the
+        // `pub default mod` handle. Same loss as the mod arm above: drop it and
+        // `<pkg> "…"` stops binding, with nothing in the repository noticing.
+        // The keyword order is the parser's (`parseFnDecl`): pub, default,
+        // declare.
         const pubKw: []const u8 = if (f.isPub) "pub " else "";
+        const defaultKw: []const u8 = if (f.isDefault) "default " else "";
         const declareKw: []const u8 = if (f.isDeclare) "declare " else "";
-        const prefix = try this.text(try std.fmt.allocPrint(this.arena, "{s}{s}fn ", .{ pubKw, declareKw }));
+        const prefix = try this.text(try std.fmt.allocPrint(this.arena, "{s}{s}{s}fn ", .{ pubKw, defaultKw, declareKw }));
         if (f.isDeclare and f.body.len == 0) {
             return this.concatAll(&.{
                 try this.fmtAnnotations(f.annotations),
