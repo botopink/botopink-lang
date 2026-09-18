@@ -105,3 +105,18 @@ wasm     | run/tuple_print.bp         | 05 step 1 | prints decision 1a's text wi
 wasm     | run/print_formatter.bp     | 05 step 1, 13 step 18 | §7 formatter: `f64` prints without its decimal part, arrays/tuples without spaces, and a record or a variant prints as its raw heap address
 wasm     | run/display_print.bp       | 05 step 1, 13 step 18 | §7: `@print` does not consult `Display`; the record prints as its raw heap address
 wasm     | modules/std_import         | 05 step 3 | a std `Dict` lookup through a user module answers the fallback (`0`) instead of the stored value, with exit 0 and no diagnostic
+
+# ── beam, the fourth executable target (decision 8) ───────────────────────────
+# `botopink run --target beam` writes `out/*.S`; `erlc +from_asm` then `erl` run
+# it (run.sh § beam). beam is not in `--target all` yet — front 13's policy 3
+# moves the `.S` layout — so these lines are exercised by
+# `tests/language/run.sh --target beam`, which is green with them. `botopink
+# test` refuses beam, so only run/ and modules/ cells reach it: 9 results,
+# 2 passing (`run/smoke.bp`, `modules/mod_tree`). Measured at `c2dd780`, OTP 29.
+beam     | run/tuple_print.bp         | 03 step 2 | F0/F1: a nested string prints `<<"a">>` and a tuple `{1,<<"a">>}`; decision 1a and §7 want `"a"` and `#(1, "a")`
+beam     | run/print_nested.bp        | 03 step 2 | F0: a nested string prints as an erlang binary with erlang escapes (`[<<"a\"b">>]`, `[<<"c\\d">>]`); §7 wants `["a\"b"]` with source escapes
+beam     | run/print_formatter.bp     | 03 step 2, 13 step 18 | §7 formatter: arrays/tuples print as erlang terms, a record as `#{x => 1,y => 2}` and a variant as `{'Square',4}` / `'Nothing'`
+beam     | run/display_print.bp       | 03 step 2, 13 step 18 | §7: `@print` does not consult `Display`; the record prints as `#{cents => 5}`
+beam     | run/case_values.bp         | 01 step 4 | `.Variant` arms are not resolved: "missing variant(s) Circle, Rect" — the same checker row the other three targets name
+beam     | modules/two_modules        | 03 step 4 | a method on a type imported from a sibling module reaches `call_fun` with the record's map: `{badfun,#{x=>1,y=>2}}`
+beam     | modules/std_import         | 03 step 4 | a std `Dict` method used through a user module reaches `call_fun` with the dict's map: `{badfun,#{pairs=>[]}}`

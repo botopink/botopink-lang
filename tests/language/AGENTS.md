@@ -43,17 +43,46 @@ with `expected.out`. A cell that needs a git dependency is deliberately out of s
 
 ## The targets
 
+Measured at `c2dd780`, OTP 29, node v25.8.0.
+
 | Target | `botopink test` | `botopink run` | In the suite |
 |---|---|---|---|
 | commonJS | yes | yes | every kind |
 | erlang | yes | yes | every kind |
 | wasm | refused — "supports only the commonJS and erlang targets" | yes, it executes | `run/` and `modules/` only |
-| beam | refused | writes `out/main.S` and stops — a BEAM Assembly artifact, not a run | **no** |
+| beam | refused — the same message | writes `out/*.S` and stops — BEAM Assembly is an artifact, not a run | `run/` and `modules/`, via `--target beam`; **not in `--target all` yet** |
 
 `test/` cells therefore run on commonJS and erlang; `run/` and `modules/` cells run on those two and
-on wasm; `reject/` runs once (target `*`, `botopink check` is target-independent). beam is excluded
-because nothing executes: a `run/` cell would compare an empty stdout and pass vacuously. Its
-decision-8 coverage stays in `snapshots/codegen/beam/` (01 step 6).
+on wasm, and on beam when asked for; `reject/` runs once (target `*`, `botopink check` is
+target-independent).
+
+**beam executes, in two more commands** — decision 8 of `specs/1.0.5-beta/decisions-taken.md`,
+re-measured here:
+
+```bash
+$ botopink run --target beam
+wrote out/main.S — BEAM Assembly is an artifact; compile with `erlc +from_asm out/main.S` …
+$ find out -name '*.S' | while read s; do erlc +from_asm -o out "$s"; done
+$ erl -noshell -pa out -eval 'main:main(), halt().'
+hi
+```
+
+`run.sh`'s `exec_run` is exactly that path (see its `§ beam` comment). Every `.S` is assembled, not
+only `out/*.S`: a `mod` tree and a `from "std"` import emit nested directories today
+(`out/shapes/circle.S`, `out/std/…`), and a module left unassembled is an `undef` at run time rather
+than a compile error — `modules/mod_tree` passes only because of it. `erlc` and `erl` are already
+gate dependencies (every erlang cell; stage 5 `scripts/beam_export_audit.sh`), so beam costs the gate
+no new tool.
+
+beam is **not** in `--target all`, and that is scheduling rather than doubt: front 13's policy 3
+changes how many `.S` files a program emits and where they live, so a default-on runner would be
+written against a layout that is about to move. Flipping it on is one line of `run.sh`
+(`all) targets=(commonJS erlang wasm beam)`) plus a re-run of the beam cells; it belongs to 13's
+closing step. The beam rows of `expected-failures.txt` already exist and
+`tests/language/run.sh --target beam` is green: **9 results, 2 passing** (`run/smoke.bp`,
+`modules/mod_tree`), 7 expected failures — 6 owned by `03-beam` (steps 2 and 4) and 1 by
+`01-checker` step 4; two of the `03` rows name `13 step 18` as well, because a record and a variant
+cannot print their names before a value carries one.
 
 ## Running
 
@@ -62,6 +91,7 @@ zig build test-language                                   # the installed botopi
 zig build test-language -- --target erlang
 tests/language/run.sh --compiler <botopink> --only test/case_arms.bp
 tests/language/run.sh --compiler <botopink> --only modules/two_modules
+tests/language/run.sh --target beam                       # opt-in; needs erlc + erl
 ```
 
 `--lib-root` defaults to `<compiler>/../../libs` (where `from "std"` resolves).
@@ -69,8 +99,11 @@ tests/language/run.sh --compiler <botopink> --only modules/two_modules
 ## expected-failures.txt
 
 ```
-<target: commonJS | erlang | wasm | *> | <path>[::<test name>] | <owner row> | <reason>
+<target: commonJS | erlang | wasm | beam | *> | <path>[::<test name>] | <owner row> | <reason>
 ```
+
+A line whose target is not in the current run is skipped, not failed — which is what lets the beam
+rows sit in the file while beam stays out of `--target all`.
 
 - The owner row must exist in the specs: a front of the current milestone
   (`specs/1.0.5-beta/fronts.md`) and one of its numbered steps, written `<front> step <n>` —

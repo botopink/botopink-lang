@@ -4,11 +4,13 @@
 # decorators, externals, generics, closures, modules (`zig build test-language`).
 #
 # Usage:
-#   tests/language/run.sh [--target commonJS|erlang|all] [--compiler <botopink>]
+#   tests/language/run.sh [--target commonJS|erlang|wasm|beam|all]
+#                         [--compiler <botopink>]
 #                         [--lib-root <dir>] [--only <path>] [--jobs <n>]
 #
-#   --target    default `all` (commonJS and erlang — the targets `botopink test`
-#               and `botopink run` execute)
+#   --target    default `all` (commonJS, erlang and wasm — the targets
+#               `botopink run` executes directly). `beam` is supported and not
+#               in `all`; see § beam below.
 #   --compiler  the `botopink` binary; default <repo>/zig-out/bin/botopink
 #   --lib-root  where `from "std"` resolves; default <compiler>/../../libs
 #   --only      run one cell (e.g. test/case_arms.bp, modules/two_modules); may repeat
@@ -18,6 +20,7 @@
 # that cell):
 #   test/<name>.bp     `botopink test --target <t> --json`; every test must pass
 #   run/<name>.bp      `botopink run --target <t>`; stdout must equal <name>.out
+#                      (on beam: run, then `erlc +from_asm out/*.S`, then `erl`)
 #   reject/<name>.bp   `botopink check`; must exit non-zero, stderr must contain
 #                      the first line of <name>.expect and ` --> src/main.bp:<L:C>`
 #                      where <L:C> is its second line (target-independent: runs
@@ -29,7 +32,7 @@
 #
 # expected-failures.txt — one line per expected failure, `|`-separated (test
 # names contain spaces):
-#   <target: commonJS|erlang|*> | <path>[::<test name>] | <owner row> | <reason>
+#   <target: commonJS|erlang|wasm|beam|*> | <path>[::<test name>] | <owner row> | <reason>
 # A path-only entry is allowed only for a file that does not compile.
 #
 # Outcome rules (a run fails on any `FAIL`):
@@ -61,16 +64,44 @@ while [ $# -gt 0 ]; do
         --only=*) only+=("${1#*=}"); shift ;;
         --jobs) jobs="$2"; shift 2 ;;
         --jobs=*) jobs="${1#*=}"; shift ;;
-        -h|--help) sed -n '2,38p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,43p' "$0"; exit 0 ;;
         *) echo "run.sh: unknown argument '$1'" >&2; exit 2 ;;
     esac
 done
 
+# ── § beam ────────────────────────────────────────────────────────────────────
+# `botopink run --target beam` writes `out/*.S` and stops — BEAM Assembly is an
+# artifact, not a run. It is two commands from being one (decision 8, measured at
+# `c2dd780`):
+#
+#     $ botopink run --target beam        # wrote out/main.S
+#     $ (cd out && erlc +from_asm *.S)    # main.S → main.beam
+#     $ erl -noshell -pa out -eval 'main:main(), halt().'
+#     hi
+#
+# `erlc` and `erl` are already gate dependencies (every erlang cell, and stage 5
+# `scripts/beam_export_audit.sh`), so beam costs no new tool. `exec_run` below is
+# that path, and `--target beam` runs it.
+#
+# `botopink test` refuses beam, so only run/ and modules/ cells reach it — the
+# same rule wasm already lives under.
+#
+# beam is **not** in `all` yet, and that is scheduling, not doubt: front 13's
+# policy 3 changes how many `.S` files a program emits and where they live, so a
+# default-on runner would be written against a layout that is about to move, and
+# every beam line of `expected-failures.txt` would be re-derived under it.
+# Flipping it on is this one line — `all) targets=(commonJS erlang wasm beam)` —
+# plus re-running the beam cells; do it as 13's closing step.
 case "$target" in
     all) targets=(commonJS erlang wasm) ;;
-    commonJS|erlang|wasm) targets=("$target") ;;
-    *) echo "run.sh: --target must be commonJS, erlang, wasm or all (got '$target')" >&2; exit 2 ;;
+    commonJS|erlang|wasm|beam) targets=("$target") ;;
+    *) echo "run.sh: --target must be commonJS, erlang, wasm, beam or all (got '$target')" >&2; exit 2 ;;
 esac
+for t in "${targets[@]}"; do
+    [ "$t" = "beam" ] || continue
+    command -v erlc >/dev/null || { echo "run.sh: the beam target needs erlc" >&2; exit 2; }
+    command -v erl  >/dev/null || { echo "run.sh: the beam target needs erl" >&2; exit 2; }
+done
 [ -x "$compiler" ] || { echo "run.sh: compiler not found or not executable: $compiler" >&2; exit 2; }
 compiler="$(cd "$(dirname "$compiler")" && pwd)/$(basename "$compiler")"
 [ -n "$lib_root" ] || lib_root="$(cd "$(dirname "$compiler")/../.." && pwd)/libs"
@@ -109,6 +140,45 @@ strip() { sed -r 's/\x1b\[[0-9;]*m//g'; }
 # progress lines (`Checking 1 module(s)...`) would satisfy an .expect like `..`
 quiet() { strip | grep -vE '^[[:space:]]*(Checking|Checked|Compiling|Compiled) ' || true; }
 
+# Run the project in <dir> on <target>: stdout in <dir>/stdout.txt, stderr in
+# <dir>/e.txt, the program's exit status returned.
+#
+# Every target but beam is `botopink run`. beam stops at an artifact, so its path
+# is three steps (§ beam at the top): compile, assemble **every** `out/*.S` with
+# `erlc +from_asm` (a multi-module project emits one `.S` per module), then
+# execute the entry module under `erl`. The compiler's own
+# "wrote out/main.S — BEAM Assembly is an artifact" notice goes to stdout and is
+# not program output, so it is kept out of the compared bytes.
+exec_run() { # <dir> <target>
+    local dir="$1" t="$2" mod=""
+    if [ "$t" != "beam" ]; then
+        (cd "$dir" && timeout 300 "$compiler" run --target "$t" >"$dir/stdout.txt" 2>"$dir/e.txt")
+        return $?
+    fi
+    : >"$dir/stdout.txt"
+    (cd "$dir" && timeout 300 "$compiler" run --target beam >"$dir/compile.txt" 2>"$dir/e.txt") || {
+        cat "$dir/compile.txt" >>"$dir/e.txt"
+        return 1
+    }
+    # Every `.S` under `out/`, not just the top level: today a `mod` tree and a
+    # `from "std"` import emit nested directories (`out/shapes/circle.S`,
+    # `out/std/…`), and a module left unassembled is an `undef` at run time, not
+    # a compile error. `-o "$dir/out"` puts every `.beam` where `-pa out` looks,
+    # which is also what front 13's policy 3 will make the emitter do by itself.
+    while IFS= read -r s; do
+        erlc +from_asm -o "$dir/out" "$s" || return 1
+    done < <(find "$dir/out" -name '*.S' | sort) 2>>"$dir/e.txt"
+    if [ -f "$dir/out/main.beam" ]; then
+        mod=main
+    else
+        mod="$(cd "$dir/out" && ls -1 ./*.beam 2>/dev/null | head -1)"
+        mod="$(basename "${mod%.beam}")"
+    fi
+    [ -n "$mod" ] || { echo "error: erlc +from_asm produced no .beam" >>"$dir/e.txt"; return 1; }
+    (cd "$dir" && timeout 300 erl -noshell -pa out -eval "$mod:main(), halt()." \
+        >"$dir/stdout.txt" 2>>"$dir/e.txt")
+}
+
 project() { # <dir> <kind>
     mkdir -p "$1/src" "$1/test"
     printf '{ "name": "language_tests", "version": "0.0.1", "src": "src/", "targets": ["commonJS", "erlang", "wasm"] }\n' > "$1/botopink.json"
@@ -141,7 +211,7 @@ run_one() { # <path> <target>
         run/*)
             local expected="$here/${path%.bp}.out"
             cp "$here/$path" "$dir/src/main.bp"
-            (cd "$dir" && timeout 300 "$compiler" run --target "$t" >"$dir/stdout.txt" 2>"$dir/e.txt")
+            exec_run "$dir" "$t"
             local code=$?
             if [ ! -f "$expected" ]; then
                 printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "missing ${path%.bp}.out" >"$out"
@@ -176,7 +246,7 @@ run_one() { # <path> <target>
             fi ;;
         modules/*)
             local expected="$here/$path/expected.out"
-            (cd "$dir" && timeout 300 "$compiler" run --target "$t" >"$dir/stdout.txt" 2>"$dir/e.txt")
+            exec_run "$dir" "$t"
             local code=$?
             if [ ! -f "$expected" ]; then
                 printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "missing $path/expected.out" >"$out"
@@ -190,7 +260,7 @@ run_one() { # <path> <target>
         *) printf '*\t%s\t%s\t%s\n' "$path" fail "not under test/, run/, reject/ or modules/" >"$work/r-$slug" ;;
     esac
 }
-export -f run_one json_tests strip quiet project
+export -f run_one json_tests strip quiet project exec_run
 export here work compiler lib_root
 
 # ── dispatch ──────────────────────────────────────────────────────────────────
@@ -204,9 +274,9 @@ for f in "${files[@]}"; do
     case "$f" in
         reject/*) printf '%s\t*\n' "$f" >>"$jobs_list" ;;
         # `botopink test` refuses every target but commonJS and erlang, so a
-        # test/ cell never runs on wasm (see AGENTS.md § the targets).
+        # test/ cell never runs on wasm or beam (see AGENTS.md § the targets).
         test/*) for t in "${targets[@]}"; do
-                    [ "$t" = "wasm" ] && continue
+                    [ "$t" = "wasm" ] || [ "$t" = "beam" ] && continue
                     printf '%s\t%s\n' "$f" "$t" >>"$jobs_list"
                 done ;;
         *) for t in "${targets[@]}"; do printf '%s\t%s\n' "$f" "$t" >>"$jobs_list"; done ;;
