@@ -206,11 +206,70 @@ fn isSyntheticMainEntrypointCall(v: ast.ValDecl) bool {
 // `.zig` recompile of the table itself is needed.
 const AutoImportedBif = struct { name: []const u8, arity: u8 };
 
-fn loadAutoImportedBifsFromPrelude(
-    alloc: std.mem.Allocator,
-) anyerror!std.ArrayListUnmanaged(AutoImportedBif) {
+/// The two embedded preludes, parsed once for the life of the process.
+///
+/// `emitErlangModule` re-lexed and re-parsed `primitives.bp`
+/// (`collectPrimErlangDispatch`) and `std/erlang`
+/// (`loadAutoImportedBifsFromPrelude`) on EVERY emission, and both sources are
+/// comptime-embedded strings — the same bytes, the same parse, every time. On a
+/// comptime-heavy build that is one whole parse per evaluated declaration
+/// (handed over by `14-comptime-on-beam`, whose step 2 left this as the other
+/// half of the per-evaluation cost).
+///
+/// The memo is safe because nothing writes to what it holds: the AST borrows
+/// only comptime source, `collectIfaceErlangDispatch` deep-copies every triple
+/// it keeps into the emitter's own allocator, and `noAutoImportRefs` only reads
+/// the BIF table. It has its own arena over the page allocator rather than a
+/// caller's, so a test allocator never sees it and the lifetime is the
+/// process's, not one module's. The lock is a spin over `std.atomic.Mutex`'s
+/// `tryLock` — zig 0.16 has no blocking mutex outside `std.Io`, and there is
+/// nothing to contend for after the first parse — because the test runner
+/// compiles on several threads and an arena is not thread-safe.
+const prelude_cache = struct {
+    var mutex: std.atomic.Mutex = .unlocked;
+    var arena: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    var primitives_tried: bool = false;
+    var primitives_program: ?ast.Program = null;
+    var bifs_tried: bool = false;
+    var bifs: []const AutoImportedBif = &.{};
+
+    /// The parsed `primitives.bp`, or null when it does not parse — the caller
+    /// has always swallowed a prelude parse failure, and `primErlangDispatchCount`
+    /// pins what that would cost.
+    fn lock() void {
+        while (!mutex.tryLock()) std.Thread.yield() catch {};
+    }
+
+    fn primitives() ?ast.Program {
+        lock();
+        defer mutex.unlock();
+        if (primitives_tried) return primitives_program;
+        primitives_tried = true;
+        const a = arena.allocator();
+        var lx = lexerMod.Lexer.init(prelude.primitives);
+        const tokens = lx.scanAll(a) catch return null;
+        var p = parserMod.Parser.init(tokens);
+        primitives_program = p.parse(a) catch null;
+        return primitives_program;
+    }
+
+    /// The auto-imported BIF catalog of `libs/std/src/erlang.bp`, empty when the
+    /// module is absent or does not parse.
+    fn autoImportedBifs() []const AutoImportedBif {
+        lock();
+        defer mutex.unlock();
+        if (bifs_tried) return bifs;
+        bifs_tried = true;
+        bifs = parseAutoImportedBifs(arena.allocator()) catch &.{};
+        return bifs;
+    }
+};
+
+/// Parses the catalog into `alloc`, which is `prelude_cache`'s arena: the table
+/// outlives every emission, so the lexer, the AST and the name dupes all live
+/// there together and nothing is freed per call.
+fn parseAutoImportedBifs(alloc: std.mem.Allocator) anyerror![]const AutoImportedBif {
     var out: std.ArrayListUnmanaged(AutoImportedBif) = .empty;
-    errdefer out.deinit(alloc);
 
     // Locate the `std/erlang` module in the embedded pkg registry.
     var source: ?[]const u8 = null;
@@ -220,20 +279,13 @@ fn loadAutoImportedBifsFromPrelude(
             break;
         }
     }
-    if (source == null) return out;
+    if (source == null) return out.items;
 
-    // Parse inside an arena so the lexer + AST scratch storage is freed
-    // wholesale at function exit; only the `.name` dupes that land in
-    // `out` are owned by `alloc` (caller frees via `freeAutoImportedBifs`).
-    var arena = std.heap.ArenaAllocator.init(alloc);
-    defer arena.deinit();
-    const a = arena.allocator();
-
+    const a = alloc;
     var lx = lexerMod.Lexer.init(source.?);
-    const tokens = lx.scanAll(a) catch return out;
+    const tokens = lx.scanAll(a) catch return out.items;
     var p = parserMod.Parser.init(tokens);
-    var program = p.parse(a) catch return out;
-    defer program.deinit(a);
+    const program = p.parse(a) catch return out.items;
 
     for (program.decls) |decl| {
         if (decl != .@"fn") continue;
@@ -251,12 +303,7 @@ fn loadAutoImportedBifsFromPrelude(
             .arity = @intCast(f.params.len),
         });
     }
-    return out;
-}
-
-fn freeAutoImportedBifs(alloc: std.mem.Allocator, list: *std.ArrayListUnmanaged(AutoImportedBif)) void {
-    for (list.items) |b| alloc.free(b.name);
-    list.deinit(alloc);
+    return out.items;
 }
 
 /// `name/arity` of every user function whose name + arity shadows an Erlang
@@ -1182,9 +1229,7 @@ fn emitErlangModule(
     // diagnostic an error, and the directive keeps the generated code
     // OTP-version-independent. The (name, arity) catalog comes from
     // `prelude.erlang_bifs` (`libs/std/src/erlang_bifs.d.bp`).
-    var bif_table = try loadAutoImportedBifsFromPrelude(alloc);
-    defer freeAutoImportedBifs(alloc, &bif_table);
-    const shadows = try noAutoImportRefs(b, program.decls, bif_table.items);
+    const shadows = try noAutoImportRefs(b, program.decls, prelude_cache.autoImportedBifs());
     if (shadows.len > 0) try forms.append(b.arena, .{ .no_auto_import = shadows });
 
     // Collect public function names for export.
@@ -2303,21 +2348,16 @@ const Emitter = struct {
             try this.collectIfaceErlangDispatch(decl.behavior);
             try this.collectIfaceExtendsChain(decl.behavior);
         }
-        // Reparse `primitives.d.bp` from the embedded prelude so the dispatch
-        // map sees `String`/`Bool`/numeric interfaces even when the module
-        // didn't get them stubbed into `program.decls` (they're only stubbed
-        // for `default fn` stdlib lib dispatch — host-backed instance methods
-        // like `s.toUpper()` don't trip that path). The parse is per-emit and
-        // throwaway; we keep only the (iface, method, external-ref) triples we
-        // need by deep-copying into the emitter's allocator.
-        var arena = std.heap.ArenaAllocator.init(this.alloc);
-        defer arena.deinit();
-        const alloc_arena = arena.allocator();
-        var lx = lexerMod.Lexer.init(prelude.primitives);
-        const tokens = lx.scanAll(alloc_arena) catch return;
-        var p = parserMod.Parser.init(tokens);
-        var prim_program = p.parse(alloc_arena) catch return;
-        defer prim_program.deinit(alloc_arena);
+        // `primitives.d.bp` from the embedded prelude, so the dispatch map sees
+        // `String`/`Bool`/numeric interfaces even when the module didn't get
+        // them stubbed into `program.decls` (they're only stubbed for
+        // `default fn` stdlib lib dispatch — host-backed instance methods like
+        // `s.toUpper()` don't trip that path). The parse is memoised for the
+        // process (`prelude_cache`) because the source is a comptime string and
+        // nothing here writes to the AST: only the (iface, method,
+        // external-ref) triples are kept, deep-copied into the emitter's
+        // allocator.
+        const prim_program = prelude_cache.primitives() orelse return;
         for (prim_program.decls) |decl| {
             if (decl != .behavior) continue;
             try this.collectIfaceErlangDispatch(decl.behavior);

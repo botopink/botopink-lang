@@ -454,6 +454,22 @@ codegen/
   expression is already right here: an erlang clause body's last expression is
   its value, so `caseBodyNode` needs nothing (the commonJS/beam/wasm IIFE shape
   is where that half of the handover lands).
+- **The two embedded preludes are parsed once per process, not once per
+  emission** (`prelude_cache`). `collectPrimErlangDispatch` re-lexed and
+  re-parsed `primitives.bp`, and `noAutoImportRefs`'s catalog re-parsed
+  `std/erlang`, on **every** `emitErlangModule` — both are comptime-embedded
+  strings, so it was the same bytes and the same parse each time. Memoising them
+  in an arena of their own (over the page allocator, so no caller's allocator and
+  no test-allocator leak) takes `collectPrimErlangDispatch` from **4.615 ms to
+  2.380 ms** per call (20 calls, Debug) and `botopink build --target erlang` over
+  `libs/std`'s 27 modules from **309 ms to 239 ms**. What remains is the
+  per-emitter deep copy of the triples it keeps, which is by design. It is safe
+  because nothing writes to the cached AST: the nodes borrow only comptime source,
+  `collectIfaceErlangDispatch` copies every triple into the emitter's own
+  allocator, and the BIF table is read-only. The lock is a spin over
+  `std.atomic.Mutex.tryLock` — zig 0.16 has no blocking mutex outside `std.Io`,
+  the test runner compiles on several threads, and after the first parse there is
+  nothing to contend for. Handed over by `14-comptime-on-beam`.
 - **Modules are `erl_ast` forms**: `emitErlangModule` builds every form in one
   arena and renders them with `erl_emitter.writeForms`: `-module`,
   `-compile({no_auto_import,…})` (`noAutoImportRefs`), `-export`s, then each
