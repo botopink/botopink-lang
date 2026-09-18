@@ -1037,6 +1037,13 @@ first three are now enforced by the model, not by discipline:
   parse error, and `wat_ast.Builder.param` refuses to build one.
 - **Entrypoint** (`emitEntrypointWrapper`): calls `$main` and `drop`s its
   result when `main` returns a value (`main_returns_value`).
+- **§7 F5 — an `f64` always carries its decimal part** (`$__print_f64_raw`):
+  `@print(5.0)` writes `5.0`, `9.0` and `[115.0, 287.5, 460.0]`, where the
+  printer used to drop a whole number's fraction entirely (`5`, `9`,
+  `[115,287.5,460]`). The fraction digits are already written; only the "was any
+  of them non-zero" test changes. **`$__f64_to_str` is not this path**: it is
+  what a float concatenated into a string (`"x" + 5.0`, `5.0.toString()`) takes,
+  and commonJS answers `x5` there, so it still drops the fraction.
 - **Decision 30's index expression** (`lowerIndex`): the parser lands `xs[0]`
   as the reserved builtin call `ast.index_builtin_name` (`"[]"`) over
   `(receiver, index)`, and `xs[0..2]` is the same node with a `range` where the

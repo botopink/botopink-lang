@@ -452,6 +452,15 @@ const print_f64_raw = ast.Func{
                 } } },
             } },
         } } },
+        .{ .indent = 4, .instr = .{ .comment = "§7 F5: an f64 always carries its decimal part — `5.0`, never `5`" } },
+        .{ .indent = 4, .instr = .{ .local_get = "last" } },
+        .{ .indent = 4, .instr = .{ .op = .{ .ty = .i32, .name = "eqz" } } },
+        .{ .indent = 4, .instr = .{ .@"if" = .{
+            .then = .{ .seq = .{ .stack = .none, .lines = &.{
+                .{ .indent = 8, .instr = .{ .@"const" = .{ .ty = .i32, .text = "1" } } },
+                .{ .indent = 8, .instr = .{ .local_set = "last" } },
+            } } },
+        } } },
         .{ .indent = 4, .instr = .{ .local_get = "last" } },
         .{ .indent = 4, .instr = .{ .@"if" = .{
             .then = .{ .seq = .{ .stack = .none, .lines = &.{
@@ -1188,9 +1197,11 @@ fn getF(comptime n: []const u8) Instr {
     return .{ .local_get = n };
 }
 
-/// The text `$__print_f64` writes, as a fresh string: an integer part and up to
-/// six fraction digits with trailing zeros dropped. The fraction digits go to
-/// scratch `168..174` first.
+/// The text a float **concatenated into a string** takes (`"x" + 5.0`,
+/// `5.0.toString()`), as a fresh string: an integer part and up to six fraction
+/// digits with trailing zeros dropped. §7 F5 is about `@print`, which goes
+/// through `$__print_f64_raw`; commonJS answers `x5` here, so this one keeps
+/// dropping a whole number's fraction. The digits go to scratch `168..174`.
 const f64_to_str = typedFunc("__f64_to_str", &.{.{ .name = "x", .ty = .f64 }}, .i32, &.{
     .{ .name = "neg", .ty = .i32 }, .{ .name = "frac", .ty = .f64 }, .{ .name = "d", .ty = .i32 },
     .{ .name = "k", .ty = .i32 },   .{ .name = "last", .ty = .i32 }, .{ .name = "ip", .ty = .i32 },
@@ -1224,7 +1235,7 @@ const f64_to_str = typedFunc("__f64_to_str", &.{.{ .name = "x", .ty = .f64 }}, .
 /// `[115,287.5,460]` — the elements of an f32 array, printed like `$__print_f64`.
 const print_arr_f32_raw = func("__print_arr_f32_raw", &.{"xs"}, null, i32s(&.{ "n", "i" }), &(putByte('[') ++ .{call("__write_bytes")} ++ [_]Instr{
     get("xs"), load(0), set("n"),
-    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk, get("i"), when(&(putByte(',') ++ .{call("__write_bytes")})) } ++ slot("xs", "i") ++ [_]Instr{
+    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk, get("i"), when(&(putByte(',') ++ [_]Instr{call("__write_bytes")})) } ++ slot("xs", "i") ++ [_]Instr{
         .{ .load = .{ .ty = .f32 } }, .{ .convert = "f64.promote_f32" }, call("__print_f64_raw"),
         get("i"),                     c32(1),                            op("add"),
         set("i"),                     again,
