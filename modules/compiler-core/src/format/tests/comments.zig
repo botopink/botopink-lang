@@ -8,7 +8,7 @@ const formatMod = @import("../../format.zig");
 const h = @import("helpers.zig");
 
 test "format: todo ---- simple" {
-    try h.assertFormat(std.testing.allocator,
+    try h.assertFormatLossless(std.testing.allocator,
         \\fn main() {
         \\    todo;
         \\}
@@ -16,7 +16,7 @@ test "format: todo ---- simple" {
 }
 
 test "format: todo ---- with message" {
-    try h.assertFormat(std.testing.allocator,
+    try h.assertFormatLossless(std.testing.allocator,
         \\fn main() {
         \\    @todo("todo with a label");
         \\}
@@ -24,7 +24,7 @@ test "format: todo ---- with message" {
 }
 
 test "format: comments ---- single line before fn" {
-    try h.assertFormat(std.testing.allocator,
+    try h.assertFormatLossless(std.testing.allocator,
         \\// one
         \\fn main() {
         \\    null;
@@ -33,7 +33,7 @@ test "format: comments ---- single line before fn" {
 }
 
 test "format: comments ---- multiple lines before fn" {
-    try h.assertFormat(std.testing.allocator,
+    try h.assertFormatLossless(std.testing.allocator,
         \\// one
         \\// two
         \\fn main() {
@@ -43,7 +43,7 @@ test "format: comments ---- multiple lines before fn" {
 }
 
 test "format: comments ---- inside function" {
-    try h.assertFormat(std.testing.allocator,
+    try h.assertFormatLossless(std.testing.allocator,
         \\fn main() {
         \\    // Hello
         \\    // world
@@ -53,7 +53,7 @@ test "format: comments ---- inside function" {
 }
 
 test "format: comments ---- between statements" {
-    try h.assertFormat(std.testing.allocator,
+    try h.assertFormatLossless(std.testing.allocator,
         \\fn main() {
         \\    // Hello
         \\    1;
@@ -64,7 +64,7 @@ test "format: comments ---- between statements" {
 }
 
 test "format: comments ---- trailing after function" {
-    try h.assertFormat(std.testing.allocator,
+    try h.assertFormatLossless(std.testing.allocator,
         \\fn main() {
         \\    x;
         \\}
@@ -74,7 +74,7 @@ test "format: comments ---- trailing after function" {
 }
 
 test "format: comments ---- inside list" {
-    try h.assertFormat(std.testing.allocator,
+    try h.assertFormatLossless(std.testing.allocator,
         \\fn main() {
         \\    [
         \\        // One
@@ -87,7 +87,7 @@ test "format: comments ---- inside list" {
 }
 
 test "format: comments ---- inside call" {
-    try h.assertFormat(std.testing.allocator,
+    try h.assertFormatLossless(std.testing.allocator,
         \\fn main() {
         \\    one(
         \\        // One
@@ -100,7 +100,7 @@ test "format: comments ---- inside call" {
 }
 
 test "format: doc comment ---- before fn" {
-    try h.assertFormat(std.testing.allocator,
+    try h.assertFormatLossless(std.testing.allocator,
         \\/// This is a documented function
         \\fn main() {
         \\    null;
@@ -109,7 +109,7 @@ test "format: doc comment ---- before fn" {
 }
 
 test "format: doc comment ---- multiline before fn" {
-    try h.assertFormat(std.testing.allocator,
+    try h.assertFormatLossless(std.testing.allocator,
         \\/// First line of documentation
         \\/// Second line of documentation
         \\fn greet(name: string) -> string {
@@ -119,28 +119,28 @@ test "format: doc comment ---- multiline before fn" {
 }
 
 test "format: doc comment ---- before a record with no fields" {
-    try h.assertFormat(std.testing.allocator,
+    try h.assertFormatLossless(std.testing.allocator,
         \\/// User account structure
         \\type Account
     );
 }
 
 test "format: doc comment ---- before an enum-shaped type" {
-    try h.assertFormat(std.testing.allocator,
+    try h.assertFormatLossless(std.testing.allocator,
         \\/// Color enumeration
         \\type Color { Red, Blue }
     );
 }
 
 test "format: doc comment ---- before a behavior" {
-    try h.assertFormat(std.testing.allocator,
+    try h.assertFormatLossless(std.testing.allocator,
         \\/// Drawable behavior
         \\behavior Drawable {}
     );
 }
 
 test "format: doc comments ---- module level" {
-    try h.assertFormat(std.testing.allocator,
+    try h.assertFormatLossless(std.testing.allocator,
         \\//// One
         \\//// Two
         \\//// Three
@@ -154,7 +154,7 @@ test "format: doc comments ---- module level" {
 }
 
 test "format: comments ---- at end of anonymous fn" {
-    try h.assertFormat(std.testing.allocator,
+    try h.assertFormatLossless(std.testing.allocator,
         \\fn main() {
         \\    fn() {
         \\        1;
@@ -168,7 +168,7 @@ test "format: comments ---- at end of anonymous fn" {
 }
 
 test "format: comments ---- multiline inside case block" {
-    try h.assertFormat(std.testing.allocator,
+    try h.assertFormatLossless(std.testing.allocator,
         \\fn main() {
         \\    case list {
         \\        [] -> acc;
@@ -181,7 +181,7 @@ test "format: comments ---- multiline inside case block" {
 }
 
 test "format: todo ---- with message and comment" {
-    try h.assertFormat(std.testing.allocator,
+    try h.assertFormatLossless(std.testing.allocator,
         \\fn main() {
         \\    @todo("wibble");
         \\}
@@ -189,7 +189,7 @@ test "format: todo ---- with message and comment" {
 }
 
 test "format: comments ---- member comments and blank lines in a behavior body are kept" {
-    try h.assertFormat(std.testing.allocator,
+    try h.assertFormatLossless(std.testing.allocator,
         \\// ── numbers ──
         \\
         \\pub behavior Router {
@@ -222,7 +222,7 @@ test "format: comments ---- member comments and blank lines in a behavior body a
 }
 
 test "format: comments ---- an empty module comment line has no trailing space" {
-    try h.assertFormat(std.testing.allocator,
+    try h.assertFormatLossless(std.testing.allocator,
         \\//// A module.
         \\////
         \\//// More.
@@ -239,7 +239,7 @@ test "format: comments ---- an empty module comment line has no trailing space" 
 // now that the branches share `fmtStmtSeq` with `fn`, `test` and lambda bodies.
 
 test "format: comments ---- an else-branch keeps a blank line between statements" {
-    try h.assertFormat(std.testing.allocator,
+    try h.assertFormatLossless(std.testing.allocator,
         \\fn f(a: bool) -> i32 {
         \\    var n = 0;
         \\    if (a) {
@@ -256,7 +256,7 @@ test "format: comments ---- an else-branch keeps a blank line between statements
 }
 
 test "format: comments ---- an else-branch keeps a trailing comment on its line" {
-    try h.assertFormat(std.testing.allocator,
+    try h.assertFormatLossless(std.testing.allocator,
         \\fn f(a: bool) -> i32 {
         \\    var n = 0;
         \\    if (a) {
@@ -276,7 +276,7 @@ test "format: comments ---- an else-branch keeps a trailing comment on its line"
 // idempotent afterwards — so `format --check` went green on the thinned file.
 
 test "format: comments ---- an enum variant keeps its leading and trailing comments" {
-    try h.assertFormat(std.testing.allocator,
+    try h.assertFormatLossless(std.testing.allocator,
         \\type Color {
         \\    // the warm one
         \\    Red, // warm
@@ -286,7 +286,7 @@ test "format: comments ---- an enum variant keeps its leading and trailing comme
 }
 
 test "format: comments ---- a record field keeps its trailing comment, including the last" {
-    try h.assertFormat(std.testing.allocator,
+    try h.assertFormatLossless(std.testing.allocator,
         \\type Point(
         \\    x: i32, // the horizontal coordinate
         \\    y: i32, // the vertical one
@@ -295,7 +295,7 @@ test "format: comments ---- a record field keeps its trailing comment, including
 }
 
 test "format: comments ---- a method keeps its trailing comment on its own line" {
-    try h.assertFormat(std.testing.allocator,
+    try h.assertFormatLossless(std.testing.allocator,
         \\type Box(n: i32) {
         \\    fn one(self: Self) -> i32 {
         \\        return 1;
