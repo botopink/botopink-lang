@@ -1081,6 +1081,30 @@ pub const Param = struct {
     /// consume the same fallback shape (see infer.zig arity check + the
     /// `fn-param-default-expansion` future spec for call-site injection).
     default: ?Expr = null,
+    /// Where the type annotation starts (`x: Foo` → `Foo`'s column). Set by the
+    /// parser; `{0,0}` when the param was synthesised. Carries the location an
+    /// unknown type name reds at (06 N30) and is left out of the AST dump.
+    typeLoc: Loc = .{ .line = 0, .col = 0 },
+
+    /// Dumped without `typeLoc`: the location is a diagnostic aid, not surface.
+    pub fn jsonStringify(this: Param, jws: anytype) !void {
+        try jws.beginObject();
+        try jws.objectField("name");
+        try jws.write(this.name);
+        try jws.objectField("typeRef");
+        try jws.write(this.typeRef);
+        try jws.objectField("typeName");
+        try jws.write(this.typeName);
+        try jws.objectField("modifier");
+        try jws.write(this.modifier);
+        try jws.objectField("fnType");
+        try jws.write(this.fnType);
+        try jws.objectField("destruct");
+        try jws.write(this.destruct);
+        try jws.objectField("default");
+        try jws.write(this.default);
+        try jws.endObject();
+    }
 
     pub fn deinit(this: *Param, allocator: std.mem.Allocator) void {
         this.typeRef.deinit(allocator);
@@ -1115,6 +1139,9 @@ pub const BehaviorMethod = struct {
     params: []Param,
     /// Return type annotation. null for void methods.
     returnType: ?TypeRef = null,
+    /// Where the return-type annotation starts (06 N30); `{0,0}` when the
+    /// member was synthesised. Left out of the AST dump.
+    returnTypeLoc: Loc = .{ .line = 0, .col = 0 },
     body: ?[]Stmt,
     /// true when declared with `default fn` in an interface body
     is_default: bool = false,
@@ -1175,7 +1202,7 @@ pub const BehaviorMethod = struct {
     }
 
     pub fn jsonStringify(this: BehaviorMethod, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{}, &.{"comments"});
+        return stringifyOmitting(this, jws, &.{"returnTypeLoc"}, &.{"comments"});
     }
 };
 
@@ -1823,6 +1850,10 @@ pub const FnDecl = struct {
     params: []Param,
     /// null when the return type is omitted (void-returning functions).
     returnType: ?TypeRef,
+    /// Where the return-type annotation starts (`-> Foo` → `Foo`'s column). Set
+    /// by the parser; `{0,0}` when the fn was synthesised. Carries the location
+    /// an unknown type name reds at (06 N30) and is left out of the AST dump.
+    returnTypeLoc: Loc = .{ .line = 0, .col = 0 },
     /// When non-null, this fn is a type guard: `fn f(x: T) -> x is NarrowedType`.
     /// The string names the parameter being narrowed. The return type (above)
     /// holds the narrowed type.
@@ -1881,6 +1912,12 @@ pub const FnDecl = struct {
         return null;
     }
 
+    /// Dumped without `returnTypeLoc`: the location is a diagnostic aid, not
+    /// surface, and the AST dumps are snapshot-compared.
+    pub fn jsonStringify(this: FnDecl, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{"returnTypeLoc"}, &.{});
+    }
+
     pub fn deinit(this: *FnDecl, allocator: std.mem.Allocator) void {
         for (this.annotations) |*ann| ann.deinit(allocator);
         allocator.free(this.annotations);
@@ -1909,6 +1946,9 @@ pub const Field = struct {
     /// (`type Config(\n // where it listens\n host: string)`), text only.
     /// Owned. Kept so the formatter prints them back.
     comments: []const []const u8 = &.{},
+    /// Where the field's type annotation starts (06 N30). `{0,0}` when
+    /// synthesised. Left out of the AST dump.
+    typeLoc: Loc = .{ .line = 0, .col = 0 },
 
     pub fn deinit(this: *Field, allocator: std.mem.Allocator) void {
         this.typeRef.deinit(allocator);

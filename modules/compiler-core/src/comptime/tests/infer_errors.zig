@@ -855,3 +855,55 @@ test "infer error: section ---- a refined section arm leaves the wrapper uncover
         \\}
     );
 }
+
+// ── C10 / N30 — an annotation that names no type reds at the annotation ───────
+// The resolution is two-pass: a name nothing declares yet is recorded with its
+// location and re-checked once every declaration of the module is registered,
+// so a forward reference resolves and only a name nothing declares reds. The
+// caret is the annotation's, carried by `Param.typeLoc` / `Field.typeLoc` /
+// `FnDecl.returnTypeLoc`.
+
+test "infer error: unknown type ---- a param annotation names nothing" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn f(p: NoSuchType) -> i32 { return 1; }
+    );
+}
+
+test "infer error: unknown type ---- a field annotation names nothing" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type Q(lat: bogusType)
+    );
+}
+
+test "infer error: unknown type ---- a return annotation names nothing" {
+    // An associated fn of a `behavior`: the signature is registered without a
+    // body, so the annotation is what reds. (A `fn` with a body reds on the
+    // returned value first — a different row.)
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\behavior Maker { fn make() -> NoSuchType; }
+    );
+}
+
+test "infer error: unknown type ---- a variant field annotation names nothing" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type Shape { Circle(r: bogusType), Square(side: f64) }
+    );
+}
+
+test "infer: unknown type ---- a forward reference to a type declared below checks" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type Outer(inner: Inner)
+        \\type Inner(n: i32)
+        \\fn f(o: Outer) -> i32 { return o.inner.n; }
+    );
+}
+
+test "infer: unknown type ---- a behavior names a type in annotation position" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\behavior Counter { fn value(self: Self) -> i32; }
+        \\type Clicks(n: i32) implement Counter {
+        \\    fn value(self: Self) -> i32 { return self.n; }
+        \\}
+        \\fn read(c: Counter) -> i32 { return c.value(); }
+    );
+}

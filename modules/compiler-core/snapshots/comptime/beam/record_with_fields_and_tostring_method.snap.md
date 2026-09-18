@@ -1,8 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 val GPSCoordinates = type(
-    lat: number,
-    lon: number) {
+    lat: f64,
+    lon: f64) {
     fn toString(self: Self) -> string {
         return "Lat: " + self.lat + " Lon: " + self.lon;
     }
@@ -18,8 +18,8 @@ val GPSCoordinates = type(
       "name": "GPSCoordinates",
       "id": 0,
       "fields": {
-        "lat": "number",
-        "lon": "number"
+        "lat": "f64",
+        "lon": "f64"
       }
     }
   ]

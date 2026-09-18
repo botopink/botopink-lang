@@ -100,6 +100,14 @@ the access loc), so two links sharing a loc collide — `self.pairs.length` woul
 emit `length(length(Self))`. `parsePostfixChain` and the identifier postfix loop
 both use `locFromToken(fieldTok)` for this reason.
 
+## Type-annotation locations
+
+`Param.typeLoc`, `Field.typeLoc` and `FnDecl`/`BehaviorMethod`'s `returnTypeLoc` hold the first token
+of the annotation (`x: Foo` → `Foo`'s column, `-> Foo` → `Foo`'s). `decls.zig` sets them next to
+every `parseTypeRef` call; `{0,0}` means the declaration was synthesised. They exist so an unknown
+type name reds at the annotation (06 N30) and are kept out of the AST dumps by the `jsonStringify`
+of each struct, so adding one moved no snapshot.
+
 ## Error locations (`ParseErrorInfo`)
 
 Build every diagnostic with `ParseErrorInfo.fromToken(kind, tok)` (or

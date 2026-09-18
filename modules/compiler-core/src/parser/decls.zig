@@ -342,6 +342,9 @@ pub fn parseFnBody(
     }
 
     var returnType: ?ast.TypeRef = null;
+    // 06 N30 — where the return-type annotation starts, so an unknown type name
+    // reds there instead of at the file.
+    var returnTypeLoc: ast.Loc = .{ .line = 0, .col = 0 };
     var arrowOmitted = false;
     var typeGuardParam: ?[]const u8 = null;
     if (this.match(.rightArrow)) {
@@ -349,8 +352,10 @@ pub fn parseFnBody(
         if (this.check(.identifier) and this.peekAt(1).kind == .is) {
             typeGuardParam = this.advance().lexeme;
             _ = try this.consume(.is);
+            returnTypeLoc = parser.Parser.locFromToken(this.peek());
             returnType = try this.parseTypeRef(alloc);
         } else {
+            returnTypeLoc = parser.Parser.locFromToken(this.peek());
             returnType = try this.parseTypeRef(alloc);
         }
     } else if (!this.check(.leftBrace) and !this.check(.semicolon) and
@@ -361,6 +366,7 @@ pub fn parseFnBody(
         // body — implicit declaration. The arrow-less form is the convention
         // in `libs/std/src/builtins.d.bp` (`fn typeOf<T>(val: T) type`,
         // `fn min<T>(a: T, b: T) T`). Treat as a bodyless `declare fn`.
+        returnTypeLoc = parser.Parser.locFromToken(this.peek());
         returnType = try this.parseTypeRef(alloc);
         arrowOmitted = true;
     }
@@ -430,6 +436,7 @@ pub fn parseFnBody(
             .genericParams = genericParams,
             .params = params,
             .returnType = returnType,
+            .returnTypeLoc = returnTypeLoc,
             .typeGuardParam = typeGuardParam,
             .body = &.{},
         };
@@ -447,6 +454,7 @@ pub fn parseFnBody(
         .genericParams = genericParams,
         .params = params,
         .returnType = returnType,
+        .returnTypeLoc = returnTypeLoc,
         .typeGuardParam = typeGuardParam,
         .body = body,
     };
@@ -577,7 +585,9 @@ pub fn parseMethodDecl(this: *This, alloc: std.mem.Allocator, is_declare: bool, 
     }
 
     var returnType: ?ast.TypeRef = null;
+    var returnTypeLoc: ast.Loc = .{ .line = 0, .col = 0 }; // 06 N30
     if (this.match(.rightArrow)) {
+        returnTypeLoc = parser.Parser.locFromToken(this.peek());
         returnType = try this.parseTypeRef(alloc);
     }
     errdefer if (returnType) |*rt| rt.deinit(alloc);
@@ -589,6 +599,7 @@ pub fn parseMethodDecl(this: *This, alloc: std.mem.Allocator, is_declare: bool, 
             .genericParams = genericParams,
             .params = params,
             .returnType = returnType,
+            .returnTypeLoc = returnTypeLoc,
             .body = null,
             .is_default = false,
             .is_declare = true,
@@ -602,6 +613,7 @@ pub fn parseMethodDecl(this: *This, alloc: std.mem.Allocator, is_declare: bool, 
         .genericParams = genericParams,
         .params = params,
         .returnType = returnType,
+        .returnTypeLoc = returnTypeLoc,
         .body = body,
         .is_default = false,
         .is_declare = false,
@@ -872,6 +884,7 @@ fn parseEnumItem(
         while (!this.check(.rightParenthesis) and !this.check(.endOfFile)) {
             const fieldName = (try this.consume(.identifier)).lexeme;
             _ = try this.consume(.colon);
+            const fieldTypeTok = this.peek();
             var fieldType = try this.parseTypeRef(alloc);
             errdefer fieldType.deinit(alloc);
             // Variant fields can carry a default just like record fields
@@ -880,7 +893,12 @@ fn parseEnumItem(
             if (this.match(.equal)) {
                 variantDefault = try this.parseBinaryExpr(alloc, prec.equality);
             }
-            try fields.append(alloc, .{ .name = fieldName, .typeRef = fieldType, .default = variantDefault });
+            try fields.append(alloc, .{
+                .name = fieldName,
+                .typeRef = fieldType,
+                .default = variantDefault,
+                .typeLoc = parser.Parser.locFromToken(fieldTypeTok),
+            });
             if (!this.match(.comma)) break;
         }
         _ = try this.consume(.rightParenthesis);
@@ -980,8 +998,14 @@ pub fn parseParam(this: *This, alloc: std.mem.Allocator) ParseError!Param {
         _ = this.advance(); // consume 'comptime'
         const name = (try this.consumeParamName()).lexeme;
         _ = try this.consume(.colon);
+        const typeTok = this.peek();
         const typeRef = try this.parseTypeRef(alloc);
-        return Param{ .name = name, .typeRef = typeRef, .modifier = .@"comptime" };
+        return Param{
+            .name = name,
+            .typeRef = typeRef,
+            .modifier = .@"comptime",
+            .typeLoc = parser.Parser.locFromToken(typeTok),
+        };
     }
 
     // ── regular param: name ['comptime'] ':' ['syntax'] type_expr ───────────
@@ -1035,6 +1059,8 @@ pub fn parseParam(this: *This, alloc: std.mem.Allocator) ParseError!Param {
     }
 
     // ── plain type (use full TypeRef to support arrays, optionals, etc.) ─
+    // 06 N30 — where the annotation starts, so an unknown type name reds there.
+    const typeTok = this.peek();
     var typeRef = try this.parseTypeRef(alloc);
     // Meta-kind params (`type`) only exist at compile time — require the
     // `comptime` modifier so the binding-time is visible in the signature.
@@ -1054,7 +1080,13 @@ pub fn parseParam(this: *This, alloc: std.mem.Allocator) ParseError!Param {
     if (this.match(.equal)) {
         defaultExpr = try this.parseBinaryExpr(alloc, prec.equality);
     }
-    return Param{ .name = name, .typeRef = typeRef, .modifier = modifier, .default = defaultExpr };
+    return Param{
+        .name = name,
+        .typeRef = typeRef,
+        .modifier = modifier,
+        .default = defaultExpr,
+        .typeLoc = parser.Parser.locFromToken(typeTok),
+    };
 }
 
 // ── 1.0.3 surface: `type` and `behavior` (front 12 dual grammar) ──────────────
@@ -1116,6 +1148,7 @@ pub fn parseFieldList(this: *This, alloc: std.mem.Allocator) ParseError!FieldLis
         if (this.check(.val)) return failAt(this, .typeFieldValPrefix, this.peek());
         const nameTok = try this.consumeMemberName();
         _ = try this.consume(.colon);
+        const fieldTypeTok = this.peek();
         var fieldType = try this.parseTypeRef(alloc);
         errdefer fieldType.deinit(alloc);
         var default: ?Expr = null;
@@ -1127,6 +1160,7 @@ pub fn parseFieldList(this: *This, alloc: std.mem.Allocator) ParseError!FieldLis
             .default = default,
             .annotations = annotations,
             .comments = commentSlice,
+            .typeLoc = parser.Parser.locFromToken(fieldTypeTok),
         });
         trailingComma = this.match(.comma);
         if (!trailingComma) break;
@@ -1429,7 +1463,11 @@ fn parseBehaviorMethod(this: *This, alloc: std.mem.Allocator, is_default: bool) 
         alloc.free(params);
     }
     var returnType: ?ast.TypeRef = null;
-    if (this.match(.rightArrow)) returnType = try this.parseTypeRef(alloc);
+    var returnTypeLoc: ast.Loc = .{ .line = 0, .col = 0 }; // 06 N30
+    if (this.match(.rightArrow)) {
+        returnTypeLoc = parser.Parser.locFromToken(this.peek());
+        returnType = try this.parseTypeRef(alloc);
+    }
     errdefer if (returnType) |*rt| rt.deinit(alloc);
 
     if (!is_default) {
@@ -1439,6 +1477,7 @@ fn parseBehaviorMethod(this: *This, alloc: std.mem.Allocator, is_default: bool) 
             .genericParams = genericParams,
             .params = params,
             .returnType = returnType,
+            .returnTypeLoc = returnTypeLoc,
             .body = null,
             .is_default = false,
         };
@@ -1450,6 +1489,7 @@ fn parseBehaviorMethod(this: *This, alloc: std.mem.Allocator, is_default: bool) 
         .genericParams = genericParams,
         .params = params,
         .returnType = returnType,
+        .returnTypeLoc = returnTypeLoc,
         .body = body,
         .is_default = true,
     };
