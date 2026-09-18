@@ -1,0 +1,21 @@
+//// A method on a parenthesised expression — decision 28's `(expr).method`,
+//// landed as front 15's R3. The three forms this suite listed as separate gaps
+//// (`(sql """ab""").length`, `(a == b).toString()`, `("ab").length`) are one
+//// production, and none of them needs a dependency to measure.
+////
+//// `42.toString()` — the same production over a number literal — is NOT here:
+//// it checks, and prints `42` on erlang and wasm, but the commonJS emitter
+//// writes `__bp_print(42.toString())` and node refuses it with
+//// `SyntaxError: Invalid or unexpected token`, because `42.` reads as a float.
+//// No step of `04-js` names that defect, so it is reported to the maintainer
+//// rather than listed here against an invented row.
+
+test "a method on a parenthesised string literal" { assert ("ab").length == 2; }
+
+test "a method on a parenthesised comparison" { assert (1 == 2).toString() == "false"; }
+
+test "a method on a parenthesised comparison that holds" { assert (2 == 2).toString() == "true"; }
+
+test "a method on a parenthesised arithmetic expression" { assert (1 + 2).toString() == "3"; }
+
+test "a method chain off a parenthesised receiver" { assert ("a,b,c").split(",").length == 3; }

@@ -52,3 +52,9 @@ test "§6 T3 labels survive an inferred val" {
     val b = a;
     assert b.pop == 1;
 }
+
+test "§6 T4 a label survives a generic array method" {
+    val rs: #(a: i32, b: string)[] = [#(1, "x"), #(2, "y")];
+    assert rs.at(0).b == "x";
+    assert rs.at(1).a == 2;
+}

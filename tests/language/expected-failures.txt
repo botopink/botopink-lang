@@ -54,6 +54,8 @@ erlang   | run/case_values.bp         | 01 step 4 | `.Variant` arms are not reso
 
 # ── §6 tuples ─────────────────────────────────────────────────────────────────
 erlang   | run/tuple_print.bp         | 02 step 1 | prints decision 1a's text without spaces (`#(1,"a")`); §7 wants `#(1, "a")`
+commonJS | test/tuple_labels.bp::§6 T4 a label survives a generic array method | 04 step 2 | a label is resolved to a position at the written type, and an element handed back by a generic method (`rs.at(0)`) has lost it: `rs.at(0).b` answers `undefined`. The element type is right, the label is not carried
+erlang   | test/tuple_labels.bp::§6 T4 a label survives a generic array method | 02 step 4 | the same, louder: `rs.at(0).b` raises `bad map: {1,<<"x">>}` in `map_get/2` — the label is emitted as a map read against a tuple. (wasm answers `0`; no `test/` cell reaches wasm)
 
 # ── §5.3b sections (decision 8 §5) ────────────────────────────────────────────
 commonJS | test/case_sections.bp      | 01 step 4 | re-measured: §5.3b section arms now parse; the failure is the arm-body one every other case cell has — "expected string, got void" at the `case`. A section is still not a type named by its path
@@ -107,6 +109,22 @@ wasm     | run/tuple_print.bp         | 05 step 1 | prints decision 1a's text wi
 wasm     | run/print_formatter.bp     | 05 step 1, 13 step 18 | §7 formatter: `f64` prints without its decimal part, arrays/tuples without spaces, and a record or a variant prints as its raw heap address
 wasm     | run/display_print.bp       | 05 step 1, 13 step 18 | §7: `@print` does not consult `Display`; the record prints as its raw heap address
 wasm     | modules/std_import         | 05 step 3 | a std `Dict` lookup through a user module answers the fallback (`0`) instead of the stored value, with exit 0 and no diagnostic
+
+# ── the forms front 15 landed, that nothing lowers or types yet ─────────────
+# `109f6c9` made five forms parse. Three of them run everywhere and are pinned by
+# passing cells (`test/nullish_default.bp`, `test/paren_receiver.bp`,
+# `test/type_suffix.bp`, `test/bodyless_fn.bp`). Two arrive with no lowering and no
+# typing, and their owner is a **handover section** of a front's README — "Handed
+# over by `15-language-surface`" — not a numbered step, which is what
+# `<front> handover 15` means below. That those sections carry no step number is
+# reported to the maintainer, not papered over with an invented one.
+commonJS | run/index_expression.bp    | 04 handover 15 | decision 30: the index reaches the unrecognised-builtin path, so the emitted JS reads `__bp_print(@[](xs, 0))` and node refuses it with `SyntaxError: Invalid or unexpected token`
+erlang   | run/index_expression.bp    | 02 handover 15 | decision 30: the same node emits a call to `'[]'/2`, which is never defined — `out/main.erl:45:19: function '[]'/2 undefined`
+wasm     | run/index_expression.bp    | 05 handover 15 | decision 30: the same node emits nothing and the module will not validate — `type mismatch: expected i32 but nothing on stack` at `wasm[0]::function[1]::main`
+beam     | run/index_expression.bp    | 03 handover 15 | decision 30: the only target that fails **silently** — exit 0, and the index is dropped rather than emitted: `xs[0]` prints the whole array (`[10,20,30]`), `xs[0..2].length` and `rows[1][0]` print `ok`
+commonJS | test/curried_call.bp       | 01 handover 15 | 15's R2 made `adder(3)(4)` parse; inference does not type it. The call carries its callee in `calleeExpr`, not `callee`, and nothing reads that: the whole cell reds with `unbound variable ''` at the second `(`
+erlang   | test/curried_call.bp       | 01 handover 15 | the same — the cell does not compile, so the failure is the file's, not a test's
+commonJS | test/nullish_default.bp::?? chains after ?. | 04 (no step; reported 2026-09-18) | `a ?? b` desugars into the optional-binding `if`, which commonJS emits as `if (n !== null)`; `?.` on commonJS answers `undefined`, not `null`, so `o.inner?.v ?? 9` answers `undefined` here and `9` on erlang and wasm. `test/optional.bp` does not see it because its optionals are explicit `null`s. Front 04 owns `commonJS.zig`; no step of `04-js` names this row
 
 # ── run-time type identity (front 12 step 4.1) ────────────────────────────────
 # The botopink-level statement of `13-module-identity`: a value knows its own
