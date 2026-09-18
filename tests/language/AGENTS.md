@@ -125,7 +125,18 @@ rows sit in the file while beam stays out of `--target all`.
 
 ## Status and the gate
 
-Coverage: **68 cells** besides the three smoke files — front 15's 31, and 37 added by front 17.
+Counted on disk at `eeff1e1`:
+
+```bash
+ls test/*.bp    | wc -l   # 40
+ls run/*.bp     | wc -l   #  6   (each with its .out)
+ls reject/*.bp  | wc -l   # 22   (each with its .expect)
+ls -d modules/*/| wc -l   #  3
+find . -name '*.bp' | wc -l   # 75 — 71 cells, plus the 4 extra .bp of the modules/ projects
+```
+
+**71 cells**, of which three are the `smoke` files (one per single-file kind) — so **68** besides
+them, by area:
 
 | Area | Cells | Total |
 |---|---|---|
@@ -140,11 +151,17 @@ Coverage: **68 cells** besides the three smoke files — front 15's 31, and 37 a
 | core: closures, recursion, primitives, optionals, sugar, defaults | 8 test | 8 |
 | modules | 3 `modules/` cells | 3 |
 
-Classification in the front-17 worktree on top of `26d4fdc` (node v25.8.0, OTP 29), every target
-together: **196 results pass and 61 are expected failures** — 06 N1, N12, N18, N19–N22, N24, N25, N28,
-`06` (the lower-case external annotation, a `fronts.md` unowned item), and 01 step 6 (the §7 formatter
-on three backends, the erlang generator protocol, erlang cross-module calls, `String.toUpperCase`,
-`ConditionLoopValueUnsupported`, tuple equality on commonJS).
+Classification at botopink-lang `eeff1e1` (node v25.8.0, OTP 29), `zig build test-language`, every
+target of `--target all` together:
+
+```
+language tests: 205 passed, 54 expected failures, 0 failed
+```
+
+The 54 owner rows are 1.0.5-beta fronts: **01-checker 31 · 02-erlang 9 · 04-js 7 · 05-wasm 4 ·
+13-module-identity 3**, twelve of them naming a second row that has to land before the line goes.
+`tests/language/run.sh --target beam` adds 9 results of its own — 2 passing, 7 listed against
+`03-beam`, `01-checker` and `13-module-identity` (see § the targets).
 
 `zig build test-language` is a stage of `scripts/gate.sh` (after `test-libs`) and a step of the CI
 `test` job (ubuntu + macos). When a front makes a listed test pass, the gate fails with "now passes:
@@ -152,19 +169,32 @@ delete its line" — the landing commit of that front deletes the line.
 
 ## Notes for whoever writes the next cell
 
-Shapes that do not parse, found while writing these cells. None is a bug filed against a front; each
-is a form the cells route around, and each would change if the maintainer decides it should parse.
+Shapes that do not parse, found while writing these cells and **re-measured at `eeff1e1`** with
+`botopink check`. None is a bug filed against a front; each is a form the cells route around.
+Decision 14 of `specs/1.0.5-beta/decisions-taken.md` settled which of them the language wants.
 
-- `(sql """ab""").length` — a template call needs a `val` intermediate before a method.
-- `adder(3)(4)` — calling the result of a call directly.
-- `(a == b).toString()` inside an argument — bind the comparison to a `val` first.
-- A bare `if` (no `else`) inside a decorator body must be the **last** statement of the block.
-- `??` is not an operator; an optional is read with `if (x) { n -> … }`, `?.` and `== null`.
-- A module-level `var` does not parse.
-- `case` arms that bind a section (§5.3b) and the whole §5.1 `Pattern { body }` form are 06 N22.
+| Shape | At `eeff1e1` | Decision |
+|---|---|---|
+| `adder(3)(4)` — calling the result of a call | `error: There must be a 'val' or 'var' to bind a variable to a value` | **make it parse** (14) — `01-checker`'s grammar tail |
+| `#(a: i32)[]` — an array of labeled tuples | `error: Unexpected token` at the `[` | **make it parse** (14) |
+| `??` | `error: Unexpected token` at the `??` | **deliberately absent** (14) — it duplicates `catch` and `?.`; read an optional with `if (x) { n -> … }`, `?.` and `== null` |
+| a module-level `var` | `error: Unexpected token` at the `var` | **deliberately absent** (14) — a module has no mutable state |
+| `(a == b).toString()` inside an argument | `error: Unexpected token` at the `.` | open — bind the comparison to a `val` first |
+| `(sql """ab""").length` — a method on a template call | needs a dependency to measure; a `val` intermediate works | open |
+| a bare `if` (no `else`) inside a decorator body | must be the **last** statement of the block | open |
 
-The range pattern `1..9` in a `case` arm: decision 8 does not yet say whether the end is inclusive
-(`loop (0..4)` is exclusive). The tests avoid the edge until the maintainer decides.
+**Struck, because they now parse:** the §5.1 `Pattern { body }` form
+(`case n { 1 { "one" } _ { "other" } }` → `Checked`) and §5.3b section arms — `test/case_sections.bp`
+parses and fails in inference like every other `case` cell (`expected string, got void`), not at the
+`{`. Both were listed as `06 N22`.
+
+The range pattern in a `case` arm: **decision 20** settled the spelling — `..` is the only range, in
+patterns and in iteration alike, and `...` leaves the grammar. The compiler has not caught up:
+`1..9` in an arm still reds `error[pattern-range-exclusive]: \`..\` is iteration, not a pattern's
+range`, which is the diagnostic that inverts (`01 step 4`; `test/case_arms.bp` is listed against it
+and is right as written). The cells still do **not** assert the endpoint: decision 20 removes the
+second spelling but does not say in so many words whether `..` in a pattern excludes its end the way
+`loop (0..4)` does. One sentence would let a cell assert it.
 
 What cannot be tested from botopink at all, and why: `@Context` / `use` (lowers to React hooks on
 commonJS, no erlang lowering — it needs a host framework); `pub default mod` / `pub default fn` and

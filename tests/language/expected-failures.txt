@@ -49,8 +49,8 @@ commonJS | run/tuple_print.bp         | 04 step 1 | prints decision 1a's text wi
 erlang   | run/tuple_print.bp         | 02 step 1 | prints decision 1a's text without spaces (`#(1,"a")`); §7 wants `#(1, "a")`
 
 # ── §5.3b sections (decision 8 §5) ────────────────────────────────────────────
-commonJS | test/case_sections.bp      | 01 step 4 | §5.3b section arms do not parse; a section is not yet a type named by its path
-erlang   | test/case_sections.bp      | 01 step 4 | §5.3b section arms do not parse; a section is not yet a type named by its path
+commonJS | test/case_sections.bp      | 01 step 4 | re-measured: §5.3b section arms now parse; the failure is the arm-body one every other case cell has — "expected string, got void" at the `case`. A section is still not a type named by its path
+erlang   | test/case_sections.bp      | 01 step 4 | re-measured: §5.3b section arms now parse; the failure is the arm-body one every other case cell has — "expected string, got void" at the `case`. A section is still not a type named by its path
 
 # ── §7 the formatter ──────────────────────────────────────────────────────────
 # The record and variant rows of §7's table need a value that knows its own type,
