@@ -1006,6 +1006,19 @@ fn emitErlangModule(
     var exports: std.ArrayListUnmanaged(Ast.FnRef) = .empty;
     if (comptime_module) |cm| try exports.appendSlice(b.arena, cm.exports);
     for (pub_fns.items) |f| try exports.append(b.arena, .{ .name = f.name, .arity = fnArityNoSelf(f) });
+    // A host-backed `declare fn` another module imports is answered by the
+    // wrapper the decl loop emits, so it is exported like any other pub fn.
+    // `externalWrapperEmits` is the same predicate the decl loop applies, so the
+    // export list never names a wrapper that was skipped (erlc rejects an
+    // exported undefined function).
+    for (program.decls) |decl| switch (decl) {
+        .@"fn" => |f| if (externalWrapperNeeded(f, cross) and em.externalWrapperEmits(f)) {
+            // A top-level `declare fn` takes no `self`, so the declared
+            // parameter count is the wrapper's arity.
+            try exports.append(b.arena, .{ .name = f.name, .arity = f.params.len });
+        },
+        else => {},
+    };
     if (cross) |xc| {
         for (program.decls) |decl| {
             // A `pub` type's methods are reachable from another module even when
@@ -1064,9 +1077,16 @@ fn emitErlangModule(
                 // FFI declaration — calls lower to the remote target directly.
                 const text = if (em.externals.get(f.name)) |ref|
                     try std.fmt.allocPrint(b.arena, "external fn {s} -> {s}:{s}", .{ f.name, ref.module, ref.symbol })
+                else if (em.user_erlang_templates.contains(f.name))
+                    try std.fmt.allocPrint(b.arena, "external fn {s} -> erlang template", .{f.name})
                 else
                     try std.fmt.allocPrint(b.arena, "external fn {s} (no erlang target)", .{f.name});
                 try forms.append(b.arena, .{ .comment = Ast.Comment.doc(text) });
+                // …and, when another module imports it, the wrapper that module
+                // calls (`hostlib:hostKey(V)`).
+                if (externalWrapperNeeded(f, cross)) {
+                    if (try em.externalWrapperForm(b, f)) |form| try forms.append(b.arena, form);
+                }
             },
             .type_ => |tdecl| switch (tdecl.shape) {
                 .record => try em.recordForms(b, &forms, tdecl),
@@ -1171,6 +1191,16 @@ fn emitErlangModule(
 }
 
 const Forms = std.ArrayListUnmanaged(Ast.Form);
+
+/// True when this module must answer `f` — a `pub` host-backed `declare fn` —
+/// with a callable wrapper: some other module imports the name, and erlang
+/// resolves a bare call in the CALLING module. Single-module builds and
+/// declarations nobody imports emit the comment alone, as before.
+fn externalWrapperNeeded(f: ast.FnDecl, cross: ?*const crossModule.CrossModule) bool {
+    if (!f.isPub or !f.isExternal()) return false;
+    const xc = cross orelse return false;
+    return xc.imported.contains(f.name);
+}
 
 /// `name(Patterns) ->` + block body.
 fn blockFunction(b: Ast.Builder, name: []const u8, patterns: []const Ast.Expr, body: Ast.Body) !Ast.Form {
@@ -2696,11 +2726,13 @@ const Emitter = struct {
                 if (std.mem.eql(u8, info.module, self.module_name)) continue;
                 const owner = crossModule.moduleBasename(info.module);
                 switch (info.kind) {
-                    // An FFI declaration emits no function in its owner — the
-                    // template renders at the call site — so it is not reachable
-                    // remotely. Left bare, an unresolved one is a loud compile
-                    // error naming the function (see AGENTS.md).
-                    .@"fn" => if (!info.is_external) try self.imported_fns.put(name, owner),
+                    // An FFI declaration with an `erlang` target is answered in
+                    // its owner by the wrapper `externalWrapperForm` emits, so
+                    // it is reached like any other imported fn. Without a target
+                    // the owner has nothing to wrap: the call stays bare, and an
+                    // unresolved one is a loud erlc error naming the function
+                    // (see AGENTS.md).
+                    .@"fn" => if (!info.is_external or info.erlang_backed) try self.imported_fns.put(name, owner),
                     .record, .@"enum" => for (info.methods) |m| {
                         const gop = try self.imported_fns.getOrPut(m);
                         if (!gop.found_existing) gop.value_ptr.* = owner;
@@ -4936,6 +4968,63 @@ const Emitter = struct {
         const e = try b.arena.create(ast.Expr);
         e.* = .{ .identifier = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .ident = name } } };
         return e;
+    }
+
+    /// True when `externalWrapperForm` will emit a body for `f` — the export
+    /// pass reads it so `-export` never names a function the decl loop skips.
+    /// Mirrors `userTemplateNode`: a `module:symbol` external always renders; a
+    /// template renders when its text is non-empty, an arity-branched one when a
+    /// branch matches the declared parameter count.
+    fn externalWrapperEmits(this: *const Emitter, f: ast.FnDecl) bool {
+        if (this.externals.contains(f.name)) return true;
+        const call = this.user_erlang_templates.get(f.name) orelse return false;
+        if (call.arity_branches.len == 0) return call.symbol.len > 0;
+        for (call.arity_branches) |branch| if (branch.argc == f.params.len) return true;
+        return false;
+    }
+
+    /// A host-backed `declare fn` emits no function of its own — its annotation
+    /// renders at each call site — so another module had nothing to call
+    /// (`function hostKey/1 undefined`). The owner answers it with a wrapper
+    /// whose body is that same rendering over the wrapper's own parameters: the
+    /// erlang twin of the commonJS `exports.name = name` re-export. Emitted only
+    /// for a `pub` external some module imports, so single-module programs and
+    /// unconsumed declarations are unchanged. Null exactly when
+    /// `externalWrapperEmits` is false — there is nothing to render, and the
+    /// consumer keeps its bare call so erlc names the gap.
+    fn externalWrapperForm(this: *Emitter, b: Ast.Builder, f: ast.FnDecl) !?Ast.Form {
+        const arity = f.params.len;
+        // A fresh local scope, as `fnForms` opens for a bodied function.
+        this.resetLocals();
+        const args = try b.arena.alloc(ast.CallArg, arity);
+        const patterns = try b.arena.alloc(Ast.Expr, arity);
+        for (f.params, 0..) |p, i| {
+            // The declared parameter name reads better than a synthetic one
+            // (`hostKey(V)`, not `hostKey(A0)`); `_`-prefixed and duplicate
+            // names are the author's problem, as in any other emitted function.
+            args[i] = .{ .label = null, .value = try shimIdent(b, p.name) };
+            patterns[i] = Ast.Expr.v(try this.arenaVar(b, p.name));
+            this.addLocal(p.name);
+            if (isNullableParam(p)) try this.nullable_locals.put(p.name, {});
+            if (isStringType(p.typeRef)) try this.string_locals.put(p.name, {});
+            if (numTypeKind(p.typeRef)) |k| try this.num_locals.put(this.alloc, p.name, k);
+        }
+        const cc = .{
+            .callee = f.name,
+            .receiver = @as(?*const ast.Expr, null),
+            .args = args,
+            .trailing = @as([]const ast.TrailingLambda, &.{}),
+        };
+        const saved = this.indent;
+        this.indent = 1;
+        defer this.indent = saved;
+        const body: Ast.Expr = if (this.user_erlang_templates.contains(f.name))
+            (try this.userTemplateNode(b, f.name, cc)) orelse return null
+        else if (this.externals.get(f.name)) |ref|
+            try b.remote(ref.module, ref.symbol, try this.callArgs(b, null, cc))
+        else
+            return null;
+        return try blockFunction(b, f.name, patterns, try b.body(&.{body}));
     }
 
     fn shimCall(b: Ast.Builder, argc: usize) !ShimCall {

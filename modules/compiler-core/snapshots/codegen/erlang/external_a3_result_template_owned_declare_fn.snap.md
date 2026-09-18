@@ -16,7 +16,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% external fn parseInt (no erlang target)
+%% external fn parseInt -> erlang template
 
 main() ->
     R = (fun(__S) -> try {ok, binary_to_integer(__S)} catch _:_ -> {error, <<"not a number">>} end end)(<<"42">>),

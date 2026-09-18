@@ -200,3 +200,49 @@ test "js: external ---- 1-arg host expression declare fn renders at the call sit
         \\}
     );
 }
+
+// A host-backed `declare fn` renders its annotation at each call site, so its
+// owner emits no function of that name — and erlang resolves a bare call in the
+// CALLING module. Another module importing `hostKey` got `function hostKey/1
+// undefined`, which is what kept every library whose host cells are template
+// externals red on erlang. The owner now answers an imported external with a
+// wrapper over its own parameters — the inline-template form and the
+// `(module, symbol)` one alike — and the consumer calls that
+// (`hostlib:hostKey(42)`). `nodeOnly` carries no erlang target: there is nothing
+// to wrap, so it keeps its comment and is not exported, and a call to it stays
+// bare for erlc to name.
+// KNOWN (commonJS): a bare `import { … }` has no module path, so the consumer
+// requires the project root placeholder (`require("./module")`) exactly as in
+// `import_a_call_to_an_imported_fn_names_its_module`, and nothing runs — its
+// RUN LOG is empty. Erlang runs and prints `42` / `2`; wasm is single-module
+// and traps on the host-backed call, as its `declare fn` comment says.
+test "js: external ---- an imported host-backed declare fn is wrapped by its owner" {
+    try h.assertJs(std.testing.allocator, @src(), &.{
+        .{
+            .path = "hostlib",
+            .source =
+            \\#[@External.Node("String($0)"),
+            \\  @External.Erlang("""iolist_to_binary(io_lib:format("~0tp", [$0]))""")]
+            \\pub declare fn hostKey(v: i32) -> string;
+            \\
+            \\#[@External.Node("$0.length"),
+            \\  @External.Erlang("erlang", "length")]
+            \\pub declare fn hostLen(xs: Array<string>) -> i32;
+            \\
+            \\#[@External.Node("console.log($0)")]
+            \\pub declare fn nodeOnly(s: string) -> void;
+            ,
+        },
+        .{
+            .path = "main",
+            .source =
+            \\import { hostKey, hostLen, nodeOnly };
+            \\
+            \\pub fn main() {
+            \\    @print(hostKey(42));
+            \\    @print(hostLen(["a", "b"]));
+            \\}
+            ,
+        },
+    });
+}

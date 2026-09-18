@@ -14,7 +14,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% external fn stringify (no erlang target)
+%% external fn stringify -> erlang template
 
 main() ->
     '__bp_print'([iolist_to_binary(io_lib:format("~p", [42]))]).

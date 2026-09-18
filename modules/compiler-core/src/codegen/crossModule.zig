@@ -40,6 +40,13 @@ pub const ExportInfo = struct {
     /// annotation's template renders at each call site), so it cannot be reached
     /// by a remote call.
     is_external: bool = false,
+    /// An external whose annotations carry an `erlang` target usable at the
+    /// declared arity. The erlang backend answers such a `declare fn` in its
+    /// owner with a wrapper function (the template applied to the wrapper's own
+    /// parameters), so a consumer can call it remotely; without a target there
+    /// is nothing to wrap and the consumer keeps the bare call, which erlc
+    /// rejects by name.
+    erlang_backed: bool = false,
 };
 
 /// Cross-module link info, built once over every module's transformed program.
@@ -113,7 +120,18 @@ pub fn build(alloc: std.mem.Allocator, outputs: []ComptimeOutput) !CrossModule {
             // `from "<lib>"` must `require` that owner just like any other export;
             // omitting externals here left such imports unresolved at the call site.
             .@"fn" => |f| if (f.isPub)
-                try exports.put(f.name, .{ .module = ct.name, .kind = .@"fn", .is_class = false, .is_external = f.isExternal() }),
+                try exports.put(f.name, .{
+                    .module = ct.name,
+                    .kind = .@"fn",
+                    .is_class = false,
+                    .is_external = f.isExternal(),
+                    // An arity-branched annotation only backs the declaration
+                    // when a branch matches its parameter count — the owner
+                    // renders that branch into the wrapper.
+                    .erlang_backed = f.isExternal() and
+                        (f.externalFor("erlang") != null or
+                            ast.externalArityBranchFor(f.annotations, "erlang", f.params.len) != null),
+                }),
             .val => |v| if (v.isPub) try exports.put(v.name, .{ .module = ct.name, .kind = .val, .is_class = false }),
             // A `pub implement` is emitted as a namespace object; a consumer that
             // stars it (`import { Name* }`) references it as a value (`Name.m(x)`).
