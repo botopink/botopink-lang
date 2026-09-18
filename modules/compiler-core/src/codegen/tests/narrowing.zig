@@ -127,6 +127,64 @@ test "js: narrow ---- type guard if codegen" {
     );
 }
 
+test "js: narrow ---- `is` tests the value, and a named type by its prototype" {
+    // Decision 8 §4 — `x is T` tests the VALUE, never where it came from, so
+    // the same lowering answers for a value whose static type is known and for
+    // one that arrives through `unknown` or a union (decision 26). An integer
+    // type is a number within its range, `f64` any number, a tuple an array of
+    // the right arity with each element tested, and a named type an
+    // `instanceof` — free under decision 5, where the prototype IS the value's
+    // identity, for a record, a payload variant and a payload-less singleton
+    // alike. `@is(p)` was written straight into the output before this: a `@`
+    // is not JavaScript, and `botopink build` exited 0 on a module node could
+    // not parse.
+    //
+    // A RUN LOG, not a snapshot: the erlang, beam and wasm baselines of this
+    // program are not this front's to record, and no backend lowers `is` yet.
+    // Every subject is a `val` because `is` does not parse after a call
+    // (`Shape.Circle(radius: 5) is Shape` is `Unexpected token` at the `is`) or
+    // after a literal — the parser's half, not this front's.
+    try h.assertJsRunLog(std.testing.allocator,
+        \\type Person(name: string)
+        \\type Shape { Circle(radius: i32), Dot }
+        \\fn main() {
+        \\    val p = Person(name: "a");
+        \\    @print(p is Person);
+        \\    @print(p is Shape);
+        \\    val c = Shape.Circle(radius: 5);
+        \\    @print(c is Shape);
+        \\    val d = Shape.Dot;
+        \\    @print(d is Shape);
+        \\    val n = 2;
+        \\    @print(n is i32);
+        \\    @print(n is f64);
+        \\    @print(n is string);
+        \\    val s = "hi";
+        \\    @print(s is string);
+        \\    @print(s is bool);
+        \\    val t = #(1, "a");
+        \\    @print(t is #(i32, string));
+        \\    @print(t is #(string, i32));
+        \\    val xs = [1, 2];
+        \\    @print(xs is i32[]);
+        \\}
+    ,
+        \\true
+        \\false
+        \\true
+        \\true
+        \\true
+        \\true
+        \\false
+        \\true
+        \\false
+        \\true
+        \\false
+        \\true
+        \\
+    );
+}
+
 // ── case narrowing on @Option ─────────────────────────────────────────────────
 
 test "js: narrow ---- case option some none" {

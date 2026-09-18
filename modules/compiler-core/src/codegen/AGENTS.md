@@ -123,6 +123,20 @@ codegen/
   carries `prototype.__bp` (the source name — the §7 formatter's marker) and
   each variant subclass `prototype.tag` (its own name). The full table is in
   [`js/AGENTS.md`](./js/AGENTS.md#what-a-value-is-105-beta-decision-5).
+- **`x is T`** (decision 8 §4, `buildIsCall`/`isTest`) tests the **value**, not
+  where it came from, which is what makes one lowering answer for a known
+  static type and for a value arriving through `unknown` or a union: an integer
+  type is `typeof === "number"` + `Number.isInteger` + its range, `f64` any
+  number, `string`/`bool` the primitive, a tuple an array of the right arity
+  with each element tested, `?T` null-or-`T`, an array its constructor only
+  (§4.2 — an element type is not checkable), and a **named type** an
+  `instanceof`, free under decision 5. The subject is bound in an arrow
+  (`((_v) => …)(x)`) only when the test reads it more than once, so a call on
+  the left is evaluated once. An unrecognised spelling answers `false`. The
+  parser synthesises this as the `is` builtin call with the type on `isType`
+  (`ast.is_builtin_name`); before the lowering it fell through to the
+  unrecognised-builtin path and wrote `@is(p)` into the module — a `@` is not
+  JavaScript, and `build` exited 0 on a file node cannot parse.
 - **Variant payload arms**: `collectVariantFields` indexes every local payload
   variant's declared field names; `Circle(r) ->` binds positionally
   (`const { radius: r } = _s;`). A variant declared in another module keeps the

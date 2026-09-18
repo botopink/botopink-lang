@@ -3757,9 +3757,135 @@ const Emitter = struct {
         return if (is_new) self.b.new_(callee, arg_slice) else self.b.call(callee, arg_slice);
     }
 
+    /// The inclusive range of an integer type, as JS number literals, or null
+    /// when the type is not a sized integer. `i64` / `u64` carry no range: a JS
+    /// number cannot represent their ends exactly, so the test is
+    /// `Number.isInteger` (plus `>= 0` for the unsigned one).
+    fn integerRange(name: []const u8) ?struct { lo: ?[]const u8, hi: ?[]const u8 } {
+        const table = .{
+            .{ "i8", "-128", "127" },                .{ "i16", "-32768", "32767" },
+            .{ "i32", "-2147483648", "2147483647" }, .{ "u8", "0", "255" },
+            .{ "u16", "0", "65535" },                .{ "u32", "0", "4294967295" },
+        };
+        inline for (table) |row| {
+            if (std.mem.eql(u8, name, row[0])) return .{ .lo = row[1], .hi = row[2] };
+        }
+        if (std.mem.eql(u8, name, "i64") or std.mem.eql(u8, name, "int") or
+            std.mem.eql(u8, name, "isize")) return .{ .lo = null, .hi = null };
+        if (std.mem.eql(u8, name, "u64") or std.mem.eql(u8, name, "uint") or
+            std.mem.eql(u8, name, "usize")) return .{ .lo = "0", .hi = null };
+        return null;
+    }
+
+    /// `typeof <subject> === "<what>"`.
+    fn typeofIs(self: *Emitter, subject: js.Expr, what: []const u8) !js.Expr {
+        return self.b.binaryBare("===", try self.b.unary("typeof ", subject, false), .{ .quoted = what });
+    }
+
+    /// How many times `isTest` reads its subject for `t` — one read can be
+    /// spelled inline, more than one needs the subject bound first.
+    fn isTestReads(t: ast.TypeRef) usize {
+        return switch (t) {
+            .named => |n| if (integerRange(n)) |r| blk: {
+                var k: usize = 2; // typeof + Number.isInteger
+                if (r.lo != null) k += 1;
+                if (r.hi != null) k += 1;
+                break :blk k;
+            } else 1,
+            .optional => |inner| 1 + isTestReads(inner.*),
+            .tuple_, .labeledTuple => blk: {
+                var k: usize = 2; // Array.isArray + .length
+                for (t.tupleElems().?) |e| k += isTestReads(e);
+                break :blk k;
+            },
+            else => 1,
+        };
+    }
+
+    /// Decision 8 §4 — `x is T` **tests the value**, never where it came from,
+    /// which is what makes it answer for a `unknown` or a union member as well
+    /// as for a value whose static type is known. An integer type is a number
+    /// within its range, `f64` any number, `string` / `bool` the primitive, a
+    /// tuple an array of the right arity with each element tested, `?T` null or
+    /// `T`, and a **named type** an `instanceof` — free under decision 5,
+    /// because the value's prototype is its identity.
+    ///
+    /// An array's element type is not tested (§4.2 only promises the
+    /// constructor), and an unknown spelling answers `false` rather than
+    /// emitting something that is not JavaScript.
+    fn isTest(self: *Emitter, t: ast.TypeRef, subject: js.Expr) anyerror!js.Expr {
+        switch (t) {
+            .named => |n| {
+                if (std.mem.eql(u8, n, "string")) return self.typeofIs(subject, "string");
+                if (std.mem.eql(u8, n, "bool")) return self.typeofIs(subject, "boolean");
+                if (std.mem.eql(u8, n, "f32") or std.mem.eql(u8, n, "f64") or
+                    std.mem.eql(u8, n, "float")) return self.typeofIs(subject, "number");
+                if (integerRange(n)) |r| {
+                    var acc = try self.b.binaryBare("&&", try self.typeofIs(subject, "number"), try self.b.call(
+                        try self.b.member(.{ .name = "Number" }, "isInteger"),
+                        &.{subject},
+                    ));
+                    if (r.lo) |lo| acc = try self.b.binaryBare("&&", acc, try self.b.binaryBare(">=", subject, .{ .number = lo }));
+                    if (r.hi) |hi| acc = try self.b.binaryBare("&&", acc, try self.b.binaryBare("<=", subject, .{ .number = hi }));
+                    return self.b.paren(acc);
+                }
+                if (std.mem.eql(u8, n, "unknown")) return .{ .name = "true" };
+                return self.b.binaryBare("instanceof", subject, .{ .name = n });
+            },
+            // `T[]` / `Array<T>`: the constructor only (§4.2 — an element type
+            // is not checkable).
+            .array => return self.b.call(try self.b.member(.{ .name = "Array" }, "isArray"), &.{subject}),
+            .generic => |g| {
+                if (std.mem.eql(u8, g.name, "Array")) {
+                    return self.b.call(try self.b.member(.{ .name = "Array" }, "isArray"), &.{subject});
+                }
+                return self.b.binaryBare("instanceof", subject, .{ .name = g.name });
+            },
+            .optional => |inner| return self.b.paren(try self.b.binaryBare(
+                "||",
+                try self.b.binaryBare("==", subject, .null_),
+                try self.isTest(inner.*, subject),
+            )),
+            .tuple_, .labeledTuple => {
+                const elems = t.tupleElems().?;
+                var acc = try self.b.call(try self.b.member(.{ .name = "Array" }, "isArray"), &.{subject});
+                acc = try self.b.binaryBare("&&", acc, try self.b.binaryBare(
+                    "===",
+                    try self.b.member(subject, "length"),
+                    .{ .number = try std.fmt.allocPrint(self.arena(), "{d}", .{elems.len}) },
+                ));
+                for (elems, 0..) |e, i| {
+                    const at = try self.b.index(subject, .{ .number = try std.fmt.allocPrint(self.arena(), "{d}", .{i}) }, false);
+                    acc = try self.b.binaryBare("&&", acc, try self.isTest(e, at));
+                }
+                return self.b.paren(acc);
+            },
+            // A function type and a comptime typeparam have no run-time test.
+            .function, .typeparam => return .{ .name = "false" },
+        }
+    }
+
+    /// `x is T` (`ast.is_builtin_name`). The subject is bound first when the
+    /// test reads it more than once, so a call on the left is evaluated once.
+    fn buildIsCall(self: *Emitter, cc: anytype) anyerror!js.Expr {
+        const t = cc.isType orelse return error.InvalidArgs;
+        if (cc.args.len != 1) return error.InvalidArgs;
+        const subject = try self.buildExpr(cc.args[0].value.*);
+        if (isTestReads(t) <= 1) return self.isTest(t, subject);
+        return self.b.call(
+            try self.b.paren(try self.b.arrowExpr(
+                &.{.{ .pattern = .{ .name = "_v" } }},
+                try self.isTest(t, .{ .name = "_v" }),
+            )),
+            &.{subject},
+        );
+    }
+
     fn buildBuiltinCall(self: *Emitter, cc: anytype) anyerror!js.Expr {
         if (std.mem.eql(u8, cc.callee, "print") or std.mem.eql(u8, cc.callee, "println") or std.mem.eql(u8, cc.callee, "debug"))
             return self.buildPrintCall(cc);
+        if (std.mem.eql(u8, cc.callee, ast.is_builtin_name) and cc.isType != null)
+            return self.buildIsCall(cc);
         // `prim-op-annotation` builtin dispatch fires first (`@todo` /
         // `@panic` annotated in `builtins.d.bp`).
         if (try self.tryBuiltinAnnotation(cc.callee, cc)) |node| return node;
