@@ -1,0 +1,22 @@
+//// Decision 8 §2 and §4.2 — `is` reads the value's own type through `unknown`.
+//// Separate from `test/type_identity.bp` because `unknown` is not §2's type yet
+//// and would otherwise hide the equality assertions that do not need it.
+
+type Person(name: string, age: i32)
+type Vec(name: string, age: i32)
+
+type Shape {
+    Dot,
+    Circle(radius: i32),
+}
+
+test "§4.2 `is` on a named type through `unknown`" {
+    val u: unknown = Vec(name: "Ana", age: 30);
+    assert u is Vec;
+    assert (u is Person) == false;
+}
+
+test "§4.2 `is` on a variant reads the type it belongs to" {
+    val s: unknown = Shape.Circle(radius: 4);
+    assert s is Shape;
+}

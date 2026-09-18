@@ -80,9 +80,9 @@ written against a layout that is about to move. Flipping it on is one line of `r
 (`all) targets=(commonJS erlang wasm beam)`) plus a re-run of the beam cells; it belongs to 13's
 closing step. The beam rows of `expected-failures.txt` already exist and
 `tests/language/run.sh --target beam` is green: **9 results, 2 passing** (`run/smoke.bp`,
-`modules/mod_tree`), 7 expected failures — 6 owned by `03-beam` (steps 2 and 4) and 1 by
-`01-checker` step 4; two of the `03` rows name `13 step 18` as well, because a record and a variant
-cannot print their names before a value carries one.
+`modules/mod_tree`), 8 expected failures — 7 owned by `03-beam` (steps 2 and 4) and 1 by
+`01-checker` step 4; three of the `03` rows name `13 step 18` as well, because a record and a
+variant cannot print their names before a value carries one.
 
 ## Running
 
@@ -125,17 +125,17 @@ rows sit in the file while beam stays out of `--target all`.
 
 ## Status and the gate
 
-Counted on disk at `eeff1e1`:
+Counted on disk at `fcc4b5b` + front 12 step 4.1:
 
 ```bash
-ls test/*.bp    | wc -l   # 40
-ls run/*.bp     | wc -l   #  6   (each with its .out)
+ls test/*.bp    | wc -l   # 44
+ls run/*.bp     | wc -l   #  7   (each with its .out)
 ls reject/*.bp  | wc -l   # 22   (each with its .expect)
 ls -d modules/*/| wc -l   #  3
-find . -name '*.bp' | wc -l   # 75 — 71 cells, plus the 4 extra .bp of the modules/ projects
+find . -name '*.bp' | wc -l   # 80 — 76 cells, plus the 4 extra .bp of the modules/ projects
 ```
 
-**71 cells**, of which three are the `smoke` files (one per single-file kind) — so **68** besides
+**76 cells**, of which three are the `smoke` files (one per single-file kind) — so **73** besides
 them, by area:
 
 | Area | Cells | Total |
@@ -149,19 +149,23 @@ them, by area:
 | generics and behaviors (§1) | 1 test + 2 reject | 3 |
 | printing (§7) | 3 run | 3 |
 | core: closures, recursion, primitives, optionals, sugar, defaults | 8 test | 8 |
+| run-time type identity (§4, §7 — `13-module-identity`) | 4 test + 1 run | 5 |
 | modules | 3 `modules/` cells | 3 |
 
-Classification at botopink-lang `eeff1e1` (node v25.8.0, OTP 29), `zig build test-language`, every
-target of `--target all` together:
+Classification at botopink-lang `fcc4b5b` + step 4.1 (node v25.8.0, OTP 29),
+`zig build test-language`, every target of `--target all` together:
 
 ```
-language tests: 205 passed, 54 expected failures, 0 failed
+language tests: 206 passed, 64 expected failures, 0 failed
 ```
 
-The 54 owner rows are 1.0.5-beta fronts: **01-checker 31 · 02-erlang 9 · 04-js 7 · 05-wasm 4 ·
-13-module-identity 3**, twelve of them naming a second row that has to land before the line goes.
-`tests/language/run.sh --target beam` adds 9 results of its own — 2 passing, 7 listed against
-`03-beam`, `01-checker` and `13-module-identity` (see § the targets).
+All 64 owner cells name a 1.0.5-beta front. By the row that comes first on the line —
+**01-checker 37 · 02-erlang 10 · 04-js 8 · 05-wasm 5 · 13-module-identity 4** — and **15** of them
+name `13-module-identity` as a further row that has to land before the line goes (the §7 formatter's
+record and variant halves, and the identity cells behind a checker row).
+`tests/language/run.sh --target beam` adds 10 results of its own — 2 passing, 8 listed (7 against
+`03-beam`, 1 against `01-checker`, 3 of them naming `13 step 18` too); those lines are skipped by
+`--target all`. See § the targets.
 
 `zig build test-language` is a stage of `scripts/gate.sh` (after `test-libs`) and a step of the CI
 `test` job (ubuntu + macos). When a front makes a listed test pass, the gate fails with "now passes:
@@ -195,6 +199,13 @@ range`, which is the diagnostic that inverts (`01 step 4`; `test/case_arms.bp` i
 and is right as written). The cells still do **not** assert the endpoint: decision 20 removes the
 second spelling but does not say in so many words whether `..` in a pattern excludes its end the way
 `loop (0..4)` does. One sentence would let a cell assert it.
+
+**Structural equality of two values of the same type is not legislated, so no cell asserts it.**
+`Person(name: "Ana", age: 30) == Person(name: "Ana", age: 30)` answers `false` on commonJS (reference
+equality on the class instance) and `true` on erlang (one map). No decision of this milestone settles
+it and no front owns it, so `test/type_identity.bp` states the omission in a comment and asserts only
+what **is** settled — that two *different* types with the same fields are different values. Reported
+to the maintainer; a sentence would turn the comment into two assertions.
 
 What cannot be tested from botopink at all, and why: `@Context` / `use` (lowers to React hooks on
 commonJS, no erlang lowering — it needs a host framework); `pub default mod` / `pub default fn` and

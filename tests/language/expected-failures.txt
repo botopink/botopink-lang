@@ -106,6 +106,23 @@ wasm     | run/print_formatter.bp     | 05 step 1, 13 step 18 | §7 formatter: `
 wasm     | run/display_print.bp       | 05 step 1, 13 step 18 | §7: `@print` does not consult `Display`; the record prints as its raw heap address
 wasm     | modules/std_import         | 05 step 3 | a std `Dict` lookup through a user module answers the fallback (`0`) instead of the stored value, with exit 0 and no diagnostic
 
+# ── run-time type identity (front 12 step 4.1) ────────────────────────────────
+# The botopink-level statement of `13-module-identity`: a value knows its own
+# type. Four `test/` cells and one `run/` cell, split so that a checker row does
+# not hide an identity row — each line below names what actually fails today,
+# and the second row is where it lands once the first is fixed.
+erlang   | test/type_identity.bp::§4 two types with the same fields are different values | 13 step 15 | a record is a bare map on erlang, so `Person(name: "Ana", age: 30)` and `Vec(name: "Ana", age: 30)` are the same term and compare equal; the tag has to be in the value. Passes on commonJS, where a record is a class instance
+commonJS | test/type_identity_unknown.bp | 01 step 1, 13 step 17 | does not compile: `unknown` is not §2's type — "type mismatch: expected unknown, got Vec". The `is` assertions behind it are 13's
+erlang   | test/type_identity_unknown.bp | 01 step 1, 13 step 17 | the same — "type mismatch: expected unknown, got Vec"
+commonJS | test/type_identity_union.bp | 01 step 2, 13 step 17 | does not compile: a union annotation is not a union type yet — "type mismatch: expected |, got Person"
+erlang   | test/type_identity_union.bp | 01 step 2, 13 step 17 | the same — "type mismatch: expected |, got Person"
+commonJS | test/type_identity_case.bp | 01 step 4, 13 step 17 | does not compile: an arm body is a lambda the checker does not unwrap — "type mismatch: expected string, got void"
+erlang   | test/type_identity_case.bp | 01 step 4, 13 step 17 | the same — "type mismatch: expected string, got void"
+commonJS | run/type_identity_print.bp | 04 step 1, 13 step 18 | §7: a record prints `Point { x: 1, y: 2 }`, a payload variant `{ tag: 'Circle', radius: 4 }`, a unit variant the bare string `Dot`, and an array without spaces
+erlang   | run/type_identity_print.bp | 02 step 1, 13 step 18 | §7: a record prints `#{x => 1,y => 2}`, a variant `{'Circle',4}` / `'Dot'`, and an array without spaces
+wasm     | run/type_identity_print.bp | 05 step 1, 13 step 18 | §7: a record and a variant print as their raw heap addresses (`256`, `264`, `268`)
+beam     | run/type_identity_print.bp | 03 step 2, 13 step 18 | §7: the erlang shapes seen from BEAM assembly — a record as a map, a variant as a tagged tuple or a bare atom
+
 # ── beam, the fourth executable target (decision 8) ───────────────────────────
 # `botopink run --target beam` writes `out/*.S`; `erlc +from_asm` then `erl` run
 # it (run.sh § beam). beam is not in `--target all` yet — front 13's policy 3
