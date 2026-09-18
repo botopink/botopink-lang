@@ -180,6 +180,18 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "add the next member here",
             .hint = "A union is written `i32 | string`, each member a complete type; `(i32 | string)[]` is an array of the union, `i32 | string[]` an `i32` or an array of `string`.",
         },
+        .isMissingType => .{
+            .code = "is-missing-type",
+            .message = "`is` needs a type to test the value against",
+            .caretCaption = "add the type here",
+            .hint = "`x is i32` answers whether the value is an `i32` right now; inside the block that it guards, `x` is that type.",
+        },
+        .isVariantBinding => .{
+            .code = "is-variant-binding",
+            .message = "`is` tests a type; it does not bind a variant's payload",
+            .caretCaption = "remove the payload pattern",
+            .hint = "Test the variant with `x is Option` and read the payload in a `case` arm: `case x { Option.Some(value: v) { … } }`.",
+        },
         .typeRecordWithVariants => .{
             .code = "type-record-with-variants",
             .message = "a `type` with a field list cannot also declare variants",

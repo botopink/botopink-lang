@@ -124,6 +124,22 @@ with nothing usable after it is `union-member-missing`, located at the bar.
 The `type A | B` meta-kind keeps its own `|`: `parseGenericParams`' constraint
 loop calls `parseTypeRefMember`, so each constraint stays one type.
 
+## `x is T` as an expression (decision 8 §4, 06 N21)
+
+`parseIsExpr` sits at the tightest level of the expression grammar, between
+`parseBinaryExpr`'s last precedence level and `parsePrimary`: `a is i32 == b` is
+`(a is i32) == b`, and `if (v is string)` needs no parentheses of its own. The
+right side is a full type — `i32`, `Point`, `#(i32, string)`, `Box<unknown>`, a
+union — parsed by `parseTypeRef`.
+
+It lands as the `is` builtin call (`ast.is_builtin_name`) with the value as its
+only argument and the tested type on the node's `isType`, since a type is not an
+expression; `ast.zig` documents what inference owes it, and the slot is left out
+of the AST dump when null, so no call snapshot moved. `is` with no type after it
+is `is-missing-type`; the payload-binding form `x is Some(v)` (§4.2) is
+`is-variant-binding`, located at the `(` — the node carries a type, so the
+binding form is refused where it starts instead of failing further along.
+
 ## Type guards (`-> x is T`)
 
 `fn f(x: ?string) -> x is string` parses to `typeGuardParam = "x"`, `typeGuardType = string` and

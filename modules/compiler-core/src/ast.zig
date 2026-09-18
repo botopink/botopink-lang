@@ -670,6 +670,15 @@ pub fn CallExprOf(comptime phase: Phase) type {
             optional: bool = false,
             args: []CallArgOf(phase),
             trailing: []TrailingLambdaOf(phase),
+            /// The type on the right of `x is T` — set only on the `is` builtin
+            /// call the parser synthesises (`is_builtin_name`), null on every
+            /// other call. Left out of the AST dump when null, so the slot moved
+            /// no snapshot.
+            isType: ?TypeRef = null,
+
+            pub fn jsonStringify(this: @This(), jws: anytype) !void {
+                return stringifyOmitting(this, jws, &.{}, &.{"isType"});
+            }
         },
         /// `expr |> fn1 |> fn2` — pipeline operator, left-associative chain
         pipeline: struct {
@@ -690,6 +699,10 @@ pub fn CallExprOf(comptime phase: Phase) type {
                     allocator.free(c.args);
                     for (c.trailing) |*t| t.deinit(allocator);
                     allocator.free(c.trailing);
+                    if (c.isType) |t| {
+                        var owned = t;
+                        owned.deinit(allocator);
+                    }
                 },
                 .pipeline => |p| {
                     p.lhs.deinit(allocator);
@@ -1572,6 +1585,23 @@ pub const unknown_type_name = "unknown";
 /// for `T[]`), and the error reported at the *use*, naming the branch that
 /// widened it.
 pub const union_type_name = "|";
+
+/// The reserved builtin-call name that carries decision 8 §4's `x is T`
+/// (06 N21): `call{ .callee = is_builtin_name, .is_builtin = true,
+/// .args = &.{ <the value> }, .isType = <the type> }` — the desugaring of the
+/// expression into `@is(x)` with the tested type on the node, since a type is
+/// not an expression and no AST union here may gain a variant.
+///
+/// `is` is a keyword, so no user function is called `is` and no source can write
+/// this call by hand.
+///
+/// **What inference has to do with it** (the checker half of N21): type the call
+/// `bool`, test the *value* by §4.1 (a number by range, converting inside the
+/// narrowed block), narrow the operand for the guarded block / arm body, and
+/// warn when the operand's static type makes the answer always false (§4.3).
+/// `Box<i32>` as the tested type is §4.2's error — only `Box<unknown>` is
+/// checkable.
+pub const is_builtin_name = "is";
 
 pub const TypeRef = union(enum) {
     /// Plain named type: `Int`, `string`, `Self`. Slice into source — not heap-owned.

@@ -142,6 +142,11 @@ pub const ParseErrorType = enum {
     unknownTakesNoArguments,
     /// `i32 | ` — a union type with nothing after the `|` (decision 8 §3, 06 N20).
     unionMemberMissing,
+    /// `x is` with no type after it (decision 8 §4, 06 N21).
+    isMissingType,
+    /// `x is Option.Some(v)` — the variant-binding form of `is` (§4.2), which
+    /// the grammar does not carry yet: `is` takes a type (06 N21).
+    isVariantBinding,
     /// `type P()` — an empty field list; a record with no fields omits `()`.
     typeEmptyFieldList,
     /// `type S { fn f(self: Self) {} A }` — variants come before methods.
@@ -1142,6 +1147,8 @@ pub const Parser = struct {
     pub const parseBaseTypeRef = types.parseBaseTypeRef;
 
     pub const parseTypeRefMember = types.parseTypeRefMember;
+
+    pub const startsTypeRef = types.startsTypeRef;
 
     // ── import decl ──────────────────────────────────────────────────────────
 

@@ -9,11 +9,11 @@ fn work(s: Status) -> i32 {
 
 ----- COMPILE DIAGNOSTIC -- main
 ```text
-error: parse error (unexpectedToken)
-  ┌─ :3:14
+error: parse error (isVariantBinding)
+  ┌─ :3:21
   │
 3 │     assert s is Busy(n);
 
-  unexpected `is`
+  unexpected `(`
 ```
 

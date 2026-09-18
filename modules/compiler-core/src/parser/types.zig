@@ -14,8 +14,9 @@ const TypeRef = parser.TypeRef;
 const GenericParam = parser.GenericParam;
 
 /// True when `kind` can begin a type reference. Used to decide whether a
-/// `type` meta-kind keyword is followed by a constraint list or stands alone.
-fn startsTypeRef(kind: TokenKind) bool {
+/// `type` meta-kind keyword is followed by a constraint list or stands alone,
+/// whether a `|` opens another union member, and whether an `is` has a type.
+pub fn startsTypeRef(kind: TokenKind) bool {
     return switch (kind) {
         .identifier, .builtinIdent, .questionMark, .hash, .@"fn", .selfType, .unknown => true,
         else => false,
