@@ -802,6 +802,26 @@ fn raiseUnexpected(this: *This, tok: Token) ParseError {
     return ParseError.UnexpectedToken;
 }
 
+/// A `//` comment written on the line the member just ended on — `Red, // warm`,
+/// `x: i32, // horizontal`, `fn two(…) { … } // trailing`. Consumes and returns
+/// it, or leaves the stream alone and returns null.
+///
+/// "Same line" is decided against the token just consumed, which is what tells a
+/// trailing comment apart from the NEXT member's leading one. Without the test
+/// every such comment is read as the next member's, where it says something
+/// false about the program — and on the last member there is no next member, so
+/// it used to be dropped.
+fn takeTrailingComment(this: *This) ?[]const u8 {
+    if (this.current == 0) return null;
+    const tok = this.peek();
+    if (tok.kind != .commentNormal and tok.kind != .commentDoc) return null;
+    const prev = this.tokens[this.current - 1];
+    const prevEnd = prev.line + std.mem.count(u8, prev.lexeme, "\n");
+    if (tok.line != prevEnd) return null;
+    _ = this.advance();
+    return tok.lexeme;
+}
+
 /// Parses a single enum item — either a bare/payload variant or a section
 /// (the latter when an identifier is followed by `{`). Returns whether the
 /// item ended with a trailing comma. When `allow_numeric` is true, accepts
@@ -813,7 +833,13 @@ fn parseEnumItem(
     variants: *std.ArrayList(EnumVariant),
     sections: *std.ArrayList(parser.EnumSection),
     allow_numeric: bool,
+    leading: []const []const u8,
 ) ParseError!bool {
+    // The member's position in the body it is declared in. `variants` and
+    // `sections` are two parallel slices, so the count of both together is the
+    // running index the source wrote — which is the whole of what the two
+    // `order` fields record.
+    const order: u32 = @intCast(variants.items.len + sections.items.len);
     // Numeric variant leaf (inside a section).
     if (this.check(.numberLiteral)) {
         if (!allow_numeric) return raiseUnexpected(this, this.peek());
@@ -823,7 +849,14 @@ fn parseEnumItem(
         // ES3 — section names must be identifiers (numeric names cannot open a section).
         if (this.check(.leftBrace)) return raiseUnexpected(this, this.peek());
         const consumed = this.match(.comma);
-        try variants.append(alloc, .{ .name = tok.lexeme, .fields = &.{}, .numeric = true });
+        try variants.append(alloc, .{
+            .name = tok.lexeme,
+            .fields = &.{},
+            .numeric = true,
+            .order = order,
+            .comments = leading,
+            .trailingComment = takeTrailingComment(this),
+        });
         return consumed;
     }
 
@@ -856,7 +889,12 @@ fn parseEnumItem(
         }
 
         while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
-            _ = try parseEnumItem(this, alloc, &sub_variants, &sub_sections, true);
+            const subLeading = try takeMemberComments(this, alloc);
+            if (this.check(.rightBrace) or this.check(.endOfFile)) {
+                alloc.free(subLeading);
+                break;
+            }
+            _ = try parseEnumItem(this, alloc, &sub_variants, &sub_sections, true, subLeading);
         }
         _ = try this.consume(.rightBrace);
         // Between sibling items inside the enclosing body, a comma is optional —
@@ -866,6 +904,8 @@ fn parseEnumItem(
             .name = itemName,
             .variants = try sub_variants.toOwnedSlice(alloc),
             .sections = try sub_sections.toOwnedSlice(alloc),
+            .order = order,
+            .comments = leading,
         });
         return consumed;
     }
@@ -914,13 +954,22 @@ fn parseEnumItem(
         try variants.append(alloc, .{
             .name = itemName,
             .fields = try fields.toOwnedSlice(alloc),
+            .order = order,
+            .comments = leading,
+            .trailingComment = takeTrailingComment(this),
         });
         return consumed;
     }
 
     // Bare variant.
     const consumed = this.match(.comma);
-    try variants.append(alloc, .{ .name = itemName, .fields = &.{} });
+    try variants.append(alloc, .{
+        .name = itemName,
+        .fields = &.{},
+        .order = order,
+        .comments = leading,
+        .trailingComment = takeTrailingComment(this),
+    });
     return consumed;
 }
 
@@ -1170,6 +1219,14 @@ pub fn parseFieldList(this: *This, alloc: std.mem.Allocator) ParseError!FieldLis
             .typeLoc = parser.Parser.locFromToken(fieldTypeTok),
         });
         trailingComma = this.match(.comma);
+        // A `//` on the field's own line belongs to THIS field. Collected at the
+        // top of the next iteration instead, it becomes the next field's leading
+        // comment — and on the last field the loop meets `)` and frees it, which
+        // is where a comment used to be destroyed outright.
+        if (takeTrailingComment(this)) |c| {
+            fields.items[fields.items.len - 1].trailingComment =
+                try alloc.dupe(u8, This.commentText(c));
+        }
         if (!trailingComma) break;
     }
     this.skipComments();
@@ -1259,6 +1316,7 @@ pub fn parseTypeDeclRest(this: *This, alloc: std.mem.Allocator, name: []const u8
                 };
                 method.annotations = memberAnnotations;
                 method.comments = memberComments;
+                method.trailingComment = takeTrailingComment(this);
                 try methods.append(alloc, method);
                 sawMethod = true;
                 needSeparator = false;
@@ -1270,10 +1328,13 @@ pub fn parseTypeDeclRest(this: *This, alloc: std.mem.Allocator, name: []const u8
             if (hasFieldList) return failAt(this, .typeRecordWithVariants, head);
             if (needSeparator) return failAt(this, .unexpectedToken, head);
             const isSection = head.kind == .identifier and this.peekAt(1).kind == .leftBrace;
+            // `memberComments` used to be dropped on the floor for anything
+            // that was not a method, which is why a `//` above a variant
+            // vanished: it was collected and then never given to anyone.
             const consumedComma = if (head.kind == .identifier and this.peekAt(1).kind == .leftParenthesis)
-                try parsePayloadVariant(this, alloc, &variants, &sections)
+                try parsePayloadVariant(this, alloc, &variants, &sections, memberComments)
             else
-                try parseEnumItem(this, alloc, &variants, &sections, false);
+                try parseEnumItem(this, alloc, &variants, &sections, false, memberComments);
             variantTrailingComma = consumedComma;
             needSeparator = !consumedComma and !isSection;
         }
@@ -1315,7 +1376,9 @@ fn parsePayloadVariant(
     alloc: std.mem.Allocator,
     variants: *std.ArrayList(EnumVariant),
     sections: *std.ArrayList(parser.EnumSection),
+    leading: []const []const u8,
 ) ParseError!bool {
+    const order: u32 = @intCast(variants.items.len + sections.items.len);
     const head = try this.consume(.identifier);
     for (sections.items) |existing| {
         if (std.mem.eql(u8, existing.name, head.lexeme)) return failAt(this, .unexpectedToken, head);
@@ -1326,7 +1389,13 @@ fn parsePayloadVariant(
         alloc.free(fl.fields);
     }
     const consumed = this.match(.comma);
-    try variants.append(alloc, .{ .name = head.lexeme, .fields = fl.fields });
+    try variants.append(alloc, .{
+        .name = head.lexeme,
+        .fields = fl.fields,
+        .order = order,
+        .comments = leading,
+        .trailingComment = takeTrailingComment(this),
+    });
     return consumed;
 }
 
@@ -1427,6 +1496,7 @@ fn parseBehaviorBody(this: *This, alloc: std.mem.Allocator, name: []const u8, ex
             method.annotations = memberAnnotations;
             method.is_declare = is_declare;
             method.comments = memberComments;
+            method.trailingComment = takeTrailingComment(this);
             try methods.append(alloc, method);
         } else {
             return failAt(this, .unexpectedToken, this.peek());

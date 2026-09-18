@@ -275,6 +275,40 @@ Records and enums parse into one `DeclKind.type_` (`TypeDecl`, whose `shape` is
 `record`/`enum`/`interface` (1.0.4-beta front 12 step 1).
 Both are pinned by snapshots (`comments_…`, `decl_ids_…`).
 
+### Member trivia and member order (front 16's carve-out)
+
+A body member carries the layout the formatter has to print back, and a field the
+parser does not record is a line the formatter deletes in silence — a deletion is
+idempotent, so `format --check` then calls the thinned file clean.
+
+| Slot | On | Written by |
+|---|---|---|
+| `comments` | `Field`, `BehaviorMethod`, `BehaviorField`, `EnumVariant`, `EnumSection` | `takeMemberComments` / `parseFieldList`, `""` for a blank source line |
+| `trailingComment` | `Field`, `BehaviorMethod`, `EnumVariant` | `takeTrailingComment`, gated on the comment sitting on the line the member ended on |
+| `order` | `EnumVariant`, `EnumSection` | `parseEnumItem` / `parsePayloadVariant`, as `variants.len + sections.len` at the moment of the append |
+
+`takeTrailingComment`'s same-line test is the whole of the distinction between a
+member's own trailing comment and the **next** member's leading one. Collected at
+the top of the next iteration instead — which is what happened before it existed
+— the comment is re-attached to the following member, where it says something
+false about the program, and on the **last** member there is no following member,
+so `parseFieldList` freed it outright.
+
+`order` exists because `TypeShape.EnumShape` keeps `variants` and `sections` in
+two parallel slices: an enum body may interleave them, and without an ordinal the
+interleaving is gone before any reader sees the AST, so a printer can only emit
+all of one list and then all of the other. It is additive on purpose — the 35
+`.variants()` / `.sections()` call sites across the five emitters, `comptime/` and
+`format.zig` keep reading the two slices unchanged. **Nothing in `src/codegen/`
+may key on a variant's position in `TypeShape.EnumShape.variants`**: `order` is
+source layout, not a run-time encoding, and a backend that started deriving a tag
+from a position would turn the formatter's member-ordering into a correctness
+question without anything saying so.
+
+None of the three reaches a snapshot: `order` is in `stringifyOmitting`'s
+`omitAlways` list and the two trivia slots in its `omitIfEmpty` list, so a member
+that uses none of them dumps exactly as it did before they existed.
+
 ## Notes
 
 - AST nodes are `union(enum)`; always call `deinit(alloc)` on heap-allocated

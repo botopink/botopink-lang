@@ -1234,6 +1234,12 @@ pub const BehaviorMethod = struct {
     /// prefix included), with "" for a blank source line. Owned slice; the
     /// strings slice into the source. Kept by the formatter.
     comments: []const []const u8 = &.{},
+    /// A `//` comment written on the member's own line, after it
+    /// (`fn two(self: Self) -> i32 { return 2; } // trailing`). Without this
+    /// slot it is picked up as the NEXT member's leading comment, or — on the
+    /// last member — by `bodyComments`, and either way it moves below the member
+    /// it was written on. Slices into the source.
+    trailingComment: ?[]const u8 = null,
 
     /// True when the method is a host-backed `#[@External.<Target>(…)]`
     /// declaration.
@@ -1283,7 +1289,7 @@ pub const BehaviorMethod = struct {
     }
 
     pub fn jsonStringify(this: BehaviorMethod, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{"returnTypeLoc"}, &.{"comments"});
+        return stringifyOmitting(this, jws, &.{"returnTypeLoc"}, &.{ "comments", "trailingComment" });
     }
 };
 
@@ -1580,10 +1586,30 @@ pub const EnumVariant = struct {
     /// True iff the variant name is a pure-digit literal. Only legal inside an
     /// enum-section body (top-level enum body still rejects digit names).
     numeric: bool = false,
+    /// Position among the members of the body that declares it, counting
+    /// variants and sections together. `variants` and `sections` are two
+    /// parallel slices, so without this the interleaving the source wrote is
+    /// gone by the time anything reads the AST, and a printer can only emit all
+    /// of one list and then all of the other. Layout only — never dumped.
+    order: u32 = 0,
+    /// `//` comment lines written above the variant, with "" for a blank source
+    /// line — the same convention `Field.comments` and `BehaviorMethod.comments`
+    /// use. Owned slice; the strings slice into the source.
+    comments: []const []const u8 = &.{},
+    /// A `//` comment written on the variant's own line, after it (`Red, // warm`).
+    /// Slices into the source.
+    trailingComment: ?[]const u8 = null,
 
     pub fn deinit(this: *EnumVariant, allocator: std.mem.Allocator) void {
         for (this.fields) |*f| f.deinit(allocator);
         allocator.free(this.fields);
+        if (this.comments.len > 0) allocator.free(this.comments);
+    }
+
+    /// `order` is layout, and the trivia is written only when present, so a
+    /// variant that carries neither dumps exactly as it did before they existed.
+    pub fn jsonStringify(this: EnumVariant, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{"order"}, &.{ "comments", "trailingComment" });
     }
 };
 
@@ -1598,12 +1624,23 @@ pub const EnumSection = struct {
     variants: []EnumVariant,
     /// Nested sub-sections.
     sections: []EnumSection,
+    /// Position among the members of the body that declares it — see
+    /// `EnumVariant.order`, which counts from the same sequence. Layout only.
+    order: u32 = 0,
+    /// `//` comment lines written above the section, with "" for a blank source
+    /// line. Owned slice; the strings slice into the source.
+    comments: []const []const u8 = &.{},
 
     pub fn deinit(this: *EnumSection, allocator: std.mem.Allocator) void {
         for (this.variants) |*v| v.deinit(allocator);
         allocator.free(this.variants);
         for (this.sections) |*s| s.deinit(allocator);
         allocator.free(this.sections);
+        if (this.comments.len > 0) allocator.free(this.comments);
+    }
+
+    pub fn jsonStringify(this: EnumSection, jws: anytype) !void {
+        return stringifyOmitting(this, jws, &.{"order"}, &.{"comments"});
     }
 };
 
@@ -2092,6 +2129,12 @@ pub const Field = struct {
     /// (`type Config(\n // where it listens\n host: string)`), text only.
     /// Owned. Kept so the formatter prints them back.
     comments: []const []const u8 = &.{},
+    /// A `//` comment written on the field's own line, after it
+    /// (`x: i32, // the horizontal coordinate`). Without this slot the comment
+    /// is read as the NEXT field's leading comment — where it says something
+    /// false — and on the last field there is no next field, so it was freed.
+    /// Text only and owned, like `comments`.
+    trailingComment: ?[]const u8 = null,
     /// Where the field's type annotation starts (06 N30). `{0,0}` when
     /// synthesised. Left out of the AST dump.
     typeLoc: Loc = .{ .line = 0, .col = 0 },
@@ -2103,6 +2146,7 @@ pub const Field = struct {
         if (this.annotations.len > 0) allocator.free(this.annotations);
         for (this.comments) |c| allocator.free(c);
         if (this.comments.len > 0) allocator.free(this.comments);
+        if (this.trailingComment) |c| allocator.free(c);
     }
 
     /// `comments` is written only when present, so a field without comments
@@ -2121,6 +2165,10 @@ pub const Field = struct {
             try jws.objectField("comments");
             try jws.write(this.comments);
         }
+        if (this.trailingComment) |c| {
+            try jws.objectField("trailingComment");
+            try jws.write(c);
+        }
         try jws.endObject();
     }
 };
@@ -2132,6 +2180,18 @@ pub const TypeShape = union(enum) {
     record: []Field,
     enum_: EnumShape,
 
+    /// Two parallel slices, and an enum body may **interleave** them. The
+    /// source order lives in each member's `order` field, not in the slices:
+    /// read them together and sort by it to recover what was written.
+    ///
+    /// **Nothing in `src/codegen/` may key on a variant's position in
+    /// `variants`.** A section desugars into a synthesised inner enum with a
+    /// mangled name, and no emitter derives a run-time encoding from an ordinal
+    /// (`grep -r 'variantIndex\|tag_index\|ordinal' src/codegen/` → 0 hits;
+    /// emilia built from both orderings emits byte-identical output on commonJS,
+    /// erlang, beam and wasm — re-measured 2026-09-18). The moment one did, the
+    /// order a member is stored in would stop being layout and start being
+    /// semantics, and it would do so silently.
     pub const EnumShape = struct {
         variants: []EnumVariant,
         /// Top-level sections (recursive groupings) declared inside the body. The
