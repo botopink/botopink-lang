@@ -270,3 +270,9 @@ editor renders is written in the 1.0.3 surface only — `renderBindingHover`
 prints `pub type Point(x: i32, y: i32)`, `pub type Shape { Circle(...) }` and
 `pub behavior Mappable<T>`, never `record` / `enum` / `interface`, so a hover
 card is a line the user could paste back into the file (front 14 step 1).
+
+The same rule binds `renderType`, which writes an inferred type rather than a
+declaration: `i32[]`, `?i32`, `#(name: string, pop: i32)` — never the checker's
+`array<…>` / `optional<…>` / `tuple<…>`. It is the one surface that also gets
+**written back**: the `Add type annotation` code action inserts exactly what
+`renderType` returned.
