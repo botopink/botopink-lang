@@ -66,7 +66,8 @@ parser/
     ├── errors.zig        ← parse errors & cross-stage error-message units
     ├── surface.zig       ← the 1.0.3 surface: `type` shapes, the field list, `behavior`, separators, and old-vs-new AST equality
     ├── decision8.zig     ← decision 8's grammar, one section per row: `unknown` (N19), union types (N20), `is` (N21), `case` arms (N22)
-    └── effect_rejections.zig ← parser-level `#[@<effect>]` rejections (R1/R2/R5…)
+    ├── effect_rejections.zig ← parser-level `#[@<effect>]` rejections (R1/R2/R5…)
+    └── language_surface.zig  ← front 15's rows: the forms the documents write against the grammar (R1 the `T[]` suffix, R2 the postfix chain, R3 a number as a receiver, R4 the shared block body)
 ```
 
 ## Testing pattern
@@ -79,6 +80,32 @@ test "import decl" {
 
 - Snapshot path: `modules/compiler-core/snapshots/parser/<slug>.snap.md` (slug from the test name)
 - Error tests: `expectParseError(alloc, "expected rendered message", source)` — it FAILS when the parse produced no `parseError` (nothing would be rendered), so the expected text is always compared; `expectParseFails(alloc, source)` only checks that parsing fails
+
+## One block body, and the prologue that used to fork it
+
+`parseBlock` consumes the `{` and delegates to **`parseBlockBody`**, which runs
+the statement loop under `BlockParseOptions` (`handleComments`,
+`trackEmptyLines`, `semicolonPolicy`, `useAfterBranchGuard`). A block that reads
+something between the `{` and its first statement — a prologue — consumes the
+`{` itself, reads the prologue, and then calls `parseBlockBody`:
+
+| Block | Prologue | Policy |
+|---|---|---|
+| fn / `test` body, `if` else-branch, `case` arm | — (`parseStmtListInBraces`) | `requiredExceptLast` |
+| `if` then-branch | `{ x -> ` — the branch's value binding | `requiredExceptLast` |
+| lambda `{ a, b -> … }` | the parameter list | `optional` |
+| trailing lambda `f { a -> … }` | an optional `label:` and the parameter list | `required` |
+| `loop (…) { x -> … }` body | the parameter list | `required` |
+
+**Five of those carried their own copy of the loop**, each written before the
+options existed, and each left out comment handling and empty-line tracking — so
+a `//` comment was a parse error in an `if` then-branch, a lambda body, a
+trailing lambda and a `loop` body, while the same comment in a fn body or an
+`if` else-branch parsed, and a blank line in any of them was lost (front 15 R4;
+`16-formatter`'s G5). **A block with a prologue calls `parseBlockBody`; it does
+not copy the loop.** The semicolon policy is per block and is what each copy
+already applied — they are recorded above rather than unified, because
+tightening one would refuse a program that compiles today.
 
 ## Type-ref grammar (`types.zig`)
 

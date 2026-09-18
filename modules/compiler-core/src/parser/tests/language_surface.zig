@@ -133,3 +133,58 @@ test "surface R3: the range and the float forms are unchanged" {
         \\}
     );
 }
+
+// ── R4 — one block body, reached by every block ──────────────────────────────
+//
+// `parseBlock` grew `handleComments` and `trackEmptyLines`; five blocks never
+// reached it, each carrying its own loop written before the options existed.
+// A `//` comment was a parse error in an `if` then-branch, a lambda body, a
+// `loop` body and a trailing lambda, while the same comment in a fn body, a
+// `test` body or an `if` else-branch parsed.
+
+test "surface R4: a comment and a blank line inside an if branch" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn f(c: bool) -> i32 {
+        \\    if (c) {
+        \\        // the then-branch
+        \\        println("a");
+        \\
+        \\        println("b");
+        \\    } else {
+        \\        // the else-branch
+        \\        println("c");
+        \\    };
+        \\    return 1;
+        \\}
+    );
+}
+
+test "surface R4: a comment inside a loop body and a lambda body" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn f() -> i32 {
+        \\    loop ([1, 2]) { x ->
+        \\        // a loop body is not a lambda body — it has its own block
+        \\        println("a");
+        \\
+        \\        println("b");
+        \\    };
+        \\    val g = { x ->
+        \\        // a standalone lambda
+        \\        x + 1
+        \\    };
+        \\    return g(1);
+        \\}
+    );
+}
+
+test "surface R4: an if branch that binds its value still binds it" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn f(v: ?i32) -> i32 {
+        \\    if (v) { x ->
+        \\        // the binding is the block's prologue, the comment is its body
+        \\        println("has");
+        \\    };
+        \\    return 1;
+        \\}
+    );
+}

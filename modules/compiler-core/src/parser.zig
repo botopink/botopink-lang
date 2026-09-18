@@ -697,6 +697,23 @@ pub const Parser = struct {
     /// Unifies every brace-delimited block in the parser via `BlockParseOptions`.
     pub fn parseBlock(this: *This, alloc: std.mem.Allocator, comptime opts: BlockParseOptions) ParseError![]Stmt {
         _ = try this.consume(.leftBrace);
+        return this.parseBlockBody(alloc, opts);
+    }
+
+    /// The body of a brace-delimited block, `{` **already consumed**, up to and
+    /// including the `}`.
+    ///
+    /// It exists for the two blocks that read something between the `{` and the
+    /// first statement and so cannot call `parseBlock`: the `if` then-branch's
+    /// `{ x -> … }` value binding, and a lambda's `{ a, b -> … }` parameter
+    /// list. Both used to carry their own copy of this loop, written before
+    /// `BlockParseOptions` existed, and each copy left out comment handling and
+    /// empty-line tracking — so a `//` comment was a parse error inside an `if`
+    /// then-branch and inside every `loop (…) { x -> … }` body (which is a
+    /// lambda body), while the same comment in a fn body, a `test` body or an
+    /// `if` **else**-branch parsed. **A block that needs a prologue calls this;
+    /// it does not copy the loop.**
+    pub fn parseBlockBody(this: *This, alloc: std.mem.Allocator, comptime opts: BlockParseOptions) ParseError![]Stmt {
         var stmts: std.ArrayList(Stmt) = .empty;
         errdefer {
             for (stmts.items) |*s| s.deinit(alloc);

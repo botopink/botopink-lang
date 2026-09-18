@@ -166,18 +166,17 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
                 binding = this.advance().lexeme;
                 _ = this.advance(); // consume `->`
             }
-            var stmts: std.ArrayList(Stmt) = .empty;
-            errdefer {
-                for (stmts.items) |*s| s.deinit(alloc);
-                stmts.deinit(alloc);
-            }
-            while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
-                const expr = try this.parseExpr(alloc);
-                if (!this.match(.semicolon) and !this.check(.rightBrace)) return ParseError.UnexpectedToken;
-                try stmts.append(alloc, .{ .expr = expr });
-            }
-            _ = try this.consume(.rightBrace);
-            break :blk try stmts.toOwnedSlice(alloc);
+            // The shared block body — same options as `parseStmtListInBraces`,
+            // which the else-branch below already uses. The `{` and the `x ->`
+            // binding are the prologue this branch reads first; everything
+            // after it is the one block loop, so a `//` comment and a blank
+            // line are recorded here exactly as they are in the else-branch.
+            break :blk try this.parseBlockBody(alloc, .{
+                .trackEmptyLines = true,
+                .handleComments = true,
+                .semicolonPolicy = .requiredExceptLast,
+                .useAfterBranchGuard = true,
+            });
         } else blk: {
             const expr = try this.parseExpr(alloc);
             var stmts: std.ArrayList(Stmt) = .empty;
@@ -980,26 +979,24 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
             }
             _ = try this.consume(.rightArrow);
 
-            // Parse body statements (with semicolons)
-            var stmts: std.ArrayList(Stmt) = .empty;
-            errdefer {
-                for (stmts.items) |*s| s.deinit(alloc);
-                stmts.deinit(alloc);
-            }
-            while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
-                const expr = try this.parseExpr(alloc);
-                try stmts.append(alloc, .{ .expr = expr });
-                // Consume semicolon if present
-                if (this.check(.semicolon)) {
-                    _ = try this.consume(.semicolon);
-                }
-            }
-            _ = try this.consume(.rightBrace);
+            // The shared block body — the `{` and the `a, b ->` parameter list
+            // are this block's prologue. The semicolon policy stays `.optional`,
+            // which is what this body has always applied: `{ x -> a b }` parses
+            // today and tightening it would refuse a program that compiles.
+            // What it gains is comment handling and empty-line tracking, so a
+            // `//` inside a lambda — and so inside every `loop (…) { x -> … }`
+            // body — parses, and a blank line inside one survives the printer.
+            const body = try this.parseBlockBody(alloc, .{
+                .trackEmptyLines = true,
+                .handleComments = true,
+                .semicolonPolicy = .optional,
+                .useAfterBranchGuard = false,
+            });
 
             return Expr{ .function = .{ .loc = locFromToken(braceTok), .kind = .{
                 .syntax = .lambda,
                 .params = try paramList.toOwnedSlice(alloc),
-                .body = try stmts.toOwnedSlice(alloc),
+                .body = body,
             } } };
         } else {
             // { } without -> is not allowed (use @block builtin instead)
@@ -1640,23 +1637,21 @@ pub fn parseTrailingLambdas(this: *This, alloc: std.mem.Allocator) ParseError![]
             _ = this.advance();
         }
 
-        // Parse body statements
-        var stmts: std.ArrayList(Stmt) = .empty;
-        errdefer {
-            for (stmts.items) |*s| s.deinit(alloc);
-            stmts.deinit(alloc);
-        }
-        while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
-            const expr = try this.parseExpr(alloc);
-            _ = try this.consume(.semicolon);
-            try stmts.append(alloc, .{ .expr = expr });
-        }
-        _ = try this.consume(.rightBrace);
+        // The shared block body — the `{`, the optional label and the
+        // `a, b ->` parameter list are this block's prologue. The semicolon
+        // policy stays `.required`, which a trailing lambda has always applied;
+        // what it gains is comment handling and empty-line tracking.
+        const body = try this.parseBlockBody(alloc, .{
+            .trackEmptyLines = true,
+            .handleComments = true,
+            .semicolonPolicy = .required,
+            .useAfterBranchGuard = false,
+        });
 
         try lambdas.append(alloc, .{
             .label = label,
             .params = try paramList.toOwnedSlice(alloc),
-            .body = try stmts.toOwnedSlice(alloc),
+            .body = body,
         });
     }
 
@@ -1721,19 +1716,17 @@ pub fn parseLoopExpr(this: *This, alloc: std.mem.Allocator) ParseError!LoopExpr 
         _ = try this.consume(.rightArrow);
     }
 
-    // Body is already-consumed `{ stmt; ... }`
-    var stmts: std.ArrayList(Stmt) = .empty;
-    errdefer {
-        for (stmts.items) |*s| s.deinit(alloc);
-        stmts.deinit(alloc);
-    }
-    while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
-        const e = try this.parseExpr(alloc);
-        _ = try this.consume(.semicolon);
-        try stmts.append(alloc, .{ .expr = e });
-    }
-    _ = try this.consume(.rightBrace);
-    const body = try stmts.toOwnedSlice(alloc);
+    // The shared block body — the `{` and the `x, y ->` parameter list are this
+    // block's prologue. The semicolon policy stays `.required`, which is what a
+    // loop body has always applied. What it gains is comment handling and
+    // empty-line tracking: a `//` inside a `loop (…) { x -> … }` body was a
+    // parse error, and a blank line inside one was dropped by the printer.
+    const body = try this.parseBlockBody(alloc, .{
+        .trackEmptyLines = true,
+        .handleComments = true,
+        .semicolonPolicy = .required,
+        .useAfterBranchGuard = false,
+    });
 
     return .{
         .loc = locFromToken(loopTok),
