@@ -74,6 +74,14 @@ pub const ProjectConfig = struct {
     /// loader path is bypassed (e.g. a hand-rolled `ProjectConfig` in tests).
     /// Owned by the same arena as the rest of the config.
     dep_diagnostics: []const DepDiagnostic = &.{},
+    /// The manifest's `files` — modules this package ships to something outside
+    /// its own `mod` tree, each a path relative to `src`. A consumer of a
+    /// dependency loads them (`libs.loadDependencies`); `libs/std` uses them for
+    /// the ambient modules the compiler build embeds into the global type env.
+    /// Either way the module is reached, which is why a `files` entry is not an
+    /// orphan. A non-string entry is skipped rather than failing the load — the
+    /// dependency loader reports an unreadable one with its manifest location.
+    files: []const []const u8 = &.{},
 
     /// The manifest's `target`, or null when it names a target the compiler
     /// does not support. Never degrades an unknown target to commonJS — the
@@ -175,6 +183,17 @@ pub fn parse(arena: std.mem.Allocator, data: []const u8) LoadError!ProjectConfig
         var diags: std.ArrayListUnmanaged(DepDiagnostic) = .empty;
         cfg.dependencies = try parseDependencies(arena, v, &diags);
         cfg.dep_diagnostics = try diags.toOwnedSlice(arena);
+    }
+
+    if (root.object.get("files")) |v| {
+        if (v == .array) {
+            var files: std.ArrayListUnmanaged([]const u8) = .empty;
+            for (v.array.items) |item| {
+                if (item != .string) continue;
+                try files.append(arena, try arena.dupe(u8, item.string));
+            }
+            cfg.files = try files.toOwnedSlice(arena);
+        }
     }
 
     return cfg;
@@ -449,4 +468,22 @@ test "dependencyNames: flattens to bare names" {
     try testing.expectEqual(@as(usize, 2), names.len);
     try testing.expectEqualStrings("a", names[0]);
     try testing.expectEqualStrings("b", names[1]);
+}
+
+test "files: the manifest's declared surface is read, non-strings skipped, absent is empty" {
+    var arena_inst = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+
+    const cfg = try parse(arena,
+        \\{ "name": "std", "files": ["primitives.bp", 7, "builtins.d.bp"] }
+    );
+    try testing.expectEqual(@as(usize, 2), cfg.files.len);
+    try testing.expectEqualStrings("primitives.bp", cfg.files[0]);
+    try testing.expectEqualStrings("builtins.d.bp", cfg.files[1]);
+
+    const none = try parse(arena,
+        \\{ "name": "p" }
+    );
+    try testing.expectEqual(@as(usize, 0), none.files.len);
 }

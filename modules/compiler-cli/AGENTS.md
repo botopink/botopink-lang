@@ -166,8 +166,16 @@ Cross-command rules:
   renders each and names the failed non-declaration modules (a module with no
   entry at all is named too). No command re-runs the comptime pipeline to
   explain a failure.
-- **Orphans.** A `.bp` file no `mod` path reaches is warned per file and counted
-  once (`N module(s) not reached by any `mod` path were not compiled`).
+- **Orphans.** A `.bp` file that **nothing** reaches is warned per file and
+  counted once (`N module(s) not reached by any `mod` path were not compiled`).
+  A module has two routes into a build and reachability means either: a `mod`
+  path from the root, or the manifest's `files`, which ships it to a consumer
+  that is not this package's module tree. `libs/std` is the second kind —
+  `src/primitives.bp` is ambient, embedded into the global type env by
+  `build.zig`'s `std_core_files` and declared in `libs/std`'s `files`, never in
+  `root.bp`'s `pub mod` chain. Knowing only the first route, the check warned
+  about it on every gate run. A file in neither is still an orphan, which is the
+  case the warning exists for.
 - **An import names something.** `import … from "<name>"` must resolve to a
   package module (the `mod` tree, dotted path), to a declared dependency
   (`<dep>` or `<dep>.<module>`) or to `std`; otherwise `build`, `check` and
