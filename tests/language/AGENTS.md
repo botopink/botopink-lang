@@ -152,17 +152,20 @@ them, by area:
 | run-time type identity (§4, §7 — `13-module-identity`) | 4 test + 1 run | 5 |
 | modules | 3 `modules/` cells | 3 |
 
-Classification at botopink-lang `fcc4b5b` + step 4.1 (node v25.8.0, OTP 29),
-`zig build test-language`, every target of `--target all` together:
+Classification at botopink-lang `19a3b01` (node v25.8.0, OTP 29), `zig build test-language`, every
+target of `--target all` together:
 
 ```
-language tests: 206 passed, 64 expected failures, 0 failed
+language tests: 218 passed, 53 expected failures, 0 failed
 ```
 
-All 64 owner cells name a 1.0.5-beta front. By the row that comes first on the line —
-**01-checker 37 · 02-erlang 10 · 04-js 8 · 05-wasm 5 · 13-module-identity 4** — and **15** of them
-name `13-module-identity` as a further row that has to land before the line goes (the §7 formatter's
-record and variant halves, and the identity cells behind a checker row).
+`expected-failures.txt` holds **61** lines: these 53 plus 8 that only `--target beam` exercises (the
+11 `*` reject lines are counted by both runs). Every owner cell names a 1.0.5-beta section, re-checked
+against `specs/1.0.5-beta/` on 2026-09-18. By the row that comes first on the line —
+**01-checker 35 · 02-erlang 10 · 03-beam 7 · 05-wasm 5 · 13-module-identity 4**, and **04-js none**,
+because front 04 deleted all seven of its lines in `c253965`, `7b6b5d3` and `17c5f8b`. **19** lines
+name a second row that has to land before the line goes (the §7 formatter's record and variant
+halves, and the identity cells behind a checker row).
 `tests/language/run.sh --target beam` adds 10 results of its own — 2 passing, 8 listed (7 against
 `03-beam`, 1 against `01-checker`, 3 of them naming `13 step 18` too); those lines are skipped by
 `--target all`. See § the targets.

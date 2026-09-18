@@ -1,21 +1,31 @@
 # Expected failures of the language tests.
 #
-#   <target: commonJS | erlang | wasm | *> | <path>[::<test name>] | <owner row> | <reason>
+#   <target: commonJS | erlang | wasm | beam | *> | <path>[::<test name>] | <owner row> | <reason>
 #
 # Every line names the row of the front that makes it pass. A listed test that
 # passes fails the run ("delete its line"); a path-only entry is for a file that
 # does not compile. `*` is for reject/ files (target-independent).
 #
 # Owner rows are 1.0.5-beta fronts (`specs/1.0.5-beta/fronts.md`), written as
-# `<front number> step <n>`. Repointed from the 1.0.4-beta rows (`06 N…`,
-# `01 step 6`) by front 12 step 1; the results did not move — 205 passed,
-# 54 expected failures, 0 failed, at botopink-lang `c2dd780`, node v25.8.0,
-# OTP 29.
+# `<front number> step <n>`. The 1.0.4-beta rows (`06 N…`, `01 step 6`) were
+# repointed by front 12 step 1 at `7ab6a55`; every owner cell below was
+# re-checked against `specs/1.0.5-beta/` on 2026-09-18 and each names a section
+# that exists.
 #
-# Distribution: 01-checker 31 · 02-erlang 9 · 04-js 7 · 05-wasm 4 ·
-# 13-module-identity 3. Twelve lines name a second row that has to land before
-# the line goes (the §7 formatter's record and variant halves are 13 step 18,
-# not a backend's).
+# Re-measured at botopink-lang `19a3b01`, node v25.8.0, OTP 29:
+#
+#   $ tests/language/run.sh                 # commonJS, erlang, wasm
+#   language tests: 218 passed, 53 expected failures, 0 failed
+#   $ tests/language/run.sh --target beam
+#   language tests: 13 passed, 19 expected failures, 0 failed
+#
+# 61 lines: 53 exercised by `--target all`, 8 more only by `--target beam`
+# (the 11 `*` reject lines are counted by both runs). By the row that comes
+# first on the line: 01-checker 35 · 02-erlang 10 · 03-beam 7 · 05-wasm 5 ·
+# 13-module-identity 4. **04-js has none** — front 04 deleted all seven of its
+# lines in `c253965`, `7b6b5d3` and `17c5f8b`. Nineteen lines name a second row
+# that has to land before the line goes (the §7 formatter's record and variant
+# halves are 13 step 18, not a backend's).
 
 # ── §5 case arms — the grammar landed (1.0.4's 06 N22 parser half); the checker's is open ──
 # `Pattern { body }`, `when (…)`, `.Variant`, tuple/label/rest patterns all parse,
