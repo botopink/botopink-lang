@@ -46,6 +46,7 @@ class DbError {
         this.msg = msg;
     }
 }
+DbError.prototype.__bp = "DbError";
 
 function inner() {
     return ({ error: new DbError("conn refused") });

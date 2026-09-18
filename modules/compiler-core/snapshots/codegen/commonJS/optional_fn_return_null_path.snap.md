@@ -39,6 +39,7 @@ class R {
         this.kind = kind;
     }
 }
+R.prototype.__bp = "R";
 
 function choose(present) {
     if (present) { return new R(7); } else { return null; }

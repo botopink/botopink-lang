@@ -14,6 +14,7 @@ class R {
         this.b = b;
     }
 }
+R.prototype.__bp = "R";
 
 function pick(maybe) {
     return maybe?.b;

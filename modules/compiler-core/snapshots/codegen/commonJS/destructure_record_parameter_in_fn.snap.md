@@ -37,6 +37,7 @@ class Person {
         this.age = age;
     }
 }
+Person.prototype.__bp = "Person";
 
 function greet({ name }) {
     __bp_print(name);

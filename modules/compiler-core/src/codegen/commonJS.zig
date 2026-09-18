@@ -828,6 +828,12 @@ const Emitter = struct {
     /// positionally, so `r` is read from the declared field (`radius`), never
     /// from a property named after the binding.
     variant_fields: std.StringHashMap([]const []const u8),
+    /// Payload-less variant name → the JS class this module emits for it
+    /// (`Nothing` → `Shape$Nothing`), for every enum declared here. A unit
+    /// variant is a singleton instance of that class (decision 5), so an arm
+    /// naming it tests `instanceof`, where it used to compare the value with
+    /// the bare string `"Nothing"`.
+    unit_variant_class: std.StringHashMap([]const u8),
     /// `Enum.method` for every enum method this module declares that takes the
     /// receiver first (`fn area(self: Self)`, `fn check(m: Self)`). Enum values
     /// are plain objects / variant-name strings with no methods of their own,
@@ -902,6 +908,7 @@ const Emitter = struct {
             .externals_missing = std.StringHashMap(void).init(alloc),
             .class_names = std.StringHashMap(void).init(alloc),
             .variant_fields = std.StringHashMap([]const []const u8).init(alloc),
+            .unit_variant_class = std.StringHashMap([]const u8).init(alloc),
             .enum_recv_methods = std.StringHashMap(void).init(alloc),
             .imported_enums = std.StringHashMap(void).init(alloc),
             .prelude_iface_externals = std.StringHashMap(ast.ExternalRef).init(alloc),
@@ -933,6 +940,7 @@ const Emitter = struct {
         self.externals_missing.deinit();
         self.class_names.deinit();
         self.variant_fields.deinit();
+        self.unit_variant_class.deinit();
         self.enum_recv_methods.deinit();
         self.imported_enums.deinit();
         self.prelude_iface_externals.deinit();
@@ -1219,7 +1227,21 @@ const Emitter = struct {
             },
             .type_ => |e| if (!e.isRecord()) {
                 for (e.variants()) |v| {
-                    if (v.fields.len == 0) continue;
+                    if (v.fields.len == 0) {
+                        // Two enums in one module may share a bare variant
+                        // name (emilia's `Token.Text.Bold` and
+                        // `Token.Font.Weight.Bold`). The name alone then does
+                        // not name a class, so the arm keeps the `tag` test —
+                        // exactly as ambiguous as the string compare it
+                        // replaces, and no more.
+                        const gop = try self.unit_variant_class.getOrPut(v.name);
+                        if (gop.found_existing) {
+                            gop.value_ptr.* = "";
+                        } else {
+                            gop.value_ptr.* = try self.variantClassName(e.name, v.name);
+                        }
+                        continue;
+                    }
                     const names = try self.arena().alloc([]const u8, v.fields.len);
                     for (v.fields, 0..) |f, i| names[i] = f.name;
                     try self.variant_fields.put(v.name, names);
@@ -1545,8 +1567,9 @@ const Emitter = struct {
             .ctor = ctor,
             .members = try members.toOwnedSlice(self.arena()),
         } };
-        if (!r.isPub) return class;
-        return self.b.group(&.{ class, try self.pubExport(r.name) });
+        const marker = try self.protoName(r.name, r.name);
+        if (!r.isPub) return self.b.group(&.{ class, marker });
+        return self.b.group(&.{ class, marker, try self.pubExport(r.name) });
     }
 
     /// The instance `default fn`s of a local interface (and the interfaces it
@@ -1587,32 +1610,117 @@ const Emitter = struct {
         for (iface.extends) |parent| try self.appendInterfaceDefaults(members, parent, depth + 1);
     }
 
+    /// `<Class>.prototype.__bp = "<source name>";` — the marker the §7
+    /// formatter reads to tell a botopink value from a host object, carrying
+    /// the name the language spells for the type. It sits on the prototype,
+    /// so `Object.keys(value)` still answers exactly the declared fields.
+    fn protoName(self: *Emitter, class_name: []const u8, source_name: []const u8) !js.Stmt {
+        return .{ .expr = try self.b.assign(
+            try self.b.member(try self.b.member(.{ .name = class_name }, "prototype"), "__bp"),
+            "=",
+            .{ .quoted = source_name },
+        ) };
+    }
+
+    /// The JS class name of one variant of `enum_name` — `Shape$Circle`.
+    /// A botopink identifier cannot hold a `$`, so the mangling never collides
+    /// with a user type.
+    fn variantClassName(self: *Emitter, enum_name: []const u8, variant: []const u8) ![]const u8 {
+        return std.fmt.allocPrint(self.arena(), "{s}${s}", .{ enum_name, variant });
+    }
+
+    /// 1.0.5-beta decision 5 — a `type` with variants emits **a class per
+    /// declaration and a subclass per variant**, so every value of the type
+    /// answers `instanceof Shape` and every variant answers its own class:
+    ///
+    /// ```js
+    /// class Shape {
+    ///     static Circle(radius) { return new Shape$Circle(radius); }
+    /// }
+    /// class Shape$Circle extends Shape {
+    ///     constructor(radius) { super(); this.radius = radius; }
+    /// }
+    /// Shape$Circle.prototype.tag = "Circle";
+    /// class Shape$Dot extends Shape {
+    /// }
+    /// Shape$Dot.prototype.tag = "Dot";
+    /// Shape.Dot = new Shape$Dot();
+    /// ```
+    ///
+    /// A payload-less variant is a **singleton instance**, not the bare string
+    /// it used to be — the shape the emitted `.d.ts` always declared. `tag`
+    /// lives on the prototype, not on the instance, so it is identity rather
+    /// than data: a variant arm in another module keeps testing `_s.tag`, and
+    /// `Object.keys(value)` still answers exactly the payload fields, which is
+    /// what the §7 formatter reads.
+    ///
+    /// The subclasses follow the base class because `extends Shape` is
+    /// evaluated when the subclass declaration runs; the singletons follow the
+    /// subclasses for the same reason.
     fn buildEnum(self: *Emitter, e: ast.TypeDecl) !js.Stmt {
-        var props: std.ArrayListUnmanaged(js.Object.Prop) = .empty;
+        var members: std.ArrayListUnmanaged(js.Class.ClassMember) = .empty;
+        var tail: std.ArrayListUnmanaged(js.Stmt) = .empty;
+
         for (e.variants()) |v| {
-            if (v.fields.len == 0) {
-                try props.append(self.arena(), .{ .kv = .{ .key = v.name, .value = .{ .quoted = v.name } } });
-                continue;
+            const class_name = try self.variantClassName(e.name, v.name);
+            var ctor: ?js.Class.Ctor = null;
+            if (v.fields.len > 0) {
+                const params = try self.arena().alloc(js.Param, v.fields.len);
+                const assigns = try self.arena().alloc(js.Stmt, v.fields.len + 1);
+                assigns[0] = .{ .expr = try self.b.call(.{ .name = "super" }, &.{}) };
+                for (v.fields, 0..) |f, i| {
+                    params[i] = .{ .pattern = .{ .name = f.name } };
+                    assigns[i + 1] = .{ .expr = try self.b.assign(
+                        try self.b.member(.this, f.name),
+                        "=",
+                        .{ .name = f.name },
+                    ) };
+                }
+                ctor = .{ .params = params, .body = .{ .stmts = assigns, .indent = 1 } };
+
+                // `Shape.Circle(5)` stays a call, so the factory keeps every
+                // construction site in the language byte-identical.
+                const args = try self.arena().alloc(js.Expr, v.fields.len);
+                for (v.fields, 0..) |f, i| args[i] = .{ .name = f.name };
+                try members.append(self.arena(), .{
+                    .kind = .static_method,
+                    .name = v.name,
+                    .params = params,
+                    .body = .{ .stmts = try self.b.stmts(&.{
+                        .{ .return_ = try self.b.new_(.{ .name = class_name }, args) },
+                    }), .indent = 1 },
+                });
             }
-            const params = try self.arena().alloc(js.Param, v.fields.len);
-            const obj_props = try self.arena().alloc(js.Object.Prop, v.fields.len + 1);
-            obj_props[0] = .{ .kv = .{ .key = "tag", .value = .{ .quoted = v.name } } };
-            for (v.fields, 0..) |f, i| {
-                params[i] = .{ .pattern = .{ .name = f.name } };
-                obj_props[i + 1] = .{ .shorthand = f.name };
-            }
-            try props.append(self.arena(), .{ .kv = .{
-                .key = v.name,
-                .value = try self.b.arrowExpr(params, try self.b.paren(.{ .object = .{ .props = obj_props } })),
+
+            try tail.append(self.arena(), .{ .class = .{
+                .name = class_name,
+                .extends = e.name,
+                .ctor = ctor,
             } });
+            try tail.append(self.arena(), .{ .expr = try self.b.assign(
+                try self.b.member(try self.b.member(.{ .name = class_name }, "prototype"), "tag"),
+                "=",
+                .{ .quoted = v.name },
+            ) });
         }
+
+        // The payload-less singletons, after every subclass exists.
+        for (e.variants()) |v| {
+            if (v.fields.len > 0) continue;
+            try tail.append(self.arena(), .{ .expr = try self.b.assign(
+                try self.b.member(.{ .name = e.name }, v.name),
+                "=",
+                try self.b.new_(.{ .name = try self.variantClassName(e.name, v.name) }, &.{}),
+            ) });
+        }
+
         const prev_self_param = self.self_is_param;
         defer self.self_is_param = prev_self_param;
         for (e.methods) |m| {
             if (m.is_declare) continue;
-            // A receiver-first method keeps `self` as a real parameter: variant
-            // values carry no methods, so a call site passes the value in
-            // (`Shape.area(value)`, `enumMethodOwner`).
+            // A receiver-first method keeps `self` as a real parameter: an enum
+            // method is a static of the enum's class, so a call site passes the
+            // value in (`Shape.area(value)`, `enumMethodOwner`).
             const recv_first = enumMethodTakesReceiver(m) and std.mem.eql(u8, m.params[0].name, "self");
             const params = if (recv_first) blk: {
                 const ps = try self.arena().alloc(js.Param, m.params.len);
@@ -1623,20 +1731,25 @@ const Emitter = struct {
             self.current_indent = 2;
             const body = try self.buildStmts(m.body orelse &.{});
             self.current_indent = 0;
-            try props.append(self.arena(), .{ .kv = .{
-                .key = m.name,
-                .value = .{ .function = .{ .params = params, .body = .{ .stmts = body, .indent = 1 } } },
-            } });
+            try members.append(self.arena(), .{
+                .kind = .static_method,
+                .name = m.name,
+                .params = params,
+                .body = .{ .stmts = body, .indent = 1 },
+            });
         }
-        const decl = js.Stmt{ .decl = .{
-            .pattern = .{ .name = e.name },
-            .value = try self.b.call(
-                try self.b.member(.{ .name = "Object" }, "freeze"),
-                &.{.{ .object = .{ .props = try props.toOwnedSlice(self.arena()), .layout = .lines } }},
-            ),
-        } };
-        if (!e.isPub) return decl;
-        return self.b.group(&.{ decl, try self.pubExport(e.name) });
+
+        var out: std.ArrayListUnmanaged(js.Stmt) = .empty;
+        try out.append(self.arena(), .{ .class = .{
+            .name = e.name,
+            .members = try members.toOwnedSlice(self.arena()),
+        } });
+        // Only the base class is marked: every variant inherits `__bp` and
+        // adds its own `tag`, which is how the formatter spells `Shape.Square`.
+        try out.append(self.arena(), try self.protoName(e.name, e.name));
+        for (tail.items) |st| try out.append(self.arena(), st);
+        if (e.isPub) try out.append(self.arena(), try self.pubExport(e.name));
+        return self.b.group(try out.toOwnedSlice(self.arena()));
     }
 
     fn buildInterface(self: *Emitter, i: ast.BehaviorDecl) !js.Stmt {
@@ -3733,7 +3846,16 @@ const Emitter = struct {
             .wildcard => return null,
             .numberLit => |n| return try self.b.binaryBare("===", subject, .{ .number = n }),
             .stringLit => |s| return try self.b.binaryBare("===", subject, .{ .lexeme_string = s }),
-            .ident => |n| return try self.b.binaryBare("===", subject, .{ .quoted = n }),
+            // A bare name is a payload-less variant (a lower-case name alone is
+            // not an arm — decision 8 § 5.2). Declared here it is a singleton
+            // of its own class, so the test is `instanceof`; declared in
+            // another module it is still tested through the `tag` its
+            // prototype carries.
+            .ident => |n| {
+                const cls = self.unit_variant_class.get(n) orelse "";
+                if (cls.len > 0) return try self.b.binaryBare("instanceof", subject, .{ .name = cls });
+                return try self.b.binaryBare("===", try self.b.member(subject, "tag"), .{ .quoted = n });
+            },
             .@"or" => |pats| {
                 if (pats.len == 0) return js.Expr{ .name = "false" };
                 var acc: ?js.Expr = null;

@@ -299,6 +299,7 @@ class Dict {
         return new Dict(out);
     }
 }
+Dict.prototype.__bp = "Dict";
 exports.Dict = Dict;
 
 function empty() {

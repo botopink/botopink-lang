@@ -35,16 +35,23 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-const Status = Object.freeze({
-    Ok: "Ok",
-    Fail: "Fail",
-});
+class Status {
+}
+Status.prototype.__bp = "Status";
+class Status$Ok extends Status {
+}
+Status$Ok.prototype.tag = "Ok";
+class Status$Fail extends Status {
+}
+Status$Fail.prototype.tag = "Fail";
+Status.Ok = new Status$Ok();
+Status.Fail = new Status$Fail();
 
 function check(s) {
     {
         const _s = s;
-        if (_s === "Ok") return ({ ok: 1 });
-        if (_s === "Fail") return ({ error: "failed" });
+        if (_s instanceof Status$Ok) return ({ ok: 1 });
+        if (_s instanceof Status$Fail) return ({ error: "failed" });
     }
 }
 

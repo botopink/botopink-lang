@@ -37,12 +37,14 @@ class Inner {
         this.value = value;
     }
 }
+Inner.prototype.__bp = "Inner";
 
 class Outer {
     constructor(inner) {
         this.inner = inner;
     }
 }
+Outer.prototype.__bp = "Outer";
 
 function getValue(o) {
     return o.inner?.value;

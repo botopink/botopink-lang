@@ -125,6 +125,7 @@ class Service {
         this.name = name;
     }
 }
+Service.prototype.__bp = "Service";
 
 function collect(xs) {
     let out = [];

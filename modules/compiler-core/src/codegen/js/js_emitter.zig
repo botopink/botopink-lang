@@ -555,6 +555,10 @@ fn writeFunctionDecl(w: *Writer, f: Ast.FunctionDecl, indent: usize) Error!void 
 fn writeClass(w: *Writer, c: Ast.Class, indent: usize) Error!void {
     try w.writeAll("class ");
     try w.writeAll(c.name);
+    if (c.extends) |base| {
+        try w.writeAll(" extends ");
+        try w.writeAll(base);
+    }
     try w.writeAll(" {\n");
     if (c.ctor) |ctor| {
         try writeIndent(w, 1);
@@ -564,8 +568,10 @@ fn writeClass(w: *Writer, c: Ast.Class, indent: usize) Error!void {
         try writeBlock(w, ctor.body);
         try w.writeByte('\n');
     }
-    for (c.members) |m| {
-        try w.writeByte('\n');
+    for (c.members, 0..) |m, mi| {
+        // A blank line separates members from each other and from the
+        // constructor — never opens the body.
+        if (mi > 0 or c.ctor != null) try w.writeByte('\n');
         try writeIndent(w, 1);
         switch (m.kind) {
             .method => {},

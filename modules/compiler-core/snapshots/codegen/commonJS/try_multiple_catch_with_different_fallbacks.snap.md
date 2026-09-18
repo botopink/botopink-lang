@@ -45,6 +45,7 @@ class UserError {
         this.msg = msg;
     }
 }
+UserError.prototype.__bp = "UserError";
 
 function fetchName() {
     return ({ error: new UserError("name missing") });

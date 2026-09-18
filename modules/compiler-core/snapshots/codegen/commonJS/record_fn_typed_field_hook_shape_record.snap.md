@@ -13,6 +13,7 @@ class State {
         this.set = set;
     }
 }
+State.prototype.__bp = "State";
 
 function make() {
     return new State(0, (n) => {

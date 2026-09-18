@@ -59,16 +59,30 @@ class Square {
         return (this.side * this.side);
     }
 }
+Square.prototype.__bp = "Square";
 
-const Size = Object.freeze({
-    Small: "Small",
-    Large: (n) => ({ tag: "Large", n }),
-});
+class Size {
+    static Large(n) {
+        return new Size$Large(n);
+    }
+}
+Size.prototype.__bp = "Size";
+class Size$Small extends Size {
+}
+Size$Small.prototype.tag = "Small";
+class Size$Large extends Size {
+    constructor(n) {
+        super();
+        this.n = n;
+    }
+}
+Size$Large.prototype.tag = "Large";
+Size.Small = new Size$Small();
 
 function weight(s) {
     return (() => {
         const _s = s;
-        if (_s === "Small") return 1;
+        if (_s instanceof Size$Small) return 1;
         if (_s.tag === "Large") {
             const { n } = _s;
             return n;

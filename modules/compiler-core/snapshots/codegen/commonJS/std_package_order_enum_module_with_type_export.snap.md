@@ -75,11 +75,21 @@ test "order case over Order" {
 
 //// an `Order`. Enums are concrete types, not interfaces.
 
-const Order = Object.freeze({
-    Lt: "Lt",
-    Eq: "Eq",
-    Gt: "Gt",
-});
+class Order {
+}
+Order.prototype.__bp = "Order";
+class Order$Lt extends Order {
+}
+Order$Lt.prototype.tag = "Lt";
+class Order$Eq extends Order {
+}
+Order$Eq.prototype.tag = "Eq";
+class Order$Gt extends Order {
+}
+Order$Gt.prototype.tag = "Gt";
+Order.Lt = new Order$Lt();
+Order.Eq = new Order$Eq();
+Order.Gt = new Order$Gt();
 exports.Order = Order;
 
 function lt() {
@@ -100,8 +110,8 @@ exports.gt = gt;
 function toInt(o) {
     const n = (() => {
         const _s = o;
-        if (_s === "Lt") return (-1);
-        if (_s === "Eq") return 0;
+        if (_s instanceof Order$Lt) return (-1);
+        if (_s instanceof Order$Eq) return 0;
         return 1;
     })();
     return n;
@@ -111,8 +121,8 @@ exports.toInt = toInt;
 function reverse(o) {
     const r = (() => {
         const _s = o;
-        if (_s === "Lt") return Order.Gt;
-        if (_s === "Gt") return Order.Lt;
+        if (_s instanceof Order$Lt) return Order.Gt;
+        if (_s instanceof Order$Gt) return Order.Lt;
         return Order.Eq;
     })();
     return r;
@@ -194,8 +204,8 @@ const order = require("./std/order.js");
 function describe(o) {
     const s = (() => {
         const _s = o;
-        if (_s === "Lt") return "less";
-        if (_s === "Gt") return "greater";
+        if (_s.tag === "Lt") return "less";
+        if (_s.tag === "Gt") return "greater";
         return "equal";
     })();
     return s;

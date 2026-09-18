@@ -16,6 +16,7 @@ class Point {
         this.z = z;
     }
 }
+Point.prototype.__bp = "Point";
 
 function describe(p) {
     const { x } = p;

@@ -43,6 +43,7 @@ class Cell {
         this.set = set;
     }
 }
+Cell.prototype.__bp = "Cell";
 
 function mk(v) {
     return new Cell(v, (next) => {

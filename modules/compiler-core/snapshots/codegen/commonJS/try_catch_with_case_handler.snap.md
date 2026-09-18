@@ -13,10 +13,17 @@ fn handle() -> i32 {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-const ErrorKind = Object.freeze({
-    NotFound: "NotFound",
-    Timeout: "Timeout",
-});
+class ErrorKind {
+}
+ErrorKind.prototype.__bp = "ErrorKind";
+class ErrorKind$NotFound extends ErrorKind {
+}
+ErrorKind$NotFound.prototype.tag = "NotFound";
+class ErrorKind$Timeout extends ErrorKind {
+}
+ErrorKind$Timeout.prototype.tag = "Timeout";
+ErrorKind.NotFound = new ErrorKind$NotFound();
+ErrorKind.Timeout = new ErrorKind$Timeout();
 
 function fetch() {
     return ({ error: ErrorKind.NotFound });

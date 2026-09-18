@@ -8,10 +8,25 @@ val Color = type {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-const Color = Object.freeze({
-    Red: "Red",
-    Rgb: (r, g, b) => ({ tag: "Rgb", r, g, b }),
-});
+class Color {
+    static Rgb(r, g, b) {
+        return new Color$Rgb(r, g, b);
+    }
+}
+Color.prototype.__bp = "Color";
+class Color$Red extends Color {
+}
+Color$Red.prototype.tag = "Red";
+class Color$Rgb extends Color {
+    constructor(r, g, b) {
+        super();
+        this.r = r;
+        this.g = g;
+        this.b = b;
+    }
+}
+Color$Rgb.prototype.tag = "Rgb";
+Color.Red = new Color$Red();
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

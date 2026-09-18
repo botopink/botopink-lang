@@ -74,6 +74,7 @@ class Bag {
         return (this.size() === 0);
     }
 }
+Bag.prototype.__bp = "Bag";
 
 function main() {
     __bp_print(new Bag([]).isEmpty());

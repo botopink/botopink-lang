@@ -44,6 +44,7 @@ class Doc {
         return ("doc:" + this.title);
     }
 }
+Doc.prototype.__bp = "Doc";
 
 function main() {
     const d = new Doc("hi");

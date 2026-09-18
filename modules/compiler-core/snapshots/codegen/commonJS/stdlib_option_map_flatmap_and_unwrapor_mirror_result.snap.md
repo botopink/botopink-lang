@@ -18,6 +18,7 @@ class Person {
         this.name = name;
     }
 }
+Person.prototype.__bp = "Person";
 
 function firstName(p) {
     (() => { throw new Error("not implemented") })();

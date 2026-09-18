@@ -10,16 +10,46 @@ type Token {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-const __Token__Text = Object.freeze({
-    Bold: "Bold",
-    Italic: "Italic",
-    Underline: "Underline",
-});
+class __Token__Text {
+}
+__Token__Text.prototype.__bp = "__Token__Text";
+class __Token__Text$Bold extends __Token__Text {
+}
+__Token__Text$Bold.prototype.tag = "Bold";
+class __Token__Text$Italic extends __Token__Text {
+}
+__Token__Text$Italic.prototype.tag = "Italic";
+class __Token__Text$Underline extends __Token__Text {
+}
+__Token__Text$Underline.prototype.tag = "Underline";
+__Token__Text.Bold = new __Token__Text$Bold();
+__Token__Text.Italic = new __Token__Text$Italic();
+__Token__Text.Underline = new __Token__Text$Underline();
 
-const Token = Object.freeze({
-    Hover: (inner) => ({ tag: "Hover", inner }),
-    Text: (_inner) => ({ tag: "Text", _inner }),
-});
+class Token {
+    static Hover(inner) {
+        return new Token$Hover(inner);
+    }
+
+    static Text(_inner) {
+        return new Token$Text(_inner);
+    }
+}
+Token.prototype.__bp = "Token";
+class Token$Hover extends Token {
+    constructor(inner) {
+        super();
+        this.inner = inner;
+    }
+}
+Token$Hover.prototype.tag = "Hover";
+class Token$Text extends Token {
+    constructor(_inner) {
+        super();
+        this._inner = _inner;
+    }
+}
+Token$Text.prototype.tag = "Text";
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

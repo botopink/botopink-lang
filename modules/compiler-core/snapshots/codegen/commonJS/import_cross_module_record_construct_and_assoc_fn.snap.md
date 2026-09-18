@@ -24,6 +24,7 @@ class Response {
         return new Response(body);
     }
 }
+Response.prototype.__bp = "Response";
 exports.Response = Response;
 
 class App {
@@ -32,6 +33,7 @@ class App {
         this.path = path;
     }
 }
+App.prototype.__bp = "App";
 exports.App = App;
 ```
 

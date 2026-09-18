@@ -19,22 +19,35 @@ val HttpMethod = type {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-const HttpMethod = Object.freeze({
-    Get: "Get",
-    Post: "Post",
-    Put: "Put",
-    Delete: "Delete",
-    name: function(m) {
+class HttpMethod {
+    static name(m) {
         const label = (() => {
             const _s = m;
-            if (_s === "Get") return "GET";
-            if (_s === "Post") return "POST";
-            if (_s === "Put") return "PUT";
+            if (_s instanceof HttpMethod$Get) return "GET";
+            if (_s instanceof HttpMethod$Post) return "POST";
+            if (_s instanceof HttpMethod$Put) return "PUT";
             return "DELETE";
         })();
         return label;
-    },
-});
+    }
+}
+HttpMethod.prototype.__bp = "HttpMethod";
+class HttpMethod$Get extends HttpMethod {
+}
+HttpMethod$Get.prototype.tag = "Get";
+class HttpMethod$Post extends HttpMethod {
+}
+HttpMethod$Post.prototype.tag = "Post";
+class HttpMethod$Put extends HttpMethod {
+}
+HttpMethod$Put.prototype.tag = "Put";
+class HttpMethod$Delete extends HttpMethod {
+}
+HttpMethod$Delete.prototype.tag = "Delete";
+HttpMethod.Get = new HttpMethod$Get();
+HttpMethod.Post = new HttpMethod$Post();
+HttpMethod.Put = new HttpMethod$Put();
+HttpMethod.Delete = new HttpMethod$Delete();
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

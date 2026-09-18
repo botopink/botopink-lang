@@ -34,6 +34,7 @@ class User {
         this.name = name;
     }
 }
+User.prototype.__bp = "User";
 
 function main() {
     const u = new User("ana");

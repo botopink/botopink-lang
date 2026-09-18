@@ -70,6 +70,7 @@ class Money {
         return this.max(lo).min(hi);
     }
 }
+Money.prototype.__bp = "Money";
 
 function main() {
     const m = new Money(500).clamp(new Money(0), new Money(120));

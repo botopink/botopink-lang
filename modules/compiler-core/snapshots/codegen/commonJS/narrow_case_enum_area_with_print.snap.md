@@ -34,10 +34,30 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-const Shape = Object.freeze({
-    Circle: (radius) => ({ tag: "Circle", radius }),
-    Square: (side) => ({ tag: "Square", side }),
-});
+class Shape {
+    static Circle(radius) {
+        return new Shape$Circle(radius);
+    }
+
+    static Square(side) {
+        return new Shape$Square(side);
+    }
+}
+Shape.prototype.__bp = "Shape";
+class Shape$Circle extends Shape {
+    constructor(radius) {
+        super();
+        this.radius = radius;
+    }
+}
+Shape$Circle.prototype.tag = "Circle";
+class Shape$Square extends Shape {
+    constructor(side) {
+        super();
+        this.side = side;
+    }
+}
+Shape$Square.prototype.tag = "Square";
 
 function area(s) {
     return (() => {

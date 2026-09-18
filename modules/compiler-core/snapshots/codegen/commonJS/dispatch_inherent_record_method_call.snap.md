@@ -42,6 +42,7 @@ class Contador {
         return this.n;
     }
 }
+Contador.prototype.__bp = "Contador";
 
 function main() {
     const c = new Contador(5);

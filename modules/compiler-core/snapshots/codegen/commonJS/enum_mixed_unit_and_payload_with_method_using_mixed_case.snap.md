@@ -14,20 +14,34 @@ val Maybe = type {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-const Maybe = Object.freeze({
-    Nothing: "Nothing",
-    Just: (value) => ({ tag: "Just", value }),
-    check: function(m) {
+class Maybe {
+    static Just(value) {
+        return new Maybe$Just(value);
+    }
+
+    static check(m) {
         return (() => {
             const _s = m;
-            if (_s === "Nothing") return "nothing";
+            if (_s instanceof Maybe$Nothing) return "nothing";
             if (_s.tag === "Just") {
                 const { value } = _s;
                 return "just";
             }
         })();
-    },
-});
+    }
+}
+Maybe.prototype.__bp = "Maybe";
+class Maybe$Nothing extends Maybe {
+}
+Maybe$Nothing.prototype.tag = "Nothing";
+class Maybe$Just extends Maybe {
+    constructor(value) {
+        super();
+        this.value = value;
+    }
+}
+Maybe$Just.prototype.tag = "Just";
+Maybe.Nothing = new Maybe$Nothing();
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

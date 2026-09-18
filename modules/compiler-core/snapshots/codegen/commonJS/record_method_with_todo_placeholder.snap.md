@@ -18,6 +18,7 @@ class Unimplemented {
         return (() => { throw new Error("not implemented") })();
     }
 }
+Unimplemented.prototype.__bp = "Unimplemented";
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

@@ -16,6 +16,7 @@ class AppError {
         this.msg = msg;
     }
 }
+AppError.prototype.__bp = "AppError";
 
 function validate(x) {
     (() => { if ((x < 0)) { throw new AppError(400, "negative"); } })();

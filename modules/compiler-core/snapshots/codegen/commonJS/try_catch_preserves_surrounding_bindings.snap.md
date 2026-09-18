@@ -43,6 +43,7 @@ class LoadError {
         this.msg = msg;
     }
 }
+LoadError.prototype.__bp = "LoadError";
 
 function load() {
     return ({ error: new LoadError("not found") });

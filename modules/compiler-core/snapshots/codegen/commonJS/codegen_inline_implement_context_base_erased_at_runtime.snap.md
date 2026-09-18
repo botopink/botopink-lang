@@ -10,6 +10,7 @@ fn render() -> Element {
 ```javascript
 class Element {
 }
+Element.prototype.__bp = "Element";
 
 function render() {
     new Element();

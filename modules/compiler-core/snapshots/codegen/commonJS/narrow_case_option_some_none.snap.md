@@ -34,15 +34,28 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-const Opt = Object.freeze({
-    None: "None",
-    Some: (value) => ({ tag: "Some", value }),
-});
+class Opt {
+    static Some(value) {
+        return new Opt$Some(value);
+    }
+}
+Opt.prototype.__bp = "Opt";
+class Opt$None extends Opt {
+}
+Opt$None.prototype.tag = "None";
+class Opt$Some extends Opt {
+    constructor(value) {
+        super();
+        this.value = value;
+    }
+}
+Opt$Some.prototype.tag = "Some";
+Opt.None = new Opt$None();
 
 function describe(opt) {
     return (() => {
         const _s = opt;
-        if (_s === "None") return "empty";
+        if (_s instanceof Opt$None) return "empty";
         if (_s.tag === "Some") {
             const { value: v } = _s;
             return ("value: " + v);

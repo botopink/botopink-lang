@@ -34,6 +34,7 @@ class P {
         this.y = y;
     }
 }
+P.prototype.__bp = "P";
 
 function main() {
     const pts = [new P(1, 2), new P(3, 4)];

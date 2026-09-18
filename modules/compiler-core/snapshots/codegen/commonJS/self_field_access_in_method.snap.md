@@ -21,6 +21,7 @@ class Point {
         return (this.x + this.y);
     }
 }
+Point.prototype.__bp = "Point";
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

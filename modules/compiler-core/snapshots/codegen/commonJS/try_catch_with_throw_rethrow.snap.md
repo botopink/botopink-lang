@@ -19,6 +19,7 @@ class ApiError {
         this.msg = msg;
     }
 }
+ApiError.prototype.__bp = "ApiError";
 
 function fetch() {
     return ({ error: new ApiError("not found") });

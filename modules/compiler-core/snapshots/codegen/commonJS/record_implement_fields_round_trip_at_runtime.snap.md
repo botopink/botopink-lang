@@ -36,6 +36,7 @@ class E {
         this.n = n;
     }
 }
+E.prototype.__bp = "E";
 
 function mk() {
     return new E("x", 5);

@@ -44,6 +44,7 @@ class Pato {
         this.id = id;
     }
 }
+Pato.prototype.__bp = "Pato";
 
 // implement Swimmer for Pato
 const PatoNada = {

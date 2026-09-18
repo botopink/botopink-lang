@@ -33,10 +33,46 @@ js/
 
 | File | Role |
 |---|---|
-| `js_ast.zig` | `Expr` (`lexeme_string`, `quoted`, `number`, `null_`, `ident`, `name`, `this`, `member`, `index`, `call`, `new_`, `binary`, `unary`, `ternary`, `assign`, `paren`, `arrow`, `function`, `array`, `object`, `host`, `await_`, `yield_`, `comment`), `Stmt` (`expr`, `decl`, `return_`, `throw_` (required operand), `continue_`, `break_`, `yield_delegate`, `if_`, `for_of`, `block`, `function`, `class`, `comment`, `group`), `Pattern` (`ident`, `name`, `object`, `array`, `match`), `Param`, `Block` (+ `Layout`), `Class`, `Comment`, `Item`; the `.d.ts` subset `TsType` / `TsField` / `TsParam` / `TsMember` / `TsDecl`; and `Builder` (arena: `ptr`, `stmtPtr`, `typePtr`, `call`, `member`, `binary`, `ternary`, `arrowBlock`, `iife`, `ifStmt`, `group`, …). |
+| `js_ast.zig` | `Class` carries `extends`, which only an enum's variant subclass uses. `Expr` (`lexeme_string`, `quoted`, `number`, `null_`, `ident`, `name`, `this`, `member`, `index`, `call`, `new_`, `binary`, `unary`, `ternary`, `assign`, `paren`, `arrow`, `function`, `array`, `object`, `host`, `await_`, `yield_`, `comment`), `Stmt` (`expr`, `decl`, `return_`, `throw_` (required operand), `continue_`, `break_`, `yield_delegate`, `if_`, `for_of`, `block`, `function`, `class`, `comment`, `group`), `Pattern` (`ident`, `name`, `object`, `array`, `match`), `Param`, `Block` (+ `Layout`), `Class`, `Comment`, `Item`; the `.d.ts` subset `TsType` / `TsField` / `TsParam` / `TsMember` / `TsDecl`; and `Builder` (arena: `ptr`, `stmtPtr`, `typePtr`, `call`, `member`, `binary`, `ternary`, `arrowBlock`, `iife`, `ifStmt`, `group`, …). |
 | `js_emitter.zig` | **Names:** `ident(name)` — the ES reserved-word rename (`delete` → `delete_`); the only place it happens. A property position is never renamed. **Strings:** `writeLexemeString` — a botopink lexeme's escape pairs pass through (the lexer validated them and the escape set is JS-compatible), raw control bytes and unescaped quotes are escaped. **Code:** `writeExpr(w, expr, indent)`, `writeStmt(w, stmt, indent)`, `writeBlock`, `writePattern`, `writeComment`, `writeProgram(w, items)` (generated declarations separated by a blank line; runtime-support source verbatim). |
 | `js_prelude.zig` | The commonJS runtime helpers for primitive methods whose native JS method disagrees with the signature, as built `Stmt.function` nodes — never a shipped file. `Helper` (`assert_fatal`: a non-test `assert` throws with message and `file:line`; `string_char_at`: `String.charAt -> ?string`, `null` out of range; `range_from`: an open-ended `a..` as the lazy generator `function* __bp_range_from(n)`; `show`: `__bp_show(v, shape, top)`, the text of one printed value under semantics decision 1a; `print` / `print_as`: `@print`'s `console.log` line over `show`, without / with the per-argument static shapes), `forMethod(receiver, method, argc)` (the declaration a helper answers), `name`, `decl`, `order`. `commonJS.zig`'s `Emitter.helper` returns the name **and** marks the helper, and only marked helpers are written into the module (the `wat/wat_prelude.zig` shape). |
 | `ts_emitter.zig` | `writeType`, `writeDecl`, `writeProgram(w, decls)` — one declaration per typed binding, separated by a blank line, a binding with no surface (`.none`) still taking its separator. |
+
+## What a value is (1.0.5-beta decision 5)
+
+Every botopink value with a declared type is an **instance of a class this
+backend emits**, so the value's prototype is its identity:
+
+| botopink | commonJS |
+|---|---|
+| `type Person(name: string, age: i32)` | `class Person { constructor(name, age) { … } }` |
+| `type Shape { Circle(radius: i32), Dot }` | `class Shape {}` + `class Shape$Circle extends Shape` + `class Shape$Dot extends Shape` |
+| `Shape.Circle(5)` | `Shape.Circle(5)` — a `static` factory returning `new Shape$Circle(5)` |
+| `Shape.Dot` | a **singleton**, `Shape.Dot = new Shape$Dot()` — no longer the bare string `"Dot"` |
+| an enum method | a `static` of the enum's class (`Shape.area(value)`) |
+
+Two prototype properties carry what the instance itself does not:
+
+- **`<Class>.prototype.__bp`** — the source name of the type (`"Point"`,
+  `"Shape"`), written for every record class and every **base** enum class. It
+  is the marker the §7 formatter tests, so a host object (a `Map`, a JSON
+  object, a `@Result`'s `{ ok }`) never takes the botopink-value branch.
+- **`<Variant>.prototype.tag`** — the variant's own name, written on each
+  variant subclass. On the prototype, so `Object.keys(value)` answers exactly
+  the payload fields in declaration order, which is what the formatter prints
+  and what a `case` arm destructures.
+
+A `case` arm over a payload-less variant tests `instanceof` when the variant's
+bare name names exactly one class in the module, and falls back to the `tag`
+test when two enums in the module share that name (`Token.Text.Bold` and
+`Token.Font.Weight.Bold` in emilia) or when the enum is declared in another
+module — the emitter knows the arm's spelling, not the subject's type. The
+`tag` test is exactly as ambiguous as the string compare it replaced, and no
+more; a checker that hands the emitter the subject's enum would let every arm
+be an `instanceof`.
+
+`Object.freeze` is gone with the enum object: an enum is a class, and its
+payload-less singletons are assigned onto it after its subclasses exist.
 
 ## Model rules
 

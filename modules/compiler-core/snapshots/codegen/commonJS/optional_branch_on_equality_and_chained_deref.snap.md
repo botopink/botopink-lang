@@ -38,6 +38,7 @@ class R {
         this.kind = kind;
     }
 }
+R.prototype.__bp = "R";
 
 function main() {
     const r = new R(11);

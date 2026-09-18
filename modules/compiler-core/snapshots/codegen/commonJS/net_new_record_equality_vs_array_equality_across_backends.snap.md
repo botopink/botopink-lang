@@ -21,6 +21,7 @@ class Point {
         this.y = y;
     }
 }
+Point.prototype.__bp = "Point";
 
 function recordEq() {
     const a = new Point(1, 2);

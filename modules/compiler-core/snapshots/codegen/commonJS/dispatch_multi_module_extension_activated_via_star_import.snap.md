@@ -21,6 +21,7 @@ class Pato {
         this.id = id;
     }
 }
+Pato.prototype.__bp = "Pato";
 exports.Pato = Pato;
 
 // implement Swimmer for Pato

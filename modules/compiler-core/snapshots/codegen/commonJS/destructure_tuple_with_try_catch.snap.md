@@ -17,6 +17,7 @@ class Error {
         this.msg = msg;
     }
 }
+Error.prototype.__bp = "Error";
 
 function fetch() {
     return ({ error: new Error("boom") });

@@ -18,6 +18,7 @@ class NetError {
         this.code = code;
     }
 }
+NetError.prototype.__bp = "NetError";
 
 function fetch() {
     return ({ error: new NetError(500) });

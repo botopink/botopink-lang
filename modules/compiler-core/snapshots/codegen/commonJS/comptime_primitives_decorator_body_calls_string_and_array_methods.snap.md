@@ -288,6 +288,7 @@ class User {
         this.age = age;
     }
 }
+User.prototype.__bp = "User";
 
 function main() {
     __bp_print(describeUser());

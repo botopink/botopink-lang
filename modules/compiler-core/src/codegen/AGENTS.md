@@ -103,10 +103,18 @@ codegen/
   pattern matching. A `case` arm `Ok(v)` / `Err(e)` / `Error(e)` that names no
   variant the module declares tests the key the same way (`if ("ok" in _s)`,
   `const v = _s.ok;`), never `_s.tag` — a Result carries no tag (C5).
+- **A value is a class instance** (1.0.5-beta decision 5): `buildRecord` emits
+  `class Point`, `buildEnum` emits `class Shape` plus a `class Shape$Circle
+  extends Shape` per variant, a `static` factory per payload variant, and a
+  singleton `Shape.Dot = new Shape$Dot()` per payload-less one. Each class
+  carries `prototype.__bp` (the source name — the §7 formatter's marker) and
+  each variant subclass `prototype.tag` (its own name). The full table is in
+  [`js/AGENTS.md`](./js/AGENTS.md#what-a-value-is-105-beta-decision-5).
 - **Variant payload arms**: `collectVariantFields` indexes every local payload
   variant's declared field names; `Circle(r) ->` binds positionally
   (`const { radius: r } = _s;`). A variant declared in another module keeps the
-  binding as the key.
+  binding as the key. A payload-less variant arm tests `instanceof` when its
+  bare name names one class in the module and `_s.tag === "Name"` otherwise.
 - **`.len`**: `s.len` / `arr.len` on a typed string/array (inference records
   `.prim` in `instance_lowerings`, threaded in as `Emitter.lowerings`) emits
   the native `.length` property; a record field named `len` is untouched (C3).
