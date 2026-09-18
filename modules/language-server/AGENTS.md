@@ -39,7 +39,8 @@ The server handles `initialize` / `shutdown`, `didOpen` / `didChange` /
   `documentSymbol` (hierarchical, incl. `test "name"` blocks; `val X = enum/record/interface`
   reports the container kind, not `Variable`; a 1.0.3 `type` reports `Struct` or `Enum` by its
   shape and lists the `(…)` field list's fields; a **section** of an enum-shaped `type`
-  is itself an `Enum` carrying its own members — decision 8 §5.3b),
+  is itself an `Enum` carrying its own members — decision 8 §5.3b; a method of a `type`, an
+  `enum` or a `behavior` is `Method`, and so is a `test "name"` block — see below),
   `completion` (prefix + dot-trigger + std members + builtin interface methods
   on primitive/array/string receivers + labeled args + sortText + module names),
   `references` (cross-module), `rename` (cross-module multi-file, with
@@ -84,6 +85,20 @@ read from disk. The resolved deps are **cached per project root**
 `didOpen`/`didClose`, never on a keystroke. No `botopink.json` walking up from
 the file ⇒ single-document compile (isolated buffers and tests). The compiler
 core still names no lib: the resolver feeds it ordinary `(uri, source)` pairs.
+
+**`documentSymbol` gives a member function the kind it has, and the tree is what
+identifies a test.** `collectChildren` emits `proto.SymbolKind.Method` for a
+method of a `type`, of an `enum` (including a §5.3b section) and of a `behavior`,
+and a `test "name"` block is a `Method` too. They are not ambiguous: a `test`
+block is a child of the **file**, a method is a child of the declaration it
+belongs to. Before decision 7 of 1.0.5-beta the three method sites emitted
+`Function` on purpose, because
+[`vscode-extension`](../../../vscode-extension/src/symbolNodes.ts) classified
+every `Method` symbol as a runnable test and the LSP protocol has no `Test`
+kind — the outline was wrong so that the Test Explorer would be right. The
+extension now reads the parent (`isTestSymbolNode(symbol, parent)` /
+`testSymbolNodes`), so **the two repositories move together**: never flip a
+symbol kind here without the consumer's commit in the same sweep.
 
 **A source the graph cannot follow is a diagnostic, not a silent gap.** Three
 reads were `catch continue`: a dependency no root carries, a `files` entry that

@@ -7,4 +7,4 @@ behavior Printable {
 
 ----- DOCUMENT SYMBOLS
 Printable  [Interface]  range: (0,9)–(2,1)  selection: (0,9)–(0,18)
-  show  [Function]  range: (1,7)–(1,11)  selection: (1,7)–(1,11)
+  show  [Method]  range: (1,7)–(1,11)  selection: (1,7)–(1,11)
