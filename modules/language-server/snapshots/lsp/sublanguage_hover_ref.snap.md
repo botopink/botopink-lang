@@ -16,5 +16,5 @@ val xs = q "select name";
 kind: markdown
 
 ```botopink
-pub record Users { name: string }
+pub type Users(name: string)
 ```

@@ -131,8 +131,8 @@ test "sublanguage F3: hover on a bound node shows the referenced symbol" {
         return error.NoHover;
     defer gpa.free(hover.contents.value);
 
-    // Hover renders the *bound* symbol (`record Users`), not the word `name`.
-    try std.testing.expect(std.mem.indexOf(u8, hover.contents.value, "record Users") != null);
+    // Hover renders the *bound* symbol (`type Users`), not the word `name`.
+    try std.testing.expect(std.mem.indexOf(u8, hover.contents.value, "type Users") != null);
 }
 
 test "sublanguage F3: go-to-definition on a bound node jumps to its declaration" {

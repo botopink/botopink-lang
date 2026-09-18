@@ -73,6 +73,13 @@ in `engine.zig`, add a test in [`tests/`](tests/AGENTS.md) (register it in
   whose own initialiser the cursor sits in (`val x = ▮` never offers `x`) and
   every `val`/`var` declared below it. A `fn` is not hidden — it may be called
   above the line that defines it.
+- **A hover card is source the user could write back.** `renderBindingHover`
+  renders a declaration in the 1.0.3 surface — `pub type Point(x: i32, y: i32)`
+  (a record with no fields keeps no parentheses), `pub type Shape { Circle(...),
+  Square }` (a section prints `Name { ... }`, decision 8 §5.3b) and
+  `pub behavior Mappable<T>` — with the type parameters a written generic type
+  always carries (decision 8 §1.1, `appendGenericParams`). `record`, `enum` and
+  `interface` are parse errors; a card must never print one.
 - The hover footer of a builtin method names the **declaring** behavior and the
   receiver's when they differ (`*from \`behavior Signed\` (via I32)*`):
   `InterfaceMember.owner` records which link of the `extends` chain declared the

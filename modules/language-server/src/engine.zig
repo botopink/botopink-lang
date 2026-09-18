@@ -132,6 +132,24 @@ pub fn hover(
     return null;
 }
 
+/// Appends `<A, B>` when the declaration has type parameters, nothing when it
+/// has none. Every declaration that can carry them (`fn`, `type`, `behavior`)
+/// writes them the same way, and a written generic type carries all of its type
+/// arguments (decision 8 §1.1), so the card never hides them.
+fn appendGenericParams(
+    gpa: std.mem.Allocator,
+    buf: *std.ArrayList(u8),
+    params: []const ast.GenericParam,
+) !void {
+    if (params.len == 0) return;
+    try buf.append(gpa, '<');
+    for (params, 0..) |gp, i| {
+        if (i > 0) try buf.appendSlice(gpa, ", ");
+        try buf.appendSlice(gpa, gp.name);
+    }
+    try buf.append(gpa, '>');
+}
+
 /// Renders the markdown hover card for a resolved top-level binding. Shared by
 /// `hover` (cursor on a botopink symbol) and `hoverCustomRef` (cursor on a
 /// sub-language node whose `ref` resolves to this binding).
@@ -154,14 +172,7 @@ fn renderBindingHover(gpa: std.mem.Allocator, b: comptime_pipeline.TypedBinding)
             const isStar = f.effect != null and f.effectAnnotation() == null;
             try buf.appendSlice(gpa, if (isStar) "*fn " else "fn ");
             try buf.appendSlice(gpa, b.name);
-            if (f.genericParams.len > 0) {
-                try buf.append(gpa, '<');
-                for (f.genericParams, 0..) |gp, gi| {
-                    if (gi > 0) try buf.appendSlice(gpa, ", ");
-                    try buf.appendSlice(gpa, gp.name);
-                }
-                try buf.append(gpa, '>');
-            }
+            try appendGenericParams(gpa, &buf, f.genericParams);
             try buf.append(gpa, '(');
             for (f.params, 0..) |p, pi| {
                 if (pi > 0) try buf.appendSlice(gpa, ", ");
@@ -187,36 +198,56 @@ fn renderBindingHover(gpa: std.mem.Allocator, b: comptime_pipeline.TypedBinding)
             try buf.appendSlice(gpa, " : ");
             try buf.appendSlice(gpa, type_str);
         },
+        // Both shapes are declared with `type` since 1.0.3; the shape decides
+        // whether the name is followed by a field list or by a variant body.
         .type_ => |tdecl| switch (tdecl.shape) {
             .record => {
                 if (tdecl.isPub) try buf.appendSlice(gpa, "pub ");
-                try buf.appendSlice(gpa, "record ");
+                try buf.appendSlice(gpa, "type ");
                 try buf.appendSlice(gpa, b.name);
-                try buf.appendSlice(gpa, " { ");
-                for (tdecl.recordFields(), 0..) |field, fi| {
-                    if (fi > 0) try buf.appendSlice(gpa, ", ");
-                    try buf.appendSlice(gpa, field.name);
-                    try buf.appendSlice(gpa, ": ");
-                    try appendTypeRef(gpa, &buf, field.typeRef);
+                try appendGenericParams(gpa, &buf, tdecl.genericParams);
+                // A record with no fields has no parentheses (MIGRATION.md).
+                const fields = tdecl.recordFields();
+                if (fields.len > 0) {
+                    try buf.append(gpa, '(');
+                    for (fields, 0..) |field, fi| {
+                        if (fi > 0) try buf.appendSlice(gpa, ", ");
+                        try buf.appendSlice(gpa, field.name);
+                        try buf.appendSlice(gpa, ": ");
+                        try appendTypeRef(gpa, &buf, field.typeRef);
+                    }
+                    try buf.append(gpa, ')');
                 }
-                try buf.appendSlice(gpa, " }");
             },
             .enum_ => {
                 if (tdecl.isPub) try buf.appendSlice(gpa, "pub ");
-                try buf.appendSlice(gpa, "enum ");
+                try buf.appendSlice(gpa, "type ");
                 try buf.appendSlice(gpa, b.name);
+                try appendGenericParams(gpa, &buf, tdecl.genericParams);
                 try buf.appendSlice(gpa, " { ");
-                for (tdecl.variants(), 0..) |v, vi| {
-                    if (vi > 0) try buf.appendSlice(gpa, ", ");
+                var wrote_member = false;
+                for (tdecl.variants()) |v| {
+                    if (wrote_member) try buf.appendSlice(gpa, ", ");
+                    wrote_member = true;
                     try buf.appendSlice(gpa, v.name);
                     if (v.fields.len > 0) try buf.appendSlice(gpa, "(...)");
+                }
+                // A section is a type of its own (decision 8 §5.3b); name it
+                // with a body so the card does not read it as a bare variant.
+                for (tdecl.sections()) |sec| {
+                    if (wrote_member) try buf.appendSlice(gpa, ", ");
+                    wrote_member = true;
+                    try buf.appendSlice(gpa, sec.name);
+                    try buf.appendSlice(gpa, " { ... }");
                 }
                 try buf.appendSlice(gpa, " }");
             },
         },
-        .behavior => {
-            try buf.appendSlice(gpa, "interface ");
+        .behavior => |bdecl| {
+            if (bdecl.isPub) try buf.appendSlice(gpa, "pub ");
+            try buf.appendSlice(gpa, "behavior ");
             try buf.appendSlice(gpa, b.name);
+            try appendGenericParams(gpa, &buf, bdecl.genericParams);
         },
         else => {
             const type_str = try renderType(gpa, b.type_);
