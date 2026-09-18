@@ -2693,9 +2693,56 @@ fn instantiateGenericType(env: *Env, ty: *T.Type) InferError!*T.Type {
     return instantiateType(env, ty, &seen, .genericOnly);
 }
 
+/// R3 (decision 8 §8, decision 15) — `#[@external(node, "…")]` in lower case.
+///
+/// The annotation grammar accepts any `#[@name(…)]`, and only the capitalised
+/// path form `External.<Target>` is read as host-backed (`FnDecl.isExternal`,
+/// `ast.zig`'s `startsWith("External.")`). A lower-case one therefore fell
+/// through as an unknown annotation and was dropped: the `declare fn` bound no
+/// host, `botopink check` exited 0, and nothing was said. Name the spelling
+/// that works, at the annotation.
+///
+/// Only the `@`-prefixed builtin form is caught. `#[external(…)]` without the
+/// `@` is a user-defined attribute — a decorator's own name — and means
+/// something else entirely.
+fn refuseLowerCaseExternal(env: *Env, a: ast.Annotation) InferError!void {
+    if (!a.is_builtin) return;
+    const misspelled = std.ascii.eqlIgnoreCase(a.name, "external") or
+        (std.ascii.startsWithIgnoreCase(a.name, "external.") and
+            !std.mem.startsWith(u8, a.name, "External."));
+    if (!misspelled) return;
+    // `#[@external(node, "…")]` names its target in the first argument;
+    // `#[@external.node("…")]` in the path. Either way the fix is the same
+    // annotation with the target capitalised, so spell it out.
+    const target: []const u8 = blk: {
+        if (std.mem.indexOfScalar(u8, a.name, '.')) |i| break :blk a.name[i + 1 ..];
+        const args = a.writtenArgs();
+        if (args.len >= 1 and args[0].len > 0 and std.ascii.isAlphabetic(args[0][0])) break :blk args[0];
+        break :blk "Node";
+    };
+    const capitalised = try env.arena.dupe(u8, target);
+    if (capitalised.len > 0) capitalised[0] = std.ascii.toUpper(capitalised[0]);
+    var e = TypeError.custom(
+        try std.fmt.allocPrint(
+            env.arena,
+            "`#[@{s}]` binds no host — an external target is written `External.<Target>`",
+            .{a.name},
+        ),
+        try std.fmt.allocPrint(
+            env.arena,
+            "Write `#[@External.{s}(\"<template>\")]`; only the capitalised path form is read as host-backed.",
+            .{capitalised},
+        ),
+    );
+    if (a.loc) |l| e = e.withLoc(l);
+    env.lastError = e;
+    return error.TypeError;
+}
+
 fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     // ── `@[external(…)]` annotation validation (F1) ─────────────────────────
     for (f.annotations) |a| {
+        try refuseLowerCaseExternal(env, a);
         if (std.mem.startsWith(u8, a.name, "External.") and a.name.len > "External.".len) {
             try validateExternalAnnotation(env, f, a);
         }

@@ -72,7 +72,6 @@ erlang   | test/loop_break_value.bp   | 02 step 5 | `ConditionLoopValueUnsupport
 *        | reject/self_without_argument.bp    | 01 step 6 | §1.2: bare `Self` inside a declaration with type parameters is accepted (exit 0)
 
 # ── §8 host externals ─────────────────────────────────────────────────────────
-*        | reject/external_lowercase_target.bp | 01 step 8 | R3, decision 15: a lower-case `#[@external(node, …)]` passes `check`, binds no host and produces no diagnostic; the located error naming the capitalised form is the annotation grammar's, which is 01's
 
 # ── trailing parameter defaults ───────────────────────────────────────────────
 commonJS | test/fn_defaults.bp        | 01 step 7 | trailing parameter defaults are never applied at a call site (`'connect' expects 3 argument(s), got 1`)

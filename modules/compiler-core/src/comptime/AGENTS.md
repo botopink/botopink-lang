@@ -70,6 +70,14 @@ annotation and returns the matching wrapper (`@Result<R, E>` / `@Future<T, E>`):
 the host template owns the wrapper shape (used by `libs/std/src/asserts.bp`
 `tryCatch` and `libs/std/src/http.bp` `fetch`).
 
+**A lower-case `#[@external(…)]` binds nothing, and says so** (R3, decision 8 §8, decision 15).
+Only the capitalised path form `External.<Target>` is read as host-backed (`FnDecl.isExternal`,
+`ast.zig`'s `startsWith("External.")`), so `#[@external(node, "…")]` fell through as an unknown
+annotation and was dropped — the `declare fn` bound no host and `check` exited 0 in silence.
+`refuseLowerCaseExternal`, called from `inferFnDecl`'s annotation loop, reds at the annotation and
+spells the target capitalised. It fires on the `@`-prefixed builtin form only: `#[external(…)]`
+without the `@` is a user-defined attribute and means something else.
+
 **The wrapper without its annotation is an error too** (06 N25, decision 8 § 9).
 `@Future` / `@Iterator` / `@AsyncIterator` already demanded one; `@Result` did not — a plain
 `fn f() -> @Result<D, E>` was accepted and deliberately given NO special treatment (`return` did
