@@ -1,0 +1,15 @@
+//// Decision 8 §8 — a host-backed `declare fn`: one `#[@External.<Target>]` per
+//// backend, positional `$0`/`$1` markers over the declared parameters
+//// (decision 5's numbering), and the same answer from every host.
+
+#[@External.Node("Math.max($0, $1)")]
+#[@External.Erlang("erlang", "max")]
+declare fn hostMax(a: i32, b: i32) -> i32;
+
+#[@External.Node("($0).toUpperCase()")]
+#[@External.Erlang("string", "uppercase")]
+declare fn hostUpper(s: string) -> string;
+
+test "§8 a two-target external answers the same on every backend" { assert hostMax(2, 7) == 7; }
+
+test "§8 positional markers follow the declared parameters" { assert hostUpper("ab") == "AB"; }

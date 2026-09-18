@@ -54,3 +54,6 @@ erlang   | test/effect_val_assert.bp  | 06 N25 | §9's handler-less `val assert 
 *        | reject/wrapper_without_annotation.bp | 06 N25 | `@Result<…>` without `#[@result]` is reported as a return-type mismatch at the `return`, not as §9's missing-annotation rule
 *        | reject/val_assert_after_catch.bp     | 06 N25 | `val assert Ok(n) = f() catch 0` is accepted (exit 0) and then fails at run time (`Ok is not defined` on commonJS, `variable 'N' unsafe in 'case'` on erlang)
 *        | reject/two_effect_markers.bp         | 06 N25 | the R5 message is right, but its caret points at the body's `{` (5:41) instead of the second annotation
+
+# ── §8 host externals ─────────────────────────────────────────────────────────
+*        | reject/external_lowercase_target.bp | 06 | a lower-case `#[@external(node, …)]` passes `check`, binds no host and produces no diagnostic (fronts.md § unowned items)
