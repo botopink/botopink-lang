@@ -64,8 +64,6 @@ erlang   | test/effect_generator.bp::§9 an empty generator runs no iteration | 
 *        | reject/two_effect_markers.bp         | 06 N25 | the R5 message is right, but its caret points at the body's `{` (5:41) instead of the second annotation
 
 # ── §10 loop ──────────────────────────────────────────────────────────────────
-commonJS | test/loop_break_value.bp::§10 break with a value is the loop's value | 06 N12 | `break <value>` yields a one-element array instead of the value
-commonJS | test/loop_break_value.bp::§10 break with a value out of a condition loop | 06 N12 | `break <value>` yields a one-element array instead of the value
 erlang   | test/loop_break_value.bp   | 01 step 6 | `ConditionLoopValueUnsupported`: a loop with a value break does not compile
 
 # ── §1 generics ───────────────────────────────────────────────────────────────

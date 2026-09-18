@@ -123,6 +123,14 @@ codegen/
   carries `prototype.__bp` (the source name — the §7 formatter's marker) and
   each variant subclass `prototype.tag` (its own name). The full table is in
   [`js/AGENTS.md`](./js/AGENTS.md#what-a-value-is-105-beta-decision-5).
+- **`break <value>` in a condition loop** (decision 8 §10) is the loop's value.
+  A `loop { … }` / `loop (cond) { … }` used as a value with no `yield` in its
+  body is a **search**: `break <v>` becomes `return <v>` out of the IIFE and the
+  loop answers `null` if it never breaks (`LoopCtx.search`). With a `yield` it
+  is a comprehension and keeps the accumulator, where `break <v>` contributes
+  `v` and ends the loop. An **iteration** loop (`loop (xs) { x -> … }`) is
+  always a comprehension: `break <v>` there contributes, which is what
+  `fn find(arr: i32[]) -> i32[]` relies on.
 - **`x is T`** (decision 8 §4, `buildIsCall`/`isTest`) tests the **value**, not
   where it came from, which is what makes one lowering answer for a known
   static type and for a value arriving through `unknown` or a union: an integer

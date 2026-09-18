@@ -736,6 +736,11 @@ const LoopCtx = union(enum) {
     /// IIFE around a JS `while`. `yield <v>` pushes; `break <v>` pushes and
     /// ends the loop (there is no next item to move to); `break;` ends it.
     cond_value: []const u8,
+    /// A condition `loop` used as a value whose body has no `yield`: a search,
+    /// not a comprehension. Decision 8 §10 — `break <v>` IS the loop's value,
+    /// so it returns `v` out of the IIFE instead of collecting it; `break;`
+    /// ends the loop and the IIFE answers `null`.
+    search,
 };
 
 /// Holes filled from a wrapper function's own parameters: `$N` is the Nth
@@ -2404,7 +2409,7 @@ const Emitter = struct {
                 .throw_ => |r| return .{ .throw_ = try self.buildExpr((r orelse return error.ThrowWithoutOperand).*) },
                 .@"continue" => return switch (self.loop_ctx) {
                     .none => error.JumpOutsideLoop,
-                    .stmt, .value, .cond_value => js.Stmt.continue_,
+                    .stmt, .value, .cond_value, .search => js.Stmt.continue_,
                 },
                 .yield => |y| if (self.loop_ctx == .value or self.loop_ctx == .cond_value) {
                     // An accumulator `yield <v>` contributes `v` and moves on;
@@ -3241,6 +3246,25 @@ const Emitter = struct {
         return false;
     }
 
+    /// A `yield` anywhere in the body, `if` branches included — what tells a
+    /// comprehension (which collects) from a search (whose value is the one
+    /// its `break` carries). Nested loops are not descended into: their
+    /// `yield`s belong to them.
+    fn hasAnyYield(body: []const ast.Stmt) bool {
+        for (body) |stmt| switch (stmt.expr) {
+            .jump => |j| if (j.kind == .yield) return true,
+            .branch => |br| switch (br.kind) {
+                .if_ => |i| {
+                    if (hasAnyYield(i.then_)) return true;
+                    if (i.else_) |els| if (hasAnyYield(els)) return true;
+                },
+                .tryCatch => {},
+            },
+            else => {},
+        };
+        return false;
+    }
+
     /// A `loop` in statement position: a JS `for…of`. Its `break` / `continue`
     /// are the native statements, and inside a generator body its `yield` is
     /// the native one — which is what makes `#[@iterator]` recursion work (a
@@ -3287,10 +3311,13 @@ const Emitter = struct {
     fn buildBreakStmt(self: *Emitter, br: anytype, is_last: bool) anyerror!js.Stmt {
         const val = br.value orelse return switch (self.loop_ctx) {
             .none => error.JumpOutsideLoop,
-            .stmt, .value, .cond_value => js.Stmt.break_,
+            .stmt, .value, .cond_value, .search => js.Stmt.break_,
         };
         return switch (self.loop_ctx) {
             .none => error.JumpOutsideLoop,
+            // Decision 8 §10 — in a condition loop with no `yield`, the
+            // loop's value IS the break's value, so the IIFE returns it.
+            .search => .{ .return_ = try self.buildExpr(val.*) },
             .cond_value => try self.b.group(&.{ try self.accPush(val.*), .break_ }),
             .value => if (is_last)
                 try self.accPush(val.*)
@@ -3422,19 +3449,28 @@ const Emitter = struct {
         })), &.{});
     }
 
-    /// A condition loop used as a value (decision 8 §10):
+    /// A condition loop used as a value (decision 8 §10).
+    ///
+    /// With a `yield` in the body it is a comprehension, and it collects:
     ///
     ///     (() => { const _acc = []; while (cond) { …; _acc.push(v); } return _acc; })()
     ///
-    /// `yield <v>` contributes `v`; `break <v>` contributes `v` and ends the loop.
+    /// Without one it is a **search**, and `break <v>` is the loop's value:
+    ///
+    ///     (() => { while (cond) { …; return v; } return null; })()
+    ///
+    /// It collected in both cases before, so `val r = loop { …; break k; };`
+    /// answered `[3]` where §10 asks for `3`. A loop that ends without
+    /// breaking has no value to give, which is `null`.
     fn buildConditionLoopValue(self: *Emitter, lp: anytype) anyerror!js.Expr {
         const acc = "_acc";
         const base = self.current_indent;
         const cond = try self.buildExpr(lp.iter.*);
+        const searching = !hasAnyYield(lp.body);
         const prev_ctx = self.loop_ctx;
         const prev_gen = self.in_generator;
         const prev_wrap = self.case_ok_wrap;
-        self.loop_ctx = .{ .cond_value = acc };
+        self.loop_ctx = if (searching) .search else .{ .cond_value = acc };
         self.in_generator = false;
         self.case_ok_wrap = false;
         self.current_indent = base + 2;
@@ -3455,12 +3491,17 @@ const Emitter = struct {
                 else => try self.buildStmt(st),
             };
         }
-        return self.b.call(try self.b.paren(try self.b.arrowBlock(&.{}, .{
-            .stmts = try self.b.stmts(&.{
+        const while_stmt = js.Stmt{ .while_ = .{ .cond = cond, .body = .{ .stmts = body, .indent = base + 1 } } };
+        const stmts = if (searching)
+            try self.b.stmts(&.{ while_stmt, .{ .return_ = .null_ } })
+        else
+            try self.b.stmts(&.{
                 .{ .decl = .{ .pattern = .{ .name = acc }, .value = .{ .array = .{} } } },
-                .{ .while_ = .{ .cond = cond, .body = .{ .stmts = body, .indent = base + 1 } } },
+                while_stmt,
                 .{ .return_ = .{ .name = acc } },
-            }),
+            });
+        return self.b.call(try self.b.paren(try self.b.arrowBlock(&.{}, .{
+            .stmts = stmts,
             .indent = base,
         })), &.{});
     }
