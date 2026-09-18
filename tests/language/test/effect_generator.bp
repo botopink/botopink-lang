@@ -1,0 +1,20 @@
+//// Decision 8 §9 — `#[@generator]` plus `-> @Generator<T>`: `yield` produces
+//// the elements and `loop (gen)` consumes them.
+
+#[@generator]
+fn nums(n: i32) -> @Generator<i32> {
+    var i = 0;
+    loop (i < n) { yield i; i = i + 1; };
+}
+
+test "§9 a generator yields its elements in order" {
+    var acc = "";
+    loop (nums(3)) { x -> acc = acc + x.toString(); };
+    assert acc == "012";
+}
+
+test "§9 an empty generator runs no iteration" {
+    var runs = 0;
+    loop (nums(0)) { x -> runs = runs + 1; };
+    assert runs == 0;
+}

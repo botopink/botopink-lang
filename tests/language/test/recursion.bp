@@ -1,0 +1,24 @@
+//// Recursion: a fn that calls itself, and two fns that call each other.
+
+fn fact(n: i32) -> i32 {
+    if (n <= 1) { return 1; };
+    return n * fact(n - 1);
+}
+
+fn isEven(n: i32) -> bool {
+    if (n == 0) { return true; };
+    return isOdd(n - 1);
+}
+
+fn isOdd(n: i32) -> bool {
+    if (n == 0) { return false; };
+    return isEven(n - 1);
+}
+
+test "a fn calls itself" { assert fact(5) == 120; }
+
+test "two fns call each other" {
+    assert isEven(10);
+    assert isOdd(7);
+    assert !isEven(3);
+}

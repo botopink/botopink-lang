@@ -1,0 +1,21 @@
+//// Decision 8 §9 — `#[@result]` plus `-> @Result<T, E>`: inside the fn a bare
+//// `return` is the success value and `throw` is the error; `catch` unwraps with
+//// a fallback and `try` propagates.
+
+#[@result]
+fn parse(n: i32) -> @Result<i32, string> {
+    if (n < 0) { throw "negative"; };
+    return n;
+}
+
+#[@result]
+fn half(n: i32) -> @Result<i32, string> {
+    if (n % 2 != 0) { throw "odd"; };
+    return n / 2;
+}
+
+test "§9 a bare return is the success value" { assert (parse(7) catch -1) == 7; }
+test "§9 throw makes the error" { assert (parse(-1) catch -1) == -1; }
+test "§9 catch after a try unwraps" { assert (try parse(4) catch 0) == 4; }
+test "§9 map over a success transforms the payload" { assert parse(5).map({ x -> x + 1 }).unwrapOr(0) == 6; }
+test "§9 flatMap short-circuits on the first error" { assert parse(7).flatMap({ x -> half(x) }).unwrapOr(-1) == -1; }

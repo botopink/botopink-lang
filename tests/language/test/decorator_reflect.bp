@@ -1,0 +1,19 @@
+//// `@Decl` reflection: the decorator body reads the declaration it annotates —
+//// its name and its kind — and synthesises code from what it read. This is the
+//// mechanism `onze`'s `#[mock]` and every `rakun` marker are built on.
+////
+//// `decl.kind` is compared through a `val` intermediate: `(a == b).toString()`
+//// inside an argument does not parse.
+
+fn describe(comptime decl: @Decl) {
+    val isType = decl.kind == DeclKind.Type;
+    @emit("pub fn describedName() -> string { return \"" + decl.name + "\"; }");
+    @emit("pub fn describedIsType() -> bool { return " + isType.toString() + "; }");
+}
+
+#[describe]
+type Account(id: i32, owner: string)
+
+test "the decorator reads the declaration's name" { assert describedName() == "Account"; }
+
+test "the decorator reads the declaration's kind" { assert describedIsType(); }

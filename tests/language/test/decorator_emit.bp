@@ -1,0 +1,19 @@
+//// Decorators and annotation processors: a fn whose first parameter is
+//// `comptime _: @Decl` is a decorator, `#[name]` applies it, the body reflects
+//// over the declaration and `@emit` splices a new top-level declaration that the
+//// rest of the module can call.
+////
+//// The bare `if` must be the last statement of the decorator body: a value-less
+//// `if` followed by another statement does not parse today.
+
+fn wire(comptime decl: @Decl) {
+    @emit("pub fn wiredSize() -> i32 { return 99; }");
+    if (decl.kind != DeclKind.Type) { decl.fail("#[wire] must annotate a type"); }
+}
+
+#[wire]
+type UserService(name: string)
+
+test "@emit splices a referenceable top-level declaration" { assert wiredSize() == 99; }
+
+test "the decorated type is unchanged" { assert UserService(name: "a").name == "a"; }

@@ -1,0 +1,6 @@
+//// String case conversion: `toUpperCase` and `toLowerCase` answer the same on
+//// every backend.
+
+test "toUpperCase raises every letter" { assert "abc".toUpperCase() == "ABC"; }
+
+test "toLowerCase lowers every letter" { assert "ABC".toLowerCase() == "abc"; }

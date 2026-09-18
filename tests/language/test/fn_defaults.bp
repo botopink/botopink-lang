@@ -1,0 +1,12 @@
+//// Trailing parameter defaults: an omitted trailing argument takes the default
+//// its declaration gives it.
+
+fn connect(host: string, port: i32 = 80, timeout: i32 = 30) -> string {
+    return host + ":" + port.toString() + "/" + timeout.toString();
+}
+
+test "every default applies" { assert connect("a") == "a:80/30"; }
+
+test "one argument overrides the first default" { assert connect("a", 90) == "a:90/30"; }
+
+test "every argument given" { assert connect("a", 90, 5) == "a:90/5"; }

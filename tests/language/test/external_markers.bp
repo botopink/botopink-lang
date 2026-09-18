@@ -1,0 +1,15 @@
+//// Decision 8 §8 / decision 5 — the marker forms of a host template: `$args`
+//// expands to the whole declared parameter list, and the keyword form
+//// (`module:` / `method:`) carries a template instead of a bare symbol.
+
+#[@External.Node("Math.max($args)")]
+#[@External.Erlang(module: "erlang", method: "max($args)")]
+declare fn biggest(a: i32, b: i32) -> i32;
+
+#[@External.Node("Math.min($0, $1)")]
+#[@External.Erlang(module: "erlang", method: "min($0, $1)")]
+declare fn smallest(a: i32, b: i32) -> i32;
+
+test "§8 $args expands to the declared parameter list" { assert biggest(1, 2) == 2; }
+
+test "§8 the keyword form carries a template" { assert smallest(9, 4) == 4; }

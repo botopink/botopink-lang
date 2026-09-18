@@ -1,0 +1,10 @@
+//// Modules: a `pub mod` sibling, an `import` of its type and its fn, and a
+//// method called on the imported type.
+
+pub mod geometry;
+import { Point, origin } from "geometry";
+
+pub fn main() {
+    @print(Point(x: 1, y: 2).norm());
+    @print(origin().norm());
+}
