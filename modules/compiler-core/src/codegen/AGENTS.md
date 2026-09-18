@@ -295,6 +295,20 @@ codegen/
   narrowed by the arm's pattern.
 - **`comptime { … }` with no `break <e>`** in value position is `undefined`
   (a block's value comes only from `break`).
+- **Index** (`buildIndexCall`, decision 30): `receiver[index]` reaches the
+  backend as the builtin call `ast.index_builtin_name` (`"[]"`) over
+  `(receiver, index)`, so one node carries the element read and the slice. A
+  `range` index is `.slice(start, end)` — `.slice(start)` when open-ended, the
+  one place an open-ended range is not `__bp_range_from`; any other index is a
+  JS index, which answers an array's element, a tuple's member (a tuple is a JS
+  array) and a string's character alike. **A `Dict` read `d["k"]` is not
+  lowered**: a `Dict` is a botopink record over a `pairs` association list, so
+  the read is `d.lookup("k")`, and choosing that needs the *receiver's type* —
+  which this backend does not have (`instanceLowerings` carries a kind only for
+  call sites `comptime/infer.zig` recorded, and it does not type this call at
+  all yet: `xs[0]` is still `void`). Today `d["k"]` emits the JS property read
+  and answers `undefined`. `01-checker` types the call by the receiver; the
+  dict arm lands with it.
 - **Ranges**: `a..b` materializes `Array.from({length: Math.max(0, b - a)}, …)`;
   an open-ended `a..` is the lazy `__bp_range_from(a)` prelude generator
   (`function*` counting up forever), so `loop (x..) { i -> … break; }` runs.

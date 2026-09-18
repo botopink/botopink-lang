@@ -3962,11 +3962,34 @@ const Emitter = struct {
         );
     }
 
+    /// `receiver[index]` (`ast.index_builtin_name`, decision 30). One node
+    /// carries the element read and the slice, because the index is an ordinary
+    /// expression: a `range` index is `.slice(start, end)` — `.slice(start)`
+    /// when the range is open-ended, which is the only place an open-ended
+    /// range is *not* the lazy `__bp_range_from` generator — and any other
+    /// index is a JS index, which answers an array's element, a tuple's member
+    /// (a tuple is a JS array) and a string's character alike.
+    fn buildIndexCall(self: *Emitter, cc: anytype) anyerror!js.Expr {
+        if (cc.args.len != 2) return error.InvalidArgs;
+        const recv = try self.buildExpr(cc.args[0].value.*);
+        const idx = cc.args[1].value.*;
+        if (idx == .collection and idx.collection.kind == .range) {
+            const r = idx.collection.kind.range;
+            const slice = try self.b.member(recv, "slice");
+            const start = try self.buildExpr(r.start.*);
+            const end = r.end orelse return self.b.call(slice, &.{start});
+            return self.b.call(slice, &.{ start, try self.buildExpr(end.*) });
+        }
+        return self.b.index(recv, try self.buildExpr(idx), false);
+    }
+
     fn buildBuiltinCall(self: *Emitter, cc: anytype) anyerror!js.Expr {
         if (std.mem.eql(u8, cc.callee, "print") or std.mem.eql(u8, cc.callee, "println") or std.mem.eql(u8, cc.callee, "debug"))
             return self.buildPrintCall(cc);
         if (std.mem.eql(u8, cc.callee, ast.is_builtin_name) and cc.isType != null)
             return self.buildIsCall(cc);
+        if (std.mem.eql(u8, cc.callee, ast.index_builtin_name))
+            return self.buildIndexCall(cc);
         // `prim-op-annotation` builtin dispatch fires first (`@todo` /
         // `@panic` annotated in `builtins.d.bp`).
         if (try self.tryBuiltinAnnotation(cc.callee, cc)) |node| return node;
