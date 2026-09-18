@@ -67,7 +67,7 @@ parser/
     ├── surface.zig       ← the 1.0.3 surface: `type` shapes, the field list, `behavior`, separators, and old-vs-new AST equality
     ├── decision8.zig     ← decision 8's grammar, one section per row: `unknown` (N19), union types (N20), `is` (N21), `case` arms (N22)
     ├── effect_rejections.zig ← parser-level `#[@<effect>]` rejections (R1/R2/R5…)
-    └── language_surface.zig  ← front 15's rows: the forms the documents write against the grammar (R1 the `T[]` suffix, R2 the postfix chain, R3 a number as a receiver, R4 the shared block body)
+    └── language_surface.zig  ← front 15's rows: the forms the documents write against the grammar (R1 the `T[]` suffix, R2 the postfix chain, R3 a number as a receiver, R4 the shared block body, R5 the index expression)
 ```
 
 ## Testing pattern
@@ -157,6 +157,8 @@ places, and the reason is trailing lambdas:
 - `parseExpr`'s call path carries the statement-position chain, which **does**
   consume trailing lambdas (`xs.forEach { … }`).
 
+The links are `.field`, `?.field`, `.method(args)`, `(args)` and `[index]`.
+
 **A link added to one must be added to the other.** `adder(3)(4)` is the case
 that proved it: adding the `(` link to `parsePostfixChain` alone closed
 `("ab").length(…)` and not `adder(3)(4)`, because the two forms reach two
@@ -164,6 +166,16 @@ copies. A chained call has no name for its callee, so the callee travels as an
 expression on `ast.CallExpr.call.calleeExpr` with `callee = ""` and
 `receiver = null` — a chained call is **not** a method call, and a consumer that
 reads `receiver` to mean "the value before the `.`" must not see one.
+
+`xs[i]` is the `[index]` link, built by `makeIndexExpr` for both copies
+(decision 30). It is the reserved builtin call `ast.index_builtin_name` over
+`(receiver, index)` and **not** a new AST variant — `ast.zig` states the rule
+that `x is T` follows for the same reason. The index is parsed with
+`parseRangeExpr`, so `xs[0..2]` and `xs[0..]` are the same node with a `range`
+inside: one node for indexing and for slicing, as `decision-8:447` reads them.
+`parseRangeExpr` stops an open end at `]` the way it already stops it at `)`.
+Typing the call is `01-checker`'s and lowering it is each backend's; until then
+it reaches the same unrecognised-builtin path `x is T` reached.
 
 ## Postfix-chain locs
 

@@ -417,7 +417,16 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         // it back and let `parsePrimary` own `a.b.c` so those snapshots stay
         // identical.
         var sawMethodCall = false;
-        while (this.check(.dot) or this.check(.questionDot) or this.check(.leftParenthesis)) {
+        while (this.check(.dot) or this.check(.questionDot) or this.check(.leftParenthesis) or
+            this.check(.leftSquareBracket))
+        {
+            // `xs[0]` — see the matching link in `parsePostfixChain`. The two
+            // chain copies carry the same links; `parser/AGENTS.md` says so.
+            if (this.check(.leftSquareBracket)) {
+                base = try makeIndexExpr(this, alloc, base);
+                sawMethodCall = true;
+                continue;
+            }
             // `adder(3)(4)` — calling what a call returned. A `(` reaches this
             // loop only after the base is already a call or a chain link (the
             // first `(` after the identifier was taken above), so it is always
@@ -864,6 +873,34 @@ pub fn parseBinaryExpr(this: *This, alloc: std.mem.Allocator, comptime level: us
     return lhs;
 }
 
+/// `receiver[index]` — decision 30's index expression, as the reserved builtin
+/// call `ast.index_builtin_name` over `(receiver, index)`. The `[` must be the
+/// current token.
+///
+/// It is a **chain link**, built by both copies of the chain loop, so
+/// `f(1)[0].name` and `d["k"][0]` are one chain and an index composes with
+/// every other link. The index is parsed as an ordinary expression, which is
+/// what makes `xs[0..2]` the same node with a `range` inside it.
+fn makeIndexExpr(this: *This, alloc: std.mem.Allocator, base: Expr) ParseError!Expr {
+    const openTok = this.advance(); // [
+    // `parseRangeExpr`, not `parseExpr`: the index is where `xs[0..2]` puts a
+    // range, and `decision-8:447` says `..` is iteration **and slicing**.
+    const idx = try this.parseRangeExpr(alloc);
+    const idxPtr = try this.boxExpr(alloc, idx);
+    _ = try this.consume(.rightSquareBracket);
+    const recvPtr = try this.boxExpr(alloc, base);
+    var args = try alloc.alloc(CallArg, 2);
+    args[0] = .{ .label = null, .value = recvPtr };
+    args[1] = .{ .label = null, .value = idxPtr };
+    return Expr{ .call = .{ .loc = locFromToken(openTok), .kind = .{ .call = .{
+        .receiver = null,
+        .callee = ast.index_builtin_name,
+        .is_builtin = true,
+        .args = args,
+        .trailing = &.{},
+    } } } };
+}
+
 /// Consume a postfix `.member` / `?.member` / `.method(args)` chain off an
 /// already-parsed `base` expression, so a literal receiver chains the same way
 /// an identifier does (`[1, 2].map(f)`, `"x".contains(y)`). Operand position:
@@ -872,7 +909,16 @@ pub fn parseBinaryExpr(this: *This, alloc: std.mem.Allocator, comptime level: us
 /// token's loc so loc-keyed method lowering stays per-link distinct.
 fn parsePostfixChain(this: *This, alloc: std.mem.Allocator, base_in: Expr) ParseError!Expr {
     var base = base_in;
-    while (this.check(.dot) or this.check(.questionDot) or this.check(.leftParenthesis)) {
+    while (this.check(.dot) or this.check(.questionDot) or this.check(.leftParenthesis) or
+        this.check(.leftSquareBracket))
+    {
+        // `xs[0]` — an index expression (decision 30), a chain link like
+        // `.field`, so `f(1)[0].name` is one chain. The index is an ordinary
+        // expression, which is what makes `xs[0..2]` the same node.
+        if (this.check(.leftSquareBracket)) {
+            base = try makeIndexExpr(this, alloc, base);
+            continue;
+        }
         // `f(a)(b)` — a function is a value, so calling what a call returned is
         // a link in the chain like a `.method(…)` is (decision 14). There is no
         // name to put in `callee`, so the callee travels as an expression; see
@@ -1792,8 +1838,9 @@ pub fn parseRangeExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
         alloc.destroy(startPtr);
     }
     // Optional end: `0..10` vs `0..`
+    // `]` closes an open-ended slice `xs[0..]`, like `)` closes `loop (0..)`.
     const hasEnd = !this.check(.rightParenthesis) and !this.check(.comma) and
-        !this.check(.endOfFile);
+        !this.check(.rightSquareBracket) and !this.check(.endOfFile);
     if (hasEnd) {
         const end = try this.parseBinaryExpr(alloc, prec.equality);
         const endPtr = try this.boxExprOwned(alloc, end);

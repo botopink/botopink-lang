@@ -1677,6 +1677,31 @@ pub const union_type_name = "|";
 /// checkable.
 pub const is_builtin_name = "is";
 
+/// The reserved builtin-call name that carries [decision 30](../../../specs)'s
+/// index expression: `call{ .callee = index_builtin_name, .is_builtin = true,
+/// .args = &.{ <the receiver>, <the index> } }` — the desugaring of `xs[0]`
+/// into `@[](xs, 0)`, for the same reason `is` desugars: **no AST union here
+/// may gain a variant**, and every consumer would otherwise have to grow an arm
+/// before the form can parse at all.
+///
+/// The spelling is not an identifier, like `union_type_name`, so no source can
+/// write this call by hand: `@[](…)` does not lex.
+///
+/// **The index is an ordinary expression**, which is what makes one node serve
+/// indexing *and* slicing: `xs[0..2]` is this call with a `range` second
+/// argument (`decision-8:447` — "`..` belongs to iteration and slicing"), and a
+/// dict read `d["k"]` is this call with a string.
+///
+/// **What inference has to do with it** (`01-checker`): type the call by the
+/// receiver — the element type for an array, the value type for a dict, a
+/// character for a string, the member type for a tuple with a constant index —
+/// decide whether it answers `T` or `?T`, and refuse an index on a receiver
+/// decision 8 §2 says has none (`:112` lists indexing among the operations
+/// `unknown` refuses). **What each backend has to do with it** (fronts 02–05):
+/// lower it. Until then it reaches each backend's unrecognised-builtin path,
+/// which is the same place `x is T` reached before `04-js` lowered it.
+pub const index_builtin_name = "[]";
+
 pub const TypeRef = union(enum) {
     /// Plain named type: `Int`, `string`, `Self`. Slice into source — not heap-owned.
     named: []const u8,

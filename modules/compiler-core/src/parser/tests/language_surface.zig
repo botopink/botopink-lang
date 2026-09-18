@@ -188,3 +188,60 @@ test "surface R4: an if branch that binds its value still binds it" {
         \\}
     );
 }
+
+// ── R5 — an index expression (decision 30) ───────────────────────────────────
+//
+// `xs[0]` was a parse error in every position. It parses as the reserved
+// builtin call `ast.index_builtin_name` over `(receiver, index)` — `ast.zig`
+// says why a new AST variant is not the shape — and it is a chain link, so it
+// composes with `.field` and `(args)`. The index is parsed as a RANGE
+// expression, which is what makes `xs[0..2]` the same node.
+
+test "surface R5: an index in every reading position" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn f(xs: i32[], d: Dict<string, i32>, s: string, i: i32) -> i32 {
+        \\    val a = xs[0];
+        \\    val b = d["k"];
+        \\    val c = s[0];
+        \\    val e = xs[i + 1];
+        \\    val g = xs[xs[0]];
+        \\    return a + b + e + g;
+        \\}
+    );
+}
+
+test "surface R5: a slice is an index whose index is a range" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn f(xs: i32[], i: i32) -> i32 {
+        \\    val a = xs[0..2];
+        \\    val b = xs[0..];
+        \\    val c = xs[i..i + 2];
+        \\    return 1;
+        \\}
+    );
+}
+
+test "surface R5: an index composes with the other chain links" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn rows(n: i32) -> i32[] { return [n]; }
+        \\fn f(xs: i32[]) -> i32 {
+        \\    val a = rows(1)[0];
+        \\    val b = xs[0].toString().length;
+        \\    val c = ([1, 2])[0];
+        \\    return a + b + c;
+        \\}
+    );
+}
+
+test "surface R5: an array literal is still an array literal" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn g(xs: i32[]) -> i32 { return xs.length; }
+        \\fn f() -> i32 {
+        \\    val xs = [1, 2];
+        \\    val n = g([1, 2]);
+        \\    var s = 0;
+        \\    loop (0..4) { i -> s = s + i; };
+        \\    return n + s;
+        \\}
+    );
+}
