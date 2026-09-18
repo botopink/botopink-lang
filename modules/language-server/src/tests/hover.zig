@@ -342,3 +342,69 @@ test "hover: a behavior is a `behavior Name` card, not an interface" {
     );
     try snap.assertHover(gpa, "hover_behavior", source, h.pos(0, 13), result);
 }
+
+// ── H-14b — a rendered type is written the way the source writes it ───────────
+
+// `array` and `tuple` are the checker's own names for two types that have no
+// such spelling in source, and the structural record's `record { … }` is a
+// parse error since the surface cutover. A card that prints one of them cannot
+// be pasted back into the file.
+
+test "hover: an array type is rendered `i32[]`, not `array<i32>`" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\val xs = [1, 2, 3];
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    const result = try engine.hover(gpa, source, h.pos(0, 4), bindings);
+    defer if (result) |hov| gpa.free(hov.contents.value);
+
+    try std.testing.expect(result != null);
+    try std.testing.expectEqualStrings(
+        \\```botopink
+        \\val xs : i32[]
+        \\```
+    ,
+        result.?.contents.value,
+    );
+    try snap.assertHover(gpa, "hover_val_array", source, h.pos(0, 4), result);
+}
+
+test "hover: a tuple type is rendered `#(i32, string)`" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\val row = #(1, "a");
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    const result = try engine.hover(gpa, source, h.pos(0, 4), bindings);
+    defer if (result) |hov| gpa.free(hov.contents.value);
+
+    try std.testing.expect(result != null);
+    try snap.assertHover(gpa, "hover_val_tuple", source, h.pos(0, 4), result);
+}
+
+test "hover: a labeled tuple type keeps its labels" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\fn load() -> #(name: string, pop: i32) { return #("SP", 12); }
+        \\val row = load();
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    const result = try engine.hover(gpa, source, h.pos(1, 4), bindings);
+    defer if (result) |hov| gpa.free(hov.contents.value);
+
+    try std.testing.expect(result != null);
+    try snap.assertHover(gpa, "hover_val_labeled_tuple", source, h.pos(1, 4), result);
+}

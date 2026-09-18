@@ -1018,12 +1018,49 @@ fn tokenToSymbolKind(kind: TokenKind) u32 {
     };
 }
 
-/// Renders a Type as a human-readable string. The caller owns the result.
-pub fn renderType(gpa: std.mem.Allocator, ty: *comptime_pipeline.Type) ![]u8 {
+/// Renders a tuple type as `#(i32, string)`, or `#(name: string, pop: i32)`
+/// when the type carries labels. A label is a name for the compiler only
+/// (decision 8 §6): it never takes part in type comparison, but a written type
+/// keeps it, so the card has to show it. `labels` is empty for an unlabeled
+/// tuple, and an empty entry marks one unlabeled element of a labeled one.
+fn renderTuple(
+    gpa: std.mem.Allocator,
+    args: []const *comptime_pipeline.Type,
+    labels: []const []const u8,
+) std.mem.Allocator.Error![]u8 {
+    var buf: std.ArrayList(u8) = .empty;
+    errdefer buf.deinit(gpa);
+    try buf.appendSlice(gpa, "#(");
+    for (args, 0..) |arg, idx| {
+        if (idx > 0) try buf.appendSlice(gpa, ", ");
+        if (idx < labels.len and labels[idx].len > 0) {
+            try buf.appendSlice(gpa, labels[idx]);
+            try buf.appendSlice(gpa, ": ");
+        }
+        const s = try renderType(gpa, arg);
+        defer gpa.free(s);
+        try buf.appendSlice(gpa, s);
+    }
+    try buf.append(gpa, ')');
+    return buf.toOwnedSlice(gpa);
+}
+
+/// Renders a Type as a human-readable string, in the surface a user writes:
+/// `i32[]`, not the internal `array<i32>`; `#(name: string, pop: i32)`, not
+/// `tuple<string, i32>`. The caller owns the result.
+pub fn renderType(gpa: std.mem.Allocator, ty: *comptime_pipeline.Type) std.mem.Allocator.Error![]u8 {
     const t = ty.deref();
     return switch (t.*) {
         .named => |n| blk: {
             if (n.args.len == 0) break :blk gpa.dupe(u8, n.name);
+            // `array` and `tuple` are how the checker names them; neither has
+            // that spelling in source.
+            if (std.mem.eql(u8, n.name, "array") and n.args.len == 1) {
+                const elem = try renderType(gpa, n.args[0]);
+                defer gpa.free(elem);
+                break :blk std.fmt.allocPrint(gpa, "{s}[]", .{elem});
+            }
+            if (std.mem.eql(u8, n.name, "tuple")) break :blk renderTuple(gpa, n.args, n.labels);
             var buf: std.ArrayList(u8) = .empty;
             errdefer buf.deinit(gpa);
             try buf.appendSlice(gpa, n.name);
@@ -1058,10 +1095,13 @@ pub fn renderType(gpa: std.mem.Allocator, ty: *comptime_pipeline.Type) ![]u8 {
             .generic => |id| std.fmt.allocPrint(gpa, "T{d}", .{id}),
             .link => |linked| renderType(gpa, linked),
         },
+        // A structural record — the checker's shape for an anonymous field
+        // list. `record { … }` is a parse error since the surface cutover; the
+        // form that carries the same names is a labeled tuple (decision 8 §6).
         .record => |fields| blk: {
             var buf: std.ArrayList(u8) = .empty;
             errdefer buf.deinit(gpa);
-            try buf.appendSlice(gpa, "record { ");
+            try buf.appendSlice(gpa, "#(");
             for (fields, 0..) |f, idx| {
                 if (idx > 0) try buf.appendSlice(gpa, ", ");
                 try buf.appendSlice(gpa, f.name);
@@ -1070,7 +1110,7 @@ pub fn renderType(gpa: std.mem.Allocator, ty: *comptime_pipeline.Type) ![]u8 {
                 defer gpa.free(fs);
                 try buf.appendSlice(gpa, fs);
             }
-            try buf.appendSlice(gpa, " }");
+            try buf.append(gpa, ')');
             break :blk buf.toOwnedSlice(gpa);
         },
         .union_ => |arms| blk: {
