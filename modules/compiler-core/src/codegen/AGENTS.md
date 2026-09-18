@@ -748,6 +748,24 @@ codegen/
   `undefined`, then `is_map` + `get_map_elements`), `comptime` nodes
   (`lowerComptime`: a folded expression/block is its value), `await e` (eager:
   the value of `e`).
+- **`@print` / `@println` / `@debug`** (`lowerPrint`, `ensurePrintHelper`) lower
+  to `'__bp_print'([A, B, …])`, whose four synthesised functions are decision 8
+  §7's formatter: `'__bp_print'/1` joins the arguments with a space and ends the
+  line, `'__bp_show'/2` renders one value, and `'-bp_show_top-'/1` /
+  `'-bp_show_elem-'/1` are the one-argument wrappers `lists:map` needs (they are
+  `'__bp_show'(V, true)` and `'__bp_show'(V, false)`). A top-level binary is its
+  own text, a nested one `io_lib:write_string(unicode:characters_to_list(V))` —
+  `"say \"hi\""`, source escapes and all, in one call instead of a per-character
+  walk — a list `[E1, E2]`, a tuple `#(E1, E2)`, and everything else `~p`: an
+  integer, a float (which keeps its `.0`), an atom, a record's map, and a tuple
+  opened by an atom other than `true`/`false`/`undefined`, which is an enum
+  variant or a `@Result`. Records (§7 F2), variants (F3) and `Display` (F4) need
+  a value that knows its own type, which is
+  [`13-module-identity`](../../../../specs/1.0.5-beta/13-module-identity/README.md) step 18.
+  It replaced the per-value format-verb machinery (`'__bp_print_fmt'/1` +
+  `'__bp_print_sep'/1`, `~ts` for a binary and `~p` for everything else), which
+  printed every compound value as an **Erlang term** — decision 1a never reached
+  this backend, so a nested string came out `<<"a">>` and a tuple `{1,<<"a">>}`.
 - **The index expression** (`lowerIndexExpr`, `ensureIndexHelper`,
   `ensureSliceHelper`): decision 30 reaches every backend as the builtin call
   `"[]"` over `(receiver, index)` (`ast.zig:1717-1740`), so `xs[0]`, `d["k"]`,

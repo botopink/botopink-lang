@@ -5171,29 +5171,52 @@ const Emitter = struct {
         try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "iolist_to_binary" } }, 0);
     }
 
-    /// Emit (once per module) `'__bp_print'/1` and the two mutually recursive
-    /// fns that build its format string: `'__bp_print_fmt'/1` turns the value
-    /// list into `"~ts ~p …~n"` (one verb per value, `~ts` for a binary) and
-    /// `'__bp_print_sep'/1` puts the space between verbs and the `~n` last.
+    /// Emit (once per module) the four functions decision 8 §7's formatter is
+    /// on BEAM: `'__bp_print'/1`, the value renderer `'__bp_show'/2` and the two
+    /// one-argument wrappers `lists:map` needs (`'-bp_show_top-'`,
+    /// `'-bp_show_elem-'`, which are `'__bp_show'(V, true)` and
+    /// `'__bp_show'(V, false)`).
+    ///
+    /// It replaces the per-value format-verb machinery (`'__bp_print_fmt'/1` +
+    /// `'__bp_print_sep'/1`, which chose `~ts` for a binary and `~p` for
+    /// everything else). That printed every compound value as an **Erlang
+    /// term** — decision 1a never reached this backend — so a nested string
+    /// came out `<<"a">>` and a tuple `{1,<<"a">>}`, and §7's separator space
+    /// was missing everywhere.
+    ///
+    /// `'__bp_show'(V, Top)`, the beam twin of the erlang backend's function of
+    /// the same name:
+    ///
+    /// | `V` | text |
+    /// |---|---|
+    /// | a binary, `Top` | itself — a top-level string prints bare |
+    /// | a binary, nested | `io_lib:write_string(unicode:characters_to_list(V))` — `"a\"b"`, source escapes and all, in one call instead of a per-character walk |
+    /// | a list | `[$[, lists:join(<<", ">>, …), $]]` over the elements |
+    /// | a tuple whose first element is an atom other than `true`/`false`/`undefined` | `~p` — a variant or a `@Result`; §7's `Shape.Square(side: 4)` is `13-module-identity`'s F3 |
+    /// | any other tuple | `[$#, $(, lists:join(<<", ">>, …), $)]` |
+    /// | anything else | `~p` — an integer, a float (which keeps its `.0`, §7 F5), an atom, a record's map (§7 F2, also 13's) |
     fn ensurePrintHelper(self: *Emitter) anyerror![]const u8 {
         if (self.print_helper_name) |n| return n;
         const name = try self.alloc.dupe(u8, "'__bp_print'");
-        const fmt_name = "'__bp_print_fmt'";
-        const sep_name = "'__bp_print_sep'";
+        const show_name = "'__bp_show'";
+        const top_name = "'-bp_show_top-'";
+        const elem_name = "'-bp_show_elem-'";
         try self.reserveFn(name, 1);
-        try self.reserveFn(fmt_name, 1);
-        try self.reserveFn(sep_name, 1);
+        try self.reserveFn(show_name, 2);
+        try self.reserveFn(top_name, 1);
+        try self.reserveFn(elem_name, 1);
         const main_l = try self.fnLabelsFor(name, 1);
-        const fmt_l = try self.fnLabelsFor(fmt_name, 1);
-        const sep_l = try self.fnLabelsFor(sep_name, 1);
-        const newline = Term.listOf(&[_]Term{ Term.int('~'), Term.int('n') });
+        const show_l = try self.fnLabelsFor(show_name, 2);
+        const top_l = try self.fnLabelsFor(top_name, 1);
+        const elem_l = try self.fnLabelsFor(elem_name, 1);
 
         var buf: std.Io.Writer.Allocating = .init(self.alloc);
         const saved_out = self.out;
         self.out = &buf.writer;
         const w = self.out;
 
-        // '__bp_print'(Values) -> io:format('__bp_print_fmt'(Values), Values).
+        // '__bp_print'(Values) ->
+        //     io:format("~ts~n", [lists:join(<<" ">>, lists:map(fun top/1, Values))]).
         try beamEmitter.writeBlankLine(w);
         try beamEmitter.writeFunctionHeader(w, name, 1, main_l.entry);
         try beamEmitter.writeLabel(w, main_l.func_info);
@@ -5203,68 +5226,134 @@ const Emitter = struct {
         try beamEmitter.writeAllocate(w, 1, 1);
         try beamEmitter.writeInitYregs(w, 1);
         try beamEmitter.writeMoveOp(w, Op.xr(0), Dst.yr(0));
-        try beamEmitter.writeCall(w, .normal, 1, .{ .local = fmt_l.entry }, 0);
+        try beamEmitter.writeTestHeapAlloc(w, 0, 1, 0);
+        try beamEmitter.writeMakeFun3(w, top_l.entry, &.{});
         try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(1));
+        try beamEmitter.writeCall(w, .normal, 2, .{ .ext = .{ .module = "lists", .function = "map" } }, 0);
+        try beamEmitter.writeMoveOp(w, Op.xr(0), Dst.xr(1));
+        try beamEmitter.writeMoveOp(w, Op.str(" "), Dst.xr(0));
+        try beamEmitter.writeCall(w, .normal, 2, .{ .ext = .{ .module = "lists", .function = "join" } }, 0);
+        try beamEmitter.writeTestHeap(w, 2, 1);
+        try beamEmitter.writePutList(w, Op.xr(0), Op.nil, Dst.xr(1));
+        try beamEmitter.writeMoveOp(w, Op.str("~ts~n"), Dst.xr(0));
         try beamEmitter.writeCall(w, .last, 2, .{ .ext = .{ .module = "io", .function = "format" } }, 1);
 
-        // '__bp_print_fmt'([]) -> "~n";
-        // '__bp_print_fmt'([V | T]) -> Verb(V) ++ '__bp_print_sep'(T).
-        const fmt_empty = self.allocLabel();
+        // '-bp_show_top-'(V) -> '__bp_show'(V, true).
+        // '-bp_show_elem-'(V) -> '__bp_show'(V, false).
+        for ([_]struct { n: []const u8, l: FnLabels, flag: []const u8 }{
+            .{ .n = top_name, .l = top_l, .flag = "true" },
+            .{ .n = elem_name, .l = elem_l, .flag = "false" },
+        }) |wrapper| {
+            try beamEmitter.writeBlankLine(w);
+            try beamEmitter.writeFunctionHeader(w, wrapper.n, 1, wrapper.l.entry);
+            try beamEmitter.writeLabel(w, wrapper.l.func_info);
+            try beamEmitter.writeLine(w, self.module_name, self.cur_line);
+            try beamEmitter.writeFuncInfo(w, self.module_name, wrapper.n, 1);
+            try beamEmitter.writeLabel(w, wrapper.l.entry);
+            try beamEmitter.writeMoveOp(w, Op.atom(wrapper.flag), Dst.xr(1));
+            try beamEmitter.writeCall(w, .only, 2, .{ .local = show_l.entry }, 0);
+        }
+
+        // '__bp_show'(V, Top).
+        const nested = self.allocLabel();
         const not_bin = self.allocLabel();
+        const not_list = self.allocLabel();
+        const plain_tuple = self.allocLabel();
+        const generic = self.allocLabel();
         try beamEmitter.writeBlankLine(w);
-        try beamEmitter.writeFunctionHeader(w, fmt_name, 1, fmt_l.entry);
-        try beamEmitter.writeLabel(w, fmt_l.func_info);
+        try beamEmitter.writeFunctionHeader(w, show_name, 2, show_l.entry);
+        try beamEmitter.writeLabel(w, show_l.func_info);
         try beamEmitter.writeLine(w, self.module_name, self.cur_line);
-        try beamEmitter.writeFuncInfo(w, self.module_name, fmt_name, 1);
-        try beamEmitter.writeLabel(w, fmt_l.entry);
-        try beamEmitter.writeTest(w, .is_nonempty_list, fmt_empty, &.{Op.xr(0)});
-        try beamEmitter.writeAllocate(w, 1, 1);
-        try beamEmitter.writeInitYregs(w, 1);
-        try beamEmitter.writeGetList(w, Op.xr(0), Dst.xr(1), Dst.xr(0));
-        try beamEmitter.writeMoveOp(w, Op.xr(1), Dst.yr(0));
-        try beamEmitter.writeCall(w, .normal, 1, .{ .local = sep_l.entry }, 0);
-        try beamEmitter.writeTest(w, .is_binary, not_bin, &.{Op.yr(0)});
-        try beamEmitter.writeTestHeap(w, 6, 1);
-        try beamEmitter.writePutList(w, Op.int('s'), Op.xr(0), Dst.xr(0));
-        try beamEmitter.writePutList(w, Op.int('t'), Op.xr(0), Dst.xr(0));
-        try beamEmitter.writePutList(w, Op.int('~'), Op.xr(0), Dst.xr(0));
-        try beamEmitter.writeDeallocate(w, 1);
+        try beamEmitter.writeFuncInfo(w, self.module_name, show_name, 2);
+        try beamEmitter.writeLabel(w, show_l.entry);
+        try beamEmitter.writeAllocate(w, 2, 2);
+        try beamEmitter.writeInitYregs(w, 2);
+        try beamEmitter.writeMoveOp(w, Op.xr(0), Dst.yr(0)); // y0 = V
+        try beamEmitter.writeMoveOp(w, Op.xr(1), Dst.yr(1)); // y1 = Top, then scratch
+
+        // A binary: itself at the top level, quoted and escaped inside.
+        try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeTest(w, .is_binary, not_bin, &.{Op.xr(0)});
+        try beamEmitter.writeTest(w, .is_eq, nested, &.{ Op.yr(1), Op.atom("true") });
+        try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeDeallocate(w, 2);
         try beamEmitter.writeReturn(w);
+        try beamEmitter.writeLabel(w, nested);
+        try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeCall(w, .normal, 1, .{ .ext = .{ .module = "unicode", .function = "characters_to_list" } }, 0);
+        try beamEmitter.writeCall(w, .last, 1, .{ .ext = .{ .module = "io_lib", .function = "write_string" } }, 2);
+
+        // A list: `[` … `]`, elements separated by `", "`.
         try beamEmitter.writeLabel(w, not_bin);
-        try beamEmitter.writeTestHeap(w, 4, 1);
-        try beamEmitter.writePutList(w, Op.int('p'), Op.xr(0), Dst.xr(0));
-        try beamEmitter.writePutList(w, Op.int('~'), Op.xr(0), Dst.xr(0));
-        try beamEmitter.writeDeallocate(w, 1);
-        try beamEmitter.writeReturn(w);
-        try beamEmitter.writeLabel(w, fmt_empty);
-        try beamEmitter.writeMove(w, newline, 0);
+        try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeTest(w, .is_list, not_list, &.{Op.xr(0)});
+        try self.emitShowJoin(w, elem_l.entry, Op.yr(0));
+        try beamEmitter.writeTestHeap(w, 6, 1);
+        try beamEmitter.writePutList(w, Op.int(']'), Op.nil, Dst.xr(1));
+        try beamEmitter.writePutList(w, Op.xr(0), Op.xr(1), Dst.xr(0));
+        try beamEmitter.writePutList(w, Op.int('['), Op.xr(0), Dst.xr(0));
+        try beamEmitter.writeDeallocate(w, 2);
         try beamEmitter.writeReturn(w);
 
-        // '__bp_print_sep'([]) -> "~n";
-        // '__bp_print_sep'(T) -> [$\s | '__bp_print_fmt'(T)].
-        const sep_empty = self.allocLabel();
-        try beamEmitter.writeBlankLine(w);
-        try beamEmitter.writeFunctionHeader(w, sep_name, 1, sep_l.entry);
-        try beamEmitter.writeLabel(w, sep_l.func_info);
-        try beamEmitter.writeLine(w, self.module_name, self.cur_line);
-        try beamEmitter.writeFuncInfo(w, self.module_name, sep_name, 1);
-        try beamEmitter.writeLabel(w, sep_l.entry);
-        try beamEmitter.writeTest(w, .is_nonempty_list, sep_empty, &.{Op.xr(0)});
-        try beamEmitter.writeAllocate(w, 0, 1);
-        try beamEmitter.writeCall(w, .normal, 1, .{ .local = fmt_l.entry }, 0);
+        // A tuple: `#(` … `)`, unless its first element is an atom other than
+        // `true`/`false`/`undefined` — then it is a variant or a `@Result`, and
+        // `~p` stands in until 13 gives a value its own type identity.
+        try beamEmitter.writeLabel(w, not_list);
+        try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeTest(w, .is_tuple, generic, &.{Op.xr(0)});
+        try beamEmitter.writeCall(w, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "tuple_size" } }, 0);
+        try beamEmitter.writeTest(w, .is_lt, plain_tuple, &.{ Op.int(0), Op.xr(0) });
+        try beamEmitter.writeMoveOp(w, Op.int(1), Dst.xr(0));
+        try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(1));
+        try beamEmitter.writeCall(w, .normal, 2, .{ .ext = .{ .module = "erlang", .function = "element" } }, 0);
+        try beamEmitter.writeTest(w, .is_atom, plain_tuple, &.{Op.xr(0)});
+        // `is_ne_exact` branches when the two ARE equal, so each of these three
+        // sends a bool or an absent `@Option` to the `#(…)` shape.
+        try beamEmitter.writeTest(w, .is_ne_exact, plain_tuple, &.{ Op.xr(0), Op.atom("true") });
+        try beamEmitter.writeTest(w, .is_ne_exact, plain_tuple, &.{ Op.xr(0), Op.atom("false") });
+        try beamEmitter.writeTest(w, .is_ne_exact, plain_tuple, &.{ Op.xr(0), Op.atom("undefined") });
+        try beamEmitter.writeJump(w, generic);
+
+        try beamEmitter.writeLabel(w, plain_tuple);
+        try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeCall(w, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "tuple_to_list" } }, 0);
+        try beamEmitter.writeMoveOp(w, Op.xr(0), Dst.yr(1));
+        try self.emitShowJoin(w, elem_l.entry, Op.yr(1));
+        try beamEmitter.writeTestHeap(w, 8, 1);
+        try beamEmitter.writePutList(w, Op.int(')'), Op.nil, Dst.xr(1));
+        try beamEmitter.writePutList(w, Op.xr(0), Op.xr(1), Dst.xr(0));
+        try beamEmitter.writePutList(w, Op.int('('), Op.xr(0), Dst.xr(0));
+        try beamEmitter.writePutList(w, Op.int('#'), Op.xr(0), Dst.xr(0));
+        try beamEmitter.writeDeallocate(w, 2);
+        try beamEmitter.writeReturn(w);
+
+        try beamEmitter.writeLabel(w, generic);
+        try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(0));
         try beamEmitter.writeTestHeap(w, 2, 1);
-        try beamEmitter.writePutList(w, Op.int(' '), Op.xr(0), Dst.xr(0));
-        try beamEmitter.writeDeallocate(w, 0);
-        try beamEmitter.writeReturn(w);
-        try beamEmitter.writeLabel(w, sep_empty);
-        try beamEmitter.writeMove(w, newline, 0);
-        try beamEmitter.writeReturn(w);
+        try beamEmitter.writePutList(w, Op.xr(0), Op.nil, Dst.xr(1));
+        try beamEmitter.writeMoveOp(w, Op.str("~p"), Dst.xr(0));
+        try beamEmitter.writeCall(w, .last, 2, .{ .ext = .{ .module = "io_lib", .function = "format" } }, 2);
 
         self.out = saved_out;
         try self.deferred_lambdas.append(self.alloc, try buf.toOwnedSlice());
         buf.deinit();
         self.print_helper_name = name;
         return name;
+    }
+
+    /// `lists:join(<<", ">>, lists:map(fun '-bp_show_elem-'/1, Items))` — the
+    /// separated element text both compound arms of `'__bp_show'/2` build. The
+    /// items come from `src` (a stack slot, since `lists:map` frees the
+    /// x-registers); the result lands in `{x, 0}`.
+    fn emitShowJoin(self: *Emitter, w: *std.Io.Writer, elem_entry: u32, src: Op) anyerror!void {
+        _ = self;
+        try beamEmitter.writeTestHeapAlloc(w, 0, 1, 0);
+        try beamEmitter.writeMakeFun3(w, elem_entry, &.{});
+        try beamEmitter.writeMoveOp(w, src, Dst.xr(1));
+        try beamEmitter.writeCall(w, .normal, 2, .{ .ext = .{ .module = "lists", .function = "map" } }, 0);
+        try beamEmitter.writeMoveOp(w, Op.xr(0), Dst.xr(1));
+        try beamEmitter.writeMoveOp(w, Op.str(", "), Dst.xr(0));
+        try beamEmitter.writeCall(w, .normal, 2, .{ .ext = .{ .module = "lists", .function = "join" } }, 0);
     }
 
     /// Lower a `__bp_<domain>_<op>(receiver, arg?)` Result/Option method op into

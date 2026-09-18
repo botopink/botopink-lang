@@ -122,6 +122,7 @@ pub const TestOp = enum {
     is_integer,
     is_float,
     is_boolean,
+    is_atom,
     is_ge,
     is_lt,
     is_tagged_tuple,
