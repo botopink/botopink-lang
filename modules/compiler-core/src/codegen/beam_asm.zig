@@ -1328,6 +1328,8 @@ const Emitter = struct {
     /// (heap-owned, freed in `deinit`) is reused for every subsequent call
     /// site so the synth body lands once per module.
     at_helper_name: ?[]const u8 = null,
+    index_helper_name: ?[]const u8 = null,
+    slice_helper_name: ?[]const u8 = null,
     indexOf_helper_name: ?[]const u8 = null,
     stringify_helper_name: ?[]const u8 = null,
     print_helper_name: ?[]const u8 = null,
@@ -1473,6 +1475,8 @@ const Emitter = struct {
         self.self_returns.deinit();
         self.prelude_arena.deinit();
         if (self.at_helper_name) |n| self.alloc.free(n);
+        if (self.index_helper_name) |n| self.alloc.free(n);
+        if (self.slice_helper_name) |n| self.alloc.free(n);
         if (self.indexOf_helper_name) |n| self.alloc.free(n);
         if (self.stringify_helper_name) |n| self.alloc.free(n);
     }
@@ -4920,7 +4924,196 @@ const Emitter = struct {
             if (mode == .tail) try self.emitReturn();
             return;
         }
+        if (std.mem.eql(u8, cc.callee, ast.index_builtin_name)) {
+            try self.lowerIndexExpr(cc, mode);
+            return;
+        }
         try beamEmitter.writeComment(self.out, "unsupported builtin: @{s} (Fase 3+)", .{cc.callee});
+    }
+
+    /// Decision 30's index expression, which the parser hands every backend as
+    /// the builtin call `"[]"` over `(receiver, index)` (`ast.zig:1717-1740`):
+    /// `xs[0]`, `d["k"]`, `s[0]`, `t[0]` and the slice `xs[0..2]` — the same
+    /// node with a `range` second argument. Beam has no type at the call site
+    /// (the checker's half of decision 30 is `01-checker`'s), so the receiver is
+    /// told apart by its runtime tag inside one of two helpers; the slice is
+    /// told apart HERE, because the range is in the AST and lowering it as a
+    /// value would build the `lists:seq/2` list the slice does not need.
+    ///
+    /// Before this, the call fell into the unrecognised-builtin path: `xs[0]`
+    /// printed the whole list and `xs[2]` printed `ok` (measured 2026-09-18).
+    fn lowerIndexExpr(self: *Emitter, cc: anytype, mode: CallMode) anyerror!void {
+        if (cc.args.len != 2) {
+            try beamEmitter.writeComment(self.out, "unsupported index arity: {d}", .{cc.args.len});
+            try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
+            if (mode == .tail) try self.emitReturn();
+            return;
+        }
+        const recv = cc.args[0].value;
+        const idx = cc.args[1].value;
+        const no_trailing: []const ast.TrailingLambda = &.{};
+        if (idx.* == .collection and idx.collection.kind == .range) {
+            const r = idx.collection.kind.range;
+            if (r.end) |end| {
+                const st = try self.stageOperands(&.{ recv.*, r.start.*, end.* }, no_trailing);
+                try self.emitParallelMove(&.{ st.ops[0], st.ops[1], st.ops[2] }, &.{ 0, 1, 2 });
+            } else {
+                const st = try self.stageOperands(&.{ recv.*, r.start.* }, no_trailing);
+                try self.emitParallelMove(&.{ st.ops[0], st.ops[1] }, &.{ 0, 1 });
+                try beamEmitter.writeMoveOp(self.out, Op.atom("infinity"), Dst.xr(2));
+            }
+            const helper = try self.ensureSliceHelper();
+            const labels = try self.fnLabelsFor(helper, 3);
+            switch (mode) {
+                .non_tail => try beamEmitter.writeCall(self.out, .normal, 3, .{ .local = labels.entry }, 0),
+                .tail => try beamEmitter.writeCall(self.out, .last, 3, .{ .local = labels.entry }, self.num_y),
+            }
+            return;
+        }
+        const st = try self.stageOperands(&.{ recv.*, idx.* }, no_trailing);
+        try self.emitParallelMove(&.{ st.ops[0], st.ops[1] }, &.{ 0, 1 });
+        const helper = try self.ensureIndexHelper();
+        const labels = try self.fnLabelsFor(helper, 2);
+        switch (mode) {
+            .non_tail => try beamEmitter.writeCall(self.out, .normal, 2, .{ .local = labels.entry }, 0),
+            .tail => try beamEmitter.writeCall(self.out, .last, 2, .{ .local = labels.entry }, self.num_y),
+        }
+    }
+
+    /// Emit (once per module) `'__bp_index'(Recv, Idx)` — decision 30's scalar
+    /// index, dispatched on the receiver's runtime tag: a map answers
+    /// `maps:get(Idx, Recv, undefined)`, a binary the one-character
+    /// `string:slice(Recv, Idx, 1)`, a tuple `element(Idx + 1, Recv)`, and
+    /// anything else (a list) the bounds-checked `'-bp_at-'/2` the `xs.at(i)`
+    /// method already uses, so an out-of-range index answers `undefined`
+    /// instead of raising.
+    fn ensureIndexHelper(self: *Emitter) anyerror![]const u8 {
+        if (self.index_helper_name) |n| return n;
+        const at = try self.ensureAtHelper();
+        const at_labels = try self.fnLabelsFor(at, 2);
+        const name = try self.alloc.dupe(u8, "'__bp_index'");
+        try self.reserveFn(name, 2);
+        const labels = try self.fnLabelsFor(name, 2);
+        var buf: std.Io.Writer.Allocating = .init(self.alloc);
+        const saved_out = self.out;
+        self.out = &buf.writer;
+
+        const not_map = self.allocLabel();
+        const not_bin = self.allocLabel();
+        const not_tuple = self.allocLabel();
+        try beamEmitter.writeBlankLine(self.out);
+        try beamEmitter.writeFunctionHeader(self.out, name, 2, labels.entry);
+        try beamEmitter.writeLabel(self.out, labels.func_info);
+        try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(self.out, self.module_name, name, 2);
+        try beamEmitter.writeLabel(self.out, labels.entry);
+        try beamEmitter.writeAllocate(self.out, 2, 2);
+        try beamEmitter.writeInitYregs(self.out, 2);
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(0)); // y0 = receiver
+        try beamEmitter.writeMoveOp(self.out, Op.xr(1), Dst.yr(1)); // y1 = index
+
+        try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeTest(self.out, .is_map, not_map, &.{Op.xr(0)});
+        try beamEmitter.writeMoveOp(self.out, Op.yr(1), Dst.xr(0));
+        try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(1));
+        try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(2));
+        try beamEmitter.writeCall(self.out, .last, 3, .{ .ext = .{ .module = "maps", .function = "get" } }, 2);
+
+        try beamEmitter.writeLabel(self.out, not_map);
+        try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeTest(self.out, .is_binary, not_bin, &.{Op.xr(0)});
+        try beamEmitter.writeMoveOp(self.out, Op.yr(1), Dst.xr(1));
+        try beamEmitter.writeMoveOp(self.out, Op.int(1), Dst.xr(2));
+        try beamEmitter.writeCall(self.out, .last, 3, .{ .ext = .{ .module = "string", .function = "slice" } }, 2);
+
+        try beamEmitter.writeLabel(self.out, not_bin);
+        try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeTest(self.out, .is_tuple, not_tuple, &.{Op.xr(0)});
+        try beamEmitter.writeGcBif(self.out, .add, 0, &.{ Op.yr(1), Op.int(1) }, Dst.xr(0));
+        try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(1));
+        try beamEmitter.writeCall(self.out, .last, 2, .{ .ext = .{ .module = "erlang", .function = "element" } }, 2);
+
+        try beamEmitter.writeLabel(self.out, not_tuple);
+        try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeMoveOp(self.out, Op.yr(1), Dst.xr(1));
+        try beamEmitter.writeCall(self.out, .last, 2, .{ .local = at_labels.entry }, 2);
+
+        self.out = saved_out;
+        try self.deferred_lambdas.append(self.alloc, try buf.toOwnedSlice());
+        buf.deinit();
+        self.index_helper_name = name;
+        return name;
+    }
+
+    /// Emit (once per module) `'__bp_slice'(Recv, Start, End)` — decision 30's
+    /// index whose index is a range, half-open like every other `..` in the
+    /// language, with `End` the atom `infinity` for `xs[0..]` (the convention
+    /// `lowerRange` already uses). A binary answers `string:slice/2,3` and
+    /// anything else `lists:sublist/3`, both of which clamp instead of raising.
+    fn ensureSliceHelper(self: *Emitter) anyerror![]const u8 {
+        if (self.slice_helper_name) |n| return n;
+        const name = try self.alloc.dupe(u8, "'__bp_slice'");
+        try self.reserveFn(name, 3);
+        const labels = try self.fnLabelsFor(name, 3);
+        var buf: std.Io.Writer.Allocating = .init(self.alloc);
+        const saved_out = self.out;
+        self.out = &buf.writer;
+
+        const bounded = self.allocLabel();
+        const open_list = self.allocLabel();
+        const bounded_list = self.allocLabel();
+        try beamEmitter.writeBlankLine(self.out);
+        try beamEmitter.writeFunctionHeader(self.out, name, 3, labels.entry);
+        try beamEmitter.writeLabel(self.out, labels.func_info);
+        try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(self.out, self.module_name, name, 3);
+        try beamEmitter.writeLabel(self.out, labels.entry);
+        try beamEmitter.writeAllocate(self.out, 3, 3);
+        try beamEmitter.writeInitYregs(self.out, 3);
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(0)); // y0 = receiver
+        try beamEmitter.writeMoveOp(self.out, Op.xr(1), Dst.yr(1)); // y1 = start
+        try beamEmitter.writeMoveOp(self.out, Op.xr(2), Dst.yr(2)); // y2 = end (or `infinity`)
+
+        // `is_eq` jumps when the two are NOT equal, so falling through is the
+        // open-ended `xs[Start..]`.
+        try beamEmitter.writeTest(self.out, .is_eq, bounded, &.{ Op.yr(2), Op.atom("infinity") });
+        try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeTest(self.out, .is_binary, open_list, &.{Op.xr(0)});
+        try beamEmitter.writeMoveOp(self.out, Op.yr(1), Dst.xr(1));
+        try beamEmitter.writeCall(self.out, .last, 2, .{ .ext = .{ .module = "string", .function = "slice" } }, 3);
+        try beamEmitter.writeLabel(self.out, open_list);
+        // `lists:sublist(Recv, Start + 1, length(Recv))` — a length larger than
+        // what is left is exactly "the rest". The length is parked in `y2`,
+        // whose `infinity` is dead on this edge, so the `gc_bif` that computes
+        // `Start + 1` needs no live x-registers.
+        try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "length" } }, 0);
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(2));
+        try beamEmitter.writeGcBif(self.out, .add, 0, &.{ Op.yr(1), Op.int(1) }, Dst.xr(1));
+        try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeMoveOp(self.out, Op.yr(2), Dst.xr(2));
+        try beamEmitter.writeCall(self.out, .last, 3, .{ .ext = .{ .module = "lists", .function = "sublist" } }, 3);
+
+        try beamEmitter.writeLabel(self.out, bounded);
+        // `Len = End - Start`, parked in y2 over the receiver's type test.
+        try beamEmitter.writeGcBif(self.out, .sub, 0, &.{ Op.yr(2), Op.yr(1) }, Dst.xr(0));
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(2));
+        try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeTest(self.out, .is_binary, bounded_list, &.{Op.xr(0)});
+        try beamEmitter.writeMoveOp(self.out, Op.yr(1), Dst.xr(1));
+        try beamEmitter.writeMoveOp(self.out, Op.yr(2), Dst.xr(2));
+        try beamEmitter.writeCall(self.out, .last, 3, .{ .ext = .{ .module = "string", .function = "slice" } }, 3);
+        try beamEmitter.writeLabel(self.out, bounded_list);
+        try beamEmitter.writeGcBif(self.out, .add, 0, &.{ Op.yr(1), Op.int(1) }, Dst.xr(1));
+        try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeMoveOp(self.out, Op.yr(2), Dst.xr(2));
+        try beamEmitter.writeCall(self.out, .last, 3, .{ .ext = .{ .module = "lists", .function = "sublist" } }, 3);
+
+        self.out = saved_out;
+        try self.deferred_lambdas.append(self.alloc, try buf.toOwnedSlice());
+        buf.deinit();
+        self.slice_helper_name = name;
+        return name;
     }
 
     /// `@print(a, b, …)` → `'__bp_print'([A, B, …])` (semantics decision 1): the

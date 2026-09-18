@@ -748,6 +748,23 @@ codegen/
   `undefined`, then `is_map` + `get_map_elements`), `comptime` nodes
   (`lowerComptime`: a folded expression/block is its value), `await e` (eager:
   the value of `e`).
+- **The index expression** (`lowerIndexExpr`, `ensureIndexHelper`,
+  `ensureSliceHelper`): decision 30 reaches every backend as the builtin call
+  `"[]"` over `(receiver, index)` (`ast.zig:1717-1740`), so `xs[0]`, `d["k"]`,
+  `s[0]` and the slice `xs[0..2]` are one shape. It used to fall into the
+  unrecognised-builtin path — `xs[0]` printed the whole list and `xs[2]` printed
+  `ok`. The **slice** is told apart here, from the AST, because lowering a
+  `range` as a value would build the `lists:seq/2` list a slice does not need;
+  the **receiver** is told apart by its runtime tag inside the helper, since the
+  checker's half of decision 30 is `01-checker`'s and beam has no type at the
+  call site. `'__bp_index'(Recv, Idx)`: a map → `maps:get(Idx, Recv, undefined)`,
+  a binary → `string:slice(Recv, Idx, 1)`, a tuple → `element(Idx + 1, Recv)`,
+  anything else → the bounds-checked `'-bp_at-'/2` `xs.at(i)` already uses, so
+  an out-of-range index answers `undefined` instead of raising.
+  `'__bp_slice'(Recv, Start, End)` is half-open like every other `..`, with
+  `End` the atom `infinity` for `xs[0..]` (the convention `lowerRange` uses): a
+  binary → `string:slice/2,3`, anything else → `lists:sublist/3`, both of which
+  clamp. Measured: `10 · 30 · undefined · e · a · [10,20] · [20,30] · el · llo`.
 - **`case` arms** (`armBlock`, `lowerArmBody`, `emitArmTail`, `bindArmParam`):
   decision 8 §5 spells an arm `Pattern { body }`, and the parser reads that
   block as a lambda (`ast.Expr.function`, `.lambda` syntax, at most one
