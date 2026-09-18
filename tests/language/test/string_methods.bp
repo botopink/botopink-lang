@@ -1,0 +1,20 @@
+//// String primitive methods: the same answer on every backend.
+//// `toUpperCase`/`toLowerCase` are in `string_case_conversion.bp`, which is red
+//// on erlang; keeping them apart leaves the rest of the surface green.
+
+test "split cuts on the separator" {
+    assert "a,b,c".split(",").length == 3;
+    assert "a,b,c".split(",").at(1) == "b";
+}
+
+test "trim drops the surrounding blanks" { assert "  x ".trim() == "x"; }
+
+test "startsWith and endsWith read the ends" {
+    assert "abc".startsWith("ab");
+    assert "abc".endsWith("bc");
+}
+
+test "concatenation and length" {
+    val s = "ab" + "cd";
+    assert s.length == 4;
+}

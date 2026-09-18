@@ -1,0 +1,14 @@
+//// Array primitive methods: the same answer on every backend.
+
+test "filter then map then join" {
+    val xs = [1, 2, 3, 4];
+    assert xs.filter({ x -> x % 2 == 0 }).map({ x -> x * 10 }).join(",") == "20,40";
+}
+
+test "slice takes a half-open range" { assert [1, 2, 3, 4].slice(1, 3).length == 2; }
+
+test "at reads by position" { assert [1, 2, 3, 4].at(0) == 1; }
+
+test "indexOf finds the first position" { assert [1, 2, 3, 4].indexOf(3) == 2; }
+
+test "fold accumulates left to right" { assert [1, 2, 3].fold(0, { acc, x -> acc + x }) == 6; }

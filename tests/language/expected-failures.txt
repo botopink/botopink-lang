@@ -57,3 +57,10 @@ erlang   | test/effect_val_assert.bp  | 06 N25 | §9's handler-less `val assert 
 
 # ── §8 host externals ─────────────────────────────────────────────────────────
 *        | reject/external_lowercase_target.bp | 06 | a lower-case `#[@external(node, …)]` passes `check`, binds no host and produces no diagnostic (fronts.md § unowned items)
+
+# ── trailing parameter defaults ───────────────────────────────────────────────
+commonJS | test/fn_defaults.bp        | 06 N1 | trailing parameter defaults are never applied at a call site (`'connect' expects 3 argument(s), got 1`)
+erlang   | test/fn_defaults.bp        | 06 N1 | trailing parameter defaults are never applied at a call site (`'connect' expects 3 argument(s), got 1`)
+
+# ── primitive methods ─────────────────────────────────────────────────────────
+erlang   | test/string_case_conversion.bp | 01 step 6 | `String.toUpperCase` / `String.toLowerCase` emit erlang functions that are never defined
