@@ -82,9 +82,26 @@ test "import decl" {
 
 ## Type-ref grammar (`types.zig`)
 
-`parseBaseTypeRef` handles `?T`, `#(…)` tuples, `fn(…) -> R` function types,
-`@Name<…>` builtins, `type` meta-kinds, plain names with `<…>`/`[]` wraps, and
-two additions for record/builder ergonomics:
+**The `T[]` suffix is applied once, at the single exit, and never per-arm.**
+`parseBaseTypeRef` is a two-line wrapper: it calls `parseBaseTypeRefArm` for the
+arm and then runs the array-wrap loop for all of them. It used to be written at
+the end of the named-type path and **copied** into the `unknown` arm, so the
+tuple arm and the builtin-generic arm — which `return` before either — refused
+`#(a: i32)[]` and `@Result<i32, E>[]` while `unknown[]` and `Box<i32>[]` parsed
+(front 15, decision 14). **A new arm goes in `parseBaseTypeRefArm` and inherits
+the suffix; never re-add a wrap loop to an arm.**
+
+`parseBaseTypeRefArm` handles `?T`, `#(…)` tuples, `(T)` parenthesised types,
+`fn(…) -> R` function types, `@Name<…>` builtins, `type` meta-kinds, plain names
+with `<…>` wraps, and two additions for record/builder ergonomics:
+
+- **`(T)` is a grouping, not a node** — it returns the inner `TypeRef` unchanged.
+  `|` binds looser than every other type operator, so `decision-8:141` writes
+  `(i32 | string)[]` for an array of a union: the parentheses are what make the
+  suffix apply to the whole alternation. `startsTypeRef` accepts `(` for the
+  same reason, so a union member and an `is` type may be parenthesised too.
+  Since the grouping is dropped, `format.zig` has to re-introduce it when it
+  prints an `array` of a union — front 16's printer arm.
 
 - **Function-type params may be named** — `fn(next: T)` parses alongside the
   bare `fn(T)`; the name is documentation-only (function types are positional)
@@ -108,11 +125,11 @@ both use `locFromToken(fieldTok)` for this reason.
 
 ## `unknown` in type position (decision 8 §2, 06 N19)
 
-`unknown` arrives as its own keyword token, so `parseBaseTypeRef` handles it
+`unknown` arrives as its own keyword token, so `parseBaseTypeRefArm` handles it
 before `consumeTypeName` and no user type can shadow it. It lands as
 `TypeRef.named = ast.unknown_type_name` (`ast.zig` documents what inference owes
-it) and takes the ordinary `[]` wraps — `unknown[]`, `?unknown`, `Box<unknown>`
-all parse. `unknown<…>` / `unknown(…)` is refused at the `<` / `(` with
+it) and takes the ordinary `[]` wraps from the shared suffix loop — `unknown[]`,
+`?unknown`, `Box<unknown>` all parse. `unknown<…>` / `unknown(…)` is refused at the `<` / `(` with
 `unknown-takes-no-arguments`: it is one type, not a constructor.
 
 ## Union types `A | B` (decision 8 §3, 06 N20)

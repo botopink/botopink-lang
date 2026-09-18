@@ -19,6 +19,10 @@ const GenericParam = parser.GenericParam;
 pub fn startsTypeRef(kind: TokenKind) bool {
     return switch (kind) {
         .identifier, .builtinIdent, .questionMark, .hash, .@"fn", .selfType, .unknown => true,
+        // `(T)` — a parenthesised type (decision 8 §3.1). It begins a type
+        // wherever a bare name does, so `A | (B | C)` and `x is (i32 | string)`
+        // read the way `(i32 | string)[]` does.
+        .leftParenthesis => true,
         else => false,
     };
 }
@@ -69,8 +73,32 @@ pub fn parseTypeRefMember(this: *This, alloc: std.mem.Allocator) ParseError!ast.
     return ref;
 }
 
-/// Parses a base type ref: `?T`, `#(T1,T2)`, plain name with optional `[]` wraps.
+/// Parses a base type ref: `?T`, `#(T1,T2)`, `(T)`, a plain name — and then the
+/// `T[]` array suffix, **once, at the single exit**.
+///
+/// The suffix belongs to the type, not to the arm that produced it. It used to
+/// be written at the end of the named-type path and copied into the `unknown`
+/// arm; the tuple arm and the builtin-generic arm `return`ed before either, so
+/// `#(a: i32)[]` and `@Result<i32, E>[]` were parse errors while `unknown[]`
+/// and `Box<i32>[]` parsed. Applying it here means every arm — and every arm
+/// added later — inherits it. See `AGENTS.md`.
 pub fn parseBaseTypeRef(this: *This, alloc: std.mem.Allocator) ParseError!ast.TypeRef {
+    var ref = try parseBaseTypeRefArm(this, alloc);
+    errdefer ref.deinit(alloc);
+    // T[] — zero or more array wraps.
+    while (this.check(.leftSquareBracket) and this.peekAt(1).kind == .rightSquareBracket) {
+        _ = this.advance(); // [
+        _ = this.advance(); // ]
+        const elem = try alloc.create(ast.TypeRef);
+        elem.* = ref;
+        ref = ast.TypeRef{ .array = elem };
+    }
+    return ref;
+}
+
+/// One arm of the base-type grammar, without the `[]` suffix — see
+/// `parseBaseTypeRef`, which applies that once for all of them.
+fn parseBaseTypeRefArm(this: *This, alloc: std.mem.Allocator) ParseError!ast.TypeRef {
     // `unknown` — decision 8 §2 (06 N19). A keyword, so no declaration can be
     // called `unknown` and the name always means this type; it travels as
     // `TypeRef.named` under the reserved spelling `ast.unknown_type_name`,
@@ -83,16 +111,23 @@ pub fn parseBaseTypeRef(this: *This, alloc: std.mem.Allocator) ParseError!ast.Ty
             return ParseError.UnexpectedToken;
         }
         _ = tok;
-        var ref = ast.TypeRef{ .named = ast.unknown_type_name };
-        // `unknown[]` — zero or more array wraps, like any other type name.
-        while (this.check(.leftSquareBracket) and this.peekAt(1).kind == .rightSquareBracket) {
-            _ = this.advance(); // [
-            _ = this.advance(); // ]
-            const elem = try alloc.create(ast.TypeRef);
-            elem.* = ref;
-            ref = ast.TypeRef{ .array = elem };
+        // `unknown[]` comes from the shared suffix loop in `parseBaseTypeRef`,
+        // like every other arm's.
+        return ast.TypeRef{ .named = ast.unknown_type_name };
+    }
+    // `(T)` — a parenthesised type. `|` binds looser than every other type
+    // operator, so `decision-8:141` writes `(i32 | string)[]` for an array of
+    // a union: the parentheses are what make the suffix apply to the whole
+    // alternation. The grouping is not kept in the AST — `(T)` *is* `T`.
+    if (this.check(.leftParenthesis)) {
+        _ = this.advance(); // (
+        const inner = try this.parseTypeRef(alloc);
+        errdefer {
+            var mut = inner;
+            mut.deinit(alloc);
         }
-        return ref;
+        _ = try this.consume(.rightParenthesis);
+        return inner;
     }
     // ?T ---- optional type
     if (this.match(.questionMark)) {
@@ -290,14 +325,7 @@ pub fn parseBaseTypeRef(this: *This, alloc: std.mem.Allocator) ParseError!ast.Ty
     } else {
         ref = ast.TypeRef{ .named = pathName };
     }
-    // T[] — zero or more array wraps
-    while (this.check(.leftSquareBracket) and this.peekAt(1).kind == .rightSquareBracket) {
-        _ = this.advance(); // [
-        _ = this.advance(); // ]
-        const elem = try alloc.create(ast.TypeRef);
-        elem.* = ref;
-        ref = ast.TypeRef{ .array = elem };
-    }
+    // `T[]` is the shared suffix loop's, in `parseBaseTypeRef`.
     return ref;
 }
 
