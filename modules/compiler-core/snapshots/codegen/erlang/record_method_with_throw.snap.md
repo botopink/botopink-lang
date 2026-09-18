@@ -7,7 +7,7 @@ val Invoice = type(
         return self.subtotal + self.subtotal * self.taxRate;
     }
     fn validate(self: Self) {
-        throw Error("invalid invoice");
+        throw "invalid invoice";
     }
 }
 ```
@@ -22,7 +22,7 @@ total(Self) ->
     (maps:get(subtotal, Self) + (maps:get(subtotal, Self) * maps:get(taxRate, Self))).
 
 validate(Self) ->
-    erlang:throw({error, <<"invalid invoice">>}).
+    erlang:throw(<<"invalid invoice">>).
 ```
 
 ----- RUN LOG -----

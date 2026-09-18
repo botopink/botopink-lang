@@ -365,6 +365,50 @@ test "infer error: a @Result return without #[@result]" {
     );
 }
 
+// ── 06 C9 — method bodies join the strict contract ───────────────────────────
+//
+// `inferTypeMethods` used to swallow `error.TypeError` from a method body, an
+// unannotated method got no stored signature, and an unresolved method call
+// fell back to a fresh var. All three made a real mismatch compile.
+
+// `assertTypeErrorSnap` runs the UNTYPED `inferProgram`, whose `inferDecl`
+// never walks a type's method bodies — only the typed `inferDeclTyped` calls
+// `inferTypeMethods`, which is the path `botopink check` takes. The two rows
+// that live inside a method body therefore assert through the typed path.
+test "infer error: a type error inside a method body" {
+    try h.assertComptimeCompileError(std.testing.allocator, @src(),
+        \\type D(id: i32) {
+        \\    fn bad(self: Self) -> string {
+        \\        val z: string = self.id;
+        \\        return z;
+        \\    }
+        \\}
+    );
+}
+
+test "infer error: a method the receiver type does not declare" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type D(id: i32)
+        \\fn main() {
+        \\    val d = D(id: 1);
+        \\    @print(d.swim());
+        \\}
+    );
+}
+
+test "infer error: an unannotated method's return type comes from its body" {
+    try h.assertComptimeCompileError(std.testing.allocator, @src(),
+        \\type D(id: i32) {
+        \\    fn get(self: Self) { return self.id; }
+        \\}
+        \\fn main() {
+        \\    val d = D(id: 1);
+        \\    val a: string = d.get();
+        \\    @print(a);
+        \\}
+    );
+}
+
 test "infer error: #[@future] body using yield" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\#[@future]

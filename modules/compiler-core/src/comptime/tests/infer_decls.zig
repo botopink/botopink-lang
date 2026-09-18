@@ -447,6 +447,28 @@ test "infer: inherent record method is always available" {
     );
 }
 
+// Decision 2 — a block is not a value, so two branches that end in a STATEMENT
+// need not agree. `if (p) { out = …; } else { taking = false; }` used to red
+// "expected array, got bool" — a shape a library in this repository writes in
+// a `takeWhile` / `skipWhile`, and the same shape in a plain fn.
+test "infer: an if whose branches end in assignments of different types" {
+    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\fn takeWhile(items: i32[], pred: fn(item: i32) -> bool) -> i32[] {
+        \\    var out: Array<i32> = [];
+        \\    var taking = true;
+        \\    items.forEach({ x ->
+        \\        if (taking) {
+        \\            if (pred(x)) { out = out.append([x]); } else { taking = false; };
+        \\        };
+        \\    });
+        \\    return out;
+        \\}
+        \\fn main() {
+        \\    @print(takeWhile([1, 2, 3], { n -> return n < 3; }).length());
+        \\}
+    );
+}
+
 test "infer: var binding ---- mutable local inside fn" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn count() -> i32 {

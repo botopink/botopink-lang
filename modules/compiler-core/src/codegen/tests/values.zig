@@ -87,8 +87,22 @@ test "js: fn ---- with local binding" {
     );
 }
 
+// A qualified call inside a method body keeps BOTH arguments — `List` is a
+// namespace, not a value to dispatch on. `List` used to be declared nowhere,
+// which only compiled while `inferTypeMethods` swallowed its method bodies'
+// errors (06 C9); it is a real type with an associated fn now. commonJS emits
+// the same `List.map(this.items, f)` as before; erlang and beam resolve the
+// call locally (`map/2`, `call_last {f, 3}`) instead of emitting a remote call
+// into a `list` module no program declared. The arity — two arguments, the
+// receiver NOT dispatched on — is what this pins, and it is the same on all
+// four backends.
 test "js: call ---- qualified module call resolves arity" {
     try h.assertJsSingle(std.testing.allocator, @src(),
+        \\type List(tag: i32) {
+        \\    fn map(items: i32[], f: fn(item: i32) -> i32) -> i32[] {
+        \\        return items.map(f);
+        \\    }
+        \\}
         \\type Pipeline(
         \\    items: i32[]) {
         \\    fn run(self: Self, f: fn(item: i32) -> i32) -> i32[] {
@@ -98,13 +112,24 @@ test "js: call ---- qualified module call resolves arity" {
     );
 }
 
+// The trailing lambda becomes the call's LAST argument, after the receiver
+// argument — arity 2, not 1. The lambda is parameterless: a trailing lambda's
+// own parameter is not typed from the callee's declared `fn(item: i32)` param
+// on a qualified associated-fn call (`{ x -> … }` reds `unbound variable 'x'`),
+// a gap this fixture used to hide behind the swallowed method body and which
+// reproduces at top level too.
 test "js: call ---- qualified module call with trailing lambda arity" {
     try h.assertJsSingle(std.testing.allocator, @src(),
+        \\type List(tag: i32) {
+        \\    fn each(items: i32[], f: fn() -> i32) -> i32[] {
+        \\        return items;
+        \\    }
+        \\}
         \\type Pipeline(
         \\    items: i32[]) {
         \\    fn doubled(self: Self) -> i32[] {
-        \\        return List.map(self.items) { x ->
-        \\            return x * 2;
+        \\        return List.each(self.items) { ->
+        \\            return 2;
         \\        };
         \\    }
         \\}

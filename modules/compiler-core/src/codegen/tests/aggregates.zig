@@ -60,7 +60,7 @@ test "js: record ---- method with throw" {
         \\        return self.subtotal + self.subtotal * self.taxRate;
         \\    }
         \\    fn validate(self: Self) {
-        \\        throw Error("invalid invoice");
+        \\        throw "invalid invoice";
         \\    }
         \\}
     );

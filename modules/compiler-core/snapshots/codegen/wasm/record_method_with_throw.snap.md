@@ -7,7 +7,7 @@ val Invoice = type(
         return self.subtotal + self.subtotal * self.taxRate;
     }
     fn validate(self: Self) {
-        throw Error("invalid invoice");
+        throw "invalid invoice";
     }
 }
 ```
@@ -30,20 +30,7 @@ val Invoice = type(
     return
   )
   (func $Invoice_validate (param $self i32)
-    (local $_res0 i32)
-    global.get $__heap_ptr
-    local.set $_res0
-    global.get $__heap_ptr
-    i32.const 8
-    i32.add
-    global.set $__heap_ptr
-    local.get $_res0
-    i32.const 1
-    i32.store ;; Result tag (Error)
-    local.get $_res0
     i32.const 256
-    i32.store offset=4 ;; payload
-    local.get $_res0
     drop
     unreachable
   )

@@ -7,7 +7,7 @@ val Invoice = type(
         return self.subtotal + self.subtotal * self.taxRate;
     }
     fn validate(self: Self) {
-        throw Error("invalid invoice");
+        throw "invalid invoice";
     }
 }
 ```
@@ -25,7 +25,7 @@ class Invoice {
     }
 
     validate() {
-        throw Error("invalid invoice");
+        throw "invalid invoice";
     }
 }
 ```

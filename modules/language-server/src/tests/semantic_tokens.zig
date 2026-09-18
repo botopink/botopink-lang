@@ -86,9 +86,14 @@ test "semanticTokens: comments and keywords" {
 // Both halves must appear: `p.x` is a property access and `p.norm()` a method
 // call. With an `i32` receiver and a call-only body the `property` branch of the
 // classifier was never reached, so the test's name outran what it checked.
+// `Point` declares `norm`: without it the module no longer compiles (06 C9 —
+// calling a method a nominal type does not declare reds), and a non-compiling
+// module makes the classifier paint `Point` `variable` instead of `type`.
 test "semanticTokens: method call vs property access" {
     const source =
-        \\val Point = type(x: i32, y: i32);
+        \\val Point = type(x: i32, y: i32) {
+        \\    fn norm(self: Self) -> i32 { return self.x + self.y; }
+        \\};
         \\fn dist(p: Point) -> i32 { return p.x + p.norm(); }
     ;
     try run(std.testing.allocator, "semantic_tokens_member_access", source);

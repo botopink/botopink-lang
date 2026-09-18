@@ -3101,13 +3101,38 @@ fn inferTypeMethods(
         env.fnContext = try contextInfoFromReturn(env, m.returnType);
         defer env.fnContext = savedFnCtx;
 
+        // 06 C9 — a method body is part of the strict contract, like a
+        // `default fn` interface body (`inferInterfaceDefaultBodies`). The walk
+        // used to swallow `error.TypeError` into `lastError = null`, so a real
+        // mismatch inside a method compiled and only failed at run time.
+        var inferredReturn: ?*T.Type = null;
         for (body) |stmt| {
-            // Swallow inference gaps (see the best-effort note above): clear the
-            // stale error and move to the next method so the compile survives.
-            _ = inferExpr(env, stmt.expr) catch {
-                env.lastError = null;
-                break;
-            };
+            const typed = try inferExprTyped(env, stmt.expr);
+            // 06 C9 — the return type of a method that annotates none comes
+            // from its body. `registerInherentMethodTypes` stores a signature
+            // only for an annotated method ("rather than mis-typing them as
+            // `void`"), so `d.get()` fell to the fresh-var fallback and
+            // `val a: string = d.get();` compiled. Every `return <v>` in the
+            // body agrees (they unify), and a bare `return` / no return leaves
+            // it `void`.
+            if (m.returnType == null and stmt.expr == .jump and stmt.expr.jump.kind == .@"return") {
+                if (stmt.expr.jump.kind.@"return" != null) {
+                    const rv = typed.jump.kind.@"return".?;
+                    if (inferredReturn) |prev| {
+                        try unifyAt(env, prev, rv.getType(), rv.getLoc());
+                    } else {
+                        inferredReturn = rv.getType();
+                    }
+                }
+            }
+        }
+        if (m.returnType == null) {
+            const params = try env.arena.alloc(*T.Type, m.params.len);
+            for (m.params, 0..) |p, i| {
+                params[i] = env.lookup(p.name) orelse try env.freshVar();
+            }
+            const ret = inferredReturn orelse try env.namedType("void");
+            try env.setInherentMethodType(typeName, m.name, try env.funcType(params, ret));
         }
     }
 }
@@ -5308,6 +5333,59 @@ fn variantPayloadTypes(env: *Env, subjectType: *T.Type, variantName: []const u8)
     return out;
 }
 
+/// 06 C9 — whether `td` answers `member` by some route other than an inherent
+/// method: a field of function type called like a method (`c.set(9)` on
+/// `#(value, set)`-shaped records), or a `default fn` the type adopts from a
+/// behavior it implements (through that behavior's `extends` chain). Both are
+/// legitimate and neither is registered in `inherentMethods`, so the unknown-
+/// method check has to ask before it reds.
+fn typeAnswersMember(env: *Env, td: envMod.TypeDef, member: []const u8) bool {
+    if (td.fields()) |fs| {
+        for (fs) |f| {
+            if (std.mem.eql(u8, f.name, member)) return true;
+        }
+    }
+    const implements: []const []const u8 = switch (td) {
+        .record => |r| r.implements,
+        .struct_ => |st| st.implements,
+        .enum_ => |e| e.implements,
+    };
+    for (implements) |iface| {
+        if (behaviorDeclaresMember(env, iface, member, 0)) return true;
+    }
+    return false;
+}
+
+/// Whether `iface` — or anything it extends — declares `member`. `depth` bounds
+/// a cyclic `extends` chain.
+fn behaviorDeclaresMember(env: *Env, iface: []const u8, member: []const u8, depth: usize) bool {
+    if (depth >= 16) return false;
+    const decl = env.assocInterfaceDecls.get(iface) orelse return false;
+    for (decl.methods) |m| {
+        if (std.mem.eql(u8, m.name, member)) return true;
+    }
+    for (decl.fields) |f| {
+        if (std.mem.eql(u8, f.name, member)) return true;
+    }
+    for (decl.extends) |parent| {
+        if (behaviorDeclaresMember(env, parent, member, depth + 1)) return true;
+    }
+    return false;
+}
+
+/// Decision 2 — whether a branch's statements end in something that HAS a
+/// value. Every binding expression (an assignment, a `val`/`var`, a
+/// destructuring) and a loop are statements: they end the branch with nothing
+/// for the other branch to agree with.
+fn stmtsYieldValue(stmts: []const ast.StmtOf(.typed)) bool {
+    if (stmts.len == 0) return false;
+    return switch (stmts[stmts.len - 1].expr) {
+        .binding => false,
+        .loop => false,
+        else => true,
+    };
+}
+
 /// The named types that hold no variant at all: a variant pattern asserted
 /// against one of them can never match. Every other unregistered name stays
 /// permissive (a forward reference, or an imported type).
@@ -6441,7 +6519,20 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
                 break :blk try env.namedType("void");
             } else try env.namedType("void");
 
-            if (elseTyped != null) {
+            // Decision 2 — a block is not a value, so the branches of an `if`
+            // only have to agree when the `if` is used as one. A branch whose
+            // last statement is a STATEMENT (an assignment, a `val`/`var`
+            // binding, a loop) has no value to agree with, and unifying the
+            // two used to red a legitimate shape:
+            //
+            //     if (pred(x)) { out = out.append([x]); } else { taking = false; }
+            //
+            // — "expected array, got bool". A library in this repository
+            // writes it in a `takeWhile` / `skipWhile`, and so does a plain
+            // fn of the same shape. Only the row that removes
+            // block-as-value outright can delete the unification entirely; this
+            // narrows it to the branches that do produce a value.
+            if (elseTyped != null and stmtsYieldValue(thenTyped) and stmtsYieldValue(elseTyped.?)) {
                 try unify(env, bodyType, elseType);
             }
             return TypedExpr{ .branch = .{ .loc = loc, .type_ = bodyType, .kind = .{ .if_ = .{
@@ -7702,6 +7793,34 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                             } } } };
                         }
                     }
+                }
+
+                // 06 C9 — a receiver whose type is a nominal the env actually
+                // registered has a closed method surface: nothing above matched,
+                // so the method does not exist. `d.swim()` on a `type D(id: i32)`
+                // used to be typed `freshVar()` and compile.
+                //
+                // Everything else stays permissive, which is what the fresh var
+                // was for: a receiver still an unresolved type variable (an
+                // inference gap must not red), and a named type the env cannot
+                // open — an imported record whose typedef lives in its own
+                // module, a `@Result`/`?T` wrapper, a forward reference.
+                if (nominalName(recvPtr.getType())) |tn| {
+                    if (env.lookupTypeDef(tn)) |td| if (!typeAnswersMember(env, td, call.callee)) {
+                        var ext_err: ?TypeError = null;
+                        var it = env.extensions.iterator();
+                        while (it.next()) |e| {
+                            const entry = e.value_ptr.*;
+                            if (!std.mem.eql(u8, entry.target, tn)) continue;
+                            if (!namesContain(entry.methods, call.callee)) continue;
+                            if (env.isActivated(entry.name)) continue;
+                            ext_err = TypeError.methodNotActive(tn, call.callee, entry.name);
+                            break;
+                        }
+                        var err = ext_err orelse TypeError.unknownMethod(tn, call.callee);
+                        env.lastError = err.withLoc(loc);
+                        return error.TypeError;
+                    };
                 }
 
                 // Other method calls (struct getters, activated extensions) are
