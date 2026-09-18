@@ -339,6 +339,33 @@ The parser carries the dotted spelling in `TypeRef.named` (`parser/types.zig`). 
 spelling (`TokenText`) reds with a hint naming the path (`Env.sectionPathForFlatName`). A section
 declares no methods — `EnumSection` has no slot for them and nothing needs one yet.
 
+## Unknown type names (06 C10 + N30)
+
+An annotation naming a type nothing declares **reds, at the annotation**. Resolution is two-pass
+because registration walks the declarations in source order: `Env.resolveTypeName`'s last arm records
+the name in `Env.pendingTypeNames` with the annotation's location and still answers an opaque named
+type, and `Env.checkPendingTypeNames` — called at the end of both `inferProgram` and
+`inferProgramTyped`, after every declaration is registered — reds on what is still unknown. A forward
+reference (`type Outer(inner: Inner)` above `type Inner(…)`) therefore checks, and so do an imported
+typedef (the constructor binding) and a `behavior` name in type position
+(`Env.assocInterfaceDecls`). The list is cleared per program: `registerStdlib` infers one std module
+per call on one env, and a name left pending by one must not red in the next.
+
+Only an annotation the parser located enters the list. `Env.typeRefLoc` is set by
+`resolveParamType` / `resolveFieldType` / `resolveReturnType` (infer.zig) from `Param.typeLoc`,
+`Field.typeLoc` and `FnDecl`/`BehaviorMethod`'s `returnTypeLoc`; a resolution with none in scope is a
+synthesised or re-entered one (a generic parameter resolved outside the context that binds it) and
+stays permissive. Two names are compiler-known without a declaration and never red:
+`Children` (coerced by `childrenCoercion`) and `Binding` (what `q.lookup` yields, the `ref` field of
+the registered `CustomNode`). `noreturn` is a registered primitive (`Env.registerBuiltins`), the
+declared return of `@panic` / `todo` / `trap`.
+
+**Not covered yet**: a top-level bodyless `declare fn` parses as a `DelegateDecl`, whose signature is
+never resolved — an unknown type in one is still accepted. A non-type *value* binding in annotation
+position (`val n = 5; val x: n = 7;`) also still checks; it is
+[types-as-values A1](../../../../specs/1.0.4-beta/06-checker/types-as-values.md)'s, which replaces the
+bindings arm with a real `type` kind.
+
 ## `case` exhaustiveness + reachability
 
 A match *into* a section (`Text(Bold)`) refines the arm: it never counts as covering the wrapper

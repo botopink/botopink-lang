@@ -177,8 +177,8 @@ test "infer: interface with multiple abstract methods" {
 test "infer: record with fields and toString method" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val GPSCoordinates = type(
-        \\    lat: number,
-        \\    lon: number) {
+        \\    lat: f64,
+        \\    lon: f64) {
         \\    fn toString(self: Self) -> string {
         \\        return "Lat: " + self.lat + " Lon: " + self.lon;
         \\    }

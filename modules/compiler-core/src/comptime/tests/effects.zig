@@ -242,6 +242,7 @@ test "infer: net-new ---- compound @Future<@Result> return type-checks" {
 
 test "context: use with binding in @Context fn passes" {
     try h.assertInfersOk(std.testing.allocator,
+        \\val Element = type implement @Context<Element, Element> { }
         \\fn state(initial: i32) -> @Context<Element, i32> {
         \\    initial;
         \\}
@@ -254,6 +255,7 @@ test "context: use with binding in @Context fn passes" {
 
 test "context: use void hook with discard binding passes" {
     try h.assertInfersOk(std.testing.allocator,
+        \\val Element = type implement @Context<Element, Element> { }
         \\fn effect(cb: i32) -> @Context<Element, i32> {
         \\    cb;
         \\}

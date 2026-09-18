@@ -161,6 +161,10 @@ pub fn inferProgram(env: *Env, program: ast.Program) InferError![]Binding {
         }
     }
 
+    // C10 second pass — every declaration is registered by now, so an annotation
+    // that still names nothing is an unknown type, reported at the annotation.
+    try env.checkPendingTypeNames();
+
     // Pass 3: semantic validation of `implement` blocks and struct accessors.
     // (Decorators already ran above, before body inference.)
     try validateProgram(env, program);
@@ -270,6 +274,10 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
             },
         }
     }
+
+    // C10 second pass — every declaration is registered by now, so an annotation
+    // that still names nothing is an unknown type, reported at the annotation.
+    try env.checkPendingTypeNames();
 
     // Semantic validation of `implement` blocks and struct accessors. (Decorators
     // already ran above, before body inference.)
@@ -411,7 +419,7 @@ fn structFieldType(
 ) InferError!?*T.Type {
     for (s.members) |m| switch (m) {
         .field => |f| if (std.mem.eql(u8, f.name, name)) {
-            return try resolveTypeRefInContext(env, f.typeRef, genericMap);
+            return try resolveFieldType(env, f, genericMap);
         },
         else => {},
     };
@@ -724,11 +732,11 @@ fn buildFnSignatureType(env: *Env, f: ast.FnDecl) InferError!*T.Type {
             else
                 try env.namedType("void");
             break :blk try env.funcType(fparams, fret);
-        } else try resolveTypeRefInContext(env, p.typeRef, genericMap);
+        } else try resolveParamType(env, p, genericMap);
     }
 
     const retType = if (f.returnType) |rt|
-        try resolveTypeRefInContext(env, rt, genericMap)
+        try resolveReturnType(env, rt, f.returnTypeLoc, genericMap)
     else
         try env.namedType("void");
 
@@ -953,7 +961,7 @@ fn registerRecord(env: *Env, r: ast.TypeDecl) InferError!void {
     for (r.recordFields(), 0..) |f, i| {
         fields[i] = .{
             .name = f.name,
-            .type_ = try resolveTypeRefInContext(env, f.typeRef, genericMap),
+            .type_ = try resolveFieldType(env, f, genericMap),
         };
     }
 
@@ -1050,9 +1058,9 @@ fn registerInherentMethodTypes(
                 else
                     try env.namedType("void");
                 break :blk try env.funcType(fparams, fret);
-            } else try resolveTypeRefInContext(env, p.typeRef, gm);
+            } else try resolveParamType(env, p, gm);
         }
-        const ret = try resolveTypeRefInContext(env, retRef, gm);
+        const ret = try resolveReturnType(env, retRef, im.returnTypeLoc, gm);
         try env.setInherentMethodType(typeName, im.name, try env.funcType(params, ret));
     }
 }
@@ -1091,10 +1099,10 @@ fn registerInterfaceAssociatedFns(env: *Env, d: ast.BehaviorDecl) InferError!voi
                 else
                     try env.namedType("void");
                 break :blk try env.funcType(fparams, fret);
-            } else try resolveTypeRefInContext(env, p.typeRef, gm);
+            } else try resolveParamType(env, p, gm);
         }
         const ret = if (im.returnType) |rt|
-            try resolveTypeRefInContext(env, rt, gm)
+            try resolveReturnType(env, rt, im.returnTypeLoc, gm)
         else
             try env.namedType("void");
         const fnTy = try env.funcType(params, ret);
@@ -1182,7 +1190,7 @@ fn registerStruct(env: *Env, s: ast.StructDecl) InferError!void {
         .field => |f| {
             fields[fi] = .{
                 .name = f.name,
-                .type_ = try resolveTypeRefInContext(env, f.typeRef, genericMap),
+                .type_ = try resolveFieldType(env, f, genericMap),
             };
             fi += 1;
         },
@@ -1275,7 +1283,7 @@ fn registerEnum(env: *Env, e: ast.TypeDecl) InferError!void {
         for (v.fields, 0..) |f, fi| {
             fields[fi] = .{
                 .name = f.name,
-                .type_ = try resolveTypeRefInContext(env, f.typeRef, genericMap),
+                .type_ = try resolveFieldType(env, f, genericMap),
             };
         }
         variants[vi] = .{ .name = v.name, .fields = fields };
@@ -1381,7 +1389,7 @@ fn registerEnumSection(
         for (v.fields, 0..) |f, fi| {
             fields[fi] = .{
                 .name = f.name,
-                .type_ = try resolveTypeRefInContext(env, f.typeRef, empty_map),
+                .type_ = try resolveFieldType(env, f, empty_map),
             };
         }
         // Pure-digit leaves carry the underscore-prefixed name codegen expects.
@@ -2780,7 +2788,7 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
             else
                 try env.namedType("void");
             break :blk try env.funcType(fparams, fret);
-        } else try resolveTypeRefInContext(env, p.typeRef, genericMap);
+        } else try resolveParamType(env, p, genericMap);
         paramTypes[i] = ty;
         if (p.destruct) |d| {
             // Destructuring param: bind each field name to its type.
@@ -2816,7 +2824,7 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
 
     // Infer return type.
     const retType = if (f.returnType) |rt|
-        try resolveTypeRefInContext(env, rt, genericMap)
+        try resolveReturnType(env, rt, f.returnTypeLoc, genericMap)
     else
         try env.namedType("void");
 
@@ -3064,7 +3072,7 @@ fn inferTypeMethods(
                 else
                     try env.namedType("void");
                 break :blk try env.funcType(fparams, fret);
-            } else try resolveTypeRefInContext(env, p.typeRef, genericMap);
+            } else try resolveParamType(env, p, genericMap);
             try env.bind(p.name, ty);
         }
 
@@ -4852,6 +4860,36 @@ fn builtinDefaultFilledArgs(env: *Env, name: []const u8, given: usize) ?[]const 
         return &.{ "", "any", "void" };
     }
     return null;
+}
+
+/// 06 N30 — resolve a param's annotation with its source location in scope, so
+/// an unknown type name reds at the annotation instead of at the file.
+fn resolveParamType(env: *Env, p: ast.Param, genericMap: std.StringHashMap(*T.Type)) InferError!*T.Type {
+    const prev = env.atTypeRef(p.typeLoc);
+    defer env.typeRefLoc = prev;
+    return resolveTypeRefInContext(env, p.typeRef, genericMap);
+}
+
+/// 06 N30 — the same for a record/variant field's annotation.
+fn resolveFieldType(env: *Env, f: ast.Field, genericMap: std.StringHashMap(*T.Type)) InferError!*T.Type {
+    const prev = env.atTypeRef(f.typeLoc);
+    defer env.typeRefLoc = prev;
+    return resolveTypeRefInContext(env, f.typeRef, genericMap);
+}
+
+/// 06 N30 — the same for a declared return type (`-> Foo`). Only the sites that
+/// register a declaration pass the location: a signature re-resolved at a call
+/// site would carry the *declaring* file's coordinates into the caller's
+/// diagnostic, and the declaring module already reds on its own annotation.
+fn resolveReturnType(
+    env: *Env,
+    ref: ast.TypeRef,
+    loc: ast.Loc,
+    genericMap: std.StringHashMap(*T.Type),
+) InferError!*T.Type {
+    const prev = env.atTypeRef(loc);
+    defer env.typeRefLoc = prev;
+    return resolveTypeRefInContext(env, ref, genericMap);
 }
 
 /// Resolve an `ast.TypeRef` to a `*T.Type` using a generic-parameter map.
@@ -7192,7 +7230,7 @@ fn paramTypeInContext(env: *Env, p: ast.Param, gm: std.StringHashMap(*T.Type)) I
             try env.namedType("void");
         return try env.funcType(fparams, fret);
     }
-    return try resolveTypeRefInContext(env, p.typeRef, gm);
+    return try resolveParamType(env, p, gm);
 }
 
 /// Infer type for `use`-hook expressions (@Context F7).

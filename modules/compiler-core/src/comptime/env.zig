@@ -395,6 +395,12 @@ pub const Env = struct {
     level: usize,
     /// The most recent type error (set before returning `error.TypeError`).
     lastError: ?@import("error.zig").TypeError,
+    /// 06 N30 — the annotation being resolved (`x: Foo` → `Foo`'s column), so an
+    /// unknown type name reds at the annotation. Set through `atTypeRef`.
+    typeRefLoc: ?ast.Loc = null,
+    /// C10 — annotations whose type name was not known yet when resolved; the
+    /// second pass (`checkPendingTypeNames`) reds on the ones still unknown.
+    pendingTypeNames: std.ArrayListUnmanaged(PendingTypeName) = .empty,
     /// Builtin `@Result`/`@Option` method calls discovered during inference,
     /// keyed by the call's source location. Drives the AST transform lowering.
     method_lowerings: std.AutoHashMap(ast.Loc, MethodLowering),
@@ -881,7 +887,7 @@ pub const Env = struct {
     pub fn registerBuiltins(self: *Env) !void {
         const primitives = [_][]const u8{
             // integer types
-            "i8",  "u8",  "i16",  "u16",    "i32",  "u32",  "i64", "u64",  "isize", "usize",
+            "i8",  "u8",  "i16",  "u16",    "i32",  "u32",  "i64", "u64",      "isize", "usize",
             // float types
             "f32", "f64",
             // other primitives
@@ -891,6 +897,10 @@ pub const Env = struct {
             // It is treated as opaque at the type level — no operations beyond
             // being threaded through generics.
             "any",
+            // The declared return of `@panic` / `todo` / `trap`
+            // (`libs/std/src/builtins_fns.d.bp`, `builtins.d.bp`): a type no
+            // module declares, so C10's second pass needs it named here.
+            "noreturn",
             // special
             "Self",
         };
@@ -912,6 +922,18 @@ pub const Env = struct {
 
     pub fn exitLevel(self: *Env) void {
         self.level -= 1;
+    }
+
+    /// 06 N30 — the type annotation being resolved right now (`x: Foo` → the
+    /// column of `Foo`). `resolveTypeName` attaches it to an unknown-type error
+    /// so the caret lands on the annotation instead of the file. Set and
+    /// restored by the inference sites that know the declaration.
+    pub fn atTypeRef(self: *Env, loc: ?ast.Loc) ?ast.Loc {
+        const prev = self.typeRefLoc;
+        if (loc) |l| {
+            if (l.line != 0) self.typeRefLoc = l;
+        }
+        return prev;
     }
 
     // ── type name resolution ──────────────────────────────────────────────────
@@ -956,6 +978,26 @@ pub const Env = struct {
         return null;
     }
 
+    /// C10 second pass — after every declaration of the module is registered,
+    /// an annotation that still names nothing is an error at the annotation.
+    pub fn checkPendingTypeNames(self: *Env) !void {
+        // The list belongs to the program that filled it: `registerStdlib` runs
+        // one inference per std module on the same env, and a name left pending
+        // by one must not red in the next.
+        defer self.pendingTypeNames.clearRetainingCapacity();
+        for (self.pendingTypeNames.items) |p| {
+            if (self.typeDefs.get(p.name) != null) continue;
+            if (self.bindings.get(p.name) != null) continue;
+            // A `behavior` names a type in annotation position (`-> Counter`)
+            // without being a typedef: its decl is recorded here.
+            if (self.assocInterfaceDecls.get(p.name) != null) continue;
+            if (isCompilerKnownTypeName(p.name)) continue;
+            const e = @import("error.zig").TypeError.unknownTypeName(p.name);
+            self.lastError = if (p.loc) |l| e.withLoc(l) else e;
+            return error.TypeError;
+        }
+    }
+
     pub fn resolveTypeName(
         self: *Env,
         name: []const u8,
@@ -970,7 +1012,8 @@ pub const Env = struct {
         if (std.mem.indexOfScalar(u8, name, '.') != null) {
             const mangled = try self.mangleSectionPath(name);
             if (self.typeDefs.get(mangled)) |_| return self.namedType(mangled);
-            self.lastError = @import("error.zig").TypeError.unknownTypeName(name);
+            const e = @import("error.zig").TypeError.unknownTypeName(name);
+            self.lastError = if (self.typeRefLoc) |l| e.withLoc(l) else e;
             return error.TypeError;
         }
         // Registered user-defined types — bare name on a generic typeDef
@@ -1007,16 +1050,58 @@ pub const Env = struct {
         // `Token.Text`) is a name the author had to guess from a mangling the
         // language never showed. It is not a type: name the path instead.
         if (try self.sectionPathForFlatName(name)) |dotted| {
-            self.lastError = @import("error.zig").TypeError.custom(
+            const e = @import("error.zig").TypeError.custom(
                 try std.fmt.allocPrint(self.arena, "the type '{s}' is not defined in this scope", .{name}),
                 try std.fmt.allocPrint(self.arena, "a section is named by its path: use `{s}`", .{dotted}),
             );
+            self.lastError = if (self.typeRefLoc) |l| e.withLoc(l) else e;
             return error.TypeError;
         }
-        // Fallback: treat as an opaque named type (forward reference, etc.)
+        // C10 — a name nothing declares. It cannot red here: a record may
+        // annotate a type declared further down the file, and registration
+        // resolves fields in declaration order. Record it with the annotation's
+        // location and let `checkPendingTypeNames` (run once every decl is
+        // registered) red on what is still unknown — the second pass of C10's
+        // two-pass resolution.
+        //
+        // Only an annotation the parser located enters the list (`typeRefLoc`,
+        // set by `resolveParamType` / `resolveFieldType`). A resolution with no
+        // annotation in scope is a synthesised or re-entered one — a generic
+        // parameter resolved outside the context that binds it, a signature
+        // rebuilt from a stored type — and has neither a caret to red at nor a
+        // source the user wrote. Compiler-known names never enter the list.
+        if (self.typeRefLoc != null and !isCompilerKnownTypeName(name)) {
+            self.pendingTypeNames.append(self.arena, .{
+                .name = name,
+                .loc = self.typeRefLoc,
+            }) catch {};
+        }
         return self.namedType(name);
     }
 };
+
+/// C10 — an annotation that named no known type when it was resolved. Checked
+/// again once every declaration of the module is registered, so a forward
+/// reference (`type A(b: B)` above `type B(…)`) resolves and only a name
+/// nothing declares reds.
+pub const PendingTypeName = struct {
+    name: []const u8,
+    loc: ?ast.Loc,
+};
+
+/// C10 — names the compiler knows without any module declaring them, so the
+/// two-pass registration cannot see them as typedefs:
+///
+/// - `Children` is the markup child list a UI library annotates, coerced by
+///   `childrenCoercion` in `infer.zig`.
+/// - `Binding` is the opaque name `q.lookup` yields inside a template body; it
+///   is the `ref` field of the registered `CustomNode`
+///   (`comptime.zig` `custom_ast_reflection_src`) and is declared by no module.
+fn isCompilerKnownTypeName(name: []const u8) bool {
+    const known = [_][]const u8{ "Children", "Binding" };
+    for (known) |k| if (std.mem.eql(u8, name, k)) return true;
+    return false;
+}
 
 /// Type guard information for narrowing at call sites.
 /// `fn f(x: T) -> x is NarrowedT` records the param index and narrowed type name.
