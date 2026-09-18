@@ -361,6 +361,56 @@ an error) and §1.4 (a non-`pub` binding falling to `unknown` **warns**) both ne
 `comptime/**` does not have: there is no warning path here at all, only `TypeError`. Indexing —
 §2.2's fourth refusal — has no syntax to refuse: `a[0]` is a parse error in this grammar.
 
+## union types (decision 8 §3, 1.0.4's 06 N20)
+
+`A | B` reaches inference as `TypeRef.generic` under the reserved name
+`ast.union_type_name` (`"|"`), members as arguments, read back with `unionMembers()`.
+`resolveTypeRefInContext` builds a real `T.Type.union_` from them, so a union annotation is a union
+type and no longer a nominal type spelled `|` ("expected |, got i32").
+
+Construction always goes through **`unionOf`** / **`finishUnion`**, never `Env.unionType` directly,
+so every union in the checker is normalised the same way:
+
+- `appendUnionMember` flattens a nested union (`(A | B) | C` is `A | B | C`) and drops a duplicate
+  by `sameTypeShape` — a structural, **non-unifying** comparison, because a probe that unified would
+  leave the alternative it rejected linked and there is no way to roll that back. An **unbound**
+  variable is not a distinct alternative: it unifies with what is already there, so a union never
+  carries a `?` member that says nothing.
+- `finishUnion` collapses a one-member union to that member and applies §3.2's **optional
+  absorption**: an optional member makes the whole union optional over the union of its inner type
+  and every other member, so `if (c) { 1 } else { null }` is `?i32` and — recursively — `?A | ?B` is
+  §3.4's `Option<A | B>`.
+- **No other head joins.** §3.4 also lists `Box`, `@Result` and `Dict`, but a join is sound only
+  when the type's parameter is *read* and never written: joining `Box<i32> | Box<string>` would let
+  a `set(v: T)` store a `string` in what is really a `Box<i32>`. The "only read" member-signature
+  walk is not built; those members stay side by side, which refuses more than §3.4 and is never
+  wrong. Arrays never join — that is §3.4's own rule.
+
+`unify` treats a union one-way, as it does `?T` and `unknown`: a **member** is assignable to the
+union, and the union to a member only after narrowing. `memberAccepting` picks the target member by
+shape (never by trial unification, for the reason above); a member still unbound accepts anything.
+Union-to-union asks that every member the value may be is one the target accepts — the target may be
+wider, never narrower. The arity-for-arity walk this replaced could only accept a union written in
+exactly the same member order.
+
+§3.2's inference sources: a `case` (`caseTypeFromArms`, already there since 06 C2a) and an `if`
+whose two branches both produce a value and disagree — that is a union now, not an error. Branches
+that agree still unify, so one branch pins the other's variables exactly as before.
+
+§3.3's use rule is `refuseUnknownUse`, shared with §2.2 (see above): a union receiver is refused at
+arithmetic, `+`, an ordering comparison, a field read and a method call. §3.3 allows a use every
+member allows; deciding that means re-resolving the operation once per member, which is not built,
+so the refusal is total — more than §3.3 asks, and never wrong. §3.2's two-location diagnostic (the
+use **and** the branch that widened it) is not built either: `TypeError` carries one `Loc`.
+
+`error.zig` `typeLabelAlloc` spells a union out as `A | B` in a mismatch message; every other kind
+is `typeLabel`'s own text, so a message that goes through it renders byte-identically to one that
+does not.
+
+**Gap, not owned here:** `(i32 | string)[]` does not parse — a parenthesised type is not in the
+grammar, so §3.1's "array of the union" has no spelling. `i32 | string[]` binds as `i32` or
+`string[]`, which is right.
+
 ## `case` and `comptime` block types (06 C2)
 
 A `case` is typed from its arms (`caseTypeFromArms`): arms that agree unify, arms of different

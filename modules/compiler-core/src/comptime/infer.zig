@@ -21,6 +21,7 @@ const templateEval = @import("template_eval.zig");
 const decoratorEval = @import("decorator_eval.zig");
 const specializeMod = @import("specialize.zig");
 const unifyMod = @import("unify.zig");
+const snapshotMod = @import("snapshot.zig");
 const unify = unifyMod.unify;
 const Lexer = @import("../lexer.zig").Lexer;
 const Parser = @import("../parser.zig").Parser;
@@ -4983,6 +4984,20 @@ fn resolveTypeRefInContext(env: *Env, ref: ast.TypeRef, genericMap: std.StringHa
             return env.funcType(paramTypes, returnType);
         },
         .generic => |b| {
+            // Decision 8 §3 — `A | B` reaches inference as a `generic` under the
+            // reserved name `ast.union_type_name`; `unionMembers()` reads the
+            // members back. It is a union type, not a nominal one called `|`,
+            // which is what the old resolution produced ("expected |, got i32").
+            if (ref.unionMembers()) |members| {
+                var flat: std.ArrayListUnmanaged(*T.Type) = .empty;
+                for (members) |m| {
+                    const mt = try resolveTypeRefInContext(env, m, genericMap);
+                    try appendUnionMember(env, &flat, mt);
+                }
+                // `finishUnion` collapses `A | A` to `A`: the grammar allows the
+                // spelling and nothing downstream should meet a one-member union.
+                return finishUnion(env, flat.items);
+            }
             // RG3 (§1G) — required generic argument missing. Each known builtin
             // wrapper has a fixed required-arg minimum: the parameters before
             // the defaulted trailing range. Catching it here covers the
@@ -5456,20 +5471,41 @@ fn inferTupleLabelCall(
 /// no constraint at all. Permissive for a type variable an inference gap has
 /// not resolved, and for any named type the env does not know to be
 /// non-numeric — only the types that certainly hold no arithmetic red.
-/// Decision 8 §2.2 — what an `unknown` value does **not** answer: arithmetic,
-/// a field read, an index and a method call. `@print`, `==`, `!=`, assignment
-/// to another `unknown` and passing to a generic parameter stay allowed, and
-/// each of those reaches inference by a path this is not on.
+/// The two type kinds decision 8 says must be **narrowed before they are
+/// used**: `unknown` (§2.2) and a union (§3.3). Both carry a set of
+/// possibilities rather than one type, and both reach the same five operations
+/// — arithmetic, `+`, an ordering comparison, a field read and a method call —
+/// through a permissive tail that would otherwise accept silently.
 ///
-/// `what` completes "an `unknown` value cannot …", so it is a verb phrase.
+/// `@print(x)`, `x == y`, `x != y`, assignment and passing to a generic
+/// parameter stay allowed for both, and reach inference by paths this is not on.
+///
+/// §3.3's own rule is narrower than this: a use is allowed when **every**
+/// member allows it. Deciding that means re-resolving the operation once per
+/// member, which this front has not built; refusing the union outright refuses
+/// more than §3.3 and is never wrong, and the fix — narrow first — is the same
+/// sentence either way.
+///
+/// `what` completes "cannot …", so it is a verb phrase.
 fn refuseUnknownUse(env: *Env, ty: *T.Type, loc: ast.Loc, what: []const u8) InferError!void {
-    if (!unifyMod.isUnknown(ty)) return;
-    var e = TypeError.custom(
-        try std.fmt.allocPrint(env.arena, "cannot {s} an `unknown` value", .{what}),
-        "Narrow it first: `if (x is i32) { … }` makes `x` an `i32` inside the block.",
-    );
-    env.lastError = e.withLoc(loc);
-    return error.TypeError;
+    const t = ty.deref();
+    if (unifyMod.isUnknown(t)) {
+        var e = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, "cannot {s} an `unknown` value", .{what}),
+            "Narrow it first: `if (x is i32) { … }` makes `x` an `i32` inside the block.",
+        );
+        env.lastError = e.withLoc(loc);
+        return error.TypeError;
+    }
+    if (t.* == .union_) {
+        const rendered = try snapshotMod.typeNameOf(env.arena, t);
+        var e = TypeError.custom(
+            try std.fmt.allocPrint(env.arena, "cannot {s} a `{s}` — not every member of the union answers it", .{ what, rendered }),
+            "Narrow it first: a `case` with one arm per member, or `if (v is i32) { … }`.",
+        );
+        env.lastError = e.withLoc(loc);
+        return error.TypeError;
+    }
 }
 
 fn requireNumericOperand(env: *Env, ty: *T.Type, op: []const u8, loc: ast.Loc) InferError!void {
@@ -6676,10 +6712,21 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
             // fn of the same shape. Only the row that removes
             // block-as-value outright can delete the unification entirely; this
             // narrows it to the branches that do produce a value.
+            //
+            // Decision 8 §3.2 — when both branches DO produce a value and the
+            // two disagree, that is not an error: the `if` is their union, the
+            // same answer `caseTypeFromArms` already gives a `case`. Branches
+            // that agree still unify, so a branch pins the other's type
+            // variables exactly as before.
+            var ifType = bodyType;
             if (elseTyped != null and stmtsYieldValue(thenTyped) and stmtsYieldValue(elseTyped.?)) {
-                try unify(env, bodyType, elseType);
+                if (caseArmTypesAgree(bodyType, elseType)) {
+                    try unify(env, bodyType, elseType);
+                } else {
+                    ifType = try unionOf(env, &.{ bodyType, elseType });
+                }
             }
-            return TypedExpr{ .branch = .{ .loc = loc, .type_ = bodyType, .kind = .{ .if_ = .{
+            return TypedExpr{ .branch = .{ .loc = loc, .type_ = ifType, .kind = .{ .if_ = .{
                 .cond = condPtr,
                 .binding = i.binding,
                 .then_ = thenTyped,
@@ -8272,6 +8319,129 @@ fn caseArmValueType(env: *Env, body: ast.TypedExpr) InferError!?*T.Type {
     return t;
 }
 
+/// Decision 8 §3 — add one member to a union under construction, flattening a
+/// nested union (`(A | B) | C` is `A | B | C`) and dropping a duplicate. Union
+/// membership is set-like: the members are what the value may be, and saying
+/// one of them twice says nothing more.
+fn appendUnionMember(
+    env: *Env,
+    into: *std.ArrayListUnmanaged(*T.Type),
+    member: *T.Type,
+) InferError!void {
+    const m = member.deref();
+    if (m.* == .union_) {
+        for (m.union_) |inner| try appendUnionMember(env, into, inner);
+        return;
+    }
+    // A variable inference has not decided is not a distinct alternative. It
+    // joins whatever is already there instead of standing beside it, so a
+    // union never carries a `?` member that says nothing.
+    if (m.isUnbound() and into.items.len > 0) return unify(env, into.items[0], m);
+    for (into.items) |existing| {
+        if (sameTypeShape(existing, m)) return;
+        if (existing.isUnbound()) return unify(env, existing, m);
+    }
+    try into.append(env.arena, m);
+}
+
+/// Decision 8 §3.2/§3.4 — finish a union that `appendUnionMember` has already
+/// flattened and de-duplicated.
+///
+/// `?T` **absorbs**: a `null` branch makes the whole thing optional, so
+/// `if (c) { 1 } else { null }` is `?i32` and not `i32 | ?_`. Recursively, that
+/// is also §3.4's `Option<A> | Option<B>` → `Option<A | B>`.
+///
+/// No other head joins here. §3.4 also lists `Box`, `@Result` and `Dict`, but a
+/// join is only sound when the type's parameter is **read** and never written:
+/// joining `Box<i32> | Box<string>` into `Box<i32 | string>` would let a
+/// `set(v: T)` store a `string` in what is really a `Box<i32>`. The "only read"
+/// test is a member-signature walk this front has not built; until it exists
+/// those members stay side by side, which refuses more than §3.4 and is never
+/// wrong. Arrays never join at all — that is §3.4's own rule.
+fn finishUnion(env: *Env, members: []*T.Type) InferError!*T.Type {
+    if (members.len == 0) return env.namedType("void");
+    if (members.len == 1) return members[0];
+    for (members, 0..) |m, idx| {
+        const d = m.deref();
+        if (d.* != .named) continue;
+        if (!std.mem.eql(u8, d.named.name, "optional") or d.named.args.len != 1) continue;
+        var inner: std.ArrayListUnmanaged(*T.Type) = .empty;
+        try appendUnionMember(env, &inner, d.named.args[0]);
+        for (members, 0..) |other, j| {
+            if (j != idx) try appendUnionMember(env, &inner, other);
+        }
+        // Each step consumes one optional member, so the recursion is finite.
+        const innerTy = try finishUnion(env, inner.items);
+        const args = try env.arena.alloc(*T.Type, 1);
+        args[0] = innerTy;
+        return env.namedTypeArgs("optional", args);
+    }
+    return env.unionType(try env.arena.dupe(*T.Type, members));
+}
+
+/// The union of `members`, flattened, de-duplicated and normalised.
+fn unionOf(env: *Env, members: []const *T.Type) InferError!*T.Type {
+    var flat: std.ArrayListUnmanaged(*T.Type) = .empty;
+    for (members) |m| try appendUnionMember(env, &flat, m);
+    return finishUnion(env, flat.items);
+}
+
+/// Two types are the same union member. Structural and conservative: it decides
+/// membership, so it must never call two members the same when a value could
+/// tell them apart, and it must not unify (a probe that mutated would leave the
+/// failed alternative linked).
+fn sameTypeShape(a: *T.Type, b: *T.Type) bool {
+    const da = a.deref();
+    const db = b.deref();
+    if (da == db) return true;
+    return switch (da.*) {
+        .named => |na| switch (db.*) {
+            .named => |nb| blk: {
+                if (!std.mem.eql(u8, na.name, nb.name)) break :blk false;
+                if (na.args.len != nb.args.len) break :blk false;
+                for (na.args, nb.args) |x, y| {
+                    if (!sameTypeShape(x, y)) break :blk false;
+                }
+                break :blk true;
+            },
+            else => false,
+        },
+        .func => |fa| switch (db.*) {
+            .func => |fb| blk: {
+                if (fa.params.len != fb.params.len) break :blk false;
+                for (fa.params, fb.params) |x, y| {
+                    if (!sameTypeShape(x, y)) break :blk false;
+                }
+                break :blk sameTypeShape(fa.ret, fb.ret);
+            },
+            else => false,
+        },
+        .union_ => |ua| switch (db.*) {
+            .union_ => |ub| blk: {
+                if (ua.len != ub.len) break :blk false;
+                for (ua, ub) |x, y| {
+                    if (!sameTypeShape(x, y)) break :blk false;
+                }
+                break :blk true;
+            },
+            else => false,
+        },
+        .record => |fa| switch (db.*) {
+            .record => |fb| blk: {
+                if (fa.len != fb.len) break :blk false;
+                for (fa, fb) |x, y| {
+                    if (!std.mem.eql(u8, x.name, y.name)) break :blk false;
+                    if (!sameTypeShape(x.type_, y.type_)) break :blk false;
+                }
+                break :blk true;
+            },
+            else => false,
+        },
+        // Two distinct variables are not the same member: nothing has said so.
+        .typeVar => false,
+    };
+}
+
 /// C2a — unify the arms that agree; distinct named types become union members.
 fn caseTypeFromArms(env: *Env, arms: []const ast.CaseArmOf(.typed)) InferError!*T.Type {
     var members: std.ArrayListUnmanaged(*T.Type) = .empty;
@@ -8287,11 +8457,7 @@ fn caseTypeFromArms(env: *Env, arms: []const ast.CaseArmOf(.typed)) InferError!*
         }
         if (!merged) try members.append(env.arena, t);
     }
-    return switch (members.items.len) {
-        0 => env.namedType("void"),
-        1 => members.items[0],
-        else => env.unionType(try members.toOwnedSlice(env.arena)),
-    };
+    return finishUnion(env, members.items);
 }
 
 /// Two arm types agree (and are unified) when either is still a type

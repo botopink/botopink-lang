@@ -300,7 +300,16 @@ pub const TypeError = struct {
     /// returned slice. Used by `botopink check` and the language server.
     pub fn message(this: TypeError, gpa: std.mem.Allocator) ![]u8 {
         return switch (this.kind) {
-            .typeMismatch => |m| std.fmt.allocPrint(gpa, "type mismatch: expected {s}, got {s}", .{ typeLabel(m.expected), typeLabel(m.got) }),
+            .typeMismatch => |m| blk: {
+                // A union's short label has to spell its members: "expected
+                // union" names nothing the author wrote, and a union is the one
+                // kind whose identity *is* its members (decision 8 §3).
+                const expected = try typeLabelAlloc(gpa, m.expected);
+                defer gpa.free(expected);
+                const got = try typeLabelAlloc(gpa, m.got);
+                defer gpa.free(got);
+                break :blk std.fmt.allocPrint(gpa, "type mismatch: expected {s}, got {s}", .{ expected, got });
+            },
             .unboundVariable => |n| std.fmt.allocPrint(gpa, "unbound variable '{s}'", .{n}),
             .arityMismatch => |a| std.fmt.allocPrint(gpa, "'{s}' expects {d} argument(s), got {d}", .{ a.name, a.expected, a.got }),
             .unknownField => |u| std.fmt.allocPrint(gpa, "unknown field '{s}' on type '{s}'", .{ u.field, u.typeName }),
@@ -343,6 +352,23 @@ fn nonExhaustiveMessage(gpa: std.mem.Allocator, n: anytype) ![]u8 {
         try list.appendSlice(gpa, name);
     }
     return std.fmt.allocPrint(gpa, "non-exhaustive `case` on '{s}': missing variant(s) {s}", .{ n.typeName, list.items });
+}
+
+/// `typeLabel`, with a union spelled out as `A | B`. Owned by the caller.
+/// Every other kind is `typeLabel`'s own text, duplicated, so a message that
+/// goes through this renders byte-identically to one that does not.
+fn typeLabelAlloc(gpa: std.mem.Allocator, ty: *T.Type) ![]const u8 {
+    const t = ty.deref();
+    if (t.* != .union_) return gpa.dupe(u8, typeLabel(t));
+    var buf: std.ArrayList(u8) = .empty;
+    errdefer buf.deinit(gpa);
+    for (t.union_, 0..) |member, i| {
+        if (i > 0) try buf.appendSlice(gpa, " | ");
+        const label = try typeLabelAlloc(gpa, member);
+        defer gpa.free(label);
+        try buf.appendSlice(gpa, label);
+    }
+    return buf.toOwnedSlice(gpa);
 }
 
 /// Best-effort short label for a type, used in error messages.

@@ -146,23 +146,66 @@ pub fn unify(env: *Env, a: *T.Type, b: *T.Type) UnifyError!void {
         },
 
         // ── union types ───────────────────────────────────────────────────────
+        // Decision 8 §3.3 — a union is one-way, like `unknown` and `?T`: a
+        // **member** is assignable to the union (`val v: i32 | string = 1;`),
+        // and the union is assignable to a member only after narrowing. The
+        // arity-for-arity walk this replaced could only ever accept a union
+        // written in exactly the same order as the expected one.
         .union_ => |typesA| switch (tb.*) {
             .typeVar => return unify(env, tb, ta),
             .union_ => |typesB| {
-                if (typesA.len != typesB.len) {
-                    env.lastError = TypeError.typeMismatch(ta, tb);
-                    return error.TypeError;
-                }
-                for (typesA, typesB) |ua, ub| {
-                    try unify(env, ua, ub);
+                // Every member the value may be has to be one the target
+                // accepts. The target may be wider; it may never be narrower.
+                for (typesB) |ub| {
+                    const target = memberAccepting(typesA, ub) orelse {
+                        env.lastError = TypeError.typeMismatch(ta, tb);
+                        return error.TypeError;
+                    };
+                    try unify(env, target, ub);
                 }
             },
             else => {
-                env.lastError = TypeError.typeMismatch(ta, tb);
-                return error.TypeError;
+                const target = memberAccepting(typesA, tb) orelse {
+                    env.lastError = TypeError.typeMismatch(ta, tb);
+                    return error.TypeError;
+                };
+                try unify(env, target, tb);
             },
         },
     }
+}
+
+/// The member of `members` that `value` goes into, matched by shape so the
+/// answer never depends on a trial unification: a failed probe would leave the
+/// alternative it tried linked, and there is no way to roll that back.
+///
+/// A member still an unbound variable accepts anything — inference has not
+/// decided it, and refusing there would red on its own gap.
+fn memberAccepting(members: []*T.Type, value: *T.Type) ?*T.Type {
+    const v = value.deref();
+    for (members) |m| {
+        const dm = m.deref();
+        if (dm == v) return m;
+        switch (dm.*) {
+            .typeVar => return m,
+            .named => |nm| switch (v.*) {
+                .named => |nv| if (std.mem.eql(u8, nm.name, nv.name) and
+                    nm.args.len == nv.args.len) return m,
+                .typeVar => return m,
+                else => {},
+            },
+            .func => switch (v.*) {
+                .func, .typeVar => return m,
+                else => {},
+            },
+            .record => switch (v.*) {
+                .record, .typeVar => return m,
+                else => {},
+            },
+            .union_ => {},
+        }
+    }
+    return null;
 }
 
 /// Returns true if type variable `id` appears anywhere inside `ty`.
