@@ -192,6 +192,42 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "remove the payload pattern",
             .hint = "Test the variant with `x is Option` and read the payload in a `case` arm: `case x { Option.Some(value: v) { … } }`.",
         },
+        .patternRangeExclusive => .{
+            .code = "pattern-range-exclusive",
+            .message = "`..` is iteration, not a pattern's range",
+            .caretCaption = "write `...` — an inclusive range, both ends matched",
+            .hint = "`1...9` matches every value from 1 to 9; `..` belongs to `loop (0..n)` and slicing. An open end is a guard: `_ when (x < 0) { … }`.",
+        },
+        .patternRangeMissingEnd => .{
+            .code = "pattern-range-missing-end",
+            .message = "a range pattern needs its upper bound",
+            .caretCaption = "add the end of the range",
+            .hint = "`1...9` matches 1 to 9, both included. For an open end write a guard: `_ when (x > 9) { … }`.",
+        },
+        .patternRestNotLast => .{
+            .code = "pattern-rest-not-last",
+            .message = "`..` stands for what the pattern does not name, so it comes last",
+            .caretCaption = "move `..` to the end",
+            .hint = "Write `.Rect(width: w, ..)`: the fields you name first, then `..` once, at the end.",
+        },
+        .patternTupleLabel => .{
+            .code = "pattern-tuple-label",
+            .message = "a tuple pattern is positional — it takes no label",
+            .caretCaption = "drop the label and match by position",
+            .hint = "Labels are names for the compiler; a tuple is positional at run time. Write `#(n, ..)`, whatever the labels of its type.",
+        },
+        .caseBareNameArm => .{
+            .code = "case-bare-name-arm",
+            .message = "a name alone is not a pattern",
+            .caretCaption = "use _ { n -> … } to bind the matched value",
+            .hint = "An arm names a type (`i32`), a variant (`.Some(v)`), a literal (`0`), a range (`1...9`) or `_`. To give the matched value a name, bind it in the body: `_ { n -> … }`.",
+        },
+        .caseConstantPattern => .{
+            .code = "case-constant-pattern",
+            .message = "a constant is not a pattern",
+            .caretCaption = "use _ when (x == MAX) { … } to compare with it",
+            .hint = "A pattern matches a shape; comparing with a constant is a guard. Write `_ when (x == MAX) { … }`.",
+        },
         .typeRecordWithVariants => .{
             .code = "type-record-with-variants",
             .message = "a `type` with a field list cannot also declare variants",

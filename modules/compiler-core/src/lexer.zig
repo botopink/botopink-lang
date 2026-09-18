@@ -286,10 +286,16 @@ pub const Lexer = struct {
                 }
             },
 
-            // ── '.', '..' ────────────────────────────────────────────────────
+            // ── '.', '..', '...' ─────────────────────────────────────────────
             '.' => {
                 if (self.matchChar('.')) {
-                    try self.addToken(.dotDot, allocator);
+                    // `...` is a pattern's inclusive range (decision 8 §5.2);
+                    // `..` stays iteration and slicing.
+                    if (self.matchChar('.')) {
+                        try self.addToken(.dotDotDot, allocator);
+                    } else {
+                        try self.addToken(.dotDot, allocator);
+                    }
                 } else {
                     try self.addToken(.dot, allocator);
                 }

@@ -152,3 +152,170 @@ test "decision 8 N21: is does not bind a variant payload" {
         \\fn f(a: unknown) -> bool { return a is Some(v); }
     );
 }
+
+// ── N22 — `case` arms (§5) ────────────────────────────────────────────────────
+
+test "decision 8 N22: arms are Pattern { body }, with literals, a range and a binder" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn describe(n: i32) -> string {
+        \\    return case n {
+        \\        0 { "zero" }
+        \\        1...9 { "digit" }
+        \\        i32 { m ->
+        \\            val d = m * 2;
+        \\            d + 1
+        \\        }
+        \\        _ { v -> "big" }
+        \\    };
+        \\}
+    );
+}
+
+test "decision 8 N22: variant arms by path, by shorthand, by label and with a rest" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn area(s: Shape) -> i32 {
+        \\    return case s {
+        \\        Shape.Circle(r) { r }
+        \\        .Rect(width: w, height: h) { w }
+        \\        .Rect(width: w, ..) { w }
+        \\        .Square(..) { 0 }
+        \\        .None { 0 }
+        \\    };
+        \\}
+    );
+}
+
+test "decision 8 N22: tuple patterns and a pattern nested in a variant" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn f(p: #(i32, string)) -> string {
+        \\    return case p {
+        \\        #(0, s) { s }
+        \\        #(n, "x") { "x" }
+        \\        #(a, ..) { "rest" }
+        \\        .Some(#(a, b)) { "pair" }
+        \\        _ { "other" }
+        \\    };
+        \\}
+    );
+}
+
+test "decision 8 N22: when guards, and the arrow arm the libraries still use" {
+    try assertParser(std.testing.allocator, @src(),
+        \\fn sign(x: i32) -> string {
+        \\    return case x {
+        \\        i32 when (x > 0) { "positive" }
+        \\        _ when (x == 0) { v -> "zero" }
+        \\        _ { "negative" }
+        \\    };
+        \\}
+        \\fn legacy(o: Order) -> i32 {
+        \\    return case o {
+        \\        Lt -> -1;
+        \\        x if x > 3 -> 1;
+        \\        _ -> 0;
+        \\    };
+        \\}
+    );
+}
+
+test "decision 8 N22: a name alone is not an arm" {
+    try expectParseError(std.testing.allocator,
+        \\error[case-bare-name-arm]: a name alone is not a pattern
+        \\ --> <test>:3:9
+        \\  |
+        \\3 |         n { "other" }
+        \\  |         ^ use _ { n -> … } to bind the matched value
+        \\  |
+        \\  = hint: An arm names a type (`i32`), a variant (`.Some(v)`), a literal (`0`), a range (`1...9`) or `_`. To give the matched value a name, bind it in the body: `_ { n -> … }`.
+        \\
+        \\
+    ,
+        \\fn f(x: i32) -> string {
+        \\    return case x {
+        \\        n { "other" }
+        \\    };
+        \\}
+    );
+}
+
+test "decision 8 N22: a constant is not an arm" {
+    try expectParseError(std.testing.allocator,
+        \\error[case-constant-pattern]: a constant is not a pattern
+        \\ --> <test>:3:9
+        \\  |
+        \\3 |         MAX { "max" }
+        \\  |         ^^^ use _ when (x == MAX) { … } to compare with it
+        \\  |
+        \\  = hint: A pattern matches a shape; comparing with a constant is a guard. Write `_ when (x == MAX) { … }`.
+        \\
+        \\
+    ,
+        \\fn f(x: i32) -> string {
+        \\    return case x {
+        \\        MAX { "max" }
+        \\        _ { "other" }
+        \\    };
+        \\}
+    );
+}
+
+test "decision 8 N22: a tuple pattern takes no label" {
+    try expectParseError(std.testing.allocator,
+        \\error[pattern-tuple-label]: a tuple pattern is positional — it takes no label
+        \\ --> <test>:3:11
+        \\  |
+        \\3 |         #(name: n, ..) { n }
+        \\  |           ^^^^ drop the label and match by position
+        \\  |
+        \\  = hint: Labels are names for the compiler; a tuple is positional at run time. Write `#(n, ..)`, whatever the labels of its type.
+        \\
+        \\
+    ,
+        \\fn f(row: #(name: string, pop: i32)) -> string {
+        \\    return case row {
+        \\        #(name: n, ..) { n }
+        \\    };
+        \\}
+    );
+}
+
+test "decision 8 N22: a pattern range is written with three dots" {
+    try expectParseError(std.testing.allocator,
+        \\error[pattern-range-exclusive]: `..` is iteration, not a pattern's range
+        \\ --> <test>:3:10
+        \\  |
+        \\3 |         1..9 { "digit" }
+        \\  |          ^^ write `...` — an inclusive range, both ends matched
+        \\  |
+        \\  = hint: `1...9` matches every value from 1 to 9; `..` belongs to `loop (0..n)` and slicing. An open end is a guard: `_ when (x < 0) { … }`.
+        \\
+        \\
+    ,
+        \\fn f(x: i32) -> string {
+        \\    return case x {
+        \\        1..9 { "digit" }
+        \\        _ { "other" }
+        \\    };
+        \\}
+    );
+}
+
+test "decision 8 N22: the rest comes last" {
+    try expectParseError(std.testing.allocator,
+        \\error[pattern-rest-not-last]: `..` stands for what the pattern does not name, so it comes last
+        \\ --> <test>:3:15
+        \\  |
+        \\3 |         .Rect(.., width: w) { w }
+        \\  |               ^^ move `..` to the end
+        \\  |
+        \\  = hint: Write `.Rect(width: w, ..)`: the fields you name first, then `..` once, at the end.
+        \\
+        \\
+    ,
+        \\fn f(s: Shape) -> i32 {
+        \\    return case s {
+        \\        .Rect(.., width: w) { w }
+        \\    };
+        \\}
+    );
+}

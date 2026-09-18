@@ -140,6 +140,54 @@ is `is-missing-type`; the payload-binding form `x is Some(v)` (§4.2) is
 `is-variant-binding`, located at the `(` — the node carries a type, so the
 binding form is refused where it starts instead of failing further along.
 
+## `case` arms and patterns (decision 8 §5, 06 N22)
+
+Two arm forms coexist, told apart by the token after the pattern and its
+optional guard:
+
+| Form | Body |
+|---|---|
+| `Pattern { body }` — decision 8 §5.1 | a lambda body: `{ n -> … }` binds the whole matched value (P1), the last expression is the arm's value (P3), and the arm takes no `;` (P2) |
+| `pattern -> value;` — pre-decision-8 | unchanged; `libs/std` and the libraries are written this way, and 12 step 3 / 13 migrate them |
+
+The guard is `when (…)` (§5.3) or the older `if <expr>`. `when` is **not** a
+keyword: it is special only after an arm's pattern, matched by lexeme, so a
+variable called `when` is untouched. `checkWhenGuard` also keeps the two-name
+pattern `Ok ok` from swallowing it.
+
+The pattern grammar (`parseSimplePattern`) reads, beyond the pre-decision-8
+forms: a dotted variant path (`Shape.Circle`), the dot shorthand (`.Some`,
+`.None` — the leading `.` stays in the name, which is what tells a variant path
+from a binding), labelled payload elements (`Rect(width: w, height: h)`), a
+trailing `..` (P7), a `#(…)` tuple pattern (P6), an `A...B` inclusive range
+(§5.2) and a pattern nested inside a payload (`.Some(#(a, b))`). One payload
+production serves variants and tuples; a payload of nothing but plain binders
+keeps the `fields` shape every existing consumer knows, anything else becomes
+`literals`. `ast.zig` documents the node each shape lands on and what inference
+owes it.
+
+Five located refusals, all in `print.zig`: `pattern-range-exclusive` (`1..9` —
+`..` is iteration), `pattern-range-missing-end`, `pattern-rest-not-last`,
+`pattern-tuple-label` (a tuple pattern is positional) and, for the
+`Pattern { body }` form only, `case-bare-name-arm` and `case-constant-pattern`
+(§5.2's two rewrites). The last two judge a name by shape — a dotted path,
+`true`/`false` and the primitive type names are patterns; an all-upper-case name
+is a constant; any other lower-case name is a variable. `isPrimitiveTypeName`
+mirrors `Env.registerBuiltins` in `comptime/env.zig`, as the language server's
+`isPrimitiveType` does; keep the three in step. The arrow arm is never judged:
+binding the matched value with a bare name is exactly how it is written today.
+
+### What the formatter does with an arm
+
+`format.zig` writes an arm back in the form its body carries: a lambda body is
+decision 8's `Pattern [when (…)] { body }` (no arrow, no `;`, the binder kept),
+anything else the older `pattern [if …] -> value;`. The pre-decision-8 block arm
+`x -> { 1; }` is a parameterless lambda too, so it comes back as `x { 1 }` —
+the same AST, decision 8's spelling; no library writes one today. Two residuals
+for the formatter pass: a lambda body's last expression is still written with a
+trailing `;`, which §5.1 P3 does not want, and a `case` whose arms carry
+comments still loses their position.
+
 ## Type guards (`-> x is T`)
 
 `fn f(x: ?string) -> x is string` parses to `typeGuardParam = "x"`, `typeGuardType = string` and

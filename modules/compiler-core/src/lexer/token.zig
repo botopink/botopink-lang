@@ -39,6 +39,9 @@ pub const TokenKind = enum {
     dot, // .
     rightArrow, // ->
     dotDot, // ..
+    /// `...` — the inclusive range of a pattern (`1...9`, decision 8 §5.2).
+    /// `..` stays iteration and slicing.
+    dotDotDot, // ...
     at, // @
     plusEqual, // +=
     builtinIdent, // @identifier (built-in function names)

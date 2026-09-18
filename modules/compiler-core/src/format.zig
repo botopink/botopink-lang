@@ -1244,21 +1244,25 @@ pub const Formatter = struct {
                 // Regular separator
                 try armParts.append(this.arena, this.hardline());
             }
+            // An arm whose body is a lambda is decision 8 §5.1's
+            // `Pattern [when (…)] { body }`: no arrow, no `;`, and the body's
+            // parameter (`{ n -> … }`) binds the whole matched value. Any other
+            // body is the pre-decision-8 `pattern [if …] -> value;`.
+            const isBlockArm = arm.body == .function and arm.body.function.kind.syntax == .lambda;
             const guardDoc: *const Doc = if (arm.guard) |g| try this.concatAll(&.{
-                try this.text(" if "),
+                try this.text(if (isBlockArm) " when (" else " if "),
                 try this.fmtExpr(g),
+                try this.text(if (isBlockArm) ")" else ""),
             }) else this.nil();
             try armParts.append(this.arena, try this.concatAll(&.{
                 try this.fmtPattern(arm.pattern),
                 guardDoc,
-                try this.text(" -> "),
-                // A block arm body is a parameterless lambda in the AST; it is
-                // written `{ … }`, without the arrow.
-                if (arm.body == .function and arm.body.function.kind.syntax == .lambda and arm.body.function.kind.params.len == 0)
-                    try this.fmtLambda(&.{}, arm.body.function.kind.body, false)
+                if (isBlockArm) try this.text(" ") else try this.text(" -> "),
+                if (isBlockArm)
+                    try this.fmtLambda(arm.body.function.kind.params, arm.body.function.kind.body, false)
                 else
                     try this.fmtExpr(arm.body),
-                try this.text(";"),
+                if (isBlockArm) this.nil() else try this.text(";"),
             }));
         }
         // Add trailing comments after the last arm
@@ -1315,6 +1319,16 @@ pub const Formatter = struct {
         };
     }
 
+    /// The `label: ` a payload element was written with (decision 8 §5.1 P4),
+    /// or the element alone when it carried none.
+    fn withPatternLabel(this: *Formatter, labels: []const []const u8, i: usize, doc: *const Doc) !*const Doc {
+        if (i >= labels.len or labels[i].len == 0) return doc;
+        return this.concat(
+            try this.text(try std.fmt.allocPrint(this.arena, "{s}: ", .{labels[i]})),
+            doc,
+        );
+    }
+
     fn fmtPattern(this: *Formatter, pat: ast.Pattern) !*const Doc {
         return switch (pat) {
             .wildcard => this.text("_"),
@@ -1331,29 +1345,41 @@ pub const Formatter = struct {
                 }
             },
 
-            .variant => |v| switch (v.payload) {
-                .binding => |binding| {
+            // `Ok ok`, `Rgb(r, g, b)`, `Rect(width: w, ..)`, `#(0, s)` and the
+            // inclusive range `1...9` — decision 8 §5's shapes ride on this node
+            // (see `ast.PatternShape`), so the label, the trailing `..` and the
+            // tuple's `#` are written back from `labels`, `rest` and `shape`.
+            .variant => |v| {
+                if (v.shape == .range) {
+                    const bounds = v.payload.literals;
+                    return this.concatAll(&.{
+                        try this.fmtPattern(bounds[0]),
+                        try this.text("..."),
+                        try this.fmtPattern(bounds[1]),
+                    });
+                }
+                if (v.payload == .binding) {
                     return this.concat(
                         try this.text(v.name),
-                        try this.concat(try this.text(" "), try this.text(binding)),
+                        try this.concat(try this.text(" "), try this.text(v.payload.binding)),
                     );
-                },
-                .fields => |fields| {
-                    var items = try this.arena.alloc(*const Doc, fields.len);
-                    for (fields, 0..) |b, i| items[i] = try this.text(b);
-                    return this.concat(
-                        try this.text(v.name),
-                        try this.commaList("(", items, ")"),
-                    );
-                },
-                .literals => |args| {
-                    var items = try this.arena.alloc(*const Doc, args.len);
-                    for (args, 0..) |arg, i| items[i] = try this.fmtPattern(arg);
-                    return this.concat(
-                        try this.text(v.name),
-                        try this.commaList("(", items, ")"),
-                    );
-                },
+                }
+                var items: std.ArrayList(*const Doc) = .empty;
+                defer items.deinit(this.arena);
+                switch (v.payload) {
+                    .fields => |fields| for (fields, 0..) |b, i| {
+                        try items.append(this.arena, try this.withPatternLabel(v.labels, i, try this.text(b)));
+                    },
+                    .literals => |args| for (args, 0..) |arg, i| {
+                        try items.append(this.arena, try this.withPatternLabel(v.labels, i, try this.fmtPattern(arg)));
+                    },
+                    .binding => unreachable,
+                }
+                if (v.rest) try items.append(this.arena, try this.text(".."));
+                return this.concat(
+                    try this.text(v.name),
+                    try this.commaList(if (v.shape == .tuple) "#(" else "(", items.items, ")"),
+                );
             },
 
             .list => |l| {

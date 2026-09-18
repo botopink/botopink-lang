@@ -147,6 +147,22 @@ pub const ParseErrorType = enum {
     /// `x is Option.Some(v)` — the variant-binding form of `is` (§4.2), which
     /// the grammar does not carry yet: `is` takes a type (06 N21).
     isVariantBinding,
+    /// `1..9` in a pattern — `..` is iteration and slicing; an inclusive range
+    /// pattern is `1...9` (decision 8 §5.2, 06 N22).
+    patternRangeExclusive,
+    /// `1...` — a range pattern with no upper bound (§5.2, 06 N22).
+    patternRangeMissingEnd,
+    /// `.Rect(.., width: w)` — `..` stands for the rest, so it comes last
+    /// (§5.1 P7, 06 N22).
+    patternRestNotLast,
+    /// `#(name: n, ..)` — a tuple pattern is positional; a label in one is an
+    /// error (§5.1 P6, 06 N22).
+    patternTupleLabel,
+    /// `case x { n { … } }` — a lower-case name alone is not a pattern
+    /// (§5.2, 06 N22).
+    caseBareNameArm,
+    /// `case x { MAX { … } }` — a constant is not a pattern (§5.2, 06 N22).
+    caseConstantPattern,
     /// `type P()` — an empty field list; a record with no fields omits `()`.
     typeEmptyFieldList,
     /// `type S { fn f(self: Self) {} A }` — variants come before methods.
@@ -955,7 +971,7 @@ pub const Parser = struct {
     /// The single source lexeme spanning `first`..`last` inclusive. Used to keep
     /// an enum/member chain (`Target.Erlang`) as one annotation argument — the
     /// tokens are adjacent in source, so the byte range is contiguous.
-    fn spanLexemes(first: Token, last: Token) []const u8 {
+    pub fn spanLexemes(first: Token, last: Token) []const u8 {
         const begin = @intFromPtr(first.lexeme.ptr);
         const end = @intFromPtr(last.lexeme.ptr) + last.lexeme.len;
         return first.lexeme.ptr[0 .. end - begin];

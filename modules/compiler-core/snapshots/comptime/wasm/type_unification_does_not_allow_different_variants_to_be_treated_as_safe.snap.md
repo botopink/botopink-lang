@@ -15,10 +15,10 @@ val process = fn(r: Result) -> string {
 ----- COMPILE DIAGNOSTIC -- main
 ```text
 error: parse error (unexpectedToken)
-  ┌─ :7:10
+  ┌─ :7:14
   │
 7 │       Ok(..) as b -> Wibble(..b, value: 1);
 
-  unexpected `..`
+  unexpected `as`
 ```
 

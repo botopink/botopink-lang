@@ -1441,7 +1441,12 @@ pub fn checkLabeledTrailingLambda(this: *const This) bool {
 }
 
 /// Parses the body of a lambda after `{` has been consumed.
-/// Grammar: `(ident (, ident)* ->)? stmt* }`
+/// Grammar: `(ident (, ident)* ->)? (stmt ';'?)* }`
+///
+/// The statement separator is optional, as it is in the lambda body
+/// `parsePrimary` reads: the last expression of the body is its value and takes
+/// no `;` (decision 2, and decision 8 §5.1 P3 for a `case` arm), while the
+/// statements before it are separated by one.
 pub fn parseLambdaBody(this: *This, alloc: std.mem.Allocator) ParseError!FunctionExpr {
     const startTok = this.peek();
     // Detect and parse optional parameter list
@@ -1465,6 +1470,7 @@ pub fn parseLambdaBody(this: *This, alloc: std.mem.Allocator) ParseError!Functio
     }
     while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
         const expr = try this.parseExpr(alloc);
+        _ = this.match(.semicolon);
         try stmts.append(alloc, .{ .expr = expr });
     }
     _ = try this.consume(.rightBrace);

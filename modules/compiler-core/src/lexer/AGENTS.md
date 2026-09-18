@@ -53,6 +53,12 @@ Usage: `var l = Lexer.init(source); const tokens = try l.scanAll(alloc);
 defer l.deinit(alloc);` — `scanAll` returns `[]const Token` owned by the lexer.
 `Lexer.init` does **not** store an allocator.
 
+## `...` is its own token (decision 8 §5.2, 06 N22)
+
+`...` lexes as `dotDotDot`, the inclusive range of a pattern (`1...9`); `..`
+stays `dotDot`, iteration and slicing. The scanner tries the third dot before
+settling for `..`, so no source that writes `..` changed meaning.
+
 ## `unknown` is a keyword (decision 8 §2, 06 N19)
 
 `unknown` lexes as `TokenKind.unknown` and `isReservedWord` refuses it as a
