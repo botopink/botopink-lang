@@ -340,6 +340,24 @@ else
   expect_no_out "Removed out/" "does not claim out/ was removed"
 fi
 
+# ── the `new` scaffold is a working program ──────────────────────────────────
+# A block's value is its `break` (semantics decision 2), so the old template —
+# a body whose only statement was the literal "Hello, world!" — compiled, ran
+# and printed nothing: the README's quick start had no visible effect.
+echo "==> botopink new scaffolds a project that prints when run"
+run "$WORK" new scaffolded
+expect_code 0 "new scaffolded"
+grep -qF '@print' "$WORK/scaffolded/src/main.bp" \
+  && ok "the template prints" \
+  || fail 'the scaffolded src/main.bp has no @print — botopink run would show nothing'
+if have node; then
+  run "$WORK/scaffolded" run
+  expect_code 0 "run of the scaffolded project"
+  expect_out "Hello, world!" "the scaffolded program prints on stdout"
+else
+  skip "the scaffold's run row (node not installed)"
+fi
+
 echo
 if [[ "$failures" -gt 0 ]]; then
   echo "==> cli contract: $failures assertion(s) FAILED" >&2

@@ -12,7 +12,9 @@ compiler-cli/
 ├── AGENTS.md            ← you are here
 ├── botopink.json        ← module manifest (`version` drives the auto-tag)
 ├── tests/               ← end-to-end CLI scripts — `zig build test-cli` runs all four
-│   ├── cli_contract.sh      ← the command contract (rows C1–C13) against the real binary
+│   ├── cli_contract.sh      ← the command contract (rows C1–C13, plus the
+│   │                          build-does-not-execute and `new`-scaffold-prints
+│   │                          rows) against the real binary
 │   ├── mutual_recursion.sh  ← forward-ref + mutual recursion runs on every backend
 │   ├── mutual_recursion/    ← fixture project for the script above
 │   ├── backend_exec.sh      ← backend execution parity (numeric / records /
@@ -128,7 +130,7 @@ What each command promises. A row the code does not meet yet is marked
 | `test [--target T] [--filter S] [--json]` | `botopink.json`, `src/`, `test/`, dependencies | `.botopinkbuild/test-out/**`, emptied first | the target runner per module with tests (`node` / `escript`) | every module compiled **and** every test passed | a module failed to compile, or a test failed; the modules that compiled still ran their tests and are reported |
 | `format [files…]` | the files, else `src/` | the files, in place | nothing | every file parsed and is now canonical (ending with one newline) | a file could not be read, lexed or parsed (rendered with its location) |
 | `format --check [files…]` | as above | nothing | nothing | every file parsed **and** already canonical | a file would change, or could not be read, lexed or parsed |
-| `new <name> [--target T]` | nothing | `<name>/{botopink.json,src/main.bp,.gitignore}` | nothing | scaffolded with a supported target | bad name, or a target outside `commonJS\|erlang\|beam\|wasm` |
+| `new <name> [--target T]` | nothing | `<name>/{botopink.json,src/main.bp,.gitignore}` — the scaffolded `main.bp` **prints** (see "the scaffold runs" below) | nothing | scaffolded with a supported target | bad name, or a target outside `commonJS\|erlang\|beam\|wasm` |
 | `clean` | nothing | deletes `out/` and `.botopinkbuild/` | nothing | both are gone (`Removed <dir>/` printed per success) | a delete failed |
 | `migrate [--dry-run]` | the `src/` tree | index files (`root.bp`/`main.bp`/`mod.bp`) — **none** under `--dry-run` | nothing | the tree is covered | `src/` unreadable |
 
@@ -158,6 +160,12 @@ Cross-command rules:
   each test module once, through its runner). Only the codegen snapshot harness
   executes (`codegen.generate`, which sets the flag). Pinned by
   `tests/cli_contract.sh`.
+- **The scaffold runs.** `botopink new` writes a program whose `main` calls
+  `@print`. A block's value is its `break` (semantics decision 2), so the old
+  template — a body whose only statement was the literal `"Hello, world!"` —
+  compiled, ran and printed nothing, and the README's quick start had no
+  visible effect. Pinned by `tests/cli_contract.sh` (the `@print` in the written
+  file, and `Hello, world!` on stdout from `botopink run`).
 - **Dependencies.** A missing dependency is named (`dependency 'server' was not
   found under any library root`). A dependency's `files` entry that cannot be
   read is `LibFileNotFound`: `libs.loadOne` prints the path it looked for,
