@@ -88,14 +88,18 @@ const Node = struct {
 /// null to auto-detect (`main.bp` then `root.bp`). `externals` names the
 /// packages an `import … from "<name>"` may reach outside the module tree — the
 /// project's declared `dependencies`; `null` disables the check (F4) for a
-/// caller that does not know the dependency set. On a resolution error the
-/// `*diag` (if non-null) is filled with detail allocated in `diag_arena`.
+/// caller that does not know the dependency set. `declared` names the modules
+/// the manifest's `files` ships outside the `mod` tree (paths relative to
+/// `src_dir_path`) — they are reached by whoever loads them, so they are not
+/// orphans. On a resolution error the `*diag` (if non-null) is filled with
+/// detail allocated in `diag_arena`.
 pub fn resolve(
     gpa: std.mem.Allocator,
     io: std.Io,
     src_dir_path: []const u8,
     entry: ?[]const u8,
     externals: ?[]const []const u8,
+    declared: []const []const u8,
     diag_arena: std.mem.Allocator,
     diag: ?*Diagnostic,
 ) Error!Resolution {
@@ -160,7 +164,7 @@ pub fn resolve(
         try collectChildren(sa, diag_arena, io, source, item.logical, decl_dir, root_logical, my_idx, &work, diag);
     }
 
-    const orphans = try collectOrphans(gpa, io, src_dir_path, &visited);
+    const orphans = try collectOrphans(gpa, io, src_dir_path, &visited, declared);
 
     // Analyze the cross-module import graph once: which module owns each `pub`
     // symbol, and what each module imports. Used for both visibility and order.
@@ -247,13 +251,21 @@ fn collectChildren(
     }
 }
 
-/// Walk `src_dir_path` for `.bp` files (excluding `.d.bp`) that no `mod` path
-/// reached. Returned slice + its `file` strings are gpa-owned.
+/// Walk `src_dir_path` for `.bp` files (excluding `.d.bp`) that nothing
+/// reaches. A module is reached by a `mod` path (it is then in `visited`) OR by
+/// the manifest's `files` (it is then in `declared`) — the second route is how a
+/// package ships a module to a consumer that is not its own module tree, which
+/// is what `libs/std`'s ambient `primitives.bp` is: the compiler build embeds it
+/// into the global type env (`build.zig`'s `std_core_files`) and `libs/std`'s
+/// `files` declares it. Knowing only the first route, this walk called it an
+/// orphan and the standard library printed the warning on every gate run.
+/// Returned slice + its `file` strings are gpa-owned.
 fn collectOrphans(
     gpa: std.mem.Allocator,
     io: std.Io,
     src_dir_path: []const u8,
     visited: *std.StringHashMapUnmanaged(void),
+    declared: []const []const u8,
 ) Error![]Orphan {
     var orphans: std.ArrayListUnmanaged(Orphan) = .empty;
     errdefer {
@@ -273,13 +285,35 @@ fn collectOrphans(
         if (entry.kind != .file) continue;
         if (!isSource(entry.basename)) continue;
         const full = std.fs.path.join(gpa, &.{ src_dir_path, entry.path }) catch continue;
-        if (visited.contains(full)) {
+        if (visited.contains(full) or isDeclared(entry.path, declared)) {
             gpa.free(full);
             continue;
         }
         try orphans.append(gpa, .{ .file = full });
     }
     return try orphans.toOwnedSlice(gpa);
+}
+
+/// Whether `rel` — a path relative to `src`, as the walker yields it — is one of
+/// the manifest `files` entries in `declared`. Separator-insensitive, so a
+/// manifest written with `/` still matches a path the host walked with `\\`.
+fn isDeclared(rel: []const u8, declared: []const []const u8) bool {
+    for (declared) |d| {
+        if (d.len != rel.len) continue;
+        var same = true;
+        for (rel, d) |a, b| {
+            if (a == b) continue;
+            if (isSep(a) and isSep(b)) continue;
+            same = false;
+            break;
+        }
+        if (same) return true;
+    }
+    return false;
+}
+
+fn isSep(c: u8) bool {
+    return c == '/' or c == '\\';
 }
 
 /// Resolve the root source file (relative to cwd). Returns a scratch-owned path.
@@ -1058,4 +1092,57 @@ test "checkSources accepts a test module importing the package it tests" {
     const deps = [_][]const u8{"erika"};
     var diag: Diagnostic = .{ .kind = Error.RootNotFound };
     try checkSources(sa, &mods, &files, &deps, sa, &diag); // no error
+}
+
+fn writeScratchFile(io: std.Io, path: []const u8, data: []const u8) !void {
+    if (std.fs.path.dirname(path)) |d| try std.Io.Dir.cwd().createDirPath(io, d);
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = data });
+}
+
+test "isDeclared matches a manifest `files` entry, separator-insensitively" {
+    const declared = [_][]const u8{ "primitives.bp", "sub/ambient.bp" };
+    try std.testing.expect(isDeclared("primitives.bp", &declared));
+    try std.testing.expect(isDeclared("sub/ambient.bp", &declared));
+    try std.testing.expect(isDeclared("sub\\ambient.bp", &declared));
+    try std.testing.expect(!isDeclared("dangling.bp", &declared));
+    try std.testing.expect(!isDeclared("primitives.bp.bak", &declared));
+    try std.testing.expect(!isDeclared("primitives.bp", &.{}));
+}
+
+test "a `files` entry is not an orphan; a module in neither `files` nor a `mod` chain still is" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+
+    // The shape `libs/std` has: a root whose `mod` chain reaches one module, an
+    // ambient module the manifest ships instead (`files`), and a real dangling
+    // file that nothing reaches at all.
+    const ws = ".botopinkbuild/resolver-declared";
+    std.Io.Dir.cwd().deleteTree(io, ws) catch {};
+    defer std.Io.Dir.cwd().deleteTree(io, ws) catch {};
+    try writeScratchFile(io, ws ++ "/src/root.bp", "pub mod geometry;\n");
+    try writeScratchFile(io, ws ++ "/src/geometry.bp", "pub fn area() -> i32 { return 1; }\n");
+    try writeScratchFile(io, ws ++ "/src/ambient.bp", "pub fn ambient() -> i32 { return 2; }\n");
+    try writeScratchFile(io, ws ++ "/src/dangling.bp", "pub fn dangling() -> i32 { return 3; }\n");
+
+    var da = std.heap.ArenaAllocator.init(gpa);
+    defer da.deinit();
+
+    // Nothing declared: both the ambient module and the dangling one are orphans.
+    {
+        const res = try resolve(gpa, io, ws ++ "/src", "root.bp", null, &.{}, da.allocator(), null);
+        defer freeModules(gpa, res.modules);
+        defer freeOrphans(gpa, res.orphans);
+        try std.testing.expectEqual(@as(usize, 2), res.orphans.len);
+    }
+
+    // `files` declares the ambient one: only the dangling one is left, which is
+    // the case the warning exists for.
+    {
+        const declared = [_][]const u8{"ambient.bp"};
+        const res = try resolve(gpa, io, ws ++ "/src", "root.bp", null, &declared, da.allocator(), null);
+        defer freeModules(gpa, res.modules);
+        defer freeOrphans(gpa, res.orphans);
+        try std.testing.expectEqual(@as(usize, 1), res.orphans.len);
+        try std.testing.expect(std.mem.endsWith(u8, res.orphans[0].file, "dangling.bp"));
+    }
 }

@@ -50,7 +50,7 @@ pub fn load(
     // Without them the resolver cannot tell a dependency from a typo.
     const externals = try proj.dependencyNames(da.allocator());
 
-    const res = resolver.resolve(gpa, io, src_dir, proj.entry, externals, da.allocator(), &diag) catch |err| switch (err) {
+    const res = resolver.resolve(gpa, io, src_dir, proj.entry, externals, proj.files, da.allocator(), &diag) catch |err| switch (err) {
         resolver.Error.RootNotFound => {
             // No explicit root yet — fall back to the legacy blind walk so
             // unmigrated packages keep building (deprecated for one release).
