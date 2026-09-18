@@ -154,6 +154,34 @@ fn isPrintBuiltin(callee: []const u8) bool {
         std.mem.eql(u8, callee, "debug");
 }
 
+/// The bare variant name of a pattern's written path. `Shape.Circle` and the
+/// dot shorthand `.Circle` are both spellings of the variant `Circle`, which is
+/// the atom the constructor emits (`{'Circle', …}`); the pattern kept what the
+/// author wrote, so a dotted arm tested `{atom, 'Shape.Circle'}` and never
+/// matched (01's defect 1, 2026-09-18). `format.zig` round-trips the written
+/// form, so the stripping belongs to the backend, not to the AST.
+fn bareVariantName(written: []const u8) []const u8 {
+    if (std.mem.lastIndexOfScalar(u8, written, '.')) |i| return written[i + 1 ..];
+    return written;
+}
+
+/// True when a pattern's `ident` was written as a path (`Maybe.None`, `.None`):
+/// §5.1 P8 — a name carrying a `.` is a variant, never a binding.
+fn isVariantPath(written: []const u8) bool {
+    return std.mem.indexOfScalar(u8, written, '.') != null;
+}
+
+/// True when a block's final statement is a bare value-producing expression, so
+/// it is the block's value. The same set `emitLambdaBody` reads: anything else
+/// (a `return`, a `val`, an assignment) runs as a statement and the block
+/// answers `ok`.
+fn armValueTail(e: ast.Expr) bool {
+    return switch (e) {
+        .literal, .identifier, .binaryOp, .unaryOp, .call, .useHook, .collection, .branch => true,
+        else => false,
+    };
+}
+
 /// A bodyless `declare fn` backed by an `#[@External.<Target>]` annotation.
 fn isHostDeclare(f: ast.FnDecl) bool {
     return f.isExternal() and f.body.len == 0;
@@ -529,6 +557,7 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
             .grouped => |inner| countLocalsInExpr(em, inner.*, count),
             .case => |c| {
                 for (c.subjects) |s| countLocalsInExpr(em, s, count);
+                var binder_arm = false;
                 for (c.arms) |arm| {
                     count.* += patternYSlots(arm.pattern);
                     if (arm.guard) |g| {
@@ -536,8 +565,18 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
                         // The subject waits on the stack across a guard that calls.
                         if (em.exprMayCall(&em.count_strings, g)) count.* += 1;
                     }
-                    countLocalsInExpr(em, arm.body, count);
+                    // A block arm runs in THIS frame (`Emitter.armBlock`), so
+                    // its own bindings take this frame's y-slots; a lambda
+                    // would have opened its own.
+                    if (Emitter.armBlock(arm.body)) |blk| {
+                        if (blk.params.len == 1) binder_arm = true;
+                        countLocalsRec(em, blk.stmts, count);
+                    } else {
+                        countLocalsInExpr(em, arm.body, count);
+                    }
                 }
+                // The slot `lowerCase` parks the subject in for a binder arm.
+                if (binder_arm) count.* += 1;
             },
             .arrayLit => |al| {
                 // One slot for the cons accumulator `lowerArrayLit` parks on
@@ -1704,7 +1743,8 @@ const Emitter = struct {
     /// `{error, E}` (built by the `#[@result]` transform), so its `Ok`/`Err`
     /// arms test those lowercase tags; a user enum variant of the same name
     /// keeps its own. Parity with the erlang backend's `variantTag`.
-    fn variantTag(self: *const Emitter, name: []const u8) []const u8 {
+    fn variantTag(self: *const Emitter, written: []const u8) []const u8 {
+        const name = bareVariantName(written);
         if (self.enum_variants.contains(name)) return name;
         if (std.mem.eql(u8, name, "Ok")) return "ok";
         if (std.mem.eql(u8, name, "Err") or std.mem.eql(u8, name, "Error")) return "error";
@@ -5257,6 +5297,75 @@ const Emitter = struct {
         try beamEmitter.writeMoveOp(self.out, c.subj, Dst.xr(0));
     }
 
+    /// The statements of a `case` arm written as a block. Decision 8 §5 spells
+    /// an arm `Pattern { body }`, and the parser reads that block as a lambda
+    /// (`ast.Expr.function`, `.lambda` syntax, at most one parameter), so
+    /// lowering it as an expression built a closure with `make_fun3` and threw
+    /// it away — every statement in the arm was dead and the arm's value was a
+    /// `#Fun<…>` (01's defect 2, measured 2026-09-18: a `case` printing from its
+    /// arms printed nothing, and `break r * r` reached `integer_to_binary/1` as
+    /// a fun). Null for an arrow-form arm, whose body is a plain expression.
+    fn armBlock(body: ast.Expr) ?struct { params: []const []const u8, stmts: []const ast.Stmt } {
+        const f = switch (body) {
+            .function => |fx| fx,
+            else => return null,
+        };
+        if (f.kind.syntax != .lambda) return null;
+        if (f.kind.params.len > 1) return null;
+        return .{ .params = f.kind.params, .stmts = f.kind.body };
+    }
+
+    /// The value of a `case` arm. A block arm runs in this frame (see
+    /// `armBlock`): its value is the last statement, unless a `break` carries
+    /// one, which wins. Returns true when the body already left the function
+    /// (an explicit `return`/`throw`), so the caller skips the dead
+    /// `{jump, end}`.
+    fn lowerArmBody(self: *Emitter, body: ast.Expr) anyerror!bool {
+        const blk = armBlock(body) orelse {
+            try self.lowerExprIntoX0(body);
+            return false;
+        };
+        const stmts = blk.stmts;
+        for (stmts, 0..) |stmt, i| {
+            if (stmt.expr == .jump and stmt.expr.jump.kind == .@"break") {
+                if (stmt.expr.jump.kind.@"break".value) |v| {
+                    try self.lowerExprIntoX0(v.*);
+                } else {
+                    try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
+                }
+                return false;
+            }
+            if (i + 1 == stmts.len and armValueTail(stmt.expr)) {
+                try self.lowerExprIntoX0(stmt.expr);
+                return false;
+            }
+            try self.emitStmt(stmt);
+        }
+        if (bodyExits(stmts)) return true;
+        try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
+        return false;
+    }
+
+    /// Bind a one-parameter block arm's name to the subject (01's defect 3).
+    /// `subj_y` is the slot `lowerCase` parked the subject in; the name is an
+    /// alias for it, so no move is emitted and every arm that asks shares it.
+    fn bindArmParam(self: *Emitter, arm: anytype, subj_y: ?u32) !void {
+        const blk = armBlock(arm.body) orelse return;
+        if (blk.params.len != 1) return;
+        const y = subj_y orelse return;
+        try self.reg_map.put(blk.params[0], .{ .y = y });
+    }
+
+    /// One arm's tail: bind its parameter, check its guard, lower its value and
+    /// jump to the end of the `case`.
+    fn emitArmTail(self: *Emitter, arm: anytype, subj_y: ?u32, end_label: u32) anyerror!void {
+        try self.bindArmParam(arm, subj_y);
+        const guard_ctx = try self.emitGuardPre(arm.guard);
+        const exited = try self.lowerArmBody(arm.body);
+        if (!exited) try beamEmitter.writeJump(self.out, end_label);
+        try self.emitGuardPost(guard_ctx);
+    }
+
     /// Lower a `case expr { pat -> body; ... }` into a chain of BEAM test
     /// instructions with fall-through labels. Optional `pat if guard -> body`
     /// guards are honoured via `emitGuardPre`/`emitGuardPost`.
@@ -5267,16 +5376,26 @@ const Emitter = struct {
         }
         try self.lowerExprIntoX0(subjects[0]);
 
+        // One stack slot holds the subject for every `{ n -> … }` arm that
+        // binds it; allocated only when some arm asks, so a `case` without a
+        // binder arm keeps the assembly it had.
+        var subj_y: ?u32 = null;
+        for (arms) |arm| {
+            const blk = armBlock(arm.body) orelse continue;
+            if (blk.params.len != 1) continue;
+            subj_y = self.next_y;
+            self.next_y += 1;
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(subj_y.?));
+            break;
+        }
+
         const end_label = self.allocLabel();
         for (arms) |arm| {
             switch (arm.pattern) {
                 .numberLit => |n| {
                     const next = self.allocLabel();
                     try beamEmitter.writeTest(self.out, .is_eq, next, &.{ Op.xr(0), Op.num(n) });
-                    const guard_ctx = try self.emitGuardPre(arm.guard);
-                    try self.lowerExprIntoX0(arm.body);
-                    try beamEmitter.writeJump(self.out, end_label);
-                    try self.emitGuardPost(guard_ctx);
+                    try self.emitArmTail(arm, subj_y, end_label);
                     try beamEmitter.writeLabel(self.out, next);
                 },
                 .stringLit => |s| {
@@ -5294,49 +5413,37 @@ const Emitter = struct {
                     self.min_live = saved_live;
                     try beamEmitter.writeTest(self.out, .is_eq, next, &.{ Op.xr(subj), Op.xr(0) });
                     try beamEmitter.writeMoveOp(self.out, Op.xr(subj), Dst.xr(0));
-                    const guard_ctx = try self.emitGuardPre(arm.guard);
-                    try self.lowerExprIntoX0(arm.body);
-                    try beamEmitter.writeJump(self.out, end_label);
-                    try self.emitGuardPost(guard_ctx);
+                    try self.emitArmTail(arm, subj_y, end_label);
                     try beamEmitter.writeLabel(self.out, next);
                     try beamEmitter.writeMoveOp(self.out, Op.xr(subj), Dst.xr(0));
                 },
-                .ident => |name| {
-                    if (self.enum_variants.contains(name)) {
+                .ident => |written| {
+                    const name = bareVariantName(written);
+                    // §5.1 P8 — a written path (`Maybe.None`, `.None`) is a
+                    // variant even when this module never declared the enum.
+                    if (isVariantPath(written) or self.enum_variants.contains(name)) {
                         // A nullary enum variant (`Lt ->`) is an atom to test
                         // against, not a name to bind. Without the test the
                         // first arm swallowed every subject
                         // (`HttpMethod_name('Post')` returned `<<"GET">>`).
                         var vbuf: [256]u8 = undefined;
-                        const vatom = try atomName(name, &vbuf);
+                        const vatom = try atomName(self.variantTag(written), &vbuf);
                         const next = self.allocLabel();
                         try beamEmitter.writeTest(self.out, .is_eq, next, &.{ Op.xr(0), Op.atom(vatom) });
-                        const guard_ctx = try self.emitGuardPre(arm.guard);
-                        try self.lowerExprIntoX0(arm.body);
-                        try beamEmitter.writeJump(self.out, end_label);
-                        try self.emitGuardPost(guard_ctx);
+                        try self.emitArmTail(arm, subj_y, end_label);
                         try beamEmitter.writeLabel(self.out, next);
                     } else if (std.mem.eql(u8, name, "_")) {
-                        const guard_ctx = try self.emitGuardPre(arm.guard);
-                        try self.lowerExprIntoX0(arm.body);
-                        try beamEmitter.writeJump(self.out, end_label);
-                        try self.emitGuardPost(guard_ctx);
+                        try self.emitArmTail(arm, subj_y, end_label);
                     } else {
                         const y_idx = self.next_y;
                         self.next_y += 1;
                         try self.reg_map.put(name, .{ .y = y_idx });
                         try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y_idx));
-                        const guard_ctx = try self.emitGuardPre(arm.guard);
-                        try self.lowerExprIntoX0(arm.body);
-                        try beamEmitter.writeJump(self.out, end_label);
-                        try self.emitGuardPost(guard_ctx);
+                        try self.emitArmTail(arm, subj_y, end_label);
                     }
                 },
                 .wildcard => {
-                    const guard_ctx = try self.emitGuardPre(arm.guard);
-                    try self.lowerExprIntoX0(arm.body);
-                    try beamEmitter.writeJump(self.out, end_label);
-                    try self.emitGuardPost(guard_ctx);
+                    try self.emitArmTail(arm, subj_y, end_label);
                 },
                 .@"or" => |pats| {
                     const arm_label = self.allocLabel();
@@ -5351,10 +5458,7 @@ const Emitter = struct {
                     const next = self.allocLabel();
                     try beamEmitter.writeJump(self.out, next);
                     try beamEmitter.writeLabel(self.out, arm_label);
-                    const guard_ctx = try self.emitGuardPre(arm.guard);
-                    try self.lowerExprIntoX0(arm.body);
-                    try beamEmitter.writeJump(self.out, end_label);
-                    try self.emitGuardPost(guard_ctx);
+                    try self.emitArmTail(arm, subj_y, end_label);
                     try beamEmitter.writeLabel(self.out, next);
                 },
                 .variant => |v| switch (v.payload) {
@@ -5370,10 +5474,7 @@ const Emitter = struct {
                             try self.reg_map.put(bname, .{ .y = y_idx });
                             try beamEmitter.writeMoveOp(self.out, Op.xr(1), Dst.yr(y_idx));
                         }
-                        const guard_ctx = try self.emitGuardPre(arm.guard);
-                        try self.lowerExprIntoX0(arm.body);
-                        try beamEmitter.writeJump(self.out, end_label);
-                        try self.emitGuardPost(guard_ctx);
+                        try self.emitArmTail(arm, subj_y, end_label);
                         try beamEmitter.writeLabel(self.out, next);
                     },
                     .binding => |binding| {
@@ -5387,18 +5488,12 @@ const Emitter = struct {
                         self.next_y += 1;
                         try self.reg_map.put(binding, .{ .y = y_idx });
                         try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y_idx));
-                        const guard_ctx = try self.emitGuardPre(arm.guard);
-                        try self.lowerExprIntoX0(arm.body);
-                        try beamEmitter.writeJump(self.out, end_label);
-                        try self.emitGuardPost(guard_ctx);
+                        try self.emitArmTail(arm, subj_y, end_label);
                         try beamEmitter.writeLabel(self.out, next);
                     },
                     .literals => {
                         // Literal-argument variants are not lowered specially yet.
-                        const guard_ctx = try self.emitGuardPre(arm.guard);
-                        try self.lowerExprIntoX0(arm.body);
-                        try beamEmitter.writeJump(self.out, end_label);
-                        try self.emitGuardPost(guard_ctx);
+                        try self.emitArmTail(arm, subj_y, end_label);
                     },
                 },
                 .list => |lst| {
@@ -5419,10 +5514,7 @@ const Emitter = struct {
                             }
                         }
                     }
-                    const guard_ctx = try self.emitGuardPre(arm.guard);
-                    try self.lowerExprIntoX0(arm.body);
-                    try beamEmitter.writeJump(self.out, end_label);
-                    try self.emitGuardPost(guard_ctx);
+                    try self.emitArmTail(arm, subj_y, end_label);
                     try beamEmitter.writeLabel(self.out, next);
                 },
                 .multi => |pats| {
@@ -5451,10 +5543,7 @@ const Emitter = struct {
                             }
                         }
                     }
-                    const guard_ctx = try self.emitGuardPre(arm.guard);
-                    try self.lowerExprIntoX0(arm.body);
-                    try beamEmitter.writeJump(self.out, end_label);
-                    try self.emitGuardPost(guard_ctx);
+                    try self.emitArmTail(arm, subj_y, end_label);
                     try beamEmitter.writeLabel(self.out, next);
                 },
             }

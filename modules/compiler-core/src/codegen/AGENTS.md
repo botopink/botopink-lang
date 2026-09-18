@@ -748,6 +748,25 @@ codegen/
   `undefined`, then `is_map` + `get_map_elements`), `comptime` nodes
   (`lowerComptime`: a folded expression/block is its value), `await e` (eager:
   the value of `e`).
+- **`case` arms** (`armBlock`, `lowerArmBody`, `emitArmTail`, `bindArmParam`):
+  decision 8 §5 spells an arm `Pattern { body }`, and the parser reads that
+  block as a lambda (`ast.Expr.function`, `.lambda` syntax, at most one
+  parameter). Lowering it as an expression built a closure with `make_fun3` and
+  dropped it, so every statement in the arm was dead and the arm's value was a
+  `#Fun<…>` — a `case` printing from its arms printed nothing, and
+  `break r * r` reached `integer_to_binary/1` as a fun (01's defect 2,
+  2026-09-18). The block now runs in the enclosing frame: its value is the last
+  statement when that is a value expression (`armValueTail`, the set
+  `emitLambdaBody` reads), unless a `break` carries one, which wins; a body that
+  already `return`s suppresses the dead `{jump, end}`. Its bindings take this
+  frame's y-slots (`countLocalsInExpr`'s `.case` arm), which a lambda's did not.
+  A one-parameter arm (`_ { n -> … }`) binds `n` to the subject, which
+  `lowerCase` parks in one stack slot allocated only when some arm asks for it —
+  so a `case` with no binder arm keeps the assembly it had (01's defect 3).
+  A pattern keeps the path the author wrote (`Shape.Circle`, `.Circle`), but the
+  constructor emits the bare atom `'Circle'`, so `variantTag` and the `.ident`
+  arm take the last `.`-separated segment (`bareVariantName`); §5.1 P8 — a name
+  carrying a `.` is a variant, never a binding (`isVariantPath`) (01's defect 1).
 - **Module shape**: every *named* top-level `val` is a 0-arity function
   (reserved, emitted and — when `pub` — exported whether or not the module has a
   `main/0`), so a read is a local call; a `val` holding a fun is read, parked on
