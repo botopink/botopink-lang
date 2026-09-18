@@ -1,14 +1,16 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn f() {
-    val assert "hello" = greeting catch throw Error("not hello");
+    val greeting = "hello";
+    val assert "hello" = greeting catch throw "not hello";
 }
 ```
 
 ----- JAVASCRIPT -- main.js
 ```javascript
 function f() {
-    (() => { const _match = greeting; if ((_match === "hello")) { return _match; } else { throw Error("not hello"); } })();
+    const greeting = "hello";
+    (() => { const _match = greeting; if ((_match === "hello")) { return _match; } else { throw "not hello"; } })();
 }
 ```
 

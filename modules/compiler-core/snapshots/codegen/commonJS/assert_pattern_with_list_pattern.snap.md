@@ -1,14 +1,16 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn f() {
-    val assert [first, ..] = items catch throw Error("not a list");
+    val items = [1, 2, 3];
+    val assert [first, ..] = items catch throw "not a list";
 }
 ```
 
 ----- JAVASCRIPT -- main.js
 ```javascript
 function f() {
-    (() => { const _match = items; if ((Array.isArray(_match) && _match.length >= 1)) { return _match; } else { throw Error("not a list"); } })();
+    const items = [1, 2, 3];
+    (() => { const _match = items; if ((Array.isArray(_match) && _match.length >= 1)) { return _match; } else { throw "not a list"; } })();
 }
 ```
 

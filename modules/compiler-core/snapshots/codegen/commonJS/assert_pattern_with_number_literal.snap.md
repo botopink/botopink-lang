@@ -1,14 +1,16 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn f() {
-    val assert 42 = answer catch throw Error("not 42");
+    val answer = 42;
+    val assert 42 = answer catch throw "not 42";
 }
 ```
 
 ----- JAVASCRIPT -- main.js
 ```javascript
 function f() {
-    (() => { const _match = answer; if ((_match === 42)) { return _match; } else { throw Error("not 42"); } })();
+    const answer = 42;
+    (() => { const _match = answer; if ((_match === 42)) { return _match; } else { throw "not 42"; } })();
 }
 ```
 

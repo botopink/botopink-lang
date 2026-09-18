@@ -24,7 +24,7 @@ fn main() {
           "type": "?"
         }
       ],
-      "return_type": "string",
+      "return_type": "bool",
       "body": [
         {
           "source": "if (x) { s -> return true; };"

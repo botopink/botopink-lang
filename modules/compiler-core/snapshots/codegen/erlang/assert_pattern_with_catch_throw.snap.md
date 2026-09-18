@@ -1,7 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
+type Person(name: string, age: i32)
 fn f() {
-    val assert Person(name, age) = r catch throw Error("is not person");
+    val r = Person(name: "ann", age: 30);
+    val assert Person(name, age) = r catch throw "is not person";
 }
 ```
 
@@ -9,8 +11,11 @@ fn f() {
 ```erlang
 -module(main).
 
+%% type Person: name, age
+
 f() ->
-    case R of {'Person', Name, Age} -> R; _ -> erlang:throw({error, <<"is not person">>}) end.
+    R = #{name => <<"ann">>, age => 30},
+    case R of {'Person', Name, Age} -> R; _ -> erlang:throw(<<"is not person">>) end.
 ```
 
 ----- RUN LOG -----

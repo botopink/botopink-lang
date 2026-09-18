@@ -506,10 +506,11 @@ pub fn parseLocalBindExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr
                 // noTailCatch prevents `catch` from being consumed as tail operator
                 const savedNTC2 = this.noTailCatch;
                 this.noTailCatch = true;
-                var expr = try this.parseExpr(alloc);
+                const expr = try this.parseExpr(alloc);
                 this.noTailCatch = savedNTC2;
-                errdefer expr.deinit(alloc);
-                const exprPtr = try this.boxExpr(alloc, expr);
+                // The box takes ownership: no `errdefer expr.deinit` may stay
+                // alive past this line, or the two free the same children.
+                const exprPtr = try this.boxExprOwned(alloc, expr);
                 errdefer {
                     exprPtr.deinit(alloc);
                     alloc.destroy(exprPtr);
@@ -520,7 +521,7 @@ pub fn parseLocalBindExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr
                 }
 
                 if (this.match(.@"catch")) {
-                    var catchExpr = if (this.check(.leftBrace)) blk: {
+                    const catchExpr = if (this.check(.leftBrace)) blk: {
                         const stmts = try this.parseBlockWithOptionalTrailingSemicolon(alloc);
                         errdefer {
                             for (stmts) |*s| s.deinit(alloc);
@@ -530,14 +531,15 @@ pub fn parseLocalBindExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr
                         alloc.free(stmts);
                         break :blk resultOwned;
                     } else try this.parseExpr(alloc);
-                    errdefer catchExpr.deinit(alloc);
-                    const catchExprPtr = try this.boxExpr(alloc, catchExpr);
+                    const catchExprPtr = try this.boxExprOwned(alloc, catchExpr);
                     return Expr{ .comptime_ = .{ .loc = locFromToken(assertTok), .kind = .{ .assertPattern = .{
                         .pattern = pattern,
                         .expr = exprPtr,
                         .handler = catchExprPtr,
                     } } } };
                 } else {
+                    // 06 C12 — located, and it names the form that compiles.
+                    this.parseError = ParseErrorInfo.fromToken(.assertPatternMissingCatch, this.peek());
                     return ParseError.UnexpectedToken;
                 }
             } else {
@@ -1682,17 +1684,23 @@ fn loopParamsAhead(this: *This) bool {
 /// Parses a range expression `expr..` or `expr..expr`, or falls back to
 /// a plain `parseEqExpr` if `..` is not present.
 pub fn parseRangeExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
-    var start = try this.parseBinaryExpr(alloc, prec.equality);
-    errdefer start.deinit(alloc);
+    const start = try this.parseBinaryExpr(alloc, prec.equality);
+    // Nothing between here and the box can fail (`check`/`advance` do not), so
+    // `start` needs no errdefer of its own — and must not have one: once boxed,
+    // the box owns its children.
     if (!this.check(.dotDot)) return start;
     const dotTok = this.advance(); // consume '..'
-    const startPtr = try this.boxExpr(alloc, start);
+    const startPtr = try this.boxExprOwned(alloc, start);
+    errdefer {
+        startPtr.deinit(alloc);
+        alloc.destroy(startPtr);
+    }
     // Optional end: `0..10` vs `0..`
     const hasEnd = !this.check(.rightParenthesis) and !this.check(.comma) and
         !this.check(.endOfFile);
     if (hasEnd) {
         const end = try this.parseBinaryExpr(alloc, prec.equality);
-        const endPtr = try this.boxExpr(alloc, end);
+        const endPtr = try this.boxExprOwned(alloc, end);
         return Expr{ .collection = .{ .loc = locFromToken(dotTok), .kind = .{ .range = .{ .start = startPtr, .end = endPtr } } } };
     }
     return Expr{ .collection = .{ .loc = locFromToken(dotTok), .kind = .{ .range = .{ .start = startPtr, .end = null } } } };

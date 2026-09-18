@@ -559,7 +559,8 @@ fn registerFnSignatures(env: *Env, program: ast.Program) InferError!void {
                         break;
                     }
                 }
-                const narrowedName: []const u8 = if (f.returnType) |rt| switch (rt) {
+                // 06 C5 — the narrowed type is its own slot; `returnType` is `bool`.
+                const narrowedName: []const u8 = if (f.typeGuardType) |gt| switch (gt) {
                     .named => |n| n,
                     else => paramName,
                 } else paramName;
@@ -2952,8 +2953,9 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
                 break;
             }
         }
-        // Record the narrowed type name from the return type.
-        const narrowedName: []const u8 = if (f.returnType) |rt| switch (rt) {
+        // Record the narrowed type name (06 C5: its own slot, not `returnType`,
+        // which a guard declares as `bool`).
+        const narrowedName: []const u8 = if (f.typeGuardType) |gt| switch (gt) {
             .named => |n| n,
             else => paramName,
         } else paramName;
@@ -8217,19 +8219,14 @@ fn inferComptimeExpr(env: *Env, ct: ast.ComptimeExprOf(.untyped), loc: ast.Loc) 
         },
 
         .assertPattern => |ap| {
-            // Use a fresh type variable when the expression can't be inferred (e.g. unbound var).
-            const exprTyped = inferExprTyped(env, ap.expr.*) catch |err| blk: {
-                if (err != error.TypeError) return err;
-                const freshTy = try env.freshVar();
-                break :blk TypedExpr{ .literal = .{ .loc = ap.expr.getLoc(), .type_ = freshTy, .kind = .null_ } };
-            };
+            // 06 C12 — the subject and the handler are inferred like any other
+            // expression. Both used to swallow `error.TypeError` into a fresh
+            // type variable, so `val assert 42 = answer catch 0;` compiled with
+            // `answer` bound to nothing and only aborted at run time.
+            const exprTyped = try inferExprTyped(env, ap.expr.*);
             const exprPtr = try makeTypedPtr(env, exprTyped);
             const handlerExpr = ap.handler.*;
-            const handlerTyped = inferExprTyped(env, handlerExpr) catch |err| blk: {
-                if (err != error.TypeError) return err;
-                const freshTy = try env.freshVar();
-                break :blk TypedExpr{ .literal = .{ .loc = handlerExpr.getLoc(), .type_ = freshTy, .kind = .null_ } };
-            };
+            const handlerTyped = try inferExprTyped(env, handlerExpr);
             const handlerPtr = try makeTypedPtr(env, handlerTyped);
             return TypedExpr{ .comptime_ = .{ .loc = loc, .type_ = exprTyped.getType(), .kind = .{ .assertPattern = .{
                 .pattern = ap.pattern,

@@ -100,6 +100,13 @@ the access loc), so two links sharing a loc collide — `self.pairs.length` woul
 emit `length(length(Self))`. `parsePostfixChain` and the identifier postfix loop
 both use `locFromToken(fieldTok)` for this reason.
 
+## Type guards (`-> x is T`)
+
+`fn f(x: ?string) -> x is string` parses to `typeGuardParam = "x"`, `typeGuardType = string` and
+`returnType = bool` — a guard answers a `bool` (06 C5). The narrowed type is dumped only when it is
+there: `stringifyOmitting`'s `omitIfEmpty` list now also skips a null optional, so the slot costs no
+line in the dump of a fn that is not a guard.
+
 ## Type-annotation locations
 
 `Param.typeLoc`, `Field.typeLoc` and `FnDecl`/`BehaviorMethod`'s `returnTypeLoc` hold the first token

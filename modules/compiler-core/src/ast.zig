@@ -958,6 +958,11 @@ pub const Pattern = union(enum) {
 /// fields: `omitAlways` never appear, `omitIfEmpty` only when their slice is
 /// non-empty — so source layout kept for the formatter does not reach every
 /// snapshot.
+/// `omitIfEmpty` names fields the dump leaves out when they carry nothing: a
+/// slice of length 0, or an optional that is null. A field listed there is
+/// therefore invisible in every declaration that does not use it, which is what
+/// keeps adding one — `typeGuardType`, say — from moving several hundred
+/// snapshots that would all gain the same `null`.
 fn stringifyOmitting(value: anytype, jws: anytype, comptime omitAlways: []const []const u8, comptime omitIfEmpty: []const []const u8) !void {
     const T = @TypeOf(value);
     try jws.beginObject();
@@ -970,7 +975,11 @@ fn stringifyOmitting(value: anytype, jws: anytype, comptime omitAlways: []const 
         inline for (omitIfEmpty) |name| {
             if (comptime std.mem.eql(u8, f.name, name)) ifEmpty = true;
         }
-        if (!always and !(ifEmpty and @field(value, f.name).len == 0)) {
+        const empty = if (!ifEmpty) false else switch (@typeInfo(f.type)) {
+            .optional => @field(value, f.name) == null,
+            else => @field(value, f.name).len == 0,
+        };
+        if (!always and !empty) {
             try jws.objectField(f.name);
             try jws.write(@field(value, f.name));
         }
@@ -1855,9 +1864,14 @@ pub const FnDecl = struct {
     /// an unknown type name reds at (06 N30) and is left out of the AST dump.
     returnTypeLoc: Loc = .{ .line = 0, .col = 0 },
     /// When non-null, this fn is a type guard: `fn f(x: T) -> x is NarrowedType`.
-    /// The string names the parameter being narrowed. The return type (above)
-    /// holds the narrowed type.
+    /// The string names the parameter being narrowed.
     typeGuardParam: ?[]const u8 = null,
+    /// The narrowed type of a type guard (`NarrowedType` above). 06 C5: a guard
+    /// *returns* `bool` — `returnType` says so — and this slot holds the type the
+    /// parameter is narrowed to in the branch the guard proves. Before C5 the
+    /// narrowed type was parked in `returnType`, which typed every guard call as
+    /// `T` and made the narrowing at the `if` unreachable.
+    typeGuardType: ?TypeRef = null,
     body: []Stmt,
 
     /// The effect named by a `#[@<effect>]` annotation on this fn, if any.
@@ -1915,7 +1929,7 @@ pub const FnDecl = struct {
     /// Dumped without `returnTypeLoc`: the location is a diagnostic aid, not
     /// surface, and the AST dumps are snapshot-compared.
     pub fn jsonStringify(this: FnDecl, jws: anytype) !void {
-        return stringifyOmitting(this, jws, &.{"returnTypeLoc"}, &.{});
+        return stringifyOmitting(this, jws, &.{"returnTypeLoc"}, &.{"typeGuardType"});
     }
 
     pub fn deinit(this: *FnDecl, allocator: std.mem.Allocator) void {
@@ -1926,6 +1940,7 @@ pub const FnDecl = struct {
         for (this.params) |*p| p.deinit(allocator);
         allocator.free(this.params);
         if (this.returnType) |*rt| rt.deinit(allocator);
+        if (this.typeGuardType) |*gt| gt.deinit(allocator);
         for (this.body) |*s| s.deinit(allocator);
         allocator.free(this.body);
     }

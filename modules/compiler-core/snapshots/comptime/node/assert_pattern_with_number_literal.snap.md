@@ -1,7 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn f() {
-    val assert 42 = answer catch throw Error("not 42");
+    val answer = 42;
+    val assert 42 = answer catch throw "not 42";
 }
 ```
 
@@ -17,7 +18,10 @@ fn f() {
       "return_type": "void",
       "body": [
         {
-          "source": "val assert 42 = answer catch throw Error(\"not 42\");"
+          "source": "val answer = 42;"
+        },
+        {
+          "source": "val assert 42 = answer catch throw \"not 42\";"
         }
       ]
     }

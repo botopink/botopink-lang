@@ -1,7 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn f() {
-    val assert [1, 2, 3] = numbers catch throw Error("not matching");
+    val numbers = [1, 2, 3];
+    val assert [1, 2, 3] = numbers catch throw "not matching";
 }
 ```
 
@@ -17,7 +18,10 @@ fn f() {
       "return_type": "void",
       "body": [
         {
-          "source": "val assert [1, 2, 3] = numbers catch throw Error(\"not matching\");"
+          "source": "val numbers = [1, 2, 3];"
+        },
+        {
+          "source": "val assert [1, 2, 3] = numbers catch throw \"not matching\";"
         }
       ]
     }

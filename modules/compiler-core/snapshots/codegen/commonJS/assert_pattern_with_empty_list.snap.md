@@ -1,14 +1,16 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn f() {
-    val assert [] = list catch throw Error("not empty");
+    val list: i32[] = [];
+    val assert [] = list catch throw "not empty";
 }
 ```
 
 ----- JAVASCRIPT -- main.js
 ```javascript
 function f() {
-    (() => { const _match = list; if ((Array.isArray(_match))) { return _match; } else { throw Error("not empty"); } })();
+    const list = [];
+    (() => { const _match = list; if ((Array.isArray(_match))) { return _match; } else { throw "not empty"; } })();
 }
 ```
 

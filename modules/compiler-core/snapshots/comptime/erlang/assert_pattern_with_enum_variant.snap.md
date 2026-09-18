@@ -1,7 +1,12 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
+#[@result]
+fn parse() -> @Result<i32, string> {
+    return 42;
+}
 fn f() {
-    val assert Ok(value) = result catch throw Error("not ok");
+    val result = parse();
+    val assert Ok(value) = result catch throw "not ok";
 }
 ```
 
@@ -11,13 +16,28 @@ fn f() {
   "declarations": [
     {
       "ast": "fn_def",
+      "name": "parse",
+      "is_pub": false,
+      "params": [],
+      "return_type": "?",
+      "body": [
+        {
+          "source": "return 42;"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
       "name": "f",
       "is_pub": false,
       "params": [],
       "return_type": "void",
       "body": [
         {
-          "source": "val assert Ok(value) = result catch throw Error(\"not ok\");"
+          "source": "val result = parse();"
+        },
+        {
+          "source": "val assert Ok(value) = result catch throw \"not ok\";"
         }
       ]
     }

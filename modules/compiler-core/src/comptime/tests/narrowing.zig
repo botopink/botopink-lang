@@ -345,3 +345,67 @@ test "infer: narrow ---- error variant field in wrong arm" {
         \\}
     );
 }
+
+// ── 06 C5 — a guard is typed `bool`, and its narrowed type is usable ──────────
+// Before C5 the narrowed type sat in `returnType`, so a guard call was typed `T`
+// and the narrowing below was unreachable: the `if` unified the call against
+// `bool` and errored first.
+
+test "infer: narrow ---- a guard call is a bool" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn isPositive(n: i32) -> n is i32 {
+        \\    return n > 0;
+        \\}
+        \\fn main() {
+        \\    val b: bool = isPositive(5);
+        \\    @print(b);
+        \\}
+    );
+}
+
+test "infer: narrow ---- a guard narrows the argument in the then-branch" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn isStr(y: ?string) -> y is string {
+        \\    return y != null;
+        \\}
+        \\fn main() {
+        \\    val y: ?string = "a";
+        \\    if (isStr(y)) {
+        \\        val s: string = y;
+        \\        @print(s);
+        \\    }
+        \\}
+    );
+}
+
+test "infer error: narrow ---- a guard body must answer bool" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn isPositive(n: i32) -> n is i32 {
+        \\    return n;
+        \\}
+    );
+}
+
+// ── 06 C12 — a pattern assert checks its subject and its handler ──────────────
+
+test "infer error: narrow ---- an unbound name in a pattern assert reds" {
+    // Both halves used to swallow `error.TypeError` into a fresh type variable,
+    // so this compiled and only aborted at run time (beam printed
+    // `{unresolved_identifier, answer}`).
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    val assert 42 = answer catch 0;
+        \\    @print("unreachable");
+        \\}
+    );
+}
+
+test "infer error: narrow ---- a pattern assert handler is checked too" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    val answer = 42;
+        \\    val assert 42 = answer catch fallback;
+        \\    @print(answer);
+        \\}
+    );
+}

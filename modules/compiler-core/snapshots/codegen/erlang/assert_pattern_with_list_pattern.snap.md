@@ -1,7 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn f() {
-    val assert [first, ..] = items catch throw Error("not a list");
+    val items = [1, 2, 3];
+    val assert [first, ..] = items catch throw "not a list";
 }
 ```
 
@@ -10,7 +11,8 @@ fn f() {
 -module(main).
 
 f() ->
-    case Items of [First | _] -> Items; _ -> erlang:throw({error, <<"not a list">>}) end.
+    Items = [1, 2, 3],
+    case Items of [First | _] -> Items; _ -> erlang:throw(<<"not a list">>) end.
 ```
 
 ----- RUN LOG -----

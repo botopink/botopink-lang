@@ -286,7 +286,11 @@ dependency arrays; other targets treat `use` as a transparent prefix). Phantom
 
 Every `return <value>` unifies with the body's **return target** (`env.returnTarget`), located at
 the value:
-- a fn with a declared return type → that type; a type guard (`-> x is T`) → `bool`;
+- a fn with a declared return type → that type; a type guard (`-> x is T`) → `bool`, which is also
+  what its signature and every call of it are typed as (06 C5: `T` lives in `FnDecl.typeGuardType`
+  and narrows the argument in the branch the guard proves — `env.typeGuardFns` is filled from that
+  slot; before C5 `T` sat in `returnType`, so the call was typed `T` and the narrowing at the `if`
+  was unreachable);
 - an effect body → the wrapper's inner channel: `#[@result]` → `R` of `@Result<R, E>`,
   `#[@future]` → `T`, `#[@generator]` → `R` of `@Generator<T, R>`; any `-> @Context<B, X>` → `X`;
 - a lambda → its expected return type, else a fresh var shared by its `return`s; a trailing
@@ -338,6 +342,18 @@ mangles the dotted path to the `__Token__Text` name `registerEnumSection` files 
 The parser carries the dotted spelling in `TypeRef.named` (`parser/types.zig`). The pre-decision flat
 spelling (`TokenText`) reds with a hint naming the path (`Env.sectionPathForFlatName`). A section
 declares no methods — `EnumSection` has no slot for them and nothing needs one yet.
+
+## `val assert <pattern> = <expr> catch <handler>` (06 C12)
+
+The subject and the handler are inferred like any other expression. Both used to swallow
+`error.TypeError` into a fresh type variable, so a subject naming nothing compiled and only failed at
+run time — beam aborted with `{unresolved_identifier, …}`, erlang did not compile the emitted module,
+wasm trapped. They no longer swallow: an unbound name reds at the name.
+
+The handler-less form decision 8 § 9 writes (`val assert Ok(n) = parse("42");`, a failure being a
+fatal assert) is a **parse error** with its own diagnostic (`assert-pattern-missing-catch`), not a
+silent acceptance: nothing lowers the fatal path in any backend yet. `throw` carries the error
+channel's own value (`throw "empty"`), not a constructor — `Error` is bound to nothing.
 
 ## Unknown type names (06 C10 + N30)
 
