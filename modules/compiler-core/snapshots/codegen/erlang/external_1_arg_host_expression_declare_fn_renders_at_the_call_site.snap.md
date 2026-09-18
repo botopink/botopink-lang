@@ -14,7 +14,7 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
-%% external fn pid (no erlang target)
+%% external fn pid -> erlang template
 
 main() ->
     '__bp_print'([(list_to_integer(os:getpid()) > 0)]).

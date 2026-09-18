@@ -1,11 +1,44 @@
+----- SOURCE CODE -- hostlib.bp
+```botopink
+#[@External.Node("String($0)"),
+  @External.Erlang("""iolist_to_binary(io_lib:format("~0tp", [$0]))""")]
+pub declare fn hostKey(v: i32) -> string;
+
+#[@External.Node("$0.length"),
+  @External.Erlang("erlang", "length")]
+pub declare fn hostLen(xs: Array<string>) -> i32;
+
+#[@External.Node("console.log($0)")]
+pub declare fn nodeOnly(s: string) -> void;
+```
+
+----- ERLANG -- hostlib.erl
+```erlang
+-module(hostlib).
+-export([hostKey/1, hostLen/1]).
+
+%% external fn hostKey -> erlang template
+hostKey(V) ->
+    iolist_to_binary(io_lib:format("~0tp", [V])).
+
+%% external fn hostLen -> erlang:length
+hostLen(Xs) ->
+    erlang:length(Xs).
+
+%% external fn nodeOnly (no erlang target)
+```
+
+----- RUN LOG -----
+```logs
+```
+
 ----- SOURCE CODE -- main.bp
 ```botopink
-#[@External.Erlang("base64:encode($0)"),
-  @External.Node("""Buffer.from($0, 'utf8').toString('base64')""")]
-pub declare fn b64encode(s: string) -> string;
+import { hostKey, hostLen, nodeOnly };
 
-fn main() {
-    @print(b64encode("hi"));
+pub fn main() {
+    @print(hostKey(42));
+    @print(hostLen(["a", "b"]));
 }
 ```
 
@@ -13,11 +46,13 @@ fn main() {
 ```erlang
 -module(main).
 -export(['_botopink_main'/0, main/1]).
+-export([main/0]).
 
-%% external fn b64encode -> erlang template
+%% import hostKey, hostLen, nodeOnly
 
 main() ->
-    '__bp_print'([base64:encode(<<"hi">>)]).
+    '__bp_print'([hostlib:hostKey(42)]),
+    '__bp_print'([hostlib:hostLen([<<"a">>, <<"b">>])]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
@@ -38,5 +73,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-aGk=
+42
+2
 ```

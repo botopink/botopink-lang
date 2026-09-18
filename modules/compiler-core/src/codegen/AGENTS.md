@@ -61,7 +61,7 @@ codegen/
 |---|---|
 | `config.zig` | `Config` (`targetSource`, `typeDefLanguage`, `build_root`, `test_mode`), `TargetSource` (`commonJS` \| `erlang` \| `beam` \| `wasm`), `TypeDefLang` |
 | `moduleOutput.zig` | `GenerateResult` (`js`, `typedef`, `comptime_script`, `comptime_err`, `diagnostic`, `run_output`; `failed()`) and `ModuleOutput` — shared between targets. A module whose comptime outcome is `.parseError`/`.typeError` is not skipped: every backend's `codegenEmit` appends `ModuleOutput.failedModule`, whose owned `Diagnostic` (`syntax`: the `SyntaxError` with its slices copied; `type`: the rendered message and location) outlives the comptime session. `Module` lives in `../module.zig` |
-| `crossModule.zig` | **Cross-module link index** built once over every module's transformed program (`build(alloc, outputs)`). `exports` maps a `pub` symbol → `ExportInfo{module, kind, is_class, fields, methods, is_external}` (emitting module path, decl kind, whether construction needs `new`/the owner's map shape, and a record's declared field order, its method names, and whether a `fn` export is host-backed); host-backed `#[@External.<Target>(…)]` fns are indexed too, so a consumer importing one `from "<lib>"` links to the owner like any other export. `imported` is the set of names some module imports. `ownerModuleAtom(name)` / `moduleBasename(path)` give the Erlang/BEAM module atom (`web/http` → `http`). Consumed by commonJS, erlang and beam_asm; wat only uses it to flag unlinkable imports |
+| `crossModule.zig` | **Cross-module link index** built once over every module's transformed program (`build(alloc, outputs)`). `exports` maps a `pub` symbol → `ExportInfo{module, kind, is_class, fields, methods, is_external, erlang_backed}` (emitting module path, decl kind, whether construction needs `new`/the owner's map shape, and a record's declared field order, its method names, whether a `fn` export is host-backed, and whether that host-backed one carries an `erlang` target usable at its declared arity — the erlang backend routes such an import to the owner's wrapper, see [erlang](#erlang)); host-backed `#[@External.<Target>(…)]` fns are indexed too, so a consumer importing one `from "<lib>"` links to the owner like any other export. `imported` is the set of names some module imports. `ownerModuleAtom(name)` / `moduleBasename(path)` give the Erlang/BEAM module atom (`web/http` → `http`). Consumed by commonJS, erlang and beam_asm; wat only uses it to flag unlinkable imports |
 | `js/` | JS/TS code model + emitters shared by `commonJS.zig` and `typescript.zig`: `js_ast.zig` (`Expr`/`Stmt`/`Pattern`/`Block`/`Class`/`Item` + the `.d.ts` `TsDecl`/`TsType` + `Builder`), `js_emitter.zig` (the only writer of JavaScript: reserved-word renaming, string escaping, parenthesisation, indentation, semicolons), `ts_emitter.zig` (the only writer of `.d.ts`). The backends build nodes and write no target text. The remaining `js_ast` bridges pin the shapes the current lowering still emits illegally. See [`js/AGENTS.md`](js/AGENTS.md) |
 | `beam/` | BEAM term model + emitters shared by `erlang.zig`, `beam_asm.zig` and the comptime evaluators: `term.zig` (`Term`), `erl_emitter.zig` (Erlang source: atom quoting incl. reserved words, variables, module names, binaries), `beam_emitter.zig` (`.S` operands and `move`s). One quoting rule for `.erl` and `.S`. See [`beam/AGENTS.md`](beam/AGENTS.md) |
 | `commonJS.zig` | CommonJS backend — builds `js/js_ast.zig` nodes, rendered by `js/js_emitter.zig`. See [commonJS](#commonjs) below |
@@ -264,12 +264,22 @@ codegen/
   A local definition of the same name and arity wins (an `@emit`ed body can
   define `find/2` beside an imported `find`). The owner exports the methods of
   its `pub` types (under the mangled name where two types share a method name),
-  so the consumer's remote call resolves. **A host-backed `declare fn` is not
-  routed**: it emits no function in its owner (the annotation's template renders
-  at each call site), so an imported one stays a bare call and an unresolved one
-  is a loud compile error — an owner-side wrapper for those is still missing,
-  which is what keeps a library whose host cells are template externals red on
-  erlang.
+  so the consumer's remote call resolves. **A host-backed `declare fn` another
+  module imports is answered by an owner-side wrapper.** It emits no function of
+  its own — the annotation renders at each call site — so an imported one used
+  to stay a bare call and fail as `function <name>/<arity> undefined`. The owner
+  now emits `externalWrapperForm`: a function of the declared name and parameters
+  whose single-expression body is that same rendering applied to them
+  (`hostKey(V) -> iolist_to_binary(io_lib:format("~0tp", [V])).`, a
+  `(module, symbol)` external `hostLen(Xs) -> erlang:length(Xs).`) — the erlang
+  twin of the commonJS `exports.name = name` re-export. The wrapper is emitted
+  and exported only for a `pub` external `CrossModule.imported` names, so
+  single-module programs and unconsumed declarations are byte-identical; the
+  export pass and the decl loop share `externalWrapperEmits`, so `-export` never
+  names a wrapper that was skipped. A declaration with no `erlang` target (or an
+  arity-branched one with no branch for its parameter count) gets no wrapper and
+  is not marked `erlang_backed` in the cross index: the consumer keeps its bare
+  call, and erlc names the gap.
 - **A field of function type is applied, not called.** `c.set(9)` on
   `type Cell(value: i32, set: fn(next: i32) -> i32)` reads the map field and
   applies it (`(maps:get(set, C))(9)`); the record emits no `set/2`.
@@ -521,7 +531,12 @@ codegen/
   without markers (`#[@External.Erlang("list_to_integer(os:getpid())")]`) — a bare
   host expression names no module, and as `module:symbol` it came out
   `:expr()()`; no `erlang` target →
-  `MissingExternalTarget`. A template is the string literal's raw LEXEME and goes
+  `MissingExternalTarget`. The `%% external fn <name> …` comment each declaration
+  leaves names what backs it — `-> <module>:<symbol>`, `-> erlang template`, or
+  `(no erlang target)`; a templated one used to be filed under the last of those.
+  A `pub` external another module imports also emits a wrapper (see
+  **A host-backed `declare fn` …** under [Cross-module](#erlang) above).
+  A template is the string literal's raw LEXEME and goes
   into the `.erl` verbatim, so `dupeTemplate` resolves `\"` to `"` first (an
   `io_lib:format(\"~p\", …)` template used to open an unterminated string).
 - **`@print` / `@println` / `@debug`** (cross-backend semantics decisions 1 and 1a)
