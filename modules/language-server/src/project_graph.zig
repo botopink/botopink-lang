@@ -62,21 +62,27 @@ const LibManifest = struct {
     files: []const []const u8 = &.{},
 };
 
-/// A dependency the graph could not load, as a located diagnostic.
+/// A source the graph could not load, as a located diagnostic.
 ///
-/// Both failures used to be `catch continue`: a dependency named in
-/// `botopink.json` that no library root carries, and a `files` entry of a
-/// resolved library that cannot be read. The graph then silently returned a
-/// shorter module list, and the editor blamed the *user's* file — every symbol
-/// the missing library exports reported "unbound", pointing nowhere near the
-/// manifest line that is actually wrong. The CLI names both (05 step 5,
+/// All three failures used to be `catch continue`: a dependency named in
+/// `botopink.json` that no library root carries, a `files` entry of a resolved
+/// library that cannot be read, and a `.bp` under the project's own `src` that
+/// cannot be read. The graph then silently returned a shorter module list, and
+/// the editor blamed the *user's* file — every symbol the missing module
+/// exports reported "unbound", pointing nowhere near the line that is actually
+/// wrong. The CLI names the first two (05 step 5,
 /// `compiler-cli/src/cli/libs.zig:loadOne` / `renderMissingFile`); this is the
-/// language-server half, with the same two messages.
+/// language-server half, with the same two messages, plus the third, which the
+/// CLI does not have because it fails the whole compile instead.
 ///
-/// The location is inside the *manifest* that names the entry — the project's
-/// own `botopink.json` for a missing dependency, the library's for an unreadable
-/// `files` entry — so the server publishes it against that file's URI and the
-/// editor shows it in the Problems panel with a jump to the offending line.
+/// The location is on whatever the user has to fix. For the two manifest
+/// entries that is the *manifest* naming the entry — the project's own
+/// `botopink.json` for a missing dependency, the library's for an unreadable
+/// `files` entry. For an unreadable `src` file it is **that file**, first
+/// character: no manifest line mentions it, and a diagnostic on `botopink.json`
+/// would name a file the manifest never names. Either way the server publishes
+/// it against that URI and the editor shows it in the Problems panel with a
+/// jump to the offending line.
 pub const Problem = struct {
     /// `file://` URI of the manifest carrying the offending entry.
     uri: []const u8,
@@ -225,7 +231,7 @@ pub const ProjectGraph = struct {
         // trimmed so the joined paths stay canonical and match the editor's URIs.
         const src_dir = try std.fs.path.join(self.gpa, &.{ root, std.mem.trimEnd(u8, manifest.src, "/") });
         defer self.gpa.free(src_dir);
-        try self.loadSrcTree(a, &deps, src_dir);
+        try self.loadSrcTree(a, &deps, &problems, src_dir);
 
         cp.deps = try deps.toOwnedSlice(a);
         cp.problems = try problems.toOwnedSlice(a);
@@ -328,10 +334,17 @@ pub const ProjectGraph = struct {
     }
 
     /// Append every `.bp` under `src_dir` (recursively) as a module.
+    ///
+    /// A file the walk finds but cannot read is a `Problem` on the file itself,
+    /// not a `catch continue`: dropping it left the graph a module short with no
+    /// diagnostic anywhere, and the editor then reported every symbol it exports
+    /// as unbound in whatever imported it. The walk continues after the problem,
+    /// so one unreadable file does not cost the project the rest of its tree.
     fn loadSrcTree(
         self: *ProjectGraph,
         a: std.mem.Allocator,
         deps: *std.ArrayListUnmanaged(GraphModule),
+        problems: *std.ArrayListUnmanaged(Problem),
         src_dir: []const u8,
     ) !void {
         const dir = std.Io.Dir.cwd().openDir(self.io, src_dir, .{ .iterate = true, .access_sub_paths = true }) catch return;
@@ -344,8 +357,21 @@ pub const ProjectGraph = struct {
         while (try walker.next(self.io)) |entry| {
             if (entry.kind != .file) continue;
             if (!std.mem.endsWith(u8, entry.basename, ".bp")) continue;
-            const source = entry.dir.readFileAlloc(self.io, entry.basename, a, .limited(10 * 1024 * 1024)) catch continue;
             const abs = try std.fs.path.join(a, &.{ src_dir, entry.path });
+            const source = entry.dir.readFileAlloc(self.io, entry.basename, a, .limited(10 * 1024 * 1024)) catch |err| {
+                try problems.append(a, .{
+                    .uri = try lsp_types.pathToUri(a, abs),
+                    .message = try std.fmt.allocPrint(
+                        a,
+                        "'{s}' is part of this project's `src` tree, but it could not be read ({s})",
+                        .{ abs, @errorName(err) },
+                    ),
+                    .line = 0,
+                    .character = 0,
+                    .length = 1,
+                });
+                continue;
+            };
             try deps.append(a, .{
                 .uri = try lsp_types.pathToUri(a, abs),
                 .source = source,

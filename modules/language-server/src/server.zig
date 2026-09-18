@@ -1085,9 +1085,12 @@ pub const Server = struct {
     /// root carries, a `files` entry that cannot be read — against the manifest
     /// that declares them, and empty the manifests that are no longer at fault.
     ///
-    /// They belong on the manifest, not on `uri`: the entry the user has to fix
-    /// is a line of `botopink.json`, and the same problem would otherwise be
-    /// repeated on every file of the project.
+    /// A manifest problem belongs on the manifest, not on `uri`: the entry the
+    /// user has to fix is a line of `botopink.json`, and the same problem would
+    /// otherwise be repeated on every file of the project. The third kind — a
+    /// `.bp` of the project's own `src` that cannot be read — carries the URI of
+    /// that file instead, because no manifest line names it; this function does
+    /// not care which, it groups by whatever URI the `Problem` carries.
     fn publishGraphProblems(self: *Server, uri: []const u8) !void {
         var arena = std.heap.ArenaAllocator.init(self.gpa);
         defer arena.deinit();

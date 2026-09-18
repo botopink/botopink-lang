@@ -59,8 +59,10 @@ Suites that touch **disk** (paths resolved against the test cwd,
 - `project_graph.zig` writes throwaway workspaces under
   `.botopinkbuild/lsp-roots-*` for the `BOTOPINK_LIB_ROOTS` tests and
   `.botopinkbuild/lsp-graph-*` for the graph-problem tests (a dependency no root
-  carries, a `files` entry that cannot be read, and a healthy project that must
-  report none), and resolves a real sibling project
+  carries, a `files` entry that cannot be read, a `.bp` of the project's own
+  `src` that cannot be read — mode `000`, which asserts the diagnostic is on that
+  file and skips when the run is root and can read it anyway — and a healthy
+  project that must report none), and resolves a real sibling project
   (`../../../rakun/examples/rakun/`) for the cache test — that test skips when the
   sibling checkout is absent. The graph-problem tests assert the **message, the
   manifest URI and the 0-based line/column** of the entry; the server half

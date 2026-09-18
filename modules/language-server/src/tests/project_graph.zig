@@ -289,6 +289,64 @@ test "project graph: an unreadable `files` entry is a diagnostic on the library 
     try std.testing.expect(saw_there);
 }
 
+// This test lives in `src/tests/`, which `07-review-backlog` owns; it is here as
+// a named carve-out of `11-tooling` step 3, agreed with that front's rule that
+// every test directory is 07's. It drives `project_graph.zig`'s third
+// `catch continue`, which was the last source the graph dropped in silence.
+test "project graph: an unreadable `src` file is a diagnostic on that file" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+
+    const ws = ".botopinkbuild/lsp-graph-unreadable-src/ws";
+    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/lsp-graph-unreadable-src") catch {};
+    // Unlinking a mode-`000` file needs write permission on its directory, not
+    // on the file, so no mode restore is needed before the tree goes.
+    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/lsp-graph-unreadable-src") catch {};
+
+    try std.Io.Dir.cwd().createDirPath(io, ws ++ "/src");
+    try std.Io.Dir.cwd().writeFile(io, .{
+        .sub_path = ws ++ "/botopink.json",
+        .data = "{\"name\": \"app\", \"src\": \"src/\"}",
+    });
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = ws ++ "/src/main.bp", .data = "val x = 1;\n" });
+    try std.Io.Dir.cwd().writeFile(io, .{
+        .sub_path = ws ++ "/src/locked.bp",
+        .data = "pub val secret = 1;\n",
+    });
+    try std.Io.Dir.cwd().setFilePermissions(
+        io,
+        ws ++ "/src/locked.bp",
+        std.Io.File.Permissions.fromMode(0o000),
+        .{},
+    );
+
+    var g = graph_mod.ProjectGraph.init(gpa, io, null);
+    defer g.deinit();
+
+    const r = (try g.resolve("file://" ++ ws ++ "/src/main.bp")) orelse return error.NoProject;
+
+    // Root is allowed to read a 000 file; then nothing is dropped and there is
+    // nothing to diagnose. Skip rather than assert the wrong thing.
+    if (r.problems.len == 0) {
+        try std.testing.expectEqual(@as(usize, 2), r.deps.len);
+        return error.SkipZigTest;
+    }
+
+    try std.testing.expectEqual(@as(usize, 1), r.problems.len);
+    const p = r.problems[0];
+    // The diagnostic names the file that cannot be read, and sits on it — not on
+    // `botopink.json`, which never names it, and not on whatever imports it.
+    try std.testing.expect(std.mem.endsWith(u8, p.uri, "/src/locked.bp"));
+    try std.testing.expect(std.mem.indexOf(u8, p.message, "/src/locked.bp") != null);
+    try std.testing.expect(std.mem.indexOf(u8, p.message, "could not be read") != null);
+    try std.testing.expectEqual(@as(u32, 0), p.line);
+    try std.testing.expectEqual(@as(u32, 0), p.character);
+
+    // The walk continues: `main.bp` is still a module of the graph.
+    try std.testing.expectEqual(@as(usize, 1), r.deps.len);
+    try std.testing.expect(std.mem.indexOf(u8, r.deps[0].source, "val x = 1;") != null);
+}
+
 test "project graph: a healthy project reports no problems" {
     const gpa = std.testing.allocator;
     const io = std.testing.io;
