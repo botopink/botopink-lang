@@ -31,4 +31,6 @@ test {
     _ = @import("./template_eval.zig");
     _ = @import("./decorator_eval.zig");
     _ = @import("./runtime/persistent_erl.zig");
+    _ = @import("./runtime/prelude.zig");
+    _ = @import("./runtime/etf.zig");
 }

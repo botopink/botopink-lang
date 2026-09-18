@@ -655,6 +655,13 @@ pub fn writeForm(w: *Writer, form: Ast.Form) Error!void {
             try writeFnRefs(w, refs);
             try w.writeAll(").\n");
         },
+        .import => |i| {
+            try w.writeAll("-import(");
+            try writeAtom(w, i.module);
+            try w.writeAll(", ");
+            try writeFnRefs(w, i.funs);
+            try w.writeAll(").\n");
+        },
         .no_auto_import => |refs| {
             try w.writeAll("-compile({no_auto_import,");
             try writeFnRefs(w, refs);

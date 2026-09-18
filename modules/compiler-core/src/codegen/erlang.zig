@@ -399,6 +399,13 @@ pub const ComptimeModule = struct {
     /// Host forms appended after the lowered decls and the standard helpers
     /// (host functions, the evaluator entry).
     forms: []const Ast.Form = &.{},
+    /// Host forms that live in a **resident** module instead of being rendered
+    /// into this one: `-import`ed, so the lowered body's own text is unchanged,
+    /// and `comptime_helper_forms` is not appended (the prelude carries it).
+    /// They still answer `isHostFunction`, so the located unsupported-method
+    /// diagnostic sees the same set of host functions either way.
+    /// Built by `comptime/runtime/prelude.zig`.
+    resident: ?Resident = null,
     /// Render only the lowered decls and `forms` — no module header, exports or
     /// helper forms. Not a compilable module: the listing snapshots show.
     listing: bool = false,
@@ -409,6 +416,15 @@ pub const ComptimeModule = struct {
     /// Only honoured on the compilable (non-`listing`) emit, where `forms`
     /// carries every host function.
     unsupported_method: ?*UnsupportedMethod = null,
+
+    /// A module the generated one imports its host glue from, with the forms
+    /// that module defines. `refs` is derived from `forms`, so nothing can be
+    /// imported that the prelude does not export.
+    pub const Resident = struct {
+        module: []const u8,
+        forms: []const Ast.Form,
+        refs: []const Ast.FnRef,
+    };
 };
 
 /// The first method call of a comptime body nothing can answer (see
@@ -709,7 +725,8 @@ fn isA(comptime kind: []const u8, comptime variable: []const u8) Ast.Expr {
 }
 
 /// Emit `program` as a comptime-evaluated Erlang module: the lowered decls, the
-/// `comptime_helper_forms`, then the host forms of `module`.
+/// `comptime_helper_forms` (unless `module.resident` carries them) and then the
+/// host forms of `module`.
 pub fn emitComptimeModule(
     alloc: std.mem.Allocator,
     module_name: []const u8,
@@ -802,6 +819,7 @@ fn emitErlangModule(
     em.untyped = comptime_module != null;
     if (comptime_module) |cm| {
         em.host_forms = cm.forms;
+        if (cm.resident) |r| em.resident_forms = r.forms;
         if (!cm.listing) em.unsupported_method = cm.unsupported_method;
     }
     defer {
@@ -1095,6 +1113,16 @@ fn emitErlangModule(
     }
     if (exports.items.len > 0) try forms.append(b.arena, .{ .exports = exports.items });
 
+    // A comptime module reaches its host glue in the resident prelude by its
+    // bare name, so the lowered body reads the same whether the glue is
+    // rendered here or compiled once at server warmup. A listing is not a
+    // compilable module and carries no directive.
+    if (comptime_module) |cm| {
+        if (cm.resident) |r| {
+            if (!cm.listing) try forms.append(b.arena, .{ .import = .{ .module = r.module, .funs = r.refs } });
+        }
+    }
+
     // Declarations, each after an empty line.
     const decls_start = forms.items.len;
     for (program.decls) |decl| {
@@ -1174,7 +1202,11 @@ fn emitErlangModule(
     if (comptime_module) |cm| {
         if (!cm.listing) {
             try em.primShimForms(b, &forms);
-            for (&comptime_helper_forms) |form| try forms.appendSlice(b.arena, &.{ .blank, form });
+            // The prelude carries them when there is one; a shim's `toString`
+            // fallback reaches `'__bp_text'/1` through the same `-import`.
+            if (cm.resident == null) {
+                for (&comptime_helper_forms) |form| try forms.appendSlice(b.arena, &.{ .blank, form });
+            }
         }
         for (cm.forms) |form| try forms.appendSlice(b.arena, &.{ .blank, form });
     }
@@ -1746,6 +1778,12 @@ const Emitter = struct {
     /// (`ComptimeModule.forms`). A method call whose `(name, argc + 1)` one of
     /// them defines stays the bare local call (`q.text()` → `text(Q)`).
     host_forms: []const Ast.Form = &.{},
+    /// Comptime modules only: the host forms a resident prelude defines
+    /// (`ComptimeModule.Resident.forms`). Not rendered into this module — the
+    /// `-import` above resolves the bare call — but they answer
+    /// `isHostFunction` exactly as `host_forms` does, so where a method call
+    /// lowers does not depend on which side of the `-import` its host lives.
+    resident_forms: []const Ast.Form = &.{},
     /// Comptime modules only: `ComptimeModule.unsupported_method`.
     unsupported_method: ?*UnsupportedMethod = null,
     /// Locals that may hold `undefined` (null): a parameter declared `?T` or
@@ -5388,15 +5426,18 @@ const Emitter = struct {
         return false;
     }
 
-    /// True when a host form defines `name/arity`.
+    /// True when a host form defines `name/arity` — in this module or in the
+    /// resident prelude it imports.
     fn isHostFunction(this: *const Emitter, name: []const u8, arity: usize) bool {
-        for (this.host_forms) |form| switch (form) {
-            .function => |f| {
-                if (!std.mem.eql(u8, f.name, name)) continue;
-                for (f.clauses) |c| if (c.patterns.len == arity) return true;
-            },
-            else => {},
-        };
+        for ([_][]const Ast.Form{ this.host_forms, this.resident_forms }) |forms| {
+            for (forms) |form| switch (form) {
+                .function => |f| {
+                    if (!std.mem.eql(u8, f.name, name)) continue;
+                    for (f.clauses) |c| if (c.patterns.len == arity) return true;
+                },
+                else => {},
+            };
+        }
         return false;
     }
 

@@ -4,18 +4,33 @@
 //! evaluators write a module to disk and ask the server to run it; evals after
 //! the first cost ~2ms (compile:file + code:load_binary + module call).
 //!
+//! The hashed build directory holds three modules, compiled together by one
+//! `erlc` at warmup: this server and the two comptime preludes
+//! (`prelude.zig`), which carry the host glue every generated module used to
+//! copy. `erl -pa <dir>` finds all of them, and the directory's hash is taken
+//! over every source in it, so a changed server *or* a changed prelude gets a
+//! fresh directory rather than a stale `.beam`.
+//!
 //! Protocol (Zig ↔ erl), length-prefixed binary frames both ways:
-//!   request:  <u32 BE len><cmd:u8><path>   cmd 1 = compile+run `.erl`
-//!   response: <u32 BE len><payload>        `main/0`'s iodata result, or an error
+//!   request:  <u32 BE len><cmd:u8><payload>
+//!             cmd 1 = compile+load `<path>`, run `main/0`   (the one-shot path)
+//!             cmd 2 = compile+load `<path>`, answer the module atom
+//!             cmd 3 = call `<module>:main(<term>)`, where the payload is
+//!                     `<u16 BE namelen><module><external term>`
+//!   response: <u32 BE len><payload>        `main`'s iodata result, or an error
 //!             payload tagged `__BP_ERL_COMPILE_ERROR__:` /
 //!             `__BP_ERL_RUNTIME_ERROR__:` (raise, exit, non-iodata result, timeout)
 //!
-//! `main/0` runs in a monitored process with a wall-clock budget
+//! Cmd 2 + cmd 3 are what the evaluators use: the module is compiled once per
+//! declaration and every later call site sends cmd 3 alone. Cmd 1 stays as the
+//! one-shot fallback and is what this file's own regression tests drive.
+//!
+//! `main` runs in a monitored process with a wall-clock budget
 //! (`eval_timeout_ms`), so a runaway body is killed instead of wedging the server.
 //! `evalDetailed` returns the reply classified as a `Response`.
 //!
 //! stdout is the frame channel and nothing else may write to it: the server
-//! moves the default logger handler to `standard_error`, and `main/0` runs with
+//! moves the default logger handler to `standard_error`, and `main` runs with
 //! `standard_error` as its group leader, so `io:format/1` and log events from a
 //! comptime body land in `erl.stderr.log`. A reply longer than `max_frame_len`
 //! is a desynchronised stream (something wrote to `user` directly), reported as
@@ -30,6 +45,7 @@
 //! the next request respawns. The failed request itself is not retried.
 
 const std = @import("std");
+const preludeMod = @import("./prelude.zig");
 
 const Io = std.Io;
 const Child = std.process.Child;
@@ -61,35 +77,47 @@ const server_body =
     \\loop() ->
     \\    case read_frame() of
     \\        eof -> ok;
-    \\        {1, PathBin} ->  %% eval: compile .erl file
-    \\            Path = binary_to_list(PathBin),
-    \\            case compile:file(Path, [binary, return]) of
-    \\                {ok, Mod, Beam} ->
-    \\                    {module, _} = code:load_binary(Mod, "", Beam),
-    \\                    Result = safe_call(Mod),
-    \\                    write_frame(Result),
-    \\                    loop();
-    \\                {ok, Mod, Beam, _Warnings} ->
-    \\                    {module, _} = code:load_binary(Mod, "", Beam),
-    \\                    Result = safe_call(Mod),
-    \\                    write_frame(Result),
-    \\                    loop();
-    \\                {error, Errors, Warnings} ->
-    \\                    write_frame(io_lib:format("__BP_ERL_COMPILE_ERROR__:~p", [{Errors, Warnings}])),
-    \\                    loop()
-    \\            end
+    \\        {1, PathBin} ->  %% eval: compile .erl file, run main/0
+    \\            write_frame(compile_then(binary_to_list(PathBin), fun(Mod) -> safe_call(Mod, []) end)),
+    \\            loop();
+    \\        {2, PathBin} ->  %% load: compile .erl file, answer the module atom
+    \\            write_frame(compile_then(binary_to_list(PathBin), fun atom_to_binary/1)),
+    \\            loop();
+    \\        {3, Payload} ->  %% call: <<NameLen:16, Name, ExternalTerm>> -> main/1
+    \\            <<NameLen:16/unsigned-big-integer, Rest/binary>> = Payload,
+    \\            <<NameBin:NameLen/binary, ArgBin/binary>> = Rest,
+    \\            Mod = binary_to_atom(NameBin, latin1),
+    \\            write_frame(safe_call(Mod, [binary_to_term(ArgBin)])),
+    \\            loop()
     \\    end.
     \\
-    \\%% `Mod:main()` runs in a monitored process so a runaway comptime body
+    \\%% Compile and load `Path`, then answer `Then(Mod)`; a compiler rejection is
+    \\%% the error frame instead. `code:purge/1` drops a previous version of the
+    \\%% same atom before it becomes old code: one module now serves every call
+    \\%% site of a declaration, so a reload means the declaration itself changed.
+    \\compile_then(Path, Then) ->
+    \\    case compile:file(Path, [binary, return]) of
+    \\        {ok, Mod, Beam} -> load_then(Mod, Beam, Then);
+    \\        {ok, Mod, Beam, _Warnings} -> load_then(Mod, Beam, Then);
+    \\        {error, Errors, Warnings} ->
+    \\            io_lib:format("__BP_ERL_COMPILE_ERROR__:~p", [{Errors, Warnings}])
+    \\    end.
+    \\
+    \\load_then(Mod, Beam, Then) ->
+    \\    _ = code:purge(Mod),
+    \\    {module, _} = code:load_binary(Mod, "", Beam),
+    \\    Then(Mod).
+    \\
+    \\%% `Mod:main(Args…)` runs in a monitored process so a runaway comptime body
     \\%% (infinite loop, blocked receive) is killed after the timeout instead of
     \\%% wedging the server — and with it every later eval of this compiler run.
     \\%% Its group leader is `standard_error`, not the server's (`user`, the frame
     \\%% channel): `io:format/1`, `io:get_line/1` and every process it spawns talk
     \\%% to stderr, so a printing body cannot desynchronise the frame stream.
-    \\safe_call(Mod) ->
+    \\safe_call(Mod, Args) ->
     \\    {Pid, Ref} = spawn_monitor(fun() ->
     \\        group_leader(whereis(standard_error), self()),
-    \\        Result = try {ok, Mod:main()}
+    \\        Result = try {ok, apply(Mod, main, Args)}
     \\        catch
     \\            Class:Reason:Stack ->
     \\                {error, io_lib:format("__BP_ERL_RUNTIME_ERROR__:~p:~p~n~p", [Class, Reason, Stack])}
@@ -104,7 +132,7 @@ const server_body =
     \\    after ?EVAL_TIMEOUT_MS ->
     \\        exit(Pid, kill),
     \\        receive {'DOWN', Ref, process, Pid, _} -> ok end,
-    \\        io_lib:format("__BP_ERL_RUNTIME_ERROR__:timeout:main/0 did not return within ~pms", [?EVAL_TIMEOUT_MS])
+    \\        io_lib:format("__BP_ERL_RUNTIME_ERROR__:timeout:main did not return within ~pms", [?EVAL_TIMEOUT_MS])
     \\    end.
     \\
     \\read_frame() ->
@@ -124,7 +152,7 @@ const server_body =
     \\        _ -> eof
     \\    end.
     \\
-    \\%% Every response is exactly one frame. A `main/0` result that is not iodata
+    \\%% Every response is exactly one frame. A `main` result that is not iodata
     \\%% becomes a runtime error frame rather than crashing the server.
     \\write_frame(Data) ->
     \\    B = try iolist_to_binary(Data)
@@ -147,14 +175,41 @@ pub const max_frame_len: u32 = 16 * 1024 * 1024;
 /// Root of the runtime's files, relative to the cwd.
 const server_dir = ".botopinkbuild/tmp/persistent_erl";
 
-/// The compiled server lives in `<server_dir>/<server_hash>/`, keyed by the
-/// server source: a warm directory skips `erlc`, and a changed server never
-/// loads a stale `.beam`.
-const server_hash = blk: {
-    @setEvalBranchQuota(100_000);
-    break :blk std.fmt.comptimePrint("{x:0>16}", .{std.hash.Wyhash.hash(0, server_erl)});
-};
 const server_module_file = "botopink_comptime_server";
+
+/// Everything built into the hashed directory: the server, then the comptime
+/// evaluators' resident prelude modules (`prelude.zig`). They are compiled
+/// together, once, and `erl -pa <dir>` finds all of them.
+const ResidentModule = struct {
+    name: []const u8,
+    source: []const u8,
+};
+
+/// The build directory is `<server_dir>/<hash>/`, keyed by **every** source
+/// built into it: a warm directory skips `erlc`, and a changed server or a
+/// changed prelude never loads a stale `.beam`. The hash is taken at run time
+/// because the prelude source is rendered from the same `erl_ast` forms the
+/// generated modules are, not written out by hand.
+fn buildHash(modules: []const ResidentModule) [16]u8 {
+    var h = std.hash.Wyhash.init(0);
+    h.update(server_erl);
+    for (modules) |m| {
+        h.update(m.name);
+        h.update(m.source);
+    }
+    var out: [16]u8 = undefined;
+    _ = std.fmt.bufPrint(&out, "{x:0>16}", .{h.final()}) catch unreachable;
+    return out;
+}
+
+/// The server plus both preludes, built into `arena`.
+fn residentModules(arena: std.mem.Allocator) ![]const ResidentModule {
+    const preludes = try preludeMod.modules(arena);
+    const out = try arena.alloc(ResidentModule, 1 + preludes.len);
+    out[0] = .{ .name = server_module_file, .source = server_erl };
+    for (preludes, out[1..]) |p, *slot| slot.* = .{ .name = p.name, .source = p.source };
+    return out;
+}
 
 /// erl's stderr: the logger's output and everything a comptime body prints.
 /// Truncated at every spawn; nothing reads it back — transport errors name it.
@@ -196,7 +251,10 @@ fn ensureSpawned(io: Io, allocator: std.mem.Allocator) !void {
             if (init_state.cmpxchgStrong(0, 1, .acquire, .acquire)) |_| continue;
             errdefer init_state.store(3, .release);
 
-            const beam_dir = try prepareServer(io, allocator, server_dir);
+            var build_arena = std.heap.ArenaAllocator.init(allocator);
+            defer build_arena.deinit();
+            const modules = try residentModules(build_arena.allocator());
+            const beam_dir = try prepareServer(io, allocator, server_dir, modules);
             defer allocator.free(beam_dir);
 
             // Spawn erl with the server module on its code path. `halt()` after
@@ -225,19 +283,24 @@ fn ensureSpawned(io: Io, allocator: std.mem.Allocator) !void {
     }
 }
 
-/// Compile the server module into `<base>/<server_hash>/` unless it is already
+/// Compile `modules` into `<base>/<hash of them all>/` unless they are already
 /// there, and return that directory (owned by the caller). Several compiler
-/// processes can share one cwd, so nothing is written in place: the source and
-/// `.beam` are built in a uniquely named staging directory that is renamed onto
+/// processes can share one cwd, so nothing is written in place: the sources and
+/// `.beam`s are built in a uniquely named staging directory that is renamed onto
 /// the final one. A process that loses the rename race uses the winner's
-/// (identical) `.beam`; a truncated server source or `.beam` is never visible.
-fn prepareServer(io: Io, allocator: std.mem.Allocator, base: []const u8) ![]u8 {
+/// (identical) `.beam`s; a truncated source or `.beam` is never visible.
+///
+/// The last module decides whether the directory is warm: `erlc` is given every
+/// source in one invocation, so either all of them are there or the staging
+/// directory never made it.
+fn prepareServer(io: Io, allocator: std.mem.Allocator, base: []const u8, modules: []const ResidentModule) ![]u8 {
     const cwd = std.Io.Dir.cwd();
-    const dir = try std.fs.path.join(allocator, &.{ base, server_hash });
+    const hash = buildHash(modules);
+    const dir = try std.fs.path.join(allocator, &.{ base, &hash });
     errdefer allocator.free(dir);
-    const beam = try std.fs.path.join(allocator, &.{ dir, server_module_file ++ ".beam" });
-    defer allocator.free(beam);
-    if (cwd.access(io, beam, .{})) |_| return dir else |_| {}
+    const last = try std.fmt.allocPrint(allocator, "{s}/{s}.beam", .{ dir, modules[modules.len - 1].name });
+    defer allocator.free(last);
+    if (cwd.access(io, last, .{})) |_| return dir else |_| {}
 
     var nonce: [8]u8 = undefined;
     io.random(&nonce);
@@ -248,12 +311,21 @@ fn prepareServer(io: Io, allocator: std.mem.Allocator, base: []const u8) ![]u8 {
     // failed build or a lost race.
     defer cwd.deleteTree(io, staging) catch {};
 
-    const source = try std.fs.path.join(allocator, &.{ staging, server_module_file ++ ".erl" });
-    defer allocator.free(source);
-    try cwd.writeFile(io, .{ .sub_path = source, .data = server_erl });
+    var argv: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer {
+        for (argv.items[3..]) |p| allocator.free(p);
+        argv.deinit(allocator);
+    }
+    try argv.appendSlice(allocator, &.{ "erlc", "-o", staging });
+    for (modules) |m| {
+        const source = try std.fmt.allocPrint(allocator, "{s}/{s}.erl", .{ staging, m.name });
+        errdefer allocator.free(source);
+        try cwd.writeFile(io, .{ .sub_path = source, .data = m.source });
+        try argv.append(allocator, source);
+    }
 
     const compile_result = std.process.run(allocator, io, .{
-        .argv = &.{ "erlc", "-o", staging, source },
+        .argv = argv.items,
         .timeout = .{ .duration = .{ .raw = .{ .nanoseconds = 120 * std.time.ns_per_s }, .clock = .real } },
     }) catch |err| switch (err) {
         error.FileNotFound => return error.PersistentErlNotFound,
@@ -268,7 +340,7 @@ fn prepareServer(io: Io, allocator: std.mem.Allocator, base: []const u8) ![]u8 {
     cwd.rename(staging, cwd, dir, io) catch {
         // Another process renamed its build in first (a non-empty target
         // refuses the rename); anything else leaves no `.beam` behind.
-        cwd.access(io, beam, .{}) catch return error.PersistentErlBroken;
+        cwd.access(io, last, .{}) catch return error.PersistentErlBroken;
     };
     return dir;
 }
@@ -333,30 +405,30 @@ pub fn lastTransportError() ?[]const u8 {
     return transport_error_buf[0..transport_error_len];
 }
 
-/// Send a command frame: <4-byte BE len><cmd byte><path bytes>.
-fn sendFrame(io: Io, cmd: u8, path: []const u8) !void {
-    const total_len: u32 = @intCast(1 + path.len); // cmd byte + path
+/// Send a command frame: <4-byte BE len><cmd byte><payload bytes>.
+fn sendFrame(io: Io, cmd: u8, payload: []const u8) !void {
+    const total_len: u32 = @intCast(1 + payload.len); // cmd byte + payload
     var len_buf: [4]u8 = undefined;
     std.mem.writeInt(u32, &len_buf, total_len, .big);
     try state.stdin.writeStreamingAll(io, &len_buf);
     try state.stdin.writeStreamingAll(io, &.{cmd});
-    try state.stdin.writeStreamingAll(io, path);
+    try state.stdin.writeStreamingAll(io, payload);
 }
 
 /// One request/reply round trip on the child's pipes.
-fn exchange(io: Io, allocator: std.mem.Allocator, cmd: u8, path: []const u8) ![]u8 {
-    try sendFrame(io, cmd, path);
+fn exchange(io: Io, allocator: std.mem.Allocator, cmd: u8, payload: []const u8) ![]u8 {
+    try sendFrame(io, cmd, payload);
     return readFrame(io, state.stdout, allocator);
 }
 
 /// Outcome of one request. Every variant's slice is allocated from the
 /// caller's allocator and owned by the caller.
 pub const Response = union(enum) {
-    /// `main/0`'s result.
+    /// `main`'s result.
     ok: []u8,
     /// `compile:file/2` rejected the module (`~p` of `{Errors, Warnings}`).
     compile_error: []u8,
-    /// `main/0` raised, exited, returned non-iodata, or timed out.
+    /// `main` raised, exited, returned non-iodata, or timed out.
     runtime_error: []u8,
 
     pub fn payload(self: Response) []u8 {
@@ -372,16 +444,25 @@ const runtime_error_tag = "__BP_ERL_RUNTIME_ERROR__:";
 /// Send one command and classify the reply. A transport failure (erl died,
 /// short/garbled frame) kills the child and marks the singleton broken so the
 /// next request respawns a fresh process instead of reading a desynced pipe.
-fn request(allocator: std.mem.Allocator, io: Io, cmd: u8, path: []const u8) !Response {
+fn request(allocator: std.mem.Allocator, io: Io, cmd: u8, payload: []const u8) !Response {
     try ensureSpawned(io, allocator);
     lock();
     defer unlock();
+    return requestLocked(allocator, io, cmd, payload);
+}
+
+/// `request` minus the spawn and the lock, so a caller that must keep the pipes
+/// for two commands in a row (`evalWithArg`: load, then call) holds one lock
+/// rather than racing another thread between them.
+fn requestLocked(allocator: std.mem.Allocator, io: Io, cmd: u8, payload: []const u8) !Response {
     transport_error_len = 0;
 
-    const raw = exchange(io, allocator, cmd, path) catch |err| {
+    const raw = exchange(io, allocator, cmd, payload) catch |err| {
         if (transport_error_len == 0) setTransportError("{s} on the erl frame stream", .{@errorName(err)});
         state.child.kill(io);
         init_state.store(3, .release);
+        // The next request respawns a fresh VM, which has loaded nothing.
+        loaded.clearRetainingCapacity();
         return if (err == error.PersistentErlFrameTooLarge) err else error.PersistentErlBroken;
     };
     errdefer allocator.free(raw);
@@ -406,8 +487,55 @@ fn request(allocator: std.mem.Allocator, io: Io, cmd: u8, path: []const u8) !Res
 /// Compile and run the comptime module at `erl_path` (cmd=1), keeping the
 /// failure detail: the compiler diagnostics, or the runtime class/reason/stack.
 /// On the first call, lazy-spawns the erl process and compiles the server module.
+///
+/// The one-shot path: it compiles on every call and calls `main/0`. The
+/// evaluators use `evalWithArg` instead; this stays for a caller that has a
+/// self-contained module and for this file's regression tests.
 pub fn evalDetailed(allocator: std.mem.Allocator, io: Io, erl_path: []const u8) !Response {
     return request(allocator, io, 1, erl_path);
+}
+
+/// Module atoms this process has had the node compile and load (cmd 2). Keys are
+/// owned by `loaded_keys` and live as long as the process: their number is
+/// bounded by the declarations in the build, not by the call sites. Read and
+/// written only under `io_mu`, and cleared when the child is respawned.
+var loaded: std.StringHashMapUnmanaged(void) = .empty;
+const loaded_keys = std.heap.page_allocator;
+
+/// Call `<module>:main(<arg>)` in the node, compiling and loading `erl_path`
+/// first if this process has not already. `arg` is an external term
+/// (`etf.encode`), so nothing about the call site is in the module — which is
+/// what lets one module serve every call site of a declaration.
+pub fn evalWithArg(
+    allocator: std.mem.Allocator,
+    io: Io,
+    erl_path: []const u8,
+    module: []const u8,
+    arg: []const u8,
+) !Response {
+    try ensureSpawned(io, allocator);
+    lock();
+    defer unlock();
+
+    if (!loaded.contains(module)) {
+        const response = try requestLocked(allocator, io, 2, erl_path);
+        switch (response) {
+            // The reply is the module atom; nothing needs it past this point.
+            .ok => |atom| allocator.free(atom),
+            else => return response,
+        }
+        const key = try loaded_keys.dupe(u8, module);
+        errdefer loaded_keys.free(key);
+        try loaded.put(loaded_keys, key, {});
+    }
+
+    // <u16 BE namelen><module><external term>
+    var payload: std.ArrayListUnmanaged(u8) = .empty;
+    defer payload.deinit(allocator);
+    try payload.appendSlice(allocator, &.{ @intCast(module.len >> 8), @truncate(module.len) });
+    try payload.appendSlice(allocator, module);
+    try payload.appendSlice(allocator, arg);
+    return requestLocked(allocator, io, 3, payload.items);
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────
@@ -486,11 +614,12 @@ test "persistent_erl: a reply frame over the length cap is a transport error, th
 
 const PrepareRace = struct {
     base: []const u8,
+    modules: []const ResidentModule,
     dir: ?[]u8 = null,
     err: ?anyerror = null,
 
     fn run(self: *PrepareRace) void {
-        self.dir = prepareServer(std.testing.io, std.heap.page_allocator, self.base) catch |err| {
+        self.dir = prepareServer(std.testing.io, std.heap.page_allocator, self.base, self.modules) catch |err| {
             self.err = err;
             return;
         };
@@ -499,6 +628,12 @@ const PrepareRace = struct {
 
 test "persistent_erl: concurrent server builds in one cwd all get a complete .beam" {
     const io = std.testing.io;
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const modules = try residentModules(arena_state.allocator());
+    // The server and both comptime preludes, compiled in one `erlc`.
+    try std.testing.expectEqual(@as(usize, 3), modules.len);
+
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
     const base = try std.fs.path.join(std.testing.allocator, &.{ ".zig-cache", "tmp", &tmp.sub_path });
@@ -506,7 +641,7 @@ test "persistent_erl: concurrent server builds in one cwd all get a complete .be
 
     // Cold directory, several builders at once — the shape of parallel test
     // binaries (or compiler runs) sharing a working directory.
-    var races: [6]PrepareRace = @splat(.{ .base = base });
+    var races: [6]PrepareRace = @splat(.{ .base = base, .modules = modules });
     var threads: [races.len]std.Thread = undefined;
     for (&races, &threads) |*race, *thread| thread.* = try std.Thread.spawn(.{}, PrepareRace.run, .{race});
     for (threads) |thread| thread.join();
@@ -516,15 +651,20 @@ test "persistent_erl: concurrent server builds in one cwd all get a complete .be
     for (races) |race| try std.testing.expectEqualStrings(races[0].dir.?, race.dir.?);
 
     // Warm: the cached build is reused, and no staging directory is left.
-    const again = try prepareServer(io, std.testing.allocator, base);
+    const again = try prepareServer(io, std.testing.allocator, base, modules);
     defer std.testing.allocator.free(again);
-    const beam = try std.fs.path.join(std.testing.allocator, &.{ again, server_module_file ++ ".beam" });
-    defer std.testing.allocator.free(beam);
-    try std.Io.Dir.cwd().access(io, beam, .{});
+    // Every resident module is there — the prelude is what a generated module
+    // `-import`s, so a directory with only the server in it would spawn an erl
+    // that compiles every comptime module and then fails to run it.
+    for (modules) |m| {
+        const beam = try std.fmt.allocPrint(std.testing.allocator, "{s}/{s}.beam", .{ again, m.name });
+        defer std.testing.allocator.free(beam);
+        try std.Io.Dir.cwd().access(io, beam, .{});
+    }
     var it = tmp.dir.iterate();
     var entries: usize = 0;
     while (try it.next(io)) |entry| {
-        try std.testing.expectEqualStrings(server_hash, entry.name);
+        try std.testing.expectEqualStrings(&buildHash(modules), entry.name);
         entries += 1;
     }
     try std.testing.expectEqual(@as(usize, 1), entries);

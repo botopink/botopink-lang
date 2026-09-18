@@ -210,8 +210,11 @@ Do not use `--no-verify`.
 ### Persistent erl server (`comptime/runtime/persistent_erl.zig`)
 
 Decorator and template bodies run in one long-lived `erl` process speaking
-length-prefixed binary frames over stdin/stdout (`cmd 1` = compile+run `.erl`).
-Comptime `val`s are folded in Zig (`comptime/eval.zig`).
+length-prefixed binary frames over stdin/stdout: `cmd 1` = compile+run `.erl`
+(one-shot), `cmd 2` = compile+load `.erl` and answer the module atom, `cmd 3` =
+call `<module>:main(<external term>)`. The evaluators use 2 + 3, so a module is
+compiled once per **declaration** and every later call site sends cmd 3 alone
+with its own capture. Comptime `val`s are folded in Zig (`comptime/eval.zig`).
 
 - **`file:read/2` on `standard_io` can return a list, not a binary.** `read_frame/0`
   converts with `list_to_binary/1` before matching `<<Len:32/unsigned-big-integer>>`;
@@ -223,21 +226,30 @@ Comptime `val`s are folded in Zig (`comptime/eval.zig`).
   `.botopinkbuild/tmp/persistent_erl/erl.stderr.log` (write-only, truncated at
   each spawn). A reply length above `max_frame_len` (16 MiB) fails as
   `error.PersistentErlFrameTooLarge` with a message in `lastTransportError()`.
-- **Timeouts.** `main/0` runs under `EVAL_TIMEOUT_MS` (10 s) inside erl; the
+- **Timeouts.** `main` runs under `EVAL_TIMEOUT_MS` (10 s) inside erl; the
   server's `erlc` compile is bounded at 120 s. The Zig-side `readFrame` itself
   blocks without a timeout, so a wedged erl process still hangs the caller —
   wrap manual runs in `timeout`.
-- **Server source is a Zig string literal** (`botopink_comptime_server`). It is
-  compiled once into `.botopinkbuild/tmp/persistent_erl/<hash>/`, keyed by the
-  source's hash, so editing the server invalidates the build by itself and a warm
-  directory skips `erlc`. The build happens in a uniquely named staging
-  directory renamed onto `<hash>/`, so compiler processes or test binaries
-  sharing a cwd never compile or load a half-written file. Clearing it is safe:
+- **Three modules live in the hashed directory, not one.** The server source is a
+  Zig string literal (`botopink_comptime_server`); beside it are the two comptime
+  preludes `bp_comptime_template` and `bp_comptime_decorator`
+  (`comptime/runtime/prelude.zig`), which carry the host glue every generated
+  module used to copy. They are compiled together by one `erlc` into
+  `.botopinkbuild/tmp/persistent_erl/<hash>/`, keyed by the hash of **every**
+  source in it, so editing the server *or* the prelude invalidates the build by
+  itself and a warm directory skips `erlc`. A generated module reaches the
+  prelude through `-import`, so a missing prelude is a run-time failure of every
+  comptime evaluation, not a compile error. The build happens in a uniquely named
+  staging directory renamed onto `<hash>/`, so compiler processes or test
+  binaries sharing a cwd never compile or load a half-written file. Clearing it
+  is safe:
   ```bash
   rm -rf .botopinkbuild/tmp/persistent_erl
   ```
 - **Manual testing.** Frame = `struct.pack('>I', len(payload)) + payload`, payload
-  = `b'\x01' + b'/path/to/mod.erl'`. Pipe into
+  = `b'\x01' + b'/path/to/mod.erl'` for the one-shot path (cmd 2 is the same
+  payload with `b'\x02'`, and cmd 3 is
+  `b'\x03' + struct.pack('>H', len(mod)) + mod + term_to_binary_bytes`). Pipe into
   `erl -noshell -pa .botopinkbuild/tmp/persistent_erl/<hash> -eval 'botopink_comptime_server:start()'`.
   Never use `-noinput` — it disables stdin reading.
 

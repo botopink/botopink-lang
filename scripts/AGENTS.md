@@ -4,7 +4,8 @@
 > Parent: [`../AGENTS.md`](../AGENTS.md)
 
 Installers, the release packaging helper, the gate, the lib-test and
-vscode-test wrappers, the snapshot audit tool, the user-docs fence checker, and the tracked git hooks.
+vscode-test wrappers, the snapshot audit tool, the user-docs fence checker, the comptime-path
+benchmark, and the tracked git hooks.
 
 ## Tree
 
@@ -21,6 +22,7 @@ scripts/
 ├── check-docs.sh      ← compiles every `botopink` fence of docs.md/README.md (`zig build test-docs`)
 ├── snap_audit.sh      ← read-only audit of every *.snap.md (6 modes)
 ├── beam_export_audit.sh ← assemble every beam snapshot module with every function exported
+├── comptime_bench.sh  ← what the comptime path costs: build wall clock + the in-node compile/load/run split
 └── git-hooks/
     ├── pre-commit                 ← tracked hook, enabled by `git config core.hooksPath scripts/git-hooks` (see ../AGENTS.md §Local gate)
     └── lib/runner-standalone.sh   ← the hook's runner → `gate.sh --staged`
@@ -200,6 +202,28 @@ BOTOPINK_SNAP_TRACE=/tmp/snap.trace zig build test
 scripts/snap_audit.sh --mode=orphans --trace=/tmp/snap.trace
 scripts/snap_audit.sh --mode=review  --trace=/tmp/snap.trace
 ```
+
+## comptime_bench.sh
+
+`scripts/comptime_bench.sh [--n LIST] [--repeat R] [--reps N] [--target T]
+[--project DIR]… [--keep] [--no-build]` — the measurement
+[`specs/1.0.5-beta/14-comptime-on-beam/`](../../../specs/1.0.5-beta/14-comptime-on-beam/README.md)
+is built on, so its numbers are re-measured on the reader's machine instead of quoted. Not a gate
+stage: it builds projects and spends tens of seconds inside `erl`.
+
+Two instruments, `evidence.md`'s E-1 and E-2:
+
+| Instrument | What it measures |
+| ---------- | ---------------- |
+| E-1 | wall clock of one `botopink build`, best of `--repeat`, over a generated project with N call sites of **one** template whose literals are all distinct — so the memo cache in `comptime/infer.zig` never hits and each call site is a real evaluation. Reports the `.erl` modules and bytes the build left behind, and the marginal ms per evaluation. |
+| E-2 | the in-node split — `compile:file` / `code:load_binary` / `main()` — measured inside a single `erl` over every module under the project's `.botopinkbuild/tmp/{template,decorator}`, `--reps` timed rounds after one untimed warm-up call each. |
+
+Every project is generated or copied into a `mktemp -d` (deleted unless `--keep`): the script writes
+nothing inside a repository. `--project DIR` copies a real project out of its checkout and builds it
+there; `BOTOPINK_LIB_ROOTS` is inherited, which is how a project whose libraries live in a sibling
+checkout resolves them. A module that takes its data as an argument exports `main/1` rather than
+`main/0` and cannot be run without that argument, so the `main()` column reads `-` for it while the
+compile columns — what this front moves — stay comparable across steps.
 
 ## beam_export_audit.sh
 

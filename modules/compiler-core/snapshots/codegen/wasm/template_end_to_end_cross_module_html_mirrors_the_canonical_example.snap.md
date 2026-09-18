@@ -66,47 +66,50 @@ html(Q) ->
     end, Acc, parts(Q)),
     build(Q, Acc@6).
 
-main() ->
+main({Arg0}) ->
     try
-        json:encode('__bp_reply'(html(#{
-            '__bp_capture' => <<"q">>,
-            text => <<"<div>\n  <p>__bp_hole_q_0</p>\n  <Page1/>\n</div>">>,
-            parts => [
-                #{
-                    kind => <<"Text">>,
-                    text => <<"<div>\n  <p>">>,
-                    span => #{start => 0, 'end' => 11, line => 1}
-                },
-                #{
-                    kind => <<"Interp">>,
-                    code => <<"__bp_hole_q_0">>,
-                    span => #{start => 11, 'end' => 24, line => 2}
-                },
-                #{
-                    kind => <<"Text">>,
-                    text => <<"</p>\n  <Page1/>\n</div>">>,
-                    span => #{start => 24, 'end' => 46, line => 2}
-                }
-            ],
-            source => #{file => <<"">>, line => 6, col => 5},
-            context => #{
-                source => #{file => <<"">>, line => 6, col => 5},
-                text => <<"<div>\n  <p>__bp_hole_q_0</p>\n  <Page1/>\n</div>">>,
-                multiline => true
-            },
-            bindings => [
-                #{name => <<"html">>, kind => 'Fn'},
-                #{name => <<"name">>, kind => 'Val'},
-                #{name => <<"page">>, kind => 'Val'},
-                #{name => <<"main">>, kind => 'Fn'}
-            ]
-        })))
+        json:encode('__bp_reply'(html(Arg0)))
     catch
         throw:{'__bp_template_fail', Message, Param, Span} ->
             json:encode(#{kind => <<"fail">>, message => '__bp_text'(Message), param => Param, span => '__bp_json'(Span)});
         Class:Reason ->
             json:encode(#{kind => <<"error">>, message => '__bp_text'({Class, Reason})})
     end.
+
+%% main/1 argument — an external term, not part of the module:
+%% Arg0 = #{
+%%     '__bp_capture' => <<"q">>,
+%%     text => <<"<div>\n  <p>__bp_hole_q_0</p>\n  <Page1/>\n</div>">>,
+%%     parts => [
+%%         #{
+%%             kind => <<"Text">>,
+%%             text => <<"<div>\n  <p>">>,
+%%             span => #{start => 0, 'end' => 11, line => 1}
+%%         },
+%%         #{
+%%             kind => <<"Interp">>,
+%%             code => <<"__bp_hole_q_0">>,
+%%             span => #{start => 11, 'end' => 24, line => 2}
+%%         },
+%%         #{
+%%             kind => <<"Text">>,
+%%             text => <<"</p>\n  <Page1/>\n</div>">>,
+%%             span => #{start => 24, 'end' => 46, line => 2}
+%%         }
+%%     ],
+%%     source => #{file => <<"">>, line => 6, col => 5},
+%%     context => #{
+%%         source => #{file => <<"">>, line => 6, col => 5},
+%%         text => <<"<div>\n  <p>__bp_hole_q_0</p>\n  <Page1/>\n</div>">>,
+%%         multiline => true
+%%     },
+%%     bindings => [
+%%         #{name => <<"html">>, kind => 'Fn'},
+%%         #{name => <<"name">>, kind => 'Val'},
+%%         #{name => <<"page">>, kind => 'Val'},
+%%         #{name => <<"main">>, kind => 'Fn'}
+%%     ]
+%% }
 ```
 
 ----- COMPTIME REPLY -- template html

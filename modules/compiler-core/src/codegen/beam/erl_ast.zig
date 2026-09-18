@@ -240,11 +240,22 @@ pub const Function = struct {
     clauses: []const Clause,
 };
 
+/// `-import(mod, [f/1, g/2]).` — functions another module defines that this one
+/// calls by their bare name. The comptime evaluators use it to reach the host
+/// glue in the resident prelude without rendering it into every generated
+/// module (`comptime/runtime/prelude.zig`).
+pub const Import = struct {
+    module: []const u8,
+    funs: []const FnRef,
+};
+
 pub const Form = union(enum) {
     /// `-module(name).` — the name as spelled.
     module: []const u8,
     /// `-export([f/0, g/1]).`
     exports: []const FnRef,
+    /// `-import(mod, [f/1]).`
+    import: Import,
     /// `-compile({no_auto_import,[f/1]}).`
     no_auto_import: []const FnRef,
     function: Function,

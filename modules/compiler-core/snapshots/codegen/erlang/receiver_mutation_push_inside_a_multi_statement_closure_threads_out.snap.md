@@ -60,25 +60,10 @@ component(Decl) ->
     end, Args, maps:get(fields, Decl)),
     emit('__bp_add'('__bp_add'('__bp_add'('__bp_add'('__bp_add'('__bp_add'(<<"pub fn wire">>, maps:get(name, Decl)), <<"() -> string { return \"">>), maps:get(name, Decl)), <<"(">>), '__bp_prim_join'(Args@3, <<", ">>)), <<")\"; }">>)).
 
-main() ->
+main({Arg0}) ->
     erlang:erase('__bp_emitted'),
     try
-        component(#{
-            kind => 'Type',
-            name => <<"Service">>,
-            fields => [
-                #{
-                    name => <<"port">>,
-                    typeName => <<"i32">>,
-                    annotations => [#{name => <<"value">>, args => [<<"port">>]}]
-                },
-                #{name => <<"name">>, typeName => <<"string">>, annotations => []}
-            ],
-            variants => [],
-            methods => [],
-            returnType => <<"">>,
-            annotations => [#{name => <<"component">>, args => []}]
-        }),
+        component(Arg0),
         json:encode(#{kind => <<"ok">>, contributions => lists:reverse('__bp_emitted'())})
     catch
         throw:{'__bp_decorator_fail', Message, Span} ->
@@ -86,6 +71,24 @@ main() ->
         Class:Reason ->
             json:encode(#{kind => <<"error">>, message => '__bp_text'({Class, Reason})})
     end.
+
+%% main/1 argument — an external term, not part of the module:
+%% Arg0 = #{
+%%     kind => 'Type',
+%%     name => <<"Service">>,
+%%     fields => [
+%%         #{
+%%             name => <<"port">>,
+%%             typeName => <<"i32">>,
+%%             annotations => [#{name => <<"value">>, args => [<<"port">>]}]
+%%         },
+%%         #{name => <<"name">>, typeName => <<"string">>, annotations => []}
+%%     ],
+%%     variants => [],
+%%     methods => [],
+%%     returnType => <<"">>,
+%%     annotations => [#{name => <<"component">>, args => []}]
+%% }
 ```
 
 ----- COMPTIME REPLY -- decorator component
