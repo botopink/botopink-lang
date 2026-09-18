@@ -4031,6 +4031,23 @@ const Emitter = struct {
 
     // ── case lowering ─────────────────────────────────────────────────────────
 
+    /// The variant a pattern names, without the path it was **written** with:
+    /// `Shape.Circle`, `.Circle` and `Circle` all name `Circle` (decision 8
+    /// §5.1 P8). The constructor writes the bare name onto
+    /// `<Variant>.prototype.tag`, so an arm that tests the written path never
+    /// matches; `ast.Pattern` says a `name` carrying a `.` is a variant path
+    /// and never a binding.
+    fn bareVariantName(name: []const u8) []const u8 {
+        const i = std.mem.lastIndexOfScalar(u8, name, '.') orelse return name;
+        return name[i + 1 ..];
+    }
+
+    /// True when a `Pattern.ident` is a variant path (`Maybe.None`, `.None`)
+    /// rather than a name to bind.
+    fn isVariantPath(name: []const u8) bool {
+        return std.mem.indexOfScalar(u8, name, '.') != null;
+    }
+
     fn isLambdaBlock(e: ast.Expr) bool {
         return switch (e) {
             .function => |f| f.kind.syntax == .lambda,
@@ -4038,9 +4055,40 @@ const Emitter = struct {
         };
     }
 
+    /// The `break <value>` an arm block carries, if any. It wins over the
+    /// block's final expression as the arm's value.
+    fn armBreakValue(stmts: []const ast.Stmt) bool {
+        for (stmts) |st| switch (st.expr) {
+            .jump => |j| switch (j.kind) {
+                .@"break" => |b| if (b.value != null) return true,
+                else => {},
+            },
+            else => {},
+        };
+        return false;
+    }
+
+    /// True when an arm block's final statement is the arm's **value**, so it
+    /// is returned instead of being dropped as a statement (decision 8 §5: an
+    /// arm's value is its body's last expression). Only the expression kinds
+    /// that are unambiguously values qualify — a trailing `val`, `if`, `loop`
+    /// or jump is a statement and stays one, so no existing lowering moves.
+    fn isArmValueExpr(e: ast.Expr) bool {
+        return switch (e) {
+            .literal, .identifier, .binaryOp, .unaryOp, .call, .collection, .function => true,
+            .jump, .branch, .loop, .binding, .useHook, .comptime_ => false,
+        };
+    }
+
     /// The statements of a matched arm body: an inlined lambda block (with a
-    /// loop-accumulator `break` turned into the arm's `return`), or a single
+    /// loop-accumulator `break` turned into the arm's `return`, and otherwise
+    /// its final expression returned as the arm's value), or a single
     /// `return <expr>;`.
+    ///
+    /// A one-parameter arm block (`_ { v -> … }`) names the whole subject: the
+    /// parameter is bound to `_s` at the top of the arm, which is the only
+    /// place it can be bound (the checker types it as the subject narrowed by
+    /// the arm's pattern).
     fn buildCaseBody(self: *Emitter, body: ast.Expr, indent: usize) anyerror![]const js.Stmt {
         if (!isLambdaBlock(body)) {
             return self.b.stmts(&.{try self.armReturn(body)});
@@ -4048,7 +4096,13 @@ const Emitter = struct {
         const l = body.function.kind;
         self.current_indent = indent;
         var out: std.ArrayListUnmanaged(js.Stmt) = .empty;
-        for (l.body) |st| {
+        if (l.params.len == 1) try out.append(self.arena(), .{ .decl = .{
+            .pattern = .{ .ident = l.params[0] },
+            .value = .{ .name = "_s" },
+        } });
+        const tail_is_value = !armBreakValue(l.body) and
+            l.body.len > 0 and isArmValueExpr(l.body[l.body.len - 1].expr);
+        for (l.body, 0..) |st, i| {
             const br: ?ast.Expr = switch (st.expr) {
                 .jump => |j| switch (j.kind) {
                     .@"break" => |b| if (b.value) |bp| bp.* else null,
@@ -4058,6 +4112,8 @@ const Emitter = struct {
             };
             if (br) |val| {
                 try out.append(self.arena(), try self.armReturn(val));
+            } else if (tail_is_value and i + 1 == l.body.len) {
+                try out.append(self.arena(), try self.armReturn(st.expr));
             } else {
                 try out.append(self.arena(), try self.buildStmt(st));
             }
@@ -4088,9 +4144,10 @@ const Emitter = struct {
             // another module it is still tested through the `tag` its
             // prototype carries.
             .ident => |n| {
-                const cls = self.unit_variant_class.get(n) orelse "";
+                const bare = bareVariantName(n);
+                const cls = self.unit_variant_class.get(bare) orelse "";
                 if (cls.len > 0) return try self.b.binaryBare("instanceof", subject, .{ .name = cls });
-                return try self.b.binaryBare("===", try self.b.member(subject, "tag"), .{ .quoted = n });
+                return try self.b.binaryBare("===", try self.b.member(subject, "tag"), .{ .quoted = bare });
             },
             .@"or" => |pats| {
                 if (pats.len == 0) return js.Expr{ .name = "false" };
@@ -4250,8 +4307,10 @@ const Emitter = struct {
             },
 
             .ident, .numberLit, .stringLit, .@"or", .multi => {
-                if (arm.pattern == .ident and arm.guard != null) {
+                if (arm.pattern == .ident and arm.guard != null and !isVariantPath(arm.pattern.ident)) {
                     // A guarded identifier binds the subject, then tests the guard.
+                    // A dotted `.ident` is a variant path (`Maybe.None`), never
+                    // a binding, so it takes the test path below instead.
                     var body: std.ArrayListUnmanaged(js.Stmt) = .empty;
                     try body.append(self.arena(), .{ .decl = .{
                         .pattern = .{ .ident = arm.pattern.ident },
@@ -4283,12 +4342,13 @@ const Emitter = struct {
 
             .variant => |v| {
                 var body: std.ArrayListUnmanaged(js.Stmt) = .empty;
-                const declared = self.variant_fields.get(v.name);
+                const bare = bareVariantName(v.name);
+                const declared = self.variant_fields.get(bare);
                 // An `Ok`/`Err`/`Error` arm that names no variant this module
                 // declares matches a `@Result`, which `#[@result]` materialises
                 // as `{ ok }` / `{ error }` — no `tag` (C5). The arm tests the
                 // key, as the `try` lowering does, and binds the payload.
-                if (declared == null) if (resultKey(v.name)) |key| {
+                if (declared == null) if (resultKey(bare)) |key| {
                     switch (v.payload) {
                         .binding => |binding| try body.append(self.arena(), .{ .decl = .{
                             .pattern = .{ .ident = binding },
@@ -4330,7 +4390,7 @@ const Emitter = struct {
                 }
                 for (try self.buildMatchedBody(arm, indent + 1)) |s| try body.append(self.arena(), s);
                 return self.b.ifStmt(
-                    try self.b.binaryBare("===", try self.b.member(subject, "tag"), .{ .quoted = v.name }),
+                    try self.b.binaryBare("===", try self.b.member(subject, "tag"), .{ .quoted = bare }),
                     .{ .block = .{ .stmts = try body.toOwnedSlice(self.arena()), .indent = indent } },
                 );
             },
@@ -4396,8 +4456,9 @@ const Emitter = struct {
                 .value = subject,
             } }),
             .variant => |v| {
-                const declared = self.variant_fields.get(v.name);
-                if (declared == null) if (resultKey(v.name)) |key| {
+                const bare = bareVariantName(v.name);
+                const declared = self.variant_fields.get(bare);
+                if (declared == null) if (resultKey(bare)) |key| {
                     switch (v.payload) {
                         .binding => |binding| try body.append(self.arena(), .{ .decl = .{
                             .pattern = .{ .ident = binding },

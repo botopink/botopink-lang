@@ -274,6 +274,25 @@ codegen/
   alternative that is `_`) has no `if`; a multi-subject arm (`case a, b { 0, 0
   -> … }`, subject `[a, b]`) tests the conjunction over `_s[i]`; a shape with
   no test is `false`.
+- **A pattern's variant name is taken bare** (`bareVariantName`): the
+  constructor writes the declared name onto `<Variant>.prototype.tag`, while a
+  pattern keeps the path it was *written* with (`ast.Pattern`: `Shape.Circle`,
+  `.Circle`, `Circle` are all the same variant, §5.1 P8), so every read of a
+  pattern's name — the `tag` test, the `variant_fields` field lookup that makes
+  `Circle(r)` bind positionally, and `resultKey` — drops everything up to the
+  last `.`. A `Pattern.ident` carrying a `.` is a variant path, never a
+  binding, so the guarded-identifier arm (`x when (…)`) does not take it.
+- **An arm block's value is its last expression** (`buildCaseBody`): a
+  `break <value>` in the block still wins, and otherwise the block's final
+  statement is returned when it is unambiguously a value
+  (`isArmValueExpr` — a literal, identifier, operator, call, collection or
+  function; a trailing `val`, `if`, `loop` or jump stays a statement). Without
+  it the arm's value was dropped *and* execution fell through into the
+  following arms.
+- **A one-parameter arm block binds the subject** (`_ { v -> … }`): the arm
+  lambda's single parameter is `const v = _s;` at the top of the arm — the only
+  scope where the subject is in hand. The checker types it as the subject
+  narrowed by the arm's pattern.
 - **`comptime { … }` with no `break <e>`** in value position is `undefined`
   (a block's value comes only from `break`).
 - **Ranges**: `a..b` materializes `Array.from({length: Math.max(0, b - a)}, …)`;

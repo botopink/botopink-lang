@@ -62,6 +62,11 @@ Two prototype properties carry what the instance itself does not:
   the payload fields in declaration order, which is what the formatter prints
   and what a `case` arm destructures.
 
+A `case` arm names its variant with whatever path it was written with
+(`Shape.Circle`, `.Circle`, `Circle`), and the path is dropped before anything
+is looked up — the class, the `tag` and the declared field order all key on the
+bare name the constructor wrote.
+
 A `case` arm over a payload-less variant tests `instanceof` when the variant's
 bare name names exactly one class in the module, and falls back to the `tag`
 test when two enums in the module share that name (`Token.Text.Bold` and

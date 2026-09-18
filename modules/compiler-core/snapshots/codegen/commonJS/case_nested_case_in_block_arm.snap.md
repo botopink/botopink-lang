@@ -16,7 +16,7 @@ val result = case 42 {
 const result = (() => {
     const _s = 42;
     if (_s === 0) {
-        (() => {
+        return (() => {
             const _s = 1;
             if (_s === 0) return 54;
             return 1;

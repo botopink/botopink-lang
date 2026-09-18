@@ -352,6 +352,51 @@ test "js: case ---- union return type from mismatched arms" {
     );
 }
 
+// Three defects front `01-checker` handed over with its case-arm typing, in one
+// program (04, 2026-09-18). Written with a statement-position `case`, because a
+// `case` **value** whose arms are blocks does not type-check yet (01 step 4):
+//   1. the arm names the variant with its written path (`Shape.Circle`) — the
+//      ctor writes the bare `"Circle"` onto the prototype, so the `tag` test and
+//      the declared field order both key on the bare name (`const { radius: r }`,
+//      not `const { r }`);
+//   2. the block's last expression is the arm's value, so it is returned — which
+//      is also what stops execution falling through into the arms below it
+//      (before the fix `show(Circle)` printed `2` *and* the wildcard arm's value);
+//   3. `_ { v -> … }` binds the whole subject to `v`, which nothing else binds.
+//
+// No snapshot: the shapes and the RUN LOG are asserted directly, so this front's
+// fixture does not write into the erlang/beam/wasm snapshot directories the
+// other backend fronts own.
+test "js: case ---- written variant path, arm value and whole-value binder" {
+    const src =
+        \\type Shape {
+        \\    Circle(radius: i32),
+        \\    Rect(width: i32, height: i32),
+        \\}
+        \\fn show(s: Shape) {
+        \\    case s {
+        \\        Shape.Circle(r) { @print(r); }
+        \\        _ { v -> @print(v); }
+        \\    };
+        \\}
+        \\fn main() {
+        \\    show(Shape.Circle(radius: 2));
+        \\    show(Shape.Rect(width: 1, height: 2));
+        \\}
+    ;
+    try h.assertJsContains(std.testing.allocator, src, &.{
+        "if (_s.tag === \"Circle\") {",
+        "const { radius: r } = _s;",
+        "return __bp_print(r);",
+        "const v = _s;",
+    });
+    try h.assertJsRunLog(std.testing.allocator, src,
+        \\2
+        \\Shape.Rect(width: 1, height: 2)
+        \\
+    );
+}
+
 test "js: case ---- nested case in block arm" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val result = case 42 {
