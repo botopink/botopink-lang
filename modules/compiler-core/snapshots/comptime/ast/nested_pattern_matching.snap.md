@@ -32,7 +32,7 @@ val unwrap_or = fn(r: Result<i32, string>, fallback: i32) -> i32 {
       "params": [
         {
           "name": "r",
-          "type": "?"
+          "type": "Result<i32,string>"
         },
         {
           "name": "fallback",

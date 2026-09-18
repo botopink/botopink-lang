@@ -26,11 +26,11 @@ val c = """
       "params": [
         {
           "name": "template",
-          "type": "?",
+          "type": "Expr<string>",
           "is_comptime": true
         }
       ],
-      "return_type": "?",
+      "return_type": "Expr<string>",
       "body": [
         {
           "source": "return template;"

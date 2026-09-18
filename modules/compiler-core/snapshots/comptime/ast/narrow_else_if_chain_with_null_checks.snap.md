@@ -22,7 +22,7 @@ fn main() {
       "params": [
         {
           "name": "x",
-          "type": "?"
+          "type": "?i32"
         }
       ],
       "return_type": "string",

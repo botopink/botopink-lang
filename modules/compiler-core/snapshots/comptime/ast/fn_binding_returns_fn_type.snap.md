@@ -28,15 +28,15 @@ val FnType = @TypeOf(identity);
     {
       "ast": "val",
       "indent": "FnType",
-      "return_type": "i32",
+      "return_type": "fn(i32) -> i32",
       "expr": {
         "ast": "call",
         "params": [
           {
-            "value": "i32"
+            "value": "fn(i32) -> i32"
           }
         ],
-        "return_type": "i32"
+        "return_type": "fn(i32) -> i32"
       }
     }
   ]

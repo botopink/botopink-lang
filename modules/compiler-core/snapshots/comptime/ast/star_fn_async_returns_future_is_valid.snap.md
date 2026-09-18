@@ -20,7 +20,7 @@ fn fetch(x: i32) -> @Future<i32> {
           "type": "i32"
         }
       ],
-      "return_type": "?",
+      "return_type": "Future<i32,any>",
       "body": [
         {
           "source": "return x;"

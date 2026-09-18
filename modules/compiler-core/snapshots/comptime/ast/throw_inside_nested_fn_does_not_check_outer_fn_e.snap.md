@@ -18,7 +18,7 @@ fn outer() -> @Result<i32, string> {
       "name": "outer",
       "is_pub": false,
       "params": [],
-      "return_type": "?",
+      "return_type": "Result<i32,string>",
       "body": [
         {
           "source": "val cb = fn() {"

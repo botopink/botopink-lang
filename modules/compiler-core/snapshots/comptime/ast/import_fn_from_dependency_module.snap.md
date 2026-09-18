@@ -61,7 +61,7 @@ val result = double(21);
         {
           "ast": "use-declaration",
           "indent": "double",
-          "return_type": "i32"
+          "return_type": "fn(i32) -> i32"
         }
       ]
     }

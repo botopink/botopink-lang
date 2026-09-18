@@ -46,7 +46,7 @@ fn main() {
           "type": "i32"
         }
       ],
-      "return_type": "?",
+      "return_type": "Result<User,AppError>",
       "body": [
         {
           "source": "if (id == 0) { throw AppError.NotFound; };"

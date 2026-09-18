@@ -236,11 +236,165 @@ fn genericNames(allocator: std.mem.Allocator, params: anytype) ![]const []const 
     return allocator.dupe([]const u8, gens.items);
 }
 
-fn typeNameFromTypeRef(tr: anytype) []const u8 {
-    return switch (tr) {
-        .named => |n| if (@TypeOf(n) == []const u8) n else n.name,
-        else => "?",
-    };
+/// Display names for the `.generic` type variables of one rendered declaration.
+///
+/// A `T.TypeId` is allocation order over the whole environment, so printing the
+/// id itself would re-record every polymorphic snapshot whenever an unrelated
+/// type is added upstream. `bind` names a variable after the type parameter the
+/// declaration wrote for it — matched through the annotation, never guessed by
+/// position — and anything left unbound falls back to `'a`, `'b`, … by first
+/// appearance.
+const GenericNamer = struct {
+    const Entry = struct { id: T.TypeId, name: []const u8 };
+
+    allocator: std.mem.Allocator,
+    entries: std.ArrayListUnmanaged(Entry) = .empty,
+
+    fn deinit(self: *GenericNamer) void {
+        self.entries.deinit(self.allocator);
+    }
+
+    fn find(self: *GenericNamer, id: T.TypeId) ?[]const u8 {
+        for (self.entries.items) |e| {
+            if (e.id == id) return e.name;
+        }
+        return null;
+    }
+
+    /// Name `id` after a declared type parameter. The first binding wins, so a
+    /// parameter list read left to right decides.
+    fn bind(self: *GenericNamer, id: T.TypeId, name: []const u8) std.mem.Allocator.Error!void {
+        if (self.find(id) != null) return;
+        try self.entries.append(self.allocator, .{ .id = id, .name = name });
+    }
+
+    fn nameFor(self: *GenericNamer, id: T.TypeId) std.mem.Allocator.Error![]const u8 {
+        if (self.find(id)) |name| return self.allocator.dupe(u8, name);
+        const index = self.entries.items.len;
+        const name = if (index < 26)
+            try std.fmt.allocPrint(self.allocator, "'{c}", .{'a' + @as(u8, @intCast(index))})
+        else
+            try std.fmt.allocPrint(self.allocator, "'t{d}", .{index});
+        try self.entries.append(self.allocator, .{ .id = id, .name = name });
+        return self.allocator.dupe(u8, name);
+    }
+};
+
+/// Pair a declared type parameter with the type variable inference gave it, so
+/// `fn identity<T>(x: T) -> T` renders `T` and not `'a`. Only an annotation
+/// that names a type parameter of this declaration binds anything.
+fn bindGenericNames(
+    namer: *GenericNamer,
+    generic_params: []const ast.GenericParam,
+    annotation: ast.TypeRef,
+    inferred: *T.Type,
+) std.mem.Allocator.Error!void {
+    if (generic_params.len == 0) return;
+    if (annotation != .named) return;
+    const declared = annotation.named;
+    var matches = false;
+    for (generic_params) |gp| {
+        if (std.mem.eql(u8, gp.name, declared)) {
+            matches = true;
+            break;
+        }
+    }
+    if (!matches) return;
+    switch (inferred.deref().*) {
+        .typeVar => |cell| switch (cell.state) {
+            .generic => |id| try namer.bind(id, declared),
+            else => {},
+        },
+        else => {},
+    }
+}
+
+/// How `typeNameIn` spells a type out.
+///
+/// `.diagnostic` is what the error renderers have always printed and what the
+/// `comptime/errors/` and `codegen/**/errors/` snapshots record — it is frozen.
+/// `.ast` is the `TYPED AST JSON` rendering: it spells a function type out
+/// instead of collapsing it to its return type, and separates a generic
+/// variable (a correct polymorphic answer, named by `namer`) from an unbound
+/// one (the checker punting, still `?`).
+const TypeRender = struct {
+    const Mode = enum { diagnostic, ast };
+
+    mode: Mode = .diagnostic,
+    namer: ?*GenericNamer = null,
+};
+
+/// Render a syntactic type annotation. Used only where inference has nothing to
+/// add because the annotation *is* the type: a record field, whose declared
+/// `TypeRef` is what `infer.zig` `buildRecordDeclName` itself renders into the
+/// binding's type name. Mirrors that builder's text.
+fn appendTypeRefName(
+    buf: *std.ArrayListUnmanaged(u8),
+    allocator: std.mem.Allocator,
+    tr: ast.TypeRef,
+) std.mem.Allocator.Error!void {
+    switch (tr) {
+        .named => |n| try buf.appendSlice(allocator, n),
+        .array => |elem| {
+            try appendTypeRefName(buf, allocator, elem.*);
+            try buf.appendSlice(allocator, "[]");
+        },
+        .tuple_ => |elems| {
+            try buf.appendSlice(allocator, "#(");
+            for (elems, 0..) |e, i| {
+                if (i > 0) try buf.appendSlice(allocator, ", ");
+                try appendTypeRefName(buf, allocator, e);
+            }
+            try buf.append(allocator, ')');
+        },
+        .labeledTuple => |lt| {
+            try buf.appendSlice(allocator, "#(");
+            for (lt.elems, 0..) |e, i| {
+                if (i > 0) try buf.appendSlice(allocator, ", ");
+                try buf.appendSlice(allocator, lt.labels[i]);
+                try buf.appendSlice(allocator, ": ");
+                try appendTypeRefName(buf, allocator, e);
+            }
+            try buf.append(allocator, ')');
+        },
+        .optional => |inner| {
+            try buf.append(allocator, '?');
+            try appendTypeRefName(buf, allocator, inner.*);
+        },
+        .function => |f| {
+            try buf.appendSlice(allocator, "fn(");
+            for (f.params, 0..) |p, i| {
+                if (i > 0) try buf.appendSlice(allocator, ", ");
+                try appendTypeRefName(buf, allocator, p);
+            }
+            try buf.appendSlice(allocator, ") -> ");
+            try appendTypeRefName(buf, allocator, f.returnType.*);
+        },
+        .generic => |g| {
+            if (g.is_builtin) try buf.append(allocator, '@');
+            try buf.appendSlice(allocator, g.name);
+            try buf.append(allocator, '<');
+            for (g.args, 0..) |a, i| {
+                if (i > 0) try buf.appendSlice(allocator, ", ");
+                try appendTypeRefName(buf, allocator, a);
+            }
+            try buf.append(allocator, '>');
+        },
+        .typeparam => |constraints| {
+            try buf.appendSlice(allocator, "typeparam");
+            for (constraints, 0..) |c, i| {
+                try buf.appendSlice(allocator, if (i == 0) " " else " | ");
+                try appendTypeRefName(buf, allocator, c);
+            }
+        },
+    }
+}
+
+fn typeRefName(allocator: std.mem.Allocator, tr: ast.TypeRef) std.mem.Allocator.Error![]const u8 {
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer buf.deinit(allocator);
+    try appendTypeRefName(&buf, allocator, tr);
+    return buf.toOwnedSlice(allocator);
 }
 
 fn extractFnBody(
@@ -256,35 +410,35 @@ fn extractFnBody(
     return body.toOwnedSlice(allocator);
 }
 
-fn buildCaseExpr(allocator: std.mem.Allocator, expr: ast.TypedExpr) !CaseExpr {
+fn buildCaseExpr(allocator: std.mem.Allocator, expr: ast.TypedExpr, render: TypeRender) !CaseExpr {
     const case_ = expr.collection.kind.case;
     var arms: std.ArrayList(CaseArm) = .empty;
     defer arms.deinit(allocator);
     for (case_.arms) |arm| {
-        try arms.append(allocator, try buildCaseArm(allocator, arm.body));
+        try arms.append(allocator, try buildCaseArm(allocator, arm.body, render));
     }
     return CaseExpr{
         .ast = "case",
-        .param = if (case_.subjects.len > 0) try typeNameOf(allocator, getTypedExprType(case_.subjects[0])) else "unknown",
+        .param = if (case_.subjects.len > 0) try typeNameIn(allocator, getTypedExprType(case_.subjects[0]), render) else "unknown",
         .match = try allocator.dupe(CaseArm, arms.items),
-        .return_type = try typeNameOf(allocator, getTypedExprType(expr)),
+        .return_type = try typeNameIn(allocator, getTypedExprType(expr), render),
     };
 }
 
-fn buildCallExpr(allocator: std.mem.Allocator, expr: ast.TypedExpr) !CallExpr {
+fn buildCallExpr(allocator: std.mem.Allocator, expr: ast.TypedExpr, render: TypeRender) !CallExpr {
     const call_ = expr.call.kind.call;
     var params: std.ArrayList(CallParam) = .empty;
     defer params.deinit(allocator);
     for (call_.args) |arg| {
         try params.append(allocator, .{
             .name = arg.label,
-            .value = try typeNameOf(allocator, getTypedExprType(arg.value.*)),
+            .value = try typeNameIn(allocator, getTypedExprType(arg.value.*), render),
         });
     }
     return CallExpr{
         .ast = "call",
         .params = try params.toOwnedSlice(allocator),
-        .return_type = try typeNameOf(allocator, getTypedExprType(expr)),
+        .return_type = try typeNameIn(allocator, getTypedExprType(expr), render),
     };
 }
 
@@ -345,8 +499,7 @@ fn getExprLoc(expr: ast.Expr) ast.Loc {
     };
 }
 
-fn buildCaseArm(allocator: std.mem.Allocator, body: ast.TypedExpr) !CaseArm {
-    const retType = try typeNameOf(allocator, body.getType());
+fn buildCaseArm(allocator: std.mem.Allocator, body: ast.TypedExpr, render: TypeRender) !CaseArm {
     if (body == .function) {
         const fk = body.function.kind;
         if (fk.syntax == .lambda and fk.params.len == 0) {
@@ -354,16 +507,20 @@ fn buildCaseArm(allocator: std.mem.Allocator, body: ast.TypedExpr) !CaseArm {
             defer items.deinit(allocator);
             for (fk.body) |stmt| {
                 const stmt_type = getTypedExprType(stmt.expr);
-                try items.append(allocator, .{ .return_type = try typeNameOf(allocator, stmt_type) });
+                try items.append(allocator, .{ .return_type = try typeNameIn(allocator, stmt_type, render) });
             }
+            // A block arm is a zero-parameter lambda the case calls at once, so
+            // the arm's type is what that lambda returns, not `fn() -> …`.
+            const arm_type = body.getType().deref();
+            const value_type = if (arm_type.* == .func) arm_type.func.ret else body.getType();
             return CaseArm{
                 .ast = "block",
                 .body = try allocator.dupe(StmtType, items.items),
-                .return_type = retType,
+                .return_type = try typeNameIn(allocator, value_type, render),
             };
         }
     }
-    return CaseArm{ .ast = "value", .body = null, .return_type = retType };
+    return CaseArm{ .ast = "value", .body = null, .return_type = try typeNameIn(allocator, body.getType(), render) };
 }
 
 fn bindingToRepr(
@@ -373,7 +530,13 @@ fn bindingToRepr(
     type_ids: std.StringHashMap(usize),
 ) !?BindingRepr {
     const resolvedTypeId = resolveTypeId(b.type_, type_ids);
-    const typeStr = try typeNameOf(allocator, b.type_);
+    // `'a`, `'b` run per declaration, so one polymorphic signature reads the
+    // same whatever else the module declares.
+    var namer = GenericNamer{ .allocator = allocator };
+    const render = TypeRender{ .mode = .ast, .namer = &namer };
+    // Deliberately not rendered here: the first render of a declaration is what
+    // fixes its `'a`, `'b`, and the `fn` arm binds the declared type-parameter
+    // names before anything is spelled out.
 
     return switch (b.decl) {
         .use => {
@@ -382,7 +545,7 @@ fn bindingToRepr(
             decls[0] = .{
                 .ast = "use-declaration",
                 .indent = b.name,
-                .return_type = typeStr,
+                .return_type = try typeNameIn(allocator, b.type_, render),
             };
 
             return .{ .use = .{
@@ -391,9 +554,11 @@ fn bindingToRepr(
             } };
         },
         .val => blk: {
+            // The binding's own type first, so a `'a` in it is the first one.
+            const typeStr = try typeNameIn(allocator, b.type_, render);
             if (b.typedExpr) |te| {
                 if (te == .collection and te.collection.kind == .case) {
-                    const caseExpr = try buildCaseExpr(allocator, te);
+                    const caseExpr = try buildCaseExpr(allocator, te, render);
                     break :blk .{ .case = .{
                         .ast = caseExpr.ast,
                         .param = caseExpr.param,
@@ -405,7 +570,7 @@ fn bindingToRepr(
                     break :blk .{ .val = .{
                         .ast = "val",
                         .indent = b.name,
-                        .expr = try buildCallExpr(allocator, te),
+                        .expr = try buildCallExpr(allocator, te, render),
                         .return_type = typeStr,
                     } };
                 }
@@ -414,11 +579,33 @@ fn bindingToRepr(
         },
 
         .@"fn" => |f| blk: {
+            // The signature comes from the binding's inferred `.func` type, so
+            // an unannotated parameter or return shows what inference worked
+            // out rather than the `?` an absent annotation used to print. The
+            // declared `TypeRef` is the fallback for a binding inference never
+            // gave a function type (a declaration that did not type-check).
+            const inferred = b.type_.deref();
+            const fn_type = if (inferred.* == .func) inferred.func else null;
+
+            // Name the polymorphic variables after the type parameters this
+            // declaration wrote, before anything is rendered.
+            if (fn_type) |ft| {
+                for (f.params, 0..) |p, i| {
+                    if (i >= ft.params.len) break;
+                    try bindGenericNames(&namer, f.genericParams, p.typeRef, ft.params[i]);
+                }
+                if (f.returnType) |rt| try bindGenericNames(&namer, f.genericParams, rt, ft.ret);
+            }
+
             var params: std.ArrayList(Param) = .empty;
-            for (f.params) |p| {
+            for (f.params, 0..) |p, i| {
+                const from_inference = if (fn_type) |ft|
+                    (if (i < ft.params.len) try typeNameIn(allocator, ft.params[i], render) else null)
+                else
+                    null;
                 try params.append(allocator, .{
                     .name = p.name,
-                    .type = typeNameFromTypeRef(p.typeRef),
+                    .type = from_inference orelse try typeRefName(allocator, p.typeRef),
                     .is_comptime = if (p.modifier == .@"comptime") true else null,
                 });
             }
@@ -429,7 +616,12 @@ fn bindingToRepr(
                 .is_pub = f.isPub,
                 .generic_params = if (gens.len > 0) gens else null,
                 .params = try params.toOwnedSlice(allocator),
-                .return_type = if (f.returnType) |rt| typeNameFromTypeRef(rt) else "void",
+                .return_type = if (fn_type) |ft|
+                    try typeNameIn(allocator, ft.ret, render)
+                else if (f.returnType) |rt|
+                    try typeRefName(allocator, rt)
+                else
+                    "void",
                 .body = try extractFnBody(allocator, src, f.body),
             } };
         },
@@ -437,7 +629,10 @@ fn bindingToRepr(
         .type_ => |r| if (r.isRecord()) blk: {
             var entries: std.ArrayList(FieldMap.Entry) = .empty;
             for (r.recordFields()) |fld| {
-                try entries.append(allocator, .{ .name = fld.name, .value = typeNameFromTypeRef(fld.typeRef) });
+                // A record field is always annotated, and `buildRecordDeclName`
+                // renders that same annotation into the binding's type name —
+                // inference has nothing here the declaration does not say.
+                try entries.append(allocator, .{ .name = fld.name, .value = try typeRefName(allocator, fld.typeRef) });
             }
             const gens = try genericNames(allocator, r.genericParams);
             break :blk .{ .record = .{
@@ -473,23 +668,46 @@ fn bindingToRepr(
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-/// Return the string representation of a type (allocated, caller owns).
+/// Return the string representation of an **inferred** type (allocated, caller
+/// owns), in the frozen `.diagnostic` spelling the error renderers print.
 pub fn typeNameOf(allocator: std.mem.Allocator, ty: *T.Type) std.mem.Allocator.Error![]const u8 {
+    return typeNameIn(allocator, ty, .{});
+}
+
+/// `typeNameOf` with the rendering picked by the caller — see `TypeRender`.
+fn typeNameIn(
+    allocator: std.mem.Allocator,
+    ty: *T.Type,
+    render: TypeRender,
+) std.mem.Allocator.Error![]const u8 {
     return switch (ty.deref().*) {
         .named => |n| {
             if (n.args.len == 0) return allocator.dupe(u8, n.name);
             var buf: std.ArrayList(u8) = .empty;
             defer buf.deinit(allocator);
             if (std.mem.eql(u8, n.name, "array") and n.args.len == 1) {
-                const elem = try typeNameOf(allocator, n.args[0]);
+                const elem = try typeNameIn(allocator, n.args[0], render);
                 defer allocator.free(elem);
                 return std.fmt.allocPrint(allocator, "{s}[]", .{elem});
+            }
+            // Source syntax for the optional, the way `array<T>` above is
+            // already written `T[]`. The AST dump only: the diagnostics have
+            // always said `optional<T>` and their snapshots are frozen.
+            if (render.mode == .ast and std.mem.eql(u8, n.name, "optional") and n.args.len == 1) {
+                const inner = try typeNameIn(allocator, n.args[0], render);
+                // An optional of a type inference has not worked out keeps the
+                // long form: `??` would read as two unrelated question marks.
+                if (!std.mem.eql(u8, inner, "?")) {
+                    defer allocator.free(inner);
+                    return std.fmt.allocPrint(allocator, "?{s}", .{inner});
+                }
+                allocator.free(inner);
             }
             if (std.mem.eql(u8, n.name, "tuple")) {
                 try buf.appendSlice(allocator, "#(");
                 for (n.args, 0..) |arg, i| {
                     if (i > 0) try buf.append(allocator, ',');
-                    const arg_name = try typeNameOf(allocator, arg);
+                    const arg_name = try typeNameIn(allocator, arg, render);
                     defer allocator.free(arg_name);
                     try buf.appendSlice(allocator, arg_name);
                 }
@@ -500,15 +718,48 @@ pub fn typeNameOf(allocator: std.mem.Allocator, ty: *T.Type) std.mem.Allocator.E
             try buf.append(allocator, '<');
             for (n.args, 0..) |arg, i| {
                 if (i > 0) try buf.append(allocator, ',');
-                const arg_name = try typeNameOf(allocator, arg);
+                const arg_name = try typeNameIn(allocator, arg, render);
                 defer allocator.free(arg_name);
                 try buf.appendSlice(allocator, arg_name);
             }
             try buf.append(allocator, '>');
             return buf.toOwnedSlice(allocator);
         },
-        .func => |f| return typeNameOf(allocator, f.ret),
-        .typeVar => return allocator.dupe(u8, "?"),
+        .func => |f| {
+            // A diagnostic has always named the return type alone. The AST
+            // dump spells the signature out, so a `val` bound to a function
+            // stops reading as a value of its return type.
+            if (render.mode == .diagnostic) return typeNameIn(allocator, f.ret, render);
+            var buf: std.ArrayList(u8) = .empty;
+            defer buf.deinit(allocator);
+            try buf.appendSlice(allocator, "fn(");
+            for (f.params, 0..) |p, i| {
+                if (i > 0) try buf.appendSlice(allocator, ", ");
+                const p_name = try typeNameIn(allocator, p, render);
+                defer allocator.free(p_name);
+                try buf.appendSlice(allocator, p_name);
+            }
+            try buf.appendSlice(allocator, ") -> ");
+            const ret_name = try typeNameIn(allocator, f.ret, render);
+            defer allocator.free(ret_name);
+            try buf.appendSlice(allocator, ret_name);
+            return buf.toOwnedSlice(allocator);
+        },
+        // `deref` already followed every `.link`, so the cell left here is
+        // either `.unbound` or `.generic`. A diagnostic prints `?` for both.
+        // The AST dump keeps `?` for `.unbound` only — that is the one place a
+        // snapshot shows the checker saying it does not know, and nothing else
+        // may be allowed to read like it.
+        .typeVar => |cell| {
+            if (render.mode == .diagnostic) return allocator.dupe(u8, "?");
+            return switch (cell.state) {
+                .generic => |id| if (render.namer) |namer|
+                    namer.nameFor(id)
+                else
+                    allocator.dupe(u8, "'_"),
+                else => allocator.dupe(u8, "?"),
+            };
+        },
         .record => |fields| {
             var buf: std.ArrayList(u8) = .empty;
             defer buf.deinit(allocator);
@@ -517,7 +768,7 @@ pub fn typeNameOf(allocator: std.mem.Allocator, ty: *T.Type) std.mem.Allocator.E
                 if (i > 0) try buf.appendSlice(allocator, ", ");
                 try buf.appendSlice(allocator, f.name);
                 try buf.appendSlice(allocator, ": ");
-                const fieldName = try typeNameOf(allocator, f.type_);
+                const fieldName = try typeNameIn(allocator, f.type_, render);
                 defer allocator.free(fieldName);
                 try buf.appendSlice(allocator, fieldName);
             }
@@ -529,7 +780,7 @@ pub fn typeNameOf(allocator: std.mem.Allocator, ty: *T.Type) std.mem.Allocator.E
             defer buf.deinit(allocator);
             for (types, 0..) |t, i| {
                 if (i > 0) try buf.appendSlice(allocator, " | ");
-                const type_name = try typeNameOf(allocator, t);
+                const type_name = try typeNameIn(allocator, t, render);
                 defer allocator.free(type_name);
                 try buf.appendSlice(allocator, type_name);
             }
@@ -1070,4 +1321,144 @@ pub fn assertComptimeAst(
     const text = try buildSnapshotMulti(allocator, outputs);
     defer allocator.free(text);
     try snapMod.checkText(allocator, snapName, text);
+}
+
+// ── Unit tests ────────────────────────────────────────────────────────────────
+//
+// The `TYPED AST JSON` type rendering, asserted directly. The snapshots cover
+// what the checker produces for real programs; these pin the contract the
+// renderer owes them — above all that `?` means one thing.
+
+fn testNamed(arena: std.mem.Allocator, name: []const u8) !*T.Type {
+    const ty = try arena.create(T.Type);
+    ty.* = .{ .named = .{ .name = name, .args = &.{} } };
+    return ty;
+}
+
+fn testVar(arena: std.mem.Allocator, state: T.TypeVar) !*T.Type {
+    const cell = try arena.create(T.TypeCell);
+    cell.* = .{ .state = state };
+    const ty = try arena.create(T.Type);
+    ty.* = .{ .typeVar = cell };
+    return ty;
+}
+
+fn testFunc(arena: std.mem.Allocator, params: []*T.Type, ret: *T.Type) !*T.Type {
+    const ty = try arena.create(T.Type);
+    ty.* = .{ .func = .{ .params = params, .ret = ret } };
+    return ty;
+}
+
+test "ast rendering: a resolved fn spells its signature out" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const params = try arena.alloc(*T.Type, 2);
+    params[0] = try testNamed(arena, "i32");
+    params[1] = try testNamed(arena, "string");
+    const fn_type = try testFunc(arena, params, try testNamed(arena, "bool"));
+
+    var namer = GenericNamer{ .allocator = arena };
+    const rendered = try typeNameIn(arena, fn_type, .{ .mode = .ast, .namer = &namer });
+    try std.testing.expectEqualStrings("fn(i32, string) -> bool", rendered);
+
+    // A diagnostic still names the return type alone — the `errors/` snapshots
+    // record that text and this front does not move it.
+    const as_diagnostic = try typeNameOf(arena, fn_type);
+    try std.testing.expectEqualStrings("bool", as_diagnostic);
+}
+
+test "ast rendering: a generic variable is named, an unbound one stays `?`" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const generic = try testVar(arena, .{ .generic = 7 });
+    const unbound = try testVar(arena, .{ .unbound = .{ .id = 9, .level = 0 } });
+
+    var namer = GenericNamer{ .allocator = arena };
+    const render = TypeRender{ .mode = .ast, .namer = &namer };
+
+    // Unnamed, a generic falls back to a stable letter — never to `?`.
+    try std.testing.expectEqualStrings("'a", try typeNameIn(arena, generic, render));
+    // Named after the type parameter the declaration wrote, it reads as source.
+    var named_namer = GenericNamer{ .allocator = arena };
+    try named_namer.bind(7, "T");
+    try std.testing.expectEqualStrings(
+        "T",
+        try typeNameIn(arena, generic, .{ .mode = .ast, .namer = &named_namer }),
+    );
+
+    // `?` is reserved for the checker saying it does not know.
+    try std.testing.expectEqualStrings("?", try typeNameIn(arena, unbound, render));
+    // A diagnostic cannot tell the two apart, and still does not have to.
+    try std.testing.expectEqualStrings("?", try typeNameOf(arena, generic));
+    try std.testing.expectEqualStrings("?", try typeNameOf(arena, unbound));
+}
+
+test "ast rendering: a generic fn signature reads with its declared parameters" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const t_var = try testVar(arena, .{ .generic = 1 });
+    const r_var = try testVar(arena, .{ .generic = 2 });
+    const params = try arena.alloc(*T.Type, 1);
+    params[0] = t_var;
+    const fn_type = try testFunc(arena, params, r_var);
+
+    const generic_params = [_]ast.GenericParam{
+        .{ .name = "T" },
+        .{ .name = "R" },
+    };
+    var namer = GenericNamer{ .allocator = arena };
+    try bindGenericNames(&namer, &generic_params, .{ .named = "T" }, t_var);
+    try bindGenericNames(&namer, &generic_params, .{ .named = "R" }, r_var);
+
+    try std.testing.expectEqualStrings(
+        "fn(T) -> R",
+        try typeNameIn(arena, fn_type, .{ .mode = .ast, .namer = &namer }),
+    );
+
+    // An annotation that names no type parameter of the declaration binds
+    // nothing, so a stray name can never rename someone else's variable.
+    var other = GenericNamer{ .allocator = arena };
+    try bindGenericNames(&other, &generic_params, .{ .named = "i32" }, t_var);
+    try std.testing.expectEqualStrings("'a", try typeNameIn(arena, t_var, .{ .mode = .ast, .namer = &other }));
+}
+
+test "ast rendering: an optional reads as source, unless its inner is unknown" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const args = try arena.alloc(*T.Type, 1);
+    args[0] = try testNamed(arena, "string");
+    const opt = try arena.create(T.Type);
+    opt.* = .{ .named = .{ .name = "optional", .args = args } };
+
+    var namer = GenericNamer{ .allocator = arena };
+    const render = TypeRender{ .mode = .ast, .namer = &namer };
+    try std.testing.expectEqualStrings("?string", try typeNameIn(arena, opt, render));
+    try std.testing.expectEqualStrings("optional<string>", try typeNameOf(arena, opt));
+
+    const unknown_args = try arena.alloc(*T.Type, 1);
+    unknown_args[0] = try testVar(arena, .{ .unbound = .{ .id = 3, .level = 0 } });
+    const opt_unknown = try arena.create(T.Type);
+    opt_unknown.* = .{ .named = .{ .name = "optional", .args = unknown_args } };
+    try std.testing.expectEqualStrings("optional<?>", try typeNameIn(arena, opt_unknown, render));
+}
+
+test "ast rendering: a record field annotation renders in full" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var inner: ast.TypeRef = .{ .named = "Inner" };
+    const optional_ref: ast.TypeRef = .{ .optional = &inner };
+    try std.testing.expectEqualStrings("?Inner", try typeRefName(arena, optional_ref));
+
+    var elem: ast.TypeRef = .{ .named = "i32" };
+    try std.testing.expectEqualStrings("i32[]", try typeRefName(arena, .{ .array = &elem }));
 }

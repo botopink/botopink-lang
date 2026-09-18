@@ -18,10 +18,10 @@ fn doubles(arr: i32[]) -> i32[] {
       "params": [
         {
           "name": "arr",
-          "type": "?"
+          "type": "i32[]"
         }
       ],
-      "return_type": "?",
+      "return_type": "i32[]",
       "body": [
         {
           "source": "return loop (arr) { x ->"

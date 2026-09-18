@@ -65,11 +65,11 @@ val s = "hey!";
       "params": [
         {
           "name": "q",
-          "type": "?",
+          "type": "Expr<string>",
           "is_comptime": true
         }
       ],
-      "return_type": "?",
+      "return_type": "Expr<string>",
       "body": [
         {
           "source": "val t = q.text();"

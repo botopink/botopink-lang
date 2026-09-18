@@ -10,7 +10,7 @@ val msg: ?string = null;
     {
       "ast": "val",
       "indent": "msg",
-      "return_type": "optional<string>"
+      "return_type": "?string"
     }
   ]
 }

@@ -54,7 +54,7 @@ val origin = Point(0, 0);
         {
           "ast": "use-declaration",
           "indent": "Point",
-          "return_type": "Point"
+          "return_type": "fn(i32, i32) -> Point"
         }
       ]
     }

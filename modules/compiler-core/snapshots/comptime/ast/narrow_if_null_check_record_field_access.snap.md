@@ -31,7 +31,7 @@ fn main() {
       "params": [
         {
           "name": "maybeUser",
-          "type": "?"
+          "type": "?User"
         }
       ],
       "return_type": "string",

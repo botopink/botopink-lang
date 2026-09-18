@@ -31,14 +31,14 @@ val map = fn(opt: Option<i32>, f: fn(i32) -> i32) -> Option<i32> {
       "params": [
         {
           "name": "opt",
-          "type": "?"
+          "type": "Option<i32>"
         },
         {
           "name": "f",
-          "type": "?"
+          "type": "fn(i32) -> i32"
         }
       ],
-      "return_type": "?",
+      "return_type": "Option<i32>",
       "body": [
         {
           "source": "case opt {"

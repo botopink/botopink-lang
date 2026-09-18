@@ -26,7 +26,7 @@ fn validate(n: i32) -> @Result<i32, string> {
           "type": "i32"
         }
       ],
-      "return_type": "?",
+      "return_type": "Result<i32,string>",
       "body": [
         {
           "source": "if (n < 0) {"

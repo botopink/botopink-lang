@@ -23,7 +23,7 @@ fn parse(s: string) -> @Result<i32, string> {
           "type": "string"
         }
       ],
-      "return_type": "?",
+      "return_type": "Result<i32,string>",
       "body": [
         {
           "source": "if (s == \"\") {"

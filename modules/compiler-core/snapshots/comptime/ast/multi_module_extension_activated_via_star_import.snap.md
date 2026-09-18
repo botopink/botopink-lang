@@ -73,7 +73,7 @@ val splash = donald.swim();
         {
           "ast": "use-declaration",
           "indent": "Pato",
-          "return_type": "Pato"
+          "return_type": "fn(i32) -> Pato"
         }
       ]
     }

@@ -23,7 +23,7 @@ fn main() {
       "params": [
         {
           "name": "list",
-          "type": "?"
+          "type": "i32[]"
         },
         {
           "name": "fallback",

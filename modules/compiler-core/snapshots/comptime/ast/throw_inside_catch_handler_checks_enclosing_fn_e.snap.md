@@ -20,7 +20,7 @@ fn process() -> @Result<i32, string> {
       "name": "fetch",
       "is_pub": false,
       "params": [],
-      "return_type": "?",
+      "return_type": "Result<i32,string>",
       "body": [
         {
           "source": "throw \"primary\";"
@@ -32,7 +32,7 @@ fn process() -> @Result<i32, string> {
       "name": "process",
       "is_pub": false,
       "params": [],
-      "return_type": "?",
+      "return_type": "Result<i32,string>",
       "body": [
         {
           "source": "val r = try fetch() catch throw \"secondary\";"

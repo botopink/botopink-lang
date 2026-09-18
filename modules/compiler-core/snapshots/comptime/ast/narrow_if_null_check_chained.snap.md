@@ -33,7 +33,7 @@ fn main() {
       "name": "Outer",
       "id": 0,
       "fields": {
-        "b": "?"
+        "b": "?Inner"
       }
     },
     {
@@ -43,7 +43,7 @@ fn main() {
       "params": [
         {
           "name": "o",
-          "type": "?"
+          "type": "?Outer"
         }
       ],
       "return_type": "i32",

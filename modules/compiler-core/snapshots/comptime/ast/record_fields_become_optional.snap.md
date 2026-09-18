@@ -20,7 +20,7 @@ val PartialCfg = partial(Config);
     {
       "ast": "val",
       "indent": "PartialCfg",
-      "return_type": "record { port: optional<i32>, host: optional<string> }"
+      "return_type": "record { port: ?i32, host: ?string }"
     }
   ]
 }

@@ -24,6 +24,7 @@ test {
     _ = @import("tests/builtins_typeinfo.zig");
     _ = @import("tests/eval_pipeline.zig");
     _ = @import("primOpTemplate.zig");
+    _ = @import("./snapshot.zig");
     _ = @import("./diagnostics.zig");
     _ = @import("./eval.zig");
     _ = @import("./trace.zig");

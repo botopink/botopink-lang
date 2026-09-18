@@ -70,11 +70,11 @@ val s = inner();
       "params": [
         {
           "name": "q",
-          "type": "?",
+          "type": "Expr<string>",
           "is_comptime": true
         }
       ],
-      "return_type": "?",
+      "return_type": "Expr<string>",
       "body": [
         {
           "source": "return q;"
@@ -88,11 +88,11 @@ val s = inner();
       "params": [
         {
           "name": "q",
-          "type": "?",
+          "type": "Expr<string>",
           "is_comptime": true
         }
       ],
-      "return_type": "?",
+      "return_type": "Expr<string>",
       "body": [
         {
           "source": "return q.build(\"inner(\\\"deep\\\")\");"

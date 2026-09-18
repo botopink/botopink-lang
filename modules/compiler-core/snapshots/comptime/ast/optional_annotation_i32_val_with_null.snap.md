@@ -10,7 +10,7 @@ val count: ?i32 = null;
     {
       "ast": "val",
       "indent": "count",
-      "return_type": "optional<i32>"
+      "return_type": "?i32"
     }
   ]
 }

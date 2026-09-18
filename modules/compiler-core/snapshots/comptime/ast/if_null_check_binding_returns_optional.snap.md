@@ -16,10 +16,10 @@ fn greet(name: ?string) -> ?string {
       "params": [
         {
           "name": "name",
-          "type": "?"
+          "type": "?string"
         }
       ],
-      "return_type": "?",
+      "return_type": "?string",
       "body": [
         {
           "source": "return if (name) { n -> n; };"

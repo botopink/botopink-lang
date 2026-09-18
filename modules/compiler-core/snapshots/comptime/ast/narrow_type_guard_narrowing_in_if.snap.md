@@ -21,7 +21,7 @@ fn main() {
       "params": [
         {
           "name": "x",
-          "type": "?"
+          "type": "?string"
         }
       ],
       "return_type": "bool",

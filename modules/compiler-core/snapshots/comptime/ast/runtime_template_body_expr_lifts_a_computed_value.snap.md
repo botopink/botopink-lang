@@ -65,11 +65,11 @@ val n = 6;
       "params": [
         {
           "name": "t",
-          "type": "?",
+          "type": "Expr<string>",
           "is_comptime": true
         }
       ],
-      "return_type": "?",
+      "return_type": "Expr<i32>",
       "body": [
         {
           "source": "val n = 2 + 4;"

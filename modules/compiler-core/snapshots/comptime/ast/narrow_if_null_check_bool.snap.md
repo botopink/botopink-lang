@@ -24,11 +24,11 @@ fn main() {
       "params": [
         {
           "name": "a",
-          "type": "?"
+          "type": "?bool"
         },
         {
           "name": "b",
-          "type": "?"
+          "type": "?bool"
         }
       ],
       "return_type": "bool",

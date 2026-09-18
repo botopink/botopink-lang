@@ -24,7 +24,7 @@ fn getValue(o: Outer) -> ?i32 {
       "name": "Outer",
       "id": 0,
       "fields": {
-        "inner": "?"
+        "inner": "?Inner"
       }
     },
     {
@@ -37,7 +37,7 @@ fn getValue(o: Outer) -> ?i32 {
           "type": "Outer"
         }
       ],
-      "return_type": "?",
+      "return_type": "?i32",
       "body": [
         {
           "source": "return o.inner?.value;"

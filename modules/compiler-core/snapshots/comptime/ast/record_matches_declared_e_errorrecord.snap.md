@@ -25,7 +25,7 @@ fn load() -> @Result<string, AppError> {
       "name": "load",
       "is_pub": false,
       "params": [],
-      "return_type": "?",
+      "return_type": "Result<string,AppError>",
       "body": [
         {
           "source": "throw AppError(code: 500, msg: \"boom\");"

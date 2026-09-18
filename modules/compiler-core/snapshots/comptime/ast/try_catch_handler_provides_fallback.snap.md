@@ -20,7 +20,7 @@ val x = safe();
       "name": "fetch",
       "is_pub": false,
       "params": [],
-      "return_type": "?",
+      "return_type": "Result<i32,string>",
       "body": [
         {
           "source": "@todo();"

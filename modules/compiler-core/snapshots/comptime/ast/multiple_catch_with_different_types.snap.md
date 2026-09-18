@@ -32,7 +32,7 @@ fn loadUser() {
       "name": "getName",
       "is_pub": false,
       "params": [],
-      "return_type": "?",
+      "return_type": "Result<string,UserError>",
       "body": [
         {
           "source": "throw UserError(msg: \"missing\");"
@@ -44,7 +44,7 @@ fn loadUser() {
       "name": "getAge",
       "is_pub": false,
       "params": [],
-      "return_type": "?",
+      "return_type": "Result<i32,UserError>",
       "body": [
         {
           "source": "throw UserError(msg: \"missing\");"

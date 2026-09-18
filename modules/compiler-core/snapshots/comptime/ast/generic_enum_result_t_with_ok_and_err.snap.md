@@ -30,7 +30,7 @@ val ok = isOk(r);
       "params": [
         {
           "name": "r",
-          "type": "Result"
+          "type": "Result<i32>"
         }
       ],
       "return_type": "bool",

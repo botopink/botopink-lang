@@ -25,7 +25,7 @@ val keys = @RecordKeys(Point);
         "ast": "call",
         "params": [
           {
-            "value": "Point"
+            "value": "fn(i32, string) -> Point"
           }
         ],
         "return_type": "string[]"

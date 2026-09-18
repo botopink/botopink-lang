@@ -31,7 +31,7 @@ fn main() {
           "type": "i32"
         }
       ],
-      "return_type": "?",
+      "return_type": "Result<string,string>",
       "body": [
         {
           "source": "if (n < 0) { throw \"negative\"; };"

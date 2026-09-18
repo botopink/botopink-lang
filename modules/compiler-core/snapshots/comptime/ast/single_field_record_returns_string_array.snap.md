@@ -24,7 +24,7 @@ val keys = @RecordKeys(Box);
         "ast": "call",
         "params": [
           {
-            "value": "Box"
+            "value": "fn(i32) -> Box"
           }
         ],
         "return_type": "string[]"

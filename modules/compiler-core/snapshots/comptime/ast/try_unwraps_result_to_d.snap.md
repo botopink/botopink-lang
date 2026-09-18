@@ -28,7 +28,7 @@ fn process() -> i32 {
       "name": "fetch",
       "is_pub": false,
       "params": [],
-      "return_type": "?",
+      "return_type": "Result<i32,AppError>",
       "body": [
         {
           "source": "throw AppError(msg: \"fail\");"

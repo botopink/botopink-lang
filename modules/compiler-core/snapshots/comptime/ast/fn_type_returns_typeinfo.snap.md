@@ -37,7 +37,7 @@ val info = @typeInfo(add);
         "ast": "call",
         "params": [
           {
-            "value": "i32"
+            "value": "fn(i32, i32) -> i32"
           }
         ],
         "return_type": "TypeInfo"

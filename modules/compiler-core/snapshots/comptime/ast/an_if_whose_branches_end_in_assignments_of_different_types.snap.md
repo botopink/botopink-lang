@@ -26,14 +26,14 @@ fn main() {
       "params": [
         {
           "name": "items",
-          "type": "?"
+          "type": "i32[]"
         },
         {
           "name": "pred",
-          "type": "?"
+          "type": "fn(i32) -> bool"
         }
       ],
-      "return_type": "?",
+      "return_type": "i32[]",
       "body": [
         {
           "source": "var out: Array<i32> = [];"

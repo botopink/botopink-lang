@@ -29,7 +29,7 @@ fn run() -> @Result<string, IoError> {
       "name": "load",
       "is_pub": false,
       "params": [],
-      "return_type": "?",
+      "return_type": "Result<string,IoError>",
       "body": [
         {
           "source": "throw IoError(path: \"/data\");"
@@ -41,7 +41,7 @@ fn run() -> @Result<string, IoError> {
       "name": "run",
       "is_pub": false,
       "params": [],
-      "return_type": "?",
+      "return_type": "Result<string,IoError>",
       "body": [
         {
           "source": "val s = try load();"

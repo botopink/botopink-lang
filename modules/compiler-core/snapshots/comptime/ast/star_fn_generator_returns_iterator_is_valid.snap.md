@@ -15,7 +15,7 @@ fn gen() -> @Iterator<i32> {
       "name": "gen",
       "is_pub": false,
       "params": [],
-      "return_type": "?",
+      "return_type": "Iterator<i32,any,void>",
       "body": [
         {
           "source": "yield 1;"

@@ -92,11 +92,11 @@ val r = "ok";
       "params": [
         {
           "name": "t",
-          "type": "?",
+          "type": "Expr<string>",
           "is_comptime": true
         }
       ],
-      "return_type": "?",
+      "return_type": "Expr<string>",
       "body": [
         {
           "source": "val hit = t.lookup(\"Buttom\");"

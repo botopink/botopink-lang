@@ -20,7 +20,7 @@ fn main() {
       "name": "parse",
       "is_pub": false,
       "params": [],
-      "return_type": "?",
+      "return_type": "Result<i32,string>",
       "body": [
         {
           "source": "return 42;"
