@@ -60,8 +60,9 @@ botopink-lang/
 
 ```bash
 zig build              # compile everything
-zig build test         # compiler-core + language-server + compiler-cli tests
+zig build test         # compiler-core, language-server, CLI and lib-test-runner unit tests
 zig build test-libs    # cross-backend lib tests
+zig build test-docs    # every botopink fence of README.md and docs.md compiles
 zig build run          # run the CLI
 ```
 

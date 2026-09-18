@@ -17,7 +17,7 @@ workflow.
 botopink-lang/                 ← language core (this project)
 ├── AGENTS.md                  ← you are here
 ├── README.md                  ← public-facing intro
-├── docs.md                    ← language reference (.bp syntax + semantics)
+├── docs.md                    ← language reference (.bp syntax + semantics); every fence compiles (`zig build test-docs`)
 ├── build.zig                  ← workspace build graph
 ├── .github/workflows/         ← test.yml (push/PR) + release.yml (tags)
 ├── modules/                   ← all Zig packages — see modules/AGENTS.md
@@ -51,6 +51,7 @@ zig build test-backends # beam/wasm/erlang execution parity (modules/compiler-cl
 zig build test-bpmp     # bpmp unit tests
 zig build test-vscode   # VS Code extension unit tests — scripts/test-vscode.sh finds the sibling checkout
 zig build test-language # botopink language tests (tests/language/run.sh; `-- --compiler <botopink>` to run another binary)
+zig build test-docs     # every `botopink` fence of docs.md/README.md compiles (scripts/check-docs.sh)
 zig build clean-tmp     # reap scratch dirs older than 1 day (also runs before `zig build test`)
 ```
 
@@ -115,7 +116,7 @@ does not mirror them. Entry points:
 
 | Workflow | Trigger | What |
 | --- | --- | --- |
-| `.github/workflows/test.yml` | push / PR to `main`, `feat` | job `test`: `zig build test` from a cold runtime cache, then `zig build test-cli`, on ubuntu-22.04 + macos-14 (hard gate) and windows-2022 (allowed to fail). Job `libs` (ubuntu, after `test`): checks out emilia/erika/jhonstart/onze/rakun at `feat` into `repository/<name>/` and runs `zig build test-libs` over every runnable target. |
+| `.github/workflows/test.yml` | push / PR to `main`, `feat` | job `test`: `zig build test` from a cold runtime cache, then `zig build test-cli`, `zig build test-language` (ubuntu + macos only — it needs `node` and `erl`) and `zig build test-docs`, on ubuntu-22.04 + macos-14 (hard gate) and windows-2022 (allowed to fail). Job `libs` (ubuntu, after `test`): checks out emilia/erika/jhonstart/onze/rakun at `feat` into `repository/<name>/` and runs `zig build test-libs` over every runnable target. |
 | `.github/workflows/release.yml` | tag push `v*` | 5-target matrix (`linux-{x86_64,aarch64}`, `macos-{x86_64,aarch64}`, `windows-x86_64`) → `scripts/release-pack.sh` writes `dist/<binary>-<tag>-<target>.<ext>` + `.sha256` → `softprops/action-gh-release@v2` uploads to one Release. Prerelease iff the tag contains `-`. |
 
 Asset naming (the contract bpmp and the install scripts rely on):
@@ -150,7 +151,14 @@ Library resolution (`modules/compiler-cli/src/cli/libs.zig`): roots from
 - **Keep AGENTS.md up to date.** Code, layout, or pipeline changes update the
   affected `AGENTS.md` in the same change.
 - **`README.md` and `docs.md` stay in sync** with language features, CLI flags
-  and syntax.
+  and syntax. Every ```` ```botopink ```` fence in them is compiled by `zig
+  build test-docs`; an HTML comment on the line above the fence says how
+  (`<!-- docs-check: body -->` wraps statements in `fn main`,
+  `<!-- docs-check: project <name> <path> -->` writes one file of a multi-file
+  project, `<!-- docs-check: skip <reason> -->` is the only escape and its
+  reason is required and printed). A doc claim that the compiler does not yet
+  honour belongs in the reference's "Decided, not yet implemented" table, with
+  the front that closes it — never as an uncompiled example.
 - **English only** for source, comments, commits and compiler docs.
 - **One fact, one source.** Each fact lives in a single file; others link to it.
 - `Parser.init(tokens)` and `Lexer.init(source)` do **not** store an
@@ -159,8 +167,9 @@ Library resolution (`modules/compiler-cli/src/cli/libs.zig`): roots from
 - Type annotations use `TypeRef` (`named`, `array`, `tuple_`, `optional`,
   `function`, `generic`). Generic types use the `is_builtin` flag to distinguish
   `@Result<D, E>` (builtin) from `MyType<T>` (user).
-- Record/enum/interface shorthand decls map to the same AST nodes as long-form
-  declarations.
+- The surface declares a record-shaped or enum-shaped `type` and a `behavior`;
+  the shorthand and long-form spellings map to the same AST nodes, which keep
+  their historical internal names (`record`, `enum`, `interface`).
 - Formatter must be round-trip stable: `format(parse(src))` re-parses to an
   equivalent AST.
 - Pipeline `|>` is left-associative — preserve stable formatting across cycles.
@@ -177,7 +186,9 @@ run is [`scripts/gate.sh`](scripts/gate.sh):
 4. `zig build test-bpmp` (the package manager's unit suite);
 5. `scripts/beam_export_audit.sh` (every beam snapshot module assembles with every function exported);
 6. `zig build test-cli` (the CLI contract, test tooling, recursion and backend execution scripts);
-7. `zig build test-libs` (every visible library, known reds named; a library without tests is still compiled).
+7. `zig build test-libs` (every visible library, known reds named; a library without tests is still compiled);
+8. `zig build test-language` (tests/language — decision 8's `case`, tuples and `loop`; expected failures named);
+9. `zig build test-docs` (every `botopink` fence of `docs.md` and `README.md` compiles).
 
 `scripts/git-hooks/pre-commit` is the tracked pre-commit hook, self-contained in
 every checkout (standalone clone or meta submodule): it sources

@@ -1,5 +1,22 @@
 # Botopink language reference
 
+This reference describes the language as the compiler accepts it today. Every
+`botopink` fence here is compiled by `zig build test-docs`; the two that are
+tables rather than modules say so in a `docs-check` comment.
+
+## Syntax changes
+
+A type is declared with `type` and a contract with `behavior`; `record`, `enum`
+and `interface` are gone, and so are `auto`, `derive`, `get`, `macro`,
+`opaque`, `private`, `set`, `new` and `delegate` — all of them are ordinary
+identifiers now. An anonymous group of values is a tuple, `#(…)`, which
+replaces the old anonymous record. Repetition is `loop` only; `while` reports
+an error naming `loop (condition)`. A host template numbers its parameters
+positionally (`$0`, `$1`, …).
+
+The move from the previous surface, declaration by declaration, is in
+[`MIGRATION.md`](https://github.com/botopink/projects/blob/feat/specs/1.0.4-beta/MIGRATION.md).
+
 ## Program structure
 
 A Botopink program is a sequence of declarations — bindings, functions, types,
@@ -19,6 +36,7 @@ for a binary, `root.bp` for a library) declares which submodules to include;
 the compiler follows these declarations instead of compiling every `.bp` it
 finds.
 
+<!-- docs-check: project modules src/main.bp -->
 ```botopink
 // src/main.bp
 import {area} from "geometry";
@@ -30,6 +48,22 @@ pub mod shapes;      // resolves src/shapes/mod.bp
 fn main() {
     @print(area(3, 4));    // 12
     @print(describe());    // circle
+}
+```
+
+<!-- docs-check: project modules src/geometry.bp -->
+```botopink
+// src/geometry.bp
+pub fn area(w: i32, h: i32) -> i32 {
+    return w * h;
+}
+```
+
+<!-- docs-check: project modules src/shapes/mod.bp -->
+```botopink
+// src/shapes/mod.bp
+pub fn describe() -> string {
+    return "circle";
 }
 ```
 
@@ -66,6 +100,7 @@ val names: string[] = ["alice", "bob"];
 
 ### var — mutable binding
 
+<!-- docs-check: body -->
 ```botopink
 var n = 0;
 n = n + 1;
@@ -135,7 +170,19 @@ type Shape {
     Circle(radius: f64),
     Square(side: f64),
 }
+
+fn main() {
+    val c = Color.Red;
+    val s = Shape.Circle(radius: 2.0);
+    @print(case c { Red -> "red"; _ -> "other"; });
+    @print(case s { Circle(r) -> r; Square(side) -> side; });    // 2
+}
 ```
+
+A variant is built through its type — `Color.Red`, `Shape.Circle(radius: 2.0)`;
+inside a `case` pattern the bare name is enough. A bare `Red` in expression
+position type-checks but no backend lowers it (the generated program reports an
+unbound `Red` at run time), so always write the qualified form.
 
 ### behavior
 
@@ -169,6 +216,7 @@ Built-in generic types carry an `@` prefix: `@Result<D, E>`, `@Iterator<T>`,
 
 ### Literals
 
+<!-- docs-check: skip a table of literal forms, not a module -->
 ```botopink
 42             // i32
 3.14           // f64
@@ -179,6 +227,7 @@ true, false    // bool
 
 ### Arrays
 
+<!-- docs-check: body -->
 ```botopink
 val xs = [1, 2, 3];
 val tail = xs.slice(1, xs.length);    // [2, 3]
@@ -186,6 +235,7 @@ val tail = xs.slice(1, xs.length);    // [2, 3]
 
 ### Operators
 
+<!-- docs-check: skip an operator table, not a module -->
 ```botopink
 a + b, a - b, a * b, a / b, a % b     // arithmetic (+ also concatenates strings)
 a == b, a != b, a < b, a > b, a <= b, a >= b
@@ -196,20 +246,24 @@ x?.field                              // optional chaining
 
 ### Lambdas and method chains
 
+<!-- docs-check: body -->
 ```botopink
 val double = { n -> n * 2 };
+val xs = [1, 2, 3, 4];
 
 val total = xs
     .filter({ n -> n % 2 == 0 })
     .map({ n -> n * 2 })
-    .fold(0, { acc, n -> acc + n });
+    .fold(0, { acc, n -> acc + n });    // 12
 ```
 
 The pipe operator `|>` is left-associative.
 
 ### If / else
 
+<!-- docs-check: body -->
 ```botopink
+val x = 1;
 val s = if (x > 0) { "positive" } else { "negative" };
 ```
 
@@ -224,6 +278,11 @@ fn show(x: ?i32) {
 ### Case (pattern matching)
 
 ```botopink
+type Shape {
+    Circle(radius: f64),
+    Square(side: f64),
+}
+
 fn area(shape: Shape) -> f64 {
     return case shape {
         Circle(radius) -> radius * radius * 3.14;
@@ -235,23 +294,52 @@ fn area(shape: Shape) -> f64 {
 List and or-patterns:
 
 ```botopink
-case items {
-    [] -> "empty";
-    [x] -> "one";
-    [first, ..rest] -> "many";
+type Color { Red, Green, Blue }
+
+fn warm(c: Color) -> bool {
+    return case c {
+        Red | Green -> true;
+        Blue -> false;
+    };
 }
 
-case c {
-    Red | Green -> true;
-    Blue -> false;
+fn size(items: i32[]) -> string {
+    return case items {
+        [] -> "empty";
+        [x] -> "one";
+        [first, ..rest] -> "many";
+    };
+}
+```
+
+A section of an enum is itself a type, written by its path, so a function can
+take one section instead of the whole enum:
+
+```botopink
+type Token {
+    Text { Bold, Italic },
+    Hover(inner: Token[]),
+}
+
+fn textToCss(t: Token.Text) -> string {
+    return case t {
+        Bold -> "font-weight:bold";
+        Italic -> "font-style:italic";
+    };
 }
 ```
 
 ### Loop
 
-`loop` iterates a collection or a range; `break` exits with a value.
+`loop` is the only repetition form. It takes a collection, a range or a
+condition, or nothing at all; `break` leaves it.
 
+A range excludes its end: `0..10` yields `0` to `9`.
+
+<!-- docs-check: body -->
 ```botopink
+val xs = [1, 2, 3];
+
 loop (xs) { item ->
     @print(item);
 };
@@ -259,15 +347,28 @@ loop (xs) { item ->
 loop (0..10) { i ->
     @print(i);
 };
+
+var n = 0;
+loop (n < 3) {
+    n = n + 1;
+};
+
+loop {
+    n = n - 1;
+    if (n == 0) { break; };
+};
 ```
+
+A `//` comment inside a `loop` body does not parse today — keep it on the line
+above the loop (front 06, parser).
 
 ### Assert
 
+<!-- docs-check: body -->
 ```botopink
+val x = 1;
 assert x > 0;
 assert x > 0, "x must be positive";
-assert x is Some(n);                                   // narrows x
-val assert Ok(value) = result catch throw Error("not ok");
 ```
 
 ## Functions
@@ -279,6 +380,10 @@ fn greet(name: string, greeting: string = "hello") -> string {
     return greeting + ", " + name + "!";
 }
 ```
+
+The default is **not applied yet**: every call still passes every argument
+(`greet("world")` reports `'greet' expects 2 argument(s), got 1`). Front 06
+row N1 closes it.
 
 ### Results
 
@@ -343,10 +448,25 @@ pub fn conf<T>(comptime q: @Expr<string>) -> @Expr<T> {
 pub declare fn parse(input: string) -> i32;
 ```
 
+A binding may also be a template, where `$0`, `$1`, … are the declared
+parameters — on a method, `self` is `$0`:
+
+```botopink
+#[@External.Node("$0.toUpperCase()"),
+  @External.Erlang("string:uppercase($0)")]
+pub declare fn shout(text: string) -> string;
+```
+
+Only `External.<Target>` is read. A lower-case `@external(node, …)` matches
+nothing: the function is left without a host and nothing says so.
+
 ## Builtins
 
 ```botopink
-@print("hello");
+fn greet() {
+    @print("hello");
+}
+
 fn notReady() -> i32 { @todo(); }
 ```
 
@@ -397,3 +517,24 @@ Every project carries a `botopink.json` at its root:
 
 Optional `entry` names the module-tree root under `src/` (default: `main.bp`,
 else `root.bp`). `dependencies` also accepts an array of bare names.
+
+## Decided, not yet implemented
+
+These are settled language rules that the compiler does not accept yet. They
+are listed so nothing here reads as working code; each names the front that
+closes it.
+
+| Rule | Today | Closes with |
+|---|---|---|
+| Union types (`i32 \| string`) | not parsed | 06 N20 |
+| The `unknown` type | `unknown` parses as an ordinary type name, with none of its assignability rules | 06 N19 |
+| `x is i32` testing a value by range, narrowing inside the block | not parsed | 06 N21 |
+| `case` arms written `Pattern { … }`, and `when (…)` guards | arms are `pattern -> value;` — a final `_` arm already works | 06 N22 |
+| `break <value>` making the loop an expression | the loop's value is a **list** holding it | 06 N12 |
+| Inclusive range patterns `1...9` (`..` stays iteration) | not parsed | 06 N22 |
+| `val assert Ok(value) = parse("42") catch 0` binding `value` | the pattern's bindings stay unbound (`unbound variable 'value'`) | 06 N11 |
+| `val assert <pattern> = <expr>;` with no `catch` (a failed match is fatal) | refused — write the `catch` form. At this commit the parser still aborts on it; 06 replaces that with `error[assert-pattern-missing-catch]` | 06 N25 |
+| `assert x is Some(n)` | not parsed | 06 N11 |
+| A parameter default being applied at a call | every argument is required | 06 N1 |
+| `Self<T>` required in a generic type or behavior | bare `Self` accepted | 06 N18 |
+| A `//` comment inside a `loop` body | not parsed | 06 (parser) |
