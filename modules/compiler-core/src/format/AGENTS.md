@@ -42,9 +42,9 @@ and running `format` twice in a row must produce identical text.
 | Lambdas | A parameterless lambda in expression position keeps `{ -> … }` (the braces alone re-parse as a block); a trailing lambda `f { … }` and a `case` arm's block body (a parameterless lambda in the AST) print `{ … }` |
 | `case` arms | An arm whose body is a lambda prints decision 8 §5.1's `Pattern [when (…)] { body }` — no arrow, no `;`, the whole-value binder kept (`_ { n -> … }`); every other body keeps `pattern [if …] -> value;`. The pre-decision-8 block arm `1 -> { … };` is the same node, so it comes back in decision 8's spelling |
 | Patterns | `ast.PatternShape` decides the spelling: a tuple pattern prints `#(…)`, an inclusive range `A...B`, a payload label `name: p`, and a pattern that ignores the rest ends in `..` |
-| `if` branches | A single-expression branch prints bare; a multi-statement branch prints its statements one per line, each ended by `;` |
+| `if` branches | A single-expression branch prints bare; a multi-statement branch prints its statements through the same `fmtStmtSeq` a `fn`, `test`, `loop` and lambda body use — one per line, each ended by `;`, keeping a blank line and a trailing comment on its own statement's line |
 | String literals | `"""…"""` when the content spans lines or holds an unescaped `"`; `"…"` otherwise |
-| `loop` body | `loop (…) { x ->` then one statement per line, each ended by `;` (the body shares `fmtStmtSeq` with `fn` and lambda bodies, including a trailing comment on its statement's line) |
+| `loop` body | `loop (…) { x ->` then one statement per line, each ended by `;` (the body shares `fmtStmtSeq` with `fn`, lambda and `if`-branch bodies, including a trailing comment on its statement's line) |
 | Imports | `import {a, b} from "m"`; the package-namespace forms keep the handle: `import pkg`, `import pkg from "m"`, `import pkg, {a} from "m"` |
 | Package default | `[pub] default mod Name;` and `[pub] default fn f(…)` keep the `default` keyword, in the parser's order (`pub`, `default`, `declare`). It is not decoration: `default mod` names the package handle `import <pkg>` resolves to and `default fn` names the handler aliased under it (`comptime.zig`'s package-default DSL). Dropping it unbinds every consumer of a package whose handle and handler have different names, and — a deletion being idempotent — `format --check` then reports the broken file as clean |
 | One-line lambda value | Rendered flat as one text (it may run past the width); a value that needs a line break of its own prints the open form — so a second `format` pass decides the same way |
@@ -83,7 +83,13 @@ shortforms) and is documentation only.
 - **End-of-line comments on a field or an array element** — `parseFieldList` and the array literal
   attach a comment to the *next* item (the last one's is dropped by `skipComments`), with no line
   information; the formatter prints it above the next item. Statement trailing comments are kept.
-- **Blank lines inside a `loop` body or an `if` branch** — no `emptyLinesBefore` is recorded there.
+- **Blank lines inside an `if` then-branch or a lambda body — which is every `loop (…) { x -> … }`
+  body** — those two blocks carry their own inlined loop in `parser/exprs.zig`, written before
+  `parseBlock` grew `trackEmptyLines`/`handleComments`, so no `emptyLinesBefore` is recorded and a
+  `//` comment there is a parse error. The printer keeps whatever is recorded, so both start
+  round-tripping the moment the loops call `parseStmtListInBraces`. An `if` **else**-branch does
+  reach `parseStmtListInBraces`: its blank lines were recorded and, until the branch printers were
+  merged into `fmtStmtSeq`, silently dropped — they are printed now.
 
 Each needs a parser/AST change (`parser/decls.zig`, `parser/exprs.zig`) before the formatter can
 print it back.

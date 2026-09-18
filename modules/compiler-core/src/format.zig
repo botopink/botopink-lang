@@ -339,9 +339,22 @@ pub const Formatter = struct {
         return this.surroundBreak("{", try this.fmtStmtSeq(stmts), "}");
     }
 
-    /// The statements of a block body — a `fn`, a lambda, a `loop` — one per
-    /// line, each ended by `;` (a comment takes none); a blank source line is
-    /// kept, and a comment written on the previous statement's line stays there.
+    /// The statements of a block body — a `fn`, a lambda, a `loop`, and an `if`
+    /// branch — one per line, each ended by `;` (a comment takes none); a blank
+    /// source line is kept, and a comment written on the previous statement's
+    /// line stays there.
+    ///
+    /// The `if` branches had a second printer of their own (`fmtBranchStmts`)
+    /// which joined with `hardline()` and read neither `emptyLinesBefore` nor
+    /// the trailing-comment flag, so an else-branch's blank line was recorded by
+    /// the parser and then dropped, and a trailing comment was moved onto a line
+    /// of its own. The two were otherwise identical, so the second one is gone
+    /// rather than given the same two arms.
+    ///
+    /// An `if` **then**-branch and a lambda body are parsed by their own inlined
+    /// loops (`parser/exprs.zig`), which record no `emptyLinesBefore` at all —
+    /// this printer keeps whatever they record, so those two start round-tripping
+    /// the moment the loops call `parseStmtListInBraces` (front 15's G5).
     fn fmtStmtSeq(this: *Formatter, stmts: []ast.Stmt) !*const Doc {
         var items: std.ArrayList(*const Doc) = .empty;
         defer items.deinit(this.arena);
@@ -493,7 +506,7 @@ pub const Formatter = struct {
                     const condDoc = try this.fmtExpr(i.cond.*);
                     // Build then block: with or without binding
                     const thenDoc = if (i.binding) |b| blk2: {
-                        const body = try this.fmtBranchStmts(i.then_);
+                        const body = try this.fmtStmtSeq(i.then_);
                         const inner = try this.concatAll(&.{
                             try this.text(b),
                             try this.text(" ->"),
@@ -510,14 +523,14 @@ pub const Formatter = struct {
                             break :blk2 try this.fmtExpr(i.then_[0].expr);
                         }
                         // Multi-statement block: one statement per line, as written.
-                        const inner = try this.fmtBranchStmts(i.then_);
+                        const inner = try this.fmtStmtSeq(i.then_);
                         break :blk2 try this.surroundBreak("{", inner, "}");
                     };
                     if (i.else_) |els| {
                         const elseDoc = if (els.len == 1)
                             try this.fmtExpr(els[0].expr)
                         else blk2: {
-                            const inner = try this.fmtBranchStmts(els);
+                            const inner = try this.fmtStmtSeq(els);
                             break :blk2 try this.surroundBreak("{", inner, "}");
                         };
                         break :blk this.concatAll(&.{
@@ -1107,22 +1120,6 @@ pub const Formatter = struct {
         }
 
         return this.concatAll(parts.items);
-    }
-
-    /// The statements of a multi-statement `if` branch, one per line, each
-    /// ended by `;` (a comment takes none) — the block re-parses as written.
-    /// (The branch printer used to prefix each with `break`, which does not
-    /// parse for a `val` and changes the value of every other statement.)
-    fn fmtBranchStmts(this: *Formatter, stmts: []ast.Stmt) !*const Doc {
-        var items = try this.arena.alloc(*const Doc, stmts.len);
-        for (stmts, 0..) |st, idx| {
-            const exprDoc = try this.fmtExpr(st.expr);
-            items[idx] = switch (st.expr) {
-                .literal => |lit| if (lit.kind == .comment) exprDoc else try this.concat(exprDoc, try this.text(";")),
-                else => try this.concat(exprDoc, try this.text(";")),
-            };
-        }
-        return this.join(items, this.hardline());
     }
 
     /// `arrow_when_empty`: a parameterless lambda in expression position keeps

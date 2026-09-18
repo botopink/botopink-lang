@@ -230,3 +230,43 @@ test "format: comments ---- an empty module comment line has no trailing space" 
         \\fn main() {}
     );
 }
+
+// ── an `if` branch is printed by the one statement-sequence printer (G6) ─────
+// The branches had a second printer of their own that joined with `hardline()`
+// and read neither `emptyLinesBefore` nor the trailing-comment flag, so an
+// else-branch's blank line — which the parser DID record — was dropped, and a
+// trailing comment was moved onto a line of its own. Both survive a round trip
+// now that the branches share `fmtStmtSeq` with `fn`, `test` and lambda bodies.
+
+test "format: comments ---- an else-branch keeps a blank line between statements" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn f(a: bool) -> i32 {
+        \\    var n = 0;
+        \\    if (a) {
+        \\        n = 1;
+        \\        n = 2;
+        \\    } else {
+        \\        n = 3;
+        \\
+        \\        n = 4;
+        \\    };
+        \\    return n;
+        \\}
+    );
+}
+
+test "format: comments ---- an else-branch keeps a trailing comment on its line" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn f(a: bool) -> i32 {
+        \\    var n = 0;
+        \\    if (a) {
+        \\        n = 1;
+        \\        n = 2;
+        \\    } else {
+        \\        n = 3; // why three
+        \\        n = 4;
+        \\    };
+        \\    return n;
+        \\}
+    );
+}
