@@ -70,3 +70,32 @@ test "js: std package ---- order enum module with type export" {
         \\}
     );
 }
+
+// A method on a type the consumer never names. `import {dict} from "std"` binds
+// the MODULE `std/dict`, not a `pub` symbol, so the cross-module index was never
+// consulted for `Dict` and erlang emitted a bare local `insert(D, K, V)` —
+// `out/main.erl: function insert/3 undefined`, i.e. the program did not compile
+// while the same source ran on commonJS. The owner exports `insert/3` and
+// `lookup/2`; the consumer must remote-call them (`dict:insert/3`). The program
+// means `1`, then `2` (two distinct keys), which commonJS and erlang both print.
+//
+// KNOWN-WRONG (beam): `main.S` reads `insert` out of the receiver map and
+// `call_fun`s it instead of calling `dict:insert/3` — the beam twin of the
+// erlang defect this test pins, in `beam_asm.zig` (front 01). The module never
+// runs, so its RUN LOG is empty.
+// KNOWN-WRONG (wasm): wasm stays single-module, so `wat.zig` inlines the std
+// module's functions into the entry (`$Dict_insert`, `$Dict_lookup`) and the
+// cross-module index never applies. `$Dict_lookup` answers absent — the first
+// print is `0` instead of `1`, a wasm-side defect in the `forEach` accumulator
+// of `Dict.lookup`, not a module-resolution one. The second print is `2`.
+test "js: std package ---- methods of a type answered by an imported module resolve in its owner" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\import {dict} from "std";
+        \\
+        \\fn main() {
+        \\    val d = dict.empty().insert("a", 1);
+        \\    @print(d.lookup("a").unwrapOr(0));
+        \\    @print(d.insert("b", 2).size());
+        \\}
+    );
+}

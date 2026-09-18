@@ -53,6 +53,9 @@ max(Self, Other) ->
             Other
     end.
 
+clamp(Self, Lo, Hi) ->
+    min(max(Self, Lo), Hi).
+
 main() ->
     M = clamp(#{cents => 500}, #{cents => 0}, #{cents => 120}),
     '__bp_print'([maps:get(cents, M)]).
@@ -76,6 +79,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:26:9: function clamp/3 undefined
+120
 ```

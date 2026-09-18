@@ -48,7 +48,7 @@ codegen/
     ├── features.zig            ← lambda/enum/destructure/star/import/range/pipeline/hooks
     ├── externals.zig           ← `#[@External.<Target>(…)]` FFI declarations
     ├── narrowing.zig           ← state narrowing (null checks, case variants, type guards)
-    ├── std_package.zig         ← `from "std"` qualified calls + builtin `result` namespace
+    ├── std_package.zig         ← `from "std"` qualified calls, a method on the type an imported module answers, builtin `result` namespace
     ├── wat.zig                 ← WAT backend codegen
     ├── dts_skips_templates.zig ← `.d.ts` drops `@Expr`/`@ExprCustom` template fns
     ├── runtime_scratch.zig     ← pins the `.botopinkbuild/tmp/<hex>/` scratch layout
@@ -264,7 +264,17 @@ codegen/
   A local definition of the same name and arity wins (an `@emit`ed body can
   define `find/2` beside an imported `find`). The owner exports the methods of
   its `pub` types (under the mangled name where two types share a method name),
-  so the consumer's remote call resolves. **A host-backed `declare fn` another
+  so the consumer's remote call resolves. **An import that names a MODULE, not a
+  symbol, registers that module's types too.** `import {dict} from "std"` binds
+  the module `std/dict`; `Dict` is never named by the consumer, so the cross
+  index was never consulted for it and `dict.empty().insert("a", 1)` emitted a
+  bare local `insert(D, K, V)` — `function insert/3 undefined`, a program that
+  runs on commonJS and does not compile on erlang. `collectNamespaceModuleTypes`
+  answers a `use` name that matches no `pub` export but *is* the basename of some
+  export's module: every pub record of that module joins `imported_types` and its
+  methods join `imported_fns`, so the call becomes `dict:insert/3`. It leaves
+  `record_fields` alone — a consumer that constructs the record imports it by
+  name, which is the branch above. **A host-backed `declare fn` another
   module imports is answered by an owner-side wrapper.** It emits no function of
   its own — the annotation renders at each call site — so an imported one used
   to stay a bare call and fail as `function <name>/<arity> undefined`. The owner
@@ -280,6 +290,23 @@ codegen/
   arity-branched one with no branch for its parameter count) gets no wrapper and
   is not marked `erlang_backed` in the cross index: the consumer keeps its bare
   call, and erlc names the gap.
+- **A record emits the `default fn`s it adopts with `implement`.** A behavior's
+  bodied instance default is part of the implementing record's surface — commonJS
+  puts it on the class (`appendInterfaceDefaults`), and without a counterpart
+  erlang emitted no function at all: `bag.isEmpty()` fell through to the untyped
+  primitive shim and aborted at run time with
+  `{bp_unsupported_method, <<"isEmpty">>, 0, #{items => []}}` while commonJS
+  answered. `recordForms` now emits each adopted default (following `extends`)
+  beside the record's own methods, and `self_record_type` makes `self.size()`
+  inside such a body resolve through the record — so it reaches `bag_size/1`
+  where a record-method collision mangled `size/1` away. Which ones are emitted
+  is decided once, in `collectAdoptedIfaceDefaults`, after `collectLocalFnArities`:
+  **only a default whose `<name>/<arity>` is free in the module and claimed by
+  exactly one record.** Inference records no lowering for a call to an adopted
+  default (the method belongs to the behavior, not to the record), so the call
+  site can only be the bare name; with two implementors one emitted `isEmpty/1`
+  would answer both receivers and read fields the other does not have. Such a
+  module keeps the run-time abort until a receiver like that is typed (06 N15).
 - **A field of function type is applied, not called.** `c.set(9)` on
   `type Cell(value: i32, set: fn(next: i32) -> i32)` reads the map field and
   applies it (`(maps:get(set, C))(9)`); the record emits no `set/2`.
