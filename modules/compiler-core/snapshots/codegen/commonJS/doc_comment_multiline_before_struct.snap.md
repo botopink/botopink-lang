@@ -17,6 +17,7 @@ class Account {
         this.email = email;
     }
 }
+Account.prototype.__bp = "Account";
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

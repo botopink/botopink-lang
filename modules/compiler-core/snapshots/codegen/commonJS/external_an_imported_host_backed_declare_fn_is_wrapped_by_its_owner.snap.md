@@ -29,10 +29,10 @@ exports.nodeOnly = nodeOnly;
 
 ----- TYPESCRIPT TYPEDEF -- hostlib.d.ts
 ```typescript
-export declare function hostKey(v: i32): string;
+export declare function hostKey(v: number): string;
 
 
-export declare function hostLen(xs: Array<string>): i32;
+export declare function hostLen(xs: Array<string>): number;
 
 
 export declare function nodeOnly(s: string): void;
@@ -60,9 +60,21 @@ function __bp_show(v, s, top, a) {
         a.push(top ? v : (("\"" + Array.from(v, (c) => ((c === "\"") || (c === "\\")) ? ("\\" + c) : (c === "\n") ? "\\n" : (c === "\r") ? "\\r" : (c === "\t") ? "\\t" : c).join("")) + "\""));
         return "%s";
     }
+    if (((typeof v === "number") && (s === "f"))) {
+        a.push(Number.isInteger(v) ? v.toFixed(1) : String(v));
+        return "%s";
+    }
     if (Array.isArray(v)) {
         const t = ((s != null) && (s[0] === "#"));
-        return (((t ? "#(" : "[") + v.map((e, i) => __bp_show(e, (s == null) ? null : t ? s[i + 1] : s[1], false, a)).join(",")) + (t ? ")" : "]"));
+        return (((t ? "#(" : "[") + v.map((e, i) => __bp_show(e, (s == null) ? null : t ? s[i + 1] : s[1], false, a)).join(", ")) + (t ? ")" : "]"));
+    }
+    if (((v != null) && (typeof v.__bp === "string"))) {
+        if ((typeof v.display === "function")) {
+            a.push(v.display());
+            return "%s";
+        }
+        const k = Object.keys(v);
+        return (((typeof v.tag === "string") ? ((v.__bp + ".") + v.tag) : v.__bp) + ((k.length === 0) ? "" : (("(" + k.map((n) => ((n + ": ") + __bp_show(v[n], null, false, a))).join(", ")) + ")")));
     }
     a.push(v);
     return "%O";
@@ -74,7 +86,7 @@ function __bp_print() {
     console.log.apply(console, [f, ...a]);
 }
 
-const { hostKey, hostLen, nodeOnly } = require("./module");
+const { hostKey, hostLen, nodeOnly } = require("./hostlib.js");
 
 function main() {
     __bp_print(hostKey(42));
@@ -90,13 +102,13 @@ _botopink_main();
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-import { hostKey, hostLen, nodeOnly } from "./module";
+import { hostKey, hostLen, nodeOnly } from "./hostlib";
 
 
-import { hostKey, hostLen, nodeOnly } from "./module";
+import { hostKey, hostLen, nodeOnly } from "./hostlib";
 
 
-import { hostKey, hostLen, nodeOnly } from "./module";
+import { hostKey, hostLen, nodeOnly } from "./hostlib";
 
 
 export declare function main(): void;
@@ -105,4 +117,6 @@ export declare function main(): void;
 
 ----- RUN LOG -----
 ```logs
+42
+2
 ```

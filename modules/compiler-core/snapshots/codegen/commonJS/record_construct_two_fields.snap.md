@@ -14,6 +14,7 @@ class Point {
         this.y = y;
     }
 }
+Point.prototype.__bp = "Point";
 
 function make() {
     return new Point(3, 4);

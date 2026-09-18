@@ -17,6 +17,7 @@ fn Widget() -> Element {
 ```javascript
 class Element {
 }
+Element.prototype.__bp = "Element";
 
 function cleanup() {
     0;

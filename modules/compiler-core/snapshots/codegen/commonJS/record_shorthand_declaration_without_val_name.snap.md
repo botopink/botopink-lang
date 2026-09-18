@@ -21,6 +21,7 @@ class Vec2 {
         return ((this.x * other.x) + (this.y * other.y));
     }
 }
+Vec2.prototype.__bp = "Vec2";
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

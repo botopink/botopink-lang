@@ -15,6 +15,7 @@ class Person {
         this.age = age;
     }
 }
+Person.prototype.__bp = "Person";
 
 function f() {
     const r = new Person("ann", 30);

@@ -28,6 +28,7 @@ class Vec2 {
         return (this.x * factor);
     }
 }
+Vec2.prototype.__bp = "Vec2";
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

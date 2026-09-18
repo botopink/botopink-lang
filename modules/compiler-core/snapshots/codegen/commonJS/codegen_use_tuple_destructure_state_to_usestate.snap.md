@@ -14,6 +14,7 @@ fn Counter() -> Element {
 ```javascript
 class Element {
 }
+Element.prototype.__bp = "Element";
 
 function state(initial) {
     initial;

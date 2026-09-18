@@ -24,6 +24,7 @@ class List {
         return items.map(f);
     }
 }
+List.prototype.__bp = "List";
 
 class Pipeline {
     constructor(items) {
@@ -34,6 +35,7 @@ class Pipeline {
         return List.map(this.items, f);
     }
 }
+Pipeline.prototype.__bp = "Pipeline";
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

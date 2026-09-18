@@ -11,10 +11,30 @@ fn makeCircle() -> Shape {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-const Shape = Object.freeze({
-    Circle: (r) => ({ tag: "Circle", r }),
-    Square: (side) => ({ tag: "Square", side }),
-});
+class Shape {
+    static Circle(r) {
+        return new Shape$Circle(r);
+    }
+
+    static Square(side) {
+        return new Shape$Square(side);
+    }
+}
+Shape.prototype.__bp = "Shape";
+class Shape$Circle extends Shape {
+    constructor(r) {
+        super();
+        this.r = r;
+    }
+}
+Shape$Circle.prototype.tag = "Circle";
+class Shape$Square extends Shape {
+    constructor(side) {
+        super();
+        this.side = side;
+    }
+}
+Shape$Square.prototype.tag = "Square";
 
 function makeCircle() {
     return Shape.Circle(5);

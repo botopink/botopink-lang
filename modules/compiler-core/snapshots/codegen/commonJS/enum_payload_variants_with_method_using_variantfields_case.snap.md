@@ -17,11 +17,20 @@ val Shape = type {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-const Shape = Object.freeze({
-    Circle: (radius) => ({ tag: "Circle", radius }),
-    Square: (side) => ({ tag: "Square", side }),
-    Triangle: (base, height) => ({ tag: "Triangle", base, height }),
-    area: function(shape) {
+class Shape {
+    static Circle(radius) {
+        return new Shape$Circle(radius);
+    }
+
+    static Square(side) {
+        return new Shape$Square(side);
+    }
+
+    static Triangle(base, height) {
+        return new Shape$Triangle(base, height);
+    }
+
+    static area(shape) {
         return (() => {
             const _s = shape;
             if (_s.tag === "Circle") {
@@ -38,8 +47,31 @@ const Shape = Object.freeze({
             }
             return 0.0;
         })();
-    },
-});
+    }
+}
+Shape.prototype.__bp = "Shape";
+class Shape$Circle extends Shape {
+    constructor(radius) {
+        super();
+        this.radius = radius;
+    }
+}
+Shape$Circle.prototype.tag = "Circle";
+class Shape$Square extends Shape {
+    constructor(side) {
+        super();
+        this.side = side;
+    }
+}
+Shape$Square.prototype.tag = "Square";
+class Shape$Triangle extends Shape {
+    constructor(base, height) {
+        super();
+        this.base = base;
+        this.height = height;
+    }
+}
+Shape$Triangle.prototype.tag = "Triangle";
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

@@ -28,6 +28,7 @@ class Invoice {
         throw "invalid invoice";
     }
 }
+Invoice.prototype.__bp = "Invoice";
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

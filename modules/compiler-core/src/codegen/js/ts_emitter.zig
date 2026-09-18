@@ -98,6 +98,7 @@ fn writeMember(w: *Writer, m: Ast.TsMember) Error!void {
             try w.writeAll(";\n");
         },
         .method => |f| {
+            try w.writeAll(f.modifier);
             try w.writeAll(f.name);
             try writeParams(w, f.params);
             try w.writeAll(": ");

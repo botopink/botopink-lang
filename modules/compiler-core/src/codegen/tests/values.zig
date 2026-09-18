@@ -383,6 +383,44 @@ test "js: net-new ---- record equality vs array equality across backends" {
     );
 }
 
+test "js: tuple ---- equality is positional, and labels take no part" {
+    // Decision 8 §6 T6 — a tuple is positional at run time, so `==` compares
+    // its elements. A tuple is a JS array and `==` lowers to `===`, which
+    // compares references, so two structurally equal tuples were unequal and
+    // the negative case passed for the wrong reason. T1/T5: the labels a
+    // construction lends take no part, and a different arity is not equal.
+    //
+    // A tuple is all this fires for today — the emitter walks the untyped AST
+    // and the print shape is the only thing it knows about an operand — but
+    // `__bp_eq` is structural for every composite value already (decision 35).
+    //
+    // A RUN LOG, not a snapshot: the erlang, beam and wasm baselines of this
+    // program are not this front's to record.
+    try h.assertJsRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    val a = #(1, "a");
+        \\    val b = #(1, "a");
+        \\    val c = #(1, "b");
+        \\    @print(a == b);
+        \\    @print(a != b);
+        \\    @print(a == c);
+        \\    @print(a != c);
+        \\    val name = "SP";
+        \\    val pop = 12;
+        \\    val labeled = #(name, pop);
+        \\    val plain = #("SP", 12);
+        \\    @print(labeled == plain);
+        \\    val n1 = #(#(1, 2), "x");
+        \\    val n2 = #(#(1, 2), "x");
+        \\    val n3 = #(#(1, 3), "x");
+        \\    @print(n1 == n2);
+        \\    @print(n1 == n3);
+        \\    val wide = #(1, "a", 2);
+        \\    @print(a == wide);
+        \\}
+    , "true\nfalse\nfalse\ntrue\ntrue\ntrue\nfalse\nfalse\n");
+}
+
 test "js: operators ---- plus on untyped operands and division of floats" {
     // A lambda parameter carries no type: `x + y` over two strings concatenates
     // and `/` over floats divides — erlang's `+` and `div` raised `badarith`.

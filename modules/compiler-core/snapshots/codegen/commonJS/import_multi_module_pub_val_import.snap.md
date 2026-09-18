@@ -13,7 +13,7 @@ const HOST = "localhost";
 
 ----- TYPESCRIPT TYPEDEF -- config.d.ts
 ```typescript
-export declare const PORT: i32;
+export declare const PORT: number;
 
 
 export declare const HOST: string;

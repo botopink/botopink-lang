@@ -24,6 +24,7 @@ class IoError {
         this.path = path;
     }
 }
+IoError.prototype.__bp = "IoError";
 
 function step1() {
     return ({ error: new IoError("/data") });

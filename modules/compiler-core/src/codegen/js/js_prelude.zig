@@ -40,10 +40,18 @@ pub const Helper = enum {
     /// The same with a static shape per argument (`["#", …]` a tuple,
     /// `["[", elem]` an array, `null` unknown).
     print_as,
+    /// Structural `==` between two composite values (decision 8 §6 T6, and
+    /// decision 35, which settles the same question for every other one): a JS
+    /// `===` compares references, so a record, an array, a tuple and a variant
+    /// all answered `false` where two equal ones were compared. Arrays and
+    /// tuples compare element-wise; a class instance compares its constructor
+    /// and then its own fields, which decision 5 made the one shape a record
+    /// and a variant share.
+    structural_eq,
 };
 
 /// Emission order of the helpers a module uses.
-pub const order = [_]Helper{ .assert_fatal, .string_char_at, .range_from, .show, .print, .print_as };
+pub const order = [_]Helper{ .assert_fatal, .string_char_at, .range_from, .structural_eq, .show, .print, .print_as };
 
 /// The receiver family of a primitive method call, as inference recorded it.
 pub const Receiver = enum { string, array, other };
@@ -65,6 +73,7 @@ pub fn name(h: Helper) []const u8 {
         .show => "__bp_show",
         .print => "__bp_print",
         .print_as => "__bp_print_as",
+        .structural_eq => "__bp_eq",
     };
 }
 
@@ -77,6 +86,7 @@ pub fn decl(h: Helper) ast.Stmt {
         .show => show,
         .print => print,
         .print_as => print_as,
+        .structural_eq => structural_eq,
     };
 }
 
@@ -148,6 +158,12 @@ const range_from: ast.Stmt = .{ .function = .{
     } }}, .layout = .spaced },
 } };
 
+const eq_a: ast.Expr = .{ .name = "a" };
+const eq_b: ast.Expr = .{ .name = "b" };
+const is_array_a: ast.Expr = callOn(&.{ .name = "Array" }, "isArray", &.{eq_a});
+/// `d + 1` — one level deeper in the structural walk.
+const deeper: ast.Expr = .{ .binary = .{ .op = "+", .lhs = &.{ .name = "d" }, .rhs = &one } };
+
 const v: ast.Expr = .{ .name = "v" };
 const c: ast.Expr = .{ .name = "c" };
 const sh: ast.Expr = .{ .name = "s" };
@@ -188,7 +204,7 @@ const quoted_v: ast.Expr = .{ .binary = .{
     .rhs = &.{ .quoted = "\\\"" },
 } };
 
-/// `(t ? "#(" : "[") + v.map((e, i) => __bp_show(e, s == null ? null : t ? s[i + 1] : s[1], false, a)).join(",") + (t ? ")" : "]")`
+/// `(t ? "#(" : "[") + v.map((e, i) => __bp_show(e, s == null ? null : t ? s[i + 1] : s[1], false, a)).join(", ") + (t ? ")" : "]")`
 const bracketed_v: ast.Expr = .{ .binary = .{
     .op = "+",
     .lhs = &.{ .binary = .{
@@ -210,20 +226,123 @@ const bracketed_v: ast.Expr = .{ .binary = .{
                 .{ .name = "false" },
                 args_a,
             } } } },
-        } }}), "join", &.{.{ .quoted = "," }}),
+        } }}), "join", &.{.{ .quoted = ", " }}),
     } },
     .rhs = &.{ .paren = &.{ .ternary = .{ .cond = &t, .then = &.{ .quoted = ")" }, .else_ = &.{ .quoted = "]" } } } },
 } };
 
 const args_a: ast.Expr = .{ .name = "a" };
 
-/// `a.push(<value>); return "<verb>";`
-fn pushAndReturn(comptime value: ast.Expr, comptime verb: []const u8) ast.Stmt {
+/// `a.push(<value>); return "<verb>";`, as a block at `indent`.
+fn pushAndReturn(comptime value: ast.Expr, comptime verb: []const u8, comptime indent: usize) ast.Stmt {
     return .{ .block = .{ .stmts = &.{
         .{ .expr = callOn(&args_a, "push", &.{value}) },
         .{ .return_ = .{ .quoted = verb } },
-    }, .layout = .indented, .indent = 1 } };
+    }, .layout = .indented, .indent = indent } };
 }
+
+const v_bp: ast.Expr = .{ .member = .{ .object = &v, .name = "__bp" } };
+const v_tag: ast.Expr = .{ .member = .{ .object = &v, .name = "tag" } };
+const keys_k: ast.Expr = .{ .name = "k" };
+
+fn typeofIs(comptime operand: *const ast.Expr, comptime what: []const u8) ast.Expr {
+    return .{ .binary = .{
+        .op = "===",
+        .lhs = &.{ .unary = .{ .op = "typeof ", .operand = operand, .parens = false } },
+        .rhs = &.{ .quoted = what },
+    } };
+}
+
+/// `if ((typeof v === "number") && (s === "f")) { a.push(Number.isInteger(v) ? v.toFixed(1) : String(v)); return "%s"; }`
+///
+/// Decision 8 § 7 — an `f64` always carries its decimal part, on every backend.
+/// JavaScript has one number type, so the call site says which values are
+/// floats: `"f"` is the print shape `commonJS.zig` builds for an expression it
+/// types as `f64`.
+const float_branch: ast.Stmt = .{ .if_ = .{
+    .cond = .{ .binary = .{ .op = "&&", .lhs = &typeofIs(&v, "number"), .rhs = &eq(&sh, "f") } },
+    .then = &pushAndReturn(.{ .ternary = .{
+        .cond = &callOn(&.{ .name = "Number" }, "isInteger", &.{v}),
+        .then = &callOn(&v, "toFixed", &.{.{ .number = "1" }}),
+        .else_ = &.{ .call = .{ .callee = &.{ .name = "String" }, .args = &.{v} } },
+    } }, "%s", 1),
+} };
+
+/// `v.__bp + "." + v.tag` for a variant, `v.__bp` for a record — the source
+/// name of the value's type. The base class of an enum carries `__bp` and each
+/// variant subclass carries `tag`, so a variant inherits both.
+const named_title: ast.Expr = .{ .ternary = .{
+    .cond = &typeofIs(&v_tag, "string"),
+    .then = &.{ .binary = .{
+        .op = "+",
+        .lhs = &.{ .binary = .{ .op = "+", .lhs = &v_bp, .rhs = &.{ .quoted = "." } } },
+        .rhs = &v_tag,
+    } },
+    .else_ = &v_bp,
+} };
+
+/// `"(" + k.map((n) => n + ": " + __bp_show(v[n], null, false, a)).join(", ") + ")"`
+const named_fields: ast.Expr = .{ .binary = .{
+    .op = "+",
+    .lhs = &.{ .binary = .{
+        .op = "+",
+        .lhs = &.{ .quoted = "(" },
+        .rhs = &callOn(&callOn(&keys_k, "map", &.{.{ .arrow = .{
+            .params = &.{.{ .pattern = .{ .name = "n" } }},
+            .body = .{ .expr = &.{ .binary = .{
+                .op = "+",
+                .lhs = &.{ .binary = .{ .op = "+", .lhs = &.{ .name = "n" }, .rhs = &.{ .quoted = ": " } } },
+                .rhs = &.{ .call = .{ .callee = &.{ .name = "__bp_show" }, .args = &.{
+                    .{ .index = .{ .object = &v, .index = &.{ .name = "n" } } },
+                    null_,
+                    .{ .name = "false" },
+                    args_a,
+                } } },
+            } } },
+        } }}), "join", &.{.{ .quoted = ", " }}),
+    } },
+    .rhs = &.{ .quoted = ")" },
+} };
+
+/// ```js
+/// if ((v != null) && (typeof v.__bp === "string")) {
+///     if ((typeof v.display === "function")) { a.push(v.display()); return "%s"; }
+///     const k = Object.keys(v);
+///     return <title> + ((k.length === 0) ? "" : <fields>);
+/// }
+/// ```
+///
+/// Decision 8 § 7 — a record prints `Point(x: 1, y: 2)` and a variant
+/// `Shape.Square(side: 4)` / `Shape.Nothing`, in the language's shape rather
+/// than `util.inspect`'s. The marker `__bp` is a prototype property every
+/// record class and every enum base class carries (decision 5), so only a
+/// botopink value takes this branch — a host object keeps `%O`. `Object.keys`
+/// answers the payload fields in declaration order, because the constructor
+/// assigns them in that order and `__bp` and `tag` live on the prototype.
+/// A type implementing `Display` answers its own `display()`, nested too.
+const named_branch: ast.Stmt = .{ .if_ = .{
+    .cond = .{ .binary = .{
+        .op = "&&",
+        .lhs = &.{ .binary = .{ .op = "!=", .lhs = &v, .rhs = &null_ } },
+        .rhs = &typeofIs(&v_bp, "string"),
+    } },
+    .then = &.{ .block = .{ .stmts = &.{
+        .{ .if_ = .{
+            .cond = typeofIs(&.{ .member = .{ .object = &v, .name = "display" } }, "function"),
+            .then = &pushAndReturn(callOn(&v, "display", &.{}), "%s", 2),
+        } },
+        .{ .decl = .{ .pattern = .{ .name = "k" }, .value = callOn(&.{ .name = "Object" }, "keys", &.{v}) } },
+        .{ .return_ = .{ .binary = .{
+            .op = "+",
+            .lhs = &.{ .paren = &named_title },
+            .rhs = &.{ .paren = &.{ .ternary = .{
+                .cond = &.{ .binary = .{ .op = "===", .lhs = &.{ .member = .{ .object = &keys_k, .name = "length" } }, .rhs = &zero } },
+                .then = &.{ .quoted = "" },
+                .else_ = &named_fields,
+            } } },
+        } } },
+    }, .layout = .indented, .indent = 1 } },
+} };
 
 /// `function __bp_show(v, s, top, a) { … }` — see `Helper.show`. It answers the
 /// `console.log` format of `v` and pushes the values its `%s` / `%O` verbs
@@ -237,8 +356,9 @@ const show: ast.Stmt = .{ .function = .{
     .body = .{ .stmts = &.{
         .{ .if_ = .{
             .cond = .{ .binary = .{ .op = "===", .lhs = &.{ .unary = .{ .op = "typeof ", .operand = &v, .parens = false } }, .rhs = &.{ .quoted = "string" } } },
-            .then = &pushAndReturn(.{ .ternary = .{ .cond = &.{ .name = "top" }, .then = &v, .else_ = &quoted_v } }, "%s"),
+            .then = &pushAndReturn(.{ .ternary = .{ .cond = &.{ .name = "top" }, .then = &v, .else_ = &quoted_v } }, "%s", 1),
         } },
+        float_branch,
         .{ .if_ = .{
             .cond = callOn(&.{ .name = "Array" }, "isArray", &.{v}),
             .then = &.{ .block = .{ .stmts = &.{
@@ -250,6 +370,7 @@ const show: ast.Stmt = .{ .function = .{
                 .{ .return_ = bracketed_v },
             }, .layout = .indented, .indent = 1 } },
         } },
+        named_branch,
         .{ .expr = callOn(&args_a, "push", &.{v}) },
         .{ .return_ = .{ .quoted = "%O" } },
     } },
@@ -288,6 +409,134 @@ const print_as: ast.Stmt = .{ .function = .{
         .{ .index = .{ .object = &.{ .name = "shapes" }, .index = &.{ .name = "i" } } },
     ),
 } };
+
+/// ```js
+/// function __bp_eq(a, b, d) {
+///     if ((a === b)) {
+///         return true;
+///     }
+///     if ((((((d > 32) || (a === null)) || (b === null)) || (typeof a !== "object")) || (a.constructor !== b.constructor))) {
+///         return false;
+///     }
+///     if (Array.isArray(a)) {
+///         return ((a.length === b.length) && a.every((e, i) => __bp_eq(e, b[i], (d + 1))));
+///     }
+///     const k = Object.keys(a);
+///     return ((k.length === Object.keys(b).length) && k.every((n) => __bp_eq(a[n], b[n], (d + 1))));
+/// }
+/// ```
+///
+/// Decision 8 §6 T6 for tuples, and decision 35 for every other composite
+/// value: without mutation (decision 37) identity is unobservable — no program
+/// can tell two structurally equal values apart except by `==` itself — so
+/// structural is the only semantics that says anything.
+///
+/// `a.constructor !== b.constructor` is the type test: two arrays share
+/// `Array`, and under decision 5 two values of the same variant share its
+/// subclass while `Shape$Circle` and `Shape$Square` do not. Own fields only, so
+/// the prototype's `__bp` and `tag` take no part — the constructor already
+/// answered for them.
+///
+/// `d` is **not** needed against a botopink cycle: decision 37 makes a record
+/// immutable, so no value can come to point at itself after it is built. It
+/// stays because a value handed in by a `#[@External.Node(…)]` call carries no
+/// such promise, and a cheap bound is better than a stack overflow in a host's
+/// object graph.
+const structural_eq: ast.Stmt = .{ .function = .{
+    .name = "__bp_eq",
+    .params = &.{ .{ .pattern = .{ .name = "a" } }, .{ .pattern = .{ .name = "b" } }, .{ .pattern = .{ .name = "d" } } },
+    .body = .{ .stmts = &.{
+        .{ .if_ = .{
+            .cond = .{ .binary = .{ .op = "===", .lhs = &eq_a, .rhs = &eq_b } },
+            .then = &.{ .block = .{ .stmts = &.{.{ .return_ = .{ .name = "true" } }}, .layout = .indented, .indent = 1 } },
+        } },
+        .{ .if_ = .{
+            .cond = .{ .binary = .{
+                .op = "||",
+                .lhs = &.{ .binary = .{
+                    .op = "||",
+                    .lhs = &.{ .binary = .{
+                        .op = "||",
+                        .lhs = &.{ .binary = .{
+                            .op = "||",
+                            .lhs = &.{ .binary = .{ .op = ">", .lhs = &.{ .name = "d" }, .rhs = &.{ .number = "32" } } },
+                            .rhs = &.{ .binary = .{ .op = "===", .lhs = &eq_a, .rhs = &null_ } },
+                        } },
+                        .rhs = &.{ .binary = .{ .op = "===", .lhs = &eq_b, .rhs = &null_ } },
+                    } },
+                    .rhs = &.{ .binary = .{
+                        .op = "!==",
+                        .lhs = &.{ .unary = .{ .op = "typeof ", .operand = &eq_a, .parens = false } },
+                        .rhs = &.{ .quoted = "object" },
+                    } },
+                } },
+                .rhs = &.{ .binary = .{
+                    .op = "!==",
+                    .lhs = &.{ .member = .{ .object = &eq_a, .name = "constructor" } },
+                    .rhs = &.{ .member = .{ .object = &eq_b, .name = "constructor" } },
+                } },
+            } },
+            .then = &.{ .block = .{ .stmts = &.{.{ .return_ = .{ .name = "false" } }}, .layout = .indented, .indent = 1 } },
+        } },
+        .{ .if_ = .{
+            .cond = is_array_a,
+            .then = &.{ .block = .{ .stmts = &.{.{ .return_ = .{ .binary = .{
+                .op = "&&",
+                .lhs = &.{ .binary = .{
+                    .op = "===",
+                    .lhs = &.{ .member = .{ .object = &eq_a, .name = "length" } },
+                    .rhs = &.{ .member = .{ .object = &eq_b, .name = "length" } },
+                } },
+                .rhs = &callOn(&eq_a, "every", &.{.{ .arrow = .{
+                    .params = &.{ .{ .pattern = .{ .name = "e" } }, .{ .pattern = .{ .name = "i" } } },
+                    .body = .{ .expr = &.{ .call = .{ .callee = &.{ .name = "__bp_eq" }, .args = &.{
+                        .{ .name = "e" },
+                        .{ .index = .{ .object = &eq_b, .index = &.{ .name = "i" } } },
+                        deeper,
+                    } } } },
+                } }}),
+            } } }}, .layout = .indented, .indent = 1 } },
+        } },
+        .{ .decl = .{ .pattern = .{ .name = "k" }, .value = callOn(&.{ .name = "Object" }, "keys", &.{eq_a}) } },
+        .{ .return_ = .{ .binary = .{
+            .op = "&&",
+            .lhs = &.{ .binary = .{
+                .op = "===",
+                .lhs = &.{ .member = .{ .object = &.{ .name = "k" }, .name = "length" } },
+                .rhs = &.{ .member = .{ .object = &callOn(&.{ .name = "Object" }, "keys", &.{eq_b}), .name = "length" } },
+            } },
+            .rhs = &callOn(&.{ .name = "k" }, "every", &.{.{ .arrow = .{
+                .params = &.{.{ .pattern = .{ .name = "n" } }},
+                .body = .{ .expr = &.{ .call = .{ .callee = &.{ .name = "__bp_eq" }, .args = &.{
+                    .{ .index = .{ .object = &eq_a, .index = &.{ .name = "n" } } },
+                    .{ .index = .{ .object = &eq_b, .index = &.{ .name = "n" } } },
+                    deeper,
+                } } } },
+            } }}),
+        } } },
+    } },
+} };
+
+test "js_prelude: structural equality walks arrays and class instances" {
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    try @import("js_emitter.zig").writeStmt(&aw.writer, decl(.structural_eq), 0);
+    try std.testing.expectEqualStrings(
+        \\function __bp_eq(a, b, d) {
+        \\    if ((a === b)) {
+        \\        return true;
+        \\    }
+        \\    if ((((((d > 32) || (a === null)) || (b === null)) || (typeof a !== "object")) || (a.constructor !== b.constructor))) {
+        \\        return false;
+        \\    }
+        \\    if (Array.isArray(a)) {
+        \\        return ((a.length === b.length) && a.every((e, i) => __bp_eq(e, b[i], (d + 1))));
+        \\    }
+        \\    const k = Object.keys(a);
+        \\    return ((k.length === Object.keys(b).length) && k.every((n) => __bp_eq(a[n], b[n], (d + 1))));
+        \\}
+    , aw.written());
+}
 
 test "js_prelude: an open-ended range counts up lazily" {
     var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);

@@ -19,13 +19,14 @@ class ParseError {
         this.msg = msg;
     }
 }
+ParseError.prototype.__bp = "ParseError";
 
 class Parser {
-
     parse() {
         throw new ParseError("bad input");
     }
 }
+Parser.prototype.__bp = "Parser";
 
 function run(p) {
     const _try0 = p.parse();

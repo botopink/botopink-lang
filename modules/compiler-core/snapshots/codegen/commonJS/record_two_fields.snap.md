@@ -11,6 +11,7 @@ class Point {
         this.y = y;
     }
 }
+Point.prototype.__bp = "Point";
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

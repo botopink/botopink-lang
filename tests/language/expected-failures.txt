@@ -43,9 +43,6 @@ erlang   | run/case_values.bp         | 01 step 4 | `.Variant` arms are not reso
 *        | reject/case_literals_only.bp          | 01 step 5 | compiles: literal arms are not checked for exhaustiveness
 
 # ── §6 tuples ─────────────────────────────────────────────────────────────────
-commonJS | test/tuple_equality.bp::§6 T6 two tuples with the same elements are equal | 04 step 4 | `==` on tuples compares references on commonJS (arrays)
-commonJS | test/tuple_equality.bp::§6 T1 T6 a labeled and an unlabeled tuple with the same elements are equal | 04 step 4 | `==` on tuples compares references on commonJS (arrays)
-commonJS | run/tuple_print.bp         | 04 step 1 | prints decision 1a's text without spaces (`#(1,"a")`); §7 wants `#(1, "a")`
 erlang   | run/tuple_print.bp         | 02 step 1 | prints decision 1a's text without spaces (`#(1,"a")`); §7 wants `#(1, "a")`
 
 # ── §5.3b sections (decision 8 §5) ────────────────────────────────────────────
@@ -55,9 +52,7 @@ erlang   | test/case_sections.bp      | 01 step 4 | re-measured: §5.3b section 
 # ── §7 the formatter ──────────────────────────────────────────────────────────
 # The record and variant rows of §7's table need a value that knows its own type,
 # which is 13 step 18; each backend's step 1 closes the separator half only.
-commonJS | run/print_formatter.bp     | 04 step 1, 13 step 18 | §7 formatter: `f64` prints without its decimal part, arrays/tuples without spaces, records and variants in host shape
 erlang   | run/print_formatter.bp     | 02 step 1, 13 step 18 | §7 formatter: arrays/tuples print without spaces, records as maps, variants as raw tags
-commonJS | run/display_print.bp       | 04 step 1, 13 step 18 | §7: `@print` does not consult a type's `Display` implementation, nested or not
 erlang   | run/display_print.bp       | 02 step 1, 13 step 18 | §7: `@print` does not consult a type's `Display` implementation, nested or not
 
 # ── §9 effects ────────────────────────────────────────────────────────────────
@@ -70,8 +65,6 @@ erlang   | test/effect_generator.bp::§9 an empty generator runs no iteration | 
 *        | reject/two_effect_markers.bp         | 01 step 8 | R9: the R5 message is right, but its caret points at the body's `{` (5:41) instead of the second annotation
 
 # ── §10 loop ──────────────────────────────────────────────────────────────────
-commonJS | test/loop_break_value.bp::§10 break with a value is the loop's value | 04 step 3 | `break <value>` yields a one-element array instead of the value
-commonJS | test/loop_break_value.bp::§10 break with a value out of a condition loop | 04 step 3 | `break <value>` yields a one-element array instead of the value
 erlang   | test/loop_break_value.bp   | 02 step 5 | `ConditionLoopValueUnsupported`: a loop with a value break does not compile
 
 # ── §1 generics ───────────────────────────────────────────────────────────────
@@ -118,7 +111,6 @@ commonJS | test/type_identity_union.bp | 01 step 2, 13 step 17 | does not compil
 erlang   | test/type_identity_union.bp | 01 step 2, 13 step 17 | the same — "type mismatch: expected |, got Person"
 commonJS | test/type_identity_case.bp | 01 step 4, 13 step 17 | does not compile: an arm body is a lambda the checker does not unwrap — "type mismatch: expected string, got void"
 erlang   | test/type_identity_case.bp | 01 step 4, 13 step 17 | the same — "type mismatch: expected string, got void"
-commonJS | run/type_identity_print.bp | 04 step 1, 13 step 18 | §7: a record prints `Point { x: 1, y: 2 }`, a payload variant `{ tag: 'Circle', radius: 4 }`, a unit variant the bare string `Dot`, and an array without spaces
 erlang   | run/type_identity_print.bp | 02 step 1, 13 step 18 | §7: a record prints `#{x => 1,y => 2}`, a variant `{'Circle',4}` / `'Dot'`, and an array without spaces
 wasm     | run/type_identity_print.bp | 05 step 1, 13 step 18 | §7: a record and a variant print as their raw heap addresses (`256`, `264`, `268`)
 beam     | run/type_identity_print.bp | 03 step 2, 13 step 18 | §7: the erlang shapes seen from BEAM assembly — a record as a map, a variant as a tagged tuple or a bare atom

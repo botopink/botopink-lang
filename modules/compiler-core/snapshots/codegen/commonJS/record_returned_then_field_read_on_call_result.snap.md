@@ -18,6 +18,7 @@ class Span {
         this.line = line;
     }
 }
+Span.prototype.__bp = "Span";
 
 function span() {
     return new Span(4, 9, 2);

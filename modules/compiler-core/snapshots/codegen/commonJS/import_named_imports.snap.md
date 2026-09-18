@@ -5,7 +5,7 @@ import { foo, bar };
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-const { foo, bar } = require("./module");
+
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

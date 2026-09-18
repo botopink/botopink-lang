@@ -71,7 +71,7 @@ codegen/
 | `beam_asm.zig` | BEAM Assembly `.S` emitter, assembled with `erlc +from_asm`. See [beam_asm](#beam_asm) below |
 | `wat/` | WebAssembly-text code model and the only writer of `.wat`: `wat_ast.zig` (`Module`/`Item`/`Func`/`Seq`/`Instr` + `Builder` + the invariants), `wat_emitter.zig` (s-expression layout, `$` names, data escaping), `wat_prelude.zig` (the runtime helpers as built nodes). See [`wat/AGENTS.md`](wat/AGENTS.md) |
 | `wat.zig` | WAT backend: builds `wat/wat_ast.zig` nodes and hands them to the emitter. See [wat](#wat) below |
-| `typescript.zig` | `.d.ts` typedef backend (optional secondary output, `Config.typeDefLanguage`) — builds `js/js_ast.zig` `TsDecl` nodes, rendered by `js/ts_emitter.zig`. Type declarations only — no call lowering. A package import in the `.d.ts` keeps only names the owner emits (`CrossModule.exports`): a template fn or a lib namespace handle has no declaration there, so `import { html } from "view"` is dropped instead of dangling. Parameter types come from `Param.typeRef` (the parser leaves the legacy `typeName` empty; an unannotated position is `any`, a zero-argument generic such as `@Decl` is the bare name). Skips template fns (`TypeRef.isTemplateReturnType()`) and phantom `@Context` structs, erases `@Context<B, R>` to `R`, renders an anonymous `TypeRef.record_type` as `{ f: T; … }` |
+| `typescript.zig` | `.d.ts` typedef backend (optional secondary output, `Config.typeDefLanguage`) — builds `js/js_ast.zig` `TsDecl` nodes, rendered by `js/ts_emitter.zig`. Type declarations only — no call lowering. A package import in the `.d.ts` keeps only names the owner emits (`CrossModule.exports`): a template fn or a lib namespace handle has no declaration there, so `import { html } from "view"` is dropped instead of dangling. Parameter types come from `Param.typeRef` (the parser leaves the legacy `typeName` empty; an unannotated position is `any`, a zero-argument generic such as `@Decl` is the bare name). Skips template fns (`TypeRef.isTemplateReturnType()`) and phantom `@Context` structs, erases `@Context<B, R>` to `R`, renders an anonymous `TypeRef.record_type` as `{ f: T; … }`. **A botopink primitive takes its TypeScript spelling** (`primitiveTsName`: every integer and float width plus `int`/`uint`/`float`/`isize`/`usize` → `number`, `bool` → `boolean`, `char` → `string`; `string`, `void` and `unknown` are spelled the same) — a `.d.ts` naming `i32` is not TypeScript. **An enum declares the class the JavaScript builds** (decision 5): `readonly tag` as the union of the variant names, a `static` factory per payload variant returning the enum type, a `static readonly` singleton per payload-less one, and each enum method as a `static` whose `self` is typed as the enum. It was a TypeScript `enum` of strings or a discriminated union of plain objects before, and the `.js` beside it built neither. **The `import { … };` shorthand** resolves through `CrossModule.exports` here too, one `import` per owning file, where it used to write the literal `from "./module"` |
 | `runtime.zig` | Test-side execution for the snapshot `----- RUN LOG -----` block. See [runtime](#runtime) below |
 | `snapshot.zig` | `buildSnapshot` / `buildSnapshotMulti` / `assertCodegen` / `assertCodegenError`; `writeComptimeSections` writes `GenerateResult.comptime_trace` (`COMPTIME ERLANG` / `COMPTIME REPLY`, rendered by `comptime/trace.zig`) then `COMPTIME VALUES` for every backend. A `SnapInput` with `result == null` (the module never reached the backend) or with `comptime_err` set writes a `COMPILE DIAGNOSTIC` section instead of the code section — spec 06 H3, which used to leave such snapshots empty |
 | `tests.zig` | Barrel aggregating `tests/<feature>.zig` plus the `beam/*.zig` and `wat/wat_emitter.zig` unit tests; harness in `tests/helpers.zig` (`assertJs`, `assertJsSingle`, `assertJsError`, `assertJsTestMode`, `assertJsContains`, `assertConsumerJs`, `configs` — one config per target) |
@@ -85,28 +85,90 @@ codegen/
   Nodes are built in one arena that is freed once the module is rendered. The
   only text this file still composes is a comment's wording, a `require` path
   and the fixed test-harness source (`Item.runtime`).
-- **`@print` / `@println` / `@debug`** (semantics decisions 1 and 1a,
-  `buildPrintCall`) lower to the on-demand prelude helper `__bp_print(a, b)`, not
-  to `console.log`: each argument is written by `__bp_show` — a top-level string
-  bare, a nested string quoted with the source escapes, an array `[a,b]` and a
-  tuple `#(a,b)` with no spaces, anything else `util.inspect` (records, enums and
-  maps keep `console.log`'s text). A tuple is a JS array, so the call site passes
-  the static shape when one argument holds a tuple:
-  `__bp_print_as([["#", null, null]], p)` (`printShape`/`typeShape`: a tuple (a
-  labeled `#(name: T, …)` type included) or
-  array literal, a local or parameter bound to one — `print_shapes` — a top-level
-  fn's declared return type, a primitive method's declared return type such as
-  `zip` → `Array<#(T, U)>`). A tuple whose shape nothing recovers prints as an
-  array.
+- **`@print` / `@println` / `@debug`** (decision 8 §7, `buildPrintCall`) lower to
+  the on-demand prelude helper `__bp_print(a, b)`, not to `console.log`: each
+  argument is written by `__bp_show` — a top-level string bare, a nested string
+  quoted with the source escapes, an array `[1, 2]`, a tuple `#(1, "a")`, a
+  record `Point(x: 1, y: 2)`, a variant `Shape.Square(side: 4)` /
+  `Shape.Nothing`, a type implementing `Display` its own `display()` (nested
+  too), anything else `util.inspect`. §7 supersedes decision 1a's no-spaces
+  text.
+  A botopink value is told from a host object by the `__bp` marker its
+  prototype carries (decision 5) — never by a `constructor` test, so a `Map` or
+  a `@Result`'s `{ ok }` keeps `console.log`'s own text. The name comes from
+  `__bp` plus the variant's `tag`, and the fields from `Object.keys(value)`,
+  which is exactly the payload in declaration order because both markers live
+  on the prototype.
+  **Two things the formatter cannot read off the value**, and both reach it as
+  the static print shape the call site passes
+  (`__bp_print_as([["#", null, null]], p)`): a **tuple**, which is a JS array,
+  and an **`f64`**, because JavaScript has one number type and §7 wants `5.0`.
+  `printShape`/`typeShape` recover a shape from a tuple or float literal, an
+  array literal of those, a local or parameter bound to one (`print_shapes`), a
+  top-level fn's declared return type, and a primitive method's declared return
+  type (`zip` → `Array<#(T, U)>`); `"f"` is the float leaf, `f64`/`f32` in a
+  written type. A tuple whose shape nothing recovers prints as an array, and an
+  `f64` whose shape nothing recovers prints as an integer — `loop (xs) { v ->
+  break v * 0.15; }` is the measured case, and a union member (decision 26) is
+  the other, since a union carries no single leaf.
 - **`@Result`** is `{ ok: V } | { error: E }`; `__bp_ok`/`__bp_error` build it for
   `return`/`throw` in `#[@result]` fns; `try`/`catch` lower to `"error" in _r`
   pattern matching. A `case` arm `Ok(v)` / `Err(e)` / `Error(e)` that names no
   variant the module declares tests the key the same way (`if ("ok" in _s)`,
   `const v = _s.ok;`), never `_s.tag` — a Result carries no tag (C5).
+- **A value is a class instance** (1.0.5-beta decision 5): `buildRecord` emits
+  `class Point`, `buildEnum` emits `class Shape` plus a `class Shape$Circle
+  extends Shape` per variant, a `static` factory per payload variant, and a
+  singleton `Shape.Dot = new Shape$Dot()` per payload-less one. Each class
+  carries `prototype.__bp` (the source name — the §7 formatter's marker) and
+  each variant subclass `prototype.tag` (its own name). The full table is in
+  [`js/AGENTS.md`](./js/AGENTS.md#what-a-value-is-105-beta-decision-5).
+- **`==` on tuples** (decision 8 §6 T6) is structural: when either side's print
+  shape is a tuple, `==` lowers to the `__bp_eq` prelude helper and `!=` to its
+  negation. A tuple is a JS array, so `===` compared references and two equal
+  tuples were unequal.
+  **The defect is wider than tuples, and the helper is already wider**
+  (decision 35): `===` answers `false` for *every* composite value, measured as
+  `record → false`, `[1,2,3] → false`, `#(1,"a") → false`, `Circle(2.0) → false`,
+  `"abc" → true`, with wasm the same and erlang `true` throughout by accident of
+  representation. Decision 35 settles it structurally for all four, as a
+  consequence of decision 37: without mutation, identity is unobservable.
+  `__bp_eq` walks arrays and tuples element-wise and a class instance by
+  constructor plus own fields — the one shape decision 5 gave a record and a
+  variant.
+  **Only a tuple reaches it today**, because this backend walks the *untyped*
+  AST (`buildExpr(e: ast.Expr)`) and the only thing it can learn about an
+  operand is the static print shape, which says "holds a tuple" and nothing
+  else. Turning the row on for a record, an array or a variant needs the
+  operand's type at the site — a per-`Loc` mark from inference, the way
+  `method_lowerings` already does it — which crosses `01-checker`.
+- **`break <value>` in a condition loop** (decision 8 §10) is the loop's value.
+  A `loop { … }` / `loop (cond) { … }` used as a value with no `yield` in its
+  body is a **search**: `break <v>` becomes `return <v>` out of the IIFE and the
+  loop answers `null` if it never breaks (`LoopCtx.search`). With a `yield` it
+  is a comprehension and keeps the accumulator, where `break <v>` contributes
+  `v` and ends the loop. An **iteration** loop (`loop (xs) { x -> … }`) is
+  always a comprehension: `break <v>` there contributes, which is what
+  `fn find(arr: i32[]) -> i32[]` relies on.
+- **`x is T`** (decision 8 §4, `buildIsCall`/`isTest`) tests the **value**, not
+  where it came from, which is what makes one lowering answer for a known
+  static type and for a value arriving through `unknown` or a union: an integer
+  type is `typeof === "number"` + `Number.isInteger` + its range, `f64` any
+  number, `string`/`bool` the primitive, a tuple an array of the right arity
+  with each element tested, `?T` null-or-`T`, an array its constructor only
+  (§4.2 — an element type is not checkable), and a **named type** an
+  `instanceof`, free under decision 5. The subject is bound in an arrow
+  (`((_v) => …)(x)`) only when the test reads it more than once, so a call on
+  the left is evaluated once. An unrecognised spelling answers `false`. The
+  parser synthesises this as the `is` builtin call with the type on `isType`
+  (`ast.is_builtin_name`); before the lowering it fell through to the
+  unrecognised-builtin path and wrote `@is(p)` into the module — a `@` is not
+  JavaScript, and `build` exited 0 on a file node cannot parse.
 - **Variant payload arms**: `collectVariantFields` indexes every local payload
   variant's declared field names; `Circle(r) ->` binds positionally
   (`const { radius: r } = _s;`). A variant declared in another module keeps the
-  binding as the key.
+  binding as the key. A payload-less variant arm tests `instanceof` when its
+  bare name names one class in the module and `_s.tag === "Name"` otherwise.
 - **`.len`**: `s.len` / `arr.len` on a typed string/array (inference records
   `.prim` in `instance_lowerings`, threaded in as `Emitter.lowerings`) emits
   the native `.length` property; a record field named `len` is untouched (C3).
@@ -177,6 +239,14 @@ codegen/
   `exports.X` (its `.d.ts` declares it exported, and a module-object consumer
   such as `order.Order` needs it), while a `pub implement` is exported only
   when another module imports it.
+- **The `import { … };` shorthand** (1.0.5-beta decision 3) names no module, so
+  it resolves exactly the way a `from "<pkg>"` import does: name by name through
+  the cross-module export index, one `require("<prefix><owner>.js")` per owning
+  module. It used to fall through to a branch that wrote the literal word —
+  `require("./module")` at the project root, `require("../module")` under a
+  package prefix — a path nothing emits, so the program built and then died at
+  run time. The namespace-handle block below is skipped for it: the shorthand
+  names no package, so there is no handle to bind.
 - **Lib namespace object**: when an import names the lib itself
   (`import {Lib} from "Lib"`) and that name has no emitted symbol, `emitUse`
   binds the lib's module object (`buildUse`: `const Lib = require(…)`, or

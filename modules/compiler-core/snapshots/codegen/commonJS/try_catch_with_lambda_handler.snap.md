@@ -18,6 +18,7 @@ class FetchError {
         this.url = url;
     }
 }
+FetchError.prototype.__bp = "FetchError";
 
 function fetch() {
     return ({ error: new FetchError("/api") });

@@ -14,10 +14,30 @@ fn big(sh: Shape) -> string {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-const Shape = Object.freeze({
-    Circle: (r) => ({ tag: "Circle", r }),
-    Square: (s) => ({ tag: "Square", s }),
-});
+class Shape {
+    static Circle(r) {
+        return new Shape$Circle(r);
+    }
+
+    static Square(s) {
+        return new Shape$Square(s);
+    }
+}
+Shape.prototype.__bp = "Shape";
+class Shape$Circle extends Shape {
+    constructor(r) {
+        super();
+        this.r = r;
+    }
+}
+Shape$Circle.prototype.tag = "Circle";
+class Shape$Square extends Shape {
+    constructor(s) {
+        super();
+        this.s = s;
+    }
+}
+Shape$Square.prototype.tag = "Square";
 
 function big(sh) {
     return (() => {

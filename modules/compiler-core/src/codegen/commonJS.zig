@@ -736,6 +736,11 @@ const LoopCtx = union(enum) {
     /// IIFE around a JS `while`. `yield <v>` pushes; `break <v>` pushes and
     /// ends the loop (there is no next item to move to); `break;` ends it.
     cond_value: []const u8,
+    /// A condition `loop` used as a value whose body has no `yield`: a search,
+    /// not a comprehension. Decision 8 §10 — `break <v>` IS the loop's value,
+    /// so it returns `v` out of the IIFE instead of collecting it; `break;`
+    /// ends the loop and the IIFE answers `null`.
+    search,
 };
 
 /// Holes filled from a wrapper function's own parameters: `$N` is the Nth
@@ -828,6 +833,12 @@ const Emitter = struct {
     /// positionally, so `r` is read from the declared field (`radius`), never
     /// from a property named after the binding.
     variant_fields: std.StringHashMap([]const []const u8),
+    /// Payload-less variant name → the JS class this module emits for it
+    /// (`Nothing` → `Shape$Nothing`), for every enum declared here. A unit
+    /// variant is a singleton instance of that class (decision 5), so an arm
+    /// naming it tests `instanceof`, where it used to compare the value with
+    /// the bare string `"Nothing"`.
+    unit_variant_class: std.StringHashMap([]const u8),
     /// `Enum.method` for every enum method this module declares that takes the
     /// receiver first (`fn area(self: Self)`, `fn check(m: Self)`). Enum values
     /// are plain objects / variant-name strings with no methods of their own,
@@ -902,6 +913,7 @@ const Emitter = struct {
             .externals_missing = std.StringHashMap(void).init(alloc),
             .class_names = std.StringHashMap(void).init(alloc),
             .variant_fields = std.StringHashMap([]const []const u8).init(alloc),
+            .unit_variant_class = std.StringHashMap([]const u8).init(alloc),
             .enum_recv_methods = std.StringHashMap(void).init(alloc),
             .imported_enums = std.StringHashMap(void).init(alloc),
             .prelude_iface_externals = std.StringHashMap(ast.ExternalRef).init(alloc),
@@ -933,6 +945,7 @@ const Emitter = struct {
         self.externals_missing.deinit();
         self.class_names.deinit();
         self.variant_fields.deinit();
+        self.unit_variant_class.deinit();
         self.enum_recv_methods.deinit();
         self.imported_enums.deinit();
         self.prelude_iface_externals.deinit();
@@ -1219,7 +1232,21 @@ const Emitter = struct {
             },
             .type_ => |e| if (!e.isRecord()) {
                 for (e.variants()) |v| {
-                    if (v.fields.len == 0) continue;
+                    if (v.fields.len == 0) {
+                        // Two enums in one module may share a bare variant
+                        // name (emilia's `Token.Text.Bold` and
+                        // `Token.Font.Weight.Bold`). The name alone then does
+                        // not name a class, so the arm keeps the `tag` test —
+                        // exactly as ambiguous as the string compare it
+                        // replaces, and no more.
+                        const gop = try self.unit_variant_class.getOrPut(v.name);
+                        if (gop.found_existing) {
+                            gop.value_ptr.* = "";
+                        } else {
+                            gop.value_ptr.* = try self.variantClassName(e.name, v.name);
+                        }
+                        continue;
+                    }
                     const names = try self.arena().alloc([]const u8, v.fields.len);
                     for (v.fields, 0..) |f, i| names[i] = f.name;
                     try self.variant_fields.put(v.name, names);
@@ -1545,8 +1572,9 @@ const Emitter = struct {
             .ctor = ctor,
             .members = try members.toOwnedSlice(self.arena()),
         } };
-        if (!r.isPub) return class;
-        return self.b.group(&.{ class, try self.pubExport(r.name) });
+        const marker = try self.protoName(r.name, r.name);
+        if (!r.isPub) return self.b.group(&.{ class, marker });
+        return self.b.group(&.{ class, marker, try self.pubExport(r.name) });
     }
 
     /// The instance `default fn`s of a local interface (and the interfaces it
@@ -1587,32 +1615,117 @@ const Emitter = struct {
         for (iface.extends) |parent| try self.appendInterfaceDefaults(members, parent, depth + 1);
     }
 
+    /// `<Class>.prototype.__bp = "<source name>";` — the marker the §7
+    /// formatter reads to tell a botopink value from a host object, carrying
+    /// the name the language spells for the type. It sits on the prototype,
+    /// so `Object.keys(value)` still answers exactly the declared fields.
+    fn protoName(self: *Emitter, class_name: []const u8, source_name: []const u8) !js.Stmt {
+        return .{ .expr = try self.b.assign(
+            try self.b.member(try self.b.member(.{ .name = class_name }, "prototype"), "__bp"),
+            "=",
+            .{ .quoted = source_name },
+        ) };
+    }
+
+    /// The JS class name of one variant of `enum_name` — `Shape$Circle`.
+    /// A botopink identifier cannot hold a `$`, so the mangling never collides
+    /// with a user type.
+    fn variantClassName(self: *Emitter, enum_name: []const u8, variant: []const u8) ![]const u8 {
+        return std.fmt.allocPrint(self.arena(), "{s}${s}", .{ enum_name, variant });
+    }
+
+    /// 1.0.5-beta decision 5 — a `type` with variants emits **a class per
+    /// declaration and a subclass per variant**, so every value of the type
+    /// answers `instanceof Shape` and every variant answers its own class:
+    ///
+    /// ```js
+    /// class Shape {
+    ///     static Circle(radius) { return new Shape$Circle(radius); }
+    /// }
+    /// class Shape$Circle extends Shape {
+    ///     constructor(radius) { super(); this.radius = radius; }
+    /// }
+    /// Shape$Circle.prototype.tag = "Circle";
+    /// class Shape$Dot extends Shape {
+    /// }
+    /// Shape$Dot.prototype.tag = "Dot";
+    /// Shape.Dot = new Shape$Dot();
+    /// ```
+    ///
+    /// A payload-less variant is a **singleton instance**, not the bare string
+    /// it used to be — the shape the emitted `.d.ts` always declared. `tag`
+    /// lives on the prototype, not on the instance, so it is identity rather
+    /// than data: a variant arm in another module keeps testing `_s.tag`, and
+    /// `Object.keys(value)` still answers exactly the payload fields, which is
+    /// what the §7 formatter reads.
+    ///
+    /// The subclasses follow the base class because `extends Shape` is
+    /// evaluated when the subclass declaration runs; the singletons follow the
+    /// subclasses for the same reason.
     fn buildEnum(self: *Emitter, e: ast.TypeDecl) !js.Stmt {
-        var props: std.ArrayListUnmanaged(js.Object.Prop) = .empty;
+        var members: std.ArrayListUnmanaged(js.Class.ClassMember) = .empty;
+        var tail: std.ArrayListUnmanaged(js.Stmt) = .empty;
+
         for (e.variants()) |v| {
-            if (v.fields.len == 0) {
-                try props.append(self.arena(), .{ .kv = .{ .key = v.name, .value = .{ .quoted = v.name } } });
-                continue;
+            const class_name = try self.variantClassName(e.name, v.name);
+            var ctor: ?js.Class.Ctor = null;
+            if (v.fields.len > 0) {
+                const params = try self.arena().alloc(js.Param, v.fields.len);
+                const assigns = try self.arena().alloc(js.Stmt, v.fields.len + 1);
+                assigns[0] = .{ .expr = try self.b.call(.{ .name = "super" }, &.{}) };
+                for (v.fields, 0..) |f, i| {
+                    params[i] = .{ .pattern = .{ .name = f.name } };
+                    assigns[i + 1] = .{ .expr = try self.b.assign(
+                        try self.b.member(.this, f.name),
+                        "=",
+                        .{ .name = f.name },
+                    ) };
+                }
+                ctor = .{ .params = params, .body = .{ .stmts = assigns, .indent = 1 } };
+
+                // `Shape.Circle(5)` stays a call, so the factory keeps every
+                // construction site in the language byte-identical.
+                const args = try self.arena().alloc(js.Expr, v.fields.len);
+                for (v.fields, 0..) |f, i| args[i] = .{ .name = f.name };
+                try members.append(self.arena(), .{
+                    .kind = .static_method,
+                    .name = v.name,
+                    .params = params,
+                    .body = .{ .stmts = try self.b.stmts(&.{
+                        .{ .return_ = try self.b.new_(.{ .name = class_name }, args) },
+                    }), .indent = 1 },
+                });
             }
-            const params = try self.arena().alloc(js.Param, v.fields.len);
-            const obj_props = try self.arena().alloc(js.Object.Prop, v.fields.len + 1);
-            obj_props[0] = .{ .kv = .{ .key = "tag", .value = .{ .quoted = v.name } } };
-            for (v.fields, 0..) |f, i| {
-                params[i] = .{ .pattern = .{ .name = f.name } };
-                obj_props[i + 1] = .{ .shorthand = f.name };
-            }
-            try props.append(self.arena(), .{ .kv = .{
-                .key = v.name,
-                .value = try self.b.arrowExpr(params, try self.b.paren(.{ .object = .{ .props = obj_props } })),
+
+            try tail.append(self.arena(), .{ .class = .{
+                .name = class_name,
+                .extends = e.name,
+                .ctor = ctor,
             } });
+            try tail.append(self.arena(), .{ .expr = try self.b.assign(
+                try self.b.member(try self.b.member(.{ .name = class_name }, "prototype"), "tag"),
+                "=",
+                .{ .quoted = v.name },
+            ) });
         }
+
+        // The payload-less singletons, after every subclass exists.
+        for (e.variants()) |v| {
+            if (v.fields.len > 0) continue;
+            try tail.append(self.arena(), .{ .expr = try self.b.assign(
+                try self.b.member(.{ .name = e.name }, v.name),
+                "=",
+                try self.b.new_(.{ .name = try self.variantClassName(e.name, v.name) }, &.{}),
+            ) });
+        }
+
         const prev_self_param = self.self_is_param;
         defer self.self_is_param = prev_self_param;
         for (e.methods) |m| {
             if (m.is_declare) continue;
-            // A receiver-first method keeps `self` as a real parameter: variant
-            // values carry no methods, so a call site passes the value in
-            // (`Shape.area(value)`, `enumMethodOwner`).
+            // A receiver-first method keeps `self` as a real parameter: an enum
+            // method is a static of the enum's class, so a call site passes the
+            // value in (`Shape.area(value)`, `enumMethodOwner`).
             const recv_first = enumMethodTakesReceiver(m) and std.mem.eql(u8, m.params[0].name, "self");
             const params = if (recv_first) blk: {
                 const ps = try self.arena().alloc(js.Param, m.params.len);
@@ -1623,20 +1736,25 @@ const Emitter = struct {
             self.current_indent = 2;
             const body = try self.buildStmts(m.body orelse &.{});
             self.current_indent = 0;
-            try props.append(self.arena(), .{ .kv = .{
-                .key = m.name,
-                .value = .{ .function = .{ .params = params, .body = .{ .stmts = body, .indent = 1 } } },
-            } });
+            try members.append(self.arena(), .{
+                .kind = .static_method,
+                .name = m.name,
+                .params = params,
+                .body = .{ .stmts = body, .indent = 1 },
+            });
         }
-        const decl = js.Stmt{ .decl = .{
-            .pattern = .{ .name = e.name },
-            .value = try self.b.call(
-                try self.b.member(.{ .name = "Object" }, "freeze"),
-                &.{.{ .object = .{ .props = try props.toOwnedSlice(self.arena()), .layout = .lines } }},
-            ),
-        } };
-        if (!e.isPub) return decl;
-        return self.b.group(&.{ decl, try self.pubExport(e.name) });
+
+        var out: std.ArrayListUnmanaged(js.Stmt) = .empty;
+        try out.append(self.arena(), .{ .class = .{
+            .name = e.name,
+            .members = try members.toOwnedSlice(self.arena()),
+        } });
+        // Only the base class is marked: every variant inherits `__bp` and
+        // adds its own `tag`, which is how the formatter spells `Shape.Square`.
+        try out.append(self.arena(), try self.protoName(e.name, e.name));
+        for (tail.items) |st| try out.append(self.arena(), st);
+        if (e.isPub) try out.append(self.arena(), try self.pubExport(e.name));
+        return self.b.group(try out.toOwnedSlice(self.arena()));
     }
 
     fn buildInterface(self: *Emitter, i: ast.BehaviorDecl) !js.Stmt {
@@ -1919,7 +2037,12 @@ const Emitter = struct {
         // no runtime binding. One `require` per distinct source module, and a
         // name already bound in this module (a repeated import) is skipped so it
         // is never redeclared.
-        if (u.source == .module and self.cross != null) {
+        // A shorthand `import { … };` (decision 3 — the form stays, and it
+        // resolves) names no module, so it took the fallback below and emitted
+        // the literal word: `require("./module")`, a path that does not exist.
+        // It resolves the same way a `from "<pkg>"` import does — name by name
+        // through the cross-module export index — so both enter here.
+        if (self.cross != null) {
             const xm = &self.cross.?.exports;
             var seen = std.StringHashMap(void).init(self.alloc);
             defer seen.deinit();
@@ -1950,7 +2073,13 @@ const Emitter = struct {
             // object so `Lib.member(...)` resolves at runtime, parity with the
             // destructured bare form. Generic: the core names no specific lib; the
             // lib is whatever `from "<lib>"` resolved off disk.
-            const lib_name = u.source.module;
+            // A shorthand `import { … };` names no package, so there is no
+            // namespace handle to bind — only the per-name `require`s above.
+            // No import is named `""`, so the block below never fires for it.
+            const lib_name = switch (u.source) {
+                .module => |name| name,
+                .root => "",
+            };
             var names_lib = false;
             for (u.imports) |imp| {
                 if (std.mem.eql(u8, imp.name(), lib_name)) {
@@ -2280,7 +2409,7 @@ const Emitter = struct {
                 .throw_ => |r| return .{ .throw_ = try self.buildExpr((r orelse return error.ThrowWithoutOperand).*) },
                 .@"continue" => return switch (self.loop_ctx) {
                     .none => error.JumpOutsideLoop,
-                    .stmt, .value, .cond_value => js.Stmt.continue_,
+                    .stmt, .value, .cond_value, .search => js.Stmt.continue_,
                 },
                 .yield => |y| if (self.loop_ctx == .value or self.loop_ctx == .cond_value) {
                     // An accumulator `yield <v>` contributes `v` and moves on;
@@ -2678,6 +2807,32 @@ const Emitter = struct {
             },
 
             .binaryOp => |bin| {
+                // Decision 8 §6 T6 — a tuple is positional at run time, so
+                // `==` compares its elements. A tuple is a JS array and `==`
+                // lowers to `===`, which compares references, so two equal
+                // tuples were unequal.
+                //
+                // The helper is structural for **every** composite value, not
+                // only for tuples (decision 35), but only a tuple reaches it
+                // today: this emitter walks the **untyped** AST
+                // (`buildExpr(e: ast.Expr)`), so the one thing it can know
+                // about an operand is the static print shape `printShape`
+                // already recovers — and that is exactly "this expression
+                // holds a tuple". Turning the row on for a record, an array or
+                // a variant needs the operand's type at the site, which means
+                // marking it in inference by `Loc` the way `method_lowerings`
+                // does; that crosses front 01 and is the maintainer's call.
+                // One side shaped is enough: the other is a tuple too, or the
+                // helper's constructor test answers `false` exactly as `===`
+                // did.
+                if ((bin.op == .eq or bin.op == .ne) and try self.isTupleShaped(bin.lhs.*, bin.rhs.*)) {
+                    const cmp = try self.b.call(self.helper(.structural_eq), &.{
+                        try self.buildExpr(bin.lhs.*),
+                        try self.buildExpr(bin.rhs.*),
+                        .{ .number = "0" },
+                    });
+                    return if (bin.op == .eq) cmp else self.b.unary("!", cmp, true);
+                }
                 const op: []const u8 = switch (bin.op) {
                     .add => "+",
                     .sub => "-",
@@ -3117,6 +3272,25 @@ const Emitter = struct {
         return false;
     }
 
+    /// A `yield` anywhere in the body, `if` branches included — what tells a
+    /// comprehension (which collects) from a search (whose value is the one
+    /// its `break` carries). Nested loops are not descended into: their
+    /// `yield`s belong to them.
+    fn hasAnyYield(body: []const ast.Stmt) bool {
+        for (body) |stmt| switch (stmt.expr) {
+            .jump => |j| if (j.kind == .yield) return true,
+            .branch => |br| switch (br.kind) {
+                .if_ => |i| {
+                    if (hasAnyYield(i.then_)) return true;
+                    if (i.else_) |els| if (hasAnyYield(els)) return true;
+                },
+                .tryCatch => {},
+            },
+            else => {},
+        };
+        return false;
+    }
+
     /// A `loop` in statement position: a JS `for…of`. Its `break` / `continue`
     /// are the native statements, and inside a generator body its `yield` is
     /// the native one — which is what makes `#[@iterator]` recursion work (a
@@ -3163,10 +3337,13 @@ const Emitter = struct {
     fn buildBreakStmt(self: *Emitter, br: anytype, is_last: bool) anyerror!js.Stmt {
         const val = br.value orelse return switch (self.loop_ctx) {
             .none => error.JumpOutsideLoop,
-            .stmt, .value, .cond_value => js.Stmt.break_,
+            .stmt, .value, .cond_value, .search => js.Stmt.break_,
         };
         return switch (self.loop_ctx) {
             .none => error.JumpOutsideLoop,
+            // Decision 8 §10 — in a condition loop with no `yield`, the
+            // loop's value IS the break's value, so the IIFE returns it.
+            .search => .{ .return_ = try self.buildExpr(val.*) },
             .cond_value => try self.b.group(&.{ try self.accPush(val.*), .break_ }),
             .value => if (is_last)
                 try self.accPush(val.*)
@@ -3298,19 +3475,28 @@ const Emitter = struct {
         })), &.{});
     }
 
-    /// A condition loop used as a value (decision 8 §10):
+    /// A condition loop used as a value (decision 8 §10).
+    ///
+    /// With a `yield` in the body it is a comprehension, and it collects:
     ///
     ///     (() => { const _acc = []; while (cond) { …; _acc.push(v); } return _acc; })()
     ///
-    /// `yield <v>` contributes `v`; `break <v>` contributes `v` and ends the loop.
+    /// Without one it is a **search**, and `break <v>` is the loop's value:
+    ///
+    ///     (() => { while (cond) { …; return v; } return null; })()
+    ///
+    /// It collected in both cases before, so `val r = loop { …; break k; };`
+    /// answered `[3]` where §10 asks for `3`. A loop that ends without
+    /// breaking has no value to give, which is `null`.
     fn buildConditionLoopValue(self: *Emitter, lp: anytype) anyerror!js.Expr {
         const acc = "_acc";
         const base = self.current_indent;
         const cond = try self.buildExpr(lp.iter.*);
+        const searching = !hasAnyYield(lp.body);
         const prev_ctx = self.loop_ctx;
         const prev_gen = self.in_generator;
         const prev_wrap = self.case_ok_wrap;
-        self.loop_ctx = .{ .cond_value = acc };
+        self.loop_ctx = if (searching) .search else .{ .cond_value = acc };
         self.in_generator = false;
         self.case_ok_wrap = false;
         self.current_indent = base + 2;
@@ -3331,12 +3517,17 @@ const Emitter = struct {
                 else => try self.buildStmt(st),
             };
         }
-        return self.b.call(try self.b.paren(try self.b.arrowBlock(&.{}, .{
-            .stmts = try self.b.stmts(&.{
+        const while_stmt = js.Stmt{ .while_ = .{ .cond = cond, .body = .{ .stmts = body, .indent = base + 1 } } };
+        const stmts = if (searching)
+            try self.b.stmts(&.{ while_stmt, .{ .return_ = .null_ } })
+        else
+            try self.b.stmts(&.{
                 .{ .decl = .{ .pattern = .{ .name = acc }, .value = .{ .array = .{} } } },
-                .{ .while_ = .{ .cond = cond, .body = .{ .stmts = body, .indent = base + 1 } } },
+                while_stmt,
                 .{ .return_ = .{ .name = acc } },
-            }),
+            });
+        return self.b.call(try self.b.paren(try self.b.arrowBlock(&.{}, .{
+            .stmts = stmts,
             .indent = base,
         })), &.{});
     }
@@ -3367,14 +3558,31 @@ const Emitter = struct {
         if (shape) |s| try self.print_shapes.put(name, s) else _ = self.print_shapes.remove(name);
     }
 
+    /// The shape leaf for an `f64` — decision 8 § 7 prints one with its decimal
+    /// part, and JavaScript has one number type, so the value's static type has
+    /// to reach the formatter from here.
+    const float_shape: js.Expr = .{ .quoted = "f" };
+
+    /// True when a number literal's own spelling is a float (`5.0`, `1e3`).
+    /// An integer literal in an `f64` position takes its shape from the
+    /// declared type instead (`typeShape`).
+    fn isFloatLiteral(text: []const u8) bool {
+        return std.mem.indexOfAny(u8, text, ".eE") != null;
+    }
+
     /// The static print shape of `e` — `["#", s1, s2]` for a tuple, `["[", s]`
-    /// for an array — when a tuple is known to sit somewhere in its value;
-    /// null otherwise (the runtime text of an array or a scalar needs none).
-    /// Known from a tuple literal, an array literal of those, a local or a
-    /// parameter bound to one, a top-level fn's declared return type, and a
-    /// primitive method's declared return type (`zip` → `Array<#(T, U)>`).
+    /// for an array, `"f"` for an `f64` — when a tuple or a float is known to
+    /// sit somewhere in its value; null otherwise (the runtime text of an
+    /// array or an integer needs none). Known from a tuple or float literal,
+    /// an array literal of those, a local or a parameter bound to one, a
+    /// top-level fn's declared return type, and a primitive method's declared
+    /// return type (`zip` → `Array<#(T, U)>`).
     fn printShape(self: *Emitter, e: ast.Expr) anyerror!?js.Expr {
         return switch (e) {
+            .literal => |lit| switch (lit.kind) {
+                .numberLit => |n| if (isFloatLiteral(n)) float_shape else null,
+                else => null,
+            },
             .collection => |col| switch (col.kind) {
                 .tupleLit => |tl| blk: {
                     const elems = try self.arena().alloc(js.Expr, tl.elems.len + 1);
@@ -3435,8 +3643,23 @@ const Emitter = struct {
             else
                 null,
             .optional => |inner| self.typeShape(inner.*),
+            .named => |n| if (std.mem.eql(u8, n, "f64") or std.mem.eql(u8, n, "f32")) float_shape else null,
             else => null,
         };
+    }
+
+    /// True when either side of a comparison is statically known to hold a
+    /// tuple — its print shape starts with `"#"`, the same fact `@print` reads
+    /// to write `#(1, "a")` instead of `[1, "a"]`.
+    fn isTupleShaped(self: *Emitter, lhs: ast.Expr, rhs: ast.Expr) anyerror!bool {
+        return isTupleShape(try self.printShape(lhs)) or isTupleShape(try self.printShape(rhs));
+    }
+
+    fn isTupleShape(shape: ?js.Expr) bool {
+        const s = shape orelse return false;
+        if (s != .array or s.array.elems.len == 0) return false;
+        const head = s.array.elems[0];
+        return head == .quoted and std.mem.eql(u8, head.quoted, "#");
     }
 
     /// `["[", elem]`, or null when the element shape holds no tuple.
@@ -3615,9 +3838,135 @@ const Emitter = struct {
         return if (is_new) self.b.new_(callee, arg_slice) else self.b.call(callee, arg_slice);
     }
 
+    /// The inclusive range of an integer type, as JS number literals, or null
+    /// when the type is not a sized integer. `i64` / `u64` carry no range: a JS
+    /// number cannot represent their ends exactly, so the test is
+    /// `Number.isInteger` (plus `>= 0` for the unsigned one).
+    fn integerRange(name: []const u8) ?struct { lo: ?[]const u8, hi: ?[]const u8 } {
+        const table = .{
+            .{ "i8", "-128", "127" },                .{ "i16", "-32768", "32767" },
+            .{ "i32", "-2147483648", "2147483647" }, .{ "u8", "0", "255" },
+            .{ "u16", "0", "65535" },                .{ "u32", "0", "4294967295" },
+        };
+        inline for (table) |row| {
+            if (std.mem.eql(u8, name, row[0])) return .{ .lo = row[1], .hi = row[2] };
+        }
+        if (std.mem.eql(u8, name, "i64") or std.mem.eql(u8, name, "int") or
+            std.mem.eql(u8, name, "isize")) return .{ .lo = null, .hi = null };
+        if (std.mem.eql(u8, name, "u64") or std.mem.eql(u8, name, "uint") or
+            std.mem.eql(u8, name, "usize")) return .{ .lo = "0", .hi = null };
+        return null;
+    }
+
+    /// `typeof <subject> === "<what>"`.
+    fn typeofIs(self: *Emitter, subject: js.Expr, what: []const u8) !js.Expr {
+        return self.b.binaryBare("===", try self.b.unary("typeof ", subject, false), .{ .quoted = what });
+    }
+
+    /// How many times `isTest` reads its subject for `t` — one read can be
+    /// spelled inline, more than one needs the subject bound first.
+    fn isTestReads(t: ast.TypeRef) usize {
+        return switch (t) {
+            .named => |n| if (integerRange(n)) |r| blk: {
+                var k: usize = 2; // typeof + Number.isInteger
+                if (r.lo != null) k += 1;
+                if (r.hi != null) k += 1;
+                break :blk k;
+            } else 1,
+            .optional => |inner| 1 + isTestReads(inner.*),
+            .tuple_, .labeledTuple => blk: {
+                var k: usize = 2; // Array.isArray + .length
+                for (t.tupleElems().?) |e| k += isTestReads(e);
+                break :blk k;
+            },
+            else => 1,
+        };
+    }
+
+    /// Decision 8 §4 — `x is T` **tests the value**, never where it came from,
+    /// which is what makes it answer for a `unknown` or a union member as well
+    /// as for a value whose static type is known. An integer type is a number
+    /// within its range, `f64` any number, `string` / `bool` the primitive, a
+    /// tuple an array of the right arity with each element tested, `?T` null or
+    /// `T`, and a **named type** an `instanceof` — free under decision 5,
+    /// because the value's prototype is its identity.
+    ///
+    /// An array's element type is not tested (§4.2 only promises the
+    /// constructor), and an unknown spelling answers `false` rather than
+    /// emitting something that is not JavaScript.
+    fn isTest(self: *Emitter, t: ast.TypeRef, subject: js.Expr) anyerror!js.Expr {
+        switch (t) {
+            .named => |n| {
+                if (std.mem.eql(u8, n, "string")) return self.typeofIs(subject, "string");
+                if (std.mem.eql(u8, n, "bool")) return self.typeofIs(subject, "boolean");
+                if (std.mem.eql(u8, n, "f32") or std.mem.eql(u8, n, "f64") or
+                    std.mem.eql(u8, n, "float")) return self.typeofIs(subject, "number");
+                if (integerRange(n)) |r| {
+                    var acc = try self.b.binaryBare("&&", try self.typeofIs(subject, "number"), try self.b.call(
+                        try self.b.member(.{ .name = "Number" }, "isInteger"),
+                        &.{subject},
+                    ));
+                    if (r.lo) |lo| acc = try self.b.binaryBare("&&", acc, try self.b.binaryBare(">=", subject, .{ .number = lo }));
+                    if (r.hi) |hi| acc = try self.b.binaryBare("&&", acc, try self.b.binaryBare("<=", subject, .{ .number = hi }));
+                    return self.b.paren(acc);
+                }
+                if (std.mem.eql(u8, n, "unknown")) return .{ .name = "true" };
+                return self.b.binaryBare("instanceof", subject, .{ .name = n });
+            },
+            // `T[]` / `Array<T>`: the constructor only (§4.2 — an element type
+            // is not checkable).
+            .array => return self.b.call(try self.b.member(.{ .name = "Array" }, "isArray"), &.{subject}),
+            .generic => |g| {
+                if (std.mem.eql(u8, g.name, "Array")) {
+                    return self.b.call(try self.b.member(.{ .name = "Array" }, "isArray"), &.{subject});
+                }
+                return self.b.binaryBare("instanceof", subject, .{ .name = g.name });
+            },
+            .optional => |inner| return self.b.paren(try self.b.binaryBare(
+                "||",
+                try self.b.binaryBare("==", subject, .null_),
+                try self.isTest(inner.*, subject),
+            )),
+            .tuple_, .labeledTuple => {
+                const elems = t.tupleElems().?;
+                var acc = try self.b.call(try self.b.member(.{ .name = "Array" }, "isArray"), &.{subject});
+                acc = try self.b.binaryBare("&&", acc, try self.b.binaryBare(
+                    "===",
+                    try self.b.member(subject, "length"),
+                    .{ .number = try std.fmt.allocPrint(self.arena(), "{d}", .{elems.len}) },
+                ));
+                for (elems, 0..) |e, i| {
+                    const at = try self.b.index(subject, .{ .number = try std.fmt.allocPrint(self.arena(), "{d}", .{i}) }, false);
+                    acc = try self.b.binaryBare("&&", acc, try self.isTest(e, at));
+                }
+                return self.b.paren(acc);
+            },
+            // A function type and a comptime typeparam have no run-time test.
+            .function, .typeparam => return .{ .name = "false" },
+        }
+    }
+
+    /// `x is T` (`ast.is_builtin_name`). The subject is bound first when the
+    /// test reads it more than once, so a call on the left is evaluated once.
+    fn buildIsCall(self: *Emitter, cc: anytype) anyerror!js.Expr {
+        const t = cc.isType orelse return error.InvalidArgs;
+        if (cc.args.len != 1) return error.InvalidArgs;
+        const subject = try self.buildExpr(cc.args[0].value.*);
+        if (isTestReads(t) <= 1) return self.isTest(t, subject);
+        return self.b.call(
+            try self.b.paren(try self.b.arrowExpr(
+                &.{.{ .pattern = .{ .name = "_v" } }},
+                try self.isTest(t, .{ .name = "_v" }),
+            )),
+            &.{subject},
+        );
+    }
+
     fn buildBuiltinCall(self: *Emitter, cc: anytype) anyerror!js.Expr {
         if (std.mem.eql(u8, cc.callee, "print") or std.mem.eql(u8, cc.callee, "println") or std.mem.eql(u8, cc.callee, "debug"))
             return self.buildPrintCall(cc);
+        if (std.mem.eql(u8, cc.callee, ast.is_builtin_name) and cc.isType != null)
+            return self.buildIsCall(cc);
         // `prim-op-annotation` builtin dispatch fires first (`@todo` /
         // `@panic` annotated in `builtins.d.bp`).
         if (try self.tryBuiltinAnnotation(cc.callee, cc)) |node| return node;
@@ -3733,7 +4082,16 @@ const Emitter = struct {
             .wildcard => return null,
             .numberLit => |n| return try self.b.binaryBare("===", subject, .{ .number = n }),
             .stringLit => |s| return try self.b.binaryBare("===", subject, .{ .lexeme_string = s }),
-            .ident => |n| return try self.b.binaryBare("===", subject, .{ .quoted = n }),
+            // A bare name is a payload-less variant (a lower-case name alone is
+            // not an arm — decision 8 § 5.2). Declared here it is a singleton
+            // of its own class, so the test is `instanceof`; declared in
+            // another module it is still tested through the `tag` its
+            // prototype carries.
+            .ident => |n| {
+                const cls = self.unit_variant_class.get(n) orelse "";
+                if (cls.len > 0) return try self.b.binaryBare("instanceof", subject, .{ .name = cls });
+                return try self.b.binaryBare("===", try self.b.member(subject, "tag"), .{ .quoted = n });
+            },
             .@"or" => |pats| {
                 if (pats.len == 0) return js.Expr{ .name = "false" };
                 var acc: ?js.Expr = null;

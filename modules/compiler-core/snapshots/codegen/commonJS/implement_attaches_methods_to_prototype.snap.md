@@ -21,6 +21,7 @@ class Person {
         this.name = name;
     }
 }
+Person.prototype.__bp = "Person";
 
 // implement Printable for Person
 const PersonPrintable = {

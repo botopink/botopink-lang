@@ -17,6 +17,7 @@ class RiskError {
         this.level = level;
     }
 }
+RiskError.prototype.__bp = "RiskError";
 
 function risky() {
     return ({ error: new RiskError(5) });

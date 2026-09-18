@@ -382,6 +382,47 @@ test "js: loop ---- break with value" {
     );
 }
 
+test "js: loop ---- a condition loop's break value is the loop's value" {
+    // Decision 8 §10 — `break <v>` makes the loop an expression. A condition
+    // loop with no `yield` is a search, not a comprehension: it collected into
+    // `_acc` and answered `[3]` / `[8]` where §10 asks for `3` / `8`. A loop
+    // that ends without breaking has no value to give, which is `null`.
+    //
+    // A RUN LOG, not a snapshot: the erlang, beam and wasm baselines of this
+    // program are not this front's to record, and erlang does not compile it
+    // at all (`ConditionLoopValueUnsupported`).
+    try h.assertJsRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    var k = 0;
+        \\    var i = 0;
+        \\    var n = 0;
+        \\    val r = loop { k = k + 1; if (k > 2) { break k; }; };
+        \\    @print(r);
+        \\    val found = loop (i < 10) { if (i == 4) { break i * 2; }; i = i + 1; };
+        \\    @print(found);
+        \\    val never = loop (n < 3) { n = n + 1; };
+        \\    @print(never);
+        \\}
+    , "3\n8\nnull\n");
+}
+
+test "js: loop ---- a condition loop that yields still collects" {
+    // The other side of the same fork: a `yield` in the body makes it a
+    // comprehension, and a `break <v>` there contributes its value and ends
+    // the loop.
+    try h.assertJsRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    var i = 0;
+        \\    val xs = loop (i < 10) {
+        \\        i = i + 1;
+        \\        if (i > 3) { break i; };
+        \\        yield i;
+        \\    };
+        \\    @print(xs);
+        \\}
+    , "[1, 2, 3, 4]\n");
+}
+
 test "js: loop ---- continue in iteration" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn sumEvens(arr: i32[]) -> i32[] {

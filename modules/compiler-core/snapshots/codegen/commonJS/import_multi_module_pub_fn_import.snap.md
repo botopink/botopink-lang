@@ -15,7 +15,7 @@ exports.double = double;
 
 ----- TYPESCRIPT TYPEDEF -- math.d.ts
 ```typescript
-export declare function double(x: i32): i32;
+export declare function double(x: number): number;
 
 ```
 

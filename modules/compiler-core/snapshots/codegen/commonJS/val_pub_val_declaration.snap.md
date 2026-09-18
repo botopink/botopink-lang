@@ -13,7 +13,7 @@ const HOST = "localhost";
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-export declare const VERSION: i32;
+export declare const VERSION: number;
 
 
 export declare const HOST: string;

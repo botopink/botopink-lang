@@ -19,6 +19,7 @@ class Counter {
         this.count += 1;
     }
 }
+Counter.prototype.__bp = "Counter";
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

@@ -18,6 +18,7 @@ class CalcError {
         this.msg = msg;
     }
 }
+CalcError.prototype.__bp = "CalcError";
 
 function getA() {
     return ({ error: new CalcError("overflow") });

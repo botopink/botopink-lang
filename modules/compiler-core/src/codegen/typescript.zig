@@ -101,30 +101,61 @@ const Builder = struct {
         return .{ .class = .{ .name = r.name, .members = try members.toOwnedSlice(self.b.arena) } };
     }
 
+    /// An enum declares the **class** the JavaScript builds (decision 5): a
+    /// payload variant is a `static` factory returning the enum type, a
+    /// payload-less one a `static readonly` singleton of it, and every value
+    /// carries the `tag` its prototype holds. Before this the typedef promised
+    /// a TypeScript `enum` of strings or a discriminated union of plain
+    /// objects, and the `.js` beside it built neither.
     fn enumDecl(self: *Builder, e: ast.TypeDecl) Error!js.TsDecl {
         if (!e.isPub) return .none;
-        // Unit variants become a TypeScript enum; payload variants a
-        // discriminated union type.
-        var has_payload = false;
+        var members: std.ArrayListUnmanaged(js.TsMember) = .empty;
+        try members.append(self.b.arena, .{ .field = .{
+            .modifier = "readonly ",
+            .name = "tag",
+            .type = .{ .union_ = blk: {
+                const tags = try self.b.arena.alloc(js.TsType, e.variants().len);
+                for (e.variants(), 0..) |v, i| tags[i] = .{ .literal = v.name };
+                break :blk tags;
+            } },
+        } });
         for (e.variants()) |v| {
-            if (v.fields.len > 0) {
-                has_payload = true;
-                break;
+            if (v.fields.len == 0) {
+                try members.append(self.b.arena, .{ .field = .{
+                    .modifier = "static readonly ",
+                    .name = v.name,
+                    .type = .{ .name = e.name },
+                } });
+                continue;
             }
+            const ps = try self.b.arena.alloc(js.TsParam, v.fields.len);
+            for (v.fields, 0..) |f, i| ps[i] = .{ .name = f.name, .type = try self.typeRef(f.typeRef) };
+            try members.append(self.b.arena, .{ .method = .{
+                .modifier = "static ",
+                .name = v.name,
+                .params = ps,
+                .ret = .{ .name = e.name },
+            } });
         }
-        if (!has_payload) {
-            const members = try self.b.arena.alloc(js.TsMember, e.variants().len);
-            for (e.variants(), 0..) |v, i| members[i] = .{ .enum_member = .{ .name = v.name, .value = v.name } };
-            return .{ .enum_ = .{ .name = e.name, .members = members } };
+        for (e.methods) |m| {
+            if (m.is_declare) continue;
+            if (m.returnType) |ret| if (ret.isTemplateReturnType()) continue;
+            // An enum method is a `static` of the enum's class, and a
+            // receiver-first one keeps `self` as a real first parameter, so it
+            // is not dropped the way a record method's `self` is.
+            var ps: std.ArrayListUnmanaged(js.TsParam) = .empty;
+            for (m.params) |p| try ps.append(self.b.arena, .{
+                .name = p.name,
+                .type = if (std.mem.eql(u8, p.name, "self")) js.TsType{ .name = e.name } else try self.typeRef(p.typeRef),
+            });
+            try members.append(self.b.arena, .{ .method = .{
+                .modifier = "static ",
+                .name = m.name,
+                .params = try ps.toOwnedSlice(self.b.arena),
+                .ret = try self.returnType(m.returnType),
+            } });
         }
-        const arms = try self.b.arena.alloc(js.TsType, e.variants().len);
-        for (e.variants(), 0..) |v, i| {
-            const fields = try self.b.arena.alloc(js.TsField, v.fields.len + 1);
-            fields[0] = .{ .name = "tag", .type = .{ .literal = v.name } };
-            for (v.fields, 0..) |f, fi| fields[fi + 1] = .{ .name = f.name, .type = try self.typeRef(f.typeRef) };
-            arms[i] = .{ .object = .{ .fields = fields } };
-        }
-        return .{ .type_alias = .{ .name = e.name, .type = .{ .union_ = arms } } };
+        return .{ .class = .{ .name = e.name, .members = try members.toOwnedSlice(self.b.arena) } };
     }
 
     fn interface(self: *Builder, i: ast.BehaviorDecl) Error!js.TsDecl {
@@ -167,24 +198,49 @@ const Builder = struct {
     fn use(self: *Builder, u: ast.ImportDecl) Error!js.TsDecl {
         // Fallback activation `X*;` has no type binding — emit nothing.
         if (u.activationOnly) return .none;
+
+        // The shorthand `import { … };` names no module (decision 3), so — as
+        // the JavaScript does — each name is resolved to the file that emits
+        // it, one `import` per owner. It used to write the literal word
+        // `"./module"`, a module `tsc` cannot find.
+        if (u.source == .root) {
+            const xm = &(self.cross orelse return .none).exports;
+            var decls: std.ArrayListUnmanaged(js.TsDecl) = .empty;
+            var seen: std.ArrayListUnmanaged([]const u8) = .empty;
+            for (u.imports) |imp| {
+                const info = xm.get(imp.name()) orelse continue;
+                const already = for (seen.items) |m| {
+                    if (std.mem.eql(u8, m, info.module)) break true;
+                } else false;
+                if (already) continue;
+                try seen.append(self.b.arena, info.module);
+                var names: std.ArrayListUnmanaged([]const u8) = .empty;
+                for (u.imports) |imp2| {
+                    const info2 = xm.get(imp2.name()) orelse continue;
+                    if (!std.mem.eql(u8, info2.module, info.module)) continue;
+                    try names.append(self.b.arena, imp2.name());
+                }
+                try decls.append(self.b.arena, .{ .import = .{
+                    .names = try names.toOwnedSlice(self.b.arena),
+                    .source = try std.fmt.allocPrint(self.b.arena, "./{s}", .{info.module}),
+                } });
+            }
+            if (decls.items.len == 0) return .none;
+            return .{ .group = try decls.toOwnedSlice(self.b.arena) };
+        }
+
         var names: std.ArrayListUnmanaged([]const u8) = .empty;
         for (u.imports) |imp| {
             // A package import names only what the owner emits: a template fn
             // (`html`) or a lib namespace handle has no declaration in the
             // owner's `.d.ts`, so importing it would dangle.
-            if (u.source == .module and self.cross != null and
+            if (self.cross != null and
                 !std.mem.eql(u8, u.source.module, "std") and
                 self.cross.?.exports.get(imp.name()) == null) continue;
             try names.append(self.b.arena, imp.name());
         }
         if (names.items.len == 0) return .none;
-        return .{ .import = .{
-            .names = names.items,
-            .source = switch (u.source) {
-                .root => "./module",
-                .module => |name| name,
-            },
-        } };
+        return .{ .import = .{ .names = names.items, .source = u.source.module } };
     }
 
     fn delegate(self: *Builder, d: ast.DelegateDecl) Error!js.TsDecl {
@@ -215,11 +271,32 @@ const Builder = struct {
 
     // ── types ────────────────────────────────────────────────────────────────
 
+    /// The TypeScript spelling of a botopink primitive. `i32` is not a
+    /// TypeScript type: a `.d.ts` naming one is not a declaration file, it is
+    /// a file `tsc` rejects, which is what made the emitted typedef worth
+    /// nothing to a host consumer.
+    fn primitiveTsName(name: []const u8) ?[]const u8 {
+        const numbers = [_][]const u8{
+            "i8",    "i16",   "i32", "i64",  "i128",
+            "u8",    "u16",   "u32", "u64",  "u128",
+            "f32",   "f64",   "int", "uint", "float",
+            "isize", "usize",
+        };
+        for (numbers) |n| if (std.mem.eql(u8, name, n)) return "number";
+        if (std.mem.eql(u8, name, "bool")) return "boolean";
+        // `string`, `void`, `unknown`, `never` and `any` are spelled the same
+        // in both languages and need no row of their own.
+        if (std.mem.eql(u8, name, "char")) return "string";
+        return null;
+    }
+
     /// A type the frontend carries as a name (an interface field, a delegate's
     /// return). A position with no written type is `any`, TypeScript's own
-    /// spelling of "not constrained" — never an empty `x: `.
+    /// spelling of "not constrained" — never an empty `x: `. A botopink
+    /// primitive takes its TypeScript spelling.
     fn namedType(name: []const u8) js.TsType {
-        return .{ .name = if (name.len == 0) "any" else name };
+        if (name.len == 0) return .{ .name = "any" };
+        return .{ .name = primitiveTsName(name) orelse name };
     }
 
     fn derefType(ty: comptimeMod.Type) comptimeMod.Type {
@@ -239,7 +316,7 @@ const Builder = struct {
     fn inferredType(self: *Builder, ty: comptimeMod.Type) Error!js.TsType {
         switch (derefType(ty)) {
             .named => |n| {
-                if (n.args.len == 0) return .{ .name = n.name };
+                if (n.args.len == 0) return namedType(n.name);
                 const args = try self.b.arena.alloc(js.TsType, n.args.len);
                 for (n.args, 0..) |a, i| args[i] = try self.inferredType(a.*);
                 return .{ .generic = .{ .name = n.name, .args = args } };

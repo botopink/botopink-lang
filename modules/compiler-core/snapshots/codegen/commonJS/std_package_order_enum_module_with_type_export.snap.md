@@ -75,11 +75,21 @@ test "order case over Order" {
 
 //// an `Order`. Enums are concrete types, not interfaces.
 
-const Order = Object.freeze({
-    Lt: "Lt",
-    Eq: "Eq",
-    Gt: "Gt",
-});
+class Order {
+}
+Order.prototype.__bp = "Order";
+class Order$Lt extends Order {
+}
+Order$Lt.prototype.tag = "Lt";
+class Order$Eq extends Order {
+}
+Order$Eq.prototype.tag = "Eq";
+class Order$Gt extends Order {
+}
+Order$Gt.prototype.tag = "Gt";
+Order.Lt = new Order$Lt();
+Order.Eq = new Order$Eq();
+Order.Gt = new Order$Gt();
 exports.Order = Order;
 
 function lt() {
@@ -100,8 +110,8 @@ exports.gt = gt;
 function toInt(o) {
     const n = (() => {
         const _s = o;
-        if (_s === "Lt") return (-1);
-        if (_s === "Eq") return 0;
+        if (_s instanceof Order$Lt) return (-1);
+        if (_s instanceof Order$Eq) return 0;
         return 1;
     })();
     return n;
@@ -111,8 +121,8 @@ exports.toInt = toInt;
 function reverse(o) {
     const r = (() => {
         const _s = o;
-        if (_s === "Lt") return Order.Gt;
-        if (_s === "Gt") return Order.Lt;
+        if (_s instanceof Order$Lt) return Order.Gt;
+        if (_s instanceof Order$Gt) return Order.Lt;
         return Order.Eq;
     })();
     return r;
@@ -122,10 +132,11 @@ exports.reverse = reverse;
 
 ----- TYPESCRIPT TYPEDEF -- std/order.d.ts
 ```typescript
-export declare enum Order {
-    Lt = "Lt",
-    Eq = "Eq",
-    Gt = "Gt",
+export declare class Order {
+    readonly tag: "Lt" | "Eq" | "Gt";
+    static readonly Lt: Order;
+    static readonly Eq: Order;
+    static readonly Gt: Order;
 }
 
 
@@ -138,7 +149,7 @@ export declare function eq(): Order;
 export declare function gt(): Order;
 
 
-export declare function toInt(o: Order): i32;
+export declare function toInt(o: Order): number;
 
 
 export declare function reverse(o: Order): Order;
@@ -175,9 +186,21 @@ function __bp_show(v, s, top, a) {
         a.push(top ? v : (("\"" + Array.from(v, (c) => ((c === "\"") || (c === "\\")) ? ("\\" + c) : (c === "\n") ? "\\n" : (c === "\r") ? "\\r" : (c === "\t") ? "\\t" : c).join("")) + "\""));
         return "%s";
     }
+    if (((typeof v === "number") && (s === "f"))) {
+        a.push(Number.isInteger(v) ? v.toFixed(1) : String(v));
+        return "%s";
+    }
     if (Array.isArray(v)) {
         const t = ((s != null) && (s[0] === "#"));
-        return (((t ? "#(" : "[") + v.map((e, i) => __bp_show(e, (s == null) ? null : t ? s[i + 1] : s[1], false, a)).join(",")) + (t ? ")" : "]"));
+        return (((t ? "#(" : "[") + v.map((e, i) => __bp_show(e, (s == null) ? null : t ? s[i + 1] : s[1], false, a)).join(", ")) + (t ? ")" : "]"));
+    }
+    if (((v != null) && (typeof v.__bp === "string"))) {
+        if ((typeof v.display === "function")) {
+            a.push(v.display());
+            return "%s";
+        }
+        const k = Object.keys(v);
+        return (((typeof v.tag === "string") ? ((v.__bp + ".") + v.tag) : v.__bp) + ((k.length === 0) ? "" : (("(" + k.map((n) => ((n + ": ") + __bp_show(v[n], null, false, a))).join(", ")) + ")")));
     }
     a.push(v);
     return "%O";
@@ -194,8 +217,8 @@ const order = require("./std/order.js");
 function describe(o) {
     const s = (() => {
         const _s = o;
-        if (_s === "Lt") return "less";
-        if (_s === "Gt") return "greater";
+        if (_s.tag === "Lt") return "less";
+        if (_s.tag === "Gt") return "greater";
         return "equal";
     })();
     return s;

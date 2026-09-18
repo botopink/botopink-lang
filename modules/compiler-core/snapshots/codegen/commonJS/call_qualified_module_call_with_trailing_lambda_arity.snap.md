@@ -26,6 +26,7 @@ class List {
         return items;
     }
 }
+List.prototype.__bp = "List";
 
 class Pipeline {
     constructor(items) {
@@ -38,6 +39,7 @@ class Pipeline {
 });
     }
 }
+Pipeline.prototype.__bp = "Pipeline";
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts

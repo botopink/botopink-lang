@@ -17,6 +17,7 @@ class Point {
         this.y = y;
     }
 }
+Point.prototype.__bp = "Point";
 
 function first(p) {
     return p.x;

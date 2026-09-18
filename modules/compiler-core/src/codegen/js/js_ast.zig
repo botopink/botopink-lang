@@ -391,6 +391,11 @@ pub const FunctionDecl = struct {
 
 pub const Class = struct {
     name: []const u8,
+    /// The base class this one extends, when it has one — an enum's variant
+    /// subclass extends the enum's own class, which is what makes
+    /// `x instanceof Shape` the run-time identity of every `Shape` value
+    /// (1.0.5-beta decision 5).
+    extends: ?[]const u8 = null,
     ctor: ?Ctor = null,
     members: []const ClassMember = &.{},
 
@@ -474,8 +479,8 @@ pub const TsParam = struct {
 pub const TsMember = union(enum) {
     /// `<modifier> name: T;`
     field: struct { modifier: []const u8 = "", name: []const u8, type: TsType },
-    /// `name(params): R;`
-    method: struct { name: []const u8, params: []const TsParam, ret: TsType },
+    /// `<modifier>name(params): R;`
+    method: struct { modifier: []const u8 = "", name: []const u8, params: []const TsParam, ret: TsType },
     /// `get name: T;`
     getter: struct { name: []const u8, type: TsType },
     /// `set name(p: T);`
