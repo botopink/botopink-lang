@@ -21,7 +21,8 @@ tests/
 ├── hover.zig             ← textDocument/hover
 ├── definition.zig        ← textDocument/definition
 ├── symbols.zig           ← textDocument/documentSymbol
-├── completion.zig        ← textDocument/completion
+├── completion.zig        ← textDocument/completion (engine path: `engine.completion`)
+├── completion_server.zig ← textDocument/completion through `Server.completionItems`
 ├── references.zig        ← textDocument/references
 ├── rename.zig            ← textDocument/rename
 ├── signature_help.zig    ← textDocument/signatureHelp
@@ -36,6 +37,12 @@ tests/
 ├── cross_module.zig      ← project-index requests (references / rename / import-missing)
 └── project_graph.zig     ← project-graph compile + `ProjectGraph.resolveRoots`
 ```
+
+`completion_server.zig` drives the server's own decision — compile, then complete
+with the module's bindings or without any — because the engine tests stayed green
+while the server answered `null` for every document that did not type-check
+(front 14 step 1). It builds a `Server` with `std.testing.io` and calls
+`completionItems`, so no JSON frame is written; the framing itself is not covered.
 
 `sublanguage.zig` uses `helpers.compileEval` (template-eval context on, unique
 scratch root `.botopinkbuild/lsp-test/<n>` per call) so the `@ExprCustom`

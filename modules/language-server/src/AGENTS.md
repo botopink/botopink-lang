@@ -62,6 +62,21 @@ in `engine.zig`, add a test in [`tests/`](tests/AGENTS.md) (register it in
 - `engine.documentSymbols` returns owned names **and owned children**; free a
   result with `engine.freeSymbol` per symbol, never `gpa.free(sym.name)` alone,
   or every child leaks.
+- **Completion never answers `null` because the module failed to compile.**
+  `Server.completionItems` (the testable half of `textDocument/completion`)
+  completes against the module's typed bindings when it type-checks and against
+  **none** when it does not; `engine.completion` then falls back to the token
+  walk — locals from `collectLocalScope` plus the module's own declarations from
+  `moduleDecls`. Answering `null` there left the editor with no completion for
+  any file carrying a type error, or being typed (front 14 step 1).
+- **Completion hides what the cursor cannot see** (`cursorScope`): the binding
+  whose own initialiser the cursor sits in (`val x = ▮` never offers `x`) and
+  every `val`/`var` declared below it. A `fn` is not hidden — it may be called
+  above the line that defines it.
+- The hover footer of a builtin method names the **declaring** behavior and the
+  receiver's when they differ (`*from \`behavior Signed\` (via I32)*`):
+  `InterfaceMember.owner` records which link of the `extends` chain declared the
+  member.
 - `semanticTokens` is a single token walk with a little state: `fn_params` /
   `fn_generics` (names in scope for the body being scanned, cleared when it
   closes), `generic_depth` (only a `<` right after a *declaration name* opens a

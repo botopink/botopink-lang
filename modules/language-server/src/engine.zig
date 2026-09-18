@@ -2483,10 +2483,13 @@ pub fn moduleCompletion(
 }
 
 fn cursorInFromString(source: []const u8, offset: usize) bool {
-    // Walk backward from cursor to find opening `"` then `from`.
-    var i = offset;
+    if (source.len == 0) return false;
+    // Walk backward from cursor to find opening `"` then `from`. The cursor sits
+    // one past the last byte when it is at end of file (a line still being
+    // typed) — start the walk at the last byte there, never past it.
+    var i = @min(offset, source.len - 1);
     if (i > 0 and source[i - 1] == '"') i -= 1; // skip quote at cursor
-    while (i > 0 and i < source.len and source[i] != '"') {
+    while (i > 0 and source[i] != '"') {
         if (source[i] == '\n') return false;
         i -= 1;
     }
@@ -3996,6 +3999,112 @@ fn collectLocalScope(
     return out.toOwnedSlice(arena);
 }
 
+/// The names a cursor cannot see, read off the token stream.
+///
+/// `being_defined` is the `val`/`var` whose own initialiser the cursor sits in:
+/// `val x = ▮` must not offer `x`. `after` holds every `val`/`var` declared at or
+/// after the cursor — a value is in scope only below its declaration. A `fn` is
+/// not collected: it may be called above the line that defines it.
+const CursorScope = struct {
+    being_defined: ?[]const u8 = null,
+    after: []const []const u8 = &.{},
+
+    fn hides(self: CursorScope, name: []const u8) bool {
+        if (self.being_defined) |d| if (std.mem.eql(u8, d, name)) return true;
+        for (self.after) |n| if (std.mem.eql(u8, n, name)) return true;
+        return false;
+    }
+};
+
+fn cursorScope(arena: std.mem.Allocator, tokens: []const Token, pos: proto.Position) !CursorScope {
+    var after: std.ArrayListUnmanaged([]const u8) = .empty;
+    // The `val`/`var` whose initialiser we are inside: set at its `=`, cleared
+    // at the `;` that ends the statement.
+    var open: ?[]const u8 = null;
+    var named: ?[]const u8 = null;
+    var being: ?[]const u8 = null;
+    var reached_cursor = false;
+
+    for (tokens, 0..) |tok, i| {
+        if (isTrivia(tok.kind)) continue;
+        if (!reached_cursor and !tokenBeforePos(tok, pos)) {
+            being = open;
+            reached_cursor = true;
+        }
+        switch (tok.kind) {
+            .val, .@"var" => {
+                const nt = nextIdentToken(tokens, i) orelse continue;
+                if (reached_cursor) {
+                    try after.append(arena, nt.lexeme);
+                } else {
+                    named = nt.lexeme;
+                }
+            },
+            .equal => if (!reached_cursor) {
+                open = named;
+                named = null;
+            },
+            .semicolon => if (!reached_cursor) {
+                open = null;
+                named = null;
+            },
+            else => {},
+        }
+    }
+    if (!reached_cursor) being = open; // cursor past the last token
+
+    return .{ .being_defined = being, .after = try after.toOwnedSlice(arena) };
+}
+
+/// One module-level declaration read straight from the token stream.
+const ModuleDecl = struct {
+    name: []const u8,
+    kind: u32,
+    /// The keyword that declared it — the detail shown while the module has no
+    /// types to render.
+    keyword: []const u8,
+};
+
+/// Module-level (brace depth 0) declarations: `val`, `var`, `fn`, `type` and
+/// `behavior`. Used only when the module does not type-check, where the typed
+/// bindings slice is empty; locals come from `collectLocalScope`.
+fn moduleDecls(arena: std.mem.Allocator, tokens: []const Token) ![]ModuleDecl {
+    var out: std.ArrayListUnmanaged(ModuleDecl) = .empty;
+    var depth: usize = 0;
+
+    for (tokens, 0..) |tok, i| {
+        if (isTrivia(tok.kind)) continue;
+        switch (tok.kind) {
+            .leftBrace => depth += 1,
+            .rightBrace => if (depth > 0) {
+                depth -= 1;
+            },
+            .val, .@"var", .@"fn", .type, .behavior => {
+                if (depth != 0) continue;
+                const nt = nextIdentToken(tokens, i) orelse continue;
+                try out.append(arena, .{
+                    .name = nt.lexeme,
+                    .kind = switch (tok.kind) {
+                        .@"fn" => proto.CompletionItemKind.Function,
+                        .type => proto.CompletionItemKind.Struct,
+                        .behavior => proto.CompletionItemKind.Interface,
+                        else => proto.CompletionItemKind.Variable,
+                    },
+                    .keyword = switch (tok.kind) {
+                        .@"fn" => "fn",
+                        .type => "type",
+                        .behavior => "behavior",
+                        .@"var" => "var",
+                        else => "val",
+                    },
+                });
+            },
+            else => {},
+        }
+    }
+    return out.toOwnedSlice(arena);
+}
+
 /// Resolve the identifier `name` at `pos` to its nearest enclosing local binding
 /// site (a parameter / `val` / `var` / closure binder), preferring the innermost
 /// scope. Returns null when no local of that name is in scope. The returned
@@ -4096,6 +4205,10 @@ pub fn completion(
     const local_tokens = local_tokens_lexer.scanAll(sa) catch &[_]Token{};
     const locals = collectLocalScope(sa, local_tokens, pos) catch &[_]LocalSym{};
 
+    // Names the cursor cannot see: the binding whose own initialiser it sits in
+    // (`val x = ▮` never offers `x`) and every value declared further down.
+    const out_of_scope = cursorScope(sa, local_tokens, pos) catch CursorScope{};
+
     // Dedupe locals by name keeping the nearest (largest `depth`); record the
     // surviving names so the module loop can skip what a local shadows.
     var local_names = std.StringHashMap(void).init(sa);
@@ -4103,6 +4216,7 @@ pub fn completion(
         var best = std.StringHashMap(LocalSym).init(sa);
         for (locals) |l| {
             if (!std.mem.startsWith(u8, l.name, prefix)) continue;
+            if (out_of_scope.hides(l.name)) continue;
             if (best.get(l.name)) |cur| {
                 if (l.depth < cur.depth) continue;
             }
@@ -4130,6 +4244,7 @@ pub fn completion(
         if (!std.mem.startsWith(u8, b.name, prefix)) continue;
         // An in-scope local of the same name shadows this module binding.
         if (local_names.contains(b.name)) continue;
+        if (out_of_scope.hides(b.name)) continue;
 
         const kind = bindingCompletionKind(b);
         const detail = try renderType(gpa, b.type_);
@@ -4141,6 +4256,29 @@ pub fn completion(
             .detail = detail,
             .sortText = bindingSortText(b),
         });
+    }
+
+    // A module that does not type-check has no typed bindings at all, so the
+    // list above is empty and only the locals survive. Read the module's own
+    // declarations off the token stream instead: while the file is being typed,
+    // its own names stay completable (front 14; the server used to answer
+    // nothing at all in this state).
+    if (bindings.len == 0) {
+        var seen = std.StringHashMap(void).init(sa);
+        for (moduleDecls(sa, local_tokens) catch &[_]ModuleDecl{}) |d| {
+            if (!std.mem.startsWith(u8, d.name, prefix)) continue;
+            if (local_names.contains(d.name)) continue;
+            if (out_of_scope.hides(d.name)) continue;
+            if (seen.contains(d.name)) continue;
+            try seen.put(d.name, {});
+
+            try items.append(gpa, .{
+                .label = try gpa.dupe(u8, d.name),
+                .kind = d.kind,
+                .detail = try gpa.dupe(u8, d.keyword),
+                .sortText = "1",
+            });
+        }
     }
 
     return items.toOwnedSlice(gpa);
@@ -4483,6 +4621,11 @@ const InterfaceMember = struct {
     sig: []const u8,
     name_line: usize,
     name_col: usize,
+    /// The behavior whose body declares this member — the receiver's own
+    /// behavior, or a base reached through `extends` (`abs` is `Signed`'s, not
+    /// `I32`'s). Hover names it so the reader looks for the member where it is
+    /// actually written.
+    owner: []const u8,
 };
 
 /// True for tokens that end a member signature when met at parenthesis depth 0.
@@ -4657,6 +4800,7 @@ fn collectInterfaceMembers(
                 .sig = sig,
                 .name_line = tokens[n].line,
                 .name_col = tokens[n].col,
+                .owner = cname,
             });
         }
     }
@@ -4793,7 +4937,14 @@ fn hoverBuiltinInterfaceMethod(
         try buf.appendSlice(gpa, "```botopink\n");
         try buf.appendSlice(gpa, m.sig);
         try buf.appendSlice(gpa, "\n```");
-        try buf.print(gpa, "\n\n*from `interface {s}`*", .{iface.name});
+        // Name the behavior that declares the member, and the receiver's own
+        // when they differ: `abs` is written in `Signed`, reached through
+        // `I32 extends Signed` (decided 2026-09-17). Naming only the receiver
+        // sent the reader to a behavior whose body has no such member.
+        if (std.mem.eql(u8, m.owner, iface.name))
+            try buf.print(gpa, "\n\n*from `behavior {s}`*", .{iface.name})
+        else
+            try buf.print(gpa, "\n\n*from `behavior {s}` (via {s})*", .{ m.owner, iface.name });
         return .{ .contents = .{ .kind = proto.MarkupKind.Markdown, .value = try buf.toOwnedSlice(gpa) } };
     }
     return null;

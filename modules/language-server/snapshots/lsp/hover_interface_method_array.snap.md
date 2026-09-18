@@ -12,4 +12,4 @@ kind: markdown
 fn filter(self: Self, pred: fn(item: T) -> bool) -> Self
 ```
 
-*from `interface Array`*
+*from `behavior Array`*
