@@ -411,6 +411,32 @@ does not.
 grammar, so §3.1's "array of the union" has no spelling. `i32 | string[]` binds as `i32` or
 `string[]`, which is right.
 
+## `x is T`, and narrowing (decision 8 §4, 1.0.4's 06 N21)
+
+The parser lands `x is T` as the `is` builtin call (`ast.is_builtin_name`) with the value as its
+only argument and the tested type in the call's `isType` slot. `inferBuiltinCallReturnType` had no
+arm for the name, so the call was typed `void` ("expected bool, got void"). It is intercepted
+**before** that function now, because the slot it needs is on the AST node and not among the typed
+arguments, and the typed node it builds **carries `isType` forward** — the four backends lower their
+run-time test from it.
+
+§4.2 is `checkIsTestableType`: a primitive, a named type's constructor and a tuple are testable as
+they are; a generic type is testable only applied to `unknown`. `Box<i32>` is the section's own
+error — a run-time test can see that a value is a `Box` and cannot see what is in it, so
+`Box<i32>` would be a promise the test does not keep, while `Box<unknown>` says exactly what it can
+answer. Each member of a union is checked in turn.
+
+Narrowing has one channel, not two: `if (x is T)` writes into the same
+`guardArgName` / `guardNarrowedType` pair C5 built for the type-guard fn form (`-> x is T`), so the
+branch rebinds the name exactly as a guard call does. Only a plain **name** narrows — narrowing is a
+rebinding, and there is nothing to rebind for `f().x`.
+
+**Not implemented.** §4.3 (`a is string` on a statically-known `i32` is a *warning*, always false)
+needs the warning channel `comptime/**` does not have — the same gap §2.4 and §1.4 hit. §4.1's
+"an integral `f64` is converted to the tested integer type inside the block" is each backend's
+run-time half. D4 (whether `is` grows a payload pattern) stands as the parser left it: the located
+`is-variant-binding` refusal, with `case` the only reader of a payload.
+
 ## `case` and `comptime` block types (06 C2)
 
 A `case` is typed from its arms (`caseTypeFromArms`): arms that agree unify, arms of different

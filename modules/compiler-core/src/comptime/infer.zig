@@ -5508,6 +5508,62 @@ fn refuseUnknownUse(env: *Env, ty: *T.Type, loc: ast.Loc, what: []const u8) Infe
     }
 }
 
+/// Decision 8 §4.2 — what may stand on the right of `is`: a primitive, a named
+/// type's constructor, a tuple `#(…)`, and a generic type applied to `unknown`
+/// only.
+///
+/// `Box<i32>` is the error the section names: a run-time test can see that a
+/// value is a `Box`, and cannot see what is in it, so `Box<i32>` would be a
+/// promise the test does not keep. `Box<unknown>` says exactly what the test
+/// can answer. A tuple is checkable — arity and each element are — and so are
+/// the other structural spellings the grammar builds out of type refs.
+fn checkIsTestableType(env: *Env, ref: ast.TypeRef, loc: ast.Loc) InferError!void {
+    switch (ref) {
+        .generic => |g| {
+            if (ref.unionMembers()) |members| {
+                for (members) |m| try checkIsTestableType(env, m, loc);
+                return;
+            }
+            for (g.args) |arg| {
+                const isUnknownArg = arg == .named and
+                    std.mem.eql(u8, arg.named, ast.unknown_type_name);
+                if (isUnknownArg) continue;
+                var e = TypeError.custom(
+                    try std.fmt.allocPrint(
+                        env.arena,
+                        "`is` cannot test the type argument of `{s}`",
+                        .{g.name},
+                    ),
+                    "A run-time test sees the type, not what is inside it. Write the argument as `unknown` (`Box<unknown>`) and narrow the contents separately.",
+                );
+                env.lastError = e.withLoc(loc);
+                return error.TypeError;
+            }
+        },
+        else => {},
+    }
+}
+
+/// Decision 8 §4 — the narrowing an `if` condition records: the name it tested
+/// and the type it tested it for. Null when the condition is not one of the
+/// forms that narrow.
+const IsNarrowing = struct { name: []const u8, ref: ast.TypeRef };
+
+/// `x is T` where `x` is a plain name. Only a name can be narrowed: narrowing
+/// rebinds it for the branch, and there is nothing to rebind for `f().x`.
+fn isNarrowingOf(cond: ast.Expr) ?IsNarrowing {
+    if (cond != .call) return null;
+    const c = cond.call.kind;
+    if (c != .call) return null;
+    const cc = c.call;
+    if (!cc.is_builtin or !std.mem.eql(u8, cc.callee, ast.is_builtin_name)) return null;
+    const tested = cc.isType orelse return null;
+    if (cc.args.len != 1) return null;
+    const arg = cc.args[0].value.*;
+    if (arg != .identifier or arg.identifier.kind != .ident) return null;
+    return .{ .name = arg.identifier.kind.ident, .ref = tested };
+}
+
 fn requireNumericOperand(env: *Env, ty: *T.Type, op: []const u8, loc: ast.Loc) InferError!void {
     const t = ty.deref();
     if (t.* != .named) return;
@@ -6648,6 +6704,15 @@ fn inferBranchExpr(env: *Env, b: ast.MakeExpr(.untyped, ast.BranchExprOf(.untype
             } else {
                 // Check for type guard call: `if (guardName(arg, ...))`
                 // Narrow the argument's type in the then-branch.
+                // Decision 8 §4 — `if (x is T)` narrows `x` to `T` inside the
+                // branch. It is the same channel C5 built for the type-guard fn
+                // form (`-> x is T`), which is why both write into
+                // `guardArgName` / `guardNarrowedType` rather than growing a
+                // second narrowing mechanism.
+                if (isNarrowingOf(i.cond.*)) |n| {
+                    guardArgName = n.name;
+                    guardNarrowedType = try resolveTypeRef(env, n.ref);
+                }
                 if (i.cond.* == .call) {
                     const ci = i.cond.call.kind.call;
                     if (env.typeGuardFns.get(ci.callee)) |guardInfo| {
@@ -7758,6 +7823,31 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             const typedTrailing = try inferTrailingLambdasTyped(env, call.trailing);
 
             if (call.is_builtin) {
+                // Decision 8 §4 — `x is T`. The parser lands it as the `is`
+                // builtin with the tested type in the call's `isType` slot;
+                // nothing typed it, so `inferBuiltinCallReturnType` had no arm
+                // for the name and the call came out `void`.
+                if (std.mem.eql(u8, call.callee, ast.is_builtin_name)) {
+                    if (call.isType) |tested| try checkIsTestableType(env, tested, loc);
+                    return TypedExpr{
+                        .call = .{
+                            .loc = loc,
+                            .type_ = try env.namedType("bool"),
+                            .kind = .{
+                                .call = .{
+                                    .receiver = null,
+                                    .callee = call.callee,
+                                    .is_builtin = true,
+                                    .args = typedArgs,
+                                    .trailing = typedTrailing,
+                                    // The tested type is what the backends lower the run-time
+                                    // test from; dropping it here left them nothing to read.
+                                    .isType = call.isType,
+                                },
+                            },
+                        },
+                    };
+                }
                 // `@makeRecord(fields)` — when fields is a literal array of RecordField
                 // values, evaluate at inference time and create a synthetic record type.
                 if (std.mem.eql(u8, call.callee, "makeRecord") and call.args.len >= 1) {
