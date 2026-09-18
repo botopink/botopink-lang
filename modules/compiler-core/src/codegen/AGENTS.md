@@ -271,9 +271,26 @@ codegen/
   ignores the rest, which JS destructuring already does, so it emits no rest
   element — and a nameless `..` in an array *literal* contributes nothing.
 - **Case tests** (`patternTest`): a pattern that matches anything (`_`, an
-  alternative that is `_`) has no `if`; a multi-subject arm (`case a, b { 0, 0
-  -> … }`, subject `[a, b]`) tests the conjunction over `_s[i]`; a shape with
-  no test is `false`.
+  alternative that is `_`, a **binding**) has no `if`; a multi-subject arm
+  (`case a, b { 0, 0 -> … }`, subject `[a, b]`) tests the conjunction over
+  `_s[i]`; a shape with no test is `false`. Decision 8 §5's shapes ride on
+  `Pattern.variant` under `shape`, and each has a test of its own: `.tuple`
+  (`#(0, s)`) is `Array.isArray` plus the arity — `>=` when `..` is written —
+  plus each element's test at `_s[i]`; `.range` (`1...5`) is `_s >= lo && _s <=
+  hi`, both ends included; `.variant` is the `tag` compare (or the `"ok" in _s`
+  key test for an `Ok`/`Err` naming no declared variant) conjoined with each
+  **nested** payload pattern's test (`.Some(#(a, b))`).
+- **A bare name in a pattern is a test or a binding** (`isBindingName`): a
+  variant path (`.None`), a primitive type spelling (`i32` — §5.2's type-test
+  arm, which takes §4.1's run-time test, the one `x is T` builds) and a
+  capitalised or declared name are **tests**; anything else binds and matches
+  anything. That is what tells `Red` from the `s` of `#(0, s)`.
+- **A pattern's bindings come from one place** (`appendPatternBinds`), which a
+  `case` arm and a `val assert` share: a payload field is read by the **label
+  the pattern wrote** when it wrote one and by the declared field at that
+  position otherwise (`.Rect(height: h, width: w)` reads `height` for `h`, §5.1
+  P4), a tuple element from `subject[i]`, and a nested pattern recursively from
+  the field it stands for.
 - **A pattern's variant name is taken bare** (`bareVariantName`): the
   constructor writes the declared name onto `<Variant>.prototype.tag`, while a
   pattern keeps the path it was *written* with (`ast.Pattern`: `Shape.Circle`,
