@@ -86,20 +86,20 @@ tests/language/run.sh --compiler <botopink> --only modules/two_modules
 
 ## Status and the gate
 
-Coverage: **62 cells** besides the three smoke files.
+Coverage: **68 cells** besides the three smoke files — front 15's 31, and 37 added by front 17.
 
-| Area | Cells |
-|---|---|
-| `case` (§5) | 7 test + 1 run + 9 reject |
-| tuples (§6) | 6 test + 1 run + 2 reject |
-| `loop` (§10) | 6 test + 2 reject |
-| effects (§9) | 5 test + 5 reject |
-| comptime, templates, decorators | 3 test |
-| host externals (§8) | 2 test + 1 reject |
-| generics and behaviors (§1) | 1 test + 2 reject |
-| printing (§7) | 3 run |
-| core: closures, recursion, primitives, optionals, sugar, defaults | 7 test |
-| modules | 3 `modules/` cells |
+| Area | Cells | Total |
+|---|---|---|
+| `case` (§5) | 8 test + 1 run + 9 reject | 18 |
+| tuples (§6) | 6 test + 1 run + 2 reject | 9 |
+| `loop` (§10) | 6 test + 2 reject | 8 |
+| effects (§9) | 5 test + 5 reject | 10 |
+| comptime, templates, decorators | 3 test | 3 |
+| host externals (§8) | 2 test + 1 reject | 3 |
+| generics and behaviors (§1) | 1 test + 2 reject | 3 |
+| printing (§7) | 3 run | 3 |
+| core: closures, recursion, primitives, optionals, sugar, defaults | 8 test | 8 |
+| modules | 3 `modules/` cells | 3 |
 
 Classification in the front-17 worktree on top of `26d4fdc` (node v25.8.0, OTP 29), every target
 together: **196 results pass and 61 are expected failures** — 06 N1, N12, N18, N19–N22, N24, N25, N28,
