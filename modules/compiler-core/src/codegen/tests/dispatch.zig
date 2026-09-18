@@ -159,10 +159,11 @@ test "js: dispatch ---- multi-module extension activated via star import" {
 // A user interface's instance `default fn` calling other members, reached
 // through a record that implements it. commonJS emitted `Bounded.prototype.clamp
 // = …` for an interface that is no JS constructor (`Bounded is not defined` at
-// load); the default is now a method of the implementing class. KNOWN: `120`;
-// erlang does not compile (`function clamp/3 undefined`), beam aborts
-// `{unresolved_method, clamp, 3}` (empty RUN LOG) and wasm traps — none of
-// them reaches a user interface's default through a record yet (1.0.4-beta 01).
+// load); the default is now a method of the implementing class. erlang emits it
+// beside the record's own methods (`clamp(Self, Lo, Hi) -> min(max(Self, Lo),
+// Hi).`) and prints the same `120`. KNOWN: beam aborts
+// `{unresolved_method, clamp, 3}` (empty RUN LOG) and wasm traps — neither
+// reaches a user interface's default through a record yet (1.0.4-beta 01).
 test "js: interface ---- a default fn calls members of the implementing record" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\behavior Bounded {
@@ -189,6 +190,45 @@ test "js: interface ---- a default fn calls members of the implementing record" 
         \\fn main() {
         \\    val m = Money(cents: 500).clamp(Money(cents: 0), Money(cents: 120));
         \\    @print(m.cents);
+        \\}
+    );
+}
+
+// The generic half of the same row (front 15's `test/generic_behavior.bp`): a
+// generic record adopts a behavior through an `extends` chain and defines only
+// the abstract member. Both defaults are the record's own functions, and
+// `self.size()` inside them reaches `size/1`, so `Bag(items: []).isEmpty()` is
+// `true` on every backend that runs the program. KNOWN: beam and wasm do not
+// reach a record's adopted default (same 1.0.4-beta 01 row as the test above);
+// beam's RUN LOG is empty and wasm's is the trap.
+test "js: interface ---- a generic record adopts defaults through an extends chain" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\behavior Sized {
+        \\    fn size(self: Self) -> i32;
+        \\
+        \\    default fn isEmpty(self: Self) -> bool {
+        \\        return self.size() == 0;
+        \\    }
+        \\}
+        \\
+        \\behavior Counted extends Sized {
+        \\    default fn twiceSize(self: Self) -> i32 {
+        \\        return self.size() * 2;
+        \\    }
+        \\}
+        \\
+        \\type Bag<T>(
+        \\    items: Array<T>,
+        \\) implement Counted {
+        \\    pub fn size(self: Self) -> i32 {
+        \\        return self.items.length;
+        \\    }
+        \\}
+        \\
+        \\fn main() {
+        \\    @print(Bag(items: []).isEmpty());
+        \\    @print(Bag(items: [1]).isEmpty());
+        \\    @print(Bag(items: [1, 2]).twiceSize());
         \\}
     );
 }

@@ -831,6 +831,8 @@ fn emitErlangModule(
         var self_it = em.iface_self_returns.keyIterator();
         while (self_it.next()) |k| em.alloc.free(k.*);
         em.iface_self_returns.deinit();
+        // Keys and values borrow the program AST — nothing to free.
+        em.local_behaviors.deinit();
     }
     defer em.nullable_locals.deinit();
     defer em.string_locals.deinit();
@@ -897,6 +899,14 @@ fn emitErlangModule(
     try em.collectImportedTypes(program);
     try em.collectStringNames(program);
     try em.collectLocalFnArities(program);
+    // After `collectLocalFnArities`: an adopted `default fn` is emitted only
+    // when its `<name>/<arity>` is still free in the module.
+    try em.collectAdoptedIfaceDefaults(program);
+    defer {
+        var ad_it = em.adopted_defaults.keyIterator();
+        while (ad_it.next()) |k| em.alloc.free(k.*);
+        em.adopted_defaults.deinit();
+    }
     if (comptime_module) |cm| {
         for (cm.host_enums) |name| try em.enum_names.put(name, {});
         for (cm.host_records) |r| try em.record_fields.put(r.name, try alloc.dupe([]const u8, r.fields));
@@ -1648,6 +1658,21 @@ const Emitter = struct {
     /// `<Iface>.<method>` — `"Bool.nor"`, `"String.slice"`, `"Number.clamp"`.
     /// Populated by `collectInterfaces` alongside `interface_assoc`.
     iface_instance_defaults: std.StringHashMap(IfaceDefault),
+    /// Every `behavior` this module declares, by name — the erlang twin of
+    /// commonJS's `local_interfaces`. `recordForms` walks it to emit the bodied
+    /// instance `default fn`s a record adopts with `implement`. Keys and values
+    /// borrow the program AST.
+    local_behaviors: std.StringHashMap(ast.BehaviorDecl),
+    /// `<Record>.<method>` for each adopted instance `default fn` this module
+    /// emits as one of the record's own functions. Populated by
+    /// `collectAdoptedIfaceDefaults`; owns its keys.
+    adopted_defaults: std.StringHashMap(void),
+    /// The record `self` names while an adopted interface `default fn` body is
+    /// being emitted, else null. Inference records no lowering inside such a
+    /// body (the method belongs to the behavior, not to the record), so
+    /// `self.size()` would otherwise be a bare `size/1` that a record-method
+    /// collision has mangled away.
+    self_record_type: ?[]const u8 = null,
     /// The subset of `iface_instance_defaults` a call site actually reached (see
     /// `ifaceDefaultNode`). Only these are emitted, as `<iface>_<method>(Self,
     /// …)` forms at the end of the module — emitting every default of every
@@ -1778,6 +1803,8 @@ const Emitter = struct {
             .top_vals = std.StringHashMap(void).init(alloc),
             .interface_assoc = std.StringHashMap(void).init(alloc),
             .iface_instance_defaults = std.StringHashMap(IfaceDefault).init(alloc),
+            .local_behaviors = std.StringHashMap(ast.BehaviorDecl).init(alloc),
+            .adopted_defaults = std.StringHashMap(void).init(alloc),
             .iface_self_returns = std.StringHashMap(void).init(alloc),
             .nullable_locals = std.StringHashMap(void).init(alloc),
             .string_locals = std.StringHashMap(void).init(alloc),
@@ -2219,6 +2246,7 @@ const Emitter = struct {
     fn collectInterfaces(this: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| switch (decl) {
             .behavior => |i| {
+                try this.local_behaviors.put(i.name, i);
                 for (i.methods) |m| {
                     if (m.returnType) |rt| {
                         if (rt == .named and std.mem.eql(u8, rt.named, "Self")) {
@@ -2267,6 +2295,101 @@ const Emitter = struct {
                 try this.iface_instance_defaults.put(try this.alloc.dupe(u8, key), .{ .iface = i.name, .method = m });
             }
         }
+    }
+
+    /// True for the bare identifier `self`.
+    fn isSelfIdent(e: ast.Expr) bool {
+        return switch (e) {
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| std.mem.eql(u8, n, "self"),
+                else => false,
+            },
+            else => false,
+        };
+    }
+
+    /// A method call whose receiver is known to be record/enum `tn`: a function
+    /// taking the receiver first — local `m(Recv, args)`, or `owner:m(Recv,
+    /// args)` for an imported type. A method name shared by two records is
+    /// mangled to `<recordtype>_<method>` so the flat fn namespace stays
+    /// unambiguous.
+    fn typedMethodNode(this: *Emitter, b: Ast.Builder, tn: []const u8, recv: *const ast.Expr, cc: anytype) anyerror!Ast.Expr {
+        // A FIELD of function type, called like a method (`c.set(9)` on
+        // `type State<T>(value: T, set: fn(next: T))`): the record has no
+        // `set/2` function — apply what the field holds.
+        if (this.fnTypedField(tn, cc.callee)) {
+            return .{ .apply = .{
+                .fun = try b.ptr(try b.paren(try b.remote("maps", "get", &.{ Ast.Expr.a(cc.callee), try this.exprNode(b, recv.*) }))),
+                .args = try this.callArgs(b, null, cc),
+            } };
+        }
+        var mn_buf: [256]u8 = undefined;
+        const mn: []const u8 = if (this.isRecordMethodCollision(tn, cc.callee))
+            try b.arena.dupe(u8, try recordMethodAtom(&mn_buf, tn, cc.callee))
+        else
+            cc.callee;
+        const args = try this.callArgs(b, try this.exprNode(b, recv.*), cc);
+        return if (this.imported_types.get(tn)) |owner| b.remote(owner, mn, args) else b.call(mn, args);
+    }
+
+    /// The name a `implement` clause refers to (`implement Sized`,
+    /// `implement Container<T>`); null for a shape that names no behavior.
+    fn implementedName(ref: ast.TypeRef) ?[]const u8 {
+        return switch (ref) {
+            .named => |n| n,
+            .generic => |g| g.name,
+            else => null,
+        };
+    }
+
+    /// The bodied instance `default fn`s a record adopts through its inline
+    /// `implement` clauses and does not declare itself — the erlang twin of
+    /// commonJS's `appendInterfaceDefaults`. Without them the record emitted no
+    /// function at all for `bag.isEmpty()`, and the call fell through to the
+    /// untyped primitive shim, which aborted at run time with
+    /// `{bp_unsupported_method, <<"isEmpty">>, 0, #{items => []}}` while commonJS
+    /// answered from the class. Follows `extends`, depth-capped like commonJS's
+    /// walker; a method already collected (two behaviors declaring the same
+    /// default) is kept once, the first one found.
+    fn adoptedIfaceDefaults(
+        this: *const Emitter,
+        alloc: std.mem.Allocator,
+        r: ast.TypeDecl,
+        out: *std.ArrayListUnmanaged(ast.BehaviorMethod),
+    ) anyerror!void {
+        for (r.implement) |ref| {
+            const iface_name = implementedName(ref) orelse continue;
+            try this.appendIfaceDefaults(alloc, iface_name, r, out, 0);
+        }
+    }
+
+    fn appendIfaceDefaults(
+        this: *const Emitter,
+        alloc: std.mem.Allocator,
+        iface_name: []const u8,
+        r: ast.TypeDecl,
+        out: *std.ArrayListUnmanaged(ast.BehaviorMethod),
+        depth: usize,
+    ) anyerror!void {
+        if (depth > 16) return;
+        const iface = this.local_behaviors.get(iface_name) orelse return;
+        for (iface.methods) |m| {
+            if (!m.is_default or m.body == null) continue;
+            // An associated `default fn` (no `self`) is already emitted by
+            // `interfaceForms` as `<iface>_<method>`; only instance ones become
+            // methods of the record.
+            if (m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self")) continue;
+            var taken = false;
+            for (r.methods) |own| {
+                if (std.mem.eql(u8, own.name, m.name)) taken = true;
+            }
+            for (out.items) |seen| {
+                if (std.mem.eql(u8, seen.name, m.name)) taken = true;
+            }
+            if (taken) continue;
+            try out.append(alloc, m);
+        }
+        for (iface.extends) |parent| try this.appendIfaceDefaults(alloc, parent, r, out, depth + 1);
     }
 
     fn isInterfaceAssoc(this: *Emitter, iface: []const u8, method: []const u8) bool {
@@ -2830,6 +2953,68 @@ const Emitter = struct {
             .extend => |ex| for (ex.methods) |m| try self.putLocalFn(m.name, m.params.len),
             else => {},
         };
+    }
+
+    /// Decide which adopted instance `default fn`s each record emits, and index
+    /// them as local functions. Runs after `collectLocalFnArities`, so
+    /// `local_fn_arities` already names every top-level fn and every record /
+    /// enum method: an adopted default whose `<name>/<arity>` is taken there is
+    /// skipped, because erlang's flat namespace would double-define it and the
+    /// call site has no lowering to disambiguate with (the receiver's type is
+    /// exactly what inference does not record for an adopted default). Skipping
+    /// leaves that call on the untyped primitive shim, i.e. unchanged.
+    ///
+    /// Two records adopting the SAME default are skipped together, not resolved
+    /// first-wins: with one `isEmpty/1` emitted, every untyped call site would
+    /// reach that one record's body and read fields the other receiver does not
+    /// have. A module with several implementors of one behavior therefore keeps
+    /// today's run-time abort until inference types such a receiver (06 N15).
+    fn collectAdoptedIfaceDefaults(self: *Emitter, program: ast.Program) !void {
+        var arena = std.heap.ArenaAllocator.init(self.alloc);
+        defer arena.deinit();
+        const aa = arena.allocator();
+        // Pass 1: how many records would claim each `<name>/<arity>`.
+        var claims = std.StringHashMap(usize).init(aa);
+        for (program.decls) |decl| switch (decl) {
+            .type_ => |r| {
+                if (!r.isRecord()) continue;
+                var adopted: std.ArrayListUnmanaged(ast.BehaviorMethod) = .empty;
+                try self.adoptedIfaceDefaults(aa, r, &adopted);
+                for (adopted.items) |m| {
+                    const key = try std.fmt.allocPrint(aa, "{s}/{d}", .{ m.name, m.params.len });
+                    const gop = try claims.getOrPut(key);
+                    gop.value_ptr.* = if (gop.found_existing) gop.value_ptr.* + 1 else 1;
+                }
+            },
+            else => {},
+        };
+        // Pass 2: emit the unambiguous ones.
+        for (program.decls) |decl| switch (decl) {
+            .type_ => |r| {
+                if (!r.isRecord()) continue;
+                var adopted: std.ArrayListUnmanaged(ast.BehaviorMethod) = .empty;
+                try self.adoptedIfaceDefaults(aa, r, &adopted);
+                for (adopted.items) |m| {
+                    var key_buf: [256]u8 = undefined;
+                    const arity_key = std.fmt.bufPrint(&key_buf, "{s}/{d}", .{ m.name, m.params.len }) catch continue;
+                    if (self.local_fn_arities.contains(arity_key)) continue;
+                    if ((claims.get(arity_key) orelse 0) != 1) continue;
+                    try self.putLocalFn(m.name, m.params.len);
+                    const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ r.name, m.name });
+                    const gop = try self.adopted_defaults.getOrPut(key);
+                    if (gop.found_existing) self.alloc.free(key);
+                }
+            },
+            else => {},
+        };
+    }
+
+    /// True when `recordForms` emits `method` for `type_name` as an adopted
+    /// interface `default fn` (see `collectAdoptedIfaceDefaults`).
+    fn emitsAdoptedDefault(this: *const Emitter, type_name: []const u8, method: []const u8) bool {
+        var b: [256]u8 = undefined;
+        const key = std.fmt.bufPrint(&b, "{s}.{s}", .{ type_name, method }) catch return false;
+        return this.adopted_defaults.contains(key);
     }
 
     fn putLocalFn(self: *Emitter, name: []const u8, arity: usize) !void {
@@ -4620,25 +4805,15 @@ const Emitter = struct {
             // first — local `m(Recv, args)`, or `owner:m(Recv, args)` for an
             // imported type. A method name shared by two records is mangled to
             // `<recordtype>_<method>` so the flat fn namespace stays unambiguous.
-            .type_ => |tn| {
-                // A FIELD of function type, called like a method (`c.set(9)` on
-                // `type State<T>(value: T, set: fn(next: T))`): the record has no
-                // `set/2` function — apply what the field holds.
-                if (this.fnTypedField(tn, cc.callee)) {
-                    return .{ .apply = .{
-                        .fun = try b.ptr(try b.paren(try b.remote("maps", "get", &.{ Ast.Expr.a(cc.callee), try this.exprNode(b, recv.*) }))),
-                        .args = try this.callArgs(b, null, cc),
-                    } };
-                }
-                var mn_buf: [256]u8 = undefined;
-                const mn: []const u8 = if (this.isRecordMethodCollision(tn, cc.callee))
-                    try b.arena.dupe(u8, try recordMethodAtom(&mn_buf, tn, cc.callee))
-                else
-                    cc.callee;
-                const args = try this.callArgs(b, try this.exprNode(b, recv.*), cc);
-                return if (this.imported_types.get(tn)) |owner| b.remote(owner, mn, args) else b.call(mn, args);
-            },
+            .type_ => |tn| return this.typedMethodNode(b, tn, recv, cc),
         };
+        // Inside an ADOPTED interface `default fn` body (`implement Sized`'s
+        // `isEmpty`, emitted as one of the record's functions) inference records
+        // no lowering — the method is declared on the behavior, not on the
+        // record — but `self` is known to be that record.
+        if (this.self_record_type) |tn| {
+            if (isSelfIdent(recv.*)) return this.typedMethodNode(b, tn, recv, cc);
+        }
         // Inside an interface instance `default fn` the receiver's type is
         // `Self`, which inference leaves unlowered (it is generic over every
         // implementor): dispatch on the owning interface's primitive kind.
@@ -5352,6 +5527,20 @@ const Emitter = struct {
             else
                 m.name;
             try this.methodForms(b, out, mname, m);
+        }
+        // The bodied instance `default fn`s the record adopts with `implement`
+        // and does not declare itself: the behavior contract is part of the
+        // record's surface, exactly as commonJS puts them on the class.
+        // `self` is the record inside those bodies, so `self.size()` reaches the
+        // record's own (possibly mangled) method rather than a bare `size/1`.
+        var adopted: std.ArrayListUnmanaged(ast.BehaviorMethod) = .empty;
+        try this.adoptedIfaceDefaults(b.arena, r, &adopted);
+        const saved_self_record = this.self_record_type;
+        defer this.self_record_type = saved_self_record;
+        this.self_record_type = r.name;
+        for (adopted.items) |m| {
+            if (!this.emitsAdoptedDefault(r.name, m.name)) continue;
+            try this.methodForms(b, out, m.name, m);
         }
     }
 

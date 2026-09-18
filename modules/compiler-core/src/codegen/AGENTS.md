@@ -290,6 +290,23 @@ codegen/
   arity-branched one with no branch for its parameter count) gets no wrapper and
   is not marked `erlang_backed` in the cross index: the consumer keeps its bare
   call, and erlc names the gap.
+- **A record emits the `default fn`s it adopts with `implement`.** A behavior's
+  bodied instance default is part of the implementing record's surface — commonJS
+  puts it on the class (`appendInterfaceDefaults`), and without a counterpart
+  erlang emitted no function at all: `bag.isEmpty()` fell through to the untyped
+  primitive shim and aborted at run time with
+  `{bp_unsupported_method, <<"isEmpty">>, 0, #{items => []}}` while commonJS
+  answered. `recordForms` now emits each adopted default (following `extends`)
+  beside the record's own methods, and `self_record_type` makes `self.size()`
+  inside such a body resolve through the record — so it reaches `bag_size/1`
+  where a record-method collision mangled `size/1` away. Which ones are emitted
+  is decided once, in `collectAdoptedIfaceDefaults`, after `collectLocalFnArities`:
+  **only a default whose `<name>/<arity>` is free in the module and claimed by
+  exactly one record.** Inference records no lowering for a call to an adopted
+  default (the method belongs to the behavior, not to the record), so the call
+  site can only be the bare name; with two implementors one emitted `isEmpty/1`
+  would answer both receivers and read fields the other does not have. Such a
+  module keeps the run-time abort until a receiver like that is typed (06 N15).
 - **A field of function type is applied, not called.** `c.set(9)` on
   `type Cell(value: i32, set: fn(next: i32) -> i32)` reads the map field and
   applies it (`(maps:get(set, C))(9)`); the record emits no `set/2`.
