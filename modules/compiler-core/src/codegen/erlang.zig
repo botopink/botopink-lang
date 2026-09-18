@@ -511,6 +511,162 @@ const len_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_len", .clauses
     },
 } } };
 
+/// `Lhs <op> Rhs`, unparenthesised — a guard test or a bound's arithmetic in the
+/// index helpers below.
+fn binOpOf(comptime op: []const u8, comptime lhs: Ast.Expr, comptime rhs: Ast.Expr) Ast.Expr {
+    return .{ .binop = .{ .op = op, .lhs = &lhs, .rhs = &rhs, .parens = false } };
+}
+
+/// `name(Args)` — an auto-imported BIF in a helper form.
+fn bifOf(comptime name: []const u8, comptime args: []const Ast.Expr) Ast.Expr {
+    return .{ .call = .{ .name = name, .args = args } };
+}
+
+/// `module:name(Args)` in a helper form.
+fn remoteOf(comptime module: []const u8, comptime name: []const u8, comptime args: []const Ast.Expr) Ast.Expr {
+    return .{ .call = .{ .module = module, .name = name, .args = args } };
+}
+
+const ix_recv = Ast.Expr.v("Recv");
+const ix_i = Ast.Expr.v("I");
+const ix_from = Ast.Expr.v("From");
+const ix_to = Ast.Expr.v("To");
+const ix_zero: Ast.Expr = .{ .number = "0" };
+const ix_one: Ast.Expr = .{ .number = "1" };
+
+/// `max(X, 0)` — a negative bound is clamped, never an error.
+fn clampLow(comptime x: Ast.Expr) Ast.Expr {
+    return bifOf("max", &.{ x, ix_zero });
+}
+
+/// One body statement holding `expr`.
+fn oneExpr(comptime expr: Ast.Expr) Ast.Body {
+    return Ast.Body.of(&.{.{ .expr = expr }});
+}
+
+/// `erlang:error({Tag, …})` — the shape `'__bp_prim_<m>'`'s fallback already
+/// uses, so an unlowered form aborts with a term that names itself.
+fn unsupportedOf(comptime tag: []const u8, comptime args: anytype) Ast.Expr {
+    const items: [1 + args.len]Ast.Expr = .{Ast.Expr.a(tag)} ++ args;
+    return remoteOf("erlang", "error", &.{.{ .tuple = &items }});
+}
+
+/// `'__bp_index'/2`: decision 30's `xs[0]` / `s[0]` / `t[0]` at run time.
+///
+/// The parser desugars every index into the builtin call `[]` over
+/// `(receiver, index)` (`ast.index_builtin_name`) and `01-checker` does not type
+/// it yet, so the receiver's kind is only known at run time — as for `'__bp_len'`
+/// and the `'__bp_prim_<m>'` shims, the dispatch is a guard sequence:
+///
+///   - a **list** by position, `undefined` outside it — the same answer
+///     `Array.at` gives, and the same one commonJS's `xs[0]` gives;
+///   - a **string** by character, not by byte (`string:slice/3` is UTF-8 aware);
+///   - a **tuple** by position, `undefined` outside it.
+///
+/// A receiver with no positions raises `{bp_unsupported_index, Recv, I}` rather
+/// than answering something. A `Dict` is deliberately **not** here: it is a map
+/// `#{pairs => …}`, so `maps:get/3` would answer `undefined` for a key that is
+/// present — `d["k"]` has to reach `Dict.lookup`, which is a lowering only the
+/// checker can record once it types the receiver.
+const index_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_index", .clauses = &.{
+    .{
+        .patterns = &.{ ix_recv, ix_i },
+        .guards = &.{
+            isA("list", "Recv"),
+            isA("integer", "I"),
+            binOpOf(">=", ix_i, ix_zero),
+            binOpOf("<", ix_i, bifOf("length", &.{ix_recv})),
+        },
+        .body = oneExpr(remoteOf("lists", "nth", &.{ binOpOf("+", ix_i, ix_one), ix_recv })),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ ix_recv, ix_i },
+        .guards = &.{ isA("binary", "Recv"), isA("integer", "I"), binOpOf(">=", ix_i, ix_zero) },
+        .body = oneExpr(remoteOf("string", "slice", &.{ ix_recv, ix_i, ix_one })),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ ix_recv, ix_i },
+        .guards = &.{
+            isA("tuple", "Recv"),
+            isA("integer", "I"),
+            binOpOf(">=", ix_i, ix_zero),
+            binOpOf("<", ix_i, bifOf("tuple_size", &.{ix_recv})),
+        },
+        .body = oneExpr(bifOf("element", &.{ binOpOf("+", ix_i, ix_one), ix_recv })),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ ix_recv, ix_i },
+        .guards = &.{ isA("list", "Recv"), isA("integer", "I") },
+        .body = oneExpr(Ast.Expr.a("undefined")),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ ix_recv, ix_i },
+        .guards = &.{ isA("tuple", "Recv"), isA("integer", "I") },
+        .body = oneExpr(Ast.Expr.a("undefined")),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ ix_recv, ix_i },
+        .body = oneExpr(unsupportedOf("bp_unsupported_index", .{ ix_recv, ix_i })),
+        .layout = .inline_,
+    },
+} } };
+
+/// `'__bp_slice'/3`: the slice half of decision 30 — `xs[0..2]` is the same
+/// builtin call with a `range` second argument, and `xs[0..]` passes the atom
+/// `infinity` for its open end, which is what the range lowering already writes
+/// for an open `lists:seq/2`.
+///
+/// `..` is half-open `[from, to)` (decision 36), so the length is `To - From`;
+/// both bounds are clamped so an out-of-range slice is short, never an error —
+/// which is `lists:sublist/3`'s and `string:slice/3`'s own behaviour.
+const slice_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_slice", .clauses = &.{
+    .{
+        .patterns = &.{ ix_recv, ix_from, Ast.Expr.a("infinity") },
+        .guards = &.{isA("list", "Recv")},
+        .body = oneExpr(remoteOf("lists", "nthtail", &.{
+            bifOf("min", &.{ clampLow(ix_from), bifOf("length", &.{ix_recv}) }),
+            ix_recv,
+        })),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ ix_recv, ix_from, Ast.Expr.a("infinity") },
+        .guards = &.{isA("binary", "Recv")},
+        .body = oneExpr(remoteOf("string", "slice", &.{ ix_recv, clampLow(ix_from) })),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ ix_recv, ix_from, ix_to },
+        .guards = &.{isA("list", "Recv")},
+        .body = oneExpr(remoteOf("lists", "sublist", &.{
+            ix_recv,
+            binOpOf("+", clampLow(ix_from), ix_one),
+            clampLow(binOpOf("-", ix_to, clampLow(ix_from))),
+        })),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ ix_recv, ix_from, ix_to },
+        .guards = &.{isA("binary", "Recv")},
+        .body = oneExpr(remoteOf("string", "slice", &.{
+            ix_recv,
+            clampLow(ix_from),
+            clampLow(binOpOf("-", ix_to, clampLow(ix_from))),
+        })),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ ix_recv, ix_from, ix_to },
+        .body = oneExpr(unsupportedOf("bp_unsupported_slice", .{ ix_recv, ix_from, ix_to })),
+        .layout = .inline_,
+    },
+} } };
+
 /// `'__bp_text'/1`: any term as a binary — a binary is itself, anything else
 /// its `~p` rendering. Every comptime module carries it; a typed module emits it
 /// when a string `+` has an operand that is not provably a string
@@ -1195,6 +1351,8 @@ fn emitErlangModule(
     if (!listing_only) {
         if (em.needs_add_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, add_helper_form });
         if (em.needs_len_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, len_helper_form });
+        if (em.needs_index_helper) try forms.appendSlice(b.arena, &.{ .blank, index_helper_form });
+        if (em.needs_slice_helper) try forms.appendSlice(b.arena, &.{ .blank, slice_helper_form });
         if (em.needs_text_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, text_helper_form });
         if (em.needs_print_helper) try forms.appendSlice(b.arena, &.{ .blank, print_helper_form, .blank, show_helper_form });
     }
@@ -1846,6 +2004,11 @@ const Emitter = struct {
     needs_print_helper: bool = false,
     /// Set when a typed-module field read fell back to `'__bp_len'/2`.
     needs_len_helper: bool = false,
+    /// Set when an index expression (decision 30's `[]` builtin) lowered to
+    /// `'__bp_index'/2`; the module then emits `index_helper_form`.
+    needs_index_helper: bool = false,
+    /// The same for a slice — `xs[0..2]`, the `[]` builtin over a `range`.
+    needs_slice_helper: bool = false,
     /// `name/arity` of every function this module defines by name — top-level
     /// fns, record/enum methods, extension methods. A value-receiver call with
     /// no recorded lowering stays the bare local call when one of these answers
@@ -4805,8 +4968,40 @@ const Emitter = struct {
                 return error.InvalidArgs;
             return b.applyParen(.{ .fun = .{ .params = &.{}, .body = body } }, &.{});
         }
+        if (std.mem.eql(u8, cc.callee, ast.index_builtin_name)) return this.indexNode(b, cc);
         if (std.mem.startsWith(u8, cc.callee, "__bp_")) return this.resultOptionNode(b, cc.callee, cc.args);
         return b.call(cc.callee, try this.callArgs(b, null, cc));
+    }
+
+    /// Decision 30's index expression: the builtin call `[]` over
+    /// `(receiver, index)` (`ast.index_builtin_name`), which is what `xs[0]`,
+    /// `d["k"]`, `s[0]` and the slice `xs[0..2]` all parse into.
+    ///
+    /// A `range` second argument is the slice — the same node, per
+    /// `ast.zig`'s contract — and it is read here rather than lowered as an
+    /// expression: the range lowering materialises `lists:seq/2`, a whole list
+    /// of indices, where a slice wants two bounds. An open end (`xs[0..]`)
+    /// keeps the atom `infinity` that lowering already uses.
+    ///
+    /// Both forms dispatch on the receiver at run time (`'__bp_index'/2`,
+    /// `'__bp_slice'/3`), because `01-checker` does not type the call yet — with
+    /// the receiver's type recorded, a list index becomes `lists:nth/2` inline
+    /// and a `Dict` index reaches `lookup`.
+    fn indexNode(this: *Emitter, b: Ast.Builder, cc: anytype) anyerror!Ast.Expr {
+        if (cc.args.len != 2) return error.InvalidArgs;
+        const recv = try this.exprNode(b, cc.args[0].value.*);
+        const index = cc.args[1].value.*;
+        if (index == .collection and index.collection.kind == .range) {
+            const r = index.collection.kind.range;
+            this.needs_slice_helper = true;
+            return b.call("__bp_slice", &.{
+                recv,
+                try this.exprNode(b, r.start.*),
+                if (r.end) |end| try this.exprNode(b, end.*) else Ast.Expr.a("infinity"),
+            });
+        }
+        this.needs_index_helper = true;
+        return b.call("__bp_index", &.{ recv, try this.exprNode(b, index) });
     }
 
     /// A user-level call: receiver dispatch (std module, extension, enum

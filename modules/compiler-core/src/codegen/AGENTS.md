@@ -416,6 +416,23 @@ codegen/
   one clause of an earlier `case` is "unsafe" in a later one. A version bound
   inside a `case`/`fun` and read after it is left as an Erlang compile error
   (unsafe/unbound) rather than silently wrong.
+- **An index expression dispatches on the receiver at run time.** Decision 30's
+  `xs[0]`, `d["k"]`, `s[0]` and the slice `xs[0..2]` are **one** AST node — the
+  builtin call `[]` over `(receiver, index)` (`ast.index_builtin_name`), the
+  slice being the same node with a `range` second argument. `01-checker` does not
+  type it yet, so `indexNode` emits `'__bp_index'/2` and `'__bp_slice'/3`, guard
+  sequences in the shape `'__bp_len'/2` and the `'__bp_prim_<m>'` shims already
+  use: a list and a tuple by position (`undefined` outside the range — what
+  `Array.at` answers, and what commonJS's `xs[0]` answers), a string by
+  **character**, not by byte (`string:slice/3` is UTF-8 aware), and anything else
+  raising `{bp_unsupported_index, Recv, I}`. The range is read as two bounds
+  rather than lowered as an expression — the range lowering materialises
+  `lists:seq/2`, a whole list of indices, where a slice wants `From` and `To` —
+  and an open end (`xs[0..]`) keeps the atom `infinity` that lowering already
+  writes. **A `Dict` is deliberately not a clause:** it is the map
+  `#{pairs => …}`, so `maps:get/3` would answer `undefined` for a key that is
+  present; `d["k"]` has to reach `Dict.lookup`, which is a lowering only the
+  checker can record once it types the receiver.
 - **A `case` pattern's variant name is the last segment of its written path.**
   `ast.Pattern` carries the name exactly as written — `Shape.Circle`, `.Some`,
   `Circle` are three spellings of one variant — while the constructor emits the
