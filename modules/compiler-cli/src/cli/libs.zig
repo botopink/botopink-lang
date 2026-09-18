@@ -535,6 +535,149 @@ pub fn shipMjsSidecars(
     }
 }
 
+// ── host `.erl` module shipping ────────────────────────────────────────────────
+//
+// The erlang twin of `shipMjsSidecars`. A `#\[@External\.Erlang("host", "fn")]`
+// lowers to a qualified call `host:fn(…)`; `host` is a module the library
+// authors in erlang and keeps beside its `.bp` sources. Nothing shipped it, so
+// a library whose host code is erlang had nothing to ship — only `.mjs`
+// sidecars ever reached the output — and every such call died with
+// `undefined function host:fn/N` at run time.
+//
+// What each runtime looks up differs, so what "into place" means differs. Node
+// reads a path out of the emitted text (`require("…/x.mjs")`), so the `.mjs`
+// half resolves that path and puts the file there. The erlang code server
+// resolves a module **atom**, and the emitted text carries no path at all — so
+// the `.erl` half puts the source in the output directory, which is where the
+// test runner's `__bp_load_siblings/0` looks: it compiles and loads every
+// `**/*.erl` beside the script before running (`codegen/erlang.zig`). Plain
+// `escript` does not do that — a `build`/`run` output needs the same loader, and
+// that emitter is another front's (`examples/modules` is red on erlang for the
+// same reason).
+//
+// Generic and lib-agnostic, like the `.mjs` half: the scan yields every
+// `atom:atom(` qualifier in the emitted erlang, and a qualifier ships only when
+// a file of that name is found under the owning lib's `src/sidecars/` or `src/`
+// — so `lists:foldl`, `base64:encode` and every other OTP call is a no-op, as
+// is a call to another module of this build. Idempotent; writes only inside
+// `out_dir`. Returns how many host modules it shipped.
+pub fn shipErlSidecars(
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    outputs: []const bp.codegen.ModuleOutput,
+    out_dir: []const u8,
+    env_map: EnvMap,
+) !usize {
+    var arena_inst = std.heap.ArenaAllocator.init(gpa);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+
+    // Module atoms this build emits — a qualifier naming one of them is a
+    // project or dependency module, never a host module.
+    var emitted = std.StringHashMapUnmanaged(void){};
+    for (outputs) |o| {
+        if (o.result.failed()) continue;
+        try emitted.put(arena, std.fs.path.basename(o.name), {});
+    }
+
+    // Resolved lazily on the first unknown qualifier (most builds have none).
+    var roots: ?[][]const u8 = null;
+    defer if (roots) |r| freeRoots(gpa, r);
+
+    var shipped = std.StringHashMapUnmanaged(void){};
+    for (outputs) |o| {
+        if (o.result.failed()) continue;
+        // The owning lib is the first path segment of a dependency module name
+        // (`rakun/http` → `rakun`); a project-own module has no such prefix.
+        const owner: ?[]const u8 = if (std.mem.indexOfScalar(u8, o.name, '/')) |i| o.name[0..i] else null;
+
+        var it = QualifierIterator{ .text = o.result.js };
+        while (it.next()) |atom| {
+            if (emitted.contains(atom)) continue;
+            if (shipped.contains(atom)) continue;
+
+            const base = try std.fmt.allocPrint(arena, "{s}.erl", .{atom});
+            const target = try std.fs.path.join(arena, &.{ out_dir, base });
+
+            const src_path: ?[]const u8 = blk: {
+                if (owner) |lib| {
+                    if (roots == null) roots = try resolveLibRoots(gpa, io, env_map);
+                    for (roots.?) |root| {
+                        const sidecar = try std.fs.path.join(arena, &.{ root, lib, "src", "sidecars", base });
+                        if (fileExists(io, sidecar)) break :blk sidecar;
+                        const cand = try std.fs.path.join(arena, &.{ root, lib, "src", base });
+                        if (fileExists(io, cand)) break :blk cand;
+                    }
+                    break :blk null;
+                }
+                const sidecar = try std.fs.path.join(arena, &.{ "src", "sidecars", base });
+                if (fileExists(io, sidecar)) break :blk sidecar;
+                const cand = try std.fs.path.join(arena, &.{ "src", base });
+                if (fileExists(io, cand)) break :blk cand;
+                break :blk null;
+            };
+            const src = src_path orelse continue; // OTP or unknown — not ours to ship
+
+            const data = std.Io.Dir.cwd().readFileAlloc(io, src, arena, .unlimited) catch continue;
+            if (std.fs.path.dirname(target)) |parent| {
+                std.Io.Dir.cwd().createDirPath(io, parent) catch |err| switch (err) {
+                    error.PathAlreadyExists => {},
+                    else => return err,
+                };
+            }
+            try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = target, .data = data });
+            try shipped.put(arena, try arena.dupe(u8, atom), {});
+        }
+    }
+    return shipped.count();
+}
+
+/// Walks the `atom:` qualifiers of emitted erlang text. An erlang module atom
+/// is unquoted lower-case `[a-z][a-zA-Z0-9_@]*`; the iterator yields one per
+/// `atom:` occurrence that is followed by a call head (`name(` or `'name'(`),
+/// skipping `::` and a qualifier preceded by an identifier character (so
+/// `Foo.bar:baz` and record fields are not mistaken for one).
+const QualifierIterator = struct {
+    text: []const u8,
+    pos: usize = 0,
+
+    fn next(self: *QualifierIterator) ?[]const u8 {
+        while (self.pos < self.text.len) {
+            const colon = std.mem.indexOfScalarPos(u8, self.text, self.pos, ':') orelse return null;
+            self.pos = colon + 1;
+            if (colon + 1 < self.text.len and self.text[colon + 1] == ':') {
+                self.pos = colon + 2;
+                continue;
+            }
+            // Walk back over the atom.
+            var start = colon;
+            while (start > 0 and isAtomChar(self.text[start - 1])) start -= 1;
+            if (start == colon) continue;
+            if (!std.ascii.isLower(self.text[start])) continue;
+            if (start > 0 and (self.text[start - 1] == '.' or self.text[start - 1] == '\'' or self.text[start - 1] == '"')) continue;
+            // A call head must follow: `fn(` or `'fn'(`.
+            var i = colon + 1;
+            if (i < self.text.len and self.text[i] == '\'') {
+                i += 1;
+                while (i < self.text.len and self.text[i] != '\'') i += 1;
+                if (i >= self.text.len) continue;
+                i += 1;
+            } else {
+                const fn_start = i;
+                while (i < self.text.len and isAtomChar(self.text[i])) i += 1;
+                if (i == fn_start) continue;
+            }
+            if (i >= self.text.len or self.text[i] != '(') continue;
+            return self.text[start..colon];
+        }
+        return null;
+    }
+};
+
+fn isAtomChar(c: u8) bool {
+    return std.ascii.isAlphanumeric(c) or c == '_' or c == '@';
+}
+
 /// Whether `path` lies outside `dir` (both already `..`-collapsed by `resolve`).
 fn escapesDir(dir: []const u8, path: []const u8) bool {
     if (std.mem.eql(u8, dir, ".")) {
@@ -575,6 +718,44 @@ test "escapesDir: a path under the output stays; a parent path escapes" {
     try std.testing.expect(!escapesDir("/tmp/w/out", "/tmp/w/out/rakun/runtime.mjs"));
     try std.testing.expect(!escapesDir(".", "src/x.mjs"));
     try std.testing.expect(escapesDir(".", "../src/x.mjs"));
+}
+
+test "QualifierIterator yields the module atom of every qualified call" {
+    var it = QualifierIterator{ .text =
+        \\greet(Name) ->
+        \\    hostlib_native:greet(Name).
+        \\encode(S) ->
+        \\    Raw = base64:encode(S),
+        \\    '__bp_print'([Raw]),
+        \\    lists:foldl(fun(A, B) -> A + B end, 0, [1]).
+    };
+    var seen: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer seen.deinit(std.testing.allocator);
+    while (it.next()) |a| try seen.append(std.testing.allocator, a);
+    try std.testing.expectEqual(@as(usize, 3), seen.items.len);
+    try std.testing.expectEqualStrings("hostlib_native", seen.items[0]);
+    try std.testing.expectEqualStrings("base64", seen.items[1]);
+    try std.testing.expectEqualStrings("lists", seen.items[2]);
+}
+
+test "QualifierIterator skips what is not a module qualifier" {
+    // `::` (a type spec), an upper-case variable, a bare atom with no call
+    // head, a quoted local call, and a map/record `key: value`.
+    var it = QualifierIterator{ .text =
+        \\-spec greet(binary()) -> binary().
+        \\f() ->
+        \\    Mod:apply(),
+        \\    ok:thing,
+        \\    '__bp_print'([1]),
+        \\    #{name := V}.
+    };
+    try std.testing.expectEqual(@as(?[]const u8, null), it.next());
+}
+
+test "QualifierIterator reads a quoted function name after the module atom" {
+    var it = QualifierIterator{ .text = "    myhost:'do it'(X)." };
+    const a = it.next() orelse return error.TestExpectedQualifier;
+    try std.testing.expectEqualStrings("myhost", a);
 }
 
 test "relocatedRequire reaches <out>/<owner>/<base> from the emitting module" {

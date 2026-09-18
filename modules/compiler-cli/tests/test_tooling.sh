@@ -110,4 +110,49 @@ libtest quietbad
 grep -q '"lib":"quietbad","target":"commonJS","status":"fail"' <<<"$out" || fail "quietbad should be fail"
 grep -q 'quietbad.bp' <<<"$out" || fail "the compile diagnostic should name quietbad.bp"
 
+# ── a library ships its erlang host module ───────────────────────────────────
+# `#[@External.Erlang("host", "fn")]` lowers to `host:fn(…)`. `host` is a module
+# the library authors in erlang and keeps beside its `.bp` sources; nothing
+# copied it into the output, so the call died with `{error,undef}` — only `.mjs`
+# sidecars were ever shipped. `libs.shipErlSidecars` is the `.erl` counterpart.
+if command -v escript >/dev/null 2>&1; then
+  echo "==> [libs] a dependency's erlang host module is shipped into the test output"
+  ERLWORK="$(mktemp -d)"
+  mkdir -p "$ERLWORK/root/hostlib/src" "$ERLWORK/app/src"
+  cat >"$ERLWORK/root/hostlib/botopink.json" <<'JSON'
+{ "name": "hostlib", "version": "0.0.1", "src": "src/", "files": ["hostlib.bp"] }
+JSON
+  cat >"$ERLWORK/root/hostlib/src/hostlib.bp" <<'BP'
+#[@External.Erlang("hostlib_native", "greet")]
+pub declare fn greet(name: string) -> string;
+BP
+  cat >"$ERLWORK/root/hostlib/src/hostlib_native.erl" <<'ERL'
+-module(hostlib_native).
+-export([greet/1]).
+
+greet(Name) -> <<"hello from the host, ", Name/binary>>.
+ERL
+  cat >"$ERLWORK/app/botopink.json" <<'JSON'
+{ "name": "app", "version": "0.0.1", "target": "erlang", "dependencies": ["hostlib"] }
+JSON
+  cat >"$ERLWORK/app/src/main.bp" <<'BP'
+import {greet} from "hostlib";
+
+test "the host module answers" {
+  assert greet("world") == "hello from the host, world";
+}
+BP
+  set +e
+  out="$( cd "$ERLWORK/app" && BOTOPINK_LIB_ROOTS="$ERLWORK/root" "$BP_BIN" test --target erlang 2>&1 )"
+  code=$?
+  set -e
+  echo "$out"
+  rm -rf "$ERLWORK"
+  [[ $code -eq 0 ]] || fail "the host-module test must pass (exit $code)"
+  grep -q "ok   the host module answers" <<<"$out" || fail "the erlang host module was not reachable"
+  ! grep -qF "{error,undef}" <<<"$out" || fail "the host module was not shipped — the call was undefined"
+else
+  echo "==> SKIPPED: the erlang host-module cell (escript not on PATH)"
+fi
+
 echo "==> test-tooling behaviours: OK"

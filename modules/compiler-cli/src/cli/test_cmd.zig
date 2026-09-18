@@ -180,6 +180,15 @@ pub fn run(
         libs.shipMjsSidecars(gpa, io, outputs.items, TEST_OUT_DIR, ext, env_map) catch {};
     }
 
+    // erlang: the same for host `.erl` modules — a `#[@External.Erlang("host",
+    // "fn")]` lowers to `host:fn(…)`, and `host` is a module the library keeps
+    // beside its `.bp` sources. Copying it into the test output is enough: the
+    // emitted runner's `__bp_load_siblings/0` compiles and loads every `.erl`
+    // beside the script before running the tests.
+    if (target == .erlang) {
+        _ = libs.shipErlSidecars(gpa, io, outputs.items, TEST_OUT_DIR, env_map) catch 0;
+    }
+
     // commonJS: root-source imports (`import {x};`) emit `require("./module")`
     // — write a `module.js` aggregator that merges every module's exports.
     // Runners only execute as the entry module (`require.main === module`),

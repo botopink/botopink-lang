@@ -12,7 +12,9 @@ compiler-cli/
 ├── AGENTS.md            ← you are here
 ├── botopink.json        ← module manifest (`version` drives the auto-tag)
 ├── tests/               ← end-to-end CLI scripts — `zig build test-cli` runs all four
-│   ├── cli_contract.sh      ← the command contract (rows C1–C13) against the real binary
+│   ├── cli_contract.sh      ← the command contract (rows C1–C13, plus the
+│   │                          build-does-not-execute and `new`-scaffold-prints
+│   │                          rows) against the real binary
 │   ├── mutual_recursion.sh  ← forward-ref + mutual recursion runs on every backend
 │   ├── mutual_recursion/    ← fixture project for the script above
 │   ├── backend_exec.sh      ← backend execution parity (numeric / records /
@@ -20,7 +22,8 @@ compiler-cli/
 │   ├── backend_exec/        ← numeric + records fixture projects
 │   ├── test_tooling.sh      ← `botopink test` behaviours: empty test, --filter
 │   │                          (multi / none), assert message, mixed pass/fail exit;
-│   │                          `botopink-lib-test` compiles a test-less library
+│   │                          `botopink-lib-test` compiles a test-less library;
+│   │                          a dependency's erlang host `.erl` is shipped and reached
 │   └── test_tooling/        ← pass + fail fixture projects
 └── src/
     ├── AGENTS.md
@@ -82,6 +85,19 @@ escapes it (a lib's `../../src/x.mjs` authored for its own build) ships the file
 `<out>/<lib>/<base>` (project-own: `<out>/<base>`) and rewrites that module's
 `require` to reach it.
 
+`shipErlSidecars` is the erlang counterpart: a `#[@External.Erlang("host",
+"fn")]` lowers to `host:fn(…)`, and `host` is a module the library authors in
+erlang and keeps beside its `.bp` sources (`<lib>/src/sidecars/<host>.erl`, else
+`<lib>/src/<host>.erl`; a project-own module probes `src/sidecars/` then `src/`).
+It scans every emitted erlang module for `atom:atom(` qualifiers and copies the
+ones it finds a source file for into the output — so a qualifier naming an OTP
+module or another module of this build is a no-op, with no lib names in the
+code. **Wired into `botopink test` only** (`test_cmd.zig`): the test runner's
+`__bp_load_siblings/0` compiles and loads every `.erl` beside the script, so
+copying is all it takes there. `botopink build`/`run` emit no such loader — an
+erlang output's cross-module calls are red for the same reason — so the
+`build.zig` call site is still open.
+
 **Unknown `botopink.json` fields are ignored.** `LibManifest` reads only `src`
 and `files`; the project loader (`config.zig`) reads `name`/`version`/`target`/
 `entry`/`dependencies`. Anything else — including the bpmp-facing `botopink`
@@ -128,7 +144,7 @@ What each command promises. A row the code does not meet yet is marked
 | `test [--target T] [--filter S] [--json]` | `botopink.json`, `src/`, `test/`, dependencies | `.botopinkbuild/test-out/**`, emptied first | the target runner per module with tests (`node` / `escript`) | every module compiled **and** every test passed | a module failed to compile, or a test failed; the modules that compiled still ran their tests and are reported |
 | `format [files…]` | the files, else `src/` | the files, in place | nothing | every file parsed and is now canonical (ending with one newline) | a file could not be read, lexed or parsed (rendered with its location) |
 | `format --check [files…]` | as above | nothing | nothing | every file parsed **and** already canonical | a file would change, or could not be read, lexed or parsed |
-| `new <name> [--target T]` | nothing | `<name>/{botopink.json,src/main.bp,.gitignore}` | nothing | scaffolded with a supported target | bad name, or a target outside `commonJS\|erlang\|beam\|wasm` |
+| `new <name> [--target T]` | nothing | `<name>/{botopink.json,src/main.bp,.gitignore}` — the scaffolded `main.bp` **prints** (see "the scaffold runs" below) | nothing | scaffolded with a supported target | bad name, or a target outside `commonJS\|erlang\|beam\|wasm` |
 | `clean` | nothing | deletes `out/` and `.botopinkbuild/` | nothing | both are gone (`Removed <dir>/` printed per success) | a delete failed |
 | `migrate [--dry-run]` | the `src/` tree | index files (`root.bp`/`main.bp`/`mod.bp`) — **none** under `--dry-run` | nothing | the tree is covered | `src/` unreadable |
 
@@ -158,6 +174,12 @@ Cross-command rules:
   each test module once, through its runner). Only the codegen snapshot harness
   executes (`codegen.generate`, which sets the flag). Pinned by
   `tests/cli_contract.sh`.
+- **The scaffold runs.** `botopink new` writes a program whose `main` calls
+  `@print`. A block's value is its `break` (semantics decision 2), so the old
+  template — a body whose only statement was the literal `"Hello, world!"` —
+  compiled, ran and printed nothing, and the README's quick start had no
+  visible effect. Pinned by `tests/cli_contract.sh` (the `@print` in the written
+  file, and `Hello, world!` on stdout from `botopink run`).
 - **Dependencies.** A missing dependency is named (`dependency 'server' was not
   found under any library root`). A dependency's `files` entry that cannot be
   read is `LibFileNotFound`: `libs.loadOne` prints the path it looked for,
