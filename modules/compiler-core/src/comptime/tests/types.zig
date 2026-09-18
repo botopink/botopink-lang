@@ -124,9 +124,10 @@ test "types: assert pattern ---- with enum variant" {
         \\fn parse() -> @Result<i32, string> {
         \\    return 42;
         \\}
-        \\fn f() {
+        \\fn main() {
         \\    val result = parse();
-        \\    val assert Ok(value) = result catch throw "not ok";
+        \\    val assert Ok(value) = result;
+        \\    @print(value);
         \\}
     );
 }

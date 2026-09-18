@@ -18,7 +18,8 @@ class Person {
 
 function f() {
     const r = new Person("ann", 30);
-    (() => { const _match = r; if ((_match instanceof Person)) { return _match; } else { return new Person("bob", 12); } })();
+    const _assert0 = (() => { const _match = r; if ((_match instanceof Person)) { return _match; } else { return new Person("bob", 12); } })();
+    const { name, age } = _assert0;
 }
 ```
 

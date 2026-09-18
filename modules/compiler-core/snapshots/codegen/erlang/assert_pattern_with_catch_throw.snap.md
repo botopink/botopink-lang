@@ -15,7 +15,8 @@ fn f() {
 
 f() ->
     R = #{name => <<"ann">>, age => 30},
-    case R of {'Person', Name, Age} -> R; _ -> erlang:throw(<<"is not person">>) end.
+    BpAssert4_9 = R,
+    {'Person', Name, Age} = case BpAssert4_9 of {'Person', _, _} -> BpAssert4_9; _ -> erlang:throw(<<"is not person">>) end.
 ```
 
 ----- RUN LOG -----

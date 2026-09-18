@@ -158,9 +158,9 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
         },
         .removedKeywordNew => .{
             .code = "removed-keyword-new",
-            .message = "`new` is not a keyword — write throw Error(…)",
+            .message = "`new` is not a keyword — call the constructor by name",
             .caretCaption = "remove `new`",
-            .hint = "A constructor is called by name: `throw Error(\"message\")`.",
+            .hint = "A constructor is called by name: `Person(name: \"ann\")`. There is no builtin `Error`: `throw` carries the error channel's own value, `throw \"message\"`.",
         },
         .removedRecordType => .{
             .code = "removed-record-type",
@@ -182,12 +182,6 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .code = "type-variant-after-method",
             .message = "a variant after a method",
             .hint = "Declare every variant (and section) before the first method.",
-        },
-        .assertPatternMissingCatch => .{
-            .code = "assert-pattern-missing-catch",
-            .message = "`val assert` needs a `catch` handler",
-            .caretCaption = "add `catch <value>` before the `;`",
-            .hint = "`val assert Ok(n) = parse(s) catch 0;` — the handler supplies the value when the pattern does not match. The handler-less form (a failure aborts) is decision 8 § 9 and is not implemented yet.",
         },
         .typeFieldValPrefix => .{
             .code = "type-field-val-prefix",

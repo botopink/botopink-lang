@@ -6,6 +6,7 @@ const configMod = @import("./config.zig");
 const ast = @import("../ast.zig");
 const specialize = @import("../comptime/specialize.zig");
 const crossModule = @import("./crossModule.zig");
+const patternFacts = @import("./patterns.zig");
 const primOpTemplate = @import("../comptime/primOpTemplate.zig");
 const lexerMod = @import("../lexer.zig");
 const parserMod = @import("../parser.zig");
@@ -743,6 +744,8 @@ const Emitter = struct {
     cv: std.StringHashMap([]const u8),
     current_indent: usize = 0,
     try_seq: usize = 0,
+    /// `_assert<N>` counter — a fresh temporary per `val assert` lowering.
+    assert_seq: usize = 0,
     /// Static extension dispatch: call-site loc → activated extension symbol.
     rewrites: std.AutoHashMap(ast.Loc, []const u8),
     /// Type-directed JS method renames: call-site loc → native JS method name to
@@ -2103,11 +2106,23 @@ const Emitter = struct {
                 try self.b.binaryBare("!==", subject, .null_),
                 try self.b.binaryBare("!==", subject, .{ .name = "undefined" }),
             )),
-            .variant => |v| return switch (v.payload) {
-                // Check if value is an instance of the variant type.
-                .binding, .fields => try self.b.paren(try self.b.binaryBare("instanceof", subject, .{ .name = v.name })),
-                // Literal-argument variants fall back to the generic check below.
-                .literals => js.Expr{ .name = "true" },
+            .variant => |v| {
+                // An `Ok`/`Err`/`Error` naming no variant this module declares
+                // is a `@Result`, which `#[@result]` materialises as `{ ok }` /
+                // `{ error }` — the same key test the `case` arms use
+                // (`buildCaseArm`). `instanceof Ok` named a class no module
+                // ever emits, so every `val assert Ok(…)` took its handler.
+                if (self.variant_fields.get(v.name) == null) {
+                    if (resultKey(v.name)) |key| {
+                        return self.b.paren(try self.b.binaryBare("in", .{ .quoted = key }, subject));
+                    }
+                }
+                return switch (v.payload) {
+                    // Check if value is an instance of the variant type.
+                    .binding, .fields => try self.b.paren(try self.b.binaryBare("instanceof", subject, .{ .name = v.name })),
+                    // Literal-argument variants fall back to the generic check below.
+                    .literals => js.Expr{ .name = "true" },
+                };
             },
             .numberLit => |n| return self.b.paren(try self.b.binaryBare("===", subject, .{ .number = n })),
             .stringLit => |s| return self.b.paren(try self.b.binaryBare("===", subject, .{ .quoted = s })),
@@ -2133,9 +2148,59 @@ const Emitter = struct {
     // ── statements ────────────────────────────────────────────────────────────
 
     fn buildStmts(self: *Emitter, body: []const ast.Stmt) anyerror![]const js.Stmt {
-        const out = try self.arena().alloc(js.Stmt, body.len);
-        for (body, 0..) |s, i| out[i] = try self.buildStmt(s);
-        return out;
+        var out: std.ArrayListUnmanaged(js.Stmt) = .empty;
+        try out.ensureTotalCapacity(self.arena(), body.len);
+        for (body) |s| {
+            // `val assert P = e [catch h];` — decision 8 § 9 binds `P`'s names
+            // for the statements after it, so it needs more than one JS
+            // statement and cannot go through `buildStmt`.
+            if (self.assertPatternBindingStmt(s)) |ap| {
+                try self.appendAssertPatternStmts(&out, ap);
+                continue;
+            }
+            try out.append(self.arena(), try self.buildStmt(s));
+        }
+        return out.toOwnedSlice(self.arena());
+    }
+
+    /// The `val assert` at `stmt` whose pattern binds at least one name, or
+    /// null. A pattern that binds nothing (`val assert 42 = answer catch 0;`)
+    /// is a pure check and keeps the single-expression lowering.
+    fn assertPatternBindingStmt(self: *const Emitter, stmt: ast.Stmt) ?@FieldType(@FieldType(ast.ComptimeExpr, "kind"), "assertPattern") {
+        if (stmt.expr != .comptime_) return null;
+        if (stmt.expr.comptime_.kind != .assertPattern) return null;
+        const ap = stmt.expr.comptime_.kind.assertPattern;
+        const isVariant = struct {
+            fn f(e: *const Emitter, name: []const u8) bool {
+                return e.variant_fields.get(name) != null;
+            }
+        }.f;
+        if (!patternFacts.bindsNames(ap.pattern, self, isVariant)) return null;
+        return ap;
+    }
+
+    /// ```javascript
+    /// const _assert0 = (() => { … the check, the handler … })();
+    /// const n = _assert0.ok;
+    /// ```
+    ///
+    /// The IIFE is the lowering a `val assert` has always had — it yields the
+    /// subject when the pattern matched and the handler's value otherwise (for
+    /// the handler-less form the handler is the `@panic(…)` the parser
+    /// desugars to, so a mismatch throws). The declarations after it are what
+    /// decision 8 § 9 adds: the pattern's names, in the enclosing block.
+    fn appendAssertPatternStmts(
+        self: *Emitter,
+        out: *std.ArrayListUnmanaged(js.Stmt),
+        ap: anytype,
+    ) anyerror!void {
+        const tmp = try std.fmt.allocPrint(self.arena(), "_assert{d}", .{self.assert_seq});
+        self.assert_seq += 1;
+        try out.append(self.arena(), .{ .decl = .{
+            .pattern = .{ .name = tmp },
+            .value = try self.buildExpr(.{ .comptime_ = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .assertPattern = ap } } }),
+        } });
+        try self.appendPatternBinds(out, ap.pattern, .{ .name = tmp });
     }
 
     fn buildStmt(self: *Emitter, stmt: ast.Stmt) anyerror!js.Stmt {
@@ -3919,6 +3984,75 @@ const Emitter = struct {
         if (std.mem.eql(u8, name, "Ok")) return "ok";
         if (std.mem.eql(u8, name, "Err") or std.mem.eql(u8, name, "Error")) return "error";
         return null;
+    }
+
+    /// The `const` declarations a pattern's names take from `subject`, in the
+    /// scope the caller is building. A `case` arm builds them at the top of its
+    /// arm block; a `val assert` (decision 8 § 9) builds them in the enclosing
+    /// block, where the statements after it read them.
+    fn appendPatternBinds(
+        self: *Emitter,
+        body: *std.ArrayListUnmanaged(js.Stmt),
+        pat: ast.Pattern,
+        subject: js.Expr,
+    ) anyerror!void {
+        switch (pat) {
+            .ident => |n| try body.append(self.arena(), .{ .decl = .{
+                .pattern = .{ .ident = n },
+                .value = subject,
+            } }),
+            .variant => |v| {
+                const declared = self.variant_fields.get(v.name);
+                if (declared == null) if (resultKey(v.name)) |key| {
+                    switch (v.payload) {
+                        .binding => |binding| try body.append(self.arena(), .{ .decl = .{
+                            .pattern = .{ .ident = binding },
+                            .value = try self.b.member(subject, key),
+                        } }),
+                        .fields => |fields| if (fields.len > 0) try body.append(self.arena(), .{ .decl = .{
+                            .pattern = .{ .ident = fields[0] },
+                            .value = try self.b.member(subject, key),
+                        } }),
+                        .literals => {},
+                    }
+                    return;
+                };
+                switch (v.payload) {
+                    .binding => |binding| try body.append(self.arena(), .{ .decl = .{
+                        .pattern = .{ .ident = binding },
+                        .value = subject,
+                    } }),
+                    // `Circle(r)` binds positionally: each binding reads the
+                    // declared field at its position (`const { radius: r }`),
+                    // never a property named after the binding (C4). A variant
+                    // this module does not declare keeps the binding as key.
+                    .fields => |fields| if (fields.len > 0) {
+                        const props = try self.arena().alloc(js.ObjectPattern.Prop, fields.len);
+                        for (fields, 0..) |bb, bi| {
+                            const key = if (declared) |d| (if (bi < d.len) d[bi] else bb) else bb;
+                            props[bi] = .{ .key = key, .bind = if (std.mem.eql(u8, key, bb)) null else jsIdent(bb) };
+                        }
+                        try body.append(self.arena(), .{ .decl = .{
+                            .pattern = .{ .object = .{ .props = props } },
+                            .value = subject,
+                        } });
+                    },
+                    .literals => {},
+                }
+            },
+            .list => |lp| {
+                if (lp.spread) |sp| {
+                    if (sp.len > 0) try body.append(self.arena(), .{ .decl = .{
+                        .pattern = .{ .ident = sp },
+                        .value = try self.b.call(try self.b.member(subject, "slice"), &.{
+                            .{ .number = try std.fmt.allocPrint(self.arena(), "{d}", .{lp.elems.len}) },
+                        }),
+                    } });
+                }
+                try self.appendListElemBinds(body, lp.elems, subject);
+            },
+            else => {},
+        }
     }
 
     fn appendListElemBinds(

@@ -26,6 +26,7 @@ codegen/
 ├── config.zig        ← Config / TargetSource (commonJS|erlang|beam|wasm) / TypeDefLang
 ├── moduleOutput.zig  ← GenerateResult, ModuleOutput
 ├── crossModule.zig   ← backend-agnostic cross-module link index (exports + imported set)
+├── patterns.zig      ← backend-agnostic pattern facts (does a pattern bind names?)
 ├── commonJS.zig      ← CommonJS backend: builds the JS model (blind: iterates transformed AST)
 ├── js/               ← JS/TS code model + the only JS/`.d.ts` writers — see [`js/AGENTS.md`](js/AGENTS.md)
 ├── erlang.zig        ← Erlang source emitter (blind)
@@ -62,6 +63,7 @@ codegen/
 | `config.zig` | `Config` (`targetSource`, `typeDefLanguage`, `build_root`, `test_mode`), `TargetSource` (`commonJS` \| `erlang` \| `beam` \| `wasm`), `TypeDefLang` |
 | `moduleOutput.zig` | `GenerateResult` (`js`, `typedef`, `comptime_script`, `comptime_err`, `diagnostic`, `run_output`; `failed()`) and `ModuleOutput` — shared between targets. A module whose comptime outcome is `.parseError`/`.typeError` is not skipped: every backend's `codegenEmit` appends `ModuleOutput.failedModule`, whose owned `Diagnostic` (`syntax`: the `SyntaxError` with its slices copied; `type`: the rendered message and location) outlives the comptime session. `Module` lives in `../module.zig` |
 | `crossModule.zig` | **Cross-module link index** built once over every module's transformed program (`build(alloc, outputs)`). `exports` maps a `pub` symbol → `ExportInfo{module, kind, is_class, fields, methods, is_external, erlang_backed}` (emitting module path, decl kind, whether construction needs `new`/the owner's map shape, and a record's declared field order, its method names, whether a `fn` export is host-backed, and whether that host-backed one carries an `erlang` target usable at its declared arity — the erlang backend routes such an import to the owner's wrapper, see [erlang](#erlang)); host-backed `#[@External.<Target>(…)]` fns are indexed too, so a consumer importing one `from "<lib>"` links to the owner like any other export. `imported` is the set of names some module imports. `ownerModuleAtom(name)` / `moduleBasename(path)` give the Erlang/BEAM module atom (`web/http` → `http`). Consumed by commonJS, erlang and beam_asm; wat only uses it to flag unlinkable imports |
+| `patterns.zig` | **Backend-agnostic pattern facts.** `bindsNames(pattern, ctx, isVariant)` answers whether a pattern binds at least one name — the question every backend asks before lowering a `val assert P = e [catch h];` (decision 8 § 9), which binds `P`'s names in the ENCLOSING scope. A pattern that binds nothing (`val assert 42 = answer catch 0;`) is a pure check and keeps the single-expression lowering it always had. `isVariant` is the backend's own variant table (a bare identifier is a binding only when it names no variant) |
 | `js/` | JS/TS code model + emitters shared by `commonJS.zig` and `typescript.zig`: `js_ast.zig` (`Expr`/`Stmt`/`Pattern`/`Block`/`Class`/`Item` + the `.d.ts` `TsDecl`/`TsType` + `Builder`), `js_emitter.zig` (the only writer of JavaScript: reserved-word renaming, string escaping, parenthesisation, indentation, semicolons), `ts_emitter.zig` (the only writer of `.d.ts`). The backends build nodes and write no target text. The remaining `js_ast` bridges pin the shapes the current lowering still emits illegally. See [`js/AGENTS.md`](js/AGENTS.md) |
 | `beam/` | BEAM term model + emitters shared by `erlang.zig`, `beam_asm.zig` and the comptime evaluators: `term.zig` (`Term`), `erl_emitter.zig` (Erlang source: atom quoting incl. reserved words, variables, module names, binaries), `beam_emitter.zig` (`.S` operands and `move`s). One quoting rule for `.erl` and `.S`. See [`beam/AGENTS.md`](beam/AGENTS.md) |
 | `commonJS.zig` | CommonJS backend — builds `js/js_ast.zig` nodes, rendered by `js/js_emitter.zig`. See [commonJS](#commonjs) below |
@@ -145,6 +147,15 @@ codegen/
   throws `Error("<msg> at <file>:<line>")` (`"assertion failed"` without a
   message), so node exits non-zero naming both. Test mode is unchanged: the
   `__bp_assert` harness helper throws for the runner to catch per test.
+- **`val assert P = e [catch h];`** (decision 8 § 9): the IIFE the construct has
+  always lowered to — the pattern check, then the subject or the handler's value
+  — is bound to `_assert<N>` and `appendPatternBinds` declares the pattern's own
+  names from it, in the enclosing block where the statements after it read them
+  (`buildStmts`, not `buildStmt`: one botopink statement becomes several JS
+  ones). A pattern that binds nothing keeps the bare IIFE. `buildPatternCheck`
+  tests an `Ok`/`Err`/`Error` that no module declares with `"ok" in _match`, the
+  same key test the `case` arms use — `_match instanceof Ok` named a class no
+  module ever emits, so every `val assert Ok(…)` took its handler.
 - **Prelude helpers** (`js/js_prelude.zig`): a call `recv.m(args)` whose
   receiver inference recorded as a primitive (`instance_lowerings` `.prim`)
   and whose native JS method disagrees with the declaration calls a helper
@@ -358,8 +369,16 @@ codegen/
   and multi-subject tuples), binding expressions (`bindingNode`), `use` and comptime
   forms (`comptimeNode`: `assert` as an inline `case` raising
   `erlang:error({bp_assert, Msg, <<"mod.bp:Line">>})` — always fatal, in and out of
-  test mode (semantics decision 4); the test runner is what catches it —
-  `assertPattern`).
+  test mode (semantics decision 4); the test runner is what catches it).
+  A `val assert P = e [catch h];` whose pattern binds names is lowered at STATEMENT
+  position (`assertPatternStmts`): the subject is staged in `BpAssert<line>_<col>`,
+  a `case` over it decides the value (the subject when the pattern matched, the
+  handler otherwise — the parser's `@panic(…)` for the handler-less form), and an
+  outer `P = …` match is what binds, in the enclosing clause. Erlang needs that
+  outer match: a name bound by a single `case` clause is "unsafe" after the case.
+  The test clause's own binders render as `_` (`Emitter.pattern_discard`), and the
+  subject is staged rather than re-emitted in the arm — it used to be evaluated
+  twice. A pattern that binds nothing keeps the old single-`case` expression.
   Record/interface literal keys are atoms (quoted when PascalCase or reserved); an
   array spread concatenates (`[1, 2] ++ Rest`, `nameRefNode` for the spread name);
   a leading-dot enum shorthand (`.Black`) is the variant atom.
@@ -808,8 +827,11 @@ codegen/
   the erlang backend's helper. Numeric formatting stays `~p` (`1.0`, where
   commonJS prints `1`): an intended divergence. `assert cond[, msg]` (decision
   4) is always fatal: `erlang:error({bp_assert, Msg, <<"<mod>.bp:<line>">>})`
-  when the condition is not `true`; `assert Pat = e catch h` is a two-arm case
-  whose bindings stay visible. `@todo`/`@panic` → `erlang:error/1`; `__bp_*` ops
+  when the condition is not `true`; `val assert P = e [catch h]` is a two-arm
+  case whose bindings stay visible (a y-register each). Its subject is still
+  emitted twice — once as the case subject, once as the matched arm's body — so
+  an effectful subject runs twice; and a list pattern binds nothing, the same
+  gap `case` has on beam. `@todo`/`@panic` → `erlang:error/1`; `__bp_*` ops
   at register level.
 - **Effects**: non-`#[@result]` effect fns get an eager body;
   `__bp_future_rejected` → `erlang:throw/1`.
@@ -868,7 +890,14 @@ first three are now enforced by the model, not by discipline:
    to `cur_result`; `storeSlotExpr` picks `f32.store` vs `i32.store`.
 
 - **Coverage**: numerics, locals, calls, assign, `!x`, null, `@todo`/`@panic`,
-  `assert`, globals, case, pipeline (`a |> f` → `call $f`), range loops
+  `assert`, `val assert` (`lowerAssertPattern`: the subject is staged in
+  `$__assert_<n>`, `emitPatternTest` decides, a mismatch runs the handler — the
+  parser's `@panic(…)` traps, a written `catch <value>` replaces the staged
+  subject — and `bindPattern` binds the names in the function's locals. A
+  pattern `emitPatternTest` has no real test for, a record constructor say,
+  is lowered as a plain binding rather than as "never matches":
+  `patternTestIsReal`. A list pattern binds nothing, the same gap its `case`
+  arms have), globals, case, pipeline (`a |> f` → `call $f`), range loops
   (`lowerRangeLoop`), condition loops (`lowerConditionLoop`, decision 8 §10:
   `i32.eqz` + `br_if $__break` at the top of each iteration; as a value, a
   `break <v>` also leaves the loop — `cond_break_depth`) and array loops

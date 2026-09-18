@@ -50,7 +50,12 @@ parser/
 │                     syntactically boolean condition (a comparison, `&&`/`||`, `not`, `true`/`false`); the comptime
 │                     transform sets it for any other `iter` inference typed `bool` (`env.conditionLoops`). `while (…)` is `removed-keyword-while` and
 │                     `throw new X(…)` is `removed-keyword-new` (06 N26, N27) — `new`/`delegate`/`const` lex
-│                     as identifiers
+│                     as identifiers. `val assert P = e;` with no `catch` (decision 8 § 9) parses:
+│                     `assertFatalHandler` desugars it into the handler `@panic("assert pattern did not
+│                     match")` and sets `AssertPattern.fatal`, so the AST keeps one shape and every
+│                     backend's handler lowering is the fatal path; the checker reads `fatal` to tell
+│                     the two forms apart. The formatter therefore re-prints the desugared `catch` —
+│                     the honest AST (an optional handler) waits for the formatter front
 ├── tests.zig      ← barrel: aggregates tests/<feature>.zig for test_root.zig
 └── tests/         ← parser tests, split by feature
     ├── helpers.zig       ← shared harness (`assertParser`/`expectParseError`/…)

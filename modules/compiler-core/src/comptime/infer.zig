@@ -5290,6 +5290,79 @@ fn variantPayloadTypes(env: *Env, subjectType: *T.Type, variantName: []const u8)
     return out;
 }
 
+/// The named types that hold no variant at all: a variant pattern asserted
+/// against one of them can never match. Every other unregistered name stays
+/// permissive (a forward reference, or an imported type).
+const scalar_type_names = [_][]const u8{
+    "i8",    "u8",       "i16", "u16", "i32",  "u32",    "i64",  "u64",
+    "isize", "usize",    "f32", "f64", "bool", "string", "void", "v128",
+    "any",   "noreturn",
+};
+
+/// Decision 8 § 9 — a `val assert` variant pattern must name a variant the
+/// subject's type can actually hold. Permissive while the subject's type is
+/// still an unresolved type variable (an inference gap must not red), and for
+/// every non-variant pattern, whose shapes (`42`, `"hi"`, `[a, ..]`) the
+/// backends test at run time.
+fn checkAssertPatternSubject(
+    env: *Env,
+    pattern: ast.Pattern,
+    subjectType: *T.Type,
+    loc: ast.Loc,
+    fatal: bool,
+) InferError!void {
+    const name = switch (pattern) {
+        .variant => |v| v.name,
+        else => return,
+    };
+    const st = subjectType.deref();
+    if (st.* != .named) return;
+    const eq = std.mem.eql;
+    const n = st.named;
+    // Decision 8 § 9 — `val assert Ok(n) = parse("42") catch 0;` is an error:
+    // `catch` is what turns a `@Result` into its success value, so a `@Result`
+    // subject and a handler cannot both be written. The handler-less form is
+    // the one that asserts a variant, and its failure is fatal.
+    if (!fatal and eq(u8, n.name, "Result")) {
+        var ce = TypeError.custom(
+            "a `val assert` over a `@Result` takes no `catch`",
+            "`catch` already yields the success value, so the pattern would be asserted against the unwrapped one. Write `val assert Ok(n) = parse(s);` — a failure is a fatal assert (decision 8 § 9).",
+        );
+        env.lastError = ce.withLoc(loc);
+        return error.TypeError;
+    }
+    const known = blk: {
+        if (eq(u8, n.name, "Result")) break :blk eq(u8, name, "Ok") or eq(u8, name, "Err") or eq(u8, name, "Error");
+        if (eq(u8, n.name, "optional")) break :blk eq(u8, name, "Some") or eq(u8, name, "None");
+        if (env.lookupTypeDef(n.name)) |td| switch (td) {
+            .enum_ => |en| {
+                for (en.variants) |vd| {
+                    if (eq(u8, vd.name, name)) break :blk true;
+                }
+                break :blk false;
+            },
+            // A record's own constructor is its only "variant"; a struct is
+            // opened by name too.
+            .record => break :blk eq(u8, n.name, name),
+            .struct_ => break :blk eq(u8, n.name, name),
+        };
+        // No typedef: a primitive holds no variant at all, anything else is a
+        // forward reference or an imported type C10 has yet to register — stay
+        // permissive there.
+        for (scalar_type_names) |p| {
+            if (eq(u8, n.name, p)) break :blk false;
+        }
+        return;
+    };
+    if (known) return;
+    var e = TypeError.custom(
+        try std.fmt.allocPrint(env.arena, "`{s}` names no variant of `{s}`", .{ name, n.name }),
+        "The pattern of a `val assert` has to be able to match its subject. After `catch` the value is the unwrapped one, so `val assert Ok(n) = parse(s) catch 0;` asserts `Ok(…)` against an `i32` — drop the `catch` (decision 8 § 9: a failure is a fatal assert).",
+    );
+    env.lastError = e.withLoc(loc);
+    return error.TypeError;
+}
+
 fn bindCaseArmPatternNames(
     env: *Env,
     pattern: ast.Pattern,
@@ -8225,6 +8298,17 @@ fn inferComptimeExpr(env: *Env, ct: ast.ComptimeExprOf(.untyped), loc: ast.Loc) 
             // `answer` bound to nothing and only aborted at run time.
             const exprTyped = try inferExprTyped(env, ap.expr.*);
             const exprPtr = try makeTypedPtr(env, exprTyped);
+            // Decision 8 § 9 — the pattern has to be able to match the
+            // subject. This is what makes
+            // `val assert Ok(n) = parse("42") catch 0;` the error the
+            // decision writes: after `catch` the value is an `i32`, and
+            // `Ok(…)` names no variant of it.
+            try checkAssertPatternSubject(env, ap.pattern, exprTyped.getType(), ap.expr.getLoc(), ap.fatal);
+            // Decision 8 § 9 — the pattern's names are bound in the ENCLOSING
+            // scope (`val assert Ok(n) = parse("42"); @print(n);`), so the
+            // snapshots a case arm would restore are deliberately dropped.
+            var bound: std.ArrayListUnmanaged(PatternBindingSnapshot) = .empty;
+            try bindPatternNamesForSubject(env, ap.pattern, exprTyped.getType(), &bound);
             const handlerExpr = ap.handler.*;
             const handlerTyped = try inferExprTyped(env, handlerExpr);
             const handlerPtr = try makeTypedPtr(env, handlerTyped);
@@ -8232,6 +8316,7 @@ fn inferComptimeExpr(env: *Env, ct: ast.ComptimeExprOf(.untyped), loc: ast.Loc) 
                 .pattern = ap.pattern,
                 .expr = exprPtr,
                 .handler = handlerPtr,
+                .fatal = ap.fatal,
             } } } };
         },
     };

@@ -343,17 +343,34 @@ The parser carries the dotted spelling in `TypeRef.named` (`parser/types.zig`). 
 spelling (`TokenText`) reds with a hint naming the path (`Env.sectionPathForFlatName`). A section
 declares no methods — `EnumSection` has no slot for them and nothing needs one yet.
 
-## `val assert <pattern> = <expr> catch <handler>` (06 C12)
+## `val assert <pattern> = <expr> [catch <handler>]` (06 C12, decision 8 § 9)
 
 The subject and the handler are inferred like any other expression. Both used to swallow
 `error.TypeError` into a fresh type variable, so a subject naming nothing compiled and only failed at
 run time — beam aborted with `{unresolved_identifier, …}`, erlang did not compile the emitted module,
 wasm trapped. They no longer swallow: an unbound name reds at the name.
 
-The handler-less form decision 8 § 9 writes (`val assert Ok(n) = parse("42");`, a failure being a
-fatal assert) is a **parse error** with its own diagnostic (`assert-pattern-missing-catch`), not a
-silent acceptance: nothing lowers the fatal path in any backend yet. `throw` carries the error
-channel's own value (`throw "empty"`), not a constructor — `Error` is bound to nothing.
+**The pattern binds, in the enclosing scope.** `inferComptimeExpr` runs
+`bindPatternNamesForSubject` — the same walk a `case` arm uses — and deliberately drops the
+snapshots that walk collects, so `val assert Ok(n) = parse("42"); @print(n);` reads `n: i32` in the
+statements after it. Before this the construct bound nothing at all and every name in a pattern was
+`unbound variable`.
+
+**The handler-less form is the one that asserts a variant.** `val assert Ok(n) = parse("42");` (a
+failure being a fatal assert) parses: `parser/exprs.zig` `assertFatalHandler` desugars it into the
+handler `@panic("assert pattern did not match")` and records `AssertPattern.fatal = true`. The AST
+therefore keeps ONE shape, every backend's existing handler lowering already emits the fatal path,
+and the flag is only what lets the checker tell the two forms apart. The `assert-pattern-missing-catch`
+parse error it replaces is gone.
+
+`checkAssertPatternSubject` reds two things. A `@Result` subject with a written `catch`
+(`val assert Ok(n) = parse("42") catch 0;`) — decision 8 § 9's own error: `catch` already yields the
+success value, so the pattern would be asserted against the unwrapped one. And a variant pattern
+naming no variant the subject's type can hold, when that type is a scalar the env knows holds none;
+an unregistered name stays permissive (a forward reference, an imported type).
+
+`throw` carries the error channel's own value (`throw "empty"`), not a constructor — `Error` is
+bound to nothing.
 
 ## Unknown type names (06 C10 + N30)
 

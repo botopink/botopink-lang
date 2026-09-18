@@ -15,6 +15,7 @@ const configMod = @import("./config.zig");
 const ast = @import("../ast.zig");
 const envMod = @import("../comptime/env.zig");
 const crossModule = @import("./crossModule.zig");
+const patternFacts = @import("./patterns.zig");
 const lexerMod = @import("../lexer.zig");
 const parserMod = @import("../parser.zig");
 const prelude = @import("std_prelude");
@@ -1548,6 +1549,10 @@ const Emitter = struct {
     cv: std.StringHashMap([]const u8),
     indent: usize = 0,
     try_seq: usize = 0,
+    /// While set, `patternBindVar` renders every binder as `_`: the pattern is
+    /// being lowered as a pure test (`assertPatternStmts`'s `case` arm) and
+    /// nothing reads its names.
+    pattern_discard: bool = false,
     /// Comptime modules (see `emitComptimeModule`) carry no inferred types, so
     /// type-directed lowerings dispatch at runtime instead: `+` → `'__bp_add'/2`
     /// (binary concat or arithmetic), `.len`/`.length` → `'__bp_len'/2`.
@@ -3305,6 +3310,15 @@ const Emitter = struct {
                 }
             }
 
+            // `val assert P = e [catch h];` — its bindings are read by the
+            // statements after it, so the pattern is matched in the enclosing
+            // clause, not inside the `case` (a name bound by a single `case`
+            // clause is "unsafe" after it).
+            if (this.assertPatternBindingStmt(stmt)) |ap| {
+                try stmts.appendSlice(b.arena, try this.assertPatternStmts(b, ap, stmt.expr.comptime_.loc));
+                continue;
+            }
+
             if (sourceComment(stmt)) |c| {
                 try stmts.append(b.arena, .{ .comment = c });
             } else if (try this.mutatingExpr(b, stmt)) |mutation| {
@@ -3314,6 +3328,59 @@ const Emitter = struct {
             }
         }
         return .{ .stmts = stmts.items };
+    }
+
+    /// The `val assert` at `stmt` whose pattern binds at least one name, or
+    /// null. A pattern that binds nothing (`val assert 42 = answer catch 0;`)
+    /// is a pure check and keeps the single-expression lowering.
+    fn assertPatternBindingStmt(this: *const Emitter, stmt: ast.Stmt) ?@FieldType(@FieldType(ast.ComptimeExpr, "kind"), "assertPattern") {
+        if (stmt.expr != .comptime_) return null;
+        if (stmt.expr.comptime_.kind != .assertPattern) return null;
+        const ap = stmt.expr.comptime_.kind.assertPattern;
+        const isVariant = struct {
+            fn f(e: *const Emitter, name: []const u8) bool {
+                return e.enum_variants.contains(name);
+            }
+        }.f;
+        if (!patternFacts.bindsNames(ap.pattern, this, isVariant)) return null;
+        return ap;
+    }
+
+    /// `val assert P = e [catch h];` at statement position, when `P` binds at
+    /// least one name:
+    ///
+    /// ```erlang
+    /// BpAssert0 = Subject,
+    /// P = case BpAssert0 of P' -> BpAssert0; _ -> Handler end
+    /// ```
+    ///
+    /// The `case` only decides *which* value the statement yields — the
+    /// subject when it matched, the handler's value otherwise (for the
+    /// handler-less form the handler is the `@panic(…)` the parser desugars
+    /// to, so a mismatch is fatal). The outer match is what binds, in the
+    /// enclosing clause where the following statements can read it: a name
+    /// bound by a single `case` clause is "unsafe" in erlang after the case.
+    /// `P'` is the same pattern lowered first, so `patternBindVar` gives it the
+    /// earlier version of each name and the outer `P` the current one.
+    ///
+    /// The subject is staged in `BpAssert<n>` because the arm used to re-emit
+    /// it — `case parse(X) of {ok, N} -> parse(X); …` called `parse/1` twice.
+    fn assertPatternStmts(this: *Emitter, b: Ast.Builder, ap: anytype, loc: ast.Loc) anyerror![]const Ast.Stmt {
+        const tmp = try std.fmt.allocPrint(b.arena, "BpAssert{d}_{d}", .{ loc.line, loc.col });
+        const subject = try this.exprNode(b, ap.expr.*);
+        this.pattern_discard = true;
+        const check = try this.patternNode(b, ap.pattern);
+        this.pattern_discard = false;
+        const handler = try this.exprNode(b, ap.handler.*);
+        const decided = try b.caseInline(Ast.Expr.v(tmp), &.{
+            try b.clause(&.{check}, &.{}, &.{Ast.Expr.v(tmp)}),
+            try b.clause(&.{Ast.Expr.v("_")}, &.{}, &.{handler}),
+        });
+        const bind = try this.patternNode(b, ap.pattern);
+        const stmts = try b.arena.alloc(Ast.Stmt, 2);
+        stmts[0] = .{ .expr = try b.match(Ast.Expr.v(tmp), subject) };
+        stmts[1] = .{ .expr = try b.match(bind, decided) };
+        return stmts;
     }
 
     /// Match `var acc = init;` at `body[i]` immediately followed by
@@ -3801,6 +3868,10 @@ const Emitter = struct {
     /// one, which is what the arm body then reads.
     fn patternBindVar(this: *Emitter, b: Ast.Builder, name: []const u8) anyerror![]const u8 {
         if (name.len == 0 or std.mem.eql(u8, name, "_")) return "_";
+        // `assertPatternStmts` lowers its pattern twice: once as the `case`
+        // test, whose binders nothing reads (and which erlang would warn
+        // about), and once as the enclosing match, which is the one that binds.
+        if (this.pattern_discard) return "_";
         if (!this.locals.contains(name)) {
             this.addLocal(name);
             return this.arenaVar(b, name);

@@ -525,6 +525,9 @@ const Emitter = struct {
     globals: std.StringHashMap(void),
     case_depth: u32 = 0,
     try_seq: u32 = 0,
+    /// Sequence counter for the `$__assert_{n}` local a `val assert` stages
+    /// its subject in.
+    assert_seq: u32 = 0,
     /// Sequence counter for the `$_res{n}` scratch pointers a Result/Option
     /// method op uses to hold its receiver (and, for `map`, the rewrapped
     /// result) while the tag/payload are read out.
@@ -1191,6 +1194,7 @@ const Emitter = struct {
         self.fn_returns_result = false;
         self.case_depth = 0;
         self.try_seq = 0;
+        self.assert_seq = 0;
         self.mem_seq = 0;
         self.res_seq = 0;
         self.loop_seq = 0;
@@ -2569,7 +2573,7 @@ const Emitter = struct {
                 else => .value,
             },
             .comptime_ => |ct| switch (ct.kind) {
-                .assert => .none,
+                .assert, .assertPattern => .none,
                 else => .value,
             },
             // Mirror `lowerIfExpr`: an `if` whose branches all end in a void
@@ -2802,6 +2806,7 @@ const Emitter = struct {
             },
             .comptime_ => |ct| switch (ct.kind) {
                 .assert => |a| try self.lowerAssert(a, ct.loc),
+                .assertPattern => |ap| try self.lowerAssertPattern(ap),
                 else => try self.emit(zero),
             },
             .function => |f| try self.lowerLambdaValue(f.kind.params, f.kind.body),
@@ -2832,6 +2837,58 @@ const Emitter = struct {
         try self.emit(.@"unreachable");
         const then_seq = self.seal(&then_c, .terminated);
         try self.emit(.{ .@"if" = .{ .then = .{ .seq = then_seq } } });
+    }
+
+    /// `val assert P = e [catch h];` (decision 8 § 9). The subject is staged in
+    /// a local, the pattern's own test decides, and the pattern's names are
+    /// bound in the function's locals — where the statements after it read
+    /// them. A mismatch runs the handler: the `@panic(…)` the parser desugars
+    /// the handler-less form to traps, a written `catch <value>` replaces the
+    /// staged subject so the bindings come from it.
+    ///
+    /// `bindPattern` covers identifier and variant patterns. A list pattern
+    /// binds nothing here, exactly as a `case` arm's does not — wasm has no
+    /// array test yet (`patternIsIrrefutable`).
+    /// True when `emitPatternTest` produces a real test for `p`. A variant
+    /// pattern naming neither an enum variant nor a `@Result` arm — a record
+    /// constructor, say — falls back to a constant `0`, which as a `val
+    /// assert` test would mean "never matches" and make every such assert
+    /// fatal. There the assert is lowered as a plain binding instead, which is
+    /// what the construct did before it was lowered at all.
+    fn patternTestIsReal(self: *Emitter, p: ast.Pattern) bool {
+        return switch (p) {
+            .variant => |v| self.variantRef(v.name) != null,
+            .@"or" => |pats| blk: {
+                for (pats) |sub| {
+                    if (!self.patternTestIsReal(sub)) break :blk false;
+                }
+                break :blk true;
+            },
+            else => true,
+        };
+    }
+
+    fn lowerAssertPattern(self: *Emitter, ap: anytype) anyerror!void {
+        const slot = try std.fmt.allocPrint(self.arena(), "__assert_{d}", .{self.assert_seq});
+        self.assert_seq += 1;
+        try self.declareLocal(slot, "i32");
+        try self.lowerCoerced(ap.expr.*, "i32");
+        try self.emit(.{ .local_set = slot });
+        if (self.isStringExpr(ap.expr.*)) try self.str_locals.put(slot, {});
+        if (self.resultShapeOf(ap.expr.*)) |shape| try self.result_subjects.put(slot, shape);
+
+        if (!self.patternIsIrrefutable(ap.pattern) and self.patternTestIsReal(ap.pattern)) {
+            try self.emitPatternTest(ap.pattern, slot);
+            try self.emit(opOf("i32", "eqz"));
+            var then_c: Capture = .{};
+            self.open(&then_c);
+            const handler_tail = self.exprTail(ap.handler.*);
+            try self.lowerExpr(ap.handler.*);
+            if (handler_tail == .value) try self.emit(.{ .local_set = slot });
+            const then_seq = self.seal(&then_c, if (handler_tail == .terminated) .terminated else .none);
+            try self.emit(.{ .@"if" = .{ .then = .{ .seq = then_seq } } });
+        }
+        try self.bindPattern(ap.pattern, slot);
     }
 
     /// `throw e`. Inside a fn that returns a `@Result` the transform rewrites
