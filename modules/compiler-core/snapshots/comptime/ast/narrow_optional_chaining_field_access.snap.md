@@ -1,0 +1,48 @@
+----- SOURCE CODE -- main.bp
+```botopink
+val Inner = type(value: i32)
+val Outer = type(inner: ?Inner)
+fn getValue(o: Outer) -> ?i32 {
+    return o.inner?.value;
+}
+```
+
+----- TYPED AST JSON -- main.json
+```json
+{
+  "declarations": [
+    {
+      "ast": "record_def",
+      "name": "Inner",
+      "fields": {
+        "value": "i32"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "Outer",
+      "fields": {
+        "inner": "?Inner"
+      }
+    },
+    {
+      "ast": "fn_def",
+      "name": "getValue",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "o",
+          "type": "Outer"
+        }
+      ],
+      "return_type": "?i32",
+      "body": [
+        {
+          "source": "return o.inner?.value;"
+        }
+      ]
+    }
+  ]
+}
+```
+

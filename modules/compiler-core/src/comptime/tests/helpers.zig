@@ -125,14 +125,6 @@ pub fn assertComptimeAstExpecting(
     const io = std.testing.io;
     const base_slug = comptime slugFromSrc(loc);
 
-    // The four-runtime architecture collapsed in v0.beta.21
-    // (`wasm3-unified-runtime`). The AST snapshots were always byte-identical
-    // across the runtimes (the per-runtime loop only changed `RunResult.script`,
-    // which the AST snapshot does NOT include) — so we keep the on-disk
-    // `comptime/{node,erlang,wasm,beam}/…` layout to avoid 4 × N stale-file
-    // churn, but the single compile run feeds all four copies.
-    const runtime_dirs = [_][]const u8{ "node", "erlang", "wasm", "beam" };
-
     var build_root_buf: [512]u8 = undefined;
     const build_root_path = try std.fmt.bufPrint(&build_root_buf, ".botopinkbuild/comptime/{s}", .{base_slug});
 
@@ -145,18 +137,15 @@ pub fn assertComptimeAstExpecting(
         try outputs.append(allocator, output);
     }
 
-    // The four legacy paths are byte-identical (same `outputs` written to each).
-    // Run them all even if one mismatches — the failed call already wrote a
-    // `.new` sibling, and we want every sibling to land at once so a one-shot
-    // promote (`for f in *.new; mv $f ${f%.new}; done`) clears the whole batch.
+    // One snapshot per test, under `comptime/ast/`. The AST snapshot never
+    // included the per-runtime script, so the four `comptime/{node,erlang,wasm,
+    // beam}/…` copies this used to write were byte-identical by construction.
+    // Record the mismatch instead of returning it: the `.new` sibling is already
+    // on disk and the compile-expectation checks below have their own say.
     var first_err: ?anyerror = null;
-    for (runtime_dirs) |rt| {
-        var snap_buf: [512]u8 = undefined;
-        const snap_slug = try std.fmt.bufPrint(&snap_buf, "comptime/{s}/{s}", .{ rt, base_slug });
-        snapshot.assertComptimeAstWithPath(allocator, snap_slug, outputs.items) catch |err| {
-            if (first_err == null) first_err = err;
-        };
-    }
+    snapshot.assertComptimeAst(allocator, base_slug, outputs.items) catch |err| {
+        first_err = err;
+    };
 
     // H3/H9 — the snapshot above now carries a `COMPILE DIAGNOSTIC` section for
     // every module that did not compile. Report it as a failure too, so a test
@@ -252,14 +241,13 @@ pub fn assertTypeErrorSnap(
 
     const base_slug = comptime slugFromSrc(loc);
 
-    // Save the same error snapshot in both node/errors/ and erlang/errors/
-    // Error messages are runtime-agnostic (type inference happens before codegen)
-    const runtimes = [_][]const u8{ "node", "erlang" };
-    for (runtimes) |runtime| {
-        var snap_buf: [512]u8 = undefined;
-        const snap_slug = try std.fmt.bufPrint(&snap_buf, "comptime/{s}/errors/{s}", .{ runtime, base_slug });
-        try snapMod.checkText(allocator, snap_slug, desc);
-    }
+    // One snapshot per test, under `comptime/errors/`. Error messages are
+    // runtime-agnostic (type inference happens before codegen), so the
+    // `node/errors/` and `erlang/errors/` copies this used to write were
+    // byte-identical by construction.
+    var snap_buf: [512]u8 = undefined;
+    const snap_slug = try std.fmt.bufPrint(&snap_buf, "comptime/errors/{s}", .{base_slug});
+    try snapMod.checkText(allocator, snap_slug, desc);
 }
 
 pub fn assertInfersOk(
