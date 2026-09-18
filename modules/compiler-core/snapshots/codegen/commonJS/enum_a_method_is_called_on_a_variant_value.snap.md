@@ -93,7 +93,12 @@ _botopink_main();
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-export declare type Shape = { tag: "Circle", radius: i32 } | { tag: "Square", side: i32 };
+export declare class Shape {
+    readonly tag: "Circle" | "Square";
+    static Circle(radius: number): Shape;
+    static Square(side: number): Shape;
+    static area(self: Shape): number;
+}
 
 
 export declare function main(): void;

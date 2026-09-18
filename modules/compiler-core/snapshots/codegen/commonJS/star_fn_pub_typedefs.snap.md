@@ -34,13 +34,13 @@ exports.pulses = pulses;
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-export declare function loadOne(x: i32): Promise<i32>;
+export declare function loadOne(x: number): Promise<number>;
 
 
-export declare function count(): IterableIterator<i32>;
+export declare function count(): IterableIterator<number>;
 
 
-export declare function pulses(): AsyncIterableIterator<i32>;
+export declare function pulses(): AsyncIterableIterator<number>;
 
 ```
 

@@ -29,10 +29,10 @@ exports.nodeOnly = nodeOnly;
 
 ----- TYPESCRIPT TYPEDEF -- hostlib.d.ts
 ```typescript
-export declare function hostKey(v: i32): string;
+export declare function hostKey(v: number): string;
 
 
-export declare function hostLen(xs: Array<string>): i32;
+export declare function hostLen(xs: Array<string>): number;
 
 
 export declare function nodeOnly(s: string): void;
@@ -90,13 +90,13 @@ _botopink_main();
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-import { hostKey, hostLen, nodeOnly } from "./module";
+import { hostKey, hostLen, nodeOnly } from "./hostlib";
 
 
-import { hostKey, hostLen, nodeOnly } from "./module";
+import { hostKey, hostLen, nodeOnly } from "./hostlib";
 
 
-import { hostKey, hostLen, nodeOnly } from "./module";
+import { hostKey, hostLen, nodeOnly } from "./hostlib";
 
 
 export declare function main(): void;

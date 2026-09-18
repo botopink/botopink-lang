@@ -47,9 +47,9 @@ export declare class Response {
 
 
 export declare class App {
-    readonly port: i32;
+    readonly port: number;
     readonly path: string;
-    constructor(port: i32, path: string);
+    constructor(port: number, path: string);
 }
 
 ```

@@ -15,7 +15,7 @@ exports.twice = twice;
 
 ----- TYPESCRIPT TYPEDEF -- a.d.ts
 ```typescript
-export declare function twice(x: i32): i32;
+export declare function twice(x: number): number;
 
 ```
 
@@ -77,10 +77,10 @@ _botopink_main();
 
 ----- TYPESCRIPT TYPEDEF -- b.d.ts
 ```typescript
-import { twice } from "./module";
+import { twice } from "./a";
 
 
-export declare function quad(x: i32): i32;
+export declare function quad(x: number): number;
 
 
 export declare function main(): void;

@@ -132,10 +132,11 @@ exports.reverse = reverse;
 
 ----- TYPESCRIPT TYPEDEF -- std/order.d.ts
 ```typescript
-export declare enum Order {
-    Lt = "Lt",
-    Eq = "Eq",
-    Gt = "Gt",
+export declare class Order {
+    readonly tag: "Lt" | "Eq" | "Gt";
+    static readonly Lt: Order;
+    static readonly Eq: Order;
+    static readonly Gt: Order;
 }
 
 
@@ -148,7 +149,7 @@ export declare function eq(): Order;
 export declare function gt(): Order;
 
 
-export declare function toInt(o: Order): i32;
+export declare function toInt(o: Order): number;
 
 
 export declare function reverse(o: Order): Order;

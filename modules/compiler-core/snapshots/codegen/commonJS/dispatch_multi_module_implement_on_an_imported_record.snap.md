@@ -17,8 +17,8 @@ exports.Pato = Pato;
 ----- TYPESCRIPT TYPEDEF -- pond.d.ts
 ```typescript
 export declare class Pato {
-    readonly id: i32;
-    constructor(id: i32);
+    readonly id: number;
+    constructor(id: number);
 }
 
 ```

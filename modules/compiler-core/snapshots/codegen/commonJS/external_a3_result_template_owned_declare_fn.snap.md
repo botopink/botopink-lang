@@ -49,7 +49,7 @@ _botopink_main();
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-export declare function parseInt(s: string): { tag: "Ok"; result: i32 } | { tag: "Error"; error: string };
+export declare function parseInt(s: string): { tag: "Ok"; result: number } | { tag: "Error"; error: string };
 
 
 

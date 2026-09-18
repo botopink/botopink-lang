@@ -49,7 +49,7 @@ _botopink_main();
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-export declare function add(a: i32, b: i32): i32;
+export declare function add(a: number, b: number): number;
 
 
 

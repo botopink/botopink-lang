@@ -479,8 +479,8 @@ pub const TsParam = struct {
 pub const TsMember = union(enum) {
     /// `<modifier> name: T;`
     field: struct { modifier: []const u8 = "", name: []const u8, type: TsType },
-    /// `name(params): R;`
-    method: struct { name: []const u8, params: []const TsParam, ret: TsType },
+    /// `<modifier>name(params): R;`
+    method: struct { modifier: []const u8 = "", name: []const u8, params: []const TsParam, ret: TsType },
     /// `get name: T;`
     getter: struct { name: []const u8, type: TsType },
     /// `set name(p: T);`

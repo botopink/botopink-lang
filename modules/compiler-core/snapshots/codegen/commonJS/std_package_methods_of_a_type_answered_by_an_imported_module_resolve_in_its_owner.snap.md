@@ -318,9 +318,9 @@ export declare class Dict {
     readonly pairs: Array<[K, V]>;
     constructor(pairs: Array<[K, V]>);
     lookup(key: K): V | null;
-    hasKey(key: K): bool;
-    size(): i32;
-    isEmpty(): bool;
+    hasKey(key: K): boolean;
+    size(): number;
+    isEmpty(): boolean;
     keys(): Array<K>;
     values(): Array<V>;
     insert(key: K, value: V): Dict<K, V>;
