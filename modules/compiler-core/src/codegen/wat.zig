@@ -1823,12 +1823,46 @@ const Emitter = struct {
 
     const FoundVariant = struct { variants: []const ast.EnumVariant, tag: u32, variant: ast.EnumVariant };
 
-    /// Search every enum for a variant named `name`. First match wins.
+    /// Decision 8 §5.1 P8: a pattern's variant name reaches the backend with
+    /// the path it was **written** with — `Shape.Circle`, `.Circle` — while the
+    /// constructor stores the bare `Circle`. The last `.`-separated segment is
+    /// the variant; what precedes it, when it is not empty, is the enum.
+    fn bareVariantName(name: []const u8) []const u8 {
+        const i = std.mem.lastIndexOfScalar(u8, name, '.') orelse return name;
+        return name[i + 1 ..];
+    }
+
+    /// The enum a written path names, or `""` for a bare name and for the
+    /// dot shorthand `.Circle` (whose enum comes from the matched value).
+    fn variantPathEnum(name: []const u8) []const u8 {
+        const i = std.mem.lastIndexOfScalar(u8, name, '.') orelse return "";
+        return name[0..i];
+    }
+
+    /// True when `name` was written as a path (`Shape.Circle`, `.None`). Such a
+    /// name is a variant, never a binding, however it resolves (§5.1 P8).
+    fn isVariantPath(name: []const u8) bool {
+        return std.mem.indexOfScalar(u8, name, '.') != null;
+    }
+
+    /// Search for a variant the pattern named. A written path (`Shape.Circle`)
+    /// is looked up in the enum it names first; a bare or dot-shorthand name
+    /// searches every enum, first match wins.
     fn findVariant(self: *Emitter, name: []const u8) ?FoundVariant {
+        const bare = bareVariantName(name);
+        const ename = variantPathEnum(name);
+        if (ename.len > 0) {
+            if (self.enums.get(ename)) |variants| {
+                for (variants, 0..) |v, i| {
+                    if (std.mem.eql(u8, v.name, bare))
+                        return .{ .variants = variants, .tag = @intCast(i), .variant = v };
+                }
+            }
+        }
         var it = self.enums.iterator();
         while (it.next()) |entry| {
             for (entry.value_ptr.*, 0..) |v, i| {
-                if (std.mem.eql(u8, v.name, name))
+                if (std.mem.eql(u8, v.name, bare))
                     return .{ .variants = entry.value_ptr.*, .tag = @intCast(i), .variant = v };
             }
         }
@@ -3396,12 +3430,107 @@ const Emitter = struct {
         const arm = arms[idx];
         if (self.patternIsIrrefutable(arm.pattern)) {
             try self.bindPattern(arm.pattern, subj);
-            try self.lowerCoerced(arm.body, self.cur_result);
+            // A guard makes even `_` refutable: a failing guard falls through
+            // to the next arm (§5.3), so there is still a chain to emit.
+            if (arm.guard) |g| {
+                try self.emitGuardChain(arms, subj, idx, g);
+            } else {
+                try self.lowerArmBody(arm.body, subj);
+            }
             self.aliases.clearRetainingCapacity();
             return;
         }
         try self.emitPatternTest(arm.pattern, subj);
         try self.emitArmChain(arms, subj, idx, arm.body);
+    }
+
+    /// `(if <guard> (then <arm body>) (else <rest of the chain>))`, the
+    /// pattern's names already bound. Decision 8 §5.3: the guard is read after
+    /// the binding, and a failing one falls through. Dropping it — which is
+    /// what this backend did until now — made every guarded arm match
+    /// unconditionally (`case_guard_bound_identifier_numeric_guard` answered
+    /// `"positive"` for every `n`).
+    fn emitGuardChain(self: *Emitter, arms: anytype, subj: []const u8, idx: usize, guard: ast.Expr) anyerror!void {
+        const ty = vt(self.cur_result);
+        try self.lowerCoerced(guard, "i32");
+
+        var ok_c: Capture = .{};
+        self.open(&ok_c);
+        try self.lowerArmBody(arms[idx].body, subj);
+        const ok_seq = self.seal(&ok_c, .{ .value = ty });
+
+        var no_c: Capture = .{};
+        self.open(&no_c);
+        try self.emitCaseArms(arms, subj, idx + 1);
+        const no_seq = self.seal(&no_c, .{ .value = ty });
+
+        try self.emit(.{ .@"if" = .{
+            .result = ty,
+            .then = .{ .seq = ok_seq },
+            .@"else" = .{ .seq = no_seq },
+        } });
+    }
+
+    /// Decision 8 §5.1 P1/P3: an arm written `Pattern { … }` — and the
+    /// pre-decision-8 `-> { … }` block arm — arrives as a **lambda**: a leading
+    /// `name ->` binds the whole matched value and the last expression is the
+    /// arm's value. It is not a function value, so it is inlined here. Lowering
+    /// it as a value lifted the body into the function table and left the arm
+    /// answering a closure-cell address (`case_or_patterns_with_block_arm_body`
+    /// recorded that as `$__lambda0` plus a 4-byte cell).
+    const ArmLambda = struct { params: []const []const u8, body: []const ast.Stmt };
+
+    fn armLambda(body: ast.Expr) ?ArmLambda {
+        if (body != .function) return null;
+        const k = body.function.kind;
+        if (k.syntax != .lambda or k.params.len > 1) return null;
+        return .{ .params = k.params, .body = k.body };
+    }
+
+    /// The arm's value, coerced to the case's result type.
+    fn lowerArmBody(self: *Emitter, body: ast.Expr, subj: []const u8) anyerror!void {
+        const lam = armLambda(body) orelse {
+            try self.lowerCoerced(body, self.cur_result);
+            return;
+        };
+        // P1: the single parameter binds the whole matched value.
+        if (lam.params.len == 1) {
+            const p = lam.params[0];
+            try self.declareLocal(p, "i32");
+            if (self.str_locals.contains(subj)) try self.str_locals.put(p, {});
+            if (self.local_types.get(subj)) |t| try self.local_types.put(p, t);
+            try self.emit(.{ .local_get = subj });
+            try self.emit(.{ .local_set = p });
+        }
+        if (lam.body.len == 0) {
+            try self.emit(constOf(self.cur_result, "0"));
+            return;
+        }
+        for (lam.body[0 .. lam.body.len - 1]) |s| _ = try self.emitStmt(s, false);
+        const last = lam.body[lam.body.len - 1];
+        // P3: the last expression is the value; an explicit `break v` carries
+        // it instead — the shape the pre-decision-8 block arm is written with.
+        switch (last.expr) {
+            .jump => |j| switch (j.kind) {
+                .@"break" => |br| if (br.value) |v| {
+                    if (self.yield_target == null) {
+                        try self.lowerCoerced(v.*, self.cur_result);
+                        return;
+                    }
+                },
+                else => {},
+            },
+            .binding => {
+                // `val x = …` in tail position is not a value
+                _ = try self.emitStmt(last, false);
+                try self.emit(constOf(self.cur_result, "0"));
+                return;
+            },
+            else => {},
+        }
+        const from = self.wasmTypeOf(last.expr);
+        const tail = try self.emitStmt(last, true);
+        if (tail == .value) try self.emitConvert(from, self.cur_result);
     }
 
     // ── case patterns ────────────────────────────────────────────────────────
@@ -3426,8 +3555,9 @@ const Emitter = struct {
 
     fn variantRef(self: *Emitter, name: []const u8) ?VariantRef {
         if (self.findVariant(name)) |fv| return .{ .user = fv };
-        if (std.mem.eql(u8, name, "Ok")) return .result_ok;
-        if (std.mem.eql(u8, name, "Err") or std.mem.eql(u8, name, "Error")) return .result_err;
+        const bare = bareVariantName(name);
+        if (std.mem.eql(u8, bare, "Ok")) return .result_ok;
+        if (std.mem.eql(u8, bare, "Err") or std.mem.eql(u8, bare, "Error")) return .result_err;
         return null;
     }
 
@@ -3439,7 +3569,8 @@ const Emitter = struct {
     fn patternIsIrrefutable(self: *Emitter, p: ast.Pattern) bool {
         return switch (p) {
             .wildcard => true,
-            .ident => |n| self.findVariant(n) == null,
+            // a written path is a variant, never a binding (§5.1 P8)
+            .ident => |n| !isVariantPath(n) and self.findVariant(n) == null,
             // no wasm test for these yet: the arm runs as before
             .list, .multi => true,
             else => false,
@@ -3449,7 +3580,19 @@ const Emitter = struct {
     fn emitPatternTest(self: *Emitter, p: ast.Pattern, subj: []const u8) anyerror!void {
         switch (p) {
             .wildcard, .list, .multi => try self.emit(one),
-            .ident => |n| if (self.findVariant(n)) |fv| try self.emitTagTest(.{ .user = fv }, subj) else try self.emit(one),
+            .ident => |n| {
+                // A written path is a variant, never a binding (§5.1 P8), so
+                // `.Ok` and `Shape.Circle` test a tag; a path no enum here
+                // declares is an arm that can never match, not a catch-all.
+                if (isVariantPath(n)) {
+                    if (self.variantRef(n)) |ref|
+                        try self.emitTagTest(ref, subj)
+                    else
+                        try self.emitCf(zero, "unknown variant pattern: {s}", .{n});
+                } else if (self.findVariant(n)) |fv| {
+                    try self.emitTagTest(.{ .user = fv }, subj);
+                } else try self.emit(one);
+            },
             .numberLit => |n| {
                 try self.emit(.{ .local_get = subj });
                 const t = numLitType(n);
@@ -3545,7 +3688,7 @@ const Emitter = struct {
     /// Bind the names a pattern introduces, from the subject held in `subj`.
     fn bindPattern(self: *Emitter, p: ast.Pattern, subj: []const u8) anyerror!void {
         switch (p) {
-            .ident => |n| if (self.findVariant(n) == null) {
+            .ident => |n| if (!isVariantPath(n) and self.findVariant(n) == null) {
                 try self.declareLocal(n, "i32");
                 if (self.str_locals.contains(subj)) try self.str_locals.put(n, {});
                 try self.emit(.{ .local_get = subj });
@@ -3614,7 +3757,11 @@ const Emitter = struct {
         var then_c: Capture = .{};
         self.open(&then_c);
         try self.bindPattern(arms[idx].pattern, subj);
-        try self.lowerCoerced(body, self.cur_result);
+        if (arms[idx].guard) |g| {
+            try self.emitGuardChain(arms, subj, idx, g);
+        } else {
+            try self.lowerArmBody(body, subj);
+        }
         self.aliases.clearRetainingCapacity();
         const then_seq = self.seal(&then_c, .{ .value = ty });
 

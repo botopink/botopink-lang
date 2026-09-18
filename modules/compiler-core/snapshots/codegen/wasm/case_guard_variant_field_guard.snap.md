@@ -33,7 +33,17 @@ fn big(sh: Shape) -> string {
     local.get $__case_0
     i32.load offset=4
     local.set $r
+    local.get $r
+    i32.const 10
+    i32.gt_s
+    (if (result i32)
+      (then
     i32.const 256
+      )
+      (else
+    i32.const 272
+      )
+    )
       )
       (else
     i32.const 272

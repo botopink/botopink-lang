@@ -482,3 +482,114 @@ test "wat: try propagation in result fn" {
         \\}
     );
 }
+
+// ── decision 8 §5: the three defects `01-checker` handed to the backends ─────
+//
+// Each of the four fixtures below answered wrongly on wasm before front 05's
+// case row, and three of them still do on the backends that have not taken
+// their half — recorded, not hidden, so the next front's commit shows the move.
+
+// §5.1 P8 — a pattern's variant name reaches the backend with the path it was
+// **written** with (`Shape.Circle`), while the constructor stores the bare
+// `Circle`, so a dotted arm never matched: wasm answered `0` for a `Circle`.
+// KNOWN-WRONG (commonJS, erlang): `0` twice, the same defect, their half.
+// KNOWN-WRONG (beam): empty RUN LOG — beam lifts each arm body into a
+// `-main/0-fun-N-` closure and never applies it (§5.1 P3, front 03's half).
+test "wat: case ---- a variant pattern written as a dotted path" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\type Shape {
+        \\    Circle(radius: i32),
+        \\    Rect(width: i32, height: i32),
+        \\}
+        \\fn main() {
+        \\    val c = Shape.Circle(radius: 7);
+        \\    case c {
+        \\        Shape.Circle(r) { @print(r); }
+        \\        _ { @print(0); }
+        \\    };
+        \\    val q = Shape.Rect(width: 2, height: 5);
+        \\    case q {
+        \\        Shape.Circle(r) { @print(r); }
+        \\        _ { @print(0); }
+        \\    };
+        \\}
+    );
+}
+
+// §5.1 P8 — the dot shorthand `.Circle(r)`, whose enum comes from the matched
+// value. The leading `.` is what tells a variant path from a binding, so it
+// stays in the name. KNOWN-WRONG (commonJS, erlang): `0`. KNOWN-WRONG (beam):
+// empty RUN LOG, as above.
+test "wat: case ---- the dot-shorthand variant pattern" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\type Shape {
+        \\    Circle(radius: i32),
+        \\    Rect(width: i32, height: i32),
+        \\}
+        \\fn main() {
+        \\    val c = Shape.Circle(radius: 7);
+        \\    case c {
+        \\        .Circle(r) { @print(r); }
+        \\        _ { @print(0); }
+        \\    };
+        \\}
+    );
+}
+
+// §5.1 P3 — an arm written `Pattern { … }` arrives as a lambda whose last
+// expression is the arm's value. wasm lifted it into the function table and
+// left the arm answering a closure-cell address, so the body never ran: this
+// program printed nothing at all. commonJS and erlang already print `circle`.
+// KNOWN-WRONG (beam): empty RUN LOG, the lifted-closure shape above.
+test "wat: case ---- an arm body's statements run and its last expression is its value" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\type Shape {
+        \\    Circle(radius: i32),
+        \\    Rect(width: i32, height: i32),
+        \\}
+        \\fn main() {
+        \\    val s = Shape.Circle(radius: 3);
+        \\    case s {
+        \\        Circle(r) { @print("circle"); }
+        \\        Rect(w, h) { @print("rect"); }
+        \\    };
+        \\}
+    );
+}
+
+// §5.1 P1 — a one-parameter arm binder binds the whole matched value.
+// KNOWN-WRONG (commonJS): empty RUN LOG. KNOWN-WRONG (erlang): the module does
+// not assemble — `main.erl:10:27: variable 'N' is unbound`. KNOWN-WRONG (beam):
+// empty RUN LOG. All three are front 02/03/04's half of the same defect.
+test "wat: case ---- a one-parameter arm binder binds the matched value" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    val v = 7;
+        \\    case v {
+        \\        0 { @print("zero"); }
+        \\        _ { n -> @print(n); }
+        \\    };
+        \\}
+    );
+}
+
+// §5.3 — a failing guard falls through to the next arm. wasm dropped the guard
+// entirely, so a guarded arm matched unconditionally: `classify` answered
+// `"positive"` for every `n` (`case_guard_bound_identifier_numeric_guard`
+// recorded exactly that).
+test "wat: case ---- a failing guard falls through to the next arm" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn classify(n: i32) -> string {
+        \\    return case n {
+        \\        x if x > 0 -> "positive";
+        \\        0 -> "zero";
+        \\        _ -> "negative";
+        \\    };
+        \\}
+        \\fn main() {
+        \\    @print(classify(5));
+        \\    @print(classify(0));
+        \\    @print(classify(-3));
+        \\}
+    );
+}

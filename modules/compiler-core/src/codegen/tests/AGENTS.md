@@ -36,4 +36,12 @@ Golden outputs live in `modules/compiler-core/snapshots/codegen/<target>/<slug>.
 - `assertJsError` stays the helper for comptime validation errors that have a
   dedicated `codegen/errors/<target>/` snapshot.
 
+`wat.zig` also carries the decision 8 §5 `case` fixtures front `05-wasm` took
+from the three defects `01-checker` handed to the backends — a variant pattern
+written as a path, the dot shorthand, an arm body whose last expression is its
+value, a one-parameter arm binder, and a failing guard. They snapshot all four
+backends like every other fixture: wasm answers each of them, and the
+`KNOWN-WRONG` note above each names what commonJS, erlang and beam still answer,
+so the front that takes its half shows the move in its own commit.
+
 When adding a test file here, register it in `../tests.zig` or it will not run.

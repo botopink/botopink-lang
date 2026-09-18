@@ -1037,6 +1037,28 @@ first three are now enforced by the model, not by discipline:
   parse error, and `wat_ast.Builder.param` refuses to build one.
 - **Entrypoint** (`emitEntrypointWrapper`): calls `$main` and `drop`s its
   result when `main` returns a value (`main_returns_value`).
+- **A pattern's variant name arrives with the path it was written with**
+  (decision 8 §5.1 P8): `Shape.Circle`, `.Circle`. The constructor stores the
+  bare `Circle`, so `findVariant` compares against `bareVariantName` — the last
+  `.`-separated segment — and looks the enum a path names up first.
+  `isVariantPath` is what tells a variant from a binding: a `.ident` carrying a
+  `.` is never bound, and a path no enum here declares is an arm that can never
+  match (`zero ;; unknown variant pattern`), not a catch-all. Before this, a
+  dotted arm never matched and fell into the next one.
+- **An arm body is inlined, never lifted** (`lowerArmBody`, §5.1 P1/P3). An arm
+  written `Pattern { … }` — and the pre-decision-8 `-> { … }` block arm —
+  arrives as an `ast.Expr.function` with `syntax == .lambda`: a leading
+  `name ->` binds the whole matched value and the last expression is the arm's
+  value. Lowering it as a *value* put the body in the function table and left
+  the arm answering a closure-cell address, so the body never ran
+  (`case_or_patterns_with_block_arm_body` recorded a `$__lambda0` and a 4-byte
+  cell where `"odd"` belonged). A lambda of more than one parameter is still a
+  function value and keeps the old path.
+- **A `case` guard is emitted** (`emitGuardChain`, §5.3): after the pattern's
+  names are bound, `(if <guard> (then <body>) (else <rest of the chain>))`. A
+  guard makes even `_` refutable. This backend used to drop guards entirely, so
+  a guarded arm matched unconditionally — `classify` answered `"positive"` for
+  every `n`.
 - **`case` patterns** (`emitPatternTest` + `bindPattern`): numbers, strings
   (`$__str_eq`), `or`, and variants. A variant of an all-unit enum is its tag;
   a variant of an enum with any payload is a `[tag, …fields]` pointer — its
