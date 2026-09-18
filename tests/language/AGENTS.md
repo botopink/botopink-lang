@@ -176,32 +176,52 @@ delete its line" — the landing commit of that front deletes the line.
 
 ## Notes for whoever writes the next cell
 
-Shapes that do not parse, found while writing these cells and **re-measured at `eeff1e1`** with
-`botopink check`. None is a bug filed against a front; each is a form the cells route around.
-Decision 14 of `specs/1.0.5-beta/decisions-taken.md` settled which of them the language wants.
+Shapes that do not parse — **re-measured at `aab5489`** with `botopink check`, after front 15
+(`specs/1.0.5-beta/15-language-surface/README.md`) landed (`109f6c9`). Five of the seven rows this
+table carried are gone: they parse. What is left is two rows and one correction.
 
-| Shape | At `eeff1e1` | Decision |
+| Shape | At `aab5489` | Decision |
 |---|---|---|
-| `adder(3)(4)` — calling the result of a call | `error: There must be a 'val' or 'var' to bind a variable to a value` | **make it parse** (14) — `01-checker`'s grammar tail |
-| `#(a: i32)[]` — an array of labeled tuples | `error: Unexpected token` at the `[` | **make it parse** (14) |
-| `??` | `error: Unexpected token` at the `??` | **deliberately absent** (14) — it duplicates `catch` and `?.`; read an optional with `if (x) { n -> … }`, `?.` and `== null` |
-| a module-level `var` | `error: Unexpected token` at the `var` | **deliberately absent** (14) — a module has no mutable state |
-| `(a == b).toString()` inside an argument | `error: Unexpected token` at the `.` | open — bind the comparison to a `val` first |
-| `(sql """ab""").length` — a method on a template call | needs a dependency to measure; a `val` intermediate works | open |
-| a bare `if` (no `else`) inside a decorator body | must be the **last** statement of the block | open |
+| a module-level `var` | `error: this token cannot appear here` at `1:1`, `var` and `pub var` alike | **still absent.** decision 28 of `specs/1.0.5-beta/decisions-taken.md` lists it as landed at `109f6c9`; it did not — front 15's own closeout says "module-level `var` — measured only", and `fronts.md`'s front-15 row repeats that. It needs a `.@"var"` arm in `parser.zig:441` **and** a `mutable` field on `ast.ValDecl`. A module-level `val` does parse |
+| a block-shaped statement not last in its block | `error: this token cannot appear here` at the statement **after** it — in any block, not only a decorator body: `if (1 > 0) { … }` then `@print("b");` reds at the `@print`. With a `;` after the `}` it checks | **decision 29** — the `;` goes. Front 15 wrote the 76-line parser half and deliberately did not commit it: rejecting the trailing `;` rejects `libs/std`'s embedded prelude, so no single front can land it green. 44 sites in this suite, counted by front 15 |
 
-**Struck, because they now parse:** the §5.1 `Pattern { body }` form
-(`case n { 1 { "one" } _ { "other" } }` → `Checked`) and §5.3b section arms — `test/case_sections.bp`
-parses and fails in inference like every other `case` cell (`expected string, got void`), not at the
-`{`. Both were listed as `06 N22`.
+**Struck, because they now parse.** Each was measured at `aab5489`:
 
-The range pattern in a `case` arm: **decision 20** settled the spelling — `..` is the only range, in
-patterns and in iteration alike, and `...` leaves the grammar. The compiler has not caught up:
-`1..9` in an arm still reds `error[pattern-range-exclusive]: \`..\` is iteration, not a pattern's
-range`, which is the diagnostic that inverts (`01 step 4`; `test/case_arms.bp` is listed against it
-and is right as written). The cells still do **not** assert the endpoint: decision 20 removes the
-second spelling but does not say in so many words whether `..` in a pattern excludes its end the way
-`loop (0..4)` does. One sentence would let a cell assert it.
+| Shape | Was listed as | Now |
+|---|---|---|
+| §5.1 `Pattern { body }` arms, and §5.3b section arms | `06 N22` | parse; `test/case_sections.bp` fails in inference like every other `case` cell (`expected string, got void`), not at the `{` |
+| `adder(3)(4)` — calling the result of a call | "make it parse" (14) | **parses** (15's R2). It does not *check*: `error: unbound variable ''` at the second `(` — the call carries its callee in `calleeExpr` and inference never types it |
+| `#(a: i32, b: string)[]` — an array of labeled tuples | "make it parse" (14) | **parses, checks and runs on all four targets** (15's R1), with `@Result<i32, string>[]` and `(i32 \| string)[]` |
+| `??` | "deliberately absent (14) — it duplicates `catch` and `?.`" | **parses and runs on all four targets** (15's R8, decision 28). The premise was false as well as the verdict: `catch` is `@Result`-only — `val b = a catch 0;` on an `a: ?i32` reds with `` `try` requires a @Result<D, E> value, found 'optional' `` — so nothing else gives an optional a default |
+| `(a == b).toString()`, and `(sql """ab""").length` — a method on a parenthesised expression | open / "needs a dependency to measure" | **one production, and it parses** (15's R3). `(1 == 2).toString()` prints `false` and `("ab").length` prints `2` on commonJS, erlang and wasm; no dependency is needed to measure it |
+
+**And one form that parses where no cell can yet assert it:** `42.toString()` — a method on a number
+literal, 15's R3 — checks, and prints `42` on erlang and wasm, but the commonJS emitter writes
+`__bp_print(42.toString())`, which node refuses with `SyntaxError: Invalid or unexpected token`
+(`42.` reads as a float). No step of `04-js` (`specs/1.0.5-beta/04-js/README.md`) names it;
+it is reported to the maintainer rather than listed against an invented row.
+
+**The range pattern in a `case` arm — both halves are decided and neither has landed, so no cell
+asserts an endpoint.** Decision 20 settled the spelling (`..` is the only range, in patterns and in
+iteration alike; `...` leaves the grammar) and decision 36 settled the meaning (`..` excludes its end
+in a pattern exactly as in a loop). Measured at `aab5489`:
+
+- `1..9` in an arm still reds `error[pattern-range-exclusive]: \`..\` is iteration, not a pattern's
+  range`, recommending `...` — the diagnostic that inverts. `test/case_arms.bp` is listed against
+  `01 step 4` and is right as written.
+- `1...9`, the spelling that diagnostic recommends, parses and checks — and **works on no backend**.
+  Re-measured here, three backends give three different wrong answers to the same program:
+  `val r = case 9 { 1...9 { 1 } _ { 0 } }; @print(r);` prints `undefined` on commonJS, `0` on erlang
+  and `256` — a heap address — on wasm. Front 15 measured the first two; the third is this front's.
+  Write the same `case` where its type is known (`fn f(n: i32) -> i32 { return case n { 1...9 … } }`)
+  and it does not compile at all: `type mismatch: expected i32, got void` at the `case`. A brace-arm
+  of `case` is neither typed nor lowered — the defect already filed with `01-checker`.
+
+So an endpoint cell written today would assert nothing on either spelling. Decision 36's sentence is
+**not yet in decision 8 §5** and its ~10-line parser edit (`parser/patterns.zig`'s
+`finishRangePattern` `:269-274`, plus dropping `dotDotDot` from the lexer) is `01-checker`'s step-4
+grammar, deliberately left by front 15 because it re-records that front's `case` snapshots. The cell
+is owed once 01 step 4 lands, not before.
 
 **Structural equality of two values of the same type is not legislated, so no cell asserts it.**
 `Person(name: "Ana", age: 30) == Person(name: "Ana", age: 30)` answers `false` on commonJS (reference
