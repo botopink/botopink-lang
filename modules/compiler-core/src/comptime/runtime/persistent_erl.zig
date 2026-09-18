@@ -4,6 +4,13 @@
 //! evaluators write a module to disk and ask the server to run it; evals after
 //! the first cost ~2ms (compile:file + code:load_binary + module call).
 //!
+//! The hashed build directory holds three modules, compiled together by one
+//! `erlc` at warmup: this server and the two comptime preludes
+//! (`prelude.zig`), which carry the host glue every generated module used to
+//! copy. `erl -pa <dir>` finds all of them, and the directory's hash is taken
+//! over every source in it, so a changed server *or* a changed prelude gets a
+//! fresh directory rather than a stale `.beam`.
+//!
 //! Protocol (Zig ↔ erl), length-prefixed binary frames both ways:
 //!   request:  <u32 BE len><cmd:u8><path>   cmd 1 = compile+run `.erl`
 //!   response: <u32 BE len><payload>        `main/0`'s iodata result, or an error
@@ -30,6 +37,7 @@
 //! the next request respawns. The failed request itself is not retried.
 
 const std = @import("std");
+const preludeMod = @import("./prelude.zig");
 
 const Io = std.Io;
 const Child = std.process.Child;
@@ -147,14 +155,41 @@ pub const max_frame_len: u32 = 16 * 1024 * 1024;
 /// Root of the runtime's files, relative to the cwd.
 const server_dir = ".botopinkbuild/tmp/persistent_erl";
 
-/// The compiled server lives in `<server_dir>/<server_hash>/`, keyed by the
-/// server source: a warm directory skips `erlc`, and a changed server never
-/// loads a stale `.beam`.
-const server_hash = blk: {
-    @setEvalBranchQuota(100_000);
-    break :blk std.fmt.comptimePrint("{x:0>16}", .{std.hash.Wyhash.hash(0, server_erl)});
-};
 const server_module_file = "botopink_comptime_server";
+
+/// Everything built into the hashed directory: the server, then the comptime
+/// evaluators' resident prelude modules (`prelude.zig`). They are compiled
+/// together, once, and `erl -pa <dir>` finds all of them.
+const ResidentModule = struct {
+    name: []const u8,
+    source: []const u8,
+};
+
+/// The build directory is `<server_dir>/<hash>/`, keyed by **every** source
+/// built into it: a warm directory skips `erlc`, and a changed server or a
+/// changed prelude never loads a stale `.beam`. The hash is taken at run time
+/// because the prelude source is rendered from the same `erl_ast` forms the
+/// generated modules are, not written out by hand.
+fn buildHash(modules: []const ResidentModule) [16]u8 {
+    var h = std.hash.Wyhash.init(0);
+    h.update(server_erl);
+    for (modules) |m| {
+        h.update(m.name);
+        h.update(m.source);
+    }
+    var out: [16]u8 = undefined;
+    _ = std.fmt.bufPrint(&out, "{x:0>16}", .{h.final()}) catch unreachable;
+    return out;
+}
+
+/// The server plus both preludes, built into `arena`.
+fn residentModules(arena: std.mem.Allocator) ![]const ResidentModule {
+    const preludes = try preludeMod.modules(arena);
+    const out = try arena.alloc(ResidentModule, 1 + preludes.len);
+    out[0] = .{ .name = server_module_file, .source = server_erl };
+    for (preludes, out[1..]) |p, *slot| slot.* = .{ .name = p.name, .source = p.source };
+    return out;
+}
 
 /// erl's stderr: the logger's output and everything a comptime body prints.
 /// Truncated at every spawn; nothing reads it back — transport errors name it.
@@ -196,7 +231,10 @@ fn ensureSpawned(io: Io, allocator: std.mem.Allocator) !void {
             if (init_state.cmpxchgStrong(0, 1, .acquire, .acquire)) |_| continue;
             errdefer init_state.store(3, .release);
 
-            const beam_dir = try prepareServer(io, allocator, server_dir);
+            var build_arena = std.heap.ArenaAllocator.init(allocator);
+            defer build_arena.deinit();
+            const modules = try residentModules(build_arena.allocator());
+            const beam_dir = try prepareServer(io, allocator, server_dir, modules);
             defer allocator.free(beam_dir);
 
             // Spawn erl with the server module on its code path. `halt()` after
@@ -225,19 +263,24 @@ fn ensureSpawned(io: Io, allocator: std.mem.Allocator) !void {
     }
 }
 
-/// Compile the server module into `<base>/<server_hash>/` unless it is already
+/// Compile `modules` into `<base>/<hash of them all>/` unless they are already
 /// there, and return that directory (owned by the caller). Several compiler
-/// processes can share one cwd, so nothing is written in place: the source and
-/// `.beam` are built in a uniquely named staging directory that is renamed onto
+/// processes can share one cwd, so nothing is written in place: the sources and
+/// `.beam`s are built in a uniquely named staging directory that is renamed onto
 /// the final one. A process that loses the rename race uses the winner's
-/// (identical) `.beam`; a truncated server source or `.beam` is never visible.
-fn prepareServer(io: Io, allocator: std.mem.Allocator, base: []const u8) ![]u8 {
+/// (identical) `.beam`s; a truncated source or `.beam` is never visible.
+///
+/// The last module decides whether the directory is warm: `erlc` is given every
+/// source in one invocation, so either all of them are there or the staging
+/// directory never made it.
+fn prepareServer(io: Io, allocator: std.mem.Allocator, base: []const u8, modules: []const ResidentModule) ![]u8 {
     const cwd = std.Io.Dir.cwd();
-    const dir = try std.fs.path.join(allocator, &.{ base, server_hash });
+    const hash = buildHash(modules);
+    const dir = try std.fs.path.join(allocator, &.{ base, &hash });
     errdefer allocator.free(dir);
-    const beam = try std.fs.path.join(allocator, &.{ dir, server_module_file ++ ".beam" });
-    defer allocator.free(beam);
-    if (cwd.access(io, beam, .{})) |_| return dir else |_| {}
+    const last = try std.fmt.allocPrint(allocator, "{s}/{s}.beam", .{ dir, modules[modules.len - 1].name });
+    defer allocator.free(last);
+    if (cwd.access(io, last, .{})) |_| return dir else |_| {}
 
     var nonce: [8]u8 = undefined;
     io.random(&nonce);
@@ -248,12 +291,21 @@ fn prepareServer(io: Io, allocator: std.mem.Allocator, base: []const u8) ![]u8 {
     // failed build or a lost race.
     defer cwd.deleteTree(io, staging) catch {};
 
-    const source = try std.fs.path.join(allocator, &.{ staging, server_module_file ++ ".erl" });
-    defer allocator.free(source);
-    try cwd.writeFile(io, .{ .sub_path = source, .data = server_erl });
+    var argv: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer {
+        for (argv.items[3..]) |p| allocator.free(p);
+        argv.deinit(allocator);
+    }
+    try argv.appendSlice(allocator, &.{ "erlc", "-o", staging });
+    for (modules) |m| {
+        const source = try std.fmt.allocPrint(allocator, "{s}/{s}.erl", .{ staging, m.name });
+        errdefer allocator.free(source);
+        try cwd.writeFile(io, .{ .sub_path = source, .data = m.source });
+        try argv.append(allocator, source);
+    }
 
     const compile_result = std.process.run(allocator, io, .{
-        .argv = &.{ "erlc", "-o", staging, source },
+        .argv = argv.items,
         .timeout = .{ .duration = .{ .raw = .{ .nanoseconds = 120 * std.time.ns_per_s }, .clock = .real } },
     }) catch |err| switch (err) {
         error.FileNotFound => return error.PersistentErlNotFound,
@@ -268,7 +320,7 @@ fn prepareServer(io: Io, allocator: std.mem.Allocator, base: []const u8) ![]u8 {
     cwd.rename(staging, cwd, dir, io) catch {
         // Another process renamed its build in first (a non-empty target
         // refuses the rename); anything else leaves no `.beam` behind.
-        cwd.access(io, beam, .{}) catch return error.PersistentErlBroken;
+        cwd.access(io, last, .{}) catch return error.PersistentErlBroken;
     };
     return dir;
 }
@@ -486,11 +538,12 @@ test "persistent_erl: a reply frame over the length cap is a transport error, th
 
 const PrepareRace = struct {
     base: []const u8,
+    modules: []const ResidentModule,
     dir: ?[]u8 = null,
     err: ?anyerror = null,
 
     fn run(self: *PrepareRace) void {
-        self.dir = prepareServer(std.testing.io, std.heap.page_allocator, self.base) catch |err| {
+        self.dir = prepareServer(std.testing.io, std.heap.page_allocator, self.base, self.modules) catch |err| {
             self.err = err;
             return;
         };
@@ -499,6 +552,12 @@ const PrepareRace = struct {
 
 test "persistent_erl: concurrent server builds in one cwd all get a complete .beam" {
     const io = std.testing.io;
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const modules = try residentModules(arena_state.allocator());
+    // The server and both comptime preludes, compiled in one `erlc`.
+    try std.testing.expectEqual(@as(usize, 3), modules.len);
+
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
     const base = try std.fs.path.join(std.testing.allocator, &.{ ".zig-cache", "tmp", &tmp.sub_path });
@@ -506,7 +565,7 @@ test "persistent_erl: concurrent server builds in one cwd all get a complete .be
 
     // Cold directory, several builders at once — the shape of parallel test
     // binaries (or compiler runs) sharing a working directory.
-    var races: [6]PrepareRace = @splat(.{ .base = base });
+    var races: [6]PrepareRace = @splat(.{ .base = base, .modules = modules });
     var threads: [races.len]std.Thread = undefined;
     for (&races, &threads) |*race, *thread| thread.* = try std.Thread.spawn(.{}, PrepareRace.run, .{race});
     for (threads) |thread| thread.join();
@@ -516,15 +575,20 @@ test "persistent_erl: concurrent server builds in one cwd all get a complete .be
     for (races) |race| try std.testing.expectEqualStrings(races[0].dir.?, race.dir.?);
 
     // Warm: the cached build is reused, and no staging directory is left.
-    const again = try prepareServer(io, std.testing.allocator, base);
+    const again = try prepareServer(io, std.testing.allocator, base, modules);
     defer std.testing.allocator.free(again);
-    const beam = try std.fs.path.join(std.testing.allocator, &.{ again, server_module_file ++ ".beam" });
-    defer std.testing.allocator.free(beam);
-    try std.Io.Dir.cwd().access(io, beam, .{});
+    // Every resident module is there — the prelude is what a generated module
+    // `-import`s, so a directory with only the server in it would spawn an erl
+    // that compiles every comptime module and then fails to run it.
+    for (modules) |m| {
+        const beam = try std.fmt.allocPrint(std.testing.allocator, "{s}/{s}.beam", .{ again, m.name });
+        defer std.testing.allocator.free(beam);
+        try std.Io.Dir.cwd().access(io, beam, .{});
+    }
     var it = tmp.dir.iterate();
     var entries: usize = 0;
     while (try it.next(io)) |entry| {
-        try std.testing.expectEqualStrings(server_hash, entry.name);
+        try std.testing.expectEqualStrings(&buildHash(modules), entry.name);
         entries += 1;
     }
     try std.testing.expectEqual(@as(usize, 1), entries);

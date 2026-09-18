@@ -498,20 +498,28 @@ codegen/
   `if`/`loop`/`forEach` (`closureMutation`). A call whose value is used keeps the
   plain application.
 - **Comptime modules:** `emitComptimeModule(alloc, name, program, .{ host_enums,
-  host_records, exports, forms, listing, unsupported_method })` lowers an untyped decorator/template body with
+  host_records, exports, forms, resident, listing, unsupported_method })` lowers an untyped decorator/template body with
   the same emitter — `host_enums` join `enum_names` (`DeclKind.Type` →
   `'Record'`), `host_records` (`HostRecord{name, fields}`) join `record_fields`
   so host record constructors build maps, `exports` (`[]erl_ast.FnRef`) are prepended to `-export`,
   `listing = true` renders only the lowered decls and `forms` (no header,
-  exports or helpers — the `COMPTIME ERLANG` snapshot section, not a compilable
+  exports, `-import` or helpers — the `COMPTIME ERLANG` snapshot section, not a compilable
   module), `forms` (`[]erl_ast.Form`) are rendered after the
   `'__bp_add'/2` / `'__bp_len'/2` helpers; the `untyped` flag routes `+` to
   `'__bp_add'` (binary concat or arithmetic) and `.len`/`.length`/`.size` without an
   instance lowering to `'__bp_len'(X, Field)`.
+  `resident = .{ module, forms, refs }` (`../comptime/runtime/prelude.zig`) says
+  those host forms live in a module built once at server warmup rather than here:
+  they are **not** rendered, `comptime_helper_forms` is not appended either
+  (the prelude carries it), and an `-import(<module>, <refs>)` directive after
+  `-export` makes the body's bare calls resolve there. The body's own text is
+  unchanged by it, which is why the move re-records no snapshot.
   **Primitive methods** in a body (`untypedPrimCallNode`, reached from
   `plainCallNode` after the Array fallbacks): a value-receiver call
-  `recv.m(args)` that a host form defines (`name/argc+1` in `forms` — `q.text()`,
-  `decl.fail(msg)`) stays the bare local call; one that some primitive kind
+  `recv.m(args)` that a host form defines (`name/argc+1` in `forms` **or** in
+  `resident.forms` — `q.text()`, `decl.fail(msg)`) stays the bare local call,
+  so where a method lowers does not depend on which side of the `-import` its
+  host lives; one that some primitive kind
   answers becomes `'__bp_prim_m'(Recv, Args…)`. `primShimForms` emits one shim
   per reached `(m, argc)`, behind the `!listing` gate: a clause per kind in
   `prim_shim_kinds` (`is_list`/`is_binary`/`is_boolean`/`is_integer`/`is_float`)

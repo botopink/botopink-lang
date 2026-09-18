@@ -10,9 +10,11 @@
 ///     → JSON `{kind, contributions | message | span}` → `Outcome`
 ///
 /// The body is lowered by the regular Erlang backend (untyped mode), so every
-/// construct that backend supports works in a decorator. Host functions the
+/// construct that backend supports works in a decorator. The host functions the
 /// body calls (`decl.fail`, `decl.failAt`, `@compilerError`, `@emit`) are plain
-/// Erlang functions appended to the module.
+/// Erlang functions resident in `bp_comptime_decorator`, built once at server
+/// warmup (`runtime/prelude.zig`) and reached by the `-import`
+/// `emitComptimeModule` writes; only `main/0` is generated per evaluation.
 const std = @import("std");
 const ast = @import("../ast.zig");
 const template = @import("./template.zig");
@@ -21,6 +23,7 @@ const templateEval = @import("./template_eval.zig");
 const Ast = @import("../codegen/beam/erl_ast.zig");
 const Term = @import("../codegen/beam/term.zig").Term;
 const persistent_erl = @import("./runtime/persistent_erl.zig");
+const preludeMod = @import("./runtime/prelude.zig");
 const trace = @import("./trace.zig");
 
 /// Sole comptime runtime.
@@ -127,15 +130,16 @@ const Module = struct {
 
 const placeholder_module = "decorator_module";
 
-/// Host functions the lowered body calls plus the `main/0` entry.
-/// `fail`/`failAt`/`compilerError` throw a tagged rejection caught by `main/0`;
-/// `emit` accumulates sources in the process dictionary. `main/0` calls the
-/// decorator with the handle and the annotation arguments and replies with JSON.
-fn hostForms(b: Ast.Builder, dfn: ast.FnDecl, handle: Term, plainArgs: []const template.PlainArg) Ast.Builder.Error![]const Ast.Form {
+/// `main/0` — the one host form whose text depends on the call site: it calls
+/// the decorator with this declaration's handle and the annotation arguments and
+/// replies with JSON. `fail`/`failAt`/`compilerError` (which throw the tagged
+/// rejection caught here) and `emit`/`'__bp_emitted'` are resident
+/// (`runtime/prelude.zig`), reached by the `-import` `emitComptimeModule` writes.
+fn mainForms(b: Ast.Builder, dfn: ast.FnDecl, handle: Term, plainArgs: []const template.PlainArg) Ast.Builder.Error![]const Ast.Form {
     const V = Ast.Expr.v;
     const A = Ast.Expr.a;
-    const fail_tag = A("__bp_decorator_fail");
-    const emitted_key = A("__bp_emitted");
+    const fail_tag = A(preludeMod.decorator_fail_tag);
+    const emitted_key = A(preludeMod.emitted_key);
 
     // <decorator>(Handle, Arg1, …): parameters after the `@Decl` one bind the
     // annotation's arguments in order; a missing argument is `undefined`.
@@ -184,25 +188,6 @@ fn hostForms(b: Ast.Builder, dfn: ast.FnDecl, handle: Term, plainArgs: []const t
     });
 
     const forms = [_]Ast.Form{
-        try b.function("fail", &.{ V("_Decl"), V("Message") }, &.{}, &.{
-            try b.remote("erlang", "throw", &.{try b.tuple(&.{ fail_tag, V("Message"), A("null") })}),
-        }),
-        try b.function("failAt", &.{ V("_Decl"), V("Span"), V("Message") }, &.{}, &.{
-            try b.remote("erlang", "throw", &.{try b.tuple(&.{ fail_tag, V("Message"), V("Span") })}),
-        }),
-        try b.function("compilerError", &.{V("Message")}, &.{}, &.{
-            try b.remote("erlang", "throw", &.{try b.tuple(&.{ fail_tag, V("Message"), A("null") })}),
-        }),
-        try b.function("emit", &.{V("Source")}, &.{}, &.{
-            try b.remote("erlang", "put", &.{ emitted_key, try b.cons(&.{V("Source")}, emitted) }),
-            A("ok"),
-        }),
-        try b.function("__bp_emitted", &.{}, &.{}, &.{
-            try b.caseOf(try b.remote("erlang", "get", &.{emitted_key}), &.{
-                try b.clause(&.{A("undefined")}, &.{}, &.{try b.list(&.{})}),
-                try b.clause(&.{V("Sources")}, &.{}, &.{V("Sources")}),
-            }),
-        }),
         .{ .function = .{ .name = "main", .clauses = try b.arena.dupe(Ast.Clause, &.{.{ .patterns = &.{}, .body = main_body }}) } },
     };
     return b.arena.dupe(Ast.Form, &forms);
@@ -216,7 +201,8 @@ fn buildModule(
     unsupported: *erlang.UnsupportedMethod,
 ) (EvalError || error{UnsupportedMethod})!Module {
     const b: Ast.Builder = .{ .arena = arena };
-    const forms = try hostForms(b, dfn, try handleToTerm(arena, handle), plainArgs);
+    const forms = try mainForms(b, dfn, try handleToTerm(arena, handle), plainArgs);
+    const resident = try preludeMod.decoratorForms(b);
 
     const decls = try arena.alloc(ast.DeclKind, 1);
     decls[0] = .{ .@"fn" = dfn };
@@ -226,12 +212,18 @@ fn buildModule(
         .host_records = &.{.{ .name = "Span", .fields = &.{ "start", "end", "line" } }},
         .exports = &.{.{ .name = "main", .arity = 0 }},
         .forms = forms,
+        .resident = .{
+            .module = preludeMod.decorator_module,
+            .forms = resident,
+            .refs = try preludeMod.exportRefs(arena, resident),
+        },
         .unsupported_method = unsupported,
     };
     const code = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, config) catch |err|
         return if (err == error.UnsupportedComptimeMethod) error.UnsupportedMethod else error.EvalFailed;
-    // What snapshots show: the lowered body and `main/0` (the last host form).
-    config.forms = forms[forms.len - 1 ..];
+    // What snapshots show: the lowered body and `main/0`. `resident` stays set:
+    // it decides where a method call lowers, so dropping it would make the
+    // listing diverge from the module that actually ran.
     config.listing = true;
     const listing = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, config) catch return error.EvalFailed;
 

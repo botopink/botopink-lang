@@ -227,12 +227,19 @@ Comptime `val`s are folded in Zig (`comptime/eval.zig`).
   server's `erlc` compile is bounded at 120 s. The Zig-side `readFrame` itself
   blocks without a timeout, so a wedged erl process still hangs the caller —
   wrap manual runs in `timeout`.
-- **Server source is a Zig string literal** (`botopink_comptime_server`). It is
-  compiled once into `.botopinkbuild/tmp/persistent_erl/<hash>/`, keyed by the
-  source's hash, so editing the server invalidates the build by itself and a warm
-  directory skips `erlc`. The build happens in a uniquely named staging
-  directory renamed onto `<hash>/`, so compiler processes or test binaries
-  sharing a cwd never compile or load a half-written file. Clearing it is safe:
+- **Three modules live in the hashed directory, not one.** The server source is a
+  Zig string literal (`botopink_comptime_server`); beside it are the two comptime
+  preludes `bp_comptime_template` and `bp_comptime_decorator`
+  (`comptime/runtime/prelude.zig`), which carry the host glue every generated
+  module used to copy. They are compiled together by one `erlc` into
+  `.botopinkbuild/tmp/persistent_erl/<hash>/`, keyed by the hash of **every**
+  source in it, so editing the server *or* the prelude invalidates the build by
+  itself and a warm directory skips `erlc`. A generated module reaches the
+  prelude through `-import`, so a missing prelude is a run-time failure of every
+  comptime evaluation, not a compile error. The build happens in a uniquely named
+  staging directory renamed onto `<hash>/`, so compiler processes or test
+  binaries sharing a cwd never compile or load a half-written file. Clearing it
+  is safe:
   ```bash
   rm -rf .botopinkbuild/tmp/persistent_erl
   ```

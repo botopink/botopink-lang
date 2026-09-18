@@ -117,11 +117,14 @@ row(File, Reps, Mod, Beam) ->
     {module, _} = code:load_binary(Mod, "", Beam),
     Lines = lines(File),
     Compile = avg(fun() -> compile:file(File, [binary, return]) end, Reps),
-    Load = avg(fun() -> code:load_binary(Mod, "", Beam) end, Reps),
+    %% Before the load round: `code:load_binary/3` repeated leaves old versions
+    %% for the code server to reap, and the first calls after it are charged for
+    %% that rather than for the body.
     Run = case lists:member({main, 0}, Mod:module_info(exports)) of
         true -> {ok, avg(fun() -> catch Mod:main() end, Reps)};
         false -> none
     end,
+    Load = avg(fun() -> code:load_binary(Mod, "", Beam) end, Reps),
     {File, Lines, byte_size(Beam), Compile, Load, Run, Reps}.
 
 %% Milliseconds per call. One untimed call first: the first `Mod:main()` of a

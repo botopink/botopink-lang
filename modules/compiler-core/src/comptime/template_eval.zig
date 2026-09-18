@@ -8,6 +8,13 @@
 ///     → comptime/runtime/persistent_erl `evalDetailed`
 ///     → JSON reply → `Outcome`
 ///
+/// The generated module carries the lowered body, the `'__bp_prim_…'` shims its
+/// method calls reached and `main/0` — nothing else. The capture API, the result
+/// constructors, the failure throws and the reply encoder are resident in
+/// `bp_comptime_template`, built once at server warmup
+/// (`runtime/prelude.zig`), and reached by the `-import` `emitComptimeModule`
+/// writes, so the body's own text is the same either way.
+///
 /// Reply format (`main/0`):
 ///   {"kind":"code","source":"…"}                  ← `q.build(src)` / `@code(src)`
 ///   {"kind":"value","value":<json>}               ← `@expr(v)`
@@ -25,6 +32,7 @@ const erlang = @import("../codegen/erlang.zig");
 const Ast = @import("../codegen/beam/erl_ast.zig");
 const Term = @import("../codegen/beam/term.zig").Term;
 const persistent_erl = @import("./runtime/persistent_erl.zig");
+const preludeMod = @import("./runtime/prelude.zig");
 const trace = @import("./trace.zig");
 
 /// Sole comptime runtime.
@@ -173,11 +181,12 @@ const host_records = [_]erlang.HostRecord{
     .{ .name = "Context", .fields = &.{ "source", "text", "multiline" } },
 };
 
-/// Host functions for the capture API, the reply encoder and `main/0`. A capture
-/// is a map tagged with `'__bp_capture'` (its parameter name); `build`/`custom`/
-/// `expr`/`code` wrap the body's result in a tagged tuple `'__bp_reply'`
-/// dispatches on.
-fn hostForms(
+/// `main/0` — the one host form whose text depends on the call site: it calls
+/// the body with this evaluation's capture and plain arguments and answers the
+/// JSON reply. The capture API, the result constructors, the failure throws and
+/// `'__bp_reply'/1` are resident (`runtime/prelude.zig`), reached by the
+/// `-import` `emitComptimeModule` writes.
+fn mainForms(
     b: Ast.Builder,
     tfn: ast.FnDecl,
     captures: []const template.CapturedExpr,
@@ -185,104 +194,19 @@ fn hostForms(
 ) EvalError![]const Ast.Form {
     const V = Ast.Expr.v;
     const A = Ast.Expr.a;
-    const fail_tag = A("__bp_template_fail");
-    const code_tag = A("__bp_code");
+    const fail_tag = A(preludeMod.template_fail_tag);
 
     const args = try b.arena.alloc(Ast.Expr, tfn.params.len);
     for (tfn.params, 0..) |p, i| args[i] = try paramExpr(b.arena, p.name, i, captures, plainArgs);
     const invoke: Ast.Expr = .{ .call = .{ .name = tfn.name, .args = args } };
 
-    const throw = struct {
-        fn call(bb: Ast.Builder, items: []const Ast.Expr) Ast.Builder.Error!Ast.Expr {
-            return bb.remote("erlang", "throw", &.{try bb.tuple(items)});
-        }
-    }.call;
     const json = struct {
         fn encode(bb: Ast.Builder, fields: []const Ast.MapField) Ast.Builder.Error!Ast.Expr {
             return bb.remote("json", "encode", &.{try bb.map(fields)});
         }
     }.encode;
 
-    // Capture accessors: `text(#{text := Text}) -> Text.` …
-    const accessors = [_][2][]const u8{
-        .{ "text", "Text" },       .{ "parts", "Parts" },       .{ "source", "Source" },
-        .{ "context", "Context" }, .{ "bindings", "Bindings" },
-    };
     var forms: std.ArrayListUnmanaged(Ast.Form) = .empty;
-    for (accessors) |acc| {
-        try forms.append(b.arena, try b.function(acc[0], &.{try b.map(&.{Ast.exactField(acc[0], V(acc[1]))})}, &.{}, &.{V(acc[1])}));
-    }
-
-    const capture_param = try b.map(&.{.{ .key = A("__bp_capture"), .value = V("Param"), .exact = true }});
-    try forms.appendSlice(b.arena, &.{
-        // lookup(#{bindings := Bindings}, Name) ->
-        //     case [B || B = #{name := N} <- Bindings, N =:= Name] of [Hit | _] -> Hit; [] -> undefined end.
-        try b.function("lookup", &.{ try b.map(&.{Ast.exactField("bindings", V("Bindings"))}), V("Name") }, &.{}, &.{
-            try b.caseOf(.{ .list_comp = .{
-                .element = try b.ptr(V("B")),
-                .qualifiers = try b.arena.dupe(Ast.ListComp.Qualifier, &.{
-                    .{ .generator = .{
-                        .pattern = try b.match(V("B"), try b.map(&.{Ast.exactField("name", V("N"))})),
-                        .list = V("Bindings"),
-                    } },
-                    .{ .filter = .{ .binop = .{ .op = "=:=", .lhs = try b.ptr(V("N")), .rhs = try b.ptr(V("Name")), .parens = false } } },
-                }),
-            } }, &.{
-                try b.clause(&.{try b.cons(&.{V("Hit")}, V("_"))}, &.{}, &.{V("Hit")}),
-                try b.clause(&.{try b.list(&.{})}, &.{}, &.{A("undefined")}),
-            }),
-        }),
-        // ref(#{name := Name}) -> {'__bp_code', __bp_text(Name)}.
-        // `Binding.ref()` splices the caller-scope binding back into the
-        // expansion as a bare reference, so `return b.ref();` for a hit on
-        // `greeting` expands to the identifier `greeting`, not to its value.
-        try b.function("ref", &.{try b.map(&.{Ast.exactField("name", V("Name"))})}, &.{}, &.{
-            try b.tuple(&.{ code_tag, try b.call("__bp_text", &.{V("Name")}) }),
-        }),
-        try b.function("build", &.{ V("_Capture"), V("Source") }, &.{}, &.{
-            try b.tuple(&.{ code_tag, try b.call("__bp_text", &.{V("Source")}) }),
-        }),
-        try b.function("custom", &.{ V("_Capture"), V("Tree"), try b.tuple(&.{ code_tag, V("Source") }) }, &.{}, &.{
-            try b.tuple(&.{ A("__bp_custom"), V("Tree"), V("Source") }),
-        }),
-        try b.function("fail", &.{ capture_param, V("Message") }, &.{}, &.{
-            try throw(b, &.{ fail_tag, V("Message"), V("Param"), A("null") }),
-        }),
-        try b.function("failAt", &.{ capture_param, V("Span"), V("Message") }, &.{}, &.{
-            try throw(b, &.{ fail_tag, V("Message"), V("Param"), V("Span") }),
-        }),
-        try b.function("compilerError", &.{V("Message")}, &.{}, &.{
-            try throw(b, &.{ fail_tag, V("Message"), A("null"), A("null") }),
-        }),
-        try b.function("expr", &.{V("Value")}, &.{}, &.{try b.tuple(&.{ A("__bp_value"), V("Value") })}),
-        try b.function("code", &.{V("Source")}, &.{}, &.{
-            try b.tuple(&.{ code_tag, try b.call("__bp_text", &.{V("Source")}) }),
-        }),
-        try b.functionClauses("__bp_reply", &.{
-            try b.clause(&.{try b.tuple(&.{ code_tag, V("Source") })}, &.{}, &.{
-                try b.map(&.{ Ast.field("kind", Ast.str("code")), Ast.field("source", V("Source")) }),
-            }),
-            try b.clause(&.{try b.tuple(&.{ A("__bp_value"), V("Value") })}, &.{}, &.{
-                try b.map(&.{ Ast.field("kind", Ast.str("value")), Ast.field("value", try b.call("__bp_json", &.{V("Value")})) }),
-            }),
-            try b.clause(&.{try b.tuple(&.{ A("__bp_custom"), V("Tree"), V("Source") })}, &.{}, &.{
-                try b.map(&.{
-                    Ast.field("kind", Ast.str("custom")),
-                    Ast.field("source", V("Source")),
-                    Ast.field("ast", try b.call("__bp_json", &.{V("Tree")})),
-                }),
-            }),
-            try b.clause(&.{capture_param}, &.{}, &.{
-                try b.map(&.{ Ast.field("kind", Ast.str("capture")), Ast.field("param", V("Param")) }),
-            }),
-            try b.clause(&.{V("Other")}, &.{}, &.{
-                try b.map(&.{
-                    Ast.field("kind", Ast.str("error")),
-                    Ast.field("message", try b.call("__bp_text", &.{try b.tuple(&.{ A("unsupported_template_result"), V("Other") })})),
-                }),
-            }),
-        }),
-    });
 
     const main_body = try b.body(&.{.{ .try_catch = .{
         .body = try b.body(&.{try b.remote("json", "encode", &.{try b.call("__bp_reply", &.{invoke})})}),
@@ -319,7 +243,9 @@ fn buildModule(
     plainArgs: []const template.PlainArg,
     unsupported: *erlang.UnsupportedMethod,
 ) (EvalError || error{UnsupportedMethod})!Module {
-    const forms = try hostForms(.{ .arena = arena }, tfn, captures, plainArgs);
+    const b: Ast.Builder = .{ .arena = arena };
+    const forms = try mainForms(b, tfn, captures, plainArgs);
+    const resident = try preludeMod.templateForms(b);
 
     const decls = try arena.alloc(ast.DeclKind, 1);
     decls[0] = .{ .@"fn" = tfn };
@@ -328,12 +254,18 @@ fn buildModule(
         .host_records = &host_records,
         .exports = &.{.{ .name = "main", .arity = 0 }},
         .forms = forms,
+        .resident = .{
+            .module = preludeMod.template_module,
+            .forms = resident,
+            .refs = try preludeMod.exportRefs(arena, resident),
+        },
         .unsupported_method = unsupported,
     };
     const code = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, config) catch |err|
         return if (err == error.UnsupportedComptimeMethod) error.UnsupportedMethod else error.EvalFailed;
-    // What snapshots show: the lowered body and `main/0` (the last host form).
-    config.forms = forms[forms.len - 1 ..];
+    // What snapshots show: the lowered body and `main/0`. `resident` stays set:
+    // it decides where a method call lowers, so dropping it would make the
+    // listing diverge from the module that actually ran.
     config.listing = true;
     const listing = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, config) catch return error.EvalFailed;
 
