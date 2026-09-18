@@ -15,7 +15,32 @@ type Token {
     {
       "ast": "enum_def",
       "name": "Token",
-      "id": 0
+      "sections": [
+        {
+          "name": "Color",
+          "variants": [
+            {
+              "name": "Hex",
+              "fields": {
+                "value": "string"
+              }
+            }
+          ],
+          "sections": [
+            {
+              "name": "Red",
+              "variants": [
+                {
+                  "name": "100"
+                },
+                {
+                  "name": "500"
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ]
 }

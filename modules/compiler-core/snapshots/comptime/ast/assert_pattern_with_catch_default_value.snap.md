@@ -14,7 +14,6 @@ fn f() {
     {
       "ast": "record_def",
       "name": "Person",
-      "id": 0,
       "fields": {
         "name": "string",
         "age": "i32"

@@ -9,7 +9,7 @@ val count: ?i32 = null;
   "declarations": [
     {
       "ast": "val",
-      "indent": "count",
+      "ident": "count",
       "return_type": "?i32"
     }
   ]

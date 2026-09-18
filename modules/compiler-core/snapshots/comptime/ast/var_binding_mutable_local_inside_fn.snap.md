@@ -28,7 +28,7 @@ val r = count();
     },
     {
       "ast": "val",
-      "indent": "r",
+      "ident": "r",
       "return_type": "i32",
       "expr": {
         "ast": "call",

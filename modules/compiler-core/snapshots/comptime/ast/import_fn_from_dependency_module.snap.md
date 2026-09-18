@@ -43,7 +43,7 @@ val result = double(21);
   "declarations": [
     {
       "ast": "val",
-      "indent": "result",
+      "ident": "result",
       "return_type": "i32",
       "expr": {
         "ast": "call",
@@ -60,7 +60,7 @@ val result = double(21);
       "declarations": [
         {
           "ast": "use-declaration",
-          "indent": "double",
+          "ident": "double",
           "return_type": "fn(i32) -> i32"
         }
       ]

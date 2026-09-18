@@ -12,7 +12,7 @@ fn main() {
   "declarations": [
     {
       "ast": "val",
-      "indent": "greeting",
+      "ident": "greeting",
       "return_type": "string"
     },
     {

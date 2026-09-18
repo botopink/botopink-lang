@@ -24,7 +24,24 @@ fn main() {
     {
       "ast": "enum_def",
       "name": "Shape",
-      "id": 0
+      "variants": [
+        {
+          "name": "Circle",
+          "fields": {
+            "radius": "f64"
+          }
+        },
+        {
+          "name": "Rectangle",
+          "fields": {
+            "w": "f64",
+            "h": "f64"
+          }
+        },
+        {
+          "name": "Point"
+        }
+      ]
     },
     {
       "ast": "fn_def",

@@ -10,12 +10,12 @@ val Rec = @makeRecord(fields);
   "declarations": [
     {
       "ast": "val",
-      "indent": "fields",
+      "ident": "fields",
       "return_type": "RecordField[]"
     },
     {
       "ast": "val",
-      "indent": "Rec",
+      "ident": "Rec",
       "return_type": "?",
       "expr": {
         "ast": "call",

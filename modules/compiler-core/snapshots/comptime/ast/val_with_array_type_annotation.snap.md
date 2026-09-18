@@ -9,7 +9,7 @@ val array: string[] = ["65454"];
   "declarations": [
     {
       "ast": "val",
-      "indent": "array",
+      "ident": "array",
       "return_type": "string[]"
     }
   ]

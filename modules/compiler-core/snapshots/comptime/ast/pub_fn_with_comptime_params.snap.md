@@ -35,7 +35,7 @@ val r = repeat("hi", 3);
     },
     {
       "ast": "val",
-      "indent": "r",
+      "ident": "r",
       "return_type": "string",
       "expr": {
         "ast": "call",

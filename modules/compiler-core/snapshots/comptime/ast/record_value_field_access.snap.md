@@ -12,7 +12,6 @@ val xVal = @field(p, "x");
     {
       "ast": "record_def",
       "name": "Point",
-      "id": 0,
       "fields": {
         "x": "i32",
         "y": "i32"
@@ -20,7 +19,7 @@ val xVal = @field(p, "x");
     },
     {
       "ast": "val",
-      "indent": "p",
+      "ident": "p",
       "return_type": "Point",
       "expr": {
         "ast": "call",
@@ -39,7 +38,7 @@ val xVal = @field(p, "x");
     },
     {
       "ast": "val",
-      "indent": "xVal",
+      "ident": "xVal",
       "return_type": "i32",
       "expr": {
         "ast": "call",

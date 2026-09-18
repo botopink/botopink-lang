@@ -14,7 +14,6 @@ fn getValue(o: Outer) -> ?i32 {
     {
       "ast": "record_def",
       "name": "Inner",
-      "id": 0,
       "fields": {
         "value": "i32"
       }
@@ -22,7 +21,6 @@ fn getValue(o: Outer) -> ?i32 {
     {
       "ast": "record_def",
       "name": "Outer",
-      "id": 0,
       "fields": {
         "inner": "?Inner"
       }

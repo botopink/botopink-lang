@@ -32,7 +32,7 @@ fn main() {
     },
     {
       "ast": "val",
-      "indent": "msg",
+      "ident": "msg",
       "return_type": "string",
       "expr": {
         "ast": "call",

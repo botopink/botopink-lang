@@ -14,7 +14,6 @@ fn main() {
     {
       "ast": "record_def",
       "name": "Point",
-      "id": 0,
       "fields": {
         "x": "i32",
         "y": "i32"
@@ -22,7 +21,7 @@ fn main() {
     },
     {
       "ast": "val",
-      "indent": "p",
+      "ident": "p",
       "return_type": "Point",
       "expr": {
         "ast": "call",

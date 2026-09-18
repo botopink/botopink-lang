@@ -10,12 +10,12 @@ pub val port = 8080;
   "declarations": [
     {
       "ast": "val",
-      "indent": "host",
+      "ident": "host",
       "return_type": "string"
     },
     {
       "ast": "val",
-      "indent": "port",
+      "ident": "port",
       "return_type": "i32"
     }
   ]
@@ -36,12 +36,12 @@ val p = port;
   "declarations": [
     {
       "ast": "val",
-      "indent": "addr",
+      "ident": "addr",
       "return_type": "string"
     },
     {
       "ast": "val",
-      "indent": "p",
+      "ident": "p",
       "return_type": "i32"
     },
     {
@@ -49,12 +49,12 @@ val p = port;
       "declarations": [
         {
           "ast": "use-declaration",
-          "indent": "host",
+          "ident": "host",
           "return_type": "string"
         },
         {
           "ast": "use-declaration",
-          "indent": "port",
+          "ident": "port",
           "return_type": "i32"
         }
       ]

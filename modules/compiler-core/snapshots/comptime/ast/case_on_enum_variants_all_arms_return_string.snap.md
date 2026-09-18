@@ -21,11 +21,21 @@ val label = case subject {
     {
       "ast": "enum_def",
       "name": "Color",
-      "id": 0
+      "variants": [
+        {
+          "name": "Red"
+        },
+        {
+          "name": "Green"
+        },
+        {
+          "name": "Blue"
+        }
+      ]
     },
     {
       "ast": "val",
-      "indent": "subject",
+      "ident": "subject",
       "return_type": "Color"
     },
     {

@@ -21,11 +21,27 @@ val label = case s {
     {
       "ast": "enum_def",
       "name": "Shape",
-      "id": 0
+      "variants": [
+        {
+          "name": "Circle",
+          "fields": {
+            "radius": "f64"
+          }
+        },
+        {
+          "name": "Square",
+          "fields": {
+            "side": "f64"
+          }
+        },
+        {
+          "name": "Point"
+        }
+      ]
     },
     {
       "ast": "val",
-      "indent": "s",
+      "ident": "s",
       "return_type": "Shape"
     },
     {

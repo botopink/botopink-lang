@@ -11,7 +11,6 @@ val PartialCfg = partial(Config);
     {
       "ast": "record_def",
       "name": "Config",
-      "id": 0,
       "fields": {
         "port": "i32",
         "host": "string"
@@ -19,7 +18,7 @@ val PartialCfg = partial(Config);
     },
     {
       "ast": "val",
-      "indent": "PartialCfg",
+      "ident": "PartialCfg",
       "return_type": "record { port: ?i32, host: ?string }"
     }
   ]

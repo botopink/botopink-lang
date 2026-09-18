@@ -11,7 +11,6 @@ val t = Triple(first: 1, second: "x", third: 3.14);
     {
       "ast": "record_def",
       "name": "Triple",
-      "id": 0,
       "generic": [
         "A",
         "B",
@@ -25,7 +24,7 @@ val t = Triple(first: 1, second: "x", third: 3.14);
     },
     {
       "ast": "val",
-      "indent": "t",
+      "ident": "t",
       "return_type": "Triple<i32,string,f64>",
       "expr": {
         "ast": "call",

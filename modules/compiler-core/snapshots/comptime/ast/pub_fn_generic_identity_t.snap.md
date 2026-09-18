@@ -32,7 +32,7 @@ val r = identity(42);
     },
     {
       "ast": "val",
-      "indent": "r",
+      "ident": "r",
       "return_type": "i32",
       "expr": {
         "ast": "call",

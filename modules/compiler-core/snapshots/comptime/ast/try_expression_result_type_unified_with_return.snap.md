@@ -44,7 +44,7 @@ val x = process();
     },
     {
       "ast": "val",
-      "indent": "x",
+      "ident": "x",
       "return_type": "i32",
       "expr": {
         "ast": "call",

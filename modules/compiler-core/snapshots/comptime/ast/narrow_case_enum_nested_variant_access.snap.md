@@ -20,7 +20,6 @@ fn main() {
     {
       "ast": "record_def",
       "name": "Payload",
-      "id": 0,
       "fields": {
         "code": "i32",
         "msg": "string"
@@ -29,7 +28,17 @@ fn main() {
     {
       "ast": "enum_def",
       "name": "Result_",
-      "id": 0
+      "variants": [
+        {
+          "name": "OkData",
+          "fields": {
+            "data": "Payload"
+          }
+        },
+        {
+          "name": "Fail"
+        }
+      ]
     },
     {
       "ast": "fn_def",

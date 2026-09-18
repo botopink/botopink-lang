@@ -21,7 +21,24 @@ val area = fn(s: Shape) -> f64 {
     {
       "ast": "enum_def",
       "name": "Shape",
-      "id": 0
+      "variants": [
+        {
+          "name": "Circle",
+          "fields": {
+            "radius": "f64"
+          }
+        },
+        {
+          "name": "Rectangle",
+          "fields": {
+            "width": "f64",
+            "height": "f64"
+          }
+        },
+        {
+          "name": "Point"
+        }
+      ]
     },
     {
       "ast": "fn_def",

@@ -9,7 +9,7 @@ val rf = RecordField(name: "x", typeName: "i32");
   "declarations": [
     {
       "ast": "val",
-      "indent": "rf",
+      "ident": "rf",
       "return_type": "RecordField",
       "expr": {
         "ast": "call",

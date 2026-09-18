@@ -26,7 +26,6 @@ fn main() {
     {
       "ast": "record_def",
       "name": "User",
-      "id": 0,
       "fields": {
         "name": "string"
       }
@@ -34,7 +33,17 @@ fn main() {
     {
       "ast": "enum_def",
       "name": "AppError",
-      "id": 0
+      "variants": [
+        {
+          "name": "NotFound"
+        },
+        {
+          "name": "Timeout",
+          "fields": {
+            "msg": "string"
+          }
+        }
+      ]
     },
     {
       "ast": "fn_def",

@@ -17,15 +17,45 @@ pub val PatoNada = implement Swimmer for Pato {
   "declarations": [
     {
       "ast": "interface_def",
-      "name": "Swimmer"
+      "name": "Swimmer",
+      "methods": [
+        {
+          "name": "swim",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            }
+          ],
+          "return_type": "void"
+        }
+      ]
     },
     {
       "ast": "record_def",
       "name": "Pato",
-      "id": 0,
       "fields": {
         "id": "i32"
       }
+    },
+    {
+      "ast": "implement_def",
+      "name": "PatoNada",
+      "interfaces": [
+        "Swimmer"
+      ],
+      "target": "Pato",
+      "methods": [
+        {
+          "name": "swim",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            }
+          ]
+        }
+      ]
     }
   ]
 }
@@ -45,7 +75,7 @@ val splash = donald.swim();
   "declarations": [
     {
       "ast": "val",
-      "indent": "donald",
+      "ident": "donald",
       "return_type": "Pato",
       "expr": {
         "ast": "call",
@@ -59,7 +89,7 @@ val splash = donald.swim();
     },
     {
       "ast": "val",
-      "indent": "splash",
+      "ident": "splash",
       "return_type": "?",
       "expr": {
         "ast": "call",
@@ -72,7 +102,7 @@ val splash = donald.swim();
       "declarations": [
         {
           "ast": "use-declaration",
-          "indent": "Pato",
+          "ident": "Pato",
           "return_type": "fn(i32) -> Pato"
         }
       ]

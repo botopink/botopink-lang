@@ -13,12 +13,12 @@ val Point = @makeRecord(fields);
   "declarations": [
     {
       "ast": "val",
-      "indent": "fields",
+      "ident": "fields",
       "return_type": "RecordField[]"
     },
     {
       "ast": "val",
-      "indent": "Point",
+      "ident": "Point",
       "return_type": "?",
       "expr": {
         "ast": "call",

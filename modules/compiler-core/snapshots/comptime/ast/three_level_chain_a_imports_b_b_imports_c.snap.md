@@ -9,7 +9,7 @@ pub val VERSION = 1;
   "declarations": [
     {
       "ast": "val",
-      "indent": "VERSION",
+      "ident": "VERSION",
       "return_type": "i32"
     }
   ]
@@ -29,7 +29,7 @@ pub val MAJOR = VERSION;
   "declarations": [
     {
       "ast": "val",
-      "indent": "MAJOR",
+      "ident": "MAJOR",
       "return_type": "i32"
     },
     {
@@ -37,7 +37,7 @@ pub val MAJOR = VERSION;
       "declarations": [
         {
           "ast": "use-declaration",
-          "indent": "VERSION",
+          "ident": "VERSION",
           "return_type": "i32"
         }
       ]
@@ -59,7 +59,7 @@ val v = MAJOR;
   "declarations": [
     {
       "ast": "val",
-      "indent": "v",
+      "ident": "v",
       "return_type": "i32"
     },
     {
@@ -67,7 +67,7 @@ val v = MAJOR;
       "declarations": [
         {
           "ast": "use-declaration",
-          "indent": "MAJOR",
+          "ident": "MAJOR",
           "return_type": "i32"
         }
       ]

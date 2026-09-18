@@ -37,7 +37,7 @@ val result = transform(42, "mapped");
     },
     {
       "ast": "val",
-      "indent": "result",
+      "ident": "result",
       "return_type": "string",
       "expr": {
         "ast": "call",

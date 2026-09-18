@@ -23,7 +23,7 @@ val hash = comptime {
   "declarations": [
     {
       "ast": "val",
-      "indent": "hash",
+      "ident": "hash",
       "return_type": "i32"
     }
   ]

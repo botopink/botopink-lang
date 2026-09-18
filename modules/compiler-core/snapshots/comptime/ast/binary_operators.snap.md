@@ -14,17 +14,17 @@ fn main() {
   "declarations": [
     {
       "ast": "val",
-      "indent": "sum",
+      "ident": "sum",
       "return_type": "i32"
     },
     {
       "ast": "val",
-      "indent": "product",
+      "ident": "product",
       "return_type": "f64"
     },
     {
       "ast": "val",
-      "indent": "joined",
+      "ident": "joined",
       "return_type": "string"
     },
     {

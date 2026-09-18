@@ -19,7 +19,20 @@ val scale = fn(s: Shape, factor: f64) -> Shape {
     {
       "ast": "enum_def",
       "name": "Shape",
-      "id": 0
+      "variants": [
+        {
+          "name": "Circle",
+          "fields": {
+            "radius": "f64"
+          }
+        },
+        {
+          "name": "Square",
+          "fields": {
+            "side": "f64"
+          }
+        }
+      ]
     },
     {
       "ast": "fn_def",

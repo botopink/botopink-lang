@@ -18,19 +18,30 @@ val c = Circle(radius: 5.0);
   "declarations": [
     {
       "ast": "interface_def",
-      "name": "Drawable"
+      "name": "Drawable",
+      "methods": [
+        {
+          "name": "draw",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            }
+          ],
+          "return_type": "void"
+        }
+      ]
     },
     {
       "ast": "record_def",
       "name": "Circle",
-      "id": 0,
       "fields": {
         "radius": "f64"
       }
     },
     {
       "ast": "val",
-      "indent": "c",
+      "ident": "c",
       "return_type": "Circle",
       "expr": {
         "ast": "call",
@@ -42,6 +53,25 @@ val c = Circle(radius: 5.0);
         ],
         "return_type": "Circle"
       }
+    },
+    {
+      "ast": "implement_def",
+      "name": "CircleDrawing",
+      "interfaces": [
+        "Drawable"
+      ],
+      "target": "Circle",
+      "methods": [
+        {
+          "name": "draw",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

@@ -12,7 +12,6 @@ val Merged = mergeRecords(A, B);
     {
       "ast": "record_def",
       "name": "A",
-      "id": 0,
       "fields": {
         "x": "i32",
         "y": "string"
@@ -21,7 +20,6 @@ val Merged = mergeRecords(A, B);
     {
       "ast": "record_def",
       "name": "B",
-      "id": 0,
       "fields": {
         "x": "i32",
         "z": "bool"
@@ -29,7 +27,7 @@ val Merged = mergeRecords(A, B);
     },
     {
       "ast": "val",
-      "indent": "Merged",
+      "ident": "Merged",
       "return_type": "record { x: i32, y: string, z: bool }"
     }
   ]

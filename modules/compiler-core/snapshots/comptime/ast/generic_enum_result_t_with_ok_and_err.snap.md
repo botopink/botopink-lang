@@ -18,9 +18,22 @@ val ok = isOk(r);
     {
       "ast": "enum_def",
       "name": "Result",
-      "id": 0,
       "generic": [
         "T"
+      ],
+      "variants": [
+        {
+          "name": "Ok",
+          "fields": {
+            "value": "T"
+          }
+        },
+        {
+          "name": "Err",
+          "fields": {
+            "message": "string"
+          }
+        }
       ]
     },
     {
@@ -42,7 +55,7 @@ val ok = isOk(r);
     },
     {
       "ast": "val",
-      "indent": "r",
+      "ident": "r",
       "return_type": "Result<i32>",
       "expr": {
         "ast": "call",
@@ -57,7 +70,7 @@ val ok = isOk(r);
     },
     {
       "ast": "val",
-      "indent": "ok",
+      "ident": "ok",
       "return_type": "bool",
       "expr": {
         "ast": "call",

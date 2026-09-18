@@ -18,7 +18,6 @@ fn process() -> i32 {
     {
       "ast": "record_def",
       "name": "AppError",
-      "id": 0,
       "fields": {
         "msg": "string"
       }

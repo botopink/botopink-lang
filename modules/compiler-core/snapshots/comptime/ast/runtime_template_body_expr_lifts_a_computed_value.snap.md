@@ -81,7 +81,7 @@ val n = 6;
     },
     {
       "ast": "val",
-      "indent": "n",
+      "ident": "n",
       "return_type": "i32"
     }
   ]

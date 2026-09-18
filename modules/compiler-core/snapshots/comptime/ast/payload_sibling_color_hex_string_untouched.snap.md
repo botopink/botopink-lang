@@ -16,7 +16,29 @@ fn red() -> Token { return .Color.Red.500; }
     {
       "ast": "enum_def",
       "name": "Token",
-      "id": 0
+      "sections": [
+        {
+          "name": "Color",
+          "variants": [
+            {
+              "name": "Hex",
+              "fields": {
+                "value": "string"
+              }
+            }
+          ],
+          "sections": [
+            {
+              "name": "Red",
+              "variants": [
+                {
+                  "name": "500"
+                }
+              ]
+            }
+          ]
+        }
+      ]
     },
     {
       "ast": "fn_def",

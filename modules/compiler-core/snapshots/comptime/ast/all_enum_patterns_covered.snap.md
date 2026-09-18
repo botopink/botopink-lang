@@ -21,7 +21,17 @@ val name = fn(c: Color) -> string {
     {
       "ast": "enum_def",
       "name": "Color",
-      "id": 0
+      "variants": [
+        {
+          "name": "Red"
+        },
+        {
+          "name": "Green"
+        },
+        {
+          "name": "Blue"
+        }
+      ]
     },
     {
       "ast": "fn_def",

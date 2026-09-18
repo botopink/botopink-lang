@@ -10,7 +10,6 @@ type Point(x: i32, y: i32)
     {
       "ast": "record_def",
       "name": "Point",
-      "id": 0,
       "fields": {
         "x": "i32",
         "y": "i32"
@@ -33,7 +32,7 @@ val origin = Point(0, 0);
   "declarations": [
     {
       "ast": "val",
-      "indent": "origin",
+      "ident": "origin",
       "return_type": "Point",
       "expr": {
         "ast": "call",
@@ -53,7 +52,7 @@ val origin = Point(0, 0);
       "declarations": [
         {
           "ast": "use-declaration",
-          "indent": "Point",
+          "ident": "Point",
           "return_type": "fn(i32, i32) -> Point"
         }
       ]

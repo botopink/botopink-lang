@@ -11,7 +11,6 @@ val info = @typeInfo(Point);
     {
       "ast": "record_def",
       "name": "Point",
-      "id": 0,
       "fields": {
         "x": "i32",
         "y": "string"
@@ -19,7 +18,7 @@ val info = @typeInfo(Point);
     },
     {
       "ast": "val",
-      "indent": "info",
+      "ident": "info",
       "return_type": "TypeInfo",
       "expr": {
         "ast": "call",

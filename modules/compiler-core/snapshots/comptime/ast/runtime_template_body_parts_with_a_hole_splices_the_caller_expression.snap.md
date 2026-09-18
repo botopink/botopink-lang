@@ -126,12 +126,12 @@ val page = "" + "<p>" + name + "</p>";
     },
     {
       "ast": "val",
-      "indent": "name",
+      "ident": "name",
       "return_type": "string"
     },
     {
       "ast": "val",
-      "indent": "page",
+      "ident": "page",
       "return_type": "string"
     }
   ]

@@ -11,7 +11,6 @@ val PublicUser = omit(FullUser, "password");
     {
       "ast": "record_def",
       "name": "FullUser",
-      "id": 0,
       "fields": {
         "id": "i32",
         "name": "string",
@@ -20,7 +19,7 @@ val PublicUser = omit(FullUser, "password");
     },
     {
       "ast": "val",
-      "indent": "PublicUser",
+      "ident": "PublicUser",
       "return_type": "record { id: i32, name: string }"
     }
   ]

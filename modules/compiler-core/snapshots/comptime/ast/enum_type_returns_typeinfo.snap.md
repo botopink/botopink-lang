@@ -11,11 +11,18 @@ val info = @typeInfo(Color);
     {
       "ast": "enum_def",
       "name": "Color",
-      "id": 0
+      "variants": [
+        {
+          "name": "Red"
+        },
+        {
+          "name": "Blue"
+        }
+      ]
     },
     {
       "ast": "val",
-      "indent": "info",
+      "ident": "info",
       "return_type": "TypeInfo",
       "expr": {
         "ast": "call",

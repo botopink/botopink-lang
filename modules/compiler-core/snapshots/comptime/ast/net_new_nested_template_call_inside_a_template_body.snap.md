@@ -101,7 +101,7 @@ val s = inner();
     },
     {
       "ast": "val",
-      "indent": "s",
+      "ident": "s",
       "return_type": "string"
     }
   ]

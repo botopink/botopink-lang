@@ -12,7 +12,6 @@ val Merged = mergeRecords(User, Timestamps);
     {
       "ast": "record_def",
       "name": "User",
-      "id": 0,
       "fields": {
         "name": "string",
         "id": "i32"
@@ -21,7 +20,6 @@ val Merged = mergeRecords(User, Timestamps);
     {
       "ast": "record_def",
       "name": "Timestamps",
-      "id": 0,
       "fields": {
         "createdAt": "string",
         "updatedAt": "string"
@@ -29,7 +27,7 @@ val Merged = mergeRecords(User, Timestamps);
     },
     {
       "ast": "val",
-      "indent": "Merged",
+      "ident": "Merged",
       "return_type": "record { name: string, id: i32, createdAt: string, updatedAt: string }"
     }
   ]

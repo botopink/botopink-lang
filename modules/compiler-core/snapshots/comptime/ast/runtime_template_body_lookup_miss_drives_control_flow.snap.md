@@ -80,7 +80,6 @@ val r = "ok";
     {
       "ast": "record_def",
       "name": "Button",
-      "id": 0,
       "fields": {
         "label": "string"
       }
@@ -111,7 +110,7 @@ val r = "ok";
     },
     {
       "ast": "val",
-      "indent": "r",
+      "ident": "r",
       "return_type": "string"
     }
   ]

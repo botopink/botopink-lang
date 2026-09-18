@@ -9,7 +9,7 @@ val list1 = [1, ..[]];
   "declarations": [
     {
       "ast": "val",
-      "indent": "list1",
+      "ident": "list1",
       "return_type": "i32[]"
     }
   ]

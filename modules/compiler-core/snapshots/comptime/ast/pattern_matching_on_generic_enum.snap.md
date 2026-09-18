@@ -19,9 +19,19 @@ val map = fn(opt: Option<i32>, f: fn(i32) -> i32) -> Option<i32> {
     {
       "ast": "enum_def",
       "name": "Option",
-      "id": 0,
       "generic": [
         "T"
+      ],
+      "variants": [
+        {
+          "name": "Some",
+          "fields": {
+            "value": "T"
+          }
+        },
+        {
+          "name": "None"
+        }
       ]
     },
     {

@@ -13,7 +13,6 @@ val b = Box(42);
     {
       "ast": "record_def",
       "name": "Box",
-      "id": 0,
       "generic": [
         "T"
       ],
@@ -23,7 +22,7 @@ val b = Box(42);
     },
     {
       "ast": "val",
-      "indent": "b",
+      "ident": "b",
       "return_type": "Box<i32>",
       "expr": {
         "ast": "call",

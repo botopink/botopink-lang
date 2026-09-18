@@ -16,7 +16,27 @@ type Token {
     {
       "ast": "enum_def",
       "name": "Token",
-      "id": 0
+      "variants": [
+        {
+          "name": "Hover",
+          "fields": {
+            "inner": "i32"
+          }
+        }
+      ],
+      "sections": [
+        {
+          "name": "Text",
+          "variants": [
+            {
+              "name": "Bold"
+            },
+            {
+              "name": "Italic"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

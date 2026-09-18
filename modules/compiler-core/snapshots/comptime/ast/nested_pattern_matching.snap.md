@@ -19,10 +19,23 @@ val unwrap_or = fn(r: Result<i32, string>, fallback: i32) -> i32 {
     {
       "ast": "enum_def",
       "name": "Result",
-      "id": 0,
       "generic": [
         "T",
         "E"
+      ],
+      "variants": [
+        {
+          "name": "Ok",
+          "fields": {
+            "value": "T"
+          }
+        },
+        {
+          "name": "Err",
+          "fields": {
+            "error": "E"
+          }
+        }
       ]
     },
     {

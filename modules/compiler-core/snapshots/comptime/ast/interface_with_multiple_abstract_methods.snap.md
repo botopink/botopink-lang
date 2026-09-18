@@ -13,7 +13,59 @@ val Canvas = behavior {
   "declarations": [
     {
       "ast": "interface_def",
-      "name": "Canvas"
+      "name": "Canvas",
+      "methods": [
+        {
+          "name": "clear",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            }
+          ],
+          "return_type": "void"
+        },
+        {
+          "name": "drawLine",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            },
+            {
+              "name": "x1",
+              "type": "i32"
+            },
+            {
+              "name": "y1",
+              "type": "i32"
+            }
+          ],
+          "return_type": "void"
+        },
+        {
+          "name": "drawRect",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            },
+            {
+              "name": "x",
+              "type": "i32"
+            },
+            {
+              "name": "y",
+              "type": "i32"
+            },
+            {
+              "name": "color",
+              "type": "string"
+            }
+          ],
+          "return_type": "void"
+        }
+      ]
     }
   ]
 }

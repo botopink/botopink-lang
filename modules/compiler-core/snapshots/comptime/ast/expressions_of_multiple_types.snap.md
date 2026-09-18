@@ -27,17 +27,17 @@ val banner = "Hello, World";
   "declarations": [
     {
       "ast": "val",
-      "indent": "pi",
+      "ident": "pi",
       "return_type": "f64"
     },
     {
       "ast": "val",
-      "indent": "maxVal",
+      "ident": "maxVal",
       "return_type": "i32"
     },
     {
       "ast": "val",
-      "indent": "banner",
+      "ident": "banner",
       "return_type": "string"
     }
   ]

@@ -9,7 +9,7 @@ val xs = ["hello", "world"];
   "declarations": [
     {
       "ast": "val",
-      "indent": "xs",
+      "ident": "xs",
       "return_type": "string[]"
     }
   ]

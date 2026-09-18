@@ -9,7 +9,7 @@ val ti: TypeInfo = TypeInfo.Int;
   "declarations": [
     {
       "ast": "val",
-      "indent": "ti",
+      "ident": "ti",
       "return_type": "TypeInfo"
     }
   ]

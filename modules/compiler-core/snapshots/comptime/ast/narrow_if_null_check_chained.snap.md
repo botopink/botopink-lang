@@ -23,7 +23,6 @@ fn main() {
     {
       "ast": "record_def",
       "name": "Inner",
-      "id": 0,
       "fields": {
         "c": "i32"
       }
@@ -31,7 +30,6 @@ fn main() {
     {
       "ast": "record_def",
       "name": "Outer",
-      "id": 0,
       "fields": {
         "b": "?Inner"
       }

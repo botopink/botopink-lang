@@ -39,7 +39,7 @@ val c = """
     },
     {
       "ast": "val",
-      "indent": "c",
+      "ident": "c",
       "return_type": "string"
     }
   ]

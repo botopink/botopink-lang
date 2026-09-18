@@ -10,12 +10,12 @@ val AnswerType = @TypeOf(answer);
   "declarations": [
     {
       "ast": "val",
-      "indent": "answer",
+      "ident": "answer",
       "return_type": "i32"
     },
     {
       "ast": "val",
-      "indent": "AnswerType",
+      "ident": "AnswerType",
       "return_type": "i32",
       "expr": {
         "ast": "call",

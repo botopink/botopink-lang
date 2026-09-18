@@ -29,7 +29,7 @@ val s = describe(5);
     },
     {
       "ast": "val",
-      "indent": "s",
+      "ident": "s",
       "return_type": "string",
       "expr": {
         "ast": "call",

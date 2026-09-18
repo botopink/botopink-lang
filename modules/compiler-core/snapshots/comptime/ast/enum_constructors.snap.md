@@ -16,16 +16,28 @@ val c3: Color = .Red;
     {
       "ast": "enum_def",
       "name": "Color",
-      "id": 0
+      "variants": [
+        {
+          "name": "Red"
+        },
+        {
+          "name": "Rgb",
+          "fields": {
+            "r": "i32",
+            "g": "i32",
+            "b": "i32"
+          }
+        }
+      ]
     },
     {
       "ast": "val",
-      "indent": "c1",
+      "ident": "c1",
       "return_type": "Color"
     },
     {
       "ast": "val",
-      "indent": "c2",
+      "ident": "c2",
       "return_type": "Color",
       "expr": {
         "ast": "call",
@@ -48,7 +60,7 @@ val c3: Color = .Red;
     },
     {
       "ast": "val",
-      "indent": "c3",
+      "ident": "c3",
       "return_type": "Color"
     }
   ]

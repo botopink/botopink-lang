@@ -22,7 +22,6 @@ fn loadUser() {
     {
       "ast": "record_def",
       "name": "UserError",
-      "id": 0,
       "fields": {
         "msg": "string"
       }

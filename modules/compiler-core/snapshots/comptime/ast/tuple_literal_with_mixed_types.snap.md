@@ -9,7 +9,7 @@ val t = #(12, "5452");
   "declarations": [
     {
       "ast": "val",
-      "indent": "t",
+      "ident": "t",
       "return_type": "#(i32,string)"
     }
   ]

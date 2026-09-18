@@ -10,12 +10,12 @@ val GreetingType = @TypeOf(greeting);
   "declarations": [
     {
       "ast": "val",
-      "indent": "greeting",
+      "ident": "greeting",
       "return_type": "string"
     },
     {
       "ast": "val",
-      "indent": "GreetingType",
+      "ident": "GreetingType",
       "return_type": "string",
       "expr": {
         "ast": "call",

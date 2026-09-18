@@ -9,7 +9,7 @@ pub val MAX = 100;
   "declarations": [
     {
       "ast": "val",
-      "indent": "MAX",
+      "ident": "MAX",
       "return_type": "i32"
     }
   ]
@@ -29,7 +29,7 @@ val limit = MAX;
   "declarations": [
     {
       "ast": "val",
-      "indent": "limit",
+      "ident": "limit",
       "return_type": "i32"
     },
     {
@@ -37,7 +37,7 @@ val limit = MAX;
       "declarations": [
         {
           "ast": "use-declaration",
-          "indent": "MAX",
+          "ident": "MAX",
           "return_type": "i32"
         }
       ]

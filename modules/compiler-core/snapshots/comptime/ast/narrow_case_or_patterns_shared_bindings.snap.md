@@ -20,7 +20,23 @@ fn breed(a: Animal) -> string {
     {
       "ast": "enum_def",
       "name": "Animal",
-      "id": 0
+      "variants": [
+        {
+          "name": "Dog",
+          "fields": {
+            "breed": "string"
+          }
+        },
+        {
+          "name": "Cat",
+          "fields": {
+            "breed": "string"
+          }
+        },
+        {
+          "name": "Fish"
+        }
+      ]
     },
     {
       "ast": "fn_def",

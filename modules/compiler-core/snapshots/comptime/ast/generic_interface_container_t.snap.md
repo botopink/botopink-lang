@@ -15,6 +15,32 @@ val Container = behavior <T> {
       "name": "Container",
       "generic": [
         "T"
+      ],
+      "methods": [
+        {
+          "name": "fetch",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            }
+          ],
+          "return_type": "T"
+        },
+        {
+          "name": "store",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            },
+            {
+              "name": "value",
+              "type": "T"
+            }
+          ],
+          "return_type": "void"
+        }
       ]
     }
   ]

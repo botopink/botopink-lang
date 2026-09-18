@@ -11,14 +11,13 @@ val keys = @RecordKeys(Box);
     {
       "ast": "record_def",
       "name": "Box",
-      "id": 0,
       "fields": {
         "value": "i32"
       }
     },
     {
       "ast": "val",
-      "indent": "keys",
+      "ident": "keys",
       "return_type": "string[]",
       "expr": {
         "ast": "call",

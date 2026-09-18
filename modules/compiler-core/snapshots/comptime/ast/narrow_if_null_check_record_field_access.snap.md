@@ -19,7 +19,6 @@ fn main() {
     {
       "ast": "record_def",
       "name": "User",
-      "id": 0,
       "fields": {
         "name": "string"
       }

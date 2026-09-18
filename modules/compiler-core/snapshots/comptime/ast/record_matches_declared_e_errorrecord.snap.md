@@ -14,7 +14,6 @@ fn load() -> @Result<string, AppError> {
     {
       "ast": "record_def",
       "name": "AppError",
-      "id": 0,
       "fields": {
         "code": "i32",
         "msg": "string"

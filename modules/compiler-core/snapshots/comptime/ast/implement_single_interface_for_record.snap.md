@@ -17,15 +17,45 @@ val CircleDrawing = implement Drawable for Circle {
   "declarations": [
     {
       "ast": "interface_def",
-      "name": "Drawable"
+      "name": "Drawable",
+      "methods": [
+        {
+          "name": "draw",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            }
+          ],
+          "return_type": "void"
+        }
+      ]
     },
     {
       "ast": "record_def",
       "name": "Circle",
-      "id": 0,
       "fields": {
         "radius": "f64"
       }
+    },
+    {
+      "ast": "implement_def",
+      "name": "CircleDrawing",
+      "interfaces": [
+        "Drawable"
+      ],
+      "target": "Circle",
+      "methods": [
+        {
+          "name": "draw",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

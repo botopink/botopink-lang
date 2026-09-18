@@ -28,7 +28,7 @@ val r = greet();
     },
     {
       "ast": "val",
-      "indent": "r",
+      "ident": "r",
       "return_type": "string",
       "expr": {
         "ast": "call",

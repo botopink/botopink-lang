@@ -23,19 +23,73 @@ val CameraPowerCharger = implement UsbCharger, SolarCharger for SmartCamera {
   "declarations": [
     {
       "ast": "interface_def",
-      "name": "UsbCharger"
+      "name": "UsbCharger",
+      "methods": [
+        {
+          "name": "Connect",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            }
+          ],
+          "return_type": "void"
+        }
+      ]
     },
     {
       "ast": "interface_def",
-      "name": "SolarCharger"
+      "name": "SolarCharger",
+      "methods": [
+        {
+          "name": "Connect",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            }
+          ],
+          "return_type": "void"
+        }
+      ]
     },
     {
       "ast": "record_def",
       "name": "SmartCamera",
-      "id": 0,
       "fields": {
         "batteryLevel": "i32"
       }
+    },
+    {
+      "ast": "implement_def",
+      "name": "CameraPowerCharger",
+      "interfaces": [
+        "UsbCharger",
+        "SolarCharger"
+      ],
+      "target": "SmartCamera",
+      "methods": [
+        {
+          "name": "Connect",
+          "qualifier": "UsbCharger",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            }
+          ]
+        },
+        {
+          "name": "Connect",
+          "qualifier": "SolarCharger",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

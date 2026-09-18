@@ -9,7 +9,7 @@ val ev = EnumVariant(name: "Red", fields: []);
   "declarations": [
     {
       "ast": "val",
-      "indent": "ev",
+      "ident": "ev",
       "return_type": "EnumVariant",
       "expr": {
         "ast": "call",

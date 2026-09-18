@@ -11,7 +11,6 @@ val keys = @RecordKeys(Point);
     {
       "ast": "record_def",
       "name": "Point",
-      "id": 0,
       "fields": {
         "x": "i32",
         "y": "string"
@@ -19,7 +18,7 @@ val keys = @RecordKeys(Point);
     },
     {
       "ast": "val",
-      "indent": "keys",
+      "ident": "keys",
       "return_type": "string[]",
       "expr": {
         "ast": "call",

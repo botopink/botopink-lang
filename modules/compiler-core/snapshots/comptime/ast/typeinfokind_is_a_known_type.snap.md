@@ -9,7 +9,7 @@ val kind: TypeInfoKind = TypeInfoKind.Int;
   "declarations": [
     {
       "ast": "val",
-      "indent": "kind",
+      "ident": "kind",
       "return_type": "TypeInfoKind"
     }
   ]

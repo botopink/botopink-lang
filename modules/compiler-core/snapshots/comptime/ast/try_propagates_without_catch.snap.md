@@ -19,7 +19,6 @@ fn run() -> @Result<string, IoError> {
     {
       "ast": "record_def",
       "name": "IoError",
-      "id": 0,
       "fields": {
         "path": "string"
       }

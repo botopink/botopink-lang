@@ -34,7 +34,7 @@ val result = add(1, 2);
     },
     {
       "ast": "val",
-      "indent": "result",
+      "ident": "result",
       "return_type": "i32",
       "expr": {
         "ast": "call",

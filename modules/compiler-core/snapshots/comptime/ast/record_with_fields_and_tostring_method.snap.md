@@ -16,11 +16,22 @@ val GPSCoordinates = type(
     {
       "ast": "record_def",
       "name": "GPSCoordinates",
-      "id": 0,
       "fields": {
         "lat": "f64",
         "lon": "f64"
-      }
+      },
+      "methods": [
+        {
+          "name": "toString",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            }
+          ],
+          "return_type": "string"
+        }
+      ]
     }
   ]
 }

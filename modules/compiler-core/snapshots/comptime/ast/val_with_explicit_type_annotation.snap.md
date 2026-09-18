@@ -11,17 +11,17 @@ val msg: string = "hello";
   "declarations": [
     {
       "ast": "val",
-      "indent": "x",
+      "ident": "x",
       "return_type": "i32"
     },
     {
       "ast": "val",
-      "indent": "y",
+      "ident": "y",
       "return_type": "f64"
     },
     {
       "ast": "val",
-      "indent": "msg",
+      "ident": "msg",
       "return_type": "string"
     }
   ]

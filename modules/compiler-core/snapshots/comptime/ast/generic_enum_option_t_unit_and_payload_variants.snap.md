@@ -15,19 +15,29 @@ val s = Option.Some(value: 42);
     {
       "ast": "enum_def",
       "name": "Option",
-      "id": 0,
       "generic": [
         "T"
+      ],
+      "variants": [
+        {
+          "name": "None"
+        },
+        {
+          "name": "Some",
+          "fields": {
+            "value": "T"
+          }
+        }
       ]
     },
     {
       "ast": "val",
-      "indent": "n",
+      "ident": "n",
       "return_type": "Option<?>"
     },
     {
       "ast": "val",
-      "indent": "s",
+      "ident": "s",
       "return_type": "Option<i32>",
       "expr": {
         "ast": "call",

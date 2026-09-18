@@ -19,11 +19,22 @@ fn main() {
     {
       "ast": "record_def",
       "name": "Point",
-      "id": 0,
       "fields": {
         "x": "i32",
         "y": "i32"
-      }
+      },
+      "methods": [
+        {
+          "name": "sum",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            }
+          ],
+          "return_type": "i32"
+        }
+      ]
     },
     {
       "ast": "fn_def",

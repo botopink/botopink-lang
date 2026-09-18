@@ -25,7 +25,21 @@ fn main() {
     {
       "ast": "enum_def",
       "name": "Response",
-      "id": 0
+      "variants": [
+        {
+          "name": "Data",
+          "fields": {
+            "code": "i32",
+            "body": "string"
+          }
+        },
+        {
+          "name": "Error",
+          "fields": {
+            "code": "i32"
+          }
+        }
+      ]
     },
     {
       "ast": "fn_def",

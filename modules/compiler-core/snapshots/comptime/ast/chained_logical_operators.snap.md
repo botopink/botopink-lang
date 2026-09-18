@@ -9,7 +9,7 @@ val a = true && false || true;
   "declarations": [
     {
       "ast": "val",
-      "indent": "a",
+      "ident": "a",
       "return_type": "bool"
     }
   ]

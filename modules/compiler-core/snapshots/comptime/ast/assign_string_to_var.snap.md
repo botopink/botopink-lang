@@ -28,7 +28,7 @@ val r = f();
     },
     {
       "ast": "val",
-      "indent": "r",
+      "ident": "r",
       "return_type": "void",
       "expr": {
         "ast": "call",

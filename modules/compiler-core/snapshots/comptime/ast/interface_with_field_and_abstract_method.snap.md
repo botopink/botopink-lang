@@ -12,7 +12,22 @@ val Drawable = behavior {
   "declarations": [
     {
       "ast": "interface_def",
-      "name": "Drawable"
+      "name": "Drawable",
+      "fields": {
+        "color": "string"
+      },
+      "methods": [
+        {
+          "name": "draw",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            }
+          ],
+          "return_type": "void"
+        }
+      ]
     }
   ]
 }

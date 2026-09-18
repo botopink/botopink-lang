@@ -50,19 +50,52 @@ const FnBodyLine = struct {
 /// A use-declaration inside a `use` statement.
 const UseDeclaration = struct {
     ast: []const u8,
-    indent: []const u8,
+    ident: []const u8,
     return_type: []const u8,
 
     pub fn jsonStringify(self: @This(), jws: anytype) !void {
         try jws.beginObject();
         try jws.objectField("ast");
         try jws.write(self.ast);
-        try jws.objectField("indent");
-        try jws.write(self.indent);
+        try jws.objectField("ident");
+        try jws.write(self.ident);
         try jws.objectField("return_type");
         try jws.write(self.return_type);
         try jws.endObject();
     }
+};
+
+/// A method signature inside a `type`, `behavior` or `implement` body. Methods
+/// are not bindings, so — like a record field — the types are the annotations
+/// the declaration wrote.
+const MethodSig = struct {
+    name: []const u8,
+    /// `UsbCharger.Conectar` in an implement block; null for a plain method.
+    qualifier: ?[]const u8 = null,
+    is_pub: ?bool = null,
+    /// `default fn` in a behavior body.
+    is_default: ?bool = null,
+    /// `declare fn` — a bodyless slot typed from its signature.
+    is_declare: ?bool = null,
+    generic_params: ?[]const []const u8 = null,
+    params: []const Param,
+    /// Absent for an `implement` method: the AST carries no return annotation
+    /// there, and the signature it satisfies is the behavior's. Printing `void`
+    /// would be a claim the declaration never made.
+    return_type: ?[]const u8 = null,
+};
+
+/// One variant of an enum. `fields` is absent for a unit variant.
+const VariantRepr = struct {
+    name: []const u8,
+    fields: ?FieldMap = null,
+};
+
+/// A named grouping of variants inside an enum body; sections nest.
+const SectionRepr = struct {
+    name: []const u8,
+    variants: ?[]const VariantRepr = null,
+    sections: ?[]const SectionRepr = null,
 };
 
 /// A call argument in a constructor or function call.
@@ -109,7 +142,7 @@ const UseExpr = struct {
 const BindingRepr = union(enum) {
     val: struct {
         ast: []const u8,
-        indent: []const u8,
+        ident: []const u8,
         expr: ?CallExpr,
         return_type: []const u8,
 
@@ -117,8 +150,8 @@ const BindingRepr = union(enum) {
             try jws.beginObject();
             try jws.objectField("ast");
             try jws.write(self.ast);
-            try jws.objectField("indent");
-            try jws.write(self.indent);
+            try jws.objectField("ident");
+            try jws.write(self.ident);
             try jws.objectField("return_type");
             try jws.write(self.return_type);
             if (self.expr) |expr| {
@@ -156,30 +189,47 @@ const BindingRepr = union(enum) {
         return_type: []const u8,
         body: []const FnBodyLine,
     },
+    // `id` used to be rendered here and was `0` in every snapshot that carried
+    // it — decision 19 of 1.0.5-beta removed the field. See `bindingToRepr`.
     struct_: struct {
         ast: []const u8,
         name: []const u8,
-        id: usize,
         generic: ?[]const []const u8,
         fields: FieldMap,
+        methods: ?[]const MethodSig = null,
     },
     record: struct {
         ast: []const u8,
         name: []const u8,
-        id: usize,
         generic: ?[]const []const u8,
+        implements: ?[]const []const u8 = null,
         fields: FieldMap,
+        methods: ?[]const MethodSig = null,
     },
     enum_: struct {
         ast: []const u8,
         name: []const u8,
-        id: usize,
         generic: ?[]const []const u8,
+        implements: ?[]const []const u8 = null,
+        variants: ?[]const VariantRepr = null,
+        sections: ?[]const SectionRepr = null,
+        methods: ?[]const MethodSig = null,
     },
     interface: struct {
         ast: []const u8,
         name: []const u8,
         generic: ?[]const []const u8,
+        extends: ?[]const []const u8 = null,
+        fields: ?FieldMap = null,
+        methods: ?[]const MethodSig = null,
+    },
+    implement: struct {
+        ast: []const u8,
+        name: []const u8,
+        generic: ?[]const []const u8 = null,
+        interfaces: []const []const u8,
+        target: []const u8,
+        methods: ?[]const MethodSig = null,
     },
     other: struct {
         ast: []const u8,
@@ -221,19 +271,135 @@ fn trimWhitespace(s: []const u8) []const u8 {
     return s[start..end];
 }
 
-/// Resolve the typeId for a type if it references a registered type definition.
-fn resolveTypeId(ty: *T.Type, type_ids: std.StringHashMap(usize)) ?usize {
-    return switch (ty.deref().*) {
-        .named => |n| type_ids.get(n.name),
-        else => null,
-    };
-}
-
 fn genericNames(allocator: std.mem.Allocator, params: anytype) ![]const []const u8 {
     var gens: std.ArrayList([]const u8) = .empty;
     defer gens.deinit(allocator);
     for (params) |gp| try gens.append(allocator, gp.name);
     return allocator.dupe([]const u8, gens.items);
+}
+
+/// The parameter list of a declared method signature, annotations as written.
+fn methodParams(allocator: std.mem.Allocator, params: []const ast.Param) ![]const Param {
+    var out: std.ArrayList(Param) = .empty;
+    defer out.deinit(allocator);
+    for (params) |p| {
+        try out.append(allocator, .{
+            .name = p.name,
+            .type = try typeRefName(allocator, p.typeRef),
+            .is_comptime = if (p.modifier == .@"comptime") true else null,
+        });
+    }
+    return allocator.dupe(Param, out.items);
+}
+
+/// The methods declared in a `type` or `behavior` body, `declare fn` slots
+/// included — an abstract member is exactly what a reader of a behavior needs.
+fn behaviorMethods(
+    allocator: std.mem.Allocator,
+    methods: []const ast.BehaviorMethod,
+) !?[]const MethodSig {
+    if (methods.len == 0) return null;
+    var out: std.ArrayList(MethodSig) = .empty;
+    defer out.deinit(allocator);
+    for (methods) |m| {
+        const gens = try genericNames(allocator, m.genericParams);
+        try out.append(allocator, .{
+            .name = m.name,
+            .is_pub = if (m.isPub) true else null,
+            .is_default = if (m.is_default) true else null,
+            .is_declare = if (m.is_declare) true else null,
+            .generic_params = if (gens.len > 0) gens else null,
+            .params = try methodParams(allocator, m.params),
+            .return_type = if (m.returnType) |rt| try typeRefName(allocator, rt) else "void",
+        });
+    }
+    return try allocator.dupe(MethodSig, out.items);
+}
+
+/// The methods of an `implement` block. They carry no return annotation in the
+/// AST — the signature they satisfy is the behavior's.
+fn implementMethods(
+    allocator: std.mem.Allocator,
+    methods: []const ast.ImplementMethod,
+) !?[]const MethodSig {
+    if (methods.len == 0) return null;
+    var out: std.ArrayList(MethodSig) = .empty;
+    defer out.deinit(allocator);
+    for (methods) |m| {
+        try out.append(allocator, .{
+            .name = m.name,
+            .qualifier = m.qualifier,
+            .params = try methodParams(allocator, m.params),
+        });
+    }
+    return try allocator.dupe(MethodSig, out.items);
+}
+
+fn variantReprs(
+    allocator: std.mem.Allocator,
+    variants: []const ast.EnumVariant,
+) !?[]const VariantRepr {
+    if (variants.len == 0) return null;
+    var out: std.ArrayList(VariantRepr) = .empty;
+    defer out.deinit(allocator);
+    for (variants) |v| {
+        var entries: std.ArrayList(FieldMap.Entry) = .empty;
+        defer entries.deinit(allocator);
+        for (v.fields) |fld| {
+            try entries.append(allocator, .{ .name = fld.name, .value = try typeRefName(allocator, fld.typeRef) });
+        }
+        try out.append(allocator, .{
+            .name = v.name,
+            .fields = if (entries.items.len > 0)
+                FieldMap{ .entries = try allocator.dupe(FieldMap.Entry, entries.items) }
+            else
+                null,
+        });
+    }
+    return try allocator.dupe(VariantRepr, out.items);
+}
+
+fn sectionReprs(
+    allocator: std.mem.Allocator,
+    sections: []const ast.EnumSection,
+) std.mem.Allocator.Error!?[]const SectionRepr {
+    if (sections.len == 0) return null;
+    var out: std.ArrayList(SectionRepr) = .empty;
+    defer out.deinit(allocator);
+    for (sections) |s| {
+        try out.append(allocator, .{
+            .name = s.name,
+            .variants = try variantReprs(allocator, s.variants),
+            .sections = try sectionReprs(allocator, s.sections),
+        });
+    }
+    return try allocator.dupe(SectionRepr, out.items);
+}
+
+/// An `implement` block, which `inferProgram` returns no binding for — it is
+/// read straight off the program instead.
+fn implementToRepr(
+    allocator: std.mem.Allocator,
+    im: ast.ImplementDecl,
+) !BindingRepr {
+    const gens = try genericNames(allocator, im.genericParams);
+    return .{ .implement = .{
+        .ast = "implement_def",
+        .name = im.name,
+        .generic = if (gens.len > 0) gens else null,
+        .interfaces = (try interfaceNames(allocator, im.interfaces)) orelse &.{},
+        .target = im.target,
+        .methods = try implementMethods(allocator, im.methods),
+    } };
+}
+
+/// The behavior names an inline `record(…) implement I1, I2 { }` lists.
+fn interfaceNames(allocator: std.mem.Allocator, refs: []const ast.TypeRef) !?[]const []const u8 {
+    if (refs.len == 0) return null;
+    var out: std.ArrayList([]const u8) = .empty;
+    defer out.deinit(allocator);
+    for (refs) |ref| try out.append(allocator, try typeRefName(allocator, ref));
+    return try allocator.dupe([]const u8, out.items);
 }
 
 /// Display names for the `.generic` type variables of one rendered declaration.
@@ -527,9 +693,7 @@ fn bindingToRepr(
     allocator: std.mem.Allocator,
     b: inferMod.TypedBinding,
     src: []const u8,
-    type_ids: std.StringHashMap(usize),
 ) !?BindingRepr {
-    const resolvedTypeId = resolveTypeId(b.type_, type_ids);
     // `'a`, `'b` run per declaration, so one polymorphic signature reads the
     // same whatever else the module declares.
     var namer = GenericNamer{ .allocator = allocator };
@@ -544,7 +708,7 @@ fn bindingToRepr(
             const decls = try allocator.alloc(UseDeclaration, 1);
             decls[0] = .{
                 .ast = "use-declaration",
-                .indent = b.name,
+                .ident = b.name,
                 .return_type = try typeNameIn(allocator, b.type_, render),
             };
 
@@ -569,13 +733,13 @@ fn bindingToRepr(
                 if (te == .call) {
                     break :blk .{ .val = .{
                         .ast = "val",
-                        .indent = b.name,
+                        .ident = b.name,
                         .expr = try buildCallExpr(allocator, te, render),
                         .return_type = typeStr,
                     } };
                 }
             }
-            break :blk .{ .val = .{ .ast = "val", .indent = b.name, .expr = null, .return_type = typeStr } };
+            break :blk .{ .val = .{ .ast = "val", .ident = b.name, .expr = null, .return_type = typeStr } };
         },
 
         .@"fn" => |f| blk: {
@@ -638,9 +802,10 @@ fn bindingToRepr(
             break :blk .{ .record = .{
                 .ast = "record_def",
                 .name = b.name,
-                .id = resolvedTypeId orelse 0,
                 .generic = if (gens.len > 0) gens else null,
+                .implements = try interfaceNames(allocator, r.implement),
                 .fields = .{ .entries = try entries.toOwnedSlice(allocator) },
+                .methods = try behaviorMethods(allocator, r.methods),
             } };
         } else blk: {
             const e = r;
@@ -648,17 +813,31 @@ fn bindingToRepr(
             break :blk .{ .enum_ = .{
                 .ast = "enum_def",
                 .name = b.name,
-                .id = resolvedTypeId orelse 0,
                 .generic = if (gens.len > 0) gens else null,
+                .implements = try interfaceNames(allocator, e.implement),
+                .variants = try variantReprs(allocator, e.variants()),
+                .sections = try sectionReprs(allocator, e.sections()),
+                .methods = try behaviorMethods(allocator, e.methods),
             } };
         },
 
         .behavior => |i| blk: {
             const gens = try genericNames(allocator, i.genericParams);
+            var entries: std.ArrayList(FieldMap.Entry) = .empty;
+            defer entries.deinit(allocator);
+            for (i.fields) |fld| {
+                try entries.append(allocator, .{ .name = fld.name, .value = fld.typeName });
+            }
             break :blk .{ .interface = .{
                 .ast = "interface_def",
                 .name = b.name,
                 .generic = if (gens.len > 0) gens else null,
+                .extends = if (i.extends.len > 0) i.extends else null,
+                .fields = if (entries.items.len > 0)
+                    FieldMap{ .entries = try allocator.dupe(FieldMap.Entry, entries.items) }
+                else
+                    null,
+                .methods = try behaviorMethods(allocator, i.methods),
             } };
         },
 
@@ -1230,7 +1409,7 @@ pub fn buildSnapshot(allocator: std.mem.Allocator, output: comptimeMod.ComptimeO
             }
 
             for (ok.bindings) |b| {
-                const repr = (try bindingToRepr(ja, b, output.src, ok.type_ids)) orelse continue;
+                const repr = (try bindingToRepr(ja, b, output.src)) orelse continue;
 
                 if (repr == .use) {
                     const use_info = b.decl.use;
@@ -1254,7 +1433,18 @@ pub fn buildSnapshot(allocator: std.mem.Allocator, output: comptimeMod.ComptimeO
                 }
             }
 
-            // Second pass: add merged use declarations to items
+            // Second pass: the `implement` blocks, which `inferProgram` returns
+            // no binding for (a behavior implementation declares no name of its
+            // own in the value namespace). They are read off the transformed
+            // program, in source order, after the declarations that do bind.
+            for (ok.transformed.decls) |decl| {
+                if (decl != .implement) continue;
+                const repr = try implementToRepr(ja, decl.implement);
+                const jsonStr = try std.json.Stringify.valueAlloc(ja, repr, .{ .emit_null_optional_fields = false, .whitespace = .indent_2 });
+                try items.append(try std.json.parseFromSliceLeaky(std.json.Value, ja, jsonStr, .{}));
+            }
+
+            // Third pass: add merged use declarations to items
             var iter = merged_uses.iterator();
             while (iter.next()) |entry| {
                 const use_repr = BindingRepr{ .use = .{

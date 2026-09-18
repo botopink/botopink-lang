@@ -9,7 +9,7 @@ val info = @typeInfo(bool);
   "declarations": [
     {
       "ast": "val",
-      "indent": "info",
+      "ident": "info",
       "return_type": "TypeInfo",
       "expr": {
         "ast": "call",

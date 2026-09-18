@@ -10,12 +10,12 @@ pub val NAME = "botopink";
   "declarations": [
     {
       "ast": "val",
-      "indent": "VERSION",
+      "ident": "VERSION",
       "return_type": "i32"
     },
     {
       "ast": "val",
-      "indent": "NAME",
+      "ident": "NAME",
       "return_type": "string"
     }
   ]

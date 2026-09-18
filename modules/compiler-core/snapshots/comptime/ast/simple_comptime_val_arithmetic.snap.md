@@ -23,12 +23,12 @@ val y = 42;
   "declarations": [
     {
       "ast": "val",
-      "indent": "x",
+      "ident": "x",
       "return_type": "i32"
     },
     {
       "ast": "val",
-      "indent": "y",
+      "ident": "y",
       "return_type": "i32"
     }
   ]

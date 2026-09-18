@@ -9,7 +9,7 @@ val msg: ?string = null;
   "declarations": [
     {
       "ast": "val",
-      "indent": "msg",
+      "ident": "msg",
       "return_type": "?string"
     }
   ]

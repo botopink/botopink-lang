@@ -19,7 +19,20 @@ val get_value = fn(r: Result) -> i32 {
     {
       "ast": "enum_def",
       "name": "Result",
-      "id": 0
+      "variants": [
+        {
+          "name": "Ok",
+          "fields": {
+            "value": "i32"
+          }
+        },
+        {
+          "name": "Error",
+          "fields": {
+            "message": "string"
+          }
+        }
+      ]
     },
     {
       "ast": "fn_def",

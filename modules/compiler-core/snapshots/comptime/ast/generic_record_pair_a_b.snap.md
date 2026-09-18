@@ -14,7 +14,6 @@ fn main() {
     {
       "ast": "record_def",
       "name": "Pair",
-      "id": 0,
       "generic": [
         "A",
         "B"
@@ -26,7 +25,7 @@ fn main() {
     },
     {
       "ast": "val",
-      "indent": "p",
+      "ident": "p",
       "return_type": "Pair<i32,string>",
       "expr": {
         "ast": "call",

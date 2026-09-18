@@ -30,7 +30,20 @@ fn main() {
     {
       "ast": "enum_def",
       "name": "Direction",
-      "id": 0
+      "variants": [
+        {
+          "name": "North"
+        },
+        {
+          "name": "South"
+        },
+        {
+          "name": "East"
+        },
+        {
+          "name": "West"
+        }
+      ]
     },
     {
       "ast": "fn_def",
@@ -57,7 +70,7 @@ fn main() {
     },
     {
       "ast": "val",
-      "indent": "n",
+      "ident": "n",
       "return_type": "string",
       "expr": {
         "ast": "call",

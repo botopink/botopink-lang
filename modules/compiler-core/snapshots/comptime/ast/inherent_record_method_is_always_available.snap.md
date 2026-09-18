@@ -17,14 +17,25 @@ val noise = donald.quack();
     {
       "ast": "record_def",
       "name": "Pato",
-      "id": 0,
       "fields": {
         "id": "i32"
-      }
+      },
+      "methods": [
+        {
+          "name": "quack",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            }
+          ],
+          "return_type": "void"
+        }
+      ]
     },
     {
       "ast": "val",
-      "indent": "donald",
+      "ident": "donald",
       "return_type": "Pato",
       "expr": {
         "ast": "call",
@@ -38,7 +49,7 @@ val noise = donald.quack();
     },
     {
       "ast": "val",
-      "indent": "noise",
+      "ident": "noise",
       "return_type": "i32",
       "expr": {
         "ast": "call",

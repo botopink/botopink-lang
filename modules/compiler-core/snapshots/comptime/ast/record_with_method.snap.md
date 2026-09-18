@@ -17,15 +17,26 @@ val g = GPSCoordinates(lat: 5.0, lon: 3.0);
     {
       "ast": "record_def",
       "name": "GPSCoordinates",
-      "id": 0,
       "fields": {
         "lat": "f64",
         "lon": "f64"
-      }
+      },
+      "methods": [
+        {
+          "name": "toString",
+          "params": [
+            {
+              "name": "self",
+              "type": "Self"
+            }
+          ],
+          "return_type": "string"
+        }
+      ]
     },
     {
       "ast": "val",
-      "indent": "g",
+      "ident": "g",
       "return_type": "GPSCoordinates",
       "expr": {
         "ast": "call",

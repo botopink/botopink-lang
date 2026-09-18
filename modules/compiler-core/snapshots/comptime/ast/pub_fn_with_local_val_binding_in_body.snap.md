@@ -40,7 +40,7 @@ fn main() {
     },
     {
       "ast": "val",
-      "indent": "result",
+      "ident": "result",
       "return_type": "i32",
       "expr": {
         "ast": "call",

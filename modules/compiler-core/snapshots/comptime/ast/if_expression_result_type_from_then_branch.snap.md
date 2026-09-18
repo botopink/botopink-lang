@@ -33,7 +33,7 @@ val s = sign(1);
     },
     {
       "ast": "val",
-      "indent": "s",
+      "ident": "s",
       "return_type": "string",
       "expr": {
         "ast": "call",

@@ -18,7 +18,35 @@ fn red() -> Token {
     {
       "ast": "enum_def",
       "name": "Token",
-      "id": 0
+      "sections": [
+        {
+          "name": "Color",
+          "sections": [
+            {
+              "name": "Red",
+              "variants": [
+                {
+                  "name": "100"
+                },
+                {
+                  "name": "500"
+                }
+              ]
+            },
+            {
+              "name": "Blue",
+              "variants": [
+                {
+                  "name": "100"
+                },
+                {
+                  "name": "500"
+                }
+              ]
+            }
+          ]
+        }
+      ]
     },
     {
       "ast": "fn_def",

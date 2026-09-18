@@ -14,11 +14,18 @@ val c: Color = .Red;
     {
       "ast": "enum_def",
       "name": "Color",
-      "id": 0
+      "variants": [
+        {
+          "name": "Red"
+        },
+        {
+          "name": "Blue"
+        }
+      ]
     },
     {
       "ast": "val",
-      "indent": "c",
+      "ident": "c",
       "return_type": "Color"
     }
   ]

@@ -16,7 +16,6 @@ val bob = Person(..alice, name: "Bob", age: 25);
     {
       "ast": "record_def",
       "name": "Person",
-      "id": 0,
       "fields": {
         "name": "string",
         "age": "i32",
@@ -25,7 +24,7 @@ val bob = Person(..alice, name: "Bob", age: 25);
     },
     {
       "ast": "val",
-      "indent": "alice",
+      "ident": "alice",
       "return_type": "Person",
       "expr": {
         "ast": "call",
@@ -48,7 +47,7 @@ val bob = Person(..alice, name: "Bob", age: 25);
     },
     {
       "ast": "val",
-      "indent": "bob",
+      "ident": "bob",
       "return_type": "Person",
       "expr": {
         "ast": "call",

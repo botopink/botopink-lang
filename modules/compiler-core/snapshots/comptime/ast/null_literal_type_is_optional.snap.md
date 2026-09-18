@@ -9,7 +9,7 @@ val x = null;
   "declarations": [
     {
       "ast": "val",
-      "indent": "x",
+      "ident": "x",
       "return_type": "optional<?>"
     }
   ]

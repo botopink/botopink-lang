@@ -11,12 +11,11 @@ val PartialE = partial(Empty);
     {
       "ast": "record_def",
       "name": "Empty",
-      "id": 0,
       "fields": {}
     },
     {
       "ast": "val",
-      "indent": "PartialE",
+      "ident": "PartialE",
       "return_type": "record {  }"
     }
   ]
