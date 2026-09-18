@@ -85,19 +85,32 @@ codegen/
   Nodes are built in one arena that is freed once the module is rendered. The
   only text this file still composes is a comment's wording, a `require` path
   and the fixed test-harness source (`Item.runtime`).
-- **`@print` / `@println` / `@debug`** (semantics decisions 1 and 1a,
-  `buildPrintCall`) lower to the on-demand prelude helper `__bp_print(a, b)`, not
-  to `console.log`: each argument is written by `__bp_show` — a top-level string
-  bare, a nested string quoted with the source escapes, an array `[a,b]` and a
-  tuple `#(a,b)` with no spaces, anything else `util.inspect` (records, enums and
-  maps keep `console.log`'s text). A tuple is a JS array, so the call site passes
-  the static shape when one argument holds a tuple:
-  `__bp_print_as([["#", null, null]], p)` (`printShape`/`typeShape`: a tuple (a
-  labeled `#(name: T, …)` type included) or
-  array literal, a local or parameter bound to one — `print_shapes` — a top-level
-  fn's declared return type, a primitive method's declared return type such as
-  `zip` → `Array<#(T, U)>`). A tuple whose shape nothing recovers prints as an
-  array.
+- **`@print` / `@println` / `@debug`** (decision 8 §7, `buildPrintCall`) lower to
+  the on-demand prelude helper `__bp_print(a, b)`, not to `console.log`: each
+  argument is written by `__bp_show` — a top-level string bare, a nested string
+  quoted with the source escapes, an array `[1, 2]`, a tuple `#(1, "a")`, a
+  record `Point(x: 1, y: 2)`, a variant `Shape.Square(side: 4)` /
+  `Shape.Nothing`, a type implementing `Display` its own `display()` (nested
+  too), anything else `util.inspect`. §7 supersedes decision 1a's no-spaces
+  text.
+  A botopink value is told from a host object by the `__bp` marker its
+  prototype carries (decision 5) — never by a `constructor` test, so a `Map` or
+  a `@Result`'s `{ ok }` keeps `console.log`'s own text. The name comes from
+  `__bp` plus the variant's `tag`, and the fields from `Object.keys(value)`,
+  which is exactly the payload in declaration order because both markers live
+  on the prototype.
+  **Two things the formatter cannot read off the value**, and both reach it as
+  the static print shape the call site passes
+  (`__bp_print_as([["#", null, null]], p)`): a **tuple**, which is a JS array,
+  and an **`f64`**, because JavaScript has one number type and §7 wants `5.0`.
+  `printShape`/`typeShape` recover a shape from a tuple or float literal, an
+  array literal of those, a local or parameter bound to one (`print_shapes`), a
+  top-level fn's declared return type, and a primitive method's declared return
+  type (`zip` → `Array<#(T, U)>`); `"f"` is the float leaf, `f64`/`f32` in a
+  written type. A tuple whose shape nothing recovers prints as an array, and an
+  `f64` whose shape nothing recovers prints as an integer — `loop (xs) { v ->
+  break v * 0.15; }` is the measured case, and a union member (decision 26) is
+  the other, since a union carries no single leaf.
 - **`@Result`** is `{ ok: V } | { error: E }`; `__bp_ok`/`__bp_error` build it for
   `return`/`throw` in `#[@result]` fns; `try`/`catch` lower to `"error" in _r`
   pattern matching. A `case` arm `Ok(v)` / `Err(e)` / `Error(e)` that names no

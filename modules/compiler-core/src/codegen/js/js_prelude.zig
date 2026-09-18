@@ -188,7 +188,7 @@ const quoted_v: ast.Expr = .{ .binary = .{
     .rhs = &.{ .quoted = "\\\"" },
 } };
 
-/// `(t ? "#(" : "[") + v.map((e, i) => __bp_show(e, s == null ? null : t ? s[i + 1] : s[1], false, a)).join(",") + (t ? ")" : "]")`
+/// `(t ? "#(" : "[") + v.map((e, i) => __bp_show(e, s == null ? null : t ? s[i + 1] : s[1], false, a)).join(", ") + (t ? ")" : "]")`
 const bracketed_v: ast.Expr = .{ .binary = .{
     .op = "+",
     .lhs = &.{ .binary = .{
@@ -210,20 +210,123 @@ const bracketed_v: ast.Expr = .{ .binary = .{
                 .{ .name = "false" },
                 args_a,
             } } } },
-        } }}), "join", &.{.{ .quoted = "," }}),
+        } }}), "join", &.{.{ .quoted = ", " }}),
     } },
     .rhs = &.{ .paren = &.{ .ternary = .{ .cond = &t, .then = &.{ .quoted = ")" }, .else_ = &.{ .quoted = "]" } } } },
 } };
 
 const args_a: ast.Expr = .{ .name = "a" };
 
-/// `a.push(<value>); return "<verb>";`
-fn pushAndReturn(comptime value: ast.Expr, comptime verb: []const u8) ast.Stmt {
+/// `a.push(<value>); return "<verb>";`, as a block at `indent`.
+fn pushAndReturn(comptime value: ast.Expr, comptime verb: []const u8, comptime indent: usize) ast.Stmt {
     return .{ .block = .{ .stmts = &.{
         .{ .expr = callOn(&args_a, "push", &.{value}) },
         .{ .return_ = .{ .quoted = verb } },
-    }, .layout = .indented, .indent = 1 } };
+    }, .layout = .indented, .indent = indent } };
 }
+
+const v_bp: ast.Expr = .{ .member = .{ .object = &v, .name = "__bp" } };
+const v_tag: ast.Expr = .{ .member = .{ .object = &v, .name = "tag" } };
+const keys_k: ast.Expr = .{ .name = "k" };
+
+fn typeofIs(comptime operand: *const ast.Expr, comptime what: []const u8) ast.Expr {
+    return .{ .binary = .{
+        .op = "===",
+        .lhs = &.{ .unary = .{ .op = "typeof ", .operand = operand, .parens = false } },
+        .rhs = &.{ .quoted = what },
+    } };
+}
+
+/// `if ((typeof v === "number") && (s === "f")) { a.push(Number.isInteger(v) ? v.toFixed(1) : String(v)); return "%s"; }`
+///
+/// Decision 8 § 7 — an `f64` always carries its decimal part, on every backend.
+/// JavaScript has one number type, so the call site says which values are
+/// floats: `"f"` is the print shape `commonJS.zig` builds for an expression it
+/// types as `f64`.
+const float_branch: ast.Stmt = .{ .if_ = .{
+    .cond = .{ .binary = .{ .op = "&&", .lhs = &typeofIs(&v, "number"), .rhs = &eq(&sh, "f") } },
+    .then = &pushAndReturn(.{ .ternary = .{
+        .cond = &callOn(&.{ .name = "Number" }, "isInteger", &.{v}),
+        .then = &callOn(&v, "toFixed", &.{.{ .number = "1" }}),
+        .else_ = &.{ .call = .{ .callee = &.{ .name = "String" }, .args = &.{v} } },
+    } }, "%s", 1),
+} };
+
+/// `v.__bp + "." + v.tag` for a variant, `v.__bp` for a record — the source
+/// name of the value's type. The base class of an enum carries `__bp` and each
+/// variant subclass carries `tag`, so a variant inherits both.
+const named_title: ast.Expr = .{ .ternary = .{
+    .cond = &typeofIs(&v_tag, "string"),
+    .then = &.{ .binary = .{
+        .op = "+",
+        .lhs = &.{ .binary = .{ .op = "+", .lhs = &v_bp, .rhs = &.{ .quoted = "." } } },
+        .rhs = &v_tag,
+    } },
+    .else_ = &v_bp,
+} };
+
+/// `"(" + k.map((n) => n + ": " + __bp_show(v[n], null, false, a)).join(", ") + ")"`
+const named_fields: ast.Expr = .{ .binary = .{
+    .op = "+",
+    .lhs = &.{ .binary = .{
+        .op = "+",
+        .lhs = &.{ .quoted = "(" },
+        .rhs = &callOn(&callOn(&keys_k, "map", &.{.{ .arrow = .{
+            .params = &.{.{ .pattern = .{ .name = "n" } }},
+            .body = .{ .expr = &.{ .binary = .{
+                .op = "+",
+                .lhs = &.{ .binary = .{ .op = "+", .lhs = &.{ .name = "n" }, .rhs = &.{ .quoted = ": " } } },
+                .rhs = &.{ .call = .{ .callee = &.{ .name = "__bp_show" }, .args = &.{
+                    .{ .index = .{ .object = &v, .index = &.{ .name = "n" } } },
+                    null_,
+                    .{ .name = "false" },
+                    args_a,
+                } } },
+            } } },
+        } }}), "join", &.{.{ .quoted = ", " }}),
+    } },
+    .rhs = &.{ .quoted = ")" },
+} };
+
+/// ```js
+/// if ((v != null) && (typeof v.__bp === "string")) {
+///     if ((typeof v.display === "function")) { a.push(v.display()); return "%s"; }
+///     const k = Object.keys(v);
+///     return <title> + ((k.length === 0) ? "" : <fields>);
+/// }
+/// ```
+///
+/// Decision 8 § 7 — a record prints `Point(x: 1, y: 2)` and a variant
+/// `Shape.Square(side: 4)` / `Shape.Nothing`, in the language's shape rather
+/// than `util.inspect`'s. The marker `__bp` is a prototype property every
+/// record class and every enum base class carries (decision 5), so only a
+/// botopink value takes this branch — a host object keeps `%O`. `Object.keys`
+/// answers the payload fields in declaration order, because the constructor
+/// assigns them in that order and `__bp` and `tag` live on the prototype.
+/// A type implementing `Display` answers its own `display()`, nested too.
+const named_branch: ast.Stmt = .{ .if_ = .{
+    .cond = .{ .binary = .{
+        .op = "&&",
+        .lhs = &.{ .binary = .{ .op = "!=", .lhs = &v, .rhs = &null_ } },
+        .rhs = &typeofIs(&v_bp, "string"),
+    } },
+    .then = &.{ .block = .{ .stmts = &.{
+        .{ .if_ = .{
+            .cond = typeofIs(&.{ .member = .{ .object = &v, .name = "display" } }, "function"),
+            .then = &pushAndReturn(callOn(&v, "display", &.{}), "%s", 2),
+        } },
+        .{ .decl = .{ .pattern = .{ .name = "k" }, .value = callOn(&.{ .name = "Object" }, "keys", &.{v}) } },
+        .{ .return_ = .{ .binary = .{
+            .op = "+",
+            .lhs = &.{ .paren = &named_title },
+            .rhs = &.{ .paren = &.{ .ternary = .{
+                .cond = &.{ .binary = .{ .op = "===", .lhs = &.{ .member = .{ .object = &keys_k, .name = "length" } }, .rhs = &zero } },
+                .then = &.{ .quoted = "" },
+                .else_ = &named_fields,
+            } } },
+        } } },
+    }, .layout = .indented, .indent = 1 } },
+} };
 
 /// `function __bp_show(v, s, top, a) { … }` — see `Helper.show`. It answers the
 /// `console.log` format of `v` and pushes the values its `%s` / `%O` verbs
@@ -237,8 +340,9 @@ const show: ast.Stmt = .{ .function = .{
     .body = .{ .stmts = &.{
         .{ .if_ = .{
             .cond = .{ .binary = .{ .op = "===", .lhs = &.{ .unary = .{ .op = "typeof ", .operand = &v, .parens = false } }, .rhs = &.{ .quoted = "string" } } },
-            .then = &pushAndReturn(.{ .ternary = .{ .cond = &.{ .name = "top" }, .then = &v, .else_ = &quoted_v } }, "%s"),
+            .then = &pushAndReturn(.{ .ternary = .{ .cond = &.{ .name = "top" }, .then = &v, .else_ = &quoted_v } }, "%s", 1),
         } },
+        float_branch,
         .{ .if_ = .{
             .cond = callOn(&.{ .name = "Array" }, "isArray", &.{v}),
             .then = &.{ .block = .{ .stmts = &.{
@@ -250,6 +354,7 @@ const show: ast.Stmt = .{ .function = .{
                 .{ .return_ = bracketed_v },
             }, .layout = .indented, .indent = 1 } },
         } },
+        named_branch,
         .{ .expr = callOn(&args_a, "push", &.{v}) },
         .{ .return_ = .{ .quoted = "%O" } },
     } },

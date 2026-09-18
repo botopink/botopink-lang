@@ -3491,14 +3491,31 @@ const Emitter = struct {
         if (shape) |s| try self.print_shapes.put(name, s) else _ = self.print_shapes.remove(name);
     }
 
+    /// The shape leaf for an `f64` — decision 8 § 7 prints one with its decimal
+    /// part, and JavaScript has one number type, so the value's static type has
+    /// to reach the formatter from here.
+    const float_shape: js.Expr = .{ .quoted = "f" };
+
+    /// True when a number literal's own spelling is a float (`5.0`, `1e3`).
+    /// An integer literal in an `f64` position takes its shape from the
+    /// declared type instead (`typeShape`).
+    fn isFloatLiteral(text: []const u8) bool {
+        return std.mem.indexOfAny(u8, text, ".eE") != null;
+    }
+
     /// The static print shape of `e` — `["#", s1, s2]` for a tuple, `["[", s]`
-    /// for an array — when a tuple is known to sit somewhere in its value;
-    /// null otherwise (the runtime text of an array or a scalar needs none).
-    /// Known from a tuple literal, an array literal of those, a local or a
-    /// parameter bound to one, a top-level fn's declared return type, and a
-    /// primitive method's declared return type (`zip` → `Array<#(T, U)>`).
+    /// for an array, `"f"` for an `f64` — when a tuple or a float is known to
+    /// sit somewhere in its value; null otherwise (the runtime text of an
+    /// array or an integer needs none). Known from a tuple or float literal,
+    /// an array literal of those, a local or a parameter bound to one, a
+    /// top-level fn's declared return type, and a primitive method's declared
+    /// return type (`zip` → `Array<#(T, U)>`).
     fn printShape(self: *Emitter, e: ast.Expr) anyerror!?js.Expr {
         return switch (e) {
+            .literal => |lit| switch (lit.kind) {
+                .numberLit => |n| if (isFloatLiteral(n)) float_shape else null,
+                else => null,
+            },
             .collection => |col| switch (col.kind) {
                 .tupleLit => |tl| blk: {
                     const elems = try self.arena().alloc(js.Expr, tl.elems.len + 1);
@@ -3559,6 +3576,7 @@ const Emitter = struct {
             else
                 null,
             .optional => |inner| self.typeShape(inner.*),
+            .named => |n| if (std.mem.eql(u8, n, "f64") or std.mem.eql(u8, n, "f32")) float_shape else null,
             else => null,
         };
     }
