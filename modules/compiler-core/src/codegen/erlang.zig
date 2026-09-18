@@ -2703,7 +2703,12 @@ const Emitter = struct {
         for (program.decls) |decl| switch (decl) {
             .use => |u| for (u.imports) |imp| {
                 const name = imp.name();
-                const info = xc.exports.get(name) orelse continue;
+                const info = xc.exports.get(name) orelse {
+                    // Not a `pub` symbol: the import names a MODULE
+                    // (`import {dict} from "std"`, a sibling `import {geometry}`).
+                    try self.collectNamespaceModuleTypes(xc, name);
+                    continue;
+                };
                 switch (info.kind) {
                     .record => {
                         // Records are maps at runtime, so the consumer inlines
@@ -2756,6 +2761,34 @@ const Emitter = struct {
             },
             else => {},
         };
+    }
+
+    /// A `use` name that is not a `pub` symbol but the basename of a module some
+    /// export comes from: `import {dict} from "std"` binds the MODULE `std/dict`,
+    /// not a declaration. The consumer then reaches the module's types only
+    /// through its functions (`dict.empty()` answers a `Dict`) and never names
+    /// `Dict` itself, so the `.record`/`.@"enum"` branches above never ran and a
+    /// method call on the answered value fell through to a bare local call
+    /// (`insert(D, K, V)` → `function insert/3 undefined`). Register the module's
+    /// pub types the same way an explicitly imported one is registered: the type
+    /// name for an associated call and a typed method call, every method name for
+    /// a call site inference left untyped. `record_fields` is deliberately left
+    /// alone — a consumer that constructs the record has to import it by name,
+    /// which is the branch above.
+    fn collectNamespaceModuleTypes(self: *Emitter, xc: *const CrossModule, ns: []const u8) !void {
+        var it = xc.exports.iterator();
+        while (it.next()) |e| {
+            const info = e.value_ptr.*;
+            if (info.kind != .record and info.kind != .@"enum") continue;
+            if (!std.mem.eql(u8, crossModule.moduleBasename(info.module), ns)) continue;
+            if (std.mem.eql(u8, info.module, self.module_name)) continue;
+            const owner = crossModule.moduleBasename(info.module);
+            if (info.kind == .record) try self.imported_types.put(e.key_ptr.*, owner);
+            for (info.methods) |m| {
+                const gop = try self.imported_fns.getOrPut(m);
+                if (!gop.found_existing) gop.value_ptr.* = owner;
+            }
+        }
     }
 
     /// Owning module atom of an imported function called with `arity`
