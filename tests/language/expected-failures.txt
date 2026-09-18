@@ -68,3 +68,16 @@ erlang   | test/string_case_conversion.bp | 01 step 6 | `String.toUpperCase` / `
 # ── §1 generics ───────────────────────────────────────────────────────────────
 *        | reject/generic_missing_argument.bp | 06 N18 | §1.1: a written generic type without its arguments is accepted (exit 0)
 *        | reject/self_without_argument.bp    | 06 N18 | §1.2: bare `Self` inside a declaration with type parameters is accepted (exit 0)
+
+# ── §5.3b sections ────────────────────────────────────────────────────────────
+commonJS | test/case_sections.bp      | 06 N22, 06 N28 | §5.3b section arms do not parse; a section is not yet a type named by its path
+erlang   | test/case_sections.bp      | 06 N22, 06 N28 | §5.3b section arms do not parse; a section is not yet a type named by its path
+
+# ── §6 tuples ─────────────────────────────────────────────────────────────────
+commonJS | test/tuple_fn_field.bp::§6 T4 a labeled function element is called through its label | 06 N24 | a function-typed tuple label is not rewritten to a positional call (`c.bump is not a function`)
+erlang   | test/tuple_fn_field.bp     | 06 N24 | a function-typed tuple label is not rewritten to a positional call (`function bump/2 undefined`)
+
+# ── §10 loop ──────────────────────────────────────────────────────────────────
+commonJS | test/loop_break_value.bp::§10 break with a value is the loop's value | 06 N12 | `break <value>` yields a one-element array instead of the value
+commonJS | test/loop_break_value.bp::§10 break with a value out of a condition loop | 06 N12 | `break <value>` yields a one-element array instead of the value
+erlang   | test/loop_break_value.bp   | 01 step 6 | `ConditionLoopValueUnsupported`: a loop with a value break does not compile

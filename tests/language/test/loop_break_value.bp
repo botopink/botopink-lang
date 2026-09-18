@@ -1,0 +1,13 @@
+//// Decision 8 §10 — `break <value>` makes the loop an expression.
+
+test "§10 break with a value is the loop's value" {
+    var k = 0;
+    val r = loop { k = k + 1; if (k > 2) { break k; }; };
+    assert r == 3;
+}
+
+test "§10 break with a value out of a condition loop" {
+    var i = 0;
+    val found = loop (i < 10) { if (i == 4) { break i * 2; }; i = i + 1; };
+    assert found == 8;
+}
