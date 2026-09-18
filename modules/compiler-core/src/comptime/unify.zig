@@ -10,14 +10,48 @@ const TypeError = @import("error.zig").TypeError;
 
 pub const UnifyError = error{ TypeError, OutOfMemory };
 
+/// Decision 8 §2 — `unknown` reaches inference as the reserved named type
+/// `ast.unknown_type_name`; the lexer makes it a keyword and `isReservedWord`
+/// refuses it as a user name, so nothing else can be spelled this way.
+pub fn isUnknown(ty: *T.Type) bool {
+    return ty.deref().isNamed("unknown");
+}
+
 /// Unify types `a` and `b`.  Both are dereferenced first so link chains
 /// are never seen inside the match arms.
+///
+/// `a` is the **expected** type and `b` the value's — every caller passes them
+/// target-first (`unifyAt(param, arg)`), which is what makes the one-way rules
+/// below (`?T` accepting a `T`, and `unknown` accepting everything) sound.
 pub fn unify(env: *Env, a: *T.Type, b: *T.Type) UnifyError!void {
     const ta = a.deref();
     const tb = b.deref();
 
     // Identical pointer → already the same type.
     if (ta == tb) return;
+
+    // ── decision 8 §2.1 — `unknown` is the one-way top type ───────────────────
+    // Every type is assignable **to** `unknown`; `unknown` is assignable to
+    // nothing but `unknown`. The rule has to sit above the match because it
+    // holds against every kind on the other side, not only `.named`.
+    if (isUnknown(ta)) {
+        // A value inference has not worked out yet is pinned to `unknown`
+        // rather than left free: the annotation is the only thing known about
+        // it. The recursive call lands in the `.typeVar` arm below — `ta` is
+        // the variable there, so the refusal just under this block is skipped.
+        if (tb.* == .typeVar) return unify(env, tb, ta);
+        return;
+    }
+    // Coming *out* of `unknown` is the located error §2.1 sketches. An unbound
+    // variable on the left is not a use — it is inference still deciding — so
+    // it falls through and links, exactly as it would for any other type.
+    if (isUnknown(tb) and ta.* != .typeVar) {
+        env.lastError = TypeError.custom(
+            "an `unknown` value cannot be used as another type without testing it",
+            "Test it first: `if (x is i32) { … }` narrows `x` to `i32` inside the block.",
+        );
+        return error.TypeError;
+    }
 
     switch (ta.*) {
         // ── type variable on the left ─────────────────────────────────────────

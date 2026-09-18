@@ -20,7 +20,8 @@ const primOpTemplate = @import("primOpTemplate.zig");
 const templateEval = @import("template_eval.zig");
 const decoratorEval = @import("decorator_eval.zig");
 const specializeMod = @import("specialize.zig");
-const unify = @import("unify.zig").unify;
+const unifyMod = @import("unify.zig");
+const unify = unifyMod.unify;
 const Lexer = @import("../lexer.zig").Lexer;
 const Parser = @import("../parser.zig").Parser;
 const Module = @import("../module.zig").Module;
@@ -5455,9 +5456,29 @@ fn inferTupleLabelCall(
 /// no constraint at all. Permissive for a type variable an inference gap has
 /// not resolved, and for any named type the env does not know to be
 /// non-numeric — only the types that certainly hold no arithmetic red.
+/// Decision 8 §2.2 — what an `unknown` value does **not** answer: arithmetic,
+/// a field read, an index and a method call. `@print`, `==`, `!=`, assignment
+/// to another `unknown` and passing to a generic parameter stay allowed, and
+/// each of those reaches inference by a path this is not on.
+///
+/// `what` completes "an `unknown` value cannot …", so it is a verb phrase.
+fn refuseUnknownUse(env: *Env, ty: *T.Type, loc: ast.Loc, what: []const u8) InferError!void {
+    if (!unifyMod.isUnknown(ty)) return;
+    var e = TypeError.custom(
+        try std.fmt.allocPrint(env.arena, "cannot {s} an `unknown` value", .{what}),
+        "Narrow it first: `if (x is i32) { … }` makes `x` an `i32` inside the block.",
+    );
+    env.lastError = e.withLoc(loc);
+    return error.TypeError;
+}
+
 fn requireNumericOperand(env: *Env, ty: *T.Type, op: []const u8, loc: ast.Loc) InferError!void {
     const t = ty.deref();
     if (t.* != .named) return;
+    // §2.2 — arithmetic is refused on `unknown` for its own reason, not as a
+    // "takes numbers" mismatch: the value may well be a number, and what is
+    // wrong is that nothing has established it.
+    try refuseUnknownUse(env, ty, loc, "do arithmetic on");
     const n = t.named.name;
     const eq = std.mem.eql;
     if (!(eq(u8, n, "string") or eq(u8, n, "bool") or eq(u8, n, "void") or eq(u8, n, "array"))) return;
@@ -5945,6 +5966,10 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                     recvType = recvType.named.args[0].deref();
                 }
             }
+            // Decision 8 §2.2 — an `unknown` receiver has no members. Without
+            // this the field falls through every arm below and lands on a fresh
+            // variable, so `a.x` on an `unknown` checks silently.
+            try refuseUnknownUse(env, recvType, loc, "read a field of");
             var outType: *T.Type = try env.freshVar();
             // Anonymous structural record: resolve the field directly.
             if (recvType.* == .record) {
@@ -6078,7 +6103,16 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
 
     // Determine result type based on operator
     const resultType: *T.Type = switch (binop.op) {
-        .lt, .gt, .lte, .gte, .eq, .ne => try env.namedType("bool"),
+        // §2.2 — `==` and `!=` are the two comparisons an `unknown` answers
+        // (they compare by value, §2.3). An ordering comparison is arithmetic:
+        // it is not in §2.2's allowed list, and it reads the value's magnitude
+        // exactly as `+` does.
+        .lt, .gt, .lte, .gte => blk: {
+            try refuseUnknownUse(env, lhsTyped.getType(), binop.lhs.getLoc(), "compare");
+            try refuseUnknownUse(env, rhsTyped.getType(), binop.rhs.getLoc(), "compare");
+            break :blk try env.namedType("bool");
+        },
+        .eq, .ne => try env.namedType("bool"),
         .@"and", .@"or" => blk: {
             // 06 C3 — `unifyAt(env, a, b, loc)` is TARGET-first: `a` is what
             // the context expects, `b` what was written
@@ -6093,6 +6127,12 @@ fn inferBinaryOpExpr(env: *Env, binop: ast.BinOpExprOf(.untyped), loc: ast.Loc) 
             // String + anything → string (coercion)
             const lhsTy = lhsTyped.getType();
             const rhsTy = rhsTyped.getType();
+            // §2.2 — `+` is the one arithmetic operator `requireNumericOperand`
+            // below does not guard, because it also concatenates strings. An
+            // `unknown` operand is refused here for both readings at once:
+            // nothing has established that it is either.
+            try refuseUnknownUse(env, lhsTy, binop.lhs.getLoc(), "do arithmetic on");
+            try refuseUnknownUse(env, rhsTy, binop.rhs.getLoc(), "do arithmetic on");
             if (lhsTy.isNamed("string") or rhsTy.isNamed("string")) break :blk try env.namedType("string");
             // Numeric promotion: float wins over int
             if (isFloatType(lhsTy) and isIntType(rhsTy)) break :blk lhsTy;
@@ -7919,6 +7959,10 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                 // inference gap must not red), and a named type the env cannot
                 // open — an imported record whose typedef lives in its own
                 // module, a `@Result`/`?T` wrapper, a forward reference.
+                // §2.2 — an `unknown` receiver answers no method. It has to be
+                // refused before the permissive fresh-var tail below, which is
+                // what let `a.len()` check.
+                try refuseUnknownUse(env, recvPtr.getType(), loc, "call a method on");
                 if (nominalName(recvPtr.getType())) |tn| {
                     if (env.lookupTypeDef(tn)) |td| if (!typeAnswersMember(env, td, call.callee)) {
                         var ext_err: ?TypeError = null;
