@@ -38,3 +38,19 @@ commonJS | test/tuple_equality.bp::§6 T6 two tuples with the same elements are 
 commonJS | test/tuple_equality.bp::§6 T1 T6 a labeled and an unlabeled tuple with the same elements are equal | 01 step 6 | `==` on tuples compares references on commonJS (arrays)
 commonJS | run/tuple_print.bp         | 01 step 6 | prints decision 1a's text without spaces (`#(1,"a")`); §7 wants `#(1, "a")`
 erlang   | run/tuple_print.bp         | 01 step 6 | prints decision 1a's text without spaces (`#(1,"a")`); §7 wants `#(1, "a")`
+
+# ══ front 17 — the rest of the language ═══════════════════════════════════════
+# Classified against botopink-lang `fix/language-tests` on top of `26d4fdc`,
+# node v25.8.0, OTP 29. Every cell below was run on every target it declares
+# before it was listed.
+
+# ── §9 effects ────────────────────────────────────────────────────────────────
+erlang   | test/effect_iterator.bp::§9 an iterator yields its elements in order | 01 step 6 | `#[@iterator]` compiles on erlang and the generator protocol raises `case_clause` at run time
+erlang   | test/effect_iterator.bp::§9 an empty iterator runs no iteration | 01 step 6 | `#[@iterator]` compiles on erlang and the generator protocol raises `case_clause` at run time
+erlang   | test/effect_generator.bp::§9 a generator yields its elements in order | 01 step 6 | `#[@generator]` compiles on erlang and the generator protocol raises `case_clause` at run time
+erlang   | test/effect_generator.bp::§9 an empty generator runs no iteration | 01 step 6 | `#[@generator]` compiles on erlang and the generator protocol raises `case_clause` at run time
+commonJS | test/effect_val_assert.bp  | 06 N25 | §9's handler-less `val assert Ok(n) = <@Result>` is refused (`assert-pattern-missing-catch`); the hint says it is not implemented yet
+erlang   | test/effect_val_assert.bp  | 06 N25 | §9's handler-less `val assert Ok(n) = <@Result>` is refused (`assert-pattern-missing-catch`); the hint says it is not implemented yet
+*        | reject/wrapper_without_annotation.bp | 06 N25 | `@Result<…>` without `#[@result]` is reported as a return-type mismatch at the `return`, not as §9's missing-annotation rule
+*        | reject/val_assert_after_catch.bp     | 06 N25 | `val assert Ok(n) = f() catch 0` is accepted (exit 0) and then fails at run time (`Ok is not defined` on commonJS, `variable 'N' unsafe in 'case'` on erlang)
+*        | reject/two_effect_markers.bp         | 06 N25 | the R5 message is right, but its caret points at the body's `{` (5:41) instead of the second annotation
