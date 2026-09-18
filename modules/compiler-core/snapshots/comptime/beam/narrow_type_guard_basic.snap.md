@@ -22,7 +22,7 @@ fn main() {
           "type": "i32"
         }
       ],
-      "return_type": "i32",
+      "return_type": "bool",
       "body": [
         {
           "source": "return n > 0;"

@@ -925,9 +925,13 @@ test "parser: type guard ---- basic" {
     try std.testing.expectEqualStrings("isString", fnDecl.name);
     try std.testing.expect(fnDecl.typeGuardParam != null);
     try std.testing.expectEqualStrings("x", fnDecl.typeGuardParam.?);
+    // 06 C5 — a guard *returns* `bool`; the narrowed type has its own slot.
     try std.testing.expect(fnDecl.returnType != null);
     try std.testing.expect(fnDecl.returnType.? == .named);
-    try std.testing.expectEqualStrings("string", fnDecl.returnType.?.named);
+    try std.testing.expectEqualStrings("bool", fnDecl.returnType.?.named);
+    try std.testing.expect(fnDecl.typeGuardType != null);
+    try std.testing.expect(fnDecl.typeGuardType.? == .named);
+    try std.testing.expectEqualStrings("string", fnDecl.typeGuardType.?.named);
 }
 
 test "parser: type guard ---- snapshot round-trip" {

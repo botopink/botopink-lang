@@ -347,13 +347,17 @@ pub fn parseFnBody(
     var returnTypeLoc: ast.Loc = .{ .line = 0, .col = 0 };
     var arrowOmitted = false;
     var typeGuardParam: ?[]const u8 = null;
+    var typeGuardType: ?ast.TypeRef = null;
     if (this.match(.rightArrow)) {
-        // Type guard: `-> param is NarrowedType`
+        // Type guard: `-> param is NarrowedType`. 06 C5 — the narrowed type goes
+        // in its own slot and the fn returns `bool`, which is what a guard
+        // answers; parking `T` in `returnType` typed every call as `T`.
         if (this.check(.identifier) and this.peekAt(1).kind == .is) {
             typeGuardParam = this.advance().lexeme;
             _ = try this.consume(.is);
             returnTypeLoc = parser.Parser.locFromToken(this.peek());
-            returnType = try this.parseTypeRef(alloc);
+            typeGuardType = try this.parseTypeRef(alloc);
+            returnType = .{ .named = "bool" };
         } else {
             returnTypeLoc = parser.Parser.locFromToken(this.peek());
             returnType = try this.parseTypeRef(alloc);
@@ -438,6 +442,7 @@ pub fn parseFnBody(
             .returnType = returnType,
             .returnTypeLoc = returnTypeLoc,
             .typeGuardParam = typeGuardParam,
+            .typeGuardType = typeGuardType,
             .body = &.{},
         };
     }
@@ -456,6 +461,7 @@ pub fn parseFnBody(
         .returnType = returnType,
         .returnTypeLoc = returnTypeLoc,
         .typeGuardParam = typeGuardParam,
+        .typeGuardType = typeGuardType,
         .body = body,
     };
 }

@@ -345,3 +345,43 @@ test "infer: narrow ---- error variant field in wrong arm" {
         \\}
     );
 }
+
+// ── 06 C5 — a guard is typed `bool`, and its narrowed type is usable ──────────
+// Before C5 the narrowed type sat in `returnType`, so a guard call was typed `T`
+// and the narrowing below was unreachable: the `if` unified the call against
+// `bool` and errored first.
+
+test "infer: narrow ---- a guard call is a bool" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn isPositive(n: i32) -> n is i32 {
+        \\    return n > 0;
+        \\}
+        \\fn main() {
+        \\    val b: bool = isPositive(5);
+        \\    @print(b);
+        \\}
+    );
+}
+
+test "infer: narrow ---- a guard narrows the argument in the then-branch" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn isStr(y: ?string) -> y is string {
+        \\    return y != null;
+        \\}
+        \\fn main() {
+        \\    val y: ?string = "a";
+        \\    if (isStr(y)) {
+        \\        val s: string = y;
+        \\        @print(s);
+        \\    }
+        \\}
+    );
+}
+
+test "infer error: narrow ---- a guard body must answer bool" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn isPositive(n: i32) -> n is i32 {
+        \\    return n;
+        \\}
+    );
+}

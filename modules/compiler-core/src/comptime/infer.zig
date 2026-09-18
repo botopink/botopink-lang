@@ -559,7 +559,8 @@ fn registerFnSignatures(env: *Env, program: ast.Program) InferError!void {
                         break;
                     }
                 }
-                const narrowedName: []const u8 = if (f.returnType) |rt| switch (rt) {
+                // 06 C5 — the narrowed type is its own slot; `returnType` is `bool`.
+                const narrowedName: []const u8 = if (f.typeGuardType) |gt| switch (gt) {
                     .named => |n| n,
                     else => paramName,
                 } else paramName;
@@ -2952,8 +2953,9 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
                 break;
             }
         }
-        // Record the narrowed type name from the return type.
-        const narrowedName: []const u8 = if (f.returnType) |rt| switch (rt) {
+        // Record the narrowed type name (06 C5: its own slot, not `returnType`,
+        // which a guard declares as `bool`).
+        const narrowedName: []const u8 = if (f.typeGuardType) |gt| switch (gt) {
             .named => |n| n,
             else => paramName,
         } else paramName;
