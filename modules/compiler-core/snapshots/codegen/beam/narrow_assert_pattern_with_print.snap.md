@@ -11,11 +11,11 @@ fn main() {
 
 ----- COMPILE DIAGNOSTIC -- main
 ```text
-error: parse error (unexpectedToken)
-  ┌─ :2:14
+error: parse error (isVariantBinding)
+  ┌─ :2:21
   │
 2 │     assert x is Some(n);
 
-  unexpected `is`
+  unexpected `(`
 ```
 

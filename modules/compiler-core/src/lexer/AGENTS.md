@@ -10,7 +10,7 @@ Lexer support files. The lexer entry point itself lives at `../lexer.zig`.
 ```text
 lexer/
 ├── AGENTS.md      ← you are here
-├── token.zig      ← TokenKind enum + Token struct (lexeme + line/col); `record`/`enum`/`interface` are no longer lexed (declaration-kind tags for the language server only)
+├── token.zig      ← TokenKind enum + Token struct (lexeme + line/col); `record`/`enum`/`interface` are no longer lexed (declaration-kind tags for the language server only); `unknown` IS lexed (decision 8 §2, 06 N19)
 ├── tests.zig      ← barrel importing every tests/<feature>.zig
 └── tests/         ← lexer tests, split by feature
     ├── helpers.zig    ← placeholder harness module (no helpers defined)
@@ -52,6 +52,20 @@ line.
 Usage: `var l = Lexer.init(source); const tokens = try l.scanAll(alloc);
 defer l.deinit(alloc);` — `scanAll` returns `[]const Token` owned by the lexer.
 `Lexer.init` does **not** store an allocator.
+
+## `...` is its own token (decision 8 §5.2, 06 N22)
+
+`...` lexes as `dotDotDot`, the inclusive range of a pattern (`1...9`); `..`
+stays `dotDot`, iteration and slicing. The scanner tries the third dot before
+settling for `..`, so no source that writes `..` changed meaning.
+
+## `unknown` is a keyword (decision 8 §2, 06 N19)
+
+`unknown` lexes as `TokenKind.unknown` and `isReservedWord` refuses it as a
+name, so no declaration, binding or parameter can be called `unknown` and the
+word in a type position always means decision 8's type. The parser turns it
+into `TypeRef.named = ast.unknown_type_name`; the language server lists it in
+`isKeyword` and paints it `type [defaultLibrary]`, like `Self`.
 
 ## Notes
 

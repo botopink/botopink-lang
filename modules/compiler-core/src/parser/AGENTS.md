@@ -60,6 +60,7 @@ parser/
     ├── destructuring.zig ← destructure/shorthand/assign
     ├── errors.zig        ← parse errors & cross-stage error-message units
     ├── surface.zig       ← the 1.0.3 surface: `type` shapes, the field list, `behavior`, separators, and old-vs-new AST equality
+    ├── decision8.zig     ← decision 8's grammar, one section per row: `unknown` (N19), union types (N20), `is` (N21), `case` arms (N22)
     └── effect_rejections.zig ← parser-level `#[@<effect>]` rejections (R1/R2/R5…)
 ```
 
@@ -99,6 +100,93 @@ is loc-keyed (e.g. `instanceLowerings` records `arr.length` → host length op b
 the access loc), so two links sharing a loc collide — `self.pairs.length` would
 emit `length(length(Self))`. `parsePostfixChain` and the identifier postfix loop
 both use `locFromToken(fieldTok)` for this reason.
+
+## `unknown` in type position (decision 8 §2, 06 N19)
+
+`unknown` arrives as its own keyword token, so `parseBaseTypeRef` handles it
+before `consumeTypeName` and no user type can shadow it. It lands as
+`TypeRef.named = ast.unknown_type_name` (`ast.zig` documents what inference owes
+it) and takes the ordinary `[]` wraps — `unknown[]`, `?unknown`, `Box<unknown>`
+all parse. `unknown<…>` / `unknown(…)` is refused at the `<` / `(` with
+`unknown-takes-no-arguments`: it is one type, not a constructor.
+
+## Union types `A | B` (decision 8 §3, 06 N20)
+
+`parseTypeRef` is the alternation: it parses one member through
+`parseTypeRefMember` — everything a type can be except a `|` chain — and keeps
+going while a `|` follows. So `|` binds looser than every other type operator:
+`i32 | string[]` is "`i32`, or an array of `string`", and an array of the union
+is written `(i32 | string)[]`. Two or more members land as
+`TypeRef.generic{ .name = ast.union_type_name, .args = <members> }` — a spelling
+no source can write, documented in `ast.zig` with what inference owes it. A `|`
+with nothing usable after it is `union-member-missing`, located at the bar.
+
+The `type A | B` meta-kind keeps its own `|`: `parseGenericParams`' constraint
+loop calls `parseTypeRefMember`, so each constraint stays one type.
+
+## `x is T` as an expression (decision 8 §4, 06 N21)
+
+`parseIsExpr` sits at the tightest level of the expression grammar, between
+`parseBinaryExpr`'s last precedence level and `parsePrimary`: `a is i32 == b` is
+`(a is i32) == b`, and `if (v is string)` needs no parentheses of its own. The
+right side is a full type — `i32`, `Point`, `#(i32, string)`, `Box<unknown>`, a
+union — parsed by `parseTypeRef`.
+
+It lands as the `is` builtin call (`ast.is_builtin_name`) with the value as its
+only argument and the tested type on the node's `isType`, since a type is not an
+expression; `ast.zig` documents what inference owes it, and the slot is left out
+of the AST dump when null, so no call snapshot moved. `is` with no type after it
+is `is-missing-type`; the payload-binding form `x is Some(v)` (§4.2) is
+`is-variant-binding`, located at the `(` — the node carries a type, so the
+binding form is refused where it starts instead of failing further along.
+
+## `case` arms and patterns (decision 8 §5, 06 N22)
+
+Two arm forms coexist, told apart by the token after the pattern and its
+optional guard:
+
+| Form | Body |
+|---|---|
+| `Pattern { body }` — decision 8 §5.1 | a lambda body: `{ n -> … }` binds the whole matched value (P1), the last expression is the arm's value (P3), and the arm takes no `;` (P2) |
+| `pattern -> value;` — pre-decision-8 | unchanged; `libs/std` and the libraries are written this way, and 12 step 3 / 13 migrate them |
+
+The guard is `when (…)` (§5.3) or the older `if <expr>`. `when` is **not** a
+keyword: it is special only after an arm's pattern, matched by lexeme, so a
+variable called `when` is untouched. `checkWhenGuard` also keeps the two-name
+pattern `Ok ok` from swallowing it.
+
+The pattern grammar (`parseSimplePattern`) reads, beyond the pre-decision-8
+forms: a dotted variant path (`Shape.Circle`), the dot shorthand (`.Some`,
+`.None` — the leading `.` stays in the name, which is what tells a variant path
+from a binding), labelled payload elements (`Rect(width: w, height: h)`), a
+trailing `..` (P7), a `#(…)` tuple pattern (P6), an `A...B` inclusive range
+(§5.2) and a pattern nested inside a payload (`.Some(#(a, b))`). One payload
+production serves variants and tuples; a payload of nothing but plain binders
+keeps the `fields` shape every existing consumer knows, anything else becomes
+`literals`. `ast.zig` documents the node each shape lands on and what inference
+owes it.
+
+Five located refusals, all in `print.zig`: `pattern-range-exclusive` (`1..9` —
+`..` is iteration), `pattern-range-missing-end`, `pattern-rest-not-last`,
+`pattern-tuple-label` (a tuple pattern is positional) and, for the
+`Pattern { body }` form only, `case-bare-name-arm` and `case-constant-pattern`
+(§5.2's two rewrites). The last two judge a name by shape — a dotted path,
+`true`/`false` and the primitive type names are patterns; an all-upper-case name
+is a constant; any other lower-case name is a variable. `isPrimitiveTypeName`
+mirrors `Env.registerBuiltins` in `comptime/env.zig`, as the language server's
+`isPrimitiveType` does; keep the three in step. The arrow arm is never judged:
+binding the matched value with a bare name is exactly how it is written today.
+
+### What the formatter does with an arm
+
+`format.zig` writes an arm back in the form its body carries: a lambda body is
+decision 8's `Pattern [when (…)] { body }` (no arrow, no `;`, the binder kept),
+anything else the older `pattern [if …] -> value;`. The pre-decision-8 block arm
+`x -> { 1; }` is a parameterless lambda too, so it comes back as `x { 1 }` —
+the same AST, decision 8's spelling; no library writes one today. Two residuals
+for the formatter pass: a lambda body's last expression is still written with a
+trailing `;`, which §5.1 P3 does not want, and a `case` whose arms carry
+comments still loses their position.
 
 ## Type guards (`-> x is T`)
 

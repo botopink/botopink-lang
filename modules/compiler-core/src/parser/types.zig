@@ -14,16 +14,52 @@ const TypeRef = parser.TypeRef;
 const GenericParam = parser.GenericParam;
 
 /// True when `kind` can begin a type reference. Used to decide whether a
-/// `type` meta-kind keyword is followed by a constraint list or stands alone.
-fn startsTypeRef(kind: TokenKind) bool {
+/// `type` meta-kind keyword is followed by a constraint list or stands alone,
+/// whether a `|` opens another union member, and whether an `is` has a type.
+pub fn startsTypeRef(kind: TokenKind) bool {
     return switch (kind) {
-        .identifier, .builtinIdent, .questionMark, .hash, .@"fn", .selfType => true,
+        .identifier, .builtinIdent, .questionMark, .hash, .@"fn", .selfType, .unknown => true,
         else => false,
     };
 }
 
-/// Parses a full type reference.
+/// Parses a full type reference, union types included (decision 8 §3, 06 N20):
+/// `i32 | string` is one type written as an alternation of its members.
+///
+/// `|` binds looser than every other type operator, so `i32 | string[]` is
+/// "`i32`, or an array of `string`" (§3.1) and a union of arrays is written
+/// `(…)` free — `i32[] | string[]`. The members land in source order on
+/// `ast.union_type_name` (see `ast.zig` for what inference owes them).
 pub fn parseTypeRef(this: *This, alloc: std.mem.Allocator) ParseError!ast.TypeRef {
+    var first = try this.parseTypeRefMember(alloc);
+    if (!this.check(.verticalBar)) return first;
+
+    var members: std.ArrayList(ast.TypeRef) = .empty;
+    errdefer {
+        for (members.items) |*m| m.deinit(alloc);
+        members.deinit(alloc);
+    }
+    errdefer first.deinit(alloc);
+    try members.append(alloc, first);
+    while (this.match(.verticalBar)) {
+        const barTok = this.tokens[this.current - 1];
+        if (!startsTypeRef(this.peek().kind)) {
+            this.parseError = ParseErrorInfo.fromToken(.unionMemberMissing, barTok);
+            return ParseError.UnexpectedToken;
+        }
+        try members.append(alloc, try this.parseTypeRefMember(alloc));
+    }
+    return ast.TypeRef{ .generic = .{
+        .name = ast.union_type_name,
+        .args = try members.toOwnedSlice(alloc),
+        .is_builtin = false,
+    } };
+}
+
+/// One member of a type: everything `parseTypeRef` parses except the `|`
+/// alternation. The `type A | B` meta-kind constraint list parses its members
+/// through this too, so `|` there keeps separating constraints.
+pub fn parseTypeRefMember(this: *This, alloc: std.mem.Allocator) ParseError!ast.TypeRef {
     const ref = try this.parseBaseTypeRef(alloc);
     if (this.check(.bang)) {
         const tok = this.peek();
@@ -35,6 +71,29 @@ pub fn parseTypeRef(this: *This, alloc: std.mem.Allocator) ParseError!ast.TypeRe
 
 /// Parses a base type ref: `?T`, `#(T1,T2)`, plain name with optional `[]` wraps.
 pub fn parseBaseTypeRef(this: *This, alloc: std.mem.Allocator) ParseError!ast.TypeRef {
+    // `unknown` — decision 8 §2 (06 N19). A keyword, so no declaration can be
+    // called `unknown` and the name always means this type; it travels as
+    // `TypeRef.named` under the reserved spelling `ast.unknown_type_name`,
+    // which the checker resolves to the `unknown` type instead of a lookup.
+    // It takes no type arguments and no payload.
+    if (this.check(.unknown)) {
+        const tok = this.advance();
+        if (this.check(.lessThan) or this.check(.leftParenthesis)) {
+            this.parseError = ParseErrorInfo.fromToken(.unknownTakesNoArguments, this.peek());
+            return ParseError.UnexpectedToken;
+        }
+        _ = tok;
+        var ref = ast.TypeRef{ .named = ast.unknown_type_name };
+        // `unknown[]` — zero or more array wraps, like any other type name.
+        while (this.check(.leftSquareBracket) and this.peekAt(1).kind == .rightSquareBracket) {
+            _ = this.advance(); // [
+            _ = this.advance(); // ]
+            const elem = try alloc.create(ast.TypeRef);
+            elem.* = ref;
+            ref = ast.TypeRef{ .array = elem };
+        }
+        return ref;
+    }
     // ?T ---- optional type
     if (this.match(.questionMark)) {
         var inner = try this.parseBaseTypeRef(alloc);
@@ -182,7 +241,7 @@ pub fn parseBaseTypeRef(this: *This, alloc: std.mem.Allocator) ParseError!ast.Ty
         }
         if (startsTypeRef(this.peek().kind)) {
             while (true) {
-                try constraints.append(alloc, try this.parseTypeRef(alloc));
+                try constraints.append(alloc, try this.parseTypeRefMember(alloc));
                 if (!this.match(.verticalBar)) break;
             }
         }

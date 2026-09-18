@@ -745,9 +745,49 @@ pub fn parsePipelineExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr 
     return lhs;
 }
 
+/// `x is T` — decision 8 §4 (06 N21): tests the VALUE, not its origin.
+///
+/// The tightest level of the expression grammar, just above a primary, so
+/// `a is i32 && b` is `(a is i32) && b` and `if (v is string)` needs no
+/// parentheses of its own. It desugars to the `is` builtin call with the tested
+/// type on the node (`ast.is_builtin_name`), because a type is not an
+/// expression; `ast.zig` documents what inference owes it.
+fn parseIsExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
+    var value = try this.parsePrimary(alloc);
+    errdefer value.deinit(alloc);
+    while (this.check(.is)) {
+        const isTok = this.advance();
+        if (!This.startsTypeRef(this.peek().kind)) {
+            this.parseError = ParseErrorInfo.fromToken(.isMissingType, isTok);
+            return ParseError.UnexpectedToken;
+        }
+        var ty = try this.parseTypeRef(alloc);
+        errdefer ty.deinit(alloc);
+        // `x is Option.Some(v)` (§4.2) binds the payload; the node carries a
+        // type, so the payload form is refused where it starts instead of
+        // failing as an unexpected token further along.
+        if (this.check(.leftParenthesis)) {
+            this.parseError = ParseErrorInfo.fromToken(.isVariantBinding, this.peek());
+            return ParseError.UnexpectedToken;
+        }
+        const valuePtr = try this.boxExpr(alloc, value);
+        var args = try alloc.alloc(CallArg, 1);
+        args[0] = .{ .label = null, .value = valuePtr };
+        value = Expr{ .call = .{ .loc = locFromToken(isTok), .kind = .{ .call = .{
+            .receiver = null,
+            .callee = ast.is_builtin_name,
+            .is_builtin = true,
+            .args = args,
+            .trailing = try alloc.alloc(TrailingLambda, 0),
+            .isType = ty,
+        } } } };
+    }
+    return value;
+}
+
 /// Left-associative precedence-climbing parser driven by `precedence_table`.
 pub fn parseBinaryExpr(this: *This, alloc: std.mem.Allocator, comptime level: usize) ParseError!Expr {
-    if (level == precedence_table.len) return this.parsePrimary(alloc);
+    if (level == precedence_table.len) return parseIsExpr(this, alloc);
     const entry = precedence_table[level];
 
     var lhs = try this.parseBinaryExpr(alloc, level + 1);
@@ -1401,7 +1441,12 @@ pub fn checkLabeledTrailingLambda(this: *const This) bool {
 }
 
 /// Parses the body of a lambda after `{` has been consumed.
-/// Grammar: `(ident (, ident)* ->)? stmt* }`
+/// Grammar: `(ident (, ident)* ->)? (stmt ';'?)* }`
+///
+/// The statement separator is optional, as it is in the lambda body
+/// `parsePrimary` reads: the last expression of the body is its value and takes
+/// no `;` (decision 2, and decision 8 §5.1 P3 for a `case` arm), while the
+/// statements before it are separated by one.
 pub fn parseLambdaBody(this: *This, alloc: std.mem.Allocator) ParseError!FunctionExpr {
     const startTok = this.peek();
     // Detect and parse optional parameter list
@@ -1425,6 +1470,7 @@ pub fn parseLambdaBody(this: *This, alloc: std.mem.Allocator) ParseError!Functio
     }
     while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
         const expr = try this.parseExpr(alloc);
+        _ = this.match(.semicolon);
         try stmts.append(alloc, .{ .expr = expr });
     }
     _ = try this.consume(.rightBrace);

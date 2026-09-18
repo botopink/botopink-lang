@@ -670,6 +670,15 @@ pub fn CallExprOf(comptime phase: Phase) type {
             optional: bool = false,
             args: []CallArgOf(phase),
             trailing: []TrailingLambdaOf(phase),
+            /// The type on the right of `x is T` — set only on the `is` builtin
+            /// call the parser synthesises (`is_builtin_name`), null on every
+            /// other call. Left out of the AST dump when null, so the slot moved
+            /// no snapshot.
+            isType: ?TypeRef = null,
+
+            pub fn jsonStringify(this: @This(), jws: anytype) !void {
+                return stringifyOmitting(this, jws, &.{}, &.{"isType"});
+            }
         },
         /// `expr |> fn1 |> fn2` — pipeline operator, left-associative chain
         pipeline: struct {
@@ -690,6 +699,10 @@ pub fn CallExprOf(comptime phase: Phase) type {
                     allocator.free(c.args);
                     for (c.trailing) |*t| t.deinit(allocator);
                     allocator.free(c.trailing);
+                    if (c.isType) |t| {
+                        var owned = t;
+                        owned.deinit(allocator);
+                    }
                 },
                 .pipeline => |p| {
                     p.lhs.deinit(allocator);
@@ -890,13 +903,53 @@ pub const ListPatternElem = union(enum) {
     numberLit: []const u8,
 };
 
+/// What a `Pattern.variant` node matches (decision 8 §5, 06 N22). The default,
+/// `.variant`, is the pre-decision-8 meaning; the other two are §5's shapes that
+/// have no name of their own, so they ride on the same node.
+pub const PatternShape = enum {
+    /// `Ok(v)`, `Shape.Circle(r)`, `.Some(v)` — the variant `name` names.
+    variant,
+    /// `#(a, b)`, `#(0, s)`, `#(a, ..)` — a tuple pattern (§5.1 P6). Positional
+    /// only: `name` is empty, the elements are `payload.literals`, and a label
+    /// inside one is a parse error.
+    tuple,
+    /// `1...9` — an inclusive range (§5.2), both ends included. `name` is empty
+    /// and `payload.literals` holds exactly the two bounds, low then high.
+    /// `1..9` in a pattern is refused: `..` is iteration.
+    range,
+};
+
 /// A match pattern used in `case` arms.
+///
+/// Decision 8 §5's shapes (06 N22) are carried by the existing variants under
+/// spellings no source can write, because a new variant here does not compile
+/// without edits to `comptime/infer.zig`, `comptime/specialize.zig`,
+/// `codegen/erlang.zig` and `format.zig`, which this front's checker half owns:
+///
+/// | Written | Node |
+/// |---|---|
+/// | `Shape.Circle(r)` | `.variant` whose `name` is the dotted path |
+/// | `.None` / `.Some(v)` | `.ident` / `.variant` whose `name` keeps the leading `.` |
+/// | `Rect(width: w, height: h)` | `.variant` with `labels` beside `payload.fields` |
+/// | `.Rect(width: w, ..)` | the same, with `rest` set |
+/// | `#(a, b)` | `.variant` with `shape == .tuple` |
+/// | `1...9` | `.variant` with `shape == .range` |
+///
+/// **What inference has to do with them** (the checker half of N22): resolve a
+/// dotted or dot-shorthand `name` against the matched value's type (§5.1 P8),
+/// bind `payload.fields` by `labels` when they are there and by position when
+/// they are not (P4), type each bound name from the matched value (P5), let
+/// `rest` stand for the fields or elements the pattern does not name and require
+/// the arity to match when it is not set (P7), and count arms for
+/// exhaustiveness (§5.4) — a guarded arm never counting.
 pub const Pattern = union(enum) {
     /// `_`
     wildcard,
-    /// enum variant or variable binding: `Red`, `x`, `total`
+    /// enum variant or variable binding: `Red`, `x`, `total`. A `name` carrying
+    /// a `.` is a variant path, never a binding: `Maybe.None`, `.None` (§5.1 P8).
     ident: []const u8,
-    /// enum variant with a payload: `Ok ok`, `Rgb(r, g, b)`, `Ok(1)`.
+    /// enum variant with a payload: `Ok ok`, `Rgb(r, g, b)`, `Ok(1)`; and, under
+    /// `shape`, decision 8's tuple and range patterns.
     /// The `name` is the variant; `payload` records how its contents are matched.
     variant: struct {
         name: []const u8,
@@ -908,6 +961,16 @@ pub const Pattern = union(enum) {
             /// literal / nested-pattern arguments: `Ok(1)`, `Error("not found")`
             literals: []Pattern,
         },
+        /// Which of decision 8 §5's patterns this is; `.variant` unless the
+        /// parser read a `#(…)` tuple or an `A...B` range.
+        shape: PatternShape = .variant,
+        /// The labels written in the payload, parallel to `payload.fields` /
+        /// `payload.literals` — `""` where an element carried none. Empty when
+        /// the pattern is fully positional. Owned slice; the strings slice into
+        /// the source.
+        labels: []const []const u8 = &.{},
+        /// `..` — the pattern ignores the remaining fields or elements (§5.1 P7).
+        rest: bool = false,
     },
     /// Number literal: `42`
     numberLit: []const u8,
@@ -928,13 +991,16 @@ pub const Pattern = union(enum) {
 
     pub fn deinit(this: *Pattern, allocator: std.mem.Allocator) void {
         switch (this.*) {
-            .variant => |*v| switch (v.payload) {
-                .fields => |f| allocator.free(f),
-                .literals => |args| {
-                    for (args) |*p| p.deinit(allocator);
-                    allocator.free(args);
-                },
-                .binding => {},
+            .variant => |*v| {
+                switch (v.payload) {
+                    .fields => |f| allocator.free(f),
+                    .literals => |args| {
+                        for (args) |*p| p.deinit(allocator);
+                        allocator.free(args);
+                    },
+                    .binding => {},
+                }
+                if (v.labels.len > 0) allocator.free(v.labels);
             },
             .list => |l| allocator.free(l.elems),
             .@"or" => |pats| {
@@ -1539,6 +1605,57 @@ pub const EnumSection = struct {
 
 /// One field of an anonymous record TYPE: `name: Type` in `{ value: T, set: fn(T) }`.
 /// A type annotation expression, e.g. `Int`, `string[]`, `#(Int, string)`, `?T`.
+/// The reserved `TypeRef.named` spelling of decision 8 §2's `unknown` (06 N19).
+///
+/// `unknown` lexes as a keyword (`TokenKind.unknown`), so no declaration can be
+/// named `unknown` and this spelling can only come from the `unknown` written
+/// in a type position — never from a user type of that name.
+///
+/// **What inference has to do with it** (the checker half of N19): resolve a
+/// `TypeRef.named` equal to this to the `unknown` type instead of looking the
+/// name up, and give that type §2's rules — every value assignable *into* it,
+/// nothing out of it without an `is` check, `@print`/`==`/`!=` and a generic
+/// argument allowed, arithmetic / field access / indexing / method calls
+/// refused, and a `pub` declaration whose *inferred* type contains it an error.
+pub const unknown_type_name = "unknown";
+
+/// The reserved `TypeRef.generic` name that carries decision 8 §3's union type
+/// `A | B` (06 N20): `generic{ .name = union_type_name, .args = <members>,
+/// .is_builtin = false }`, members in source order, never fewer than two.
+///
+/// It is a spelling no source can write — `consumeTypeName` needs an identifier
+/// — so no user type collides with it. It is not a `TypeRef` variant of its own
+/// because one does not compile without edits to `comptime/infer.zig`,
+/// `codegen/typescript.zig`, `format.zig` and the language server, which this
+/// front's checker half owns; promoting it to a variant is a rename away once
+/// both halves are in one tree.
+///
+/// **What inference has to do with it** (the checker half of N20): resolve it to
+/// a union of its members instead of a named type, and give it §3's rules — a
+/// value assignable when it is assignable to one member, only the operations
+/// every member allows, narrowing by `is` and by a `case` arm, the join of
+/// `X<A> | X<B>` for a single-value immutable container and for `Dict` (never
+/// for `T[]`), and the error reported at the *use*, naming the branch that
+/// widened it.
+pub const union_type_name = "|";
+
+/// The reserved builtin-call name that carries decision 8 §4's `x is T`
+/// (06 N21): `call{ .callee = is_builtin_name, .is_builtin = true,
+/// .args = &.{ <the value> }, .isType = <the type> }` — the desugaring of the
+/// expression into `@is(x)` with the tested type on the node, since a type is
+/// not an expression and no AST union here may gain a variant.
+///
+/// `is` is a keyword, so no user function is called `is` and no source can write
+/// this call by hand.
+///
+/// **What inference has to do with it** (the checker half of N21): type the call
+/// `bool`, test the *value* by §4.1 (a number by range, converting inside the
+/// narrowed block), narrow the operand for the guarded block / arm body, and
+/// warn when the operand's static type makes the answer always false (§4.3).
+/// `Box<i32>` as the tested type is §4.2's error — only `Box<unknown>` is
+/// checkable.
+pub const is_builtin_name = "is";
+
 pub const TypeRef = union(enum) {
     /// Plain named type: `Int`, `string`, `Self`. Slice into source — not heap-owned.
     named: []const u8,
@@ -1578,6 +1695,14 @@ pub const TypeRef = union(enum) {
     /// means the typeparam is unconstrained and accepts any type. Owns the constraints.
     /// Surface syntax (post-F0): `type` / `type string | int | bool`.
     typeparam: []TypeRef,
+
+    /// The members of a union type `A | B` (`union_type_name`); null otherwise.
+    pub fn unionMembers(this: TypeRef) ?[]TypeRef {
+        return switch (this) {
+            .generic => |g| if (!g.is_builtin and std.mem.eql(u8, g.name, union_type_name)) g.args else null,
+            else => null,
+        };
+    }
 
     /// The element types of a tuple type, labeled or not; null otherwise.
     pub fn tupleElems(this: TypeRef) ?[]TypeRef {

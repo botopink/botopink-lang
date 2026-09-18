@@ -2162,6 +2162,8 @@ pub fn prepareRename(
 /// `true` and `false` are the exception: the lexer reads them as identifiers and
 /// the parser gives them their meaning (`parser/exprs.zig:1656`), so they are
 /// listed here — renaming a boolean literal is never what the user meant.
+/// `unknown` joined the table with 06 N19 (decision 8 §2): it is a keyword token
+/// now, so no declaration can be named after it and none can be renamed to it.
 fn isKeyword(name: []const u8) bool {
     const keywords = [_][]const u8{
         "as",        "assert",   "await",    "behavior", "break",   "case",
@@ -2169,9 +2171,10 @@ fn isKeyword(name: []const u8) bool {
         "extend",    "extends",  "fn",       "for",      "from",    "if",
         "implement", "import",   "is",       "loop",     "mod",     "null",
         "pub",       "return",   "Self",     "syntax",   "test",    "throw",
-        "try",       "type",     "use",      "val",      "var",     "yield",
+        "try",       "type",     "unknown",  "use",      "val",     "var",
+        "yield",
         // Not lexer keywords, but not renameable identifiers either.
-        "true",      "false",
+            "true",     "false",
     };
     for (keywords) |kw| {
         if (std.mem.eql(u8, name, kw)) return true;
@@ -3521,7 +3524,9 @@ pub fn semanticTokens(
                     fn_generics.clearRetainingCapacity();
                 }
             }
-            if (tok.kind == .selfType) {
+            // `Self` and decision 8 §2's `unknown` are keyword tokens that name
+            // a type: they paint `type [defaultLibrary]`, not `keyword`.
+            if (tok.kind == .selfType or tok.kind == .unknown) {
                 try emitSem(arena, &out, tok, proto.SemanticTokenTypes.type_, proto.SemanticTokenModifiers.defaultLibrary);
             } else {
                 try emitSem(arena, &out, tok, proto.SemanticTokenTypes.keyword, 0);
@@ -3944,7 +3949,7 @@ fn isPrimitiveType(name: []const u8) bool {
 /// reclassified as a type by the caller).
 fn isKeywordKind(kind: TokenKind) bool {
     return switch (kind) {
-        .as, .assert, .await, .case, .default, .@"else", .@"enum", .extend, .extends, .@"fn", .@"for", .from, .@"if", .implement, .import, .@"pub", .@"return", .selfType, .@"test", .throw, .interface, .behavior, .type, .record, .use, .val, .@"var", .@"comptime", .syntax, .@"break", .loop, .@"continue", .yield, .declare, .null, .@"try", .@"catch" => true,
+        .as, .assert, .await, .case, .default, .@"else", .@"enum", .extend, .extends, .@"fn", .@"for", .from, .@"if", .implement, .import, .@"pub", .@"return", .selfType, .@"test", .throw, .interface, .behavior, .type, .record, .use, .val, .@"var", .@"comptime", .syntax, .@"break", .loop, .@"continue", .yield, .declare, .null, .@"try", .@"catch", .unknown => true,
         else => false,
     };
 }
