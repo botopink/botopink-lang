@@ -848,3 +848,47 @@ test "js: mutual recursion ---- forward reference + bare-if base case on every b
         \\}
     );
 }
+
+// ── front 02-erlang: the two `case` defects `01-checker` handed over ──────────
+//
+// Both are erlang-only and both are *load* failures, not wrong values, so they
+// are asserted by running the emitted module rather than by a snapshot: a
+// snapshot of `{'.Some', V}` looks plausible and never matches, and `.None`
+// renders a token `erlc` refuses outright.
+//
+// The §5.1 value-position forms these rows are written for (`test/case_variants.bp`,
+// `test/case_guards.bp`) do not type-check until `01-checker` step 4 lands, so
+// each cell is the same arm in **statement** position, which compiles at
+// `bef762b`. When step 4 lands, the value-position twins join the language suite.
+
+test "erlang: case ---- a variant pattern written with its path matches the bare tag" {
+    // Handover 1. The constructor emits `{'Some', 7}`; the pattern emitted what
+    // was written — `{'.Some', V}`, matching nothing, and a nullary `.None` as
+    // the bare token `.None`, which is `syntax error before: '.'`.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\type Maybe { Some(v: i32), None }
+        \\fn show(m: Maybe) { case m { .Some(v) { @print(v) } .None { @print(0) } }; }
+        \\fn main() { show(Maybe.None); show(Maybe.Some(v: 7)); }
+    , "0\n7\n", &.{ "{'Some', V} ->", "'None' ->" });
+}
+
+test "erlang: case ---- a one-parameter arm binds the whole subject" {
+    // Handover 3. `_ { v -> … }` names the subject; nothing bound it, so the
+    // arm body read an erlang variable the clause never introduced
+    // (`variable 'V' is unbound`). The name is now an alias on the clause
+    // pattern, and on a wildcard it *is* the pattern.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn show(n: i32) { case n { 0 { @print("zero") } _ { v -> @print(v) } }; }
+        \\fn main() { show(4); show(0); }
+    , "4\nzero\n", &.{"        V ->"});
+}
+
+test "erlang: case ---- a one-parameter arm on a variant pattern aliases it" {
+    // The same binder where the pattern is not a wildcard: erlang's `V = Pat`
+    // alias binds the subject without evaluating it twice.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\type Maybe { Some(v: i32), None }
+        \\fn show(m: Maybe) { case m { .Some(v) { w -> @print(v) } .None { @print(0) } }; }
+        \\fn main() { show(Maybe.Some(v: 7)); }
+    , "7\n", &.{"W = {'Some', V} ->"});
+}

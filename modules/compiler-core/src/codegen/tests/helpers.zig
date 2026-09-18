@@ -526,6 +526,51 @@ pub fn assertJsRunLog(allocator: Allocator, src: []const u8, expected: []const u
     return error.ModuleDidNotCompile;
 }
 
+/// The erlang twin of `assertJsRunLog` (front `02-erlang`): compiles `src` for
+/// the erlang target, runs the emitted module and asserts its RUN LOG equals
+/// `expected`, then that every needle of `needles` is in the emitted erlang.
+///
+/// It exists because the commonJS helpers above cannot see an erlang-only
+/// defect, and because a row whose fixture does not yet type-check on the
+/// §5.1 arm forms (`01-checker` step 4) still has a statement-position shape
+/// that compiles today — running it is the only assertion that proves the
+/// emitted erlang is *loadable*, which `escript` decides and a snapshot does
+/// not.
+pub fn assertErlangRunLog(
+    allocator: Allocator,
+    src: []const u8,
+    expected: []const u8,
+    needles: []const []const u8,
+) !void {
+    const io = std.testing.io;
+    var outputs = try codegen.generate(
+        allocator,
+        &.{.{ .path = "", .source = src }},
+        io,
+        configs[1], // erlang
+    );
+    defer {
+        for (outputs.items) |*o| o.result.deinit(allocator);
+        outputs.deinit(allocator);
+    }
+    for (outputs.items) |o| {
+        if (!std.mem.eql(u8, o.name, "") and !std.mem.eql(u8, o.name, "main")) continue;
+        const got = o.result.run_output orelse "";
+        if (!std.mem.eql(u8, got, expected)) {
+            std.debug.print("\n=== generated erlang ===\n{s}\n=== RUN LOG ===\n{s}\n=== expected ===\n{s}\n", .{ o.result.js, got, expected });
+            return error.RunLogMismatch;
+        }
+        for (needles) |needle| {
+            if (std.mem.indexOf(u8, o.result.js, needle) == null) {
+                std.debug.print("\n=== generated erlang ===\n{s}\n=== missing needle: {s} ===\n", .{ o.result.js, needle });
+                return error.NeedleNotFound;
+            }
+        }
+        return;
+    }
+    return error.ModuleDidNotCompile;
+}
+
 /// Asserts that none of `needles` appear in the generated commonJS output.
 pub fn assertJsNotContains(allocator: Allocator, src: []const u8, needles: []const []const u8) !void {
     const io = std.testing.io;

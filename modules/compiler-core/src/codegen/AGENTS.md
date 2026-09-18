@@ -416,6 +416,27 @@ codegen/
   one clause of an earlier `case` is "unsafe" in a later one. A version bound
   inside a `case`/`fun` and read after it is left as an Erlang compile error
   (unsafe/unbound) rather than silently wrong.
+- **A `case` pattern's variant name is the last segment of its written path.**
+  `ast.Pattern` carries the name exactly as written — `Shape.Circle`, `.Some`,
+  `Circle` are three spellings of one variant — while the constructor emits the
+  bare tag (`Maybe.Some(v: 7)` → `{'Some', 7}`). Matching the written form gave
+  `{'.Some', V}`, which matches nothing, and a nullary `.None` rendered as the
+  bare token `.None`, which is `syntax error before: '.'`. `variantTag` now
+  drops the path (`bareVariantName`), and a `.ident` pattern carrying a `.` is a
+  variant, never a binding (`isVariantPath`, the same rule `bindsNames`'
+  `isVariant` callback applies). Handed over by `01-checker`, whose `infer.zig`
+  resolves the same paths with the same two helpers.
+- **A one-parameter arm binds the whole subject as an erlang alias.** `_ { v -> … }`
+  and `.Some(v) { w -> … }` (decision 8 §5.3) name the matched value in the arm
+  body's single lambda parameter; nothing bound it, so the body read a variable
+  the clause never introduced (`variable 'V' is unbound`). `armPatternNode` puts
+  the name on the clause pattern — `V = {'Some', R}` — which binds it without
+  evaluating the subject twice; on a wildcard pattern the variable simply *is*
+  the pattern (`V ->`, not `V = _`). A zero-parameter lambda is the ordinary
+  `Pattern { body }` arm and binds nothing. An arm whose value is its final
+  expression is already right here: an erlang clause body's last expression is
+  its value, so `caseBodyNode` needs nothing (the commonJS/beam/wasm IIFE shape
+  is where that half of the handover lands).
 - **Modules are `erl_ast` forms**: `emitErlangModule` builds every form in one
   arena and renders them with `erl_emitter.writeForms`: `-module`,
   `-compile({no_auto_import,…})` (`noAutoImportRefs`), `-export`s, then each

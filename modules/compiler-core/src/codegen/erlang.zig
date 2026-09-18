@@ -3405,7 +3405,9 @@ const Emitter = struct {
         const ap = stmt.expr.comptime_.kind.assertPattern;
         const isVariant = struct {
             fn f(e: *const Emitter, name: []const u8) bool {
-                return e.enum_variants.contains(name);
+                // A written path (`Maybe.None`, `.None`) is a variant, never a
+                // binding — the same rule `patternNode` applies.
+                return isVariantPath(name) or e.enum_variants.contains(name);
             }
         }.f;
         if (!patternFacts.bindsNames(ap.pattern, this, isVariant)) return null;
@@ -5137,7 +5139,7 @@ const Emitter = struct {
             // dropped guard makes the first arm swallow every subject.
             switch (arm.pattern) {
                 .@"or" => |pats| for (pats) |pat| {
-                    const pattern = try this.patternNode(b, pat);
+                    const pattern = try this.armPatternNode(b, pat, arm.body);
                     try clauses.append(b.arena, .{
                         .patterns = try b.exprs(&.{pattern}),
                         .guards = try this.armGuards(b, arm.guard),
@@ -5145,7 +5147,7 @@ const Emitter = struct {
                     });
                 },
                 else => {
-                    const pattern = try this.patternNode(b, arm.pattern);
+                    const pattern = try this.armPatternNode(b, arm.pattern, arm.body);
                     try clauses.append(b.arena, .{
                         .patterns = try b.exprs(&.{pattern}),
                         .guards = try this.armGuards(b, arm.guard),
@@ -5155,6 +5157,36 @@ const Emitter = struct {
             }
         }
         return b.caseOf(subject, clauses.items);
+    }
+
+    /// An arm's clause pattern, with the arm's own binder aliased onto it.
+    ///
+    /// `_ { v -> … }` (decision 8 §5.3, `test/case_guards.bp`) writes the whole
+    /// subject's name as the arm body's single parameter. Nothing bound it — the
+    /// body read an erlang variable the clause never introduced
+    /// (`variable 'V' is unbound`, 01's handover 3) — so the name becomes an
+    /// erlang alias on the clause pattern, `V = {'Circle', R}`, which binds it
+    /// without evaluating the subject a second time.
+    fn armPatternNode(this: *Emitter, b: Ast.Builder, pat: ast.Pattern, body: ast.Expr) anyerror!Ast.Expr {
+        const pattern = try this.patternNode(b, pat);
+        const name = armBinderName(body) orelse return pattern;
+        const bound = Ast.Expr.v(try this.patternBindVar(b, name));
+        // `V = _` is legal erlang and says nothing: on a wildcard the variable
+        // *is* the pattern.
+        if (pattern == .variable and std.mem.eql(u8, pattern.variable, "_")) return bound;
+        return b.match(bound, pattern);
+    }
+
+    /// The name a `Pattern { name -> … }` arm binds the whole subject to, or
+    /// null when the arm's body is not a one-parameter lambda. A zero-parameter
+    /// lambda is the ordinary `Pattern { body }` form and binds nothing.
+    fn armBinderName(body: ast.Expr) ?[]const u8 {
+        if (body != .function) return null;
+        const kind = body.function.kind;
+        if (kind.syntax != .lambda or kind.params.len != 1) return null;
+        const name = kind.params[0];
+        if (name.len == 0 or std.mem.eql(u8, name, "_")) return null;
+        return name;
     }
 
     /// The guard sequence of a case arm, rendered after its pattern so the guard
@@ -5180,8 +5212,13 @@ const Emitter = struct {
         switch (pat) {
             .wildcard => return Ast.Expr.v("_"),
             // A bare ident pattern is either a nullary enum variant (→ the atom
-            // `'Lt'`) or a binding (→ an erlang variable `X`).
-            .ident => |n| return if (this.enum_variants.contains(n)) Ast.Expr.a(n) else Ast.Expr.v(try this.patternBindVar(b, n)),
+            // `'Lt'`) or a binding (→ an erlang variable `X`). A name carrying a
+            // `.` is always the former — `Maybe.None`, `.None` — and reaches the
+            // atom through `variantTag`, which drops the path.
+            .ident => |n| return if (isVariantPath(n) or this.enum_variants.contains(n))
+                Ast.Expr.a(this.variantTag(n))
+            else
+                Ast.Expr.v(try this.patternBindVar(b, n)),
             .numberLit => |n| return .{ .number = n },
             .stringLit => |str| return .{ .lexeme_binary = str },
             // Variant patterns mirror what the constructor builds: the tagged
@@ -5224,9 +5261,33 @@ const Emitter = struct {
     /// `{ok, V}` / `{error, E}` by the `#[@result]` transform, so its `Ok`/`Err`
     /// arms match those lowercase tags. A user enum variant of the same name
     /// (recorded in `enum_variants`) keeps its own name.
-    fn variantTag(this: *const Emitter, name: []const u8) []const u8 {
+    ///
+    /// The name arrives **as written** (`ast.Pattern`'s doc comment: `Shape.Circle`
+    /// and `.Some` keep their path), while the constructor emits the bare variant
+    /// — `Maybe.Some(v: 1)` is `{'Some', 1}`. Matching the written form produced
+    /// `{'.Some', V}`, which matches nothing, and a nullary `.None` rendered as
+    /// the bare token `.None`, which is an erlang syntax error. The tag is
+    /// therefore taken from the last `.`-separated segment (01's handover 1).
+    fn variantTag(this: *const Emitter, written: []const u8) []const u8 {
+        const name = bareVariantName(written);
         if (this.enum_variants.contains(name)) return name;
         return resultTag(name) orelse name;
+    }
+
+    /// The last `.`-separated segment of a variant path: `Shape.Circle` → `Circle`,
+    /// `.None` → `None`, `Circle` → `Circle`. The twin of `infer.zig`'s
+    /// `bareVariantName`, which the checker resolves the same paths with.
+    fn bareVariantName(written: []const u8) []const u8 {
+        const dot = std.mem.lastIndexOfScalar(u8, written, '.') orelse return written;
+        return written[dot + 1 ..];
+    }
+
+    /// A `.ident` pattern that carries a `.` is a variant path, never a binding
+    /// (`ast.Pattern`: "A `name` carrying a `.` is a variant path"). `Maybe.None`
+    /// and `.None` are the nullary-variant spellings of what `enum_variants`
+    /// holds under `None`.
+    fn isVariantPath(name: []const u8) bool {
+        return std.mem.indexOfScalar(u8, name, '.') != null;
     }
 
     /// The `@Result` runtime tag a constructor name builds, or null when the
