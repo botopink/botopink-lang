@@ -355,6 +355,16 @@ test "infer error: effect annotation does not match the return wrapper" {
     );
 }
 
+// 06 N25 / decision 8 § 9 — the wrapper without its annotation. A plain
+// `fn -> @Result<D, E>` used to be accepted with no Result treatment at all.
+test "infer error: a @Result return without #[@result]" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn bad() -> @Result<i32, string> {
+        \\    @todo();
+        \\}
+    );
+}
+
 test "infer error: #[@future] body using yield" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\#[@future]

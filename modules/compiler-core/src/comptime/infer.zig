@@ -2911,6 +2911,24 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
         if (fnLoc) |l| err = err.withLoc(l);
         env.lastError = err;
         return error.TypeError;
+    } else if (isResultFn) {
+        // N25 / decision 8 § 9 — the wrapper without its annotation is an
+        // error too. A plain `fn -> @Result<D, E>` used to be accepted and
+        // given NO special treatment: `return` did not wrap, `throw` stayed a
+        // raw host exception. That is a second, unwritten Result calculus; the
+        // decision leaves one.
+        const msg = try std.fmt.allocPrint(
+            env.arena,
+            "{s}: a function returning `@Result<D, E>` needs `#[@result]`",
+            .{diagnostics.effect_missing_annotation},
+        );
+        var err = TypeError.custom(
+            msg,
+            "Mark it `#[@result]`: `return` then carries the success value and `throw` the error channel's own (decision 8 § 9). Without the annotation the wrapper is not built.",
+        );
+        if (fnLoc) |l| err = err.withLoc(l);
+        env.lastError = err;
+        return error.TypeError;
     }
 
     // Establish the effect context (saved/restored around the body) so nested

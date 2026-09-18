@@ -70,6 +70,17 @@ annotation and returns the matching wrapper (`@Result<R, E>` / `@Future<T, E>`):
 the host template owns the wrapper shape (used by `libs/std/src/asserts.bp`
 `tryCatch` and `libs/std/src/http.bp` `fetch`).
 
+**The wrapper without its annotation is an error too** (06 N25, decision 8 § 9).
+`@Future` / `@Iterator` / `@AsyncIterator` already demanded one; `@Result` did not — a plain
+`fn f() -> @Result<D, E>` was accepted and deliberately given NO special treatment (`return` did
+not wrap, `throw` stayed a raw host exception), which is a second, unwritten Result calculus.
+`inferFnDecl` now reds it with `effect-missing-annotation`. Every `-> @Result` in `libs/std` already
+carried `#[@result]`, so nothing there moved.
+
+Spelling note for the maintainer: decision 8 § 9's table writes `#[@asyncGenerator]` →
+`@AsyncGenerator<T>`, while the compiler, `libs/std/src/builtins.d.bp` (`behavior AsyncIterator`)
+and 38 other sites write `@AsyncIterator`. The enforcement here uses the spelling that exists.
+
 The body context `starCtxFromEffect` → `env.starFn: ?StarFnCtx{ allowsAwait,
 allowsYield, iterItem, effect }` gates `await` (future/asyncGenerator), `yield`
 (generator/iterator/asyncGenerator) and `throw` (via `env.throwContext` for
