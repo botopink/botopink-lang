@@ -1,0 +1,24 @@
+//// Decision 8 §4 — a value knows its own type. Two declarations with the same
+//// fields are two types, so their values are never equal, however alike the
+//// fields are.
+////
+//// This is the botopink-level statement of `13-module-identity`: the atom goes
+//// inside the value. Nothing else in the suite asserts it. The cell needs no
+//// union and no `unknown`, so what it fails on is identity and nothing else —
+//// its siblings `type_identity_unknown`, `_union` and `_case` carry the rest.
+
+type Person(name: string, age: i32)
+type Vec(name: string, age: i32)
+
+test "§4 two types with the same fields are different values" {
+    val p = Person(name: "Ana", age: 30);
+    val v = Vec(name: "Ana", age: 30);
+    assert (p == v) == false;
+}
+
+//// Deliberately absent: `Person(name: "Ana") == Person(name: "Ana")`. Whether
+//// two values of the *same* type with the same fields are equal is structural
+//// equality, which no decision of this milestone legislates and no front owns —
+//// it answers `false` on commonJS (reference equality on the class instance)
+//// and `true` on erlang (one map). Reported to the maintainer rather than
+//// listed against an invented row.

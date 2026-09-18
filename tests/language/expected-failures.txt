@@ -1,101 +1,139 @@
-# Expected failures of the language tests (front 15).
+# Expected failures of the language tests.
 #
-#   <target: commonJS | erlang | *> | <path>[::<test name>] | <owner row> | <reason>
+#   <target: commonJS | erlang | wasm | *> | <path>[::<test name>] | <owner row> | <reason>
 #
 # Every line names the row of the front that makes it pass. A listed test that
 # passes fails the run ("delete its line"); a path-only entry is for a file that
 # does not compile. `*` is for reject/ files (target-independent).
 #
-# Classified against botopink-lang feat ed575b5 (front 12 landed).
+# Owner rows are 1.0.5-beta fronts (`specs/1.0.5-beta/fronts.md`), written as
+# `<front number> step <n>`. Repointed from the 1.0.4-beta rows (`06 N…`,
+# `01 step 6`) by front 12 step 1; the results did not move — 205 passed,
+# 54 expected failures, 0 failed, at botopink-lang `c2dd780`, node v25.8.0,
+# OTP 29.
+#
+# Distribution: 01-checker 31 · 02-erlang 9 · 04-js 7 · 05-wasm 4 ·
+# 13-module-identity 3. Twelve lines name a second row that has to land before
+# the line goes (the §7 formatter's record and variant halves are 13 step 18,
+# not a backend's).
 
-# ── §5 case arms — the grammar landed (06 N22 parser half); the checker's is open ──
-# Reclassified against the `fix/grammar` worktree: `Pattern { body }`, `when (…)`,
-# `1...9`, `.Variant`, tuple/label/rest patterns all parse now, so every line below
-# names what inference still owes, not a parse error. The three reject cells whose
-# diagnostic the parser owns are gone from this list.
-commonJS | test/case_arms.bp          | 06 N22 | the cell writes the range `1..9`; decision 8 §5.2 settled on `1...9` and the parser refuses `..` (front 15 updates the cell)
-erlang   | test/case_arms.bp          | 06 N22 | the cell writes the range `1..9`; decision 8 §5.2 settled on `1...9` and the parser refuses `..` (front 15 updates the cell)
-commonJS | test/case_variants.bp      | 06 N22 | `.Variant` arms are not resolved against the matched value's type: "missing variant(s) Circle, Rect"
-erlang   | test/case_variants.bp      | 06 N22 | `.Variant` arms are not resolved against the matched value's type: "missing variant(s) Circle, Rect"
-commonJS | test/case_tuples.bp        | 06 N22 | an arm body is a lambda the checker does not unwrap: "expected string, got void"
-erlang   | test/case_tuples.bp        | 06 N22 | an arm body is a lambda the checker does not unwrap: "expected string, got void"
-commonJS | test/case_guards.bp        | 06 N22 | the same, with `when (…)` guards: "expected string, got void"
-erlang   | test/case_guards.bp        | 06 N22 | the same, with `when (…)` guards: "expected string, got void"
-commonJS | test/case_exhaustive.bp    | 06 N22, 06 N20 | arm bodies are not unwrapped and a union annotation is not a union type yet: "expected i32, got union"
-erlang   | test/case_exhaustive.bp    | 06 N22, 06 N20 | arm bodies are not unwrapped and a union annotation is not a union type yet: "expected i32, got union"
-commonJS | test/case_unknown.bp       | 06 N22, 06 N19, 06 N21 | arm bodies are not unwrapped, `unknown` is not §2's type and `is` is not typed: "expected string, got union"
-erlang   | test/case_unknown.bp       | 06 N22, 06 N19, 06 N21 | arm bodies are not unwrapped, `unknown` is not §2's type and `is` is not typed: "expected string, got union"
-commonJS | run/case_values.bp         | 06 N22 | `.Variant` arms are not resolved: "missing variant(s) Circle, Rect"
-erlang   | run/case_values.bp         | 06 N22 | `.Variant` arms are not resolved: "missing variant(s) Circle, Rect"
-*        | reject/case_missing_variant.bp        | 06 N22 | rejected for the wrong reason: `.Circle(r)` does not resolve, so every variant reads as missing
-*        | reject/case_unknown_without_wildcard.bp | 06 N22, 06 N19 | rejected by `unknown` assignability, not by exhaustiveness over unknown
-*        | reject/case_only_guarded_arms.bp      | 06 N22 | compiles: guarded arms are not counted for exhaustiveness
-*        | reject/case_shorthand_on_unknown.bp   | 06 N22 | rejected by `unknown` assignability, without the "full name" diagnostic
-*        | reject/case_arity_without_rest.bp     | 06 N22 | rejected for the wrong reason: the missing-field diagnostic is not there
-*        | reject/case_literals_only.bp          | 06 N22 | compiles: literal arms are not checked for exhaustiveness
+# ── §5 case arms — the grammar landed (1.0.4's 06 N22 parser half); the checker's is open ──
+# `Pattern { body }`, `when (…)`, `.Variant`, tuple/label/rest patterns all parse,
+# so every line below names what inference still owes, not a parse error. The
+# exception is `test/case_arms.bp`, which decision 20 turned back into a parser row.
+commonJS | test/case_arms.bp          | 01 step 4 | decision 20 made `..` the only range spelling; the parser still reds `1..9` with `pattern-range-exclusive` ("write `...`") and that diagnostic inverts — the cell is right as written
+erlang   | test/case_arms.bp          | 01 step 4 | decision 20 made `..` the only range spelling; the parser still reds `1..9` with `pattern-range-exclusive` ("write `...`") and that diagnostic inverts — the cell is right as written
+commonJS | test/case_variants.bp      | 01 step 4 | `.Variant` arms are not resolved against the matched value's type: "missing variant(s) Circle, Rect"
+erlang   | test/case_variants.bp      | 01 step 4 | `.Variant` arms are not resolved against the matched value's type: "missing variant(s) Circle, Rect"
+commonJS | test/case_tuples.bp        | 01 step 4 | an arm body is a lambda the checker does not unwrap: "expected string, got void"
+erlang   | test/case_tuples.bp        | 01 step 4 | an arm body is a lambda the checker does not unwrap: "expected string, got void"
+commonJS | test/case_guards.bp        | 01 step 4 | the same, with `when (…)` guards: "expected string, got void"
+erlang   | test/case_guards.bp        | 01 step 4 | the same, with `when (…)` guards: "expected string, got void"
+commonJS | test/case_exhaustive.bp    | 01 step 4, 01 step 2 | arm bodies are not unwrapped and a union annotation is not a union type yet: "expected i32, got union"
+erlang   | test/case_exhaustive.bp    | 01 step 4, 01 step 2 | arm bodies are not unwrapped and a union annotation is not a union type yet: "expected i32, got union"
+commonJS | test/case_unknown.bp       | 01 step 4, 01 step 1, 01 step 3 | arm bodies are not unwrapped, `unknown` is not §2's type and `is` is not typed: "expected string, got union"
+erlang   | test/case_unknown.bp       | 01 step 4, 01 step 1, 01 step 3 | arm bodies are not unwrapped, `unknown` is not §2's type and `is` is not typed: "expected string, got union"
+commonJS | run/case_values.bp         | 01 step 4 | `.Variant` arms are not resolved: "missing variant(s) Circle, Rect"
+erlang   | run/case_values.bp         | 01 step 4 | `.Variant` arms are not resolved: "missing variant(s) Circle, Rect"
+*        | reject/case_missing_variant.bp        | 01 step 4 | rejected for the wrong reason: `.Circle(r)` does not resolve, so every variant reads as missing
+*        | reject/case_unknown_without_wildcard.bp | 01 step 1, 01 step 4 | rejected by `unknown` assignability, not by exhaustiveness over unknown
+*        | reject/case_only_guarded_arms.bp      | 01 step 5 | compiles: guarded arms are not counted for exhaustiveness
+*        | reject/case_shorthand_on_unknown.bp   | 01 step 1, 01 step 5 | rejected by `unknown` assignability, without the "full name" diagnostic
+*        | reject/case_arity_without_rest.bp     | 01 step 4 | rejected for the wrong reason: the missing-field diagnostic is not there
+*        | reject/case_literals_only.bp          | 01 step 5 | compiles: literal arms are not checked for exhaustiveness
 
 # ── §6 tuples ─────────────────────────────────────────────────────────────────
-commonJS | test/tuple_equality.bp::§6 T6 two tuples with the same elements are equal | 01 step 6 | `==` on tuples compares references on commonJS (arrays)
-commonJS | test/tuple_equality.bp::§6 T1 T6 a labeled and an unlabeled tuple with the same elements are equal | 01 step 6 | `==` on tuples compares references on commonJS (arrays)
-commonJS | run/tuple_print.bp         | 01 step 6 | prints decision 1a's text without spaces (`#(1,"a")`); §7 wants `#(1, "a")`
-erlang   | run/tuple_print.bp         | 01 step 6 | prints decision 1a's text without spaces (`#(1,"a")`); §7 wants `#(1, "a")`
-
-# ══ front 17 — the rest of the language ═══════════════════════════════════════
-# Classified against botopink-lang `fix/language-tests` on top of `26d4fdc`,
-# node v25.8.0, OTP 29. Every cell below was run on every target it declares
-# before it was listed.
+commonJS | test/tuple_equality.bp::§6 T6 two tuples with the same elements are equal | 04 step 4 | `==` on tuples compares references on commonJS (arrays)
+commonJS | test/tuple_equality.bp::§6 T1 T6 a labeled and an unlabeled tuple with the same elements are equal | 04 step 4 | `==` on tuples compares references on commonJS (arrays)
+commonJS | run/tuple_print.bp         | 04 step 1 | prints decision 1a's text without spaces (`#(1,"a")`); §7 wants `#(1, "a")`
+erlang   | run/tuple_print.bp         | 02 step 1 | prints decision 1a's text without spaces (`#(1,"a")`); §7 wants `#(1, "a")`
 
 # ── §5.3b sections (decision 8 §5) ────────────────────────────────────────────
-commonJS | test/case_sections.bp      | 06 N22, 06 N28 | §5.3b section arms do not parse; a section is not yet a type named by its path
-erlang   | test/case_sections.bp      | 06 N22, 06 N28 | §5.3b section arms do not parse; a section is not yet a type named by its path
-
-# ── §6 tuples ─────────────────────────────────────────────────────────────────
+commonJS | test/case_sections.bp      | 01 step 4 | re-measured: §5.3b section arms now parse; the failure is the arm-body one every other case cell has — "expected string, got void" at the `case`. A section is still not a type named by its path
+erlang   | test/case_sections.bp      | 01 step 4 | re-measured: §5.3b section arms now parse; the failure is the arm-body one every other case cell has — "expected string, got void" at the `case`. A section is still not a type named by its path
 
 # ── §7 the formatter ──────────────────────────────────────────────────────────
-commonJS | run/print_formatter.bp     | 01 step 6 | §7 formatter: `f64` prints without its decimal part, arrays/tuples without spaces, records and variants in host shape
-erlang   | run/print_formatter.bp     | 01 step 6 | §7 formatter: arrays/tuples print without spaces, records as maps, variants as raw tags
-commonJS | run/display_print.bp       | 01 step 6 | §7: `@print` does not consult a type's `Display` implementation, nested or not
-erlang   | run/display_print.bp       | 01 step 6 | §7: `@print` does not consult a type's `Display` implementation, nested or not
+# The record and variant rows of §7's table need a value that knows its own type,
+# which is 13 step 18; each backend's step 1 closes the separator half only.
+commonJS | run/print_formatter.bp     | 04 step 1, 13 step 18 | §7 formatter: `f64` prints without its decimal part, arrays/tuples without spaces, records and variants in host shape
+erlang   | run/print_formatter.bp     | 02 step 1, 13 step 18 | §7 formatter: arrays/tuples print without spaces, records as maps, variants as raw tags
+commonJS | run/display_print.bp       | 04 step 1, 13 step 18 | §7: `@print` does not consult a type's `Display` implementation, nested or not
+erlang   | run/display_print.bp       | 02 step 1, 13 step 18 | §7: `@print` does not consult a type's `Display` implementation, nested or not
 
 # ── §9 effects ────────────────────────────────────────────────────────────────
-erlang   | test/effect_iterator.bp::§9 an iterator yields its elements in order | 01 step 6 | `#[@iterator]` compiles on erlang and the generator protocol raises `case_clause` at run time
-erlang   | test/effect_iterator.bp::§9 an empty iterator runs no iteration | 01 step 6 | `#[@iterator]` compiles on erlang and the generator protocol raises `case_clause` at run time
-erlang   | test/effect_generator.bp::§9 a generator yields its elements in order | 01 step 6 | `#[@generator]` compiles on erlang and the generator protocol raises `case_clause` at run time
-erlang   | test/effect_generator.bp::§9 an empty generator runs no iteration | 01 step 6 | `#[@generator]` compiles on erlang and the generator protocol raises `case_clause` at run time
-*        | reject/wrapper_without_annotation.bp | 06 N25 | `@Result<…>` without `#[@result]` is reported as a return-type mismatch at the `return`, not as §9's missing-annotation rule
-*        | reject/val_assert_after_catch.bp     | 06 N25 | `val assert Ok(n) = f() catch 0` is accepted (exit 0) and then fails at run time (`Ok is not defined` on commonJS, `variable 'N' unsafe in 'case'` on erlang)
-*        | reject/two_effect_markers.bp         | 06 N25 | the R5 message is right, but its caret points at the body's `{` (5:41) instead of the second annotation
+erlang   | test/effect_iterator.bp::§9 an iterator yields its elements in order | 02 step 6 | `#[@iterator]` compiles on erlang and the generator protocol raises `case_clause` at run time
+erlang   | test/effect_iterator.bp::§9 an empty iterator runs no iteration | 02 step 6 | `#[@iterator]` compiles on erlang and the generator protocol raises `case_clause` at run time
+erlang   | test/effect_generator.bp::§9 a generator yields its elements in order | 02 step 6 | `#[@generator]` compiles on erlang and the generator protocol raises `case_clause` at run time
+erlang   | test/effect_generator.bp::§9 an empty generator runs no iteration | 02 step 6 | `#[@generator]` compiles on erlang and the generator protocol raises `case_clause` at run time
+*        | reject/wrapper_without_annotation.bp | 01 step 8 | R9: `@Result<…>` without `#[@result]` is reported as a return-type mismatch at the `return`, not as §9's missing-annotation rule
+*        | reject/val_assert_after_catch.bp     | 01 step 8 | R9: `val assert Ok(n) = f() catch 0` is accepted (exit 0) and then fails at run time (`Ok is not defined` on commonJS, `variable 'N' unsafe in 'case'` on erlang)
+*        | reject/two_effect_markers.bp         | 01 step 8 | R9: the R5 message is right, but its caret points at the body's `{` (5:41) instead of the second annotation
 
 # ── §10 loop ──────────────────────────────────────────────────────────────────
-commonJS | test/loop_break_value.bp::§10 break with a value is the loop's value | 06 N12 | `break <value>` yields a one-element array instead of the value
-commonJS | test/loop_break_value.bp::§10 break with a value out of a condition loop | 06 N12 | `break <value>` yields a one-element array instead of the value
-erlang   | test/loop_break_value.bp   | 01 step 6 | `ConditionLoopValueUnsupported`: a loop with a value break does not compile
+commonJS | test/loop_break_value.bp::§10 break with a value is the loop's value | 04 step 3 | `break <value>` yields a one-element array instead of the value
+commonJS | test/loop_break_value.bp::§10 break with a value out of a condition loop | 04 step 3 | `break <value>` yields a one-element array instead of the value
+erlang   | test/loop_break_value.bp   | 02 step 5 | `ConditionLoopValueUnsupported`: a loop with a value break does not compile
 
 # ── §1 generics ───────────────────────────────────────────────────────────────
-*        | reject/generic_missing_argument.bp | 06 N18 | §1.1: a written generic type without its arguments is accepted (exit 0)
-*        | reject/self_without_argument.bp    | 06 N18 | §1.2: bare `Self` inside a declaration with type parameters is accepted (exit 0)
+*        | reject/generic_missing_argument.bp | 01 step 6 | §1.1: a written generic type without its arguments is accepted (exit 0)
+*        | reject/self_without_argument.bp    | 01 step 6 | §1.2: bare `Self` inside a declaration with type parameters is accepted (exit 0)
 
 # ── §8 host externals ─────────────────────────────────────────────────────────
-*        | reject/external_lowercase_target.bp | 06 | a lower-case `#[@external(node, …)]` passes `check`, binds no host and produces no diagnostic (fronts.md § unowned items)
+*        | reject/external_lowercase_target.bp | 01 step 8 | R3, decision 15: a lower-case `#[@external(node, …)]` passes `check`, binds no host and produces no diagnostic; the located error naming the capitalised form is the annotation grammar's, which is 01's
 
 # ── trailing parameter defaults ───────────────────────────────────────────────
-commonJS | test/fn_defaults.bp        | 06 N1 | trailing parameter defaults are never applied at a call site (`'connect' expects 3 argument(s), got 1`)
-erlang   | test/fn_defaults.bp        | 06 N1 | trailing parameter defaults are never applied at a call site (`'connect' expects 3 argument(s), got 1`)
+commonJS | test/fn_defaults.bp        | 01 step 7 | trailing parameter defaults are never applied at a call site (`'connect' expects 3 argument(s), got 1`)
+erlang   | test/fn_defaults.bp        | 01 step 7 | trailing parameter defaults are never applied at a call site (`'connect' expects 3 argument(s), got 1`)
 
 # ── primitive methods ─────────────────────────────────────────────────────────
-erlang   | test/string_case_conversion.bp | 01 step 6 | `String.toUpperCase` / `String.toLowerCase` emit erlang functions that are never defined
+erlang   | test/string_case_conversion.bp | 02 step 7 | `String.toUpperCase` / `String.toLowerCase` emit erlang functions that are never defined
 
 # ── modules ───────────────────────────────────────────────────────────────────
-erlang   | modules/two_modules        | 01 step 6 | a method on a type imported from a sibling module is emitted as `<module>:<method>/1` and is undefined at run time
-erlang   | modules/mod_tree           | 01 step 6 | a fn imported from a folder-index module is emitted as `<module>:<fn>/0` and is undefined at run time
-erlang   | modules/std_import         | 01 step 6 | a std package fn used from a user module is emitted as `dict:empty/0` and is undefined at run time
+# The emitted code is correct; `botopink run --target erlang` runs `escript out/main.erl`,
+# which compiles only the file it is handed. The `-pa` fix lives in `cli/run.zig`,
+# which 13 owns (fronts.md: 10 owns `modules/compiler-cli/**` except `cli/{build,run}.zig`).
+erlang   | modules/two_modules        | 13 step 2 | a method on a type imported from a sibling module is emitted as `<module>:<method>/1` and is undefined at run time
+erlang   | modules/mod_tree           | 13 step 2 | a fn imported from a folder-index module is emitted as `<module>:<fn>/0` and is undefined at run time
+erlang   | modules/std_import         | 13 step 2 | a std package fn used from a user module is emitted as `dict:empty/0` and is undefined at run time
 
-# ── wasm, the third executable target (front 17 step 4) ───────────────────────
+# ── wasm, the third executable target ─────────────────────────────────────────
 # `botopink run --target wasm` executes; `botopink test` refuses it, so only
 # run/ and modules/ cells reach wasm. The rows below are the same defects the
 # commonJS and erlang lines above name, seen from the third backend.
-wasm     | run/case_values.bp         | 06 N22 | case arms and guards do not parse
-wasm     | run/tuple_print.bp         | 01 step 6 | prints decision 1a's text without spaces (`#(1,"a")`); §7 wants `#(1, "a")`
-wasm     | run/print_formatter.bp     | 01 step 6 | §7 formatter: `f64` prints without its decimal part, arrays/tuples without spaces, and a record or a variant prints as its raw heap address
-wasm     | run/display_print.bp       | 01 step 6 | §7: `@print` does not consult `Display`; the record prints as its raw heap address
-wasm     | modules/std_import         | 01 step 6 | a std `Dict` lookup through a user module answers the fallback (`0`) instead of the stored value, with exit 0 and no diagnostic
+wasm     | run/case_values.bp         | 01 step 4 | `.Variant` arms are not resolved: "missing variant(s) Circle, Rect" — the same checker row the commonJS and erlang lines name
+wasm     | run/tuple_print.bp         | 05 step 1 | prints decision 1a's text without spaces (`#(1,"a")`); §7 wants `#(1, "a")`
+wasm     | run/print_formatter.bp     | 05 step 1, 13 step 18 | §7 formatter: `f64` prints without its decimal part, arrays/tuples without spaces, and a record or a variant prints as its raw heap address
+wasm     | run/display_print.bp       | 05 step 1, 13 step 18 | §7: `@print` does not consult `Display`; the record prints as its raw heap address
+wasm     | modules/std_import         | 05 step 3 | a std `Dict` lookup through a user module answers the fallback (`0`) instead of the stored value, with exit 0 and no diagnostic
+
+# ── run-time type identity (front 12 step 4.1) ────────────────────────────────
+# The botopink-level statement of `13-module-identity`: a value knows its own
+# type. Four `test/` cells and one `run/` cell, split so that a checker row does
+# not hide an identity row — each line below names what actually fails today,
+# and the second row is where it lands once the first is fixed.
+erlang   | test/type_identity.bp::§4 two types with the same fields are different values | 13 step 15 | a record is a bare map on erlang, so `Person(name: "Ana", age: 30)` and `Vec(name: "Ana", age: 30)` are the same term and compare equal; the tag has to be in the value. Passes on commonJS, where a record is a class instance
+commonJS | test/type_identity_unknown.bp | 01 step 1, 13 step 17 | does not compile: `unknown` is not §2's type — "type mismatch: expected unknown, got Vec". The `is` assertions behind it are 13's
+erlang   | test/type_identity_unknown.bp | 01 step 1, 13 step 17 | the same — "type mismatch: expected unknown, got Vec"
+commonJS | test/type_identity_union.bp | 01 step 2, 13 step 17 | does not compile: a union annotation is not a union type yet — "type mismatch: expected |, got Person"
+erlang   | test/type_identity_union.bp | 01 step 2, 13 step 17 | the same — "type mismatch: expected |, got Person"
+commonJS | test/type_identity_case.bp | 01 step 4, 13 step 17 | does not compile: an arm body is a lambda the checker does not unwrap — "type mismatch: expected string, got void"
+erlang   | test/type_identity_case.bp | 01 step 4, 13 step 17 | the same — "type mismatch: expected string, got void"
+commonJS | run/type_identity_print.bp | 04 step 1, 13 step 18 | §7: a record prints `Point { x: 1, y: 2 }`, a payload variant `{ tag: 'Circle', radius: 4 }`, a unit variant the bare string `Dot`, and an array without spaces
+erlang   | run/type_identity_print.bp | 02 step 1, 13 step 18 | §7: a record prints `#{x => 1,y => 2}`, a variant `{'Circle',4}` / `'Dot'`, and an array without spaces
+wasm     | run/type_identity_print.bp | 05 step 1, 13 step 18 | §7: a record and a variant print as their raw heap addresses (`256`, `264`, `268`)
+beam     | run/type_identity_print.bp | 03 step 2, 13 step 18 | §7: the erlang shapes seen from BEAM assembly — a record as a map, a variant as a tagged tuple or a bare atom
+
+# ── beam, the fourth executable target (decision 8) ───────────────────────────
+# `botopink run --target beam` writes `out/*.S`; `erlc +from_asm` then `erl` run
+# it (run.sh § beam). beam is not in `--target all` yet — front 13's policy 3
+# moves the `.S` layout — so these lines are exercised by
+# `tests/language/run.sh --target beam`, which is green with them. `botopink
+# test` refuses beam, so only run/ and modules/ cells reach it: 9 results,
+# 2 passing (`run/smoke.bp`, `modules/mod_tree`). Measured at `c2dd780`, OTP 29.
+beam     | run/tuple_print.bp         | 03 step 2 | F0/F1: a nested string prints `<<"a">>` and a tuple `{1,<<"a">>}`; decision 1a and §7 want `"a"` and `#(1, "a")`
+beam     | run/print_nested.bp        | 03 step 2 | F0: a nested string prints as an erlang binary with erlang escapes (`[<<"a\"b">>]`, `[<<"c\\d">>]`); §7 wants `["a\"b"]` with source escapes
+beam     | run/print_formatter.bp     | 03 step 2, 13 step 18 | §7 formatter: arrays/tuples print as erlang terms, a record as `#{x => 1,y => 2}` and a variant as `{'Square',4}` / `'Nothing'`
+beam     | run/display_print.bp       | 03 step 2, 13 step 18 | §7: `@print` does not consult `Display`; the record prints as `#{cents => 5}`
+beam     | run/case_values.bp         | 01 step 4 | `.Variant` arms are not resolved: "missing variant(s) Circle, Rect" — the same checker row the other three targets name
+beam     | modules/two_modules        | 03 step 4 | a method on a type imported from a sibling module reaches `call_fun` with the record's map: `{badfun,#{x=>1,y=>2}}`
+beam     | modules/std_import         | 03 step 4 | a std `Dict` method used through a user module reaches `call_fun` with the dict's map: `{badfun,#{pairs=>[]}}`

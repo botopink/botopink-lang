@@ -1,0 +1,13 @@
+//// Decision 8 §3.3 and §4.2 — a union of two **named** types, and `is` reading
+//// the value's own type through it. Separate from `test/type_identity.bp` so a
+//// union annotation the checker does not build yet does not hide the identity
+//// assertions that need no union.
+
+type Person(name: string, age: i32)
+type Vec(name: string, age: i32)
+
+test "§4.2 `is` on a named type answers by the value, not by the annotation" {
+    val p: Person | Vec = Person(name: "Ana", age: 30);
+    assert p is Person;
+    assert (p is Vec) == false;
+}

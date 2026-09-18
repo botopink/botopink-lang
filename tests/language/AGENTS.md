@@ -43,17 +43,46 @@ with `expected.out`. A cell that needs a git dependency is deliberately out of s
 
 ## The targets
 
+Measured at `c2dd780`, OTP 29, node v25.8.0.
+
 | Target | `botopink test` | `botopink run` | In the suite |
 |---|---|---|---|
 | commonJS | yes | yes | every kind |
 | erlang | yes | yes | every kind |
 | wasm | refused — "supports only the commonJS and erlang targets" | yes, it executes | `run/` and `modules/` only |
-| beam | refused | writes `out/main.S` and stops — a BEAM Assembly artifact, not a run | **no** |
+| beam | refused — the same message | writes `out/*.S` and stops — BEAM Assembly is an artifact, not a run | `run/` and `modules/`, via `--target beam`; **not in `--target all` yet** |
 
 `test/` cells therefore run on commonJS and erlang; `run/` and `modules/` cells run on those two and
-on wasm; `reject/` runs once (target `*`, `botopink check` is target-independent). beam is excluded
-because nothing executes: a `run/` cell would compare an empty stdout and pass vacuously. Its
-decision-8 coverage stays in `snapshots/codegen/beam/` (01 step 6).
+on wasm, and on beam when asked for; `reject/` runs once (target `*`, `botopink check` is
+target-independent).
+
+**beam executes, in two more commands** — decision 8 of `specs/1.0.5-beta/decisions-taken.md`,
+re-measured here:
+
+```bash
+$ botopink run --target beam
+wrote out/main.S — BEAM Assembly is an artifact; compile with `erlc +from_asm out/main.S` …
+$ find out -name '*.S' | while read s; do erlc +from_asm -o out "$s"; done
+$ erl -noshell -pa out -eval 'main:main(), halt().'
+hi
+```
+
+`run.sh`'s `exec_run` is exactly that path (see its `§ beam` comment). Every `.S` is assembled, not
+only `out/*.S`: a `mod` tree and a `from "std"` import emit nested directories today
+(`out/shapes/circle.S`, `out/std/…`), and a module left unassembled is an `undef` at run time rather
+than a compile error — `modules/mod_tree` passes only because of it. `erlc` and `erl` are already
+gate dependencies (every erlang cell; stage 5 `scripts/beam_export_audit.sh`), so beam costs the gate
+no new tool.
+
+beam is **not** in `--target all`, and that is scheduling rather than doubt: front 13's policy 3
+changes how many `.S` files a program emits and where they live, so a default-on runner would be
+written against a layout that is about to move. Flipping it on is one line of `run.sh`
+(`all) targets=(commonJS erlang wasm beam)`) plus a re-run of the beam cells; it belongs to 13's
+closing step. The beam rows of `expected-failures.txt` already exist and
+`tests/language/run.sh --target beam` is green: **9 results, 2 passing** (`run/smoke.bp`,
+`modules/mod_tree`), 8 expected failures — 7 owned by `03-beam` (steps 2 and 4) and 1 by
+`01-checker` step 4; three of the `03` rows name `13 step 18` as well, because a record and a
+variant cannot print their names before a value carries one.
 
 ## Running
 
@@ -62,6 +91,7 @@ zig build test-language                                   # the installed botopi
 zig build test-language -- --target erlang
 tests/language/run.sh --compiler <botopink> --only test/case_arms.bp
 tests/language/run.sh --compiler <botopink> --only modules/two_modules
+tests/language/run.sh --target beam                       # opt-in; needs erlc + erl
 ```
 
 `--lib-root` defaults to `<compiler>/../../libs` (where `from "std"` resolves).
@@ -69,12 +99,21 @@ tests/language/run.sh --compiler <botopink> --only modules/two_modules
 ## expected-failures.txt
 
 ```
-<target: commonJS | erlang | wasm | *> | <path>[::<test name>] | <owner row> | <reason>
+<target: commonJS | erlang | wasm | beam | *> | <path>[::<test name>] | <owner row> | <reason>
 ```
 
-- The owner row must exist in the specs: `12 step 3|4`, `06 N1`…`06 N30`, `01 step 6`, or an
-  unowned item of `specs/1.0.4-beta/fronts.md`. **A cell whose owner is nobody is reported to the
-  maintainer, not listed against an invented row** — and not committed until the row exists.
+A line whose target is not in the current run is skipped, not failed — which is what lets the beam
+rows sit in the file while beam stays out of `--target all`.
+
+- The owner row must exist in the specs: a front of the current milestone
+  (`specs/1.0.5-beta/fronts.md`) and one of its numbered steps, written `<front> step <n>` —
+  `01 step 4`, `02 step 6`, `04 step 1`, `05 step 3`, `13 step 18`. A line may name more than one
+  row, comma-separated, when the failure needs both to land (`04 step 1, 13 step 18`: the separator
+  half is the backend's, the record and variant halves need a value that knows its own type).
+  **A cell whose owner is nobody is reported to the maintainer, not listed against an invented
+  row** — and not committed until the row exists. When a milestone closes, the next milestone's
+  first landing repoints every line before any front deletes one, so that two commits never touch
+  the same line.
 - A path-only entry is for a cell that does not compile; a cell that compiles lists its failing
   tests by name. A cell may fail differently per target and then carries one line per target, with
   two different owners (`test/loop_break_value.bp` is the worked example).
@@ -86,7 +125,18 @@ tests/language/run.sh --compiler <botopink> --only modules/two_modules
 
 ## Status and the gate
 
-Coverage: **68 cells** besides the three smoke files — front 15's 31, and 37 added by front 17.
+Counted on disk at `fcc4b5b` + front 12 step 4.1:
+
+```bash
+ls test/*.bp    | wc -l   # 44
+ls run/*.bp     | wc -l   #  7   (each with its .out)
+ls reject/*.bp  | wc -l   # 22   (each with its .expect)
+ls -d modules/*/| wc -l   #  3
+find . -name '*.bp' | wc -l   # 80 — 76 cells, plus the 4 extra .bp of the modules/ projects
+```
+
+**76 cells**, of which three are the `smoke` files (one per single-file kind) — so **73** besides
+them, by area:
 
 | Area | Cells | Total |
 |---|---|---|
@@ -99,13 +149,23 @@ Coverage: **68 cells** besides the three smoke files — front 15's 31, and 37 a
 | generics and behaviors (§1) | 1 test + 2 reject | 3 |
 | printing (§7) | 3 run | 3 |
 | core: closures, recursion, primitives, optionals, sugar, defaults | 8 test | 8 |
+| run-time type identity (§4, §7 — `13-module-identity`) | 4 test + 1 run | 5 |
 | modules | 3 `modules/` cells | 3 |
 
-Classification in the front-17 worktree on top of `26d4fdc` (node v25.8.0, OTP 29), every target
-together: **196 results pass and 61 are expected failures** — 06 N1, N12, N18, N19–N22, N24, N25, N28,
-`06` (the lower-case external annotation, a `fronts.md` unowned item), and 01 step 6 (the §7 formatter
-on three backends, the erlang generator protocol, erlang cross-module calls, `String.toUpperCase`,
-`ConditionLoopValueUnsupported`, tuple equality on commonJS).
+Classification at botopink-lang `fcc4b5b` + step 4.1 (node v25.8.0, OTP 29),
+`zig build test-language`, every target of `--target all` together:
+
+```
+language tests: 206 passed, 64 expected failures, 0 failed
+```
+
+All 64 owner cells name a 1.0.5-beta front. By the row that comes first on the line —
+**01-checker 37 · 02-erlang 10 · 04-js 8 · 05-wasm 5 · 13-module-identity 4** — and **15** of them
+name `13-module-identity` as a further row that has to land before the line goes (the §7 formatter's
+record and variant halves, and the identity cells behind a checker row).
+`tests/language/run.sh --target beam` adds 10 results of its own — 2 passing, 8 listed (7 against
+`03-beam`, 1 against `01-checker`, 3 of them naming `13 step 18` too); those lines are skipped by
+`--target all`. See § the targets.
 
 `zig build test-language` is a stage of `scripts/gate.sh` (after `test-libs`) and a step of the CI
 `test` job (ubuntu + macos). When a front makes a listed test pass, the gate fails with "now passes:
@@ -113,19 +173,39 @@ delete its line" — the landing commit of that front deletes the line.
 
 ## Notes for whoever writes the next cell
 
-Shapes that do not parse, found while writing these cells. None is a bug filed against a front; each
-is a form the cells route around, and each would change if the maintainer decides it should parse.
+Shapes that do not parse, found while writing these cells and **re-measured at `eeff1e1`** with
+`botopink check`. None is a bug filed against a front; each is a form the cells route around.
+Decision 14 of `specs/1.0.5-beta/decisions-taken.md` settled which of them the language wants.
 
-- `(sql """ab""").length` — a template call needs a `val` intermediate before a method.
-- `adder(3)(4)` — calling the result of a call directly.
-- `(a == b).toString()` inside an argument — bind the comparison to a `val` first.
-- A bare `if` (no `else`) inside a decorator body must be the **last** statement of the block.
-- `??` is not an operator; an optional is read with `if (x) { n -> … }`, `?.` and `== null`.
-- A module-level `var` does not parse.
-- `case` arms that bind a section (§5.3b) and the whole §5.1 `Pattern { body }` form are 06 N22.
+| Shape | At `eeff1e1` | Decision |
+|---|---|---|
+| `adder(3)(4)` — calling the result of a call | `error: There must be a 'val' or 'var' to bind a variable to a value` | **make it parse** (14) — `01-checker`'s grammar tail |
+| `#(a: i32)[]` — an array of labeled tuples | `error: Unexpected token` at the `[` | **make it parse** (14) |
+| `??` | `error: Unexpected token` at the `??` | **deliberately absent** (14) — it duplicates `catch` and `?.`; read an optional with `if (x) { n -> … }`, `?.` and `== null` |
+| a module-level `var` | `error: Unexpected token` at the `var` | **deliberately absent** (14) — a module has no mutable state |
+| `(a == b).toString()` inside an argument | `error: Unexpected token` at the `.` | open — bind the comparison to a `val` first |
+| `(sql """ab""").length` — a method on a template call | needs a dependency to measure; a `val` intermediate works | open |
+| a bare `if` (no `else`) inside a decorator body | must be the **last** statement of the block | open |
 
-The range pattern `1..9` in a `case` arm: decision 8 does not yet say whether the end is inclusive
-(`loop (0..4)` is exclusive). The tests avoid the edge until the maintainer decides.
+**Struck, because they now parse:** the §5.1 `Pattern { body }` form
+(`case n { 1 { "one" } _ { "other" } }` → `Checked`) and §5.3b section arms — `test/case_sections.bp`
+parses and fails in inference like every other `case` cell (`expected string, got void`), not at the
+`{`. Both were listed as `06 N22`.
+
+The range pattern in a `case` arm: **decision 20** settled the spelling — `..` is the only range, in
+patterns and in iteration alike, and `...` leaves the grammar. The compiler has not caught up:
+`1..9` in an arm still reds `error[pattern-range-exclusive]: \`..\` is iteration, not a pattern's
+range`, which is the diagnostic that inverts (`01 step 4`; `test/case_arms.bp` is listed against it
+and is right as written). The cells still do **not** assert the endpoint: decision 20 removes the
+second spelling but does not say in so many words whether `..` in a pattern excludes its end the way
+`loop (0..4)` does. One sentence would let a cell assert it.
+
+**Structural equality of two values of the same type is not legislated, so no cell asserts it.**
+`Person(name: "Ana", age: 30) == Person(name: "Ana", age: 30)` answers `false` on commonJS (reference
+equality on the class instance) and `true` on erlang (one map). No decision of this milestone settles
+it and no front owns it, so `test/type_identity.bp` states the omission in a comment and asserts only
+what **is** settled — that two *different* types with the same fields are different values. Reported
+to the maintainer; a sentence would turn the comment into two assertions.
 
 What cannot be tested from botopink at all, and why: `@Context` / `use` (lowers to React hooks on
 commonJS, no erlang lowering — it needs a host framework); `pub default mod` / `pub default fn` and
