@@ -17,7 +17,7 @@ compiler-core/
 └── snapshots/           ← .snap.md test fixtures
     ├── parser/          ← AST snapshots
     ├── codegen/         ← codegen output (beam/, erlang/, errors/, node/, wasm/)
-    └── comptime/        ← comptime + type-error snapshots (beam/, erlang/, node/, templates/, wasm/)
+    └── comptime/        ← comptime snapshots, one file per test (ast/, errors/, templates/)
 ```
 
 ## Commands (run from the workspace root)

@@ -1055,7 +1055,11 @@ pub fn buildSnapshotMulti(allocator: std.mem.Allocator, outputs: []const comptim
 }
 
 /// Assert the comptime AST against a snapshot file.
-/// The snapshot path is `"comptime/ast/{slug}.snap.md"`.
+/// The snapshot path is `"comptime/ast/{slug}.snap.md"` — one file per test.
+/// The AST snapshot carries no per-backend text, so there is nothing to record
+/// per runtime; the sibling `comptime/errors/` tree is written by
+/// `tests/helpers.zig` `assertTypeErrorSnap` and `comptime/templates/` by
+/// `tests/templates.zig`.
 pub fn assertComptimeAst(
     allocator: std.mem.Allocator,
     slug: []const u8,
@@ -1066,16 +1070,4 @@ pub fn assertComptimeAst(
     const text = try buildSnapshotMulti(allocator, outputs);
     defer allocator.free(text);
     try snapMod.checkText(allocator, snapName, text);
-}
-
-/// Assert the comptime AST against a snapshot file with a full custom path.
-/// Allows saving snapshots in separate directories (e.g., `comptime/node/` or `comptime/erlang/`).
-pub fn assertComptimeAstWithPath(
-    allocator: std.mem.Allocator,
-    snap_slug: []const u8,
-    outputs: []const comptimeMod.ComptimeOutput,
-) !void {
-    const text = try buildSnapshotMulti(allocator, outputs);
-    defer allocator.free(text);
-    try snapMod.checkText(allocator, snap_slug, text);
 }

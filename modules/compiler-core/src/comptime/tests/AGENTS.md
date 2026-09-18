@@ -7,6 +7,30 @@ Inference/comptime tests, split by feature. Aggregated by the sibling barrel
 `../tests.zig` for `test_root.zig`; golden snapshots live in
 `modules/compiler-core/snapshots/comptime/`.
 
+## Snapshot layout — one file per test
+
+| Directory | Written by | Holds |
+|---|---|---|
+| `comptime/ast/` | `assertComptimeAst` (`../snapshot.zig`), through the `helpers.zig` wrapper | the typed-AST snapshot of a test that compiles (or records its `COMPILE DIAGNOSTIC`) |
+| `comptime/errors/` | `assertTypeErrorSnap` (`helpers.zig`) | the rendered type error of a test that must not infer |
+| `comptime/templates/` | `checkText` in `templates.zig` | the `@Expr` capture/expansion fixtures |
+
+Until 1.0.5-beta front 06 every AST snapshot was written four times
+(`comptime/{node,erlang,wasm,beam}/<slug>`) and every type error twice
+(`comptime/{node,erlang}/errors/<slug>`). The copies were always byte-identical:
+the four-runtime architecture collapsed in v0.beta.21 (`wasm3-unified-runtime`)
+and the per-runtime loop only changed `RunResult.script`, which these snapshots
+do not include. The layout outlived it to avoid stale-file churn, at the cost of
+four files per review row. 1079 files became 338, with no change to what the
+compiler emits.
+
+**Reading the older reports.** The 1.0.1-beta audit and the 1.0.4-beta front
+documents cite the old paths — `SN/<slug>` and `snapshots/comptime/node/<slug>`
+are today's `snapshots/comptime/ast/<slug>`, and
+`snapshots/comptime/{node,erlang}/errors/<slug>` is today's
+`snapshots/comptime/errors/<slug>`. Those reports are the audit record and are
+not rewritten; this table is the mapping.
+
 When adding a test file here, register it in `../tests.zig` or it will not run.
 
 | File | Covers |
@@ -46,7 +70,7 @@ When adding a test file here, register it in `../tests.zig` or it will not run.
   and fails if the source ever starts compiling. Every call site carries a
   comment naming the missing feature and the spec that owns it
   (`DOCUMENTED SKIP —`).
-- `renderTypeError` (the `comptime/*/errors/` snapshots) is a thin wrapper over
+- `renderTypeError` (the `comptime/errors/` snapshots) is a thin wrapper over
   `comptime/snapshot.zig` `renderTypeErrorBody`, which the diagnostic sections
   reuse — both texts stay in sync by construction.
 - `BOTOPINK_SNAP_CREATE=1` is required to record a *missing* snapshot
