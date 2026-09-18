@@ -38,7 +38,8 @@ The server handles `initialize` / `shutdown`, `didOpen` / `didChange` /
   `typeDefinition`,
   `documentSymbol` (hierarchical, incl. `test "name"` blocks; `val X = enum/record/interface`
   reports the container kind, not `Variable`; a 1.0.3 `type` reports `Struct` or `Enum` by its
-  shape and lists the `(…)` field list's fields),
+  shape and lists the `(…)` field list's fields; a **section** of an enum-shaped `type`
+  is itself an `Enum` carrying its own members — decision 8 §5.3b),
   `completion` (prefix + dot-trigger + std members + builtin interface methods
   on primitive/array/string receivers + labeled args + sortText + module names),
   `references` (cross-module), `rename` (cross-module multi-file, with

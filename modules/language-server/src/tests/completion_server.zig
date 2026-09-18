@@ -201,3 +201,59 @@ test "completion (server): an enum-shaped type completes as an Enum, a record-sh
         kindOf(items, "Show"),
     );
 }
+
+// ── S8 — the declaration keywords the 1.0.3 surface introduced ───────────────
+//
+// Front 14 step 1: completion offers `type` and `behavior` where a declaration
+// may start, and never the words they replaced. The server answered neither —
+// `CompletionItemKind.Keyword` had no use site anywhere in the engine.
+
+test "completion (server): `type` and `behavior` are offered where a declaration starts" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\val x = 1;
+        \\
+    ;
+
+    const items = try completeThroughServer(gpa, source, h.pos(1, 0));
+    defer freeItems(gpa, items);
+
+    try std.testing.expect(hasLabel(items, "type"));
+    try std.testing.expect(hasLabel(items, "behavior"));
+    try std.testing.expectEqual(proto.CompletionItemKind.Keyword, kindOf(items, "type").?);
+    try std.testing.expectEqual(proto.CompletionItemKind.Keyword, kindOf(items, "behavior").?);
+
+    // The spellings the surface cutover removed are never offered.
+    try std.testing.expect(!hasLabel(items, "record"));
+    try std.testing.expect(!hasLabel(items, "enum"));
+    try std.testing.expect(!hasLabel(items, "interface"));
+}
+
+test "completion (server): a half-typed `ty` at declaration start offers `type`" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\val x = 1;
+        \\ty
+    ;
+
+    const items = try completeThroughServer(gpa, source, h.pos(1, 2));
+    defer freeItems(gpa, items);
+
+    try std.testing.expect(hasLabel(items, "type"));
+    try std.testing.expect(!hasLabel(items, "behavior")); // filtered by the prefix
+}
+
+test "completion (server): a keyword is not offered in expression position" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\val other = 1;
+        \\val x = ty;
+    ;
+
+    // Inside `val x = ty▮` — a value is expected here, not a declaration.
+    const items = try completeThroughServer(gpa, source, h.pos(1, 10));
+    defer freeItems(gpa, items);
+
+    try std.testing.expect(!hasLabel(items, "type"));
+    try std.testing.expect(!hasLabel(items, "behavior"));
+}
