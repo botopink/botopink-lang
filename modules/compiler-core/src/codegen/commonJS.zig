@@ -2807,6 +2807,32 @@ const Emitter = struct {
             },
 
             .binaryOp => |bin| {
+                // Decision 8 §6 T6 — a tuple is positional at run time, so
+                // `==` compares its elements. A tuple is a JS array and `==`
+                // lowers to `===`, which compares references, so two equal
+                // tuples were unequal.
+                //
+                // The helper is structural for **every** composite value, not
+                // only for tuples (decision 35), but only a tuple reaches it
+                // today: this emitter walks the **untyped** AST
+                // (`buildExpr(e: ast.Expr)`), so the one thing it can know
+                // about an operand is the static print shape `printShape`
+                // already recovers — and that is exactly "this expression
+                // holds a tuple". Turning the row on for a record, an array or
+                // a variant needs the operand's type at the site, which means
+                // marking it in inference by `Loc` the way `method_lowerings`
+                // does; that crosses front 01 and is the maintainer's call.
+                // One side shaped is enough: the other is a tuple too, or the
+                // helper's constructor test answers `false` exactly as `===`
+                // did.
+                if ((bin.op == .eq or bin.op == .ne) and try self.isTupleShaped(bin.lhs.*, bin.rhs.*)) {
+                    const cmp = try self.b.call(self.helper(.structural_eq), &.{
+                        try self.buildExpr(bin.lhs.*),
+                        try self.buildExpr(bin.rhs.*),
+                        .{ .number = "0" },
+                    });
+                    return if (bin.op == .eq) cmp else self.b.unary("!", cmp, true);
+                }
                 const op: []const u8 = switch (bin.op) {
                     .add => "+",
                     .sub => "-",
@@ -3620,6 +3646,20 @@ const Emitter = struct {
             .named => |n| if (std.mem.eql(u8, n, "f64") or std.mem.eql(u8, n, "f32")) float_shape else null,
             else => null,
         };
+    }
+
+    /// True when either side of a comparison is statically known to hold a
+    /// tuple — its print shape starts with `"#"`, the same fact `@print` reads
+    /// to write `#(1, "a")` instead of `[1, "a"]`.
+    fn isTupleShaped(self: *Emitter, lhs: ast.Expr, rhs: ast.Expr) anyerror!bool {
+        return isTupleShape(try self.printShape(lhs)) or isTupleShape(try self.printShape(rhs));
+    }
+
+    fn isTupleShape(shape: ?js.Expr) bool {
+        const s = shape orelse return false;
+        if (s != .array or s.array.elems.len == 0) return false;
+        const head = s.array.elems[0];
+        return head == .quoted and std.mem.eql(u8, head.quoted, "#");
     }
 
     /// `["[", elem]`, or null when the element shape holds no tuple.

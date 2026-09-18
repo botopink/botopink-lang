@@ -123,6 +123,25 @@ codegen/
   carries `prototype.__bp` (the source name — the §7 formatter's marker) and
   each variant subclass `prototype.tag` (its own name). The full table is in
   [`js/AGENTS.md`](./js/AGENTS.md#what-a-value-is-105-beta-decision-5).
+- **`==` on tuples** (decision 8 §6 T6) is structural: when either side's print
+  shape is a tuple, `==` lowers to the `__bp_eq` prelude helper and `!=` to its
+  negation. A tuple is a JS array, so `===` compared references and two equal
+  tuples were unequal.
+  **The defect is wider than tuples, and the helper is already wider**
+  (decision 35): `===` answers `false` for *every* composite value, measured as
+  `record → false`, `[1,2,3] → false`, `#(1,"a") → false`, `Circle(2.0) → false`,
+  `"abc" → true`, with wasm the same and erlang `true` throughout by accident of
+  representation. Decision 35 settles it structurally for all four, as a
+  consequence of decision 37: without mutation, identity is unobservable.
+  `__bp_eq` walks arrays and tuples element-wise and a class instance by
+  constructor plus own fields — the one shape decision 5 gave a record and a
+  variant.
+  **Only a tuple reaches it today**, because this backend walks the *untyped*
+  AST (`buildExpr(e: ast.Expr)`) and the only thing it can learn about an
+  operand is the static print shape, which says "holds a tuple" and nothing
+  else. Turning the row on for a record, an array or a variant needs the
+  operand's type at the site — a per-`Loc` mark from inference, the way
+  `method_lowerings` already does it — which crosses `01-checker`.
 - **`break <value>` in a condition loop** (decision 8 §10) is the loop's value.
   A `loop { … }` / `loop (cond) { … }` used as a value with no `yield` in its
   body is a **search**: `break <v>` becomes `return <v>` out of the IIFE and the
