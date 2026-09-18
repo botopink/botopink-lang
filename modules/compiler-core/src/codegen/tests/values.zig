@@ -392,16 +392,9 @@ test "js: operators ---- abs on an i32 receiver reaches Signed" {
     );
 }
 
-// A name nothing binds used to become the atom of its own name on beam, so the
-// program printed the word. Here `answer` is never declared (the checker lets
-// the pattern-assert subject through): beam aborts at the read with
-// `{unresolved_identifier, answer}` before `@print` runs, so its RUN LOG is
-// empty. KNOWN: the other backends do not reject it either (F7 checker).
-test "js: identifier ---- unresolved name aborts instead of printing its name" {
-    try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn main() {
-        \\    val assert 42 = answer catch 0;
-        \\    @print("unreachable");
-        \\}
-    );
-}
+// The program this test used to carry — `val assert 42 = answer catch 0;` with
+// `answer` declared nowhere — no longer compiles: 06 C12 stopped the pattern
+// assert from swallowing its subject's type error, so the read reds at the name
+// (`comptime/tests/narrowing.zig`, "an unbound name in a pattern assert reds").
+// beam's `{unresolved_identifier, …}` abort stays as the backstop for a name
+// that reaches codegen from generated code, which no source can express here.

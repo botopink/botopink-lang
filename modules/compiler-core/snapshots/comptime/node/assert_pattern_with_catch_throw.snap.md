@@ -1,7 +1,9 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
+type Person(name: string, age: i32)
 fn f() {
-    val assert Person(name, age) = r catch throw Error("is not person");
+    val r = Person(name: "ann", age: 30);
+    val assert Person(name, age) = r catch throw "is not person";
 }
 ```
 
@@ -10,6 +12,15 @@ fn f() {
 {
   "declarations": [
     {
+      "ast": "record_def",
+      "name": "Person",
+      "id": 0,
+      "fields": {
+        "name": "string",
+        "age": "i32"
+      }
+    },
+    {
       "ast": "fn_def",
       "name": "f",
       "is_pub": false,
@@ -17,7 +28,10 @@ fn f() {
       "return_type": "void",
       "body": [
         {
-          "source": "val assert Person(name, age) = r catch throw Error(\"is not person\");"
+          "source": "val r = Person(name: \"ann\", age: 30);"
+        },
+        {
+          "source": "val assert Person(name, age) = r catch throw \"is not person\";"
         }
       ]
     }

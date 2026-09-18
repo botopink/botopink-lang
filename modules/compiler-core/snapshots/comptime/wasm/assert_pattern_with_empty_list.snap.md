@@ -1,7 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn f() {
-    val assert [] = list catch throw Error("not empty");
+    val list: i32[] = [];
+    val assert [] = list catch throw "not empty";
 }
 ```
 
@@ -17,7 +18,10 @@ fn f() {
       "return_type": "void",
       "body": [
         {
-          "source": "val assert [] = list catch throw Error(\"not empty\");"
+          "source": "val list: i32[] = [];"
+        },
+        {
+          "source": "val assert [] = list catch throw \"not empty\";"
         }
       ]
     }

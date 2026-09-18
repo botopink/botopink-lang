@@ -1,7 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn f() {
-    val assert [] = list catch throw Error("not empty");
+    val list: i32[] = [];
+    val assert [] = list catch throw "not empty";
 }
 ```
 
@@ -10,7 +11,8 @@ fn f() {
 -module(main).
 
 f() ->
-    case List of [] -> List; _ -> erlang:throw({error, <<"not empty">>}) end.
+    List = [],
+    case List of [] -> List; _ -> erlang:throw(<<"not empty">>) end.
 ```
 
 ----- RUN LOG -----

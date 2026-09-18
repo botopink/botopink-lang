@@ -183,6 +183,12 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .message = "a variant after a method",
             .hint = "Declare every variant (and section) before the first method.",
         },
+        .assertPatternMissingCatch => .{
+            .code = "assert-pattern-missing-catch",
+            .message = "`val assert` needs a `catch` handler",
+            .caretCaption = "add `catch <value>` before the `;`",
+            .hint = "`val assert Ok(n) = parse(s) catch 0;` — the handler supplies the value when the pattern does not match. The handler-less form (a failure aborts) is decision 8 § 9 and is not implemented yet.",
+        },
         .typeFieldValPrefix => .{
             .code = "type-field-val-prefix",
             .message = "a field list takes no `val` prefix",

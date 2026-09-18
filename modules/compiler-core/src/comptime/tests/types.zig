@@ -82,15 +82,19 @@ test "types: assert ---- array equality" {
 
 test "types: assert pattern ---- with catch throw" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\type Person(name: string, age: i32)
         \\fn f() {
-        \\    val assert Person(name, age) = r catch throw Error("is not person");
+        \\    val r = Person(name: "ann", age: 30);
+        \\    val assert Person(name, age) = r catch throw "is not person";
         \\}
     );
 }
 
 test "types: assert pattern ---- with catch default value" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\type Person(name: string, age: i32)
         \\fn f() {
+        \\    val r = Person(name: "ann", age: 30);
         \\    val assert Person(name, age) = r catch Person(name: "bob", age: 12);
         \\}
     );
@@ -99,7 +103,8 @@ test "types: assert pattern ---- with catch default value" {
 test "types: assert pattern ---- with string literal" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn f() {
-        \\    val assert "hello" = greeting catch throw Error("not hello");
+        \\    val greeting = "hello";
+        \\    val assert "hello" = greeting catch throw "not hello";
         \\}
     );
 }
@@ -107,15 +112,21 @@ test "types: assert pattern ---- with string literal" {
 test "types: assert pattern ---- with number literal" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn f() {
-        \\    val assert 42 = answer catch throw Error("not 42");
+        \\    val answer = 42;
+        \\    val assert 42 = answer catch throw "not 42";
         \\}
     );
 }
 
 test "types: assert pattern ---- with enum variant" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\#[@result]
+        \\fn parse() -> @Result<i32, string> {
+        \\    return 42;
+        \\}
         \\fn f() {
-        \\    val assert Ok(value) = result catch throw Error("not ok");
+        \\    val result = parse();
+        \\    val assert Ok(value) = result catch throw "not ok";
         \\}
     );
 }
@@ -123,7 +134,8 @@ test "types: assert pattern ---- with enum variant" {
 test "types: assert pattern ---- with empty list" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn f() {
-        \\    val assert [] = list catch throw Error("not empty");
+        \\    val list: i32[] = [];
+        \\    val assert [] = list catch throw "not empty";
         \\}
     );
 }
@@ -131,7 +143,8 @@ test "types: assert pattern ---- with empty list" {
 test "types: assert pattern ---- with multiple element list" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn f() {
-        \\    val assert [1, 2, 3] = numbers catch throw Error("not matching");
+        \\    val numbers = [1, 2, 3];
+        \\    val assert [1, 2, 3] = numbers catch throw "not matching";
         \\}
     );
 }
@@ -139,6 +152,7 @@ test "types: assert pattern ---- with multiple element list" {
 test "types: assert pattern ---- with list and rest" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn f() {
+        \\    val items = [1, 2, 3, 4];
         \\    val assert [first, second, ..rest] = items catch [];
         \\}
     );

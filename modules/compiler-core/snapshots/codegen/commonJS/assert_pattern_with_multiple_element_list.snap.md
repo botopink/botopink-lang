@@ -1,14 +1,16 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn f() {
-    val assert [1, 2, 3] = numbers catch throw Error("not matching");
+    val numbers = [1, 2, 3];
+    val assert [1, 2, 3] = numbers catch throw "not matching";
 }
 ```
 
 ----- JAVASCRIPT -- main.js
 ```javascript
 function f() {
-    (() => { const _match = numbers; if ((Array.isArray(_match) && _match.length >= 3)) { return _match; } else { throw Error("not matching"); } })();
+    const numbers = [1, 2, 3];
+    (() => { const _match = numbers; if ((Array.isArray(_match) && _match.length >= 3)) { return _match; } else { throw "not matching"; } })();
 }
 ```
 

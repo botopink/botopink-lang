@@ -1,7 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn f() {
-    val assert 42 = answer catch throw Error("not 42");
+    val answer = 42;
+    val assert 42 = answer catch throw "not 42";
 }
 ```
 
@@ -10,7 +11,8 @@ fn f() {
 -module(main).
 
 f() ->
-    case Answer of 42 -> Answer; _ -> erlang:throw({error, <<"not 42">>}) end.
+    Answer = 42,
+    case Answer of 42 -> Answer; _ -> erlang:throw(<<"not 42">>) end.
 ```
 
 ----- RUN LOG -----

@@ -154,6 +154,11 @@ pub const ParseErrorType = enum {
     templateSelfMarker,
     /// `$N` in an `@External` template past the declaration's parameters.
     templateMarkerOutOfRange,
+    /// `val assert <pattern> = <expr>;` with no `catch`. Decision 8 § 9 spells
+    /// this form (a failure is a fatal assert) but nothing lowers it yet, so the
+    /// parser says which form compiles today instead of failing at the `;` with
+    /// a bare "Unexpected token" (06 C12).
+    assertPatternMissingCatch,
 };
 
 pub const ParseErrorInfo = struct {
@@ -995,6 +1000,20 @@ pub const Parser = struct {
         const ptr = try alloc.create(Expr);
         ptr.* = expr;
         return ptr;
+    }
+
+    /// `boxExpr`, taking ownership even when the allocation fails: the value is
+    /// freed on the error path, so the caller must **not** keep an
+    /// `errdefer expr.deinit(alloc)` alive across the call. The boxed copy owns
+    /// the children from here on, and a second `deinit` of the same children is
+    /// a double free — that is what aborted the compiler on
+    /// `val assert Ok(n) = f();` with no `catch` (06 C12).
+    pub fn boxExprOwned(this: *This, alloc: std.mem.Allocator, expr: Expr) ParseError!*Expr {
+        return this.boxExpr(alloc, expr) catch |err| {
+            var mut = expr;
+            mut.deinit(alloc);
+            return err;
+        };
     }
 
     /// The binary-operator enum carried by `binaryOp` expressions.

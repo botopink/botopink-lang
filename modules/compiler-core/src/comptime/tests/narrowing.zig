@@ -385,3 +385,27 @@ test "infer error: narrow ---- a guard body must answer bool" {
         \\}
     );
 }
+
+// ── 06 C12 — a pattern assert checks its subject and its handler ──────────────
+
+test "infer error: narrow ---- an unbound name in a pattern assert reds" {
+    // Both halves used to swallow `error.TypeError` into a fresh type variable,
+    // so this compiled and only aborted at run time (beam printed
+    // `{unresolved_identifier, answer}`).
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    val assert 42 = answer catch 0;
+        \\    @print("unreachable");
+        \\}
+    );
+}
+
+test "infer error: narrow ---- a pattern assert handler is checked too" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    val answer = 42;
+        \\    val assert 42 = answer catch fallback;
+        \\    @print(answer);
+        \\}
+    );
+}
