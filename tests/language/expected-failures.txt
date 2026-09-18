@@ -44,6 +44,20 @@ erlang   | run/tuple_print.bp         | 01 step 6 | prints decision 1a's text wi
 # node v25.8.0, OTP 29. Every cell below was run on every target it declares
 # before it was listed.
 
+# ── §5.3b sections (decision 8 §5) ────────────────────────────────────────────
+commonJS | test/case_sections.bp      | 06 N22, 06 N28 | §5.3b section arms do not parse; a section is not yet a type named by its path
+erlang   | test/case_sections.bp      | 06 N22, 06 N28 | §5.3b section arms do not parse; a section is not yet a type named by its path
+
+# ── §6 tuples ─────────────────────────────────────────────────────────────────
+commonJS | test/tuple_fn_field.bp::§6 T4 a labeled function element is called through its label | 06 N24 | a function-typed tuple label is not rewritten to a positional call (`c.bump is not a function`)
+erlang   | test/tuple_fn_field.bp     | 06 N24 | a function-typed tuple label is not rewritten to a positional call (`function bump/2 undefined`)
+
+# ── §7 the formatter ──────────────────────────────────────────────────────────
+commonJS | run/print_formatter.bp     | 01 step 6 | §7 formatter: `f64` prints without its decimal part, arrays/tuples without spaces, records and variants in host shape
+erlang   | run/print_formatter.bp     | 01 step 6 | §7 formatter: arrays/tuples print without spaces, records as maps, variants as raw tags
+commonJS | run/display_print.bp       | 01 step 6 | §7: `@print` does not consult a type's `Display` implementation, nested or not
+erlang   | run/display_print.bp       | 01 step 6 | §7: `@print` does not consult a type's `Display` implementation, nested or not
+
 # ── §9 effects ────────────────────────────────────────────────────────────────
 erlang   | test/effect_iterator.bp::§9 an iterator yields its elements in order | 01 step 6 | `#[@iterator]` compiles on erlang and the generator protocol raises `case_clause` at run time
 erlang   | test/effect_iterator.bp::§9 an empty iterator runs no iteration | 01 step 6 | `#[@iterator]` compiles on erlang and the generator protocol raises `case_clause` at run time
@@ -55,6 +69,15 @@ erlang   | test/effect_val_assert.bp  | 06 N25 | §9's handler-less `val assert 
 *        | reject/val_assert_after_catch.bp     | 06 N25 | `val assert Ok(n) = f() catch 0` is accepted (exit 0) and then fails at run time (`Ok is not defined` on commonJS, `variable 'N' unsafe in 'case'` on erlang)
 *        | reject/two_effect_markers.bp         | 06 N25 | the R5 message is right, but its caret points at the body's `{` (5:41) instead of the second annotation
 
+# ── §10 loop ──────────────────────────────────────────────────────────────────
+commonJS | test/loop_break_value.bp::§10 break with a value is the loop's value | 06 N12 | `break <value>` yields a one-element array instead of the value
+commonJS | test/loop_break_value.bp::§10 break with a value out of a condition loop | 06 N12 | `break <value>` yields a one-element array instead of the value
+erlang   | test/loop_break_value.bp   | 01 step 6 | `ConditionLoopValueUnsupported`: a loop with a value break does not compile
+
+# ── §1 generics ───────────────────────────────────────────────────────────────
+*        | reject/generic_missing_argument.bp | 06 N18 | §1.1: a written generic type without its arguments is accepted (exit 0)
+*        | reject/self_without_argument.bp    | 06 N18 | §1.2: bare `Self` inside a declaration with type parameters is accepted (exit 0)
+
 # ── §8 host externals ─────────────────────────────────────────────────────────
 *        | reject/external_lowercase_target.bp | 06 | a lower-case `#[@external(node, …)]` passes `check`, binds no host and produces no diagnostic (fronts.md § unowned items)
 
@@ -65,30 +88,17 @@ erlang   | test/fn_defaults.bp        | 06 N1 | trailing parameter defaults are 
 # ── primitive methods ─────────────────────────────────────────────────────────
 erlang   | test/string_case_conversion.bp | 01 step 6 | `String.toUpperCase` / `String.toLowerCase` emit erlang functions that are never defined
 
-# ── §1 generics ───────────────────────────────────────────────────────────────
-*        | reject/generic_missing_argument.bp | 06 N18 | §1.1: a written generic type without its arguments is accepted (exit 0)
-*        | reject/self_without_argument.bp    | 06 N18 | §1.2: bare `Self` inside a declaration with type parameters is accepted (exit 0)
-
-# ── §5.3b sections ────────────────────────────────────────────────────────────
-commonJS | test/case_sections.bp      | 06 N22, 06 N28 | §5.3b section arms do not parse; a section is not yet a type named by its path
-erlang   | test/case_sections.bp      | 06 N22, 06 N28 | §5.3b section arms do not parse; a section is not yet a type named by its path
-
-# ── §6 tuples ─────────────────────────────────────────────────────────────────
-commonJS | test/tuple_fn_field.bp::§6 T4 a labeled function element is called through its label | 06 N24 | a function-typed tuple label is not rewritten to a positional call (`c.bump is not a function`)
-erlang   | test/tuple_fn_field.bp     | 06 N24 | a function-typed tuple label is not rewritten to a positional call (`function bump/2 undefined`)
-
-# ── §10 loop ──────────────────────────────────────────────────────────────────
-commonJS | test/loop_break_value.bp::§10 break with a value is the loop's value | 06 N12 | `break <value>` yields a one-element array instead of the value
-commonJS | test/loop_break_value.bp::§10 break with a value out of a condition loop | 06 N12 | `break <value>` yields a one-element array instead of the value
-erlang   | test/loop_break_value.bp   | 01 step 6 | `ConditionLoopValueUnsupported`: a loop with a value break does not compile
-
-# ── §7 the formatter ──────────────────────────────────────────────────────────
-commonJS | run/print_formatter.bp     | 01 step 6 | §7 formatter: `f64` prints without its decimal part, arrays/tuples without spaces, records and variants in host shape
-erlang   | run/print_formatter.bp     | 01 step 6 | §7 formatter: arrays/tuples print without spaces, records as maps, variants as raw tags
-commonJS | run/display_print.bp       | 01 step 6 | §7: `@print` does not consult a type's `Display` implementation, nested or not
-erlang   | run/display_print.bp       | 01 step 6 | §7: `@print` does not consult a type's `Display` implementation, nested or not
-
 # ── modules ───────────────────────────────────────────────────────────────────
 erlang   | modules/two_modules        | 01 step 6 | a method on a type imported from a sibling module is emitted as `<module>:<method>/1` and is undefined at run time
 erlang   | modules/mod_tree           | 01 step 6 | a fn imported from a folder-index module is emitted as `<module>:<fn>/0` and is undefined at run time
 erlang   | modules/std_import         | 01 step 6 | a std package fn used from a user module is emitted as `dict:empty/0` and is undefined at run time
+
+# ── wasm, the third executable target (front 17 step 4) ───────────────────────
+# `botopink run --target wasm` executes; `botopink test` refuses it, so only
+# run/ and modules/ cells reach wasm. The rows below are the same defects the
+# commonJS and erlang lines above name, seen from the third backend.
+wasm     | run/case_values.bp         | 06 N22 | case arms and guards do not parse
+wasm     | run/tuple_print.bp         | 01 step 6 | prints decision 1a's text without spaces (`#(1,"a")`); §7 wants `#(1, "a")`
+wasm     | run/print_formatter.bp     | 01 step 6 | §7 formatter: `f64` prints without its decimal part, arrays/tuples without spaces, and a record or a variant prints as its raw heap address
+wasm     | run/display_print.bp       | 01 step 6 | §7: `@print` does not consult `Display`; the record prints as its raw heap address
+wasm     | modules/std_import         | 01 step 6 | a std `Dict` lookup through a user module answers the fallback (`0`) instead of the stored value, with exit 0 and no diagnostic

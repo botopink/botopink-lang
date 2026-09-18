@@ -43,15 +43,22 @@ with `expected.out`. A cell that needs a git dependency is deliberately out of s
 
 ## The targets
 
-Every kind runs on commonJS and erlang — the targets `botopink test` and `botopink run` execute —
-except `reject/`, which runs once (target `*`, `botopink check` is target-independent). beam and wasm
-are measured in front 17 step 4; until then their decision-8 coverage stays in the codegen snapshots
-(01 step 6).
+| Target | `botopink test` | `botopink run` | In the suite |
+|---|---|---|---|
+| commonJS | yes | yes | every kind |
+| erlang | yes | yes | every kind |
+| wasm | refused — "supports only the commonJS and erlang targets" | yes, it executes | `run/` and `modules/` only |
+| beam | refused | writes `out/main.S` and stops — a BEAM Assembly artifact, not a run | **no** |
+
+`test/` cells therefore run on commonJS and erlang; `run/` and `modules/` cells run on those two and
+on wasm; `reject/` runs once (target `*`, `botopink check` is target-independent). beam is excluded
+because nothing executes: a `run/` cell would compare an empty stdout and pass vacuously. Its
+decision-8 coverage stays in `snapshots/codegen/beam/` (01 step 6).
 
 ## Running
 
 ```bash
-zig build test-language                                   # the installed botopink, both targets
+zig build test-language                                   # the installed botopink, every target
 zig build test-language -- --target erlang
 tests/language/run.sh --compiler <botopink> --only test/case_arms.bp
 tests/language/run.sh --compiler <botopink> --only modules/two_modules
@@ -62,7 +69,7 @@ tests/language/run.sh --compiler <botopink> --only modules/two_modules
 ## expected-failures.txt
 
 ```
-<target: commonJS | erlang | *> | <path>[::<test name>] | <owner row> | <reason>
+<target: commonJS | erlang | wasm | *> | <path>[::<test name>] | <owner row> | <reason>
 ```
 
 - The owner row must exist in the specs: `12 step 3|4`, `06 N1`…`06 N30`, `01 step 6`, or an
@@ -94,9 +101,10 @@ Coverage: **62 cells** besides the three smoke files.
 | core: closures, recursion, primitives, optionals, sugar, defaults | 7 test |
 | modules | 3 `modules/` cells |
 
-Classification in the front-17 worktree on top of `26d4fdc` (node v25.8.0, OTP 29), both targets
-together: **192 results pass and 56 are expected failures** — 06 N1, N12, N18, N19–N22, N24, N25, N28,
-`06` (the lower-case external annotation, a `fronts.md` unowned item), and 01 step 6 (the §7 formatter, the erlang generator protocol, erlang cross-module calls, `String.toUpperCase`,
+Classification in the front-17 worktree on top of `26d4fdc` (node v25.8.0, OTP 29), every target
+together: **196 results pass and 61 are expected failures** — 06 N1, N12, N18, N19–N22, N24, N25, N28,
+`06` (the lower-case external annotation, a `fronts.md` unowned item), and 01 step 6 (the §7 formatter
+on three backends, the erlang generator protocol, erlang cross-module calls, `String.toUpperCase`,
 `ConditionLoopValueUnsupported`, tuple equality on commonJS).
 
 `zig build test-language` is a stage of `scripts/gate.sh` (after `test-libs`) and a step of the CI
