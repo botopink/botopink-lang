@@ -445,6 +445,25 @@ needs the warning channel `comptime/**` does not have — the same gap §2.4 and
 run-time half. D4 (whether `is` grows a payload pattern) stands as the parser left it: the located
 `is-variant-binding` refusal, with `case` the only reader of a payload.
 
+## a record is immutable (decision 37)
+
+`p.age = 31` and `self.count += 1` both checked and both mutated in place. The decided form is a new
+value — `Person(..p, age: 31)` — which the constructor's `..` spread already builds (06 C11), so
+`refuseRecordFieldAssign` (the `.fieldAccess` target of the `.assign` walk) reds at the assignment
+and spells that form out, naming the receiver when it is a plain name it can spread.
+
+Only a receiver whose type is a record **this module registered** is refused. Everything else keeps
+assigning, for the reasons 06 C9 left its own fresh var: a receiver still an unresolved type
+variable is an inference gap, and a named type the env cannot open — an imported record, a wrapper,
+a host object a library binds — is not something this rule can speak for.
+
+Measured on this HEAD: zero occurrences in `libs/std`, in the three `examples/` projects and in the
+eleven `test-libs` cells, so the rule cost no migration. The one occurrence the 1.0.5-beta spec
+predicted would move, `snapshots/codegen/**/field_assign_self_field_update.snap.md`, **does not**:
+its fixture writes the types-as-values surface (`val Counter = type(count: i32 = 0) { … }`), where
+`self` is never typed as `Counter` and the typedef is not registered, so nothing here reaches it.
+That is R8 / types-as-values A1's ground, not decision 37's.
+
 ## `case` and `comptime` block types (06 C2)
 
 A `case` is typed from its arms (`caseTypeFromArms`): arms that agree unify, arms of different

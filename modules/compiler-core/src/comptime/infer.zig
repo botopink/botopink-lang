@@ -2705,6 +2705,53 @@ fn instantiateGenericType(env: *Env, ty: *T.Type) InferError!*T.Type {
 /// Only the `@`-prefixed builtin form is caught. `#[external(…)]` without the
 /// `@` is a user-defined attribute — a decorator's own name — and means
 /// something else entirely.
+/// Decision 37 — a record is **immutable**. `p.age = 31` and `self.count += 1`
+/// both checked and both mutated in place; the decided form is a new value,
+/// `Person(..p, age: 31)`, which the constructor's `..` spread already builds
+/// (06 C11).
+///
+/// Only a receiver whose type is a record this module registered is refused.
+/// Everything else keeps assigning: a receiver still an unresolved type
+/// variable is an inference gap and must not red here, and a named type the env
+/// cannot open — an imported record, a `@Result`/`?T` wrapper, a host object a
+/// library binds — is not something this rule can speak for.
+fn refuseRecordFieldAssign(
+    env: *Env,
+    receiver: ast.Expr,
+    receiverType: *T.Type,
+    field: []const u8,
+    loc: ast.Loc,
+) InferError!void {
+    const t = receiverType.deref();
+    if (t.* != .named) return;
+    const typeName = t.named.name;
+    const td = env.lookupTypeDef(typeName) orelse return;
+    if (td != .record) return;
+    // Name the receiver in the hint when it is something the author can spread:
+    // a plain name (`p`, `self`). Anything else gets the shape without it.
+    const spread: []const u8 = switch (receiver) {
+        .identifier => |id| switch (id.kind) {
+            .ident => |n| n,
+            else => "…",
+        },
+        else => "…",
+    };
+    var e = TypeError.custom(
+        try std.fmt.allocPrint(
+            env.arena,
+            "a `{s}` is immutable — its field `{s}` cannot be assigned",
+            .{ typeName, field },
+        ),
+        try std.fmt.allocPrint(
+            env.arena,
+            "Build a new value instead: `{s}(..{s}, {s}: <value>)`.",
+            .{ typeName, spread, field },
+        ),
+    );
+    env.lastError = e.withLoc(loc);
+    return error.TypeError;
+}
+
 fn refuseLowerCaseExternal(env: *Env, a: ast.Annotation) InferError!void {
     if (!a.is_builtin) return;
     const misspelled = std.ascii.eqlIgnoreCase(a.name, "external") or
@@ -6984,6 +7031,7 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
                     },
                     .fieldAccess => |fa| blk: {
                         const recvTyped = try inferExprTyped(env, fa.receiver.*);
+                        try refuseRecordFieldAssign(env, fa.receiver.*, recvTyped.getType(), fa.field, loc);
                         const recvPtr = try makeTypedPtr(env, recvTyped);
                         break :blk .{ .fieldAccess = .{ .receiver = recvPtr, .field = fa.field } };
                     },
