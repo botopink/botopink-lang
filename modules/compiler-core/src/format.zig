@@ -2137,11 +2137,54 @@ pub const Formatter = struct {
         });
     }
 
+    /// Where a type is being printed, for the one question the printer has to
+    /// ask there: would re-reading the text give back the same type?
+    ///
+    /// The three positions are the three places `parser/types.zig` binds a type
+    /// operator to a **base** type rather than to a whole one, so a member that
+    /// does not close itself absorbs what follows.
+    const TypePosition = enum {
+        /// `X[]` — `parseBaseTypeRef` applies the `[]` suffix at the single exit
+        /// of a base type, so `?i32[]` reads as `?(i32[])` and `i32 | string[]`
+        /// as `i32 | (string[])`.
+        arrayElement,
+        /// `?X` — `?` takes a base type, so a `|` after it opens a union whose
+        /// *first member* is the optional.
+        optionalInner,
+        /// `X | …` — a member's own grammar must not swallow the bar: a function
+        /// type's return type is parsed with the full `parseTypeRef`.
+        unionMember,
+    };
+
+    /// True when printing `ref` in `position` needs parentheses to read back as
+    /// the same type. `(T)` is not kept in the AST — `parseBaseTypeRefArm` says
+    /// `(T)` *is* `T` — so the printer decides this from the shape, not from a
+    /// recorded grouping.
+    fn typeNeedsParens(ref: ast.TypeRef, position: TypePosition) bool {
+        const isUnion = ref.unionMembers() != null;
+        const isConstrainedTypeparam = ref == .typeparam and ref.typeparam.len > 0;
+        return switch (position) {
+            .arrayElement => isUnion or ref == .optional or ref == .function or isConstrainedTypeparam,
+            .optionalInner => isUnion or isConstrainedTypeparam,
+            .unionMember => ref == .function or isConstrainedTypeparam,
+        };
+    }
+
+    /// `fmtTypeRef`, parenthesised when `position` would otherwise re-read the
+    /// text as a different type. `(i32 | string)[]` is the case that found this:
+    /// the parentheses are the array's element boundary, and printing them away
+    /// gave an array of `string`, unioned with `i32`.
+    fn fmtTypeRefIn(this: *Formatter, ref: ast.TypeRef, position: TypePosition) anyerror!*const Doc {
+        const inner = try this.fmtTypeRef(ref);
+        if (!typeNeedsParens(ref, position)) return inner;
+        return this.concatAll(&.{ try this.text("("), inner, try this.text(")") });
+    }
+
     fn fmtTypeRef(this: *Formatter, ref: ast.TypeRef) anyerror!*const Doc {
         return switch (ref) {
             .named => |n| this.text(n),
-            .array => |elem| this.concat(try this.fmtTypeRef(elem.*), try this.text("[]")),
-            .optional => |inner| this.concat(try this.text("?"), try this.fmtTypeRef(inner.*)),
+            .array => |elem| this.concat(try this.fmtTypeRefIn(elem.*, .arrayElement), try this.text("[]")),
+            .optional => |inner| this.concat(try this.text("?"), try this.fmtTypeRefIn(inner.*, .optionalInner)),
             .tuple_ => |elems| blk: {
                 var docs = try this.arena.alloc(*const Doc, elems.len);
                 for (elems, 0..) |e, i| docs[i] = try this.fmtTypeRef(e);
@@ -2195,7 +2238,7 @@ pub const Formatter = struct {
                 // under `ast.union_type_name`; it is written as its members.
                 if (ref.unionMembers()) |members| {
                     var memberDocs = try this.arena.alloc(*const Doc, members.len);
-                    for (members, 0..) |m, i| memberDocs[i] = try this.fmtTypeRef(m);
+                    for (members, 0..) |m, i| memberDocs[i] = try this.fmtTypeRefIn(m, .unionMember);
                     break :blk this.join(memberDocs, try this.text(" | "));
                 }
                 var argDocs = try this.arena.alloc(*const Doc, b.args.len);
@@ -2227,7 +2270,9 @@ pub const Formatter = struct {
             .typeparam => |constraints| blk: {
                 if (constraints.len == 0) break :blk this.text("type");
                 var docs = try this.arena.alloc(*const Doc, constraints.len);
-                for (constraints, 0..) |c, i| docs[i] = try this.fmtTypeRef(c);
+                // The constraint list is `|`-separated like a union's members,
+                // and `parseTypeRefMember` parses it the same way.
+                for (constraints, 0..) |c, i| docs[i] = try this.fmtTypeRefIn(c, .unionMember);
                 break :blk this.concat(
                     try this.text("type "),
                     try this.join(docs, try this.text(" | ")),

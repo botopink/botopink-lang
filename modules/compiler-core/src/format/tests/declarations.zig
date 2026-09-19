@@ -704,3 +704,79 @@ test "format: declarations ---- member order is kept at a nested level too" {
         \\}
     );
 }
+
+// ── a type the `[]`, `?` and `|` grammars would re-read differently ───────────
+// `parser/types.zig` binds each of those three to a **base** type, and `(T)` is
+// not kept in the AST — `parseBaseTypeRefArm` says `(T)` *is* `T`. So the
+// printer has to decide from the shape where a parenthesis is load-bearing, and
+// it did not: `(i32 | string)[]` printed as `i32 | string[]`, which is **a
+// different type** — `i32`, or an array of `string`. The loss is idempotent, so
+// `format --check` reported it clean. Handed over by `15-language-surface`,
+// whose step 4 made the form parse.
+
+test "format: types ---- an array of a union keeps the element boundary" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(xs: (i32 | string)[]) -> i32 {
+        \\    return 1;
+        \\}
+    );
+}
+
+test "format: types ---- an array of an optional keeps its parentheses" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(xs: (?i32)[]) -> i32 {
+        \\    return 1;
+        \\}
+    );
+}
+
+test "format: types ---- an optional of a union keeps its parentheses" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(x: ?(i32 | string)) -> i32 {
+        \\    return 1;
+        \\}
+    );
+}
+
+test "format: types ---- an array of a function type keeps its parentheses" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(fs: (fn(i32) -> i32)[]) -> i32 {
+        \\    return 1;
+        \\}
+    );
+}
+
+test "format: types ---- a union whose member is a function type keeps its parentheses" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(x: (fn(i32) -> i32) | string) -> i32 {
+        \\    return 1;
+        \\}
+    );
+}
+
+// The other half of the rule: a parenthesis the grammar does not need is not
+// printed, so the canonical form stays the shortest spelling of the type.
+
+test "format: types ---- an optional of an array needs no parentheses" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(x: ?i32[]) -> i32 {
+        \\    return 1;
+        \\}
+    );
+}
+
+test "format: types ---- a union of arrays needs no parentheses" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(x: i32[] | string[]) -> i32 {
+        \\    return 1;
+        \\}
+    );
+}
+
+test "format: types ---- a union whose last member is an array needs no parentheses" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(x: i32 | string[]) -> i32 {
+        \\    return 1;
+        \\}
+    );
+}
