@@ -1269,6 +1269,26 @@ pub const Formatter = struct {
     }
 
     fn fmtLambda(this: *Formatter, params: []const []const u8, body: []ast.Stmt, arrow_when_empty: bool) !*const Doc {
+        // An empty body stays inline — `{ next -> }`, `{ -> }`, `{}`
+        // ([decision 61](../../../specs/1.0.5-beta/decisions-taken.md) rule 2).
+        // The open form had nothing to put between the two hardlines, so it
+        // printed the body's indentation and then a newline: a line carrying
+        // **eight spaces and nothing else**, in a printer that goes out of its
+        // way to avoid trailing whitespace (`fmtStmtSeq` emits a bare `"\n"`
+        // for a blank line rather than a `hardline`, for exactly that reason).
+        // `fmtBody` already answers `{}` for an empty `fn` body; this is the
+        // same answer for the same question.
+        if (body.len == 0) {
+            if (params.len == 0) return this.text(if (arrow_when_empty) "{ -> }" else "{}");
+            var paramDocs = try this.arena.alloc(*const Doc, params.len);
+            for (params, 0..) |p, i| paramDocs[i] = try this.text(p);
+            return this.concatAll(&.{
+                try this.text("{ "),
+                try this.join(paramDocs, try this.text(", ")),
+                try this.text(" -> }"),
+            });
+        }
+
         const inner = try this.fmtStmtSeq(body);
 
         if (params.len == 0 and !arrow_when_empty) {

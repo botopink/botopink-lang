@@ -693,3 +693,42 @@ test "format: lambda ---- a parameterless lambda whose body needs a line keeps t
         \\}
     );
 }
+
+// decision 61 rule 2 — an empty lambda body stays inline. The open form had
+// nothing to put between its two hardlines, so it printed the body's indentation
+// and then a newline: a line of eight spaces and nothing else.
+
+test "format: lambda ---- an empty body stays inline" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn main() {
+        \\    val g = { next -> };
+        \\    val h = { -> };
+        \\}
+    );
+}
+
+test "format: lambda ---- an empty body as a record field and a tuple element" {
+    // The shape both real occurrences have: a sink a client runtime rebinds,
+    // written empty on the server. The open form spent three lines on it.
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn state(initial: i32) -> State<i32> {
+        \\    return State(value: initial, set: { next -> });
+        \\}
+    );
+}
+
+test "format: lambda ---- an empty trailing lambda and an empty case arm print {}" {
+    // `arrow_when_empty` is false for both, and neither can re-parse as a block:
+    // a trailing lambda's braces follow a callee, and a `case` arm's follow a
+    // pattern. `fmtBody` already answers `{}` for an empty `fn` body.
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn pick(n: i32) {
+        \\    case n {
+        \\        1 {
+        \\            @print("one");
+        \\        }
+        \\        _ {}
+        \\    };
+        \\}
+    );
+}
