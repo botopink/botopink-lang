@@ -17,7 +17,8 @@
 //! its group, so a module cannot call a helper it does not define.
 //!
 //! The scratch layout the print helpers assume, below the data section (which
-//! starts at 256): `0..8` the WASI iovec, `8` the newline byte, `16..32` the
+//! starts at 256): `0..8` the WASI iovec, `8` the newline byte — and `9` the
+//! space of §7's `, ` separator, written beside it in one call —, `16..32` the
 //! bool text, `32..64` the float fraction, `64..128` the i32 digits.
 
 const std = @import("std");
@@ -1177,11 +1178,21 @@ fn putByte(comptime ch: comptime_int) [5]Instr {
     return .{ c32(8), c32(ch), store8(0), c32(8), c32(1) };
 }
 
-/// `[1,2,3]` — the elements of an i32 array, comma-separated, no spaces (the
-/// erlang/beam spelling of a list; commonJS pads it with spaces).
+/// `, ` — decision 8 §7's separator inside an array or a tuple. Both bytes go
+/// through the scratch cells at 8 and 9 in one `fd_write`, so the separator
+/// costs the same one call the bare comma did. The whole of §7 F1 is this
+/// function replacing `putByte(',')` at the four sites that write a separator:
+/// the two flat-array printers and `$__print_shaped_raw`'s array and tuple arms.
+fn putSep() [8]Instr {
+    return .{ c32(8), c32(','), store8(0), c32(8), c32(' '), store8(1), c32(8), c32(2) };
+}
+
+/// `[1, 2, 3]` — the elements of an i32 array, comma-separated with the space
+/// decision 8 §7 wants (commonJS and beam already write it; erlang owes the
+/// same row as `02-erlang` step 1 F1).
 const print_arr_i32_raw = func("__print_arr_i32_raw", &.{"xs"}, null, i32s(&.{ "n", "i" }), &(putByte('[') ++ [_]Instr{call("__write_bytes")} ++ [_]Instr{
     get("xs"), load(0), set("n"),
-    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk, get("i"), when(&(putByte(',') ++ [_]Instr{call("__write_bytes")})) } ++ slot("xs", "i") ++ [_]Instr{
+    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk, get("i"), when(&(putSep() ++ [_]Instr{call("__write_bytes")})) } ++ slot("xs", "i") ++ [_]Instr{
         load(0),   call("__print_i32_raw"),
         get("i"),  c32(1),
         op("add"), set("i"),
@@ -1233,10 +1244,10 @@ const f64_to_str = typedFunc("__f64_to_str", &.{.{ .name = "x", .ty = .f64 }}, .
     set("pos"),                                                                            get("last"),                                   when(&.{ get("pos"), c32(46), store8(0), get("pos"), c32(1), op("add"), c32(168), get("last"), copy }), get("p"),
 });
 
-/// `[115,287.5,460]` — the elements of an f32 array, printed like `$__print_f64`.
+/// `[115, 287.5, 460]` — the elements of an f32 array, printed like `$__print_f64`.
 const print_arr_f32_raw = func("__print_arr_f32_raw", &.{"xs"}, null, i32s(&.{ "n", "i" }), &(putByte('[') ++ .{call("__write_bytes")} ++ [_]Instr{
     get("xs"), load(0), set("n"),
-    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk, get("i"), when(&(putByte(',') ++ [_]Instr{call("__write_bytes")})) } ++ slot("xs", "i") ++ [_]Instr{
+    loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk, get("i"), when(&(putSep() ++ [_]Instr{call("__write_bytes")})) } ++ slot("xs", "i") ++ [_]Instr{
         .{ .load = .{ .ty = .f32 } }, .{ .convert = "f64.promote_f32" }, call("__print_f64_raw"),
         get("i"),                     c32(1),                            op("add"),
         set("i"),                     again,
@@ -1270,8 +1281,8 @@ const print_quoted_raw = func("__print_quoted_raw", &.{"s"}, null, i32s(&.{ "n",
 
 /// The text of `v` by the shape at `sh`, answering the address just past that
 /// shape (semantics decision 1a). Shape codes: `i` an i32, `b` a bool, `f` an
-/// f32 slot, `s` a string (quoted), `[X` an array of `X` — `[e1,e2]` —, and
-/// `(XY…)` a tuple — `#(e1,e2)`. With `go` = 0 nothing is written and nothing
+/// f32 slot, `s` a string (quoted), `[X` an array of `X` — `[e1, e2]` —, and
+/// `(XY…)` a tuple — `#(e1, e2)`. With `go` = 0 nothing is written and nothing
 /// is read through `v`: the call only measures a shape, which is how an array
 /// finds the end of its element shape when it has no element.
 const print_shaped_raw = func("__print_shaped_raw", &.{ "v", "sh", "go" }, .i32, i32s(&.{ "c", "n", "i", "p", "e" }), &.{
@@ -1299,7 +1310,7 @@ const print_shaped_raw = func("__print_shaped_raw", &.{ "v", "sh", "go" }, .i32,
         c32(0),                                  call("__print_shaped_raw"),
         set("p"),                                get("go"),
         when(&.{ get("v"), load(0), set("n") }),
-        loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk, get("i"), when(&(putByte(',') ++ [_]Instr{call("__write_bytes")})) } ++ slot("v", "i") ++ [_]Instr{
+        loop(&([_]Instr{ get("i"), get("n"), op("ge_u"), brk, get("i"), when(&(putSep() ++ [_]Instr{call("__write_bytes")})) } ++ slot("v", "i") ++ [_]Instr{
             load(0),  get("e"), c32(1),    call("__print_shaped_raw"), .drop,
             get("i"), c32(1),   op("add"), set("i"),                   again,
         })),
@@ -1312,10 +1323,10 @@ const print_shaped_raw = func("__print_shaped_raw", &.{ "v", "sh", "go" }, .i32,
         get("sh"), c32(1),
         op("add"), set("p"),
         loop(&[_]Instr{
-            get("p"),                   load8(0),                                                                       c32(')'), op("eq"), brk,
-            get("go"),                  when(&.{ get("i"), when(&(putByte(',') ++ [_]Instr{call("__write_bytes")})) }), get("v"), get("i"), c32(4),
-            op("mul"),                  op("add"),                                                                      load(0),  get("p"), get("go"),
-            call("__print_shaped_raw"), set("p"),                                                                       get("i"), c32(1),   op("add"),
+            get("p"),                   load8(0),                                                                   c32(')'), op("eq"), brk,
+            get("go"),                  when(&.{ get("i"), when(&(putSep() ++ [_]Instr{call("__write_bytes")})) }), get("v"), get("i"), c32(4),
+            op("mul"),                  op("add"),                                                                  load(0),  get("p"), get("go"),
+            call("__print_shaped_raw"), set("p"),                                                                   get("i"), c32(1),   op("add"),
             set("i"),                   again,
         }),
         get("go"), when(&(putByte(')') ++ [_]Instr{call("__write_bytes")})),

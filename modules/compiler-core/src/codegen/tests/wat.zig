@@ -735,7 +735,7 @@ test "wat: loop ---- break with a value is the loop's value, not a one-element a
         \\    @print(collected);
         \\    @print(find([5, 15, 20]));
         \\}
-    , "3\n8\n[1,2,3,4,5]\n[15,20]\n");
+    , "3\n8\n[1, 2, 3, 4, 5]\n[15, 20]\n");
 }
 
 // §10 — a search that never breaks has no value to give: `0`, wasm's null

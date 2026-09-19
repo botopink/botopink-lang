@@ -1337,6 +1337,16 @@ first three are now enforced by the model, not by discipline:
   A shape holding an array (`[X`) is **not** compared this way and keeps the
   pointer comparison: `[X` has no closing code and an array's length is only
   known at run time.
+- **§7 F1 — a separator inside an array or a tuple is `, `, not `,`**
+  (`wat_prelude.putSep`): `@print([1, 2])` writes `[1, 2]` and `@print(#(1, "a"))`
+  writes `#(1, "a")`, where decision 1a's text had no space at all
+  (`[1,2]`, `#(1,"a")`). Four sites write a separator and all four now call it:
+  `$__print_arr_i32_raw`, `$__print_arr_f32_raw` and `$__print_shaped_raw`'s
+  array (`[X`) and tuple (`(XY…)`) arms. The two bytes go through the scratch
+  cells at **8 and 9** in one `fd_write`, so the separator still costs one call.
+  commonJS and beam already wrote the space; **erlang does not** — that is
+  `02-erlang` step 1 F1, and until it lands `snapshots/codegen/erlang/` is the
+  only directory whose logs still read `[1,2]`.
 - **§7 F5 — an `f64` always carries its decimal part** (`$__print_f64_raw`):
   `@print(5.0)` writes `5.0`, `9.0` and `[115.0, 287.5, 460.0]`, where the
   printer used to drop a whole number's fraction entirely (`5`, `9`,

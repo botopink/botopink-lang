@@ -23,19 +23,20 @@
 #   $ tests/language/run.sh --target beam
 #   language tests: 14 passed, 20 expected failures, 0 failed
 #
-# 56 lines: 51 exercised by `--target all`, 5 more only by `--target beam`
+# 55 lines: 50 exercised by `--target all`, 5 more only by `--target beam`
 # (the 11 `*` reject lines are counted by both runs). By the row that comes
-# first on the line: 01-checker 37 · 02-erlang 6 · 03-beam 4 · 05-wasm 4 ·
-# 13-module-identity 4 · 04-js 1. Nineteen lines name a second row that has to
+# first on the line: 01-checker 37 · 02-erlang 6 · 03-beam 4 · 13-module-identity 4 ·
+# 05-wasm 3 · 04-js 1. Nineteen lines name a second row that has to
 # land before the line goes (the §7 formatter's record and variant halves are
-# 13 step 18, not a backend's). Re-derived from the file on 2026-09-18, not from
-# one front's deltas: the paragraph had been two lines stale since 04's landing,
-# and fronts 02 and 03 deleted nine lines between them in the same merge window.
+# 13 step 18, not a backend's). Re-derived from the file on 2026-09-18 by
+# decision 59, not from one front's deltas: the paragraph had been two lines
+# stale since 04's landing, and fronts 02 and 03 deleted nine lines between them
+# in the same merge window.
 #
-# Front 05 deleted two of its own in that window — `wasm | run/index_expression.bp`
-# and `wasm | modules/std_import` — and the count above is re-derived from the file
-# after merging 02's and 03's deletions with them, not added up from any front's
-# own delta.
+# Front 05 deleted three of its own — `wasm | run/index_expression.bp`,
+# `wasm | modules/std_import` and `wasm | run/tuple_print.bp` (§7's separator,
+# step 1 F1) — and every count above is re-derived by re-reading the file after
+# the deletion, not added up from any front's own delta.
 #
 # For the record, since it changed inside this milestone: 04-js went to **zero**
 # lines when `c253965`, `7b6b5d3` and `17c5f8b` deleted all seven it had; the
@@ -114,7 +115,6 @@ erlang   | modules/std_import         | 13 step 2 | a std package fn used from a
 # run/ and modules/ cells reach wasm. The rows below are the same defects the
 # commonJS and erlang lines above name, seen from the third backend.
 wasm     | run/case_values.bp         | 01 step 4 | `.Variant` arms are not resolved: "missing variant(s) Circle, Rect" — the same checker row the commonJS and erlang lines name
-wasm     | run/tuple_print.bp         | 05 step 1 | prints decision 1a's text without spaces (`#(1,"a")`); §7 wants `#(1, "a")`
 wasm     | run/print_formatter.bp     | 05 step 1, 13 step 18 | §7 formatter: `f64` prints without its decimal part, arrays/tuples without spaces, and a record or a variant prints as its raw heap address
 wasm     | run/display_print.bp       | 05 step 1, 13 step 18 | §7: `@print` does not consult `Display`; the record prints as its raw heap address
 
