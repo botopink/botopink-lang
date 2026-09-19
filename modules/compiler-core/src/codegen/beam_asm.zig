@@ -5020,7 +5020,21 @@ const Emitter = struct {
             try self.lowerIndexExpr(cc, mode);
             return;
         }
-        try beamEmitter.writeComment(self.out, "unsupported builtin: @{s} (Fase 3+)", .{cc.callee});
+        // A builtin this backend does not lower **aborts**, it does not fall
+        // through. Emitting only a comment left whatever happened to be in
+        // `{x, 0}` there — the receiver, or the previous statement's `ok` — so
+        // the program ran to completion and printed a wrong answer with exit 0.
+        // `12-language-tests` measured that on the index expression before
+        // `lowerIndexExpr` existed, and `@print(v is i32)` still shows it:
+        // beam printed `7` and then `ok` three times for four `is` tests, where
+        // erlang refuses to compile (`function is/1 undefined`) and commonJS
+        // answers the four booleans. A silent wrong answer is worse than a
+        // crash, and this backend's own convention is the loud one — the same
+        // `{unresolved_identifier, N}` / `{unresolved_method, N, A}` backstop
+        // (README `Notes`: "the run-time abort on an unbound name is the
+        // backstop, not a fix"). No beam snapshot reaches this path, so nothing
+        // is re-recorded by making it loud.
+        try self.emitUnresolvedAbort("unsupported_builtin", cc.callee, cc.args.len);
     }
 
     /// Decision 30's index expression, which the parser hands every backend as

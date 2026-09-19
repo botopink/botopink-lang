@@ -965,6 +965,19 @@ codegen/
   `{unresolved_method, F, N}`). (Not a compile error: several fixtures whose
   source names undefined identifiers still compile on every backend — the
   checker's gap.)
+- **A builtin this backend does not lower aborts the same way**
+  (`lowerBuiltinCall`'s tail, `{unsupported_builtin, Name, Argc}`). It used to
+  emit **only** a `%%` comment and fall through, so the call left whatever was
+  already in `{x, 0}` — the receiver, or the previous statement's `ok` — and the
+  program ran to completion with a wrong answer and exit 0. That is how
+  `12-language-tests` found the index expression before `lowerIndexExpr` existed,
+  and `x is T` still shows it: `@print(v is i32)` on a `v: unknown` printed the
+  receiver and then `ok` three times for four tests, where erlang refuses to
+  compile (`function is/1 undefined`) and commonJS answers the four booleans
+  (only `commonJS.zig` has `buildIsCall`). Decision 8 §4's run-time test is
+  unlowered on erlang, beam and wasm alike; the abort makes that visible instead
+  of silently wrong. No beam snapshot reached this path, so nothing was
+  re-recorded.
 - **Closures** (`emitMakeFun`, `closureEnv`): a lambda or loop body's free
   variables — every name it reads that the enclosing frame binds — travel in
   `make_fun3`'s environment (`test_heap` with `{words, NumFree}`) and arrive
@@ -1609,3 +1622,17 @@ No backend reads a tuple label. `row.label` reaches codegen already rewritten to
 `row._N` by the checker (`comptime/AGENTS.md`), and a labeled tuple type
 (`ast.TypeRef.labeledTuple`) is the positional tuple everywhere: `.d.ts` tuple
 (`typescript.zig`), commonJS/wasm print shapes via `TypeRef.tupleElems`.
+
+**Closed on beam** (03 step 3 D5, re-verified 2026-09-18 by assembling and
+running, not by reading the `.S`): every shape 06 N24 landed answers on beam what
+it answers on erlang — a label read through a return type, through a parameter
+type and through a written annotation (`SP`, `13`, `RJ`, `3`, `12`, `2`), a
+labelled element of **function** type applied as a method (`c.set(9)` → `18`), a
+bare digit index under an `Option.map` (`2`, `true`) and a chained positional
+access with a method on the element (`2`, `x`, `7`). The fixtures are
+`snapshots/codegen/beam/tuple_labels_resolve_to_positions_on_every_backend`,
+`…_a_labeled_element_of_function_type_is_called_like_a_method`,
+`…_a_bare_digit_index_and_an_option_map_over_a_found_pair` and
+`…_chained_positional_access_and_a_method_on_an_element`. What is **not** closed
+is a label behind a `?T` (`rs.at(0).b`): the rewrite never fires there, which is
+decision 45's row and the checker's, not a backend's.
