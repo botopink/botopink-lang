@@ -403,3 +403,56 @@ test "erlang: index ---- a range second argument is a slice, open end included" 
         \\}
     , "[10,20]\n[20,30]\nbc\n", &.{ "'__bp_slice'(Xs, 0, 2)", "'__bp_slice'(Xs, 1, infinity)" });
 }
+
+// Decision 30's index expression, which the parser lands as the builtin call
+// `ast.index_builtin_name` over `(receiver, index)` — one node for the element
+// read and the slice, since the index is an ordinary expression. Written under
+// `@print`, which is the only position the checker lets it through today: it
+// types the call `void` (01-checker owns typing it by the receiver), so
+// `val a: i32 = xs[0]` is still "expected i32, got void".
+//
+// No snapshot: fronts 02, 03 and 05 each own their backend's lowering of the
+// same node, and a shared fixture would write their still-unlowered `@[]` into
+// the snapshot directories they own.
+test "js: index ---- element, slice, open slice, string and tuple" {
+    const src =
+        \\fn main() {
+        \\    val xs = [10, 20, 30];
+        \\    @print(xs[0]);
+        \\    @print(xs[0..2]);
+        \\    @print(xs[1..]);
+        \\    val s = "abcd";
+        \\    @print(s[1]);
+        \\    @print(s[1..3]);
+        \\    val t = #(1, "a");
+        \\    @print(t[0]);
+        \\    val i = 1;
+        \\    @print(xs[i + 1]);
+        \\    @print([[1, 2], [3, 4]][1][0]);
+        \\}
+    ;
+    try h.assertJsContains(std.testing.allocator, src, &.{
+        "__bp_print(xs[0]);",
+        "__bp_print(xs.slice(0, 2));",
+        "__bp_print(xs.slice(1));",
+        "__bp_print(s[1]);",
+        "__bp_print(s.slice(1, 3));",
+        "__bp_print(xs[(i + 1)]);",
+        "__bp_print([[1, 2], [3, 4]][1][0]);",
+    });
+    // An open-ended range is `.slice(start)` here and the lazy
+    // `__bp_range_from` generator everywhere else, so the helper is not pulled
+    // in by a slice.
+    try h.assertJsNotContains(std.testing.allocator, src, &.{"__bp_range_from"});
+    try h.assertJsRunLog(std.testing.allocator, src,
+        \\10
+        \\[10, 20]
+        \\[20, 30]
+        \\b
+        \\bc
+        \\1
+        \\30
+        \\3
+        \\
+    );
+}

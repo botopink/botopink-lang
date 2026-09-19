@@ -43,7 +43,7 @@ function __bp_print() {
 }
 
 function isString(x) {
-    { const s = x; if (s !== null) { return true; } }
+    { const s = x; if (s != null) { return true; } }
     return false;
 }
 

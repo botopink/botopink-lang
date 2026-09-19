@@ -1,0 +1,38 @@
+//// `a ?? b` — decision 28, landed in the parser as front 15's R8. It gives an
+//// optional a default, which nothing else in the language does: `catch` is
+//// `@Result`-only (`val b = a catch 0;` on an `a: ?i32` reds with "`try`
+//// requires a @Result<D, E> value, found 'optional'"), `?.` chains and
+//// `if (x) { n -> … }` is a statement.
+////
+//// It carries no new AST node — it desugars into the optional-binding `if` the
+//// language already had — so no backend has anything to lower for it. That
+//// desugaring is also how it inherits a commonJS defect: the emitted guard is
+//// `if (n !== null)`, and `?.` on commonJS answers `undefined`, not `null`, so
+//// `o.inner?.v ?? 9` answers `undefined` there and `9` on erlang and wasm. The
+//// same hole is in the `if (x) { n -> … }` the desugaring uses, which is why
+//// `test/optional.bp` does not see it: its optionals are explicit `null`s.
+
+fn find(n: i32) -> ?i32 {
+    if (n > 0) { return n; };
+    return null;
+}
+
+test "?? answers the fallback when the optional is null" { assert (find(-1) ?? 7) == 7; }
+
+test "?? answers the value when the optional carries one" { assert (find(5) ?? 7) == 5; }
+
+test "?? does not swallow a zero" { assert (find(0) ?? 7) == 7; }
+
+test "?? chains after ?." {
+    val o = Outer(inner: null);
+    assert (o.inner?.v ?? 9) == 9;
+}
+
+test "?? after ?. reads through a present value" {
+    val o = Outer(inner: Inner(v: 4));
+    assert (o.inner?.v ?? 9) == 4;
+}
+
+type Inner(v: i32)
+
+type Outer(inner: ?Inner)

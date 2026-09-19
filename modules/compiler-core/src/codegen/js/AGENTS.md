@@ -62,6 +62,11 @@ Two prototype properties carry what the instance itself does not:
   the payload fields in declaration order, which is what the formatter prints
   and what a `case` arm destructures.
 
+A `case` arm names its variant with whatever path it was written with
+(`Shape.Circle`, `.Circle`, `Circle`), and the path is dropped before anything
+is looked up — the class, the `tag` and the declared field order all key on the
+bare name the constructor wrote.
+
 A `case` arm over a payload-less variant tests `instanceof` when the variant's
 bare name names exactly one class in the module, and falls back to the `tag`
 test when two enums in the module share that name (`Token.Text.Bold` and
@@ -108,6 +113,32 @@ finds every one. Fixing a defect means deleting its build site, not its node.
 | Bridge | Renders | Defect |
 |---|---|---|
 | `Pattern.match` | botopink's own pattern spelling | **JS-4** a match pattern used as a JS binding target (`const Circle(r) = …`). **Blocked (F7 checker):** no program reaches a build site — `val Circle(r) = s;` and `val [a, b] = xs;` parse but the checker leaves the bindings unbound (`error: unbound variable 'r'`), and `assert x is Some(n)` is still a parse error (`narrow_assert_pattern_with_print`). Once they type-check, a `ctor` / `list` destructuring lowers to a real test-plus-destructure and the eight `buildPattern` sites, `MatchPattern` and `writeMatchPattern` go |
+
+## The IIFE build sites, classified
+
+A `(() => { … })()` is how this backend gives a **statement sequence** a value.
+`grep -cF '(() =>'` over `commonJS.zig` counts text, not build sites: it answers
+**11**, of which seven are `@todo`/`@panic` host templates and four are doc
+comments. The build sites are `Builder.iife` and
+`b.call(b.paren(b.arrowBlock(&.{}, …)))`, and there are **ten**; each is named
+here so a later row that removes one knows what it is removing:
+
+| Site | What it wraps | Genuine? |
+|---|---|---|
+| `buildExpr` `.throw_` | `throw` in value position — unwinding crosses a function boundary | **yes** |
+| `buildExpr` `__bp_future_rejected` | the same `throw`, as a rejected `@Future` | **yes** |
+| `buildExpr` `.try_` | a nested `try` in expression position: bind, propagate the error, unwrap `ok` | **yes** |
+| `buildExpr` `try … catch` | the same with a handler | **yes** |
+| `buildExpr` `val assert … catch` | bind `_match`, test the pattern, run the handler (decision 8 §9) | **yes** |
+| `buildIfExpr` | an `if` **used as a value** — decision 2 keeps `if` an expression | **yes** |
+| `buildLoop` (collection) | a `loop` used as a value: the accumulator and its `for…of` | **yes** |
+| `buildLoop` (condition) | the same for `loop (cond)`, including the `break <value>` form | **yes** |
+| `buildCase` | a `case` used as a value: `const _s = …` and one statement per arm | **yes** |
+| `@block { body }` | a **block as a value** — the one site whose producer decision 2 removes | **no** |
+
+So the checker row that enforces decision 2 (a block is not a value) reaches
+exactly **one** of them: the other nine give a value to a construct the language
+keeps as an expression.
 
 `Expr.host` is **not** a bridge: it carries the literal text of an
 `#[@External.Node("…")]` annotation, which is host code by definition — the

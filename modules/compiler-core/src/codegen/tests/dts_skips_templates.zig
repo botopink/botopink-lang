@@ -65,3 +65,27 @@ test ".d.ts: interface method returning @Expr<T> is skipped" {
         \\}
     , &.{ "export declare interface Tpl {", "name(): string;" }, &.{"render("});
 }
+
+// Decision 8 §3's union `A | B` reaches the `.d.ts` as TypeScript's own union.
+// It rides on `TypeRef.generic` under the reserved name `ast.union_type_name`
+// (`"|"`), and the generic path wrote it out as `|<A, B>` — a declaration file
+// that is not TypeScript, the defect step 6's T2 named for the primitive names.
+// No snapshot: the typedef is the only output that moves, and a snapshot would
+// carry this program's JavaScript through all four backends.
+test ".d.ts: a union is `A | B`, not `|<A, B>` (step 6 T3)" {
+    try helpers.assertDtsContains(
+        std.testing.allocator,
+        \\pub type A(x: i32)
+        \\pub type B(y: string)
+        \\pub fn pick(v: A | B) -> A | B { return v; }
+        \\pub fn u(x: unknown) -> unknown { return x; }
+        \\pub fn opt(x: ?i32) -> ?i32 { return x; }
+    ,
+        &.{
+            "export declare function pick(v: A | B): A | B;",
+            "export declare function u(x: unknown): unknown;",
+            "export declare function opt(x: number | null): number | null;",
+        },
+        &.{"|<"},
+    );
+}

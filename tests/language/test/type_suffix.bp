@@ -1,0 +1,34 @@
+//// The `T[]` suffix belongs to the type, not to a handful of type spellings —
+//// front 15's R1. Before it, `#(a: i32, b: string)[]`, `@Result<i32, string>[]`
+//// and `(i32 | string)[]` were each `Unexpected token` at the `[`; only
+//// `Box<i32>[]` parsed.
+////
+//// Reading a *label* off an element of such an array is §6 T4's promise, not
+//// this one's, and it is broken on every backend — `test/tuple_labels.bp`
+//// carries that assertion and its expected-failure lines.
+
+type Box<T>(v: T)
+
+fn rows() -> #(a: i32, b: string)[] {
+    return [#(1, "x"), #(2, "y")];
+}
+
+fn boxes() -> Box<i32>[] {
+    return [Box(v: 1), Box(v: 2), Box(v: 3)];
+}
+
+fn attempts() -> @Result<i32, string>[] {
+    return [];
+}
+
+fn labels(rs: #(a: i32, b: string)[]) -> i32 {
+    return rs.length;
+}
+
+test "an array of labeled tuples is a type" { assert rows().length == 2; }
+
+test "an array of labeled tuples is a parameter type" { assert labels(rows()) == 2; }
+
+test "the suffix still applies to a generic type" { assert boxes().length == 3; }
+
+test "an array of @Result is a return type" { assert attempts().length == 0; }

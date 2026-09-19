@@ -597,6 +597,43 @@ pub fn assertJsNotContains(allocator: Allocator, src: []const u8, needles: []con
     }
 }
 
+/// Asserts the emitted `.d.ts` of `src` contains every `present` needle and none
+/// of the `absent` ones. For a typedef row whose point is the `.d.ts` alone: a
+/// snapshot would carry the same program's JavaScript through every backend,
+/// and the typedef is the only output that moves.
+pub fn assertDtsContains(
+    allocator: Allocator,
+    src: []const u8,
+    present: []const []const u8,
+    absent: []const []const u8,
+) !void {
+    const io = std.testing.io;
+    var outputs = try codegen.generate(
+        allocator,
+        &.{.{ .path = "", .source = src }},
+        io,
+        configs[0], // commonJS / node — the only config with a typedef language
+    );
+    defer {
+        for (outputs.items) |*o| o.result.deinit(allocator);
+        outputs.deinit(allocator);
+    }
+    try std.testing.expect(outputs.items.len > 0);
+    const dts = outputs.items[outputs.items.len - 1].result.typedef orelse return error.MissingTypedef;
+    for (present) |needle| {
+        if (std.mem.indexOf(u8, dts, needle) == null) {
+            std.debug.print("\n=== generated .d.ts ===\n{s}\n=== missing needle: {s} ===\n", .{ dts, needle });
+            return error.NeedleNotFound;
+        }
+    }
+    for (absent) |needle| {
+        if (std.mem.indexOf(u8, dts, needle) != null) {
+            std.debug.print("\n=== generated .d.ts ===\n{s}\n=== unexpected needle: {s} ===\n", .{ dts, needle });
+            return error.UnexpectedNeedle;
+        }
+    }
+}
+
 /// Multi-module variant of `assertJsContains`/`assertJsNotContains`: generates
 /// every module (last one is the consumer `main`) and asserts the consumer's JS
 /// both contains every `present` needle and contains none of the `absent` ones.
