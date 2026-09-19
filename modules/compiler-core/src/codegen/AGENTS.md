@@ -1009,8 +1009,15 @@ codegen/
   variables it reassigns are this frame's registers, so nothing is threaded;
   `break` jumps to `Exit` and `continue` to `Top` (`cond_loop`, matched by the
   output buffer so a lambda's jumps never take it), and its body's slots are
-  counted into the frame (`countLocalsInExpr`). The value form is
-  `error.ConditionLoopValueUnsupported`.
+  counted into the frame (`countLocalsInExpr`). A `break` that carries a VALUE
+  makes the loop an expression (decision 8 §10, `condLoopBreaksWithValue`): the
+  condition then tests to a `Fail` label of its own, every `break` leaves its
+  value in `{x, 0}` (a value-less one leaves `undefined`) before it jumps to
+  `Exit`, and `Fail` moves `undefined` in and falls through to `Exit` — so
+  `{x, 0}` at `Exit` is the break's value or `undefined`, the two answers the
+  erlang lowering's `{GroupAtTheJump, Value}` / `{FinalGroup, undefined}` pair
+  carries. A body that **yields** is still
+  `error.ConditionLoopValueUnsupported` (`condLoopYieldsValue`).
 - **Calls**: module-qualified `List.map(…)` → `call_ext`/`call_ext_last`
   (trailing lambdas materialized as funs); `from "std"` qualified calls
   (`math.floor(x)`) → `call_ext` via `collectStdImports`; interface
