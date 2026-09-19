@@ -498,6 +498,10 @@ const loop_fun_var = "__Loop";
 /// The throws a condition loop (decision 8 §10) catches: `{Signal, Group}`,
 /// the reassigned variables at the jump.
 const cond_break_signal = "__bp_cond_break";
+/// The synthetic local a yielding condition loop collects into. It travels in
+/// the loop's variable group like any reassigned name, so the existing
+/// threading carries it through the recursion (decision 8 §9).
+const cond_yield_acc = "__bp_cond_yield";
 const cond_continue_signal = "__bp_cond_continue";
 
 /// A `pub enum` of some module in the build, with its variants.
@@ -1969,6 +1973,10 @@ const Emitter = struct {
     /// Set while lowering a condition loop whose `break` carries a value: the
     /// break's throw then carries it too, and the loop answers it.
     cond_loop_valued: bool = false,
+    /// The accumulator a YIELDING condition loop collects into, when it has one
+    /// (`cond_yield_acc`): each `yield <v>` conses onto it and the loop answers
+    /// the reversed list. Null outside such a loop, where a `yield` is dropped.
+    cond_loop_yield: ?[]const u8 = null,
     /// Numbers the named funs of condition loops so a nested one does not
     /// shadow its parent's name.
     cond_loop_seq: u32 = 0,
@@ -3881,11 +3889,35 @@ const Emitter = struct {
         this.cond_loop_valued = valued;
         defer this.cond_loop_valued = saved_valued;
 
+        // Decision 8 §9 — a generator whose body drives itself with a condition
+        // loop. `yield <v>` used to lower to the bare value expression, which an
+        // erlang clause body discards, so `#[@generator] fn nums` answered its
+        // loop's final counter and `lists:foldl/3` over it raised
+        // `no case clause matching 3`. The yields are collected instead: a
+        // synthetic local joins the loop's variable GROUP, so the threading that
+        // already carries a reassigned `i` through the recursion carries the
+        // accumulator too, and the loop answers `lists:reverse/1` of it.
+        const yielding = conditionLoopYieldsValue(lp.body);
+        const saved_yield = this.cond_loop_yield;
+        defer this.cond_loop_yield = saved_yield;
+        var all_names = names;
+        if (yielding) {
+            const with_acc = try b.arena.alloc([]const u8, names.len + 1);
+            @memcpy(with_acc[0..names.len], names);
+            with_acc[names.len] = cond_yield_acc;
+            all_names = with_acc;
+            this.addLocal(cond_yield_acc);
+            this.cond_loop_yield = cond_yield_acc;
+            this.cond_loop = all_names;
+        } else {
+            this.cond_loop_yield = null;
+        }
+
         this.cond_loop_vars += 1;
         const caught_var = try std.fmt.allocPrint(b.arena, "__BpGroup{d}", .{this.cond_loop_vars});
         var snapshot = try this.var_current.clone();
         defer snapshot.deinit();
-        const group_in: ?Ast.Expr = if (names.len > 0) try this.bindVarGroupExpr(b, names) else null;
+        const group_in: ?Ast.Expr = if (all_names.len > 0) try this.bindVarGroupExpr(b, all_names) else null;
         var in_versions = try this.var_current.clone();
         defer in_versions.deinit();
         const arm_indent = this.indent + 3;
@@ -3895,7 +3927,7 @@ const Emitter = struct {
         this.indent = saved;
 
         const body_stmts = (try this.bodyNode(b, lp.body, 0, arm_indent)).stmts;
-        const group_out = if (group_in != null) try this.varGroupExpr(b, names) else Ast.Expr.a("ok");
+        const group_out = if (group_in != null) try this.varGroupExpr(b, all_names) else Ast.Expr.a("ok");
         var arm: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
         const next: Ast.Expr = if (hasJump(lp.body, .@"continue")) blk: {
             var tried: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
@@ -3923,7 +3955,7 @@ const Emitter = struct {
             try arm.insert(b.arena, arm.items.len - 1, .{ .expr = next });
         }
         try this.restoreVersions(&in_versions);
-        const done = if (group_in) |_| try this.varGroupExpr(b, names) else Ast.Expr.a("ok");
+        const done = if (group_in) |_| try this.varGroupExpr(b, all_names) else Ast.Expr.a("ok");
         try this.restoreVersions(&snapshot);
         const case = try b.caseOf(cond, &.{
             .{ .patterns = try b.exprs(&.{Ast.Expr.a("true")}), .body = .{ .stmts = arm.items } },
@@ -3934,9 +3966,21 @@ const Emitter = struct {
             .params = if (group_in) |g| try b.exprs(&.{g}) else &.{},
             .body = try b.body(&.{case}),
         } };
+        // The accumulator has no value before the loop — it starts empty — so
+        // the initial group is built by hand rather than from the current
+        // versions: every other name is its variable, the accumulator is `[]`.
+        const initial_group: ?Ast.Expr = if (group_in == null) null else blk: {
+            if (!yielding) break :blk try this.varGroupExpr(b, all_names);
+            const vars = try b.arena.alloc(Ast.Expr, all_names.len);
+            for (all_names, 0..) |n, i| vars[i] = if (std.mem.eql(u8, n, cond_yield_acc))
+                Ast.Expr{ .list = &.{} }
+            else
+                Ast.Expr.v(try this.varRef(b, n));
+            break :blk if (vars.len == 1) vars[0] else Ast.Expr{ .tuple = vars };
+        };
         const plain_call: Ast.Expr = .{ .apply = .{
             .fun = try b.ptr(try b.paren(fun)),
-            .args = if (group_in != null) try b.exprs(&.{try this.varGroupExpr(b, names)}) else &.{},
+            .args = if (initial_group) |g| try b.exprs(&.{g}) else &.{},
         } };
         var call = plain_call;
         if (valued) {
@@ -3980,6 +4024,20 @@ const Emitter = struct {
                     &.{Ast.Expr.v(caught_var)},
                 )}),
             } };
+        }
+        if (yielding) {
+            // `case <call> of {I@3, Acc@n} -> lists:reverse(Acc@n) end`: the
+            // group is rebound by the pattern (bound in the only clause, so
+            // erlang exports it) and the loop's own value is the collected
+            // list, in yield order.
+            // A group of one name is a bare variable rather than a tuple, and
+            // the `case` destructures that just as well, so there is no
+            // shorter form to special-case: the call has to be there either
+            // way, or the accumulator is never bound.
+            const group_pat = try this.bindVarGroupExpr(b, all_names);
+            const acc = Ast.Expr.v(try this.varRef(b, cond_yield_acc));
+            const reversed = try b.remote("lists", "reverse", &.{acc});
+            return b.caseOf(call, &.{try b.clause(&.{group_pat}, &.{}, &.{reversed})});
         }
         if (group_in == null) return call;
         return b.match(try this.bindVarGroupExpr(b, names), call);
@@ -4037,6 +4095,16 @@ const Emitter = struct {
             else => {},
         };
         return false;
+    }
+
+    /// `Acc@n = [<value> | Acc@n-1]` — one `yield` inside a collecting condition
+    /// loop. The current version is read BEFORE the new one is bound, as an
+    /// ordinary reassignment does; the loop reverses at the end.
+    fn condYieldPush(this: *Emitter, b: Ast.Builder, acc: []const u8, value: anytype) anyerror!Ast.Expr {
+        const head = if (value) |val| try this.exprNode(b, val.*) else Ast.Expr.a("undefined");
+        const tail = Ast.Expr.v(try this.varRef(b, acc));
+        const bound = try this.bindVarGroupExpr(b, &.{acc});
+        return b.match(bound, try b.cons(&.{head}, tail));
     }
 
     /// The throw a `break` inside a condition loop raises. Without a value it is
@@ -4803,7 +4871,9 @@ const Emitter = struct {
                 .@"break" => |brk| if (this.cond_loop) |names|
                     this.condBreakThrow(b, names, brk)
                 else if (brk.value) |bp| this.exprNode(b, bp.*) else b.remote("erlang", "throw", &.{Ast.Expr.a(break_signal)}),
-                .yield => |y| if (y.value) |val| this.exprNode(b, val.*) else A("undefined"),
+                .yield => |y| if (this.cond_loop_yield) |acc|
+                    this.condYieldPush(b, acc, y.value)
+                else if (y.value) |val| this.exprNode(b, val.*) else A("undefined"),
                 .@"continue" => if (this.cond_loop) |names|
                     b.remote("erlang", "throw", &.{try b.tuple(&.{ A(cond_continue_signal), if (names.len > 0) try this.varGroupExpr(b, names) else A("ok") })})
                 else

@@ -1054,3 +1054,43 @@ test "erlang: loop ---- a value break out of a bare loop is the loop's value" {
         \\}
     , "3\n3\n", &.{});
 }
+
+// ── front 02-erlang step 6: the generator protocol over a condition loop ─────
+//
+// `yield <v>` inside a condition loop lowered to the bare value expression,
+// which an erlang clause body discards — so `#[@generator] fn nums` answered
+// its loop's final counter and the consuming `lists:foldl/3` raised
+// `no case clause matching 3` at run time. The yields are collected into a
+// synthetic member of the loop's variable group and the loop answers
+// `lists:reverse/1` of it.
+
+test "erlang: generator ---- a condition-loop body yields its elements in order" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\#[@generator]
+        \\fn nums(n: i32) -> @Generator<i32> {
+        \\  var i = 0;
+        \\  loop (i < n) { yield i; i = i + 1; };
+        \\}
+        \\fn main() {
+        \\  var acc = "";
+        \\  loop (nums(3)) { x -> acc = acc + x.toString(); };
+        \\  @print(acc);
+        \\  var runs = 0;
+        \\  loop (nums(0)) { x -> runs = runs + 1; };
+        \\  @print(runs);
+        \\}
+    , "012\n0\n", &.{"lists:reverse(__bp_cond_yield@3)"});
+}
+
+test "erlang: generator ---- a bare-yield body still lowers to an eager list" {
+    // `isPlainYieldGenerator`'s path, untouched by the collecting loop.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\#[@iterator]
+        \\fn two() -> @Iterator<i32> { yield 1; yield 2; }
+        \\fn main() {
+        \\  var a = "";
+        \\  loop (two()) { x -> a = a + x.toString(); };
+        \\  @print(a);
+        \\}
+    , "12\n", &.{});
+}

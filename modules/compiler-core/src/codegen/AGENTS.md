@@ -523,6 +523,19 @@ codegen/
   also had to start carrying the group: `conditionLoopNode` was called with no
   names from `exprNode`, so `val x = loop (i < 10) { … i = i + 1; };` built a fun
   of no arguments, never advanced `i`, and did not terminate.
+- **A yielding condition loop collects, it does not discard** (decision 8 §9).
+  `yield <v>` lowered to the bare value expression, which an erlang clause body
+  throws away, so `#[@generator] fn nums(n) { var i = 0; loop (i < n) { yield i;
+  i = i + 1; }; }` answered its loop's final counter and the consuming
+  `lists:foldl/3` raised `no case clause matching 3` — the milestone's only
+  run-time crash. A synthetic local (`cond_yield_acc`, `__bp_cond_yield`) joins
+  the loop's variable **group**, so the threading that already carries a
+  reassigned `i` through the recursion carries the accumulator too: each `yield`
+  is `Acc@n = [V | Acc@n-1]`, the initial group passes `[]` in its slot (it has
+  no pre-loop value), and the loop answers `lists:reverse/1` of it. The name
+  begins with `_`, so it is a valid erlang variable and is exempt from the unused
+  warning. `isPlainYieldGenerator`'s eager-list path (`yield 1; yield 2;`) is
+  untouched.
 - **The two embedded preludes are parsed once per process, not once per
   emission** (`prelude_cache`). `collectPrimErlangDispatch` re-lexed and
   re-parsed `primitives.bp`, and `noAutoImportRefs`'s catalog re-parsed
@@ -732,8 +745,11 @@ codegen/
     `{'__bp_cond_continue', Group}` caught around the body, so the recursion
     carries the variables at the jump; each loop's `catch` binds its own
     `__BpGroupN`. A `break` that carries a VALUE makes the loop an expression
-    whose value is that break's (the bullet below, decision 8 §10); a body that
-    `yield`s is still `error.ConditionLoopValueUnsupported`.
+    whose value is that break's, and a body that `yield`s collects into the group
+    and answers the reversed list (the two bullets below, decision 8 §10 and §9).
+    `error.ConditionLoopValueUnsupported` survives for a yielding condition loop
+    in EXPRESSION position only (`val xs = loop (i < n) { yield i; };`), which
+    reaches `exprNode` rather than `mutatingExpr` and so has no group to join.
   A value-less `break` is `erlang:throw('__bp_break')` and its loop is wrapped in
   the `try … catch throw:'__bp_break' -> ok end` that ends it (`loopBreakCatch`,
   `hasBareBreak`).
