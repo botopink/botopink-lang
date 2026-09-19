@@ -1,0 +1,27 @@
+//// Decision 54 — a `?T` is matched by `null` and a binder: `case x { null { … }
+//// v { … } }`, the shape `??` and `?.` already use. Decided 2026-09-18; the
+//// variant spelling `.Some(v)` / `.None` becomes a located error
+//// (`reject/optional_variant_pattern.bp`).
+////
+//// Measured at `b5a9b85d`, on all four targets: the decided spelling **does not
+//// parse**.
+////
+////   error: this token cannot appear here
+////    --> src/main.bp:21:22
+////       |    val a = case x { null { "absent" } v { "present " + v.toString() } };
+////       |                     ^^^^ unexpected `null`
+////
+//// So the optional has no working pattern form at all today — decision 54 measured
+//// the variant spelling compiling and answering nothing useful, and this one does
+//// not reach the checker. The cell is the statement of the decided form; it is
+//// listed against the row that makes it parse and type.
+
+pub fn main() {
+    val x: ?i32 = 5;
+    val a = case x { null { "absent" } v { "present " + v.toString() } };
+    @print(a);
+
+    val y: ?i32 = null;
+    val b = case y { null { "absent" } v { "present " + v.toString() } };
+    @print(b);
+}

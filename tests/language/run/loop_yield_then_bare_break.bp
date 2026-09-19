@@ -1,0 +1,23 @@
+//// Decision 55 — a value-less `break` ends the loop and contributes nothing.
+//// Decided 2026-09-18; written into decision 8 §10.
+////
+//// 10 yields 20, 20 yields 40 and then breaks, 30 is never visited. So the loop
+//// is `[20, 40]` — two elements.
+////
+//// Measured at `b5a9b85d`, **wasm is the only backend that answers it**, which is
+//// why this cell has three expected-failure lines and not four:
+////
+////   commonJS  3  20,40,60   — the break does not end the loop
+////   beam      3  20,40,60   — the same
+////   erlang    —             — the loop answers the atom `ok`, so `length/1` is
+////                            called on a non-list and the program dies (exit 127)
+////   wasm      2  20,40      — correct
+
+pub fn main() {
+    val r = loop ([10, 20, 30]) { x ->
+        yield x * 2;
+        if (x == 20) { break; };
+    };
+    @print(r.length);
+    @print(r.join(","));
+}
