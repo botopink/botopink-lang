@@ -5265,14 +5265,71 @@ fn inferTrailingLambdasTyped(env: *Env, trailing: []const ast.TrailingLambda) In
     return out;
 }
 
+/// Decision 8 §5.2 — a **type pattern**: an arm whose pattern is a bare type
+/// name (`i32 { n -> … }`, `string { s -> … }`, `Person { p -> … }`) tests the
+/// matched value's type and narrows the arm to it. Returns the tested type, or
+/// null when the name is an ordinary binder.
+///
+/// The name has to be a type the env knows AND not a variant of the subject —
+/// a variant path is read as a variant first, which is what keeps
+/// `case s { Circle { … } }` a variant arm.
+fn typePatternType(env: *Env, pattern: ast.Pattern, subjectType: *T.Type) InferError!?*T.Type {
+    const name = typePatternName(env, pattern, subjectType) orelse return null;
+    return try env.namedType(name);
+}
+
+/// The type name a pattern tests as a type pattern, or null when it is an
+/// ordinary binder. Split out of `typePatternType` because the coverage walk
+/// (§5.4) has to ask the question from `patternIsCatchAll`, which allocates
+/// nothing and cannot fail: a type pattern is **not** a catch-all, and reading
+/// it as one is what let `case x { i32 { … } }` stand in for `_`.
+fn typePatternName(env: *Env, pattern: ast.Pattern, subjectType: *T.Type) ?[]const u8 {
+    const name = switch (pattern) {
+        .ident => |n| n,
+        else => return null,
+    };
+    if (isVariantPath(name)) return null;
+    if (isEnumVariantNameForSubject(env, subjectType, name)) return null;
+    if (!isKnownTypeName(env, name)) return null;
+    return name;
+}
+
+/// A name the env can resolve as a type: a primitive, or a declaration this
+/// module registered. Deliberately *not* every name — an unregistered one is a
+/// binder, which is what every arm written before decision 8 relies on.
+fn isKnownTypeName(env: *Env, name: []const u8) bool {
+    for (scalar_type_names) |p| if (std.mem.eql(u8, name, p)) return true;
+    return env.lookupTypeDef(name) != null;
+}
+
+/// Decision 8 §5.1 P8 — the bare variant name inside a pattern's written path.
+///
+/// The parser keeps the path exactly as written, because the leading `.` is
+/// what tells a variant path from a binding (`dff3446`): `Circle`,
+/// `Shape.Circle` and `.Circle` all reach here, and only the last segment names
+/// a variant. Every variant table in the checker is keyed by the bare name, so
+/// nothing matched `.Circle` and every variant read as missing.
+fn bareVariantName(written: []const u8) []const u8 {
+    if (std.mem.lastIndexOfScalar(u8, written, '.')) |i| return written[i + 1 ..];
+    return written;
+}
+
+/// True when a pattern's written name is a **path** and so can never be a
+/// binding — `.None`, `Maybe.None`, `Token.Text.Bold`. A path that names no
+/// variant of the subject is a mistake, not a catch-all binder.
+fn isVariantPath(written: []const u8) bool {
+    return std.mem.indexOfScalar(u8, written, '.') != null;
+}
+
 fn isEnumVariantNameForSubject(env: *Env, subjectType: *T.Type, candidate: []const u8) bool {
     const ty = subjectType.deref();
     if (ty.* != .named) return false;
+    const bare = bareVariantName(candidate);
     if (env.lookupTypeDef(ty.named.name)) |td| {
         switch (td) {
             .enum_ => |en| {
                 for (en.variants) |v| {
-                    if (std.mem.eql(u8, v.name, candidate)) return true;
+                    if (std.mem.eql(u8, v.name, bare)) return true;
                 }
             },
             else => {},
@@ -5326,6 +5383,10 @@ fn bindPatternNamesForSubject(
         .wildcard, .numberLit, .stringLit => {},
         .ident => |name| {
             if (isEnumVariantNameForSubject(env, subjectType, name)) return;
+            // §5.2 — a bare type name is a type pattern, not a binder: it tests
+            // the value and binds nothing. The arm's own binder is its lambda
+            // parameter (`i32 { n -> … }`), bound by `inferCaseArmBody`.
+            if (try typePatternType(env, pattern, subjectType) != null) return;
             // C8 — a binder names the matched value itself.
             try saveAndBindPatternName(env, snapshots, name, subjectType);
         },
@@ -5401,11 +5462,14 @@ fn bindPatternNamesForSubject(
 /// `subjectType`, instantiated against the subject's generic args; null when
 /// the subject's type or the variant is not known (the bindings stay fresh).
 /// `@Result<R, E>`: `Ok` → [R], `Err`/`Error` → [E]; `?T`: `Some` → [T].
-fn variantPayloadTypes(env: *Env, subjectType: *T.Type, variantName: []const u8) InferError!?[]*T.Type {
+fn variantPayloadTypes(env: *Env, subjectType: *T.Type, writtenName: []const u8) InferError!?[]*T.Type {
     const st = subjectType.deref();
     if (st.* != .named) return null;
     const n = st.named;
     const eq = std.mem.eql;
+    // §5.1 P8 — the written form may be a path (`.Some`, `Maybe.Some`); the
+    // payload table is keyed by the bare variant name.
+    const variantName = bareVariantName(writtenName);
     if (eq(u8, n.name, "Result") and n.args.len >= 2) {
         if (eq(u8, variantName, "Ok")) return try env.arena.dupe(*T.Type, n.args[0..1]);
         if (eq(u8, variantName, "Err") or eq(u8, variantName, "Error")) return try env.arena.dupe(*T.Type, n.args[1..2]);
@@ -5782,7 +5846,16 @@ fn namesContain(list: []const []const u8, name: []const u8) bool {
 fn patternIsCatchAll(env: *Env, pattern: ast.Pattern, subjectType: *T.Type) bool {
     return switch (pattern) {
         .wildcard => true,
-        .ident => |name| !isEnumVariantNameForSubject(env, subjectType, name),
+        // §5.1 P8 — a name carrying a `.` is a variant path and never a binder,
+        // so it is never a catch-all even when it names no variant of the
+        // subject (that case is a mistake the coverage walk reports).
+        //
+        // §5.2 / §5.4 — nor is a **type pattern**. `i32 { n -> … }` tests the
+        // value; whether it happens to cover the subject whole is the coverage
+        // walk's question (`caseSubjectDomain`), not a catch-all's.
+        .ident => |name| !isVariantPath(name) and
+            !isEnumVariantNameForSubject(env, subjectType, name) and
+            typePatternName(env, pattern, subjectType) == null,
         .@"or" => |pats| blk: {
             for (pats) |p| {
                 if (patternIsCatchAll(env, p, subjectType)) break :blk true;
@@ -5796,6 +5869,74 @@ fn patternIsCatchAll(env: *Env, pattern: ast.Pattern, subjectType: *T.Type) bool
 /// True when a variant pattern's payload matches *every* value of that variant,
 /// so the variant is fully covered. Refined payloads like `Ok(1)` do not; a
 /// payload of only bindings / wildcards (e.g. `Err(_)`, `Rgb(r, g, b)`) does.
+/// Decision 8 §5.1 — does this pattern match **every** value of its type?
+///
+/// A binder and a `_` do; a literal, a range, a list and a variant path do not
+/// (each selects some values and not others). A tuple pattern (§5.1 P6) matches
+/// every tuple when each of its elements does — which is what
+/// `.Some(#(a, b))` needs: the payload is one tuple pattern, all binders, so
+/// the `Some` variant is fully covered. The `.literals` walk used to answer
+/// `false` for every nested pattern, so an enum matched that way read as
+/// uncovered ("missing variant(s) Some").
+///
+/// `elemType` is the type the pattern is matched against, when it is known: an
+/// `.ident` is a binder unless it names a variant of that type, which is how a
+/// section refinement (`Text(Bold)`) is told from a binding (N28).
+fn patternIsIrrefutable(env: *Env, pattern: ast.Pattern, elemType: ?*T.Type) InferError!bool {
+    return switch (pattern) {
+        .wildcard => true,
+        .ident => |nm| blk: {
+            if (isVariantPath(nm)) break :blk false;
+            const ty = elemType orelse break :blk true;
+            break :blk !isEnumVariantNameForSubject(env, ty, nm);
+        },
+        .variant => |v| switch (v.shape) {
+            // `#(a, b)` / `#(a, ..)` — every tuple of the right shape matches
+            // when each element pattern does. `..` drops the rest, which is
+            // exactly what makes the remainder irrefutable (P7).
+            .tuple => blk: {
+                const elemTypes: ?[]*T.Type = if (elemType) |t| tupleElementTypes(t) else null;
+                switch (v.payload) {
+                    .literals => |args| {
+                        for (args, 0..) |a, i| {
+                            const at: ?*T.Type = if (elemTypes != null and i < elemTypes.?.len)
+                                elemTypes.?[i]
+                            else
+                                null;
+                            if (!try patternIsIrrefutable(env, a, at)) break :blk false;
+                        }
+                        break :blk true;
+                    },
+                    // A whole-payload binder or a field list over a tuple binds
+                    // names and tests nothing.
+                    .binding, .fields => break :blk true,
+                }
+            },
+            // A variant path selects one variant; a range selects an interval.
+            .variant, .range => false,
+        },
+        .numberLit, .stringLit, .list => false,
+        // An OR is irrefutable only if some alternative is, and an alternative
+        // that is makes the others unreachable — the reachability walk reports
+        // that separately, so answering on the whole is enough here.
+        .@"or" => |pats| blk: {
+            for (pats) |alt| {
+                if (try patternIsIrrefutable(env, alt, elemType)) break :blk true;
+            }
+            break :blk false;
+        },
+        .multi => false,
+    };
+}
+
+/// The element types of a tuple type, or null when the type is not a tuple (or
+/// is not known yet).
+fn tupleElementTypes(ty: *T.Type) ?[]*T.Type {
+    const d = ty.deref();
+    if (d.* != .named or !std.mem.eql(u8, d.named.name, "tuple")) return null;
+    return d.named.args;
+}
+
 fn variantPayloadIrrefutable(
     env: *Env,
     subjectType: *T.Type,
@@ -5831,13 +5972,11 @@ fn variantPayloadIrrefutable(
             // (decision 8 §5.4).
             const payloadTypes = try variantPayloadTypes(env, subjectType, variantName);
             for (args, 0..) |a, i| {
-                const ok = switch (a) {
-                    .wildcard => true,
-                    .ident => |nm| !(payloadTypes != null and i < payloadTypes.?.len and
-                        isEnumVariantNameForSubject(env, payloadTypes.?[i], nm)),
-                    else => false,
-                };
-                if (!ok) break :blk false;
+                const argTy: ?*T.Type = if (payloadTypes != null and i < payloadTypes.?.len)
+                    payloadTypes.?[i]
+                else
+                    null;
+                if (!try patternIsIrrefutable(env, a, argTy)) break :blk false;
             }
             break :blk true;
         },
@@ -5855,13 +5994,15 @@ fn collectFullyCoveredVariants(
 ) InferError!void {
     switch (pattern) {
         .ident => |name| {
-            if (isEnumVariantNameForSubject(env, subjectType, name) and !namesContain(covered.items, name)) {
-                try covered.append(env.arena, name);
+            const bare = bareVariantName(name);
+            if (isEnumVariantNameForSubject(env, subjectType, name) and !namesContain(covered.items, bare)) {
+                try covered.append(env.arena, bare);
             }
         },
         .variant => |v| {
-            if (try variantPayloadIrrefutable(env, subjectType, v.name, v.payload) and !namesContain(covered.items, v.name)) {
-                try covered.append(env.arena, v.name);
+            const bare = bareVariantName(v.name);
+            if (try variantPayloadIrrefutable(env, subjectType, v.name, v.payload) and !namesContain(covered.items, bare)) {
+                try covered.append(env.arena, bare);
             }
         },
         .@"or" => |pats| {
@@ -5882,20 +6023,97 @@ fn alreadyCoveredVariant(
 ) InferError!?[]const u8 {
     switch (pattern) {
         .ident => |name| {
-            if (isEnumVariantNameForSubject(env, subjectType, name) and namesContain(covered, name)) return name;
+            const bare = bareVariantName(name);
+            if (isEnumVariantNameForSubject(env, subjectType, name) and namesContain(covered, bare)) return bare;
         },
         .variant => |v| {
-            if (try variantPayloadIrrefutable(env, subjectType, v.name, v.payload) and namesContain(covered, v.name)) return v.name;
+            const bare = bareVariantName(v.name);
+            if (try variantPayloadIrrefutable(env, subjectType, v.name, v.payload) and namesContain(covered, bare)) return bare;
         },
         else => {},
     }
     return null;
 }
 
-/// Full exhaustiveness + reachability analysis for a `case` on an enum or
-/// string subject. Sets `env.lastError` and returns `error.TypeError` on the
-/// first problem: an unreachable arm, a missing wildcard for an open domain, or
-/// an enum with uncovered variants. Subjects of any other type are not checked.
+/// Decision 8 §5.4 — the set of values a `case` subject draws from, and what it
+/// takes to cover that set.
+const CaseDomain = union(enum) {
+    /// A `type` with variants: covered when every variant is.
+    enum_: []const []const u8,
+    /// `A | B` (§3.3): covered when every member is named by a type pattern.
+    /// The identity of a union *is* its members, so the members are the domain.
+    union_: []*T.Type,
+    /// `string`, `i32`, `unknown` — an unbounded set of values no finite list of
+    /// literal arms reaches. Only `_`, or a type pattern naming the subject's own
+    /// type (§5.4's "a type covered whole"), covers it. `unknown` has no such
+    /// type pattern, which is why §5.4 always requires `_` over it.
+    open,
+};
+
+/// The two open domains §5.4 names by hand, beside `unknown`. Deliberately not
+/// every scalar: widening the rule to `f64`, `bool` and the sized integers turns
+/// every `case` on one of them that has no `_` into an error, and §5.4 states
+/// the rule for `i32` and `string`. The rest is reported, not assumed.
+const open_case_domain_names = [_][]const u8{ "i32", "string" };
+
+/// Resolve a `case` subject's domain, or null when the subject is not
+/// exhaustiveness-checked at all (a record, a generic, an array, a `?T`, an
+/// unresolved type variable).
+fn caseSubjectDomain(env: *Env, resolved: *T.Type) InferError!?CaseDomain {
+    // §3.3 — a `case` covering every member of a union needs no `_`.
+    if (resolved.* == .union_) return CaseDomain{ .union_ = resolved.union_ };
+    if (resolved.* != .named) return null;
+    // §5.4 — `unknown` always needs `_`: no type pattern covers it, because a
+    // value of any other type is still a possibility the arm did not test.
+    if (unifyMod.isUnknown(resolved)) return CaseDomain.open;
+    const name = resolved.named.name;
+    if (env.lookupTypeDef(name)) |td| {
+        switch (td) {
+            .enum_ => |en| {
+                const names = try env.arena.alloc([]const u8, en.variants.len);
+                for (en.variants, 0..) |v, i| names[i] = v.name;
+                return CaseDomain{ .enum_ = names };
+            },
+            else => return null,
+        }
+    }
+    for (open_case_domain_names) |p| {
+        if (std.mem.eql(u8, name, p)) return CaseDomain.open;
+    }
+    return null;
+}
+
+/// A printable label for a `case` subject: a named type's own name, or a union
+/// spelled out `i32 | string` — "union" on its own names nothing the author
+/// wrote. Owned by `env.arena`.
+fn caseSubjectLabel(env: *Env, ty: *T.Type) InferError![]const u8 {
+    const d = ty.deref();
+    if (d.* != .union_) return switch (d.*) {
+        .named => |n| n.name,
+        else => "value",
+    };
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    for (d.union_, 0..) |m, i| {
+        if (i > 0) try buf.appendSlice(env.arena, " | ");
+        try buf.appendSlice(env.arena, try caseSubjectLabel(env, m));
+    }
+    return buf.toOwnedSlice(env.arena);
+}
+
+/// True when the type a type pattern tests is the same named type as `member` —
+/// the only way a union member is covered arm by arm (§3.3).
+fn sameNamedType(a: *T.Type, b: *T.Type) bool {
+    const da = a.deref();
+    const db = b.deref();
+    if (da.* != .named or db.* != .named) return false;
+    return std.mem.eql(u8, da.named.name, db.named.name);
+}
+
+/// Full exhaustiveness + reachability analysis for a `case`. Sets
+/// `env.lastError` and returns `error.TypeError` on the first problem: an
+/// unreachable arm, an open domain with no `_`, a union with an uncovered member,
+/// or an enum with uncovered variants. Subjects whose type names no domain
+/// (`caseSubjectDomain`) are not checked.
 fn checkCaseExhaustiveness(
     env: *Env,
     subjectType: *T.Type,
@@ -5903,30 +6121,24 @@ fn checkCaseExhaustiveness(
     loc: ast.Loc,
 ) InferError!void {
     const resolved = subjectType.deref();
-
-    // Resolve the subject's domain. `string` is open (only a wildcard makes it
-    // exhaustive); an enum has a known finite variant set; anything else is not
-    // exhaustiveness-checked.
-    const isString = resolved.isNamed("string");
-    var typeName: []const u8 = "string";
-    var variantNames: []const []const u8 = &.{};
-    if (!isString) {
-        if (resolved.* != .named) return;
-        typeName = resolved.named.name;
-        const td = env.lookupTypeDef(typeName) orelse return;
-        switch (td) {
-            .enum_ => |en| {
-                const names = try env.arena.alloc([]const u8, en.variants.len);
-                for (en.variants, 0..) |v, i| names[i] = v.name;
-                variantNames = names;
-            },
-            else => return,
-        }
-    }
+    const domain = (try caseSubjectDomain(env, resolved)) orelse return;
+    const typeName = try caseSubjectLabel(env, resolved);
 
     var covered: std.ArrayListUnmanaged([]const u8) = .empty;
     defer covered.deinit(env.arena);
     var hasCatchAll = false;
+    // §5.4 — a type pattern naming the subject's own type covers it whole
+    // (`case n { i32 { m -> … } }` on an `i32`).
+    var wholeTypeCovered = false;
+    // §3.3 — one flag per union member, set by the arm that tests that member.
+    const memberCovered: []bool = switch (domain) {
+        .union_ => |members| blk: {
+            const flags = try env.arena.alloc(bool, members.len);
+            @memset(flags, false);
+            break :blk flags;
+        },
+        else => &.{},
+    };
 
     for (arms) |arm| {
         const guarded = arm.guard != null;
@@ -5937,12 +6149,28 @@ fn checkCaseExhaustiveness(
             return error.TypeError;
         }
 
-        // A guarded arm may fail its guard, so it neither covers a variant for
-        // exhaustiveness nor shadows later arms.
+        // §5.3 / §5.4 — a guarded arm may fail its guard, so it neither covers
+        // anything for exhaustiveness nor shadows a later arm.
         if (guarded) continue;
 
         if (patternIsCatchAll(env, arm.pattern, resolved)) {
             hasCatchAll = true;
+            continue;
+        }
+
+        // §5.2 / §5.4 — a type pattern. What it covers depends on the domain: the
+        // subject's own type covers an open domain whole, and a union member
+        // covers that member. Over `unknown` it covers nothing.
+        if (try typePatternType(env, arm.pattern, resolved)) |tested| {
+            switch (domain) {
+                .open => if (!unifyMod.isUnknown(resolved) and sameNamedType(tested, resolved)) {
+                    wholeTypeCovered = true;
+                },
+                .union_ => |members| for (members, 0..) |m, i| {
+                    if (sameNamedType(tested, m)) memberCovered[i] = true;
+                },
+                .enum_ => {},
+            }
             continue;
         }
 
@@ -5957,18 +6185,34 @@ fn checkCaseExhaustiveness(
 
     if (hasCatchAll) return;
 
-    if (isString) {
-        env.lastError = TypeError.nonExhaustive(typeName, &.{}).withLoc(loc);
-        return error.TypeError;
-    }
-
-    var missing: std.ArrayListUnmanaged([]const u8) = .empty;
-    for (variantNames) |name| {
-        if (!namesContain(covered.items, name)) try missing.append(env.arena, name);
-    }
-    if (missing.items.len > 0) {
-        env.lastError = TypeError.nonExhaustive(typeName, try missing.toOwnedSlice(env.arena)).withLoc(loc);
-        return error.TypeError;
+    switch (domain) {
+        .open => {
+            if (wholeTypeCovered) return;
+            env.lastError = TypeError.nonExhaustive(typeName, &.{}).withLoc(loc);
+            return error.TypeError;
+        },
+        .union_ => |members| {
+            var missing: std.ArrayListUnmanaged([]const u8) = .empty;
+            for (members, 0..) |m, i| {
+                if (!memberCovered[i]) try missing.append(env.arena, try caseSubjectLabel(env, m));
+            }
+            if (missing.items.len > 0) {
+                env.lastError = TypeError
+                    .nonExhaustiveOf(typeName, try missing.toOwnedSlice(env.arena), "member(s)")
+                    .withLoc(loc);
+                return error.TypeError;
+            }
+        },
+        .enum_ => |variantNames| {
+            var missing: std.ArrayListUnmanaged([]const u8) = .empty;
+            for (variantNames) |name| {
+                if (!namesContain(covered.items, name)) try missing.append(env.arena, name);
+            }
+            if (missing.items.len > 0) {
+                env.lastError = TypeError.nonExhaustive(typeName, try missing.toOwnedSlice(env.arena)).withLoc(loc);
+                return error.TypeError;
+            }
+        },
     }
 }
 
@@ -7189,6 +7433,43 @@ fn methodCallReturnType(
     return fn_.func.ret;
 }
 
+/// Decision 62 — the return type of a **type-qualified** call to one of a type's
+/// own methods (`Counter.zero()`, and the explicit-receiver spelling of an
+/// instance method, `Counter.bump(c)`). Null when the type declares no such
+/// method, or declares it without a return-type annotation — in which case the
+/// caller's fresh-var fallback still stands, exactly as it does for the instance
+/// form (`registerInherentMethodTypes` only stores an annotated signature).
+///
+/// The signature is instantiated fresh per call site, like
+/// `methodCallReturnType`, so the type's shared generic cells never collapse
+/// across two calls. Unlike that function there is no receiver value to unify
+/// `self` against: every declared parameter lines up with an argument, so the
+/// arity must match exactly for the signature to be read at all.
+fn associatedCallReturnType(
+    env: *Env,
+    typeName: []const u8,
+    callee: []const u8,
+    typedArgs: []ast.CallArgOf(.typed),
+    typedTrailing: []ast.TrailingLambdaOf(.typed),
+) InferError!?*T.Type {
+    if (!env.hasInherentMethod(typeName, callee)) return null;
+    const sigRaw = env.getInherentMethodType(typeName, callee) orelse return null;
+
+    var seen = std.AutoHashMap(*T.TypeCell, *T.Type).init(env.arena);
+    defer seen.deinit();
+    const sig = try instantiateType(env, sigRaw, &seen, .allVars);
+    const fn_ = sig.deref();
+    if (fn_.* != .func) return null;
+    // A trailing lambda's value type is not available here, and a mismatched
+    // arity is the plain-call path's diagnostic, not this one's — leave both to
+    // the fallback rather than unify against the wrong slots.
+    if (typedTrailing.len > 0 or fn_.func.params.len != typedArgs.len) return null;
+    for (typedArgs, fn_.func.params) |ta, p| {
+        try unifyAt(env, p, ta.value.getType(), ta.value.getLoc());
+    }
+    return fn_.func.ret;
+}
+
 /// Resolve a builtin `result` namespace qualified call:
 /// `result.map(r, f)` / `result.then(r, f)` / `result.unwrap(r, fallback)` /
 /// `result.isOk(r)` / `result.isError(r)`. The subject `@Result<R, E>` value
@@ -7991,6 +8272,26 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                             return try inferAssociatedFnCall(env, recvName, call.callee, fnTy, typedReceiver, typedArgs, typedTrailing, loc);
                         }
                     }
+                    // Decision 62 — a type's own associated fn, called through the
+                    // type (`Counter.zero()`). Its result reached here as a fresh
+                    // var, so `val c = Counter.zero(); c.bump()` recorded no
+                    // `instanceLowerings` entry for `bump`: beam answered
+                    // `{unresolved_method, bump, 1}` and wasm trapped, while
+                    // commonJS and erlang happened to be right because neither
+                    // needs the type. The signature is already registered by
+                    // `registerInherentMethodTypes` (with `Self` resolved to the
+                    // type) — it was simply never read for the type-qualified form.
+                    if (env.lookupTypeDef(recvName) != null) {
+                        if (try associatedCallReturnType(env, recvName, call.callee, typedArgs, typedTrailing)) |ret| {
+                            return TypedExpr{ .call = .{ .loc = loc, .type_ = ret, .kind = .{ .call = .{
+                                .receiver = typedReceiver,
+                                .callee = call.callee,
+                                .is_builtin = false,
+                                .args = typedArgs,
+                                .trailing = typedTrailing,
+                            } } } };
+                        }
+                    }
                 }
             }
 
@@ -8480,27 +8781,78 @@ fn isBlockArmBody(body: ast.Expr) bool {
     return body == .function and body.function.kind.syntax == .lambda and body.function.kind.params.len == 0;
 }
 
+/// Decision 8 §5.1 P3 — the arm body forms that are a lambda node: the block
+/// arm (`_ -> { … }`, no parameter) and the decision-8 binder arm
+/// (`i32 { n -> … }`, exactly one). Both are arm bodies, so both keep the
+/// enclosing fn's return target.
+fn isArmBodyLambda(body: ast.Expr) bool {
+    if (body != .function or body.function.kind.syntax != .lambda) return false;
+    return body.function.kind.params.len <= 1;
+}
+
+/// Infer an arm's body, binding a single-parameter binder arm's parameter to
+/// the matched value's type (§5.1 P1/P5) instead of to a fresh variable.
+fn inferCaseArmBody(
+    env: *Env,
+    arm: ast.CaseArm,
+    typedSubjects: []const ast.TypedExpr,
+) InferError!TypedExpr {
+    const body = arm.body;
+    const isBinderArm = body == .function and
+        body.function.kind.syntax == .lambda and
+        body.function.kind.params.len == 1;
+    if (!isBinderArm or typedSubjects.len != 1) return inferExprTyped(env, body);
+    // The subject **as this arm's pattern narrowed it** (§5.1 P1/P5). A type
+    // pattern (`i32 { n -> … }`) makes the binder that type; every other
+    // pattern leaves the subject's own, which is P5's answer for them — a
+    // variant payload's own binding comes from the pattern instead, and
+    // `bindCaseArmPatternNames` has already bound it.
+    const subjectTy = typedSubjects[0].getType();
+    const narrowed = (try typePatternType(env, arm.pattern, subjectTy)) orelse subjectTy;
+    const expected = try env.funcType(&.{narrowed}, try env.freshVar());
+    return inferFunctionExprExpected(env, body.function, body.getLoc(), expected);
+}
+
 /// C2a — the value an arm contributes to its `case`'s type, or null when it
 /// contributes nothing: a jump arm, a `void` arm, a block arm without a
 /// top-level `break <value>` (decision 2: a block's value comes from `break`).
 fn caseArmValueType(env: *Env, body: ast.TypedExpr) InferError!?*T.Type {
     if (body == .jump) return null;
-    if (body == .function and body.function.kind.syntax == .lambda and body.function.kind.params.len == 0) {
+    // Decision 8 §5.1 P3 — `Pattern { body }` lands as the same lambda node the
+    // older block arm produced, and the body **is** a lambda body: its last
+    // expression is the arm's value. Only the `break` half was read, so
+    // `0 { "zero" }` contributed nothing at all and the `case` typed `void`,
+    // while `_ { n -> … }` was unified as a `function`.
+    if (body == .function and body.function.kind.syntax == .lambda) {
         var found: ?*T.Type = null;
         for (body.function.kind.body) |stmt| {
             const e = stmt.expr;
             if (e != .jump) continue;
             switch (e.jump.kind) {
+                // A `break <value>` names the arm's value explicitly and wins
+                // over the tail; that is the block arm's own rule (06 C2a).
                 .@"break" => |b| if (b.value) |v| {
                     if (found) |f| try unify(env, f, v.getType()) else found = v.getType();
                 },
                 else => {},
             }
         }
-        return found;
+        if (found) |f| return f;
+        const stmts = body.function.kind.body;
+        if (stmts.len == 0) return null;
+        const tail = stmts[stmts.len - 1].expr;
+        // §3.2 — an arm whose body jumps (`return`/`throw`/`continue`) does not
+        // contribute to the `case`'s type.
+        if (tail == .jump) return null;
+        return nonVoid(tail.getType());
     }
-    const t = body.getType();
-    if (t.deref().* == .named and std.mem.eql(u8, t.deref().named.name, "void")) return null;
+    return nonVoid(body.getType());
+}
+
+/// The type, unless it is `void` — a statement arm contributes nothing.
+fn nonVoid(t: *T.Type) ?*T.Type {
+    const d = t.deref();
+    if (d.* == .named and std.mem.eql(u8, d.named.name, "void")) return null;
     return t;
 }
 
@@ -8839,9 +9191,16 @@ fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.
                 }
 
                 // A block arm (`_ -> { … }`) is a zero-param lambda in the AST,
-                // but its `return`s leave the enclosing fn, not the block.
-                env.keepReturnTarget = isBlockArmBody(arm.body);
-                const bodyTyped = inferExprTyped(env, arm.body) catch |err| {
+                // but its `return`s leave the enclosing fn, not the block. So do
+                // a decision-8 arm's: `{ n -> … }` is an arm body too, not a
+                // function value the arm happens to produce.
+                env.keepReturnTarget = isArmBodyLambda(arm.body);
+                // §5.1 P1/P5 — `{ n -> … }` binds the WHOLE matched value,
+                // already narrowed by this arm's pattern. Its parameter is not a
+                // fresh variable: it is the subject. Passing it as the expected
+                // parameter type binds it before the body is inferred, so the
+                // body resolves methods and operators against the real type.
+                const bodyTyped = inferCaseArmBody(env, arm, typedSubjects) catch |err| {
                     env.keepReturnTarget = false;
                     try restorePatternBindings(env, snapshots.items);
                     return err;

@@ -159,10 +159,15 @@ pub const TypeErrorKind = union(enum) {
     tryOnNonResult: *T.Type,
     /// A `case` expression does not cover every possibility of its subject.
     /// `missing` lists the uncovered enum variants; it is empty for open
-    /// domains (e.g. `string`), where a wildcard `_` arm is required instead.
+    /// domains (e.g. `string`, `i32`, `unknown`), where a wildcard `_` arm is
+    /// required instead.
     nonExhaustive: struct {
         typeName: []const u8,
         missing: []const []const u8,
+        /// What the entries of `missing` are, for the message. Decision 8 §3.3
+        /// made a union a `case` domain, and its uncovered entries are its
+        /// **members**, not variants.
+        missingLabel: []const u8 = "variant(s)",
     },
     /// A `case` arm can never match because an earlier arm (a wildcard, a
     /// whole-value binding, or the same variant) already covers it.
@@ -288,6 +293,16 @@ pub const TypeError = struct {
         return .{ .kind = .{ .nonExhaustive = .{ .typeName = typeName, .missing = missing } } };
     }
 
+    /// `nonExhaustive` naming what the uncovered entries are — `"member(s)"` for
+    /// a union (§3.3), `"variant(s)"` for an enum.
+    pub fn nonExhaustiveOf(typeName: []const u8, missing: []const []const u8, missingLabel: []const u8) TypeError {
+        return .{ .kind = .{ .nonExhaustive = .{
+            .typeName = typeName,
+            .missing = missing,
+            .missingLabel = missingLabel,
+        } } };
+    }
+
     pub fn redundantPattern(typeName: []const u8, description: []const u8) TypeError {
         return .{ .kind = .{ .redundantPattern = .{ .typeName = typeName, .description = description } } };
     }
@@ -341,9 +356,21 @@ pub const TypeError = struct {
 
 /// Build the `nonExhaustive` message: either "requires a wildcard" (open
 /// domain) or "missing variants: A, B" (enum). Caller owns the result.
+///
+/// Both forms open with **`case` … is not exhaustive**, the wording
+/// `1.0.4-beta/MIGRATION.md:300` publishes for this rule (`not exhaustive`,
+/// `use _ {`) and the one decision 8 §5.4's reject fixtures match against. The
+/// text that stood here said "non-exhaustive", which no published sketch and no
+/// fixture asks for; MIGRATION's own note ("the implementing fronts fix the
+/// wording") makes this the front that settles it. `comptime/snapshot.zig` keeps
+/// its own shorter title, so no error snapshot moves with this.
 fn nonExhaustiveMessage(gpa: std.mem.Allocator, n: anytype) ![]u8 {
     if (n.missing.len == 0) {
-        return std.fmt.allocPrint(gpa, "non-exhaustive `case`: '{s}' has no wildcard `_` arm", .{n.typeName});
+        return std.fmt.allocPrint(
+            gpa,
+            "`case` on '{s}' is not exhaustive: nothing covers the remaining values — use `_ {{ … }}`",
+            .{n.typeName},
+        );
     }
     var list: std.ArrayList(u8) = .empty;
     defer list.deinit(gpa);
@@ -351,7 +378,7 @@ fn nonExhaustiveMessage(gpa: std.mem.Allocator, n: anytype) ![]u8 {
         if (i > 0) try list.appendSlice(gpa, ", ");
         try list.appendSlice(gpa, name);
     }
-    return std.fmt.allocPrint(gpa, "non-exhaustive `case` on '{s}': missing variant(s) {s}", .{ n.typeName, list.items });
+    return std.fmt.allocPrint(gpa, "`case` on '{s}' is not exhaustive: missing {s} {s}", .{ n.typeName, n.missingLabel, list.items });
 }
 
 /// `typeLabel`, with a union spelled out as `A | B`. Owned by the caller.
