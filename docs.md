@@ -265,6 +265,34 @@ type Tree<T> {
 Built-in generic types carry an `@` prefix: `@Result<D, E>`, `@Iterator<T>`,
 `@Future<T>`, `@Expr<T>`. Optionals are `?T`; tuples are `#(A, B)`.
 
+### Union types, `unknown`, and `is`
+
+A union type is written `A | B`. `unknown` holds any value and, unlike a union,
+cannot be used as another type until it has been tested — `val b: i32 = a;` on an
+`unknown` reports "an `unknown` value cannot be used as another type without
+testing it". `x is <Type>` answers a `bool` and narrows `x` inside the branch it
+guards.
+
+```botopink
+fn describe(x: i32 | string) -> string {
+    if (x is i32) {
+        return "an integer";
+    };
+    return "a string";
+}
+
+fn read(raw: unknown) -> string {
+    if (raw is string) {
+        return raw;
+    };
+    return "not a string";
+}
+```
+
+`is` tests a type; it does not bind. Read a variant's payload in a `case` arm
+(`Circle(radius) -> …`, below) and an optional with `if (x) { n -> … }`;
+`assert x is Some(v)` is a located error.
+
 ## Expressions
 
 ### Literals
@@ -382,6 +410,23 @@ fn textToCss(t: Token.Text) -> string {
 }
 ```
 
+An arm may also be written as a block, `<pattern> { … }`. A block arm takes an
+optional `when (…)` guard, and a pattern may be a type (`i32`) or an inclusive
+range (`90...100`); `..` stays iteration and excludes its end.
+
+```botopink
+fn grade(n: i32) {
+    case n {
+        i32 when (n > 100) { @print("impossible"); }
+        90...100 { @print("A"); }
+        _ { @print("lower"); }
+    };
+}
+```
+
+A name alone is not a pattern: to give the matched value a name, bind it in the
+body (`_ { n -> … }`).
+
 ### Loop
 
 `loop` is the only repetition form. It takes a collection, a range or a
@@ -412,8 +457,7 @@ loop {
 };
 ```
 
-A `//` comment inside a `loop` body does not parse today — keep it on the line
-above the loop (front 06, parser).
+A `//` comment inside a `loop` body parses like any other comment.
 
 ### Assert
 
@@ -422,6 +466,25 @@ above the loop (front 06, parser).
 val x = 1;
 assert x > 0;
 assert x > 0, "x must be positive";
+```
+
+`val assert <pattern> = <expr>;` binds the pattern's names and is **fatal** when
+the match fails, so the names below the binding are never unbound. It takes no
+`catch` — `try … catch` is the form that supplies a fallback.
+
+```botopink
+#[@result]
+fn parse(s: string) -> @Result<i32, string> {
+    if (s == "") {
+        throw "empty input";
+    };
+    return 42;
+}
+
+fn load() {
+    val assert Ok(n) = parse("42");
+    @print(n);
+}
 ```
 
 ## Functions
@@ -435,8 +498,8 @@ fn greet(name: string, greeting: string = "hello") -> string {
 ```
 
 The default is **not applied yet**: every call still passes every argument
-(`greet("world")` reports `'greet' expects 2 argument(s), got 1`). Front 06
-row N1 closes it.
+(`greet("world")` reports `'greet' expects 2 argument(s), got 1`). 1.0.5-beta
+front `01-checker` step 7 closes it.
 
 ### Results
 
@@ -510,8 +573,10 @@ parameters — on a method, `self` is `$0`:
 pub declare fn shout(text: string) -> string;
 ```
 
-Only `External.<Target>` is read. A lower-case `@external(node, …)` matches
-nothing: the function is left without a host and nothing says so.
+Only `External.<Target>` is read. A lower-case `@external(node, …)` is a located
+error naming the capitalised form (`` `#[@external]` binds no host — an external
+target is written `External.<Target>` ``), rather than a function left silently
+without a host.
 
 ## Builtins
 
@@ -575,19 +640,26 @@ else `root.bp`). `dependencies` also accepts an array of bare names.
 
 These are settled language rules that the compiler does not accept yet. They
 are listed so nothing here reads as working code; each names the front that
-closes it.
+closes it. Every row below was re-derived by **running** the form, not by
+reading the previous revision of this table.
 
 | Rule | Today | Closes with |
 |---|---|---|
-| Union types (`i32 \| string`) | not parsed | 06 N20 |
-| The `unknown` type | `unknown` parses as an ordinary type name, with none of its assignability rules | 06 N19 |
-| `x is i32` testing a value by range, narrowing inside the block | not parsed | 06 N21 |
-| `case` arms written `Pattern { … }`, and `when (…)` guards | arms are `pattern -> value;` — a final `_` arm already works | 06 N22 |
-| `break <value>` making the loop an expression | the loop's value is a **list** holding it | 06 N12 |
-| Inclusive range patterns `1...9` (`..` stays iteration) | not parsed | 06 N22 |
-| `val assert Ok(value) = parse("42") catch 0` binding `value` | the pattern's bindings stay unbound (`unbound variable 'value'`) | 06 N11 |
-| `val assert <pattern> = <expr>;` with no `catch` (a failed match is fatal) | refused — write the `catch` form. At this commit the parser still aborts on it; 06 replaces that with `error[assert-pattern-missing-catch]` | 06 N25 |
-| `assert x is Some(n)` | not parsed | 06 N11 |
-| A parameter default being applied at a call | every argument is required | 06 N1 |
-| `Self<T>` required in a generic type or behavior | bare `Self` accepted | 06 N18 |
-| A `//` comment inside a `loop` body | not parsed | 06 (parser) |
+| `break <value>` making the loop an expression | the loop's value is a **list** holding it: `val v = loop (0..10) { i -> if (i == 3) { break i; }; };` prints `[3]` | 1.0.5-beta `04-js` — the lowering is commonJS's; the same defect on wasm is `05-wasm` |
+| A parameter default being applied at a call | every argument is required — `greet("world")` on `fn greet(name: string, greeting: string = "hello")` reports `'greet' expects 2 argument(s), got 1` | 1.0.5-beta `01-checker` step 7 |
+| `Self<T>` required in a generic type or behavior | bare `Self` is accepted inside a generic declaration; `Self<T>` parses and then fails to check (`type mismatch: expected Self, got Holder`) | 1.0.5-beta `01-checker` step 6 |
+
+Seven rows left this table because the compiler now accepts the form: union
+types, the `unknown` type and its assignability rule, `x is <Type>` with
+narrowing, `case` arms written `Pattern { … }` with `when (…)` guards, inclusive
+range patterns `1...9`, `val assert <pattern> = <expr>;` (binding its names, and
+fatal when the match fails), and a `//` comment inside a `loop` body. Each is
+documented above, in the section that teaches the form.
+
+Two more left it because the form is **deliberately absent**, so that neither
+reads as unfinished work:
+
+| Form | What the compiler says |
+|---|---|
+| `assert x is Some(n)` — `is` binding a payload | `error[is-variant-binding]`: `is` tests a type; it does not bind. Read the payload in a `case` arm |
+| `val assert Ok(v) = parse("42") catch 0` | ``a `val assert` over a `@Result` takes no `catch` `` — the match is fatal, and `try … catch` is the form that supplies a fallback |
