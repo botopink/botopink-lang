@@ -2369,43 +2369,32 @@ pub const Formatter = struct {
         };
     }
 
+    /// A module-level binding: `[pub] val [name]: [T] = value`.
+    ///
+    /// One path, assembled from the parts the declaration has, rather than one
+    /// arm per combination: the four arms this replaces were the 2×2 of
+    /// `typeAnnotation` × `isPub`, each spelling `"val "` again, so **any** new
+    /// modifier had to be written into four places or double them to eight. The
+    /// next one is known — `17-beam-memory` lands module-level `var`, and
+    /// [decision 48] grants it this function's keyword arm, in the same commit
+    /// that makes the form parse. With the parts separated that arm is the one
+    /// `text()` below: `if (v.mutable) "var " else "val "`.
+    ///
+    /// [decision 48]: the named carve-out of this front, `specs/1.0.5-beta`.
     fn fmtValDecl(this: *Formatter, v: ast.ValDecl) !*const Doc {
+        var parts: std.ArrayList(*const Doc) = .empty;
+        defer parts.deinit(this.arena);
+        if (v.isPub) try parts.append(this.arena, try this.text("pub "));
+        // The keyword. `17-beam-memory`'s `var` joins here and nowhere else.
+        try parts.append(this.arena, try this.text("val "));
+        try parts.append(this.arena, try this.text(v.name));
         if (v.typeAnnotation) |ann| {
-            if (v.isPub) {
-                return this.concatAll(&.{
-                    try this.text("pub "),
-                    try this.text("val "),
-                    try this.text(v.name),
-                    try this.text(": "),
-                    try this.fmtTypeRef(ann),
-                    try this.text(" = "),
-                    try this.fmtExpr(v.value.*),
-                });
-            }
-            return this.concatAll(&.{
-                try this.text("val "),
-                try this.text(v.name),
-                try this.text(": "),
-                try this.fmtTypeRef(ann),
-                try this.text(" = "),
-                try this.fmtExpr(v.value.*),
-            });
+            try parts.append(this.arena, try this.text(": "));
+            try parts.append(this.arena, try this.fmtTypeRef(ann));
         }
-        if (v.isPub) {
-            return this.concatAll(&.{
-                try this.text("pub "),
-                try this.text("val "),
-                try this.text(v.name),
-                try this.text(" = "),
-                try this.fmtExpr(v.value.*),
-            });
-        }
-        return this.concatAll(&.{
-            try this.text("val "),
-            try this.text(v.name),
-            try this.text(" = "),
-            try this.fmtExpr(v.value.*),
-        });
+        try parts.append(this.arena, try this.text(" = "));
+        try parts.append(this.arena, try this.fmtExpr(v.value.*));
+        return this.concatAll(parts.items);
     }
 };
 
