@@ -552,8 +552,10 @@ test "js: loop ---- a condition loop's break value is the loop's value" {
     // that ends without breaking has no value to give, which is `null`.
     //
     // A RUN LOG, not a snapshot: the erlang, beam and wasm baselines of this
-    // program are not this front's to record, and erlang does not compile it
-    // at all (`ConditionLoopValueUnsupported`).
+    // program are not this front's to record. When this was written neither
+    // erlang nor beam compiled the form at all (`ConditionLoopValueUnsupported`);
+    // both do now — erlang since `a9e9d03` (02 step 5), beam since 03 step 3's
+    // D6 — and the four-backend fixture below records what they answer.
     try h.assertJsRunLog(std.testing.allocator,
         \\fn main() {
         \\    var k = 0;
@@ -567,6 +569,66 @@ test "js: loop ---- a condition loop's break value is the loop's value" {
         \\    @print(never);
         \\}
     , "3\n8\nnull\n");
+}
+
+// ── front 03-beam step 3 D6: a condition loop's value break on beam ──────────
+//
+// Beam refused `break <value>` out of `loop (cond)` — and out of the bare
+// `loop { … }`, which the parser gives the same node — with the same unlocated
+// `error.ConditionLoopValueUnsupported` erlang raised until `a9e9d03`. It was
+// the last backend on the row.
+//
+// The beam shape is not erlang's: a condition loop is a label-jump loop in the
+// caller's own frame, not a recursive fun, so there is no `{Group, Value}` tuple
+// to carry and no `case` to destructure. What it needs is a register the
+// condition's failure path cannot share with the `break`'s:
+//
+//   {label, Top}  {test, is_lt, {f, Fail}, [{y,0}, {integer,10}]}
+//                 … {gc_bif, '*', …, {x, 0}}  {jump, {f, Exit}}   % break i * 2
+//                 … {jump, {f, Top}}
+//   {label, Fail} {move, {atom, undefined}, {x, 0}}
+//   {label, Exit} …                                               % the value
+//
+// so `{x, 0}` at `Exit` is the break's value on the break path and `undefined`
+// when the condition ran out — the two answers erlang's `{GroupAtTheJump,
+// Value}` / `{FinalGroup, undefined}` pair carries. The `.S` is what the RUN LOG
+// below was assembled and run from, by hand as well:
+//
+//   $ botopink build --target beam
+//   $ (cd out && erlc +from_asm main.S)
+//   $ erl -noshell -pa out -eval "main:'_botopink_main'(), halt()."
+//   8
+//   4
+//   3
+//   undefined
+//
+// byte-identical to what the erlang cell answers for the same program.
+//
+// KNOWN (commonJS): the exhausted loop answers `null` where erlang and beam
+// answer `undefined` — the backends' standing spelling of absence, not this row.
+// KNOWN-WRONG (wasm, front 05): a condition loop still COLLECTS, so the three
+// values arrive as `[8]`, `[3]` and `[]`. commonJS was fixed by 04; erlang by
+// 02 step 5; wasm is the last one left on decision 8 §10.
+// KNOWN-WRONG (front 01, all four targets): the CHECKER types a condition loop
+// with a valued `break` as an ARRAY, so `val hit = loop (j < 5) { if (j == 2)
+// { break j; }; j = j + 1; }; val n = hit + 1;` is refused with "type mismatch:
+// expected array, got i32" on commonJS, erlang and wasm alike. That is why this
+// fixture only prints its loops and never does arithmetic on one.
+test "js: loop ---- a condition loop's value break is the loop's value on every backend" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    var i = 0;
+        \\    val found = loop (i < 10) { if (i == 4) { break i * 2; }; i = i + 1; };
+        \\    @print(found);
+        \\    @print(i);
+        \\    var k = 0;
+        \\    val r = loop { k = k + 1; if (k > 2) { break k; }; };
+        \\    @print(r);
+        \\    var n = 0;
+        \\    val never = loop (n < 3) { if (n == 99) { break n; }; n = n + 1; };
+        \\    @print(never);
+        \\}
+    );
 }
 
 test "js: loop ---- a condition loop that yields still collects" {
