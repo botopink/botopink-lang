@@ -1185,6 +1185,11 @@ fn emitErlangModule(
         em.enum_names.deinit();
         em.enum_variants.deinit();
         {
+            var vf_it = em.variant_fields.valueIterator();
+            while (vf_it.next()) |names| alloc.free(names.*);
+        }
+        em.variant_fields.deinit();
+        {
             var it = em.enum_variant_of.keyIterator();
             while (it.next()) |k| alloc.free(k.*);
         }
@@ -1845,6 +1850,10 @@ const Emitter = struct {
     /// being lowered as a pure test (`assertPatternStmts`'s `case` arm) and
     /// nothing reads its names.
     pattern_discard: bool = false,
+    /// Hands out the clause-local variables a tuple pattern under `..` needs
+    /// (`freshPatternVar`). Monotonic for the whole module, so no two clauses
+    /// share one.
+    pattern_var_next: u32 = 0,
     /// Comptime modules (see `emitComptimeModule`) carry no inferred types, so
     /// type-directed lowerings dispatch at runtime instead: `+` → `'__bp_add'/2`
     /// (binary concat or arithmetic), `.len`/`.length` → `'__bp_len'/2`.
@@ -1892,6 +1901,14 @@ const Emitter = struct {
     /// (`case o { Lt -> … }`) lowers to the atom `'Lt'`, not an erlang variable
     /// that would shadow-match anything.
     enum_variants: std.StringHashMap(void),
+    /// Enum variant name → its declared field names, in constructor order. A
+    /// `case` pattern needs it for decision 8 §5.1's P4 and P7: a written label
+    /// names a POSITION in the tagged tuple (`.Rect(height: h, width: w)` fills
+    /// slot 0 with `w`), and `..` has to be written out as the `_`s of the slots
+    /// the pattern did not name — which is an arity the pattern itself does not
+    /// carry. Flat across enums, like `enum_variants`. The slice is owned; the
+    /// names borrow the AST (or the export index).
+    variant_fields: std.StringHashMap([]const []const u8),
     /// `"<Enum>.<Variant>"` for every enum whose variant list the emitter has
     /// seen — local declarations and imported `pub` enums. `enum_variants` is
     /// flat (a case arm only needs to know that SOME enum declares the name);
@@ -2120,6 +2137,7 @@ const Emitter = struct {
             .record_fields = std.StringHashMap([]const []const u8).init(alloc),
             .enum_names = std.StringHashMap(void).init(alloc),
             .enum_variants = std.StringHashMap(void).init(alloc),
+            .variant_fields = std.StringHashMap([]const []const u8).init(alloc),
             .enum_variant_of = std.StringHashMap(void).init(alloc),
             .enum_variants_known = std.StringHashMap(void).init(alloc),
             .imported_types = std.StringHashMap([]const u8).init(alloc),
@@ -3120,6 +3138,7 @@ const Emitter = struct {
                     for (tdecl.variants()) |v| {
                         try self.enum_variants.put(v.name, {});
                         try self.rememberEnumVariant(tdecl.name, v.name);
+                        try self.rememberVariantFields(v);
                     }
                 },
             },
@@ -3134,6 +3153,18 @@ const Emitter = struct {
         const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ enum_name, variant });
         const gop = try self.enum_variant_of.getOrPut(key);
         if (gop.found_existing) self.alloc.free(key);
+    }
+
+    /// Record a variant's declared field names, so a `case` pattern can fill the
+    /// tagged tuple by label (§5.1 P4) and write out the slots `..` stands for
+    /// (P7). A payload-less variant carries none and is skipped: a pattern over it
+    /// is the bare atom.
+    fn rememberVariantFields(self: *Emitter, v: ast.EnumVariant) !void {
+        if (v.fields.len == 0) return;
+        if (self.variant_fields.contains(v.name)) return;
+        const names = try self.alloc.alloc([]const u8, v.fields.len);
+        for (v.fields, 0..) |f, i| names[i] = f.name;
+        try self.variant_fields.put(v.name, names);
     }
 
     /// Whether `variant` is a variant OF `enum_name`. False when the enum's
@@ -3167,6 +3198,7 @@ const Emitter = struct {
                     for (ee.variants) |v| {
                         try self.enum_variants.put(v.name, {});
                         try self.rememberEnumVariant(ee.name, v.name);
+                        try self.rememberVariantFields(v);
                     }
                 }
             },
@@ -5658,31 +5690,50 @@ const Emitter = struct {
         const body_indent = this.indent + 2;
         var clauses: std.ArrayListUnmanaged(Ast.Clause) = .empty;
         for (arms) |arm| {
-            // The pattern is lowered FIRST: it binds the names the guard and the
-            // body then read at their arm-local versions (`patternBindVar`).
-            // `pattern if <guard> -> body` becomes an erlang clause guard — the
-            // arm only matches when the pattern matches AND the guard holds; a
-            // dropped guard makes the first arm swallow every subject.
             switch (arm.pattern) {
                 .@"or" => |pats| for (pats) |pat| {
-                    const pattern = try this.armPatternNode(b, pat, arm.body);
-                    try clauses.append(b.arena, .{
-                        .patterns = try b.exprs(&.{pattern}),
-                        .guards = try this.armGuards(b, arm.guard),
-                        .body = try this.caseBodyNode(b, arm.body, body_indent),
-                    });
+                    try clauses.append(b.arena, try this.armClause(b, pat, arm, body_indent));
                 },
-                else => {
-                    const pattern = try this.armPatternNode(b, arm.pattern, arm.body);
-                    try clauses.append(b.arena, .{
-                        .patterns = try b.exprs(&.{pattern}),
-                        .guards = try this.armGuards(b, arm.guard),
-                        .body = try this.caseBodyNode(b, arm.body, body_indent),
-                    });
-                },
+                else => try clauses.append(b.arena, try this.armClause(b, arm.pattern, arm, body_indent)),
             }
         }
         return b.caseOf(subject, clauses.items);
+    }
+
+    /// One erlang clause for one arm pattern.
+    ///
+    /// The pattern is lowered FIRST: it binds the names the guard and the body
+    /// then read at their arm-local versions (`patternBindVar`).
+    /// `pattern when (<guard>) -> body` becomes an erlang clause guard — the arm
+    /// only matches when the pattern matches AND the guard holds; a dropped guard
+    /// makes the first arm swallow every subject.
+    ///
+    /// Two of decision 8 §5's patterns need more than a clause head, because
+    /// erlang has no pattern that writes them (`PatternExtras`): a primitive type
+    /// pattern is a guard test, and a tuple pattern under `..` is a guard test
+    /// plus `element/2` bindings the body has to open with. The pattern's own
+    /// guards come BEFORE the arm's `when (…)`, so the arm's guard only runs on a
+    /// subject the pattern already accepted.
+    fn armClause(this: *Emitter, b: Ast.Builder, pat: ast.Pattern, arm: ast.CaseArm, body_indent: usize) anyerror!Ast.Clause {
+        var extras: PatternExtras = .{};
+        const pattern = try this.armPatternNode(b, pat, arm.body, &extras);
+        const arm_guards = try this.armGuards(b, arm.guard);
+        try extras.guards.appendSlice(b.arena, arm_guards);
+        const body = try this.caseBodyNode(b, arm.body, body_indent);
+        return .{
+            .patterns = try b.exprs(&.{pattern}),
+            .guards = extras.guards.items,
+            .body = try prependStmts(b, extras.binds.items, body),
+        };
+    }
+
+    /// `body` with `pre` matched in front of it, in the clause's own scope.
+    fn prependStmts(b: Ast.Builder, pre: []const Ast.Expr, body: Ast.Body) anyerror!Ast.Body {
+        if (pre.len == 0) return body;
+        var stmts: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
+        for (pre) |e| try stmts.append(b.arena, .{ .expr = e });
+        try stmts.appendSlice(b.arena, body.stmts);
+        return .{ .stmts = stmts.items };
     }
 
     /// An arm's clause pattern, with the arm's own binder aliased onto it.
@@ -5693,8 +5744,8 @@ const Emitter = struct {
     /// (`variable 'V' is unbound`, 01's handover 3) — so the name becomes an
     /// erlang alias on the clause pattern, `V = {'Circle', R}`, which binds it
     /// without evaluating the subject a second time.
-    fn armPatternNode(this: *Emitter, b: Ast.Builder, pat: ast.Pattern, body: ast.Expr) anyerror!Ast.Expr {
-        const pattern = try this.patternNode(b, pat);
+    fn armPatternNode(this: *Emitter, b: Ast.Builder, pat: ast.Pattern, body: ast.Expr, extras: *PatternExtras) anyerror!Ast.Expr {
+        const pattern = try this.patternNodeExtra(b, pat, extras);
         const name = armBinderName(body) orelse return pattern;
         const bound = Ast.Expr.v(try this.patternBindVar(b, name));
         // `V = _` is legal erlang and says nothing: on a wildcard the variable
@@ -5734,34 +5785,84 @@ const Emitter = struct {
         return b.body(&.{try this.exprNode(b, body)});
     }
 
+    /// What a pattern needs BESIDE its clause head, because erlang has no pattern
+    /// that writes it: guard tests, and the bindings a guard-tested element
+    /// stands for, which the clause body then has to open with.
+    ///
+    /// Two of decision 8 §5's patterns need one. A primitive type pattern
+    /// (`case v { i32 { … } string { … } }`, §5.2) tests the subject's type,
+    /// which is `when is_integer(V)`, not a pattern. A tuple pattern under `..`
+    /// (§5.1 P7) has an arity that is only a lower bound, and an erlang tuple
+    /// pattern has no such thing, so the shape becomes
+    /// `when is_tuple(T), tuple_size(T) >= N` and each named element an
+    /// `element/2` read.
+    ///
+    /// A caller that can carry them (`caseNode`, through `armClause`) passes one.
+    /// `assertPatternStmts` cannot — its pattern is lowered twice, once as a
+    /// `case` test and once as the enclosing match that binds — so it passes
+    /// null and the pattern is lowered exactly as it was before.
+    const PatternExtras = struct {
+        /// Guard tests, joined by `,` after the clause head.
+        guards: std.ArrayListUnmanaged(Ast.Expr) = .empty,
+        /// `X = element(1, T)` matches the clause body opens with.
+        binds: std.ArrayListUnmanaged(Ast.Expr) = .empty,
+    };
+
     fn patternNode(this: *Emitter, b: Ast.Builder, pat: ast.Pattern) anyerror!Ast.Expr {
+        return this.patternNodeExtra(b, pat, null);
+    }
+
+    fn patternNodeExtra(this: *Emitter, b: Ast.Builder, pat: ast.Pattern, extras: ?*PatternExtras) anyerror!Ast.Expr {
         switch (pat) {
             .wildcard => return Ast.Expr.v("_"),
-            // A bare ident pattern is either a nullary enum variant (→ the atom
-            // `'Lt'`) or a binding (→ an erlang variable `X`). A name carrying a
-            // `.` is always the former — `Maybe.None`, `.None` — and reaches the
+            // A bare ident pattern is one of three things: a nullary enum variant
+            // (→ the atom `'Lt'`), a primitive type spelling (→ §5.2's type test,
+            // a guard), or a binding (→ an erlang variable `X`). A name carrying a
+            // `.` is always the first — `Maybe.None`, `.None` — and reaches the
             // atom through `variantTag`, which drops the path.
-            .ident => |n| return if (isVariantPath(n) or this.enum_variants.contains(n))
-                Ast.Expr.a(this.variantTag(n))
-            else
-                Ast.Expr.v(try this.patternBindVar(b, n)),
+            .ident => |n| {
+                if (isVariantPath(n) or this.enum_variants.contains(n)) return Ast.Expr.a(this.variantTag(n));
+                const name = Ast.Expr.v(try this.patternBindVar(b, n));
+                // `case v { i32 { n -> n } string { s -> s.length } }` (§5.2):
+                // erlang cannot test a type in a pattern, so the arm keeps its
+                // variable and the test becomes a guard on it — `I32 when
+                // is_integer(I32)`. Emitted as the bare binder it was, the first
+                // arm matched every subject and answered for the whole union.
+                if (primitiveTypeName(n)) {
+                    if (extras) |ex| if (!std.mem.eql(u8, name.variable, "_")) {
+                        try appendPrimTypeGuards(b, ex, n, name);
+                    };
+                }
+                return name;
+            },
             .numberLit => |n| return .{ .number = n },
             .stringLit => |str| return .{ .lexeme_binary = str },
-            // Variant patterns mirror what the constructor builds: the tagged
-            // tuple `{'Rgb', R, G, B}` for a payload, the bare atom `'Lt'`
-            // without one. (The old `{tag, Name, …}` shape both bound `Name` as
-            // a fresh variable and added an element no constructor ever
-            // materialised, so every arm failed with `case_clause`.)
-            .variant => |v| {
-                var items: std.ArrayListUnmanaged(Ast.Expr) = .empty;
-                try items.append(b.arena, Ast.Expr.a(this.variantTag(v.name)));
-                switch (v.payload) {
-                    .binding => |binding| try items.append(b.arena, Ast.Expr.v(try this.patternBindVar(b, binding))),
-                    .fields => |fields| for (fields) |f| try items.append(b.arena, Ast.Expr.v(try this.patternBindVar(b, f))),
-                    .literals => |args| for (args) |arg| try items.append(b.arena, try this.patternNode(b, arg)),
-                }
-                if (items.items.len == 1) return Ast.Expr.a(this.variantTag(v.name));
-                return .{ .tuple = items.items };
+            .variant => |v| switch (v.shape) {
+                // `#(a, b)` / `#(0, s)` / `#(a, ..)` (§5.1 P6, P7): a tuple
+                // pattern is an erlang tuple of its ELEMENTS and nothing else.
+                // Lowered through the variant path it gained the tag atom of a
+                // variant with no name — `{'', 0, S}`, which no constructor
+                // builds — so every tuple arm failed with `case_clause`.
+                .tuple => return this.tuplePatternNode(b, v, extras),
+                // Variant patterns mirror what the constructor builds: the tagged
+                // tuple `{'Rgb', R, G, B}` for a payload, the bare atom `'Lt'`
+                // without one. (The old `{tag, Name, …}` shape both bound `Name`
+                // as a fresh variable and added an element no constructor ever
+                // materialised, so every arm failed with `case_clause`.)
+                //
+                // `.range` is decision 8 §5.2's `1...9`, whose name is empty as
+                // well; it keeps the shape it has until front 02 step 3 lowers it
+                // (`run/case_range_value.bp`).
+                .variant, .range => {
+                    var items: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+                    try items.append(b.arena, Ast.Expr.a(this.variantTag(v.name)));
+                    switch (v.payload) {
+                        .binding => |binding| try items.append(b.arena, Ast.Expr.v(try this.patternBindVar(b, binding))),
+                        .fields, .literals => try items.appendSlice(b.arena, try this.variantPayloadSlots(b, v, extras)),
+                    }
+                    if (items.items.len == 1) return Ast.Expr.a(this.variantTag(v.name));
+                    return .{ .tuple = items.items };
+                },
             },
             .list => |lp| {
                 const elems = try b.arena.alloc(Ast.Expr, lp.elems.len);
@@ -5774,13 +5875,173 @@ const Emitter = struct {
                 return b.cons(elems, tail);
             },
             // Expanded by `caseNode`; elsewhere the first alternative stands in.
-            .@"or" => |pats| return if (pats.len > 0) this.patternNode(b, pats[0]) else error.EmptyOrPattern,
+            .@"or" => |pats| return if (pats.len > 0) this.patternNodeExtra(b, pats[0], extras) else error.EmptyOrPattern,
             .multi => |pats| {
                 const items = try b.arena.alloc(Ast.Expr, pats.len);
-                for (pats, 0..) |p, i| items[i] = try this.patternNode(b, p);
+                for (pats, 0..) |p, i| items[i] = try this.patternNodeExtra(b, p, extras);
                 return .{ .tuple = items };
             },
         }
+    }
+
+    /// The payload slots of a variant pattern, in the order the CONSTRUCTOR built
+    /// them, `_` for every slot the pattern does not name.
+    ///
+    /// Two of decision 8 §5.1's rules live here. P4: a pattern that wrote a label
+    /// names its slot by that label, so `.Rect(height: h, width: w)` fills slot 0
+    /// with `w`, not with `h`. P7: `..` stands for the fields the pattern does not
+    /// name, and an erlang tuple pattern has to write them — which needs the
+    /// variant's declared arity (`variant_fields`). Without it `.Rect(width: w, ..)`
+    /// was emitted as `{'Rect', W}` against a `{'Rect', 5, 9}` the constructor
+    /// built, and `.Circle(..)` collapsed to the bare atom `'Circle'`; both
+    /// matched nothing.
+    ///
+    /// A variant whose declaration this module never saw keeps the written arity,
+    /// which is what it had before: there is nothing to pad to.
+    fn variantPayloadSlots(this: *Emitter, b: Ast.Builder, v: anytype, extras: ?*PatternExtras) anyerror![]Ast.Expr {
+        const written: usize = switch (v.payload) {
+            .fields => |f| f.len,
+            .literals => |l| l.len,
+            .binding => 1,
+        };
+        const declared = this.variant_fields.get(bareVariantName(v.name));
+        var count = written;
+        if (v.rest) if (declared) |d| if (d.len > count) {
+            count = d.len;
+        };
+        const slots = try b.arena.alloc(Ast.Expr, count);
+        for (slots) |*slot| slot.* = Ast.Expr.v("_");
+        for (0..written) |i| {
+            const at = slotIndex(v, declared, i) orelse continue;
+            if (at >= count) continue;
+            slots[at] = switch (v.payload) {
+                .fields => |f| Ast.Expr.v(try this.patternBindVar(b, f[i])),
+                .literals => |l| try this.patternNodeExtra(b, l[i], extras),
+                .binding => unreachable,
+            };
+        }
+        return slots;
+    }
+
+    /// The constructor slot the payload element at `i` fills: the position of the
+    /// label the pattern WROTE when it wrote one (§5.1 P4), else `i`. Null when
+    /// the written label names no declared field, which leaves the slot `_`.
+    fn slotIndex(v: anytype, declared: ?[]const []const u8, i: usize) ?usize {
+        if (v.labels.len > i and v.labels[i].len > 0) {
+            const d = declared orelse return i;
+            for (d, 0..) |name, at| if (std.mem.eql(u8, name, v.labels[i])) return at;
+            return null;
+        }
+        return i;
+    }
+
+    /// `#(a, b)` and `#(0, s)` are an erlang tuple of their element patterns.
+    ///
+    /// `#(a, ..)` (§5.1 P7) is not: its arity is a lower bound, and an erlang
+    /// tuple pattern has no lower bound. So the clause matches a fresh variable,
+    /// the shape becomes the guard `is_tuple(T), tuple_size(T) >= N`, and each
+    /// element the pattern named becomes an `element/2` read — a `=:=` test in the
+    /// guard when the element is a literal or a nullary variant, a binding the
+    /// clause body opens with when it is a name. A COMPOSITE element under `..`
+    /// (`#(Circle(r), ..)`) becomes a body match, which raises `badmatch` instead
+    /// of falling through to the next arm; nothing in the language suite writes
+    /// one, and it is reported rather than papered over.
+    ///
+    /// Without a `PatternExtras` to carry the guard (the `val assert` path) the
+    /// written arity stands, which is what it was before.
+    fn tuplePatternNode(this: *Emitter, b: Ast.Builder, v: anytype, extras: ?*PatternExtras) anyerror!Ast.Expr {
+        const elems: []const ast.Pattern = switch (v.payload) {
+            .literals => |l| l,
+            else => &.{},
+        };
+        const ex = if (v.rest) extras else null;
+        if (ex == null) {
+            const items = try b.arena.alloc(Ast.Expr, elems.len);
+            for (elems, 0..) |e, i| items[i] = try this.patternNodeExtra(b, e, extras);
+            return .{ .tuple = items };
+        }
+        const subject = Ast.Expr.v(try this.freshPatternVar(b));
+        try ex.?.guards.append(b.arena, try b.call("is_tuple", &.{subject}));
+        try ex.?.guards.append(b.arena, try b.binop(
+            ">=",
+            try b.call("tuple_size", &.{subject}),
+            .{ .number = try std.fmt.allocPrint(b.arena, "{d}", .{elems.len}) },
+        ));
+        for (elems, 0..) |e, i| {
+            const at = try b.call("element", &.{
+                .{ .number = try std.fmt.allocPrint(b.arena, "{d}", .{i + 1}) },
+                subject,
+            });
+            switch (e) {
+                .wildcard => {},
+                .numberLit, .stringLit => try ex.?.guards.append(
+                    b.arena,
+                    try b.binop("=:=", at, try this.patternNodeExtra(b, e, null)),
+                ),
+                .ident => |n| if (isVariantPath(n) or this.enum_variants.contains(n))
+                    try ex.?.guards.append(b.arena, try b.binop("=:=", at, Ast.Expr.a(this.variantTag(n))))
+                else
+                    try ex.?.binds.append(b.arena, try b.match(Ast.Expr.v(try this.patternBindVar(b, n)), at)),
+                else => try ex.?.binds.append(
+                    b.arena,
+                    try b.match(try this.patternNodeExtra(b, e, null), at),
+                ),
+            }
+        }
+        return subject;
+    }
+
+    /// A clause-local variable no botopink name can collide with. Erlang
+    /// variables are function-scoped and the counter never rewinds, so two arms
+    /// of the same function get two names.
+    fn freshPatternVar(this: *Emitter, b: Ast.Builder) anyerror![]const u8 {
+        this.pattern_var_next += 1;
+        return std.fmt.allocPrint(b.arena, "BpPat{d}", .{this.pattern_var_next});
+    }
+
+    /// The primitive type spellings a pattern can write, which decision 8 §5.2
+    /// makes a type test rather than a binding. The twin of commonJS's
+    /// `primitiveTypeName`, so both backends read the same arm the same way:
+    /// disagree and one of them takes a different arm.
+    fn primitiveTypeName(name: []const u8) bool {
+        if (integerPatternRange(name) != null) return true;
+        return std.mem.eql(u8, name, "string") or std.mem.eql(u8, name, "bool") or
+            std.mem.eql(u8, name, "f32") or std.mem.eql(u8, name, "f64") or
+            std.mem.eql(u8, name, "float");
+    }
+
+    /// The closed range an integer spelling names, `null` bound for an open end.
+    /// The twin of commonJS's `integerRange`.
+    fn integerPatternRange(name: []const u8) ?struct { lo: ?[]const u8, hi: ?[]const u8 } {
+        const table = .{
+            .{ "i8", "-128", "127" },                .{ "i16", "-32768", "32767" },
+            .{ "i32", "-2147483648", "2147483647" }, .{ "u8", "0", "255" },
+            .{ "u16", "0", "65535" },                .{ "u32", "0", "4294967295" },
+        };
+        inline for (table) |row| {
+            if (std.mem.eql(u8, name, row[0])) return .{ .lo = row[1], .hi = row[2] };
+        }
+        if (std.mem.eql(u8, name, "i64") or std.mem.eql(u8, name, "int") or
+            std.mem.eql(u8, name, "isize")) return .{ .lo = null, .hi = null };
+        if (std.mem.eql(u8, name, "u64") or std.mem.eql(u8, name, "uint") or
+            std.mem.eql(u8, name, "usize")) return .{ .lo = "0", .hi = null };
+        return null;
+    }
+
+    /// The guard a primitive type pattern becomes: the erlang twin of commonJS's
+    /// `isTest` over a `.named` type. An integer spelling is an integer within its
+    /// range, `f32`/`f64`/`float` any number (`typeof === "number"` there, which
+    /// an integer satisfies too), `string` a binary and `bool` a boolean.
+    fn appendPrimTypeGuards(b: Ast.Builder, ex: *PatternExtras, name: []const u8, subject: Ast.Expr) anyerror!void {
+        if (std.mem.eql(u8, name, "string")) return ex.guards.append(b.arena, try b.call("is_binary", &.{subject}));
+        if (std.mem.eql(u8, name, "bool")) return ex.guards.append(b.arena, try b.call("is_boolean", &.{subject}));
+        if (std.mem.eql(u8, name, "f32") or std.mem.eql(u8, name, "f64") or std.mem.eql(u8, name, "float")) {
+            return ex.guards.append(b.arena, try b.call("is_number", &.{subject}));
+        }
+        const range = integerPatternRange(name) orelse return;
+        try ex.guards.append(b.arena, try b.call("is_integer", &.{subject}));
+        if (range.lo) |lo| try ex.guards.append(b.arena, try b.binop(">=", subject, .{ .number = lo }));
+        if (range.hi) |hi| try ex.guards.append(b.arena, try b.binop("=<", subject, .{ .number = hi }));
     }
 
     /// The runtime tag atom of a variant pattern. `@Result` is materialised as

@@ -35,9 +35,7 @@ fn parsePair(chunk: string) -> #(string, string) {
 pub fn parse(query: string) -> Array<#(string, string)> {
     val body = stripPrefix(query);
     if (body == "") return [];
-    return body.split("&").filter({ chunk -> chunk != "" }).map({ chunk -> parsePair(
-            chunk
-        ) });
+    return body.split("&").filter({ chunk -> chunk != "" }).map({ chunk -> parsePair(chunk) });
 }
 
 fn joinPair(p: #(string, string)) -> string {

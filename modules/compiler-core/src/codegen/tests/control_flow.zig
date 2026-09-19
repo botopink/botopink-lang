@@ -1118,6 +1118,71 @@ test "erlang: case ---- a one-parameter arm on a variant pattern aliases it" {
     , "7\n", &.{"W = {'Some', V} ->"});
 }
 
+// ── front 02-erlang, reopened: the three `patternNode` defects 01 isolated ────
+//
+// Each one made an arm match NOTHING, or the wrong arm match everything, so each
+// is asserted by running the emitted module and pinning the clause head it now
+// writes. commonJS had all three right, which is why only erlang's lines sat in
+// `tests/language/expected-failures.txt`.
+//
+// The §5.1 cells these rows are written for (`test/case_tuples.bp`,
+// `test/case_variants.bp`, `test/case_guards.bp`, `test/case_exhaustive.bp`) are
+// in VALUE position and do not type-check until `01-checker` step 4 and step 5
+// land, so each cell below is the same pattern in statement position, which
+// compiles at `b09bf9c6`.
+
+test "erlang: case ---- a tuple pattern is the bare tuple, with no variant tag" {
+    // Defect 1. `#(0, s)` rode the variant lowering and gained the tag atom of a
+    // variant with no name — `{'', 0, S}`, which no constructor builds — so every
+    // tuple arm died with `{case_clause,{0,5}}`.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn main() {
+        \\  val p = #(0, 5);
+        \\  case p { #(0, s) { @print(s) } #(n, _) { @print(n) } };
+        \\}
+    , "5\n", &.{ "{0, S} ->", "{N, _} ->" });
+}
+
+test "erlang: case ---- `..` writes the fields the pattern does not name" {
+    // Defect 2. `v.rest` was never read: `Rect(width: w, ..)` was emitted
+    // `{'Rect', W}` against the `{'Rect', 5, 9}` the constructor builds, and
+    // `Circle(..)` collapsed to the bare atom `'Circle'`. Both matched nothing.
+    // The declared arity comes from `variant_fields`.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\type Shape { Circle(radius: i32), Rect(width: i32, height: i32) }
+        \\fn main() {
+        \\  case Shape.Rect(width: 5, height: 9) { Rect(width: w, ..) { @print(w) } Circle(..) { @print(0) } };
+        \\  case Shape.Circle(radius: 1) { Rect(width: w, ..) { @print(w) } Circle(..) { @print(0) } };
+        \\}
+    , "5\n0\n", &.{ "{'Rect', W, _} ->", "{'Circle', _} ->" });
+}
+
+test "erlang: case ---- a tuple under `..` is a tuple_size guard, not a fixed arity" {
+    // Defect 2, the tuple half. `#(a, ..)` has an arity that is only a LOWER
+    // bound and an erlang tuple pattern has no such thing, so the clause matches
+    // a fresh variable, the shape becomes a guard, and the named element is an
+    // `element/2` read the body opens with.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn main() {
+        \\  val t = #(4, 5, 6);
+        \\  case t { #(a, ..) { @print(a) } };
+        \\}
+    , "4\n", &.{ "when is_tuple(", "tuple_size(", ") >= 1) ->", "= element(1, " });
+}
+
+test "erlang: case ---- a primitive type pattern is a guard, not a binder" {
+    // Defect 3. `i32` / `string` are §5.2's type-test arms. Lowered as the plain
+    // binders `I32` / `String` the FIRST arm matched every subject, so `show("x")`
+    // answered the `i32` arm; erlang cannot test a type in a pattern, so the test
+    // is a clause guard on the variable the arm keeps.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn show(v: i32 | string) {
+        \\  case v { i32 { @print("int") } string { @print("str") } };
+        \\}
+        \\fn main() { show(3); show("abcd"); }
+    , "int\nstr\n", &.{ "I32 when is_integer(I32)", "String when is_binary(String) ->" });
+}
+
 // ── front 02-erlang step 5: a condition loop's value break (decision 8 §10) ──
 //
 // `break <value>` out of `loop (cond)` was refused outright with an unlocated

@@ -147,9 +147,9 @@ test "asserts.matches accepts a literal pattern" {
 
 test "asserts.throws catches a panicking body" {
     throws({ ->
-            @panic("expected");
-            0;
-        }, "expected panic");
+        @panic("expected");
+        0;
+    }, "expected panic");
 }
 
 test "asserts.AssertError carries the failed-assertion shape" {
