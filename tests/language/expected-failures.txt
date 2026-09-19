@@ -23,9 +23,9 @@
 #   $ tests/language/run.sh --target beam
 #   language tests: 14 passed, 20 expected failures, 0 failed
 #
-# 69 lines: 60 exercised by `--target all`, 9 more only by `--target beam`
+# 68 lines: 59 exercised by `--target all`, 9 more only by `--target beam`
 # (the 11 `*` reject lines are counted by both runs). By the row that comes
-# first on the line: 01-checker 37 · 02-erlang 11 · 03-beam 8 · 05-wasm 6 ·
+# first on the line: 01-checker 37 · 02-erlang 10 · 03-beam 8 · 05-wasm 6 ·
 # 13-module-identity 4 · 04-js 3. Nineteen lines name a second row that has to
 # land before the line goes (the §7 formatter's record and variant halves are
 # 13 step 18, not a backend's).
@@ -84,7 +84,6 @@ erlang   | test/effect_generator.bp::§9 an empty generator runs no iteration | 
 *        | reject/two_effect_markers.bp         | 01 step 8 | R9: the R5 message is right, but its caret points at the body's `{` (5:41) instead of the second annotation
 
 # ── §10 loop ──────────────────────────────────────────────────────────────────
-erlang   | test/loop_break_value.bp   | 02 step 5 | `ConditionLoopValueUnsupported`: a loop with a value break does not compile
 
 # ── §1 generics ───────────────────────────────────────────────────────────────
 *        | reject/generic_missing_argument.bp | 01 step 6 | §1.1: a written generic type without its arguments is accepted (exit 0)

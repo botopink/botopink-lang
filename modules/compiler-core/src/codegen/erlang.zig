@@ -1966,6 +1966,9 @@ const Emitter = struct {
     /// while its body is emitted; null outside one and behind a fun boundary
     /// (a collection loop, a lambda). A `break` / `continue` there throws them.
     cond_loop: ?[]const []const u8 = null,
+    /// Set while lowering a condition loop whose `break` carries a value: the
+    /// break's throw then carries it too, and the loop answers it.
+    cond_loop_valued: bool = false,
     /// Numbers the named funs of condition loops so a nested one does not
     /// shadow its parent's name.
     cond_loop_seq: u32 = 0,
@@ -3873,6 +3876,10 @@ const Emitter = struct {
         const saved_ctx = this.cond_loop;
         this.cond_loop = names;
         defer this.cond_loop = saved_ctx;
+        const valued = conditionLoopBreaksWithValue(lp.body);
+        const saved_valued = this.cond_loop_valued;
+        this.cond_loop_valued = valued;
+        defer this.cond_loop_valued = saved_valued;
 
         this.cond_loop_vars += 1;
         const caught_var = try std.fmt.allocPrint(b.arena, "__BpGroup{d}", .{this.cond_loop_vars});
@@ -3932,6 +3939,37 @@ const Emitter = struct {
             .args = if (group_in != null) try b.exprs(&.{try this.varGroupExpr(b, names)}) else &.{},
         } };
         var call = plain_call;
+        if (valued) {
+            // Decision 8 §10 — `break <value>` is the loop's value. The loop
+            // answers a PAIR, `{Group, Value}`: running to the end of the
+            // condition gives `{FinalGroup, undefined}`, and the break's throw
+            // gives `{GroupAtTheJump, Value}`. A `case` with one clause then
+            // destructures it, so the group's variables are rebound (they are
+            // bound in every clause, so erlang exports them) and the case's own
+            // value — the loop's — is the break's.
+            const thrown_var = try std.fmt.allocPrint(b.arena, "__BpBreak{d}", .{this.cond_loop_vars});
+            const value_var = try std.fmt.allocPrint(b.arena, "__BpValue{d}", .{this.cond_loop_vars});
+            call = .{ .try_catch = .{
+                .body = try b.body(&.{try b.tuple(&.{ plain_call, Ast.Expr.a("undefined") })}),
+                .catches = try b.arena.dupe(Ast.Clause, &.{try b.clause(
+                    &.{try b.exception(Ast.Expr.a("throw"), try b.tuple(&.{
+                        Ast.Expr.a(cond_break_signal),
+                        Ast.Expr.v(caught_var),
+                        Ast.Expr.v(thrown_var),
+                    }))},
+                    &.{},
+                    &.{try b.tuple(&.{ Ast.Expr.v(caught_var), Ast.Expr.v(thrown_var) })},
+                )}),
+            } };
+            const group_pat: Ast.Expr = if (group_in != null)
+                try this.bindVarGroupExpr(b, names)
+            else
+                Ast.Expr.v("_");
+            const out = Ast.Expr.v(value_var);
+            return b.caseOf(call, &.{
+                try b.clause(&.{try b.tuple(&.{ group_pat, out })}, &.{}, &.{out}),
+            });
+        }
         if (hasJump(lp.body, .@"break")) {
             const guarded = try b.body(&.{plain_call});
             call = .{ .try_catch = .{
@@ -3964,25 +4002,54 @@ const Emitter = struct {
         return false;
     }
 
-    /// A condition loop used as a value, or one whose body yields or breaks
-    /// with a value: the value form has no erlang lowering yet.
-    fn conditionLoopHasValue(body: []const ast.Stmt) bool {
+    /// A condition loop whose body YIELDS a value: the generator protocol's
+    /// shape, which has no erlang lowering of its own — `#[@generator]` rewrites
+    /// the yield before codegen sees it, so a yield reaching here is the form
+    /// that is still refused. A valued `break` is lowered (decision 8 §10) and
+    /// is `conditionLoopBreaksWithValue`'s question.
+    fn conditionLoopYieldsValue(body: []const ast.Stmt) bool {
+        return condLoopJumpHasValue(body, .yield);
+    }
+
+    /// A condition loop whose `break` carries a value — the loop is then an
+    /// expression whose value is that `break`'s (decision 8 §10).
+    fn conditionLoopBreaksWithValue(body: []const ast.Stmt) bool {
+        return condLoopJumpHasValue(body, .@"break");
+    }
+
+    /// True when `body` carries a `kind` jump WITH a value for the loop it
+    /// belongs to — directly or under an `if`, never inside a nested loop or a
+    /// lambda, which own their own jumps (the traversal `hasJump` uses).
+    fn condLoopJumpHasValue(body: []const ast.Stmt, comptime kind: std.meta.Tag(ast.JumpExprOf(.untyped))) bool {
         for (body) |stmt| switch (stmt.expr) {
-            .jump => |j| switch (j.kind) {
+            .jump => |j| if (j.kind == kind) switch (j.kind) {
                 .yield => |y| if (y.value != null) return true,
                 .@"break" => |brk| if (brk.value != null) return true,
                 else => {},
             },
             .branch => |br| switch (br.kind) {
                 .if_ => |i| {
-                    if (conditionLoopHasValue(i.then_)) return true;
-                    if (i.else_) |els| if (conditionLoopHasValue(els)) return true;
+                    if (condLoopJumpHasValue(i.then_, kind)) return true;
+                    if (i.else_) |els| if (condLoopJumpHasValue(els, kind)) return true;
                 },
                 else => {},
             },
             else => {},
         };
         return false;
+    }
+
+    /// The throw a `break` inside a condition loop raises. Without a value it is
+    /// `{Signal, Group}` — the reassigned variables at the jump, which the loop's
+    /// `try` rebinds. With one (decision 8 §10) it is `{Signal, Group, Value}`,
+    /// and `conditionLoopNode` destructures both.
+    fn condBreakThrow(this: *Emitter, b: Ast.Builder, names: []const []const u8, brk: anytype) anyerror!Ast.Expr {
+        const group = if (names.len > 0) try this.varGroupExpr(b, names) else Ast.Expr.a("ok");
+        if (!this.cond_loop_valued) {
+            return b.remote("erlang", "throw", &.{try b.tuple(&.{ Ast.Expr.a(cond_break_signal), group })});
+        }
+        const value = if (brk.value) |bp| try this.exprNode(b, bp.*) else Ast.Expr.a("undefined");
+        return b.remote("erlang", "throw", &.{try b.tuple(&.{ Ast.Expr.a(cond_break_signal), group, value })});
     }
 
     const ClosureMutation = struct {
@@ -4734,7 +4801,7 @@ const Emitter = struct {
                 // used to render as nothing at all, which left a `;` where the
                 // clause body belonged and broke the whole module.
                 .@"break" => |brk| if (this.cond_loop) |names|
-                    b.remote("erlang", "throw", &.{try b.tuple(&.{ A(cond_break_signal), if (names.len > 0) try this.varGroupExpr(b, names) else A("ok") })})
+                    this.condBreakThrow(b, names, brk)
                 else if (brk.value) |bp| this.exprNode(b, bp.*) else b.remote("erlang", "throw", &.{Ast.Expr.a(break_signal)}),
                 .yield => |y| if (y.value) |val| this.exprNode(b, val.*) else A("undefined"),
                 .@"continue" => if (this.cond_loop) |names|
@@ -4812,8 +4879,15 @@ const Emitter = struct {
 
             .loop => |lp| {
                 if (lp.condition) {
-                    if (conditionLoopHasValue(lp.body)) return error.ConditionLoopValueUnsupported;
-                    return this.conditionLoopNode(b, lp, &.{});
+                    if (conditionLoopYieldsValue(lp.body)) return error.ConditionLoopValueUnsupported;
+                    // The variables the body reassigns travel through the loop
+                    // fun as its group, exactly as in statement position
+                    // (`mutatingExpr`). Without them the fun took no argument,
+                    // so `loop (i < 10) { … i = i + 1; }` as a VALUE never
+                    // advanced `i` and did not terminate.
+                    var names: std.ArrayListUnmanaged([]const u8) = .empty;
+                    try this.collectMutations(b.arena, lp.body, &.{}, &names);
+                    return this.conditionLoopNode(b, lp, names.items);
                 }
                 // A collection loop's body is a fun: its jumps are its own.
                 const saved_cond_loop = this.cond_loop;

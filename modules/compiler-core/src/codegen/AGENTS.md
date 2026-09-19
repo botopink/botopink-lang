@@ -510,6 +510,19 @@ codegen/
   expression is already right here: an erlang clause body's last expression is
   its value, so `caseBodyNode` needs nothing (the commonJS/beam/wasm IIFE shape
   is where that half of the handover lands).
+- **A condition loop's `break <value>` is the loop's value** (decision 8 §10).
+  It used to be refused outright, with an unlocated
+  `error.ConditionLoopValueUnsupported` — and on the bare `loop { … }` too, which
+  the parser gives the same node. The loop now answers a **pair**: running the
+  condition to its end gives `{FinalGroup, undefined}`, the break's throw gives
+  `{GroupAtTheJump, Value}` (a three-element `{Signal, Group, Value}` instead of
+  the bare-break two), and a one-clause `case` destructures it — the group's
+  variables are rebound, because a name bound in every clause is exported, and
+  the `case`'s own value is the break's. The refusal survives only for a
+  condition loop that **yields**, which is the bullet below. Expression position
+  also had to start carrying the group: `conditionLoopNode` was called with no
+  names from `exprNode`, so `val x = loop (i < 10) { … i = i + 1; };` built a fun
+  of no arguments, never advanced `i`, and did not terminate.
 - **The two embedded preludes are parsed once per process, not once per
   emission** (`prelude_cache`). `collectPrimErlangDispatch` re-lexed and
   re-parsed `primitives.bp`, and `noAutoImportRefs`'s catalog re-parsed
@@ -718,8 +731,9 @@ codegen/
     `{'__bp_cond_break', Group}` caught around the call, and a `continue` throws
     `{'__bp_cond_continue', Group}` caught around the body, so the recursion
     carries the variables at the jump; each loop's `catch` binds its own
-    `__BpGroupN`. The value form (a body that `yield`s or `break`s with a value)
-    is `error.ConditionLoopValueUnsupported` — no erlang lowering yet.
+    `__BpGroupN`. A `break` that carries a VALUE makes the loop an expression
+    whose value is that break's (the bullet below, decision 8 §10); a body that
+    `yield`s is still `error.ConditionLoopValueUnsupported`.
   A value-less `break` is `erlang:throw('__bp_break')` and its loop is wrapped in
   the `try … catch throw:'__bp_break' -> ok end` that ends it (`loopBreakCatch`,
   `hasBareBreak`).

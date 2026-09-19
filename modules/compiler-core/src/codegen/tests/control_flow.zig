@@ -1024,3 +1024,33 @@ test "erlang: case ---- a one-parameter arm on a variant pattern aliases it" {
         \\fn main() { show(Maybe.Some(v: 7)); }
     , "7\n", &.{"W = {'Some', V} ->"});
 }
+
+// ── front 02-erlang step 5: a condition loop's value break (decision 8 §10) ──
+//
+// `break <value>` out of `loop (cond)` was refused outright with an unlocated
+// `ConditionLoopValueUnsupported`, on the bare `loop { … }` too — the parser
+// gives both the same node. The loop now answers a pair, `{Group, Value}`, and
+// a one-clause `case` destructures it: the group's variables are rebound and
+// the case's value is the break's.
+
+test "erlang: loop ---- a value break out of a condition loop is the loop's value" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn main() {
+        \\  var i = 0;
+        \\  val found = loop (i < 10) { if (i == 4) { break i * 2; }; i = i + 1; };
+        \\  @print(found);
+        \\  @print(i);
+        \\}
+    , "8\n4\n", &.{"erlang:throw({'__bp_cond_break', I@1, (I@1 * 2)})"});
+}
+
+test "erlang: loop ---- a value break out of a bare loop is the loop's value" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn main() {
+        \\  var k = 0;
+        \\  val r = loop { k = k + 1; if (k > 2) { break k; }; };
+        \\  @print(r);
+        \\  @print(k);
+        \\}
+    , "3\n3\n", &.{});
+}
