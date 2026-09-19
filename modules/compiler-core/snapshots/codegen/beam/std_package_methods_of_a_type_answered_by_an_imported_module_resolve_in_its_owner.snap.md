@@ -197,7 +197,7 @@ test "dict empty boundary: size 0, lookup misses" {
 
 ----- BEAM ASSEMBLY -- std/dict.S
 ```erlang
-{module, dict}.
+{module, std@dict}.
 {exports, [{'Dict_lookup', 2}, {'Dict_hasKey', 2}, {'Dict_size', 1}, {'Dict_isEmpty', 1}, {'Dict_keys', 1}, {'Dict_values', 1}, {'Dict_insert', 3}, {'Dict_delete', 2}, {'Dict_merge', 2}, {'Dict_fold', 3}, {'Dict_mapValues', 2}, {empty, 0}]}.
 {attributes, []}.
 {labels, 70}.
@@ -215,8 +215,8 @@ test "dict empty boundary: size 0, lookup misses" {
 
 {function, 'Dict_lookup', 2, 3}.
   {label, 2}.
-    {line, [{location, "dict.erl", 1}]}.
-    {func_info, {atom, dict}, {atom, 'Dict_lookup'}, 2}.
+    {line, [{location, "std@dict.erl", 1}]}.
+    {func_info, {atom, std@dict}, {atom, 'Dict_lookup'}, 2}.
   {label, 3}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
@@ -240,8 +240,8 @@ test "dict empty boundary: size 0, lookup misses" {
 
 {function, 'Dict_hasKey', 2, 5}.
   {label, 4}.
-    {line, [{location, "dict.erl", 2}]}.
-    {func_info, {atom, dict}, {atom, 'Dict_hasKey'}, 2}.
+    {line, [{location, "std@dict.erl", 2}]}.
+    {func_info, {atom, std@dict}, {atom, 'Dict_hasKey'}, 2}.
   {label, 5}.
     {allocate, 4, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
@@ -268,8 +268,8 @@ test "dict empty boundary: size 0, lookup misses" {
 
 {function, 'Dict_size', 1, 7}.
   {label, 6}.
-    {line, [{location, "dict.erl", 3}]}.
-    {func_info, {atom, dict}, {atom, 'Dict_size'}, 1}.
+    {line, [{location, "std@dict.erl", 3}]}.
+    {func_info, {atom, std@dict}, {atom, 'Dict_size'}, 1}.
   {label, 7}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -284,8 +284,8 @@ test "dict empty boundary: size 0, lookup misses" {
 
 {function, 'Dict_isEmpty', 1, 9}.
   {label, 8}.
-    {line, [{location, "dict.erl", 4}]}.
-    {func_info, {atom, dict}, {atom, 'Dict_isEmpty'}, 1}.
+    {line, [{location, "std@dict.erl", 4}]}.
+    {func_info, {atom, std@dict}, {atom, 'Dict_isEmpty'}, 1}.
   {label, 9}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -306,8 +306,8 @@ test "dict empty boundary: size 0, lookup misses" {
 
 {function, 'Dict_keys', 1, 11}.
   {label, 10}.
-    {line, [{location, "dict.erl", 5}]}.
-    {func_info, {atom, dict}, {atom, 'Dict_keys'}, 1}.
+    {line, [{location, "std@dict.erl", 5}]}.
+    {func_info, {atom, std@dict}, {atom, 'Dict_keys'}, 1}.
   {label, 11}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -323,8 +323,8 @@ test "dict empty boundary: size 0, lookup misses" {
 
 {function, 'Dict_values', 1, 13}.
   {label, 12}.
-    {line, [{location, "dict.erl", 6}]}.
-    {func_info, {atom, dict}, {atom, 'Dict_values'}, 1}.
+    {line, [{location, "std@dict.erl", 6}]}.
+    {func_info, {atom, std@dict}, {atom, 'Dict_values'}, 1}.
   {label, 13}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -340,8 +340,8 @@ test "dict empty boundary: size 0, lookup misses" {
 
 {function, 'Dict_insert', 3, 15}.
   {label, 14}.
-    {line, [{location, "dict.erl", 7}]}.
-    {func_info, {atom, dict}, {atom, 'Dict_insert'}, 3}.
+    {line, [{location, "std@dict.erl", 7}]}.
+    {func_info, {atom, std@dict}, {atom, 'Dict_insert'}, 3}.
   {label, 15}.
     {allocate, 5, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
@@ -373,8 +373,8 @@ test "dict empty boundary: size 0, lookup misses" {
 
 {function, 'Dict_delete', 2, 17}.
   {label, 16}.
-    {line, [{location, "dict.erl", 8}]}.
-    {func_info, {atom, dict}, {atom, 'Dict_delete'}, 2}.
+    {line, [{location, "std@dict.erl", 8}]}.
+    {func_info, {atom, std@dict}, {atom, 'Dict_delete'}, 2}.
   {label, 17}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -394,8 +394,8 @@ test "dict empty boundary: size 0, lookup misses" {
 
 {function, 'Dict_merge', 2, 19}.
   {label, 18}.
-    {line, [{location, "dict.erl", 9}]}.
-    {func_info, {atom, dict}, {atom, 'Dict_merge'}, 2}.
+    {line, [{location, "std@dict.erl", 9}]}.
+    {func_info, {atom, std@dict}, {atom, 'Dict_merge'}, 2}.
   {label, 19}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
@@ -419,8 +419,8 @@ test "dict empty boundary: size 0, lookup misses" {
 
 {function, 'Dict_fold', 3, 21}.
   {label, 20}.
-    {line, [{location, "dict.erl", 10}]}.
-    {func_info, {atom, dict}, {atom, 'Dict_fold'}, 3}.
+    {line, [{location, "std@dict.erl", 10}]}.
+    {func_info, {atom, std@dict}, {atom, 'Dict_fold'}, 3}.
   {label, 21}.
     {allocate, 4, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
@@ -445,8 +445,8 @@ test "dict empty boundary: size 0, lookup misses" {
 
 {function, 'Dict_mapValues', 2, 23}.
   {label, 22}.
-    {line, [{location, "dict.erl", 11}]}.
-    {func_info, {atom, dict}, {atom, 'Dict_mapValues'}, 2}.
+    {line, [{location, "std@dict.erl", 11}]}.
+    {func_info, {atom, std@dict}, {atom, 'Dict_mapValues'}, 2}.
   {label, 23}.
     {allocate, 3, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
@@ -470,8 +470,8 @@ test "dict empty boundary: size 0, lookup misses" {
 
 {function, empty, 0, 25}.
   {label, 24}.
-    {line, [{location, "dict.erl", 12}]}.
-    {func_info, {atom, dict}, {atom, empty}, 0}.
+    {line, [{location, "std@dict.erl", 12}]}.
+    {func_info, {atom, std@dict}, {atom, empty}, 0}.
   {label, 25}.
     {allocate, 0, 0}.
     {move, nil, {x, 0}}.
@@ -483,8 +483,8 @@ test "dict empty boundary: size 0, lookup misses" {
 
 {function, '-/2-fun-0-', 3, 27}.
   {label, 26}.
-    {line, [{location, "dict.erl", 2}]}.
-    {func_info, {atom, dict}, {atom, '-/2-fun-0-'}, 3}.
+    {line, [{location, "std@dict.erl", 2}]}.
+    {func_info, {atom, std@dict}, {atom, '-/2-fun-0-'}, 3}.
   {label, 27}.
     {allocate, 3, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
@@ -510,8 +510,8 @@ test "dict empty boundary: size 0, lookup misses" {
 
 {function, '-/2-fun-1-', 2, 33}.
   {label, 32}.
-    {line, [{location, "dict.erl", 3}]}.
-    {func_info, {atom, dict}, {atom, '-/2-fun-1-'}, 2}.
+    {line, [{location, "std@dict.erl", 3}]}.
+    {func_info, {atom, std@dict}, {atom, '-/2-fun-1-'}, 2}.
   {label, 33}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -532,8 +532,8 @@ test "dict empty boundary: size 0, lookup misses" {
 
 {function, '-bp_at-', 2, 37}.
   {label, 36}.
-    {line, [{location, "dict.erl", 3}]}.
-    {func_info, {atom, dict}, {atom, '-bp_at-'}, 2}.
+    {line, [{location, "std@dict.erl", 3}]}.
+    {func_info, {atom, std@dict}, {atom, '-bp_at-'}, 2}.
   {label, 37}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -553,8 +553,8 @@ test "dict empty boundary: size 0, lookup misses" {
 
 {function, '-/1-fun-2-', 1, 47}.
   {label, 46}.
-    {line, [{location, "dict.erl", 6}]}.
-    {func_info, {atom, dict}, {atom, '-/1-fun-2-'}, 1}.
+    {line, [{location, "std@dict.erl", 6}]}.
+    {func_info, {atom, std@dict}, {atom, '-/1-fun-2-'}, 1}.
   {label, 47}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -568,8 +568,8 @@ test "dict empty boundary: size 0, lookup misses" {
 
 {function, '-/1-fun-3-', 1, 50}.
   {label, 49}.
-    {line, [{location, "dict.erl", 7}]}.
-    {func_info, {atom, dict}, {atom, '-/1-fun-3-'}, 1}.
+    {line, [{location, "std@dict.erl", 7}]}.
+    {func_info, {atom, std@dict}, {atom, '-/1-fun-3-'}, 1}.
   {label, 50}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -583,8 +583,8 @@ test "dict empty boundary: size 0, lookup misses" {
 
 {function, '-/3-fun-4-', 2, 53}.
   {label, 52}.
-    {line, [{location, "dict.erl", 8}]}.
-    {func_info, {atom, dict}, {atom, '-/3-fun-4-'}, 2}.
+    {line, [{location, "std@dict.erl", 8}]}.
+    {func_info, {atom, std@dict}, {atom, '-/3-fun-4-'}, 2}.
   {label, 53}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -605,8 +605,8 @@ test "dict empty boundary: size 0, lookup misses" {
 
 {function, '-/2-fun-5-', 2, 58}.
   {label, 57}.
-    {line, [{location, "dict.erl", 9}]}.
-    {func_info, {atom, dict}, {atom, '-/2-fun-5-'}, 2}.
+    {line, [{location, "std@dict.erl", 9}]}.
+    {func_info, {atom, std@dict}, {atom, '-/2-fun-5-'}, 2}.
   {label, 58}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
@@ -627,8 +627,8 @@ test "dict empty boundary: size 0, lookup misses" {
 
 {function, '-/2-fun-6-', 2, 62}.
   {label, 61}.
-    {line, [{location, "dict.erl", 10}]}.
-    {func_info, {atom, dict}, {atom, '-/2-fun-6-'}, 2}.
+    {line, [{location, "std@dict.erl", 10}]}.
+    {func_info, {atom, std@dict}, {atom, '-/2-fun-6-'}, 2}.
   {label, 62}.
     {allocate, 5, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
@@ -654,8 +654,8 @@ test "dict empty boundary: size 0, lookup misses" {
 
 {function, '-/3-fun-7-', 3, 65}.
   {label, 64}.
-    {line, [{location, "dict.erl", 11}]}.
-    {func_info, {atom, dict}, {atom, '-/3-fun-7-'}, 3}.
+    {line, [{location, "std@dict.erl", 11}]}.
+    {func_info, {atom, std@dict}, {atom, '-/3-fun-7-'}, 3}.
   {label, 65}.
     {allocate, 6, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}]}}.
@@ -683,8 +683,8 @@ test "dict empty boundary: size 0, lookup misses" {
 
 {function, '-/2-fun-8-', 3, 68}.
   {label, 67}.
-    {line, [{location, "dict.erl", 12}]}.
-    {func_info, {atom, dict}, {atom, '-/2-fun-8-'}, 3}.
+    {line, [{location, "std@dict.erl", 12}]}.
+    {func_info, {atom, std@dict}, {atom, '-/2-fun-8-'}, 3}.
   {label, 68}.
     {allocate, 7, 3}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}, {y, 5}, {y, 6}]}}.
@@ -743,19 +743,19 @@ fn main() {
   {label, 3}.
     {allocate, 5, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}, {y, 4}]}}.
-    {call_ext, 0, {extfunc, dict, empty, 0}}.
+    {call_ext, 0, {extfunc, std@dict, empty, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {literal, <<"a">>}, {x, 0}}.
     {move, {integer, 1}, {x, 2}}.
     {move, {x, 1}, {x, 3}}.
     {move, {x, 0}, {x, 1}}.
     {move, {x, 3}, {x, 0}}.
-    {call_ext, 3, {extfunc, dict, 'Dict_insert', 3}}.
+    {call_ext, 3, {extfunc, std@dict, 'Dict_insert', 3}}.
     {move, {x, 0}, {y, 0}}.
     {move, {literal, <<"a">>}, {x, 0}}.
     {move, {x, 0}, {x, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {call_ext, 2, {extfunc, dict, 'Dict_lookup', 2}}.
+    {call_ext, 2, {extfunc, std@dict, 'Dict_lookup', 2}}.
     {test, is_eq, {f, 8}, [{x, 0}, {atom, undefined}]}.
     {move, {integer, 0}, {x, 0}}.
     {jump, {f, 9}}.
@@ -768,8 +768,8 @@ fn main() {
     {move, {x, 0}, {x, 1}}.
     {move, {integer, 2}, {x, 2}}.
     {move, {y, 0}, {x, 0}}.
-    {call_ext, 3, {extfunc, dict, 'Dict_insert', 3}}.
-    {call_ext, 1, {extfunc, dict, 'Dict_size', 1}}.
+    {call_ext, 3, {extfunc, std@dict, 'Dict_insert', 3}}.
+    {call_ext, 1, {extfunc, std@dict, 'Dict_size', 1}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 11}}.

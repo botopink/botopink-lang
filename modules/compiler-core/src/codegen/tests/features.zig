@@ -372,6 +372,37 @@ test "js: import ---- multi-module pub fn import" {
     });
 }
 
+// 13 half 1 — the collision the erlang module atom used to have: two `.bp`
+// files whose paths share a BASENAME both emitted `-module(user)`, so one
+// silently overwrote the other in a shared output directory and silently
+// shadowed it on one code path. Nothing diagnosed it, and no cell could see it
+// because no fixture had two same-named modules. The atom is the whole path
+// joined with `@` now, so this program has `models@user` and `services@user`
+// and both answer. It could not exist before.
+test "js: import ---- two modules whose files share a basename" {
+    try h.assertJs(std.testing.allocator, @src(), &.{
+        .{ .path = "models/user", .source =
+        \\pub fn label() -> string {
+        \\    return "models/user";
+        \\}
+        },
+        .{ .path = "services/user", .source =
+        \\pub fn tag() -> string {
+        \\    return "services/user";
+        \\}
+        },
+        .{ .path = "", .source =
+        \\import {label} from "models/user";
+        \\import {tag} from "services/user";
+        \\
+        \\fn main() {
+        \\    @print(label());
+        \\    @print(tag());
+        \\}
+        },
+    });
+}
+
 test "js: import ---- multi-module pub val import" {
     try h.assertJs(std.testing.allocator, @src(), &.{
         .{ .path = "config", .source =
@@ -580,6 +611,42 @@ test "js: enum ---- method with case on self" {
 // the call passes the value to the enum's method: `Shape.area(Shape.Square(4))`.
 // It used to throw `Shape.Square(...).area is not a function`. KNOWN: `16`
 // then `12`; wasm traps (1.0.4-beta 01 wasm).
+// An associated `fn` on an `enum` — no `self`, so it is a constructor-like
+// helper, not an instance method. `memberCallNode`'s qualified-payload-variant
+// branch fired on ANY `EnumName.callee(...)` without checking that `callee`
+// names a variant, so this lowered to the tagged tuple `{unit}` on erlang: erlc
+// clean, and the program died at run time with `{case_clause,{unit}}` inside the
+// method that matched on it. beam had the mirror image — the receiver was
+// lowercased into a module atom and the call was `shape:unit()`,
+// `{undef,[{shape,unit,[],[]}…]}` — because an enum name is not in
+// `record_fields` and nothing else claimed it.
+test "js: enum ---- an associated fn on an enum is a call, not a variant" {
+    try h.assertJs(std.testing.allocator, @src(), &.{
+        .{ .path = "", .source =
+        \\pub type Shape {
+        \\    Circle(radius: i32),
+        \\    Square(side: i32),
+        \\
+        \\    pub fn unit() -> Shape {
+        \\        return Shape.Square(side: 1);
+        \\    }
+        \\
+        \\    pub fn area(self: Self) -> i32 {
+        \\        return case self {
+        \\            Circle(r) -> r * r * 3;
+        \\            Square(s) -> s * s;
+        \\        };
+        \\    }
+        \\}
+        \\
+        \\fn main() {
+        \\    val s: Shape = Shape.unit();
+        \\    @print(s.area());
+        \\}
+        },
+    });
+}
+
 test "js: enum ---- a method is called on a variant value" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\pub type Shape {

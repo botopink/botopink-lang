@@ -937,6 +937,23 @@ pub fn codegenEmit(
                 });
             },
             .ok => |*ok| {
+                // The atom the module will be named by must be its own: two
+                // paths rendering one atom used to be a silent overwrite (or a
+                // silent shadow across two output directories), which is the
+                // failure this front exists to remove. Fail exactly the modules
+                // involved, with a diagnostic, like a type error.
+                if (cross.atomFault(ct.name)) |fault| {
+                    try results.append(alloc, .{
+                        .name = ct.name,
+                        .src = ct.src,
+                        .result = .{
+                            .js = try alloc.dupe(u8, ""),
+                            .comptime_script = null,
+                            .diagnostic = .{ .type = .{ .message = try fault.message(alloc), .loc = null } },
+                        },
+                    });
+                    continue;
+                }
                 // 06 C13 — a host-backed fn with no beam or erlang target
                 // reaches the driver as a located diagnostic naming it.
                 var missing: ?moduleOutput.MissingExternal = null;
@@ -999,12 +1016,17 @@ fn emitBeamAsm(
     var body_buf: std.Io.Writer.Allocating = .init(alloc);
     defer body_buf.deinit();
 
-    // The BEAM module atom is the path basename (`std/order` → `order`,
-    // `web/http` → `http`) — a slash is invalid in an unquoted module atom,
-    // and cross-module `call_ext` targets resolve by basename (see
-    // `crossModule.ownerModuleAtom`). Mirrors the Erlang backend's
+    // The BEAM module atom is the whole module path joined with `@`
+    // (`std/order` → `std@order`, `web/api/http` → `web@api@http`) — a slash is
+    // invalid in an unquoted module atom, and the path is what makes the atom
+    // unique. It was the BASENAME, which made `models/user` and `services/user`
+    // one module and let eleven `libs/std` modules shadow OTP. Cross-module
+    // `call_ext` targets resolve through the same renderer
+    // (`crossModule.erlAtom`, read here via `CrossModule.atomFor`), so a target
+    // and the module it names can never disagree. Mirrors the Erlang backend's
     // `erl_module_name`.
-    const module_atom = crossModule.moduleBasename(module_name);
+    const module_atom = try crossModule.erlAtom(alloc, .of(module_name));
+    defer alloc.free(module_atom);
 
     var em = Emitter.init(alloc, module_atom, &body_buf.writer, comptime_vals, rewrites);
     errdefer if (missing) |slot| {
@@ -1295,6 +1317,11 @@ const Emitter = struct {
     /// variant atom; anything else is a binding. Populated by
     /// `collectRecordShapes`.
     enum_variants: std.StringHashMap(void),
+    /// Names of the enums this module declares. A PascalCase receiver that names
+    /// one is a TYPE, not a module: a lowercase callee on it is an associated fn
+    /// the enum declares, which `enumForms` emits as a plain local function.
+    /// Parity with the erlang backend's `enum_names`.
+    enum_names: std.StringHashMap(void),
     /// Interface associated `default fn` qualified names (`"Array.range"`). Pure
     /// botopink, emitted as local mangled fns (`'Array_range'`) since the
     /// interface decl is inlined into each consuming module; an
@@ -1428,6 +1455,7 @@ const Emitter = struct {
             .record_fields = std.StringHashMap([]const []const u8).init(alloc),
             .imported_types = std.StringHashMap([]const u8).init(alloc),
             .enum_variants = std.StringHashMap(void).init(alloc),
+            .enum_names = std.StringHashMap(void).init(alloc),
             .interface_assoc = std.StringHashMap(void).init(alloc),
             .user_behavior_methods = std.StringHashMap(void).init(alloc),
             .prim_erlang_dispatch = std.StringHashMap(PrimErlangCall).init(alloc),
@@ -1461,6 +1489,7 @@ const Emitter = struct {
         self.record_fields.deinit();
         self.imported_types.deinit();
         self.enum_variants.deinit();
+        self.enum_names.deinit();
         var ia = self.interface_assoc.keyIterator();
         while (ia.next()) |k| self.alloc.free(k.*);
         self.interface_assoc.deinit();
@@ -1686,10 +1715,22 @@ const Emitter = struct {
         return self.interface_assoc.contains(qn);
     }
 
-    /// §D2 — record every module name imported from the `"std"` package, so a
-    /// qualified call `<mod>.<callee>(args)` whose receiver names one lowers
-    /// to a remote `call_ext` into that module atom. Parity with the erlang
-    /// backend's `collectStdImports`.
+    /// §D2 — the module atom of a `"std"` package module imported by its bare name
+    /// (`order` → `std@order`). The bare segment used to be the atom, which is
+    /// how eleven `libs/std` modules shadowed the OTP module of the same name.
+    /// `buf` holds the path while the index is consulted; the returned slice is
+    /// either the index's own or `seg` itself, and it is written out before the
+    /// buffer dies.
+    fn stdModuleAtom(self: *const Emitter, seg: []const u8, buf: []u8) []const u8 {
+        const path = std.fmt.bufPrint(buf, "std/{s}", .{seg}) catch return seg;
+        if (self.cross) |xc| if (xc.atoms.get(path)) |a| return a;
+        return seg;
+    }
+
+    /// Records every module name imported from the "std" package: a qualified
+    /// call `<mod>.<callee>(args)` whose receiver names one lowers to a remote
+    /// `call_ext` into that module's atom. Parity with the erlang backend's
+    /// `collectStdImports`.
     fn collectStdImports(self: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| switch (decl) {
             .use => |u| {
@@ -1742,7 +1783,10 @@ const Emitter = struct {
                     for (tdecl.recordFields(), 0..) |f, i| fields[i] = f.name;
                     try self.record_fields.put(tdecl.name, fields);
                 },
-                .enum_ => for (tdecl.variants()) |v| try self.enum_variants.put(v.name, {}),
+                .enum_ => {
+                    try self.enum_names.put(tdecl.name, {});
+                    for (tdecl.variants()) |v| try self.enum_variants.put(v.name, {});
+                },
             },
             // A nullary enum variant is an atom, so a bare `Lt ->` case arm is a
             // *test* against that atom, not a binding. Parity with the erlang
@@ -1780,7 +1824,7 @@ const Emitter = struct {
             .use => |u| for (u.imports) |imp| {
                 const name = imp.name();
                 const info = xc.exports.get(name) orelse continue;
-                const owner = crossModule.moduleBasename(info.module);
+                const owner = self.atomOf(info.module);
                 if (std.mem.eql(u8, owner, self.module_name)) continue;
                 switch (info.kind) {
                     // An imported record is built with the owner's field order,
@@ -1827,9 +1871,18 @@ const Emitter = struct {
 
     /// The owner module and mangled `'<qualifier>_<method>'` name of an
     /// `implement`/`extend` block named `sym` that another module declares.
+    /// BEAM module atom of a module PATH (`std/order` → `std@order`), as the
+    /// cross-module index rendered it once. A `call_ext` target and the
+    /// `{module, …}` header of the module it names must agree, so both come from
+    /// `crossModule.erlAtom` — never from the path's basename.
+    fn atomOf(self: *const Emitter, path: []const u8) []const u8 {
+        if (self.cross) |xc| return xc.atomFor(path);
+        return crossModule.moduleBasename(path);
+    }
+
     fn importedExtension(self: *const Emitter, buf: []u8, sym: []const u8, method: []const u8) ?struct { owner: []const u8, mangled: []const u8 } {
         for (self.all_outputs) |*other| {
-            const owner = crossModule.moduleBasename(other.name);
+            const owner = self.atomOf(other.name);
             if (std.mem.eql(u8, owner, self.module_name)) continue;
             const ok = switch (other.outcome) {
                 .ok => |*o| o,
@@ -3453,11 +3506,12 @@ const Emitter = struct {
                     const arity = cc.args.len + cc.trailing.len;
                     var fn_buf: [256]u8 = undefined;
                     const fn_atom = atomName(cc.callee, &fn_buf) catch cc.callee;
+                    var path_buf: [256]u8 = undefined;
                     try beamEmitter.writeCall(
                         self.out,
                         if (mode == .tail) .last else .normal,
                         arity,
-                        .{ .ext = .{ .module = rn, .function = fn_atom } },
+                        .{ .ext = .{ .module = self.stdModuleAtom(rn, &path_buf), .function = fn_atom } },
                         self.num_y,
                     );
                     return;
@@ -3514,6 +3568,26 @@ const Emitter = struct {
                             switch (mode) {
                                 .non_tail => try beamEmitter.writeCall(self.out, .normal, arity, .{ .local = labels.entry }, 0),
                                 .tail => try beamEmitter.writeCall(self.out, .last, arity, .{ .local = labels.entry }, self.num_y),
+                            }
+                            return;
+                        } else |_| {}
+                    }
+                    // An associated `fn` of a LOCAL enum (`Shape.unit()`): the
+                    // enum's methods are emitted as plain local functions under
+                    // their own names, so this is a local call. It used to fall
+                    // through to the lowercased-receiver remote below and die with
+                    // `{undef,[{shape,unit,[],[]}…]}` — a module named after the
+                    // type, which nothing emits.
+                    if (cc.trailing.len == 0 and self.enum_names.contains(rn)) {
+                        var ebuf: [256]u8 = undefined;
+                        // `reserveEnumMethods` reserves an enum's methods under
+                        // the mangled `'<Enum>_<method>'`, as records are.
+                        const emangled = std.fmt.bufPrint(&ebuf, "'{s}_{s}'", .{ rn, cc.callee }) catch return;
+                        if (self.fnLabelsFor(emangled, cc.args.len)) |labels| {
+                            try self.materializeCallArgs(cc.args, cc.trailing);
+                            switch (mode) {
+                                .non_tail => try beamEmitter.writeCall(self.out, .normal, cc.args.len, .{ .local = labels.entry }, 0),
+                                .tail => try beamEmitter.writeCall(self.out, .last, cc.args.len, .{ .local = labels.entry }, self.num_y),
                             }
                             return;
                         } else |_| {}
@@ -3755,7 +3829,7 @@ const Emitter = struct {
             .record, .@"enum" => {},
             else => return null,
         }
-        const owner = crossModule.moduleBasename(info.module);
+        const owner = self.atomOf(info.module);
         if (std.mem.eql(u8, owner, self.module_name)) return null;
         for (info.methods) |m| {
             if (std.mem.eql(u8, m, method)) return owner;
@@ -3770,7 +3844,7 @@ const Emitter = struct {
         const xc = self.cross orelse return null;
         const info = xc.exports.get(name) orelse return null;
         if (info.kind != kind) return null;
-        const owner = crossModule.moduleBasename(info.module);
+        const owner = self.atomOf(info.module);
         // A module never calls into itself remotely.
         if (std.mem.eql(u8, owner, self.module_name)) return null;
         return owner;

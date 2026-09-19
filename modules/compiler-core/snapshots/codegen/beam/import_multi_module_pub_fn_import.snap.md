@@ -7,15 +7,15 @@ pub fn double(x: i32) -> i32 {
 
 ----- BEAM ASSEMBLY -- math.S
 ```erlang
-{module, math}.
+{module, bp@math}.
 {exports, [{double, 1}]}.
 {attributes, []}.
 {labels, 4}.
 
 {function, double, 1, 3}.
   {label, 2}.
-    {line, [{location, "math.erl", 1}]}.
-    {func_info, {atom, math}, {atom, double}, 1}.
+    {line, [{location, "bp@math.erl", 1}]}.
+    {func_info, {atom, bp@math}, {atom, double}, 1}.
   {label, 3}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -49,7 +49,7 @@ val result = double(21);
   {label, 3}.
     {allocate, 0, 0}.
     {move, {integer, 21}, {x, 0}}.
-    {call_ext, 1, {extfunc, math, double, 1}}.
+    {call_ext, 1, {extfunc, bp@math, double, 1}}.
     {deallocate, 0}.
     return.
 ```

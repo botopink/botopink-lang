@@ -48,7 +48,10 @@ run_test_target() {
 run_beam() {
   local dir="$1" want="$2"
   echo "==> [$(basename "$dir")] beam: build + erlc +from_asm + main:main()"
-  ( cd "$dir" && "$BP_BIN" build --target beam && erlc +from_asm -o out out/main.S )
+  # 13 half 1: an erlang/BEAM artifact is named by its module atom under
+  # `out/<target>/`, because `erlc` refuses a `-module` atom that differs from
+  # its file's basename. `-o out` still puts the `.beam` where `-pa out` looks.
+  ( cd "$dir" && "$BP_BIN" build --target beam && erlc +from_asm -o out out/beam/main.S )
   local got
   got="$( cd "$dir" && erl -noshell -pa out -eval 'io:format("~p", [main:main()]), halt(0)' 2>/dev/null || true )"
   if [[ "$got" == "$want" ]]; then
@@ -112,18 +115,19 @@ if have node; then run_test_target "$RECORDS" commonJS; else echo "==> records c
 if have escript; then run_test_target "$RECORDS" erlang; else echo "==> records erlang: SKIPPED (no escript)"; fi
 if have erlc && have erl; then run_beam "$RECORDS" 3; else echo "==> records beam: SKIPPED (no erlc/erl)"; fi
 
-# ── multi-folder mod package (commonJS) ──────────────────────────────────────
-# commonJS runs the `mod`/`pub mod` tree end-to-end. The erlang cell is not run,
-# and **not** because of the backend: the emitted calls are properly qualified
-# (`geometry:area/2`, `shapes:describe/0`, `shapes:lucky/0`). `botopink run
-# --target erlang` spawns `escript out/main.erl`, and escript compiles only the
-# file it is handed, so the sibling module is `undef`
-# (`undefined function geometry:area/2`). The fix is in `cli/run.zig`, which
-# front `13-module-identity` owns — assemble every emitted `.erl` with
-# `erlc -o out` and run `erl -noshell -pa out`, the shape the beam arm of
-# `tests/language/run.sh` already uses. Verified by hand at that shape: this
-# package then prints `12 circle 7`, so 13 restores the cell as
-# `run_package "$MODULES" erlang 12 circle 7`.
+# ── multi-folder mod package (commonJS / erlang) ─────────────────────────────
+# commonJS and erlang both run the `mod`/`pub mod` tree end-to-end. The erlang
+# cell used to be skipped, and **not** because of the backend: the emitted calls
+# were already properly qualified (`geometry:area/2`, `shapes:describe/0`,
+# `shapes:lucky/0`). `botopink run --target erlang` spawned `escript
+# out/main.erl`, and escript compiles only the file it is handed, so the sibling
+# module was `undef` (`undefined function geometry:area/2`). Front
+# `13-module-identity` half 1 fixed `cli/run.zig` at the shape front 10
+# measured — `erlc -o <out>/erl` over every emitted `.erl`, then
+# `erl -noshell -pa <out>/erl`, which is what the beam arm of
+# `tests/language/run.sh` already uses — so the cell is restored here exactly as
+# that analysis asked.
 if have node; then run_package "$MODULES" commonJS 12 circle 7; else echo "==> modules commonJS: SKIPPED (no node)"; fi
+if have erlc && have erl; then run_package "$MODULES" erlang 12 circle 7; else echo "==> modules erlang: SKIPPED (no erlc/erl)"; fi
 
 echo "==> backend-execution parity: OK"

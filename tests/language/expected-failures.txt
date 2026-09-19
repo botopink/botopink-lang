@@ -18,13 +18,12 @@
 # 2026-09-18)` for the collection-loop `break` rows decision 55 says are owed and
 # front 02 has no step for. Neither shape invents a step.
 #
-# Measured on `fix/langtests-2` after merging `origin/feat` `3cfb65cb` (front 16's
-# formatter landing), with the decision-52/53/54/55 cells this front added,
-# node v25.8.0, OTP 29, `zig version` 0.16.0. Both runs are byte-for-byte what
-# they were at `b5a9b85d`: the formatter landing moved no result.
+# Measured on `feat` after fronts 12 and 13 merged (13's half 1 renames three std
+# module atoms and its runner reaches every module; 12 added the decision-52/53/54/55
+# cells), node v25.8.0, OTP 29, `zig version` 0.16.0:
 #
 #   $ tests/language/run.sh                 # commonJS, erlang, wasm
-#   language tests: 265 passed, 69 expected failures, 0 failed
+#   language tests: 268 passed, 66 expected failures, 0 failed
 #   $ tests/language/run.sh --target beam
 #   language tests: 19 passed, 23 expected failures, 0 failed
 #
@@ -35,6 +34,11 @@
 # with a command, and never adjusts them by their own delta. Seven fronts share
 # the file and five deleted lines from it on one day; two of them re-tallied from
 # different baselines and were individually right and jointly wrong. The command:
+#
+# Re-derived from the file after every merge, never from either side's paragraph:
+# when fronts 12 and 13 merged, both sides' numbers were stale and the two
+# disagreed on the totals and on 13's share.
+#
 #
 #   $ python3 - <<'EOF'
 #   from collections import Counter
@@ -48,13 +52,15 @@
 #   print(len(d), dict(t), sorted(f.items()), second)
 #   EOF
 #
-# **80 lines**: 69 exercised by `--target all`, 11 more only by `--target beam`
-# (the 12 `*` reject lines are counted by both runs — which is why 69 and 23 are
+# **77 lines**: 66 exercised by `--target all`, 11 more only by `--target beam`
+# (the 12 `*` reject lines are counted by both runs — which is why 66 and 23 are
 # what the two runs above report). By the row that comes first on the line:
 # 01-checker 42 · 02-erlang 12 · 03-beam 9 · 05-wasm 8 · 04-js 5 ·
-# 13-module-identity 4. **23** lines name a second row that has to land before
+# 13-module-identity 1. **23** lines name a second row that has to land before
 # the line goes (the §7 formatter's record and variant halves are 13 step 18, not
-# a backend's). Re-derived from the file on 2026-09-18 with the command above.
+# a backend's). Re-derived from the file on 2026-09-19 with the command above,
+# after the fronts 12 × 13 merge: front 13's half 1 deleted the three `modules/*`
+# erlang rows its runner fixed, which is the whole difference from 12's 80.
 #
 # The sub-claim decision 59 flagged as stale — "24 lines name a second row" —
 # was already 19 at `b5a9b85d` and re-derives to 19 there; it is 23 after this
@@ -124,14 +130,6 @@ erlang   | test/fn_defaults.bp        | 01 step 7 | trailing parameter defaults 
 
 # ── primitive methods ─────────────────────────────────────────────────────────
 erlang   | test/string_case_conversion.bp | 02 step 7 | `String.toUpperCase` / `String.toLowerCase` emit erlang functions that are never defined
-
-# ── modules ───────────────────────────────────────────────────────────────────
-# The emitted code is correct; `botopink run --target erlang` runs `escript out/main.erl`,
-# which compiles only the file it is handed. The `-pa` fix lives in `cli/run.zig`,
-# which 13 owns (fronts.md: 10 owns `modules/compiler-cli/**` except `cli/{build,run}.zig`).
-erlang   | modules/two_modules        | 13 step 2 | a method on a type imported from a sibling module is emitted as `<module>:<method>/1` and is undefined at run time
-erlang   | modules/mod_tree           | 13 step 2 | a fn imported from a folder-index module is emitted as `<module>:<fn>/0` and is undefined at run time
-erlang   | modules/std_import         | 13 step 2 | a std package fn used from a user module is emitted as `dict:empty/0` and is undefined at run time
 
 # ── wasm, the third executable target ─────────────────────────────────────────
 # `botopink run --target wasm` executes; `botopink test` refuses it, so only

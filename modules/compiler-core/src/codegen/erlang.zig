@@ -393,6 +393,23 @@ pub fn codegenEmit(
             .ok => |*ok| {
                 // `"std"` package copies are dependencies — never emit their
                 // test blocks (mirrors the commonJS rule).
+                // The atom the module will be named by must be its own: two
+                // paths rendering one atom used to be a silent overwrite (or a
+                // silent shadow across two output directories), which is the
+                // failure this front exists to remove. Fail exactly the modules
+                // involved, with a diagnostic, like a type error.
+                if (cross.atomFault(ct.name)) |fault| {
+                    try results.append(alloc, .{
+                        .name = ct.name,
+                        .src = ct.src,
+                        .result = .{
+                            .js = try alloc.dupe(u8, ""),
+                            .comptime_script = null,
+                            .diagnostic = .{ .type = .{ .message = try fault.message(alloc), .loc = null } },
+                        },
+                    });
+                    continue;
+                }
                 const module_test_mode = config.test_mode and !std.mem.startsWith(u8, ct.name, "std/");
                 // 06 C13 — a host-backed fn with no `erlang` target used to
                 // abort the whole build with the bare error name. It reaches
@@ -1167,6 +1184,12 @@ fn emitErlangModule(
         em.record_fields.deinit();
         em.enum_names.deinit();
         em.enum_variants.deinit();
+        {
+            var it = em.enum_variant_of.keyIterator();
+            while (it.next()) |k| alloc.free(k.*);
+        }
+        em.enum_variant_of.deinit();
+        em.enum_variants_known.deinit();
         em.imported_types.deinit();
         em.imported_fns.deinit();
         var ftf_it = em.fn_typed_fields.keyIterator();
@@ -1219,12 +1242,14 @@ fn emitErlangModule(
     const b: Ast.Builder = .{ .arena = arena_state.allocator() };
     var forms: Forms = .empty;
 
-    // Module header. "std" package modules are named `std/<mod>` for output
-    // layout; the Erlang module atom is the basename (`-module(option).`).
-    const erl_module_name = if (std.mem.lastIndexOfScalar(u8, module_name, '/')) |i|
-        module_name[i + 1 ..]
-    else
-        module_name;
+    // Module header. The Erlang module atom is the whole module path joined
+    // with `@` (`std/math` → `std@math`, `web/api/http` → `web@api@http`), a
+    // legal unquoted atom — it used to be the path's BASENAME, which made two
+    // files of the same name one module and let eleven `libs/std` modules
+    // shadow the OTP module of that name. `main` is unchanged.
+    // `crossModule.erlAtom` is the one renderer; `outputStem` names the file
+    // from the same rule, because `erlc` refuses an atom that differs from it.
+    const erl_module_name = try crossModule.erlAtom(b.arena, .of(module_name));
     try forms.append(b.arena, .{ .module = erl_module_name });
 
     // `-compile({no_auto_import,[fn/arity, ...]}).` for any user function whose
@@ -1867,6 +1892,18 @@ const Emitter = struct {
     /// (`case o { Lt -> … }`) lowers to the atom `'Lt'`, not an erlang variable
     /// that would shadow-match anything.
     enum_variants: std.StringHashMap(void),
+    /// `"<Enum>.<Variant>"` for every enum whose variant list the emitter has
+    /// seen — local declarations and imported `pub` enums. `enum_variants` is
+    /// flat (a case arm only needs to know that SOME enum declares the name);
+    /// this one answers "is `callee` a variant OF `name`", which is what tells a
+    /// payload-variant constructor (`Color.Rgb(r, g, b)`) from an associated
+    /// `fn` declared on the enum (`Shape.unit()`).
+    enum_variant_of: std.StringHashMap(void),
+    /// Enums whose variant list is known, so a miss in `enum_variant_of` means
+    /// "not a variant" rather than "never registered". A host enum injected by a
+    /// comptime body (`ComptimeModule.host_enums`) has no declaration here and
+    /// is deliberately absent.
+    enum_variants_known: std.StringHashMap(void),
     /// Cross-module link index (null in the standalone path).
     cross: ?*const CrossModule = null,
     /// Every module's `pub enum`s (empty in the standalone path).
@@ -2083,6 +2120,8 @@ const Emitter = struct {
             .record_fields = std.StringHashMap([]const []const u8).init(alloc),
             .enum_names = std.StringHashMap(void).init(alloc),
             .enum_variants = std.StringHashMap(void).init(alloc),
+            .enum_variant_of = std.StringHashMap(void).init(alloc),
+            .enum_variants_known = std.StringHashMap(void).init(alloc),
             .imported_types = std.StringHashMap([]const u8).init(alloc),
             .imported_fns = std.StringHashMap([]const u8).init(alloc),
             .fn_typed_fields = std.StringHashMap(void).init(alloc),
@@ -3077,11 +3116,33 @@ const Emitter = struct {
                 },
                 .enum_ => {
                     try self.enum_names.put(tdecl.name, {});
-                    for (tdecl.variants()) |v| try self.enum_variants.put(v.name, {});
+                    try self.enum_variants_known.put(tdecl.name, {});
+                    for (tdecl.variants()) |v| {
+                        try self.enum_variants.put(v.name, {});
+                        try self.rememberEnumVariant(tdecl.name, v.name);
+                    }
                 },
             },
             else => {},
         };
+    }
+
+    /// Record `<Enum>.<Variant>` so `isEnumVariantOf` can answer precisely.
+    /// The key is duped: the map outlives the AST slice it is built from only in
+    /// the comptime path, and duping is cheaper than reasoning about which.
+    fn rememberEnumVariant(self: *Emitter, enum_name: []const u8, variant: []const u8) !void {
+        const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ enum_name, variant });
+        const gop = try self.enum_variant_of.getOrPut(key);
+        if (gop.found_existing) self.alloc.free(key);
+    }
+
+    /// Whether `variant` is a variant OF `enum_name`. False when the enum's
+    /// variant list was never registered (a comptime host enum), so the caller
+    /// must decide what an unknown enum means.
+    fn isEnumVariantOf(self: *const Emitter, enum_name: []const u8, variant: []const u8) bool {
+        var buf: [256]u8 = undefined;
+        const key = std.fmt.bufPrint(&buf, "{s}.{s}", .{ enum_name, variant }) catch return false;
+        return self.enum_variant_of.contains(key);
     }
 
     /// Registers types this module imports `from "<pkg>"` (resolved via the
@@ -3102,7 +3163,11 @@ const Emitter = struct {
                 for (self.enum_exports) |ee| {
                     if (std.mem.eql(u8, ee.module, self.module_name)) continue;
                     if (!std.mem.eql(u8, ee.name, name) and !std.mem.eql(u8, crossModule.moduleBasename(ee.module), name)) continue;
-                    for (ee.variants) |v| try self.enum_variants.put(v.name, {});
+                    try self.enum_variants_known.put(ee.name, {});
+                    for (ee.variants) |v| {
+                        try self.enum_variants.put(v.name, {});
+                        try self.rememberEnumVariant(ee.name, v.name);
+                    }
                 }
             },
             else => {},
@@ -3125,7 +3190,7 @@ const Emitter = struct {
                         if (!self.record_fields.contains(name)) {
                             try self.record_fields.put(name, try self.alloc.dupe([]const u8, info.fields));
                         }
-                        try self.imported_types.put(name, crossModule.moduleBasename(info.module));
+                        try self.imported_types.put(name, self.atomOf(info.module));
                     },
                     .@"enum" => try self.enum_names.put(name, {}),
                     .@"fn", .val => {},
@@ -3137,7 +3202,7 @@ const Emitter = struct {
                 // bare call in the calling module, so the call site needs the
                 // owner atom; a local definition of the same name wins.
                 if (std.mem.eql(u8, info.module, self.module_name)) continue;
-                const owner = crossModule.moduleBasename(info.module);
+                const owner = self.atomOf(info.module);
                 switch (info.kind) {
                     // An FFI declaration with an `erlang` target is answered in
                     // its owner by the wrapper `externalWrapperForm` emits, so
@@ -3183,6 +3248,16 @@ const Emitter = struct {
     /// a call site inference left untyped. `record_fields` is deliberately left
     /// alone — a consumer that constructs the record has to import it by name,
     /// which is the branch above.
+    /// Erlang module atom of a module PATH (`std/order` → `std@order`), as the
+    /// cross-module index rendered it once. A `call_ext`/remote-call target and
+    /// this module's own `-module` atom must agree, so both come from
+    /// `crossModule.erlAtom` — never from the path's basename, which is what
+    /// made two same-named files one module.
+    fn atomOf(self: *const Emitter, path: []const u8) []const u8 {
+        if (self.cross) |xc| return xc.atomFor(path);
+        return crossModule.moduleBasename(path);
+    }
+
     fn collectNamespaceModuleTypes(self: *Emitter, xc: *const CrossModule, ns: []const u8) !void {
         var it = xc.exports.iterator();
         while (it.next()) |e| {
@@ -3190,7 +3265,7 @@ const Emitter = struct {
             if (info.kind != .record and info.kind != .@"enum") continue;
             if (!std.mem.eql(u8, crossModule.moduleBasename(info.module), ns)) continue;
             if (std.mem.eql(u8, info.module, self.module_name)) continue;
-            const owner = crossModule.moduleBasename(info.module);
+            const owner = self.atomOf(info.module);
             if (info.kind == .record) try self.imported_types.put(e.key_ptr.*, owner);
             for (info.methods) |m| {
                 const gop = try self.imported_fns.getOrPut(m);
@@ -3346,6 +3421,20 @@ const Emitter = struct {
         const key = try std.fmt.allocPrint(self.alloc, "{s}/{d}", .{ name, arity });
         const gop = try self.local_fn_arities.getOrPut(self.alloc, key);
         if (gop.found_existing) self.alloc.free(key);
+    }
+
+    /// Module atom of a `"std"` package module imported by its bare name
+    /// (`order` → `std@order`). The import segment IS the name the program
+    /// writes, and it used to be the module atom too — which is exactly how
+    /// `libs/std`'s `math`, `dict`, `queue`, `sets`, `os`, `json`, `crypto`,
+    /// `base64`, `random`, `unicode` and `erlang` shadowed the OTP module of
+    /// the same name node-wide. The atom is the module PATH's, rendered once by
+    /// the cross-module index; arena-allocated, because the returned slice is
+    /// stored in the form tree and rendered later.
+    fn stdModuleAtom(this: *const Emitter, b: Ast.Builder, seg: []const u8) ![]const u8 {
+        const path = try std.fmt.allocPrint(b.arena, "std/{s}", .{seg});
+        if (this.cross) |xc| if (xc.atoms.get(path)) |a| return a;
+        return crossModule.erlAtom(b.arena, .of(path));
     }
 
     /// Records every module name imported from the "std" package.
@@ -5325,9 +5414,10 @@ const Emitter = struct {
         else
             null;
         // `"std"` package call: a lowercase receiver naming an imported std
-        // module lowers to the remote `option:map(Args)`.
+        // module lowers to the remote `std@option:map(Args)`.
         if (recv.* == .identifier and recv.identifier.kind == .ident and this.std_imports.contains(recv.identifier.kind.ident)) {
-            return b.remote(recv.identifier.kind.ident, cc.callee, try this.callArgs(b, null, cc));
+            const owner = try this.stdModuleAtom(b, recv.identifier.kind.ident);
+            return b.remote(owner, cc.callee, try this.callArgs(b, null, cc));
         }
         // Activated extension dispatch: `recv.m(args)` → the local `m(Recv, args)`
         // emitted by `extensionForms`.
@@ -5348,11 +5438,28 @@ const Emitter = struct {
             if (this.ext_names.contains(name)) return b.call(cc.callee, try this.callArgs(b, null, cc));
             // Qualified enum payload constructor `Color.Rgb(r, g, b)` → the tagged
             // tuple `{'Rgb', R, G, B}` (the case-arm constructor pattern shape).
-            if (this.enum_names.contains(name)) {
+            //
+            // `callee` must be a variant OF this enum. It used to be enough that
+            // the RECEIVER named an enum, so an associated `fn` declared on the
+            // enum — `Shape.unit()` — became the tuple `{unit}` instead of the
+            // call `unit()`: erlc was clean and the program died at run time with
+            // `{case_clause,{unit}}` inside the method that matched on it. An
+            // enum whose variant list the emitter never saw (a comptime host
+            // enum, `ComptimeModule.host_enums`) keeps the old behaviour: there is
+            // no declaration to check against, and a host enum declares no fns.
+            if (this.enum_names.contains(name) and
+                (this.isEnumVariantOf(name, cc.callee) or !this.enum_variants_known.contains(name)))
+            {
                 const items = try b.arena.alloc(Ast.Expr, cc.args.len + 1);
                 items[0] = Ast.Expr.a(cc.callee);
                 for (cc.args, 1..) |arg, i| items[i] = try this.exprNode(b, arg.value.*);
                 return .{ .tuple = items };
+            }
+            // An associated `fn` of a LOCAL enum (`Shape.unit()`): `enumForms`
+            // emits the enum's methods as plain local functions under their own
+            // names, so this is a local call — not a variant, and not a module.
+            if (this.enum_names.contains(name) and this.enum_variants_known.contains(name)) {
+                return b.call(cc.callee, try this.callArgs(b, null, cc));
             }
             // Associated fn of an IMPORTED record (`Response.ok(...)` from
             // `"web"`): a remote call into the owning module (`http:ok(...)`).

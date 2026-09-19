@@ -197,7 +197,7 @@ test "dict empty boundary: size 0, lookup misses" {
 
 ----- ERLANG -- std/dict.erl
 ```erlang
--module(dict).
+-module(std@dict).
 -compile({no_auto_import,[size/1]}).
 -export([empty/0, lookup/2, hasKey/2, size/1, isEmpty/1, keys/1, values/1, insert/3, delete/2, merge/2, fold/3, mapValues/2]).
 
@@ -337,9 +337,9 @@ fn main() {
 %% import dict
 
 main() ->
-    D = dict:insert(dict:empty(), <<"a">>, 1),
-    '__bp_print'([(fun(O) -> case O of undefined -> (0); V -> V end end)(dict:lookup(D, <<"a">>))]),
-    '__bp_print'([dict:size(dict:insert(D, <<"b">>, 2))]).
+    D = std@dict:insert(std@dict:empty(), <<"a">>, 1),
+    '__bp_print'([(fun(O) -> case O of undefined -> (0); V -> V end end)(std@dict:lookup(D, <<"a">>))]),
+    '__bp_print'([std@dict:size(std@dict:insert(D, <<"b">>, 2))]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).

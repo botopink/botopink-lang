@@ -33,6 +33,7 @@ const std = @import("std");
 const ast = @import("../ast.zig");
 const template = @import("./template.zig");
 const erlang = @import("../codegen/erlang.zig");
+const crossModule = @import("../codegen/crossModule.zig");
 const Ast = @import("../codegen/beam/erl_ast.zig");
 const Term = @import("../codegen/beam/term.zig").Term;
 const erlEmitter = @import("../codegen/beam/erl_emitter.zig");
@@ -420,6 +421,21 @@ pub fn listingWithArgument(arena: std.mem.Allocator, listing: []const u8, argume
     return out.written();
 }
 
+/// The owning module of a comptime-evaluated body, for A2's atom.
+///
+/// It SHOULD be the path of the `.bp` file the template was declared in
+/// (`ui/panel` → `ui@panel__tpl__<decl>__<hash>`), which is what makes a stack
+/// trace and a `.botopinkbuild/tmp/template/` listing traceable back to source.
+/// That path does not reach here: the evaluator is handed the declaration
+/// (`ast.FnDecl`, whose `Loc` carries a line and a column and no file) and the
+/// template registry (`comptime.zig`, a `StringHashMap(ast.FnDecl)`) records no
+/// owner either, so threading it needs the module name on
+/// `env.TemplateEvalCtx` — `src/comptime/env.zig` and `src/comptime.zig`, which
+/// this front does not own. Until that carve-out, every comptime body is owned
+/// by one synthetic path, and the atom still names WHICH template it came from,
+/// which `template_<hash>` did not.
+pub const comptime_owner: crossModule.ModuleId = .of("bp/comptime");
+
 const placeholder_module = "template_module";
 
 /// Records of the `std.syntax` template model a body may construct.
@@ -514,7 +530,13 @@ fn buildModule(
     const code = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, config) catch |err|
         return if (err == error.UnsupportedComptimeMethod) error.UnsupportedMethod else error.EvalFailed;
     const argument = try argumentTerm(arena, plans);
-    const module = try std.fmt.allocPrint(arena, "template_{x:0>16}", .{std.hash.Wyhash.hash(0, code)});
+    // A2: `bp@comptime__tpl__<template>__<16 hex>`. The Wyhash is unchanged, so
+    // an identical generated body is still the identical module and re-loading
+    // it is still a no-op (`runtime/persistent_erl.zig`).
+    const module = crossModule.erlDeclAtom(arena, comptime_owner, .tpl, tfn.name, std.hash.Wyhash.hash(0, code)) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return error.EvalFailed,
+    };
     const header = "-module(" ++ placeholder_module ++ ").";
     if (!std.mem.startsWith(u8, code, header)) return error.EvalFailed;
     const renamed = try std.fmt.allocPrint(arena, "-module({s}).{s}", .{ module, code[header.len..] });
