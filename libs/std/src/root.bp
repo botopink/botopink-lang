@@ -30,6 +30,7 @@ pub mod env;
 pub mod crypto;
 pub mod regex;
 pub mod erlang;
+pub mod beam;
 pub mod json;
 pub mod fs;
 pub mod http;

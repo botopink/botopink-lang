@@ -1,6 +1,6 @@
 //// Decision 8 §10 — `loop (xs) { x -> … }` over an array: the empty
 //// collection, outer vars reassigned inside, nested loops, and a loop as an
-//// expression collecting `break` values.
+//// expression whose `break` contributes a value and ends the loop (decision 55).
 
 test "§10 loop over an array visits every element in order" {
     var out = "";
@@ -36,8 +36,15 @@ test "§10 nested loops" {
     assert pairs == 18;
 }
 
-test "§10 a loop as an expression collects its break values" {
+test "§10 a value break contributes its value and ends the loop" {
+    // Decision 55, taken 2026-09-18: `break <value>` in a collection loop
+    // contributes its argument **and ends the loop**. So the first element
+    // breaks and the loop is `[2]`, not `[2, 4, 6]`.
+    //
+    // This assertion was `length == 3` / `"2,4,6"` until decision 55 was taken,
+    // and it passed on all four backends — they share one accumulator shape and
+    // none of them stops. The cell now states the language and carries its lines.
     val doubled = loop ([1, 2, 3]) { x -> break x * 2; };
-    assert doubled.length == 3;
-    assert doubled.join(",") == "2,4,6";
+    assert doubled.length == 1;
+    assert doubled.join(",") == "2";
 }

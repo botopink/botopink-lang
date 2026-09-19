@@ -1,0 +1,24 @@
+//// Decision 55 — `break <value>` in a collection loop contributes its value and
+//// ends the loop. Decided 2026-09-18; written into decision 8 §10.
+////
+//// The same body as `run/loop_yield_then_break_value.bp` with its two statements
+//// **swapped**: 10 yields 20, 20 breaks with 99 before reaching its `yield`, and
+//// 30 is never visited. So the loop is `[20, 99]` — two elements.
+////
+//// Decision 55 is what makes the two cells differ by exactly the swap. Measured
+//// at `b5a9b85d`, three of the four backends answer something that depends on the
+//// textual order and none answers this:
+////
+////   commonJS  3  20,99,60      — the loop runs on after the break
+////   beam      3  20,99,60      — the same
+////   erlang    3  20,40,60      — the break is ignored outright
+////   wasm      4  20,99,40,60   — the break value is appended and the loop runs on
+
+pub fn main() {
+    val r = loop ([10, 20, 30]) { x ->
+        if (x == 20) { break 99; };
+        yield x * 2;
+    };
+    @print(r.length);
+    @print(r.join(","));
+}

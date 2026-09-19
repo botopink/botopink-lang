@@ -12,35 +12,61 @@
 # re-checked against `specs/1.0.5-beta/` on 2026-09-18 and each names a section
 # that exists. Two other shapes appear, both deliberate: `<front> handover 15`
 # names a front's "Handed over by `15-language-surface`" section, which is prose
-# with no step number, and `04 (no step; reported 2026-09-18)` says outright that
-# the front is certain and the row is missing. Neither invents a step.
+# with no step number, and `<front> (no step; …)` says outright that the front is
+# certain and the row is missing — `04 (no step; reported 2026-09-18)` for a
+# commonJS defect no step of 04 names, `02 (no step; decision 55, reported
+# 2026-09-18)` for the collection-loop `break` rows decision 55 says are owed and
+# front 02 has no step for. Neither shape invents a step.
 #
-# Measured on `fix/langtests` at `7bfecf7` plus the decision-28/30/33 cells
-# (its base is `feat` `bef762b`), node v25.8.0, OTP 29:
+# Measured on `fix/langtests-2` after merging `origin/feat` `3cfb65cb` (front 16's
+# formatter landing), with the decision-52/53/54/55 cells this front added,
+# node v25.8.0, OTP 29, `zig version` 0.16.0. Both runs are byte-for-byte what
+# they were at `b5a9b85d`: the formatter landing moved no result.
 #
 #   $ tests/language/run.sh                 # commonJS, erlang, wasm
-#   language tests: 250 passed, 61 expected failures, 0 failed
+#   language tests: 265 passed, 69 expected failures, 0 failed
 #   $ tests/language/run.sh --target beam
-#   language tests: 14 passed, 20 expected failures, 0 failed
+#   language tests: 19 passed, 23 expected failures, 0 failed
 #
-# 55 lines: 50 exercised by `--target all`, 5 more only by `--target beam`
-# (the 11 `*` reject lines are counted by both runs). By the row that comes
-# first on the line: 01-checker 37 · 02-erlang 6 · 03-beam 4 · 13-module-identity 4 ·
-# 05-wasm 3 · 04-js 1. Nineteen lines name a second row that has to
-# land before the line goes (the §7 formatter's record and variant halves are
-# 13 step 18, not a backend's). Re-derived from the file on 2026-09-18 by
-# decision 59, not from one front's deltas: the paragraph had been two lines
-# stale since 04's landing, and fronts 02 and 03 deleted nine lines between them
-# in the same merge window.
+# **How the paragraph below is kept, and it is a rule, not a habit**
+# (decision 59 of `specs/1.0.5-beta/decisions-taken.md` in the meta workspace,
+# taken 2026-09-18):
+# whoever deletes a line from this file **recounts these numbers from the file**,
+# with a command, and never adjusts them by their own delta. Seven fronts share
+# the file and five deleted lines from it on one day; two of them re-tallied from
+# different baselines and were individually right and jointly wrong. The command:
 #
-# Front 05 deleted three of its own — `wasm | run/index_expression.bp`,
-# `wasm | modules/std_import` and `wasm | run/tuple_print.bp` (§7's separator,
-# step 1 F1) — and every count above is re-derived by re-reading the file after
-# the deletion, not added up from any front's own delta.
+#   $ python3 - <<'EOF'
+#   from collections import Counter
+#   d=[l for l in open('tests/language/expected-failures.txt')
+#      if l.strip() and not l.lstrip().startswith('#')]
+#   t=Counter(); f=Counter(); second=0
+#   for l in d:
+#       p=[x.strip() for x in l.split('|')]; t[p[0]]+=1
+#       o=[x.strip() for x in p[2].split(',')]; f[o[0].split()[0]]+=1
+#       second += len(o) > 1
+#   print(len(d), dict(t), sorted(f.items()), second)
+#   EOF
+#
+# **79 lines**: 68 exercised by `--target all`, 11 more only by `--target beam`
+# (the 12 `*` reject lines are counted by both runs). By the row that comes first
+# on the line: 01-checker 42 · 02-erlang 12 · 03-beam 9 · 05-wasm 7 · 04-js 5 ·
+# 13-module-identity 4. **23** lines name a second row that has to land before
+# the line goes (the §7 formatter's record and variant halves are 13 step 18, not
+# a backend's). Re-derived from the file on 2026-09-19 with the command above,
+# after front 05 deleted `wasm | run/tuple_print.bp` — §7's separator, step 1 F1.
+# The two run totals quoted above are `fix/langtests-2`'s and still name their own
+# commit: they were measured before that deletion, which turns one wasm expected
+# failure into a pass.
+#
+# The sub-claim decision 59 flagged as stale — "24 lines name a second row" —
+# was already 19 at `b5a9b85d` and re-derives to 19 there; it is 23 after this
+# front's cells. Nothing else in the paragraph was stale: 56 lines / 51 / 5 and
+# 37 · 6 · 4 · 4 · 4 · 1 all re-derived exactly at `b5a9b85d`.
 #
 # For the record, since it changed inside this milestone: 04-js went to **zero**
 # lines when `c253965`, `7b6b5d3` and `17c5f8b` deleted all seven it had; the
-# three it carries now are new rows this front measured, not survivors.
+# five it carries now are rows measured after that, not survivors.
 
 # ── §5 case arms — the grammar landed (1.0.4's 06 N22 parser half); the checker's is open ──
 # `Pattern { body }`, `when (…)`, `.Variant`, tuple/label/rest patterns all parse,
@@ -115,8 +141,8 @@ erlang   | modules/std_import         | 13 step 2 | a std package fn used from a
 # run/ and modules/ cells reach wasm. The rows below are the same defects the
 # commonJS and erlang lines above name, seen from the third backend.
 wasm     | run/case_values.bp         | 01 step 4 | `.Variant` arms are not resolved: "missing variant(s) Circle, Rect" — the same checker row the commonJS and erlang lines name
-wasm     | run/print_formatter.bp     | 05 step 1, 13 step 18 | §7 formatter: `f64` prints without its decimal part, arrays/tuples without spaces, and a record or a variant prints as its raw heap address
-wasm     | run/display_print.bp       | 05 step 1, 13 step 18 | §7: `@print` does not consult `Display`; the record prints as its raw heap address
+wasm     | run/print_formatter.bp     | 05 step 1, 13 step 18 | re-measured 2026-09-18 at `b5a9b85d`: arrays and tuples still print without spaces (`[1,2]`, `#(1,"a")`), and then `@print` of a record **traps** — `wasm trap: wasm `unreachable` instruction executed`, exit 134, after the first six lines. Two halves of the old text are false: it no longer prints a raw heap address, and `f64` no longer loses its decimal part (`5.0` is right)
+wasm     | run/display_print.bp       | 05 step 1, 13 step 18 | re-measured 2026-09-18 at `b5a9b85d`: `@print(Money(cents: 5))` **traps** on the very first line — `wasm trap: wasm `unreachable` instruction executed`, exit 134, stdout empty. Not a raw heap address: nothing is printed at all, so §7's `Display` half is unreachable behind the trap and cannot be measured from this cell yet
 
 # ── the forms front 15 landed, that nothing lowers or types yet ─────────────
 # `109f6c9` made five forms parse. Three of them run everywhere and are pinned by
@@ -141,7 +167,7 @@ erlang   | test/type_identity_union.bp | 01 step 2, 13 step 17 | the same — "t
 commonJS | test/type_identity_case.bp | 01 step 4, 13 step 17 | does not compile: an arm body is a lambda the checker does not unwrap — "type mismatch: expected string, got void"
 erlang   | test/type_identity_case.bp | 01 step 4, 13 step 17 | the same — "type mismatch: expected string, got void"
 erlang   | run/type_identity_print.bp | 02 step 1, 13 step 18 | §7: a record prints `#{x => 1,y => 2}`, a variant `{'Circle',4}` / `'Dot'`, and an array without spaces
-wasm     | run/type_identity_print.bp | 05 step 1, 13 step 18 | §7: a record and a variant print as their raw heap addresses (`256`, `264`, `268`)
+wasm     | run/type_identity_print.bp | 05 step 1, 13 step 18 | re-measured 2026-09-18 at `b5a9b85d`: `@print(Point(x: 1, y: 2))` **traps** on the very first line — `wasm trap: wasm `unreachable` instruction executed`, exit 134, stdout empty. The `256` / `264` / `268` heap addresses this line used to name are gone
 beam     | run/type_identity_print.bp | 03 step 2, 13 step 18 | §7: the erlang shapes seen from BEAM assembly — a record as a map, a variant as a tagged tuple or a bare atom
 
 # ── beam, the fourth executable target (decision 8) ───────────────────────────
@@ -154,3 +180,73 @@ beam     | run/type_identity_print.bp | 03 step 2, 13 step 18 | §7: the erlang 
 beam     | run/print_formatter.bp     | 03 step 2, 13 step 18 | §7 formatter: arrays/tuples print as erlang terms, a record as `#{x => 1,y => 2}` and a variant as `{'Square',4}` / `'Nothing'`
 beam     | run/display_print.bp       | 03 step 2, 13 step 18 | §7: `@print` does not consult `Display`; the record prints as `#{cents => 5}`
 beam     | run/case_values.bp         | 01 step 4 | `.Variant` arms are not resolved: "missing variant(s) Circle, Rect" — the same checker row the other three targets name
+
+# ── §5 range patterns (decision 53) ───────────────────────────────────────────
+# Decision 53 amended decisions 20 and 36 to Zig's split: `...` is inclusive in a
+# pattern, `..` exclusive in a slice and a range, and no emitter moves. The
+# defect that survives the amendment is that `1...9` answers three different
+# things. `run/case_range_value.bp` probes the endpoints, which is what separates
+# them: erlang and wasm never take the arm and beam always takes it, so the
+# single-value probe decision 53 quotes reads beam's `1` as correct when it is a
+# false positive. commonJS passes.
+erlang   | run/case_range_value.bp     | 02 step 3 | decision 53: the `1...9` arm never matches — all five probes (5, 1, 9, 0, 10) answer the `_` arm's `0`
+wasm     | run/case_range_value.bp     | 05 step 2 | decision 53: the same, and not the `256` heap address the decision's single-value probe recorded — the arm never matches, so all five probes answer `0` (D4, `case` arms)
+beam     | run/case_range_value.bp     | 03 step 3 | decision 53: the opposite — the `1...9` arm **always** matches, so 0 and 10 answer `1` too. beam does run (run.sh § beam assembles and executes it); "beam emits only out/main.S" is no longer the measurement (D4, `case` arms)
+
+# ── §10 `yield` beside `break` in a collection loop (decision 55) ─────────────
+# Decision 55, taken 2026-09-18: `break <value>` in a collection loop contributes
+# its value **and ends the loop**. Each `.out` below is that decision's column,
+# not any backend's current answer, so if the four are moved against it exactly
+# one `.out` per cell is involved. The two shapes that already agree on all four
+# are pinned as a passing cell (`run/loop_yield_and_break.bp`) and carry no line.
+#
+# Every result is read as `length` + `join(",")` rather than printed as an array:
+# `@print` of an array is §7's separator row and two backends still get it wrong,
+# and a §7 row must not hide a §10 one.
+#
+# Three of the erlang lines below quote an `escript` compile warning that arrives
+# on **stdout**, which this suite compares byte for byte. The warnings are caused
+# by the broken lowerings themselves, so they go with them — but under
+# [decision 56](`specs/1.0.5-beta/decisions-taken.md`) front 13 replaces
+# `escript out/main.erl` with `erlc -o <out> … && erl -pa <out>`, and an erlc
+# warning does not reach the program's stdout there. A front that fixes an erlang
+# lowering and still sees a byte mismatch should check which of the two moved.
+#
+# The erlang owner cell has no step number because front 02 has none for the
+# collection loop — its step 5 is the *condition* loop used as a value, a
+# different shape — and decision 55 says outright that the row per backend comes
+# after the cell. Reported to the maintainer rather than filed against step 5.
+commonJS | run/loop_yield_then_break_value.bp | 04 step 3 | decision 55: the break value is dropped and the loop runs on — `3` / `20,40,60` where `3` / `20,40,99` is owed
+erlang   | run/loop_yield_then_break_value.bp | 02 (no step; decision 55, reported 2026-09-18) | decision 55: the yielded values are lost — `3` / `ok,99,ok`: every non-breaking iteration answers the `ok` of its last statement. escript also prints a `the result of evaluating operator '*'/2 is ignored` warning on stdout, which is the same defect seen by the compiler
+wasm     | run/loop_yield_then_break_value.bp | 05 step 4 | decision 55: the break value is appended and the loop runs on — `4` / `20,40,99,60`
+beam     | run/loop_yield_then_break_value.bp | 03 step 3 | decision 55: the break value is dropped and the loop runs on — `3` / `20,40,60` (D7, `break <value>`; measured here for the first time, which D7 asked for)
+commonJS | run/loop_break_value_then_yield.bp | 04 step 3 | decision 55: the loop runs on after the break — `3` / `20,99,60` where `2` / `20,99` is owed
+erlang   | run/loop_break_value_then_yield.bp | 02 (no step; decision 55, reported 2026-09-18) | decision 55: the break is ignored outright — `3` / `20,40,60`, the same answer the body without any `break` gives
+wasm     | run/loop_break_value_then_yield.bp | 05 step 4 | decision 55: the break value is appended and the loop runs on — `4` / `20,99,40,60`
+beam     | run/loop_break_value_then_yield.bp | 03 step 3 | decision 55: the loop runs on after the break — `3` / `20,99,60` (D7)
+commonJS | run/loop_yield_then_bare_break.bp | 04 step 3 | decision 55: a value-less `break` does not end the loop — `3` / `20,40,60` where `2` / `20,40` is owed
+erlang   | run/loop_yield_then_bare_break.bp | 02 (no step; decision 55, reported 2026-09-18) | decision 55: the loop answers the atom `ok`, so `length/1` is called on a non-list and the program dies — `escript: exception error: bad argument in function length/1 called as length(ok)`. The status is escript's **127** today and becomes `erl`'s **1** when front 13 lands decision 56's runner; the reason is the crash, not the number
+beam     | run/loop_yield_then_bare_break.bp | 03 step 3 | decision 55: a value-less `break` does not end the loop — `3` / `20,40,60` (D7)
+commonJS | test/loop_collection.bp::§10 a value break contributes its value and ends the loop | 04 step 3 | decision 55: `loop ([1, 2, 3]) { x -> break x * 2; }` answers all three doubled values; the first `break` must end the loop, so `[2]`. This assertion read `length == 3` / `"2,4,6"` and passed on all four backends until decision 55 was taken
+erlang   | test/loop_collection.bp::§10 a value break contributes its value and ends the loop | 02 (no step; decision 55, reported 2026-09-18) | decision 55: the same — `[2, 4, 6]` where `[2]` is owed
+
+# ── §10 a condition loop that never breaks (decision 52) ─────────────────────
+# Decision 52, taken 2026-09-18: a loop with no `break <value>` has no value to
+# give, on every backend, and `null` is decision 47's one spelling for absent.
+# commonJS already answers it. Decision 52's "what it costs" paragraph says
+# erlang and beam print `undefined`; re-measured here, neither does — that is
+# what they print for a *value* break, a different row.
+erlang   | run/loop_condition_no_break.bp | 02 step 5 | decision 52: the loop's variable group leaks out as its value — prints `3`, not `null`. escript also prints a `variable 'I@3' is unused` warning on stdout
+wasm     | run/loop_condition_no_break.bp | 05 step 4 | decision 52: a condition loop still collects, and the empty collection reads back as the integer `0`, not `null` — §10 as a whole, per the decision
+beam     | run/loop_condition_no_break.bp | 03 step 3 | decision 52: prints the atom `ok` — the value of the loop body's last statement — not `null` (D6)
+
+# ── the optional's pattern form (decision 54) ────────────────────────────────
+# Decision 54, taken 2026-09-18: a `?T` is matched by `null` and a binder, and the
+# variant spelling `.Some(v)` / `.None` over a `?T` becomes a located error. Both
+# halves are one row of 01-checker: step 4 owns pattern grammar as well as arm
+# resolution (the same place decision 36's range edit lands).
+commonJS | run/optional_null_pattern.bp | 01 step 4 | decision 54: the decided spelling does not parse — `error: this token cannot appear here` at `21:22`, `^^^^ unexpected \`null\``. The whole file reds, so the failure is the file's
+erlang   | run/optional_null_pattern.bp | 01 step 4 | decision 54: the same parse error; the file does not compile on any target
+wasm     | run/optional_null_pattern.bp | 01 step 4 | decision 54: the same parse error
+beam     | run/optional_null_pattern.bp | 01 step 4 | decision 54: the same parse error
+*        | reject/optional_variant_pattern.bp | 01 step 4 | decision 54: `.Some(v)` / `.None` over a `?i32` is accepted (exit 0) and then answers four different things — `undefined` on commonJS, `0` on wasm, `5` on beam, and `no case clause matching 5` on erlang. The `.expect` phrase is a placeholder for the diagnostic this row writes, per AGENTS.md
