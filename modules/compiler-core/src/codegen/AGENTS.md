@@ -528,6 +528,51 @@ codegen/
   expression is already right here: an erlang clause body's last expression is
   its value, so `caseBodyNode` needs nothing (the commonJS/beam/wasm IIFE shape
   is where that half of the handover lands).
+- **A tuple pattern is the bare erlang tuple** (`tuplePatternNode`). Decision 8
+  §5.1 P6's `#(a, b)` rides `ast.Pattern.variant` with `shape == .tuple` and an
+  EMPTY name, so the variant lowering prepended the tag atom of a variant with no
+  name — `{'', 0, S}`, which no constructor builds, so every tuple arm died with
+  `case_clause`. `shape` is now read: `.tuple` writes the elements and nothing
+  else, and `.range` (§5.2's `1...9`) keeps the tagged shape until front 02 step 3
+  lowers it.
+- **`..` writes the fields it stands for** (`variantPayloadSlots`). §5.1 P7's
+  `rest` was never read: `Rect(width: w, ..)` was emitted `{'Rect', W}` against the
+  `{'Rect', 5, 9}` a constructor builds, and `Circle(..)` collapsed to the bare
+  atom `'Circle'`. An erlang tuple pattern has a fixed arity, so the slots the
+  pattern does not name have to be written as `_` — which needs the variant's
+  declared arity, kept in `variant_fields` (filled beside `enum_variants`, for
+  imported enums too). The same map gives P4 its meaning on erlang: a WRITTEN
+  label names a POSITION in the tagged tuple, so `.Rect(height: h, width: w)`
+  fills slot 0 with `w` (`slotIndex`). A variant whose declaration this module
+  never saw keeps the written arity — there is nothing to pad to.
+- **A tuple under `..` is a guard, because erlang has no variable-arity tuple
+  pattern.** `#(a, ..)` matches a fresh clause variable (`freshPatternVar`), its
+  shape becomes `when is_tuple(T), tuple_size(T) >= N`, and each element the
+  pattern named becomes an `element/2` read — a `=:=` test in the guard for a
+  literal or a nullary variant, a binding the clause body opens with for a name.
+  A COMPOSITE element under `..` (`#(Circle(r), ..)`) becomes a body match, which
+  raises `badmatch` instead of falling through to the next arm; nothing in the
+  language suite writes one, and it is named here rather than papered over. So is
+  the other residual of moving a binding into the body: an arm guard cannot read a
+  name bound there (`#(a, ..) when (a > 0)`), because an erlang guard runs before
+  the body.
+- **A primitive type pattern is a clause guard, not a binder**
+  (`primitiveTypeName`, `appendPrimTypeGuards`). Decision 8 §5.2's `case v { i32 { … }
+  string { … } }` tests the subject's TYPE; erlang has no pattern that does, and
+  emitted as the plain binders `I32` / `String` the first arm matched every
+  subject, so the whole union answered through it. The arm keeps its variable and
+  the test becomes a guard on it — `I32 when is_integer(I32), (I32 >= …), (I32 =< …)`.
+  The spelling table and the range table are deliberate twins of commonJS's
+  `primitiveTypeName` / `integerRange` / `isTest`: `f32`/`f64`/`float` are
+  `is_number` because commonJS's is `typeof === "number"`, which an integer
+  satisfies too. Disagree on the set and the two backends take different arms.
+- **What a pattern needs beside its clause head travels in `PatternExtras`** —
+  guard tests, and the `element/2` bindings a guard-tested element stands for.
+  `armClause` carries one per clause, puts the pattern's guards BEFORE the arm's
+  own `when (…)`, and opens the clause body with the bindings. The `val assert`
+  path (`assertPatternStmts`) passes null, because its pattern is lowered twice —
+  once as a `case` test, once as the enclosing match that binds — and is lowered
+  exactly as it was.
 - **A condition loop's `break <value>` is the loop's value** (decision 8 §10).
   It used to be refused outright, with an unlocated
   `error.ConditionLoopValueUnsupported` — and on the bare `loop { … }` too, which
