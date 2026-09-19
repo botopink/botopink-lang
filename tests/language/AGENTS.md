@@ -155,22 +155,27 @@ them, by area:
 | the forms `109f6c9` landed (decisions 28, 30, 33; 15's R1–R3, R5, R8) | 5 test + 1 run + 1 reject | 7 |
 | modules | 3 `modules/` cells | 3 |
 
-Classification at botopink-lang `7bfecf7` + these cells (node v25.8.0, OTP 29),
-`zig build test-language`, every target of `--target all` together:
+Classification at botopink-lang `b5a9b85d` (node v25.8.0, OTP 29), `zig build test-language`, every
+target of `--target all` together:
 
 ```
-language tests: 250 passed, 61 expected failures, 0 failed
+language tests: 261 passed, 51 expected failures, 0 failed
 ```
 
-`expected-failures.txt` holds **70** lines: these 61 plus 9 that only `--target beam` exercises (the
+`expected-failures.txt` holds **56** lines: these 51 plus 5 that only `--target beam` exercises (the
 11 `*` reject lines are counted by both runs). Every owner cell names a 1.0.5-beta section, re-checked
 against `specs/1.0.5-beta/` on 2026-09-18. By the row that comes first on the line —
-**01-checker 37 · 02-erlang 12 · 03-beam 8 · 05-wasm 6 · 13-module-identity 4 · 04-js 3**. **19**
+**01-checker 37 · 02-erlang 6 · 03-beam 4 · 05-wasm 4 · 13-module-identity 4 · 04-js 1**. **19**
 lines name a second row that has to land before the line goes (the §7 formatter's record and variant
 halves, and the identity cells behind a checker row).
-`tests/language/run.sh --target beam` adds 11 results of its own — 2 passing, 9 listed (8 against
-`03-beam`, 1 against `01-checker`, 3 of them naming `13 step 18` too); those lines are skipped by
-`--target all`. See § the targets.
+`tests/language/run.sh --target beam` reads **18 passed, 16 expected failures, 0 failed**; its 5
+beam-only lines are skipped by `--target all`. See § the targets.
+
+**Every number in this section and in `expected-failures.txt`'s header is recounted from the file,
+never adjusted by a delta** — decision 59 of `specs/1.0.5-beta/decisions-taken.md`, taken
+2026-09-18 after two fronts re-tallied the same block from different baselines in one merge window
+and were individually right and jointly wrong. The header carries the counting command. This section
+had been stale by nine results and fourteen lines for the same reason.
 
 **Where an owner cell is not `<front> step <n>`.** Two of this milestone's rows are *handover
 sections* of a front's README — "Handed over by `15-language-surface`", prose with a heading and no

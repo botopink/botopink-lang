@@ -12,34 +12,54 @@
 # re-checked against `specs/1.0.5-beta/` on 2026-09-18 and each names a section
 # that exists. Two other shapes appear, both deliberate: `<front> handover 15`
 # names a front's "Handed over by `15-language-surface`" section, which is prose
-# with no step number, and `04 (no step; reported 2026-09-18)` says outright that
-# the front is certain and the row is missing. Neither invents a step.
+# with no step number, and `<front> (no step; …)` says outright that the front
+# is certain and the row is missing (`04 (no step; reported 2026-09-18)`). Neither
+# shape invents a step.
 #
-# Measured on `fix/langtests` at `7bfecf7` plus the decision-28/30/33 cells
-# (its base is `feat` `bef762b`), node v25.8.0, OTP 29:
+# Measured on `fix/langtests-2` at `b5a9b85d` node v25.8.0, OTP 29, `zig version` 0.16.0:
 #
 #   $ tests/language/run.sh                 # commonJS, erlang, wasm
-#   language tests: 250 passed, 61 expected failures, 0 failed
+#   language tests: 261 passed, 51 expected failures, 0 failed
 #   $ tests/language/run.sh --target beam
-#   language tests: 14 passed, 20 expected failures, 0 failed
+#   language tests: 18 passed, 16 expected failures, 0 failed
 #
-# 56 lines: 51 exercised by `--target all`, 5 more only by `--target beam`
-# (the 11 `*` reject lines are counted by both runs). By the row that comes
-# first on the line: 01-checker 37 · 02-erlang 6 · 03-beam 4 · 05-wasm 4 ·
-# 13-module-identity 4 · 04-js 1. Nineteen lines name a second row that has to
-# land before the line goes (the §7 formatter's record and variant halves are
-# 13 step 18, not a backend's). Re-derived from the file on 2026-09-18, not from
-# one front's deltas: the paragraph had been two lines stale since 04's landing,
-# and fronts 02 and 03 deleted nine lines between them in the same merge window.
+# **How the paragraph below is kept, and it is a rule, not a habit**
+# (decision 59 of `specs/1.0.5-beta/decisions-taken.md` in the meta workspace,
+# taken 2026-09-18):
+# whoever deletes a line from this file **recounts these numbers from the file**,
+# with a command, and never adjusts them by their own delta. Seven fronts share
+# the file and five deleted lines from it on one day; two of them re-tallied from
+# different baselines and were individually right and jointly wrong. The command:
 #
-# Front 05 deleted two of its own in that window — `wasm | run/index_expression.bp`
-# and `wasm | modules/std_import` — and the count above is re-derived from the file
-# after merging 02's and 03's deletions with them, not added up from any front's
-# own delta.
+#   $ python3 - <<'EOF'
+#   from collections import Counter
+#   d=[l for l in open('tests/language/expected-failures.txt')
+#      if l.strip() and not l.lstrip().startswith('#')]
+#   t=Counter(); f=Counter(); second=0
+#   for l in d:
+#       p=[x.strip() for x in l.split('|')]; t[p[0]]+=1
+#       o=[x.strip() for x in p[2].split(',')]; f[o[0].split()[0]]+=1
+#       second += len(o) > 1
+#   print(len(d), dict(t), sorted(f.items()), second)
+#   EOF
+#
+# **56 lines**: 51 exercised by `--target all`, 5 more only by `--target beam`
+# (the 11 `*` reject lines are counted by both runs — which is why 51 and 16 are
+# what the two runs above report). By the row that comes first on the line:
+# 01-checker 37 · 02-erlang 6 · 03-beam 4 · 05-wasm 4 · 13-module-identity 4 ·
+# 04-js 1. **19** lines name a second row that has to land before the line goes
+# (the §7 formatter's record and variant halves are 13 step 18, not a backend's).
+# Re-derived from the file on 2026-09-18 with the command above.
+#
+# The sub-claim decision 59 flagged as stale — "24 lines name a second row" —
+# re-derives to **19**, and 19 is what the paragraph already said at `b5a9b85d`:
+# the correction had landed with one of the deletions. Nothing else in it was
+# stale either — 56 lines / 51 / 5 and 37 · 6 · 4 · 4 · 4 · 1 all re-derive
+# exactly. What the paragraph was missing is the rule itself, above.
 #
 # For the record, since it changed inside this milestone: 04-js went to **zero**
 # lines when `c253965`, `7b6b5d3` and `17c5f8b` deleted all seven it had; the
-# three it carries now are new rows this front measured, not survivors.
+# one it carries now is a row measured after that, not a survivor.
 
 # ── §5 case arms — the grammar landed (1.0.4's 06 N22 parser half); the checker's is open ──
 # `Pattern { body }`, `when (…)`, `.Variant`, tuple/label/rest patterns all parse,
@@ -115,8 +135,8 @@ erlang   | modules/std_import         | 13 step 2 | a std package fn used from a
 # commonJS and erlang lines above name, seen from the third backend.
 wasm     | run/case_values.bp         | 01 step 4 | `.Variant` arms are not resolved: "missing variant(s) Circle, Rect" — the same checker row the commonJS and erlang lines name
 wasm     | run/tuple_print.bp         | 05 step 1 | prints decision 1a's text without spaces (`#(1,"a")`); §7 wants `#(1, "a")`
-wasm     | run/print_formatter.bp     | 05 step 1, 13 step 18 | §7 formatter: `f64` prints without its decimal part, arrays/tuples without spaces, and a record or a variant prints as its raw heap address
-wasm     | run/display_print.bp       | 05 step 1, 13 step 18 | §7: `@print` does not consult `Display`; the record prints as its raw heap address
+wasm     | run/print_formatter.bp     | 05 step 1, 13 step 18 | re-measured 2026-09-18 at `b5a9b85d`: arrays and tuples still print without spaces (`[1,2]`, `#(1,"a")`), and then `@print` of a record **traps** — `wasm trap: wasm `unreachable` instruction executed`, exit 134, after the first six lines. Two halves of the old text are false: it no longer prints a raw heap address, and `f64` no longer loses its decimal part (`5.0` is right)
+wasm     | run/display_print.bp       | 05 step 1, 13 step 18 | re-measured 2026-09-18 at `b5a9b85d`: `@print(Money(cents: 5))` **traps** on the very first line — `wasm trap: wasm `unreachable` instruction executed`, exit 134, stdout empty. Not a raw heap address: nothing is printed at all, so §7's `Display` half is unreachable behind the trap and cannot be measured from this cell yet
 
 # ── the forms front 15 landed, that nothing lowers or types yet ─────────────
 # `109f6c9` made five forms parse. Three of them run everywhere and are pinned by
@@ -141,7 +161,7 @@ erlang   | test/type_identity_union.bp | 01 step 2, 13 step 17 | the same — "t
 commonJS | test/type_identity_case.bp | 01 step 4, 13 step 17 | does not compile: an arm body is a lambda the checker does not unwrap — "type mismatch: expected string, got void"
 erlang   | test/type_identity_case.bp | 01 step 4, 13 step 17 | the same — "type mismatch: expected string, got void"
 erlang   | run/type_identity_print.bp | 02 step 1, 13 step 18 | §7: a record prints `#{x => 1,y => 2}`, a variant `{'Circle',4}` / `'Dot'`, and an array without spaces
-wasm     | run/type_identity_print.bp | 05 step 1, 13 step 18 | §7: a record and a variant print as their raw heap addresses (`256`, `264`, `268`)
+wasm     | run/type_identity_print.bp | 05 step 1, 13 step 18 | re-measured 2026-09-18 at `b5a9b85d`: `@print(Point(x: 1, y: 2))` **traps** on the very first line — `wasm trap: wasm `unreachable` instruction executed`, exit 134, stdout empty. The `256` / `264` / `268` heap addresses this line used to name are gone
 beam     | run/type_identity_print.bp | 03 step 2, 13 step 18 | §7: the erlang shapes seen from BEAM assembly — a record as a map, a variant as a tagged tuple or a bare atom
 
 # ── beam, the fourth executable target (decision 8) ───────────────────────────
