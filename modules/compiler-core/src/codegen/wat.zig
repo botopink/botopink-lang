@@ -4883,6 +4883,13 @@ const Emitter = struct {
         switch (e) {
             .identifier => |id| switch (id.kind) {
                 .ident => |n| if (self.print_shape_locals.get(self.resolveName(n))) |shape| return shape,
+                // A tuple element that is itself a container — `t._0` of
+                // `#(#(1, 2), "x")`. The same slice `isStringExpr` takes, kept
+                // only when it is an array or a tuple, which is this
+                // function's contract.
+                .identAccess => if (try self.tupleElemShapeOf(e)) |el| {
+                    if (el[0] == '[' or el[0] == '(') return el;
+                },
                 else => {},
             },
             .collection => |col| switch (col.kind) {
@@ -4969,6 +4976,73 @@ const Emitter = struct {
         if (std.mem.eql(u8, n, "bool")) return 'b';
         if (std.mem.eql(u8, n, "i32") or std.mem.eql(u8, n, "int") or std.mem.eql(u8, n, "Int")) return 'i';
         if (std.mem.eql(u8, n, "f32") or std.mem.eql(u8, n, "f64") or std.mem.eql(u8, n, "float")) return 'f';
+        return null;
+    }
+
+    /// The shape of the element `t._N` reads — **scalar codes included**, which
+    /// is what tells it apart from `printShapeOf`. `printShapeOf(t)` already
+    /// builds the whole tuple's shape (`((ii)s)` for `#(#(1, 2), "x")`, `(si)`
+    /// for a `#(name: string, pop: i32)`), so element `N` only has to be sliced
+    /// out of it; nothing else in this backend knew an element's type.
+    ///
+    /// Both readers of an element need it and neither could ask the other:
+    /// `printShapeOf`'s contract is to answer only containers, while
+    /// `isStringExpr` is the question `@print` asks about a **single** value.
+    /// While only the container half existed, `@print(t.1)` and `@print(row.name)`
+    /// printed the element's heap address — `256` where they mean `x` and `SP` —
+    /// with exit 0 and no diagnostic.
+    ///
+    /// A label is not a case here: the checker resolves `row.name` to `row._0`
+    /// before this backend sees it (decision 8 §6 T4), so the member is always
+    /// `_N` or a bare `N`.
+    fn tupleElemShapeOf(self: *Emitter, e: ast.Expr) anyerror!?[]const u8 {
+        const ia = switch (e) {
+            .identifier => |id| switch (id.kind) {
+                .identAccess => |a| a,
+                else => return null,
+            },
+            else => return null,
+        };
+        if (ia.optional) return null;
+        const idx = tupleIndex(ia.member) orelse return null;
+        const sh = (try self.printShapeOf(ia.receiver.*)) orelse return null;
+        return tupleShapeElem(sh, idx);
+    }
+
+    /// The length of the element shape starting at `sh[0]`: `i`/`f`/`b`/`s` are
+    /// one byte, `[X` is one plus its element's, `(XY…)` runs to its `)`. The
+    /// Zig twin of `$__print_shaped_raw`'s `go = 0` measuring mode, and it has
+    /// to agree with it — the two walk the same strings.
+    fn shapeSpan(sh: []const u8) usize {
+        if (sh.len == 0) return 0;
+        switch (sh[0]) {
+            '[' => return 1 + shapeSpan(sh[1..]),
+            '(' => {
+                var i: usize = 1;
+                while (i < sh.len and sh[i] != ')') {
+                    const n = shapeSpan(sh[i..]);
+                    if (n == 0) return i;
+                    i += n;
+                }
+                return if (i < sh.len) i + 1 else i;
+            },
+            else => return 1,
+        }
+    }
+
+    /// Element `idx` of the tuple shape `sh` (`(XY…)`), or null when `sh` is
+    /// not a tuple shape or has no such element.
+    fn tupleShapeElem(sh: []const u8, idx: u32) ?[]const u8 {
+        if (sh.len == 0 or sh[0] != '(') return null;
+        var i: usize = 1;
+        var k: u32 = 0;
+        while (i < sh.len and sh[i] != ')') {
+            const n = shapeSpan(sh[i..]);
+            if (n == 0) return null;
+            if (k == idx) return sh[i .. i + n];
+            i += n;
+            k += 1;
+        }
         return null;
     }
 
@@ -6057,6 +6131,13 @@ const Emitter = struct {
                     break :blk self.str_locals.contains(self.resolveName(n)) or self.str_globals.contains(n);
                 },
                 .identAccess => |ia| blk: {
+                    // A **tuple element** whose type is a string: `t._1`, and a
+                    // label the checker resolved to its position
+                    // (`row.name` → `row._0`). The tuple's shape was known to
+                    // `printShapeOf` and to nothing else, so `@print` fell
+                    // through to the numeric printer and answered the element's
+                    // heap address — `256` where it means `x`.
+                    if (self.tupleElemShapeOf(e) catch null) |el| break :blk std.mem.eql(u8, el, "s");
                     // A record field declared `string`.
                     const rty = self.recordTypeOfExpr(ia.receiver.*) orelse break :blk false;
                     const ft = self.fieldTypeIn(rty, ia.member) orelse break :blk false;

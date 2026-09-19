@@ -75,7 +75,7 @@ fn main() {
     local.set $row
     local.get $row
     i32.load
-    call $__print_i32
+    call $__print_str
     local.get $row
     i32.load offset=4
     i32.const 1
@@ -101,7 +101,7 @@ fn main() {
     local.set $local
     local.get $local
     i32.load
-    call $__print_i32
+    call $__print_str
     global.get $__heap_ptr
     local.set $__mem1
     global.get $__heap_ptr
@@ -321,14 +321,27 @@ fn main() {
       )
     )
   )
+  (func $__print_str_raw (param $s i32)
+    local.get $s
+    i32.const 4
+    i32.add
+    local.get $s
+    i32.load
+    call $__write_bytes
+  )
+  (func $__print_str (param $s i32)
+    local.get $s
+    call $__print_str_raw
+    call $__print_nl
+  )
 )
 ```
 
 ----- RUN LOG -----
 ```logs
-256
+SP
 13
-264
+RJ
 3
 12
 2

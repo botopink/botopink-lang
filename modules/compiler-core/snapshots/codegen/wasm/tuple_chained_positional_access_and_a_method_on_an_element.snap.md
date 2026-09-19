@@ -54,7 +54,7 @@ fn main() {
     call $__print_i32
     local.get $t
     i32.load offset=4
-    call $__print_i32
+    call $__print_str
     global.get $__heap_ptr
     local.set $__mem2
     global.get $__heap_ptr
@@ -366,6 +366,6 @@ fn main() {
 ----- RUN LOG -----
 ```logs
 2
-256
+x
 7
 ```

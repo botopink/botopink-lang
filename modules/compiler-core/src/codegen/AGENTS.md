@@ -1337,6 +1337,18 @@ first three are now enforced by the model, not by discipline:
   A shape holding an array (`[X`) is **not** compared this way and keeps the
   pointer comparison: `[X` has no closing code and an array's length is only
   known at run time.
+- **A tuple element is printed by its own shape** (`tupleElemShapeOf` +
+  `shapeSpan`): `@print(t.1)` answered `256` and answers `x`, `@print(row.name)`
+  answered `256` and answers `SP`. `printShapeOf` already built the tuple's whole
+  shape (`((ii)s)`, `(si)`) but its contract is to answer containers, and
+  `isStringExpr` — what `@print` asks about a **single** value — could not ask it;
+  `tupleElemShapeOf` slices element `N` out and both readers use it, so string
+  `+`, string `==` and `str_locals` follow. A label is not a separate case: the
+  checker resolves `row.name` to `row._0` (§6 T4) before this backend sees it, so
+  the member is always `_N` or a bare `N`. An element that is itself a container
+  prints as one too (`t.0` → `#(1, 2)`), which is **ahead of commonJS**: it prints
+  `[1, 2]` there, dropping the `#` marker when no shape hint is passed — `04-js`'s
+  row, so the fixture for this is wasm-only.
 - **§7 F1 — a separator inside an array or a tuple is `, `, not `,`**
   (`wat_prelude.putSep`): `@print([1, 2])` writes `[1, 2]` and `@print(#(1, "a"))`
   writes `#(1, "a")`, where decision 1a's text had no space at all

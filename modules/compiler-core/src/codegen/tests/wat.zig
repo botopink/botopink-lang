@@ -785,6 +785,49 @@ test "wat: tuple ---- equality compares elements, and labels take no part" {
     );
 }
 
+// §6 T4 / §7 — a tuple element is printed by its own shape, not by its address.
+// `@print(t.1)` answered `256` where it means `x`, and `@print(row.name)` — a
+// label the checker resolves to `row._0` — answered `256` where it means `SP`:
+// the tuple's shape was known to `printShapeOf` and to nothing else, so a
+// **single** element fell through to the numeric printer with exit 0 and no
+// diagnostic. `tupleElemShapeOf` slices element N out of the receiver's shape
+// and both readers ask it, which also makes an element that is itself a
+// container print as one (`t.0` → `#(1, 2)`, `u.0` → `["a", "b"]`).
+//
+// A RUN LOG and not a snapshot, the shape a single backend's row uses: the last
+// two prints are where commonJS and wasm still disagree, and an all-backend
+// fixture would pin commonJS's answer in a directory this front does not own.
+// commonJS prints `[1, 2]` for `t.0` — it drops the tuple marker when the shape
+// hint is absent, which is `04-js`'s to answer, not this front's. Every other
+// line here was run on both and matches.
+test "wat: tuple ---- an element prints by its shape, positional and labelled" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn load() -> #(name: string, pop: i32) {
+        \\    val name = "SP";
+        \\    val pop = 12;
+        \\    return #(name, pop);
+        \\}
+        \\fn main() {
+        \\    val t = #(#(1, 2), "x");
+        \\    @print(t.1);
+        \\    @print(t.0.1);
+        \\    val row = load();
+        \\    @print(row.name);
+        \\    @print(row.pop + 1);
+        \\    val a = "RJ";
+        \\    val b = 7;
+        \\    val local = #(a, b);
+        \\    @print(local.a);
+        \\    val s = t.1;
+        \\    @print(s + "!");
+        \\    @print(t.1 == "x");
+        \\    val u = #(["a", "b"], 3);
+        \\    @print(t.0);
+        \\    @print(u.0);
+        \\}
+    , "x\n2\nSP\n13\nRJ\nx!\ntrue\n#(1, 2)\n[\"a\", \"b\"]\n");
+}
+
 // ── step 6: the string case primitives ──────────────────────────────────────
 
 // `"aB".toUpperCase()` trapped on wasm (`prim method not lowered on wasm:

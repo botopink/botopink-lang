@@ -99,31 +99,50 @@ address. `elemKindOfTypeRef` reads a type parameter as `.i32`, which is right fo
 the *slot* and wrong for the *text*. Fixing it needs the instantiated type at the
 call site, which this backend does not have.
 
-**Two silent wrong answers remain**, measured over `snapshots/codegen/wasm/` on
-2026-09-18 and left for their own row: a **string** reaching `@print` through a
-shape `isStringExpr` does not recognise, so the address is printed instead of the
-text. (A third, `record_a_method_named_print_is_called_on_the_record`
-— `@print(d.print())` → `276` — is fixed by the method-symbol registration
-above, and its fixture now records `doc:hi`.)
+**A tuple element is printed by its own shape, not by its address**
+(`tupleElemShapeOf`). This was the last silent wrong-answer class the directory
+carried, and it was two fixtures:
 
-| Fixture | Written | Printed | Means |
-|---|---|---|---|
-| `tuple_chained_positional_access_and_a_method_on_an_element` | `@print(t.1)` | `256` | `x` |
-| `tuple_labels_resolve_to_positions_on_every_backend` | `@print(row.name)` | `256` | `SP` |
+| Fixture | Written | Printed | Means | Now |
+|---|---|---|---|---|
+| `tuple_chained_positional_access_and_a_method_on_an_element` | `@print(t.1)` | `256` | `x` | `x` |
+| `tuple_labels_resolve_to_positions_on_every_backend` | `@print(row.name)` | `256` | `SP` | `SP` |
+| the same | `@print(local.a)` | `264` | `RJ` | `RJ` |
 
-Both are a **labelled or positional tuple element whose type is a string**: the
-element's shape is known to `printShapeOf` (it builds `((ii)s)` for the tuple) but
-not to `isStringExpr`, which is what `@print` asks for a single value.
+Both are a **labelled or positional tuple element whose type is a string**. A
+label is not a separate case: the checker resolves `row.name` to `row._0` before
+this backend sees it (§6 T4), so the member is always `_N` or a bare `N`. The
+element's shape *was* known — `printShapeOf` builds `((ii)s)` for the tuple and
+`(si)` for a `#(name: string, pop: i32)` — but only to `printShapeOf`, whose
+contract is to answer **containers**; `isStringExpr` is what `@print` asks about a
+**single** value, and it had no way to ask. `tupleElemShapeOf` slices element `N`
+out of the receiver's shape and both readers now ask it, so `str_locals`, string
+`+` and string `==` follow for free (`val s = t.1; s + "!"` answered `256!`).
+`shapeSpan` is the Zig twin of `$__print_shaped_raw`'s `go = 0` measuring mode and
+has to keep agreeing with it — they walk the same strings.
+
+Because `printShapeOf` asks too, an element that is itself a **container** prints
+as one: `t.0` of `#(#(1, 2), "x")` answered `296` and answers `#(1, 2)`, and `u.0`
+of `#(["a", "b"], 3)` answered `312` and answers `["a", "b"]`. Here wasm is ahead
+of commonJS, which prints `[1, 2]` for `t.0` — it drops the `#` marker when the
+shape hint is absent. That is `04-js`'s row, which is why the fixture pinning
+these is `assertWasmRunLog` and not an all-backend snapshot.
 
 The class was found by scanning every `RUN LOG` in the directory for a bare
 integer ≥ 256 (the first data offset) or a bracketed list of them. Six files
-matched: the three above, and three whose numbers are the value the program
-actually computes (`loop_filter_with_conditional_break` `[250,400]`,
+matched: the two above, `record_a_method_named_print_is_called_on_the_record`
+(`@print(d.print())` → `276`, fixed by the method-symbol registration above and
+now recording `doc:hi`), and three whose numbers are the value the program
+actually computes (`loop_filter_with_conditional_break` `[250, 400]`,
 `template_end_to_end_generic_expr_via_code_builtin` `8081`,
 `template_end_to_end_yaml_model_computes_a_labeled_tuple` `8005`). **No fixture
 printed a record or a variant**, which is why the trap above re-recorded no
 existing file — the addresses §7 owes were only ever in the language cells. Any
 new fixture whose log holds such a number is worth re-reading against this table.
+
+What is left in this class is the **generic-parameter limit** below, which is a
+different cause: there the declared type is a type parameter, so no shape exists
+to slice.
 
 ## Function values, and the lowering that is not there
 
