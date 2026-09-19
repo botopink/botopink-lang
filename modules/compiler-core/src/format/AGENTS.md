@@ -27,6 +27,24 @@ format/
 `format(parse(src))` must produce output that re-parses to an equivalent AST,
 and running `format` twice in a row must produce identical text.
 
+## `fits` does not fit, and `Doc.widthChoice` is why
+
+The renderer's `fits` scan stops at the first `concat` and then answers "yes" to
+anything with a non-negative budget — its own comment calls that "suboptimal but
+safe". Since every non-trivial document *is* a `concat`, a `group` effectively
+always renders flat, and `LINE_WIDTH` only ever bites through a `hardline` or a
+`forceBreak` somebody placed by hand. That is why a `fn` signature could reach 104
+columns with a `group` around its parameter list.
+
+`Doc.widthChoice { flat, broken, flatWidth }` is the way around it without
+rewriting the scan: `flatWidth` is measured when the node is built (render the flat
+spelling at an unbounded width) and includes what follows on the line, and the
+renderer compares it against the real `col`. Fixing `fits` itself would be the
+principled repair and is **not** a small change — every grouped construct in the
+language (array literals, calls, type unions, comma lists) would start breaking by
+width at once, which is a canonical-form decision per construct rather than a bug
+fix.
+
 ## Formatting rules
 
 | Construct | Rule |
@@ -35,6 +53,7 @@ and running `format` twice in a row must produce identical text.
 | Record (`type`) | Field list in parentheses, no `val` → `type Point(x: i32, y: i32)`; compact without a trailing comma (even past the width), open one field per line with the trailing comma when the source had one or a field carries a `//` comment; field annotations and defaults inline; no body when there are no methods; ` implement B` after the field list |
 | Enum (`type`) | `type Color { Red, Rgb(r: i32, g: i32, b: i32) }` compact; open (one item per line, trailing comma added) with a trailing comma, a section or a method; a blank line before the first method |
 | Behavior | `behavior Name<G> extends B { … }`; `val x: T;`, bodyless `fn …;`, `default fn … { }`; a blank line between the field, signature and default-method groups; `{}` when empty |
+| `fn` signatures | A signature that does not fit breaks **one parameter per line, with a trailing comma**, closing on its own line, with the return type and the body's `{` after the `)` ([decision 61](../../../../specs/1.0.5-beta/decisions-taken.md) rule 4). It covers all five signature printers — `fn`, `declare fn`, a `type`'s method, a behavior method bodyless or not, and an `implement`/`extend` method. `fmtParams`' `commaList` is a `group` that was meant to do this and never once did: `fits` stops at the first `concat`, so a signature joined past the width (the decision's own example reached **104** columns against 80). `fmtSignature` decides from a flat width measured at build time against the column the render has really reached, which is why a method four columns in breaks four columns earlier; the `;` or ` {` that follows the signature is counted too, so the boundary is exact — 80 columns stays on one line, 81 breaks. A parameter default that itself needs a line (a lambda) has no flat width and keeps whatever it printed before |
 | Pipeline `\|>` | A single step with no comments stays inline if it fits; multi-step chains (or any step comment) put each `\|>` on its own line |
 | Array / list literals | Trailing comma or comments → multi-line; otherwise inline if it fits |
 | Call arguments | A **lambda argument hugs the call** ([decision 61](../../../../specs/1.0.5-beta/decisions-taken.md) rule 1): the argument list drops its `nest(INDENT)` and its softlines, so the lambda's own `forceBreak` opens at the call's indentation — body at +4 from the call line, `});` level with the call. It applies to a lambda in **any** argument position (`throws({ -> … }, "expected")` puts it first) and only when that lambda's own printing breaks; a one-line lambda, an argument carrying a `//` comment and a multiline-string argument all keep the grouped/open forms. Before this the two nests compounded: one line break paid +8 for the body and +4 for the brace |

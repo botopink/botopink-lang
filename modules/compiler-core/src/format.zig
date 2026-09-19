@@ -36,6 +36,18 @@ pub const Doc = union(enum) {
     group: *const Doc,
     /// Force break mode for the inner document regardless of enclosing group.
     forceBreak: *const Doc,
+    /// Two spellings of one construct, chosen by the column the render has
+    /// actually reached: `flat` when `flatWidth` more columns are still
+    /// available, `broken` otherwise.
+    ///
+    /// It exists because `fits` cannot answer this question. `fits` stops at the
+    /// first `concat` and then says yes to anything with a non-negative budget
+    /// (its own comment calls that "suboptimal but safe"), so a `group` whose
+    /// inner document is a `concat` — which is every non-trivial one — always
+    /// goes flat. `flatWidth` is measured when the node is built, by rendering
+    /// the flat spelling at an unbounded width, and it counts what follows on the
+    /// line as well, which is the other half `fits` cannot see.
+    widthChoice: struct { flat: *const Doc, broken: *const Doc, flatWidth: usize },
 };
 
 // ── global singletons (zero-cost leaves) ──────────────────────────────────────
@@ -98,6 +110,13 @@ pub const Formatter = struct {
 
     pub fn forceBreak(this: *Formatter, doc: *const Doc) !*const Doc {
         return this.alloc(.{ .forceBreak = doc });
+    }
+
+    /// `flat` if it still fits in `flatWidth` columns at the point the render has
+    /// reached, `broken` otherwise. See `Doc.widthChoice` for why this is not a
+    /// `group`.
+    pub fn widthChoice(this: *Formatter, flat: *const Doc, broken: *const Doc, flatWidth: usize) !*const Doc {
+        return this.alloc(.{ .widthChoice = .{ .flat = flat, .broken = broken, .flatWidth = flatWidth } });
     }
 
     // ── higher-level combinators ───────────────────────────────────────────────
@@ -310,6 +329,78 @@ pub const Formatter = struct {
         var items = try this.arena.alloc(*const Doc, params.len);
         for (params, 0..) |p, i| items[i] = try this.fmtParam(p);
         return this.commaList("(", items, ")");
+    }
+
+    /// What a body puts on the signature's own line: ` {` when it opens, ` {}`
+    /// when it is empty (`fmtBody`'s answer for no statements).
+    fn bodyCols(stmts: usize) usize {
+        return if (stmts == 0) 3 else 2;
+    }
+
+    /// A declaration's parameter list, and whatever follows the closing paren on
+    /// the same line. A signature that does not fit breaks **one parameter per
+    /// line, with a trailing comma**, closing on its own line
+    /// ([decision 61](../../../specs/1.0.5-beta/decisions-taken.md) rule 4):
+    ///
+    /// ```botopink
+    /// fn aVeryLongFunctionName(
+    ///     firstParameter: i32,
+    ///     secondParameter: string,
+    ///     thirdParameter: bool,
+    /// ) -> string {
+    /// ```
+    ///
+    /// `fmtParams`' `commaList` is a `group` that was meant to do exactly this and
+    /// never did once: `fits` stops at the first `concat`, so the group always went
+    /// flat and the signature above joined to **104 columns** against a
+    /// `LINE_WIDTH` of 80. The decision is taken here instead, from a flat width
+    /// measured at build time against the column the render has really reached —
+    /// see `Doc.widthChoice`.
+    ///
+    /// `tail` is printed after the closing paren and is part of the measurement.
+    /// `tailCols` is what follows *that* and is **not** part of this document —
+    /// the `;` of a bodyless declaration, or the ` {` a body opens with — which
+    /// the fit decision still has to pay for, or a signature would be broken one
+    /// column too late.
+    fn fmtSignature(this: *Formatter, params: []const ast.Param, tail: *const Doc, tailCols: usize) !*const Doc {
+        if (params.len == 0) return this.concat(try this.text("()"), tail);
+
+        var items = try this.arena.alloc(*const Doc, params.len);
+        for (params, 0..) |p, i| items[i] = try this.fmtParam(p);
+
+        const flat = try this.concat(
+            try this.concatAll(&.{
+                try this.text("("),
+                try this.join(items, try this.text(", ")),
+                try this.text(")"),
+            }),
+            tail,
+        );
+        const flatText = try render(this.arena, flat, std.math.maxInt(u32));
+        // A parameter default that needs a line of its own (a lambda) has no flat
+        // width to compare, so such a signature keeps whatever it printed before
+        // rather than being broken on a number that does not mean anything.
+        if (std.mem.indexOfScalar(u8, flatText, '\n') != null) return flat;
+
+        var brokenParts: std.ArrayList(*const Doc) = .empty;
+        defer brokenParts.deinit(this.arena);
+        for (items, 0..) |it, i| {
+            if (i > 0) try brokenParts.append(this.arena, this.hardline());
+            // The trailing comma is on every parameter, the last one included —
+            // measured to parse, and it is what makes adding a parameter a
+            // one-line diff.
+            try brokenParts.append(this.arena, try this.concat(it, try this.text(",")));
+        }
+        const broken = try this.concat(
+            try this.forceBreak(try this.concatAll(&.{
+                try this.text("("),
+                try this.nest(INDENT, try this.concat(this.hardline(), try this.concatAll(brokenParts.items))),
+                this.hardline(),
+                try this.text(")"),
+            })),
+            tail,
+        );
+        return this.widthChoice(flat, broken, flatText.len + tailCols);
     }
 
     fn fmtReturnType(this: *Formatter, ret: ?[]const u8) !*const Doc {
@@ -1760,8 +1851,7 @@ pub const Formatter = struct {
         return this.concatAll(&.{
             prefix,
             try this.text(d.name),
-            try this.fmtParams(d.params),
-            try this.fmtReturnType(d.returnType),
+            try this.fmtSignature(d.params, try this.fmtReturnType(d.returnType), 1),
         });
     }
 
@@ -1915,8 +2005,11 @@ pub const Formatter = struct {
             fn_kw,
             try this.text(m.name),
             try this.fmtGenericParams(m.genericParams),
-            try this.fmtParams(m.params),
-            try this.fmtReturnTypeRef(m.returnType, null),
+            try this.fmtSignature(
+                m.params,
+                try this.fmtReturnTypeRef(m.returnType, null),
+                if (m.body) |stmts| bodyCols(stmts.len) else 1,
+            ),
         });
         if (m.body) |stmts| {
             return this.concatAll(&.{
@@ -2241,7 +2334,7 @@ pub const Formatter = struct {
         return this.concatAll(&.{
             try this.text("fn "),
             nameDoc,
-            try this.fmtParams(m.params),
+            try this.fmtSignature(m.params, this.nil(), bodyCols(m.body.len)),
             try this.text(" "),
             try this.fmtBody(m.body),
         });
@@ -2271,8 +2364,7 @@ pub const Formatter = struct {
                 prefix,
                 try this.text(f.name),
                 try this.fmtGenericParams(f.genericParams),
-                try this.fmtParams(f.params),
-                try this.fmtReturnTypeRef(f.returnType, f.typeGuardParam),
+                try this.fmtSignature(f.params, try this.fmtReturnTypeRef(f.returnType, f.typeGuardParam), 1),
                 try this.text(";"),
             });
         }
@@ -2288,9 +2380,11 @@ pub const Formatter = struct {
             prefix,
             try this.text(f.name),
             try this.fmtGenericParams(f.genericParams),
-            try this.fmtParams(f.params),
-            try this.fmtReturnTypeRef(f.returnType, f.typeGuardParam),
-            labelDoc,
+            try this.fmtSignature(
+                f.params,
+                try this.concat(try this.fmtReturnTypeRef(f.returnType, f.typeGuardParam), labelDoc),
+                bodyCols(f.body.len),
+            ),
             try this.text(" "),
             try this.fmtBody(f.body),
         });
@@ -2523,6 +2617,9 @@ fn fits(budget: isize, work: *std.ArrayList(Item)) bool {
             .nest => |n| _ = n,
             .group => |d| _ = d,
             .forceBreak => return false,
+            // Its flat spelling has a width that was measured, so — unlike every
+            // other node here — this one can be charged for exactly.
+            .widthChoice => |w| remaining -= @intCast(w.flatWidth),
         }
     }
     return remaining >= 0;
@@ -2610,6 +2707,19 @@ pub fn render(allocator: std.mem.Allocator, doc: *const Doc, width: usize) ![]u8
 
             .forceBreak => |d| {
                 try work.append(wa, .{ .indent = item.indent, .mode = .break_, .doc = d });
+            },
+
+            .widthChoice => |w| {
+                // The enclosing mode is carried through rather than forced flat:
+                // the flat spelling holds no `line` or `softline` of its own, and
+                // whatever trails it (a return type, a `:label`) must keep
+                // deciding the way it did before this node existed.
+                const fitsFlat = col + w.flatWidth <= width;
+                try work.append(wa, .{
+                    .indent = item.indent,
+                    .mode = item.mode,
+                    .doc = if (fitsFlat) w.flat else w.broken,
+                });
             },
         }
     }
