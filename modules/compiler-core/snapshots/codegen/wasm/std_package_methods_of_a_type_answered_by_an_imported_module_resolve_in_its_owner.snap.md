@@ -1700,7 +1700,6 @@ fn main() {
     (if (result i32)
       (then
     local.get $_res0 ;; Some — present value
-    i32.load ;; optional payload
       )
       (else
     i32.const 0
@@ -2035,6 +2034,6 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-0
+1
 2
 ```

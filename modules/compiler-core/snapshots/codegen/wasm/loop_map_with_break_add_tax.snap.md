@@ -357,6 +357,15 @@ fn main() {
         br $fdigits
       )
     )
+    ;; §7 F5: an f64 always carries its decimal part — `5.0`, never `5`
+    local.get $last
+    i32.eqz
+    (if
+      (then
+        i32.const 1
+        local.set $last
+      )
+    )
     local.get $last
     (if
       (then
@@ -492,5 +501,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-[115,287.5,460]
+[115.0,287.5,460.0]
 ```

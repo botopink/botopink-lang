@@ -13,7 +13,6 @@ val parity = case 5 {
 ```wasm
 (module
   (memory (export "memory") 1)
-  (table funcref (elem $__lambda0))
   (start $__init_globals)
   (data (i32.const 256) "\04\00\00\00even")
   (data (i32.const 264) "\03\00\00\00odd")
@@ -21,7 +20,7 @@ val parity = case 5 {
   (global $parity (mut i32) (i32.const 0))
   (func $__init_globals
     (local $__case_0 i32)
-    (local $__mem0 i32)
+    (local $value i32)
     i32.const 5
     local.set $__case_0
     i32.const 0
@@ -42,25 +41,12 @@ val parity = case 5 {
     i32.const 256
       )
       (else
-    global.get $__heap_ptr
-    local.set $__mem0
-    global.get $__heap_ptr
-    i32.const 4
-    i32.add
-    global.set $__heap_ptr
-    local.get $__mem0
-    i32.const 0
-    i32.store
-    local.get $__mem0
-      )
-    )
-    global.set $parity
-  )
-  (func $__lambda0 (param $__env i32) (result i32)
-    (local $value i32)
     i32.const 264
     local.set $value
     local.get $value
+      )
+    )
+    global.set $parity
   )
 )
 ```

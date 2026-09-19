@@ -416,6 +416,10 @@ pub const HelperGroup = enum {
     arr_at_box,
     /// `$__print_undefined`, and `$__print_opt_{i32,bool,str}` (+`_raw`).
     print_opt,
+    /// `$__print_opt_f32` (+`_raw`) — a `?T` box holding an `f32` slot. Its own
+    /// group and not part of `print_opt`, so a module that prints a plain
+    /// optional renders exactly as it did before this existed.
+    print_opt_f32,
     /// `$__write_err` `$__assert_fail`.
     assert_fail,
     /// `$__print_quoted_raw` `$__print_shaped_raw` — arrays of strings, tuples
@@ -431,6 +435,7 @@ pub const HelperGroup = enum {
             .box_i32 => &.{.alloc},
             .arr_at_box => &.{.box_i32},
             .print_opt => &.{ .print, .print_bool, .print_str },
+            .print_opt_f32 => &.{ .print, .print_f64, .print_opt },
             .assert_fail => &.{.print},
             .print_shaped => &.{ .print, .print_bool, .print_f64 },
             .i32_to_str, .str_case, .str_repeat, .arr_new => &.{.alloc},
@@ -506,6 +511,8 @@ pub const Helper = enum {
     print_opt_bool_raw,
     print_opt_str,
     print_opt_str_raw,
+    print_opt_f32,
+    print_opt_f32_raw,
     write_err,
     assert_fail,
     print_quoted_raw,
@@ -528,6 +535,7 @@ pub const Helper = enum {
             .write_err, .assert_fail => .assert_fail,
             .print_quoted_raw, .print_shaped_raw => .print_shaped,
             .print_undefined, .print_opt_i32, .print_opt_i32_raw, .print_opt_bool, .print_opt_bool_raw, .print_opt_str, .print_opt_str_raw => .print_opt,
+            .print_opt_f32, .print_opt_f32_raw => .print_opt_f32,
             inline else => |t| @field(HelperGroup, @tagName(t)),
         };
     }
