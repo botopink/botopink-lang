@@ -47,6 +47,9 @@ and running `format` twice in a row must produce identical text.
 | `loop` body | `loop (…) { x ->` then one statement per line, each ended by `;` (the body shares `fmtStmtSeq` with `fn`, lambda and `if`-branch bodies, including a trailing comment on its statement's line) |
 | Imports | `import {a, b} from "m"`; the package-namespace forms keep the handle: `import pkg`, `import pkg from "m"`, `import pkg, {a} from "m"` |
 | Package default | `[pub] default mod Name;` and `[pub] default fn f(…)` keep the `default` keyword, in the parser's order (`pub`, `default`, `declare`). It is not decoration: `default mod` names the package handle `import <pkg>` resolves to and `default fn` names the handler aliased under it (`comptime.zig`'s package-default DSL). Dropping it unbinds every consumer of a package whose handle and handler have different names, and — a deletion being idempotent — `format --check` then reports the broken file as clean |
+| Parser desugarings | Printed back in the spelling that was **written**, never as the call the parser built: `xs[0]` (and `xs[0..2]`, `d["k"]`, `t[0]` — one node, decision 30) rather than `@[](xs, 0)`; `x is T` (decision 8 §4) rather than `@is(x)`, which deleted the tested type outright; `a ?? b` (decision 28) rather than `if (a) { __bp_nullish -> __bp_nullish } else { b }`. The reserved callees cannot be written by hand (`is` is a keyword, `@[]` does not lex) and the binding name is the reserved `__bp` prefix, so a node carrying one is always the desugaring. `nullishDefaultFallback` tests all four parts of the `if`, so an `if` that binds a name of its own is untouched |
+| Chained call | `adder(3)(4)` — calling what a call returned. There is no name, so the callee is an **expression** (`ast.CallExpr.call.calleeExpr`, `callee` is `""`) and `receiver` stays null: a chained call is not a method call. Reading only `receiver` and `callee` printed the empty name and dropped the receiver — `adder(3)(4)` came back as `(4)` |
+| Type references | A parenthesis is printed exactly where it is load-bearing. `parser/types.zig` binds `[]`, `?` and `\|` to a **base** type and does not keep `(T)` in the AST (`(T)` *is* `T`), so `fmtTypeRefIn` decides from the shape: an array of a union, an optional or a function type (`(i32 \| string)[]`, `(?i32)[]`, `(fn(i32) -> i32)[]`), an optional of a union (`?(i32 \| string)`), and a union or constraint-list member that is a function type (`(fn() -> i32) \| string`). Everywhere else the shortest spelling is the canonical one — `?i32[]`, `i32[] \| string[]`, `i32 \| string[]`. Printing the parentheses away gave **a different type**, and idempotently, so `format --check` reported it clean |
 | One-line lambda value | Rendered flat as one text (it may run past the width); a value that needs a line break of its own prints the open form — so a second `format` pass decides the same way |
 
 ## Layout the formatter keeps (front 12 step 4)
@@ -72,14 +75,26 @@ and running `format` twice in a row must produce identical text.
   body open: the compact `{ Red, Blue }` has nowhere to put a `//`.
 - **One-line lambdas** — `{ n -> n * 2 }` written on one line with a single value expression
   stays inline (`fmtLambdaAt`).
+- **Blank lines and comments in every block** — including an `if` **then**-branch and a lambda
+  body, which is every `loop (…) { x -> … }` body. Those two were the last blocks whose statements
+  came from an inlined loop in `parser/exprs.zig` that recorded no `emptyLinesBefore` and made a
+  `//` there a parse error; `15-language-surface`'s `28e447e` routed them through
+  `parseStmtListInBraces`, and this printer has read the field all along (one `fmtStmtSeq` for every
+  block since `9d1d067`), so all three — then-branch, else-branch and `loop` body — keep a blank
+  line and a comment now. Measured, not assumed: a blank line plus a `//` in each of the three
+  round-trips byte-identically.
 - An empty `////` line prints without a trailing space; `botopink format` (CLI) ends a file with
   one newline.
 - None of these fields reach the parser snapshots: `jsonStringify` omits them when empty/false
   (`Program.blankLineBefore` always).
 
-`botopink format --check` passes on `libs/std/**` and `examples/**`, and — since the formatter
-follow-up of 2026-09-17 — on the five sibling libraries under `repository/`: formatted, they compile, pass
-the same tests, and a second pass changes nothing. Canonical rewrites that remain (no content lost): a
+`botopink format --check` passes on `examples/**` and — since `09-ecosystem-residuals` committed the
+formatted text (2026-09-18) — on all five sibling libraries under `repository/`: formatted, they
+compile, pass the same tests, and a second pass changes nothing. **`libs/std` has two files that
+would be reformatted** as of `f8d97f95`: `src/primitives.bp:549` (a braced single-statement `if`
+inside a `loop`) and `src/querystring.bp:37` (a method chain that now fits on one line). Both are the
+canonical rules below and neither loses text; the drift is from edits made after the last sweep, and
+`libs/std` is not this front's directory. Canonical rewrites that remain (no content lost): a
 `#[a, b]` annotation list prints as one `#[…]` per annotation, a method chain split over lines
 joins onto one, a single-expression `if` block drops its braces, a `\\` line string prints as
 `"""…"""`. `.d.bp` files are not reached by `format` (the loader never scans them into the
@@ -91,13 +106,12 @@ shortforms) and is documentation only.
 - **End-of-line comments on an array element** — the array literal attaches a comment to the *next*
   item, with no line information, so the formatter prints it above that item. A **field's** is kept
   (`Field.trailingComment`), and so are a statement's, a variant's and a method's.
-- **Blank lines inside an `if` then-branch or a lambda body — which is every `loop (…) { x -> … }`
-  body** — those two blocks carry their own inlined loop in `parser/exprs.zig`, written before
-  `parseBlock` grew `trackEmptyLines`/`handleComments`, so no `emptyLinesBefore` is recorded and a
-  `//` comment there is a parse error. The printer keeps whatever is recorded, so both start
-  round-tripping the moment the loops call `parseStmtListInBraces`. An `if` **else**-branch does
-  reach `parseStmtListInBraces`: its blank lines were recorded and, until the branch printers were
-  merged into `fmtStmtSeq`, silently dropped — they are printed now.
+- **The indentation of a comment's continuation line** — a `//` line the author indented to align
+  under the comment above it (one site, in a sibling library under `repository/`) re-emits at the
+  statement's own column. The text is intact; the alignment is not. A comment reaches the AST as text
+  with no column, so keeping it needs a recorded column, not a printer arm — it is the last live
+  member of `09-ecosystem-residuals`' R1 classes and the only fidelity loss left after formatting all
+  five libraries.
 
 Each needs a parser/AST change (`parser/decls.zig`, `parser/exprs.zig`) before the formatter can
 print it back.
