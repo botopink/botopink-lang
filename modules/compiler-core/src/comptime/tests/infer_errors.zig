@@ -56,6 +56,31 @@ test "infer error: implement missing a required interface method" {
     );
 }
 
+test "infer error: an inline implement clause missing a required interface method" {
+    // Decision 58 — the inline `implement <Behavior> { }` asserts that the type
+    // satisfies the behavior, and nothing verified the assertion: this checked.
+    // Same coverage rule as the separate block above, on the inline form.
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\behavior Display {
+        \\    fn show(self: Self) -> string;
+        \\}
+        \\type Money(cents: i32) implement Display { }
+    );
+}
+
+test "infer error: an inline implement clause whose method is only a declare fn" {
+    // A `declare fn` member is an abstract slot typed from its signature, so it
+    // satisfies nothing — the inline clause still owes the behavior a body.
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\behavior Display {
+        \\    fn show(self: Self) -> string;
+        \\}
+        \\type Money(cents: i32) implement Display {
+        \\    declare fn show(self: Self) -> string;
+        \\}
+    );
+}
+
 test "infer error: implement method not declared in the interface" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\val Drawable = behavior {

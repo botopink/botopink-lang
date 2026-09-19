@@ -467,9 +467,30 @@ That is R8 / types-as-values A1's ground, not decision 37's.
 ## `case` and `comptime` block types (06 C2)
 
 A `case` is typed from its arms (`caseTypeFromArms`): arms that agree unify, arms of different
-types make a union (decision 8 §3.2). A jump arm and a statement arm (`void`, a block without a
-top-level `break <value>`) contribute nothing; a block arm's value is its `break` value. A block
-arm keeps the enclosing fn's return target (`env.keepReturnTarget`).
+types make a union (decision 8 §3.2). A jump arm and a `void` arm contribute nothing.
+
+**An arm body is a lambda BODY, not a lambda value** (decision 8 §5.1 P3). `Pattern { body }` lands
+as the same lambda node the older block arm produced, so `caseArmValueType` reads it as one: a
+top-level `break <value>` names the arm's value and wins, and otherwise the body's **tail
+expression** is the value (a jump tail contributes nothing, §3.2). Before this only the `break` half
+was read, and only for a 0-parameter lambda — `0 { "zero" }` contributed nothing at all and the
+`case` typed `void`, while `_ { n -> … }` was unified against a `function`. `isArmBodyLambda` is the
+0-**or**-1-parameter test, so both forms keep the enclosing fn's return target
+(`env.keepReturnTarget`).
+
+**A 1-parameter arm binds the whole matched value, narrowed** (§5.1 P1/P5). `inferCaseArmBody`
+passes the subject — narrowed by that arm's own pattern — as the expected parameter type of the
+body lambda, so the body resolves methods and operators against the real type rather than a fresh
+variable. A **type pattern** (`i32 { n -> … }`, §5.2 — `typePatternType`) narrows the binder to the
+tested type; every other pattern leaves the subject's own, which is P5's answer for them, the
+payload bindings having already come from `bindPatternNamesForSubject`.
+
+**A variant path resolves to its last segment** (§5.1 P8 — `bareVariantName`, `isVariantPath`).
+`.Circle`, `Shape.Circle` and `Maybe.Some` all reach inference as written, because the leading `.`
+is what tells a variant path from a binding; every variant table here is keyed by the bare name, so
+the written form matched nothing and every variant read as missing. A name carrying a `.` is never a
+catch-all either — a path that names no variant of the subject is a mistake, not a binder.
+`codegen/erlang.zig` keeps a twin of the same rule (`variantTag`).
 
 Pattern bindings are typed (06 C8, `bindPatternNamesForSubject`): a binder is the subject type; a
 variant payload binding takes the variant field's type instantiated against the subject's generic
@@ -548,17 +569,86 @@ variant, so the `case` still has to handle the section's other values or end in 
 §5.4). `variantPayloadIrrefutable` decides this — a payload name is a binder unless it names a
 variant of the payload's own type.
 
-`checkCaseExhaustiveness` (infer.zig) checks a single-subject `case` on an
-**enum** or **string** subject after the arms are typed:
+`checkCaseExhaustiveness` (infer.zig) checks a single-subject `case` after the arms are typed, over
+the **domain** its subject draws from (`CaseDomain`, `caseSubjectDomain` — decision 8 §5.4). It knew
+two domains and returned before looking at an arm for anything else, which is why
+`case x { 0 { … } 1 { … } }` on an `i32` compiled:
+
+| Domain | Subject | Covered by |
+|---|---|---|
+| `enum_` | a `type` with variants | every variant |
+| `union_` | `A \| B` (§3.3) | every member named by a type pattern (`sameNamedType`) |
+| `open` | `string`, `i32`, `unknown` | `_`, or a type pattern naming the subject's own type (§5.4's "a type covered whole") — and `unknown` has no such pattern, so it always needs `_` |
 
 - **Coverage** — an unguarded arm covers a variant when it is a bare variant
   ident or `Variant(payload)` with an irrefutable payload (bindings/wildcards).
   Refined payloads (`Ok(1)`) don't cover. OR-patterns cover each alternative.
-- **Catch-all** — `_` or a non-variant identifier. A `string` subject is only
-  exhaustive with a catch-all.
-- **Guards** — a guarded arm neither covers a variant nor shadows later arms.
-- **Diagnostics** — `nonExhaustive` (missing variants, or a wildcard request)
-  and `redundantPattern` (arm after a catch-all, or a repeated variant).
+  `patternIsIrrefutable` decides nested payloads: a tuple pattern of binders
+  matches every tuple, so `.Some(#(a, b))` covers `Some` (§5.1 P6/P7). It used to
+  answer `false` for every nested pattern.
+- **Catch-all** — `_` or a non-variant identifier. A **type pattern is not a
+  catch-all**: `case x { i32 { … } }` used to stand in for `_`.
+- **Guards** — a guarded arm neither covers anything nor shadows later arms.
+- **Diagnostics** — `nonExhaustive` (missing variants or members, or a wildcard
+  request) and `redundantPattern` (arm after a catch-all, or a repeated variant).
+  The message reads **`case` on '<T>' is not exhaustive: …**, the text
+  `1.0.4-beta/MIGRATION.md:300` publishes for this rule (`not exhaustive`,
+  `use _ {`); a union's uncovered entries read as **members** and an enum's as
+  **variants** (`nonExhaustive.missingLabel`, `TypeError.nonExhaustiveOf`), and a
+  union prints spelled out (`i32 | string`) because its identity *is* its members.
+  `comptime/snapshot.zig` builds its own shorter title, so the error snapshots do
+  not carry this text.
+
+`open_case_domain_names` is **`i32` and `string` only** — the two §5.4 names by hand. `f64`, `bool`
+and the sized integers are the same kind of unbounded domain, so
+`case x { 0 { … } 1 { … } }` on an `f64` still compiles; widening the list is a language rule and is
+reported rather than assumed. Measured: `test-libs` is 11/0 with `i32` in, so it costs no migration.
+
+## The inline `implement <Behavior> { }` is checked (decision 58)
+
+`validateProgram` collects the program's behaviors and then validates **both** implementing forms.
+It used to visit only `.implement` decls: `TypeDecl.implement: []TypeRef` was never read, so
+`type Money(cents: i32) implement Display { }` checked with `Display` declared in the same file, and
+with the long-registered `Generator` too — the inline clause asserted that the type satisfied the
+behavior and nothing verified the assertion. Only the separate block was covered (the
+`implement_missing_a_required_interface_method` snapshot family).
+
+`validateInlineImplements` runs the same coverage rule as `validateImplement`: for each behavior the
+clause names **and this program declares**, every method the behavior declares with no body must be
+provided. A `default fn` carries its own body, so implementing it is optional. Provided means either
+a member of the type's own body that has a body (`typeDeclProvidesMethod` — a `declare fn` member is
+an abstract slot typed from its signature and provides nothing), or a member of some
+`implement <Behavior> for <this type>` block in the same program, unqualified or qualified with that
+behavior (`separateImplementProvides`); writing both halves is legal and the inline clause is what
+names the contract.
+
+**The blind spot both forms share**, and it is deliberate: an interface this program does not declare
+is skipped, so the ambient `Display` from `libs/std` is unchecked in the inline form exactly as it is
+in the block form. Closing it needs the interface-member registry, and doing it here would red every
+implementation the registry cannot open.
+
+## A type-qualified call to a type's own method (decision 62)
+
+`Counter.zero()` — a call to an **associated** fn of a registered type, through the type — came back
+a fresh type variable. The signature was already there: `registerInherentMethodTypes` stores every
+method of a `type` under `inherentMethodTypes[<type>][<method>]` with `Self` resolved to the type,
+associated ones included. Nothing read it for the type-qualified form, only for
+`recv.method(args)` (`methodCallReturnType`).
+
+`associatedCallReturnType` reads it, instantiated fresh per call site so the type's shared generic
+cells never collapse across two calls. Unlike the instance form there is no receiver to unify `self`
+against: every declared parameter lines up with an argument, so the arity must match exactly.
+
+What that fixed is two backends, not the checker's own answer: `val c = Counter.zero(); c.bump()`
+recorded no `env.instanceLowerings` entry for `bump`, because `c` had no nominal type for
+`resolveReceiverCall` to read. beam emitted `{unresolved_method, bump, 1}` through `erlang:error/1`
+and wasm trapped on `unreachable`, while commonJS and erlang were right because neither needs the
+type. And the checker now answers what it was silent on — `val s: string = Counter.zero();` reds.
+
+Deliberate limits, both the instance form's existing policy: no signature is read when the method
+carries **no return-type annotation** (none is stored, and the true type comes from body inference,
+which is not available at registration), nor under a trailing lambda, nor on an arity mismatch —
+the plain-call path owns that diagnostic.
 
 ## Enum sections
 
