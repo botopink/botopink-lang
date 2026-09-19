@@ -62,10 +62,13 @@ test "hover: keyword val returns null" {
 
 // ── H4 — polymorphic fn ──
 
-test "hover: fn binding shows function type" {
+// Distinct from H5 (`hover_fn_annotated`) on purpose: that one covers a fn
+// whose params carry concrete annotations, this one a *generic* fn, where the
+// rendered signature has to keep the type parameter instead of a concrete type.
+test "hover: generic fn keeps its type parameter" {
     const gpa = std.testing.allocator;
     const source =
-        \\fn f(a: i32) { return a; }
+        \\fn f<T>(a: T) -> T { return a; }
     ;
 
     var c = try h.compile(gpa, source);
@@ -75,6 +78,10 @@ test "hover: fn binding shows function type" {
     // 'f' na col 3
     const result = try engine.hover(gpa, source, h.pos(0, 3), bindings);
     defer if (result) |hov| gpa.free(hov.contents.value);
+
+    const hov = result orelse return error.NoHover;
+    // The hover body must not collapse `T` into a concrete type.
+    try std.testing.expect(std.mem.indexOf(u8, hov.contents.value, "a: T") != null);
 
     try snap.assertHover(gpa, "hover_fn_polymorphic", source, h.pos(0, 3), result);
 }
@@ -188,7 +195,9 @@ test "hover: interface method on integer receiver shows signature" {
 
     try std.testing.expect(result != null);
     try std.testing.expect(std.mem.indexOf(u8, result.?.contents.value, "fn abs") != null);
-    try std.testing.expect(std.mem.indexOf(u8, result.?.contents.value, "interface I32") != null);
+    // `abs` is written in `Signed`; `I32 extends Signed` only inherits it. The
+    // footer names the declaring behavior and the receiver's (front 14).
+    try std.testing.expect(std.mem.indexOf(u8, result.?.contents.value, "behavior Signed` (via I32)") != null);
     try snap.assertHover(gpa, "hover_interface_method", source, h.pos(0, 12), result);
 }
 
@@ -211,7 +220,232 @@ test "hover: interface method on array receiver shows signature" {
     defer if (result) |hov| gpa.free(hov.contents.value);
 
     try std.testing.expect(result != null);
-    try std.testing.expect(std.mem.indexOf(u8, result.?.contents.value, "fn filter") != null);
-    try std.testing.expect(std.mem.indexOf(u8, result.?.contents.value, "interface Array") != null);
+    // Exact body: a substring check cannot catch the neighbouring member's doc
+    // comment leaking into the signature (the bug this test now pins down).
+    try std.testing.expectEqualStrings(
+        \\```botopink
+        \\fn filter(self: Self, pred: fn(item: T) -> bool) -> Self
+        \\```
+        \\
+        \\*from `behavior Array`*
+    ,
+        result.?.contents.value,
+    );
     try snap.assertHover(gpa, "hover_interface_method_array", source, h.pos(1, 12), result);
+}
+
+// ── H-14 — a declaration card is written in the 1.0.3 surface ─────────────────
+
+// `record`, `enum` and `interface` are gone (MIGRATION.md): a hover that still
+// printed them taught a form the parser rejects. The card is now the source
+// line the user would write — fields in parentheses, variants in a body,
+// `behavior` for the contract — with the type parameters a written generic type
+// always carries (decision 8 §1.1).
+
+test "hover: a record-shaped type is a `type Name(fields)` card" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\pub type Point(x: i32, y: i32)
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    const result = try engine.hover(gpa, source, h.pos(0, 9), bindings);
+    defer if (result) |hov| gpa.free(hov.contents.value);
+
+    try std.testing.expect(result != null);
+    try std.testing.expectEqualStrings(
+        \\```botopink
+        \\pub type Point(x: i32, y: i32)
+        \\```
+    ,
+        result.?.contents.value,
+    );
+    try snap.assertHover(gpa, "hover_type_record", source, h.pos(0, 9), result);
+}
+
+test "hover: a generic record-shaped type keeps its type parameters" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\type Box<T>(value: T)
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    const result = try engine.hover(gpa, source, h.pos(0, 5), bindings);
+    defer if (result) |hov| gpa.free(hov.contents.value);
+
+    try std.testing.expect(result != null);
+    try std.testing.expectEqualStrings(
+        \\```botopink
+        \\type Box<T>(value: T)
+        \\```
+    ,
+        result.?.contents.value,
+    );
+    try snap.assertHover(gpa, "hover_type_generic_record", source, h.pos(0, 5), result);
+}
+
+test "hover: an enum-shaped type is a `type Name { variants }` card" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\pub type Shape {
+        \\    Circle(radius: f64),
+        \\    Square,
+        \\}
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    const result = try engine.hover(gpa, source, h.pos(0, 9), bindings);
+    defer if (result) |hov| gpa.free(hov.contents.value);
+
+    try std.testing.expect(result != null);
+    try std.testing.expectEqualStrings(
+        \\```botopink
+        \\pub type Shape { Circle(...), Square }
+        \\```
+    ,
+        result.?.contents.value,
+    );
+    try snap.assertHover(gpa, "hover_type_enum", source, h.pos(0, 9), result);
+}
+
+test "hover: a behavior is a `behavior Name` card, not an interface" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\pub behavior Mappable<T> {
+        \\    fn map(self: Self<T>) -> Self<T>;
+        \\}
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    const result = try engine.hover(gpa, source, h.pos(0, 13), bindings);
+    defer if (result) |hov| gpa.free(hov.contents.value);
+
+    try std.testing.expect(result != null);
+    try std.testing.expectEqualStrings(
+        \\```botopink
+        \\pub behavior Mappable<T>
+        \\```
+    ,
+        result.?.contents.value,
+    );
+    try snap.assertHover(gpa, "hover_behavior", source, h.pos(0, 13), result);
+}
+
+// ── H-14b — a rendered type is written the way the source writes it ───────────
+
+// `array` and `tuple` are the checker's own names for two types that have no
+// such spelling in source, and the structural record's `record { … }` is a
+// parse error since the surface cutover. A card that prints one of them cannot
+// be pasted back into the file.
+
+test "hover: an array type is rendered `i32[]`, not `array<i32>`" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\val xs = [1, 2, 3];
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    const result = try engine.hover(gpa, source, h.pos(0, 4), bindings);
+    defer if (result) |hov| gpa.free(hov.contents.value);
+
+    try std.testing.expect(result != null);
+    try std.testing.expectEqualStrings(
+        \\```botopink
+        \\val xs : i32[]
+        \\```
+    ,
+        result.?.contents.value,
+    );
+    try snap.assertHover(gpa, "hover_val_array", source, h.pos(0, 4), result);
+}
+
+test "hover: a tuple type is rendered `#(i32, string)`" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\val row = #(1, "a");
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    const result = try engine.hover(gpa, source, h.pos(0, 4), bindings);
+    defer if (result) |hov| gpa.free(hov.contents.value);
+
+    try std.testing.expect(result != null);
+    try snap.assertHover(gpa, "hover_val_tuple", source, h.pos(0, 4), result);
+}
+
+test "hover: a labeled tuple type keeps its labels" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\fn load() -> #(name: string, pop: i32) { return #("SP", 12); }
+        \\val row = load();
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    const result = try engine.hover(gpa, source, h.pos(1, 4), bindings);
+    defer if (result) |hov| gpa.free(hov.contents.value);
+
+    try std.testing.expect(result != null);
+    try snap.assertHover(gpa, "hover_val_labeled_tuple", source, h.pos(1, 4), result);
+}
+
+// ── front 11 carve-out: the surface spelling of an optional ────────────────────
+
+test "hover: an optional type is rendered `?i32`, not `optional<i32>`" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\fn find(k: string) -> ?i32 { return null; }
+        \\val hit = find("a");
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    const result = try engine.hover(gpa, source, h.pos(1, 4), bindings);
+    defer if (result) |hov| gpa.free(hov.contents.value);
+
+    try std.testing.expect(result != null);
+    // The card must be source the user could write back: `optional<i32>` is the
+    // checker's name for it, `?i32` is the only spelling the surface has.
+    try std.testing.expect(std.mem.indexOf(u8, result.?.contents.value, "optional<") == null);
+    try snap.assertHover(gpa, "hover_val_optional", source, h.pos(1, 4), result);
+}
+
+test "hover: an optional of an array keeps both sugars" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\fn rows() -> ?i32[] { return null; }
+        \\val all = rows();
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    const result = try engine.hover(gpa, source, h.pos(1, 4), bindings);
+    defer if (result) |hov| gpa.free(hov.contents.value);
+
+    try std.testing.expect(result != null);
+    try snap.assertHover(gpa, "hover_val_optional_array", source, h.pos(1, 4), result);
 }

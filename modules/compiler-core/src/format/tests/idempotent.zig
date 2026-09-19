@@ -7,12 +7,11 @@ const parserMod = @import("../../parser.zig");
 const formatMod = @import("../../format.zig");
 const h = @import("helpers.zig");
 
-
 test "format: idempotent ---- full Drawable interface" {
     try h.assertIdempotent(std.testing.allocator,
-        \\val Drawable = interface {
-        \\    val color: string,
-        \\    fn draw(self: Self),
+        \\val Drawable = behavior {
+        \\    val color: string;
+        \\    fn draw(self: Self);
         \\    default fn log(self: Self) {
         \\        Console.WriteLine("Rendering object with color: " + self.color);
         \\    }
@@ -22,7 +21,7 @@ test "format: idempotent ---- full Drawable interface" {
 
 test "format: idempotent ---- enum with payload" {
     try h.assertIdempotent(std.testing.allocator,
-        \\val Color = enum {
+        \\val Color = type {
         \\    Red,
         \\    Green,
         \\    Blue,
@@ -79,12 +78,11 @@ test "format: idempotent ---- nested case expressions" {
     );
 }
 
-
 test "format: idempotent ---- interface with default method" {
     try h.assertIdempotent(std.testing.allocator,
-        \\val Drawable = interface {
-        \\    val color: string,
-        \\    fn draw(self: Self),
+        \\val Drawable = behavior {
+        \\    val color: string;
+        \\    fn draw(self: Self);
         \\    default fn log(self: Self) {
         \\        Console.WriteLine("Rendering object with color: " + self.color);
         \\    }
@@ -94,7 +92,7 @@ test "format: idempotent ---- interface with default method" {
 
 test "format: idempotent ---- enum with payload variants" {
     try h.assertIdempotent(std.testing.allocator,
-        \\val Color = enum {
+        \\val Color = type {
         \\    Red,
         \\    Green,
         \\    Blue,
@@ -132,5 +130,24 @@ test "format: idempotent ---- array prepend" {
         \\val list1 = [1, ..[]];
         \\val list2 = [1, 2, ..[3]];
         \\val list3 = [1, 2, ..[3, 4]];
+    );
+}
+
+// A one-line lambda whose value is wider than the line: its inner call
+// broke by width on the first pass, and the second pass (the value no
+// longer on the lambda's line) printed the lambda open.
+test "format: idempotent ---- a one-line lambda wider than the line" {
+    try h.assertIdempotent(std.testing.allocator,
+        \\fn lower(q: Query, srcName: string, orGroups: Array<string>, hasWhere: bool) -> string {
+        \\    val known = q.lookup(srcName);
+        \\    if (known) { binding ->
+        \\        var pipe = "of(" + srcName + ")";
+        \\        if (hasWhere) {
+        \\            val orParts = orGroups.map({ andGroup -> andGroup.split(",").map({ cmp -> cmpCode(cmp) }).join(" && ") });
+        \\            pipe = pipe + ".where({ row -> " + orParts.join(" || ") + " })";
+        \\        };
+        \\    };
+        \\    return "";
+        \\}
     );
 }

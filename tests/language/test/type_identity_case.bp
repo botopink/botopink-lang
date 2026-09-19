@@ -1,0 +1,22 @@
+//// Decision 8 §5.1 and §3.3 — a `case` over a union of two **named** types is
+//// exhaustive without a wildcard, and each arm is chosen by the value's own
+//// type. The arm is a type, not a variant: `13-module-identity`'s subject seen
+//// from `case` rather than from `is`.
+
+type Person(name: string, age: i32)
+type Vec(name: string, age: i32)
+
+fn nameOf(v: Person | Vec) -> string {
+    return case v {
+        Person { "person" }
+        Vec { "vec" }
+    };
+}
+
+test "§5.1 a case over a union of two named types needs no wildcard" {
+    assert nameOf(Person(name: "Ana", age: 30)) == "person";
+}
+
+test "§3.3 the arm is chosen by the value's own type" {
+    assert nameOf(Vec(name: "Ana", age: 30)) == "vec";
+}

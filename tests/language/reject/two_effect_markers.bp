@@ -1,0 +1,7 @@
+//// Decision 8 §9 R5 — at most one effect annotation per fn.
+
+#[@result]
+#[@future]
+fn both(n: i32) -> @Result<i32, string> { return n; }
+
+pub fn main() { @print(1); }

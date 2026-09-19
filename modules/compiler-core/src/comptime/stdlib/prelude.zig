@@ -4,8 +4,8 @@
 /// file is exposed as an anonymous import in build.zig (std_bp_files) and
 /// embedded here by name. One `pub const` per stdlib source.
 ///
-/// `primitives.d.bp` is the controller (numeric tower, Bool, String, Function,
-/// Array<T>) and `builtins.bp` holds the builtin model (reflection, io, Result,
+/// `primitives.bp` is the controller (numeric tower, Bool, String, Function,
+/// Array<T>) and `builtins.d.bp` holds the builtin model (reflection, io, Result,
 /// the lazy Iterator<T>, generators, async, Expr<E>, annotations). Both flatten
 /// into the global env. The remaining files are concrete `record`/`enum` modules
 /// importable via `import {…} from "std";`.
@@ -20,14 +20,6 @@ pub const builtins = @embedFile("builtins.d.bp");
 /// types are pre-registered by `Env.registerBuiltins`, so re-parsing them
 /// would red on duplicate type registration.
 pub const builtin_fns = @embedFile("builtins_fns.d.bp");
-
-/// Compiler-internal `.bp` sources — NOT user-importable, NOT in the
-/// `pkg_modules` registry below. The wat3 comptime prelude (`template_runtime.bp`)
-/// is the first such file: `comptime/runtime/wat_runtime.zig` reads this source,
-/// compiles it through the wat backend, and splices the post-processed wat into
-/// `prelude()` ahead of every template body. Wired through `std_internal_files`
-/// in `build.zig`.
-pub const template_runtime_src = @embedFile("template_runtime.bp");
 
 // "std" package impl modules — importable via `import {…} from "std";`.
 // These are NOT flattened into the global env (see comptime.zig std_pkg_modules).

@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "enum": {
+      "type_": {
         "name": "Color",
         "id": 1,
         "isPub": false,
@@ -16,26 +16,30 @@
             "named": "Printable"
           }
         ],
-        "variants": [
-          {
-            "name": "Red",
-            "fields": [],
-            "numeric": false
-          },
-          {
-            "name": "Green",
-            "fields": [],
-            "numeric": false
-          },
-          {
-            "name": "Blue",
-            "fields": [],
-            "numeric": false
+        "shape": {
+          "enum_": {
+            "variants": [
+              {
+                "name": "Red",
+                "fields": [],
+                "numeric": false
+              },
+              {
+                "name": "Green",
+                "fields": [],
+                "numeric": false
+              },
+              {
+                "name": "Blue",
+                "fields": [],
+                "numeric": false
+              }
+            ],
+            "sections": []
           }
-        ],
+        },
         "trailingComma": false,
-        "methods": [],
-        "sections": []
+        "methods": []
       }
     }
   ]

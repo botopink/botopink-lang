@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "record": {
+      "type_": {
         "name": "Config",
         "id": 1,
         "isPub": false,
@@ -12,44 +12,46 @@
         "annotations": [],
         "genericParams": [],
         "implement": [],
-        "fields": [
-          {
-            "name": "host",
-            "typeRef": {
-              "named": "string"
-            },
-            "default": {
-              "literal": {
-                "loc": {
-                  "line": 1,
-                  "col": 38
-                },
-                "kind": {
-                  "stringLit": "localhost"
+        "shape": {
+          "record": [
+            {
+              "name": "host",
+              "typeRef": {
+                "named": "string"
+              },
+              "default": {
+                "literal": {
+                  "loc": {
+                    "line": 1,
+                    "col": 34
+                  },
+                  "kind": {
+                    "stringLit": "localhost"
+                  }
                 }
-              }
+              },
+              "annotations": []
             },
-            "annotations": []
-          },
-          {
-            "name": "port",
-            "typeRef": {
-              "named": "i32"
-            },
-            "default": {
-              "literal": {
-                "loc": {
-                  "line": 1,
-                  "col": 63
-                },
-                "kind": {
-                  "numberLit": "8080"
+            {
+              "name": "port",
+              "typeRef": {
+                "named": "i32"
+              },
+              "default": {
+                "literal": {
+                  "loc": {
+                    "line": 1,
+                    "col": 59
+                  },
+                  "kind": {
+                    "numberLit": "8080"
+                  }
                 }
-              }
-            },
-            "annotations": []
-          }
-        ],
+              },
+              "annotations": []
+            }
+          ]
+        },
         "trailingComma": false,
         "methods": []
       }

@@ -90,7 +90,7 @@ test "§1F happy path — bare return <t> + throw <e> inside #[@future] type-che
     // tail without firing any RF*. The codegen pair lives in
     // `codegen/tests/effect_future_lowering.zig`.
     try h.assertInfersOk(std.testing.allocator,
-        \\record User { id: i32, name: string }
+        \\type User(id: i32, name: string)
         \\#[@future]
         \\fn fetchUser(id: i32) -> @Future<User, string> {
         \\    if (id < 0) { throw "negative-id"; };
@@ -103,7 +103,7 @@ test "§1F happy path — await unwraps @Future<T, E> to T" {
     // Inside another `#[@future]` body, `await` resolves a `@Future<T, E>`
     // operand to T. The E channel travels via the outer fn's throw shape.
     try h.assertInfersOk(std.testing.allocator,
-        \\record User { id: i32, name: string }
+        \\type User(id: i32, name: string)
         \\#[@future]
         \\fn fetchUser(id: i32) -> @Future<User, string> {
         \\    return User(id: id, name: "alice");

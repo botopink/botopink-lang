@@ -9,9 +9,9 @@
 // arithmetic trips `beam_validator` — both Front-A codegen gaps. (wasm carries
 // no records/enums; its numeric core is the `numeric` fixture.)
 
-enum Shape { Circle, Square, Triangle }
+type Shape { Circle, Square, Triangle }
 
-record Box { w: i32, h: i32 }
+type Box(w: i32, h: i32)
 
 fn sides(s: Shape) -> i32 {
   return case s {

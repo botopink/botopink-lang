@@ -1,0 +1,46 @@
+//// Optionals: `?T` is the only optional spelling (`Option<T>` is rejected by
+//// design), `?.` chains through a null, and `if (x) { n -> … }` binds the
+//// unwrapped value.
+
+type Inner(v: i32)
+
+type Outer(inner: ?Inner)
+
+fn find(n: i32) -> ?i32 {
+    if (n > 0) { return n; };
+    return null;
+}
+
+test "an optional carries a value" {
+    val v = find(3);
+    assert v != null;
+}
+
+test "an optional carries null" {
+    val v = find(-1);
+    assert v == null;
+}
+
+test "if binds the unwrapped value" {
+    var got = 0;
+    if (find(5)) { n -> got = n; };
+    assert got == 5;
+}
+
+test "if over null does not bind" {
+    var runs = 0;
+    if (find(-1)) { n -> runs = runs + 1; };
+    assert runs == 0;
+}
+
+test "?. reads through a present value" {
+    val o = Outer(inner: Inner(v: 4));
+    val r = o.inner?.v;
+    assert r != null;
+}
+
+test "?. over null yields null" {
+    val o = Outer(inner: null);
+    val r = o.inner?.v;
+    assert r == null;
+}

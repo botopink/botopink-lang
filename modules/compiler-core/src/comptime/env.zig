@@ -6,6 +6,7 @@ const std = @import("std");
 const ast = @import("../ast.zig");
 const T = @import("./types.zig");
 const template = @import("./template.zig");
+const trace = @import("./trace.zig");
 
 // ── type definitions ──────────────────────────────────────────────────────────
 
@@ -292,7 +293,8 @@ pub const PrimKind = enum { array, string, bool, int, float };
 ///                (`owner:method(Recv, args)`) from its own import index.
 pub const InstanceLowering = union(enum) {
     prim: PrimKind,
-    record: []const u8,
+    /// A method on a named type (record or enum) — the type's name.
+    type_: []const u8,
 };
 
 /// A recognized decorator's signature, minus its leading `comptime _: @Decl`
@@ -393,6 +395,12 @@ pub const Env = struct {
     level: usize,
     /// The most recent type error (set before returning `error.TypeError`).
     lastError: ?@import("error.zig").TypeError,
+    /// 06 N30 — the annotation being resolved (`x: Foo` → `Foo`'s column), so an
+    /// unknown type name reds at the annotation. Set through `atTypeRef`.
+    typeRefLoc: ?ast.Loc = null,
+    /// C10 — annotations whose type name was not known yet when resolved; the
+    /// second pass (`checkPendingTypeNames`) reds on the ones still unknown.
+    pendingTypeNames: std.ArrayListUnmanaged(PendingTypeName) = .empty,
     /// Builtin `@Result`/`@Option` method calls discovered during inference,
     /// keyed by the call's source location. Drives the AST transform lowering.
     method_lowerings: std.AutoHashMap(ast.Loc, MethodLowering),
@@ -413,6 +421,27 @@ pub const Env = struct {
     iterator_jump_lowerings: std.AutoHashMap(ast.Loc, IteratorJumpLowering),
     /// Capability scope of the function body currently being inferred (null at top level).
     fnContext: ?FnContext = null,
+    /// C1 — the type a `return <value>` in the body currently being inferred
+    /// must unify with: the declared return type, or an effect wrapper's inner
+    /// channel (`#[@result]` → R, `#[@future]` → T, `#[@generator]` → R,
+    /// `#[@context]` → X). Null where returns are not checked (no declared
+    /// return type, template fns, top level).
+    returnTarget: ?*T.Type = null,
+    /// C1 — a bare `return;` must unify with `void` (fn decls with a declared
+    /// return type; not lambdas, whose target is a shared fresh var).
+    returnBareIsVoid: bool = false,
+    /// C1 — the fn's whole declared return type, for a returned value that is
+    /// already the wrapper (`return state(start)` in a `-> @Context<B, X>` hook).
+    returnWhole: ?*T.Type = null,
+    /// C1 — set while inferring a `case` block arm: its `return`s leave the
+    /// enclosing fn, so the arm's lambda keeps the fn's return target.
+    keepReturnTarget: bool = false,
+    /// The generic-param map of the fn body being inferred, so annotations
+    /// inside the body resolve `T` to the fn's own generic var.
+    fnGenericMap: ?*std.StringHashMap(*T.Type) = null,
+    /// C1 — the return targets of the trailing lambdas inferred last, read by
+    /// `@block` to type the block as the value its `return`s carry.
+    lastTrailingReturnTargets: []*T.Type = &.{},
     /// How `throw` is checked in the function body currently being inferred.
     throwContext: ThrowContext = .unchecked,
     /// Active effect-fn context while inferring its body (for `await`/`yield`
@@ -453,7 +482,7 @@ pub const Env = struct {
     /// so codegen emits each one as a top-level enum (the user-written outer
     /// enum already names its section wrappers via `_inner: __Enum__Section`
     /// payload type — these decls bind the referenced names).
-    synthesisedEnumDecls: std.StringHashMap(ast.EnumDecl),
+    synthesisedEnumDecls: std.StringHashMap(ast.TypeDecl),
     /// §enum-sections F2 — untyped AST rewrites for a path-access expression
     /// (`.Color.Red.500`). The F2 resolver in `infer.zig` populates this map
     /// keyed by the outermost identAccess loc when the chain matches an
@@ -463,11 +492,15 @@ pub const Env = struct {
     /// so the codegen — which reads the untyped AST — emits the byte-correct
     /// shape instead of the bare `Color.Red.500` source-text fallback.
     enumSectionRewrites: std.AutoHashMap(ast.Loc, *const ast.Expr),
+    /// Decision 8 §10 — locs of the `loop`s whose `iter` inference typed `bool`
+    /// (`loop (flag) { … }`); the comptime transform marks them
+    /// `LoopExpr.condition` for the backends, which read the untyped AST.
+    conditionLoops: std.AutoHashMap(ast.Loc, void),
     /// Interface declarations that expose associated functions (`default fn` with
     /// no `self`), keyed by name. Includes stdlib primitives (`Pair`, `Function`,
     /// `Array`) registered before user inference. Used to emit their namespace
     /// objects into the codegen output when a call site uses them.
-    assocInterfaceDecls: std.StringHashMap(ast.InterfaceDecl),
+    assocInterfaceDecls: std.StringHashMap(ast.BehaviorDecl),
     /// Interface names actually used as an associated-fn call receiver
     /// (`Pair.of(...)`), recorded during inference so codegen emits only the
     /// namespaces that are needed.
@@ -528,6 +561,10 @@ pub const Env = struct {
     /// and re-analyzes it (a wiring decorator builds singletons / DI / router as
     /// ordinary code). Allocated in `arena`; no explicit deinit needed.
     contributions: std.ArrayListUnmanaged([]const u8) = .empty,
+    /// Erlang sent to and replies received from the `erl` runtime by every
+    /// decorator / template evaluation in this module, in order (snapshots).
+    /// Allocated in `arena`.
+    comptimeTraces: std.ArrayListUnmanaged(trace.Entry) = .empty,
     /// Set on the second analysis pass (after splicing contributions) so
     /// decorators are not re-invoked — no re-contribution, no infinite loop.
     skipDecoratorInvoke: bool = false,
@@ -578,9 +615,10 @@ pub const Env = struct {
             .activations = std.StringHashMap(void).init(arena),
             .inherentMethods = std.StringHashMap(std.StringHashMap(void)).init(arena),
             .inherentMethodTypes = std.StringHashMap(std.StringHashMap(*T.Type)).init(arena),
-            .synthesisedEnumDecls = std.StringHashMap(ast.EnumDecl).init(arena),
+            .synthesisedEnumDecls = std.StringHashMap(ast.TypeDecl).init(arena),
             .enumSectionRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
-            .assocInterfaceDecls = std.StringHashMap(ast.InterfaceDecl).init(arena),
+            .conditionLoops = std.AutoHashMap(ast.Loc, void).init(arena),
+            .assocInterfaceDecls = std.StringHashMap(ast.BehaviorDecl).init(arena),
             .usedAssocInterfaces = std.StringHashMap(void).init(arena),
             .dispatchRewrites = std.AutoHashMap(ast.Loc, []const u8).init(arena),
             .jsMethodRenames = std.AutoHashMap(ast.Loc, []const u8).init(arena),
@@ -648,6 +686,7 @@ pub const Env = struct {
             .inherentMethodTypes = try cloneNestedTypeMap(tmpl.inherentMethodTypes, arena),
             .synthesisedEnumDecls = try tmpl.synthesisedEnumDecls.cloneWithAllocator(arena),
             .enumSectionRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
+            .conditionLoops = std.AutoHashMap(ast.Loc, void).init(arena),
             .assocInterfaceDecls = try tmpl.assocInterfaceDecls.cloneWithAllocator(arena),
             .usedAssocInterfaces = std.StringHashMap(void).init(arena),
             .dispatchRewrites = std.AutoHashMap(ast.Loc, []const u8).init(arena),
@@ -848,7 +887,7 @@ pub const Env = struct {
     pub fn registerBuiltins(self: *Env) !void {
         const primitives = [_][]const u8{
             // integer types
-            "i8",  "u8",  "i16",  "u16",    "i32",  "u32",  "i64",  "u64", "isize", "usize",
+            "i8",  "u8",  "i16",  "u16",    "i32",  "u32",  "i64", "u64",      "isize", "usize",
             // float types
             "f32", "f64",
             // other primitives
@@ -858,6 +897,10 @@ pub const Env = struct {
             // It is treated as opaque at the type level — no operations beyond
             // being threaded through generics.
             "any",
+            // The declared return of `@panic` / `todo` / `trap`
+            // (`libs/std/src/builtins_fns.d.bp`, `builtins.d.bp`): a type no
+            // module declares, so C10's second pass needs it named here.
+            "noreturn",
             // special
             "Self",
         };
@@ -881,10 +924,80 @@ pub const Env = struct {
         self.level -= 1;
     }
 
+    /// 06 N30 — the type annotation being resolved right now (`x: Foo` → the
+    /// column of `Foo`). `resolveTypeName` attaches it to an unknown-type error
+    /// so the caret lands on the annotation instead of the file. Set and
+    /// restored by the inference sites that know the declaration.
+    pub fn atTypeRef(self: *Env, loc: ?ast.Loc) ?ast.Loc {
+        const prev = self.typeRefLoc;
+        if (loc) |l| {
+            if (l.line != 0) self.typeRefLoc = l;
+        }
+        return prev;
+    }
+
     // ── type name resolution ──────────────────────────────────────────────────
 
     /// Resolve a string type name (from AST) to a *Type.
     /// Generic parameters are looked up in `genericMap` first.
+    /// N28 — `Token.Text.Size` → `__Token__Text__Size`, the name
+    /// `registerEnumSection` files a section's typedef under. The dotted form is
+    /// what the author writes; the mangled one never appears in source.
+    pub fn mangleSectionPath(self: *Env, path: []const u8) ![]const u8 {
+        var buf: std.ArrayList(u8) = .empty;
+        var it = std.mem.splitScalar(u8, path, '.');
+        while (it.next()) |seg| {
+            try buf.appendSlice(self.arena, "__");
+            try buf.appendSlice(self.arena, seg);
+        }
+        return buf.toOwnedSlice(self.arena);
+    }
+
+    /// N28 — the dotted path of a registered section whose segments, run
+    /// together, spell `flat` (`TokenText` → `Token.Text`), or null. Lets an
+    /// annotation written in the pre-decision flat spelling say what to write.
+    fn sectionPathForFlatName(self: *Env, flat: []const u8) !?[]const u8 {
+        var it = self.typeDefs.iterator();
+        while (it.next()) |e| {
+            const key = e.key_ptr.*;
+            if (!std.mem.startsWith(u8, key, "__")) continue;
+            var run: std.ArrayList(u8) = .empty;
+            defer run.deinit(self.arena);
+            var dotted: std.ArrayList(u8) = .empty;
+            var segs = std.mem.splitSequence(u8, key[2..], "__");
+            var first = true;
+            while (segs.next()) |seg| {
+                try run.appendSlice(self.arena, seg);
+                if (!first) try dotted.append(self.arena, '.');
+                try dotted.appendSlice(self.arena, seg);
+                first = false;
+            }
+            if (std.mem.eql(u8, run.items, flat)) return try dotted.toOwnedSlice(self.arena);
+            dotted.deinit(self.arena);
+        }
+        return null;
+    }
+
+    /// C10 second pass — after every declaration of the module is registered,
+    /// an annotation that still names nothing is an error at the annotation.
+    pub fn checkPendingTypeNames(self: *Env) !void {
+        // The list belongs to the program that filled it: `registerStdlib` runs
+        // one inference per std module on the same env, and a name left pending
+        // by one must not red in the next.
+        defer self.pendingTypeNames.clearRetainingCapacity();
+        for (self.pendingTypeNames.items) |p| {
+            if (self.typeDefs.get(p.name) != null) continue;
+            if (self.bindings.get(p.name) != null) continue;
+            // A `behavior` names a type in annotation position (`-> Counter`)
+            // without being a typedef: its decl is recorded here.
+            if (self.assocInterfaceDecls.get(p.name) != null) continue;
+            if (isCompilerKnownTypeName(p.name)) continue;
+            const e = @import("error.zig").TypeError.unknownTypeName(p.name);
+            self.lastError = if (p.loc) |l| e.withLoc(l) else e;
+            return error.TypeError;
+        }
+    }
+
     pub fn resolveTypeName(
         self: *Env,
         name: []const u8,
@@ -892,6 +1005,23 @@ pub const Env = struct {
     ) !*T.Type {
         // Generic parameters bound in the current function/type
         if (genericMap.get(name)) |ty| return ty;
+        // Decision 8 §2 — `unknown` is a type the compiler owns, not a name a
+        // module declares. It has to answer before the two-pass `pendingTypeNames`
+        // walk below, which reds a name nothing declared: an annotation the
+        // parser located (`-> unknown`, `x: unknown`) would otherwise be
+        // reported as an undeclared type.
+        if (std.mem.eql(u8, name, ast.unknown_type_name)) return self.namedType(name);
+        // N28 — a section of an enum-shaped `type` is named by its path
+        // (`Token.Text`, `Token.Text.Size`, decision 8 §5.3b). The section's
+        // typedef is registered under the mangled `__Token__Text` form by
+        // `registerEnumSection`; the dotted spelling is the written one.
+        if (std.mem.indexOfScalar(u8, name, '.') != null) {
+            const mangled = try self.mangleSectionPath(name);
+            if (self.typeDefs.get(mangled)) |_| return self.namedType(mangled);
+            const e = @import("error.zig").TypeError.unknownTypeName(name);
+            self.lastError = if (self.typeRefLoc) |l| e.withLoc(l) else e;
+            return error.TypeError;
+        }
         // Registered user-defined types — bare name on a generic typeDef
         // (`r: Result`, `-> Pair`) means "any args". Produce `Name<fresh, …>`
         // so it unifies with the constructor's `Name<T_cell, …>` return type;
@@ -922,10 +1052,62 @@ pub const Env = struct {
             }
             return ty;
         }
-        // Fallback: treat as an opaque named type (forward reference, etc.)
+        // N28 — the flat spelling of a section type (`TokenText` for
+        // `Token.Text`) is a name the author had to guess from a mangling the
+        // language never showed. It is not a type: name the path instead.
+        if (try self.sectionPathForFlatName(name)) |dotted| {
+            const e = @import("error.zig").TypeError.custom(
+                try std.fmt.allocPrint(self.arena, "the type '{s}' is not defined in this scope", .{name}),
+                try std.fmt.allocPrint(self.arena, "a section is named by its path: use `{s}`", .{dotted}),
+            );
+            self.lastError = if (self.typeRefLoc) |l| e.withLoc(l) else e;
+            return error.TypeError;
+        }
+        // C10 — a name nothing declares. It cannot red here: a record may
+        // annotate a type declared further down the file, and registration
+        // resolves fields in declaration order. Record it with the annotation's
+        // location and let `checkPendingTypeNames` (run once every decl is
+        // registered) red on what is still unknown — the second pass of C10's
+        // two-pass resolution.
+        //
+        // Only an annotation the parser located enters the list (`typeRefLoc`,
+        // set by `resolveParamType` / `resolveFieldType`). A resolution with no
+        // annotation in scope is a synthesised or re-entered one — a generic
+        // parameter resolved outside the context that binds it, a signature
+        // rebuilt from a stored type — and has neither a caret to red at nor a
+        // source the user wrote. Compiler-known names never enter the list.
+        if (self.typeRefLoc != null and !isCompilerKnownTypeName(name)) {
+            self.pendingTypeNames.append(self.arena, .{
+                .name = name,
+                .loc = self.typeRefLoc,
+            }) catch {};
+        }
         return self.namedType(name);
     }
 };
+
+/// C10 — an annotation that named no known type when it was resolved. Checked
+/// again once every declaration of the module is registered, so a forward
+/// reference (`type A(b: B)` above `type B(…)`) resolves and only a name
+/// nothing declares reds.
+pub const PendingTypeName = struct {
+    name: []const u8,
+    loc: ?ast.Loc,
+};
+
+/// C10 — names the compiler knows without any module declaring them, so the
+/// two-pass registration cannot see them as typedefs:
+///
+/// - `Children` is the markup child list a UI library annotates, coerced by
+///   `childrenCoercion` in `infer.zig`.
+/// - `Binding` is the opaque name `q.lookup` yields inside a template body; it
+///   is the `ref` field of the registered `CustomNode`
+///   (`comptime.zig` `custom_ast_reflection_src`) and is declared by no module.
+fn isCompilerKnownTypeName(name: []const u8) bool {
+    const known = [_][]const u8{ "Children", "Binding" };
+    for (known) |k| if (std.mem.eql(u8, name, k)) return true;
+    return false;
+}
 
 /// Type guard information for narrowing at call sites.
 /// `fn f(x: T) -> x is NarrowedT` records the param index and narrowed type name.

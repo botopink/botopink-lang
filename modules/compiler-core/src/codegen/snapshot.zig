@@ -2,10 +2,16 @@
 ///
 /// Builds multi-section snapshot content:
 ///   ----- SOURCE CODE -- name.bp
-///   ----- COMPTIME JAVASCRIPT -- name.js  (optional)
+///   ----- COMPTIME VALUES -- name  (optional: `ct_N = literal` per comptime val)
 ///   ----- JAVASCRIPT -- name.js
 ///   ----- TYPESCRIPT TYPEDEF -- name.d.ts  (optional)
 ///   ----- RUN LOG -----  (optional)
+///
+/// A module that never reached the backend (parse / type error) or that comptime
+/// validation rejected gets, in place of the code section:
+///   ----- COMPILE DIAGNOSTIC -- name
+/// so a program that does not compile can no longer be recorded as an empty
+/// snapshot that compares equal to itself (spec 06 defect H3).
 ///
 /// And for error tests:
 ///   ----- SOURCE CODE -- main.bp
@@ -15,18 +21,45 @@ const snapMod = @import("../utils/snap.zig");
 const codegen = @import("../codegen.zig");
 const config = @import("./config.zig");
 const moduleOutput = @import("./moduleOutput.zig");
+const comptimeSnapshot = @import("../comptime/snapshot.zig");
 const Module = codegen.Module;
 const GenerateResult = moduleOutput.GenerateResult;
 
 /// Input data for snapshot generation.
+///
+/// `result` is null for a module that never reached codegen (parse / type
+/// error): the backends drop it from their output list. `diagnostic` then
+/// carries the rendered reason, which `buildSnapshot` records as a
+/// `COMPILE DIAGNOSTIC` section — spec 06 defect H3, where such a module used
+/// to contribute nothing at all and the snapshot compared empty with empty.
 pub const SnapInput = struct {
     name: []const u8,
     src: []const u8,
-    result: GenerateResult,
+    result: ?GenerateResult = null,
+    diagnostic: ?[]const u8 = null,
 };
 
+/// The comptime evidence, shared by every backend: the decorator/template
+/// runtime exchanges (`COMPTIME ERLANG` / `COMPTIME REPLY`), then the folded
+/// `val`s (`COMPTIME VALUES`).
+fn writeComptimeSections(alloc: std.mem.Allocator, buf: *std.ArrayListUnmanaged(u8), name: []const u8, result: GenerateResult) !void {
+    if (result.comptime_trace) |tr| try buf.appendSlice(alloc, tr);
+    if (result.comptime_script) |ct| {
+        try buf.print(alloc, "----- COMPTIME VALUES -- {s}\n```text\n", .{name});
+        try buf.appendSlice(alloc, ct);
+        try buf.appendSlice(alloc, "```\n\n");
+    }
+}
+
 /// Builds the full snapshot text for a single codegen module output.
-pub fn buildSnapshot(alloc: std.mem.Allocator, name: []const u8, src: []const u8, result: GenerateResult, cfg: config.Config) ![]u8 {
+pub fn buildSnapshot(
+    alloc: std.mem.Allocator,
+    name: []const u8,
+    src: []const u8,
+    result_opt: ?GenerateResult,
+    diagnostic: ?[]const u8,
+    cfg: config.Config,
+) ![]u8 {
     var buf: std.ArrayListUnmanaged(u8) = .empty;
     errdefer buf.deinit(alloc);
 
@@ -37,16 +70,29 @@ pub fn buildSnapshot(alloc: std.mem.Allocator, name: []const u8, src: []const u8
     try buf.appendSlice(alloc, src);
     try buf.appendSlice(alloc, "\n```\n\n");
 
+    const result = result_opt orelse {
+        // The module never reached the backend — record why.
+        try comptimeSnapshot.appendDiagnosticSection(
+            alloc,
+            &buf,
+            name,
+            diagnostic orelse "error: the module did not compile (no diagnostic available)\n",
+        );
+        return try buf.toOwnedSlice(alloc);
+    };
+
+    // Comptime validation rejected the module: the backends emit an empty
+    // program, so show the diagnostic in place of the (empty) code section.
+    if (result.comptime_err) |ct_err| {
+        const body = try ct_err.renderAlloc(alloc, src);
+        defer alloc.free(body);
+        try comptimeSnapshot.appendDiagnosticSection(alloc, &buf, name, body);
+        return try buf.toOwnedSlice(alloc);
+    }
+
     switch (cfg.targetSource) {
         .commonJS => {
-            // Comptime JavaScript section (if any)
-            if (result.comptime_script) |ct| {
-                const ctHdr = try std.fmt.allocPrint(alloc, "----- COMPTIME JAVASCRIPT -- {s}.js\n```javascript\n", .{name});
-                defer alloc.free(ctHdr);
-                try buf.appendSlice(alloc, ctHdr);
-                try buf.appendSlice(alloc, ct);
-                try buf.appendSlice(alloc, "```\n\n");
-            }
+            try writeComptimeSections(alloc, &buf, name, result);
 
             // JavaScript output section
             const jsHdr = try std.fmt.allocPrint(alloc, "----- JAVASCRIPT -- {s}.js\n```javascript\n", .{name});
@@ -74,14 +120,7 @@ pub fn buildSnapshot(alloc: std.mem.Allocator, name: []const u8, src: []const u8
             }
         },
         .erlang => {
-            // Comptime Erlang section (if any)
-            if (result.comptime_script) |ct| {
-                const ctHdr = try std.fmt.allocPrint(alloc, "----- COMPTIME ERLANG -- {s}.erl\n```erlang\n", .{name});
-                defer alloc.free(ctHdr);
-                try buf.appendSlice(alloc, ctHdr);
-                try buf.appendSlice(alloc, ct);
-                try buf.appendSlice(alloc, "```\n\n");
-            }
+            try writeComptimeSections(alloc, &buf, name, result);
 
             // Erlang output section
             const erlHdr = try std.fmt.allocPrint(alloc, "----- ERLANG -- {s}.erl\n```erlang\n", .{name});
@@ -100,14 +139,7 @@ pub fn buildSnapshot(alloc: std.mem.Allocator, name: []const u8, src: []const u8
             }
         },
         .beam => {
-            // Comptime Erlang section (if any) — beam shares the Erlang comptime runtime.
-            if (result.comptime_script) |ct| {
-                const ctHdr = try std.fmt.allocPrint(alloc, "----- COMPTIME ERLANG -- {s}.erl\n```erlang\n", .{name});
-                defer alloc.free(ctHdr);
-                try buf.appendSlice(alloc, ctHdr);
-                try buf.appendSlice(alloc, ct);
-                try buf.appendSlice(alloc, "```\n\n");
-            }
+            try writeComptimeSections(alloc, &buf, name, result);
 
             // BEAM Assembly output section
             const asmHdr = try std.fmt.allocPrint(alloc, "----- BEAM ASSEMBLY -- {s}.S\n```erlang\n", .{name});
@@ -125,14 +157,7 @@ pub fn buildSnapshot(alloc: std.mem.Allocator, name: []const u8, src: []const u8
             }
         },
         .wasm => {
-            // Comptime JavaScript section (if any) — wasm shares the Node comptime runtime.
-            if (result.comptime_script) |ct| {
-                const ctHdr = try std.fmt.allocPrint(alloc, "----- COMPTIME JAVASCRIPT -- {s}.js\n```javascript\n", .{name});
-                defer alloc.free(ctHdr);
-                try buf.appendSlice(alloc, ctHdr);
-                try buf.appendSlice(alloc, ct);
-                try buf.appendSlice(alloc, "```\n\n");
-            }
+            try writeComptimeSections(alloc, &buf, name, result);
 
             // WebAssembly Text output section
             const watHdr = try std.fmt.allocPrint(alloc, "----- WASM TEXT -- {s}.wat\n```wasm\n", .{name});
@@ -161,7 +186,7 @@ pub fn buildSnapshotMulti(alloc: std.mem.Allocator, outputs: []const SnapInput, 
 
     for (outputs, 0..) |out, idx| {
         if (idx > 0) try buf.appendSlice(alloc, "\n");
-        const text = try buildSnapshot(alloc, out.name, out.src, out.result, cfg);
+        const text = try buildSnapshot(alloc, out.name, out.src, out.result, out.diagnostic, cfg);
         defer alloc.free(text);
         try buf.appendSlice(alloc, text);
     }
@@ -170,20 +195,14 @@ pub fn buildSnapshotMulti(alloc: std.mem.Allocator, outputs: []const SnapInput, 
 }
 
 /// Asserts the codegen output against a snapshot file.
-/// The snapshot path is "codegen/{runtimeTag}/{targetSource}/{slug}.snap.md".
-///
-/// `runtimeTag` was the pre-v0.beta.21 `comptimeRuntime` enum tag (one of
-/// node/erlang/wasm/beam). After the four-runtime architecture collapsed into
-/// a single wasm3 path we keep the tag in the snapshot path — purely to leave
-/// the on-disk snapshot tree byte-identical — by deriving it from the
-/// target backend (each target had exactly one comptime runtime historically).
+/// The snapshot path is "codegen/{targetSource}/{slug}.snap.md".
 pub fn assertCodegen(
     alloc: std.mem.Allocator,
     slug: []const u8,
     outputs: []const SnapInput,
     cfg: config.Config,
 ) !void {
-    const snapName = try std.fmt.allocPrint(alloc, "codegen/{s}/{s}/{s}", .{ legacyRuntimeTag(cfg.targetSource), @tagName(cfg.targetSource), slug });
+    const snapName = try std.fmt.allocPrint(alloc, "codegen/{s}/{s}", .{ @tagName(cfg.targetSource), slug });
     defer alloc.free(snapName);
 
     const text = try buildSnapshotMulti(alloc, outputs, cfg);
@@ -193,7 +212,7 @@ pub fn assertCodegen(
 }
 
 /// Asserts a codegen error against a snapshot file.
-/// The snapshot path is "codegen/errors/{comptimeRuntime}/{targetSource}/{slug}.snap.md".
+/// The snapshot path is "codegen/errors/{targetSource}/{slug}.snap.md".
 pub fn assertCodegenError(
     alloc: std.mem.Allocator,
     slug: []const u8,
@@ -208,21 +227,8 @@ pub fn assertCodegenError(
     );
     defer alloc.free(combined);
 
-    const snapName = try std.fmt.allocPrint(alloc, "codegen/errors/{s}/{s}/{s}", .{ legacyRuntimeTag(cfg.targetSource), @tagName(cfg.targetSource), slug });
+    const snapName = try std.fmt.allocPrint(alloc, "codegen/errors/{s}/{s}", .{ @tagName(cfg.targetSource), slug });
     defer alloc.free(snapName);
 
     try snapMod.checkText(alloc, snapName, combined);
-}
-
-/// Returns the pre-v0.beta.21 `comptimeRuntime` tag for `target` — used only to
-/// preserve the on-disk snapshot path layout when the runtime enum disappeared.
-/// The pairing is the same one `helpers.zig::configs` used before the unify:
-/// commonJS ↔ node, erlang ↔ erlang, beam ↔ beam, wasm ↔ wasm.
-fn legacyRuntimeTag(target: config.TargetSource) []const u8 {
-    return switch (target) {
-        .commonJS => "node",
-        .erlang => "erlang",
-        .beam => "beam",
-        .wasm => "wasm",
-    };
 }

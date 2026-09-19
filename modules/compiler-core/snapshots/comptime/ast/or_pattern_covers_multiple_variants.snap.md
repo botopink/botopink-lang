@@ -1,0 +1,55 @@
+----- SOURCE CODE -- main.bp
+```botopink
+val Color = type {
+    Red,
+    Green,
+    Blue,
+};
+val warm = fn(c: Color) -> bool {
+    case c {
+        Red | Green -> true;
+        Blue -> false;
+    }
+};
+```
+
+----- TYPED AST JSON -- main.json
+```json
+{
+  "declarations": [
+    {
+      "ast": "enum_def",
+      "name": "Color",
+      "variants": [
+        {
+          "name": "Red"
+        },
+        {
+          "name": "Green"
+        },
+        {
+          "name": "Blue"
+        }
+      ]
+    },
+    {
+      "ast": "fn_def",
+      "name": "warm",
+      "is_pub": false,
+      "params": [
+        {
+          "name": "c",
+          "type": "Color"
+        }
+      ],
+      "return_type": "bool",
+      "body": [
+        {
+          "source": "case c {"
+        }
+      ]
+    }
+  ]
+}
+```
+

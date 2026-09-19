@@ -1,0 +1,26 @@
+//// Decision 8 §9 — `#[@future]` plus `-> @Future<T>`: a bare `return` resolves
+//// the future and `await` inside another `#[@future]` body unpacks it.
+////
+//// A `test` body is not a `#[@future]` body, so a resolved value cannot be
+//// observed from here; what this cell pins is that the pair typechecks, that a
+//// future chains onto another through `await`, and that the call produces a
+//// value on both backends.
+
+#[@future]
+fn fetch(n: i32) -> @Future<i32> { return n * 2; }
+
+#[@future]
+fn chain(n: i32) -> @Future<i32> {
+    val v = await fetch(n);
+    return v + 1;
+}
+
+test "§9 a #[@future] fn produces a future" {
+    val f = fetch(3);
+    assert f != null;
+}
+
+test "§9 await inside another future body chains" {
+    val f = chain(3);
+    assert f != null;
+}

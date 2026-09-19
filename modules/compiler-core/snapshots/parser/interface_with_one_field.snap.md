@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "interface": {
+      "behavior": {
         "name": "Drawable",
         "id": 1,
         "isPub": false,

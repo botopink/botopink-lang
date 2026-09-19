@@ -15,10 +15,14 @@ const configMod = @import("./config.zig");
 const ast = @import("../ast.zig");
 const envMod = @import("../comptime/env.zig");
 const crossModule = @import("./crossModule.zig");
+const patternFacts = @import("./patterns.zig");
 const lexerMod = @import("../lexer.zig");
 const parserMod = @import("../parser.zig");
 const prelude = @import("std_prelude");
 const primOpTemplate = @import("../comptime/primOpTemplate.zig");
+const erlEmitter = @import("./beam/erl_emitter.zig");
+const Ast = @import("./beam/erl_ast.zig");
+const Term = @import("./beam/term.zig").Term;
 
 const ModuleOutput = moduleOutput.ModuleOutput;
 const ComptimeOutput = comptimeMod.ComptimeOutput;
@@ -35,7 +39,7 @@ fn fnArityNoSelf(f: ast.FnDecl) usize {
 /// True when a record/struct/enum method is an associated fn — no `self`
 /// receiver, so it's callable as `Type.method(...)` (and across modules as a
 /// remote call). Its Erlang arity is just `params.len` (no `self` to drop).
-fn isAssocMethod(m: ast.InterfaceMethod) bool {
+fn isAssocMethod(m: ast.BehaviorMethod) bool {
     return m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self");
 }
 
@@ -202,11 +206,70 @@ fn isSyntheticMainEntrypointCall(v: ast.ValDecl) bool {
 // `.zig` recompile of the table itself is needed.
 const AutoImportedBif = struct { name: []const u8, arity: u8 };
 
-fn loadAutoImportedBifsFromPrelude(
-    alloc: std.mem.Allocator,
-) anyerror!std.ArrayListUnmanaged(AutoImportedBif) {
+/// The two embedded preludes, parsed once for the life of the process.
+///
+/// `emitErlangModule` re-lexed and re-parsed `primitives.bp`
+/// (`collectPrimErlangDispatch`) and `std/erlang`
+/// (`loadAutoImportedBifsFromPrelude`) on EVERY emission, and both sources are
+/// comptime-embedded strings — the same bytes, the same parse, every time. On a
+/// comptime-heavy build that is one whole parse per evaluated declaration
+/// (handed over by `14-comptime-on-beam`, whose step 2 left this as the other
+/// half of the per-evaluation cost).
+///
+/// The memo is safe because nothing writes to what it holds: the AST borrows
+/// only comptime source, `collectIfaceErlangDispatch` deep-copies every triple
+/// it keeps into the emitter's own allocator, and `noAutoImportRefs` only reads
+/// the BIF table. It has its own arena over the page allocator rather than a
+/// caller's, so a test allocator never sees it and the lifetime is the
+/// process's, not one module's. The lock is a spin over `std.atomic.Mutex`'s
+/// `tryLock` — zig 0.16 has no blocking mutex outside `std.Io`, and there is
+/// nothing to contend for after the first parse — because the test runner
+/// compiles on several threads and an arena is not thread-safe.
+const prelude_cache = struct {
+    var mutex: std.atomic.Mutex = .unlocked;
+    var arena: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    var primitives_tried: bool = false;
+    var primitives_program: ?ast.Program = null;
+    var bifs_tried: bool = false;
+    var bifs: []const AutoImportedBif = &.{};
+
+    /// The parsed `primitives.bp`, or null when it does not parse — the caller
+    /// has always swallowed a prelude parse failure, and `primErlangDispatchCount`
+    /// pins what that would cost.
+    fn lock() void {
+        while (!mutex.tryLock()) std.Thread.yield() catch {};
+    }
+
+    fn primitives() ?ast.Program {
+        lock();
+        defer mutex.unlock();
+        if (primitives_tried) return primitives_program;
+        primitives_tried = true;
+        const a = arena.allocator();
+        var lx = lexerMod.Lexer.init(prelude.primitives);
+        const tokens = lx.scanAll(a) catch return null;
+        var p = parserMod.Parser.init(tokens);
+        primitives_program = p.parse(a) catch null;
+        return primitives_program;
+    }
+
+    /// The auto-imported BIF catalog of `libs/std/src/erlang.bp`, empty when the
+    /// module is absent or does not parse.
+    fn autoImportedBifs() []const AutoImportedBif {
+        lock();
+        defer mutex.unlock();
+        if (bifs_tried) return bifs;
+        bifs_tried = true;
+        bifs = parseAutoImportedBifs(arena.allocator()) catch &.{};
+        return bifs;
+    }
+};
+
+/// Parses the catalog into `alloc`, which is `prelude_cache`'s arena: the table
+/// outlives every emission, so the lexer, the AST and the name dupes all live
+/// there together and nothing is freed per call.
+fn parseAutoImportedBifs(alloc: std.mem.Allocator) anyerror![]const AutoImportedBif {
     var out: std.ArrayListUnmanaged(AutoImportedBif) = .empty;
-    errdefer out.deinit(alloc);
 
     // Locate the `std/erlang` module in the embedded pkg registry.
     var source: ?[]const u8 = null;
@@ -216,20 +279,13 @@ fn loadAutoImportedBifsFromPrelude(
             break;
         }
     }
-    if (source == null) return out;
+    if (source == null) return out.items;
 
-    // Parse inside an arena so the lexer + AST scratch storage is freed
-    // wholesale at function exit; only the `.name` dupes that land in
-    // `out` are owned by `alloc` (caller frees via `freeAutoImportedBifs`).
-    var arena = std.heap.ArenaAllocator.init(alloc);
-    defer arena.deinit();
-    const a = arena.allocator();
-
+    const a = alloc;
     var lx = lexerMod.Lexer.init(source.?);
-    const tokens = lx.scanAll(a) catch return out;
+    const tokens = lx.scanAll(a) catch return out.items;
     var p = parserMod.Parser.init(tokens);
-    var program = p.parse(a) catch return out;
-    defer program.deinit(a);
+    const program = p.parse(a) catch return out.items;
 
     for (program.decls) |decl| {
         if (decl != .@"fn") continue;
@@ -247,116 +303,46 @@ fn loadAutoImportedBifsFromPrelude(
             .arity = @intCast(f.params.len),
         });
     }
-    return out;
+    return out.items;
 }
 
-fn freeAutoImportedBifs(alloc: std.mem.Allocator, list: *std.ArrayListUnmanaged(AutoImportedBif)) void {
-    for (list.items) |b| alloc.free(b.name);
-    list.deinit(alloc);
-}
-
-fn emitNoAutoImportDirective(
-    alloc: std.mem.Allocator,
-    writer: anytype,
-    decls: []ast.DeclKind,
-    bif_table: []const AutoImportedBif,
-) !void {
-    // Collect the intersection of user-defined symbols with the BIF table.
-    // Walks every emitted-as-bare-erlang-fn surface: top-level fns plus
-    // methods inside record/enum/struct/extend/implement (which the
-    // codegen also emits as bare local functions sharing the global atom
-    // namespace). `interface` assoc fns are mangled (`'Interface_name'`)
-    // and quoted — they start uppercase and cannot collide with a
-    // lowercase BIF, so they are excluded.
-    //
-    // Deduplicate so a symbol declared twice in the same module
-    // (overload, or the same method reused via `extend` + `impl`)
-    // contributes one entry, not two.
-    var seen: std.StringHashMap(void) = .init(alloc);
-    defer {
-        var keys = seen.keyIterator();
-        while (keys.next()) |k| alloc.free(k.*);
-        seen.deinit();
-    }
-
-    var shadows: std.ArrayListUnmanaged([]u8) = .empty;
-    defer {
-        for (shadows.items) |s| alloc.free(s);
-        shadows.deinit(alloc);
-    }
-
-    const CollectSym = struct {
-        fn run(
-            a: std.mem.Allocator,
-            table: []const AutoImportedBif,
-            seen_set: *std.StringHashMap(void),
-            shadow_list: *std.ArrayListUnmanaged([]u8),
-            name: []const u8,
-            arity: usize,
-        ) !void {
+/// `name/arity` of every user function whose name + arity shadows an Erlang
+/// auto-imported BIF, deduplicated in declaration order. Walks every surface
+/// emitted as a bare erlang fn: top-level fns plus methods of records, enums,
+/// `extend` and `implement` (sharing the global atom namespace). Interface
+/// assoc fns are mangled (`'Interface_name'`) and cannot collide with a
+/// lowercase BIF, so they are excluded.
+fn noAutoImportRefs(b: Ast.Builder, decls: []ast.DeclKind, bif_table: []const AutoImportedBif) ![]const Ast.FnRef {
+    var refs: std.ArrayListUnmanaged(Ast.FnRef) = .empty;
+    const Collect = struct {
+        fn run(arena: std.mem.Allocator, out: *std.ArrayListUnmanaged(Ast.FnRef), table: []const AutoImportedBif, name: []const u8, arity: usize) !void {
             for (table) |bif| {
-                if (bif.arity == arity and std.mem.eql(u8, bif.name, name)) {
-                    const key = try std.fmt.allocPrint(a, "{s}/{d}", .{ name, arity });
-                    const gop = try seen_set.getOrPut(key);
-                    if (gop.found_existing) {
-                        a.free(key);
-                        return;
-                    }
-                    gop.key_ptr.* = key;
-                    try shadow_list.append(a, try a.dupe(u8, key));
-                    return;
+                if (bif.arity != arity or !std.mem.eql(u8, bif.name, name)) continue;
+                for (out.items) |seen| {
+                    if (seen.arity == arity and std.mem.eql(u8, seen.name, name)) return;
                 }
+                return out.append(arena, .{ .name = try arena.dupe(u8, name), .arity = arity });
             }
         }
     };
-
-    for (decls) |decl| {
-        switch (decl) {
-            .@"fn" => |f| {
-                try CollectSym.run(alloc, bif_table, &seen, &shadows, f.name, f.params.len);
+    for (decls) |decl| switch (decl) {
+        .@"fn" => |f| try Collect.run(b.arena, &refs, bif_table, f.name, f.params.len),
+        // Record / enum methods keep `params.len` as the erlang arity (instance
+        // methods include the receiver); `is_declare` methods emit no body.
+        .type_ => |tdecl| switch (tdecl.shape) {
+            .record => for (tdecl.methods) |m| {
+                if (!m.is_declare) try Collect.run(b.arena, &refs, bif_table, m.name, m.params.len);
             },
-            // Record / enum methods emit through `emitFn` with `f.name = m.name`;
-            // both instance methods (`self` retained, `params.len` already
-            // includes the receiver) and associated fns (no `self`) keep
-            // `params.len` as the actual erlang arity. `is_declare` methods
-            // emit no body — skip.
-            .record => |r| {
-                for (r.methods) |m| {
-                    if (m.is_declare) continue;
-                    try CollectSym.run(alloc, bif_table, &seen, &shadows, m.name, m.params.len);
-                }
+            .enum_ => for (tdecl.methods) |m| {
+                if (!m.is_declare) try Collect.run(b.arena, &refs, bif_table, m.name, m.params.len);
             },
-            .@"enum" => |e| {
-                for (e.methods) |m| {
-                    if (m.is_declare) continue;
-                    try CollectSym.run(alloc, bif_table, &seen, &shadows, m.name, m.params.len);
-                }
-            },
-            // `extend`/`implement` methods emit through `emitExtensionMethods`
-            // with `keep_self = true`, so the receiver is always kept as the
-            // first param; `m.params.len` is the actual emitted arity.
-            .extend => |ex| {
-                for (ex.methods) |m| {
-                    try CollectSym.run(alloc, bif_table, &seen, &shadows, m.name, m.params.len);
-                }
-            },
-            .implement => |im| {
-                for (im.methods) |m| {
-                    try CollectSym.run(alloc, bif_table, &seen, &shadows, m.name, m.params.len);
-                }
-            },
-            else => {},
-        }
-    }
-
-    if (shadows.items.len == 0) return;
-
-    try writer.writeAll("-compile({no_auto_import,[");
-    for (shadows.items, 0..) |s, i| {
-        if (i > 0) try writer.writeAll(", ");
-        try writer.writeAll(s);
-    }
-    try writer.writeAll("]}).\n");
+        },
+        // Extension methods always keep the receiver as the first param.
+        .extend => |ex| for (ex.methods) |m| try Collect.run(b.arena, &refs, bif_table, m.name, m.params.len),
+        .implement => |im| for (im.methods) |m| try Collect.run(b.arena, &refs, bif_table, m.name, m.params.len),
+        else => {},
+    };
+    return refs.items;
 }
 
 // ── public entry ─────────────────────────────────────────────────────────────
@@ -374,10 +360,25 @@ pub fn codegenEmit(
     var cross = try crossModule.build(alloc, outputs);
     defer cross.deinit();
 
+    // Every module's `pub enum`s with their variants, so a consumer can quote
+    // an imported variant in a case pattern (`collectImportedTypes`). The
+    // cross-module index carries an enum's name only.
+    var enum_exports: std.ArrayListUnmanaged(EnumExport) = .empty;
+    defer enum_exports.deinit(alloc);
+    for (outputs) |*ct| {
+        const ok = switch (ct.outcome) {
+            .ok => |*o| o,
+            else => continue,
+        };
+        for (ok.transformed.decls) |decl| switch (decl) {
+            .type_ => |e| if (!e.isRecord() and e.isPub) try enum_exports.append(alloc, .{ .module = ct.name, .name = e.name, .variants = e.variants() }),
+            else => {},
+        };
+    }
+
     for (outputs) |*ct| {
         switch (ct.outcome) {
-            .parseError => continue,
-            .typeError => continue,
+            .parseError, .typeError => try results.append(alloc, try ModuleOutput.failedModule(alloc, ct.*)),
             .validationError => |verr| {
                 try results.append(alloc, .{
                     .name = ct.name,
@@ -392,14 +393,49 @@ pub fn codegenEmit(
             .ok => |*ok| {
                 // `"std"` package copies are dependencies — never emit their
                 // test blocks (mirrors the commonJS rule).
+                // The atom the module will be named by must be its own: two
+                // paths rendering one atom used to be a silent overwrite (or a
+                // silent shadow across two output directories), which is the
+                // failure this front exists to remove. Fail exactly the modules
+                // involved, with a diagnostic, like a type error.
+                if (cross.atomFault(ct.name)) |fault| {
+                    try results.append(alloc, .{
+                        .name = ct.name,
+                        .src = ct.src,
+                        .result = .{
+                            .js = try alloc.dupe(u8, ""),
+                            .comptime_script = null,
+                            .diagnostic = .{ .type = .{ .message = try fault.message(alloc), .loc = null } },
+                        },
+                    });
+                    continue;
+                }
                 const module_test_mode = config.test_mode and !std.mem.startsWith(u8, ct.name, "std/");
-                const code = try emitErlang(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, module_test_mode, &cross);
+                // 06 C13 — a host-backed fn with no `erlang` target used to
+                // abort the whole build with the bare error name. It reaches
+                // the driver as a located diagnostic naming the function now,
+                // like a type error: only this module fails.
+                var missing: ?moduleOutput.MissingExternal = null;
+                const code = emitErlang(alloc, ct.name, ok.transformed, ok.comptime_vals, ok.dispatch_rewrites, ok.instance_lowerings, module_test_mode, &cross, enum_exports.items, &missing) catch |err| {
+                    const me = missing orelse return err;
+                    try results.append(alloc, .{
+                        .name = ct.name,
+                        .src = ct.src,
+                        .result = .{
+                            .js = try alloc.dupe(u8, ""),
+                            .comptime_script = null,
+                            .diagnostic = try me.diagnostic(alloc),
+                        },
+                    });
+                    continue;
+                };
                 try results.append(alloc, .{
                     .name = ct.name,
                     .src = ct.src,
                     .result = .{
                         .js = code,
                         .comptime_script = if (ok.comptime_script) |s| try alloc.dupe(u8, s) else null,
+                        .comptime_trace = try comptimeMod.trace.renderAlloc(alloc, ok.comptime_traces),
                         .comptime_err = null,
                     },
                 });
@@ -408,6 +444,562 @@ pub fn codegenEmit(
     }
 
     return results;
+}
+
+/// Shape of a standalone module evaluated at compile time (decorator / template
+/// bodies run in the persistent `erl`). The body decls are lowered by the same
+/// emitter as regular modules — only the host glue differs.
+pub const ComptimeModule = struct {
+    /// Enum types the host injects without a declaration (`DeclKind`), so a
+    /// qualified member (`DeclKind.Type`) lowers to its variant atom.
+    host_enums: []const []const u8 = &.{},
+    /// Record types the host injects without a declaration (`Span`,
+    /// `CustomNode`), so a constructor call (`Span(5, 9, 1)`,
+    /// `CustomNode(kind: …)`) lowers to the same `#{field => …}` map a declared
+    /// record would.
+    host_records: []const HostRecord = &.{},
+    /// Extra exports (the evaluator entry, `main/0`).
+    exports: []const Ast.FnRef = &.{},
+    /// Host forms appended after the lowered decls and the standard helpers
+    /// (host functions, the evaluator entry).
+    forms: []const Ast.Form = &.{},
+    /// Host forms that live in a **resident** module instead of being rendered
+    /// into this one: `-import`ed, so the lowered body's own text is unchanged,
+    /// and `comptime_helper_forms` is not appended (the prelude carries it).
+    /// They still answer `isHostFunction`, so the located unsupported-method
+    /// diagnostic sees the same set of host functions either way.
+    /// Built by `comptime/runtime/prelude.zig`.
+    resident: ?Resident = null,
+    /// Render only the lowered decls and `forms` — no module header, exports or
+    /// helper forms. Not a compilable module: the listing snapshots show.
+    listing: bool = false,
+    /// When set, a method call that no primitive type answers and no host form
+    /// defines is rejected at emit time: the call is recorded here and the emit
+    /// fails with `error.UnsupportedComptimeMethod`, so the evaluator reports a
+    /// located diagnostic instead of `erl_lint`'s `{undefined_function,…}`.
+    /// Only honoured on the compilable (non-`listing`) emit, where `forms`
+    /// carries every host function.
+    unsupported_method: ?*UnsupportedMethod = null,
+
+    /// A module the generated one imports its host glue from, with the forms
+    /// that module defines. `refs` is derived from `forms`, so nothing can be
+    /// imported that the prelude does not export.
+    pub const Resident = struct {
+        module: []const u8,
+        forms: []const Ast.Form,
+        refs: []const Ast.FnRef,
+    };
+};
+
+/// The first method call of a comptime body nothing can answer (see
+/// `ComptimeModule.unsupported_method`). `callee` borrows from the body's AST.
+pub const UnsupportedMethod = struct {
+    callee: []const u8 = "",
+    /// Positional arguments plus trailing lambdas — the receiver excluded.
+    argc: usize = 0,
+    loc: ast.Loc = .{ .line = 0, .col = 0 },
+};
+
+/// A number's representation: an erlang integer, a float, or a number whose
+/// precision is unknown (the result of `*` on operands of unknown type).
+const NumKind = enum { int, float, number };
+
+/// The runtime-dispatch shim a comptime-body method call lowers to:
+/// `'__bp_prim_<method>'(Recv, Args…)` (see `Emitter.primShimForms`).
+const prim_shim_prefix = "__bp_prim_";
+
+/// The atom a bare `break` throws and its loop's `try` catches.
+const break_signal = "__bp_break";
+/// The named-fun variable an unbounded `loop (x..)` recurses through.
+const loop_fun_var = "__Loop";
+/// The throws a condition loop (decision 8 §10) catches: `{Signal, Group}`,
+/// the reassigned variables at the jump.
+const cond_break_signal = "__bp_cond_break";
+/// The synthetic local a yielding condition loop collects into. It travels in
+/// the loop's variable group like any reassigned name, so the existing
+/// threading carries it through the recursion (decision 8 §9).
+const cond_yield_acc = "__bp_cond_yield";
+const cond_continue_signal = "__bp_cond_continue";
+
+/// A `pub enum` of some module in the build, with its variants.
+const EnumExport = struct {
+    /// The declaring module's path (`std/order`).
+    module: []const u8,
+    name: []const u8,
+    variants: []const ast.EnumVariant,
+};
+
+pub const HostRecord = struct {
+    name: []const u8,
+    /// Field names in declaration order (positional constructor arguments).
+    fields: []const []const u8,
+};
+
+/// `'__bp_add'/2`: `+` on operands of unknown type — two binaries concatenate,
+/// anything else is arithmetic. Every comptime module carries it; a typed module
+/// emits it when neither operand of a `+` is provably a number or a string.
+const add_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_add", .clauses = &.{
+    .{
+        .patterns = &.{ Ast.Expr.v("A"), Ast.Expr.v("B") },
+        .guards = &.{ isA("binary", "A"), isA("binary", "B") },
+        .body = Ast.Body.of(&.{.{ .expr = .{ .bin = &.{
+            .{ .value = Ast.Expr.v("A"), .type = "binary" },
+            .{ .value = Ast.Expr.v("B"), .type = "binary" },
+        } } }}),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ Ast.Expr.v("A"), Ast.Expr.v("B") },
+        .body = Ast.Body.of(&.{.{ .expr = .{ .binop = .{ .op = "+", .lhs = &Ast.Expr.v("A"), .rhs = &Ast.Expr.v("B"), .parens = false } } }}),
+        .layout = .inline_,
+    },
+} } };
+
+/// `'__bp_len'/2`: `.len`/`.length`/`.size` on a receiver of unknown type — a
+/// list's length, a binary's length, else the map field. Every comptime module
+/// carries it; a typed module emits it when inference recorded no lowering for
+/// such a field read.
+const len_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_len", .clauses = &.{
+    .{
+        .patterns = &.{ Ast.Expr.v("X"), Ast.Expr.v("_") },
+        .guards = &.{isA("list", "X")},
+        .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .name = "length", .args = &.{Ast.Expr.v("X")} } } }}),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ Ast.Expr.v("X"), Ast.Expr.v("_") },
+        .guards = &.{isA("binary", "X")},
+        .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "string", .name = "length", .args = &.{Ast.Expr.v("X")} } } }}),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ Ast.Expr.v("X"), Ast.Expr.v("Field") },
+        .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "maps", .name = "get", .args = &.{ Ast.Expr.v("Field"), Ast.Expr.v("X") } } } }}),
+        .layout = .inline_,
+    },
+} } };
+
+/// `Lhs <op> Rhs`, unparenthesised — a guard test or a bound's arithmetic in the
+/// index helpers below.
+fn binOpOf(comptime op: []const u8, comptime lhs: Ast.Expr, comptime rhs: Ast.Expr) Ast.Expr {
+    return .{ .binop = .{ .op = op, .lhs = &lhs, .rhs = &rhs, .parens = false } };
+}
+
+/// `name(Args)` — an auto-imported BIF in a helper form.
+fn bifOf(comptime name: []const u8, comptime args: []const Ast.Expr) Ast.Expr {
+    return .{ .call = .{ .name = name, .args = args } };
+}
+
+/// `module:name(Args)` in a helper form.
+fn remoteOf(comptime module: []const u8, comptime name: []const u8, comptime args: []const Ast.Expr) Ast.Expr {
+    return .{ .call = .{ .module = module, .name = name, .args = args } };
+}
+
+const ix_recv = Ast.Expr.v("Recv");
+const ix_i = Ast.Expr.v("I");
+const ix_from = Ast.Expr.v("From");
+const ix_to = Ast.Expr.v("To");
+const ix_zero: Ast.Expr = .{ .number = "0" };
+const ix_one: Ast.Expr = .{ .number = "1" };
+
+/// `max(X, 0)` — a negative bound is clamped, never an error.
+fn clampLow(comptime x: Ast.Expr) Ast.Expr {
+    return bifOf("max", &.{ x, ix_zero });
+}
+
+/// One body statement holding `expr`.
+fn oneExpr(comptime expr: Ast.Expr) Ast.Body {
+    return Ast.Body.of(&.{.{ .expr = expr }});
+}
+
+/// `erlang:error({Tag, …})` — the shape `'__bp_prim_<m>'`'s fallback already
+/// uses, so an unlowered form aborts with a term that names itself.
+fn unsupportedOf(comptime tag: []const u8, comptime args: anytype) Ast.Expr {
+    const items: [1 + args.len]Ast.Expr = .{Ast.Expr.a(tag)} ++ args;
+    return remoteOf("erlang", "error", &.{.{ .tuple = &items }});
+}
+
+/// `'__bp_index'/2`: decision 30's `xs[0]` / `s[0]` / `t[0]` at run time.
+///
+/// The parser desugars every index into the builtin call `[]` over
+/// `(receiver, index)` (`ast.index_builtin_name`) and `01-checker` does not type
+/// it yet, so the receiver's kind is only known at run time — as for `'__bp_len'`
+/// and the `'__bp_prim_<m>'` shims, the dispatch is a guard sequence:
+///
+///   - a **list** by position, `undefined` outside it — the same answer
+///     `Array.at` gives, and the same one commonJS's `xs[0]` gives;
+///   - a **string** by character, not by byte (`string:slice/3` is UTF-8 aware);
+///   - a **tuple** by position, `undefined` outside it.
+///
+/// A receiver with no positions raises `{bp_unsupported_index, Recv, I}` rather
+/// than answering something. A `Dict` is deliberately **not** here: it is a map
+/// `#{pairs => …}`, so `maps:get/3` would answer `undefined` for a key that is
+/// present — `d["k"]` has to reach `Dict.lookup`, which is a lowering only the
+/// checker can record once it types the receiver.
+const index_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_index", .clauses = &.{
+    .{
+        .patterns = &.{ ix_recv, ix_i },
+        .guards = &.{
+            isA("list", "Recv"),
+            isA("integer", "I"),
+            binOpOf(">=", ix_i, ix_zero),
+            binOpOf("<", ix_i, bifOf("length", &.{ix_recv})),
+        },
+        .body = oneExpr(remoteOf("lists", "nth", &.{ binOpOf("+", ix_i, ix_one), ix_recv })),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ ix_recv, ix_i },
+        .guards = &.{ isA("binary", "Recv"), isA("integer", "I"), binOpOf(">=", ix_i, ix_zero) },
+        .body = oneExpr(remoteOf("string", "slice", &.{ ix_recv, ix_i, ix_one })),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ ix_recv, ix_i },
+        .guards = &.{
+            isA("tuple", "Recv"),
+            isA("integer", "I"),
+            binOpOf(">=", ix_i, ix_zero),
+            binOpOf("<", ix_i, bifOf("tuple_size", &.{ix_recv})),
+        },
+        .body = oneExpr(bifOf("element", &.{ binOpOf("+", ix_i, ix_one), ix_recv })),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ ix_recv, ix_i },
+        .guards = &.{ isA("list", "Recv"), isA("integer", "I") },
+        .body = oneExpr(Ast.Expr.a("undefined")),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ ix_recv, ix_i },
+        .guards = &.{ isA("tuple", "Recv"), isA("integer", "I") },
+        .body = oneExpr(Ast.Expr.a("undefined")),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ ix_recv, ix_i },
+        .body = oneExpr(unsupportedOf("bp_unsupported_index", .{ ix_recv, ix_i })),
+        .layout = .inline_,
+    },
+} } };
+
+/// `'__bp_slice'/3`: the slice half of decision 30 — `xs[0..2]` is the same
+/// builtin call with a `range` second argument, and `xs[0..]` passes the atom
+/// `infinity` for its open end, which is what the range lowering already writes
+/// for an open `lists:seq/2`.
+///
+/// `..` is half-open `[from, to)` (decision 36), so the length is `To - From`;
+/// both bounds are clamped so an out-of-range slice is short, never an error —
+/// which is `lists:sublist/3`'s and `string:slice/3`'s own behaviour.
+const slice_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_slice", .clauses = &.{
+    .{
+        .patterns = &.{ ix_recv, ix_from, Ast.Expr.a("infinity") },
+        .guards = &.{isA("list", "Recv")},
+        .body = oneExpr(remoteOf("lists", "nthtail", &.{
+            bifOf("min", &.{ clampLow(ix_from), bifOf("length", &.{ix_recv}) }),
+            ix_recv,
+        })),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ ix_recv, ix_from, Ast.Expr.a("infinity") },
+        .guards = &.{isA("binary", "Recv")},
+        .body = oneExpr(remoteOf("string", "slice", &.{ ix_recv, clampLow(ix_from) })),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ ix_recv, ix_from, ix_to },
+        .guards = &.{isA("list", "Recv")},
+        .body = oneExpr(remoteOf("lists", "sublist", &.{
+            ix_recv,
+            binOpOf("+", clampLow(ix_from), ix_one),
+            clampLow(binOpOf("-", ix_to, clampLow(ix_from))),
+        })),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ ix_recv, ix_from, ix_to },
+        .guards = &.{isA("binary", "Recv")},
+        .body = oneExpr(remoteOf("string", "slice", &.{
+            ix_recv,
+            clampLow(ix_from),
+            clampLow(binOpOf("-", ix_to, clampLow(ix_from))),
+        })),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ ix_recv, ix_from, ix_to },
+        .body = oneExpr(unsupportedOf("bp_unsupported_slice", .{ ix_recv, ix_from, ix_to })),
+        .layout = .inline_,
+    },
+} } };
+
+/// `'__bp_text'/1`: any term as a binary — a binary is itself, anything else
+/// its `~p` rendering. Every comptime module carries it; a typed module emits it
+/// when a string `+` has an operand that is not provably a string
+/// (`concatSegments`).
+const text_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_text", .clauses = &.{
+    .{
+        .patterns = &.{Ast.Expr.v("Value")},
+        .guards = &.{isA("binary", "Value")},
+        .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("Value") }}),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{Ast.Expr.v("Value")},
+        .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .name = "iolist_to_binary", .args = &.{.{ .call = .{
+            .module = "io_lib",
+            .name = "format",
+            .args = &.{ Ast.Expr.t(Term.str("~p")), .{ .list = &.{Ast.Expr.v("Value")} } },
+        } }} } } }}),
+        .layout = .inline_,
+    },
+} } };
+
+/// `'__bp_print'/1`: the `@print`/`@println`/`@debug` lowering (cross-backend
+/// semantics decisions 1 and 1a). It takes the argument LIST and prints the
+/// values on one line separated by a space, each as `'__bp_show'/2` renders
+/// it. The rendering dispatches at runtime, so the typed and the untyped
+/// (comptime) path print the same bytes.
+const print_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_print", .clauses = &.{.{
+    .patterns = &.{Ast.Expr.v("Values")},
+    .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "io", .name = "format", .args = &.{
+        .{ .string = "~ts~n" },
+        .{ .list = &.{.{ .call = .{ .module = "lists", .name = "join", .args = &.{
+            .{ .string = " " },
+            .{ .list_comp = .{
+                .element = &Ast.Expr{ .call = .{ .name = "__bp_show", .args = &.{ Ast.Expr.v("V"), Ast.Expr.a("true") } } },
+                .qualifiers = &.{.{ .generator = .{ .pattern = Ast.Expr.v("V"), .list = Ast.Expr.v("Values") } }},
+            } },
+        } } }} },
+    } } } }}),
+}} } };
+
+/// `V` bound to the first element of a tuple, for the tagged-tuple guard.
+const show_first: Ast.Expr = .{ .call = .{ .name = "element", .args = &.{ .{ .number = "1" }, Ast.Expr.v("V") } } };
+
+/// `element(1, V) =/= Atom`.
+fn firstIsNot(comptime atom: []const u8) Ast.Expr {
+    return .{ .binop = .{ .op = "=/=", .lhs = &show_first, .rhs = &Ast.Expr.a(atom), .parens = false } };
+}
+
+/// `'__bp_show'(Elem, false)` over `Elems`, joined by `,`.
+fn showJoined(comptime elems: Ast.Expr) Ast.Expr {
+    return .{ .call = .{ .module = "lists", .name = "join", .args = &.{
+        .{ .string = "," },
+        .{ .list_comp = .{
+            .element = &Ast.Expr{ .call = .{ .name = "__bp_show", .args = &.{ Ast.Expr.v("E"), Ast.Expr.a("false") } } },
+            .qualifiers = &.{.{ .generator = .{ .pattern = Ast.Expr.v("E"), .list = elems } }},
+        } },
+    } } };
+}
+
+/// `$C -> "Escaped"` — one clause of the nested-string escape `case`.
+fn escapeClause(comptime char: []const u8, comptime escaped: []const u8) Ast.Clause {
+    return .{ .patterns = &.{.{ .number = char }}, .body = Ast.Body.of(&.{.{ .expr = .{ .string = escaped } }}), .layout = .inline_ };
+}
+
+/// `'__bp_show'/2`: the text of one printed value as chardata (semantics
+/// decision 1a). `Top` is `true` for an argument of `@print` itself.
+///   - a binary at top level is its text; nested, it is quoted with the source
+///     escapes (`\"`, `\\`, `\n`, `\r`, `\t`);
+///   - a list is `[E1,E2]`, a tuple `#(E1,E2)` — no spaces;
+///   - a tuple tagged by an atom (an enum variant `{'Circle', R}`, a Result
+///     `{ok, V}`) and every other term (numbers, atoms, maps) keep `~p`: the
+///     text of records, enums and maps is not decided by 1a. `true`, `false`
+///     and `undefined` are values, not tags, so a tuple they open is a tuple.
+const show_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_show", .clauses = &.{
+    .{
+        .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.a("true") },
+        .guards = &.{isA("binary", "V")},
+        .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("V") }}),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.v("_") },
+        .guards = &.{isA("binary", "V")},
+        .body = Ast.Body.of(&.{.{ .expr = .{ .list = &.{
+            .{ .number = "$\"" },
+            .{ .list_comp = .{
+                .element = &Ast.Expr{ .case_ = .{
+                    .subject = &Ast.Expr.v("C"),
+                    .clauses = &.{
+                        escapeClause("$\"", "\\\""),
+                        escapeClause("$\\\\", "\\\\"),
+                        escapeClause("$\\n", "\\n"),
+                        escapeClause("$\\r", "\\r"),
+                        escapeClause("$\\t", "\\t"),
+                        .{ .patterns = &.{Ast.Expr.v("_")}, .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("C") }}), .layout = .inline_ },
+                    },
+                    .layout = .inline_,
+                } },
+                .qualifiers = &.{.{ .generator = .{
+                    .pattern = Ast.Expr.v("C"),
+                    .list = .{ .call = .{ .module = "unicode", .name = "characters_to_list", .args = &.{Ast.Expr.v("V")} } },
+                } }},
+            } },
+            .{ .number = "$\"" },
+        } } }}),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.v("_") },
+        .guards = &.{isA("list", "V")},
+        .body = Ast.Body.of(&.{.{ .expr = .{ .list = &.{ .{ .number = "$[" }, showJoined(Ast.Expr.v("V")), .{ .number = "$]" } } } }}),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.v("_") },
+        .guards = &.{
+            isA("tuple", "V"),
+            .{ .binop = .{ .op = ">", .lhs = &Ast.Expr{ .call = .{ .name = "tuple_size", .args = &.{Ast.Expr.v("V")} } }, .rhs = &Ast.Expr{ .number = "0" }, .parens = false } },
+            .{ .call = .{ .name = "is_atom", .args = &.{show_first} } },
+            firstIsNot("true"),
+            firstIsNot("false"),
+            firstIsNot("undefined"),
+        },
+        .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "io_lib", .name = "format", .args = &.{ .{ .string = "~p" }, .{ .list = &.{Ast.Expr.v("V")} } } } } }}),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.v("_") },
+        .guards = &.{isA("tuple", "V")},
+        .body = Ast.Body.of(&.{.{ .expr = .{ .list = &.{
+            .{ .string = "#(" },
+            showJoined(.{ .call = .{ .name = "tuple_to_list", .args = &.{Ast.Expr.v("V")} } }),
+            .{ .number = "$)" },
+        } } }}),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ Ast.Expr.v("V"), Ast.Expr.v("_") },
+        .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "io_lib", .name = "format", .args = &.{ .{ .string = "~p" }, .{ .list = &.{Ast.Expr.v("V")} } } } } }}),
+        .layout = .inline_,
+    },
+} } };
+
+/// Helpers every comptime module carries. Bodies are untyped (no inference ran
+/// over them), so type-directed lowerings dispatch at runtime — `+` →
+/// `'__bp_add'/2` (binary concat for strings, arithmetic otherwise),
+/// `.len`/`.length` → `'__bp_len'/2` (list/string length, else the map field) —
+/// and host glue reports through `'__bp_text'/1` (any term as a binary) and
+/// `'__bp_json'/1` (a term with `undefined` as JSON `null`).
+pub const comptime_helper_forms = [_]Ast.Form{
+    add_helper_form,
+    len_helper_form,
+    text_helper_form,
+    .{
+        .function = .{
+            .name = "__bp_json",
+            .clauses = &.{
+                .{
+                    .patterns = &.{Ast.Expr.a("undefined")},
+                    .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.a("null") }}),
+                    .layout = .inline_,
+                },
+                .{
+                    .patterns = &.{Ast.Expr.v("Map")},
+                    .guards = &.{isA("map", "Map")},
+                    .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "maps", .name = "map", .args = &.{
+                        .{ .fun = .{
+                            .params = &.{ Ast.Expr.v("_"), Ast.Expr.v("V") },
+                            .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .name = "__bp_json", .args = &.{Ast.Expr.v("V")} } } }}),
+                        } },
+                        Ast.Expr.v("Map"),
+                    } } } }}),
+                    .layout = .inline_,
+                },
+                .{
+                    .patterns = &.{Ast.Expr.v("List")},
+                    .guards = &.{isA("list", "List")},
+                    .body = Ast.Body.of(&.{.{ .expr = .{ .list_comp = .{
+                        .element = &Ast.Expr{ .call = .{ .name = "__bp_json", .args = &.{Ast.Expr.v("V")} } },
+                        .qualifiers = &.{.{ .generator = .{ .pattern = Ast.Expr.v("V"), .list = Ast.Expr.v("List") } }},
+                    } } }}),
+                    .layout = .inline_,
+                },
+                .{
+                    // A tuple has no JSON form: `{"$tuple": [...]}`, read back by
+                    // template_eval's `typedValue`.
+                    .patterns = &.{Ast.Expr.v("Tuple")},
+                    .guards = &.{isA("tuple", "Tuple")},
+                    .body = Ast.Body.of(&.{.{ .expr = .{ .map = &.{.{
+                        .key = .{ .lexeme_binary = "$tuple" },
+                        .value = .{ .list_comp = .{
+                            .element = &Ast.Expr{ .call = .{ .name = "__bp_json", .args = &.{Ast.Expr.v("V")} } },
+                            .qualifiers = &.{.{ .generator = .{ .pattern = Ast.Expr.v("V"), .list = .{ .call = .{ .module = "erlang", .name = "tuple_to_list", .args = &.{Ast.Expr.v("Tuple")} } } } }},
+                        } },
+                    }} } }}),
+                    .layout = .inline_,
+                },
+                .{
+                    .patterns = &.{Ast.Expr.v("Value")},
+                    .body = Ast.Body.of(&.{.{ .expr = Ast.Expr.v("Value") }}),
+                    .layout = .inline_,
+                },
+            },
+        },
+    },
+};
+
+/// `is_<kind>(Var)` guard test.
+fn isA(comptime kind: []const u8, comptime variable: []const u8) Ast.Expr {
+    return .{ .call = .{ .name = "is_" ++ kind, .args = &.{Ast.Expr.v(variable)} } };
+}
+
+/// Emit `program` as a comptime-evaluated Erlang module: the lowered decls, the
+/// `comptime_helper_forms` (unless `module.resident` carries them) and then the
+/// host forms of `module`.
+pub fn emitComptimeModule(
+    alloc: std.mem.Allocator,
+    module_name: []const u8,
+    program: ast.Program,
+    module: ComptimeModule,
+) ![]u8 {
+    var comptime_vals = std.StringHashMap([]const u8).init(alloc);
+    defer comptime_vals.deinit();
+    var rewrites = std.AutoHashMap(ast.Loc, []const u8).init(alloc);
+    defer rewrites.deinit();
+    var instance_lowerings = std.AutoHashMap(ast.Loc, envMod.InstanceLowering).init(alloc);
+    defer instance_lowerings.deinit();
+    return emitErlangModule(alloc, module_name, program, comptime_vals, rewrites, instance_lowerings, false, null, &.{}, module, null);
+}
+
+/// How many `<Iface>.<method>` entries the primitive dispatch table holds for a
+/// module that declares nothing — i.e. what the embedded `primitives.bp`
+/// contributes. `collectPrimErlangDispatch` swallows a prelude parse failure,
+/// which would silently empty the table for every module; tests pin this.
+pub fn primErlangDispatchCount(alloc: std.mem.Allocator) !usize {
+    var comptime_vals = std.StringHashMap([]const u8).init(alloc);
+    defer comptime_vals.deinit();
+    var rewrites = std.AutoHashMap(ast.Loc, []const u8).init(alloc);
+    defer rewrites.deinit();
+    var em = Emitter.init(alloc, comptime_vals, rewrites);
+    var no_decls = [_]ast.DeclKind{};
+    try em.collectPrimErlangDispatch(.{ .decls = &no_decls });
+    defer {
+        var pit = em.prim_iface_chain.iterator();
+        while (pit.next()) |entry| {
+            alloc.free(entry.key_ptr.*);
+            alloc.free(entry.value_ptr.*);
+        }
+        em.prim_iface_chain.deinit();
+        var dit = em.prim_erlang_dispatch.iterator();
+        while (dit.next()) |entry| {
+            alloc.free(entry.key_ptr.*);
+            alloc.free(entry.value_ptr.module);
+            alloc.free(entry.value_ptr.symbol);
+            if (entry.value_ptr.args) |args| {
+                for (args) |a| alloc.free(a);
+                alloc.free(args);
+            }
+            for (entry.value_ptr.arity_branches) |br| alloc.free(br.template);
+            if (entry.value_ptr.arity_branches.len > 0) alloc.free(entry.value_ptr.arity_branches);
+        }
+        em.prim_erlang_dispatch.deinit();
+    }
+    return em.prim_erlang_dispatch.count();
 }
 
 // ── top-level emitter ─────────────────────────────────────────────────────────
@@ -421,12 +1013,43 @@ fn emitErlang(
     instance_lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
     test_mode: bool,
     cross: ?*const CrossModule,
+    enum_exports: []const EnumExport,
+    /// 06 C13 — set when the emit fails with `error.MissingExternalTarget`, so
+    /// the caller reports the function and the call site, not the error name.
+    missing: ?*?moduleOutput.MissingExternal,
 ) ![]u8 {
-    var aw: std.Io.Writer.Allocating = .init(alloc);
-    defer aw.deinit();
+    return emitErlangModule(alloc, module_name, program, comptime_vals, rewrites, instance_lowerings, test_mode, cross, enum_exports, null, missing);
+}
 
-    var em = Emitter.init(alloc, &aw.writer, comptime_vals, rewrites);
+fn emitErlangModule(
+    alloc: std.mem.Allocator,
+    module_name: []const u8,
+    program: ast.Program,
+    comptime_vals: std.StringHashMap([]const u8),
+    rewrites: std.AutoHashMap(ast.Loc, []const u8),
+    instance_lowerings: std.AutoHashMap(ast.Loc, envMod.InstanceLowering),
+    test_mode: bool,
+    cross: ?*const CrossModule,
+    enum_exports: []const EnumExport,
+    comptime_module: ?ComptimeModule,
+    missing: ?*?moduleOutput.MissingExternal,
+) ![]u8 {
+    var em = Emitter.init(alloc, comptime_vals, rewrites);
+    errdefer if (missing) |slot| {
+        slot.* = em.missing_external;
+    };
+    em.enum_exports = enum_exports;
     em.instance_lowerings = instance_lowerings;
+    em.untyped = comptime_module != null;
+    if (comptime_module) |cm| {
+        em.host_forms = cm.forms;
+        if (cm.resident) |r| em.resident_forms = r.forms;
+        if (!cm.listing) em.unsupported_method = cm.unsupported_method;
+    }
+    defer {
+        for (em.prim_shims.keys()) |k| alloc.free(k);
+        em.prim_shims.deinit(alloc);
+    }
     em.test_mode = test_mode;
     em.module_name = module_name;
     em.cross = cross;
@@ -452,14 +1075,45 @@ fn emitErlang(
     try em.collectStdImports(program);
     defer em.std_imports.deinit();
     defer em.locals.deinit();
+    defer em.mutable_locals.deinit(alloc);
+    defer em.mutating_closures.deinit(alloc);
+    defer {
+        var kit = em.local_fn_arities.keyIterator();
+        while (kit.next()) |k| alloc.free(k.*);
+        em.local_fn_arities.deinit(alloc);
+    }
+    defer em.var_current.deinit();
+    defer em.var_next.deinit();
     defer em.top_vals.deinit();
     try em.collectInterfaces(program);
     defer {
         var iface_it = em.interface_assoc.keyIterator();
         while (iface_it.next()) |k| em.alloc.free(k.*);
         em.interface_assoc.deinit();
+        var inst_it = em.iface_instance_defaults.keyIterator();
+        while (inst_it.next()) |k| em.alloc.free(k.*);
+        em.iface_instance_defaults.deinit();
+        // Keys are borrowed from `iface_instance_defaults` — freed above.
+        em.needed_instance_defaults.deinit(em.alloc);
+        var self_it = em.iface_self_returns.keyIterator();
+        while (self_it.next()) |k| em.alloc.free(k.*);
+        em.iface_self_returns.deinit();
+        // Keys and values borrow the program AST — nothing to free.
+        em.local_behaviors.deinit();
     }
+    defer em.nullable_locals.deinit();
+    defer em.string_locals.deinit();
+    defer em.string_names.deinit();
+    defer em.num_locals.deinit(alloc);
+    defer em.num_names.deinit(alloc);
     try em.collectPrimErlangDispatch(program);
+    // A comptime body is one decl: the primitive interfaces' bodied instance
+    // `default fn`s (`String.slice`, `Array.first`) are not in it, so they are
+    // indexed from the embedded prelude. The parse lives until the module is
+    // rendered — the reached bodies are lowered from it and borrow its strings.
+    var prelude_arena = std.heap.ArenaAllocator.init(alloc);
+    defer prelude_arena.deinit();
+    if (comptime_module != null) try em.collectPreludeInstanceDefaults(prelude_arena.allocator());
     try em.collectRecordMethodCollisions(program);
     defer {
         var rit = em.record_method_collisions.iterator();
@@ -510,13 +1164,43 @@ fn emitErlang(
     }
     try em.collectTypeShapes(program);
     try em.collectImportedTypes(program);
+    try em.collectStringNames(program);
+    try em.collectLocalFnArities(program);
+    // After `collectLocalFnArities`: an adopted `default fn` is emitted only
+    // when its `<name>/<arity>` is still free in the module.
+    try em.collectAdoptedIfaceDefaults(program);
+    defer {
+        var ad_it = em.adopted_defaults.keyIterator();
+        while (ad_it.next()) |k| em.alloc.free(k.*);
+        em.adopted_defaults.deinit();
+    }
+    if (comptime_module) |cm| {
+        for (cm.host_enums) |name| try em.enum_names.put(name, {});
+        for (cm.host_records) |r| try em.record_fields.put(r.name, try alloc.dupe([]const u8, r.fields));
+    }
     defer {
         var rf_it = em.record_fields.valueIterator();
         while (rf_it.next()) |names| alloc.free(names.*);
         em.record_fields.deinit();
         em.enum_names.deinit();
         em.enum_variants.deinit();
+        {
+            var vf_it = em.variant_fields.valueIterator();
+            while (vf_it.next()) |names| alloc.free(names.*);
+        }
+        em.variant_fields.deinit();
+        {
+            var it = em.enum_variant_of.keyIterator();
+            while (it.next()) |k| alloc.free(k.*);
+        }
+        em.enum_variant_of.deinit();
+        em.enum_variants_known.deinit();
         em.imported_types.deinit();
+        em.imported_fns.deinit();
+        var ftf_it = em.fn_typed_fields.keyIterator();
+        while (ftf_it.next()) |k| alloc.free(k.*);
+        em.fn_typed_fields.deinit();
+        em.fn_typed_field_names.deinit();
     }
     var top_runtime_vals: std.ArrayListUnmanaged(ast.ValDecl) = .empty;
     defer top_runtime_vals.deinit(alloc);
@@ -535,36 +1219,52 @@ fn emitErlang(
     // Test mode never auto-runs `main/0` — the escript entry is the test runner.
     const emit_entrypoint_wrapper = has_main_0 and !test_mode;
 
-    // Without the wrapper, each runtime module-level `val` is emitted as a 0-arity
-    // function (`emitTopVal`), so a bare reference to it lowers to a call `name()`,
-    // not a variable. With the wrapper the vals are local `Name = …` bindings, so
-    // the set stays empty and references stay variables.
-    if (!emit_entrypoint_wrapper) {
-        for (top_runtime_vals.items) |v| em.top_vals.put(v.name, {}) catch {};
+    // A *named* runtime module-level `val` is always emitted as a 0-arity function
+    // (`topValForms`), so a bare reference to it lowers to the call `name()`.
+    // Erlang has no module-level storage: binding them as locals of the generated
+    // `'_botopink_main'/0` (what the entrypoint wrapper used to do) left every read
+    // from `main/0` — or from any other function — as an unbound variable.
+    // The trade-off is that the initialiser runs once per read instead of once at
+    // startup; `_`-named synthetic statements (top-level expression statements)
+    // keep their single, ordered evaluation inside the wrapper.
+    for (program.decls) |decl| {
+        const v = switch (decl) {
+            .val => |x| x,
+            else => continue,
+        };
+        if (!v.value.isComptimeExpr() or isSyntheticMainEntrypointCall(v)) continue;
+        if (std.mem.startsWith(u8, v.name, "_")) continue;
+        em.top_vals.put(v.name, {}) catch {};
+    }
+    for (top_runtime_vals.items) |v| {
+        if (std.mem.startsWith(u8, v.name, "_")) continue;
+        em.top_vals.put(v.name, {}) catch {};
     }
 
-    // Module header. "std" package modules are named `std/<mod>` for output
-    // layout; the Erlang module atom is the basename (`-module(option).`).
-    const erl_module_name = if (std.mem.lastIndexOfScalar(u8, module_name, '/')) |i|
-        module_name[i + 1 ..]
-    else
-        module_name;
-    try aw.writer.print("-module({s}).\n", .{erl_module_name});
+    // The module is built as `erl_ast` forms in one arena, then rendered.
+    var arena_state = std.heap.ArenaAllocator.init(alloc);
+    defer arena_state.deinit();
+    const b: Ast.Builder = .{ .arena = arena_state.allocator() };
+    var forms: Forms = .empty;
 
-    // Emit `-compile({no_auto_import,[fn/arity, ...]}).` for any user
-    // function whose name + arity shadows an Erlang auto-imported BIF.
-    // OTP 27+ erlc upgrades the diagnostic
+    // Module header. The Erlang module atom is the whole module path joined
+    // with `@` (`std/math` → `std@math`, `web/api/http` → `web@api@http`), a
+    // legal unquoted atom — it used to be the path's BASENAME, which made two
+    // files of the same name one module and let eleven `libs/std` modules
+    // shadow the OTP module of that name. `main` is unchanged.
+    // `crossModule.erlAtom` is the one renderer; `outputStem` names the file
+    // from the same rule, because `erlc` refuses an atom that differs from it.
+    const erl_module_name = try crossModule.erlAtom(b.arena, .of(module_name));
+    try forms.append(b.arena, .{ .module = erl_module_name });
+
+    // `-compile({no_auto_import,[fn/arity, ...]}).` for any user function whose
+    // name + arity shadows an Erlang auto-imported BIF: OTP 27+ erlc makes the
     // `ambiguous call of overridden pre Erlang/OTP R14 auto-imported BIF`
-    // from a warning to a compile error; the directive resolves the name
-    // clash and makes the generated code OTP-version-independent.
-    //
-    // The (name, arity) catalog is loaded from `prelude.erlang_bifs`
-    // (annotations in `libs/std/src/erlang_bifs.d.bp`) — see
-    // `loadAutoImportedBifsFromPrelude` above. Loaded per emit (cheap:
-    // ~110 decls; cached per-Emitter would be a future micro-opt).
-    var bif_table = try loadAutoImportedBifsFromPrelude(alloc);
-    defer freeAutoImportedBifs(alloc, &bif_table);
-    try emitNoAutoImportDirective(alloc, &aw.writer, program.decls, bif_table.items);
+    // diagnostic an error, and the directive keeps the generated code
+    // OTP-version-independent. The (name, arity) catalog comes from
+    // `prelude.erlang_bifs` (`libs/std/src/erlang_bifs.d.bp`).
+    const shadows = try noAutoImportRefs(b, program.decls, prelude_cache.autoImportedBifs());
+    if (shadows.len > 0) try forms.append(b.arena, .{ .no_auto_import = shadows });
 
     // Collect public function names for export.
     var pub_fns: std.ArrayListUnmanaged(ast.FnDecl) = .empty;
@@ -576,215 +1276,415 @@ fn emitErlang(
             else => {},
         }
     }
-    // Export generated entrypoint wrapper when main/0 exists.
-    // `main/1` is the escript entry point — escript calls it with the argv list.
+    // The generated entrypoint wrapper when main/0 exists; `main/1` is the
+    // escript entry point (escript calls it with the argv list).
     if (emit_entrypoint_wrapper) {
-        try aw.writer.writeAll("-export(['_botopink_main'/0, main/1]).\n");
+        try forms.append(b.arena, .{ .exports = &.{ .{ .name = "_botopink_main", .arity = 0 }, .{ .name = "main", .arity = 1 } } });
     }
     // Test runner escript entry point.
     if (test_mode and test_count > 0) {
-        try aw.writer.writeAll("-export([main/1]).\n");
+        try forms.append(b.arena, .{ .exports = &.{.{ .name = "main", .arity = 1 }} });
     }
 
-    // A record/struct/enum whose name another module imports must export its
-    // associated fns: the consumer reaches them via a remote call
-    // (`http:ok(...)`). Records emit assoc fns as bare local functions (see
-    // `emitRecord`), so the owner exports `<fn>/<arity>` for every no-`self`
-    // method. Scoped to consumed types → single-module programs are unchanged.
-    var assoc_exports: std.ArrayListUnmanaged(struct { name: []const u8, arity: usize }) = .empty;
-    defer assoc_exports.deinit(alloc);
+    // A record/enum whose name another module imports exports its associated
+    // fns: the consumer reaches them via a remote call (`http:ok(...)`). Records
+    // emit assoc fns as bare local functions (see `recordForms`), so the owner
+    // exports `<fn>/<arity>` for every no-`self` method. Scoped to consumed
+    // types → single-module programs are unchanged.
+    var exports: std.ArrayListUnmanaged(Ast.FnRef) = .empty;
+    if (comptime_module) |cm| try exports.appendSlice(b.arena, cm.exports);
+    for (pub_fns.items) |f| try exports.append(b.arena, .{ .name = f.name, .arity = fnArityNoSelf(f) });
+    // A host-backed `declare fn` another module imports is answered by the
+    // wrapper the decl loop emits, so it is exported like any other pub fn.
+    // `externalWrapperEmits` is the same predicate the decl loop applies, so the
+    // export list never names a wrapper that was skipped (erlc rejects an
+    // exported undefined function).
+    for (program.decls) |decl| switch (decl) {
+        .@"fn" => |f| if (externalWrapperNeeded(f, cross) and em.externalWrapperEmits(f)) {
+            // A top-level `declare fn` takes no `self`, so the declared
+            // parameter count is the wrapper's arity.
+            try exports.append(b.arena, .{ .name = f.name, .arity = f.params.len });
+        },
+        else => {},
+    };
     if (cross) |xc| {
-        const Collect = struct {
-            fn methods(list: *@TypeOf(assoc_exports), a: std.mem.Allocator, ms: []const ast.InterfaceMethod) !void {
-                for (ms) |m| {
-                    if (m.is_declare or !isAssocMethod(m)) continue;
-                    try list.append(a, .{ .name = m.name, .arity = m.params.len });
-                }
+        for (program.decls) |decl| {
+            // A `pub` type's methods are reachable from another module even when
+            // that module never names the type itself (a method called on a
+            // value some imported fn answered), so the owner exports them in any
+            // multi-module build.
+            const tdecl = switch (decl) {
+                .type_ => |t| if (t.isPub or xc.imported.contains(t.name)) t else continue,
+                else => continue,
+            };
+            for (tdecl.methods) |m| {
+                if (m.is_declare) continue;
+                // Both shapes are bare local functions here: an assoc fn takes
+                // only its declared parameters, an instance method takes the
+                // receiver as `params[0]`. A method name two types share is
+                // emitted under its mangled name (`grouping_toArray`), so the
+                // export must name what the module actually defines.
+                var mn_buf: [256]u8 = undefined;
+                const mn: []const u8 = if (em.isRecordMethodCollision(tdecl.name, m.name))
+                    try b.arena.dupe(u8, try Emitter.recordMethodAtom(&mn_buf, tdecl.name, m.name))
+                else
+                    m.name;
+                try exports.append(b.arena, .{ .name = mn, .arity = m.params.len });
             }
-        };
-        for (program.decls) |decl| switch (decl) {
-            .record => |r| if (xc.imported.contains(r.name)) try Collect.methods(&assoc_exports, alloc, r.methods),
-            .@"enum" => |e| if (xc.imported.contains(e.name)) try Collect.methods(&assoc_exports, alloc, e.methods),
-            else => {},
-        };
+        }
+        // A `pub implement` / `pub extend` another module activates
+        // (`import {PatoNada*} from "pond"`) is reached as a remote call, so the
+        // owner exports each method. Extension methods keep the receiver as
+        // their first parameter, so the arity is the full parameter count.
+        for (program.decls) |decl| {
+            const ext: struct { name: []const u8, is_pub: bool, methods: []const ast.ImplementMethod } = switch (decl) {
+                .implement => |im| .{ .name = im.name, .is_pub = im.isPub, .methods = im.methods },
+                .extend => |ex| .{ .name = ex.name, .is_pub = ex.isPub, .methods = ex.methods },
+                else => continue,
+            };
+            if (!ext.is_pub or !xc.imported.contains(ext.name)) continue;
+            for (ext.methods) |m| try exports.append(b.arena, .{ .name = m.name, .arity = m.params.len });
+        }
+    }
+    if (exports.items.len > 0) try forms.append(b.arena, .{ .exports = exports.items });
+
+    // A comptime module reaches its host glue in the resident prelude by its
+    // bare name, so the lowered body reads the same whether the glue is
+    // rendered here or compiled once at server warmup. A listing is not a
+    // compilable module and carries no directive.
+    if (comptime_module) |cm| {
+        if (cm.resident) |r| {
+            if (!cm.listing) try forms.append(b.arena, .{ .import = .{ .module = r.module, .funs = r.refs } });
+        }
     }
 
-    // Export other public functions + cross-imported associated fns.
-    if (pub_fns.items.len > 0 or assoc_exports.items.len > 0) {
-        try aw.writer.writeAll("-export([");
-        var first = true;
-        var exp_buf: [256]u8 = undefined;
-        for (pub_fns.items) |f| {
-            if (!first) try aw.writer.writeAll(", ");
-            first = false;
-            try aw.writer.print("{s}/{d}", .{ try fnAtom(f.name, &exp_buf), fnArityNoSelf(f) });
-        }
-        for (assoc_exports.items) |e| {
-            if (!first) try aw.writer.writeAll(", ");
-            first = false;
-            try aw.writer.print("{s}/{d}", .{ try fnAtom(e.name, &exp_buf), e.arity });
-        }
-        try aw.writer.writeAll("]).\n");
-    }
-
-    // Emit declarations
+    // Declarations, each after an empty line.
+    const decls_start = forms.items.len;
     for (program.decls) |decl| {
-        try aw.writer.writeByte('\n');
+        try forms.append(b.arena, .blank);
         switch (decl) {
-            .val => |v| {
-                if (emit_entrypoint_wrapper) {
-                    if (v.value.isComptimeExpr()) try em.emitTopVal(v, comptime_vals);
-                } else {
-                    try em.emitTopVal(v, comptime_vals);
-                }
-            },
+            // Only the `_`-named synthetic statements move into the entrypoint
+            // wrapper; every named `val` keeps its 0-arity form (see `top_vals`).
+            .val => |v| if (!emit_entrypoint_wrapper or v.value.isComptimeExpr() or
+                !std.mem.startsWith(u8, v.name, "_")) try em.topValForms(b, &forms, v),
             .@"fn" => |f| {
-                if (f.isExternal()) {
-                    // FFI declaration — calls lower to the remote target directly.
-                    if (em.externals.get(f.name)) |ref| {
-                        try aw.writer.print("%% external fn {s} -> {s}:{s}\n", .{ f.name, ref.module, ref.symbol });
-                    } else {
-                        try aw.writer.print("%% external fn {s} (no erlang target)\n", .{f.name});
-                    }
-                } else {
-                    try em.emitFn(f);
+                if (!f.isExternal()) {
+                    try em.fnForms(b, &forms, f);
+                    continue;
+                }
+                // FFI declaration — calls lower to the remote target directly.
+                const text = if (em.externals.get(f.name)) |ref|
+                    try std.fmt.allocPrint(b.arena, "external fn {s} -> {s}:{s}", .{ f.name, ref.module, ref.symbol })
+                else if (em.user_erlang_templates.contains(f.name))
+                    try std.fmt.allocPrint(b.arena, "external fn {s} -> erlang template", .{f.name})
+                else
+                    try std.fmt.allocPrint(b.arena, "external fn {s} (no erlang target)", .{f.name});
+                try forms.append(b.arena, .{ .comment = Ast.Comment.doc(text) });
+                // …and, when another module imports it, the wrapper that module
+                // calls (`hostlib:hostKey(V)`).
+                if (externalWrapperNeeded(f, cross)) {
+                    if (try em.externalWrapperForm(b, f)) |form| try forms.append(b.arena, form);
                 }
             },
-            .record => |r| try em.emitRecord(r),
-            .@"enum" => |e| try em.emitEnum(e),
-            .interface => |i| try em.emitInterface(i),
-            .implement => |im| try em.emitImplement(im),
-            .extend => |ex| try em.emitExtend(ex),
-            .use => |u| try em.emitUse(u),
+            .type_ => |tdecl| switch (tdecl.shape) {
+                .record => try em.recordForms(b, &forms, tdecl),
+                .enum_ => try em.enumForms(b, &forms, tdecl),
+            },
+            .behavior => |i| try em.interfaceForms(b, &forms, i),
+            .implement => |im| try em.implementForms(b, &forms, im),
+            .extend => |ex| try em.extendForms(b, &forms, ex),
+            .use => |u| try forms.append(b.arena, .{ .comment = Ast.Comment.doc(try useComment(b, u)) }),
             // `mod` is module-tree metadata; the submodule emits as its own atom.
             .mod => {},
-            .delegate => |d| try aw.writer.print("%% delegate {s}\n", .{d.name}),
+            .delegate => |d| try forms.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "delegate {s}", .{d.name})) }),
             // Test blocks are only compiled under `botopink test`; in normal
             // builds they are skipped entirely.
             .@"test" => |t| {
                 if (!test_mode) continue;
                 const idx = test_entries.items.len;
                 try test_entries.append(alloc, .{ .name = t.name, .line = t.loc.line, .idx = idx });
-                try em.emitTestFn(t, idx);
+                try forms.append(b.arena, try em.testFunction(b, t, idx));
             },
-            .comment => |c| {
-                const prefix = if (c.is_doc) "%%" else if (c.is_module) "%%%" else "%";
-                try aw.writer.print("{s} {s}\n", .{ prefix, c.text });
-            },
+            .comment => |c| try forms.append(b.arena, .{ .comment = .{
+                .level = if (c.is_doc) .doc else if (c.is_module) .module else .line,
+                .text = c.text,
+            } }),
         }
+    }
+
+    // Interface instance `default fn`s reached by some call site above.
+    try em.instanceDefaultForms(b, &forms);
+
+    // Runtime helpers a lowering reached. A comptime module always carries
+    // `'__bp_text'/1` (`comptime_helper_forms`); a listing renders no helper.
+    const listing_only = if (comptime_module) |cm| cm.listing else false;
+    if (comptime_module == null) {
+        // Runtime-dispatch shims a typed call site reached (no recorded
+        // lowering); their fallback clause for `toString` formats through
+        // `'__bp_text'/1`.
+        if (em.prim_shims.count() > 0) {
+            try em.primShimForms(b, &forms);
+            if (em.prim_shims.contains("toString/0")) em.needs_text_helper = true;
+        }
+    }
+    if (!listing_only) {
+        if (em.needs_add_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, add_helper_form });
+        if (em.needs_len_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, len_helper_form });
+        if (em.needs_index_helper) try forms.appendSlice(b.arena, &.{ .blank, index_helper_form });
+        if (em.needs_slice_helper) try forms.appendSlice(b.arena, &.{ .blank, slice_helper_form });
+        if (em.needs_text_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, text_helper_form });
+        if (em.needs_print_helper) try forms.appendSlice(b.arena, &.{ .blank, print_helper_form, .blank, show_helper_form });
+    }
+
+    if (comptime_module) |cm| {
+        if (!cm.listing) {
+            try em.primShimForms(b, &forms);
+            // The prelude carries them when there is one; a shim's `toString`
+            // fallback reaches `'__bp_text'/1` through the same `-import`.
+            if (cm.resident == null) {
+                for (&comptime_helper_forms) |form| try forms.appendSlice(b.arena, &.{ .blank, form });
+            }
+        }
+        for (cm.forms) |form| try forms.appendSlice(b.arena, &.{ .blank, form });
     }
 
     if (emit_entrypoint_wrapper) {
-        try aw.writer.writeByte('\n');
-        try aw.writer.writeAll("'_botopink_main'() ->\n");
+        // `'_botopink_main'() -> Stmt1, …, main().` runs the top-level
+        // expression statements in order, then `main/0`. Named vals are 0-arity
+        // functions instead, so they stay reachable from every function.
         const saved_indent = em.indent;
         em.indent = 1;
-
+        var stmts: std.ArrayListUnmanaged(Ast.Expr) = .empty;
         for (top_runtime_vals.items) |v| {
-            try em.writeIndent();
-            try em.emitTopValEntryStmt(v);
-            try aw.writer.writeAll(",\n");
+            if (!std.mem.startsWith(u8, v.name, "_")) continue;
+            try stmts.append(b.arena, try em.topValEntryExpr(b, v));
         }
-        try em.writeIndent();
-        try aw.writer.writeAll("main().\n");
+        try stmts.append(b.arena, try b.call("main", &.{}));
         em.indent = saved_indent;
-
-        // escript entry point — `escript <file>` calls main/1 with the argv list.
-        try aw.writer.writeByte('\n');
-        try aw.writer.writeAll("main(_Args) ->\n");
-        try aw.writer.writeAll("    '_botopink_main'().\n");
+        try forms.appendSlice(b.arena, &.{
+            .blank,
+            try blockFunction(b, "_botopink_main", &.{}, try b.body(stmts.items)),
+            .blank,
+            try blockFunction(b, "main", &.{Ast.Expr.v("_Args")}, try b.body(&.{try b.call("_botopink_main", &.{})})),
+        });
     }
 
-    // Test mode: emit the registry + runner + escript entry.
+    // Test mode: the registry, the runner and the escript entry.
     if (test_mode and test_entries.items.len > 0) {
-        try aw.writer.writeByte('\n');
-        try aw.writer.writeAll(
-            \\'__bp_run_one'({Name, Fun, Loc}) ->
-            \\    %% §T `----- RUN LOG -----` envelope (v0.beta.20 frente-b spec):
-            \\    %% emit TEST header + fenced ```logs``` block; the test body's
-            \\    %% io:format/io:put_chars calls land inside the fence
-            \\    %% sequentially via the group leader (no explicit capture
-            \\    %% needed for the sync erlang shape).
-            \\    io:format("TEST ~s ~s~n", [Loc, Name]),
-            \\    io:format("----- RUN LOG -----~n```logs~n", []),
-            \\    %% §T duration: monotonic millisecond clock around Fun(); the
-            \\    %% delta lands on its own `  duration <ms>ms` line between the
-            \\    %% fence close and the ok/FAIL line. Older parsers that don't
-            \\    %% recognise the duration line skip it (forward-compatible).
-            \\    T0 = erlang:monotonic_time(millisecond),
-            \\    Outcome = try
-            \\        Fun(),
-            \\        ok
-            \\    catch
-            \\        error:{bp_assert, Msg, ALoc} ->
-            \\            {fail, Msg, ALoc};
-            \\        Class:Reason ->
-            \\            {fail, {Class, Reason}, Loc}
-            \\    end,
-            \\    T1 = erlang:monotonic_time(millisecond),
-            \\    DurMs = erlang:max(0, T1 - T0),
-            \\    io:format("```~n", []),
-            \\    io:format("  duration ~pms~n", [DurMs]),
-            \\    case Outcome of
-            \\        ok ->
-            \\            io:format("  ok   ~s~n", [Name]),
-            \\            ok;
-            \\        {fail, FMsg, FLoc} when is_binary(FMsg) ->
-            \\            io:format("  FAIL ~s  (~s)  at ~s~n", [Name, FMsg, FLoc]),
-            \\            fail;
-            \\        {fail, FMsg, FLoc} ->
-            \\            io:format("  FAIL ~s  (~p)  at ~s~n", [Name, FMsg, FLoc]),
-            \\            fail
-            \\    end.
-            \\
-            \\'__bp_run_tests'(Filter) ->
-            \\    Tests = [
-            \\
-        );
+        const tests = try b.arena.alloc(Ast.Expr, test_entries.items.len);
         for (test_entries.items, 0..) |t, i| {
-            if (i > 0) try aw.writer.writeAll(",\n");
-            if (t.name) |n| {
-                try aw.writer.print("        {{<<\"{s}\">>, fun '__bp_test_{d}'/0, <<\"{s}.bp:{d}\">>}}", .{ n, t.idx, module_name, t.line });
-            } else {
-                try aw.writer.print("        {{<<\"test_{d}\">>, fun '__bp_test_{d}'/0, <<\"{s}.bp:{d}\">>}}", .{ t.idx, t.idx, module_name, t.line });
-            }
+            const name = t.name orelse try std.fmt.allocPrint(b.arena, "test_{d}", .{t.idx});
+            tests[i] = try b.tuple(&.{
+                .{ .lexeme_binary = name },
+                .{ .fun_ref = .{ .name = try std.fmt.allocPrint(b.arena, "__bp_test_{d}", .{t.idx}), .arity = 0 } },
+                .{ .lexeme_binary = try std.fmt.allocPrint(b.arena, "{s}.bp:{d}", .{ module_name, t.line }) },
+            });
         }
-        try aw.writer.writeAll(
-            \\
-            \\    ],
-            \\    Selected = case Filter of
-            \\        none -> Tests;
-            \\        _ -> [T || {N, _, _} = T <- Tests, binary:match(N, Filter) =/= nomatch]
-            \\    end,
-            \\    Results = ['__bp_run_one'(T) || T <- Selected],
-            \\    Failed = length([R || R <- Results, R =:= fail]),
-            \\    Passed = length(Results) - Failed,
-            \\    io:format("~p passed, ~p failed~n", [Passed, Failed]),
-            \\    case Failed > 0 of true -> halt(1); false -> ok end.
-            \\
-            \\main(Args) ->
-            \\    Filter = case Args of
-            \\        [F | _] -> list_to_binary(F);
-            \\        _ -> none
-            \\    end,
-            \\    '__bp_run_tests'(Filter).
-            \\
-        );
+        // Only a module that calls into another needs the sibling loader: a
+        // single-module project's runner stays exactly as it was.
+        try testRunnerForms(b, &forms, tests, em.imported_fns.count() > 0 or em.imported_types.count() > 0);
     }
 
+    var aw: std.Io.Writer.Allocating = .init(alloc);
+    defer aw.deinit();
+    const listing = if (comptime_module) |cm| cm.listing else false;
+    // A listing starts at the first decl, past its leading blank line.
+    const written = if (listing) forms.items[@min(decls_start + 1, forms.items.len)..] else forms.items;
+    try erlEmitter.writeForms(&aw.writer, written);
     return aw.toOwnedSlice();
 }
 
-// ── helpers ───────────────────────────────────────────────────────────────────
+const Forms = std.ArrayListUnmanaged(Ast.Form);
 
-/// Return a heap-allocated copy of `name` with the first byte uppercased.
-/// Caller owns the result.
-fn erlangVar(alloc: std.mem.Allocator, name: []const u8) ![]u8 {
-    if (name.len == 0) return alloc.dupe(u8, name);
-    const buf = try alloc.dupe(u8, name);
-    buf[0] = std.ascii.toUpper(buf[0]);
-    return buf;
+/// True when this module must answer `f` — a `pub` host-backed `declare fn` —
+/// with a callable wrapper: some other module imports the name, and erlang
+/// resolves a bare call in the CALLING module. Single-module builds and
+/// declarations nobody imports emit the comment alone, as before.
+fn externalWrapperNeeded(f: ast.FnDecl, cross: ?*const crossModule.CrossModule) bool {
+    if (!f.isPub or !f.isExternal()) return false;
+    const xc = cross orelse return false;
+    return xc.imported.contains(f.name);
 }
+
+/// `name(Patterns) ->` + block body.
+fn blockFunction(b: Ast.Builder, name: []const u8, patterns: []const Ast.Expr, body: Ast.Body) !Ast.Form {
+    return .{ .function = .{
+        .name = try b.arena.dupe(u8, name),
+        .clauses = try b.arena.dupe(Ast.Clause, &.{.{ .patterns = try b.exprs(patterns), .body = body }}),
+    } };
+}
+
+/// `import a, b` / `activate a, b` (a comment's text).
+fn useComment(b: Ast.Builder, u: ast.ImportDecl) ![]const u8 {
+    var text: std.ArrayListUnmanaged(u8) = .empty;
+    try text.appendSlice(b.arena, if (u.activationOnly) "activate " else "import ");
+    for (u.imports, 0..) |imp, i| {
+        if (i > 0) try text.appendSlice(b.arena, ", ");
+        try text.appendSlice(b.arena, imp.name());
+    }
+    return text.items;
+}
+
+/// `io:format("Format", [Args])`.
+fn ioFormat(b: Ast.Builder, format: []const u8, args: []const Ast.Expr) !Ast.Expr {
+    return b.remote("io", "format", &.{ .{ .string = format }, try b.list(args) });
+}
+
+fn comments(b: Ast.Builder, lines: []const []const u8) ![]const Ast.Stmt {
+    const out = try b.arena.alloc(Ast.Stmt, lines.len);
+    for (lines, 0..) |line, i| out[i] = .{ .comment = Ast.Comment.doc(line) };
+    return out;
+}
+
+/// The test-mode runner: `'__bp_run_one'/1` runs one `{Name, Fun, Loc}` inside
+/// the `----- RUN LOG -----` envelope, `'__bp_run_tests'/1` runs the registry
+/// (`tests`, filtered by name) and halts non-zero on failure, and `main/1` is the
+/// escript entry.
+fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_siblings: bool) !void {
+    const V = Ast.Expr.v;
+    const A = Ast.Expr.a;
+    const monotonic = try b.remote("erlang", "monotonic_time", &.{A("millisecond")});
+    const outcome = try b.match(V("Outcome"), .{ .try_catch = .{
+        .body = try b.body(&.{ .{ .apply = .{ .fun = try b.ptr(V("Fun")) } }, A("ok") }),
+        .catches = try b.arena.dupe(Ast.Clause, &.{
+            .{
+                .patterns = try b.exprs(&.{try b.exception(A("error"), try b.tuple(&.{ A("bp_assert"), V("Msg"), V("ALoc") }))}),
+                .body = try b.body(&.{try b.tuple(&.{ A("fail"), V("Msg"), V("ALoc") })}),
+            },
+            .{
+                .patterns = try b.exprs(&.{try b.exception(V("Class"), V("Reason"))}),
+                .body = try b.body(&.{try b.tuple(&.{ A("fail"), try b.tuple(&.{ V("Class"), V("Reason") }), V("Loc") })}),
+            },
+        }),
+    } });
+    const fail_pattern = try b.tuple(&.{ A("fail"), V("FMsg"), V("FLoc") });
+    const report = try b.caseOf(V("Outcome"), &.{
+        .{ .patterns = try b.exprs(&.{A("ok")}), .body = try b.body(&.{ try ioFormat(b, "  ok   ~s~n", &.{V("Name")}), A("ok") }) },
+        .{
+            .patterns = try b.exprs(&.{fail_pattern}),
+            .guards = try b.exprs(&.{try b.call("is_binary", &.{V("FMsg")})}),
+            .body = try b.body(&.{ try ioFormat(b, "  FAIL ~s  (~s)  at ~s~n", &.{ V("Name"), V("FMsg"), V("FLoc") }), A("fail") }),
+        },
+        .{ .patterns = try b.exprs(&.{fail_pattern}), .body = try b.body(&.{ try ioFormat(b, "  FAIL ~s  (~p)  at ~s~n", &.{ V("Name"), V("FMsg"), V("FLoc") }), A("fail") }) },
+    });
+
+    var run_one: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
+    try run_one.appendSlice(b.arena, try comments(b, &.{
+        "§T `----- RUN LOG -----` envelope (v0.beta.20 frente-b spec):",
+        "emit TEST header + fenced ```logs``` block; the test body's",
+        "io:format/io:put_chars calls land inside the fence",
+        "sequentially via the group leader (no explicit capture",
+        "needed for the sync erlang shape).",
+    }));
+    try run_one.appendSlice(b.arena, &.{
+        .{ .expr = try ioFormat(b, "TEST ~s ~s~n", &.{ V("Loc"), V("Name") }) },
+        .{ .expr = try ioFormat(b, "----- RUN LOG -----~n```logs~n", &.{}) },
+    });
+    try run_one.appendSlice(b.arena, try comments(b, &.{
+        "§T duration: monotonic millisecond clock around Fun(); the",
+        "delta lands on its own `  duration <ms>ms` line between the",
+        "fence close and the ok/FAIL line. Older parsers that don't",
+        "recognise the duration line skip it (forward-compatible).",
+    }));
+    try run_one.appendSlice(b.arena, &.{
+        .{ .expr = try b.match(V("T0"), monotonic) },
+        .{ .expr = outcome },
+        .{ .expr = try b.match(V("T1"), monotonic) },
+        .{ .expr = try b.match(V("DurMs"), try b.remote("erlang", "max", &.{
+            Ast.Expr.t(Term.int(0)),
+            .{ .binop = .{ .op = "-", .lhs = try b.ptr(V("T1")), .rhs = try b.ptr(V("T0")), .parens = false } },
+        })) },
+        .{ .expr = try ioFormat(b, "```~n", &.{}) },
+        .{ .expr = try ioFormat(b, "  duration ~pms~n", &.{V("DurMs")}) },
+        .{ .expr = report },
+    });
+
+    const selected = try b.caseOf(V("Filter"), &.{
+        try b.clause(&.{A("none")}, &.{}, &.{V("Tests")}),
+        try b.clause(&.{V("_")}, &.{}, &.{.{ .list_comp = .{
+            .element = try b.ptr(V("T")),
+            .qualifiers = try b.arena.dupe(Ast.ListComp.Qualifier, &.{
+                .{ .generator = .{ .pattern = try b.match(try b.tuple(&.{ V("N"), V("_"), V("_") }), V("T")), .list = V("Tests") } },
+                .{ .filter = .{ .binop = .{ .op = "=/=", .lhs = try b.ptr(try b.remote("binary", "match", &.{ V("N"), V("Filter") })), .rhs = try b.ptr(A("nomatch")), .parens = false } } },
+            }),
+        } }}),
+    });
+    const results: Ast.Expr = .{ .list_comp = .{
+        .element = try b.ptr(try b.call("__bp_run_one", &.{V("T")})),
+        .qualifiers = try b.arena.dupe(Ast.ListComp.Qualifier, &.{.{ .generator = .{ .pattern = V("T"), .list = V("Selected") } }}),
+    } };
+    const failures: Ast.Expr = .{ .list_comp = .{
+        .element = try b.ptr(V("R")),
+        .qualifiers = try b.arena.dupe(Ast.ListComp.Qualifier, &.{
+            .{ .generator = .{ .pattern = V("R"), .list = V("Results") } },
+            .{ .filter = .{ .binop = .{ .op = "=:=", .lhs = try b.ptr(V("R")), .rhs = try b.ptr(A("fail")), .parens = false } } },
+        }),
+    } };
+    const run_tests = try b.body(&.{
+        try b.match(V("Tests"), .{ .list_block = tests }),
+        try b.match(V("Selected"), selected),
+        try b.match(V("Results"), results),
+        try b.match(V("Failed"), try b.call("length", &.{failures})),
+        try b.match(V("Passed"), .{ .binop = .{ .op = "-", .lhs = try b.ptr(try b.call("length", &.{V("Results")})), .rhs = try b.ptr(V("Failed")), .parens = false } }),
+        try ioFormat(b, "~p passed, ~p failed~n", &.{ V("Passed"), V("Failed") }),
+        try b.caseInline(.{ .binop = .{ .op = ">", .lhs = try b.ptr(V("Failed")), .rhs = try b.ptr(Ast.Expr.t(Term.int(0))), .parens = false } }, &.{
+            try b.clause(&.{A("true")}, &.{}, &.{try b.call("halt", &.{Ast.Expr.t(Term.int(1))})}),
+            try b.clause(&.{A("false")}, &.{}, &.{A("ok")}),
+        }),
+    });
+
+    const filter = try b.caseOf(V("Args"), &.{
+        try b.clause(&.{try b.cons(&.{V("F")}, V("_"))}, &.{}, &.{try b.call("list_to_binary", &.{V("F")})}),
+        try b.clause(&.{V("_")}, &.{}, &.{A("none")}),
+    });
+
+    try forms.appendSlice(b.arena, &.{
+        .blank,
+        try blockFunction(b, "__bp_run_one", &.{try b.tuple(&.{ V("Name"), V("Fun"), V("Loc") })}, .{ .stmts = run_one.items }),
+        .blank,
+        try blockFunction(b, "__bp_run_tests", &.{V("Filter")}, run_tests),
+    });
+
+    // `escript <module>.erl` compiles and loads THAT module only, so a call
+    // into a sibling or a dependency (`a:twice(X)`) is `undef` at run time.
+    // Compile and load every other module the runner wrote beside this one,
+    // once, before the tests run. A module that does not compile is skipped:
+    // its own cell reports the error.
+    const main_body = if (load_siblings) blk: {
+        const loader: Ast.Expr = .{ .raw =
+            \\(fun() ->
+            \\        Dir = filename:dirname(escript:script_name()),
+            \\        Self = atom_to_list(?MODULE) ++ ".erl",
+            \\        lists:foreach(fun(Src) ->
+            \\            case filename:basename(Src) =:= Self of
+            \\                true -> ok;
+            \\                false ->
+            \\                    case compile:file(Src, [binary, return_errors, {i, Dir}]) of
+            \\                        {ok, Mod, Bin} -> code:load_binary(Mod, Src, Bin);
+            \\                        _ -> ok
+            \\                    end
+            \\            end
+            \\        end, filelib:wildcard(filename:join([Dir, "**", "*.erl"])))
+            \\    end)()
+        };
+        try forms.appendSlice(b.arena, &.{
+            .blank,
+            try blockFunction(b, "__bp_load_siblings", &.{}, try b.body(&.{loader})),
+        });
+        break :blk try b.body(&.{
+            try b.call("__bp_load_siblings", &.{}),
+            try b.match(V("Filter"), filter),
+            try b.call("__bp_run_tests", &.{V("Filter")}),
+        });
+    } else try b.body(&.{ try b.match(V("Filter"), filter), try b.call("__bp_run_tests", &.{V("Filter")}) });
+
+    try forms.appendSlice(b.arena, &.{
+        .blank,
+        try blockFunction(b, "main", &.{V("Args")}, main_body),
+    });
+}
+
+// ── helpers ───────────────────────────────────────────────────────────────────
 
 /// True when `name` looks like a module/type reference (PascalCase) rather than
 /// a local variable. A qualified call whose receiver is such a name maps to an
@@ -800,65 +1700,9 @@ fn isModuleRef(name: []const u8) bool {
     return name.len >= 3 and name[0] == '_' and name[1] == '_' and std.ascii.isUpper(name[2]);
 }
 
-/// Return a heap-allocated copy of `name` with the first byte lowercased so it
-/// is a valid unquoted Erlang module atom (`List` → `list`). Inverse of
-/// `erlangVar`. Caller owns the result.
-fn erlangModule(alloc: std.mem.Allocator, name: []const u8) ![]u8 {
-    if (name.len == 0) return alloc.dupe(u8, name);
-    const buf = try alloc.dupe(u8, name);
-    buf[0] = std.ascii.toLower(buf[0]);
-    return buf;
-}
-
-/// Erlang reserved words. A botopink identifier that collides with one of these
-/// (e.g. a fn named `of` or `div`, an HTML builder `div`) is a syntactically
-/// valid *unquoted* atom lexically, yet the parser rejects it as a bare atom —
-/// it must be single-quoted (`'of'`). Used to decide quoting for atoms and
-/// function names alike. Source: Erlang reference manual reserved words.
-const erlang_reserved = std.StaticStringMap(void).initComptime(.{
-    .{"after"}, .{"and"}, .{"andalso"}, .{"band"}, .{"begin"},  .{"bnot"},
-    .{"bor"},   .{"bsl"}, .{"bsr"},     .{"bxor"}, .{"case"},   .{"catch"},
-    .{"cond"},  .{"div"}, .{"end"},     .{"fun"},  .{"if"},     .{"let"},
-    .{"maybe"}, .{"not"}, .{"of"},      .{"or"},   .{"orelse"}, .{"receive"},
-    .{"rem"},   .{"try"}, .{"when"},    .{"xor"},
-});
-
-fn isErlangReserved(name: []const u8) bool {
-    return erlang_reserved.has(name);
-}
-
-/// Render `name` as a valid Erlang atom into `buf` — quoted when it is not a
-/// valid unquoted atom (must start lowercase; only alnum/`_`/`@` after) or when
-/// it collides with a reserved word.
-fn atomName(name: []const u8, buf: []u8) ![]const u8 {
-    var ok = name.len > 0 and name[0] >= 'a' and name[0] <= 'z' and !isErlangReserved(name);
-    if (ok) for (name) |ch| {
-        if (!(std.ascii.isAlphanumeric(ch) or ch == '_' or ch == '@')) {
-            ok = false;
-            break;
-        }
-    };
-    if (ok) return name;
-    return std.fmt.bufPrint(buf, "'{s}'", .{name});
-}
-
-/// Render `name` as a callable Erlang function atom into `buf`. Function names
-/// from botopink are normally valid lowercase identifiers, so this is a no-op
-/// for them; it adds single-quoting when the name collides with a reserved word
-/// (`of` → `'of'`) OR when the name is not a valid bare atom (leading `_` from
-/// decorator-emitted `__rkScan_<Type>` helpers, leading uppercase, leading
-/// digit, or non-alnum/`_`/`@` body bytes).
-fn fnAtom(name: []const u8, buf: []u8) ![]const u8 {
-    var ok = name.len > 0 and name[0] >= 'a' and name[0] <= 'z' and !isErlangReserved(name);
-    if (ok) for (name) |ch| {
-        if (!(std.ascii.isAlphanumeric(ch) or ch == '_' or ch == '@')) {
-            ok = false;
-            break;
-        }
-    };
-    if (ok) return name;
-    return std.fmt.bufPrint(buf, "'{s}'", .{name});
-}
+/// Module atom for a type-like name (`List` → `list`), allocated by the caller's
+/// allocator.
+const erlangModule = erlEmitter.moduleName;
 
 /// Mangled atom for an interface associated `default fn` (`Array`.`range` →
 /// `array_range`). The interface's first char is lowercased so the result is a
@@ -870,14 +1714,46 @@ fn interfaceAssocAtom(buf: []u8, iface: []const u8, method: []const u8) ![]const
     return std.fmt.bufPrint(buf, "{c}{s}_{s}", .{ std.ascii.toLower(iface[0]), iface[1..], method });
 }
 
+/// True when a parameter can hold `undefined` at runtime: it is declared `?T`,
+/// or it defaults to `null` (`end: i32 = null`, the optional-argument form the
+/// arity-dispatch default fns use). `if (p)` on such a parameter is a null test,
+/// not a boolean test.
+fn isNullableParam(p: ast.Param) bool {
+    if (p.typeRef == .optional) return true;
+    const d = p.default orelse return false;
+    return d == .literal and d.literal.kind == .null_;
+}
+
+/// An interface instance `default fn` — a `default fn` whose first parameter is
+/// `self` and which carries a body. Unlike an associated default (`Array.range`)
+/// it is reached through a value receiver (`xs.all(pred)`), so the emitted form
+/// keeps `self` as its first parameter.
+const IfaceDefault = struct { iface: []const u8, method: ast.BehaviorMethod };
+
+/// One `'__bp_prim_<callee>'/<argc + 1>` runtime-dispatch shim a comptime body
+/// reached. `callee` borrows from the body's AST.
+const PrimShim = struct { callee: []const u8, argc: usize };
+
+/// The primitive kinds a shim dispatches on, in clause order, with the guard
+/// BIF that recognises each one's runtime representation.
+const prim_shim_kinds = [_]struct { kind: envMod.PrimKind, guard: Ast.Expr }{
+    .{ .kind = .array, .guard = isA("list", "Recv") },
+    .{ .kind = .string, .guard = isA("binary", "Recv") },
+    .{ .kind = .bool, .guard = isA("boolean", "Recv") },
+    .{ .kind = .int, .guard = isA("integer", "Recv") },
+    .{ .kind = .float, .guard = isA("float", "Recv") },
+};
+
 /// Tuple positional member (`_0`, `_1`, …) → the digits, else null.
 /// Distinguishes tuple index access from `_`-prefixed record fields.
 fn tupleIndexMember(member: []const u8) ?[]const u8 {
-    if (member.len < 2 or member[0] != '_') return null;
-    for (member[1..]) |ch| {
+    // `t._N` and the bare `t.N` both read element N.
+    const digits = if (member.len > 0 and member[0] == '_') member[1..] else member;
+    if (digits.len == 0) return null;
+    for (digits) |ch| {
         if (!std.ascii.isDigit(ch)) return null;
     }
-    return member[1..];
+    return digits;
 }
 
 /// §A5 annotation-driven prim-method dispatch entry: the host module + symbol +
@@ -898,9 +1774,8 @@ const PrimErlangCall = struct {
 
 /// Map a primitive `PrimKind` to its controller interface name in
 /// `primitives.d.bp`. Mirrors `comptime/infer.zig`'s `primitiveInterfaceName`.
-/// `.int` / `.float` map to the widest interface that carries the host-
-/// backed methods (`Integer` for both signed + unsigned widths,
-/// `Float` for f32/f64) — the concrete `I32`/`I64`/`U32`/`U64`/`F32`/`F64`
+/// `.int` maps to `Signed` (its chain reaches `Integer` and `Number`) and
+/// `.float` to `Float` — the concrete `I32`/`I64`/`U32`/`U64`/`F32`/`F64`
 /// interfaces are empty markers that extend their parent, so a method
 /// declared on `Integer` (e.g. `toString → erlang:integer_to_binary`)
 /// reaches any concrete-width receiver through `walkPrimIfaceChain`.
@@ -909,7 +1784,11 @@ fn primIfaceForKind(k: envMod.PrimKind) ?[]const u8 {
         .array => "Array",
         .string => "String",
         .bool => "Bool",
-        .int => "Integer",
+        // `Signed` extends `Integer`, so a walk from it reaches both: `abs`,
+        // declared on `Signed`, was never found from `Integer` and fell through
+        // to the auto-imported `abs/1`. The checker already rejected `abs` on an
+        // unsigned receiver, so starting from the signed interface is safe.
+        .int => "Signed",
         .float => "Float",
     };
 }
@@ -917,7 +1796,7 @@ fn primIfaceForKind(k: envMod.PrimKind) ?[]const u8 {
 /// Walk the `extends` chain of `iface` (depth-bounded) and yield each
 /// successive parent name, starting with `iface` itself. Mirrors the
 /// `primMethodReturnTypeFromIface` chain walk on the infer side — used
-/// by `tryEmitPrimAnnotation` so a method declared on a parent
+/// by `primAnnotationNode` so a method declared on a parent
 /// (`Integer.toString` for an `I32` receiver) lights up via dispatch
 /// without flattening the map at collection time.
 const PrimIfaceWalker = struct {
@@ -940,6 +1819,11 @@ const PrimIfaceWalker = struct {
     }
 };
 
+/// `@print` / `@println` / `@debug` — the builtins lowered to `'__bp_print'/1`.
+fn isPrintBuiltin(callee: []const u8) bool {
+    return std.mem.eql(u8, callee, "print") or std.mem.eql(u8, callee, "println") or std.mem.eql(u8, callee, "debug");
+}
+
 /// True when any `External.<target>(..., "true")` annotation carries the
 /// inline flag (last arg is the literal `"true"`).
 fn hasExternalInline(annotations: []const ast.Annotation, target: []const u8) bool {
@@ -955,10 +1839,25 @@ fn hasExternalInline(annotations: []const ast.Annotation, target: []const u8) bo
 // ── Emitter ───────────────────────────────────────────────────────────────────
 
 const Emitter = struct {
-    out: *std.Io.Writer,
     cv: std.StringHashMap([]const u8),
     indent: usize = 0,
     try_seq: usize = 0,
+    /// 06 C13 — the host-backed fn whose `#[@External.Erlang(…)]` is missing,
+    /// filled at the throw site so `codegenEmit` can turn
+    /// `error.MissingExternalTarget` into a located diagnostic naming it.
+    missing_external: ?moduleOutput.MissingExternal = null,
+    /// While set, `patternBindVar` renders every binder as `_`: the pattern is
+    /// being lowered as a pure test (`assertPatternStmts`'s `case` arm) and
+    /// nothing reads its names.
+    pattern_discard: bool = false,
+    /// Hands out the clause-local variables a tuple pattern under `..` needs
+    /// (`freshPatternVar`). Monotonic for the whole module, so no two clauses
+    /// share one.
+    pattern_var_next: u32 = 0,
+    /// Comptime modules (see `emitComptimeModule`) carry no inferred types, so
+    /// type-directed lowerings dispatch at runtime instead: `+` → `'__bp_add'/2`
+    /// (binary concat or arithmetic), `.len`/`.length` → `'__bp_len'/2`.
+    untyped: bool = false,
     alloc: std.mem.Allocator,
     /// Static extension dispatch (F6): call-site loc → activated extension symbol.
     /// At these sites `recv.m(args)` lowers to the bare local function `m(Recv, args)`.
@@ -972,17 +1871,17 @@ const Emitter = struct {
     externals_missing: std.StringHashMap(void),
     /// §A2 user-fn per-callee template dispatch (erlang twin of the
     /// commonJS `user_node_templates`): a `declare fn` whose
-    /// `@external(erlang, …)` symbol is a template (contains `$0`/`$self`/…)
+    /// `@external(erlang, …)` symbol is a template (contains `$0`/`$1`/…)
     /// or whose annotation list carries `when(argc == N): "..."` branches.
     /// The decl emits no `module:symbol` reference at the top level — the
     /// template renders inline at every call site, matching how the
-    /// existing interface-method `tryEmitPrimAnnotation` path already
+    /// existing interface-method `primAnnotationNode` path already
     /// handles per-callee templates on primitives.d.bp methods.
     user_erlang_templates: std.StringHashMap(PrimErlangCall),
     /// Module names imported via `import {…} from "std"` — a lowercase
     /// receiver naming one lowers to a remote call (`option:map(Args)`).
     std_imports: std.StringHashMap(void),
-    /// When true, `emitFn` keeps the `self` parameter (extension methods take
+    /// When true, `fnForms` keeps the `self` parameter (extension methods take
     /// the receiver as an explicit first argument; ordinary fns drop `self`).
     keep_self: bool = false,
     /// `botopink test` compilation: `assert` lowers to a `bp_assert` error the
@@ -1002,12 +1901,46 @@ const Emitter = struct {
     /// (`case o { Lt -> … }`) lowers to the atom `'Lt'`, not an erlang variable
     /// that would shadow-match anything.
     enum_variants: std.StringHashMap(void),
+    /// Enum variant name → its declared field names, in constructor order. A
+    /// `case` pattern needs it for decision 8 §5.1's P4 and P7: a written label
+    /// names a POSITION in the tagged tuple (`.Rect(height: h, width: w)` fills
+    /// slot 0 with `w`), and `..` has to be written out as the `_`s of the slots
+    /// the pattern did not name — which is an arity the pattern itself does not
+    /// carry. Flat across enums, like `enum_variants`. The slice is owned; the
+    /// names borrow the AST (or the export index).
+    variant_fields: std.StringHashMap([]const []const u8),
+    /// `"<Enum>.<Variant>"` for every enum whose variant list the emitter has
+    /// seen — local declarations and imported `pub` enums. `enum_variants` is
+    /// flat (a case arm only needs to know that SOME enum declares the name);
+    /// this one answers "is `callee` a variant OF `name`", which is what tells a
+    /// payload-variant constructor (`Color.Rgb(r, g, b)`) from an associated
+    /// `fn` declared on the enum (`Shape.unit()`).
+    enum_variant_of: std.StringHashMap(void),
+    /// Enums whose variant list is known, so a miss in `enum_variant_of` means
+    /// "not a variant" rather than "never registered". A host enum injected by a
+    /// comptime body (`ComptimeModule.host_enums`) has no declaration here and
+    /// is deliberately absent.
+    enum_variants_known: std.StringHashMap(void),
     /// Cross-module link index (null in the standalone path).
     cross: ?*const CrossModule = null,
+    /// Every module's `pub enum`s (empty in the standalone path).
+    enum_exports: []const EnumExport = &.{},
     /// Imported record/struct name → owning module atom. A qualified call whose
     /// receiver names one (`Response.ok(...)` for an imported `Response`) lowers
     /// to a remote call into the owner (`http:ok(...)`), not a bare local fn.
     imported_types: std.StringHashMap([]const u8),
+    /// Imported function name → owning module atom: a `pub fn` this module
+    /// imports (`import {twice};`) and the methods of an imported record/enum.
+    /// Erlang has no ambient scope, so a call to one of these is a remote call
+    /// (`a:twice(X)`); emitted bare it was `function twice/1 undefined`. A local
+    /// definition of the same name/arity wins (an `@emit`ed mock body defines
+    /// `find/2` next to the imported `find`).
+    imported_fns: std.StringHashMap([]const u8),
+    /// `"<Record>.<field>"` of every field declared with a function type, and
+    /// the bare field names — inference records no instance lowering for a call
+    /// on a field, so the untyped fallback matches on the name alone.
+    fn_typed_fields: std.StringHashMap(void),
+    fn_typed_field_names: std.StringHashMap(void),
     /// Value-receiver instance call lowerings (call loc → record/primitive). A
     /// record method lowers to `method(Recv, args)` (or `owner:method(...)` for
     /// an imported type); a primitive method lowers to the erlang host op.
@@ -1017,6 +1950,25 @@ const Emitter = struct {
     /// a flat per-function set is exact. A no-receiver call whose callee is a
     /// local lowers to a fun application (`F(args)`), not a bare function call.
     locals: std.StringHashMap(void),
+    /// The subset of `locals` declared with `var` in the current function —
+    /// the only receivers a mutating method call (`receiverMutation`) rebinds.
+    /// Reset per function alongside `locals`.
+    mutable_locals: std.StringHashMapUnmanaged(void) = .empty,
+    /// Local closures (`val emit = { x -> tokens = tokens.append([x]); }`) whose
+    /// body reassigns variables of the enclosing function, keyed by the closure
+    /// name, valued by those variables. Such a closure takes the variables as an
+    /// extra last argument and answers their new values (`mutatingClosureExpr`);
+    /// a statement-position call rebinds them. Reset with `locals`.
+    mutating_closures: std.StringHashMapUnmanaged([]const []const u8) = .empty,
+    /// Single-assignment versioning. Erlang variables bind once, so a botopink
+    /// name rebound in the same function (`count += 1`, `msg = msg + x`) gets a
+    /// fresh variable per binding: `Count`, `Count@1`, `Count@2`. `var_current`
+    /// is the version reads resolve to; `var_next` the last version handed out
+    /// (never reused, so a version bound in one `case` arm can't collide with a
+    /// later one). Both reset per function. `@` keeps versions disjoint from
+    /// botopink identifiers.
+    var_current: std.StringHashMap(u32),
+    var_next: std.StringHashMap(u32),
     /// Module-level `val` names emitted as 0-arity functions (library / test
     /// mode, no entrypoint wrapper). A bare reference to one is NOT a variable —
     /// it lowers to the call `name()`. Empty when an entrypoint wrapper binds the
@@ -1028,23 +1980,120 @@ const Emitter = struct {
     /// `Interface.method(...)` call resolves to the local fn, not a remote
     /// `array:range`. Populated by `collectInterfaces`.
     interface_assoc: std.StringHashMap(void),
+    /// Interface INSTANCE `default fn`s (a `self` receiver plus a body), keyed
+    /// `<Iface>.<method>` — `"Bool.nor"`, `"String.slice"`, `"Number.clamp"`.
+    /// Populated by `collectInterfaces` alongside `interface_assoc`.
+    iface_instance_defaults: std.StringHashMap(IfaceDefault),
+    /// Every `behavior` this module declares, by name — the erlang twin of
+    /// commonJS's `local_interfaces`. `recordForms` walks it to emit the bodied
+    /// instance `default fn`s a record adopts with `implement`. Keys and values
+    /// borrow the program AST.
+    local_behaviors: std.StringHashMap(ast.BehaviorDecl),
+    /// `<Record>.<method>` for each adopted instance `default fn` this module
+    /// emits as one of the record's own functions. Populated by
+    /// `collectAdoptedIfaceDefaults`; owns its keys.
+    adopted_defaults: std.StringHashMap(void),
+    /// The record `self` names while an adopted interface `default fn` body is
+    /// being emitted, else null. Inference records no lowering inside such a
+    /// body (the method belongs to the behavior, not to the record), so
+    /// `self.size()` would otherwise be a bare `size/1` that a record-method
+    /// collision has mangled away.
+    self_record_type: ?[]const u8 = null,
+    /// The subset of `iface_instance_defaults` a call site actually reached (see
+    /// `ifaceDefaultNode`). Only these are emitted, as `<iface>_<method>(Self,
+    /// …)` forms at the end of the module — emitting every default of every
+    /// inlined primitive interface would bury each module in dead code. Insertion
+    /// ordered so the emitted forms are deterministic; the map grows while it is
+    /// drained (a default body may call another default), so `instanceDefaultForms`
+    /// walks it to a fixpoint.
+    needed_instance_defaults: std.StringArrayHashMapUnmanaged(IfaceDefault) = .empty,
+    /// `<Iface>.<method>` for every interface method declared to return `Self`.
+    /// Inside an instance `default fn` body it is what makes a chained receiver
+    /// (`self.filter(pred).length`) keep the interface's primitive kind.
+    iface_self_returns: std.StringHashMap(void),
+    /// The primitive kind `self` carries while an interface instance
+    /// `default fn` body is being emitted, else null. Inference records no
+    /// lowering for a `Self`-typed receiver (it is generic over every
+    /// implementor), so the emitter re-derives it from the owning interface.
+    self_prim_kind: ?envMod.PrimKind = null,
+    /// True while emitting an inlined interface `default fn` body. Such a body
+    /// may call a std prelude helper (`stringSlice1`) the consuming module never
+    /// declares, so bare callees also resolve against the prelude template index.
+    in_iface_default: bool = false,
+    /// The variables the innermost condition loop (decision 8 §10) threads,
+    /// while its body is emitted; null outside one and behind a fun boundary
+    /// (a collection loop, a lambda). A `break` / `continue` there throws them.
+    cond_loop: ?[]const []const u8 = null,
+    /// Set while lowering a condition loop whose `break` carries a value: the
+    /// break's throw then carries it too, and the loop answers it.
+    cond_loop_valued: bool = false,
+    /// The accumulator a YIELDING condition loop collects into, when it has one
+    /// (`cond_yield_acc`): each `yield <v>` conses onto it and the loop answers
+    /// the reversed list. Null outside such a loop, where a `yield` is dropped.
+    cond_loop_yield: ?[]const u8 = null,
+    /// Numbers the named funs of condition loops so a nested one does not
+    /// shadow its parent's name.
+    cond_loop_seq: u32 = 0,
+    /// Numbers the variables a condition loop's `catch` binds, so two loops in
+    /// one function body never reuse a name Erlang considers unsafe after `try`.
+    cond_loop_vars: u32 = 0,
+    /// Comptime modules only: the `(method, argc)` runtime-dispatch shims the
+    /// body's method calls reached (see `untypedPrimCallNode`), keyed
+    /// `"<method>/<argc>"` (owned) and insertion ordered so the emitted forms
+    /// are deterministic. Drained by `primShimForms`.
+    prim_shims: std.StringArrayHashMapUnmanaged(PrimShim) = .empty,
+    /// Comptime modules only: the host forms appended after the body
+    /// (`ComptimeModule.forms`). A method call whose `(name, argc + 1)` one of
+    /// them defines stays the bare local call (`q.text()` → `text(Q)`).
+    host_forms: []const Ast.Form = &.{},
+    /// Comptime modules only: the host forms a resident prelude defines
+    /// (`ComptimeModule.Resident.forms`). Not rendered into this module — the
+    /// `-import` above resolves the bare call — but they answer
+    /// `isHostFunction` exactly as `host_forms` does, so where a method call
+    /// lowers does not depend on which side of the `-import` its host lives.
+    resident_forms: []const Ast.Form = &.{},
+    /// Comptime modules only: `ComptimeModule.unsupported_method`.
+    unsupported_method: ?*UnsupportedMethod = null,
+    /// Locals that may hold `undefined` (null): a parameter declared `?T` or
+    /// defaulted to `null`. `if (x)` on one is a null test, not a boolean test.
+    /// Reset per function alongside `locals`.
+    nullable_locals: std.StringHashMap(void),
+    /// Locals statically known to hold a `string`: a parameter declared `string`
+    /// or a `val`/`var` bound to a string expression. Feeds `isStringExpr`, which
+    /// decides whether `+` is binary concatenation or arithmetic. Reset per
+    /// function alongside `locals`.
+    string_locals: std.StringHashMap(void),
+    /// Module-level names that evaluate to a `string`: a `fn` declared
+    /// `-> string` and a top-level `val` bound to a string expression (both are
+    /// reached as 0-arity/`n`-arity local calls). Module-wide, never reset.
+    string_names: std.StringHashMap(void),
+    /// Locals statically known to hold a number, with its kind: a parameter
+    /// declared with a numeric type, or a `val`/`var` bound to a numeric
+    /// expression (`numKind`). Decides `+` (arithmetic vs `'__bp_add'/2`) and
+    /// `/` (`div` vs `/`). Reset per function alongside `locals`.
+    num_locals: std.StringHashMapUnmanaged(NumKind) = .empty,
+    /// Module-level names answering a number: a `fn` declared with a numeric
+    /// return type, a top-level `val` bound to a numeric expression.
+    num_names: std.StringHashMapUnmanaged(NumKind) = .empty,
+    /// Set when a typed `+` fell back to `'__bp_add'/2`.
+    needs_add_helper: bool = false,
     /// §A5 annotation-driven prim-method dispatch: `<Iface>.<method>` →
     /// `(host module, host symbol, ordered arg names)` parsed from
     /// `@external(erlang, "mod", "sym(args)")` on a primitive interface method.
-    /// Populated by `collectPrimErlangDispatch`. `emitPrimMethod` consults this
+    /// Populated by `collectPrimErlangDispatch`. `primMethodNode` consults this
     /// map FIRST and emits `mod:sym(...)` with the args rendered in the template
     /// order (`self` resolves to the receiver expression); the inline allow-list
     /// catches irreducible cases (list ops, custom comparisons, BIF aliases).
     prim_erlang_dispatch: std.StringHashMap(PrimErlangCall),
     /// `prim-op-annotation` builtin dispatch: top-level `fn` callees from
     /// `builtins.d.bp` carrying `@external(erlang, …)` annotations, keyed by
-    /// callee name (`todo`, `panic`, …). `tryEmitBuiltinAnnotation` consults
+    /// callee name (`todo`, `panic`, …). `builtinAnnotationNode` consults
     /// this map before the hardcoded `@todo`/`@panic`/`@block`/`@print`
     /// switches in `if (cc.is_builtin)`.
     builtin_erlang_dispatch: std.StringHashMap(PrimErlangCall),
     /// Parent-interface edges parsed from `primitives.d.bp`:
     /// `prim_iface_chain.get("I32")` → `"Signed"`, etc. Used by
-    /// `tryEmitPrimAnnotation`'s `PrimIfaceWalker` so a method declared on
+    /// `primAnnotationNode`'s `PrimIfaceWalker` so a method declared on
     /// `Integer` lights up via an `I32` receiver. Populated by
     /// `collectPrimErlangDispatch` alongside the dispatch map.
     prim_iface_chain: std.StringHashMap([]const u8),
@@ -1056,10 +2105,28 @@ const Emitter = struct {
     /// means no collision detected — every record method stays bare.
     /// Populated by `collectRecordMethodCollisions` before any emit.
     record_method_collisions: std.StringHashMap(void),
+    /// Set when a lowering called `'__bp_text'/1` (a string `+` operand that
+    /// is not provably a string). A typed module then emits `text_helper_form`;
+    /// a comptime module always carries it.
+    needs_text_helper: bool = false,
+    /// Set when `@print`/`@println`/`@debug` lowered to `'__bp_print'/1`; the
+    /// module then emits `print_helper_form`.
+    needs_print_helper: bool = false,
+    /// Set when a typed-module field read fell back to `'__bp_len'/2`.
+    needs_len_helper: bool = false,
+    /// Set when an index expression (decision 30's `[]` builtin) lowered to
+    /// `'__bp_index'/2`; the module then emits `index_helper_form`.
+    needs_index_helper: bool = false,
+    /// The same for a slice — `xs[0..2]`, the `[]` builtin over a `range`.
+    needs_slice_helper: bool = false,
+    /// `name/arity` of every function this module defines by name — top-level
+    /// fns, record/enum methods, extension methods. A value-receiver call with
+    /// no recorded lowering stays the bare local call when one of these answers
+    /// it, and dispatches on the receiver at runtime otherwise.
+    local_fn_arities: std.StringHashMapUnmanaged(void) = .empty,
 
-    fn init(alloc: std.mem.Allocator, out: *std.Io.Writer, cv: std.StringHashMap([]const u8), rewrites: std.AutoHashMap(ast.Loc, []const u8)) Emitter {
+    fn init(alloc: std.mem.Allocator, cv: std.StringHashMap([]const u8), rewrites: std.AutoHashMap(ast.Loc, []const u8)) Emitter {
         return .{
-            .out = out,
             .cv = cv,
             .alloc = alloc,
             .rewrites = rewrites,
@@ -1070,10 +2137,25 @@ const Emitter = struct {
             .record_fields = std.StringHashMap([]const []const u8).init(alloc),
             .enum_names = std.StringHashMap(void).init(alloc),
             .enum_variants = std.StringHashMap(void).init(alloc),
+            .variant_fields = std.StringHashMap([]const []const u8).init(alloc),
+            .enum_variant_of = std.StringHashMap(void).init(alloc),
+            .enum_variants_known = std.StringHashMap(void).init(alloc),
             .imported_types = std.StringHashMap([]const u8).init(alloc),
+            .imported_fns = std.StringHashMap([]const u8).init(alloc),
+            .fn_typed_fields = std.StringHashMap(void).init(alloc),
+            .fn_typed_field_names = std.StringHashMap(void).init(alloc),
             .locals = std.StringHashMap(void).init(alloc),
+            .var_current = std.StringHashMap(u32).init(alloc),
+            .var_next = std.StringHashMap(u32).init(alloc),
             .top_vals = std.StringHashMap(void).init(alloc),
             .interface_assoc = std.StringHashMap(void).init(alloc),
+            .iface_instance_defaults = std.StringHashMap(IfaceDefault).init(alloc),
+            .local_behaviors = std.StringHashMap(ast.BehaviorDecl).init(alloc),
+            .adopted_defaults = std.StringHashMap(void).init(alloc),
+            .iface_self_returns = std.StringHashMap(void).init(alloc),
+            .nullable_locals = std.StringHashMap(void).init(alloc),
+            .string_locals = std.StringHashMap(void).init(alloc),
+            .string_names = std.StringHashMap(void).init(alloc),
             .prim_erlang_dispatch = std.StringHashMap(PrimErlangCall).init(alloc),
             .builtin_erlang_dispatch = std.StringHashMap(PrimErlangCall).init(alloc),
             .user_erlang_templates = std.StringHashMap(PrimErlangCall).init(alloc),
@@ -1085,7 +2167,7 @@ const Emitter = struct {
     /// Pre-pass: detect record/struct method names that appear on more than
     /// one nominal type with the same arity. Those collisions get mangled
     /// at emit time (`Query.count` → `query_count`) and at the call site
-    /// (`.record => |"Query"|` of `count` routes to `query_count`),
+    /// (`.type_ => |"Query"|` of `count` routes to `query_count`),
     /// because erlang's top-level fn namespace has no record-scoped
     /// disambiguation.
     fn collectRecordMethodCollisions(this: *Emitter, program: ast.Program) !void {
@@ -1099,11 +2181,11 @@ const Emitter = struct {
         var seen = std.StringHashMap(FirstOf).init(aa);
         for (program.decls) |decl| {
             const type_name: []const u8 = switch (decl) {
-                .record => |r| r.name,
+                .type_ => |r| if (r.isRecord()) r.name else continue,
                 else => continue,
             };
-            const methods: []const ast.InterfaceMethod = switch (decl) {
-                .record => |r| r.methods,
+            const methods: []const ast.BehaviorMethod = switch (decl) {
+                .type_ => |r| if (r.isRecord()) r.methods else continue,
                 else => continue,
             };
             for (methods) |m| {
@@ -1145,7 +2227,7 @@ const Emitter = struct {
 
     /// `prim-op-annotation`: index top-level `fn` decls in `builtins.d.bp`
     /// carrying `@external(erlang, …)` — the dispatch map is keyed by the bare
-    /// callee name (`todo`, `panic`, …). `tryEmitBuiltinAnnotation` consults
+    /// callee name (`todo`, `panic`, …). `builtinAnnotationNode` consults
     /// this in the `if (cc.is_builtin)` branch before the hardcoded switches.
     ///
     /// `libs/std/src/builtins.d.bp` is the *documented* surface and is not
@@ -1205,22 +2287,9 @@ const Emitter = struct {
             .{ .argc = 0, .template = "erlang:error({panic, \"panic\"})" },
             .{ .argc = 1, .template = "erlang:error({panic, $0})" },
         });
-        // §D1: `print`/`println`/`debug` lower to
-        // `io:format("~p~n", [$args])` — the host-format pair lives entirely
-        // in the template, the `$args` marker expands to every positional arg
-        // comma-separated. No per-name fork in the call-emitter.
-        try this.putInlineErlangBuiltinTemplate("print", "io:format(\"~p~n\", [$args])");
-        try this.putInlineErlangBuiltinTemplate("println", "io:format(\"~p~n\", [$args])");
-        try this.putInlineErlangBuiltinTemplate("debug", "io:format(\"~p~n\", [$args])");
-    }
-
-    fn putInlineErlangBuiltinTemplate(this: *Emitter, name: []const u8, template: []const u8) !void {
-        if (this.builtin_erlang_dispatch.contains(name)) return;
-        try this.builtin_erlang_dispatch.put(try this.alloc.dupe(u8, name), .{
-            .module = "",
-            .symbol = try this.alloc.dupe(u8, template),
-            .args = null,
-        });
+        // `print`/`println`/`debug` are not templates: they lower to the
+        // `'__bp_print'/1` helper (`builtinCallNode`), whatever the prelude's
+        // `builtins.d.bp` annotation still spells.
     }
 
     fn putInlineErlangBuiltin(this: *Emitter, name: []const u8, branches: []const ast.ArityBranch) !void {
@@ -1240,75 +2309,100 @@ const Emitter = struct {
         });
     }
 
-    /// Try emitting an `@builtin(...)` call from its `@external(erlang, …)`
-    /// annotation. Returns false when no annotation is registered (caller falls
-    /// through to the hardcoded `@print`/`@todo`/`@panic`/`@block` switches).
-    fn tryEmitBuiltinAnnotation(this: *Emitter, callee: []const u8, cc: anytype) anyerror!bool {
-        const call = this.builtin_erlang_dispatch.get(callee) orelse return false;
+    /// A `@builtin(...)` call rendered from its `@external(erlang, …)` template,
+    /// or null when no template is registered (the caller falls through to
+    /// `@block`, the `__bp_*` ops and the plain call).
+    fn builtinAnnotationNode(this: *Emitter, b: Ast.Builder, callee: []const u8, cc: anytype) anyerror!?Ast.Expr {
+        const call = this.builtin_erlang_dispatch.get(callee) orelse return null;
+        const template = templateFor(call, cc) orelse return null;
+        return try this.templateNode(b, template, null, cc, error.PrimOpRecvInBuiltinTemplate);
+    }
+
+    /// A bare call to a std prelude `declare fn` whose `@External.Erlang` symbol
+    /// is a template (`stringSlice1(self, start, end)` →
+    /// `string:slice(Self, Start, (End - Start))`). The declaration's first
+    /// parameter is named `self`, so the template's receiver marker (the source's `$0`) is the call's
+    /// FIRST positional argument and `$N` the (N+1)-th — unlike a method call,
+    /// where the receiver marker is the receiver. Null when the callee has no template.
+    fn preludeHelperNode(this: *Emitter, b: Ast.Builder, callee: []const u8, cc: anytype) anyerror!?Ast.Expr {
+        const call = this.builtin_erlang_dispatch.get(callee) orelse return null;
+        if (cc.args.len == 0) return null;
+        const shifted = .{ .args = cc.args[1..], .trailing = cc.trailing };
+        const template = templateFor(call, shifted) orelse return null;
+        return try this.templateNode(b, template, cc.args[0].value, shifted, error.PrimOpRecvInBuiltinTemplate);
+    }
+
+    /// The template an annotation renders for this call site: the arity branch
+    /// matching its argument count, or the single `$`-bearing symbol.
+    fn templateFor(call: PrimErlangCall, cc: anytype) ?[]const u8 {
         if (call.arity_branches.len > 0) {
             const argc = cc.args.len + cc.trailing.len;
             for (call.arity_branches) |branch| {
-                if (branch.argc != argc) continue;
-                const Ctx = struct {
-                    self: *Emitter,
-                    cc_ref: @TypeOf(cc),
-                    argc: usize,
-                    pub fn writeByte(c: *@This(), ch: u8) anyerror!void {
-                        try c.self.out.writeByte(ch);
-                    }
-                    pub fn writeAll(c: *@This(), s: []const u8) anyerror!void {
-                        try c.self.w(s);
-                    }
-                    pub fn emitRecv(c: *@This()) anyerror!void {
-                        _ = c;
-                        return error.PrimOpRecvInBuiltinTemplate;
-                    }
-                    pub fn emitArg(c: *@This(), i: usize) anyerror!void {
-                        try c.self.emitArg(c.cc_ref, i);
-                    }
-                    pub fn emitStringifyOpen(c: *@This()) anyerror!void {
-                        try c.self.w("iolist_to_binary(io_lib:format(\"~p\", [");
-                    }
-                    pub fn emitStringifyClose(c: *@This()) anyerror!void {
-                        try c.self.w("]))");
-                    }
-                };
-                var ctx = Ctx{ .self = this, .cc_ref = cc, .argc = argc };
-                try primOpTemplate.render(branch.template, &ctx);
-                return true;
+                if (branch.argc == argc) return branch.template;
             }
-            return false;
+            return null;
         }
-        if (primOpTemplate.looksLikeTemplate(call.symbol)) {
-            const Ctx = struct {
-                self: *Emitter,
-                cc_ref: @TypeOf(cc),
-                argc: usize,
-                pub fn writeByte(c: *@This(), ch: u8) anyerror!void {
-                    try c.self.out.writeByte(ch);
-                }
-                pub fn writeAll(c: *@This(), s: []const u8) anyerror!void {
-                    try c.self.w(s);
-                }
-                pub fn emitRecv(c: *@This()) anyerror!void {
-                    _ = c;
-                    return error.PrimOpRecvInBuiltinTemplate;
-                }
-                pub fn emitArg(c: *@This(), i: usize) anyerror!void {
-                    try c.self.emitArg(c.cc_ref, i);
-                }
-                pub fn emitStringifyOpen(c: *@This()) anyerror!void {
-                    try c.self.w("iolist_to_binary(io_lib:format(\"~p\", [");
-                }
-                pub fn emitStringifyClose(c: *@This()) anyerror!void {
-                    try c.self.w("]))");
-                }
-            };
-            var ctx = Ctx{ .self = this, .cc_ref = cc, .argc = cc.args.len + cc.trailing.len };
-            try primOpTemplate.render(call.symbol, &ctx);
-            return true;
-        }
-        return false;
+        return if (primOpTemplate.looksLikeTemplate(call.symbol)) call.symbol else null;
+    }
+
+    /// A host template (`comptime/primOpTemplate.zig`) as a `seq` node: the
+    /// template text is kept verbatim around the receiver and argument
+    /// (`$N`, `$args`) nodes. `no_recv` is raised when the template names
+    /// the receiver but the call has no receiver.
+    fn templateNode(this: *Emitter, b: Ast.Builder, template: []const u8, recv: ?*const ast.Expr, cc: anytype, no_recv: anyerror) anyerror!Ast.Expr {
+        const Ctx = struct {
+            self: *Emitter,
+            b: Ast.Builder,
+            recv: ?*const ast.Expr,
+            cc_ref: @TypeOf(cc),
+            argc: usize,
+            no_recv: anyerror,
+            parts: std.ArrayListUnmanaged(Ast.Expr) = .empty,
+            text: std.ArrayListUnmanaged(u8) = .empty,
+            /// `parts` lengths at each open `$stringify(`.
+            stringify_marks: std.ArrayListUnmanaged(usize) = .empty,
+
+            fn flush(c: *@This()) anyerror!void {
+                if (c.text.items.len == 0) return;
+                try c.parts.append(c.b.arena, Ast.Expr.r(try c.text.toOwnedSlice(c.b.arena)));
+            }
+            pub fn writeByte(c: *@This(), ch: u8) anyerror!void {
+                try c.text.append(c.b.arena, ch);
+            }
+            pub fn writeAll(c: *@This(), s: []const u8) anyerror!void {
+                try c.text.appendSlice(c.b.arena, s);
+            }
+            pub fn emitRecv(c: *@This()) anyerror!void {
+                const r = c.recv orelse return c.no_recv;
+                try c.flush();
+                try c.parts.append(c.b.arena, try c.self.exprNode(c.b, r.*));
+            }
+            pub fn emitArg(c: *@This(), i: usize) anyerror!void {
+                try c.flush();
+                try c.parts.append(c.b.arena, try c.self.argNode(c.b, c.cc_ref, i));
+            }
+            /// `$stringify(<inner>)`: the parts `<inner>` renders become the
+            /// argument of the compiler's own any-value-as-text call node,
+            /// `iolist_to_binary(io_lib:format("~p", [Inner]))` — not template
+            /// text, which stays the author's only.
+            pub fn emitStringifyOpen(c: *@This()) anyerror!void {
+                try c.flush();
+                try c.stringify_marks.append(c.b.arena, c.parts.items.len);
+            }
+            pub fn emitStringifyClose(c: *@This()) anyerror!void {
+                try c.flush();
+                const mark = c.stringify_marks.pop() orelse return error.PrimOpStringifyMalformed;
+                const inner_parts = try c.b.arena.dupe(Ast.Expr, c.parts.items[mark..]);
+                c.parts.shrinkRetainingCapacity(mark);
+                const inner: Ast.Expr = if (inner_parts.len == 1) inner_parts[0] else .{ .seq = inner_parts };
+                const format = try c.b.remote("io_lib", "format", &.{ .{ .string = "~p" }, try c.b.list(&.{inner}) });
+                try c.parts.append(c.b.arena, try c.b.call("iolist_to_binary", &.{format}));
+            }
+        };
+        var ctx = Ctx{ .self = this, .b = b, .recv = recv, .cc_ref = cc, .argc = cc.args.len + cc.trailing.len, .no_recv = no_recv };
+        try primOpTemplate.render(template, &ctx);
+        try ctx.flush();
+        return .{ .seq = ctx.parts.items };
     }
 
     /// §A5: index interface methods carrying `@external(erlang, "mod", "sym[(args)]")`
@@ -1318,39 +2412,34 @@ const Emitter = struct {
     /// would survive, but the parsed arg list lives on a scratch buffer).
     fn collectPrimErlangDispatch(this: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| {
-            if (decl != .interface) continue;
-            try this.collectIfaceErlangDispatch(decl.interface);
-            try this.collectIfaceExtendsChain(decl.interface);
+            if (decl != .behavior) continue;
+            try this.collectIfaceErlangDispatch(decl.behavior);
+            try this.collectIfaceExtendsChain(decl.behavior);
         }
-        // Reparse `primitives.d.bp` from the embedded prelude so the dispatch
-        // map sees `String`/`Bool`/numeric interfaces even when the module
-        // didn't get them stubbed into `program.decls` (they're only stubbed
-        // for `default fn` stdlib lib dispatch — host-backed instance methods
-        // like `s.toUpper()` don't trip that path). The parse is per-emit and
-        // throwaway; we keep only the (iface, method, external-ref) triples we
-        // need by deep-copying into the emitter's allocator.
-        var arena = std.heap.ArenaAllocator.init(this.alloc);
-        defer arena.deinit();
-        const alloc_arena = arena.allocator();
-        var lx = lexerMod.Lexer.init(prelude.primitives);
-        const tokens = lx.scanAll(alloc_arena) catch return;
-        var p = parserMod.Parser.init(tokens);
-        var prim_program = p.parse(alloc_arena) catch return;
-        defer prim_program.deinit(alloc_arena);
+        // `primitives.d.bp` from the embedded prelude, so the dispatch map sees
+        // `String`/`Bool`/numeric interfaces even when the module didn't get
+        // them stubbed into `program.decls` (they're only stubbed for
+        // `default fn` stdlib lib dispatch — host-backed instance methods like
+        // `s.toUpper()` don't trip that path). The parse is memoised for the
+        // process (`prelude_cache`) because the source is a comptime string and
+        // nothing here writes to the AST: only the (iface, method,
+        // external-ref) triples are kept, deep-copied into the emitter's
+        // allocator.
+        const prim_program = prelude_cache.primitives() orelse return;
         for (prim_program.decls) |decl| {
-            if (decl != .interface) continue;
-            try this.collectIfaceErlangDispatch(decl.interface);
-            try this.collectIfaceExtendsChain(decl.interface);
+            if (decl != .behavior) continue;
+            try this.collectIfaceErlangDispatch(decl.behavior);
+            try this.collectIfaceExtendsChain(decl.behavior);
         }
     }
 
     /// Record `iface.extends[0]` as the parent for `iface` in
-    /// `prim_iface_chain` so `tryEmitPrimAnnotation`'s walker can climb
+    /// `prim_iface_chain` so `primAnnotationNode`'s walker can climb
     /// `I32 → Signed → Integer → Number`. First-write-wins (the parse of
     /// `program.decls` lands before the embedded `primitives.d.bp`
     /// re-parse). We only record the first parent — multi-inheritance is
     /// not used by `primitives.d.bp` at v1.
-    fn collectIfaceExtendsChain(this: *Emitter, iface: ast.InterfaceDecl) !void {
+    fn collectIfaceExtendsChain(this: *Emitter, iface: ast.BehaviorDecl) !void {
         if (iface.extends.len == 0) return;
         if (this.prim_iface_chain.contains(iface.name)) return;
         const child = try this.alloc.dupe(u8, iface.name);
@@ -1364,7 +2453,7 @@ const Emitter = struct {
     /// the same shape. A key already present wins on first-write (the in-program
     /// decl overrides the embedded primitive — useful for tests that shadow a
     /// stdlib interface to inject a custom dispatch).
-    fn collectIfaceErlangDispatch(this: *Emitter, iface: ast.InterfaceDecl) !void {
+    fn collectIfaceErlangDispatch(this: *Emitter, iface: ast.BehaviorDecl) !void {
         var slots: [16][]const u8 = undefined;
         for (iface.methods) |m| {
             // `prim-op-annotation` arity-branch form takes precedence: when the
@@ -1407,8 +2496,8 @@ const Emitter = struct {
             }
             // `prim-op-annotation` template form: a `$`-bearing symbol is a raw
             // template body — store it verbatim and skip `parseExternalCallTemplate`
-            // (which would interpret `($self ++ $0)` as a `f(arg)` shape with an
-            // empty head and one bogus arg). `tryEmitPrimAnnotation` runs the same
+            // (which would interpret `($0 ++ $1)` as a `f(arg)` shape with an
+            // empty head and one bogus arg). `primAnnotationNode` runs the same
             // `looksLikeTemplate` discriminator and renders via
             // `comptime/primOpTemplate.zig`.
             if (primOpTemplate.looksLikeTemplate(ref.symbol)) {
@@ -1433,230 +2522,216 @@ const Emitter = struct {
         }
     }
 
-    /// Try emitting a primitive method call from its `@external(erlang, …)`
-    /// annotation. Returns false when no annotation is registered for this
-    /// `<iface>.<method>` (callers fall through to the inline allow-list for
-    /// irreducible cases). `iface_name` maps a `PrimKind` to the controller
-    /// interface name (`PrimKind.array` → `"Array"`); the dispatch map is keyed
-    /// on the interface so a numeric tower lookup follows the same path.
-    fn tryEmitPrimAnnotation(this: *Emitter, k: envMod.PrimKind, callee: []const u8, recv: *const ast.Expr, cc: anytype) anyerror!bool {
-        const head_iface = primIfaceForKind(k) orelse return false;
-        // Walk the `extends` chain so a method declared on a parent
-        // interface (e.g. `Integer.toString` reached from an `I32` receiver)
-        // resolves without flattening the dispatch map at collection time.
+    /// A primitive method call rendered from its `@external(erlang, …)`
+    /// annotation, or null when none is registered for `<iface>.<method>`
+    /// (callers fall through to the inline lowerings for irreducible cases).
+    /// `primIfaceForKind` maps a `PrimKind` to its interface (`.array` →
+    /// `"Array"`), and the `extends` chain is walked so a method declared on a
+    /// parent interface (`Integer.toString` from an `I32` receiver) resolves.
+    fn primAnnotationNode(this: *Emitter, b: Ast.Builder, k: envMod.PrimKind, callee: []const u8, recv: *const ast.Expr, cc: anytype) anyerror!?Ast.Expr {
+        const head_iface = primIfaceForKind(k) orelse return null;
         var iface_walk = PrimIfaceWalker.init(this, head_iface, &this.prim_iface_chain);
-        var call_opt: ?PrimErlangCall = null;
-        while (iface_walk.next()) |iface_name| {
-            var b: [128]u8 = undefined;
-            const k_str = std.fmt.bufPrint(&b, "{s}.{s}", .{ iface_name, callee }) catch return false;
-            if (this.prim_erlang_dispatch.get(k_str)) |hit| {
-                call_opt = hit;
-                break;
-            }
+        const call = while (iface_walk.next()) |iface_name| {
+            var key_buf: [128]u8 = undefined;
+            const key = std.fmt.bufPrint(&key_buf, "{s}.{s}", .{ iface_name, callee }) catch return null;
+            if (this.prim_erlang_dispatch.get(key)) |hit| break hit;
+        } else return null;
+        // Arity-branched (`when($argc == N): "…"`) or single-string template:
+        // The receiver marker ⇒ the receiver, `$N` ⇒ the N-th argument (the
+        // parser translated the source's positional markers, decision 5). An arity-branched
+        // annotation with no branch for this argument count falls through.
+        if (call.arity_branches.len > 0 or primOpTemplate.looksLikeTemplate(call.symbol)) {
+            const template = templateFor(call, cc) orelse return null;
+            return try this.templateNode(b, template, recv, cc, error.PrimOpRecvMissing);
         }
-        const call = call_opt orelse return false;
-        // `prim-op-annotation` arity branch (`when($argc == N): "..."`):
-        // select the matching branch by the call-site arg count and render its
-        // template. No matching branch ⇒ return false so the inline switch (or
-        // value-receiver fallback) handles it — RP2 (`prim-op-no-arity-match`)
-        // would be surfaced by inference, not by codegen.
-        if (call.arity_branches.len > 0) {
-            const argc = cc.args.len + cc.trailing.len;
-            for (call.arity_branches) |branch| {
-                if (branch.argc != argc) continue;
-                const Ctx = struct {
-                    self: *Emitter,
-                    recv: *const ast.Expr,
-                    cc_ref: @TypeOf(cc),
-                    argc: usize,
-                    pub fn writeByte(c: *@This(), ch: u8) anyerror!void {
-                        try c.self.out.writeByte(ch);
-                    }
-                    pub fn writeAll(c: *@This(), s: []const u8) anyerror!void {
-                        try c.self.w(s);
-                    }
-                    pub fn emitRecv(c: *@This()) anyerror!void {
-                        try c.self.emitExpr(c.recv.*);
-                    }
-                    pub fn emitArg(c: *@This(), i: usize) anyerror!void {
-                        try c.self.emitArg(c.cc_ref, i);
-                    }
-                    pub fn emitStringifyOpen(c: *@This()) anyerror!void {
-                        try c.self.w("iolist_to_binary(io_lib:format(\"~p\", [");
-                    }
-                    pub fn emitStringifyClose(c: *@This()) anyerror!void {
-                        try c.self.w("]))");
-                    }
-                };
-                var ctx = Ctx{ .self = this, .recv = recv, .cc_ref = cc, .argc = argc };
-                try primOpTemplate.render(branch.template, &ctx);
-                return true;
-            }
-            return false;
-        }
-        // `prim-op-annotation` template form: a `$`-bearing symbol is the
-        // single-string template body (`#[@External.Erlang( "<template>")]`).
-        // Render it via the shared walker — `$self` ⇒ recv, `$N` ⇒ N-th arg,
-        // any other byte is target-language passthrough.
-        if (primOpTemplate.looksLikeTemplate(call.symbol)) {
-            const Ctx = struct {
-                self: *Emitter,
-                recv: *const ast.Expr,
-                cc_ref: @TypeOf(cc),
-                argc: usize,
-                pub fn writeByte(c: *@This(), ch: u8) anyerror!void {
-                    try c.self.out.writeByte(ch);
-                }
-                pub fn writeAll(c: *@This(), s: []const u8) anyerror!void {
-                    try c.self.w(s);
-                }
-                pub fn emitRecv(c: *@This()) anyerror!void {
-                    try c.self.emitExpr(c.recv.*);
-                }
-                pub fn emitArg(c: *@This(), i: usize) anyerror!void {
-                    try c.self.emitArg(c.cc_ref, i);
-                }
-                pub fn emitStringifyOpen(c: *@This()) anyerror!void {
-                    try c.self.w("iolist_to_binary(io_lib:format(\"~p\", [");
-                }
-                pub fn emitStringifyClose(c: *@This()) anyerror!void {
-                    try c.self.w("]))");
-                }
-            };
-            var ctx = Ctx{
-                .self = this,
-                .recv = recv,
-                .cc_ref = cc,
-                .argc = cc.args.len + cc.trailing.len,
-            };
-            try primOpTemplate.render(call.symbol, &ctx);
-            return true;
-        }
-        try this.fmt("{s}:{s}(", .{ call.module, call.symbol });
-        if (call.args) |args| {
-            // Render in template order. `self` ⇒ the receiver expression; any
-            // other slot ⇒ the next positional call argument (the parser drops
-            // `@external(…)` arg labels, so the template's param names are
-            // documentation — the binding is positional, in source order).
+        var args: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+        if (call.args) |names| {
+            // Template order: `self` ⇒ the receiver; any other slot ⇒ the next
+            // positional argument (the parser drops `@external(…)` arg labels,
+            // so the binding is positional, in source order).
             var next_arg: usize = 0;
-            for (args, 0..) |name, i| {
-                if (i > 0) try this.w(", ");
+            for (names) |name| {
                 if (std.mem.eql(u8, name, "self")) {
-                    try this.emitExpr(recv.*);
+                    try args.append(b.arena, try this.exprNode(b, recv.*));
                 } else {
-                    try this.emitArg(cc, next_arg);
+                    try args.append(b.arena, try this.argNode(b, cc, next_arg));
                     next_arg += 1;
                 }
             }
         } else {
-            // Bare symbol — use declaration order (`self` first, then the call's
-            // positional args / trailing lambdas).
-            try this.emitExpr(recv.*);
-            for (cc.args) |arg| {
-                try this.w(", ");
-                try this.emitExpr(arg.value.*);
-            }
+            // Bare symbol — declaration order: `self`, then the positional args.
+            try args.append(b.arena, try this.exprNode(b, recv.*));
+            for (cc.args) |arg| try args.append(b.arena, try this.exprNode(b, arg.value.*));
         }
-        try this.w(")");
-        return true;
+        return try b.remote(call.module, call.symbol, args.items);
     }
 
-    /// §A2 erlang twin: render a top-level user `declare fn` whose
-    /// `@external(erlang, …)` annotation is a template (with `$0`/`$N`
-    /// markers) or arity-branched (`when(argc == N): "..."`) at the call
-    /// site instead of emitting `module:symbol(args)` against the
-    /// `externals` map (which would emit `:symbol(args)` for the
-    /// chained-host-call shapes whose host doesn't fit `module:symbol`).
-    /// Mirrors `tryEmitPrimAnnotation` for the call-site dispatch path,
-    /// minus the receiver (top-level fns have no `self`).
-    fn tryEmitUserTemplate(this: *Emitter, callee: []const u8, cc: anytype) anyerror!bool {
-        const call = this.user_erlang_templates.get(callee) orelse return false;
-        if (call.arity_branches.len > 0) {
-            const argc = cc.args.len + cc.trailing.len;
-            for (call.arity_branches) |branch| {
-                if (branch.argc != argc) continue;
-                const Ctx = struct {
-                    self: *Emitter,
-                    cc_ref: @TypeOf(cc),
-                    argc: usize,
-                    pub fn writeByte(c: *@This(), ch: u8) anyerror!void {
-                        try c.self.out.writeByte(ch);
-                    }
-                    pub fn writeAll(c: *@This(), s: []const u8) anyerror!void {
-                        try c.self.w(s);
-                    }
-                    pub fn emitRecv(c: *@This()) anyerror!void {
-                        _ = c;
-                        return error.PrimOpRecvInUserTemplate;
-                    }
-                    pub fn emitArg(c: *@This(), i: usize) anyerror!void {
-                        try c.self.emitArg(c.cc_ref, i);
-                    }
-                    pub fn emitStringifyOpen(c: *@This()) anyerror!void {
-                        try c.self.w("iolist_to_binary(io_lib:format(\"~p\", [");
-                    }
-                    pub fn emitStringifyClose(c: *@This()) anyerror!void {
-                        try c.self.w("]))");
-                    }
-                };
-                var ctx = Ctx{ .self = this, .cc_ref = cc, .argc = argc };
-                try primOpTemplate.render(branch.template, &ctx);
-                return true;
-            }
-            return false;
-        }
-        if (primOpTemplate.looksLikeTemplate(call.symbol)) {
-            const Ctx = struct {
-                self: *Emitter,
-                cc_ref: @TypeOf(cc),
-                argc: usize,
-                pub fn writeByte(c: *@This(), ch: u8) anyerror!void {
-                    try c.self.out.writeByte(ch);
-                }
-                pub fn writeAll(c: *@This(), s: []const u8) anyerror!void {
-                    try c.self.w(s);
-                }
-                pub fn emitRecv(c: *@This()) anyerror!void {
-                    _ = c;
-                    return error.PrimOpRecvInUserTemplate;
-                }
-                pub fn emitArg(c: *@This(), i: usize) anyerror!void {
-                    try c.self.emitArg(c.cc_ref, i);
-                }
-                pub fn emitStringifyOpen(c: *@This()) anyerror!void {
-                    try c.self.w("iolist_to_binary(io_lib:format(\"~p\", [");
-                }
-                pub fn emitStringifyClose(c: *@This()) anyerror!void {
-                    try c.self.w("]))");
-                }
-            };
-            var ctx = Ctx{
-                .self = this,
-                .cc_ref = cc,
-                .argc = cc.args.len + cc.trailing.len,
-            };
-            try primOpTemplate.render(call.symbol, &ctx);
-            return true;
-        }
-        return false;
+    /// §A2 erlang twin: a top-level user `declare fn` whose `@external(erlang, …)`
+    /// annotation is a template (`$0`/`$N`) or arity-branched, rendered at the
+    /// call site instead of `module:symbol(args)` (which does not fit
+    /// chained-host-call shapes). Null when no template matches.
+    fn userTemplateNode(this: *Emitter, b: Ast.Builder, callee: []const u8, cc: anytype) anyerror!?Ast.Expr {
+        const call = this.user_erlang_templates.get(callee) orelse return null;
+        // A marker-less host expression (module-less 1-arg annotation) is its
+        // own template text.
+        const template = templateFor(call, cc) orelse
+            (if (call.arity_branches.len == 0 and call.symbol.len > 0) call.symbol else return null);
+        return try this.templateNode(b, template, null, cc, error.PrimOpRecvInUserTemplate);
     }
 
-    /// Index interface associated `default fn`s (no `self`, with a body) by their
-    /// qualified name so `Interface.method(...)` resolves to the bare local fn
-    /// `emitInterface` emits.
+    /// Index an interface's bodied `default fn`s by qualified name. Associated
+    /// ones (no `self`) land in `interface_assoc` so `Interface.method(...)`
+    /// resolves to the bare local fn `interfaceForms` emits; instance ones
+    /// (a `self` receiver) land in `iface_instance_defaults` so a value-receiver
+    /// call (`xs.all(pred)`) resolves to the `<iface>_<method>(Recv, …)` form
+    /// `instanceDefaultForms` emits on demand.
     fn collectInterfaces(this: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| switch (decl) {
-            .interface => |i| {
+            .behavior => |i| {
+                try this.local_behaviors.put(i.name, i);
                 for (i.methods) |m| {
+                    if (m.returnType) |rt| {
+                        if (rt == .named and std.mem.eql(u8, rt.named, "Self")) {
+                            const sq = try std.fmt.allocPrint(this.alloc, "{s}.{s}", .{ i.name, m.name });
+                            try this.iface_self_returns.put(sq, {});
+                        }
+                    }
                     if (!m.is_default or m.body == null) continue;
                     const has_self = m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self");
-                    if (has_self) continue;
                     const qn = try std.fmt.allocPrint(this.alloc, "{s}.{s}", .{ i.name, m.name });
-                    try this.interface_assoc.put(qn, {});
+                    if (has_self) {
+                        try this.iface_instance_defaults.put(qn, .{ .iface = i.name, .method = m });
+                    } else {
+                        try this.interface_assoc.put(qn, {});
+                    }
                 }
             },
             else => {},
         };
+    }
+
+    /// Comptime modules: index the embedded prelude's primitive interfaces the
+    /// way `collectInterfaces` indexes a program's — the bodied instance
+    /// `default fn`s and the `-> Self` methods — so a shim clause reaches
+    /// `String.slice` / `Array.first`. `arena` owns the parsed prelude and must
+    /// outlive the emit. A name the program already declares keeps its entry.
+    fn collectPreludeInstanceDefaults(this: *Emitter, arena: std.mem.Allocator) !void {
+        var lx = lexerMod.Lexer.init(prelude.primitives);
+        const tokens = try lx.scanAll(arena);
+        var p = parserMod.Parser.init(tokens);
+        const prim_program = try p.parse(arena);
+        for (prim_program.decls) |decl| {
+            if (decl != .behavior) continue;
+            const i = decl.behavior;
+            for (i.methods) |m| {
+                var key_buf: [256]u8 = undefined;
+                const key = std.fmt.bufPrint(&key_buf, "{s}.{s}", .{ i.name, m.name }) catch continue;
+                if (m.returnType) |rt| {
+                    if (rt == .named and std.mem.eql(u8, rt.named, "Self") and !this.iface_self_returns.contains(key)) {
+                        try this.iface_self_returns.put(try this.alloc.dupe(u8, key), {});
+                    }
+                }
+                if (!m.is_default or m.body == null) continue;
+                if (m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self")) continue;
+                if (this.iface_instance_defaults.contains(key)) continue;
+                try this.iface_instance_defaults.put(try this.alloc.dupe(u8, key), .{ .iface = i.name, .method = m });
+            }
+        }
+    }
+
+    /// True for the bare identifier `self`.
+    fn isSelfIdent(e: ast.Expr) bool {
+        return switch (e) {
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| std.mem.eql(u8, n, "self"),
+                else => false,
+            },
+            else => false,
+        };
+    }
+
+    /// A method call whose receiver is known to be record/enum `tn`: a function
+    /// taking the receiver first — local `m(Recv, args)`, or `owner:m(Recv,
+    /// args)` for an imported type. A method name shared by two records is
+    /// mangled to `<recordtype>_<method>` so the flat fn namespace stays
+    /// unambiguous.
+    fn typedMethodNode(this: *Emitter, b: Ast.Builder, tn: []const u8, recv: *const ast.Expr, cc: anytype) anyerror!Ast.Expr {
+        // A FIELD of function type, called like a method (`c.set(9)` on
+        // `type State<T>(value: T, set: fn(next: T))`): the record has no
+        // `set/2` function — apply what the field holds.
+        if (this.fnTypedField(tn, cc.callee)) {
+            return .{ .apply = .{
+                .fun = try b.ptr(try b.paren(try b.remote("maps", "get", &.{ Ast.Expr.a(cc.callee), try this.exprNode(b, recv.*) }))),
+                .args = try this.callArgs(b, null, cc),
+            } };
+        }
+        var mn_buf: [256]u8 = undefined;
+        const mn: []const u8 = if (this.isRecordMethodCollision(tn, cc.callee))
+            try b.arena.dupe(u8, try recordMethodAtom(&mn_buf, tn, cc.callee))
+        else
+            cc.callee;
+        const args = try this.callArgs(b, try this.exprNode(b, recv.*), cc);
+        return if (this.methodOwnerModule(tn, cc.callee)) |owner| b.remote(owner, mn, args) else b.call(mn, args);
+    }
+
+    /// The name a `implement` clause refers to (`implement Sized`,
+    /// `implement Container<T>`); null for a shape that names no behavior.
+    fn implementedName(ref: ast.TypeRef) ?[]const u8 {
+        return switch (ref) {
+            .named => |n| n,
+            .generic => |g| g.name,
+            else => null,
+        };
+    }
+
+    /// The bodied instance `default fn`s a record adopts through its inline
+    /// `implement` clauses and does not declare itself — the erlang twin of
+    /// commonJS's `appendInterfaceDefaults`. Without them the record emitted no
+    /// function at all for `bag.isEmpty()`, and the call fell through to the
+    /// untyped primitive shim, which aborted at run time with
+    /// `{bp_unsupported_method, <<"isEmpty">>, 0, #{items => []}}` while commonJS
+    /// answered from the class. Follows `extends`, depth-capped like commonJS's
+    /// walker; a method already collected (two behaviors declaring the same
+    /// default) is kept once, the first one found.
+    fn adoptedIfaceDefaults(
+        this: *const Emitter,
+        alloc: std.mem.Allocator,
+        r: ast.TypeDecl,
+        out: *std.ArrayListUnmanaged(ast.BehaviorMethod),
+    ) anyerror!void {
+        for (r.implement) |ref| {
+            const iface_name = implementedName(ref) orelse continue;
+            try this.appendIfaceDefaults(alloc, iface_name, r, out, 0);
+        }
+    }
+
+    fn appendIfaceDefaults(
+        this: *const Emitter,
+        alloc: std.mem.Allocator,
+        iface_name: []const u8,
+        r: ast.TypeDecl,
+        out: *std.ArrayListUnmanaged(ast.BehaviorMethod),
+        depth: usize,
+    ) anyerror!void {
+        if (depth > 16) return;
+        const iface = this.local_behaviors.get(iface_name) orelse return;
+        for (iface.methods) |m| {
+            if (!m.is_default or m.body == null) continue;
+            // An associated `default fn` (no `self`) is already emitted by
+            // `interfaceForms` as `<iface>_<method>`; only instance ones become
+            // methods of the record.
+            if (m.params.len == 0 or !std.mem.eql(u8, m.params[0].name, "self")) continue;
+            var taken = false;
+            for (r.methods) |own| {
+                if (std.mem.eql(u8, own.name, m.name)) taken = true;
+            }
+            for (out.items) |seen| {
+                if (std.mem.eql(u8, seen.name, m.name)) taken = true;
+            }
+            if (taken) continue;
+            try out.append(alloc, m);
+        }
+        for (iface.extends) |parent| try this.appendIfaceDefaults(alloc, parent, r, out, depth + 1);
     }
 
     fn isInterfaceAssoc(this: *Emitter, iface: []const u8, method: []const u8) bool {
@@ -1665,26 +2740,440 @@ const Emitter = struct {
         return this.interface_assoc.contains(qn);
     }
 
+    /// Inverse of `primIfaceForKind`: the primitive kind whose controller
+    /// interface reaches `iface` through its `extends` chain. A method declared
+    /// on a shared parent (`Number.clamp`) answers `.int` — the chain walk from
+    /// either numeric kind passes through `Number`, so the dispatch is the same.
+    fn primKindForIface(this: *const Emitter, iface: []const u8) ?envMod.PrimKind {
+        for ([_]envMod.PrimKind{ .array, .string, .bool, .int, .float }) |k| {
+            const head = primIfaceForKind(k) orelse continue;
+            var iface_walk = PrimIfaceWalker.init(this, head, &this.prim_iface_chain);
+            while (iface_walk.next()) |name| {
+                if (std.mem.eql(u8, name, iface)) return k;
+            }
+        }
+        return null;
+    }
+
+    /// The primitive kind of a `Self`-typed expression inside an interface
+    /// instance `default fn` body — the `self` parameter, or a call on a
+    /// `Self`-typed receiver whose interface method is declared `-> Self`
+    /// (`self.filter(pred)` on `Array`). Null everywhere else, including in
+    /// every ordinary function, where inference records the lowering instead.
+    fn selfPrimKind(this: *const Emitter, e: ast.Expr) ?envMod.PrimKind {
+        const k = this.self_prim_kind orelse return null;
+        switch (e) {
+            .identifier => |id| {
+                const name = switch (id.kind) {
+                    .ident => |n| n,
+                    else => return null,
+                };
+                return if (std.mem.eql(u8, name, "self")) k else null;
+            },
+            .call => |c| {
+                const cc = switch (c.kind) {
+                    .call => |x| x,
+                    else => return null,
+                };
+                if (cc.is_builtin) return null;
+                const recv = cc.receiver orelse return null;
+                if (this.selfPrimKind(recv.*) == null) return null;
+                const head_iface = primIfaceForKind(k) orelse return null;
+                var iface_walk = PrimIfaceWalker.init(this, head_iface, &this.prim_iface_chain);
+                while (iface_walk.next()) |iface_name| {
+                    var key_buf: [256]u8 = undefined;
+                    const key = std.fmt.bufPrint(&key_buf, "{s}.{s}", .{ iface_name, cc.callee }) catch return null;
+                    if (this.iface_self_returns.contains(key)) return k;
+                }
+                return null;
+            },
+            else => return null,
+        }
+    }
+
     /// Mark `name` as a function-scoped local (param / `val` / lambda param).
     fn addLocal(this: *Emitter, name: []const u8) void {
         this.locals.put(name, {}) catch {};
+        // A fresh binding (param, lambda param, first `val`) shadows any
+        // rebound version of the same name.
+        _ = this.var_current.remove(name);
+    }
+
+    fn resetLocals(this: *Emitter) void {
+        this.locals.clearRetainingCapacity();
+        this.mutable_locals.clearRetainingCapacity();
+        this.mutating_closures.clearRetainingCapacity();
+        this.var_current.clearRetainingCapacity();
+        this.var_next.clearRetainingCapacity();
+        this.nullable_locals.clearRetainingCapacity();
+        this.string_locals.clearRetainingCapacity();
+        this.num_locals.clearRetainingCapacity();
+    }
+
+    /// True when `t` is the `string` primitive.
+    fn isStringType(t: ?ast.TypeRef) bool {
+        const ty = t orelse return false;
+        return ty == .named and std.mem.eql(u8, ty.named, "string");
+    }
+
+    /// Index the module-level names that evaluate to a `string`: every `fn`
+    /// declared `-> string` and every top-level `val` bound to a string
+    /// expression. `isStringExpr` reads it to decide whether `+` is binary
+    /// concatenation (`<<A/binary, B/binary>>`) or integer arithmetic.
+    fn collectStringNames(this: *Emitter, program: ast.Program) !void {
+        // Two passes: a `val` may be initialised by a `fn` declared later.
+        for (program.decls) |decl| switch (decl) {
+            .@"fn" => |f| {
+                if (isStringType(f.returnType)) try this.string_names.put(f.name, {});
+                if (numTypeKind(f.returnType)) |k| try this.num_names.put(this.alloc, f.name, k);
+            },
+            else => {},
+        };
+        for (program.decls) |decl| switch (decl) {
+            .val => |v| {
+                if (this.isStringExpr(v.value.*)) try this.string_names.put(v.name, {});
+                if (this.numKind(v.value.*)) |k| try this.num_names.put(this.alloc, v.name, k);
+            },
+            else => {},
+        };
+    }
+
+    /// The start of an open-ended range (`x..`), or null for anything else.
+    fn unboundedRangeStart(e: ast.Expr) ?*const ast.Expr {
+        if (e != .collection or e.collection.kind != .range) return null;
+        const r = e.collection.kind.range;
+        if (r.end != null) return null;
+        return r.start;
+    }
+
+    /// Wraps a loop whose body can `break` in the `try … catch` that catches the
+    /// break throw, so the loop ends instead of the exception escaping the
+    /// enclosing function. Loops that never break are returned untouched.
+    fn loopBreakCatch(this: *Emitter, b: Ast.Builder, loop: Ast.Expr, body: []const ast.Stmt) anyerror!Ast.Expr {
+        _ = this;
+        if (!hasBareBreak(body)) return loop;
+        return .{ .try_catch = .{
+            .body = try b.body(&.{loop}),
+            .catches = try b.arena.dupe(Ast.Clause, &.{
+                try b.clause(
+                    &.{.{ .exception = .{ .class = try b.ptr(Ast.Expr.a("throw")), .reason = try b.ptr(Ast.Expr.a(break_signal)) } }},
+                    &.{},
+                    &.{Ast.Expr.a("ok")},
+                ),
+            }),
+        } };
+    }
+
+    /// True when the statements contain a value-less `break` — the form that
+    /// leaves the loop rather than producing an element. Walks the `if`/`case`
+    /// arms a break is normally guarded by.
+    fn hasBareBreak(body: []const ast.Stmt) bool {
+        for (body) |stmt| switch (stmt.expr) {
+            .jump => |j| switch (j.kind) {
+                .@"break" => |brk| if (brk.value == null) return true,
+                else => {},
+            },
+            .branch => |br| switch (br.kind) {
+                .if_ => |i| {
+                    if (hasBareBreak(i.then_)) return true;
+                    if (i.else_) |els| if (hasBareBreak(els)) return true;
+                },
+                else => {},
+            },
+            else => {},
+        };
+        return false;
+    }
+
+    /// The `lists:filtermap/2` fun body for a loop whose whole body is one
+    /// unconditional `if` (no `else`, no binding form) ending in `break <expr>`:
+    /// `case Cond of true -> …, {true, Value}; _ -> false end`. Null for every
+    /// other loop, which keeps its `map`/`foreach` lowering.
+    fn filterMapFunBody(this: *Emitter, b: Ast.Builder, lp: anytype) anyerror!?Ast.Body {
+        if (lp.body.len != 1 or lp.body[0].expr != .branch) return null;
+        const br = lp.body[0].expr.branch;
+        if (br.kind != .if_) return null;
+        const iff = br.kind.if_;
+        if (iff.else_ != null or iff.binding != null or iff.then_.len == 0) return null;
+        const last = iff.then_[iff.then_.len - 1].expr;
+        if (last != .jump or last.jump.kind != .@"break") return null;
+        const value = last.jump.kind.@"break".value orelse return null;
+
+        const saved = this.indent;
+        this.indent += 2;
+        defer this.indent = saved;
+        const cond = try this.condNode(b, iff.cond.*);
+        var body: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+        for (iff.then_[0 .. iff.then_.len - 1]) |stmt| {
+            try body.append(b.arena, try this.exprNode(b, stmt.expr));
+        }
+        try body.append(b.arena, try b.tuple(&.{ Ast.Expr.a("true"), try this.exprNode(b, value.*) }));
+        const case = try b.caseOf(cond, &.{
+            .{ .patterns = try b.exprs(&.{Ast.Expr.a("true")}), .body = try b.body(body.items) },
+            try b.clause(&.{Ast.Expr.v("_")}, &.{}, &.{Ast.Expr.a("false")}),
+        });
+        this.indent = saved;
+        return try b.body(&.{case});
+    }
+
+    /// The first index a `loop (xs, <range>)` counts from — `0` for the usual
+    /// `0..`, the range's lower bound otherwise.
+    fn indexRangeStart(this: *Emitter, b: Ast.Builder, e: ast.Expr) anyerror!Ast.Expr {
+        if (e == .collection and e.collection.kind == .range) {
+            return this.exprNode(b, e.collection.kind.range.start.*);
+        }
+        return Ast.Expr.t(Term.int(0));
+    }
+
+    /// A bare botopink name as a read: the local variable at its current
+    /// version, or the call `name()` when it is a module-level `val`.
+    fn nameRefNode(this: *Emitter, b: Ast.Builder, name: []const u8) anyerror!Ast.Expr {
+        if (!this.locals.contains(name) and this.top_vals.contains(name)) return b.call(name, &.{});
+        return Ast.Expr.v(try this.varRef(b, name));
+    }
+
+    /// A string `+` chain as one flat binary construction:
+    /// `a + b + c` → `<<"a", (b())/binary, C/binary>>`. Flattening keeps the
+    /// nesting out of the emitted module; the segments are collected left to
+    /// right so the concatenation order is preserved.
+    fn stringConcatNode(this: *Emitter, b: Ast.Builder, e: ast.Expr) anyerror!Ast.Expr {
+        var segs: std.ArrayListUnmanaged(Ast.BinSegment) = .empty;
+        try this.concatSegments(b, &segs, e);
+        return .{ .bin = segs.items };
+    }
+
+    fn concatSegments(this: *Emitter, b: Ast.Builder, out: *std.ArrayListUnmanaged(Ast.BinSegment), e: ast.Expr) anyerror!void {
+        if (e == .binaryOp and e.binaryOp.op == .add and this.isStringExpr(e)) {
+            try this.concatSegments(b, out, e.binaryOp.lhs.*);
+            try this.concatSegments(b, out, e.binaryOp.rhs.*);
+            return;
+        }
+        var node = try this.exprNode(b, e);
+        // An empty literal contributes nothing (the comptime template builder
+        // starts its concat chain from `""`), so it is dropped rather than
+        // written as a `""` segment.
+        if (node == .lexeme_binary and node.lexeme_binary.len == 0) return;
+        // A `/binary` segment takes a binary only: `"value: " + v` with `v: i32`
+        // raised `badarg`. An operand not provably a string goes through
+        // `'__bp_text'/1` — itself when it is a binary at runtime, its `~p`
+        // rendering otherwise — so an unproven string still concatenates as text.
+        if (!this.isStringExpr(e)) {
+            this.needs_text_helper = true;
+            node = try b.call("__bp_text", &.{node});
+        }
+        // A binary segment only takes a "simple" expression bare; anything else
+        // — a call, a `case`, an arithmetic term — has to be parenthesised.
+        const value: Ast.Expr = switch (node) {
+            .variable, .lexeme_binary, .paren => node,
+            .term => |t| if (t == .binary) node else .{ .paren = try b.ptr(node) },
+            else => .{ .paren = try b.ptr(node) },
+        };
+        try out.append(b.arena, .{ .value = value, .type = "binary" });
+    }
+
+    /// The numeric kind a type names (`i32` → int, `f64` → float), or null.
+    fn numTypeKind(t: ?ast.TypeRef) ?NumKind {
+        const ty = t orelse return null;
+        if (ty != .named) return null;
+        const n = ty.named;
+        if (n.len < 2) return null;
+        for (n[1..]) |ch| if (!std.ascii.isDigit(ch)) {
+            return if (std.mem.eql(u8, n, "isize") or std.mem.eql(u8, n, "usize")) .int else null;
+        };
+        return switch (n[0]) {
+            'i', 'u' => .int,
+            'f' => .float,
+            else => null,
+        };
+    }
+
+    /// The numeric kind `e` statically has, or null when it cannot be proven
+    /// (`.number` when it is a number of unknown precision):
+    /// a number literal (a float when it has a `.` or an exponent), a numeric
+    /// local/parameter/module name, a length read, and arithmetic over them (a
+    /// float operand makes a float; `%` is an integer).
+    fn numKind(this: *const Emitter, e: ast.Expr) ?NumKind {
+        return switch (e) {
+            .literal => |lit| switch (lit.kind) {
+                .numberLit => |n| if (std.mem.startsWith(u8, n, "0x") or std.mem.startsWith(u8, n, "0b") or std.mem.startsWith(u8, n, "0o"))
+                    .int
+                else if (std.mem.indexOfAny(u8, n, ".eE") != null) .float else .int,
+                else => null,
+            },
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| this.num_locals.get(n) orelse
+                    (if (!this.locals.contains(n)) this.num_names.get(n) else null),
+                .identAccess => if (this.instance_lowerings.get(id.loc)) |il| switch (il) {
+                    .prim => .int,
+                    .type_ => null,
+                } else null,
+                else => null,
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| this.numKind(inner.*),
+                else => null,
+            },
+            .unaryOp => |un| if (un.op == .neg) this.numKind(un.expr.*) else null,
+            .binaryOp => |bin| switch (bin.op) {
+                .add => if (this.isStringExpr(e)) null else combineNum(this.numKind(bin.lhs.*), this.numKind(bin.rhs.*)),
+                // `-`, `*` and `/` only ever answer a number in erlang.
+                .sub, .mul, .div => combineNum(this.numKind(bin.lhs.*), this.numKind(bin.rhs.*)) orelse .number,
+                .mod => .int,
+                else => null,
+            },
+            .call => |c| switch (c.kind) {
+                .call => |cc| if (cc.receiver == null and !cc.is_builtin and !this.locals.contains(cc.callee)) this.num_names.get(cc.callee) else null,
+                else => null,
+            },
+            else => null,
+        };
+    }
+
+    fn combineNum(a: ?NumKind, b: ?NumKind) ?NumKind {
+        if (a == .float or b == .float) return .float;
+        if (a == .int and b == .int) return .int;
+        if (a != null or b != null) return .number;
+        return null;
+    }
+
+    /// True when `e` is statically a botopink `string`, so a `+` over it is
+    /// binary concatenation and not arithmetic. Conservative: anything it cannot
+    /// prove stays arithmetic, which is the pre-existing behaviour.
+    fn isStringExpr(this: *const Emitter, e: ast.Expr) bool {
+        return switch (e) {
+            .literal => |lit| lit.kind == .stringLit or lit.kind == .stringTemplate,
+            .binaryOp => |bin| bin.op == .add and
+                (this.isStringExpr(bin.lhs.*) or this.isStringExpr(bin.rhs.*)),
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| this.string_locals.contains(n) or
+                    (!this.locals.contains(n) and this.string_names.contains(n)),
+                else => false,
+            },
+            .call => |c| switch (c.kind) {
+                .call => |cc| cc.receiver == null and this.string_names.contains(cc.callee),
+                else => false,
+            },
+            else => false,
+        };
+    }
+
+    /// The Erlang variable for a read of `name` at its current version
+    /// (`Count` or `Count@2`), spelled once in the builder's arena.
+    fn varRef(this: *Emitter, b: Ast.Builder, name: []const u8) ![]const u8 {
+        return this.versionedVar(b, name, this.var_current.get(name) orelse 0);
+    }
+
+    /// `Name` for version 0, `Name@N` otherwise, in the builder's arena.
+    fn versionedVar(this: *Emitter, b: Ast.Builder, name: []const u8, version: u32) ![]const u8 {
+        _ = this;
+        const base = try erlEmitter.varName(b.arena, name);
+        if (version == 0) return base;
+        return std.fmt.allocPrint(b.arena, "{s}@{d}", .{ base, version });
+    }
+
+    const BindOp = enum { bind, assign, plus_assign };
+
+    /// `Name = Value` for `val`/`var` declarations and `=`/`+=` assignments.
+    /// The first binding of a name in the function keeps the bare variable; any
+    /// later binding — assignment or a shadowing `val i = i - 1` — binds the next
+    /// version, with `value` (and the `+=` left operand) reading the previous one.
+    fn bindExpr(this: *Emitter, b: Ast.Builder, name: []const u8, op: BindOp, value: ast.Expr) anyerror!Ast.Expr {
+        // Remember string-valued bindings so a later `+` on them concatenates.
+        if (op != .plus_assign and this.isStringExpr(value)) try this.string_locals.put(name, {});
+        if (op != .plus_assign) {
+            if (this.numKind(value)) |k| try this.num_locals.put(this.alloc, name, k);
+        }
+        if (!this.locals.contains(name)) {
+            const vname = Ast.Expr.v(try this.arenaVar(b, name));
+            this.addLocal(name);
+            return b.match(vname, try this.exprNode(b, value));
+        }
+        const version = (this.var_next.get(name) orelse 0) + 1;
+        const target = Ast.Expr.v(try this.versionedVar(b, name, version));
+        const rhs: Ast.Expr = if (op == .plus_assign) blk: {
+            const old_var = Ast.Expr.v(try this.varRef(b, name));
+            // `s += x` on a string concatenates; on a number it adds; on a
+            // name of unknown type it dispatches at runtime.
+            if (!this.untyped and (this.string_locals.contains(name) or this.isStringExpr(value))) {
+                var segs: std.ArrayListUnmanaged(Ast.BinSegment) = .empty;
+                try segs.append(b.arena, .{ .value = old_var, .type = "binary" });
+                try this.concatSegments(b, &segs, value);
+                break :blk .{ .bin = segs.items };
+            }
+            const addend = try this.exprNode(b, value);
+            if (this.untyped or (!this.num_locals.contains(name) and this.numKind(value) == null)) {
+                if (!this.untyped) this.needs_add_helper = true;
+                break :blk try b.call("__bp_add", &.{ old_var, addend });
+            }
+            break :blk .{ .binop = .{ .op = "+", .lhs = try b.ptr(old_var), .rhs = try b.ptr(addend), .parens = false } };
+        } else try this.exprNode(b, value);
+        try this.var_next.put(name, version);
+        try this.var_current.put(name, version);
+        return b.match(target, rhs);
     }
 
     /// Indexes record/struct field orders + enum names for constructor-call,
     /// field-access, and enum-member lowering.
     fn collectTypeShapes(self: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| switch (decl) {
-            .record => |r| {
-                var names = try self.alloc.alloc([]const u8, r.fields.len);
-                for (r.fields, 0..) |f, i| names[i] = f.name;
-                try self.record_fields.put(r.name, names);
-            },
-            .@"enum" => |e| {
-                try self.enum_names.put(e.name, {});
-                for (e.variants) |v| try self.enum_variants.put(v.name, {});
+            .type_ => |tdecl| switch (tdecl.shape) {
+                .record => {
+                    var names = try self.alloc.alloc([]const u8, tdecl.recordFields().len);
+                    for (tdecl.recordFields(), 0..) |f, i| names[i] = f.name;
+                    try self.record_fields.put(tdecl.name, names);
+                    // A field of function type is CALLED like a method
+                    // (`c.set(9)`), and the record emits no `set/2`: remember
+                    // the pair so the call applies the field's value.
+                    for (tdecl.recordFields()) |f| {
+                        if (f.typeRef != .function) continue;
+                        var key_buf: [256]u8 = undefined;
+                        const key = std.fmt.bufPrint(&key_buf, "{s}.{s}", .{ tdecl.name, f.name }) catch continue;
+                        try self.fn_typed_fields.put(try self.alloc.dupe(u8, key), {});
+                        try self.fn_typed_field_names.put(f.name, {});
+                    }
+                },
+                .enum_ => {
+                    try self.enum_names.put(tdecl.name, {});
+                    try self.enum_variants_known.put(tdecl.name, {});
+                    for (tdecl.variants()) |v| {
+                        try self.enum_variants.put(v.name, {});
+                        try self.rememberEnumVariant(tdecl.name, v.name);
+                        try self.rememberVariantFields(v);
+                    }
+                },
             },
             else => {},
         };
+    }
+
+    /// Record `<Enum>.<Variant>` so `isEnumVariantOf` can answer precisely.
+    /// The key is duped: the map outlives the AST slice it is built from only in
+    /// the comptime path, and duping is cheaper than reasoning about which.
+    fn rememberEnumVariant(self: *Emitter, enum_name: []const u8, variant: []const u8) !void {
+        const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ enum_name, variant });
+        const gop = try self.enum_variant_of.getOrPut(key);
+        if (gop.found_existing) self.alloc.free(key);
+    }
+
+    /// Record a variant's declared field names, so a `case` pattern can fill the
+    /// tagged tuple by label (§5.1 P4) and write out the slots `..` stands for
+    /// (P7). A payload-less variant carries none and is skipped: a pattern over it
+    /// is the bare atom.
+    fn rememberVariantFields(self: *Emitter, v: ast.EnumVariant) !void {
+        if (v.fields.len == 0) return;
+        if (self.variant_fields.contains(v.name)) return;
+        const names = try self.alloc.alloc([]const u8, v.fields.len);
+        for (v.fields, 0..) |f, i| names[i] = f.name;
+        try self.variant_fields.put(v.name, names);
+    }
+
+    /// Whether `variant` is a variant OF `enum_name`. False when the enum's
+    /// variant list was never registered (a comptime host enum), so the caller
+    /// must decide what an unknown enum means.
+    fn isEnumVariantOf(self: *const Emitter, enum_name: []const u8, variant: []const u8) bool {
+        var buf: [256]u8 = undefined;
+        const key = std.fmt.bufPrint(&buf, "{s}.{s}", .{ enum_name, variant }) catch return false;
+        return self.enum_variant_of.contains(key);
     }
 
     /// Registers types this module imports `from "<pkg>"` (resolved via the
@@ -1695,19 +3184,289 @@ const Emitter = struct {
     /// Imported enums join `enum_names` (their tagged-tuple / atom shape is
     /// module-independent). No-op without a cross index (standalone path).
     fn collectImportedTypes(self: *Emitter, program: ast.Program) !void {
-        const xc = self.cross orelse return;
+        // An imported enum's variants join `enum_variants`, so a case pattern
+        // naming one is the atom (`'Gt'`), not a fresh variable that matches
+        // anything. The enum arrives by name (`import {Order}`) or with its
+        // module (`import {order} from "std"` brings `std/order`'s enums).
         for (program.decls) |decl| switch (decl) {
             .use => |u| for (u.imports) |imp| {
-                const name = imp.name();
-                const info = xc.exports.get(name) orelse continue;
-                switch (info.kind) {
-                    .record => {},
-                    .@"enum" => try self.enum_names.put(name, {}),
-                    .@"fn", .val => {},
+                const name = imp.segments[imp.segments.len - 1];
+                for (self.enum_exports) |ee| {
+                    if (std.mem.eql(u8, ee.module, self.module_name)) continue;
+                    if (!std.mem.eql(u8, ee.name, name) and !std.mem.eql(u8, crossModule.moduleBasename(ee.module), name)) continue;
+                    try self.enum_variants_known.put(ee.name, {});
+                    for (ee.variants) |v| {
+                        try self.enum_variants.put(v.name, {});
+                        try self.rememberEnumVariant(ee.name, v.name);
+                        try self.rememberVariantFields(v);
+                    }
                 }
             },
             else => {},
         };
+        const xc = self.cross orelse return;
+        for (program.decls) |decl| switch (decl) {
+            .use => |u| for (u.imports) |imp| {
+                const name = imp.name();
+                const info = xc.exports.get(name) orelse {
+                    // Not a `pub` symbol: the import names a MODULE
+                    // (`import {dict} from "std"`, a sibling `import {geometry}`).
+                    try self.collectNamespaceModuleTypes(xc, name);
+                    continue;
+                };
+                switch (info.kind) {
+                    .record => {
+                        // Records are maps at runtime, so the consumer inlines
+                        // the same `#{field => V}` literal the owner would build
+                        // — there is no constructor function to call remotely.
+                        if (!self.record_fields.contains(name)) {
+                            try self.record_fields.put(name, try self.alloc.dupe([]const u8, info.fields));
+                        }
+                        try self.imported_types.put(name, self.atomOf(info.module));
+                    },
+                    .@"enum" => try self.enum_names.put(name, {}),
+                    .@"fn", .val => {},
+                }
+                // Names this module calls but never defines: an imported
+                // `pub fn` (`twice(X)`) and the methods of an imported
+                // record/enum (`stub.thenReturn(v)`, emitted by the owner as a
+                // bare function taking the receiver first). Erlang resolves a
+                // bare call in the calling module, so the call site needs the
+                // owner atom; a local definition of the same name wins.
+                if (std.mem.eql(u8, info.module, self.module_name)) continue;
+                const owner = self.atomOf(info.module);
+                switch (info.kind) {
+                    // An FFI declaration with an `erlang` target is answered in
+                    // its owner by the wrapper `externalWrapperForm` emits, so
+                    // it is reached like any other imported fn. Without a target
+                    // the owner has nothing to wrap: the call stays bare, and an
+                    // unresolved one is a loud erlc error naming the function
+                    // (see AGENTS.md).
+                    .@"fn" => if (!info.is_external or info.erlang_backed) try self.imported_fns.put(name, owner),
+                    .record, .@"enum" => for (info.methods) |m| {
+                        const gop = try self.imported_fns.getOrPut(m);
+                        if (!gop.found_existing) gop.value_ptr.* = owner;
+                    },
+                    .val => {},
+                }
+                // A method may belong to a type the consumer never names
+                // (`when(...)` answers onze's `OnzeStub`, whose `thenReturn` is
+                // called on the result): register the methods of every pub type
+                // of a module this one already imports from.
+                var ex_it = xc.exports.iterator();
+                while (ex_it.next()) |e| {
+                    const other = e.value_ptr.*;
+                    if (!std.mem.eql(u8, other.module, info.module)) continue;
+                    if (other.kind != .record and other.kind != .@"enum") continue;
+                    for (other.methods) |m| {
+                        const gop = try self.imported_fns.getOrPut(m);
+                        if (!gop.found_existing) gop.value_ptr.* = owner;
+                    }
+                }
+            },
+            else => {},
+        };
+    }
+
+    /// A `use` name that is not a `pub` symbol but the basename of a module some
+    /// export comes from: `import {dict} from "std"` binds the MODULE `std/dict`,
+    /// not a declaration. The consumer then reaches the module's types only
+    /// through its functions (`dict.empty()` answers a `Dict`) and never names
+    /// `Dict` itself, so the `.record`/`.@"enum"` branches above never ran and a
+    /// method call on the answered value fell through to a bare local call
+    /// (`insert(D, K, V)` → `function insert/3 undefined`). Register the module's
+    /// pub types the same way an explicitly imported one is registered: the type
+    /// name for an associated call and a typed method call, every method name for
+    /// a call site inference left untyped. `record_fields` is deliberately left
+    /// alone — a consumer that constructs the record has to import it by name,
+    /// which is the branch above.
+    /// Erlang module atom of a module PATH (`std/order` → `std@order`), as the
+    /// cross-module index rendered it once. A `call_ext`/remote-call target and
+    /// this module's own `-module` atom must agree, so both come from
+    /// `crossModule.erlAtom` — never from the path's basename, which is what
+    /// made two same-named files one module.
+    fn atomOf(self: *const Emitter, path: []const u8) []const u8 {
+        if (self.cross) |xc| return xc.atomFor(path);
+        return crossModule.moduleBasename(path);
+    }
+
+    fn collectNamespaceModuleTypes(self: *Emitter, xc: *const CrossModule, ns: []const u8) !void {
+        var it = xc.exports.iterator();
+        while (it.next()) |e| {
+            const info = e.value_ptr.*;
+            if (info.kind != .record and info.kind != .@"enum") continue;
+            if (!std.mem.eql(u8, crossModule.moduleBasename(info.module), ns)) continue;
+            if (std.mem.eql(u8, info.module, self.module_name)) continue;
+            const owner = self.atomOf(info.module);
+            if (info.kind == .record) try self.imported_types.put(e.key_ptr.*, owner);
+            for (info.methods) |m| {
+                const gop = try self.imported_fns.getOrPut(m);
+                if (!gop.found_existing) gop.value_ptr.* = owner;
+            }
+        }
+    }
+
+    /// Owning module atom of an imported function called with `arity`
+    /// arguments, or null when this module defines one of that name and arity
+    /// itself (a local definition shadows the import, as it does in botopink).
+    fn importedFnOwner(self: *const Emitter, name: []const u8, arity: usize) ?[]const u8 {
+        const owner = self.imported_fns.get(name) orelse return null;
+        var key_buf: [256]u8 = undefined;
+        const key = std.fmt.bufPrint(&key_buf, "{s}/{d}", .{ name, arity }) catch return owner;
+        return if (self.local_fn_arities.contains(key)) null else owner;
+    }
+
+    /// The module atom a method on `type_name` has to be called in, when the
+    /// type came from another module; null when the type is this module's own,
+    /// where the method is a local function. The erlang twin of `beam_asm.zig`'s
+    /// `methodOwnerModule` (`448b935`), with the same two sources, because a
+    /// consumer reaches an imported type two ways:
+    ///
+    ///   * by naming it in an `import { … }` — `imported_types`, which
+    ///     `collectImportedTypes` fills for a **record** and
+    ///     `collectNamespaceModuleTypes` for a module-shaped import;
+    ///   * through the link index, which is the only source that knows an
+    ///     imported **enum** owns the method: an enum's `import { … }` arm
+    ///     registers its variants (`enum_names`) and never its owner, because a
+    ///     tagged tuple is module-independent while its methods are not.
+    ///
+    /// Both kinds are consulted (`record` *or* `enum`) and the method has to be
+    /// one the exported type actually declares, so a name this module owns is
+    /// never redirected into a module that does not answer it.
+    fn methodOwnerModule(self: *const Emitter, type_name: []const u8, method: []const u8) ?[]const u8 {
+        if (self.imported_types.get(type_name)) |owner| return owner;
+        const xc = self.cross orelse return null;
+        const info = xc.exports.get(type_name) orelse return null;
+        switch (info.kind) {
+            .record, .@"enum" => {},
+            else => return null,
+        }
+        // A module never calls into itself remotely. `module_name` is the source
+        // path (`std/dict`) while the module atom is its basename (`dict`), so
+        // both have to be compared: the path catches this module's own type, and
+        // the basename catches a sibling that would emit the same atom — a
+        // remote self-call either way. The sites above compare paths for the same
+        // reason.
+        if (std.mem.eql(u8, info.module, self.module_name)) return null;
+        const owner = crossModule.moduleBasename(info.module);
+        if (std.mem.eql(u8, owner, crossModule.moduleBasename(self.module_name))) return null;
+        for (info.methods) |m| {
+            if (std.mem.eql(u8, m, method)) return owner;
+        }
+        return null;
+    }
+
+    /// True when record `type_name` declares a field `name` of function type —
+    /// `c.set(9)` applies the field, it does not call a `set/2` the record never
+    /// emits.
+    fn fnTypedField(this: *const Emitter, type_name: []const u8, name: []const u8) bool {
+        var key_buf: [256]u8 = undefined;
+        const key = std.fmt.bufPrint(&key_buf, "{s}.{s}", .{ type_name, name }) catch return false;
+        return this.fn_typed_fields.contains(key);
+    }
+
+    /// True when some record of the module declares a field named `name`.
+    fn isRecordField(self: *const Emitter, name: []const u8) bool {
+        var it = self.record_fields.valueIterator();
+        while (it.next()) |fields| for (fields.*) |f| if (std.mem.eql(u8, f, name)) return true;
+        return false;
+    }
+
+    /// Index `local_fn_arities`: every function the module emits under its own
+    /// name, with its Erlang arity.
+    fn collectLocalFnArities(self: *Emitter, program: ast.Program) !void {
+        for (program.decls) |decl| switch (decl) {
+            .@"fn" => |f| try self.putLocalFn(f.name, fnArityNoSelf(f)),
+            .type_ => |tdecl| switch (tdecl.shape) {
+                .record => for (tdecl.methods) |m| try self.putLocalFn(m.name, m.params.len),
+                .enum_ => for (tdecl.methods) |m| try self.putLocalFn(m.name, m.params.len),
+            },
+            .implement => |im| for (im.methods) |m| try self.putLocalFn(m.name, m.params.len),
+            .extend => |ex| for (ex.methods) |m| try self.putLocalFn(m.name, m.params.len),
+            else => {},
+        };
+    }
+
+    /// Decide which adopted instance `default fn`s each record emits, and index
+    /// them as local functions. Runs after `collectLocalFnArities`, so
+    /// `local_fn_arities` already names every top-level fn and every record /
+    /// enum method: an adopted default whose `<name>/<arity>` is taken there is
+    /// skipped, because erlang's flat namespace would double-define it and the
+    /// call site has no lowering to disambiguate with (the receiver's type is
+    /// exactly what inference does not record for an adopted default). Skipping
+    /// leaves that call on the untyped primitive shim, i.e. unchanged.
+    ///
+    /// Two records adopting the SAME default are skipped together, not resolved
+    /// first-wins: with one `isEmpty/1` emitted, every untyped call site would
+    /// reach that one record's body and read fields the other receiver does not
+    /// have. A module with several implementors of one behavior therefore keeps
+    /// today's run-time abort until inference types such a receiver (06 N15).
+    fn collectAdoptedIfaceDefaults(self: *Emitter, program: ast.Program) !void {
+        var arena = std.heap.ArenaAllocator.init(self.alloc);
+        defer arena.deinit();
+        const aa = arena.allocator();
+        // Pass 1: how many records would claim each `<name>/<arity>`.
+        var claims = std.StringHashMap(usize).init(aa);
+        for (program.decls) |decl| switch (decl) {
+            .type_ => |r| {
+                if (!r.isRecord()) continue;
+                var adopted: std.ArrayListUnmanaged(ast.BehaviorMethod) = .empty;
+                try self.adoptedIfaceDefaults(aa, r, &adopted);
+                for (adopted.items) |m| {
+                    const key = try std.fmt.allocPrint(aa, "{s}/{d}", .{ m.name, m.params.len });
+                    const gop = try claims.getOrPut(key);
+                    gop.value_ptr.* = if (gop.found_existing) gop.value_ptr.* + 1 else 1;
+                }
+            },
+            else => {},
+        };
+        // Pass 2: emit the unambiguous ones.
+        for (program.decls) |decl| switch (decl) {
+            .type_ => |r| {
+                if (!r.isRecord()) continue;
+                var adopted: std.ArrayListUnmanaged(ast.BehaviorMethod) = .empty;
+                try self.adoptedIfaceDefaults(aa, r, &adopted);
+                for (adopted.items) |m| {
+                    var key_buf: [256]u8 = undefined;
+                    const arity_key = std.fmt.bufPrint(&key_buf, "{s}/{d}", .{ m.name, m.params.len }) catch continue;
+                    if (self.local_fn_arities.contains(arity_key)) continue;
+                    if ((claims.get(arity_key) orelse 0) != 1) continue;
+                    try self.putLocalFn(m.name, m.params.len);
+                    const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ r.name, m.name });
+                    const gop = try self.adopted_defaults.getOrPut(key);
+                    if (gop.found_existing) self.alloc.free(key);
+                }
+            },
+            else => {},
+        };
+    }
+
+    /// True when `recordForms` emits `method` for `type_name` as an adopted
+    /// interface `default fn` (see `collectAdoptedIfaceDefaults`).
+    fn emitsAdoptedDefault(this: *const Emitter, type_name: []const u8, method: []const u8) bool {
+        var b: [256]u8 = undefined;
+        const key = std.fmt.bufPrint(&b, "{s}.{s}", .{ type_name, method }) catch return false;
+        return this.adopted_defaults.contains(key);
+    }
+
+    fn putLocalFn(self: *Emitter, name: []const u8, arity: usize) !void {
+        const key = try std.fmt.allocPrint(self.alloc, "{s}/{d}", .{ name, arity });
+        const gop = try self.local_fn_arities.getOrPut(self.alloc, key);
+        if (gop.found_existing) self.alloc.free(key);
+    }
+
+    /// Module atom of a `"std"` package module imported by its bare name
+    /// (`order` → `std@order`). The import segment IS the name the program
+    /// writes, and it used to be the module atom too — which is exactly how
+    /// `libs/std`'s `math`, `dict`, `queue`, `sets`, `os`, `json`, `crypto`,
+    /// `base64`, `random`, `unicode` and `erlang` shadowed the OTP module of
+    /// the same name node-wide. The atom is the module PATH's, rendered once by
+    /// the cross-module index; arena-allocated, because the returned slice is
+    /// stored in the form tree and rendered later.
+    fn stdModuleAtom(this: *const Emitter, b: Ast.Builder, seg: []const u8) ![]const u8 {
+        const path = try std.fmt.allocPrint(b.arena, "std/{s}", .{seg});
+        if (this.cross) |xc| if (xc.atoms.get(path)) |a| return a;
+        return crossModule.erlAtom(b.arena, .of(path));
     }
 
     /// Records every module name imported from the "std" package.
@@ -1738,13 +3497,31 @@ const Emitter = struct {
     /// Indexes every `@[external(…)]` fn by name: with an `erlang` target it
     /// goes to `externals`; without one it goes to `externals_missing` (so a
     /// call can fail with a clear error instead of an undefined function).
+    /// An `@External.Erlang("…")` template, owned by the emitter. The annotation
+    /// argument is the string literal's raw LEXEME, so a quote inside the Erlang
+    /// text is still written botopink-escaped (`io_lib:format(\"~p\", …)`) — it
+    /// is emitted verbatim into the `.erl`, where the backslash would start an
+    /// unterminated string. Resolve `\"` to `"`; every other escape belongs to
+    /// the Erlang source the template carries and passes through untouched.
+    fn dupeTemplate(this: *Emitter, s: []const u8) ![]const u8 {
+        if (std.mem.indexOf(u8, s, "\\\"") == null) return this.alloc.dupe(u8, s);
+        var out: std.ArrayListUnmanaged(u8) = .empty;
+        errdefer out.deinit(this.alloc);
+        var i: usize = 0;
+        while (i < s.len) : (i += 1) {
+            if (s[i] == '\\' and i + 1 < s.len and s[i + 1] == '"') continue;
+            try out.append(this.alloc, s[i]);
+        }
+        return out.toOwnedSlice(this.alloc);
+    }
+
     fn collectExternals(this: *Emitter, program: ast.Program) !void {
         for (program.decls) |decl| switch (decl) {
             .@"fn" => |f| {
                 if (!f.isExternal()) continue;
                 // §A2 arity-branched template (`when(argc == N): "<tmpl>"`)
                 // on a top-level declare fn — the existing
-                // interface-method `tryEmitPrimAnnotation` path already
+                // interface-method `primAnnotationNode` path already
                 // handles primitives.d.bp; this map covers
                 // top-level user `declare fn`s so chained-host-call
                 // shapes (`file:get_cwd()`, `os:getpid()`, etc.) can
@@ -1758,7 +3535,7 @@ const Emitter = struct {
                             const b = ast.parseArityBranchArg(raw) orelse continue;
                             try branches.append(this.alloc, .{
                                 .argc = b.argc,
-                                .template = try this.alloc.dupe(u8, b.template),
+                                .template = try this.dupeTemplate(b.template),
                             });
                         }
                     }
@@ -1774,11 +3551,14 @@ const Emitter = struct {
                     // §A2 single-template form (`"$0.method(...)"`,
                     // `"erlang:something($0, $1)"` with `$` markers) — the
                     // symbol carries `$` → render at the call site, never
-                    // emit `module:symbol`.
-                    if (primOpTemplate.looksLikeTemplate(ref.symbol)) {
+                    // emit `module:symbol`. A 1-arg form without markers
+                    // (`"list_to_integer(os:getpid())"`) names no module: it is
+                    // a bare host expression and renders verbatim too — as a
+                    // `module:symbol` call it came out `:expr()()`.
+                    if (primOpTemplate.looksLikeTemplate(ref.symbol) or ref.module.len == 0) {
                         try this.user_erlang_templates.put(try this.alloc.dupe(u8, f.name), .{
                             .module = "",
-                            .symbol = try this.alloc.dupe(u8, ref.symbol),
+                            .symbol = try this.dupeTemplate(ref.symbol),
                             .args = null,
                         });
                         continue;
@@ -1792,47 +3572,35 @@ const Emitter = struct {
         };
     }
 
-    fn w(this: *Emitter, s: []const u8) !void {
-        try this.out.writeAll(s);
-    }
-
-    fn fmt(this: *Emitter, comptime f: []const u8, args: anytype) !void {
-        try this.out.print(f, args);
-    }
-
-    fn writeIndent(this: *Emitter) !void {
-        for (0..this.indent) |_| try this.w("    ");
-    }
-
     // ── top-level val ─────────────────────────────────────────────────────────
 
-    fn emitTopVal(this: *Emitter, v: ast.ValDecl, cv: std.StringHashMap([]const u8)) !void {
+    /// A module-level `val` is a 0-arity function. A comptime one keeps its
+    /// `%% comptime val x` header and carries the FOLDED value as its body —
+    /// the comment alone left every reader of the name unbound.
+    fn topValForms(this: *Emitter, b: Ast.Builder, out: *Forms, v: ast.ValDecl) !void {
         if (v.value.isComptimeExpr()) {
-            _ = cv;
-            try this.fmt("%% comptime val {s}\n", .{v.name});
-            return;
+            try out.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "comptime val {s}", .{v.name})) });
         }
-        // Emit as a 0-arity function when there is no script wrapper entrypoint.
-        var name_buf: [256]u8 = undefined;
-        try this.fmt("{s}() ->\n", .{try fnAtom(v.name, &name_buf)});
         const saved = this.indent;
         this.indent = 1;
-        try this.writeIndent();
-        try this.emitExpr(v.value.*);
-        this.indent = saved;
-        try this.w(".\n");
+        defer this.indent = saved;
+        // A 0-arity function is its own variable scope.
+        this.resetLocals();
+        // A comptime block is the function body itself: its statements, then
+        // its `break` value.
+        if (v.value.* == .comptime_ and v.value.comptime_.kind == .comptimeBlock) {
+            const body = try this.comptimeBlockBody(b, v.value.comptime_.kind.comptimeBlock.body, 1);
+            return out.append(b.arena, try blockFunction(b, v.name, &.{}, body));
+        }
+        try out.append(b.arena, try blockFunction(b, v.name, &.{}, try b.body(&.{try this.exprNode(b, v.value.*)})));
     }
 
-    fn emitTopValEntryStmt(this: *Emitter, v: ast.ValDecl) !void {
-        const synthetic_runtime_stmt = std.mem.startsWith(u8, v.name, "_");
-        if (synthetic_runtime_stmt) {
-            try this.emitExpr(v.value.*);
-            return;
-        }
-        const vname = try erlangVar(this.alloc, v.name);
-        defer this.alloc.free(vname);
-        try this.fmt("{s} = ", .{vname});
-        try this.emitExpr(v.value.*);
+    /// A runtime module-level `val` inside `'_botopink_main'/0`: `Name = Value`,
+    /// or the bare value for a synthetic `_`-named statement.
+    fn topValEntryExpr(this: *Emitter, b: Ast.Builder, v: ast.ValDecl) !Ast.Expr {
+        if (std.mem.startsWith(u8, v.name, "_")) return this.exprNode(b, v.value.*);
+        const name = Ast.Expr.v(try this.arenaVar(b, v.name));
+        return b.match(name, try this.exprNode(b, v.value.*));
     }
 
     // ── fn ────────────────────────────────────────────────────────────────────
@@ -1847,92 +3615,57 @@ const Emitter = struct {
         return true;
     }
 
-    fn emitFn(this: *Emitter, f: ast.FnDecl) !void {
+    fn fnForms(this: *Emitter, b: Ast.Builder, out: *Forms, f: ast.FnDecl) !void {
         // An effect fn is async/generator — except `#[@result]` (checked-Result
         // effect), which is a plain function. Erlang is eager: a `@Future<T>`
         // resolves to `T` (so `await` is identity) and a finite `@Iterator<T>`
         // is a list.
         if (f.effect != null and f.effect.? != .result) {
-            try this.fmt("%% #[@future] / #[@asyncGenerator] — eager lowering\n", .{});
+            try out.append(b.arena, .{ .comment = Ast.Comment.doc("#[@future] / #[@asyncGenerator] — eager lowering") });
         }
         // Fresh local scope for this function (erlang vars are function-scoped).
-        this.locals.clearRetainingCapacity();
-        var fn_buf: [256]u8 = undefined;
-        try this.w(try fnAtom(f.name, &fn_buf));
-        try this.w("(");
-        var first = true;
+        this.resetLocals();
+        var params: std.ArrayListUnmanaged(Ast.Expr) = .empty;
         for (f.params) |p| {
-            if (p.destruct) |d| {
-                switch (d) {
-                    .names => |*n| {
-                        if (!first) try this.w(", ");
-                        try this.w("{");
-                        for (n.fields, 0..) |fld, i| {
-                            if (i > 0) try this.w(", ");
-                            const vname = try erlangVar(this.alloc, fld.bind_name);
-                            defer this.alloc.free(vname);
-                            try this.w(vname);
-                            this.addLocal(fld.bind_name);
-                        }
-                        if (n.hasSpread) try this.w(", _");
-                        try this.w("}");
-                        first = false;
-                    },
-                    .tuple_ => |t| {
-                        if (!first) try this.w(", ");
-                        try this.w("{");
-                        for (t, 0..) |nm, i| {
-                            if (i > 0) try this.w(", ");
-                            const vname = try erlangVar(this.alloc, nm);
-                            defer this.alloc.free(vname);
-                            try this.w(vname);
-                            this.addLocal(nm);
-                        }
-                        try this.w("}");
-                        first = false;
-                    },
-                    .list => {}, // List pattern — placeholder
-                    .ctor => {}, // Constructor pattern — placeholder
-                }
+            if (p.destruct) |d| switch (d) {
+                // `destructPatternExpr` binds each name as a local.
+                .names, .tuple_ => try params.append(b.arena, try this.destructPatternExpr(b, d)),
+                // List / constructor parameter patterns are not lowered yet.
+                .list, .ctor => {},
             } else if (this.keep_self or !std.mem.eql(u8, p.name, "self")) {
-                if (!first) try this.w(", ");
-                const vname = try erlangVar(this.alloc, p.name);
-                defer this.alloc.free(vname);
-                try this.w(vname);
+                try params.append(b.arena, Ast.Expr.v(try this.arenaVar(b, p.name)));
                 this.addLocal(p.name);
-                first = false;
+                if (isNullableParam(p)) try this.nullable_locals.put(p.name, {});
+                if (isStringType(p.typeRef)) try this.string_locals.put(p.name, {});
+                if (numTypeKind(p.typeRef)) |k| try this.num_locals.put(this.alloc, p.name, k);
             }
         }
-        try this.w(") ->\n");
         const saved = this.indent;
         this.indent = 1;
+        defer this.indent = saved;
         this.try_seq = 0;
-        if (isPlainYieldGenerator(f)) {
+        const body: Ast.Body = if (isPlainYieldGenerator(f)) blk: {
             // Finite generator → eager list of yielded items: `[V1, V2, ...]`.
-            try this.writeIndent();
-            try this.w("[");
+            const items = try b.arena.alloc(Ast.Expr, f.body.len);
             for (f.body, 0..) |stmt, i| {
-                if (i > 0) try this.w(", ");
-                if (stmt.expr.jump.kind.yield.value) |val| try this.emitExpr(val.*);
+                // A bare `yield;` yields no value: `undefined`, botopink's null.
+                items[i] = if (stmt.expr.jump.kind.yield.value) |val| try this.exprNode(b, val.*) else Ast.Expr.a("undefined");
             }
-            try this.w("]");
-        } else {
-            try this.emitBody(f.body);
-        }
-        this.indent = saved;
-        try this.w(".\n");
+            break :blk try b.body(&.{.{ .list = items }});
+        } else try this.bodyNode(b, f.body, 0, 1);
+        try out.append(b.arena, try blockFunction(b, f.name, params.items, body));
     }
 
-    /// Emit a `test { … }` body as `'__bp_test_<idx>'() -> Body.`
-    /// Same body emission as `emitFn` — no params, exported via the runner.
-    fn emitTestFn(this: *Emitter, t: ast.TestDecl, idx: usize) !void {
-        try this.fmt("'__bp_test_{d}'() ->\n", .{idx});
+    /// A `test { … }` body as `'__bp_test_<idx>'() -> Body.`, registered with
+    /// the runner.
+    fn testFunction(this: *Emitter, b: Ast.Builder, t: ast.TestDecl, idx: usize) !Ast.Form {
+        this.resetLocals();
         const saved = this.indent;
         this.indent = 1;
+        defer this.indent = saved;
         this.try_seq = 0;
-        try this.emitBody(t.body);
-        this.indent = saved;
-        try this.w(".\n");
+        const name = try std.fmt.allocPrint(b.arena, "__bp_test_{d}", .{idx});
+        return blockFunction(b, name, &.{}, try this.bodyNode(b, t.body, 0, 1));
     }
 
     /// `try expr` (no catch) at body position → propagate `{error, E}` by nesting
@@ -1947,33 +3680,30 @@ const Emitter = struct {
         };
     }
 
-    // ── body (comma-separated stmts; does NOT emit trailing newline) ──────────
-    //
-    // Callers are responsible for the terminator that follows on the same line:
-    //   emitFn  → ".\n"
-    //   fun end → "\nINDENT end"
+    /// The statements `body[start..]` as an `erl_ast` body rendered at `indent`.
+    ///
+    /// A `try` without `catch` short-circuits: it lowers to
+    /// `case Inner of {ok, V} -> <rest>; {error, E} -> {error, E} end`, nesting
+    /// every following statement inside the Ok arm (Erlang has no early return),
+    /// so the Error variant propagates up as the function's value. An `if` whose
+    /// then-branch ends in `return` nests the rest in its false arm the same way.
+    fn bodyNode(this: *Emitter, b: Ast.Builder, body: []const ast.Stmt, start: usize, indent: usize) anyerror!Ast.Body {
+        const saved_indent = this.indent;
+        this.indent = indent;
+        defer this.indent = saved_indent;
 
-    fn emitBody(this: *Emitter, body: []const ast.Stmt) !void {
-        try this.emitBodyFrom(body, 0);
-    }
-
-    /// Emit statements `body[start..]`. A `try` without `catch` short-circuits:
-    /// it lowers to `case Inner of {ok, V} -> <rest>; {error, E} -> {error, E} end`,
-    /// nesting every following statement inside the Ok arm (Erlang has no early
-    /// return), so the Error variant propagates up as the function's value.
-    fn emitBodyFrom(this: *Emitter, body: []const ast.Stmt, start: usize) anyerror!void {
-        // The body's tail (last value) and comma-joining key off the last *real*
-        // statement, so trailing comments neither become the tail nor strand a
-        // dangling `,` before the closing `end`/`.`.
+        var stmts: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
+        // The body's tail (last value) keys off the last *real* statement, so
+        // trailing comments never become the tail.
         const last_real = lastRealStmt(body);
         var i = start;
         while (i < body.len) : (i += 1) {
             const stmt = body[i];
             const is_last = if (last_real) |lr| (i == lr) else (i == body.len - 1);
 
-            // Detect `[val name =] try inner` (no catch) at this position.
+            // `[val name =] try inner` (no catch) at this position.
             const prop: ?struct { inner: ast.Expr, head: TryHead } = switch (stmt.expr) {
-                .binding => |b| switch (b.kind) {
+                .binding => |bind| switch (bind.kind) {
                     .localBind => |lb| if (propagateTryInner(lb.value.*)) |inner|
                         .{ .inner = inner, .head = .{ .name = lb.name } }
                     else
@@ -1997,22 +3727,16 @@ const Emitter = struct {
                 },
                 else => null,
             };
-
             if (prop) |p| {
-                try this.writeIndent();
-                try this.emitPropagateTry(body, i, p.inner, p.head);
-                return; // remaining statements are nested inside the Ok arm
+                try stmts.append(b.arena, .{ .expr = try this.propagateTryExpr(b, body, i, p.inner, p.head) });
+                break; // remaining statements are nested inside the Ok arm
             }
 
-            // `if` whose then-branch ends in `return` and that has following
-            // statements: Erlang has no early return, so nest the rest of the
-            // body inside the false arm (mirrors the propagate-try nesting).
             if (!is_last and stmt.expr == .branch and stmt.expr.branch.kind == .if_) {
                 const if_node = stmt.expr.branch.kind.if_;
-                if (if_node.binding == null and if_node.else_ == null and bodyEndsWithReturn(if_node.then_)) {
-                    try this.writeIndent();
-                    try this.emitEarlyReturnIf(body, i, if_node);
-                    return; // remaining statements are nested inside the false arm
+                if (if_node.else_ == null and bodyEndsWithReturn(if_node.then_)) {
+                    try stmts.append(b.arena, .{ .expr = try this.earlyReturnIfExpr(b, body, i, if_node) });
+                    break; // remaining statements are nested inside the false arm
                 }
             }
 
@@ -2021,49 +3745,85 @@ const Emitter = struct {
             // captured var). Consumes both statements.
             if (!is_last) {
                 if (this.detectFoldFusion(body, i)) |ff| {
-                    try this.writeIndent();
-                    try this.emitFoldFusion(ff);
-                    if (i + 1 != body.len - 1) {
-                        const real_follows = if (last_real) |lr| (i + 1 < lr) else false;
-                        try this.w(if (real_follows) ",\n" else "\n");
-                    }
+                    try stmts.append(b.arena, .{ .expr = try this.foldFusionExpr(b, ff) });
                     i += 1; // also consume the forEach statement
                     continue;
                 }
             }
 
-            try this.writeIndent();
-            try this.emitBodyStmt(stmt, is_last);
-            // A real statement takes a trailing `,` only when another real
-            // statement follows; comments (and the tail) get a bare newline.
-            if (i != body.len - 1) {
-                const real_follows = if (last_real) |lr| (!isCommentStmt(stmt) and i < lr) else false;
-                try this.w(if (real_follows) ",\n" else "\n");
+            // `val assert P = e [catch h];` — its bindings are read by the
+            // statements after it, so the pattern is matched in the enclosing
+            // clause, not inside the `case` (a name bound by a single `case`
+            // clause is "unsafe" after it).
+            if (this.assertPatternBindingStmt(stmt)) |ap| {
+                try stmts.appendSlice(b.arena, try this.assertPatternStmts(b, ap, stmt.expr.comptime_.loc));
+                continue;
             }
-        }
 
-        // Erlang has no empty body: a `fun`, clause or function must end in an
-        // expression (`fun(X) -> end` is a syntax error). When `body[start..]`
-        // contributes no real statement — empty, or comments only — the tail
-        // value is `undefined` (mirrors how an absent value lowers elsewhere).
-        const has_real = blk: {
-            var k = start;
-            while (k < body.len) : (k += 1) {
-                if (!isCommentStmt(body[k])) break :blk true;
+            if (sourceComment(stmt)) |c| {
+                try stmts.append(b.arena, .{ .comment = c });
+            } else if (try this.mutatingExpr(b, stmt)) |mutation| {
+                try stmts.append(b.arena, .{ .expr = mutation });
+            } else {
+                try stmts.append(b.arena, .{ .expr = try this.stmtExpr(b, stmt) });
             }
-            break :blk false;
-        };
-        if (!has_real) {
-            if (start < body.len) try this.w("\n"); // separate from emitted comments
-            try this.writeIndent();
-            try this.w("undefined");
-        } else if (body.len > start and isCommentStmt(body[body.len - 1])) {
-            // A trailing comment ends the body on a `%`-line; the caller's
-            // terminator (`.` for a clause, `end` for a fun) would be swallowed
-            // by it. Break to a fresh indented line so it lands cleanly.
-            try this.w("\n");
-            try this.writeIndent();
         }
+        return .{ .stmts = stmts.items };
+    }
+
+    /// The `val assert` at `stmt` whose pattern binds at least one name, or
+    /// null. A pattern that binds nothing (`val assert 42 = answer catch 0;`)
+    /// is a pure check and keeps the single-expression lowering.
+    fn assertPatternBindingStmt(this: *const Emitter, stmt: ast.Stmt) ?@FieldType(@FieldType(ast.ComptimeExpr, "kind"), "assertPattern") {
+        if (stmt.expr != .comptime_) return null;
+        if (stmt.expr.comptime_.kind != .assertPattern) return null;
+        const ap = stmt.expr.comptime_.kind.assertPattern;
+        const isVariant = struct {
+            fn f(e: *const Emitter, name: []const u8) bool {
+                // A written path (`Maybe.None`, `.None`) is a variant, never a
+                // binding — the same rule `patternNode` applies.
+                return isVariantPath(name) or e.enum_variants.contains(name);
+            }
+        }.f;
+        if (!patternFacts.bindsNames(ap.pattern, this, isVariant)) return null;
+        return ap;
+    }
+
+    /// `val assert P = e [catch h];` at statement position, when `P` binds at
+    /// least one name:
+    ///
+    /// ```erlang
+    /// BpAssert0 = Subject,
+    /// P = case BpAssert0 of P' -> BpAssert0; _ -> Handler end
+    /// ```
+    ///
+    /// The `case` only decides *which* value the statement yields — the
+    /// subject when it matched, the handler's value otherwise (for the
+    /// handler-less form the handler is the `@panic(…)` the parser desugars
+    /// to, so a mismatch is fatal). The outer match is what binds, in the
+    /// enclosing clause where the following statements can read it: a name
+    /// bound by a single `case` clause is "unsafe" in erlang after the case.
+    /// `P'` is the same pattern lowered first, so `patternBindVar` gives it the
+    /// earlier version of each name and the outer `P` the current one.
+    ///
+    /// The subject is staged in `BpAssert<n>` because the arm used to re-emit
+    /// it — `case parse(X) of {ok, N} -> parse(X); …` called `parse/1` twice.
+    fn assertPatternStmts(this: *Emitter, b: Ast.Builder, ap: anytype, loc: ast.Loc) anyerror![]const Ast.Stmt {
+        const tmp = try std.fmt.allocPrint(b.arena, "BpAssert{d}_{d}", .{ loc.line, loc.col });
+        const subject = try this.exprNode(b, ap.expr.*);
+        this.pattern_discard = true;
+        const check = try this.patternNode(b, ap.pattern);
+        this.pattern_discard = false;
+        const handler = try this.exprNode(b, ap.handler.*);
+        const decided = try b.caseInline(Ast.Expr.v(tmp), &.{
+            try b.clause(&.{check}, &.{}, &.{Ast.Expr.v(tmp)}),
+            try b.clause(&.{Ast.Expr.v("_")}, &.{}, &.{handler}),
+        });
+        const bind = try this.patternNode(b, ap.pattern);
+        const stmts = try b.arena.alloc(Ast.Stmt, 2);
+        stmts[0] = .{ .expr = try b.match(Ast.Expr.v(tmp), subject) };
+        stmts[1] = .{ .expr = try b.match(bind, decided) };
+        return stmts;
     }
 
     /// Match `var acc = init;` at `body[i]` immediately followed by
@@ -2121,68 +3881,694 @@ const Emitter = struct {
         };
     }
 
-    /// Emit `Acc = lists:foldl(fun(P, Acc) -> <body> end, Init, Recv)`. The
+    /// `Acc = lists:foldl(fun(P, Acc) -> <body> end, Init, Recv)`. The
     /// accumulator reuses its source name as the fun's second parameter so the
     /// body's reads of `acc` resolve to the per-iteration value.
-    fn emitFoldFusion(this: *Emitter, ff: FoldFusion) anyerror!void {
-        const acc_var = try erlangVar(this.alloc, ff.acc_name);
-        defer this.alloc.free(acc_var);
-        const p_var = try erlangVar(this.alloc, ff.param);
-        defer this.alloc.free(p_var);
+    fn foldFusionExpr(this: *Emitter, b: Ast.Builder, ff: FoldFusion) anyerror!Ast.Expr {
+        const acc_var = Ast.Expr.v(try this.arenaVar(b, ff.acc_name));
+        const p_var = Ast.Expr.v(try this.arenaVar(b, ff.param));
         this.addLocal(ff.acc_name);
+        try this.mutable_locals.put(this.alloc, ff.acc_name, {});
         this.addLocal(ff.param);
-        try this.fmt("{s} = lists:foldl(fun({s}, {s}) ->\n", .{ acc_var, p_var, acc_var });
         const saved = this.indent;
         this.indent = saved + 1;
-        try this.writeIndent();
-        try this.emitFoldBody(ff.body_kind, acc_var);
+        const fold_body = try this.foldBodyExpr(b, ff.body_kind, acc_var);
         this.indent = saved;
-        try this.w("\n");
-        try this.writeIndent();
-        try this.w("end, ");
-        try this.emitExpr(ff.init.*);
-        try this.w(", ");
-        try this.emitExpr(ff.recv.*);
-        try this.w(")");
+        const fold = try b.remote("lists", "foldl", &.{
+            .{ .fun = .{ .params = try b.exprs(&.{ p_var, acc_var }), .body = try b.body(&.{fold_body}) } },
+            try this.exprNode(b, ff.init.*),
+            try this.exprNode(b, ff.recv.*),
+        });
+        return b.match(acc_var, fold);
     }
 
-    fn emitFoldBody(this: *Emitter, bk: FoldBodyKind, acc_var: []const u8) anyerror!void {
-        switch (bk) {
-            .assign => |e| try this.emitExpr(e.*),
-            .plus_assign => |e| {
-                try this.fmt("({s} + ", .{acc_var});
-                try this.emitExpr(e.*);
-                try this.w(")");
-            },
-            .push => |e| {
-                try this.fmt("({s} ++ [", .{acc_var});
-                try this.emitExpr(e.*);
-                try this.w("])");
-            },
-            .if_assign => |ia| {
-                try this.w("case ");
-                try this.emitExpr(ia.cond.*);
-                try this.w(" of\n");
+    fn foldBodyExpr(this: *Emitter, b: Ast.Builder, bk: FoldBodyKind, acc_var: Ast.Expr) anyerror!Ast.Expr {
+        return switch (bk) {
+            .assign => |e| this.exprNode(b, e.*),
+            .plus_assign => |e| b.binop("+", acc_var, try this.exprNode(b, e.*)),
+            .push => |e| b.binop("++", acc_var, try b.list(&.{try this.exprNode(b, e.*)})),
+            .if_assign => |ia| blk: {
+                const cond = try this.exprNode(b, ia.cond.*);
                 this.indent += 1;
-                try this.writeIndent();
-                try this.w("true -> ");
-                try this.emitExpr(ia.then_val.*);
-                try this.w(";\n");
-                try this.writeIndent();
-                try this.w("_ -> ");
-                if (ia.else_val) |ev| try this.emitExpr(ev.*) else try this.w(acc_var);
-                this.indent -= 1;
-                try this.w("\n");
-                try this.writeIndent();
-                try this.w("end");
+                defer this.indent -= 1;
+                const then_val = try this.exprNode(b, ia.then_val.*);
+                const else_val = if (ia.else_val) |ev| try this.exprNode(b, ev.*) else acc_var;
+                break :blk b.caseOf(cond, &.{
+                    try b.clause(&.{Ast.Expr.a("true")}, &.{}, &.{then_val}),
+                    try b.clause(&.{Ast.Expr.v("_")}, &.{}, &.{else_val}),
+                });
             },
+        };
+    }
+
+    // ── mutation through branches and loops ──────────────────────────────────
+    //
+    // Erlang variables are immutable and a binding made inside a `case` arm or a
+    // `fun` is not visible after it, so a statement-level `if` / `loop` /
+    // `forEach` that reassigns variables bound before it is lowered to an
+    // expression that *returns* the new values:
+    //
+    //   if (c) { acc = acc + 1; }          Acc@1 = case C of true -> Acc@2 = …, Acc@2; _ -> Acc end
+    //   loop (xs) { x -> acc = acc + x; }  Acc@3 = lists:foldl(fun(X, Acc@1) -> Acc@2 = …, Acc@2 end, Acc, Xs)
+    //
+    // Several reassigned variables travel as a tuple. The names are the ones
+    // already bound in the function (`locals`) that the statement assigns,
+    // looking through nested `if`/`loop`/`forEach` bodies.
+
+    /// `stmt` through the mutation-returning shapes above when it reassigns
+    /// outer variables, or null.
+    fn mutatingExpr(this: *Emitter, b: Ast.Builder, stmt: ast.Stmt) anyerror!?Ast.Expr {
+        var names: std.ArrayListUnmanaged([]const u8) = .empty;
+        switch (stmt.expr) {
+            .branch => |br| switch (br.kind) {
+                .if_ => |if_node| {
+                    if (bodyEndsWithReturn(if_node.then_)) return null;
+                    if (if_node.else_) |els| if (bodyEndsWithReturn(els)) return null;
+                    try this.collectMutations(b.arena, if_node.then_, &.{}, &names);
+                    if (if_node.else_) |els| try this.collectMutations(b.arena, els, &.{}, &names);
+                    if (if_node.binding) |bn| removeName(&names, bn);
+                    if (names.items.len == 0) return null;
+                    return try this.mutatingIfExpr(b, if_node, names.items);
+                },
+                else => return null,
+            },
+            .loop => |lp| {
+                if (lp.condition) {
+                    try this.collectMutations(b.arena, lp.body, &.{}, &names);
+                    if (names.items.len == 0) return null;
+                    return try this.conditionLoopNode(b, lp, names.items);
+                }
+                // One loop parameter, or two — `loop (xs) { x, i -> … }` /
+                // `loop (xs, 0..) { … }` — whose second one is the index.
+                if (lp.params.len == 0 or lp.params.len > 2 or lp.awaitLoop) return null;
+                if (lp.indexRange != null and lp.params.len != 2) return null;
+                for (lp.body) |s| if (s.expr == .jump and s.expr.jump.kind == .yield) return null;
+                try this.collectMutations(b.arena, lp.body, lp.params, &names);
+                if (names.items.len == 0) return null;
+                const index: ?FoldIndex = if (lp.params.len == 2) .{ .name = lp.params[1], .range = lp.indexRange } else null;
+                return try this.mutatingFoldExpr(b, lp.params[0], index, lp.body, lp.iter.*, names.items);
+            },
+            .binding => |bind| switch (bind.kind) {
+                .localBind => |lb| {
+                    if (lb.value.* != .function or this.locals.contains(lb.name)) return null;
+                    const fe = lb.value.function;
+                    try this.collectMutations(b.arena, fe.kind.body, fe.kind.params, &names);
+                    if (names.items.len == 0) return null;
+                    if (lb.mutable) try this.mutable_locals.put(this.alloc, lb.name, {});
+                    return try this.mutatingClosureExpr(b, lb.name, fe.kind.params, fe.kind.body, names.items);
+                },
+                else => return null,
+            },
+            .call => {
+                // `emit(x)` on a closure that reassigns outer variables rebinds
+                // them from what it answers: `Tokens@2 = Emit(X, Tokens@1)`.
+                if (this.closureMutation(stmt.expr)) |cm| {
+                    var args: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+                    try args.appendSlice(b.arena, try this.callArgs(b, null, cm.cc));
+                    try args.append(b.arena, try this.varGroupExpr(b, cm.names));
+                    const call: Ast.Expr = .{ .apply = .{
+                        .fun = try b.ptr(try this.nameRefNode(b, cm.cc.callee)),
+                        .args = args.items,
+                    } };
+                    return try b.match(try this.bindVarGroupExpr(b, cm.names), call);
+                }
+                // `out.push(x)` rebinds `out`: `Out@1 = (Out ++ [X])`, so a
+                // group-out expression after it reads the grown list.
+                if (this.receiverMutation(stmt.expr)) |name| {
+                    return try this.bindExpr(b, name, .assign, stmt.expr);
+                }
+                const each = forEachLambda(stmt.expr) orelse return null;
+                try this.collectMutations(b.arena, each.body, each.params, &names);
+                if (names.items.len == 0) return null;
+                return try this.mutatingFoldExpr(b, each.params[0], null, each.body, each.recv.*, names.items);
+            },
+            else => return null,
         }
+    }
+
+    /// The local a statement-position call mutates through its receiver —
+    /// `out.push(x)` on a `var out` — or null. The receiver must be an Array
+    /// (the inferred `.prim = .array` lowering; in a comptime body any receiver,
+    /// whose shim answers `push` for lists only), so the call's value is the
+    /// grown list. A parameter or a field access (`self.items.push(x)`) keeps
+    /// the plain lowering: rebinding it could not reach the caller anyway.
+    fn receiverMutation(this: *const Emitter, e: ast.Expr) ?[]const u8 {
+        if (e != .call or e.call.kind != .call) return null;
+        const cc = e.call.kind.call;
+        if (cc.is_builtin or !std.mem.eql(u8, cc.callee, "push")) return null;
+        if (cc.args.len + cc.trailing.len != 1) return null;
+        const name = identName((cc.receiver orelse return null).*) orelse return null;
+        if (!this.locals.contains(name) or !this.mutable_locals.contains(name)) return null;
+        if (this.untyped) return name;
+        const il = this.instance_lowerings.get(e.call.loc) orelse return null;
+        return switch (il) {
+            .prim => |k| if (k == .array) name else null,
+            .type_ => null,
+        };
+    }
+
+    /// A condition loop (decision 8 §10) as a named fun that tests, runs the
+    /// body and recurses:
+    ///
+    ///     Group' = (fun __Loop(GroupIn) -> case Cond of true -> Body, __Loop(GroupOut);
+    ///                                                   _ -> GroupIn end end)(Group)
+    ///
+    /// The variables the body reassigns (`names`) travel as the fun's parameter
+    /// and come back as its value; with none the fun takes nothing and answers
+    /// `ok`. A `break` throws `{__bp_cond_break, Group}` at its versions, caught
+    /// around the call; a `continue` throws `{__bp_cond_continue, Group}`, caught
+    /// around the body so the recursion carries on.
+    fn conditionLoopNode(this: *Emitter, b: Ast.Builder, lp: anytype, names: []const []const u8) anyerror!Ast.Expr {
+        const fun_name = if (this.cond_loop_seq == 0) loop_fun_var else try std.fmt.allocPrint(b.arena, "{s}{d}", .{ loop_fun_var, this.cond_loop_seq });
+        this.cond_loop_seq += 1;
+        defer this.cond_loop_seq -= 1;
+        const saved_ctx = this.cond_loop;
+        this.cond_loop = names;
+        defer this.cond_loop = saved_ctx;
+        const valued = conditionLoopBreaksWithValue(lp.body);
+        const saved_valued = this.cond_loop_valued;
+        this.cond_loop_valued = valued;
+        defer this.cond_loop_valued = saved_valued;
+
+        // Decision 8 §9 — a generator whose body drives itself with a condition
+        // loop. `yield <v>` used to lower to the bare value expression, which an
+        // erlang clause body discards, so `#[@generator] fn nums` answered its
+        // loop's final counter and `lists:foldl/3` over it raised
+        // `no case clause matching 3`. The yields are collected instead: a
+        // synthetic local joins the loop's variable GROUP, so the threading that
+        // already carries a reassigned `i` through the recursion carries the
+        // accumulator too, and the loop answers `lists:reverse/1` of it.
+        const yielding = conditionLoopYieldsValue(lp.body);
+        const saved_yield = this.cond_loop_yield;
+        defer this.cond_loop_yield = saved_yield;
+        var all_names = names;
+        if (yielding) {
+            const with_acc = try b.arena.alloc([]const u8, names.len + 1);
+            @memcpy(with_acc[0..names.len], names);
+            with_acc[names.len] = cond_yield_acc;
+            all_names = with_acc;
+            this.addLocal(cond_yield_acc);
+            this.cond_loop_yield = cond_yield_acc;
+            this.cond_loop = all_names;
+        } else {
+            this.cond_loop_yield = null;
+        }
+
+        this.cond_loop_vars += 1;
+        const caught_var = try std.fmt.allocPrint(b.arena, "__BpGroup{d}", .{this.cond_loop_vars});
+        var snapshot = try this.var_current.clone();
+        defer snapshot.deinit();
+        const group_in: ?Ast.Expr = if (all_names.len > 0) try this.bindVarGroupExpr(b, all_names) else null;
+        var in_versions = try this.var_current.clone();
+        defer in_versions.deinit();
+        const arm_indent = this.indent + 3;
+        const saved = this.indent;
+        this.indent = arm_indent;
+        const cond = try this.condNode(b, lp.iter.*);
+        this.indent = saved;
+
+        const body_stmts = (try this.bodyNode(b, lp.body, 0, arm_indent)).stmts;
+        const group_out = if (group_in != null) try this.varGroupExpr(b, all_names) else Ast.Expr.a("ok");
+        var arm: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
+        const next: Ast.Expr = if (hasJump(lp.body, .@"continue")) blk: {
+            var tried: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
+            try tried.appendSlice(b.arena, body_stmts);
+            try tried.append(b.arena, .{ .expr = group_out });
+            break :blk .{ .try_catch = .{
+                .body = .{ .stmts = tried.items },
+                .catches = try b.arena.dupe(Ast.Clause, &.{try b.clause(
+                    &.{try b.exception(Ast.Expr.a("throw"), try b.tuple(&.{ Ast.Expr.a(cond_continue_signal), Ast.Expr.v(caught_var) }))},
+                    &.{},
+                    &.{Ast.Expr.v(caught_var)},
+                )}),
+            } };
+        } else blk: {
+            try arm.appendSlice(b.arena, body_stmts);
+            break :blk group_out;
+        };
+        try arm.append(b.arena, .{ .expr = .{ .apply = .{
+            .fun = try b.ptr(Ast.Expr.v(fun_name)),
+            .args = if (group_in != null) try b.exprs(&.{next}) else &.{},
+        } } });
+        if (group_in == null and next == .try_catch) {
+            // No group to carry: run the guarded body for its effects, then recurse.
+            arm.items[arm.items.len - 1] = .{ .expr = .{ .apply = .{ .fun = try b.ptr(Ast.Expr.v(fun_name)), .args = &.{} } } };
+            try arm.insert(b.arena, arm.items.len - 1, .{ .expr = next });
+        }
+        try this.restoreVersions(&in_versions);
+        const done = if (group_in) |_| try this.varGroupExpr(b, all_names) else Ast.Expr.a("ok");
+        try this.restoreVersions(&snapshot);
+        const case = try b.caseOf(cond, &.{
+            .{ .patterns = try b.exprs(&.{Ast.Expr.a("true")}), .body = .{ .stmts = arm.items } },
+            try b.clause(&.{Ast.Expr.v("_")}, &.{}, &.{done}),
+        });
+        const fun: Ast.Expr = .{ .fun = .{
+            .name = fun_name,
+            .params = if (group_in) |g| try b.exprs(&.{g}) else &.{},
+            .body = try b.body(&.{case}),
+        } };
+        // The accumulator has no value before the loop — it starts empty — so
+        // the initial group is built by hand rather than from the current
+        // versions: every other name is its variable, the accumulator is `[]`.
+        const initial_group: ?Ast.Expr = if (group_in == null) null else blk: {
+            if (!yielding) break :blk try this.varGroupExpr(b, all_names);
+            const vars = try b.arena.alloc(Ast.Expr, all_names.len);
+            for (all_names, 0..) |n, i| vars[i] = if (std.mem.eql(u8, n, cond_yield_acc))
+                Ast.Expr{ .list = &.{} }
+            else
+                Ast.Expr.v(try this.varRef(b, n));
+            break :blk if (vars.len == 1) vars[0] else Ast.Expr{ .tuple = vars };
+        };
+        const plain_call: Ast.Expr = .{ .apply = .{
+            .fun = try b.ptr(try b.paren(fun)),
+            .args = if (initial_group) |g| try b.exprs(&.{g}) else &.{},
+        } };
+        var call = plain_call;
+        if (valued) {
+            // Decision 8 §10 — `break <value>` is the loop's value. The loop
+            // answers a PAIR, `{Group, Value}`: running to the end of the
+            // condition gives `{FinalGroup, undefined}`, and the break's throw
+            // gives `{GroupAtTheJump, Value}`. A `case` with one clause then
+            // destructures it, so the group's variables are rebound (they are
+            // bound in every clause, so erlang exports them) and the case's own
+            // value — the loop's — is the break's.
+            const thrown_var = try std.fmt.allocPrint(b.arena, "__BpBreak{d}", .{this.cond_loop_vars});
+            const value_var = try std.fmt.allocPrint(b.arena, "__BpValue{d}", .{this.cond_loop_vars});
+            call = .{ .try_catch = .{
+                .body = try b.body(&.{try b.tuple(&.{ plain_call, Ast.Expr.a("undefined") })}),
+                .catches = try b.arena.dupe(Ast.Clause, &.{try b.clause(
+                    &.{try b.exception(Ast.Expr.a("throw"), try b.tuple(&.{
+                        Ast.Expr.a(cond_break_signal),
+                        Ast.Expr.v(caught_var),
+                        Ast.Expr.v(thrown_var),
+                    }))},
+                    &.{},
+                    &.{try b.tuple(&.{ Ast.Expr.v(caught_var), Ast.Expr.v(thrown_var) })},
+                )}),
+            } };
+            const group_pat: Ast.Expr = if (group_in != null)
+                try this.bindVarGroupExpr(b, names)
+            else
+                Ast.Expr.v("_");
+            const out = Ast.Expr.v(value_var);
+            return b.caseOf(call, &.{
+                try b.clause(&.{try b.tuple(&.{ group_pat, out })}, &.{}, &.{out}),
+            });
+        }
+        if (hasJump(lp.body, .@"break")) {
+            const guarded = try b.body(&.{plain_call});
+            call = .{ .try_catch = .{
+                .body = guarded,
+                .catches = try b.arena.dupe(Ast.Clause, &.{try b.clause(
+                    &.{try b.exception(Ast.Expr.a("throw"), try b.tuple(&.{ Ast.Expr.a(cond_break_signal), Ast.Expr.v(caught_var) }))},
+                    &.{},
+                    &.{Ast.Expr.v(caught_var)},
+                )}),
+            } };
+        }
+        if (yielding) {
+            // `case <call> of {I@3, Acc@n} -> lists:reverse(Acc@n) end`: the
+            // group is rebound by the pattern (bound in the only clause, so
+            // erlang exports it) and the loop's own value is the collected
+            // list, in yield order.
+            // A group of one name is a bare variable rather than a tuple, and
+            // the `case` destructures that just as well, so there is no
+            // shorter form to special-case: the call has to be there either
+            // way, or the accumulator is never bound.
+            const group_pat = try this.bindVarGroupExpr(b, all_names);
+            const acc = Ast.Expr.v(try this.varRef(b, cond_yield_acc));
+            const reversed = try b.remote("lists", "reverse", &.{acc});
+            return b.caseOf(call, &.{try b.clause(&.{group_pat}, &.{}, &.{reversed})});
+        }
+        if (group_in == null) return call;
+        return b.match(try this.bindVarGroupExpr(b, names), call);
+    }
+
+    /// True when `body` jumps with `kind` for the loop it belongs to — directly
+    /// or under an `if`, not inside a nested loop or a lambda.
+    fn hasJump(body: []const ast.Stmt, kind: std.meta.Tag(ast.JumpExprOf(.untyped))) bool {
+        for (body) |stmt| switch (stmt.expr) {
+            .jump => |j| if (j.kind == kind) return true,
+            .branch => |br| switch (br.kind) {
+                .if_ => |i| {
+                    if (hasJump(i.then_, kind)) return true;
+                    if (i.else_) |els| if (hasJump(els, kind)) return true;
+                },
+                else => {},
+            },
+            else => {},
+        };
+        return false;
+    }
+
+    /// A condition loop whose body YIELDS a value: the generator protocol's
+    /// shape, which has no erlang lowering of its own — `#[@generator]` rewrites
+    /// the yield before codegen sees it, so a yield reaching here is the form
+    /// that is still refused. A valued `break` is lowered (decision 8 §10) and
+    /// is `conditionLoopBreaksWithValue`'s question.
+    fn conditionLoopYieldsValue(body: []const ast.Stmt) bool {
+        return condLoopJumpHasValue(body, .yield);
+    }
+
+    /// A condition loop whose `break` carries a value — the loop is then an
+    /// expression whose value is that `break`'s (decision 8 §10).
+    fn conditionLoopBreaksWithValue(body: []const ast.Stmt) bool {
+        return condLoopJumpHasValue(body, .@"break");
+    }
+
+    /// True when `body` carries a `kind` jump WITH a value for the loop it
+    /// belongs to — directly or under an `if`, never inside a nested loop or a
+    /// lambda, which own their own jumps (the traversal `hasJump` uses).
+    fn condLoopJumpHasValue(body: []const ast.Stmt, comptime kind: std.meta.Tag(ast.JumpExprOf(.untyped))) bool {
+        for (body) |stmt| switch (stmt.expr) {
+            .jump => |j| if (j.kind == kind) switch (j.kind) {
+                .yield => |y| if (y.value != null) return true,
+                .@"break" => |brk| if (brk.value != null) return true,
+                else => {},
+            },
+            .branch => |br| switch (br.kind) {
+                .if_ => |i| {
+                    if (condLoopJumpHasValue(i.then_, kind)) return true;
+                    if (i.else_) |els| if (condLoopJumpHasValue(els, kind)) return true;
+                },
+                else => {},
+            },
+            else => {},
+        };
+        return false;
+    }
+
+    /// `Acc@n = [<value> | Acc@n-1]` — one `yield` inside a collecting condition
+    /// loop. The current version is read BEFORE the new one is bound, as an
+    /// ordinary reassignment does; the loop reverses at the end.
+    fn condYieldPush(this: *Emitter, b: Ast.Builder, acc: []const u8, value: anytype) anyerror!Ast.Expr {
+        const head = if (value) |val| try this.exprNode(b, val.*) else Ast.Expr.a("undefined");
+        const tail = Ast.Expr.v(try this.varRef(b, acc));
+        const bound = try this.bindVarGroupExpr(b, &.{acc});
+        return b.match(bound, try b.cons(&.{head}, tail));
+    }
+
+    /// The throw a `break` inside a condition loop raises. Without a value it is
+    /// `{Signal, Group}` — the reassigned variables at the jump, which the loop's
+    /// `try` rebinds. With one (decision 8 §10) it is `{Signal, Group, Value}`,
+    /// and `conditionLoopNode` destructures both.
+    fn condBreakThrow(this: *Emitter, b: Ast.Builder, names: []const []const u8, brk: anytype) anyerror!Ast.Expr {
+        const group = if (names.len > 0) try this.varGroupExpr(b, names) else Ast.Expr.a("ok");
+        if (!this.cond_loop_valued) {
+            return b.remote("erlang", "throw", &.{try b.tuple(&.{ Ast.Expr.a(cond_break_signal), group })});
+        }
+        const value = if (brk.value) |bp| try this.exprNode(b, bp.*) else Ast.Expr.a("undefined");
+        return b.remote("erlang", "throw", &.{try b.tuple(&.{ Ast.Expr.a(cond_break_signal), group, value })});
+    }
+
+    const ClosureMutation = struct {
+        cc: @FieldType(@FieldType(ast.CallExprOf(.untyped), "kind"), "call"),
+        names: []const []const u8,
+    };
+
+    /// A statement-position call of a local closure recorded in
+    /// `mutating_closures`, or null.
+    fn closureMutation(this: *const Emitter, e: ast.Expr) ?ClosureMutation {
+        if (e != .call or e.call.kind != .call) return null;
+        const cc = e.call.kind.call;
+        if (cc.is_builtin or cc.receiver != null or !this.locals.contains(cc.callee)) return null;
+        const names = this.mutating_closures.get(cc.callee) orelse return null;
+        return .{ .cc = cc, .names = names };
+    }
+
+    /// `Name = fun(Params…, GroupIn) -> Body, GroupOut end` for a closure whose
+    /// body reassigns `names` of the enclosing function. An erlang fun cannot
+    /// rebind what it captured, so the variables travel in as the last argument
+    /// and out as the value; every statement-position call rebinds them.
+    fn mutatingClosureExpr(this: *Emitter, b: Ast.Builder, name: []const u8, params: []const []const u8, body: []const ast.Stmt, names: []const []const u8) anyerror!Ast.Expr {
+        const saved_cond_loop = this.cond_loop;
+        this.cond_loop = null;
+        defer this.cond_loop = saved_cond_loop;
+        var snapshot = try this.var_current.clone();
+        defer snapshot.deinit();
+        const fun_params = try b.arena.alloc(Ast.Expr, params.len + 1);
+        for (params, 0..) |p, i| {
+            fun_params[i] = Ast.Expr.v(try this.arenaVar(b, p));
+            this.addLocal(p);
+        }
+        fun_params[params.len] = try this.bindVarGroupExpr(b, names);
+        const fun_body = try this.armWithGroup(b, body, names, this.indent + 1);
+        try this.restoreVersions(&snapshot);
+        try this.mutating_closures.put(this.alloc, name, try b.arena.dupe([]const u8, names));
+        const target = Ast.Expr.v(try this.arenaVar(b, name));
+        this.addLocal(name);
+        return b.match(target, .{ .fun = .{ .params = fun_params, .body = fun_body } });
+    }
+
+    const ForEachLambda = struct {
+        recv: *const ast.Expr,
+        params: []const []const u8,
+        body: []const ast.Stmt,
+    };
+
+    /// `recv.forEach({ p -> body })` / `recv.forEach { p -> body }` with a
+    /// single-parameter lambda, or null.
+    fn forEachLambda(e: ast.Expr) ?ForEachLambda {
+        if (e != .call or e.call.kind != .call) return null;
+        const cc = e.call.kind.call;
+        const recv = cc.receiver orelse return null;
+        if (!std.mem.eql(u8, cc.callee, "forEach")) return null;
+        if (cc.args.len == 1 and cc.trailing.len == 0) {
+            const fe = switch (cc.args[0].value.*) {
+                .function => |f| f,
+                else => return null,
+            };
+            if (fe.kind.params.len != 1) return null;
+            return .{ .recv = recv, .params = fe.kind.params, .body = fe.kind.body };
+        }
+        if (cc.args.len == 0 and cc.trailing.len == 1 and cc.trailing[0].params.len == 1) {
+            return .{ .recv = recv, .params = cc.trailing[0].params, .body = cc.trailing[0].body };
+        }
+        return null;
+    }
+
+    /// Append (once each) the outer variables that `stmts` reassigns. `shadowed`
+    /// names are bound by the construct itself (loop/lambda params) and skipped.
+    fn collectMutations(this: *Emitter, gpa: std.mem.Allocator, stmts: []const ast.Stmt, shadowed: []const []const u8, out: *std.ArrayListUnmanaged([]const u8)) anyerror!void {
+        for (stmts) |s| switch (s.expr) {
+            .binding => |b| switch (b.kind) {
+                .assign => |a| switch (a.target) {
+                    .name => |n| {
+                        if (!this.locals.contains(n)) continue;
+                        if (containsName(shadowed, n) or containsName(out.items, n)) continue;
+                        try out.append(gpa, n);
+                    },
+                    else => {},
+                },
+                else => {},
+            },
+            .branch => |br| switch (br.kind) {
+                .if_ => |if_node| {
+                    try this.collectMutations(gpa, if_node.then_, shadowed, out);
+                    if (if_node.else_) |els| try this.collectMutations(gpa, els, shadowed, out);
+                },
+                else => {},
+            },
+            .loop => |lp| try this.collectMutations(gpa, lp.body, lp.params, out),
+            .call => if (this.closureMutation(s.expr)) |cm| {
+                for (cm.names) |n| {
+                    if (!this.locals.contains(n) or containsName(shadowed, n) or containsName(out.items, n)) continue;
+                    try out.append(gpa, n);
+                }
+            } else if (this.receiverMutation(s.expr)) |n| {
+                if (containsName(shadowed, n) or containsName(out.items, n)) continue;
+                try out.append(gpa, n);
+            } else if (forEachLambda(s.expr)) |each| try this.collectMutations(gpa, each.body, each.params, out),
+            else => {},
+        };
+    }
+
+    fn containsName(names: []const []const u8, name: []const u8) bool {
+        for (names) |n| if (std.mem.eql(u8, n, name)) return true;
+        return false;
+    }
+
+    fn removeName(names: *std.ArrayListUnmanaged([]const u8), name: []const u8) void {
+        var i: usize = 0;
+        while (i < names.items.len) {
+            if (std.mem.eql(u8, names.items[i], name)) _ = names.orderedRemove(i) else i += 1;
+        }
+    }
+
+    /// `Name` / `Name@v` for each of `names` at their current versions, as one
+    /// variable or a `{A, B}` tuple.
+    fn varGroupExpr(this: *Emitter, b: Ast.Builder, names: []const []const u8) anyerror!Ast.Expr {
+        const vars = try b.arena.alloc(Ast.Expr, names.len);
+        for (names, 0..) |n, i| vars[i] = Ast.Expr.v(try this.varRef(b, n));
+        return if (vars.len == 1) vars[0] else .{ .tuple = vars };
+    }
+
+    /// Give every name in `names` a fresh version and return the group.
+    fn bindVarGroupExpr(this: *Emitter, b: Ast.Builder, names: []const []const u8) anyerror!Ast.Expr {
+        for (names) |n| {
+            const version = (this.var_next.get(n) orelse 0) + 1;
+            try this.var_next.put(n, version);
+            try this.var_current.put(n, version);
+        }
+        return this.varGroupExpr(b, names);
+    }
+
+    const VersionSnapshot = std.StringHashMap(u32);
+
+    fn restoreVersions(this: *Emitter, snapshot: *const VersionSnapshot) !void {
+        this.var_current.clearRetainingCapacity();
+        var it = snapshot.iterator();
+        while (it.next()) |e| try this.var_current.put(e.key_ptr.*, e.value_ptr.*);
+    }
+
+    /// The bare Erlang variable for `name`, spelled in the builder's arena.
+    fn arenaVar(this: *Emitter, b: Ast.Builder, name: []const u8) anyerror![]const u8 {
+        return this.versionedVar(b, name, 0);
+    }
+
+    /// A variable BOUND by a pattern. Erlang patterns do not shadow: a name that
+    /// is already bound in the enclosing clause matches against its value instead
+    /// of binding it (`case Sh of {'Square', S} ->` with `S` the function
+    /// parameter never matches), and a name bound by a single `case` clause is
+    /// "unsafe" in every later `case`. So each pattern binding takes the next
+    /// version of the name (`S`, `S@2`, …) and that version becomes the current
+    /// one, which is what the arm body then reads.
+    fn patternBindVar(this: *Emitter, b: Ast.Builder, name: []const u8) anyerror![]const u8 {
+        if (name.len == 0 or std.mem.eql(u8, name, "_")) return "_";
+        // `assertPatternStmts` lowers its pattern twice: once as the `case`
+        // test, whose binders nothing reads (and which erlang would warn
+        // about), and once as the enclosing match, which is the one that binds.
+        if (this.pattern_discard) return "_";
+        if (!this.locals.contains(name)) {
+            this.addLocal(name);
+            return this.arenaVar(b, name);
+        }
+        const version = (this.var_next.get(name) orelse 0) + 1;
+        try this.var_next.put(name, version);
+        try this.var_current.put(name, version);
+        return this.versionedVar(b, name, version);
+    }
+
+    /// An arm body at `indent`: its statements (when it has a real one), then
+    /// the group at its post-arm versions.
+    fn armWithGroup(this: *Emitter, b: Ast.Builder, body: []const ast.Stmt, names: []const []const u8, indent: usize) anyerror!Ast.Body {
+        var stmts: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
+        if (lastRealStmt(body) != null) {
+            try stmts.appendSlice(b.arena, (try this.bodyNode(b, body, 0, indent)).stmts);
+        }
+        try stmts.append(b.arena, .{ .expr = try this.varGroupExpr(b, names) });
+        return .{ .stmts = stmts.items };
+    }
+
+    /// `Group = case Cond of true -> Then, Group'; _ -> Else, Group'' end`
+    /// (the binding form `if (x) { b -> … }` matches `undefined` first).
+    fn mutatingIfExpr(this: *Emitter, b: Ast.Builder, if_node: anytype, names: []const []const u8) anyerror!Ast.Expr {
+        var snapshot = try this.var_current.clone();
+        defer snapshot.deinit();
+
+        var clauses: std.ArrayListUnmanaged(Ast.Clause) = .empty;
+        const arm_indent = this.indent + 2;
+
+        if (if_node.binding) |name| {
+            // The binding form: `undefined` runs the else arm, any other value
+            // binds the name and runs the then arm — no catch-all after them.
+            const subject = try this.exprNode(b, if_node.cond.*);
+            if (if_node.else_) |els| {
+                try clauses.append(b.arena, .{ .patterns = try b.exprs(&.{Ast.Expr.a("undefined")}), .body = try this.armWithGroup(b, els, names, arm_indent) });
+                try this.restoreVersions(&snapshot);
+            } else {
+                try clauses.append(b.arena, try b.clause(&.{Ast.Expr.a("undefined")}, &.{}, &.{try this.varGroupExpr(b, names)}));
+            }
+            const bound = Ast.Expr.v(try this.patternBindVar(b, name));
+            try clauses.append(b.arena, .{ .patterns = try b.exprs(&.{bound}), .body = try this.armWithGroup(b, if_node.then_, names, arm_indent) });
+            try this.restoreVersions(&snapshot);
+            const target = try this.bindVarGroupExpr(b, names);
+            return b.match(target, try b.caseOf(subject, clauses.items));
+        }
+        const subject = try this.condNode(b, if_node.cond.*);
+        const then_pattern = Ast.Expr.a("true");
+        try clauses.append(b.arena, .{
+            .patterns = try b.exprs(&.{then_pattern}),
+            .body = try this.armWithGroup(b, if_node.then_, names, arm_indent),
+        });
+        try this.restoreVersions(&snapshot);
+
+        const else_body: Ast.Body = if (if_node.else_) |els| blk: {
+            const body = try this.armWithGroup(b, els, names, arm_indent);
+            try this.restoreVersions(&snapshot);
+            break :blk body;
+        } else try b.body(&.{try this.varGroupExpr(b, names)});
+        try clauses.append(b.arena, .{ .patterns = try b.exprs(&.{Ast.Expr.v("_")}), .body = else_body });
+
+        // The group's fresh versions are only known once both arms were built.
+        const target = try this.bindVarGroupExpr(b, names);
+        return b.match(target, try b.caseOf(subject, clauses.items));
+    }
+
+    /// The index parameter of a two-parameter loop and the range it counts
+    /// (`loop (xs, 1..) { x, i -> }`); `range` is null for `loop (xs) { x, i -> }`,
+    /// which counts from 0.
+    const FoldIndex = struct { name: []const u8, range: ?*const ast.Expr };
+
+    /// `Group = lists:foldl(fun(Param, GroupIn) -> Body, GroupOut end, Group, Iter)`.
+    /// With an index the fold walks `lists:enumerate(Start, Iter)` and the item
+    /// parameter is the `{Index, Item}` pair — `lists:foldl` passes one element,
+    /// so two fun parameters would never match.
+    fn mutatingFoldExpr(this: *Emitter, b: Ast.Builder, param: []const u8, index: ?FoldIndex, body: []const ast.Stmt, iter: ast.Expr, names: []const []const u8) anyerror!Ast.Expr {
+        const saved_cond_loop = this.cond_loop;
+        this.cond_loop = null;
+        defer this.cond_loop = saved_cond_loop;
+        var snapshot = try this.var_current.clone();
+        defer snapshot.deinit();
+
+        // Fun heads shadow: the parameters take the bare names.
+        const item = Ast.Expr.v(try this.arenaVar(b, param));
+        this.addLocal(param);
+        const pname = if (index) |ix| blk: {
+            const idx = Ast.Expr.v(try this.arenaVar(b, ix.name));
+            this.addLocal(ix.name);
+            break :blk try b.tuple(&.{ idx, item });
+        } else item;
+        // The accumulator parameter is a fresh version: fun heads always bind.
+        const group_in = try this.bindVarGroupExpr(b, names);
+        const fun_body = try this.armWithGroup(b, body, names, this.indent + 1);
+        try this.restoreVersions(&snapshot);
+        const group_init = try this.varGroupExpr(b, names);
+        const iter_expr = if (index) |ix| try b.remote("lists", "enumerate", &.{
+            if (ix.range) |r| try this.indexRangeStart(b, r.*) else Ast.Expr.t(Term.int(0)),
+            try this.exprNode(b, iter),
+        }) else try this.exprNode(b, iter);
+
+        const fold = try b.remote("lists", "foldl", &.{
+            .{ .fun = .{ .params = try b.exprs(&.{ pname, group_in }), .body = fun_body } },
+            group_init,
+            iter_expr,
+        });
+        const target = try this.bindVarGroupExpr(b, names);
+        return b.match(target, fold);
     }
 
     /// True when the last statement of a branch body is a valued `return`.
     /// A statement that is only a source comment (`.literal.comment`). Comments
     /// are not Erlang expressions: they never take a `,` separator and must not
     /// be treated as the body's tail value.
+    fn sourceComment(stmt: ast.Stmt) ?Ast.Comment {
+        if (stmt.expr != .literal or stmt.expr.literal.kind != .comment) return null;
+        return commentNode(stmt.expr.literal.kind.comment);
+    }
+
+    /// A source comment as an Erlang comment: `//` → `%`, `///` → `%%`, `////` → `%%%`.
+    fn commentNode(c: anytype) Ast.Comment {
+        return .{
+            .level = switch (c.kind) {
+                .normal => .line,
+                .doc => .doc,
+                .module => .module,
+            },
+            .text = c.text,
+        };
+    }
+
     fn isCommentStmt(stmt: ast.Stmt) bool {
         return switch (stmt.expr) {
             .literal => |lit| switch (lit.kind) {
@@ -2217,27 +4603,31 @@ const Emitter = struct {
         };
     }
 
-    /// Emit `case Cond of true -> <then-body>; _ -> <body[i+1..]> end` for an
-    /// `if` that early-returns, nesting the remaining statements in the false arm.
-    fn emitEarlyReturnIf(this: *Emitter, body: []const ast.Stmt, i: usize, if_node: anytype) anyerror!void {
-        try this.w("case ");
-        try this.emitExpr(if_node.cond.*);
-        try this.w(" of\n");
-        this.indent += 1;
-        try this.writeIndent();
-        try this.w("true ->\n");
-        this.indent += 1;
-        try this.emitBranchBody(if_node.then_);
-        this.indent -= 1;
-        try this.w(";\n");
-        try this.writeIndent();
-        try this.w("_ ->\n");
-        this.indent += 1;
-        try this.emitBodyFrom(body, i + 1);
-        this.indent -= 2;
-        try this.w("\n");
-        try this.writeIndent();
-        try this.w("end");
+    /// `case Cond of true -> <then-body>; _ -> <body[i+1..]> end` for an `if`
+    /// that early-returns, nesting the remaining statements in the false arm.
+    /// The binding form `if (x) { s -> return …; }` matches the value itself:
+    /// `case X of undefined -> <body[i+1..]>; S -> <then-body> end`. Lowered as
+    /// a statement instead, its `case` value was discarded and the function
+    /// answered the fall-through value unconditionally.
+    fn earlyReturnIfExpr(this: *Emitter, b: Ast.Builder, body: []const ast.Stmt, i: usize, if_node: anytype) anyerror!Ast.Expr {
+        const arm_indent = this.indent + 2;
+        if (if_node.binding) |name| {
+            const subject = try this.exprNode(b, if_node.cond.*);
+            var snapshot = try this.var_current.clone();
+            defer snapshot.deinit();
+            const rest = try this.bodyNode(b, body, i + 1, arm_indent);
+            try this.restoreVersions(&snapshot);
+            const bound = Ast.Expr.v(try this.patternBindVar(b, name));
+            return b.caseOf(subject, &.{
+                .{ .patterns = try b.exprs(&.{Ast.Expr.a("undefined")}), .body = rest },
+                .{ .patterns = try b.exprs(&.{bound}), .body = try this.bodyNode(b, if_node.then_, 0, arm_indent) },
+            });
+        }
+        const cond = try this.condNode(b, if_node.cond.*);
+        return b.caseOf(cond, &.{
+            .{ .patterns = try b.exprs(&.{Ast.Expr.a("true")}), .body = try this.bodyNode(b, if_node.then_, 0, arm_indent) },
+            .{ .patterns = try b.exprs(&.{Ast.Expr.v("_")}), .body = try this.bodyNode(b, body, i + 1, arm_indent) },
+        });
     }
 
     const TryHead = union(enum) {
@@ -2246,1630 +4636,1956 @@ const Emitter = struct {
         none,
     };
 
-    /// Emit the propagating `case` for a `try` at `body[i]`, nesting `body[i+1..]`
+    /// The propagating `case` for a `try` at `body[i]`, nesting `body[i+1..]`
     /// inside the `{ok, _}` arm.
-    fn emitPropagateTry(this: *Emitter, body: []const ast.Stmt, i: usize, inner: ast.Expr, head: TryHead) !void {
+    fn propagateTryExpr(this: *Emitter, b: Ast.Builder, body: []const ast.Stmt, i: usize, inner: ast.Expr, head: TryHead) anyerror!Ast.Expr {
         const n = this.try_seq;
         this.try_seq += 1;
 
-        try this.w("case ");
-        try this.emitExpr(inner);
-        try this.w(" of\n");
-        this.indent += 1;
-        try this.writeIndent();
-
-        // {ok, <bind>} ->
-        try this.w("{ok, ");
-        switch (head) {
-            .name => |nm| {
-                const vname = try erlangVar(this.alloc, nm);
-                defer this.alloc.free(vname);
-                try this.w(vname);
-            },
-            .destruct => |pat| try this.emitDestructPattern(pat),
-            .none => try this.fmt("_TryV{d}", .{n}),
-        }
-        try this.w("} ->\n");
-
-        this.indent += 1;
-        if (i + 1 < body.len) {
-            try this.emitBodyFrom(body, i + 1);
-        } else {
+        const subject = try this.exprNode(b, inner);
+        const bound: Ast.Expr = switch (head) {
+            .name => |nm| Ast.Expr.v(try this.arenaVar(b, nm)),
+            .destruct => |pat| try this.destructPatternExpr(b, pat),
+            .none => Ast.Expr.v(try std.fmt.allocPrint(b.arena, "_TryV{d}", .{n})),
+        };
+        const arm_indent = this.indent + 2;
+        const ok_body: Ast.Body = if (i + 1 < body.len)
+            try this.bodyNode(b, body, i + 1, arm_indent)
+        else switch (head) {
             // No continuation: the Ok value is the function's result.
-            try this.writeIndent();
-            switch (head) {
-                .name => |nm| {
-                    const vname = try erlangVar(this.alloc, nm);
-                    defer this.alloc.free(vname);
-                    try this.w(vname);
-                },
-                else => try this.fmt("_TryV{d}", .{n}),
-            }
-        }
-        this.indent -= 1;
-        try this.w(";\n");
-        try this.writeIndent();
-        try this.fmt("{{error, _TryE{d}}} -> {{error, _TryE{d}}}\n", .{ n, n });
-        this.indent -= 1;
-        try this.writeIndent();
-        try this.w("end");
+            .name => try b.body(&.{bound}),
+            else => try b.body(&.{Ast.Expr.v(try std.fmt.allocPrint(b.arena, "_TryV{d}", .{n}))}),
+        };
+        const err_var = Ast.Expr.v(try std.fmt.allocPrint(b.arena, "_TryE{d}", .{n}));
+        const err = try b.tuple(&.{ Ast.Expr.a("error"), err_var });
+        return b.caseOf(subject, &.{
+            .{ .patterns = try b.exprs(&.{try b.tuple(&.{ Ast.Expr.a("ok"), bound })}), .body = ok_body },
+            try b.clause(&.{err}, &.{}, &.{err}),
+        });
     }
 
-    /// Render a destructuring pattern (tuple/record names) as an Erlang pattern.
-    fn emitDestructPattern(this: *Emitter, pattern: ast.ParamDestruct) !void {
+    /// A destructuring pattern as an Erlang pattern. A record is a map at
+    /// runtime, so `{ x, y }` is the exact map pattern `#{x := X, y := Y}` — the
+    /// tuple `{X, Y}` it used to be never matched a map (`badmatch` on a `val`,
+    /// `function_clause` on a parameter). A map pattern ignores the keys it does
+    /// not name, so `..` needs no element of its own. `#(a, b)` stays a tuple.
+    /// Each name binds through `patternBindVar`, so a destructured name already
+    /// bound in the function takes a fresh version instead of matching.
+    fn destructPatternExpr(this: *Emitter, b: Ast.Builder, pattern: ast.ParamDestruct) anyerror!Ast.Expr {
         switch (pattern) {
             .names => |n| {
-                try this.w("{");
-                for (n.fields, 0..) |fld, k| {
-                    if (k > 0) try this.w(", ");
-                    const vname = try erlangVar(this.alloc, fld.bind_name);
-                    defer this.alloc.free(vname);
-                    try this.w(vname);
+                const fields = try b.arena.alloc(Ast.MapField, n.fields.len);
+                for (n.fields, 0..) |fld, i| {
+                    fields[i] = Ast.exactField(fld.field_name, Ast.Expr.v(try this.patternBindVar(b, fld.bind_name)));
                 }
-                if (n.hasSpread) try this.w(", _");
-                try this.w("}");
+                return .{ .map = fields };
             },
             .tuple_ => |t| {
-                try this.w("{");
-                for (t, 0..) |nm, k| {
-                    if (k > 0) try this.w(", ");
-                    const vname = try erlangVar(this.alloc, nm);
-                    defer this.alloc.free(vname);
-                    try this.w(vname);
-                }
-                try this.w("}");
+                const items = try b.arena.alloc(Ast.Expr, t.len);
+                for (t, 0..) |nm, i| items[i] = Ast.Expr.v(try this.patternBindVar(b, nm));
+                return .{ .tuple = items };
             },
-            .list, .ctor => try this.w("_"),
+            .list, .ctor => return Ast.Expr.v("_"),
         }
     }
 
-    /// Emit a statement inside a function body.
-    /// When `is_last` is true, `return expr` is emitted as bare `expr`.
-    fn emitBodyStmt(this: *Emitter, stmt: ast.Stmt, is_last: bool) !void {
+    /// A statement inside a function body. `return expr` is the bare expression
+    /// (in Erlang the last expression is the value).
+    fn stmtExpr(this: *Emitter, b: Ast.Builder, stmt: ast.Stmt) anyerror!Ast.Expr {
         const e = stmt.expr;
         switch (e) {
             .jump => |j| switch (j.kind) {
                 .@"return" => |r| {
-                    // In Erlang the last expression is the return value.
-                    // Emit a bare expression; if not last, wrap in a noop binding.
-                    _ = is_last;
-                    if (r) |val| {
-                        // §1F F4F-T2 — `#[@future]` eager lowering: strip the
-                        // `__bp_future_resolved(<t>)` marker back to `<t>`, and
-                        // map `__bp_future_rejected(<e>)` to a plain `throw(<e>)`.
-                        // The marker is the post-transform shape; erlang's eager
-                        // lowering renders #[@future] as sync code, so the
-                        // promise wrap is implicit (no marker on the wire).
-                        if (futureWrapCallNameErl(val.*)) |kind| {
-                            const inner = val.*.call.kind.call.args[0].value.*;
-                            switch (kind) {
-                                .resolved => try this.emitExpr(inner),
-                                .rejected => {
-                                    try this.w("throw(");
-                                    try this.emitExpr(inner);
-                                    try this.w(")");
-                                },
-                            }
-                        } else {
-                            try this.emitExpr(val.*);
-                        }
-                    } else try this.w("undefined");
-                },
-                else => try this.emitExpr(e),
-            },
-            .binding => |b| switch (b.kind) {
-                .localBind => |lb| {
-                    const vname = try erlangVar(this.alloc, lb.name);
-                    defer this.alloc.free(vname);
-                    this.addLocal(lb.name);
-                    try this.fmt("{s} = ", .{vname});
-                    try this.emitExpr(lb.value.*);
-                },
-                .assign => |a| {
-                    switch (a.target) {
-                        .name => |name| {
-                            const vname = try erlangVar(this.alloc, name);
-                            defer this.alloc.free(vname);
-                            switch (a.op) {
-                                .assign => try this.fmt("{s} = ", .{vname}),
-                                .plusAssign => try this.fmt("{s} = {s} + ", .{ vname, vname }),
-                            }
-                            try this.emitExpr(a.value.*);
-                        },
-                        .fieldAccess => |*fa| {
-                            _ = fa;
-                            try this.w("%% field assignment is not directly supported in Erlang");
-                        },
+                    const val = r orelse return Ast.Expr.a("undefined");
+                    // `#[@future]` eager lowering: strip the
+                    // `__bp_future_resolved(<t>)` marker back to `<t>`, and map
+                    // `__bp_future_rejected(<e>)` to a plain `throw(<e>)` — the
+                    // promise wrap is implicit in erlang's sync rendering.
+                    if (futureWrapCallNameErl(val.*)) |kind| {
+                        const inner = try this.exprNode(b, val.*.call.kind.call.args[0].value.*);
+                        return switch (kind) {
+                            .resolved => inner,
+                            .rejected => b.call("throw", &.{inner}),
+                        };
                     }
+                    return this.exprNode(b, val.*);
+                },
+                else => return this.exprNode(b, e),
+            },
+            .binding => |bind| switch (bind.kind) {
+                .localBind => |lb| {
+                    if (lb.mutable) try this.mutable_locals.put(this.alloc, lb.name, {});
+                    return this.bindExpr(b, lb.name, .bind, lb.value.*);
+                },
+                .assign => |a| switch (a.target) {
+                    .name => |name| return this.bindExpr(b, name, switch (a.op) {
+                        .assign => .assign,
+                        .plusAssign => .plus_assign,
+                    }, a.value.*),
+                    .fieldAccess => return .{ .comment = Ast.Comment.doc("field assignment is not directly supported in Erlang") },
                 },
                 .localBindDestruct => |lb| {
-                    switch (lb.pattern) {
-                        .names => |*n| {
-                            try this.w("{");
-                            for (n.fields, 0..) |fld, i| {
-                                if (i > 0) try this.w(", ");
-                                const vname = try erlangVar(this.alloc, fld.bind_name);
-                                defer this.alloc.free(vname);
-                                try this.w(vname);
-                            }
-                            if (n.hasSpread) try this.w(", _");
-                            try this.w("} = ");
-                        },
-                        .tuple_ => |t| {
-                            try this.w("{");
-                            for (t, 0..) |nm, i| {
-                                if (i > 0) try this.w(", ");
-                                const vname = try erlangVar(this.alloc, nm);
-                                defer this.alloc.free(vname);
-                                try this.w(vname);
-                            }
-                            try this.w("} = ");
-                        },
-                        .list => {}, // List pattern — placeholder
-                        .ctor => {}, // Constructor pattern — placeholder
-                    }
-                    try this.emitExpr(lb.value.*);
+                    const value = try this.exprNode(b, lb.value.*);
+                    return switch (lb.pattern) {
+                        .names, .tuple_ => b.match(try this.destructPatternExpr(b, lb.pattern), value),
+                        .list, .ctor => value,
+                    };
                 },
             },
-            else => try this.emitExpr(e),
+            else => return this.exprNode(b, e),
         }
     }
 
     // ── expressions ──────────────────────────────────────────────────────────
 
-    fn emitBinaryOp(this: *Emitter, op: []const u8, lhs: *ast.Expr, rhs: *ast.Expr) !void {
-        try this.w("(");
-        try this.emitExpr(lhs.*);
-        try this.w(" ");
-        try this.w(op);
-        try this.w(" ");
-        try this.emitExpr(rhs.*);
-        try this.w(")");
-    }
-
-    /// Emit the inline Erlang form for a lowered `@Result`/`@Option` method op.
+    /// The inline Erlang form of a lowered `@Result`/`@Option` method op.
     /// `args[0]` is the receiver; `args[1]` (when present) the fn/default value.
     /// A fun binds the receiver once (so chains don't re-evaluate it). Result
-    /// values use the idiomatic OTP `{ok, V} | {error, E}` shape; absent options
-    /// are `undefined`.
-    fn emitResultOptionOp(this: *Emitter, callee: []const u8, args: []const ast.CallArg) anyerror!void {
+    /// values use the OTP `{ok, V} | {error, E}` shape; absent options are
+    /// `undefined`.
+    fn resultOptionNode(this: *Emitter, b: Ast.Builder, callee: []const u8, args: []const ast.CallArg) anyerror!Ast.Expr {
+        const eq = std.mem.eql;
+        const V = Ast.Expr.v;
+        const A = Ast.Expr.a;
         const recv = args[0].value;
-        const arg1: ?*ast.Expr = if (args.len > 1) args[1].value else null;
+        // Result constructors: `return v` / `throw e` in a `-> @Result<…>` fn.
+        if (eq(u8, callee, "__bp_ok")) return b.tuple(&.{ A("ok"), try this.exprNode(b, recv.*) });
+        if (eq(u8, callee, "__bp_error")) return b.tuple(&.{ A("error"), try this.exprNode(b, recv.*) });
 
-        if (std.mem.eql(u8, callee, "__bp_ok")) {
-            // Result constructor: `return v` in a `-> @Result<…>` fn.
-            try this.w("{ok, ");
-            try this.emitExpr(recv.*);
-            try this.w("}");
-            return;
-        } else if (std.mem.eql(u8, callee, "__bp_error")) {
-            // Result constructor: `throw e` in a `-> @Result<…>` fn.
-            try this.w("{error, ");
-            try this.emitExpr(recv.*);
-            try this.w("}");
-            return;
-        } else if (std.mem.eql(u8, callee, "__bp_result_map")) {
-            try this.w("(fun(R) -> case R of {ok, V} -> {ok, (");
-            if (arg1) |a| try this.emitExpr(a.*);
-            try this.w(")(V)}; _ -> R end end)(");
-        } else if (std.mem.eql(u8, callee, "__bp_result_flatMap")) {
-            try this.w("(fun(R) -> case R of {ok, V} -> (");
-            if (arg1) |a| try this.emitExpr(a.*);
-            try this.w(")(V); _ -> R end end)(");
-        } else if (std.mem.eql(u8, callee, "__bp_result_unwrapOr")) {
-            try this.w("(fun(R) -> case R of {ok, V} -> V; _ -> (");
-            if (arg1) |a| try this.emitExpr(a.*);
-            try this.w(") end end)(");
-        } else if (std.mem.eql(u8, callee, "__bp_result_isOk")) {
-            try this.w("(fun(R) -> case R of {ok, _} -> true; _ -> false end end)(");
-        } else if (std.mem.eql(u8, callee, "__bp_result_isError")) {
-            try this.w("(fun(R) -> case R of {error, _} -> true; _ -> false end end)(");
-        } else if (std.mem.eql(u8, callee, "__bp_option_map") or std.mem.eql(u8, callee, "__bp_option_flatMap")) {
-            try this.w("(fun(O) -> case O of undefined -> undefined; V -> (");
-            if (arg1) |a| try this.emitExpr(a.*);
-            try this.w(")(V) end end)(");
-        } else if (std.mem.eql(u8, callee, "__bp_option_unwrapOr")) {
-            try this.w("(fun(O) -> case O of undefined -> (");
-            if (arg1) |a| try this.emitExpr(a.*);
-            try this.w("); V -> V end end)(");
+        const ok_v = try b.tuple(&.{ A("ok"), V("V") });
+        var subject = V("R");
+        var clauses: [2]Ast.Clause = undefined;
+        if (eq(u8, callee, "__bp_result_map")) {
+            clauses = .{
+                try b.clause(&.{ok_v}, &.{}, &.{try b.tuple(&.{ A("ok"), try b.applyParen(try this.opArg(b, args), &.{V("V")}) })}),
+                try b.clause(&.{V("_")}, &.{}, &.{subject}),
+            };
+        } else if (eq(u8, callee, "__bp_result_flatMap")) {
+            clauses = .{
+                try b.clause(&.{ok_v}, &.{}, &.{try b.applyParen(try this.opArg(b, args), &.{V("V")})}),
+                try b.clause(&.{V("_")}, &.{}, &.{subject}),
+            };
+        } else if (eq(u8, callee, "__bp_result_unwrapOr")) {
+            clauses = .{
+                try b.clause(&.{ok_v}, &.{}, &.{V("V")}),
+                try b.clause(&.{V("_")}, &.{}, &.{try b.paren(try this.opArg(b, args))}),
+            };
+        } else if (eq(u8, callee, "__bp_result_isOk") or eq(u8, callee, "__bp_result_isError")) {
+            const tag = if (eq(u8, callee, "__bp_result_isOk")) "ok" else "error";
+            clauses = .{
+                try b.clause(&.{try b.tuple(&.{ A(tag), V("_") })}, &.{}, &.{A("true")}),
+                try b.clause(&.{V("_")}, &.{}, &.{A("false")}),
+            };
+        } else if (eq(u8, callee, "__bp_option_map") or eq(u8, callee, "__bp_option_flatMap")) {
+            subject = V("O");
+            clauses = .{
+                try b.clause(&.{A("undefined")}, &.{}, &.{A("undefined")}),
+                try b.clause(&.{V("V")}, &.{}, &.{try b.applyParen(try this.opArg(b, args), &.{V("V")})}),
+            };
+        } else if (eq(u8, callee, "__bp_option_unwrapOr")) {
+            subject = V("O");
+            clauses = .{
+                try b.clause(&.{A("undefined")}, &.{}, &.{try b.paren(try this.opArg(b, args))}),
+                try b.clause(&.{V("V")}, &.{}, &.{V("V")}),
+            };
         } else {
-            return;
+            return error.UnknownResultOptionOp;
         }
-        try this.emitExpr(recv.*);
-        try this.w(")");
+        const fun: Ast.Expr = .{ .fun_clauses = try b.arena.dupe(Ast.Clause, &.{
+            try b.clause(&.{subject}, &.{}, &.{try b.caseInline(subject, &clauses)}),
+        }) };
+        return b.applyParen(fun, &.{try this.exprNode(b, recv.*)});
     }
 
-    fn emitExpr(this: *Emitter, e: ast.Expr) anyerror!void {
+    /// The fn/default argument of a `@Result`/`@Option` op (empty when absent).
+    fn opArg(this: *Emitter, b: Ast.Builder, args: []const ast.CallArg) anyerror!Ast.Expr {
+        if (args.len < 2) return error.MissingResultOptionArgument;
+        return this.exprNode(b, args[1].value.*);
+    }
+
+    /// `e` as an `erl_ast` expression rendered at the current indentation.
+    fn exprNode(this: *Emitter, b: Ast.Builder, e: ast.Expr) anyerror!Ast.Expr {
+        const V = Ast.Expr.v;
+        const A = Ast.Expr.a;
         switch (e) {
-            .literal => |lit| switch (lit.kind) {
-                .numberLit => |n| try this.w(n),
-                .comment => |c| {
-                    const prefix = switch (c.kind) {
-                        .normal => "%",
-                        .doc => "%%",
-                        .module => "%%%",
-                    };
-                    try this.fmt("{s} {s}", .{ prefix, c.text });
-                },
-                .stringLit => |s| try this.emitBinary(s),
+            .literal => |lit| return switch (lit.kind) {
+                .numberLit => |n| .{ .number = n },
+                .comment => |c| .{ .comment = commentNode(c) },
+                .stringLit => |str| .{ .lexeme_binary = str },
                 // Desugared to a `+` chain by the transform pass; never reaches codegen.
                 .stringTemplate => unreachable,
-                .null_ => try this.w("undefined"),
+                .null_ => A("undefined"),
             },
 
             .identifier => |id| switch (id.kind) {
                 .ident => |n| {
                     // Boolean literals are env-bound identifiers in botopink —
                     // they must stay lowercase atoms, never `True`/`False` vars.
-                    if (std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false")) {
-                        try this.w(n);
-                    } else if (!this.locals.contains(n) and this.top_vals.contains(n)) {
-                        // A module-level `val` emitted as a 0-arity function: a bare
-                        // reference is the call `name()`, not a variable. A local of
-                        // the same name shadows it (handled by the `locals` check).
-                        var fb: [256]u8 = undefined;
-                        try this.fmt("{s}()", .{try fnAtom(n, &fb)});
-                    } else {
-                        const vname = try erlangVar(this.alloc, n);
-                        defer this.alloc.free(vname);
-                        try this.w(vname);
-                    }
+                    if (std.mem.eql(u8, n, "true") or std.mem.eql(u8, n, "false")) return A(n);
+                    // A module-level `val` emitted as a 0-arity function: a bare
+                    // reference is the call `name()`. A local of the same name
+                    // shadows it.
+                    if (!this.locals.contains(n) and this.top_vals.contains(n)) return b.call(n, &.{});
+                    return V(try this.varRef(b, n));
                 },
                 .identAccess => |ia| {
                     // Qualified enum member: `Order.Lt` → the variant atom.
                     if (ia.receiver.* == .identifier and ia.receiver.*.identifier.kind == .ident and
                         this.enum_names.contains(ia.receiver.*.identifier.kind.ident))
                     {
-                        var tag_buf: [128]u8 = undefined;
-                        try this.w(try atomName(ia.member, &tag_buf));
-                        return;
+                        return A(ia.member);
                     }
                     // Tuple index access: `t._N` → `element(N+1, T)` (1-based).
                     if (tupleIndexMember(ia.member)) |digits| {
                         const idx = std.fmt.parseInt(usize, digits, 10) catch 0;
+                        const position = Ast.Expr.t(Term.int(@intCast(idx + 1)));
                         if (ia.optional) {
                             const n = this.try_seq;
                             this.try_seq += 1;
-                            try this.fmt("(fun(undefined) -> undefined; (_Opt{d}) -> element({d}, _Opt{d}) end)(", .{ n, idx + 1, n });
-                            try this.emitExpr(ia.receiver.*);
-                            try this.w(")");
-                        } else {
-                            try this.fmt("element({d}, ", .{idx + 1});
-                            try this.emitExpr(ia.receiver.*);
-                            try this.w(")");
+                            const opt = V(try std.fmt.allocPrint(b.arena, "_Opt{d}", .{n}));
+                            return this.optionalAccess(b, opt, try b.call("element", &.{ position, opt }), ia.receiver.*);
                         }
-                        return;
+                        return b.call("element", &.{ position, try this.exprNode(b, ia.receiver.*) });
                     }
-                    // `arr.length` / `s.length` / `arr.len` recorded by inference
-                    // as a primitive field access → the host length op, not a
-                    // map read (`maps:get(length, …)` would crash on a list).
+                    // `arr.length` / `s.length` / `arr.len` recorded by inference as a
+                    // primitive field access → the host length op, not a map read.
                     if (this.instance_lowerings.get(id.loc)) |il| switch (il) {
                         .prim => |k| {
-                            switch (k) {
-                                .string => try this.w("string:length("),
-                                else => try this.w("length("),
-                            }
-                            try this.emitExpr(ia.receiver.*);
-                            try this.w(")");
-                            return;
+                            const recv = try this.exprNode(b, ia.receiver.*);
+                            return switch (k) {
+                                .string => b.remote("string", "length", &.{recv}),
+                                else => b.call("length", &.{recv}),
+                            };
                         },
-                        .record => {},
+                        .type_ => {},
                     };
+                    // Same field access on a `Self`-typed receiver inside an
+                    // interface instance `default fn` (`self.length`), which
+                    // inference leaves unlowered.
+                    if (!ia.optional and (std.mem.eql(u8, ia.member, "len") or
+                        std.mem.eql(u8, ia.member, "length") or std.mem.eql(u8, ia.member, "size")))
+                    {
+                        if (this.selfPrimKind(ia.receiver.*)) |k| {
+                            const recv = try this.exprNode(b, ia.receiver.*);
+                            return switch (k) {
+                                .string => b.remote("string", "length", &.{recv}),
+                                else => b.call("length", &.{recv}),
+                            };
+                        }
+                    }
+                    // A comptime body has no types; a typed module whose inference
+                    // recorded nothing here (a chained or generic receiver:
+                    // `Array.range(0, 5)`'s result) does not know either, unless
+                    // some record of the module declares the field. Both
+                    // dispatch at runtime: a list's or binary's length, else the
+                    // map field.
+                    if (!ia.optional and
+                        (std.mem.eql(u8, ia.member, "len") or std.mem.eql(u8, ia.member, "length") or
+                            std.mem.eql(u8, ia.member, "size")) and
+                        (this.untyped or (this.instance_lowerings.get(id.loc) == null and !this.isRecordField(ia.member))))
+                    {
+                        if (!this.untyped) this.needs_len_helper = true;
+                        return b.call("__bp_len", &.{ try this.exprNode(b, ia.receiver.*), A(ia.member) });
+                    }
                     // Record/struct field access — records are maps at runtime.
                     // Optional chaining (`a?.b`) guards on `undefined`.
                     if (ia.optional) {
                         const n = this.try_seq;
                         this.try_seq += 1;
-                        var ab1: [128]u8 = undefined;
-                        try this.fmt("(fun(undefined) -> undefined; (_Opt{d}) -> maps:get({s}, _Opt{d}) end)(", .{ n, try atomName(ia.member, &ab1), n });
-                        try this.emitExpr(ia.receiver.*);
-                        try this.w(")");
-                    } else {
-                        var ab2: [128]u8 = undefined;
-                        try this.fmt("maps:get({s}, ", .{try atomName(ia.member, &ab2)});
-                        try this.emitExpr(ia.receiver.*);
-                        try this.w(")");
+                        const opt = V(try std.fmt.allocPrint(b.arena, "_Opt{d}", .{n}));
+                        return this.optionalAccess(b, opt, try b.remote("maps", "get", &.{ A(ia.member), opt }), ia.receiver.*);
                     }
+                    return b.remote("maps", "get", &.{ A(ia.member), try this.exprNode(b, ia.receiver.*) });
                 },
-                .dotIdent => |n| try this.fmt("{s}", .{n}),
+                // Leading-dot shorthand for an enum member (`.Black`): the same
+                // variant atom the qualified form lowers to. Rendered raw it was
+                // the bare name — an unbound erlang VARIABLE for the usual
+                // PascalCase variant.
+                .dotIdent => |n| return A(n),
             },
 
-            .binaryOp => |bin| switch (bin.op) {
-                .add => try this.emitBinaryOp("+", bin.lhs, bin.rhs),
-                .sub => try this.emitBinaryOp("-", bin.lhs, bin.rhs),
-                .mul => try this.emitBinaryOp("*", bin.lhs, bin.rhs),
-                .div => try this.emitBinaryOp("div", bin.lhs, bin.rhs),
-                .mod => try this.emitBinaryOp("rem", bin.lhs, bin.rhs),
-                .lt => try this.emitBinaryOp("<", bin.lhs, bin.rhs),
-                .gt => try this.emitBinaryOp(">", bin.lhs, bin.rhs),
-                .lte => try this.emitBinaryOp("=<", bin.lhs, bin.rhs),
-                .gte => try this.emitBinaryOp(">=", bin.lhs, bin.rhs),
-                .eq => try this.emitBinaryOp("=:=", bin.lhs, bin.rhs),
-                .ne => try this.emitBinaryOp("=/=", bin.lhs, bin.rhs),
-                .@"and" => try this.emitBinaryOp("and", bin.lhs, bin.rhs),
-                .@"or" => try this.emitBinaryOp("or", bin.lhs, bin.rhs),
+            .binaryOp => |bin| {
+                const op: []const u8 = switch (bin.op) {
+                    .add => if (this.untyped)
+                        return b.call("__bp_add", &.{ try this.exprNode(b, bin.lhs.*), try this.exprNode(b, bin.rhs.*) })
+                    else if (this.isStringExpr(e))
+                        // String `+` is concatenation: erlang binaries have no
+                        // arithmetic, so `"a" + b` used to raise `badarith`.
+                        return this.stringConcatNode(b, e)
+                    else if (this.numKind(bin.lhs.*) != null or this.numKind(bin.rhs.*) != null)
+                        "+"
+                    else {
+                        // Neither operand is provably a number or a string (a
+                        // generic lambda's `{ acc, s -> acc + s }`): two binaries
+                        // concatenate at runtime, anything else adds.
+                        this.needs_add_helper = true;
+                        return b.call("__bp_add", &.{ try this.exprNode(b, bin.lhs.*), try this.exprNode(b, bin.rhs.*) });
+                    },
+                    .sub => "-",
+                    .mul => "*",
+                    // `div` is integer division and raises `badarith` on a float;
+                    // an operand known to be a float takes `/`.
+                    .div => if (this.numKind(bin.lhs.*) == .float or this.numKind(bin.rhs.*) == .float) "/" else "div",
+                    .mod => "rem",
+                    .lt => "<",
+                    .gt => ">",
+                    .lte => "=<",
+                    .gte => ">=",
+                    .eq => "=:=",
+                    .ne => "=/=",
+                    // Short-circuiting, as botopink's `&&`/`||` are: erlang's
+                    // `and`/`or` evaluate BOTH operands, so a right operand
+                    // guarded by the left (`xs.length > 0 && xs.at(0) > 1`)
+                    // used to raise instead of yielding `false`.
+                    .@"and" => "andalso",
+                    .@"or" => "orelse",
+                };
+                return b.binop(op, try this.exprNode(b, bin.lhs.*), try this.exprNode(b, bin.rhs.*));
             },
 
-            .unaryOp => |un| switch (un.op) {
-                .not => {
-                    try this.w("(not ");
-                    try this.emitExpr(un.expr.*);
-                    try this.w(")");
+            .unaryOp => |un| return .{ .unop = .{
+                .op = switch (un.op) {
+                    .not => "not ",
+                    .neg => "-",
                 },
-                .neg => {
-                    try this.w("(-");
-                    try this.emitExpr(un.expr.*);
-                    try this.w(")");
-                },
-            },
-
-            .call => |c| switch (c.kind) {
-                .pipeline => |b| {
-                    // Flatten the pipeline chain
-                    var items: std.ArrayList(ast.Expr) = .empty;
-                    defer items.deinit(this.alloc);
-                    try items.append(this.alloc, b.lhs.*);
-                    var current = b.rhs.*;
-                    while (true) {
-                        switch (current) {
-                            .call => |cc| switch (cc.kind) {
-                                .pipeline => |p| {
-                                    try items.append(this.alloc, p.lhs.*);
-                                    current = p.rhs.*;
-                                    continue;
-                                },
-                                else => {},
-                            },
-                            else => {},
-                        }
-                        break;
-                    }
-                    try items.append(this.alloc, current);
-
-                    // Emit as nested calls: last(...(first))
-                    var i: usize = items.items.len - 1;
-                    while (i > 0) : (i -= 1) {
-                        try this.emitExpr(items.items[i]);
-                        try this.w("(");
-                    }
-                    try this.emitExpr(items.items[0]);
-                    i = items.items.len - 1;
-                    while (i > 0) : (i -= 1) {
-                        try this.w(")");
-                    }
-                },
-
-                .call => |cc| {
-                    if (cc.is_builtin) {
-                        // `prim-op-annotation` builtin dispatch: a `fn` declared
-                        // in `builtins.d.bp` with `@external(erlang, …)` matches
-                        // here first (`todo`/`panic`/`print`/`println`/`debug`).
-                        // `@block` keeps its bespoke inline-fun shape below.
-                        if (try this.tryEmitBuiltinAnnotation(cc.callee, cc)) return;
-                        if (std.mem.eql(u8, cc.callee, "block")) {
-                            // @block { ... } emits an immediately-invoked fun
-                            // so the body executes and its value is the call result.
-                            if (cc.args.len == 1) {
-                                const arg = cc.args[0].value;
-                                const isFunction = switch (arg.*) {
-                                    .function => true,
-                                    else => false,
-                                };
-                                if (!isFunction) return error.InvalidArgs;
-                                try this.w("(fun() ->\n");
-                                this.indent += 1;
-                                try this.emitExpr(arg.*);
-                                this.indent -= 1;
-                                try this.w("\n");
-                                try this.writeIndent();
-                                try this.w("end)()");
-                                return;
-                            } else if (cc.trailing.len == 1 and cc.trailing[0].params.len == 0) {
-                                // @block { body } - trailing lambda with no params
-                                try this.w("(fun() ->\n");
-                                this.indent += 1;
-                                try this.emitBody(cc.trailing[0].body);
-                                this.indent -= 1;
-                                try this.w("\n");
-                                try this.writeIndent();
-                                try this.w("end)()");
-                                return;
-                            } else {
-                                return error.InvalidArgs;
-                            }
-                        }
-                        if (std.mem.startsWith(u8, cc.callee, "__bp_")) {
-                            try this.emitResultOptionOp(cc.callee, cc.args);
-                            return;
-                        }
-                        var callee_buf: [256]u8 = undefined;
-                        try this.fmt("{s}(", .{try fnAtom(cc.callee, &callee_buf)});
-                        var first = true;
-                        for (cc.args) |arg| {
-                            if (!first) try this.w(", ");
-                            try this.emitExpr(arg.value.*);
-                            first = false;
-                        }
-                        // Trailing lambdas: emit as fun args
-                        for (cc.trailing) |tl| {
-                            if (!first) try this.w(", ");
-                            first = false;
-                            try this.w("fun(");
-                            for (tl.params, 0..) |p, pi| {
-                                if (pi > 0) try this.w(", ");
-                                const vname = try erlangVar(this.alloc, p);
-                                defer this.alloc.free(vname);
-                                try this.w(vname);
-                                this.addLocal(p);
-                            }
-                            try this.w(") ->\n");
-                            const tl_saved = this.indent;
-                            this.indent = this.indent + 1;
-                            try this.emitBody(tl.body);
-                            this.indent = tl_saved;
-                            try this.w("\n");
-                            try this.writeIndent();
-                            try this.w("end");
-                        }
-                        try this.w(")");
-                    } else {
-                        // `recv_arg_emitted` tracks whether the receiver was
-                        // already written as the first positional argument
-                        // (activated extension dispatch) so the argument loop
-                        // knows to prefix a comma.
-                        var recv_arg_emitted = false;
-                        // Reserved-word function names (`of`, `div`) must be
-                        // single-quoted wherever they are called; `fnAtom` is a
-                        // no-op for every other callee. One buffer, reused per use.
-                        var callee_buf: [256]u8 = undefined;
-                        const callee = try fnAtom(cc.callee, &callee_buf);
-                        if (cc.receiver) |recv| {
-                            const mod_name: ?[]const u8 = switch (recv.*) {
-                                .identifier => |id| switch (id.kind) {
-                                    .ident => |n| if (isModuleRef(n)) n else null,
-                                    else => null,
-                                },
-                                else => null,
-                            };
-                            // `"std"` package qualified call: a lowercase
-                            // receiver naming an imported std module lowers to
-                            // the remote `option:map(Args)`.
-                            const std_mod: ?[]const u8 = switch (recv.*) {
-                                .identifier => |id| switch (id.kind) {
-                                    .ident => |n| if (this.std_imports.contains(n)) n else null,
-                                    else => null,
-                                },
-                                else => null,
-                            };
-                            if (std_mod) |sm| {
-                                try this.fmt("{s}:{s}(", .{ sm, callee });
-                            } else if (this.rewrites.get(c.loc)) |_| {
-                                // Activated extension dispatch: `recv.m(args)` →
-                                // `m(Recv, args)`, a bare local call to the
-                                // function emitted by `emitExtensionMethods`.
-                                try this.fmt("{s}(", .{callee});
-                                try this.emitExpr(recv.*);
-                                recv_arg_emitted = true;
-                            } else if (mod_name != null and this.ext_names.contains(mod_name.?)) {
-                                // Qualified extension call `Sym.m(obj)`: the
-                                // receiver names the extension block, so it is
-                                // not a module — call the bare local `m(obj)`.
-                                try this.fmt("{s}(", .{callee});
-                            } else if (mod_name != null and this.enum_names.contains(mod_name.?)) {
-                                // Qualified enum payload constructor:
-                                // `Color.Rgb(r, g, b)` → tagged tuple
-                                // `{'Rgb', R, G, B}` (matches the case-arm
-                                // constructor pattern lowering).
-                                var tag_buf: [128]u8 = undefined;
-                                try this.fmt("{{{s}", .{try atomName(cc.callee, &tag_buf)});
-                                for (cc.args) |arg| {
-                                    try this.w(", ");
-                                    try this.emitExpr(arg.value.*);
-                                }
-                                try this.w("}");
-                                return;
-                            } else if (mod_name != null and this.imported_types.get(mod_name.?) != null) {
-                                // Associated fn of an IMPORTED record/struct
-                                // (`Response.ok(...)` where `Response` comes
-                                // `from "web"`): a remote call into the owning
-                                // module (`http:ok(...)`) — the bare fn only
-                                // exists in the owner, lowercasing the type name
-                                // (`response:ok`) would hit the wrong module.
-                                const owner = this.imported_types.get(mod_name.?).?;
-                                try this.fmt("{s}:{s}(", .{ owner, callee });
-                            } else if (mod_name != null and this.record_fields.contains(mod_name.?)) {
-                                // Associated fn of a LOCAL record (`Response.ok(...)`):
-                                // the fn is emitted as a bare local function in this
-                                // module, not a remote `response:ok(...)`.
-                                try this.fmt("{s}(", .{callee});
-                            } else if (mod_name != null and this.isInterfaceAssoc(mod_name.?, cc.callee)) {
-                                // Associated `default fn` of an interface (`Array.range`,
-                                // `Pair.of`): `emitInterface` emits it as the mangled
-                                // local `'<Interface>_<method>'` (so it never collides
-                                // with a consumer's own top-level fn), so call that — not
-                                // a remote `array:range`.
-                                var mraw: [256]u8 = undefined;
-                                const mname = interfaceAssocAtom(&mraw, mod_name.?, cc.callee) catch return;
-                                try this.fmt("{s}(", .{mname});
-                            } else if (mod_name) |name| {
-                                // A PascalCase identifier receiver is a module-qualified
-                                // call: `List.map(xs, f)` → a remote call `list:map(Xs, F)`.
-                                // The module name is lowercased to a valid atom; arity is
-                                // implicit from the arg count (args + trailing lambdas).
-                                const mod = try erlangModule(this.alloc, name);
-                                defer this.alloc.free(mod);
-                                try this.fmt("{s}:{s}(", .{ mod, callee });
-                            } else if (this.instance_lowerings.get(c.loc)) |il| switch (il) {
-                                // Builtin-primitive method (`xs.map(f)`, `s.split(sep)`):
-                                // erlang has no native method dispatch — emit the host op
-                                // directly (the receiver's argument position varies).
-                                .prim => |k| {
-                                    try this.emitPrimMethod(k, cc.callee, recv, cc);
-                                    return;
-                                },
-                                // Record/struct/enum instance method: a plain function
-                                // taking the receiver first. Local types call the bare
-                                // `m(Recv, args)`; an imported type calls into its owner
-                                // module (`owner:m(Recv, args)`). A method name that
-                                // collides with another record's method (`Query.count`
-                                // + `Grouping.count`) is mangled at emit and at the
-                                // call site to `<recordtype>_<method>` so the flat
-                                // erlang top-level fn namespace stays unambiguous.
-                                .record => |tn| {
-                                    var mn_buf: [256]u8 = undefined;
-                                    const mn: []const u8 = if (this.isRecordMethodCollision(tn, cc.callee))
-                                        try recordMethodAtom(&mn_buf, tn, cc.callee)
-                                    else
-                                        callee;
-                                    if (this.imported_types.get(tn)) |owner| {
-                                        try this.fmt("{s}:{s}(", .{ owner, mn });
-                                    } else {
-                                        try this.fmt("{s}(", .{mn});
-                                    }
-                                    try this.emitExpr(recv.*);
-                                    recv_arg_emitted = true;
-                                },
-                            } else {
-                                // Method call on a value receiver with no recorded
-                                // lowering. Before falling through to the bare
-                                // local-fn shape, speculatively try the Array
-                                // primitive dispatch (`forEach`/`fold`/`drop`/
-                                // `take`/`toList`) and the universal `toString`.
-                                // These callee names are tightly bound to the std
-                                // Array/Integer/Float interface methods; a user-
-                                // defined record with the same name is rare and
-                                // would also red as `m(Recv, args)` (the existing
-                                // fallback) — the speculative dispatch is a
-                                // strict improvement for the chained-self case
-                                // where `inferTypeMethods` bails out before
-                                // recording an `.array` lowering (e.g. a body
-                                // with a control-flow shape the best-effort
-                                // walker can't resolve).
-                                if (try this.tryArrayPrimFallback(cc.callee, recv, cc)) return;
-                                if (std.mem.eql(u8, cc.callee, "toString") and cc.args.len == 0) {
-                                    // Generic toString fallback — use the BIF
-                                    // `io_lib:format("~p", [Recv])` shape so any
-                                    // value renders. The wider integer/float
-                                    // toString annotations on `Integer`/`Float`
-                                    // light up via `emitPrimMethod` when the
-                                    // lowering IS recorded; this catches the
-                                    // gap-inference case where it isn't.
-                                    try this.w("iolist_to_binary(io_lib:format(\"~p\", [");
-                                    try this.emitExpr(recv.*);
-                                    try this.w("]))");
-                                    return;
-                                }
-                                try this.fmt("{s}(", .{callee});
-                                try this.emitExpr(recv.*);
-                                recv_arg_emitted = true;
-                            }
-                        } else if (this.user_erlang_templates.contains(cc.callee)) {
-                            // §A2 erlang twin: per-callee template /
-                            // arity-branched annotation — render inline
-                            // and return (no `{s}(args)` fallback below).
-                            if (try this.tryEmitUserTemplate(cc.callee, cc)) return;
-                            // No matching arity branch — fall back to the
-                            // bare local-fn call so the missing branch
-                            // surfaces as an erlang "undefined function"
-                            // at compile time rather than silently emitting
-                            // nothing.
-                            try this.fmt("{s}(", .{callee});
-                        } else if (this.externals.get(cc.callee)) |ref| {
-                            // `@[external(erlang, "module", "symbol")]` fn:
-                            // the call lowers to the remote `module:symbol(…)`.
-                            try this.fmt("{s}:{s}(", .{ ref.module, ref.symbol });
-                        } else if (this.externals_missing.contains(cc.callee)) {
-                            // External fn with no `erlang` target — no symbol
-                            // to call on this backend.
-                            return error.MissingExternalTarget;
-                        } else if (this.record_fields.get(cc.callee)) |fields| {
-                            // Record/struct constructor → map literal
-                            // `#{field => V, …}` (runtime shape mirrors the
-                            // beam backend's `put_map_assoc` maps). Labeled
-                            // args use their label; positional args map to
-                            // the declared field order.
-                            try this.w("#{");
-                            for (cc.args, 0..) |arg, ai| {
-                                if (ai > 0) try this.w(", ");
-                                const fname: []const u8 = if (arg.label) |lbl|
-                                    lbl
-                                else if (ai < fields.len)
-                                    fields[ai]
-                                else
-                                    "_arg";
-                                var kb: [128]u8 = undefined;
-                                try this.fmt("{s} => ", .{try atomName(fname, &kb)});
-                                try this.emitExpr(arg.value.*);
-                            }
-                            try this.w("}");
-                            return;
-                        } else if (this.locals.contains(cc.callee)) {
-                            // The callee is a fn-typed local (a parameter, `val`,
-                            // or lambda binding) — apply it as a fun variable
-                            // (`Pred(X)`), not a bare module function call.
-                            const vname = try erlangVar(this.alloc, cc.callee);
-                            defer this.alloc.free(vname);
-                            try this.fmt("{s}(", .{vname});
-                        } else {
-                            try this.fmt("{s}(", .{callee});
-                        }
-                        var first = !recv_arg_emitted;
-                        for (cc.args) |arg| {
-                            if (!first) try this.w(", ");
-                            try this.emitExpr(arg.value.*);
-                            first = false;
-                        }
-                        // Trailing lambdas: emit as fun args
-                        for (cc.trailing) |tl| {
-                            if (!first) try this.w(", ");
-                            first = false;
-                            try this.w("fun(");
-                            for (tl.params, 0..) |p, pi| {
-                                if (pi > 0) try this.w(", ");
-                                const vname = try erlangVar(this.alloc, p);
-                                defer this.alloc.free(vname);
-                                try this.w(vname);
-                                this.addLocal(p);
-                            }
-                            try this.w(") ->\n");
-                            const tl_saved = this.indent;
-                            this.indent = this.indent + 1;
-                            try this.emitBody(tl.body);
-                            this.indent = tl_saved;
-                            try this.w("\n");
-                            try this.writeIndent();
-                            try this.w("end");
-                        }
-                        try this.w(")");
-                    }
-                },
-            },
+                .operand = try b.ptr(try this.exprNode(b, un.expr.*)),
+            } },
 
             .function => |func| {
-                try this.w("fun(");
+                const saved_cond_loop = this.cond_loop;
+                this.cond_loop = null;
+                defer this.cond_loop = saved_cond_loop;
+                const params = try b.arena.alloc(Ast.Expr, func.kind.params.len);
                 for (func.kind.params, 0..) |p, i| {
-                    if (i > 0) try this.w(", ");
-                    const vname = try erlangVar(this.alloc, p);
-                    defer this.alloc.free(vname);
-                    try this.w(vname);
+                    params[i] = V(try this.arenaVar(b, p));
                     this.addLocal(p);
                 }
-                try this.w(") ->\n");
-                const lam_saved = this.indent;
-                this.indent = this.indent + 1;
-                try this.emitBody(func.kind.body);
-                this.indent = lam_saved;
-                try this.w("\n");
-                try this.writeIndent();
-                try this.w("end");
+                return .{ .fun = .{ .params = params, .body = try this.bodyNode(b, func.kind.body, 0, this.indent + 1) } };
             },
 
             .collection => |col| switch (col.kind) {
-                .grouped => |inner| {
-                    try this.w("(");
-                    try this.emitExpr(inner.*);
-                    try this.w(")");
-                },
+                .grouped => |inner| return b.paren(try this.exprNode(b, inner.*)),
                 .arrayLit => |al| {
-                    // Special handling for spreadExpr: use ++ operator for list concatenation
+                    var items: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+                    for (al.elems) |elem| try items.append(b.arena, try this.exprNode(b, elem));
+                    // A spread expression concatenates: `[A, B] ++ Rest`.
                     if (al.spreadExpr) |se| {
-                        // Emit the first part as a list
-                        try this.w("[");
-                        for (al.elems, 0..) |elem, i| {
-                            if (i > 0) try this.w(", ");
-                            try this.emitExpr(elem);
-                        }
-                        try this.w("]");
-
-                        // Use ++ to concatenate with the spread expression
-                        try this.w(" ++ ");
-                        try this.emitExpr(se.*);
-                    } else {
-                        // Normal array literal or simple spread (identifier)
-                        try this.w("[");
-                        for (al.elems, 0..) |elem, i| {
-                            if (i > 0) try this.w(", ");
-                            try this.emitExpr(elem);
-                        }
-                        if (al.spread) |name| {
-                            if (al.elems.len > 0) try this.w(", ");
-                            if (name.len > 0) try this.w(name);
-                        }
-                        try this.w("]");
+                        return .{ .binop = .{
+                            .op = "++",
+                            .lhs = try b.ptr(.{ .list = items.items }),
+                            .rhs = try b.ptr(try this.exprNode(b, se.*)),
+                            .parens = false,
+                        } };
                     }
+                    // `[a, b, ...rest]` parsed as a trailing spread NAME: it is
+                    // a concatenation too, not a fourth element (which is what
+                    // the raw name used to render — and in botopink spelling,
+                    // so the emitted module did not even compile).
+                    if (al.spread) |name| {
+                        if (name.len > 0) return .{ .binop = .{
+                            .op = "++",
+                            .lhs = try b.ptr(.{ .list = items.items }),
+                            .rhs = try b.ptr(try this.nameRefNode(b, name)),
+                            .parens = false,
+                        } };
+                    }
+                    return .{ .list = items.items };
                 },
                 .tupleLit => |tl| {
-                    try this.w("{");
-                    for (tl.elems, 0..) |elem, i| {
-                        if (i > 0) try this.w(", ");
-                        try this.emitExpr(elem);
-                    }
-                    try this.w("}");
+                    const items = try b.arena.alloc(Ast.Expr, tl.elems.len);
+                    for (tl.elems, 0..) |elem, i| items[i] = try this.exprNode(b, elem);
+                    return .{ .tuple = items };
                 },
-                .case => |c| try this.emitCase(c.subjects, c.arms),
-                .range => |r| {
-                    // `a..b` is half-open `[a, b)` (parity with wasm + `Array.range`),
-                    // but erlang's `lists:seq/2` is inclusive — so the upper bound is
-                    // `b - 1` (`lists:seq(A, B - 1)`; `B = A` yields `[]`). An open
-                    // range `a..` iterates to `infinity`.
-                    try this.w("lists:seq(");
-                    try this.emitExpr(r.start.*);
-                    try this.w(", ");
-                    if (r.end) |end| {
-                        try this.w("(");
-                        try this.emitExpr(end.*);
-                        try this.w(") - 1");
-                    } else try this.w("infinity");
-                    try this.w(")");
-                },
-                // Anonymous record literal — an Erlang map (the same shape
-                // named records lower to).
-                .recordLit => |rl| {
-                    try this.w("#{");
-                    for (rl.fields, 0..) |f, i| {
-                        if (i > 0) try this.w(", ");
-                        try this.fmt("{s} => ", .{f.name});
-                        try this.emitExpr(f.value.*);
-                    }
-                    try this.w("}");
-                },
+                .case => |c| return this.caseNode(b, c.subjects, c.arms),
+                // `a..b` is half-open `[a, b)` (parity with wasm + `Array.range`),
+                // but erlang's `lists:seq/2` is inclusive — so the upper bound is
+                // `b - 1`; an open range `a..` iterates to `infinity`.
+                .range => |r| return b.remote("lists", "seq", &.{
+                    try this.exprNode(b, r.start.*),
+                    if (r.end) |end| .{ .binop = .{
+                        .op = "-",
+                        .lhs = try b.ptr(try b.paren(try this.exprNode(b, end.*))),
+                        .rhs = try b.ptr(Ast.Expr.t(Term.int(1))),
+                        .parens = false,
+                    } } else A("infinity"),
+                }),
+                // Anonymous record / interface literal — an Erlang map (the same
+                // shape named records lower to). Keys are the field names as written.
+                .behaviorLit => |il| return this.fieldMap(b, il.fields),
             },
 
-            .jump => |j| switch (j.kind) {
-                .@"return" => |r| if (r) |val| try this.emitExpr(val.*),
-                .throw_ => |r| if (r) |val| {
-                    try this.w("erlang:throw(");
-                    try this.emitExpr(val.*);
-                    try this.w(")");
-                },
-                .try_ => |t| if (t) |val| try this.emitExpr(val.*),
-                .await_ => |av| try this.emitExpr(av.*),
-                .@"break" => |b| if (b.value) |bp| try this.emitExpr(bp.*),
-                .yield => |y| if (y.value) |val| try this.emitExpr(val.*),
-                .@"continue" => try this.w("%% continue"),
+            .jump => |j| return switch (j.kind) {
+                // A value-less jump has no value to stand for: `return;` and a
+                // bare `try` are `undefined` (null), as `stmtExpr`'s `return`
+                // already was, and a bare `throw;` throws `undefined` rather
+                // than rendering as nothing — a hole `erlc` rejected, or worse,
+                // accepted as the next expression.
+                .@"return" => |r| if (r) |val| this.exprNode(b, val.*) else A("undefined"),
+                .throw_ => |r| b.remote("erlang", "throw", &.{if (r) |val| try this.exprNode(b, val.*) else A("undefined")}),
+                .try_ => |t| if (t) |val| this.exprNode(b, val.*) else A("undefined"),
+                .await_ => |av| this.exprNode(b, av.*),
+                // A bare `break` leaves the enclosing loop. Erlang's list
+                // functions cannot be stopped from inside the fun, so the exit
+                // is a throw the loop's `try` catches (`loopBreakCatch`). It
+                // used to render as nothing at all, which left a `;` where the
+                // clause body belonged and broke the whole module.
+                .@"break" => |brk| if (this.cond_loop) |names|
+                    this.condBreakThrow(b, names, brk)
+                else if (brk.value) |bp| this.exprNode(b, bp.*) else b.remote("erlang", "throw", &.{Ast.Expr.a(break_signal)}),
+                .yield => |y| if (this.cond_loop_yield) |acc|
+                    this.condYieldPush(b, acc, y.value)
+                else if (y.value) |val| this.exprNode(b, val.*) else A("undefined"),
+                .@"continue" => if (this.cond_loop) |names|
+                    b.remote("erlang", "throw", &.{try b.tuple(&.{ A(cond_continue_signal), if (names.len > 0) try this.varGroupExpr(b, names) else A("ok") })})
+                else
+                    .{ .comment = Ast.Comment.doc("continue") },
             },
 
             .branch => |br| switch (br.kind) {
                 .if_ => |i| {
-                    try this.w("case ");
-                    try this.emitExpr(i.cond.*);
-                    try this.w(" of\n");
-                    this.indent += 1;
-                    try this.writeIndent();
-                    if (i.binding) |b| {
-                        // `if (mb) { b -> body }`: bind `b` to the non-`undefined`
-                        // value so the body's references to `b` resolve. Without
-                        // the binding the case arm was `_ ->`, leaving `b`
-                        // unbound — the §B3 "variable 'B' is unbound" LINQ bug.
-                        const bname = try erlangVar(this.alloc, b);
-                        defer this.alloc.free(bname);
-                        try this.w("undefined -> undefined;\n");
-                        try this.writeIndent();
-                        try this.fmt("{s} ->\n", .{bname});
-                        this.addLocal(b);
-                    } else {
-                        try this.w("true ->\n");
+                    // The binding form (`if (mb) { b -> … }`) matches on the
+                    // value itself (`undefined -> …; B -> …`), so it keeps the
+                    // raw subject; only the boolean form needs the null test.
+                    const cond = if (i.binding == null) try this.condNode(b, i.cond.*) else try this.exprNode(b, i.cond.*);
+                    const arm_indent = this.indent + 2;
+                    var clauses: std.ArrayListUnmanaged(Ast.Clause) = .empty;
+                    if (i.binding) |name| {
+                        // `if (mb) { b -> body } [else { … }]`: `undefined` takes
+                        // the else body (it used to sit behind an unreachable
+                        // `false` clause), any other value binds `b`. The two
+                        // patterns cover every value, so no catch-all follows.
+                        const undefined_body = if (i.else_) |els| try this.bodyNode(b, els, 0, arm_indent) else try b.body(&.{A("undefined")});
+                        try clauses.append(b.arena, .{ .patterns = try b.exprs(&.{A("undefined")}), .body = undefined_body, .layout = if (i.else_ == null) .inline_ else .block });
+                        const bound = V(try this.patternBindVar(b, name));
+                        try clauses.append(b.arena, .{ .patterns = try b.exprs(&.{bound}), .body = try this.bodyNode(b, i.then_, 0, arm_indent) });
+                        return b.caseOf(cond, clauses.items);
                     }
-                    this.indent += 1;
-                    try this.emitBranchBody(i.then_);
-                    this.indent -= 1;
+                    try clauses.append(b.arena, .{ .patterns = try b.exprs(&.{A("true")}), .body = try this.bodyNode(b, i.then_, 0, arm_indent) });
                     if (i.else_) |els| {
-                        try this.w(";\n");
-                        try this.writeIndent();
-                        try this.w("false ->\n");
-                        this.indent += 1;
-                        try this.emitBranchBody(els);
-                        this.indent -= 1;
+                        try clauses.append(b.arena, .{ .patterns = try b.exprs(&.{A("false")}), .body = try this.bodyNode(b, els, 0, arm_indent) });
                     } else {
-                        // No else branch — emit a catch-all so the case
-                        // doesn't crash when the condition is false.
-                        try this.w(";\n");
-                        try this.writeIndent();
-                        try this.w("_ -> ok");
+                        // No else branch — a catch-all so the case doesn't crash
+                        // when the condition is false.
+                        try clauses.append(b.arena, try b.clause(&.{V("_")}, &.{}, &.{A("ok")}));
                     }
-                    this.indent -= 1;
-                    try this.w("\n");
-                    try this.writeIndent();
-                    try this.w("end");
+                    return b.caseOf(cond, clauses.items);
                 },
                 .tryCatch => |tc| {
-                    // `try expr catch handler` → pattern match on the Result tag.
+                    // `try expr catch handler` → pattern match on the Result tag:
                     //   case Expr of {ok, V} -> V; {error, E} -> Handler end
-                    const handler = tc.handler.*;
-                    const is_jump = switch (handler) {
-                        .jump => |j| switch (j.kind) {
-                            .throw_, .@"return", .@"break", .@"continue", .yield => true,
-                            else => false,
-                        },
-                        else => false,
-                    };
-                    const is_fun = switch (handler) {
-                        .function => true,
-                        else => false,
-                    };
                     const n = this.try_seq;
                     this.try_seq += 1;
+                    // The subject runs inside a real `try`: `@todo()`/`@panic`
+                    // in a `#[@result]` callee RAISE instead of answering
+                    // `{error, E}`, and a `case` cannot catch a raise. The
+                    // reason becomes the `{error, Reason}` the handler receives.
+                    // Only the subject is wrapped — a raise in the handler or
+                    // in the value arm still propagates.
+                    const reason = V(try std.fmt.allocPrint(b.arena, "_TryR{d}", .{n}));
+                    const subject: Ast.Expr = .{ .try_catch = .{
+                        .body = try b.body(&.{try this.exprNode(b, tc.expr.*)}),
+                        .catches = try b.arena.dupe(Ast.Clause, &.{
+                            try b.clause(&.{try b.exception(A("error"), reason)}, &.{}, &.{try b.tuple(&.{ A("error"), reason })}),
+                        }),
+                    } };
+                    const ok_var = V(try std.fmt.allocPrint(b.arena, "TryV{d}", .{n}));
+                    const err_var = V(try std.fmt.allocPrint(b.arena, "_TryE{d}", .{n}));
 
-                    try this.w("case ");
-                    try this.emitExpr(tc.expr.*);
-                    try this.w(" of\n");
-                    this.indent += 1;
-                    try this.writeIndent();
-                    try this.fmt("{{ok, TryV{d}}} -> TryV{d};\n", .{ n, n });
-                    try this.writeIndent();
-                    try this.fmt("{{error, _TryE{d}}} ->\n", .{n});
-                    this.indent += 1;
-                    try this.writeIndent();
-                    try this.emitExpr(handler);
-                    if (is_fun) {
-                        try this.fmt("(_TryE{d})", .{n});
-                    } else if (is_jump) {
-                        // handler already emitted its own control-flow expression
-                    }
-                    this.indent -= 2;
-                    try this.w("\n");
-                    try this.writeIndent();
-                    try this.w("end");
+                    const saved = this.indent;
+                    this.indent = saved + 2;
+                    const handler_expr = try this.exprNode(b, tc.handler.*);
+                    this.indent = saved;
+                    // A function handler receives the error.
+                    const handler: Ast.Expr = if (tc.handler.* == .function)
+                        .{ .apply = .{ .fun = try b.ptr(handler_expr), .args = try b.exprs(&.{err_var}) } }
+                    else
+                        handler_expr;
+
+                    return b.caseOf(subject, &.{
+                        try b.clause(&.{try b.tuple(&.{ A("ok"), ok_var })}, &.{}, &.{ok_var}),
+                        .{ .patterns = try b.exprs(&.{try b.tuple(&.{ A("error"), err_var })}), .body = try b.body(&.{handler}) },
+                    });
                 },
             },
 
             .loop => |lp| {
-                const has_yield = blk: {
-                    for (lp.body) |stmt| {
-                        if (switch (stmt.expr) {
-                            .jump => |j| j.kind == .yield,
-                            else => false,
-                        }) break :blk true;
-                    }
-                    break :blk false;
-                };
-                const fun_kw = if (has_yield) "lists:map" else "lists:foreach";
-                try this.fmt("{s}(fun(", .{fun_kw});
-                for (lp.params, 0..) |p, i| {
-                    if (i > 0) try this.w(", ");
-                    const vname = try erlangVar(this.alloc, p);
-                    defer this.alloc.free(vname);
-                    try this.w(vname);
+                if (lp.condition) {
+                    if (conditionLoopYieldsValue(lp.body)) return error.ConditionLoopValueUnsupported;
+                    // The variables the body reassigns travel through the loop
+                    // fun as its group, exactly as in statement position
+                    // (`mutatingExpr`). Without them the fun took no argument,
+                    // so `loop (i < 10) { … i = i + 1; }` as a VALUE never
+                    // advanced `i` and did not terminate.
+                    var names: std.ArrayListUnmanaged([]const u8) = .empty;
+                    try this.collectMutations(b.arena, lp.body, &.{}, &names);
+                    return this.conditionLoopNode(b, lp, names.items);
                 }
-                try this.w(") ->\n");
-                const fun_body_indent = this.indent + 1;
-                const saved2 = this.indent;
-                this.indent = fun_body_indent;
-                try this.emitBody(lp.body);
-                this.indent = saved2;
-                try this.w("\n");
-                try this.writeIndent();
-                try this.w("end, ");
-                try this.emitExpr(lp.iter.*);
-                try this.w(")");
+                // A collection loop's body is a fun: its jumps are its own.
+                const saved_cond_loop = this.cond_loop;
+                this.cond_loop = null;
+                defer this.cond_loop = saved_cond_loop;
+                // A loop is a `lists:map` when its body produces a value per
+                // item: a `yield`, or a `break <expr>` (the mapped element —
+                // bare `break` carries no value and keeps the loop a foreach).
+                const yields = for (lp.body) |stmt| {
+                    if (stmt.expr != .jump) continue;
+                    switch (stmt.expr.jump.kind) {
+                        .yield => break true,
+                        .@"break" => |brk| if (brk.value != null) break true,
+                        else => {},
+                    }
+                } else false;
+                const op = if (yields) "map" else "foreach";
+                // `loop (xs, 0..) { item, i -> … }`: `lists:map/foreach` pass ONE
+                // element to the fun, so the two loop parameters cannot be two fun
+                // parameters (that raised `function_clause` at every call). The
+                // index range walks alongside the collection, which is exactly
+                // `lists:enumerate/2` — a list of `{Index, Item}` pairs matched by
+                // a single tuple parameter.
+                // `loop (xs) { item, i -> … }` (no written range) counts from 0.
+                if (lp.params.len == 2) {
+                    const idx = V(try this.arenaVar(b, lp.params[1]));
+                    this.addLocal(lp.params[1]);
+                    const item = V(try this.arenaVar(b, lp.params[0]));
+                    this.addLocal(lp.params[0]);
+                    const pair = try b.tuple(&.{ idx, item });
+                    const fun: Ast.Expr = .{ .fun = .{
+                        .params = try b.exprs(&.{pair}),
+                        .body = try this.bodyNode(b, lp.body, 0, this.indent + 1),
+                    } };
+                    const enumerated = try b.remote("lists", "enumerate", &.{
+                        if (lp.indexRange) |r| try this.indexRangeStart(b, r.*) else Ast.Expr.t(Term.int(0)),
+                        try this.exprNode(b, lp.iter.*),
+                    });
+                    return b.remote("lists", op, &.{ fun, enumerated });
+                }
+                const params = try b.arena.alloc(Ast.Expr, lp.params.len);
+                for (lp.params, 0..) |p, i| {
+                    params[i] = V(try this.arenaVar(b, p));
+                    this.addLocal(p);
+                }
+                // An open-ended range (`loop (x..) { i -> … }`) has no list to
+                // walk — `lists:seq/2` cannot take `infinity` — so it becomes a
+                // named fun that counts up and calls itself. The bare `break`
+                // such a loop needs to terminate is the throw below.
+                if (unboundedRangeStart(lp.iter.*)) |start| {
+                    if (lp.params.len == 1) {
+                        var body: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+                        const inner = try this.bodyNode(b, lp.body, 0, this.indent + 1);
+                        for (inner.stmts) |s| try body.append(b.arena, s.expr);
+                        const next: Ast.Expr = .{ .binop = .{
+                            .op = "+",
+                            .lhs = try b.ptr(params[0]),
+                            .rhs = try b.ptr(Ast.Expr.t(Term.int(1))),
+                            .parens = false,
+                        } };
+                        try body.append(b.arena, .{ .apply = .{
+                            .fun = try b.ptr(V(loop_fun_var)),
+                            .args = try b.exprs(&.{next}),
+                        } });
+                        const fun: Ast.Expr = .{ .fun = .{
+                            .name = loop_fun_var,
+                            .params = params,
+                            .body = try b.body(body.items),
+                        } };
+                        const call: Ast.Expr = .{ .apply = .{
+                            .fun = try b.ptr(try b.paren(fun)),
+                            .args = try b.exprs(&.{try this.exprNode(b, start.*)}),
+                        } };
+                        return this.loopBreakCatch(b, call, lp.body);
+                    }
+                }
+                // `loop (xs) { x -> if (cond) { break x; }; }` keeps only the
+                // items the guard admits — `lists:filtermap/2` exactly, with the
+                // fun answering `{true, Value}` or `false`. Lowered as a plain
+                // `foreach` this dropped every value the loop produced.
+                if (try this.filterMapFunBody(b, lp)) |body| {
+                    return b.remote("lists", "filtermap", &.{
+                        .{ .fun = .{ .params = params, .body = body } },
+                        try this.exprNode(b, lp.iter.*),
+                    });
+                }
+                const fun: Ast.Expr = .{ .fun = .{ .params = params, .body = try this.bodyNode(b, lp.body, 0, this.indent + 1) } };
+                return this.loopBreakCatch(b, try b.remote("lists", op, &.{ fun, try this.exprNode(b, lp.iter.*) }), lp.body);
             },
 
-            .binding => |b| switch (b.kind) {
-                .localBind => |lb| {
-                    const vname = try erlangVar(this.alloc, lb.name);
-                    defer this.alloc.free(vname);
-                    this.addLocal(lb.name);
-                    try this.fmt("{s} = ", .{vname});
-                    try this.emitExpr(lb.value.*);
-                },
-                .assign => |a| {
-                    switch (a.target) {
-                        .name => |name| {
-                            const vname = try erlangVar(this.alloc, name);
-                            defer this.alloc.free(vname);
-                            switch (a.op) {
-                                .assign => try this.fmt("{s} = ", .{vname}),
-                                .plusAssign => try this.fmt("{s} = {s} + ", .{ vname, vname }),
-                            }
-                            try this.emitExpr(a.value.*);
-                        },
-                        .fieldAccess => |*fa| {
-                            // Erlang records don't support mutation like this; emit a comment
-                            try this.fmt("%% {s}.{s} = ...", .{ "self", fa.field });
-                        },
-                    }
-                },
-                .localBindDestruct => |lb| {
-                    switch (lb.pattern) {
-                        .names => |*n| {
-                            try this.w("{");
-                            for (n.fields, 0..) |fld, i| {
-                                if (i > 0) try this.w(", ");
-                                const vname = try erlangVar(this.alloc, fld.bind_name);
-                                defer this.alloc.free(vname);
-                                try this.w(vname);
-                            }
-                            if (n.hasSpread) try this.w(", _");
-                            try this.w("} = ");
-                        },
-                        .tuple_ => |t| {
-                            try this.w("{");
-                            for (t, 0..) |nm, i| {
-                                if (i > 0) try this.w(", ");
-                                const vname = try erlangVar(this.alloc, nm);
-                                defer this.alloc.free(vname);
-                                try this.w(vname);
-                            }
-                            try this.w("} = ");
-                        },
-                        .list => {}, // List pattern — placeholder
-                        .ctor => {}, // Constructor pattern — placeholder
-                    }
-                    try this.emitExpr(lb.value.*);
-                },
+            .call => |c| return this.callNode(b, c),
+            .binding => |bind| return this.bindingNode(b, bind),
+            // `use` is a transparent prefix: lower the wrapped call (any binding
+            // belongs to the enclosing `val`).
+            .useHook => |uh| return this.exprNode(b, uh.kind.inner.*),
+            .comptime_ => |ct| return this.comptimeNode(b, ct),
+        }
+    }
+
+    /// `(fun(undefined) -> undefined; (Opt) -> Access end)(Receiver)`.
+    /// An `if`/`else if` condition. The `case Cond of true -> …; false -> …`
+    /// shape needs a real boolean, so a bare reference to a nullable local
+    /// (`if (end)` where `end: i32 = null`) becomes the null test the botopink
+    /// truthiness rule means: `(End =/= undefined)`. Every other condition
+    /// already evaluates to a boolean and is emitted unchanged.
+    fn condNode(this: *Emitter, b: Ast.Builder, cond: ast.Expr) anyerror!Ast.Expr {
+        const node = try this.exprNode(b, cond);
+        if (cond != .identifier or cond.identifier.kind != .ident) return node;
+        if (!this.nullable_locals.contains(cond.identifier.kind.ident)) return node;
+        return b.binop("=/=", node, Ast.Expr.a("undefined"));
+    }
+
+    fn optionalAccess(this: *Emitter, b: Ast.Builder, opt: Ast.Expr, access: Ast.Expr, receiver: ast.Expr) anyerror!Ast.Expr {
+        const fun: Ast.Expr = .{ .fun_clauses = try b.arena.dupe(Ast.Clause, &.{
+            try b.clause(&.{Ast.Expr.a("undefined")}, &.{}, &.{Ast.Expr.a("undefined")}),
+            try b.clause(&.{opt}, &.{}, &.{access}),
+        }) };
+        return .{ .apply = .{ .fun = try b.ptr(try b.paren(fun)), .args = try b.exprs(&.{try this.exprNode(b, receiver)}) } };
+    }
+
+    /// `#{field => Value, …}`, the field names as atoms (quoted when PascalCase
+    /// or reserved, e.g. `'Kind'`, `'end'`).
+    fn fieldMap(this: *Emitter, b: Ast.Builder, fields: anytype) anyerror!Ast.Expr {
+        const out = try b.arena.alloc(Ast.MapField, fields.len);
+        for (fields, 0..) |f, i| out[i] = Ast.field(f.name, try this.exprNode(b, f.value.*));
+        return .{ .map = out };
+    }
+
+    // ── calls ─────────────────────────────────────────────────────────────────
+
+    fn callNode(this: *Emitter, b: Ast.Builder, c: anytype) anyerror!Ast.Expr {
+        return switch (c.kind) {
+            .pipeline => |p| this.pipelineNode(b, p),
+            .call => |cc| if (cc.is_builtin) this.builtinCallNode(b, cc) else this.plainCallNode(b, c.loc, cc),
+        };
+    }
+
+    /// `a |> f |> g` → `g(f(A))`: the chain flattened and applied inside out.
+    /// Stages are built from the last one down, as they have always been emitted.
+    fn pipelineNode(this: *Emitter, b: Ast.Builder, p: anytype) anyerror!Ast.Expr {
+        var items: std.ArrayListUnmanaged(ast.Expr) = .empty;
+        try items.append(b.arena, p.lhs.*);
+        var current = p.rhs.*;
+        while (current == .call and current.call.kind == .pipeline) {
+            try items.append(b.arena, current.call.kind.pipeline.lhs.*);
+            current = current.call.kind.pipeline.rhs.*;
+        }
+        try items.append(b.arena, current);
+
+        // A stage that is a bare identifier naming a top-level function is
+        // CALLED (`inc(Acc)`); only a fn-typed local is APPLIED as a fun
+        // variable (`Inc(Acc)`). Erlang has no value for a plain fn name, so
+        // lowering a bare `|> inc` as a variable leaves `Inc` unbound.
+        var node = try this.exprNode(b, items.items[0]);
+        for (items.items[1..]) |stage_expr| {
+            if (identName(stage_expr)) |name| {
+                if (!this.locals.contains(name)) {
+                    node = try b.call(name, &.{node});
+                    continue;
+                }
+            }
+            const stage = try this.exprNode(b, stage_expr);
+            node = .{ .apply = .{ .fun = try b.ptr(stage), .args = try b.exprs(&.{node}) } };
+        }
+        return node;
+    }
+
+    /// `@name(...)`: the builtin's `@external(erlang, …)` template when it has
+    /// one (`todo`/`panic`/`print`/`println`/`debug`), `@block`, the lowered
+    /// `__bp_*` result/option ops, else a local call.
+    fn builtinCallNode(this: *Emitter, b: Ast.Builder, cc: anytype) anyerror!Ast.Expr {
+        // `@print(a, b)` → `'__bp_print'([A, B])`: the helper picks `~ts` for a
+        // binary and `~p` for anything else at runtime (semantics decision 1),
+        // so a string prints as its text on the typed and the comptime path.
+        if (isPrintBuiltin(cc.callee)) {
+            this.needs_print_helper = true;
+            return b.call("__bp_print", &.{try b.list(try this.callArgs(b, null, cc))});
+        }
+        if (try this.builtinAnnotationNode(b, cc.callee, cc)) |node| return node;
+        if (std.mem.eql(u8, cc.callee, "block")) {
+            // `@block { … }` (or `@block(fn)`) is an immediately-applied fun, so
+            // the body runs and its value is the call's value.
+            const body: Ast.Body = if (cc.args.len == 1) blk: {
+                const arg = cc.args[0].value;
+                if (arg.* != .function) return error.InvalidArgs;
+                this.indent += 1;
+                defer this.indent -= 1;
+                break :blk try b.body(&.{try this.exprNode(b, arg.*)});
+            } else if (cc.trailing.len == 1 and cc.trailing[0].params.len == 0)
+                try this.bodyNode(b, cc.trailing[0].body, 0, this.indent + 1)
+            else
+                return error.InvalidArgs;
+            return b.applyParen(.{ .fun = .{ .params = &.{}, .body = body } }, &.{});
+        }
+        if (std.mem.eql(u8, cc.callee, ast.index_builtin_name)) return this.indexNode(b, cc);
+        if (std.mem.startsWith(u8, cc.callee, "__bp_")) return this.resultOptionNode(b, cc.callee, cc.args);
+        return b.call(cc.callee, try this.callArgs(b, null, cc));
+    }
+
+    /// Decision 30's index expression: the builtin call `[]` over
+    /// `(receiver, index)` (`ast.index_builtin_name`), which is what `xs[0]`,
+    /// `d["k"]`, `s[0]` and the slice `xs[0..2]` all parse into.
+    ///
+    /// A `range` second argument is the slice — the same node, per
+    /// `ast.zig`'s contract — and it is read here rather than lowered as an
+    /// expression: the range lowering materialises `lists:seq/2`, a whole list
+    /// of indices, where a slice wants two bounds. An open end (`xs[0..]`)
+    /// keeps the atom `infinity` that lowering already uses.
+    ///
+    /// Both forms dispatch on the receiver at run time (`'__bp_index'/2`,
+    /// `'__bp_slice'/3`), because `01-checker` does not type the call yet — with
+    /// the receiver's type recorded, a list index becomes `lists:nth/2` inline
+    /// and a `Dict` index reaches `lookup`.
+    fn indexNode(this: *Emitter, b: Ast.Builder, cc: anytype) anyerror!Ast.Expr {
+        if (cc.args.len != 2) return error.InvalidArgs;
+        const recv = try this.exprNode(b, cc.args[0].value.*);
+        const index = cc.args[1].value.*;
+        if (index == .collection and index.collection.kind == .range) {
+            const r = index.collection.kind.range;
+            this.needs_slice_helper = true;
+            return b.call("__bp_slice", &.{
+                recv,
+                try this.exprNode(b, r.start.*),
+                if (r.end) |end| try this.exprNode(b, end.*) else Ast.Expr.a("infinity"),
+            });
+        }
+        this.needs_index_helper = true;
+        return b.call("__bp_index", &.{ recv, try this.exprNode(b, index) });
+    }
+
+    /// A user-level call: receiver dispatch (std module, extension, enum
+    /// constructor, associated fn, primitive/record instance method), host
+    /// templates and externals, record constructors, fun-typed locals, or a
+    /// plain local call. Reserved-word callees (`of`, `div`) are quoted atoms.
+    fn plainCallNode(this: *Emitter, b: Ast.Builder, loc: anytype, cc: anytype) anyerror!Ast.Expr {
+        const recv = cc.receiver orelse {
+            if (this.user_erlang_templates.contains(cc.callee)) {
+                // §A2 per-callee template / arity-branched annotation. With no
+                // matching branch, the bare local call surfaces the gap as an
+                // erlang "undefined function" instead of emitting nothing.
+                if (try this.userTemplateNode(b, cc.callee, cc)) |node| return node;
+                return b.call(cc.callee, try this.callArgs(b, null, cc));
+            }
+            // A bare callee inside an inlined interface `default fn` body is a
+            // std prelude helper the consuming module never declares
+            // (`String.slice`'s body calls `stringSlice0`/`stringSlice1`), so it
+            // renders from the `primitives.bp` template index instead.
+            if (this.in_iface_default) {
+                if (try this.preludeHelperNode(b, cc.callee, cc)) |node| return node;
+            }
+            // `#[@external(erlang, "module", "symbol")]` fn → `module:symbol(…)`.
+            if (this.externals.get(cc.callee)) |ref| {
+                return b.remote(ref.module, ref.symbol, try this.callArgs(b, null, cc));
+            }
+            // External fn with no `erlang` target — no symbol to call here.
+            if (this.externals_missing.contains(cc.callee)) {
+                this.missing_external = .{ .name = cc.callee, .target = "erlang", .loc = loc };
+                return error.MissingExternalTarget;
+            }
+            // Record/struct constructor → `#{field => V, …}` (the runtime shape of
+            // the beam backend's `put_map_assoc` maps). Labeled args use their
+            // label; positional args follow the declared field order.
+            if (this.record_fields.get(cc.callee)) |fields| {
+                const out = try b.arena.alloc(Ast.MapField, cc.args.len);
+                for (cc.args, 0..) |arg, ai| {
+                    const fname: []const u8 = if (arg.label) |lbl| lbl else if (ai < fields.len) fields[ai] else "_arg";
+                    out[ai] = Ast.field(fname, try this.exprNode(b, arg.value.*));
+                }
+                return .{ .map = out };
+            }
+            // `Ok(v)` / `Err(e)` / `new Error(msg)` build the runtime `@Result`
+            // tuple the `#[@result]` transform and the `Ok`/`Err` case arms both
+            // use. Rendered as a call they became `'Ok'(V)` — applying an atom,
+            // which is not a function. A user type of the same name wins (it was
+            // matched above).
+            if (!this.enum_variants.contains(cc.callee) and cc.args.len == 1) {
+                if (resultTag(cc.callee)) |tag| {
+                    return b.tuple(&.{ Ast.Expr.a(tag), try this.exprNode(b, cc.args[0].value.*) });
+                }
+            }
+            // A fn-typed local (parameter, `val`, lambda binding) is applied as a
+            // fun variable (`Pred(X)`), not called as a module function.
+            if (this.locals.contains(cc.callee)) {
+                return .{ .apply = .{
+                    .fun = try b.ptr(Ast.Expr.v(try this.arenaVar(b, cc.callee))),
+                    .args = try this.callArgs(b, null, cc),
+                } };
+            }
+            // A module-level `val` holding a lambda (`val add = { x, y -> … }`)
+            // is a 0-arity function RETURNING the fun, so the call applies what
+            // it answers: `(add())(10, 20)` — `add(10, 20)` would look for an
+            // `add/2` the module never defines.
+            if (this.top_vals.contains(cc.callee)) {
+                return .{ .apply = .{
+                    .fun = try b.ptr(try b.paren(try b.call(cc.callee, &.{}))),
+                    .args = try this.callArgs(b, null, cc),
+                } };
+            }
+            // An imported `pub fn` (`import {twice};`): this module never emits
+            // `twice/1`, so the bare call was `function twice/1 undefined` —
+            // reach the owner (`a:twice(X)`). A local definition of the same
+            // name and arity wins (an `@emit`ed body next to the import).
+            if (this.importedFnOwner(cc.callee, cc.args.len + cc.trailing.len)) |owner| {
+                return b.remote(owner, cc.callee, try this.callArgs(b, null, cc));
+            }
+            return b.call(cc.callee, try this.callArgs(b, null, cc));
+        };
+
+        // 06 N24 — a tuple element of function type applied by its position
+        // (`c._1(9)`, what a labelled `c.set(9)` becomes): a tuple is an erlang
+        // tuple, so the fun is `element(N+1, C)` applied to the arguments —
+        // never a module function named `'_1'`.
+        if (tupleIndexMember(cc.callee)) |digits| {
+            const idx = std.fmt.parseInt(usize, digits, 10) catch 0;
+            const position = Ast.Expr.t(Term.int(@intCast(idx + 1)));
+            const elem = try b.call("element", &.{ position, try this.exprNode(b, recv.*) });
+            return .{ .apply = .{
+                .fun = try b.ptr(elem),
+                .args = try this.callArgs(b, null, cc),
+            } };
+        }
+
+        const mod_name: ?[]const u8 = if (recv.* == .identifier and recv.identifier.kind == .ident and isModuleRef(recv.identifier.kind.ident))
+            recv.identifier.kind.ident
+        else
+            null;
+        // `"std"` package call: a lowercase receiver naming an imported std
+        // module lowers to the remote `std@option:map(Args)`.
+        if (recv.* == .identifier and recv.identifier.kind == .ident and this.std_imports.contains(recv.identifier.kind.ident)) {
+            const owner = try this.stdModuleAtom(b, recv.identifier.kind.ident);
+            return b.remote(owner, cc.callee, try this.callArgs(b, null, cc));
+        }
+        // Activated extension dispatch: `recv.m(args)` → the local `m(Recv, args)`
+        // emitted by `extensionForms`.
+        if (this.rewrites.get(loc)) |sym| {
+            // The activated block may belong to another module
+            // (`import {PatoNada*} from "pond"`), where the method is emitted as
+            // a bare exported function: reach it remotely.
+            if (!this.ext_names.contains(sym)) {
+                if (this.cross) |xc| if (xc.ownerModuleAtom(sym)) |owner| {
+                    return b.remote(owner, cc.callee, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
+                };
+            }
+            return b.call(cc.callee, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
+        }
+        if (mod_name) |name| {
+            // Qualified extension call `Sym.m(obj)`: the receiver names the
+            // extension block, not a module — the local `m(obj)`.
+            if (this.ext_names.contains(name)) return b.call(cc.callee, try this.callArgs(b, null, cc));
+            // Qualified enum payload constructor `Color.Rgb(r, g, b)` → the tagged
+            // tuple `{'Rgb', R, G, B}` (the case-arm constructor pattern shape).
+            //
+            // `callee` must be a variant OF this enum. It used to be enough that
+            // the RECEIVER named an enum, so an associated `fn` declared on the
+            // enum — `Shape.unit()` — became the tuple `{unit}` instead of the
+            // call `unit()`: erlc was clean and the program died at run time with
+            // `{case_clause,{unit}}` inside the method that matched on it. An
+            // enum whose variant list the emitter never saw (a comptime host
+            // enum, `ComptimeModule.host_enums`) keeps the old behaviour: there is
+            // no declaration to check against, and a host enum declares no fns.
+            if (this.enum_names.contains(name) and
+                (this.isEnumVariantOf(name, cc.callee) or !this.enum_variants_known.contains(name)))
+            {
+                const items = try b.arena.alloc(Ast.Expr, cc.args.len + 1);
+                items[0] = Ast.Expr.a(cc.callee);
+                for (cc.args, 1..) |arg, i| items[i] = try this.exprNode(b, arg.value.*);
+                return .{ .tuple = items };
+            }
+            // An associated `fn` of a LOCAL enum (`Shape.unit()`): `enumForms`
+            // emits the enum's methods as plain local functions under their own
+            // names, so this is a local call — not a variant, and not a module.
+            if (this.enum_names.contains(name) and this.enum_variants_known.contains(name)) {
+                return b.call(cc.callee, try this.callArgs(b, null, cc));
+            }
+            // Associated fn of an IMPORTED record (`Response.ok(...)` from
+            // `"web"`): a remote call into the owning module (`http:ok(...)`).
+            if (this.imported_types.get(name)) |owner| {
+                return b.remote(owner, cc.callee, try this.callArgs(b, null, cc));
+            }
+            // Associated fn of a LOCAL record: a local function of this module.
+            if (this.record_fields.contains(name)) return b.call(cc.callee, try this.callArgs(b, null, cc));
+            // Associated `default fn` of an interface (`Array.range`): the mangled
+            // local `'<Interface>_<method>'` that `interfaceForms` emits.
+            if (this.isInterfaceAssoc(name, cc.callee)) {
+                var mraw: [256]u8 = undefined;
+                const mname = try interfaceAssocAtom(&mraw, name, cc.callee);
+                return b.call(try b.arena.dupe(u8, mname), try this.callArgs(b, null, cc));
+            }
+            // Any other PascalCase receiver is a module: `List.map(xs, f)` →
+            // `list:map(Xs, F)`.
+            const mod = try erlangModule(b.arena, name);
+            return b.remote(mod, cc.callee, try this.callArgs(b, null, cc));
+        }
+        if (this.instance_lowerings.get(loc)) |il| switch (il) {
+            // Builtin-primitive method (`xs.map(f)`, `s.split(sep)`): the host op.
+            .prim => |k| return this.primMethodNode(b, k, cc.callee, recv, cc),
+            // Record/struct/enum instance method: a function taking the receiver
+            // first — local `m(Recv, args)`, or `owner:m(Recv, args)` for an
+            // imported type. A method name shared by two records is mangled to
+            // `<recordtype>_<method>` so the flat fn namespace stays unambiguous.
+            .type_ => |tn| return this.typedMethodNode(b, tn, recv, cc),
+        };
+        // Inside an ADOPTED interface `default fn` body (`implement Sized`'s
+        // `isEmpty`, emitted as one of the record's functions) inference records
+        // no lowering — the method is declared on the behavior, not on the
+        // record — but `self` is known to be that record.
+        if (this.self_record_type) |tn| {
+            if (isSelfIdent(recv.*)) return this.typedMethodNode(b, tn, recv, cc);
+        }
+        // Inside an interface instance `default fn` the receiver's type is
+        // `Self`, which inference leaves unlowered (it is generic over every
+        // implementor): dispatch on the owning interface's primitive kind.
+        if (this.selfPrimKind(recv.*)) |k| return this.primMethodNode(b, k, cc.callee, recv, cc);
+        // A value receiver with no recorded lowering (inference bailed out, e.g.
+        // on a chained call): try the Array primitive defaults and the universal
+        // `toString` before the bare `m(Recv, args)` call.
+        if (try this.arrayPrimFallbackNode(b, cc.callee, recv, cc)) |node| return node;
+        // A comptime body has no types at all: dispatch on the receiver at runtime.
+        // A comptime body has no types at all, and a typed module whose inference
+        // recorded no lowering here (a method on `Array.range(0, 5)`'s result, a
+        // local inside an inlined interface default) does not know the receiver
+        // either: dispatch on it at runtime — unless the module defines a
+        // function of that name taking the receiver first.
+        if (this.untyped or !this.local_fn_arities.contains(try std.fmt.allocPrint(b.arena, "{s}/{d}", .{ cc.callee, cc.args.len + cc.trailing.len + 1 }))) {
+            if (try this.untypedPrimCallNode(b, loc, recv, cc)) |node| return node;
+        }
+        if (std.mem.eql(u8, cc.callee, "toString") and cc.args.len == 0) return this.formatNode(b, recv);
+        // A field of function type called like a method on a receiver inference
+        // left untyped (`c.set(9)` where some record declares `set: fn(…)`):
+        // apply what the field holds. A function of that name taking the
+        // receiver first wins — that is a real method.
+        if (this.fn_typed_field_names.contains(cc.callee) and
+            this.importedFnOwner(cc.callee, cc.args.len + cc.trailing.len + 1) == null and
+            !this.local_fn_arities.contains(try std.fmt.allocPrint(b.arena, "{s}/{d}", .{ cc.callee, cc.args.len + cc.trailing.len + 1 })))
+        {
+            return .{ .apply = .{
+                .fun = try b.ptr(try b.paren(try b.remote("maps", "get", &.{ Ast.Expr.a(cc.callee), try this.exprNode(b, recv.*) }))),
+                .args = try this.callArgs(b, null, cc),
+            } };
+        }
+        // A method of an IMPORTED record whose receiver inference left untyped
+        // (`when(...).thenReturn(v)` — a method on a call's result): the owner
+        // emits it as a bare function taking the receiver first, so reach it
+        // there instead of calling a local this module never defines.
+        if (this.importedFnOwner(cc.callee, cc.args.len + cc.trailing.len + 1)) |owner| {
+            return b.remote(owner, cc.callee, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
+        }
+        return b.call(cc.callee, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
+    }
+
+    /// Call arguments: `first` (a receiver passed positionally), the positional
+    /// arguments, then trailing lambdas as funs.
+    fn callArgs(this: *Emitter, b: Ast.Builder, first: ?Ast.Expr, cc: anytype) anyerror![]const Ast.Expr {
+        var out: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+        if (first) |f| try out.append(b.arena, f);
+        for (cc.args) |arg| try out.append(b.arena, try this.exprNode(b, arg.value.*));
+        for (cc.trailing) |tl| try out.append(b.arena, try this.trailingFunNode(b, tl));
+        return out.items;
+    }
+
+    /// `iolist_to_binary(io_lib:format("~p", [Value]))` — any value as text.
+    fn formatNode(this: *Emitter, b: Ast.Builder, value: *const ast.Expr) anyerror!Ast.Expr {
+        const format = try b.remote("io_lib", "format", &.{ .{ .string = "~p" }, try b.list(&.{try this.exprNode(b, value.*)}) });
+        return b.call("iolist_to_binary", &.{format});
+    }
+
+    fn bindingNode(this: *Emitter, b: Ast.Builder, bind: anytype) anyerror!Ast.Expr {
+        switch (bind.kind) {
+            .localBind => |lb| {
+                if (lb.mutable) try this.mutable_locals.put(this.alloc, lb.name, {});
+                return this.bindExpr(b, lb.name, .bind, lb.value.*);
             },
-
-            // `use` is a transparent prefix in Erlang: lower the wrapped call.
-            // Any binding is handled by the enclosing `val` (localBind/Destruct),
-            // so the hook result lands in a bound variable (a per-process slot).
-            .useHook => |uh| try this.emitExpr(uh.kind.inner.*),
-
-            .comptime_ => |ct| switch (ct.kind) {
-                .comptimeExpr => |inner| try this.emitExpr(inner.*),
-                .comptimeBlock => |cb| {
-                    for (cb.body) |stmt| {
-                        switch (stmt.expr) {
-                            .jump => |j| switch (j.kind) {
-                                .@"break" => |y| {
-                                    if (y.value) |yp| try this.emitExpr(yp.*);
-                                    return;
-                                },
-                                else => {},
-                            },
-                            else => {},
-                        }
-                    }
+            .assign => |a| switch (a.target) {
+                .name => |name| return this.bindExpr(b, name, switch (a.op) {
+                    .assign => .assign,
+                    .plusAssign => .plus_assign,
+                }, a.value.*),
+                // Maps are immutable; a field assignment has no Erlang form.
+                .fieldAccess => |fa| return .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "self.{s} = ...", .{fa.field})) },
+            },
+            .localBindDestruct => |lb| switch (lb.pattern) {
+                .names, .tuple_ => {
+                    // The value reads the names BEFORE the pattern rebinds them.
+                    const value = try this.exprNode(b, lb.value.*);
+                    return b.match(try this.destructPatternExpr(b, lb.pattern), value);
                 },
-                .assert => |a| {
-                    if (this.test_mode) {
-                        // Raise a tagged error the test runner catches per
-                        // test (records the failure and continues).
-                        try this.w("case (");
-                        try this.emitExpr(a.condition.*);
-                        try this.w(") of true -> ok; _ -> erlang:error({bp_assert, ");
-                        if (a.message) |msg| {
-                            try this.emitExpr(msg.*);
-                        } else {
-                            try this.w("<<\"assertion failed\">>");
-                        }
-                        try this.fmt(", <<\"{s}.bp:{d}\">>}}) end", .{ this.module_name, ct.loc.line });
-                    } else {
-                        // Erlang doesn't have built-in assert, so we use pattern matching
-                        try this.w("true = (");
-                        try this.emitExpr(a.condition.*);
-                        try this.w(")");
-                    }
-                },
-                .assertPattern => |ap| {
-                    // Use Erlang's native pattern matching with case expressions
-                    try this.w("case ");
-                    try this.emitExpr(ap.expr.*);
-                    try this.w(" of ");
-
-                    // Emit the pattern
-                    try this.emitPattern(ap.pattern);
-                    try this.w(" -> ");
-
-                    // On successful match, return the matched value
-                    try this.emitExpr(ap.expr.*);
-
-                    try this.w("; _ -> ");
-
-                    // Handle the failure case
-                    try this.emitExpr(ap.handler.*);
-
-                    try this.w(" end");
-                },
+                // List / constructor patterns are not lowered yet: the value alone.
+                .list, .ctor => return this.exprNode(b, lb.value.*),
             },
         }
     }
 
-    // ── if branch body (delegates to emitBody) ────────────────────────────────
+    /// A comptime block's statements up to its first `break`, then the value
+    /// that `break` carries (semantics decision 2: a block's value comes from
+    /// `break`). It used to lower to the `break` expression alone, dropping
+    /// the `val`s it reads — `result() -> (X * 2).` did not compile. A block
+    /// with no `break`, or a bare one, is valueless: `ok`.
+    fn comptimeBlockBody(this: *Emitter, b: Ast.Builder, body: []const ast.Stmt, indent: usize) anyerror!Ast.Body {
+        var end = body.len;
+        var value: ?*const ast.Expr = null;
+        for (body, 0..) |stmt, i| {
+            if (stmt.expr == .jump and stmt.expr.jump.kind == .@"break") {
+                end = i;
+                value = stmt.expr.jump.kind.@"break".value;
+                break;
+            }
+        }
+        var stmts: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
+        try stmts.appendSlice(b.arena, (try this.bodyNode(b, body[0..end], 0, indent)).stmts);
+        const saved = this.indent;
+        this.indent = indent;
+        defer this.indent = saved;
+        try stmts.append(b.arena, .{ .expr = if (value) |v| try this.exprNode(b, v.*) else Ast.Expr.a("ok") });
+        return .{ .stmts = stmts.items };
+    }
 
-    fn emitBranchBody(this: *Emitter, body: []const ast.Stmt) !void {
-        try this.emitBody(body);
+    fn comptimeNode(this: *Emitter, b: Ast.Builder, ct: anytype) anyerror!Ast.Expr {
+        const V = Ast.Expr.v;
+        const A = Ast.Expr.a;
+        switch (ct.kind) {
+            .comptimeExpr => |inner| return this.exprNode(b, inner.*),
+            // A comptime block in expression position is an applied fun over
+            // its statements, so the `val`s before its `break` stay bound.
+            .comptimeBlock => |cb| return b.applyParen(.{ .fun = .{
+                .params = &.{},
+                .body = try this.comptimeBlockBody(b, cb.body, this.indent + 1),
+            } }, &.{}),
+            .assert => |a| {
+                const cond = try b.paren(try this.exprNode(b, a.condition.*));
+                // Always fatal, with the message and the `file:line` (semantics
+                // decision 4): a failed assert raises `{bp_assert, Msg, Where}`.
+                // The test runner catches it per test and continues; outside
+                // test mode nothing does. `true = (Cond)` dropped both.
+                const message = if (a.message) |msg| try this.exprNode(b, msg.*) else Ast.str("assertion failed");
+                const where: Ast.Expr = .{ .lexeme_binary = try std.fmt.allocPrint(b.arena, "{s}.bp:{d}", .{ this.module_name, ct.loc.line }) };
+                const raise = try b.remote("erlang", "error", &.{try b.tuple(&.{ A("bp_assert"), message, where })});
+                return b.caseInline(cond, &.{
+                    try b.clause(&.{A("true")}, &.{}, &.{A("ok")}),
+                    try b.clause(&.{V("_")}, &.{}, &.{raise}),
+                });
+            },
+            // `case E of Pat -> E; _ -> Handler end`.
+            .assertPattern => |ap| {
+                const subject = try this.exprNode(b, ap.expr.*);
+                const pattern = try this.patternNode(b, ap.pattern);
+                const matched = try this.exprNode(b, ap.expr.*);
+                const handler = try this.exprNode(b, ap.handler.*);
+                return b.caseInline(subject, &.{
+                    try b.clause(&.{pattern}, &.{}, &.{matched}),
+                    try b.clause(&.{V("_")}, &.{}, &.{handler}),
+                });
+            },
+        }
     }
 
     // ── case expression ───────────────────────────────────────────────────────
 
-    fn emitCase(this: *Emitter, subjects: []ast.Expr, arms: []ast.CaseArm) !void {
-        try this.w("case ");
-        if (subjects.len == 1) {
-            try this.emitExpr(subjects[0]);
-        } else {
-            try this.w("{");
-            for (subjects, 0..) |s, i| {
-                if (i > 0) try this.w(", ");
-                try this.emitExpr(s);
-            }
-            try this.w("}");
-        }
-        try this.w(" of\n");
-        this.indent += 1;
-
-        var first_clause = true;
+    /// `case Subject of Pat -> Body; … end`. A multi-subject case matches a tuple
+    /// of the subjects; an OR pattern expands to one clause per alternative with
+    /// the same body.
+    fn caseNode(this: *Emitter, b: Ast.Builder, subjects: []ast.Expr, arms: []ast.CaseArm) anyerror!Ast.Expr {
+        const subject: Ast.Expr = if (subjects.len == 1)
+            try this.exprNode(b, subjects[0])
+        else blk: {
+            const items = try b.arena.alloc(Ast.Expr, subjects.len);
+            for (subjects, 0..) |subj, i| items[i] = try this.exprNode(b, subj);
+            break :blk .{ .tuple = items };
+        };
+        const body_indent = this.indent + 2;
+        var clauses: std.ArrayListUnmanaged(Ast.Clause) = .empty;
         for (arms) |arm| {
-            // OR patterns expand to multiple Erlang clauses with the same body
             switch (arm.pattern) {
-                .@"or" => |pats| {
-                    for (pats) |p| {
-                        if (!first_clause) try this.w(";\n");
-                        try this.writeIndent();
-                        try this.emitPattern(p);
-                        try this.w(" ->\n");
-                        this.indent += 1;
-                        try this.emitCaseBody(arm.body);
-                        this.indent -= 1;
-                        first_clause = false;
-                    }
+                .@"or" => |pats| for (pats) |pat| {
+                    try clauses.append(b.arena, try this.armClause(b, pat, arm, body_indent));
                 },
-                .multi => {
-                    if (!first_clause) try this.w(";\n");
-                    try this.writeIndent();
-                    try this.emitPattern(arm.pattern);
-                    try this.w(" ->\n");
-                    this.indent += 1;
-                    try this.emitCaseBody(arm.body);
-                    this.indent -= 1;
-                    first_clause = false;
-                },
-                else => {
-                    if (!first_clause) try this.w(";\n");
-                    try this.writeIndent();
-                    try this.emitPattern(arm.pattern);
-                    try this.w(" ->\n");
-                    this.indent += 1;
-                    try this.emitCaseBody(arm.body);
-                    this.indent -= 1;
-                    first_clause = false;
-                },
+                else => try clauses.append(b.arena, try this.armClause(b, arm.pattern, arm, body_indent)),
             }
         }
-
-        this.indent -= 1;
-        try this.w("\n");
-        try this.writeIndent();
-        try this.w("end");
+        return b.caseOf(subject, clauses.items);
     }
 
-    fn emitPattern(this: *Emitter, pat: ast.Pattern) !void {
+    /// One erlang clause for one arm pattern.
+    ///
+    /// The pattern is lowered FIRST: it binds the names the guard and the body
+    /// then read at their arm-local versions (`patternBindVar`).
+    /// `pattern when (<guard>) -> body` becomes an erlang clause guard — the arm
+    /// only matches when the pattern matches AND the guard holds; a dropped guard
+    /// makes the first arm swallow every subject.
+    ///
+    /// Two of decision 8 §5's patterns need more than a clause head, because
+    /// erlang has no pattern that writes them (`PatternExtras`): a primitive type
+    /// pattern is a guard test, and a tuple pattern under `..` is a guard test
+    /// plus `element/2` bindings the body has to open with. The pattern's own
+    /// guards come BEFORE the arm's `when (…)`, so the arm's guard only runs on a
+    /// subject the pattern already accepted.
+    fn armClause(this: *Emitter, b: Ast.Builder, pat: ast.Pattern, arm: ast.CaseArm, body_indent: usize) anyerror!Ast.Clause {
+        var extras: PatternExtras = .{};
+        const pattern = try this.armPatternNode(b, pat, arm.body, &extras);
+        const arm_guards = try this.armGuards(b, arm.guard);
+        try extras.guards.appendSlice(b.arena, arm_guards);
+        const body = try this.caseBodyNode(b, arm.body, body_indent);
+        return .{
+            .patterns = try b.exprs(&.{pattern}),
+            .guards = extras.guards.items,
+            .body = try prependStmts(b, extras.binds.items, body),
+        };
+    }
+
+    /// `body` with `pre` matched in front of it, in the clause's own scope.
+    fn prependStmts(b: Ast.Builder, pre: []const Ast.Expr, body: Ast.Body) anyerror!Ast.Body {
+        if (pre.len == 0) return body;
+        var stmts: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
+        for (pre) |e| try stmts.append(b.arena, .{ .expr = e });
+        try stmts.appendSlice(b.arena, body.stmts);
+        return .{ .stmts = stmts.items };
+    }
+
+    /// An arm's clause pattern, with the arm's own binder aliased onto it.
+    ///
+    /// `_ { v -> … }` (decision 8 §5.3, `test/case_guards.bp`) writes the whole
+    /// subject's name as the arm body's single parameter. Nothing bound it — the
+    /// body read an erlang variable the clause never introduced
+    /// (`variable 'V' is unbound`, 01's handover 3) — so the name becomes an
+    /// erlang alias on the clause pattern, `V = {'Circle', R}`, which binds it
+    /// without evaluating the subject a second time.
+    fn armPatternNode(this: *Emitter, b: Ast.Builder, pat: ast.Pattern, body: ast.Expr, extras: *PatternExtras) anyerror!Ast.Expr {
+        const pattern = try this.patternNodeExtra(b, pat, extras);
+        const name = armBinderName(body) orelse return pattern;
+        const bound = Ast.Expr.v(try this.patternBindVar(b, name));
+        // `V = _` is legal erlang and says nothing: on a wildcard the variable
+        // *is* the pattern.
+        if (pattern == .variable and std.mem.eql(u8, pattern.variable, "_")) return bound;
+        return b.match(bound, pattern);
+    }
+
+    /// The name a `Pattern { name -> … }` arm binds the whole subject to, or
+    /// null when the arm's body is not a one-parameter lambda. A zero-parameter
+    /// lambda is the ordinary `Pattern { body }` form and binds nothing.
+    fn armBinderName(body: ast.Expr) ?[]const u8 {
+        if (body != .function) return null;
+        const kind = body.function.kind;
+        if (kind.syntax != .lambda or kind.params.len != 1) return null;
+        const name = kind.params[0];
+        if (name.len == 0 or std.mem.eql(u8, name, "_")) return null;
+        return name;
+    }
+
+    /// The guard sequence of a case arm, rendered after its pattern so the guard
+    /// reads the names the pattern just bound.
+    fn armGuards(this: *Emitter, b: Ast.Builder, guard: ?ast.Expr) anyerror![]const Ast.Expr {
+        const g = guard orelse return &.{};
+        return b.exprs(&.{try this.exprNode(b, g)});
+    }
+
+    /// A case arm body at `indent`: a lambda block's statements, or the single
+    /// expression.
+    fn caseBodyNode(this: *Emitter, b: Ast.Builder, body: ast.Expr, indent: usize) anyerror!Ast.Body {
+        if (body == .function and body.function.kind.syntax == .lambda) {
+            return this.bodyNode(b, body.function.kind.body, 0, indent);
+        }
+        const saved = this.indent;
+        this.indent = indent;
+        defer this.indent = saved;
+        return b.body(&.{try this.exprNode(b, body)});
+    }
+
+    /// What a pattern needs BESIDE its clause head, because erlang has no pattern
+    /// that writes it: guard tests, and the bindings a guard-tested element
+    /// stands for, which the clause body then has to open with.
+    ///
+    /// Two of decision 8 §5's patterns need one. A primitive type pattern
+    /// (`case v { i32 { … } string { … } }`, §5.2) tests the subject's type,
+    /// which is `when is_integer(V)`, not a pattern. A tuple pattern under `..`
+    /// (§5.1 P7) has an arity that is only a lower bound, and an erlang tuple
+    /// pattern has no such thing, so the shape becomes
+    /// `when is_tuple(T), tuple_size(T) >= N` and each named element an
+    /// `element/2` read.
+    ///
+    /// A caller that can carry them (`caseNode`, through `armClause`) passes one.
+    /// `assertPatternStmts` cannot — its pattern is lowered twice, once as a
+    /// `case` test and once as the enclosing match that binds — so it passes
+    /// null and the pattern is lowered exactly as it was before.
+    const PatternExtras = struct {
+        /// Guard tests, joined by `,` after the clause head.
+        guards: std.ArrayListUnmanaged(Ast.Expr) = .empty,
+        /// `X = element(1, T)` matches the clause body opens with.
+        binds: std.ArrayListUnmanaged(Ast.Expr) = .empty,
+    };
+
+    fn patternNode(this: *Emitter, b: Ast.Builder, pat: ast.Pattern) anyerror!Ast.Expr {
+        return this.patternNodeExtra(b, pat, null);
+    }
+
+    fn patternNodeExtra(this: *Emitter, b: Ast.Builder, pat: ast.Pattern, extras: ?*PatternExtras) anyerror!Ast.Expr {
         switch (pat) {
-            .wildcard => try this.w("_"),
+            .wildcard => return Ast.Expr.v("_"),
+            // A bare ident pattern is one of three things: a nullary enum variant
+            // (→ the atom `'Lt'`), a primitive type spelling (→ §5.2's type test,
+            // a guard), or a binding (→ an erlang variable `X`). A name carrying a
+            // `.` is always the first — `Maybe.None`, `.None` — and reaches the
+            // atom through `variantTag`, which drops the path.
             .ident => |n| {
-                // A bare ident pattern is either a nullary enum variant (→ the
-                // atom `'Lt'`) or a binding (→ an erlang variable `X`). Emitting
-                // the raw name would make a variant match like an unbound var.
-                if (this.enum_variants.contains(n)) {
-                    var ab: [128]u8 = undefined;
-                    try this.w(try atomName(n, &ab));
-                } else {
-                    const vname = try erlangVar(this.alloc, n);
-                    defer this.alloc.free(vname);
-                    try this.w(vname);
+                if (isVariantPath(n) or this.enum_variants.contains(n)) return Ast.Expr.a(this.variantTag(n));
+                const name = Ast.Expr.v(try this.patternBindVar(b, n));
+                // `case v { i32 { n -> n } string { s -> s.length } }` (§5.2):
+                // erlang cannot test a type in a pattern, so the arm keeps its
+                // variable and the test becomes a guard on it — `I32 when
+                // is_integer(I32)`. Emitted as the bare binder it was, the first
+                // arm matched every subject and answered for the whole union.
+                if (primitiveTypeName(n)) {
+                    if (extras) |ex| if (!std.mem.eql(u8, name.variable, "_")) {
+                        try appendPrimTypeGuards(b, ex, n, name);
+                    };
                 }
+                return name;
             },
-            .numberLit => |n| try this.w(n),
-            .stringLit => |s| try this.emitBinary(s),
-            .variant => |v| switch (v.payload) {
-                .binding => |binding| {
-                    const vname = try erlangVar(this.alloc, binding);
-                    defer this.alloc.free(vname);
-                    try this.fmt("{{tag, {s}, {s}}}", .{ v.name, vname });
-                },
-                .fields => |fields| {
-                    try this.fmt("{{tag, {s}", .{v.name});
-                    for (fields) |bb| {
-                        try this.w(", ");
-                        const vname = try erlangVar(this.alloc, bb);
-                        defer this.alloc.free(vname);
-                        try this.w(vname);
+            .numberLit => |n| return .{ .number = n },
+            .stringLit => |str| return .{ .lexeme_binary = str },
+            .variant => |v| switch (v.shape) {
+                // `#(a, b)` / `#(0, s)` / `#(a, ..)` (§5.1 P6, P7): a tuple
+                // pattern is an erlang tuple of its ELEMENTS and nothing else.
+                // Lowered through the variant path it gained the tag atom of a
+                // variant with no name — `{'', 0, S}`, which no constructor
+                // builds — so every tuple arm failed with `case_clause`.
+                .tuple => return this.tuplePatternNode(b, v, extras),
+                // Variant patterns mirror what the constructor builds: the tagged
+                // tuple `{'Rgb', R, G, B}` for a payload, the bare atom `'Lt'`
+                // without one. (The old `{tag, Name, …}` shape both bound `Name`
+                // as a fresh variable and added an element no constructor ever
+                // materialised, so every arm failed with `case_clause`.)
+                //
+                // `.range` is decision 8 §5.2's `1...9`, whose name is empty as
+                // well; it keeps the shape it has until front 02 step 3 lowers it
+                // (`run/case_range_value.bp`).
+                .variant, .range => {
+                    var items: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+                    try items.append(b.arena, Ast.Expr.a(this.variantTag(v.name)));
+                    switch (v.payload) {
+                        .binding => |binding| try items.append(b.arena, Ast.Expr.v(try this.patternBindVar(b, binding))),
+                        .fields, .literals => try items.appendSlice(b.arena, try this.variantPayloadSlots(b, v, extras)),
                     }
-                    try this.w("}");
-                },
-                .literals => |args| {
-                    try this.fmt("{{tag, {s}", .{v.name});
-                    for (args) |arg| {
-                        try this.w(", ");
-                        try this.emitPattern(arg);
-                    }
-                    try this.w("}");
+                    if (items.items.len == 1) return Ast.Expr.a(this.variantTag(v.name));
+                    return .{ .tuple = items.items };
                 },
             },
             .list => |lp| {
-                if (lp.spread) |sp| {
-                    if (lp.elems.len == 0 and sp.len == 0) {
-                        try this.w("_");
-                    } else {
-                        try this.w("[");
-                        for (lp.elems, 0..) |elem, i| {
-                            if (i > 0) try this.w(", ");
-                            try this.emitListPatElem(elem);
-                        }
-                        if (sp.len > 0) {
-                            if (lp.elems.len > 0) try this.w(" | ");
-                            const vname = try erlangVar(this.alloc, sp);
-                            defer this.alloc.free(vname);
-                            try this.w(vname);
-                        } else {
-                            try this.w(" | _");
-                        }
-                        try this.w("]");
-                    }
-                } else if (lp.elems.len == 0) {
-                    try this.w("[]");
-                } else {
-                    try this.w("[");
-                    for (lp.elems, 0..) |elem, i| {
-                        if (i > 0) try this.w(", ");
-                        try this.emitListPatElem(elem);
-                    }
-                    try this.w("]");
-                }
+                const elems = try b.arena.alloc(Ast.Expr, lp.elems.len);
+                for (lp.elems, 0..) |elem, i| elems[i] = try this.listPatElemNode(b, elem);
+                const sp = lp.spread orelse return .{ .list = elems };
+                if (lp.elems.len == 0 and sp.len == 0) return Ast.Expr.v("_");
+                const tail = if (sp.len > 0) Ast.Expr.v(try this.patternBindVar(b, sp)) else Ast.Expr.v("_");
+                // `[Rest]` when only a named spread is present (as the backend has always written it).
+                if (lp.elems.len == 0) return b.list(&.{tail});
+                return b.cons(elems, tail);
             },
-            .@"or" => |pats| {
-                // Should be expanded by emitCase; fallback: emit first
-                if (pats.len > 0) try this.emitPattern(pats[0]);
-            },
+            // Expanded by `caseNode`; elsewhere the first alternative stands in.
+            .@"or" => |pats| return if (pats.len > 0) this.patternNodeExtra(b, pats[0], extras) else error.EmptyOrPattern,
             .multi => |pats| {
-                try this.w("{");
-                for (pats, 0..) |p, i| {
-                    if (i > 0) try this.w(", ");
-                    try this.emitPattern(p);
-                }
-                try this.w("}");
+                const items = try b.arena.alloc(Ast.Expr, pats.len);
+                for (pats, 0..) |p, i| items[i] = try this.patternNodeExtra(b, p, extras);
+                return .{ .tuple = items };
             },
         }
     }
 
-    fn emitListPatElem(this: *Emitter, elem: ast.ListPatternElem) !void {
-        switch (elem) {
-            .wildcard => try this.w("_"),
-            .bind => |name| {
-                const vname = try erlangVar(this.alloc, name);
-                defer this.alloc.free(vname);
-                try this.w(vname);
-            },
-            .numberLit => |n| try this.w(n),
+    /// The payload slots of a variant pattern, in the order the CONSTRUCTOR built
+    /// them, `_` for every slot the pattern does not name.
+    ///
+    /// Two of decision 8 §5.1's rules live here. P4: a pattern that wrote a label
+    /// names its slot by that label, so `.Rect(height: h, width: w)` fills slot 0
+    /// with `w`, not with `h`. P7: `..` stands for the fields the pattern does not
+    /// name, and an erlang tuple pattern has to write them — which needs the
+    /// variant's declared arity (`variant_fields`). Without it `.Rect(width: w, ..)`
+    /// was emitted as `{'Rect', W}` against a `{'Rect', 5, 9}` the constructor
+    /// built, and `.Circle(..)` collapsed to the bare atom `'Circle'`; both
+    /// matched nothing.
+    ///
+    /// A variant whose declaration this module never saw keeps the written arity,
+    /// which is what it had before: there is nothing to pad to.
+    fn variantPayloadSlots(this: *Emitter, b: Ast.Builder, v: anytype, extras: ?*PatternExtras) anyerror![]Ast.Expr {
+        const written: usize = switch (v.payload) {
+            .fields => |f| f.len,
+            .literals => |l| l.len,
+            .binding => 1,
+        };
+        const declared = this.variant_fields.get(bareVariantName(v.name));
+        var count = written;
+        if (v.rest) if (declared) |d| if (d.len > count) {
+            count = d.len;
+        };
+        const slots = try b.arena.alloc(Ast.Expr, count);
+        for (slots) |*slot| slot.* = Ast.Expr.v("_");
+        for (0..written) |i| {
+            const at = slotIndex(v, declared, i) orelse continue;
+            if (at >= count) continue;
+            slots[at] = switch (v.payload) {
+                .fields => |f| Ast.Expr.v(try this.patternBindVar(b, f[i])),
+                .literals => |l| try this.patternNodeExtra(b, l[i], extras),
+                .binding => unreachable,
+            };
         }
+        return slots;
     }
 
-    fn emitCaseBody(this: *Emitter, body: ast.Expr) !void {
-        switch (body) {
-            .function => |func| switch (func.kind.syntax) {
-                .lambda => {
-                    // Multi-statement block: emitBody handles indentation via this.indent
-                    try this.emitBody(func.kind.body);
-                },
-                .fnExpr => {
-                    // Single expression: emit with current indentation
-                    try this.writeIndent();
-                    try this.emitExpr(body);
-                },
-            },
-            else => {
-                // Single expression: emit with current indentation
-                try this.writeIndent();
-                try this.emitExpr(body);
-            },
+    /// The constructor slot the payload element at `i` fills: the position of the
+    /// label the pattern WROTE when it wrote one (§5.1 P4), else `i`. Null when
+    /// the written label names no declared field, which leaves the slot `_`.
+    fn slotIndex(v: anytype, declared: ?[]const []const u8, i: usize) ?usize {
+        if (v.labels.len > i and v.labels[i].len > 0) {
+            const d = declared orelse return i;
+            for (d, 0..) |name, at| if (std.mem.eql(u8, name, v.labels[i])) return at;
+            return null;
         }
+        return i;
+    }
+
+    /// `#(a, b)` and `#(0, s)` are an erlang tuple of their element patterns.
+    ///
+    /// `#(a, ..)` (§5.1 P7) is not: its arity is a lower bound, and an erlang
+    /// tuple pattern has no lower bound. So the clause matches a fresh variable,
+    /// the shape becomes the guard `is_tuple(T), tuple_size(T) >= N`, and each
+    /// element the pattern named becomes an `element/2` read — a `=:=` test in the
+    /// guard when the element is a literal or a nullary variant, a binding the
+    /// clause body opens with when it is a name. A COMPOSITE element under `..`
+    /// (`#(Circle(r), ..)`) becomes a body match, which raises `badmatch` instead
+    /// of falling through to the next arm; nothing in the language suite writes
+    /// one, and it is reported rather than papered over.
+    ///
+    /// Without a `PatternExtras` to carry the guard (the `val assert` path) the
+    /// written arity stands, which is what it was before.
+    fn tuplePatternNode(this: *Emitter, b: Ast.Builder, v: anytype, extras: ?*PatternExtras) anyerror!Ast.Expr {
+        const elems: []const ast.Pattern = switch (v.payload) {
+            .literals => |l| l,
+            else => &.{},
+        };
+        const ex = if (v.rest) extras else null;
+        if (ex == null) {
+            const items = try b.arena.alloc(Ast.Expr, elems.len);
+            for (elems, 0..) |e, i| items[i] = try this.patternNodeExtra(b, e, extras);
+            return .{ .tuple = items };
+        }
+        const subject = Ast.Expr.v(try this.freshPatternVar(b));
+        try ex.?.guards.append(b.arena, try b.call("is_tuple", &.{subject}));
+        try ex.?.guards.append(b.arena, try b.binop(
+            ">=",
+            try b.call("tuple_size", &.{subject}),
+            .{ .number = try std.fmt.allocPrint(b.arena, "{d}", .{elems.len}) },
+        ));
+        for (elems, 0..) |e, i| {
+            const at = try b.call("element", &.{
+                .{ .number = try std.fmt.allocPrint(b.arena, "{d}", .{i + 1}) },
+                subject,
+            });
+            switch (e) {
+                .wildcard => {},
+                .numberLit, .stringLit => try ex.?.guards.append(
+                    b.arena,
+                    try b.binop("=:=", at, try this.patternNodeExtra(b, e, null)),
+                ),
+                .ident => |n| if (isVariantPath(n) or this.enum_variants.contains(n))
+                    try ex.?.guards.append(b.arena, try b.binop("=:=", at, Ast.Expr.a(this.variantTag(n))))
+                else
+                    try ex.?.binds.append(b.arena, try b.match(Ast.Expr.v(try this.patternBindVar(b, n)), at)),
+                else => try ex.?.binds.append(
+                    b.arena,
+                    try b.match(try this.patternNodeExtra(b, e, null), at),
+                ),
+            }
+        }
+        return subject;
+    }
+
+    /// A clause-local variable no botopink name can collide with. Erlang
+    /// variables are function-scoped and the counter never rewinds, so two arms
+    /// of the same function get two names.
+    fn freshPatternVar(this: *Emitter, b: Ast.Builder) anyerror![]const u8 {
+        this.pattern_var_next += 1;
+        return std.fmt.allocPrint(b.arena, "BpPat{d}", .{this.pattern_var_next});
+    }
+
+    /// The primitive type spellings a pattern can write, which decision 8 §5.2
+    /// makes a type test rather than a binding. The twin of commonJS's
+    /// `primitiveTypeName`, so both backends read the same arm the same way:
+    /// disagree and one of them takes a different arm.
+    fn primitiveTypeName(name: []const u8) bool {
+        if (integerPatternRange(name) != null) return true;
+        return std.mem.eql(u8, name, "string") or std.mem.eql(u8, name, "bool") or
+            std.mem.eql(u8, name, "f32") or std.mem.eql(u8, name, "f64") or
+            std.mem.eql(u8, name, "float");
+    }
+
+    /// The closed range an integer spelling names, `null` bound for an open end.
+    /// The twin of commonJS's `integerRange`.
+    fn integerPatternRange(name: []const u8) ?struct { lo: ?[]const u8, hi: ?[]const u8 } {
+        const table = .{
+            .{ "i8", "-128", "127" },                .{ "i16", "-32768", "32767" },
+            .{ "i32", "-2147483648", "2147483647" }, .{ "u8", "0", "255" },
+            .{ "u16", "0", "65535" },                .{ "u32", "0", "4294967295" },
+        };
+        inline for (table) |row| {
+            if (std.mem.eql(u8, name, row[0])) return .{ .lo = row[1], .hi = row[2] };
+        }
+        if (std.mem.eql(u8, name, "i64") or std.mem.eql(u8, name, "int") or
+            std.mem.eql(u8, name, "isize")) return .{ .lo = null, .hi = null };
+        if (std.mem.eql(u8, name, "u64") or std.mem.eql(u8, name, "uint") or
+            std.mem.eql(u8, name, "usize")) return .{ .lo = "0", .hi = null };
+        return null;
+    }
+
+    /// The guard a primitive type pattern becomes: the erlang twin of commonJS's
+    /// `isTest` over a `.named` type. An integer spelling is an integer within its
+    /// range, `f32`/`f64`/`float` any number (`typeof === "number"` there, which
+    /// an integer satisfies too), `string` a binary and `bool` a boolean.
+    fn appendPrimTypeGuards(b: Ast.Builder, ex: *PatternExtras, name: []const u8, subject: Ast.Expr) anyerror!void {
+        if (std.mem.eql(u8, name, "string")) return ex.guards.append(b.arena, try b.call("is_binary", &.{subject}));
+        if (std.mem.eql(u8, name, "bool")) return ex.guards.append(b.arena, try b.call("is_boolean", &.{subject}));
+        if (std.mem.eql(u8, name, "f32") or std.mem.eql(u8, name, "f64") or std.mem.eql(u8, name, "float")) {
+            return ex.guards.append(b.arena, try b.call("is_number", &.{subject}));
+        }
+        const range = integerPatternRange(name) orelse return;
+        try ex.guards.append(b.arena, try b.call("is_integer", &.{subject}));
+        if (range.lo) |lo| try ex.guards.append(b.arena, try b.binop(">=", subject, .{ .number = lo }));
+        if (range.hi) |hi| try ex.guards.append(b.arena, try b.binop("=<", subject, .{ .number = hi }));
+    }
+
+    /// The runtime tag atom of a variant pattern. `@Result` is materialised as
+    /// `{ok, V}` / `{error, E}` by the `#[@result]` transform, so its `Ok`/`Err`
+    /// arms match those lowercase tags. A user enum variant of the same name
+    /// (recorded in `enum_variants`) keeps its own name.
+    ///
+    /// The name arrives **as written** (`ast.Pattern`'s doc comment: `Shape.Circle`
+    /// and `.Some` keep their path), while the constructor emits the bare variant
+    /// — `Maybe.Some(v: 1)` is `{'Some', 1}`. Matching the written form produced
+    /// `{'.Some', V}`, which matches nothing, and a nullary `.None` rendered as
+    /// the bare token `.None`, which is an erlang syntax error. The tag is
+    /// therefore taken from the last `.`-separated segment (01's handover 1).
+    fn variantTag(this: *const Emitter, written: []const u8) []const u8 {
+        const name = bareVariantName(written);
+        if (this.enum_variants.contains(name)) return name;
+        return resultTag(name) orelse name;
+    }
+
+    /// The last `.`-separated segment of a variant path: `Shape.Circle` → `Circle`,
+    /// `.None` → `None`, `Circle` → `Circle`. The twin of `infer.zig`'s
+    /// `bareVariantName`, which the checker resolves the same paths with.
+    fn bareVariantName(written: []const u8) []const u8 {
+        const dot = std.mem.lastIndexOfScalar(u8, written, '.') orelse return written;
+        return written[dot + 1 ..];
+    }
+
+    /// A `.ident` pattern that carries a `.` is a variant path, never a binding
+    /// (`ast.Pattern`: "A `name` carrying a `.` is a variant path"). `Maybe.None`
+    /// and `.None` are the nullary-variant spellings of what `enum_variants`
+    /// holds under `None`.
+    fn isVariantPath(name: []const u8) bool {
+        return std.mem.indexOfScalar(u8, name, '.') != null;
+    }
+
+    /// The `@Result` runtime tag a constructor name builds, or null when the
+    /// name is not one of `Ok` / `Err` / `Error`.
+    fn resultTag(name: []const u8) ?[]const u8 {
+        if (std.mem.eql(u8, name, "Ok")) return "ok";
+        if (std.mem.eql(u8, name, "Err") or std.mem.eql(u8, name, "Error")) return "error";
+        return null;
+    }
+
+    fn listPatElemNode(this: *Emitter, b: Ast.Builder, elem: ast.ListPatternElem) anyerror!Ast.Expr {
+        return switch (elem) {
+            .wildcard => Ast.Expr.v("_"),
+            .bind => |name| Ast.Expr.v(try this.patternBindVar(b, name)),
+            .numberLit => |n| .{ .number = n },
+        };
     }
 
     // ── builtin-primitive method lowering ─────────────────────────────────────
 
-    /// Emit the `i`-th argument of a call (positional args first, then trailing
-    /// lambdas as `fun(...) -> ... end`). Used by `emitPrimMethod`, where the
-    /// receiver and arguments are reordered to fit the erlang host signature.
-    fn emitArg(this: *Emitter, cc: anytype, i: usize) anyerror!void {
-        if (i < cc.args.len) {
-            try this.emitExpr(cc.args[i].value.*);
-            return;
-        }
-        if (i - cc.args.len >= cc.trailing.len) {
-            // Caller asked for an argument that wasn't supplied (e.g. an
-            // optional-arg method form) — emit nothing rather than crash.
-            try this.w("undefined");
-            return;
-        }
-        const tl = cc.trailing[i - cc.args.len];
-        try this.w("fun(");
-        for (tl.params, 0..) |p, pi| {
-            if (pi > 0) try this.w(", ");
-            const vname = try erlangVar(this.alloc, p);
-            defer this.alloc.free(vname);
-            try this.w(vname);
+    /// The `i`-th argument of a call: a positional argument, then trailing
+    /// lambdas as funs; `undefined` when not supplied (an optional-arg method
+    /// form). Receiver and arguments are reordered to fit host signatures.
+    fn argNode(this: *Emitter, b: Ast.Builder, cc: anytype, i: usize) anyerror!Ast.Expr {
+        if (i < cc.args.len) return this.exprNode(b, cc.args[i].value.*);
+        if (i - cc.args.len >= cc.trailing.len) return Ast.Expr.a("undefined");
+        return this.trailingFunNode(b, cc.trailing[i - cc.args.len]);
+    }
+
+    /// A trailing lambda `{ a, b -> … }` as `fun(A, B) -> … end`.
+    fn trailingFunNode(this: *Emitter, b: Ast.Builder, tl: anytype) anyerror!Ast.Expr {
+        const params = try b.arena.alloc(Ast.Expr, tl.params.len);
+        for (tl.params, 0..) |p, i| {
+            params[i] = Ast.Expr.v(try this.arenaVar(b, p));
             this.addLocal(p);
         }
-        try this.w(") ->\n");
-        const saved = this.indent;
-        this.indent = this.indent + 1;
-        try this.emitBody(tl.body);
-        this.indent = saved;
-        try this.w("\n");
-        try this.writeIndent();
-        try this.w("end");
+        return .{ .fun = .{ .params = params, .body = try this.bodyNode(b, tl.body, 0, this.indent + 1) } };
     }
 
-    /// Lower a builtin-primitive instance method to its erlang host operation.
-    /// botopink arrays are erlang lists, strings are binaries, numbers/bools are
-    /// native. The receiver's argument position differs per op (e.g. the fun is
-    /// first in `lists:map/2`), so this emits the whole call. Unmapped methods
-    /// fall back to a bare local `m(Recv, args)` call (a clear runtime error if
-    /// truly unsupported) rather than invalid `Recv:m(args)` syntax.
-    fn emitPrimMethod(this: *Emitter, k: envMod.PrimKind, callee: []const u8, recv: *const ast.Expr, cc: anytype) anyerror!void {
+    /// A builtin-primitive instance method lowered to its erlang host operation
+    /// (arrays are lists, strings binaries, numbers/bools native). Most methods
+    /// are annotation-driven (`primitives.d.bp` `@external(erlang, …)`
+    /// templates); the inline cases below don't reduce to a template. An
+    /// unmapped method is a bare local `m(Recv, args)` call (a clear runtime
+    /// error if truly unsupported) rather than invalid `Recv:m(args)` syntax.
+    fn primMethodNode(this: *Emitter, b: Ast.Builder, k: envMod.PrimKind, callee: []const u8, recv: *const ast.Expr, cc: anytype) anyerror!Ast.Expr {
+        if (try this.primHostMethodNode(b, k, callee, recv, cc)) |node| return node;
+        // Pure-botopink instance `default fn` (`xs.all(pred)`, `n.clamp(lo, hi)`):
+        // the local form emitted on demand at the end of the module.
+        if (try this.ifaceDefaultNode(b, k, callee, recv, cc)) |node| return node;
+        var args: std.ArrayListUnmanaged(Ast.Expr) = .empty;
+        try args.append(b.arena, try this.exprNode(b, recv.*));
+        for (cc.args) |arg| try args.append(b.arena, try this.exprNode(b, arg.value.*));
+        return b.call(callee, args.items);
+    }
+
+    /// The host-op half of `primMethodNode`: the `@external(erlang, …)`
+    /// annotation, the inline cases and the Array fallbacks — null when none
+    /// answers (an instance `default fn` or nothing).
+    fn primHostMethodNode(this: *Emitter, b: Ast.Builder, k: envMod.PrimKind, callee: []const u8, recv: *const ast.Expr, cc: anytype) anyerror!?Ast.Expr {
         const eq = std.mem.eql;
-        // §A5 annotation-driven path: if `primitives.d.bp` carries
-        // `#[@External.Erlang( "mod", "sym(args)")]` for this primitive method,
-        // emit `mod:sym(...)` in the template's arg order — the inline allow-list
-        // below catches only the cases that don't reduce to `mod:sym(args)`
-        // (list-cons / `++` ops, custom comparisons, BIF aliases, arithmetic
-        // slices, inline guard funs).
-        if (try this.tryEmitPrimAnnotation(k, callee, recv, cc)) return;
+        if (try this.primAnnotationNode(b, k, callee, recv, cc)) |node| return node;
         switch (k) {
-            .array => {
-                // map / filter / forEach / reverse are §A5 annotation-driven —
-                // see `Array.{map,filter,forEach,reverse}` in primitives.d.bp +
-                // `tryEmitPrimAnnotation` above. `append` / `prepend` / `push` /
-                // `contains` / `isEmpty` are `prim-op-annotation` template-driven
-                // (same path; templates `($self ++ $0)`, `[$0 | $self]`,
-                // `($self ++ [$0])`, `lists:member($0, $self)`, `($self =:= [])`).
-                // `indexOf` is `prim-op-annotation` template-driven (the full
-                // inline-fun body lives as a single-string template in
-                // primitives.d.bp; `$self` and `$0` substitute to the receiver
-                // and the search-key argument).
-                if (eq(u8, callee, "len") or eq(u8, callee, "length") or eq(u8, callee, "size")) {
-                    try this.w("length(");
-                    try this.emitExpr(recv.*);
-                    try this.w(")");
-                    return;
-                }
-                // `slice` is `prim-op-annotation` arity-branched
-                // (`when($argc == 1)` / `when($argc == 2)` templates in
-                // primitives.d.bp).
-                // `join` is `prim-op-annotation` template-driven (triple-quoted
-                // raw string in primitives.d.bp — the body carries `"~p"` which
-                // needs `"""…"""` to avoid `\"` escapes that wouldn't unescape
-                // through the renderer).
-                // `at` is `prim-op-annotation` template-driven (bounds-safe
-                // 0-based index → 1-based `lists:nth`, `undefined` out of
-                // range — full body in primitives.d.bp).
+            .array => if (eq(u8, callee, "len") or eq(u8, callee, "length") or eq(u8, callee, "size")) {
+                return try b.call("length", &.{try this.exprNode(b, recv.*)});
             },
-            .string => {
-                // length / toUpper / toLower / trim are §A5 annotation-driven —
-                // see `String.{length,toUpper,toLower,trim}` in primitives.d.bp.
-                // `slice` is `prim-op-annotation` arity-branched
-                // (`when($argc == 1)` / `when($argc == 2)` templates in
-                // primitives.d.bp).
-                // `contains` / `startsWith` / `split` are `prim-op-annotation`
-                // template-driven (templates `(string:find($self, $0) =/= nomatch)`,
-                // `(string:prefix($self, $0) =/= nomatch)`,
-                // `string:split($self, $0, all)`).
-            },
-            // .bool: `negate` is annotation-driven (template `(not $self)`).
-            .bool => {},
-            // .int/.float: `toString` is declared on `Integer`/`Float` (parent
-            // interfaces) with `erlang:integer_to_binary`/`float_to_binary`
-            // annotations; the chain-walking `tryEmitPrimAnnotation` above
-            // catches it. The inline fallback for `toString` here defends
-            // against a missing dispatch entry (e.g. when the receiver's type
-            // is a freshly-introduced numeric variant the chain doesn't
-            // know about) by emitting the canonical host conversion directly.
-            .int => {
-                if (eq(u8, callee, "toString")) {
-                    try this.w("integer_to_binary(");
-                    try this.emitExpr(recv.*);
-                    try this.w(")");
-                    return;
-                }
-            },
-            .float => {
-                if (eq(u8, callee, "toString")) {
-                    try this.w("float_to_binary(");
-                    try this.emitExpr(recv.*);
-                    try this.w(")");
-                    return;
-                }
-            },
+            // `toString` is declared on `Integer`/`Float` with host annotations;
+            // this covers a numeric receiver the interface chain doesn't know.
+            .int => if (eq(u8, callee, "toString")) return try b.call("integer_to_binary", &.{try this.exprNode(b, recv.*)}),
+            .float => if (eq(u8, callee, "toString")) return try b.call("float_to_binary", &.{try this.exprNode(b, recv.*)}),
+            .string, .bool => {},
         }
-        // Unmapped primitive method on an Array receiver: fall back to inline
-        // BIF-shaped lowerings for the default fns that lack a `@external`
-        // annotation. These mirror the bp default body but use the canonical
-        // host op so the emitted module is self-contained (no need to inline
-        // the default fn's bp body as an erlang fn).
+        // Array default fns without an `@external` annotation (or a chained call
+        // the inferer didn't tag) use the canonical host op directly.
         if (k == .array) {
-            // `xs.forEach(action)` — `lists:foreach(Action, Xs)`. The
-            // `lists:foreach/2` BIF takes Fun first, Xs second. (The
-            // primitives.d.bp annotation `"lists", "foreach(action, self)"`
-            // should already light up via `tryEmitPrimAnnotation` for an
-            // `Array<T>` receiver, but a chained `.where(...).forEach(...)`
-            // hits this fallback when the inferer doesn't tag the chained
-            // call site — recovers parity.)
-            if (eq(u8, callee, "forEach") and cc.args.len + cc.trailing.len == 1) {
-                try this.w("lists:foreach(");
-                try this.emitArgOrTrailing(cc, 0);
-                try this.w(", ");
-                try this.emitExpr(recv.*);
-                try this.w(")");
-                return;
-            }
-            // `xs.fold(init, fn(acc, x) -> ...)` — `lists:foldl(Fun, Init, Xs)`.
-            // bp's `f(acc, x)` arg order DIFFERS from erlang's `foldl(fun(X,
-            // Acc) -> …, Init, L)`: swap the lambda params inside the
-            // wrapper so the bp-side body receives `(acc, x)` as authored.
-            if (eq(u8, callee, "fold") and cc.args.len + cc.trailing.len == 2) {
-                try this.w("lists:foldl(fun(__X, __A) -> (");
-                try this.emitArgOrTrailing(cc, 1);
-                try this.w(")(__A, __X) end, ");
-                try this.emitArgOrTrailing(cc, 0);
-                try this.w(", ");
-                try this.emitExpr(recv.*);
-                try this.w(")");
-                return;
-            }
-            // `xs.drop(n)` — `lists:nthtail(N, Xs)` (or `lists:sublist(Xs,
-            // N+1, length(Xs))` when N may exceed length; nthtail panics
-            // out-of-bounds on erlang, matching the bp `default fn drop`'s
-            // `slice(n, length)` contract for in-bounds N).
-            if (eq(u8, callee, "drop") and cc.args.len == 1) {
-                try this.w("lists:nthtail(");
-                try this.emitExpr(cc.args[0].value.*);
-                try this.w(", ");
-                try this.emitExpr(recv.*);
-                try this.w(")");
-                return;
-            }
-            // `xs.take(n)` — `lists:sublist(Xs, N)`.
-            if (eq(u8, callee, "take") and cc.args.len == 1) {
-                try this.w("lists:sublist(");
-                try this.emitExpr(recv.*);
-                try this.w(", ");
-                try this.emitExpr(cc.args[0].value.*);
-                try this.w(")");
-                return;
-            }
-            // `xs.toList()` — identity. `Array<T>` is already a list on
-            // erlang, so the call returns the receiver unchanged.
-            if (eq(u8, callee, "toList") and cc.args.len == 0) {
-                try this.emitExpr(recv.*);
-                return;
-            }
+            if (try this.arrayPrimFallbackNode(b, callee, recv, cc)) |node| return node;
         }
-        // Unmapped primitive method: bare local call (`m(Recv, args)`).
-        try this.fmt("{s}(", .{callee});
-        try this.emitExpr(recv.*);
-        for (cc.args) |arg| {
-            try this.w(", ");
-            try this.emitExpr(arg.value.*);
-        }
-        try this.w(")");
+        return null;
     }
 
-    /// Speculative Array-primitive dispatch for the no-`instance_lowering`
-    /// fallback path. Recognises the std Array default-fn names and emits
-    /// the canonical erlang BIF directly, matching the lowering
-    /// `emitPrimMethod` would have used. Returns true when the call is
-    /// emitted (caller returns immediately); false otherwise (caller
-    /// continues to the bare local-fn fallback).
-    fn tryArrayPrimFallback(this: *Emitter, callee: []const u8, recv: *const ast.Expr, cc: anytype) anyerror!bool {
-        const eq = std.mem.eql;
-        if (eq(u8, callee, "forEach") and cc.args.len + cc.trailing.len == 1) {
-            try this.w("lists:foreach(");
-            try this.emitArgOrTrailing(cc, 0);
-            try this.w(", ");
-            try this.emitExpr(recv.*);
-            try this.w(")");
-            return true;
+    // ── comptime-body primitive dispatch ──────────────────────────────────────
+    //
+    // A comptime body (`emitComptimeModule`) has no inferred types, so a method
+    // call's receiver kind is unknown when it is lowered. `recv.m(args)` becomes
+    // `'__bp_prim_m'(Recv, Args…)`, and one shim per reached `(m, argc)` carries
+    // a clause per primitive kind that answers `m` — the clause body is
+    // `primMethodNode`'s own lowering of that kind, guarded by the kind's runtime
+    // test (`is_list`, `is_binary`, …) — then a clause that raises. The typed
+    // tables (`prim_erlang_dispatch`, the prelude's instance defaults) stay the
+    // single source of truth.
+
+    /// The call a shim clause lowers: the receiver `recv` and the positional
+    /// arguments `arg0…` (→ `Recv`, `Arg0…`).
+    const ShimCall = struct {
+        recv: *ast.Expr,
+        args: []const ast.CallArg,
+        trailing: []const ast.TrailingLambda = &.{},
+    };
+
+    fn shimIdent(b: Ast.Builder, name: []const u8) !*ast.Expr {
+        const e = try b.arena.create(ast.Expr);
+        e.* = .{ .identifier = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .ident = name } } };
+        return e;
+    }
+
+    /// True when `externalWrapperForm` will emit a body for `f` — the export
+    /// pass reads it so `-export` never names a function the decl loop skips.
+    /// Mirrors `userTemplateNode`: a `module:symbol` external always renders; a
+    /// template renders when its text is non-empty, an arity-branched one when a
+    /// branch matches the declared parameter count.
+    fn externalWrapperEmits(this: *const Emitter, f: ast.FnDecl) bool {
+        if (this.externals.contains(f.name)) return true;
+        const call = this.user_erlang_templates.get(f.name) orelse return false;
+        if (call.arity_branches.len == 0) return call.symbol.len > 0;
+        for (call.arity_branches) |branch| if (branch.argc == f.params.len) return true;
+        return false;
+    }
+
+    /// A host-backed `declare fn` emits no function of its own — its annotation
+    /// renders at each call site — so another module had nothing to call
+    /// (`function hostKey/1 undefined`). The owner answers it with a wrapper
+    /// whose body is that same rendering over the wrapper's own parameters: the
+    /// erlang twin of the commonJS `exports.name = name` re-export. Emitted only
+    /// for a `pub` external some module imports, so single-module programs and
+    /// unconsumed declarations are unchanged. Null exactly when
+    /// `externalWrapperEmits` is false — there is nothing to render, and the
+    /// consumer keeps its bare call so erlc names the gap.
+    fn externalWrapperForm(this: *Emitter, b: Ast.Builder, f: ast.FnDecl) !?Ast.Form {
+        const arity = f.params.len;
+        // A fresh local scope, as `fnForms` opens for a bodied function.
+        this.resetLocals();
+        const args = try b.arena.alloc(ast.CallArg, arity);
+        const patterns = try b.arena.alloc(Ast.Expr, arity);
+        for (f.params, 0..) |p, i| {
+            // The declared parameter name reads better than a synthetic one
+            // (`hostKey(V)`, not `hostKey(A0)`); `_`-prefixed and duplicate
+            // names are the author's problem, as in any other emitted function.
+            args[i] = .{ .label = null, .value = try shimIdent(b, p.name) };
+            patterns[i] = Ast.Expr.v(try this.arenaVar(b, p.name));
+            this.addLocal(p.name);
+            if (isNullableParam(p)) try this.nullable_locals.put(p.name, {});
+            if (isStringType(p.typeRef)) try this.string_locals.put(p.name, {});
+            if (numTypeKind(p.typeRef)) |k| try this.num_locals.put(this.alloc, p.name, k);
         }
-        if (eq(u8, callee, "fold") and cc.args.len + cc.trailing.len == 2) {
-            try this.w("lists:foldl(fun(__X, __A) -> (");
-            try this.emitArgOrTrailing(cc, 1);
-            try this.w(")(__A, __X) end, ");
-            try this.emitArgOrTrailing(cc, 0);
-            try this.w(", ");
-            try this.emitExpr(recv.*);
-            try this.w(")");
-            return true;
+        const cc = .{
+            .callee = f.name,
+            .receiver = @as(?*const ast.Expr, null),
+            .args = args,
+            .trailing = @as([]const ast.TrailingLambda, &.{}),
+        };
+        const saved = this.indent;
+        this.indent = 1;
+        defer this.indent = saved;
+        const body: Ast.Expr = if (this.user_erlang_templates.contains(f.name))
+            (try this.userTemplateNode(b, f.name, cc)) orelse return null
+        else if (this.externals.get(f.name)) |ref|
+            try b.remote(ref.module, ref.symbol, try this.callArgs(b, null, cc))
+        else
+            return null;
+        return try blockFunction(b, f.name, patterns, try b.body(&.{body}));
+    }
+
+    fn shimCall(b: Ast.Builder, argc: usize) !ShimCall {
+        const args = try b.arena.alloc(ast.CallArg, argc);
+        for (args, 0..) |*arg, i| arg.* = .{
+            .label = null,
+            .value = try shimIdent(b, try std.fmt.allocPrint(b.arena, "arg{d}", .{i})),
+        };
+        return .{ .recv = try shimIdent(b, "recv"), .args = args };
+    }
+
+    /// The instance `default fn` kind `k` answers `callee` with, when it accepts
+    /// `argc` arguments (the ones past `argc` all carry a default).
+    fn primDefaultFor(this: *const Emitter, k: envMod.PrimKind, callee: []const u8, argc: usize) ?IfaceDefault {
+        const head_iface = primIfaceForKind(k) orelse return null;
+        var iface_walk = PrimIfaceWalker.init(this, head_iface, &this.prim_iface_chain);
+        while (iface_walk.next()) |iface_name| {
+            var key_buf: [256]u8 = undefined;
+            const key = std.fmt.bufPrint(&key_buf, "{s}.{s}", .{ iface_name, callee }) catch return null;
+            const d = this.iface_instance_defaults.get(key) orelse continue;
+            const params = d.method.params[1..];
+            if (argc > params.len) return null;
+            for (params[argc..]) |p| if (p.default == null) return null;
+            return d;
         }
-        if (eq(u8, callee, "drop") and cc.args.len == 1) {
-            try this.w("lists:nthtail(");
-            try this.emitExpr(cc.args[0].value.*);
-            try this.w(", ");
-            try this.emitExpr(recv.*);
-            try this.w(")");
-            return true;
-        }
-        if (eq(u8, callee, "take") and cc.args.len == 1) {
-            try this.w("lists:sublist(");
-            try this.emitExpr(recv.*);
-            try this.w(", ");
-            try this.emitExpr(cc.args[0].value.*);
-            try this.w(")");
-            return true;
-        }
-        if (eq(u8, callee, "toList") and cc.args.len == 0) {
-            try this.emitExpr(recv.*);
-            return true;
+        return null;
+    }
+
+    /// True when some primitive kind lowers `callee` called with `argc`
+    /// arguments. Builds (and drops) the lowering, so it agrees with the shim.
+    fn primMethodAnswered(this: *Emitter, b: Ast.Builder, callee: []const u8, argc: usize) anyerror!bool {
+        const call = try shimCall(b, argc);
+        for (prim_shim_kinds) |pk| {
+            if (try this.primHostMethodNode(b, pk.kind, callee, call.recv, call) != null) return true;
+            if (this.primDefaultFor(pk.kind, callee, argc) != null) return true;
         }
         return false;
     }
 
-    /// Emit either the i-th positional arg or, when `i` is past `cc.args`,
-    /// the corresponding trailing-lambda materialised as a `fun(...)`.
-    /// Used by the array-method fallbacks above so the same emitter line
-    /// handles both `xs.fold(0, { a, x -> a + x })` (trailing) and
-    /// `xs.fold(0, step)` (positional).
-    fn emitArgOrTrailing(this: *Emitter, cc: anytype, i: usize) anyerror!void {
-        if (i < cc.args.len) {
-            try this.emitExpr(cc.args[i].value.*);
-            return;
+    /// True when a host form defines `name/arity` — in this module or in the
+    /// resident prelude it imports.
+    fn isHostFunction(this: *const Emitter, name: []const u8, arity: usize) bool {
+        for ([_][]const Ast.Form{ this.host_forms, this.resident_forms }) |forms| {
+            for (forms) |form| switch (form) {
+                .function => |f| {
+                    if (!std.mem.eql(u8, f.name, name)) continue;
+                    for (f.clauses) |c| if (c.patterns.len == arity) return true;
+                },
+                else => {},
+            };
         }
-        const ti = i - cc.args.len;
-        if (ti >= cc.trailing.len) return;
-        const tl = cc.trailing[ti];
-        try this.w("fun(");
-        for (tl.params, 0..) |p, pi| {
-            if (pi > 0) try this.w(", ");
-            const vname = try erlangVar(this.alloc, p);
-            defer this.alloc.free(vname);
-            try this.w(vname);
-            this.addLocal(p);
-        }
-        try this.w(") ->\n");
-        const saved = this.indent;
-        this.indent = this.indent + 1;
-        try this.emitBody(tl.body);
-        this.indent = saved;
-        try this.w("\n");
-        try this.writeIndent();
-        try this.w("end");
+        return false;
     }
 
-    // ── struct / record / enum ────────────────────────────────────────────────
-
-    fn emitStruct(this: *Emitter, s: ast.StructDecl) !void {
-        // Structs are maps at runtime (`#{field => V}`) — no decl needed.
-        // (`-record(PascalCase, …)` is invalid Erlang: a capitalised bare atom.)
-        try this.fmt("%% struct {s}: ", .{s.name});
-        var first = true;
-        for (s.members) |m| switch (m) {
-            .field => |f| {
-                if (!first) try this.w(", ");
-                try this.w(f.name);
-                first = false;
-            },
-            else => {},
-        };
-        try this.w("\n");
-        // Emit methods as standalone functions
-        for (s.members) |m| switch (m) {
-            .method => |md| {
-                if (md.is_declare) continue;
-                try this.w("\n");
-                const saved_keep_self = this.keep_self;
-                this.keep_self = !isAssocMethod(md);
-                defer this.keep_self = saved_keep_self;
-                try this.emitFn(.{
-                    .isPub = false,
-                    .name = md.name,
-                    .annotations = &.{},
-                    .genericParams = &.{},
-                    .params = md.params,
-                    .returnType = md.returnType,
-                    .body = md.body orelse &.{},
-                });
-            },
-            else => {},
-        };
+    /// A comptime body's value-receiver method call: the shim call when some
+    /// primitive kind answers it; null when a host form defines it (`q.text()`,
+    /// `decl.fail(msg)`) or nothing does. In the latter case, when the module
+    /// asked for it (`ComptimeModule.unsupported_method`), the call is recorded
+    /// and the emit fails instead.
+    fn untypedPrimCallNode(this: *Emitter, b: Ast.Builder, loc: ast.Loc, recv: *const ast.Expr, cc: anytype) anyerror!?Ast.Expr {
+        const argc = cc.args.len + cc.trailing.len;
+        if (this.isHostFunction(cc.callee, argc + 1)) return null;
+        if (!try this.primMethodAnswered(b, cc.callee, argc)) {
+            if (this.unsupported_method) |slot| {
+                slot.* = .{ .callee = cc.callee, .argc = argc, .loc = loc };
+                return error.UnsupportedComptimeMethod;
+            }
+            return null;
+        }
+        const key = try std.fmt.allocPrint(this.alloc, "{s}/{d}", .{ cc.callee, argc });
+        const entry = try this.prim_shims.getOrPut(this.alloc, key);
+        if (entry.found_existing) {
+            this.alloc.free(key);
+        } else {
+            entry.value_ptr.* = .{ .callee = cc.callee, .argc = argc };
+        }
+        const name = try std.fmt.allocPrint(b.arena, prim_shim_prefix ++ "{s}", .{cc.callee});
+        return try b.call(name, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
     }
 
-    fn emitRecord(this: *Emitter, r: ast.RecordDecl) !void {
+    /// Emit every shim the body reached, and the instance `default fn`s their
+    /// clauses reach. A default body may itself reach a new shim
+    /// (`out.append(x)` on a local), so both lists are drained to a fixpoint.
+    fn primShimForms(this: *Emitter, b: Ast.Builder, out: *Forms) !void {
+        var next_shim: usize = 0;
+        // Defaults a call site reached were already emitted above the host block.
+        var next_default = this.needed_instance_defaults.count();
+        while (true) {
+            if (next_shim < this.prim_shims.count()) {
+                const shim = this.prim_shims.values()[next_shim];
+                next_shim += 1;
+                try out.appendSlice(b.arena, &.{ .blank, try this.primShimForm(b, shim) });
+            } else if (next_default < this.needed_instance_defaults.count()) {
+                const d = this.needed_instance_defaults.values()[next_default];
+                next_default += 1;
+                try this.instanceDefaultForm(b, out, d);
+            } else break;
+        }
+    }
+
+    /// `'__bp_prim_<callee>'(Recv, Arg0, …)`: one guarded clause per primitive
+    /// kind that answers the call, then a clause that raises
+    /// `{bp_unsupported_method, <<"callee">>, Argc, Recv}` — or, for `toString/0`,
+    /// formats any other term the way `'__bp_text'/1` does.
+    fn primShimForm(this: *Emitter, b: Ast.Builder, shim: PrimShim) !Ast.Form {
+        this.resetLocals();
+        const call = try shimCall(b, shim.argc);
+        const patterns = try b.arena.alloc(Ast.Expr, shim.argc + 1);
+        patterns[0] = Ast.Expr.v("Recv");
+        this.addLocal("recv");
+        for (call.args, 1..) |arg, i| {
+            const name = arg.value.identifier.kind.ident;
+            patterns[i] = Ast.Expr.v(try this.arenaVar(b, name));
+            this.addLocal(name);
+        }
+        const saved_indent = this.indent;
+        this.indent = 1;
+        defer this.indent = saved_indent;
+
+        var clauses: std.ArrayListUnmanaged(Ast.Clause) = .empty;
+        for (prim_shim_kinds) |pk| {
+            const node = (try this.primHostMethodNode(b, pk.kind, shim.callee, call.recv, call)) orelse
+                (try this.primDefaultShimNode(b, pk.kind, shim, call)) orelse continue;
+            try clauses.append(b.arena, .{
+                .patterns = patterns,
+                .guards = try b.exprs(&.{pk.guard}),
+                .body = try b.body(&.{node}),
+            });
+        }
+
+        const fallback_patterns = try b.arena.alloc(Ast.Expr, shim.argc + 1);
+        fallback_patterns[0] = Ast.Expr.v("Recv");
+        for (fallback_patterns[1..]) |*p| p.* = Ast.Expr.v("_");
+        const fallback = if (std.mem.eql(u8, shim.callee, "toString") and shim.argc == 0)
+            try b.call("__bp_text", &.{Ast.Expr.v("Recv")})
+        else
+            try b.remote("erlang", "error", &.{try b.tuple(&.{
+                Ast.Expr.a("bp_unsupported_method"),
+                Ast.str(shim.callee),
+                Ast.Expr.t(Term.int(@intCast(shim.argc))),
+                Ast.Expr.v("Recv"),
+            })});
+        try clauses.append(b.arena, .{ .patterns = fallback_patterns, .body = try b.body(&.{fallback}) });
+
+        const name = try std.fmt.allocPrint(b.arena, prim_shim_prefix ++ "{s}", .{shim.callee});
+        return b.functionClauses(name, clauses.items);
+    }
+
+    /// A shim clause reaching an instance `default fn`: `<Iface>_<method>(Recv,
+    /// Arg0, …)` with every omitted trailing parameter filled from its declared
+    /// default (`s.slice(1)` → `'String_slice'(Recv, Arg0, undefined)`).
+    fn primDefaultShimNode(this: *Emitter, b: Ast.Builder, k: envMod.PrimKind, shim: PrimShim, call: ShimCall) anyerror!?Ast.Expr {
+        const d = this.primDefaultFor(k, shim.callee, shim.argc) orelse return null;
+        const params = d.method.params[1..];
+        const args = try b.arena.alloc(ast.CallArg, params.len);
+        for (args, 0..) |*arg, i| {
+            if (i < shim.argc) {
+                arg.* = call.args[i];
+                continue;
+            }
+            const value = try b.arena.create(ast.Expr);
+            value.* = params[i].default.?;
+            arg.* = .{ .label = null, .value = value };
+        }
+        const padded: ShimCall = .{ .recv = call.recv, .args = args };
+        return this.ifaceDefaultNode(b, k, shim.callee, padded.recv, padded);
+    }
+
+    /// A value-receiver call that resolves to an interface instance `default fn`
+    /// → the local `<iface>_<method>(Recv, args)` form, and a note that the form
+    /// is needed. Walks the receiver's `extends` chain, so `n.clamp(0, 5)` on an
+    /// `i32` finds `Number.clamp`. Null when no interface in the chain declares
+    /// `callee` as a bodied instance default — the caller then falls back to the
+    /// bare `callee(Recv, args)` call.
+    fn ifaceDefaultNode(this: *Emitter, b: Ast.Builder, k: envMod.PrimKind, callee: []const u8, recv: *const ast.Expr, cc: anytype) anyerror!?Ast.Expr {
+        const head_iface = primIfaceForKind(k) orelse return null;
+        var iface_walk = PrimIfaceWalker.init(this, head_iface, &this.prim_iface_chain);
+        while (iface_walk.next()) |iface_name| {
+            var key_buf: [256]u8 = undefined;
+            const key = std.fmt.bufPrint(&key_buf, "{s}.{s}", .{ iface_name, callee }) catch return null;
+            const hit = this.iface_instance_defaults.getEntry(key) orelse continue;
+            // The key is owned by `iface_instance_defaults`, which outlives the
+            // needed-set, so the borrow is safe.
+            try this.needed_instance_defaults.put(this.alloc, hit.key_ptr.*, hit.value_ptr.*);
+            var mbuf: [256]u8 = undefined;
+            const mangled = interfaceAssocAtom(&mbuf, iface_name, callee) catch return null;
+            const head = try b.arena.dupe(u8, mangled);
+            return try b.call(head, try this.callArgs(b, try this.exprNode(b, recv.*), cc));
+        }
+        return null;
+    }
+
+    /// Emit the interface instance `default fn`s some call site reached, as
+    /// `<iface>_<method>(Self, …)` forms. Draining is a fixpoint walk: a default
+    /// body may itself call another default (`String.slice` → nothing, but
+    /// `Array.append` → `Array.slice`), which appends to the same list.
+    fn instanceDefaultForms(this: *Emitter, b: Ast.Builder, out: *Forms) !void {
+        var i: usize = 0;
+        while (i < this.needed_instance_defaults.count()) : (i += 1) {
+            try this.instanceDefaultForm(b, out, this.needed_instance_defaults.values()[i]);
+        }
+    }
+
+    /// One reached instance `default fn` as its `<iface>_<method>(Self, …)`
+    /// form, lowered with `self` known to be the interface's primitive kind.
+    fn instanceDefaultForm(this: *Emitter, b: Ast.Builder, out: *Forms, d: IfaceDefault) !void {
+        const saved_kind = this.self_prim_kind;
+        const saved_in = this.in_iface_default;
+        defer {
+            this.self_prim_kind = saved_kind;
+            this.in_iface_default = saved_in;
+        }
+        this.in_iface_default = true;
+        var mbuf: [256]u8 = undefined;
+        const mangled = interfaceAssocAtom(&mbuf, d.iface, d.method.name) catch return;
+        this.self_prim_kind = this.primKindForIface(d.iface);
+        try this.methodForms(b, out, try b.arena.dupe(u8, mangled), d.method);
+    }
+
+    /// The std Array default fns as erlang BIFs (`forEach`/`fold`/`drop`/
+    /// `take`/`toList`), or null for any other method.
+    fn arrayPrimFallbackNode(this: *Emitter, b: Ast.Builder, callee: []const u8, recv: *const ast.Expr, cc: anytype) anyerror!?Ast.Expr {
+        const eq = std.mem.eql;
+        const arity = cc.args.len + cc.trailing.len;
+        // `xs.forEach(action)` → `lists:foreach(Action, Xs)`.
+        if (eq(u8, callee, "forEach") and arity == 1) {
+            const action = try this.argNode(b, cc, 0);
+            return try b.remote("lists", "foreach", &.{ action, try this.exprNode(b, recv.*) });
+        }
+        // `xs.fold(init, f)` → `lists:foldl(fun(__X, __A) -> (F)(__A, __X) end, Init, Xs)`:
+        // botopink's `f(acc, x)` order is swapped inside the wrapper.
+        if (eq(u8, callee, "fold") and arity == 2) {
+            const f = try this.argNode(b, cc, 1);
+            const step: Ast.Expr = .{ .fun_clauses = try b.arena.dupe(Ast.Clause, &.{
+                try b.clause(&.{ Ast.Expr.v("__X"), Ast.Expr.v("__A") }, &.{}, &.{try b.applyParen(f, &.{ Ast.Expr.v("__A"), Ast.Expr.v("__X") })}),
+            }) };
+            const initial = try this.argNode(b, cc, 0);
+            return try b.remote("lists", "foldl", &.{ step, initial, try this.exprNode(b, recv.*) });
+        }
+        // `xs.drop(n)` → `lists:nthtail(N, Xs)` (panics out of bounds, matching
+        // the default fn's in-bounds contract).
+        if (eq(u8, callee, "drop") and cc.args.len == 1) {
+            const n = try this.exprNode(b, cc.args[0].value.*);
+            return try b.remote("lists", "nthtail", &.{ n, try this.exprNode(b, recv.*) });
+        }
+        // `xs.take(n)` → `lists:sublist(Xs, N)`.
+        if (eq(u8, callee, "take") and cc.args.len == 1) {
+            const xs = try this.exprNode(b, recv.*);
+            return try b.remote("lists", "sublist", &.{ xs, try this.exprNode(b, cc.args[0].value.*) });
+        }
+        // `xs.toList()` — an `Array<T>` is already a list.
+        if (eq(u8, callee, "toList") and cc.args.len == 0) return try this.exprNode(b, recv.*);
+        return null;
+    }
+
+    // ── record / enum / interface / extensions ────────────────────────────────
+
+    /// A method as a function form: `keep_self` keeps the receiver as the first
+    /// parameter (`Self`) for instance methods; associated fns have none.
+    fn methodForms(this: *Emitter, b: Ast.Builder, out: *Forms, name: []const u8, m: anytype) !void {
+        const saved_keep_self = this.keep_self;
+        this.keep_self = !isAssocMethod(m);
+        defer this.keep_self = saved_keep_self;
+        try out.append(b.arena, .blank);
+        try this.fnForms(b, out, .{
+            .isPub = false,
+            .name = name,
+            .annotations = &.{},
+            .genericParams = &.{},
+            .params = m.params,
+            .returnType = m.returnType,
+            .body = m.body orelse &.{},
+        });
+    }
+
+    fn recordForms(this: *Emitter, b: Ast.Builder, out: *Forms, r: ast.TypeDecl) !void {
         // Records are maps at runtime (`#{field => V}`) — no decl needed.
         // (`-record(PascalCase, …)` is invalid Erlang: a capitalised bare atom.)
-        try this.fmt("%% record {s}: ", .{r.name});
-        for (r.fields, 0..) |f, i| {
-            if (i > 0) try this.w(", ");
-            try this.w(f.name);
+        var text: std.ArrayListUnmanaged(u8) = .empty;
+        try text.appendSlice(b.arena, try std.fmt.allocPrint(b.arena, "type {s}: ", .{r.name}));
+        for (r.recordFields(), 0..) |f, i| {
+            if (i > 0) try text.appendSlice(b.arena, ", ");
+            try text.appendSlice(b.arena, f.name);
         }
-        try this.w("\n");
-        // Instance methods keep their `self` receiver as an explicit first
-        // parameter (`Self`); the call site passes the receiver positionally
-        // (`recv.m(args)` → `m(Recv, args)`). Associated fns (no `self`) are
-        // emitted as ordinary bare functions. A method whose name collides
-        // with another record's method gets mangled to `<recordtype>_<method>`
-        // so erlang's flat top-level fn namespace doesn't double-define it.
+        try out.append(b.arena, .{ .comment = Ast.Comment.doc(text.items) });
+        // Instance methods take the receiver positionally (`recv.m(args)` →
+        // `m(Recv, args)`). A method whose name collides with another record's
+        // method is mangled to `<recordtype>_<method>` so erlang's flat
+        // top-level fn namespace doesn't double-define it.
         for (r.methods) |m| {
             if (m.is_declare) continue;
-            try this.w("\n");
-            const saved_keep_self = this.keep_self;
-            this.keep_self = !isAssocMethod(m);
-            defer this.keep_self = saved_keep_self;
             var mname_buf: [256]u8 = undefined;
             const mname: []const u8 = if (this.isRecordMethodCollision(r.name, m.name))
                 try recordMethodAtom(&mname_buf, r.name, m.name)
             else
                 m.name;
-            try this.emitFn(.{
-                .isPub = false,
-                .name = mname,
-                .annotations = &.{},
-                .genericParams = &.{},
-                .params = m.params,
-                .returnType = m.returnType,
-                .body = m.body orelse &.{},
-            });
+            try this.methodForms(b, out, mname, m);
+        }
+        // The bodied instance `default fn`s the record adopts with `implement`
+        // and does not declare itself: the behavior contract is part of the
+        // record's surface, exactly as commonJS puts them on the class.
+        // `self` is the record inside those bodies, so `self.size()` reaches the
+        // record's own (possibly mangled) method rather than a bare `size/1`.
+        var adopted: std.ArrayListUnmanaged(ast.BehaviorMethod) = .empty;
+        try this.adoptedIfaceDefaults(b.arena, r, &adopted);
+        const saved_self_record = this.self_record_type;
+        defer this.self_record_type = saved_self_record;
+        this.self_record_type = r.name;
+        for (adopted.items) |m| {
+            if (!this.emitsAdoptedDefault(r.name, m.name)) continue;
+            try this.methodForms(b, out, m.name, m);
         }
     }
 
-    fn emitEnum(this: *Emitter, e: ast.EnumDecl) !void {
-        try this.fmt("%% enum {s}\n", .{e.name});
-        for (e.variants) |v| {
-            if (v.fields.len == 0) {
-                try this.fmt("%%   {s}\n", .{v.name});
-            } else {
-                try this.fmt("%%   {s}(", .{v.name});
+    fn enumForms(this: *Emitter, b: Ast.Builder, out: *Forms, e: ast.TypeDecl) !void {
+        try out.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "type {s}", .{e.name})) });
+        for (e.variants()) |v| {
+            var text: std.ArrayListUnmanaged(u8) = .empty;
+            try text.appendSlice(b.arena, try std.fmt.allocPrint(b.arena, "  {s}", .{v.name}));
+            if (v.fields.len > 0) {
+                try text.append(b.arena, '(');
                 for (v.fields, 0..) |f, i| {
-                    if (i > 0) try this.w(", ");
-                    try this.w(f.name);
+                    if (i > 0) try text.appendSlice(b.arena, ", ");
+                    try text.appendSlice(b.arena, f.name);
                 }
-                try this.w(")\n");
+                try text.append(b.arena, ')');
             }
+            try out.append(b.arena, .{ .comment = Ast.Comment.doc(text.items) });
         }
         for (e.methods) |m| {
             if (m.is_declare) continue;
-            try this.w("\n");
-            const saved_keep_self = this.keep_self;
-            this.keep_self = !isAssocMethod(m);
-            defer this.keep_self = saved_keep_self;
-            try this.emitFn(.{
-                .isPub = false,
-                .name = m.name,
-                .annotations = &.{},
-                .genericParams = &.{},
-                .params = m.params,
-                .returnType = m.returnType,
-                .body = m.body orelse &.{},
-            });
+            try this.methodForms(b, out, m.name, m);
         }
     }
 
-    fn emitInterface(this: *Emitter, i: ast.InterfaceDecl) !void {
-        try this.fmt("%% interface {s}\n", .{i.name});
-        // Associated `default fn`s (no `self`) are pure botopink — emit them as
-        // local functions so `Interface.method(...)` resolves locally (the
-        // interface decl is inlined into each consuming module). The name is
-        // mangled `Interface_method` (→ quoted `'Array_range'`, since it starts
-        // uppercase) so it never collides with a consumer's own top-level fn of
-        // the same name (a consumer may define its own `range`/`repeat`). Instance
-        // default fns (with `self`) are a separate gap (§B4 — needs §B1
-        // generic-Self resolution + cross-primitive-method routing), not emitted
-        // here.
+    fn interfaceForms(this: *Emitter, b: Ast.Builder, out: *Forms, i: ast.BehaviorDecl) !void {
+        try out.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "behavior {s}", .{i.name})) });
+        // Associated `default fn`s (no `self`) are pure botopink — local
+        // functions so `Interface.method(...)` resolves locally (the interface
+        // decl is inlined into each consuming module). The name is mangled
+        // `Interface_method` (→ quoted `'Array_range'`) so it never collides with
+        // a consumer's own top-level fn of the same name. Instance default fns
+        // (with `self`) are not emitted here.
         for (i.methods) |m| {
             if (!m.is_default or m.body == null) continue;
             const has_self = m.params.len > 0 and std.mem.eql(u8, m.params[0].name, "self");
             if (has_self) continue;
             var mbuf: [256]u8 = undefined;
             const mangled = interfaceAssocAtom(&mbuf, i.name, m.name) catch continue;
-            try this.w("\n");
-            try this.emitFn(.{
+            try out.append(b.arena, .blank);
+            try this.fnForms(b, out, .{
                 .isPub = false,
                 .name = mangled,
                 .annotations = &.{},
@@ -3881,35 +6597,37 @@ const Emitter = struct {
         }
     }
 
-    fn emitImplement(this: *Emitter, im: ast.ImplementDecl) !void {
-        try this.w("%% implement ");
+    fn implementForms(this: *Emitter, b: Ast.Builder, out: *Forms, im: ast.ImplementDecl) !void {
+        var text: std.ArrayListUnmanaged(u8) = .empty;
+        try text.appendSlice(b.arena, "implement ");
         for (im.interfaces, 0..) |iface, i| {
-            if (i > 0) try this.w(", ");
-            try this.w(switch (iface) {
+            if (i > 0) try text.appendSlice(b.arena, ", ");
+            try text.appendSlice(b.arena, switch (iface) {
                 .named => |n| n,
                 .generic => |g| g.name,
                 else => "?",
             });
         }
-        try this.fmt(" for {s}\n", .{im.target});
-        try this.emitExtensionMethods(im.methods);
+        try text.appendSlice(b.arena, try std.fmt.allocPrint(b.arena, " for {s}", .{im.target}));
+        try out.append(b.arena, .{ .comment = Ast.Comment.doc(text.items) });
+        try this.extensionForms(b, out, im.methods);
     }
 
-    fn emitExtend(this: *Emitter, ex: ast.ExtendDecl) !void {
-        try this.fmt("%% extend {s}\n", .{ex.target});
-        try this.emitExtensionMethods(ex.methods);
+    fn extendForms(this: *Emitter, b: Ast.Builder, out: *Forms, ex: ast.ExtendDecl) !void {
+        try out.append(b.arena, .{ .comment = Ast.Comment.doc(try std.fmt.allocPrint(b.arena, "extend {s}", .{ex.target})) });
+        try this.extensionForms(b, out, ex.methods);
     }
 
-    /// Extension methods (from `implement`/`extend`) are emitted as bare
-    /// top-level functions that take the receiver as their first param, so an
-    /// activated `recv.m(args)` dispatch can call `m(Recv, args)` directly.
-    fn emitExtensionMethods(this: *Emitter, methods: []const ast.ImplementMethod) !void {
+    /// Extension methods (from `implement`/`extend`) are bare top-level
+    /// functions taking the receiver first, so an activated `recv.m(args)`
+    /// dispatch calls `m(Recv, args)` directly.
+    fn extensionForms(this: *Emitter, b: Ast.Builder, out: *Forms, methods: []const ast.ImplementMethod) !void {
         const saved_keep_self = this.keep_self;
         this.keep_self = true;
         defer this.keep_self = saved_keep_self;
         for (methods) |m| {
-            try this.w("\n");
-            try this.emitFn(.{
+            try out.append(b.arena, .blank);
+            try this.fnForms(b, out, .{
                 .isPub = false,
                 .name = m.name,
                 .annotations = &.{},
@@ -3919,29 +6637,5 @@ const Emitter = struct {
                 .body = m.body,
             });
         }
-    }
-
-    fn emitUse(this: *Emitter, u: ast.ImportDecl) !void {
-        try this.w(if (u.activationOnly) "%% activate " else "%% import ");
-        for (u.imports, 0..) |imp, i| {
-            if (i > 0) try this.w(", ");
-            try this.w(imp.name());
-        }
-        try this.w("\n");
-    }
-
-    // ── binary string helper ─────────────────────────────────────────────────
-
-    fn emitBinary(this: *Emitter, s: []const u8) !void {
-        try this.w("<<\"");
-        for (s) |c| switch (c) {
-            '"' => try this.w("\\\""),
-            '\\' => try this.w("\\\\"),
-            '\n' => try this.w("\\n"),
-            '\r' => try this.w("\\r"),
-            '\t' => try this.w("\\t"),
-            else => try this.out.writeByte(c),
-        };
-        try this.w("\">>");
     }
 };

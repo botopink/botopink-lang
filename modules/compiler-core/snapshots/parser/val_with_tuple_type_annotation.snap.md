@@ -51,7 +51,8 @@
                   }
                 ],
                 "comments": [],
-                "commentsPerElem": []
+                "commentsPerElem": [],
+                "labels": []
               }
             }
           }

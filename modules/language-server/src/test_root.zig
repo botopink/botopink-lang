@@ -9,6 +9,7 @@ comptime {
     _ = @import("./tests/definition.zig");
     _ = @import("./tests/symbols.zig");
     _ = @import("./tests/completion.zig");
+    _ = @import("./tests/completion_server.zig");
     _ = @import("./tests/references.zig");
     _ = @import("./tests/rename.zig");
     _ = @import("./tests/signature_help.zig");
@@ -22,4 +23,5 @@ comptime {
     _ = @import("./tests/lifecycle.zig");
     _ = @import("./tests/cross_module.zig");
     _ = @import("./tests/project_graph.zig");
+    _ = @import("./tests/snapshot_test.zig"); // unit tests for the snapshot renderers
 }

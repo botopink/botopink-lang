@@ -6,3 +6,5 @@ zig-out/
 dist/
 build/
 _memory.md
+*.snap.md.new
+erl_crash.dump

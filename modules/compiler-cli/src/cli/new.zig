@@ -11,9 +11,18 @@ pub const Options = struct {
 
 // ── Templates ─────────────────────────────────────────────────────────────────
 
+/// The scaffolded program. It must **print**: a block's value is its `break`
+/// (`specs/1.0.4-beta/08-review-backlog/semantics-decisions.md` decision 2), so
+/// a body whose only statement is the literal `"Hello, world!"` evaluates to
+/// nothing and `botopink run` shows an empty screen — the quick start of the
+/// README then has no visible effect. `@print` is the builtin, on every target.
 const MAIN_BP =
+    \\fn greet(name: string) -> string {
+    \\    return "Hello, " + name + "!";
+    \\}
+    \\
     \\pub fn main() {
-    \\  "Hello, world!"
+    \\    @print(greet("world"));
     \\}
     \\
 ;

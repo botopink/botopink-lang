@@ -2,7 +2,6 @@
 
 > Path: `modules/compiler-core/src/`
 > Parent: [`../AGENTS.md`](../AGENTS.md) · Root: [`../../../AGENTS.md`](../../../AGENTS.md)
-> Docs: [`./docs.md`](docs.md)
 
 All compiler stages live here. Each top-level `*.zig` is a façade; the
 implementation delegates to a sibling directory of the same name.
@@ -12,50 +11,50 @@ implementation delegates to a sibling directory of the same name.
 ```text
 src/
 ├── AGENTS.md             ← you are here
-├── docs.md               ← detailed architecture: façade pattern, pipeline, conventions
 ├── root.zig              ← public library entry (re-exports the public API)
-├── main.zig              ← minimal CLI stub used by `zig build run`
+├── main.zig              ← empty CLI stub used by `zig build run`
 ├── test_root.zig         ← aggregates each stage's tests.zig barrel
+├── test_warmup.zig       ← pre-warms the stdlib template env before other tests
 ├── module.zig            ← `Module` struct — input module representation
 ├── ast.zig               ← AST node types (categorised)
 ├── lexer.zig             ← Lexer (delegates to lexer/token.zig)
 ├── parser.zig            ← Parser struct + token cursor + shared helpers (sub-grammars in parser/)
 ├── format.zig            ← Wadler-Lindig pretty printer (round-trip stable)
 ├── print.zig             ← rustc-style diagnostics renderer
-├── comptime.zig          ← Target-agnostic comptime façade
-├── codegen.zig           ← Public codegen API
-├── codegen/              ← Per-target backends — see codegen/AGENTS.md
-├── comptime/             ← HM inference + transform — see comptime/AGENTS.md
-│   └── runtime/          ← External eval scripts (Node.js + Erlang)
-├── lexer/                ← Token struct + lexer snapshot tests
-├── parser/               ← Parser sub-grammars (types/patterns/decls/exprs) + snapshot tests
-├── format/               ← Formatter snapshot tests
+├── comptime.zig          ← comptime façade (compile / compileTypesOnly / evaluateComptime)
+├── codegen.zig           ← public codegen API
+├── codegen/              ← per-target backends — see codegen/AGENTS.md
+├── comptime/             ← HM inference + transform + comptime eval — see comptime/AGENTS.md
+│   └── runtime/          ← persistent `erl` comptime runtime
+├── lexer/                ← Token struct + lexer tests
+├── parser/               ← Parser sub-grammars (types/patterns/decls/exprs) + tests
+├── format/               ← Formatter tests
 └── utils/                ← Snapshot/JSON helpers
 ```
 
 ## Top-level façades
 
-| File | Role | Deeper docs |
-|---|---|---|
-| `root.zig` | Library entry — re-exports public API | — |
-| `ast.zig` | All AST node types | [`./docs.md`](docs.md) |
-| `lexer.zig` | Lexer façade → `lexer/token.zig` | [`lexer/docs.md`](lexer/docs.md) |
-| `parser.zig` | Parser struct + cursor + shared helpers; sub-grammars in [`parser/`](parser/AGENTS.md) | [`parser/docs.md`](parser/docs.md) |
-| `comptime.zig` | Comptime façade — `ComptimeSession`, `compile`, `evaluateComptime` | [`comptime/docs.md`](comptime/docs.md) |
-| `format.zig` | Wadler-Lindig formatter | [`format/docs.md`](format/docs.md) |
-| `print.zig` | rustc-style error renderer | — |
-| `codegen.zig` | Public codegen API | [`codegen/docs.md`](codegen/docs.md) |
+| File | Role |
+|---|---|
+| `root.zig` | Library entry — re-exports `codegen`, `format`, `print_errors`, `Module`, `comptime_pipeline`, `Lexer`, `Parser`, `ast`, `types`, `CustomNode`/`CustomAstEntry`, … |
+| `ast.zig` | All AST node types. Named types are one `TypeDecl` (`shape`: `.record` fields or `.enum_` variants + sections; helpers `isRecord`/`recordFields`/`variants`/`sections`) under `DeclKind.type_`; interfaces are `BehaviorDecl` under `DeclKind.behavior`; record fields and variant payload fields share `Field` (its `comments` are serialized only when present); `TypeRef.labeledTuple` is a `#(name: T, …)` type (`tupleElems()` covers both tuple forms); decision 8's own shapes travel in existing nodes under reserved spellings, each documented where it is defined — `unknown_type_name` (§2, N19), `union_type_name` (§3, N20, with `unionMembers()`), `is_builtin_name` (§4, N21, with the call's `isType`), `index_builtin_name` (decision 30's `xs[0]`, the receiver and the index as its two arguments — a `range` index is `xs[0..2]`), and `nullish_binding_name` (decision 28's `a ?? b`, desugared to `if (a) { <n> -> <n> } else { b }` — the optional binding form, which every backend already lowers), and `Pattern.variant`'s `shape`/`labels`/`rest` (§5, N22). `CallExpr.call.calleeExpr` carries the callee of `adder(3)(4)` as an **expression** (`callee` is then `""` and `receiver` stays null — a chained call is not a method call); it is null on every call written before decision 14 and omitted from the AST dump when null, so a consumer that does not read it lowers exactly the calls it lowered before |
+| `lexer.zig` | Lexer façade → `lexer/token.zig` |
+| `parser.zig` | Parser struct + cursor + shared helpers; sub-grammars in [`parser/`](parser/AGENTS.md). `parse` records a located `parseError` for every `UnexpectedToken` it returns (the token it stopped on, when no named rejection filled it) |
+| `comptime.zig` | Comptime façade — `ComptimeSession`, `compile`, `compileTypesOnly`, `evaluateComptime`, `registerStdlib`. A module that does not lex or parse is an `Outcome.parseError` carrying a located `SyntaxError` (`.lex` / `.parse`), never a session-wide error |
+| `format.zig` | Wadler-Lindig formatter |
+| `print.zig` | rustc-style error renderer |
+| `codegen.zig` | Public codegen API over the `codegen/` backends: `generateWith(alloc, modules, io, config, .{ .execute })` compiles and, only when `execute` is set, runs each emitted module (`run_output`). Every module comes back: one that did not lex, parse or type-check carries `result.diagnostic`, one that failed comptime validation `result.comptime_err` (`result.failed()`). `generate` is the snapshot harness's executing entry and drops the `diagnostic` entries (the harness derives those from its own comptime run) — drivers (the CLI) call `generateWith` with `.execute = false` |
 
 ## Subdirectories
 
 | Dir | Purpose | AGENTS |
 |---|---|---|
 | `lexer/` | `token.zig` + tests | [link](lexer/AGENTS.md) |
-| `parser/` | parser snapshot tests | [link](parser/AGENTS.md) |
+| `parser/` | sub-grammars + parser snapshot tests | [link](parser/AGENTS.md) |
 | `format/` | formatter snapshot tests | [link](format/AGENTS.md) |
-| `comptime/` | HM types, infer, unify, transform, specialize, eval | [link](comptime/AGENTS.md) |
-| `comptime/runtime/` | Node.js + Erlang comptime runtimes | [link](comptime/runtime/AGENTS.md) |
-| `codegen/` | per-target backends (commonJS, erlang, typescript) | [link](codegen/AGENTS.md) |
+| `comptime/` | HM types, infer, unify, transform, specialize, template/decorator eval | [link](comptime/AGENTS.md) |
+| `comptime/runtime/` | persistent `erl` comptime runtime | [link](comptime/runtime/AGENTS.md) |
+| `codegen/` | per-target backends (commonJS, typescript `.d.ts`, erlang, beam_asm, wat) | [link](codegen/AGENTS.md) |
 | `utils/` | snap.zig, pretty.zig, json_diff.zig | [link](utils/AGENTS.md) |
 
 ## Dir-specific conventions
@@ -76,6 +75,3 @@ src/
   Snapshot paths derive from the **test name**, never the file — so a test block
   may move between feature files freely, but its `test "<stage>: <name>"` string
   must never be renamed.
-
-For pipeline details, façade pattern rationale, and current-release
-highlights see [`./docs.md`](docs.md).

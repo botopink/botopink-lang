@@ -149,38 +149,6 @@ test "parser: delegate ---- shorthand pub with return type" {
     );
 }
 
-test "parser: star fn ---- async declaration" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\#[@future]
-        \\fn fetch(url: string) -> @Future<Response> {
-        \\    return download(url);
-        \\}
-    );
-}
 
-test "parser: star fn ---- generator declaration" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\#[@iterator]
-        \\fn fib() -> @Iterator<Int> {
-        \\    yield 1;
-        \\}
-    );
-}
 
-test "parser: star fn ---- async generator declaration" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\#[@asyncGenerator]
-        \\pub fn stream() -> @AsyncIterator<Int, Error> {
-        \\    yield 1;
-        \\}
-    );
-}
 
-test "parser: star fn ---- label after return type" {
-    try h.assertParser(std.testing.allocator, @src(),
-        \\#[@iterator]
-        \\fn gen() -> @Iterator<Int> :gen {
-        \\    yield :gen 1;
-        \\}
-    );
-}

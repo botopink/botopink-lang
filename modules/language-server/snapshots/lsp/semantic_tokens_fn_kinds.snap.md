@@ -1,7 +1,7 @@
 ----- SOURCE
 ```botopink
 fn free(a: i32) -> i32 { return a; }
-interface Greeter { fn greet(self: Self) -> string }
+behavior Greeter { fn greet(self: Self) -> string; }
 #[@iterator]
 fn counter() -> @Iterator<i32> :gen { yield 1; }
 ```
@@ -13,18 +13,40 @@ fn counter() -> @Iterator<i32> :gen { yield 1; }
   (0,11) +3  type [defaultLibrary]  "i32"
   (0,19) +3  type [defaultLibrary]  "i32"
   (0,25) +6  keyword  "return"
-  (0,32) +1  variable  "a"
-  (1,0) +9  keyword  "interface"
-  (1,10) +7  interface [declaration]  "Greeter"
-  (1,20) +2  keyword  "fn"
-  (1,23) +5  method [declaration]  "greet"
-  (1,29) +4  parameter  "self"
-  (1,35) +4  type [defaultLibrary]  "Self"
-  (1,44) +6  type [defaultLibrary]  "string"
+  (0,32) +1  parameter  "a"
+  (1,0) +8  keyword  "behavior"
+  (1,9) +7  interface [declaration]  "Greeter"
+  (1,19) +2  keyword  "fn"
+  (1,22) +5  method [declaration]  "greet"
+  (1,28) +4  parameter  "self"
+  (1,34) +4  type [defaultLibrary]  "Self"
+  (1,43) +6  type [defaultLibrary]  "string"
   (2,2) +9  function [defaultLibrary]  "@iterator"
   (3,0) +2  keyword  "fn"
-  (3,3) +7  function [declaration]  "counter"
+  (3,3) +7  function [declaration,async]  "counter"
   (3,16) +9  type [defaultLibrary]  "@Iterator"
   (3,26) +3  type [defaultLibrary]  "i32"
-  (3,32) +3  variable  "gen"
+  (3,32) +3  keyword  "gen"
   (3,38) +5  keyword  "yield"
+----- ENCODED (deltaLine, deltaStart, len, type, mods)
+  0 0 2 9 0
+  0 3 4 4 1
+  0 5 1 6 0
+  0 3 3 0 4
+  0 8 3 0 4
+  0 6 6 9 0
+  0 7 1 6 0
+  1 0 8 9 0
+  0 9 7 1 1
+  0 10 2 9 0
+  0 3 5 5 1
+  0 6 4 6 0
+  0 6 4 0 4
+  0 9 6 0 4
+  1 2 9 4 4
+  1 0 2 9 0
+  0 3 7 4 9
+  0 13 9 0 4
+  0 10 3 0 4
+  0 6 3 9 0
+  0 6 5 9 0

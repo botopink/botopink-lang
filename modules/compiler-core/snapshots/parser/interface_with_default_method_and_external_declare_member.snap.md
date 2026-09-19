@@ -2,7 +2,7 @@
 {
   "decls": [
     {
-      "interface": {
+      "behavior": {
         "name": "List",
         "id": 1,
         "isPub": true,
@@ -116,9 +116,8 @@
                 "is_builtin": true
               },
               {
-                "name": "external",
+                "name": "External.Node",
                 "args": [
-                  "node",
                   "\"./bp_stdlib.mjs\"",
                   "\"list_reverse\""
                 ],

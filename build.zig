@@ -1,8 +1,10 @@
 /// Workspace build — coordinates compiler-core, compiler-cli and language-server.
 ///
 ///   zig build          → builds botopink + botopink-lsp
-///   zig build test     → runs every compiler-core test
+///   zig build test     → runs every compiler-core, language-server, CLI and lib-test-runner unit test
 ///   zig build test -Dtest-filter=<substr> → runs only matching tests
+///   zig build test-cli → runs every modules/compiler-cli/tests/*.sh end to end
+///   zig build test-libs → compiles and tests every visible `.bp` library per target
 ///   zig build run      → builds and runs the botopink CLI
 const std = @import("std");
 
@@ -10,16 +12,12 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // Build-time options exposed to modules via @import("build_options").
-    const build_options_opts = b.addOptions();
-    const build_options_mod = build_options_opts.createModule();
-
-    // wasm3 needs libc; on Linux + system glibc 2.42 (Arch as of 2026-06-17)
-    // Zig 0.16's linker errors on the new `.sframe` sections in the system
-    // crt1.o (`unhandled relocation type R_X86_64_PC64`). The workaround is to
-    // use Zig's bundled glibc + crt1, which we opt into by re-resolving the
-    // target with an explicit glibc version pin. Affects only Linux-gnu
-    // builds; macOS / Windows / musl pass through unchanged.
+    // On Linux + system glibc 2.41 or newer (Arch as of 2026-06-17) Zig 0.16's
+    // linker errors on the new `.sframe` sections in the system crt1.o
+    // (`unhandled relocation type R_X86_64_PC64`). The workaround is to use
+    // Zig's bundled glibc + crt1, which we opt into by re-resolving the target
+    // with an explicit glibc version pin. Affects only Linux-gnu builds;
+    // macOS / Windows / musl pass through unchanged.
     const target_for_libc = libcResolvedTarget(b, target);
 
     // ── std prelude ───────────────────────────────────────────────────────────
@@ -38,21 +36,6 @@ pub fn build(b: *std.Build) void {
         "builtins_fns.d.bp",
     };
     for (std_core_files) |f| {
-        std_prelude.addAnonymousImport(f, .{
-            .root_source_file = b.path(b.fmt("libs/std/src/{s}", .{f})),
-        });
-    }
-
-    // Compiler-internal `.bp` sources — NOT user-importable (no `pub mod` entry
-    // in `root.bp`), NOT flattened into the global type env (no entry in the
-    // `pkg_modules` registry above). The wat3 comptime prelude (`template_runtime.bp`)
-    // is the first such file: `wat_runtime.zig` reads the embedded source through
-    // `std_prelude.template_runtime_src`, compiles it through the wat backend, and
-    // splices the post-processed wat into `prelude()` ahead of every template body.
-    const std_internal_files = [_][]const u8{
-        "template_runtime.bp",
-    };
-    for (std_internal_files) |f| {
         std_prelude.addAnonymousImport(f, .{
             .root_source_file = b.path(b.fmt("libs/std/src/{s}", .{f})),
         });
@@ -107,9 +90,6 @@ pub fn build(b: *std.Build) void {
             .{ .name = "std_prelude", .module = std_prelude },
         },
     });
-    // wasm3 headers are accessed via `@cImport` in
-    core_mod.addImport("build_options", build_options_mod);
-
     // ── compiler-core tests ───────────────────────────────────────────────────
 
     const core_test_mod = b.addModule("botopink_tests", .{
@@ -119,8 +99,6 @@ pub fn build(b: *std.Build) void {
             .{ .name = "std_prelude", .module = std_prelude },
         },
     });
-
-    core_test_mod.addImport("build_options", build_options_mod);
 
     const test_filters = b.option([]const []const u8, "test-filter", "Only run tests matching filter") orelse &.{};
     const core_tests = b.addTest(.{
@@ -153,7 +131,7 @@ pub fn build(b: *std.Build) void {
     // never accumulate beyond a day.
     run_core_tests.step.dependOn(&clean_tmp_run.step);
 
-    const test_step = b.step("test", "Run every test (compiler-core + language-server)");
+    const test_step = b.step("test", "Run every unit test (compiler-core, language-server, CLI, lib-test-runner)");
     test_step.dependOn(&run_core_tests.step);
 
     // ── lib-agnostic gate (annotation-processors P0) ──────────────────────────
@@ -254,6 +232,18 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(lib_test_exe);
 
+    // Its unit tests (args, discovery, matrix, runner) run with `zig build test`.
+    const lib_test_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("modules/lib-test-runner/src/main.zig"),
+            .target = target,
+        }),
+        .filters = test_filters,
+    });
+    const run_lib_test_tests = b.addRunArtifact(lib_test_tests);
+    run_lib_test_tests.setCwd(b.path("modules/lib-test-runner"));
+    test_step.dependOn(&run_lib_test_tests.step);
+
     // ── bpmp (Boto Pink Package Manager executable) ───────────────────────────
     // Self-contained — no `compiler-core` import. bpmp *spawns* `botopink`, it
     // does not link it. Same idea as `lib-test-runner`: a thin orchestrator that
@@ -308,33 +298,77 @@ pub fn build(b: *std.Build) void {
 
     // `zig build test-vscode` — run the VS Code extension's pure-function
     // unit suite (`npm test` → tsc typecheck + Node's built-in test runner)
-    // via the workspace's `scripts/test-vscode.sh` wrapper. On first run the
-    // wrapper does an `npm ci` (K2 of v0.beta.19 §K env deferreds) and
-    // touches a marker under `repository/vscode-extension/node_modules/`;
-    // subsequent runs skip the install. Like `test-libs`, NOT wired into
-    // `zig build test` — needs `node`/`npm` on PATH.
-    const test_vscode_run = b.addSystemCommand(&.{ "bash", "../../scripts/test-vscode.sh" });
+    // through `scripts/test-vscode.sh`, which locates the sibling
+    // `vscode-extension` checkout (BOTOPINK_VSCODE_DIR, else
+    // `<ancestor>/repository/vscode-extension`) and fails when it cannot. On
+    // first run the wrapper does an `npm ci`. NOT wired into `zig build test` —
+    // needs `node`/`npm` and a sibling checkout.
+    const test_vscode_run = b.addSystemCommand(&.{ "bash", "scripts/test-vscode.sh" });
     test_vscode_run.setCwd(b.path("."));
     test_vscode_run.has_side_effects = true; // spawns node — never cache
 
     const test_vscode_step = b.step("test-vscode", "Run the VS Code extension unit tests");
     test_vscode_step.dependOn(&test_vscode_run.step);
 
+    // `zig build test-language` — the language tests of decision 8 (front 15):
+    // `case` and patterns, tuples and labels, `loop`, written in botopink under
+    // `tests/language/` and run by `tests/language/run.sh` on commonJS and
+    // erlang against the installed `botopink`, with the expected failures in
+    // `tests/language/expected-failures.txt`. Forwards `--` args, e.g.
+    //   zig build test-language -- --target erlang --compiler <botopink>
+    // NOT wired into `zig build test` (spawns node/erl per file).
+    const test_language_run = b.addSystemCommand(&.{ "bash", "tests/language/run.sh" });
+    test_language_run.step.dependOn(b.getInstallStep());
+    test_language_run.setCwd(b.path("."));
+    test_language_run.has_side_effects = true; // spawns child compilers — never cache
+    if (b.args) |args| test_language_run.addArgs(args);
+
+    const test_language_step = b.step("test-language", "Run the botopink language tests (tests/language)");
+    test_language_step.dependOn(&test_language_run.step);
+
+    // `zig build test-docs` — every `botopink` fence of the user docs compiles
+    // (front 14 step 3). `scripts/check-docs.sh` extracts each fence into a
+    // scratch project and runs `botopink check`; a fence that is a table rather
+    // than a module carries a `<!-- docs-check: skip <reason> -->` comment.
+    // Forwards `--` args, e.g.
+    //   zig build test-docs -- --doc docs.md --list
+    // NOT wired into `zig build test` (spawns a compiler per fence).
+    const test_docs_run = b.addSystemCommand(&.{ "bash", "scripts/check-docs.sh" });
+    test_docs_run.step.dependOn(b.getInstallStep());
+    test_docs_run.setCwd(b.path("."));
+    test_docs_run.has_side_effects = true; // spawns child compilers — never cache
+    if (b.args) |args| test_docs_run.addArgs(args);
+
+    const test_docs_step = b.step("test-docs", "Compile every botopink fence in the user docs");
+    test_docs_step.dependOn(&test_docs_run.step);
+
     // `zig build test-backends` — the single build step that reaches BEAM + wasm
     // *execution* (not just codegen snapshots): builds the CLI, then runs the
     // backend-execution harness against `node`/`escript`/`erlc`+`erl`/`wasmtime`,
-    // skipping any backend whose runtime is absent. Like `test-libs`/`test-vscode`
-    // it is NOT wired into `zig build test` (needs those runtimes on PATH).
-    // BOTOPINK_SKIP_BUILD=1 avoids nesting a `zig build` — the CLI is installed by
-    // the dependency below.
-    const test_backends_run = b.addSystemCommand(&.{ "bash", "modules/compiler-cli/tests/backend_exec.sh" });
-    test_backends_run.setCwd(b.path("."));
-    test_backends_run.setEnvironmentVariable("BOTOPINK_SKIP_BUILD", "1");
-    test_backends_run.step.dependOn(b.getInstallStep());
-    test_backends_run.has_side_effects = true; // spawns child runtimes — never cache
-
+    // skipping any backend whose runtime is absent. Every cell is a hard assert.
+    // Like `test-libs`/`test-vscode` it is NOT wired into `zig build test` (needs
+    // those runtimes on PATH). BOTOPINK_SKIP_BUILD=1 avoids nesting a `zig
+    // build` — the CLI is installed by the dependency below.
+    const test_backends_run = cliScript(b, "backend_exec.sh");
     const test_backends_step = b.step("test-backends", "Run beam/wasm/erlang execution parity scenarios");
     test_backends_step.dependOn(&test_backends_run.step);
+
+    // `zig build test-cli` — every end-to-end CLI script under
+    // `modules/compiler-cli/tests/`, each against the installed binary
+    // (BOTOPINK_SKIP_BUILD=1): the command contract (`cli_contract.sh`), the
+    // `botopink test` behaviours (`test_tooling.sh`), forward references and
+    // mutual recursion on every backend (`mutual_recursion.sh`), and backend
+    // execution parity (`backend_exec.sh`, also `test-backends`). The scripts
+    // run one after another — they share `zig-out/` and fixture `out/` dirs.
+    const cli_scripts = [_][]const u8{ "cli_contract.sh", "test_tooling.sh", "mutual_recursion.sh", "backend_exec.sh" };
+    const test_cli_step = b.step("test-cli", "Run every modules/compiler-cli/tests/*.sh against the installed CLI");
+    var prev_cli_script: ?*std.Build.Step = null;
+    for (cli_scripts) |script| {
+        const run_script = cliScript(b, script);
+        if (prev_cli_script) |p| run_script.step.dependOn(p);
+        prev_cli_script = &run_script.step;
+        test_cli_step.dependOn(&run_script.step);
+    }
 
     // ── Run step ──────────────────────────────────────────────────────────────
 
@@ -344,6 +378,16 @@ pub fn build(b: *std.Build) void {
 
     const run_step = b.step("run", "Build and run the botopink CLI");
     run_step.dependOn(&run_cmd.step);
+}
+
+/// A `bash modules/compiler-cli/tests/<script>` run against the installed CLI.
+fn cliScript(b: *std.Build, script: []const u8) *std.Build.Step.Run {
+    const run = b.addSystemCommand(&.{ "bash", b.fmt("modules/compiler-cli/tests/{s}", .{script}) });
+    run.setCwd(b.path("."));
+    run.setEnvironmentVariable("BOTOPINK_SKIP_BUILD", "1");
+    run.step.dependOn(b.getInstallStep());
+    run.has_side_effects = true; // spawns child runtimes — never cache
+    return run;
 }
 
 /// Re-resolve the user-requested target with an explicit bundled-glibc version

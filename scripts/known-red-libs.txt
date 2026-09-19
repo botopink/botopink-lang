@@ -1,0 +1,12 @@
+# Library cells `zig build test-libs` knows to be red, each owned by the front
+# that turns it green. One cell per line:
+#
+#   <lib> <target> <owner> <reason…>
+#
+# A listed cell that fails is reported by name and counted, but does not fail
+# the gate. A listed cell that PASSES fails the gate until its line is deleted —
+# the owning front deletes it in the commit that fixes the library, which turns
+# the cell into a hard assert. An unlisted cell that fails always fails the gate.
+#
+# Owners are the 1.0.4-beta fronts (specs/1.0.4-beta/fronts.md).
+

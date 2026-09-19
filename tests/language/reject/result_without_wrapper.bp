@@ -1,0 +1,6 @@
+//// Decision 8 §9 — the effect annotation without its return wrapper is an error.
+
+#[@result]
+fn parse(s: string) -> i32 { return 1; }
+
+pub fn main() { @print(parse("a")); }

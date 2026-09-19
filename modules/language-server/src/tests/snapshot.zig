@@ -5,9 +5,10 @@
 ///
 /// Mirrors `compiler-core/src/comptime/snapshot.zig` but for LSP responses.
 ///
-/// On the **first run** a missing snapshot is created from the actual output.
-/// On subsequent runs the saved file is compared against the new output.
-/// A mismatch writes a `.new` file and returns `error.SnapshotMismatch`.
+/// A missing snapshot **fails** the test (`error.SnapshotMissing`) and writes
+/// the candidate baseline as `<snap>.new`; set `BOTOPINK_SNAP_CREATE=1` to
+/// record it instead. Otherwise the saved file is compared against the new
+/// output; a mismatch writes a `.new` file and returns `error.SnapshotMismatch`.
 ///
 /// Snapshot files: `snapshots/lsp/{slug}.snap.md` (relative to test CWD,
 /// which build.zig sets to `modules/language-server/`).
@@ -25,6 +26,7 @@
 const std = @import("std");
 const proto = @import("../protocol.zig");
 const engine = @import("../engine.zig");
+const helpers = @import("helpers.zig");
 
 pub const SNAP_DIR = "snapshots/lsp";
 
@@ -40,12 +42,64 @@ pub fn checkText(allocator: std.mem.Allocator, slug: []const u8, text: []const u
     try compareOrCreate(allocator, path, text);
 }
 
+/// `BOTOPINK_SNAP_CREATE=1` — opt in to recording a *missing* snapshot.
+/// Mirrors `compiler-core/src/utils/snap.zig`: without the flag a missing
+/// snapshot fails the test (spec 06 defect H4) and the candidate baseline is
+/// written to `<snap>.new` for review.
+const CREATE_ENV = "BOTOPINK_SNAP_CREATE";
+
+fn createMissingEnabled() bool {
+    return std.process.Environ.containsUnemptyConstant(std.testing.environ, CREATE_ENV);
+}
+
+/// `BOTOPINK_SNAP_TRACE=<file>` — mirrors `compiler-core/src/utils/snap.zig`:
+/// append `<absolute snapshot path> TAB - TAB -` for every checked snapshot
+/// (`O_APPEND`, one `write` per line, so it shares the file with the
+/// compiler-core test binary running at the same time). The LSP asserts take a
+/// literal slug instead of `@src()`, so the test location is `-`;
+/// `scripts/snap_audit.sh --mode=review` resolves it from the slug literal.
+const TRACE_ENV = "BOTOPINK_SNAP_TRACE";
+
+fn traceRecord(allocator: std.mem.Allocator, snap_path: []const u8) !void {
+    if (@import("builtin").os.tag == .windows) return;
+    const trace_path = std.testing.environ.getPosix(TRACE_ENV) orelse return;
+    if (trace_path.len == 0) return;
+
+    const io = std.testing.io;
+    const cwd = try std.process.currentPathAlloc(io, allocator);
+    defer allocator.free(cwd);
+    const line = try std.fmt.allocPrint(allocator, "{s}/{s}\t-\t-\n", .{ cwd, snap_path });
+    defer allocator.free(line);
+
+    const fd = try std.posix.openat(std.posix.AT.FDCWD, trace_path, .{
+        .ACCMODE = .WRONLY,
+        .CREAT = true,
+        .APPEND = true,
+        .CLOEXEC = true,
+    }, 0o644);
+    const file: std.Io.File = .{ .handle = fd, .flags = .{ .nonblocking = false } };
+    defer file.close(io);
+    try file.writeStreamingAll(io, line);
+}
+
 fn compareOrCreate(allocator: std.mem.Allocator, snap_path: []const u8, got: []const u8) !void {
+    try traceRecord(allocator, snap_path);
     const existing = readFile(allocator, snap_path) catch |err| switch (err) {
         error.FileNotFound => {
-            try writeFile(snap_path, got);
-            std.debug.print("snap created: {s}\n", .{snap_path});
-            return;
+            if (createMissingEnabled()) {
+                try writeFile(snap_path, got);
+                std.debug.print("snap created: {s}\n", .{snap_path});
+                return;
+            }
+            const new_path = try std.fmt.allocPrint(allocator, "{s}.new", .{snap_path});
+            defer allocator.free(new_path);
+            try writeFile(new_path, got);
+            std.debug.print(
+                "\nsnap missing: {s}\ncandidate written to: {s}\n" ++
+                    "review it, then re-run with " ++ CREATE_ENV ++ "=1 to record it\n",
+                .{ snap_path, new_path },
+            );
+            return error.SnapshotMissing;
         },
         else => return err,
     };
@@ -125,12 +179,30 @@ pub fn assertHover(
 
 // ── Definition ────────────────────────────────────────────────────────────────
 
+/// The source text of a module other than the one under the cursor, so a
+/// cross-file definition result can be underlined in the file it actually
+/// points at.
+pub const TargetSource = struct { uri: []const u8, source: []const u8 };
+
 pub fn assertDefinition(
     gpa: std.mem.Allocator,
     slug: []const u8,
     source: []const u8,
     cursor: proto.Position,
     result: ?proto.Location,
+) !void {
+    return assertDefinitionIn(gpa, slug, source, cursor, result, &.{});
+}
+
+/// Like `assertDefinition`, but `targets` carries the sources of the other
+/// modules in the test so the underline is drawn on the file the result names.
+pub fn assertDefinitionIn(
+    gpa: std.mem.Allocator,
+    slug: []const u8,
+    source: []const u8,
+    cursor: proto.Position,
+    result: ?proto.Location,
+    targets: []const TargetSource,
 ) !void {
     var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(gpa);
@@ -150,12 +222,36 @@ pub fn assertDefinition(
                 loc.range.end.character,
             },
         );
-        try appendSourceWithUnderline(&buf, gpa, source, loc.range);
+        try appendTargetUnderline(&buf, gpa, source, loc, targets);
     } else {
         try buf.appendSlice(gpa, "null\n");
     }
 
     try checkText(gpa, slug, buf.items);
+}
+
+/// Underlines `loc.range` in the source the location's URI names: the document
+/// under the cursor, one of `targets`, or — when the target's text is not
+/// available to the test — nothing but a note. Underlining the caller's source
+/// for a result in another file would show the wrong line entirely.
+fn appendTargetUnderline(
+    buf: *std.ArrayList(u8),
+    gpa: std.mem.Allocator,
+    source: []const u8,
+    loc: proto.Location,
+    targets: []const TargetSource,
+) !void {
+    if (std.mem.eql(u8, loc.uri, helpers.TEST_URI)) {
+        try appendSourceWithUnderline(buf, gpa, source, loc.range);
+        return;
+    }
+    for (targets) |t| {
+        if (!std.mem.eql(u8, t.uri, loc.uri)) continue;
+        try buf.print(gpa, "in {s}:\n", .{t.uri});
+        try appendSourceWithUnderline(buf, gpa, t.source, loc.range);
+        return;
+    }
+    try buf.print(gpa, "(target source not available to the test: {s})\n", .{loc.uri});
 }
 
 // ── Document Symbols ──────────────────────────────────────────────────────────
@@ -172,23 +268,42 @@ pub fn assertDocumentSymbols(
 
     try appendSource(&buf, gpa, source);
     try buf.appendSlice(gpa, "----- DOCUMENT SYMBOLS\n");
+    try appendSymbols(&buf, gpa, symbols, 0);
+    if (symbols.len == 0) try buf.appendSlice(gpa, "(empty)\n");
+
+    try checkText(gpa, slug, buf.items);
+}
+
+/// Renders symbols with their full `range`, their `selectionRange` and their
+/// children (indented). Both the range and the child list are part of what a
+/// client shows in its outline, so both belong in the snapshot.
+fn appendSymbols(
+    buf: *std.ArrayList(u8),
+    gpa: std.mem.Allocator,
+    symbols: []const proto.DocumentSymbol,
+    depth: usize,
+) !void {
     for (symbols) |sym| {
+        var d: usize = 0;
+        while (d < depth) : (d += 1) try buf.appendSlice(gpa, "  ");
         try buf.print(
             gpa,
-            "{s}  [{s}]  selection: ({d},{d})–({d},{d})\n",
+            "{s}  [{s}]  range: ({d},{d})–({d},{d})  selection: ({d},{d})–({d},{d})\n",
             .{
                 sym.name,
                 symbolKindName(sym.kind),
+                sym.range.start.line,
+                sym.range.start.character,
+                sym.range.end.line,
+                sym.range.end.character,
                 sym.selectionRange.start.line,
                 sym.selectionRange.start.character,
                 sym.selectionRange.end.line,
                 sym.selectionRange.end.character,
             },
         );
+        if (sym.children) |kids| try appendSymbols(buf, gpa, kids, depth + 1);
     }
-    if (symbols.len == 0) try buf.appendSlice(gpa, "(empty)\n");
-
-    try checkText(gpa, slug, buf.items);
 }
 
 // ── Completion ────────────────────────────────────────────────────────────────
@@ -366,6 +481,7 @@ pub fn assertSemanticTokens(
                 .{ proto.SemanticTokenModifiers.declaration, "declaration" },
                 .{ proto.SemanticTokenModifiers.readonly, "readonly" },
                 .{ proto.SemanticTokenModifiers.defaultLibrary, "defaultLibrary" },
+                .{ proto.SemanticTokenModifiers.async, "async" },
             }) |m| {
                 if (t.mods & m[0] != 0) {
                     if (!first) try buf.appendSlice(gpa, ",");
@@ -378,6 +494,23 @@ pub fn assertSemanticTokens(
         try buf.print(gpa, "  \"{s}\"\n", .{text});
     }
     if (tokens.len == 0) try buf.appendSlice(gpa, "  (none)\n");
+
+    // The wire format is the delta encoding, not the absolute tokens above —
+    // pin it too, so a regression in `encodeSemanticTokens` is visible.
+    var arena_state = std.heap.ArenaAllocator.init(gpa);
+    defer arena_state.deinit();
+    const data = try engine.encodeSemanticTokens(arena_state.allocator(), tokens);
+    try buf.appendSlice(gpa, "----- ENCODED (deltaLine, deltaStart, len, type, mods)\n");
+    if (data.len == 0) {
+        try buf.appendSlice(gpa, "  (none)\n");
+    } else {
+        var idx: usize = 0;
+        while (idx < data.len) : (idx += 5) {
+            try buf.print(gpa, "  {d} {d} {d} {d} {d}\n", .{
+                data[idx], data[idx + 1], data[idx + 2], data[idx + 3], data[idx + 4],
+            });
+        }
+    }
 
     try checkText(gpa, slug, buf.items);
 }
@@ -485,6 +618,28 @@ pub fn assertCodeActions(
     });
     for (actions) |a| {
         try buf.print(gpa, "  [{s}] {s}\n", .{ a.kind orelse "?", a.title });
+        // The edits are the whole point of a code action — a title alone says
+        // nothing about what applying it would do to the buffer.
+        const edit = a.edit orelse {
+            try buf.appendSlice(gpa, "    (no edit)\n");
+            continue;
+        };
+        const changes = edit.documentChanges orelse {
+            try buf.appendSlice(gpa, "    (no documentChanges)\n");
+            continue;
+        };
+        for (changes) |dc| {
+            try buf.print(gpa, "    in {s}\n", .{dc.textDocument.uri});
+            for (dc.edits) |te| {
+                try buf.print(gpa, "      ({d},{d})–({d},{d}) → \"{s}\"\n", .{
+                    te.range.start.line,
+                    te.range.start.character,
+                    te.range.end.line,
+                    te.range.end.character,
+                    te.newText,
+                });
+            }
+        }
     }
     if (actions.len == 0) try buf.appendSlice(gpa, "  (none)\n");
 
@@ -513,7 +668,7 @@ pub fn assertTypeDefinition(
             loc.range.end.line,
             loc.range.end.character,
         });
-        try appendSourceWithUnderline(&buf, gpa, source, loc.range);
+        try appendTargetUnderline(&buf, gpa, source, loc, &.{});
     } else {
         try buf.appendSlice(gpa, "null\n");
     }
@@ -537,7 +692,7 @@ fn appendSource(buf: *std.ArrayList(u8), gpa: std.mem.Allocator, source: []const
 ///   • Source ending with `\n` — the trailing empty segment is stripped.
 ///   • Cursor column beyond line length — spaces extend past visible content.
 ///   • Cursor on the last line (with or without trailing `\n`).
-fn appendSourceWithCursor(
+pub fn appendSourceWithCursor(
     buf: *std.ArrayList(u8),
     gpa: std.mem.Allocator,
     source: []const u8,
@@ -622,6 +777,9 @@ fn symbolKindName(kind: u32) []const u8 {
         proto.SymbolKind.Enum => "Enum",
         proto.SymbolKind.Interface => "Interface",
         proto.SymbolKind.Constant => "Constant",
+        proto.SymbolKind.EnumMember => "EnumMember",
+        proto.SymbolKind.Field => "Field",
+        proto.SymbolKind.Property => "Property",
         else => "?",
     };
 }
@@ -638,6 +796,7 @@ fn completionKindName(kind: u32) []const u8 {
         proto.CompletionItemKind.Property => "Property",
         proto.CompletionItemKind.EnumMember => "EnumMember",
         proto.CompletionItemKind.Module => "Module",
+        proto.CompletionItemKind.Keyword => "Keyword",
         else => "?",
     };
 }

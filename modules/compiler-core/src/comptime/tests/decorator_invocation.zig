@@ -2,11 +2,11 @@
 //!
 //! After argument validation, a decorator's body RUNS over the declaration it
 //! annotates: the core serializes that declaration into a `@Decl` handle and
-//! executes the body in the node runtime (host-side comptime, like `@Expr`
-//! templates). `decl.fail(...)` surfaces as a scoped type error; a clean return
-//! accepts the placement. The core has NO lib knowledge — the body holds every
-//! rule. (P1's recognition + generic argument validation live in
-//! `decorators.zig`; these scenarios need the full node pipeline.)
+//! executes the body on the persistent `erl` (host-side comptime, like `@Expr`
+//! templates). `decl.fail(...)` surfaces as a type error at the annotation; a
+//! clean return accepts the placement. The core has NO lib knowledge — the body
+//! holds every rule. (P1's recognition + generic argument validation live in
+//! `decorators.zig`; these scenarios need the full compile pipeline.)
 
 const std = @import("std");
 const comptimeMod = @import("../../comptime.zig");
@@ -32,17 +32,30 @@ fn assertAccepts(comptime loc: std.builtin.SourceLocation, src: []const u8) !voi
 /// type error whose message contains `needle`. The session is kept alive until
 /// after the assertion (its arena backs the error message).
 fn assertRejects(comptime loc: std.builtin.SourceLocation, src: []const u8, needle: []const u8) !void {
+    try assertRejectsAt(loc, src, needle, null);
+}
+
+/// `assertRejects`, also checking the diagnostic's `line:col` when given.
+fn assertRejectsAt(comptime loc: std.builtin.SourceLocation, src: []const u8, needle: []const u8, at: ?[2]usize) !void {
     const io = std.testing.io;
     const build_root = comptime h.buildRootPathFromSrc(loc);
     var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root, null);
     defer session.deinit(std.testing.allocator);
     const outcome = session.outputs.items[0].outcome;
     try std.testing.expect(outcome == .typeError);
-    const desc = try h.renderTypeError(std.testing.allocator, src, outcome.typeError);
-    defer std.testing.allocator.free(desc);
-    if (std.mem.indexOf(u8, desc, needle) == null) {
+    // Match the diagnostic's own message, not the rendered report: the report
+    // quotes the source, where the expected text appears as a string literal.
+    const message = try outcome.typeError.message(std.testing.allocator);
+    defer std.testing.allocator.free(message);
+    if (std.mem.indexOf(u8, message, needle) == null) {
+        const desc = try h.renderTypeError(std.testing.allocator, src, outcome.typeError);
+        defer std.testing.allocator.free(desc);
         std.debug.print("\nexpected rejection containing \"{s}\", got:\n{s}\n", .{ needle, desc });
         return error.TestUnexpectedResult;
+    }
+    if (at) |want| {
+        const got = outcome.typeError.loc orelse return error.TestUnexpectedResult;
+        try std.testing.expectEqual(want, [2]usize{ got.line, got.col });
     }
 }
 
@@ -51,21 +64,32 @@ fn assertRejects(comptime loc: std.builtin.SourceLocation, src: []const u8, need
 test "decorator invocation: body accepts a record" {
     try assertAccepts(@src(),
         \\fn service(comptime decl: @Decl) {
-        \\    if (decl.kind != DeclKind.Record) { decl.fail("#[service] must annotate a record"); }
+        \\    if (decl.kind != DeclKind.Type) { decl.fail("#[service] must annotate a type with fields"); }
         \\}
         \\#[service]
-        \\record UserService { name: string }
+        \\type UserService(name: string)
     );
 }
 
 test "decorator invocation: body rejects wrong placement (fn instead of record)" {
     try assertRejects(@src(),
         \\fn service(comptime decl: @Decl) {
-        \\    if (decl.kind != DeclKind.Record) { decl.fail("#[service] must annotate a record"); }
+        \\    if (decl.kind != DeclKind.Type) { decl.fail("#[service] must annotate a type with fields"); }
         \\}
         \\#[service]
         \\fn notARecord() { }
-    , "must annotate a record");
+    , "must annotate a type with fields");
+}
+
+test "decorator invocation: rejection points at the annotation" {
+    try assertRejectsAt(@src(),
+        \\fn service(comptime decl: @Decl) {
+        \\    if (decl.kind != DeclKind.Type) { decl.failAt(Span(0, 1, 1), "#[service] must annotate a type with fields"); }
+        \\}
+        \\
+        \\#[service]
+        \\fn notARecord() { }
+    , "must annotate a type with fields", .{ 5, 3 });
 }
 
 test "decorator invocation: method placement accepted" {
@@ -73,9 +97,9 @@ test "decorator invocation: method placement accepted" {
         \\fn getMapping(comptime decl: @Decl, path: string) {
         \\    if (decl.kind != DeclKind.Method) { decl.fail("#[getMapping] must annotate a method"); }
         \\}
-        \\interface Routes {
+        \\behavior Routes {
         \\    #[getMapping("/users")]
-        \\    fn index(self: Self) -> string
+        \\    fn index(self: Self) -> string;
         \\}
     );
 }
@@ -86,7 +110,7 @@ test "decorator invocation: method decorator rejects a record" {
         \\    if (decl.kind != DeclKind.Method) { decl.fail("#[getMapping] must annotate a method"); }
         \\}
         \\#[getMapping("/x")]
-        \\record Nope { }
+        \\type Nope { }
     , "must annotate a method");
 }
 
@@ -96,7 +120,7 @@ test "decorator invocation: body reads the reflected name" {
         \\    if (decl.name == "Bad") { decl.fail("the name Bad is reserved"); }
         \\}
         \\#[named]
-        \\record Bad { }
+        \\type Bad { }
     , "the name Bad is reserved");
 }
 
@@ -105,20 +129,44 @@ test "decorator invocation: @compilerError rejects wrong placement" {
     // surfaces as a scoped rejection when the body runs.
     try assertRejects(@src(),
         \\fn service(comptime decl: @Decl) {
-        \\    if (decl.kind != DeclKind.Record) { @compilerError("#[service] must annotate a record"); }
+        \\    if (decl.kind != DeclKind.Type) { @compilerError("#[service] must annotate a type with fields"); }
         \\}
         \\#[service]
         \\fn notARecord() { }
-    , "must annotate a record");
+    , "must annotate a type with fields");
 }
 
 test "decorator invocation: @compilerError body accepts the right placement" {
     try assertAccepts(@src(),
         \\fn service(comptime decl: @Decl) {
-        \\    if (decl.kind != DeclKind.Record) { @compilerError("#[service] must annotate a record"); }
+        \\    if (decl.kind != DeclKind.Type) { @compilerError("#[service] must annotate a type with fields"); }
         \\}
         \\#[service]
-        \\record UserService { name: string }
+        \\type UserService(name: string)
+    );
+}
+
+test "decorator invocation: decl.variants tells an enum-shaped type from a record" {
+    // `DeclKind.Type` covers both shapes; `decl.variants` is empty for a record
+    // and lists the variant names of an enum.
+    try assertRejects(@src(),
+        \\fn service(comptime decl: @Decl) {
+        \\    if (decl.kind != DeclKind.Type) { decl.fail("#[service] must annotate a type with fields"); };
+        \\    if (decl.variants.length > 0) { decl.fail("#[service] must annotate a type with fields"); }
+        \\}
+        \\#[service]
+        \\type Mode { Fast, Slow }
+    , "must annotate a type with fields");
+}
+
+test "decorator invocation: decl.variants is empty on a record" {
+    try assertAccepts(@src(),
+        \\fn service(comptime decl: @Decl) {
+        \\    if (decl.kind != DeclKind.Type) { decl.fail("#[service] must annotate a type with fields"); };
+        \\    if (decl.variants.length > 0) { decl.fail("#[service] must annotate a type with fields"); }
+        \\}
+        \\#[service]
+        \\type UserService(name: string)
     );
 }
 
@@ -134,7 +182,7 @@ test "decorator invocation: @emit contributes a top-level declaration" {
         \\    @emit("pub val wiredMarker = 99;");
         \\}
         \\#[singleton]
-        \\record Service { x: i32 }
+        \\type Service(x: i32)
     ;
     var session = try comptimeMod.compile(std.testing.allocator, &.{.{ .path = "", .source = src }}, io, build_root, null);
     defer session.deinit(std.testing.allocator);
@@ -162,7 +210,7 @@ test "decorator invocation: a body may reference an @emit'd declaration" {
         \\    @emit("pub fn makeThing() -> i32 { return 7; }");
         \\}
         \\#[gen]
-        \\record Anchor { x: i32 }
+        \\type Anchor(x: i32)
         \\fn useit() -> i32 { return makeThing(); }
     );
 }
@@ -172,11 +220,11 @@ test "decorator invocation: interface-level marker runs over the interface" {
     // (previously interface-level markers were silently skipped).
     try assertRejects(@src(),
         \\fn onlyRecords(comptime decl: @Decl) {
-        \\    if (decl.kind == DeclKind.Interface) { decl.fail("marker is not allowed on an interface"); }
+        \\    if (decl.kind == DeclKind.Behavior) { decl.fail("marker is not allowed on a behavior"); }
         \\}
         \\#[onlyRecords]
-        \\interface Repo { fn find(self: Self, id: i32) -> string }
-    , "not allowed on an interface");
+        \\behavior Repo { fn find(self: Self, id: i32) -> string; }
+    , "not allowed on a behavior");
 }
 
 test "decorator invocation: mock-style synthesis from an interface compiles" {
@@ -188,11 +236,11 @@ test "decorator invocation: mock-style synthesis from an interface compiles" {
         \\    decl.methods.forEach({ m ->
         \\        methods = methods + "  fn " + m.name + "(self: Self) -> i32 { return 0; }\n";
         \\    });
-        \\    @emit("record Mock" + decl.name + " implement " + decl.name + " {\n  tag: string,\n" + methods + "}");
+        \\    @emit("type Mock" + decl.name + "(\n  tag: string,\n) implement " + decl.name + " {\n" + methods + "}");
         \\    @emit("pub fn mock" + decl.name + "() -> " + decl.name + " { return Mock" + decl.name + "(tag: \"\"); }");
         \\}
         \\#[mock]
-        \\interface Counter { fn value(self: Self) -> i32 }
+        \\behavior Counter { fn value(self: Self) -> i32; }
         \\fn useit() -> i32 { return mockCounter().value(); }
     );
 }

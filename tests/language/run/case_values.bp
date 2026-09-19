@@ -1,0 +1,20 @@
+//// Decision 8 §5 — a whole program whose `case` results are printed.
+
+type Shape {
+    Circle(radius: i32),
+    Rect(width: i32, height: i32),
+}
+
+fn describe(s: Shape) -> string {
+    return case s {
+        .Circle(r) when (r == 0) { "a point" }
+        .Circle(r) { "circle " + r.toString() }
+        .Rect(width: w, height: h) { "rect " + w.toString() + "x" + h.toString() }
+    };
+}
+
+pub fn main() {
+    @print(describe(Shape.Circle(radius: 0)));
+    @print(describe(Shape.Circle(radius: 3)));
+    @print(describe(Shape.Rect(width: 2, height: 5)));
+}

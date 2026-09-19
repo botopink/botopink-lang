@@ -1,0 +1,357 @@
+# Expected failures of the language tests.
+#
+#   <target: commonJS | erlang | wasm | beam | *> | <key> | <owner row> | <reason>
+#
+# Every line names the row of the front that makes it pass. `*` is for reject/
+# files (target-independent).
+#
+# **`<key>` has three shapes, and which shape it is *is* part of the claim.** One
+# example of each, and all three are live in this file:
+#
+#   1. a path — the cell does not compile:
+#        erlang | test/case_arms.bp | 01 step 4 | …
+#   2. a path and one test name — the cell compiles and that test fails:
+#        erlang | test/case_guards.bp::§5.3 a guard reads the variables its pattern bound | 02 step 3 | …
+#   3. a path and several — the cell compiles and each of them fails:
+#        erlang | test/case_tuples.bp::§5.1 P6 arms are tried in order ;; §5.1 P7 #(a, ..) binds the first element only | 02 step 3 | …
+#
+# `::` splits the path from the first name; ` ;; ` — one space either side —
+# separates the names. Shape 1 is strict in **both** directions: a path-only entry
+# on a cell that compiles fails the run with "compiles: list its failing tests by
+# name", which is the reading five fronts depend on, and nothing below widens it.
+# Shapes 2 and 3 are strict the other way: a named test that now passes fails the
+# run with "drop it from the line, and delete the line when it names no other".
+#
+# A named-test entry whose cell does **not** compile is still honoured — a cell
+# that does not compile passes nothing — and the run prints, on that line, "the
+# cell does not compile, so its N listed tests did not run". That is the state a
+# line is in while the front that makes its cell compile is in flight: the six
+# lines front 12 converted at `b09bf9c6` read that way here and read per-test in
+# front 01's step-4/5 tree, which is the whole point of the shape. Seven fronts
+# share this file and their trees differ by hours.
+#
+# **`\|` is a literal `|`, anywhere on the line.** The line is split on `|` only
+# where the `|` is not preceded by a backslash, so a test name that carries the
+# file's own separator is written with the escape — `test/case_exhaustive.bp`'s
+# `Maybe<i32 \| string>` below is the one that needs it. Nothing else is escaped.
+# Grep every use: `grep -nF '\|' tests/language/expected-failures.txt`.
+#
+# A malformed line is a `FAIL` that names what is wrong with it — a missing or
+# empty field, a target that is not one of the five, an empty name either side of
+# ` ;; `, the same name twice, or `::` on a path that is not a `test/` cell —
+# never a line quietly read as a different shape.
+#
+# Owner rows are 1.0.5-beta fronts (`specs/1.0.5-beta/fronts.md`), written as
+# `<front number> step <n>`. The 1.0.4-beta rows (`06 N…`, `01 step 6`) were
+# repointed by front 12 step 1 at `7ab6a55`; every owner cell below was
+# re-checked against `specs/1.0.5-beta/` on 2026-09-18, and the six re-attributed
+# on 2026-09-19 against `02-erlang`'s step 3 ("`case` arms at run time (§5)", whose
+# acceptance names these very cells) and `13-module-identity`'s step 17 ("`is` and
+# `case` over a named type"). Each names a section that exists.
+#
+# Two other shapes appear, both deliberate: `<front> handover 15`
+# names a front's "Handed over by `15-language-surface`" section, which is prose
+# with no step number, and `<front> (no step; …)` says outright that the front is
+# certain and the row is missing: `02 (no step; decision 55, reported 2026-09-18)`,
+# on the four collection-loop `break` rows decision 55 says are owed and front 02
+# has no step for. Neither shape invents a step. `04 (no step; reported
+# 2026-09-18)` was a fifth such cell and is **no longer on any line** — front 04
+# fixed the `?.`-into-`??` defect on `test/nullish_default.bp` and deleted it.
+# Checked at `b09bf9c6`: the spelling survives in this comment and in no owner
+# cell, and 04's five lines are `04 step 2` (1) and `04 step 3` (4).
+#
+# Measured on `feat` after fronts 12, 13 and 05 merged (13's half 1 renames three std
+# module atoms and its runner reaches every module; 12 added the decision-52/53/54/55
+# cells; 05 landed §7's separator and decision 52's wasm row), node v25.8.0, OTP 29,
+# `zig version` 0.16.0:
+# Re-run after the six lines below were converted to the named-test shape: **byte for
+# byte the same two lines**, which is what a shape change must cost.
+#
+#   $ tests/language/run.sh                 # commonJS, erlang, wasm
+#   language tests: 270 passed, 64 expected failures, 0 failed
+#   $ tests/language/run.sh --target beam
+#   language tests: 19 passed, 23 expected failures, 0 failed
+#
+# Re-measured on `fix/checker` after front 01's steps 4 and 5 and, with front 02's
+# `fe87db51` merged under them, again (the two runs above stand as front 12's
+# measurement of `feat`):
+#
+#   $ tests/language/run.sh                 # commonJS, erlang, wasm
+#   language tests: 324 passed, 48 expected failures, 0 failed
+#   $ tests/language/run.sh --target beam
+#   language tests: 24 passed, 18 expected failures, 0 failed
+#
+# 314 → 324 and 52 → 48 between the two, and the two numbers move by different
+# amounts on purpose: deleting the four lines takes 4 off the expected count and
+# puts **10** named tests into the passing count, because the runner counts a
+# listed test once per name and a line once per line. Measured, not derived — the
+# first draft of this paragraph reasoned it out as "314 either way" and was wrong.
+#
+# **How the paragraph below is kept, and it is a rule, not a habit**
+# (decision 59 of `specs/1.0.5-beta/decisions-taken.md` in the meta workspace,
+# taken 2026-09-18):
+# whoever deletes a line from this file **recounts these numbers from the file**,
+# with a command, and never adjusts them by their own delta. Seven fronts share
+# the file and five deleted lines from it on one day; two of them re-tallied from
+# different baselines and were individually right and jointly wrong. The command:
+#
+#   $ python3 - <<'EOF'
+#   import re
+#   from collections import Counter
+#   d=[l for l in open('tests/language/expected-failures.txt')
+#      if l.strip() and not l.lstrip().startswith('#')]
+#   t=Counter(); f=Counter(); second=0
+#   for l in d:
+#       p=[x.strip() for x in re.split(r'(?<!\\)\|', l)]; t[p[0]]+=1
+#       o=[x.strip() for x in re.split(r',(?![^(]*\))', p[2])]
+#       f[o[0].split()[0]]+=1
+#       second += len(o) > 1
+#   print(len(d), dict(t), sorted(f.items()), second)
+#   EOF
+#
+# Both splits in that command are deliberate and both were wrong before this front
+# re-derived them.
+#   * `re.split(r'(?<!\\)\|', l)` and not `l.split('|')`, because a test name may
+#     carry an escaped `|`; a plain split miscounts that line's fields and, with
+#     them, its owner row. `run.sh` splits the same way.
+#   * `re.split(r',(?![^(]*\))', p[2])` and not `p[2].split(',')` for the owner
+#     field, because a comma inside a parenthesised cell is not a second row:
+#     `02 (no step; decision 55, reported 2026-09-18)` is **one** row, and the
+#     plain split read the four lines carrying it as naming two. That is the whole
+#     difference between the 20 a plain split answers and the 16 below.
+#
+# Re-derived from the file after every merge, never from either side's paragraph:
+# when fronts 12 and 13 merged, both sides' numbers were stale and the two
+# disagreed on the totals and on 13's share.
+#
+# **58 lines**: 48 exercised by `--target all`, 10 more only by `--target beam`
+# (the 8 `*` reject lines are counted by both runs). 7 of the 58 name tests
+# rather than a path. By the row that comes first on the line:
+# 01-checker 23 · 02-erlang 12 · 03-beam 9 · 05-wasm 6 · 04-js 5 ·
+# 13-module-identity 3. **13** lines name a second row that has to land before
+# the line goes (the §7 formatter's record and variant halves are 13 step 18, not
+# a backend's). Re-derived from the merged file on 2026-09-19 with the command
+# above, after front 02's `fe87db51` landed erlang's three `patternNode` defects
+# under front 01's committed step 4: the four `erlang | test/case_*.bp` lines are
+# gone, all **20** of the tests they named pass, and the four `::` keys that made
+# those tests nameable in the first place existed for about six hours. That is the
+# whole difference from the 62 below — 02's share 16 → 12, named-test lines 11 → 7 —
+# and it is the shape doing exactly what it was added for: a cell whose checker row
+# and whose backend row land hours apart is described honestly at every hour.
+#
+# Superseded, kept because the arithmetic between them is the audit trail:
+#
+# > **62 lines**: 52 exercised by `--target all`, 10 more only by `--target beam`
+# > (the 8 `*` reject lines are counted by both runs). 11 of the 62 name tests
+# > rather than a path. By the row that comes first on the line:
+# > 01-checker 23 · 02-erlang 16 · 03-beam 9 · 05-wasm 6 · 04-js 5 ·
+# > 13-module-identity 3. **13** lines name a second row … Re-derived from the
+# > merged file on 2026-09-19 with the command above, after front 01 committed its
+# > steps 4 and 5 and deleted the 13 lines they make pass: 5
+# > `commonJS | test/case_*.bp`, `run/case_values.bp` on all four targets, and 4
+# > `* | reject/case_*.bp`. That is the whole difference from the 75 below, and it
+# > is why 01's share drops 36 → 23 and the second-row figure 16 → 13.
+#
+# > **75 lines**: 64 exercised by `--target all`, 11 more only by `--target beam`
+# > (the 12 `*` reject lines are counted by both runs — which is why 64 and 23 are
+# > what the two runs above report). 11 of the 75 name tests rather than a path.
+# > By the row that comes first on the line:
+# > 01-checker 36 · 02-erlang 16 · 03-beam 9 · 05-wasm 6 · 04-js 5 ·
+# > 13-module-identity 3. **16** lines name a second row … Re-derived from the
+# > merged file on 2026-09-19 with the command above — 77 of them were front 12's
+# > tree, and front 05's landing then took `run/tuple_print.bp` and
+# > `run/loop_condition_no_break.bp`, which is the whole difference and also why
+# > 05's own share reads 6 rather than 8.
+#
+# Two movements are in those tallies and neither is a line leaving or arriving.
+# The fronts 12 × 13 merge took 80 lines to 77, and front 05's landing then took
+# 77 to 75: front 13's half 1 deleted the
+# three `modules/*` erlang rows its runner fixed. Then front 01 proved six owner
+# cells wrong — its step 4 does unwrap a lambda arm body and does resolve a
+# `.Variant` arm — so four `erlang | test/case_*.bp` lines moved from `01 step 4`
+# to `02 step 3` and the two `test/type_identity_case.bp` lines to `13 step 17`
+# alone: 42 → 36, 12 → 16, 1 → 3, and 19 → 16, because three of the six shed a
+# second row they no longer need. The second-row figure moved twice, and only once
+# for that reason: split on every comma the file answered 23 before and 20 after,
+# and both over-count the four `02 (no step; decision 55, …)` lines by one row
+# each. Paren-aware it is 19 before and **16** after. The 23 → 19 half of that is
+# the command being fixed, not a line moving.
+#
+# The sub-claim decision 59 flagged as stale — "24 lines name a second row" —
+# was already 19 at `b5a9b85d` and re-derives to 19 there. Nothing else in the
+# paragraph was stale: 56 lines / 51 / 5 and 37 · 6 · 4 · 4 · 4 · 1 all
+# re-derived exactly at `b5a9b85d`.
+#
+# For the record, since it changed inside this milestone: 04-js went to **zero**
+# lines when `c253965`, `7b6b5d3` and `17c5f8b` deleted all seven it had; the
+# five it carries now are rows measured after that, not survivors.
+
+# ── §5 case arms — the grammar landed (1.0.4's 06 N22 parser half); the checker's is closing ──
+# `Pattern { body }`, `when (…)`, `.Variant`, tuple/label/rest patterns all parse,
+# so no line below names a parse error. The exception is `test/case_arms.bp`, which
+# decision 20 turned back into a parser row.
+#
+# The section is no longer one front's. Front 01's step 4 unwraps a lambda arm body
+# and resolves a `.Variant` arm against the matched value's type, which is why the
+# four `erlang | test/case_*.bp` lines that name tests read `02 step 3` — erlang's
+# pattern emission — and not `01 step 4`. The path-only lines here are still 01's:
+# they are cells that do not compile in this tree.
+commonJS | test/case_arms.bp          | 01 step 4 | decision 20 made `..` the only range spelling; the parser still reds `1..9` with `pattern-range-exclusive` ("write `...`") and that diagnostic inverts — the cell is right as written
+erlang   | test/case_arms.bp          | 01 step 4 | decision 20 made `..` the only range spelling; the parser still reds `1..9` with `pattern-range-exclusive` ("write `...`") and that diagnostic inverts — the cell is right as written
+erlang   | test/case_unknown.bp       | 01 step 4, 01 step 1, 01 step 3 | arm bodies are not unwrapped, `unknown` is not §2's type and `is` is not typed: "expected string, got union"
+*        | reject/case_shorthand_on_unknown.bp   | 01 step 1, 01 step 5 | rejected by `unknown` assignability, without the "full name" diagnostic
+*        | reject/case_arity_without_rest.bp     | 01 step 4 | rejected for the wrong reason: the missing-field diagnostic is not there
+
+# ── §6 tuples ─────────────────────────────────────────────────────────────────
+erlang   | run/tuple_print.bp         | 02 step 1 | prints decision 1a's text without spaces (`#(1,"a")`); §7 wants `#(1, "a")`
+commonJS | test/tuple_labels.bp::§6 T4 a label survives a generic array method | 04 step 2 | a label is resolved to a position at the written type, and an element handed back by a generic method (`rs.at(0)`) has lost it: `rs.at(0).b` answers `undefined`. The element type is right, the label is not carried
+erlang   | test/tuple_labels.bp::§6 T4 a label survives a generic array method | 02 step 4 | the same, louder: `rs.at(0).b` raises `bad map: {1,<<"x">>}` in `map_get/2` — the label is emitted as a map read against a tuple. (wasm answers `0`; no `test/` cell reaches wasm)
+
+# ── §5.3b sections (decision 8 §5) ────────────────────────────────────────────
+commonJS | test/case_sections.bp      | 01 step 4 | re-measured: §5.3b section arms now parse; the failure is the arm-body one every other case cell has — "expected string, got void" at the `case`. A section is still not a type named by its path
+erlang   | test/case_sections.bp      | 01 step 4 | re-measured: §5.3b section arms now parse; the failure is the arm-body one every other case cell has — "expected string, got void" at the `case`. A section is still not a type named by its path
+
+# ── §7 the formatter ──────────────────────────────────────────────────────────
+# The record and variant rows of §7's table need a value that knows its own type,
+# which is 13 step 18; each backend's step 1 closes the separator half only.
+erlang   | run/print_formatter.bp     | 02 step 1, 13 step 18 | §7 formatter: arrays/tuples print without spaces, records as maps, variants as raw tags
+erlang   | run/display_print.bp       | 02 step 1, 13 step 18 | §7: `@print` does not consult a type's `Display` implementation, nested or not
+
+# ── §9 effects ────────────────────────────────────────────────────────────────
+*        | reject/wrapper_without_annotation.bp | 01 step 8 | R9: `@Result<…>` without `#[@result]` is reported as a return-type mismatch at the `return`, not as §9's missing-annotation rule
+*        | reject/val_assert_after_catch.bp     | 01 step 8 | R9: `val assert Ok(n) = f() catch 0` is accepted (exit 0) and then fails at run time (`Ok is not defined` on commonJS, `variable 'N' unsafe in 'case'` on erlang)
+*        | reject/two_effect_markers.bp         | 01 step 8 | R9: the R5 message is right, but its caret points at the body's `{` (5:41) instead of the second annotation
+
+# ── §10 loop ──────────────────────────────────────────────────────────────────
+
+# ── §1 generics ───────────────────────────────────────────────────────────────
+*        | reject/generic_missing_argument.bp | 01 step 6 | §1.1: a written generic type without its arguments is accepted (exit 0)
+*        | reject/self_without_argument.bp    | 01 step 6 | §1.2: bare `Self` inside a declaration with type parameters is accepted (exit 0)
+
+# ── §8 host externals ─────────────────────────────────────────────────────────
+
+# ── trailing parameter defaults ───────────────────────────────────────────────
+commonJS | test/fn_defaults.bp        | 01 step 7 | trailing parameter defaults are never applied at a call site (`'connect' expects 3 argument(s), got 1`)
+erlang   | test/fn_defaults.bp        | 01 step 7 | trailing parameter defaults are never applied at a call site (`'connect' expects 3 argument(s), got 1`)
+
+# ── primitive methods ─────────────────────────────────────────────────────────
+erlang   | test/string_case_conversion.bp | 02 step 7 | `String.toUpperCase` / `String.toLowerCase` emit erlang functions that are never defined
+
+# ── wasm, the third executable target ─────────────────────────────────────────
+# `botopink run --target wasm` executes; `botopink test` refuses it, so only
+# run/ and modules/ cells reach wasm. The rows below are the same defects the
+# commonJS and erlang lines above name, seen from the third backend.
+wasm     | run/print_formatter.bp     | 05 step 1, 13 step 18 | re-measured 2026-09-18 at `b5a9b85d`: arrays and tuples still print without spaces (`[1,2]`, `#(1,"a")`), and then `@print` of a record **traps** — `wasm trap: wasm `unreachable` instruction executed`, exit 134, after the first six lines. Two halves of the old text are false: it no longer prints a raw heap address, and `f64` no longer loses its decimal part (`5.0` is right)
+wasm     | run/display_print.bp       | 05 step 1, 13 step 18 | re-measured 2026-09-18 at `b5a9b85d`: `@print(Money(cents: 5))` **traps** on the very first line — `wasm trap: wasm `unreachable` instruction executed`, exit 134, stdout empty. Not a raw heap address: nothing is printed at all, so §7's `Display` half is unreachable behind the trap and cannot be measured from this cell yet
+
+# ── the forms front 15 landed, that nothing lowers or types yet ─────────────
+# `109f6c9` made five forms parse. Three of them run everywhere and are pinned by
+# passing cells (`test/nullish_default.bp`, `test/paren_receiver.bp`,
+# `test/type_suffix.bp`, `test/bodyless_fn.bp`). Two arrive with no lowering and no
+# typing, and their owner is a **handover section** of a front's README — "Handed
+# over by `15-language-surface`" — not a numbered step, which is what
+# `<front> handover 15` means below. That those sections carry no step number is
+# reported to the maintainer, not papered over with an invented one.
+beam     | run/index_expression.bp    | 03 handover 15 | decision 30: the only target that fails **silently** — exit 0, and the index is dropped rather than emitted: `xs[0]` prints the whole array (`[10,20,30]`), `xs[0..2].length` and `rows[1][0]` print `ok`
+commonJS | test/curried_call.bp       | 01 handover 15 | 15's R2 made `adder(3)(4)` parse; inference does not type it. The call carries its callee in `calleeExpr`, not `callee`, and nothing reads that: the whole cell reds with `unbound variable ''` at the second `(`
+erlang   | test/curried_call.bp       | 01 handover 15 | the same — the cell does not compile, so the failure is the file's, not a test's
+
+# ── run-time type identity (front 12 step 4.1) ────────────────────────────────
+# The botopink-level statement of `13-module-identity`: a value knows its own
+# type. Four `test/` cells and one `run/` cell, split so that a checker row does
+# not hide an identity row — each line below names what actually fails today,
+# and the second row is where it lands once the first is fixed. Two of them have
+# no second row any more: with front 01's step 4 written and measured (in its own
+# tree, not on `feat` yet) `test/type_identity_case.bp` compiles, and the two lines
+# it carries are `13 step 17` outright.
+erlang   | test/type_identity.bp::§4 two types with the same fields are different values | 13 step 15 | a record is a bare map on erlang, so `Person(name: "Ana", age: 30)` and `Vec(name: "Ana", age: 30)` are the same term and compare equal; the tag has to be in the value. Passes on commonJS, where a record is a class instance
+erlang   | test/type_identity_unknown.bp | 01 step 1, 13 step 17 | the same — "type mismatch: expected unknown, got Vec"
+erlang   | test/type_identity_union.bp | 01 step 2, 13 step 17 | the same — "type mismatch: expected \|, got Person" (the diagnostic prints the bare union operator; escaped here, or the reason would be read as two fields)
+commonJS | test/type_identity_case.bp::§5.1 a case over a union of two named types needs no wildcard ;; §3.3 the arm is chosen by the value's own type | 13 step 17 | re-measured by front 01 in its step-4/5 tree on 2026-09-19: the cell compiles — the arm body is unwrapped — and what is left is identity, not the checker. A `case` arm that names a type has to dispatch on the value's own type, which needs the tag in the value, so `01 step 4` is off this line
+erlang   | test/type_identity_case.bp::§3.3 the arm is chosen by the value's own type | 13 step 17 | the same, and one test fewer: with the cell compiling, `§5.1 a case over a union of two named types needs no wildcard` passes on erlang and only the §3.3 arm-by-own-type row is left. `01 step 4` is off this line
+erlang   | run/type_identity_print.bp | 02 step 1, 13 step 18 | §7: a record prints `#{x => 1,y => 2}`, a variant `{'Circle',4}` / `'Dot'`, and an array without spaces
+wasm     | run/type_identity_print.bp | 05 step 1, 13 step 18 | re-measured 2026-09-18 at `b5a9b85d`: `@print(Point(x: 1, y: 2))` **traps** on the very first line — `wasm trap: wasm `unreachable` instruction executed`, exit 134, stdout empty. The `256` / `264` / `268` heap addresses this line used to name are gone
+beam     | run/type_identity_print.bp | 03 step 2, 13 step 18 | §7: the erlang shapes seen from BEAM assembly — a record as a map, a variant as a tagged tuple or a bare atom
+
+# ── beam, the fourth executable target (decision 8) ───────────────────────────
+# `botopink run --target beam` writes `out/*.S`; `erlc +from_asm` then `erl` run
+# it (run.sh § beam). beam is not in `--target all` yet — front 13's policy 3
+# moves the `.S` layout — so these lines are exercised by
+# `tests/language/run.sh --target beam`, which is green with them. `botopink
+# test` refuses beam, so only run/ and modules/ cells reach it: re-counted at
+# `b09bf9c6`, **18 results, 7 passing** — `run/smoke.bp`, `run/tuple_print.bp`,
+# `run/print_nested.bp`, `run/loop_yield_and_break.bp` and all three `modules/`
+# cells, the last two of those thanks to front 13's half 1. The "9 results,
+# 2 passing" this comment carried was measured at `c2dd780` and is two milestone
+# merges out of date.
+beam     | run/print_formatter.bp     | 03 step 2, 13 step 18 | §7 formatter: arrays/tuples print as erlang terms, a record as `#{x => 1,y => 2}` and a variant as `{'Square',4}` / `'Nothing'`
+beam     | run/display_print.bp       | 03 step 2, 13 step 18 | §7: `@print` does not consult `Display`; the record prints as `#{cents => 5}`
+
+# ── §5 range patterns (decision 53) ───────────────────────────────────────────
+# Decision 53 amended decisions 20 and 36 to Zig's split: `...` is inclusive in a
+# pattern, `..` exclusive in a slice and a range, and no emitter moves. The
+# defect that survives the amendment is that `1...9` answers three different
+# things. `run/case_range_value.bp` probes the endpoints, which is what separates
+# them: erlang and wasm never take the arm and beam always takes it, so the
+# single-value probe decision 53 quotes reads beam's `1` as correct when it is a
+# false positive. commonJS passes.
+erlang   | run/case_range_value.bp     | 02 step 3 | decision 53: the `1...9` arm never matches — all five probes (5, 1, 9, 0, 10) answer the `_` arm's `0`
+wasm     | run/case_range_value.bp     | 05 step 2 | decision 53: the same, and not the `256` heap address the decision's single-value probe recorded — the arm never matches, so all five probes answer `0` (D4, `case` arms)
+beam     | run/case_range_value.bp     | 03 step 3 | decision 53: the opposite — the `1...9` arm **always** matches, so 0 and 10 answer `1` too. beam does run (run.sh § beam assembles and executes it); "beam emits only out/main.S" is no longer the measurement (D4, `case` arms)
+
+# ── §10 `yield` beside `break` in a collection loop (decision 55) ─────────────
+# Decision 55, taken 2026-09-18: `break <value>` in a collection loop contributes
+# its value **and ends the loop**. Each `.out` below is that decision's column,
+# not any backend's current answer, so if the four are moved against it exactly
+# one `.out` per cell is involved. The two shapes that already agree on all four
+# are pinned as a passing cell (`run/loop_yield_and_break.bp`) and carry no line.
+#
+# Every result is read as `length` + `join(",")` rather than printed as an array:
+# `@print` of an array is §7's separator row and two backends still get it wrong,
+# and a §7 row must not hide a §10 one.
+#
+# Three of the erlang lines below quote an `escript` compile warning that arrives
+# on **stdout**, which this suite compares byte for byte. The warnings are caused
+# by the broken lowerings themselves, so they go with them — but under
+# [decision 56](`specs/1.0.5-beta/decisions-taken.md`) front 13 replaces
+# `escript out/main.erl` with `erlc -o <out> … && erl -pa <out>`, and an erlc
+# warning does not reach the program's stdout there. A front that fixes an erlang
+# lowering and still sees a byte mismatch should check which of the two moved.
+#
+# The erlang owner cell has no step number because front 02 has none for the
+# collection loop — its step 5 is the *condition* loop used as a value, a
+# different shape — and decision 55 says outright that the row per backend comes
+# after the cell. Reported to the maintainer rather than filed against step 5.
+commonJS | run/loop_yield_then_break_value.bp | 04 step 3 | decision 55: the break value is dropped and the loop runs on — `3` / `20,40,60` where `3` / `20,40,99` is owed
+erlang   | run/loop_yield_then_break_value.bp | 02 (no step; decision 55, reported 2026-09-18) | decision 55: the yielded values are lost — `3` / `ok,99,ok`: every non-breaking iteration answers the `ok` of its last statement. escript also prints a `the result of evaluating operator '*'/2 is ignored` warning on stdout, which is the same defect seen by the compiler
+wasm     | run/loop_yield_then_break_value.bp | 05 step 4 | decision 55: the break value is appended and the loop runs on — `4` / `20,40,99,60`
+beam     | run/loop_yield_then_break_value.bp | 03 step 3 | decision 55: the break value is dropped and the loop runs on — `3` / `20,40,60` (D7, `break <value>`; measured here for the first time, which D7 asked for)
+commonJS | run/loop_break_value_then_yield.bp | 04 step 3 | decision 55: the loop runs on after the break — `3` / `20,99,60` where `2` / `20,99` is owed
+erlang   | run/loop_break_value_then_yield.bp | 02 (no step; decision 55, reported 2026-09-18) | decision 55: the break is ignored outright — `3` / `20,40,60`, the same answer the body without any `break` gives
+wasm     | run/loop_break_value_then_yield.bp | 05 step 4 | decision 55: the break value is appended and the loop runs on — `4` / `20,99,40,60`
+beam     | run/loop_break_value_then_yield.bp | 03 step 3 | decision 55: the loop runs on after the break — `3` / `20,99,60` (D7)
+commonJS | run/loop_yield_then_bare_break.bp | 04 step 3 | decision 55: a value-less `break` does not end the loop — `3` / `20,40,60` where `2` / `20,40` is owed
+erlang   | run/loop_yield_then_bare_break.bp | 02 (no step; decision 55, reported 2026-09-18) | decision 55: the loop answers the atom `ok`, so `length/1` is called on a non-list and the program dies — `escript: exception error: bad argument in function length/1 called as length(ok)`. The status is escript's **127** today and becomes `erl`'s **1** when front 13 lands decision 56's runner; the reason is the crash, not the number
+beam     | run/loop_yield_then_bare_break.bp | 03 step 3 | decision 55: a value-less `break` does not end the loop — `3` / `20,40,60` (D7)
+commonJS | test/loop_collection.bp::§10 a value break contributes its value and ends the loop | 04 step 3 | decision 55: `loop ([1, 2, 3]) { x -> break x * 2; }` answers all three doubled values; the first `break` must end the loop, so `[2]`. This assertion read `length == 3` / `"2,4,6"` and passed on all four backends until decision 55 was taken
+erlang   | test/loop_collection.bp::§10 a value break contributes its value and ends the loop | 02 (no step; decision 55, reported 2026-09-18) | decision 55: the same — `[2, 4, 6]` where `[2]` is owed
+
+# ── §10 a condition loop that never breaks (decision 52) ─────────────────────
+# Decision 52, taken 2026-09-18: a loop with no `break <value>` has no value to
+# give, on every backend, and `null` is decision 47's one spelling for absent.
+# commonJS already answers it. Decision 52's "what it costs" paragraph says
+# erlang and beam print `undefined`; re-measured here, neither does — that is
+# what they print for a *value* break, a different row.
+erlang   | run/loop_condition_no_break.bp | 02 step 5 | decision 52: the loop's variable group leaks out as its value — prints `3`, not `null`. escript also prints a `variable 'I@3' is unused` warning on stdout
+beam     | run/loop_condition_no_break.bp | 03 step 3 | decision 52: prints the atom `ok` — the value of the loop body's last statement — not `null` (D6)
+
+# ── the optional's pattern form (decision 54) ────────────────────────────────
+# Decision 54, taken 2026-09-18: a `?T` is matched by `null` and a binder, and the
+# variant spelling `.Some(v)` / `.None` over a `?T` becomes a located error. Both
+# halves are one row of 01-checker: step 4 owns pattern grammar as well as arm
+# resolution (the same place decision 36's range edit lands).
+commonJS | run/optional_null_pattern.bp | 01 step 4 | decision 54: the decided spelling does not parse — `error: this token cannot appear here` at `21:22`, `^^^^ unexpected \`null\``. The whole file reds, so the failure is the file's
+erlang   | run/optional_null_pattern.bp | 01 step 4 | decision 54: the same parse error; the file does not compile on any target
+wasm     | run/optional_null_pattern.bp | 01 step 4 | decision 54: the same parse error
+beam     | run/optional_null_pattern.bp | 01 step 4 | decision 54: the same parse error
+*        | reject/optional_variant_pattern.bp | 01 step 4 | decision 54: `.Some(v)` / `.None` over a `?i32` is accepted (exit 0) and then answers four different things — `undefined` on commonJS, `0` on wasm, `5` on beam, and `no case clause matching 5` on erlang. The `.expect` phrase is a placeholder for the diagnostic this row writes, per AGENTS.md

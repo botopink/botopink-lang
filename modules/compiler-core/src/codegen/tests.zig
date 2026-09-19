@@ -3,6 +3,7 @@
 //! so `test_root.zig` (which imports this) discovers every test.
 
 test {
+    _ = @import("crossModule.zig");
     _ = @import("tests/values.zig");
     _ = @import("tests/aggregates.zig");
     _ = @import("tests/control_flow.zig");
@@ -16,4 +17,14 @@ test {
     _ = @import("tests/wat.zig");
     _ = @import("tests/dts_skips_templates.zig");
     _ = @import("tests/runtime_scratch.zig");
+    _ = @import("tests/comptime_module.zig");
+    _ = @import("js/js_ast.zig");
+    _ = @import("js/js_emitter.zig");
+    _ = @import("js/ts_emitter.zig");
+    _ = @import("js/js_prelude.zig");
+    _ = @import("beam/term.zig");
+    _ = @import("beam/erl_emitter.zig");
+    _ = @import("beam/erl_ast.zig");
+    _ = @import("beam/beam_emitter.zig");
+    _ = @import("wat/wat_emitter.zig");
 }

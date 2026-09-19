@@ -94,12 +94,28 @@ test "format: multiple statements with import and types" {
         \\import {three};
         \\import {two};
         \\
-        \\pub val One = record {};
+        \\pub type One
         \\
-        \\pub val Two = record {};
+        \\pub type Two
         \\
-        \\pub val Three = record {};
+        \\pub type Three
         \\
-        \\pub val Four = record {};
+        \\pub type Four
+    );
+}
+
+// The package-namespace forms bind the package name; the formatter printed
+// only the braces, so `import pkg, {of} from "pkg"` lost `pkg`.
+
+test "format: import ---- package handle with named items" {
+    try h.assertFormat(std.testing.allocator,
+        \\import query, {of} from "query";
+    );
+}
+
+test "format: import ---- package handle alone" {
+    try h.assertFormat(std.testing.allocator,
+        \\import html from "web";
+        \\import query;
     );
 }

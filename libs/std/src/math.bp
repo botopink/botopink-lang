@@ -13,38 +13,45 @@
 
 // ── constants ────────────────────────────────────────────────────────────────
 
-pub val pi:     f64 = 3.141592653589793;
-pub val e:      f64 = 2.718281828459045;
-pub val tau:    f64 = 6.283185307179586;
-pub val sqrt2:  f64 = 1.4142135623730951;
-pub val ln2:    f64 = 0.6931471805599453;
-pub val ln10:   f64 = 2.302585092994046;
-pub val log2e:  f64 = 1.4426950408889634;
+pub val pi: f64 = 3.141592653589793;
+
+pub val e: f64 = 2.718281828459045;
+
+pub val tau: f64 = 6.283185307179586;
+
+pub val sqrt2: f64 = 1.4142135623730951;
+
+pub val ln2: f64 = 0.6931471805599453;
+
+pub val ln10: f64 = 2.302585092994046;
+
+pub val log2e: f64 = 1.4426950408889634;
+
 pub val log10e: f64 = 0.4342944819032518;
 
 // ── arithmetic + rounding ────────────────────────────────────────────────────
 // `abs` works on `f64`. Integer abs lives on the numeric tower
-// (`primitives.d.bp` Signed). `minF`/`maxF` are the float variants — the
+// (`primitives.bp` Signed). `minF`/`maxF` are the float variants — the
 // generic ones live on `Number`.
 
-#[@External.Node("Math", "abs"),
-  @External.Erlang("erlang", "abs"),
-  @External.Beam("erlang", "abs")]
+#[@External.Node("Math", "abs")]
+#[@External.Erlang("erlang", "abs")]
+#[@External.Beam("erlang", "abs")]
 pub declare fn abs(x: f64) -> f64;
 
-#[@External.Node("Math", "floor"),
-  @External.Erlang("math", "floor"),
-  @External.Beam("math", "floor")]
+#[@External.Node("Math", "floor")]
+#[@External.Erlang("math", "floor")]
+#[@External.Beam("math", "floor")]
 pub declare fn floor(x: f64) -> f64;
 
-#[@External.Node("Math", "round"),
-  @External.Erlang("erlang", "round"),
-  @External.Beam("erlang", "round")]
+#[@External.Node("Math", "round")]
+#[@External.Erlang("erlang", "round")]
+#[@External.Beam("erlang", "round")]
 pub declare fn round(x: f64) -> f64;
 
-#[@External.Node("Math", "trunc"),
-  @External.Erlang("erlang", "trunc"),
-  @External.Beam("erlang", "trunc")]
+#[@External.Node("Math", "trunc")]
+#[@External.Erlang("erlang", "trunc")]
+#[@External.Beam("erlang", "trunc")]
 pub declare fn trunc(x: f64) -> f64;
 
 // `ceil(x) = -floor(-x)` — a pure-botopink derivation that avoids the
@@ -56,25 +63,17 @@ pub fn ceil(x: f64) -> f64 {
 // `sign` returns -1.0, 0.0, or 1.0 depending on the input's sign.
 // Pure-botopink; sidesteps the inline-case template the spec describes.
 pub fn sign(x: f64) -> f64 {
-    return if (x > 0.0) {
-        1.0;
-    } else {
-        if (x < 0.0) {
-            0.0 - 1.0;
-        } else {
-            0.0;
-        };
-    };
+    return if (x > 0.0) 1.0 else if (x < 0.0) 0.0 - 1.0 else 0.0;
 }
 
-#[@External.Node("Math", "min"),
-  @External.Erlang("erlang", "min"),
-  @External.Beam("erlang", "min")]
+#[@External.Node("Math", "min")]
+#[@External.Erlang("erlang", "min")]
+#[@External.Beam("erlang", "min")]
 pub declare fn minF(a: f64, b: f64) -> f64;
 
-#[@External.Node("Math", "max"),
-  @External.Erlang("erlang", "max"),
-  @External.Beam("erlang", "max")]
+#[@External.Node("Math", "max")]
+#[@External.Erlang("erlang", "max")]
+#[@External.Beam("erlang", "max")]
 pub declare fn maxF(a: f64, b: f64) -> f64;
 
 pub fn clamp(x: f64, lo: f64, hi: f64) -> f64 {
@@ -83,44 +82,40 @@ pub fn clamp(x: f64, lo: f64, hi: f64) -> f64 {
 
 // ── powers + roots + exp/log ─────────────────────────────────────────────────
 
-#[@External.Node("Math", "sqrt"),
-  @External.Erlang("math", "sqrt"),
-  @External.Beam("math", "sqrt")]
+#[@External.Node("Math", "sqrt")]
+#[@External.Erlang("math", "sqrt")]
+#[@External.Beam("math", "sqrt")]
 pub declare fn sqrt(x: f64) -> f64;
 
-#[@External.Node("Math", "pow"),
-  @External.Erlang("math", "pow"),
-  @External.Beam("math", "pow")]
+#[@External.Node("Math", "pow")]
+#[@External.Erlang("math", "pow")]
+#[@External.Beam("math", "pow")]
 pub declare fn pow(x: f64, y: f64) -> f64;
 
 // `cbrt(x)` via `pow(x, 1/3)`, honouring sign for negatives. Pure-botopink;
 // node has `Math.cbrt` but the erlang side has no BIF — composition is uniform.
 pub fn cbrt(x: f64) -> f64 {
-    return if (x >= 0.0) {
-        pow(x, 0.3333333333333333);
-    } else {
-        0.0 - pow(0.0 - x, 0.3333333333333333);
-    };
+    return if (x >= 0.0) pow(x, 0.3333333333333333) else 0.0 - pow(0.0 - x, 0.3333333333333333);
 }
 
-#[@External.Node("Math", "exp"),
-  @External.Erlang("math", "exp"),
-  @External.Beam("math", "exp")]
+#[@External.Node("Math", "exp")]
+#[@External.Erlang("math", "exp")]
+#[@External.Beam("math", "exp")]
 pub declare fn exp(x: f64) -> f64;
 
-#[@External.Node("Math", "log"),
-  @External.Erlang("math", "log"),
-  @External.Beam("math", "log")]
+#[@External.Node("Math", "log")]
+#[@External.Erlang("math", "log")]
+#[@External.Beam("math", "log")]
 pub declare fn ln(x: f64) -> f64;
 
-#[@External.Node("Math", "log2"),
-  @External.Erlang("math", "log2"),
-  @External.Beam("math", "log2")]
+#[@External.Node("Math", "log2")]
+#[@External.Erlang("math", "log2")]
+#[@External.Beam("math", "log2")]
 pub declare fn log2(x: f64) -> f64;
 
-#[@External.Node("Math", "log10"),
-  @External.Erlang("math", "log10"),
-  @External.Beam("math", "log10")]
+#[@External.Node("Math", "log10")]
+#[@External.Erlang("math", "log10")]
+#[@External.Beam("math", "log10")]
 pub declare fn log10(x: f64) -> f64;
 
 // `hypot(x, y) = sqrt(x*x + y*y)` — pure-botopink composition.
@@ -130,54 +125,54 @@ pub fn hypot(x: f64, y: f64) -> f64 {
 
 // ── trigonometry ─────────────────────────────────────────────────────────────
 
-#[@External.Node("Math", "sin"),
-  @External.Erlang("math", "sin"),
-  @External.Beam("math", "sin")]
+#[@External.Node("Math", "sin")]
+#[@External.Erlang("math", "sin")]
+#[@External.Beam("math", "sin")]
 pub declare fn sin(x: f64) -> f64;
 
-#[@External.Node("Math", "cos"),
-  @External.Erlang("math", "cos"),
-  @External.Beam("math", "cos")]
+#[@External.Node("Math", "cos")]
+#[@External.Erlang("math", "cos")]
+#[@External.Beam("math", "cos")]
 pub declare fn cos(x: f64) -> f64;
 
-#[@External.Node("Math", "tan"),
-  @External.Erlang("math", "tan"),
-  @External.Beam("math", "tan")]
+#[@External.Node("Math", "tan")]
+#[@External.Erlang("math", "tan")]
+#[@External.Beam("math", "tan")]
 pub declare fn tan(x: f64) -> f64;
 
-#[@External.Node("Math", "asin"),
-  @External.Erlang("math", "asin"),
-  @External.Beam("math", "asin")]
+#[@External.Node("Math", "asin")]
+#[@External.Erlang("math", "asin")]
+#[@External.Beam("math", "asin")]
 pub declare fn asin(x: f64) -> f64;
 
-#[@External.Node("Math", "acos"),
-  @External.Erlang("math", "acos"),
-  @External.Beam("math", "acos")]
+#[@External.Node("Math", "acos")]
+#[@External.Erlang("math", "acos")]
+#[@External.Beam("math", "acos")]
 pub declare fn acos(x: f64) -> f64;
 
-#[@External.Node("Math", "atan"),
-  @External.Erlang("math", "atan"),
-  @External.Beam("math", "atan")]
+#[@External.Node("Math", "atan")]
+#[@External.Erlang("math", "atan")]
+#[@External.Beam("math", "atan")]
 pub declare fn atan(x: f64) -> f64;
 
-#[@External.Node("Math", "atan2"),
-  @External.Erlang("math", "atan2"),
-  @External.Beam("math", "atan2")]
+#[@External.Node("Math", "atan2")]
+#[@External.Erlang("math", "atan2")]
+#[@External.Beam("math", "atan2")]
 pub declare fn atan2(y: f64, x: f64) -> f64;
 
-#[@External.Node("Math", "sinh"),
-  @External.Erlang("math", "sinh"),
-  @External.Beam("math", "sinh")]
+#[@External.Node("Math", "sinh")]
+#[@External.Erlang("math", "sinh")]
+#[@External.Beam("math", "sinh")]
 pub declare fn sinh(x: f64) -> f64;
 
-#[@External.Node("Math", "cosh"),
-  @External.Erlang("math", "cosh"),
-  @External.Beam("math", "cosh")]
+#[@External.Node("Math", "cosh")]
+#[@External.Erlang("math", "cosh")]
+#[@External.Beam("math", "cosh")]
 pub declare fn cosh(x: f64) -> f64;
 
-#[@External.Node("Math", "tanh"),
-  @External.Erlang("math", "tanh"),
-  @External.Beam("math", "tanh")]
+#[@External.Node("Math", "tanh")]
+#[@External.Erlang("math", "tanh")]
+#[@External.Beam("math", "tanh")]
 pub declare fn tanh(x: f64) -> f64;
 
 // ── tests ────────────────────────────────────────────────────────────────────

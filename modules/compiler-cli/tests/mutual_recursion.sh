@@ -9,8 +9,8 @@
 # in `codegen/tests/js_control_flow.zig`. This script proves the emitted code
 # actually executes and asserts the boolean result, which a snapshot cannot.
 #
-# It is an end-to-end test (builds the `botopink` CLI, spawns node/escript/erl),
-# so it is NOT part of `zig build test` — run it directly:
+# It is an end-to-end test (spawns node/escript/erl), so it is NOT part of
+# `zig build test`; `zig build test-cli` runs it, or run it directly:
 #
 #     bash modules/compiler-cli/tests/mutual_recursion.sh
 #
@@ -30,8 +30,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 FIXTURE_DIR="$SCRIPT_DIR/mutual_recursion"
 
-echo "==> building botopink CLI"
-( cd "$REPO_ROOT" && zig build )
+# `zig build test-cli` sets BOTOPINK_SKIP_BUILD=1 (the CLI is installed by the
+# step's dependency) so a `zig build` is never nested inside one.
+if [[ -z "${BOTOPINK_SKIP_BUILD:-}" ]]; then
+  echo "==> building botopink CLI"
+  ( cd "$REPO_ROOT" && zig build )
+fi
 
 BP_BIN="$REPO_ROOT/zig-out/bin/botopink"
 if [[ ! -x "$BP_BIN" ]]; then
@@ -64,7 +68,9 @@ fi
 if command -v erlc >/dev/null 2>&1 && command -v erl >/dev/null 2>&1; then
   echo "==> beam: build --target beam, erlc +from_asm, run main:main()"
   "$BP_BIN" build --target beam
-  erlc +from_asm -o out out/main.S
+  # 13 half 1: `out/beam/<atom>.S` — an erlang/BEAM artifact is named by its
+  # module atom, which `erlc` requires to equal the file's basename.
+  erlc +from_asm -o out out/beam/main.S
   erl -noshell -pa out -eval \
     'case main:main() of true -> io:format("  beam: main:main() => true~n"), halt(0); X -> io:format("  beam: WRONG result ~p~n", [X]), halt(1) end'
 else

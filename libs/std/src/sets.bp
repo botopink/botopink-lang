@@ -1,4 +1,4 @@
-//// Gleam-inspired `sets` module — a `record Set<T>` wrapping a deduplicated
+//// Gleam-inspired `sets` module — a `type Set<T>` wrapping a deduplicated
 //// `Array<T>` (`items`). Pure botopink — no host backing. O(n) contains;
 //// uniqueness via `Array.indexOf` (structural equality — string/numeric elems).
 ////
@@ -6,9 +6,9 @@
 //// are top-level constructors. API naming note: `new`/`set` are keyword
 //// tokens — module is `sets`, constructor is `empty`.
 
-pub record Set<T> {
+pub type Set<T>(
     items: Array<T>,
-
+) {
     pub fn contains(self: Self, x: T) -> bool {
         return self.items.indexOf(x) != -1;
     }
@@ -26,11 +26,9 @@ pub record Set<T> {
     }
 
     pub fn insert(self: Self, x: T) -> Set<T> {
-        return if (self.items.indexOf(x) != -1) {
-            self;
-        } else {
-            Set(items: self.items.append([x]));
-        };
+        return if (self.items.indexOf(x) != -1) self else Set(items: self.items.append(
+                [x]
+            ));
     }
 
     pub fn delete(self: Self, x: T) -> Set<T> {
@@ -39,7 +37,9 @@ pub record Set<T> {
 
     pub fn union(self: Self, other: Set<T>) -> Set<T> {
         var out = self;
-        other.items.forEach({ x -> out = out.insert(x); });
+        other.items.forEach({ x ->
+            out = out.insert(x);
+        });
         return out;
     }
 
@@ -58,7 +58,9 @@ pub fn empty<T>() -> Set<T> {
 
 pub fn fromList<T>(xs: Array<T>) -> Set<T> {
     var out = empty();
-    xs.forEach({ x -> out = out.insert(x); });
+    xs.forEach({ x ->
+        out = out.insert(x);
+    });
     return out;
 }
 

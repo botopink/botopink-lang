@@ -2,7 +2,6 @@
 
 > Path: `modules/compiler-cli/`
 > Parent: [`../AGENTS.md`](../AGENTS.md)
-> Docs: [`./docs.md`](docs.md) · Examples: [`src/cli/examples.md`](src/cli/examples.md)
 
 Package that builds the `botopink` CLI executable. Depends on `compiler-core`.
 
@@ -11,81 +10,134 @@ Package that builds the `botopink` CLI executable. Depends on `compiler-core`.
 ```text
 compiler-cli/
 ├── AGENTS.md            ← you are here
-├── build.zig            ← package build graph + `run` + `test` steps
-├── build.zig.zon        ← dependency manifest (compiler-core)
-├── tests/               ← end-to-end CLI scripts (NOT in `zig build test`)
-│   ├── std_erlang.sh        ← `bp test --target erlang` over libs/std
+├── botopink.json        ← module manifest (`version` drives the auto-tag)
+├── tests/               ← end-to-end CLI scripts — `zig build test-cli` runs all four
+│   ├── cli_contract.sh      ← the command contract (rows C1–C13, plus the
+│   │                          build-does-not-execute and `new`-scaffold-prints
+│   │                          rows) against the real binary
 │   ├── mutual_recursion.sh  ← forward-ref + mutual recursion runs on every backend
 │   ├── mutual_recursion/    ← fixture project for the script above
-│   ├── backend_exec.sh      ← backend EXECUTION parity (numeric/records/modules
-│   │                          on node/erlang/beam/wasm); `zig build test-backends`
-│   ├── backend_exec/         ← numeric + records fixture projects
+│   ├── backend_exec.sh      ← backend execution parity (numeric / records /
+│   │                          examples/modules); `zig build test-backends`
+│   ├── backend_exec/        ← numeric + records fixture projects
 │   ├── test_tooling.sh      ← `botopink test` behaviours: empty test, --filter
-│   │                          (multi / none), assert-message, mixed pass/fail exit
-│   └── test_tooling/         ← pass + fail fixture projects
+│   │                          (multi / none), assert message, mixed pass/fail exit;
+│   │                          `botopink-lib-test` compiles a test-less library;
+│   │                          a dependency's erlang host `.erl` is shipped and reached
+│   └── test_tooling/        ← pass + fail fixture projects
 └── src/
     ├── AGENTS.md
-    ├── docs.md          ← argv parser layout, dispatch flow
     ├── main.zig         ← argv parser, subcommand dispatcher
     └── cli/             ← one file per subcommand + shared helpers
-        ├── AGENTS.md
-        ├── docs.md      ← subcommand pipeline + shared helpers
-        └── examples.md  ← `botopink` command recipes
+        └── AGENTS.md
 ```
 
 ## Commands
 
 ```bash
-zig build               # produce ./zig-out/bin/botopink
+# from the workspace root (the package has no build.zig of its own)
+zig build               # produce zig-out/bin/botopink
 zig build run -- help
 zig build run -- version
-zig build test          # CLI unit tests (e.g. the generic lib loader)
+zig build test          # includes the CLI unit tests (main.zig parsers / config /
+                        # libs / resolver / migrate / test_cmd / diagnostics / clean;
+                        # root = src/main.zig, cwd = modules/compiler-cli) — main.zig's
+                        # `test { _ = @import(...) }` block pulls every cli/ file in; a
+                        # file not listed there has its tests silently skipped
 
-# End-to-end scripts under tests/ build the CLI + spawn runtimes, so they are
-# NOT part of `zig build test` — run them directly:
-bash modules/compiler-cli/tests/std_erlang.sh        # stdlib suite on erlang
+# End-to-end scripts under tests/ spawn the CLI and runtimes, so they are NOT
+# part of `zig build test`. From the workspace root:
+zig build test-cli      # all four scripts, in order, against the installed CLI
+zig build test-backends # backend_exec.sh alone
+
+# Or directly (each builds the CLI unless BOTOPINK_SKIP_BUILD=1 is set;
+# cli_contract.sh also takes BOTOPINK_BIN=<binary> to test another build):
+bash modules/compiler-cli/tests/cli_contract.sh      # command contract C1–C13
+bash modules/compiler-cli/tests/test_tooling.sh      # `botopink test` behaviours
 bash modules/compiler-cli/tests/mutual_recursion.sh  # mutual recursion on every backend
 bash modules/compiler-cli/tests/backend_exec.sh      # numeric/records/modules per backend
-bash modules/compiler-cli/tests/test_tooling.sh      # `botopink test` behaviours
-
-# backend_exec.sh is also reachable from the repo root as a single build step
-# (skips any absent runtime; sets BOTOPINK_SKIP_BUILD so it reuses the install):
-zig build test-backends
 ```
 
-> **Pinned backend reds** (recorded, not regressions — Front-A codegen gaps that
-> `backend_exec.sh` surfaces and keeps visible): BEAM mis-codegens integer
-> arithmetic combined with calls (`f(n-1) + …` / 2-arg arithmetic calls trip
-> `beam_validator`), `case…of` enum dispatch (returns the wrong arm), and lambdas
-> (a `#Fun` mis-applied to `*`); the erlang backend emits cross-module package
-> calls unqualified (`area` vs `geometry:area`). The harness builds these (erlc
-> must accept the asm) but treats the run as informational, flagging loudly if a
-> red ever starts passing so the pin can be promoted to a hard assert.
+> **Every cell is a hard assert** — there are no pinned reds. A missing runtime
+> skips its cells by name. **Cells not run**, each restored by the front that
+> fixes it: `examples/modules` on erlang (**not** a backend defect — the emitted
+> code is correct; `cli/run.zig` runs `escript out/main.erl`, which compiles only
+> the file it is handed, so the sibling module is `undef` at run time. See "the
+> erlang runner reaches one module" below; front `13-module-identity` owns the
+> file) and the `numeric` fixture on BEAM (call-result arithmetic fails
+> `beam_validator`; the beam front).
+> The `std` suite on erlang is covered by `zig build test-libs`, not a script.
 
 ## External libs (generic loader)
 
 `cli/libs.zig` is the driver-side half of the lib-agnostic package mechanism. A
-project's `botopink.json` `dependencies: ["<name>", …]` are resolved from disk
-against an ordered **root list** (`resolveLibRoots`): walking up from cwd, each
-ancestor `D` contributes — when present — `D/repository/botopink-lang/libs`
-(bundled libs), `D/repository` (sibling projects), and `D/libs` (legacy flat
-tree), de-duplicated nearest-first. `<name>` resolves to the **first root**
-holding `<name>/botopink.json`; the loader reads its `{src, files}` and feeds the
-lib's modules into compilation prefixed by name (`<name>/<module>`). On today's
-flat tree only the `D/libs` branch fires, so the list is `[<ancestor>/libs]` —
-byte-identical to the former single-root walk. The compiler core never names a
-lib — it just sees ordinary `Module[]` and resolves `from "<name>"` through the
-shared import registry. `std` is the one embedded exception and is not loaded
-here. `shipMjsSidecars` resolves an owning lib's `.mjs` through the same root
-list.
+project's `botopink.json` `dependencies` are resolved from disk against an
+ordered **root list** (`resolveLibRoots`): `BOTOPINK_LIB_ROOTS` entries first,
+then, walking up from cwd, each ancestor `D` contributes — when present —
+`D/repository/botopink-lang/libs` (bundled libs), `D/repository` (sibling
+projects), and `D/libs` (flat tree), de-duplicated first-occurrence-wins. After
+those, `resolveFallbackRoots` adds `<project>/.botopinkbuild/deps/` (the symlink
+store written by `bpmp install`). `<name>` resolves to the **first root** holding
+`<name>/botopink.json`; the loader reads its `{src, files}` (`LibManifest`) and
+feeds the lib's modules into compilation prefixed by name (`<name>/<module>`).
+The compiler core never names a lib — it sees ordinary `Module[]` and resolves
+`from "<name>"` through the shared import registry. `std` is embedded and not
+loaded here. `shipMjsSidecars` resolves an owning lib's `.mjs` through the same
+root list, and never writes outside the output directory: a `require` whose path
+escapes it (a lib's `../../src/x.mjs` authored for its own build) ships the file to
+`<out>/<lib>/<base>` (project-own: `<out>/<base>`) and rewrites that module's
+`require` to reach it.
+
+`shipErlSidecars` is the erlang counterpart: a `#[@External.Erlang("host",
+"fn")]` lowers to `host:fn(…)`, and `host` is a module the library authors in
+erlang and keeps beside its `.bp` sources (`<lib>/src/sidecars/<host>.erl`, else
+`<lib>/src/<host>.erl`; a project-own module probes `src/sidecars/` then `src/`).
+It scans every emitted erlang module for `atom:atom(` qualifiers and copies the
+ones it finds a source file for into the output — so a qualifier naming an OTP
+module or another module of this build is a no-op, with no lib names in the
+code. **Wired into `botopink test` only** (`test_cmd.zig`): the test runner's
+`__bp_load_siblings/0` compiles and loads every `.erl` beside the script, so
+copying is all it takes there. `botopink build`/`run` emit no such loader and do
+not copy, so the `build.zig` call site is still open (front
+`13-module-identity`'s file: `if (target == .erlang) { _ = libs.shipErlSidecars(gpa, io, outputs, out_dir, env_map) catch 0; }`
+beside the existing `if (target == .commonJS)`). It only becomes *useful* once an
+erlang `build`/`run` output can reach **any** sibling module, which is the next
+section — a different defect with a different cause.
+
+### The erlang runner reaches one module
+
+`cli/run.zig` spawns `escript <out>/<module>.erl`. `escript` compiles **only the
+file it is handed** and has no code-path flag (`escript -pa out out/main.erl` →
+`escript: illegal operation on a directory: 'out'`), so every call into a sibling
+module is `undef` at run time even though the emitted code is right. Measured on
+four projects, each of which prints its expected output once the modules are on a
+code path:
+
+| project | escript today | emitted call |
+|---|---|---|
+| `tests/language/modules/two_modules` | `undefined function geometry:norm/1` | `geometry:norm/1` — qualified, correct |
+| `tests/language/modules/mod_tree` | `undefined function shapes:describe/0` | `shapes:describe/0` |
+| `tests/language/modules/std_import` | `undefined function dict:empty/0` | `dict:empty/0` |
+| `examples/modules` | `undefined function geometry:area/2` | `geometry:area/2`, `shapes:describe/0`, `shapes:lucky/0` |
+
+The shape that works is the one the beam arm of `tests/language/run.sh` already
+uses: `erlc -o <out_dir>` over every emitted `.erl` **found recursively** — the
+file layout nests (`out/shapes/circle.erl`, `out/std/dict.erl`) while the module
+atom is flat, so `-o <out_dir>` is what puts each `.beam` where a single
+`-pa <out_dir>` looks — then `erl -noshell -pa <out_dir> -eval "<module>:main([]), halt()."`.
+`main([])` and not `main()`: `main/1` is always exported, while `main/0` is
+emitted only when `main` is `pub` (`examples/modules` declares `fn main()` and
+exports just `'_botopink_main'/0, main/1`). A crash's exit status moves from
+escript's `127` to `erl`'s `1`.
+
+`cli/run.zig` belongs to front `13-module-identity`, together with the `-pa` row
+of its output-layout step — so this is recorded here, not fixed here.
 
 **Unknown `botopink.json` fields are ignored.** `LibManifest` reads only `src`
-and `files`; the project loader (`config.zig`) reads `dependencies`/`entry`/etc.
-Anything else — including the bpmp-facing `botopink` (compiler version
-constraint) and `requires` (per-dep version constraint) added in v0.beta.18 —
-passes through untouched. Adding a new optional field to `botopink.json`
-requires no change here. Full schema lives in
-[`docs/botopink-json.md`](../../docs/botopink-json.md).
+and `files`; the project loader (`config.zig`) reads `name`/`version`/`target`/
+`entry`/`dependencies`. Anything else — including the bpmp-facing `botopink`
+(compiler version constraint) and `requires` (per-dep version constraint) —
+passes through untouched, so adding an optional field needs no change here.
 
 ## Env
 
@@ -98,35 +150,109 @@ requires no change here. Full schema lives in
 - Path separator: `:` on POSIX, `;` on Windows (matches `PATH`; via
   `std.fs.path.delimiter`).
 - Entries are prepended to the walk-up result, then the combined list is
-  de-duplicated first-occurrence-wins (so an env entry always shadows a
+  de-duplicated first-occurrence-wins (an env entry always shadows a
   duplicate walk-up root).
 - Non-existent entries are **silently dropped** — a typo must not break a
   build that does not need the missing root.
 - Empty entries (`a::b`, trailing `:`) are dropped.
 - Relative entries are resolved against the process cwd.
-- Unset or empty value → byte-identical to the legacy resolver
-  (`zig build test` on `BOTOPINK_LIB_ROOTS=` matches the unset baseline).
+- Unset or empty value → walk-up roots only.
 
 The same hook is mirrored in
-[`language-server/src/project_graph.zig:resolveRoots`](../language-server/AGENTS.md#env)
+[`language-server/src/project_graph.zig`](../language-server/AGENTS.md#env)
 and
 [`lib-test-runner/src/discovery.zig:resolveRoots`](../lib-test-runner/AGENTS.md#env)
-so the CLI, the LSP, and the lib-test runner always see the same root list.
-bpmp uses it to point spawned compilers at its package store
-(`$BPMP_HOME/packages/<name>/versions/<v>`).
+so the CLI, the LSP, and the lib-test runner see the same root list.
+bpmp sets it when spawning the compiler (`bpmp run`).
 
-## CLI behavior contract
+## Command contract
 
-- Exit `0` on success, non-zero on command failure.
-- All user-facing status/errors must go through `src/cli/reporter.zig`.
-- Keep command options aligned with help text in `src/main.zig` and the
-  `cli/<cmd>.zig` implementation.
+What each command promises. A row the code does not meet yet is marked
+**open**, with the owner of the fix. Every row is exercised by
+`tests/cli_contract.sh` (`zig build test-cli`) or by a `main.zig` unit test.
 
-### `botopink test` output format (§T)
+| Command | Reads | Writes | Spawns | Exit 0 | Exit 1 |
+|---|---|---|---|---|---|
+| `build [--target T] [--out D] [--typescript]` | `botopink.json`, the `src/` module tree, each declared dependency | `D/<stem><ext>` for every module that compiled (+ `.d.ts`, + `.mjs` sidecars on commonJS); the previous artifact of a module that did not compile is deleted. The **stem** is the module ATOM under `D/erl/` or `D/beam/` for the erlang and BEAM targets (`std/math` → `D/erl/std@math.erl`), because `erlc` refuses a `-module` atom that differs from its file's basename; commonJS, its `.d.ts` and wasm keep the mirrored `D/<module path>` tree, because a `require` target and a wasm import segment ARE the module path (`cli/build.zig` `artifactPath`/`targetSubdir`) | nothing — `codegen.generateWith(…, .{ .execute = false })` emits without running the program | every module compiled and its artifact is on disk | no project, unsupported target, unresolvable tree or dependency, or **any** module failed — each failing module is rendered (file, line, excerpt) and named in `N module(s) failed to compile: a, b` |
+| `run [--target T] [--module M] [--out D] [-- args…]` | what `build` reads | what `build` writes, into `D` | `node` / `wasmtime` on `D/M.<ext>`; on **erlang** `erlc -o D/erl` over every emitted `.erl` and then `erl -noshell -pa D/erl -eval "M:main([]), halt()."` (`beam` only prints the `erlc +from_asm` hint) | the program's own 0 | `build`'s code, or the program's — on erlang a **crash is `1`**, `erl`'s status, where `escript` used to exit `127` (see "the erlang runner reaches one module") |
+| `check [<path>]` | `botopink.json`, `src/` **and** `test/`, dependencies — in `<path>` when given | nothing | `erl` (comptime) | every module type-checks | at least one diagnostic, each with file, line and excerpt; failing modules named |
+| `test [--target T] [--filter S] [--json]` | `botopink.json`, `src/`, `test/`, dependencies | `.botopinkbuild/test-out/**`, emptied first | the target runner per module with tests (`node` / `escript`) | every module compiled **and** every test passed | a module failed to compile, or a test failed; the modules that compiled still ran their tests and are reported |
+| `format [files…]` | the files, else `src/` | the files, in place | nothing | every file parsed and is now canonical (ending with one newline) | a file could not be read, lexed or parsed (rendered with its location) |
+| `format --check [files…]` | as above | nothing | nothing | every file parsed **and** already canonical | a file would change, or could not be read, lexed or parsed |
+| `new <name> [--target T]` | nothing | `<name>/{botopink.json,src/main.bp,.gitignore}` — the scaffolded `main.bp` **prints** (see "the scaffold runs" below) | nothing | scaffolded with a supported target | bad name, or a target outside `commonJS\|erlang\|beam\|wasm` |
+| `clean` | nothing | deletes `out/` and `.botopinkbuild/` | nothing | both are gone (`Removed <dir>/` printed per success) | a delete failed |
+| `migrate [--dry-run]` | the `src/` tree | index files (`root.bp`/`main.bp`/`mod.bp`) — **none** under `--dry-run` | nothing | the tree is covered | `src/` unreadable |
 
-Each `test "name" { … }` block emits a fixed envelope so downstream
-tooling (lib-test-runner, IDE test panels, future `--json` consumers)
-can parse per-test outcomes without scanning ad-hoc prose:
+Cross-command rules:
+
+- **Arguments.** Every parser in `main.zig` rejects an unknown flag, a positional
+  the command does not take and an unsupported target (exit 1, with the token
+  named). `--flag value` and `--flag=value` are equivalent. A `botopink.json`
+  whose `target` is unsupported fails the command instead of degrading to
+  commonJS (`ProjectConfig.parsedTarget` returns `null`).
+- **`build`, `check` and `test` agree**: on the same tree either all three exit
+  0 or all three exit 1. They share `cli/diagnostics.zig`. Every failed module
+  carries its located diagnostic in `ComptimeOutput.outcome` — a lex or parse
+  error included (`.parseError` holds the `SyntaxError`; a lex error no longer
+  aborts the session, so the other modules still compile and get diagnosed).
+  `build`/`test` read the same diagnostic from `codegen.generateWith`'s result:
+  every module comes back, a failed one with `result.diagnostic` (lex, parse,
+  type) or `result.comptime_err` (validation), and `diagnostics.failedOutputs`
+  renders each and names the failed non-declaration modules (a module with no
+  entry at all is named too). No command re-runs the comptime pipeline to
+  explain a failure.
+- **Orphans.** A `.bp` file that **nothing** reaches is warned per file and
+  counted once (`N module(s) not reached by any `mod` path were not compiled`).
+  A module has two routes into a build and reachability means either: a `mod`
+  path from the root, or the manifest's `files`, which ships it to a consumer
+  that is not this package's module tree. `libs/std` is the second kind —
+  `src/primitives.bp` is ambient, embedded into the global type env by
+  `build.zig`'s `std_core_files` and declared in `libs/std`'s `files`, never in
+  `root.bp`'s `pub mod` chain. Knowing only the first route, the check warned
+  about it on every gate run. A file in neither is still an orphan, which is the
+  case the warning exists for.
+- **An import names something.** `import … from "<name>"` must resolve to a
+  package module (the `mod` tree, dotted path), to a declared dependency
+  (`<dep>` or `<dep>.<module>`) or to `std`; otherwise `build`, `check` and
+  `test` exit 1 with `unresolved import source — no such module or dependency`,
+  naming what the `from` said and where (`at: src/main.bp:1:20`). A `from` that
+  names a module which *does* exist but does not export the symbol is the other
+  error (`imported symbol is not exported by the named module`), also located.
+  Before this, an import naming nothing bound nothing and said nothing: exit 0,
+  with code emitted.
+- **Two loaders, one import rule.** `src/` is a package and loads through
+  `sources.load` → `resolver.resolve`, which applies the rule as pass F4. The
+  flat `test/` directory is **not** a package — `check` and `test` discover it
+  with `scanner.scanSourcesWithFiles`, which never calls the resolver — so those
+  two commands run `sources.checkFlatImports` over it, which hands
+  `resolver.checkSources` the resolved `src/` modules together with the flat
+  ones. A `*_test.bp` may therefore import the package it tests, and still
+  cannot name a module that does not exist. `format` scans without checking:
+  it rewrites files and resolves nothing.
+- **Compiling does not execute.** `build` and `test` call
+  `codegen.generateWith` with `.execute = false`: no `node`/`erl`/`wasmtime`
+  spawn and no `.botopinkbuild/runtime-cache` entry at build time (`test` runs
+  each test module once, through its runner). Only the codegen snapshot harness
+  executes (`codegen.generate`, which sets the flag). Pinned by
+  `tests/cli_contract.sh`.
+- **The scaffold runs.** `botopink new` writes a program whose `main` calls
+  `@print`. A block's value is its `break` (semantics decision 2), so the old
+  template — a body whose only statement was the literal `"Hello, world!"` —
+  compiled, ran and printed nothing, and the README's quick start had no
+  visible effect. Pinned by `tests/cli_contract.sh` (the `@print` in the written
+  file, and `Hello, world!` on stdout from `botopink run`).
+- **Dependencies.** A missing dependency is named (`dependency 'server' was not
+  found under any library root`). A dependency's `files` entry that cannot be
+  read is `LibFileNotFound`: `libs.loadOne` prints the path it looked for,
+  located at the entry in the dependency's `botopink.json`
+  (`--> <lib>/botopink.json:L:C`), and the commands add nothing after it.
+  Pinned by `tests/cli_contract.sh`.
+
+### `botopink test` output format
+
+Each `test "name" { … }` block emits a fixed envelope (generated by the
+commonJS and erlang test runners in compiler-core codegen) so downstream
+tooling (lib-test-runner, `--json` consumers) can parse per-test outcomes:
 
 ```
 TEST <file>:<line> <name>
@@ -139,47 +265,34 @@ TEST <file>:<line> <name>
   FAIL <name>  (<err>)  at <file>:<line>
 ```
 
-`  duration <ms>ms` lands between the fence-close and the ok/FAIL line
-(monotonic clock around the test body). Older parsers that don't
-recognise the line skip it — forward-compatible by construction.
-
+`  duration <ms>ms` sits between the fence-close and the ok/FAIL line
+(monotonic clock around the test body); parsers that don't recognise it skip it.
 The runner closes with a single summary line: `<P> passed, <F> failed`.
 Exit code is non-zero when any test fails.
 
-**Backend status**:
-- commonJS — emits the envelope; stdout is captured per-test via a
-  `process.stdout.write` override restored after each `t.fn()`.
-- erlang — emits the envelope; the body's `io:format` calls land
-  inside the fence via the synchronous group-leader path (no explicit
-  capture).
-- beam_asm — follow-up; needs `call_ext_only` to `io:put_chars/1`
-  for the envelope markers around each test invocation.
-- wat — gated on `botopink test --target wasm` wiring (Frente A §C2).
+**Backends**: `botopink test` runs only `commonJS` (via `node`; stdout captured
+per test through a `process.stdout.write` override) and `erlang` (via `escript`;
+`io:format` output lands inside the fence through the group leader). Other
+targets are rejected with "currently supports only the commonJS and erlang
+targets".
 
-**`--json` / JSONL mode**: shipping. `botopink test --json` captures each
-child runner's stdout, parses the §T envelope above, and re-emits one
-JSON object per line to its own stdout (stderr passes through). Schema:
+**`--json` (JSONL)**: `botopink test --json` captures each child runner's
+stdout, parses the envelope above, and re-emits one JSON object per line
+(stderr passes through). Schema:
 
 - per test: `{"event":"test","module":"<src-name>","file":"<path>",
   "line":<u32>,"name":"<test name>","status":"ok"|"fail",
   "run_log":"<captured stdout>","duration_ms":<u32>,
   "error_message":"…","error_file":"…","error_line":<u32>}` — the
-  three `error_*` keys appear only on `"status":"fail"`;
-  `duration_ms` appears only when the envelope carries a `  duration
-  <ms>ms` line (always on current commonJS + erlang runners, omitted
-  by older builds). Strings are RFC 8259 §7 escaped (embedded
-  newlines surface as `\n`).
-- end of run: `{"event":"summary","passed":<P>,"failed":<F>}` — a
-  single record aggregated across every module the run touched (not
-  per child), so consumers see exactly one terminal record per
-  invocation.
+  three `error_*` keys appear only on `"status":"fail"`; `duration_ms` appears
+  only when the envelope carries a `duration` line. Strings are RFC 8259 §7
+  escaped.
+- end of run: `{"event":"summary","passed":<P>,"failed":<F>}` — one record
+  aggregated across every module the run touched.
 
-The sentinel parser lives in `cli/test_cmd.zig` (`emitJsonl` +
-`parseFailLine` + `parseDurationMs`). Forward-compatible: unknown
-envelope lines are skipped.
-
-Text mode (no flag) is unchanged: stdio is inherited so the runner
-streams the §T envelope live to the user's terminal.
+The parser lives in `cli/test_cmd.zig` (`emitJsonl` + `parseFailLine` +
+`parseDurationMs`); unknown envelope lines are skipped. Text mode (no flag)
+inherits stdio so the envelope streams live.
 
 See [`src/AGENTS.md`](src/AGENTS.md) for the dispatch flow and
 [`src/cli/AGENTS.md`](src/cli/AGENTS.md) for the per-command list.
@@ -194,7 +307,39 @@ filter: `modules/compiler-cli/**`):
 - `compiler-cli/<version>` — immutable; created once per master/main push.
   Re-push without bumping `botopink.json.version` → red gate.
 
-`<version>` is `botopink.json.version` (this module's local manifest, NOT
-the workspace `v*` release tags). Bumping the tag is a one-line edit to
-`botopink.json` in the same PR that lands the changes you want tagged.
-Spec: [`tasks/v0.beta.18/specs/module-auto-tag.md`](../../tasks/v0.beta.18/specs/module-auto-tag.md).
+`<version>` is this module's `botopink.json.version` (not the workspace `v*`
+release tags). Bump it in the same change you want tagged.
+
+## The erlang runner reaches one module
+
+`botopink run --target erlang` ran `escript out/main.erl`, and `escript` compiles
+**only the file it is handed**. Every cross-module call in a multi-module program
+was therefore `undefined function <mod>:<fn>` at run time, with correct and
+correctly qualified emitted code — three `tests/language/modules/*` cells and
+`examples/modules` failed on erlang for that reason alone.
+
+Two shapes that look like the fix and are not:
+
+```
+$ escript -pa out out/main.erl
+escript: illegal operation on a directory: 'out'
+$ ERL_FLAGS="-pa out" escript out/main.erl      # unchanged: no .beam exists yet
+```
+
+The compile step is the missing half, not the code path. `cli/run.zig`
+(`runErlang`) does what the beam arm of `tests/language/run.sh` already did:
+
+1. `erlc -o <out_dir>/erl` over **every** emitted `.erl`, found recursively — a
+   module left uncompiled is an `undef` at run time, not a compile error;
+2. `erl -noshell -pa <out_dir>/erl -eval "<module>:main([]), halt()."`
+
+Two details that are load-bearing:
+
+- **`main([])`, not `main()`.** `main/1` is always exported — it is the escript
+  entry point — while `main/0` is emitted only when `main` is `pub`. A runner
+  calling `main:main()` fails with `undef` on any project whose entry is a plain
+  `fn main()`, `examples/modules` included. The asymmetry itself lives in
+  `codegen/erlang.zig` and is not changed here.
+- **A crashing program now exits `1`.** `erl` returns 1 where `escript` returned
+  127 (measured on a `1 / 0` program). The 127 was escript's artefact, nothing
+  asserted it, and it is not mapped back — the table above says `1`.

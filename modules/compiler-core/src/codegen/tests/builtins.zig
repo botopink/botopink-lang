@@ -48,15 +48,19 @@ test "js: assert ---- array equality" {
 
 test "js: assert pattern ---- with catch throw" {
     try h.assertJsSingle(std.testing.allocator, @src(),
+        \\type Person(name: string, age: i32)
         \\fn f() {
-        \\    val assert Person(name, age) = r catch throw Error("is not person");
+        \\    val r = Person(name: "ann", age: 30);
+        \\    val assert Person(name, age) = r catch throw "is not person";
         \\}
     );
 }
 
 test "js: assert pattern ---- with catch default value" {
     try h.assertJsSingle(std.testing.allocator, @src(),
+        \\type Person(name: string, age: i32)
         \\fn f() {
+        \\    val r = Person(name: "ann", age: 30);
         \\    val assert Person(name, age) = r catch Person(name: "bob", age: 12);
         \\}
     );
@@ -65,7 +69,8 @@ test "js: assert pattern ---- with catch default value" {
 test "js: assert pattern ---- with list pattern" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn f() {
-        \\    val assert [first, ..] = items catch throw Error("not a list");
+        \\    val items = [1, 2, 3];
+        \\    val assert [first, ..] = items catch throw "not a list";
         \\}
     );
 }
@@ -73,7 +78,8 @@ test "js: assert pattern ---- with list pattern" {
 test "js: assert pattern ---- with string literal" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn f() {
-        \\    val assert "hello" = greeting catch throw Error("not hello");
+        \\    val greeting = "hello";
+        \\    val assert "hello" = greeting catch throw "not hello";
         \\}
     );
 }
@@ -81,15 +87,22 @@ test "js: assert pattern ---- with string literal" {
 test "js: assert pattern ---- with number literal" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn f() {
-        \\    val assert 42 = answer catch throw Error("not 42");
+        \\    val answer = 42;
+        \\    val assert 42 = answer catch throw "not 42";
         \\}
     );
 }
 
 test "js: assert pattern ---- with enum variant" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn f() {
-        \\    val assert Ok(value) = result catch throw Error("not ok");
+        \\#[@result]
+        \\fn parse() -> @Result<i32, string> {
+        \\    return 42;
+        \\}
+        \\fn main() {
+        \\    val result = parse();
+        \\    val assert Ok(value) = result;
+        \\    @print(value);
         \\}
     );
 }
@@ -97,7 +110,8 @@ test "js: assert pattern ---- with enum variant" {
 test "js: assert pattern ---- with empty list" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn f() {
-        \\    val assert [] = list catch throw Error("not empty");
+        \\    val list: i32[] = [];
+        \\    val assert [] = list catch throw "not empty";
         \\}
     );
 }
@@ -105,7 +119,8 @@ test "js: assert pattern ---- with empty list" {
 test "js: assert pattern ---- with multiple element list" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn f() {
-        \\    val assert [1, 2, 3] = numbers catch throw Error("not matching");
+        \\    val numbers = [1, 2, 3];
+        \\    val assert [1, 2, 3] = numbers catch throw "not matching";
         \\}
     );
 }
@@ -113,6 +128,7 @@ test "js: assert pattern ---- with multiple element list" {
 test "js: assert pattern ---- with list and rest" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn f() {
+        \\    val items = [1, 2, 3, 4];
         \\    val assert [first, second, ..rest] = items catch [];
         \\}
     );
@@ -155,6 +171,27 @@ test "js: builtin ---- @print expression" {
         \\fn main() {
         \\    val x = 10;
         \\    @print(x * 2);
+        \\}
+    );
+}
+
+// A user declaration named like a comptime type-manipulation builtin
+// (`pick`, `omit`, `partial`, `mergeRecords`, `mapFields`) is called as
+// declared: the inference intercept only claims a bare name the scope does not
+// bind (std-surface 6a — `libs/std/src/random.bp` declares `pick`).
+test "js: builtin ---- user fns named like type-manipulation builtins call their own bodies" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn pick(n: i32) -> i32 { return n + 1; }
+        \\fn omit(n: i32) -> i32 { return n + 2; }
+        \\fn partial(n: i32) -> i32 { return n + 3; }
+        \\fn mergeRecords(a: i32, b: i32) -> i32 { return a + b; }
+        \\fn mapFields(n: i32) -> i32 { return n * 2; }
+        \\fn main() {
+        \\    @print(pick(1));
+        \\    @print(omit(1));
+        \\    @print(partial(1));
+        \\    @print(mergeRecords(2, 3));
+        \\    @print(mapFields(3));
         \\}
     );
 }
@@ -205,7 +242,7 @@ test "js: stdlib ---- Result.isOk and isError predicates" {
 
 test "js: stdlib ---- Option map, flatMap and unwrapOr mirror Result" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record Person { name: string }
+        \\type Person(name: string)
         \\fn firstName(p: Person) -> ?string { @todo(); }
         \\fn shout(s: string) -> ?string { @todo(); }
         \\fn greet(p: Person) -> string {
@@ -244,11 +281,15 @@ test "js: stdlib ---- chain map flatMap unwrapOr types correctly" {
 test "js: builtin ---- @print in if branch" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn check(x: i32) {
-        \\    if x > 0 {
+        \\    if (x > 0) {
         \\        @print("positive");
         \\    } else {
         \\        @print("non-positive");
         \\    }
+        \\}
+        \\fn main() {
+        \\    check(1);
+        \\    check(-1);
         \\}
     );
 }
@@ -265,12 +306,12 @@ test "js: builtin ---- @print with variable" {
 test "js: builtin ---- @print in loop" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn countdown(n: i32) {
-        \\    val i = n;
-        \\    loop {
-        \\        if i <= 0 { break; }
-        \\        @print(i);
-        \\        val i = i - 1;
-        \\    }
+        \\    loop (0..n) { i ->
+        \\        @print(n - i);
+        \\    };
+        \\}
+        \\fn main() {
+        \\    countdown(3);
         \\}
     );
 }
@@ -321,4 +362,76 @@ test "codegen: test runner excluded from normal build" {
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{"function add"});
     try h.assertJsNotContains(std.testing.allocator, src, &.{ "__bp_test", "__bp_assert", "__bp_run_tests" });
+}
+
+// Semantics decision 4 (1.0.2-beta): `assert` outside test mode is always
+// fatal, carrying its message and `file:line`. A holding assertion lets the
+// program continue on every backend.
+test "js: assert ---- holding assertion lets main continue" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    assert 1 + 1 == 2, "arithmetic";
+        \\    @print("after");
+        \\}
+    );
+}
+
+// A failing assertion aborts the program. beam raises
+// `{bp_assert, <<"boom">>, <<"main.bp:3">>}`, so the process exits non-zero and
+// the RUN LOG is empty (a crash records no output). KNOWN DIVERGENCE: commonJS
+// still lowers to `console.assert` and prints `before`/`after` (F8), erlang to
+// `true = (…)` without message or location (F5).
+test "js: assert ---- failing assertion outside test mode is fatal" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    @print("before");
+        \\    assert 1 == 2, "boom";
+        \\    @print("after");
+        \\}
+    );
+}
+
+// Semantics decisions 1 and 1a: `@print` writes a top-level string as its
+// text and an array as `[1,2]`, space-separated, on one line.
+test "js: builtin ---- @print mixes strings and terms as text" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    val name = "ana";
+        \\    @print("hi", name, 42, [1, 2]);
+        \\}
+    );
+}
+
+// Semantics decision 1a: an array is `[a,b]` with no spaces, and a string
+// nested in it is quoted with the source escapes; a top-level string stays
+// bare. KNOWN: beam prints its own `~p` text (PR3, deferred after 06).
+test "js: builtin ---- @print quotes the strings of an array" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    val words = ["plain", "say \"hi\"", "back\\slash", "two\nlines"];
+        \\    @print(words);
+        \\    @print("top", words);
+        \\}
+    );
+}
+
+// Semantics decision 1a: a tuple is `#(a,b)` — from a literal, a nested tuple,
+// an array of tuples, a fn's declared result and a parameter's declared type.
+// KNOWN: beam prints its own `~p` text (PR3, deferred after 06).
+test "js: builtin ---- @print writes tuples as #(a,b)" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn pairOf(a: i32, b: string) -> #(i32, string) {
+        \\    return #(a, b);
+        \\}
+        \\fn show(p: #(i32, string)) {
+        \\    @print(p);
+        \\}
+        \\fn main() {
+        \\    @print(#(true, 1));
+        \\    @print(#(#(1, 2), "x"));
+        \\    @print([#(1, 2), #(17, 1)]);
+        \\    @print(pairOf(7, "s"));
+        \\    show(#(3, "z"));
+        \\}
+    );
 }

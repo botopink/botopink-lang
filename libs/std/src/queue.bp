@@ -1,4 +1,4 @@
-//// Gleam-inspired `queue` module — a `record Queue<T>` wrapping an `Array<T>`
+//// Gleam-inspired `queue` module — a `type Queue<T>` wrapping an `Array<T>`
 //// (front at index 0). Pure botopink — no host backing. O(n) enqueue (copy),
 //// O(1) peek.
 ////
@@ -7,9 +7,9 @@
 //// queue + the removed front item). API naming note: `new` is a keyword token —
 //// the constructor is `empty`.
 
-pub record Queue<T> {
+pub type Queue<T>(
     items: Array<T>,
-
+) {
     pub fn size(self: Self) -> i32 {
         return self.items.length;
     }

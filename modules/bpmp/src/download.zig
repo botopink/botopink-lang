@@ -168,10 +168,9 @@ fn downloadOnce(
         .response_writer = &body.writer,
         .extra_headers = extra_headers,
     });
-    if (@intFromEnum(result.status) >= 400) {
-        body.deinit();
-        return error.HttpStatusError;
-    }
+    // `errdefer body.deinit()` above frees the body; freeing it here too was a
+    // double free that crashed `bpmp sync` on any 4xx (e.g. an unknown repo).
+    if (@intFromEnum(result.status) >= 400) return error.HttpStatusError;
     return body.toOwnedSlice();
 }
 

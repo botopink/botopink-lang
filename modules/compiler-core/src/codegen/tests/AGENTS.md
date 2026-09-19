@@ -3,13 +3,57 @@
 > Path: `modules/compiler-core/src/codegen/tests/`
 > Parent: [`../AGENTS.md`](../AGENTS.md) (owns the per-file breakdown)
 
-Codegen tests, split by feature (`values.zig` etc. for codegen, `wat.zig` for the WAT
-backend, `externals.zig` for `@[external(…)]` FFI declarations). Aggregated by the sibling barrel `../tests.zig` for `test_root.zig`;
-shared harness (`assertJs`/`assertJsError`/`configs`) lives in `helpers.zig`.
+Codegen tests, split by feature (`values.zig` etc. for codegen, `wat.zig` for the
+WAT backend, `externals.zig` for `#[@External.<Target>(…)]` FFI declarations,
+`comptime_module.zig` for `erlang.emitComptimeModule`). Aggregated by the
+sibling barrel `../tests.zig` for `test_root.zig`; shared harness
+(`assertJs`/`assertJsError`/`configs`) lives in `helpers.zig`.
+`assertJsRunLog(src, expected)` compiles `src` for commonJS, runs it and
+compares the entry's RUN LOG — for behaviour that lives in a sibling module
+(`std/<mod>.js`) a single-module snapshot does not show.
+`assertErlangRunLog(src, expected, needles)` is its erlang twin (front
+`02-erlang`): it compiles for the erlang target, compares the RUN LOG and then
+checks the emitted erlang for each needle. It writes **no** snapshot, which is
+the point — a defect that makes `erlc` refuse the module, or a pattern that
+matches nothing, is only visible by running it, and a row whose §5.1 fixture
+does not type-check yet still has a statement-position shape that compiles.
 For multi-module assertions without a snapshot, `assertConsumerJs(modules, present, absent)`
 generates every module (last = consumer `main`) and checks the consumer's JS
 contains/omits given substrings — used by the disk-lib namespace test in
 `features.zig` (`import {Lib} from "Lib"` → `const Lib = require(...)`).
-Golden outputs live in `modules/compiler-core/snapshots/codegen/`.
+Golden outputs live in `modules/compiler-core/snapshots/codegen/<target>/<slug>.snap.md` (`commonJS`, `erlang`, `beam`, `wasm`), comptime validation errors in `codegen/errors/<target>/`.
+
+`assertWasmRunLog(src, expected)` is the wasm twin of `assertJsRunLog`, for the
+programs an all-backend snapshot cannot hold: decision 8 §10's `break <value>`
+out of a condition loop does not compile on erlang at all
+(`ConditionLoopValueUnsupported`), so `assertJsSingle` aborts before it can
+record wasm's answer.
+
+`assertJsExpecting`, `assertJsError` and `assertJsTestMode` wrap their snapshot calls in `utils/snap.zig` `traceEnter(loc)`/`traceLeave`, so `BOTOPINK_SNAP_TRACE=<file>` records the test `file:line` for every codegen snapshot. A new helper that writes a snapshot must do the same, or `scripts/snap_audit.sh --mode=review` cannot attribute it.
+
+## Pass/fail contract (spec 06, H3/H9/H10)
+
+- `assertJs` / `assertJsSingle` **compare every backend before failing** and
+  return the first error at the end, so one suite round writes every
+  `.snap.md.new` (H10). Same for `assertJsError` and `assertJsTestMode`.
+- A module that does not compile (parse error, type error, or comptime
+  validation error) **fails the test** with `error.ModuleDidNotCompile`, and the
+  snapshot records a `----- COMPILE DIAGNOSTIC -- <module>` section instead of
+  an empty code section (H3/H9). Before this, 29 slugs × 4 backends were 0-byte
+  snapshots that compared empty with empty and passed.
+- `assertJsCompileError(alloc, @src(), src)` is the opt-in for a test whose
+  point *is* that the program does not compile: it records the diagnostic and
+  fails if the source ever starts compiling. Every call site carries a comment
+  naming the missing feature and the spec that owns it (`DOCUMENTED SKIP —`).
+- `assertJsError` stays the helper for comptime validation errors that have a
+  dedicated `codegen/errors/<target>/` snapshot.
+
+`wat.zig` also carries the decision 8 §5 `case` fixtures front `05-wasm` took
+from the three defects `01-checker` handed to the backends — a variant pattern
+written as a path, the dot shorthand, an arm body whose last expression is its
+value, a one-parameter arm binder, and a failing guard. They snapshot all four
+backends like every other fixture: wasm answers each of them, and the
+`KNOWN-WRONG` note above each names what commonJS, erlang and beam still answer,
+so the front that takes its half shows the move in its own commit.
 
 When adding a test file here, register it in `../tests.zig` or it will not run.

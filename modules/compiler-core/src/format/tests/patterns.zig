@@ -132,7 +132,7 @@ test "format: pattern ---- constructor" {
 
 test "format: pattern ---- constructor with fields" {
     try h.assertFormat(std.testing.allocator,
-        \\val Result = enum { Ok(value: i32), Error(message: String) };
+        \\type Result { Ok(value: i32), Error(message: String) }
         \\
         \\fn main() {
         \\    val result = Result.Ok(42);
@@ -147,7 +147,7 @@ test "format: pattern ---- constructor with fields" {
 
 test "format: pattern ---- constructor with labeled fields" {
     try h.assertFormat(std.testing.allocator,
-        \\val Person = enum { Person(name: String, age: i32), Dog(name: String, age: i32) };
+        \\type Person { Person(name: String, age: i32), Dog(name: String, age: i32) }
         \\
         \\fn main() {
         \\    val thing = Person.Dog("bob", 121);
@@ -171,15 +171,45 @@ test "format: case ---- simple" {
     );
 }
 
+// A block arm is decision 8 §5.1's `Pattern { body }` (06 N22): it is the same
+// node the pre-decision-8 `1 -> { … };` parsed to, so the formatter writes both
+// back in decision 8's spelling — no arrow, no `;`.
 test "format: case ---- block body" {
     try h.assertFormat(std.testing.allocator,
         \\fn main() {
         \\    case 1 {
-        \\        1 -> {
+        \\        1 {
         \\            1;
         \\            2;
-        \\        };
+        \\        }
         \\        _ -> 1;
+        \\    };
+        \\}
+    );
+}
+
+// The decision 8 arm forms round-trip: the whole-value binder `{ n -> … }`, the
+// `when (…)` guard, a dotted and a shorthand variant path, a label, the trailing
+// `..`, a tuple pattern and the inclusive range.
+test "format: case ---- decision 8 arms" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn main() {
+        \\    case x {
+        \\        Shape.Circle(r) {
+        \\            r;
+        \\        }
+        \\        .Rect(width: w, ..) when (w > 1) {
+        \\            w;
+        \\        }
+        \\        #(0, s) {
+        \\            s;
+        \\        }
+        \\        1...9 {
+        \\            1;
+        \\        }
+        \\        _ { n ->
+        \\            n;
+        \\        }
         \\    };
         \\}
     );

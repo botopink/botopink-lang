@@ -1,0 +1,23 @@
+----- SOURCE CODE -- main.bp
+```botopink
+val Counter = type(
+    count: i32 = 0) {
+    fn inc() {
+        self.count += 1;
+    }
+};
+```
+
+----- ERLANG -- main.erl
+```erlang
+-module(main).
+
+%% type Counter: count
+
+inc() ->
+    %% field assignment is not directly supported in Erlang.
+```
+
+----- RUN LOG -----
+```logs
+```

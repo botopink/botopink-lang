@@ -8,3 +8,6 @@ val n = order.toInt(order.lt());
 ----- DEFINITION at (line 1, char 14)
 uri: std/order
 range: (23,7) → (23,12)
+in std/order:
+  pub fn toInt(o: Order) -> i32 {
+         ^^^^^

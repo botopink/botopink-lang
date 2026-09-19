@@ -82,15 +82,19 @@ test "types: assert ---- array equality" {
 
 test "types: assert pattern ---- with catch throw" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\type Person(name: string, age: i32)
         \\fn f() {
-        \\    val assert Person(name, age) = r catch throw Error("is not person");
+        \\    val r = Person(name: "ann", age: 30);
+        \\    val assert Person(name, age) = r catch throw "is not person";
         \\}
     );
 }
 
 test "types: assert pattern ---- with catch default value" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\type Person(name: string, age: i32)
         \\fn f() {
+        \\    val r = Person(name: "ann", age: 30);
         \\    val assert Person(name, age) = r catch Person(name: "bob", age: 12);
         \\}
     );
@@ -99,7 +103,8 @@ test "types: assert pattern ---- with catch default value" {
 test "types: assert pattern ---- with string literal" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn f() {
-        \\    val assert "hello" = greeting catch throw Error("not hello");
+        \\    val greeting = "hello";
+        \\    val assert "hello" = greeting catch throw "not hello";
         \\}
     );
 }
@@ -107,15 +112,22 @@ test "types: assert pattern ---- with string literal" {
 test "types: assert pattern ---- with number literal" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn f() {
-        \\    val assert 42 = answer catch throw Error("not 42");
+        \\    val answer = 42;
+        \\    val assert 42 = answer catch throw "not 42";
         \\}
     );
 }
 
 test "types: assert pattern ---- with enum variant" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn f() {
-        \\    val assert Ok(value) = result catch throw Error("not ok");
+        \\#[@result]
+        \\fn parse() -> @Result<i32, string> {
+        \\    return 42;
+        \\}
+        \\fn main() {
+        \\    val result = parse();
+        \\    val assert Ok(value) = result;
+        \\    @print(value);
         \\}
     );
 }
@@ -123,7 +135,8 @@ test "types: assert pattern ---- with enum variant" {
 test "types: assert pattern ---- with empty list" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn f() {
-        \\    val assert [] = list catch throw Error("not empty");
+        \\    val list: i32[] = [];
+        \\    val assert [] = list catch throw "not empty";
         \\}
     );
 }
@@ -131,7 +144,8 @@ test "types: assert pattern ---- with empty list" {
 test "types: assert pattern ---- with multiple element list" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn f() {
-        \\    val assert [1, 2, 3] = numbers catch throw Error("not matching");
+        \\    val numbers = [1, 2, 3];
+        \\    val assert [1, 2, 3] = numbers catch throw "not matching";
         \\}
     );
 }
@@ -139,6 +153,7 @@ test "types: assert pattern ---- with multiple element list" {
 test "types: assert pattern ---- with list and rest" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\fn f() {
+        \\    val items = [1, 2, 3, 4];
         \\    val assert [first, second, ..rest] = items catch [];
         \\}
     );
@@ -239,7 +254,7 @@ test "types: range ---- iterate 0 to n" {
 
 test "types: loop ---- break with value" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\fn find(arr: i32[]) -> i32 {
+        \\fn find(arr: i32[]) -> i32[] {
         \\    return loop (arr) { x ->
         \\        if (x > 10) { break x; };
         \\    };
@@ -268,13 +283,16 @@ test "types: assign ---- plusEq on var" {
 
 test "types: self ---- field access in method" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Point = struct {
+        \\type Point(
         \\    x: i32,
-        \\    y: i32,
-        \\    fn sum() -> i32 {
+        \\    y: i32) {
+        \\    fn sum(self: Self) -> i32 {
         \\        return self.x + self.y;
-        \\    },
-        \\};
+        \\    }
+        \\}
+        \\fn main() {
+        \\    @print(Point(x: 1, y: 2).sum());
+        \\}
     );
 }
 

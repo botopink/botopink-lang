@@ -17,11 +17,11 @@ pub const TypeDefLang = enum {
 
 /// Top-level codegen configuration.
 ///
-/// Note: pre-v0.beta.21 this struct carried a `comptimeRuntime` field selecting
-/// one of four backends (node/erlang/wasm/beam). The four-runtime architecture
-/// was retired by the `wasm3-unified-runtime` spec; every comptime val
-/// expression now runs through the embedded wasm3 interpreter, so the field
-/// became dead weight and was removed.
+/// Note: this struct once carried a `comptimeRuntime` field selecting one of
+/// four backends (node/erlang/wasm/beam). The four-runtime architecture was
+/// retired: every comptime expression runs on the persistent `erl` server
+/// (`comptime/runtime/persistent_erl.zig`), so the field became dead weight and
+/// was removed.
 pub const Config = struct {
     /// Module source of the generated code.
     targetSource: TargetSource = .commonJS,

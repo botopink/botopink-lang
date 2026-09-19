@@ -121,20 +121,24 @@ fn run(init: std.process.Init) !u8 {
         lib_names[r] = lib.name;
         cells[r] = try arena.alloc(matrix.Status, opts.targets.len);
         for (opts.targets, 0..) |target, c| {
-            const status: matrix.Status = if (!lib.has_tests) blk: {
-                // JSON mode still emits a cell_summary so a consumer can tell
-                // "this cell ran (no tests)" from "this cell was skipped" —
-                // matches the spawning branch's structured output exactly.
-                if (opts.json) try runner.emitCellSummaryFor(arena, io, lib.name, target.toString(), .no_tests);
-                break :blk .no_tests;
-            } else if (!discovery.libSupportsTarget(lib, target.toString())) blk: {
+            const status: matrix.Status = if (!discovery.libSupportsTarget(lib, target.toString())) blk: {
                 // Lib's botopink.json `"targets": [...]` whitelist excludes
                 // this target — skip without spawning. Marks `~` in the matrix,
                 // never fails the run (even under --strict; the lib opted out
                 // explicitly, unlike a CLI-side unsupported target).
                 if (opts.json) try runner.emitCellSummaryFor(arena, io, lib.name, target.toString(), .skipped_unsupported);
                 break :blk .skipped_unsupported;
-            } else try runner.runCell(arena, io, bin, lib.dir, lib.name, target, opts.filter, opts.strict, opts.json);
+            } else if (!lib.has_tests and !lib.has_sources) blk: {
+                // A manifest with no botopink source: nothing to compile.
+                if (opts.json) try runner.emitCellSummaryFor(arena, io, lib.name, target.toString(), .no_tests);
+                break :blk .no_tests;
+            } else if (!lib.has_tests)
+                // No `test` block: still compiled per target (`botopink
+                // build`), so a test-less lib that does not compile fails
+                // its cell; one that compiles is `–`.
+                try runner.compileCell(arena, io, bin, lib.dir, lib.name, target, opts.strict, opts.json)
+            else
+                try runner.runCell(arena, io, bin, lib.dir, lib.name, target, opts.filter, opts.strict, opts.json);
             cells[r][c] = status;
             summary.tally(status);
         }
@@ -186,4 +190,12 @@ fn absolutize(arena: std.mem.Allocator, base: []const u8, path: []const u8) ![]c
     if (std.fs.path.isAbsolute(path)) return path;
     if (std.mem.indexOfScalar(u8, path, '/') == null) return path; // bare name → PATH
     return std.fs.path.join(arena, &.{ base, path });
+}
+
+test {
+    // Pull every file's unit tests into this root's test binary.
+    _ = args;
+    _ = discovery;
+    _ = matrix;
+    _ = runner;
 }

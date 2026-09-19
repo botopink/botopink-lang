@@ -7,8 +7,12 @@ const ast = @import("./ast.zig");
 const infer = @import("./comptime/infer.zig");
 const transform = @import("./comptime/transform.zig");
 const evalMod = @import("./comptime/eval.zig");
+const format = @import("./format.zig");
+pub const trace = @import("./comptime/trace.zig");
 const Lexer = @import("./lexer.zig").Lexer;
 const Parser = @import("./parser.zig").Parser;
+const LexicalError = @import("./lexer.zig").LexicalError;
+const ParseErrorInfo = @import("./parser.zig").ParseErrorInfo;
 const Env = @import("./comptime/env.zig").Env;
 const envMod = @import("./comptime/env.zig");
 const template = @import("./comptime/template.zig");
@@ -61,6 +65,28 @@ pub const CustomAstEntry = struct {
     col: usize,
 };
 
+/// Why a module did not lex or did not parse — the `Outcome.parseError`
+/// payload, located so every caller (CLI, snapshots, the language server)
+/// can render file, line and excerpt without re-running the lexer or parser.
+pub const SyntaxError = union(enum) {
+    /// `Lexer.scanAll` failed.
+    lex: LexFailure,
+    /// `Parser.parse` returned `UnexpectedToken`; the parser records a
+    /// located `ParseErrorInfo` for every one it returns.
+    parse: ?ParseErrorInfo,
+
+    pub const LexFailure = struct {
+        /// `@errorName` of the error `scanAll` returned (`UnterminatedString`,
+        /// `UnexpectedCharacter`, `LexicalError`).
+        name: []const u8,
+        /// The structured error, when the lexer recorded one (`Lexer.lexError`).
+        info: ?LexicalError,
+        /// Byte span the lexer was scanning when it stopped (`start`..`current`).
+        start: usize,
+        end: usize,
+    };
+};
+
 pub const ComptimeOutput = struct {
     name: []const u8,
     src: []const u8,
@@ -72,8 +98,9 @@ pub const ComptimeOutput = struct {
         /// Type inference failed (e.g. a type mismatch). Carries the located
         /// error so editors can render a diagnostic squiggle.
         typeError: TypeError,
-        /// Source failed to parse (e.g. incomplete input during LSP editing).
-        parseError: void,
+        /// Source failed to lex or parse (e.g. incomplete input during LSP
+        /// editing). Carries the located lexer / parser error.
+        parseError: SyntaxError,
     };
 
     pub const OkData = struct {
@@ -101,6 +128,15 @@ pub const ComptimeOutput = struct {
         /// for tooling (the language server). Empty for modules with no custom
         /// templates. expr-custom.
         custom_ast: []const CustomAstEntry,
+        /// What each decorator / template evaluation sent to and got back from
+        /// the `erl` runtime, in evaluation order (snapshots).
+        comptime_traces: []const trace.Entry,
+        /// How many template calls this module expanded, runtime-evaluated ones
+        /// and V1-driver ones (pass-through / `@expr` / `@code`) alike. The
+        /// V1 expansions never reach the `erl` runtime, so they leave no
+        /// `comptime_traces` entry; snapshots use this count to decide that the
+        /// spliced program is worth recording.
+        template_expansions: usize = 0,
     };
 };
 
@@ -149,14 +185,14 @@ fn withUsedAssocInterfaces(arena: std.mem.Allocator, prog: ast.Program, env: *co
         const name = k.*;
         var already = false;
         for (prog.decls) |d| {
-            if (d == .interface and std.mem.eql(u8, d.interface.name, name)) {
+            if (d == .behavior and std.mem.eql(u8, d.behavior.name, name)) {
                 already = true;
                 break;
             }
         }
         if (already) continue;
         if (env.assocInterfaceDecls.get(name)) |decl| {
-            try extra.append(arena, .{ .interface = decl });
+            try extra.append(arena, .{ .behavior = decl });
         }
     }
     if (extra.items.len == 0) return prog;
@@ -185,7 +221,7 @@ fn withSynthesisedEnumDecls(arena: std.mem.Allocator, prog: ast.Program, env: *c
     var extra: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
     var it = env.synthesisedEnumDecls.iterator();
     while (it.next()) |entry| {
-        try extra.append(arena, .{ .@"enum" = entry.value_ptr.* });
+        try extra.append(arena, .{ .type_ = entry.value_ptr.* });
     }
     if (extra.items.len == 0) return prog;
 
@@ -195,12 +231,12 @@ fn withSynthesisedEnumDecls(arena: std.mem.Allocator, prog: ast.Program, env: *c
     @memcpy(new_decls[0..extra.items.len], extra.items);
     for (prog.decls, 0..) |d, i| {
         switch (d) {
-            .@"enum" => |e| {
-                if (e.sections.len == 0) {
+            .type_ => |e| {
+                if (e.sections().len == 0) {
                     new_decls[extra.items.len + i] = d;
                 } else {
                     const enriched = try enrichEnumWithSectionWrappers(arena, e);
-                    new_decls[extra.items.len + i] = .{ .@"enum" = enriched };
+                    new_decls[extra.items.len + i] = .{ .type_ = enriched };
                 }
             },
             else => new_decls[extra.items.len + i] = d,
@@ -210,17 +246,17 @@ fn withSynthesisedEnumDecls(arena: std.mem.Allocator, prog: ast.Program, env: *c
 }
 
 /// §enum-sections F4 — synthesise the section-wrapper variants for a parent
-/// `EnumDecl` so codegen sees `Color(_inner: __Enum__Color)` alongside the
-/// user-written variants. The parent's `EnumDecl.sections` carry the section
+/// enum `TypeDecl` so codegen sees `Color(_inner: __Enum__Color)` alongside the
+/// user-written variants. The parent's `sections()` carry the section
 /// names; the wrapper payload's type-ref points at the mangled inner enum
 /// name (matching `registerEnumSection`'s `__<Enum>__<Path>` convention).
-/// Returns a new EnumDecl with `.variants` set to (original variants ++
+/// Returns a new enum TypeDecl with its variants set to (original variants ++
 /// synthesised wrappers).
-fn enrichEnumWithSectionWrappers(arena: std.mem.Allocator, e: ast.EnumDecl) !ast.EnumDecl {
-    const wrappers = try arena.alloc(ast.EnumVariant, e.sections.len);
-    for (e.sections, 0..) |sec, i| {
+fn enrichEnumWithSectionWrappers(arena: std.mem.Allocator, e: ast.TypeDecl) !ast.TypeDecl {
+    const wrappers = try arena.alloc(ast.EnumVariant, e.sections().len);
+    for (e.sections(), 0..) |sec, i| {
         const mangled = try std.fmt.allocPrint(arena, "__{s}__{s}", .{ e.name, sec.name });
-        const fields = try arena.alloc(ast.EnumVariantField, 1);
+        const fields = try arena.alloc(ast.Field, 1);
         fields[0] = .{
             .name = "_inner",
             .typeRef = .{ .named = mangled },
@@ -228,11 +264,12 @@ fn enrichEnumWithSectionWrappers(arena: std.mem.Allocator, e: ast.EnumDecl) !ast
         };
         wrappers[i] = .{ .name = sec.name, .fields = fields, .numeric = false };
     }
-    const merged = try arena.alloc(ast.EnumVariant, e.variants.len + wrappers.len);
-    @memcpy(merged[0..e.variants.len], e.variants);
-    @memcpy(merged[e.variants.len..], wrappers);
+    const variants = e.variants();
+    const merged = try arena.alloc(ast.EnumVariant, variants.len + wrappers.len);
+    @memcpy(merged[0..variants.len], variants);
+    @memcpy(merged[variants.len..], wrappers);
     var out = e;
-    out.variants = merged;
+    out.shape = .{ .enum_ = .{ .variants = merged, .sections = e.sections() } };
     return out;
 }
 
@@ -248,7 +285,7 @@ const AnalysisResult = union(enum) {
         info: ComptimeError,
     },
     typeError: TypeError,
-    parseError: void,
+    parseError: SyntaxError,
 };
 
 fn analyzeModule(
@@ -306,6 +343,12 @@ fn parseAndMergeContributions(
     return ast.Program{ .decls = try merged.toOwnedSlice(arena) };
 }
 
+/// The pass-2 env replaces pass 1's, where the decorators ran: carry their
+/// runtime traces over, ahead of any pass-2 (template) evaluations.
+fn keepPassOneTraces(pass_two: *Env, pass_one: *const Env) !void {
+    try pass_two.comptimeTraces.insertSlice(pass_two.arena, 0, pass_one.comptimeTraces.items);
+}
+
 /// Pass-2 of decorator `@emit` expansion: re-infer on the merged program
 /// (original decls + parsed contributions) with decorator invocation disabled
 /// so generated decls don't re-emit. Mirrors `analyzeSource` minus the lex/
@@ -358,7 +401,7 @@ fn analyzeMerged(
 /// Process-lifetime template Env populated once by `registerBuiltins` +
 /// `registerStdlib`. Each `freshEnv` then clones the (already-inferred)
 /// hashmaps in ~µs instead of re-lexing + re-parsing + re-inferring the
-/// stdlib (`primitives.d.bp` + `@Decl` cluster + `CustomNode` +
+/// stdlib (`primitives.bp` + `@Decl` cluster + `CustomNode` +
 /// `builtins_fns.d.bp`) on every call.
 ///
 /// Before this template was introduced, every `freshEnv` invocation
@@ -374,88 +417,6 @@ var stdlib_template_env: Env = undefined;
 /// `.load(.acquire)` until they observe 2. No mutex needed — the
 /// init function runs exactly once, every other caller is read-only.
 var stdlib_template_init: std.atomic.Value(u8) = .init(0);
-
-/// Pre-spawn the persistent erl subprocess used for comptime val evaluation.
-/// Erlang/OTP cold-spawns in ~50ms; pre-warming keeps the first comptime
-/// evaluation's latency honest and prevents the first test from paying the
-/// spawn cost.
-pub fn warmPersistentErlRunner(io: std.Io, gpa: std.mem.Allocator) !void {
-    const erl = @import("./comptime/runtime/persistent_erl.zig");
-    erl.warm(gpa, io) catch return;
-
-    // Compile template_runtime.bp to Erlang and write to the server directory
-    // so Span, CustomNode, Capture, DeclHandle types are available to
-    // template/decorator bodies compiled to Erlang.
-    const erlang_codegen = @import("./codegen/erlang.zig");
-    const session = compile(gpa, &.{.{ .path = "template_runtime", .source = template_runtime_src }}, io, null, "erlang") catch return;
-    defer session.deinit(gpa);
-    for (session.outputs.items) |out| {
-        if (out.outcome == .ok) {
-            var results = erlang_codegen.codegenEmit(gpa, &.{out}, .{ .targetSource = .erlang }) catch continue;
-            defer {
-                for (results.items) |*r| r.result.deinit(gpa);
-                results.deinit(gpa);
-            }
-            for (results.items) |r| {
-                if (r.result.js.len > 0) {
-                    const server_dir = ".botopinkbuild/tmp/persistent_erl";
-                    const tr_path = try std.fs.path.join(gpa, &.{ server_dir, "template_runtime.erl" });
-                    defer gpa.free(tr_path);
-
-                    // Post-process: replace #[@Host] stub bodies with prelude calls.
-                    const patched = try patchHostMethods(gpa, r.result.js);
-                    defer gpa.free(patched);
-                    std.Io.Dir.cwd().writeFile(io, .{ .sub_path = tr_path, .data = patched }) catch break;
-                    _ = std.process.run(gpa, io, .{
-                        .argv = &.{ "erlc", "-o", server_dir, tr_path },
-                    }) catch {};
-                    break;
-                }
-            }
-            break;
-        }
-    }
-}
-
-/// Replace #[@Host] stub bodies in the generated template_runtime Erlang source
-/// with calls to botopink_comptime_prelude. The codegen emits #[@Host] methods as
-/// empty functions (returning `ok`). This patches them to delegate to the prelude.
-fn patchHostMethods(gpa: std.mem.Allocator, erl_src: []const u8) ![]u8 {
-    var result: std.ArrayListUnmanaged(u8) = .empty;
-    try result.ensureTotalCapacity(gpa, erl_src.len + 512);
-
-    var lines = std.mem.splitScalar(u8, erl_src, '\n');
-    while (lines.next()) |line| {
-        const trimmed = std.mem.trim(u8, line, " \t");
-        // Match #[@Host] function stubs and replace bodies.
-        if (std.mem.startsWith(u8, trimmed, "context(")) {
-            try result.appendSlice(gpa, "context(Self) -> botopink_comptime_prelude:context(maps:get(descriptor, Self)).\n");
-        } else if (std.mem.startsWith(u8, trimmed, "lookup(")) {
-            try result.appendSlice(gpa, "lookup(Self, Name) -> botopink_comptime_prelude:lookup(maps:get(descriptor, Self), Name).\n");
-        } else if (std.mem.startsWith(u8, trimmed, "bindings(")) {
-            try result.appendSlice(gpa, "bindings(Self) -> botopink_comptime_prelude:bindings(maps:get(descriptor, Self)).\n");
-        } else if (std.mem.startsWith(u8, trimmed, "parts(")) {
-            try result.appendSlice(gpa, "parts(Self) -> botopink_comptime_prelude:parts(maps:get(descriptor, Self)).\n");
-        } else if (std.mem.startsWith(u8, trimmed, "custom(")) {
-            try result.appendSlice(gpa, "custom(Self, Ast, Code) -> {maps:get(descriptor, Self), Ast, Code}.\n");
-        } else if (std.mem.startsWith(u8, trimmed, "makeExpr(")) {
-            try result.appendSlice(gpa, "makeExpr(V) -> {v, V}.\n");
-        } else if (std.mem.startsWith(u8, trimmed, "makeCode(")) {
-            try result.appendSlice(gpa, "makeCode(S) -> {code, S}.\n");
-        } else if (std.mem.startsWith(u8, trimmed, "fail(")) {
-            try result.appendSlice(gpa, "fail(Self, Msg) -> botopink_comptime_prelude:fail(maps:get(descriptor, Self), Msg).\n");
-        } else if (std.mem.startsWith(u8, trimmed, "failAt(")) {
-            try result.appendSlice(gpa, "failAt(Self, Span, Msg) -> botopink_comptime_prelude:fail_at(maps:get(descriptor, Self), Msg, Span).\n");
-        } else if (std.mem.startsWith(u8, trimmed, "build(")) {
-            try result.appendSlice(gpa, "build(Self, Type) -> botopink_comptime_prelude:build(maps:get(descriptor, Self), Type).\n");
-        } else {
-            try result.appendSlice(gpa, line);
-            try result.append(gpa, '\n');
-        }
-    }
-
-    return result.toOwnedSlice(gpa);
-}
 
 pub fn getStdlibTemplate(gpa: std.mem.Allocator) !*const Env {
     while (true) {
@@ -507,15 +468,27 @@ fn analyzeSource(
     env.skipDecoratorInvoke = skip_invoke;
     // STD-001 — codegen-path target name (null in LSP / tests). Consumed by
     // `markStdImports` to red imports of `from "std"` modules whose
-    // host-bound declares lack an `@external(<target>, …)` match.
+    // host-bound declares lack an `#[@External.<Target>(…)]` match.
     env.target = target_name;
 
     var lexer = Lexer.init(source);
-    const tokens = try lexer.scanAll(arena);
+    const tokens = lexer.scanAll(arena) catch |err| switch (err) {
+        error.OutOfMemory => return err,
+        // A lex error is an outcome of this module, not a failure of the
+        // whole session: the other modules still compile and get diagnosed.
+        else => return .{ .parseError = .{ .lex = .{
+            .name = @errorName(err),
+            .info = lexer.lexError,
+            .start = lexer.start,
+            .end = lexer.current,
+        } } },
+    };
 
     var parser = Parser.init(tokens);
     const program = parser.parse(arena) catch |err| switch (err) {
-        error.UnexpectedToken => return .parseError,
+        // The caller renders the diagnostic (`ComptimeOutput.parseError`); a
+        // library call must not write to stderr — a test runner reads it.
+        error.UnexpectedToken => return .{ .parseError = .{ .parse = parser.parseError } },
         else => return err,
     };
 
@@ -542,8 +515,9 @@ fn analyzeSource(
     // splicing only when a contribution fails to parse standalone.
     if (!skip_invoke and env.contributions.items.len > 0) {
         if (try parseAndMergeContributions(arena, program, env.contributions.items)) |merged_program| {
-            const reanalysis = try analyzeMerged(arena, mod, merged_program, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, target_name);
+            var reanalysis = try analyzeMerged(arena, mod, merged_program, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, target_name);
             if (reanalysis == .success) {
+                try keepPassOneTraces(&reanalysis.success.env, &env);
                 env.deinit();
                 return reanalysis;
             }
@@ -563,8 +537,9 @@ fn analyzeSource(
         // full re-lex so the parser sees the original module as one unit (its
         // diagnostics carry global offsets).
         const spliced = try spliceContributions(arena, source, env.contributions.items);
-        const reanalysis = try analyzeSource(arena, mod, spliced, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, types_only, true, target_name);
+        var reanalysis = try analyzeSource(arena, mod, spliced, registry, typeDeclRegistry, templateRegistry, decoratorRegistry, extensionRegistry, templateEvalCtx, types_only, true, target_name);
         if (reanalysis == .success) {
+            try keepPassOneTraces(&reanalysis.success.env, &env);
             env.deinit();
             return reanalysis;
         }
@@ -599,19 +574,20 @@ pub const std_pkg_modules = @import("std_prelude").pkg_modules;
 /// object `decorator_eval.zig` binds, so a body's `decl.fields`/`decl.kind`/
 /// `decl.fail(…)` type-check against the same data the runtime provides.
 const decl_reflection_src =
-    \\pub enum DeclKind { Record, Struct, Enum, Interface, Fn, Method, Field }
-    \\pub record Span { val start: i32, val end: i32, val line: i32 }
-    \\pub record Annotation { val name: string, val args: string[] }
-    \\pub record Param { val name: string, val typeName: string }
-    \\pub record Field { val name: string, val typeName: string, val annotations: Annotation[] }
-    \\pub record Method { val name: string, val params: Param[], val returnType: string, val annotations: Annotation[] }
-    \\pub record Decl {
-    \\    val kind: DeclKind,
-    \\    val name: string,
-    \\    val fields: Field[],
-    \\    val methods: Method[],
-    \\    val returnType: string,
-    \\    val annotations: Annotation[],
+    \\pub type DeclKind { Type, Behavior, Fn, Method, Field }
+    \\pub type Span(start: i32, end: i32, line: i32)
+    \\pub type Annotation(name: string, args: string[])
+    \\pub type Param(name: string, typeName: string)
+    \\pub type Field(name: string, typeName: string, annotations: Annotation[])
+    \\pub type Method(name: string, params: Param[], returnType: string, annotations: Annotation[])
+    \\pub type Decl(
+    \\    kind: DeclKind,
+    \\    name: string,
+    \\    fields: Field[],
+    \\    variants: string[],
+    \\    methods: Method[],
+    \\    returnType: string,
+    \\    annotations: Annotation[]) {
     \\    declare fn fail(self: Self, message: string);
     \\    declare fn failAt(self: Self, span: Span, message: string);
     \\}
@@ -625,13 +601,13 @@ const decl_reflection_src =
 /// `Span` field type resolves. `Binding` (the `ref` field) is the same opaque
 /// type `q.lookup` yields. Generic — the core never inspects `kind`/`label`.
 const custom_ast_reflection_src =
-    \\pub record CustomNode {
-    \\    val kind: string,
-    \\    val span: Span,
-    \\    val label: string,
-    \\    val ref: ?Binding,
-    \\    val children: CustomNode[],
-    \\}
+    \\pub type CustomNode(
+    \\    kind: string,
+    \\    span: Span,
+    \\    label: string,
+    \\    ref: ?Binding,
+    \\    children: CustomNode[],
+    \\)
 ;
 
 /// Comptime type introspection types (§1.0.0-beta): `@typeInfo` returns a
@@ -640,19 +616,19 @@ const custom_ast_reflection_src =
 /// introspection results. Mirrors the surface documented in
 /// `libs/std/src/builtins.d.bp`; registered like the `@Decl` cluster.
 const type_info_src =
-    \\pub record RecordField {
-    \\    val name: string,
-    \\    val typeName: string,
-    \\}
+    \\pub type RecordField(
+    \\    name: string,
+    \\    typeName: string,
+    \\)
     \\
-    \\pub record EnumVariant {
-    \\    val name: string,
-    \\    val fields: RecordField[],
-    \\}
+    \\pub type EnumVariant(
+    \\    name: string,
+    \\    fields: RecordField[],
+    \\)
     \\
-    \\pub enum TypeInfoKind { Int, Float, Bool, String, Array, Record, Enum, Fn, Optional, Generic }
+    \\pub type TypeInfoKind { Int, Float, Bool, String, Array, Record, Enum, Fn, Optional, Generic }
     \\
-    \\pub enum TypeInfo {
+    \\pub type TypeInfo {
     \\    Int,
     \\    Float,
     \\    Bool,
@@ -666,19 +642,13 @@ const type_info_src =
     \\}
 ;
 
-/// Compiler-internal `.bp` source for the wat3 comptime prelude. Re-exports
-/// `std_prelude.template_runtime_src` so `comptime/runtime/wat_runtime.zig`
-/// can read the embedded bp bytes without taking a direct `std_prelude`
-/// import (which would cycle through the lib-agnostic gate).
-pub const template_runtime_src = @import("std_prelude").template_runtime_src;
-
 /// Embedded builtin-type interface declarations. Unlike `std_pkg_modules`
 /// these are flattened into the global type env at infer time (they declare the
 /// methods available on primitives / arrays / strings). Tooling — the language
 /// server — scans these sources to resolve receiver methods such as `42.abs()`,
 /// `true.to_string()`, `xs.map(…)` and `"s".len()`.
 pub const primitive_interfaces_src = @import("std_prelude").primitives;
-// Array<T> and String interfaces live inside primitives.d.bp (the controller)
+// Array<T> and String behaviors live inside primitives.bp (the controller)
 // in the interface model — there are no standalone array/string modules.
 pub const array_interface_src = @import("std_prelude").primitives;
 pub const string_interface_src = @import("std_prelude").primitives;
@@ -913,8 +883,7 @@ fn registerExports(
             // `pub`-only. Non-pub types still export their constructor (above)
             // for value use, but carry no cross-module `TypeDef`.
             switch (b.decl) {
-                .record => |r| if (r.isPub) try typeDecls.put(b.name, b.decl),
-                .@"enum" => |e| if (e.isPub) try typeDecls.put(b.name, b.decl),
+                .type_ => |t| if (t.isPub) try typeDecls.put(b.name, b.decl),
                 else => {},
             }
             // Template fns export their declaration too — importing modules
@@ -1103,8 +1072,7 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
             var type_decls: std.ArrayListUnmanaged(ast.DeclKind) = .empty;
             for (program.decls) |decl| {
                 const is_pub_type = switch (decl) {
-                    .record => |r| r.isPub,
-                    .@"enum" => |e2| e2.isPub,
+                    .type_ => |t| t.isPub,
                     else => false,
                 };
                 if (is_pub_type) try type_decls.append(env.arena, decl);
@@ -1148,25 +1116,29 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
     }
 }
 
-/// Collect comptime entries from `bindings`, evaluate them via the unified
-/// wasm3 runtime, and return the generated script (if any) and the evaluated
-/// values.
+/// Collect the comptime `val` entries of `bindings` and fold them, returning
+/// the value listing (null when there are none) and the evaluated literals.
 pub fn evaluateComptime(
     allocator: std.mem.Allocator,
-    io: std.Io,
     bindings: []const infer.TypedBinding,
-    build_root: []const u8,
 ) !ComptimeEvalResult {
     var entries: std.ArrayListUnmanaged(evalMod.ComptimeEntry) = .empty;
     defer {
-        for (entries.items) |e| allocator.free(e.id);
+        for (entries.items) |e| {
+            allocator.free(e.id);
+            allocator.free(e.source);
+        }
         entries.deinit(allocator);
     }
     for (bindings, 0..) |b, i| {
         const te = b.typedExpr orelse continue;
         if (!te.isComptimeExpr()) continue;
         const id = try std.fmt.allocPrint(allocator, "ct_{d}", .{i});
-        try entries.append(allocator, .{ .id = id, .expr = te });
+        errdefer allocator.free(id);
+        var decl = [_]ast.DeclKind{b.decl};
+        const source = format.format(allocator, .{ .decls = &decl }) catch try allocator.dupe(u8, b.name);
+        errdefer allocator.free(source);
+        try entries.append(allocator, .{ .id = id, .expr = te, .source = source });
     }
 
     if (entries.items.len == 0) {
@@ -1176,7 +1148,7 @@ pub fn evaluateComptime(
         };
     }
 
-    const result = try evalMod.evaluate(allocator, io, entries.items, build_root);
+    const result = try evalMod.evaluate(allocator, entries.items);
     return .{ .comptime_script = result.script, .comptime_vals = result.values };
 }
 
@@ -1227,11 +1199,11 @@ pub fn compileTypesOnly(
         const analysis = try analyzeModule(arena_alloc, mod, &registry, &type_decl_registry, &template_registry, &decorator_registry, &extension_registry, eval_ctx, true, null);
 
         switch (analysis) {
-            .parseError => {
+            .parseError => |se| {
                 try session.outputs.append(allocator, .{
                     .name = name,
                     .src = mod.source,
-                    .outcome = .parseError,
+                    .outcome = .{ .parseError = se },
                 });
             },
             .validationError => |verr| {
@@ -1329,6 +1301,7 @@ pub fn compileTypesOnly(
                         &succ.env.future_jump_lowerings,
                         &succ.env.stdArrayLowerings,
                         &succ.env.enumSectionRewrites,
+                        &succ.env.conditionLoops,
                         succ.env.ctorParams,
                     ) catch break :blk_t program_for_transform;
                     const with_assoc = withUsedAssocInterfaces(arena_alloc, t, &succ.env) catch break :blk_t t;
@@ -1353,6 +1326,8 @@ pub fn compileTypesOnly(
                         .js_method_renames = js_method_renames,
                         .instance_lowerings = instance_lowerings,
                         .custom_ast = try collectCustomAst(arena_alloc, &succ.env),
+                        .comptime_traces = succ.env.comptimeTraces.items,
+                        .template_expansions = succ.env.templateExpansions.count(),
                     } },
                 });
             },
@@ -1404,11 +1379,11 @@ pub fn compile(
         }, false, target_name);
 
         switch (analysis) {
-            .parseError => {
+            .parseError => |se| {
                 try session.outputs.append(allocator, .{
                     .name = name,
                     .src = mod.source,
-                    .outcome = .parseError,
+                    .outcome = .{ .parseError = se },
                 });
             },
             .validationError => |verr| {
@@ -1449,7 +1424,7 @@ pub fn compile(
                     // below still reads `succ.env.method_lowerings`. The env is
                     // arena-backed; the session arena reclaims it wholesale.
                 }
-                const ct = try evaluateComptime(arena_alloc, io, succ.bindings, build_root orelse name);
+                const ct = try evaluateComptime(arena_alloc, succ.bindings);
 
                 var fn_decls = std.StringHashMap(ast.FnDecl).init(arena_alloc);
                 var comptime_arrays = std.StringHashMap([]const ast.TypedExpr).init(arena_alloc);
@@ -1508,7 +1483,7 @@ pub fn compile(
                 };
                 const transformed = try withSynthesisedEnumDecls(
                     arena_alloc,
-                    try withUsedAssocInterfaces(arena_alloc, try transform.transform(arena_alloc, program_for_transform, fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.result_jump_lowerings, &succ.env.future_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, succ.env.ctorParams), &succ.env),
+                    try withUsedAssocInterfaces(arena_alloc, try transform.transform(arena_alloc, program_for_transform, fn_decls, comptime_arrays, ct.comptime_vals, &succ.env.method_lowerings, &succ.env.templateExpansions, &succ.env.result_jump_lowerings, &succ.env.future_jump_lowerings, &succ.env.stdArrayLowerings, &succ.env.enumSectionRewrites, &succ.env.conditionLoops, succ.env.ctorParams), &succ.env),
                     &succ.env,
                 );
 
@@ -1530,6 +1505,8 @@ pub fn compile(
                         .js_method_renames = js_method_renames,
                         .instance_lowerings = instance_lowerings,
                         .custom_ast = try collectCustomAst(arena_alloc, &succ.env),
+                        .comptime_traces = succ.env.comptimeTraces.items,
+                        .template_expansions = succ.env.templateExpansions.count(),
                     } },
                 });
             },

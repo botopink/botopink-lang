@@ -1,0 +1,87 @@
+//// Decision 8 §5.1 P4, P5, P7, P8 — variants by label and by position, `..`
+//// for the rest, `.Variant` shorthand, nested patterns, the bound variable's
+//// type taken from the matched value.
+
+type Shape {
+    Circle(radius: i32),
+    Rect(width: i32, height: i32),
+}
+
+type Maybe<T> {
+    Some(value: T),
+    None,
+}
+
+fn area(s: Shape) -> i32 {
+    return case s {
+        Shape.Circle(r) { r * r * 3 }
+        Shape.Rect(width: w, height: h) { w * h }
+    };
+}
+
+fn width(s: Shape) -> i32 {
+    return case s {
+        .Rect(width: w, ..) { w }
+        .Circle(..) { 0 }
+    };
+}
+
+fn firstOfRect(s: Shape) -> i32 {
+    return case s {
+        .Rect(w, ..) { w }
+        .Circle(r) { r }
+    };
+}
+
+fn textLength(m: Maybe<string>) -> i32 {
+    return case m {
+        .Some(v) { v.length }
+        .None { 0 }
+    };
+}
+
+fn labelOrDefault(m: Maybe<string>) -> string {
+    return case m {
+        Maybe.Some(value: v) { v }
+        Maybe.None { "default" }
+    };
+}
+
+fn sumPair(m: Maybe<#(i32, i32)>) -> i32 {
+    return case m {
+        .Some(#(a, b)) { a + b }
+        .None { -1 }
+    };
+}
+
+test "§5.1 P4 a variant binds by position" {
+    assert area(Shape.Circle(radius: 2)) == 12;
+}
+
+test "§5.1 P4 a variant binds by label" {
+    assert area(Shape.Rect(width: 3, height: 4)) == 12;
+}
+
+test "§5.1 P7 .. ignores the remaining fields (by label)" {
+    assert width(Shape.Rect(width: 5, height: 9)) == 5;
+    assert width(Shape.Circle(radius: 1)) == 0;
+}
+
+test "§5.1 P7 .. ignores the remaining fields (by position)" {
+    assert firstOfRect(Shape.Rect(width: 6, height: 1)) == 6;
+}
+
+test "§5.1 P8 .Some / .None take the enum from the matched value's type" {
+    assert labelOrDefault(Maybe.None) == "default";
+    assert labelOrDefault(Maybe.Some(value: "x")) == "x";
+}
+
+test "§5.1 P5 the bound variable has the matched value's type argument" {
+    val m: Maybe<string> = Maybe.Some(value: "abcd");
+    assert textLength(m) == 4;
+}
+
+test "§5.1 nested patterns: a tuple inside a variant" {
+    assert sumPair(Maybe.Some(value: #(2, 3))) == 5;
+    assert sumPair(Maybe.None) == -1;
+}

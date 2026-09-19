@@ -1,9 +1,9 @@
 ----- SOURCE
 ```botopink
 val x = 1;
-val zzz
-       ↑
+val y = zzz
+           ↑
 ```
 
------ COMPLETION at (line 1, char 7)
+----- COMPLETION at (line 1, char 11)
 (empty)

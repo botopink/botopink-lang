@@ -14,6 +14,7 @@ test {
     _ = @import("tests/templates.zig");
     _ = @import("tests/decorators.zig");
     _ = @import("tests/decorator_invocation.zig");
+    _ = @import("tests/decorator_regression.zig");
     _ = @import("tests/generic_defaults.zig");
     _ = @import("tests/std_target_gating.zig");
     _ = @import("tests/narrowing.zig");
@@ -23,7 +24,13 @@ test {
     _ = @import("tests/builtins_typeinfo.zig");
     _ = @import("tests/eval_pipeline.zig");
     _ = @import("primOpTemplate.zig");
+    _ = @import("./snapshot.zig");
     _ = @import("./diagnostics.zig");
+    _ = @import("./eval.zig");
+    _ = @import("./trace.zig");
     _ = @import("./template_eval.zig");
     _ = @import("./decorator_eval.zig");
+    _ = @import("./runtime/persistent_erl.zig");
+    _ = @import("./runtime/prelude.zig");
+    _ = @import("./runtime/etf.zig");
 }

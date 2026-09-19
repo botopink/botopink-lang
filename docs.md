@@ -1,6 +1,21 @@
 # Botopink language reference
 
-> Version: v0.0.13-beta
+This reference describes the language as the compiler accepts it today. Every
+`botopink` fence here is compiled by `zig build test-docs`; the two that are
+tables rather than modules say so in a `docs-check` comment.
+
+## Syntax changes
+
+A type is declared with `type` and a contract with `behavior`; `record`, `enum`
+and `interface` are gone, and so are `auto`, `derive`, `get`, `macro`,
+`opaque`, `private`, `set`, `new` and `delegate` — all of them are ordinary
+identifiers now. An anonymous group of values is a tuple, `#(…)`, which
+replaces the old anonymous record. Repetition is `loop` only; `while` reports
+an error naming `loop (condition)`. A host template numbers its parameters
+positionally (`$0`, `$1`, …).
+
+The move from the previous surface, declaration by declaration, is in
+[`MIGRATION.md`](https://github.com/botopink/projects/blob/feat/specs/1.0.4-beta/MIGRATION.md).
 
 ## Program structure
 
@@ -16,34 +31,108 @@ fn main() {
 
 ### Modules
 
-Projects use an explicit, Rust-style module tree. The root module (`main.bp`)
-declares which submodules to include; the compiler follows these declarations
-instead of compiling every `.bp` it finds.
+Projects use an explicit, Rust-style module tree. The root module (`main.bp`
+for a binary, `root.bp` for a library) declares which submodules to include;
+the compiler follows these declarations instead of compiling every `.bp` it
+finds.
 
+<!-- docs-check: project modules src/main.bp -->
 ```botopink
 // src/main.bp
-pub mod geometry;    // resolves src/geometry.bp
-pub mod shapes;      // resolves src/shapes/mod.bp
-
 import {area} from "geometry";
 import {describe} from "shapes";
 
+pub mod geometry;    // resolves src/geometry.bp
+pub mod shapes;      // resolves src/shapes/mod.bp
+
 fn main() {
     @print(area(3, 4));    // 12
-    @print(describe());     // circle
+    @print(describe());    // circle
 }
 ```
 
-Leaf modules are single files; folder modules use a `mod.bp` entry point. Only
-`pub` declarations are visible outside their module.
+<!-- docs-check: project modules src/geometry.bp -->
+```botopink
+// src/geometry.bp
+pub fn area(w: i32, h: i32) -> i32 {
+    return w * h;
+}
+```
+
+<!-- docs-check: project modules src/shapes/mod.bp -->
+```botopink
+// src/shapes/mod.bp
+pub fn describe() -> string {
+    return "circle";
+}
+```
+
+Leaf modules are single files; folder modules use a `mod.bp` entry point.
+`pub mod` is visible through the parent; a plain `mod` is private to its
+declaring module's subtree. Only `pub` declarations are visible outside their
+module.
 
 ### Imports
 
+An import either names the module it reads from, or names nothing and resolves
+the sibling module that exports the names. Both forms are the language.
+
+<!-- docs-check: project imports src/main.bp -->
 ```botopink
-import {dict, queue, order} from "std";   // stdlib
-import {area} from "geometry";             // sibling module
-import {of, erika} from "erika";           // disk dependency
+// src/main.bp
+import {math} from "std";              // a stdlib module
+import {area} from "geometry";         // a module of this package, named
+import {name} from "shapes.circle";    // a nested module path
+import {perimeter};                    // the shorthand — the sibling that exports it
+
+pub mod geometry;
+pub mod shapes;
+
+fn main() {
+    @print(area(3, 4));             // 12
+    @print(name());                 // circle
+    @print(perimeter(3, 4));        // 14
+    @print(math.abs(0.0 - 1.0));    // 1
+}
 ```
+
+<!-- docs-check: project imports src/geometry.bp -->
+```botopink
+// src/geometry.bp
+pub fn area(w: i32, h: i32) -> i32 {
+    return w * h;
+}
+
+pub fn perimeter(w: i32, h: i32) -> i32 {
+    return (w + h) * 2;
+}
+```
+
+<!-- docs-check: project imports src/shapes/mod.bp -->
+```botopink
+// src/shapes/mod.bp
+pub mod circle;
+```
+
+<!-- docs-check: project imports src/shapes/circle.bp -->
+```botopink
+// src/shapes/circle.bp
+pub fn name() -> string {
+    return "circle";
+}
+```
+
+A library is imported the same way, under the name `botopink.json` declares it
+in `dependencies`:
+
+<!-- docs-check: skip a library dependency needs that library declared in `dependencies`; the docs harness builds a scratch project with none -->
+```botopink
+import {of, erika} from "erika";   // a library dependency
+```
+
+A `from` that names neither a module of this package, nor a declared
+dependency, nor `std` is an error — it is reported where it is written, rather
+than binding nothing in silence.
 
 ## Bindings
 
@@ -52,7 +141,6 @@ import {of, erika} from "erika";           // disk dependency
 ```botopink
 val x = 42;
 val greeting = "hello";
-val Point = record { x: i32, y: i32 };
 ```
 
 Types are inferred via Hindley-Milner unification. Explicit annotations are
@@ -60,11 +148,12 @@ optional:
 
 ```botopink
 val count: i32 = 42;
-val names: Array<string> = ["alice", "bob"];
+val names: string[] = ["alice", "bob"];
 ```
 
 ### var — mutable binding
 
+<!-- docs-check: body -->
 ```botopink
 var n = 0;
 n = n + 1;
@@ -76,67 +165,88 @@ n = n + 1;
 fn add(x: i32, y: i32) -> i32 {
     return x + y;
 }
-
-// Inferred return type
-fn double(x: i32) { return x * 2; }
-
-// Nested functions use `return` to exit the enclosing `fn`
-fn outer() {
-    fn inner() { return 42; }
-    @print(inner());  // 42
-}
 ```
 
 ## Types
 
 ### Primitives
 
-`i32`, `i64`, `f64`, `string`, `bool`, `void`
+`i32`, `i64`, `u32`, `u64`, `f32`, `f64`, `string`, `bool`, `void`.
+Their methods are declared in `libs/std/src/primitives.bp`.
 
-### Record
+### type — records
+
+A `type` whose fields are written in parentheses is a record: the declaration
+mirrors construction.
 
 ```botopink
-record Point { x: i32, y: i32 }
+type Point(x: i32, y: i32)
 
 val p = Point(x: 1, y: 2);
-val px = p.x;                       // field access
+val px = p.x;
 ```
 
-Records can have methods:
+A body adds methods:
 
 ```botopink
-record Point {
-    x: i32,
-    y: i32,
-
-    fn magnitude(self: Self) -> f64 { ... }
+type Counter(n: i32) {
+    fn current(self: Self) -> i32 {
+        return self.n;
+    }
 }
 ```
 
-### Enum
+An anonymous group of values is a tuple, not a type declaration. A tuple is
+positional at run time; a label is a compile-time name, lent by the variable
+used to build it or written in the type:
 
 ```botopink
-enum Color { Red, Green, Blue }
-
-val c = Color.Red;
-```
-
-Enum variants can carry payloads:
-
-```botopink
-enum Option<T> { None, Some(T) }
-```
-
-### Interface
-
-```botopink
-interface Show {
-    fn show(self: Self) -> string;
+fn box() -> #(value: i32) {
+    val value = 1;
+    return #(value);    // the variable lends the label
 }
 
-implement Show for Point {
-    fn show(self: Self) -> string {
-        return "(" ++ self.x ++ ", " ++ self.y ++ ")";
+fn read() -> i32 {
+    val inner = box();
+    return inner.value;    // same element as inner.0
+}
+```
+
+### type — enums
+
+A `type` whose body lists variants is an enum:
+
+```botopink
+type Color { Red, Green, Blue }
+
+type Shape {
+    Circle(radius: f64),
+    Square(side: f64),
+}
+
+fn main() {
+    val c = Color.Red;
+    val s = Shape.Circle(radius: 2.0);
+    @print(case c { Red -> "red"; _ -> "other"; });
+    @print(case s { Circle(r) -> r; Square(side) -> side; });    // 2
+}
+```
+
+A variant is built through its type — `Color.Red`, `Shape.Circle(radius: 2.0)`;
+inside a `case` pattern the bare name is enough. A bare `Red` in expression
+position type-checks but no backend lowers it (the generated program reports an
+unbound `Red` at run time), so always write the qualified form.
+
+### behavior
+
+```botopink
+behavior Printable {
+    fn print(self: Self);
+}
+
+type Person(name: string) implement Printable {
+    fn print(self: Self) {
+        @print(self.name);
     }
 }
 ```
@@ -144,119 +254,240 @@ implement Show for Point {
 ### Generics
 
 ```botopink
-record Pair<A, B> { first: A, second: B }
-
 fn identity<T>(x: T) -> T { return x; }
 
-enum Option<T> { None, Some(T) }
-enum @Result<D, E> { Ok(D), Error(E) }
+type Tree<T> {
+    Leaf(value: T),
+    Node(left: Tree<T>, right: Tree<T>),
+}
 ```
 
-Built-in generic types use `@Result`, `@Iterator`, `@Future`. User-defined
-generics use angle brackets: `MyType<T>`.
+Built-in generic types carry an `@` prefix: `@Result<D, E>`, `@Iterator<T>`,
+`@Future<T>`, `@Expr<T>`. Optionals are `?T`; tuples are `#(A, B)`.
 
-### Type aliases
+### Union types, `unknown`, and `is`
+
+A union type is written `A | B`. `unknown` holds any value and, unlike a union,
+cannot be used as another type until it has been tested — `val b: i32 = a;` on an
+`unknown` reports "an `unknown` value cannot be used as another type without
+testing it". `x is <Type>` answers a `bool` and narrows `x` inside the branch it
+guards.
 
 ```botopink
-val Age = record { years: i32 };
+fn describe(x: i32 | string) -> string {
+    if (x is i32) {
+        return "an integer";
+    };
+    return "a string";
+}
+
+fn read(raw: unknown) -> string {
+    if (raw is string) {
+        return raw;
+    };
+    return "not a string";
+}
 ```
+
+`is` tests a type; it does not bind. Read a variant's payload in a `case` arm
+(`Circle(radius) -> …`, below) and an optional with `if (x) { n -> … }`;
+`assert x is Some(v)` is a located error.
 
 ## Expressions
 
 ### Literals
 
+<!-- docs-check: skip a table of literal forms, not a module -->
 ```botopink
 42             // i32
 3.14           // f64
 "hello"        // string
+"hi ${name}!"  // string interpolation
 true, false    // bool
 ```
 
 ### Arrays
 
+<!-- docs-check: body -->
 ```botopink
 val xs = [1, 2, 3];
-val empty: Array<i32> = [];
 val tail = xs.slice(1, xs.length);    // [2, 3]
 ```
 
 ### Operators
 
+<!-- docs-check: skip an operator table, not a module -->
 ```botopink
-a + b, a - b, a * b, a / b, a % b    // arithmetic
-a ++ b                                // string / array concatenation
-a == b, a != b, a < b, a > b          // comparison
-a <= b, a >= b
+a + b, a - b, a * b, a / b, a % b     // arithmetic (+ also concatenates strings)
+a == b, a != b, a < b, a > b, a <= b, a >= b
 !x, x && y, x || y                    // logical
 a |> f                                // pipe: f(a)
+x?.field                              // optional chaining
 ```
 
-### Pipeline
+### Lambdas and method chains
 
+<!-- docs-check: body -->
 ```botopink
-val result = xs
+val double = { n -> n * 2 };
+val xs = [1, 2, 3, 4];
+
+val total = xs
     .filter({ n -> n % 2 == 0 })
     .map({ n -> n * 2 })
-    .fold(0, { acc, n -> acc + n });
+    .fold(0, { acc, n -> acc + n });    // 12
 ```
 
-The pipeline operator `|>` is left-associative. A method call `x.f(y)` is
-equivalent to `f(x, y)`.
+The pipe operator `|>` is left-associative.
 
 ### If / else
 
+<!-- docs-check: body -->
 ```botopink
+val x = 1;
 val s = if (x > 0) { "positive" } else { "negative" };
 ```
 
-If expressions return values; both branches must unify to the same type.
+`if` on an optional unwraps it in the then-branch:
+
+```botopink
+fn show(x: ?i32) {
+    if (x) { n -> @print(n); };
+}
+```
 
 ### Case (pattern matching)
 
 ```botopink
-case color {
-    Color.Red   -> "warm";
-    Color.Green -> "calm";
-    Color.Blue  -> { val _ = 1; "cool" };   // block arm
+type Shape {
+    Circle(radius: f64),
+    Square(side: f64),
+}
+
+fn area(shape: Shape) -> f64 {
+    return case shape {
+        Circle(radius) -> radius * radius * 3.14;
+        Square(side) -> side * side;
+    };
 }
 ```
 
-List patterns:
+List and or-patterns:
 
 ```botopink
-case xs {
-    []        -> "empty";
-    [a, ...b] -> "first: " ++ a;
+type Color { Red, Green, Blue }
+
+fn warm(c: Color) -> bool {
+    return case c {
+        Red | Green -> true;
+        Blue -> false;
+    };
+}
+
+fn size(items: i32[]) -> string {
+    return case items {
+        [] -> "empty";
+        [x] -> "one";
+        [first, ..rest] -> "many";
+    };
 }
 ```
 
-Or-patterns:
+A section of an enum is itself a type, written by its path, so a function can
+take one section instead of the whole enum:
 
 ```botopink
-case x {
-    0 | 1 -> "small";
-    _     -> "other";
+type Token {
+    Text { Bold, Italic },
+    Hover(inner: Token[]),
+}
+
+fn textToCss(t: Token.Text) -> string {
+    return case t {
+        Bold -> "font-weight:bold";
+        Italic -> "font-style:italic";
+    };
 }
 ```
+
+An arm may also be written as a block, `<pattern> { … }`. A block arm takes an
+optional `when (…)` guard, and a pattern may be a literal, a type (`i32`) or `_`.
+
+```botopink
+fn grade(n: i32) {
+    case n {
+        i32 when (n > 100) { @print("impossible"); }
+        0 { @print("zero"); }
+        _ { @print("something else"); }
+    };
+}
+```
+
+A range in a pattern is `..`, exclusive, exactly as in a loop. The compiler is
+behind that rule and still asks for `...` — see
+[Decided, not yet implemented](#decided-not-yet-implemented).
+
+A name alone is not a pattern: to give the matched value a name, bind it in the
+body (`_ { n -> … }`).
 
 ### Loop
 
+`loop` is the only repetition form. It takes a collection, a range or a
+condition, or nothing at all; `break` leaves it.
+
+A range excludes its end: `0..10` yields `0` to `9`.
+
+<!-- docs-check: body -->
 ```botopink
-var i = 0;
-loop (i < 5) {
+val xs = [1, 2, 3];
+
+loop (xs) { item ->
+    @print(item);
+};
+
+loop (0..10) { i ->
     @print(i);
-    i = i + 1;
-}
+};
+
+var n = 0;
+loop (n < 3) {
+    n = n + 1;
+};
+
+loop {
+    n = n - 1;
+    if (n == 0) { break; };
+};
 ```
+
+A `//` comment inside a `loop` body parses like any other comment.
 
 ### Assert
 
+<!-- docs-check: body -->
 ```botopink
+val x = 1;
 assert x > 0;
 assert x > 0, "x must be positive";
+```
 
-// Pattern assertions
-assert Ok(v) = result;
+`val assert <pattern> = <expr>;` binds the pattern's names and is **fatal** when
+the match fails, so the names below the binding are never unbound. It takes no
+`catch` — `try … catch` is the form that supplies a fallback.
+
+```botopink
+#[@result]
+fn parse(s: string) -> @Result<i32, string> {
+    if (s == "") {
+        throw "empty input";
+    };
+    return 42;
+}
+
+fn load() {
+    val assert Ok(n) = parse("42");
+    @print(n);
+}
 ```
 
 ## Functions
@@ -265,103 +496,103 @@ assert Ok(v) = result;
 
 ```botopink
 fn greet(name: string, greeting: string = "hello") -> string {
-    return greeting ++ ", " ++ name ++ "!";
+    return greeting + ", " + name + "!";
 }
 ```
 
-### Lambda
+The default is **not applied yet**: every call still passes every argument
+(`greet("world")` reports `'greet' expects 2 argument(s), got 1`). 1.0.5-beta
+front `01-checker` step 7 closes it.
+
+### Results
+
+A `#[@result]` function returns `@Result<D, E>`; `throw` produces the error,
+`try … catch` unwraps it.
 
 ```botopink
-val double = { n -> n * 2 };
-val add = { a, b -> a + b };
+#[@result]
+fn parse(s: string) -> @Result<i32, string> {
+    if (s == "") {
+        throw "empty input";
+    };
+    return 0;
+}
+
+fn load() {
+    val n = try parse("42") catch 0;
+    val ok = parse("42").isOk();
+}
 ```
 
-### Trailing lambda
-
-When the last argument is a lambda, it can be written after the closing paren:
+### Iterators
 
 ```botopink
-xs.filter({ n -> n > 0 });
-xs.map({ n -> n * 2 });
-```
-
-### Trailing blocks
-
-```botopink
-result.map(r, { v ->
-    val doubled = v * 2;
-    return doubled;
-});
+#[@iterator]
+fn counter() -> @Iterator<i32> {
+    yield 1;
+    yield 2;
+}
 ```
 
 ## Comptime
 
-Comptime evaluates code at compile time, producing values or AST fragments.
-
 ### Compile-time evaluation
 
 ```botopink
-comptime {
-    val layout = @print("computed at build time");
-}
+val result = comptime {
+    val x = 10;
+    break x * 2;
+};
 ```
 
 ### Template functions
 
+A function taking `comptime q: @Expr<…>` expands at the call site; `@expr`
+lifts a comptime value back into code.
+
 ```botopink
 pub fn conf<T>(comptime q: @Expr<string>) -> @Expr<T> {
-    val text = q.text();
-    return @expr(record {
-        server: record { host: "0.0.0.0", port: 8000 + text.length },
-        debug: true,
-    });
+    val t = q.text();
+    val port = 8000 + t.length;
+    val debug = true;
+    return @expr(#(port, debug));    // the labels come from the variable names
 }
 ```
 
-### Annotations
+### Host bindings
 
 ```botopink
-#[@External.Node("./helpers.mjs", "parse")]
+#[@External.Node("./helpers.mjs", "parse"),
+  @External.Erlang("helpers", "parse")]
 pub declare fn parse(input: string) -> i32;
-
-#[@iterator]
-fn counter() -> @Iterator<i32> :gen { yield 1; }
 ```
+
+A binding may also be a template, where `$0`, `$1`, … are the declared
+parameters — on a method, `self` is `$0`:
+
+```botopink
+#[@External.Node("$0.toUpperCase()"),
+  @External.Erlang("string:uppercase($0)")]
+pub declare fn shout(text: string) -> string;
+```
+
+Only `External.<Target>` is read. A lower-case `@external(node, …)` is a located
+error naming the capitalised form (`` `#[@external]` binds no host — an external
+target is written `External.<Target>` ``), rather than a function left silently
+without a host.
 
 ## Builtins
 
-### @print
-
 ```botopink
-@print("hello");
-@print(42);
-```
+fn greet() {
+    @print("hello");
+}
 
-### @todo
-
-```botopink
 fn notReady() -> i32 { @todo(); }
 ```
 
-### @Result
-
-```botopink
-fn parse(s: string) -> @Result<i32, string> {
-    return if (s == "") { Error("empty") } else { Ok(42) };
-}
-
-val r = parse("42");
-r.isOk();                          // result methods
-r.unwrapOr(0);
-```
-
-### @Expr
-
-```botopink
-pub fn lift<T>(comptime v: T) -> @Expr<T> {
-    return @expr(v);
-}
-```
+Other builtins (`@panic`, `@field`, `@emit`, …) are declared in
+`libs/std/src/builtins.d.bp` and `libs/std/src/builtins_fns.d.bp`.
 
 ## Tests
 
@@ -369,28 +600,24 @@ pub fn lift<T>(comptime v: T) -> @Expr<T> {
 test "addition works" {
     assert 1 + 1 == 2;
 }
-
-test "strings concatenate" {
-    assert "a" ++ "b" == "ab";
-}
 ```
 
-Tests blocks are declared at the module level. Run with `botopink test`.
+Test blocks are declared at module level. Run with `botopink test`
+(`--target`, `--filter <substring>`).
 
 ## Backends
 
-| Target     | Output         | Runtime           |
-|------------|----------------|-------------------|
-| `commonJS` | `.mjs`         | Node.js ≥ 20      |
-| `erlang`   | `.erl`         | escript (OTP)     |
-| `beam`     | `.beam`        | erlc + escript    |
-| `wasm`     | `.wat`/`.wasm` | wasmtime          |
+| Target     | Output | Runner                      |
+|------------|--------|-----------------------------|
+| `commonJS` | `.js`  | `node` ≥ 20                 |
+| `erlang`   | `.erl` | `escript` (OTP)             |
+| `beam`     | `.S`   | artifact — `erlc +from_asm` |
+| `wasm`     | `.wat` | `wasmtime`                  |
 
 Select the target with `--target`:
 
 ```bash
 botopink run --target commonJS
-botopink run --target wasm
 botopink build --target erlang
 ```
 
@@ -402,9 +629,42 @@ Every project carries a `botopink.json` at its root:
 {
   "name": "my-project",
   "version": "0.1.0",
-  "sources": ["src"],
+  "target": "commonJS",
   "dependencies": {
-    "disk-lib": { "git": "https://github.com/user/disk-lib", "branch": "main" }
+    "erika": { "git": "https://github.com/botopink/erika.git", "branch": "feat" }
   }
 }
 ```
+
+Optional `entry` names the module-tree root under `src/` (default: `main.bp`,
+else `root.bp`). `dependencies` also accepts an array of bare names.
+
+## Decided, not yet implemented
+
+These are settled language rules that the compiler does not accept yet. They
+are listed so nothing here reads as working code; each names the front that
+closes it, or says that it has none yet. Every row below was re-derived by
+**running** the form, not by reading the previous revision of this table.
+
+| Rule | Today | Closes with |
+|---|---|---|
+| `break <value>` making the loop an expression | the loop's value is a **list** holding it: `val v = loop (0..10) { i -> if (i == 3) { break i; }; };` prints `[3]` on commonJS, on erlang and on wasm alike | 1.0.5-beta — three backends answer the same way, so the row is the rule's rather than one backend's; `01-checker` assigns the two commonJS suite lines to `04-js` |
+| A parameter default being applied at a call | every argument is required — `greet("world")` on `fn greet(name: string, greeting: string = "hello")` reports `'greet' expects 2 argument(s), got 1` | 1.0.5-beta `01-checker` step 7 |
+| `Self<T>` required in a generic type or behavior | bare `Self` is accepted inside a generic declaration; `Self<T>` parses and then fails to check (`type mismatch: expected Self, got Holder`) | 1.0.5-beta `01-checker` step 6 |
+| A block-shaped statement ends itself: no `;` after the closing brace of an `if`, `loop` or `case` in statement position | the `;` is required — dropping it reports `this token cannot appear here` at the **next** statement, with the "may be missing its `;`" hint. Every fence above therefore writes it | 1.0.5-beta `15-language-surface` step 2, with `16-formatter` (the formatter has to stop printing it in the same wave) |
+| A pattern range written `..` and exclusive, as in a loop — `...` leaves the grammar | inverted: `1..9` in an arm reds `error[pattern-range-exclusive]` ("write `...` — an inclusive range, both ends matched"), and `1...9` is accepted. As a value it answers something different on every backend: `case 9 { 1...9 { 1 } _ { 0 } }` prints `1` on commonJS, `0` on erlang and `256` on wasm | 1.0.5-beta — owner unassigned; the rule is decided (the `...` token, the diagnostic and the run-time semantics) |
+
+Six of the twelve rows this table carried before this revision left it because
+the compiler now accepts the form: union types, the `unknown` type and its
+assignability rule, `x is <Type>` with narrowing, `case` arms written
+`Pattern { … }` with `when (…)` guards, `val assert <pattern> = <expr>;`
+(binding its names, and fatal when the match fails), and a `//` comment inside a
+`loop` body. Each is documented above, in the section that teaches the form.
+
+Two more left it because the form is **deliberately absent**, so that neither
+reads as unfinished work:
+
+| Form | What the compiler says |
+|---|---|
+| `assert x is Some(n)` — `is` binding a payload | `error[is-variant-binding]`: `is` tests a type; it does not bind. Read the payload in a `case` arm |
+| `val assert Ok(v) = parse("42") catch 0` | ``a `val assert` over a `@Result` takes no `catch` `` — the match is fatal, and `try … catch` is the form that supplies a fallback |

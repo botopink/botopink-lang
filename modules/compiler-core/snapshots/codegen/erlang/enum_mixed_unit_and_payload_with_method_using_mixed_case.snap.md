@@ -1,0 +1,34 @@
+----- SOURCE CODE -- main.bp
+```botopink
+val Maybe = type {
+    Nothing,
+    Just(value: string),
+    fn check(m: Self) -> string {
+        return case m {
+            Nothing -> "nothing";
+            Just(value) -> "just";
+        };
+    }
+}
+```
+
+----- ERLANG -- main.erl
+```erlang
+-module(main).
+
+%% type Maybe
+%%   Nothing
+%%   Just(value)
+
+check(M) ->
+    case M of
+        'Nothing' ->
+            <<"nothing">>;
+        {'Just', Value} ->
+            <<"just">>
+    end.
+```
+
+----- RUN LOG -----
+```logs
+```

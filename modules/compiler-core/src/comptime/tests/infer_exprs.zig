@@ -22,14 +22,18 @@ test "infer: integer and float literals" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val x = 42;
         \\val y = 3.14;
-        \\@print(x, y);
+        \\fn main() {
+        \\    @print(x, y);
+        \\}
     );
 }
 
 test "infer: string literal" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\val greeting = "hello";
-        \\@print(greeting);
+        \\fn main() {
+        \\    @print(greeting);
+        \\}
     );
 }
 
@@ -38,7 +42,9 @@ test "infer: binary operators" {
         \\val sum = 1 + 2;
         \\val product = 3.0 * 2.0;
         \\val joined = "a" + "b";
-        \\@print(sum, product, joined);
+        \\fn main() {
+        \\    @print(sum, product, joined);
+        \\}
     );
 }
 
@@ -50,7 +56,7 @@ test "infer: local binding inside comptime" {
 
 test "infer: case on enum variants ---- all arms return string" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Color = enum {
+        \\val Color = type {
         \\    Red,
         \\    Green,
         \\    Blue,
@@ -71,7 +77,9 @@ test "infer: case on integer with wildcard" {
         \\    0 -> "zero";
         \\    _ -> "nonzero";
         \\};
-        \\@print(desc);
+        \\fn main() {
+        \\    @print(desc);
+        \\}
     );
 }
 
@@ -81,13 +89,15 @@ test "infer: case with OR patterns" {
         \\    0 | 2 | 4 -> "even";
         \\    _ -> "odd";
         \\};
-        \\@print(parity);
+        \\fn main() {
+        \\    @print(parity);
+        \\}
     );
 }
 
 test "infer: case with variant field bindings ---- body does not use bound vars" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
-        \\val Shape = enum {
+        \\val Shape = type {
         \\    Circle(radius: f64),
         \\    Square(side: f64),
         \\    Point,

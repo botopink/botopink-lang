@@ -1,4 +1,4 @@
-//// Gleam-inspired `dict` module — a `record Dict<K, V>` wrapping an
+//// Gleam-inspired `dict` module — a `type Dict<K, V>` wrapping an
 //// association list `pairs: Array<#(K, V)>` for full backend portability
 //// (no host-backing). O(n) lookup; camelCase convention.
 ////
@@ -10,16 +10,16 @@
 //// the common case). API naming note: `new`/`get` are keyword tokens — use
 //// `empty`/`lookup`.
 
-pub record Dict<K, V> {
+pub type Dict<K, V>(
     pairs: Array<#(K, V)>,
-
+) {
     pub fn lookup(self: Self, key: K) -> ?V {
         // NOTE: written with `forEach` + accumulator rather than
         // `.at(0).map(…)` — chained method dispatch on a `?T` (option-map) is
         // not lowered yet (tracked in tasks/v0.beta.4 Part A: primitive/option
         // method dispatch). `.at(0)` here would type as array, not `?T`.
         var found: ?V = null;
-        self.pairs.forEach({ p -> if (p._0 == key) { found = p._1; } });
+        self.pairs.forEach({ p -> if (p._0 == key) found = p._1 });
         return found;
     }
 
@@ -55,19 +55,27 @@ pub record Dict<K, V> {
     // Right-biased merge: keys in both keep `other`'s value.
     pub fn merge(self: Self, other: Dict<K, V>) -> Dict<K, V> {
         var out = self;
-        other.pairs.forEach({ p -> out = out.insert(p._0, p._1); });
+        other.pairs.forEach({ p ->
+            out = out.insert(p._0, p._1);
+        });
         return out;
     }
 
-    pub fn fold<A>(self: Self, initial: A, f: fn(acc: A, key: K, value: V) -> A) -> A {
+    pub fn fold<A>(
+        self: Self,
+        initial: A,
+        f: fn(acc: A, key: K, value: V) -> A,
+    ) -> A {
         var acc = initial;
-        self.pairs.forEach({ p -> acc = f(acc, p._0, p._1); });
+        self.pairs.forEach({ p ->
+            acc = f(acc, p._0, p._1);
+        });
         return acc;
     }
 
     pub fn mapValues<W>(self: Self, f: fn(value: V) -> W) -> Dict<K, W> {
         var out = [];
-        self.pairs.forEach({ p -> out.push(#(p._0, f(p._1))); });
+        self.pairs.forEach({ p -> out.push(#(p._0, f(p._1))) });
         return Dict(pairs: out);
     }
 }
@@ -89,10 +97,7 @@ test "dict insert and lookup" {
 }
 
 test "dict pipeline: insert chain" {
-    val d = empty()
-        .insert("x", 10)
-        .insert("y", 20)
-        .insert("z", 30);
+    val d = empty().insert("x", 10).insert("y", 20).insert("z", 30);
     assert d.lookup("x").unwrapOr(0) == 10;
     assert d.lookup("y").unwrapOr(0) == 20;
     assert d.lookup("z").unwrapOr(0) == 30;

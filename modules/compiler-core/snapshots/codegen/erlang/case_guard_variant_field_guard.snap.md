@@ -1,0 +1,34 @@
+----- SOURCE CODE -- main.bp
+```botopink
+val Shape = type {
+    Circle(r: i32),
+    Square(s: i32),
+}
+fn big(sh: Shape) -> string {
+    return case sh {
+        Circle(r) if r > 10 -> "big circle";
+        _ -> "other";
+    };
+}
+```
+
+----- ERLANG -- main.erl
+```erlang
+-module(main).
+
+%% type Shape
+%%   Circle(r)
+%%   Square(s)
+
+big(Sh) ->
+    case Sh of
+        {'Circle', R} when (R > 10) ->
+            <<"big circle">>;
+        _ ->
+            <<"other">>
+    end.
+```
+
+----- RUN LOG -----
+```logs
+```

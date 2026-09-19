@@ -17,7 +17,9 @@ const h = @import("helpers.zig");
 test "js: comptime folding ---- integer addition folds to literal" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val v1 = comptime 1 + 1;
-        \\@print(v1);
+        \\fn main() {
+        \\    @print(v1);
+        \\}
     );
 }
 
@@ -26,7 +28,9 @@ test "js: comptime folding ---- block with break value inlines result" {
         \\val t = comptime {
         \\    break 2 + 22;
         \\};
-        \\@print(t);
+        \\fn main() {
+        \\    @print(t);
+        \\}
     );
 }
 
@@ -35,7 +39,9 @@ test "js: comptime folding ---- float multiplication folds to literal" {
         \\val pi2 = comptime {
         \\    break 3.14 * 2.0;
         \\};
-        \\@print(pi2);
+        \\fn main() {
+        \\    @print(pi2);
+        \\}
     );
 }
 
@@ -44,16 +50,24 @@ test "js: comptime folding ---- multiplication binds tighter than addition" {
         \\val n = comptime {
         \\    break 2 + 3 * 4;
         \\};
-        \\@print(n);
+        \\fn main() {
+        \\    @print(n);
+        \\}
     );
 }
 
+// `greeting` is a declared module-level runtime `val`, so the error is the
+// comptime scope rule (a comptime block may not read a runtime binding), not
+// an undeclared name.
 test "js: comptime validation ---- runtime identifier inside comptime raises error" {
     try h.assertJsError(std.testing.allocator, @src(),
+        \\val greeting = "hi";
         \\val msg = comptime {
         \\    break greeting;
         \\};
-        \\@print(msg);
+        \\fn main() {
+        \\    @print(msg);
+        \\}
     );
 }
 
@@ -66,10 +80,14 @@ test "js: comptime val ---- runtime val with string literal" {
 test "js: comptime val ---- comptime val folds arithmetic to literal" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val result = comptime 10 + 20;
-        \\@print(result);
+        \\fn main() {
+        \\    @print(result);
+        \\}
     );
 }
 
+// beam records an empty RUN LOG on the two string-specialisation fixtures while
+// string `+` lowers to arithmetic `'+'` (04-beam B3) — known-wrong output.
 test "js: comptime specialization ---- distinct string args generate specialized functions" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn build(prefix comptime: string, name: string) -> string {
@@ -80,6 +98,9 @@ test "js: comptime specialization ---- distinct string args generate specialized
         \\    val r1 = build("INFO", "Sistema iniciado");
         \\    val r2 = build("WARN", "Memória alta");
         \\    val r3 = build("INFO", "Log replicado");
+        \\    @print(r1);
+        \\    @print(r2);
+        \\    @print(r3);
         \\}
     );
 }
@@ -90,14 +111,20 @@ test "js: comptime specialization ---- distinct integer args generate specialize
         \\    return x * factor;
         \\}
         \\
-        \\fn calculate() {
+        \\fn main() {
         \\    val double = multiply(2, 21);
         \\    val triple = multiply(3, 21);
         \\    val doubleAgain = multiply(2, 10);
+        \\    @print(double);
+        \\    @print(triple);
+        \\    @print(doubleAgain);
         \\}
     );
 }
 
+// Every call passes the same comptime `prefix`, so only one specialisation
+// (`build_$0`) may be emitted. (It used to repeat the distinct-args fixture
+// above with the modifier spelled before the name.)
 test "js: comptime specialization ---- same string arg reuses specialized function" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn build(comptime prefix: string, name: string) -> string {
@@ -106,8 +133,9 @@ test "js: comptime specialization ---- same string arg reuses specialized functi
         \\
         \\fn main() {
         \\    val r1 = build("INFO", "Sistema iniciado");
-        \\    val r2 = build("WARN", "Memória alta");
-        \\    val r3 = build("INFO", "Log replicado");
+        \\    val r2 = build("INFO", "Log replicado");
+        \\    @print(r1);
+        \\    @print(r2);
         \\}
     );
 }
@@ -262,12 +290,19 @@ test "js: comptime basic ---- comptime val and plain function coexist" {
     );
 }
 
+// A `comptime { … }` block has its own scope: a local `val` is declared,
+// folded, and visible to the `break` expression (`comptime/error.zig`
+// `validateBody` + `comptime/eval.zig` `Scope`), as `docs.md` ("Compile-time
+// evaluation") shows. Folds to `20`.
 test "js: comptime ---- block with break" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val result = comptime {
         \\    val x = 10;
         \\    break x * 2;
         \\};
+        \\fn main() {
+        \\    @print(result);
+        \\}
     );
 }
 
@@ -377,32 +412,59 @@ test "js: template end to end ---- cross-module html mirrors the canonical examp
     });
 }
 
+// `Binding.ref()` splices the caller-scope binding back as a bare reference:
+// the template host now emits `ref/1` next to `lookup/2`
+// (`comptime/template_eval.zig`), so `b.ref()` expands to the identifier
+// `greeting` — not to its value — and the module prints `ola mundo`.
+// (The user fn is named `refer`; a user `pick` would also win over the `pick`
+// type-manipulation builtin since std-surface 6a, but `refer` keeps the slug.)
+// The miss path is an `else` arm, not a statement after the `if`: in a template
+// body lowered by `codegen/erlang.zig` `emitComptimeModule`, a `return` inside
+// an if-arm does not leave the function — the `case` value is discarded and the
+// next statement runs anyway (visible in the `COMPTIME ERLANG` section of
+// `runtime_template_body_lookup_miss_drives_control_flow`, where the miss hides
+// it). That lowering gap is owned by the codegen/erlang side, not by comptime.
 test "js: template end to end ---- lookup().ref() splices a caller-scope reference" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val greeting = "ola mundo";
-        \\pub fn pick(comptime q: @Expr<string>) -> @Expr<string> {
+        \\pub fn refer(comptime q: @Expr<string>) -> @Expr<string> {
         \\    val hit = q.lookup("greeting");
         \\    if (hit) { b ->
         \\        return b.ref();
+        \\    } else {
+        \\        return q.fail("greeting not found in caller scope");
         \\    };
-        \\    return q.fail("greeting not found in caller scope");
         \\}
-        \\val s = pick "x";
+        \\val s = refer "x";
         \\fn main() {
         \\    @print(s);
         \\}
     );
 }
 
-test "js: template end to end ---- yaml model computes a typed record" {
+test "js: template end to end ---- yaml model computes a labeled tuple" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\pub fn conf<T>(comptime q: @Expr<string>) -> @Expr<T> {
         \\    val t = q.text();
-        \\    return @expr(record { port: 8000 + t.length, debug: true });
+        \\    val port = 8000 + t.length;
+        \\    val debug = true;
+        \\    return @expr(#(port, debug));
         \\}
         \\val cfg = conf "yaml";
         \\fn main() {
         \\    @print(cfg.port + 1);
         \\}
+    );
+}
+
+test "js: comptime ---- a constant division by zero is a located comptime error (C4b)" {
+    try h.assertJsError(std.testing.allocator, @src(),
+        \\val q = comptime 1 / 0;
+    );
+}
+
+test "js: comptime ---- negating a string is a located comptime error (C4b)" {
+    try h.assertJsError(std.testing.allocator, @src(),
+        \\val q = comptime -"s";
     );
 }

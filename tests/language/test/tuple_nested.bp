@@ -1,0 +1,12 @@
+//// Decision 8 §6 — a tuple inside a tuple, read with chained positional access.
+
+test "§6 chained positional access t.0.1" {
+    val t = #(#(1, 2), "x");
+    assert t.0.1 == 2;
+    assert t.1 == "x";
+}
+
+test "§6 a method called on a positional element: p.0.toString()" {
+    val p = #(7, "x");
+    assert p.0.toString() == "7";
+}

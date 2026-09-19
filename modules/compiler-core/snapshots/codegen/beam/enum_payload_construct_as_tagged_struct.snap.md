@@ -1,0 +1,33 @@
+----- SOURCE CODE -- main.bp
+```botopink
+type Shape {
+    Circle(r: i32),
+    Square(side: i32),
+}
+fn makeCircle() -> Shape {
+    return Shape.Circle(r: 5);
+}
+```
+
+----- BEAM ASSEMBLY -- main.S
+```erlang
+{module, main}.
+{exports, []}.
+{attributes, []}.
+{labels, 4}.
+
+{function, makeCircle, 0, 3}.
+  {label, 2}.
+    {line, [{location, "main.erl", 1}]}.
+    {func_info, {atom, main}, {atom, makeCircle}, 0}.
+  {label, 3}.
+    {allocate, 0, 0}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, 'Circle'}, {integer, 5}]}}.
+    {deallocate, 0}.
+    return.
+```
+
+----- RUN LOG -----
+```logs
+```

@@ -24,14 +24,19 @@ const std = @import("std");
 /// R1 — `#[@<effect>] declare fn …` (annotation on a bodyless declaration).
 pub const effect_on_declare_forbidden: []const u8 = "effect-on-declare-forbidden";
 
-/// R2 — `interface I { #[@<effect>] fn … }` (annotation on an interface method).
-pub const effect_on_interface_method_forbidden: []const u8 = "effect-on-interface-method-forbidden";
+/// R2 — `behavior I { #[@<effect>] fn … }` (annotation on a behavior method).
+pub const effect_on_behavior_method_forbidden: []const u8 = "effect-on-behavior-method-forbidden";
 
 /// R3 — annotation effect kind disagrees with the return wrapper kind.
 pub const effect_wrapper_mismatch: []const u8 = "effect-wrapper-mismatch";
 
 /// R4 — annotation present, return wrapper missing (`#[@result] fn f() -> i32`).
 pub const effect_missing_wrapper: []const u8 = "effect-missing-wrapper";
+
+/// N25 — return wrapper present, annotation missing (`fn f() -> @Result<D, E>`).
+/// The async wrappers have their own, older message; this one is the `@Result`
+/// half decision 8 § 9 added ("the wrapper without its annotation is an error").
+pub const effect_missing_annotation: []const u8 = "effect-missing-annotation";
 
 /// R5 — more than one `#[@<effect>]` annotation on the same fn.
 pub const effect_duplicate_annotation: []const u8 = "effect-duplicate-annotation";
@@ -222,9 +227,10 @@ pub const fn_param_arity_exceeded: []const u8 = "fn-param-arity-exceeded";
 
 pub const all_codes = [_][]const u8{
     effect_on_declare_forbidden,
-    effect_on_interface_method_forbidden,
+    effect_on_behavior_method_forbidden,
     effect_wrapper_mismatch,
     effect_missing_wrapper,
+    effect_missing_annotation,
     effect_duplicate_annotation,
     effect_throw_without_fallible_channel,
     effect_await_without_future,

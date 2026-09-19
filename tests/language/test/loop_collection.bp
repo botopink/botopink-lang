@@ -1,0 +1,50 @@
+//// Decision 8 §10 — `loop (xs) { x -> … }` over an array: the empty
+//// collection, outer vars reassigned inside, nested loops, and a loop as an
+//// expression whose `break` contributes a value and ends the loop (decision 55).
+
+test "§10 loop over an array visits every element in order" {
+    var out = "";
+    loop (["a", "b", "c"]) { s -> out = out + s; };
+    assert out == "abc";
+}
+
+test "§10 loop over an empty array runs no iteration" {
+    val empty: i32[] = [];
+    var n = 0;
+    loop (empty) { x -> n = n + 1; };
+    assert n == 0;
+}
+
+test "§10 an outer var reassigned inside survives the loop" {
+    var total = 0;
+    var last = 0;
+    loop ([4, 5, 6]) { x ->
+        total = total + x;
+        last = x;
+    };
+    assert total == 15;
+    assert last == 6;
+}
+
+test "§10 nested loops" {
+    var pairs = 0;
+    loop ([1, 2, 3]) { a ->
+        loop ([1, 2]) { b ->
+            pairs = pairs + a * b;
+        };
+    };
+    assert pairs == 18;
+}
+
+test "§10 a value break contributes its value and ends the loop" {
+    // Decision 55, taken 2026-09-18: `break <value>` in a collection loop
+    // contributes its argument **and ends the loop**. So the first element
+    // breaks and the loop is `[2]`, not `[2, 4, 6]`.
+    //
+    // This assertion was `length == 3` / `"2,4,6"` until decision 55 was taken,
+    // and it passed on all four backends — they share one accumulator shape and
+    // none of them stops. The cell now states the language and carries its lines.
+    val doubled = loop ([1, 2, 3]) { x -> break x * 2; };
+    assert doubled.length == 1;
+    assert doubled.join(",") == "2";
+}

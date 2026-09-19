@@ -28,7 +28,7 @@
                     "value": {
                       "literal": {
                         "loc": {
-                          "line": 3,
+                          "line": 1,
                           "col": 22
                         },
                         "kind": {
@@ -42,8 +42,8 @@
                                 "expr": {
                                   "identifier": {
                                     "loc": {
-                                      "line": 1,
-                                      "col": 1
+                                      "line": 2,
+                                      "col": 17
                                     },
                                     "kind": {
                                       "ident": "title"

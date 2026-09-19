@@ -43,11 +43,11 @@ test "infer error: type ---- arg violates constraint" {
 
 test "infer error: implement missing a required interface method" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Drawable = interface {
-        \\    fn draw(self: Self),
-        \\    fn erase(self: Self),
+        \\val Drawable = behavior {
+        \\    fn draw(self: Self);
+        \\    fn erase(self: Self);
         \\};
-        \\val Circle = record { radius: f64 };
+        \\val Circle = type(radius: f64);
         \\val CircleDrawing = implement Drawable for Circle {
         \\    fn draw(self: Self) {
         \\        @print("draw");
@@ -56,12 +56,37 @@ test "infer error: implement missing a required interface method" {
     );
 }
 
+test "infer error: an inline implement clause missing a required interface method" {
+    // Decision 58 — the inline `implement <Behavior> { }` asserts that the type
+    // satisfies the behavior, and nothing verified the assertion: this checked.
+    // Same coverage rule as the separate block above, on the inline form.
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\behavior Display {
+        \\    fn show(self: Self) -> string;
+        \\}
+        \\type Money(cents: i32) implement Display { }
+    );
+}
+
+test "infer error: an inline implement clause whose method is only a declare fn" {
+    // A `declare fn` member is an abstract slot typed from its signature, so it
+    // satisfies nothing — the inline clause still owes the behavior a body.
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\behavior Display {
+        \\    fn show(self: Self) -> string;
+        \\}
+        \\type Money(cents: i32) implement Display {
+        \\    declare fn show(self: Self) -> string;
+        \\}
+    );
+}
+
 test "infer error: implement method not declared in the interface" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Drawable = interface {
-        \\    fn draw(self: Self),
+        \\val Drawable = behavior {
+        \\    fn draw(self: Self);
         \\};
-        \\val Circle = record { radius: f64 };
+        \\val Circle = type(radius: f64);
         \\val CircleDrawing = implement Drawable for Circle {
         \\    fn draw(self: Self) {
         \\        @print("draw");
@@ -75,10 +100,10 @@ test "infer error: implement method not declared in the interface" {
 
 test "infer error: implement qualified prefix is not a declared interface" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Drawable = interface {
-        \\    fn draw(self: Self),
+        \\val Drawable = behavior {
+        \\    fn draw(self: Self);
         \\};
-        \\val Circle = record { radius: f64 };
+        \\val Circle = type(radius: f64);
         \\val CircleDrawing = implement Drawable for Circle {
         \\    fn Renderable.draw(self: Self) {
         \\        @print("draw");
@@ -89,13 +114,13 @@ test "infer error: implement qualified prefix is not a declared interface" {
 
 test "infer error: duplicate method across interfaces without qualification" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val UsbCharger = interface {
-        \\    fn connect(self: Self),
+        \\val UsbCharger = behavior {
+        \\    fn connect(self: Self);
         \\};
-        \\val SolarCharger = interface {
-        \\    fn connect(self: Self),
+        \\val SolarCharger = behavior {
+        \\    fn connect(self: Self);
         \\};
-        \\val Camera = record { battery: i32 };
+        \\val Camera = type(battery: i32);
         \\val CameraCharger = implement UsbCharger, SolarCharger for Camera {
         \\    fn connect(self: Self) {
         \\        @print("connect");
@@ -131,6 +156,20 @@ test "infer error: type mismatch ---- i32 + bool" {
 test "infer error: type mismatch ---- mul with non-numeric" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\val bad = 3.14 * "oops";
+    );
+}
+
+// 06 C3 — `*` only unified the two sides with each other, and two strings
+// agree; `-` applied no constraint at all.
+test "infer error: mul with two non-numeric operands" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val bad = "a" * "b";
+    );
+}
+
+test "infer error: negating a string" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val bad = -"s";
     );
 }
 
@@ -206,7 +245,7 @@ test "infer error: import of val ---- unbound variable" {
 
 test "infer error: extend without an interface ---- requires implement" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\record Pato { id: i32 }
+        \\type Pato(id: i32)
         \\val PatoVoa = extend Pato {
         \\    fn fly(self: Self) {
         \\        return self.id;
@@ -217,10 +256,10 @@ test "infer error: extend without an interface ---- requires implement" {
 
 test "infer error: redundant local activation ---- star is for imports" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Swimmer = interface {
+        \\val Swimmer = behavior {
         \\    fn swim(self: Self);
         \\}
-        \\record Pato { id: i32 }
+        \\type Pato(id: i32)
         \\val PatoNada = implement Swimmer for Pato {
         \\    fn swim(self: Self) {
         \\        return self.id;
@@ -232,13 +271,13 @@ test "infer error: redundant local activation ---- star is for imports" {
 
 test "infer error: extension method ambiguous ---- two local impls" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Swimmer = interface {
+        \\val Swimmer = behavior {
         \\    fn swim(self: Self);
         \\}
-        \\val Diver = interface {
+        \\val Diver = behavior {
         \\    fn swim(self: Self);
         \\}
-        \\record Pato { id: i32 }
+        \\type Pato(id: i32)
         \\val PatoNada = implement Swimmer for Pato {
         \\    fn swim(self: Self) {
         \\        return self.id;
@@ -256,17 +295,17 @@ test "infer error: extension method ambiguous ---- two local impls" {
 
 test "infer error: activation of non-extension symbol" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\record Pato { id: i32 }
+        \\type Pato(id: i32)
         \\Pato*;
     );
 }
 
 test "infer error: implement declares method not in interface" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\val Swimmer = interface {
+        \\val Swimmer = behavior {
         \\    fn swim(self: Self);
         \\}
-        \\record Pato { id: i32 }
+        \\type Pato(id: i32)
         \\val PatoNada = implement Swimmer for Pato {
         \\    fn swim(self: Self) {
         \\        return self.id;
@@ -355,6 +394,60 @@ test "infer error: effect annotation does not match the return wrapper" {
     );
 }
 
+// 06 N25 / decision 8 § 9 — the wrapper without its annotation. A plain
+// `fn -> @Result<D, E>` used to be accepted with no Result treatment at all.
+test "infer error: a @Result return without #[@result]" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn bad() -> @Result<i32, string> {
+        \\    @todo();
+        \\}
+    );
+}
+
+// ── 06 C9 — method bodies join the strict contract ───────────────────────────
+//
+// `inferTypeMethods` used to swallow `error.TypeError` from a method body, an
+// unannotated method got no stored signature, and an unresolved method call
+// fell back to a fresh var. All three made a real mismatch compile.
+
+// `assertTypeErrorSnap` runs the UNTYPED `inferProgram`, whose `inferDecl`
+// never walks a type's method bodies — only the typed `inferDeclTyped` calls
+// `inferTypeMethods`, which is the path `botopink check` takes. The two rows
+// that live inside a method body therefore assert through the typed path.
+test "infer error: a type error inside a method body" {
+    try h.assertComptimeCompileError(std.testing.allocator, @src(),
+        \\type D(id: i32) {
+        \\    fn bad(self: Self) -> string {
+        \\        val z: string = self.id;
+        \\        return z;
+        \\    }
+        \\}
+    );
+}
+
+test "infer error: a method the receiver type does not declare" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type D(id: i32)
+        \\fn main() {
+        \\    val d = D(id: 1);
+        \\    @print(d.swim());
+        \\}
+    );
+}
+
+test "infer error: an unannotated method's return type comes from its body" {
+    try h.assertComptimeCompileError(std.testing.allocator, @src(),
+        \\type D(id: i32) {
+        \\    fn get(self: Self) { return self.id; }
+        \\}
+        \\fn main() {
+        \\    val d = D(id: 1);
+        \\    val a: string = d.get();
+        \\    @print(a);
+        \\}
+    );
+}
+
 test "infer error: #[@future] body using yield" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
         \\#[@future]
@@ -365,7 +458,7 @@ test "infer error: #[@future] body using yield" {
 }
 
 // R1, R2, R5 (§2 of frente-b-rules-tooling.md) — effect-on-declare /
-// effect-on-interface-method / effect-duplicate-annotation now reject at the
+// effect-on-behavior-method / effect-duplicate-annotation now reject at the
 // parser layer (see `parser/tests/effect_rejections.zig`). The comptime
 // inference path keeps a defense-in-depth check for direct AST construction.
 
@@ -548,7 +641,7 @@ test "infer error: RI3 ---- break <expr> with C=void reds iterator-break-without
 
 test "infer error: RC5 ---- @getContex outside #[@context] fn reds context-getcontex-outside-context-fn" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\record User { id: i32 }
+        \\type User(id: i32)
         \\fn lookup() -> User {
         \\    return @getContex(User);
         \\}
@@ -557,7 +650,7 @@ test "infer error: RC5 ---- @getContex outside #[@context] fn reds context-getco
 
 test "infer error: RC4 ---- @getContex(<value>) reds context-getcontex-expects-type" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\record User { id: i32 }
+        \\type User(id: i32)
         \\#[@context]
         \\fn lookup() -> @Context<User, User> {
         \\    return @getContex(42);
@@ -567,7 +660,7 @@ test "infer error: RC4 ---- @getContex(<value>) reds context-getcontex-expects-t
 
 test "infer error: RC6 ---- use of non-context fn reds use-of-non-context-fn" {
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\record User { id: i32 }
+        \\type User(id: i32)
         \\fn plain() -> User { return User(id: 1); }
         \\#[@context]
         \\fn lookup() -> @Context<User, User> {
@@ -582,9 +675,9 @@ test "infer error: RC3 ---- @getContex(T) outside enclosing Anchor tree reds con
     // Anchor is `RootB`. No `use` chain rooted at `RootA` can ever provide
     // `LeafB`, so the request is statically out of reach (RC3).
     try h.assertTypeErrorSnap(std.testing.allocator, @src(),
-        \\record RootA { name: string }
-        \\record RootB { name: string }
-        \\record LeafB implement @Context<RootB, RootB> { v: i32 }
+        \\type RootA(name: string)
+        \\type RootB(name: string)
+        \\type LeafB(v: i32) implement @Context<RootB, RootB>
         \\#[@context]
         \\fn pickA() -> @Context<RootA, RootA> {
         \\    return @getContex(LeafB);
@@ -609,5 +702,316 @@ test "infer error: RF5 ---- let-binding Future.resolved inside #[@future] reds f
         \\    val f = Future.resolved(value: 42);
         \\    return 0;
         \\}
+    );
+}
+
+// ── tuple labels (decision 8 §6) ──────────────────────────────────────────────
+
+test "infer: tuple label ---- an unknown label is an error naming the positional form" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn loadTyped() -> #(string, i32) {
+        \\    return #("SP", 12);
+        \\}
+        \\val n = loadTyped().name;
+    );
+}
+
+// N24 — the labels live on the `named` type node, so instantiating a generic
+// signature has to carry them. `r.current` used to red "this tuple has no
+// element labeled `current`".
+test "infer: tuple label ---- a label survives generic instantiation" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn ref<T>(v: T) -> #(current: T) {
+        \\    return #(v);
+        \\}
+        \\fn main() -> i32 {
+        \\    val r = ref(5);
+        \\    return r.current;
+        \\}
+    );
+}
+
+test "infer: tuple label ---- labels come from the written type and from construction variables" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn load() -> #(name: string, pop: i32) {
+        \\    val name = "SP";
+        \\    val pop = 12;
+        \\    return #(name, pop);
+        \\}
+        \\fn show(r: #(city: string, pop: i32)) -> i32 {
+        \\    return r.pop;
+        \\}
+        \\fn main() -> i32 {
+        \\    val row = load();
+        \\    val a = "RJ";
+        \\    val b = 7;
+        \\    val local = #(a, b);
+        \\    val s: string = local.a;
+        \\    val typed: #(x: i32, y: i32) = #(1, 2);
+        \\    return show(row) + show(#("BH", 3)) + typed.y + row.pop;
+        \\}
+    );
+}
+
+test "infer error: pipeline ---- the piped value does not fit the call's arity (C12)" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn add(a: i32, b: i32) -> i32 { return a + b; }
+        \\val r = 1 |> add(1, 2);
+    );
+}
+
+test "infer error: record update ---- an unknown label reds at the label (C11)" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type Person(name: string, age: i32)
+        \\val alice = Person(name: "a", age: 1);
+        \\val b = Person(..alice, agee: 25);
+    );
+}
+
+test "infer error: record update ---- a wrong value type reds at the value (C11)" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type Person(name: string, age: i32)
+        \\val alice = Person(name: "a", age: 1);
+        \\val b = Person(..alice, age: "x");
+    );
+}
+
+test "infer error: loop ---- a condition loop takes no parameter (N26)" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn f() {
+        \\    var i = 0;
+        \\    loop (i < 3) { x ->
+        \\        i = i + 1;
+        \\    };
+        \\}
+    );
+}
+
+// ── C1 — `return` unifies with the declared return type ─────────────────────
+
+test "infer error: return ---- a value that is not the declared return type" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn f() -> i32 { return "s"; }
+    );
+}
+
+test "infer error: return ---- an anonymous fn returns a value that is not its declared type" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val f = fn(x: i32) -> i32 { return "s"; };
+    );
+}
+
+test "infer error: return ---- a result fn returns a value that is not R" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type Oops(msg: string)
+        \\#[@result]
+        \\fn f() -> @Result<i32, Oops> { return "s"; }
+    );
+}
+
+test "infer error: return ---- an @block value flows to the fn's return" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn f() -> i32 {
+        \\    val s = @block{ return "x"; };
+        \\    return s;
+        \\}
+    );
+}
+
+test "infer: return ---- a hook body returns the X of @Context<B, X>, or another hook" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type El(tag: string)
+        \\type Cell<T>(value: T)
+        \\fn state<T>(initial: T) -> @Context<El, Cell<T>> { return Cell(value: initial); }
+        \\fn counter(start: i32) -> @Context<El, Cell<i32>> { return state(start); }
+    );
+}
+
+test "infer: return ---- body annotations see the fn's generic params" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn wrap<P>(xs: Array<P>) -> Array<#(P, P)> {
+        \\    var acc: Array<#(P, P)> = [];
+        \\    return acc;
+        \\}
+        \\val n = wrap([1, 2]);
+        \\val m = wrap(["a"]);
+    );
+}
+
+test "infer: return ---- a type guard body returns bool" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn isPositive(n: i32) -> n is i32 { return n > 0; }
+    );
+}
+
+// ── C2 — a `case` is typed from its arms; a `comptime` block from its `break` ──
+
+test "infer error: case ---- its arms' type does not match the annotation" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val a: bool = case 42 { 0 -> "a"; _ -> "b"; };
+    );
+}
+
+test "infer: comptime block ---- its value is the break value" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\val h = comptime { break 1; };
+        \\val z: i32 = h;
+    );
+}
+
+test "infer: case ---- a block arm's return leaves the enclosing fn" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\fn f(x: i32) -> i32 {
+        \\    val s = case x { 0 -> { return 7; }; _ -> "n"; };
+        \\    return 1;
+        \\}
+    );
+}
+
+// ── C8 — pattern bindings take the matched value's types ─────────────────────
+
+test "infer error: pattern ---- a variant payload binding has the field's type" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type E { A(v: i32), B }
+        \\fn f(s: string) -> string { return s; }
+        \\fn g(e: E) -> string { return case e { A(v) -> f(v); B -> "b"; }; }
+    );
+}
+
+test "infer error: pattern ---- an OR pattern binds the same field type in every alternative" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type Pet { Dog(name: i32), Cat(name: i32) }
+        \\fn f(s: string) -> string { return s; }
+        \\fn g(p: Pet) -> string { return case p { Dog(b) | Cat(b) -> f(b); }; }
+    );
+}
+
+test "infer error: pattern ---- a guarded binder is the subject type" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn f(s: string) -> string { return s; }
+        \\fn g(x: i32) -> string { return case x { y if (y > 0) -> f(y); _ -> "n"; }; }
+    );
+}
+
+test "infer error: pattern ---- Ok binds the R of a @Result" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type Oops(msg: string)
+        \\#[@result]
+        \\fn parse(s: string) -> @Result<i32, Oops> { return 1; }
+        \\fn f(s: string) -> string { return s; }
+        \\fn g() -> string { return case parse("1") { Ok(v) -> f(v); Err(e) -> "e"; }; }
+    );
+}
+
+test "infer error: pattern ---- a list pattern binds the element type" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn f(s: string) -> string { return s; }
+        \\fn g(xs: i32[]) -> string { return case xs { [first, ..rest] -> f(first); _ -> "n"; }; }
+    );
+}
+
+test "infer: pattern ---- a generic enum payload is instantiated against the subject" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type Box<T> { Full(v: T), Empty }
+        \\fn g(b: Box<string>) -> string { return case b { Full(v) -> v; Empty -> ""; }; }
+    );
+}
+
+// ── N28 — a section of an enum-shaped `type` is a type named by its path ──────
+
+test "infer: section ---- a section path types an annotation, a parameter and a return" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type Token { Text { Bold, Size { Xs, Sm } }, Color { Red }, Hover(inner: Token[]) }
+        \\fn sizeToCss(s: Token.Text.Size) -> string { return case s { Xs -> "xs"; Sm -> "sm"; }; }
+        \\fn textToCss(t: Token.Text) -> string {
+        \\    return case t { Bold -> "bold"; Size(s) -> sizeToCss(s); };
+        \\}
+        \\fn tokenToCss(t: Token) -> string {
+        \\    return case t { Text(i) -> textToCss(i); Color(c) -> "c"; Hover(h) -> "h"; };
+        \\}
+    );
+}
+
+test "infer error: section ---- an unknown section path is not a type" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type Token { Text { Bold }, Hover(inner: Token[]) }
+        \\fn f(t: Token.Nope) -> string { return "x"; }
+    );
+}
+
+test "infer error: section ---- the flat spelling names the path to write" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type Token { Text { Bold }, Hover(inner: Token[]) }
+        \\fn f(t: TokenText) -> string { return "x"; }
+    );
+}
+
+test "infer: section ---- a nested section pattern refines the arm, it does not cover it" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type Token { Text { Bold, Italic }, Hover(inner: Token[]) }
+        \\fn f(t: Token) -> string {
+        \\    return case t { Text(Bold) -> "b"; Text(i) -> "t"; Hover(h) -> "h"; };
+        \\}
+    );
+}
+
+test "infer error: section ---- a refined section arm leaves the wrapper uncovered" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type Token { Text { Bold, Italic }, Hover(inner: Token[]) }
+        \\fn f(t: Token) -> string {
+        \\    return case t { Text(Bold) -> "b"; Hover(h) -> "h"; };
+        \\}
+    );
+}
+
+// ── C10 / N30 — an annotation that names no type reds at the annotation ───────
+// The resolution is two-pass: a name nothing declares yet is recorded with its
+// location and re-checked once every declaration of the module is registered,
+// so a forward reference resolves and only a name nothing declares reds. The
+// caret is the annotation's, carried by `Param.typeLoc` / `Field.typeLoc` /
+// `FnDecl.returnTypeLoc`.
+
+test "infer error: unknown type ---- a param annotation names nothing" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\fn f(p: NoSuchType) -> i32 { return 1; }
+    );
+}
+
+test "infer error: unknown type ---- a field annotation names nothing" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type Q(lat: bogusType)
+    );
+}
+
+test "infer error: unknown type ---- a return annotation names nothing" {
+    // An associated fn of a `behavior`: the signature is registered without a
+    // body, so the annotation is what reds. (A `fn` with a body reds on the
+    // returned value first — a different row.)
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\behavior Maker { fn make() -> NoSuchType; }
+    );
+}
+
+test "infer error: unknown type ---- a variant field annotation names nothing" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\type Shape { Circle(r: bogusType), Square(side: f64) }
+    );
+}
+
+test "infer: unknown type ---- a forward reference to a type declared below checks" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\type Outer(inner: Inner)
+        \\type Inner(n: i32)
+        \\fn f(o: Outer) -> i32 { return o.inner.n; }
+    );
+}
+
+test "infer: unknown type ---- a behavior names a type in annotation position" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\behavior Counter { fn value(self: Self) -> i32; }
+        \\type Clicks(n: i32) implement Counter {
+        \\    fn value(self: Self) -> i32 { return self.n; }
+        \\}
+        \\fn read(c: Counter) -> i32 { return c.value(); }
     );
 }

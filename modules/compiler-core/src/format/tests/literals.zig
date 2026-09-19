@@ -309,10 +309,42 @@ test "format: line string ---- normalizes to triple quotes" {
     , out);
 }
 
-test "format: record literal ---- round-trip" {
+test "format: tuple literal ---- round-trip" {
     try h.assertFormat(std.testing.allocator,
         \\fn main() {
-        \\    val cfg = record { port: 8080, debug: true };
+        \\    val cfg = #(8080, true);
+        \\}
+    );
+}
+
+test "format: interface literal ---- basic" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn main() {
+        \\    val decl = @Decl(kind: "Record", name: "Service");
+        \\}
+    );
+}
+
+test "format: interface literal ---- multiple fields" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn main() {
+        \\    val decl = @Decl(kind: "Record", name: "Service", fields: [], methods: []);
+        \\}
+    );
+}
+
+test "format: interface literal ---- with array" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn main() {
+        \\    val decl = @Decl(kind: "Record", name: "Service", fields: [Field(name: "x", typeName: "i32")]);
+        \\}
+    );
+}
+
+test "format: a string holding a quote keeps its triple fences" {
+    try h.assertFormat(std.testing.allocator,
+        \\fn main() {
+        \\    val r = parse("""{"a":1}""");
         \\}
     );
 }

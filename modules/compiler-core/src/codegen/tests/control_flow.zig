@@ -70,6 +70,10 @@ test "js: case ---- or patterns with numbers" {
     );
 }
 
+// DIVERGENT wasm RUN LOG, second line (pinned, 06-wasm): `undefined` — the
+// value of an `if` with no `else` when the condition is false. commonJS prints
+// `undefined`, erlang `ok`; decision 2 (a block's value comes from `break`)
+// makes this program a checker error, 07-checker's to land.
 test "js: if ---- simple conditional in fn body" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn sign(n: i32) -> string {
@@ -151,6 +155,120 @@ test "js: loop ---- side-effect print in iterator" {
     );
 }
 
+test "js: loop ---- two-parameter loop threads reassigned vars out" {
+    // `loop (xs) { x, i -> … }` names the index without writing a range. Its
+    // reassignments of outer `var`s must survive the loop like the
+    // one-parameter form's (a library's lexer written as a counter loop).
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn pick(xs: Array<string>) -> string {
+        \\    var first = "";
+        \\    var last = "";
+        \\    loop (xs) { x, i ->
+        \\        if (i == 0) { first = x; };
+        \\        last = x;
+        \\    };
+        \\    return first + "-" + last;
+        \\}
+        \\fn weigh(xs: Array<i32>) -> i32 {
+        \\    var total = 0;
+        \\    loop (xs, 1..) { x, i ->
+        \\        total = total + x * i;
+        \\    };
+        \\    return total;
+        \\}
+        \\fn main() {
+        \\    @print(pick(["a", "b", "c"]));
+        \\    @print(weigh([10, 20, 30]));
+        \\}
+    );
+}
+
+test "js: loop ---- a condition loop repeats while its condition holds and threads reassigned vars out" {
+    // Decision 8 §10: `loop (condition) { … }` re-tests the condition before
+    // every iteration, including a condition false on entry; `continue` skips
+    // to the next test.
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn count(limit: i32) -> i32 {
+        \\    var i = 0;
+        \\    var acc = "";
+        \\    loop (i < limit) {
+        \\        acc = acc + i.toString();
+        \\        i = i + 1;
+        \\    };
+        \\    @print(acc);
+        \\    return i;
+        \\}
+        \\fn evens(limit: i32) -> i32 {
+        \\    var i = 0;
+        \\    var sum = 0;
+        \\    loop (i < limit) {
+        \\        i = i + 1;
+        \\        if (i % 2 == 1) { continue; };
+        \\        sum = sum + i;
+        \\    };
+        \\    return sum;
+        \\}
+        \\fn main() {
+        \\    @print(count(4));
+        \\    @print(count(0));
+        \\    @print(evens(6));
+        \\}
+    );
+}
+
+test "js: loop ---- an unconditioned loop ends at break and a break leaves only the inner loop" {
+    // Decision 8 §10: `loop { … }` repeats until a `break`; a `break` inside a
+    // nested loop ends that loop only; the variables reassigned before the
+    // break survive it.
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn firstSquareOver(n: i32) -> i32 {
+        \\    var k = 0;
+        \\    loop {
+        \\        k = k + 1;
+        \\        if (k * k > n) { break; };
+        \\    };
+        \\    return k;
+        \\}
+        \\fn nested() -> i32 {
+        \\    var outer = 0;
+        \\    var inner = 0;
+        \\    loop (outer < 3) {
+        \\        outer = outer + 1;
+        \\        loop {
+        \\            inner = inner + 1;
+        \\            break;
+        \\        };
+        \\    };
+        \\    return outer * 10 + inner;
+        \\}
+        \\fn main() {
+        \\    @print(firstSquareOver(20));
+        \\    @print(nested());
+        \\}
+    );
+}
+
+test "js: lambda ---- a local closure reassigning outer vars threads them out" {
+    // A markup template's shape: a named closure appends to an outer `var`, and
+    // is called both directly and from inside a loop.
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn render(words: Array<string>) -> string {
+        \\    var out = "";
+        \\    var count = 0;
+        \\    val emit = { w ->
+        \\        out = out + "<" + w + ">";
+        \\        count = count + 1;
+        \\    };
+        \\    emit("start");
+        \\    loop (words) { w -> emit(w); };
+        \\    return out + " " + count.toString();
+        \\}
+        \\fn main() {
+        \\    @print(render(["a", "b"]));
+        \\}
+    );
+}
+
 test "js: loop ---- side-effect over range" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
@@ -168,7 +286,9 @@ test "js: loop ---- map with break (add tax)" {
         \\    val taxa = valor * 0.15;
         \\    break valor + taxa;
         \\};
-        \\@print(precosComTaxa);
+        \\fn main() {
+        \\    @print(precosComTaxa);
+        \\}
     );
 }
 
@@ -180,7 +300,9 @@ test "js: loop ---- filter with conditional break" {
         \\        break valor;
         \\    };
         \\};
-        \\@print(apenasGrandes);
+        \\fn main() {
+        \\    @print(apenasGrandes);
+        \\}
     );
 }
 
@@ -190,7 +312,9 @@ test "js: loop ---- map with break simple" {
         \\val dobrados = loop (ids) { id ->
         \\    break id * 2;
         \\};
-        \\@print(dobrados);
+        \\fn main() {
+        \\    @print(dobrados);
+        \\}
     );
 }
 
@@ -201,7 +325,9 @@ test "js: loop ---- even numbers with break" {
         \\        break i;
         \\    };
         \\};
-        \\@print(processamento);
+        \\fn main() {
+        \\    @print(processamento);
+        \\}
     );
 }
 
@@ -226,6 +352,138 @@ test "js: case ---- union return type from mismatched arms" {
     );
 }
 
+// Three defects front `01-checker` handed over with its case-arm typing, in one
+// program (04, 2026-09-18). Written with a statement-position `case`, because a
+// `case` **value** whose arms are blocks does not type-check yet (01 step 4):
+//   1. the arm names the variant with its written path (`Shape.Circle`) — the
+//      ctor writes the bare `"Circle"` onto the prototype, so the `tag` test and
+//      the declared field order both key on the bare name (`const { radius: r }`,
+//      not `const { r }`);
+//   2. the block's last expression is the arm's value, so it is returned — which
+//      is also what stops execution falling through into the arms below it
+//      (before the fix `show(Circle)` printed `2` *and* the wildcard arm's value);
+//   3. `_ { v -> … }` binds the whole subject to `v`, which nothing else binds.
+//
+// No snapshot: the shapes and the RUN LOG are asserted directly, so this front's
+// fixture does not write into the erlang/beam/wasm snapshot directories the
+// other backend fronts own.
+test "js: case ---- written variant path, arm value and whole-value binder" {
+    const src =
+        \\type Shape {
+        \\    Circle(radius: i32),
+        \\    Rect(width: i32, height: i32),
+        \\}
+        \\fn show(s: Shape) {
+        \\    case s {
+        \\        Shape.Circle(r) { @print(r); }
+        \\        _ { v -> @print(v); }
+        \\    };
+        \\}
+        \\fn main() {
+        \\    show(Shape.Circle(radius: 2));
+        \\    show(Shape.Rect(width: 1, height: 2));
+        \\}
+    ;
+    try h.assertJsContains(std.testing.allocator, src, &.{
+        "if (_s.tag === \"Circle\") {",
+        "const { radius: r } = _s;",
+        "return __bp_print(r);",
+        "const v = _s;",
+    });
+    try h.assertJsRunLog(std.testing.allocator, src,
+        \\2
+        \\Shape.Rect(width: 1, height: 2)
+        \\
+    );
+}
+
+// Decision 8 §5's arm shapes, step 2's D4. Each cell below compiled before and
+// answered wrongly, so each is a measured row, not a new feature:
+//   * `i32 when (…)` — a type-test arm bound `const i32 = _s;` and tested
+//     nothing (§5.2, tested by §4.1's run-time test, the one `x is T` builds);
+//   * `#(0, s)` — a tuple pattern tested `_s.tag === ""` and never matched (P6);
+//   * `1...5` — a range pattern did the same (§5.2);
+//   * `.Rect(height: h, width: w)` — a written label was ignored and the fields
+//     were read by position, so `h` and `w` came out swapped (P4);
+//   * `.Some(#(a, b))` — a nested payload pattern bound nothing at all, and the
+//     arm ran with `a` and `b` undeclared.
+// The `break` form is used because a `case` value whose arms are blocks does not
+// type-check yet (01 step 4). No snapshot, for the reason the fixture above it
+// gives.
+test "js: case ---- type-test, tuple, range, labelled and nested arms" {
+    const src =
+        \\type Shape { Circle(radius: i32), Rect(width: i32, height: i32) }
+        \\type Maybe<T> { Some(value: T), None }
+        \\fn sign(x: i32) -> string {
+        \\    return case x {
+        \\        i32 when (x > 0) { break "positive"; }
+        \\        _ { break "zero"; }
+        \\    };
+        \\}
+        \\fn pair(t: #(i32, string)) -> string {
+        \\    return case t {
+        \\        #(0, s) { break s; }
+        \\        #(a, b) { break b + "!"; }
+        \\    };
+        \\}
+        \\fn digit(n: i32) -> string {
+        \\    return case n {
+        \\        1...5 { break "low"; }
+        \\        _ { break "high"; }
+        \\    };
+        \\}
+        \\fn labels(s: Shape) -> i32 {
+        \\    return case s {
+        \\        .Rect(height: h, width: w) { break w * 10 + h; }
+        \\        _ { break 0; }
+        \\    };
+        \\}
+        \\fn nested(m: Maybe<#(i32, i32)>) -> i32 {
+        \\    return case m {
+        \\        .Some(#(a, b)) { break a + b; }
+        \\        _ { break -1; }
+        \\    };
+        \\}
+        \\fn rest(s: Shape) -> i32 {
+        \\    return case s {
+        \\        .Rect(width: w, ..) { break w; }
+        \\        _ { break 0; }
+        \\    };
+        \\}
+        \\fn main() {
+        \\    @print(sign(5));
+        \\    @print(sign(-1));
+        \\    @print(pair(#(0, "z")));
+        \\    @print(pair(#(9, "y")));
+        \\    @print(digit(3));
+        \\    @print(digit(8));
+        \\    @print(labels(Shape.Rect(width: 2, height: 3)));
+        \\    @print(nested(Maybe.Some(value: #(2, 3))));
+        \\    @print(rest(Shape.Rect(width: 5, height: 9)));
+        \\}
+    ;
+    try h.assertJsContains(std.testing.allocator, src, &.{
+        "if ((typeof _s === \"number\" && Number.isInteger(_s) && _s >= -2147483648 && _s <= 2147483647)) {",
+        "if ((Array.isArray(_s) && _s.length === 2 && _s[0] === 0)) {",
+        "if ((_s >= 1 && _s <= 5)) {",
+        "const { height: h, width: w } = _s;",
+        "if (_s.tag === \"Some\" && (Array.isArray(_s.value) && _s.value.length === 2)) {",
+        "const a = _s.value[0];",
+    });
+    try h.assertJsRunLog(std.testing.allocator, src,
+        \\positive
+        \\zero
+        \\z
+        \\y!
+        \\low
+        \\high
+        \\23
+        \\5
+        \\5
+        \\
+    );
+}
+
 test "js: case ---- nested case in block arm" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val result = case 42 {
@@ -240,9 +498,43 @@ test "js: case ---- nested case in block arm" {
     );
 }
 
+// A loop whose ITERABLE is written at the loop, not passed in as a name — the
+// shape no cell in this corpus had, and the one beam emitted unassemblable `.S`
+// for. `lowerLoop` materialises the iterable in the ENCLOSING frame (before it
+// builds the body closure), so the array literal's cons accumulator takes one of
+// that frame's y-slots; `countLocalsRec`'s `.loop` arm counted nothing for a
+// collection loop, so the frame stayed at `{allocate, 0, 0}` and `erlc
+// +from_asm` refused the module:
+//
+//     main:1: function main/0+7:
+//       Internal consistency check failed - please report this bug.
+//       Instruction: {move,{x,0},{y,0}}
+//       Error:       {invalid_store,{y,0}}
+//
+// `beam_export_audit.sh` stayed green through it, because assembling every
+// snapshot cannot find a shape no snapshot has. Both prints run on all four
+// backends now: `1`, `2`, `3`, then `[20]`.
+//
+// KNOWN (decision 8 §10, all four backends): `break <value>` out of a
+// COLLECTION loop answers a one-element ARRAY, `[20]`, where §10 reads as the
+// value itself, `20`. commonJS, erlang, wasm and beam agree on `[20]`, so this
+// is the decision's row (front 03's step 3 D7 names it), not one backend's.
+test "js: loop ---- a loop over an array literal, and a value break out of one" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    loop ([1, 2, 3]) { x -> @print(x); };
+        \\    val first = loop ([1, 2, 3]) { x -> if (x == 2) { break x * 10; }; };
+        \\    @print(first);
+        \\}
+    );
+}
+
+// The loop collects its `break` values into an array (erlang prints
+// `[15,20]`). `find` was declared `-> i32`; since 06 C1 a `return` unifies with
+// the declared type, so the fixture declares what the loop produces (N12).
 test "js: loop ---- break with value" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn find(arr: i32[]) -> i32 {
+        \\fn find(arr: i32[]) -> i32[] {
         \\    return loop (arr) { x ->
         \\        if (x > 10) { break x; };
         \\    };
@@ -253,9 +545,112 @@ test "js: loop ---- break with value" {
     );
 }
 
+test "js: loop ---- a condition loop's break value is the loop's value" {
+    // Decision 8 §10 — `break <v>` makes the loop an expression. A condition
+    // loop with no `yield` is a search, not a comprehension: it collected into
+    // `_acc` and answered `[3]` / `[8]` where §10 asks for `3` / `8`. A loop
+    // that ends without breaking has no value to give, which is `null`.
+    //
+    // A RUN LOG, not a snapshot: the erlang, beam and wasm baselines of this
+    // program are not this front's to record. When this was written neither
+    // erlang nor beam compiled the form at all (`ConditionLoopValueUnsupported`);
+    // both do now — erlang since `a9e9d03` (02 step 5), beam since 03 step 3's
+    // D6 — and the four-backend fixture below records what they answer.
+    try h.assertJsRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    var k = 0;
+        \\    var i = 0;
+        \\    var n = 0;
+        \\    val r = loop { k = k + 1; if (k > 2) { break k; }; };
+        \\    @print(r);
+        \\    val found = loop (i < 10) { if (i == 4) { break i * 2; }; i = i + 1; };
+        \\    @print(found);
+        \\    val never = loop (n < 3) { n = n + 1; };
+        \\    @print(never);
+        \\}
+    , "3\n8\nnull\n");
+}
+
+// ── front 03-beam step 3 D6: a condition loop's value break on beam ──────────
+//
+// Beam refused `break <value>` out of `loop (cond)` — and out of the bare
+// `loop { … }`, which the parser gives the same node — with the same unlocated
+// `error.ConditionLoopValueUnsupported` erlang raised until `a9e9d03`. It was
+// the last backend on the row.
+//
+// The beam shape is not erlang's: a condition loop is a label-jump loop in the
+// caller's own frame, not a recursive fun, so there is no `{Group, Value}` tuple
+// to carry and no `case` to destructure. What it needs is a register the
+// condition's failure path cannot share with the `break`'s:
+//
+//   {label, Top}  {test, is_lt, {f, Fail}, [{y,0}, {integer,10}]}
+//                 … {gc_bif, '*', …, {x, 0}}  {jump, {f, Exit}}   % break i * 2
+//                 … {jump, {f, Top}}
+//   {label, Fail} {move, {atom, undefined}, {x, 0}}
+//   {label, Exit} …                                               % the value
+//
+// so `{x, 0}` at `Exit` is the break's value on the break path and `undefined`
+// when the condition ran out — the two answers erlang's `{GroupAtTheJump,
+// Value}` / `{FinalGroup, undefined}` pair carries. The `.S` is what the RUN LOG
+// below was assembled and run from, by hand as well:
+//
+//   $ botopink build --target beam
+//   $ (cd out && erlc +from_asm main.S)
+//   $ erl -noshell -pa out -eval "main:'_botopink_main'(), halt()."
+//   8
+//   4
+//   3
+//   undefined
+//
+// byte-identical to what the erlang cell answers for the same program.
+//
+// KNOWN (commonJS): the exhausted loop answers `null` where erlang and beam
+// answer `undefined` — the backends' standing spelling of absence, not this row.
+// KNOWN-WRONG (wasm, front 05): a condition loop still COLLECTS, so the three
+// values arrive as `[8]`, `[3]` and `[]`. commonJS was fixed by 04; erlang by
+// 02 step 5; wasm is the last one left on decision 8 §10.
+// KNOWN-WRONG (front 01, all four targets): the CHECKER types a condition loop
+// with a valued `break` as an ARRAY, so `val hit = loop (j < 5) { if (j == 2)
+// { break j; }; j = j + 1; }; val n = hit + 1;` is refused with "type mismatch:
+// expected array, got i32" on commonJS, erlang and wasm alike. That is why this
+// fixture only prints its loops and never does arithmetic on one.
+test "js: loop ---- a condition loop's value break is the loop's value on every backend" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    var i = 0;
+        \\    val found = loop (i < 10) { if (i == 4) { break i * 2; }; i = i + 1; };
+        \\    @print(found);
+        \\    @print(i);
+        \\    var k = 0;
+        \\    val r = loop { k = k + 1; if (k > 2) { break k; }; };
+        \\    @print(r);
+        \\    var n = 0;
+        \\    val never = loop (n < 3) { if (n == 99) { break n; }; n = n + 1; };
+        \\    @print(never);
+        \\}
+    );
+}
+
+test "js: loop ---- a condition loop that yields still collects" {
+    // The other side of the same fork: a `yield` in the body makes it a
+    // comprehension, and a `break <v>` there contributes its value and ends
+    // the loop.
+    try h.assertJsRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    var i = 0;
+        \\    val xs = loop (i < 10) {
+        \\        i = i + 1;
+        \\        if (i > 3) { break i; };
+        \\        yield i;
+        \\    };
+        \\    @print(xs);
+        \\}
+    , "[1, 2, 3, 4]\n");
+}
+
 test "js: loop ---- continue in iteration" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn sumEvens(arr: i32[]) -> i32 {
+        \\fn sumEvens(arr: i32[]) -> i32[] {
         \\    return loop (arr) { x ->
         \\        if (x % 2 != 0) { continue; };
         \\        yield x;
@@ -330,7 +725,7 @@ test "js: case ---- nested case in fn body" {
 
 test "js: try ---- catch with throw rethrow" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record ApiError { msg: string }
+        \\type ApiError(msg: string)
         \\#[@result]
         \\fn fetch() -> @Result<i32, ApiError> {
         \\    throw ApiError(msg: "not found");
@@ -345,7 +740,7 @@ test "js: try ---- catch with throw rethrow" {
 
 test "js: try ---- catch with return fallback" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record NetError { code: i32 }
+        \\type NetError(code: i32)
         \\#[@result]
         \\fn fetch() -> @Result<i32, NetError> {
         \\    throw NetError(code: 500);
@@ -359,7 +754,7 @@ test "js: try ---- catch with return fallback" {
 
 test "js: try ---- nested try catch" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record DbError { msg: string }
+        \\type DbError(msg: string)
         \\#[@result]
         \\fn inner() -> @Result<i32, DbError> {
         \\    throw DbError(msg: "conn refused");
@@ -382,8 +777,8 @@ test "js: try ---- nested try catch" {
 
 test "js: try ---- catch tail on method call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record ParseError { msg: string }
-        \\val Parser = record {
+        \\type ParseError(msg: string)
+        \\val Parser = type {
         \\    fn parse(self: Self) -> @Result<i32, ParseError> {
         \\        throw ParseError(msg: "bad input");
         \\    }
@@ -403,9 +798,29 @@ test "js: throw ---- string literal" {
     );
 }
 
+// A bare `throw;` (no operand) — JS-6 in `codegen/js/AGENTS.md`. Decided
+// semantics: rejected, not a rethrow. The parser requires an operand
+// (`throw [new] <expr>`), so the program never reaches a backend; the
+// snapshot pins the parse error on all four, which is what lets
+// `Stmt.throw_` carry a required operand.
+test "js: throw ---- bare throw inside try catch is rejected" {
+    try h.assertJsCompileError(std.testing.allocator, @src(),
+        \\#[@result]
+        \\fn g(x: i32) -> @Result<i32, string> {
+        \\    if (x > 0) { return x; };
+        \\    throw "neg";
+        \\}
+        \\#[@result]
+        \\fn f(x: i32) -> @Result<i32, string> {
+        \\    val r = try g(x) catch { e -> throw; };
+        \\    return r;
+        \\}
+    );
+}
+
 test "js: throw ---- record constructor" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record AppError { code: i32, msg: string }
+        \\type AppError(code: i32, msg: string)
         \\fn validate(x: i32) {
         \\    if (x < 0) {
         \\        throw AppError(code: 400, msg: "negative");
@@ -416,7 +831,7 @@ test "js: throw ---- record constructor" {
 
 test "js: try ---- propagate in multi-statement fn" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record IoError { path: string }
+        \\type IoError(path: string)
         \\#[@result]
         \\fn step1() -> @Result<i32, IoError> {
         \\    throw IoError(path: "/data");
@@ -436,7 +851,7 @@ test "js: try ---- propagate in multi-statement fn" {
 
 test "js: try ---- catch with lambda handler" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record FetchError { url: string }
+        \\type FetchError(url: string)
         \\#[@result]
         \\fn fetch() -> @Result<i32, FetchError> {
         \\    throw FetchError(url: "/api");
@@ -450,7 +865,7 @@ test "js: try ---- catch with lambda handler" {
 
 test "js: catch ---- tail on binary expression" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record CalcError { msg: string }
+        \\type CalcError(msg: string)
         \\#[@result]
         \\fn getA() -> @Result<i32, CalcError> {
         \\    throw CalcError(msg: "overflow");
@@ -464,7 +879,7 @@ test "js: catch ---- tail on binary expression" {
 
 test "js: try ---- catch with case handler" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val ErrorKind = enum { NotFound, Timeout }
+        \\val ErrorKind = type { NotFound, Timeout }
         \\#[@result]
         \\fn fetch() -> @Result<i32, ErrorKind> {
         \\    throw ErrorKind.NotFound;
@@ -478,19 +893,24 @@ test "js: try ---- catch with case handler" {
 
 test "js: throw ---- inside case arm" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Status = enum { Ok, Fail }
-        \\fn check(s: Status) -> i32 {
+        \\type Status { Ok, Fail }
+        \\#[@result]
+        \\fn check(s: Status) -> @Result<i32, string> {
         \\    return case s {
-        \\        Status.Ok -> 1;
-        \\        Status.Fail -> throw "failed";
+        \\        Ok -> 1;
+        \\        Fail -> throw "failed";
         \\    };
+        \\}
+        \\fn main() {
+        \\    @print(check(Status.Ok).isOk());
+        \\    @print(check(Status.Fail).isOk());
         \\}
     );
 }
 
 test "js: try ---- catch preserves surrounding bindings" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record LoadError { msg: string }
+        \\type LoadError(msg: string)
         \\#[@result]
         \\fn load() -> @Result<i32, LoadError> {
         \\    throw LoadError(msg: "not found");
@@ -510,19 +930,22 @@ test "js: try ---- catch preserves surrounding bindings" {
 
 test "js: throw ---- inside loop body" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\fn validate(items: i32) {
-        \\    val i = 0;
-        \\    loop {
-        \\        if (i > items) { throw "too many"; };
-        \\        break;
+        \\#[@result]
+        \\fn validate(items: i32) -> @Result<i32, string> {
+        \\    loop (0..items) { i ->
+        \\        if (i > 2) { throw "too many"; };
         \\    };
+        \\    return items;
+        \\}
+        \\fn main() {
+        \\    @print(validate(2).isOk());
         \\}
     );
 }
 
 test "js: try ---- multiple catch with different fallbacks" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record UserError { msg: string }
+        \\type UserError(msg: string)
         \\#[@result]
         \\fn fetchName() -> @Result<string, UserError> {
         \\    throw UserError(msg: "name missing");
@@ -544,7 +967,7 @@ test "js: try ---- multiple catch with different fallbacks" {
 
 test "js: catch ---- tail on function call no try" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\record RiskError { level: i32 }
+        \\type RiskError(level: i32)
         \\#[@result]
         \\fn risky() -> @Result<i32, RiskError> {
         \\    throw RiskError(level: 5);
@@ -574,7 +997,7 @@ test "js: case ---- guard clause on bound identifier" {
 
 test "js: case ---- guard clause on variant fields" {
     try h.assertJsContains(std.testing.allocator,
-        \\val Shape = enum {
+        \\val Shape = type {
         \\    Circle(r: i32),
         \\    Square(s: i32),
         \\}
@@ -608,7 +1031,7 @@ test "case guard ---- bound identifier numeric guard" {
 
 test "case guard ---- variant field guard" {
     try h.assertJsSingle(std.testing.allocator, @src(),
-        \\val Shape = enum {
+        \\val Shape = type {
         \\    Circle(r: i32),
         \\    Square(s: i32),
         \\}
@@ -649,4 +1072,183 @@ test "js: mutual recursion ---- forward reference + bare-if base case on every b
         \\    return isEven(n - 1);
         \\}
     );
+}
+
+// ── front 02-erlang: the two `case` defects `01-checker` handed over ──────────
+//
+// Both are erlang-only and both are *load* failures, not wrong values, so they
+// are asserted by running the emitted module rather than by a snapshot: a
+// snapshot of `{'.Some', V}` looks plausible and never matches, and `.None`
+// renders a token `erlc` refuses outright.
+//
+// The §5.1 value-position forms these rows are written for (`test/case_variants.bp`,
+// `test/case_guards.bp`) do not type-check until `01-checker` step 4 lands, so
+// each cell is the same arm in **statement** position, which compiles at
+// `bef762b`. When step 4 lands, the value-position twins join the language suite.
+
+test "erlang: case ---- a variant pattern written with its path matches the bare tag" {
+    // Handover 1. The constructor emits `{'Some', 7}`; the pattern emitted what
+    // was written — `{'.Some', V}`, matching nothing, and a nullary `.None` as
+    // the bare token `.None`, which is `syntax error before: '.'`.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\type Maybe { Some(v: i32), None }
+        \\fn show(m: Maybe) { case m { .Some(v) { @print(v) } .None { @print(0) } }; }
+        \\fn main() { show(Maybe.None); show(Maybe.Some(v: 7)); }
+    , "0\n7\n", &.{ "{'Some', V} ->", "'None' ->" });
+}
+
+test "erlang: case ---- a one-parameter arm binds the whole subject" {
+    // Handover 3. `_ { v -> … }` names the subject; nothing bound it, so the
+    // arm body read an erlang variable the clause never introduced
+    // (`variable 'V' is unbound`). The name is now an alias on the clause
+    // pattern, and on a wildcard it *is* the pattern.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn show(n: i32) { case n { 0 { @print("zero") } _ { v -> @print(v) } }; }
+        \\fn main() { show(4); show(0); }
+    , "4\nzero\n", &.{"        V ->"});
+}
+
+test "erlang: case ---- a one-parameter arm on a variant pattern aliases it" {
+    // The same binder where the pattern is not a wildcard: erlang's `V = Pat`
+    // alias binds the subject without evaluating it twice.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\type Maybe { Some(v: i32), None }
+        \\fn show(m: Maybe) { case m { .Some(v) { w -> @print(v) } .None { @print(0) } }; }
+        \\fn main() { show(Maybe.Some(v: 7)); }
+    , "7\n", &.{"W = {'Some', V} ->"});
+}
+
+// ── front 02-erlang, reopened: the three `patternNode` defects 01 isolated ────
+//
+// Each one made an arm match NOTHING, or the wrong arm match everything, so each
+// is asserted by running the emitted module and pinning the clause head it now
+// writes. commonJS had all three right, which is why only erlang's lines sat in
+// `tests/language/expected-failures.txt`.
+//
+// The §5.1 cells these rows are written for (`test/case_tuples.bp`,
+// `test/case_variants.bp`, `test/case_guards.bp`, `test/case_exhaustive.bp`) are
+// in VALUE position and do not type-check until `01-checker` step 4 and step 5
+// land, so each cell below is the same pattern in statement position, which
+// compiles at `b09bf9c6`.
+
+test "erlang: case ---- a tuple pattern is the bare tuple, with no variant tag" {
+    // Defect 1. `#(0, s)` rode the variant lowering and gained the tag atom of a
+    // variant with no name — `{'', 0, S}`, which no constructor builds — so every
+    // tuple arm died with `{case_clause,{0,5}}`.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn main() {
+        \\  val p = #(0, 5);
+        \\  case p { #(0, s) { @print(s) } #(n, _) { @print(n) } };
+        \\}
+    , "5\n", &.{ "{0, S} ->", "{N, _} ->" });
+}
+
+test "erlang: case ---- `..` writes the fields the pattern does not name" {
+    // Defect 2. `v.rest` was never read: `Rect(width: w, ..)` was emitted
+    // `{'Rect', W}` against the `{'Rect', 5, 9}` the constructor builds, and
+    // `Circle(..)` collapsed to the bare atom `'Circle'`. Both matched nothing.
+    // The declared arity comes from `variant_fields`.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\type Shape { Circle(radius: i32), Rect(width: i32, height: i32) }
+        \\fn main() {
+        \\  case Shape.Rect(width: 5, height: 9) { Rect(width: w, ..) { @print(w) } Circle(..) { @print(0) } };
+        \\  case Shape.Circle(radius: 1) { Rect(width: w, ..) { @print(w) } Circle(..) { @print(0) } };
+        \\}
+    , "5\n0\n", &.{ "{'Rect', W, _} ->", "{'Circle', _} ->" });
+}
+
+test "erlang: case ---- a tuple under `..` is a tuple_size guard, not a fixed arity" {
+    // Defect 2, the tuple half. `#(a, ..)` has an arity that is only a LOWER
+    // bound and an erlang tuple pattern has no such thing, so the clause matches
+    // a fresh variable, the shape becomes a guard, and the named element is an
+    // `element/2` read the body opens with.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn main() {
+        \\  val t = #(4, 5, 6);
+        \\  case t { #(a, ..) { @print(a) } };
+        \\}
+    , "4\n", &.{ "when is_tuple(", "tuple_size(", ") >= 1) ->", "= element(1, " });
+}
+
+test "erlang: case ---- a primitive type pattern is a guard, not a binder" {
+    // Defect 3. `i32` / `string` are §5.2's type-test arms. Lowered as the plain
+    // binders `I32` / `String` the FIRST arm matched every subject, so `show("x")`
+    // answered the `i32` arm; erlang cannot test a type in a pattern, so the test
+    // is a clause guard on the variable the arm keeps.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn show(v: i32 | string) {
+        \\  case v { i32 { @print("int") } string { @print("str") } };
+        \\}
+        \\fn main() { show(3); show("abcd"); }
+    , "int\nstr\n", &.{ "I32 when is_integer(I32)", "String when is_binary(String) ->" });
+}
+
+// ── front 02-erlang step 5: a condition loop's value break (decision 8 §10) ──
+//
+// `break <value>` out of `loop (cond)` was refused outright with an unlocated
+// `ConditionLoopValueUnsupported`, on the bare `loop { … }` too — the parser
+// gives both the same node. The loop now answers a pair, `{Group, Value}`, and
+// a one-clause `case` destructures it: the group's variables are rebound and
+// the case's value is the break's.
+
+test "erlang: loop ---- a value break out of a condition loop is the loop's value" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn main() {
+        \\  var i = 0;
+        \\  val found = loop (i < 10) { if (i == 4) { break i * 2; }; i = i + 1; };
+        \\  @print(found);
+        \\  @print(i);
+        \\}
+    , "8\n4\n", &.{"erlang:throw({'__bp_cond_break', I@1, (I@1 * 2)})"});
+}
+
+test "erlang: loop ---- a value break out of a bare loop is the loop's value" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn main() {
+        \\  var k = 0;
+        \\  val r = loop { k = k + 1; if (k > 2) { break k; }; };
+        \\  @print(r);
+        \\  @print(k);
+        \\}
+    , "3\n3\n", &.{});
+}
+
+// ── front 02-erlang step 6: the generator protocol over a condition loop ─────
+//
+// `yield <v>` inside a condition loop lowered to the bare value expression,
+// which an erlang clause body discards — so `#[@generator] fn nums` answered
+// its loop's final counter and the consuming `lists:foldl/3` raised
+// `no case clause matching 3` at run time. The yields are collected into a
+// synthetic member of the loop's variable group and the loop answers
+// `lists:reverse/1` of it.
+
+test "erlang: generator ---- a condition-loop body yields its elements in order" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\#[@generator]
+        \\fn nums(n: i32) -> @Generator<i32> {
+        \\  var i = 0;
+        \\  loop (i < n) { yield i; i = i + 1; };
+        \\}
+        \\fn main() {
+        \\  var acc = "";
+        \\  loop (nums(3)) { x -> acc = acc + x.toString(); };
+        \\  @print(acc);
+        \\  var runs = 0;
+        \\  loop (nums(0)) { x -> runs = runs + 1; };
+        \\  @print(runs);
+        \\}
+    , "012\n0\n", &.{"lists:reverse(__bp_cond_yield@3)"});
+}
+
+test "erlang: generator ---- a bare-yield body still lowers to an eager list" {
+    // `isPlainYieldGenerator`'s path, untouched by the collecting loop.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\#[@iterator]
+        \\fn two() -> @Iterator<i32> { yield 1; yield 2; }
+        \\fn main() {
+        \\  var a = "";
+        \\  loop (two()) { x -> a = a + x.toString(); };
+        \\  @print(a);
+        \\}
+    , "12\n", &.{});
 }

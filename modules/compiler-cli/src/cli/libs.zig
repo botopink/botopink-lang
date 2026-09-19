@@ -14,6 +14,7 @@
 const std = @import("std");
 const bp = @import("botopink");
 const config = @import("./config.zig");
+const diagnostics = @import("./diagnostics.zig");
 
 const Module = bp.Module;
 const DepEntry = config.DepEntry;
@@ -32,6 +33,10 @@ pub const Error = error{
     LibsRootNotFound,
     LibNotFound,
     LibManifestInvalid,
+    /// A `files` entry of a dependency's `botopink.json` could not be read;
+    /// the located diagnostic (the path looked for, the manifest line) has
+    /// already been printed.
+    LibFileNotFound,
 } || std.mem.Allocator.Error;
 
 /// Name of the env var that prepends extra lib roots (drop-in for `PATH`-style
@@ -51,7 +56,7 @@ pub const ENV_VAR = "BOTOPINK_LIB_ROOTS";
 ///      silently when the directory does not exist. This is the hook bpmp uses
 ///      to point the compiler at its package store without symlinking.
 ///   2. **Walk-up roots** — for each ancestor dir `D` of cwd (nearest-first):
-///        * `D/repository/botopink-lang/libs`  — bundled libs (std/client/server)
+///        * `D/repository/botopink-lang/libs`  — bundled libs (std)
 ///        * `D/repository`                     — sibling projects (frameworks)
 ///        * `D/libs`                           — legacy flat tree
 ///
@@ -254,13 +259,13 @@ pub fn resolveFallbackRoots(gpa: std.mem.Allocator, io: std.Io, env_map: EnvMap)
 pub fn resolveBpmpStoreRoot(gpa: std.mem.Allocator, env_map: EnvMap) !?[]u8 {
     if (env_map) |m| {
         if (m.get("BPMP_HOME")) |v| {
-            if (v.len > 0) return std.fs.path.join(gpa, &.{ v, "store" });
+            if (v.len > 0) return try std.fs.path.join(gpa, &.{ v, "store" });
         }
         if (m.get("XDG_CACHE_HOME")) |v| {
-            if (v.len > 0) return std.fs.path.join(gpa, &.{ v, "bpmp", "store" });
+            if (v.len > 0) return try std.fs.path.join(gpa, &.{ v, "bpmp", "store" });
         }
         if (m.get("HOME")) |v| {
-            if (v.len > 0) return std.fs.path.join(gpa, &.{ v, ".cache", "bpmp", "store" });
+            if (v.len > 0) return try std.fs.path.join(gpa, &.{ v, ".cache", "bpmp", "store" });
         }
     }
     return null;
@@ -292,14 +297,27 @@ fn loadOne(
         }
         if (lib_dir != null) break;
     }
-    const dir = lib_dir orelse return error.LibNotFound;
+    const dir = lib_dir orelse {
+        // Name the dependency here — the caller only sees the error tag.
+        std.debug.print("\x1b[1m\x1b[31merror\x1b[0m: dependency '{s}' was not found under any library root\n", .{dep});
+        return error.LibNotFound;
+    };
     const manifest = std.json.parseFromSliceLeaky(LibManifest, arena, data, .{
         .ignore_unknown_fields = true,
     }) catch return error.LibManifestInvalid;
 
     for (manifest.files) |file| {
         const file_path = try std.fs.path.join(arena, &.{ dir, manifest.src, file });
-        const source = try std.Io.Dir.cwd().readFileAlloc(io, file_path, gpa, .unlimited);
+        const source = std.Io.Dir.cwd().readFileAlloc(io, file_path, gpa, .unlimited) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => {
+                const manifest_path = try std.fs.path.join(arena, &.{ dir, "botopink.json" });
+                var aw: std.Io.Writer.Allocating = .init(arena);
+                try renderMissingFile(&aw.writer, err, dep, file, file_path, manifest_path, data);
+                std.debug.print("{s}", .{aw.written()});
+                return error.LibFileNotFound;
+            },
+        };
         errdefer gpa.free(source);
 
         // Module path: `<dep>/<basename without extension>`. The `<dep>/` prefix
@@ -310,6 +328,46 @@ fn loadOne(
 
         try out.append(gpa, .{ .path = mod_path, .source = source, .declaration = isDeclFile(file) });
     }
+}
+
+/// A dependency's `files` entry that could not be read: the path looked for,
+/// located at the entry in the manifest (`--> <lib>/botopink.json:L:C`).
+fn renderMissingFile(
+    w: *std.Io.Writer,
+    err: anyerror,
+    dep: []const u8,
+    entry: []const u8,
+    file_path: []const u8,
+    manifest_path: []const u8,
+    manifest: []const u8,
+) !void {
+    var msg_buf: [1024]u8 = undefined;
+    const message = (if (err == error.FileNotFound)
+        std.fmt.bufPrint(&msg_buf, "dependency '{s}' lists \"{s}\" in `files`, but {s} does not exist", .{ dep, entry, file_path })
+    else
+        std.fmt.bufPrint(&msg_buf, "dependency '{s}' lists \"{s}\" in `files`, but {s} could not be read ({s})", .{ dep, entry, file_path, @errorName(err) })) catch "a dependency's `files` entry could not be read";
+
+    // Locate the quoted entry after the `"files"` key; fall back to the key,
+    // then to the first line.
+    var quoted_buf: [512]u8 = undefined;
+    const quoted = std.fmt.bufPrint(&quoted_buf, "\"{s}\"", .{entry}) catch entry;
+    const key = std.mem.indexOf(u8, manifest, "\"files\"");
+    const offset: usize, const span: usize = blk: {
+        if (key) |k| {
+            if (std.mem.indexOfPos(u8, manifest, k, quoted)) |at| break :blk .{ at, quoted.len };
+            break :blk .{ k, "\"files\"".len };
+        }
+        break :blk .{ 0, 1 };
+    };
+    var line: usize = 1;
+    var line_start: usize = 0;
+    for (manifest[0..offset], 0..) |c, i| {
+        if (c == '\n') {
+            line += 1;
+            line_start = i + 1;
+        }
+    }
+    try diagnostics.renderLocated(w, message, manifest_path, manifest, line, offset - line_start + 1, span);
 }
 
 fn isDeclFile(name: []const u8) bool {
@@ -348,6 +406,12 @@ pub fn freeModules(gpa: std.mem.Allocator, modules: []Module) void {
 // runtime will look up, and — when nothing is there yet — copies the source
 // `.mjs` (found under the owning lib's `src/`, or the project's own `src/`) into
 // place. Idempotent and lib-agnostic; a no-op when every `.mjs` already resolves.
+//
+// A `require` whose resolved path escapes `out_dir` (onze's `../../src/onze.mjs`
+// from `<out>/onze/onze.js` lands at `<out>/../src/onze.mjs`) is never shipped
+// outside the output: the sidecar goes to `<out>/<owner>/<base>` (a project-own
+// module: `<out>/<base>`) and the emitted module's `require` is rewritten to
+// reach it, so a build writes nothing beside `--out`.
 pub fn shipMjsSidecars(
     gpa: std.mem.Allocator,
     io: std.Io,
@@ -364,11 +428,16 @@ pub fn shipMjsSidecars(
     var roots: ?[][]const u8 = null;
     defer if (roots) |r| freeRoots(gpa, r);
 
+    const out_norm = try std.fs.path.resolve(arena, &.{out_dir});
+
     for (outputs) |o| {
+        if (o.result.failed()) continue;
         const emitted_rel = try std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ out_dir, o.name, ext });
+        // `require` paths of this module to rewrite once the scan is done.
+        var rewrites: std.ArrayListUnmanaged([2][]const u8) = .empty;
         const emitted_dir = std.fs.path.dirname(emitted_rel) orelse out_dir;
         // The owning lib is the first path segment of a dependency module name
-        // (`server/server` → `server`); a project-own module has no such prefix.
+        // (`rakun/http` → `rakun`); a project-own module has no such prefix.
         const owner: ?[]const u8 = if (std.mem.indexOfScalar(u8, o.name, '/')) |i| o.name[0..i] else null;
 
         var search: usize = 0;
@@ -399,11 +468,25 @@ pub fn shipMjsSidecars(
             // and absolutes resolve on their own.
             if (!std.mem.startsWith(u8, req_path, ".")) continue;
 
-            // Where the runtime will look for it (absolute, `..` collapsed).
-            const target = try std.fs.path.resolve(arena, &.{ emitted_dir, req_path });
+            const base = std.fs.path.basename(req_path);
+            // Where the runtime will look for it (`..` collapsed). A path that
+            // escapes the output directory is relocated inside it.
+            const resolved = try std.fs.path.resolve(arena, &.{ emitted_dir, req_path });
+            const escapes = escapesDir(out_norm, resolved);
+            const target = if (escapes)
+                try std.fs.path.join(arena, if (owner) |lib| &.{ out_norm, lib, base } else &.{ out_norm, base })
+            else
+                resolved;
+            if (escapes) {
+                const new_req = try relocatedRequire(arena, o.name, owner, base);
+                var seen = false;
+                for (rewrites.items) |r| {
+                    if (std.mem.eql(u8, r[0], req_path)) seen = true;
+                }
+                if (!seen) try rewrites.append(arena, .{ req_path, new_req });
+            }
             if (fileExists(io, target)) continue;
 
-            const base = std.fs.path.basename(req_path);
             // std-tail F2: when a sidecar lives under `<lib>/src/sidecars/<base>`
             // (the convention for std's `#\[@External\.node(…)]` adapters that
             // need a sibling `.mjs`/`.erl` file), the search also probes that
@@ -436,7 +519,188 @@ pub fn shipMjsSidecars(
             }
             try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = target, .data = data });
         }
+
+        if (rewrites.items.len > 0) {
+            const emitted = std.Io.Dir.cwd().readFileAlloc(io, emitted_rel, arena, .unlimited) catch continue;
+            var text: []const u8 = emitted;
+            for (rewrites.items) |r| {
+                for ([_]u8{ '"', '\'' }) |q| {
+                    const from = try std.fmt.allocPrint(arena, "require({c}{s}{c})", .{ q, r[0], q });
+                    const to = try std.fmt.allocPrint(arena, "require({c}{s}{c})", .{ q, r[1], q });
+                    text = try std.mem.replaceOwned(u8, arena, text, from, to);
+                }
+            }
+            try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = emitted_rel, .data = text });
+        }
     }
+}
+
+// ── host `.erl` module shipping ────────────────────────────────────────────────
+//
+// The erlang twin of `shipMjsSidecars`. A `#\[@External\.Erlang("host", "fn")]`
+// lowers to a qualified call `host:fn(…)`; `host` is a module the library
+// authors in erlang and keeps beside its `.bp` sources. Nothing shipped it, so
+// a library whose host code is erlang had nothing to ship — only `.mjs`
+// sidecars ever reached the output — and every such call died with
+// `undefined function host:fn/N` at run time.
+//
+// What each runtime looks up differs, so what "into place" means differs. Node
+// reads a path out of the emitted text (`require("…/x.mjs")`), so the `.mjs`
+// half resolves that path and puts the file there. The erlang code server
+// resolves a module **atom**, and the emitted text carries no path at all — so
+// the `.erl` half puts the source in the output directory, which is where the
+// test runner's `__bp_load_siblings/0` looks: it compiles and loads every
+// `**/*.erl` beside the script before running (`codegen/erlang.zig`). Plain
+// `escript` does not do that — a `build`/`run` output needs the same loader, and
+// that emitter is another front's (`examples/modules` is red on erlang for the
+// same reason).
+//
+// Generic and lib-agnostic, like the `.mjs` half: the scan yields every
+// `atom:atom(` qualifier in the emitted erlang, and a qualifier ships only when
+// a file of that name is found under the owning lib's `src/sidecars/` or `src/`
+// — so `lists:foldl`, `base64:encode` and every other OTP call is a no-op, as
+// is a call to another module of this build. Idempotent; writes only inside
+// `out_dir`. Returns how many host modules it shipped.
+pub fn shipErlSidecars(
+    gpa: std.mem.Allocator,
+    io: std.Io,
+    outputs: []const bp.codegen.ModuleOutput,
+    out_dir: []const u8,
+    env_map: EnvMap,
+) !usize {
+    var arena_inst = std.heap.ArenaAllocator.init(gpa);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+
+    // Module atoms this build emits — a qualifier naming one of them is a
+    // project or dependency module, never a host module.
+    var emitted = std.StringHashMapUnmanaged(void){};
+    for (outputs) |o| {
+        if (o.result.failed()) continue;
+        try emitted.put(arena, std.fs.path.basename(o.name), {});
+    }
+
+    // Resolved lazily on the first unknown qualifier (most builds have none).
+    var roots: ?[][]const u8 = null;
+    defer if (roots) |r| freeRoots(gpa, r);
+
+    var shipped = std.StringHashMapUnmanaged(void){};
+    for (outputs) |o| {
+        if (o.result.failed()) continue;
+        // The owning lib is the first path segment of a dependency module name
+        // (`rakun/http` → `rakun`); a project-own module has no such prefix.
+        const owner: ?[]const u8 = if (std.mem.indexOfScalar(u8, o.name, '/')) |i| o.name[0..i] else null;
+
+        var it = QualifierIterator{ .text = o.result.js };
+        while (it.next()) |atom| {
+            if (emitted.contains(atom)) continue;
+            if (shipped.contains(atom)) continue;
+
+            const base = try std.fmt.allocPrint(arena, "{s}.erl", .{atom});
+            const target = try std.fs.path.join(arena, &.{ out_dir, base });
+
+            const src_path: ?[]const u8 = blk: {
+                if (owner) |lib| {
+                    if (roots == null) roots = try resolveLibRoots(gpa, io, env_map);
+                    for (roots.?) |root| {
+                        const sidecar = try std.fs.path.join(arena, &.{ root, lib, "src", "sidecars", base });
+                        if (fileExists(io, sidecar)) break :blk sidecar;
+                        const cand = try std.fs.path.join(arena, &.{ root, lib, "src", base });
+                        if (fileExists(io, cand)) break :blk cand;
+                    }
+                    break :blk null;
+                }
+                const sidecar = try std.fs.path.join(arena, &.{ "src", "sidecars", base });
+                if (fileExists(io, sidecar)) break :blk sidecar;
+                const cand = try std.fs.path.join(arena, &.{ "src", base });
+                if (fileExists(io, cand)) break :blk cand;
+                break :blk null;
+            };
+            const src = src_path orelse continue; // OTP or unknown — not ours to ship
+
+            const data = std.Io.Dir.cwd().readFileAlloc(io, src, arena, .unlimited) catch continue;
+            if (std.fs.path.dirname(target)) |parent| {
+                std.Io.Dir.cwd().createDirPath(io, parent) catch |err| switch (err) {
+                    error.PathAlreadyExists => {},
+                    else => return err,
+                };
+            }
+            try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = target, .data = data });
+            try shipped.put(arena, try arena.dupe(u8, atom), {});
+        }
+    }
+    return shipped.count();
+}
+
+/// Walks the `atom:` qualifiers of emitted erlang text. An erlang module atom
+/// is unquoted lower-case `[a-z][a-zA-Z0-9_@]*`; the iterator yields one per
+/// `atom:` occurrence that is followed by a call head (`name(` or `'name'(`),
+/// skipping `::` and a qualifier preceded by an identifier character (so
+/// `Foo.bar:baz` and record fields are not mistaken for one).
+const QualifierIterator = struct {
+    text: []const u8,
+    pos: usize = 0,
+
+    fn next(self: *QualifierIterator) ?[]const u8 {
+        while (self.pos < self.text.len) {
+            const colon = std.mem.indexOfScalarPos(u8, self.text, self.pos, ':') orelse return null;
+            self.pos = colon + 1;
+            if (colon + 1 < self.text.len and self.text[colon + 1] == ':') {
+                self.pos = colon + 2;
+                continue;
+            }
+            // Walk back over the atom.
+            var start = colon;
+            while (start > 0 and isAtomChar(self.text[start - 1])) start -= 1;
+            if (start == colon) continue;
+            if (!std.ascii.isLower(self.text[start])) continue;
+            if (start > 0 and (self.text[start - 1] == '.' or self.text[start - 1] == '\'' or self.text[start - 1] == '"')) continue;
+            // A call head must follow: `fn(` or `'fn'(`.
+            var i = colon + 1;
+            if (i < self.text.len and self.text[i] == '\'') {
+                i += 1;
+                while (i < self.text.len and self.text[i] != '\'') i += 1;
+                if (i >= self.text.len) continue;
+                i += 1;
+            } else {
+                const fn_start = i;
+                while (i < self.text.len and isAtomChar(self.text[i])) i += 1;
+                if (i == fn_start) continue;
+            }
+            if (i >= self.text.len or self.text[i] != '(') continue;
+            return self.text[start..colon];
+        }
+        return null;
+    }
+};
+
+fn isAtomChar(c: u8) bool {
+    return std.ascii.isAlphanumeric(c) or c == '_' or c == '@';
+}
+
+/// Whether `path` lies outside `dir` (both already `..`-collapsed by `resolve`).
+fn escapesDir(dir: []const u8, path: []const u8) bool {
+    if (std.mem.eql(u8, dir, ".")) {
+        return std.mem.eql(u8, path, "..") or std.mem.startsWith(u8, path, "../") or std.fs.path.isAbsolute(path);
+    }
+    if (!std.mem.startsWith(u8, path, dir)) return true;
+    return path.len > dir.len and path[dir.len] != '/';
+}
+
+/// The `require` path that reaches a relocated sidecar from module `name`:
+/// `<out>/<owner>/<base>` for a dependency, `<out>/<base>` for a project-own
+/// module; the module is emitted at `<out>/<name>.js`.
+fn relocatedRequire(arena: std.mem.Allocator, name: []const u8, owner: ?[]const u8, base: []const u8) ![]const u8 {
+    const depth = std.mem.count(u8, name, "/");
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    if (depth == 0) try buf.appendSlice(arena, "./");
+    for (0..depth) |_| try buf.appendSlice(arena, "../");
+    if (owner) |lib| {
+        try buf.appendSlice(arena, lib);
+        try buf.append(arena, '/');
+    }
+    try buf.appendSlice(arena, base);
+    return buf.items;
 }
 
 fn fileExists(io: std.Io, path: []const u8) bool {
@@ -445,6 +709,63 @@ fn fileExists(io: std.Io, path: []const u8) bool {
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────
+
+test "escapesDir: a path under the output stays; a parent path escapes" {
+    try std.testing.expect(!escapesDir("out", "out/onze/onze.mjs"));
+    try std.testing.expect(escapesDir("out", "src/onze.mjs"));
+    try std.testing.expect(escapesDir("out", "outer/x.mjs"));
+    try std.testing.expect(escapesDir("/tmp/w/out", "/tmp/w/src/onze.mjs"));
+    try std.testing.expect(!escapesDir("/tmp/w/out", "/tmp/w/out/rakun/runtime.mjs"));
+    try std.testing.expect(!escapesDir(".", "src/x.mjs"));
+    try std.testing.expect(escapesDir(".", "../src/x.mjs"));
+}
+
+test "QualifierIterator yields the module atom of every qualified call" {
+    var it = QualifierIterator{ .text =
+        \\greet(Name) ->
+        \\    hostlib_native:greet(Name).
+        \\encode(S) ->
+        \\    Raw = base64:encode(S),
+        \\    '__bp_print'([Raw]),
+        \\    lists:foldl(fun(A, B) -> A + B end, 0, [1]).
+    };
+    var seen: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer seen.deinit(std.testing.allocator);
+    while (it.next()) |a| try seen.append(std.testing.allocator, a);
+    try std.testing.expectEqual(@as(usize, 3), seen.items.len);
+    try std.testing.expectEqualStrings("hostlib_native", seen.items[0]);
+    try std.testing.expectEqualStrings("base64", seen.items[1]);
+    try std.testing.expectEqualStrings("lists", seen.items[2]);
+}
+
+test "QualifierIterator skips what is not a module qualifier" {
+    // `::` (a type spec), an upper-case variable, a bare atom with no call
+    // head, a quoted local call, and a map/record `key: value`.
+    var it = QualifierIterator{ .text =
+        \\-spec greet(binary()) -> binary().
+        \\f() ->
+        \\    Mod:apply(),
+        \\    ok:thing,
+        \\    '__bp_print'([1]),
+        \\    #{name := V}.
+    };
+    try std.testing.expectEqual(@as(?[]const u8, null), it.next());
+}
+
+test "QualifierIterator reads a quoted function name after the module atom" {
+    var it = QualifierIterator{ .text = "    myhost:'do it'(X)." };
+    const a = it.next() orelse return error.TestExpectedQualifier;
+    try std.testing.expectEqualStrings("myhost", a);
+}
+
+test "relocatedRequire reaches <out>/<owner>/<base> from the emitting module" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    try std.testing.expectEqualStrings("../onze/onze.mjs", try relocatedRequire(a, "onze/onze", "onze", "onze.mjs"));
+    try std.testing.expectEqualStrings("../../onze/onze.mjs", try relocatedRequire(a, "onze/sub/mod", "onze", "onze.mjs"));
+    try std.testing.expectEqualStrings("./x.mjs", try relocatedRequire(a, "main", null, "x.mjs"));
+}
 
 test "stripSourceExt strips .d.bp before .bp" {
     try std.testing.expectEqualStrings("rakun", stripSourceExt("rakun.d.bp"));
@@ -512,7 +833,7 @@ test "resolveLibRoots: repository workspace yields [bundled libs, repository]" {
     const ws = ".botopinkbuild/roots-repo/ws";
     std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/roots-repo") catch {};
     defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/roots-repo") catch {};
-    try writeFileP(io, ws ++ "/repository/botopink-lang/libs/server/botopink.json", "{}");
+    try writeFileP(io, ws ++ "/repository/botopink-lang/libs/std/botopink.json", "{}");
     try writeFileP(io, ws ++ "/repository/rakun/botopink.json", "{}");
 
     // A consumer under repository/rakun resolves up to `ws`, where both roots fire.
@@ -666,19 +987,19 @@ test "parseEnvRoots: BOTOPINK_LIB_ROOTS set is parsed" {
     try std.testing.expectEqualStrings("/b", roots[1]);
 }
 
-test "loadOne: rakun resolves \"server\" across roots; absent dep is LibNotFound" {
+test "loadOne: std resolves from the bundled root, rakun from the sibling root; absent dep is LibNotFound" {
     const gpa = std.testing.allocator;
     const io = std.testing.io;
 
     const ws = ".botopinkbuild/loadone/ws";
     std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/loadone") catch {};
     defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/loadone") catch {};
-    // `server` is a bundled lib; `rakun` is a sibling project.
-    try writeFileP(io, ws ++ "/repository/botopink-lang/libs/server/botopink.json",
-        \\{ "src": "src/", "files": ["server.bp"] }
+    // `std` is the bundled lib (`libs/std`); `rakun` is a sibling project.
+    try writeFileP(io, ws ++ "/repository/botopink-lang/libs/std/botopink.json",
+        \\{ "src": "src/", "files": ["math.bp"] }
     );
-    try writeFileP(io, ws ++ "/repository/botopink-lang/libs/server/src/server.bp",
-        \\pub fn serverServe() {}
+    try writeFileP(io, ws ++ "/repository/botopink-lang/libs/std/src/math.bp",
+        \\pub fn abs() {}
     );
     try writeFileP(io, ws ++ "/repository/rakun/botopink.json",
         \\{ "src": "src/", "files": ["rakun.bp"] }
@@ -701,11 +1022,11 @@ test "loadOne: rakun resolves \"server\" across roots; absent dep is LibNotFound
         out.deinit(gpa);
     }
 
-    try loadOne(gpa, io, &roots, &.{}, "server", &out); // bundled — first root
+    try loadOne(gpa, io, &roots, &.{}, "std", &out); // bundled — first root
     try loadOne(gpa, io, &roots, &.{}, "rakun", &out); // sibling — second root
     try std.testing.expectEqual(@as(usize, 2), out.items.len);
-    try std.testing.expectEqualStrings("server/server", out.items[0].path);
-    try std.testing.expect(std.mem.indexOf(u8, out.items[0].source, "serverServe") != null);
+    try std.testing.expectEqualStrings("std/math", out.items[0].path);
+    try std.testing.expect(std.mem.indexOf(u8, out.items[0].source, "abs") != null);
     try std.testing.expectEqualStrings("rakun/rakun", out.items[1].path);
 
     try std.testing.expectError(error.LibNotFound, loadOne(gpa, io, &roots, &.{}, "absent", &out));
@@ -740,6 +1061,52 @@ test "loadOne: falls back to fallback_roots when not in regular roots" {
     try loadOne(gpa, io, &roots, &fb, "jhonstart", &out);
     try std.testing.expectEqual(@as(usize, 1), out.items.len);
     try std.testing.expectEqualStrings("jhonstart/jhonstart", out.items[0].path);
+}
+
+test "loadOne: a files entry that does not exist is LibFileNotFound, located in the manifest" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+
+    const ws = ".botopinkbuild/loadone-missing/ws";
+    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/loadone-missing") catch {};
+    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/loadone-missing") catch {};
+    try writeFileP(io, ws ++ "/repository/rakun/botopink.json",
+        \\{ "src": "src/",
+        \\  "files": ["rakun.bp", "gone.bp"] }
+    );
+    try writeFileP(io, ws ++ "/repository/rakun/src/rakun.bp",
+        \\pub fn run() {}
+    );
+    const roots = [_][]const u8{ws ++ "/repository"};
+
+    var out: std.ArrayListUnmanaged(Module) = .empty;
+    defer {
+        for (out.items) |m| {
+            gpa.free(m.path);
+            gpa.free(m.source);
+        }
+        out.deinit(gpa);
+    }
+    try std.testing.expectError(error.LibFileNotFound, loadOne(gpa, io, &roots, &.{}, "rakun", &out));
+}
+
+test "renderMissingFile names the path it looked for and the manifest entry" {
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    const manifest =
+        \\{ "src": "src/",
+        \\  "files": ["rakun.bp", "gone.bp"] }
+    ;
+    try renderMissingFile(&aw.writer, error.FileNotFound, "rakun", "gone.bp", "libs/rakun/src/gone.bp", "libs/rakun/botopink.json", manifest);
+    try std.testing.expectEqualStrings(
+        \\error: dependency 'rakun' lists "gone.bp" in `files`, but libs/rakun/src/gone.bp does not exist
+        \\ --> libs/rakun/botopink.json:2:25
+        \\  |
+        \\2 |   "files": ["rakun.bp", "gone.bp"] }
+        \\  |                         ^^^^^^^^^
+        \\
+        \\
+    , aw.written());
 }
 
 test "LibManifest parses src + files, ignores unknown fields" {

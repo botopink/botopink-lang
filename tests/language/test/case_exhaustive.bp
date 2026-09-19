@@ -1,0 +1,63 @@
+//// Decision 8 §5.4, §3.2, §3.3 — exhaustiveness without `_` when no other value
+//// is possible (union members, a type covered whole), and a `case` whose arms
+//// have different types yields a union.
+
+type Maybe<T> {
+    Some(value: T),
+    None,
+}
+
+fn size(v: i32 | string) -> i32 {
+    return case v {
+        i32 { n -> n }
+        string { s -> s.length }
+    };
+}
+
+fn orNone(m: Maybe<i32>) -> i32 | string {
+    return case m {
+        .Some(value: n) { n }
+        .None { "none" }
+    };
+}
+
+fn wholeType(n: i32) -> i32 {
+    return case n {
+        i32 { m -> m + 1 }
+    };
+}
+
+fn innerSize(m: Maybe<i32 | string>) -> i32 {
+    return case m {
+        .Some(value: v) { size(v) }
+        .None { 0 }
+    };
+}
+
+test "§5.1 P5 a variable bound from Maybe<i32 | string> is i32 | string" {
+    assert innerSize(Maybe.Some(value: "abc")) == 3;
+    assert innerSize(Maybe.Some(value: 2)) == 2;
+    assert innerSize(Maybe.None) == 0;
+}
+
+test "§5.4 §3.3 a union covered member by member needs no _" {
+    assert size(3) == 3;
+    assert size("abcd") == 4;
+}
+
+test "§5.4 a type covered whole needs no _" {
+    assert wholeType(1) == 2;
+}
+
+test "§3.2 arms of different types yield their union" {
+    val a = orNone(Maybe.Some(value: 7));
+    val b = orNone(Maybe.None);
+    assert a == 7;
+    assert b == "none";
+}
+
+test "§3.2 an if with branches of different types yields a union" {
+    val flag = true;
+    val v = if (flag) { 2 } else { "two" };
+    assert size(v) == 2;
+}

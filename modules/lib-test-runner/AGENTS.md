@@ -6,9 +6,9 @@
 Package that builds the `botopink-lib-test` executable: the CI gate that runs
 every discovered project's test suite on each requested backend and aggregates
 the results into a lib×target matrix. Projects are discovered across the resolved
-**root list** (`discovery.resolveRoots`: `BOTOPINK_LIB_ROOTS` env entries →
-bundled `repository/botopink-lang/libs` → sibling `repository/` → legacy flat
-`libs/` → any `--lib-root` flag entries, de-duped first-occurrence-wins;
+**root list** (`discovery.resolveRoots`: `BOTOPINK_LIB_ROOTS` env entries → for
+each ancestor `D` of cwd, `D/repository/botopink-lang/libs`, `D/repository`,
+`D/libs` → any `--lib-root` flag entries; de-duped first-occurrence-wins;
 first-root-wins by name). It **shells out to the installed `botopink` binary** (`botopink test
 --target <t>` with `cwd` set to each lib's own directory) and touches no compiler
 internals — so it carries **no `compiler-core` dependency**. Its job is discovery
@@ -19,27 +19,24 @@ internals — so it carries **no `compiler-core` dependency**. Its job is discov
 ```text
 lib-test-runner/
 ├── AGENTS.md            ← you are here
-├── build.zig            ← package build graph + `run` + `test` steps
-├── build.zig.zon        ← manifest (no dependencies — self-contained)
-└── src/
+└── src/                 ← built and tested by the workspace build.zig (no build.zig of its own)
     ├── main.zig         ← entry: resolve roots/binary → discover → run cells → matrix → exit
     ├── args.zig         ← CLI parsing (Target enum, node alias, =-form, all)  + unit tests
     ├── discovery.zig    ← enumerate <root>/*/ with botopink.json across roots, "has tests" probe + unit tests
-    ├── runner.zig       ← per-(lib,target) `botopink test` spawn + status classification
+    ├── runner.zig       ← per-(lib,target) `botopink test` spawn (or `botopink build` for a test-less lib) + status classification
     └── matrix.zig       ← Status enum, lib×target matrix render, summary + unit tests
 ```
 
 ## Commands
 
 ```bash
-# from the workspace root:
+# from the workspace root (runs scripts/test-libs.sh, which pre-flights
+# node/escript/erlc/wasmtime and then execs zig-out/bin/botopink-lib-test):
 zig build test-libs                                   # every lib, commonJS+erlang
 zig build test-libs -- --target erlang --lib rakun    # one target, one lib
 zig build test-libs -- --target all --strict          # supported targets, strict
-
-# from this package:
-zig build               # produce ./zig-out/bin/botopink-lib-test
-zig build test          # arg-parsing + discovery + matrix unit tests
+zig build               # produces zig-out/bin/botopink-lib-test among the workspace executables
+zig build test          # includes the args + discovery + matrix + runner unit tests (38)
 ```
 
 ## CLI surface
@@ -51,7 +48,7 @@ botopink-lib-test [--target <t>[,<t>…] | --target all] [--lib <name>]
 ```
 
 `--json` switches output from the text matrix to JSONL — see
-"Test output passthrough (§T)" below for the schema.
+"Test output passthrough" below for the schema.
 
 - `--target` — repeatable / comma-separated. Accepts `commonJS|erlang|beam|wasm`
   plus the alias `node`→`commonJS`, and both `--target <t>` and `--target=<t>`.
@@ -73,7 +70,7 @@ botopink-lib-test [--target <t>[,<t>…] | --target all] [--lib <name>]
 |---|---|
 | `✓` | `botopink test` passed |
 | `✗` | a red `.bp` test — the **only** status that fails the run |
-| `–` | lib has no test blocks (green skip, never a failure) |
+| `–` | lib has no test blocks and **compiled** (`botopink build --target <t>`); nothing ran |
 | `~` | target skipped: either not-yet-runnable (beam/wasm), or excluded by the lib's `"targets"` whitelist (see below). `--strict` flips the not-yet-runnable case to fail; the per-lib whitelist always skips. |
 
 ### Per-lib `"targets"` whitelist (`botopink.json`)
@@ -90,23 +87,28 @@ array in its `botopink.json`:
 
 The runner reads this during discovery (`discovery.readManifestTargets`)
 and reports `~` for any requested target not in the list — without
-spawning `botopink test`. Used by commonJS-only libs whose erlang port
-is not in scope (`onze`, `emilia`). The single-string `"target"` field
-(canonical build target) is left unchanged; the new array field is the
-runner-side filter.
+spawning `botopink test`. Used by commonJS-only libs. The single-string
+`"target"` field (canonical build target) is separate; the array field is
+only the runner-side filter.
 
-Absent `"targets"` → the historic behaviour (every requested target is
-attempted). A malformed list (non-array, mixed types) is silently
+Absent `"targets"` → every requested target is attempted. A malformed list (non-array, mixed types) is silently
 dropped to absent — a typo must not narrow the matrix without warning.
 
-**Exit non-zero iff at least one cell is `✗`.** A no-tests lib (`–`) and a
-skipped-unsupported target (`~`) never redden the gate.
+**Exit non-zero iff at least one cell is `✗`.** A skipped target (`~`) never
+reddens the gate. A lib with no `test` block is still **compiled** on each
+target it does not opt out of (`runner.compileCell` spawns `botopink build
+--target <t> --out .botopinkbuild/lib-test-build/<t>` in the lib's directory):
+`–` when it compiles, `✗` when it does not — a library that never wrote a test
+cannot break silently. A project whose `src/` holds no `.bp` file at all (a
+tooling repository carrying a `botopink.json`, e.g. `vscode-extension`) has
+nothing to compile and stays `–`. The build's output goes to stderr, so `--json` stdout
+stays pure JSONL.
 
-## Test output passthrough (§T)
+## Test output passthrough
 
 Each child `botopink test` invocation produces the per-test envelope
 documented in
-[`../compiler-cli/AGENTS.md#botopink-test-output-format-§t`](../compiler-cli/AGENTS.md):
+[`../compiler-cli/AGENTS.md`](../compiler-cli/AGENTS.md#botopink-test-output-format):
 
 ```
 TEST <file>:<line> <name>
@@ -114,17 +116,18 @@ TEST <file>:<line> <name>
 \`\`\`logs
 <captured stdout>
 \`\`\`
+  duration <ms>ms
   ok | FAIL <name>  …
 ```
 
 In text mode (no flag) the runner **re-emits the child's stdout
-untouched**: a downstream tool that needs to attribute the §T envelope
+untouched**: a downstream tool that needs to attribute the envelope
 to a lib uses the cyan section header written to **stderr**
 (`── <lib> · <target> ──`) immediately before the cell's stdout — a
 deliberate choice over per-line text prefixing, which would corrupt
 the fenced ```` ```logs ```` blocks.
 
-### `--json` mode (T3)
+### `--json` mode
 
 `botopink-lib-test --json` passes `--json` to each spawned
 `botopink test`, parses each JSONL record on the child's stdout, and
@@ -159,7 +162,7 @@ Schema for the inner `event:"test"` and `event:"summary"` records is
 the upstream contract from
 [`../compiler-cli/AGENTS.md`](../compiler-cli/AGENTS.md) (`--json`
 section). Forward-compatible: a JSON consumer that does not recognise
-a key (e.g. a future `duration_ms`) should ignore it.
+a key should ignore it.
 
 ## Design contract
 
@@ -192,10 +195,8 @@ a key (e.g. a future `duration_ms`) should ignore it.
   not need the missing root).
 - Empty entries and a trailing delimiter dropped.
 - Relative entries resolved against cwd.
-- Unset / empty → byte-identical to the legacy walk-up.
+- Unset / empty → walk-up roots (plus `--lib-root`) only.
 - `init.environ_map` is threaded into `discovery.resolveRoots`; tests pass `null`.
-
-Schema: see [`docs/botopink-json.md`](../../docs/botopink-json.md).
 
 See the root [`AGENTS.md`](../../AGENTS.md) for workspace commands and the
 [`modules/AGENTS.md`](../AGENTS.md) package table.

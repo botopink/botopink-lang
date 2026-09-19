@@ -70,17 +70,33 @@ test "completion: prefix filters to matching bindings" {
 
 test "completion: prefix with no match returns empty" {
     const gpa = std.testing.allocator;
+    // The bindings must come from a source that actually compiles: an
+    // incomplete buffer yields *no* bindings, and an empty list makes the
+    // completion empty whatever the prefix filter does — which would leave this
+    // test asserting nothing.
+    const compile_source =
+        \\val x = 1;
+    ;
+    // The buffer the user is typing in: `zzz` matches no binding.
     const source =
         \\val x = 1;
-        \\val zzz
+        \\val y = zzz
     ;
 
-    var c = try h.compile(gpa, source);
+    var c = try h.compile(gpa, compile_source);
     defer c.deinit(gpa);
-    const bindings = c.bindings() orelse &[_]h.comptime_pipeline.TypedBinding{};
+    const bindings = c.bindings() orelse return error.CompileFailed;
 
-    // col 7 = after "zzz"
-    const cursor = h.pos(1, 7);
+    // Guard: `x` is offered for an empty prefix, so an empty list below is the
+    // filter's doing and not a missing binding set.
+    var has_x = false;
+    for (bindings) |b| {
+        if (std.mem.eql(u8, b.name, "x")) has_x = true;
+    }
+    try std.testing.expect(has_x);
+
+    // col 11 = after "zzz" in `val y = zzz`
+    const cursor = h.pos(1, 11);
     const items = try engine.completion(gpa, source, cursor, bindings);
     defer {
         for (items) |it| {
@@ -90,6 +106,8 @@ test "completion: prefix with no match returns empty" {
         gpa.free(items);
     }
 
+    for (items) |it| try std.testing.expect(!std.mem.eql(u8, it.label, "x"));
+    try std.testing.expectEqual(@as(usize, 0), items.len);
     try snap.assertCompletion(gpa, "completion_no_match", source, cursor, items);
 }
 
@@ -164,8 +182,14 @@ test "completion: item detail shows inferred type" {
 // Ref: `do_not_show_completions_when_typing_a_number`
 // The binding "result_2" exists and contains "2" in the name, but the cursor is over
 // the literal `2` (not an identifier), so no items are suggested.
+//
+// The guard has two arms (`engine.zig`, "guard: cursor on a numeric literal"):
+// Case B — the prefix is empty and the char *at* the cursor is a digit — is this
+// test; Case A — the prefix itself starts with a digit, i.e. the caret is
+// *after* the digit — is C7b below. One test per arm, so neither arm can rot
+// unnoticed behind the other.
 
-test "completion: number literal at cursor returns empty" {
+test "completion: caret before a number literal returns empty" {
     const gpa = std.testing.allocator;
     // "result_2" is a valid binding — intentionally contains "2" in the name
     // to confirm the guard runs before the prefix filter.
@@ -183,6 +207,38 @@ test "completion: number literal at cursor returns empty" {
     // 0123456789012345
     // col 15 = '2', source[offset] = '2' → numeric guard → empty
     const cursor = h.pos(0, 15);
+    const items = try engine.completion(gpa, source, cursor, bindings);
+    defer {
+        for (items) |it| {
+            gpa.free(it.label);
+            if (it.detail) |d| gpa.free(d);
+        }
+        gpa.free(items);
+    }
+
+    try std.testing.expectEqual(@as(usize, 0), items.len);
+    try snap.assertCompletion(gpa, "completion_before_number", source, cursor, items);
+}
+
+// ── C7b — caret *after* a digit (Case A of the numeric guard) ──
+
+test "completion: caret after a number literal returns empty" {
+    const gpa = std.testing.allocator;
+    // Same binding as C7: `result_2` would match the prefix `2` on a substring
+    // filter, so an empty list here is the guard's doing, not the filter's.
+    const source =
+        \\val result_2 = 2;
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    // val result_2 = 2;
+    // 0         1
+    // 0123456789012345
+    // col 16 = right after the literal `2`, so `prefixAt` yields "2" → Case A.
+    const cursor = h.pos(0, 16);
     const items = try engine.completion(gpa, source, cursor, bindings);
     defer {
         for (items) |it| {
@@ -387,17 +443,23 @@ test "completion: cursor at end of comment returns empty" {
 
 // ── C6 — empty bindings ──────────────────────────────────────────────────────
 
-test "completion: empty bindings returns empty list" {
+test "completion: no bindings falls back to the module's own declarations" {
     const gpa = std.testing.allocator;
     const source =
         \\val x = 1;
     ;
 
+    // No typed bindings is the state of every module that does not type-check.
+    // The answer is no longer empty: the module's declarations are read off the
+    // token stream so the file's own names stay completable (front 14).
     const cursor = h.pos(0, 10);
     const items = try engine.completion(gpa, source, cursor, &.{});
-    defer gpa.free(items);
+    defer freeItems(gpa, items);
 
-    try std.testing.expectEqual(@as(usize, 0), items.len);
+    // `x`, then the two declaration keywords the cursor may start here.
+    try std.testing.expectEqual(@as(usize, 3), items.len);
+    try std.testing.expectEqualStrings("x", items[0].label);
+    try std.testing.expectEqualStrings("val", items[0].detail.?);
     try snap.assertCompletion(gpa, "completion_empty_bindings", source, cursor, items);
 }
 
@@ -406,7 +468,7 @@ test "completion: empty bindings returns empty list" {
 test "completion: dot completes record fields" {
     const gpa = std.testing.allocator;
     const source =
-        \\val Point = record { x: f64, y: f64 };
+        \\val Point = type(x: f64, y: f64);
         \\val origin = Point(x: 0.0, y: 0.0);
         \\val gx = origin.x;
     ;
@@ -441,7 +503,7 @@ test "completion: dot completes record fields" {
 test "completion: dot completes enum variants" {
     const gpa = std.testing.allocator;
     const source =
-        \\val Status = enum { Active, Inactive };
+        \\val Status = type { Active, Inactive };
         \\val s = Status.Active;
     ;
 
@@ -675,6 +737,17 @@ fn hasLabel(items: []const proto.CompletionItem, name: []const u8) bool {
     return false;
 }
 
+/// Frees a completion list the way the server does (label, detail, insertText,
+/// then the slice).
+fn freeItems(gpa: std.mem.Allocator, items: []const proto.CompletionItem) void {
+    for (items) |it| {
+        gpa.free(it.label);
+        if (it.detail) |d| gpa.free(d);
+        if (it.insertText) |t| gpa.free(t);
+    }
+    gpa.free(items);
+}
+
 test "completion: decorator body lists params/locals/closure binder (R1)" {
     const gpa = std.testing.allocator;
     const source =
@@ -704,6 +777,12 @@ test "completion: decorator body lists params/locals/closure binder (R1)" {
     try std.testing.expect(hasLabel(items, "decl")); // comptime parameter
     try std.testing.expect(hasLabel(items, "args")); // `var` local
     try std.testing.expect(hasLabel(items, "f")); //    closure binder
+
+    // The gap this test used to document is closed (front 14): the fixture does
+    // not type-check (`items` is unbound), so `bindings()` is empty — and the
+    // fallback now reads the module's own declarations off the token stream, so
+    // the enclosing `component` fn is offered too.
+    try std.testing.expect(hasLabel(items, "component"));
     try snap.assertCompletion(gpa, "completion_decorator_body_locals", source, cursor, items);
 }
 
@@ -727,8 +806,9 @@ test "completion: decorator-bearing record still lists bindings (R2)" {
         \\}
         \\
         \\#[service]
-        \\record PostService { name: string, count: i32 }
+        \\type PostService(name: string, count: i32)
         \\
+        \\val other = 1;
         \\val usePost = PostService;
     ;
 
@@ -737,7 +817,7 @@ test "completion: decorator-bearing record still lists bindings (R2)" {
     const bindings = c.bindings() orelse &[_]h.comptime_pipeline.TypedBinding{};
 
     // cursor at the start of `PostService` on the last line (empty prefix)
-    const cursor = h.pos(7, 14);
+    const cursor = h.pos(8, 14);
     const items = try engine.completion(gpa, source, cursor, bindings);
     defer {
         for (items) |it| {
@@ -750,5 +830,73 @@ test "completion: decorator-bearing record still lists bindings (R2)" {
     // Not blanked: the record (and the marker fn) are still completable.
     try std.testing.expect(items.len > 0);
     try std.testing.expect(hasLabel(items, "PostService"));
+    // `other` is an unrelated `val` declared before the cursor, never touched
+    // by the decorator. The degraded path (the spliced re-analysis failed) keeps
+    // every well-typed `val` binding since 06 N23, so `other` is completable.
+    try std.testing.expect(hasLabel(items, "other"));
+    // `usePost` is the binding this very line is defining — the cursor sits in
+    // its initialiser, where the name is not in scope yet (front 14).
+    try std.testing.expect(!hasLabel(items, "usePost"));
     try snap.assertCompletion(gpa, "completion_decorator_record", source, cursor, items);
+}
+
+// ── C10b — a variant is reached through the type, never through a value ──────
+//
+// `fn a(c: Color) -> Color { return c.Red; }` is
+// `error: unknown field 'Red' on type 'Color'`, yet the list offered every
+// variant there: a value receiver resolved to its named type and then reused
+// the type-name member list unchanged (front 14 step 1).
+
+test "completion: a value of an enum type offers its methods, not its variants" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\val Status = type { Active, Inactive, fn label(self: Self) -> string { return "s"; } };
+        \\val s = Status.Active;
+        \\val n = s.label();
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    // "val n = s." → dot at col 9, cursor right after.
+    const cursor = h.pos(2, 10);
+    const items = try engine.completion(gpa, source, cursor, bindings);
+    defer freeItems(gpa, items);
+
+    var has_variant = false;
+    var has_method = false;
+    for (items) |it| {
+        if (std.mem.eql(u8, it.label, "Active") or std.mem.eql(u8, it.label, "Inactive")) has_variant = true;
+        if (std.mem.eql(u8, it.label, "label")) has_method = true;
+    }
+    try std.testing.expect(!has_variant);
+    try std.testing.expect(has_method);
+    try snap.assertCompletion(gpa, "completion_dot_enum_value_members", source, cursor, items);
+}
+
+test "completion: the enum type itself still offers its variants and methods" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\val Status = type { Active, Inactive, fn label(self: Self) -> string { return "s"; } };
+        \\val s = Status.Active;
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    // "val s = Status." → dot at col 14, cursor right after.
+    const cursor = h.pos(1, 15);
+    const items = try engine.completion(gpa, source, cursor, bindings);
+    defer freeItems(gpa, items);
+
+    var has_active = false;
+    var has_method = false;
+    for (items) |it| {
+        if (std.mem.eql(u8, it.label, "Active")) has_active = true;
+        if (std.mem.eql(u8, it.label, "label")) has_method = true;
+    }
+    try std.testing.expect(has_active);
+    try std.testing.expect(has_method);
 }

@@ -21,7 +21,7 @@ test "definition: member access on a `from \"<lib>\"` symbol resolves through th
     // The lib surface (what `from "rakun"` would bring in): a `pub fn created`.
     const lib_uri = "file:///libs/rakun/http.bp";
     const lib_src =
-        \\pub record Response { code: i32 }
+        \\pub type Response(code: i32)
         \\pub fn created(self: Response, body: string) -> Response {
         \\    return self;
         \\}
@@ -50,7 +50,9 @@ test "definition: member access on a `from \"<lib>\"` symbol resolves through th
     // Jumped into the lib file, onto `pub fn created` (line 1, 0-based).
     try std.testing.expectEqualStrings(lib_uri, loc.uri);
     try std.testing.expectEqual(@as(u32, 1), loc.range.start.line);
-    try snap.assertDefinition(gpa, "definition_lib_member", app_src, cursor, loc);
+    try snap.assertDefinitionIn(gpa, "definition_lib_member", app_src, cursor, loc, &.{
+        .{ .uri = lib_uri, .source = lib_src },
+    });
 }
 
 fn engine_offsetToPos(source: []const u8, off: usize) proto.Position {
@@ -172,4 +174,198 @@ test "ProjectGraph.resolveRoots: env unset is byte-identical to legacy walk-up" 
         if (std.mem.endsWith(u8, r, "lsp-roots-unset/ws/libs")) saw_ws_libs = true;
     }
     try std.testing.expect(saw_ws_libs);
+}
+
+// ── Graph problems: what `catch continue` used to swallow ─────────────────────
+//
+// A dependency no library root carries, and a `files` entry of a resolved
+// library that cannot be read, were both dropped silently: the graph returned a
+// shorter module list and the editor blamed the user's own file (every symbol
+// the library exports "unbound"), never the manifest line that is wrong. The
+// CLI names both (05 step 5); these pin the language-server half — same two
+// messages, located inside the manifest that declares the entry.
+
+test "project graph: a dependency no root carries is a diagnostic on the project manifest" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+
+    const ws = ".botopinkbuild/lsp-graph-missing-dep/ws";
+    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/lsp-graph-missing-dep") catch {};
+    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/lsp-graph-missing-dep") catch {};
+
+    try std.Io.Dir.cwd().createDirPath(io, ws ++ "/src");
+    try std.Io.Dir.cwd().createDirPath(io, ws ++ "/libs");
+    try std.Io.Dir.cwd().writeFile(io, .{
+        .sub_path = ws ++ "/botopink.json",
+        .data =
+        \\{
+        \\  "name": "app",
+        \\  "src": "src/",
+        \\  "dependencies": ["ghostlib"]
+        \\}
+        ,
+    });
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = ws ++ "/src/main.bp", .data = "val x = 1;\n" });
+
+    var g = graph_mod.ProjectGraph.init(gpa, io, null);
+    defer g.deinit();
+
+    const r = (try g.resolve("file://" ++ ws ++ "/src/main.bp")) orelse return error.NoProject;
+
+    try std.testing.expectEqual(@as(usize, 1), r.problems.len);
+    const p = r.problems[0];
+    try std.testing.expectEqualStrings(
+        "dependency 'ghostlib' was not found under any library root",
+        p.message,
+    );
+    try std.testing.expect(std.mem.endsWith(u8, p.uri, ws ++ "/botopink.json"));
+    // `"ghostlib"` sits on the 4th line (0-based 3), after `"dependencies": [`.
+    try std.testing.expectEqual(@as(u32, 3), p.line);
+    try std.testing.expectEqual(@as(u32, 19), p.character);
+    try std.testing.expectEqual(@as(u32, 10), p.length); // `"ghostlib"` with its quotes
+
+    // The project's own `src` tree still loads — a broken dependency degrades
+    // the graph, it does not empty it.
+    try std.testing.expect(r.deps.len > 0);
+}
+
+test "project graph: an unreadable `files` entry is a diagnostic on the library manifest" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+
+    const ws = ".botopinkbuild/lsp-graph-missing-file/ws";
+    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/lsp-graph-missing-file") catch {};
+    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/lsp-graph-missing-file") catch {};
+
+    try std.Io.Dir.cwd().createDirPath(io, ws ++ "/src");
+    try std.Io.Dir.cwd().createDirPath(io, ws ++ "/libs/halflib/src");
+    try std.Io.Dir.cwd().writeFile(io, .{
+        .sub_path = ws ++ "/botopink.json",
+        .data =
+        \\{"name": "app", "src": "src/", "dependencies": ["halflib"]}
+        ,
+    });
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = ws ++ "/src/main.bp", .data = "val x = 1;\n" });
+    try std.Io.Dir.cwd().writeFile(io, .{
+        .sub_path = ws ++ "/libs/halflib/botopink.json",
+        .data =
+        \\{
+        \\  "name": "halflib",
+        \\  "src": "src/",
+        \\  "files": ["there.bp", "gone.bp"]
+        \\}
+        ,
+    });
+    try std.Io.Dir.cwd().writeFile(io, .{
+        .sub_path = ws ++ "/libs/halflib/src/there.bp",
+        .data = "pub val here = 1;\n",
+    });
+
+    var g = graph_mod.ProjectGraph.init(gpa, io, null);
+    defer g.deinit();
+
+    const r = (try g.resolve("file://" ++ ws ++ "/src/main.bp")) orelse return error.NoProject;
+
+    try std.testing.expectEqual(@as(usize, 1), r.problems.len);
+    const p = r.problems[0];
+    try std.testing.expect(std.mem.startsWith(
+        u8,
+        p.message,
+        "dependency 'halflib' lists \"gone.bp\" in `files`, but ",
+    ));
+    try std.testing.expect(std.mem.endsWith(u8, p.message, "/src/gone.bp does not exist"));
+    try std.testing.expect(std.mem.endsWith(u8, p.uri, "/libs/halflib/botopink.json"));
+    // The `"gone.bp"` entry, not the `"files"` key: line 3 (0-based), after
+    // `"there.bp", `.
+    try std.testing.expectEqual(@as(u32, 3), p.line);
+    try std.testing.expectEqual(@as(u32, 24), p.character);
+    try std.testing.expectEqual(@as(u32, 9), p.length);
+
+    // The entry that does exist is still a dependency module.
+    var saw_there = false;
+    for (r.deps) |d| {
+        if (std.mem.indexOf(u8, d.source, "pub val here") != null) saw_there = true;
+    }
+    try std.testing.expect(saw_there);
+}
+
+// This test lives in `src/tests/`, which `07-review-backlog` owns; it is here as
+// a named carve-out of `11-tooling` step 3, agreed with that front's rule that
+// every test directory is 07's. It drives `project_graph.zig`'s third
+// `catch continue`, which was the last source the graph dropped in silence.
+test "project graph: an unreadable `src` file is a diagnostic on that file" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+
+    const ws = ".botopinkbuild/lsp-graph-unreadable-src/ws";
+    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/lsp-graph-unreadable-src") catch {};
+    // Unlinking a mode-`000` file needs write permission on its directory, not
+    // on the file, so no mode restore is needed before the tree goes.
+    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/lsp-graph-unreadable-src") catch {};
+
+    try std.Io.Dir.cwd().createDirPath(io, ws ++ "/src");
+    try std.Io.Dir.cwd().writeFile(io, .{
+        .sub_path = ws ++ "/botopink.json",
+        .data = "{\"name\": \"app\", \"src\": \"src/\"}",
+    });
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = ws ++ "/src/main.bp", .data = "val x = 1;\n" });
+    try std.Io.Dir.cwd().writeFile(io, .{
+        .sub_path = ws ++ "/src/locked.bp",
+        .data = "pub val secret = 1;\n",
+    });
+    try std.Io.Dir.cwd().setFilePermissions(
+        io,
+        ws ++ "/src/locked.bp",
+        std.Io.File.Permissions.fromMode(0o000),
+        .{},
+    );
+
+    var g = graph_mod.ProjectGraph.init(gpa, io, null);
+    defer g.deinit();
+
+    const r = (try g.resolve("file://" ++ ws ++ "/src/main.bp")) orelse return error.NoProject;
+
+    // Root is allowed to read a 000 file; then nothing is dropped and there is
+    // nothing to diagnose. Skip rather than assert the wrong thing.
+    if (r.problems.len == 0) {
+        try std.testing.expectEqual(@as(usize, 2), r.deps.len);
+        return error.SkipZigTest;
+    }
+
+    try std.testing.expectEqual(@as(usize, 1), r.problems.len);
+    const p = r.problems[0];
+    // The diagnostic names the file that cannot be read, and sits on it — not on
+    // `botopink.json`, which never names it, and not on whatever imports it.
+    try std.testing.expect(std.mem.endsWith(u8, p.uri, "/src/locked.bp"));
+    try std.testing.expect(std.mem.indexOf(u8, p.message, "/src/locked.bp") != null);
+    try std.testing.expect(std.mem.indexOf(u8, p.message, "could not be read") != null);
+    try std.testing.expectEqual(@as(u32, 0), p.line);
+    try std.testing.expectEqual(@as(u32, 0), p.character);
+
+    // The walk continues: `main.bp` is still a module of the graph.
+    try std.testing.expectEqual(@as(usize, 1), r.deps.len);
+    try std.testing.expect(std.mem.indexOf(u8, r.deps[0].source, "val x = 1;") != null);
+}
+
+test "project graph: a healthy project reports no problems" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+
+    const ws = ".botopinkbuild/lsp-graph-healthy/ws";
+    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/lsp-graph-healthy") catch {};
+    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/lsp-graph-healthy") catch {};
+
+    try std.Io.Dir.cwd().createDirPath(io, ws ++ "/src");
+    try std.Io.Dir.cwd().writeFile(io, .{
+        .sub_path = ws ++ "/botopink.json",
+        .data = "{\"name\": \"app\", \"src\": \"src/\"}",
+    });
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = ws ++ "/src/main.bp", .data = "val x = 1;\n" });
+
+    var g = graph_mod.ProjectGraph.init(gpa, io, null);
+    defer g.deinit();
+
+    const r = (try g.resolve("file://" ++ ws ++ "/src/main.bp")) orelse return error.NoProject;
+    try std.testing.expectEqual(@as(usize, 0), r.problems.len);
+    try std.testing.expectEqual(@as(usize, 1), r.deps.len);
 }
