@@ -885,7 +885,14 @@ codegen/
   variables — every name it reads that the enclosing frame binds — travel in
   `make_fun3`'s environment (`test_heap` with `{words, NumFree}`) and arrive
   as extra parameters after the fun's own, spilled to stack slots like params.
-  `Live` honours the `min_live` floor; lambda bodies reset it to 0.
+  `Live` honours the `min_live` floor; lambda bodies reset it to 0. The **eight**
+  places that emit a fun value are classified one by one in
+  [`beam/AGENTS.md`](beam/AGENTS.md#closure-values-make_fun3--every-build-site-classified):
+  every one is a real fun — four feed a `lists:*` higher-order call, four are a
+  written lambda or a loop body — and **none** is a block as a value, because
+  `@block { … }` runs in the current frame on this backend and the `case`-arm
+  block that did build a throwaway closure was removed by `ae813cc8`. The
+  13 `make_fun3` hits `grep` finds in `beam_asm.zig` are all comments.
 - **Mutation threading** (`lowerMutatingFold`, `emitGroupFun`): a statement
   `loop (xs) { x -> … }`, `loop (xs) { x, i -> … }` / `loop (xs, 1..) { … }`
   or `xs.forEach({ x -> … })` whose body reassigns names of the enclosing frame
