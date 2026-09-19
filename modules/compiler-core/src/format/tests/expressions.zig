@@ -453,8 +453,6 @@ test "format: branches re-parse and format to the same text" {
 // whitespace-only line between them), so a loop holding two statements
 // no longer parsed — a library's template lexer after `botopink format`.
 
-// (A blank line inside a loop body is not kept: the parser records no
-// `emptyLinesBefore` for loop-body statements.)
 test "format: a loop body keeps each statement's semicolon" {
     try h.assertFormat(std.testing.allocator,
         \\fn f(xs: Array<string>) -> string {
