@@ -411,18 +411,21 @@ fn textToCss(t: Token.Text) -> string {
 ```
 
 An arm may also be written as a block, `<pattern> { … }`. A block arm takes an
-optional `when (…)` guard, and a pattern may be a type (`i32`) or an inclusive
-range (`90...100`); `..` stays iteration and excludes its end.
+optional `when (…)` guard, and a pattern may be a literal, a type (`i32`) or `_`.
 
 ```botopink
 fn grade(n: i32) {
     case n {
         i32 when (n > 100) { @print("impossible"); }
-        90...100 { @print("A"); }
-        _ { @print("lower"); }
+        0 { @print("zero"); }
+        _ { @print("something else"); }
     };
 }
 ```
+
+A range in a pattern is `..`, exclusive, exactly as in a loop. The compiler is
+behind that rule and still asks for `...` — see
+[Decided, not yet implemented](#decided-not-yet-implemented).
 
 A name alone is not a pattern: to give the matched value a name, bind it in the
 body (`_ { n -> … }`).
@@ -640,21 +643,22 @@ else `root.bp`). `dependencies` also accepts an array of bare names.
 
 These are settled language rules that the compiler does not accept yet. They
 are listed so nothing here reads as working code; each names the front that
-closes it. Every row below was re-derived by **running** the form, not by
-reading the previous revision of this table.
+closes it, or says that it has none yet. Every row below was re-derived by
+**running** the form, not by reading the previous revision of this table.
 
 | Rule | Today | Closes with |
 |---|---|---|
 | `break <value>` making the loop an expression | the loop's value is a **list** holding it: `val v = loop (0..10) { i -> if (i == 3) { break i; }; };` prints `[3]` | 1.0.5-beta `04-js` — the lowering is commonJS's; the same defect on wasm is `05-wasm` |
 | A parameter default being applied at a call | every argument is required — `greet("world")` on `fn greet(name: string, greeting: string = "hello")` reports `'greet' expects 2 argument(s), got 1` | 1.0.5-beta `01-checker` step 7 |
 | `Self<T>` required in a generic type or behavior | bare `Self` is accepted inside a generic declaration; `Self<T>` parses and then fails to check (`type mismatch: expected Self, got Holder`) | 1.0.5-beta `01-checker` step 6 |
+| A pattern range written `..` and exclusive, as in a loop — `...` leaves the grammar | inverted: `1..9` in an arm reds `error[pattern-range-exclusive]` ("write `...` — an inclusive range, both ends matched"), and `1...9` is accepted. As a value it answers something different on every backend: `case 9 { 1...9 { 1 } _ { 0 } }` prints `1` on commonJS, `0` on erlang and `256` on wasm | 1.0.5-beta — owner unassigned; the rule is decided (the `...` token, the diagnostic and the run-time semantics) |
 
-Seven rows left this table because the compiler now accepts the form: union
+Six rows left this table because the compiler now accepts the form: union
 types, the `unknown` type and its assignability rule, `x is <Type>` with
-narrowing, `case` arms written `Pattern { … }` with `when (…)` guards, inclusive
-range patterns `1...9`, `val assert <pattern> = <expr>;` (binding its names, and
-fatal when the match fails), and a `//` comment inside a `loop` body. Each is
-documented above, in the section that teaches the form.
+narrowing, `case` arms written `Pattern { … }` with `when (…)` guards,
+`val assert <pattern> = <expr>;` (binding its names, and fatal when the match
+fails), and a `//` comment inside a `loop` body. Each is documented above, in the
+section that teaches the form.
 
 Two more left it because the form is **deliberately absent**, so that neither
 reads as unfinished work:
