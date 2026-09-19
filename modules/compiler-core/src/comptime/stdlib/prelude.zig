@@ -4,8 +4,8 @@
 /// file is exposed as an anonymous import in build.zig (std_bp_files) and
 /// embedded here by name. One `pub const` per stdlib source.
 ///
-/// `primitives.d.bp` is the controller (numeric tower, Bool, String, Function,
-/// Array<T>) and `builtins.bp` holds the builtin model (reflection, io, Result,
+/// `primitives.bp` is the controller (numeric tower, Bool, String, Function,
+/// Array<T>) and `builtins.d.bp` holds the builtin model (reflection, io, Result,
 /// the lazy Iterator<T>, generators, async, Expr<E>, annotations). Both flatten
 /// into the global env. The remaining files are concrete `record`/`enum` modules
 /// importable via `import {…} from "std";`.
