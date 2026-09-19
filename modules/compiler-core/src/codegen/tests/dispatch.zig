@@ -156,6 +156,79 @@ test "js: dispatch ---- multi-module extension activated via star import" {
     });
 }
 
+// The three shapes a method call reaches a type from ANOTHER module through, in
+// one module pair — the siblings of the row `448b935` landed (a method whose
+// owning type came from another module is a remote call, not a `call_fun` on the
+// receiver's map). All three print on beam, each through a different resolution
+// path in `beam_asm.zig`:
+//
+//   * a method on an imported **enum** — `Shape.Square(side: 4).area()` →
+//     `{call_ext, 1, {extfunc, geometry, 'Shape_area', 1}}` (the link index's
+//     `kind == .enum` arm of `methodOwnerModule`);
+//   * a method on the value an imported **associated fn** answers —
+//     `val c: Counter = Counter.zero(); c.bump()` → `'Counter_zero'/0` remotely,
+//     then `'Counter_bump'/1` remotely;
+//   * a method on the value an imported plain `fn` answers — `make().bump()`,
+//     the shape `tests/language/modules/two_modules` runs.
+//
+// Verified by hand on a real project (`botopink build --target beam`, then
+// `erlc +from_asm out/*.S`, then `erl -noshell -pa . -eval
+// "main:'_botopink_main'(), halt()."`): `1`, `16`, `42` — what commonJS prints.
+//
+// KNOWN-WRONG (erlang): the imported **enum**'s method is emitted as a BARE
+// LOCAL call — `main.erl` holds `area({'Square', 4})` while `geometry.erl`
+// exports `area/1`, so the emitted program does not compile
+// (`out/main.erl:8:19: function area/1 undefined`). The record cases beside it
+// are right (`geometry:bump(C)`), so this is the enum half of `02-erlang`'s two
+// module-owner landings (`7783fd6`, `1193d3c`), not a link-index gap.
+// KNOWN-WRONG (wasm): wasm stays single-module and has no named-type identity,
+// so the imported enum's `case self` traps (`unreachable`); the two record
+// shapes print.
+//
+// NOT pinned here, because it fails on beam and wasm both and the row is the
+// CHECKER's: the same associated fn WITHOUT the type annotation —
+// `Counter.zero().bump()`, or `val c = Counter.zero()` — reaches beam as
+// `{unresolved_method, bump, 1}` and wasm as a trap, because
+// `env.instanceLowerings` carries no entry for the call: the checker gives
+// `Type.assoc()` no return type, so the receiver's type is a fresh var and
+// `recordInstanceCall` never runs. It reproduces inside ONE module, so it is not
+// about imports at all, and the two dynamic-dispatch backends cannot see it
+// (commonJS dispatches at run time; erlang names a record method flatly, so it
+// needs no type either).
+test "js: dispatch ---- a method on an imported enum, an imported associated fn and an imported fn" {
+    try h.assertJs(std.testing.allocator, @src(), &.{
+        .{ .path = "geometry", .source =
+        \\pub type Counter(n: i32) {
+        \\    pub fn zero() -> Self { return Counter(n: 0); }
+        \\    pub fn bump(self: Self) -> i32 { return self.n + 1; }
+        \\}
+        \\
+        \\pub type Shape {
+        \\    Circle(radius: i32),
+        \\    Square(side: i32),
+        \\
+        \\    pub fn area(self: Self) -> i32 {
+        \\        return case self {
+        \\            Circle(r) -> r * r * 3;
+        \\            Square(s) -> s * s;
+        \\        };
+        \\    }
+        \\}
+        \\
+        \\pub fn make() -> Counter { return Counter(n: 41); }
+        },
+        .{ .path = "", .source =
+        \\import {Counter, Shape, make} from "geometry";
+        \\fn main() {
+        \\    val c: Counter = Counter.zero();
+        \\    @print(c.bump());
+        \\    @print(Shape.Square(side: 4).area());
+        \\    @print(make().bump());
+        \\}
+        },
+    });
+}
+
 // A user interface's instance `default fn` calling other members, reached
 // through a record that implements it. commonJS emitted `Bounded.prototype.clamp
 // = …` for an interface that is no JS constructor (`Bounded is not defined` at

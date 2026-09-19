@@ -23,12 +23,14 @@
 #   $ tests/language/run.sh --target beam
 #   language tests: 14 passed, 20 expected failures, 0 failed
 #
-# 64 lines: 55 exercised by `--target all`, 9 more only by `--target beam`
+# 58 lines: 53 exercised by `--target all`, 5 more only by `--target beam`
 # (the 11 `*` reject lines are counted by both runs). By the row that comes
-# first on the line: 01-checker 37 · 02-erlang 6 · 03-beam 8 · 05-wasm 6 ·
-# 13-module-identity 4 · 04-js 3. Nineteen lines name a second row that has to
+# first on the line: 01-checker 37 · 02-erlang 6 · 05-wasm 6 · 03-beam 4 ·
+# 13-module-identity 4 · 04-js 1. 24 lines name a second row that has to
 # land before the line goes (the §7 formatter's record and variant halves are
-# 13 step 18, not a backend's).
+# 13 step 18, not a backend's). Re-derived from the file on 2026-09-18, not from
+# one front's deltas: the paragraph had been two lines stale since 04's landing,
+# and fronts 02 and 03 deleted nine lines between them in the same merge window.
 #
 # For the record, since it changed inside this milestone: 04-js went to **zero**
 # lines when `c253965`, `7b6b5d3` and `17c5f8b` deleted all seven it had; the
@@ -146,10 +148,6 @@ beam     | run/type_identity_print.bp | 03 step 2, 13 step 18 | §7: the erlang 
 # `tests/language/run.sh --target beam`, which is green with them. `botopink
 # test` refuses beam, so only run/ and modules/ cells reach it: 9 results,
 # 2 passing (`run/smoke.bp`, `modules/mod_tree`). Measured at `c2dd780`, OTP 29.
-beam     | run/tuple_print.bp         | 03 step 2 | F0/F1: a nested string prints `<<"a">>` and a tuple `{1,<<"a">>}`; decision 1a and §7 want `"a"` and `#(1, "a")`
-beam     | run/print_nested.bp        | 03 step 2 | F0: a nested string prints as an erlang binary with erlang escapes (`[<<"a\"b">>]`, `[<<"c\\d">>]`); §7 wants `["a\"b"]` with source escapes
 beam     | run/print_formatter.bp     | 03 step 2, 13 step 18 | §7 formatter: arrays/tuples print as erlang terms, a record as `#{x => 1,y => 2}` and a variant as `{'Square',4}` / `'Nothing'`
 beam     | run/display_print.bp       | 03 step 2, 13 step 18 | §7: `@print` does not consult `Display`; the record prints as `#{cents => 5}`
 beam     | run/case_values.bp         | 01 step 4 | `.Variant` arms are not resolved: "missing variant(s) Circle, Rect" — the same checker row the other three targets name
-beam     | modules/two_modules        | 03 step 4 | a method on a type imported from a sibling module reaches `call_fun` with the record's map: `{badfun,#{x=>1,y=>2}}`
-beam     | modules/std_import         | 03 step 4 | a std `Dict` method used through a user module reaches `call_fun` with the dict's map: `{badfun,#{pairs=>[]}}`

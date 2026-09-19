@@ -154,6 +154,40 @@ fn isPrintBuiltin(callee: []const u8) bool {
         std.mem.eql(u8, callee, "debug");
 }
 
+/// The bare variant name of a pattern's written path. `Shape.Circle` and the
+/// dot shorthand `.Circle` are both spellings of the variant `Circle`, which is
+/// the atom the constructor emits (`{'Circle', …}`); the pattern kept what the
+/// author wrote, so a dotted arm tested `{atom, 'Shape.Circle'}` and never
+/// matched (01's defect 1, 2026-09-18). `format.zig` round-trips the written
+/// form, so the stripping belongs to the backend, not to the AST.
+fn bareVariantName(written: []const u8) []const u8 {
+    if (std.mem.lastIndexOfScalar(u8, written, '.')) |i| return written[i + 1 ..];
+    return written;
+}
+
+/// True when a pattern's `ident` was written as a path (`Maybe.None`, `.None`):
+/// §5.1 P8 — a name carrying a `.` is a variant, never a binding.
+fn isVariantPath(written: []const u8) bool {
+    return std.mem.indexOfScalar(u8, written, '.') != null;
+}
+
+/// True when a block's final statement is a bare value-producing expression, so
+/// it is the block's value. The same set `emitLambdaBody` reads: anything else
+/// (a `return`, a `val`, an assignment) runs as a statement and the block
+/// answers `ok`.
+fn armValueTail(e: ast.Expr) bool {
+    return switch (e) {
+        .literal, .identifier, .binaryOp, .unaryOp, .call, .useHook, .collection, .branch => true,
+        else => false,
+    };
+}
+
+/// A bare identifier expression naming a register the caller already bound —
+/// the receiver and arguments a synthesised shim function hands `emitPrimMethod`.
+fn shimIdent(name: []const u8) ast.Expr {
+    return .{ .identifier = .{ .loc = .{ .line = 0, .col = 0 }, .kind = .{ .ident = name } } };
+}
+
 /// A bodyless `declare fn` backed by an `#[@External.<Target>]` annotation.
 fn isHostDeclare(f: ast.FnDecl) bool {
     return f.isExternal() and f.body.len == 0;
@@ -529,6 +563,7 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
             .grouped => |inner| countLocalsInExpr(em, inner.*, count),
             .case => |c| {
                 for (c.subjects) |s| countLocalsInExpr(em, s, count);
+                var binder_arm = false;
                 for (c.arms) |arm| {
                     count.* += patternYSlots(arm.pattern);
                     if (arm.guard) |g| {
@@ -536,8 +571,18 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
                         // The subject waits on the stack across a guard that calls.
                         if (em.exprMayCall(&em.count_strings, g)) count.* += 1;
                     }
-                    countLocalsInExpr(em, arm.body, count);
+                    // A block arm runs in THIS frame (`Emitter.armBlock`), so
+                    // its own bindings take this frame's y-slots; a lambda
+                    // would have opened its own.
+                    if (Emitter.armBlock(arm.body)) |blk| {
+                        if (blk.params.len == 1) binder_arm = true;
+                        countLocalsRec(em, blk.stmts, count);
+                    } else {
+                        countLocalsInExpr(em, arm.body, count);
+                    }
                 }
+                // The slot `lowerCase` parks the subject in for a binder arm.
+                if (binder_arm) count.* += 1;
             },
             .arrayLit => |al| {
                 // One slot for the cons accumulator `lowerArrayLit` parks on
@@ -615,19 +660,31 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
         // with the iterable (`lowerEnumerateIntoX0`).
         // A condition loop (decision 8 §10) runs in this frame: its condition
         // and body take this frame's slots.
-        .loop => |lp| if (lp.condition) {
+        //
+        // The **iterable** is lowered in this frame whichever loop it is
+        // (`lowerLoop` materialises it before it builds the body closure, and
+        // `lowerConditionLoop` re-evaluates the condition here), so its own
+        // slots are this frame's: `loop ([1, 2, 3]) { x -> … }` parks the cons
+        // accumulator of the array literal in a y-slot, and counting nothing
+        // left the frame at `{allocate, 0, 0}` — the emitted `.S` did not
+        // assemble (`{invalid_store, {y, 0}}`, "Internal consistency check
+        // failed"). Over-counting only widens the frame; under-counting is a
+        // loader error.
+        .loop => |lp| {
             countLocalsInExpr(em, lp.iter.*, count);
-            countLocalsRec(em, lp.body, count);
-        } else if (lp.params.len == 2) if (lp.indexRange) |ir| {
-            if (ir.* == .collection and ir.collection.kind == .range) {
-                const start = ir.collection.kind.range.start.*;
-                const simple = switch (start) {
-                    .literal => true,
-                    .identifier => |id| id.kind == .ident and !em.top_vals.contains(id.kind.ident),
-                    else => false,
-                };
-                if (!simple) countStaging(em, &.{ start, lp.iter.* }, count);
-            }
+            if (lp.condition) {
+                countLocalsRec(em, lp.body, count);
+            } else if (lp.params.len == 2) if (lp.indexRange) |ir| {
+                if (ir.* == .collection and ir.collection.kind == .range) {
+                    const start = ir.collection.kind.range.start.*;
+                    const simple = switch (start) {
+                        .literal => true,
+                        .identifier => |id| id.kind == .ident and !em.top_vals.contains(id.kind.ident),
+                        else => false,
+                    };
+                    if (!simple) countStaging(em, &.{ start, lp.iter.* }, count);
+                }
+            };
         },
         else => {},
     }
@@ -1066,8 +1123,14 @@ fn emitBeamAsm(
     }
 
     // Interface `default fn`s some call site reached (a default body may reach
-    // another, so the list grows while it is drained).
+    // another, so the list grows while it is drained), then the run-time
+    // primitive dispatch shims. A shim clause is one of those defaults' own
+    // lowerings, so it can add to either list: both are drained to a fixpoint.
     try em.emitNeededDefaults();
+    while (em.needed_prim_shims.count() > em.emitted_prim_shims) {
+        try em.emitNeededPrimShims();
+        try em.emitNeededDefaults();
+    }
 
     // Now build the final output: header + exports + attributes + labels + body.
     //
@@ -1277,6 +1340,8 @@ const Emitter = struct {
     /// (heap-owned, freed in `deinit`) is reused for every subsequent call
     /// site so the synth body lands once per module.
     at_helper_name: ?[]const u8 = null,
+    index_helper_name: ?[]const u8 = null,
+    slice_helper_name: ?[]const u8 = null,
     indexOf_helper_name: ?[]const u8 = null,
     stringify_helper_name: ?[]const u8 = null,
     print_helper_name: ?[]const u8 = null,
@@ -1293,6 +1358,16 @@ const Emitter = struct {
     iface_defaults: std.StringHashMap(IfaceDefault),
     /// The defaults some call site reached, in first-use order.
     needed_defaults: std.StringArrayHashMapUnmanaged(IfaceDefault) = .empty,
+    /// The run-time primitive dispatch shims some untyped call site reached,
+    /// keyed `"<callee>/<argc>"`, in first-use order (`ensurePrimShim`).
+    needed_prim_shims: std.StringArrayHashMapUnmanaged(PrimShim) = .empty,
+    /// How many of them have been emitted — the drain's watermark.
+    emitted_prim_shims: usize = 0,
+    /// Method names the program's own `behavior` declarations carry (the
+    /// primitive interfaces excluded). A call to one of these is a user type's
+    /// method that failed to resolve, never a primitive's, so it keeps the
+    /// `{unresolved_method, …}` abort instead of reaching a dispatch shim.
+    user_behavior_methods: std.StringHashMap(void),
     /// `"<Iface>.<method>"` for every interface method declared `-> Self`.
     self_returns: std.StringHashMap(void),
     /// The primitive kind `self` carries while an interface `default fn` body
@@ -1316,6 +1391,10 @@ const Emitter = struct {
     /// An interface instance `default fn` and the interface declaring it.
     const IfaceDefault = struct { iface: []const u8, method: ast.BehaviorMethod };
 
+    /// One `'__bp_prim_<callee>'/<argc + 1>` run-time dispatch shim an untyped
+    /// call site reached. `name` is the quoted atom the call site calls.
+    const PrimShim = struct { callee: []const u8, argc: usize, name: []const u8 };
+
     fn init(alloc: std.mem.Allocator, module_name: []const u8, out: *std.Io.Writer, cv: std.StringHashMap([]const u8), rewrites: std.AutoHashMap(ast.Loc, []const u8)) Emitter {
         return .{
             .alloc = alloc,
@@ -1330,6 +1409,7 @@ const Emitter = struct {
             .imported_types = std.StringHashMap([]const u8).init(alloc),
             .enum_variants = std.StringHashMap(void).init(alloc),
             .interface_assoc = std.StringHashMap(void).init(alloc),
+            .user_behavior_methods = std.StringHashMap(void).init(alloc),
             .prim_erlang_dispatch = std.StringHashMap(PrimErlangCall).init(alloc),
             .prim_beam_templates = std.StringHashMap([]const u8).init(alloc),
             .std_imports = std.StringHashMap(void).init(alloc),
@@ -1400,9 +1480,15 @@ const Emitter = struct {
         self.externals.deinit();
         self.iface_defaults.deinit();
         self.needed_defaults.deinit(self.alloc);
+        self.user_behavior_methods.deinit();
+        for (self.needed_prim_shims.keys()) |k| self.alloc.free(k);
+        for (self.needed_prim_shims.values()) |v| self.alloc.free(v.name);
+        self.needed_prim_shims.deinit(self.alloc);
         self.self_returns.deinit();
         self.prelude_arena.deinit();
         if (self.at_helper_name) |n| self.alloc.free(n);
+        if (self.index_helper_name) |n| self.alloc.free(n);
+        if (self.slice_helper_name) |n| self.alloc.free(n);
         if (self.indexOf_helper_name) |n| self.alloc.free(n);
         if (self.stringify_helper_name) |n| self.alloc.free(n);
     }
@@ -1428,6 +1514,13 @@ const Emitter = struct {
             if (decl != .behavior) continue;
             try self.collectIfaceErlangDispatch(decl.behavior);
         }
+        for (program.decls) |decl| switch (decl) {
+            .behavior => |i| {
+                if (primKindForIface(i.name) != null) continue;
+                for (i.methods) |m| try self.user_behavior_methods.put(m.name, {});
+            },
+            else => {},
+        };
         // The program's own declarations win; the prelude fills the rest.
         try self.collectDefaultsAndExternals(program.decls);
         try self.collectDefaultsAndExternals(prim_program.decls);
@@ -1704,7 +1797,8 @@ const Emitter = struct {
     /// `{error, E}` (built by the `#[@result]` transform), so its `Ok`/`Err`
     /// arms test those lowercase tags; a user enum variant of the same name
     /// keeps its own. Parity with the erlang backend's `variantTag`.
-    fn variantTag(self: *const Emitter, name: []const u8) []const u8 {
+    fn variantTag(self: *const Emitter, written: []const u8) []const u8 {
+        const name = bareVariantName(written);
         if (self.enum_variants.contains(name)) return name;
         if (std.mem.eql(u8, name, "Ok")) return "ok";
         if (std.mem.eql(u8, name, "Err") or std.mem.eql(u8, name, "Error")) return "error";
@@ -3289,6 +3383,27 @@ const Emitter = struct {
                             try self.lowerExtCall(mangled, recv_expr, cc.args, mode);
                             return;
                         } else |_| {}
+                        // A method whose owning type came from ANOTHER module.
+                        // The owner emits and exports it (`geometry.S`:
+                        // `{exports, [{'Point_norm', 1}, …]}`), so the call is
+                        // remote — it used to fall into the fun-field heuristic
+                        // below, read `norm` out of the record's map and
+                        // `call_fun` the `undefined` it found
+                        // (`{badfun, #{x => 1, y => 2}}` at run time). Parity
+                        // with the associated-fn path above and with the erlang
+                        // backend's landing (`7783fd6`, `1193d3c`).
+                        if (self.methodOwnerModule(type_name, cc.callee)) |owner| {
+                            const st = try self.stageCall(recv_expr, cc.args, &[_]ast.TrailingLambda{});
+                            try self.placeStaged(&st);
+                            try beamEmitter.writeCall(
+                                self.out,
+                                if (mode == .tail) .last else .normal,
+                                1 + cc.args.len,
+                                .{ .ext = .{ .module = owner, .function = mangled } },
+                                self.num_y,
+                            );
+                            return;
+                        }
                     } else |_| {}
                 },
             };
@@ -3436,6 +3551,26 @@ const Emitter = struct {
                         return;
                     }
                 }
+                // An untyped receiver (`xs.map({ x -> x.toUpper() })`: the
+                // lambda parameter carries no declared type, so inference
+                // recorded no lowering for `x`) whose method some primitive
+                // interface declares: dispatch on the receiver's runtime tag
+                // through `'__bp_prim_<callee>'`, the erlang backend's answer to
+                // the same shape. Only when inference recorded NOTHING — a
+                // receiver it typed and whose method did not lower keeps the
+                // abort, which is this front's documented backstop.
+                if (self.instanceLowering(loc, recv_expr.*) == null) {
+                    if (try self.ensurePrimShim(cc.callee, cc.args.len + cc.trailing.len)) |shim_name| {
+                        const st = try self.stageCall(recv_expr, cc.args, cc.trailing);
+                        try self.placeStaged(&st);
+                        const shim_labels = try self.fnLabelsFor(shim_name, total_arity);
+                        switch (mode) {
+                            .non_tail => try beamEmitter.writeCall(self.out, .normal, total_arity, .{ .local = shim_labels.entry }, 0),
+                            .tail => try beamEmitter.writeCall(self.out, .last, total_arity, .{ .local = shim_labels.entry }, self.num_y),
+                        }
+                        return;
+                    }
+                }
                 try self.materializeCallArgs(cc.args, cc.trailing);
                 try self.emitUnresolvedAbort("unresolved_method", cc.callee, total_arity);
                 if (mode == .tail) try self.emitReturn();
@@ -3567,6 +3702,29 @@ const Emitter = struct {
         try beamEmitter.writeComment(self.out, "{s}: {s}/{d}", .{ kind, name, arity });
         try beamEmitter.writeMove(self.out, Term.tupleOf(&[_]Term{ Term.atomOf(kind), Term.atomOf(name), Term.int(@intCast(arity)) }), 0);
         try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "error" } }, 0);
+    }
+
+    /// The module atom that emits `'<type_name>_<method>'`, when the type came
+    /// from another module. Two sources, because a consumer reaches an imported
+    /// type two ways: by naming it in an `import { … }` (`imported_types`), and
+    /// through a value some other import answers (`dict.empty()` gives a `Dict`
+    /// nothing in this module named), which only the link index knows about.
+    /// Null when the type is this module's own — then the method is a local
+    /// label and the caller has already found it.
+    fn methodOwnerModule(self: *const Emitter, type_name: []const u8, method: []const u8) ?[]const u8 {
+        if (self.imported_types.get(type_name)) |owner| return owner;
+        const xc = self.cross orelse return null;
+        const info = xc.exports.get(type_name) orelse return null;
+        switch (info.kind) {
+            .record, .@"enum" => {},
+            else => return null,
+        }
+        const owner = crossModule.moduleBasename(info.module);
+        if (std.mem.eql(u8, owner, self.module_name)) return null;
+        for (info.methods) |m| {
+            if (std.mem.eql(u8, m, method)) return owner;
+        }
+        return null;
     }
 
     /// Owning module atom for a cross-module export of the given kind, or null
@@ -3719,6 +3877,191 @@ const Emitter = struct {
             .tail => try beamEmitter.writeCall(self.out, .last, 1 + params.len, .{ .local = labels.entry }, self.num_y),
         }
         return true;
+    }
+
+    // ── run-time primitive dispatch (an untyped receiver) ────────────────────
+    //
+    // `xs.map({ x -> x.toUpper() })`: the lambda parameter carries no declared
+    // type, so inference records no instance lowering for `x` and the typed
+    // path above has nothing to dispatch on. Beam used to abort at run time
+    // with `{unresolved_method, toUpper, 1}` (measured 2026-09-18 against
+    // `bef762b`; the same program's straight-line form — `.trim()`, `.split()`,
+    // `.join()` on a named local — runs). The erlang backend answers it with a
+    // guarded shim per `(method, argc)` (`erlang.zig` `primShimForm`); this is
+    // its BEAM twin, and the clause bodies are `emitPrimMethod`'s own
+    // lowerings, so the typed tables stay the single source of truth.
+
+    /// The primitive kinds a shim tests, in the erlang backend's order, with
+    /// the BEAM type test each clause is guarded by.
+    const prim_shim_kinds = [_]struct { kind: envMod.PrimKind, guard: beamEmitter.TestOp }{
+        .{ .kind = .array, .guard = .is_list },
+        .{ .kind = .string, .guard = .is_binary },
+        .{ .kind = .bool, .guard = .is_boolean },
+        .{ .kind = .int, .guard = .is_integer },
+        .{ .kind = .float, .guard = .is_float },
+    };
+
+    /// True when some interface on `k`'s chain declares `callee`. The three
+    /// tables `emitPrimMethod` walks — the `@External.Beam` bodies, the
+    /// erlang-derived dispatch and the bodied `default fn`s — are all keyed
+    /// `"<Iface>.<method>"`, so this asks them without emitting anything.
+    /// Conservative by construction: a name no table names keeps the abort the
+    /// call site already had.
+    fn primKindDeclares(self: *const Emitter, k: envMod.PrimKind, callee: []const u8) bool {
+        var b: [128]u8 = undefined;
+        for (primIfaceChain(k)) |iface_name| {
+            const key = std.fmt.bufPrint(&b, "{s}.{s}", .{ iface_name, callee }) catch return false;
+            if (self.prim_beam_templates.contains(key)) return true;
+            if (self.prim_erlang_dispatch.contains(key)) return true;
+            if (self.iface_defaults.contains(key)) return true;
+        }
+        return false;
+    }
+
+    /// The `'__bp_prim_<callee>'` shim for an untyped `recv.callee(a…)`, or null
+    /// when no primitive interface declares `callee` — then the call site keeps
+    /// its `{unresolved_method, …}` abort, which is the backstop this front's
+    /// notes ask to keep. Reserves the name and queues the body; the body is
+    /// emitted after the enclosing function, because writing it resets the
+    /// per-function register state.
+    fn ensurePrimShim(self: *Emitter, callee: []const u8, argc: usize) anyerror!?[]const u8 {
+        if (self.user_behavior_methods.contains(callee)) return null;
+        var answered = false;
+        for (prim_shim_kinds) |pk| {
+            if (self.primKindDeclares(pk.kind, callee)) answered = true;
+        }
+        if (!answered) return null;
+        var kbuf: [256]u8 = undefined;
+        const key = std.fmt.bufPrint(&kbuf, "{s}/{d}", .{ callee, argc }) catch return null;
+        if (self.needed_prim_shims.get(key)) |s| return s.name;
+        const name = try std.fmt.allocPrint(self.alloc, "'__bp_prim_{s}'", .{callee});
+        try self.reserveFn(name, argc + 1);
+        try self.needed_prim_shims.put(
+            self.alloc,
+            try self.alloc.dupe(u8, key),
+            .{ .callee = callee, .argc = argc, .name = name },
+        );
+        return name;
+    }
+
+    /// Emit every shim a call site reached. A clause body may itself reach an
+    /// interface `default fn` or another shim, so both lists are drained to a
+    /// fixpoint (the caller re-drains `needed_defaults`).
+    fn emitNeededPrimShims(self: *Emitter) anyerror!void {
+        while (self.emitted_prim_shims < self.needed_prim_shims.count()) {
+            const shim = self.needed_prim_shims.values()[self.emitted_prim_shims];
+            self.emitted_prim_shims += 1;
+            try self.emitPrimShimFn(shim);
+        }
+    }
+
+    /// `'__bp_prim_<callee>'(Recv, Arg0, …)`: one clause per primitive kind that
+    /// answers the call, each guarded by that kind's BEAM type test and bodied
+    /// by `emitPrimMethod`'s own lowering, then the `{unresolved_method, …}`
+    /// abort. A clause is lowered into a scratch buffer first — `emitPrimMethod`
+    /// decides whether it can answer while it emits — and dropped whole when it
+    /// cannot, so a kind that declares the method but has no BEAM lowering
+    /// costs nothing.
+    fn emitPrimShimFn(self: *Emitter, shim: PrimShim) anyerror!void {
+        const arity = shim.argc + 1;
+        const labels = try self.fnLabelsFor(shim.name, arity);
+
+        var names_buf: [1 + max_staged][]const u8 = undefined;
+        var arg_names_buf: [max_staged][16]u8 = undefined;
+        names_buf[0] = "recv";
+        for (0..shim.argc) |i| {
+            names_buf[i + 1] = std.fmt.bufPrint(&arg_names_buf[i], "arg{d}", .{i}) catch "arg";
+        }
+        const names = names_buf[0..arity];
+
+        self.resetFnState(@intCast(arity));
+        self.self_prim_kind = null;
+        self.cur_fn_name = shim.callee;
+        // The frame holds exactly the spilled parameters: a clause body is one
+        // expression, which stages through x-registers and takes no stack slot.
+        // A clause that turns out to need one is dropped below.
+        self.num_y = @intCast(arity);
+        try self.bindParams(names);
+
+        // The receiver and the arguments as the identifiers `bindParams` just
+        // bound, so `emitPrimMethod` stages them like any other call's operands.
+        var recv: ast.Expr = shimIdent(names[0]);
+        var arg_exprs: [max_staged]ast.Expr = undefined;
+        var call_args: [max_staged]ast.CallArg = undefined;
+        for (0..shim.argc) |i| {
+            arg_exprs[i] = shimIdent(names[i + 1]);
+            call_args[i] = .{ .label = null, .value = &arg_exprs[i] };
+        }
+        const cc = .{
+            .callee = shim.callee,
+            .args = @as([]const ast.CallArg, call_args[0..shim.argc]),
+            .trailing = @as([]const ast.TrailingLambda, &.{}),
+        };
+
+        // Rendered sections, joined at the end — a clause is lowered before it
+        // is known whether it can be lowered at all, so the guard that jumps
+        // past it cannot be written first.
+        var sections: std.ArrayListUnmanaged([]u8) = .empty;
+        defer {
+            for (sections.items) |sec| self.alloc.free(sec);
+            sections.deinit(self.alloc);
+        }
+        const saved_out = self.out;
+        defer self.out = saved_out;
+
+        for (prim_shim_kinds) |pk| {
+            if (!self.primKindDeclares(pk.kind, shim.callee)) continue;
+            var clause: std.Io.Writer.Allocating = .init(self.alloc);
+            defer clause.deinit();
+            self.out = &clause.writer;
+            self.min_live = 0;
+            const answered = self.emitPrimMethod(pk.kind, shim.callee, &recv, cc, .tail) catch false;
+            if (!answered or self.next_y != arity) {
+                self.next_y = @intCast(arity);
+                continue;
+            }
+            const next = self.allocLabel();
+            var pre: std.Io.Writer.Allocating = .init(self.alloc);
+            defer pre.deinit();
+            self.out = &pre.writer;
+            try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+            try beamEmitter.writeTest(self.out, pk.guard, next, &.{Op.xr(0)});
+            try sections.append(self.alloc, try pre.toOwnedSlice());
+            try sections.append(self.alloc, try clause.toOwnedSlice());
+            var post: std.Io.Writer.Allocating = .init(self.alloc);
+            defer post.deinit();
+            self.out = &post.writer;
+            try beamEmitter.writeLabel(self.out, next);
+            try sections.append(self.alloc, try post.toOwnedSlice());
+        }
+
+        // The head is rendered last because `num_y` is only final now, and
+        // prepended: `allocate` has to name the frame every clause deallocates.
+        var head: std.Io.Writer.Allocating = .init(self.alloc);
+        defer head.deinit();
+        self.out = &head.writer;
+        try beamEmitter.writeBlankLine(self.out);
+        try beamEmitter.writeFunctionHeader(self.out, shim.name, arity, labels.entry);
+        try beamEmitter.writeLabel(self.out, labels.func_info);
+        try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(self.out, self.module_name, shim.name, arity);
+        try beamEmitter.writeLabel(self.out, labels.entry);
+        try self.emitFrame(arity);
+        try self.emitParamSpill(arity);
+        try sections.insert(self.alloc, 0, try head.toOwnedSlice());
+
+        // No kind answered: the receiver is named in the abort, exactly as the
+        // call site used to raise it.
+        var tail: std.Io.Writer.Allocating = .init(self.alloc);
+        defer tail.deinit();
+        self.out = &tail.writer;
+        try self.emitUnresolvedAbort("unresolved_method", shim.callee, arity);
+        try beamEmitter.writeDeallocate(self.out, self.num_y);
+        try beamEmitter.writeReturn(self.out);
+        try sections.append(self.alloc, try tail.toOwnedSlice());
+
+        self.cur_line += 1;
+        try self.deferred_lambdas.append(self.alloc, try std.mem.concat(self.alloc, u8, sections.items));
     }
 
     /// Emit every interface `default fn` a call site reached, with `self`
@@ -4637,7 +4980,196 @@ const Emitter = struct {
             if (mode == .tail) try self.emitReturn();
             return;
         }
+        if (std.mem.eql(u8, cc.callee, ast.index_builtin_name)) {
+            try self.lowerIndexExpr(cc, mode);
+            return;
+        }
         try beamEmitter.writeComment(self.out, "unsupported builtin: @{s} (Fase 3+)", .{cc.callee});
+    }
+
+    /// Decision 30's index expression, which the parser hands every backend as
+    /// the builtin call `"[]"` over `(receiver, index)` (`ast.zig:1717-1740`):
+    /// `xs[0]`, `d["k"]`, `s[0]`, `t[0]` and the slice `xs[0..2]` — the same
+    /// node with a `range` second argument. Beam has no type at the call site
+    /// (the checker's half of decision 30 is `01-checker`'s), so the receiver is
+    /// told apart by its runtime tag inside one of two helpers; the slice is
+    /// told apart HERE, because the range is in the AST and lowering it as a
+    /// value would build the `lists:seq/2` list the slice does not need.
+    ///
+    /// Before this, the call fell into the unrecognised-builtin path: `xs[0]`
+    /// printed the whole list and `xs[2]` printed `ok` (measured 2026-09-18).
+    fn lowerIndexExpr(self: *Emitter, cc: anytype, mode: CallMode) anyerror!void {
+        if (cc.args.len != 2) {
+            try beamEmitter.writeComment(self.out, "unsupported index arity: {d}", .{cc.args.len});
+            try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
+            if (mode == .tail) try self.emitReturn();
+            return;
+        }
+        const recv = cc.args[0].value;
+        const idx = cc.args[1].value;
+        const no_trailing: []const ast.TrailingLambda = &.{};
+        if (idx.* == .collection and idx.collection.kind == .range) {
+            const r = idx.collection.kind.range;
+            if (r.end) |end| {
+                const st = try self.stageOperands(&.{ recv.*, r.start.*, end.* }, no_trailing);
+                try self.emitParallelMove(&.{ st.ops[0], st.ops[1], st.ops[2] }, &.{ 0, 1, 2 });
+            } else {
+                const st = try self.stageOperands(&.{ recv.*, r.start.* }, no_trailing);
+                try self.emitParallelMove(&.{ st.ops[0], st.ops[1] }, &.{ 0, 1 });
+                try beamEmitter.writeMoveOp(self.out, Op.atom("infinity"), Dst.xr(2));
+            }
+            const helper = try self.ensureSliceHelper();
+            const labels = try self.fnLabelsFor(helper, 3);
+            switch (mode) {
+                .non_tail => try beamEmitter.writeCall(self.out, .normal, 3, .{ .local = labels.entry }, 0),
+                .tail => try beamEmitter.writeCall(self.out, .last, 3, .{ .local = labels.entry }, self.num_y),
+            }
+            return;
+        }
+        const st = try self.stageOperands(&.{ recv.*, idx.* }, no_trailing);
+        try self.emitParallelMove(&.{ st.ops[0], st.ops[1] }, &.{ 0, 1 });
+        const helper = try self.ensureIndexHelper();
+        const labels = try self.fnLabelsFor(helper, 2);
+        switch (mode) {
+            .non_tail => try beamEmitter.writeCall(self.out, .normal, 2, .{ .local = labels.entry }, 0),
+            .tail => try beamEmitter.writeCall(self.out, .last, 2, .{ .local = labels.entry }, self.num_y),
+        }
+    }
+
+    /// Emit (once per module) `'__bp_index'(Recv, Idx)` — decision 30's scalar
+    /// index, dispatched on the receiver's runtime tag: a map answers
+    /// `maps:get(Idx, Recv, undefined)`, a binary the one-character
+    /// `string:slice(Recv, Idx, 1)`, a tuple `element(Idx + 1, Recv)`, and
+    /// anything else (a list) the bounds-checked `'-bp_at-'/2` the `xs.at(i)`
+    /// method already uses, so an out-of-range index answers `undefined`
+    /// instead of raising.
+    fn ensureIndexHelper(self: *Emitter) anyerror![]const u8 {
+        if (self.index_helper_name) |n| return n;
+        const at = try self.ensureAtHelper();
+        const at_labels = try self.fnLabelsFor(at, 2);
+        const name = try self.alloc.dupe(u8, "'__bp_index'");
+        try self.reserveFn(name, 2);
+        const labels = try self.fnLabelsFor(name, 2);
+        var buf: std.Io.Writer.Allocating = .init(self.alloc);
+        const saved_out = self.out;
+        self.out = &buf.writer;
+
+        const not_map = self.allocLabel();
+        const not_bin = self.allocLabel();
+        const not_tuple = self.allocLabel();
+        try beamEmitter.writeBlankLine(self.out);
+        try beamEmitter.writeFunctionHeader(self.out, name, 2, labels.entry);
+        try beamEmitter.writeLabel(self.out, labels.func_info);
+        try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(self.out, self.module_name, name, 2);
+        try beamEmitter.writeLabel(self.out, labels.entry);
+        try beamEmitter.writeAllocate(self.out, 2, 2);
+        try beamEmitter.writeInitYregs(self.out, 2);
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(0)); // y0 = receiver
+        try beamEmitter.writeMoveOp(self.out, Op.xr(1), Dst.yr(1)); // y1 = index
+
+        try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeTest(self.out, .is_map, not_map, &.{Op.xr(0)});
+        try beamEmitter.writeMoveOp(self.out, Op.yr(1), Dst.xr(0));
+        try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(1));
+        try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(2));
+        try beamEmitter.writeCall(self.out, .last, 3, .{ .ext = .{ .module = "maps", .function = "get" } }, 2);
+
+        try beamEmitter.writeLabel(self.out, not_map);
+        try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeTest(self.out, .is_binary, not_bin, &.{Op.xr(0)});
+        try beamEmitter.writeMoveOp(self.out, Op.yr(1), Dst.xr(1));
+        try beamEmitter.writeMoveOp(self.out, Op.int(1), Dst.xr(2));
+        try beamEmitter.writeCall(self.out, .last, 3, .{ .ext = .{ .module = "string", .function = "slice" } }, 2);
+
+        try beamEmitter.writeLabel(self.out, not_bin);
+        try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeTest(self.out, .is_tuple, not_tuple, &.{Op.xr(0)});
+        try beamEmitter.writeGcBif(self.out, .add, 0, &.{ Op.yr(1), Op.int(1) }, Dst.xr(0));
+        try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(1));
+        try beamEmitter.writeCall(self.out, .last, 2, .{ .ext = .{ .module = "erlang", .function = "element" } }, 2);
+
+        try beamEmitter.writeLabel(self.out, not_tuple);
+        try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeMoveOp(self.out, Op.yr(1), Dst.xr(1));
+        try beamEmitter.writeCall(self.out, .last, 2, .{ .local = at_labels.entry }, 2);
+
+        self.out = saved_out;
+        try self.deferred_lambdas.append(self.alloc, try buf.toOwnedSlice());
+        buf.deinit();
+        self.index_helper_name = name;
+        return name;
+    }
+
+    /// Emit (once per module) `'__bp_slice'(Recv, Start, End)` — decision 30's
+    /// index whose index is a range, half-open like every other `..` in the
+    /// language, with `End` the atom `infinity` for `xs[0..]` (the convention
+    /// `lowerRange` already uses). A binary answers `string:slice/2,3` and
+    /// anything else `lists:sublist/3`, both of which clamp instead of raising.
+    fn ensureSliceHelper(self: *Emitter) anyerror![]const u8 {
+        if (self.slice_helper_name) |n| return n;
+        const name = try self.alloc.dupe(u8, "'__bp_slice'");
+        try self.reserveFn(name, 3);
+        const labels = try self.fnLabelsFor(name, 3);
+        var buf: std.Io.Writer.Allocating = .init(self.alloc);
+        const saved_out = self.out;
+        self.out = &buf.writer;
+
+        const bounded = self.allocLabel();
+        const open_list = self.allocLabel();
+        const bounded_list = self.allocLabel();
+        try beamEmitter.writeBlankLine(self.out);
+        try beamEmitter.writeFunctionHeader(self.out, name, 3, labels.entry);
+        try beamEmitter.writeLabel(self.out, labels.func_info);
+        try beamEmitter.writeLine(self.out, self.module_name, self.cur_line);
+        try beamEmitter.writeFuncInfo(self.out, self.module_name, name, 3);
+        try beamEmitter.writeLabel(self.out, labels.entry);
+        try beamEmitter.writeAllocate(self.out, 3, 3);
+        try beamEmitter.writeInitYregs(self.out, 3);
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(0)); // y0 = receiver
+        try beamEmitter.writeMoveOp(self.out, Op.xr(1), Dst.yr(1)); // y1 = start
+        try beamEmitter.writeMoveOp(self.out, Op.xr(2), Dst.yr(2)); // y2 = end (or `infinity`)
+
+        // `is_eq` jumps when the two are NOT equal, so falling through is the
+        // open-ended `xs[Start..]`.
+        try beamEmitter.writeTest(self.out, .is_eq, bounded, &.{ Op.yr(2), Op.atom("infinity") });
+        try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeTest(self.out, .is_binary, open_list, &.{Op.xr(0)});
+        try beamEmitter.writeMoveOp(self.out, Op.yr(1), Dst.xr(1));
+        try beamEmitter.writeCall(self.out, .last, 2, .{ .ext = .{ .module = "string", .function = "slice" } }, 3);
+        try beamEmitter.writeLabel(self.out, open_list);
+        // `lists:sublist(Recv, Start + 1, length(Recv))` — a length larger than
+        // what is left is exactly "the rest". The length is parked in `y2`,
+        // whose `infinity` is dead on this edge, so the `gc_bif` that computes
+        // `Start + 1` needs no live x-registers.
+        try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "length" } }, 0);
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(2));
+        try beamEmitter.writeGcBif(self.out, .add, 0, &.{ Op.yr(1), Op.int(1) }, Dst.xr(1));
+        try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeMoveOp(self.out, Op.yr(2), Dst.xr(2));
+        try beamEmitter.writeCall(self.out, .last, 3, .{ .ext = .{ .module = "lists", .function = "sublist" } }, 3);
+
+        try beamEmitter.writeLabel(self.out, bounded);
+        // `Len = End - Start`, parked in y2 over the receiver's type test.
+        try beamEmitter.writeGcBif(self.out, .sub, 0, &.{ Op.yr(2), Op.yr(1) }, Dst.xr(0));
+        try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(2));
+        try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeTest(self.out, .is_binary, bounded_list, &.{Op.xr(0)});
+        try beamEmitter.writeMoveOp(self.out, Op.yr(1), Dst.xr(1));
+        try beamEmitter.writeMoveOp(self.out, Op.yr(2), Dst.xr(2));
+        try beamEmitter.writeCall(self.out, .last, 3, .{ .ext = .{ .module = "string", .function = "slice" } }, 3);
+        try beamEmitter.writeLabel(self.out, bounded_list);
+        try beamEmitter.writeGcBif(self.out, .add, 0, &.{ Op.yr(1), Op.int(1) }, Dst.xr(1));
+        try beamEmitter.writeMoveOp(self.out, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeMoveOp(self.out, Op.yr(2), Dst.xr(2));
+        try beamEmitter.writeCall(self.out, .last, 3, .{ .ext = .{ .module = "lists", .function = "sublist" } }, 3);
+
+        self.out = saved_out;
+        try self.deferred_lambdas.append(self.alloc, try buf.toOwnedSlice());
+        buf.deinit();
+        self.slice_helper_name = name;
+        return name;
     }
 
     /// `@print(a, b, …)` → `'__bp_print'([A, B, …])` (semantics decision 1): the
@@ -4695,29 +5227,52 @@ const Emitter = struct {
         try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "iolist_to_binary" } }, 0);
     }
 
-    /// Emit (once per module) `'__bp_print'/1` and the two mutually recursive
-    /// fns that build its format string: `'__bp_print_fmt'/1` turns the value
-    /// list into `"~ts ~p …~n"` (one verb per value, `~ts` for a binary) and
-    /// `'__bp_print_sep'/1` puts the space between verbs and the `~n` last.
+    /// Emit (once per module) the four functions decision 8 §7's formatter is
+    /// on BEAM: `'__bp_print'/1`, the value renderer `'__bp_show'/2` and the two
+    /// one-argument wrappers `lists:map` needs (`'-bp_show_top-'`,
+    /// `'-bp_show_elem-'`, which are `'__bp_show'(V, true)` and
+    /// `'__bp_show'(V, false)`).
+    ///
+    /// It replaces the per-value format-verb machinery (`'__bp_print_fmt'/1` +
+    /// `'__bp_print_sep'/1`, which chose `~ts` for a binary and `~p` for
+    /// everything else). That printed every compound value as an **Erlang
+    /// term** — decision 1a never reached this backend — so a nested string
+    /// came out `<<"a">>` and a tuple `{1,<<"a">>}`, and §7's separator space
+    /// was missing everywhere.
+    ///
+    /// `'__bp_show'(V, Top)`, the beam twin of the erlang backend's function of
+    /// the same name:
+    ///
+    /// | `V` | text |
+    /// |---|---|
+    /// | a binary, `Top` | itself — a top-level string prints bare |
+    /// | a binary, nested | `io_lib:write_string(unicode:characters_to_list(V))` — `"a\"b"`, source escapes and all, in one call instead of a per-character walk |
+    /// | a list | `[$[, lists:join(<<", ">>, …), $]]` over the elements |
+    /// | a tuple whose first element is an atom other than `true`/`false`/`undefined` | `~p` — a variant or a `@Result`; §7's `Shape.Square(side: 4)` is `13-module-identity`'s F3 |
+    /// | any other tuple | `[$#, $(, lists:join(<<", ">>, …), $)]` |
+    /// | anything else | `~p` — an integer, a float (which keeps its `.0`, §7 F5), an atom, a record's map (§7 F2, also 13's) |
     fn ensurePrintHelper(self: *Emitter) anyerror![]const u8 {
         if (self.print_helper_name) |n| return n;
         const name = try self.alloc.dupe(u8, "'__bp_print'");
-        const fmt_name = "'__bp_print_fmt'";
-        const sep_name = "'__bp_print_sep'";
+        const show_name = "'__bp_show'";
+        const top_name = "'-bp_show_top-'";
+        const elem_name = "'-bp_show_elem-'";
         try self.reserveFn(name, 1);
-        try self.reserveFn(fmt_name, 1);
-        try self.reserveFn(sep_name, 1);
+        try self.reserveFn(show_name, 2);
+        try self.reserveFn(top_name, 1);
+        try self.reserveFn(elem_name, 1);
         const main_l = try self.fnLabelsFor(name, 1);
-        const fmt_l = try self.fnLabelsFor(fmt_name, 1);
-        const sep_l = try self.fnLabelsFor(sep_name, 1);
-        const newline = Term.listOf(&[_]Term{ Term.int('~'), Term.int('n') });
+        const show_l = try self.fnLabelsFor(show_name, 2);
+        const top_l = try self.fnLabelsFor(top_name, 1);
+        const elem_l = try self.fnLabelsFor(elem_name, 1);
 
         var buf: std.Io.Writer.Allocating = .init(self.alloc);
         const saved_out = self.out;
         self.out = &buf.writer;
         const w = self.out;
 
-        // '__bp_print'(Values) -> io:format('__bp_print_fmt'(Values), Values).
+        // '__bp_print'(Values) ->
+        //     io:format("~ts~n", [lists:join(<<" ">>, lists:map(fun top/1, Values))]).
         try beamEmitter.writeBlankLine(w);
         try beamEmitter.writeFunctionHeader(w, name, 1, main_l.entry);
         try beamEmitter.writeLabel(w, main_l.func_info);
@@ -4727,68 +5282,134 @@ const Emitter = struct {
         try beamEmitter.writeAllocate(w, 1, 1);
         try beamEmitter.writeInitYregs(w, 1);
         try beamEmitter.writeMoveOp(w, Op.xr(0), Dst.yr(0));
-        try beamEmitter.writeCall(w, .normal, 1, .{ .local = fmt_l.entry }, 0);
+        try beamEmitter.writeTestHeapAlloc(w, 0, 1, 0);
+        try beamEmitter.writeMakeFun3(w, top_l.entry, &.{});
         try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(1));
+        try beamEmitter.writeCall(w, .normal, 2, .{ .ext = .{ .module = "lists", .function = "map" } }, 0);
+        try beamEmitter.writeMoveOp(w, Op.xr(0), Dst.xr(1));
+        try beamEmitter.writeMoveOp(w, Op.str(" "), Dst.xr(0));
+        try beamEmitter.writeCall(w, .normal, 2, .{ .ext = .{ .module = "lists", .function = "join" } }, 0);
+        try beamEmitter.writeTestHeap(w, 2, 1);
+        try beamEmitter.writePutList(w, Op.xr(0), Op.nil, Dst.xr(1));
+        try beamEmitter.writeMoveOp(w, Op.str("~ts~n"), Dst.xr(0));
         try beamEmitter.writeCall(w, .last, 2, .{ .ext = .{ .module = "io", .function = "format" } }, 1);
 
-        // '__bp_print_fmt'([]) -> "~n";
-        // '__bp_print_fmt'([V | T]) -> Verb(V) ++ '__bp_print_sep'(T).
-        const fmt_empty = self.allocLabel();
+        // '-bp_show_top-'(V) -> '__bp_show'(V, true).
+        // '-bp_show_elem-'(V) -> '__bp_show'(V, false).
+        for ([_]struct { n: []const u8, l: FnLabels, flag: []const u8 }{
+            .{ .n = top_name, .l = top_l, .flag = "true" },
+            .{ .n = elem_name, .l = elem_l, .flag = "false" },
+        }) |wrapper| {
+            try beamEmitter.writeBlankLine(w);
+            try beamEmitter.writeFunctionHeader(w, wrapper.n, 1, wrapper.l.entry);
+            try beamEmitter.writeLabel(w, wrapper.l.func_info);
+            try beamEmitter.writeLine(w, self.module_name, self.cur_line);
+            try beamEmitter.writeFuncInfo(w, self.module_name, wrapper.n, 1);
+            try beamEmitter.writeLabel(w, wrapper.l.entry);
+            try beamEmitter.writeMoveOp(w, Op.atom(wrapper.flag), Dst.xr(1));
+            try beamEmitter.writeCall(w, .only, 2, .{ .local = show_l.entry }, 0);
+        }
+
+        // '__bp_show'(V, Top).
+        const nested = self.allocLabel();
         const not_bin = self.allocLabel();
+        const not_list = self.allocLabel();
+        const plain_tuple = self.allocLabel();
+        const generic = self.allocLabel();
         try beamEmitter.writeBlankLine(w);
-        try beamEmitter.writeFunctionHeader(w, fmt_name, 1, fmt_l.entry);
-        try beamEmitter.writeLabel(w, fmt_l.func_info);
+        try beamEmitter.writeFunctionHeader(w, show_name, 2, show_l.entry);
+        try beamEmitter.writeLabel(w, show_l.func_info);
         try beamEmitter.writeLine(w, self.module_name, self.cur_line);
-        try beamEmitter.writeFuncInfo(w, self.module_name, fmt_name, 1);
-        try beamEmitter.writeLabel(w, fmt_l.entry);
-        try beamEmitter.writeTest(w, .is_nonempty_list, fmt_empty, &.{Op.xr(0)});
-        try beamEmitter.writeAllocate(w, 1, 1);
-        try beamEmitter.writeInitYregs(w, 1);
-        try beamEmitter.writeGetList(w, Op.xr(0), Dst.xr(1), Dst.xr(0));
-        try beamEmitter.writeMoveOp(w, Op.xr(1), Dst.yr(0));
-        try beamEmitter.writeCall(w, .normal, 1, .{ .local = sep_l.entry }, 0);
-        try beamEmitter.writeTest(w, .is_binary, not_bin, &.{Op.yr(0)});
-        try beamEmitter.writeTestHeap(w, 6, 1);
-        try beamEmitter.writePutList(w, Op.int('s'), Op.xr(0), Dst.xr(0));
-        try beamEmitter.writePutList(w, Op.int('t'), Op.xr(0), Dst.xr(0));
-        try beamEmitter.writePutList(w, Op.int('~'), Op.xr(0), Dst.xr(0));
-        try beamEmitter.writeDeallocate(w, 1);
+        try beamEmitter.writeFuncInfo(w, self.module_name, show_name, 2);
+        try beamEmitter.writeLabel(w, show_l.entry);
+        try beamEmitter.writeAllocate(w, 2, 2);
+        try beamEmitter.writeInitYregs(w, 2);
+        try beamEmitter.writeMoveOp(w, Op.xr(0), Dst.yr(0)); // y0 = V
+        try beamEmitter.writeMoveOp(w, Op.xr(1), Dst.yr(1)); // y1 = Top, then scratch
+
+        // A binary: itself at the top level, quoted and escaped inside.
+        try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeTest(w, .is_binary, not_bin, &.{Op.xr(0)});
+        try beamEmitter.writeTest(w, .is_eq, nested, &.{ Op.yr(1), Op.atom("true") });
+        try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeDeallocate(w, 2);
         try beamEmitter.writeReturn(w);
+        try beamEmitter.writeLabel(w, nested);
+        try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeCall(w, .normal, 1, .{ .ext = .{ .module = "unicode", .function = "characters_to_list" } }, 0);
+        try beamEmitter.writeCall(w, .last, 1, .{ .ext = .{ .module = "io_lib", .function = "write_string" } }, 2);
+
+        // A list: `[` … `]`, elements separated by `", "`.
         try beamEmitter.writeLabel(w, not_bin);
-        try beamEmitter.writeTestHeap(w, 4, 1);
-        try beamEmitter.writePutList(w, Op.int('p'), Op.xr(0), Dst.xr(0));
-        try beamEmitter.writePutList(w, Op.int('~'), Op.xr(0), Dst.xr(0));
-        try beamEmitter.writeDeallocate(w, 1);
-        try beamEmitter.writeReturn(w);
-        try beamEmitter.writeLabel(w, fmt_empty);
-        try beamEmitter.writeMove(w, newline, 0);
+        try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeTest(w, .is_list, not_list, &.{Op.xr(0)});
+        try self.emitShowJoin(w, elem_l.entry, Op.yr(0));
+        try beamEmitter.writeTestHeap(w, 6, 1);
+        try beamEmitter.writePutList(w, Op.int(']'), Op.nil, Dst.xr(1));
+        try beamEmitter.writePutList(w, Op.xr(0), Op.xr(1), Dst.xr(0));
+        try beamEmitter.writePutList(w, Op.int('['), Op.xr(0), Dst.xr(0));
+        try beamEmitter.writeDeallocate(w, 2);
         try beamEmitter.writeReturn(w);
 
-        // '__bp_print_sep'([]) -> "~n";
-        // '__bp_print_sep'(T) -> [$\s | '__bp_print_fmt'(T)].
-        const sep_empty = self.allocLabel();
-        try beamEmitter.writeBlankLine(w);
-        try beamEmitter.writeFunctionHeader(w, sep_name, 1, sep_l.entry);
-        try beamEmitter.writeLabel(w, sep_l.func_info);
-        try beamEmitter.writeLine(w, self.module_name, self.cur_line);
-        try beamEmitter.writeFuncInfo(w, self.module_name, sep_name, 1);
-        try beamEmitter.writeLabel(w, sep_l.entry);
-        try beamEmitter.writeTest(w, .is_nonempty_list, sep_empty, &.{Op.xr(0)});
-        try beamEmitter.writeAllocate(w, 0, 1);
-        try beamEmitter.writeCall(w, .normal, 1, .{ .local = fmt_l.entry }, 0);
+        // A tuple: `#(` … `)`, unless its first element is an atom other than
+        // `true`/`false`/`undefined` — then it is a variant or a `@Result`, and
+        // `~p` stands in until 13 gives a value its own type identity.
+        try beamEmitter.writeLabel(w, not_list);
+        try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeTest(w, .is_tuple, generic, &.{Op.xr(0)});
+        try beamEmitter.writeCall(w, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "tuple_size" } }, 0);
+        try beamEmitter.writeTest(w, .is_lt, plain_tuple, &.{ Op.int(0), Op.xr(0) });
+        try beamEmitter.writeMoveOp(w, Op.int(1), Dst.xr(0));
+        try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(1));
+        try beamEmitter.writeCall(w, .normal, 2, .{ .ext = .{ .module = "erlang", .function = "element" } }, 0);
+        try beamEmitter.writeTest(w, .is_atom, plain_tuple, &.{Op.xr(0)});
+        // `is_ne_exact` branches when the two ARE equal, so each of these three
+        // sends a bool or an absent `@Option` to the `#(…)` shape.
+        try beamEmitter.writeTest(w, .is_ne_exact, plain_tuple, &.{ Op.xr(0), Op.atom("true") });
+        try beamEmitter.writeTest(w, .is_ne_exact, plain_tuple, &.{ Op.xr(0), Op.atom("false") });
+        try beamEmitter.writeTest(w, .is_ne_exact, plain_tuple, &.{ Op.xr(0), Op.atom("undefined") });
+        try beamEmitter.writeJump(w, generic);
+
+        try beamEmitter.writeLabel(w, plain_tuple);
+        try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(0));
+        try beamEmitter.writeCall(w, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "tuple_to_list" } }, 0);
+        try beamEmitter.writeMoveOp(w, Op.xr(0), Dst.yr(1));
+        try self.emitShowJoin(w, elem_l.entry, Op.yr(1));
+        try beamEmitter.writeTestHeap(w, 8, 1);
+        try beamEmitter.writePutList(w, Op.int(')'), Op.nil, Dst.xr(1));
+        try beamEmitter.writePutList(w, Op.xr(0), Op.xr(1), Dst.xr(0));
+        try beamEmitter.writePutList(w, Op.int('('), Op.xr(0), Dst.xr(0));
+        try beamEmitter.writePutList(w, Op.int('#'), Op.xr(0), Dst.xr(0));
+        try beamEmitter.writeDeallocate(w, 2);
+        try beamEmitter.writeReturn(w);
+
+        try beamEmitter.writeLabel(w, generic);
+        try beamEmitter.writeMoveOp(w, Op.yr(0), Dst.xr(0));
         try beamEmitter.writeTestHeap(w, 2, 1);
-        try beamEmitter.writePutList(w, Op.int(' '), Op.xr(0), Dst.xr(0));
-        try beamEmitter.writeDeallocate(w, 0);
-        try beamEmitter.writeReturn(w);
-        try beamEmitter.writeLabel(w, sep_empty);
-        try beamEmitter.writeMove(w, newline, 0);
-        try beamEmitter.writeReturn(w);
+        try beamEmitter.writePutList(w, Op.xr(0), Op.nil, Dst.xr(1));
+        try beamEmitter.writeMoveOp(w, Op.str("~p"), Dst.xr(0));
+        try beamEmitter.writeCall(w, .last, 2, .{ .ext = .{ .module = "io_lib", .function = "format" } }, 2);
 
         self.out = saved_out;
         try self.deferred_lambdas.append(self.alloc, try buf.toOwnedSlice());
         buf.deinit();
         self.print_helper_name = name;
         return name;
+    }
+
+    /// `lists:join(<<", ">>, lists:map(fun '-bp_show_elem-'/1, Items))` — the
+    /// separated element text both compound arms of `'__bp_show'/2` build. The
+    /// items come from `src` (a stack slot, since `lists:map` frees the
+    /// x-registers); the result lands in `{x, 0}`.
+    fn emitShowJoin(self: *Emitter, w: *std.Io.Writer, elem_entry: u32, src: Op) anyerror!void {
+        _ = self;
+        try beamEmitter.writeTestHeapAlloc(w, 0, 1, 0);
+        try beamEmitter.writeMakeFun3(w, elem_entry, &.{});
+        try beamEmitter.writeMoveOp(w, src, Dst.xr(1));
+        try beamEmitter.writeCall(w, .normal, 2, .{ .ext = .{ .module = "lists", .function = "map" } }, 0);
+        try beamEmitter.writeMoveOp(w, Op.xr(0), Dst.xr(1));
+        try beamEmitter.writeMoveOp(w, Op.str(", "), Dst.xr(0));
+        try beamEmitter.writeCall(w, .normal, 2, .{ .ext = .{ .module = "lists", .function = "join" } }, 0);
     }
 
     /// Lower a `__bp_<domain>_<op>(receiver, arg?)` Result/Option method op into
@@ -5257,6 +5878,75 @@ const Emitter = struct {
         try beamEmitter.writeMoveOp(self.out, c.subj, Dst.xr(0));
     }
 
+    /// The statements of a `case` arm written as a block. Decision 8 §5 spells
+    /// an arm `Pattern { body }`, and the parser reads that block as a lambda
+    /// (`ast.Expr.function`, `.lambda` syntax, at most one parameter), so
+    /// lowering it as an expression built a closure with `make_fun3` and threw
+    /// it away — every statement in the arm was dead and the arm's value was a
+    /// `#Fun<…>` (01's defect 2, measured 2026-09-18: a `case` printing from its
+    /// arms printed nothing, and `break r * r` reached `integer_to_binary/1` as
+    /// a fun). Null for an arrow-form arm, whose body is a plain expression.
+    fn armBlock(body: ast.Expr) ?struct { params: []const []const u8, stmts: []const ast.Stmt } {
+        const f = switch (body) {
+            .function => |fx| fx,
+            else => return null,
+        };
+        if (f.kind.syntax != .lambda) return null;
+        if (f.kind.params.len > 1) return null;
+        return .{ .params = f.kind.params, .stmts = f.kind.body };
+    }
+
+    /// The value of a `case` arm. A block arm runs in this frame (see
+    /// `armBlock`): its value is the last statement, unless a `break` carries
+    /// one, which wins. Returns true when the body already left the function
+    /// (an explicit `return`/`throw`), so the caller skips the dead
+    /// `{jump, end}`.
+    fn lowerArmBody(self: *Emitter, body: ast.Expr) anyerror!bool {
+        const blk = armBlock(body) orelse {
+            try self.lowerExprIntoX0(body);
+            return false;
+        };
+        const stmts = blk.stmts;
+        for (stmts, 0..) |stmt, i| {
+            if (stmt.expr == .jump and stmt.expr.jump.kind == .@"break") {
+                if (stmt.expr.jump.kind.@"break".value) |v| {
+                    try self.lowerExprIntoX0(v.*);
+                } else {
+                    try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
+                }
+                return false;
+            }
+            if (i + 1 == stmts.len and armValueTail(stmt.expr)) {
+                try self.lowerExprIntoX0(stmt.expr);
+                return false;
+            }
+            try self.emitStmt(stmt);
+        }
+        if (bodyExits(stmts)) return true;
+        try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
+        return false;
+    }
+
+    /// Bind a one-parameter block arm's name to the subject (01's defect 3).
+    /// `subj_y` is the slot `lowerCase` parked the subject in; the name is an
+    /// alias for it, so no move is emitted and every arm that asks shares it.
+    fn bindArmParam(self: *Emitter, arm: anytype, subj_y: ?u32) !void {
+        const blk = armBlock(arm.body) orelse return;
+        if (blk.params.len != 1) return;
+        const y = subj_y orelse return;
+        try self.reg_map.put(blk.params[0], .{ .y = y });
+    }
+
+    /// One arm's tail: bind its parameter, check its guard, lower its value and
+    /// jump to the end of the `case`.
+    fn emitArmTail(self: *Emitter, arm: anytype, subj_y: ?u32, end_label: u32) anyerror!void {
+        try self.bindArmParam(arm, subj_y);
+        const guard_ctx = try self.emitGuardPre(arm.guard);
+        const exited = try self.lowerArmBody(arm.body);
+        if (!exited) try beamEmitter.writeJump(self.out, end_label);
+        try self.emitGuardPost(guard_ctx);
+    }
+
     /// Lower a `case expr { pat -> body; ... }` into a chain of BEAM test
     /// instructions with fall-through labels. Optional `pat if guard -> body`
     /// guards are honoured via `emitGuardPre`/`emitGuardPost`.
@@ -5267,16 +5957,26 @@ const Emitter = struct {
         }
         try self.lowerExprIntoX0(subjects[0]);
 
+        // One stack slot holds the subject for every `{ n -> … }` arm that
+        // binds it; allocated only when some arm asks, so a `case` without a
+        // binder arm keeps the assembly it had.
+        var subj_y: ?u32 = null;
+        for (arms) |arm| {
+            const blk = armBlock(arm.body) orelse continue;
+            if (blk.params.len != 1) continue;
+            subj_y = self.next_y;
+            self.next_y += 1;
+            try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(subj_y.?));
+            break;
+        }
+
         const end_label = self.allocLabel();
         for (arms) |arm| {
             switch (arm.pattern) {
                 .numberLit => |n| {
                     const next = self.allocLabel();
                     try beamEmitter.writeTest(self.out, .is_eq, next, &.{ Op.xr(0), Op.num(n) });
-                    const guard_ctx = try self.emitGuardPre(arm.guard);
-                    try self.lowerExprIntoX0(arm.body);
-                    try beamEmitter.writeJump(self.out, end_label);
-                    try self.emitGuardPost(guard_ctx);
+                    try self.emitArmTail(arm, subj_y, end_label);
                     try beamEmitter.writeLabel(self.out, next);
                 },
                 .stringLit => |s| {
@@ -5294,49 +5994,37 @@ const Emitter = struct {
                     self.min_live = saved_live;
                     try beamEmitter.writeTest(self.out, .is_eq, next, &.{ Op.xr(subj), Op.xr(0) });
                     try beamEmitter.writeMoveOp(self.out, Op.xr(subj), Dst.xr(0));
-                    const guard_ctx = try self.emitGuardPre(arm.guard);
-                    try self.lowerExprIntoX0(arm.body);
-                    try beamEmitter.writeJump(self.out, end_label);
-                    try self.emitGuardPost(guard_ctx);
+                    try self.emitArmTail(arm, subj_y, end_label);
                     try beamEmitter.writeLabel(self.out, next);
                     try beamEmitter.writeMoveOp(self.out, Op.xr(subj), Dst.xr(0));
                 },
-                .ident => |name| {
-                    if (self.enum_variants.contains(name)) {
+                .ident => |written| {
+                    const name = bareVariantName(written);
+                    // §5.1 P8 — a written path (`Maybe.None`, `.None`) is a
+                    // variant even when this module never declared the enum.
+                    if (isVariantPath(written) or self.enum_variants.contains(name)) {
                         // A nullary enum variant (`Lt ->`) is an atom to test
                         // against, not a name to bind. Without the test the
                         // first arm swallowed every subject
                         // (`HttpMethod_name('Post')` returned `<<"GET">>`).
                         var vbuf: [256]u8 = undefined;
-                        const vatom = try atomName(name, &vbuf);
+                        const vatom = try atomName(self.variantTag(written), &vbuf);
                         const next = self.allocLabel();
                         try beamEmitter.writeTest(self.out, .is_eq, next, &.{ Op.xr(0), Op.atom(vatom) });
-                        const guard_ctx = try self.emitGuardPre(arm.guard);
-                        try self.lowerExprIntoX0(arm.body);
-                        try beamEmitter.writeJump(self.out, end_label);
-                        try self.emitGuardPost(guard_ctx);
+                        try self.emitArmTail(arm, subj_y, end_label);
                         try beamEmitter.writeLabel(self.out, next);
                     } else if (std.mem.eql(u8, name, "_")) {
-                        const guard_ctx = try self.emitGuardPre(arm.guard);
-                        try self.lowerExprIntoX0(arm.body);
-                        try beamEmitter.writeJump(self.out, end_label);
-                        try self.emitGuardPost(guard_ctx);
+                        try self.emitArmTail(arm, subj_y, end_label);
                     } else {
                         const y_idx = self.next_y;
                         self.next_y += 1;
                         try self.reg_map.put(name, .{ .y = y_idx });
                         try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y_idx));
-                        const guard_ctx = try self.emitGuardPre(arm.guard);
-                        try self.lowerExprIntoX0(arm.body);
-                        try beamEmitter.writeJump(self.out, end_label);
-                        try self.emitGuardPost(guard_ctx);
+                        try self.emitArmTail(arm, subj_y, end_label);
                     }
                 },
                 .wildcard => {
-                    const guard_ctx = try self.emitGuardPre(arm.guard);
-                    try self.lowerExprIntoX0(arm.body);
-                    try beamEmitter.writeJump(self.out, end_label);
-                    try self.emitGuardPost(guard_ctx);
+                    try self.emitArmTail(arm, subj_y, end_label);
                 },
                 .@"or" => |pats| {
                     const arm_label = self.allocLabel();
@@ -5351,10 +6039,7 @@ const Emitter = struct {
                     const next = self.allocLabel();
                     try beamEmitter.writeJump(self.out, next);
                     try beamEmitter.writeLabel(self.out, arm_label);
-                    const guard_ctx = try self.emitGuardPre(arm.guard);
-                    try self.lowerExprIntoX0(arm.body);
-                    try beamEmitter.writeJump(self.out, end_label);
-                    try self.emitGuardPost(guard_ctx);
+                    try self.emitArmTail(arm, subj_y, end_label);
                     try beamEmitter.writeLabel(self.out, next);
                 },
                 .variant => |v| switch (v.payload) {
@@ -5370,10 +6055,7 @@ const Emitter = struct {
                             try self.reg_map.put(bname, .{ .y = y_idx });
                             try beamEmitter.writeMoveOp(self.out, Op.xr(1), Dst.yr(y_idx));
                         }
-                        const guard_ctx = try self.emitGuardPre(arm.guard);
-                        try self.lowerExprIntoX0(arm.body);
-                        try beamEmitter.writeJump(self.out, end_label);
-                        try self.emitGuardPost(guard_ctx);
+                        try self.emitArmTail(arm, subj_y, end_label);
                         try beamEmitter.writeLabel(self.out, next);
                     },
                     .binding => |binding| {
@@ -5387,18 +6069,12 @@ const Emitter = struct {
                         self.next_y += 1;
                         try self.reg_map.put(binding, .{ .y = y_idx });
                         try beamEmitter.writeMoveOp(self.out, Op.xr(0), Dst.yr(y_idx));
-                        const guard_ctx = try self.emitGuardPre(arm.guard);
-                        try self.lowerExprIntoX0(arm.body);
-                        try beamEmitter.writeJump(self.out, end_label);
-                        try self.emitGuardPost(guard_ctx);
+                        try self.emitArmTail(arm, subj_y, end_label);
                         try beamEmitter.writeLabel(self.out, next);
                     },
                     .literals => {
                         // Literal-argument variants are not lowered specially yet.
-                        const guard_ctx = try self.emitGuardPre(arm.guard);
-                        try self.lowerExprIntoX0(arm.body);
-                        try beamEmitter.writeJump(self.out, end_label);
-                        try self.emitGuardPost(guard_ctx);
+                        try self.emitArmTail(arm, subj_y, end_label);
                     },
                 },
                 .list => |lst| {
@@ -5419,10 +6095,7 @@ const Emitter = struct {
                             }
                         }
                     }
-                    const guard_ctx = try self.emitGuardPre(arm.guard);
-                    try self.lowerExprIntoX0(arm.body);
-                    try beamEmitter.writeJump(self.out, end_label);
-                    try self.emitGuardPost(guard_ctx);
+                    try self.emitArmTail(arm, subj_y, end_label);
                     try beamEmitter.writeLabel(self.out, next);
                 },
                 .multi => |pats| {
@@ -5451,10 +6124,7 @@ const Emitter = struct {
                             }
                         }
                     }
-                    const guard_ctx = try self.emitGuardPre(arm.guard);
-                    try self.lowerExprIntoX0(arm.body);
-                    try beamEmitter.writeJump(self.out, end_label);
-                    try self.emitGuardPost(guard_ctx);
+                    try self.emitArmTail(arm, subj_y, end_label);
                     try beamEmitter.writeLabel(self.out, next);
                 },
             }
