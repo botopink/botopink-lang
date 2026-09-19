@@ -90,9 +90,11 @@ Targets come from `type Target { Node, Typescript, Erlang, Beam, Wasm }` in
   a call-site rename when it differs from the method name, never a prototype
   patch). On a `declare fn` it is a host expression
   (`#[@External.Node("process.cwd()")]`) that commonJS renders verbatim at each
-  call site; the erlang backend still lowers the marker-less form to
-  `:expr()()`, which does not compile (owned by F5 erlang), so `env`, `os` and
-  `process` do not build on erlang yet.
+  call site, and the erlang backend renders the same way — the `:expr()()`
+  lowering that used to keep `env`, `os` and `process` off erlang is gone
+  (`botopink test --target erlang` in `libs/std`: `process.pid is positive`,
+  `os.hostname is non-empty` and `env.write + env.read round-trips a value` all
+  pass).
 - **Relative module file** — `#[@External.Node("./file.mjs", "symbol")]` is
   **not a supported form in `libs/std`**. On a behavior method both inference
   and the commonJS emitter skip it and the native JS method of the same name
@@ -158,19 +160,23 @@ stdout is captured under a `----- RUN LOG -----` fence; failures print
 [`../../modules/compiler-cli/AGENTS.md`](../../modules/compiler-cli/AGENTS.md)
 §`botopink test` output format.
 
-Known red (the `std` cells in `scripts/known-red-libs.txt`):
-
-| Target | What fails | Owner |
-|---|---|---|
-| commonJS | `test/primitives_gaps_test.bp`: `array chunked partitions`, `array sliding window of 2` — (`chunked`/`sliding` are written with range loops since 06 N26; `while` left the language — re-check this row) | F8 js-bridges |
-| erlang | `env`, `os`, `process` do not compile — a marker-less 1-arg `@External.Erlang` on a `declare fn` lowers to `:expr()()` | F5 erlang |
-| erlang | `test/primitives_gaps_test.bp` does not compile — a method call on an `Array.range(…)` result is not lowered (`join/2`, `map/2`, `filter/2` undefined, `.length` as `maps:get`) | F5 erlang |
+**No known red cell.** `scripts/known-red-libs.txt` carries no line, and
+`zig build test-libs` reads `std · commonJS: pass` and `std · erlang: pass`
+(11 passed, 0 failed, 0 known red across the workspace). The three rows this
+section used to carry were re-measured with
+`botopink test [--target erlang]` in `libs/std` and all three are green:
+`test/primitives_gaps_test.bp` is **13 passed, 0 failed on both targets**
+(`array chunked partitions` and `array sliding window of 2` included, and every
+method call on an `Array.range(…)` result), and `env`, `os` and `process`
+compile and pass on erlang.
 
 Also known, not a red cell: `n.abs()` on an `i32` receiver resolves on
 erlang only because `abs/1` is an auto-imported BIF — the erlang backend maps
 an int receiver to `Integer` and walks up its `extends` chain, never down to
 `Signed` — and beam leaves it `%% unresolved` (numeric receivers map to no
-behavior). Owned by F5 erlang and F4 beam.
+behavior). The erlang half is what `botopink test` exercises; the beam half is
+not re-measured here, because `botopink test` does not run beam. Owned by
+1.0.5-beta `02-erlang` and `03-beam`.
 
 ## Sidecars
 
