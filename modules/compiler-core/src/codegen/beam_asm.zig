@@ -660,19 +660,31 @@ fn countLocalsInExpr(em: *Emitter, e: ast.Expr, count: *u32) void {
         // with the iterable (`lowerEnumerateIntoX0`).
         // A condition loop (decision 8 §10) runs in this frame: its condition
         // and body take this frame's slots.
-        .loop => |lp| if (lp.condition) {
+        //
+        // The **iterable** is lowered in this frame whichever loop it is
+        // (`lowerLoop` materialises it before it builds the body closure, and
+        // `lowerConditionLoop` re-evaluates the condition here), so its own
+        // slots are this frame's: `loop ([1, 2, 3]) { x -> … }` parks the cons
+        // accumulator of the array literal in a y-slot, and counting nothing
+        // left the frame at `{allocate, 0, 0}` — the emitted `.S` did not
+        // assemble (`{invalid_store, {y, 0}}`, "Internal consistency check
+        // failed"). Over-counting only widens the frame; under-counting is a
+        // loader error.
+        .loop => |lp| {
             countLocalsInExpr(em, lp.iter.*, count);
-            countLocalsRec(em, lp.body, count);
-        } else if (lp.params.len == 2) if (lp.indexRange) |ir| {
-            if (ir.* == .collection and ir.collection.kind == .range) {
-                const start = ir.collection.kind.range.start.*;
-                const simple = switch (start) {
-                    .literal => true,
-                    .identifier => |id| id.kind == .ident and !em.top_vals.contains(id.kind.ident),
-                    else => false,
-                };
-                if (!simple) countStaging(em, &.{ start, lp.iter.* }, count);
-            }
+            if (lp.condition) {
+                countLocalsRec(em, lp.body, count);
+            } else if (lp.params.len == 2) if (lp.indexRange) |ir| {
+                if (ir.* == .collection and ir.collection.kind == .range) {
+                    const start = ir.collection.kind.range.start.*;
+                    const simple = switch (start) {
+                        .literal => true,
+                        .identifier => |id| id.kind == .ident and !em.top_vals.contains(id.kind.ident),
+                        else => false,
+                    };
+                    if (!simple) countStaging(em, &.{ start, lp.iter.* }, count);
+                }
+            };
         },
         else => {},
     }

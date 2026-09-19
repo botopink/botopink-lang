@@ -998,10 +998,16 @@ codegen/
   `is_gt`/`is_le` — operands swap, `comparisonTestOp`); `{allocate, N, A}` is
   followed by `{init_yregs, …}` (`emitFrame`); `countLocalsRec` counts every
   stack slot the lowering takes — `val`s, case-arm/destructure/binding-`if`
-  bindings, array-literal and concatenation accumulators, the `try` tag, and
+  bindings, array-literal and concatenation accumulators, the `try` tag, a
+  **loop's iterable** (lowered in the enclosing frame whichever loop it is), and
   `stagingSlots` — so the frame is sized correctly. Every decision the count
   mirrors (string-ness via `count_strings`, `exprMayCall`) is taken from the
-  same AST and tables in both passes.
+  same AST and tables in both passes. Under-counting is not a wrong value, it is
+  a module the assembler refuses (`{invalid_store, {y, N}}`, "Internal
+  consistency check failed"), and `beam_export_audit.sh` cannot find it unless a
+  snapshot carries the shape: `loop ([1, 2, 3]) { x -> … }`, a loop over a
+  literal rather than over a name, had no cell and counted nothing until
+  `tests/control_flow.zig`'s "a loop over an array literal" fixture.
 - **Registers**: parameters are spilled to `y0..y{arity-1}` by `bindParams` +
   `emitParamSpill` right after `allocate`, so the whole x-file is scratch and a
   `self.field` read cannot overwrite `self`.

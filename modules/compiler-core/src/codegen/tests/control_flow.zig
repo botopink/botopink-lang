@@ -498,6 +498,37 @@ test "js: case ---- nested case in block arm" {
     );
 }
 
+// A loop whose ITERABLE is written at the loop, not passed in as a name — the
+// shape no cell in this corpus had, and the one beam emitted unassemblable `.S`
+// for. `lowerLoop` materialises the iterable in the ENCLOSING frame (before it
+// builds the body closure), so the array literal's cons accumulator takes one of
+// that frame's y-slots; `countLocalsRec`'s `.loop` arm counted nothing for a
+// collection loop, so the frame stayed at `{allocate, 0, 0}` and `erlc
+// +from_asm` refused the module:
+//
+//     main:1: function main/0+7:
+//       Internal consistency check failed - please report this bug.
+//       Instruction: {move,{x,0},{y,0}}
+//       Error:       {invalid_store,{y,0}}
+//
+// `beam_export_audit.sh` stayed green through it, because assembling every
+// snapshot cannot find a shape no snapshot has. Both prints run on all four
+// backends now: `1`, `2`, `3`, then `[20]`.
+//
+// KNOWN (decision 8 §10, all four backends): `break <value>` out of a
+// COLLECTION loop answers a one-element ARRAY, `[20]`, where §10 reads as the
+// value itself, `20`. commonJS, erlang, wasm and beam agree on `[20]`, so this
+// is the decision's row (front 03's step 3 D7 names it), not one backend's.
+test "js: loop ---- a loop over an array literal, and a value break out of one" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    loop ([1, 2, 3]) { x -> @print(x); };
+        \\    val first = loop ([1, 2, 3]) { x -> if (x == 2) { break x * 10; }; };
+        \\    @print(first);
+        \\}
+    );
+}
+
 // The loop collects its `break` values into an array (erlang prints
 // `[15,20]`). `find` was declared `-> i32`; since 06 C1 a `return` unifies with
 // the declared type, so the fixture declares what the loop produces (N12).
