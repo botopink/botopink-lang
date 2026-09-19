@@ -48,6 +48,52 @@ model exists so none of them can be written again:
   for a nested body), assembles the module's item order, and calls
   `renderModule`.
 
+## Where this backend refuses to answer
+
+wasm is the only backend that can answer **wrongly and silently** — a number,
+exit 0, no diagnostic — because every value here is an `i32` and a pointer is a
+number like any other. The rule this directory holds to: *where wasm cannot do a
+shape, it traps*; a wrong value with exit 0 is a bug even when a fixture records
+it. `Instr.unreachable` plus a `;;` comment naming the shape is the mechanism,
+and 24 fixtures already use it.
+
+**A record or a variant reaching `@print` traps** (`wat.zig`'s `namedShapeOf`,
+consulted first in `lowerPrintArg`). Decision 8 §7's F2 and F3 want
+`Point(x: 1, y: 2)` and `Shape.Square(side: 4)`; both need a value that knows
+which named type it is at run time, which is `13-module-identity`'s subject, not
+this backend's. Until then the numeric printer wrote the value's heap address —
+`tests/language/run/print_formatter.bp` printed `328`, `336`, `344` — so the
+printer now traps instead. commonJS needs no such interim: a class instance
+carries its constructor's name and already answers §7's text. When 13 lands, the
+trap is one branch to delete.
+
+The walk covers the value, an array or tuple **literal** holding one, and a
+record recovered through a field or a fn return type. **Not** covered, and still
+answering an address: a *local* bound to such a container (`val ps =
+[Point(x: 1, y: 2)]; @print(ps)`) — the element shapes tracked per local are
+`i32`/`f32`/`str`, and a record is an `i32` slot like every other pointer.
+
+**Three more silent wrong answers, measured over `snapshots/codegen/wasm/` on
+2026-09-18** and left for their own row: each is a **string** reaching `@print`
+through a shape `isStringExpr` does not recognise, so the address is printed
+instead of the text.
+
+| Fixture | Written | Printed | Means |
+|---|---|---|---|
+| `record_a_method_named_print_is_called_on_the_record` | `@print(d.print())` | `276` | `doc:hi` |
+| `tuple_chained_positional_access_and_a_method_on_an_element` | `@print(t.1)` | `256` | `x` |
+| `tuple_labels_resolve_to_positions_on_every_backend` | `@print(row.name)` | `256` | `SP` |
+
+The class was found by scanning every `RUN LOG` in the directory for a bare
+integer ≥ 256 (the first data offset) or a bracketed list of them. Six files
+matched: the three above, and three whose numbers are the value the program
+actually computes (`loop_filter_with_conditional_break` `[250,400]`,
+`template_end_to_end_generic_expr_via_code_builtin` `8081`,
+`template_end_to_end_yaml_model_computes_a_labeled_tuple` `8005`). **No fixture
+printed a record or a variant**, which is why the trap above re-recorded no
+existing file — the addresses §7 owes were only ever in the language cells. Any
+new fixture whose log holds such a number is worth re-reading against this table.
+
 ## Rules
 
 - **Layout is part of the model where the output depends on it** — as in

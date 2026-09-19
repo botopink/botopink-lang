@@ -1062,6 +1062,61 @@ const Emitter = struct {
         };
     }
 
+    /// Decision 8 §7's two rows this front cannot close: a value whose printed
+    /// text is its **type's name** — `Point(x: 1, y: 2)` (F2) and
+    /// `Shape.Square(side: 4)` (F3). Both need a value that knows which named
+    /// type it is at run time, which is `13-module-identity`'s subject; until
+    /// then `@print` has no text to write for one.
+    const NamedShape = enum { record, variant };
+
+    /// Which of the two `e` is, or null. An array or a tuple **literal** whose
+    /// elements are ones counts: `@print([Point(x: 1, y: 2)])` printed
+    /// `[256,264]`, addresses inside a container, the same wrong answer one
+    /// bracket deeper. Not covered, and recorded in `wat/AGENTS.md`: a local
+    /// bound to such a container (the element shapes tracked for a local are
+    /// `i32`/`f32`/`str`, and a record is an `i32` slot like any pointer), and a
+    /// record read out of one.
+    fn namedShapeOf(self: *Emitter, e: ast.Expr) ?NamedShape {
+        if (self.recordTypeOfExpr(e)) |_| return .record;
+        switch (e) {
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| return self.namedShapeOf(inner.*),
+                .arrayLit => |al| {
+                    for (al.elems) |el| if (self.namedShapeOf(el)) |ns| return ns;
+                    return null;
+                },
+                .tupleLit => |tl| {
+                    for (tl.elems) |el| if (self.namedShapeOf(el)) |ns| return ns;
+                    return null;
+                },
+                else => return null,
+            },
+            // `Shape.Square(side: 4)`, and the bare `Square(side: 4)` whose
+            // name uniquely finds a payload-bearing variant.
+            .call => |c| switch (c.kind) {
+                .call => |cc| return if (self.callKind(cc) == .enum_ctor) .variant else null,
+                else => return null,
+            },
+            // `Shape.Nothing` — a unit variant, read as a qualified member.
+            .identifier => |id| switch (id.kind) {
+                .identAccess => |ia| {
+                    const ename = switch (ia.receiver.*) {
+                        .identifier => |rid| switch (rid.kind) {
+                            .ident => |n| n,
+                            else => return null,
+                        },
+                        else => return null,
+                    };
+                    const variants = self.enums.get(ename) orelse return null;
+                    for (variants) |v| if (std.mem.eql(u8, v.name, ia.member)) return .variant;
+                    return null;
+                },
+                else => return null,
+            },
+            else => return null,
+        }
+    }
+
     /// Register a behavior literal's fields under a synthetic name
     /// `__anon_L{line}_C{col}` so `recordTypeOfExpr` + `fieldOffsetIn` can
     /// resolve field reads against it. Idempotent: subsequent encounters of
@@ -3020,6 +3075,20 @@ const Emitter = struct {
     /// through `$__print_i32`, so a string printed as its *address* and a bool
     /// as `0`/`1`.
     fn lowerPrintArg(self: *Emitter, arg: ast.Expr, last: bool) anyerror!void {
+        // §7 F2/F3 are not this front's — a value has to know which named type
+        // it is at run time, which is `13-module-identity`. Until then a record
+        // or a variant reaching `@print` has **no text**, and the numeric
+        // printer answered its heap address: `328`, `336`, `344` with exit 0 and
+        // no diagnostic. That is the one thing this backend must not do, and it
+        // already has the mechanism for a shape it cannot write — the trap 24
+        // fixtures record. So it traps, and the wrong number is gone.
+        if (self.namedShapeOf(arg)) |ns| {
+            try self.emitCf(.@"unreachable", "§7 F{d}: no printed form for a {s} yet (13-module-identity)", .{
+                @as(u8, if (ns == .record) 2 else 3),
+                @tagName(ns),
+            });
+            return;
+        }
         if (self.optInfoOf(arg)) |oi| {
             try self.lowerValue(arg);
             const b = self.builder();

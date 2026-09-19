@@ -800,3 +800,44 @@ test "wat: string ---- toUpperCase and toLowerCase answer, under both spellings"
         \\}
     );
 }
+
+// ── step 1, the interim: a record or a variant reaching `@print` traps ───────
+//
+// §7's F2 (`Point(x: 1, y: 2)`) and F3 (`Shape.Square(side: 4)`) need a value
+// that knows which named type it is at run time — `13-module-identity`, not this
+// front. Until they land there is no text to write, and the numeric printer
+// answered the value's **heap address** with exit 0 and no diagnostic:
+// `run/print_formatter.bp` printed `328`, `336`, `344` where §7 wants three
+// names. That is the one thing this backend must not do, so it now traps, the
+// way the 24 fixtures that record a shape wasm cannot lower already do.
+//
+// The array is here because the same wrong answer hid one bracket deeper:
+// `@print([Point(x: 1, y: 2)])` wrote `[256]`. A tuple holding one is covered by
+// the same walk; what is not, and is recorded in `wat/AGENTS.md`, is a *local*
+// bound to such a container.
+//
+// The three prints before the trap are deliberate: they show the trap is the
+// record's, not the program's, and the RUN LOG keeps their text.
+//
+// **commonJS already answers §7's text** — `Point(x: 1, y: 2)`,
+// `Shape.Square(side: 4)`, `Shape.Nothing`, `[Point(x: 1, y: 2)]` — which is
+// worth recording here: a class instance carries its constructor's name, so that
+// backend needed no identity work. KNOWN-WRONG (erlang, beam): a record is a
+// bare map (`#{x => 1,y => 2}`) and a variant a tagged tuple or an atom
+// (`{'Square',4}`, `'Nothing'`) — `13 step 18`. Neither answers an address, so
+// neither has this front's interim to make; wasm is the only one that did.
+test "wat: print ---- a record and a variant have no printed form yet, so they trap" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\type Point(x: i32, y: i32)
+        \\type Shape { Square(side: i32), Nothing }
+        \\fn main() {
+        \\    @print("hi");
+        \\    @print([1, 2]);
+        \\    @print(#(1, "a"));
+        \\    @print(Point(x: 1, y: 2));
+        \\    @print(Shape.Square(side: 4));
+        \\    @print(Shape.Nothing);
+        \\    @print([Point(x: 1, y: 2)]);
+        \\}
+    );
+}
