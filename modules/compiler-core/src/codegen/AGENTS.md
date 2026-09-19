@@ -420,7 +420,21 @@ codegen/
   namespace the program writes is still the basename, the atom it lowers to is
   the module's (`stdModuleAtom`). It leaves
   `record_fields` alone — a consumer that constructs the record imports it by
-  name, which is the branch above. **A host-backed `declare fn` another
+  name, which is the branch above. **A typed method call asks
+  `methodOwnerModule`, not `imported_types`.** That map is written for an
+  imported **record** and by `collectNamespaceModuleTypes`; the `import { … }`
+  **enum** arm writes only `enum_variants`/`enum_names`, because a tagged tuple is
+  module-independent while the enum's methods are not. So
+  `Shape.Square(side: 4).area()` on an imported enum came out as a bare local
+  `area({'Square', 4})` while `geometry.erl` exported `area/1` —
+  `function area/1 undefined`, the enum half of the two record landings above.
+  `methodOwnerModule` is the erlang twin of `beam_asm.zig`'s (`448b935`) and reads
+  the same two sources: `imported_types` first, then the cross index for kind
+  `record` **or `enum`** with the method in the export's `methods`. A module never
+  calls itself remotely, and the guard compares the module PATH (`std/dict`) as
+  well as the atom (`dict`) — `module_name` is the path, the atom is its basename,
+  so comparing only one made `dict.bp`'s own `merge` emit `dict:insert/3`.
+  **A host-backed `declare fn` another
   module imports is answered by an owner-side wrapper.** It emits no function of
   its own — the annotation renders at each call site — so an imported one used
   to stay a bare call and fail as `function <name>/<arity> undefined`. The owner
@@ -832,7 +846,10 @@ codegen/
   `Response.ok(…)` calls into the owner module atom (`http:ok(…)`); the owner
   exports a `pub` type's associated fns when another module imports it, and a
   `pub implement`/`extend` another module activates (`import {PatoNada*} …`) is
-  exported too and reached remotely (`pond:swim(Donald)`).
+  exported too and reached remotely (`pond:swim(Donald)`). An imported **enum**
+  joins `enum_names` only, so its method call resolves through
+  `methodOwnerModule`'s link-index arm — see
+  [Cross-module calls are remote calls](#erlang).
 - **Interface associated `default fn`s** (`Array.range`, `Pair.of`):
   `interfaceForms` emits each no-`self` body as a local function
   (`collectInterfaces`); `Interface.method(...)` calls it (reserved words quoted,
@@ -970,6 +987,19 @@ codegen/
   `{unresolved_method, F, N}`). (Not a compile error: several fixtures whose
   source names undefined identifiers still compile on every backend — the
   checker's gap.)
+- **A builtin this backend does not lower aborts the same way**
+  (`lowerBuiltinCall`'s tail, `{unsupported_builtin, Name, Argc}`). It used to
+  emit **only** a `%%` comment and fall through, so the call left whatever was
+  already in `{x, 0}` — the receiver, or the previous statement's `ok` — and the
+  program ran to completion with a wrong answer and exit 0. That is how
+  `12-language-tests` found the index expression before `lowerIndexExpr` existed,
+  and `x is T` still shows it: `@print(v is i32)` on a `v: unknown` printed the
+  receiver and then `ok` three times for four tests, where erlang refuses to
+  compile (`function is/1 undefined`) and commonJS answers the four booleans
+  (only `commonJS.zig` has `buildIsCall`). Decision 8 §4's run-time test is
+  unlowered on erlang, beam and wasm alike; the abort makes that visible instead
+  of silently wrong. No beam snapshot reached this path, so nothing was
+  re-recorded.
 - **Closures** (`emitMakeFun`, `closureEnv`): a lambda or loop body's free
   variables — every name it reads that the enclosing frame binds — travel in
   `make_fun3`'s environment (`test_heap` with `{words, NumFree}`) and arrive
@@ -1014,8 +1044,15 @@ codegen/
   variables it reassigns are this frame's registers, so nothing is threaded;
   `break` jumps to `Exit` and `continue` to `Top` (`cond_loop`, matched by the
   output buffer so a lambda's jumps never take it), and its body's slots are
-  counted into the frame (`countLocalsInExpr`). The value form is
-  `error.ConditionLoopValueUnsupported`.
+  counted into the frame (`countLocalsInExpr`). A `break` that carries a VALUE
+  makes the loop an expression (decision 8 §10, `condLoopBreaksWithValue`): the
+  condition then tests to a `Fail` label of its own, every `break` leaves its
+  value in `{x, 0}` (a value-less one leaves `undefined`) before it jumps to
+  `Exit`, and `Fail` moves `undefined` in and falls through to `Exit` — so
+  `{x, 0}` at `Exit` is the break's value or `undefined`, the two answers the
+  erlang lowering's `{GroupAtTheJump, Value}` / `{FinalGroup, undefined}` pair
+  carries. A body that **yields** is still
+  `error.ConditionLoopValueUnsupported` (`condLoopYieldsValue`).
 - **Calls**: module-qualified `List.map(…)` → `call_ext`/`call_ext_last`
   (trailing lambdas materialized as funs); `from "std"` qualified calls
   (`math.floor(x)`) → `call_ext` via `collectStdImports`; interface
@@ -1272,6 +1309,93 @@ first three are now enforced by the model, not by discipline:
   parse error, and `wat_ast.Builder.param` refuses to build one.
 - **Entrypoint** (`emitEntrypointWrapper`): calls `$main` and `drop`s its
   result when `main` returns a value (`main_returns_value`).
+- **The primitive methods wasm does not lower trap, they never answer.**
+  `primCallRes` is the table; a method missing from it emits
+  `unreachable ;; prim method not lowered on wasm: <kind>.<name>/<argc>`.
+  Audited against `libs/std/src/primitives.bp` on 2026-09-18 — not lowered, each
+  verified to trap under wasmtime: **string** `charAt`, `charCodeAt`, `chars`,
+  `lastIndexOf`, `lines`, `padEnd`, `padStart`, `replace`, `replaceAll`,
+  `words`; **array** `chunked`, `find`, `pop`, `range`, `sliding`, `unique`;
+  **float** `toString`; **Pair** `first`, `of`, `second`, `swap`.
+  `toUpperCase` / `toLowerCase` — the host spellings `primitives.bp` gives
+  `toUpper` / `toLower` through `#[@External.Node(…)]`, which source writes and
+  commonJS answers — used to be in that list and are now lowered to
+  `$__str_case` like their botopink names.
+- **A `?T` box holding an `f32`** (`fs.at(0)` on a float array) prints through
+  `$__print_opt_f32`, its own helper group. Read as a boxed `i32` it printed the
+  float's **bits** — `1069547520` for `1.5`, exit 0, no diagnostic.
+- **`break <value>` is the loop's value, not one element of an array**
+  (decision 8 §10, `loopIsSearch` + `search_target`). The fork is the body: a
+  `yield` anywhere means the loop **collects** and keeps the `$__yield{n}`
+  accumulator; without one, a condition or infinite `loop` used as a value is a
+  **search** — `break <v>` stores `v` in `$__found{n}` and `br $__break`s, and
+  the loop answers that local (`0` when it never broke, wasm's null carrier).
+  An **iteration** loop (`loop (xs) { x -> … }`) always collects, which is what
+  `fn find(arr: i32[]) -> i32[]` relies on. `isArrayExpr` knows the difference,
+  or a search's value printed through the array printer. Both forms used to
+  answer `[3]` / `[8]`. The commonJS twin is `LoopCtx.search`.
+- **`==` between tuples compares elements** (decision 8 §6 T6; T5 — labels take
+  no part): `tupleEqShape` + `emitTupleEq`. Both sides are pointers into the
+  bump heap, so `i32.eq` on them answered `false` for `#(1, "a") == #(1, "a")`.
+  The print shape is static (`(is)`), so the comparison is emitted element by
+  element — `i`/`b` as an `i32`, `f` as the `f32` the slot holds, `s` through
+  `$__str_eq` (the words are addresses), `(` by recursing through the pointer.
+  A shape holding an array (`[X`) is **not** compared this way and keeps the
+  pointer comparison: `[X` has no closing code and an array's length is only
+  known at run time.
+- **§7 F5 — an `f64` always carries its decimal part** (`$__print_f64_raw`):
+  `@print(5.0)` writes `5.0`, `9.0` and `[115.0, 287.5, 460.0]`, where the
+  printer used to drop a whole number's fraction entirely (`5`, `9`,
+  `[115,287.5,460]`). The fraction digits are already written; only the "was any
+  of them non-zero" test changes. **`$__f64_to_str` is not this path**: it is
+  what a float concatenated into a string (`"x" + 5.0`, `5.0.toString()`) takes,
+  and commonJS answers `x5` there, so it still drops the fraction.
+- **Decision 30's index expression** (`lowerIndex`): the parser lands `xs[0]`
+  as the reserved builtin call `ast.index_builtin_name` (`"[]"`) over
+  `(receiver, index)`, and `xs[0..2]` is the same node with a `range` where the
+  index goes. One node, four readings, told apart by the receiver and by whether
+  the index is a range: `xs[i]` → `$__arr_at` (the element, `0` out of range),
+  `xs[a..b]` → `$__arr_slice`, `s[i]` → `$__str_slice(s, i, i+1)` (the one-byte
+  string), `s[a..b]` → `$__str_slice`. A float array's slots are `f32`, so the
+  four bytes `$__arr_at` answers are reinterpreted rather than printed as an
+  integer. `indexArgs` is what `isStringExpr` / `isArrayExpr` / `elemKindOf` /
+  `wasmTypeOf` ask, so `val sub = xs[1..]` is an array local and `s[1]` a string
+  one. **`xs[i]` answers `T`, not `?T`** — which of the two decision 30 means is
+  `01-checker`'s to settle (`ast.zig:1734`); a receiver that is neither an array
+  nor a string (a `Dict`) traps rather than answering a number nothing put there.
+  Before the lowering the form left **nothing on the stack** and `wasmtime`
+  refused the whole module. Two shapes the first lowering still got wrong, both
+  with exit 0: **`rows[1][0]`**, where the element is itself an array —
+  `indexElemShape` strips one `[` off the receiver's print shape (`[[i` → `[i`,
+  `[(is)` → `(is)`), which is what tells `rows[1]` from `xs[1]`; without it the
+  inner index reached `unreachable` — and **`xs[0..2].length`**, where inference
+  records the `.prim` instance lowering only for a receiver it typed, so the
+  index node reached the field-access stub and answered `i32.const 0`. When the
+  `.prim` note is absent, `lowerIdentAccess` asks this backend's own
+  `isArrayExpr` / `isStringExpr`; neither is ever true of a record, so a field
+  actually named `length` still resolves.
+- **A pattern's variant name arrives with the path it was written with**
+  (decision 8 §5.1 P8): `Shape.Circle`, `.Circle`. The constructor stores the
+  bare `Circle`, so `findVariant` compares against `bareVariantName` — the last
+  `.`-separated segment — and looks the enum a path names up first.
+  `isVariantPath` is what tells a variant from a binding: a `.ident` carrying a
+  `.` is never bound, and a path no enum here declares is an arm that can never
+  match (`zero ;; unknown variant pattern`), not a catch-all. Before this, a
+  dotted arm never matched and fell into the next one.
+- **An arm body is inlined, never lifted** (`lowerArmBody`, §5.1 P1/P3). An arm
+  written `Pattern { … }` — and the pre-decision-8 `-> { … }` block arm —
+  arrives as an `ast.Expr.function` with `syntax == .lambda`: a leading
+  `name ->` binds the whole matched value and the last expression is the arm's
+  value. Lowering it as a *value* put the body in the function table and left
+  the arm answering a closure-cell address, so the body never ran
+  (`case_or_patterns_with_block_arm_body` recorded a `$__lambda0` and a 4-byte
+  cell where `"odd"` belonged). A lambda of more than one parameter is still a
+  function value and keeps the old path.
+- **A `case` guard is emitted** (`emitGuardChain`, §5.3): after the pattern's
+  names are bound, `(if <guard> (then <body>) (else <rest of the chain>))`. A
+  guard makes even `_` refutable. This backend used to drop guards entirely, so
+  a guarded arm matched unconditionally — `classify` answered `"positive"` for
+  every `n`.
 - **`case` patterns** (`emitPatternTest` + `bindPattern`): numbers, strings
   (`$__str_eq`), `or`, and variants. A variant of an all-unit enum is its tag;
   a variant of an enum with any payload is a `[tag, …fields]` pointer — its
@@ -1614,3 +1738,17 @@ No backend reads a tuple label. `row.label` reaches codegen already rewritten to
 `row._N` by the checker (`comptime/AGENTS.md`), and a labeled tuple type
 (`ast.TypeRef.labeledTuple`) is the positional tuple everywhere: `.d.ts` tuple
 (`typescript.zig`), commonJS/wasm print shapes via `TypeRef.tupleElems`.
+
+**Closed on beam** (03 step 3 D5, re-verified 2026-09-18 by assembling and
+running, not by reading the `.S`): every shape 06 N24 landed answers on beam what
+it answers on erlang — a label read through a return type, through a parameter
+type and through a written annotation (`SP`, `13`, `RJ`, `3`, `12`, `2`), a
+labelled element of **function** type applied as a method (`c.set(9)` → `18`), a
+bare digit index under an `Option.map` (`2`, `true`) and a chained positional
+access with a method on the element (`2`, `x`, `7`). The fixtures are
+`snapshots/codegen/beam/tuple_labels_resolve_to_positions_on_every_backend`,
+`…_a_labeled_element_of_function_type_is_called_like_a_method`,
+`…_a_bare_digit_index_and_an_option_map_over_a_found_pair` and
+`…_chained_positional_access_and_a_method_on_an_element`. What is **not** closed
+is a label behind a `?T` (`rs.at(0).b`): the rewrite never fires there, which is
+decision 45's row and the checker's, not a backend's.

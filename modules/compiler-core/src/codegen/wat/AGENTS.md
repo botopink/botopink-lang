@@ -48,6 +48,117 @@ model exists so none of them can be written again:
   for a nested body), assembles the module's item order, and calls
   `renderModule`.
 
+## Where this backend refuses to answer
+
+wasm is the only backend that can answer **wrongly and silently** — a number,
+exit 0, no diagnostic — because every value here is an `i32` and a pointer is a
+number like any other. The rule this directory holds to: *where wasm cannot do a
+shape, it traps*; a wrong value with exit 0 is a bug even when a fixture records
+it. `Instr.unreachable` plus a `;;` comment naming the shape is the mechanism,
+and 24 fixtures already use it.
+
+**A record or a variant reaching `@print` traps** (`wat.zig`'s `namedShapeOf`,
+consulted first in `lowerPrintArg`). Decision 8 §7's F2 and F3 want
+`Point(x: 1, y: 2)` and `Shape.Square(side: 4)`; both need a value that knows
+which named type it is at run time, which is `13-module-identity`'s subject, not
+this backend's. Until then the numeric printer wrote the value's heap address —
+`tests/language/run/print_formatter.bp` printed `328`, `336`, `344` — so the
+printer now traps instead. commonJS needs no such interim: a class instance
+carries its constructor's name and already answers §7's text. When 13 lands, the
+trap is one branch to delete.
+
+The walk covers the value, an array or tuple **literal** holding one, and a
+record recovered through a field or a fn return type. **Not** covered, and still
+answering an address: a *local* bound to such a container (`val ps =
+[Point(x: 1, y: 2)]; @print(ps)`) — the element shapes tracked per local are
+`i32`/`f32`/`str`, and a record is an `i32` slot like every other pointer.
+
+**A `?T`'s writer and its reader must agree about the box.** Two disagreements
+made `d.lookup("a").unwrapOr(0)` answer `0` for a key that is present — the
+defect the front's step 3 names, and *not* the `forEach` accumulator it suspected
+(that works):
+
+- **An assignment into a declared `?T` boxes, like the binding that declared the
+  slot.** `var h: ?i32 = null; h = 5;` stored the bare `5`, and the reader took it
+  for a box *address*: `@print(h)` answered `16777216`. `boxesInto` decides, from
+  the slot's `local_typerefs` entry, at the assignment as it already did at the
+  binding.
+- **A method's declared return type is registered under the symbol its call
+  emits** (`registerInterfaceSigs` → `fn_ret_typerefs`, `str_fns`, `bool_fns`,
+  `fn_arr_elem`), and the shape predicates resolve that symbol through
+  `resolvedCallSym` — `recordMethodSym` (inference's per-loc note, the path
+  `lowerRecordMethod` itself takes) before `calleeSymbol`. Without it a method's
+  return shape was invisible: `Dict.lookup`'s `?V` read as a box, `hasKey()`
+  printed `0`/`1` for a `bool`, `values()` and a `string`-returning method printed
+  a **pointer**.
+
+**The generic-parameter limit this leaves, deliberately.** Nothing here
+monomorphises, so `Array<K>` and `?V` carry `K`/`V` as declared: `keys()` on a
+`Dict<string, i32>` prints `[256,272]`, and `?V` with `V = string` prints an
+address. `elemKindOfTypeRef` reads a type parameter as `.i32`, which is right for
+the *slot* and wrong for the *text*. Fixing it needs the instantiated type at the
+call site, which this backend does not have.
+
+**Two silent wrong answers remain**, measured over `snapshots/codegen/wasm/` on
+2026-09-18 and left for their own row: a **string** reaching `@print` through a
+shape `isStringExpr` does not recognise, so the address is printed instead of the
+text. (A third, `record_a_method_named_print_is_called_on_the_record`
+— `@print(d.print())` → `276` — is fixed by the method-symbol registration
+above, and its fixture now records `doc:hi`.)
+
+| Fixture | Written | Printed | Means |
+|---|---|---|---|
+| `tuple_chained_positional_access_and_a_method_on_an_element` | `@print(t.1)` | `256` | `x` |
+| `tuple_labels_resolve_to_positions_on_every_backend` | `@print(row.name)` | `256` | `SP` |
+
+Both are a **labelled or positional tuple element whose type is a string**: the
+element's shape is known to `printShapeOf` (it builds `((ii)s)` for the tuple) but
+not to `isStringExpr`, which is what `@print` asks for a single value.
+
+The class was found by scanning every `RUN LOG` in the directory for a bare
+integer ≥ 256 (the first data offset) or a bracketed list of them. Six files
+matched: the three above, and three whose numbers are the value the program
+actually computes (`loop_filter_with_conditional_break` `[250,400]`,
+`template_end_to_end_generic_expr_via_code_builtin` `8081`,
+`template_end_to_end_yaml_model_computes_a_labeled_tuple` `8005`). **No fixture
+printed a record or a variant**, which is why the trap above re-recorded no
+existing file — the addresses §7 owes were only ever in the language cells. Any
+new fixture whose log holds such a number is worth re-reading against this table.
+
+## Function values, and the lowering that is not there
+
+**This backend has function values.** A lambda used as a value is lifted into
+`$__lambda{n}(env, a0, …)`, listed in the module's `(table funcref (elem …))`, and
+applied with `call_indirect`; the value itself is a pointer to an environment cell
+holding the table index and one 4-byte slot per capture. A top-level fn used as a
+value gets a `$__fnref_<name>` trampoline. Five shapes, all answering as commonJS
+does: a lambda in a local, a lambda passed as a `fn(…)` parameter, a top-level fn
+passed or bound, and — since front 05 step 7 — one read out of an **aggregate
+slot**, `t._1(2)` / `o.step(10)` / a labelled element the checker resolved to its
+position (`c.set` → `_1`). That last was the only gap, and the reason the trap it
+left read as "wasm has no function values".
+
+**A lambda handed straight to an array method is not lifted**: `lowerArrayHof`
+inlines its body into a counted walk, which is what lets `forEach` assign an outer
+local.
+
+**There is no block-as-value lowering to delete** — the row 1.0.4's note opened,
+measured on 2026-09-18:
+
+| Measurement | Count |
+|---|---|
+| `;; lambda` in `../wat.zig` and all of `wat/**` | **0** |
+| sites that make a function value | **3** — `lowerExpr`'s `.function` arm, `lowerValueCall`'s trailing lambdas, `lowerFnRef` |
+| of those, sites a **block** can reach | **0** |
+
+The one producer that ever lifted a block was the `case` arm: a `Pattern { … }`
+arm arrives as an `ast.Expr.function`, and lowering it as a *value* put the body in
+the table and left the arm answering a closure-cell address
+(`case_or_patterns_with_block_arm_body` recorded `$__lambda0` plus a 4-byte cell).
+`lowerArmBody` inlines it instead. `@block { … }` is inlined by `lowerBuiltin`,
+and a bare `{ 1 + 2 }` in value position does not parse at all ("this token cannot
+appear here"). So decision 2's enforcement leaves nothing dead here.
+
 ## Rules
 
 - **Layout is part of the model where the output depends on it** — as in

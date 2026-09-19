@@ -526,6 +526,38 @@ pub fn assertJsRunLog(allocator: Allocator, src: []const u8, expected: []const u
     return error.ModuleDidNotCompile;
 }
 
+/// The wasm twin of `assertJsRunLog`: compiles `src` as `main` for wasm, runs
+/// the module under wasmtime and asserts its RUN LOG equals `expected`.
+///
+/// It exists for the programs an all-backend snapshot cannot hold: decision 8
+/// §10's `break <value>` out of a condition loop does not compile on erlang at
+/// all (`ConditionLoopValueUnsupported`), so `assertJsSingle` aborts before it
+/// can record wasm's answer. `04-js` recorded the same programs with
+/// `assertJsRunLog` for the same reason.
+pub fn assertWasmRunLog(allocator: Allocator, src: []const u8, expected: []const u8) !void {
+    const io = std.testing.io;
+    var outputs = try codegen.generate(
+        allocator,
+        &.{.{ .path = "", .source = src }},
+        io,
+        configs[3], // wasm / wasmtime
+    );
+    defer {
+        for (outputs.items) |*o| o.result.deinit(allocator);
+        outputs.deinit(allocator);
+    }
+    for (outputs.items) |o| {
+        if (!std.mem.eql(u8, o.name, "") and !std.mem.eql(u8, o.name, "main")) continue;
+        const got = o.result.run_output orelse "";
+        if (!std.mem.eql(u8, got, expected)) {
+            std.debug.print("\n=== generated WAT ===\n{s}\n=== RUN LOG ===\n{s}\n=== expected ===\n{s}\n", .{ o.result.js, got, expected });
+            return error.RunLogMismatch;
+        }
+        return;
+    }
+    return error.ModuleDidNotCompile;
+}
+
 /// The erlang twin of `assertJsRunLog` (front `02-erlang`): compiles `src` for
 /// the erlang target, runs the emitted module and asserts its RUN LOG equals
 /// `expected`, then that every needle of `needles` is in the emitted erlang.

@@ -116,11 +116,16 @@ test "js: std package ---- order enum module with type export" {
 // It used to read `insert` out of the receiver map and `call_fun` the
 // `undefined` it found (`{badfun, #{…}}`), so the module never ran and its RUN
 // LOG was empty.
-// KNOWN-WRONG (wasm): wasm stays single-module, so `wat.zig` inlines the std
-// module's functions into the entry (`$Dict_insert`, `$Dict_lookup`) and the
-// cross-module index never applies. `$Dict_lookup` answers absent — the first
-// print is `0` instead of `1`, a wasm-side defect in the `forEach` accumulator
-// of `Dict.lookup`, not a module-resolution one. The second print is `2`.
+// wasm stays single-module, so `wat.zig` inlines the std module's functions into
+// the entry (`$Dict_insert`, `$Dict_lookup`) and the cross-module index never
+// applies — which is why this test says nothing about wasm's resolution. It
+// **answered `0` instead of `1`** until front 05 step 3: not the `forEach`
+// accumulator, which works, but the *reader* of the `?V` the accumulator
+// returns. `Dict.lookup` is declared `-> ?V`; a type parameter is not a known
+// scalar, so the payload is the value itself, while `unwrapOr` assumed a box and
+// loaded through the payload as an address. A method's declared return type was
+// never registered under the symbol its call emits, so the reader had nothing to
+// ask. Both prints are now the value the program means.
 test "js: std package ---- methods of a type answered by an imported module resolve in its owner" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\import {dict} from "std";

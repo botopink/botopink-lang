@@ -307,3 +307,69 @@ test "format: comments ---- a method keeps its trailing comment on its own line"
         \\}
     );
 }
+
+// ── the last two blocks: a then-branch and a lambda body (G5's other half) ────
+// `parser/exprs.zig` carried two inlined block loops, written before `parseBlock`
+// grew `trackEmptyLines`/`handleComments`: they recorded no `emptyLinesBefore` and
+// a `//` comment inside them was a **parse error**. They were the `if`
+// then-branch and the lambda body — which is every `loop (…) { x -> … }` body.
+// `15-language-surface`'s `28e447e` routed both through `parseStmtListInBraces`,
+// and this printer has read the field since the two statement-sequence printers
+// became one, so the round trip closes without a further printer arm. These are
+// the cases that say so, and that catch a regression in either half.
+
+test "format: comments ---- a loop body keeps a blank line and a comment" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(xs: Array<i32>) -> i32 {
+        \\    var n = 0;
+        \\    loop (xs) { x ->
+        \\        n = n + x;
+        \\
+        \\        // the second half
+        \\        n = n + 1;
+        \\    };
+        \\    return n;
+        \\}
+    );
+}
+
+test "format: comments ---- an if then-branch keeps a blank line and a comment" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(a: bool) -> i32 {
+        \\    var n = 0;
+        \\    if (a) {
+        \\        n = 1;
+        \\
+        \\        // and then
+        \\        n = 2;
+        \\    };
+        \\    return n;
+        \\}
+    );
+}
+
+test "format: comments ---- all three blocks of one `if`/`loop` keep theirs at once" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(a: bool, xs: Array<i32>) -> i32 {
+        \\    var n = 0;
+        \\    if (a) {
+        \\        n = 1;
+        \\
+        \\        // then-branch
+        \\        n = 2;
+        \\    } else {
+        \\        n = 3;
+        \\
+        \\        // else-branch
+        \\        n = 4;
+        \\    };
+        \\    loop (xs) { x ->
+        \\        n = n + x;
+        \\
+        \\        // loop body
+        \\        n = n + 1;
+        \\    };
+        \\    return n;
+        \\}
+    );
+}

@@ -45,7 +45,7 @@ fn main() {
     local.set $d
     local.get $d
     call $Doc_print
-    call $__print_i32
+    call $__print_str
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
@@ -230,6 +230,19 @@ fn main() {
       )
     )
   )
+  (func $__print_str_raw (param $s i32)
+    local.get $s
+    i32.const 4
+    i32.add
+    local.get $s
+    i32.load
+    call $__write_bytes
+  )
+  (func $__print_str (param $s i32)
+    local.get $s
+    call $__print_str_raw
+    call $__print_nl
+  )
   (func $__str_concat (param $a i32) (param $b i32) (result i32)
     (local $base i32) (local $alen i32) (local $blen i32)
     local.get $a
@@ -282,5 +295,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-276
+doc:hi
 ```

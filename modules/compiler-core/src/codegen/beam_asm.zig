@@ -210,7 +210,11 @@ fn stmtIsReturn(stmt: ast.Stmt) bool {
 }
 
 /// A condition loop's labels, and the buffer (the frame) it is emitted into.
-const CondLoop = struct { top: u32, exit: u32, out: *std.Io.Writer };
+/// `valued` is set when the body carries a `break <value>` (decision 8 §10):
+/// the loop is then an expression, every `break` leaves its value in `{x, 0}`
+/// before it jumps to `exit`, and the condition's own failure path goes to
+/// `fail` instead — which moves `undefined` in and falls through to `exit`.
+const CondLoop = struct { top: u32, exit: u32, out: *std.Io.Writer, valued: bool = false };
 
 /// True for a `break` / `continue` statement.
 fn stmtIsLoopJump(stmt: ast.Stmt) bool {
@@ -220,19 +224,35 @@ fn stmtIsLoopJump(stmt: ast.Stmt) bool {
     };
 }
 
-/// True when a condition-loop body yields or breaks with a value — the value
-/// form, which has no beam lowering yet.
-fn condLoopHasValue(body: []const ast.Stmt) bool {
+/// True when a condition-loop body YIELDS a value — the generator protocol's
+/// shape, which has no beam lowering of its own. A valued `break` is lowered
+/// (decision 8 §10) and is `condLoopBreaksWithValue`'s question; the two are
+/// asked separately, exactly as on erlang (`conditionLoopYieldsValue` /
+/// `conditionLoopBreaksWithValue`).
+fn condLoopYieldsValue(body: []const ast.Stmt) bool {
+    return condLoopJumpHasValue(body, .yield);
+}
+
+/// True when a condition-loop body's `break` carries a value — the loop is then
+/// an expression whose value is that `break`'s (decision 8 §10).
+fn condLoopBreaksWithValue(body: []const ast.Stmt) bool {
+    return condLoopJumpHasValue(body, .@"break");
+}
+
+/// True when `body` carries a `kind` jump WITH a value for the loop it belongs
+/// to — directly or under an `if`, never inside a nested loop or a lambda,
+/// which own their own jumps.
+fn condLoopJumpHasValue(body: []const ast.Stmt, comptime kind: std.meta.Tag(ast.JumpExprOf(.untyped))) bool {
     for (body) |stmt| switch (stmt.expr) {
-        .jump => |j| switch (j.kind) {
+        .jump => |j| if (j.kind == kind) switch (j.kind) {
             .yield => |y| if (y.value != null) return true,
             .@"break" => |brk| if (brk.value != null) return true,
             else => {},
         },
         .branch => |br| switch (br.kind) {
             .if_ => |i| {
-                if (condLoopHasValue(i.then_)) return true;
-                if (i.else_) |els| if (condLoopHasValue(els)) return true;
+                if (condLoopJumpHasValue(i.then_, kind)) return true;
+                if (i.else_) |els| if (condLoopJumpHasValue(els, kind)) return true;
             },
             else => {},
         },
@@ -2565,6 +2585,18 @@ const Emitter = struct {
                 },
                 .@"break" => |br| {
                     if (self.inCondLoop()) |cl| {
+                        // Decision 8 §10 — in a loop some `break` of which
+                        // carries a value, every `break` leaves the loop's
+                        // value in `{x, 0}`; a value-less one answers
+                        // `undefined`, as the erlang lowering's third tuple
+                        // element does.
+                        if (cl.valued) {
+                            if (br.value) |v| {
+                                try self.lowerExprIntoX0(v.*);
+                            } else {
+                                try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
+                            }
+                        }
                         try beamEmitter.writeJump(self.out, cl.exit);
                         return;
                     }
@@ -2616,7 +2648,7 @@ const Emitter = struct {
             // caller's stack slots).
             .loop => |lp| {
                 if (lp.condition) {
-                    if (condLoopHasValue(lp.body)) return error.ConditionLoopValueUnsupported;
+                    if (condLoopYieldsValue(lp.body)) return error.ConditionLoopValueUnsupported;
                     try self.lowerConditionLoop(lp);
                     return;
                 }
@@ -3074,9 +3106,13 @@ const Emitter = struct {
             },
             .loop => |lp| {
                 if (lp.condition) {
-                    if (condLoopHasValue(lp.body)) return error.ConditionLoopValueUnsupported;
+                    if (condLoopYieldsValue(lp.body)) return error.ConditionLoopValueUnsupported;
+                    // A loop whose `break` carries a value leaves it in `{x, 0}`
+                    // itself (decision 8 §10); one that cannot answer anything
+                    // is `ok`, as it was.
+                    const valued = condLoopBreaksWithValue(lp.body);
                     try self.lowerConditionLoop(lp);
-                    try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
+                    if (!valued) try beamEmitter.writeMoveOp(self.out, Op.atom("ok"), Dst.xr(0));
                     return;
                 }
                 try self.lowerLoop(lp);
@@ -5028,7 +5064,21 @@ const Emitter = struct {
             try self.lowerIndexExpr(cc, mode);
             return;
         }
-        try beamEmitter.writeComment(self.out, "unsupported builtin: @{s} (Fase 3+)", .{cc.callee});
+        // A builtin this backend does not lower **aborts**, it does not fall
+        // through. Emitting only a comment left whatever happened to be in
+        // `{x, 0}` there — the receiver, or the previous statement's `ok` — so
+        // the program ran to completion and printed a wrong answer with exit 0.
+        // `12-language-tests` measured that on the index expression before
+        // `lowerIndexExpr` existed, and `@print(v is i32)` still shows it:
+        // beam printed `7` and then `ok` three times for four `is` tests, where
+        // erlang refuses to compile (`function is/1 undefined`) and commonJS
+        // answers the four booleans. A silent wrong answer is worse than a
+        // crash, and this backend's own convention is the loud one — the same
+        // `{unresolved_identifier, N}` / `{unresolved_method, N, A}` backstop
+        // (README `Notes`: "the run-time abort on an unbound name is the
+        // backstop, not a fix"). No beam snapshot reaches this path, so nothing
+        // is re-recorded by making it loud.
+        try self.emitUnresolvedAbort("unsupported_builtin", cc.callee, cc.args.len);
     }
 
     /// Decision 30's index expression, which the parser hands every backend as
@@ -6817,20 +6867,38 @@ const Emitter = struct {
     ///
     /// Reassigned variables live in this frame's registers, so they need no
     /// threading; `break` jumps to `Exit`, `continue` to `Top`.
+    ///
+    /// When the body carries a `break <value>` (decision 8 §10) the loop is an
+    /// expression, and the condition's failure path needs a register of its own
+    /// so it cannot be the `break`'s:
+    ///
+    ///     {label, Top}  <test Cond, else jump Fail>  Body  {jump, {f, Top}}
+    ///     {label, Fail} {move, {atom, undefined}, {x,0}}  {label, Exit}
+    ///
+    /// so `{x, 0}` at `Exit` is the break's value on the `break` path and
+    /// `undefined` when the condition ran out — the same pair of answers the
+    /// erlang backend's `{Group, Value}` tuple carries (`{FinalGroup,
+    /// undefined}` against `{GroupAtTheJump, Value}`).
     fn lowerConditionLoop(self: *Emitter, lp: anytype) anyerror!void {
+        const valued = condLoopBreaksWithValue(lp.body);
         const top = self.allocLabel();
         const exit = self.allocLabel();
+        const fail = if (valued) self.allocLabel() else exit;
         try beamEmitter.writeLabel(self.out, top);
-        if (!try self.lowerComparisonAsTest(lp.iter.*, exit)) {
+        if (!try self.lowerComparisonAsTest(lp.iter.*, fail)) {
             try self.lowerExprIntoX0(lp.iter.*);
-            try beamEmitter.writeTest(self.out, .is_eq_exact, exit, &.{ Op.xr(0), Op.atom("true") });
+            try beamEmitter.writeTest(self.out, .is_eq_exact, fail, &.{ Op.xr(0), Op.atom("true") });
         }
         const saved = self.cond_loop;
-        self.cond_loop = .{ .top = top, .exit = exit, .out = self.out };
+        self.cond_loop = .{ .top = top, .exit = exit, .out = self.out, .valued = valued };
         defer self.cond_loop = saved;
         for (lp.body) |stmt| try self.emitStmt(stmt);
         if (!(lp.body.len > 0 and stmtIsLoopJump(lp.body[lp.body.len - 1]))) {
             try beamEmitter.writeJump(self.out, top);
+        }
+        if (valued) {
+            try beamEmitter.writeLabel(self.out, fail);
+            try beamEmitter.writeMoveOp(self.out, Op.atom("undefined"), Dst.xr(0));
         }
         try beamEmitter.writeLabel(self.out, exit);
     }

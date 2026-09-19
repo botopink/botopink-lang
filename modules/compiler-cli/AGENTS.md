@@ -60,9 +60,12 @@ bash modules/compiler-cli/tests/backend_exec.sh      # numeric/records/modules p
 
 > **Every cell is a hard assert** — there are no pinned reds. A missing runtime
 > skips its cells by name. **Cells not run**, each restored by the front that
-> fixes its backend: `examples/modules` on erlang (cross-module calls emitted
-> unqualified — `function lucky/0 undefined`; the erlang front) and the `numeric`
-> fixture on BEAM (call-result arithmetic fails `beam_validator`; the beam front).
+> fixes it: `examples/modules` on erlang (**not** a backend defect — the emitted
+> code is correct; `cli/run.zig` runs `escript out/main.erl`, which compiles only
+> the file it is handed, so the sibling module is `undef` at run time. See "the
+> erlang runner reaches one module" below; front `13-module-identity` owns the
+> file) and the `numeric` fixture on BEAM (call-result arithmetic fails
+> `beam_validator`; the beam front).
 > The `std` suite on erlang is covered by `zig build test-libs`, not a script.
 
 ## External libs (generic loader)
@@ -94,9 +97,41 @@ ones it finds a source file for into the output — so a qualifier naming an OTP
 module or another module of this build is a no-op, with no lib names in the
 code. **Wired into `botopink test` only** (`test_cmd.zig`): the test runner's
 `__bp_load_siblings/0` compiles and loads every `.erl` beside the script, so
-copying is all it takes there. `botopink build`/`run` emit no such loader — an
-erlang output's cross-module calls are red for the same reason — so the
-`build.zig` call site is still open.
+copying is all it takes there. `botopink build`/`run` emit no such loader and do
+not copy, so the `build.zig` call site is still open (front
+`13-module-identity`'s file: `if (target == .erlang) { _ = libs.shipErlSidecars(gpa, io, outputs, out_dir, env_map) catch 0; }`
+beside the existing `if (target == .commonJS)`). It only becomes *useful* once an
+erlang `build`/`run` output can reach **any** sibling module, which is the next
+section — a different defect with a different cause.
+
+### The erlang runner reaches one module
+
+`cli/run.zig` spawns `escript <out>/<module>.erl`. `escript` compiles **only the
+file it is handed** and has no code-path flag (`escript -pa out out/main.erl` →
+`escript: illegal operation on a directory: 'out'`), so every call into a sibling
+module is `undef` at run time even though the emitted code is right. Measured on
+four projects, each of which prints its expected output once the modules are on a
+code path:
+
+| project | escript today | emitted call |
+|---|---|---|
+| `tests/language/modules/two_modules` | `undefined function geometry:norm/1` | `geometry:norm/1` — qualified, correct |
+| `tests/language/modules/mod_tree` | `undefined function shapes:describe/0` | `shapes:describe/0` |
+| `tests/language/modules/std_import` | `undefined function dict:empty/0` | `dict:empty/0` |
+| `examples/modules` | `undefined function geometry:area/2` | `geometry:area/2`, `shapes:describe/0`, `shapes:lucky/0` |
+
+The shape that works is the one the beam arm of `tests/language/run.sh` already
+uses: `erlc -o <out_dir>` over every emitted `.erl` **found recursively** — the
+file layout nests (`out/shapes/circle.erl`, `out/std/dict.erl`) while the module
+atom is flat, so `-o <out_dir>` is what puts each `.beam` where a single
+`-pa <out_dir>` looks — then `erl -noshell -pa <out_dir> -eval "<module>:main([]), halt()."`.
+`main([])` and not `main()`: `main/1` is always exported, while `main/0` is
+emitted only when `main` is `pub` (`examples/modules` declares `fn main()` and
+exports just `'_botopink_main'/0, main/1`). A crash's exit status moves from
+escript's `127` to `erl`'s `1`.
+
+`cli/run.zig` belongs to front `13-module-identity`, together with the `-pa` row
+of its output-layout step — so this is recorded here, not fixed here.
 
 **Unknown `botopink.json` fields are ignored.** `LibManifest` reads only `src`
 and `files`; the project loader (`config.zig`) reads `name`/`version`/`target`/

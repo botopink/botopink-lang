@@ -53,9 +53,17 @@ fn main() {
   )
   (func $main
     (local $c i32)
+    (local $__fnv0 i32)
     call $mk
     local.set $c
-    unreachable ;; unresolved call: _1/1
+    local.get $c
+    i32.load offset=4 ;; ._1
+    local.set $__fnv0
+    local.get $__fnv0
+    i32.const 9
+    local.get $__fnv0
+    i32.load ;; table index
+    call_indirect (param i32 i32) (result i32)
     call $__print_i32
   )
   (func $__lambda0 (param $__env i32) (param $n i32) (result i32)
@@ -252,6 +260,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-RUNTIME TRAP (wasmtime):
-wasm trap: wasm `unreachable` instruction executed
+18
 ```

@@ -175,12 +175,18 @@ test "js: dispatch ---- multi-module extension activated via star import" {
 // `erlc +from_asm out/*.S`, then `erl -noshell -pa . -eval
 // "main:'_botopink_main'(), halt()."`): `1`, `16`, `42` — what commonJS prints.
 //
-// KNOWN-WRONG (erlang): the imported **enum**'s method is emitted as a BARE
-// LOCAL call — `main.erl` holds `area({'Square', 4})` while `geometry.erl`
-// exports `area/1`, so the emitted program does not compile
-// (`out/main.erl:8:19: function area/1 undefined`). The record cases beside it
-// are right (`geometry:bump(C)`), so this is the enum half of `02-erlang`'s two
-// module-owner landings (`7783fd6`, `1193d3c`), not a link-index gap.
+// FIXED on erlang (`02-erlang`, the enum half of `7783fd6` and `1193d3c`). It
+// was a bare LOCAL call — `main.erl` held `area({'Square', 4})` while
+// `geometry.erl` exports `area/1`, so the emitted program did not compile
+// (`out/main.erl:11:19: function area/1 undefined`) while the two record cases
+// beside it were already right (`geometry:bump(C)`). `typedMethodNode` read
+// `imported_types`, which the `import { … }` **enum** arm never writes (it
+// registers the variants, because a tagged tuple is module-independent), and it
+// had no link-index fallback at all — so the erlang side was missing the `enum`
+// kind *and* the `info.methods` membership test. `methodOwnerModule` now mirrors
+// `beam_asm.zig`'s (`448b935`) over both sources, and `main.erl` calls
+// `geometry:area/1`; the RUN LOG is `1`, `16`, `42` — what commonJS and beam
+// print.
 // KNOWN-WRONG (wasm): wasm stays single-module and has no named-type identity,
 // so the imported enum's `case self` traps (`unreachable`); the two record
 // shapes print.

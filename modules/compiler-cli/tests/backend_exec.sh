@@ -117,11 +117,16 @@ if have erlc && have erl; then run_beam "$RECORDS" 3; else echo "==> records bea
 
 # ── multi-folder mod package (commonJS / erlang) ─────────────────────────────
 # commonJS and erlang both run the `mod`/`pub mod` tree end-to-end. The erlang
-# cell was disabled because `botopink run --target erlang` was `escript
-# out/main.erl`, which compiles only the file it is handed, so every
-# cross-module call (`lucky`, `describe`) was `undefined` at run time. 13 half 1
-# replaced that with `erlc -o <dir>` over the whole output directory and
-# `erl -pa <dir>`, and the cell is restored exactly as the old comment asked.
+# cell used to be skipped, and **not** because of the backend: the emitted calls
+# were already properly qualified (`geometry:area/2`, `shapes:describe/0`,
+# `shapes:lucky/0`). `botopink run --target erlang` spawned `escript
+# out/main.erl`, and escript compiles only the file it is handed, so the sibling
+# module was `undef` (`undefined function geometry:area/2`). Front
+# `13-module-identity` half 1 fixed `cli/run.zig` at the shape front 10
+# measured — `erlc -o <out>/erl` over every emitted `.erl`, then
+# `erl -noshell -pa <out>/erl`, which is what the beam arm of
+# `tests/language/run.sh` already uses — so the cell is restored here exactly as
+# that analysis asked.
 if have node; then run_package "$MODULES" commonJS 12 circle 7; else echo "==> modules commonJS: SKIPPED (no node)"; fi
 if have erlc && have erl; then run_package "$MODULES" erlang 12 circle 7; else echo "==> modules erlang: SKIPPED (no erlc/erl)"; fi
 

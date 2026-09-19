@@ -2633,7 +2633,7 @@ const Emitter = struct {
         else
             cc.callee;
         const args = try this.callArgs(b, try this.exprNode(b, recv.*), cc);
-        return if (this.imported_types.get(tn)) |owner| b.remote(owner, mn, args) else b.call(mn, args);
+        return if (this.methodOwnerModule(tn, cc.callee)) |owner| b.remote(owner, mn, args) else b.call(mn, args);
     }
 
     /// The name a `implement` clause refers to (`implement Sized`,
@@ -3236,6 +3236,46 @@ const Emitter = struct {
         var key_buf: [256]u8 = undefined;
         const key = std.fmt.bufPrint(&key_buf, "{s}/{d}", .{ name, arity }) catch return owner;
         return if (self.local_fn_arities.contains(key)) null else owner;
+    }
+
+    /// The module atom a method on `type_name` has to be called in, when the
+    /// type came from another module; null when the type is this module's own,
+    /// where the method is a local function. The erlang twin of `beam_asm.zig`'s
+    /// `methodOwnerModule` (`448b935`), with the same two sources, because a
+    /// consumer reaches an imported type two ways:
+    ///
+    ///   * by naming it in an `import { … }` — `imported_types`, which
+    ///     `collectImportedTypes` fills for a **record** and
+    ///     `collectNamespaceModuleTypes` for a module-shaped import;
+    ///   * through the link index, which is the only source that knows an
+    ///     imported **enum** owns the method: an enum's `import { … }` arm
+    ///     registers its variants (`enum_names`) and never its owner, because a
+    ///     tagged tuple is module-independent while its methods are not.
+    ///
+    /// Both kinds are consulted (`record` *or* `enum`) and the method has to be
+    /// one the exported type actually declares, so a name this module owns is
+    /// never redirected into a module that does not answer it.
+    fn methodOwnerModule(self: *const Emitter, type_name: []const u8, method: []const u8) ?[]const u8 {
+        if (self.imported_types.get(type_name)) |owner| return owner;
+        const xc = self.cross orelse return null;
+        const info = xc.exports.get(type_name) orelse return null;
+        switch (info.kind) {
+            .record, .@"enum" => {},
+            else => return null,
+        }
+        // A module never calls into itself remotely. `module_name` is the source
+        // path (`std/dict`) while the module atom is its basename (`dict`), so
+        // both have to be compared: the path catches this module's own type, and
+        // the basename catches a sibling that would emit the same atom — a
+        // remote self-call either way. The sites above compare paths for the same
+        // reason.
+        if (std.mem.eql(u8, info.module, self.module_name)) return null;
+        const owner = crossModule.moduleBasename(info.module);
+        if (std.mem.eql(u8, owner, crossModule.moduleBasename(self.module_name))) return null;
+        for (info.methods) |m| {
+            if (std.mem.eql(u8, m, method)) return owner;
+        }
+        return null;
     }
 
     /// True when record `type_name` declares a field `name` of function type —
