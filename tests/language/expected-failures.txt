@@ -18,12 +18,13 @@
 # 2026-09-18)` for the collection-loop `break` rows decision 55 says are owed and
 # front 02 has no step for. Neither shape invents a step.
 #
-# Measured on `feat` after fronts 12 and 13 merged (13's half 1 renames three std
+# Measured on `feat` after fronts 12, 13 and 05 merged (13's half 1 renames three std
 # module atoms and its runner reaches every module; 12 added the decision-52/53/54/55
-# cells), node v25.8.0, OTP 29, `zig version` 0.16.0:
+# cells; 05 landed §7's separator and decision 52's wasm row), node v25.8.0, OTP 29,
+# `zig version` 0.16.0:
 #
 #   $ tests/language/run.sh                 # commonJS, erlang, wasm
-#   language tests: 268 passed, 66 expected failures, 0 failed
+#   language tests: 270 passed, 64 expected failures, 0 failed
 #   $ tests/language/run.sh --target beam
 #   language tests: 19 passed, 23 expected failures, 0 failed
 #
@@ -52,15 +53,13 @@
 #   print(len(d), dict(t), sorted(f.items()), second)
 #   EOF
 #
-# **77 lines**: 66 exercised by `--target all`, 11 more only by `--target beam`
-# (the 12 `*` reject lines are counted by both runs — which is why 66 and 23 are
-# what the two runs above report). By the row that comes first on the line:
-# 01-checker 42 · 02-erlang 12 · 03-beam 9 · 05-wasm 8 · 04-js 5 ·
-# 13-module-identity 1. **23** lines name a second row that has to land before
-# the line goes (the §7 formatter's record and variant halves are 13 step 18, not
-# a backend's). Re-derived from the file on 2026-09-19 with the command above,
-# after the fronts 12 × 13 merge: front 13's half 1 deleted the three `modules/*`
-# erlang rows its runner fixed, which is the whole difference from 12's 80.
+# **75 lines**: 64 exercised by `--target all`, 11 more only by
+# `--target beam` (the 12 `*` reject lines are counted by both runs). By the row that comes
+# first on the line: 01-checker 42 · 02-erlang 12 · 03-beam 9 · 05-wasm 6 · 04-js 5 · 13-module-identity 1. **23** lines name a second row that has to
+# land before the line goes (the §7 formatter's record and variant halves are 13 step 18, not a
+# backend's). Re-derived from the merged file on 2026-09-19 after fronts 13 and 05 both deleted lines
+# from front 12's baseline — three and two respectively — with the command above. Neither side's
+# paragraph was taken: 13's said 77 and 05's said 78, and both were right about their own tree.
 #
 # The sub-claim decision 59 flagged as stale — "24 lines name a second row" —
 # was already 19 at `b5a9b85d` and re-derives to 19 there; it is 23 after this
@@ -136,7 +135,6 @@ erlang   | test/string_case_conversion.bp | 02 step 7 | `String.toUpperCase` / `
 # run/ and modules/ cells reach wasm. The rows below are the same defects the
 # commonJS and erlang lines above name, seen from the third backend.
 wasm     | run/case_values.bp         | 01 step 4 | `.Variant` arms are not resolved: "missing variant(s) Circle, Rect" — the same checker row the commonJS and erlang lines name
-wasm     | run/tuple_print.bp         | 05 step 1 | prints decision 1a's text without spaces (`#(1,"a")`); §7 wants `#(1, "a")`
 wasm     | run/print_formatter.bp     | 05 step 1, 13 step 18 | re-measured 2026-09-18 at `b5a9b85d`: arrays and tuples still print without spaces (`[1,2]`, `#(1,"a")`), and then `@print` of a record **traps** — `wasm trap: wasm `unreachable` instruction executed`, exit 134, after the first six lines. Two halves of the old text are false: it no longer prints a raw heap address, and `f64` no longer loses its decimal part (`5.0` is right)
 wasm     | run/display_print.bp       | 05 step 1, 13 step 18 | re-measured 2026-09-18 at `b5a9b85d`: `@print(Money(cents: 5))` **traps** on the very first line — `wasm trap: wasm `unreachable` instruction executed`, exit 134, stdout empty. Not a raw heap address: nothing is printed at all, so §7's `Display` half is unreachable behind the trap and cannot be measured from this cell yet
 
@@ -233,7 +231,6 @@ erlang   | test/loop_collection.bp::§10 a value break contributes its value and
 # erlang and beam print `undefined`; re-measured here, neither does — that is
 # what they print for a *value* break, a different row.
 erlang   | run/loop_condition_no_break.bp | 02 step 5 | decision 52: the loop's variable group leaks out as its value — prints `3`, not `null`. escript also prints a `variable 'I@3' is unused` warning on stdout
-wasm     | run/loop_condition_no_break.bp | 05 step 4 | decision 52: a condition loop still collects, and the empty collection reads back as the integer `0`, not `null` — §10 as a whole, per the decision
 beam     | run/loop_condition_no_break.bp | 03 step 3 | decision 52: prints the atom `ok` — the value of the loop body's last statement — not `null` (D6)
 
 # ── the optional's pattern form (decision 54) ────────────────────────────────

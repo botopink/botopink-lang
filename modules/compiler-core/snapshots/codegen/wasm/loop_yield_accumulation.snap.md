@@ -351,7 +351,10 @@ fn main() {
             i32.const 44
             i32.store8
             i32.const 8
-            i32.const 1
+            i32.const 32
+            i32.store8 offset=1
+            i32.const 8
+            i32.const 2
             call $__write_bytes
           )
         )
@@ -388,5 +391,5 @@ fn main() {
 
 ----- RUN LOG -----
 ```logs
-[2,4,6]
+[2, 4, 6]
 ```

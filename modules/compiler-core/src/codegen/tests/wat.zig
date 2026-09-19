@@ -735,19 +735,33 @@ test "wat: loop ---- break with a value is the loop's value, not a one-element a
         \\    @print(collected);
         \\    @print(find([5, 15, 20]));
         \\}
-    , "3\n8\n[1,2,3,4,5]\n[15,20]\n");
+    , "3\n8\n[1, 2, 3, 4, 5]\n[15, 20]\n");
 }
 
-// §10 — a search that never breaks has no value to give: `0`, wasm's null
-// carrier (commonJS answers `null`).
-test "wat: loop ---- a search that never breaks answers no value" {
+// §10 and decision 52 — a search that never breaks has no value to give, and
+// the spelling of that is `null`, on every backend. wasm answered `0`: the value
+// is carried unboxed with `0` for absence (which is what `??` reads, and it was
+// already right — `none ?? 42` answers `42`), so the value alone cannot tell
+// "never broke" from `break 0`. `lowerLoop` declares a `$__got{n}` flag beside
+// `$__found{n}`, `break <v>` sets it, and `@print` reads both through
+// `$__print_loop_i32`. The third and fourth prints are the pair that makes the
+// flag necessary rather than decorative: commonJS answers `0` for `break 0` and
+// `null` for the exhausted loop, and so does this backend now.
+test "wat: loop ---- a search that never breaks answers null, and `break 0` answers 0" {
     try h.assertWasmRunLog(std.testing.allocator,
         \\fn main() {
         \\    var m = 0;
         \\    val none = loop (m < 3) { m = m + 1; if (m > 99) { break m; }; };
         \\    @print(none);
+        \\    @print(none ?? 42);
+        \\    var i = 0;
+        \\    val zero = loop (i < 10) { if (i == 0) { break i; }; i = i + 1; };
+        \\    @print(zero);
+        \\    var j = 0;
+        \\    val eight = loop (j < 10) { if (j == 4) { break j * 2; }; j = j + 1; };
+        \\    @print(eight);
         \\}
-    , "0\n");
+    , "null\n42\n0\n8\n");
 }
 
 // §6 T6 — a tuple is positional at run time and `==` compares its elements;
@@ -783,6 +797,69 @@ test "wat: tuple ---- equality compares elements, and labels take no part" {
         \\    @print(f1 == f3);
         \\}
     );
+}
+
+// Decision 52's headline shape, which the value-`break` fixture above does not
+// reach: a condition loop with **no** `break <value>` and no `yield` at all. It
+// builds neither accumulator, so `lowerConditionLoop` leaves a bare `0` and
+// `@print` wrote that `0`. Absence is statically certain here — there is no
+// `break` that could ever give the loop a value — so there is no flag to test and
+// nothing to load: `$__print_null` outright. `??` reads the same `0` and was
+// already right. `tests/language/run/loop_condition_no_break.bp` is front 12's
+// cell for this, and its `.out` is `null` on every backend.
+test "wat: loop ---- a condition loop with no value `break` at all answers null" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    var i = 0;
+        \\    val r = loop (i < 3) { i = i + 1; };
+        \\    @print(r);
+        \\    @print(r ?? 9);
+        \\    @print(i);
+        \\}
+    , "null\n9\n3\n");
+}
+
+// §6 T4 / §7 — a tuple element is printed by its own shape, not by its address.
+// `@print(t.1)` answered `256` where it means `x`, and `@print(row.name)` — a
+// label the checker resolves to `row._0` — answered `256` where it means `SP`:
+// the tuple's shape was known to `printShapeOf` and to nothing else, so a
+// **single** element fell through to the numeric printer with exit 0 and no
+// diagnostic. `tupleElemShapeOf` slices element N out of the receiver's shape
+// and both readers ask it, which also makes an element that is itself a
+// container print as one (`t.0` → `#(1, 2)`, `u.0` → `["a", "b"]`).
+//
+// A RUN LOG and not a snapshot, the shape a single backend's row uses: the last
+// two prints are where commonJS and wasm still disagree, and an all-backend
+// fixture would pin commonJS's answer in a directory this front does not own.
+// commonJS prints `[1, 2]` for `t.0` — it drops the tuple marker when the shape
+// hint is absent, which is `04-js`'s to answer, not this front's. Every other
+// line here was run on both and matches.
+test "wat: tuple ---- an element prints by its shape, positional and labelled" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn load() -> #(name: string, pop: i32) {
+        \\    val name = "SP";
+        \\    val pop = 12;
+        \\    return #(name, pop);
+        \\}
+        \\fn main() {
+        \\    val t = #(#(1, 2), "x");
+        \\    @print(t.1);
+        \\    @print(t.0.1);
+        \\    val row = load();
+        \\    @print(row.name);
+        \\    @print(row.pop + 1);
+        \\    val a = "RJ";
+        \\    val b = 7;
+        \\    val local = #(a, b);
+        \\    @print(local.a);
+        \\    val s = t.1;
+        \\    @print(s + "!");
+        \\    @print(t.1 == "x");
+        \\    val u = #(["a", "b"], 3);
+        \\    @print(t.0);
+        \\    @print(u.0);
+        \\}
+    , "x\n2\nSP\n13\nRJ\nx!\ntrue\n#(1, 2)\n[\"a\", \"b\"]\n");
 }
 
 // ── step 6: the string case primitives ──────────────────────────────────────

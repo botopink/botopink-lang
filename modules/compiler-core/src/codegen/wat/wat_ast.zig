@@ -425,6 +425,11 @@ pub const HelperGroup = enum {
     /// `$__print_quoted_raw` `$__print_shaped_raw` — arrays of strings, tuples
     /// and arrays of tuples (semantics decision 1a).
     print_shaped,
+    /// `$__print_null`, `$__print_loop_i32` (+`_raw`) — a condition loop's value
+    /// and decision 52's `null` when it never broke. Its own group and not part
+    /// of `print_opt`: the two spell absence differently on purpose, because
+    /// decision 52 settles the loop and the optional's spelling is still open.
+    print_loop,
 
     /// The groups `g`'s functions call into.
     pub fn deps(g: HelperGroup) []const HelperGroup {
@@ -438,6 +443,7 @@ pub const HelperGroup = enum {
             .print_opt_f32 => &.{ .print, .print_f64, .print_opt },
             .assert_fail => &.{.print},
             .print_shaped => &.{ .print, .print_bool, .print_f64 },
+            .print_loop => &.{.print},
             .i32_to_str, .str_case, .str_repeat, .arr_new => &.{.alloc},
             .f64_to_str => &.{ .i32_to_str, .alloc },
             .str_index_of, .str_starts_with, .str_ends_with => &.{.mem_eq},
@@ -517,6 +523,9 @@ pub const Helper = enum {
     assert_fail,
     print_quoted_raw,
     print_shaped_raw,
+    print_null,
+    print_loop_i32,
+    print_loop_i32_raw,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {
@@ -534,6 +543,7 @@ pub const Helper = enum {
             .print_arr_f32, .print_arr_f32_raw => .print_arr_f32,
             .write_err, .assert_fail => .assert_fail,
             .print_quoted_raw, .print_shaped_raw => .print_shaped,
+            .print_null, .print_loop_i32, .print_loop_i32_raw => .print_loop,
             .print_undefined, .print_opt_i32, .print_opt_i32_raw, .print_opt_bool, .print_opt_bool_raw, .print_opt_str, .print_opt_str_raw => .print_opt,
             .print_opt_f32, .print_opt_f32_raw => .print_opt_f32,
             inline else => |t| @field(HelperGroup, @tagName(t)),

@@ -515,7 +515,10 @@ fn main() {
             i32.const 44
             i32.store8
             i32.const 8
-            i32.const 1
+            i32.const 32
+            i32.store8 offset=1
+            i32.const 8
+            i32.const 2
             call $__write_bytes
           )
         )
@@ -558,5 +561,5 @@ bo
 e
 el
 lo
-[20,30]
+[20, 30]
 ```

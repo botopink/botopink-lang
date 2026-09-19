@@ -515,6 +515,15 @@ const Emitter = struct {
     /// Local name → the `$__print_shaped_raw` shape of its value, when it is
     /// an array or a tuple (`printShapeOf`).
     print_shape_locals: std.StringHashMap([]const u8),
+    /// Local name → the `search_flag` of the condition loop it was bound to
+    /// (decision 52). `@print` is the only reader.
+    search_flag_locals: std.StringHashMap([]const u8),
+    /// Locals bound to a condition loop that can **never** have a value — no
+    /// `break <value>` and no `yield` anywhere in its body, which is decision
+    /// 52's headline shape and the one `tests/language/run/loop_condition_no_break.bp`
+    /// writes. There is no flag to read: it would be `0` always, so the local is
+    /// simply known to be absent and `@print` writes `null` without loading it.
+    null_value_locals: std.StringHashMap(void),
     arr_globals: std.StringHashMap(void),
     bool_globals: std.StringHashMap(void),
     /// Every emitted WAT function symbol → its signature.
@@ -543,6 +552,17 @@ const Emitter = struct {
     /// no accumulator: `break <v>` stores `v` here and ends the loop, and the
     /// loop answers this local (`0` when it never broke).
     search_target: ?[]const u8 = null,
+    /// Decision 52 — the companion flag of `search_target`: `0` until a
+    /// `break <v>` fires, `1` after. The value alone cannot say whether the
+    /// loop broke, because `break 0` and "never broke" are the same `i32`, and
+    /// every other backend prints `0` for the first and the `null` spelling for
+    /// the second. Only `@print` reads it; the loop's **value** stays the bare
+    /// `i32`, so `??` — which already reads `0` as absence — is untouched.
+    search_flag: ?[]const u8 = null,
+    /// The flag of the search loop most recently lowered, so the binding that
+    /// consumes the loop can adopt it. Read only when the initialiser *is* the
+    /// loop (`searchLoopInit`), never when a loop merely occurs inside one.
+    last_search_flag: ?[]const u8 = null,
     /// How many loops enclose the code being lowered: `break`/`continue`
     /// branch only inside one.
     loop_depth: u32 = 0,
@@ -666,6 +686,8 @@ const Emitter = struct {
             .str_globals = std.StringHashMap(void).init(alloc),
             .arr_locals = std.StringHashMap(void).init(alloc),
             .print_shape_locals = std.StringHashMap([]const u8).init(alloc),
+            .search_flag_locals = std.StringHashMap([]const u8).init(alloc),
+            .null_value_locals = std.StringHashMap(void).init(alloc),
             .arr_globals = std.StringHashMap(void).init(alloc),
             .bool_globals = std.StringHashMap(void).init(alloc),
             .fn_sigs = std.StringHashMap(FnSig).init(alloc),
@@ -731,6 +753,8 @@ const Emitter = struct {
         self.str_globals.deinit();
         self.arr_locals.deinit();
         self.print_shape_locals.deinit();
+        self.search_flag_locals.deinit();
+        self.null_value_locals.deinit();
         self.arr_globals.deinit();
         self.bool_globals.deinit();
         self.fn_sigs.deinit();
@@ -1257,6 +1281,8 @@ const Emitter = struct {
         self.str_locals.clearRetainingCapacity();
         self.arr_locals.clearRetainingCapacity();
         self.print_shape_locals.clearRetainingCapacity();
+        self.search_flag_locals.clearRetainingCapacity();
+        self.null_value_locals.clearRetainingCapacity();
         self.arr_elem_locals.clearRetainingCapacity();
         self.result_shape_locals.clearRetainingCapacity();
         self.result_subjects.clearRetainingCapacity();
@@ -2463,6 +2489,10 @@ const Emitter = struct {
                         if (self.search_target) |tgt| {
                             try self.lowerCoerced(v.*, "i32");
                             try self.emit(.{ .local_set = tgt });
+                            if (self.search_flag) |flag| {
+                                try self.emitC(one, "decision 52: it broke, so it has a value");
+                                try self.emit(.{ .local_set = flag });
+                            }
                             try self.emit(.{ .br = break_label });
                             return .terminated;
                         }
@@ -2516,11 +2546,26 @@ const Emitter = struct {
                     // `emitLocalDecls` runs before the body, so its guess can
                     // differ from what lowering ends up pushing.
                     const lambda_idx: u32 = @intCast(self.lambdas.items.len);
+                    // Decision 52 — `val r = loop (…) { … }` adopts the loop's
+                    // `search_flag`, so `@print(r)` can tell the value a `break`
+                    // carried from the `null` an exhausted loop answers. Read
+                    // only when the initialiser *is* the loop: a loop merely
+                    // occurring inside a bigger expression (`loop(…) ?? 5`)
+                    // binds that expression's value, not the loop's.
+                    const is_search_init = searchLoopInit(lb.value.*);
+                    if (is_search_init) self.last_search_flag = null;
                     if (self.boxesInto(lb.typeAnnotation, lb.value.*))
                         try self.lowerBoxed(lb.value.*)
                     else
                         try self.lowerCoerced(lb.value.*, self.locals.get(lb.name) orelse "i32");
                     try self.emit(.{ .local_set = lb.name });
+                    if (is_search_init) {
+                        if (self.last_search_flag) |flag| try self.search_flag_locals.put(lb.name, flag);
+                    } else _ = self.search_flag_locals.remove(lb.name);
+                    if (valuelessLoopInit(lb.value.*))
+                        try self.null_value_locals.put(lb.name, {})
+                    else
+                        _ = self.null_value_locals.remove(lb.name);
                     if (lb.value.* == .function and self.lambdas.items.len > lambda_idx)
                         try self.closure_locals.put(lb.name, lambda_idx)
                     else
@@ -3104,6 +3149,40 @@ const Emitter = struct {
         try self.emitC(.{ .load = .{ .offset = 4 } }, ok_payload);
     }
 
+    /// The decision-52 flag of a local bound to a condition loop's value, when
+    /// `e` is a read of exactly that local. Nothing else has one: a loop lowered
+    /// straight into `@print` is not a fixture this backend has, and the flag is
+    /// a local of the enclosing function, not a property of the value.
+    fn searchFlagOf(self: *Emitter, e: ast.Expr) ?[]const u8 {
+        return switch (e) {
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| self.search_flag_locals.get(self.resolveName(n)),
+                else => null,
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| self.searchFlagOf(inner.*),
+                else => null,
+            },
+            else => null,
+        };
+    }
+
+    /// Whether `e` reads a local bound to a loop that can never have a value
+    /// (`null_value_locals`), or is such a loop written straight into `@print`.
+    fn isNullValueRead(self: *Emitter, e: ast.Expr) bool {
+        return switch (e) {
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| self.null_value_locals.contains(self.resolveName(n)),
+                else => false,
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| self.isNullValueRead(inner.*),
+                else => false,
+            },
+            else => valuelessLoopInit(e),
+        };
+    }
+
     /// One `@print` argument. `last` decides whether the trailing newline is
     /// emitted here (the `_raw` helpers write the value only). The printer is
     /// picked from the argument's recovered shape — everything used to go
@@ -3122,6 +3201,27 @@ const Emitter = struct {
                 @as(u8, if (ns == .record) 2 else 3),
                 @tagName(ns),
             });
+            return;
+        }
+        // Decision 52 — a condition loop that never broke has no value to give,
+        // and every backend owes the `null` spelling for it. wasm carries the
+        // value unboxed with `0` for absence (which is what `??` already reads),
+        // so the value alone cannot tell "never broke" from `break 0`, and
+        // commonJS prints `0` for the second. The companion flag decides.
+        if (self.searchFlagOf(arg)) |flag| {
+            try self.lowerCoerced(arg, "i32");
+            try self.emit(.{ .local_get = flag });
+            try self.emit(self.builder().helper(if (last) .print_loop_i32 else .print_loop_i32_raw));
+            return;
+        }
+        // The same decision, one shape simpler: a loop with no `break <value>`
+        // at all is absent with certainty, so there is nothing to load and no
+        // flag to test — `$__print_null` outright. This is the shape
+        // `run/loop_condition_no_break.bp` writes, and it printed the bare `0`
+        // that `lowerConditionLoop` leaves for a loop with no accumulator.
+        if (self.isNullValueRead(arg)) {
+            try self.emit(self.builder().helper(.print_null));
+            if (last) try self.emit(self.builder().helper(.print_nl));
             return;
         }
         if (self.optInfoOf(arg)) |oi| {
@@ -4883,6 +4983,13 @@ const Emitter = struct {
         switch (e) {
             .identifier => |id| switch (id.kind) {
                 .ident => |n| if (self.print_shape_locals.get(self.resolveName(n))) |shape| return shape,
+                // A tuple element that is itself a container — `t._0` of
+                // `#(#(1, 2), "x")`. The same slice `isStringExpr` takes, kept
+                // only when it is an array or a tuple, which is this
+                // function's contract.
+                .identAccess => if (try self.tupleElemShapeOf(e)) |el| {
+                    if (el[0] == '[' or el[0] == '(') return el;
+                },
                 else => {},
             },
             .collection => |col| switch (col.kind) {
@@ -4969,6 +5076,73 @@ const Emitter = struct {
         if (std.mem.eql(u8, n, "bool")) return 'b';
         if (std.mem.eql(u8, n, "i32") or std.mem.eql(u8, n, "int") or std.mem.eql(u8, n, "Int")) return 'i';
         if (std.mem.eql(u8, n, "f32") or std.mem.eql(u8, n, "f64") or std.mem.eql(u8, n, "float")) return 'f';
+        return null;
+    }
+
+    /// The shape of the element `t._N` reads — **scalar codes included**, which
+    /// is what tells it apart from `printShapeOf`. `printShapeOf(t)` already
+    /// builds the whole tuple's shape (`((ii)s)` for `#(#(1, 2), "x")`, `(si)`
+    /// for a `#(name: string, pop: i32)`), so element `N` only has to be sliced
+    /// out of it; nothing else in this backend knew an element's type.
+    ///
+    /// Both readers of an element need it and neither could ask the other:
+    /// `printShapeOf`'s contract is to answer only containers, while
+    /// `isStringExpr` is the question `@print` asks about a **single** value.
+    /// While only the container half existed, `@print(t.1)` and `@print(row.name)`
+    /// printed the element's heap address — `256` where they mean `x` and `SP` —
+    /// with exit 0 and no diagnostic.
+    ///
+    /// A label is not a case here: the checker resolves `row.name` to `row._0`
+    /// before this backend sees it (decision 8 §6 T4), so the member is always
+    /// `_N` or a bare `N`.
+    fn tupleElemShapeOf(self: *Emitter, e: ast.Expr) anyerror!?[]const u8 {
+        const ia = switch (e) {
+            .identifier => |id| switch (id.kind) {
+                .identAccess => |a| a,
+                else => return null,
+            },
+            else => return null,
+        };
+        if (ia.optional) return null;
+        const idx = tupleIndex(ia.member) orelse return null;
+        const sh = (try self.printShapeOf(ia.receiver.*)) orelse return null;
+        return tupleShapeElem(sh, idx);
+    }
+
+    /// The length of the element shape starting at `sh[0]`: `i`/`f`/`b`/`s` are
+    /// one byte, `[X` is one plus its element's, `(XY…)` runs to its `)`. The
+    /// Zig twin of `$__print_shaped_raw`'s `go = 0` measuring mode, and it has
+    /// to agree with it — the two walk the same strings.
+    fn shapeSpan(sh: []const u8) usize {
+        if (sh.len == 0) return 0;
+        switch (sh[0]) {
+            '[' => return 1 + shapeSpan(sh[1..]),
+            '(' => {
+                var i: usize = 1;
+                while (i < sh.len and sh[i] != ')') {
+                    const n = shapeSpan(sh[i..]);
+                    if (n == 0) return i;
+                    i += n;
+                }
+                return if (i < sh.len) i + 1 else i;
+            },
+            else => return 1,
+        }
+    }
+
+    /// Element `idx` of the tuple shape `sh` (`(XY…)`), or null when `sh` is
+    /// not a tuple shape or has no such element.
+    fn tupleShapeElem(sh: []const u8, idx: u32) ?[]const u8 {
+        if (sh.len == 0 or sh[0] != '(') return null;
+        var i: usize = 1;
+        var k: u32 = 0;
+        while (i < sh.len and sh[i] != ')') {
+            const n = shapeSpan(sh[i..]);
+            if (n == 0) return null;
+            if (k == idx) return sh[i .. i + n];
+            i += n;
+            k += 1;
+        }
         return null;
     }
 
@@ -6057,6 +6231,13 @@ const Emitter = struct {
                     break :blk self.str_locals.contains(self.resolveName(n)) or self.str_globals.contains(n);
                 },
                 .identAccess => |ia| blk: {
+                    // A **tuple element** whose type is a string: `t._1`, and a
+                    // label the checker resolved to its position
+                    // (`row.name` → `row._0`). The tuple's shape was known to
+                    // `printShapeOf` and to nothing else, so `@print` fell
+                    // through to the numeric printer and answered the element's
+                    // heap address — `256` where it means `x`.
+                    if (self.tupleElemShapeOf(e) catch null) |el| break :blk std.mem.eql(u8, el, "s");
                     // A record field declared `string`.
                     const rty = self.recordTypeOfExpr(ia.receiver.*) orelse break :blk false;
                     const ft = self.fieldTypeIn(rty, ia.member) orelse break :blk false;
@@ -6322,9 +6503,11 @@ const Emitter = struct {
         // fn's own accumulator (`emitFn`) collects them instead.
         const saved_target = self.yield_target;
         const saved_search = self.search_target;
+        const saved_flag = self.search_flag;
         defer {
             self.yield_target = saved_target;
             self.search_target = saved_search;
+            self.search_flag = saved_flag;
         }
         var result: ?[]const u8 = null;
         if (self.yield_target == null and bodyYields(lp.body)) {
@@ -6339,6 +6522,14 @@ const Emitter = struct {
                 try self.emitC(zero, "§10: a search that never breaks has no value");
                 try self.emit(.{ .local_set = tgt });
                 self.search_target = tgt;
+                // Decision 52 — the flag that tells "never broke" from
+                // `break 0`, which are the same `i32` in `$__found{n}`.
+                const flag = try std.fmt.allocPrint(self.reg_arena.allocator(), "__got{d}", .{self.loop_seq});
+                try self.declareLocal(flag, "i32");
+                try self.emitC(zero, "decision 52: it has not broken yet");
+                try self.emit(.{ .local_set = flag });
+                self.search_flag = flag;
+                self.last_search_flag = flag;
                 result = tgt;
             } else {
                 const tgt = try std.fmt.allocPrint(self.reg_arena.allocator(), "__yield{d}", .{self.loop_seq});
@@ -6384,6 +6575,38 @@ const Emitter = struct {
     /// collection. An iteration loop always collects.
     fn loopIsSearch(lp: anytype) bool {
         return lp.condition and !bodyHasYield(lp.body);
+    }
+
+    /// Whether `e` **is** a search loop used as a value — the initialiser shape
+    /// that lets a binding adopt the loop's decision-52 flag. Parentheses are
+    /// transparent; anything else is not the loop's value.
+    fn searchLoopInit(e: ast.Expr) bool {
+        return switch (e) {
+            .loop => |lp| loopIsSearch(lp) and bodyYields(lp.body),
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| searchLoopInit(inner.*),
+                else => false,
+            },
+            else => false,
+        };
+    }
+
+    /// Whether `e` is a condition or infinite `loop` that can **never** have a
+    /// value: no `yield` and no `break <value>` anywhere in its body, so
+    /// `lowerLoop` builds neither accumulator and `lowerConditionLoop` leaves a
+    /// bare `0`. Decision 52's headline — "a loop with no `break <value>` has no
+    /// value to give" — is exactly this shape, and it needs no run-time flag:
+    /// absence is statically certain. An **iteration** loop is excluded: it
+    /// collects, and its value is an empty array, not absence.
+    fn valuelessLoopInit(e: ast.Expr) bool {
+        return switch (e) {
+            .loop => |lp| lp.condition and !bodyYields(lp.body),
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| valuelessLoopInit(inner.*),
+                else => false,
+            },
+            else => false,
+        };
     }
 
     fn bodyHasYield(body: []const ast.Stmt) bool {

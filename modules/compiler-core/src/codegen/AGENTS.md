@@ -1347,7 +1347,7 @@ first three are now enforced by the model, not by discipline:
   `yield` anywhere means the loop **collects** and keeps the `$__yield{n}`
   accumulator; without one, a condition or infinite `loop` used as a value is a
   **search** — `break <v>` stores `v` in `$__found{n}` and `br $__break`s, and
-  the loop answers that local (`0` when it never broke, wasm's null carrier).
+  the loop answers that local.
   An **iteration** loop (`loop (xs) { x -> … }`) always collects, which is what
   `fn find(arr: i32[]) -> i32[]` relies on. `isArrayExpr` knows the difference,
   or a search's value printed through the array printer. Both forms used to
@@ -1361,6 +1361,52 @@ first three are now enforced by the model, not by discipline:
   A shape holding an array (`[X`) is **not** compared this way and keeps the
   pointer comparison: `[X` has no closing code and an array's length is only
   known at run time.
+- **A tuple element is printed by its own shape** (`tupleElemShapeOf` +
+  `shapeSpan`): `@print(t.1)` answered `256` and answers `x`, `@print(row.name)`
+  answered `256` and answers `SP`. `printShapeOf` already built the tuple's whole
+  shape (`((ii)s)`, `(si)`) but its contract is to answer containers, and
+  `isStringExpr` — what `@print` asks about a **single** value — could not ask it;
+  `tupleElemShapeOf` slices element `N` out and both readers use it, so string
+  `+`, string `==` and `str_locals` follow. A label is not a separate case: the
+  checker resolves `row.name` to `row._0` (§6 T4) before this backend sees it, so
+  the member is always `_N` or a bare `N`. An element that is itself a container
+  prints as one too (`t.0` → `#(1, 2)`), which is **ahead of commonJS**: it prints
+  `[1, 2]` there, dropping the `#` marker when no shape hint is passed — `04-js`'s
+  row, so the fixture for this is wasm-only.
+- **A condition loop that never breaks answers `null`** (decision 52,
+  `search_flag` + `$__print_loop_i32`): it answered `0`, which is a value. The
+  loop's value is carried **unboxed** with `0` for absence — the representation
+  `??` already reads, and it was already right (`none ?? 42` answers `42`) — so
+  the value alone cannot tell "never broke" from `break 0`, and commonJS prints
+  `0` for the second. `lowerLoop` therefore declares a `$__got{n}` flag beside
+  `$__found{n}`, `break <v>` sets it, and `@print` pushes both into
+  `$__print_loop_i32`, which writes the number or `$__print_null`. The flag
+  shares `$__found{n}`'s name index, so the two can never disagree — including
+  under the pre-existing limit that sequential condition loops in one fn reuse
+  index `0`. **Only `@print` reads the flag**: the loop's value is unchanged
+  everywhere else, which is why no other snapshot moved.
+  `$__print_null` is deliberately **not** `$__print_undefined`: decision 52
+  settles the loop, and what an absent `?T` prints here — `undefined`, against
+  commonJS's `null` — is still open, so wasm now carries two absence texts on
+  purpose. erlang and beam owe the same row — erlang leaks the loop's variable
+  group (`3`) and beam answers an atom; front 12's
+  `tests/language/run/loop_condition_no_break.bp` measures all four.
+  **Two shapes, and the simpler one is the decision's headline**: a loop with no
+  `break <value>` **at all** builds neither accumulator, so `lowerConditionLoop`
+  leaves a bare `0` and there is no flag to read — absence is statically certain,
+  and `null_value_locals` + `valuelessLoopInit` make `@print` write
+  `$__print_null` without loading anything. The flag is only for the loop that
+  *might* have broken.
+- **§7 F1 — a separator inside an array or a tuple is `, `, not `,`**
+  (`wat_prelude.putSep`): `@print([1, 2])` writes `[1, 2]` and `@print(#(1, "a"))`
+  writes `#(1, "a")`, where decision 1a's text had no space at all
+  (`[1,2]`, `#(1,"a")`). Four sites write a separator and all four now call it:
+  `$__print_arr_i32_raw`, `$__print_arr_f32_raw` and `$__print_shaped_raw`'s
+  array (`[X`) and tuple (`(XY…)`) arms. The two bytes go through the scratch
+  cells at **8 and 9** in one `fd_write`, so the separator still costs one call.
+  commonJS and beam already wrote the space; **erlang does not** — that is
+  `02-erlang` step 1 F1, and until it lands `snapshots/codegen/erlang/` is the
+  only directory whose logs still read `[1,2]`.
 - **§7 F5 — an `f64` always carries its decimal part** (`$__print_f64_raw`):
   `@print(5.0)` writes `5.0`, `9.0` and `[115.0, 287.5, 460.0]`, where the
   printer used to drop a whole number's fraction entirely (`5`, `9`,

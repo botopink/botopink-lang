@@ -39,7 +39,7 @@ model exists so none of them can be written again:
 |---|---|
 | `wat_ast.zig` | **Types**: `ValType` (`i32`/`i64`/`f32`/`f64`, with `parse` for the backend's spelled type names), `Stack` (`none`/`value`/`terminated`, with `fits(?ValType)`), `Width` (`full`/`byte` — `…8_u` / `…8`), `MemArg` (`ty`, `width`, `offset`). **Instructions**: `Instr` (`const` with the numeral as spelled, `local_get`/`local_set`/`local_tee`, `global_get`/`global_set`, `op` = `<ty>.<name>`, `convert` (a fully-spelled conversion opcode), `load`/`store`, `call`, `call_indirect` (an inline `FuncType`), `br`/`br_if`, `drop`, `return`, `unreachable`, `memory_copy`, `if`, `block` (`block` or `loop`), `comment`). **Layout**: `Line` (instruction + `indent` + trailing `;; comment` + `folded`), `Seq` (lines + stack), `If.Arm.Layout` (`block` vs one-line `inline_`). **Forms**: `Param`, `Local`, `Func` (name, exports, params, result, `locals` as *lines* so a helper can group several, body), `Global`, `FuncType`/`Import`, `Memory`, `DataSegment` (offset + length prefix + raw bytes), `Item` (import/memory/start/table/data/global/func/comment — `table` is `(table funcref (elem $f …))`, each name checked against the module's functions), `Module` (items). **Invariants**: `Invalid`, `validateFunc`, `validateModule`, `declaresCall`. **Helpers**: `Helper` (every symbol is `__<tag>`; `group`), `HelperGroup` (`deps` — the groups a group's functions call into), `HelperSet` (an `EnumSet`; `require` closes over `deps`). **`Builder`**: arena + `seq`/`param`/`localLines`/`func` (which validates) + `helper`. |
 | `wat_emitter.zig` | `renderModule` (validates, then `(module …)`; there is no bare-form entry point). Owns: the two-space item column, the four-space body column and each construct's arm columns, `$`-prefixing, folded (`(call $main)`) vs flat form, inline `(then i32.const 0 return)` arms, `offset=` suppressed when zero, and the data-segment escaping (four little-endian length bytes as `\xx`, then `\n`/`"`/`\`/`\t`/`\r`/`\xx` for control bytes). |
-| `wat_prelude.zig` | The runtime helpers wasm has no opcode for, as `Func` nodes: `print` (`$__write_bytes`, `$__print_nl`, `$__print_sp`, `$__print_i32`, `$__print_i32_raw`, `$__memmove`), `print_str`, `print_bool`, `print_f64`, `arr_at`, `str_concat`, `str_eq`, `str_slice` (transcribed line by line), then — one helper per group, built with the comptime constructors at the bottom of the file (`func`, `loop`, `when`, `whenElse`, `get`/`set`/`op`/…; `func` assigns each line the column its nesting puts it at) — `alloc` (bump, 4-byte aligned), `mem_eq`, `i32_abs`/`i32_min`/`i32_max`, `i32_to_str`, `f64_to_str` (float param — `typedFunc`), `str_case` (ASCII shift of a byte range), `str_index_of`, `str_starts_with`, `str_ends_with`, `str_trim` (mode bits: 1 start, 2 end), `str_split`, `str_repeat`, `arr_new`, `arr_slice` (host bound rules), `arr_reverse`, `arr_prepend`, `arr_push`, `arr_concat`, `arr_zip`, `arr_index_of_i32`/`_str`, `arr_join_str`/`_i32`, `print_arr_i32`, `print_arr_f32` (+`_raw`), `box_i32`, `arr_at_box`, `print_opt` (`$__print_undefined` — the bytes of `undefined` through scratch `176..185` — and `$__print_opt_i32`/`_bool`/`_str` +`_raw`), `assert_fail` (`$__write_err` — `fd_write` to fd 2 — and `$__assert_fail`, its literal text through scratch `188..208`), `print_shaped` (`$__print_quoted_raw` — a nested string, quoted with the source escapes — and `$__print_shaped_raw(v, shape, go)`, which walks a shape string — `i`/`f`/`b`/`s`, `[X`, `(XY…)` — writing `[a,b]` / `#(a,b)` and answering the address past the shape; `go = 0` only measures). `items(group)` returns a group's forms, `order` the order a module appends them in (declaration order, so the transcribed groups keep their place), `fd_write_import` the one host import the print group needs. Scratch layout below the data section (which starts at 256): `0..8` the WASI iovec, `8` the newline byte, `16..32` the bool text, `32..64` the float fraction, `64..128` the i32 digits, `128..160` the digits `$__i32_to_str` writes backwards, `168..174` the fraction digits of `$__f64_to_str`. |
+| `wat_prelude.zig` | The runtime helpers wasm has no opcode for, as `Func` nodes: `print` (`$__write_bytes`, `$__print_nl`, `$__print_sp`, `$__print_i32`, `$__print_i32_raw`, `$__memmove`), `print_str`, `print_bool`, `print_f64`, `arr_at`, `str_concat`, `str_eq`, `str_slice` (transcribed line by line), then — one helper per group, built with the comptime constructors at the bottom of the file (`func`, `loop`, `when`, `whenElse`, `get`/`set`/`op`/…; `func` assigns each line the column its nesting puts it at) — `alloc` (bump, 4-byte aligned), `mem_eq`, `i32_abs`/`i32_min`/`i32_max`, `i32_to_str`, `f64_to_str` (float param — `typedFunc`), `str_case` (ASCII shift of a byte range), `str_index_of`, `str_starts_with`, `str_ends_with`, `str_trim` (mode bits: 1 start, 2 end), `str_split`, `str_repeat`, `arr_new`, `arr_slice` (host bound rules), `arr_reverse`, `arr_prepend`, `arr_push`, `arr_concat`, `arr_zip`, `arr_index_of_i32`/`_str`, `arr_join_str`/`_i32`, `print_arr_i32`, `print_arr_f32` (+`_raw`), `box_i32`, `arr_at_box`, `print_opt` (`$__print_undefined` — the bytes of `undefined` through scratch `176..185` — and `$__print_opt_i32`/`_bool`/`_str` +`_raw`), `print_loop` (`$__print_null` — decision 52's four bytes through scratch `176..180`, one `i32.store` — and `$__print_loop_i32` +`_raw`, which take the value **and** the `$__got{n}` flag; deliberately a different text from `$__print_undefined`, see `../AGENTS.md`), `assert_fail` (`$__write_err` — `fd_write` to fd 2 — and `$__assert_fail`, its literal text through scratch `188..208`), `print_shaped` (`$__print_quoted_raw` — a nested string, quoted with the source escapes — and `$__print_shaped_raw(v, shape, go)`, which walks a shape string — `i`/`f`/`b`/`s`, `[X`, `(XY…)` — writing `[a, b]` / `#(a, b)` and answering the address past the shape; `go = 0` only measures). `items(group)` returns a group's forms, `order` the order a module appends them in (declaration order, so the transcribed groups keep their place), `fd_write_import` the one host import the print group needs. Scratch layout below the data section (which starts at 256): `0..8` the WASI iovec, `8` the newline byte — and `9` the space of §7's `, ` separator (`putSep`), written beside it so the two bytes leave in one `fd_write` —, `16..32` the bool text, `32..64` the float fraction, `64..128` the i32 digits, `128..160` the digits `$__i32_to_str` writes backwards, `168..174` the fraction digits of `$__f64_to_str`. |
 
 ## Consumers
 
@@ -99,31 +99,50 @@ address. `elemKindOfTypeRef` reads a type parameter as `.i32`, which is right fo
 the *slot* and wrong for the *text*. Fixing it needs the instantiated type at the
 call site, which this backend does not have.
 
-**Two silent wrong answers remain**, measured over `snapshots/codegen/wasm/` on
-2026-09-18 and left for their own row: a **string** reaching `@print` through a
-shape `isStringExpr` does not recognise, so the address is printed instead of the
-text. (A third, `record_a_method_named_print_is_called_on_the_record`
-— `@print(d.print())` → `276` — is fixed by the method-symbol registration
-above, and its fixture now records `doc:hi`.)
+**A tuple element is printed by its own shape, not by its address**
+(`tupleElemShapeOf`). This was the last silent wrong-answer class the directory
+carried, and it was two fixtures:
 
-| Fixture | Written | Printed | Means |
-|---|---|---|---|
-| `tuple_chained_positional_access_and_a_method_on_an_element` | `@print(t.1)` | `256` | `x` |
-| `tuple_labels_resolve_to_positions_on_every_backend` | `@print(row.name)` | `256` | `SP` |
+| Fixture | Written | Printed | Means | Now |
+|---|---|---|---|---|
+| `tuple_chained_positional_access_and_a_method_on_an_element` | `@print(t.1)` | `256` | `x` | `x` |
+| `tuple_labels_resolve_to_positions_on_every_backend` | `@print(row.name)` | `256` | `SP` | `SP` |
+| the same | `@print(local.a)` | `264` | `RJ` | `RJ` |
 
-Both are a **labelled or positional tuple element whose type is a string**: the
-element's shape is known to `printShapeOf` (it builds `((ii)s)` for the tuple) but
-not to `isStringExpr`, which is what `@print` asks for a single value.
+Both are a **labelled or positional tuple element whose type is a string**. A
+label is not a separate case: the checker resolves `row.name` to `row._0` before
+this backend sees it (§6 T4), so the member is always `_N` or a bare `N`. The
+element's shape *was* known — `printShapeOf` builds `((ii)s)` for the tuple and
+`(si)` for a `#(name: string, pop: i32)` — but only to `printShapeOf`, whose
+contract is to answer **containers**; `isStringExpr` is what `@print` asks about a
+**single** value, and it had no way to ask. `tupleElemShapeOf` slices element `N`
+out of the receiver's shape and both readers now ask it, so `str_locals`, string
+`+` and string `==` follow for free (`val s = t.1; s + "!"` answered `256!`).
+`shapeSpan` is the Zig twin of `$__print_shaped_raw`'s `go = 0` measuring mode and
+has to keep agreeing with it — they walk the same strings.
+
+Because `printShapeOf` asks too, an element that is itself a **container** prints
+as one: `t.0` of `#(#(1, 2), "x")` answered `296` and answers `#(1, 2)`, and `u.0`
+of `#(["a", "b"], 3)` answered `312` and answers `["a", "b"]`. Here wasm is ahead
+of commonJS, which prints `[1, 2]` for `t.0` — it drops the `#` marker when the
+shape hint is absent. That is `04-js`'s row, which is why the fixture pinning
+these is `assertWasmRunLog` and not an all-backend snapshot.
 
 The class was found by scanning every `RUN LOG` in the directory for a bare
 integer ≥ 256 (the first data offset) or a bracketed list of them. Six files
-matched: the three above, and three whose numbers are the value the program
-actually computes (`loop_filter_with_conditional_break` `[250,400]`,
+matched: the two above, `record_a_method_named_print_is_called_on_the_record`
+(`@print(d.print())` → `276`, fixed by the method-symbol registration above and
+now recording `doc:hi`), and three whose numbers are the value the program
+actually computes (`loop_filter_with_conditional_break` `[250, 400]`,
 `template_end_to_end_generic_expr_via_code_builtin` `8081`,
 `template_end_to_end_yaml_model_computes_a_labeled_tuple` `8005`). **No fixture
 printed a record or a variant**, which is why the trap above re-recorded no
 existing file — the addresses §7 owes were only ever in the language cells. Any
 new fixture whose log holds such a number is worth re-reading against this table.
+
+What is left in this class is the **generic-parameter limit** below, which is a
+different cause: there the declared type is a type parameter, so no shape exists
+to slice.
 
 ## Function values, and the lowering that is not there
 

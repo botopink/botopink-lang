@@ -28,10 +28,13 @@ fn main() {
     (local $n i32)
     (local $never i32)
     (local $__found0 i32)
+    (local $__got0 i32)
     i32.const 0
     local.set $i
     i32.const 0 ;; §10: a search that never breaks has no value
     local.set $__found0
+    i32.const 0 ;; decision 52: it has not broken yet
+    local.set $__got0
     (block $__break
       (loop $__continue
     local.get $i
@@ -48,6 +51,8 @@ fn main() {
     i32.const 2
     i32.mul
     local.set $__found0
+    i32.const 1 ;; decision 52: it broke, so it has a value
+    local.set $__got0
     br $__break
       )
       (else
@@ -65,13 +70,16 @@ fn main() {
     local.get $__found0
     local.set $found
     local.get $found
-    call $__print_i32
+    local.get $__got0
+    call $__print_loop_i32
     local.get $i
     call $__print_i32
     i32.const 0
     local.set $k
     i32.const 0 ;; §10: a search that never breaks has no value
     local.set $__found0
+    i32.const 0 ;; decision 52: it has not broken yet
+    local.set $__got0
     (block $__break
       (loop $__continue
     i32.const 1
@@ -88,6 +96,8 @@ fn main() {
       (then
     local.get $k
     local.set $__found0
+    i32.const 1 ;; decision 52: it broke, so it has a value
+    local.set $__got0
     br $__break
       )
       (else
@@ -101,11 +111,14 @@ fn main() {
     local.get $__found0
     local.set $r
     local.get $r
-    call $__print_i32
+    local.get $__got0
+    call $__print_loop_i32
     i32.const 0
     local.set $n
     i32.const 0 ;; §10: a search that never breaks has no value
     local.set $__found0
+    i32.const 0 ;; decision 52: it has not broken yet
+    local.set $__got0
     (block $__break
       (loop $__continue
     local.get $n
@@ -120,6 +133,8 @@ fn main() {
       (then
     local.get $n
     local.set $__found0
+    i32.const 1 ;; decision 52: it broke, so it has a value
+    local.set $__got0
     br $__break
       )
       (else
@@ -137,7 +152,8 @@ fn main() {
     local.get $__found0
     local.set $never
     local.get $never
-    call $__print_i32
+    local.get $__got0
+    call $__print_loop_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
@@ -322,6 +338,32 @@ fn main() {
       )
     )
   )
+  (func $__print_null
+    i32.const 176
+    i32.const 1819047278
+    i32.store
+    i32.const 176
+    i32.const 4
+    call $__write_bytes
+  )
+  (func $__print_loop_i32_raw (param $v i32) (param $got i32)
+    local.get $got
+    (if
+      (then
+        local.get $v
+        call $__print_i32_raw
+      )
+      (else
+        call $__print_null
+      )
+    )
+  )
+  (func $__print_loop_i32 (param $v i32) (param $got i32)
+    local.get $v
+    local.get $got
+    call $__print_loop_i32_raw
+    call $__print_nl
+  )
 )
 ```
 
@@ -330,5 +372,5 @@ fn main() {
 8
 4
 3
-0
+null
 ```
