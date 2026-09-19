@@ -79,10 +79,11 @@ test "js: std package ---- order enum module with type export" {
 // `lookup/2`; the consumer must remote-call them (`dict:insert/3`). The program
 // means `1`, then `2` (two distinct keys), which commonJS and erlang both print.
 //
-// KNOWN-WRONG (beam): `main.S` reads `insert` out of the receiver map and
-// `call_fun`s it instead of calling `dict:insert/3` — the beam twin of the
-// erlang defect this test pins, in `beam_asm.zig` (front 01). The module never
-// runs, so its RUN LOG is empty.
+// beam calls them remotely too, since `methodOwnerModule` in `beam_asm.zig`
+// reads the same link index: `{call_ext, 3, {extfunc, dict, 'Dict_insert', 3}}`.
+// It used to read `insert` out of the receiver map and `call_fun` the
+// `undefined` it found (`{badfun, #{…}}`), so the module never ran and its RUN
+// LOG was empty.
 // KNOWN-WRONG (wasm): wasm stays single-module, so `wat.zig` inlines the std
 // module's functions into the entry (`$Dict_insert`, `$Dict_lookup`) and the
 // cross-module index never applies. `$Dict_lookup` answers absent — the first

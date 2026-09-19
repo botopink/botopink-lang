@@ -3371,6 +3371,27 @@ const Emitter = struct {
                             try self.lowerExtCall(mangled, recv_expr, cc.args, mode);
                             return;
                         } else |_| {}
+                        // A method whose owning type came from ANOTHER module.
+                        // The owner emits and exports it (`geometry.S`:
+                        // `{exports, [{'Point_norm', 1}, …]}`), so the call is
+                        // remote — it used to fall into the fun-field heuristic
+                        // below, read `norm` out of the record's map and
+                        // `call_fun` the `undefined` it found
+                        // (`{badfun, #{x => 1, y => 2}}` at run time). Parity
+                        // with the associated-fn path above and with the erlang
+                        // backend's landing (`7783fd6`, `1193d3c`).
+                        if (self.methodOwnerModule(type_name, cc.callee)) |owner| {
+                            const st = try self.stageCall(recv_expr, cc.args, &[_]ast.TrailingLambda{});
+                            try self.placeStaged(&st);
+                            try beamEmitter.writeCall(
+                                self.out,
+                                if (mode == .tail) .last else .normal,
+                                1 + cc.args.len,
+                                .{ .ext = .{ .module = owner, .function = mangled } },
+                                self.num_y,
+                            );
+                            return;
+                        }
                     } else |_| {}
                 },
             };
@@ -3669,6 +3690,29 @@ const Emitter = struct {
         try beamEmitter.writeComment(self.out, "{s}: {s}/{d}", .{ kind, name, arity });
         try beamEmitter.writeMove(self.out, Term.tupleOf(&[_]Term{ Term.atomOf(kind), Term.atomOf(name), Term.int(@intCast(arity)) }), 0);
         try beamEmitter.writeCall(self.out, .normal, 1, .{ .ext = .{ .module = "erlang", .function = "error" } }, 0);
+    }
+
+    /// The module atom that emits `'<type_name>_<method>'`, when the type came
+    /// from another module. Two sources, because a consumer reaches an imported
+    /// type two ways: by naming it in an `import { … }` (`imported_types`), and
+    /// through a value some other import answers (`dict.empty()` gives a `Dict`
+    /// nothing in this module named), which only the link index knows about.
+    /// Null when the type is this module's own — then the method is a local
+    /// label and the caller has already found it.
+    fn methodOwnerModule(self: *const Emitter, type_name: []const u8, method: []const u8) ?[]const u8 {
+        if (self.imported_types.get(type_name)) |owner| return owner;
+        const xc = self.cross orelse return null;
+        const info = xc.exports.get(type_name) orelse return null;
+        switch (info.kind) {
+            .record, .@"enum" => {},
+            else => return null,
+        }
+        const owner = crossModule.moduleBasename(info.module);
+        if (std.mem.eql(u8, owner, self.module_name)) return null;
+        for (info.methods) |m| {
+            if (std.mem.eql(u8, m, method)) return owner;
+        }
+        return null;
     }
 
     /// Owning module atom for a cross-module export of the given kind, or null
