@@ -29,7 +29,8 @@ the rule; a capability decision 8 does not legislate gets a plain sentence.
 
 Areas, by filename prefix: `case_*`, `tuple_*`, `loop_*` (decision 8 §5, §6, §10), `effect_*`,
 `comptime_*` / `decorator_*`, `external_*`, `generic_*`, `string_*` / `array_*`, `type_identity_*`,
-and the singletons (`closure_capture`, `recursion`, `optional`, `expr_sugar`, `fn_defaults`, and the
+`optional*` (`optional`, and decision 54's `optional_null_pattern` / `optional_variant_pattern`),
+and the singletons (`closure_capture`, `recursion`, `expr_sugar`, `fn_defaults`, and the
 decision-28/30/33 cells `nullish_default`, `paren_receiver`, `type_suffix`, `bodyless_fn`,
 `curried_call`, `index_expression`). One scenario group per
 file: a parse error is the blast radius, so nine `#[@External]` declarations in one file mean one
@@ -81,10 +82,12 @@ changes how many `.S` files a program emits and where they live, so a default-on
 written against a layout that is about to move. Flipping it on is one line of `run.sh`
 (`all) targets=(commonJS erlang wasm beam)`) plus a re-run of the beam cells; it belongs to 13's
 closing step. The beam rows of `expected-failures.txt` already exist and
-`tests/language/run.sh --target beam` is green: **9 results, 2 passing** (`run/smoke.bp`,
-`modules/mod_tree`), 8 expected failures — 7 owned by `03-beam` (steps 2 and 4) and 1 by
-`01-checker` step 4; three of the `03` rows name `13 step 18` as well, because a record and a
-variant cannot print their names before a value carries one.
+`tests/language/run.sh --target beam` is green. Re-measured at `b5a9b85d` plus this front's
+decision-52/53/54/55 cells: **42 results, 19 passed, 23 expected failures, 0 failed** — 18 of
+them `run/` and `modules/` results (7 passing) and 24 `reject/` results, which run once under
+`targets[0]` and are counted by both runs. The 11 beam lines are owned by `03-beam` (steps 2, 3
+and 4), `01-checker` step 4 and `03 handover 15`; four of them name `13 step 18` as well, because
+a record and a variant cannot print their names before a value carries one.
 
 ## Running
 
@@ -127,55 +130,57 @@ rows sit in the file while beam stays out of `--target all`.
 
 ## Status and the gate
 
-Counted on disk at `7bfecf7` + the decision-28/30/33 cells:
+Counted on disk at `b5a9b85d` + the decision-52/53/54/55 cells:
 
 ```bash
 ls test/*.bp    | wc -l   # 49
-ls run/*.bp     | wc -l   #  8   (each with its .out)
-ls reject/*.bp  | wc -l   # 23   (each with its .expect)
+ls run/*.bp     | wc -l   # 15   (each with its .out)
+ls reject/*.bp  | wc -l   # 24   (each with its .expect)
 ls -d modules/*/| wc -l   #  3
-find . -name '*.bp' | wc -l   # 87 — 83 cells, plus the 4 extra .bp of the modules/ projects
+find . -name '*.bp' | wc -l   # 95 — 91 cells, plus the 4 extra .bp of the modules/ projects
 ```
 
-**83 cells**, of which three are the `smoke` files (one per single-file kind) — so **80** besides
+**91 cells**, of which three are the `smoke` files (one per single-file kind) — so **88** besides
 them, by area:
 
 | Area | Cells | Total |
 |---|---|---|
-| `case` (§5) | 8 test + 1 run + 9 reject | 18 |
+| `case` (§5) | 8 test + 2 run + 9 reject | 19 |
 | tuples (§6) | 6 test + 1 run + 2 reject | 9 |
-| `loop` (§10) | 6 test + 2 reject | 8 |
+| `loop` (§10) | 6 test + 5 run + 2 reject | 13 |
 | effects (§9) | 5 test + 5 reject | 10 |
 | comptime, templates, decorators | 3 test | 3 |
 | host externals (§8) | 2 test + 1 reject | 3 |
 | generics and behaviors (§1) | 1 test + 2 reject | 3 |
 | printing (§7) | 3 run | 3 |
-| core: closures, recursion, primitives, optionals, sugar, defaults | 8 test | 8 |
+| core: closures, recursion, primitives, optionals (decision 54), sugar, defaults | 8 test + 1 run + 1 reject | 10 |
 | run-time type identity (§4, §7 — `13-module-identity`) | 4 test + 1 run | 5 |
 | the forms `109f6c9` landed (decisions 28, 30, 33; 15's R1–R3, R5, R8) | 5 test + 1 run + 1 reject | 7 |
 | modules | 3 `modules/` cells | 3 |
 
-Classification at botopink-lang `b5a9b85d` (node v25.8.0, OTP 29), `zig build test-language`, every
-target of `--target all` together:
+Classification at botopink-lang `b5a9b85d` + these cells (node v25.8.0, OTP 29),
+`zig build test-language`, every target of `--target all` together:
 
 ```
-language tests: 261 passed, 51 expected failures, 0 failed
+language tests: 265 passed, 69 expected failures, 0 failed
 ```
 
-`expected-failures.txt` holds **56** lines: these 51 plus 5 that only `--target beam` exercises (the
-11 `*` reject lines are counted by both runs). Every owner cell names a 1.0.5-beta section, re-checked
+`expected-failures.txt` holds **80** lines: these 69 plus 11 that only `--target beam` exercises (the
+12 `*` reject lines are counted by both runs). Every owner cell names a 1.0.5-beta section, re-checked
 against `specs/1.0.5-beta/` on 2026-09-18. By the row that comes first on the line —
-**01-checker 37 · 02-erlang 6 · 03-beam 4 · 05-wasm 4 · 13-module-identity 4 · 04-js 1**. **19**
+**01-checker 42 · 02-erlang 12 · 03-beam 9 · 05-wasm 8 · 04-js 5 · 13-module-identity 4**. **23**
 lines name a second row that has to land before the line goes (the §7 formatter's record and variant
 halves, and the identity cells behind a checker row).
-`tests/language/run.sh --target beam` reads **18 passed, 16 expected failures, 0 failed**; its 5
-beam-only lines are skipped by `--target all`. See § the targets.
+`tests/language/run.sh --target beam` adds 18 `run/`+`modules/` results of its own — 7 passing, 11
+listed — beside the same 24 `reject/` results; those 11 lines are skipped by `--target all`.
+See § the targets.
 
 **Every number in this section and in `expected-failures.txt`'s header is recounted from the file,
 never adjusted by a delta** — decision 59 of `specs/1.0.5-beta/decisions-taken.md`, taken
 2026-09-18 after two fronts re-tallied the same block from different baselines in one merge window
 and were individually right and jointly wrong. The header carries the counting command. This section
-had been stale by nine results and fourteen lines for the same reason.
+had been stale by nine results and fourteen lines for that reason when `fe871ed` recounted it, and by
+the cells below it again here.
 
 **Where an owner cell is not `<front> step <n>`.** Two of this milestone's rows are *handover
 sections* of a front's README — "Handed over by `15-language-surface`", prose with a heading and no
@@ -232,27 +237,65 @@ table carried are gone: they parse. What is left is two rows and one correction.
 `map_get/2` on erlang, and answers `0` on wasm. That is §6 T4 and the rows exist — `04 step 2`,
 `02 step 4` — so `test/tuple_labels.bp` asserts it and carries the two lines.
 
-**The range pattern in a `case` arm — both halves are decided and neither has landed, so no cell
-asserts an endpoint.** Decision 20 settled the spelling (`..` is the only range, in patterns and in
-iteration alike; `...` leaves the grammar) and decision 36 settled the meaning (`..` excludes its end
-in a pattern exactly as in a loop). Measured at `aab5489`:
+**The range pattern in a `case` arm — decision 53 settled the spelling and `run/case_range_value.bp`
+now pins the endpoints.** Decision 53 (2026-09-18) **amended** decisions 20 and 36 to Zig's split:
+`...` is inclusive in a **pattern**, `..` is exclusive in a **slice** and in `loop (a..b)`, and no
+emitter moves. `zig version` 0.16.0 has both spellings in those two positions and `1..9` inside a
+`switch` does not exist there at all, so the compiler was the Zig-consistent side all along.
 
 - `1..9` in an arm still reds `error[pattern-range-exclusive]: \`..\` is iteration, not a pattern's
-  range`, recommending `...` — the diagnostic that inverts. `test/case_arms.bp` is listed against
-  `01 step 4` and is right as written.
-- `1...9`, the spelling that diagnostic recommends, parses and checks — and **works on no backend**.
-  Re-measured here, three backends give three different wrong answers to the same program:
-  `val r = case 9 { 1...9 { 1 } _ { 0 } }; @print(r);` prints `undefined` on commonJS, `0` on erlang
-  and `256` — a heap address — on wasm. Front 15 measured the first two; the third is this front's.
-  Write the same `case` where its type is known (`fn f(n: i32) -> i32 { return case n { 1...9 … } }`)
-  and it does not compile at all: `type mismatch: expected i32, got void` at the `case`. A brace-arm
-  of `case` is neither typed nor lowered — the defect already filed with `01-checker`.
+  range`, recommending `...`. Under decision 53 that recommendation is now **right** and it is the
+  decision text that moved; `test/case_arms.bp` is still listed against `01 step 4`, because the
+  parser has to accept `..` in the slice position it already refuses — verify before deleting.
+- `1...9` parses, checks, and **is wrong on three of the four backends**. Re-measured at `b5a9b85d`
+  with the endpoints, which is what `run/case_range_value.bp` prints:
 
-So an endpoint cell written today would assert nothing on either spelling. Decision 36's sentence is
-**not yet in decision 8 §5** and its ~10-line parser edit (`parser/patterns.zig`'s
-`finishRangePattern` `:269-274`, plus dropping `dotDotDot` from the lexer) is `01-checker`'s step-4
-grammar, deliberately left by front 15 because it re-records that front's `case` snapshots. The cell
-is owed once 01 step 4 lands, not before.
+  | `case n { 1...9 { 1 } _ { 0 } }` | n=5 | n=1 | n=9 | n=0 | n=10 |
+  |---|---|---|---|---|---|
+  | commonJS | 1 | 1 | 1 | 0 | 0 | ← correct |
+  | erlang | 0 | 0 | 0 | 0 | 0 | ← the arm never matches |
+  | wasm | 0 | 0 | 0 | 0 | 0 | ← the same |
+  | beam | 1 | 1 | 1 | 1 | 1 | ← the arm always matches |
+
+  **The single-value probe every earlier measurement used is misleading**: at `n=9` it reads
+  `1 / 0 / 0 / 1`, which makes beam look right when its `1` is a false positive, and it was recorded
+  as `1 / 0 / 256` with "beam emits only `out/main.S`" — neither the `256` nor the `.S`-only half
+  reproduces at `b5a9b85d`. An endpoint probe is the minimum a range cell may print.
+- Written where its type is known (`fn f(n: i32) -> i32 { return case n { 1...9 … } }`) the same
+  `case` does not compile: `type mismatch: expected i32, got void`. A brace-arm of `case` is neither
+  typed nor lowered — already filed with `01-checker` step 4, which owns pattern **grammar** as well
+  as arm resolution (decision 36's ~10-line `parser/patterns.zig` `finishRangePattern` edit lands
+  there too).
+
+**A `.out` may encode a decision no backend implements yet, and that is the point.** Five cells do —
+`run/loop_yield_then_break_value.bp`, `run/loop_break_value_then_yield.bp`,
+`run/loop_yield_then_bare_break.bp` (decision 55), `run/loop_condition_no_break.bp` (decision 52) and
+`run/optional_null_pattern.bp` (decision 54). Each `.out` is the decision's answer, so when the
+backends are moved against it **exactly one file per cell** is involved and no `.out` is renegotiated
+in the same commit as an emitter. Each cell's header comment carries the per-backend measurement it
+was written against, dated and with the commit.
+
+**Read a loop's result as `length` + `join(",")`, not as a printed array.** `@print` of an array is
+decision 8 §7's separator row and erlang and wasm still get it wrong (`[20,40,60]` for
+`[20, 40, 60]`), so a cell that prints the array carries a §7 line on two backends and the §10 rule
+it means to assert is hidden behind it. The five `loop` cells above read the result instead — and it
+is what makes `run/loop_yield_then_bare_break.bp` show that **wasm alone already answers decision
+55's fifth row**, as a pass, rather than as a §7 near-miss.
+
+**Decision 55 turned a cell that passed on all four backends into one that fails on all four.**
+`test/loop_collection.bp`'s last test asserted `loop ([1, 2, 3]) { x -> break x * 2; }` → `[2, 4, 6]`,
+and every backend agreed, because they share one accumulator shape and none of them stops at a
+`break`. Decision 55 says `break <value>` contributes its value **and ends the loop**, so the answer
+is `[2]`; the assertion was rewritten to the language and now carries two lines. This is the rule at
+the top of this file working in the direction it is usually not noticed in: four backends agreeing is
+not evidence, and a decision can make a green cell red.
+
+**Where front 02 has no row for the collection loop.** Decision 55 says outright that the cell comes
+first and "then one row per backend against it". `04 step 3` and `05 step 4` are both titled
+`break <value>` and `03 step 3`'s D7 asks for exactly this measurement, so those three lines name
+steps. Front 02 has no §10 collection-loop step — its step 5 is the *condition* loop used as a value,
+a different shape — so its four lines read `02 (no step; decision 55, reported 2026-09-18)`, the shape
+§ expected-failures.txt documents for a certain front with a missing row. Reported to the maintainer.
 
 **Structural equality of two values of the same type is not legislated, so no cell asserts it.**
 `Person(name: "Ana", age: 30) == Person(name: "Ana", age: 30)` answers `false` on commonJS (reference

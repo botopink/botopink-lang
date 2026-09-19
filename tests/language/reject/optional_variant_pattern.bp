@@ -1,0 +1,14 @@
+//// Decision 54 — `.Some(v)` / `.None` over a `?T` is a **located error** naming
+//// the `null` form. The optional is not a variant: `case x { null { … } v { … } }`
+//// is the one spelling (`run/optional_null_pattern.bp`).
+////
+//// Measured at `b5a9b85d`: this compiles, exit 0, and answers `undefined` on
+//// commonJS, `0` on wasm, `5` on beam, and dies with
+//// `no case clause matching 5` on erlang — four different wrong answers to a
+//// program that decision 54 says must not compile.
+
+pub fn main() {
+    val x: ?i32 = 5;
+    val a = case x { .Some(v) { "present" } .None { "absent" } };
+    @print(a);
+}
