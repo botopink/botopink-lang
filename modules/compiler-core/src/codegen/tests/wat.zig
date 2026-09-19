@@ -738,16 +738,30 @@ test "wat: loop ---- break with a value is the loop's value, not a one-element a
     , "3\n8\n[1, 2, 3, 4, 5]\n[15, 20]\n");
 }
 
-// §10 — a search that never breaks has no value to give: `0`, wasm's null
-// carrier (commonJS answers `null`).
-test "wat: loop ---- a search that never breaks answers no value" {
+// §10 and decision 52 — a search that never breaks has no value to give, and
+// the spelling of that is `null`, on every backend. wasm answered `0`: the value
+// is carried unboxed with `0` for absence (which is what `??` reads, and it was
+// already right — `none ?? 42` answers `42`), so the value alone cannot tell
+// "never broke" from `break 0`. `lowerLoop` declares a `$__got{n}` flag beside
+// `$__found{n}`, `break <v>` sets it, and `@print` reads both through
+// `$__print_loop_i32`. The third and fourth prints are the pair that makes the
+// flag necessary rather than decorative: commonJS answers `0` for `break 0` and
+// `null` for the exhausted loop, and so does this backend now.
+test "wat: loop ---- a search that never breaks answers null, and `break 0` answers 0" {
     try h.assertWasmRunLog(std.testing.allocator,
         \\fn main() {
         \\    var m = 0;
         \\    val none = loop (m < 3) { m = m + 1; if (m > 99) { break m; }; };
         \\    @print(none);
+        \\    @print(none ?? 42);
+        \\    var i = 0;
+        \\    val zero = loop (i < 10) { if (i == 0) { break i; }; i = i + 1; };
+        \\    @print(zero);
+        \\    var j = 0;
+        \\    val eight = loop (j < 10) { if (j == 4) { break j * 2; }; j = j + 1; };
+        \\    @print(eight);
         \\}
-    , "0\n");
+    , "null\n42\n0\n8\n");
 }
 
 // §6 T6 — a tuple is positional at run time and `==` compares its elements;
