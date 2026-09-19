@@ -113,10 +113,17 @@ if have escript; then run_test_target "$RECORDS" erlang; else echo "==> records 
 if have erlc && have erl; then run_beam "$RECORDS" 3; else echo "==> records beam: SKIPPED (no erlc/erl)"; fi
 
 # ── multi-folder mod package (commonJS) ──────────────────────────────────────
-# commonJS runs the `mod`/`pub mod` tree end-to-end. The erlang cell is not run:
-# the erlang backend emits cross-module calls (`lucky`, `describe`) as bare
-# local calls, so escript rejects `out/main.erl` (`function lucky/0 undefined`).
-# The erlang front restores it as `run_package "$MODULES" erlang 12 circle 7`.
+# commonJS runs the `mod`/`pub mod` tree end-to-end. The erlang cell is not run,
+# and **not** because of the backend: the emitted calls are properly qualified
+# (`geometry:area/2`, `shapes:describe/0`, `shapes:lucky/0`). `botopink run
+# --target erlang` spawns `escript out/main.erl`, and escript compiles only the
+# file it is handed, so the sibling module is `undef`
+# (`undefined function geometry:area/2`). The fix is in `cli/run.zig`, which
+# front `13-module-identity` owns — assemble every emitted `.erl` with
+# `erlc -o out` and run `erl -noshell -pa out`, the shape the beam arm of
+# `tests/language/run.sh` already uses. Verified by hand at that shape: this
+# package then prints `12 circle 7`, so 13 restores the cell as
+# `run_package "$MODULES" erlang 12 circle 7`.
 if have node; then run_package "$MODULES" commonJS 12 circle 7; else echo "==> modules commonJS: SKIPPED (no node)"; fi
 
 echo "==> backend-execution parity: OK"
