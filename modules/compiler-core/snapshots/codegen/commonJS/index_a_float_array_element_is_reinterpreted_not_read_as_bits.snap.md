@@ -42,7 +42,7 @@ function __bp_print() {
 
 function main() {
     const fs = [1.5, 2.5];
-    __bp_print(@[](fs, 0));
+    __bp_print(fs[0]);
     __bp_print(fs.at(0));
 }
 
@@ -59,9 +59,6 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (node --check):
-main.js:34
-    __bp_print(@[](fs, 0));
-               ^
-SyntaxError: Invalid or unexpected token
+1.5
+1.5
 ```

@@ -486,13 +486,14 @@ test "wat: try propagation in result fn" {
 // ── decision 8 §5: the three defects `01-checker` handed to the backends ─────
 //
 // Each of the four fixtures below answered wrongly on wasm before front 05's
-// case row, and three of them still do on the backends that have not taken
-// their half — recorded, not hidden, so the next front's commit shows the move.
+// case row, and the ones the remaining backends have not taken still do —
+// recorded, not hidden, so the next front's commit shows the move. `04-js` took
+// its half at `f1757f41`, which is why every commonJS log below is now right.
 
 // §5.1 P8 — a pattern's variant name reaches the backend with the path it was
 // **written** with (`Shape.Circle`), while the constructor stores the bare
 // `Circle`, so a dotted arm never matched: wasm answered `0` for a `Circle`.
-// KNOWN-WRONG (commonJS, erlang): `0` twice, the same defect, their half.
+// KNOWN-WRONG (erlang): `0` twice, the same defect, front 02's half.
 // KNOWN-WRONG (beam): empty RUN LOG — beam lifts each arm body into a
 // `-main/0-fun-N-` closure and never applies it (§5.1 P3, front 03's half).
 test "wat: case ---- a variant pattern written as a dotted path" {
@@ -518,8 +519,8 @@ test "wat: case ---- a variant pattern written as a dotted path" {
 
 // §5.1 P8 — the dot shorthand `.Circle(r)`, whose enum comes from the matched
 // value. The leading `.` is what tells a variant path from a binding, so it
-// stays in the name. KNOWN-WRONG (commonJS, erlang): `0`. KNOWN-WRONG (beam):
-// empty RUN LOG, as above.
+// stays in the name. KNOWN-WRONG (erlang): `0`. KNOWN-WRONG (beam): empty RUN
+// LOG, as above.
 test "wat: case ---- the dot-shorthand variant pattern" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type Shape {
@@ -558,9 +559,9 @@ test "wat: case ---- an arm body's statements run and its last expression is its
 }
 
 // §5.1 P1 — a one-parameter arm binder binds the whole matched value.
-// KNOWN-WRONG (commonJS): empty RUN LOG. KNOWN-WRONG (erlang): the module does
-// not assemble — `main.erl:10:27: variable 'N' is unbound`. KNOWN-WRONG (beam):
-// empty RUN LOG. All three are front 02/03/04's half of the same defect.
+// KNOWN-WRONG (erlang): the module does not assemble — `main.erl:10:27:
+// variable 'N' is unbound`. KNOWN-WRONG (beam): empty RUN LOG. Both are front
+// 02/03's half of the same defect.
 test "wat: case ---- a one-parameter arm binder binds the matched value" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
@@ -601,12 +602,17 @@ test "wat: case ---- a failing guard falls through to the next arm" {
 // same node with a `range` where the index goes. Until a backend lowers it the
 // form falls into the unrecognised-builtin path, which on wasm left **nothing
 // on the stack**: `wasmtime` refused the module ("expected i32 but nothing on
-// stack at offset 195"). KNOWN-WRONG (commonJS): not lowered — it writes the
-// literal `@[](xs, 0)`, which is not JavaScript, and `node --check` refuses the
-// file. KNOWN-WRONG (erlang): `function '[]'/2 undefined`, so `erlc` refuses it.
+// stack at offset 195"). `04-js` lowered it at `17e20592`, so commonJS answers
+// too. KNOWN-WRONG (erlang): `function '[]'/2 undefined`, so `erlc` refuses it.
 // KNOWN-WRONG (beam): the worst of the three — it **runs**, exit 0, answering
 // the receiver or `ok` where an element belongs (`xs[9]` prints the whole
 // `[10,20,30]`).
+//
+// Two divergences between the two backends that do answer, neither this row's:
+// a slice prints `[20, 30]` on commonJS and `[20,30]` on wasm (decision 8 §7's
+// separator — this front's step 1 F1, and 02/03/04 each have the same row), and
+// `xs[9]` answers `undefined` on commonJS against `0` on wasm — whether
+// decision 30 means `T` or `?T` is still open (`ast.zig:1734`).
 test "wat: index ---- an array element, a string character and a slice" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {

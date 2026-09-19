@@ -17,8 +17,6 @@ fn main() {
 
 ----- JAVASCRIPT -- main.js
 ```javascript
-function* __bp_range_from(n) { while (true) { yield n; n += 1; } }
-
 function __bp_show(v, s, top, a) {
     if ((typeof v === "string")) {
         a.push(top ? v : (("\"" + Array.from(v, (c) => ((c === "\"") || (c === "\\")) ? ("\\" + c) : (c === "\n") ? "\\n" : (c === "\r") ? "\\r" : (c === "\t") ? "\\t" : c).join("")) + "\""));
@@ -53,15 +51,15 @@ function __bp_print() {
 function main() {
     const xs = [10, 20, 30];
     const i = 1;
-    __bp_print(@[](xs, 0));
-    __bp_print(@[](xs, (i + 1)));
+    __bp_print(xs[0]);
+    __bp_print(xs[(i + 1)]);
     const names = ["ana", "bo"];
-    __bp_print(@[](names, 1));
+    __bp_print(names[1]);
     const s = "hello";
-    __bp_print(@[](s, 1));
-    __bp_print(@[](s, Array.from({length: Math.max(0, (3) - (1))}, (_, __i) => (1) + __i)));
-    __bp_print(@[](s, __bp_range_from(3)));
-    __bp_print(@[](xs, __bp_range_from(1)));
+    __bp_print(s[1]);
+    __bp_print(s.slice(1, 3));
+    __bp_print(s.slice(3));
+    __bp_print(xs.slice(1));
 }
 
 function _botopink_main() {
@@ -77,9 +75,11 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (node --check):
-main.js:37
-    __bp_print(@[](xs, 0));
-               ^
-SyntaxError: Invalid or unexpected token
+10
+30
+bo
+e
+el
+lo
+[20, 30]
 ```

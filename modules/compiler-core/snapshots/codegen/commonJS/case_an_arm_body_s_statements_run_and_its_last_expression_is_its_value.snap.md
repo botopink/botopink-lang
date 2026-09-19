@@ -78,11 +78,11 @@ function main() {
         const _s = s;
         if (_s.tag === "Circle") {
             const { radius: r } = _s;
-            __bp_print("circle");
+            return __bp_print("circle");
         }
         if (_s.tag === "Rect") {
             const { width: w, height: h } = _s;
-            __bp_print("rect");
+            return __bp_print("rect");
         }
     })();
 }

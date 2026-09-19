@@ -41,7 +41,7 @@ function __bp_print() {
 
 function main() {
     const xs = [10, 20, 30];
-    __bp_print(@[](xs, 9));
+    __bp_print(xs[9]);
 }
 
 function _botopink_main() {
@@ -57,9 +57,5 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (node --check):
-main.js:34
-    __bp_print(@[](xs, 9));
-               ^
-SyntaxError: Invalid or unexpected token
+undefined
 ```

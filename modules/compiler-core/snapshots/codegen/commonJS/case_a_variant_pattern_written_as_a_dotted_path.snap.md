@@ -81,23 +81,23 @@ function main() {
     const c = Shape.Circle(7);
     (() => {
         const _s = c;
-        if (_s.tag === "Shape.Circle") {
-            const { r } = _s;
-            __bp_print(r);
+        if (_s.tag === "Circle") {
+            const { radius: r } = _s;
+            return __bp_print(r);
         }
         {
-            __bp_print(0);
+            return __bp_print(0);
         }
     })();
     const q = Shape.Rect(2, 5);
     (() => {
                 const _s = q;
-                if (_s.tag === "Shape.Circle") {
-                    const { r } = _s;
-                    __bp_print(r);
+                if (_s.tag === "Circle") {
+                    const { radius: r } = _s;
+                    return __bp_print(r);
                 }
                 {
-                    __bp_print(0);
+                    return __bp_print(0);
                 }
             })();
 }
@@ -117,6 +117,6 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
-0
+7
 0
 ```

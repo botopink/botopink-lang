@@ -47,10 +47,11 @@ function main() {
     (() => {
         const _s = v;
         if (_s === 0) {
-            __bp_print("zero");
+            return __bp_print("zero");
         }
         {
-            __bp_print(n);
+            const n = _s;
+            return __bp_print(n);
         }
     })();
 }
@@ -68,4 +69,5 @@ _botopink_main();
 
 ----- RUN LOG -----
 ```logs
+7
 ```
