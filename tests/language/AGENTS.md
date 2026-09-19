@@ -130,7 +130,7 @@ rows sit in the file while beam stays out of `--target all`.
 
 ## Status and the gate
 
-Counted on disk at `b5a9b85d` + the decision-52/53/54/55 cells:
+Counted on disk after merging `origin/feat` `3cfb65cb` + the decision-52/53/54/55 cells:
 
 ```bash
 ls test/*.bp    | wc -l   # 49
@@ -158,8 +158,10 @@ them, by area:
 | the forms `109f6c9` landed (decisions 28, 30, 33; 15's R1–R3, R5, R8) | 5 test + 1 run + 1 reject | 7 |
 | modules | 3 `modules/` cells | 3 |
 
-Classification at botopink-lang `b5a9b85d` + these cells (node v25.8.0, OTP 29),
-`zig build test-language`, every target of `--target all` together:
+Classification at botopink-lang `3cfb65cb` + these cells (node v25.8.0, OTP 29),
+`zig build test-language`, every target of `--target all` together. Re-run after merging front 16's
+formatter landing: **both runs are byte-for-byte what they were at `b5a9b85d`** — the formatter moved
+no result, which is what a printer-only change should do:
 
 ```
 language tests: 265 passed, 69 expected failures, 0 failed
@@ -267,6 +269,12 @@ emitter moves. `zig version` 0.16.0 has both spellings in those two positions an
   as arm resolution (decision 36's ~10-line `parser/patterns.zig` `finishRangePattern` edit lands
   there too).
 
+**Every per-cell measurement in this section and in the cells' own header comments was re-run after
+merging `origin/feat` `3cfb65cb` and none of them moved**, the range table above included — so the
+`b5a9b85d` dates in the cell comments are the measurement, not a stale one. In particular the `256`
+heap address the range defect used to be recorded with does **not** reproduce on either commit: wasm
+answers `0`, and it answers `0` at every endpoint.
+
 **A `.out` may encode a decision no backend implements yet, and that is the point.** Five cells do —
 `run/loop_yield_then_break_value.bp`, `run/loop_break_value_then_yield.bp`,
 `run/loop_yield_then_bare_break.bp` (decision 55), `run/loop_condition_no_break.bp` (decision 52) and
@@ -274,6 +282,16 @@ emitter moves. `zig version` 0.16.0 has both spellings in those two positions an
 backends are moved against it **exactly one file per cell** is involved and no `.out` is renegotiated
 in the same commit as an emitter. Each cell's header comment carries the per-backend measurement it
 was written against, dated and with the commit.
+
+**Never pin an erlang exit status or an `escript` warning as the point of a line.** `run.sh` runs
+`botopink run --target erlang`, which today is `escript out/main.erl`: escript compiles the file it is
+handed, prints its **compile warnings on stdout** — which the `.out` comparison sees — and answers
+`127` when the program crashes. [Decision 56](../../specs/1.0.5-beta/decisions-taken.md) replaces that
+with `erlc -o <out>` over every emitted `.erl` and then `erl -pa <out>`, in front 13's `cli/run.zig`:
+the crash status becomes **`1`** and an `erlc` warning no longer reaches the program's stdout. So a
+reason line may *quote* either as evidence, and four of this front's do, but the defect it names must
+be the wrong answer. A front that fixes an erlang lowering and still sees a byte mismatch should check
+which of the two moved.
 
 **Read a loop's result as `length` + `join(",")`, not as a printed array.** `@print` of an array is
 decision 8 §7's separator row and erlang and wasm still get it wrong (`[20,40,60]` for

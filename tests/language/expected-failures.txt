@@ -18,8 +18,10 @@
 # 2026-09-18)` for the collection-loop `break` rows decision 55 says are owed and
 # front 02 has no step for. Neither shape invents a step.
 #
-# Measured on `fix/langtests-2` at `b5a9b85d` plus the decision-52/53/54/55
-# cells this front added, node v25.8.0, OTP 29, `zig version` 0.16.0:
+# Measured on `fix/langtests-2` after merging `origin/feat` `3cfb65cb` (front 16's
+# formatter landing), with the decision-52/53/54/55 cells this front added,
+# node v25.8.0, OTP 29, `zig version` 0.16.0. Both runs are byte-for-byte what
+# they were at `b5a9b85d`: the formatter landing moved no result.
 #
 #   $ tests/language/run.sh                 # commonJS, erlang, wasm
 #   language tests: 265 passed, 69 expected failures, 0 failed
@@ -200,6 +202,14 @@ beam     | run/case_range_value.bp     | 03 step 3 | decision 53: the opposite �
 # `@print` of an array is §7's separator row and two backends still get it wrong,
 # and a §7 row must not hide a §10 one.
 #
+# Three of the erlang lines below quote an `escript` compile warning that arrives
+# on **stdout**, which this suite compares byte for byte. The warnings are caused
+# by the broken lowerings themselves, so they go with them — but under
+# [decision 56](`specs/1.0.5-beta/decisions-taken.md`) front 13 replaces
+# `escript out/main.erl` with `erlc -o <out> … && erl -pa <out>`, and an erlc
+# warning does not reach the program's stdout there. A front that fixes an erlang
+# lowering and still sees a byte mismatch should check which of the two moved.
+#
 # The erlang owner cell has no step number because front 02 has none for the
 # collection loop — its step 5 is the *condition* loop used as a value, a
 # different shape — and decision 55 says outright that the row per backend comes
@@ -213,7 +223,7 @@ erlang   | run/loop_break_value_then_yield.bp | 02 (no step; decision 55, report
 wasm     | run/loop_break_value_then_yield.bp | 05 step 4 | decision 55: the break value is appended and the loop runs on — `4` / `20,99,40,60`
 beam     | run/loop_break_value_then_yield.bp | 03 step 3 | decision 55: the loop runs on after the break — `3` / `20,99,60` (D7)
 commonJS | run/loop_yield_then_bare_break.bp | 04 step 3 | decision 55: a value-less `break` does not end the loop — `3` / `20,40,60` where `2` / `20,40` is owed
-erlang   | run/loop_yield_then_bare_break.bp | 02 (no step; decision 55, reported 2026-09-18) | decision 55: the loop answers the atom `ok`, so `length/1` is called on a non-list and the program dies — `escript: exception error: bad argument in function length/1 called as length(ok)`, exit 127
+erlang   | run/loop_yield_then_bare_break.bp | 02 (no step; decision 55, reported 2026-09-18) | decision 55: the loop answers the atom `ok`, so `length/1` is called on a non-list and the program dies — `escript: exception error: bad argument in function length/1 called as length(ok)`. The status is escript's **127** today and becomes `erl`'s **1** when front 13 lands decision 56's runner; the reason is the crash, not the number
 beam     | run/loop_yield_then_bare_break.bp | 03 step 3 | decision 55: a value-less `break` does not end the loop — `3` / `20,40,60` (D7)
 commonJS | test/loop_collection.bp::§10 a value break contributes its value and ends the loop | 04 step 3 | decision 55: `loop ([1, 2, 3]) { x -> break x * 2; }` answers all three doubled values; the first `break` must end the loop, so `[2]`. This assertion read `length == 3` / `"2,4,6"` and passed on all four backends until decision 55 was taken
 erlang   | test/loop_collection.bp::§10 a value break contributes its value and ends the loop | 02 (no step; decision 55, reported 2026-09-18) | decision 55: the same — `[2, 4, 6]` where `[2]` is owed
