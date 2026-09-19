@@ -393,6 +393,28 @@ pub const Formatter = struct {
 
     // ── expressions ───────────────────────────────────────────────────────────
 
+    /// The fallback of `a ?? b` when this `if` **is** that form's desugaring, and
+    /// null when it is an `if` somebody wrote.
+    ///
+    /// `parseNullishExpr` builds one shape and only one:
+    /// `if (a) { <n> -> <n> } else { b }` with `n = ast.nullish_binding_name` —
+    /// the optional binding form the language already has, which evaluates `a`
+    /// once and narrows it inside the branch. All four parts are tested here, so
+    /// an `if` that binds, or one whose branch is a single identifier, is not
+    /// mistaken for it. The binding name is the codebase's reserved `__bp`
+    /// prefix, so no source spells it.
+    fn nullishDefaultFallback(i: anytype) ?ast.Expr {
+        const binding = i.binding orelse return null;
+        if (!std.mem.eql(u8, binding, ast.nullish_binding_name)) return null;
+        if (i.then_.len != 1) return null;
+        const then_expr = i.then_[0].expr;
+        if (then_expr != .identifier or then_expr.identifier.kind != .ident) return null;
+        if (!std.mem.eql(u8, then_expr.identifier.kind.ident, ast.nullish_binding_name)) return null;
+        const els = i.else_ orelse return null;
+        if (els.len != 1) return null;
+        return els[0].expr;
+    }
+
     pub fn fmtExpr(this: *Formatter, expr: ast.Expr) anyerror!*const Doc {
         return switch (expr) {
             .literal => |lit| switch (lit.kind) {
@@ -503,6 +525,18 @@ pub const Formatter = struct {
                     try this.fmtExpr(tc.handler.*),
                 }),
                 .if_ => |i| blk: {
+                    // `a ?? b` — decision 28's nullish default, which the parser
+                    // desugars into exactly this `if` (`ast.nullish_binding_name`
+                    // says why: no `BinOp` variant, no new node). Printing the
+                    // desugaring gave back a program nobody wrote and lost the
+                    // `??` token with it.
+                    if (nullishDefaultFallback(i)) |fallback| {
+                        break :blk this.concatAll(&.{
+                            try this.fmtExpr(i.cond.*),
+                            try this.text(" ?? "),
+                            try this.fmtExpr(fallback),
+                        });
+                    }
                     const condDoc = try this.fmtExpr(i.cond.*);
                     // Build then block: with or without binding
                     const thenDoc = if (i.binding) |b| blk2: {
@@ -966,7 +1000,53 @@ pub const Formatter = struct {
         });
     }
 
+    /// A builtin call the **parser** synthesised for a form that has its own
+    /// spelling, printed back in that spelling.
+    ///
+    /// `ast.zig` states why both forms desugar into a call rather than into a
+    /// node of their own: no AST union there may gain a variant, or every
+    /// consumer would have to grow an arm before the form could parse at all.
+    /// The reserved callees cannot be written by hand (`is` is a keyword, `@[]`
+    /// does not lex), so a call carrying one is always the desugaring — and the
+    /// printer is the one place that has to undo it, because the desugared text
+    /// is not the program that was written.
+    fn fmtDesugaredBuiltin(this: *Formatter, c: anytype) anyerror!?*const Doc {
+        const is_builtin = if (@hasField(@TypeOf(c), "is_builtin")) c.is_builtin else false;
+        if (!is_builtin or c.receiver != null or c.trailing.len != 0) return null;
+
+        // `xs[0]` — decision 30's index expression, as `@[](receiver, index)`.
+        // One node serves indexing, slicing and a dict read, so `d["k"]` and
+        // `xs[0..2]` come back in their own spellings too: the index is an
+        // ordinary expression and prints as one.
+        if (std.mem.eql(u8, c.callee, ast.index_builtin_name) and c.args.len == 2 and
+            c.args[0].label == null and c.args[1].label == null)
+        {
+            return try this.concatAll(&.{
+                try this.fmtExpr(c.args[0].value.*),
+                try this.text("["),
+                try this.fmtExpr(c.args[1].value.*),
+                try this.text("]"),
+            });
+        }
+
+        // `x is T` — decision 8 §4, as `@is(x)` with the tested type on the
+        // node. Printing the call dropped the type outright: `o is i32` and
+        // `o is string` both came back as `@is(o)`.
+        if (std.mem.eql(u8, c.callee, ast.is_builtin_name) and c.args.len == 1 and c.args[0].label == null) {
+            const isType = if (@hasField(@TypeOf(c), "isType")) c.isType else null;
+            if (isType) |ty| {
+                return try this.concatAll(&.{
+                    try this.fmtExpr(c.args[0].value.*),
+                    try this.text(" is "),
+                    try this.fmtTypeRef(ty),
+                });
+            }
+        }
+        return null;
+    }
+
     fn fmtCall(this: *Formatter, c: anytype) anyerror!*const Doc {
+        if (try this.fmtDesugaredBuiltin(c)) |doc| return doc;
         // Tagged-call sugar round-trip: `callee "..."` (single string arg, no parens)
         const is_tagged = if (@hasField(@TypeOf(c), "is_tagged")) c.is_tagged else false;
         if (is_tagged and c.args.len == 1 and c.args[0].label == null) {
@@ -1013,7 +1093,15 @@ pub const Formatter = struct {
 
         const is_builtin = if (@hasField(@TypeOf(c), "is_builtin")) c.is_builtin else false;
         const is_optional = if (@hasField(@TypeOf(c), "optional")) c.optional else false;
-        const callee: *const Doc = if (c.receiver) |recv|
+        // `adder(3)(4)` — what is called is the previous call's result, so there
+        // is no name to print and the callee travels as an expression
+        // (`ast.CallExpr.call.calleeExpr`, `c.callee` is then `""`). Reading only
+        // `receiver` and `callee` printed the empty name and dropped the
+        // receiver: `adder(3)(4)` came back as `(4)`.
+        const calleeExpr = if (@hasField(@TypeOf(c), "calleeExpr")) c.calleeExpr else null;
+        const callee: *const Doc = if (calleeExpr) |ce|
+            try this.fmtExpr(ce.*)
+        else if (c.receiver) |recv|
             try this.concatAll(&.{
                 try this.fmtExpr(recv.*),
                 try this.text(if (is_optional) "?." else "."),
@@ -2137,11 +2225,54 @@ pub const Formatter = struct {
         });
     }
 
+    /// Where a type is being printed, for the one question the printer has to
+    /// ask there: would re-reading the text give back the same type?
+    ///
+    /// The three positions are the three places `parser/types.zig` binds a type
+    /// operator to a **base** type rather than to a whole one, so a member that
+    /// does not close itself absorbs what follows.
+    const TypePosition = enum {
+        /// `X[]` — `parseBaseTypeRef` applies the `[]` suffix at the single exit
+        /// of a base type, so `?i32[]` reads as `?(i32[])` and `i32 | string[]`
+        /// as `i32 | (string[])`.
+        arrayElement,
+        /// `?X` — `?` takes a base type, so a `|` after it opens a union whose
+        /// *first member* is the optional.
+        optionalInner,
+        /// `X | …` — a member's own grammar must not swallow the bar: a function
+        /// type's return type is parsed with the full `parseTypeRef`.
+        unionMember,
+    };
+
+    /// True when printing `ref` in `position` needs parentheses to read back as
+    /// the same type. `(T)` is not kept in the AST — `parseBaseTypeRefArm` says
+    /// `(T)` *is* `T` — so the printer decides this from the shape, not from a
+    /// recorded grouping.
+    fn typeNeedsParens(ref: ast.TypeRef, position: TypePosition) bool {
+        const isUnion = ref.unionMembers() != null;
+        const isConstrainedTypeparam = ref == .typeparam and ref.typeparam.len > 0;
+        return switch (position) {
+            .arrayElement => isUnion or ref == .optional or ref == .function or isConstrainedTypeparam,
+            .optionalInner => isUnion or isConstrainedTypeparam,
+            .unionMember => ref == .function or isConstrainedTypeparam,
+        };
+    }
+
+    /// `fmtTypeRef`, parenthesised when `position` would otherwise re-read the
+    /// text as a different type. `(i32 | string)[]` is the case that found this:
+    /// the parentheses are the array's element boundary, and printing them away
+    /// gave an array of `string`, unioned with `i32`.
+    fn fmtTypeRefIn(this: *Formatter, ref: ast.TypeRef, position: TypePosition) anyerror!*const Doc {
+        const inner = try this.fmtTypeRef(ref);
+        if (!typeNeedsParens(ref, position)) return inner;
+        return this.concatAll(&.{ try this.text("("), inner, try this.text(")") });
+    }
+
     fn fmtTypeRef(this: *Formatter, ref: ast.TypeRef) anyerror!*const Doc {
         return switch (ref) {
             .named => |n| this.text(n),
-            .array => |elem| this.concat(try this.fmtTypeRef(elem.*), try this.text("[]")),
-            .optional => |inner| this.concat(try this.text("?"), try this.fmtTypeRef(inner.*)),
+            .array => |elem| this.concat(try this.fmtTypeRefIn(elem.*, .arrayElement), try this.text("[]")),
+            .optional => |inner| this.concat(try this.text("?"), try this.fmtTypeRefIn(inner.*, .optionalInner)),
             .tuple_ => |elems| blk: {
                 var docs = try this.arena.alloc(*const Doc, elems.len);
                 for (elems, 0..) |e, i| docs[i] = try this.fmtTypeRef(e);
@@ -2195,7 +2326,7 @@ pub const Formatter = struct {
                 // under `ast.union_type_name`; it is written as its members.
                 if (ref.unionMembers()) |members| {
                     var memberDocs = try this.arena.alloc(*const Doc, members.len);
-                    for (members, 0..) |m, i| memberDocs[i] = try this.fmtTypeRef(m);
+                    for (members, 0..) |m, i| memberDocs[i] = try this.fmtTypeRefIn(m, .unionMember);
                     break :blk this.join(memberDocs, try this.text(" | "));
                 }
                 var argDocs = try this.arena.alloc(*const Doc, b.args.len);
@@ -2227,7 +2358,9 @@ pub const Formatter = struct {
             .typeparam => |constraints| blk: {
                 if (constraints.len == 0) break :blk this.text("type");
                 var docs = try this.arena.alloc(*const Doc, constraints.len);
-                for (constraints, 0..) |c, i| docs[i] = try this.fmtTypeRef(c);
+                // The constraint list is `|`-separated like a union's members,
+                // and `parseTypeRefMember` parses it the same way.
+                for (constraints, 0..) |c, i| docs[i] = try this.fmtTypeRefIn(c, .unionMember);
                 break :blk this.concat(
                     try this.text("type "),
                     try this.join(docs, try this.text(" | ")),
@@ -2236,43 +2369,32 @@ pub const Formatter = struct {
         };
     }
 
+    /// A module-level binding: `[pub] val [name]: [T] = value`.
+    ///
+    /// One path, assembled from the parts the declaration has, rather than one
+    /// arm per combination: the four arms this replaces were the 2×2 of
+    /// `typeAnnotation` × `isPub`, each spelling `"val "` again, so **any** new
+    /// modifier had to be written into four places or double them to eight. The
+    /// next one is known — `17-beam-memory` lands module-level `var`, and
+    /// [decision 48] grants it this function's keyword arm, in the same commit
+    /// that makes the form parse. With the parts separated that arm is the one
+    /// `text()` below: `if (v.mutable) "var " else "val "`.
+    ///
+    /// [decision 48]: the named carve-out of this front, `specs/1.0.5-beta`.
     fn fmtValDecl(this: *Formatter, v: ast.ValDecl) !*const Doc {
+        var parts: std.ArrayList(*const Doc) = .empty;
+        defer parts.deinit(this.arena);
+        if (v.isPub) try parts.append(this.arena, try this.text("pub "));
+        // The keyword. `17-beam-memory`'s `var` joins here and nowhere else.
+        try parts.append(this.arena, try this.text("val "));
+        try parts.append(this.arena, try this.text(v.name));
         if (v.typeAnnotation) |ann| {
-            if (v.isPub) {
-                return this.concatAll(&.{
-                    try this.text("pub "),
-                    try this.text("val "),
-                    try this.text(v.name),
-                    try this.text(": "),
-                    try this.fmtTypeRef(ann),
-                    try this.text(" = "),
-                    try this.fmtExpr(v.value.*),
-                });
-            }
-            return this.concatAll(&.{
-                try this.text("val "),
-                try this.text(v.name),
-                try this.text(": "),
-                try this.fmtTypeRef(ann),
-                try this.text(" = "),
-                try this.fmtExpr(v.value.*),
-            });
+            try parts.append(this.arena, try this.text(": "));
+            try parts.append(this.arena, try this.fmtTypeRef(ann));
         }
-        if (v.isPub) {
-            return this.concatAll(&.{
-                try this.text("pub "),
-                try this.text("val "),
-                try this.text(v.name),
-                try this.text(" = "),
-                try this.fmtExpr(v.value.*),
-            });
-        }
-        return this.concatAll(&.{
-            try this.text("val "),
-            try this.text(v.name),
-            try this.text(" = "),
-            try this.fmtExpr(v.value.*),
-        });
+        try parts.append(this.arena, try this.text(" = "));
+        try parts.append(this.arena, try this.fmtExpr(v.value.*));
+        return this.concatAll(parts.items);
     }
 };
 

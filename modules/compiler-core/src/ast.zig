@@ -2244,9 +2244,12 @@ pub const TypeShape = union(enum) {
     /// mangled name, and no emitter derives a run-time encoding from an ordinal
     /// (`grep -r 'variantIndex\|tag_index\|ordinal' src/codegen/` → 0 hits;
     /// emilia built from both orderings emits byte-identical output on commonJS,
-    /// erlang, beam and wasm — re-measured 2026-09-18). The moment one did, the
-    /// order a member is stored in would stop being layout and start being
-    /// semantics, and it would do so silently.
+    /// erlang, beam and wasm, and its 17 cells pass either way — re-measured
+    /// 2026-09-18 at `f8d97f95`, after fronts 02, 03, 04 and 05 had landed their
+    /// emitter work, by hoisting the 13 variants `tokens.bp` writes after a
+    /// section and diffing all four output trees). The moment one emitter did key
+    /// on the position, the order a member is stored in would stop being layout
+    /// and start being semantics, and it would do so silently.
     pub const EnumShape = struct {
         variants: []EnumVariant,
         /// Top-level sections (recursive groupings) declared inside the body. The
