@@ -907,3 +907,46 @@ test "wat: option ---- a value assigned into a declared `?T` is boxed like one" 
         \\}
     );
 }
+
+// ── step 7: function values ─────────────────────────────────────────────────
+//
+// The step asked whether to build them or defer, on the reading that "wasm has no
+// function values". Measured first, and the reading was wrong: `wat.zig` lifts a
+// lambda into `$__lambda{n}(env, …)`, lists it in the module's function table and
+// applies it with `call_indirect`, and four of the five ways a function reaches a
+// value already worked — a lambda in a local, a lambda passed as a `fn(…)`
+// parameter, a top-level fn used as a value, and one bound to a local.
+//
+// The fifth did not: a function value read out of an **aggregate slot**.
+// `lowerValueCall` recognised a record field and nothing else, and a labelled
+// tuple element is resolved by the checker to its *position* — `c.set` arrives as
+// `_1`, which is not a field name — so the call fell through to the unresolved
+// path: `unreachable ;; unresolved call: _1/1`. One helper (`slotOffset`, a record
+// field offset or `tupleIndex * 4`) closes it, so there is nothing to defer.
+//
+// All four prints match commonJS exactly. The three fixtures the step listed as
+// this shape's traps were re-read with it: only
+// `tuple_a_labeled_element_of_function_type_is_called_like_a_method` was one, and
+// it now answers `18` on all four backends. `call_trailing_lambda_block` and
+// `call_trailing_lambda_with_multiple_params` trap on the **`@todo()` in the
+// function they call** — the program's own trap, not a missing mechanism — and
+// neither ever carried a `KNOWN` note saying otherwise.
+test "wat: function value ---- a lambda in a tuple slot or a record field is applied" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\type Ops(step: fn(n: i32) -> i32)
+        \\fn mk() -> #(value: i32, set: fn(n: i32) -> i32) {
+        \\    val value = 1;
+        \\    val set = { n -> return n * 2; };
+        \\    return #(value, set);
+        \\}
+        \\fn main() {
+        \\    val c = mk();
+        \\    @print(c.value);
+        \\    @print(c.set(9));
+        \\    val t = #(1, { n -> return n + 100; });
+        \\    @print(t._1(2));
+        \\    val o = Ops(step: { n -> return n - 1; });
+        \\    @print(o.step(10));
+        \\}
+    );
+}

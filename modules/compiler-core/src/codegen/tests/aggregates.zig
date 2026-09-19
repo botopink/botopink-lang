@@ -130,9 +130,15 @@ test "js: array ---- prepend with identifier" {
 // (`row.pop` → `row._1`), so `c.set(9)` reached every backend as a method
 // call on a value that is a tuple: `c.set is not a function` on commonJS,
 // `'_1'(C, 9)` (an undefined function) on erlang, `unresolved_method` on beam.
-// KNOWN-WRONG (wasm): wasm has no function values, so the element cannot be
-// applied there — the module traps with `unresolved call: _1/1`, the same gap
-// a lambda stored in any value has.
+// wasm answered this at front 05 step 7, and the note it carried — "wasm has no
+// function values" — was wrong: wasm lifts a lambda into `$__lambda{n}`, lists it
+// in the module's function table and applies it with `call_indirect`, so a lambda
+// in a local, a lambda passed as a `fn(…)` parameter, a top-level fn used as a
+// value and one bound to a local all worked. The one shape that did not was a
+// function value read out of an **aggregate slot**: `lowerValueCall` recognised a
+// record field and nothing else, and the checker resolves `c.set` to the position
+// `_1`, which is not a field name — hence `unresolved call: _1/1`. All four
+// backends now print `18`.
 test "js: tuple ---- a labeled element of function type is called like a method" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn mk() -> #(value: i32, set: fn(n: i32) -> i32) {

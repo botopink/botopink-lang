@@ -125,6 +125,40 @@ printed a record or a variant**, which is why the trap above re-recorded no
 existing file — the addresses §7 owes were only ever in the language cells. Any
 new fixture whose log holds such a number is worth re-reading against this table.
 
+## Function values, and the lowering that is not there
+
+**This backend has function values.** A lambda used as a value is lifted into
+`$__lambda{n}(env, a0, …)`, listed in the module's `(table funcref (elem …))`, and
+applied with `call_indirect`; the value itself is a pointer to an environment cell
+holding the table index and one 4-byte slot per capture. A top-level fn used as a
+value gets a `$__fnref_<name>` trampoline. Five shapes, all answering as commonJS
+does: a lambda in a local, a lambda passed as a `fn(…)` parameter, a top-level fn
+passed or bound, and — since front 05 step 7 — one read out of an **aggregate
+slot**, `t._1(2)` / `o.step(10)` / a labelled element the checker resolved to its
+position (`c.set` → `_1`). That last was the only gap, and the reason the trap it
+left read as "wasm has no function values".
+
+**A lambda handed straight to an array method is not lifted**: `lowerArrayHof`
+inlines its body into a counted walk, which is what lets `forEach` assign an outer
+local.
+
+**There is no block-as-value lowering to delete** — the row 1.0.4's note opened,
+measured on 2026-09-18:
+
+| Measurement | Count |
+|---|---|
+| `;; lambda` in `../wat.zig` and all of `wat/**` | **0** |
+| sites that make a function value | **3** — `lowerExpr`'s `.function` arm, `lowerValueCall`'s trailing lambdas, `lowerFnRef` |
+| of those, sites a **block** can reach | **0** |
+
+The one producer that ever lifted a block was the `case` arm: a `Pattern { … }`
+arm arrives as an `ast.Expr.function`, and lowering it as a *value* put the body in
+the table and left the arm answering a closure-cell address
+(`case_or_patterns_with_block_arm_body` recorded `$__lambda0` plus a 4-byte cell).
+`lowerArmBody` inlines it instead. `@block { … }` is inlined by `lowerBuiltin`,
+and a bare `{ 1 + 2 }` in value position does not parse at all ("this token cannot
+appear here"). So decision 2's enforcement leaves nothing dead here.
+
 ## Rules
 
 - **Layout is part of the model where the output depends on it** — as in

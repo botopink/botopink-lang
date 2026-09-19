@@ -5156,14 +5156,26 @@ const Emitter = struct {
         try self.emitClosureCell(idx, &.{});
     }
 
-    /// `f(a, b)` where `f` is a local or global holding a function value, or
-    /// `r.field(a)` where the field holds one.
+    /// `f(a, b)` where `f` is a local or global holding a function value,
+    /// `r.field(a)` where the field holds one, or `t._1(a)` — a **tuple slot**
+    /// holding one, which is also what a labelled element arrives as: the checker
+    /// resolves `c.set(9)` on `#(value: i32, set: fn(n: i32) -> i32)` to the
+    /// position, so the callee here is `_1`. Without that last case the call fell
+    /// into the unresolved path and trapped (`;; unresolved call: _1/1`), which is
+    /// the whole of what "wasm has no function values" ever meant.
     fn lowerValueCall(self: *Emitter, cc: anytype) anyerror!bool {
-        const is_value = blk: {
-            if (cc.receiver) |recv| {
-                const rty = self.recordTypeOfExpr(recv.*) orelse break :blk false;
-                break :blk self.fieldOffsetIn(rty, cc.callee) != null;
+        // The slot the function value sits in, for a call through a receiver.
+        const slotOffset = struct {
+            fn f(em: *Emitter, recv: ast.Expr, member: []const u8) ?u32 {
+                if (em.recordTypeOfExpr(recv)) |rty| {
+                    if (em.fieldOffsetIn(rty, member)) |off| return off;
+                }
+                if (tupleIndex(member)) |idx| return idx * 4;
+                return null;
             }
+        }.f;
+        const is_value = blk: {
+            if (cc.receiver) |recv| break :blk slotOffset(self, recv.*, cc.callee) != null;
             break :blk self.locals.contains(cc.callee) or self.globals.contains(cc.callee);
         };
         if (!is_value) return false;
@@ -5172,9 +5184,9 @@ const Emitter = struct {
         self.loop_seq += 1;
         try self.declareLocal(tmp, "i32");
         if (cc.receiver) |recv| {
-            const rty = self.recordTypeOfExpr(recv.*).?;
+            const off = slotOffset(self, recv.*, cc.callee).?;
             try self.lowerValue(recv.*);
-            try self.emitCf(.{ .load = .{ .offset = self.fieldOffsetIn(rty, cc.callee).? } }, ".{s}", .{cc.callee});
+            try self.emitCf(.{ .load = .{ .offset = off } }, ".{s}", .{cc.callee});
         } else if (self.locals.contains(cc.callee)) {
             try self.emit(.{ .local_get = cc.callee });
         } else {
