@@ -32,16 +32,31 @@
 #
 # expected-failures.txt — one line per expected failure, `|`-separated (test
 # names contain spaces):
-#   <target: commonJS|erlang|wasm|beam|*> | <path>[::<test name>] | <owner row> | <reason>
-# A path-only entry is allowed only for a file that does not compile.
+#   <target: commonJS|erlang|wasm|beam|*> | <key> | <owner row> | <reason>
+#
+# <key> has three shapes, and which shape it is *is* part of the claim:
+#   test/case_arms.bp                      the cell does not compile
+#   test/case_guards.bp::<test>            it compiles; that one test fails
+#   test/case_tuples.bp::<test> ;; <test>  it compiles; each of these fails
+# ` ;; ` — one space either side — separates the names. `\|` anywhere on the line
+# is a literal `|`: the split ignores an escaped pipe, which is how a test name
+# that contains one is written (`Maybe<i32 \| string>`). Nothing else is escaped.
 #
 # Outcome rules (a run fails on any `FAIL`):
 #   unlisted, passes            ok
 #   unlisted, fails             FAIL
 #   listed, fails               expected (printed with its owner)
-#   listed, passes              FAIL — "now passes: delete its line"
+#   listed, passes              FAIL — "now passes: delete its line" / "drop ::<test>"
 #   listed, does not exist      FAIL — the path or the test name is not there
 #   path-only entry on a file that compiles   FAIL — list the failing tests by name
+#   malformed line              FAIL — the field, target or separator is named
+#
+# A named-test entry whose cell does **not** compile is still honoured: a cell that
+# does not compile cannot pass anything, and the run prints the line with "the cell
+# does not compile, so its listed tests did not run". That is the state the file is
+# in while the front that makes the cell compile is in flight — seven fronts share
+# this file and their compilers differ by hours. The path-only shape stays strict
+# in both directions, which is what the five fronts reading it depend on.
 set -uo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -64,7 +79,7 @@ while [ $# -gt 0 ]; do
         --only=*) only+=("${1#*=}"); shift ;;
         --jobs) jobs="$2"; shift 2 ;;
         --jobs=*) jobs="${1#*=}"; shift ;;
-        -h|--help) sed -n '2,43p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,59p' "$0"; exit 0 ;;
         *) echo "run.sh: unknown argument '$1'" >&2; exit 2 ;;
     esac
 done
@@ -305,17 +320,46 @@ for (const line of fs.readFileSync(resultsPath, "utf8").split("\n")) {
   if (key.includes("::")) compiled.add(`${t}\t${key.split("::")[0]}`);
 }
 
+// A line is split on `|` only where the `|` is not escaped: `\\|` is a literal
+// pipe, which is how a test name that contains one is written. Nothing else is
+// escaped. The key field then has one of three shapes — <path>, <path>::<test>,
+// or <path>::<test> ;; <test> — and a line that is none of them is a FAIL that
+// names what is wrong with it, never a line read as a different shape.
+const TARGETS = ["commonJS", "erlang", "wasm", "beam", "*"];
+const unescapePipe = (s) => s.replace(/\\\|/g, "|");
 const expected = [];
 if (fs.existsSync(listPath)) {
   fs.readFileSync(listPath, "utf8").split("\n").forEach((raw, i) => {
     const line = raw.trim();
     if (!line || line.startsWith("#")) return;
-    const parts = line.split("|").map((s) => s.trim());
-    if (parts.length < 4 || !parts[2] || !parts[3]) {
-      expected.push({ bad: `expected-failures.txt:${i + 1}: needs 4 fields <target> | <path>[::test] | <owner> | <reason>` });
+    const bad = (why) => expected.push({ bad: `expected-failures.txt:${i + 1}: ${why}` });
+    const parts = line.split(/(?<!\\)\|/).map((s) => unescapePipe(s.trim()));
+    if (parts.length < 4 || !parts[0] || !parts[1] || !parts[2] || !parts[3]) {
+      bad("needs 4 non-empty fields — <target> | <path>[::<test>[ ;; <test>]] | <owner row> | <reason>");
       return;
     }
-    expected.push({ target: parts[0], key: parts[1], owner: parts[2], reason: parts.slice(3).join(" | "), line: i + 1 });
+    const [target, keyField, owner] = parts;
+    if (!TARGETS.includes(target)) {
+      bad(`unknown target \`${target}\` — one of ${TARGETS.join(", ")}`);
+      return;
+    }
+    const cut = keyField.indexOf("::");
+    const path = (cut < 0 ? keyField : keyField.slice(0, cut)).trim();
+    if (!path) { bad("the path is empty"); return; }
+    let tests = null;
+    if (cut >= 0) {
+      if (!path.startsWith("test/")) {
+        bad(`\`::\` names a test and only a test/ cell has tests — got \`${path}\``);
+        return;
+      }
+      tests = keyField.slice(cut + 2).split(" ;; ").map((t) => t.trim());
+      if (tests.some((t) => !t)) {
+        bad("an empty test name — the separator between names is ` ;; `, one space either side");
+        return;
+      }
+      if (new Set(tests).size !== tests.length) { bad("the same test name twice on one line"); return; }
+    }
+    expected.push({ target, path, tests, owner, reason: parts.slice(3).join(" | "), line: i + 1 });
   });
 }
 
@@ -326,32 +370,70 @@ for (const e of expected) {
   if (e.bad) { out.push(`${RED}FAIL${NC}     ${e.bad}`); fails++; continue; }
   const ts = e.target === "*" ? ["*", ...targets] : [e.target];
   if (e.target !== "*" && !targets.includes(e.target)) continue; // not run this time
+  const at = `expected-failures.txt:${e.line}`;
   let found = false;
   for (const t of ts) {
-    const path = e.key.split("::")[0];
-    if (!e.key.includes("::") && compiled.has(`${t}\t${path}`)) {
+    // Shape 1 — path only: the claim is that the cell does not compile, and it is
+    // strict in both directions. Five fronts read this shape; nothing below widens it.
+    if (e.tests === null) {
+      if (compiled.has(`${t}\t${e.path}`)) {
+        found = true;
+        out.push(`${RED}FAIL${NC}     [${t}] ${e.path} — compiles: list its failing tests by name (${at})`);
+        fails++;
+        continue;
+      }
+      const r = results.get(`${t}\t${e.path}`);
+      if (!r) continue;
       found = true;
-      out.push(`${RED}FAIL${NC}     [${t}] ${e.key} — compiles: list its failing tests by name (expected-failures.txt:${e.line})`);
-      fails++;
+      claimed.add(`${t}\t${e.path}`);
+      if (r.status === "ok") {
+        out.push(`${RED}FAIL${NC}     [${t}] ${e.path} — now passes: delete its line (${at})`);
+        fails++;
+      } else {
+        out.push(`${YELLOW}expected${NC} [${t}] ${e.path} — ${e.owner}: ${e.reason}`);
+        expectedCount++;
+      }
       continue;
     }
-    const r = results.get(`${t}\t${e.key}`);
-    if (!r) continue;
+    // Shapes 2 and 3 — one or more named tests: the claim is that none of them
+    // passes. A cell that does not compile at all passes nothing, so the line is
+    // honoured and the run says so; that is the state the file is in while the
+    // front that makes the cell compile is in flight.
+    if (!compiled.has(`${t}\t${e.path}`)) {
+      const r = results.get(`${t}\t${e.path}`);
+      if (!r) continue;
+      found = true;
+      claimed.add(`${t}\t${e.path}`);
+      const n = e.tests.length;
+      out.push(`${YELLOW}expected${NC} [${t}] ${e.path} — ${e.owner}: ${e.reason} ${YELLOW}[the cell does not compile, so its ${n} listed test${n === 1 ? "" : "s"} did not run: ${r.detail}]${NC}`);
+      expectedCount++;
+      continue;
+    }
     found = true;
-    claimed.add(`${t}\t${e.key}`);
-    if (r.status === "ok") {
-      out.push(`${RED}FAIL${NC}     [${t}] ${e.key} — now passes: delete its line (expected-failures.txt:${e.line})`);
-      fails++;
-    } else {
-      out.push(`${YELLOW}expected${NC} [${t}] ${e.key} — ${e.owner}: ${e.reason}`);
+    let stillFailing = 0;
+    for (const name of e.tests) {
+      const r = results.get(`${t}\t${e.path}::${name}`);
+      if (!r) {
+        out.push(`${RED}FAIL${NC}     [${t}] ${e.path} — no test named "${name}" (${at})`);
+        fails++;
+        continue;
+      }
+      claimed.add(`${t}\t${e.path}::${name}`);
+      if (r.status === "ok") {
+        out.push(`${RED}FAIL${NC}     [${t}] ${e.path} — "${name}" now passes: drop it from the line, and delete the line when it names no other (${at})`);
+        fails++;
+      } else stillFailing++;
+    }
+    if (stillFailing) {
+      const names = e.tests.length === 1 ? e.tests[0] : `${stillFailing} of ${e.tests.length} tests`;
+      out.push(`${YELLOW}expected${NC} [${t}] ${e.path} — ${names} — ${e.owner}: ${e.reason}`);
       expectedCount++;
     }
   }
   if (!found) {
-    const path = e.key.split("::")[0];
-    const fileRan = [...results.keys()].some((k) => k.split("\t")[1].split("::")[0] === path);
+    const fileRan = [...results.keys()].some((k) => k.split("\t")[1].split("::")[0] === e.path);
     if (partial && !fileRan) continue; // --only run that skipped this file
-    out.push(`${RED}FAIL${NC}     ${e.key} — listed (line ${e.line}) but no such ${e.key.includes("::") && fileRan ? "test" : "file or result"} for target ${e.target}`);
+    out.push(`${RED}FAIL${NC}     ${e.path} — listed (line ${e.line}) but no such ${e.tests && fileRan ? "test" : "file or result"} for target ${e.target}`);
     fails++;
   }
 }

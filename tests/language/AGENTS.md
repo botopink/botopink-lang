@@ -82,12 +82,14 @@ changes how many `.S` files a program emits and where they live, so a default-on
 written against a layout that is about to move. Flipping it on is one line of `run.sh`
 (`all) targets=(commonJS erlang wasm beam)`) plus a re-run of the beam cells; it belongs to 13's
 closing step. The beam rows of `expected-failures.txt` already exist and
-`tests/language/run.sh --target beam` is green. Re-measured at `b5a9b85d` plus this front's
-decision-52/53/54/55 cells: **42 results, 19 passed, 23 expected failures, 0 failed** — 18 of
-them `run/` and `modules/` results (7 passing) and 24 `reject/` results, which run once under
-`targets[0]` and are counted by both runs. The 11 beam lines are owned by `03-beam` (steps 2, 3
-and 4), `01-checker` step 4 and `03 handover 15`; four of them name `13 step 18` as well, because
-a record and a variant cannot print their names before a value carries one.
+`tests/language/run.sh --target beam` is green. Re-measured at `b09bf9c6`: **42 results, 19 passed,
+23 expected failures, 0 failed** — 18 of them `run/` and `modules/` results (7 passing:
+`run/smoke.bp`, `run/tuple_print.bp`, `run/print_nested.bp`, `run/loop_yield_and_break.bp` and all
+three `modules/` cells) and 24 `reject/` results, which run once under `targets[0]` and are counted
+by both runs. Recounted from the file: the 11 beam lines are owned by `03 step 3` (5), `03 step 2` (3),
+`01 step 4` (2) and `03 handover 15` (1) — **no step 4 of `03-beam`, and three of them, not four,
+name `13 step 18`** as a second row, because a record and a variant cannot print their names before a
+value carries one.
 
 ## Running
 
@@ -104,11 +106,49 @@ tests/language/run.sh --target beam                       # opt-in; needs erlc +
 ## expected-failures.txt
 
 ```
-<target: commonJS | erlang | wasm | beam | *> | <path>[::<test name>] | <owner row> | <reason>
+<target: commonJS | erlang | wasm | beam | *> | <key> | <owner row> | <reason>
 ```
 
 A line whose target is not in the current run is skipped, not failed — which is what lets the beam
 rows sit in the file while beam stays out of `--target all`.
+
+### The three shapes of `<key>`, and the `\|` escape
+
+Which shape the key is **is part of the claim**, so the three are distinguishable by eye and each is
+checked differently. One live example of each:
+
+```
+1  erlang | test/case_arms.bp | 01 step 4 | …
+2  erlang | test/case_guards.bp::§5.3 a guard reads the variables its pattern bound | 02 step 3 | …
+3  erlang | test/case_tuples.bp::§5.1 P6 arms are tried in order ;; §5.1 P7 #(a, ..) binds the first element only | 02 step 3 | …
+```
+
+1. **A path alone — the cell does not compile.** Strict in *both* directions: if the cell compiles,
+   the run fails with "compiles: list its failing tests by name". Five fronts read the file for that
+   reading and nothing below widens it.
+2. **A path and one test name — the cell compiles and that test fails.**
+3. **A path and several — the cell compiles and each of them fails.** `::` splits the path from the
+   first name, ` ;; ` (one space either side) separates the names. Shapes 2 and 3 are the same shape
+   and the same check; 2 is the one-name case of it. A named test that now passes fails the run with
+   "drop it from the line, and delete the line when it names no other", so a cell that is fixed test
+   by test is tracked test by test instead of going dark until the last one lands.
+
+**`\|` is a literal `|`, anywhere on the line.** The line is split on `|` only where the `|` is not
+preceded by a backslash, which is the only way a test name that carries the file's own separator can
+be written — `test/case_exhaustive.bp::§5.1 P5 a variable bound from Maybe<i32 \| string> is i32 \|
+string` is the one line that needs it. Nothing else is escaped, and the escape is greppable:
+`grep -nF '\|' tests/language/expected-failures.txt`. The counting command in the file's header
+splits the same way (`re.split(r'(?<!\\)\|', l)`); a plain `l.split('|')` miscounts that line's
+fields and therefore its owner row.
+
+**A named-test entry whose cell does not compile at all is still honoured** — a cell that does not
+compile passes nothing — and the run prints, on that line, "the cell does not compile, so its N
+listed tests did not run". That is not a loophole, it is the state the file is in while the front that
+makes the cell compile is in flight: seven fronts share this file and their trees differ by hours. The
+six lines front 12 converted at `b09bf9c6` read that way on `feat` and read per-test in front 01's
+step-4/5 tree, which is what let 01 commit a green gate without rewriting a file it does not own. The
+shape a line *cannot* have is the one it had before: path-only on a cell that compiles, which fails
+unconditionally and can be neither deleted (its tests fail) nor rewritten (by anyone but front 12).
 
 - The owner row must exist in the specs: a front of the current milestone
   (`specs/1.0.5-beta/fronts.md`) and one of its numbered steps, written `<front> step <n>` —
@@ -120,17 +160,22 @@ rows sit in the file while beam stays out of `--target all`.
   first landing repoints every line before any front deletes one, so that two commits never touch
   the same line.
 - A path-only entry is for a cell that does not compile; a cell that compiles lists its failing
-  tests by name. A cell may fail differently per target and then carries one line per target, with
-  two different owners (`test/loop_break_value.bp` is the worked example).
+  tests by name, one line or several (§ the three shapes above). A cell may fail differently per
+  target and then carries one line per target, with two different owners — `test/tuple_labels.bp`
+  is the worked example: `04 step 2` on commonJS, `02 step 4` on erlang, the same test name.
 - A `reject/` `.expect` names a short key phrase of the diagnostic decision 8 sketches (`use _ {`,
   `not exhaustive`, `use loop (`…) and the location of the offending token. The front that implements
   the diagnostic fixes its final wording and updates the `.expect` in the same change.
-- The runner fails on: an unlisted failure; a listed test that now passes ("delete its line"); a
-  listed path or test that does not exist; a path-only entry on a cell that compiles; a malformed line.
+- The runner fails on: an unlisted failure; a listed test that now passes ("delete its line", or
+  "drop it from the line" when the line names several); a listed path or test that does not exist; a
+  path-only entry on a cell that compiles; and a **malformed line**, which is reported with what is
+  wrong with it and never read as a different shape — a missing or empty field, a target that is not
+  one of the five, an empty name either side of ` ;; `, the same name twice on one line, or `::` on a
+  path that is not a `test/` cell (only a `test/` cell has tests).
 
 ## Status and the gate
 
-Counted on disk after merging `origin/feat` `3cfb65cb` + the decision-52/53/54/55 cells:
+Counted on disk at `b09bf9c6` — local `feat` after the fronts 12 × 13 merge:
 
 ```bash
 ls test/*.bp    | wc -l   # 49
@@ -158,38 +203,57 @@ them, by area:
 | the forms `109f6c9` landed (decisions 28, 30, 33; 15's R1–R3, R5, R8) | 5 test + 1 run + 1 reject | 7 |
 | modules | 3 `modules/` cells | 3 |
 
-Classification at botopink-lang `3cfb65cb` + these cells (node v25.8.0, OTP 29),
-`zig build test-language`, every target of `--target all` together. Re-run after merging front 16's
-formatter landing: **both runs are byte-for-byte what they were at `b5a9b85d`** — the formatter moved
-no result, which is what a printer-only change should do:
+Classification at botopink-lang `b09bf9c6` (node v25.8.0, OTP 29), `zig build test-language`, every
+target of `--target all` together:
 
 ```
-language tests: 265 passed, 69 expected failures, 0 failed
+language tests: 268 passed, 66 expected failures, 0 failed
 ```
 
-`expected-failures.txt` holds **80** lines: these 69 plus 11 that only `--target beam` exercises (the
-12 `*` reject lines are counted by both runs). Every owner cell names a 1.0.5-beta section, re-checked
-against `specs/1.0.5-beta/` on 2026-09-18. By the row that comes first on the line —
-**01-checker 42 · 02-erlang 12 · 03-beam 9 · 05-wasm 8 · 04-js 5 · 13-module-identity 4**. **23**
+`expected-failures.txt` holds **77** lines: these 66 plus 11 that only `--target beam` exercises (the
+12 `*` reject lines are counted by both runs). **11** of the 77 name tests rather than a path. Every
+owner cell names a 1.0.5-beta section, re-checked against `specs/1.0.5-beta/` on 2026-09-18, and the
+six re-attributed here on 2026-09-19. By the row that comes first on the line —
+**01-checker 36 · 02-erlang 16 · 03-beam 9 · 05-wasm 8 · 04-js 5 · 13-module-identity 3**. **16**
 lines name a second row that has to land before the line goes (the §7 formatter's record and variant
 halves, and the identity cells behind a checker row).
 `tests/language/run.sh --target beam` adds 18 `run/`+`modules/` results of its own — 7 passing, 11
 listed — beside the same 24 `reject/` results; those 11 lines are skipped by `--target all`.
 See § the targets.
 
+**Two movements are inside those tallies and neither is a line arriving or leaving.** The fronts
+12 × 13 merge took 80 lines to 77 and 265 passes to 268: front 13's half 1 made the three `modules/*`
+erlang cells run and deleted their lines. Then front 01 proved six owner cells wrong — its step 4 does
+unwrap a lambda arm body and does resolve a `.Variant` arm, so neither is what those cells fail on —
+and the six were re-attributed: four `erlang | test/case_*.bp` lines from `01 step 4` to `02 step 3`
+(erlang's pattern emission, `codegen/erlang.zig` `Emitter.patternNode`) and the two
+`test/type_identity_case.bp` lines to `13 step 17` alone. That is 42 → 36, 12 → 16, 1 → 3, and — for
+the lines naming a second row — 19 → 16, because three of the six shed a second row they no longer
+need. **The second-row figure also had a third mover, the counting command itself.** Split on every
+comma the file answers 23 before and 20 after, and both over-count by four: a comma *inside* a
+parenthesised owner cell is not a second row, and `02 (no step; decision 55, reported 2026-09-18)` is
+one row on four lines. The header's command now splits the owner field on `,(?![^(]*\))`, which
+answers 19 before and 16 after. So of 23 → 16, only three are lines moving.
+
 **Every number in this section and in `expected-failures.txt`'s header is recounted from the file,
 never adjusted by a delta** — decision 59 of `specs/1.0.5-beta/decisions-taken.md`, taken
 2026-09-18 after two fronts re-tallied the same block from different baselines in one merge window
-and were individually right and jointly wrong. The header carries the counting command. This section
-had been stale by nine results and fourteen lines for that reason when `fe871ed` recounted it, and by
-the cells below it again here.
+and were individually right and jointly wrong. The header carries the counting command, and since a
+test name may carry an escaped `|` that command splits on `(?<!\\)\|`, not on `|`. This section had
+been stale by nine results and fourteen lines for that reason when `fe871ed` recounted it, and it was
+stale again on arrival here: it read 265 / 69 / **80** lines and `01-checker 42`, measured at
+`3cfb65cb`, two merges behind the tree it sat in. Recounted above with that command.
 
 **Where an owner cell is not `<front> step <n>`.** Two of this milestone's rows are *handover
 sections* of a front's README — "Handed over by `15-language-surface`", prose with a heading and no
-step number. The cells that name them read `<front> handover 15`. One row has neither a step nor a
-handover section and the owner cell says so (`04 (no step; reported 2026-09-18)`): front 04 owns
-`commonJS.zig`, so the *front* is certain even though no step names the defect. Both shapes are
-reported to the maintainer rather than papered over with an invented step number.
+step number; three lines name them, as `01 handover 15` (2) and `03 handover 15` (1). One row has
+neither a step nor a handover section and the owner cell says so: `02 (no step; decision 55, reported
+2026-09-18)`, on the four collection-loop `break` lines — front 02 owns `erlang.zig`, so the *front*
+is certain even though no step names the defect (§ Where front 02 has no row for the collection loop).
+Both shapes are reported to the maintainer rather than papered over with an invented step number.
+`04 (no step; reported 2026-09-18)` was a third and is **gone**: front 04 fixed the `?.`-into-`??`
+defect and deleted its line, so 04's five lines are `04 step 2` (1) and `04 step 3` (4). Recounted
+from the file at `b09bf9c6`.
 
 `zig build test-language` is a stage of `scripts/gate.sh` (after `test-libs`) and a step of the CI
 `test` job (ubuntu + macos). When a front makes a listed test pass, the gate fails with "now passes:
@@ -219,8 +283,10 @@ table carried are gone: they parse. What is left is two rows and one correction.
 | `(a == b).toString()`, and `(sql """ab""").length` — a method on a parenthesised expression | open / "needs a dependency to measure" | **one production, and it parses** (15's R3). `(1 == 2).toString()` prints `false` and `("ab").length` prints `2` on commonJS, erlang and wasm; no dependency is needed to measure it. `test/paren_receiver.bp` |
 
 **Two commonJS defects these cells turned up that no step of `04-js`
-(`specs/1.0.5-beta/04-js/README.md`) names.** Both are reported to the maintainer; front 04 owns
-`commonJS.zig`, so the front is certain and only the row is missing.
+(`specs/1.0.5-beta/04-js/README.md`) named.** Both were reported to the maintainer; front 04 owns
+`commonJS.zig`, so the front was certain and only the row was missing. **The second is fixed** —
+recounted at `b09bf9c6`: `test/nullish_default.bp` carries no line and the suite is green, so its
+`04 (no step; reported 2026-09-18)` cell is gone from the file and only the first is still open.
 
 1. **`42.toString()` — a method on a number literal** (15's R3) checks, and prints `42` on erlang and
    wasm, but the emitter writes `__bp_print(42.toString())` and node refuses it with
@@ -231,8 +297,10 @@ table carried are gone: they parse. What is left is two rows and one correction.
    emits `(() => { const n = …; if (n !== null) { … } })()`, so an absent value arriving from a `?.`
    chain takes the present branch and binds `undefined`. `o.inner?.v ?? 9` answers `undefined` on
    commonJS and `9` on erlang and wasm. `test/optional.bp` does not see it because its optionals are
-   explicit `null`s. This one **is** asserted — `test/nullish_default.bp::?? chains after ?.` — with
-   an owner cell that says outright that it has no step.
+   explicit `null`s. This one **was** asserted — `test/nullish_default.bp::?? chains after ?.` — with
+   an owner cell that said outright that it had no step, and **it passes at `b09bf9c6`**: front 04
+   fixed it and deleted the line. The paragraph is kept because the shape of the report is the thing
+   worth copying, not because the defect survives.
 
 **A third, with owners.** A tuple label does not survive a generic array method: `rs.at(0).b` on an
 `rs: #(a: i32, b: string)[]` answers `undefined` on commonJS, raises `bad map: {1,<<"x">>}` in
