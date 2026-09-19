@@ -75,14 +75,26 @@ and running `format` twice in a row must produce identical text.
   body open: the compact `{ Red, Blue }` has nowhere to put a `//`.
 - **One-line lambdas** — `{ n -> n * 2 }` written on one line with a single value expression
   stays inline (`fmtLambdaAt`).
+- **Blank lines and comments in every block** — including an `if` **then**-branch and a lambda
+  body, which is every `loop (…) { x -> … }` body. Those two were the last blocks whose statements
+  came from an inlined loop in `parser/exprs.zig` that recorded no `emptyLinesBefore` and made a
+  `//` there a parse error; `15-language-surface`'s `28e447e` routed them through
+  `parseStmtListInBraces`, and this printer has read the field all along (one `fmtStmtSeq` for every
+  block since `9d1d067`), so all three — then-branch, else-branch and `loop` body — keep a blank
+  line and a comment now. Measured, not assumed: a blank line plus a `//` in each of the three
+  round-trips byte-identically.
 - An empty `////` line prints without a trailing space; `botopink format` (CLI) ends a file with
   one newline.
 - None of these fields reach the parser snapshots: `jsonStringify` omits them when empty/false
   (`Program.blankLineBefore` always).
 
-`botopink format --check` passes on `libs/std/**` and `examples/**`, and — since the formatter
-follow-up of 2026-09-17 — on the five sibling libraries under `repository/`: formatted, they compile, pass
-the same tests, and a second pass changes nothing. Canonical rewrites that remain (no content lost): a
+`botopink format --check` passes on `examples/**` and — since `09-ecosystem-residuals` committed the
+formatted text (2026-09-18) — on all five sibling libraries under `repository/`: formatted, they
+compile, pass the same tests, and a second pass changes nothing. **`libs/std` has two files that
+would be reformatted** as of `f8d97f95`: `src/primitives.bp:549` (a braced single-statement `if`
+inside a `loop`) and `src/querystring.bp:37` (a method chain that now fits on one line). Both are the
+canonical rules below and neither loses text; the drift is from edits made after the last sweep, and
+`libs/std` is not this front's directory. Canonical rewrites that remain (no content lost): a
 `#[a, b]` annotation list prints as one `#[…]` per annotation, a method chain split over lines
 joins onto one, a single-expression `if` block drops its braces, a `\\` line string prints as
 `"""…"""`. `.d.bp` files are not reached by `format` (the loader never scans them into the
@@ -94,13 +106,12 @@ shortforms) and is documentation only.
 - **End-of-line comments on an array element** — the array literal attaches a comment to the *next*
   item, with no line information, so the formatter prints it above that item. A **field's** is kept
   (`Field.trailingComment`), and so are a statement's, a variant's and a method's.
-- **Blank lines inside an `if` then-branch or a lambda body — which is every `loop (…) { x -> … }`
-  body** — those two blocks carry their own inlined loop in `parser/exprs.zig`, written before
-  `parseBlock` grew `trackEmptyLines`/`handleComments`, so no `emptyLinesBefore` is recorded and a
-  `//` comment there is a parse error. The printer keeps whatever is recorded, so both start
-  round-tripping the moment the loops call `parseStmtListInBraces`. An `if` **else**-branch does
-  reach `parseStmtListInBraces`: its blank lines were recorded and, until the branch printers were
-  merged into `fmtStmtSeq`, silently dropped — they are printed now.
+- **The indentation of a comment's continuation line** — a `//` line the author indented to align
+  under the comment above it (one site, in a sibling library under `repository/`) re-emits at the
+  statement's own column. The text is intact; the alignment is not. A comment reaches the AST as text
+  with no column, so keeping it needs a recorded column, not a printer arm — it is the last live
+  member of `09-ecosystem-residuals`' R1 classes and the only fidelity loss left after formatting all
+  five libraries.
 
 Each needs a parser/AST change (`parser/decls.zig`, `parser/exprs.zig`) before the formatter can
 print it back.
