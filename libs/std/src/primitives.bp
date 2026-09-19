@@ -285,7 +285,10 @@ behavior Function {
         return x;
     }
 
-    default fn compose<A, B, C>(f: fn(a: A) -> B, g: fn(b: B) -> C) -> fn(A) -> C {
+    default fn compose<A, B, C>(
+        f: fn(a: A) -> B,
+        g: fn(b: B) -> C,
+    ) -> fn(A) -> C {
         return { a -> g(f(a)) };
     }
 
@@ -319,11 +322,17 @@ behavior Pair<A, B> {
         return #(p._1, p._0);
     }
 
-    default fn mapFirst<C>(p: #(A, B), transform: fn(value: A) -> C) -> #(C, B) {
+    default fn mapFirst<C>(
+        p: #(A, B),
+        transform: fn(value: A) -> C,
+    ) -> #(C, B) {
         return #(transform(p._0), p._1);
     }
 
-    default fn mapSecond<C>(p: #(A, B), transform: fn(value: B) -> C) -> #(A, C) {
+    default fn mapSecond<C>(
+        p: #(A, B),
+        transform: fn(value: B) -> C,
+    ) -> #(A, C) {
         return #(p._0, transform(p._1));
     }
 }
@@ -443,11 +452,15 @@ behavior Array<T> {
         return self.slice(n, self.length);
     }
 
-    default fn fold<A>(self: Self, initial: A, f: fn(acc: A, item: T) -> A) -> A {
+    default fn fold<A>(
+        self: Self,
+        initial: A,
+        f: fn(acc: A, item: T) -> A,
+    ) -> A {
         var acc = initial;
         self.forEach({ x ->
-                acc = f(acc, x);
-            });
+            acc = f(acc, x);
+        });
         return acc;
     }
 
@@ -488,8 +501,8 @@ behavior Array<T> {
     default fn flatten<E>(self: Self) -> Array<E> {
         var out = [];
         self.forEach({ inner ->
-                out = out.append(inner);
-            });
+            out = out.append(inner);
+        });
         return out;
     }
 
@@ -526,9 +539,9 @@ behavior Array<T> {
         var out = -1;
         var i = 0;
         self.forEach({ x ->
-                if (out == -1) if (pred(x)) out = i;
-                i = i + 1;
-            });
+            if (out == -1) if (pred(x)) out = i;
+            i = i + 1;
+        });
         return out;
     }
 
@@ -574,17 +587,17 @@ behavior Array<T> {
         var seenLast = false;
         var prev = self.at(0);
         self.forEach({ x ->
-                if (seenLast) {
-                    if (prev.unwrapOr(x) != x) {
-                        out = out.append([x]);
-                        prev = self.at(out.length);
-                    };
-                } else {
+            if (seenLast) {
+                if (prev.unwrapOr(x) != x) {
                     out = out.append([x]);
-                    seenLast = true;
-                    prev = self.at(0);
+                    prev = self.at(out.length);
                 };
-            });
+            } else {
+                out = out.append([x]);
+                seenLast = true;
+                prev = self.at(0);
+            };
+        });
         return out;
     }
 }

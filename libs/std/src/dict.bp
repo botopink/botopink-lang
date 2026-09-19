@@ -56,16 +56,20 @@ pub type Dict<K, V>(
     pub fn merge(self: Self, other: Dict<K, V>) -> Dict<K, V> {
         var out = self;
         other.pairs.forEach({ p ->
-                out = out.insert(p._0, p._1);
-            });
+            out = out.insert(p._0, p._1);
+        });
         return out;
     }
 
-    pub fn fold<A>(self: Self, initial: A, f: fn(acc: A, key: K, value: V) -> A) -> A {
+    pub fn fold<A>(
+        self: Self,
+        initial: A,
+        f: fn(acc: A, key: K, value: V) -> A,
+    ) -> A {
         var acc = initial;
         self.pairs.forEach({ p ->
-                acc = f(acc, p._0, p._1);
-            });
+            acc = f(acc, p._0, p._1);
+        });
         return acc;
     }
 

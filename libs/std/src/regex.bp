@@ -40,14 +40,22 @@ pub declare fn matches(pattern: string, input: string) -> bool;
 // `{return, binary}` keeps the output a binary.
 #[@External.Node("""($1.replace(new RegExp($0), $2))""")]
 #[@External.Erlang("""re:replace($1, $0, $2, [{return, binary}])""")]
-pub declare fn replace(pattern: string, input: string, replacement: string) -> string;
+pub declare fn replace(
+    pattern: string,
+    input: string,
+    replacement: string,
+) -> string;
 
 // Replace EVERY occurrence of `pattern` in `input` with `replacement`.
 // Node: `new RegExp($0, 'g')` for global flag.
 // Erlang: `re:replace/4` with the `global` option.
 #[@External.Node("""($1.replace(new RegExp($0, 'g'), $2))""")]
 #[@External.Erlang("""re:replace($1, $0, $2, [global, {return, binary}])""")]
-pub declare fn replaceAll(pattern: string, input: string, replacement: string) -> string;
+pub declare fn replaceAll(
+    pattern: string,
+    input: string,
+    replacement: string,
+) -> string;
 
 // Split `input` on every match of `pattern`. Returns the array of
 // pieces between matches.

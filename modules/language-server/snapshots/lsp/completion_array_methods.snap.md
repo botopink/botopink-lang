@@ -24,7 +24,11 @@ first  [Method]  detail: fn first(self: Self) -> ?T
 rest  [Method]  detail: fn rest(self: Self) -> Self
 take  [Method]  detail: fn take(self: Self, n: i32) -> Self
 drop  [Method]  detail: fn drop(self: Self, n: i32) -> Self
-fold  [Method]  detail: fn fold<A>(self: Self, initial: A, f: fn(acc: A, item: T) -> A) -> A
+fold  [Method]  detail: fn fold<A>(
+        self: Self,
+        initial: A,
+        f: fn(acc: A, item: T) -> A,
+    ) -> A
 find  [Method]  detail: fn find(self: Self, pred: fn(item: T) -> bool) -> ?T
 count  [Method]  detail: fn count(self: Self, pred: fn(item: T) -> bool) -> i32
 all  [Method]  detail: fn all(self: Self, pred: fn(item: T) -> bool) -> bool

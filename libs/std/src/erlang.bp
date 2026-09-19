@@ -47,7 +47,11 @@ pub declare fn error(reason: any) -> any;
 pub declare fn errorWithArgs(reason: any, args: any) -> any;
 
 #[@External.Erlang("erlang", "error")]
-pub declare fn errorWithArgsAndOptions(reason: any, args: any, options: any) -> any;
+pub declare fn errorWithArgsAndOptions(
+    reason: any,
+    args: any,
+    options: any,
+) -> any;
 
 #[@External.Erlang("erlang", "exit")]
 pub declare fn exit(reason: any) -> any;
