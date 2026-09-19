@@ -74,7 +74,7 @@ fn main() {
 main() ->
     C = geometry:zero(),
     '__bp_print'([geometry:bump(C)]),
-    '__bp_print'([area({'Square', 4})]),
+    '__bp_print'([geometry:area({'Square', 4})]),
     '__bp_print'([geometry:bump(geometry:make())]).
 
 '__bp_print'(Values) ->
@@ -96,6 +96,7 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:9:19: function area/1 undefined
+1
+16
+42
 ```

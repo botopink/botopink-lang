@@ -416,7 +416,21 @@ codegen/
   export's module: every pub record of that module joins `imported_types` and its
   methods join `imported_fns`, so the call becomes `dict:insert/3`. It leaves
   `record_fields` alone — a consumer that constructs the record imports it by
-  name, which is the branch above. **A host-backed `declare fn` another
+  name, which is the branch above. **A typed method call asks
+  `methodOwnerModule`, not `imported_types`.** That map is written for an
+  imported **record** and by `collectNamespaceModuleTypes`; the `import { … }`
+  **enum** arm writes only `enum_variants`/`enum_names`, because a tagged tuple is
+  module-independent while the enum's methods are not. So
+  `Shape.Square(side: 4).area()` on an imported enum came out as a bare local
+  `area({'Square', 4})` while `geometry.erl` exported `area/1` —
+  `function area/1 undefined`, the enum half of the two record landings above.
+  `methodOwnerModule` is the erlang twin of `beam_asm.zig`'s (`448b935`) and reads
+  the same two sources: `imported_types` first, then the cross index for kind
+  `record` **or `enum`** with the method in the export's `methods`. A module never
+  calls itself remotely, and the guard compares the module PATH (`std/dict`) as
+  well as the atom (`dict`) — `module_name` is the path, the atom is its basename,
+  so comparing only one made `dict.bp`'s own `merge` emit `dict:insert/3`.
+  **A host-backed `declare fn` another
   module imports is answered by an owner-side wrapper.** It emits no function of
   its own — the annotation renders at each call site — so an imported one used
   to stay a bare call and fail as `function <name>/<arity> undefined`. The owner
@@ -827,7 +841,10 @@ codegen/
   `Response.ok(…)` calls into the owner module atom (`http:ok(…)`); the owner
   exports a `pub` type's associated fns when another module imports it, and a
   `pub implement`/`extend` another module activates (`import {PatoNada*} …`) is
-  exported too and reached remotely (`pond:swim(Donald)`).
+  exported too and reached remotely (`pond:swim(Donald)`). An imported **enum**
+  joins `enum_names` only, so its method call resolves through
+  `methodOwnerModule`'s link-index arm — see
+  [Cross-module calls are remote calls](#erlang).
 - **Interface associated `default fn`s** (`Array.range`, `Pair.of`):
   `interfaceForms` emits each no-`self` body as a local function
   (`collectInterfaces`); `Interface.method(...)` calls it (reserved words quoted,
