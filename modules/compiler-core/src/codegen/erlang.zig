@@ -393,6 +393,23 @@ pub fn codegenEmit(
             .ok => |*ok| {
                 // `"std"` package copies are dependencies — never emit their
                 // test blocks (mirrors the commonJS rule).
+                // The atom the module will be named by must be its own: two
+                // paths rendering one atom used to be a silent overwrite (or a
+                // silent shadow across two output directories), which is the
+                // failure this front exists to remove. Fail exactly the modules
+                // involved, with a diagnostic, like a type error.
+                if (cross.atomFault(ct.name)) |fault| {
+                    try results.append(alloc, .{
+                        .name = ct.name,
+                        .src = ct.src,
+                        .result = .{
+                            .js = try alloc.dupe(u8, ""),
+                            .comptime_script = null,
+                            .diagnostic = .{ .type = .{ .message = try fault.message(alloc), .loc = null } },
+                        },
+                    });
+                    continue;
+                }
                 const module_test_mode = config.test_mode and !std.mem.startsWith(u8, ct.name, "std/");
                 // 06 C13 — a host-backed fn with no `erlang` target used to
                 // abort the whole build with the bare error name. It reaches
@@ -1219,12 +1236,14 @@ fn emitErlangModule(
     const b: Ast.Builder = .{ .arena = arena_state.allocator() };
     var forms: Forms = .empty;
 
-    // Module header. "std" package modules are named `std/<mod>` for output
-    // layout; the Erlang module atom is the basename (`-module(option).`).
-    const erl_module_name = if (std.mem.lastIndexOfScalar(u8, module_name, '/')) |i|
-        module_name[i + 1 ..]
-    else
-        module_name;
+    // Module header. The Erlang module atom is the whole module path joined
+    // with `@` (`std/math` → `std@math`, `web/api/http` → `web@api@http`), a
+    // legal unquoted atom — it used to be the path's BASENAME, which made two
+    // files of the same name one module and let eleven `libs/std` modules
+    // shadow the OTP module of that name. `main` is unchanged.
+    // `crossModule.erlAtom` is the one renderer; `outputStem` names the file
+    // from the same rule, because `erlc` refuses an atom that differs from it.
+    const erl_module_name = try crossModule.erlAtom(b.arena, .of(module_name));
     try forms.append(b.arena, .{ .module = erl_module_name });
 
     // `-compile({no_auto_import,[fn/arity, ...]}).` for any user function whose
@@ -3125,7 +3144,7 @@ const Emitter = struct {
                         if (!self.record_fields.contains(name)) {
                             try self.record_fields.put(name, try self.alloc.dupe([]const u8, info.fields));
                         }
-                        try self.imported_types.put(name, crossModule.moduleBasename(info.module));
+                        try self.imported_types.put(name, self.atomOf(info.module));
                     },
                     .@"enum" => try self.enum_names.put(name, {}),
                     .@"fn", .val => {},
@@ -3137,7 +3156,7 @@ const Emitter = struct {
                 // bare call in the calling module, so the call site needs the
                 // owner atom; a local definition of the same name wins.
                 if (std.mem.eql(u8, info.module, self.module_name)) continue;
-                const owner = crossModule.moduleBasename(info.module);
+                const owner = self.atomOf(info.module);
                 switch (info.kind) {
                     // An FFI declaration with an `erlang` target is answered in
                     // its owner by the wrapper `externalWrapperForm` emits, so
@@ -3183,6 +3202,16 @@ const Emitter = struct {
     /// a call site inference left untyped. `record_fields` is deliberately left
     /// alone — a consumer that constructs the record has to import it by name,
     /// which is the branch above.
+    /// Erlang module atom of a module PATH (`std/order` → `std@order`), as the
+    /// cross-module index rendered it once. A `call_ext`/remote-call target and
+    /// this module's own `-module` atom must agree, so both come from
+    /// `crossModule.erlAtom` — never from the path's basename, which is what
+    /// made two same-named files one module.
+    fn atomOf(self: *const Emitter, path: []const u8) []const u8 {
+        if (self.cross) |xc| return xc.atomFor(path);
+        return crossModule.moduleBasename(path);
+    }
+
     fn collectNamespaceModuleTypes(self: *Emitter, xc: *const CrossModule, ns: []const u8) !void {
         var it = xc.exports.iterator();
         while (it.next()) |e| {
@@ -3190,7 +3219,7 @@ const Emitter = struct {
             if (info.kind != .record and info.kind != .@"enum") continue;
             if (!std.mem.eql(u8, crossModule.moduleBasename(info.module), ns)) continue;
             if (std.mem.eql(u8, info.module, self.module_name)) continue;
-            const owner = crossModule.moduleBasename(info.module);
+            const owner = self.atomOf(info.module);
             if (info.kind == .record) try self.imported_types.put(e.key_ptr.*, owner);
             for (info.methods) |m| {
                 const gop = try self.imported_fns.getOrPut(m);
@@ -3306,6 +3335,20 @@ const Emitter = struct {
         const key = try std.fmt.allocPrint(self.alloc, "{s}/{d}", .{ name, arity });
         const gop = try self.local_fn_arities.getOrPut(self.alloc, key);
         if (gop.found_existing) self.alloc.free(key);
+    }
+
+    /// Module atom of a `"std"` package module imported by its bare name
+    /// (`order` → `std@order`). The import segment IS the name the program
+    /// writes, and it used to be the module atom too — which is exactly how
+    /// `libs/std`'s `math`, `dict`, `queue`, `sets`, `os`, `json`, `crypto`,
+    /// `base64`, `random`, `unicode` and `erlang` shadowed the OTP module of
+    /// the same name node-wide. The atom is the module PATH's, rendered once by
+    /// the cross-module index; arena-allocated, because the returned slice is
+    /// stored in the form tree and rendered later.
+    fn stdModuleAtom(this: *const Emitter, b: Ast.Builder, seg: []const u8) ![]const u8 {
+        const path = try std.fmt.allocPrint(b.arena, "std/{s}", .{seg});
+        if (this.cross) |xc| if (xc.atoms.get(path)) |a| return a;
+        return crossModule.erlAtom(b.arena, .of(path));
     }
 
     /// Records every module name imported from the "std" package.
@@ -5285,9 +5328,10 @@ const Emitter = struct {
         else
             null;
         // `"std"` package call: a lowercase receiver naming an imported std
-        // module lowers to the remote `option:map(Args)`.
+        // module lowers to the remote `std@option:map(Args)`.
         if (recv.* == .identifier and recv.identifier.kind == .ident and this.std_imports.contains(recv.identifier.kind.ident)) {
-            return b.remote(recv.identifier.kind.ident, cc.callee, try this.callArgs(b, null, cc));
+            const owner = try this.stdModuleAtom(b, recv.identifier.kind.ident);
+            return b.remote(owner, cc.callee, try this.callArgs(b, null, cc));
         }
         // Activated extension dispatch: `recv.m(args)` → the local `m(Recv, args)`
         // emitted by `extensionForms`.

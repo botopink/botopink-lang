@@ -60,6 +60,7 @@
 //! ever resurfaces, filter the known lines here, do not go back to inferring
 //! failure from the output.
 const std = @import("std");
+const crossModule = @import("./crossModule.zig");
 fn isProcessSuccess(term: std.process.Child.Term) bool {
     return switch (term) {
         .exited => |code| code == 0,
@@ -448,10 +449,27 @@ fn nodeCheckFailureLog(allocator: std.mem.Allocator, rel: []const u8, diagnostic
     return try out.toOwnedSlice(allocator);
 }
 
-/// An Erlang module name is the path basename (`std/bool` → `bool`) —
-/// matches the `-module(...)` atom the erlang backend emits.
-fn erlModuleName(name: []const u8) []const u8 {
-    return if (std.mem.lastIndexOfScalar(u8, name, '/')) |i| name[i + 1 ..] else name;
+/// The Erlang/BEAM module atom of a module path — the whole path joined with
+/// `@` (`std/bool` → `std@bool`), which is what the erlang and BEAM backends
+/// write into `-module(...)` / `{module, …}`. It was the path's BASENAME, and
+/// the harness inherited the collision that made: two aux modules whose paths
+/// shared a basename were written to the same scratch file and one silently
+/// overwrote the other. Caller owns the result.
+fn erlModuleAtom(allocator: std.mem.Allocator, name: []const u8) ![]u8 {
+    return crossModule.erlAtom(allocator, .of(name)) catch |err| switch (err) {
+        error.OutOfMemory => error.OutOfMemory,
+        else => allocator.dupe(u8, crossModule.moduleBasename(name)),
+    };
+}
+
+/// Two modules of one program writing the same scratch filename. Loud, in the
+/// RUN LOG, because the harness used to let the second overwrite the first.
+fn duplicateAtomLog(allocator: std.mem.Allocator, atom: []const u8, first: []const u8, second: []const u8) ![]u8 {
+    return std.fmt.allocPrint(
+        allocator,
+        "HARNESS ERROR: modules `{s}` and `{s}` both render to the module atom `{s}`, so both would be written to `{s}`\n",
+        .{ first, second, atom, atom },
+    );
 }
 
 /// True when `erl_code` reaches stdio at runtime — only `io:format` (the
@@ -524,7 +542,14 @@ pub fn executeErlang(allocator: std.mem.Allocator, erl_code: []const u8, module_
     const tmp_dir = try makeScratchDir(io, &dir_buf);
     defer std.Io.Dir.cwd().deleteTree(io, tmp_dir) catch {};
 
-    const entry_module = erlModuleName(module_name);
+    const entry_module = try erlModuleAtom(allocator, module_name);
+    defer allocator.free(entry_module);
+    // Every module of the program writes one scratch file named by its atom.
+    // A second module rendering the same atom is a harness error, not an
+    // overwrite: `seen` maps an atom to the module path that claimed it.
+    var seen = std.StringHashMap([]const u8).init(allocator);
+    defer seen.deinit();
+    try seen.put(entry_module, module_name);
     // Two spellings of every file: the path from the process cwd (used to
     // write it) and the bare basename (used in argv — `erlc`/`erl` run *in*
     // the scratch dir, so their diagnostics never quote the random hex).
@@ -555,8 +580,15 @@ pub fn executeErlang(allocator: std.mem.Allocator, erl_code: []const u8, module_
         }
     }
     for (aux) |a| {
-        const aux_module = erlModuleName(a.name);
+        const aux_module = try erlModuleAtom(allocator, a.name);
+        defer allocator.free(aux_module);
         if (std.mem.eql(u8, aux_module, entry_module)) continue;
+        if (seen.get(aux_module)) |first| {
+            const log = try duplicateAtomLog(allocator, aux_module, first, a.name);
+            cacheWrite(io, allocator, &key, log);
+            return log;
+        }
+        try seen.put(aux_module, a.name);
         const aux_basename = try std.fmt.allocPrint(allocator, "{s}.erl", .{aux_module});
         defer allocator.free(aux_basename);
         const aux_filename = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ tmp_dir, aux_basename });
@@ -620,7 +652,13 @@ pub fn executeBeamAsm(allocator: std.mem.Allocator, asm_code: []const u8, module
     const tmp_dir = try makeScratchDir(io, &dir_buf);
     defer std.Io.Dir.cwd().deleteTree(io, tmp_dir) catch {};
 
-    const entry_module = erlModuleName(module_name);
+    const entry_module = try erlModuleAtom(allocator, module_name);
+    defer allocator.free(entry_module);
+    // As in `executeErlang`: one scratch file per atom, and a second claim is
+    // a harness error rather than a silent overwrite.
+    var seen = std.StringHashMap([]const u8).init(allocator);
+    defer seen.deinit();
+    try seen.put(entry_module, module_name);
     const asm_basename = try std.fmt.allocPrint(allocator, "{s}.S", .{entry_module});
     defer allocator.free(asm_basename);
     const asm_filename = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ tmp_dir, asm_basename });
@@ -650,8 +688,15 @@ pub fn executeBeamAsm(allocator: std.mem.Allocator, asm_code: []const u8, module
 
     // Assemble sibling modules the entry calls into (cross-module `call_ext`).
     for (aux) |a| {
-        const aux_module = erlModuleName(a.name);
+        const aux_module = try erlModuleAtom(allocator, a.name);
+        defer allocator.free(aux_module);
         if (std.mem.eql(u8, aux_module, entry_module)) continue;
+        if (seen.get(aux_module)) |first| {
+            const log = try duplicateAtomLog(allocator, aux_module, first, a.name);
+            cacheWrite(io, allocator, &key, log);
+            return log;
+        }
+        try seen.put(aux_module, a.name);
         const aux_basename = try std.fmt.allocPrint(allocator, "{s}.S", .{aux_module});
         defer allocator.free(aux_basename);
         const aux_filename = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ tmp_dir, aux_basename });
@@ -702,7 +747,9 @@ pub fn executeWat(allocator: std.mem.Allocator, wat_code: []const u8, module_nam
     const tmp_dir = try makeScratchDir(io, &dir_buf);
     defer std.Io.Dir.cwd().deleteTree(io, tmp_dir) catch {};
 
-    const basename = try std.fmt.allocPrint(allocator, "{s}.wat", .{erlModuleName(if (module_name.len > 0) module_name else "main")});
+    // wasm keeps the mirrored `out/<module path>` layout, and a `.wat` carries
+    // no module atom at all, so the scratch file stays named by the basename.
+    const basename = try std.fmt.allocPrint(allocator, "{s}.wat", .{crossModule.moduleBasename(if (module_name.len > 0) module_name else "main")});
     defer allocator.free(basename);
     const path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ tmp_dir, basename });
     defer allocator.free(path);

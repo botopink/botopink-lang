@@ -7,7 +7,7 @@ pub fn double(x: i32) -> i32 {
 
 ----- ERLANG -- math.erl
 ```erlang
--module(math).
+-module(bp@math).
 -export([double/1]).
 
 double(X) ->
@@ -31,7 +31,7 @@ val result = double(21);
 %% import double
 
 result() ->
-    math:double(21).
+    bp@math:double(21).
 ```
 
 ----- RUN LOG -----

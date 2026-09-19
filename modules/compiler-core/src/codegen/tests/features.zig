@@ -372,6 +372,37 @@ test "js: import ---- multi-module pub fn import" {
     });
 }
 
+// 13 half 1 — the collision the erlang module atom used to have: two `.bp`
+// files whose paths share a BASENAME both emitted `-module(user)`, so one
+// silently overwrote the other in a shared output directory and silently
+// shadowed it on one code path. Nothing diagnosed it, and no cell could see it
+// because no fixture had two same-named modules. The atom is the whole path
+// joined with `@` now, so this program has `models@user` and `services@user`
+// and both answer. It could not exist before.
+test "js: import ---- two modules whose files share a basename" {
+    try h.assertJs(std.testing.allocator, @src(), &.{
+        .{ .path = "models/user", .source =
+        \\pub fn label() -> string {
+        \\    return "models/user";
+        \\}
+        },
+        .{ .path = "services/user", .source =
+        \\pub fn tag() -> string {
+        \\    return "services/user";
+        \\}
+        },
+        .{ .path = "", .source =
+        \\import {label} from "models/user";
+        \\import {tag} from "services/user";
+        \\
+        \\fn main() {
+        \\    @print(label());
+        \\    @print(tag());
+        \\}
+        },
+    });
+}
+
 test "js: import ---- multi-module pub val import" {
     try h.assertJs(std.testing.allocator, @src(), &.{
         .{ .path = "config", .source =

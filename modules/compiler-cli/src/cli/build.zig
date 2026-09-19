@@ -79,12 +79,7 @@ pub fn run(
 
     // Build codegen config.
     const cfg = bp.codegen.Config{
-        .targetSource = switch (target) {
-            .commonJS => .commonJS,
-            .erlang => .erlang,
-            .beam => .beam,
-            .wasm => .wasm,
-        },
+        .targetSource = targetSource(target),
         .typeDefLanguage = if (opts.typescript) .typescript else null,
         .build_root = ".botopinkbuild",
     };
@@ -154,12 +149,53 @@ pub fn artifactExt(target: config.Target) []const u8 {
     };
 }
 
-/// Delete `<out_dir>/<name><ext>` (and `.d.ts`) for every module that failed.
+/// The codegen target a CLI target emits.
+pub fn targetSource(target: config.Target) bp.codegen.TargetSource {
+    return switch (target) {
+        .commonJS => .commonJS,
+        .erlang => .erlang,
+        .beam => .beam,
+        .wasm => .wasm,
+    };
+}
+
+/// Where a target's artifacts live under `out/`.
+///
+/// `erlc` refuses a `-module` atom that differs from its file's basename, so an
+/// erlang or BEAM artifact is named by the module ATOM (`std/math` →
+/// `std@math.erl`) and the tree is FLAT — one directory per target, which is
+/// also the only shape `erl -pa <one directory>` can load a multi-module program
+/// from. commonJS, its `.d.ts` and wasm keep the mirrored module-path tree
+/// directly under `out/`: a `require` target and a wasm import segment ARE the
+/// module path, so flattening them would break every multi-module JS program.
+pub fn targetSubdir(target: config.Target) []const u8 {
+    return switch (target) {
+        .erlang => "erl/",
+        .beam => "beam/",
+        .commonJS, .wasm => "",
+    };
+}
+
+/// `<out_dir>/<subdir><stem><ext>` for one module — the stem is the module atom
+/// for erlang and BEAM, the module path for commonJS and wasm. Caller owns it.
+pub fn artifactPath(
+    alloc: std.mem.Allocator,
+    out_dir: []const u8,
+    target: config.Target,
+    module_name: []const u8,
+    ext: []const u8,
+) ![]u8 {
+    const stem = try bp.codegen.crossModule.outputStem(targetSource(target), alloc, .of(module_name));
+    defer alloc.free(stem);
+    return std.fmt.allocPrint(alloc, "{s}/{s}{s}{s}", .{ out_dir, targetSubdir(target), stem, ext });
+}
+
+/// Delete the artifact (and `.d.ts`) of every module that failed.
 fn removeStaleArtifacts(arena: std.mem.Allocator, io: std.Io, failed: []const []const u8, out_dir: []const u8, target: config.Target) void {
     for (failed) |name| {
         const exts = [_][]const u8{ artifactExt(target), ".d.ts" };
         for (exts) |ext| {
-            const p = std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ out_dir, name, ext }) catch continue;
+            const p = artifactPath(arena, out_dir, target, name, ext) catch continue;
             std.Io.Dir.cwd().deleteFile(io, p) catch {};
         }
     }
@@ -186,8 +222,9 @@ fn writeOutputs(
     for (outputs) |o| {
         // A validation error carries no artifact.
         if (o.result.failed()) continue;
-        // Create subdirectories if the module path contains slashes.
-        const sub_path = try std.fmt.allocPrint(gpa, "{s}/{s}{s}", .{ out_dir, o.name, ext });
+        // erlang/BEAM: `out/<target>/<atom><ext>`, flat. commonJS/wasm:
+        // `out/<module path><ext>`, so subdirectories may have to be created.
+        const sub_path = try artifactPath(gpa, out_dir, target, o.name, ext);
         defer gpa.free(sub_path);
 
         // Ensure parent directory exists.
@@ -202,7 +239,7 @@ fn writeOutputs(
 
         // Optional TypeScript typedef.
         if (o.result.typedef) |td| {
-            const dts_path = try std.fmt.allocPrint(gpa, "{s}/{s}.d.ts", .{ out_dir, o.name });
+            const dts_path = try artifactPath(gpa, out_dir, target, o.name, ".d.ts");
             defer gpa.free(dts_path);
             try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = dts_path, .data = td });
         }

@@ -311,7 +311,8 @@ expect_code 1 "build --frobnicate"
 expect_out "unknown flag '--frobnicate'" "names the unknown flag"
 run "$P" build --target=erlang --out out-eq
 expect_code 0 "build --target=erlang"
-[[ -f "$P/out-eq/main.erl" && ! -e "$P/out-eq/main.js" ]] && ok "--target=erlang honoured" || fail "--target=erlang did not produce out-eq/main.erl"
+# 13 half 1: an erlang artifact lands at `<out>/erl/<module atom><ext>`.
+[[ -f "$P/out-eq/erl/main.erl" && ! -e "$P/out-eq/main.js" ]] && ok "--target=erlang honoured" || fail "--target=erlang did not produce out-eq/erl/main.erl"
 run "$P" test --target wasm2
 expect_code 1 "test --target wasm2"
 

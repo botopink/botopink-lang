@@ -15,22 +15,24 @@
 # with no step number, and `04 (no step; reported 2026-09-18)` says outright that
 # the front is certain and the row is missing. Neither invents a step.
 #
-# Measured on `fix/langtests` at `7bfecf7` plus the decision-28/30/33 cells
-# (its base is `feat` `bef762b`), node v25.8.0, OTP 29:
+# Measured on `fix/module-identity` at `f8d97f9` plus 13's half 1 (the erlang
+# module atom and the erlang runner), node v25.8.0, OTP 29:
 #
 #   $ tests/language/run.sh                 # commonJS, erlang, wasm
-#   language tests: 250 passed, 61 expected failures, 0 failed
+#   language tests: 262 passed, 50 expected failures, 0 failed
 #   $ tests/language/run.sh --target beam
-#   language tests: 14 passed, 20 expected failures, 0 failed
+#   language tests: 18 passed, 16 expected failures, 0 failed
 #
-# 58 lines: 53 exercised by `--target all`, 5 more only by `--target beam`
+# 55 lines: 50 exercised by `--target all`, 5 more only by `--target beam`
 # (the 11 `*` reject lines are counted by both runs). By the row that comes
 # first on the line: 01-checker 37 · 02-erlang 6 · 05-wasm 6 · 03-beam 4 ·
-# 13-module-identity 4 · 04-js 1. 24 lines name a second row that has to
-# land before the line goes (the §7 formatter's record and variant halves are
-# 13 step 18, not a backend's). Re-derived from the file on 2026-09-18, not from
-# one front's deltas: the paragraph had been two lines stale since 04's landing,
-# and fronts 02 and 03 deleted nine lines between them in the same merge window.
+# 04-js 1 · 13-module-identity 1. 19 lines name more than one front in their
+# owner cell — a second row that has to land before the line goes (the §7
+# formatter's record and variant halves are 13 step 18, not a backend's); that
+# is the count of owner cells holding a comma, which is how it is reproducible.
+# Re-derived from the file on 2026-09-18, not from one front's deltas: the
+# previous paragraph was stale in three figures at once — the two run totals and
+# the second-row count, which no reading of the file reproduced at 58 lines.
 #
 # For the record, since it changed inside this milestone: 04-js went to **zero**
 # lines when `c253965`, `7b6b5d3` and `17c5f8b` deleted all seven it had; the
@@ -95,14 +97,6 @@ erlang   | test/fn_defaults.bp        | 01 step 7 | trailing parameter defaults 
 
 # ── primitive methods ─────────────────────────────────────────────────────────
 erlang   | test/string_case_conversion.bp | 02 step 7 | `String.toUpperCase` / `String.toLowerCase` emit erlang functions that are never defined
-
-# ── modules ───────────────────────────────────────────────────────────────────
-# The emitted code is correct; `botopink run --target erlang` runs `escript out/main.erl`,
-# which compiles only the file it is handed. The `-pa` fix lives in `cli/run.zig`,
-# which 13 owns (fronts.md: 10 owns `modules/compiler-cli/**` except `cli/{build,run}.zig`).
-erlang   | modules/two_modules        | 13 step 2 | a method on a type imported from a sibling module is emitted as `<module>:<method>/1` and is undefined at run time
-erlang   | modules/mod_tree           | 13 step 2 | a fn imported from a folder-index module is emitted as `<module>:<fn>/0` and is undefined at run time
-erlang   | modules/std_import         | 13 step 2 | a std package fn used from a user module is emitted as `dict:empty/0` and is undefined at run time
 
 # ── wasm, the third executable target ─────────────────────────────────────────
 # `botopink run --target wasm` executes; `botopink test` refuses it, so only

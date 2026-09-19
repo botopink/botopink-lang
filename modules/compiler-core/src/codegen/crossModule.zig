@@ -13,6 +13,7 @@ const std = @import("std");
 const ast = @import("../ast.zig");
 const comptimeMod = @import("../comptime.zig");
 const commonJS = @import("./commonJS.zig");
+const configMod = @import("./config.zig");
 
 const ComptimeOutput = comptimeMod.ComptimeOutput;
 
@@ -57,6 +58,16 @@ pub const ExportInfo = struct {
 pub const CrossModule = struct {
     exports: std.StringHashMap(ExportInfo),
     imported: std.StringHashMap(void),
+    /// Every module path in the program → its rendered Erlang/BEAM module atom
+    /// (`"std/math"` → `"std@math"`). Rendered once, in `build`, so every
+    /// emitter reads one spelling of the atom and the values outlive the
+    /// per-module emitters that store them in their own tables.
+    atoms: std.StringHashMap([]u8),
+    /// Module paths whose atom cannot be used — two paths rendering the same
+    /// atom, a `RESERVED` hit, or over `ATOM_MAX_BYTES`. Keyed by path, so the
+    /// erlang and BEAM backends can fail exactly the modules involved with a
+    /// diagnostic instead of letting one silently overwrite the other.
+    atom_faults: std.StringHashMap(AtomFault),
     /// Owns the `fields` arrays allocated for record/struct exports.
     field_arrays: std.ArrayListUnmanaged([]const []const u8) = .empty,
     alloc: std.mem.Allocator,
@@ -64,24 +75,349 @@ pub const CrossModule = struct {
     pub fn deinit(self: *CrossModule) void {
         for (self.field_arrays.items) |arr| self.alloc.free(arr);
         self.field_arrays.deinit(self.alloc);
+        var ait = self.atoms.valueIterator();
+        while (ait.next()) |a| self.alloc.free(a.*);
+        self.atoms.deinit();
+        self.atom_faults.deinit();
         self.exports.deinit();
         self.imported.deinit();
     }
 
-    /// Basename of an export's emitting module path — the Erlang/BEAM module
-    /// atom (`"web/http"` → `"http"`). Null when `name` isn't a cross-module
-    /// export.
+    /// Erlang/BEAM module atom of a module PATH (`"web/api/http"` →
+    /// `"web@api@http"`). Falls back to the basename for a path the index never
+    /// saw — the comptime evaluators emit a standalone module whose name is a
+    /// placeholder, not a project module.
+    pub fn atomFor(self: *const CrossModule, path: []const u8) []const u8 {
+        return self.atoms.get(path) orelse moduleBasename(path);
+    }
+
+    /// Erlang/BEAM module atom of the module that emits `name`. Null when
+    /// `name` isn't a cross-module export.
     pub fn ownerModuleAtom(self: *const CrossModule, name: []const u8) ?[]const u8 {
         const info = self.exports.get(name) orelse return null;
-        return moduleBasename(info.module);
+        return self.atomFor(info.module);
+    }
+
+    /// The fault that makes `path`'s atom unusable, or null.
+    pub fn atomFault(self: *const CrossModule, path: []const u8) ?AtomFault {
+        return self.atom_faults.get(path);
     }
 };
 
-/// Last path segment of a module path — the Erlang/BEAM module atom.
+/// Last path segment of a module path. NOT the module atom any more — it is
+/// what a *source-level* name is compared against (an `import { order } from
+/// "std"` namespace, a `wat.zig` import segment). The atom is `erlAtom`.
 pub fn moduleBasename(path: []const u8) []const u8 {
     if (std.mem.lastIndexOfScalar(u8, path, '/')) |i| return path[i + 1 ..];
     return path;
 }
+
+// ── the Erlang/BEAM module atom (option A + A2) ───────────────────────────────
+//
+// `erlc` refuses a `-module` atom that differs from its file's basename, so the
+// atom IS the filename and a module path cannot be carried by the directory and
+// by the atom at once. This backend used to throw the directory away, which made
+// the atom non-unique: `models/user.bp` and `services/user.bp` both emitted
+// `-module(user)` — one silently overwrote the other in a shared output
+// directory, and silently shadowed it on one code path — and eleven `libs/std`
+// modules (`base64`, `crypto`, `dict`, `erlang`, `json`, `math`, `os`, `queue`,
+// `random`, `sets`, `unicode`) shadowed the OTP module of the same name
+// node-wide, which makes every other function of that OTP module `undef`.
+//
+// Option A joins the whole path with `@` — a legal UNQUOTED erlang atom, so no
+// emitter, no `.S` writer and no hand-written `.erl` has to learn quoting — and
+// A2 qualifies each EXTRA module one source file produces with `__<kind>__<decl>`,
+// which decodes back to its origin. Both were re-verified with `erlc`/`erl` on
+// OTP 29.
+
+/// A botopink module's identity: its module path (`main`, `std/math`,
+/// `models/user`). Every atom renderer takes one, so a caller cannot pass a
+/// basename where a path is meant.
+pub const ModuleId = struct {
+    path: []const u8,
+
+    pub fn of(path: []const u8) ModuleId {
+        return .{ .path = path };
+    }
+};
+
+/// Which extra module a source file produced — A2's `__<kind>__` qualifier.
+/// A kind is never a free string: the segment is this enum's own tag name.
+pub const Kind = enum {
+    /// a `type` declared in that file. Reserved; nothing emits it yet (that is
+    /// half 2 of this front).
+    t,
+    /// a `behavior` declared in that file. Reserved and emits nothing, by
+    /// decision 23 — a behavior has no run-time representation.
+    b,
+    /// an `implement` block. Reserved; nothing emits it yet.
+    im,
+    /// a template body evaluated at compile time. Live.
+    tpl,
+    /// a decorator body evaluated at compile time. Live.
+    dec,
+
+    pub fn tag(self: Kind) []const u8 {
+        return @tagName(self);
+    }
+};
+
+/// A2's in-file qualifier separator, and the reason a run of `_` collapses to
+/// one: the suffix has to be decodable, so `__` may not occur inside the path
+/// half of an atom. It is OTP's own convention for the same purpose — `escript`
+/// names its synthesised module `<script>__escript__<pid parts>`.
+pub const QUALIFIER_SEP = "__";
+
+/// The practical cap on a module atom is the FILENAME, not the 255-byte atom
+/// limit: `erlc` stages its output through `<atom>.bea#`, five bytes more than
+/// the atom, inside a 255-byte `NAME_MAX`. Measured on OTP 29: a 250-byte atom
+/// compiles, a 251-byte one fails.
+pub const ATOM_MAX_BYTES = 250;
+
+/// OTP module names a single-segment botopink module may not render to, frozen
+/// here as a source list rather than read from the running node: the atom a
+/// build emits must not depend on which OTP release compiled it. `kernel` +
+/// `stdlib` + the preloaded modules as shipped by OTP 29, plus the one name
+/// outside those three that `libs/std` already collides with (`crypto`, from the
+/// `crypto` application) — 225 names, sorted, which `isReserved` relies on.
+/// Widen it by adding the name in sorted position; the test below re-checks both
+/// the order and the eleven `libs/std` names.
+pub const RESERVED = [_][]const u8{
+    "application",           "application_controller", "application_master", "application_starter",               "argparse",               "array",
+    "atomics",               "auth",                   "base64",             "beam_lib",                          "binary",                 "c",
+    "calendar",              "code",                   "code_server",        "counters",                          "crypto",                 "data_publisher",
+    "dets",                  "dets_server",            "dets_sup",           "dets_utils",                        "dets_v9",                "dict",
+    "digraph",               "digraph_utils",          "disk_log",           "disk_log_1",                        "disk_log_server",        "disk_log_sup",
+    "dist_ac",               "dist_util",              "edlin",              "edlin_context",                     "edlin_expand",           "edlin_key",
+    "edlin_type_suggestion", "epp",                    "erl_abstract_code",  "erl_anno",                          "erl_bits",               "erl_boot_server",
+    "erl_compile",           "erl_compile_server",     "erl_ddll",           "erl_debugger",                      "erl_distribution",       "erl_epmd",
+    "erl_error",             "erl_erts_errors",        "erl_eval",           "erl_expand_records",                "erl_features",           "erl_init",
+    "erl_internal",          "erl_kernel_errors",      "erl_lint",           "erl_parse",                         "erl_posix_msg",          "erl_pp",
+    "erl_prim_loader",       "erl_reply",              "erl_scan",           "erl_signal_handler",                "erl_stdlib_errors",      "erl_tar",
+    "erl_tracer",            "erlang",                 "erpc",               "error_handler",                     "error_logger",           "error_logger_file_h",
+    "error_logger_tty_h",    "erts_code_purger",       "erts_debug",         "erts_dirty_process_signal_handler", "erts_internal",          "erts_literal_area_collector",
+    "erts_trace_cleaner",    "escript",                "ets",                "eval_bits",                         "file",                   "file_io_server",
+    "file_server",           "file_sorter",            "filelib",            "filename",                          "gb_sets",                "gb_trees",
+    "gen",                   "gen_event",              "gen_fsm",            "gen_sctp",                          "gen_server",             "gen_statem",
+    "gen_tcp",               "gen_tcp_socket",         "gen_udp",            "gen_udp_socket",                    "global",                 "global_group",
+    "global_search",         "graph",                  "group",              "group_history",                     "heart",                  "inet",
+    "inet6_sctp",            "inet6_tcp",              "inet6_tcp_dist",     "inet6_udp",                         "inet_config",            "inet_db",
+    "inet_dns",              "inet_dns_tsig",          "inet_epmd_dist",     "inet_epmd_socket",                  "inet_gethost_native",    "inet_hosts",
+    "inet_parse",            "inet_res",               "inet_sctp",          "inet_tcp",                          "inet_tcp_dist",          "inet_udp",
+    "init",                  "io",                     "io_ansi",            "io_lib",                            "io_lib_format",          "io_lib_fread",
+    "io_lib_pretty",         "json",                   "kernel",             "kernel_config",                     "kernel_refc",            "lists",
+    "local_tcp",             "local_udp",              "log_mf_h",           "logger",                            "logger_backend",         "logger_config",
+    "logger_disk_log_h",     "logger_filters",         "logger_formatter",   "logger_h_common",                   "logger_handler",         "logger_handler_watcher",
+    "logger_olp",            "logger_proxy",           "logger_server",      "logger_simple_h",                   "logger_std_h",           "logger_sup",
+    "man_docs",              "maps",                   "math",               "ms_transform",                      "net",                    "net_adm",
+    "net_kernel",            "orddict",                "ordsets",            "os",                                "otp_internal",           "peer",
+    "persistent_term",       "pg",                     "pg2",                "pool",                              "prim_buffer",            "prim_eval",
+    "prim_file",             "prim_inet",              "prim_net",           "prim_socket",                       "prim_tty",               "prim_tty_sighandler",
+    "prim_zip",              "proc_lib",               "proplists",          "qlc",                               "qlc_pt",                 "queue",
+    "ram_file",              "rand",                   "random",             "raw_file_io",                       "raw_file_io_compressed", "raw_file_io_deflate",
+    "raw_file_io_delayed",   "raw_file_io_inflate",    "raw_file_io_list",   "re",                                "records",                "rpc",
+    "seq_trace",             "sets",                   "shell",              "shell_default",                     "shell_docs",             "shell_docs_markdown",
+    "slave",                 "socket",                 "socket_registry",    "sofs",                              "standard_error",         "string",
+    "supervisor",            "supervisor_bridge",      "sys",                "timer",                             "trace",                  "unicode",
+    "unicode_util",          "uri_string",             "user_drv",           "user_sup",                          "win32reg",               "wrap_log_reader",
+    "zip",                   "zlib",                   "zstd",
+};
+
+/// Whether `name` is one of `RESERVED`. Binary search — `RESERVED` is sorted.
+pub fn isReserved(name: []const u8) bool {
+    var lo: usize = 0;
+    var hi: usize = RESERVED.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        switch (std.mem.order(u8, RESERVED[mid], name)) {
+            .eq => return true,
+            .lt => lo = mid + 1,
+            .gt => hi = mid,
+        }
+    }
+    return false;
+}
+
+pub const AtomError = error{
+    /// A module path, or a path whose every character sanitised away, cannot
+    /// name a module.
+    EmptyModulePath,
+    /// A declaration whose name sanitised away cannot qualify an atom.
+    EmptyDeclName,
+    /// An atom that does not split into 1, 3 or 4 `__`-separated parts was not
+    /// produced by `erlAtom`/`erlDeclAtom`.
+    UndecodableAtom,
+};
+
+/// Option A: the module path as a legal unquoted erlang atom.
+///
+///     1. lowercase the path
+///     2. '/' → '@'
+///     3. every character outside [a-z0-9_@] → '_'
+///     3b. collapse a run of two or more '_' to a single '_' (so `__` is free
+///         for A2's qualifier and the atom decodes)
+///     4. if the first character is not [a-z], prefix "bp@"
+///     5. if the result has no '@' and is RESERVED, prefix "bp@"
+///
+/// Rule 5 only fires for a single-segment path: any path with a directory
+/// already carries a prefix and cannot collide with OTP. `main` stays `main`.
+/// Caller owns the result.
+pub fn erlAtom(alloc: std.mem.Allocator, id: ModuleId) (std.mem.Allocator.Error || AtomError)![]u8 {
+    if (id.path.len == 0) return error.EmptyModulePath;
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer out.deinit(alloc);
+    var has_at = false;
+    for (id.path) |raw| {
+        const c = std.ascii.toLower(raw);
+        const mapped: u8 = switch (c) {
+            '/' => '@',
+            'a'...'z', '0'...'9', '_', '@' => c,
+            else => '_',
+        };
+        if (mapped == '_' and out.items.len > 0 and out.items[out.items.len - 1] == '_') continue;
+        if (mapped == '@') has_at = true;
+        try out.append(alloc, mapped);
+    }
+    if (out.items.len == 0) return error.EmptyModulePath;
+    const first = out.items[0];
+    const needs_prefix = !(first >= 'a' and first <= 'z') or (!has_at and isReserved(out.items));
+    if (needs_prefix) try out.insertSlice(alloc, 0, "bp@");
+    return out.toOwnedSlice(alloc);
+}
+
+/// A2: the atom of an EXTRA module one source file produces.
+///
+///     atom = erlAtom(path) "__" kind "__" decl [ "__" 16-hex-hash ]
+///
+/// `hash` belongs to a comptime producer only — one template declaration
+/// evaluates to many distinct generated bodies, and the hash is what keeps a
+/// re-evaluation of an identical body the same module (the content-addressing
+/// the comptime server relies on). Caller owns the result.
+pub fn erlDeclAtom(
+    alloc: std.mem.Allocator,
+    id: ModuleId,
+    kind: Kind,
+    decl: []const u8,
+    hash: ?u64,
+) (std.mem.Allocator.Error || AtomError)![]u8 {
+    const base = try erlAtom(alloc, id);
+    defer alloc.free(base);
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer out.deinit(alloc);
+    try out.appendSlice(alloc, base);
+    try out.appendSlice(alloc, QUALIFIER_SEP);
+    try out.appendSlice(alloc, kind.tag());
+    try out.appendSlice(alloc, QUALIFIER_SEP);
+    const before = out.items.len;
+    for (decl) |raw| {
+        const c = std.ascii.toLower(raw);
+        const mapped: u8 = switch (c) {
+            'a'...'z', '0'...'9', '_' => c,
+            else => '_',
+        };
+        if (mapped == '_' and out.items.len > before and out.items[out.items.len - 1] == '_') continue;
+        if (mapped == '_' and out.items.len == before) continue;
+        try out.append(alloc, mapped);
+    }
+    if (out.items.len == before) return error.EmptyDeclName;
+    if (hash) |h| {
+        try out.appendSlice(alloc, QUALIFIER_SEP);
+        var hex: [16]u8 = undefined;
+        _ = std.fmt.bufPrint(&hex, "{x:0>16}", .{h}) catch unreachable;
+        try out.appendSlice(alloc, &hex);
+    }
+    return out.toOwnedSlice(alloc);
+}
+
+/// What an atom this module rendered came from. The reason A2 spells the
+/// qualifier `__<kind>__<decl>` instead of the `#<Decl>` the first proposal
+/// asked for: `#` produced text the BEAM never reads, while this decodes.
+pub const Decoded = struct {
+    shape: enum { module, decl, gen },
+    /// The module path, `@` restored to `/`. Owned by the caller.
+    path: []u8,
+    /// Borrowed from the atom that was decoded.
+    kind: []const u8 = "",
+    decl: []const u8 = "",
+    hash: []const u8 = "",
+
+    pub fn deinit(self: *Decoded, alloc: std.mem.Allocator) void {
+        alloc.free(self.path);
+    }
+};
+
+/// Split an atom back into its origin. `bp@` stays part of the path, because it
+/// is the prefix rule 4/5 added and only the compiler knows whether it was
+/// there in the source.
+pub fn decodeAtom(alloc: std.mem.Allocator, atom: []const u8) (std.mem.Allocator.Error || AtomError)!Decoded {
+    var parts: [4][]const u8 = undefined;
+    var n: usize = 0;
+    var it = std.mem.splitSequence(u8, atom, QUALIFIER_SEP);
+    while (it.next()) |part| {
+        if (n == parts.len) return error.UndecodableAtom;
+        parts[n] = part;
+        n += 1;
+    }
+    const path = try alloc.dupe(u8, parts[0]);
+    errdefer alloc.free(path);
+    for (path) |*c| {
+        if (c.* == '@') c.* = '/';
+    }
+    return switch (n) {
+        1 => .{ .shape = .module, .path = path },
+        3 => .{ .shape = .decl, .path = path, .kind = parts[1], .decl = parts[2] },
+        4 => .{ .shape = .gen, .path = path, .kind = parts[1], .decl = parts[2], .hash = parts[3] },
+        else => error.UndecodableAtom,
+    };
+}
+
+/// The basename a module's artifact is written under, without its extension.
+/// The erlang and BEAM trees are FLAT and the filename is the atom, because
+/// `erlc` demands the two be equal; commonJS, its `.d.ts` and wasm keep the
+/// mirrored `<module path>` tree, because a `require` target and a wasm import
+/// segment ARE the path. Caller owns the result.
+pub fn outputStem(target: configMod.TargetSource, alloc: std.mem.Allocator, id: ModuleId) (std.mem.Allocator.Error || AtomError)![]u8 {
+    return switch (target) {
+        .erlang, .beam => try erlAtom(alloc, id),
+        .commonJS, .wasm => try alloc.dupe(u8, id.path),
+    };
+}
+
+/// Why a module's rendered atom cannot be used. The absence of this check is
+/// the whole reason this front exists: two paths rendering one atom was a
+/// silent winner, never a diagnostic.
+pub const AtomFault = struct {
+    atom: []const u8,
+    path: []const u8,
+    reason: Reason,
+    /// The other module path that rendered the same atom. `duplicate` only.
+    other: []const u8 = "",
+
+    pub const Reason = enum { duplicate, reserved, too_long };
+
+    /// This as the message of a `moduleOutput.Diagnostic.type`, so the failure
+    /// reaches the driver naming both source modules instead of one of them
+    /// quietly overwriting the other.
+    pub fn message(self: AtomFault, alloc: std.mem.Allocator) ![]u8 {
+        return switch (self.reason) {
+            .duplicate => std.fmt.allocPrint(
+                alloc,
+                "modules `{s}` and `{s}` both render to the erlang module atom `{s}` — `__` is reserved as the in-file qualifier separator, so a run of `_` in a path segment collapses to one",
+                .{ self.path, self.other, self.atom },
+            ),
+            .reserved => std.fmt.allocPrint(
+                alloc,
+                "module `{s}` renders to `{s}`, which is the name of an OTP module and would shadow it node-wide",
+                .{ self.path, self.atom },
+            ),
+            .too_long => std.fmt.allocPrint(
+                alloc,
+                "module `{s}` renders to an erlang module atom of {d} bytes (`{s}`); the limit is {d}, because `<atom>.beam` has to be a filename",
+                .{ self.path, self.atom.len, self.atom, ATOM_MAX_BYTES },
+            ),
+        };
+    }
+};
 
 pub fn build(alloc: std.mem.Allocator, outputs: []ComptimeOutput) !CrossModule {
     var exports = std.StringHashMap(ExportInfo).init(alloc);
@@ -92,6 +428,50 @@ pub fn build(alloc: std.mem.Allocator, outputs: []ComptimeOutput) !CrossModule {
     errdefer {
         for (field_arrays.items) |arr| alloc.free(arr);
         field_arrays.deinit(alloc);
+    }
+
+    // Every module's erlang/BEAM atom, rendered once, plus the check whose
+    // absence is this front: a second path rendering the same atom, a RESERVED
+    // hit or an over-long atom is recorded against BOTH modules involved so the
+    // erlang and BEAM backends can fail them with a diagnostic. A module that
+    // did not lex, parse or type-check is still named here — it is a source
+    // module and its atom still competes for the filename.
+    var atoms = std.StringHashMap([]u8).init(alloc);
+    errdefer {
+        var it = atoms.valueIterator();
+        while (it.next()) |a| alloc.free(a.*);
+        atoms.deinit();
+    }
+    var atom_faults = std.StringHashMap(AtomFault).init(alloc);
+    errdefer atom_faults.deinit();
+    // atom text → the first module path that rendered it.
+    var seen = std.StringHashMap([]const u8).init(alloc);
+    defer seen.deinit();
+    for (outputs) |*ct| {
+        if (ct.name.len == 0) continue;
+        if (atoms.contains(ct.name)) continue;
+        const atom = erlAtom(alloc, .of(ct.name)) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            // A path that renders to nothing cannot name a module; leaving it
+            // out of `atoms` falls back to the basename, exactly as before.
+            error.EmptyModulePath, error.EmptyDeclName, error.UndecodableAtom => continue,
+        };
+        try atoms.put(ct.name, atom);
+        const gop = try seen.getOrPut(atom);
+        if (gop.found_existing) {
+            try atom_faults.put(ct.name, .{ .atom = atom, .path = ct.name, .reason = .duplicate, .other = gop.value_ptr.* });
+            try atom_faults.put(gop.value_ptr.*, .{ .atom = atom, .path = gop.value_ptr.*, .reason = .duplicate, .other = ct.name });
+        } else {
+            gop.value_ptr.* = ct.name;
+        }
+        if (atom.len > ATOM_MAX_BYTES) {
+            try atom_faults.put(ct.name, .{ .atom = atom, .path = ct.name, .reason = .too_long });
+        } else if (isReserved(atom)) {
+            // Rule 5 prefixes `bp@` for a single-segment reserved name, so this
+            // can only fire for a shape rule 5 does not cover. It is kept
+            // because a shadowed OTP module is silent and node-wide.
+            try atom_faults.put(ct.name, .{ .atom = atom, .path = ct.name, .reason = .reserved });
+        }
     }
 
     for (outputs) |*ct| {
@@ -140,5 +520,234 @@ pub fn build(alloc: std.mem.Allocator, outputs: []ComptimeOutput) !CrossModule {
             else => {},
         };
     }
-    return .{ .exports = exports, .imported = imported, .field_arrays = field_arrays, .alloc = alloc };
+    return .{ .exports = exports, .imported = imported, .atoms = atoms, .atom_faults = atom_faults, .field_arrays = field_arrays, .alloc = alloc };
+}
+
+// ── tests: the atom, its qualifier, its decoder and the collision check ───────
+
+const testing = std.testing;
+
+fn expectAtom(expected: []const u8, path: []const u8) !void {
+    const got = try erlAtom(testing.allocator, .of(path));
+    defer testing.allocator.free(got);
+    try testing.expectEqualStrings(expected, got);
+}
+
+test "erlAtom: one segment stays itself, so `main` is unchanged" {
+    try expectAtom("main", "main");
+    try expectAtom("geometry", "geometry");
+}
+
+test "erlAtom: two and three segments join with `@`, unquoted" {
+    try expectAtom("std@math", "std/math");
+    try expectAtom("web@api@http", "web/api/http");
+    // The collision the front exists to remove: one basename, two atoms.
+    try expectAtom("models@user", "models/user");
+    try expectAtom("services@user", "services/user");
+}
+
+test "erlAtom: a single-segment RESERVED name takes the `bp@` prefix" {
+    // The eleven `libs/std` modules that shadow OTP today.
+    try expectAtom("bp@math", "math");
+    try expectAtom("bp@erlang", "erlang");
+    try expectAtom("bp@queue", "queue");
+    try expectAtom("bp@dict", "dict");
+    // A path with a directory already carries a prefix, so rule 5 must NOT
+    // fire — `std@math` cannot shadow `math`.
+    try expectAtom("std@math", "std/math");
+    try expectAtom("std@erlang", "std/erlang");
+}
+
+test "erlAtom: a character outside [a-z0-9_@] becomes `_`, and case folds" {
+    try expectAtom("my_mod@user", "My-Mod/User");
+    try expectAtom("a_b@c_d", "a.b/c d");
+    // Rule 4: a leading non-letter takes the prefix.
+    try expectAtom("bp@1st@mod", "1st/mod");
+    try expectAtom("bp@_hidden", "_hidden");
+}
+
+test "erlAtom: a run of `_` collapses, so `__` stays free for the qualifier" {
+    try expectAtom("my_mod@user", "my__mod/user");
+    try expectAtom("a_b", "a___b");
+    // …which is the pathological collision the check in `build` has to catch.
+    const a = try erlAtom(testing.allocator, .of("my__mod/user"));
+    defer testing.allocator.free(a);
+    const b = try erlAtom(testing.allocator, .of("my_mod/user"));
+    defer testing.allocator.free(b);
+    try testing.expectEqualStrings(a, b);
+}
+
+test "erlAtom: a path that would exceed 250 bytes renders and is caught later" {
+    const long = "a" ** 300;
+    const got = try erlAtom(testing.allocator, .of(long));
+    defer testing.allocator.free(got);
+    // The renderer does not truncate — truncating is what made atoms collide.
+    // It is `build`'s check that refuses it, with the filename limit named.
+    try testing.expectEqual(@as(usize, 300), got.len);
+    try testing.expect(got.len > ATOM_MAX_BYTES);
+}
+
+test "erlAtom: an empty path is an error, not an empty atom" {
+    try testing.expectError(error.EmptyModulePath, erlAtom(testing.allocator, .of("")));
+    // Nothing else can sanitise away: every character maps to `@` or `_`.
+    try expectAtom("bp@@@@", "///");
+}
+
+test "erlDeclAtom: the kind segment is the enum tag, never a free string" {
+    const cases = [_]struct { kind: Kind, want: []const u8 }{
+        .{ .kind = .t, .want = "models@user__t__pessoa" },
+        .{ .kind = .b, .want = "models@user__b__pessoa" },
+        .{ .kind = .im, .want = "models@user__im__pessoa" },
+        .{ .kind = .tpl, .want = "models@user__tpl__pessoa" },
+        .{ .kind = .dec, .want = "models@user__dec__pessoa" },
+    };
+    for (cases) |c| {
+        const got = try erlDeclAtom(testing.allocator, .of("models/user"), c.kind, "Pessoa", null);
+        defer testing.allocator.free(got);
+        try testing.expectEqualStrings(c.want, got);
+    }
+}
+
+test "erlDeclAtom: a comptime producer carries the 16-hex content hash" {
+    const got = try erlDeclAtom(testing.allocator, .of("ui/panel"), .tpl, "panel", 0x3f1a9c02b7e4d5f8);
+    defer testing.allocator.free(got);
+    try testing.expectEqualStrings("ui@panel__tpl__panel__3f1a9c02b7e4d5f8", got);
+}
+
+test "erlDeclAtom: a declaration name is escaped and its `_` runs collapse" {
+    const got = try erlDeclAtom(testing.allocator, .of("main"), .t, "My-Type__X", null);
+    defer testing.allocator.free(got);
+    try testing.expectEqualStrings("main__t__my_type_x", got);
+    try testing.expectError(error.EmptyDeclName, erlDeclAtom(testing.allocator, .of("main"), .t, "--", null));
+}
+
+test "decodeAtom: every shape round-trips to its origin" {
+    const cases = [_]struct {
+        atom: []const u8,
+        shape: @FieldType(Decoded, "shape"),
+        path: []const u8,
+        kind: []const u8 = "",
+        decl: []const u8 = "",
+        hash: []const u8 = "",
+    }{
+        .{ .atom = "models@user", .shape = .module, .path = "models/user" },
+        .{ .atom = "web@api@http", .shape = .module, .path = "web/api/http" },
+        .{ .atom = "main", .shape = .module, .path = "main" },
+        .{ .atom = "models@user__t__pessoa", .shape = .decl, .path = "models/user", .kind = "t", .decl = "pessoa" },
+        .{ .atom = "std@math__b__signed", .shape = .decl, .path = "std/math", .kind = "b", .decl = "signed" },
+        .{
+            .atom = "ui@panel__tpl__panel__3f1a9c02b7e4d5f8",
+            .shape = .gen,
+            .path = "ui/panel",
+            .kind = "tpl",
+            .decl = "panel",
+            .hash = "3f1a9c02b7e4d5f8",
+        },
+    };
+    for (cases) |c| {
+        var d = try decodeAtom(testing.allocator, c.atom);
+        defer d.deinit(testing.allocator);
+        try testing.expectEqual(c.shape, d.shape);
+        try testing.expectEqualStrings(c.path, d.path);
+        try testing.expectEqualStrings(c.kind, d.kind);
+        try testing.expectEqualStrings(c.decl, d.decl);
+        try testing.expectEqualStrings(c.hash, d.hash);
+    }
+    try testing.expectError(error.UndecodableAtom, decodeAtom(testing.allocator, "a__b"));
+    try testing.expectError(error.UndecodableAtom, decodeAtom(testing.allocator, "a__b__c__d__e"));
+}
+
+test "decodeAtom: what erlDeclAtom wrote is what decodeAtom reads back" {
+    const atom = try erlDeclAtom(testing.allocator, .of("ui/panel"), .tpl, "panel", 0xb7e4d5f83f1a9c02);
+    defer testing.allocator.free(atom);
+    var d = try decodeAtom(testing.allocator, atom);
+    defer d.deinit(testing.allocator);
+    try testing.expectEqual(@as(@FieldType(Decoded, "shape"), .gen), d.shape);
+    try testing.expectEqualStrings("ui/panel", d.path);
+    try testing.expectEqualStrings("tpl", d.kind);
+    try testing.expectEqualStrings("panel", d.decl);
+    try testing.expectEqualStrings("b7e4d5f83f1a9c02", d.hash);
+}
+
+test "outputStem: erlang and beam take the atom, commonJS and wasm the path" {
+    const cases = [_]struct { target: configMod.TargetSource, want: []const u8 }{
+        .{ .target = .erlang, .want = "std@math" },
+        .{ .target = .beam, .want = "std@math" },
+        .{ .target = .commonJS, .want = "std/math" },
+        .{ .target = .wasm, .want = "std/math" },
+    };
+    for (cases) |c| {
+        const got = try outputStem(c.target, testing.allocator, .of("std/math"));
+        defer testing.allocator.free(got);
+        try testing.expectEqualStrings(c.want, got);
+    }
+}
+
+fn syntaxFailed(name: []const u8) ComptimeOutput {
+    return .{ .name = name, .src = "", .outcome = .{ .parseError = .{ .parse = null } } };
+}
+
+test "build: two paths rendering one atom is a fault on BOTH, not a silent winner" {
+    var outputs = [_]ComptimeOutput{
+        syntaxFailed("my__mod/user"),
+        syntaxFailed("my_mod/user"),
+        syntaxFailed("main"),
+    };
+    var xc = try build(testing.allocator, &outputs);
+    defer xc.deinit();
+
+    try testing.expectEqualStrings("my_mod@user", xc.atomFor("my__mod/user"));
+    try testing.expectEqualStrings("my_mod@user", xc.atomFor("my_mod/user"));
+    try testing.expectEqualStrings("main", xc.atomFor("main"));
+
+    const a = xc.atomFault("my__mod/user") orelse return error.TestExpectedFault;
+    const b = xc.atomFault("my_mod/user") orelse return error.TestExpectedFault;
+    try testing.expectEqual(AtomFault.Reason.duplicate, a.reason);
+    try testing.expectEqual(AtomFault.Reason.duplicate, b.reason);
+    try testing.expectEqualStrings("my_mod/user", a.other);
+    try testing.expectEqualStrings("my__mod/user", b.other);
+    try testing.expect(xc.atomFault("main") == null);
+
+    const msg = try a.message(testing.allocator);
+    defer testing.allocator.free(msg);
+    try testing.expect(std.mem.indexOf(u8, msg, "my__mod/user") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, "my_mod/user") != null);
+    try testing.expect(std.mem.indexOf(u8, msg, "my_mod@user") != null);
+}
+
+test "build: an atom over the filename limit is a fault naming the limit" {
+    const long = "z" ** 260;
+    var outputs = [_]ComptimeOutput{syntaxFailed(long)};
+    var xc = try build(testing.allocator, &outputs);
+    defer xc.deinit();
+    const f = xc.atomFault(long) orelse return error.TestExpectedFault;
+    try testing.expectEqual(AtomFault.Reason.too_long, f.reason);
+    const msg = try f.message(testing.allocator);
+    defer testing.allocator.free(msg);
+    try testing.expect(std.mem.indexOf(u8, msg, "250") != null);
+}
+
+test "build: a RESERVED single-segment name is prefixed, so it raises no fault" {
+    var outputs = [_]ComptimeOutput{ syntaxFailed("math"), syntaxFailed("std/math") };
+    var xc = try build(testing.allocator, &outputs);
+    defer xc.deinit();
+    try testing.expectEqualStrings("bp@math", xc.atomFor("math"));
+    try testing.expectEqualStrings("std@math", xc.atomFor("std/math"));
+    try testing.expect(xc.atomFault("math") == null);
+    try testing.expect(xc.atomFault("std/math") == null);
+}
+
+test "RESERVED is sorted and holds the eleven names `libs/std` already collides with" {
+    for (RESERVED[1..], 0..) |name, i| {
+        try testing.expect(std.mem.order(u8, RESERVED[i], name) == .lt);
+    }
+    for ([_][]const u8{
+        "base64", "crypto", "dict",   "erlang", "json",    "math",
+        "os",     "queue",  "random", "sets",   "unicode",
+    }) |name| {
+        try testing.expect(isReserved(name));
+    }
+    try testing.expect(!isReserved("main"));
+    try testing.expect(!isReserved("geometry"));
+    try testing.expect(!isReserved("std@math"));
 }

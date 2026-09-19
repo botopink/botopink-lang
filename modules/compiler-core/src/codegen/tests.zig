@@ -3,6 +3,7 @@
 //! so `test_root.zig` (which imports this) discovers every test.
 
 test {
+    _ = @import("crossModule.zig");
     _ = @import("tests/values.zig");
     _ = @import("tests/aggregates.zig");
     _ = @import("tests/control_flow.zig");

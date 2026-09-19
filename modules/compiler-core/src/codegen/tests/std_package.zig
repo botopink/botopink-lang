@@ -51,6 +51,38 @@ test "js: std package ---- env template externals resolve through the module obj
     , "hi\nnull\n");
 }
 
+// 13 half 1 — the sharper half of the same collision: eleven `libs/std` modules
+// are named after an OTP module (`base64`, `crypto`, `dict`, `erlang`, `json`,
+// `math`, `os`, `queue`, `random`, `sets`, `unicode`). Emitting `-module(math)`
+// put that file ahead of `stdlib`'s `math` on the code path, which makes every
+// other function of the OTP module `undef` — node-wide, silently. The std module
+// is `std@math` now, so the two coexist: this program calls `std@math:ceil/1`
+// and the OTP `math:sqrt/1` in the same function, and RUNNING it is the only
+// assertion that can see the shadow (a snapshot of unloadable code looks fine).
+//
+// Erlang-only on purpose: `libs/std`'s `math` does not compile for wasm at all
+// (`math.abs` has no `@external` for that target), so a four-backend cell would
+// pin that unrelated gap instead of this one.
+test "erlang: std package ---- a std math import and the OTP math module in one program" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\import {math} from "std";
+        \\
+        \\#[@External.Erlang("math", "sqrt"),
+        \\  @External.Beam("math", "sqrt"),
+        \\  @External.Node("Math", "sqrt")]
+        \\declare fn otpSqrt(x: f64) -> f64;
+        \\
+        \\fn main() {
+        \\    @print(math.ceil(1.2));
+        \\    @print(otpSqrt(16.0));
+        \\}
+    , "2.0\n4.0\n", &.{
+        // the std module reached by its atom, and OTP's own `math` beside it
+        "std@math:ceil(1.2)",
+        "math:sqrt(16.0)",
+    });
+}
+
 test "js: std package ---- order enum module with type export" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\import {order} from "std";

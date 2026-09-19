@@ -67,7 +67,7 @@ test "order case over Order" {
 
 ----- BEAM ASSEMBLY -- std/order.S
 ```erlang
-{module, order}.
+{module, std@order}.
 {exports, [{lt, 0}, {eq, 0}, {gt, 0}, {toInt, 1}, {reverse, 1}]}.
 {attributes, []}.
 {labels, 18}.
@@ -78,8 +78,8 @@ test "order case over Order" {
 
 {function, lt, 0, 3}.
   {label, 2}.
-    {line, [{location, "order.erl", 1}]}.
-    {func_info, {atom, order}, {atom, lt}, 0}.
+    {line, [{location, "std@order.erl", 1}]}.
+    {func_info, {atom, std@order}, {atom, lt}, 0}.
   {label, 3}.
     {allocate, 0, 0}.
     {move, {atom, 'Lt'}, {x, 0}}.
@@ -88,8 +88,8 @@ test "order case over Order" {
 
 {function, eq, 0, 5}.
   {label, 4}.
-    {line, [{location, "order.erl", 2}]}.
-    {func_info, {atom, order}, {atom, eq}, 0}.
+    {line, [{location, "std@order.erl", 2}]}.
+    {func_info, {atom, std@order}, {atom, eq}, 0}.
   {label, 5}.
     {allocate, 0, 0}.
     {move, {atom, 'Eq'}, {x, 0}}.
@@ -98,8 +98,8 @@ test "order case over Order" {
 
 {function, gt, 0, 7}.
   {label, 6}.
-    {line, [{location, "order.erl", 3}]}.
-    {func_info, {atom, order}, {atom, gt}, 0}.
+    {line, [{location, "std@order.erl", 3}]}.
+    {func_info, {atom, std@order}, {atom, gt}, 0}.
   {label, 7}.
     {allocate, 0, 0}.
     {move, {atom, 'Gt'}, {x, 0}}.
@@ -108,8 +108,8 @@ test "order case over Order" {
 
 {function, toInt, 1, 9}.
   {label, 8}.
-    {line, [{location, "order.erl", 4}]}.
-    {func_info, {atom, order}, {atom, toInt}, 1}.
+    {line, [{location, "std@order.erl", 4}]}.
+    {func_info, {atom, std@order}, {atom, toInt}, 1}.
   {label, 9}.
     {allocate, 4, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
@@ -133,8 +133,8 @@ test "order case over Order" {
 
 {function, reverse, 1, 11}.
   {label, 10}.
-    {line, [{location, "order.erl", 5}]}.
-    {func_info, {atom, order}, {atom, reverse}, 1}.
+    {line, [{location, "std@order.erl", 5}]}.
+    {func_info, {atom, std@order}, {atom, reverse}, 1}.
   {label, 11}.
     {allocate, 4, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
@@ -219,13 +219,13 @@ fn main() {
   {label, 5}.
     {allocate, 4, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}, {y, 3}]}}.
-    {call_ext, 0, {extfunc, order, lt, 0}}.
-    {call_ext, 1, {extfunc, order, toInt, 1}}.
+    {call_ext, 0, {extfunc, std@order, lt, 0}}.
+    {call_ext, 1, {extfunc, std@order, toInt, 1}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 14}}.
-    {call_ext, 0, {extfunc, order, lt, 0}}.
-    {call_ext, 1, {extfunc, order, reverse, 1}}.
+    {call_ext, 0, {extfunc, std@order, lt, 0}}.
+    {call_ext, 1, {extfunc, std@order, reverse, 1}}.
     {call, 1, {f, 3}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.

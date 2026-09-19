@@ -48,7 +48,10 @@ run_test_target() {
 run_beam() {
   local dir="$1" want="$2"
   echo "==> [$(basename "$dir")] beam: build + erlc +from_asm + main:main()"
-  ( cd "$dir" && "$BP_BIN" build --target beam && erlc +from_asm -o out out/main.S )
+  # 13 half 1: an erlang/BEAM artifact is named by its module atom under
+  # `out/<target>/`, because `erlc` refuses a `-module` atom that differs from
+  # its file's basename. `-o out` still puts the `.beam` where `-pa out` looks.
+  ( cd "$dir" && "$BP_BIN" build --target beam && erlc +from_asm -o out out/beam/main.S )
   local got
   got="$( cd "$dir" && erl -noshell -pa out -eval 'io:format("~p", [main:main()]), halt(0)' 2>/dev/null || true )"
   if [[ "$got" == "$want" ]]; then
@@ -112,11 +115,14 @@ if have node; then run_test_target "$RECORDS" commonJS; else echo "==> records c
 if have escript; then run_test_target "$RECORDS" erlang; else echo "==> records erlang: SKIPPED (no escript)"; fi
 if have erlc && have erl; then run_beam "$RECORDS" 3; else echo "==> records beam: SKIPPED (no erlc/erl)"; fi
 
-# ── multi-folder mod package (commonJS) ──────────────────────────────────────
-# commonJS runs the `mod`/`pub mod` tree end-to-end. The erlang cell is not run:
-# the erlang backend emits cross-module calls (`lucky`, `describe`) as bare
-# local calls, so escript rejects `out/main.erl` (`function lucky/0 undefined`).
-# The erlang front restores it as `run_package "$MODULES" erlang 12 circle 7`.
+# ── multi-folder mod package (commonJS / erlang) ─────────────────────────────
+# commonJS and erlang both run the `mod`/`pub mod` tree end-to-end. The erlang
+# cell was disabled because `botopink run --target erlang` was `escript
+# out/main.erl`, which compiles only the file it is handed, so every
+# cross-module call (`lucky`, `describe`) was `undefined` at run time. 13 half 1
+# replaced that with `erlc -o <dir>` over the whole output directory and
+# `erl -pa <dir>`, and the cell is restored exactly as the old comment asked.
 if have node; then run_package "$MODULES" commonJS 12 circle 7; else echo "==> modules commonJS: SKIPPED (no node)"; fi
+if have erlc && have erl; then run_package "$MODULES" erlang 12 circle 7; else echo "==> modules erlang: SKIPPED (no erlc/erl)"; fi
 
 echo "==> backend-execution parity: OK"

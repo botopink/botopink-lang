@@ -16,6 +16,10 @@ pub const ComptimeOutput = comptimeMod.ComptimeOutput;
 
 pub const Config = configMod.Config;
 pub const TargetSource = configMod.TargetSource;
+/// The module-atom / output-stem rules a driver needs to name an artifact:
+/// `outputStem` (erlang and BEAM take the module ATOM, commonJS and wasm the
+/// module path) and `erlAtom` beside it.
+pub const crossModule = @import("./codegen/crossModule.zig");
 
 /// What `generateWith` does after emitting each module.
 pub const Options = struct {

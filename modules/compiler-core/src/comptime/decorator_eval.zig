@@ -22,6 +22,7 @@ const std = @import("std");
 const ast = @import("../ast.zig");
 const template = @import("./template.zig");
 const erlang = @import("../codegen/erlang.zig");
+const crossModule = @import("../codegen/crossModule.zig");
 const templateEval = @import("./template_eval.zig");
 const Ast = @import("../codegen/beam/erl_ast.zig");
 const Term = @import("../codegen/beam/term.zig").Term;
@@ -254,7 +255,12 @@ fn buildModule(
     const code = erlang.emitComptimeModule(arena, placeholder_module, .{ .decls = decls }, config) catch |err|
         return if (err == error.UnsupportedComptimeMethod) error.UnsupportedMethod else error.EvalFailed;
     const argument = try templateEval.argumentTerm(arena, plans);
-    const module = try std.fmt.allocPrint(arena, "decorator_{x:0>16}", .{std.hash.Wyhash.hash(0, code)});
+    // A2: `bp@comptime__dec__<decorator>__<16 hex>`; the Wyhash is unchanged, so
+    // content-addressing survives (see `template_eval.buildModule`).
+    const module = crossModule.erlDeclAtom(arena, templateEval.comptime_owner, .dec, dfn.name, std.hash.Wyhash.hash(0, code)) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return error.EvalFailed,
+    };
     const header = "-module(" ++ placeholder_module ++ ").";
     if (!std.mem.startsWith(u8, code, header)) return error.EvalFailed;
     const renamed = try std.fmt.allocPrint(arena, "-module({s}).{s}", .{ module, code[header.len..] });
@@ -430,8 +436,17 @@ test "decorator module: lowered body, handle term and host glue" {
     var unsupported: erlang.UnsupportedMethod = .{};
     const m = try buildModule(arena, dfn, handle, &args, &unsupported);
 
-    try std.testing.expect(std.mem.startsWith(u8, m.module, "decorator_"));
-    try std.testing.expect(std.mem.startsWith(u8, m.code, "-module(decorator_"));
+    // A2: the atom names the declaration, not just a hash of the body, and it
+    // decodes back to `{gen, "bp/comptime", "dec", "route", <16 hex>}`.
+    try std.testing.expect(std.mem.startsWith(u8, m.module, "bp@comptime__dec__"));
+    try std.testing.expect(std.mem.startsWith(u8, m.code, "-module(bp@comptime__dec__"));
+    const decoded = try crossModule.decodeAtom(arena, m.module);
+    try std.testing.expectEqualStrings("bp/comptime", decoded.path);
+    try std.testing.expectEqualStrings("dec", decoded.kind);
+    // A2 lowercases the declaration segment, so `getMapping` is `getmapping`.
+    var lowered: [64]u8 = undefined;
+    try std.testing.expectEqualStrings(std.ascii.lowerString(&lowered, dfn.name), decoded.decl);
+    try std.testing.expectEqual(@as(usize, 16), decoded.hash.len);
     // Nothing about the declaration is in the module: `main/1` takes the handle
     // and the annotation arguments, the body is called with the bound names, and
     // the host glue is imported rather than defined.

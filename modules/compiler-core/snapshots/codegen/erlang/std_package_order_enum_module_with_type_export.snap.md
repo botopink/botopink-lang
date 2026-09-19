@@ -67,7 +67,7 @@ test "order case over Order" {
 
 ----- ERLANG -- std/order.erl
 ```erlang
--module(order).
+-module(std@order).
 -export([lt/0, eq/0, gt/0, toInt/1, reverse/1]).
 
 %%% Gleam-style `order` module, inspired by `gleam/order`. A sum type — the
@@ -160,8 +160,8 @@ describe(O) ->
     S.
 
 main() ->
-    '__bp_print'([order:toInt(order:lt())]),
-    '__bp_print'([describe(order:reverse(order:lt()))]).
+    '__bp_print'([std@order:toInt(std@order:lt())]),
+    '__bp_print'([describe(std@order:reverse(std@order:lt()))]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
