@@ -850,6 +850,16 @@ codegen/
   joins `enum_names` only, so its method call resolves through
   `methodOwnerModule`'s link-index arm — see
   [Cross-module calls are remote calls](#erlang).
+- **An associated `fn` on an `enum`** (`Shape.unit()` — no `self`) is a plain
+  local function, exactly as `enumForms` emits it. `memberCallNode`'s
+  qualified-payload-variant branch has to check that the callee is a variant **of
+  that enum** (`enum_variant_of`, keyed `<Enum>.<Variant>`, with
+  `enum_variants_known` saying whose list the emitter has seen): it used to fire
+  on any `EnumName.callee(...)`, so `Shape.unit()` became the tagged tuple
+  `{unit}` — erlc clean, and the program died at run time with
+  `{case_clause,{unit}}` inside the method that matched on it. A comptime **host**
+  enum (`ComptimeModule.host_enums`) has no declaration to check against and is
+  deliberately absent from `enum_variants_known`, so it keeps the tuple.
 - **Interface associated `default fn`s** (`Array.range`, `Pair.of`):
   `interfaceForms` emits each no-`self` body as a local function
   (`collectInterfaces`); `Interface.method(...)` calls it (reserved words quoted,
@@ -1163,6 +1173,14 @@ codegen/
   the tail accumulator on the stack. A length read uses the `length` gc_bif
   rather than `erlang:length/1`. A field assignment is `maps:update/3` (a call,
   so the receiver needs no static map type).
+- **An associated `fn` on an `enum`** (`Shape.unit()`): `reserveEnumMethods`
+  reserves an enum's methods under the mangled `'<Enum>_<method>'`, as a record's
+  are, so the call is a LOCAL call by label — `enum_names` is what tells a
+  PascalCase receiver that names a type from one that names a module. Without it
+  the receiver was lowercased into a module atom and the call was `shape:unit()`,
+  `{undef,[{shape,unit,[],[]}…]}` against a module nothing emits. (The erlang
+  backend emits the same method under its bare name; each backend calls its own
+  spelling.)
 - **Cross-module**: the module atom is the whole module path joined with `@`
   (`crossModule.erlAtom`, read through `Emitter.atomOf`); an imported record
   joins `record_fields` + `imported_types` (`collectRecordShapes`), its

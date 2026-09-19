@@ -611,6 +611,42 @@ test "js: enum ---- method with case on self" {
 // the call passes the value to the enum's method: `Shape.area(Shape.Square(4))`.
 // It used to throw `Shape.Square(...).area is not a function`. KNOWN: `16`
 // then `12`; wasm traps (1.0.4-beta 01 wasm).
+// An associated `fn` on an `enum` — no `self`, so it is a constructor-like
+// helper, not an instance method. `memberCallNode`'s qualified-payload-variant
+// branch fired on ANY `EnumName.callee(...)` without checking that `callee`
+// names a variant, so this lowered to the tagged tuple `{unit}` on erlang: erlc
+// clean, and the program died at run time with `{case_clause,{unit}}` inside the
+// method that matched on it. beam had the mirror image — the receiver was
+// lowercased into a module atom and the call was `shape:unit()`,
+// `{undef,[{shape,unit,[],[]}…]}` — because an enum name is not in
+// `record_fields` and nothing else claimed it.
+test "js: enum ---- an associated fn on an enum is a call, not a variant" {
+    try h.assertJs(std.testing.allocator, @src(), &.{
+        .{ .path = "", .source =
+        \\pub type Shape {
+        \\    Circle(radius: i32),
+        \\    Square(side: i32),
+        \\
+        \\    pub fn unit() -> Shape {
+        \\        return Shape.Square(side: 1);
+        \\    }
+        \\
+        \\    pub fn area(self: Self) -> i32 {
+        \\        return case self {
+        \\            Circle(r) -> r * r * 3;
+        \\            Square(s) -> s * s;
+        \\        };
+        \\    }
+        \\}
+        \\
+        \\fn main() {
+        \\    val s: Shape = Shape.unit();
+        \\    @print(s.area());
+        \\}
+        },
+    });
+}
+
 test "js: enum ---- a method is called on a variant value" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\pub type Shape {

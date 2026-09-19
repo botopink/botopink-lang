@@ -1317,6 +1317,11 @@ const Emitter = struct {
     /// variant atom; anything else is a binding. Populated by
     /// `collectRecordShapes`.
     enum_variants: std.StringHashMap(void),
+    /// Names of the enums this module declares. A PascalCase receiver that names
+    /// one is a TYPE, not a module: a lowercase callee on it is an associated fn
+    /// the enum declares, which `enumForms` emits as a plain local function.
+    /// Parity with the erlang backend's `enum_names`.
+    enum_names: std.StringHashMap(void),
     /// Interface associated `default fn` qualified names (`"Array.range"`). Pure
     /// botopink, emitted as local mangled fns (`'Array_range'`) since the
     /// interface decl is inlined into each consuming module; an
@@ -1450,6 +1455,7 @@ const Emitter = struct {
             .record_fields = std.StringHashMap([]const []const u8).init(alloc),
             .imported_types = std.StringHashMap([]const u8).init(alloc),
             .enum_variants = std.StringHashMap(void).init(alloc),
+            .enum_names = std.StringHashMap(void).init(alloc),
             .interface_assoc = std.StringHashMap(void).init(alloc),
             .user_behavior_methods = std.StringHashMap(void).init(alloc),
             .prim_erlang_dispatch = std.StringHashMap(PrimErlangCall).init(alloc),
@@ -1483,6 +1489,7 @@ const Emitter = struct {
         self.record_fields.deinit();
         self.imported_types.deinit();
         self.enum_variants.deinit();
+        self.enum_names.deinit();
         var ia = self.interface_assoc.keyIterator();
         while (ia.next()) |k| self.alloc.free(k.*);
         self.interface_assoc.deinit();
@@ -1776,7 +1783,10 @@ const Emitter = struct {
                     for (tdecl.recordFields(), 0..) |f, i| fields[i] = f.name;
                     try self.record_fields.put(tdecl.name, fields);
                 },
-                .enum_ => for (tdecl.variants()) |v| try self.enum_variants.put(v.name, {}),
+                .enum_ => {
+                    try self.enum_names.put(tdecl.name, {});
+                    for (tdecl.variants()) |v| try self.enum_variants.put(v.name, {});
+                },
             },
             // A nullary enum variant is an atom, so a bare `Lt ->` case arm is a
             // *test* against that atom, not a binding. Parity with the erlang
@@ -3558,6 +3568,26 @@ const Emitter = struct {
                             switch (mode) {
                                 .non_tail => try beamEmitter.writeCall(self.out, .normal, arity, .{ .local = labels.entry }, 0),
                                 .tail => try beamEmitter.writeCall(self.out, .last, arity, .{ .local = labels.entry }, self.num_y),
+                            }
+                            return;
+                        } else |_| {}
+                    }
+                    // An associated `fn` of a LOCAL enum (`Shape.unit()`): the
+                    // enum's methods are emitted as plain local functions under
+                    // their own names, so this is a local call. It used to fall
+                    // through to the lowercased-receiver remote below and die with
+                    // `{undef,[{shape,unit,[],[]}…]}` — a module named after the
+                    // type, which nothing emits.
+                    if (cc.trailing.len == 0 and self.enum_names.contains(rn)) {
+                        var ebuf: [256]u8 = undefined;
+                        // `reserveEnumMethods` reserves an enum's methods under
+                        // the mangled `'<Enum>_<method>'`, as records are.
+                        const emangled = std.fmt.bufPrint(&ebuf, "'{s}_{s}'", .{ rn, cc.callee }) catch return;
+                        if (self.fnLabelsFor(emangled, cc.args.len)) |labels| {
+                            try self.materializeCallArgs(cc.args, cc.trailing);
+                            switch (mode) {
+                                .non_tail => try beamEmitter.writeCall(self.out, .normal, cc.args.len, .{ .local = labels.entry }, 0),
+                                .tail => try beamEmitter.writeCall(self.out, .last, cc.args.len, .{ .local = labels.entry }, self.num_y),
                             }
                             return;
                         } else |_| {}

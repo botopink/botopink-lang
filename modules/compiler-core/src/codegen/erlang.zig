@@ -1184,6 +1184,12 @@ fn emitErlangModule(
         em.record_fields.deinit();
         em.enum_names.deinit();
         em.enum_variants.deinit();
+        {
+            var it = em.enum_variant_of.keyIterator();
+            while (it.next()) |k| alloc.free(k.*);
+        }
+        em.enum_variant_of.deinit();
+        em.enum_variants_known.deinit();
         em.imported_types.deinit();
         em.imported_fns.deinit();
         var ftf_it = em.fn_typed_fields.keyIterator();
@@ -1886,6 +1892,18 @@ const Emitter = struct {
     /// (`case o { Lt -> … }`) lowers to the atom `'Lt'`, not an erlang variable
     /// that would shadow-match anything.
     enum_variants: std.StringHashMap(void),
+    /// `"<Enum>.<Variant>"` for every enum whose variant list the emitter has
+    /// seen — local declarations and imported `pub` enums. `enum_variants` is
+    /// flat (a case arm only needs to know that SOME enum declares the name);
+    /// this one answers "is `callee` a variant OF `name`", which is what tells a
+    /// payload-variant constructor (`Color.Rgb(r, g, b)`) from an associated
+    /// `fn` declared on the enum (`Shape.unit()`).
+    enum_variant_of: std.StringHashMap(void),
+    /// Enums whose variant list is known, so a miss in `enum_variant_of` means
+    /// "not a variant" rather than "never registered". A host enum injected by a
+    /// comptime body (`ComptimeModule.host_enums`) has no declaration here and
+    /// is deliberately absent.
+    enum_variants_known: std.StringHashMap(void),
     /// Cross-module link index (null in the standalone path).
     cross: ?*const CrossModule = null,
     /// Every module's `pub enum`s (empty in the standalone path).
@@ -2102,6 +2120,8 @@ const Emitter = struct {
             .record_fields = std.StringHashMap([]const []const u8).init(alloc),
             .enum_names = std.StringHashMap(void).init(alloc),
             .enum_variants = std.StringHashMap(void).init(alloc),
+            .enum_variant_of = std.StringHashMap(void).init(alloc),
+            .enum_variants_known = std.StringHashMap(void).init(alloc),
             .imported_types = std.StringHashMap([]const u8).init(alloc),
             .imported_fns = std.StringHashMap([]const u8).init(alloc),
             .fn_typed_fields = std.StringHashMap(void).init(alloc),
@@ -3096,11 +3116,33 @@ const Emitter = struct {
                 },
                 .enum_ => {
                     try self.enum_names.put(tdecl.name, {});
-                    for (tdecl.variants()) |v| try self.enum_variants.put(v.name, {});
+                    try self.enum_variants_known.put(tdecl.name, {});
+                    for (tdecl.variants()) |v| {
+                        try self.enum_variants.put(v.name, {});
+                        try self.rememberEnumVariant(tdecl.name, v.name);
+                    }
                 },
             },
             else => {},
         };
+    }
+
+    /// Record `<Enum>.<Variant>` so `isEnumVariantOf` can answer precisely.
+    /// The key is duped: the map outlives the AST slice it is built from only in
+    /// the comptime path, and duping is cheaper than reasoning about which.
+    fn rememberEnumVariant(self: *Emitter, enum_name: []const u8, variant: []const u8) !void {
+        const key = try std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ enum_name, variant });
+        const gop = try self.enum_variant_of.getOrPut(key);
+        if (gop.found_existing) self.alloc.free(key);
+    }
+
+    /// Whether `variant` is a variant OF `enum_name`. False when the enum's
+    /// variant list was never registered (a comptime host enum), so the caller
+    /// must decide what an unknown enum means.
+    fn isEnumVariantOf(self: *const Emitter, enum_name: []const u8, variant: []const u8) bool {
+        var buf: [256]u8 = undefined;
+        const key = std.fmt.bufPrint(&buf, "{s}.{s}", .{ enum_name, variant }) catch return false;
+        return self.enum_variant_of.contains(key);
     }
 
     /// Registers types this module imports `from "<pkg>"` (resolved via the
@@ -3121,7 +3163,11 @@ const Emitter = struct {
                 for (self.enum_exports) |ee| {
                     if (std.mem.eql(u8, ee.module, self.module_name)) continue;
                     if (!std.mem.eql(u8, ee.name, name) and !std.mem.eql(u8, crossModule.moduleBasename(ee.module), name)) continue;
-                    for (ee.variants) |v| try self.enum_variants.put(v.name, {});
+                    try self.enum_variants_known.put(ee.name, {});
+                    for (ee.variants) |v| {
+                        try self.enum_variants.put(v.name, {});
+                        try self.rememberEnumVariant(ee.name, v.name);
+                    }
                 }
             },
             else => {},
@@ -5392,11 +5438,28 @@ const Emitter = struct {
             if (this.ext_names.contains(name)) return b.call(cc.callee, try this.callArgs(b, null, cc));
             // Qualified enum payload constructor `Color.Rgb(r, g, b)` → the tagged
             // tuple `{'Rgb', R, G, B}` (the case-arm constructor pattern shape).
-            if (this.enum_names.contains(name)) {
+            //
+            // `callee` must be a variant OF this enum. It used to be enough that
+            // the RECEIVER named an enum, so an associated `fn` declared on the
+            // enum — `Shape.unit()` — became the tuple `{unit}` instead of the
+            // call `unit()`: erlc was clean and the program died at run time with
+            // `{case_clause,{unit}}` inside the method that matched on it. An
+            // enum whose variant list the emitter never saw (a comptime host
+            // enum, `ComptimeModule.host_enums`) keeps the old behaviour: there is
+            // no declaration to check against, and a host enum declares no fns.
+            if (this.enum_names.contains(name) and
+                (this.isEnumVariantOf(name, cc.callee) or !this.enum_variants_known.contains(name)))
+            {
                 const items = try b.arena.alloc(Ast.Expr, cc.args.len + 1);
                 items[0] = Ast.Expr.a(cc.callee);
                 for (cc.args, 1..) |arg, i| items[i] = try this.exprNode(b, arg.value.*);
                 return .{ .tuple = items };
+            }
+            // An associated `fn` of a LOCAL enum (`Shape.unit()`): `enumForms`
+            // emits the enum's methods as plain local functions under their own
+            // names, so this is a local call — not a variant, and not a module.
+            if (this.enum_names.contains(name) and this.enum_variants_known.contains(name)) {
+                return b.call(cc.callee, try this.callArgs(b, null, cc));
             }
             // Associated fn of an IMPORTED record (`Response.ok(...)` from
             // `"web"`): a remote call into the owning module (`http:ok(...)`).
