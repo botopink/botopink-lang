@@ -23,17 +23,18 @@
 #   $ tests/language/run.sh --target beam
 #   language tests: 14 passed, 20 expected failures, 0 failed
 #
-# 67 lines: 58 exercised by `--target all`, 9 more only by `--target beam`
+# 66 lines: 57 exercised by `--target all`, 9 more only by `--target beam`
 # (the 11 `*` reject lines are counted by both runs). By the row that comes
-# first on the line: 01-checker 37 · 02-erlang 12 · 03-beam 8 · 05-wasm 5 ·
+# first on the line: 01-checker 37 · 02-erlang 12 · 03-beam 8 · 05-wasm 4 ·
 # 13-module-identity 4 · 04-js 1. Nineteen lines name a second row that has to
 # land before the line goes (the §7 formatter's record and variant halves are
 # 13 step 18, not a backend's).
 #
 # Re-derived from the file on 2026-09-18 by front 05, which deleted
-# `wasm | run/index_expression.bp`. The paragraph above counted 70 lines and
-# `04-js 3` against the 7bfecf7 measurement; `1379659` had since deleted two of
-# 04's three, so the totals are 67/58 and 04 carries one.
+# `wasm | run/index_expression.bp` and `wasm | modules/std_import`. The paragraph
+# above counted 70 lines and `04-js 3` against the 7bfecf7 measurement;
+# `1379659` had since deleted two of 04's three, so the totals are 66/57 and 04
+# carries one.
 #
 # For the record, since it changed inside this milestone: 04-js went to **zero**
 # lines when `c253965`, `7b6b5d3` and `17c5f8b` deleted all seven it had; the
@@ -120,7 +121,6 @@ wasm     | run/case_values.bp         | 01 step 4 | `.Variant` arms are not reso
 wasm     | run/tuple_print.bp         | 05 step 1 | prints decision 1a's text without spaces (`#(1,"a")`); §7 wants `#(1, "a")`
 wasm     | run/print_formatter.bp     | 05 step 1, 13 step 18 | §7 formatter: `f64` prints without its decimal part, arrays/tuples without spaces, and a record or a variant prints as its raw heap address
 wasm     | run/display_print.bp       | 05 step 1, 13 step 18 | §7: `@print` does not consult `Display`; the record prints as its raw heap address
-wasm     | modules/std_import         | 05 step 3 | a std `Dict` lookup through a user module answers the fallback (`0`) instead of the stored value, with exit 0 and no diagnostic
 
 # ── the forms front 15 landed, that nothing lowers or types yet ─────────────
 # `109f6c9` made five forms parse. Three of them run everywhere and are pinned by

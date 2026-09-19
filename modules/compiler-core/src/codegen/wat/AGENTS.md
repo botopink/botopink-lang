@@ -73,16 +73,47 @@ answering an address: a *local* bound to such a container (`val ps =
 [Point(x: 1, y: 2)]; @print(ps)`) — the element shapes tracked per local are
 `i32`/`f32`/`str`, and a record is an `i32` slot like every other pointer.
 
-**Three more silent wrong answers, measured over `snapshots/codegen/wasm/` on
-2026-09-18** and left for their own row: each is a **string** reaching `@print`
-through a shape `isStringExpr` does not recognise, so the address is printed
-instead of the text.
+**A `?T`'s writer and its reader must agree about the box.** Two disagreements
+made `d.lookup("a").unwrapOr(0)` answer `0` for a key that is present — the
+defect the front's step 3 names, and *not* the `forEach` accumulator it suspected
+(that works):
+
+- **An assignment into a declared `?T` boxes, like the binding that declared the
+  slot.** `var h: ?i32 = null; h = 5;` stored the bare `5`, and the reader took it
+  for a box *address*: `@print(h)` answered `16777216`. `boxesInto` decides, from
+  the slot's `local_typerefs` entry, at the assignment as it already did at the
+  binding.
+- **A method's declared return type is registered under the symbol its call
+  emits** (`registerInterfaceSigs` → `fn_ret_typerefs`, `str_fns`, `bool_fns`,
+  `fn_arr_elem`), and the shape predicates resolve that symbol through
+  `resolvedCallSym` — `recordMethodSym` (inference's per-loc note, the path
+  `lowerRecordMethod` itself takes) before `calleeSymbol`. Without it a method's
+  return shape was invisible: `Dict.lookup`'s `?V` read as a box, `hasKey()`
+  printed `0`/`1` for a `bool`, `values()` and a `string`-returning method printed
+  a **pointer**.
+
+**The generic-parameter limit this leaves, deliberately.** Nothing here
+monomorphises, so `Array<K>` and `?V` carry `K`/`V` as declared: `keys()` on a
+`Dict<string, i32>` prints `[256,272]`, and `?V` with `V = string` prints an
+address. `elemKindOfTypeRef` reads a type parameter as `.i32`, which is right for
+the *slot* and wrong for the *text*. Fixing it needs the instantiated type at the
+call site, which this backend does not have.
+
+**Two silent wrong answers remain**, measured over `snapshots/codegen/wasm/` on
+2026-09-18 and left for their own row: a **string** reaching `@print` through a
+shape `isStringExpr` does not recognise, so the address is printed instead of the
+text. (A third, `record_a_method_named_print_is_called_on_the_record`
+— `@print(d.print())` → `276` — is fixed by the method-symbol registration
+above, and its fixture now records `doc:hi`.)
 
 | Fixture | Written | Printed | Means |
 |---|---|---|---|
-| `record_a_method_named_print_is_called_on_the_record` | `@print(d.print())` | `276` | `doc:hi` |
 | `tuple_chained_positional_access_and_a_method_on_an_element` | `@print(t.1)` | `256` | `x` |
 | `tuple_labels_resolve_to_positions_on_every_backend` | `@print(row.name)` | `256` | `SP` |
+
+Both are a **labelled or positional tuple element whose type is a string**: the
+element's shape is known to `printShapeOf` (it builds `((ii)s)` for the tuple) but
+not to `isStringExpr`, which is what `@print` asks for a single value.
 
 The class was found by scanning every `RUN LOG` in the directory for a bare
 integer ≥ 256 (the first data offset) or a bracketed list of them. Six files

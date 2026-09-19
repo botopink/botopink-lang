@@ -841,3 +841,69 @@ test "wat: print ---- a record and a variant have no printed form yet, so they t
         \\}
     );
 }
+
+// ── step 3: the two halves of `Dict.lookup` answering the fallback ───────────
+//
+// `modules/std_import` printed `0` where `1` is stored, exit 0, no diagnostic.
+// The suspect named in the step was the closure — a `forEach` writing an outer
+// local — and it is innocent: the first two prints below worked before the fix.
+// The two that did not, each a `?T` whose writer and reader disagreed about the
+// box:
+//
+//   `var h: ?i32 = null; h = 5;`   the assignment stored the bare `5`; the
+//                                  binding that declares the slot boxes, the
+//                                  assignment did not. `@print(h)` then read
+//                                  offset 5 as a box: `16777216`.
+//   `d.lookup("a").unwrapOr(0)`    `-> ?V` is unboxed (a type parameter is not a
+//                                  known scalar) and the reader assumed a box.
+//                                  A method's declared return type was not
+//                                  registered under the symbol its call emits,
+//                                  so the reader had nothing to ask.
+//
+// Registering it fixes three more readers at once — `hasKey` answered `0`/`1`
+// for a `bool` and `values()` answered a **pointer** for an array — and the two
+// that remain are the generic-parameter limit, written into `wat/AGENTS.md`:
+// `keys()` is `Array<K>` with `K = string`, and `?V` with `V = string`, and
+// nothing here monomorphises, so both print an address.
+//
+// wasm's log is now **byte-identical to erlang's and beam's**. Against commonJS
+// it differs on two texts only, and on both wasm is in the majority: the array
+// separator (§7 F1 — `[6,8]` on three backends, `[6, 8]` on commonJS, which is
+// the text §7 wants) and the word for absence — `undefined` on three, `null` on
+// commonJS, and decision 8 §7 names neither. The second is reported, not fixed
+// here: it is one text on four backends, not this front's alone.
+//
+// KNOWN-WRONG (erlang, beam): a `Dict` method reached through an imported module
+// is emitted as a local or `call_fun`'d out of the receiver map, so neither
+// module runs — `02-erlang`/`03-beam`, pinned by `std_package.zig`'s own cells.
+test "wat: option ---- a value assigned into a declared `?T` is boxed like one" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\type Box(items: Array<i32>) {
+        \\    fn total(self: Self) -> i32 {
+        \\        var sum = 0;
+        \\        self.items.forEach({ n -> sum = sum + n });
+        \\        return sum;
+        \\    }
+        \\    fn isBig(self: Self) -> bool { return self.items.length > 1; }
+        \\    fn doubled(self: Self) -> Array<i32> { return self.items.map({ n -> n * 2 }); }
+        \\    fn label(self: Self) -> string { return "box"; }
+        \\}
+        \\fn main() {
+        \\    var seen = 0;
+        \\    [1, 2].forEach({ n -> seen = n });
+        \\    @print(seen);
+        \\    val b = Box(items: [3, 4]);
+        \\    @print(b.total());
+        \\    var h: ?i32 = null;
+        \\    @print(h);
+        \\    h = 5;
+        \\    @print(h);
+        \\    var acc: ?i32 = null;
+        \\    [7, 8].forEach({ n -> acc = n });
+        \\    @print(acc);
+        \\    @print(b.isBig());
+        \\    @print(b.doubled());
+        \\    @print(b.label());
+        \\}
+    );
+}

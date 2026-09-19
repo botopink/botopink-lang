@@ -908,6 +908,25 @@ const Emitter = struct {
                 .params = params,
                 .result = if (m.returnType != null or methodHasResult(body)) "i32" else null,
             });
+            // A method's declared return type, under the symbol the call
+            // emits. `typeRefOf` asks for it so the *reader* of a `?T` agrees
+            // with the writer: `Dict.lookup` answers `?V`, which is unboxed
+            // here (a type parameter is not a known scalar), and without this
+            // the reader assumed a box and loaded through the payload as if it
+            // were an address — `d.lookup("a").unwrapOr(0)` answered `0` for a
+            // key that is present, exit 0, no diagnostic.
+            // The same registration the top-level `fn` arm makes, for the same
+            // reason: `@print` picks its printer from the recovered shape, and a
+            // method's shape was never recorded — so a method returning a
+            // `string`, a `bool` or an array was printed through
+            // `$__print_i32`, which writes a **pointer** (`276` for `"doc:hi"`,
+            // `444` for `["a", "b"]`) or `0`/`1` for a bool.
+            if (m.returnType) |rt| {
+                try self.fn_ret_typerefs.put(sym, rt);
+                if (isStringTypeRef(rt)) try self.str_fns.put(sym, {});
+                if (isBoolTypeRef(rt)) try self.bool_fns.put(sym, {});
+                if (arrayElemOfTypeRef(rt)) |ek| try self.fn_arr_elem.put(sym, ek);
+            }
         }
     }
 
@@ -2510,9 +2529,25 @@ const Emitter = struct {
                 .assign => |a| switch (a.target) {
                     .name => |name| switch (a.op) {
                         .assign => {
-                            // The slot's declared type wins over the value's.
-                            try self.lowerCoerced(a.value.*, self.locals.get(name) orelse
-                                self.global_types.get(name) orelse "i32");
+                            // A scalar flowing into a declared `?T` goes in a
+                            // box, exactly as it does at the binding that
+                            // declared the slot. Without this, `var h: ?i32 =
+                            // null; h = 5;` stored the bare `5` and the reader
+                            // took it for a box *address*: `@print(h)` answered
+                            // whatever lives at offset 5 — `16777216` — with
+                            // exit 0 and no diagnostic.
+                            const tr: ?ast.TypeRef = blk: {
+                                const n = self.resolveName(name);
+                                if (self.local_typerefs.get(n)) |t| break :blk t;
+                                if (self.locals.contains(n)) break :blk null;
+                                break :blk self.global_typerefs.get(n);
+                            };
+                            if (self.boxesInto(tr, a.value.*))
+                                try self.lowerBoxed(a.value.*)
+                            else
+                                // The slot's declared type wins over the value's.
+                                try self.lowerCoerced(a.value.*, self.locals.get(name) orelse
+                                    self.global_types.get(name) orelse "i32");
                             try self.emit(if (self.locals.contains(name))
                                 .{ .local_set = name }
                             else
@@ -3605,7 +3640,7 @@ const Emitter = struct {
                     if (cc.is_builtin) break :blk std.mem.eql(u8, cc.callee, "__bp_result_isOk") or
                         std.mem.eql(u8, cc.callee, "__bp_result_isError");
                     if (self.primKindAt(cc, c.loc)) |k| break :blk primCallRes(k, cc) == .bool_;
-                    if (self.calleeSymbol(cc, c.loc)) |sym| break :blk self.bool_fns.contains(sym);
+                    if (self.resolvedCallSym(cc, c.loc)) |sym| break :blk self.bool_fns.contains(sym);
                     break :blk false;
                 },
                 else => false,
@@ -4163,6 +4198,19 @@ const Emitter = struct {
     /// The WAT symbol a non-builtin call resolves to, or null when this module
     /// defines nothing by that name. Mirrors `lowerDispatchCall` + `lowerPlainCall`
     /// so `exprTail` and the emitter agree on whether a `call` pushes a value.
+    /// The symbol a call emits, method calls included: `recordMethodSym` reads
+    /// the receiver's type off inference's per-loc note (`d.hasKey(…)` →
+    /// `Dict_hasKey`), which is the path `lowerRecordMethod` itself takes, and
+    /// `calleeSymbol` covers the rest. The shape predicates ask *this*, not
+    /// `calleeSymbol` alone: without the first half a method's declared return
+    /// type was invisible to them, so a method answering a `bool` or an array was
+    /// printed through `$__print_i32` — `0`/`1` for a bool, and a **pointer**
+    /// (`444` for `["a", "b"]`) for an array.
+    fn resolvedCallSym(self: *Emitter, cc: anytype, loc: ast.Loc) ?[]const u8 {
+        if (self.recordMethodSym(cc, loc)) |sym| return sym;
+        return self.calleeSymbol(cc, loc);
+    }
+
     fn calleeSymbol(self: *Emitter, cc: anytype, loc: ast.Loc) ?[]const u8 {
         if (self.rewrites.get(loc)) |sym| {
             if (self.extMangledName(&self.sym_buf, sym, cc.callee)) |m| return m;
@@ -4994,8 +5042,9 @@ const Emitter = struct {
                     };
                     // `xs[a..b]` keeps the elements of `xs`
                     if (self.indexArgs(cc)) |ix| break :blk if (ix.is_slice) self.elemKindOf(ix.recv) else .i32;
-                    if (cc.receiver == null and !cc.is_builtin) break :blk self.fn_arr_elem.get(cc.callee) orelse .i32;
-                    break :blk .i32;
+                    if (cc.is_builtin) break :blk .i32;
+                    if (self.resolvedCallSym(cc, c.loc)) |sym| break :blk self.fn_arr_elem.get(sym) orelse .i32;
+                    break :blk self.fn_arr_elem.get(cc.callee) orelse .i32;
                 },
                 else => .i32,
             },
@@ -5556,7 +5605,24 @@ const Emitter = struct {
             },
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
-                    if (cc.receiver != null or cc.is_builtin) break :blk null;
+                    if (cc.is_builtin) break :blk null;
+                    // A method on a record value: its declared return type is
+                    // registered under the emitted symbol (`Dict_lookup`), and
+                    // asking for it is what keeps the *reader* of a `?T` in step
+                    // with the writer. `d.lookup("a")` returns a `?V` — a type
+                    // parameter, so unboxed here — while the reader guessed
+                    // "boxed" and loaded through the payload as an address.
+                    if (cc.receiver != null) {
+                        if (self.recordMethodSym(cc, c.loc)) |sym| {
+                            if (self.fn_ret_typerefs.get(sym)) |t| break :blk t;
+                        }
+                        // The same question one step lower: the symbol the call
+                        // actually emits — a `rewrites` entry the comptime pass
+                        // left, an interface `default fn`, or a method already
+                        // flattened to `Dict_lookup` by the specialisation pass.
+                        const sym = self.calleeSymbol(cc, c.loc) orelse break :blk null;
+                        break :blk self.fn_ret_typerefs.get(sym);
+                    }
                     break :blk self.fn_ret_typerefs.get(cc.callee);
                 },
                 else => null,
@@ -6028,7 +6094,7 @@ const Emitter = struct {
                     if (cc.receiver == null and self.locals.contains(cc.callee)) {
                         if (self.closure_locals.get(cc.callee)) |li| break :blk self.closureCallIsString(li, cc);
                     }
-                    if (self.calleeSymbol(cc, c.loc)) |sym| {
+                    if (self.resolvedCallSym(cc, c.loc)) |sym| {
                         if (self.str_fns.contains(sym)) break :blk true;
                     }
                     break :blk false;
@@ -6420,8 +6486,9 @@ const Emitter = struct {
                     if (self.indexArgs(cc)) |ix| break :blk if (ix.is_slice)
                         self.isArrayExpr(ix.recv)
                     else if ((self.indexElemShape(cc) catch null)) |s| s[0] == '[' else false;
-                    if (cc.receiver == null and !cc.is_builtin) break :blk self.fn_arr_elem.contains(cc.callee);
-                    break :blk false;
+                    if (cc.is_builtin) break :blk false;
+                    if (self.resolvedCallSym(cc, c.loc)) |sym| break :blk self.fn_arr_elem.contains(sym);
+                    break :blk self.fn_arr_elem.contains(cc.callee);
                 },
                 else => false,
             },
