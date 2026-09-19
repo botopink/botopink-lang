@@ -535,3 +535,111 @@ test "format: call ---- a method call's result is called with no receiver invent
         \\}
     );
 }
+
+// ── the desugarings print back in the spelling that was written ───────────────
+// `ast.zig` says why `xs[0]`, `x is T` and `a ?? b` all desugar in the parser
+// rather than becoming nodes of their own: no AST union there may gain a variant,
+// or every consumer would have to grow an arm before the form could parse at all.
+// The printer is then the one place that has to undo it — and it did not, so
+// `format` rewrote the file into a program nobody wrote:
+//
+//   xs[0]    → @[](xs, 0)                          the desugaring leaks
+//   o is i32 → @is(o)                              the tested TYPE is deleted
+//   a ?? 0   → if (a) { __bp_nullish -> … } else 0  the `??` token is deleted
+//
+// Two of the three lose text, and idempotently, so `format --check` reported the
+// rewritten file as clean. The first two were handed over by
+// `15-language-surface`; `x is T` is the same class and was already there.
+
+test "format: index ---- an index expression is not `@[]`" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(xs: i32[]) -> i32 {
+        \\    return xs[0];
+        \\}
+    );
+}
+
+test "format: index ---- a slice is the same node and keeps its range" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(xs: i32[]) -> i32[] {
+        \\    return xs[0..2];
+        \\}
+    );
+}
+
+test "format: index ---- a dict read is the same node and keeps its key" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(d: Dict<string, i32>) -> i32 {
+        \\    return d["k"];
+        \\}
+    );
+}
+
+test "format: index ---- a tuple member is the same node" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(t: #(i32, string)) -> i32 {
+        \\    return t[0];
+        \\}
+    );
+}
+
+test "format: index ---- an index composes with the links around it" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(d: Dict<string, i32[]>) -> i32 {
+        \\    return d["k"][0];
+        \\}
+    );
+}
+
+test "format: is ---- `x is T` keeps the tested type" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(o: ?i32) -> bool {
+        \\    return o is i32;
+        \\}
+    );
+}
+
+test "format: is ---- the tested type may be a union" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(o: ?i32) -> bool {
+        \\    return o is string | i32;
+        \\}
+    );
+}
+
+test "format: nullish ---- `a ?? b` is not its desugared `if`" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(o: ?i32) -> i32 {
+        \\    return o ?? 3;
+        \\}
+    );
+}
+
+test "format: nullish ---- a `??` chain stays right-associative and flat" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(o: ?i32, p: ?i32) -> i32 {
+        \\    return o ?? p ?? 7;
+        \\}
+    );
+}
+
+test "format: nullish ---- a `??` inside a larger expression keeps its parentheses" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(o: ?i32) -> i32 {
+        \\    return (o ?? 3) + 1;
+        \\}
+    );
+}
+
+test "format: nullish ---- an optional-binding `if` is still printed as an `if`" {
+    // The negative of the arm above: the desugaring is recognised by all four of
+    // its parts, so an `if` that binds a name of its own is untouched.
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(o: ?i32) {
+        \\    if (o) {
+        \\        n ->
+        \\        @print(n);
+        \\    };
+        \\}
+    );
+}

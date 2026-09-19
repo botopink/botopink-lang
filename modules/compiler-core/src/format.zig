@@ -393,6 +393,28 @@ pub const Formatter = struct {
 
     // ── expressions ───────────────────────────────────────────────────────────
 
+    /// The fallback of `a ?? b` when this `if` **is** that form's desugaring, and
+    /// null when it is an `if` somebody wrote.
+    ///
+    /// `parseNullishExpr` builds one shape and only one:
+    /// `if (a) { <n> -> <n> } else { b }` with `n = ast.nullish_binding_name` —
+    /// the optional binding form the language already has, which evaluates `a`
+    /// once and narrows it inside the branch. All four parts are tested here, so
+    /// an `if` that binds, or one whose branch is a single identifier, is not
+    /// mistaken for it. The binding name is the codebase's reserved `__bp`
+    /// prefix, so no source spells it.
+    fn nullishDefaultFallback(i: anytype) ?ast.Expr {
+        const binding = i.binding orelse return null;
+        if (!std.mem.eql(u8, binding, ast.nullish_binding_name)) return null;
+        if (i.then_.len != 1) return null;
+        const then_expr = i.then_[0].expr;
+        if (then_expr != .identifier or then_expr.identifier.kind != .ident) return null;
+        if (!std.mem.eql(u8, then_expr.identifier.kind.ident, ast.nullish_binding_name)) return null;
+        const els = i.else_ orelse return null;
+        if (els.len != 1) return null;
+        return els[0].expr;
+    }
+
     pub fn fmtExpr(this: *Formatter, expr: ast.Expr) anyerror!*const Doc {
         return switch (expr) {
             .literal => |lit| switch (lit.kind) {
@@ -503,6 +525,18 @@ pub const Formatter = struct {
                     try this.fmtExpr(tc.handler.*),
                 }),
                 .if_ => |i| blk: {
+                    // `a ?? b` — decision 28's nullish default, which the parser
+                    // desugars into exactly this `if` (`ast.nullish_binding_name`
+                    // says why: no `BinOp` variant, no new node). Printing the
+                    // desugaring gave back a program nobody wrote and lost the
+                    // `??` token with it.
+                    if (nullishDefaultFallback(i)) |fallback| {
+                        break :blk this.concatAll(&.{
+                            try this.fmtExpr(i.cond.*),
+                            try this.text(" ?? "),
+                            try this.fmtExpr(fallback),
+                        });
+                    }
                     const condDoc = try this.fmtExpr(i.cond.*);
                     // Build then block: with or without binding
                     const thenDoc = if (i.binding) |b| blk2: {
@@ -966,7 +1000,53 @@ pub const Formatter = struct {
         });
     }
 
+    /// A builtin call the **parser** synthesised for a form that has its own
+    /// spelling, printed back in that spelling.
+    ///
+    /// `ast.zig` states why both forms desugar into a call rather than into a
+    /// node of their own: no AST union there may gain a variant, or every
+    /// consumer would have to grow an arm before the form could parse at all.
+    /// The reserved callees cannot be written by hand (`is` is a keyword, `@[]`
+    /// does not lex), so a call carrying one is always the desugaring — and the
+    /// printer is the one place that has to undo it, because the desugared text
+    /// is not the program that was written.
+    fn fmtDesugaredBuiltin(this: *Formatter, c: anytype) anyerror!?*const Doc {
+        const is_builtin = if (@hasField(@TypeOf(c), "is_builtin")) c.is_builtin else false;
+        if (!is_builtin or c.receiver != null or c.trailing.len != 0) return null;
+
+        // `xs[0]` — decision 30's index expression, as `@[](receiver, index)`.
+        // One node serves indexing, slicing and a dict read, so `d["k"]` and
+        // `xs[0..2]` come back in their own spellings too: the index is an
+        // ordinary expression and prints as one.
+        if (std.mem.eql(u8, c.callee, ast.index_builtin_name) and c.args.len == 2 and
+            c.args[0].label == null and c.args[1].label == null)
+        {
+            return try this.concatAll(&.{
+                try this.fmtExpr(c.args[0].value.*),
+                try this.text("["),
+                try this.fmtExpr(c.args[1].value.*),
+                try this.text("]"),
+            });
+        }
+
+        // `x is T` — decision 8 §4, as `@is(x)` with the tested type on the
+        // node. Printing the call dropped the type outright: `o is i32` and
+        // `o is string` both came back as `@is(o)`.
+        if (std.mem.eql(u8, c.callee, ast.is_builtin_name) and c.args.len == 1 and c.args[0].label == null) {
+            const isType = if (@hasField(@TypeOf(c), "isType")) c.isType else null;
+            if (isType) |ty| {
+                return try this.concatAll(&.{
+                    try this.fmtExpr(c.args[0].value.*),
+                    try this.text(" is "),
+                    try this.fmtTypeRef(ty),
+                });
+            }
+        }
+        return null;
+    }
+
     fn fmtCall(this: *Formatter, c: anytype) anyerror!*const Doc {
+        if (try this.fmtDesugaredBuiltin(c)) |doc| return doc;
         // Tagged-call sugar round-trip: `callee "..."` (single string arg, no parens)
         const is_tagged = if (@hasField(@TypeOf(c), "is_tagged")) c.is_tagged else false;
         if (is_tagged and c.args.len == 1 and c.args[0].label == null) {
