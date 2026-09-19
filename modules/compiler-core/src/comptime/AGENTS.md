@@ -604,6 +604,29 @@ and the sized integers are the same kind of unbounded domain, so
 `case x { 0 { … } 1 { … } }` on an `f64` still compiles; widening the list is a language rule and is
 reported rather than assumed. Measured: `test-libs` is 11/0 with `i32` in, so it costs no migration.
 
+## The inline `implement <Behavior> { }` is checked (decision 58)
+
+`validateProgram` collects the program's behaviors and then validates **both** implementing forms.
+It used to visit only `.implement` decls: `TypeDecl.implement: []TypeRef` was never read, so
+`type Money(cents: i32) implement Display { }` checked with `Display` declared in the same file, and
+with the long-registered `Generator` too — the inline clause asserted that the type satisfied the
+behavior and nothing verified the assertion. Only the separate block was covered (the
+`implement_missing_a_required_interface_method` snapshot family).
+
+`validateInlineImplements` runs the same coverage rule as `validateImplement`: for each behavior the
+clause names **and this program declares**, every method the behavior declares with no body must be
+provided. A `default fn` carries its own body, so implementing it is optional. Provided means either
+a member of the type's own body that has a body (`typeDeclProvidesMethod` — a `declare fn` member is
+an abstract slot typed from its signature and provides nothing), or a member of some
+`implement <Behavior> for <this type>` block in the same program, unqualified or qualified with that
+behavior (`separateImplementProvides`); writing both halves is legal and the inline clause is what
+names the contract.
+
+**The blind spot both forms share**, and it is deliberate: an interface this program does not declare
+is skipped, so the ambient `Display` from `libs/std` is unchecked in the inline form exactly as it is
+in the block form. Closing it needs the interface-member registry, and doing it here would red every
+implementation the registry cannot open.
+
 ## A type-qualified call to a type's own method (decision 62)
 
 `Counter.zero()` — a call to an **associated** fn of a registered type, through the type — came back

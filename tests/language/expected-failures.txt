@@ -72,14 +72,20 @@
 #   $ tests/language/run.sh --target beam
 #   language tests: 19 passed, 23 expected failures, 0 failed
 #
-# Re-measured on `fix/checker` after front 01's steps 4 and 5, which deleted the 13
-# lines below that they make pass (the two runs above stand as front 12's
-# measurement of `feat`; this one is of the tree the 13 deletions were taken from):
+# Re-measured on `fix/checker` after front 01's steps 4 and 5 and, with front 02's
+# `fe87db51` merged under them, again (the two runs above stand as front 12's
+# measurement of `feat`):
 #
 #   $ tests/language/run.sh                 # commonJS, erlang, wasm
-#   language tests: 314 passed, 52 expected failures, 0 failed
+#   language tests: 324 passed, 48 expected failures, 0 failed
 #   $ tests/language/run.sh --target beam
 #   language tests: 24 passed, 18 expected failures, 0 failed
+#
+# 314 → 324 and 52 → 48 between the two, and the two numbers move by different
+# amounts on purpose: deleting the four lines takes 4 off the expected count and
+# puts **10** named tests into the passing count, because the runner counts a
+# listed test once per name and a line once per line. Measured, not derived — the
+# first draft of this paragraph reasoned it out as "314 either way" and was wrong.
 #
 # **How the paragraph below is kept, and it is a rule, not a habit**
 # (decision 59 of `specs/1.0.5-beta/decisions-taken.md` in the meta workspace,
@@ -118,19 +124,33 @@
 # when fronts 12 and 13 merged, both sides' numbers were stale and the two
 # disagreed on the totals and on 13's share.
 #
-# **62 lines**: 52 exercised by `--target all`, 10 more only by `--target beam`
-# (the 8 `*` reject lines are counted by both runs). 11 of the 62 name tests
+# **58 lines**: 48 exercised by `--target all`, 10 more only by `--target beam`
+# (the 8 `*` reject lines are counted by both runs). 7 of the 58 name tests
 # rather than a path. By the row that comes first on the line:
-# 01-checker 23 · 02-erlang 16 · 03-beam 9 · 05-wasm 6 · 04-js 5 ·
+# 01-checker 23 · 02-erlang 12 · 03-beam 9 · 05-wasm 6 · 04-js 5 ·
 # 13-module-identity 3. **13** lines name a second row that has to land before
 # the line goes (the §7 formatter's record and variant halves are 13 step 18, not
 # a backend's). Re-derived from the merged file on 2026-09-19 with the command
-# above, after front 01 committed its steps 4 and 5 and deleted the 13 lines they
-# make pass: 5 `commonJS | test/case_*.bp`, `run/case_values.bp` on all four
-# targets, and 4 `* | reject/case_*.bp`. That is the whole difference from the 75
-# below, and it is why 01's share drops 36 → 23 and the second-row figure 16 → 13.
+# above, after front 02's `fe87db51` landed erlang's three `patternNode` defects
+# under front 01's committed step 4: the four `erlang | test/case_*.bp` lines are
+# gone, all **20** of the tests they named pass, and the four `::` keys that made
+# those tests nameable in the first place existed for about six hours. That is the
+# whole difference from the 62 below — 02's share 16 → 12, named-test lines 11 → 7 —
+# and it is the shape doing exactly what it was added for: a cell whose checker row
+# and whose backend row land hours apart is described honestly at every hour.
 #
 # Superseded, kept because the arithmetic between them is the audit trail:
+#
+# > **62 lines**: 52 exercised by `--target all`, 10 more only by `--target beam`
+# > (the 8 `*` reject lines are counted by both runs). 11 of the 62 name tests
+# > rather than a path. By the row that comes first on the line:
+# > 01-checker 23 · 02-erlang 16 · 03-beam 9 · 05-wasm 6 · 04-js 5 ·
+# > 13-module-identity 3. **13** lines name a second row … Re-derived from the
+# > merged file on 2026-09-19 with the command above, after front 01 committed its
+# > steps 4 and 5 and deleted the 13 lines they make pass: 5
+# > `commonJS | test/case_*.bp`, `run/case_values.bp` on all four targets, and 4
+# > `* | reject/case_*.bp`. That is the whole difference from the 75 below, and it
+# > is why 01's share drops 36 → 23 and the second-row figure 16 → 13.
 #
 # > **75 lines**: 64 exercised by `--target all`, 11 more only by `--target beam`
 # > (the 12 `*` reject lines are counted by both runs — which is why 64 and 23 are
@@ -178,10 +198,6 @@
 # they are cells that do not compile in this tree.
 commonJS | test/case_arms.bp          | 01 step 4 | decision 20 made `..` the only range spelling; the parser still reds `1..9` with `pattern-range-exclusive` ("write `...`") and that diagnostic inverts — the cell is right as written
 erlang   | test/case_arms.bp          | 01 step 4 | decision 20 made `..` the only range spelling; the parser still reds `1..9` with `pattern-range-exclusive` ("write `...`") and that diagnostic inverts — the cell is right as written
-erlang   | test/case_variants.bp::§5.1 P7 .. ignores the remaining fields (by label) ;; §5.1 P7 .. ignores the remaining fields (by position) ;; §5.1 nested patterns: a tuple inside a variant | 02 step 3 | re-measured by front 01 in its step-4/5 tree on 2026-09-19 — not on `feat` yet, which is why the cell still reads as not compiling here. The checker now does both things the old reason blamed: an arm body that is a lambda is unwrapped and a `.Variant` arm is resolved against the matched value's type. What is left is erlang's pattern emission — one function, `codegen/erlang.zig` `Emitter.patternNode` (around `:5630`) — and every one of these reproduces with the pre-decision-8 arrow arms too, so it is the emitter and not decision 8's brace-arm shape: a `..` rest inside a variant pattern, and a tuple nested in one, do not reach erlang as patterns
-erlang   | test/case_tuples.bp::§5.1 P6 a literal inside a tuple pattern ;; §5.1 P6 arms are tried in order ;; §5.1 P6 a labeled tuple type is still matched by position ;; §5.1 P7 #(a, ..) binds the first element only | 02 step 3 | re-measured by front 01 in its step-4/5 tree on 2026-09-19 — not on `feat` yet, which is why the cell still reads as not compiling here. The checker now does both things the old reason blamed: an arm body that is a lambda is unwrapped and a `.Variant` arm is resolved against the matched value's type. What is left is erlang's pattern emission — one function, `codegen/erlang.zig` `Emitter.patternNode` (around `:5630`) — and every one of these reproduces with the pre-decision-8 arrow arms too, so it is the emitter and not decision 8's brace-arm shape: a literal inside a tuple pattern, the order the arms are tried in, a labelled tuple matched by position, and `#(a, ..)`
-erlang   | test/case_guards.bp::§5.3 a guard reads the variables its pattern bound | 02 step 3 | re-measured by front 01 in its step-4/5 tree on 2026-09-19 — not on `feat` yet, which is why the cell still reads as not compiling here. The checker now does both things the old reason blamed: an arm body that is a lambda is unwrapped and a `.Variant` arm is resolved against the matched value's type. What is left is erlang's pattern emission — one function, `codegen/erlang.zig` `Emitter.patternNode` (around `:5630`) — and every one of these reproduces with the pre-decision-8 arrow arms too, so it is the emitter and not decision 8's brace-arm shape: the guard is emitted where the variables its own pattern bound are not in scope. The other three guard tests of the cell pass
-erlang   | test/case_exhaustive.bp::§5.1 P5 a variable bound from Maybe<i32 \| string> is i32 \| string ;; §5.4 §3.3 a union covered member by member needs no _ | 02 step 3 | re-measured by front 01 in its step-4/5 tree on 2026-09-19 — not on `feat` yet, which is why the cell still reads as not compiling here. The checker now does both things the old reason blamed: an arm body that is a lambda is unwrapped and a `.Variant` arm is resolved against the matched value's type. What is left is erlang's pattern emission — one function, `codegen/erlang.zig` `Emitter.patternNode` (around `:5630`) — and every one of these reproduces with the pre-decision-8 arrow arms too, so it is the emitter and not decision 8's brace-arm shape: the variant payload bound from `Maybe<i32 \| string>` is not the value erlang hands back. `01 step 2` is off this line as well — the union annotation does type now, and the cell's other three tests pass. Front 12's conversion listed one name where two fail: `§5.4 §3.3 a union covered member by member needs no _` has the same cause (a primitive type pattern reaches erlang as a binder named `I32`, so the first arm always matches) and is added here by front 01, measured. (This is the line whose test name carries the file's own separator; it is written `\|`)
 erlang   | test/case_unknown.bp       | 01 step 4, 01 step 1, 01 step 3 | arm bodies are not unwrapped, `unknown` is not §2's type and `is` is not typed: "expected string, got union"
 *        | reject/case_shorthand_on_unknown.bp   | 01 step 1, 01 step 5 | rejected by `unknown` assignability, without the "full name" diagnostic
 *        | reject/case_arity_without_rest.bp     | 01 step 4 | rejected for the wrong reason: the missing-field diagnostic is not there

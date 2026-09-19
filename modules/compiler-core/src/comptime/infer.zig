@@ -294,10 +294,10 @@ pub fn inferProgramTyped(env: *Env, program: ast.Program) InferError![]TypedBind
 /// check that struct getters/setters agree with their backing field's type.
 ///
 /// Runs after type registration so user-defined interface and field types are
-/// already known. Only the standalone `implement … for …` form is checked for
-/// method coverage; inline `struct/enum/record implement` clauses carry no method
-/// bodies of their own here. Interfaces that are not declared in this program
-/// (e.g. stdlib interfaces) are skipped — their method sets are not visible.
+/// already known. **Both** forms are checked for method coverage — the standalone
+/// `implement … for …` block and the inline `type … implement I { }` clause
+/// (decision 58). Interfaces that are not declared in this program (e.g. stdlib
+/// interfaces) are skipped — their method sets are not visible.
 fn validateProgram(env: *Env, program: ast.Program) InferError!void {
     var interfaces = std.StringHashMap(ast.BehaviorDecl).init(env.arena);
     defer interfaces.deinit();
@@ -308,8 +308,85 @@ fn validateProgram(env: *Env, program: ast.Program) InferError!void {
 
     for (program.decls) |decl| switch (decl) {
         .implement => |impl| try validateImplement(env, impl, interfaces),
+        .type_ => |td| try validateInlineImplements(env, td, interfaces, program),
         else => {},
     };
+}
+
+/// Decision 58 — an inline `implement <Behavior> { }` on a type declaration
+/// asserts that the type satisfies the behavior, and nothing verified the
+/// assertion: `type Money(cents: i32) implement Display { }` **checked**, with
+/// `Display` declared in the same file and with the long-registered `Generator`
+/// too. Only the separate block was covered (the
+/// `implement_missing_a_required_interface_method` snapshot family), so this was
+/// the same family as decisions 37, 38 and 45 — the checker accepting what a
+/// backend then answers on its own.
+///
+/// It is the same coverage check `validateImplement` runs, applied to the inline
+/// form; decision 58 settles that it is not a question about meaning.
+///
+/// A required method is one the behavior declares with **no body** — a
+/// `default fn` carries its own, so implementing it is optional. It is satisfied
+/// by a member of the type's own body, or by a member of any separate
+/// `implement <Behavior> for <this type>` block in the same program: writing both
+/// halves is legal and the inline clause is what names the contract.
+///
+/// Interfaces this program does not declare are skipped, exactly as
+/// `validateImplement` skips them. That leaves an ambient `libs/std` behavior
+/// unchecked in both forms — the block form's existing blind spot, reported rather
+/// than widened here, because closing it needs the interface-member registry and
+/// would red every implementation the registry cannot open.
+fn validateInlineImplements(
+    env: *Env,
+    td: ast.TypeDecl,
+    interfaces: std.StringHashMap(ast.BehaviorDecl),
+    program: ast.Program,
+) InferError!void {
+    for (td.implement) |iface| {
+        const iname = interfaceRefName(iface);
+        const d = interfaces.get(iname) orelse continue;
+        for (d.methods) |am| {
+            if (am.body != null) continue; // a default method — optional
+            if (typeDeclProvidesMethod(td, am.name)) continue;
+            if (separateImplementProvides(program, td.name, iname, am.name)) continue;
+            env.lastError = TypeError.missingMethod(td.name, iname, am.name);
+            return error.TypeError;
+        }
+    }
+}
+
+/// True when the type's own body provides `name` with a body. A `declare fn`
+/// member is an abstract slot typed from its signature, so it provides nothing.
+fn typeDeclProvidesMethod(td: ast.TypeDecl, name: []const u8) bool {
+    for (td.methods) |m| {
+        if (!std.mem.eql(u8, m.name, name)) continue;
+        if (m.body != null) return true;
+    }
+    return false;
+}
+
+/// True when some `implement <iname> for <target>` block in this program provides
+/// `name` — either unqualified, or qualified with `iname` itself.
+fn separateImplementProvides(
+    program: ast.Program,
+    target: []const u8,
+    iname: []const u8,
+    name: []const u8,
+) bool {
+    for (program.decls) |decl| {
+        const impl = switch (decl) {
+            .implement => |i| i,
+            else => continue,
+        };
+        if (!std.mem.eql(u8, impl.target, target)) continue;
+        if (!implementsInterface(impl, iname)) continue;
+        for (impl.methods) |m| {
+            if (!std.mem.eql(u8, m.name, name)) continue;
+            const q = m.qualifier orelse return true;
+            if (std.mem.eql(u8, q, iname)) return true;
+        }
+    }
+    return false;
 }
 
 /// True when interface `d` declares a method named `name` (abstract or default).
