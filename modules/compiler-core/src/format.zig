@@ -1131,6 +1131,37 @@ pub const Formatter = struct {
             break :hasMultilineLoop false;
         };
 
+        // An argument that is a lambda **hugs** the call
+        // ([decision 61](../../../specs/1.0.5-beta/decisions-taken.md) rule 1):
+        //
+        //     xs.forEach({ x ->
+        //         @print(x);
+        //     });
+        //
+        // The arg list is a `group` whose inner document is `nest(INDENT, …)`, and
+        // `fits` stops at the first `concat` (see its comment) so the group goes
+        // flat: `(` prints, the softline vanishes, and then the lambda's own
+        // `forceBreak` opens **inside** that nest. Two nests for one line break
+        // put the body at +8 from the call line and the closing `});` at +4,
+        // which is the largest single source of churn in the libraries' diffs.
+        //
+        // The hug drops the nest and the softlines, so the lambda's forceBreak
+        // opens at the call's own indentation: body +4, `}` level with the call.
+        // It is deliberately not restricted to the last argument — `throws({ ->
+        // … }, "expected")` puts the lambda first, and the rule is about the
+        // lambda's body, not its position.
+        const hugsLambdaArg = !hasComments and !hasMultilineStringArg and hugLoop: {
+            for (c.args, 0..) |a, i| {
+                if (a.value.* != .function) continue;
+                // A lambda that prints on one line needs no hug; one that breaks
+                // does. `render` at an unbounded width answers exactly that,
+                // because only a hardline survives it.
+                const flat = try render(this.arena, items.items[i], std.math.maxInt(u32));
+                if (std.mem.indexOfScalar(u8, flat, '\n') != null) break :hugLoop true;
+            }
+            break :hugLoop false;
+        };
+
         // Build comma-separated arg list with proper grouping
         var argParts: std.ArrayList(*const Doc) = .empty;
         defer argParts.deinit(this.arena);
@@ -1155,6 +1186,15 @@ pub const Formatter = struct {
 
         const argsDoc = if (argParts.items.len == 0)
             try this.text("()")
+        else if (hugsLambdaArg)
+            // No nest, no softlines, and `", "` as the separator rather than
+            // `line()` — outside a group the mode is the enclosing break mode, in
+            // which a `line()` would become a newline of its own.
+            try this.concatAll(&.{
+                try this.text("("),
+                try this.join(items.items, try this.text(", ")),
+                try this.text(")"),
+            })
         else blk: {
             const inner = try this.concatAll(argParts.items);
 

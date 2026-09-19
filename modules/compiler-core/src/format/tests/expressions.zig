@@ -421,11 +421,17 @@ test "format: tagged call ---- interpolated multiline round-trip" {
 // printed as source that no longer parsed.
 
 test "format: a parameterless lambda argument keeps its arrow" {
+    // Re-recorded for decision 61 rule 1: the body indents +4 from the call line
+    // and the `}` lines up with the call, where it used to be +8 and +4. What this
+    // case is about — the arrow a parameterless lambda argument keeps, without
+    // which the braces re-parse as a block — is unchanged. Two statements, so the
+    // one-line rule does not take it.
     try h.assertFormat(std.testing.allocator,
         \\fn main() {
         \\    throws({ ->
-        \\            0;
-        \\        }, "expected");
+        \\        0;
+        \\        1;
+        \\    }, "expected");
         \\}
     );
 }
@@ -729,6 +735,87 @@ test "format: lambda ---- an empty trailing lambda and an empty case arm print {
         \\        }
         \\        _ {}
         \\    };
+        \\}
+    );
+}
+
+// decision 61 rule 1 — a lambda **argument** hugs the call: its body indents +4
+// from the call line and its closing `});` lines up with the call. Before this
+// the argument list's `nest(INDENT)` sat outside the lambda's own, so one line
+// break paid twice: +8 for the body, +4 for the brace.
+
+test "format: call ---- a lambda argument's body indents +4 and its brace lines up" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn main() {
+        \\    xs.forEach({ x ->
+        \\        @print(x);
+        \\        @print(x + 1);
+        \\    });
+        \\}
+    );
+}
+
+test "format: call ---- the lambda need not be the last argument" {
+    // The rule is about the lambda's body, not its position: a first-argument
+    // lambda hugs exactly as a last-argument one does.
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn main() {
+        \\    throws({ ->
+        \\        0;
+        \\        1;
+        \\    }, "expected");
+        \\}
+    );
+}
+
+test "format: call ---- a lambda after a plain argument hugs, the argument stays flat" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn run(app: App) {
+        \\    val _port = serve(app.port, { method, path ->
+        \\        dispatch(method, path);
+        \\        done(method);
+        \\    });
+        \\}
+    );
+}
+
+test "format: call ---- nesting compounds by +4 a level, not +8" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn walk(decl: Decl) {
+        \\    decl.methods.forEach({ m ->
+        \\        m.annotations.forEach({ a ->
+        \\            @print(a);
+        \\            @print(m);
+        \\        });
+        \\    });
+        \\}
+    );
+}
+
+test "format: call ---- a lambda argument that fits on one line is not hugged" {
+    // The negative: the hug is decided by whether the lambda's own printing
+    // breaks, so a one-line lambda leaves the argument list grouped as before.
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn main() {
+        \\    val ys = xs.map({ n -> n * 2 });
+        \\}
+    );
+}
+
+test "format: call ---- a comment on an argument still opens the list" {
+    // The other negative: the comment and multiline-string arms print the list
+    // open, one argument per line, and the hug does not reach them — a comment
+    // has nowhere to go inside a flat `(a, b)`.
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn main() {
+        \\    run(
+        \\        // why
+        \\        1,
+        \\        { x ->
+        \\            @print(x);
+        \\            @print(x);
+        \\        },
+        \\    );
         \\}
     );
 }
