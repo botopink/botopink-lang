@@ -204,6 +204,12 @@ documented in the effect-annotations block of `src/builtins.d.bp`.
 
 - Stable, additive signatures — renames force snapshot churn.
 - `.d.bp` files stay declarative (no bodies).
+- **Every `.bp` here is at the formatter's canonical form, and `format --check`
+  does not cover all of it.** The default scan is `src/**`, excluding `.d.bp`, so
+  `test/` and `builtins_fns.d.bp` have to be named explicitly:
+  `botopink format --check src/builtins_fns.d.bp test/*.bp`. `builtins.d.bp`
+  cannot be formatted at all — `fn await(self: Self)` at line 116 is a parse
+  error (`await` is a keyword), which is a parser row, not a formatter one.
 - No Zig in `libs/std/` — loader/glue changes belong in `build.zig` / `compiler-core`.
 - `get`/`set`/`test`/`from`/`assert` are keywords (`new`, `delegate` and `const` are identifiers since 06 N27) — pick other names (`empty`/`lookup`/`insert`, `matches`, `src`, `asserts`).
 - Array equality in assertions uses `.join(...)` (`==` on arrays is reference equality in JS).

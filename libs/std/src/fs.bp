@@ -39,7 +39,10 @@ pub declare fn readText(path: string) -> @Result<string, string>;
 #[@result]
 #[@External.Node("""(() => { try { require('fs').writeFileSync($0, $1); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
 #[@External.Erlang("""(fun(__P, __C) -> case file:write_file(__P, __C) of ok -> {ok, 0}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0, $1)""")]
-pub declare fn writeText(path: string, contents: string) -> @Result<i32, string>;
+pub declare fn writeText(
+    path: string,
+    contents: string,
+) -> @Result<i32, string>;
 
 // Does the file exist at `path`?
 // Node: `require('fs').existsSync($0)`.

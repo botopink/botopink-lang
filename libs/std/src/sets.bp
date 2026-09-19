@@ -38,8 +38,8 @@ pub type Set<T>(
     pub fn union(self: Self, other: Set<T>) -> Set<T> {
         var out = self;
         other.items.forEach({ x ->
-                out = out.insert(x);
-            });
+            out = out.insert(x);
+        });
         return out;
     }
 
@@ -59,8 +59,8 @@ pub fn empty<T>() -> Set<T> {
 pub fn fromList<T>(xs: Array<T>) -> Set<T> {
     var out = empty();
     xs.forEach({ x ->
-            out = out.insert(x);
-        });
+        out = out.insert(x);
+    });
     return out;
 }
 

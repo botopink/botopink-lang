@@ -124,8 +124,8 @@ test "time.monotonicMillis is non-decreasing across two reads" {
 
 test "time.measureMillis returns body result and non-negative elapsed" {
     val pair = measureMillis({ ->
-            42;
-        });
+        42;
+    });
     assert pair._0 == 42;
     assert pair._1 >= 0;
 }

@@ -185,8 +185,8 @@ test "random.shuffle preserves the multiset (sum)" {
     // Sum is permutation-invariant — every element still appears once.
     var s = 0;
     ys.forEach({ y ->
-            s = s + y;
-        });
+        s = s + y;
+    });
     assert s == 15;
 }
 
