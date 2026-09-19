@@ -352,6 +352,138 @@ test "js: case ---- union return type from mismatched arms" {
     );
 }
 
+// Three defects front `01-checker` handed over with its case-arm typing, in one
+// program (04, 2026-09-18). Written with a statement-position `case`, because a
+// `case` **value** whose arms are blocks does not type-check yet (01 step 4):
+//   1. the arm names the variant with its written path (`Shape.Circle`) — the
+//      ctor writes the bare `"Circle"` onto the prototype, so the `tag` test and
+//      the declared field order both key on the bare name (`const { radius: r }`,
+//      not `const { r }`);
+//   2. the block's last expression is the arm's value, so it is returned — which
+//      is also what stops execution falling through into the arms below it
+//      (before the fix `show(Circle)` printed `2` *and* the wildcard arm's value);
+//   3. `_ { v -> … }` binds the whole subject to `v`, which nothing else binds.
+//
+// No snapshot: the shapes and the RUN LOG are asserted directly, so this front's
+// fixture does not write into the erlang/beam/wasm snapshot directories the
+// other backend fronts own.
+test "js: case ---- written variant path, arm value and whole-value binder" {
+    const src =
+        \\type Shape {
+        \\    Circle(radius: i32),
+        \\    Rect(width: i32, height: i32),
+        \\}
+        \\fn show(s: Shape) {
+        \\    case s {
+        \\        Shape.Circle(r) { @print(r); }
+        \\        _ { v -> @print(v); }
+        \\    };
+        \\}
+        \\fn main() {
+        \\    show(Shape.Circle(radius: 2));
+        \\    show(Shape.Rect(width: 1, height: 2));
+        \\}
+    ;
+    try h.assertJsContains(std.testing.allocator, src, &.{
+        "if (_s.tag === \"Circle\") {",
+        "const { radius: r } = _s;",
+        "return __bp_print(r);",
+        "const v = _s;",
+    });
+    try h.assertJsRunLog(std.testing.allocator, src,
+        \\2
+        \\Shape.Rect(width: 1, height: 2)
+        \\
+    );
+}
+
+// Decision 8 §5's arm shapes, step 2's D4. Each cell below compiled before and
+// answered wrongly, so each is a measured row, not a new feature:
+//   * `i32 when (…)` — a type-test arm bound `const i32 = _s;` and tested
+//     nothing (§5.2, tested by §4.1's run-time test, the one `x is T` builds);
+//   * `#(0, s)` — a tuple pattern tested `_s.tag === ""` and never matched (P6);
+//   * `1...5` — a range pattern did the same (§5.2);
+//   * `.Rect(height: h, width: w)` — a written label was ignored and the fields
+//     were read by position, so `h` and `w` came out swapped (P4);
+//   * `.Some(#(a, b))` — a nested payload pattern bound nothing at all, and the
+//     arm ran with `a` and `b` undeclared.
+// The `break` form is used because a `case` value whose arms are blocks does not
+// type-check yet (01 step 4). No snapshot, for the reason the fixture above it
+// gives.
+test "js: case ---- type-test, tuple, range, labelled and nested arms" {
+    const src =
+        \\type Shape { Circle(radius: i32), Rect(width: i32, height: i32) }
+        \\type Maybe<T> { Some(value: T), None }
+        \\fn sign(x: i32) -> string {
+        \\    return case x {
+        \\        i32 when (x > 0) { break "positive"; }
+        \\        _ { break "zero"; }
+        \\    };
+        \\}
+        \\fn pair(t: #(i32, string)) -> string {
+        \\    return case t {
+        \\        #(0, s) { break s; }
+        \\        #(a, b) { break b + "!"; }
+        \\    };
+        \\}
+        \\fn digit(n: i32) -> string {
+        \\    return case n {
+        \\        1...5 { break "low"; }
+        \\        _ { break "high"; }
+        \\    };
+        \\}
+        \\fn labels(s: Shape) -> i32 {
+        \\    return case s {
+        \\        .Rect(height: h, width: w) { break w * 10 + h; }
+        \\        _ { break 0; }
+        \\    };
+        \\}
+        \\fn nested(m: Maybe<#(i32, i32)>) -> i32 {
+        \\    return case m {
+        \\        .Some(#(a, b)) { break a + b; }
+        \\        _ { break -1; }
+        \\    };
+        \\}
+        \\fn rest(s: Shape) -> i32 {
+        \\    return case s {
+        \\        .Rect(width: w, ..) { break w; }
+        \\        _ { break 0; }
+        \\    };
+        \\}
+        \\fn main() {
+        \\    @print(sign(5));
+        \\    @print(sign(-1));
+        \\    @print(pair(#(0, "z")));
+        \\    @print(pair(#(9, "y")));
+        \\    @print(digit(3));
+        \\    @print(digit(8));
+        \\    @print(labels(Shape.Rect(width: 2, height: 3)));
+        \\    @print(nested(Maybe.Some(value: #(2, 3))));
+        \\    @print(rest(Shape.Rect(width: 5, height: 9)));
+        \\}
+    ;
+    try h.assertJsContains(std.testing.allocator, src, &.{
+        "if ((typeof _s === \"number\" && Number.isInteger(_s) && _s >= -2147483648 && _s <= 2147483647)) {",
+        "if ((Array.isArray(_s) && _s.length === 2 && _s[0] === 0)) {",
+        "if ((_s >= 1 && _s <= 5)) {",
+        "const { height: h, width: w } = _s;",
+        "if (_s.tag === \"Some\" && (Array.isArray(_s.value) && _s.value.length === 2)) {",
+        "const a = _s.value[0];",
+    });
+    try h.assertJsRunLog(std.testing.allocator, src,
+        \\positive
+        \\zero
+        \\z
+        \\y!
+        \\low
+        \\high
+        \\23
+        \\5
+        \\5
+        \\
+    );
+}
+
 test "js: case ---- nested case in block arm" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val result = case 42 {

@@ -114,10 +114,17 @@ in `engine.zig`, add a test in [`tests/`](tests/AGENTS.md) (register it in
   always carries (decision 8 §1.1, `appendGenericParams`). `record`, `enum` and
   `interface` are parse errors; a card must never print one.
 - **`renderType` writes a type the way the source writes it**, not the way the
-  checker names it: `array<i32>` → `i32[]`, `tuple<…>` → `#(i32, string)` and,
+  checker names it: `array<i32>` → `i32[]`, `optional<i32>` → `?i32`,
+  `tuple<…>` → `#(i32, string)` and,
   with labels, `#(name: string, pop: i32)` (a label is a name for the compiler
   only — decision 8 §6 — but a written type keeps it). The structural-record
   shape prints `#(x: i32)` for the same reason: `record { … }` no longer parses.
+  The `optional` arm is the one that was missing (front 11): `?T` is the only
+  spelling the surface has for an optional (decision 2 — `Option<T>` is not one),
+  and every consumer of `renderType` printed the checker's name instead — hover,
+  the inlay hint, the `signatureHelp` parameter label, and the `Add type
+  annotation` code action, which wrote `: optional<i32>` **into the user's file**
+  one line under a declaration that spelled the same type `?i32`.
   What it cannot fix is a type **name** the checker built: a `type` declaration's
   constructor binding is *named* `record { name: string, count: i32 }` by
   `comptime/infer.zig`'s `buildRecordDeclName` (and `enum {` / `interface ` by
