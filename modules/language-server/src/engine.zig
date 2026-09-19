@@ -1282,7 +1282,7 @@ pub fn typeDefinition(
 // `definitionMember` resolves those by reusing the receiver-type machinery that
 // completion/hover already have: it walks the dotted receiver chain to a named
 // type, then points at the member inside that type's body (a user record, or the
-// embedded `primitives.d.bp` for a builtin), and resolves `mod` names through the
+// embedded `primitives.bp` for a builtin), and resolves `mod` names through the
 // project graph (the `others` modules).
 
 /// The result of a type-aware definition lookup. A `location` is a real on-disk
@@ -1295,7 +1295,7 @@ pub const TypedDefinition = union(enum) {
 };
 
 /// A builtin-method jump target: the embedded interface `source` (the
-/// `primitives.d.bp` content) and the `range` of the method's name token in it.
+/// `primitives.bp` content) and the `range` of the method's name token in it.
 pub const BuiltinJump = struct {
     source: []const u8,
     range: proto.Range,
@@ -4753,9 +4753,11 @@ fn stdModuleCompletion(
 //
 // The methods callable on a primitive (`42.abs()`), boolean (`true.to_string()`),
 // array (`xs.map(…)`) or string (`"s".len()`) come from the embedded interface
-// declarations in `primitives.d.bp` / `array.d.bp` / `string.d.bp`. These are
+// declarations in `primitives.bp` — one file for all of them:
+// `comptime.zig`'s `primitive_interfaces_src`, `array_interface_src` and
+// `string_interface_src` are three names for the same embedded source. These are
 // not user bindings, so completion / hover / signatureHelp resolve them by
-// scanning those embedded sources directly.
+// scanning that embedded source directly.
 
 /// One builtin-type interface: its declared name plus the embedded source that
 /// contains the `interface … { … }` block.
@@ -5034,8 +5036,8 @@ fn collectInterfaceMembers(
 
 // ── process-lifetime cache for builtin interface members ─────────────────────
 //
-// `collectInterfaceMembers` re-lexes the entire embedded primitives.d.bp /
-// array.d.bp / string.d.bp source on every call. Each source is
+// `collectInterfaceMembers` re-lexes the entire embedded `primitives.bp` source
+// on every call. That source is
 // `@embedFile`-static (comptime-embedded into the binary), so its content
 // never changes for the lifetime of the process. Caching the resolved
 // `[]InterfaceMember` per interface name is therefore lossless and safe —

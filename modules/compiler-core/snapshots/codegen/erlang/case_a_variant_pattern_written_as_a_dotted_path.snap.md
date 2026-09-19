@@ -30,14 +30,14 @@ fn main() {
 main() ->
     C = {'Circle', 7},
     case C of
-        {'Shape.Circle', R} ->
+        {'Circle', R} ->
             '__bp_print'([R]);
         _ ->
             '__bp_print'([0])
     end,
     Q = {'Rect', 2, 5},
     case Q of
-        {'Shape.Circle', R@1} ->
+        {'Circle', R@1} ->
             '__bp_print'([R@1]);
         _ ->
             '__bp_print'([0])
@@ -62,6 +62,6 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-0
+7
 0
 ```

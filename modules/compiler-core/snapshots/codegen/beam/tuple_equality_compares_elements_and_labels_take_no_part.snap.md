@@ -30,7 +30,7 @@ fn main() {
 {module, main}.
 {exports, [{'_botopink_main', 0}, {main, 1}]}.
 {attributes, []}.
-{labels, 33}.
+{labels, 37}.
 
 {function, main, 0, 3}.
   {label, 2}.
@@ -56,12 +56,12 @@ fn main() {
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 11}}.
-    {test, is_ne_exact, {f, 19}, [{y, 0}, {y, 1}]}.
+    {test, is_ne_exact, {f, 23}, [{y, 0}, {y, 1}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 20}}.
-  {label, 19}.
+    {jump, {f, 24}}.
+  {label, 23}.
     {move, {atom, false}, {x, 0}}.
-  {label, 20}.
+  {label, 24}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 11}}.
@@ -69,12 +69,12 @@ fn main() {
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{integer, 1}, {x, 0}]}}.
     {move, {x, 0}, {y, 2}}.
-    {test, is_eq, {f, 21}, [{y, 0}, {y, 2}]}.
+    {test, is_eq, {f, 25}, [{y, 0}, {y, 2}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 22}}.
-  {label, 21}.
+    {jump, {f, 26}}.
+  {label, 25}.
     {move, {atom, false}, {x, 0}}.
-  {label, 22}.
+  {label, 26}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 11}}.
@@ -89,12 +89,12 @@ fn main() {
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{x, 0}, {integer, 12}]}}.
     {move, {x, 0}, {y, 6}}.
-    {test, is_eq, {f, 23}, [{y, 5}, {y, 6}]}.
+    {test, is_eq, {f, 27}, [{y, 5}, {y, 6}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 24}}.
-  {label, 23}.
+    {jump, {f, 28}}.
+  {label, 27}.
     {move, {atom, false}, {x, 0}}.
-  {label, 24}.
+  {label, 28}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 11}}.
@@ -119,21 +119,21 @@ fn main() {
     {test_heap, 3, 2}.
     {put_tuple2, {x, 0}, {list, [{x, 1}, {x, 0}]}}.
     {move, {x, 0}, {y, 9}}.
-    {test, is_eq, {f, 25}, [{y, 7}, {y, 8}]}.
+    {test, is_eq, {f, 29}, [{y, 7}, {y, 8}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 26}}.
-  {label, 25}.
+    {jump, {f, 30}}.
+  {label, 29}.
     {move, {atom, false}, {x, 0}}.
-  {label, 26}.
+  {label, 30}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 11}}.
-    {test, is_eq, {f, 27}, [{y, 7}, {y, 9}]}.
+    {test, is_eq, {f, 31}, [{y, 7}, {y, 9}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 28}}.
-  {label, 27}.
+    {jump, {f, 32}}.
+  {label, 31}.
     {move, {atom, false}, {x, 0}}.
-  {label, 28}.
+  {label, 32}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 11}}.
@@ -149,21 +149,21 @@ fn main() {
     {test_heap, 3, 1}.
     {put_tuple2, {x, 0}, {list, [{float, 1.5}, {x, 0}]}}.
     {move, {x, 0}, {y, 12}}.
-    {test, is_eq, {f, 29}, [{y, 10}, {y, 11}]}.
+    {test, is_eq, {f, 33}, [{y, 10}, {y, 11}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 30}}.
-  {label, 29}.
+    {jump, {f, 34}}.
+  {label, 33}.
     {move, {atom, false}, {x, 0}}.
-  {label, 30}.
+  {label, 34}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 11}}.
-    {test, is_eq, {f, 31}, [{y, 10}, {y, 12}]}.
+    {test, is_eq, {f, 35}, [{y, 10}, {y, 12}]}.
     {move, {atom, true}, {x, 0}}.
-    {jump, {f, 32}}.
-  {label, 31}.
+    {jump, {f, 36}}.
+  {label, 35}.
     {move, {atom, false}, {x, 0}}.
-  {label, 32}.
+  {label, 36}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 11}}.
@@ -193,53 +193,106 @@ fn main() {
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
-    {call, 1, {f, 13}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 15}, 0, 0, {x, 0}, {list, []}}.
     {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {literal, <<" ">>}, {x, 0}}.
+    {call_ext, 2, {extfunc, lists, join, 2}}.
+    {test_heap, 2, 1}.
+    {put_list, {x, 0}, nil, {x, 1}}.
+    {move, {literal, <<"~ts~n">>}, {x, 0}}.
     {call_ext_last, 2, {extfunc, io, format, 2}, 1}.
 
-{function, '__bp_print_fmt', 1, 13}.
-  {label, 12}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, '__bp_print_fmt'}, 1}.
-  {label, 13}.
-    {test, is_nonempty_list, {f, 16}, [{x, 0}]}.
-    {allocate, 1, 1}.
-    {init_yregs, {list, [{y, 0}]}}.
-    {get_list, {x, 0}, {x, 1}, {x, 0}}.
-    {move, {x, 1}, {y, 0}}.
-    {call, 1, {f, 15}}.
-    {test, is_binary, {f, 17}, [{y, 0}]}.
-    {test_heap, 6, 1}.
-    {put_list, {integer, 115}, {x, 0}, {x, 0}}.
-    {put_list, {integer, 116}, {x, 0}, {x, 0}}.
-    {put_list, {integer, 126}, {x, 0}, {x, 0}}.
-    {deallocate, 1}.
-    return.
-  {label, 17}.
-    {test_heap, 4, 1}.
-    {put_list, {integer, 112}, {x, 0}, {x, 0}}.
-    {put_list, {integer, 126}, {x, 0}, {x, 0}}.
-    {deallocate, 1}.
-    return.
-  {label, 16}.
-    {move, {literal, [126, 110]}, {x, 0}}.
-    return.
-
-{function, '__bp_print_sep', 1, 15}.
+{function, '-bp_show_top-', 1, 15}.
   {label, 14}.
     {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, '__bp_print_sep'}, 1}.
+    {func_info, {atom, main}, {atom, '-bp_show_top-'}, 1}.
   {label, 15}.
-    {test, is_nonempty_list, {f, 18}, [{x, 0}]}.
-    {allocate, 0, 1}.
-    {call, 1, {f, 13}}.
-    {test_heap, 2, 1}.
-    {put_list, {integer, 32}, {x, 0}, {x, 0}}.
-    {deallocate, 0}.
+    {move, {atom, true}, {x, 1}}.
+    {call_only, 2, {f, 13}}.
+
+{function, '-bp_show_elem-', 1, 17}.
+  {label, 16}.
+    {line, [{location, "main.erl", 2}]}.
+    {func_info, {atom, main}, {atom, '-bp_show_elem-'}, 1}.
+  {label, 17}.
+    {move, {atom, false}, {x, 1}}.
+    {call_only, 2, {f, 13}}.
+
+{function, '__bp_show', 2, 13}.
+  {label, 12}.
+    {line, [{location, "main.erl", 2}]}.
+    {func_info, {atom, main}, {atom, '__bp_show'}, 2}.
+  {label, 13}.
+    {allocate, 2, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {x, 1}, {y, 1}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_binary, {f, 19}, [{x, 0}]}.
+    {test, is_eq, {f, 18}, [{y, 1}, {atom, true}]}.
+    {move, {y, 0}, {x, 0}}.
+    {deallocate, 2}.
     return.
   {label, 18}.
-    {move, {literal, [126, 110]}, {x, 0}}.
+    {move, {y, 0}, {x, 0}}.
+    {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
+    {call_ext_last, 1, {extfunc, io_lib, write_string, 1}, 2}.
+  {label, 19}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_list, {f, 20}, [{x, 0}]}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 17}, 0, 0, {x, 0}, {list, []}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {literal, <<", ">>}, {x, 0}}.
+    {call_ext, 2, {extfunc, lists, join, 2}}.
+    {test_heap, 6, 1}.
+    {put_list, {integer, 93}, nil, {x, 1}}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {put_list, {integer, 91}, {x, 0}, {x, 0}}.
+    {deallocate, 2}.
     return.
+  {label, 20}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_tuple, {f, 22}, [{x, 0}]}.
+    {call_ext, 1, {extfunc, erlang, tuple_size, 1}}.
+    {test, is_lt, {f, 21}, [{integer, 0}, {x, 0}]}.
+    {move, {integer, 1}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test, is_atom, {f, 21}, [{x, 0}]}.
+    {test, is_ne_exact, {f, 21}, [{x, 0}, {atom, true}]}.
+    {test, is_ne_exact, {f, 21}, [{x, 0}, {atom, false}]}.
+    {test, is_ne_exact, {f, 21}, [{x, 0}, {atom, undefined}]}.
+    {jump, {f, 22}}.
+  {label, 21}.
+    {move, {y, 0}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, tuple_to_list, 1}}.
+    {move, {x, 0}, {y, 1}}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 17}, 0, 0, {x, 0}, {list, []}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {literal, <<", ">>}, {x, 0}}.
+    {call_ext, 2, {extfunc, lists, join, 2}}.
+    {test_heap, 8, 1}.
+    {put_list, {integer, 41}, nil, {x, 1}}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {put_list, {integer, 40}, {x, 0}, {x, 0}}.
+    {put_list, {integer, 35}, {x, 0}, {x, 0}}.
+    {deallocate, 2}.
+    return.
+  {label, 22}.
+    {move, {y, 0}, {x, 0}}.
+    {test_heap, 2, 1}.
+    {put_list, {x, 0}, nil, {x, 1}}.
+    {move, {literal, <<"~p">>}, {x, 0}}.
+    {call_ext_last, 2, {extfunc, io_lib, format, 2}, 2}.
 ```
 
 ----- RUN LOG -----

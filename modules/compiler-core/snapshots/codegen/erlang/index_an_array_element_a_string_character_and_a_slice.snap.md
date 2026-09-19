@@ -23,15 +23,28 @@ fn main() {
 main() ->
     Xs = [10, 20, 30],
     I = 1,
-    '__bp_print'(['[]'(Xs, 0)]),
-    '__bp_print'(['[]'(Xs, (I + 1))]),
+    '__bp_print'(['__bp_index'(Xs, 0)]),
+    '__bp_print'(['__bp_index'(Xs, (I + 1))]),
     Names = [<<"ana">>, <<"bo">>],
-    '__bp_print'(['[]'(Names, 1)]),
+    '__bp_print'(['__bp_index'(Names, 1)]),
     S = <<"hello">>,
-    '__bp_print'(['[]'(S, 1)]),
-    '__bp_print'(['[]'(S, lists:seq(1, (3) - 1))]),
-    '__bp_print'(['[]'(S, lists:seq(3, infinity))]),
-    '__bp_print'(['[]'(Xs, lists:seq(1, infinity))]).
+    '__bp_print'(['__bp_index'(S, 1)]),
+    '__bp_print'(['__bp_slice'(S, 1, 3)]),
+    '__bp_print'(['__bp_slice'(S, 3, infinity)]),
+    '__bp_print'(['__bp_slice'(Xs, 1, infinity)]).
+
+'__bp_index'(Recv, I) when is_list(Recv), is_integer(I), I >= 0, I < length(Recv) -> lists:nth(I + 1, Recv);
+'__bp_index'(Recv, I) when is_binary(Recv), is_integer(I), I >= 0 -> string:slice(Recv, I, 1);
+'__bp_index'(Recv, I) when is_tuple(Recv), is_integer(I), I >= 0, I < tuple_size(Recv) -> element(I + 1, Recv);
+'__bp_index'(Recv, I) when is_list(Recv), is_integer(I) -> undefined;
+'__bp_index'(Recv, I) when is_tuple(Recv), is_integer(I) -> undefined;
+'__bp_index'(Recv, I) -> erlang:error({bp_unsupported_index, Recv, I}).
+
+'__bp_slice'(Recv, From, infinity) when is_list(Recv) -> lists:nthtail(min(max(From, 0), length(Recv)), Recv);
+'__bp_slice'(Recv, From, infinity) when is_binary(Recv) -> string:slice(Recv, max(From, 0));
+'__bp_slice'(Recv, From, To) when is_list(Recv) -> lists:sublist(Recv, max(From, 0) + 1, max(To - max(From, 0), 0));
+'__bp_slice'(Recv, From, To) when is_binary(Recv) -> string:slice(Recv, max(From, 0), max(To - max(From, 0), 0));
+'__bp_slice'(Recv, From, To) -> erlang:error({bp_unsupported_slice, Recv, From, To}).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
@@ -52,12 +65,11 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:7:19: function '[]'/2 undefined
-main.erl:8:19: function '[]'/2 undefined
-main.erl:10:19: function '[]'/2 undefined
-main.erl:12:19: function '[]'/2 undefined
-main.erl:13:19: function '[]'/2 undefined
-main.erl:14:19: function '[]'/2 undefined
-main.erl:15:19: function '[]'/2 undefined
+10
+30
+bo
+e
+el
+lo
+[20,30]
 ```

@@ -498,6 +498,37 @@ test "js: case ---- nested case in block arm" {
     );
 }
 
+// A loop whose ITERABLE is written at the loop, not passed in as a name — the
+// shape no cell in this corpus had, and the one beam emitted unassemblable `.S`
+// for. `lowerLoop` materialises the iterable in the ENCLOSING frame (before it
+// builds the body closure), so the array literal's cons accumulator takes one of
+// that frame's y-slots; `countLocalsRec`'s `.loop` arm counted nothing for a
+// collection loop, so the frame stayed at `{allocate, 0, 0}` and `erlc
+// +from_asm` refused the module:
+//
+//     main:1: function main/0+7:
+//       Internal consistency check failed - please report this bug.
+//       Instruction: {move,{x,0},{y,0}}
+//       Error:       {invalid_store,{y,0}}
+//
+// `beam_export_audit.sh` stayed green through it, because assembling every
+// snapshot cannot find a shape no snapshot has. Both prints run on all four
+// backends now: `1`, `2`, `3`, then `[20]`.
+//
+// KNOWN (decision 8 §10, all four backends): `break <value>` out of a
+// COLLECTION loop answers a one-element ARRAY, `[20]`, where §10 reads as the
+// value itself, `20`. commonJS, erlang, wasm and beam agree on `[20]`, so this
+// is the decision's row (front 03's step 3 D7 names it), not one backend's.
+test "js: loop ---- a loop over an array literal, and a value break out of one" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    loop ([1, 2, 3]) { x -> @print(x); };
+        \\    val first = loop ([1, 2, 3]) { x -> if (x == 2) { break x * 10; }; };
+        \\    @print(first);
+        \\}
+    );
+}
+
 // The loop collects its `break` values into an array (erlang prints
 // `[15,20]`). `find` was declared `-> i32`; since 06 C1 a `return` unifies with
 // the declared type, so the fixture declares what the loop produces (N12).
@@ -979,4 +1010,118 @@ test "js: mutual recursion ---- forward reference + bare-if base case on every b
         \\    return isEven(n - 1);
         \\}
     );
+}
+
+// ── front 02-erlang: the two `case` defects `01-checker` handed over ──────────
+//
+// Both are erlang-only and both are *load* failures, not wrong values, so they
+// are asserted by running the emitted module rather than by a snapshot: a
+// snapshot of `{'.Some', V}` looks plausible and never matches, and `.None`
+// renders a token `erlc` refuses outright.
+//
+// The §5.1 value-position forms these rows are written for (`test/case_variants.bp`,
+// `test/case_guards.bp`) do not type-check until `01-checker` step 4 lands, so
+// each cell is the same arm in **statement** position, which compiles at
+// `bef762b`. When step 4 lands, the value-position twins join the language suite.
+
+test "erlang: case ---- a variant pattern written with its path matches the bare tag" {
+    // Handover 1. The constructor emits `{'Some', 7}`; the pattern emitted what
+    // was written — `{'.Some', V}`, matching nothing, and a nullary `.None` as
+    // the bare token `.None`, which is `syntax error before: '.'`.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\type Maybe { Some(v: i32), None }
+        \\fn show(m: Maybe) { case m { .Some(v) { @print(v) } .None { @print(0) } }; }
+        \\fn main() { show(Maybe.None); show(Maybe.Some(v: 7)); }
+    , "0\n7\n", &.{ "{'Some', V} ->", "'None' ->" });
+}
+
+test "erlang: case ---- a one-parameter arm binds the whole subject" {
+    // Handover 3. `_ { v -> … }` names the subject; nothing bound it, so the
+    // arm body read an erlang variable the clause never introduced
+    // (`variable 'V' is unbound`). The name is now an alias on the clause
+    // pattern, and on a wildcard it *is* the pattern.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn show(n: i32) { case n { 0 { @print("zero") } _ { v -> @print(v) } }; }
+        \\fn main() { show(4); show(0); }
+    , "4\nzero\n", &.{"        V ->"});
+}
+
+test "erlang: case ---- a one-parameter arm on a variant pattern aliases it" {
+    // The same binder where the pattern is not a wildcard: erlang's `V = Pat`
+    // alias binds the subject without evaluating it twice.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\type Maybe { Some(v: i32), None }
+        \\fn show(m: Maybe) { case m { .Some(v) { w -> @print(v) } .None { @print(0) } }; }
+        \\fn main() { show(Maybe.Some(v: 7)); }
+    , "7\n", &.{"W = {'Some', V} ->"});
+}
+
+// ── front 02-erlang step 5: a condition loop's value break (decision 8 §10) ──
+//
+// `break <value>` out of `loop (cond)` was refused outright with an unlocated
+// `ConditionLoopValueUnsupported`, on the bare `loop { … }` too — the parser
+// gives both the same node. The loop now answers a pair, `{Group, Value}`, and
+// a one-clause `case` destructures it: the group's variables are rebound and
+// the case's value is the break's.
+
+test "erlang: loop ---- a value break out of a condition loop is the loop's value" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn main() {
+        \\  var i = 0;
+        \\  val found = loop (i < 10) { if (i == 4) { break i * 2; }; i = i + 1; };
+        \\  @print(found);
+        \\  @print(i);
+        \\}
+    , "8\n4\n", &.{"erlang:throw({'__bp_cond_break', I@1, (I@1 * 2)})"});
+}
+
+test "erlang: loop ---- a value break out of a bare loop is the loop's value" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn main() {
+        \\  var k = 0;
+        \\  val r = loop { k = k + 1; if (k > 2) { break k; }; };
+        \\  @print(r);
+        \\  @print(k);
+        \\}
+    , "3\n3\n", &.{});
+}
+
+// ── front 02-erlang step 6: the generator protocol over a condition loop ─────
+//
+// `yield <v>` inside a condition loop lowered to the bare value expression,
+// which an erlang clause body discards — so `#[@generator] fn nums` answered
+// its loop's final counter and the consuming `lists:foldl/3` raised
+// `no case clause matching 3` at run time. The yields are collected into a
+// synthetic member of the loop's variable group and the loop answers
+// `lists:reverse/1` of it.
+
+test "erlang: generator ---- a condition-loop body yields its elements in order" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\#[@generator]
+        \\fn nums(n: i32) -> @Generator<i32> {
+        \\  var i = 0;
+        \\  loop (i < n) { yield i; i = i + 1; };
+        \\}
+        \\fn main() {
+        \\  var acc = "";
+        \\  loop (nums(3)) { x -> acc = acc + x.toString(); };
+        \\  @print(acc);
+        \\  var runs = 0;
+        \\  loop (nums(0)) { x -> runs = runs + 1; };
+        \\  @print(runs);
+        \\}
+    , "012\n0\n", &.{"lists:reverse(__bp_cond_yield@3)"});
+}
+
+test "erlang: generator ---- a bare-yield body still lowers to an eager list" {
+    // `isPlainYieldGenerator`'s path, untouched by the collecting loop.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\#[@iterator]
+        \\fn two() -> @Iterator<i32> { yield 1; yield 2; }
+        \\fn main() {
+        \\  var a = "";
+        \\  loop (two()) { x -> a = a + x.toString(); };
+        \\  @print(a);
+        \\}
+    , "12\n", &.{});
 }

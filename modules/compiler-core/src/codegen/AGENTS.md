@@ -472,6 +472,86 @@ codegen/
   one clause of an earlier `case` is "unsafe" in a later one. A version bound
   inside a `case`/`fun` and read after it is left as an Erlang compile error
   (unsafe/unbound) rather than silently wrong.
+- **An index expression dispatches on the receiver at run time.** Decision 30's
+  `xs[0]`, `d["k"]`, `s[0]` and the slice `xs[0..2]` are **one** AST node — the
+  builtin call `[]` over `(receiver, index)` (`ast.index_builtin_name`), the
+  slice being the same node with a `range` second argument. `01-checker` does not
+  type it yet, so `indexNode` emits `'__bp_index'/2` and `'__bp_slice'/3`, guard
+  sequences in the shape `'__bp_len'/2` and the `'__bp_prim_<m>'` shims already
+  use: a list and a tuple by position (`undefined` outside the range — what
+  `Array.at` answers, and what commonJS's `xs[0]` answers), a string by
+  **character**, not by byte (`string:slice/3` is UTF-8 aware), and anything else
+  raising `{bp_unsupported_index, Recv, I}`. The range is read as two bounds
+  rather than lowered as an expression — the range lowering materialises
+  `lists:seq/2`, a whole list of indices, where a slice wants `From` and `To` —
+  and an open end (`xs[0..]`) keeps the atom `infinity` that lowering already
+  writes. **A `Dict` is deliberately not a clause:** it is the map
+  `#{pairs => …}`, so `maps:get/3` would answer `undefined` for a key that is
+  present; `d["k"]` has to reach `Dict.lookup`, which is a lowering only the
+  checker can record once it types the receiver.
+- **A `case` pattern's variant name is the last segment of its written path.**
+  `ast.Pattern` carries the name exactly as written — `Shape.Circle`, `.Some`,
+  `Circle` are three spellings of one variant — while the constructor emits the
+  bare tag (`Maybe.Some(v: 7)` → `{'Some', 7}`). Matching the written form gave
+  `{'.Some', V}`, which matches nothing, and a nullary `.None` rendered as the
+  bare token `.None`, which is `syntax error before: '.'`. `variantTag` now
+  drops the path (`bareVariantName`), and a `.ident` pattern carrying a `.` is a
+  variant, never a binding (`isVariantPath`, the same rule `bindsNames`'
+  `isVariant` callback applies). Handed over by `01-checker`, whose `infer.zig`
+  resolves the same paths with the same two helpers.
+- **A one-parameter arm binds the whole subject as an erlang alias.** `_ { v -> … }`
+  and `.Some(v) { w -> … }` (decision 8 §5.3) name the matched value in the arm
+  body's single lambda parameter; nothing bound it, so the body read a variable
+  the clause never introduced (`variable 'V' is unbound`). `armPatternNode` puts
+  the name on the clause pattern — `V = {'Some', R}` — which binds it without
+  evaluating the subject twice; on a wildcard pattern the variable simply *is*
+  the pattern (`V ->`, not `V = _`). A zero-parameter lambda is the ordinary
+  `Pattern { body }` arm and binds nothing. An arm whose value is its final
+  expression is already right here: an erlang clause body's last expression is
+  its value, so `caseBodyNode` needs nothing (the commonJS/beam/wasm IIFE shape
+  is where that half of the handover lands).
+- **A condition loop's `break <value>` is the loop's value** (decision 8 §10).
+  It used to be refused outright, with an unlocated
+  `error.ConditionLoopValueUnsupported` — and on the bare `loop { … }` too, which
+  the parser gives the same node. The loop now answers a **pair**: running the
+  condition to its end gives `{FinalGroup, undefined}`, the break's throw gives
+  `{GroupAtTheJump, Value}` (a three-element `{Signal, Group, Value}` instead of
+  the bare-break two), and a one-clause `case` destructures it — the group's
+  variables are rebound, because a name bound in every clause is exported, and
+  the `case`'s own value is the break's. The refusal survives only for a
+  condition loop that **yields**, which is the bullet below. Expression position
+  also had to start carrying the group: `conditionLoopNode` was called with no
+  names from `exprNode`, so `val x = loop (i < 10) { … i = i + 1; };` built a fun
+  of no arguments, never advanced `i`, and did not terminate.
+- **A yielding condition loop collects, it does not discard** (decision 8 §9).
+  `yield <v>` lowered to the bare value expression, which an erlang clause body
+  throws away, so `#[@generator] fn nums(n) { var i = 0; loop (i < n) { yield i;
+  i = i + 1; }; }` answered its loop's final counter and the consuming
+  `lists:foldl/3` raised `no case clause matching 3` — the milestone's only
+  run-time crash. A synthetic local (`cond_yield_acc`, `__bp_cond_yield`) joins
+  the loop's variable **group**, so the threading that already carries a
+  reassigned `i` through the recursion carries the accumulator too: each `yield`
+  is `Acc@n = [V | Acc@n-1]`, the initial group passes `[]` in its slot (it has
+  no pre-loop value), and the loop answers `lists:reverse/1` of it. The name
+  begins with `_`, so it is a valid erlang variable and is exempt from the unused
+  warning. `isPlainYieldGenerator`'s eager-list path (`yield 1; yield 2;`) is
+  untouched.
+- **The two embedded preludes are parsed once per process, not once per
+  emission** (`prelude_cache`). `collectPrimErlangDispatch` re-lexed and
+  re-parsed `primitives.bp`, and `noAutoImportRefs`'s catalog re-parsed
+  `std/erlang`, on **every** `emitErlangModule` — both are comptime-embedded
+  strings, so it was the same bytes and the same parse each time. Memoising them
+  in an arena of their own (over the page allocator, so no caller's allocator and
+  no test-allocator leak) takes `collectPrimErlangDispatch` from **4.615 ms to
+  2.380 ms** per call (20 calls, Debug) and `botopink build --target erlang` over
+  `libs/std`'s 27 modules from **309 ms to 239 ms**. What remains is the
+  per-emitter deep copy of the triples it keeps, which is by design. It is safe
+  because nothing writes to the cached AST: the nodes borrow only comptime source,
+  `collectIfaceErlangDispatch` copies every triple into the emitter's own
+  allocator, and the BIF table is read-only. The lock is a spin over
+  `std.atomic.Mutex.tryLock` — zig 0.16 has no blocking mutex outside `std.Io`,
+  the test runner compiles on several threads, and after the first parse there is
+  nothing to contend for. Handed over by `14-comptime-on-beam`.
 - **Modules are `erl_ast` forms**: `emitErlangModule` builds every form in one
   arena and renders them with `erl_emitter.writeForms`: `-module`,
   `-compile({no_auto_import,…})` (`noAutoImportRefs`), `-export`s, then each
@@ -664,8 +744,12 @@ codegen/
     `{'__bp_cond_break', Group}` caught around the call, and a `continue` throws
     `{'__bp_cond_continue', Group}` caught around the body, so the recursion
     carries the variables at the jump; each loop's `catch` binds its own
-    `__BpGroupN`. The value form (a body that `yield`s or `break`s with a value)
-    is `error.ConditionLoopValueUnsupported` — no erlang lowering yet.
+    `__BpGroupN`. A `break` that carries a VALUE makes the loop an expression
+    whose value is that break's, and a body that `yield`s collects into the group
+    and answers the reversed list (the two bullets below, decision 8 §10 and §9).
+    `error.ConditionLoopValueUnsupported` survives for a yielding condition loop
+    in EXPRESSION position only (`val xs = loop (i < n) { yield i; };`), which
+    reaches `exprNode` rather than `mutatingExpr` and so has no group to join.
   A value-less `break` is `erlang:throw('__bp_break')` and its loop is wrapped in
   the `try … catch throw:'__bp_break' -> ok end` that ends it (`loopBreakCatch`,
   `hasBareBreak`).
@@ -804,6 +888,60 @@ codegen/
   `undefined`, then `is_map` + `get_map_elements`), `comptime` nodes
   (`lowerComptime`: a folded expression/block is its value), `await e` (eager:
   the value of `e`).
+- **`@print` / `@println` / `@debug`** (`lowerPrint`, `ensurePrintHelper`) lower
+  to `'__bp_print'([A, B, …])`, whose four synthesised functions are decision 8
+  §7's formatter: `'__bp_print'/1` joins the arguments with a space and ends the
+  line, `'__bp_show'/2` renders one value, and `'-bp_show_top-'/1` /
+  `'-bp_show_elem-'/1` are the one-argument wrappers `lists:map` needs (they are
+  `'__bp_show'(V, true)` and `'__bp_show'(V, false)`). A top-level binary is its
+  own text, a nested one `io_lib:write_string(unicode:characters_to_list(V))` —
+  `"say \"hi\""`, source escapes and all, in one call instead of a per-character
+  walk — a list `[E1, E2]`, a tuple `#(E1, E2)`, and everything else `~p`: an
+  integer, a float (which keeps its `.0`), an atom, a record's map, and a tuple
+  opened by an atom other than `true`/`false`/`undefined`, which is an enum
+  variant or a `@Result`. Records (§7 F2), variants (F3) and `Display` (F4) need
+  a value that knows its own type, which is
+  [`13-module-identity`](../../../../specs/1.0.5-beta/13-module-identity/README.md) step 18.
+  It replaced the per-value format-verb machinery (`'__bp_print_fmt'/1` +
+  `'__bp_print_sep'/1`, `~ts` for a binary and `~p` for everything else), which
+  printed every compound value as an **Erlang term** — decision 1a never reached
+  this backend, so a nested string came out `<<"a">>` and a tuple `{1,<<"a">>}`.
+- **The index expression** (`lowerIndexExpr`, `ensureIndexHelper`,
+  `ensureSliceHelper`): decision 30 reaches every backend as the builtin call
+  `"[]"` over `(receiver, index)` (`ast.zig:1717-1740`), so `xs[0]`, `d["k"]`,
+  `s[0]` and the slice `xs[0..2]` are one shape. It used to fall into the
+  unrecognised-builtin path — `xs[0]` printed the whole list and `xs[2]` printed
+  `ok`. The **slice** is told apart here, from the AST, because lowering a
+  `range` as a value would build the `lists:seq/2` list a slice does not need;
+  the **receiver** is told apart by its runtime tag inside the helper, since the
+  checker's half of decision 30 is `01-checker`'s and beam has no type at the
+  call site. `'__bp_index'(Recv, Idx)`: a map → `maps:get(Idx, Recv, undefined)`,
+  a binary → `string:slice(Recv, Idx, 1)`, a tuple → `element(Idx + 1, Recv)`,
+  anything else → the bounds-checked `'-bp_at-'/2` `xs.at(i)` already uses, so
+  an out-of-range index answers `undefined` instead of raising.
+  `'__bp_slice'(Recv, Start, End)` is half-open like every other `..`, with
+  `End` the atom `infinity` for `xs[0..]` (the convention `lowerRange` uses): a
+  binary → `string:slice/2,3`, anything else → `lists:sublist/3`, both of which
+  clamp. Measured: `10 · 30 · undefined · e · a · [10,20] · [20,30] · el · llo`.
+- **`case` arms** (`armBlock`, `lowerArmBody`, `emitArmTail`, `bindArmParam`):
+  decision 8 §5 spells an arm `Pattern { body }`, and the parser reads that
+  block as a lambda (`ast.Expr.function`, `.lambda` syntax, at most one
+  parameter). Lowering it as an expression built a closure with `make_fun3` and
+  dropped it, so every statement in the arm was dead and the arm's value was a
+  `#Fun<…>` — a `case` printing from its arms printed nothing, and
+  `break r * r` reached `integer_to_binary/1` as a fun (01's defect 2,
+  2026-09-18). The block now runs in the enclosing frame: its value is the last
+  statement when that is a value expression (`armValueTail`, the set
+  `emitLambdaBody` reads), unless a `break` carries one, which wins; a body that
+  already `return`s suppresses the dead `{jump, end}`. Its bindings take this
+  frame's y-slots (`countLocalsInExpr`'s `.case` arm), which a lambda's did not.
+  A one-parameter arm (`_ { n -> … }`) binds `n` to the subject, which
+  `lowerCase` parks in one stack slot allocated only when some arm asks for it —
+  so a `case` with no binder arm keeps the assembly it had (01's defect 3).
+  A pattern keeps the path the author wrote (`Shape.Circle`, `.Circle`), but the
+  constructor emits the bare atom `'Circle'`, so `variantTag` and the `.ident`
+  arm take the last `.`-separated segment (`bareVariantName`); §5.1 P8 — a name
+  carrying a `.` is a variant, never a binding (`isVariantPath`) (01's defect 1).
 - **Module shape**: every *named* top-level `val` is a 0-arity function
   (reserved, emitted and — when `pub` — exported whether or not the module has a
   `main/0`), so a read is a local call; a `val` holding a fun is read, parked on
@@ -831,7 +969,14 @@ codegen/
   variables — every name it reads that the enclosing frame binds — travel in
   `make_fun3`'s environment (`test_heap` with `{words, NumFree}`) and arrive
   as extra parameters after the fun's own, spilled to stack slots like params.
-  `Live` honours the `min_live` floor; lambda bodies reset it to 0.
+  `Live` honours the `min_live` floor; lambda bodies reset it to 0. The **eight**
+  places that emit a fun value are classified one by one in
+  [`beam/AGENTS.md`](beam/AGENTS.md#closure-values-make_fun3--every-build-site-classified):
+  every one is a real fun — four feed a `lists:*` higher-order call, four are a
+  written lambda or a loop body — and **none** is a block as a value, because
+  `@block { … }` runs in the current frame on this backend and the `case`-arm
+  block that did build a throwaway closure was removed by `ae813cc8`. The
+  13 `make_fun3` hits `grep` finds in `beam_asm.zig` are all comments.
 - **Mutation threading** (`lowerMutatingFold`, `emitGroupFun`): a statement
   `loop (xs) { x -> … }`, `loop (xs) { x, i -> … }` / `loop (xs, 1..) { … }`
   or `xs.forEach({ x -> … })` whose body reassigns names of the enclosing frame
@@ -897,6 +1042,28 @@ codegen/
   omitted trailing params filled from their declared defaults). Inside such a
   body inference recorded nothing, so `self`'s kind (`self_prim_kind`) drives
   the lowering of `self.m(…)`/`self.length`.
+- **A primitive method on an untyped receiver** (`ensurePrimShim`,
+  `emitPrimShimFn`, `primKindDeclares`): a lambda parameter carries no declared
+  type, so inference records no instance lowering for it and
+  `xs.map({ x -> x.toUpper() })` reached the `{unresolved_method, toUpper, 1}`
+  abort at run time while the same call on a named local ran (measured
+  2026-09-18 at `bef762b`; it is front 14 step 3's blocker). Such a call now
+  goes through `'__bp_prim_<callee>'(Recv, Arg0, …)`, one clause per primitive
+  kind that answers it — guarded by that kind's BEAM type test (`is_list`,
+  `is_binary`, `is_boolean`, `is_integer`, `is_float`), bodied by
+  `emitPrimMethod`'s own lowering, so the typed tables stay the single source of
+  truth — then the same `{unresolved_method, …}` abort. The BEAM twin of
+  `erlang.zig`'s `primShimForm`. Three gates keep it off every path that was
+  already right: inference recorded **nothing** for the receiver (a receiver it
+  typed keeps the abort), some primitive interface **declares** the method
+  (`prim_beam_templates` / `prim_erlang_dispatch` / `iface_defaults`, all keyed
+  `<Iface>.<method>`), and the program's own `behavior` declarations do **not**
+  name it (`user_behavior_methods` — `Bounded.clamp` on a record is a user
+  type's method that failed to resolve, not `Number.clamp`). A clause is lowered
+  into a scratch buffer before the guard that jumps past it can be written —
+  `emitPrimMethod` decides whether it can answer while it emits — and dropped
+  whole when it cannot, so the rendered function is a list of sections joined
+  with `std.mem.concat`, never text written at the call site.
 - **Static extension dispatch**: `implement`/`extend` methods are emitted and
   exported as `'<target>_<method>'`; activated `recv.m(args)` and qualified
   `Sym.m(obj)` call it with the receiver prepended (`ext_by_name`,
@@ -922,10 +1089,16 @@ codegen/
   `is_gt`/`is_le` — operands swap, `comparisonTestOp`); `{allocate, N, A}` is
   followed by `{init_yregs, …}` (`emitFrame`); `countLocalsRec` counts every
   stack slot the lowering takes — `val`s, case-arm/destructure/binding-`if`
-  bindings, array-literal and concatenation accumulators, the `try` tag, and
+  bindings, array-literal and concatenation accumulators, the `try` tag, a
+  **loop's iterable** (lowered in the enclosing frame whichever loop it is), and
   `stagingSlots` — so the frame is sized correctly. Every decision the count
   mirrors (string-ness via `count_strings`, `exprMayCall`) is taken from the
-  same AST and tables in both passes.
+  same AST and tables in both passes. Under-counting is not a wrong value, it is
+  a module the assembler refuses (`{invalid_store, {y, N}}`, "Internal
+  consistency check failed"), and `beam_export_audit.sh` cannot find it unless a
+  snapshot carries the shape: `loop ([1, 2, 3]) { x -> … }`, a loop over a
+  literal rather than over a name, had no cell and counted nothing until
+  `tests/control_flow.zig`'s "a loop over an array literal" fixture.
 - **Registers**: parameters are spilled to `y0..y{arity-1}` by `bindParams` +
   `emitParamSpill` right after `allocate`, so the whole x-file is scratch and a
   `self.field` read cannot overwrite `self`.

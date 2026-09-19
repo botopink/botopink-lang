@@ -18,7 +18,7 @@ fn process(x: i32) -> string {
 {module, main}.
 {exports, []}.
 {attributes, []}.
-{labels, 10}.
+{labels, 8}.
 
 {function, process, 1, 3}.
   {label, 2}.
@@ -30,33 +30,19 @@ fn process(x: i32) -> string {
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {test, is_eq, {f, 5}, [{x, 0}, {integer, 0}]}.
-    {test_heap, {alloc, [{words, 1}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 7}, 0, 0, {x, 0}, {list, [{y, 0}]}}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_eq, {f, 7}, [{x, 0}, {integer, 0}]}.
+    {move, {literal, <<"zero">>}, {x, 0}}.
+    {jump, {f, 6}}.
+  {label, 7}.
+    {move, {literal, <<"other">>}, {x, 0}}.
+    {jump, {f, 6}}.
+  {label, 6}.
     {jump, {f, 4}}.
   {label, 5}.
     {move, {literal, <<"non-zero">>}, {x, 0}}.
     {jump, {f, 4}}.
   {label, 4}.
-    {deallocate, 1}.
-    return.
-
-{function, '-process/1-fun-0-', 1, 7}.
-  {label, 6}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, '-process/1-fun-0-'}, 1}.
-  {label, 7}.
-    {allocate, 1, 1}.
-    {init_yregs, {list, [{y, 0}]}}.
-    {move, {x, 0}, {y, 0}}.
-    {move, {y, 0}, {x, 0}}.
-    {test, is_eq, {f, 9}, [{x, 0}, {integer, 0}]}.
-    {move, {literal, <<"zero">>}, {x, 0}}.
-    {jump, {f, 8}}.
-  {label, 9}.
-    {move, {literal, <<"other">>}, {x, 0}}.
-    {jump, {f, 8}}.
-  {label, 8}.
-    {move, {atom, ok}, {x, 0}}.
     {deallocate, 1}.
     return.
 ```

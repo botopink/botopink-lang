@@ -19,7 +19,7 @@ main() ->
     case V of
         0 ->
             '__bp_print'([<<"zero">>]);
-        _ ->
+        N ->
             '__bp_print'([N])
     end.
 
@@ -42,6 +42,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-COMPILE ERROR (erlc):
-main.erl:10:27: variable 'N' is unbound
+7
 ```

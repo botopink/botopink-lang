@@ -25,7 +25,7 @@ fn main() {
 main() ->
     C = {'Circle', 7},
     case C of
-        {'.Circle', R} ->
+        {'Circle', R} ->
             '__bp_print'([R]);
         _ ->
             '__bp_print'([0])
@@ -50,5 +50,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-0
+7
 ```

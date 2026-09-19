@@ -362,6 +362,54 @@ test "js: surface ---- type and behavior compile like record, enum and interface
     );
 }
 
+// ── front 02-erlang: decision 30's index expression ──────────────────────────
+//
+// `xs[0]`, `s[0]`, `t[0]` and `xs[0..2]` are one AST node — the builtin call
+// `[]` over `(receiver, index)`, with a `range` second argument for the slice
+// (`ast.index_builtin_name`, `ast.zig:1718-1740`). `01-checker` does not type it
+// yet, so the erlang lowering dispatches on the receiver at run time; these
+// cells pin what each shape answers, by running the emitted module.
+//
+// Before the lowering, every one of them emitted `'[]'(Xs, 0)` — the
+// unrecognised-builtin path — and erlc answered `function '[]'/2 undefined`.
+
+test "erlang: index ---- a list, a string and a tuple answer by position" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn main() {
+        \\  val xs = [10, 20, 30];
+        \\  @print(xs[0]);
+        \\  @print(xs[2]);
+        \\  val s = "abcd";
+        \\  @print(s[1]);
+        \\  val t = #(1, "a");
+        \\  @print(t[0]);
+        \\}
+    , "10\n30\nb\n1\n", &.{"'__bp_index'(Xs, 0)"});
+}
+
+test "erlang: index ---- out of range answers undefined, not an error" {
+    // The same answer `Array.at` gives and the same one commonJS's `xs[0]`
+    // gives. Whether the language calls that `?T` is `01-checker`'s row.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn main() { val xs = [10, 20]; @print(xs[5]); }
+    , "undefined\n", &.{});
+}
+
+test "erlang: index ---- a range second argument is a slice, open end included" {
+    // The range is read as two bounds rather than lowered: the range
+    // lowering materialises `lists:seq/2`, a whole list of indices, and an
+    // open end keeps the atom `infinity` that lowering writes.
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn main() {
+        \\  val xs = [10, 20, 30];
+        \\  @print(xs[0..2]);
+        \\  @print(xs[1..]);
+        \\  val s = "abcd";
+        \\  @print(s[1..3]);
+        \\}
+    , "[10,20]\n[20,30]\nbc\n", &.{ "'__bp_slice'(Xs, 0, 2)", "'__bp_slice'(Xs, 1, infinity)" });
+}
+
 // Decision 30's index expression, which the parser lands as the builtin call
 // `ast.index_builtin_name` over `(receiver, index)` — one node for the element
 // read and the slice, since the index is an ordinary expression. Written under

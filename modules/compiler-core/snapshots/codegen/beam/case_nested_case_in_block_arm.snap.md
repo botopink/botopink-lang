@@ -16,7 +16,7 @@ val result = case 42 {
 {module, main}.
 {exports, []}.
 {attributes, []}.
-{labels, 10}.
+{labels, 8}.
 
 {function, result, 0, 3}.
   {label, 2}.
@@ -26,31 +26,19 @@ val result = case 42 {
     {allocate, 0, 0}.
     {move, {integer, 42}, {x, 0}}.
     {test, is_eq, {f, 5}, [{x, 0}, {integer, 0}]}.
-    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
-    {make_fun3, {f, 7}, 0, 0, {x, 0}, {list, []}}.
+    {move, {integer, 1}, {x, 0}}.
+    {test, is_eq, {f, 7}, [{x, 0}, {integer, 0}]}.
+    {move, {integer, 54}, {x, 0}}.
+    {jump, {f, 6}}.
+  {label, 7}.
+    {move, {integer, 1}, {x, 0}}.
+    {jump, {f, 6}}.
+  {label, 6}.
     {jump, {f, 4}}.
   {label, 5}.
     {move, {integer, 1}, {x, 0}}.
     {jump, {f, 4}}.
   {label, 4}.
-    {deallocate, 0}.
-    return.
-
-{function, '-/0-fun-0-', 0, 7}.
-  {label, 6}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, '-/0-fun-0-'}, 0}.
-  {label, 7}.
-    {allocate, 0, 0}.
-    {move, {integer, 1}, {x, 0}}.
-    {test, is_eq, {f, 9}, [{x, 0}, {integer, 0}]}.
-    {move, {integer, 54}, {x, 0}}.
-    {jump, {f, 8}}.
-  {label, 9}.
-    {move, {integer, 1}, {x, 0}}.
-    {jump, {f, 8}}.
-  {label, 8}.
-    {move, {atom, ok}, {x, 0}}.
     {deallocate, 0}.
     return.
 ```
