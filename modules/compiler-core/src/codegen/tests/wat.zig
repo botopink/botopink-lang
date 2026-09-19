@@ -658,6 +658,47 @@ test "wat: index ---- a float array element is reinterpreted, not read as bits" 
     );
 }
 
+// The two shapes `tests/language/run/index_expression.bp` asked for that the
+// three fixtures above do not reach, both wrong on wasm with exit 0 until now:
+//
+//   `rows[1][0]`      an index whose element is itself an array. `isArrayExpr`
+//                     answered no for `rows[1]`, so the inner index fell to
+//                     `unreachable` ("index on an unknown receiver") — the cell
+//                     trapped. `indexElemShape` strips one `[` off the
+//                     receiver's print shape (`[[i` → `[i`), which is what
+//                     tells `rows[1]` from `xs[1]`.
+//   `xs[0..2].length` a slice's length. Inference records `.prim` only where it
+//                     typed the receiver and it does not type decision 30's node
+//                     yet, so this reached the field-access stub and printed
+//                     `i32.const 0` — a wrong length, exit 0, no diagnostic. The
+//                     backend's own `isArrayExpr`/`isStringExpr` answer instead.
+//
+// A tuple element is here too, because it takes the same path through
+// `indexElemShape` (`[(is)` → `(is)`), and a nested array printed whole, to pin
+// that the shaped printer still walks both levels.
+// KNOWN-WRONG (erlang): `function '[]'/2 undefined`. KNOWN-WRONG (beam): runs,
+// exit 0, answering the receiver or `ok`. commonJS answers, modulo §7's
+// separator and decision 1a's tuple text (`[2, "b"]` for `#(2, "b")`).
+test "wat: index ---- a nested index, a slice's length and a tuple element" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    val rows = [[1, 2], [3, 4]];
+        \\    @print(rows);
+        \\    @print(rows[1]);
+        \\    @print(rows[1][0]);
+        \\    @print(rows[0].length);
+        \\    val xs = [10, 20, 30];
+        \\    @print(xs[0..2].length);
+        \\    val sl = xs[0..2];
+        \\    @print(sl.length);
+        \\    val ps = [#(1, "a"), #(2, "b")];
+        \\    @print(ps[1]);
+        \\    val s = "hello";
+        \\    @print(s[1..3].length);
+        \\}
+    );
+}
+
 // ── decision 8 §10 and §6 T6, the two twins of `04-js` steps 3 and 4 ─────────
 
 // §10 — `break <value>` makes the loop an expression. Both forms answered a

@@ -1148,7 +1148,16 @@ first three are now enforced by the model, not by discipline:
   `01-checker`'s to settle (`ast.zig:1734`); a receiver that is neither an array
   nor a string (a `Dict`) traps rather than answering a number nothing put there.
   Before the lowering the form left **nothing on the stack** and `wasmtime`
-  refused the whole module.
+  refused the whole module. Two shapes the first lowering still got wrong, both
+  with exit 0: **`rows[1][0]`**, where the element is itself an array —
+  `indexElemShape` strips one `[` off the receiver's print shape (`[[i` → `[i`,
+  `[(is)` → `(is)`), which is what tells `rows[1]` from `xs[1]`; without it the
+  inner index reached `unreachable` — and **`xs[0..2].length`**, where inference
+  records the `.prim` instance lowering only for a receiver it typed, so the
+  index node reached the field-access stub and answered `i32.const 0`. When the
+  `.prim` note is absent, `lowerIdentAccess` asks this backend's own
+  `isArrayExpr` / `isStringExpr`; neither is ever true of a record, so a field
+  actually named `length` still resolves.
 - **A pattern's variant name arrives with the path it was written with**
   (decision 8 §5.1 P8): `Shape.Circle`, `.Circle`. The constructor stores the
   bare `Circle`, so `findVariant` compares against `bareVariantName` — the last

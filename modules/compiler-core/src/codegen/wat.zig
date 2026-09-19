@@ -3165,6 +3165,24 @@ const Emitter = struct {
         return .{ .recv = cc.args[0].value.*, .idx = idx, .is_slice = is_slice };
     }
 
+    /// The print shape of `xs[i]` — one `[` stripped off the receiver's shape —
+    /// when that element is itself a blob (`[[i` → `[i`, `[(is)` → `(is)`).
+    /// Null for a slice, for a scalar element and for a receiver whose shape is
+    /// unknown. This is what tells `rows[1]` from `xs[1]`: without it a nested
+    /// index had no lowering and trapped (`index on an unknown receiver`).
+    ///
+    /// It must not call `isArrayExpr` on the index node itself: `isArrayExpr`
+    /// asks *this* question, and `printShapeOf` ends by asking `isArrayExpr`.
+    /// Only the receiver — structurally smaller — is walked.
+    fn indexElemShape(self: *Emitter, cc: anytype) anyerror!?[]const u8 {
+        const ix = self.indexArgs(cc) orelse return null;
+        if (ix.is_slice) return null;
+        const outer = try self.printShapeOf(ix.recv) orelse return null;
+        if (outer.len < 2 or outer[0] != '[') return null;
+        const inner = outer[1..];
+        return if (inner[0] == '[' or inner[0] == '(') inner else null;
+    }
+
     fn lowerIndex(self: *Emitter, cc: anytype) anyerror!void {
         const b = self.builder();
         const recv = cc.args[0].value.*;
@@ -4765,11 +4783,15 @@ const Emitter = struct {
                 else => {},
             },
             .call => |c| switch (c.kind) {
-                .call => |cc| if (std.mem.eql(u8, cc.callee, "zip") and cc.args.len == 1 and cc.receiver != null) {
-                    if (self.primKindAt(cc, c.loc) == .array) return try std.fmt.allocPrint(self.arena(), "[({c}{c})", .{
-                        elemCode(self.elemKindOf(cc.receiver.?.*)),
-                        elemCode(self.elemKindOf(cc.args[0].value.*)),
-                    });
+                .call => |cc| {
+                    if (std.mem.eql(u8, cc.callee, "zip") and cc.args.len == 1 and cc.receiver != null) {
+                        if (self.primKindAt(cc, c.loc) == .array) return try std.fmt.allocPrint(self.arena(), "[({c}{c})", .{
+                            elemCode(self.elemKindOf(cc.receiver.?.*)),
+                            elemCode(self.elemKindOf(cc.args[0].value.*)),
+                        });
+                    }
+                    // `rows[1]` keeps the shape of one element of `rows`.
+                    if (try self.indexElemShape(cc)) |inner| return inner;
                 },
                 else => {},
             },
@@ -5686,6 +5708,18 @@ const Emitter = struct {
                 try self.emitC(.{ .load = .{} }, ".length");
                 return;
             };
+            // Inference records `.prim` only where it typed the receiver. It
+            // does not type decision 30's index node yet, so `xs[0..2].length`
+            // and a local bound to a slice arrived here unrecorded and fell
+            // through to the field-access stub — `i32.const 0`, a wrong length
+            // with exit 0. This backend's own predicates know the receiver is a
+            // blob; neither is ever true of a record, so a field actually named
+            // `length` still resolves below.
+            if (self.isArrayExpr(ia.receiver.*) or self.isStringExpr(ia.receiver.*)) {
+                try self.lowerValue(ia.receiver.*);
+                try self.emitC(.{ .load = .{} }, ".length");
+                return;
+            }
         }
         // `.len` on a string → load the length prefix. Strings are
         // length-prefixed buffers, so the value points at the i32 length word.
@@ -6312,9 +6346,11 @@ const Emitter = struct {
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
                     if (self.primKindAt(cc, c.loc)) |k| break :blk primCallRes(k, cc) == .arr;
-                    // a slice of an array is an array; `xs[i]` is an element
-                    if (self.indexArgs(cc)) |ix|
-                        break :blk ix.is_slice and self.isArrayExpr(ix.recv);
+                    // A slice of an array is an array; `xs[i]` is an element,
+                    // which is itself an array when `xs` holds arrays.
+                    if (self.indexArgs(cc)) |ix| break :blk if (ix.is_slice)
+                        self.isArrayExpr(ix.recv)
+                    else if ((self.indexElemShape(cc) catch null)) |s| s[0] == '[' else false;
                     if (cc.receiver == null and !cc.is_builtin) break :blk self.fn_arr_elem.contains(cc.callee);
                     break :blk false;
                 },
