@@ -799,6 +799,26 @@ test "wat: tuple ---- equality compares elements, and labels take no part" {
     );
 }
 
+// Decision 52's headline shape, which the value-`break` fixture above does not
+// reach: a condition loop with **no** `break <value>` and no `yield` at all. It
+// builds neither accumulator, so `lowerConditionLoop` leaves a bare `0` and
+// `@print` wrote that `0`. Absence is statically certain here — there is no
+// `break` that could ever give the loop a value — so there is no flag to test and
+// nothing to load: `$__print_null` outright. `??` reads the same `0` and was
+// already right. `tests/language/run/loop_condition_no_break.bp` is front 12's
+// cell for this, and its `.out` is `null` on every backend.
+test "wat: loop ---- a condition loop with no value `break` at all answers null" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    var i = 0;
+        \\    val r = loop (i < 3) { i = i + 1; };
+        \\    @print(r);
+        \\    @print(r ?? 9);
+        \\    @print(i);
+        \\}
+    , "null\n9\n3\n");
+}
+
 // §6 T4 / §7 — a tuple element is printed by its own shape, not by its address.
 // `@print(t.1)` answered `256` where it means `x`, and `@print(row.name)` — a
 // label the checker resolves to `row._0` — answered `256` where it means `SP`:

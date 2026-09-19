@@ -1364,7 +1364,15 @@ first three are now enforced by the model, not by discipline:
   `$__print_null` is deliberately **not** `$__print_undefined`: decision 52
   settles the loop, and what an absent `?T` prints here — `undefined`, against
   commonJS's `null` — is still open, so wasm now carries two absence texts on
-  purpose. erlang and beam owe the same row and still print `undefined`.
+  purpose. erlang and beam owe the same row — erlang leaks the loop's variable
+  group (`3`) and beam answers an atom; front 12's
+  `tests/language/run/loop_condition_no_break.bp` measures all four.
+  **Two shapes, and the simpler one is the decision's headline**: a loop with no
+  `break <value>` **at all** builds neither accumulator, so `lowerConditionLoop`
+  leaves a bare `0` and there is no flag to read — absence is statically certain,
+  and `null_value_locals` + `valuelessLoopInit` make `@print` write
+  `$__print_null` without loading anything. The flag is only for the loop that
+  *might* have broken.
 - **§7 F1 — a separator inside an array or a tuple is `, `, not `,`**
   (`wat_prelude.putSep`): `@print([1, 2])` writes `[1, 2]` and `@print(#(1, "a"))`
   writes `#(1, "a")`, where decision 1a's text had no space at all

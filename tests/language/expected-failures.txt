@@ -48,16 +48,17 @@
 #   print(len(d), dict(t), sorted(f.items()), second)
 #   EOF
 #
-# **79 lines**: 68 exercised by `--target all`, 11 more only by `--target beam`
+# **78 lines**: 67 exercised by `--target all`, 11 more only by `--target beam`
 # (the 12 `*` reject lines are counted by both runs). By the row that comes first
-# on the line: 01-checker 42 · 02-erlang 12 · 03-beam 9 · 05-wasm 7 · 04-js 5 ·
+# on the line: 01-checker 42 · 02-erlang 12 · 03-beam 9 · 05-wasm 6 · 04-js 5 ·
 # 13-module-identity 4. **23** lines name a second row that has to land before
 # the line goes (the §7 formatter's record and variant halves are 13 step 18, not
 # a backend's). Re-derived from the file on 2026-09-19 with the command above,
-# after front 05 deleted `wasm | run/tuple_print.bp` — §7's separator, step 1 F1.
+# after front 05 deleted two: `wasm | run/tuple_print.bp` (§7's separator, step 1
+# F1) and `wasm | run/loop_condition_no_break.bp` (decision 52's wasm row).
 # The two run totals quoted above are `fix/langtests-2`'s and still name their own
-# commit: they were measured before that deletion, which turns one wasm expected
-# failure into a pass.
+# commit: they were measured before those deletions, which turn two wasm expected
+# failures into passes.
 #
 # The sub-claim decision 59 flagged as stale — "24 lines name a second row" —
 # was already 19 at `b5a9b85d` and re-derives to 19 there; it is 23 after this
@@ -237,7 +238,6 @@ erlang   | test/loop_collection.bp::§10 a value break contributes its value and
 # erlang and beam print `undefined`; re-measured here, neither does — that is
 # what they print for a *value* break, a different row.
 erlang   | run/loop_condition_no_break.bp | 02 step 5 | decision 52: the loop's variable group leaks out as its value — prints `3`, not `null`. escript also prints a `variable 'I@3' is unused` warning on stdout
-wasm     | run/loop_condition_no_break.bp | 05 step 4 | decision 52: a condition loop still collects, and the empty collection reads back as the integer `0`, not `null` — §10 as a whole, per the decision
 beam     | run/loop_condition_no_break.bp | 03 step 3 | decision 52: prints the atom `ok` — the value of the loop body's last statement — not `null` (D6)
 
 # ── the optional's pattern form (decision 54) ────────────────────────────────

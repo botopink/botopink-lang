@@ -518,6 +518,12 @@ const Emitter = struct {
     /// Local name → the `search_flag` of the condition loop it was bound to
     /// (decision 52). `@print` is the only reader.
     search_flag_locals: std.StringHashMap([]const u8),
+    /// Locals bound to a condition loop that can **never** have a value — no
+    /// `break <value>` and no `yield` anywhere in its body, which is decision
+    /// 52's headline shape and the one `tests/language/run/loop_condition_no_break.bp`
+    /// writes. There is no flag to read: it would be `0` always, so the local is
+    /// simply known to be absent and `@print` writes `null` without loading it.
+    null_value_locals: std.StringHashMap(void),
     arr_globals: std.StringHashMap(void),
     bool_globals: std.StringHashMap(void),
     /// Every emitted WAT function symbol → its signature.
@@ -681,6 +687,7 @@ const Emitter = struct {
             .arr_locals = std.StringHashMap(void).init(alloc),
             .print_shape_locals = std.StringHashMap([]const u8).init(alloc),
             .search_flag_locals = std.StringHashMap([]const u8).init(alloc),
+            .null_value_locals = std.StringHashMap(void).init(alloc),
             .arr_globals = std.StringHashMap(void).init(alloc),
             .bool_globals = std.StringHashMap(void).init(alloc),
             .fn_sigs = std.StringHashMap(FnSig).init(alloc),
@@ -747,6 +754,7 @@ const Emitter = struct {
         self.arr_locals.deinit();
         self.print_shape_locals.deinit();
         self.search_flag_locals.deinit();
+        self.null_value_locals.deinit();
         self.arr_globals.deinit();
         self.bool_globals.deinit();
         self.fn_sigs.deinit();
@@ -1274,6 +1282,7 @@ const Emitter = struct {
         self.arr_locals.clearRetainingCapacity();
         self.print_shape_locals.clearRetainingCapacity();
         self.search_flag_locals.clearRetainingCapacity();
+        self.null_value_locals.clearRetainingCapacity();
         self.arr_elem_locals.clearRetainingCapacity();
         self.result_shape_locals.clearRetainingCapacity();
         self.result_subjects.clearRetainingCapacity();
@@ -2553,6 +2562,10 @@ const Emitter = struct {
                     if (is_search_init) {
                         if (self.last_search_flag) |flag| try self.search_flag_locals.put(lb.name, flag);
                     } else _ = self.search_flag_locals.remove(lb.name);
+                    if (valuelessLoopInit(lb.value.*))
+                        try self.null_value_locals.put(lb.name, {})
+                    else
+                        _ = self.null_value_locals.remove(lb.name);
                     if (lb.value.* == .function and self.lambdas.items.len > lambda_idx)
                         try self.closure_locals.put(lb.name, lambda_idx)
                     else
@@ -3154,6 +3167,22 @@ const Emitter = struct {
         };
     }
 
+    /// Whether `e` reads a local bound to a loop that can never have a value
+    /// (`null_value_locals`), or is such a loop written straight into `@print`.
+    fn isNullValueRead(self: *Emitter, e: ast.Expr) bool {
+        return switch (e) {
+            .identifier => |id| switch (id.kind) {
+                .ident => |n| self.null_value_locals.contains(self.resolveName(n)),
+                else => false,
+            },
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| self.isNullValueRead(inner.*),
+                else => false,
+            },
+            else => valuelessLoopInit(e),
+        };
+    }
+
     /// One `@print` argument. `last` decides whether the trailing newline is
     /// emitted here (the `_raw` helpers write the value only). The printer is
     /// picked from the argument's recovered shape — everything used to go
@@ -3183,6 +3212,16 @@ const Emitter = struct {
             try self.lowerCoerced(arg, "i32");
             try self.emit(.{ .local_get = flag });
             try self.emit(self.builder().helper(if (last) .print_loop_i32 else .print_loop_i32_raw));
+            return;
+        }
+        // The same decision, one shape simpler: a loop with no `break <value>`
+        // at all is absent with certainty, so there is nothing to load and no
+        // flag to test — `$__print_null` outright. This is the shape
+        // `run/loop_condition_no_break.bp` writes, and it printed the bare `0`
+        // that `lowerConditionLoop` leaves for a loop with no accumulator.
+        if (self.isNullValueRead(arg)) {
+            try self.emit(self.builder().helper(.print_null));
+            if (last) try self.emit(self.builder().helper(.print_nl));
             return;
         }
         if (self.optInfoOf(arg)) |oi| {
@@ -6546,6 +6585,24 @@ const Emitter = struct {
             .loop => |lp| loopIsSearch(lp) and bodyYields(lp.body),
             .collection => |col| switch (col.kind) {
                 .grouped => |inner| searchLoopInit(inner.*),
+                else => false,
+            },
+            else => false,
+        };
+    }
+
+    /// Whether `e` is a condition or infinite `loop` that can **never** have a
+    /// value: no `yield` and no `break <value>` anywhere in its body, so
+    /// `lowerLoop` builds neither accumulator and `lowerConditionLoop` leaves a
+    /// bare `0`. Decision 52's headline — "a loop with no `break <value>` has no
+    /// value to give" — is exactly this shape, and it needs no run-time flag:
+    /// absence is statically certain. An **iteration** loop is excluded: it
+    /// collects, and its value is an empty array, not absence.
+    fn valuelessLoopInit(e: ast.Expr) bool {
+        return switch (e) {
+            .loop => |lp| lp.condition and !bodyYields(lp.body),
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| valuelessLoopInit(inner.*),
                 else => false,
             },
             else => false,
