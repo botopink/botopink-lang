@@ -1013,7 +1013,15 @@ pub const Formatter = struct {
 
         const is_builtin = if (@hasField(@TypeOf(c), "is_builtin")) c.is_builtin else false;
         const is_optional = if (@hasField(@TypeOf(c), "optional")) c.optional else false;
-        const callee: *const Doc = if (c.receiver) |recv|
+        // `adder(3)(4)` — what is called is the previous call's result, so there
+        // is no name to print and the callee travels as an expression
+        // (`ast.CallExpr.call.calleeExpr`, `c.callee` is then `""`). Reading only
+        // `receiver` and `callee` printed the empty name and dropped the
+        // receiver: `adder(3)(4)` came back as `(4)`.
+        const calleeExpr = if (@hasField(@TypeOf(c), "calleeExpr")) c.calleeExpr else null;
+        const callee: *const Doc = if (calleeExpr) |ce|
+            try this.fmtExpr(ce.*)
+        else if (c.receiver) |recv|
             try this.concatAll(&.{
                 try this.fmtExpr(recv.*),
                 try this.text(if (is_optional) "?." else "."),

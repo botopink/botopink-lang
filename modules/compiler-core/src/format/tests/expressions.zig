@@ -496,3 +496,42 @@ test "format: braced ifs inside a loop body format to statements that re-parse" 
         \\}
     );
 }
+
+// ── calling what a call returned (decision 14) ────────────────────────────────
+// `adder(3)(4)` has no name to put in `callee`, so the callee travels as an
+// expression (`ast.CallExpr.call.calleeExpr`) and `callee` is `""`. The printer
+// read only `receiver` and `callee`, so it printed the empty name and dropped the
+// receiver entirely: `adder(3)(4)` came back as `(4)`. Handed over by
+// `15-language-surface`, whose step 4 made the form parse.
+
+test "format: call ---- a call of what a call returned keeps its callee" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f() -> i32 {
+        \\    return adder(3)(4);
+        \\}
+    );
+}
+
+test "format: call ---- a chained call composes with the links after it" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(xs: i32[]) -> i32 {
+        \\    return pick(xs)(0).value;
+        \\}
+    );
+}
+
+test "format: call ---- three calls in a row keep all three" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f() -> i32 {
+        \\    return curry(1)(2)(3);
+        \\}
+    );
+}
+
+test "format: call ---- a method call's result is called with no receiver invented" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn f(o: Box) -> i32 {
+        \\    return o.pick(1)(2);
+        \\}
+    );
+}
