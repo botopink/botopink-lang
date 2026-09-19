@@ -36,6 +36,18 @@ pub const Doc = union(enum) {
     group: *const Doc,
     /// Force break mode for the inner document regardless of enclosing group.
     forceBreak: *const Doc,
+    /// Two spellings of one construct, chosen by the column the render has
+    /// actually reached: `flat` when `flatWidth` more columns are still
+    /// available, `broken` otherwise.
+    ///
+    /// It exists because `fits` cannot answer this question. `fits` stops at the
+    /// first `concat` and then says yes to anything with a non-negative budget
+    /// (its own comment calls that "suboptimal but safe"), so a `group` whose
+    /// inner document is a `concat` — which is every non-trivial one — always
+    /// goes flat. `flatWidth` is measured when the node is built, by rendering
+    /// the flat spelling at an unbounded width, and it counts what follows on the
+    /// line as well, which is the other half `fits` cannot see.
+    widthChoice: struct { flat: *const Doc, broken: *const Doc, flatWidth: usize },
 };
 
 // ── global singletons (zero-cost leaves) ──────────────────────────────────────
@@ -98,6 +110,13 @@ pub const Formatter = struct {
 
     pub fn forceBreak(this: *Formatter, doc: *const Doc) !*const Doc {
         return this.alloc(.{ .forceBreak = doc });
+    }
+
+    /// `flat` if it still fits in `flatWidth` columns at the point the render has
+    /// reached, `broken` otherwise. See `Doc.widthChoice` for why this is not a
+    /// `group`.
+    pub fn widthChoice(this: *Formatter, flat: *const Doc, broken: *const Doc, flatWidth: usize) !*const Doc {
+        return this.alloc(.{ .widthChoice = .{ .flat = flat, .broken = broken, .flatWidth = flatWidth } });
     }
 
     // ── higher-level combinators ───────────────────────────────────────────────
@@ -310,6 +329,78 @@ pub const Formatter = struct {
         var items = try this.arena.alloc(*const Doc, params.len);
         for (params, 0..) |p, i| items[i] = try this.fmtParam(p);
         return this.commaList("(", items, ")");
+    }
+
+    /// What a body puts on the signature's own line: ` {` when it opens, ` {}`
+    /// when it is empty (`fmtBody`'s answer for no statements).
+    fn bodyCols(stmts: usize) usize {
+        return if (stmts == 0) 3 else 2;
+    }
+
+    /// A declaration's parameter list, and whatever follows the closing paren on
+    /// the same line. A signature that does not fit breaks **one parameter per
+    /// line, with a trailing comma**, closing on its own line
+    /// ([decision 61](../../../specs/1.0.5-beta/decisions-taken.md) rule 4):
+    ///
+    /// ```botopink
+    /// fn aVeryLongFunctionName(
+    ///     firstParameter: i32,
+    ///     secondParameter: string,
+    ///     thirdParameter: bool,
+    /// ) -> string {
+    /// ```
+    ///
+    /// `fmtParams`' `commaList` is a `group` that was meant to do exactly this and
+    /// never did once: `fits` stops at the first `concat`, so the group always went
+    /// flat and the signature above joined to **104 columns** against a
+    /// `LINE_WIDTH` of 80. The decision is taken here instead, from a flat width
+    /// measured at build time against the column the render has really reached —
+    /// see `Doc.widthChoice`.
+    ///
+    /// `tail` is printed after the closing paren and is part of the measurement.
+    /// `tailCols` is what follows *that* and is **not** part of this document —
+    /// the `;` of a bodyless declaration, or the ` {` a body opens with — which
+    /// the fit decision still has to pay for, or a signature would be broken one
+    /// column too late.
+    fn fmtSignature(this: *Formatter, params: []const ast.Param, tail: *const Doc, tailCols: usize) !*const Doc {
+        if (params.len == 0) return this.concat(try this.text("()"), tail);
+
+        var items = try this.arena.alloc(*const Doc, params.len);
+        for (params, 0..) |p, i| items[i] = try this.fmtParam(p);
+
+        const flat = try this.concat(
+            try this.concatAll(&.{
+                try this.text("("),
+                try this.join(items, try this.text(", ")),
+                try this.text(")"),
+            }),
+            tail,
+        );
+        const flatText = try render(this.arena, flat, std.math.maxInt(u32));
+        // A parameter default that needs a line of its own (a lambda) has no flat
+        // width to compare, so such a signature keeps whatever it printed before
+        // rather than being broken on a number that does not mean anything.
+        if (std.mem.indexOfScalar(u8, flatText, '\n') != null) return flat;
+
+        var brokenParts: std.ArrayList(*const Doc) = .empty;
+        defer brokenParts.deinit(this.arena);
+        for (items, 0..) |it, i| {
+            if (i > 0) try brokenParts.append(this.arena, this.hardline());
+            // The trailing comma is on every parameter, the last one included —
+            // measured to parse, and it is what makes adding a parameter a
+            // one-line diff.
+            try brokenParts.append(this.arena, try this.concat(it, try this.text(",")));
+        }
+        const broken = try this.concat(
+            try this.forceBreak(try this.concatAll(&.{
+                try this.text("("),
+                try this.nest(INDENT, try this.concat(this.hardline(), try this.concatAll(brokenParts.items))),
+                this.hardline(),
+                try this.text(")"),
+            })),
+            tail,
+        );
+        return this.widthChoice(flat, broken, flatText.len + tailCols);
     }
 
     fn fmtReturnType(this: *Formatter, ret: ?[]const u8) !*const Doc {
@@ -1131,6 +1222,37 @@ pub const Formatter = struct {
             break :hasMultilineLoop false;
         };
 
+        // An argument that is a lambda **hugs** the call
+        // ([decision 61](../../../specs/1.0.5-beta/decisions-taken.md) rule 1):
+        //
+        //     xs.forEach({ x ->
+        //         @print(x);
+        //     });
+        //
+        // The arg list is a `group` whose inner document is `nest(INDENT, …)`, and
+        // `fits` stops at the first `concat` (see its comment) so the group goes
+        // flat: `(` prints, the softline vanishes, and then the lambda's own
+        // `forceBreak` opens **inside** that nest. Two nests for one line break
+        // put the body at +8 from the call line and the closing `});` at +4,
+        // which is the largest single source of churn in the libraries' diffs.
+        //
+        // The hug drops the nest and the softlines, so the lambda's forceBreak
+        // opens at the call's own indentation: body +4, `}` level with the call.
+        // It is deliberately not restricted to the last argument — `throws({ ->
+        // … }, "expected")` puts the lambda first, and the rule is about the
+        // lambda's body, not its position.
+        const hugsLambdaArg = !hasComments and !hasMultilineStringArg and hugLoop: {
+            for (c.args, 0..) |a, i| {
+                if (a.value.* != .function) continue;
+                // A lambda that prints on one line needs no hug; one that breaks
+                // does. `render` at an unbounded width answers exactly that,
+                // because only a hardline survives it.
+                const flat = try render(this.arena, items.items[i], std.math.maxInt(u32));
+                if (std.mem.indexOfScalar(u8, flat, '\n') != null) break :hugLoop true;
+            }
+            break :hugLoop false;
+        };
+
         // Build comma-separated arg list with proper grouping
         var argParts: std.ArrayList(*const Doc) = .empty;
         defer argParts.deinit(this.arena);
@@ -1155,6 +1277,15 @@ pub const Formatter = struct {
 
         const argsDoc = if (argParts.items.len == 0)
             try this.text("()")
+        else if (hugsLambdaArg)
+            // No nest, no softlines, and `", "` as the separator rather than
+            // `line()` — outside a group the mode is the enclosing break mode, in
+            // which a `line()` would become a newline of its own.
+            try this.concatAll(&.{
+                try this.text("("),
+                try this.join(items.items, try this.text(", ")),
+                try this.text(")"),
+            })
         else blk: {
             const inner = try this.concatAll(argParts.items);
 
@@ -1214,9 +1345,25 @@ pub const Formatter = struct {
     /// its `{ -> … }` arrow — without it the braces re-parse as a block. A
     /// trailing lambda (`f { … }`) needs none.
     /// A lambda written on one line with a single value expression
-    /// (`{ n -> n * 2 }`) stays on one line; everything else is `fmtLambda`.
+    /// (`{ n -> n * 2 }`, `{ -> 3 + 4 }`) stays on one line; everything else is
+    /// `fmtLambda`.
+    ///
+    /// The no-parameter case is part of the rule on purpose
+    /// ([decision 61](../../../specs/1.0.5-beta/decisions-taken.md) rule 3): the
+    /// first draft tested `params.len > 0`, so `{ n -> n * 2 }` stayed inline
+    /// while `{ -> 3 + 4 }` — the same lambda with nothing to bind — exploded
+    /// into three lines. Two spellings of one form printed two ways is the
+    /// formatter contradicting itself, not a layout choice.
+    ///
+    /// The one-line form is only printed where an arrow is printed with it.
+    /// Measured: a **trailing** lambda's body is a statement block, so its
+    /// statements keep their `;` and the one-line spelling is a parse error —
+    /// `executar { ok }` answers *unexpected `}`*, and so does
+    /// `calcular(fator: 2) { a, b -> a + b }`, while `{ -> 42 }` and
+    /// `{ n -> n * 2 }` in argument position both parse. Printing the one-line
+    /// form there would emit text this compiler refuses.
     fn fmtLambdaAt(this: *Formatter, lambdaLine: usize, params: []const []const u8, body: []ast.Stmt, arrow_when_empty: bool) !*const Doc {
-        if (params.len > 0 and body.len == 1 and body[0].expr.getLoc().line == lambdaLine) {
+        if (arrow_when_empty and body.len == 1 and body[0].expr.getLoc().line == lambdaLine) {
             const inlineValue = switch (body[0].expr) {
                 .binding, .jump => false,
                 .literal => |lit| lit.kind != .comment,
@@ -1230,12 +1377,19 @@ pub const Formatter = struct {
                 // line break of its own prints the open form.
                 const flat = try render(this.arena, try this.fmtExpr(body[0].expr), std.math.maxInt(u32));
                 if (std.mem.indexOfScalar(u8, flat, '\n') == null) {
-                    var paramDocs = try this.arena.alloc(*const Doc, params.len);
-                    for (params, 0..) |p, i| paramDocs[i] = try this.text(p);
+                    // `{ ` + params + ` -> ` — a parameterless lambda keeps the
+                    // bare arrow, without which the braces re-parse as a block.
+                    const head: *const Doc = if (params.len > 0) blk: {
+                        var paramDocs = try this.arena.alloc(*const Doc, params.len);
+                        for (params, 0..) |p, i| paramDocs[i] = try this.text(p);
+                        break :blk try this.concatAll(&.{
+                            try this.text("{ "),
+                            try this.join(paramDocs, try this.text(", ")),
+                            try this.text(" -> "),
+                        });
+                    } else try this.text("{ -> ");
                     return this.concatAll(&.{
-                        try this.text("{ "),
-                        try this.join(paramDocs, try this.text(", ")),
-                        try this.text(" -> "),
+                        head,
                         try this.text(flat),
                         try this.text(" }"),
                     });
@@ -1246,6 +1400,26 @@ pub const Formatter = struct {
     }
 
     fn fmtLambda(this: *Formatter, params: []const []const u8, body: []ast.Stmt, arrow_when_empty: bool) !*const Doc {
+        // An empty body stays inline — `{ next -> }`, `{ -> }`, `{}`
+        // ([decision 61](../../../specs/1.0.5-beta/decisions-taken.md) rule 2).
+        // The open form had nothing to put between the two hardlines, so it
+        // printed the body's indentation and then a newline: a line carrying
+        // **eight spaces and nothing else**, in a printer that goes out of its
+        // way to avoid trailing whitespace (`fmtStmtSeq` emits a bare `"\n"`
+        // for a blank line rather than a `hardline`, for exactly that reason).
+        // `fmtBody` already answers `{}` for an empty `fn` body; this is the
+        // same answer for the same question.
+        if (body.len == 0) {
+            if (params.len == 0) return this.text(if (arrow_when_empty) "{ -> }" else "{}");
+            var paramDocs = try this.arena.alloc(*const Doc, params.len);
+            for (params, 0..) |p, i| paramDocs[i] = try this.text(p);
+            return this.concatAll(&.{
+                try this.text("{ "),
+                try this.join(paramDocs, try this.text(", ")),
+                try this.text(" -> }"),
+            });
+        }
+
         const inner = try this.fmtStmtSeq(body);
 
         if (params.len == 0 and !arrow_when_empty) {
@@ -1677,8 +1851,7 @@ pub const Formatter = struct {
         return this.concatAll(&.{
             prefix,
             try this.text(d.name),
-            try this.fmtParams(d.params),
-            try this.fmtReturnType(d.returnType),
+            try this.fmtSignature(d.params, try this.fmtReturnType(d.returnType), 1),
         });
     }
 
@@ -1832,8 +2005,11 @@ pub const Formatter = struct {
             fn_kw,
             try this.text(m.name),
             try this.fmtGenericParams(m.genericParams),
-            try this.fmtParams(m.params),
-            try this.fmtReturnTypeRef(m.returnType, null),
+            try this.fmtSignature(
+                m.params,
+                try this.fmtReturnTypeRef(m.returnType, null),
+                if (m.body) |stmts| bodyCols(stmts.len) else 1,
+            ),
         });
         if (m.body) |stmts| {
             return this.concatAll(&.{
@@ -2158,7 +2334,7 @@ pub const Formatter = struct {
         return this.concatAll(&.{
             try this.text("fn "),
             nameDoc,
-            try this.fmtParams(m.params),
+            try this.fmtSignature(m.params, this.nil(), bodyCols(m.body.len)),
             try this.text(" "),
             try this.fmtBody(m.body),
         });
@@ -2188,8 +2364,7 @@ pub const Formatter = struct {
                 prefix,
                 try this.text(f.name),
                 try this.fmtGenericParams(f.genericParams),
-                try this.fmtParams(f.params),
-                try this.fmtReturnTypeRef(f.returnType, f.typeGuardParam),
+                try this.fmtSignature(f.params, try this.fmtReturnTypeRef(f.returnType, f.typeGuardParam), 1),
                 try this.text(";"),
             });
         }
@@ -2205,9 +2380,11 @@ pub const Formatter = struct {
             prefix,
             try this.text(f.name),
             try this.fmtGenericParams(f.genericParams),
-            try this.fmtParams(f.params),
-            try this.fmtReturnTypeRef(f.returnType, f.typeGuardParam),
-            labelDoc,
+            try this.fmtSignature(
+                f.params,
+                try this.concat(try this.fmtReturnTypeRef(f.returnType, f.typeGuardParam), labelDoc),
+                bodyCols(f.body.len),
+            ),
             try this.text(" "),
             try this.fmtBody(f.body),
         });
@@ -2440,6 +2617,9 @@ fn fits(budget: isize, work: *std.ArrayList(Item)) bool {
             .nest => |n| _ = n,
             .group => |d| _ = d,
             .forceBreak => return false,
+            // Its flat spelling has a width that was measured, so — unlike every
+            // other node here — this one can be charged for exactly.
+            .widthChoice => |w| remaining -= @intCast(w.flatWidth),
         }
     }
     return remaining >= 0;
@@ -2527,6 +2707,19 @@ pub fn render(allocator: std.mem.Allocator, doc: *const Doc, width: usize) ![]u8
 
             .forceBreak => |d| {
                 try work.append(wa, .{ .indent = item.indent, .mode = .break_, .doc = d });
+            },
+
+            .widthChoice => |w| {
+                // The enclosing mode is carried through rather than forced flat:
+                // the flat spelling holds no `line` or `softline` of its own, and
+                // whatever trails it (a return type, a `:label`) must keep
+                // deciding the way it did before this node existed.
+                const fitsFlat = col + w.flatWidth <= width;
+                try work.append(wa, .{
+                    .indent = item.indent,
+                    .mode = item.mode,
+                    .doc = if (fitsFlat) w.flat else w.broken,
+                });
             },
         }
     }

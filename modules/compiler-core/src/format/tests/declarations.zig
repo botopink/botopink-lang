@@ -780,3 +780,118 @@ test "format: types ---- a union whose last member is an array needs no parenthe
         \\}
     );
 }
+
+// decision 61 rule 4 — a `fn` signature that does not fit breaks one parameter
+// per line, with a trailing comma, closing on its own line. Before this a
+// signature had no break available at all: `commaList`'s `group` never broke,
+// because `fits` stops at the first `concat`, and the first case below joined to
+// 104 columns against a `LINE_WIDTH` of 80.
+
+test "format: fn ---- a signature that does not fit breaks one parameter per line" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn aVeryLongFunctionName(
+        \\    firstParameter: i32,
+        \\    secondParameter: string,
+        \\    thirdParameter: bool,
+        \\) -> string {
+        \\    return secondParameter;
+        \\}
+    );
+}
+
+test "format: fn ---- a single parameter breaks the same way" {
+    // "one per line" with one of them, trailing comma included — measured to
+    // parse, like every other shape in this group.
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn oneReallyQuiteExtraordinarilyLongParameterNameThatDoesNotFit(
+        \\    firstParameterName: i32,
+        \\) -> i32 {
+        \\    return firstParameterName;
+        \\}
+    );
+}
+
+test "format: fn ---- a bodyless declaration breaks and keeps its `;`" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\declare fn aLongHostBackedName(
+        \\    firstParameter: i32,
+        \\    secondParameter: string,
+        \\    third: bool,
+        \\) -> bool;
+    );
+}
+
+test "format: fn ---- a method breaks at its own indentation, not at column 0" {
+    // The decision is taken against the column the render has actually reached,
+    // so a member four columns in gets four fewer columns of room and its
+    // parameters land at +8. A fixed width would have broken this one too late.
+    try h.assertFormatLossless(std.testing.allocator,
+        \\pub type Holder(v: i32) {
+        \\    pub fn aLongMethodNameHere(
+        \\        firstParameter: i32,
+        \\        secondParameter: string,
+        \\        third: bool,
+        \\    ) -> string {
+        \\        return secondParameter;
+        \\    }
+        \\}
+    );
+}
+
+test "format: fn ---- a bodyless behavior method breaks" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\pub behavior Greeter {
+        \\    fn greetSomebodyWithAVeryLongName(
+        \\        whoToGreet: string,
+        \\        loudly: bool,
+        \\        times: i32,
+        \\    ) -> string;
+        \\}
+    );
+}
+
+test "format: fn ---- generic parameters and a fn-type parameter break too" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn generics<T, R>(
+        \\    itemsToTransform: Array<T>,
+        \\    mapperFunction: fn(item: T) -> R,
+        \\) -> Array<R> {
+        \\    return itemsToTransform.map(mapperFunction);
+        \\}
+    );
+}
+
+test "format: fn ---- a signature with no return type breaks on the body's brace" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn noReturnTypeButAVeryLongParameterList(
+        \\    firstParameter: i32,
+        \\    secondParameter: string,
+        \\    third: bool,
+        \\) {
+        \\    @print(secondParameter);
+        \\}
+    );
+}
+
+test "format: fn ---- 80 columns stays on one line" {
+    // The boundary, both sides of it. The two differ by one character in the
+    // name; what makes the second break is the ` {` the body opens with, which
+    // is not part of the signature document and is counted anyway — without that
+    // the break would land one column late.
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn fxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx(aParam: i32, bParam: string) -> i32 {
+        \\    return aParam;
+        \\}
+    );
+}
+
+test "format: fn ---- 81 columns breaks" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn fxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx(
+        \\    aParam: i32,
+        \\    bParam: string,
+        \\) -> i32 {
+        \\    return aParam;
+        \\}
+    );
+}
