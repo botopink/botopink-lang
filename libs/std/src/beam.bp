@@ -1,0 +1,103 @@
+//// std/beam — the BEAM memory host primitives, layer 1 of `@BeamMemory`.
+////
+//// Ten `declare fn`s over three BEAM storage families: the process
+//// dictionary (`erlang:get/put/erase`), ETS (`ets:whereis/new/
+//// lookup_element/insert/update_counter`) and `persistent_term`
+//// (`persistent_term:get/put`). Nothing else. Each one is a single host
+//// call with the host's own arity — no composition, no policy.
+////
+//// Why a module and not `.zig` (decision 43): `@BeamMemory` lives in two
+//// layers. **Layer 1 is this file** — the host vocabulary, as template
+//// text, editable without recompiling the compiler, exactly the property
+//// `codegen/erlang.zig:184-206` claims for the auto-imported BIF table it
+//// reads out of `erlang.bp`. **Layer 2 is the core** — three mode names
+//// (`ProcessDict`, `Ets`, `PersistentTerm`) and how a binding's read and
+//// its write lower onto the functions below. No line of `.zig` names ETS,
+//// `persistent_term` or the process dictionary.
+////
+//// Why these ten and not the shapes: the shapes layer 2 composes are
+//// compositions of these calls, not host calls of their own. The
+//// `whereis`-guarded initialisation is `etsWhereis` answering `undefined`
+//// and then `etsNew` under a `try` — two primitives and a `case`, because
+//// a module cannot create its table at load time (`-on_load` runs in a
+//// temporary process: a `persistent_term` write survives it, an ETS table
+//// does not — `ets:whereis` answers `undefined` the moment the loader
+//// exits). Which process then owns the table is layer 2's, and it is the
+//// registered-owner question the front tracks; nothing here decides it.
+////
+//// Why `any` on every parameter and every return: the precedent is
+//// `erlang.bp`, which types every one of its declarations the same way,
+//// and these arguments are host terms with no botopink type — an ETS
+//// table identifier, a registered name atom, the `{Key, Value}` tuple
+//// `ets:insert` takes, the option list `ets:new` takes.
+////
+//// What `any` actually is, measured: a closed type that unifies only with
+//// itself. `beam.pdPut("k", 1)` is `type mismatch: expected any, got
+//// string`, and so is `val a: any = 1;`; `beam.pdPut(t, t)` where
+//// `t = erlang.self()` checks green. So an `any` is producible only by
+//// another host call — which is right for a host vocabulary, and is why
+//// `erlang.bp`'s header claim that it is "also callable when explicitly
+//// imported" holds for host terms and not for botopink values. Decision
+//// 31 deleted `any` "for now" over one use (`builtins.d.bp:88`); these
+//// two modules are the rest of the count, and they are rewritten together
+//// when that lands, not with a second spelling invented here.
+////
+//// Targets: `@External.Erlang` covers **both** BEAM targets — `codegen.zig:74-77`
+//// maps `.erlang` and `.beam` alike to the `"erlang"` lookup name. On
+//// `commonJS` and `wasm` importing this module is `std-unsupported-on-target`
+//// (`comptime/infer.zig:100`), and that is the intended answer: the
+//// annotation is a silent no-op off the BEAM, because a target with one
+//// execution context has nowhere else to put the state, while an import
+//// asks for the host primitives by name and there are none.
+////
+//// One thing layer 2 cannot yet do through this module, measured: on the
+//// erlang backend a qualified std host call is emitted as a call to the
+//// std module itself (`beam:pdPut(Slot, Slot)`) and the emitted
+//// `out/std/beam.erl` is `-module(beam).` and nothing else — no export,
+//// no function. It is not this module's doing: `out/std/process.erl` is
+//// `-module(process).` plus its `no_auto_import` line and no function
+//// either, while commonJS emits real wrappers (`function cwd() { return
+//// process.cwd(); }`). So these ten declarations check and resolve on
+//// `erlang` and `beam`, and a call through them would answer `undef` at
+//// run time until the erlang backend emits the wrappers commonJS already
+//// does. That is a backend row, not a `.zig` line owed here.
+////
+//// Adding a primitive: one `#[@External.Erlang("<mod>", "<symbol>")] pub
+//// declare fn <camelCase>(…) -> any;`. `root.bp` already declares this
+//// module, and `build.zig` derives the std module set from `root.bp`.
+
+// ── the process dictionary — per-process, no setup, erased with the process
+
+#[@External.Erlang("erlang", "get")]
+pub declare fn pdGet(key: any) -> any;
+
+#[@External.Erlang("erlang", "put")]
+pub declare fn pdPut(key: any, value: any) -> any;
+
+#[@External.Erlang("erlang", "erase")]
+pub declare fn pdErase(key: any) -> any;
+
+// ── ETS — shared across processes, created by the first caller, owned by one
+
+#[@External.Erlang("ets", "whereis")]
+pub declare fn etsWhereis(name: any) -> any;
+
+#[@External.Erlang("ets", "new")]
+pub declare fn etsNew(name: any, opts: any) -> any;
+
+#[@External.Erlang("ets", "lookup_element")]
+pub declare fn etsGet(tid: any, key: any, pos: any) -> any;
+
+#[@External.Erlang("ets", "insert")]
+pub declare fn etsPut(tid: any, tuple: any) -> any;
+
+#[@External.Erlang("ets", "update_counter")]
+pub declare fn etsBump(tid: any, key: any, incr: any) -> any;
+
+// ── persistent_term — read-cheap, write-expensive, written at load time
+
+#[@External.Erlang("persistent_term", "get")]
+pub declare fn ptGet(key: any) -> any;
+
+#[@External.Erlang("persistent_term", "put")]
+pub declare fn ptPut(key: any, value: any) -> any;
