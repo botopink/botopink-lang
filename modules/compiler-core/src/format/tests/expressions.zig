@@ -641,3 +641,55 @@ test "format: nullish ---- an optional-binding `if` is still printed as an `if`"
         \\}
     );
 }
+
+// decision 61 rule 3 — the one-line rule covers a parameterless lambda. Before
+// this, `{ n -> n * 2 }` stayed inline and `{ -> 3 + 4 }` exploded into three
+// lines: one form printed two ways, decided by whether it had a name to bind.
+
+test "format: lambda ---- a parameterless lambda on one line stays on one line" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn main() {
+        \\    val g = { -> 3 + 4 };
+        \\    @print(g());
+        \\}
+    );
+}
+
+test "format: lambda ---- the one-line form prints for a parameterless lambda argument" {
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn main() {
+        \\    val n = measureMillis({ -> 42 });
+        \\}
+    );
+}
+
+test "format: lambda ---- a trailing lambda keeps the open form, one statement or not" {
+    // The one-line rule stops at the `arrow_when_empty` boundary, and the reason
+    // was measured rather than assumed: a trailing lambda's body is a statement
+    // block, so `executar { ok }` is a **parse error** (*unexpected `}`*) and so
+    // is `calcular(fator: 2) { a, b -> a + b }`. Printing the one-line form here
+    // would emit text this compiler refuses, which `assertIdempotent` — it
+    // re-parses pass 1 — would then fail on.
+    try h.assertFormatLossless(std.testing.allocator,
+        \\behavior Test {
+        \\    default fn run() {
+        \\        executar {
+        \\            ok;
+        \\        };
+        \\    }
+        \\}
+    );
+}
+
+test "format: lambda ---- a parameterless lambda whose body needs a line keeps the open form" {
+    // The negative: the one-line rule tests the source's own line, so a body
+    // that was written below the arrow stays below it, with or without params.
+    try h.assertFormatLossless(std.testing.allocator,
+        \\fn main() {
+        \\    val g = { ->
+        \\        val a = 1;
+        \\        a + 2;
+        \\    };
+        \\}
+    );
+}

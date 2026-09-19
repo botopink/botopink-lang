@@ -1214,9 +1214,25 @@ pub const Formatter = struct {
     /// its `{ -> … }` arrow — without it the braces re-parse as a block. A
     /// trailing lambda (`f { … }`) needs none.
     /// A lambda written on one line with a single value expression
-    /// (`{ n -> n * 2 }`) stays on one line; everything else is `fmtLambda`.
+    /// (`{ n -> n * 2 }`, `{ -> 3 + 4 }`) stays on one line; everything else is
+    /// `fmtLambda`.
+    ///
+    /// The no-parameter case is part of the rule on purpose
+    /// ([decision 61](../../../specs/1.0.5-beta/decisions-taken.md) rule 3): the
+    /// first draft tested `params.len > 0`, so `{ n -> n * 2 }` stayed inline
+    /// while `{ -> 3 + 4 }` — the same lambda with nothing to bind — exploded
+    /// into three lines. Two spellings of one form printed two ways is the
+    /// formatter contradicting itself, not a layout choice.
+    ///
+    /// The one-line form is only printed where an arrow is printed with it.
+    /// Measured: a **trailing** lambda's body is a statement block, so its
+    /// statements keep their `;` and the one-line spelling is a parse error —
+    /// `executar { ok }` answers *unexpected `}`*, and so does
+    /// `calcular(fator: 2) { a, b -> a + b }`, while `{ -> 42 }` and
+    /// `{ n -> n * 2 }` in argument position both parse. Printing the one-line
+    /// form there would emit text this compiler refuses.
     fn fmtLambdaAt(this: *Formatter, lambdaLine: usize, params: []const []const u8, body: []ast.Stmt, arrow_when_empty: bool) !*const Doc {
-        if (params.len > 0 and body.len == 1 and body[0].expr.getLoc().line == lambdaLine) {
+        if (arrow_when_empty and body.len == 1 and body[0].expr.getLoc().line == lambdaLine) {
             const inlineValue = switch (body[0].expr) {
                 .binding, .jump => false,
                 .literal => |lit| lit.kind != .comment,
@@ -1230,12 +1246,19 @@ pub const Formatter = struct {
                 // line break of its own prints the open form.
                 const flat = try render(this.arena, try this.fmtExpr(body[0].expr), std.math.maxInt(u32));
                 if (std.mem.indexOfScalar(u8, flat, '\n') == null) {
-                    var paramDocs = try this.arena.alloc(*const Doc, params.len);
-                    for (params, 0..) |p, i| paramDocs[i] = try this.text(p);
+                    // `{ ` + params + ` -> ` — a parameterless lambda keeps the
+                    // bare arrow, without which the braces re-parse as a block.
+                    const head: *const Doc = if (params.len > 0) blk: {
+                        var paramDocs = try this.arena.alloc(*const Doc, params.len);
+                        for (params, 0..) |p, i| paramDocs[i] = try this.text(p);
+                        break :blk try this.concatAll(&.{
+                            try this.text("{ "),
+                            try this.join(paramDocs, try this.text(", ")),
+                            try this.text(" -> "),
+                        });
+                    } else try this.text("{ -> ");
                     return this.concatAll(&.{
-                        try this.text("{ "),
-                        try this.join(paramDocs, try this.text(", ")),
-                        try this.text(" -> "),
+                        head,
                         try this.text(flat),
                         try this.text(" }"),
                     });
