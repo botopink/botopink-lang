@@ -547,9 +547,7 @@ behavior Array<T> {
         if (n <= 0) return out;
         val len = self.length;
         loop (0..len) { k ->
-            if (k % n == 0) {
-                out = out.append([self.slice(k, k + n)]);
-            };
+            if (k % n == 0) out = out.append([self.slice(k, k + n)]);
         };
         return out;
     }

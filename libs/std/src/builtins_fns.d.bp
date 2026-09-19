@@ -11,10 +11,10 @@
 //// `trap` / `emit` / `module` / `getContex<T>` keep their declarative form
 //// in `builtins.d.bp` (no default, so they don't need this parse path).
 
-#[@External.Erlang("erlang:error({todo, $0})"),
-  @External.Node("(() => { throw new Error($0) })()")]
+#[@External.Erlang("erlang:error({todo, $0})")]
+#[@External.Node("(() => { throw new Error($0) })()")]
 declare fn todo(message: string = "not implemented") -> noreturn;
 
-#[@External.Erlang("erlang:error({panic, $0})"),
-  @External.Node("(() => { throw new Error($0) })()")]
+#[@External.Erlang("erlang:error({panic, $0})")]
+#[@External.Node("(() => { throw new Error($0) })()")]
 declare fn panic(message: string = "panic") -> noreturn;

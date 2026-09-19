@@ -7,43 +7,43 @@
 
 #[@result]
 fn parse(n: i32) -> @Result<i32, string> {
-  if (n < 0) { throw "negative"; };
-  return n;
+    if (n < 0) throw "negative";
+    return n;
 }
 
 #[@result]
 fn half(n: i32) -> @Result<i32, string> {
-  if (n % 2 != 0) { throw "odd"; };
-  return n / 2;
+    if (n % 2 != 0) throw "odd";
+    return n / 2;
 }
 
 test "result map over Ok transforms the payload" {
-  val r = parse(5).map({ x -> x + 1 });
-  assert r.unwrapOr(0) == 6;
+    val r = parse(5).map({ x -> x + 1 });
+    assert r.unwrapOr(0) == 6;
 }
 
 test "result map over Error is propagated untouched" {
-  val r = parse(-3).map({ x -> x + 1 });
-  assert r.unwrapOr(-99) == -99;
+    val r = parse(-3).map({ x -> x + 1 });
+    assert r.unwrapOr(-99) == -99;
 }
 
 test "result flatMap chains Result-returning steps" {
-  val r = parse(8).flatMap({ x -> half(x) });
-  assert r.unwrapOr(0) == 4;
+    val r = parse(8).flatMap({ x -> half(x) });
+    assert r.unwrapOr(0) == 4;
 }
 
 test "result flatMap short-circuits on the first Error" {
-  val r = parse(7).flatMap({ x -> half(x) });   // 7 is odd → `half` throws
-  assert r.unwrapOr(-1) == -1;
+    val r = parse(7).flatMap({ x -> half(x) }); // 7 is odd → `half` throws
+    assert r.unwrapOr(-1) == -1;
 }
 
 test "result flatMap short-circuits when the head is Error" {
-  val r = parse(-1).flatMap({ x -> half(x) });
-  assert r.unwrapOr(-1) == -1;
+    val r = parse(-1).flatMap({ x -> half(x) });
+    assert r.unwrapOr(-1) == -1;
 }
 
 test "result unwrapOr returns the Ok payload" {
-  assert parse(42).unwrapOr(0) == 42;
+    assert parse(42).unwrapOr(0) == 42;
 }
 
 // LIMITATION (recorded): `isOk()`/`isError()` — neither the method form
