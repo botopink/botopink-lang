@@ -51,3 +51,13 @@ runtime/
   reads it back, and it is not surfaced into diagnostics (a comptime failure already carries its Erlang
   diagnostic in the reply frame); the transport-error message names the path so
   a broken stream points at it. Read it by hand when a comptime body misbehaves.
+- **Who reads `lastTransportError()`.** `transportFailure` in
+  [`../template_eval.zig`](../template_eval.zig) and in
+  [`../decorator_eval.zig`](../decorator_eval.zig) — the two callers of
+  `evalDetailed` / `evalWithArg`, and the only readers outside this file
+  (`grep -rn lastTransportError modules/` is those two call sites, this file's
+  declaration and its three inline regression tests). A failure that left a
+  message becomes the diagnostic `the <template|decorator> evaluator's erl
+  runtime failed (<error name>): <message>`; a failure that left none stays
+  `error.EvalFailed`, because that case is `erl` or `erlc` missing and the
+  caller's hint for it names `PATH`.
