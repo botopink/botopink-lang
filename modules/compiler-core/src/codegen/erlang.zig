@@ -206,11 +206,70 @@ fn isSyntheticMainEntrypointCall(v: ast.ValDecl) bool {
 // `.zig` recompile of the table itself is needed.
 const AutoImportedBif = struct { name: []const u8, arity: u8 };
 
-fn loadAutoImportedBifsFromPrelude(
-    alloc: std.mem.Allocator,
-) anyerror!std.ArrayListUnmanaged(AutoImportedBif) {
+/// The two embedded preludes, parsed once for the life of the process.
+///
+/// `emitErlangModule` re-lexed and re-parsed `primitives.bp`
+/// (`collectPrimErlangDispatch`) and `std/erlang`
+/// (`loadAutoImportedBifsFromPrelude`) on EVERY emission, and both sources are
+/// comptime-embedded strings — the same bytes, the same parse, every time. On a
+/// comptime-heavy build that is one whole parse per evaluated declaration
+/// (handed over by `14-comptime-on-beam`, whose step 2 left this as the other
+/// half of the per-evaluation cost).
+///
+/// The memo is safe because nothing writes to what it holds: the AST borrows
+/// only comptime source, `collectIfaceErlangDispatch` deep-copies every triple
+/// it keeps into the emitter's own allocator, and `noAutoImportRefs` only reads
+/// the BIF table. It has its own arena over the page allocator rather than a
+/// caller's, so a test allocator never sees it and the lifetime is the
+/// process's, not one module's. The lock is a spin over `std.atomic.Mutex`'s
+/// `tryLock` — zig 0.16 has no blocking mutex outside `std.Io`, and there is
+/// nothing to contend for after the first parse — because the test runner
+/// compiles on several threads and an arena is not thread-safe.
+const prelude_cache = struct {
+    var mutex: std.atomic.Mutex = .unlocked;
+    var arena: std.heap.ArenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    var primitives_tried: bool = false;
+    var primitives_program: ?ast.Program = null;
+    var bifs_tried: bool = false;
+    var bifs: []const AutoImportedBif = &.{};
+
+    /// The parsed `primitives.bp`, or null when it does not parse — the caller
+    /// has always swallowed a prelude parse failure, and `primErlangDispatchCount`
+    /// pins what that would cost.
+    fn lock() void {
+        while (!mutex.tryLock()) std.Thread.yield() catch {};
+    }
+
+    fn primitives() ?ast.Program {
+        lock();
+        defer mutex.unlock();
+        if (primitives_tried) return primitives_program;
+        primitives_tried = true;
+        const a = arena.allocator();
+        var lx = lexerMod.Lexer.init(prelude.primitives);
+        const tokens = lx.scanAll(a) catch return null;
+        var p = parserMod.Parser.init(tokens);
+        primitives_program = p.parse(a) catch null;
+        return primitives_program;
+    }
+
+    /// The auto-imported BIF catalog of `libs/std/src/erlang.bp`, empty when the
+    /// module is absent or does not parse.
+    fn autoImportedBifs() []const AutoImportedBif {
+        lock();
+        defer mutex.unlock();
+        if (bifs_tried) return bifs;
+        bifs_tried = true;
+        bifs = parseAutoImportedBifs(arena.allocator()) catch &.{};
+        return bifs;
+    }
+};
+
+/// Parses the catalog into `alloc`, which is `prelude_cache`'s arena: the table
+/// outlives every emission, so the lexer, the AST and the name dupes all live
+/// there together and nothing is freed per call.
+fn parseAutoImportedBifs(alloc: std.mem.Allocator) anyerror![]const AutoImportedBif {
     var out: std.ArrayListUnmanaged(AutoImportedBif) = .empty;
-    errdefer out.deinit(alloc);
 
     // Locate the `std/erlang` module in the embedded pkg registry.
     var source: ?[]const u8 = null;
@@ -220,20 +279,13 @@ fn loadAutoImportedBifsFromPrelude(
             break;
         }
     }
-    if (source == null) return out;
+    if (source == null) return out.items;
 
-    // Parse inside an arena so the lexer + AST scratch storage is freed
-    // wholesale at function exit; only the `.name` dupes that land in
-    // `out` are owned by `alloc` (caller frees via `freeAutoImportedBifs`).
-    var arena = std.heap.ArenaAllocator.init(alloc);
-    defer arena.deinit();
-    const a = arena.allocator();
-
+    const a = alloc;
     var lx = lexerMod.Lexer.init(source.?);
-    const tokens = lx.scanAll(a) catch return out;
+    const tokens = lx.scanAll(a) catch return out.items;
     var p = parserMod.Parser.init(tokens);
-    var program = p.parse(a) catch return out;
-    defer program.deinit(a);
+    const program = p.parse(a) catch return out.items;
 
     for (program.decls) |decl| {
         if (decl != .@"fn") continue;
@@ -251,12 +303,7 @@ fn loadAutoImportedBifsFromPrelude(
             .arity = @intCast(f.params.len),
         });
     }
-    return out;
-}
-
-fn freeAutoImportedBifs(alloc: std.mem.Allocator, list: *std.ArrayListUnmanaged(AutoImportedBif)) void {
-    for (list.items) |b| alloc.free(b.name);
-    list.deinit(alloc);
+    return out.items;
 }
 
 /// `name/arity` of every user function whose name + arity shadows an Erlang
@@ -451,6 +498,10 @@ const loop_fun_var = "__Loop";
 /// The throws a condition loop (decision 8 §10) catches: `{Signal, Group}`,
 /// the reassigned variables at the jump.
 const cond_break_signal = "__bp_cond_break";
+/// The synthetic local a yielding condition loop collects into. It travels in
+/// the loop's variable group like any reassigned name, so the existing
+/// threading carries it through the recursion (decision 8 §9).
+const cond_yield_acc = "__bp_cond_yield";
 const cond_continue_signal = "__bp_cond_continue";
 
 /// A `pub enum` of some module in the build, with its variants.
@@ -507,6 +558,162 @@ const len_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_len", .clauses
     .{
         .patterns = &.{ Ast.Expr.v("X"), Ast.Expr.v("Field") },
         .body = Ast.Body.of(&.{.{ .expr = .{ .call = .{ .module = "maps", .name = "get", .args = &.{ Ast.Expr.v("Field"), Ast.Expr.v("X") } } } }}),
+        .layout = .inline_,
+    },
+} } };
+
+/// `Lhs <op> Rhs`, unparenthesised — a guard test or a bound's arithmetic in the
+/// index helpers below.
+fn binOpOf(comptime op: []const u8, comptime lhs: Ast.Expr, comptime rhs: Ast.Expr) Ast.Expr {
+    return .{ .binop = .{ .op = op, .lhs = &lhs, .rhs = &rhs, .parens = false } };
+}
+
+/// `name(Args)` — an auto-imported BIF in a helper form.
+fn bifOf(comptime name: []const u8, comptime args: []const Ast.Expr) Ast.Expr {
+    return .{ .call = .{ .name = name, .args = args } };
+}
+
+/// `module:name(Args)` in a helper form.
+fn remoteOf(comptime module: []const u8, comptime name: []const u8, comptime args: []const Ast.Expr) Ast.Expr {
+    return .{ .call = .{ .module = module, .name = name, .args = args } };
+}
+
+const ix_recv = Ast.Expr.v("Recv");
+const ix_i = Ast.Expr.v("I");
+const ix_from = Ast.Expr.v("From");
+const ix_to = Ast.Expr.v("To");
+const ix_zero: Ast.Expr = .{ .number = "0" };
+const ix_one: Ast.Expr = .{ .number = "1" };
+
+/// `max(X, 0)` — a negative bound is clamped, never an error.
+fn clampLow(comptime x: Ast.Expr) Ast.Expr {
+    return bifOf("max", &.{ x, ix_zero });
+}
+
+/// One body statement holding `expr`.
+fn oneExpr(comptime expr: Ast.Expr) Ast.Body {
+    return Ast.Body.of(&.{.{ .expr = expr }});
+}
+
+/// `erlang:error({Tag, …})` — the shape `'__bp_prim_<m>'`'s fallback already
+/// uses, so an unlowered form aborts with a term that names itself.
+fn unsupportedOf(comptime tag: []const u8, comptime args: anytype) Ast.Expr {
+    const items: [1 + args.len]Ast.Expr = .{Ast.Expr.a(tag)} ++ args;
+    return remoteOf("erlang", "error", &.{.{ .tuple = &items }});
+}
+
+/// `'__bp_index'/2`: decision 30's `xs[0]` / `s[0]` / `t[0]` at run time.
+///
+/// The parser desugars every index into the builtin call `[]` over
+/// `(receiver, index)` (`ast.index_builtin_name`) and `01-checker` does not type
+/// it yet, so the receiver's kind is only known at run time — as for `'__bp_len'`
+/// and the `'__bp_prim_<m>'` shims, the dispatch is a guard sequence:
+///
+///   - a **list** by position, `undefined` outside it — the same answer
+///     `Array.at` gives, and the same one commonJS's `xs[0]` gives;
+///   - a **string** by character, not by byte (`string:slice/3` is UTF-8 aware);
+///   - a **tuple** by position, `undefined` outside it.
+///
+/// A receiver with no positions raises `{bp_unsupported_index, Recv, I}` rather
+/// than answering something. A `Dict` is deliberately **not** here: it is a map
+/// `#{pairs => …}`, so `maps:get/3` would answer `undefined` for a key that is
+/// present — `d["k"]` has to reach `Dict.lookup`, which is a lowering only the
+/// checker can record once it types the receiver.
+const index_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_index", .clauses = &.{
+    .{
+        .patterns = &.{ ix_recv, ix_i },
+        .guards = &.{
+            isA("list", "Recv"),
+            isA("integer", "I"),
+            binOpOf(">=", ix_i, ix_zero),
+            binOpOf("<", ix_i, bifOf("length", &.{ix_recv})),
+        },
+        .body = oneExpr(remoteOf("lists", "nth", &.{ binOpOf("+", ix_i, ix_one), ix_recv })),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ ix_recv, ix_i },
+        .guards = &.{ isA("binary", "Recv"), isA("integer", "I"), binOpOf(">=", ix_i, ix_zero) },
+        .body = oneExpr(remoteOf("string", "slice", &.{ ix_recv, ix_i, ix_one })),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ ix_recv, ix_i },
+        .guards = &.{
+            isA("tuple", "Recv"),
+            isA("integer", "I"),
+            binOpOf(">=", ix_i, ix_zero),
+            binOpOf("<", ix_i, bifOf("tuple_size", &.{ix_recv})),
+        },
+        .body = oneExpr(bifOf("element", &.{ binOpOf("+", ix_i, ix_one), ix_recv })),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ ix_recv, ix_i },
+        .guards = &.{ isA("list", "Recv"), isA("integer", "I") },
+        .body = oneExpr(Ast.Expr.a("undefined")),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ ix_recv, ix_i },
+        .guards = &.{ isA("tuple", "Recv"), isA("integer", "I") },
+        .body = oneExpr(Ast.Expr.a("undefined")),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ ix_recv, ix_i },
+        .body = oneExpr(unsupportedOf("bp_unsupported_index", .{ ix_recv, ix_i })),
+        .layout = .inline_,
+    },
+} } };
+
+/// `'__bp_slice'/3`: the slice half of decision 30 — `xs[0..2]` is the same
+/// builtin call with a `range` second argument, and `xs[0..]` passes the atom
+/// `infinity` for its open end, which is what the range lowering already writes
+/// for an open `lists:seq/2`.
+///
+/// `..` is half-open `[from, to)` (decision 36), so the length is `To - From`;
+/// both bounds are clamped so an out-of-range slice is short, never an error —
+/// which is `lists:sublist/3`'s and `string:slice/3`'s own behaviour.
+const slice_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_slice", .clauses = &.{
+    .{
+        .patterns = &.{ ix_recv, ix_from, Ast.Expr.a("infinity") },
+        .guards = &.{isA("list", "Recv")},
+        .body = oneExpr(remoteOf("lists", "nthtail", &.{
+            bifOf("min", &.{ clampLow(ix_from), bifOf("length", &.{ix_recv}) }),
+            ix_recv,
+        })),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ ix_recv, ix_from, Ast.Expr.a("infinity") },
+        .guards = &.{isA("binary", "Recv")},
+        .body = oneExpr(remoteOf("string", "slice", &.{ ix_recv, clampLow(ix_from) })),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ ix_recv, ix_from, ix_to },
+        .guards = &.{isA("list", "Recv")},
+        .body = oneExpr(remoteOf("lists", "sublist", &.{
+            ix_recv,
+            binOpOf("+", clampLow(ix_from), ix_one),
+            clampLow(binOpOf("-", ix_to, clampLow(ix_from))),
+        })),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ ix_recv, ix_from, ix_to },
+        .guards = &.{isA("binary", "Recv")},
+        .body = oneExpr(remoteOf("string", "slice", &.{
+            ix_recv,
+            clampLow(ix_from),
+            clampLow(binOpOf("-", ix_to, clampLow(ix_from))),
+        })),
+        .layout = .inline_,
+    },
+    .{
+        .patterns = &.{ ix_recv, ix_from, ix_to },
+        .body = oneExpr(unsupportedOf("bp_unsupported_slice", .{ ix_recv, ix_from, ix_to })),
         .layout = .inline_,
     },
 } } };
@@ -1026,9 +1233,7 @@ fn emitErlangModule(
     // diagnostic an error, and the directive keeps the generated code
     // OTP-version-independent. The (name, arity) catalog comes from
     // `prelude.erlang_bifs` (`libs/std/src/erlang_bifs.d.bp`).
-    var bif_table = try loadAutoImportedBifsFromPrelude(alloc);
-    defer freeAutoImportedBifs(alloc, &bif_table);
-    const shadows = try noAutoImportRefs(b, program.decls, bif_table.items);
+    const shadows = try noAutoImportRefs(b, program.decls, prelude_cache.autoImportedBifs());
     if (shadows.len > 0) try forms.append(b.arena, .{ .no_auto_import = shadows });
 
     // Collect public function names for export.
@@ -1195,6 +1400,8 @@ fn emitErlangModule(
     if (!listing_only) {
         if (em.needs_add_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, add_helper_form });
         if (em.needs_len_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, len_helper_form });
+        if (em.needs_index_helper) try forms.appendSlice(b.arena, &.{ .blank, index_helper_form });
+        if (em.needs_slice_helper) try forms.appendSlice(b.arena, &.{ .blank, slice_helper_form });
         if (em.needs_text_helper and comptime_module == null) try forms.appendSlice(b.arena, &.{ .blank, text_helper_form });
         if (em.needs_print_helper) try forms.appendSlice(b.arena, &.{ .blank, print_helper_form, .blank, show_helper_form });
     }
@@ -1763,6 +1970,13 @@ const Emitter = struct {
     /// while its body is emitted; null outside one and behind a fun boundary
     /// (a collection loop, a lambda). A `break` / `continue` there throws them.
     cond_loop: ?[]const []const u8 = null,
+    /// Set while lowering a condition loop whose `break` carries a value: the
+    /// break's throw then carries it too, and the loop answers it.
+    cond_loop_valued: bool = false,
+    /// The accumulator a YIELDING condition loop collects into, when it has one
+    /// (`cond_yield_acc`): each `yield <v>` conses onto it and the loop answers
+    /// the reversed list. Null outside such a loop, where a `yield` is dropped.
+    cond_loop_yield: ?[]const u8 = null,
     /// Numbers the named funs of condition loops so a nested one does not
     /// shadow its parent's name.
     cond_loop_seq: u32 = 0,
@@ -1846,6 +2060,11 @@ const Emitter = struct {
     needs_print_helper: bool = false,
     /// Set when a typed-module field read fell back to `'__bp_len'/2`.
     needs_len_helper: bool = false,
+    /// Set when an index expression (decision 30's `[]` builtin) lowered to
+    /// `'__bp_index'/2`; the module then emits `index_helper_form`.
+    needs_index_helper: bool = false,
+    /// The same for a slice — `xs[0..2]`, the `[]` builtin over a `range`.
+    needs_slice_helper: bool = false,
     /// `name/arity` of every function this module defines by name — top-level
     /// fns, record/enum methods, extension methods. A value-receiver call with
     /// no recorded lowering stays the bare local call when one of these answers
@@ -2140,21 +2359,16 @@ const Emitter = struct {
             try this.collectIfaceErlangDispatch(decl.behavior);
             try this.collectIfaceExtendsChain(decl.behavior);
         }
-        // Reparse `primitives.d.bp` from the embedded prelude so the dispatch
-        // map sees `String`/`Bool`/numeric interfaces even when the module
-        // didn't get them stubbed into `program.decls` (they're only stubbed
-        // for `default fn` stdlib lib dispatch — host-backed instance methods
-        // like `s.toUpper()` don't trip that path). The parse is per-emit and
-        // throwaway; we keep only the (iface, method, external-ref) triples we
-        // need by deep-copying into the emitter's allocator.
-        var arena = std.heap.ArenaAllocator.init(this.alloc);
-        defer arena.deinit();
-        const alloc_arena = arena.allocator();
-        var lx = lexerMod.Lexer.init(prelude.primitives);
-        const tokens = lx.scanAll(alloc_arena) catch return;
-        var p = parserMod.Parser.init(tokens);
-        var prim_program = p.parse(alloc_arena) catch return;
-        defer prim_program.deinit(alloc_arena);
+        // `primitives.d.bp` from the embedded prelude, so the dispatch map sees
+        // `String`/`Bool`/numeric interfaces even when the module didn't get
+        // them stubbed into `program.decls` (they're only stubbed for
+        // `default fn` stdlib lib dispatch — host-backed instance methods like
+        // `s.toUpper()` don't trip that path). The parse is memoised for the
+        // process (`prelude_cache`) because the source is a comptime string and
+        // nothing here writes to the AST: only the (iface, method,
+        // external-ref) triples are kept, deep-copied into the emitter's
+        // allocator.
+        const prim_program = prelude_cache.primitives() orelse return;
         for (prim_program.decls) |decl| {
             if (decl != .behavior) continue;
             try this.collectIfaceErlangDispatch(decl.behavior);
@@ -3405,7 +3619,9 @@ const Emitter = struct {
         const ap = stmt.expr.comptime_.kind.assertPattern;
         const isVariant = struct {
             fn f(e: *const Emitter, name: []const u8) bool {
-                return e.enum_variants.contains(name);
+                // A written path (`Maybe.None`, `.None`) is a variant, never a
+                // binding — the same rule `patternNode` applies.
+                return isVariantPath(name) or e.enum_variants.contains(name);
             }
         }.f;
         if (!patternFacts.bindsNames(ap.pattern, this, isVariant)) return null;
@@ -3668,12 +3884,40 @@ const Emitter = struct {
         const saved_ctx = this.cond_loop;
         this.cond_loop = names;
         defer this.cond_loop = saved_ctx;
+        const valued = conditionLoopBreaksWithValue(lp.body);
+        const saved_valued = this.cond_loop_valued;
+        this.cond_loop_valued = valued;
+        defer this.cond_loop_valued = saved_valued;
+
+        // Decision 8 §9 — a generator whose body drives itself with a condition
+        // loop. `yield <v>` used to lower to the bare value expression, which an
+        // erlang clause body discards, so `#[@generator] fn nums` answered its
+        // loop's final counter and `lists:foldl/3` over it raised
+        // `no case clause matching 3`. The yields are collected instead: a
+        // synthetic local joins the loop's variable GROUP, so the threading that
+        // already carries a reassigned `i` through the recursion carries the
+        // accumulator too, and the loop answers `lists:reverse/1` of it.
+        const yielding = conditionLoopYieldsValue(lp.body);
+        const saved_yield = this.cond_loop_yield;
+        defer this.cond_loop_yield = saved_yield;
+        var all_names = names;
+        if (yielding) {
+            const with_acc = try b.arena.alloc([]const u8, names.len + 1);
+            @memcpy(with_acc[0..names.len], names);
+            with_acc[names.len] = cond_yield_acc;
+            all_names = with_acc;
+            this.addLocal(cond_yield_acc);
+            this.cond_loop_yield = cond_yield_acc;
+            this.cond_loop = all_names;
+        } else {
+            this.cond_loop_yield = null;
+        }
 
         this.cond_loop_vars += 1;
         const caught_var = try std.fmt.allocPrint(b.arena, "__BpGroup{d}", .{this.cond_loop_vars});
         var snapshot = try this.var_current.clone();
         defer snapshot.deinit();
-        const group_in: ?Ast.Expr = if (names.len > 0) try this.bindVarGroupExpr(b, names) else null;
+        const group_in: ?Ast.Expr = if (all_names.len > 0) try this.bindVarGroupExpr(b, all_names) else null;
         var in_versions = try this.var_current.clone();
         defer in_versions.deinit();
         const arm_indent = this.indent + 3;
@@ -3683,7 +3927,7 @@ const Emitter = struct {
         this.indent = saved;
 
         const body_stmts = (try this.bodyNode(b, lp.body, 0, arm_indent)).stmts;
-        const group_out = if (group_in != null) try this.varGroupExpr(b, names) else Ast.Expr.a("ok");
+        const group_out = if (group_in != null) try this.varGroupExpr(b, all_names) else Ast.Expr.a("ok");
         var arm: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
         const next: Ast.Expr = if (hasJump(lp.body, .@"continue")) blk: {
             var tried: std.ArrayListUnmanaged(Ast.Stmt) = .empty;
@@ -3711,7 +3955,7 @@ const Emitter = struct {
             try arm.insert(b.arena, arm.items.len - 1, .{ .expr = next });
         }
         try this.restoreVersions(&in_versions);
-        const done = if (group_in) |_| try this.varGroupExpr(b, names) else Ast.Expr.a("ok");
+        const done = if (group_in) |_| try this.varGroupExpr(b, all_names) else Ast.Expr.a("ok");
         try this.restoreVersions(&snapshot);
         const case = try b.caseOf(cond, &.{
             .{ .patterns = try b.exprs(&.{Ast.Expr.a("true")}), .body = .{ .stmts = arm.items } },
@@ -3722,11 +3966,54 @@ const Emitter = struct {
             .params = if (group_in) |g| try b.exprs(&.{g}) else &.{},
             .body = try b.body(&.{case}),
         } };
+        // The accumulator has no value before the loop — it starts empty — so
+        // the initial group is built by hand rather than from the current
+        // versions: every other name is its variable, the accumulator is `[]`.
+        const initial_group: ?Ast.Expr = if (group_in == null) null else blk: {
+            if (!yielding) break :blk try this.varGroupExpr(b, all_names);
+            const vars = try b.arena.alloc(Ast.Expr, all_names.len);
+            for (all_names, 0..) |n, i| vars[i] = if (std.mem.eql(u8, n, cond_yield_acc))
+                Ast.Expr{ .list = &.{} }
+            else
+                Ast.Expr.v(try this.varRef(b, n));
+            break :blk if (vars.len == 1) vars[0] else Ast.Expr{ .tuple = vars };
+        };
         const plain_call: Ast.Expr = .{ .apply = .{
             .fun = try b.ptr(try b.paren(fun)),
-            .args = if (group_in != null) try b.exprs(&.{try this.varGroupExpr(b, names)}) else &.{},
+            .args = if (initial_group) |g| try b.exprs(&.{g}) else &.{},
         } };
         var call = plain_call;
+        if (valued) {
+            // Decision 8 §10 — `break <value>` is the loop's value. The loop
+            // answers a PAIR, `{Group, Value}`: running to the end of the
+            // condition gives `{FinalGroup, undefined}`, and the break's throw
+            // gives `{GroupAtTheJump, Value}`. A `case` with one clause then
+            // destructures it, so the group's variables are rebound (they are
+            // bound in every clause, so erlang exports them) and the case's own
+            // value — the loop's — is the break's.
+            const thrown_var = try std.fmt.allocPrint(b.arena, "__BpBreak{d}", .{this.cond_loop_vars});
+            const value_var = try std.fmt.allocPrint(b.arena, "__BpValue{d}", .{this.cond_loop_vars});
+            call = .{ .try_catch = .{
+                .body = try b.body(&.{try b.tuple(&.{ plain_call, Ast.Expr.a("undefined") })}),
+                .catches = try b.arena.dupe(Ast.Clause, &.{try b.clause(
+                    &.{try b.exception(Ast.Expr.a("throw"), try b.tuple(&.{
+                        Ast.Expr.a(cond_break_signal),
+                        Ast.Expr.v(caught_var),
+                        Ast.Expr.v(thrown_var),
+                    }))},
+                    &.{},
+                    &.{try b.tuple(&.{ Ast.Expr.v(caught_var), Ast.Expr.v(thrown_var) })},
+                )}),
+            } };
+            const group_pat: Ast.Expr = if (group_in != null)
+                try this.bindVarGroupExpr(b, names)
+            else
+                Ast.Expr.v("_");
+            const out = Ast.Expr.v(value_var);
+            return b.caseOf(call, &.{
+                try b.clause(&.{try b.tuple(&.{ group_pat, out })}, &.{}, &.{out}),
+            });
+        }
         if (hasJump(lp.body, .@"break")) {
             const guarded = try b.body(&.{plain_call});
             call = .{ .try_catch = .{
@@ -3737,6 +4024,20 @@ const Emitter = struct {
                     &.{Ast.Expr.v(caught_var)},
                 )}),
             } };
+        }
+        if (yielding) {
+            // `case <call> of {I@3, Acc@n} -> lists:reverse(Acc@n) end`: the
+            // group is rebound by the pattern (bound in the only clause, so
+            // erlang exports it) and the loop's own value is the collected
+            // list, in yield order.
+            // A group of one name is a bare variable rather than a tuple, and
+            // the `case` destructures that just as well, so there is no
+            // shorter form to special-case: the call has to be there either
+            // way, or the accumulator is never bound.
+            const group_pat = try this.bindVarGroupExpr(b, all_names);
+            const acc = Ast.Expr.v(try this.varRef(b, cond_yield_acc));
+            const reversed = try b.remote("lists", "reverse", &.{acc});
+            return b.caseOf(call, &.{try b.clause(&.{group_pat}, &.{}, &.{reversed})});
         }
         if (group_in == null) return call;
         return b.match(try this.bindVarGroupExpr(b, names), call);
@@ -3759,25 +4060,64 @@ const Emitter = struct {
         return false;
     }
 
-    /// A condition loop used as a value, or one whose body yields or breaks
-    /// with a value: the value form has no erlang lowering yet.
-    fn conditionLoopHasValue(body: []const ast.Stmt) bool {
+    /// A condition loop whose body YIELDS a value: the generator protocol's
+    /// shape, which has no erlang lowering of its own — `#[@generator]` rewrites
+    /// the yield before codegen sees it, so a yield reaching here is the form
+    /// that is still refused. A valued `break` is lowered (decision 8 §10) and
+    /// is `conditionLoopBreaksWithValue`'s question.
+    fn conditionLoopYieldsValue(body: []const ast.Stmt) bool {
+        return condLoopJumpHasValue(body, .yield);
+    }
+
+    /// A condition loop whose `break` carries a value — the loop is then an
+    /// expression whose value is that `break`'s (decision 8 §10).
+    fn conditionLoopBreaksWithValue(body: []const ast.Stmt) bool {
+        return condLoopJumpHasValue(body, .@"break");
+    }
+
+    /// True when `body` carries a `kind` jump WITH a value for the loop it
+    /// belongs to — directly or under an `if`, never inside a nested loop or a
+    /// lambda, which own their own jumps (the traversal `hasJump` uses).
+    fn condLoopJumpHasValue(body: []const ast.Stmt, comptime kind: std.meta.Tag(ast.JumpExprOf(.untyped))) bool {
         for (body) |stmt| switch (stmt.expr) {
-            .jump => |j| switch (j.kind) {
+            .jump => |j| if (j.kind == kind) switch (j.kind) {
                 .yield => |y| if (y.value != null) return true,
                 .@"break" => |brk| if (brk.value != null) return true,
                 else => {},
             },
             .branch => |br| switch (br.kind) {
                 .if_ => |i| {
-                    if (conditionLoopHasValue(i.then_)) return true;
-                    if (i.else_) |els| if (conditionLoopHasValue(els)) return true;
+                    if (condLoopJumpHasValue(i.then_, kind)) return true;
+                    if (i.else_) |els| if (condLoopJumpHasValue(els, kind)) return true;
                 },
                 else => {},
             },
             else => {},
         };
         return false;
+    }
+
+    /// `Acc@n = [<value> | Acc@n-1]` — one `yield` inside a collecting condition
+    /// loop. The current version is read BEFORE the new one is bound, as an
+    /// ordinary reassignment does; the loop reverses at the end.
+    fn condYieldPush(this: *Emitter, b: Ast.Builder, acc: []const u8, value: anytype) anyerror!Ast.Expr {
+        const head = if (value) |val| try this.exprNode(b, val.*) else Ast.Expr.a("undefined");
+        const tail = Ast.Expr.v(try this.varRef(b, acc));
+        const bound = try this.bindVarGroupExpr(b, &.{acc});
+        return b.match(bound, try b.cons(&.{head}, tail));
+    }
+
+    /// The throw a `break` inside a condition loop raises. Without a value it is
+    /// `{Signal, Group}` — the reassigned variables at the jump, which the loop's
+    /// `try` rebinds. With one (decision 8 §10) it is `{Signal, Group, Value}`,
+    /// and `conditionLoopNode` destructures both.
+    fn condBreakThrow(this: *Emitter, b: Ast.Builder, names: []const []const u8, brk: anytype) anyerror!Ast.Expr {
+        const group = if (names.len > 0) try this.varGroupExpr(b, names) else Ast.Expr.a("ok");
+        if (!this.cond_loop_valued) {
+            return b.remote("erlang", "throw", &.{try b.tuple(&.{ Ast.Expr.a(cond_break_signal), group })});
+        }
+        const value = if (brk.value) |bp| try this.exprNode(b, bp.*) else Ast.Expr.a("undefined");
+        return b.remote("erlang", "throw", &.{try b.tuple(&.{ Ast.Expr.a(cond_break_signal), group, value })});
     }
 
     const ClosureMutation = struct {
@@ -4529,9 +4869,11 @@ const Emitter = struct {
                 // used to render as nothing at all, which left a `;` where the
                 // clause body belonged and broke the whole module.
                 .@"break" => |brk| if (this.cond_loop) |names|
-                    b.remote("erlang", "throw", &.{try b.tuple(&.{ A(cond_break_signal), if (names.len > 0) try this.varGroupExpr(b, names) else A("ok") })})
+                    this.condBreakThrow(b, names, brk)
                 else if (brk.value) |bp| this.exprNode(b, bp.*) else b.remote("erlang", "throw", &.{Ast.Expr.a(break_signal)}),
-                .yield => |y| if (y.value) |val| this.exprNode(b, val.*) else A("undefined"),
+                .yield => |y| if (this.cond_loop_yield) |acc|
+                    this.condYieldPush(b, acc, y.value)
+                else if (y.value) |val| this.exprNode(b, val.*) else A("undefined"),
                 .@"continue" => if (this.cond_loop) |names|
                     b.remote("erlang", "throw", &.{try b.tuple(&.{ A(cond_continue_signal), if (names.len > 0) try this.varGroupExpr(b, names) else A("ok") })})
                 else
@@ -4607,8 +4949,15 @@ const Emitter = struct {
 
             .loop => |lp| {
                 if (lp.condition) {
-                    if (conditionLoopHasValue(lp.body)) return error.ConditionLoopValueUnsupported;
-                    return this.conditionLoopNode(b, lp, &.{});
+                    if (conditionLoopYieldsValue(lp.body)) return error.ConditionLoopValueUnsupported;
+                    // The variables the body reassigns travel through the loop
+                    // fun as its group, exactly as in statement position
+                    // (`mutatingExpr`). Without them the fun took no argument,
+                    // so `loop (i < 10) { … i = i + 1; }` as a VALUE never
+                    // advanced `i` and did not terminate.
+                    var names: std.ArrayListUnmanaged([]const u8) = .empty;
+                    try this.collectMutations(b.arena, lp.body, &.{}, &names);
+                    return this.conditionLoopNode(b, lp, names.items);
                 }
                 // A collection loop's body is a fun: its jumps are its own.
                 const saved_cond_loop = this.cond_loop;
@@ -4803,8 +5152,40 @@ const Emitter = struct {
                 return error.InvalidArgs;
             return b.applyParen(.{ .fun = .{ .params = &.{}, .body = body } }, &.{});
         }
+        if (std.mem.eql(u8, cc.callee, ast.index_builtin_name)) return this.indexNode(b, cc);
         if (std.mem.startsWith(u8, cc.callee, "__bp_")) return this.resultOptionNode(b, cc.callee, cc.args);
         return b.call(cc.callee, try this.callArgs(b, null, cc));
+    }
+
+    /// Decision 30's index expression: the builtin call `[]` over
+    /// `(receiver, index)` (`ast.index_builtin_name`), which is what `xs[0]`,
+    /// `d["k"]`, `s[0]` and the slice `xs[0..2]` all parse into.
+    ///
+    /// A `range` second argument is the slice — the same node, per
+    /// `ast.zig`'s contract — and it is read here rather than lowered as an
+    /// expression: the range lowering materialises `lists:seq/2`, a whole list
+    /// of indices, where a slice wants two bounds. An open end (`xs[0..]`)
+    /// keeps the atom `infinity` that lowering already uses.
+    ///
+    /// Both forms dispatch on the receiver at run time (`'__bp_index'/2`,
+    /// `'__bp_slice'/3`), because `01-checker` does not type the call yet — with
+    /// the receiver's type recorded, a list index becomes `lists:nth/2` inline
+    /// and a `Dict` index reaches `lookup`.
+    fn indexNode(this: *Emitter, b: Ast.Builder, cc: anytype) anyerror!Ast.Expr {
+        if (cc.args.len != 2) return error.InvalidArgs;
+        const recv = try this.exprNode(b, cc.args[0].value.*);
+        const index = cc.args[1].value.*;
+        if (index == .collection and index.collection.kind == .range) {
+            const r = index.collection.kind.range;
+            this.needs_slice_helper = true;
+            return b.call("__bp_slice", &.{
+                recv,
+                try this.exprNode(b, r.start.*),
+                if (r.end) |end| try this.exprNode(b, end.*) else Ast.Expr.a("infinity"),
+            });
+        }
+        this.needs_index_helper = true;
+        return b.call("__bp_index", &.{ recv, try this.exprNode(b, index) });
     }
 
     /// A user-level call: receiver dispatch (std module, extension, enum
@@ -5137,7 +5518,7 @@ const Emitter = struct {
             // dropped guard makes the first arm swallow every subject.
             switch (arm.pattern) {
                 .@"or" => |pats| for (pats) |pat| {
-                    const pattern = try this.patternNode(b, pat);
+                    const pattern = try this.armPatternNode(b, pat, arm.body);
                     try clauses.append(b.arena, .{
                         .patterns = try b.exprs(&.{pattern}),
                         .guards = try this.armGuards(b, arm.guard),
@@ -5145,7 +5526,7 @@ const Emitter = struct {
                     });
                 },
                 else => {
-                    const pattern = try this.patternNode(b, arm.pattern);
+                    const pattern = try this.armPatternNode(b, arm.pattern, arm.body);
                     try clauses.append(b.arena, .{
                         .patterns = try b.exprs(&.{pattern}),
                         .guards = try this.armGuards(b, arm.guard),
@@ -5155,6 +5536,36 @@ const Emitter = struct {
             }
         }
         return b.caseOf(subject, clauses.items);
+    }
+
+    /// An arm's clause pattern, with the arm's own binder aliased onto it.
+    ///
+    /// `_ { v -> … }` (decision 8 §5.3, `test/case_guards.bp`) writes the whole
+    /// subject's name as the arm body's single parameter. Nothing bound it — the
+    /// body read an erlang variable the clause never introduced
+    /// (`variable 'V' is unbound`, 01's handover 3) — so the name becomes an
+    /// erlang alias on the clause pattern, `V = {'Circle', R}`, which binds it
+    /// without evaluating the subject a second time.
+    fn armPatternNode(this: *Emitter, b: Ast.Builder, pat: ast.Pattern, body: ast.Expr) anyerror!Ast.Expr {
+        const pattern = try this.patternNode(b, pat);
+        const name = armBinderName(body) orelse return pattern;
+        const bound = Ast.Expr.v(try this.patternBindVar(b, name));
+        // `V = _` is legal erlang and says nothing: on a wildcard the variable
+        // *is* the pattern.
+        if (pattern == .variable and std.mem.eql(u8, pattern.variable, "_")) return bound;
+        return b.match(bound, pattern);
+    }
+
+    /// The name a `Pattern { name -> … }` arm binds the whole subject to, or
+    /// null when the arm's body is not a one-parameter lambda. A zero-parameter
+    /// lambda is the ordinary `Pattern { body }` form and binds nothing.
+    fn armBinderName(body: ast.Expr) ?[]const u8 {
+        if (body != .function) return null;
+        const kind = body.function.kind;
+        if (kind.syntax != .lambda or kind.params.len != 1) return null;
+        const name = kind.params[0];
+        if (name.len == 0 or std.mem.eql(u8, name, "_")) return null;
+        return name;
     }
 
     /// The guard sequence of a case arm, rendered after its pattern so the guard
@@ -5180,8 +5591,13 @@ const Emitter = struct {
         switch (pat) {
             .wildcard => return Ast.Expr.v("_"),
             // A bare ident pattern is either a nullary enum variant (→ the atom
-            // `'Lt'`) or a binding (→ an erlang variable `X`).
-            .ident => |n| return if (this.enum_variants.contains(n)) Ast.Expr.a(n) else Ast.Expr.v(try this.patternBindVar(b, n)),
+            // `'Lt'`) or a binding (→ an erlang variable `X`). A name carrying a
+            // `.` is always the former — `Maybe.None`, `.None` — and reaches the
+            // atom through `variantTag`, which drops the path.
+            .ident => |n| return if (isVariantPath(n) or this.enum_variants.contains(n))
+                Ast.Expr.a(this.variantTag(n))
+            else
+                Ast.Expr.v(try this.patternBindVar(b, n)),
             .numberLit => |n| return .{ .number = n },
             .stringLit => |str| return .{ .lexeme_binary = str },
             // Variant patterns mirror what the constructor builds: the tagged
@@ -5224,9 +5640,33 @@ const Emitter = struct {
     /// `{ok, V}` / `{error, E}` by the `#[@result]` transform, so its `Ok`/`Err`
     /// arms match those lowercase tags. A user enum variant of the same name
     /// (recorded in `enum_variants`) keeps its own name.
-    fn variantTag(this: *const Emitter, name: []const u8) []const u8 {
+    ///
+    /// The name arrives **as written** (`ast.Pattern`'s doc comment: `Shape.Circle`
+    /// and `.Some` keep their path), while the constructor emits the bare variant
+    /// — `Maybe.Some(v: 1)` is `{'Some', 1}`. Matching the written form produced
+    /// `{'.Some', V}`, which matches nothing, and a nullary `.None` rendered as
+    /// the bare token `.None`, which is an erlang syntax error. The tag is
+    /// therefore taken from the last `.`-separated segment (01's handover 1).
+    fn variantTag(this: *const Emitter, written: []const u8) []const u8 {
+        const name = bareVariantName(written);
         if (this.enum_variants.contains(name)) return name;
         return resultTag(name) orelse name;
+    }
+
+    /// The last `.`-separated segment of a variant path: `Shape.Circle` → `Circle`,
+    /// `.None` → `None`, `Circle` → `Circle`. The twin of `infer.zig`'s
+    /// `bareVariantName`, which the checker resolves the same paths with.
+    fn bareVariantName(written: []const u8) []const u8 {
+        const dot = std.mem.lastIndexOfScalar(u8, written, '.') orelse return written;
+        return written[dot + 1 ..];
+    }
+
+    /// A `.ident` pattern that carries a `.` is a variant path, never a binding
+    /// (`ast.Pattern`: "A `name` carrying a `.` is a variant path"). `Maybe.None`
+    /// and `.None` are the nullary-variant spellings of what `enum_variants`
+    /// holds under `None`.
+    fn isVariantPath(name: []const u8) bool {
+        return std.mem.indexOfScalar(u8, name, '.') != null;
     }
 
     /// The `@Result` runtime tag a constructor name builds, or null when the

@@ -472,6 +472,86 @@ codegen/
   one clause of an earlier `case` is "unsafe" in a later one. A version bound
   inside a `case`/`fun` and read after it is left as an Erlang compile error
   (unsafe/unbound) rather than silently wrong.
+- **An index expression dispatches on the receiver at run time.** Decision 30's
+  `xs[0]`, `d["k"]`, `s[0]` and the slice `xs[0..2]` are **one** AST node — the
+  builtin call `[]` over `(receiver, index)` (`ast.index_builtin_name`), the
+  slice being the same node with a `range` second argument. `01-checker` does not
+  type it yet, so `indexNode` emits `'__bp_index'/2` and `'__bp_slice'/3`, guard
+  sequences in the shape `'__bp_len'/2` and the `'__bp_prim_<m>'` shims already
+  use: a list and a tuple by position (`undefined` outside the range — what
+  `Array.at` answers, and what commonJS's `xs[0]` answers), a string by
+  **character**, not by byte (`string:slice/3` is UTF-8 aware), and anything else
+  raising `{bp_unsupported_index, Recv, I}`. The range is read as two bounds
+  rather than lowered as an expression — the range lowering materialises
+  `lists:seq/2`, a whole list of indices, where a slice wants `From` and `To` —
+  and an open end (`xs[0..]`) keeps the atom `infinity` that lowering already
+  writes. **A `Dict` is deliberately not a clause:** it is the map
+  `#{pairs => …}`, so `maps:get/3` would answer `undefined` for a key that is
+  present; `d["k"]` has to reach `Dict.lookup`, which is a lowering only the
+  checker can record once it types the receiver.
+- **A `case` pattern's variant name is the last segment of its written path.**
+  `ast.Pattern` carries the name exactly as written — `Shape.Circle`, `.Some`,
+  `Circle` are three spellings of one variant — while the constructor emits the
+  bare tag (`Maybe.Some(v: 7)` → `{'Some', 7}`). Matching the written form gave
+  `{'.Some', V}`, which matches nothing, and a nullary `.None` rendered as the
+  bare token `.None`, which is `syntax error before: '.'`. `variantTag` now
+  drops the path (`bareVariantName`), and a `.ident` pattern carrying a `.` is a
+  variant, never a binding (`isVariantPath`, the same rule `bindsNames`'
+  `isVariant` callback applies). Handed over by `01-checker`, whose `infer.zig`
+  resolves the same paths with the same two helpers.
+- **A one-parameter arm binds the whole subject as an erlang alias.** `_ { v -> … }`
+  and `.Some(v) { w -> … }` (decision 8 §5.3) name the matched value in the arm
+  body's single lambda parameter; nothing bound it, so the body read a variable
+  the clause never introduced (`variable 'V' is unbound`). `armPatternNode` puts
+  the name on the clause pattern — `V = {'Some', R}` — which binds it without
+  evaluating the subject twice; on a wildcard pattern the variable simply *is*
+  the pattern (`V ->`, not `V = _`). A zero-parameter lambda is the ordinary
+  `Pattern { body }` arm and binds nothing. An arm whose value is its final
+  expression is already right here: an erlang clause body's last expression is
+  its value, so `caseBodyNode` needs nothing (the commonJS/beam/wasm IIFE shape
+  is where that half of the handover lands).
+- **A condition loop's `break <value>` is the loop's value** (decision 8 §10).
+  It used to be refused outright, with an unlocated
+  `error.ConditionLoopValueUnsupported` — and on the bare `loop { … }` too, which
+  the parser gives the same node. The loop now answers a **pair**: running the
+  condition to its end gives `{FinalGroup, undefined}`, the break's throw gives
+  `{GroupAtTheJump, Value}` (a three-element `{Signal, Group, Value}` instead of
+  the bare-break two), and a one-clause `case` destructures it — the group's
+  variables are rebound, because a name bound in every clause is exported, and
+  the `case`'s own value is the break's. The refusal survives only for a
+  condition loop that **yields**, which is the bullet below. Expression position
+  also had to start carrying the group: `conditionLoopNode` was called with no
+  names from `exprNode`, so `val x = loop (i < 10) { … i = i + 1; };` built a fun
+  of no arguments, never advanced `i`, and did not terminate.
+- **A yielding condition loop collects, it does not discard** (decision 8 §9).
+  `yield <v>` lowered to the bare value expression, which an erlang clause body
+  throws away, so `#[@generator] fn nums(n) { var i = 0; loop (i < n) { yield i;
+  i = i + 1; }; }` answered its loop's final counter and the consuming
+  `lists:foldl/3` raised `no case clause matching 3` — the milestone's only
+  run-time crash. A synthetic local (`cond_yield_acc`, `__bp_cond_yield`) joins
+  the loop's variable **group**, so the threading that already carries a
+  reassigned `i` through the recursion carries the accumulator too: each `yield`
+  is `Acc@n = [V | Acc@n-1]`, the initial group passes `[]` in its slot (it has
+  no pre-loop value), and the loop answers `lists:reverse/1` of it. The name
+  begins with `_`, so it is a valid erlang variable and is exempt from the unused
+  warning. `isPlainYieldGenerator`'s eager-list path (`yield 1; yield 2;`) is
+  untouched.
+- **The two embedded preludes are parsed once per process, not once per
+  emission** (`prelude_cache`). `collectPrimErlangDispatch` re-lexed and
+  re-parsed `primitives.bp`, and `noAutoImportRefs`'s catalog re-parsed
+  `std/erlang`, on **every** `emitErlangModule` — both are comptime-embedded
+  strings, so it was the same bytes and the same parse each time. Memoising them
+  in an arena of their own (over the page allocator, so no caller's allocator and
+  no test-allocator leak) takes `collectPrimErlangDispatch` from **4.615 ms to
+  2.380 ms** per call (20 calls, Debug) and `botopink build --target erlang` over
+  `libs/std`'s 27 modules from **309 ms to 239 ms**. What remains is the
+  per-emitter deep copy of the triples it keeps, which is by design. It is safe
+  because nothing writes to the cached AST: the nodes borrow only comptime source,
+  `collectIfaceErlangDispatch` copies every triple into the emitter's own
+  allocator, and the BIF table is read-only. The lock is a spin over
+  `std.atomic.Mutex.tryLock` — zig 0.16 has no blocking mutex outside `std.Io`,
+  the test runner compiles on several threads, and after the first parse there is
+  nothing to contend for. Handed over by `14-comptime-on-beam`.
 - **Modules are `erl_ast` forms**: `emitErlangModule` builds every form in one
   arena and renders them with `erl_emitter.writeForms`: `-module`,
   `-compile({no_auto_import,…})` (`noAutoImportRefs`), `-export`s, then each
@@ -664,8 +744,12 @@ codegen/
     `{'__bp_cond_break', Group}` caught around the call, and a `continue` throws
     `{'__bp_cond_continue', Group}` caught around the body, so the recursion
     carries the variables at the jump; each loop's `catch` binds its own
-    `__BpGroupN`. The value form (a body that `yield`s or `break`s with a value)
-    is `error.ConditionLoopValueUnsupported` — no erlang lowering yet.
+    `__BpGroupN`. A `break` that carries a VALUE makes the loop an expression
+    whose value is that break's, and a body that `yield`s collects into the group
+    and answers the reversed list (the two bullets below, decision 8 §10 and §9).
+    `error.ConditionLoopValueUnsupported` survives for a yielding condition loop
+    in EXPRESSION position only (`val xs = loop (i < n) { yield i; };`), which
+    reaches `exprNode` rather than `mutatingExpr` and so has no group to join.
   A value-less `break` is `erlang:throw('__bp_break')` and its loop is wrapped in
   the `try … catch throw:'__bp_break' -> ok end` that ends it (`loopBreakCatch`,
   `hasBareBreak`).

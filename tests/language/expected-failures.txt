@@ -23,9 +23,9 @@
 #   $ tests/language/run.sh --target beam
 #   language tests: 14 passed, 20 expected failures, 0 failed
 #
-# 70 lines: 61 exercised by `--target all`, 9 more only by `--target beam`
+# 64 lines: 55 exercised by `--target all`, 9 more only by `--target beam`
 # (the 11 `*` reject lines are counted by both runs). By the row that comes
-# first on the line: 01-checker 37 · 02-erlang 12 · 03-beam 8 · 05-wasm 6 ·
+# first on the line: 01-checker 37 · 02-erlang 6 · 03-beam 8 · 05-wasm 6 ·
 # 13-module-identity 4 · 04-js 3. Nineteen lines name a second row that has to
 # land before the line goes (the §7 formatter's record and variant halves are
 # 13 step 18, not a backend's).
@@ -75,16 +75,11 @@ erlang   | run/print_formatter.bp     | 02 step 1, 13 step 18 | §7 formatter: a
 erlang   | run/display_print.bp       | 02 step 1, 13 step 18 | §7: `@print` does not consult a type's `Display` implementation, nested or not
 
 # ── §9 effects ────────────────────────────────────────────────────────────────
-erlang   | test/effect_iterator.bp::§9 an iterator yields its elements in order | 02 step 6 | `#[@iterator]` compiles on erlang and the generator protocol raises `case_clause` at run time
-erlang   | test/effect_iterator.bp::§9 an empty iterator runs no iteration | 02 step 6 | `#[@iterator]` compiles on erlang and the generator protocol raises `case_clause` at run time
-erlang   | test/effect_generator.bp::§9 a generator yields its elements in order | 02 step 6 | `#[@generator]` compiles on erlang and the generator protocol raises `case_clause` at run time
-erlang   | test/effect_generator.bp::§9 an empty generator runs no iteration | 02 step 6 | `#[@generator]` compiles on erlang and the generator protocol raises `case_clause` at run time
 *        | reject/wrapper_without_annotation.bp | 01 step 8 | R9: `@Result<…>` without `#[@result]` is reported as a return-type mismatch at the `return`, not as §9's missing-annotation rule
 *        | reject/val_assert_after_catch.bp     | 01 step 8 | R9: `val assert Ok(n) = f() catch 0` is accepted (exit 0) and then fails at run time (`Ok is not defined` on commonJS, `variable 'N' unsafe in 'case'` on erlang)
 *        | reject/two_effect_markers.bp         | 01 step 8 | R9: the R5 message is right, but its caret points at the body's `{` (5:41) instead of the second annotation
 
 # ── §10 loop ──────────────────────────────────────────────────────────────────
-erlang   | test/loop_break_value.bp   | 02 step 5 | `ConditionLoopValueUnsupported`: a loop with a value break does not compile
 
 # ── §1 generics ───────────────────────────────────────────────────────────────
 *        | reject/generic_missing_argument.bp | 01 step 6 | §1.1: a written generic type without its arguments is accepted (exit 0)
@@ -125,7 +120,6 @@ wasm     | modules/std_import         | 05 step 3 | a std `Dict` lookup through 
 # over by `15-language-surface`" — not a numbered step, which is what
 # `<front> handover 15` means below. That those sections carry no step number is
 # reported to the maintainer, not papered over with an invented one.
-erlang   | run/index_expression.bp    | 02 handover 15 | decision 30: the same node emits a call to `'[]'/2`, which is never defined — `out/main.erl:45:19: function '[]'/2 undefined`
 wasm     | run/index_expression.bp    | 05 handover 15 | decision 30: the same node emits nothing and the module will not validate — `type mismatch: expected i32 but nothing on stack` at `wasm[0]::function[1]::main`
 beam     | run/index_expression.bp    | 03 handover 15 | decision 30: the only target that fails **silently** — exit 0, and the index is dropped rather than emitted: `xs[0]` prints the whole array (`[10,20,30]`), `xs[0..2].length` and `rows[1][0]` print `ok`
 commonJS | test/curried_call.bp       | 01 handover 15 | 15's R2 made `adder(3)(4)` parse; inference does not type it. The call carries its callee in `calleeExpr`, not `callee`, and nothing reads that: the whole cell reds with `unbound variable ''` at the second `(`
