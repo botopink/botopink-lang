@@ -71,10 +71,10 @@ codegen/
 | `beam_asm.zig` | BEAM Assembly `.S` emitter, assembled with `erlc +from_asm`. See [beam_asm](#beam_asm) below |
 | `wat/` | WebAssembly-text code model and the only writer of `.wat`: `wat_ast.zig` (`Module`/`Item`/`Func`/`Seq`/`Instr` + `Builder` + the invariants), `wat_emitter.zig` (s-expression layout, `$` names, data escaping), `wat_prelude.zig` (the runtime helpers as built nodes). See [`wat/AGENTS.md`](wat/AGENTS.md) |
 | `wat.zig` | WAT backend: builds `wat/wat_ast.zig` nodes and hands them to the emitter. See [wat](#wat) below |
-| `typescript.zig` | `.d.ts` typedef backend (optional secondary output, `Config.typeDefLanguage`) — builds `js/js_ast.zig` `TsDecl` nodes, rendered by `js/ts_emitter.zig`. Type declarations only — no call lowering. A package import in the `.d.ts` keeps only names the owner emits (`CrossModule.exports`): a template fn or a lib namespace handle has no declaration there, so `import { html } from "view"` is dropped instead of dangling. Parameter types come from `Param.typeRef` (the parser leaves the legacy `typeName` empty; an unannotated position is `any`, a zero-argument generic such as `@Decl` is the bare name). Skips template fns (`TypeRef.isTemplateReturnType()`) and phantom `@Context` structs, erases `@Context<B, R>` to `R`, renders an anonymous `TypeRef.record_type` as `{ f: T; … }`. **A botopink primitive takes its TypeScript spelling** (`primitiveTsName`: every integer and float width plus `int`/`uint`/`float`/`isize`/`usize` → `number`, `bool` → `boolean`, `char` → `string`; `string`, `void` and `unknown` are spelled the same) — a `.d.ts` naming `i32` is not TypeScript. **An enum declares the class the JavaScript builds** (decision 5): `readonly tag` as the union of the variant names, a `static` factory per payload variant returning the enum type, a `static readonly` singleton per payload-less one, and each enum method as a `static` whose `self` is typed as the enum. It was a TypeScript `enum` of strings or a discriminated union of plain objects before, and the `.js` beside it built neither. **The `import { … };` shorthand** resolves through `CrossModule.exports` here too, one `import` per owning file, where it used to write the literal `from "./module"` |
+| `typescript.zig` | `.d.ts` typedef backend (optional secondary output, `Config.typeDefLanguage`) — builds `js/js_ast.zig` `TsDecl` nodes, rendered by `js/ts_emitter.zig`. Type declarations only — no call lowering. A package import in the `.d.ts` keeps only names the owner emits (`CrossModule.exports`): a template fn or a lib namespace handle has no declaration there, so `import { html } from "view"` is dropped instead of dangling. Parameter types come from `Param.typeRef` (the parser leaves the legacy `typeName` empty; an unannotated position is `any`, a zero-argument generic such as `@Decl` is the bare name). Skips template fns (`TypeRef.isTemplateReturnType()`) and phantom `@Context` structs, erases `@Context<B, R>` to `R`, renders an anonymous `TypeRef.record_type` as `{ f: T; … }`. **A botopink primitive takes its TypeScript spelling** (`primitiveTsName`: every integer and float width plus `int`/`uint`/`float`/`isize`/`usize` → `number`, `bool` → `boolean`, `char` → `string`; `string`, `void` and `unknown` are spelled the same) — a `.d.ts` naming `i32` is not TypeScript. **An enum declares the class the JavaScript builds** (decision 5): `readonly tag` as the union of the variant names, a `static` factory per payload variant returning the enum type, a `static readonly` singleton per payload-less one, and each enum method as a `static` whose `self` is typed as the enum. It was a TypeScript `enum` of strings or a discriminated union of plain objects before, and the `.js` beside it built neither. **Decision 8 §3's union `A | B`** rides on `TypeRef.generic` under the reserved name `ast.union_type_name` (`"|"`), and takes TypeScript's own union (`TsType.union_`) rather than the generic path's `|<A, B>`, which is not TypeScript. **The `import { … };` shorthand** resolves through `CrossModule.exports` here too, one `import` per owning file, where it used to write the literal `from "./module"` |
 | `runtime.zig` | Test-side execution for the snapshot `----- RUN LOG -----` block. See [runtime](#runtime) below |
 | `snapshot.zig` | `buildSnapshot` / `buildSnapshotMulti` / `assertCodegen` / `assertCodegenError`; `writeComptimeSections` writes `GenerateResult.comptime_trace` (`COMPTIME ERLANG` / `COMPTIME REPLY`, rendered by `comptime/trace.zig`) then `COMPTIME VALUES` for every backend. A `SnapInput` with `result == null` (the module never reached the backend) or with `comptime_err` set writes a `COMPILE DIAGNOSTIC` section instead of the code section — spec 06 H3, which used to leave such snapshots empty |
-| `tests.zig` | Barrel aggregating `tests/<feature>.zig` plus the `beam/*.zig` and `wat/wat_emitter.zig` unit tests; harness in `tests/helpers.zig` (`assertJs`, `assertJsSingle`, `assertJsError`, `assertJsTestMode`, `assertJsContains`, `assertConsumerJs`, `configs` — one config per target) |
+| `tests.zig` | Barrel aggregating `tests/<feature>.zig` plus the `beam/*.zig` and `wat/wat_emitter.zig` unit tests; harness in `tests/helpers.zig` (`assertJs`, `assertJsSingle`, `assertJsError`, `assertJsTestMode`, `assertJsContains`, `assertJsNotContains`, `assertJsRunLog`, `assertDtsContains`, `assertConsumerJs`, `configs` — one config per target). The snapshot-free helpers are what a **single backend's** row uses: a snapshot carries the same program through all four, so a commonJS-only fixture would write into the erlang, beam and wasm snapshot directories other fronts own |
 
 ### commonJS
 
@@ -271,11 +271,67 @@ codegen/
   ignores the rest, which JS destructuring already does, so it emits no rest
   element — and a nameless `..` in an array *literal* contributes nothing.
 - **Case tests** (`patternTest`): a pattern that matches anything (`_`, an
-  alternative that is `_`) has no `if`; a multi-subject arm (`case a, b { 0, 0
-  -> … }`, subject `[a, b]`) tests the conjunction over `_s[i]`; a shape with
-  no test is `false`.
+  alternative that is `_`, a **binding**) has no `if`; a multi-subject arm
+  (`case a, b { 0, 0 -> … }`, subject `[a, b]`) tests the conjunction over
+  `_s[i]`; a shape with no test is `false`. Decision 8 §5's shapes ride on
+  `Pattern.variant` under `shape`, and each has a test of its own: `.tuple`
+  (`#(0, s)`) is `Array.isArray` plus the arity — `>=` when `..` is written —
+  plus each element's test at `_s[i]`; `.range` (`1...5`) is `_s >= lo && _s <=
+  hi`, both ends included; `.variant` is the `tag` compare (or the `"ok" in _s`
+  key test for an `Ok`/`Err` naming no declared variant) conjoined with each
+  **nested** payload pattern's test (`.Some(#(a, b))`).
+- **A bare name in a pattern is a test or a binding** (`isBindingName`): a
+  variant path (`.None`), a primitive type spelling (`i32` — §5.2's type-test
+  arm, which takes §4.1's run-time test, the one `x is T` builds) and a
+  capitalised or declared name are **tests**; anything else binds and matches
+  anything. That is what tells `Red` from the `s` of `#(0, s)`.
+- **A pattern's bindings come from one place** (`appendPatternBinds`), which a
+  `case` arm and a `val assert` share: a payload field is read by the **label
+  the pattern wrote** when it wrote one and by the declared field at that
+  position otherwise (`.Rect(height: h, width: w)` reads `height` for `h`, §5.1
+  P4), a tuple element from `subject[i]`, and a nested pattern recursively from
+  the field it stands for.
+- **A pattern's variant name is taken bare** (`bareVariantName`): the
+  constructor writes the declared name onto `<Variant>.prototype.tag`, while a
+  pattern keeps the path it was *written* with (`ast.Pattern`: `Shape.Circle`,
+  `.Circle`, `Circle` are all the same variant, §5.1 P8), so every read of a
+  pattern's name — the `tag` test, the `variant_fields` field lookup that makes
+  `Circle(r)` bind positionally, and `resultKey` — drops everything up to the
+  last `.`. A `Pattern.ident` carrying a `.` is a variant path, never a
+  binding, so the guarded-identifier arm (`x when (…)`) does not take it.
+- **An arm block's value is its last expression** (`buildCaseBody`): a
+  `break <value>` in the block still wins, and otherwise the block's final
+  statement is returned when it is unambiguously a value
+  (`isArmValueExpr` — a literal, identifier, operator, call, collection or
+  function; a trailing `val`, `if`, `loop` or jump stays a statement). Without
+  it the arm's value was dropped *and* execution fell through into the
+  following arms.
+- **A one-parameter arm block binds the subject** (`_ { v -> … }`): the arm
+  lambda's single parameter is `const v = _s;` at the top of the arm — the only
+  scope where the subject is in hand. The checker types it as the subject
+  narrowed by the arm's pattern.
 - **`comptime { … }` with no `break <e>`** in value position is `undefined`
   (a block's value comes only from `break`).
+- **None is loose**: botopink has one none value and JavaScript spells it two
+  ways (`?.` answers `undefined`, so does `Array.at` past the end), so `==` and
+  `!=` against a `null` literal lower to the loose `==`/`!=` — and so does the
+  **optional-binding** guard (`if (val e = …)`, and the `a ?? b` that desugars
+  into it): `if (n != null)`. Under a strict `!==`, `o.inner?.v ?? 9` answered
+  `undefined` where erlang and wasm answered `9`. Every other `==` is `===`.
+- **Index** (`buildIndexCall`, decision 30): `receiver[index]` reaches the
+  backend as the builtin call `ast.index_builtin_name` (`"[]"`) over
+  `(receiver, index)`, so one node carries the element read and the slice. A
+  `range` index is `.slice(start, end)` — `.slice(start)` when open-ended, the
+  one place an open-ended range is not `__bp_range_from`; any other index is a
+  JS index, which answers an array's element, a tuple's member (a tuple is a JS
+  array) and a string's character alike. **A `Dict` read `d["k"]` is not
+  lowered**: a `Dict` is a botopink record over a `pairs` association list, so
+  the read is `d.lookup("k")`, and choosing that needs the *receiver's type* —
+  which this backend does not have (`instanceLowerings` carries a kind only for
+  call sites `comptime/infer.zig` recorded, and it does not type this call at
+  all yet: `xs[0]` is still `void`). Today `d["k"]` emits the JS property read
+  and answers `undefined`. `01-checker` types the call by the receiver; the
+  dict arm lands with it.
 - **Ranges**: `a..b` materializes `Array.from({length: Math.max(0, b - a)}, …)`;
   an open-ended `a..` is the lazy `__bp_range_from(a)` prelude generator
   (`function*` counting up forever), so `loop (x..) { i -> … break; }` runs.

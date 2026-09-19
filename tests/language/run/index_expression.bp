@@ -1,0 +1,35 @@
+//// Decision 30 — the language has an index expression. Front 15's R5 landed it
+//// in the parser as the builtin call `ast.index_builtin_name` (`"[]"`) over
+//// `(receiver, index)`: one node for indexing and for slicing, because the index
+//// is an ordinary expression. It checks; **no backend lowers it yet**, so the
+//// form reaches the unrecognised-builtin path — where `x is T` sat before it was
+//// lowered — and every target fails this cell at once:
+////
+////   commonJS  the emitted JS reads `__bp_print(@[](xs, 0))` — a SyntaxError
+////   erlang    `function '[]'/2 undefined`
+////   wasm      `type mismatch: expected i32 but nothing on stack`
+////   beam      the erlang shape, seen through `erlc +from_asm`
+////
+//// A `run/` cell rather than a `test/` one so that all four targets are named:
+//// `botopink test` refuses wasm and beam. A dict index (`d["k"]`) is deliberately
+//// not here — it needs `from "std"`, whose own erlang and wasm rows are already
+//// listed, and a second reason would hide this one.
+////
+//// `xs[0] = 5` — an index in write position — is not here either: it is still a
+//// parse error, and decision 37 makes that a question rather than a gap. Nor is
+//// `s[1]` on a string: decision 30 leaves the element type open (`01-checker`'s
+//// handover asks it to "decide whether the answer is `T` or `?T`"), and a
+//// "character" has no printed form the language has settled — a one-character
+//// string and a code point are both readings. The cell asserts only what decision
+//// 30 states outright.
+
+pub fn main() {
+    val xs = [10, 20, 30];
+    @print(xs[0]);
+    @print(xs[2]);
+
+    @print(xs[0..2].length);
+
+    val rows = [[1, 2], [3, 4]];
+    @print(rows[1][0]);
+}

@@ -41,7 +41,7 @@ function __bp_print() {
 
 function main() {
     const x = 42;
-    (() => { const n = x; if (n !== null) { return __bp_print(n); } })();
+    (() => { const n = x; if (n != null) { return __bp_print(n); } })();
 }
 
 function _botopink_main() {

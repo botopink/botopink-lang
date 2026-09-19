@@ -1,21 +1,38 @@
 # Expected failures of the language tests.
 #
-#   <target: commonJS | erlang | wasm | *> | <path>[::<test name>] | <owner row> | <reason>
+#   <target: commonJS | erlang | wasm | beam | *> | <path>[::<test name>] | <owner row> | <reason>
 #
 # Every line names the row of the front that makes it pass. A listed test that
 # passes fails the run ("delete its line"); a path-only entry is for a file that
 # does not compile. `*` is for reject/ files (target-independent).
 #
 # Owner rows are 1.0.5-beta fronts (`specs/1.0.5-beta/fronts.md`), written as
-# `<front number> step <n>`. Repointed from the 1.0.4-beta rows (`06 N…`,
-# `01 step 6`) by front 12 step 1; the results did not move — 205 passed,
-# 54 expected failures, 0 failed, at botopink-lang `c2dd780`, node v25.8.0,
-# OTP 29.
+# `<front number> step <n>`. The 1.0.4-beta rows (`06 N…`, `01 step 6`) were
+# repointed by front 12 step 1 at `7ab6a55`; every owner cell below was
+# re-checked against `specs/1.0.5-beta/` on 2026-09-18 and each names a section
+# that exists. Two other shapes appear, both deliberate: `<front> handover 15`
+# names a front's "Handed over by `15-language-surface`" section, which is prose
+# with no step number, and `04 (no step; reported 2026-09-18)` says outright that
+# the front is certain and the row is missing. Neither invents a step.
 #
-# Distribution: 01-checker 31 · 02-erlang 9 · 04-js 7 · 05-wasm 4 ·
-# 13-module-identity 3. Twelve lines name a second row that has to land before
-# the line goes (the §7 formatter's record and variant halves are 13 step 18,
-# not a backend's).
+# Measured on `fix/langtests` at `7bfecf7` plus the decision-28/30/33 cells
+# (its base is `feat` `bef762b`), node v25.8.0, OTP 29:
+#
+#   $ tests/language/run.sh                 # commonJS, erlang, wasm
+#   language tests: 250 passed, 61 expected failures, 0 failed
+#   $ tests/language/run.sh --target beam
+#   language tests: 14 passed, 20 expected failures, 0 failed
+#
+# 70 lines: 61 exercised by `--target all`, 9 more only by `--target beam`
+# (the 11 `*` reject lines are counted by both runs). By the row that comes
+# first on the line: 01-checker 37 · 02-erlang 12 · 03-beam 8 · 05-wasm 6 ·
+# 13-module-identity 4 · 04-js 3. Nineteen lines name a second row that has to
+# land before the line goes (the §7 formatter's record and variant halves are
+# 13 step 18, not a backend's).
+#
+# For the record, since it changed inside this milestone: 04-js went to **zero**
+# lines when `c253965`, `7b6b5d3` and `17c5f8b` deleted all seven it had; the
+# three it carries now are new rows this front measured, not survivors.
 
 # ── §5 case arms — the grammar landed (1.0.4's 06 N22 parser half); the checker's is open ──
 # `Pattern { body }`, `when (…)`, `.Variant`, tuple/label/rest patterns all parse,
@@ -44,6 +61,8 @@ erlang   | run/case_values.bp         | 01 step 4 | `.Variant` arms are not reso
 
 # ── §6 tuples ─────────────────────────────────────────────────────────────────
 erlang   | run/tuple_print.bp         | 02 step 1 | prints decision 1a's text without spaces (`#(1,"a")`); §7 wants `#(1, "a")`
+commonJS | test/tuple_labels.bp::§6 T4 a label survives a generic array method | 04 step 2 | a label is resolved to a position at the written type, and an element handed back by a generic method (`rs.at(0)`) has lost it: `rs.at(0).b` answers `undefined`. The element type is right, the label is not carried
+erlang   | test/tuple_labels.bp::§6 T4 a label survives a generic array method | 02 step 4 | the same, louder: `rs.at(0).b` raises `bad map: {1,<<"x">>}` in `map_get/2` — the label is emitted as a map read against a tuple. (wasm answers `0`; no `test/` cell reaches wasm)
 
 # ── §5.3b sections (decision 8 §5) ────────────────────────────────────────────
 commonJS | test/case_sections.bp      | 01 step 4 | re-measured: §5.3b section arms now parse; the failure is the arm-body one every other case cell has — "expected string, got void" at the `case`. A section is still not a type named by its path
@@ -97,6 +116,20 @@ wasm     | run/tuple_print.bp         | 05 step 1 | prints decision 1a's text wi
 wasm     | run/print_formatter.bp     | 05 step 1, 13 step 18 | §7 formatter: `f64` prints without its decimal part, arrays/tuples without spaces, and a record or a variant prints as its raw heap address
 wasm     | run/display_print.bp       | 05 step 1, 13 step 18 | §7: `@print` does not consult `Display`; the record prints as its raw heap address
 wasm     | modules/std_import         | 05 step 3 | a std `Dict` lookup through a user module answers the fallback (`0`) instead of the stored value, with exit 0 and no diagnostic
+
+# ── the forms front 15 landed, that nothing lowers or types yet ─────────────
+# `109f6c9` made five forms parse. Three of them run everywhere and are pinned by
+# passing cells (`test/nullish_default.bp`, `test/paren_receiver.bp`,
+# `test/type_suffix.bp`, `test/bodyless_fn.bp`). Two arrive with no lowering and no
+# typing, and their owner is a **handover section** of a front's README — "Handed
+# over by `15-language-surface`" — not a numbered step, which is what
+# `<front> handover 15` means below. That those sections carry no step number is
+# reported to the maintainer, not papered over with an invented one.
+erlang   | run/index_expression.bp    | 02 handover 15 | decision 30: the same node emits a call to `'[]'/2`, which is never defined — `out/main.erl:45:19: function '[]'/2 undefined`
+wasm     | run/index_expression.bp    | 05 handover 15 | decision 30: the same node emits nothing and the module will not validate — `type mismatch: expected i32 but nothing on stack` at `wasm[0]::function[1]::main`
+beam     | run/index_expression.bp    | 03 handover 15 | decision 30: the only target that fails **silently** — exit 0, and the index is dropped rather than emitted: `xs[0]` prints the whole array (`[10,20,30]`), `xs[0..2].length` and `rows[1][0]` print `ok`
+commonJS | test/curried_call.bp       | 01 handover 15 | 15's R2 made `adder(3)(4)` parse; inference does not type it. The call carries its callee in `calleeExpr`, not `callee`, and nothing reads that: the whole cell reds with `unbound variable ''` at the second `(`
+erlang   | test/curried_call.bp       | 01 handover 15 | the same — the cell does not compile, so the failure is the file's, not a test's
 
 # ── run-time type identity (front 12 step 4.1) ────────────────────────────────
 # The botopink-level statement of `13-module-identity`: a value knows its own

@@ -3123,12 +3123,17 @@ const Emitter = struct {
         }
 
         var seq: std.ArrayListUnmanaged(js.Stmt) = .empty;
+        // The optional-binding guard is the **loose** `!= null`, for the reason
+        // `==`/`!=` against a `null` literal are loose above: botopink has one
+        // none value and JavaScript spells it two ways — `?.` answers
+        // `undefined`, so `o.inner?.v ?? 9` took the value branch with
+        // `undefined` in hand under a strict `!==`.
         const cond: js.Expr = if (i.binding) |b| blk: {
             try seq.append(self.arena(), .{ .decl = .{
                 .pattern = .{ .name = b },
                 .value = try self.buildExpr(i.cond.*),
             } });
-            break :blk try self.b.binaryBare("!==", .{ .name = b }, .null_);
+            break :blk try self.b.binaryBare("!=", .{ .name = b }, .null_);
         } else try self.buildExpr(i.cond.*);
 
         const then_block = js.Stmt{ .block = .{
@@ -3157,7 +3162,7 @@ const Emitter = struct {
     /// such `if`s in one body do not redeclare it.
     fn buildIfStmt(self: *Emitter, i: anytype) anyerror!js.Stmt {
         const cond: js.Expr = if (i.binding) |b|
-            try self.b.binaryBare("!==", .{ .name = b }, .null_)
+            try self.b.binaryBare("!=", .{ .name = b }, .null_)
         else
             try self.buildExpr(i.cond.*);
         const then_block = js.Stmt{ .block = .{ .stmts = try self.buildStmts(i.then_), .layout = .spaced } };
@@ -3962,11 +3967,34 @@ const Emitter = struct {
         );
     }
 
+    /// `receiver[index]` (`ast.index_builtin_name`, decision 30). One node
+    /// carries the element read and the slice, because the index is an ordinary
+    /// expression: a `range` index is `.slice(start, end)` — `.slice(start)`
+    /// when the range is open-ended, which is the only place an open-ended
+    /// range is *not* the lazy `__bp_range_from` generator — and any other
+    /// index is a JS index, which answers an array's element, a tuple's member
+    /// (a tuple is a JS array) and a string's character alike.
+    fn buildIndexCall(self: *Emitter, cc: anytype) anyerror!js.Expr {
+        if (cc.args.len != 2) return error.InvalidArgs;
+        const recv = try self.buildExpr(cc.args[0].value.*);
+        const idx = cc.args[1].value.*;
+        if (idx == .collection and idx.collection.kind == .range) {
+            const r = idx.collection.kind.range;
+            const slice = try self.b.member(recv, "slice");
+            const start = try self.buildExpr(r.start.*);
+            const end = r.end orelse return self.b.call(slice, &.{start});
+            return self.b.call(slice, &.{ start, try self.buildExpr(end.*) });
+        }
+        return self.b.index(recv, try self.buildExpr(idx), false);
+    }
+
     fn buildBuiltinCall(self: *Emitter, cc: anytype) anyerror!js.Expr {
         if (std.mem.eql(u8, cc.callee, "print") or std.mem.eql(u8, cc.callee, "println") or std.mem.eql(u8, cc.callee, "debug"))
             return self.buildPrintCall(cc);
         if (std.mem.eql(u8, cc.callee, ast.is_builtin_name) and cc.isType != null)
             return self.buildIsCall(cc);
+        if (std.mem.eql(u8, cc.callee, ast.index_builtin_name))
+            return self.buildIndexCall(cc);
         // `prim-op-annotation` builtin dispatch fires first (`@todo` /
         // `@panic` annotated in `builtins.d.bp`).
         if (try self.tryBuiltinAnnotation(cc.callee, cc)) |node| return node;
@@ -4031,6 +4059,47 @@ const Emitter = struct {
 
     // ── case lowering ─────────────────────────────────────────────────────────
 
+    /// The variant a pattern names, without the path it was **written** with:
+    /// `Shape.Circle`, `.Circle` and `Circle` all name `Circle` (decision 8
+    /// §5.1 P8). The constructor writes the bare name onto
+    /// `<Variant>.prototype.tag`, so an arm that tests the written path never
+    /// matches; `ast.Pattern` says a `name` carrying a `.` is a variant path
+    /// and never a binding.
+    fn bareVariantName(name: []const u8) []const u8 {
+        const i = std.mem.lastIndexOfScalar(u8, name, '.') orelse return name;
+        return name[i + 1 ..];
+    }
+
+    /// True when a `Pattern.ident` is a variant path (`Maybe.None`, `.None`)
+    /// rather than a name to bind.
+    fn isVariantPath(name: []const u8) bool {
+        return std.mem.indexOfScalar(u8, name, '.') != null;
+    }
+
+    /// True when a bare pattern name spells a **primitive type**, which makes
+    /// the arm decision 8 §5.2's type test (`case x { i32 { … } string { … } }`)
+    /// rather than a variant or a binding. The set is exactly the spellings
+    /// `isTest` answers for: a variant is capitalised, and §5.2 says a
+    /// lower-case name alone is not a binding.
+    fn primitiveTypeName(name: []const u8) bool {
+        if (integerRange(name) != null) return true;
+        return std.mem.eql(u8, name, "string") or std.mem.eql(u8, name, "bool") or
+            std.mem.eql(u8, name, "f32") or std.mem.eql(u8, name, "f64") or
+            std.mem.eql(u8, name, "float");
+    }
+
+    /// True when a `Pattern.ident` **binds** rather than tests: it is not a
+    /// path, not a primitive type spelling, not a variant this module declares,
+    /// and it is not capitalised — which is how decision 8 §5 tells `Red` and
+    /// `.None` (a variant) from the `s` of `#(0, s)` (a binding). A binding
+    /// matches anything, so it contributes no test.
+    fn isBindingName(self: *Emitter, name: []const u8) bool {
+        if (name.len == 0) return false;
+        if (isVariantPath(name) or primitiveTypeName(name)) return false;
+        if (self.unit_variant_class.contains(name) or self.variant_fields.contains(name)) return false;
+        return !std.ascii.isUpper(name[0]);
+    }
+
     fn isLambdaBlock(e: ast.Expr) bool {
         return switch (e) {
             .function => |f| f.kind.syntax == .lambda,
@@ -4038,9 +4107,40 @@ const Emitter = struct {
         };
     }
 
+    /// The `break <value>` an arm block carries, if any. It wins over the
+    /// block's final expression as the arm's value.
+    fn armBreakValue(stmts: []const ast.Stmt) bool {
+        for (stmts) |st| switch (st.expr) {
+            .jump => |j| switch (j.kind) {
+                .@"break" => |b| if (b.value != null) return true,
+                else => {},
+            },
+            else => {},
+        };
+        return false;
+    }
+
+    /// True when an arm block's final statement is the arm's **value**, so it
+    /// is returned instead of being dropped as a statement (decision 8 §5: an
+    /// arm's value is its body's last expression). Only the expression kinds
+    /// that are unambiguously values qualify — a trailing `val`, `if`, `loop`
+    /// or jump is a statement and stays one, so no existing lowering moves.
+    fn isArmValueExpr(e: ast.Expr) bool {
+        return switch (e) {
+            .literal, .identifier, .binaryOp, .unaryOp, .call, .collection, .function => true,
+            .jump, .branch, .loop, .binding, .useHook, .comptime_ => false,
+        };
+    }
+
     /// The statements of a matched arm body: an inlined lambda block (with a
-    /// loop-accumulator `break` turned into the arm's `return`), or a single
+    /// loop-accumulator `break` turned into the arm's `return`, and otherwise
+    /// its final expression returned as the arm's value), or a single
     /// `return <expr>;`.
+    ///
+    /// A one-parameter arm block (`_ { v -> … }`) names the whole subject: the
+    /// parameter is bound to `_s` at the top of the arm, which is the only
+    /// place it can be bound (the checker types it as the subject narrowed by
+    /// the arm's pattern).
     fn buildCaseBody(self: *Emitter, body: ast.Expr, indent: usize) anyerror![]const js.Stmt {
         if (!isLambdaBlock(body)) {
             return self.b.stmts(&.{try self.armReturn(body)});
@@ -4048,7 +4148,13 @@ const Emitter = struct {
         const l = body.function.kind;
         self.current_indent = indent;
         var out: std.ArrayListUnmanaged(js.Stmt) = .empty;
-        for (l.body) |st| {
+        if (l.params.len == 1) try out.append(self.arena(), .{ .decl = .{
+            .pattern = .{ .ident = l.params[0] },
+            .value = .{ .name = "_s" },
+        } });
+        const tail_is_value = !armBreakValue(l.body) and
+            l.body.len > 0 and isArmValueExpr(l.body[l.body.len - 1].expr);
+        for (l.body, 0..) |st, i| {
             const br: ?ast.Expr = switch (st.expr) {
                 .jump => |j| switch (j.kind) {
                     .@"break" => |b| if (b.value) |bp| bp.* else null,
@@ -4058,6 +4164,8 @@ const Emitter = struct {
             };
             if (br) |val| {
                 try out.append(self.arena(), try self.armReturn(val));
+            } else if (tail_is_value and i + 1 == l.body.len) {
+                try out.append(self.arena(), try self.armReturn(st.expr));
             } else {
                 try out.append(self.arena(), try self.buildStmt(st));
             }
@@ -4088,9 +4196,16 @@ const Emitter = struct {
             // another module it is still tested through the `tag` its
             // prototype carries.
             .ident => |n| {
-                const cls = self.unit_variant_class.get(n) orelse "";
+                const bare = bareVariantName(n);
+                // A primitive type spelling is decision 8 §5.2's type-test arm
+                // (`case x { i32 { … } string { … } }`), tested by §4.1's
+                // run-time test — the same one `x is T` builds.
+                if (primitiveTypeName(bare)) return try self.isTest(.{ .named = bare }, subject);
+                // A binding (`#(0, s)`'s `s`) matches anything.
+                if (self.isBindingName(n)) return null;
+                const cls = self.unit_variant_class.get(bare) orelse "";
                 if (cls.len > 0) return try self.b.binaryBare("instanceof", subject, .{ .name = cls });
-                return try self.b.binaryBare("===", try self.b.member(subject, "tag"), .{ .quoted = n });
+                return try self.b.binaryBare("===", try self.b.member(subject, "tag"), .{ .quoted = bare });
             },
             .@"or" => |pats| {
                 if (pats.len == 0) return js.Expr{ .name = "false" };
@@ -4110,8 +4225,90 @@ const Emitter = struct {
                 }
                 return acc;
             },
-            .variant, .list => return js.Expr{ .name = "false" },
+            // `#(a, b)` / `#(0, s)` (§5.1 P6): a tuple is a JS array, so the
+            // test is the arity plus whatever test each element carries — `..`
+            // makes the arity a lower bound.
+            .variant => |v| switch (v.shape) {
+                .tuple => {
+                    const elems = switch (v.payload) {
+                        .literals => |l| l,
+                        else => return js.Expr{ .name = "false" },
+                    };
+                    var acc = try self.b.call(try self.b.member(.{ .name = "Array" }, "isArray"), &.{subject});
+                    acc = try self.b.binaryBare("&&", acc, try self.b.binaryBare(
+                        if (v.rest) ">=" else "===",
+                        try self.b.member(subject, "length"),
+                        .{ .number = try std.fmt.allocPrint(self.arena(), "{d}", .{elems.len}) },
+                    ));
+                    for (elems, 0..) |p, i| {
+                        const at = try self.b.index(subject, .{ .number = try std.fmt.allocPrint(self.arena(), "{d}", .{i}) }, false);
+                        const t = try self.patternTest(p, at) orelse continue;
+                        acc = try self.b.binaryBare("&&", acc, t);
+                    }
+                    return try self.b.paren(acc);
+                },
+                // `1...9` (§5.2): an inclusive range, both ends included.
+                .range => {
+                    const bounds = switch (v.payload) {
+                        .literals => |l| l,
+                        else => return js.Expr{ .name = "false" },
+                    };
+                    if (bounds.len != 2) return js.Expr{ .name = "false" };
+                    const lo = try self.patternBoundExpr(bounds[0]) orelse return js.Expr{ .name = "false" };
+                    const hi = try self.patternBoundExpr(bounds[1]) orelse return js.Expr{ .name = "false" };
+                    return try self.b.paren(try self.b.binaryBare(
+                        "&&",
+                        try self.b.binaryBare(">=", subject, lo),
+                        try self.b.binaryBare("<=", subject, hi),
+                    ));
+                },
+                .variant => return try self.variantTest(v, subject),
+            },
+            .list => return js.Expr{ .name = "false" },
         }
+    }
+
+    /// A range pattern's bound as a JS literal, or null for a spelling that is
+    /// not one (`1...9` and `"a"..."z"` are the forms §5.2 has).
+    fn patternBoundExpr(self: *Emitter, pat: ast.Pattern) anyerror!?js.Expr {
+        _ = self;
+        return switch (pat) {
+            .numberLit => |n| js.Expr{ .number = n },
+            .stringLit => |s| js.Expr{ .lexeme_string = s },
+            else => null,
+        };
+    }
+
+    /// The test a `.variant`-shaped pattern becomes: the `tag` compare (or the
+    /// `@Result` key test for an `Ok`/`Err` naming no declared variant), and
+    /// then whatever test each nested payload pattern carries — `Ok(1)` tests
+    /// the payload, `.Some(#(a, b))` tests the tuple.
+    fn variantTest(self: *Emitter, v: anytype, subject: js.Expr) anyerror!js.Expr {
+        const bare = bareVariantName(v.name);
+        const declared = self.variant_fields.get(bare);
+        if (declared == null) if (resultKey(bare)) |key| {
+            return try self.b.binaryBare("in", .{ .quoted = key }, subject);
+        };
+        var acc = try self.b.binaryBare("===", try self.b.member(subject, "tag"), .{ .quoted = bare });
+        if (v.payload == .literals) for (v.payload.literals, 0..) |p, i| {
+            const key = variantFieldKey(v, declared, i) orelse continue;
+            const t = try self.patternTest(p, try self.b.member(subject, key)) orelse continue;
+            acc = try self.b.binaryBare("&&", acc, t);
+        };
+        return acc;
+    }
+
+    /// The field a variant pattern's payload element at `i` reads: the label
+    /// the pattern **wrote** when it wrote one (`.Rect(height: h, width: w)`
+    /// reads `height` for `h`, not the declared field at position 0), and
+    /// otherwise the declared field at that position (§5.1 P4). Null when the
+    /// variant is not declared in this module, which leaves the caller its own
+    /// fallback.
+    fn variantFieldKey(v: anytype, declared: ?[]const []const u8, i: usize) ?[]const u8 {
+        if (v.labels.len > i and v.labels[i].len > 0) return v.labels[i];
+        const d = declared orelse return null;
+        if (i >= d.len) return null;
+        return d[i];
     }
 
     /// `return <body>;` for a matched arm, gated by the arm's guard when
@@ -4250,8 +4447,12 @@ const Emitter = struct {
             },
 
             .ident, .numberLit, .stringLit, .@"or", .multi => {
-                if (arm.pattern == .ident and arm.guard != null) {
+                if (arm.pattern == .ident and arm.guard != null and self.isBindingName(arm.pattern.ident)) {
                     // A guarded identifier binds the subject, then tests the guard.
+                    // A dotted `.ident` is a variant path (`Maybe.None`), a
+                    // capitalised one a variant and a primitive spelling §5.2's
+                    // type test (`i32 when (…)`); none of the three is a
+                    // binding, so they take the test path below.
                     var body: std.ArrayListUnmanaged(js.Stmt) = .empty;
                     try body.append(self.arena(), .{ .decl = .{
                         .pattern = .{ .ident = arm.pattern.ident },
@@ -4281,58 +4482,18 @@ const Emitter = struct {
                 return if (cond) |c| try self.b.ifStmt(c, ret) else ret;
             },
 
-            .variant => |v| {
+            // Every `.variant`-shaped pattern — decision 8 §5's variant, its
+            // `#(a, b)` tuple (P6) and its `1...9` range (§5.2) alike — is the
+            // conjunction `patternTest` builds over `_s`, then the bindings
+            // `appendPatternBinds` takes from it. The two are the same pair a
+            // `val assert` uses, so a pattern gains a shape in one place.
+            .variant => {
                 var body: std.ArrayListUnmanaged(js.Stmt) = .empty;
-                const declared = self.variant_fields.get(v.name);
-                // An `Ok`/`Err`/`Error` arm that names no variant this module
-                // declares matches a `@Result`, which `#[@result]` materialises
-                // as `{ ok }` / `{ error }` — no `tag` (C5). The arm tests the
-                // key, as the `try` lowering does, and binds the payload.
-                if (declared == null) if (resultKey(v.name)) |key| {
-                    switch (v.payload) {
-                        .binding => |binding| try body.append(self.arena(), .{ .decl = .{
-                            .pattern = .{ .ident = binding },
-                            .value = try self.b.member(subject, key),
-                        } }),
-                        .fields => |fields| if (fields.len > 0) try body.append(self.arena(), .{ .decl = .{
-                            .pattern = .{ .ident = fields[0] },
-                            .value = try self.b.member(subject, key),
-                        } }),
-                        .literals => {},
-                    }
-                    for (try self.buildMatchedBody(arm, indent + 1)) |s| try body.append(self.arena(), s);
-                    return self.b.ifStmt(
-                        try self.b.binaryBare("in", .{ .quoted = key }, subject),
-                        .{ .block = .{ .stmts = try body.toOwnedSlice(self.arena()), .indent = indent } },
-                    );
-                };
-                switch (v.payload) {
-                    .binding => |binding| try body.append(self.arena(), .{ .decl = .{
-                        .pattern = .{ .ident = binding },
-                        .value = subject,
-                    } }),
-                    // `Circle(r)` binds positionally: each binding reads the
-                    // declared field at its position (`const { radius: r }`),
-                    // never a property named after the binding (C4). A variant
-                    // this module does not declare keeps the binding as key.
-                    .fields => |fields| if (fields.len > 0) {
-                        const props = try self.arena().alloc(js.ObjectPattern.Prop, fields.len);
-                        for (fields, 0..) |bb, bi| {
-                            const key = if (declared) |d| (if (bi < d.len) d[bi] else bb) else bb;
-                            props[bi] = .{ .key = key, .bind = if (std.mem.eql(u8, key, bb)) null else jsIdent(bb) };
-                        }
-                        try body.append(self.arena(), .{ .decl = .{
-                            .pattern = .{ .object = .{ .props = props } },
-                            .value = subject,
-                        } });
-                    },
-                    .literals => {},
-                }
+                try self.appendPatternBinds(&body, arm.pattern, subject);
                 for (try self.buildMatchedBody(arm, indent + 1)) |s| try body.append(self.arena(), s);
-                return self.b.ifStmt(
-                    try self.b.binaryBare("===", try self.b.member(subject, "tag"), .{ .quoted = v.name }),
-                    .{ .block = .{ .stmts = try body.toOwnedSlice(self.arena()), .indent = indent } },
-                );
+                const block = js.Stmt{ .block = .{ .stmts = try body.toOwnedSlice(self.arena()), .indent = indent } };
+                const cond = try self.patternTest(arm.pattern, subject) orelse return block;
+                return self.b.ifStmt(cond, block);
             },
 
             .list => |lp| {
@@ -4391,13 +4552,31 @@ const Emitter = struct {
         subject: js.Expr,
     ) anyerror!void {
         switch (pat) {
-            .ident => |n| try body.append(self.arena(), .{ .decl = .{
-                .pattern = .{ .ident = n },
-                .value = subject,
-            } }),
+            // A name that spells a type (`i32`) or a variant path (`.None`)
+            // is a test, not a binding (§5.2), so only a plain name binds.
+            .ident => |n| {
+                if (!self.isBindingName(n)) return;
+                try body.append(self.arena(), .{ .decl = .{
+                    .pattern = .{ .ident = n },
+                    .value = subject,
+                } });
+            },
             .variant => |v| {
-                const declared = self.variant_fields.get(v.name);
-                if (declared == null) if (resultKey(v.name)) |key| {
+                // `#(a, b)` (§5.1 P6): a tuple is a JS array, so each element
+                // pattern binds from `subject[i]`; `1...9` binds nothing.
+                if (v.shape == .tuple) {
+                    if (v.payload != .literals) return;
+                    for (v.payload.literals, 0..) |p, i| try self.appendPatternBinds(
+                        body,
+                        p,
+                        try self.b.index(subject, .{ .number = try std.fmt.allocPrint(self.arena(), "{d}", .{i}) }, false),
+                    );
+                    return;
+                }
+                if (v.shape == .range) return;
+                const bare = bareVariantName(v.name);
+                const declared = self.variant_fields.get(bare);
+                if (declared == null) if (resultKey(bare)) |key| {
                     switch (v.payload) {
                         .binding => |binding| try body.append(self.arena(), .{ .decl = .{
                             .pattern = .{ .ident = binding },
@@ -4418,12 +4597,15 @@ const Emitter = struct {
                     } }),
                     // `Circle(r)` binds positionally: each binding reads the
                     // declared field at its position (`const { radius: r }`),
-                    // never a property named after the binding (C4). A variant
-                    // this module does not declare keeps the binding as key.
+                    // never a property named after the binding (C4) — and the
+                    // label the pattern wrote wins over the position when it
+                    // wrote one, so `.Rect(height: h, width: w)` reads `height`
+                    // for `h` (§5.1 P4). A variant this module does not declare
+                    // and that wrote no label keeps the binding as key.
                     .fields => |fields| if (fields.len > 0) {
                         const props = try self.arena().alloc(js.ObjectPattern.Prop, fields.len);
                         for (fields, 0..) |bb, bi| {
-                            const key = if (declared) |d| (if (bi < d.len) d[bi] else bb) else bb;
+                            const key = variantFieldKey(v, declared, bi) orelse bb;
                             props[bi] = .{ .key = key, .bind = if (std.mem.eql(u8, key, bb)) null else jsIdent(bb) };
                         }
                         try body.append(self.arena(), .{ .decl = .{
@@ -4431,7 +4613,12 @@ const Emitter = struct {
                             .value = subject,
                         } });
                     },
-                    .literals => {},
+                    // A nested pattern inside a payload (`.Some(#(a, b))`,
+                    // `Ok(Circle(r))`) binds from the field it stands for.
+                    .literals => |lits| for (lits, 0..) |p, li| {
+                        const key = variantFieldKey(v, declared, li) orelse continue;
+                        try self.appendPatternBinds(body, p, try self.b.member(subject, key));
+                    },
                 }
             },
             .list => |lp| {

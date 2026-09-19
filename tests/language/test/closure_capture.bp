@@ -2,8 +2,10 @@
 //// keeps its capture, an outer `var` reassigned inside a lambda, and a closure
 //// nested in a `loop` body.
 ////
-//// `adder(3)(4)` — calling the result of a call directly — does not parse, which
-//// is why the second test binds `f`.
+//// `adder(3)(4)` — calling the result of a call directly — parses since front
+//// 15's R2 but does not check (`unbound variable ''`), which is why the second
+//// test still binds `f`. `test/curried_call.bp` asserts the direct form and
+//// carries the expected-failure lines.
 
 fn adder(n: i32) -> fn(x: i32) -> i32 { return { x -> x + n }; }
 

@@ -1,0 +1,23 @@
+//// Calling the result of a call — `adder(3)(4)`. Front 15's R2 made a chain
+//// link chain from every receiver, so this parses; it does not check. The call
+//// carries its callee in `calleeExpr` rather than in `callee`, and inference
+//// never types that, so the whole cell answers `unbound variable ''` at the
+//// second `(`.
+////
+//// Written as the language means it, not as the compiler takes it: the second
+//// test is the work-around the rest of the suite uses (`test/closure_capture.bp`
+//// binds `f` for exactly this reason) and is here so that a fix has both shapes
+//// to pass.
+
+fn adder(n: i32) -> fn(x: i32) -> i32 { return { x -> x + n }; }
+
+fn pick(which: bool) -> fn(x: i32) -> i32 { return { x -> if (which) { x } else { 0 - x } }; }
+
+test "calling the result of a call" { assert adder(3)(4) == 7; }
+
+test "calling the result of a call, with the binding the suite works around it with" {
+    val f = adder(3);
+    assert f(4) == 7;
+}
+
+test "calling the result of a call whose result is chosen at run time" { assert pick(true)(5) == 5; }

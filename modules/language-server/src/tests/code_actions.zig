@@ -117,3 +117,31 @@ test "codeAction: remove unused import" {
 // types-only `h.compile` helper yields no bindings for the codeAction to read
 // the enum type from. Testing it needs a best-effort-bindings compile path
 // (recorded in front-c-runtime.md C3, deferred with import-missing to v14).
+
+// ── front 11 carve-out: the annotation the action writes must parse ────────────
+
+test "codeAction: the annotation offered for an optional is `?i32`" {
+    const gpa = std.testing.allocator;
+    const source =
+        \\fn find(k: string) -> ?i32 { return null; }
+        \\val hit = find("a");
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const tokens = try h.tokenize(arena.allocator(), source);
+
+    const range = h.range(1, 0, 1, 19);
+    const actions = try engine.codeActions(gpa, h.TEST_URI, source, range, tokens, bindings, null);
+    defer freeActions(gpa, actions);
+
+    try std.testing.expect(actions.len >= 1);
+    // This action edits the user's file: the text it inserts is the surface
+    // spelling, never the checker's `optional<i32>`.
+    try std.testing.expect(std.mem.indexOf(u8, actions[0].title, "optional<") == null);
+    try snap.assertCodeActions(gpa, "code_action_annotation_optional", source, range, actions);
+}
