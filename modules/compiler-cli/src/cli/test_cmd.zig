@@ -310,6 +310,14 @@ pub fn run(
 
     var any_tests = false;
     var exit_code: u8 = 0;
+    // Text mode: how many module runners actually ran. Each prints its OWN
+    // `<P> passed, <F> failed` line, so the last line of a multi-module run is
+    // the last MODULE's count and not the run's — a reading two fronts of
+    // 1.0.10-beta nearly took as a suite baseline. The banner below labels
+    // every summary with the module it belongs to and the footer says how many
+    // there were; `--json` already aggregates one `{"event":"summary",…}` and
+    // gets neither (its stdout channel stays pure JSONL).
+    var modules_ran: usize = 0;
     // JSON mode accumulates `passed`/`failed` across modules so the final
     // `summary` JSON object reflects the whole run, not the last module only.
     var json_passed_total: usize = 0;
@@ -364,6 +372,10 @@ pub fn run(
             continue;
         }
 
+        modules_ran += 1;
+        const banner = try std.fmt.allocPrint(arena, "----- TESTS OF {s} -----\n", .{o.name});
+        reporter.stdout(io, banner);
+
         // Spawn and wait — stdio is inherited so the runner reports directly.
         var child = std.process.spawn(io, .{ .argv = argv.items }) catch |err| {
             const msg = try std.fmt.allocPrint(arena, "failed to spawn '{s}': {s}", .{ runner, @errorName(err) });
@@ -391,6 +403,15 @@ pub fn run(
         try appendDecimal(arena, &buf, json_failed_total);
         try buf.appendSlice(arena, "}\n");
         std.Io.File.stdout().writeStreamingAll(io, buf.items) catch {};
+    }
+
+    if (!opts.json and modules_ran > 0) {
+        const footer = try std.fmt.allocPrint(
+            arena,
+            "----- {d} MODULE(S) RAN — each \"N passed, M failed\" above is that module's own -----\n",
+            .{modules_ran},
+        );
+        reporter.stdout(io, footer);
     }
 
     diagnostics.reportOrphans(arena, src_loaded.orphans.len);

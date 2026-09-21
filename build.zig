@@ -55,6 +55,33 @@ pub fn build(b: *std.Build) void {
 
     const test_filters = b.option([]const []const u8, "test-filter", "Only run tests matching filter") orelse &.{};
 
+    // ── test_scratch (per-process scratch paths) ──────────────────────────────
+    // Every test binary below runs with its package directory as cwd, so the
+    // whole suite writes into ONE shared checkout. A scratch path scoped per
+    // test name but not per RUN is shared with every other process running the
+    // suite, and each test empties its own root on the way in — so a second
+    // `zig build test` over the same checkout reds the first. This module is
+    // the one way a test spells such a path; its root carries a per-process
+    // segment. See `modules/test-scratch/src/root.zig`.
+    //
+    // It is given to the TEST modules ONLY. Naming it outside a `test` block
+    // is analysed by the executable build too, where the module does not
+    // exist — so it does not compile. That is the refusal (decision 67).
+    const test_scratch_mod = b.addModule("test_scratch", .{
+        .root_source_file = b.path("modules/test-scratch/src/root.zig"),
+        .target = target,
+    });
+    const test_scratch_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("modules/test-scratch/src/root.zig"),
+            .target = target,
+        }),
+        .filters = test_filters,
+    });
+    const run_test_scratch_tests = b.addRunArtifact(test_scratch_tests);
+    // Its own tests write a scratch tree — under its own package directory.
+    run_test_scratch_tests.setCwd(b.path("modules/test-scratch"));
+
     // ── manifest (shared `botopink.json` model) ───────────────────────────────
     // The one reading of the manifest — packages, workspaces, the dependency
     // object — imported by the CLI, the LSP, the lib-test runner and bpmp.
@@ -91,6 +118,7 @@ pub fn build(b: *std.Build) void {
         .target = target_for_libc,
         .imports = &.{
             .{ .name = "std_prelude", .module = std_prelude },
+            .{ .name = "test_scratch", .module = test_scratch_mod },
         },
     });
 
@@ -160,16 +188,42 @@ pub fn build(b: *std.Build) void {
     clean_tmp_run.setCwd(b.path("modules/compiler-core"));
     clean_tmp_run.has_side_effects = true; // never cache — always re-reap
 
-    const clean_tmp_step = b.step("clean-tmp", "Reap per-test scratch dirs older than 1 day from .botopinkbuild/tmp/");
+    // The same reap for the per-PROCESS roots `test_scratch` draws, which every
+    // package's test binary leaves behind in its own directory
+    // (`modules/<pkg>/.botopinkbuild/test-scratch/<id>/`). A test removes its
+    // own subtree on the way out, so what survives is an empty root — one per
+    // run, and one per crashed run with its fixtures still in it. Same 1-day
+    // TTL, for the same reason: a live run's root is minutes old, never a day.
+    const clean_scratch_run = b.addSystemCommand(&.{
+        "sh",                                                                                                               "-c",
+        "find modules -mindepth 4 -maxdepth 4 -type d -path '*/.botopinkbuild/test-scratch/*' -mtime +1 -exec rm -rf {} +",
+    });
+    clean_scratch_run.has_side_effects = true; // never cache — always re-reap
+
+    const clean_tmp_step = b.step("clean-tmp", "Reap per-test scratch dirs older than 1 day (.botopinkbuild/tmp/ and every .botopinkbuild/test-scratch/)");
     clean_tmp_step.dependOn(&clean_tmp_run.step);
+    clean_tmp_step.dependOn(&clean_scratch_run.step);
 
     // Runs at the start of every test cycle so crashed-test leaks
     // never accumulate beyond a day.
     run_core_tests.step.dependOn(&clean_tmp_run.step);
+    run_core_tests.step.dependOn(&clean_scratch_run.step);
 
-    const test_step = b.step("test", "Run every unit test (compiler-core, language-server, CLI, lib-test-runner, manifest)");
+    const test_step = b.step("test", "Run every unit test (compiler-core, language-server, CLI, lib-test-runner, manifest, test-scratch)");
     test_step.dependOn(&run_core_tests.step);
     test_step.dependOn(&run_manifest_tests.step);
+    test_step.dependOn(&run_test_scratch_tests.step);
+
+    // ── shared-checkout gate (front 00 · 11-tooling) ──────────────────────────
+    // HARD RULE: a test may not name a cwd-anchored `.botopinkbuild` path. Each
+    // test binary runs with its package directory as cwd, so a fixed path is
+    // shared with every other process running the suite and the second one
+    // deletes the first one's fixtures mid-test. The one way to spell such a
+    // path is the `test_scratch` module, whose root is per process. The script
+    // refuses, it does not warn, and no flag turns it off (decision 67).
+    const test_scratch_gate = b.addSystemCommand(&.{"scripts/check-test-scratch.sh"});
+    test_scratch_gate.has_side_effects = true; // never cache — always re-scan
+    test_step.dependOn(&test_scratch_gate.step);
 
     // ── lib-agnostic gate (annotation-processors P0) ──────────────────────────
     // HARD RULE: the compiler core must name no specific NON-std library. Fail
@@ -194,6 +248,7 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "botopink", .module = core_mod },
             .{ .name = "manifest", .module = manifest_mod },
+            .{ .name = "test_scratch", .module = test_scratch_mod },
         },
     });
 
@@ -214,6 +269,7 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "botopink", .module = core_mod },
             .{ .name = "manifest", .module = manifest_mod },
+            .{ .name = "test_scratch", .module = test_scratch_mod },
         },
     });
 
@@ -284,6 +340,7 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .imports = &.{
                 .{ .name = "manifest", .module = manifest_mod },
+                .{ .name = "test_scratch", .module = test_scratch_mod },
             },
         }),
         .filters = test_filters,
@@ -318,6 +375,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .imports = &.{
             .{ .name = "manifest", .module = manifest_mod },
+            .{ .name = "test_scratch", .module = test_scratch_mod },
         },
     });
     const bpmp_tests = b.addTest(.{ .root_module = bpmp_test_mod, .filters = test_filters });

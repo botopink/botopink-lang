@@ -29,9 +29,15 @@ test "clean removes both artifact trees and succeeds when they are absent" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     const io = std.testing.io;
-    try tmp.dir.createDirPath(io, "out/nested");
-    try tmp.dir.createDirPath(io, ".botopinkbuild/tmp");
+    // Populated from `ARTIFACTS` itself, never from a re-spelling of the two
+    // names: the test then covers exactly what `removeAll` deletes, and it
+    // names no path anchored at the process cwd (`scripts/check-test-scratch.sh`).
+    var nested: [ARTIFACTS.len][]const u8 = undefined;
+    inline for (ARTIFACTS, 0..) |name, i| {
+        nested[i] = name ++ "/nested";
+        try tmp.dir.createDirPath(io, nested[i]);
+    }
     try std.testing.expectEqual(@as(u8, 0), removeAll(io, tmp.dir));
-    try std.testing.expectError(error.FileNotFound, tmp.dir.access(io, "out", .{}));
+    for (ARTIFACTS) |name| try std.testing.expectError(error.FileNotFound, tmp.dir.access(io, name, .{}));
     try std.testing.expectEqual(@as(u8, 0), removeAll(io, tmp.dir));
 }

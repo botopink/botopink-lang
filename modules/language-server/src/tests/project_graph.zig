@@ -12,6 +12,10 @@ const engine = @import("../engine.zig");
 const proto = @import("../protocol.zig");
 const graph_mod = @import("../project_graph.zig");
 const snap = @import("./snapshot.zig");
+/// Test-only: the one way a test spells a path it writes to (per process, so a
+/// second `zig build test` over this checkout cannot empty it mid-test).
+/// `build.zig` gives this module to the test modules alone.
+const test_scratch = @import("test_scratch");
 
 // ── R3 — cross-module member-access go-to-def via the graph ───────────────────
 
@@ -115,18 +119,18 @@ test "ProjectGraph.resolveRoots: env entry prepends before walk-up roots" {
     const gpa = std.testing.allocator;
     const io = std.testing.io;
 
-    const ws = ".botopinkbuild/lsp-roots-env/ws";
-    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/lsp-roots-env") catch {};
-    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/lsp-roots-env") catch {};
+    const ws = test_scratch.path(io, "lsp-roots-env/ws");
+    test_scratch.remove(io, "lsp-roots-env");
+    defer test_scratch.remove(io, "lsp-roots-env");
     // Resolve to an abs path so the env entry survives without cwd churn.
     var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
     const cwd_n = try std.process.currentPath(io, &cwd_buf);
     const abs_store = try std.fs.path.join(gpa, &.{ cwd_buf[0..cwd_n], ws, "store" });
     defer gpa.free(abs_store);
 
-    try std.Io.Dir.cwd().createDirPath(io, ws ++ "/store/erika");
-    try std.Io.Dir.cwd().createDirPath(io, ws ++ "/libs");
-    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = ws ++ "/botopink.json", .data = "{}" });
+    try std.Io.Dir.cwd().createDirPath(io, test_scratch.path(io, "lsp-roots-env/ws/store/erika"));
+    try std.Io.Dir.cwd().createDirPath(io, test_scratch.path(io, "lsp-roots-env/ws/libs"));
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = test_scratch.path(io, "lsp-roots-env/ws/botopink.json"), .data = "{}" });
 
     var map = std.process.Environ.Map.init(gpa);
     defer map.deinit();
@@ -150,11 +154,11 @@ test "ProjectGraph.resolveRoots: env unset is byte-identical to legacy walk-up" 
     const gpa = std.testing.allocator;
     const io = std.testing.io;
 
-    const ws = ".botopinkbuild/lsp-roots-unset/ws";
-    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/lsp-roots-unset") catch {};
-    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/lsp-roots-unset") catch {};
-    try std.Io.Dir.cwd().createDirPath(io, ws ++ "/libs/std");
-    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = ws ++ "/libs/std/botopink.json", .data = "{}" });
+    const ws = test_scratch.path(io, "lsp-roots-unset/ws");
+    test_scratch.remove(io, "lsp-roots-unset");
+    defer test_scratch.remove(io, "lsp-roots-unset");
+    try std.Io.Dir.cwd().createDirPath(io, test_scratch.path(io, "lsp-roots-unset/ws/libs/std"));
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = test_scratch.path(io, "lsp-roots-unset/ws/libs/std/botopink.json"), .data = "{}" });
 
     var g = graph_mod.ProjectGraph.init(gpa, io, null);
     defer g.deinit();
@@ -189,14 +193,13 @@ test "project graph: a dependency no root carries is a diagnostic on the project
     const gpa = std.testing.allocator;
     const io = std.testing.io;
 
-    const ws = ".botopinkbuild/lsp-graph-missing-dep/ws";
-    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/lsp-graph-missing-dep") catch {};
-    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/lsp-graph-missing-dep") catch {};
+    test_scratch.remove(io, "lsp-graph-missing-dep");
+    defer test_scratch.remove(io, "lsp-graph-missing-dep");
 
-    try std.Io.Dir.cwd().createDirPath(io, ws ++ "/src");
-    try std.Io.Dir.cwd().createDirPath(io, ws ++ "/libs");
+    try std.Io.Dir.cwd().createDirPath(io, test_scratch.path(io, "lsp-graph-missing-dep/ws/src"));
+    try std.Io.Dir.cwd().createDirPath(io, test_scratch.path(io, "lsp-graph-missing-dep/ws/libs"));
     try std.Io.Dir.cwd().writeFile(io, .{
-        .sub_path = ws ++ "/botopink.json",
+        .sub_path = test_scratch.path(io, "lsp-graph-missing-dep/ws/botopink.json"),
         .data =
         \\{
         \\  "name": "app",
@@ -207,12 +210,12 @@ test "project graph: a dependency no root carries is a diagnostic on the project
         \\}
         ,
     });
-    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = ws ++ "/src/main.bp", .data = "val x = 1;\n" });
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = test_scratch.path(io, "lsp-graph-missing-dep/ws/src/main.bp"), .data = "val x = 1;\n" });
 
     var g = graph_mod.ProjectGraph.init(gpa, io, null);
     defer g.deinit();
 
-    const r = (try g.resolve("file://" ++ ws ++ "/src/main.bp")) orelse return error.NoProject;
+    const r = (try g.resolve(test_scratch.uri(io, "lsp-graph-missing-dep/ws/src/main.bp"))) orelse return error.NoProject;
 
     try std.testing.expectEqual(@as(usize, 1), r.problems.len);
     const p = r.problems[0];
@@ -220,7 +223,7 @@ test "project graph: a dependency no root carries is a diagnostic on the project
         "dependency 'ghostlib' was not found under any library root",
         p.message,
     );
-    try std.testing.expect(std.mem.endsWith(u8, p.uri, ws ++ "/botopink.json"));
+    try std.testing.expect(std.mem.endsWith(u8, p.uri, test_scratch.path(io, "lsp-graph-missing-dep/ws/botopink.json")));
     // `"ghostlib"` sits on the 5th line (0-based 4), the key of its object entry.
     try std.testing.expectEqual(@as(u32, 4), p.line);
     try std.testing.expectEqual(@as(u32, 4), p.character);
@@ -235,21 +238,20 @@ test "project graph: an unreadable `files` entry is a diagnostic on the library 
     const gpa = std.testing.allocator;
     const io = std.testing.io;
 
-    const ws = ".botopinkbuild/lsp-graph-missing-file/ws";
-    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/lsp-graph-missing-file") catch {};
-    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/lsp-graph-missing-file") catch {};
+    test_scratch.remove(io, "lsp-graph-missing-file");
+    defer test_scratch.remove(io, "lsp-graph-missing-file");
 
-    try std.Io.Dir.cwd().createDirPath(io, ws ++ "/src");
-    try std.Io.Dir.cwd().createDirPath(io, ws ++ "/libs/halflib/src");
+    try std.Io.Dir.cwd().createDirPath(io, test_scratch.path(io, "lsp-graph-missing-file/ws/src"));
+    try std.Io.Dir.cwd().createDirPath(io, test_scratch.path(io, "lsp-graph-missing-file/ws/libs/halflib/src"));
     try std.Io.Dir.cwd().writeFile(io, .{
-        .sub_path = ws ++ "/botopink.json",
+        .sub_path = test_scratch.path(io, "lsp-graph-missing-file/ws/botopink.json"),
         .data =
         \\{"name": "app", "src": "src/", "dependencies": {"halflib": {"git": "https://example.invalid/halflib.git"}}}
         ,
     });
-    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = ws ++ "/src/main.bp", .data = "val x = 1;\n" });
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = test_scratch.path(io, "lsp-graph-missing-file/ws/src/main.bp"), .data = "val x = 1;\n" });
     try std.Io.Dir.cwd().writeFile(io, .{
-        .sub_path = ws ++ "/libs/halflib/botopink.json",
+        .sub_path = test_scratch.path(io, "lsp-graph-missing-file/ws/libs/halflib/botopink.json"),
         .data =
         \\{
         \\  "name": "halflib",
@@ -259,14 +261,14 @@ test "project graph: an unreadable `files` entry is a diagnostic on the library 
         ,
     });
     try std.Io.Dir.cwd().writeFile(io, .{
-        .sub_path = ws ++ "/libs/halflib/src/there.bp",
+        .sub_path = test_scratch.path(io, "lsp-graph-missing-file/ws/libs/halflib/src/there.bp"),
         .data = "pub val here = 1;\n",
     });
 
     var g = graph_mod.ProjectGraph.init(gpa, io, null);
     defer g.deinit();
 
-    const r = (try g.resolve("file://" ++ ws ++ "/src/main.bp")) orelse return error.NoProject;
+    const r = (try g.resolve(test_scratch.uri(io, "lsp-graph-missing-file/ws/src/main.bp"))) orelse return error.NoProject;
 
     try std.testing.expectEqual(@as(usize, 1), r.problems.len);
     const p = r.problems[0];
@@ -299,25 +301,24 @@ test "project graph: an unreadable `src` file is a diagnostic on that file" {
     const gpa = std.testing.allocator;
     const io = std.testing.io;
 
-    const ws = ".botopinkbuild/lsp-graph-unreadable-src/ws";
-    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/lsp-graph-unreadable-src") catch {};
+    test_scratch.remove(io, "lsp-graph-unreadable-src");
     // Unlinking a mode-`000` file needs write permission on its directory, not
     // on the file, so no mode restore is needed before the tree goes.
-    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/lsp-graph-unreadable-src") catch {};
+    defer test_scratch.remove(io, "lsp-graph-unreadable-src");
 
-    try std.Io.Dir.cwd().createDirPath(io, ws ++ "/src");
+    try std.Io.Dir.cwd().createDirPath(io, test_scratch.path(io, "lsp-graph-unreadable-src/ws/src"));
     try std.Io.Dir.cwd().writeFile(io, .{
-        .sub_path = ws ++ "/botopink.json",
+        .sub_path = test_scratch.path(io, "lsp-graph-unreadable-src/ws/botopink.json"),
         .data = "{\"name\": \"app\", \"src\": \"src/\"}",
     });
-    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = ws ++ "/src/main.bp", .data = "val x = 1;\n" });
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = test_scratch.path(io, "lsp-graph-unreadable-src/ws/src/main.bp"), .data = "val x = 1;\n" });
     try std.Io.Dir.cwd().writeFile(io, .{
-        .sub_path = ws ++ "/src/locked.bp",
+        .sub_path = test_scratch.path(io, "lsp-graph-unreadable-src/ws/src/locked.bp"),
         .data = "pub val secret = 1;\n",
     });
     try std.Io.Dir.cwd().setFilePermissions(
         io,
-        ws ++ "/src/locked.bp",
+        test_scratch.path(io, "lsp-graph-unreadable-src/ws/src/locked.bp"),
         std.Io.File.Permissions.fromMode(0o000),
         .{},
     );
@@ -325,7 +326,7 @@ test "project graph: an unreadable `src` file is a diagnostic on that file" {
     var g = graph_mod.ProjectGraph.init(gpa, io, null);
     defer g.deinit();
 
-    const r = (try g.resolve("file://" ++ ws ++ "/src/main.bp")) orelse return error.NoProject;
+    const r = (try g.resolve(test_scratch.uri(io, "lsp-graph-unreadable-src/ws/src/main.bp"))) orelse return error.NoProject;
 
     // Root is allowed to read a 000 file; then nothing is dropped and there is
     // nothing to diagnose. Skip rather than assert the wrong thing.
@@ -353,21 +354,20 @@ test "project graph: a healthy project reports no problems" {
     const gpa = std.testing.allocator;
     const io = std.testing.io;
 
-    const ws = ".botopinkbuild/lsp-graph-healthy/ws";
-    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/lsp-graph-healthy") catch {};
-    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/lsp-graph-healthy") catch {};
+    test_scratch.remove(io, "lsp-graph-healthy");
+    defer test_scratch.remove(io, "lsp-graph-healthy");
 
-    try std.Io.Dir.cwd().createDirPath(io, ws ++ "/src");
+    try std.Io.Dir.cwd().createDirPath(io, test_scratch.path(io, "lsp-graph-healthy/ws/src"));
     try std.Io.Dir.cwd().writeFile(io, .{
-        .sub_path = ws ++ "/botopink.json",
+        .sub_path = test_scratch.path(io, "lsp-graph-healthy/ws/botopink.json"),
         .data = "{\"name\": \"app\", \"src\": \"src/\"}",
     });
-    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = ws ++ "/src/main.bp", .data = "val x = 1;\n" });
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = test_scratch.path(io, "lsp-graph-healthy/ws/src/main.bp"), .data = "val x = 1;\n" });
 
     var g = graph_mod.ProjectGraph.init(gpa, io, null);
     defer g.deinit();
 
-    const r = (try g.resolve("file://" ++ ws ++ "/src/main.bp")) orelse return error.NoProject;
+    const r = (try g.resolve(test_scratch.uri(io, "lsp-graph-healthy/ws/src/main.bp"))) orelse return error.NoProject;
     try std.testing.expectEqual(@as(usize, 0), r.problems.len);
     try std.testing.expectEqual(@as(usize, 1), r.deps.len);
 }

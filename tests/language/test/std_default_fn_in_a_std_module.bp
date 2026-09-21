@@ -1,0 +1,27 @@
+//// 1.0.10-beta `00 · 02-erlang` — the `botopink test` half of
+//// `run/std_default_fn_in_a_std_module.bp`, and a second claim the `run/` cell
+//// cannot make: `botopink run --target erlang` compiles the whole output
+//// directory with `erlc` up front, so a dead std module is a hard error there,
+//// while `botopink test` runs the entry with `escript` and the emitted runner
+//// loads its siblings itself.
+////
+//// That loader was emitted only for a module with `imported_fns` /
+//// `imported_types` / a type module of its own. `from "std"` fills neither —
+//// it fills `std_imports` — so `std@querystring:parse/1` was a remote call
+//// into a module the escript never loaded, and the test died `{error,undef}`
+//// with the failure pinned to the TEST rather than to the missing module. A
+//// sibling the loader cannot compile now refuses the run, named, with `erlc`'s
+//// own diagnostic (decision 67); it used to be skipped in silence, which is
+//// what kept the dead `slice/3` invisible for as long as it was.
+
+import {querystring, path} from "std";
+
+test "a String.slice default fn answers inside a std module" {
+    assert querystring.parse("?a=1&b=2").length == 2;
+    assert querystring.parse("a=1").length == 1;
+}
+
+test "a std module reached only by its namespace is still loaded" {
+    assert path.extname("dir/report.tar.gz") == ".gz";
+    assert path.basename("dir/report.tar.gz") == "report.tar.gz";
+}

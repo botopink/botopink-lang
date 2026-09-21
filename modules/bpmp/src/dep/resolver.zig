@@ -7,6 +7,10 @@ const std = @import("std");
 const spec = @import("./spec.zig");
 const clone = @import("./clone.zig");
 const lock = @import("../lock.zig");
+/// Test-only: the one way a test spells a path it writes to (per process, so a
+/// second `zig build test` over this checkout cannot empty it mid-test).
+/// `build.zig` gives this module to the test modules alone.
+const test_scratch = @import("test_scratch");
 
 pub const Plan = struct {
     arena: std.heap.ArenaAllocator,
@@ -250,10 +254,10 @@ test "plan: git with no ref → clone of default HEAD (ref .none)" {
 }
 
 test "plan: git+rev, commit in the store → reuse_cas (frozen or not)" {
-    const store = ".botopinkbuild/bpmp-tests/resolver-rev-hit";
+    const store = test_scratch.path(testing.io, "bpmp-tests/resolver-rev-hit");
     resetDir(store);
     defer std.Io.Dir.cwd().deleteTree(testing.io, store) catch {};
-    try std.Io.Dir.cwd().createDirPath(testing.io, store ++ "/j/" ++ test_rev);
+    try std.Io.Dir.cwd().createDirPath(testing.io, test_scratch.path(testing.io, "bpmp-tests/resolver-rev-hit/j/" ++ test_rev));
 
     const entries = [_]spec.DepEntry{.{
         .name = "j",
@@ -263,12 +267,12 @@ test "plan: git+rev, commit in the store → reuse_cas (frozen or not)" {
         var p = try plan(testing.allocator, testing.io, &entries, store, .{ .frozen = frozen });
         defer p.deinit();
         try testing.expectEqual(Action.Kind.reuse_cas, p.actions[0].kind);
-        try testing.expectEqualStrings(store ++ "/j/" ++ test_rev, p.actions[0].store_path);
+        try testing.expectEqualStrings(test_scratch.path(testing.io, "bpmp-tests/resolver-rev-hit/j/" ++ test_rev), p.actions[0].store_path);
     }
 }
 
 test "plan: git+rev, empty store → clone of that rev" {
-    const store = ".botopinkbuild/bpmp-tests/resolver-rev-miss";
+    const store = test_scratch.path(testing.io, "bpmp-tests/resolver-rev-miss");
     resetDir(store);
     const entries = [_]spec.DepEntry{.{
         .name = "j",
@@ -281,7 +285,7 @@ test "plan: git+rev, empty store → clone of that rev" {
 }
 
 test "plan: frozen + git+rev + empty store → FrozenStoreMiss naming the dep" {
-    const store = ".botopinkbuild/bpmp-tests/resolver-frozen-rev-miss";
+    const store = test_scratch.path(testing.io, "bpmp-tests/resolver-frozen-rev-miss");
     resetDir(store);
     const entries = [_]spec.DepEntry{.{
         .name = "j",
@@ -305,10 +309,10 @@ test "plan: frozen + missing lockfile entry → FrozenMissingEntry" {
 }
 
 test "plan: lock_in hit with the commit in the store → reuse_cas" {
-    const store = ".botopinkbuild/bpmp-tests/resolver-lock-hit";
+    const store = test_scratch.path(testing.io, "bpmp-tests/resolver-lock-hit");
     resetDir(store);
     defer std.Io.Dir.cwd().deleteTree(testing.io, store) catch {};
-    try std.Io.Dir.cwd().createDirPath(testing.io, store ++ "/j/" ++ test_rev);
+    try std.Io.Dir.cwd().createDirPath(testing.io, test_scratch.path(testing.io, "bpmp-tests/resolver-lock-hit/j/" ++ test_rev));
 
     const entries = [_]spec.DepEntry{.{
         .name = "j",
@@ -320,11 +324,11 @@ test "plan: lock_in hit with the commit in the store → reuse_cas" {
     var p = try plan(testing.allocator, testing.io, &entries, store, .{ .lock_in = &lf });
     defer p.deinit();
     try testing.expectEqual(Action.Kind.reuse_cas, p.actions[0].kind);
-    try testing.expectEqualStrings(store ++ "/j/" ++ test_rev, p.actions[0].store_path);
+    try testing.expectEqualStrings(test_scratch.path(testing.io, "bpmp-tests/resolver-lock-hit/j/" ++ test_rev), p.actions[0].store_path);
 }
 
 test "plan: lock_in hit, pruned store → clone of the locked rev, not the branch" {
-    const store = ".botopinkbuild/bpmp-tests/resolver-lock-pruned";
+    const store = test_scratch.path(testing.io, "bpmp-tests/resolver-lock-pruned");
     resetDir(store);
     const entries = [_]spec.DepEntry{.{
         .name = "j",
@@ -340,7 +344,7 @@ test "plan: lock_in hit, pruned store → clone of the locked rev, not the branc
 }
 
 test "plan: frozen + lock_in hit + pruned store → FrozenStoreMiss (no dangling symlink)" {
-    const store = ".botopinkbuild/bpmp-tests/resolver-frozen-lock-pruned";
+    const store = test_scratch.path(testing.io, "bpmp-tests/resolver-frozen-lock-pruned");
     resetDir(store);
     const entries = [_]spec.DepEntry{.{
         .name = "j",

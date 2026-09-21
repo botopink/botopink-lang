@@ -17,6 +17,13 @@ checks the emitted erlang for each needle. It writes **no** snapshot, which is
 the point — a defect that makes `erlc` refuse the module, or a pattern that
 matches nothing, is only visible by running it, and a row whose §5.1 fixture
 does not type-check yet still has a statement-position shape that compiles.
+`assertErlangTestModeContains(src, present, absent)` compiles `src` in **test
+mode** for erlang and checks the entry module's emitted code for each `present`
+needle and against each `absent` one. For a claim about the emitted `botopink
+test` runner's own preamble — whether `'__bp_load_siblings'/0` is emitted at
+all, and what it does with a sibling `compile:file/2` refuses — which no
+`test { }` block can observe from the inside and no snapshot of a green program
+shows. Both live in `std_package.zig`.
 For multi-module assertions without a snapshot, `assertConsumerJs(modules, present, absent)`
 generates every module (last = consumer `main`) and checks the consumer's JS
 contains/omits given substrings — used by the disk-lib namespace test in

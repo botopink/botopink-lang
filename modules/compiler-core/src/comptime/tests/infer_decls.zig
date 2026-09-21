@@ -8,6 +8,10 @@ const prettyMod = @import("../../utils/pretty.zig");
 const T = @import(".././types.zig");
 const envMod = @import("../env.zig");
 const inferMod = @import("../infer.zig");
+/// Test-only: the one way a test spells a path it writes to (per process, so a
+/// second `zig build test` over this checkout cannot empty it mid-test).
+/// `build.zig` gives this module to the test modules alone.
+const test_scratch = @import("test_scratch");
 const comptimeMod = @import("../../comptime.zig");
 const errorMod = @import("../error.zig");
 const snapshot = @import("../snapshot.zig");
@@ -312,7 +316,7 @@ test "infer: net-new ---- two imported libs activating the same method are ambig
         std.testing.allocator,
         &modules,
         io,
-        ".botopinkbuild/comptime/cross_module_extension_ambiguity",
+        test_scratch.path(io, "comptime/cross_module_extension_ambiguity"),
         null,
     );
     defer session.deinit(std.testing.allocator);

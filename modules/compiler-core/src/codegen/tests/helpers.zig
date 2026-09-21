@@ -604,6 +604,45 @@ pub fn assertJsContains(allocator: Allocator, src: []const u8, needles: []const 
     }
 }
 
+/// Asserts the **test-mode** erlang of `src`'s entry module contains every
+/// `present` needle and none of the `absent` ones. For a claim about the
+/// emitted `botopink test` runner itself — the sibling loader and what it does
+/// with a module that does not compile — which is code no `test { }` block can
+/// observe from the inside and no snapshot of a green program shows.
+pub fn assertErlangTestModeContains(
+    allocator: Allocator,
+    src: []const u8,
+    present: []const []const u8,
+    absent: []const []const u8,
+) !void {
+    const io = std.testing.io;
+    var cfg = configs[1]; // erlang
+    cfg.test_mode = true;
+    cfg.build_root = ".botopinkbuild/codegen/erlang_test_mode_contains";
+    var outputs = try codegen.generate(allocator, &.{.{ .path = "", .source = src }}, io, cfg);
+    defer {
+        for (outputs.items) |*o| o.result.deinit(allocator);
+        outputs.deinit(allocator);
+    }
+    for (outputs.items) |o| {
+        if (!std.mem.eql(u8, o.name, "") and !std.mem.eql(u8, o.name, "main")) continue;
+        for (present) |needle| {
+            if (std.mem.indexOf(u8, o.result.js, needle) == null) {
+                std.debug.print("\n=== generated erlang (test mode) ===\n{s}\n=== missing needle: {s} ===\n", .{ o.result.js, needle });
+                return error.NeedleNotFound;
+            }
+        }
+        for (absent) |needle| {
+            if (std.mem.indexOf(u8, o.result.js, needle) != null) {
+                std.debug.print("\n=== generated erlang (test mode) ===\n{s}\n=== unexpected needle: {s} ===\n", .{ o.result.js, needle });
+                return error.UnexpectedNeedle;
+            }
+        }
+        return;
+    }
+    return error.ModuleDidNotCompile;
+}
+
 /// Compiles `src` as `main` for commonJS, runs it with node (sibling modules
 /// such as `std/<mod>.js` written next to it) and asserts its RUN LOG equals
 /// `expected`. For behaviour that lives in a module other than the entry, which

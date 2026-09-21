@@ -1484,13 +1484,20 @@ fn emitErlangModule(
     defer em.num_locals.deinit(alloc);
     defer em.num_names.deinit(alloc);
     try em.collectPrimErlangDispatch(program);
-    // A comptime body is one decl: the primitive interfaces' bodied instance
-    // `default fn`s (`String.slice`, `Array.first`) are not in it, so they are
-    // indexed from the embedded prelude. The parse lives until the module is
-    // rendered — the reached bodies are lowered from it and borrow its strings.
-    var prelude_arena = std.heap.ArenaAllocator.init(alloc);
-    defer prelude_arena.deinit();
-    if (comptime_module != null) try em.collectPreludeInstanceDefaults(prelude_arena.allocator());
+    // The primitive interfaces' bodied instance `default fn`s (`String.slice`,
+    // `Array.first`) live in the embedded prelude, not in `program`, so they are
+    // indexed from there — for EVERY module, not only a comptime one. A comptime
+    // body is one decl and never holds them; an ordinary module holds them only
+    // when its own compile unit happens to carry `primitives.bp`'s `behavior`
+    // decls, which a dependency module compiled through `from "std"` does not.
+    // Guarding this on `comptime_module != null` made `s.slice(a, b)` in such a
+    // module fall through to a bare local `slice/3` the module never defines —
+    // an `.erl` `erlc` refuses. Five std modules were dead on this row at once:
+    // `path`, `querystring`, `queue`, `snapshots`, `url`. Pinned by
+    // `tests/language/run/std_default_fn_in_a_std_module.bp` and its `test/` twin.
+    // The parse is the process-wide `prelude_cache`, whose arena outlives every
+    // emission: the reached bodies are lowered from it and borrow its strings.
+    try em.collectPreludeInstanceDefaults();
     defer em.atom_arena.deinit();
     defer em.type_units.deinit(alloc);
     defer em.file_exports_needed.deinit(alloc);
@@ -1893,8 +1900,16 @@ fn emitErlangModule(
         // Only a module that calls into another needs the sibling loader: a
         // single-module project's runner stays exactly as it was.
         // A file with a type module calls into it, so the runner has to load
-        // the siblings the emitter wrote beside it.
-        try testRunnerForms(b, &forms, tests, em.imported_fns.count() > 0 or em.imported_types.count() > 0 or em.type_units.items.len > 0, emit_init);
+        // the siblings the emitter wrote beside it. `from "std"` is the fourth
+        // route and was missing: `import {querystring} from "std"` fills
+        // `std_imports`, not `imported_fns`, so `querystring.parse(q)` lowered
+        // to the remote `std@querystring:parse/1` in a module whose runner
+        // never loaded `std@querystring` — `{error,undef}`, pinned to the test.
+        const calls_out = em.imported_fns.count() > 0 or
+            em.imported_types.count() > 0 or
+            em.std_imports.count() > 0 or
+            em.type_units.items.len > 0;
+        try testRunnerForms(b, &forms, tests, calls_out, emit_init);
     }
 
     var aw: std.Io.Writer.Allocating = .init(alloc);
@@ -2118,8 +2133,17 @@ fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_
     // `escript <module>.erl` compiles and loads THAT module only, so a call
     // into a sibling or a dependency (`a:twice(X)`) is `undef` at run time.
     // Compile and load every other module the runner wrote beside this one,
-    // once, before the tests run. A module that does not compile is skipped:
-    // its own cell reports the error.
+    // once, before the tests run.
+    //
+    // A module that does not compile REFUSES THE RUN, named, with `erlc`'s own
+    // diagnostic (decision 67 — refuse rather than continue, and no flag that
+    // turns the refusal into a warning). It used to be skipped (`_ -> ok`) on
+    // the reading that "its own cell reports the error", which holds only for a
+    // module of the project under test: a DEPENDENCY module is compiled for its
+    // exports and has no cell of its own, so a dead one was indistinguishable
+    // from an absent one and the first call into it died `{error,undef}` at the
+    // CALLER's location. That is how `std/querystring`'s dead `slice/3` stayed
+    // invisible until it was read off the emitted `.erl` by hand.
     var main_stmts: std.ArrayListUnmanaged(Ast.Expr) = .empty;
     if (load_siblings) {
         const loader: Ast.Expr = .{ .raw =
@@ -2132,15 +2156,57 @@ fn testRunnerForms(b: Ast.Builder, forms: *Forms, tests: []const Ast.Expr, load_
             \\                false ->
             \\                    case compile:file(Src, [binary, return_errors, {i, Dir}]) of
             \\                        {ok, Mod, Bin} -> code:load_binary(Mod, Src, Bin);
-            \\                        _ -> ok
+            \\                        Bad -> '__bp_dead_module'(Src, Bad)
             \\                    end
             \\            end
             \\        end, filelib:wildcard(filename:join([Dir, "**", "*.erl"])))
             \\    end)()
         };
+        // Reported on standard_error, so `--json`'s stdout envelope stays pure
+        // (`test_cmd.zig` forwards a child's stderr untouched), and `halt(1)`
+        // before a single test runs — a suite that cannot load its modules has
+        // no verdict to report.
+        const dead: Ast.Expr = .{ .raw =
+            \\io:format(standard_error,
+            \\        "error: ~ts does not compile — refusing to run the tests of ~ts~n",
+            \\        [Src, escript:script_name()]),
+            \\    case Bad of
+            \\        {error, Errors, _Warnings} ->
+            \\            lists:foreach(fun({File, Ds}) ->
+            \\                lists:foreach(fun(D) ->
+            \\                    io:format(standard_error, "  ~ts:~ts~n", [File, '__bp_error_text'(D)])
+            \\                end, Ds)
+            \\            end, Errors);
+            \\        Other ->
+            \\            io:format(standard_error, "  ~p~n", [Other])
+            \\    end,
+            \\    halt(1)
+        };
+        const error_text: Ast.Expr = .{ .raw =
+            \\case D of
+            \\        {Loc, Mod, Desc} ->
+            \\            io_lib:format("~ts ~ts", ['__bp_error_loc'(Loc),
+            \\                try Mod:format_error(Desc) catch _:_ -> io_lib:format("~p", [Desc]) end]);
+            \\        Other ->
+            \\            io_lib:format(" ~p", [Other])
+            \\    end
+        };
+        const error_loc: Ast.Expr = .{ .raw =
+            \\case Loc of
+            \\        {L, C} -> io_lib:format("~p:~p:", [L, C]);
+            \\        L when is_integer(L) -> io_lib:format("~p:", [L]);
+            \\        _ -> ""
+            \\    end
+        };
         try forms.appendSlice(b.arena, &.{
             .blank,
             try blockFunction(b, "__bp_load_siblings", &.{}, try b.body(&.{loader})),
+            .blank,
+            try blockFunction(b, "__bp_dead_module", &.{ V("Src"), V("Bad") }, try b.body(&.{dead})),
+            .blank,
+            try blockFunction(b, "__bp_error_text", &.{V("D")}, try b.body(&.{error_text})),
+            .blank,
+            try blockFunction(b, "__bp_error_loc", &.{V("Loc")}, try b.body(&.{error_loc})),
         });
         try main_stmts.append(b.arena, try b.call("__bp_load_siblings", &.{}));
     }
@@ -3123,16 +3189,20 @@ const Emitter = struct {
         };
     }
 
-    /// Comptime modules: index the embedded prelude's primitive interfaces the
-    /// way `collectInterfaces` indexes a program's — the bodied instance
-    /// `default fn`s and the `-> Self` methods — so a shim clause reaches
-    /// `String.slice` / `Array.first`. `arena` owns the parsed prelude and must
-    /// outlive the emit. A name the program already declares keeps its entry.
-    fn collectPreludeInstanceDefaults(this: *Emitter, arena: std.mem.Allocator) !void {
-        var lx = lexerMod.Lexer.init(prelude.primitives);
-        const tokens = try lx.scanAll(arena);
-        var p = parserMod.Parser.init(tokens);
-        const prim_program = try p.parse(arena);
+    /// Index the embedded prelude's primitive interfaces the way
+    /// `collectInterfaces` indexes a program's — the bodied instance
+    /// `default fn`s and the `-> Self` methods — so a call site reaches
+    /// `String.slice` / `Array.first` wherever it sits. A name the program
+    /// already declares keeps its entry, so a module that carries
+    /// `primitives.bp`'s own `behavior` decls is unchanged by this.
+    ///
+    /// The AST is `prelude_cache`'s, parsed once per process and never freed:
+    /// the reached bodies are lowered during the emit and borrow its strings.
+    /// A prelude that does not parse leaves the table as it is — the same
+    /// swallow `collectPrimErlangDispatch` has always done, pinned by
+    /// `primErlangDispatchCount`.
+    fn collectPreludeInstanceDefaults(this: *Emitter) !void {
+        const prim_program = prelude_cache.primitives() orelse return;
         for (prim_program.decls) |decl| {
             if (decl != .behavior) continue;
             const i = decl.behavior;

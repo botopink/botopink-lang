@@ -47,7 +47,11 @@ the whole of what the rule is for), `std_erlang_node` (decision 64),
 templates deliberately build the pre-decision-21 `#{field => V}` map that an `.erl` sidecar in a
 consumer library still builds, and the boundary adopts it; `.targets` is `commonJS erlang` because
 neither wasm nor beam has a host vocabulary for these templates),
-`string_at` (`05-wasm`: the `String.at` reader, on all four targets), and the
+`string_at` (`05-wasm`: the `String.at` reader, on all four targets),
+`std_default_fn_in_a_std_module` (1.0.10-beta `00 · 02-erlang`: a primitive-interface
+`default fn` — `String.slice`, `Array.slice` — reached INSIDE a `libs/std` module that
+`from "std"` compiled as an ordinary dependency; one `run/` cell and one `test/` cell,
+§ `std_default_fn_in_a_std_module` below), and the
 singletons (`closure_capture`, `recursion`, `expr_sugar`, `fn_defaults` (with `run/fn_defaults_values`, the VALUE on all four targets, and `reject/missing_required_argument`, N2 — both 1.0.10-beta's C-04), the two `lambda_*` cells of
 1.0.10-beta's `00 · 04-js` — `lambda_expression_body` (a lambda whose whole body is one expression
 answers that expression's value) and `lambda_element_method` (a primitive method on a lambda's
@@ -256,6 +260,46 @@ tagged `main__t__shape__v__circle` and died with `{case_clause, …}` at run tim
 AT ALL (measured with the collision removed — `ReferenceError: Circle is not defined`, `00 · 04-js`'s
 row), and wasm places it correctly from the expected type, so it has nothing to refuse.
 
+### `std_default_fn_in_a_std_module`
+
+Two cells of 1.0.10-beta's `00 · 02-erlang` (`fix/std-slice-shim`), and the reason they are a group
+rather than an addition to `std_erlang_node`: what they pin is a `libs/std` module compiled as a
+**dependency**, which is a different compile unit from the one `zig build test-libs` gives it.
+
+`String.slice` and `Array.slice` are bodied instance `default fn`s of `libs/std/src/primitives.bp`,
+not bare-symbol prim-ops, so the erlang backend reaches them through
+`collectPreludeInstanceDefaults` — which was called only for a **comptime** module. A std module
+reached through `from "std"` is neither a comptime module nor a unit that carries `primitives.bp`'s
+own `behavior` decls, so `query.slice(1, query.length)` fell through to a bare local `slice/3` the
+module never defines. Five std modules were dead on the erlang row at once — `path`, `querystring`,
+`queue`, `snapshots`, `url` — and the same expression in a PROJECT module has always lowered to the
+emitted `string_slice/3`, which is why the defect needs a std module to say anything at all.
+
+| Cell | Pins |
+|---|---|
+| `run/std_default_fn_in_a_std_module.bp` | the VALUE, through four std modules and both interfaces. `botopink run --target erlang` compiles the whole output directory with `erlc` up front, so a dead std module is a hard error on this path. `.targets` is `commonJS erlang`: wasm inlines the std modules into the entry and prints heap addresses for `url.parse(…).host` and the queue's values, a wasm gap of its own |
+| `test/std_default_fn_in_a_std_module.bp` | the `botopink test` path, which does NOT run `erlc` over the output: the entry runs under `escript` and its emitted runner loads its own siblings. Its imports are namespace-only on purpose (`querystring`, `path` — no imported fn, no imported type), because the sibling loader was emitted for `imported_fns` / `imported_types` / a type module only and `from "std"` fills none of them |
+
+Both halves were invisible rather than red, and in different ways. The lowering half was invisible
+because `botopink build --target erlang` exits 0 — it transpiles and never invokes `erlc`. The
+runner half was invisible because the sibling loader **skipped** a module that did not compile
+(`_ -> ok`), on the reading that its own cell reports the error — true for a module of the project
+under test, never true for a dependency, which has no cell. So the first call into the dead module
+died `{error,undef}` pinned to the TEST, and a library that does not compile was indistinguishable
+from one that is merely absent. A sibling `compile:file/2` refuses now refuses the run, named, with
+`erlc`'s own diagnostic on `standard_error`, and `halt(1)`s before a single test runs (decision 67 —
+no flag turns it into a warning).
+
+Measured on `fix/std-slice-shim` merged onto `origin/feat` `1f41990c` (this compiler, OTP 29,
+node v25.8.0): `tests/language/run.sh` — **547 passed, 42 expected failures, 0 failed**, over
+feat's own 541/42. The +6 accounts for itself exactly: these two cells are the `run/` cell on
+commonJS and erlang and the `test/` cell's two tests on each. Each was shown to red by planting the
+pre-fix behaviour: with `collectPreludeInstanceDefaults` guarded again, the `run/` cell exits 1 with
+empty stdout and the `test/` cell does not compile ("`std/path.erl` does not compile — refusing to
+run the tests of …"); with the `_ -> ok` skip also back, the same cell reports `{error,undef}` and
+says nothing about `std/path`; with only the sibling loader's `std_imports` route removed, it is
+`{error,undef}` again on a module that compiles perfectly.
+
 ### The sidecars of a `run/` cell
 
 Three optional files beside `run/<name>.bp`, each a claim the cell makes (C-16, front 12 steps 4.3
@@ -267,8 +311,10 @@ and 4.4). `run.sh`'s usage block is the reference; this is the why.
 | `<name>.<target>.expect` | on that target the compiler **refuses** the program — `reject/`'s shape, per target | exit ≠ 0 and the diagnostic contains line 1 (and ` --> src/main.bp:<L:C>` when line 2 is present). `run/external_erlang_only.{commonJS,wasm}.expect` and `run/std_erlang_node.{commonJS,wasm}.expect` are the live ones |
 | `<name>.targets` | the cell is scheduled only on these targets | — (a target not listed is not run; the cell's header comment says why) |
 
-Any other content in `.exit` is a malformed claim and fails the cell. **One cell carries
-`.targets` today**: `run/string_char_code_after_slice.bp` names `commonJS erlang`, because
+Any other content in `.exit` is a malformed claim and fails the cell. **Five cells carry
+`.targets`** (`external_host_record`, `optional_length_method`, `std_default_fn_in_a_std_module`,
+`string_char_code_after_slice` and `variant_name_ambiguous`). The one the paragraph below was written about is
+`run/string_char_code_after_slice.bp`, which names `commonJS erlang` because
 `String.charCodeAt` has no wasm or beam lowering — on wasm `@print("A".charCodeAt(0))` traps
 (`unreachable`, exit 134), which is a backend gap of its own and not that cell's claim. Before it
 the only one was `run/external_erlang_only.bp`, which kept wasm out because wasm did

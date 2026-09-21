@@ -21,6 +21,10 @@
 /// `ships nothing`) is `✗` on every target without a spawn.
 const std = @import("std");
 const manifest = @import("manifest");
+/// Test-only: the one way a test spells a path it writes to (per process, so a
+/// second `zig build test` over this checkout cannot empty it mid-test).
+/// `build.zig` gives this module to the test modules alone.
+const test_scratch = @import("test_scratch");
 
 /// Optional process-environment handle. The runner threads `init.environ_map`
 /// through so the discovery walker honours `BOTOPINK_LIB_ROOTS` exactly like
@@ -504,11 +508,11 @@ test "resolveRoots: env entry prepends before walk-up roots" {
     const arena = arena_inst.allocator();
     const io = testing.io;
 
-    const ws = ".botopinkbuild/runner-roots-env/ws";
-    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/runner-roots-env") catch {};
-    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/runner-roots-env") catch {};
-    try std.Io.Dir.cwd().createDirPath(io, ws ++ "/store/erika");
-    try std.Io.Dir.cwd().createDirPath(io, ws ++ "/libs/std");
+    const ws = test_scratch.path(io, "runner-roots-env/ws");
+    test_scratch.remove(io, "runner-roots-env");
+    defer test_scratch.remove(io, "runner-roots-env");
+    try std.Io.Dir.cwd().createDirPath(io, test_scratch.path(io, "runner-roots-env/ws/store/erika"));
+    try std.Io.Dir.cwd().createDirPath(io, test_scratch.path(io, "runner-roots-env/ws/libs/std"));
 
     // Pretend cwd is ws so the walk-up only sees the local synthetic tree.
     var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -532,11 +536,11 @@ test "resolveRoots: --lib-root extras append after env + walk-up" {
     const arena = arena_inst.allocator();
     const io = testing.io;
 
-    const ws = ".botopinkbuild/runner-roots-extra/ws";
-    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/runner-roots-extra") catch {};
-    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/runner-roots-extra") catch {};
-    try std.Io.Dir.cwd().createDirPath(io, ws ++ "/extra/foo");
-    try std.Io.Dir.cwd().createDirPath(io, ws ++ "/libs/std");
+    const ws = test_scratch.path(io, "runner-roots-extra/ws");
+    test_scratch.remove(io, "runner-roots-extra");
+    defer test_scratch.remove(io, "runner-roots-extra");
+    try std.Io.Dir.cwd().createDirPath(io, test_scratch.path(io, "runner-roots-extra/ws/extra/foo"));
+    try std.Io.Dir.cwd().createDirPath(io, test_scratch.path(io, "runner-roots-extra/ws/libs/std"));
 
     var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
     const cwd_n = try std.process.currentPath(io, &cwd_buf);
@@ -556,10 +560,10 @@ test "resolveRoots: non-existent env entry silently dropped" {
     const arena = arena_inst.allocator();
     const io = testing.io;
 
-    const ws = ".botopinkbuild/runner-roots-miss/ws";
-    std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/runner-roots-miss") catch {};
-    defer std.Io.Dir.cwd().deleteTree(io, ".botopinkbuild/runner-roots-miss") catch {};
-    try std.Io.Dir.cwd().createDirPath(io, ws ++ "/libs/std");
+    const ws = test_scratch.path(io, "runner-roots-miss/ws");
+    test_scratch.remove(io, "runner-roots-miss");
+    defer test_scratch.remove(io, "runner-roots-miss");
+    try std.Io.Dir.cwd().createDirPath(io, test_scratch.path(io, "runner-roots-miss/ws/libs/std"));
 
     var cwd_buf: [std.fs.max_path_bytes]u8 = undefined;
     const cwd_n = try std.process.currentPath(io, &cwd_buf);
