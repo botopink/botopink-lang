@@ -781,6 +781,25 @@ a condition loop, which binds nothing at all, and an iterated expression still a
 where a fresh one is exactly right. The SECOND parameter is the index and still binds a fresh
 variable: nothing has measured it, and giving it `i32` would newly red a body that widens it.
 
+## `.length()` through ONE optional layer
+
+The `.len()` / `.size()` / `.length()` → native `length` PROPERTY rename (`env.jsMethodRenames`,
+read only by commonJS) fires on a receiver whose type is the named `string` or `array`. A `?string`
+is neither, so `xs.at(0)?.length()` and `es.at(0)?.key.length()` kept their call parens and the
+emitted module called a number — `TypeError: … .length is not a function`, exit 1, where erlang
+printed it. The rename now also unwraps one `optional` layer, and ONLY the rename does: nothing
+else about an optional receiver is treated as a primitive one, so the call's own type is still
+whatever the branches below it give it. `?string` and `?array` are the only families that qualify,
+and `.length` is the same answer for either with or without the `?` — a null value throws on the
+read exactly where it threw on the call.
+
+**The gap this does not close**, measured and left named for the front that owns narrowing: a field
+read off a `?Record` receiver is still a fresh variable. `es.at(0)` is `?Entry`, the member-access
+path finds no `TypeDef` for `optional`, and `if (first != null)` does not rebind `first` inside the
+block — narrowing has one channel (`guardArgName` / `guardNarrowedType`, above) and it has no
+`!= null` arm. So `val first = es.at(0); if (first != null) { first.key.length() }` is still a call
+on commonJS (exit 1) and `3` on erlang. The fix is narrowing's, not this rename's.
+
 ## Enum sections
 
 `registerEnum` desugars an enum `TypeDecl`'s `sections()` into enum-of-enum form: each section

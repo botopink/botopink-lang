@@ -68,6 +68,10 @@ records the ceiling each backend still has. `loop_item_method` (D7/D8) calls `.l
 `loop` binds — the item, a field of it, and a `val` bound from it inside the body: the loop
 parameter used to bind a fresh type variable, and commonJS, which needs the receiver's type to know
 that `.length()` is JavaScript's `length` PROPERTY, emitted a CALL on a number.
+`optional_length_method` (D7) is the same rename one layer deeper — `.length()` on a `?string` from
+`.at()`, on a `?string` field reached with `?.`, and on one a `!= null` test has just checked; its
+header names both the shape it deliberately leaves out (a field read off a `?Record`, which is
+narrowing's row) and why wasm is not in its `.targets`.
 
 ### The `modules/` kind
 

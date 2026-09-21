@@ -9663,6 +9663,30 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                     }
                 }
 
+                // The same `.length` rename through ONE optional layer.
+                // `xs.at(0)?.key` is a `?string`, and a `!= null` narrowing
+                // does not rewrite the type either, so neither reached the
+                // typed-primitive branch above and the call site kept its
+                // parens: commonJS emitted `x.length()` against JavaScript's
+                // `length` PROPERTY (`TypeError: … is not a function`, exit 1)
+                // where erlang printed the number. Only the RENAME is taken
+                // from the unwrapped type — the call's own type is whatever
+                // the branches below give it.
+                if (env.jsMethodRenames.get(loc) == null and
+                    (std.mem.eql(u8, call.callee, "len") or
+                        std.mem.eql(u8, call.callee, "size") or
+                        std.mem.eql(u8, call.callee, "length")))
+                {
+                    if (optionalInner(recvPtr.getType())) |inner| {
+                        const innerTy = inner.deref();
+                        if (innerTy.* == .named) {
+                            if (primKindOfName(innerTy.named.name)) |pk| {
+                                if (pk == .array or pk == .string) try env.jsMethodRenames.put(loc, "length");
+                            }
+                        }
+                    }
+                }
+
                 // 06 C9 — a receiver whose type is a nominal the env actually
                 // registered has a closed method surface: nothing above matched,
                 // so the method does not exist. `d.swim()` on a `type D(id: i32)`

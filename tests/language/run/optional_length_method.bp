@@ -1,0 +1,33 @@
+//// 1.0.10-beta `00 · 04-js` D7 — `.length()` on an OPTIONAL string or array.
+//// Measured by rakun's front 05 while writing a configuration reader.
+////
+//// commonJS turns `.length()` into JavaScript's `length` PROPERTY only for a
+//// receiver inference resolved as a named `string` or `array`. A `?string` is
+//// neither, so `xs.at(0)?.length()` and `es.at(0)?.key.length()` kept their
+//// call parens and the emitted module called a number — `TypeError:
+//// es.at(0)?.key.length is not a function`, at exit 1 — while erlang, which
+//// needs no receiver type to lower a primitive method, printed it. A silent
+//// backend divergence, so the cell asserts the VALUE.
+////
+//// wasm is NOT in `.targets`: `es.at(0)?.key.length()` answers **276** there —
+//// the optional-chained field of a record taken out of `.at()` reads the wrong
+//// word — where commonJS and erlang both answer 3. Measured at `f01c508a`;
+//// `codegen/wat.zig` belongs to another front, so the row is recorded and not
+//// fixed here. The other two lines are right on wasm (`5`, `2`).
+////
+//// NOT here, and deliberately: a field read off a `?Record` receiver. `val
+//// first = es.at(0); if (first != null) { first.key.length(); }` is still a
+//// call on commonJS, because `!= null` does not rebind `first` inside the
+//// block and field access through `?T` is not modelled — that is narrowing's
+//// row, not this one (`comptime/AGENTS.md` § `x is T`, and narrowing).
+
+type Entry(key: string) {}
+
+pub fn main() {
+    val words = ["alpha", "be"];
+    @print(words.at(0)?.length());
+    val es = [Entry(key: "abc")];
+    @print(es.at(0)?.key.length());
+    val maybe = words.at(1);
+    if (maybe != null) { @print(maybe.length()); };
+}
