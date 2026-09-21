@@ -53,14 +53,49 @@ leading-dot section path names — `run/enum_section_expected_type`, where two e
 `.Color.Red.500` and every spelling is resolved by the type its position expects, and
 `reject/enum_section_ambiguous_path`, where the position expects nothing and the refusal names both
 candidates, and `run/enum_section_qualified_path`, where `Token.Color.Red.500` names its enum and
-needs no expectation at all), and `run/case_arm_name_is_also_a_type` (§5.3b's collision: a
+needs no expectation at all), `run/case_arm_name_is_also_a_type` (§5.3b's collision: a
 module declaring a record `Block` and an enum section carrying a `Block` leaf — the arm over the
 section is the VARIANT, the arm over a union of records is still the type, and the cell asserts
 both values on all four targets. commonJS tested only `instanceof`, so the section arm never
 fired and the `case` answered `undefined` at exit 0, which is how emilia read 223/2 on commonJS
-against 225/0 on erlang from one source). One scenario group per
+against 225/0 on erlang from one source), and `narrowing_*` (the same front's
+`fix/null-narrowing`: which shapes of a null test rebind the name they test —
+§ `narrowing_*` below). One scenario group per
 file: a parse error is the blast radius, so nine `#[@External]` declarations in one file mean one
 unparseable annotation hides the other eight.
+
+### `narrowing_*`
+
+Four cells of 1.0.10-beta's `00 · 01-checker` (`fix/null-narrowing`), and the reason they are a group
+rather than an addition to `optional*`: what they pin is the CHECKER rebinding a name, not what an
+optional does. `if (first != null)` did not rebind `first`, so a field read off a `?Record` stayed a
+fresh type variable and commonJS — which needs the receiver's type to know `.length()` is
+JavaScript's `length` PROPERTY — emitted a call on a number (`TypeError: first.key.length is not a
+function`, exit 1) where erlang and beam, dispatching dynamically, printed `3`. Four library fronts
+of this milestone wrote a workaround and a local gotcha instead of the null check, which is why the
+front exists; every cell here asserts the VALUE, because the defect is a crash on one backend and a
+right answer on another.
+
+| Cell | Pins |
+|---|---|
+| `run/narrowing_null_check.bp` | `if (x != null)` over a `?Record` field, a `?string`, a `?T[]` and a `?i32`; `null != x`; `&&` narrowing BOTH names; the else side of `== null`; and that the narrowing ENDS with the branch |
+| `run/narrowing_null_guard_clause.bp` | `if (x == null) { return …; }` and then the rest of the block — in a top-level `fn` and in a record METHOD, plus the `\|\|` form. Each function is called twice, present and absent |
+| `test/narrowing_null.bp` | the same rules inside a `test` block, which is the third statement walk a program has |
+| `reject/if_optional_needs_a_binder.bp` | the limit: `if (x)` on a `?T` with no binder is refused ("expected bool, got optional"). There is no truthiness on an optional |
+
+**Shapes that do NOT narrow, measured and deliberate.** `loop (x != null) { … }` leaves its body
+alone: a condition loop reassigns the name it tests (`cur = es.at(i)`), and a narrowed `cur` would
+red the assignment — narrowing it would break programs that work today. `if (o.inner != null)`
+does not narrow either: only a plain NAME is rebindable. `case x { null { … } v { … } }` and `if (x)
+{ v -> … }` narrow already, each through a channel of its own.
+
+`run/narrowing_null_check.bp` passes on commonJS, erlang and beam; the guard-clause cell passes on
+commonJS and erlang. Their `expected-failures.txt` lines carry the two reasons, and neither is the
+checker's: wasm's `?T` is a box that a narrowed NAME is never unboxed from (`05 step 2` D1 — the
+lines TRAPPED before narrowing landed and answer a heap address now, which is the same missing
+unbox), and beam does not compile a module holding an optional reader in a record method AND one in
+a top-level `fn` (`UnknownFunction`, no location — the same program written with `??` fails
+identically).
 
 1.0.10-beta's `00 · 04-js` adds three more `run/` cells, every one of them measured by rakun's front
 05 while it wrote a configuration reader, and every one asserting the VALUE — each defect made
