@@ -307,7 +307,7 @@ $ tests/language/run.sh --target beam
 expected-failures.txt: 62 lines, 21 exercised by --target beam
 language tests: 58 passed, 21 expected failures, 0 failed
 $ zig build test-libs
-test-libs: 21 passed, 0 failed, 0 known red
+test-libs: 23 passed, 0 failed, 0 known red   # with emilia at `ea0811d`
 ```
 
 Re-derived from the files and a re-run after the merge — neither side's number
@@ -325,7 +325,12 @@ erlang.
 still pinned the pre-fix text, and said the line goes with them. emilia landed
 them (`fc23760`, "the class bodies are goldens again, not a pinned defect"), so
 the cell passes and the line had to go — a listed cell that passes fails the
-gate until it is deleted, which is the rule working as written.
+gate until it is deleted, which is the rule working as written. `feat` reached
+the same deletion independently (`3b1e2468`), and the merged file is byte-identical
+to it. `test-libs`' `passed` follows the sibling libraries' own checkouts rather
+than this branch — emilia's cells went 21 → 23 between two runs of it here, with
+no compiler change in between — so the emilia commit it was measured at is named
+above and the number is reproducible only against that.
 
 **Recounted on disk at `fix/js-instanceof-boundary` (00 · 04-js round 2, merged onto
 `032fd765`):**
