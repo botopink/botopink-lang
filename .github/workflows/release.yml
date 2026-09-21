@@ -53,6 +53,20 @@ jobs:
         with:
           version: 0.16.0
 
+      # `zig build` now runs `erlc` (front 18, decision 83): the three resident
+      # comptime modules are compiled at build time and embedded in the binary,
+      # so every release runner needs Erlang/OTP 28 before the cross-build.
+      # OTP 28 is the floor the embedded .beam files are stamped for (decision 86).
+      - name: Install Erlang/OTP (linux, windows)
+        if: runner.os != 'macOS'
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: '28'
+
+      - name: Install Erlang/OTP (macos)
+        if: runner.os == 'macOS'
+        run: brew install erlang
+
       - name: Print build identity
         shell: bash
         run: |
