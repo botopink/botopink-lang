@@ -291,6 +291,14 @@ is `is-missing-type`; the payload-binding form `x is Some(v)` (§4.2) is
 `is-variant-binding`, located at the `(` — the node carries a type, so the
 binding form is refused where it starts instead of failing further along.
 
+`assert <expr> is <Pattern>` has **no production and is not getting one**
+(C-08). `is` answers a `bool`; the form that binds a pattern's names into the
+enclosing scope is `val assert <Pattern> = <expr>;` (decision 8 §9), and a
+second spelling for one meaning is what decision 67 refuses. Three DOCUMENTED
+SKIPs used to pin the parse error and promise the form —
+`comptime/tests/narrowing.zig` ×2 and `codegen/tests/narrowing.zig` ×1; they are
+gone, and `tests/language/reject/assert_is_pattern.bp` pins the refusal instead.
+
 ## `case` arms and patterns (decision 8 §5, 06 N22)
 
 Two arm forms coexist, told apart by the token after the pattern and its

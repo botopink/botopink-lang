@@ -78,23 +78,9 @@ test "js: narrow ---- early return with print" {
     );
 }
 
-// ── assert pattern narrowing ──────────────────────────────────────────────────
-
-// DOCUMENTED SKIP — `assert <expr> is <Pattern>` is documented in `docs.md`
-// but the parser only implements `assert <Pattern> = <expr> catch …`. Missing
-// feature: assert-`is` narrowing; owner: spec 02 (parser gaps). The snapshot
-// pins the parse error on all four backends.
-test "js: narrow ---- assert pattern with print" {
-    try h.assertJsCompileError(std.testing.allocator, @src(),
-        \\fn process(x: ?i32) -> i32 {
-        \\    assert x is Some(n);
-        \\    return n + 1;
-        \\}
-        \\fn main() {
-        \\    @print(process(42));
-        \\}
-    );
-}
+// `assert <expr> is <Pattern>` was a DOCUMENTED SKIP here. C-08 decided the
+// form does not land; see `comptime/tests/narrowing.zig` for the argument, and
+// `tests/language/reject/assert_is_pattern.bp` for the refusal it keeps giving.
 
 // ── type guard narrowing ──────────────────────────────────────────────────────
 
