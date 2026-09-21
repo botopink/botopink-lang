@@ -182,13 +182,74 @@ if have node; then
   mkdir -p "$P/test"
   printf 'test "broken" {\n    assert nope();\n}\n' >"$P/test/broken_test.bp"
   mkdir -p "$P/.botopinkbuild/test-out" && echo 'stale' >"$P/.botopinkbuild/test-out/stale.js"
+  mkdir -p "$P/.botopinkbuild/test-out/commonJS" && echo 'stale' >"$P/.botopinkbuild/test-out/commonJS/broken_test.js"
   run "$P" test
   expect_code 1 "test"
   expect_out "ok   one" "healthy test one ran"
   expect_out "ok   two" "healthy test two ran"
   expect_out "failed to compile: broken_test" "names the broken module"
   expect_out "test/broken_test.bp:2:12" "prints the located diagnostic, not a count"
-  [[ ! -e "$P/.botopinkbuild/test-out/stale.js" ]] && ok "previous test-out artifacts removed" || fail "stale test-out artifact survived"
+  # A run writes into its own `test-out/<target>/<id>/` and removes it when it
+  # ends, so a previous run's artifact of a module that no longer compiles is
+  # never in the tree this run reads — structurally, not by emptying a shared
+  # directory another run may be using (C3b). Nothing of this run survives it,
+  # and the planted files are neither read nor deleted: they are not in it.
+  [[ -z "$(find "$P/.botopinkbuild/test-out" -mindepth 3 -print -quit)" ]] \
+    && ok "the run left no artifact tree behind" \
+    || fail "the run's test-out directory survived it"
+  expect_no_out "stale" "no stale artifact was read"
+
+  # ── C3b — two runs in one checkout must not empty each other's output ──────
+  # `botopink test` used to write to one `.botopinkbuild/test-out/` in the
+  # project's own directory and empty it on the way in, while
+  # `botopink-lib-test` runs every cell with `cwd = <lib dir>`. Two gates over
+  # one library checkout therefore wiped each other's artifacts mid-run, and the
+  # loser reported a library red owned by nobody: modules missing under node
+  # (`Cannot find module …/x_test.js`), or an `{error,undef}` storm under
+  # escript once another target's `.js` had replaced the `.erl` siblings its
+  # runner loads. Both targets of one project, started together, must pass.
+  if have escript; then
+    echo "==> C3b concurrent runs in one checkout keep their own output"
+    P="$(project c3b)"
+    # Target-neutral source: the row runs commonJS AND erlang, and `$MAIN_OK`'s
+    # `print` is a commonJS builtin (`print/1 undefined` under erlang).
+    printf 'pub fn double(n: i32) -> i32 {\n    return n * 2;\n}\n\ntest "double" {\n    assert double(2) == 4;\n}\n' >"$P/src/main.bp"
+    mkdir -p "$P/test"
+    for m in a b c d e f; do
+      printf 'test "suite %s" {\n    assert 1 == 1;\n    assert 2 == 2;\n}\n' "$m" >"$P/test/${m}_test.bp"
+    done
+    c3b_failed=0
+    for i in 1 2 3; do
+      # `set +e` inside each subshell: the script's own `set -e` is inherited,
+      # and a failing run would end the subshell before it recorded its code.
+      ( set +e; cd "$P"; "$BP" test --target commonJS >"$WORK/c3b-$i-js.log" 2>&1; echo "$?" >"$WORK/c3b-$i-js.code" ) &
+      ( set +e; cd "$P"; "$BP" test --target erlang >"$WORK/c3b-$i-erl.log" 2>&1; echo "$?" >"$WORK/c3b-$i-erl.code" ) &
+      wait
+      for t in js erl; do
+        if [[ "$(cat "$WORK/c3b-$i-$t.code")" != 0 ]]; then
+          c3b_failed=1
+          fail "concurrent pair $i: the $t run failed"
+          sed 's/^/      /' "$WORK/c3b-$i-$t.log" | tail -20 >&2
+        elif grep -qE 'Cannot find module|\{error,undef\}|Failed to open file' "$WORK/c3b-$i-$t.log"; then
+          c3b_failed=1
+          fail "concurrent pair $i: the $t run lost artifacts to the other run"
+        fi
+      done
+    done
+    [[ "$c3b_failed" -eq 0 ]] && ok "three concurrent commonJS/erlang pairs, none clobbered"
+    [[ -z "$(find "$P/.botopinkbuild/test-out" -mindepth 3 -print -quit)" ]] \
+      && ok "every run removed its own output directory" \
+      || fail "a run's test-out directory survived it"
+    # The deterministic half of the row: a run writes NOTHING into the shared
+    # root — every artifact lives under its own `<target>/<id>/`, which is what
+    # makes two runs unable to reach each other's. A pre-fix binary leaves
+    # `test-out/main.js` here and reds this line on every run, concurrent or not.
+    [[ -z "$(find "$P/.botopinkbuild/test-out" -maxdepth 1 -type f -print -quit)" ]] \
+      && ok "nothing was written to the shared test-out root" \
+      || fail "an artifact was written to the shared test-out root"
+  else
+    skip "C3b concurrent runs (escript not installed)"
+  fi
 
   echo "==> C4 a from \"std\" import does not mask a broken module"
   P="$(project c4)"

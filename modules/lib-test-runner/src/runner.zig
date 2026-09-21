@@ -2,9 +2,12 @@
 ///
 /// The runner orchestrates the existing CLI; it never re-implements test running.
 /// Each child runs with `cwd = <lib_dir>` (the lib's own directory, which may live
-/// under any resolved root) so it reads that lib's `botopink.json` and writes its
-/// own `.botopinkbuild/test-out/` — per-lib isolation falls out of the working
-/// directory, exactly as CI would do it.
+/// under any resolved root) so it reads that lib's `botopink.json` and writes under
+/// that lib's own `.botopinkbuild/` — per-lib isolation falls out of the working
+/// directory, exactly as CI would do it. Isolation BETWEEN runs is the child's:
+/// two gates share one library checkout, so `botopink test` writes to
+/// `.botopinkbuild/test-out/<target>/<id>/` (per target, per run) and
+/// `compileCell` below to `.botopinkbuild/lib-test-build/<target>`.
 const std = @import("std");
 const args = @import("args.zig");
 const matrix = @import("matrix.zig");
@@ -139,7 +142,9 @@ fn parseChildSummary(child_stdout: []const u8) CellCounts {
 }
 
 /// Build directory, relative to the lib's own directory, that `compileCell`
-/// writes to — next to `botopink test`'s `.botopinkbuild/test-out/`.
+/// writes to — next to `botopink test`'s `.botopinkbuild/test-out/`, and scoped
+/// per target for the same reason: the checkout is shared, so the path a run
+/// writes to must not be.
 const COMPILE_OUT_DIR = ".botopinkbuild/lib-test-build";
 
 /// Compile one cell of a library that has no `test` block: spawn `botopink

@@ -2,7 +2,8 @@
 ///
 /// Compiles the project with `test_mode = true` (test blocks emit as
 /// functions + a registry + runner entry; `fn main/0` is not auto-invoked),
-/// writes artifacts under `.botopinkbuild/test-out/`, then executes each
+/// writes artifacts under `.botopinkbuild/test-out/<target>/<id>/` (one
+/// directory per run, removed when the run ends), then executes each
 /// module that contains tests and aggregates the exit codes.
 ///
 /// Currently only the `commonJS` target runs tests (node); other targets
@@ -34,7 +35,41 @@ pub const Options = struct {
     json: bool = false,
 };
 
-const TEST_OUT_DIR = ".botopinkbuild/test-out";
+/// Root of the test output tree. One run NEVER writes here directly: it writes
+/// to `<TEST_OUT_ROOT>/<target>/<id>/` (see `makeTestOutDir`), removed again
+/// when the run ends.
+///
+/// Two runs used to share this one directory, and each emptied it on the way
+/// in. `botopink-lib-test` gives every cell `cwd = <lib dir>`, so two gates
+/// over one library checkout — two worktrees, or one gate and a hand-run
+/// `botopink test` — wiped each other's artifacts mid-run. The loser reported
+/// a library red nobody owned: modules missing under `node` (`Cannot find
+/// module …/x_test.js`), or an `{error,undef}` storm under `escript` when the
+/// sibling `.erl` files it loads had been replaced by another target's `.js`.
+const TEST_OUT_ROOT = ".botopinkbuild/test-out";
+
+/// The output directory of THIS run: `<root>/<target>/<id>`, where `id` is 64
+/// random bits — the same shape the comptime runtime uses for its scratch dirs
+/// (`codegen/runtime.zig`, `makeScratchDir`), and the same per-target scoping
+/// `lib-test-build/<target>` already has in `lib-test-runner`.
+///
+/// Both halves earn their place. Per target, because the two targets of one
+/// library emit DIFFERENT file sets (`.js` vs `.erl`) into the same names — the
+/// clobber that made the artifacts of the loser vanish for good instead of for
+/// a millisecond. Per run, because two gates reach the same `(lib, target)`
+/// cell as often as they reach two.
+///
+/// It stays under `.botopinkbuild/` so `botopink clean` (which removes `out/`
+/// and `.botopinkbuild/`) and the `.gitignore` entry both keep covering it with
+/// no new rule. The caller removes it when the run ends: a run's artifacts
+/// belong to the run, and the next one's id differs, so nothing readable would
+/// survive anyway.
+fn makeTestOutDir(arena: std.mem.Allocator, io: std.Io, target: config.Target) ![]const u8 {
+    var rand_bytes: [8]u8 = undefined;
+    io.random(&rand_bytes);
+    const id = std.mem.readInt(u64, &rand_bytes, .little);
+    return std.fmt.allocPrint(arena, TEST_OUT_ROOT ++ "/{s}/{x}", .{ target.toString(), id });
+}
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -154,13 +189,17 @@ pub fn run(
     // modules that compiled from running their tests.
     const failed = try diagnostics.failedOutputs(gpa, io, arena, modules, outputs.items);
 
-    // Start from an empty artifact tree: a previous run's artifact of a module
-    // that no longer compiles must not be found (or run) by this one.
-    std.Io.Dir.cwd().deleteTree(io, TEST_OUT_DIR) catch {};
+    // This run's own artifact tree, empty by construction: a previous run's
+    // artifact of a module that no longer compiles cannot be found (or run) by
+    // this one, and no concurrent run can reach in and empty it. Removed when
+    // the run ends, whichever way it ends.
+    const test_out = try makeTestOutDir(arena, io, target);
+    std.Io.Dir.cwd().deleteTree(io, test_out) catch {};
+    defer std.Io.Dir.cwd().deleteTree(io, test_out) catch {};
 
     // Write every module's test-mode artifact (test modules `require` their
     // sibling modules on commonJS), then run each module that contains tests.
-    std.Io.Dir.cwd().createDirPath(io, TEST_OUT_DIR) catch |err| switch (err) {
+    std.Io.Dir.cwd().createDirPath(io, test_out) catch |err| switch (err) {
         error.PathAlreadyExists => {},
         else => return err,
     };
@@ -178,7 +217,7 @@ pub fn run(
 
     for (outputs.items) |o| {
         if (o.result.failed()) continue;
-        const sub_path = try std.fmt.allocPrint(arena, TEST_OUT_DIR ++ "/{s}{s}", .{ o.name, ext });
+        const sub_path = try std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ test_out, o.name, ext });
         if (std.fs.path.dirname(sub_path)) |parent| {
             std.Io.Dir.cwd().createDirPath(io, parent) catch |err| switch (err) {
                 error.PathAlreadyExists => {},
@@ -193,7 +232,7 @@ pub fn run(
         // atom, flat at the root of the test output, the way `build` writes
         // them under `out/erl/`.
         for (o.result.units) |u| {
-            const unit_path = try std.fmt.allocPrint(arena, TEST_OUT_DIR ++ "/{s}{s}", .{ u.atom, ext });
+            const unit_path = try std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ test_out, u.atom, ext });
             try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = unit_path, .data = u.code });
         }
     }
@@ -202,7 +241,7 @@ pub fn run(
     // sit a directory deeper here than in their own build, so their relative
     // `require("../../src/x.mjs")` would miss the source — copy each into place.
     if (target == .commonJS) {
-        libs.shipMjsSidecars(gpa, io, outputs.items, TEST_OUT_DIR, ext, env_map) catch {};
+        libs.shipMjsSidecars(gpa, io, outputs.items, test_out, ext, env_map) catch {};
     }
 
     // erlang: the same for host `.erl` modules — a `#[@External.Erlang("host",
@@ -211,7 +250,7 @@ pub fn run(
     // emitted runner's `__bp_load_siblings/0` compiles and loads every `.erl`
     // beside the script before running the tests.
     if (target == .erlang) {
-        _ = libs.shipErlSidecars(gpa, io, outputs.items, TEST_OUT_DIR, env_map) catch 0;
+        _ = libs.shipErlSidecars(gpa, io, outputs.items, test_out, env_map) catch 0;
     }
 
     // commonJS: root-source imports (`import {x};`) emit `require("./module")`
@@ -239,7 +278,8 @@ pub fn run(
             try agg.appendSlice(arena, ".js\")");
         }
         try agg.appendSlice(arena, ");\n");
-        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = TEST_OUT_DIR ++ "/module.js", .data = agg.items });
+        const agg_path = try std.fmt.allocPrint(arena, "{s}/module.js", .{test_out});
+        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = agg_path, .data = agg.items });
 
         // Nested modules (a dependency's `jhonstart/hooks.js`) emit a flat
         // `require("./module")` for their bare sibling imports, which would
@@ -263,7 +303,7 @@ pub fn run(
             for (0..depth) |_| try shim.appendSlice(arena, "../");
             try shim.appendSlice(arena, "module\");\n");
 
-            const shim_path = try std.fmt.allocPrint(arena, TEST_OUT_DIR ++ "/{s}/module.js", .{dir});
+            const shim_path = try std.fmt.allocPrint(arena, "{s}/{s}/module.js", .{ test_out, dir });
             try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = shim_path, .data = shim.items });
         }
     }
@@ -283,7 +323,7 @@ pub fn run(
         if (std.mem.indexOf(u8, o.result.js, "__bp_run_tests") == null) continue;
         any_tests = true;
 
-        const sub_path = try std.fmt.allocPrint(arena, TEST_OUT_DIR ++ "/{s}{s}", .{ o.name, ext });
+        const sub_path = try std.fmt.allocPrint(arena, "{s}/{s}{s}", .{ test_out, o.name, ext });
 
         var argv = std.ArrayListUnmanaged([]const u8).empty;
         defer argv.deinit(arena);
