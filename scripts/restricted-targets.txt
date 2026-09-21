@@ -56,6 +56,7 @@ jhonstart-counter       erlang    build  00/02-erlang          `"targets": ["com
 jhonstart-todo          erlang    0      04-jhonstart          `"targets": ["commonJS"]`; was `build` while the example wrote bare `print(…)`, which type-checks everywhere and only commonJS lowers — jhonstart `bef57e2` spells it `@print`, and the cell now passes 3/3
 rakun-example           erlang    0      02-packaging          `"targets": ["commonJS"]`; no `test {}` block — `botopink build --target erlang` is clean
 rakun-container-example erlang    0      03-rakun/F06          `"targets": ["commonJS"]`; the container showcase F06 added — no `test {}` block, and it compiles on erlang
+rakun-ssr-example       erlang    0      03-rakun/F23          `"targets": ["commonJS"]`; the SSR showcase F23 added — no `test {}` block, and it compiles on erlang
 
 # ── erika (no track this milestone; `09-ecosystem-residuals` keeps the tree) ─
 erika-linq              erlang    8      00/09-ecosystem-residuals  `"targets": ["commonJS"]` hides 8 red erlang tests in the LINQ example — the largest thing any restriction here hides, and no front owns the fix
