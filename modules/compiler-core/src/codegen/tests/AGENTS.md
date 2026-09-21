@@ -22,6 +22,7 @@ generates every module (last = consumer `main`) and checks the consumer's JS
 contains/omits given substrings — used by the disk-lib namespace test in
 `features.zig` (`import {Lib} from "Lib"` → `const Lib = require(...)`).
 Golden outputs live in `modules/compiler-core/snapshots/codegen/<target>/<slug>.snap.md` (`commonJS`, `erlang`, `beam`, `wasm`), comptime validation errors in `codegen/errors/<target>/`.
+The four `codegen ---- use … is a plain call` cells of `features.zig` record decision 88 (1.0.10-beta, front 19): `val c = use state(0)` is `const c = state(0)` on commonJS, as it already was on erlang, beam and wasm — their components carry `#[@context]`, the effect that lets a body activate a hook. They replaced the `… to useState` / `… infers dependency array` / `… empty deps` cells, whose snapshots recorded the React rename.
 
 `assertTestModeRunLog(src, expected)` compiles `src` in **test mode** for both
 `botopink test` targets, runs each module the way the CLI does

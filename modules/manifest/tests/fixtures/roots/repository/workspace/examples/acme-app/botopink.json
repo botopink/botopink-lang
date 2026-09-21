@@ -1,0 +1,7 @@
+{
+  "name": "acme-app",
+  "version": "0.0.1",
+  "entry": "main.bp",
+  "target": "commonJS",
+  "dependencies": { "acme": { "workspace": true } }
+}

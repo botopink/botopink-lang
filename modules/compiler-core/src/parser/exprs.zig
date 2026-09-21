@@ -151,12 +151,19 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     // OR: if (cond) expr [else expr]
     if (this.check(.@"if")) {
         const ifTok = this.advance();
+        // Static prefix of `use`: an `if` ends it for the rest of the function
+        // body, its own branches included (`parser.zig` `useBranchSeen`).
+        this.useBranchSeen = true;
 
         _ = try this.consume(.leftParenthesis);
         const cond = try this.parseBinaryExpr(alloc, prec.equality);
         errdefer @constCast(&cond).deinit(alloc);
         _ = try this.consume(.rightParenthesis);
         const condPtr = try this.boxExpr(alloc, cond);
+        // `cond`'s errdefer above frees the children; the box itself was
+        // leaked when a branch failed to parse (a `use` inside the then-block
+        // refused by the static-prefix rule, for one).
+        errdefer alloc.destroy(condPtr);
 
         var binding: ?[]const u8 = null;
 
@@ -213,6 +220,7 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
     // still takes the expression on the next line, as it always did.
     if (this.check(.@"return")) {
         const retTok = this.advance();
+        this.useBranchSeen = true; // static prefix of `use` ends at a `return`
         if (this.check(.semicolon) or this.check(.rightBrace) or this.check(.endOfFile)) {
             return this.makeJump(alloc, retTok, .@"return", null);
         }
@@ -222,6 +230,7 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
 
     // case expr { arm* }
     if (this.check(.case)) {
+        this.useBranchSeen = true; // static prefix of `use` ends at a `case`
         return .{ .collection = try this.parseCaseExpr(alloc) };
     }
 
@@ -304,6 +313,7 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
 
     // loop (iter) { params -> body }  /  loop (iter, 0..) { item, i -> body }
     if (this.check(.loop)) {
+        this.useBranchSeen = true; // static prefix of `use` ends at a `loop`
         return .{ .loop = try this.parseLoopExpr(alloc) };
     }
 
@@ -1090,7 +1100,10 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
                 .trackEmptyLines = true,
                 .handleComments = true,
                 .semicolonPolicy = .optional,
-                .useAfterBranchGuard = false,
+                // A lambda is another function: its static prefix of `use`
+                // starts over and does not touch the enclosing body's.
+                .useAfterBranchGuard = true,
+                .freshUseScope = true,
             });
 
             return Expr{ .function = .{ .loc = locFromToken(braceTok), .kind = .{
@@ -1240,7 +1253,7 @@ pub fn parsePrimary(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
             if (!this.match(.comma)) break;
         }
         _ = try this.consume(.rightParenthesis);
-        const body = try this.parseStmtListInBraces(alloc);
+        const body = try this.parseFnBodyInBraces(alloc);
         return Expr{ .function = .{ .loc = locFromToken(fnTok), .kind = .{
             .syntax = .fnExpr,
             .params = try params.toOwnedSlice(alloc),
@@ -1751,7 +1764,10 @@ pub fn parseTrailingLambdas(this: *This, alloc: std.mem.Allocator) ParseError![]
             .trackEmptyLines = true,
             .handleComments = true,
             .semicolonPolicy = .required,
-            .useAfterBranchGuard = false,
+            // A trailing lambda is another function: a fresh static prefix
+            // of `use` (`use memo { -> return … }` keeps the enclosing one).
+            .useAfterBranchGuard = true,
+            .freshUseScope = true,
         });
 
         try lambdas.append(alloc, .{
@@ -1831,7 +1847,10 @@ pub fn parseLoopExpr(this: *This, alloc: std.mem.Allocator) ParseError!LoopExpr 
         .trackEmptyLines = true,
         .handleComments = true,
         .semicolonPolicy = .required,
-        .useAfterBranchGuard = false,
+        // A loop body is a branch's block, not a function: it inherits the
+        // enclosing body's static prefix, which the `loop` itself just ended,
+        // so a `use` inside it is `useAfterBranch`.
+        .useAfterBranchGuard = true,
     });
 
     return .{

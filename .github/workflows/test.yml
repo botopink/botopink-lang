@@ -4,7 +4,9 @@
 #   test  `zig build test` from a cold runtime cache, `zig build test-bpmp`,
 #         `scripts/beam_export_audit.sh` (ubuntu + macos), then `zig build
 #         test-cli` (the CLI command contract, test tooling, mutual recursion and
-#         backend execution parity scripts), then `zig build test-language`
+#         backend execution parity scripts), `scripts/format-check.sh` (decision
+#         66: `botopink format --check` over the compiler's canonical `.bp`
+#         trees), then `zig build test-language`
 #         (tests/language, ubuntu + macos) and `zig build test-docs` (every
 #         `botopink` fence of the user docs). ubuntu + macos hard, windows
 #         allow-fail.
@@ -148,6 +150,13 @@ jobs:
       - name: zig build test-cli
         shell: bash
         run: zig build test-cli
+
+      # Decision 66: `botopink format --check` over the compiler's own canonical
+      # `.bp` trees — the list, and the red trees with their causes, are in
+      # scripts/format-check.sh. Needs only the CLI, installed by test-cli.
+      - name: botopink format --check
+        shell: bash
+        run: bash scripts/format-check.sh
 
       # Decision 8's language tests on commonJS and erlang; the expected
       # failures in tests/language/expected-failures.txt name their owner.

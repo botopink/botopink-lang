@@ -51,12 +51,11 @@ pub fn run(ctx: cli.Context, args: []const []const u8) anyerror!u8 {
         }
     }
 
-    // Object-form deps dispatch: if the local `botopink.json` carries any
-    // object-form entry, install those into `$BPMP_HOME/store/` + write
-    // `botopink.lock`. The legacy compiler-distribution replay path still
-    // fires if the local project has no manifest (e.g. a globally invoked
-    // bpmp) or if the manifest's `dependencies` is the legacy bare-name
-    // array form.
+    // Dependency install: if the local `botopink.json` declares any
+    // dependency (the object form is the only form — decision 76), install
+    // those into `$BPMP_HOME/store/` + write `botopink.lock`. The
+    // compiler-distribution replay path still fires if the local project has
+    // no manifest (e.g. a globally invoked bpmp) or declares no dependency.
     if (try maybeRunDepInstall(ctx, .{
         .single_name = positional,
         .frozen = frozen,
@@ -81,10 +80,12 @@ const DepInstallOpts = struct {
     dry_run: bool,
 };
 
-/// Detect + handle object-form deps. Returns:
-///   - null  → no object-form deps in this project; fall through to the
-///     legacy compiler-distribution flow.
-///   - code  → object-form flow handled the install; this is the exit code.
+/// Detect + handle the project's dependencies. Returns:
+///   - null  → no dependencies in this project; fall through to the
+///     compiler-distribution flow.
+///   - code  → the dependency flow handled the install; this is the exit code.
+/// A refused `botopink.json` (a string-array `dependencies`, an entry without a
+/// source, …) is printed located and is exit 1.
 fn maybeRunDepInstall(ctx: cli.Context, opts: DepInstallOpts) !?u8 {
     var arena = std.heap.ArenaAllocator.init(ctx.gpa);
     defer arena.deinit();
@@ -94,18 +95,9 @@ fn maybeRunDepInstall(ctx: cli.Context, opts: DepInstallOpts) !?u8 {
 
     var diags: std.ArrayListUnmanaged(dep_spec.Diagnostic) = .empty;
     const deps = try dep_spec.parseFromManifest(a, data, &diags);
-    for (diags.items) |d| {
-        const code_str = switch (d.code) {
-            .invalid_json => "DEP-001 (invalid JSON)",
-            .invalid_shape => "DEP-001",
-            .missing_source => "DEP-002",
-            .ambiguous_ref => "DEP-003",
-        };
-        if (d.name.len > 0) {
-            common.warnMsgFmt(ctx, "botopink.json:dependencies.{s}: {s}", .{ d.name, code_str });
-        } else {
-            common.warnMsgFmt(ctx, "botopink.json:dependencies: {s}", .{code_str});
-        }
+    if (diags.items.len > 0) {
+        for (diags.items) |d| d.located.print();
+        return 1;
     }
 
     if (!dep_spec.anySpec(deps)) return null;
@@ -183,7 +175,7 @@ fn runDepInstall(ctx: cli.Context, deps: []const dep_spec.DepEntry, opts: DepIns
 
     for (p.actions) |act| {
         switch (act.kind) {
-            .skip_legacy => {},
+            .skip_workspace => {},
             .path_symlink => {
                 const link_path = try std.fs.path.join(a, &.{ project_root, ".botopinkbuild", "deps", act.name });
                 // A relative `path:` is relative to the project, not to the link's
@@ -271,7 +263,7 @@ fn kindLabel(k: dep_resolver.Action.Kind) []const u8 {
         .clone => "clone     ",
         .reuse_cas => "reuse-cas ",
         .path_symlink => "link path ",
-        .skip_legacy => "skip      ",
+        .skip_workspace => "workspace ",
     };
 }
 
@@ -374,17 +366,63 @@ const HELP =
     \\
     \\Specs: `<ver>` exact, `^<ver>`, `~<ver>`, `>=<ver>`, `feat`, `latest` (default).
     \\
+    \\A new dependency is written as `{ "<name>": { "git": "<url>" } }` (decision 76):
+    \\`<name>` is `<owner>/<name>` (a GitHub repository), a git URL, or a bare
+    \\name under $BPMP_DEFAULT_ORG.
+    \\
 ;
+
+/// The `dependencies` entry `bpmp install <spec>` writes: the import name and
+/// the git URL it comes from.
+const InstallSource = struct {
+    name: []const u8,
+    git: []const u8,
+};
+
+/// `<owner>/<name>` → GitHub; a URL (`https://…`, `git@…`) → as given, name
+/// from its last segment; a bare `<name>` → under `$BPMP_DEFAULT_ORG`, else null.
+fn resolveInstallSource(a: std.mem.Allocator, ctx: cli.Context, arg: []const u8) !?InstallSource {
+    if (std.mem.indexOf(u8, arg, "://") != null or std.mem.startsWith(u8, arg, "git@")) {
+        var base = std.fs.path.basename(arg);
+        if (std.mem.endsWith(u8, base, ".git")) base = base[0 .. base.len - ".git".len];
+        if (base.len == 0) return null;
+        return .{ .name = base, .git = arg };
+    }
+    if (std.mem.indexOfScalar(u8, arg, '/')) |slash| {
+        const owner = arg[0..slash];
+        const name = arg[slash + 1 ..];
+        if (owner.len == 0 or name.len == 0 or std.mem.indexOfScalar(u8, name, '/') != null) return null;
+        return .{ .name = name, .git = try std.fmt.allocPrint(a, "https://github.com/{s}/{s}.git", .{ owner, name }) };
+    }
+    const env = ctx.env_map orelse return null;
+    const org = env.get("BPMP_DEFAULT_ORG") orelse return null;
+    if (org.len == 0) return null;
+    return .{ .name = arg, .git = try std.fmt.allocPrint(a, "https://github.com/{s}/{s}.git", .{ org, arg }) };
+}
 
 fn installSingle(ctx: cli.Context, spec: []const u8, allow_unlocked: bool) !u8 {
     _ = allow_unlocked;
-    var name = spec;
+    var arg = spec;
     var constraint: []const u8 = "latest";
-    if (std.mem.indexOfScalar(u8, spec, '@')) |at| {
-        name = spec[0..at];
-        constraint = spec[at + 1 ..];
+    if (std.mem.lastIndexOfScalar(u8, spec, '@')) |at| {
+        // `git@github.com:…` has an `@` of its own; a constraint follows the last one
+        // only when what follows does not look like a host.
+        if (std.mem.indexOfScalar(u8, spec[at + 1 ..], ':') == null and std.mem.indexOfScalar(u8, spec[at + 1 ..], '/') == null) {
+            arg = spec[0..at];
+            constraint = spec[at + 1 ..];
+        }
     }
-    if (name.len == 0) return common.errMsg("install: missing package name");
+    if (arg.len == 0) return common.errMsg("install: missing package name");
+
+    var arena = std.heap.ArenaAllocator.init(ctx.gpa);
+    defer arena.deinit();
+    const source = (try resolveInstallSource(arena.allocator(), ctx, arg)) orelse {
+        return common.errFmt(
+            "install: '{s}' has no source — a dependency is {{ \"{s}\": {{ \"git\": \"…\" }} }} (decision 76); write `bpmp install <owner>/{s}[@<spec>]`, a git URL, or set BPMP_DEFAULT_ORG",
+            .{ arg, arg, arg },
+        );
+    };
+    const name = source.name;
 
     // Update manifest with the new dep — this is the offline-safe half. The
     // resolver/download half follows once the live HTTP layer lands.
@@ -393,7 +431,7 @@ fn installSingle(ctx: cli.Context, spec: []const u8, allow_unlocked: bool) !u8 {
         else => return err,
     };
     defer m.deinit();
-    try m.addDependency(ctx.gpa, name, constraint);
+    try m.addDependency(ctx.gpa, name, constraint, source.git);
     try manifest.write(ctx.gpa, ctx.io, ".", &m);
 
     common.printf(ctx,

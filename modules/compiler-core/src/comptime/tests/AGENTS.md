@@ -39,12 +39,12 @@ When adding a test file here, register it in `../tests.zig` or it will not run.
 | `infer_exprs.zig` | Literal / binary / case / control-flow inference; `@src()` typing as `SourceLocation` (`src_types_as_sourcelocation`). |
 | `infer_decls.zig` | fn / record / interface / implement / test-block inference. |
 | `infer_generics.zig` | Type meta-kind + generic inference (regression guards). |
-| `infer_errors.zig` | Inference type errors (`infer error: …`), including `src-takes-no-arguments` and `unknown-builtin` (with and without a near name). |
+| `infer_errors.zig` | Inference type errors (`infer error: …`), including `src-takes-no-arguments` and `unknown-builtin` (with and without a near name). The decision 38 / front 17 rows (`val` assignment, `@BeamMemory` validation) assert the message by content through `typeErrorMessage` — no cell under `snapshots/comptime/errors/`. |
 | `types.zig` | Types / type unification. |
 | `variants.zig` | Variants, record update, patterns, `@print`, AST probes. |
 | `narrowing.zig` | Null-check / case-variant / type-guard narrowing. |
 | `exhaustiveness.zig` | `case` exhaustiveness + reachability errors. |
-| `effects.zig` | throw / context / `@Result` effect checking. |
+| `effects.zig` | throw / context / `@Result` effect checking. The `context:` cells carry `#[@context]` on every body that writes `use` (decision 88 of 1.0.10-beta); `use without #[@context] on a -> Element body` pins the `use-without-context-effect` diagnostic and `#[@context] fn -> Element (owner type) passes` the component form. |
 | `effect_result.zig` | `#[@result]` contract (R-codes). |
 | `effect_future.zig` | `#[@future]` contract (RF-codes). |
 | `effect_generator.zig` | `#[@generator]` contract (`yield`, labels). |

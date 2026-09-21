@@ -36,7 +36,7 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, opts: Options, env_map: libs.EnvM
     const proj = config.load(arena, io) catch |err| {
         switch (err) {
             error.ConfigNotFound => reporter.errMsg("botopink.json not found — are you in a botopink project?"),
-            error.ConfigInvalid => reporter.errMsg("botopink.json is invalid JSON"),
+            error.ConfigInvalid => {}, // refused — the located diagnostic is already printed
             else => reporter.errMsg("failed to load botopink.json"),
         }
         return 1;
@@ -64,7 +64,7 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, opts: Options, env_map: libs.EnvM
 
     // Resolve declared external libs (generic — `libs/<name>/`), same as `build`,
     // so `import … from "<lib>"` type-checks. Dependencies compile first.
-    const dep_modules = libs.loadDependencies(gpa, io, proj.dependencies, env_map) catch |err| {
+    const dep_modules = libs.loadDependencies(gpa, io, proj, env_map) catch |err| {
         build_cmd.reportDependencyError(err);
         return 1;
     };

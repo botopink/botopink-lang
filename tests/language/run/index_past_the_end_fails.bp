@@ -1,0 +1,24 @@
+//// Decision 63 (amended 2026-09-19) — `xs[i]` is `xs.at(i)` through the ambient
+//// `Index<i32, T>`, and its value is `T`. An index past the end has no `T` to
+//// answer, so the program **fails** there (`index_past_the_end_fails.exit` says
+//// `nonzero`): not `undefined`, not `null`, not `0`. `xs.at(9)` — the method
+//// called by name — is the different feature that answers `?T` (decision 30,
+//// `run/index_at_optional.bp`).
+////
+//// This is the third spelling of the cell C-16 names as
+//// `index_an_index_past_the_end_answers_zero`: the slug said `zero`, the text
+//// said `undefined`, and decision 63 makes the answer a failure on every backend.
+////
+//// Measured at `85f883bd` (2026-09-20), the compiler half (C-02) not landed:
+////
+////   commonJS  `10`, `undefined`, `after` — exit 0, the hole TypeScript leaves open
+////   erlang    `10`, `undefined`, `after` — exit 0, the same
+////   wasm      `10`, `0`, `after`         — exit 0, `$__arr_at` answers 0 out of range
+////   beam      exit 0; the index is dropped rather than emitted (03 handover 15)
+
+pub fn main() {
+    val xs = [10, 20, 30];
+    @print(xs[0]);
+    @print(xs[9]);
+    @print("after");
+}

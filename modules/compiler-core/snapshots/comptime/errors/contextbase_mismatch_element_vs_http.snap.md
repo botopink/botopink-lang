@@ -5,6 +5,7 @@ fn state(initial: i32) -> @Context<Element, i32> {
 fn connection() -> @Context<Http, i32> {
     0;
 }
+#[@context]
 fn bad() -> @Context<Element, i32> {
     val c = use connection();
     state(0);
@@ -12,9 +13,9 @@ fn bad() -> @Context<Element, i32> {
 
 ----- ERROR
 error: context-anchor-violation: ContextBase mismatch
-  ┌─ :8:13
+  ┌─ :9:13
   │
-8 │     val c = use connection();
+9 │     val c = use connection();
   │             ^
 
   function returns @Context<Element, _>

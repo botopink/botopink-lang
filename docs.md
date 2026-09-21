@@ -490,7 +490,117 @@ fn load() {
 }
 ```
 
+### use — imports, activation, and hooks
+
+One keyword, two roles: a **declaration** (the import list and the extension
+activation) and an **expression prefix** (the hook activation). Grammar:
+
+<!-- docs-check: skip a grammar, not a module -->
+```
+ImportItem     := DottedName "*"? ("as" Ident)?   // in `import { … } from "…"`
+ActivationStmt := DottedName "*" ";"              // module level only
+UseExpr        := "use" Expr                      // prefix; the operand is a call
+```
+
+**Declaration role.** `import { name* } from "…"` opts an imported `implement`
+/ `extend` into scope (see *Imports*). The bare statement `Name*;` at module
+level names a local symbol, and is refused either way: an extension declared in
+the module is applied on its own — `` `Name*` is redundant: an extension declared
+in this module is auto-applied; `*` is only for imports `` (`redundantActivation`)
+— and anything else is `'Name' does not name an implement/extend symbol`
+(`notAnExtension`).
+
+**Expression role.** A **hook** is a function whose return type is
+`@Context<Owner, R>`: `Owner` is the type the hook is anchored to, `R` is what it
+yields. A hook is named by its noun, without a `use` prefix (`state`, `effect`,
+`router`, `pathname` — never `useState`), because the keyword *is* the
+activation. `val x = use <hook>(…)` activates the hook and binds `R`; a bare
+`use <hook>(…);` activates a void hook; `val {a, b} = use …` binds `R`'s fields
+by name. The activating body is a `#[@context]` function whose return type is
+the owner — a **component**, `#[@context] fn Widget() -> Element`, where
+`Element` is a type that `implement @Context<Element, Element>` — or is itself
+`@Context<Owner, _>` — a **custom hook** composing hooks. Every `use` in one
+body agrees on the one `Owner` its return type names.
+
+```botopink
+type Element(count: i32) implement @Context<Element, Element>
+type State(value: i32, name: string) implement @Context<Element, State>
+
+// A hook: the noun, the owner, the yield. No annotation — its body activates nothing.
+fn state(initial: i32) -> @Context<Element, State> {
+    return State(value: initial, name: "state");
+}
+
+// A custom hook composes hooks: `#[@context]`, and a return that is `@Context<Element, _>`.
+#[@context]
+fn counter(start: i32) -> @Context<Element, State> {
+    val s = use state(start * 2);
+    return s;
+}
+
+// A component: `#[@context]`, and a return that is the owner type.
+#[@context]
+fn Widget(n: i32) -> Element {
+    val c = use state(n);
+    val {value, name} = use counter(n);
+    return Element(count: c.value + value);
+}
+
+// Without `use` the same call is an ordinary call — the first-render value.
+fn Plain() -> Element {
+    val c = state(7);
+    return Element(count: c.value);
+}
+```
+
+The rules, each with its diagnostic:
+
+- **The body needs the effect.** A `use` in a body whose fn is not
+  `#[@context]` is refused at the `use`: when the return type implements
+  `@Context` (the owner type, or the `@Context<…>` wrapper) the message names
+  the annotation — `` use-without-context-effect: `use` needs `#[@context]` on
+  the enclosing fn 'Widget': its return type 'Element' implements @Context, but
+  only a `#[@context]` body activates a hook `` — and a bare `fn … -> Element`
+  without it is an ordinary function. When the return type does not implement
+  `@Context` at all (`-> string`, `-> void`, a module-level `val`) it is
+  `` use-of-non-context-fn: `use` not allowed: function returns 'string' which
+  does not implement @Context ``. `#[@context]` itself accepts either return
+  shape: `-> @Context<B, R>` or a named type implementing `@Context<B, _>`.
+- **The operand is a hook.** `use plain()` where `plain : -> User` is
+  `` use-of-non-context-fn: `use` requires @Context: 'User' does not implement
+  @Context ``.
+- **One owner per body.** `use connection()` with `connection : ->
+  @Context<Http, _>` inside a body owned by `Element` is
+  `` context-anchor-violation: function returns @Context<Element, _> but `use`
+  returns @Context<Http, _> ``.
+- **The static prefix.** Every `use` of a function body comes before its first
+  `if`, `case`, `loop` or `return`, at any nesting: `val c = use …` after a
+  `return`, and a `use` inside an `if`'s own block, are both parse errors —
+  `` `use` must be in static prefix `` with the hint `Move all `use` statements
+  to the top of the function body, before any `if`, `case`, `loop`, or
+  `return``. A lambda body is another function: its own prefix starts over, so
+  `use memo({ -> return count * 2; })` keeps the enclosing prefix intact.
+- **The type is `R`.** `val c = use state(0)` binds `c : State`. A tuple `R`
+  destructures positionally, `val #(a, b) = use pair()`, but its element types
+  are not propagated yet — each name is a fresh type variable (front 19 step 3).
+- **`use` never leaves a function body.** There is no module-level `use` and no
+  `use client;` / `use server;` directive (decision 87 of 1.0.10-beta): a
+  framework's boundary markers are its own decorators (`#[client]`).
+
+**Lowering.** `use f(x)` is `f(x)` on every backend (decision 88). The prefix is
+the activation the checker validated, not a rename: nothing is turned into
+`useState`, no dependency array is inferred — a hook that takes one declares it
+as a parameter (`memo(compute, deps)`). A client runtime supplies hook semantics
+through what `f` does; the pure body above is what every backend runs, and what
+the server renders.
+
+**The provider side.** `#[@context]` is also the effect under which
+`@getContex(T)` reads the active provider of `T` on the same owner tree; a
+provider stack is not part of this section.
+
 ## Functions
+
+`use` and `#[@context]` (hooks and components) are under *Expressions › use*.
 
 ### Parameters with defaults
 
@@ -692,7 +802,12 @@ Every project carries a `botopink.json` at its root:
 ```
 
 Optional `entry` names the module-tree root under `src/` (default: `main.bp`,
-else `root.bp`). `dependencies` also accepts an array of bare names.
+else `root.bp`). `dependencies` is an object — one entry per import name, each
+with exactly one source: `{ "path": "…" }`, `{ "git": "…", "branch"|"tag"|"rev":
+"…" }` or `{ "workspace": true }` (the sibling member of the enclosing
+workspace). A manifest with `"workspaces": ["modules/*", "examples/*"]` is a
+workspace: it declares members and is not a package. Every field, both forms
+and every refusal are in [`docs/botopink-json.md`](docs/botopink-json.md).
 
 ## Decided, not yet implemented
 

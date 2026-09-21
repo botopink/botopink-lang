@@ -557,7 +557,8 @@ fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
             // (`val head: ?i32 = 5;` must bind `?i32`, or a later
             // `option.map(head, f)` sees a bare `i32`).
             const bindTy = annType orelse ty;
-            try env.bind(v.name, bindTy);
+            try validateMemoryAnnotations(env, v, bindTy);
+            if (v.mutable) try env.bind(v.name, bindTy) else try env.bindVal(v.name, bindTy);
             return .{ .name = v.name, .type_ = bindTy, .typedExpr = typedExpr, .decl = decl };
         },
         .@"fn" => |f| {
@@ -977,20 +978,26 @@ fn contextBaseFromImplements(arena: std.mem.Allocator, impls: []const ast.TypeRe
 
 /// Derive the `@Context` capability of a function from its declared return type.
 /// A return type implements `@Context` either directly (`@Context<B, R>`) or via a
-/// named type whose inline `implement` clause lists `@Context<B, R>`.
-fn contextInfoFromReturn(env: *Env, retType: ?ast.TypeRef) InferError!envMod.FnContext {
+/// named type whose inline `implement` clause lists `@Context<B, R>` — the owner
+/// type of a component (`#[@context] fn Widget() -> Element`, decision 88).
+/// `eff` is the fn's effect annotation: `annotated` records whether it is
+/// `#[@context]`, the second half of the capability — a body activates a hook
+/// only when its return type implements `@Context` **and** it carries the
+/// annotation (`inferUseHookExpr`).
+fn contextInfoFromReturn(env: *Env, retType: ?ast.TypeRef, eff: ?ast.EffectKind, fnName: []const u8) InferError!envMod.FnContext {
     const display = if (retType) |rt| try typeRefToString(env.arena, rt) else "void";
+    const annotated = eff == .context;
     if (retType) |rt| switch (rt) {
         .generic => |g| if (std.mem.eql(u8, g.name, "Context")) {
             const base = if (g.args.len >= 1) try typeRefToString(env.arena, g.args[0]) else null;
-            return .{ .implementsContext = true, .base = base, .returnDisplay = display };
+            return .{ .implementsContext = true, .base = base, .returnDisplay = display, .annotated = annotated, .fnName = fnName };
         },
         .named => |n| if (env.lookupTypeDef(n)) |td| {
-            if (td.contextBase()) |b| return .{ .implementsContext = true, .base = b, .returnDisplay = display };
+            if (td.contextBase()) |b| return .{ .implementsContext = true, .base = b, .returnDisplay = display, .annotated = annotated, .fnName = fnName };
         },
         else => {},
     };
-    return .{ .implementsContext = false, .base = null, .returnDisplay = display };
+    return .{ .implementsContext = false, .base = null, .returnDisplay = display, .annotated = annotated, .fnName = fnName };
 }
 
 /// The display name of a `ContextBase` type (a phantom, typically a plain named type).
@@ -2137,7 +2144,8 @@ fn inferDecl(env: *Env, decl: ast.DeclKind) InferError!?Binding {
                 try unifyAt(env, annType, ty, v.value.getLoc());
                 bindTy = annType;
             }
-            try env.bind(v.name, bindTy);
+            try validateMemoryAnnotations(env, v, bindTy);
+            if (v.mutable) try env.bind(v.name, bindTy) else try env.bindVal(v.name, bindTy);
             return .{ .name = v.name, .type_ = bindTy };
         },
         .@"fn" => |f| {
@@ -2789,6 +2797,94 @@ fn instantiateGenericType(env: *Env, ty: *T.Type) InferError!*T.Type {
 /// Only the `@`-prefixed builtin form is caught. `#[external(…)]` without the
 /// `@` is a user-defined attribute — a decorator's own name — and means
 /// something else entirely.
+/// Decision 38 — a `val` is **immutable**, local or module-level. `val x = 0;
+/// x = 1;` checked and then threw on node (`const`) and ran on the other three
+/// targets; the rule moves to compile time, and the error names `var`.
+fn refuseValAssign(env: *Env, name: []const u8, loc: ast.Loc) InferError!void {
+    if (!env.isVal(name)) return;
+    var e = TypeError.custom(
+        try std.fmt.allocPrint(env.arena, "`{s}` is a `val` and cannot be assigned", .{name}),
+        try std.fmt.allocPrint(env.arena, "Declare it `var {s} = …` to reassign it, or bind the new value to a new name.", .{name}),
+    );
+    env.lastError = e.withLoc(loc);
+    return error.TypeError;
+}
+
+/// `#[@BeamMemory.<member>(…)]` on a module binding — front 17 step 3,
+/// decisions 41 and 51. A misread memory annotation does not fail, it moves
+/// where the state lives, so every part is checked in the commit the carrier
+/// was born in: the binding is a `var`; the member is one of `ProcessDict`
+/// (the default, said out loud), `Ets` or `PersistentTerm`; every argument is
+/// the one the annotation takes, `keyed`, with a `true`/`false` value; and
+/// `keyed = true` names a `Dict` — an `i32` has no key, and neither has a
+/// list (51).
+fn validateMemoryAnnotations(env: *Env, v: ast.ValDecl, bindTy: *T.Type) InferError!void {
+    const members = [_][]const u8{ "ProcessDict", "Ets", "PersistentTerm" };
+    for (v.annotations) |a| {
+        if (!std.mem.startsWith(u8, a.name, "BeamMemory.")) continue;
+        const loc = a.loc orelse v.value.getLoc();
+        if (!v.mutable) return failAt(
+            env,
+            loc,
+            try std.fmt.allocPrint(env.arena, "`#[@{s}]` needs a `var` — `{s}` is a `val`", .{ a.name, v.name }),
+            try std.fmt.allocPrint(env.arena, "Write `#[@{s}] var {s}: T = …;`.", .{ a.name, v.name }),
+        );
+        const member = a.name["BeamMemory.".len..];
+        var known = false;
+        for (members) |m| known = known or std.mem.eql(u8, m, member);
+        if (!known) return failAt(
+            env,
+            loc,
+            try std.fmt.allocPrint(env.arena, "unknown member `{s}` in `@BeamMemory` — expected `ProcessDict`, `Ets` or `PersistentTerm`", .{member}),
+            "The member names where the `var` lives on the BEAM; `ProcessDict` is what a `var` with no annotation means.",
+        );
+        for (a.writtenArgs(), 0..) |arg, i| {
+            const label = a.labelOf(i) orelse arg;
+            if (!std.mem.eql(u8, label, "keyed")) return failAt(
+                env,
+                loc,
+                try std.fmt.allocPrint(env.arena, "unknown argument `{s}` — expected `keyed`", .{label}),
+                try std.fmt.allocPrint(env.arena, "Write `#[@{s}(keyed = true)]`.", .{a.name}),
+            );
+            const is_true = std.mem.eql(u8, arg, "true");
+            if (!is_true and !std.mem.eql(u8, arg, "false")) return failAt(
+                env,
+                loc,
+                try std.fmt.allocPrint(env.arena, "`keyed` takes `true` or `false`, not `{s}`", .{arg}),
+                null,
+            );
+            if (is_true and !typeIsDict(bindTy)) return failAt(
+                env,
+                loc,
+                try std.fmt.allocPrint(env.arena, "`keyed` needs a keyed container — {s} has no key", .{try describeForKeyed(env, bindTy)}),
+                "Only a `Dict<K, V>` is keyed; a list stores its whole value (decision 51).",
+            );
+        }
+    }
+}
+
+fn failAt(env: *Env, loc: ast.Loc, msg: []const u8, hint: ?[]const u8) InferError {
+    var e = TypeError.custom(msg, hint);
+    env.lastError = e.withLoc(loc);
+    return error.TypeError;
+}
+
+/// Is `t` the standard library's `Dict<K, V>`?
+fn typeIsDict(t: *T.Type) bool {
+    const d = t.deref();
+    return switch (d.*) {
+        .named => |n| std.mem.eql(u8, n.name, "Dict") or std.mem.startsWith(u8, n.name, "Dict<"),
+        else => false,
+    };
+}
+
+/// `an \`i32\`` / `a \`string[]\`` — the type in the `keyed` diagnostic.
+fn describeForKeyed(env: *Env, t: *T.Type) ![]const u8 {
+    const rendered = try snapshotMod.typeNameOf(env.arena, t);
+    const article: []const u8 = if (rendered.len > 0 and std.mem.indexOfScalar(u8, "aeiouAEIOU", rendered[0]) != null) "an" else "a";
+    return std.fmt.allocPrint(env.arena, "{s} `{s}`", .{ article, rendered });
+}
+
 /// Decision 37 — a record is **immutable**. `p.age = 31` and `self.count += 1`
 /// both checked and both mutated in place; the decided form is a new value,
 /// `Person(..p, age: 31)`, which the constructor's `..` spread already builds
@@ -3016,7 +3112,7 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     // The return type decides whether `use` is allowed in the body and which
     // ContextBase every `use` must agree on (@Context F7). Scope it to the body.
     const savedFnCtx = env.fnContext;
-    env.fnContext = try contextInfoFromReturn(env, f.returnType);
+    env.fnContext = try contextInfoFromReturn(env, f.returnType, f.effect, f.name);
     defer env.fnContext = savedFnCtx;
 
     // `@src().fnName` inside this body (decision 73). A lambda in the body does
@@ -3074,7 +3170,7 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     const asyncKind = classifyAsyncReturn(retType);
     const fnLoc: ?ast.Loc = if (f.body.len > 0) f.body[0].expr.getLoc() else null;
     if (eff) |e| {
-        if (!effectMatchesReturn(e, retType)) {
+        if (!effectMatchesReturn(env, e, retType)) {
             // R3 / R4 — the annotation effect kind disagrees with the return
             // wrapper kind. The diagnostic carries the stable code from
             // `comptime/diagnostics.zig` so snapshot consumers can key on it.
@@ -3293,7 +3389,7 @@ fn inferTypeMethods(
 
         // Scope the return-type-derived `use`/effect context to this body.
         const savedFnCtx = env.fnContext;
-        env.fnContext = try contextInfoFromReturn(env, m.returnType);
+        env.fnContext = try contextInfoFromReturn(env, m.returnType, effectAnnotationOf(m.annotations), m.name);
         defer env.fnContext = savedFnCtx;
 
         // 06 C9 — a method body is part of the strict contract, like a
@@ -3352,10 +3448,14 @@ fn classifyAsyncReturn(ty: *T.Type) AsyncReturnKind {
 
 /// True when `retType` is the builtin wrapper named by `eff` (an unresolved
 /// type variable stays lenient, matching the rest of the effect checks).
-fn effectMatchesReturn(eff: ast.EffectKind, retType: *T.Type) bool {
+/// `#[@context]` also accepts a named type that implements `@Context<B, _>`
+/// through its inline `implement` clause — the owner type of a component,
+/// `#[@context] fn Widget() -> Element` (decision 88).
+fn effectMatchesReturn(env: *Env, eff: ast.EffectKind, retType: *T.Type) bool {
     const t = retType.deref();
     return switch (t.*) {
-        .named => |n| std.mem.eql(u8, n.name, eff.returnWrapper()),
+        .named => |n| std.mem.eql(u8, n.name, eff.returnWrapper()) or
+            (eff == .context and contextBaseOfType(env, retType) != null),
         .typeVar => true,
         else => false,
     };
@@ -3383,7 +3483,11 @@ fn returnTargetFor(retType: *T.Type, eff: ?ast.EffectKind, checked: bool) ?*T.Ty
     const args = t.named.args;
     return switch (e) {
         .result, .future => if (args.len >= 1) args[0] else null,
-        .generator, .context => if (args.len >= 2) args[1] else null,
+        .generator => if (args.len >= 2) args[1] else null,
+        // A `#[@context]` fn whose return is not the `@Context<B, X>` wrapper
+        // (handled above) returns its owner type as written — a component's
+        // `-> Element` (decision 88).
+        .context => retType,
         .iterator, .asyncGenerator => null,
     };
 }
@@ -7504,7 +7608,7 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
             // The annotation is the DECLARED type — bind it, not the RHS type
             // (`val head: ?i32 = 5;` must bind `?i32`).
             const bindTy = annType orelse valTyped.getType();
-            try env.bind(lb.name, bindTy);
+            if (lb.mutable) try env.bind(lb.name, bindTy) else try env.bindVal(lb.name, bindTy);
             return TypedExpr{ .binding = .{ .loc = loc, .type_ = bindTy, .kind = .{ .localBind = .{
                 .name = lb.name,
                 .value = valPtr,
@@ -7521,6 +7625,7 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
                 .target = switch (a.target) {
                     .name => |name| blk: {
                         if (env.lookup(name)) |ty| {
+                            try refuseValAssign(env, name, loc);
                             try unifyAt(env, ty, valTyped.getType(), loc);
                         } else {
                             env.lastError = TypeError.unboundVariable(name).withLoc(loc);
@@ -8316,6 +8421,14 @@ fn inferUseHookExpr(env: *Env, uh: ast.UseHookExprOf(.untyped), loc: ast.Loc) In
     };
     if (!fc.implementsContext) {
         env.lastError = TypeError.useNotAllowed(fc.returnDisplay).withLoc(loc);
+        return error.TypeError;
+    }
+    // Decision 88 — the return type implements `@Context`, but only a
+    // `#[@context]` body activates a hook; without the annotation the fn is
+    // an ordinary fn (a bare `-> Element` renders once, a bare
+    // `-> @Context<B, R>` is a hook declaration, and neither writes `use`).
+    if (!fc.annotated) {
+        env.lastError = TypeError.useWithoutContextEffect(fc.fnName, fc.returnDisplay).withLoc(loc);
         return error.TypeError;
     }
 

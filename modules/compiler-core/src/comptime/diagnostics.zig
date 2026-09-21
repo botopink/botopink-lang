@@ -165,6 +165,10 @@ pub const context_getcontex_outside_context_fn: []const u8 = "context-getcontex-
 /// RC6 — `use <hook>()` where `<hook>` is not a `#[@context]` fn.
 pub const use_of_non_context_fn: []const u8 = "use-of-non-context-fn";
 
+/// RC7 (decision 88) — `use` in a body whose return type implements `@Context`
+/// but whose fn is not `#[@context]`: only the annotated body activates a hook.
+pub const use_without_context_effect: []const u8 = "use-without-context-effect";
+
 // ── RG1–RG4: §1G default-generic diagnostics ────────────────────────────────
 
 /// RG1 — `<T = default, U>` — required parameter follows a defaulted one.
@@ -266,6 +270,7 @@ pub const all_codes = [_][]const u8{
     context_getcontex_expects_type,
     context_getcontex_outside_context_fn,
     use_of_non_context_fn,
+    use_without_context_effect,
     generic_required_arg_missing,
     generic_arg_skip_forbidden,
     result_template_shape_mismatch,

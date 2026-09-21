@@ -20,7 +20,26 @@
 # that cell):
 #   test/<name>.bp     `botopink test --target <t> --json`; every test must pass
 #   run/<name>.bp      `botopink run --target <t>`; stdout must equal <name>.out
-#                      (on beam: run, then `erlc +from_asm out/*.S`, then `erl`)
+#                      (on beam: run, then `erlc +from_asm out/*.S`, then `erl`).
+#                      Three optional sidecars, each a claim about the cell:
+#                        <name>.exit         `nonzero` — the program must abort:
+#                                            stdout equals <name>.out AND the
+#                                            status is not 0 (`@panic`, a failed
+#                                            index). The number itself is never
+#                                            pinned (escript 127 / erl 1 / wasmtime
+#                                            134 / node 1 are the runtimes', not
+#                                            the language's)
+#                        <name>.<t>.expect   on target <t> the compiler must
+#                                            REFUSE the program: exit non-zero and
+#                                            the diagnostic contains line 1 (and
+#                                            ` --> src/main.bp:<L:C>` when line 2 is
+#                                            present) — the shape of reject/, per
+#                                            target, for "no external target for
+#                                            the active backend"
+#                        <name>.targets      the targets the cell is scheduled on
+#                                            (space-separated); absent = every
+#                                            target of the run. A cell's header
+#                                            comment says why a target is missing
 #   reject/<name>.bp   `botopink check`; must exit non-zero, stderr must contain
 #                      the first line of <name>.expect and ` --> src/main.bp:<L:C>`
 #                      where <L:C> is its second line (target-independent: runs
@@ -28,7 +47,10 @@
 #   modules/<name>/    a whole project — its own `botopink.json` and `src/` tree;
 #                      `botopink run --target <t>`; stdout must equal
 #                      <name>/expected.out. The kind for what one file cannot
-#                      express: `pub mod`, `import … from "<module>"`, `from "std"`
+#                      express: `pub mod`, `import … from "<module>"`, `from "std"`,
+#                      and a local dependency — a second project inside the cell
+#                      named by a `{ "path": "…" }` dependency of its manifest
+#                      (front 12 step 4.2; no network, nothing special here)
 #
 # expected-failures.txt — one line per expected failure, `|`-separated (test
 # names contain spaces):
@@ -225,17 +247,51 @@ run_one() { # <path> <target>
             fi ;;
         run/*)
             local expected="$here/${path%.bp}.out"
+            local refuse="$here/${path%.bp}.$t.expect"
+            local exitfile="$here/${path%.bp}.exit"
             cp "$here/$path" "$dir/src/main.bp"
             exec_run "$dir" "$t"
             local code=$?
-            if [ ! -f "$expected" ]; then
+            if [ -f "$refuse" ]; then
+                # The claim is that this target refuses the program (the shape of
+                # reject/, per target): non-zero, and the diagnostic named.
+                quiet <"$dir/stdout.txt" >"$dir/all.txt"; quiet <"$dir/e.txt" >>"$dir/all.txt"
+                local msg loc; msg="$(sed -n 1p "$refuse")"; loc="$(sed -n 2p "$refuse")"
+                if [ $code -eq 0 ]; then
+                    local got; got="$(head -c 300 "$dir/stdout.txt" | tr '\n\t' '⏎ ')"
+                    printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "accepted (exit 0; stdout: $got); expected to be refused with: $msg" >"$out"
+                elif ! grep -qF -- "$msg" "$dir/all.txt"; then
+                    local first; first="$(grep -m1 -iE 'error' "$dir/all.txt" | tr '\t' ' ')"
+                    printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "refused (exit $code), but not with \"$msg\" (got: ${first:-no error line})" >"$out"
+                elif [ -n "$loc" ] && ! grep -qF -- "--> src/main.bp:$loc" "$dir/all.txt"; then
+                    local where; where="$(grep -m1 -oE -- '--> src/main.bp:[0-9]+:[0-9]+' "$dir/all.txt")"
+                    printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "right message, wrong location: ${where:-none} (expected $loc)" >"$out"
+                else
+                    printf '%s\t%s\t%s\t\n' "$t" "$path" ok >"$out"
+                fi
+            elif [ ! -f "$expected" ]; then
                 printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "missing ${path%.bp}.out" >"$out"
-            elif [ $code -eq 0 ] && cmp -s "$dir/stdout.txt" "$expected"; then
-                printf '%s\t%s\t%s\t\n' "$t" "$path" ok >"$out"
             else
-                local got; got="$(head -c 300 "$dir/stdout.txt" | tr '\n\t' '⏎ ')"
-                local err; err="$(strip <"$dir/e.txt" | grep -m1 -iE 'error' | tr '\t' ' ')"
-                printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "exit $code; stdout: $got ${err:+; $err}" >"$out"
+                # `<name>.exit` holding `nonzero` claims an abort: the program
+                # prints its .out and then dies. Any other content is malformed.
+                local want_exit=0
+                if [ -f "$exitfile" ]; then
+                    case "$(tr -d '[:space:]' <"$exitfile")" in
+                        nonzero) want_exit=1 ;;
+                        *) printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "malformed ${path%.bp}.exit: the only claim it can make is \`nonzero\`" >"$out"; return ;;
+                    esac
+                fi
+                local status_ok=0
+                if [ $want_exit -eq 0 ] && [ $code -eq 0 ]; then status_ok=1; fi
+                if [ $want_exit -eq 1 ] && [ $code -ne 0 ]; then status_ok=1; fi
+                if [ $status_ok -eq 1 ] && cmp -s "$dir/stdout.txt" "$expected"; then
+                    printf '%s\t%s\t%s\t\n' "$t" "$path" ok >"$out"
+                else
+                    local got; got="$(head -c 300 "$dir/stdout.txt" | tr '\n\t' '⏎ ')"
+                    local err; err="$(strip <"$dir/e.txt" | grep -m1 -iE 'error' | tr '\t' ' ')"
+                    local want; want="exit $code"; [ $want_exit -eq 1 ] && [ $code -eq 0 ] && want="exit 0 where an abort was expected"
+                    printf '%s\t%s\t%s\t%s\n' "$t" "$path" fail "$want; stdout: $got ${err:+; $err}" >"$out"
+                fi
             fi ;;
         reject/*)
             local expect="$here/${path%.bp}.expect"
@@ -294,6 +350,16 @@ for f in "${files[@]}"; do
                     [ "$t" = "wasm" ] || [ "$t" = "beam" ] && continue
                     printf '%s\t%s\n' "$f" "$t" >>"$jobs_list"
                 done ;;
+        run/*)  # `<name>.targets` narrows the cell to the targets it claims
+                local_targets=("${targets[@]}")
+                if [ -f "$here/${f%.bp}.targets" ]; then
+                    read -r -a declared <"$here/${f%.bp}.targets"
+                    local_targets=()
+                    for t in "${targets[@]}"; do
+                        for d in "${declared[@]}"; do [ "$t" = "$d" ] && local_targets+=("$t"); done
+                    done
+                fi
+                for t in "${local_targets[@]}"; do printf '%s\t%s\n' "$f" "$t" >>"$jobs_list"; done ;;
         *) for t in "${targets[@]}"; do printf '%s\t%s\n' "$f" "$t" >>"$jobs_list"; done ;;
     esac
 done
@@ -361,6 +427,28 @@ if (fs.existsSync(listPath)) {
     }
     expected.push({ target, path, tests, owner, reason: parts.slice(3).join(" | "), line: i + 1 });
   });
+}
+
+// Decision 59 (b) of `specs/1.0.5-beta/decisions-taken.md`: the tally of
+// expected-failures.txt is printed by the runner, recounted from the file on
+// every run, and never kept by hand in the file's header. The owner field is
+// split on `,` outside parentheses — `02 (no step; decision 55, reported …)`
+// is one row — and the first token of the first row names the owner.
+if (!partial) {
+  const live = expected.filter((e) => !e.bad);
+  const byTarget = new Map(), byOwner = new Map();
+  let named = 0, second = 0, exercised = 0;
+  for (const e of live) {
+    byTarget.set(e.target, (byTarget.get(e.target) || 0) + 1);
+    const rows = e.owner.split(/,(?![^(]*\))/).map((s) => s.trim()).filter(Boolean);
+    const first = (rows[0] || "?").split(/\s+/)[0];
+    byOwner.set(first, (byOwner.get(first) || 0) + 1);
+    if (rows.length > 1) second++;
+    if (e.tests) named++;
+    if (e.target === "*" || targets.includes(e.target)) exercised++;
+  }
+  const fmt = (m) => [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([k, v]) => `${k} ${v}`).join(" · ");
+  console.log(`expected-failures.txt: ${live.length} lines, ${exercised} exercised by --target ${targetsArg.replace(/ /g, ",")} — by target: ${fmt(byTarget)}; by first owner row: ${fmt(byOwner)}; ${named} name tests rather than a path; ${second} name a second row`);
 }
 
 let fails = 0, oks = 0, expectedCount = 0;

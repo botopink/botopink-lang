@@ -140,6 +140,13 @@ pub const FnContext = struct {
     base: ?[]const u8 = null,
     /// Rendered return type, used in the "`use` not allowed" diagnostic.
     returnDisplay: []const u8 = "void",
+    /// True when the enclosing fn carries `#[@context]` (decision 88): the
+    /// effect under which a body activates a hook. A return type that
+    /// implements `@Context` without the annotation is an ordinary fn — a `use`
+    /// in it is `useWithoutContextEffect`, which names the annotation.
+    annotated: bool = false,
+    /// The enclosing fn's name, for that diagnostic.
+    fnName: []const u8 = "",
 };
 
 /// How `throw` should be type-checked in the current function scope.
@@ -345,6 +352,10 @@ pub const Env = struct {
     arena: std.mem.Allocator,
     /// Value bindings: variable/function name → *Type.
     bindings: std.StringHashMap(*T.Type),
+    /// The names whose most recent binder was a `val` (decision 38). `bind`
+    /// clears a name — a `var`, a parameter, a pattern may all be assigned;
+    /// `bindVal` sets it — and an assignment to a set name is refused.
+    valNames: std.StringHashMap(void),
     /// Registered type definitions: type name → TypeDef.
     typeDefs: std.StringHashMap(TypeDef),
     /// Per-function typeparam constraints: function name → constraint list.
@@ -615,6 +626,7 @@ pub const Env = struct {
         return .{
             .arena = arena,
             .bindings = std.StringHashMap(*T.Type).init(arena),
+            .valNames = std.StringHashMap(void).init(arena),
             .typeDefs = std.StringHashMap(TypeDef).init(arena),
             .fnTypeparams = std.StringHashMap([]const TypeparamConstraint).init(arena),
             .fnExprParams = std.StringHashMap([]const ExprParamInfo).init(arena),
@@ -685,6 +697,7 @@ pub const Env = struct {
         return .{
             .arena = arena,
             .bindings = try tmpl.bindings.cloneWithAllocator(arena),
+            .valNames = try tmpl.valNames.cloneWithAllocator(arena),
             .typeDefs = try tmpl.typeDefs.cloneWithAllocator(arena),
             .fnTypeparams = try tmpl.fnTypeparams.cloneWithAllocator(arena),
             .fnExprParams = try tmpl.fnExprParams.cloneWithAllocator(arena),
@@ -872,6 +885,19 @@ pub const Env = struct {
 
     pub fn bind(self: *Env, name: []const u8, ty: *T.Type) !void {
         try self.bindings.put(name, ty);
+        _ = self.valNames.remove(name);
+    }
+
+    /// `bind` for a `val` — local or module-level: the name is then refused
+    /// as an assignment target until something else binds it (decision 38).
+    pub fn bindVal(self: *Env, name: []const u8, ty: *T.Type) !void {
+        try self.bindings.put(name, ty);
+        try self.valNames.put(name, {});
+    }
+
+    /// Was `name`'s most recent binder a `val`?
+    pub fn isVal(self: *Env, name: []const u8) bool {
+        return self.valNames.contains(name);
     }
 
     pub fn lookupTypeDef(self: *Env, name: []const u8) ?TypeDef {

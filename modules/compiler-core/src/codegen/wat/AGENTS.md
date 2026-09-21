@@ -74,7 +74,7 @@ answering an address: a *local* bound to such a container (`val ps =
 `i32`/`f32`/`str`, and a record is an `i32` slot like every other pointer.
 
 **A `?T`'s writer and its reader must agree about the box.** Two disagreements
-made `d.lookup("a").unwrapOr(0)` answer `0` for a key that is present — the
+made `d.at("a").unwrapOr(0)` answer `0` for a key that is present — the
 defect the front's step 3 names, and *not* the `forEach` accumulator it suspected
 (that works):
 
@@ -88,7 +88,7 @@ defect the front's step 3 names, and *not* the `forEach` accumulator it suspecte
   `fn_arr_elem`), and the shape predicates resolve that symbol through
   `resolvedCallSym` — `recordMethodSym` (inference's per-loc note, the path
   `lowerRecordMethod` itself takes) before `calleeSymbol`. Without it a method's
-  return shape was invisible: `Dict.lookup`'s `?V` read as a box, `hasKey()`
+  return shape was invisible: `Dict.at`'s `?V` read as a box, `hasKey()`
   printed `0`/`1` for a `bool`, `values()` and a `string`-returning method printed
   a **pointer**.
 

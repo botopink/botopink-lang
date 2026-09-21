@@ -1965,7 +1965,19 @@ pub const Formatter = struct {
                     try std.fmt.allocPrint(this.arena, "#[{s}{s}]", .{ prefix, ann.name }),
                 ));
             } else {
-                const argsStr = try std.mem.join(this.arena, ", ", ann.writtenArgs());
+                // A labelled argument prints `label = value` — the fn-style
+                // spelling `#[@BeamMemory.Ets(keyed = true)]` is written with;
+                // the parser also reads `label: value`, and this is its one
+                // canonical form.
+                var written: std.ArrayList([]const u8) = .empty;
+                defer written.deinit(this.arena);
+                for (ann.writtenArgs(), 0..) |arg, i| {
+                    try written.append(this.arena, if (ann.labelOf(i)) |label|
+                        try std.fmt.allocPrint(this.arena, "{s} = {s}", .{ label, arg })
+                    else
+                        arg);
+                }
+                const argsStr = try std.mem.join(this.arena, ", ", written.items);
                 try docs.append(this.arena, try this.text(
                     try std.fmt.allocPrint(this.arena, "#[{s}{s}({s})]", .{ prefix, ann.name, argsStr }),
                 ));
@@ -2660,9 +2672,11 @@ pub const Formatter = struct {
     fn fmtValDecl(this: *Formatter, v: ast.ValDecl) !*const Doc {
         var parts: std.ArrayList(*const Doc) = .empty;
         defer parts.deinit(this.arena);
+        // `#[@BeamMemory.Ets]` above the binding, as a `fn`'s annotations print.
+        try parts.append(this.arena, try this.fmtAnnotations(v.annotations));
         if (v.isPub) try parts.append(this.arena, try this.text("pub "));
-        // The keyword. `17-beam-memory`'s `var` joins here and nowhere else.
-        try parts.append(this.arena, try this.text("val "));
+        // The keyword — decision 48's arm: `var` when the binding is mutable.
+        try parts.append(this.arena, try this.text(if (v.mutable) "var " else "val "));
         try parts.append(this.arena, try this.text(v.name));
         if (v.typeAnnotation) |ann| {
             try parts.append(this.arena, try this.text(": "));

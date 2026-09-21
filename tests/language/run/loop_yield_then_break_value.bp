@@ -13,6 +13,9 @@
 ////                               iteration answers the `ok` of its last statement
 ////   wasm      4  20,40,99,60   — the break value is appended and the loop runs on
 ////
+//// Re-measured at `85f883bd` (2026-09-20), after C-06's wasm half (`8594e4ba`): wasm
+//// answers `3` / `20,40,99` and its line is gone; the other three are unchanged.
+////
 //// The result is read as `length` + `join(",")` rather than printed as an array
 //// so that §7's separator row cannot hide this one.
 

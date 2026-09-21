@@ -1,0 +1,12 @@
+//// `use` in a body whose return type does not implement `@Context` — the
+//// activation has no owner to agree on.
+
+type Element(count: i32) implement @Context<Element, Element>
+fn state(initial: i32) -> @Context<Element, i32> { return initial; }
+
+fn label() -> string {
+    val c = use state(0);
+    return "n";
+}
+
+pub fn main() { @print(label()); }

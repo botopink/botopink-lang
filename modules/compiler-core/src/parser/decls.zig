@@ -90,7 +90,10 @@ pub fn parseParamList(this: *This, alloc: std.mem.Allocator) ParseError![]Param 
 
 pub fn parseValDecl(this: *This, alloc: std.mem.Allocator) ParseError!ValDecl {
     const isPub = this.match(.@"pub");
-    _ = try this.consume(.val);
+    // `var name: T = v;` — decision 38's mutable binding, one level up from the
+    // local `var` (`localBind.mutable`).
+    const mutable = this.match(.@"var");
+    if (!mutable) _ = try this.consume(.val);
 
     // Check for pattern assertion: val assert Pattern = expr handler
     // First check if we have 'assert' keyword followed by a valid pattern
@@ -176,7 +179,7 @@ pub fn parseValDecl(this: *This, alloc: std.mem.Allocator) ParseError!ValDecl {
     const value_ptr = try this.boxExpr(alloc, value);
     // Semicolon required after top-level val declaration
     _ = try this.consume(.semicolon);
-    return ValDecl{ .name = name, .isPub = isPub, .typeAnnotation = typeAnnotation, .value = value_ptr };
+    return ValDecl{ .name = name, .isPub = isPub, .mutable = mutable, .typeAnnotation = typeAnnotation, .value = value_ptr };
 }
 
 /// `import { item, ... } [from "name"];`  ──or──
@@ -475,7 +478,7 @@ pub fn parseFnBody(
         };
     }
 
-    const body = try this.parseStmtListInBraces(alloc);
+    const body = try this.parseFnBodyInBraces(alloc);
 
     return FnDecl{
         .isPub = isPub,
@@ -539,7 +542,7 @@ pub fn parseTestDecl(this: *This, alloc: std.mem.Allocator) ParseError!ast.TestD
         const tok = this.advance();
         name = tok.lexeme[1 .. tok.lexeme.len - 1];
     }
-    const body = try this.parseStmtListInBraces(alloc);
+    const body = try this.parseFnBodyInBraces(alloc);
     return ast.TestDecl{
         .name = name,
         .loc = locFromToken(testTok),

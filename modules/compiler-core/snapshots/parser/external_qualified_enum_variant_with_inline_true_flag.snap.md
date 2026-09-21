@@ -20,6 +20,11 @@
               "\"search\"",
               "true"
             ],
+            "labels": [
+              "",
+              "",
+              "inline"
+            ],
             "is_builtin": true
           },
           {

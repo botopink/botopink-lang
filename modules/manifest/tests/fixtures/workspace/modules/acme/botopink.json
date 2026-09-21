@@ -1,0 +1,7 @@
+{
+  "name": "acme",
+  "version": "0.0.1",
+  "entry": "root.bp",
+  "targets": ["commonJS"],
+  "files": ["root.bp"]
+}
