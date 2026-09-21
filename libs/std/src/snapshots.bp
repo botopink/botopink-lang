@@ -1,0 +1,453 @@
+//// std/snapshots — the snapshot engine every `<lib>-test` writes through
+//// (1.0.10-beta front 01-std, `snapshots.md`; decisions 72, 73 and 67).
+////
+//// Three rules:
+////   1. `path(loc)` = `<dir of loc.file>/__snapshots__/<suite>/<slug>.snap`,
+////      where `suite` is the text before the first `": "` of the test name
+////      and `slug` is the slugified rest — the slugifier is byte-for-byte the
+////      compiler's own (`codegen/tests/helpers.zig` `slugify`): lowercase,
+////      every maximal run of `[A-Za-z0-9]` kept, everything else one `_`,
+////      no leading or trailing `_`.
+////   2. A mismatch or a missing file writes `<path>.new` and answers `Error`.
+////      Nothing accepts a snapshot but a person renaming the `.new` file:
+////      there is no update flag, no environment variable, no manifest key
+////      (decision 67), and no code path here ever writes `<path>` itself.
+////   3. A `<lib>-test` exposes `assert<Subject>(loc, …) -> @Result<void, string>`
+////      helpers that turn a domain value into text and call
+////      `assertAs(loc, "<subject>", text)` with the CALLER's `@src()` — a
+////      `@src()` taken inside the helper would name the helper.
+////
+//// The `.snap` file (decision 72):
+////
+////     botopink-snap 1
+////     test: <loc.fnName>
+////     subject: <subject>
+////     <empty line>
+////     <body, verbatim, one trailing newline appended>
+////
+//// Header lines compare exactly; bodies compare after `\r\n → \n` and with
+//// trailing newlines trimmed on both sides — the two normalisations the
+//// compiler's `utils/snap.zig` applies — and nothing else.
+////
+//// `path`, `pathNamed`, `suiteOf` and `slugOf` are pure botopink and run on
+//// every backend. The four `assert*` entry points sit on PRIVATE host cells
+//// (`readFile`, `writeFile`, `removeFile`, `exists` — Node + Erlang, the
+//// `fs.bp` shapes re-declared here because a std module does not import
+//// another), so `import {snapshots} from "std"` passes STD-001 on beam and
+//// wasm while the four are unresolved at lowering there — which does not
+//// matter: `botopink test` runs on commonJS and erlang only. `path(loc)` is
+//// package-relative because `loc.file` is; the engine opens it relative to
+//// the process's working directory, and `botopink test` runs from the
+//// package root.
+
+// ── the path rule (pure) ─────────────────────────────────────────────────────
+
+// The suite of a test name: the text before the first `": "`, `""` when the
+// name has none (`assert*` then refuse — decision 67, no `misc/` default).
+pub fn suiteOf(testName: string) -> string {
+    val i = testName.indexOf(": ");
+    if (i < 0) return "";
+    return testName.slice(0, i);
+}
+
+// The rest of a test name after its suite, `""` when there is no suite.
+fn descriptionOf(testName: string) -> string {
+    val i = testName.indexOf(": ");
+    if (i < 0) return "";
+    return testName.slice(i + 2, testName.length());
+}
+
+// A character lowercased when it is `[A-Za-z0-9]`, `""` otherwise — the one
+// classification `slugOf` needs, written over `indexOf` so it is the same on
+// every host (no `toLower`, no char codes).
+fn slugChar(c: string) -> string {
+    val upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    val lower = "abcdefghijklmnopqrstuvwxyz0123456789";
+    val u = upper.indexOf(c);
+    if (u >= 0) return lower.slice(u, u + 1);
+    if (lower.indexOf(c) >= 0) return c;
+    return "";
+}
+
+// `slugOf`'s walk: `acc` is the slug so far, `pending` whether a separator
+// is owed before the next kept character (never flushed at the end, so no
+// trailing `_`; never before an empty `acc`, so no leading one).
+fn slugStep(chars: string[], i: i32, acc: string, pending: bool) -> string {
+    if (i >= chars.length) return acc;
+    val c = chars.slice(i, i + 1).join("");
+    val kept = slugChar(c);
+    if (kept == "") return slugStep(chars, i + 1, acc, true);
+    val glue = if (pending) (if (acc == "") "" else "_") else "";
+    return slugStep(chars, i + 1, [acc, glue, kept].join(""), false);
+}
+
+// The slugify rule (`codegen/tests/helpers.zig:38`, byte-for-byte):
+// `"Modifiers ---- Hover, on (md) breakpoint!"` → `modifiers_hover_on_md_breakpoint`.
+pub fn slugOf(text: string) -> string {
+    return slugStep(text.split(""), 0, "", false);
+}
+
+// The directory of a `/`-separated path, `""` for a bare file name.
+fn dirOf(file: string) -> string {
+    val parts = file.split("/");
+    val n = parts.length;
+    if (n <= 1) return "";
+    return parts.slice(0, n - 1).join("/");
+}
+
+// `<dir of loc.file>/__snapshots__/<suite>/` — the directory rule 1 fixes.
+fn snapshotDir(loc: SourceLocation) -> string {
+    val dir = dirOf(loc.file);
+    val root = if (dir == "") "__snapshots__" else [dir, "/__snapshots__"].join("");
+    return [root, "/", slugOf(suiteOf(loc.fnName)), "/"].join("");
+}
+
+// The `.snap` path of the test `loc` was taken in. Pure; every backend. A
+// `loc` whose name has no `": "` (or is `""`, module level) has no suite: the
+// path is then `<dir>/__snapshots__//<slug>.snap`-shaped garbage, which is
+// why `assert*` refuse such a name before computing it.
+pub fn path(loc: SourceLocation) -> string {
+    return [snapshotDir(loc), slugOf(descriptionOf(loc.fnName)), ".snap"].join("");
+}
+
+// A second snapshot of the same test: `…/<slug>.<slugOf(name)>.snap`.
+pub fn pathNamed(loc: SourceLocation, name: string) -> string {
+    return [snapshotDir(loc), slugOf(descriptionOf(loc.fnName)), ".", slugOf(name), ".snap"].join("");
+}
+
+// ── private host cells (Node + Erlang) ───────────────────────────────────────
+
+// The file's text, or the host's error.
+#[@result]
+#[@External.Node("""(() => { try { return { ok: require('fs').readFileSync($0, 'utf8') } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
+#[@External.Erlang("""(fun(__P) -> case file:read_file(__P) of {ok, __B} -> {ok, __B}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
+declare fn readFile(p: string) -> @Result<string, string>;
+
+// Write `text` to `p`, creating the parent directories; the host's error
+// on failure (a full disk is a test failure, not a silent pass).
+#[@result]
+#[@External.Node("""(() => { try { require('fs').mkdirSync(require('path').dirname($0), { recursive: true }); require('fs').writeFileSync($0, $1); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
+#[@External.Erlang("""(fun(__P, __T) -> case filelib:ensure_dir(__P) of ok -> case file:write_file(__P, __T) of ok -> {ok, 0}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0, $1)""")]
+declare fn writeFile(p: string, text: string) -> @Result<i32, string>;
+
+// Remove `p`; a file that is not there is `Ok` too.
+#[@result]
+#[@External.Node("""(() => { try { require('fs').rmSync($0, { force: true }); return { ok: 0 } } catch (__e) { return { error: __e && __e.message ? __e.message : String(__e) } } })()""")]
+#[@External.Erlang("""(fun(__P) -> case file:delete(__P) of ok -> {ok, 0}; {error, enoent} -> {ok, 0}; {error, __R} -> {error, iolist_to_binary(io_lib:format("~p", [__R]))} end end)($0)""")]
+declare fn removeFile(p: string) -> @Result<i32, string>;
+
+// Whether a file exists at `p`.
+#[@External.Node("""require('fs').existsSync($0)""")]
+#[@External.Erlang("""filelib:is_file($0)""")]
+declare fn exists(p: string) -> bool;
+
+// A fresh, empty scratch directory under the host's tmpdir — for the inline
+// tests only, so the package tree is never written to. The Erlang name carries
+// the OS pid: `erlang:unique_integer` restarts with the VM, so a bare counter
+// collided (`eexist`) with the directories an earlier run left behind.
+#[@External.Node("""require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'bpsnap-'))""")]
+#[@External.Erlang("""(fun() -> __D = filename:join(case os:getenv("TMPDIR") of false -> "/tmp"; __V -> __V end, "bpsnap-" ++ os:getpid() ++ "-" ++ integer_to_list(erlang:unique_integer([positive]))), ok = file:make_dir(__D), list_to_binary(__D) end)()""")]
+declare fn tmpDir() -> string;
+
+// ── the engine ───────────────────────────────────────────────────────────────
+
+// `\r\n → \n`, for a snapshot recorded on a windows runner.
+fn normalizeNewlines(text: string) -> string {
+    return text.split("\r\n").join("\n");
+}
+
+// Trailing newlines dropped — only newlines, not spaces: whitespace inside
+// the body is the body.
+fn trimTrailingNewlines(text: string) -> string {
+    if (text.endsWith("\n")) return trimTrailingNewlines(text.slice(0, text.length() - 1));
+    return text;
+}
+
+// The file text of a snapshot: header, blank line, body, one newline.
+fn render(testName: string, subject: string, body: string) -> string {
+    return ["botopink-snap 1\ntest: ", testName, "\nsubject: ", subject, "\n\n", body, "\n"].join("");
+}
+
+// The `Error` payload of a cell's result, `""` for `Ok`.
+fn errorOf(r: @Result<i32, string>) -> string {
+    val text = case r {
+        Ok(v) -> "";
+        Error(e) -> e;
+    };
+    return text;
+}
+
+// The `Error` payload of an engine result, `""` for `Ok` — what a test reads
+// to check a refusal (`asserts.errorText`'s twin, private: a std module does
+// not import another).
+fn errorText(r: @Result<void, string>) -> string {
+    val text = case r {
+        Ok(v) -> "";
+        Error(e) -> e;
+    };
+    return text;
+}
+
+// 1-based index of the first line where the two bodies differ (a shorter
+// body differs at the line after its last).
+fn firstDifferingLine(a: string[], b: string[], i: i32) -> i32 {
+    val ai = a.slice(i, i + 1).join("");
+    val bi = b.slice(i, i + 1).join("");
+    if (i >= a.length) return i + 1;
+    if (i >= b.length) return i + 1;
+    if (ai != bi) return i + 1;
+    return firstDifferingLine(a, b, i + 1);
+}
+
+// How a recorded file compares with what the test produced: `""` for a
+// match, otherwise the parenthesised reason of the mismatch message, or
+// `"not a snapshot file"` when the magic line is wrong.
+fn verdict(recorded: string, testName: string, subject: string, actual: string) -> string {
+    val lines = normalizeNewlines(recorded).split("\n");
+    if (lines.length < 4) return "not a snapshot file";
+    if (lines.slice(0, 1).join("") != "botopink-snap 1") return "not a snapshot file";
+    val headerOk = lines.slice(1, 4).join("\n") == ["test: ", testName, "\nsubject: ", subject, "\n"].join("");
+    if (headerOk == false) return "(header differs)";
+    val recordedBody = trimTrailingNewlines(lines.slice(4, lines.length).join("\n"));
+    val actualBody = trimTrailingNewlines(normalizeNewlines(actual));
+    if (recordedBody == actualBody) return "";
+    val n = firstDifferingLine(recordedBody.split("\n"), actualBody.split("\n"), 0);
+    return ["(first difference at body line ", n.toString(), ")"].join("");
+}
+
+// Write the candidate `<path>.new`; a host failure is the test's failure.
+#[@result]
+fn writeCandidate(newPath: string, text: string) -> @Result<void, string> {
+    val w = writeFile(newPath, text);
+    if (w.isError()) {
+        throw ["snapshots: cannot write ", newPath, ": ", errorOf(w)].join("");
+    };
+    return;
+}
+
+// The engine proper, over a computed `file` path.
+#[@result]
+fn check(loc: SourceLocation, file: string, subject: string, actual: string) -> @Result<void, string> {
+    val expected = render(loc.fnName, subject, actual);
+    val newPath = [file, ".new"].join("");
+    val recorded = readFile(file);
+    if (recorded.isError()) {
+        try writeCandidate(newPath, expected);
+        throw ["snapshots: missing ", file, " - candidate written to ", newPath, "; review it and rename it to record"].join("");
+    };
+    val why = verdict(recorded.unwrapOr(""), loc.fnName, subject, actual);
+    if (why == "not a snapshot file") {
+        throw ["snapshots: not a snapshot file: ", file].join("");
+    };
+    if (why != "") {
+        try writeCandidate(newPath, expected);
+        throw ["snapshots: mismatch ", file, " - candidate written to ", newPath, " ", why].join("");
+    };
+    // A match: a stale `.new` from an earlier red run is review noise.
+    val cleared = removeFile(newPath);
+    if (cleared.isError()) {
+        throw ["snapshots: cannot remove ", newPath, ": ", errorOf(cleared)].join("");
+    };
+    return;
+}
+
+// Refuse a `loc` whose test name carries no suite (decision 67: no default).
+#[@result]
+fn requireSuite(loc: SourceLocation) -> @Result<void, string> {
+    if (loc.fnName == "") {
+        throw "snapshots: test name needs a suite - a @src() taken outside a test has no test name; take it inside test \"<suite>: <description>\" { ... }";
+    };
+    if (suiteOf(loc.fnName) == "") {
+        throw "snapshots: test name needs a suite - write \"<suite>: <description>\"";
+    };
+    return;
+}
+
+// ── the four entry points ────────────────────────────────────────────────────
+
+// Record/compare `actual` as the test's one snapshot, subject `text`.
+// `snapshots.md` names this `assert`; `assert` is a reserved keyword statement
+// (the reason the module beside this one is `asserts`), so the entry point is
+// `assertText` — the `assert<Subject>` spelling of the contract's own
+// convention, for the subject the header records.
+#[@result]
+pub fn assertText(loc: SourceLocation, actual: string) -> @Result<void, string> {
+    try assertAs(loc, "text", actual);
+    return;
+}
+
+// What a `<lib>-test` helper calls: the same, with the helper's subject
+// (`css`, `html`, `route`, …) in the header.
+#[@result]
+pub fn assertAs(loc: SourceLocation, subject: string, actual: string) -> @Result<void, string> {
+    try requireSuite(loc);
+    try check(loc, path(loc), subject, actual);
+    return;
+}
+
+// A named second snapshot in the same test, subject `text`.
+#[@result]
+pub fn assertNamed(loc: SourceLocation, name: string, actual: string) -> @Result<void, string> {
+    try assertNamedAs(loc, name, "text", actual);
+    return;
+}
+
+// A named snapshot with a subject. `name` empty is refused.
+#[@result]
+pub fn assertNamedAs(loc: SourceLocation, name: string, subject: string, actual: string) -> @Result<void, string> {
+    try requireSuite(loc);
+    if (slugOf(name) == "") {
+        throw "snapshots: a named snapshot needs a name - pass a non-empty name to assertNamed/assertNamedAs";
+    };
+    try check(loc, pathNamed(loc, name), subject, actual);
+    return;
+}
+
+// ── tests ────────────────────────────────────────────────────────────────────
+// The path rule is recorded as ordinary snapshots beside this file
+// (`src/__snapshots__/snapshots/…`, `test-snap.md`); the engine tests itself
+// against a scratch directory under the host tmpdir, building a
+// `SourceLocation` by hand whose `file` points there, so the package tree is
+// untouched and every outcome is produced deterministically.
+
+test "snapshots: path ---- suite and slug from a test name" {
+    val loc = SourceLocation(file: "src/emilia.bp", line: 1, column: 1, fnName: "css: modifiers ---- hover on md breakpoint");
+    try assertText(@src(), path(loc));
+}
+
+test "snapshots: path ---- named second snapshot" {
+    val loc = SourceLocation(file: "test/router_test.bp", line: 1, column: 1, fnName: "route: two tables");
+    try assertText(@src(), pathNamed(loc, "After Merge"));
+}
+
+test "snapshots: slug ---- punctuation collapses to one underscore" {
+    try assertText(@src(), slugOf("Modifiers ---- Hover, on (md) breakpoint!"));
+}
+
+test "snapshots: path ---- a name without a suite is refused" {
+    val loc = SourceLocation(file: "src/a.bp", line: 1, column: 1, fnName: "no suite here");
+    val r = assertAs(loc, "text", "x");
+    try assertText(@src(), errorText(r));
+}
+
+test "snapshots: path ---- the pure half" {
+    assert suiteOf("css: modifiers ---- hover") == "css";
+    assert suiteOf("no suite") == "";
+    assert slugOf("modifiers ---- hover on md breakpoint") == "modifiers_hover_on_md_breakpoint";
+    assert slugOf("  Leading and trailing  ") == "leading_and_trailing";
+    assert slugOf("!!!") == "";
+    val bare = SourceLocation(file: "main.bp", line: 1, column: 1, fnName: "t: bare file");
+    assert path(bare) == "__snapshots__/t/bare_file.snap";
+}
+
+test "snapshots: engine ---- missing writes a .new and answers Error" {
+    val dir = tmpDir();
+    val loc = SourceLocation(file: [dir, "/t.bp"].join(""), line: 1, column: 1, fnName: "e: missing");
+    val r = assertAs(loc, "text", "hello");
+    assert r.isError();
+    assert exists([path(loc), ".new"].join(""));
+    assert exists(path(loc)) == false;
+    assert errorText(r).startsWith("snapshots: missing ");
+    val candidate = readFile([path(loc), ".new"].join("")).unwrapOr("");
+    assert candidate == "botopink-snap 1\ntest: e: missing\nsubject: text\n\nhello\n";
+}
+
+test "snapshots: engine ---- mismatch writes a .new and answers Error" {
+    val dir = tmpDir();
+    val loc = SourceLocation(file: [dir, "/t.bp"].join(""), line: 1, column: 1, fnName: "e: mismatch");
+    val w = writeFile(path(loc), render("e: mismatch", "text", "old"));
+    assert w.isOk();
+    val r = assertAs(loc, "text", "new");
+    assert r.isError();
+    assert errorText(r).startsWith("snapshots: mismatch ");
+    assert errorText(r).contains("(first difference at body line 1)");
+    val candidate = readFile([path(loc), ".new"].join("")).unwrapOr("");
+    assert candidate == "botopink-snap 1\ntest: e: mismatch\nsubject: text\n\nnew\n";
+}
+
+test "snapshots: engine ---- the differing line is counted from the body" {
+    val dir = tmpDir();
+    val loc = SourceLocation(file: [dir, "/t.bp"].join(""), line: 1, column: 1, fnName: "e: line");
+    val w = writeFile(path(loc), render("e: line", "text", "a\nb\nc"));
+    assert w.isOk();
+    val r = assertAs(loc, "text", "a\nb\nd");
+    assert errorText(r).contains("(first difference at body line 3)");
+}
+
+test "snapshots: engine ---- match answers Ok and removes a stale .new" {
+    val dir = tmpDir();
+    val loc = SourceLocation(file: [dir, "/t.bp"].join(""), line: 1, column: 1, fnName: "e: match");
+    val w = writeFile(path(loc), render("e: match", "text", "same"));
+    assert w.isOk();
+    val stale = writeFile([path(loc), ".new"].join(""), "stale");
+    assert stale.isOk();
+    try assertAs(loc, "text", "same");
+    assert exists([path(loc), ".new"].join("")) == false;
+}
+
+test "snapshots: engine ---- header must match too" {
+    val dir = tmpDir();
+    val loc = SourceLocation(file: [dir, "/t.bp"].join(""), line: 1, column: 1, fnName: "e: header");
+    val w = writeFile(path(loc), render("e: header", "css", "body"));
+    assert w.isOk();
+    val r = assertAs(loc, "text", "body");
+    assert r.isError();
+    assert errorText(r).contains("(header differs)");
+}
+
+test "snapshots: engine ---- CRLF in the recorded file still matches" {
+    val dir = tmpDir();
+    val loc = SourceLocation(file: [dir, "/t.bp"].join(""), line: 1, column: 1, fnName: "e: crlf");
+    val w = writeFile(path(loc), "botopink-snap 1\r\ntest: e: crlf\r\nsubject: text\r\n\r\nline one\r\nline two\r\n");
+    assert w.isOk();
+    try assertAs(loc, "text", "line one\nline two");
+}
+
+test "snapshots: engine ---- trailing newlines of the body do not matter" {
+    val dir = tmpDir();
+    val loc = SourceLocation(file: [dir, "/t.bp"].join(""), line: 1, column: 1, fnName: "e: trailing");
+    val w = writeFile(path(loc), render("e: trailing", "text", "body\n\n"));
+    assert w.isOk();
+    try assertAs(loc, "text", "body");
+}
+
+test "snapshots: engine ---- not a snapshot file" {
+    val dir = tmpDir();
+    val loc = SourceLocation(file: [dir, "/t.bp"].join(""), line: 1, column: 1, fnName: "e: magic");
+    val w = writeFile(path(loc), "hello\nworld\n\n\n");
+    assert w.isOk();
+    val r = assertAs(loc, "text", "x");
+    assert r.isError();
+    assert errorText(r).startsWith("snapshots: not a snapshot file");
+    assert exists([path(loc), ".new"].join("")) == false;
+}
+
+test "snapshots: engine ---- the header keeps the full test name" {
+    val dir = tmpDir();
+    val loc = SourceLocation(file: [dir, "/t.bp"].join(""), line: 1, column: 1, fnName: "css: modifiers ---- hover on md breakpoint");
+    val first = assertAs(loc, "css", "@media(min-width:768px){:hover{background:red}}");
+    assert first.isError();
+    val text = readFile([path(loc), ".new"].join("")).unwrapOr("");
+    assert text.contains("test: css: modifiers ---- hover on md breakpoint");
+    assert text.contains("subject: css");
+    assert path(loc).endsWith("/__snapshots__/css/modifiers_hover_on_md_breakpoint.snap");
+}
+
+test "snapshots: engine ---- a named snapshot lives beside the unnamed one" {
+    val dir = tmpDir();
+    val loc = SourceLocation(file: [dir, "/t.bp"].join(""), line: 1, column: 1, fnName: "e: named");
+    val w = writeFile(pathNamed(loc, "After Merge"), render("e: named", "text", "second"));
+    assert w.isOk();
+    try assertNamed(loc, "After Merge", "second");
+    assert pathNamed(loc, "After Merge").endsWith("/__snapshots__/e/named.after_merge.snap");
+    val empty = assertNamedAs(loc, "", "text", "x");
+    assert empty.isError();
+    assert errorText(empty).startsWith("snapshots: a named snapshot needs a name");
+}
+
+test "snapshots: engine ---- a module-level location is refused" {
+    val loc = SourceLocation(file: "src/a.bp", line: 1, column: 1, fnName: "");
+    val r = assertText(loc, "x");
+    assert r.isError();
+    assert errorText(r).startsWith("snapshots: test name needs a suite");
+}

@@ -7,4 +7,6 @@ dist/
 build/
 _memory.md
 *.snap.md.new
+# std/snapshots candidates (1.0.10-beta decision 67): a person renames one to record it
+*.snap.new
 erl_crash.dump

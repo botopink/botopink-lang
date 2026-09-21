@@ -19,9 +19,12 @@
 ////   3. One literal message per function, `asserts.<fn>: <what>`; no value
 ////      rendering (a generic `T` has no `toString`). The call site's `@src()`
 ////      and the runner's `at <file>:<line>` say where; the message says which.
-////   4. Pure botopink on the path that runs everywhere: `==`, `!=`, `.negate()`,
-////      `.length`, `.contains()`, `.startsWith()`, `.endsWith()`, `.isOk()`,
-////      `.isError()`, `!= null`.
+////   4. Pure botopink on the path that runs everywhere: `==`, `!=`, `== false`,
+////      `.length`, `.contains()`, `.startsWith()`, `.endsWith()`, `.indexOf()`,
+////      `.isOk()`, `.isError()`, `!= null` — host-backed primitives only. A
+////      primitive `default fn` (`Bool.negate`, `Array.contains`) is not lowered
+////      when a std module is compiled as a consumer's embedded import today,
+////      so none is used here (measured 2026-09-20; `libs/std/AGENTS.md`).
 ////   5. No `pub declare fn` in the file, so `import {asserts} from "std"`
 ////      passes STD-001 on every target. The four functions that need a host
 ////      — `matches`, `deepEquals`, `throws`, `throwsWith` — sit on the three
@@ -45,7 +48,7 @@
 // Fails when `condition` is false.
 #[@result]
 pub fn isTrue(condition: bool) -> @Result<void, string> {
-    if (condition.negate()) {
+    if (condition == false) {
         throw "asserts.isTrue: condition was false";
     };
     return;
@@ -160,7 +163,7 @@ pub fn isError<T, E>(result: @Result<T, E>) -> @Result<void, string> {
 // Fails when `needle` is not a substring of `actual`.
 #[@result]
 pub fn contains(actual: string, needle: string) -> @Result<void, string> {
-    if (actual.contains(needle).negate()) {
+    if (actual.contains(needle) == false) {
         throw "asserts.contains: needle not in actual";
     };
     return;
@@ -178,7 +181,7 @@ pub fn notContains(actual: string, needle: string) -> @Result<void, string> {
 // Fails when `actual` does not start with `prefix`.
 #[@result]
 pub fn startsWith(actual: string, prefix: string) -> @Result<void, string> {
-    if (actual.startsWith(prefix).negate()) {
+    if (actual.startsWith(prefix) == false) {
         throw "asserts.startsWith: prefix does not match";
     };
     return;
@@ -187,7 +190,7 @@ pub fn startsWith(actual: string, prefix: string) -> @Result<void, string> {
 // Fails when `actual` does not end with `suffix`.
 #[@result]
 pub fn endsWith(actual: string, suffix: string) -> @Result<void, string> {
-    if (actual.endsWith(suffix).negate()) {
+    if (actual.endsWith(suffix) == false) {
         throw "asserts.endsWith: suffix does not match";
     };
     return;
@@ -205,7 +208,7 @@ declare fn regexMatches(actual: string, pattern: string) -> bool;
 // Erlang at run time (`regexMatches`).
 #[@result]
 pub fn matches(actual: string, pattern: string) -> @Result<void, string> {
-    if (regexMatches(actual, pattern).negate()) {
+    if (regexMatches(actual, pattern) == false) {
         throw "asserts.matches: pattern did not match";
     };
     return;
@@ -240,11 +243,11 @@ pub fn lengthIs<T>(actual: T[], expected: i32) -> @Result<void, string> {
     return;
 }
 
-// Fails when no element `==` `element` (`Array.contains` — reference equality
+// Fails when no element `==` `element` (`Array.indexOf` — reference equality
 // for records on commonJS; extract with `.at(i)` and `deepEquals` instead).
 #[@result]
 pub fn includes<T>(actual: T[], element: T) -> @Result<void, string> {
-    if (actual.contains(element).negate()) {
+    if (actual.indexOf(element) < 0) {
         throw "asserts.includes: element not found";
     };
     return;
@@ -253,7 +256,7 @@ pub fn includes<T>(actual: T[], element: T) -> @Result<void, string> {
 // Fails when some element `==` `element`.
 #[@result]
 pub fn notIncludes<T>(actual: T[], element: T) -> @Result<void, string> {
-    if (actual.contains(element)) {
+    if (actual.indexOf(element) >= 0) {
         throw "asserts.notIncludes: element found";
     };
     return;
@@ -339,7 +342,7 @@ pub fn throwsWith(body: fn() -> i32, needle: string) -> @Result<void, string> {
     if (r.isOk()) {
         throw "asserts.throwsWith: body did not raise";
     };
-    if (caughtMessage(r).contains(needle).negate()) {
+    if (caughtMessage(r).contains(needle) == false) {
         throw "asserts.throwsWith: message does not contain needle";
     };
     return;

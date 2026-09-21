@@ -1,0 +1,5 @@
+botopink-snap 1
+test: snapshots: path ---- named second snapshot
+subject: text
+
+test/__snapshots__/route/two_tables.after_merge.snap

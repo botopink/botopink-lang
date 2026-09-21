@@ -1,0 +1,5 @@
+botopink-snap 1
+test: snapshots: path ---- suite and slug from a test name
+subject: text
+
+src/__snapshots__/css/modifiers_hover_on_md_breakpoint.snap

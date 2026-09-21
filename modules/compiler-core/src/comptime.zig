@@ -1011,6 +1011,19 @@ fn stripTestDecls(program: ast.Program, alloc: std.mem.Allocator) !ast.Program {
     return out;
 }
 
+/// Register the `@Decl` reflection cluster (`decl_reflection_src` — `Span`,
+/// `Annotation`, `Decl`, … and 1.0.10-beta's `SourceLocation`) into `env`.
+/// Called for the global env and for every scratch env `registerStdlib` infers
+/// a std module in, so a std module's signature may name a prelude record.
+fn registerReflectionPrelude(env: *Env) anyerror!void {
+    const alloc = env.arena;
+    var lx = Lexer.init(decl_reflection_src);
+    const tokens = try lx.scanAll(alloc);
+    var p = Parser.init(tokens);
+    const program = try p.parse(alloc);
+    _ = try infer.inferProgram(env, program);
+}
+
 pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
     _ = gpa; // stdlib sources are now parsed into `env.arena` (see below)
     const prelude = @import("std_prelude");
@@ -1038,14 +1051,7 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
     // documented in `libs/std/src/builtins.d.bp` (kept there for tooling); it is
     // parsed from a dedicated minimal source here because the full `builtins.d.bp`
     // is the tooling/`@Expr` surface and is not consumed as a standalone program.
-    {
-        const alloc = env.arena;
-        var lx = Lexer.init(decl_reflection_src);
-        const tokens = try lx.scanAll(alloc);
-        var p = Parser.init(tokens);
-        const program = try p.parse(alloc);
-        _ = try infer.inferProgram(env, program);
-    }
+    try registerReflectionPrelude(env);
 
     // The `@ExprCustom` reference-tree type (expr-custom): registered after the
     // `@Decl` cluster so a sub-language template body can construct `CustomNode`
@@ -1111,6 +1117,10 @@ pub fn registerStdlib(env: *Env, gpa: std.mem.Allocator) anyerror!void {
         // env needs them too (inline `test` bodies in std modules use them).
         try env2.bind("true", try env2.namedType("bool"));
         try env2.bind("false", try env2.namedType("bool"));
+        // `SourceLocation` (1.0.10-beta decision 73) is a prelude record a std
+        // module may name in a signature (`snapshots.path(loc: SourceLocation)`);
+        // the scratch env has to know the same prelude the importer's env does.
+        try registerReflectionPrelude(&env2);
         for (sources) |src| {
             var lx = Lexer.init(src);
             const tokens = try lx.scanAll(env.arena);
