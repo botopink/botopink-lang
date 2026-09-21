@@ -527,6 +527,36 @@ test "enum sections F2: payload sibling .Color.Hex(string) untouched" {
     );
 }
 
+// ── 00 · 01-checker — the expected type decides which enum carries the path ──
+// `env.typeDefs` holds the synthesised section enums beside the declared ones,
+// so more than one enum can carry the same path. Which one a spelling means is
+// the expected type's answer — an annotation, a declared parameter, the return
+// target, an array literal's element type — and never the map's iteration
+// order, which changed with the number of enums in the program.
+
+test "enum sections: the expected type picks among the enums carrying one path" {
+    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\type Token {
+        \\    Color {
+        \\        Red { 100, 500 }
+        \\    }
+        \\}
+        \\type Border {
+        \\    Color {
+        \\        Red { 100, 500 }
+        \\    }
+        \\}
+        \\fn onToken(t: Token) -> i32 { return 1; }
+        \\fn onBorder(b: Border) -> i32 { return 2; }
+        \\fn pick() -> Border { return .Color.Red.500; }
+        \\val a: Token = .Color.Red.500;
+        \\val b: Border = .Color.Red.500;
+        \\val c: Array<Token> = [.Color.Red.100];
+        \\val d = onToken(.Color.Red.100);
+        \\val e = onBorder(.Color.Red.100);
+    );
+}
+
 test "enum sections F3 ES4: path-access with bad tail raises focused error" {
     // The head segment `Color` matches Token's section wrapper, so the
     // resolver knows the user intended a section path — but `Bogus` isn't

@@ -1,0 +1,52 @@
+//// 00 · 01-checker — a leading-dot enum section path resolves by the EXPECTED
+//// TYPE of the position it is written in, never by the order the checker walks
+//// its type definitions. `Token` and `Border` carry the same path
+//// (`.Color.Red.500`), so every spelling below would otherwise mean whichever
+//// of the two the typedef hash map handed over first — and that answer changed
+//// with the number of enums in the program.
+////
+//// The positions that carry an expectation: a `val`'s annotation, a declared
+//// parameter, the body's return target, and an array literal's element type.
+
+type Token {
+    Color {
+        Red { 100, 500 }
+    }
+}
+
+type Border {
+    Color {
+        Red { 100, 500 }
+    }
+}
+
+fn tokenName(t: Token) -> string {
+    val s = case t {
+        Color(_inner) -> "token";
+    };
+    return s;
+}
+
+fn borderName(b: Border) -> string {
+    val s = case b {
+        Color(_inner) -> "border";
+    };
+    return s;
+}
+
+fn pickBorder() -> Border {
+    return .Color.Red.500;
+}
+
+pub fn main() {
+    val t: Token = .Color.Red.500;
+    val b: Border = .Color.Red.500;
+    val ts: Array<Token> = [.Color.Red.100];
+
+    @print(tokenName(t));
+    @print(borderName(b));
+    @print(borderName(pickBorder()));
+    @print(tokenName(.Color.Red.100));
+    @print(borderName(.Color.Red.500));
+    @print(ts.length());
+}

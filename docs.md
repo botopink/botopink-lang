@@ -261,6 +261,44 @@ inside a `case` pattern the bare name is enough. A bare `Red` in expression
 position type-checks but no backend lowers it (the generated program reports an
 unbound `Red` at run time), so always write the qualified form.
 
+#### Sections of an enum
+
+An enum's body may group variants into **sections**, and a section may nest.
+A section is itself a type (`Token.Color`), and a leaf is reached by its path:
+
+```botopink
+type Token {
+    Color {
+        Red { 100, 500 }
+        Gray { 100, 500 }
+    }
+    Bold,
+}
+
+fn main() {
+    val t: Token = .Color.Red.500;
+    @print(case t { Color(_inner) -> "a colour"; Bold -> "bold"; });
+}
+```
+
+**Which enum a leading-dot path names is decided by the type the position
+expects.** More than one enum can carry the same path, so the answer is read
+from the position the path is written in — a `val`'s annotation, a declared
+parameter, the function's return type, the element type of an array literal:
+
+```botopink
+type Token  { Color { Red { 100, 500 } } }
+type Border { Color { Red { 100, 500 } } }
+
+fn onToken(t: Token) -> string { return "token"; }
+
+fn main() {
+    val a: Token = .Color.Red.500;      // Token
+    val b: Border = .Color.Red.500;     // Border
+    @print(onToken(.Color.Red.100));    // Token — the parameter says so
+}
+```
+
 ### behavior
 
 ```botopink

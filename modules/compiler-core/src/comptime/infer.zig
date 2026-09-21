@@ -551,7 +551,10 @@ fn inferDeclTyped(env: *Env, decl: ast.DeclKind) InferError!?TypedBinding {
             const typedExpr = if (annType != null and v.value.* == .function)
                 try inferFunctionExprExpected(env, v.value.function, v.value.function.loc, annType, false)
             else
-                try inferExprTyped(env, v.value.*);
+                // 00 · 01-checker — the annotation is this position's expected
+                // type, so `val t: Token = .Color.Red.500;` resolves the path
+                // on `Token`.
+                try inferExprTypedExpecting(env, v.value.*, annType);
             const ty = typedExpr.getType();
             if (annType) |at| try unifyAt(env, at, ty, v.value.getLoc());
             // The annotation is the DECLARED type — bind it, not the RHS type
@@ -1627,6 +1630,13 @@ fn registerSynthesisedEnumDecl(
 /// Returns `null` when the chain doesn't root at a dotIdent or no enum
 /// matches the path. Takes the leaf member + receiver separately because the
 /// `identAccess` payload is an anonymous struct, not a nameable type.
+///
+/// 00 · 01-checker — WHICH enum carries the path is decided by the expected
+/// type (`env.expectedType`), never by the order `env.typeDefs` happens to
+/// hand the enums over: that map holds the synthesised section enums beside
+/// the declared ones, so `.Color.Red.500` is carried by emilia's `Token` and
+/// by `__Token__Border` alike and the winner used to change with the size of
+/// the typedef set.
 fn tryResolveEnumSectionPath(
     env: *Env,
     leaf_member: []const u8,
@@ -1666,12 +1676,15 @@ fn tryResolveEnumSectionPath(
     std.mem.reverse(ast.Loc, segLocs.items);
     if (segs.items.len < 2) return null;
 
-    // Search every registered enum for one whose top-level variant matches
-    // the head segment AND whose section tree carries the rest of the path.
+    // Collect EVERY registered enum whose top-level variant matches the head
+    // segment AND whose section tree carries the rest of the path. The set,
+    // not the first hit, is what the choice is made from.
     // Also remember the enum whose HEAD segment matched (`enum_with_head`)
     // so a partial-match path (head OK, tail wrong: `.Color.Bogus`) can
     // raise ES4 with a focused message instead of bubbling a confusing
     // generic "unknown field" error from the fall-through code.
+    var candidates: std.ArrayList([]const u8) = .empty;
+    defer candidates.deinit(env.arena);
     var enum_with_head: ?[]const u8 = null;
     var enum_def_with_head: ?envMod.TypeDef.Enum = null;
     var it = env.typeDefs.iterator();
@@ -1679,16 +1692,9 @@ fn tryResolveEnumSectionPath(
         const td = entry.value_ptr.*;
         if (td != .enum_) continue;
         const en = td.enum_;
-        if (try resolveSectionPathInEnum(env, en, segs.items, loc)) |resolved| {
-            // Also build the equivalent UNTYPED rewrite and stash it under
-            // this chain's outermost loc. The post-inference rewrite pass
-            // (`withEnumSectionRewrites` in `comptime.zig`) walks the
-            // untyped AST and swaps the original `.dotIdent` chain for this
-            // qualified-ctor form so codegen emits the correct shape.
-            if (try buildSectionPathRewrite(env, en, segs.items)) |rewrite| {
-                try env.enumSectionRewrites.put(loc, rewrite);
-            }
-            return resolved;
+        if (enumCarriesSectionPath(env, en, segs.items)) {
+            if (!containsStr(candidates.items, en.name)) try candidates.append(env.arena, en.name);
+            continue;
         }
         // Did the head segment at least match a section wrapper on this
         // enum? If yes, the user intended a section path on this enum — a
@@ -1697,6 +1703,18 @@ fn tryResolveEnumSectionPath(
             enum_with_head = en.name;
             enum_def_with_head = en;
         }
+    }
+
+    if (candidates.items.len > 0) {
+        // One carrier: the path names it. More than one: the expected type of
+        // this position is what decides — an annotation, a declared parameter,
+        // the return target, an array literal's element type.
+        const chosen: []const u8 = if (candidates.items.len == 1)
+            candidates.items[0]
+        else
+            expectedEnumAmong(env.expectedType, candidates.items) orelse candidates.items[0];
+        const owner = env.lookupTypeDef(chosen).?.enum_;
+        return try resolveAndRecordSectionPath(env, owner, segs.items, loc);
     }
 
     // ES4 — chain looks like a section path (`.<Section>.<more>` rooted at
@@ -1723,6 +1741,73 @@ fn tryResolveEnumSectionPath(
         return error.TypeError;
     }
     return null;
+}
+
+/// Resolve `path` in `en` and record the untyped rewrite for it.
+///
+/// The rewrite is the equivalent qualified-ctor form, stashed under this
+/// chain's outermost loc. The post-inference rewrite pass
+/// (`withEnumSectionRewrites` in `comptime.zig`) walks the untyped AST and
+/// swaps the original chain for it, so codegen — which reads the untyped AST —
+/// emits `Token.Color(__Token__Color.Red(…))` instead of the source text.
+fn resolveAndRecordSectionPath(
+    env: *Env,
+    en: envMod.TypeDef.Enum,
+    path: []const []const u8,
+    loc: ast.Loc,
+) InferError!?TypedExpr {
+    const resolved = try resolveSectionPathInEnum(env, en, path, loc) orelse return null;
+    if (try buildSectionPathRewrite(env, en, path)) |rewrite| {
+        try env.enumSectionRewrites.put(loc, rewrite);
+    }
+    return resolved;
+}
+
+/// The candidate `expected` names, or null when the expectation says nothing
+/// about the choice (there is none, it is still a type variable, or it names
+/// an enum that carries no such path). `?Token` answers `Token`: the
+/// expectation of an optional position is the optional's inner type.
+fn expectedEnumAmong(expected: ?*T.Type, candidates: []const []const u8) ?[]const u8 {
+    var ty = (expected orelse return null).deref();
+    if (ty.* == .named and std.mem.eql(u8, ty.named.name, "optional") and ty.named.args.len == 1) {
+        ty = ty.named.args[0].deref();
+    }
+    if (ty.* != .named) return null;
+    for (candidates) |c| if (std.mem.eql(u8, c, ty.named.name)) return c;
+    return null;
+}
+
+/// True when `en`'s section tree carries `path` all the way down to a unit
+/// variant — the predicate form of `resolveSectionPathInEnum`, so the set of
+/// carriers can be collected without building a typed node for each one. The
+/// two walk the same steps and must keep agreeing: a path this answers `true`
+/// for is a path `resolveSectionPathInEnum` resolves.
+fn enumCarriesSectionPath(env: *Env, en: envMod.TypeDef.Enum, path: []const []const u8) bool {
+    if (path.len == 0) return false;
+    var current = en;
+    for (path, 0..) |seg, i| {
+        var matched: ?envMod.VariantDef = null;
+        for (current.variants) |v| {
+            if (std.mem.eql(u8, v.name, seg) or
+                (looksNumeric(seg) and v.name.len > 1 and v.name[0] == '_' and v.name[1] == '_' and std.mem.eql(u8, v.name[2..], seg)))
+            {
+                matched = v;
+                break;
+            }
+        }
+        const variant = matched orelse return false;
+        // The leaf of a section path is a unit variant; a payload variant
+        // (`Hex(value: string)`) is a call, not the end of a chain.
+        if (i + 1 == path.len) return variant.fields.len == 0;
+        // Every inner segment must be a section wrapper.
+        if (variant.fields.len != 1 or !std.mem.eql(u8, variant.fields[0].name, "_inner")) return false;
+        const inner_type = variant.fields[0].type_.deref();
+        if (inner_type.* != .named) return false;
+        const inner_def = env.lookupTypeDef(inner_type.named.name) orelse return false;
+        if (inner_def != .enum_) return false;
+        current = inner_def.enum_;
+    }
+    return false;
 }
 
 /// Index of the first segment of `path` that does not name a variant or a
@@ -2169,14 +2254,16 @@ fn appendTypeRefStr(buf: *std.ArrayListUnmanaged(u8), allocator: std.mem.Allocat
 fn inferDecl(env: *Env, decl: ast.DeclKind) InferError!?Binding {
     switch (decl) {
         .val => |v| {
-            const ty = try inferExpr(env, v.value.*);
-            // Bind the DECLARED (annotated) type when present — see
+            // The annotation is resolved BEFORE the value so it can be this
+            // position's expected type (00 · 01-checker) — see
             // `inferDeclTyped`'s `.val` case.
+            const annType: ?*T.Type = if (v.typeAnnotation) |ann| try resolveTypeRef(env, ann) else null;
+            const ty = try inferExprExpecting(env, v.value.*, annType);
+            // Bind the DECLARED (annotated) type when present.
             var bindTy = ty;
-            if (v.typeAnnotation) |ann| {
-                const annType = try resolveTypeRef(env, ann);
-                try unifyAt(env, annType, ty, v.value.getLoc());
-                bindTy = annType;
+            if (annType) |at| {
+                try unifyAt(env, at, ty, v.value.getLoc());
+                bindTy = at;
             }
             try validateMemoryAnnotations(env, v, bindTy);
             if (v.mutable) try env.bind(v.name, bindTy) else try env.bindVal(v.name, bindTy);
@@ -6803,6 +6890,16 @@ fn checkCaseExhaustiveness(
 /// pass.  Every child node is recursively typed before its parent is built, so
 /// no expression is visited more than once.  All allocations go into env.arena.
 pub fn inferExprTyped(env: *Env, expr: ast.Expr) InferError!TypedExpr {
+    // 00 · 01-checker — an expectation belongs to the position it was set for.
+    // Only an identifier chain reads it (a leading-dot enum path) and only an
+    // array literal passes it on (to its elements); every other node clears it
+    // so a nested expression never inherits its parent's expected type.
+    const outer_expected = env.expectedType;
+    defer env.expectedType = outer_expected;
+    switch (expr) {
+        .identifier, .collection => {},
+        else => env.expectedType = null,
+    }
     return switch (expr) {
         // ── literals ──────────────────────────────────────────────────────────
         .literal => |l| inferLiteralExpr(env, l, l.loc),
@@ -6839,6 +6936,25 @@ pub fn inferExprTyped(env: *Env, expr: ast.Expr) InferError!TypedExpr {
         // ── comptime expressions ───────────────────────────────────────────────
         .comptime_ => |a| inferComptimeExpr(env, a, a.loc),
     };
+}
+
+/// Infer `expr` in a position whose type the site already knows (00 ·
+/// 01-checker). The expectation is only a hint — `tryResolveEnumSectionPath`
+/// is its one reader — and the caller's own expectation is restored on the way
+/// out, so a site can set one per sub-expression.
+fn inferExprTypedExpecting(env: *Env, expr: ast.Expr, expected: ?*T.Type) InferError!TypedExpr {
+    const prev = env.expectedType;
+    defer env.expectedType = prev;
+    env.expectedType = expected;
+    return inferExprTyped(env, expr);
+}
+
+/// `inferExprTypedExpecting` for the untyped inference path.
+fn inferExprExpecting(env: *Env, expr: ast.Expr, expected: ?*T.Type) InferError!*T.Type {
+    const prev = env.expectedType;
+    defer env.expectedType = prev;
+    env.expectedType = expected;
+    return inferExpr(env, expr);
 }
 
 // ── Helper functions for each expression category ───────────────────────────
@@ -7306,7 +7422,9 @@ fn inferJumpExpr(env: *Env, j: ast.MakeExpr(.untyped, ast.JumpExprOf(.untyped)),
                     }
                 }
             }
-            const valPtr: ?*TypedExpr = if (r) |rv| try makeTypedPtr(env, try inferExprTyped(env, rv.*)) else null;
+            // 00 · 01-checker — the body's return target is the expected type
+            // of a returned value (`fn pick() -> Token { return .Color.Red.500; }`).
+            const valPtr: ?*TypedExpr = if (r) |rv| try makeTypedPtr(env, try inferExprTypedExpecting(env, rv.*, env.returnTarget)) else null;
             // Inside a `-> @Result<…>` fn, a returned plain value must be wrapped
             // into `{ok, V}` by the transform pass (`__bp_ok`). Skip values that
             // are already a `@Result` (passthrough) and `try`/`catch` forms —
@@ -7870,7 +7988,9 @@ fn inferBindingExpr(env: *Env, b: ast.BindingExprOf(.untyped), loc: ast.Loc) Inf
             const valTyped = if (annType != null and lb.value.* == .function)
                 try inferFunctionExprExpected(env, lb.value.function, lb.value.function.loc, annType, false)
             else
-                try inferExprTyped(env, lb.value.*);
+                // 00 · 01-checker — the annotation is this position's expected
+                // type (`val t: Token = .Color.Red.500;`).
+                try inferExprTypedExpecting(env, lb.value.*, annType);
             const valPtr = try makeTypedPtr(env, valTyped);
             if (annType) |at| try unifyAt(env, at, valTyped.getType(), lb.value.getLoc());
             // The annotation is the DECLARED type — bind it, not the RHS type
@@ -8967,6 +9087,22 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             else
                 null;
 
+            // 00 · 01-checker — the DECLARED parameter types of a plain call,
+            // read only as the expectation an argument is inferred under
+            // (`tokenDeclarations(.Color.Red.500)` resolves the path on the
+            // parameter's enum). Nothing is unified from here — the arm that
+            // types the call still unifies each argument with its parameter.
+            // Labelled arguments may be given out of order, so the hint is
+            // taken only when the call site is positional.
+            const declParams: ?[]*T.Type = blk: {
+                if (call.receiver != null or call.is_builtin) break :blk null;
+                for (call.args) |a| if (a.label != null) break :blk null;
+                const calleeTy = env.lookup(call.callee) orelse break :blk null;
+                const d = calleeTy.deref();
+                if (d.* != .func) break :blk null;
+                break :blk d.func.params;
+            };
+
             const typedArgs = try env.arena.alloc(ast.CallArgOf(.typed), call.args.len);
             for (call.args, 0..) |arg, i| {
                 // Only the declared PARAMETER types are pushed down
@@ -8986,10 +9122,14 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                     for (d.func.params) |fp| if (!typeIsGround(fp, 0)) break :blk null;
                     break :blk ps[i];
                 } else null;
+                const argExpected: ?*T.Type = if (declParams) |ps|
+                    (if (i < ps.len) ps[i] else null)
+                else
+                    null;
                 const val = if (expected != null and arg.value.* == .function)
                     try inferFunctionExprExpected(env, arg.value.*.function, arg.value.*.function.loc, expected.?, true)
                 else
-                    try inferExprTyped(env, arg.value.*);
+                    try inferExprTypedExpecting(env, arg.value.*, argExpected);
                 typedArgs[i] = .{ .label = arg.label, .value = try makeTypedPtr(env, val) };
             }
             const typedTrailing = try inferTrailingLambdasTyped(env, call.trailing);
@@ -9913,9 +10053,18 @@ fn inferFunctionExprExpected(
 fn inferCollectionExpr(env: *Env, col: ast.CollectionExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
     return switch (col.kind) {
         .arrayLit => |al| {
+            // 00 · 01-checker — an expected `Array<T>` makes `T` the expected
+            // type of every element (`val ts: Array<Token> = [.Color.Red.500];`).
+            const elemExpected: ?*T.Type = blk: {
+                const want = (env.expectedType orelse break :blk null).deref();
+                if (want.* != .named) break :blk null;
+                if (!std.mem.eql(u8, want.named.name, "array") and !std.mem.eql(u8, want.named.name, "Array")) break :blk null;
+                if (want.named.args.len != 1) break :blk null;
+                break :blk want.named.args[0];
+            };
             const typedElems = try env.arena.alloc(ast.TypedExpr, al.elems.len);
             for (al.elems, 0..) |elem, i| {
-                typedElems[i] = try inferExprTyped(env, elem);
+                typedElems[i] = try inferExprTypedExpecting(env, elem, elemExpected);
             }
             const elemType = if (typedElems.len > 0) typedElems[0].getType() else try env.freshVar();
             for (typedElems) |elem| {

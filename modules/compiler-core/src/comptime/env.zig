@@ -437,6 +437,15 @@ pub const Env = struct {
     /// 06 N30 — the annotation being resolved (`x: Foo` → `Foo`'s column), so an
     /// unknown type name reds at the annotation. Set through `atTypeRef`.
     typeRefLoc: ?ast.Loc = null,
+    /// 00 · 01-checker — the type the expression at the position being inferred
+    /// is expected to produce, when the site knows it: a `val`'s annotation, a
+    /// declared parameter, the body's return target, an array literal's element
+    /// type. Read by `tryResolveEnumSectionPath` to choose among the enums whose
+    /// section tree carries the same path (`.Color.Red.500` on both `Token` and
+    /// `__Token__Border`) — the choice used to fall out of `typeDefs`' hash
+    /// order. Nothing is unified from here: the site that set the expectation
+    /// still unifies the inferred type itself.
+    expectedType: ?*T.Type = null,
     /// C10 — annotations whose type name was not known yet when resolved; the
     /// second pass (`checkPendingTypeNames`) reds on the ones still unknown.
     pendingTypeNames: std.ArrayListUnmanaged(PendingTypeName) = .empty,

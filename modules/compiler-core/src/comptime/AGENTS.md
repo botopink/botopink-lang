@@ -780,6 +780,23 @@ builds the equivalent untyped ctor chain into `env.enumSectionRewrites` (keyed b
 the outer identAccess loc) and `transform.zig rewriteExpr` substitutes it;
 synthesised nodes carry loc `{line=0, col=0}` so the rewrite is not re-triggered.
 
+**Which enum carries the path is the expected type's answer** (00 · 01-checker).
+`env.typeDefs` holds the synthesised section enums beside the declared ones, so
+more than one enum can carry one path — emilia's `Token` and its own
+`__Token__Border` both carry `Color.Red.500`. The resolver used to return the
+FIRST hit of the `typeDefs` iterator, which made the answer a function of the
+map's hash order: it changed with the number of enums in the program and took
+six declared cells out of reach in every spelling. So `enumCarriesSectionPath`
+(the predicate form of `resolveSectionPathInEnum` — the two walk the same steps
+and must keep agreeing) collects every carrier, and `expectedEnumAmong` picks
+the one `env.expectedType` names (through one `?T`). `env.expectedType` is a
+hint and never unified from here: `inferExprTyped` clears it for every node but
+an identifier chain and an array literal, and the sites that know a position's
+type set it around that sub-expression — a `val`'s annotation (`inferDecl`,
+`inferDeclTyped`, `inferBindingExpr`), a plain positional call's declared
+parameters (`inferCallExpr`), the body's return target (`inferJumpExpr`) and an
+expected `Array<T>`'s element type (`inferCollectionExpr`).
+
 Tuple labels (decision 8 §6) ride the same map: a `tuple` type carries
 `named.labels` (from a written `#(name: T, …)` type — `ast.TypeRef.labeledTuple`
 — or, T1, from the plain variables a `#(…)` literal is built from; `unify` never
