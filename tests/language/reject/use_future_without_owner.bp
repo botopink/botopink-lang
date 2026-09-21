@@ -1,0 +1,15 @@
+//// Decision 90 is a dispensation, not a way to switch a refusal off. The
+//// wrapper effect is there, but `@Future<i32>` unwraps (decision 89) to a type
+//// that owns no context, so there is no owner for the activation to agree on —
+//// the fn is refused exactly as a plain `-> i32` body would be.
+
+type Element(count: i32) implement @Context<Element, Element>
+fn state(initial: i32) -> @Context<Element, i32> { return initial; }
+
+#[@future]
+fn Page() -> @Future<i32> {
+    val n = use state(0);
+    return n;
+}
+
+pub fn main() { @print(0); }

@@ -974,28 +974,61 @@ fn contextBaseFromImplements(arena: std.mem.Allocator, impls: []const ast.TypeRe
     return null;
 }
 
+/// True for an effect whose return type *wraps* the value the body produces
+/// (`#[@future]` → `@Future<T>`, `#[@result]` → `@Result<D, E>`, …). `#[@context]`
+/// is the one effect that does not: it names the activation capability itself,
+/// and its return type is the owner (decision 88). Decision 90 reads this
+/// predicate — a wrapper effect whose unwrapped return type owns a context
+/// activates hooks on its own, since the wrapper says nothing about activation.
+fn isWrapperEffect(eff: ast.EffectKind) bool {
+    return eff != .context;
+}
+
+/// Look through a wrapper return type to the type that owns the context.
+/// Decision 89 — **only** `@Future<T>` is unwrapped, and only one level: a
+/// `#[@future] fn … -> @Future<Element>` has owner `Element`, so a hook declared
+/// `-> @Context<Element, R>` is type-legal in it. Every other return type,
+/// wrapper or not, is its own owner.
+fn unwrapContextOwner(retType: ast.TypeRef) ast.TypeRef {
+    return switch (retType) {
+        .generic => |g| if (std.mem.eql(u8, g.name, "Future") and g.args.len >= 1)
+            g.args[0]
+        else
+            retType,
+        else => retType,
+    };
+}
+
 /// Derive the `@Context` capability of a function from its declared return type.
-/// A return type implements `@Context` either directly (`@Context<B, R>`) or via a
+/// The owner is read after `unwrapContextOwner` (decision 89 — through `@Future<T>`
+/// to `T`), and implements `@Context` either directly (`@Context<B, R>`) or via a
 /// named type whose inline `implement` clause lists `@Context<B, R>` — the owner
 /// type of a component (`#[@context] fn Widget() -> Element`, decision 88).
-/// `eff` is the fn's effect annotation: `annotated` records whether it is
-/// `#[@context]`, the second half of the capability — a body activates a hook
-/// only when its return type implements `@Context` **and** it carries the
-/// annotation (`inferUseHookExpr`).
+/// `eff` is the fn's effect annotation and decides `annotated`, the second half of
+/// the capability — a body activates a hook only when its return type owns a
+/// context **and** `annotated` is true (`inferUseHookExpr`). `annotated` is set by
+/// `#[@context]`, **or** (decision 90) by a wrapper effect whose unwrapped return
+/// type owns a context: `#[@future] fn Page() -> @Future<Element>` activates
+/// without a second annotation, which R5 forbids spelling anyway. A fn with no
+/// effect annotation, or one whose return owns no context, is untouched by this:
+/// the two refusals of decision 67 still fire.
 fn contextInfoFromReturn(env: *Env, retType: ?ast.TypeRef, eff: ?ast.EffectKind, fnName: []const u8) InferError!envMod.FnContext {
     const display = if (retType) |rt| try typeRefToString(env.arena, rt) else "void";
-    const annotated = eff == .context;
-    if (retType) |rt| switch (rt) {
+    const contextAnnotated = eff == .context;
+    const wrapperEffect = if (eff) |e| isWrapperEffect(e) else false;
+    // Decision 90 — the owner answers the question the annotation would have.
+    const ownerActivates = contextAnnotated or wrapperEffect;
+    if (retType) |rt| switch (unwrapContextOwner(rt)) {
         .generic => |g| if (std.mem.eql(u8, g.name, "Context")) {
             const base = if (g.args.len >= 1) try typeRefToString(env.arena, g.args[0]) else null;
-            return .{ .implementsContext = true, .base = base, .returnDisplay = display, .annotated = annotated, .fnName = fnName };
+            return .{ .implementsContext = true, .base = base, .returnDisplay = display, .annotated = ownerActivates, .fnName = fnName };
         },
         .named => |n| if (env.lookupTypeDef(n)) |td| {
-            if (td.contextBase()) |b| return .{ .implementsContext = true, .base = b, .returnDisplay = display, .annotated = annotated, .fnName = fnName };
+            if (td.contextBase()) |b| return .{ .implementsContext = true, .base = b, .returnDisplay = display, .annotated = ownerActivates, .fnName = fnName };
         },
         else => {},
     };
-    return .{ .implementsContext = false, .base = null, .returnDisplay = display, .annotated = annotated, .fnName = fnName };
+    return .{ .implementsContext = false, .base = null, .returnDisplay = display, .annotated = contextAnnotated, .fnName = fnName };
 }
 
 /// The display name of a `ContextBase` type (a phantom, typically a plain named type).
@@ -8242,10 +8275,11 @@ fn inferUseHookExpr(env: *Env, uh: ast.UseHookExprOf(.untyped), loc: ast.Loc) In
         env.lastError = TypeError.useNotAllowed(fc.returnDisplay).withLoc(loc);
         return error.TypeError;
     }
-    // Decision 88 — the return type implements `@Context`, but only a
-    // `#[@context]` body activates a hook; without the annotation the fn is
-    // an ordinary fn (a bare `-> Element` renders once, a bare
-    // `-> @Context<B, R>` is a hook declaration, and neither writes `use`).
+    // Decision 88 — the return type owns a context, but a body activates a
+    // hook only under an effect annotation: `#[@context]`, or (decision 90) a
+    // wrapper effect whose unwrapped return type owns the context. With no
+    // annotation the fn is an ordinary fn (a bare `-> Element` renders once, a
+    // bare `-> @Context<B, R>` is a hook declaration, and neither writes `use`).
     if (!fc.annotated) {
         env.lastError = TypeError.useWithoutContextEffect(fc.fnName, fc.returnDisplay).withLoc(loc);
         return error.TypeError;
