@@ -952,6 +952,22 @@ pub fn codegenEmit(
                 });
             },
             .ok => |*ok| {
+                // An import this program cannot resolve to one module — the
+                // index is keyed by the bare symbol name and two modules
+                // export it. Backend-agnostic, reported the same way as the
+                // atom fault below.
+                if (cross.exportFault(ct.name)) |contest| {
+                    try results.append(alloc, .{
+                        .name = ct.name,
+                        .src = ct.src,
+                        .result = .{
+                            .js = try alloc.dupe(u8, ""),
+                            .comptime_script = null,
+                            .diagnostic = .{ .type = .{ .message = try contest.message(alloc), .loc = null } },
+                        },
+                    });
+                    continue;
+                }
                 // The atom the module will be named by must be its own: two
                 // paths rendering one atom used to be a silent overwrite (or a
                 // silent shadow across two output directories), which is the
@@ -1977,7 +1993,11 @@ const Emitter = struct {
         for (program.decls) |decl| switch (decl) {
             .use => |u| for (u.imports) |imp| {
                 const name = imp.name();
-                const info = xc.exports.get(name) orelse continue;
+                // Resolved through the import's own `from "<mod>"`, not by the
+                // bare name: several modules of a program may export one name
+                // and `exports.get` answered with whichever the walk reached
+                // last. A contest is refused in the driver, not guessed here.
+                const info = xc.picked(name, u.source, null) orelse continue;
                 const owner = self.atomOf(info.module);
                 if (std.mem.eql(u8, owner, self.module_name)) continue;
                 switch (info.kind) {

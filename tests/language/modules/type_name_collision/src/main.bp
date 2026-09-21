@@ -1,0 +1,43 @@
+//// A `pub type` name two modules of one program declare. A record has no
+//// arity, so its NAME is the whole of its identity — which is exactly why a
+//// name-keyed index cannot carry two of them.
+////
+//// Three defects, measured on this cell's shape before the fix, none of them
+//// a diagnostic:
+////
+//// 1. The checker's registry scan bound `import {Outcome} from "parser"` to
+////    `net`'s record (with different field TYPES it refused the program
+////    against the wrong record's fields: "expected i32, got string").
+//// 2. `CrossModule.exports` kept one `Outcome`, so erlang filled
+////    `record_fields` with `parser`'s field order and read `net`'s `.tag` at
+////    it: `net-note`, the NEIGHBOURING field, at exit 0, where commonJS and
+////    wasm printed `net-tag`.
+//// 3. `type_owner_path` kept one owner too, so the typed method call went to
+////    `parser__t__outcome:describe/1` over a `net` tuple — the same wrong
+////    field, `404` in the first reduction, again at exit 0.
+////
+//// Inference records a field read's and a method call's receiver type as a
+//// NAME and nothing else, so a name the program declares twice places
+//// nothing: the read goes to `'__bp_field'/2` and the call to
+//// `'__bp_method'/3`, both of which ask the value's own tag — decision 21
+//// gives every value its type's module in that tag, which is what makes the
+//// question answerable at all.
+
+pub mod parser;
+pub mod net;
+import {Outcome, parserOutcome} from "parser";
+import {netOutcome} from "net";
+
+pub fn main() {
+    // The field axis, through each module's own fn.
+    @print(parserOutcome().tag);
+    @print(netOutcome().tag);
+    // The method axis: each `describe` reads its OWN record's `tag`.
+    @print(parserOutcome().describe());
+    @print(netOutcome().describe());
+    // The construction axis: the import names `parser`, so this is parser's
+    // field order and nothing else's.
+    val o = Outcome(tag: "local-tag", note: "local-note");
+    @print(o.tag);
+    @print(o.note);
+}

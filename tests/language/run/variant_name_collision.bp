@@ -1,0 +1,52 @@
+//// A bare variant name two enums of one module declare.
+////
+//// Decision 21 puts the ENUM and the enum's module in a variant's runtime
+//// atom (`main__t__shape__v__circle`), so which enum a written variant
+//// belongs to decides the value — and `variant_enum` answered that by
+//// declaration order, first writer wins, with no dissent check. Its own
+//// comment named the hazard and mitigated it only for a `case` SUBJECT, so a
+//// qualified `Shape.Circle` was safe and everything else was a coin toss.
+////
+//// This cell is the spelling that always had an answer: the enum is written.
+//// Both directions run, and through a binding as well as at the call, because
+//// the defect was in the TAG and a tag travels with the value.
+////
+//// The spelling that has no answer is `run/variant_name_ambiguous.bp`, which
+//// the erlang emit refuses now instead of tagging with one of the two: it
+//// died with `{case_clause, main__t__shape__v__circle}` over a `Hole` value
+//// before, while wasm answered correctly from the same source.
+
+pub type Shape {
+    Circle,
+    Square,
+}
+
+pub type Hole {
+    Circle,
+    Slot,
+}
+
+pub fn holeOf(h: Hole) -> string {
+    return case h {
+        Hole.Circle { "hole-circle" }
+        Hole.Slot { "hole-slot" }
+    };
+}
+
+pub fn shapeOf(s: Shape) -> string {
+    return case s {
+        Shape.Circle { "shape-circle" }
+        Shape.Square { "shape-square" }
+    };
+}
+
+pub fn main() {
+    @print(holeOf(Hole.Circle));
+    @print(shapeOf(Shape.Circle));
+    val h = Hole.Circle;
+    val s = Shape.Circle;
+    @print(holeOf(h));
+    @print(shapeOf(s));
+    @print(holeOf(Hole.Slot));
+    @print(shapeOf(Shape.Square));
+}
