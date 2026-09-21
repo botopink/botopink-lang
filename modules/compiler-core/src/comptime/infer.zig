@@ -3276,6 +3276,11 @@ fn inferFnDecl(env: *Env, f: ast.FnDecl) InferError!*T.Type {
     const savedFnEffect = env.fnEffect;
     env.fnEffect = eff;
     defer env.fnEffect = savedFnEffect;
+    // Decision 96 — the body's `ContextBase` is fixed by its first `use`, so
+    // the anchor starts empty at every body and is restored on the way out.
+    const savedUseAnchor = env.useAnchor;
+    env.useAnchor = null;
+    defer env.useAnchor = savedUseAnchor;
     // §1C — `@getContex(T)` is only valid inside a `#[@context]` fn body
     // (RC5). Save/restore the flag around the body so nested non-context
     // closures fall back to false correctly.
@@ -8542,19 +8547,44 @@ fn isUseHookValue(value: *const ast.ExprOf(.untyped)) bool {
     return value.* == .useHook;
 }
 
-/// Verify a `use` expression returns `@Context<B, _>` whose `B` matches the
-/// enclosing function's ContextBase.
+/// Verify a `use` expression returns `@Context<B, _>` whose `B` is the one
+/// base this body resolves every `use` against (decision 96).
+///
+/// Two questions, in this order. RC2 first: the enclosing function DECLARED a
+/// base in its return type, and a hook anchored elsewhere disagrees with the
+/// declaration — that is the older refusal and the one a single `use` hits.
+/// Then decision 96's: the anchor is a property of the BODY, fixed by its first
+/// `use`, so a second `use` anchored elsewhere reds at its own site with both
+/// bases and the line that fixed the first. The two coincide whenever the
+/// return type names a base, which is every shape that parses today; the anchor
+/// is what holds the rule up where the declaration cannot answer, and it is
+/// what makes the diagnostic say which `use` the body is committed to.
 fn validateUseBase(env: *Env, valTy: *T.Type, fc: envMod.FnContext, loc: ast.Loc) InferError!void {
     const useBase = contextBaseOfType(env, valTy) orelse {
         const disp = baseNameOfType(valTy) orelse "value";
         env.lastError = TypeError.useNotContext(disp).withLoc(loc);
         return error.TypeError;
     };
-    const fnBase = fc.base orelse return; // implements @Context but base unconstrained
-    if (!std.mem.eql(u8, fnBase, useBase)) {
-        env.lastError = TypeError.contextMismatch(fnBase, useBase).withLoc(loc);
-        return error.TypeError;
+    if (env.useAnchor) |anchor| {
+        // Decision 96 — the body is already committed. This is the refusal the
+        // decision legislates, and it is the one a reader meets: both bases,
+        // and the `use` that chose the first.
+        if (!std.mem.eql(u8, anchor.base, useBase)) {
+            env.lastError = TypeError.contextBaseMixed(anchor.base, anchor.line, useBase).withLoc(loc);
+            return error.TypeError;
+        }
+        return;
     }
+    // The first `use` of the body. It fixes the anchor, and before it may do so
+    // it has to agree with the base the return type DECLARED — RC2, the older
+    // refusal, which is what a single misanchored `use` hits.
+    if (fc.base) |fnBase| {
+        if (!std.mem.eql(u8, fnBase, useBase)) {
+            env.lastError = TypeError.contextMismatch(fnBase, useBase).withLoc(loc);
+            return error.TypeError;
+        }
+    }
+    env.useAnchor = .{ .base = useBase, .line = loc.line };
 }
 
 /// Bind the names introduced by a destructuring `use { ... } = expr` against the

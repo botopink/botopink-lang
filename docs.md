@@ -591,10 +591,21 @@ The rules, each with its diagnostic:
 - **The operand is a hook.** `use plain()` where `plain : -> User` is
   `` use-of-non-context-fn: `use` requires @Context: 'User' does not implement
   @Context ``.
-- **One owner per body.** `use connection()` with `connection : ->
+- **One owner per body** (decision 96). The owner is a property of the
+  FUNCTION, not of each activation: the first `use` fixes it and every later
+  one resolves against the same one. Two refusals say so, and they are
+  different rules. A single `use` anchored at an owner the return type never
+  named is the DECLARATION's: `use connection()` with `connection : ->
   @Context<Http, _>` inside a body owned by `Element` is
   `` context-anchor-violation: function returns @Context<Element, _> but `use`
-  returns @Context<Http, _> ``.
+  returns @Context<Http, _> ``. A second `use` disagreeing with the first is
+  the BODY's, refused at its own site with both owners and the line that fixed
+  the anchor: `` context-anchor-violation: every `use` in one function resolves
+  against the same ContextBase: this body's is @Context<Element, _>, fixed by
+  the `use` on line 9, and this one is @Context<Http, _> ``. Two hooks that are
+  each legal alone are still refused together; there is no flag (decision 67).
+  Each body starts over — a sibling `fn` may anchor wherever its own return
+  type says.
 - **The static prefix.** Every `use` of a function body comes before its first
   `if`, `case`, `loop` or `return`, at any nesting: `val c = use …` after a
   `return`, and a `use` inside an `if`'s own block, are both parse errors —
@@ -635,6 +646,52 @@ fn greet(name: string, greeting: string = "hello") -> string {
 The default is **not applied yet**: every call still passes every argument
 (`greet("world")` reports `'greet' expects 2 argument(s), got 1`). 1.0.5-beta
 front `01-checker` step 7 closes it.
+
+### Effects
+
+A function's effect is named by one `#[@<effect>]` annotation — at most one per
+`fn` — and the return wrapper is the annotation with its first letter
+capitalised, in all six rows and with no exception: `#[@result]` → `@Result`,
+`#[@future]` → `@Future`, `#[@generator]` → `@Generator`, `#[@iterator]` →
+`@Iterator`, `#[@futureGenerator]` → `@FutureGenerator`, `#[@context]` →
+`@Context`.
+
+The six effects form a **chain** (decision 95): a wrapper extends the one
+below it, and an annotation grants every body operation at or below its own
+level.
+
+| Body | May write | Because the wrapper extends |
+|---|---|---|
+| `#[@context] fn … -> @Context<B, R>` (or a type implementing it, e.g. `Element`) | `use` · `await` · `try` | `@Context` ⊃ `@Future` ⊃ `@Result` |
+| `#[@futureGenerator] fn … -> @FutureGenerator<T, E, C>` | `await` · `try` · `yield` | `@FutureGenerator` ⊃ `@Future` ⊃ `@Result` |
+| `#[@future] fn … -> @Future<T, E>` | `await` · `try` | `@Future` ⊃ `@Result` |
+| `#[@iterator] fn … -> @Iterator<T, E, C>` | `try` · `yield` | `@Iterator` ⊃ `@Result` |
+| `#[@generator] fn … -> @Generator<T, R>` | `yield` | — no error channel |
+| `#[@result] fn … -> @Result<T, E>` | `try` | — it is the base |
+
+Every effectful body can fail, so every wrapper but one extends `@Result`; a
+wrapper that suspends extends `@Future`. The chain grants **downwards and never
+upwards**: `yield` stays exclusive to the three generator-shaped wrappers and
+`use` to `@Context`, and neither is a level anything else reaches.
+`@Generator<T, R>` is the exception — it has no error channel, so `throw` and
+`try` are both refused in a `#[@generator]` body.
+
+A capability written above the body's level is refused, located, naming the
+level it would need — there is no flag:
+
+```
+error: effect-try-without-fallible-channel: `try` needs an effect that
+implements `@Result` — `#[@result]`, `#[@future]`, `#[@iterator]`,
+`#[@futureGenerator]` or `#[@context]`; `#[@generator]` is `@Generator`,
+which does not
+```
+
+Two forms are **not** gated by the chain, because neither leaves the body.
+`try <e> catch <f>` handles the error on the spot, so it needs no channel and
+is legal in a plain `fn` — it is bare `try`, which returns the `Error` out of
+the enclosing function, that needs one. And a `yield` inside a `loop (…) { … }`
+body feeds that loop's array rather than the function (see *Loop*), so it is
+legal in any body, effect or not.
 
 ### Results
 

@@ -40,7 +40,9 @@ cell and eight reject cells), `index_*` (decision 63 as amended: `run/index_dict
 singletons (`closure_capture`, `recursion`, `expr_sugar`, `fn_defaults`, and the
 decision-28/30/33 cells `nullish_default`, `paren_receiver`, `type_suffix`, `bodyless_fn`,
 `curried_call`, `index_expression`), and `effect_chain` (1.0.10-beta front 20,
-decisions 95 and 98: one `test/`, one `run/` and five `reject/` cells). One scenario group per
+decisions 95 and 98: one `test/`, one `run/` and five `reject/` cells; front 20
+also adds `run/use_one_base` and `reject/use_two_bases` to the `use_*` area for
+decision 96). One scenario group per
 file: a parse error is the blast radius, so nine `#[@External]` declarations in one file mean one
 unparseable annotation hides the other eight.
 
@@ -242,17 +244,19 @@ unconditionally and can be neither deleted (its tests fail) nor rewritten (by an
 
 ```bash
 ls test/*.bp    | wc -l   # 52
-ls run/*.bp     | wc -l   # 24
-ls reject/*.bp  | wc -l   # 37
+ls run/*.bp     | wc -l   # 25
+ls reject/*.bp  | wc -l   # 38
 ls -d modules/*/| wc -l   #  4
-find . -name '*.bp' | wc -l   # 124
+find . -name '*.bp' | wc -l   # 126
 ```
 
-The difference from the block below is front 20's seven cells, one new area row:
+The difference from the block below is front 20's nine cells, one new area row
+and one grown:
 
 | Area | Cells | Total |
 |---|---|---|
 | the effect chain (1.0.10-beta front 20, decisions 95 and 98) | 1 test + 1 run + 5 reject | 7 |
+| one `ContextBase` per body (front 20, decision 96) | 1 run + 1 reject | 2 |
 
 `run/effect_chain.bp` holds the two rows of decision 95's table every backend
 runs (`#[@result]` with `try`, `#[@context]` with `use` and `try`);
@@ -263,6 +267,13 @@ wasm and beam, and commonJS lowers `#[@context]` to a plain `function`, so the
 emitted `await` is a JS `SyntaxError`. That is a lowering row for the backend's
 own front, not a reason to leave the capability refused, and it is not an
 `expected-failures.txt` line because no cell of this suite claims it.
+
+`run/use_one_base.bp` and `reject/use_two_bases.bp` are decision 96's pair: a
+body whose hooks share an owner compiles and composes, and a second `use`
+anchored elsewhere is refused at its own site with both owners and the line
+that fixed the first. `reject/use_owner_mismatch.bp`, which front 19 wrote, is
+the other refusal and a different rule — ONE `use` anchored at an owner the
+return type never named, caught before any anchor exists.
 
 The five `reject/` cells are the refusals decision 95 adds or repairs:
 `try_in_generator` (question 97 — the generator stays infallible),
@@ -275,7 +286,7 @@ Measured there, this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0:
 
 ```
 $ tests/language/run.sh                 # commonJS, erlang, wasm
-language tests: 383 passed, 53 expected failures, 0 failed
+language tests: 387 passed, 53 expected failures, 0 failed
 ```
 
 Counted on disk at `b09bf9c6` — local `feat` after the fronts 12 × 13 merge:

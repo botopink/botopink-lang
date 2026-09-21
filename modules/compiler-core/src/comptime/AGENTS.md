@@ -86,6 +86,24 @@ not wrap, `throw` stayed a raw host exception), which is a second, unwritten Res
 `inferFnDecl` now reds it with `effect-missing-annotation`. Every `-> @Result` in `libs/std` already
 carried `#[@result]`, so nothing there moved.
 
+**One `ContextBase` per function** (decision 96 of 1.0.10-beta). The anchor is
+a property of the BODY, not of each activation: `env.useAnchor` records the
+base the first `use` resolved against, with its line, and is cleared by
+`inferFnDecl` around every body. `validateUseBase` asks two questions in order
+— the anchor's, which reds a second `use` anchored elsewhere
+(`contextBaseMixed`, naming both bases and the line that fixed the first), and
+then, only for the first `use` of a body, RC2's, which reds a `use` anchored at
+a base the RETURN TYPE never named (`contextMismatch`). The two coincide
+wherever the return type names a base, which is every shape that parses today.
+Measured at front 20's landing: the premise decision 96 corrects — "RC2 asks
+only that a hook be anchored at a subtype of the body's base" — was true of the
+DOCUMENTATION (`builtins.d.bp` § 1C, now rewritten) and never of this checker,
+which has always compared the two names for equality. The library half — the
+owner type of a component declaring a base type of its own, instead of being
+its own base — belongs to the framework that declares that type, and is
+written up in the root `AGENTS.md` § Open handoffs. Nothing here changes when
+it lands: the anchor reads whatever the first type argument says.
+
 **The effects are a chain** (decision 95 of 1.0.10-beta). `effect_chain.zig`
 owns the order — `@Future` and `@Iterator` extend `@Result`, `@FutureGenerator`
 and `@Context` extend `@Future`, `@Generator` extends nothing (question 97: no

@@ -506,6 +506,13 @@ pub const Env = struct {
     /// yield j; }` collects), so only a `yield` that reaches the function is
     /// the effect's and gated by the chain.
     loopDepth: u32 = 0,
+    /// Decision 96 — the `ContextBase` this body resolved its FIRST `use`
+    /// against, with the line that fixed it. The anchor is a property of the
+    /// FUNCTION, not of each activation: every later `use` must agree with it,
+    /// and one that does not reds at its own site naming both bases. Set and
+    /// cleared by `inferFnDecl` around each body, so a nested lambda or a
+    /// sibling fn starts over.
+    useAnchor: ?struct { base: []const u8, line: usize } = null,
     /// The effect annotation of the fn whose body is being inferred, or null
     /// for a plain `fn` (and at module level). Read by the `try` gate, which
     /// has to ask the chain a question `env.starFn` cannot answer: a

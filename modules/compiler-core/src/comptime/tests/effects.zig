@@ -685,3 +685,85 @@ test "chain: `try … catch` needs no channel — it propagates nothing" {
         \\}
     );
 }
+
+// ── decision 96: one ContextBase per function ─────────────────────────────────
+//
+// The anchor is a property of the BODY, not of each activation: the first `use`
+// fixes it and every later one must agree. Two refusals live here and they are
+// not the same rule —
+//
+//   RC2 (`context-anchor-violation: function returns …`) is the DECLARATION's:
+//   one `use` anchored at a base the return type never named. It fires before
+//   any anchor exists, which is why a single misanchored `use` still meets it.
+//
+//   Decision 96's (`… every `use` in one function resolves against the same
+//   ContextBase`) is the BODY's: a second `use` disagreeing with the first,
+//   refused at its own site with both bases and the line that fixed the anchor.
+//
+// Measured while implementing this: the premise decision 96 corrects —
+// "today RC2 asks only that a hook be anchored at a SUBTYPE of the body's
+// Base, so two different subtypes can meet in one function" — was true of the
+// documentation (`builtins.d.bp` § 1C, which front 20 step 2 rewrote) and never
+// of the checker, which has always compared the two names for equality. What
+// this step adds is the anchor as a thing the body owns, and the refusal that
+// says which `use` committed it.
+
+test "anchor: a body whose hooks share a base compiles" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\val Element = type implement @Context<Element, Element> { }
+        \\fn state(initial: i32) -> @Context<Element, i32> {
+        \\    initial;
+        \\}
+        \\fn memo(value: i32) -> @Context<Element, i32> {
+        \\    value;
+        \\}
+        \\#[@context]
+        \\fn Widget() -> Element {
+        \\    val a = use state(0);
+        \\    val b = use memo(a);
+        \\    return Element();
+        \\}
+    );
+}
+
+test "anchor error: two `use`s at different bases in one body (decision 96)" {
+    try h.assertTypeErrorSnap(std.testing.allocator, @src(),
+        \\val Element = type implement @Context<Element, Element> { }
+        \\val Http = type implement @Context<Http, Http> { }
+        \\fn state(initial: i32) -> @Context<Element, i32> {
+        \\    initial;
+        \\}
+        \\fn connection() -> @Context<Http, i32> {
+        \\    initial;
+        \\}
+        \\#[@context]
+        \\fn Mixed() -> Element {
+        \\    val a = use state(0);
+        \\    val b = use connection();
+        \\    return Element();
+        \\}
+    );
+}
+
+test "anchor: each body starts over — a sibling fn may anchor elsewhere" {
+    try h.assertInfersOk(std.testing.allocator,
+        \\val Element = type implement @Context<Element, Element> { }
+        \\val Http = type implement @Context<Http, Http> { }
+        \\fn state(initial: i32) -> @Context<Element, i32> {
+        \\    initial;
+        \\}
+        \\fn connection() -> @Context<Http, i32> {
+        \\    initial;
+        \\}
+        \\#[@context]
+        \\fn Widget() -> Element {
+        \\    val a = use state(0);
+        \\    return Element();
+        \\}
+        \\#[@context]
+        \\fn Server() -> Http {
+        \\    val c = use connection();
+        \\    return Http();
+        \\}
+    );
+}
