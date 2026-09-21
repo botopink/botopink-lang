@@ -13,8 +13,11 @@ fn main() {
 ```erlang
 -module(main).
 -export(['_botopink_main'/0, main/1]).
+-export([floor/1]).
 
 %% external fn floor -> math:floor
+floor(N) ->
+    math:floor(N).
 
 main() ->
     '__bp_print'([math:floor(1.7)]).

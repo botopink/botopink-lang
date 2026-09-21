@@ -13,8 +13,11 @@ fn main() {
 ```erlang
 -module(main).
 -export(['_botopink_main'/0, main/1]).
+-export([b64encode/1]).
 
 %% external fn b64encode -> erlang template
+b64encode(S) ->
+    base64:encode(S).
 
 main() ->
     '__bp_print'([base64:encode(<<"hi">>)]).

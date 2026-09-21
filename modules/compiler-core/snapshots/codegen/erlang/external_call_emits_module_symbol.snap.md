@@ -13,8 +13,11 @@ fn main() {
 ```erlang
 -module(main).
 -export(['_botopink_main'/0, main/1]).
+-export([basename/1]).
 
 %% external fn basename -> filename:basename
+basename(P) ->
+    filename:basename(P).
 
 main() ->
     '__bp_print'([filename:basename(<<"/tmp/notes.txt">>)]).
