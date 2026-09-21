@@ -163,6 +163,21 @@ The arrowless shortform also stops swallowing a `fn` that is not followed by
 `fn main() …` used to parse the *next declaration* as this one's return type
 and report the failure there.
 
+## A field and a variant payload are `name: Type` (decision 12, C-08)
+
+`parseFieldList` serves both `type Name(…)` and a variant payload `Variant(…)`,
+and it refuses an element that is not `name: Type` **where the element starts**,
+with `fieldNeedsName` — the diagnostic names `Variant(field: T)`. The test is
+"the current token is a member name AND the one after it is `:`", so the bare
+type (`Circle(i32)`, `Circle(Point)`, `Circle(Box<i32>)`) and the forms that
+cannot even begin with a name (`Circle(?i32)`, `Circle(#(a, b))`) are refused
+alike. Reading past the element instead would report the missing `:` as a stray
+token, which is the unlocated-in-practice diagnostic this replaced: `Circle(i32)`
+used to red at the `)` two tokens later, naming nothing.
+
+The rule is the decision's own reason: a payload nobody can name is a payload no
+`case` arm can bind.
+
 ## Type-ref grammar (`types.zig`)
 
 **The `T[]` suffix is applied once, at the single exit, and never per-arm.**

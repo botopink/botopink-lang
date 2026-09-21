@@ -264,6 +264,12 @@ pub fn errorMessages(info: ParseErrorInfo) ErrorMessages {
             .caretCaption = "remove `val`",
             .hint = "Fields are immutable already: `type Point(x: i32, y: i32)`.",
         },
+        .fieldNeedsName => .{
+            .code = "field-needs-name",
+            .message = "a field with no name",
+            .caretCaption = "write `name: Type` here",
+            .hint = "Every field and every variant payload is named: `type Point(x: i32, y: i32)`, `Variant(field: T)`. A payload nobody can name is a payload no `case` arm can bind.",
+        },
         .memberCommaSeparator => .{
             .code = "member-comma-separator",
             .message = "members end with `;`, not `,`",
