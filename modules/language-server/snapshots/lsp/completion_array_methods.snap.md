@@ -10,7 +10,7 @@ length  [Field]  detail: val length: i32
 at  [Method]  detail: fn at(self: Self, index: i32) -> ?T
 push  [Method]  detail: fn push(self: Self, item: T)
 pop  [Method]  detail: fn pop(self: Self) -> ?T
-slice  [Method]  detail: fn slice(self: Self, start: i32, end: i32 = null) -> Self
+slice  [Method]  detail: fn slice(self: Self, start: i32, end: ?i32 = null) -> Self
 join  [Method]  detail: fn join(self: Self, sep: string) -> string
 reverse  [Method]  detail: fn reverse(self: Self) -> Self
 indexOf  [Method]  detail: fn indexOf(self: Self, item: T) -> i32

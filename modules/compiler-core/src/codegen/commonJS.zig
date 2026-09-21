@@ -371,8 +371,10 @@ fn emitProgramOptsX(
     try em.collectExternals(program);
     try em.collectClassNames(program);
     try em.collectDeclIndexes(program);
-    try em.collectPrimNodeRenames(program);
+    // The dispatch scan first: it parses the embedded std registry and fills
+    // `ambiguous_prim_renames`, which the rename collector consults.
     try em.collectBuiltinNodeDispatch();
+    try em.collectPrimNodeRenames(program);
 
     const arena_alloc = arena.allocator();
     var items: std.ArrayListUnmanaged(js.Item) = .empty;
@@ -855,6 +857,18 @@ const Emitter = struct {
     /// host methods the prelude binds, so `buildInterface` falls back to these.
     /// Keys and strings live in the node arena.
     prelude_iface_externals: std.StringHashMap(ast.ExternalRef),
+    /// Method name → the host symbol an UNTYPED call of it emits on node, over
+    /// every behavior of the embedded std registry (`scanDeclareFnExternal`),
+    /// and the names two behaviors disagree on. `at` is `String.at` → native
+    /// `charAt` and `Array.at` → native `at` (decision 63, amended), so it has
+    /// no type-naive rename: `collectPrimNodeRenames` skips `ambiguous_prim_renames`.
+    /// Computed over the registry rather than the program because the program
+    /// the emitter scans may carry ONE of the two behaviors (a String `default
+    /// fn` in use materialises the String behavior alone) and `at → charAt`
+    /// then looked unambiguous — `parts.at(0)` on a `string[]` emitted
+    /// `parts.charAt(0)` in `libs/std`'s `querystring.bp`.
+    prim_symbol_of: std.StringHashMap([]const u8),
+    ambiguous_prim_renames: std.StringHashMap(void),
     /// Every interface this module declares, by name. A user interface has no
     /// JS object to patch, so its instance `default fn`s are copied into each
     /// local record that implements it (`buildRecord`).
@@ -917,6 +931,8 @@ const Emitter = struct {
             .enum_recv_methods = std.StringHashMap(void).init(alloc),
             .imported_enums = std.StringHashMap(void).init(alloc),
             .prelude_iface_externals = std.StringHashMap(ast.ExternalRef).init(alloc),
+            .prim_symbol_of = std.StringHashMap([]const u8).init(alloc),
+            .ambiguous_prim_renames = std.StringHashMap(void).init(alloc),
             .local_interfaces = std.StringHashMap(ast.BehaviorDecl).init(alloc),
             .fn_return_types = std.StringHashMap(ast.TypeRef).init(alloc),
             .print_shapes = std.StringHashMap(js.Expr).init(alloc),
@@ -949,6 +965,8 @@ const Emitter = struct {
         self.enum_recv_methods.deinit();
         self.imported_enums.deinit();
         self.prelude_iface_externals.deinit();
+        self.prim_symbol_of.deinit();
+        self.ambiguous_prim_renames.deinit();
         self.local_interfaces.deinit();
         self.fn_return_types.deinit();
         self.print_shapes.deinit();
@@ -1023,6 +1041,7 @@ const Emitter = struct {
             if (decl == .behavior) {
                 const iface = decl.behavior;
                 for (iface.methods) |m| {
+                    if (std.mem.eql(u8, target, "node")) try self.noteUntypedNodeSymbol(m);
                     const ref = m.externalFor(target) orelse continue;
                     const key = try std.fmt.allocPrint(self.arena(), "{s}.{s}", .{ iface.name, m.name });
                     if (self.prelude_iface_externals.contains(key)) continue;
@@ -1135,6 +1154,21 @@ const Emitter = struct {
             .type_ => |r| if (r.isRecord()) for (r.methods) |m| try record_methods.put(m.name, {}),
             else => {},
         };
+        // A name two primitive behaviors send to DIFFERENT host symbols has no
+        // type-naive rename: `String.at` is native `charAt` while `Array.at` is
+        // native `at` (decision 63's amendment gave both readers one name), and
+        // whichever won here rewrote the other receiver's default-fn bodies —
+        // `Array.first`'s `self.at(0)` was emitted `this.charAt(0)` on an array,
+        // `TypeError: this.charAt is not a function` on node. Such a call keeps
+        // its own name unless inference's per-loc rename typed the receiver.
+        // The disagreement is read off the whole embedded std registry
+        // (`ambiguous_prim_renames`, filled by `collectBuiltinNodeDispatch`)
+        // AND this program's own behaviors: the program may carry one of the
+        // two (see the field).
+        for (program.decls) |decl| {
+            if (decl != .behavior) continue;
+            for (decl.behavior.methods) |m| try self.noteUntypedNodeSymbol(m);
+        }
         for (program.decls) |decl| {
             if (decl != .behavior) continue;
             for (decl.behavior.methods) |m| {
@@ -1143,6 +1177,7 @@ const Emitter = struct {
                 if (std.mem.indexOfScalar(u8, ref.symbol, '(') != null) continue;
                 if (std.mem.eql(u8, ref.symbol, m.name)) continue;
                 if (record_methods.contains(m.name)) continue;
+                if (self.ambiguous_prim_renames.contains(m.name)) continue;
                 try self.prim_node_renames.put(m.name, ref.symbol);
             }
         }
@@ -1923,6 +1958,24 @@ const Emitter = struct {
             }
         }
         return self.b.group(try stmts.toOwnedSlice(self.arena()));
+    }
+
+    /// The symbol an UNTYPED call of behavior method `m` emits on node: the
+    /// plain 2-arg `Node` symbol, else the method's own name (a template, a
+    /// `(module, symbol)` external, a `default fn` and an unannotated method
+    /// all keep it). Two behaviors disagreeing on a name make it ambiguous.
+    fn noteUntypedNodeSymbol(self: *Emitter, m: ast.BehaviorMethod) !void {
+        const sym: []const u8 = blk: {
+            const ref = m.externalFor("node") orelse break :blk m.name;
+            if (ref.module.len != 0) break :blk m.name;
+            if (std.mem.indexOfScalar(u8, ref.symbol, '(') != null) break :blk m.name;
+            break :blk ref.symbol;
+        };
+        if (self.prim_symbol_of.get(m.name)) |prev| {
+            if (!std.mem.eql(u8, prev, sym)) try self.ambiguous_prim_renames.put(try self.arena().dupe(u8, m.name), {});
+        } else {
+            try self.prim_symbol_of.put(try self.arena().dupe(u8, m.name), try self.arena().dupe(u8, sym));
+        }
     }
 
     /// The std prelude's `#[@External.Node]` for `iface.method`, if any.

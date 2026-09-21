@@ -634,7 +634,7 @@ fn unsupportedOf(comptime tag: []const u8, comptime args: anytype) Ast.Expr {
 /// A receiver with no positions raises `{bp_unsupported_index, Recv, I}` rather
 /// than answering something. A `Dict` is deliberately **not** here: it is a map
 /// `#{pairs => …}`, so `maps:get/3` would answer `undefined` for a key that is
-/// present — `d["k"]` has to reach `Dict.lookup`, which is a lowering only the
+/// present — `d["k"]` has to reach `Dict.at`, which is a lowering only the
 /// checker can record once it types the receiver.
 const index_helper_form: Ast.Form = .{ .function = .{ .name = "__bp_index", .clauses = &.{
     .{
@@ -5341,7 +5341,7 @@ const Emitter = struct {
     /// Both forms dispatch on the receiver at run time (`'__bp_index'/2`,
     /// `'__bp_slice'/3`), because `01-checker` does not type the call yet — with
     /// the receiver's type recorded, a list index becomes `lists:nth/2` inline
-    /// and a `Dict` index reaches `lookup`.
+    /// and a `Dict` index reaches `at`.
     fn indexNode(this: *Emitter, b: Ast.Builder, cc: anytype) anyerror!Ast.Expr {
         if (cc.args.len != 2) return error.InvalidArgs;
         const recv = try this.exprNode(b, cc.args[0].value.*);

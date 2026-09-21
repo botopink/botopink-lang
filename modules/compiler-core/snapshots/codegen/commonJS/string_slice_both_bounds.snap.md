@@ -53,7 +53,7 @@ function __bp_print() {
 //   fn trimEnd(...)
 //   fn replace(...)
 //   default fn slice(...)
-//   fn charAt(...)
+//   fn at(...)
 //   fn indexOf(...)
 //   default fn toString(...)
 //   fn padStart(...)

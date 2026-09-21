@@ -132,7 +132,7 @@ test "js: std package ---- order enum module with type export" {
 // consulted for `Dict` and erlang emitted a bare local `insert(D, K, V)` —
 // `out/main.erl: function insert/3 undefined`, i.e. the program did not compile
 // while the same source ran on commonJS. The owner exports `insert/3` and
-// `lookup/2`; the consumer must remote-call them (`dict:insert/3`). The program
+// `at/2`; the consumer must remote-call them (`dict:insert/3`). The program
 // means `1`, then `2` (two distinct keys), which commonJS and erlang both print.
 //
 // beam calls them remotely too, since `methodOwnerModule` in `beam_asm.zig`
@@ -141,11 +141,11 @@ test "js: std package ---- order enum module with type export" {
 // `undefined` it found (`{badfun, #{…}}`), so the module never ran and its RUN
 // LOG was empty.
 // wasm stays single-module, so `wat.zig` inlines the std module's functions into
-// the entry (`$Dict_insert`, `$Dict_lookup`) and the cross-module index never
+// the entry (`$Dict_insert`, `$Dict_at`) and the cross-module index never
 // applies — which is why this test says nothing about wasm's resolution. It
 // **answered `0` instead of `1`** until front 05 step 3: not the `forEach`
 // accumulator, which works, but the *reader* of the `?V` the accumulator
-// returns. `Dict.lookup` is declared `-> ?V`; a type parameter is not a known
+// returns. `Dict.at` is declared `-> ?V`; a type parameter is not a known
 // scalar, so the payload is the value itself, while `unwrapOr` assumed a box and
 // loaded through the payload as an address. A method's declared return type was
 // never registered under the symbol its call emits, so the reader had nothing to
@@ -156,7 +156,7 @@ test "js: std package ---- methods of a type answered by an imported module reso
         \\
         \\fn main() {
         \\    val d = dict.empty().insert("a", 1);
-        \\    @print(d.lookup("a").unwrapOr(0));
+        \\    @print(d.at("a").unwrapOr(0));
         \\    @print(d.insert("b", 2).size());
         \\}
     );

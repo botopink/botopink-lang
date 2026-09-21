@@ -999,16 +999,61 @@ test "js: numeric instance methods (external + default-fn)" {
     );
 }
 
-// `String.charAt -> ?string`: native JS answers `""` out of range, so commonJS
-// calls the `__bp_string_char_at` prelude helper, emitted only into the module
-// that uses it. RUN LOG asserted without a snapshot (commonJS-only behaviour).
-test "js: string charAt out of range is null" {
+// `String.at -> ?string` (`charAt` until decision 63's amendment): native JS
+// answers `undefined` out of range, so commonJS calls the
+// `__bp_string_char_at` prelude helper, emitted only into the module that uses
+// it. RUN LOG asserted without a snapshot (commonJS-only behaviour).
+// `at` is the reader of BOTH `Array<T>` (native `at`) and `string` (native
+// `charAt`) since decision 63's amendment. The type-naive `prim_node_renames`
+// map used to take the string rename for every untyped `at` call, so the
+// `Array` default-fn bodies materialised as prototype patches (`first`,
+// `unique`: `self.at(0)`) emitted `this.charAt(0)` on an array and threw on
+// node. A name two behaviors send to different host symbols has no type-naive
+// rename; the typed call sites keep their per-loc one. RUN LOG asserted.
+// The `"abcd".slice(1, 3)` line is the second route, `libs/std`'s own
+// `querystring.bp`: once a String `default fn` is in use the program the
+// emitter scans carries the String behavior alone, `at → charAt` looks
+// unambiguous there, and a TYPED array receiver whose per-loc rename is
+// "none" (`Array.at` is its own host symbol) fell through to the type-naive
+// map — `parts.charAt is not a function`. The disagreement is therefore read
+// off the whole embedded std registry, not the program's behaviors.
+// `unique` itself is not run: its body calls `prev.unwrapOr(x)` on a `?T`
+// that is an unboxed number on JS (`prev.unwrapOr is not a function`), a
+// pre-existing defect of that default fn and not of the rename.
+test "js: `at` on an array default fn and on a string do not share a rename" {
+    try h.assertJsRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    val xs = [3, 4];
+        \\    @print(xs.first().unwrapOr(0));
+        \\    @print(xs.at(1).unwrapOr(0));
+        \\    @print("abc".at(1).unwrapOr("?"));
+        \\}
+    , "3\n4\nb\n");
+}
+
+// The second route, on its own: NO Array default fn in the program (the test
+// above calls `first`, which materialises the Array behavior beside String's
+// and lets the program-local disagreement mask this one). Only the registry-
+// wide `ambiguous_prim_renames` keeps `ys.at(1)` from becoming `charAt` here.
+test "js: a typed array `at` beside a String default fn in use keeps its name" {
+    try h.assertJsRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    @print("abcd".slice(1, 3));
+        \\    val ys: i32[] = [7, 8];
+        \\    @print(ys.at(1).unwrapOr(0));
+        \\    val parts = "a=1".split("=");
+        \\    @print(parts.at(0).unwrapOr(""));
+        \\}
+    , "bc\n8\na\n");
+}
+
+test "js: string at out of range is null" {
     try h.assertJsRunLog(std.testing.allocator,
         \\fn main() {
         \\    val s = "ab";
-        \\    @print(s.charAt(1));
-        \\    @print(s.charAt(2));
-        \\    @print(s.charAt(-1));
+        \\    @print(s.at(1));
+        \\    @print(s.at(2));
+        \\    @print(s.at(-1));
         \\}
     , "b\nnull\nnull\n");
 }
