@@ -1,0 +1,71 @@
+//// 1.0.10-beta `00 · 05-wasm` — **how a `?T` CARRIES a `T` that is already a
+//// pointer**, and every reader that has to agree with it.
+////
+//// wasm is the only backend with a carrier to get wrong: a `?T` is an i32
+//// offset and `0` is absence (decision 3), so a scalar payload goes in a box
+//// and a pointer payload — a string, a record, an array — is its own offset.
+//// The two decisions were taken in two places: `lowerArrayMethod` picked the
+//// helper (`$__arr_at` or `$__arr_at_box`) and `optInfoOf` reported the shape,
+//// and a RECORD element fell between them, because a record shares the `i32`
+//// element slot with an integer. So `es.at(0)` was written boxed and read as a
+//// bare pointer, and every line below answered a heap address at exit 0 where
+//// the other three backends answered a value — `es.at(0)?.key.length()` was
+//// `276` against `3`, and the narrowed `val k: string = first.key` was `272`
+//// against `abc`. Exit 0 throughout, with nothing said: which is why every
+//// line here asserts the VALUE.
+////
+//// Green on all four targets. The shapes, in order: printing the optional
+//// whole; `?.` on a field, and on a field a primitive method then reads; the
+//// name a `!= null` test narrows (`00 · 01-checker`'s rule, read here through
+//// wasm's carrier — `run/narrowing_null_check.bp` is where the CHECKER's half
+//// is pinned); `??` with a record default, whose result is a record and whose
+//// field is a declared `string`; the same `.at()` reached through a record
+//// FIELD declared `Entry[]`, which is where the element's shape has to come
+//// from the field's declared type; and a `?T[]` — an element that is itself a
+//// pointer for the same reason a record is.
+////
+//// NOT here, and deliberately: `@print` of an ABSENT optional. Every backend
+//// spells absence differently today (`null` on commonJS, the atom `undefined`
+//// on erlang and beam, `undefined` on wasm) and decision 47's row owns that
+//// disagreement — `run/index_at_optional.bp` carries it. This cell reads the
+//// absent value through `??` instead, which every backend agrees on. Nor is
+//// `.toString()` after a `?.` chain: `es.at(1)?.key.length().toString()`
+//// traps on wasm (`unresolved call: toString/0` — the chain loses the
+//// receiver's type for the SECOND method), a gap of its own and not the
+//// carrier's.
+
+type Entry(key: string) {}
+type Table(rows: Entry[]) {}
+
+pub fn main() {
+    val es = [Entry(key: "abc"), Entry(key: "de")];
+
+    // The optional printed whole: present, it is the record's own text.
+    @print(es.at(0));
+
+    // `?.` on a field, and a primitive method on what `?.` answered.
+    @print(es.at(0)?.key);
+    @print(es.at(1)?.key.length());
+
+    // The name a `!= null` test narrows: inside the branch it is the payload.
+    val first = es.at(0);
+    if (first != null) {
+        val k: string = first.key;
+        @print(k);
+        @print(first.key.length());
+    };
+
+    // `??` with a record default — the result is a record, and its field is a
+    // declared `string`.
+    @print((es.at(9) ?? Entry(key: "zz")).key);
+
+    // The same `.at()` through a record FIELD declared `Entry[]`.
+    val t = Table(rows: es);
+    @print(t.rows.at(1)?.key);
+    @print(t.rows.first()?.key.length());
+
+    // An element that is itself an array is a pointer for the same reason.
+    val grid = [[1, 2, 3], [4]];
+    val row = grid.at(0);
+    if (row != null) { @print(row.length()); };
+}

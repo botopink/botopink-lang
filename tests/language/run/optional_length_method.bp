@@ -9,11 +9,13 @@
 //// needs no receiver type to lower a primitive method, printed it. A silent
 //// backend divergence, so the cell asserts the VALUE.
 ////
-//// wasm is NOT in `.targets`: `es.at(0)?.key.length()` answers **276** there —
-//// the optional-chained field of a record taken out of `.at()` reads the wrong
-//// word — where commonJS and erlang both answer 3. Measured at `f01c508a`;
-//// `codegen/wat.zig` belongs to another front, so the row is recorded and not
-//// fixed here. The other two lines are right on wasm (`5`, `2`).
+//// It carried `.targets commonJS erlang` until `00 · 05-wasm` fixed the
+//// carrier: `es.at(0)?.key.length()` answered **276** on wasm — the
+//// optional-chained field of a record taken out of `.at()` read the wrong
+//// word, because a record element was WRITTEN into a box and READ as a bare
+//// pointer. The other two lines were right there all along (`5`, `2`). The
+//// sidecar is gone and the cell runs on all four targets;
+//// `run/optional_record_carrier.bp` is where that carrier is pinned in full.
 ////
 //// NOT here, and deliberately: a field read off a `?Record` receiver. `val
 //// first = es.at(0); if (first != null) { first.key.length(); }` is narrowing's

@@ -1,0 +1,29 @@
+//// 1.0.10-beta `00 · 05-wasm` — a `case` used as a VALUE, with string arms,
+//// in BOTH arm spellings.
+////
+//// The two spellings took different paths through `wat.zig` and only one of
+//// them was a string: a BRACE arm parses its body as a parameterless block,
+//// which reaches codegen as a lambda node, and a lambda VALUE is a closure
+//// pointer — so `isStringExpr` said no, the binding was typed `i32`, and
+//// `@print(a)` wrote the arm's heap address (`256`) at exit 0 where commonJS,
+//// erlang and beam wrote `five`. The ARROW spelling was right all along,
+//// which is what made the defect syntax-dependent and easy to miss. A silent
+//// backend divergence, so both lines assert the VALUE.
+////
+//// The `-> string` function form is NOT the same question and is already
+//// covered by `run/case_values.bp`: a declared return type registers the
+//// shape on its own, so the arm never has to be asked.
+
+pub fn main() {
+    val x = 5;
+
+    val braced = case x { 5 { "five" } _ { "other" } };
+    @print(braced);
+
+    val arrowed = case x { 5 -> "five"; _ -> "other"; };
+    @print(arrowed);
+
+    val y = 7;
+    val other = case y { 5 { "five" } _ { "other" } };
+    @print(other);
+}
