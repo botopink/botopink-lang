@@ -747,7 +747,12 @@ Every project carries a `botopink.json` at its root:
 ```
 
 Optional `entry` names the module-tree root under `src/` (default: `main.bp`,
-else `root.bp`). `dependencies` also accepts an array of bare names.
+else `root.bp`). `dependencies` is an object — one entry per import name, each
+with exactly one source: `{ "path": "…" }`, `{ "git": "…", "branch"|"tag"|"rev":
+"…" }` or `{ "workspace": true }` (the sibling member of the enclosing
+workspace). A manifest with `"workspaces": ["modules/*", "examples/*"]` is a
+workspace: it declares members and is not a package. Every field, both forms
+and every refusal are in [`docs/botopink-json.md`](docs/botopink-json.md).
 
 ## Decided, not yet implemented
 

@@ -7,10 +7,13 @@
 ///
 /// It discovers every project carrying a `botopink.json` across the resolved root
 /// list (bundled `repository/botopink-lang/libs`, sibling `repository/`, legacy
-/// flat `libs/`), runs `botopink test --target <t>` with `cwd` set to each lib's
-/// own directory, and **exits non-zero iff any cell fails** — the missing CI gate
+/// flat `libs/`) — and every **member** of a workspace found there (a manifest
+/// declaring `"workspaces"`, decision 75), examples included, one row per
+/// member — runs `botopink test --target <t>` with `cwd` set to each lib's own
+/// directory, and **exits non-zero iff any cell fails** — the missing CI gate
 /// for the lib ecosystem. It shells out to the installed `botopink` binary and
-/// touches no compiler internals.
+/// touches no compiler internals (the std-only `manifest` module is the shared
+/// reading of `botopink.json`).
 const std = @import("std");
 const args = @import("args.zig");
 const discovery = @import("discovery.zig");
@@ -24,7 +27,8 @@ const HELP =
     \\  botopink-lib-test [options]
     \\
     \\Discovers every project carrying a botopink.json across the resolved roots
-    \\(repository/botopink-lang/libs, repository/, or a legacy flat libs/).
+    \\(repository/botopink-lang/libs, repository/, or a legacy flat libs/), and
+    \\every member of a workspace found there ("workspaces" in botopink.json).
     \\
     \\Options:
     \\  --target <t>[,<t>…]   Targets to run; repeatable. Accepts commonJS|erlang|
@@ -121,7 +125,16 @@ fn run(init: std.process.Init) !u8 {
         lib_names[r] = lib.name;
         cells[r] = try arena.alloc(matrix.Status, opts.targets.len);
         for (opts.targets, 0..) |target, c| {
-            const status: matrix.Status = if (!discovery.libSupportsTarget(lib, target.toString())) blk: {
+            const status: matrix.Status = if (lib.problem) |problem| blk: {
+                // The lib cannot be used at all — a refused manifest, a name
+                // declared twice, a library member that ships nothing. Every
+                // cell is a fail, printed once per cell with its location;
+                // nothing is spawned. Stderr in both modes, so `--json` stdout
+                // stays pure JSONL.
+                std.debug.print("\n\x1b[36m── {s} · {s} ──\x1b[0m\n{s}", .{ lib.name, target.toString(), problem });
+                if (opts.json) try runner.emitCellSummaryFor(arena, io, lib.name, target.toString(), .fail);
+                break :blk .fail;
+            } else if (!discovery.libSupportsTarget(lib, target.toString())) blk: {
                 // Lib's botopink.json `"targets": [...]` whitelist excludes
                 // this target — skip without spawning. Marks `~` in the matrix,
                 // never fails the run (even under --strict; the lib opted out

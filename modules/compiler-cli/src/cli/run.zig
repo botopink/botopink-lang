@@ -32,7 +32,7 @@ pub fn run(
     const proj = config.load(arena, io) catch |err| {
         switch (err) {
             error.ConfigNotFound => reporter.errMsg("botopink.json not found — are you in a botopink project?"),
-            error.ConfigInvalid => reporter.errMsg("botopink.json is invalid JSON"),
+            error.ConfigInvalid => {}, // refused — the located diagnostic is already printed
             else => reporter.errMsg("failed to load botopink.json"),
         }
         return 1;

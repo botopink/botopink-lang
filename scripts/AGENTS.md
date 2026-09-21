@@ -151,7 +151,8 @@ checkout's root, so every worktree runs its own tracked hook).
 Resolves the core dir (meta layout `repository/botopink-lang/` or this repo's
 root), exits `1` if `zig-out/bin/botopink-lib-test` is not built, warns (without
 gating) for each missing `node`/`escript`/`erlc`/`wasmtime`, then runs the runner
-in `--json` mode and prints one line per cell — `pass`, `FAIL`, `known red — <front>
+in `--json` mode — discovery is the runner's, workspace members included, so
+the script exports no root — and prints one line per cell — `pass`, `FAIL`, `known red — <front>
 <reason>`, `skipped — <reason>`, `no tests` (the library has no `test` block and
 compiled; one that does not compile is a `FAIL`) — after that cell's diagnostics, and a
 count summary. Exit `1` when an unlisted cell fails or a listed known red passes;

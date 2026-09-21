@@ -33,7 +33,7 @@ pub fn run(
     const proj = config.load(arena, io) catch |err| {
         switch (err) {
             error.ConfigNotFound => reporter.errMsg("botopink.json not found — are you in a botopink project?"),
-            error.ConfigInvalid => reporter.errMsg("botopink.json is invalid JSON"),
+            error.ConfigInvalid => {}, // refused — the located diagnostic is already printed
             else => reporter.errMsg("failed to load botopink.json"),
         }
         return 1;
@@ -60,7 +60,7 @@ pub fn run(
     // core never names a lib; it only sees these as ordinary `Module[]` and
     // resolves `from "<lib>"` through the shared import registry. `std` is the
     // embedded exception and is not loaded here.
-    const dep_modules = libs.loadDependencies(gpa, io, proj.dependencies, env_map) catch |err| {
+    const dep_modules = libs.loadDependencies(gpa, io, proj, env_map) catch |err| {
         reportDependencyError(err);
         return 1;
     };
@@ -133,7 +133,8 @@ pub fn reportDependencyError(err: anyerror) void {
             reporter.hintMsg("if your botopink.json uses the new object form ({\"<name>\": {\"git\": ...}}), run `bpmp install` to fetch deps into $BPMP_HOME first");
         },
         error.LibNotFound => reporter.hintMsg("libraries resolve from BOTOPINK_LIB_ROOTS, then <ancestor>/repository/botopink-lang/libs, <ancestor>/repository and <ancestor>/libs, then .botopinkbuild/deps (`bpmp install`)"),
-        error.LibManifestInvalid => reporter.errMsg("a dependency's botopink.json is invalid"),
+        // Already rendered, located in the manifest that is wrong.
+        error.LibManifestInvalid => {},
         // Already rendered with the path and the manifest line.
         error.LibFileNotFound => {},
         else => reporter.errMsg("failed to load project dependencies"),

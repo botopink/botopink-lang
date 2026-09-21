@@ -221,7 +221,7 @@ for cmd in build check test; do run "$P" "$cmd"; codes="$codes$CODE"; done
 # ── a dependency's missing `files` entry is named, with the manifest line ────
 echo "==> a missing files entry of a dependency names the path and the manifest entry"
 P="$(project missingfile)"
-printf '{ "name": "missingfile", "version": "0.1.0", "target": "commonJS", "dependencies": ["gonelib"] }\n' >"$P/botopink.json"
+printf '{ "name": "missingfile", "version": "0.1.0", "target": "commonJS", "dependencies": { "gonelib": { "git": "https://example.invalid/gonelib.git" } } }\n' >"$P/botopink.json"
 printf '%s' "$MAIN_OK" >"$P/src/main.bp"
 LIBROOT="$WORK/libroot"; mkdir -p "$LIBROOT/gonelib/src"
 printf '{ "name": "gonelib",\n  "src": "src/",\n  "files": ["gonelib.bp", "gone.bp"] }\n' >"$LIBROOT/gonelib/botopink.json"
@@ -239,7 +239,7 @@ done
 # ── a dependency's .mjs sidecar ships inside --out, never beside it ─────────
 echo "==> a dependency's .mjs sidecar ships inside --out and the build runs"
 P="$(project sidecar)"
-printf '{ "name": "sidecar", "version": "0.1.0", "target": "commonJS", "dependencies": ["sidelib"] }\n' >"$P/botopink.json"
+printf '{ "name": "sidecar", "version": "0.1.0", "target": "commonJS", "dependencies": { "sidelib": { "git": "https://example.invalid/sidelib.git" } } }\n' >"$P/botopink.json"
 printf 'import { greet } from "sidelib";\n\npub fn main() {\n    print(greet());\n}\n' >"$P/src/main.bp"
 LIBROOT="$WORK/sideroot"; mkdir -p "$LIBROOT/sidelib/src"
 printf '{ "name": "sidelib", "src": "src/", "files": ["sidelib.bp"] }\n' >"$LIBROOT/sidelib/botopink.json"
@@ -398,6 +398,94 @@ if have node; then
 else
   skip "the scaffold's run row (node not installed)"
 fi
+
+# ── workspaces (decision 75) and the dependency object (decision 76) ─────────
+# An umbrella `botopink.json` with `"workspaces"` declares members; a member
+# depends on a sibling with `{ "workspace": true }`, and the enclosing
+# workspace is found from the member's own directory — no root export.
+echo "==> a workspace member resolves a sibling with { workspace: true }"
+WS="$WORK/acme"; rm -rf "$WS"
+mkdir -p "$WS/modules/acme/src" "$WS/modules/acme-web/src" "$WS/modules/acme-web/test" "$WS/modules/acme-empty/src" "$WS/examples/acme-app/src"
+cat >"$WS/botopink.json" <<'JSON'
+{ "name": "acme", "version": "0.0.1", "targets": ["commonJS"],
+  "workspaces": ["modules/*", "examples/*"] }
+JSON
+cat >"$WS/modules/acme/botopink.json" <<'JSON'
+{ "name": "acme", "version": "0.0.1", "target": "commonJS", "entry": "root.bp", "files": ["root.bp"] }
+JSON
+printf 'pub fn core() -> i32 {\n    return 41;\n}\n' >"$WS/modules/acme/src/root.bp"
+cat >"$WS/modules/acme-web/botopink.json" <<'JSON'
+{ "name": "acme-web", "version": "0.0.1", "target": "commonJS", "entry": "root.bp", "files": ["root.bp"],
+  "dependencies": { "acme": { "workspace": true } } }
+JSON
+printf 'import { core } from "acme";\n\npub fn web() -> i32 {\n    return core() + 1;\n}\n' >"$WS/modules/acme-web/src/root.bp"
+# The flat `test/` suite imports the package it tests with a bare import.
+printf 'import { web };\n\ntest "the sibling member is reachable" {\n    assert web() == 42;\n}\n' >"$WS/modules/acme-web/test/web_test.bp"
+cat >"$WS/modules/acme-empty/botopink.json" <<'JSON'
+{
+  "name": "acme-empty", "version": "0.0.1", "target": "commonJS", "entry": "root.bp" }
+JSON
+printf '// ships nothing\n' >"$WS/modules/acme-empty/src/root.bp"
+cat >"$WS/examples/acme-app/botopink.json" <<'JSON'
+{ "name": "acme-app", "version": "0.0.1", "target": "commonJS", "entry": "main.bp",
+  "dependencies": { "acme": { "workspace": true } } }
+JSON
+printf 'import { core } from "acme";\n\npub fn main() {\n    print(core());\n}\n' >"$WS/examples/acme-app/src/main.bp"
+
+run "$WS/modules/acme-web" build
+expect_code 0 "build of a member depending on a sibling"
+run "$WS/examples/acme-app" build
+expect_code 0 "build of an example member depending on a core member"
+if have node; then
+  run "$WS/modules/acme-web" test
+  expect_code 0 "test of a member depending on a sibling"
+  expect_out "ok   the sibling member is reachable" "the sibling's symbol resolved"
+else
+  skip "the member's test row (node not installed)"
+fi
+
+echo "==> a library member without files ships nothing — its own test fails"
+run "$WS/modules/acme-empty" test
+expect_code 1 "test inside a library member with no files"
+expect_out 'ships nothing: manifest has no "files"' "names the refusal"
+expect_out "botopink.json:2:3" "locates it on the member manifest"
+
+echo "==> a package command on the workspace itself is refused, listing the members"
+for cmd in build check test; do
+  run "$WS" "$cmd"
+  expect_code 1 "$cmd on the umbrella"
+  expect_out "is a workspace, not a package — run this command inside one of its members: acme, acme-empty, acme-web, acme-app" "$cmd names the members"
+done
+
+echo "==> a path to a sibling member is refused: use { workspace: true }"
+cat >"$WS/modules/acme-web/botopink.json" <<'JSON'
+{ "name": "acme-web", "version": "0.0.1", "target": "commonJS", "entry": "root.bp", "files": ["root.bp"],
+  "dependencies": { "acme": { "path": "../acme" } } }
+JSON
+run "$WS/modules/acme-web" build
+expect_code 1 "build with a path to a sibling"
+expect_out '"acme": path "../acme" points at the sibling member "acme" — use { "workspace": true }' "names the fix"
+expect_out "botopink.json:2:21" "locates the dependency entry"
+
+echo "==> the string-array dependencies form is refused, naming the fix"
+P="$(project arraydeps)"
+printf '{ "name": "arraydeps", "version": "0.1.0", "target": "commonJS",\n  "dependencies": ["erika"] }\n' >"$P/botopink.json"
+printf '%s' "$MAIN_OK" >"$P/src/main.bp"
+run "$P" build
+expect_code 1 "build with array-form dependencies"
+expect_out '"dependencies" must be an object, not an array' "names the retired shape"
+expect_out '["erika"] becomes { "erika": { "path": "../erika" } }' "names the rewrite"
+expect_out "botopink.json:2:3" "locates the field"
+
+echo "==> a path dependency is honoured from the project directory"
+P="$(project pathdep)"
+mkdir -p "$WORK/pathlib/src"
+printf '{ "name": "pathlib", "files": ["pathlib.bp"] }\n' >"$WORK/pathlib/botopink.json"
+printf 'pub fn answer() -> i32 {\n    return 7;\n}\n' >"$WORK/pathlib/src/pathlib.bp"
+printf '{ "name": "pathdep", "version": "0.1.0", "target": "commonJS", "dependencies": { "pathlib": { "path": "../pathlib" } } }\n' >"$P/botopink.json"
+printf 'import { answer } from "pathlib";\n\npub fn main() {\n    print(answer());\n}\n' >"$P/src/main.bp"
+run "$P" build
+expect_code 0 "build with a path dependency (no library root involved)"
 
 echo
 if [[ "$failures" -gt 0 ]]; then

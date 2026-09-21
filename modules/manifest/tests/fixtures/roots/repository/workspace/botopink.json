@@ -1,0 +1,7 @@
+{
+  "name": "acme",
+  "version": "0.0.1",
+  "description": "fixture workspace — two library members, one library member without files, one example",
+  "targets": ["commonJS", "erlang"],
+  "workspaces": ["modules/*", "examples/*"]
+}

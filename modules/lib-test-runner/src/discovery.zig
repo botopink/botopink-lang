@@ -1,16 +1,26 @@
 /// Lib discovery — enumerate projects across the resolved root list and decide
 /// which have tests.
 ///
-/// A "lib" is any immediate subdirectory of a root that holds a `botopink.json`.
-/// Roots are scanned in order — env-driven `BOTOPINK_LIB_ROOTS` first, then the
-/// walk-up halves (bundled `repository/botopink-lang/libs`, sibling `repository/`,
-/// legacy flat `libs/`), finally any `--lib-root` flag entries. The first root
-/// carrying a given name wins, later duplicates are dropped. "Has tests" means
-/// either a `test/` directory with at least one `.bp` suite, or a `src/**/*.bp`
-/// file containing a `test` block. A lib with no tests (`has_tests = false`) is
-/// still compiled per target by the runner (`runner.compileCell`): `–` when it
-/// compiles, `✗` when it does not.
+/// A "lib" is an immediate subdirectory of a root that holds a `botopink.json`,
+/// or a **member** of a workspace found there (decision 75: a root — or a child
+/// of one — whose manifest declares `"workspaces"` contributes every member it
+/// expands to, examples included, each named by its manifest `name`; the
+/// umbrella itself is not a cell). The enumeration is the shared
+/// `manifest.scanRoots`, the same walk the compiler's loader and the language
+/// server use. Roots are scanned in order — env-driven `BOTOPINK_LIB_ROOTS`
+/// first, then the walk-up halves (an ancestor that is a workspace, bundled
+/// `repository/botopink-lang/libs`, sibling `repository/`, legacy flat `libs/`),
+/// finally any `--lib-root` flag entries. Two members with one `name` in
+/// different directories are both a `✗` with a located error (first-root-wins
+/// is what decision 75 retires); two plain packages keep first-root-wins.
+/// "Has tests" means either a `test/` directory with at least one `.bp` suite,
+/// or a `src/**/*.bp` file containing a `test` block. A lib with no tests
+/// (`has_tests = false`) is still compiled per target by the runner
+/// (`runner.compileCell`): `–` when it compiles, `✗` when it does not. A lib
+/// with a `problem` (a refused manifest, a library member without `files` —
+/// `ships nothing`) is `✗` on every target without a spawn.
 const std = @import("std");
+const manifest = @import("manifest");
 
 /// Optional process-environment handle. The runner threads `init.environ_map`
 /// through so the discovery walker honours `BOTOPINK_LIB_ROOTS` exactly like
@@ -25,11 +35,17 @@ pub const ENV_VAR = "BOTOPINK_LIB_ROOTS";
 // ── Types ───────────────────────────────────────────────────────────────────────
 
 pub const Lib = struct {
-    /// Directory name (the immediate child of its root). Owned by `gpa`.
+    /// Import name: the directory name of a plain package, the manifest `name`
+    /// of a workspace member. Owned by `gpa`.
     name: []const u8,
-    /// Full path to the lib's directory (`<root>/<name>`), used as the child's
-    /// `cwd`. Owned by `gpa`.
+    /// Full path to the lib's directory (`<root>/<name>`, or the member's
+    /// directory under its workspace), used as the child's `cwd`. Owned by `gpa`.
     dir: []const u8,
+    /// A rendered located error that fails every cell of this lib without a
+    /// spawn: its manifest was refused, its workspace does not expand, its
+    /// name is declared by two libraries, or it is a library member that lists
+    /// no `files` (`ships nothing`). Owned by `gpa`.
+    problem: ?[]const u8 = null,
     has_tests: bool,
     /// The lib has at least one `src/**/*.bp` file (declaration files
     /// included). A manifest with no botopink source (a tooling project that
@@ -54,7 +70,8 @@ pub const Error = error{
 
 /// Build the discovery root list for `start_dir` (typically cwd). Returns roots
 /// in scan order: env entries (`BOTOPINK_LIB_ROOTS`) first, then walk-up roots
-/// (`repository/botopink-lang/libs`, `repository`, `libs`), finally any
+/// (an ancestor holding a workspace manifest, `repository/botopink-lang/libs`,
+/// `repository`, `libs`), finally any
 /// `extra_roots` (e.g. `--lib-root` flag entries). Empty / non-existent entries
 /// are silently dropped, mirroring the CLI driver. De-duped first-occurrence-
 /// wins. Caller owns the slice and every element via `arena`.
@@ -71,9 +88,11 @@ pub fn resolveRoots(
     const env_roots = try parseEnvRoots(arena, env_map, start_dir);
     for (env_roots) |er| try addRootIfExists(arena, io, &roots, &.{er});
 
-    // 2. Walk-up roots.
+    // 2. Walk-up roots. An ancestor that is itself a workspace comes first:
+    // its members are what a member resolves its siblings from.
     var dir: []const u8 = start_dir;
     while (true) {
+        if (manifest.isWorkspaceDir(io, dir)) try addRootIfExists(arena, io, &roots, &.{dir});
         try addRootIfExists(arena, io, &roots, &.{ dir, "repository", "botopink-lang", "libs" });
         try addRootIfExists(arena, io, &roots, &.{ dir, "repository" });
         try addRootIfExists(arena, io, &roots, &.{ dir, "libs" });
@@ -146,12 +165,11 @@ fn addRootIfExists(
 
 // ── Discovery ───────────────────────────────────────────────────────────────────
 
-/// Discover every lib under each root in `roots` (relative to cwd) that carries a
-/// `botopink.json`. If `only` is set, restrict to that one lib. A name found in an
-/// earlier root shadows the same name in a later one (first-root-wins). Results
-/// are sorted by name; each `name`/`dir` is heap-allocated with `gpa` — call
-/// `free` when done. Roots that cannot be opened are skipped; the call errors only
-/// if no root could be read at all.
+/// Discover every lib under each root in `roots` (relative to cwd) — plain
+/// packages and workspace members alike (`manifest.scanRoots`). If `only` is
+/// set, restrict to that one lib. Results are sorted by name; each string is
+/// heap-allocated with `gpa` — call `free` when done. Roots that cannot be
+/// opened are skipped; the call errors only if no root could be read at all.
 pub fn discover(
     gpa: std.mem.Allocator,
     io: std.Io,
@@ -164,45 +182,59 @@ pub fn discover(
 
     var any_opened = false;
     for (roots) |libs_root| {
-        var root = std.Io.Dir.cwd().openDir(io, libs_root, .{ .iterate = true }) catch continue;
-        defer root.close(io);
+        var root = std.Io.Dir.cwd().openDir(io, libs_root, .{}) catch continue;
+        root.close(io);
         any_opened = true;
-
-        var it = root.iterate();
-        while (it.next(io) catch break) |entry| {
-            if (entry.kind != .directory) continue;
-            if (only) |want| {
-                if (!std.mem.eql(u8, entry.name, want)) continue;
-            }
-            // First root carrying this name wins — skip a later duplicate.
-            if (hasName(libs.items, entry.name)) continue;
-
-            var lib_dir = root.openDir(io, entry.name, .{}) catch continue;
-            defer lib_dir.close(io);
-
-            // A project is a lib iff it has a manifest.
-            lib_dir.access(io, "botopink.json", .{}) catch continue;
-
-            // `entry.name` is backed by the iterator's scratch buffer — dupe before
-            // any further `it.next()` invalidates it.
-            const name = try gpa.dupe(u8, entry.name);
-            errdefer gpa.free(name);
-            const dir = try std.fs.path.join(gpa, &.{ libs_root, entry.name });
-            errdefer gpa.free(dir);
-
-            const targets = readManifestTargets(gpa, io, lib_dir);
-            errdefer if (targets) |t| freeTargets(gpa, t);
-
-            try libs.append(gpa, .{
-                .name = name,
-                .dir = dir,
-                .has_tests = libHasTests(gpa, io, lib_dir),
-                .has_sources = srcHasBpFile(gpa, io, lib_dir),
-                .targets = targets,
-            });
-        }
     }
     if (!any_opened) return error.LibsRootNotFound;
+
+    var arena_inst = std.heap.ArenaAllocator.init(gpa);
+    defer arena_inst.deinit();
+    const arena = arena_inst.allocator();
+    const entries = try manifest.scanRoots(arena, io, roots);
+
+    for (entries) |e| {
+        // The umbrella is not a cell — its members are. It stays only when it
+        // is what is wrong (a workspace that does not expand).
+        if (e.is_workspace and e.problem == null) continue;
+        if (only) |want| {
+            if (!std.mem.eql(u8, e.name, want)) continue;
+        }
+
+        const name = try gpa.dupe(u8, e.name);
+        errdefer gpa.free(name);
+        const dir = try gpa.dupe(u8, e.dir);
+        errdefer gpa.free(dir);
+
+        const located: ?manifest.Located = e.problem orelse blk: {
+            // A library member that lists no `files` ships nothing (decision 75).
+            if (e.workspace != null) {
+                if (e.manifest) |m| break :blk manifest.shipsNothing(io, m);
+            }
+            break :blk null;
+        };
+        const problem: ?[]const u8 = if (located) |l| try l.renderAlloc(gpa) else null;
+        errdefer if (problem) |t| gpa.free(t);
+
+        const targets: ?[]const []const u8 = if (e.manifest) |m| try dupeTargets(gpa, m.targets) else null;
+        errdefer if (targets) |t| freeTargets(gpa, t);
+
+        var lib_dir = std.Io.Dir.cwd().openDir(io, e.dir, .{}) catch {
+            // Unreadable directory: keep the row so it is reported, not hidden.
+            try libs.append(gpa, .{ .name = name, .dir = dir, .problem = problem, .has_tests = false, .has_sources = false, .targets = targets });
+            continue;
+        };
+        defer lib_dir.close(io);
+
+        try libs.append(gpa, .{
+            .name = name,
+            .dir = dir,
+            .problem = problem,
+            .has_tests = libHasTests(gpa, io, lib_dir),
+            .has_sources = srcHasBpFile(gpa, io, lib_dir),
+            .targets = targets,
+        });
+    }
 
     const items = libs.items;
     std.mem.sort(Lib, items, {}, struct {
@@ -214,17 +246,27 @@ pub fn discover(
     return libs.toOwnedSlice(gpa);
 }
 
-fn hasName(libs: []const Lib, name: []const u8) bool {
-    for (libs) |l| {
-        if (std.mem.eql(u8, l.name, name)) return true;
+/// Copy a manifest's `targets` (arena-owned) into `gpa`, or null.
+fn dupeTargets(gpa: std.mem.Allocator, targets: ?[]const []const u8) !?[]const []const u8 {
+    const list = targets orelse return null;
+    var out = try gpa.alloc([]const u8, list.len);
+    var n: usize = 0;
+    errdefer {
+        for (out[0..n]) |t| gpa.free(t);
+        gpa.free(out);
     }
-    return false;
+    for (list) |t| {
+        out[n] = try gpa.dupe(u8, t);
+        n += 1;
+    }
+    return out;
 }
 
 pub fn free(gpa: std.mem.Allocator, libs: []Lib) void {
     for (libs) |l| {
         gpa.free(l.name);
         gpa.free(l.dir);
+        if (l.problem) |t| gpa.free(t);
         if (l.targets) |t| freeTargets(gpa, t);
     }
     gpa.free(libs);
@@ -233,55 +275,6 @@ pub fn free(gpa: std.mem.Allocator, libs: []Lib) void {
 fn freeTargets(gpa: std.mem.Allocator, targets: []const []const u8) void {
     for (targets) |t| gpa.free(t);
     gpa.free(targets);
-}
-
-/// Read the `"targets"` array from a lib's `botopink.json` and return the list
-/// of host-supported targets. Returns `null` when the field is absent, malformed,
-/// or the manifest can't be opened — the runner treats `null` as "no whitelist,
-/// run every requested target". Caller owns the slice + element strings.
-///
-/// Why parse the JSON here instead of routing through `compiler-cli`'s
-/// `ProjectConfig`: the lib-test runner explicitly carries `no compiler-core
-/// dependency` (see AGENTS.md "Design contract"). A minimal in-house parser
-/// keeps that contract; the only field we read is the optional `targets`
-/// array. Schema documented in `docs/botopink-json.md` — keep in sync if the
-/// shape changes.
-fn readManifestTargets(
-    gpa: std.mem.Allocator,
-    io: std.Io,
-    lib_dir: std.Io.Dir,
-) ?[]const []const u8 {
-    const data = lib_dir.readFileAlloc(io, "botopink.json", gpa, .limited(64 * 1024)) catch return null;
-    defer gpa.free(data);
-
-    var parsed = std.json.parseFromSlice(std.json.Value, gpa, data, .{}) catch return null;
-    defer parsed.deinit();
-
-    const root = parsed.value;
-    if (root != .object) return null;
-    const targets_val = root.object.get("targets") orelse return null;
-    if (targets_val != .array) return null;
-
-    const items = targets_val.array.items;
-    var out: std.ArrayListUnmanaged([]const u8) = .empty;
-    out.ensureTotalCapacity(gpa, items.len) catch return null;
-    for (items) |item| {
-        if (item != .string) {
-            // Drop a malformed list rather than partially honoring it — a
-            // misspelled or wrong-shape entry would otherwise silently widen
-            // the "supported" set on the runner side.
-            for (out.items) |s| gpa.free(s);
-            out.deinit(gpa);
-            return null;
-        }
-        const dup = gpa.dupe(u8, item.string) catch {
-            for (out.items) |s| gpa.free(s);
-            out.deinit(gpa);
-            return null;
-        };
-        out.appendAssumeCapacity(dup);
-    }
-    return out.toOwnedSlice(gpa) catch return null;
 }
 
 /// True when `lib` has no `targets` whitelist OR the whitelist contains
@@ -550,4 +543,65 @@ test "resolveRoots: non-existent env entry silently dropped" {
     for (roots) |r| {
         try testing.expect(!std.mem.endsWith(u8, r, "/nonexistent/path/that/should/not/exist/here"));
     }
+}
+
+// ── Workspace discovery tests (fixtures of the shared manifest module) ─────────
+
+const FIX = "../manifest/tests/fixtures/roots";
+
+test "discover: workspace members are rows, the umbrella is not; a library member without files is a problem" {
+    const gpa = testing.allocator;
+    const roots = [_][]const u8{FIX ++ "/repository"};
+    const libs = try discover(gpa, testing.io, &roots, null);
+    defer free(gpa, libs);
+
+    // plain + the four members (acme, acme-app, acme-empty, acme-web), sorted.
+    try testing.expectEqual(@as(usize, 5), libs.len);
+    try testing.expectEqualStrings("acme", libs[0].name);
+    try testing.expectEqualStrings("acme-app", libs[1].name);
+    try testing.expectEqualStrings("acme-empty", libs[2].name);
+    try testing.expectEqualStrings("acme-web", libs[3].name);
+    try testing.expectEqualStrings("plain", libs[4].name);
+    try testing.expectEqualStrings(FIX ++ "/repository/workspace/modules/acme-web", libs[3].dir);
+
+    // Inherited targets: the workspace allows commonJS+erlang, `acme` restricts.
+    try testing.expectEqual(@as(usize, 1), libs[0].targets.?.len);
+    try testing.expectEqual(@as(usize, 2), libs[3].targets.?.len);
+    try testing.expect(libs[4].targets == null);
+
+    // The example member is an application: nothing to ship, no problem.
+    try testing.expect(libs[1].problem == null);
+    // The library member without `files` fails every cell.
+    try testing.expect(std.mem.indexOf(u8, libs[2].problem.?, "error: ships nothing: manifest has no \"files\"") != null);
+    try testing.expect(std.mem.indexOf(u8, libs[2].problem.?, "--> " ++ FIX ++ "/repository/workspace/modules/acme-empty/botopink.json:2:3") != null);
+    try testing.expect(libs[0].problem == null);
+}
+
+test "discover: --lib restricts to one member by its manifest name" {
+    const gpa = testing.allocator;
+    const roots = [_][]const u8{FIX ++ "/repository"};
+    const libs = try discover(gpa, testing.io, &roots, "acme-web");
+    defer free(gpa, libs);
+    try testing.expectEqual(@as(usize, 1), libs.len);
+    try testing.expectEqualStrings("acme-web", libs[0].name);
+}
+
+test "discover: two members with one name across roots are both a located problem" {
+    const gpa = testing.allocator;
+    const roots = [_][]const u8{ FIX ++ "/repository", FIX ++ "/other" };
+    const libs = try discover(gpa, testing.io, &roots, "acme-web");
+    defer free(gpa, libs);
+    try testing.expectEqual(@as(usize, 2), libs.len);
+    for (libs) |l| {
+        try testing.expect(std.mem.indexOf(u8, l.problem.?, "error: \"acme-web\" is declared by two libraries") != null);
+    }
+}
+
+test "discover: a manifest that is refused is a row with its located error, not a silent skip" {
+    const gpa = testing.allocator;
+    const roots = [_][]const u8{FIX ++ "/other"};
+    const libs = try discover(gpa, testing.io, &roots, "array-deps");
+    defer free(gpa, libs);
+    try testing.expectEqual(@as(usize, 1), libs.len);
+    try testing.expect(std.mem.indexOf(u8, libs[0].problem.?, "must be an object, not an array") != null);
 }
