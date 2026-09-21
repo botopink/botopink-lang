@@ -1,0 +1,32 @@
+//// A variant's identity across a package boundary (front 00 · 04-js, D3).
+////
+//// The value is built HERE, in the consumer; the `case` that reads it lives
+//// in the dependency. Nothing else in `tests/language/` puts those two on
+//// opposite sides of a package boundary, and one package cannot see the
+//// defect at all: inside a single package there is one copy of the enum's
+//// classes and every lowering agrees.
+////
+//// What it pins: a payload-less variant is matched by the `tag` its
+//// prototype carries, not by the JS class its singleton is an instance of.
+//// commonJS used to test `_s instanceof __Token__Text__Size$X3xl` whenever
+//// the variant's bare name was unique in the module, and `_s.tag === "Lg"`
+//// when it repeated. A section's inner enum is re-emitted in every module
+//// that names it, so the consumer's `.Text.Size.X3xl` was an instance of
+//// the consumer's class and never of the library's: the arm did not fire,
+//// no later arm did either, and the `case` answered `undefined` — printed,
+//// at exit 0, with no diagnostic. `.Text.Size.Lg` printed correctly the
+//// whole time, which is what kept it hidden.
+////
+//// The two lines below therefore have to answer the same KIND of thing:
+//// a unique name and a repeated one, through the same dispatcher.
+
+import {Token, styleOf} from "tokenlib";
+
+pub fn main() {
+    val unique: Token = .Text.Size.X3xl;
+    val repeated: Token = .Text.Size.Lg;
+    @print(styleOf(unique));
+    @print(styleOf(repeated));
+    @print(styleOf(.Text.Bold));
+    @print(styleOf(.Bg.Lg));
+}

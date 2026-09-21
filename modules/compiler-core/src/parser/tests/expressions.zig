@@ -378,6 +378,29 @@ test "parser: if with null-check binding" {
     );
 }
 
+test "parser: if with discard binding" {
+    try h.assertParser(std.testing.allocator, @src(),
+        \\fn f() {
+        \\    var email: ?string = null;
+        \\    if (email) { _ ->
+        \\        console.log("present");
+        \\    };
+        \\}
+    );
+}
+
+test "parser: if condition takes a compound boolean" {
+    try h.assertParser(std.testing.allocator, @src(),
+        \\fn f() {
+        \\    val a = true;
+        \\    val b = false;
+        \\    if (a && b) { console.log("both"); };
+        \\    if (a || b) { console.log("either"); };
+        \\    if (a == true && b != true) { console.log("mixed"); };
+        \\}
+    );
+}
+
 test "parser: assert ---- simple assertion" {
     try h.assertParser(std.testing.allocator, @src(),
         \\fn f() {

@@ -169,6 +169,10 @@ pub const ParseErrorType = enum {
     typeVariantAfterMethod,
     /// `type P(val x: i32)` — the field list takes no `val` prefix.
     typeFieldValPrefix,
+    /// `type Shape { Circle(i32) }`, `type P(i32)` — a field or a variant
+    /// payload written without its name. Decision 12: the form is refused, with
+    /// a diagnostic that names `Variant(field: T)`.
+    fieldNeedsName,
     /// A `,` after a member of a `type`/`behavior` body: members end with `;`
     /// (bodyless) or `}` (with a body), never with `,`.
     memberCommaSeparator,

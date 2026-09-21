@@ -172,8 +172,24 @@ codegen/
 - **Variant payload arms**: `collectVariantFields` indexes every local payload
   variant's declared field names; `Circle(r) ->` binds positionally
   (`const { radius: r } = _s;`). A variant declared in another module keeps the
-  binding as the key. A payload-less variant arm tests `instanceof` when its
-  bare name names one class in the module and `_s.tag === "Name"` otherwise.
+  binding as the key. A payload-less variant arm tests `_s.tag === "Name"` —
+  always, in every module.
+- **A variant's identity is its `tag`, never its class.** A payload-less arm
+  used to test `_s instanceof <Enum>$<Variant>` whenever the bare name was
+  unique in the module, and `tag` only when it repeated. A class is
+  per-emitted-COPY identity and a copy is emitted per module for every enum a
+  module cannot `require` — an enum SECTION desugars into an inner enum that no
+  module exports, so `Token.Text.Size` is re-emitted in each module that names
+  it. A value built in a consuming package was then never `instanceof` the
+  class the library matched against: the arm did not fire, no later arm did
+  either, and the whole `case` answered `undefined` at exit 0, with no
+  diagnostic. `tag` is a string on the prototype, so it crosses every copy,
+  module and package boundary, and it is what `variantTest`, the payload arms
+  and `@Result` already used. `unit_variant_names` therefore records only the
+  NAMES, to tell a variant from a binding. Pinned by
+  `tests/language/modules/package_variant_identity/`, which one package cannot
+  express. `is`/`val assert` still test `instanceof` (below) and inherit the
+  same limit wherever a class is re-emitted.
 - **`.len`**: `s.len` / `arr.len` on a typed string/array (inference records
   `.prim` in `instance_lowerings`, threaded in as `Emitter.lowerings`) emits
   the native `.length` property; a record field named `len` is untouched (C3).
@@ -202,7 +218,18 @@ codegen/
   the native `.length` **property** without parens (a `member` node, not a
   `call`); inference
   records it only for typed array/string receivers, so a record `length()`
-  method is untouched.
+  method is untouched. **A rename names a native method that matches the
+  SIGNATURE**, not one that shares the botopink name: `Array.reverse` answers a
+  reversed array and leaves the receiver alone (`lists:reverse/1` on erlang, a
+  fresh array on wasm), and native `Array.prototype.reverse` reverses in place,
+  so while the annotation read `#[@External.Node("reverse")]` commonJS alone
+  also reversed the receiver — a fold that read it again answered one thing
+  there and another everywhere else, at exit 0. It names `toReversed`
+  (ES2023, node 20) since `fix/js-instanceof-boundary`, and the rename is
+  type-naive, so it reaches every `.reverse()` call site and not only the ones
+  inference typed. Pinned by
+  `tests/language/run/array_reverse_answers_a_new_array.bp`, which reads the
+  receiver AFTER the call — no commonJS snapshot exercises `reverse` at all.
 - **The only external spelling is `#[@External.<Target>(…)]`.** `FnDecl.isExternal`
   (`ast.zig`) matches on the `External.` prefix, so the retired lowercase
   `#[@external(<target>, …)]` and the retired bracket form `@[external(…)]` match
@@ -224,6 +251,20 @@ codegen/
   `import {env} from "std"`) resolves; calls in the owning module still inline
   the template. A fn with no `node` target raises
   `MissingExternalTarget` when called.
+- **A template on a BEHAVIOR method is a prototype patch, not a call-site
+  render** (`buildInterface`): it becomes `<Owner>.prototype.<m> =
+  function(…){ return <template with $0 = this[.valueOf()]> }` and every call
+  site dispatches through it. So the template must not call the method it
+  patches — it would call the patch. `String.charCodeAt` read
+  `(($0.charCodeAt($1) ?? -1) | 0)`, and since the whole `String` prelude is
+  installed into any module using a member that needs a patch (`slice` does;
+  `split`/`indexOf`/`startsWith` do not), one `s.slice(…)` made every
+  `.charCodeAt(…)` in the PROGRAM blow the stack. The template body is opaque
+  host text (`js_ast.Expr.host`), so there is nothing to rewrite into a call of
+  the original; the rule is instead **gated** by
+  `codegen/tests/externals.zig`'s `no prelude template calls the method it
+  patches`, which walks the embedded prelude. Pinned end to end by
+  `tests/language/run/string_char_code_after_slice.bp`.
 - **`assert`** (semantics decision 4): outside test mode it is always fatal —
   `__bp_assert_fatal(cond, msg, "<module>.bp:<line>")`, a prelude helper that
   throws `Error("<msg> at <file>:<line>")` (`"assertion failed"` without a
@@ -336,6 +377,19 @@ codegen/
   lambda's single parameter is `const v = _s;` at the top of the arm — the only
   scope where the subject is in hand. The checker types it as the subject
   narrowed by the arm's pattern.
+- **A lambda's last statement is a return position** (`buildLambdaTail`): a JS
+  arrow block does not auto-return, so every expression form `buildExpr` gives a
+  value to is `return`ed there — the same rule `buildIfLast` applies one level
+  down, and the same rule a `val x = <e>;` binding already gets. The whitelist
+  that used to decide it (`isImplicitReturnExpr`) listed only the categories
+  that are *always* a value, so an `if`, a `loop` and a `try`/`catch` tail fell
+  through to `buildStmt` and were written as statements —
+  `(x) => { (() => { … })(); }` — and the arrow answered `undefined`. A `case`
+  never had the defect (it is a `.collection`). Still statements: a jump, a
+  binding, a `use` hook, and any `if`/`loop` whose body jumps out of the lambda
+  (`exprJumps`), because a `return` cannot cross the IIFE the value form wraps
+  it in. `try`/`catch` goes through `buildTryStmt` with the `.ret` head, not
+  `.discard`.
 - **`comptime { … }` with no `break <e>`** in value position is `undefined`
   (a block's value comes only from `break`).
 - **None is loose**: botopink has one none value and JavaScript spells it two
@@ -692,7 +746,8 @@ codegen/
   tuples, plain `yield` generators as lists), `recordForms`/`enumForms`/
   `interfaceForms`/`implementForms`/`extendForms` (a `%%` comment plus method
   functions), `use`/`delegate`/external-fn comments, `testFunction` — the comptime
-  helper and host forms, the `'_botopink_main'/0` + `main/1` entrypoint wrapper and,
+  helper and host forms, the `'_botopink_init'/0` module body (see **Module-level
+  `val`s** below), the `'_botopink_main'/0` + `main/1` entrypoint wrapper and,
   in test mode, the runner (`testRunnerForms`: `'__bp_run_one'/1`,
   `'__bp_run_tests'/1`, `main/1`).
 - **Bodies are `erl_ast` nodes**: `emitBodyFrom` builds an `Ast.Body` with
@@ -921,10 +976,30 @@ codegen/
   (`comptimeBlockBody`; no `break` → `ok`), and in expression position the same
   body as an applied `fun`. Each val function starts a fresh variable scope.
   Value-less jumps have a value node: `return;`/bare `try`/bare `yield` →
-  `undefined`, bare `throw;` → `erlang:throw(undefined)`. Only the `_`-named synthetic
-  statements (top-level expression statements) stay inside `'_botopink_main'/0`,
-  where they keep their single, ordered evaluation. The trade-off is that a named
-  `val`'s initialiser runs once per read.
+  `undefined`, bare `throw;` → `erlang:throw(undefined)`.
+- **The module body** (`'_botopink_init'/0`, `initForms`): a module-level `val` is
+  evaluated ONCE, in declaration order, at module load — `docs.md` § `val`, and
+  what `const x = f();` does on commonJS. `'_botopink_init'/0` is that body: a
+  `_`-named statement inline (it has no reader, and `val _ = …` twice would
+  collide on `'_'/0`), a named `val` as the call to its 0-arity reader. It is
+  emitted in EVERY mode and called from both entrypoints — `'_botopink_main'/0`
+  before `main/0`, and the test runner's `main/1` before the first test
+  (`testRunnerForms(…, run_init)`). A rule that held only in test mode is how the
+  gap was born: the wrapper was not emitted there at all, so a decorator's
+  `@emit`ted `val _scan_X = scan("X");` never ran and a library whose model is
+  module-load self-registration was untestable on this backend.
+  It is emitted only when some runtime `val`'s initialiser CAN have an effect
+  (`initialiserCanHaveEffect`: anything but literals, operators, collection
+  literals, field reads and a lambda *value*; an unrecognised node counts as
+  effectful). A constant initialiser evaluated per read cannot be told apart
+  from one evaluated once, so it needs neither the init nor the cache.
+  Such an effectful named `val` caches its value under
+  `persistent_term:{<module atom>, <name>}` on first evaluation
+  (`cachedValueExpr`) — node-wide, like the module-level binding it stands for,
+  not per process. `'_botopink_init'/0` is exported: a module with neither
+  `main/0` nor tests has nothing that calls it locally, and erlc would report it
+  unused. **Nothing calls it for that module** — cross-module module-load effects
+  wait on the build path having a sibling loader at all.
 - **Strings**: `+` over a `string` is binary concatenation, flattened into ONE
   construction — `a + b + c` → `<<"a", (b())/binary, C/binary>>` (`stringConcatNode`).
   `isStringExpr` decides: a string literal, a `+` chain with a string operand, a
@@ -1033,6 +1108,24 @@ codegen/
   `instance_lowerings` table — `.record` → local (or `owner:`) call, `.prim` →
   `emitPrimMethod` (see [Primitive methods](#primitive-methods)).
   `arr.length`/`s.length` field access also lowers through `instance_lowerings`.
+- **A method on a host-supplied `behavior`** (`behaviorMethodNode`): a `behavior`
+  no type in the program implements is a runtime boundary — the host builds the
+  value — and decision 23 gives the behavior itself no run-time representation,
+  so there is no module to call into and inference records no lowering. The value
+  IS the dispatch table: a `val` member already reads as `maps:get(tag, G)`, so a
+  method reads the same way and applies what it finds,
+  `(maps:get(greet, G))(G, <<"ana">>)`. The receiver is passed explicitly — the
+  arity the declaration writes (`fn greet(self: Self, who: string)`) and the one
+  a botopink `@Greeter(…)` literal already builds on both backends — so a host
+  can store a plain `fun mod:f/2` instead of a per-value closure.
+  It fires last, only when the receiver is an identifier whose DECLARED type
+  (`local_types`, from a parameter annotation or `val x: T = …`) names a
+  `behavior`: one this module declares (`local_behaviors`, method present with no
+  body and matching arity) or one it imports that no module exports
+  (`imported_behaviors` — a behavior never reaches the cross-module index). A
+  local function of that name taking the receiver first, or a `method_owners`
+  entry, wins. Before this, such a call fell through to a bare local
+  `greet(G, …)` that no module defines and erlc refused the whole file.
 - **`forEach` accumulator fusion** (`detectFoldFusion`/`emitFoldFusion`):
   `var acc = init;` followed by `recv.forEach({ p -> <mutate acc> })` fuses into
   `Acc = lists:foldl(fun(P, Acc) -> <body> end, Init, Recv)` (a closure can't
@@ -1157,8 +1250,12 @@ codegen/
   (reserved, emitted and — when `pub` — exported whether or not the module has a
   `main/0`), so a read is a local call; a `val` holding a fun is read, parked on
   the stack and applied with `call_fun`. Only `_`-named synthetic statements run
-  in order inside `'_botopink_main'/0` before it calls `main/0`. Parity with the
-  erlang backend's `topValForms`.
+  in order inside `'_botopink_main'/0` before it calls `main/0`. This is the
+  shape erlang had before `'_botopink_init'/0` (§ **The module body**): the
+  statements run only when a `main/0` exists, a named `val`'s initialiser runs
+  once per READ rather than once at load, and neither runs under `botopink test`.
+  `tests/language/expected-failures.txt` carries the beam row of
+  `run/module_init_order.bp`.
 - **Emission**: `beam_asm.zig` writes no target text. It builds typed operands
   (`Op`/`Dst` = `beamEmitter.Operand`/`Dest`) and calls one `beam_emitter.write*`
   function per `.S` line, the module preamble included (`writeModuleForm` /
@@ -2010,13 +2107,35 @@ Primitive-receiver methods (`xs.map(f)`, `s.toUpper()`) are tagged `.prim` in
 | `#[@result]` | plain `function`; `__bp_ok`/`__bp_error` build `{ok: V}`/`{error: E}`; `try`/`catch` via `"error" in _r` | plain fun; `{ok, V}`/`{error, E}`; `try`/`catch` → `case … of` | plain local; `put_tuple2` pair; `try`/`catch` → `is_tagged_tuple` | `[tag, payload]` in linear memory; `try`/`catch` → `if` on the tag |
 | `#[@future]` | `async function`; resolved/rejected markers → native `return`/`throw` | eager (`@Future<T>` is `T`); rejected → `throw` | eager; rejected → `erlang:throw/1` | eager; rejected → `unreachable` |
 | `#[@generator]` / `#[@iterator]` | `function*` (`return <iter>` → `yield*`) | eager; a body of only `yield`s → list | eager body | eager body |
-| `#[@asyncGenerator]` | `async function*` | eager | eager body | eager body |
+| `#[@futureGenerator]` | `async function*` | eager | eager body | eager body |
 | `#[@context]` | plain `function` | plain fun | plain local | plain func |
+
+**Open, measured 2026-09-21 at front 20's landing: a `#[@context]` body may now
+`await`, and commonJS cannot emit it.** Decision 95 made the effects a chain —
+`@Context` extends `@Future` extends `@Result` — so `await` inside a
+`#[@context]` body is legal, and `try` with it. `try` lowers everywhere (it is
+the same propagate/`catch` shape the `#[@result]` row describes). `await` does
+not: the `#[@context]` row above is a plain `function` on commonJS, so the
+emitted `await` is
+
+```
+SyntaxError: await is only valid in async functions and the top level bodies of modules
+```
+
+while erlang, wasm and beam run it (their `@Future<T>` is eager, so `await` is
+the identity and the row needs nothing). The fix is commonJS's `fnKeyword`
+answering `async function` for a `#[@context]` body that awaits — which changes
+what a component's caller receives, and is therefore a backend decision, not a
+legality one. Front 20 owns what is legal and explicitly does not touch
+`codegen/**` lowering; this row is the handoff. `tests/language/run/effect_chain.bp`
+carries the other rows and its header says why this one is absent.
 
 Effect rejection diagnostics (R*, RF*, RI*, RC*, RG* codes) live in
 `comptime/diagnostics.zig`; `comptime/infer.zig`'s `inEffectContext` uses the
 `effect` field of `comptime/env.zig`'s `StarFnCtx` so each family's rejections
-fire only inside the right effect body.
+fire only inside the right effect body. Which body operations each effect may
+hold is `comptime/effect_chain.zig`, not a table here: the four checks
+(`try`/`await`/`use`/`yield`) ask it the same question.
 
 ## Tuple labels (decision 8 §6)
 

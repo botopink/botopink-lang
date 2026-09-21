@@ -67,7 +67,7 @@ Opt.None = new Opt$None();
 function describe(opt) {
     return (() => {
         const _s = opt;
-        if (_s instanceof Opt$None) return "empty";
+        if (_s.tag === "None") return "empty";
         if (_s.tag === "Some") {
             const { value: v } = _s;
             return ("value: " + v);

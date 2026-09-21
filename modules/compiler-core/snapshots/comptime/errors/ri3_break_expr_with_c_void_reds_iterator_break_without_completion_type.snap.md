@@ -12,4 +12,4 @@ error: iterator-break-without-completion-type: this iterator declares C = void; 
 4 │     break 42;
   │     ^
 
-  hint: Extend the wrapper to opt into completion values: `@Iterator<T, E, <C-type>>` (or `@AsyncIterator<…>`).
+  hint: Extend the wrapper to opt into completion values: `@Iterator<T, E, <C-type>>` (or `@FutureGenerator<…>`).

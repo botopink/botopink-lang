@@ -164,9 +164,17 @@ overrides the list path.
 
 `<lib> <target> <owner> <reason…>` per line, `#` comments. The owning front
 deletes its line in the commit that turns the cell green, which makes the cell
-a hard assert. **No live entries.** The last two — `jhonstart commonJS` and
+a hard assert. **One live entry**, `emilia-card commonJS`, owned by `05-emilia`:
+that example's two class-body assertions deliberately pin the output of a
+commonJS defect (a `case` arm over a uniquely-named variant lowered to
+`instanceof`, which does not cross a package boundary, so two of its tokens went
+nowhere), with the reason written above them and a note that "the fix is visible
+as a change here". `fix/js-instanceof-boundary` is that fix, and the cell is the
+change: the class bodies now carry `font-size:1.875rem` and `font-size:1rem`.
+Updating the goldens is emilia's, not this repo's — a library's cell is listed,
+never edited from here. Before it, the last two were `jhonstart commonJS` and
 `jhonstart erlang`, `src/hooks.bp:109` writing `use` in a `-> Element` body
-without `#[@context]` (decision 88, `use-without-context-effect`) — were deleted
+without `#[@context]` (decision 88, `use-without-context-effect`) — deleted
 once the jhonstart library front landed the annotation (`repository/jhonstart`
 b89c787) and both cells passed.
 

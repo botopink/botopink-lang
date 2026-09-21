@@ -13,13 +13,16 @@ fn main() {
 ```erlang
 -module(main).
 -export(['_botopink_main'/0, main/1]).
--export([add/2]).
+-export(['_botopink_init'/0, add/2]).
 
 add(A, B) ->
     (A + B).
 
 result() ->
-    add(3, 4).
+    case persistent_term:get({main, result}, '__bp_unset') of
+        '__bp_unset' -> __BpV = add(3, 4), persistent_term:put({main, result}, __BpV), __BpV;
+        __BpCached -> __BpCached
+    end.
 
 main() ->
     '__bp_print'([result()]).
@@ -43,7 +46,12 @@ main() ->
 '__bp_render'({variant, N, []}) -> N;
 '__bp_render'({_, N, Fs}) -> [N, $(, lists:join(", ", [[K, ": ", '__bp_show'(Val, false)] || {K, Val} <- Fs]), $)].
 
+'_botopink_init'() ->
+    result(),
+    ok.
+
 '_botopink_main'() ->
+    '_botopink_init'(),
     main().
 
 main(_Args) ->

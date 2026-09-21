@@ -8,8 +8,9 @@
 //// each Param.
 ////
 //// Surface bookkeeping (the doc-only fns in `builtins.d.bp`): `field<T,F>` /
-//// `trap` / `emit` / `module` / `getContex<T>` keep their declarative form
-//// in `builtins.d.bp` (no default, so they don't need this parse path).
+//// `trap` / `emit` / `module` / `getContex<T>` are declared there as
+//// `pub declare fn … -> …;` like every other bodyless fn in the file (front 20
+//// F10). None carries a trailing default, so none needs this parse path.
 
 #[@External.Erlang("erlang:error({todo, $0})")]
 #[@External.Node("(() => { throw new Error($0) })()")]

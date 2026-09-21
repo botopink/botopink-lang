@@ -241,12 +241,16 @@ test "infer: null-check binding ---- if (x) { e -> } body ignores binding" {
 }
 
 test "infer: try expression ---- result type unified with return" {
+    // `try` unwraps `@Result<i32, string>` to `i32`, and propagates the error
+    // out of `process`, which therefore carries the channel it propagates into
+    // (decision 95 — a plain `fn -> i32` is refused here).
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
         \\#[@result]
         \\fn fetch() -> @Result<i32, string> {
         \\    @todo();
         \\}
-        \\fn process() -> i32 {
+        \\#[@result]
+        \\fn process() -> @Result<i32, string> {
         \\    val r = try fetch();
         \\    return r;
         \\}

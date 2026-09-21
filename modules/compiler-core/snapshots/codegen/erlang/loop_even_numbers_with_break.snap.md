@@ -14,15 +14,19 @@ fn main() {
 ```erlang
 -module(main).
 -export(['_botopink_main'/0, main/1]).
+-export(['_botopink_init'/0]).
 
 processamento() ->
-    lists:filtermap(fun(I) ->
-        case ((I rem 2) =:= 0) of
-            true ->
-                {true, I};
-            _ -> false
-        end
-    end, lists:seq(0, (10) - 1)).
+    case persistent_term:get({main, processamento}, '__bp_unset') of
+        '__bp_unset' -> __BpV = lists:filtermap(fun(I) ->
+            case ((I rem 2) =:= 0) of
+                true ->
+                    {true, I};
+                _ -> false
+            end
+        end, lists:seq(0, (10) - 1)), persistent_term:put({main, processamento}, __BpV), __BpV;
+        __BpCached -> __BpCached
+    end.
 
 main() ->
     '__bp_print'([processamento()]).
@@ -46,7 +50,12 @@ main() ->
 '__bp_render'({variant, N, []}) -> N;
 '__bp_render'({_, N, Fs}) -> [N, $(, lists:join(", ", [[K, ": ", '__bp_show'(Val, false)] || {K, Val} <- Fs]), $)].
 
+'_botopink_init'() ->
+    processamento(),
+    ok.
+
 '_botopink_main'() ->
+    '_botopink_init'(),
     main().
 
 main(_Args) ->

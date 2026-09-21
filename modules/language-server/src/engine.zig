@@ -262,7 +262,7 @@ fn renderBindingHover(gpa: std.mem.Allocator, b: comptime_pipeline.TypedBinding)
 
     // For an effect fn, surface the unwrapped element type produced by
     // `await` / `yield` / iteration (the `T` of `@Future<T>` /
-    // `@Iterator<T>` / `@AsyncIterator<T, _>`).
+    // `@Iterator<T>` / `@FutureGenerator<T, _>`).
     if (b.decl == .@"fn" and b.decl.@"fn".effect != null) {
         if (b.decl.@"fn".returnType) |rt| {
             if (asyncItemTypeRef(rt)) |item| {
@@ -386,13 +386,13 @@ fn getDeclDocComment(decl: ast.DeclKind) ?[]const u8 {
 }
 
 /// The element type `T` of an async/generator return type
-/// (`@Future<T>` / `@Iterator<T>` / `@AsyncIterator<T, _>`), or null.
+/// (`@Future<T>` / `@Iterator<T>` / `@FutureGenerator<T, _>`), or null.
 fn asyncItemTypeRef(tr: ast.TypeRef) ?ast.TypeRef {
     return switch (tr) {
         .generic => |g| if (g.is_builtin and g.args.len >= 1 and
             (std.mem.eql(u8, g.name, "Future") or
                 std.mem.eql(u8, g.name, "Iterator") or
-                std.mem.eql(u8, g.name, "AsyncIterator")))
+                std.mem.eql(u8, g.name, "FutureGenerator")))
             g.args[0]
         else
             null,
@@ -4649,10 +4649,10 @@ fn dotCompletion(
         if (t.* == .named) receiver_type_name = t.named.name;
         break;
     }
-    // Iterator receivers (`@Iterator` / `@AsyncIterator`) expose the iteration
+    // Iterator receivers (`@Iterator` / `@FutureGenerator`) expose the iteration
     // protocol: `next()`, `iter()` and `map()`.
     if (receiver_type_name) |rtn| {
-        if (std.mem.eql(u8, rtn, "Iterator") or std.mem.eql(u8, rtn, "AsyncIterator")) {
+        if (std.mem.eql(u8, rtn, "Iterator") or std.mem.eql(u8, rtn, "FutureGenerator")) {
             const iter_methods = [_][]const u8{ "next", "iter", "map" };
             for (iter_methods) |m| {
                 try items.append(gpa, .{

@@ -4,7 +4,8 @@
 fn fetch() -> @Result<i32, string> {
     @todo();
 }
-fn process() -> i32 {
+#[@result]
+fn process() -> @Result<i32, string> {
     val r = try fetch();
     @print(r);
     return r;
@@ -53,7 +54,7 @@ function process() {
     if ("error" in _try0) return _try0;
     const r = _try0.ok;
     __bp_print(r);
-    return r;
+    return ({ ok: r });
 }
 ```
 

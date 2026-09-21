@@ -122,6 +122,14 @@ pub const TypeErrorKind = union(enum) {
         fnBase: []const u8,
         useBase: []const u8,
     },
+    /// Decision 96 — two `use`s in ONE body anchored at different bases. The
+    /// anchor is a property of the function, fixed by its first `use`, so this
+    /// reds at the SECOND one and names both bases and the line that fixed it.
+    contextBaseMixed: struct {
+        anchorBase: []const u8,
+        anchorLine: usize,
+        useBase: []const u8,
+    },
     /// `use` in a body whose return type implements `@Context` but whose fn does
     /// not carry `#[@context]` (decision 88). Payload: the fn's name and its
     /// rendered return type.
@@ -268,6 +276,10 @@ pub const TypeError = struct {
         return .{ .kind = .{ .contextMismatch = .{ .fnBase = fnBase, .useBase = useBase } } };
     }
 
+    pub fn contextBaseMixed(anchorBase: []const u8, anchorLine: usize, useBase: []const u8) TypeError {
+        return .{ .kind = .{ .contextBaseMixed = .{ .anchorBase = anchorBase, .anchorLine = anchorLine, .useBase = useBase } } };
+    }
+
     pub fn useWithoutContextEffect(fnName: []const u8, returnType: []const u8) TypeError {
         return .{ .kind = .{ .useWithoutContextEffect = .{ .fnName = fnName, .returnType = returnType } } };
     }
@@ -346,8 +358,9 @@ pub const TypeError = struct {
             .useNotAllowed => |r| std.fmt.allocPrint(gpa, "use-of-non-context-fn: `use` not allowed: function returns '{s}' which does not implement @Context", .{r}),
             .useNotContext => |e| std.fmt.allocPrint(gpa, "use-of-non-context-fn: `use` requires @Context: '{s}' does not implement @Context", .{e}),
             .contextMismatch => |m| std.fmt.allocPrint(gpa, "context-anchor-violation: function returns @Context<{s}, _> but `use` returns @Context<{s}, _>", .{ m.fnBase, m.useBase }),
+            .contextBaseMixed => |m| std.fmt.allocPrint(gpa, "context-anchor-violation: every `use` in one function resolves against the same ContextBase: this body's is @Context<{s}, _>, fixed by the `use` on line {d}, and this one is @Context<{s}, _>", .{ m.anchorBase, m.anchorLine, m.useBase }),
             .useWithoutContextEffect => |u| std.fmt.allocPrint(gpa, "use-without-context-effect: `use` needs `#[@context]` on the enclosing fn '{s}': its return type '{s}' implements @Context, but a body with no effect annotation does not activate a hook", .{ u.fnName, u.returnType }),
-            .throwWithoutResult => std.fmt.allocPrint(gpa, "effect-throw-without-fallible-channel: `throw` is only valid inside a fn whose effect declares an error channel: #[@result], #[@future], #[@iterator], or #[@asyncGenerator]", .{}),
+            .throwWithoutResult => std.fmt.allocPrint(gpa, "effect-throw-without-fallible-channel: `throw` is only valid inside a fn whose effect declares an error channel: #[@result], #[@future], #[@iterator], or #[@futureGenerator]", .{}),
             .methodNotActive => |m| std.fmt.allocPrint(gpa, "'{s}' has no active method '{s}' — activate the extension with `{s}*`", .{ m.typeName, m.method, m.hintSym }),
             .ambiguousExtension => |a| std.fmt.allocPrint(gpa, "'{s}.{s}' is provided by both '{s}' and '{s}' — qualify the call, e.g. `{s}.{s}(obj)`", .{ a.typeName, a.method, a.symA, a.symB, a.symA, a.method }),
             .notAnExtension => |name| std.fmt.allocPrint(gpa, "'{s}' does not name an implement/extend symbol", .{name}),

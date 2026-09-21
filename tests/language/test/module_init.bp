@@ -1,0 +1,40 @@
+//// A module-level `val` is the module BODY: evaluated once, in declaration
+//// order, when the module loads — which is before the first test runs, exactly
+//// as `botopink run` evaluates it before `main`. The two modes do not differ.
+////
+//// `mark` appends its tag to a host-side list and answers the new length, so
+//// the order and the number of evaluations are both readable from inside a
+//// test. The node row keeps the list on `globalThis`, the erlang row in the
+//// process dictionary — the escript runs the module body and the tests in one
+//// process.
+////
+//// The gap this pins (front 00 · 02-erlang): on erlang a named module-level
+//// `val` was a 0-arity function called on each READ — so `first` was evaluated
+//// inside the test rather than at load, and `_registered`, which nothing reads,
+//// was never evaluated at all (`Warning: function '_registered'/0 is unused`).
+//// A library whose model is module-load self-registration had no way to work.
+
+#[@External.Node("(globalThis.__bpMarks = globalThis.__bpMarks || [], globalThis.__bpMarks.push($0), globalThis.__bpMarks.length)"),
+  @External.Erlang("(begin erlang:put(bp_marks, (case erlang:get(bp_marks) of undefined -> []; L -> L end) ++ [$0]), erlang:length(erlang:get(bp_marks)) end)")]
+declare fn mark(tag: string) -> i32;
+
+#[@External.Node("((globalThis.__bpMarks || []).join(','))"),
+  @External.Erlang("(iolist_to_binary(lists:join($,, case erlang:get(bp_marks) of undefined -> []; L -> L end)))")]
+declare fn marks() -> string;
+
+val first = mark("first");
+val _registered = mark("registered");
+
+test "a module-level val runs at module load, before the first test" {
+    assert marks() == "first,registered";
+}
+
+test "a module-level val runs in declaration order" {
+    assert first == 1;
+}
+
+test "reading a module-level val does not evaluate it again" {
+    assert first == 1;
+    assert first == 1;
+    assert marks() == "first,registered";
+}

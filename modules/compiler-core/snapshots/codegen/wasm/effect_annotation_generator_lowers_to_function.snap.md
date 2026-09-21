@@ -12,7 +12,7 @@ fn range(a: i32, b: i32) -> @Generator<i32> {
 (module
   (memory (export "memory") 1)
   (global $__heap_ptr (mut i32) (i32.const 256))
-  ;; #[@future] / #[@asyncGenerator] — eager lowering
+  ;; #[@future] / #[@futureGenerator] — eager lowering
   (func $range (param $a i32) (param $b i32) (result i32)
     (local $__yield_fn i32)
     i32.const 0

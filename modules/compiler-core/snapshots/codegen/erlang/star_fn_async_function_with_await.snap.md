@@ -15,11 +15,11 @@ fn loadTwice(x: i32) -> @Future<i32> {
 ```erlang
 -module(main).
 
-%% #[@future] / #[@asyncGenerator] — eager lowering
+%% #[@future] / #[@futureGenerator] — eager lowering
 fetch(X) ->
     X.
 
-%% #[@future] / #[@asyncGenerator] — eager lowering
+%% #[@future] / #[@futureGenerator] — eager lowering
 loadTwice(X) ->
     A = fetch(X),
     '__bp_add'(A, A).

@@ -15,18 +15,22 @@ fn main() {
 ```erlang
 -module(main).
 -export(['_botopink_main'/0, main/1]).
+-export(['_botopink_init'/0]).
 
 precosBrutos() ->
     [100, 250, 400].
 
 apenasGrandes() ->
-    lists:filtermap(fun(Valor) ->
-        case (Valor > 200) of
-            true ->
-                {true, Valor};
-            _ -> false
-        end
-    end, precosBrutos()).
+    case persistent_term:get({main, apenasGrandes}, '__bp_unset') of
+        '__bp_unset' -> __BpV = lists:filtermap(fun(Valor) ->
+            case (Valor > 200) of
+                true ->
+                    {true, Valor};
+                _ -> false
+            end
+        end, precosBrutos()), persistent_term:put({main, apenasGrandes}, __BpV), __BpV;
+        __BpCached -> __BpCached
+    end.
 
 main() ->
     '__bp_print'([apenasGrandes()]).
@@ -50,7 +54,12 @@ main() ->
 '__bp_render'({variant, N, []}) -> N;
 '__bp_render'({_, N, Fs}) -> [N, $(, lists:join(", ", [[K, ": ", '__bp_show'(Val, false)] || {K, Val} <- Fs]), $)].
 
+'_botopink_init'() ->
+    apenasGrandes(),
+    ok.
+
 '_botopink_main'() ->
+    '_botopink_init'(),
     main().
 
 main(_Args) ->

@@ -11,6 +11,7 @@ val txt = box("hi");
 ```erlang
 -module(main).
 -compile({no_auto_import,[node/0]}).
+-export(['_botopink_init'/0]).
 
 node() ->
     <<"n">>.
@@ -19,13 +20,28 @@ box(Children) ->
     <<"x">>.
 
 many() ->
-    box([node(), node()]).
+    case persistent_term:get({main, many}, '__bp_unset') of
+        '__bp_unset' -> __BpV = box([node(), node()]), persistent_term:put({main, many}, __BpV), __BpV;
+        __BpCached -> __BpCached
+    end.
 
 one() ->
-    box(node()).
+    case persistent_term:get({main, one}, '__bp_unset') of
+        '__bp_unset' -> __BpV = box(node()), persistent_term:put({main, one}, __BpV), __BpV;
+        __BpCached -> __BpCached
+    end.
 
 txt() ->
-    box(<<"hi">>).
+    case persistent_term:get({main, txt}, '__bp_unset') of
+        '__bp_unset' -> __BpV = box(<<"hi">>), persistent_term:put({main, txt}, __BpV), __BpV;
+        __BpCached -> __BpCached
+    end.
+
+'_botopink_init'() ->
+    many(),
+    one(),
+    txt(),
+    ok.
 ```
 
 ----- RUN LOG -----

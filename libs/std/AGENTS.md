@@ -21,7 +21,7 @@ std/
     ├── root.bp              ← module-tree root: one `pub mod <name>;` per importable std module
     │                        — core files flattened into the global type env (`std_core_files` in build.zig):
     ├── primitives.bp        ← primitive behavior registry (Number/Integer/Signed/Float, I32…F64, Bool, String, Function, Pair, Array); no tests (see `test/`)
-    ├── builtins.d.bp        ← builtin surface: print, @Result/@Iterator/@Future…, `Display` (decision 8 §7), `Index`/`Slice` (decision 63, amended), `Target`/`External`/`Host` annotations, std.syntax (`Expr`, `CustomNode`, …), `@Decl` reflection, effect-annotation rules
+    ├── builtins.d.bp        ← builtin surface: print, @Result/@Iterator/@Future/@FutureGenerator…, `Display` (decision 8 §7), `Index`/`Slice` (decision 63, amended), `Target`/`External`/`Host` annotations, std.syntax (`Expr`, `ExprContext`, `CustomNode`, …), `@Decl` reflection, effect-annotation rules
     ├── builtins_fns.d.bp    ← builtin fns with literal defaults (`todo`, `panic`)
     │                        — importable modules (declared in root.bp):
     ├── order.bp  dict.bp  sets.bp  string_builder.bp  queue.bp
@@ -89,9 +89,13 @@ Targets come from `type Target { Node, Typescript, Erlang, Beam, Wasm }` in
 - **Module + symbol** — `#[@External.Erlang("erlang", "abs")]`: call
   `module:symbol(args)` with args in declaration order.
 - **Single string** — `module` comes back empty from `externalFor` (`ast.zig`).
-  On a behavior method it names the native method (`#[@External.Node("reverse")]`,
-  a call-site rename when it differs from the method name, never a prototype
-  patch). On a `declare fn` it is a host expression
+  On a behavior method it names the native method (`#[@External.Node("toReversed")]`
+  for `Array.reverse`, a call-site rename when it differs from the method name,
+  never a prototype patch). The native method it names has to MATCH the
+  signature: `Array.reverse` answers a reversed array and leaves the receiver
+  alone on erlang and wasm, and named native `reverse`, which reverses in
+  place, so commonJS alone also reversed the receiver — `toReversed` is the
+  copying reader that answers what the signature says. On a `declare fn` it is a host expression
   (`#[@External.Node("process.cwd()")]`) that commonJS renders verbatim at each
   call site, and the erlang backend renders the same way — the `:expr()()`
   lowering that used to keep `env`, `os` and `process` off erlang is gone
@@ -137,7 +141,18 @@ erlang and commonJS. A template on a behavior method
 becomes a `<Owner>.prototype.<m>` patch on commonJS, so it must not call the
 native method of the same name (the patch would call itself), and a
 `default fn` body is patched the same way — `stringSlice*`/`arraySlice*`
-therefore cut without `.slice`. `@External.Beam` bodies are `.S`
+therefore cut without `.slice`. **That rule is now gated**, because it was
+written here and broken anyway: `String.charCodeAt` read
+`(($0.charCodeAt($1) ?? -1) | 0)`, and since the `String` prelude is installed
+into any module using a member that needs a patch (one `s.slice(…)` is enough),
+every `.charCodeAt(…)` in the program blew the stack — a library adopted "never
+call `String.slice`" as a house rule rather than find it. `js: external ---- no
+prelude template calls the method it patches`
+(`codegen/tests/externals.zig`) walks the embedded prelude and fails on the
+shape. `charCodeAt` names native `codePointAt`, which no behavior member
+patches, and which is also what the `?? -1` was written for: out of range it
+answers `undefined` where `charCodeAt` answers `NaN`, which `??` does not catch
+and `| 0` turned into `0` — commonJS answered `0` where erlang answered `-1`. `@External.Beam` bodies are `.S`
 instructions: the receiver arrives in `{x, 0}`, argument N in `{x, N+1}`, the
 result leaves in `{x, 0}`, and a `gc_bif` live count must cover every
 register it reads or that is read later. Arity branching
@@ -234,7 +249,7 @@ lib is a dependency. Sidecars ship verbatim.
 ## Effect annotations
 
 `#[@result]`, `#[@future]`, `#[@generator]`, `#[@iterator]`,
-`#[@asyncGenerator]`, `#[@context]` and default generic parameters are
+`#[@futureGenerator]`, `#[@context]` and default generic parameters are
 documented in the effect-annotations block of `src/builtins.d.bp`.
 
 ## Conventions
@@ -245,8 +260,11 @@ documented in the effect-annotations block of `src/builtins.d.bp`.
   does not cover all of it.** The default scan is `src/**`, excluding `.d.bp`, so
   `test/` and `builtins_fns.d.bp` have to be named explicitly:
   `botopink format --check src/builtins_fns.d.bp test/*.bp`. `builtins.d.bp`
-  cannot be formatted at all — `fn await(self: Self)` at line 116 is a parse
-  error (`await` is a keyword), which is a parser row, not a formatter one.
+  cannot be formatted at all — `fn await(self: Self)` in the `Future` behavior
+  is a parse error (`await` is a keyword), which is a parser row, not a
+  formatter one. Front 20 removed the file's other unparseable form: the five
+  intrinsics at the foot (`field` / `trap` / `emit` / `module` / `getContex`)
+  are `pub declare fn … -> …;` now, like every other bodyless fn here.
 - No Zig in `libs/std/` — loader/glue changes belong in `build.zig` / `compiler-core`.
 - `get`/`set`/`test`/`from`/`assert` are keywords (`new`, `delegate` and `const` are identifiers since 06 N27) — pick other names (`empty`/`at`/`insert`, `matches`, `src`, `asserts`).
 - Array equality in assertions uses `.join(...)` (`==` on arrays is reference equality in JS) — or `asserts.deepEquals`, which renders both sides on the same host.

@@ -16,7 +16,7 @@ pub const builtins = @embedFile("builtins.d.bp");
 /// (todo / panic / trap / emit / module / getContex / field) so
 /// `registerStdlib` can install them in the global env. Splitting them out
 /// keeps the synthetic-interface declarations (Result / Future / Iterator /
-/// Generator / AsyncIterator / Context) in `builtins.d.bp` doc-only — those
+/// Generator / FutureGenerator / Context) in `builtins.d.bp` doc-only — those
 /// types are pre-registered by `Env.registerBuiltins`, so re-parsing them
 /// would red on duplicate type registration.
 pub const builtin_fns = @embedFile("builtins_fns.d.bp");

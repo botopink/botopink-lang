@@ -20,9 +20,9 @@ class Color {
     static name() {
         (() => {
             const _s = this;
-            if (_s instanceof Color$Red) return "red";
-            if (_s instanceof Color$Green) return "green";
-            if (_s instanceof Color$Blue) return "blue";
+            if (_s.tag === "Red") return "red";
+            if (_s.tag === "Green") return "green";
+            if (_s.tag === "Blue") return "blue";
         })();
     }
 }
