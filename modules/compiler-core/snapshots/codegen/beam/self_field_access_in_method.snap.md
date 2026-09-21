@@ -14,12 +14,20 @@ val Point = type(
 {module, main}.
 {exports, []}.
 {attributes, []}.
+{labels, 2}.
+```
+
+----- BEAM ASSEMBLY -- main__t__point.S
+```erlang
+{module, main__t__point}.
+{exports, [{sum, 1}]}.
+{attributes, []}.
 {labels, 9}.
 
-{function, 'Point_sum', 1, 3}.
+{function, sum, 1, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, 'Point_sum'}, 1}.
+    {line, [{location, "main__t__point.erl", 1}]}.
+    {func_info, {atom, main__t__point}, {atom, sum}, 1}.
   {label, 3}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -42,8 +50,8 @@ val Point = type(
 
 {function, '__bp_add', 2, 7}.
   {label, 6}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, '__bp_add'}, 2}.
+    {line, [{location, "main__t__point.erl", 2}]}.
+    {func_info, {atom, main__t__point}, {atom, '__bp_add'}, 2}.
   {label, 7}.
     {test, is_binary, {f, 8}, [{x, 0}]}.
     {test, is_binary, {f, 8}, [{x, 1}]}.

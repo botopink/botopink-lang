@@ -27,8 +27,9 @@ std/
     ├── order.bp  dict.bp  sets.bp  string_builder.bp  queue.bp
     ├── math.bp  asserts.bp  path.bp  random.bp  querystring.bp  time.bp  url.bp
     ├── base64.bp  unicode.bp  process.bp  os.bp  env.bp  crypto.bp  regex.bp
-    ├── erlang.bp  json.bp  fs.bp  http.bp
-    └── sidecars/random.mjs  ← Mulberry32 PRNG used by `random`
+    ├── erlang.bp  json.bp  fs.bp  http.bp  snapshots.bp  mocks.bp
+    ├── __snapshots__/<suite>/<slug>.snap  ← recorded by `snapshots` from the inline tests (decision 72); a `.snap.new` beside one is a candidate a person reviews and renames
+    └── sidecars/random.mjs  ← Mulberry32 PRNG used by `random` (the only sidecar: `mocks` keeps its tables on `globalThis`, not in a `.mjs`)
 ```
 
 ## Importable modules
@@ -43,7 +44,9 @@ std/
 | `string_builder` | `type StringBuilder`: `empty`, `fromString`, `fromStrings`, `append`, `prepend`, `toString`, `length`, `isEmpty` |
 | `queue` | `type Queue<T>` (FIFO): `empty`, `fromList`, `size`, `isEmpty`, `enqueue`, `dequeue`, `peek`, `toList` |
 | `math` | constants `pi`/`e`/`tau`/`sqrt2`/`ln2`/`ln10`/`log2e`/`log10e`; `abs`/`floor`/`round`/`trunc`/`ceil`/`sign`/`minF`/`maxF`/`clamp`; `sqrt`/`pow`/`cbrt`/`exp`/`ln`/`log2`/`log10`/`hypot`; trig + hyperbolic |
-| `asserts` | `truthy`, `falsy`, `equal`, `notEqual`, `approxEqual`, `contains`, `throws`, `matches`, `type AssertError` (named `asserts` — `assert` is a keyword) |
+| `asserts` | The canonical assertion API (1.0.10-beta front 01-std, `asserts-api.md`): every fn is `#[@result] -> @Result<void, string>`, consumed with `try`, `actual` first, one literal message `asserts.<fn>: <what>` each — `isTrue`, `isFalse`, `equals`, `notEquals`, `approxEquals`, `deepEquals`, `isNil`, `isNotNil`, `isOk`, `isError`, `contains`, `notContains`, `startsWith`, `endsWith`, `matches(actual, pattern)`, `isEmpty`, `isNotEmpty`, `lengthIs`, `includes`, `notIncludes`, `between`, `greaterThan`, `lessThan`, `throws(body)`, `throwsWith(body, needle)`, `fail(message)`, plus `errorText(r) -> string` (the `Error` payload, `""` for `Ok`). No `pub declare fn` (STD-001-clean on every target); `matches`/`deepEquals`/`throws`/`throwsWith` sit on the private cells `regexMatches`/`canonical`/`tryCatch` (Node + Erlang). The old panicking `truthy`/`falsy`/`equal`/`notEqual`/`approxEqual`/`AssertError` are gone. Named `asserts` — `assert` is a keyword |
+| `snapshots` | The snapshot engine (1.0.10-beta front 01-std, `snapshots.md`; decisions 72, 67): `path(loc)` = `<dir of loc.file>/__snapshots__/<suite>/<slug>.snap` (suite = text before the first `": "` of `loc.fnName`, slug = the compiler's `slugify` rule ported byte-for-byte in `slugOf`), `pathNamed(loc, name)`, `suiteOf`, `slugOf` — pure, every backend; `assertText(loc, actual)` (the spec's `assert` — a keyword, so renamed), `assertAs(loc, subject, actual)`, `assertNamed(loc, name, actual)`, `assertNamedAs(loc, name, subject, actual)` — `#[@result]`, `-> @Result<void, string>`; the `.snap` is `botopink-snap 1` / `test: <name>` / `subject: <subject>` / blank / body; missing or mismatch writes `<path>.new` and answers `Error`, a match deletes a stale `.new`; **no update flag of any kind** — a person renames the `.new`. Private cells `readFile`/`writeFile`/`removeFile`/`removeTree`/`exists`/`tmpDir` (Node + Erlang; STD-001-clean) — every inline engine test makes a `tmpDir()` scratch and removes it again with `removeTree`, so a run leaves nothing under the host's tmpdir. `loc` must be the CALLER's `@src()` |
+| `mocks` | Mockito-style mocks over a `behavior` (1.0.10-beta front 01-std, `onze-migration.md`; decision 71) — 100 % of the retired `onze` library, Erlang templates carried over, Node templates inlining what `onze.mjs` held. Eight `pub declare fn` cells (`newMock`, `key`, `pushMatcher`, `invoke`, `beginVerify`, `whenCall`, `thenReturnCell`, `thenThrowCell`), the matchers `eq`/`anyInt`/`anyString` (matchers, **not** assertions — they push a descriptor and answer a dummy), the verify specs `atLeastOnce`/`times`/`never`, `pub type Stub` with `thenReturn`/`thenThrow`, `when(value)`, `verify(mock, spec)` and the `#[mock]` decorator. Mutable state is one cell per host process: `globalThis.__bp_mocks` on Node (the `emilia.bp:24` shape), the `'__bp_mocks_*'` process-dictionary keys on Erlang — **no `.mjs` sidecar**. The only std module with `pub declare fn`, so STD-001 refuses `import {mocks} from "std"` on beam and wasm (the cells have to be exported: `#[mock]`'s emitted body calls them). `#[mock]` fires in THIS module only — see *Tests* below |
 | `path` | `separator`, `delimiter`, `split`, `isAbsolute`, `basename`, `dirname`, `extname`, `join`, `normalize`, `relative(src, dst)`, `resolve` (posix only) |
 | `random` | `float`, `coin`, `bool`, `intInRange`, `pick`, `shuffle`, `seed`, `seededFloat` |
 | `querystring` | `parse`, `stringify` |
@@ -160,6 +163,34 @@ stdout is captured under a `----- RUN LOG -----` fence; failures print
 [`../../modules/compiler-cli/AGENTS.md`](../../modules/compiler-cli/AGENTS.md)
 §`botopink test` output format.
 
+`snapshots`' own path-rule tests record ordinary snapshots under
+`src/__snapshots__/snapshots/` (four files, committed); its engine tests run
+against a scratch directory under the host tmpdir. A red snapshot run leaves a
+`*.snap.new` beside the `.snap` (git-ignored); review it, then `mv` it over the
+`.snap` to record — there is no flag that does it for you (decision 67).
+
+`mocks`' nine inline tests are the eight of the retired `repository/onze/test/onze_test.bp`
+plus one for `anyString` (the old suite covered it from its example app, not its
+test file). They run on both targets — `botopink test [--target erlang] --filter
+mocks` reads `9 passed, 0 failed`.
+
+**`#[mock]` fires only inside `mocks.bp`.** `@emit` splices its text into the
+module that hosts the annotated `behavior`, and the emitted method bodies name
+the runtime bare (`invoke`, `key`, `newMock`). That resolves here and nowhere
+else: `import {mocks} from "std"` binds the module handle, never its functions
+(a bare `import {mock, …} from "std"` is `unknown "std" module in import`), and
+`#[mocks.mock]` is not registered as a decorator at all — a qualified
+annotation name never reaches `env.decorators`, so the marker silently does
+nothing and `mockUserRepo` comes out unbound. A consumer therefore writes the
+double by hand over the qualified runtime, which works in full
+(`mocks.invoke`/`mocks.key`/`mocks.newMock`/`mocks.when(…).thenReturn`/
+`mocks.verify`, all measured 2026-09-21 from a scratch package on commonJS).
+Closing the gap needs two changes, both recorded in
+`specs/1.0.10-beta/01-std/onze-migration.md` § *Language gaps*: registering a
+std module's `@Decl`-shaped `pub fn`s in `env.decorators` under `<mod>.<fn>`
+(`comptime/infer.zig` `markStdImports`), and an emission that resolves in both
+places — `#[mock]` cannot emit one text that is bare here and qualified there.
+
 **No known red cell.** `scripts/known-red-libs.txt` carries no line, and
 `zig build test-libs` reads `std · commonJS: pass` and `std · erlang: pass`
 (11 passed, 0 failed, 0 known red across the workspace). The three rows this
@@ -189,6 +220,12 @@ Host code that does not fit a one-line template lives at
 pub declare fn seed(s: i32) -> unit;
 ```
 
+A host runtime that needs mutable state does **not** get a sidecar for it:
+`mocks` keeps its six tables in one lazily created `globalThis.__bp_mocks` cell
+inside each Node template (the shape `emilia.bp:24` uses) and in the
+`'__bp_mocks_*'` process-dictionary keys inside each Erlang template, so
+`sidecars/` holds exactly one file.
+
 `shipMjsSidecars` (`modules/compiler-cli/src/cli/libs.zig`) copies sidecars next
 to the emitted module, probing `<lib>/src/sidecars/<base>` and `<lib>/src/<base>`,
 so the relative `require` resolves both in the lib's own build/test and when the
@@ -212,7 +249,10 @@ documented in the effect-annotations block of `src/builtins.d.bp`.
   error (`await` is a keyword), which is a parser row, not a formatter one.
 - No Zig in `libs/std/` — loader/glue changes belong in `build.zig` / `compiler-core`.
 - `get`/`set`/`test`/`from`/`assert` are keywords (`new`, `delegate` and `const` are identifiers since 06 N27) — pick other names (`empty`/`at`/`insert`, `matches`, `src`, `asserts`).
-- Array equality in assertions uses `.join(...)` (`==` on arrays is reference equality in JS).
+- Array equality in assertions uses `.join(...)` (`==` on arrays is reference equality in JS) — or `asserts.deepEquals`, which renders both sides on the same host.
+- An `if (a < b || c > d)` condition does not parse today (the condition grammar stops at `||`); bind it to a `val` first (`asserts.between` does). A parser gap, not a std one.
+- **Measured 2026-09-20, consumer side** (`import {asserts, snapshots} from "std"` from a user package under `botopink test`): a primitive interface `default fn` (`Bool.negate`, `Array.contains`, `Array.isEmpty`, …) is emitted verbatim (`condition.negate is not a function`) when a std module is compiled as a consumer's **embedded** import — the project compile of `libs/std` itself lowers it. `asserts`/`snapshots` therefore use only host-backed primitives (`== false`, `indexOf`, `.length`, `split`/`join`/`slice`/`indexOf`/`startsWith`/`endsWith`/`contains` on strings). A std module written with a default fn passes its own tests and breaks its consumers. Core gap (commonJS cross-module emission of embedded std modules).
+- **Measured 2026-09-20, erlang consumer side**: any `from "std"` import from a user package under `botopink test --target erlang` is `{error,undef}` — `test_cmd.zig` writes the module as `std/<name>.erl` while its atom is `std@<name>`, and `erlc` refuses the mismatch (`Module name 'std@math' does not match file name 'math'`), so `__bp_load_siblings` never loads it. Pre-existing (`math` fails the same way); `botopink run` is not affected. Toolchain gap, owned by the CLI.
 - A trailing default on a behavior method is not expanded at the call site
   yet: `s.slice(1)` fails to check (`'slice' expects 2 argument(s)`); pass both
   bounds. `slice`'s `end` is `?i32`, so the open-ended form is

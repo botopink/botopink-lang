@@ -58,6 +58,9 @@ expect_out() { # <fixed-string> <label>
 expect_no_out() { # <fixed-string> <label>
   if grep -qF -- "$1" <<<"$OUT"; then fail "$2: output unexpectedly has '$1'"; else ok "$2"; fi
 }
+expect_file_out() { # <file> <fixed-string> <label>
+  if grep -qF -- "$2" "$1"; then ok "$3"; else fail "$3: $1 lacks '$2'"; sed 's/^/      /' "$1" >&2; fi
+}
 
 # project <name> [target] — a fresh project directory with a botopink.json.
 project() {
@@ -486,6 +489,90 @@ printf '{ "name": "pathdep", "version": "0.1.0", "target": "commonJS", "dependen
 printf 'import { answer } from "pathlib";\n\npub fn main() {\n    print(answer());\n}\n' >"$P/src/main.bp"
 run "$P" build
 expect_code 0 "build with a path dependency (no library root involved)"
+
+# ── `.mjs` sidecars (00 · 10-cli-residuals) ──────────────────────────────────
+# A `#[@External.Node("./x.mjs", …)]` lowers to a relative `require` in the
+# emitted module, and the CLI copies the source `.mjs` next to it. The owner of
+# that file is the dependency the build RESOLVED — not the first directory of
+# that name across the library roots — and a sidecar that cannot be shipped is
+# a located error, never a silent exit 0 (decision 67: no flag turns it off).
+
+# One library with a sidecar, as a workspace member, plus a decoy checkout that
+# declares the same library name on another root.
+sidecar_lib() { # <dir> <marker>
+  mkdir -p "$1/src"
+  cat >"$1/botopink.json" <<'JSON'
+{ "name": "side", "version": "0.0.1", "target": "commonJS", "entry": "root.bp", "files": ["root.bp"] }
+JSON
+  printf '#[@External.Node("./side.mjs", "mark")]\npub declare fn mark() -> string;\n' >"$1/src/root.bp"
+  printf 'module.exports = { mark: () => "%s" };\n' "$2" >"$1/src/side.mjs"
+}
+sidecar_app() { # <dir> <dependency-json>
+  mkdir -p "$1/src"
+  printf '{ "name": "side-app", "version": "0.0.1", "target": "commonJS", "entry": "main.bp",\n  "dependencies": { "side": %s } }\n' "$2" >"$1/botopink.json"
+  printf 'import { mark } from "side";\n\npub fn main() {\n    print(mark());\n}\n' >"$1/src/main.bp"
+}
+
+SWS="$WORK/sidews"; rm -rf "$SWS"
+mkdir -p "$SWS/modules" "$SWS/examples"
+cat >"$SWS/botopink.json" <<'JSON'
+{ "name": "sidews", "version": "0.0.1", "targets": ["commonJS"],
+  "workspaces": ["modules/*", "examples/*"] }
+JSON
+sidecar_lib "$SWS/modules/side" "from the workspace member"
+sidecar_app "$SWS/examples/side-app" '{ "workspace": true }'
+
+DECOY="$WORK/decoyroot"; rm -rf "$DECOY"
+sidecar_lib "$DECOY/side" "from the decoy checkout"
+
+echo "==> a workspace member's sidecar is shipped through the resolved dependency"
+run "$SWS/examples/side-app" build
+expect_code 0 "build of a member-dependency with a sidecar"
+if [[ -f "$SWS/examples/side-app/out/side/side.mjs" ]]; then
+  ok "out/side/side.mjs shipped"
+  expect_file_out "$SWS/examples/side-app/out/side/side.mjs" "from the workspace member" "shipped from the resolved member, not by name"
+else
+  fail "out/side/side.mjs was not shipped"
+fi
+
+echo "==> a second checkout declaring the same name does not silence the shipper"
+# Both entries named "side" are marked as a duplicate by `scanRoots`, so the
+# by-name lookup answers nothing; the resolved `{ workspace: true }` dependency
+# still does.
+rm -rf "$SWS/examples/side-app/out"
+set +e
+OUT="$(cd "$SWS/examples/side-app" && BOTOPINK_LIB_ROOTS="$DECOY" "$BP" build 2>&1)"
+CODE=$?
+set -e
+expect_code 0 "build with the library name declared twice across roots"
+if [[ -f "$SWS/examples/side-app/out/side/side.mjs" ]]; then
+  ok "out/side/side.mjs shipped despite the duplicate name"
+  expect_file_out "$SWS/examples/side-app/out/side/side.mjs" "from the workspace member" "the resolved dependency wins over the decoy"
+else
+  fail "the duplicate name silenced the sidecar shipper"
+fi
+
+echo "==> a path dependency outside every library root ships its sidecar"
+PLIB="$WORK/sidepath"; rm -rf "$PLIB"; sidecar_lib "$PLIB" "from the path dependency"
+PAPP="$WORK/sidepathapp"; rm -rf "$PAPP"; sidecar_app "$PAPP" "{ \"path\": \"$PLIB\" }"
+run "$PAPP" build
+expect_code 0 "build with a path dependency carrying a sidecar"
+if [[ -f "$PAPP/out/side/side.mjs" ]]; then
+  ok "out/side/side.mjs shipped from the path dependency"
+  expect_file_out "$PAPP/out/side/side.mjs" "from the path dependency" "shipped from the directory the build resolved"
+else
+  fail "a path dependency's sidecar was not shipped"
+fi
+
+echo "==> a sidecar that cannot be shipped is a located error, not exit 0"
+rm -f "$PLIB/src/side.mjs"
+rm -rf "$PAPP/out"
+run "$PAPP" build
+expect_code 1 "build whose dependency has no sidecar to ship"
+expect_out 'dependency '"'"'side'"'"' requires "./side.mjs" from module '"'"'side/root'"'"'' "names the dependency, the require and the module"
+expect_out "$PLIB/src/side.mjs" "names the last path it looked at"
+expect_out "botopink.json:2:21" "locates the dependency entry of the project manifest"
+[[ ! -e "$PAPP/out/side/side.mjs" ]] && ok "nothing half-shipped" || fail "a sidecar was written by the refused build"
 
 echo
 if [[ "$failures" -gt 0 ]]; then

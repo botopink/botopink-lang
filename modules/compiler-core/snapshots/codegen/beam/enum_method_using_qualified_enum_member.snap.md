@@ -15,12 +15,20 @@ val Status = type {
 {module, main}.
 {exports, []}.
 {attributes, []}.
+{labels, 2}.
+```
+
+----- BEAM ASSEMBLY -- main__t__status.S
+```erlang
+{module, main__t__status}.
+{exports, [{isDefault, 1}]}.
+{attributes, []}.
 {labels, 4}.
 
-{function, 'Status_isDefault', 1, 3}.
+{function, isDefault, 1, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, 'Status_isDefault'}, 1}.
+    {line, [{location, "main__t__status.erl", 1}]}.
+    {func_info, {atom, main__t__status}, {atom, isDefault}, 1}.
   {label, 3}.
     {allocate, 2, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.

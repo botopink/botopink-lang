@@ -33,8 +33,8 @@ the rule; a capability decision 8 does not legislate gets a plain sentence.
 Areas, by filename prefix: `case_*`, `tuple_*`, `loop_*` (decision 8 §5, §6, §10), `effect_*`,
 `comptime_*` / `decorator_*`, `external_*`, `generic_*`, `string_*` / `array_*`, `type_identity_*`,
 `optional*` (`optional`, and decision 54's `optional_null_pattern` / `optional_variant_pattern`),
-`context_use` / `use_*` (front 19 of 1.0.10-beta: `use` and `@Context`, one test cell, one run
-cell and six reject cells), `index_*` (decision 63 as amended: `run/index_dict`,
+`context_use` / `use_*` (front 19 of 1.0.10-beta: `use` and `@Context`, two test cells, one run
+cell and eight reject cells), `index_*` (decision 63 as amended: `run/index_dict`,
 `run/index_past_the_end_fails`, `run/index_at_optional`), `std_erlang_node` (decision 64),
 `panic_aborts` / `todo_aborts` (front 12 step 4.3), `external_erlang_only` (step 4.4),
 `string_at` (`05-wasm`: the `String.at` reader, on all four targets), and the
@@ -255,17 +255,20 @@ find . -name '*.bp' | wc -l   # 95 — 91 cells, plus the 4 extra .bp of the mod
 after the branch moved from `85f883bd` onto the workspaces manifest):**
 
 ```bash
-ls test/*.bp    | wc -l   # 50
+ls test/*.bp    | wc -l   # 51
 ls run/*.bp     | wc -l   # 24   (each with its .out; 4 with an .exit, 2 with .<target>.expect — 4 files, one per refusing target; none with .targets)
-ls reject/*.bp  | wc -l   # 30   (each with its .expect)
+ls reject/*.bp  | wc -l   # 32   (each with its .expect)
 ls -d modules/*/| wc -l   #  4
-find . -name '*.bp' | wc -l   # 115 — 108 cells, plus the 7 extra .bp of the modules/ projects
+find . -name '*.bp' | wc -l   # 118 — 111 cells, plus the 7 extra .bp of the modules/ projects
 ```
 
-**108 cells**, 105 besides the three `smoke` files. The 108th is `run/string_at.bp`, added on
-`fix/wasm-refusals`: `String.at` had no wasm lowering and `s.at(1)` trapped there while the other
-three answered, so the cell pins the present-index reader on all four targets. Absent indexes stay
-out of it — they are decision 47's spelling row (C-18), measured by `run/index_at_optional.bp`. The difference from the front-19 block below is
+**111 cells**, 108 besides the three `smoke` files. Recounted from the files after
+`fix/wasm-refusals` merged `origin/feat` — neither side's number was kept. Since C-16's block above:
+`run/string_at.bp` is `fix/wasm-refusals`' (`String.at` had no wasm lowering and `s.at(1)` trapped
+there while the other three answered, so the cell pins the present-index reader on all four targets
+— absent indexes stay out of it, they are decision 47's spelling row, C-18, measured by
+`run/index_at_optional.bp`), and the other three are `origin/feat`'s: one `test/` cell and two
+`reject/` cells. The difference from the front-19 block below is
 C-16's eight cells, two new area rows and one row grown:
 
 | Area | Cells | Total |
@@ -274,24 +277,30 @@ C-16's eight cells, two new area rows and one row grown:
 | a qualified std host call (decision 64; C-03's erlang half landed, beam half open) | 1 run | 1 |
 | front 12 steps 4.2–4.4: a local dependency, `@panic`/`@todo`, "no external target" | 1 `modules/` + 3 run | 4 |
 
-Measured there — this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0:
+Measured there — this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0, on the tree
+`fix/wasm-refusals` made by merging `origin/feat` `cbd5f1ec`:
 
 ```
 $ tests/language/run.sh                 # commonJS, erlang, wasm
 expected-failures.txt: 67 lines, 53 exercised by --target commonJS,erlang,wasm — by target: erlang 25 · beam 14 · commonJS 13 · * 8 · wasm 7; by first owner row: 01 23 · C-06 15 · C-02 8 · 02 6 · 03 4 · 05 3 · 13 3 · C-18 3 · 04 1 · C-03 1; 7 name tests rather than a path; 13 name a second row
-language tests: 367 passed, 53 expected failures, 0 failed
+language tests: 375 passed, 53 expected failures, 0 failed
 $ tests/language/run.sh --target beam
 expected-failures.txt: 67 lines, 22 exercised by --target beam — …the same line…
-language tests: 36 passed, 22 expected failures, 0 failed
+language tests: 38 passed, 22 expected failures, 0 failed
 ```
 
-Re-run on `fix/wasm-refusals` (front `05-wasm`): **367 / 53** and **36 / 22**, from 363 / 53 and
-35 / 22 at C-16's landing. `expected-failures.txt` keeps its 67 lines — nothing was deleted, and
-**one was relabelled**: `wasm | run/index_at_optional.bp` lost the `String.at` trap half it carried
-(the method has a wasm lowering now) and names only decision 47's absent-optional spelling, still
-C-18. The **+5 results** are two cells: `run/string_at.bp` is new and passes on all four targets
-(+3 here, +1 on beam), and `run/external_erlang_only.bp` lost its `.targets` sidecar and now runs —
-and is refused — on wasm too (+1 here; it already ran on beam).
+`expected-failures.txt` keeps its 67 lines — nothing was added or deleted by `fix/wasm-refusals`,
+and **one was relabelled**: `wasm | run/index_at_optional.bp` lost the `String.at` trap half it
+carried (the method has a wasm lowering now) and names only decision 47's absent-optional spelling,
+still C-18.
+
+Where the results came from, since C-16's 363 / 53 and 35 / 22. `fix/wasm-refusals` adds **+4** on
+`--target all` and **+1** on beam: `run/string_at.bp` is new and passes on all four targets (+3 and
++1), and `run/external_erlang_only.bp` lost its `.targets` sidecar so it now runs — and is refused
+— on wasm too (+1; it already ran on beam). `origin/feat` adds the rest: `test/use_future_context.bp`
+(commonJS and erlang only — `botopink test` refuses wasm and beam) and the two `reject/` cells
+`use_future_context_duplicate` and `use_future_without_owner`, which run once per invocation and so
+count in both columns (+2 on beam).
 
 From 348 / 45 and 31 / 18 at `85f883bd` before C-16: **+12 lines** (8 `C-02`, 3 `C-18`, 1 `C-03`),
 **15 relabelled** (decisions 52/53/55's erlang, beam and commonJS halves, from `02 step 3` / `02 (no
@@ -552,6 +561,15 @@ the static prefix (rows 4b and 4c as parse errors), `use-without-context-effect`
 body without `#[@context]`), `use-of-non-context-fn` (a `-> string` body, and a module-level `val` —
 decision 87), and `context-anchor-violation`. Green on commonJS, erlang, wasm and beam at the
 landing commit, with no line in `expected-failures.txt`.
+
+Step 2 (decisions 89 and 90) added three more, also with no line in `expected-failures.txt`:
+`test/use_future_context.bp` — a `#[@future] fn Page() -> @Future<Element>` activates a hook with no
+`#[@context]`, because `@Future<T>` is looked through to `T`'s owner, and the future still chains
+through `await`; `reject/use_future_without_owner.bp` — the same wrapper effect over `@Future<i32>`
+is still `use-of-non-context-fn`, so the dispensation switches no refusal off; and
+`reject/use_future_context_duplicate.bp` — `#[@future] #[@context]` is still refused (R5), which is
+why the wrapper effect has to activate on its own. The last claims the message only: R5's caret
+drift is already owned by `reject/two_effect_markers.bp`'s row in `expected-failures.txt`.
 
 **Decisions 63–66, one cell or one sentence each (C-16).**
 

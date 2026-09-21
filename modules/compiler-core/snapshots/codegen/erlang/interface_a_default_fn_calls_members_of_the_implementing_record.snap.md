@@ -30,12 +30,38 @@ fn main() {
 ----- ERLANG -- main.erl
 ```erlang
 -module(main).
--compile({no_auto_import,[min/2, max/2]}).
 -export(['_botopink_main'/0, main/1]).
 
 %% behavior Bounded
 
 %% type Money: cents
+
+main() ->
+    M = main__t__money:clamp(#{cents => 500}, #{cents => 0}, #{cents => 120}),
+    '__bp_print'([maps:get(cents, M)]).
+
+'__bp_print'(Values) ->
+    io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
+
+'__bp_show'(V, true) when is_binary(V) -> V;
+'__bp_show'(V, _) when is_binary(V) -> [$", [case C of $" -> "\\\""; $\\ -> "\\\\"; $\n -> "\\n"; $\r -> "\\r"; $\t -> "\\t"; _ -> C end || C <- unicode:characters_to_list(V)], $"];
+'__bp_show'(V, _) when is_list(V) -> [$[, lists:join(",", ['__bp_show'(E, false) || E <- V]), $]];
+'__bp_show'(V, _) when is_tuple(V), tuple_size(V) > 0, is_atom(element(1, V)), element(1, V) =/= true, element(1, V) =/= false, element(1, V) =/= undefined -> io_lib:format("~p", [V]);
+'__bp_show'(V, _) when is_tuple(V) -> ["#(", lists:join(",", ['__bp_show'(E, false) || E <- tuple_to_list(V)]), $)];
+'__bp_show'(V, _) -> io_lib:format("~p", [V]).
+
+'_botopink_main'() ->
+    main().
+
+main(_Args) ->
+    '_botopink_main'().
+```
+
+----- ERLANG -- main__t__money.erl
+```erlang
+-module(main__t__money).
+-compile({no_auto_import,[min/2, max/2]}).
+-export([min/2, max/2, clamp/3]).
 
 min(Self, Other) ->
     case (maps:get(cents, Self) < maps:get(cents, Other)) of
@@ -55,26 +81,6 @@ max(Self, Other) ->
 
 clamp(Self, Lo, Hi) ->
     min(max(Self, Lo), Hi).
-
-main() ->
-    M = clamp(#{cents => 500}, #{cents => 0}, #{cents => 120}),
-    '__bp_print'([maps:get(cents, M)]).
-
-'__bp_print'(Values) ->
-    io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
-
-'__bp_show'(V, true) when is_binary(V) -> V;
-'__bp_show'(V, _) when is_binary(V) -> [$", [case C of $" -> "\\\""; $\\ -> "\\\\"; $\n -> "\\n"; $\r -> "\\r"; $\t -> "\\t"; _ -> C end || C <- unicode:characters_to_list(V)], $"];
-'__bp_show'(V, _) when is_list(V) -> [$[, lists:join(",", ['__bp_show'(E, false) || E <- V]), $]];
-'__bp_show'(V, _) when is_tuple(V), tuple_size(V) > 0, is_atom(element(1, V)), element(1, V) =/= true, element(1, V) =/= false, element(1, V) =/= undefined -> io_lib:format("~p", [V]);
-'__bp_show'(V, _) when is_tuple(V) -> ["#(", lists:join(",", ['__bp_show'(E, false) || E <- tuple_to_list(V)]), $)];
-'__bp_show'(V, _) -> io_lib:format("~p", [V]).
-
-'_botopink_main'() ->
-    main().
-
-main(_Args) ->
-    '_botopink_main'().
 ```
 
 ----- RUN LOG -----

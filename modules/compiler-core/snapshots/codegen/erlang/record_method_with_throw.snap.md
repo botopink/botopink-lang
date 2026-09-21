@@ -17,6 +17,12 @@ val Invoice = type(
 -module(main).
 
 %% type Invoice: subtotal, taxRate
+```
+
+----- ERLANG -- main__t__invoice.erl
+```erlang
+-module(main__t__invoice).
+-export([total/1, validate/1]).
 
 total(Self) ->
     (maps:get(subtotal, Self) + (maps:get(subtotal, Self) * maps:get(taxRate, Self))).

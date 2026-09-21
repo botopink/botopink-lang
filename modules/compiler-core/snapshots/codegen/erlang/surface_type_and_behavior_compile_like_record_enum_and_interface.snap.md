@@ -35,9 +35,6 @@ fn main() {
 
 %% type Square: side
 
-area(Self) ->
-    (maps:get(side, Self) * maps:get(side, Self)).
-
 %% type Size
 %%   Small
 %%   Large(n)
@@ -52,7 +49,7 @@ weight(S) ->
 
 main() ->
     Sq = #{side => 3},
-    '__bp_print'([area(Sq)]),
+    '__bp_print'([main__t__square:area(Sq)]),
     '__bp_print'([(weight({'Large', 5}) + weight('Small'))]).
 
 '__bp_print'(Values) ->
@@ -70,6 +67,15 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+```
+
+----- ERLANG -- main__t__square.erl
+```erlang
+-module(main__t__square).
+-export([area/1]).
+
+area(Self) ->
+    (maps:get(side, Self) * maps:get(side, Self)).
 ```
 
 ----- RUN LOG -----

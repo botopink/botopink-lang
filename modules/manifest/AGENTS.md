@@ -40,7 +40,7 @@ manifest/
 
 | Symbol | What |
 |---|---|
-| `Manifest` | Every field a parser reads: `name`, `version`, `description`, `src`, `entry`, `target`, `targets`, `files`, `dependencies`, `workspaces`; `kind` (`package` / `workspace`); raw `text` + `path` so a later refusal can be located. `supportsTarget`, `dir`. |
+| `Manifest` | Every field a parser reads: `name`, `version`, `description`, `src`, `entry`, `target`, `targets`, `files`, `dependencies`, `workspaces`; `kind` (`package` / `workspace`); raw `text` + `path` so a later refusal can be located. `supportsTarget`, `dir`; `locateAt(key, message)` and `locateEntryAt(key, entry, message)` build a `Located` on this manifest's `"<key>"` / on the `"<entry>"` of its `"<key>"` object, so a caller outside this module (the CLI's sidecar shipper, say) reports a problem it found *through* a manifest in the same shape as the refusals raised here. |
 | `DepEntry{name, spec}` · `DepSpec{git, path, ref, workspace}` · `DepRef` | The dependency object: exactly one source (`git` with an optional `branch`/`tag`/`rev` pin, `path`, `workspace: true`). |
 | `Located` | A refusal with a place; `render(w)` / `renderAlloc` / `print` produce `error: … / --> file:L:C / caret`. |
 | `parse(arena, text, path, &err)` · `read(arena, io, dir, &err)` | Parse a manifest; `error.Invalid` with `err` set. A workspace manifest may not carry `src`/`files`/`entry`/`dependencies`; the string-array `dependencies` is refused naming the fix; a dependency needs exactly one source and at most one pin. |

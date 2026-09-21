@@ -99,6 +99,9 @@ pub fn generateWith(
     for (outputs.items) |o| {
         if (!o.result.failed() and o.name.len > 0) {
             try aux_files.append(allocator, .{ .name = o.name, .code = o.result.js });
+            // Policy 3: every `type` of the module is a module of its own on
+            // erlang/beam, compiled and loaded beside the file's.
+            for (o.result.units) |u| try aux_files.append(allocator, .{ .name = u.atom, .code = u.code, .atom = u.atom });
         }
     }
 

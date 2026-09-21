@@ -191,7 +191,12 @@ pub fn artifactPath(
     return std.fmt.allocPrint(alloc, "{s}/{s}{s}{s}", .{ out_dir, targetSubdir(target), stem, ext });
 }
 
-/// Delete the artifact (and `.d.ts`) of every module that failed.
+/// Delete the artifact (and `.d.ts`) of every module that failed — and, on
+/// erlang and BEAM, the per-`type` modules it wrote beside it when it last
+/// succeeded (policy 3 of `13-module-identity`). A failed module carries no
+/// `GenerateResult`, so its units cannot be named from the output; they are
+/// found by their prefix instead, which is exactly this module's: every unit is
+/// `<module atom>__t__<decl><ext>` and no other module can render that stem.
 fn removeStaleArtifacts(arena: std.mem.Allocator, io: std.Io, failed: []const []const u8, out_dir: []const u8, target: config.Target) void {
     for (failed) |name| {
         const exts = [_][]const u8{ artifactExt(target), ".d.ts" };
@@ -199,6 +204,29 @@ fn removeStaleArtifacts(arena: std.mem.Allocator, io: std.Io, failed: []const []
             const p = artifactPath(arena, out_dir, target, name, ext) catch continue;
             std.Io.Dir.cwd().deleteFile(io, p) catch {};
         }
+        removeStaleUnits(arena, io, name, out_dir, target);
+    }
+}
+
+/// The `<module atom>__t__…<ext>` files of one failed module, deleted from the
+/// flat per-target directory. A no-op on commonJS and wasm, which emit no units.
+fn removeStaleUnits(arena: std.mem.Allocator, io: std.Io, name: []const u8, out_dir: []const u8, target: config.Target) void {
+    switch (target) {
+        .erlang, .beam => {},
+        .commonJS, .wasm => return,
+    }
+    const atom = bp.codegen.crossModule.erlAtom(arena, .of(name)) catch return;
+    const prefix = std.fmt.allocPrint(arena, "{s}__{s}__", .{ atom, bp.codegen.crossModule.Kind.t.tag() }) catch return;
+    const ext = artifactExt(target);
+    const dir_path = std.fmt.allocPrint(arena, "{s}/{s}", .{ out_dir, targetSubdir(target) }) catch return;
+    var dir = std.Io.Dir.cwd().openDir(io, dir_path, .{ .iterate = true }) catch return;
+    defer dir.close(io);
+    var it = dir.iterate();
+    while (it.next(io) catch null) |entry| {
+        if (entry.kind != .file) continue;
+        if (!std.mem.startsWith(u8, entry.name, prefix)) continue;
+        if (!std.mem.endsWith(u8, entry.name, ext)) continue;
+        dir.deleteFile(io, entry.name) catch {};
     }
 }
 
@@ -237,6 +265,15 @@ fn writeOutputs(
         }
 
         try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = sub_path, .data = o.result.js });
+
+        // Policy 3 (`13-module-identity`): every `type` of the module is a
+        // module of its own on erlang/beam — `out/<target>/<type atom><ext>`,
+        // flat beside the file's, which is where `erl -pa` loads it from.
+        for (o.result.units) |u| {
+            const unit_path = try std.fmt.allocPrint(gpa, "{s}/{s}{s}{s}", .{ out_dir, targetSubdir(target), u.atom, ext });
+            defer gpa.free(unit_path);
+            try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = unit_path, .data = u.code });
+        }
 
         // Optional TypeScript typedef.
         if (o.result.typedef) |td| {

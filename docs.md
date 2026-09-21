@@ -519,8 +519,13 @@ activation. `val x = use <hook>(…)` activates the hook and binds `R`; a bare
 by name. The activating body is a `#[@context]` function whose return type is
 the owner — a **component**, `#[@context] fn Widget() -> Element`, where
 `Element` is a type that `implement @Context<Element, Element>` — or is itself
-`@Context<Owner, _>` — a **custom hook** composing hooks. Every `use` in one
-body agrees on the one `Owner` its return type names.
+`@Context<Owner, _>` — a **custom hook** composing hooks. A body that carries a
+**wrapper effect** instead (`#[@future]` today) and whose return type *unwraps*
+to the owner activates too, with no second annotation: `@Future<T>` is looked
+through to `T`, so `#[@future] fn Page() -> @Future<Element>` is owned by
+`Element` (and one fn carries one effect annotation — `#[@future] #[@context]`
+is `effect-duplicate-annotation`). Every `use` in one body agrees on the one
+`Owner` its return type names.
 
 ```botopink
 type Element(count: i32) implement @Context<Element, Element>
@@ -546,6 +551,13 @@ fn Widget(n: i32) -> Element {
     return Element(count: c.value + value);
 }
 
+// A wrapper effect activates on its own: `@Future<Element>` unwraps to the owner.
+#[@future]
+fn Page() -> @Future<Element> {
+    val c = use state(1);
+    return Element(count: c.value);
+}
+
 // Without `use` the same call is an ordinary call — the first-render value.
 fn Plain() -> Element {
     val c = state(7);
@@ -555,17 +567,27 @@ fn Plain() -> Element {
 
 The rules, each with its diagnostic:
 
-- **The body needs the effect.** A `use` in a body whose fn is not
-  `#[@context]` is refused at the `use`: when the return type implements
+- **The body needs an effect.** A `use` in a body that carries **no** effect
+  annotation is refused at the `use`: when the return type implements
   `@Context` (the owner type, or the `@Context<…>` wrapper) the message names
   the annotation — `` use-without-context-effect: `use` needs `#[@context]` on
   the enclosing fn 'Widget': its return type 'Element' implements @Context, but
-  only a `#[@context]` body activates a hook `` — and a bare `fn … -> Element`
-  without it is an ordinary function. When the return type does not implement
-  `@Context` at all (`-> string`, `-> void`, a module-level `val`) it is
-  `` use-of-non-context-fn: `use` not allowed: function returns 'string' which
-  does not implement @Context ``. `#[@context]` itself accepts either return
-  shape: `-> @Context<B, R>` or a named type implementing `@Context<B, _>`.
+  a body with no effect annotation does not activate a hook `` — and a bare
+  `fn … -> Element` without it is an ordinary function. When the return type
+  does not implement `@Context` at all (`-> string`, `-> void`, a module-level
+  `val`) it is `` use-of-non-context-fn: `use` not allowed: function returns
+  'string' which does not implement @Context ``. `#[@context]` itself accepts
+  either return shape: `-> @Context<B, R>` or a named type implementing
+  `@Context<B, _>`.
+- **A wrapper effect is enough when its return owns the context.** The
+  dispensation above is the return type answering the question the annotation
+  would have: `#[@future] fn Page() -> @Future<Element>` activates, because
+  `@Future<Element>` unwraps to the owner. It switches no refusal off —
+  `#[@future] fn … -> @Future<i32>` with a `use` is still
+  `` use-of-non-context-fn: `use` not allowed ``, and `#[@context]` over a
+  return type that owns no context is still
+  `` effect-wrapper-mismatch: `#[@context]` requires a `-> @Context<…>` return
+  type ``.
 - **The operand is a hook.** `use plain()` where `plain : -> User` is
   `` use-of-non-context-fn: `use` requires @Context: 'User' does not implement
   @Context ``.
@@ -691,6 +713,16 @@ error naming the capitalised form (`` `#[@external]` binds no host — an extern
 target is written `External.<Target>` ``), rather than a function left silently
 without a host.
 
+A relative path (`"./helpers.mjs"`, `"helpers"` on erlang) names a **sidecar** the
+library keeps beside its sources, in `<src>/sidecars/` or `<src>/`. `botopink
+build` and `botopink test` copy it next to the emitted module, from the
+directory the dependency resolved to — so it ships the same whether the library
+is a workspace member, a `{ "path": … }` package outside every library root, or
+one of two checkouts declaring the name. A sidecar the build cannot ship is a
+located error on the `dependencies` entry that named the library, never a
+silent exit 0. See [`docs/botopink-json.md`](./docs/botopink-json.md) § Host
+sidecars.
+
 **Calling a host binding on a target it does not name is refused where the call
 is written, on every backend:**
 
@@ -724,7 +756,42 @@ fn notReady() -> i32 { @todo(); }
 ```
 
 Other builtins (`@panic`, `@field`, `@emit`, …) are declared in
-`libs/std/src/builtins.d.bp` and `libs/std/src/builtins_fns.d.bp`.
+`libs/std/src/builtins.d.bp` and `libs/std/src/builtins_fns.d.bp`. Builtin
+names are exact: an unrecognised `@name(…)` is `error[unknown-builtin]`
+(with the nearest name when one is an edit away), never a silent `void`.
+
+### `@src()` and `SourceLocation`
+
+```botopink
+// A builtin record every module sees:
+//   type SourceLocation(file: string, line: i32, column: i32, fnName: string)
+
+fn where() -> SourceLocation {
+    return @src();
+}
+
+test "src: a test knows its own name" {
+    val loc = @src();
+    @print(loc.file, loc.line, loc.column, loc.fnName);
+    // src/example.bp 10 15 src: a test knows its own name
+}
+```
+
+`@src()` is the place it is written, evaluated at compile time: the four
+fields are literals at the call site and the expression costs nothing at run
+time — every backend emits the same code it emits for the constructor call
+`SourceLocation(file: "…", line: N, column: C, fnName: "…")`.
+
+| Field | Value |
+|---|---|
+| `file` | the source file relative to the root of its package, forward slashes, with extension (`src/emilia.bp`, `test/color_test.bp`) |
+| `line`, `column` | 1-based position of the `@` — the numbers a diagnostic prints |
+| `fnName` | the enclosing `fn`'s name; `Type.method` inside a method; the test name inside `test "…" { }` (`test_<idx>` for an anonymous block); `""` at module level. A lambda does not change it |
+
+`@src()` takes no arguments and no trailing lambda (`@src(1)` is
+`error[src-takes-no-arguments]`). It is a value like any other: `@src().line`
+reads a field in place. Its consumer is the test contract — `std/asserts`
+messages and `std/snapshots` paths are computed from the caller's `@src()`.
 
 ## Tests
 
@@ -736,6 +803,77 @@ test "addition works" {
 
 Test blocks are declared at module level. Run with `botopink test`
 (`--target`, `--filter <substring>`).
+
+A test body is a **fallible context**: a `try` whose operand is an `Error(e)`
+ends the test as `FAIL <name>  (<e>)  at <file>:<line>` — `e` is the message
+(a non-string `e` is rendered) and the `at` is the test's own line. The
+statements after the failed `try` do not run; a `try` inside a lambda is the
+lambda's, not the test's. An assertion helper is therefore an ordinary
+`#[@result] fn … -> @Result<void, string>` whose `ok` position is the empty
+`return;`:
+
+```botopink
+#[@result]
+fn isPositive(n: i32) -> @Result<void, string> {
+    if (n <= 0) { throw "asserts.isPositive: value not positive"; };
+    return;
+}
+
+test "t: a propagated error fails the test" {
+    try isPositive(-1);     // FAIL t: a propagated error fails the test  (asserts.isPositive: value not positive)  at src/main.bp:12
+}
+```
+
+### Mocks
+
+`std/mocks` is the Mockito-style double: `when(...)` stubs a return, the
+matchers `eq` / `anyInt` / `anyString` pick which call a stub answers, and
+`verify(mock, spec)` checks how many matching calls were recorded. It is the
+old `onze` library, retired into std (1.0.10-beta front 01-std, decision 71).
+commonJS and erlang only — its cells are `pub declare fn` with a Node and an
+Erlang template each, so `import {mocks} from "std"` is refused on beam and
+wasm, where `botopink test` does not run.
+
+```botopink
+import {mocks} from "std";
+
+behavior UserRepo {
+    fn find(self: Self, id: i32) -> string;
+}
+
+// The double: every method funnels through `mocks.invoke`, which records the
+// call and answers the matching stub value or the type-default.
+type MockUserRepo(__id: string) implement UserRepo {
+    fn find(self: Self, id: i32) -> string {
+        return mocks.invoke(self.__id, "find", [mocks.key(id)], "");
+    }
+}
+
+fn mockUserRepo() -> UserRepo { return MockUserRepo(__id: mocks.newMock()); }
+
+test "repo: eq(v) stubs only the matching argument" {
+    val repo = mockUserRepo();
+    val _s = mocks.when(repo.find(mocks.eq(7))).thenReturn("ana");
+    assert repo.find(7) == "ana";
+    assert repo.find(8) == "";
+    val _v = mocks.verify(repo, mocks.times(2)).find(mocks.anyInt());
+}
+```
+
+`#[mock]` writes that double for you — it reflects the annotated `behavior`'s
+methods through `@Decl` and `@emit`s the type plus a `mock<Name>()` factory.
+**It fires inside the module that declares it only.** `@emit` splices its text
+into the module that hosts the annotated behavior, and the text names the
+runtime bare (`invoke`, `key`, `newMock`), which resolves in `std/mocks` and
+nowhere else: a `from "std"` import binds the module handle (`mocks`), never
+its functions, and `#[mocks.mock]` is not looked up as a decorator at all. So a
+consumer writes the double by hand, as above. Recorded in
+`specs/1.0.10-beta/01-std/onze-migration.md` § *Language gaps*.
+
+Two more limits carried over from the old library: a matched `thenThrow` is a
+host throw, not an `@Result`, so the caller catches it with `asserts.throws`
+and not with `try … catch`; and there is no generic `any<T>()` matcher, because
+it would need a per-type default it cannot synthesize.
 
 ## Backends
 

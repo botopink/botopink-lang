@@ -17,6 +17,12 @@ val Status = type {
 %% type Status
 %%   Active
 %%   Inactive
+```
+
+----- ERLANG -- main__t__status.erl
+```erlang
+-module(main__t__status).
+-export([isDefault/1]).
 
 isDefault(S) ->
     Current = 'Active',

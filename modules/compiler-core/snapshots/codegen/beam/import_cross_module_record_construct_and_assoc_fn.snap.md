@@ -16,14 +16,22 @@ pub type App(
 ----- BEAM ASSEMBLY -- http.S
 ```erlang
 {module, http}.
-{exports, [{'Response_ok', 1}]}.
+{exports, []}.
+{attributes, []}.
+{labels, 2}.
+```
+
+----- BEAM ASSEMBLY -- http__t__response.S
+```erlang
+{module, http__t__response}.
+{exports, [{ok, 1}]}.
 {attributes, []}.
 {labels, 4}.
 
-{function, 'Response_ok', 1, 3}.
+{function, ok, 1, 3}.
   {label, 2}.
-    {line, [{location, "http.erl", 1}]}.
-    {func_info, {atom, http}, {atom, 'Response_ok'}, 1}.
+    {line, [{location, "http__t__response.erl", 1}]}.
+    {func_info, {atom, http__t__response}, {atom, ok}, 1}.
   {label, 3}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -64,7 +72,7 @@ fn main() {
     {allocate, 2, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.
     {move, {literal, <<"hi">>}, {x, 0}}.
-    {call_ext, 1, {extfunc, http, 'Response_ok', 1}}.
+    {call_ext, 1, {extfunc, http__t__response, ok, 1}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {test, is_map, {f, 8}, [{x, 0}]}.

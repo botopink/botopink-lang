@@ -68,6 +68,9 @@ pub const CrossModule = struct {
     /// erlang and BEAM backends can fail exactly the modules involved with a
     /// diagnostic instead of letting one silently overwrite the other.
     atom_faults: std.StringHashMap(AtomFault),
+    /// The type atoms a `duplicate_decl`/`too_long` fault quotes — rendered for
+    /// the check and owned here, since no module table holds them.
+    fault_atoms: std.ArrayListUnmanaged([]u8) = .empty,
     /// Owns the `fields` arrays allocated for record/struct exports.
     field_arrays: std.ArrayListUnmanaged([]const []const u8) = .empty,
     alloc: std.mem.Allocator,
@@ -78,6 +81,8 @@ pub const CrossModule = struct {
         var ait = self.atoms.valueIterator();
         while (ait.next()) |a| self.alloc.free(a.*);
         self.atoms.deinit();
+        for (self.fault_atoms.items) |a| self.alloc.free(a);
+        self.fault_atoms.deinit(self.alloc);
         self.atom_faults.deinit();
         self.exports.deinit();
         self.imported.deinit();
@@ -144,8 +149,8 @@ pub const ModuleId = struct {
 /// Which extra module a source file produced — A2's `__<kind>__` qualifier.
 /// A kind is never a free string: the segment is this enum's own tag name.
 pub const Kind = enum {
-    /// a `type` declared in that file. Reserved; nothing emits it yet (that is
-    /// half 2 of this front).
+    /// a `type` declared in that file — the module that holds its methods
+    /// (policy 3) and the tag inside every value it builds (`typeAtom`).
     t,
     /// a `behavior` declared in that file. Reserved and emits nothing, by
     /// decision 23 — a behavior has no run-time representation.
@@ -329,17 +334,62 @@ pub fn erlDeclAtom(
     return out.toOwnedSlice(alloc);
 }
 
+/// The identity of a `type` declared in module `id` — the atom of the module
+/// that holds its methods under policy 3 AND the tag inside every value the
+/// type builds (half 3, decision 21): `erlDeclAtom(id, .t, decl)`, so
+/// `type Person` in `app/models.bp` is `app@models__t__person`. One renderer,
+/// because the value's tag has to name the module that formats it.
+pub fn typeAtom(alloc: std.mem.Allocator, id: ModuleId, decl: []const u8) (std.mem.Allocator.Error || AtomError)![]u8 {
+    return erlDeclAtom(alloc, id, .t, decl, null);
+}
+
+/// The `__v__` segment: a variant's tag, qualified by the enum it belongs to
+/// and the module that declares the enum —
+/// `typeAtom(id, decl) ++ "__v__" ++ lower(variant)`. `Circle` is declared in
+/// five files of the ecosystem; this is what tells them apart in one node. A
+/// legal unquoted atom like its prefix, and `decodeAtom` reads it back.
+pub fn variantAtom(alloc: std.mem.Allocator, id: ModuleId, decl: []const u8, variant: []const u8) (std.mem.Allocator.Error || AtomError)![]u8 {
+    const base = try typeAtom(alloc, id, decl);
+    defer alloc.free(base);
+    var out: std.ArrayListUnmanaged(u8) = .empty;
+    errdefer out.deinit(alloc);
+    try out.appendSlice(alloc, base);
+    try out.appendSlice(alloc, QUALIFIER_SEP);
+    try out.appendSlice(alloc, VARIANT_TAG);
+    try out.appendSlice(alloc, QUALIFIER_SEP);
+    const before = out.items.len;
+    for (variant) |raw| {
+        const c = std.ascii.toLower(raw);
+        const mapped: u8 = switch (c) {
+            'a'...'z', '0'...'9', '_' => c,
+            else => '_',
+        };
+        if (mapped == '_' and out.items.len > before and out.items[out.items.len - 1] == '_') continue;
+        if (mapped == '_' and out.items.len == before) continue;
+        try out.append(alloc, mapped);
+    }
+    if (out.items.len == before) return error.EmptyDeclName;
+    return out.toOwnedSlice(alloc);
+}
+
+/// The segment that qualifies a variant inside its type's atom. Not a `Kind`:
+/// a variant is not a module a source file produces, it is a value tag that
+/// decodes back to the module which does.
+pub const VARIANT_TAG = "v";
+
 /// What an atom this module rendered came from. The reason A2 spells the
 /// qualifier `__<kind>__<decl>` instead of the `#<Decl>` the first proposal
 /// asked for: `#` produced text the BEAM never reads, while this decodes.
 pub const Decoded = struct {
-    shape: enum { module, decl, gen },
+    shape: enum { module, decl, gen, variant },
     /// The module path, `@` restored to `/`. Owned by the caller.
     path: []u8,
     /// Borrowed from the atom that was decoded.
     kind: []const u8 = "",
     decl: []const u8 = "",
     hash: []const u8 = "",
+    /// The `__v__` segment of a variant tag; empty for every other shape.
+    variant: []const u8 = "",
 
     pub fn deinit(self: *Decoded, alloc: std.mem.Allocator) void {
         alloc.free(self.path);
@@ -350,7 +400,7 @@ pub const Decoded = struct {
 /// is the prefix rule 4/5 added and only the compiler knows whether it was
 /// there in the source.
 pub fn decodeAtom(alloc: std.mem.Allocator, atom: []const u8) (std.mem.Allocator.Error || AtomError)!Decoded {
-    var parts: [4][]const u8 = undefined;
+    var parts: [5][]const u8 = undefined;
     var n: usize = 0;
     var it = std.mem.splitSequence(u8, atom, QUALIFIER_SEP);
     while (it.next()) |part| {
@@ -367,6 +417,12 @@ pub fn decodeAtom(alloc: std.mem.Allocator, atom: []const u8) (std.mem.Allocator
         1 => .{ .shape = .module, .path = path },
         3 => .{ .shape = .decl, .path = path, .kind = parts[1], .decl = parts[2] },
         4 => .{ .shape = .gen, .path = path, .kind = parts[1], .decl = parts[2], .hash = parts[3] },
+        // `<path>__t__<decl>__v__<variant>`: only a type's atom carries a
+        // variant, and only under the `v` segment.
+        5 => if (std.mem.eql(u8, parts[1], Kind.t.tag()) and std.mem.eql(u8, parts[3], VARIANT_TAG))
+            .{ .shape = .variant, .path = path, .kind = parts[1], .decl = parts[2], .variant = parts[4] }
+        else
+            error.UndecodableAtom,
         else => error.UndecodableAtom,
     };
 }
@@ -390,10 +446,13 @@ pub const AtomFault = struct {
     atom: []const u8,
     path: []const u8,
     reason: Reason,
-    /// The other module path that rendered the same atom. `duplicate` only.
+    /// The other module path that rendered the same atom (`duplicate`), or the
+    /// other declaration name (`duplicate_decl`).
     other: []const u8 = "",
+    /// The declaration whose type atom faulted. `duplicate_decl` only.
+    decl: []const u8 = "",
 
-    pub const Reason = enum { duplicate, reserved, too_long };
+    pub const Reason = enum { duplicate, reserved, too_long, duplicate_decl };
 
     /// This as the message of a `moduleOutput.Diagnostic.type`, so the failure
     /// reaches the driver naming both source modules instead of one of them
@@ -404,6 +463,15 @@ pub const AtomFault = struct {
                 alloc,
                 "modules `{s}` and `{s}` both render to the erlang module atom `{s}` — `__` is reserved as the in-file qualifier separator, so a run of `_` in a path segment collapses to one",
                 .{ self.path, self.other, self.atom },
+            ),
+            // Two `type` declarations of one module rendering one identity: the
+            // type atom lowercases the declaration name and folds every other
+            // character to `_`, so `Person`/`person` and `Foo_Bar`/`FooBar` are
+            // one atom — one module and one value tag for two types.
+            .duplicate_decl => std.fmt.allocPrint(
+                alloc,
+                "types `{s}` and `{s}` of module `{s}` both render to the erlang atom `{s}` — a type's identity is its lowercased name with every other character folded to `_`",
+                .{ self.decl, self.other, self.path, self.atom },
             ),
             .reserved => std.fmt.allocPrint(
                 alloc,
@@ -474,6 +542,53 @@ pub fn build(alloc: std.mem.Allocator, outputs: []ComptimeOutput) !CrossModule {
         }
     }
 
+    // The same check over every `type`'s atom (half 3's identity, policy 3's
+    // module): two declarations of one module rendering one atom would be one
+    // module and one value tag for two types. Across modules the path already
+    // tells them apart, so the check is per module. Keyed by the module path
+    // like the module faults, so the module fails as a whole.
+    var fault_atoms: std.ArrayListUnmanaged([]u8) = .empty;
+    errdefer {
+        for (fault_atoms.items) |a| alloc.free(a);
+        fault_atoms.deinit(alloc);
+    }
+    for (outputs) |*ct| {
+        const ok = switch (ct.outcome) {
+            .ok => |*o| o,
+            else => continue,
+        };
+        if (atom_faults.contains(ct.name)) continue;
+        // type atom (owned) → the declaration that rendered it first.
+        var seen_types = std.StringHashMap([]const u8).init(alloc);
+        defer {
+            var kit = seen_types.keyIterator();
+            while (kit.next()) |k| alloc.free(k.*);
+            seen_types.deinit();
+        }
+        for (ok.transformed.decls) |decl| {
+            const r = switch (decl) {
+                .type_ => |t| t,
+                else => continue,
+            };
+            const atom = typeAtom(alloc, .of(ct.name), r.name) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                error.EmptyModulePath, error.EmptyDeclName, error.UndecodableAtom => continue,
+            };
+            if (atom.len > ATOM_MAX_BYTES) {
+                try fault_atoms.append(alloc, atom);
+                try atom_faults.put(ct.name, .{ .atom = atom, .path = ct.name, .reason = .too_long, .decl = r.name });
+                break;
+            }
+            const gop = try seen_types.getOrPut(atom);
+            if (gop.found_existing) {
+                try fault_atoms.append(alloc, atom);
+                try atom_faults.put(ct.name, .{ .atom = atom, .path = ct.name, .reason = .duplicate_decl, .other = gop.value_ptr.*, .decl = r.name });
+                break;
+            }
+            gop.value_ptr.* = r.name;
+        }
+    }
+
     for (outputs) |*ct| {
         const ok = switch (ct.outcome) {
             .ok => |*o| o,
@@ -520,7 +635,7 @@ pub fn build(alloc: std.mem.Allocator, outputs: []ComptimeOutput) !CrossModule {
             else => {},
         };
     }
-    return .{ .exports = exports, .imported = imported, .atoms = atoms, .atom_faults = atom_faults, .field_arrays = field_arrays, .alloc = alloc };
+    return .{ .exports = exports, .imported = imported, .atoms = atoms, .atom_faults = atom_faults, .fault_atoms = fault_atoms, .field_arrays = field_arrays, .alloc = alloc };
 }
 
 // ── tests: the atom, its qualifier, its decoder and the collision check ───────
@@ -654,7 +769,68 @@ test "decodeAtom: every shape round-trips to its origin" {
         try testing.expectEqualStrings(c.hash, d.hash);
     }
     try testing.expectError(error.UndecodableAtom, decodeAtom(testing.allocator, "a__b"));
+    // Five segments decode only as a variant tag: `__t__` then `__v__`.
     try testing.expectError(error.UndecodableAtom, decodeAtom(testing.allocator, "a__b__c__d__e"));
+    try testing.expectError(error.UndecodableAtom, decodeAtom(testing.allocator, "a__tpl__c__v__e"));
+}
+
+fn expectTypeAtom(expected: []const u8, path: []const u8, decl: []const u8) !void {
+    const got = try typeAtom(testing.allocator, .of(path), decl);
+    defer testing.allocator.free(got);
+    try testing.expectEqualStrings(expected, got);
+}
+
+fn expectVariantAtom(expected: []const u8, path: []const u8, decl: []const u8, variant: []const u8) !void {
+    const got = try variantAtom(testing.allocator, .of(path), decl, variant);
+    defer testing.allocator.free(got);
+    try testing.expectEqualStrings(expected, got);
+}
+
+test "typeAtom: the type's identity is the `__t__` module of the file that declares it" {
+    // A single-segment path, a multi-segment path.
+    try expectTypeAtom("main__t__person", "main", "Person");
+    try expectTypeAtom("app@models__t__person", "app/models", "Person");
+    // A reserved single-segment name keeps rule 5's prefix in the path half.
+    try expectTypeAtom("bp@dict__t__dict", "dict", "Dict");
+    // A name that needs escaping: lowercased, every other character folded to
+    // one `_`, so the atom stays unquoted and decodable.
+    try expectTypeAtom("main__t__token_color", "main", "__Token__Color");
+    try expectTypeAtom("main__t__http2_server", "main", "Http2-Server");
+    // Over the filename limit is an error at the renderer's caller (`build`).
+    const long = "Z" ** 260;
+    const atom = try typeAtom(testing.allocator, .of("main"), long);
+    defer testing.allocator.free(atom);
+    try testing.expect(atom.len > ATOM_MAX_BYTES);
+    try testing.expectError(error.EmptyDeclName, typeAtom(testing.allocator, .of("main"), "-"));
+}
+
+test "variantAtom: a variant is qualified by its enum and its module" {
+    try expectVariantAtom("main__t__shape__v__circle", "main", "Shape", "Circle");
+    try expectVariantAtom("app@models__t__shape__v__dot", "app/models", "Shape", "Dot");
+    // The many `Circle`s of an ecosystem stay many atoms: the path differs.
+    try expectVariantAtom("draw@query__t__shape__v__circle", "draw/query", "Shape", "Circle");
+    // A variant whose name needs escaping.
+    try expectVariantAtom("main__t__token__v__500", "main", "Token", "__500");
+    try testing.expectError(error.EmptyDeclName, variantAtom(testing.allocator, .of("main"), "Token", "-"));
+}
+
+test "decodeAtom: a variant tag round-trips to {variant, path, t, decl, variant} (E15)" {
+    const atom = try variantAtom(testing.allocator, .of("app/models"), "Shape", "Circle");
+    defer testing.allocator.free(atom);
+    var d = try decodeAtom(testing.allocator, atom);
+    defer d.deinit(testing.allocator);
+    try testing.expectEqual(@as(@FieldType(Decoded, "shape"), .variant), d.shape);
+    try testing.expectEqualStrings("app/models", d.path);
+    try testing.expectEqualStrings("t", d.kind);
+    try testing.expectEqualStrings("shape", d.decl);
+    try testing.expectEqualStrings("circle", d.variant);
+    // And a type atom decodes as before — the `__v__` clause changed nothing.
+    const ta = try typeAtom(testing.allocator, .of("app/models"), "Shape");
+    defer testing.allocator.free(ta);
+    var td = try decodeAtom(testing.allocator, ta);
+    defer td.deinit(testing.allocator);
+    try testing.expectEqual(@as(@FieldType(Decoded, "shape"), .decl), td.shape);
+    try testing.expectEqualStrings("shape", td.decl);
 }
 
 test "decodeAtom: what erlDeclAtom wrote is what decodeAtom reads back" {

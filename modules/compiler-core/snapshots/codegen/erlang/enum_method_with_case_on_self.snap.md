@@ -22,6 +22,12 @@ val Color = type {
 %%   Red
 %%   Green
 %%   Blue
+```
+
+----- ERLANG -- main__t__color.erl
+```erlang
+-module(main__t__color).
+-export([name/0]).
 
 name() ->
     case Self of

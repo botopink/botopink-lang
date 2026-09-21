@@ -26,6 +26,7 @@ pub const Loaded = struct {
         for (self.modules) |m| {
             gpa.free(m.path);
             gpa.free(m.source);
+            gpa.free(m.srcPath);
         }
         gpa.free(self.modules);
         resolver.freeOrphans(gpa, self.orphans);

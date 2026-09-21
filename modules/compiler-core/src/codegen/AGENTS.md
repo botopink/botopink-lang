@@ -61,8 +61,8 @@ codegen/
 | File | Role |
 |---|---|
 | `config.zig` | `Config` (`targetSource`, `typeDefLanguage`, `build_root`, `test_mode`), `TargetSource` (`commonJS` \| `erlang` \| `beam` \| `wasm`), `TypeDefLang` |
-| `moduleOutput.zig` | `MissingExternal` (06 C13 — the host-backed fn a backend has no `#[@External.<Target>(…)]` for: name, target and call site; `diagnostic(alloc)` renders it as a `Diagnostic.type`, so the failure reaches the driver LOCATED and only that module fails, instead of `error.MissingExternalTarget` aborting the build with its own name). `GenerateResult` (`js`, `typedef`, `comptime_script`, `comptime_err`, `diagnostic`, `run_output`; `failed()`) and `ModuleOutput` — shared between targets. A module whose comptime outcome is `.parseError`/`.typeError` is not skipped: every backend's `codegenEmit` appends `ModuleOutput.failedModule`, whose owned `Diagnostic` (`syntax`: the `SyntaxError` with its slices copied; `type`: the rendered message and location) outlives the comptime session. `Module` lives in `../module.zig` |
-| `crossModule.zig` | **Cross-module link index** built once over every module's transformed program (`build(alloc, outputs)`). `exports` maps a `pub` symbol → `ExportInfo{module, kind, is_class, fields, methods, is_external, erlang_backed}` (emitting module path, decl kind, whether construction needs `new`/the owner's map shape, and a record's declared field order, its method names, whether a `fn` export is host-backed, and whether that host-backed one carries an `erlang` target usable at its declared arity — the erlang backend routes such an import to the owner's wrapper, see [erlang](#erlang)); host-backed `#[@External.<Target>(…)]` fns are indexed too, so a consumer importing one `from "<lib>"` links to the owner like any other export. `imported` is the set of names some module imports. Consumed by commonJS, erlang and beam_asm; wat only uses it to flag unlinkable imports. **It also owns the Erlang/BEAM module atom** (option A + A2): `erlAtom(alloc, ModuleId)` renders the whole module path as a legal UNQUOTED atom (lowercase · `/` → `@` · anything outside `[a-z0-9_@]` → `_` · a run of `_` collapsed to one so `__` stays free for the qualifier · `bp@` prefixed when the first character is not `[a-z]` or when a single-segment name is in `RESERVED`), so `main` stays `main`, `std/math` is `std@math` and `web/api/http` is `web@api@http`. It was the path's BASENAME, which made `models/user` and `services/user` the same module and let eleven `libs/std` modules shadow the OTP module of the same name node-wide. `erlDeclAtom(alloc, id, Kind, decl, ?hash)` names an EXTRA module one source file produces (`<atom>__<t|b|im|tpl|dec>__<decl>[__<16 hex>]`), `decodeAtom` reads either shape back to its origin, `outputStem(target, alloc, id)` gives the artifact's basename (the atom for erlang/beam, the module path for commonJS/wasm), `RESERVED`/`isReserved` are the frozen OTP name list and `ATOM_MAX_BYTES` is 250 (the `<atom>.bea#` filename limit, not the atom limit). `CrossModule.atomFor(path)` reads the atom `build` rendered once per module and `ownerModuleAtom(name)` the owning module's; `atomFault(path)` is the **collision check** — two paths rendering one atom, a `RESERVED` hit or an over-long atom, which the erlang and BEAM `codegenEmit`s turn into a located diagnostic instead of letting one module silently overwrite the other. `moduleBasename(path)` survives for the places that compare a SOURCE-level name (an `import { order } from "std"` namespace, a `wat.zig` import segment) and is no longer a module atom |
+| `moduleOutput.zig` | `MissingExternal` (06 C13 — the host-backed fn a backend has no `#[@External.<Target>(…)]` for: name, target and call site; `diagnostic(alloc)` renders it as a `Diagnostic.type`, so the failure reaches the driver LOCATED and only that module fails, instead of `error.MissingExternalTarget` aborting the build with its own name). `GenerateResult` (`js`, `typedef`, `units`, `comptime_script`, `comptime_err`, `diagnostic`, `run_output`; `failed()`) and `ModuleOutput` — shared between targets. `Unit` is one EXTRA module a source file produced on a BEAM target — policy 3 of `13-module-identity`: a `type` declared in the file is a module of its own, `atom` (`crossModule.typeAtom`, `app@models__t__person`) being both the `-module` and the artifact's basename, `code` its text. commonJS and wasm produce none — a class already is the type's identity there (decision 5) and wasm is single-module. Everywhere the file's own module goes, its units go with it: `cli/build.zig` writes them, `runtime.zig` compiles and loads them as `AuxFile`s, `snapshot.zig` renders one section each. A module whose comptime outcome is `.parseError`/`.typeError` is not skipped: every backend's `codegenEmit` appends `ModuleOutput.failedModule`, whose owned `Diagnostic` (`syntax`: the `SyntaxError` with its slices copied; `type`: the rendered message and location) outlives the comptime session. `Module` lives in `../module.zig` |
+| `crossModule.zig` | **Cross-module link index** built once over every module's transformed program (`build(alloc, outputs)`). `exports` maps a `pub` symbol → `ExportInfo{module, kind, is_class, fields, methods, is_external, erlang_backed}` (emitting module path, decl kind, whether construction needs `new`/the owner's map shape, and a record's declared field order, its method names, whether a `fn` export is host-backed, and whether that host-backed one carries an `erlang` target usable at its declared arity — the erlang backend routes such an import to the owner's wrapper, see [erlang](#erlang)); host-backed `#[@External.<Target>(…)]` fns are indexed too, so a consumer importing one `from "<lib>"` links to the owner like any other export. `imported` is the set of names some module imports. Consumed by commonJS, erlang and beam_asm; wat only uses it to flag unlinkable imports. **It also owns the Erlang/BEAM module atom** (option A + A2): `erlAtom(alloc, ModuleId)` renders the whole module path as a legal UNQUOTED atom (lowercase · `/` → `@` · anything outside `[a-z0-9_@]` → `_` · a run of `_` collapsed to one so `__` stays free for the qualifier · `bp@` prefixed when the first character is not `[a-z]` or when a single-segment name is in `RESERVED`), so `main` stays `main`, `std/math` is `std@math` and `web/api/http` is `web@api@http`. It was the path's BASENAME, which made `models/user` and `services/user` the same module and let eleven `libs/std` modules shadow the OTP module of the same name node-wide. `erlDeclAtom(alloc, id, Kind, decl, ?hash)` names an EXTRA module one source file produces (`<atom>__<t|b|im|tpl|dec>__<decl>[__<16 hex>]`), `decodeAtom` reads either shape back to its origin, `typeAtom(alloc, id, decl)` is the identity of a `type` — `erlDeclAtom(id, .t, decl)`, so `type Person` in `app/models.bp` is `app@models__t__person`: the module policy 3 puts its methods in AND the tag half 3 puts inside every value it builds, one renderer because the tag has to name the module that formats it — and `variantAtom(alloc, id, decl, variant)` appends `__v__<variant>` so the five `Circle`s of the ecosystem stay five atoms (`decodeAtom` reads that fifth segment back as `.variant`), `outputStem(target, alloc, id)` gives the artifact's basename (the atom for erlang/beam, the module path for commonJS/wasm), `RESERVED`/`isReserved` are the frozen OTP name list and `ATOM_MAX_BYTES` is 250 (the `<atom>.bea#` filename limit, not the atom limit). `CrossModule.atomFor(path)` reads the atom `build` rendered once per module and `ownerModuleAtom(name)` the owning module's; `atomFault(path)` is the **collision check** — two paths rendering one atom, a `RESERVED` hit or an over-long atom, which the erlang and BEAM `codegenEmit`s turn into a located diagnostic instead of letting one module silently overwrite the other. The same check runs over each module's **type** atoms (`duplicate_decl`, `too_long`): a type atom lowercases the declaration name and folds every other character to `_`, so `Person`/`person` and `Foo_Bar`/`FooBar` would be one module and one value tag for two types — across modules the path already tells them apart, so this half is per module and fails the module as a whole. `moduleBasename(path)` survives for the places that compare a SOURCE-level name (an `import { order } from "std"` namespace, a `wat.zig` import segment) and is no longer a module atom |
 | `patterns.zig` | **Backend-agnostic pattern facts.** `bindsNames(pattern, ctx, isVariant)` answers whether a pattern binds at least one name — the question every backend asks before lowering a `val assert P = e [catch h];` (decision 8 § 9), which binds `P`'s names in the ENCLOSING scope. A pattern that binds nothing (`val assert 42 = answer catch 0;`) is a pure check and keeps the single-expression lowering it always had. `isVariant` is the backend's own variant table (a bare identifier is a binding only when it names no variant) |
 | `js/` | JS/TS code model + emitters shared by `commonJS.zig` and `typescript.zig`: `js_ast.zig` (`Expr`/`Stmt`/`Pattern`/`Block`/`Class`/`Item` + the `.d.ts` `TsDecl`/`TsType` + `Builder`), `js_emitter.zig` (the only writer of JavaScript: reserved-word renaming, string escaping, parenthesisation, indentation, semicolons), `ts_emitter.zig` (the only writer of `.d.ts`). The backends build nodes and write no target text. The remaining `js_ast` bridges pin the shapes the current lowering still emits illegally. See [`js/AGENTS.md`](js/AGENTS.md) |
 | `beam/` | BEAM term model + emitters shared by `erlang.zig`, `beam_asm.zig` and the comptime evaluators: `term.zig` (`Term`), `erl_emitter.zig` (Erlang source: atom quoting incl. reserved words, variables, module names, binaries), `beam_emitter.zig` (`.S` operands and `move`s). One quoting rule for `.erl` and `.S`. See [`beam/AGENTS.md`](beam/AGENTS.md) |
@@ -72,8 +72,8 @@ codegen/
 | `wat/` | WebAssembly-text code model and the only writer of `.wat`: `wat_ast.zig` (`Module`/`Item`/`Func`/`Seq`/`Instr` + `Builder` + the invariants), `wat_emitter.zig` (s-expression layout, `$` names, data escaping), `wat_prelude.zig` (the runtime helpers as built nodes). See [`wat/AGENTS.md`](wat/AGENTS.md) |
 | `wat.zig` | WAT backend: builds `wat/wat_ast.zig` nodes and hands them to the emitter. See [wat](#wat) below |
 | `typescript.zig` | `.d.ts` typedef backend (optional secondary output, `Config.typeDefLanguage`) — builds `js/js_ast.zig` `TsDecl` nodes, rendered by `js/ts_emitter.zig`. Type declarations only — no call lowering. A package import in the `.d.ts` keeps only names the owner emits (`CrossModule.exports`): a template fn or a lib namespace handle has no declaration there, so `import { html } from "view"` is dropped instead of dangling. Parameter types come from `Param.typeRef` (the parser leaves the legacy `typeName` empty; an unannotated position is `any`, a zero-argument generic such as `@Decl` is the bare name). Skips template fns (`TypeRef.isTemplateReturnType()`) and phantom `@Context` structs, erases `@Context<B, R>` to `R`, renders an anonymous `TypeRef.record_type` as `{ f: T; … }`. **A botopink primitive takes its TypeScript spelling** (`primitiveTsName`: every integer and float width plus `int`/`uint`/`float`/`isize`/`usize` → `number`, `bool` → `boolean`, `char` → `string`; `string`, `void` and `unknown` are spelled the same) — a `.d.ts` naming `i32` is not TypeScript. **An enum declares the class the JavaScript builds** (decision 5): `readonly tag` as the union of the variant names, a `static` factory per payload variant returning the enum type, a `static readonly` singleton per payload-less one, and each enum method as a `static` whose `self` is typed as the enum. It was a TypeScript `enum` of strings or a discriminated union of plain objects before, and the `.js` beside it built neither. **Decision 8 §3's union `A | B`** rides on `TypeRef.generic` under the reserved name `ast.union_type_name` (`"|"`), and takes TypeScript's own union (`TsType.union_`) rather than the generic path's `|<A, B>`, which is not TypeScript. **The `import { … };` shorthand** resolves through `CrossModule.exports` here too, one `import` per owning file, where it used to write the literal `from "./module"` |
-| `runtime.zig` | Test-side execution for the snapshot `----- RUN LOG -----` block. See [runtime](#runtime) below |
-| `snapshot.zig` | `buildSnapshot` / `buildSnapshotMulti` / `assertCodegen` / `assertCodegenError`; `writeComptimeSections` writes `GenerateResult.comptime_trace` (`COMPTIME ERLANG` / `COMPTIME REPLY`, rendered by `comptime/trace.zig`) then `COMPTIME VALUES` for every backend. A `SnapInput` with `result == null` (the module never reached the backend) or with `comptime_err` set writes a `COMPILE DIAGNOSTIC` section instead of the code section — spec 06 H3, which used to leave such snapshots empty |
+| `runtime.zig` | Test-side execution for the snapshot `----- RUN LOG -----` block. See [runtime](#runtime) below. `executeTestModule` runs a **test-mode** module the way `botopink test` does (`node main.js` / `escript main.erl`) and answers its output whatever the exit status — the decision-74 FAIL line is a non-zero exit, which the snapshot path records as an empty RUN LOG, and `executeErlang` never runs a test module (no `_botopink_main`) |
+| `snapshot.zig` | `buildSnapshot` / `buildSnapshotMulti` / `assertCodegen` / `assertCodegenError`; `writeComptimeSections` writes `GenerateResult.comptime_trace` (`COMPTIME ERLANG` / `COMPTIME REPLY`, rendered by `comptime/trace.zig`) then `COMPTIME VALUES` for every backend. A `SnapInput` with `result == null` (the module never reached the backend) or with `comptime_err` set writes a `COMPILE DIAGNOSTIC` section instead of the code section — spec 06 H3, which used to leave such snapshots empty. `writeUnitSections` adds one `----- ERLANG -- <atom>.erl` / `----- BEAM ASSEMBLY -- <atom>.S` section per `GenerateResult.units` entry, so a cell shows every module its program loads and `beam_export_audit.sh` — which keys on the `{module, …}` form, not on the fixture — assembles each of them |
 | `tests.zig` | Barrel aggregating `tests/<feature>.zig` plus the `beam/*.zig` and `wat/wat_emitter.zig` unit tests; harness in `tests/helpers.zig` (`assertJs`, `assertJsSingle`, `assertJsError`, `assertJsTestMode`, `assertJsContains`, `assertJsNotContains`, `assertJsRunLog`, `assertDtsContains`, `assertConsumerJs`, `configs` — one config per target). The snapshot-free helpers are what a **single backend's** row uses: a snapshot carries the same program through all four, so a commonJS-only fixture would write into the erlang, beam and wasm snapshot directories other fronts own |
 
 ### commonJS
@@ -229,6 +229,12 @@ codegen/
   throws `Error("<msg> at <file>:<line>")` (`"assertion failed"` without a
   message), so node exits non-zero naming both. Test mode is unchanged: the
   `__bp_assert` harness helper throws for the runner to catch per test.
+- **`try` inside a `test` body** (1.0.10-beta decision 74): `buildTryStmt`'s
+  `.propagate` arm emits `throw new Error(typeof e === "string" ? e :
+  JSON.stringify(e))` while `Emitter.in_test_body` is set (by `buildTestFn`;
+  cleared in `buildArrow`/`buildLambda`), so the runner's `catch` prints
+  `FAIL <name>  (<e>)  at <file>:<line>`. Everywhere else the arm keeps its
+  `return _tryN;`.
 - **`val assert P = e [catch h];`** (decision 8 § 9): the IIFE the construct has
   always lowered to — the pattern check, then the subject or the handler's value
   — is bound to `_assert<N>` and `appendPatternBinds` declares the pattern's own
@@ -418,6 +424,40 @@ codegen/
 
 ### erlang
 
+- **One module per `type` — policy 3 of `13-module-identity`.** A source file
+  emits its own module plus one per `type` it declares
+  (`crossModule.typeAtom` → `main__t__person`, `std@dict__t__dict`), carried out
+  as `GenerateResult.units`. A type's instance methods, its associated fns and
+  the behavior `default fn`s it adopts are that module's, exported under **the
+  names the programmer wrote** — the module boundary is what erlang's flat
+  function namespace lacked, so `recordMethodAtom`, `record_method_collisions`,
+  `isRecordMethodCollision` and `collectRecordMethodCollisions` are **gone**:
+  two types can each declare `greet/1` and there is no collision left to mangle.
+  `openTypeUnit` / `closeTypeUnit` bracket a unit: the file module's helper state
+  (`needs_*`, `prim_shims`, `needed_instance_defaults`) is set aside for its
+  duration, so each module carries exactly the helpers its own bodies reached,
+  and `cur_type` decides the shape of every call made inside — a call to this
+  type's own methods is local, one into the file's functions is a remote call
+  the file module then exports (`fileCall` → `file_exports_needed`, which is why
+  the `-export` form is written into a placeholder and filled once every
+  declaration is lowered). `typeCall` is the single site that spells a method
+  call: local inside that type's module, `atom:m(Recv, …)` everywhere else,
+  with `typeModuleAtom` answering the owner's atom for an imported type.
+  A receiver inference left untyped (a behavior's `default fn` records no
+  lowering) routes through `method_owners` — `method/arity` → the one local type
+  declaring or adopting it; two claimants leave no entry and the bare call
+  stands, which is what the receiver's own tag will decide in half 3.
+  **A `type` with no bodied method emits no module**: an artifact holding one
+  `-module` line is not written and no snapshot section shows one. Half 3 gives
+  every type a `format/1` and the unit stops being empty then.
+  **A `behavior` emits no module of its own** (decision 23: `__b__` is reserved
+  and has no run-time representation). That is a deliberate departure from
+  policy 3 §2.2, which would put a behavior's associated `default fn` in
+  `<path>__b__<decl>` and emit it once: the assoc default keeps
+  `interfaceAssocAtom`'s mangled local (`array_range/2`) in **every** consuming
+  module, as it always has. Decision 23 is newer than §2.2 and wins; §2.2's
+  "emitted once" is therefore still open, and it is the behavior module that
+  would close it.
 - **Cross-module calls are remote calls.** Erlang resolves a bare `f(X)` in the
   CALLING module, so a name this module imports but never defines must name its
   owner: `imported_fns` (built in `collectImportedTypes` from the cross index)
@@ -426,9 +466,10 @@ codegen/
   owner atom is `Emitter.atomOf(path)`, i.e. `CrossModule.atomFor` — the whole
   module path joined with `@` (`std@dict:insert/3`), never the basename.
   A local definition of the same name and arity wins (an `@emit`ed body can
-  define `find/2` beside an imported `find`). The owner exports the methods of
-  its `pub` types (under the mangled name where two types share a method name),
-  so the consumer's remote call resolves. **An import that names a MODULE, not a
+  define `find/2` beside an imported `find`). A method is reached in **the
+  TYPE's** module, not the file's (policy 3, below): `imported_fns` maps it to
+  `crossModule.typeAtom(owner path, type)`, so `stub.thenReturn(v)` is
+  `lib__t__stub:thenReturn/2` and the owner's type module exports it. **An import that names a MODULE, not a
   symbol, registers that module's types too.** `import {dict} from "std"` binds
   the module `std/dict`; `Dict` is never named by the consumer, so the cross
   index was never consulted for it and `dict.empty().insert("a", 1)` emitted a
@@ -485,9 +526,9 @@ codegen/
   primitive shim and aborted at run time with
   `{bp_unsupported_method, <<"isEmpty">>, 0, #{items => []}}` while commonJS
   answered. `recordForms` now emits each adopted default (following `extends`)
-  beside the record's own methods, and `self_record_type` makes `self.size()`
-  inside such a body resolve through the record — so it reaches `bag_size/1`
-  where a record-method collision mangled `size/1` away. Which ones are emitted
+  in the record's own module beside its methods, and `self_record_type` makes
+  `self.size()` inside such a body resolve through the record — a local call
+  there, since both are that module's. Which ones are emitted
   is decided once, in `collectAdoptedIfaceDefaults`, after `collectLocalFnArities`:
   **only a default whose `<name>/<arity>` is free in the module and claimed by
   exactly one record.** Inference records no lowering for a call to an adopted
@@ -673,6 +714,11 @@ codegen/
   forms (`comptimeNode`: `assert` as an inline `case` raising
   `erlang:error({bp_assert, Msg, <<"mod.bp:Line">>})` — always fatal, in and out of
   test mode (semantics decision 4); the test runner is what catches it).
+  A `try` without `catch` inside a `test` body (`Emitter.in_test_body`, set by
+  `testFunction`, cleared in a `fun`) raises the same shape on its Error arm —
+  `{error, E} -> erlang:error({bp_assert, E, <<"mod.bp:Line">>})` with the test's
+  own line (`test_loc`) — so the runner prints `FAIL <name>  (<E>)  at …`
+  (1.0.10-beta decision 74); elsewhere the arm stays `{error, E}`.
   A `val assert P = e [catch h];` whose pattern binds names is lowered at STATEMENT
   position (`assertPatternStmts`): the subject is staged in `BpAssert<line>_<col>`,
   a `case` over it decides the value (the subject when the pattern matched, the
@@ -965,6 +1011,32 @@ codegen/
 
 ### beam_asm
 
+- **One module per `type` — policy 3, the same split `erlang.zig` made.** A
+  source file emits its own `.S` plus one per `type` it declares
+  (`crossModule.typeAtom` → `main__t__contador`, `std@dict__t__dict`), carried
+  out as `GenerateResult.units`. This backend mangled **every** method as
+  `'<Owner>_<method>'`, not only a colliding one, so a unit both moves its
+  functions and renames them: `'Contador_atual'/1` in `main` becomes `atual/1`
+  in `main__t__contador`, and the call site becomes
+  `{call_ext, 1, {extfunc, main__t__contador, atual, 1}}`. `methodFnName` is
+  the one place the choice is made (bare inside that type's own module, mangled
+  everywhere else), `typeModuleAtom` answers the module and `typeMethodModule`
+  answers it **only when the type is what declares the method** — an
+  `implement` / `extend` block's method on the same type stays the file
+  module's mangled local, because `__im__` is reserved and emits nothing.
+  A `behavior`'s `default fn` likewise keeps `'<Iface>_<method>'` wherever
+  `emitNeededDefaults` puts it (decision 23).
+- **A unit is a whole module, so it gets a whole module's state**
+  (`openTypeUnit` / `closeTypeUnit`): its own writer, its own `fn_labels`, its
+  own `{labels, N}` counting from 1, its own `deferred_lambdas`,
+  `needed_defaults` and `needed_prim_shims` — drained into it before it closes,
+  so a unit carries exactly the helper shims its own bodies reached. The file
+  module gets all of it back. A `type` with no bodied method emits no unit.
+  Four call sites cross the new boundary — a module-level `val` read, the
+  value-receiver call, the bare local call and a `val` holding a fun — and each
+  goes through `tryFileCall`: a `call_ext` into the file module plus an entry in
+  `file_exports_needed`, which the `{exports, …}` header picks up because it is
+  written after pass 2.
 - **Comprehensions** (`lowerLoop`, `emitYield`): a `loop` whose body `yield`s
   or `break`s with a value (directly or in an `if`/`case` arm, not in a nested
   loop or lambda) appends each value to a fresh array (`$__arr_push`; a float
@@ -1254,18 +1326,18 @@ codegen/
   the tail accumulator on the stack. A length read uses the `length` gc_bif
   rather than `erlang:length/1`. A field assignment is `maps:update/3` (a call,
   so the receiver needs no static map type).
-- **An associated `fn` on an `enum`** (`Shape.unit()`): `reserveEnumMethods`
-  reserves an enum's methods under the mangled `'<Enum>_<method>'`, as a record's
-  are, so the call is a LOCAL call by label — `enum_names` is what tells a
-  PascalCase receiver that names a type from one that names a module. Without it
-  the receiver was lowercased into a module atom and the call was `shape:unit()`,
-  `{undef,[{shape,unit,[],[]}…]}` against a module nothing emits. (The erlang
-  backend emits the same method under its bare name; each backend calls its own
-  spelling.)
+- **An associated `fn` on a `type`** (`Shape.unit()`, `Response.ok(…)`):
+  `typeAssocCall` — a function of the TYPE's own module under policy 3, local
+  only while that module is the one being emitted. `record_fields` /
+  `enum_names` are what tell a PascalCase receiver that names a type from one
+  that names a module. Without that the receiver was lowercased into a module
+  atom and the call was `shape:unit()`, `{undef,[{shape,unit,[],[]}…]}` against
+  a module nothing emits.
 - **Cross-module**: the module atom is the whole module path joined with `@`
   (`crossModule.erlAtom`, read through `Emitter.atomOf`); an imported record
-  joins `record_fields` + `imported_types` (`collectRecordShapes`), its
-  associated fn lowers to `call_ext` into the owner (`http:'Response_ok'(…)`),
+  joins `record_fields` + `imported_types` (`collectRecordShapes`, which holds
+  the TYPE's atom under policy 3, not the owner file's), its associated fn
+  lowers to `call_ext` into that module (`http__t__response:ok(…)`),
   and the owner exports `'Type_method'/arity` when imported elsewhere. A field
   read on a `call_ext` result emits `is_map` before `get_map_elements` (the
   result is typed `any`, which the loader rejects otherwise). An imported
@@ -1754,8 +1826,11 @@ first three are now enforced by the model, not by discipline:
   (`erlModuleAtom` → `crossModule.erlAtom`, so `std/dict` is `std@dict.erl`) and
   `-s <atom>` runs it; a second module of the program claiming an atom already
   taken is a loud `HARNESS ERROR:` RUN LOG, where the aux loop used to overwrite
-  the first file silently. A `.wat` carries no module atom, so its scratch file
-  keeps the basename.
+  the first file silently. An `AuxFile` whose `atom` is set is a per-`type`
+  module (`GenerateResult.units`, policy 3): its NAME already is an atom, so it
+  is written as it stands instead of being rendered a second time, which would
+  collapse the `__` of `<path>__t__<decl>` to one `_`. A `.wat` carries no module
+  atom, so its scratch file keeps the basename.
   Captured text is stdout with stderr appended after a newline (wasm: stdout
   then stderr, no separator).
 - **`executeWat` — the decision (06-wasm step 3): it executes.** It was turned

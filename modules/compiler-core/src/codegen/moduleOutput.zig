@@ -75,6 +75,19 @@ pub const MissingExternal = struct {
     }
 };
 
+/// One EXTRA module a source file produced on a BEAM target — policy 3 of
+/// `13-module-identity`: every `type` declared in a file is its own erlang/BEAM
+/// module, named by `crossModule.typeAtom` (`app@models__t__person`), holding
+/// the type's methods. `atom` is the rendered module atom, which is also the
+/// artifact's basename (`out/erl/<atom>.erl`, `out/beam/<atom>.S`); `code` is
+/// the module's text in the target's language. Both owned by the
+/// `GenerateResult`. commonJS and wasm produce none: a class already is the
+/// type's identity there (decision 5), and wasm is single-module.
+pub const Unit = struct {
+    atom: []u8,
+    code: []u8,
+};
+
 /// Final per-module output after all pipeline stages.
 /// `js` and `comptime_script` are heap-allocated; call `deinit` when done.
 /// `comptime_err` is set (and `js` is empty) when comptime validation failed.
@@ -82,6 +95,9 @@ pub const MissingExternal = struct {
 pub const GenerateResult = struct {
     js: []u8,
     typedef: ?[]u8 = null,
+    /// The per-`type` modules beside the file's own (`Unit`); empty on commonJS
+    /// and wasm. Written, compiled and loaded wherever `js` is.
+    units: []Unit = &.{},
     comptime_script: ?[]u8,
     /// `COMPTIME ERLANG` / `COMPTIME REPLY` sections of the module's decorator
     /// and template evaluations (`comptime/trace.zig`), null when there are none.
@@ -99,6 +115,11 @@ pub const GenerateResult = struct {
 
     pub fn deinit(self: *GenerateResult, allocator: std.mem.Allocator) void {
         allocator.free(self.js);
+        for (self.units) |u| {
+            allocator.free(u.atom);
+            allocator.free(u.code);
+        }
+        if (self.units.len > 0) allocator.free(self.units);
         if (self.typedef) |t| allocator.free(t);
         if (self.comptime_script) |s| allocator.free(s);
         if (self.comptime_trace) |s| allocator.free(s);

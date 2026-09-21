@@ -109,7 +109,14 @@ pub fn scanSourcesWithFiles(
         const file = try std.fs.path.join(gpa, &.{ src_dir_path, entry.path });
         errdefer gpa.free(file);
 
-        try pairs.append(gpa, .{ .module = .{ .path = module_path, .source = source }, .file = file });
+        // `@src().file` (1.0.10-beta decision 73): the same path, package-root
+        // relative — the scan dir is given relative to the package root — with
+        // forward slashes whatever the host separator.
+        const src_path = try gpa.dupe(u8, file);
+        errdefer gpa.free(src_path);
+        std.mem.replaceScalar(u8, src_path, '\\', '/');
+
+        try pairs.append(gpa, .{ .module = .{ .path = module_path, .source = source, .srcPath = src_path }, .file = file });
     }
 
     // Sort by path so compilation order is deterministic.
@@ -141,6 +148,7 @@ pub fn freeModules(gpa: std.mem.Allocator, modules: []Module) void {
     for (modules) |m| {
         gpa.free(m.path);
         gpa.free(m.source);
+        gpa.free(m.srcPath);
     }
     gpa.free(modules);
 }

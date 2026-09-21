@@ -32,7 +32,6 @@ fn main() {
 ----- ERLANG -- main.erl
 ```erlang
 -module(main).
--compile({no_auto_import,[size/1]}).
 -export(['_botopink_main'/0, main/1]).
 
 %% behavior Sized
@@ -41,19 +40,10 @@ fn main() {
 
 %% type Bag: items
 
-size(Self) ->
-    length(maps:get(items, Self)).
-
-twiceSize(Self) ->
-    (size(Self) * 2).
-
-isEmpty(Self) ->
-    (size(Self) =:= 0).
-
 main() ->
-    '__bp_print'([isEmpty(#{items => []})]),
-    '__bp_print'([isEmpty(#{items => [1]})]),
-    '__bp_print'([twiceSize(#{items => [1, 2]})]).
+    '__bp_print'([main__t__bag:isEmpty(#{items => []})]),
+    '__bp_print'([main__t__bag:isEmpty(#{items => [1]})]),
+    '__bp_print'([main__t__bag:twiceSize(#{items => [1, 2]})]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
@@ -70,6 +60,22 @@ main() ->
 
 main(_Args) ->
     '_botopink_main'().
+```
+
+----- ERLANG -- main__t__bag.erl
+```erlang
+-module(main__t__bag).
+-compile({no_auto_import,[size/1]}).
+-export([size/1, twiceSize/1, isEmpty/1]).
+
+size(Self) ->
+    length(maps:get(items, Self)).
+
+twiceSize(Self) ->
+    (size(Self) * 2).
+
+isEmpty(Self) ->
+    (size(Self) =:= 0).
 ```
 
 ----- RUN LOG -----

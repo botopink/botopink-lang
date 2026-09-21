@@ -17,12 +17,20 @@ val Vec2 = type(
 {module, main}.
 {exports, []}.
 {attributes, []}.
+{labels, 2}.
+```
+
+----- BEAM ASSEMBLY -- main__t__vec2.S
+```erlang
+{module, main__t__vec2}.
+{exports, [{lengthSq, 1}, {scale, 2}]}.
+{attributes, []}.
 {labels, 11}.
 
-{function, 'Vec2_lengthSq', 1, 3}.
+{function, lengthSq, 1, 3}.
   {label, 2}.
-    {line, [{location, "main.erl", 1}]}.
-    {func_info, {atom, main}, {atom, 'Vec2_lengthSq'}, 1}.
+    {line, [{location, "main__t__vec2.erl", 1}]}.
+    {func_info, {atom, main__t__vec2}, {atom, lengthSq}, 1}.
   {label, 3}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
@@ -52,10 +60,10 @@ val Vec2 = type(
     {deallocate, 1}.
     return.
 
-{function, 'Vec2_scale', 2, 5}.
+{function, scale, 2, 5}.
   {label, 4}.
-    {line, [{location, "main.erl", 2}]}.
-    {func_info, {atom, main}, {atom, 'Vec2_scale'}, 2}.
+    {line, [{location, "main__t__vec2.erl", 2}]}.
+    {func_info, {atom, main__t__vec2}, {atom, scale}, 2}.
   {label, 5}.
     {allocate, 2, 2}.
     {init_yregs, {list, [{y, 0}, {y, 1}]}}.

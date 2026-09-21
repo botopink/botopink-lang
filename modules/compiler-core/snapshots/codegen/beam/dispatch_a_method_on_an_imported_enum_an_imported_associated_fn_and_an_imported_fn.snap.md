@@ -23,70 +23,86 @@ pub fn make() -> Counter { return Counter(n: 41); }
 ----- BEAM ASSEMBLY -- geometry.S
 ```erlang
 {module, geometry}.
-{exports, [{'Counter_zero', 0}, {'Counter_bump', 1}, {'Shape_area', 1}, {make, 0}]}.
+{exports, [{make, 0}]}.
 {attributes, []}.
-{labels, 14}.
+{labels, 4}.
 
-{function, 'Counter_zero', 0, 3}.
+{function, make, 0, 3}.
   {label, 2}.
-    {line, [{location, "geometry.erl", 1}]}.
-    {func_info, {atom, geometry}, {atom, 'Counter_zero'}, 0}.
+    {line, [{location, "geometry.erl", 4}]}.
+    {func_info, {atom, geometry}, {atom, make}, 0}.
+  {label, 3}.
+    {allocate, 0, 0}.
+    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 0, {list, [{atom, n}, {integer, 41}]}}.
+    {deallocate, 0}.
+    return.
+```
+
+----- BEAM ASSEMBLY -- geometry__t__counter.S
+```erlang
+{module, geometry__t__counter}.
+{exports, [{zero, 0}, {bump, 1}]}.
+{attributes, []}.
+{labels, 7}.
+
+{function, zero, 0, 3}.
+  {label, 2}.
+    {line, [{location, "geometry__t__counter.erl", 1}]}.
+    {func_info, {atom, geometry__t__counter}, {atom, zero}, 0}.
   {label, 3}.
     {allocate, 0, 0}.
     {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 0, {list, [{atom, n}, {integer, 0}]}}.
     {deallocate, 0}.
     return.
 
-{function, 'Counter_bump', 1, 5}.
+{function, bump, 1, 5}.
   {label, 4}.
-    {line, [{location, "geometry.erl", 2}]}.
-    {func_info, {atom, geometry}, {atom, 'Counter_bump'}, 1}.
+    {line, [{location, "geometry__t__counter.erl", 2}]}.
+    {func_info, {atom, geometry__t__counter}, {atom, bump}, 1}.
   {label, 5}.
     {allocate, 1, 1}.
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_map, {f, 10}, [{x, 0}]}.
-    {get_map_elements, {f, 10}, {x, 0}, {list, [{atom, n}, {x, 0}]}}.
-  {label, 10}.
+    {test, is_map, {f, 6}, [{x, 0}]}.
+    {get_map_elements, {f, 6}, {x, 0}, {list, [{atom, n}, {x, 0}]}}.
+  {label, 6}.
     {gc_bif, '+', {f, 0}, 1, [{x, 0}, {integer, 1}], {x, 0}}.
     {deallocate, 1}.
     return.
+```
 
-{function, 'Shape_area', 1, 7}.
-  {label, 6}.
-    {line, [{location, "geometry.erl", 3}]}.
-    {func_info, {atom, geometry}, {atom, 'Shape_area'}, 1}.
-  {label, 7}.
+----- BEAM ASSEMBLY -- geometry__t__shape.S
+```erlang
+{module, geometry__t__shape}.
+{exports, [{area, 1}]}.
+{attributes, []}.
+{labels, 7}.
+
+{function, area, 1, 3}.
+  {label, 2}.
+    {line, [{location, "geometry__t__shape.erl", 3}]}.
+    {func_info, {atom, geometry__t__shape}, {atom, area}, 1}.
+  {label, 3}.
     {allocate, 3, 1}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tagged_tuple, {f, 12}, [{x, 0}, 2, {atom, 'Circle'}]}.
+    {test, is_tagged_tuple, {f, 5}, [{x, 0}, 2, {atom, 'Circle'}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 1}}.
     {gc_bif, '*', {f, 0}, 0, [{y, 1}, {y, 1}], {x, 0}}.
     {gc_bif, '*', {f, 0}, 1, [{x, 0}, {integer, 3}], {x, 0}}.
-    {jump, {f, 11}}.
-  {label, 12}.
-    {test, is_tagged_tuple, {f, 13}, [{x, 0}, 2, {atom, 'Square'}]}.
+    {jump, {f, 4}}.
+  {label, 5}.
+    {test, is_tagged_tuple, {f, 6}, [{x, 0}, 2, {atom, 'Square'}]}.
     {get_tuple_element, {x, 0}, 1, {x, 1}}.
     {move, {x, 1}, {y, 2}}.
     {gc_bif, '*', {f, 0}, 0, [{y, 2}, {y, 2}], {x, 0}}.
-    {jump, {f, 11}}.
-  {label, 13}.
-  {label, 11}.
+    {jump, {f, 4}}.
+  {label, 6}.
+  {label, 4}.
     {deallocate, 3}.
-    return.
-
-{function, make, 0, 9}.
-  {label, 8}.
-    {line, [{location, "geometry.erl", 4}]}.
-    {func_info, {atom, geometry}, {atom, make}, 0}.
-  {label, 9}.
-    {allocate, 0, 0}.
-    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 0, {list, [{atom, n}, {integer, 41}]}}.
-    {deallocate, 0}.
     return.
 ```
 
@@ -119,21 +135,21 @@ fn main() {
   {label, 3}.
     {allocate, 3, 0}.
     {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
-    {call_ext, 0, {extfunc, geometry, 'Counter_zero', 0}}.
+    {call_ext, 0, {extfunc, geometry__t__counter, zero, 0}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {call_ext, 1, {extfunc, geometry, 'Counter_bump', 1}}.
+    {call_ext, 1, {extfunc, geometry__t__counter, bump, 1}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 9}}.
     {test_heap, 3, 0}.
     {put_tuple2, {x, 0}, {list, [{atom, 'Square'}, {integer, 4}]}}.
-    {call_ext, 1, {extfunc, geometry, 'Shape_area', 1}}.
+    {call_ext, 1, {extfunc, geometry__t__shape, area, 1}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 9}}.
     {call_ext, 0, {extfunc, geometry, make, 0}}.
-    {call_ext, 1, {extfunc, geometry, 'Counter_bump', 1}}.
+    {call_ext, 1, {extfunc, geometry__t__counter, bump, 1}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 0}}.
     {call, 1, {f, 9}}.
