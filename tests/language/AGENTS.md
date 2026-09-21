@@ -57,6 +57,25 @@ needs no expectation at all). One scenario group per
 file: a parse error is the blast radius, so nine `#[@External]` declarations in one file mean one
 unparseable annotation hides the other eight.
 
+1.0.10-beta's `00 · 04-js` adds three more `run/` cells, every one of them measured by rakun's front
+05 while it wrote a configuration reader, and every one asserting the VALUE — each defect made
+commonJS answer differently from erlang, or not answer at all, with nothing said about it.
+`self_tail_recursion` (D6) walks 20 000 rounds of a tail-recursive function: commonJS emitted a
+plain JS call and node has no tail-call elimination, so the program died with `RangeError: Maximum
+call stack size exceeded` while erlang, a tail-recursive VM, printed the sum. Its bound is a
+VARIABLE on purpose — a literal one could be folded and hide the depth — and the cell's header
+records the ceiling each backend still has. `loop_item_method` (D7/D8) calls `.length()` on what a
+`loop` binds — the item, a field of it, and a `val` bound from it inside the body: the loop
+parameter used to bind a fresh type variable, and commonJS, which needs the receiver's type to know
+that `.length()` is JavaScript's `length` PROPERTY, emitted a CALL on a number.
+`optional_length_method` (D7) is the same rename one layer deeper — `.length()` on a `?string` from
+`.at()`, on a `?string` field reached with `?.`, and on one a `!= null` test has just checked; its
+header names both the shape it deliberately leaves out (a field read off a `?Record`, which is
+narrowing's row) and why wasm is not in its `.targets`. `comment_in_braced_block` (D9) puts a `//`
+comment inside a braced `if` and inside a condition loop's body: commonJS writes some blocks on one
+line, so the comment ran on and swallowed the closing brace and everything after it, and the module
+did not parse.
+
 ### The `modules/` kind
 
 The kind for what a single file cannot express: `pub mod`, `import … from "<module>"`, a folder index

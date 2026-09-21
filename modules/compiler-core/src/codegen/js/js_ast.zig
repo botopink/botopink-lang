@@ -297,6 +297,10 @@ pub const Stmt = union(enum) {
     throw_: Expr,
     /// `continue;`
     continue_,
+    /// `continue <label>;` — the only way to continue an OUTER loop, which is
+    /// what a self tail call rewritten as a loop needs when it sits inside a
+    /// loop of its own (`commonJS.zig` § self tail calls).
+    continue_label: []const u8,
     /// `break;`
     break_,
     /// `yield* <expr>; return;` — delegating the rest of an iteration.
@@ -343,6 +347,9 @@ pub const If = struct {
 pub const While = struct {
     cond: Expr,
     body: Block,
+    /// `<label>: while (…) { … }`. Written verbatim; null for an unlabelled
+    /// loop, which is every loop but the self-tail-call one.
+    label: ?[]const u8 = null,
 };
 
 pub const ForOf = struct {

@@ -752,6 +752,262 @@ const ParamHoles = struct {
     }
 };
 
+// ── self tail calls ──────────────────────────────────────────────────────────
+//
+// V8 has no tail-call elimination, so a botopink function that recurses on
+// itself walks the JS stack one frame per step and dies at a few thousand —
+// while erlang and beam, whose VMs DO drop the frame, run the same program to
+// the end. `std`'s `random.intInRange` is the shape that found it: its
+// `floorWalk` helper is one frame per unit of range, so a range of a few
+// thousand killed the program on node and nowhere else.
+//
+// The rewrite is the direct one: a `return f(a, b);` inside `f` gives the
+// parameters their next values and goes round again, and the body becomes the
+// body of a `while (true)`.
+//
+//     function f(n, acc) {         function f(n, acc) {
+//         if (n === 0)                 while (true) {
+//             return acc;                  if ((n === 0)) { return acc; }
+//         return f(n - 1,                  { const __bp_tc0 = (n - 1);
+//                  acc + n);                 const __bp_tc1 = (acc + n);
+//     }                                      n = __bp_tc0; acc = __bp_tc1;
+//                                            continue; }
+//                                       }
+//                                   }
+//
+// It fires only where it is provably sound; what it refuses still recurses,
+// and that list is the language's documented limit (`AGENTS.md` § self tail
+// calls, `docs.md` § Recursion).
+
+/// The label a rewritten tail call continues when it sits inside a loop of the
+/// function's own — a bare `continue` would target that inner loop.
+const tc_label = "__bp_tc";
+
+/// Walks a built JS subtree looking for a reference to one of `names`.
+/// `closure_only` counts a hit only when it sits inside a nested function,
+/// arrow, class or object method: that is the shape where reassigning a
+/// parameter is still observable after the round that owned it is gone.
+const NameScan = struct {
+    names: []const []const u8,
+    closure_only: bool,
+
+    fn hit(s: NameScan, n: []const u8, in_closure: bool) bool {
+        if (s.closure_only and !in_closure) return false;
+        for (s.names) |x| if (std.mem.eql(u8, x, n)) return true;
+        return false;
+    }
+
+    fn expr(s: NameScan, e: js.Expr, c: bool) bool {
+        return switch (e) {
+            .lexeme_string, .quoted, .number, .null_, .this, .comment => false,
+            .ident, .name => |n| s.hit(n, c),
+            .member => |m| s.expr(m.object.*, c),
+            .index => |ix| s.expr(ix.object.*, c) or s.expr(ix.index.*, c),
+            .call, .new_ => |cl| s.expr(cl.callee.*, c) or s.exprs(cl.args, c),
+            .binary => |b| s.expr(b.lhs.*, c) or s.expr(b.rhs.*, c),
+            .unary => |u| s.expr(u.operand.*, c),
+            .ternary => |t| s.expr(t.cond.*, c) or s.expr(t.then.*, c) or s.expr(t.else_.*, c),
+            .assign => |a| s.expr(a.target.*, c) or s.expr(a.value.*, c),
+            .paren => |p| s.expr(p.*, c),
+            // A closure's body is the closure zone, whatever `c` was.
+            .arrow => |a| switch (a.body) {
+                .expr => |x| s.expr(x.*, true),
+                .block => |b| s.stmts(b.stmts, true),
+            },
+            .function => |f| s.stmts(f.body.stmts, true),
+            .array => |a| s.exprs(a.elems, c) or (if (a.spread) |sp| switch (sp) {
+                .name => |n| s.hit(n, c),
+                .expr => |x| s.expr(x.*, c),
+            } else false),
+            .object => |o| blk: {
+                for (o.props) |pr| switch (pr) {
+                    .kv => |kv| if (s.expr(kv.value, c)) break :blk true,
+                    .shorthand => |n| if (s.hit(n, c)) break :blk true,
+                    .method => |m| if (s.stmts(m.body.stmts, true)) break :blk true,
+                };
+                break :blk false;
+            },
+            .host => |parts| blk: {
+                for (parts) |pt| switch (pt) {
+                    .text => {},
+                    .expr => |x| if (s.expr(x, c)) break :blk true,
+                };
+                break :blk false;
+            },
+            .await_ => |x| s.expr(x.*, c),
+            .yield_ => |x| if (x) |v| s.expr(v.*, c) else false,
+        };
+    }
+
+    fn exprs(s: NameScan, xs: []const js.Expr, c: bool) bool {
+        for (xs) |x| if (s.expr(x, c)) return true;
+        return false;
+    }
+
+    fn stmt(s: NameScan, st: js.Stmt, c: bool) bool {
+        return switch (st) {
+            .continue_, .continue_label, .break_, .comment => false,
+            .expr, .throw_, .yield_delegate => |e| s.expr(e, c),
+            .decl => |d| s.expr(d.value, c),
+            .return_ => |e| if (e) |v| s.expr(v, c) else false,
+            .if_ => |i| s.expr(i.cond, c) or s.stmt(i.then.*, c) or
+                (if (i.else_) |el| s.stmt(el.*, c) else false),
+            .for_of => |f| s.expr(f.iter, c) or s.stmts(f.body.stmts, c),
+            .while_ => |wh| s.expr(wh.cond, c) or s.stmts(wh.body.stmts, c),
+            .block => |b| s.stmts(b.stmts, c),
+            .function => |f| s.stmts(f.body.stmts, true),
+            .class => |cl| blk: {
+                if (cl.ctor) |ct| if (s.stmts(ct.body.stmts, true)) break :blk true;
+                for (cl.members) |m| if (s.stmts(m.body.stmts, true)) break :blk true;
+                break :blk false;
+            },
+            .group => |g| s.stmts(g, c),
+        };
+    }
+
+    fn stmts(s: NameScan, list: []const js.Stmt, c: bool) bool {
+        for (list) |st| if (s.stmt(st, c)) return true;
+        return false;
+    }
+};
+
+/// Rewrites every `return <self>(args);` of one function into "assign the
+/// parameters and go round again". Statement positions only: a `return` inside
+/// a nested arrow or function belongs to THAT function, and the walk never
+/// descends into one.
+const TailRewrite = struct {
+    em: *Emitter,
+    fn_name: []const u8,
+    params: []const []const u8,
+    /// At least one tail call was rewritten — otherwise the caller drops the
+    /// whole transform and the function keeps its original body.
+    fired: bool = false,
+    /// A rewritten call sat inside a loop of the function's own, so the outer
+    /// `while (true)` needs a label to continue.
+    needs_label: bool = false,
+
+    /// The arguments of `v` when it is a call of this very function at the
+    /// declared arity — a self tail call. Null for anything else.
+    fn selfCallArgs(r: *TailRewrite, v: js.Expr) ?[]const js.Expr {
+        const call = switch (v) {
+            .call => |c| c,
+            else => return null,
+        };
+        const name = switch (call.callee.*) {
+            .ident, .name => |n| n,
+            else => return null,
+        };
+        if (!std.mem.eql(u8, name, r.fn_name)) return null;
+        if (call.args.len != r.params.len) return null;
+        return call.args;
+    }
+
+    /// `{ <temps> <assignments> continue; }` — one round of the loop. An
+    /// argument that READS a parameter is staged in a temporary first, because
+    /// the assignments happen in order and an earlier one would be visible to
+    /// a later argument. An argument that IS its own parameter is a no-op and
+    /// is dropped.
+    fn step(r: *TailRewrite, args: []const js.Expr, depth: usize) !js.Stmt {
+        r.fired = true;
+        if (depth > 0) r.needs_label = true;
+        const arena = r.em.arena();
+        const reads = NameScan{ .names = r.params, .closure_only = false };
+        var pre: std.ArrayListUnmanaged(js.Stmt) = .empty;
+        var set: std.ArrayListUnmanaged(js.Stmt) = .empty;
+        for (args, 0..) |arg, i| {
+            const p = r.params[i];
+            if (arg == .ident and std.mem.eql(u8, arg.ident, p)) continue;
+            var value = arg;
+            if (reads.expr(arg, false)) {
+                const tmp = try std.fmt.allocPrint(arena, "__bp_tc{d}", .{i});
+                try pre.append(arena, .{ .decl = .{ .pattern = .{ .name = tmp }, .value = arg } });
+                value = .{ .name = tmp };
+            }
+            try set.append(arena, .{ .expr = try r.em.b.assign(.{ .ident = p }, "=", value) });
+        }
+        try pre.appendSlice(arena, set.items);
+        try pre.append(arena, if (depth > 0) js.Stmt{ .continue_label = tc_label } else .continue_);
+        return .{ .block = .{ .stmts = try pre.toOwnedSlice(arena), .layout = .spaced } };
+    }
+
+    fn stmt(r: *TailRewrite, st: js.Stmt, depth: usize) anyerror!js.Stmt {
+        return switch (st) {
+            .return_ => |maybe| blk: {
+                if (maybe) |v| {
+                    if (r.selfCallArgs(v)) |args| break :blk try r.step(args, depth);
+                }
+                break :blk st;
+            },
+            .if_ => |i| .{ .if_ = .{
+                .cond = i.cond,
+                .then = try r.em.b.stmtPtr(try r.stmt(i.then.*, depth)),
+                .else_ = if (i.else_) |el| try r.em.b.stmtPtr(try r.stmt(el.*, depth)) else null,
+            } },
+            .block => |b| .{ .block = .{
+                .stmts = try r.stmts(b.stmts, depth),
+                .layout = b.layout,
+                .indent = b.indent,
+            } },
+            .group => |g| .{ .group = try r.stmts(g, depth) },
+            .for_of => |f| .{ .for_of = .{
+                .pattern = f.pattern,
+                .iter = f.iter,
+                .body = .{ .stmts = try r.stmts(f.body.stmts, depth + 1), .layout = f.body.layout, .indent = f.body.indent },
+            } },
+            .while_ => |wh| .{ .while_ = .{
+                .cond = wh.cond,
+                .label = wh.label,
+                .body = .{ .stmts = try r.stmts(wh.body.stmts, depth + 1), .layout = wh.body.layout, .indent = wh.body.indent },
+            } },
+            else => st,
+        };
+    }
+
+    fn stmts(r: *TailRewrite, list: []const js.Stmt, depth: usize) anyerror![]const js.Stmt {
+        const out = try r.em.arena().alloc(js.Stmt, list.len);
+        for (list, 0..) |st, i| out[i] = try r.stmt(st, depth);
+        return out;
+    }
+};
+
+/// True when the last statement of `list` cannot fall through — it leaves the
+/// function (`return`/`throw`) or ends the round (`continue`/`break`). Falling
+/// off the end of the rewritten body is then unreachable and no `return;` is
+/// needed to stop the `while (true)` going round once more.
+fn endsTheRound(list: []const js.Stmt) bool {
+    const last = if (list.len == 0) return false else list[list.len - 1];
+    return switch (last) {
+        .return_, .throw_, .yield_delegate, .continue_, .continue_label, .break_ => true,
+        .group => |g| endsTheRound(g),
+        .block => |b| endsTheRound(b.stmts),
+        else => false,
+    };
+}
+
+/// True when some statement binds `name` — a local `const`/`let`, a nested
+/// function or a class. The recursive call would then be that binding's, not
+/// the function's, and the rewrite would be wrong.
+fn bindsName(list: []const js.Stmt, name: []const u8) bool {
+    for (list) |st| switch (st) {
+        .decl => |d| switch (d.pattern) {
+            .ident, .name => |n| if (std.mem.eql(u8, n, name)) return true,
+            else => {},
+        },
+        .function => |f| if (std.mem.eql(u8, f.name, name)) return true,
+        .class => |c| if (std.mem.eql(u8, c.name, name)) return true,
+        .if_ => |i| {
+            if (bindsName(&.{i.then.*}, name)) return true;
+            if (i.else_) |el| if (bindsName(&.{el.*}, name)) return true;
+        },
+        .block => |b| if (bindsName(b.stmts, name)) return true,
+        .group => |g| if (bindsName(g, name)) return true,
+        .for_of => |f| if (bindsName(f.body.stmts, name)) return true,
+        .while_ => |wh| if (bindsName(wh.body.stmts, name)) return true,
+        else => {},
+    };
+    return false;
+}
+
 const this_expr: js.Expr = .this;
 const boxed_value_of: js.Expr = .{ .member = .{ .object = &this_expr, .name = "valueOf" } };
 
@@ -1510,6 +1766,54 @@ const Emitter = struct {
         return self.b.call(.{ .name = "require" }, &.{.{ .quoted = path }});
     }
 
+    /// The parameter names of `params` when every one is a plain binding.
+    /// Null when one destructures or carries a default: the rewrite has to
+    /// ASSIGN each parameter, and neither shape has a name to assign to.
+    fn plainParamNames(self: *Emitter, params: []const js.Param) !?[][]const u8 {
+        const out = try self.arena().alloc([]const u8, params.len);
+        for (params, 0..) |p, i| {
+            if (p.default != null) return null;
+            out[i] = switch (p.pattern) {
+                .ident, .name => |n| n,
+                else => return null,
+            };
+        }
+        return out;
+    }
+
+    /// `body` rewritten as `while (true) { … }` with every self tail call
+    /// turned into a round of the loop — or null when nothing fires or the
+    /// shape is not provably safe, and the function keeps its recursion.
+    /// The refusals ARE the documented limit (`AGENTS.md` § self tail calls).
+    fn selfTailLoop(self: *Emitter, name: []const u8, params: []const js.Param, body: []const js.Stmt) !?[]const js.Stmt {
+        const names = try self.plainParamNames(params) orelse return null;
+        // A sloppy-mode function maps `arguments` onto its parameters, so
+        // reassigning one is visible through it.
+        if ((NameScan{ .names = &.{"arguments"}, .closure_only = false }).stmts(body, false)) return null;
+        // A closure that reads a parameter outlives the round that made it;
+        // after the rewrite it would read the NEXT round's value.
+        if ((NameScan{ .names = names, .closure_only = true }).stmts(body, false)) return null;
+        // A local of the function's own name: the call is that binding's.
+        if (bindsName(body, name)) return null;
+
+        var r = TailRewrite{ .em = self, .fn_name = name, .params = names };
+        const rewritten = try r.stmts(body, 0);
+        if (!r.fired) return null;
+
+        var loop_body: std.ArrayListUnmanaged(js.Stmt) = .empty;
+        try loop_body.appendSlice(self.arena(), rewritten);
+        // Falling off the end of a function body ends the FUNCTION; inside the
+        // loop it would start another round, so it becomes an explicit
+        // `return;` — the same `undefined` the fall-through answered.
+        if (!endsTheRound(rewritten)) try loop_body.append(self.arena(), .{ .return_ = null });
+
+        return try self.b.stmts(&.{.{ .while_ = .{
+            .cond = .{ .name = "true" },
+            .label = if (r.needs_label) tc_label else null,
+            .body = .{ .stmts = try loop_body.toOwnedSlice(self.arena()), .layout = .indented, .indent = 1 },
+        } }});
+    }
+
     fn buildFn(self: *Emitter, f: ast.FnDecl) anyerror!js.Stmt {
         self.try_seq = 0;
         const kw = fnKeyword(f);
@@ -1519,8 +1823,14 @@ const Emitter = struct {
         const params = try self.buildParams(f.params);
         const prev_fn_indent = self.current_indent;
         self.current_indent = 1;
-        const body = try self.buildStmts(f.body);
+        var body = try self.buildStmts(f.body);
         self.current_indent = prev_fn_indent;
+        // A plain `function` only: a generator's `return f(…)` resumes an
+        // iterator rather than ending one, and an `async` one's answer is a
+        // promise the caller of the round would have to await.
+        if (std.mem.eql(u8, kw, "function")) {
+            if (try self.selfTailLoop(f.name, params, body)) |looped| body = looped;
+        }
         const decl = js.Stmt{ .function = .{
             .keyword = kw,
             .name = f.name,
