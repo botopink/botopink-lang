@@ -24,10 +24,11 @@ fn main() {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\0c\00\00\00name missing")
-  (data (i32.const 272) "\0b\00\00\00age missing")
-  (data (i32.const 288) "\09\00\00\00anonymous")
-  (global $__heap_ptr (mut i32) (i32.const 304))
+  (data (i32.const 256) "\11\00\00\00R\tUserError\01\03msgs")
+  (data (i32.const 280) "\0c\00\00\00name missing")
+  (data (i32.const 296) "\0b\00\00\00age missing")
+  (data (i32.const 312) "\09\00\00\00anonymous")
+  (global $__heap_ptr (mut i32) (i32.const 328))
   (func $fetchName (result i32)
     (local $__mem0 i32)
     (local $_res0 i32)
@@ -44,13 +45,18 @@ fn main() {
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 4
+    i32.const 8
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 256
+    i32.const 260
     i32.store
     local.get $__mem0
+    i32.const 280
+    i32.store offset=4
+    local.get $__mem0
+    i32.const 4
+    i32.add
     i32.store offset=4 ;; payload
     local.get $_res0
     return
@@ -71,13 +77,18 @@ fn main() {
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 4
+    i32.const 8
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 272
+    i32.const 260
     i32.store
     local.get $__mem0
+    i32.const 296
+    i32.store offset=4
+    local.get $__mem0
+    i32.const 4
+    i32.add
     i32.store offset=4 ;; payload
     local.get $_res0
     return
@@ -93,7 +104,7 @@ fn main() {
     i32.load ;; Result tag (0 = Ok, non-zero = Error)
     (if (result i32)
       (then
-    i32.const 288
+    i32.const 312
       )
       (else
     local.get $_try0

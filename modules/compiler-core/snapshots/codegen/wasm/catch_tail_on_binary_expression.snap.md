@@ -15,8 +15,9 @@ fn compute() -> i32 {
 ```wasm
 (module
   (memory (export "memory") 1)
-  (data (i32.const 256) "\08\00\00\00overflow")
-  (global $__heap_ptr (mut i32) (i32.const 268))
+  (data (i32.const 256) "\11\00\00\00R\tCalcError\01\03msgs")
+  (data (i32.const 280) "\08\00\00\00overflow")
+  (global $__heap_ptr (mut i32) (i32.const 292))
   (func $getA (result i32)
     (local $__mem0 i32)
     (local $_res0 i32)
@@ -33,13 +34,18 @@ fn compute() -> i32 {
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 4
+    i32.const 8
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 256
+    i32.const 260
     i32.store
     local.get $__mem0
+    i32.const 280
+    i32.store offset=4
+    local.get $__mem0
+    i32.const 4
+    i32.add
     i32.store offset=4 ;; payload
     local.get $_res0
     return

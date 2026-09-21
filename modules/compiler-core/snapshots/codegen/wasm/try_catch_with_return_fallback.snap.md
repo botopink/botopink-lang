@@ -15,7 +15,8 @@ fn safe() -> i32 {
 ```wasm
 (module
   (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (data (i32.const 256) "\11\00\00\00R\08NetError\01\04codei")
+  (global $__heap_ptr (mut i32) (i32.const 280))
   (func $fetch (result i32)
     (local $__mem0 i32)
     (local $_res0 i32)
@@ -32,13 +33,18 @@ fn safe() -> i32 {
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 4
+    i32.const 8
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 500
+    i32.const 260
     i32.store
     local.get $__mem0
+    i32.const 500
+    i32.store offset=4
+    local.get $__mem0
+    i32.const 4
+    i32.add
     i32.store offset=4 ;; payload
     local.get $_res0
     return

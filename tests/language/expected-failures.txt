@@ -149,8 +149,7 @@ erlang   | test/string_case_conversion.bp | 02 step 7 | `String.toUpperCase` / `
 # `botopink run --target wasm` executes; `botopink test` refuses it, so only
 # run/ and modules/ cells reach wasm. The rows below are the same defects the
 # commonJS and erlang lines above name, seen from the third backend.
-wasm     | run/print_formatter.bp     | 05 step 1, 13 step 18 | re-measured 2026-09-18 at `b5a9b85d`: arrays and tuples still print without spaces (`[1,2]`, `#(1,"a")`), and then `@print` of a record **traps** — `wasm trap: wasm `unreachable` instruction executed`, exit 134, after the first six lines. Two halves of the old text are false: it no longer prints a raw heap address, and `f64` no longer loses its decimal part (`5.0` is right)
-wasm     | run/display_print.bp       | 05 step 1, 13 step 18 | re-measured 2026-09-18 at `b5a9b85d`: `@print(Money(cents: 5))` **traps** on the very first line — `wasm trap: wasm `unreachable` instruction executed`, exit 134, stdout empty. Not a raw heap address: nothing is printed at all, so §7's `Display` half is unreachable behind the trap and cannot be measured from this cell yet
+wasm     | run/display_print.bp       | 05-wasm | re-measured 2026-09-21 by running, after C-01 half 3 step 17: the trap is GONE and the record prints — `Money(cents: 5)` and `[Money(cents: 1), Money(cents: 2)]`, decision 8 §7's record text read from the value's own header. What is left is §7's `Display` half, which on this backend needs a function the printer can reach through the value: the descriptor would have to carry the table index of `display/1` and `$__print_tagged_raw` would `call_indirect` it, and the table is built from the lifted-lambda list, whose indices are assigned as lambdas are lifted. 05-wasm owns the table; the other three backends answer `$5` / `[$1, $2]`
 
 # ── the forms front 15 landed, that nothing lowers or types yet ─────────────
 # `109f6c9` made five forms parse. Three of them run everywhere and are pinned by
@@ -172,7 +171,6 @@ erlang   | test/curried_call.bp       | 01 handover 15 | the same — the cell d
 # no second row any more: with front 01's step 4 written and measured (in its own
 # tree, not on `feat` yet) `test/type_identity_case.bp` compiles, and the two lines
 # it carries are `13 step 17` outright.
-wasm     | run/type_identity_print.bp | 05 step 1, 13 step 18 | re-measured 2026-09-18 at `b5a9b85d`: `@print(Point(x: 1, y: 2))` **traps** on the very first line — `wasm trap: wasm `unreachable` instruction executed`, exit 134, stdout empty. The `256` / `264` / `268` heap addresses this line used to name are gone
 
 # ── beam, the fourth executable target (decision 8) ───────────────────────────
 # `botopink run --target beam` writes `out/*.S`; `erlc +from_asm` then `erl` run

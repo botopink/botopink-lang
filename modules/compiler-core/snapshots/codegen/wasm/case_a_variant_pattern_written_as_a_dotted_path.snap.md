@@ -23,7 +23,9 @@ fn main() {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (data (i32.const 256) "\17\00\00\00V\0cShape.Circle\01\06radiusi")
+  (data (i32.const 284) "\1c\00\00\00V\nShape.Rect\02\05widthi\06heighti")
+  (global $__heap_ptr (mut i32) (i32.const 316))
   (func $main (result i32)
     (local $__mem0 i32)
     (local $__mem1 i32)
@@ -35,16 +37,21 @@ fn main() {
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 8
+    i32.const 12
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 0
+    i32.const 260
     i32.store
     local.get $__mem0
-    i32.const 7
+    i32.const 0
     i32.store offset=4
     local.get $__mem0
+    i32.const 7
+    i32.store offset=8
+    local.get $__mem0
+    i32.const 4
+    i32.add
     local.set $c
     local.get $c
     local.set $__case_0
@@ -71,19 +78,24 @@ fn main() {
     global.get $__heap_ptr
     local.set $__mem1
     global.get $__heap_ptr
-    i32.const 12
+    i32.const 16
     i32.add
     global.set $__heap_ptr
     local.get $__mem1
-    i32.const 1
+    i32.const 288
     i32.store
     local.get $__mem1
-    i32.const 2
+    i32.const 1
     i32.store offset=4
     local.get $__mem1
-    i32.const 5
+    i32.const 2
     i32.store offset=8
     local.get $__mem1
+    i32.const 5
+    i32.store offset=12
+    local.get $__mem1
+    i32.const 4
+    i32.add
     local.set $q
     local.get $q
     local.set $__case_1

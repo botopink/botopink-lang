@@ -1035,8 +1035,9 @@ fn main() {
 ```
 
 A string prints as its text at the top level (`hi`) and quoted inside a
-container (`["hi"]`). The erlang and BEAM backends carry this text today; the
-other two are being brought to it.
+container (`["hi"]`). erlang, BEAM, commonJS and wasm all write the record and
+variant text; `Display` is consulted on the first three, and wasm prints the
+record's own fields instead.
 
 ### A value knows its own type
 

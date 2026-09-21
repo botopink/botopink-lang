@@ -210,7 +210,8 @@ test "dict empty boundary: size 0, at misses" {
 (module
   (memory (export "memory") 1)
   (table funcref (elem))
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (data (i32.const 256) "\0e\00\00\00R\04Dict\01\05pairsi")
+  (global $__heap_ptr (mut i32) (i32.const 276))
   ;; Gleam-inspired `dict` module — a `type Dict<K, V>` wrapping an
   ;; association list `pairs: Array<#(K, V)>` for full backend portability
   ;; (no host-backing). O(n) read; camelCase convention.
@@ -552,9 +553,12 @@ test "dict empty boundary: size 0, at misses" {
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 4
+    i32.const 8
     i32.add
     global.set $__heap_ptr
+    local.get $__mem0
+    i32.const 260
+    i32.store
     local.get $__mem0
     local.get $filtered
     global.get $__heap_ptr
@@ -583,8 +587,10 @@ test "dict empty boundary: size 0, at misses" {
     i32.store offset=4
     local.get $__mem1
     call $__arr_concat
-    i32.store
+    i32.store offset=4
     local.get $__mem0
+    i32.const 4
+    i32.add
     return
   )
   (func $Dict_delete (param $self i32) (param $key i32) (result i32)
@@ -598,9 +604,12 @@ test "dict empty boundary: size 0, at misses" {
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 4
+    i32.const 8
     i32.add
     global.set $__heap_ptr
+    local.get $__mem0
+    i32.const 260
+    i32.store
     local.get $__mem0
     local.get $self
     i32.load ;; .pairs
@@ -663,8 +672,10 @@ test "dict empty boundary: size 0, at misses" {
     local.get $__acc0
     i32.store ;; kept count
     local.get $__out0
-    i32.store
+    i32.store offset=4
     local.get $__mem0
+    i32.const 4
+    i32.add
     return
   )
   (func $Dict_merge (param $self i32) (param $other i32) (result i32)
@@ -850,13 +861,18 @@ test "dict empty boundary: size 0, at misses" {
     global.get $__heap_ptr
     local.set $__mem2
     global.get $__heap_ptr
-    i32.const 4
+    i32.const 8
     i32.add
     global.set $__heap_ptr
     local.get $__mem2
-    local.get $out
+    i32.const 260
     i32.store
     local.get $__mem2
+    local.get $out
+    i32.store offset=4
+    local.get $__mem2
+    i32.const 4
+    i32.add
     return
   )
   (func $empty (export "empty") (result i32)
@@ -865,9 +881,12 @@ test "dict empty boundary: size 0, at misses" {
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 4
+    i32.const 8
     i32.add
     global.set $__heap_ptr
+    local.get $__mem0
+    i32.const 260
+    i32.store
     local.get $__mem0
     global.get $__heap_ptr
     local.set $__mem1
@@ -879,8 +898,10 @@ test "dict empty boundary: size 0, at misses" {
     i32.const 0
     i32.store
     local.get $__mem1
-    i32.store
+    i32.store offset=4
     local.get $__mem0
+    i32.const 4
+    i32.add
     return
   )
   ;; ── option method API over `at`'s `?V` (B1: Option map/flatMap/unwrapOr) ──
@@ -1042,9 +1063,10 @@ fn main() {
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (table funcref (elem))
-  (data (i32.const 256) "\01\00\00\00a")
-  (data (i32.const 264) "\01\00\00\00b")
-  (global $__heap_ptr (mut i32) (i32.const 272))
+  (data (i32.const 256) "\0e\00\00\00R\04Dict\01\05pairsi")
+  (data (i32.const 276) "\01\00\00\00a")
+  (data (i32.const 284) "\01\00\00\00b")
+  (global $__heap_ptr (mut i32) (i32.const 292))
   (func $Dict_at (param $self i32) (param $key i32) (result i32)
     (local $found i32)
     (local $__iter0 i32)
@@ -1369,9 +1391,12 @@ fn main() {
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 4
+    i32.const 8
     i32.add
     global.set $__heap_ptr
+    local.get $__mem0
+    i32.const 260
+    i32.store
     local.get $__mem0
     local.get $filtered
     global.get $__heap_ptr
@@ -1400,8 +1425,10 @@ fn main() {
     i32.store offset=4
     local.get $__mem1
     call $__arr_concat
-    i32.store
+    i32.store offset=4
     local.get $__mem0
+    i32.const 4
+    i32.add
     return
   )
   (func $Dict_delete (param $self i32) (param $key i32) (result i32)
@@ -1415,9 +1442,12 @@ fn main() {
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 4
+    i32.const 8
     i32.add
     global.set $__heap_ptr
+    local.get $__mem0
+    i32.const 260
+    i32.store
     local.get $__mem0
     local.get $self
     i32.load ;; .pairs
@@ -1480,8 +1510,10 @@ fn main() {
     local.get $__acc0
     i32.store ;; kept count
     local.get $__out0
-    i32.store
+    i32.store offset=4
     local.get $__mem0
+    i32.const 4
+    i32.add
     return
   )
   (func $Dict_merge (param $self i32) (param $other i32) (result i32)
@@ -1667,13 +1699,18 @@ fn main() {
     global.get $__heap_ptr
     local.set $__mem2
     global.get $__heap_ptr
-    i32.const 4
+    i32.const 8
     i32.add
     global.set $__heap_ptr
     local.get $__mem2
-    local.get $out
+    i32.const 260
     i32.store
     local.get $__mem2
+    local.get $out
+    i32.store offset=4
+    local.get $__mem2
+    i32.const 4
+    i32.add
     return
   )
   (func $empty (result i32)
@@ -1682,9 +1719,12 @@ fn main() {
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 4
+    i32.const 8
     i32.add
     global.set $__heap_ptr
+    local.get $__mem0
+    i32.const 260
+    i32.store
     local.get $__mem0
     global.get $__heap_ptr
     local.set $__mem1
@@ -1696,20 +1736,22 @@ fn main() {
     i32.const 0
     i32.store
     local.get $__mem1
-    i32.store
+    i32.store offset=4
     local.get $__mem0
+    i32.const 4
+    i32.add
     return
   )
   (func $main
     (local $d i32)
     (local $_res0 i32)
     call $empty
-    i32.const 256
+    i32.const 276
     i32.const 1
     call $Dict_insert
     local.set $d
     local.get $d
-    i32.const 256
+    i32.const 276
     call $Dict_at
     local.set $_res0
     local.get $_res0 ;; Option (0 = None, else Some payload)
@@ -1723,7 +1765,7 @@ fn main() {
     )
     call $__print_i32
     local.get $d
-    i32.const 264
+    i32.const 284
     i32.const 2
     call $Dict_insert
     call $Dict_size

@@ -24,19 +24,25 @@ pub fn make() -> Counter { return Counter(n: 41); }
 ```wasm
 (module
   (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (data (i32.const 256) "\0d\00\00\00R\07Counter\01\01ni")
+  (global $__heap_ptr (mut i32) (i32.const 276))
   (func $Counter_zero (result i32)
     (local $__mem0 i32)
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 4
+    i32.const 8
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 0
+    i32.const 260
     i32.store
     local.get $__mem0
+    i32.const 0
+    i32.store offset=4
+    local.get $__mem0
+    i32.const 4
+    i32.add
     return
   )
   (func $Counter_bump (param $self i32) (result i32)
@@ -51,13 +57,18 @@ pub fn make() -> Counter { return Counter(n: 41); }
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 4
+    i32.const 8
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 41
+    i32.const 260
     i32.store
     local.get $__mem0
+    i32.const 41
+    i32.store offset=4
+    local.get $__mem0
+    i32.const 4
+    i32.add
     return
   )
 )
@@ -83,19 +94,25 @@ fn main() {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (data (i32.const 256) "\0d\00\00\00R\07Counter\01\01ni")
+  (global $__heap_ptr (mut i32) (i32.const 276))
   (func $Counter_zero (result i32)
     (local $__mem0 i32)
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 4
+    i32.const 8
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 0
+    i32.const 260
     i32.store
     local.get $__mem0
+    i32.const 0
+    i32.store offset=4
+    local.get $__mem0
+    i32.const 4
+    i32.add
     return
   )
   (func $Counter_bump (param $self i32) (result i32)
@@ -110,13 +127,18 @@ fn main() {
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 4
+    i32.const 8
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 41
+    i32.const 260
     i32.store
     local.get $__mem0
+    i32.const 41
+    i32.store offset=4
+    local.get $__mem0
+    i32.const 4
+    i32.add
     return
   )
   (func $main

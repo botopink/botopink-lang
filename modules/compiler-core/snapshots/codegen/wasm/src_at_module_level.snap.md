@@ -14,8 +14,9 @@ fn main() {
   (memory (export "memory") 1)
   (start $__init_globals)
   (data (i32.const 256) "\00\00\00\00")
-  (data (i32.const 260) "\07\00\00\00main.bp")
-  (global $__heap_ptr (mut i32) (i32.const 272))
+  (data (i32.const 260) "\2d\00\00\00R\0eSourceLocation\04\04files\04linei\06columni\06fnNames")
+  (data (i32.const 312) "\07\00\00\00main.bp")
+  (global $__heap_ptr (mut i32) (i32.const 324))
   (global $top (mut i32) (i32.const 0))
   (func $main
     global.get $top
@@ -40,22 +41,27 @@ fn main() {
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 16
+    i32.const 20
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 260
+    i32.const 264
     i32.store
     local.get $__mem0
-    i32.const 1
+    i32.const 312
     i32.store offset=4
     local.get $__mem0
-    i32.const 11
+    i32.const 1
     i32.store offset=8
     local.get $__mem0
-    i32.const 256
+    i32.const 11
     i32.store offset=12
     local.get $__mem0
+    i32.const 256
+    i32.store offset=16
+    local.get $__mem0
+    i32.const 4
+    i32.add
     global.set $top
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")

@@ -29,9 +29,14 @@ fn main() {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\06\00\00\00person")
-  (data (i32.const 268) "\03\00\00\00Ana")
-  (global $__heap_ptr (mut i32) (i32.const 276))
+  (data (i32.const 256) "\14\00\00\00R\06Person\02\04names\03agei")
+  (data (i32.const 280) "\06\00\00\00person")
+  (data (i32.const 292) "\11\00\00\00R\03Vec\02\04names\03agei")
+  (data (i32.const 316) "\03\00\00\00vec")
+  (data (i32.const 324) "\03\00\00\00Ana")
+  (data (i32.const 332) "\17\00\00\00V\0cShape.Circle\01\06radiusi")
+  (data (i32.const 360) "\0c\00\00\00V\tShape.Dot\00")
+  (global $__heap_ptr (mut i32) (i32.const 376))
   (func $nameOf (param $v i32) (result i32)
     (local $Person i32)
     (local $Vec i32)
@@ -39,8 +44,44 @@ fn main() {
     local.get $v
     local.set $__case_0
     local.get $__case_0
-    local.set $Person
     i32.const 256
+    i32.ge_u
+    local.get $__case_0
+    i32.const 4
+    i32.sub
+    i32.load
+    i32.const 260
+    i32.eq
+    i32.and
+    (if (result i32)
+      (then
+    local.get $__case_0
+    local.set $Person
+    i32.const 280
+      )
+      (else
+    local.get $__case_0
+    i32.const 256
+    i32.ge_u
+    local.get $__case_0
+    i32.const 4
+    i32.sub
+    i32.load
+    i32.const 296
+    i32.eq
+    i32.and
+    (if (result i32)
+      (then
+    local.get $__case_0
+    local.set $Vec
+    i32.const 316
+      )
+      (else
+    i32.const 0
+      )
+    )
+      )
+    )
     return
   )
   (func $main
@@ -52,81 +93,164 @@ fn main() {
     (local $s i32)
     (local $d i32)
     (local $__mem4 i32)
+    (local $__mem5 i32)
+    (local $__mem6 i32)
+    (local $__mem7 i32)
+    (local $__mem8 i32)
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 8
+    i32.const 12
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 268
+    i32.const 296
     i32.store
+    local.get $__mem0
+    i32.const 324
+    i32.store offset=4
     local.get $__mem0
     i32.const 30
-    i32.store offset=4
+    i32.store offset=8
     local.get $__mem0
+    i32.const 4
+    i32.add
     local.set $u
-    ;; builtin stub
-    call $__print_i32
-    ;; builtin stub
-    call $__print_i32
-    global.get $__heap_ptr
-    local.set $__mem1
-    global.get $__heap_ptr
-    i32.const 8
-    i32.add
-    global.set $__heap_ptr
-    local.get $__mem1
-    i32.const 1
-    i32.store
+    local.get $u
+    local.tee $__mem1
+    i32.const 256
+    i32.ge_u
     local.get $__mem1
     i32.const 4
-    i32.store offset=4
-    local.get $__mem1
-    local.set $s
-    ;; builtin stub
-    call $__print_i32
-    global.get $__heap_ptr
-    local.set $__mem2
-    global.get $__heap_ptr
+    i32.sub
+    i32.load
+    i32.const 296
+    i32.eq
+    i32.and
+    call $__print_bool
+    local.get $u
+    local.tee $__mem2
+    i32.const 256
+    i32.ge_u
+    local.get $__mem2
     i32.const 4
-    i32.add
-    global.set $__heap_ptr
-    local.get $__mem2
-    i32.const 0
-    i32.store
-    local.get $__mem2
-    local.set $d
-    ;; builtin stub
-    call $__print_i32
+    i32.sub
+    i32.load
+    i32.const 260
+    i32.eq
+    i32.and
+    call $__print_bool
     global.get $__heap_ptr
     local.set $__mem3
     global.get $__heap_ptr
-    i32.const 8
+    i32.const 12
     i32.add
     global.set $__heap_ptr
     local.get $__mem3
-    i32.const 268
+    i32.const 336
     i32.store
     local.get $__mem3
-    i32.const 30
+    i32.const 1
     i32.store offset=4
     local.get $__mem3
+    i32.const 4
+    i32.store offset=8
+    local.get $__mem3
+    i32.const 4
+    i32.add
+    local.set $s
+    local.get $s
+    local.tee $__mem4
+    i32.const 256
+    i32.ge_u
+    local.get $__mem4
+    i32.const 4
+    i32.sub
+    i32.load
+    i32.const 364
+    i32.eq
+    local.get $__mem4
+    i32.const 4
+    i32.sub
+    i32.load
+    i32.const 336
+    i32.eq
+    i32.or
+    i32.and
+    call $__print_bool
+    global.get $__heap_ptr
+    local.set $__mem5
+    global.get $__heap_ptr
+    i32.const 8
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem5
+    i32.const 364
+    i32.store
+    local.get $__mem5
+    i32.const 0
+    i32.store offset=4
+    local.get $__mem5
+    i32.const 4
+    i32.add
+    local.set $d
+    local.get $d
+    local.tee $__mem6
+    i32.const 256
+    i32.ge_u
+    local.get $__mem6
+    i32.const 4
+    i32.sub
+    i32.load
+    i32.const 364
+    i32.eq
+    local.get $__mem6
+    i32.const 4
+    i32.sub
+    i32.load
+    i32.const 336
+    i32.eq
+    i32.or
+    i32.and
+    call $__print_bool
+    global.get $__heap_ptr
+    local.set $__mem7
+    global.get $__heap_ptr
+    i32.const 12
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem7
+    i32.const 260
+    i32.store
+    local.get $__mem7
+    i32.const 324
+    i32.store offset=4
+    local.get $__mem7
+    i32.const 30
+    i32.store offset=8
+    local.get $__mem7
+    i32.const 4
+    i32.add
     call $nameOf
     call $__print_str
     global.get $__heap_ptr
-    local.set $__mem4
+    local.set $__mem8
     global.get $__heap_ptr
-    i32.const 8
+    i32.const 12
     i32.add
     global.set $__heap_ptr
-    local.get $__mem4
-    i32.const 268
+    local.get $__mem8
+    i32.const 296
     i32.store
-    local.get $__mem4
-    i32.const 30
+    local.get $__mem8
+    i32.const 324
     i32.store offset=4
-    local.get $__mem4
+    local.get $__mem8
+    i32.const 30
+    i32.store offset=8
+    local.get $__mem8
+    i32.const 4
+    i32.add
     call $nameOf
     call $__print_str
   )
@@ -326,17 +450,46 @@ fn main() {
     call $__print_str_raw
     call $__print_nl
   )
+  (func $__print_bool (param $b i32)
+    local.get $b
+    call $__print_bool_raw
+    call $__print_nl
+  )
+  (func $__print_bool_raw (param $b i32)
+    local.get $b
+    (if
+      (then
+        ;; "true" as a little-endian i32
+        i32.const 16
+        i32.const 1702195828
+        i32.store
+        i32.const 16
+        i32.const 4
+        call $__write_bytes
+      )
+      (else
+        ;; "fals" + 'e'
+        i32.const 16
+        i32.const 1936482662
+        i32.store
+        i32.const 16
+        i32.const 101
+        i32.store8 offset=4
+        i32.const 16
+        i32.const 5
+        call $__write_bytes
+      )
+    )
+  )
 )
 ```
 
 ----- RUN LOG -----
 ```logs
-Error: failed to compile: wasm[0]::function[2]::main
-
-Caused by:
-    0: WebAssembly translation error
-    1: Invalid input WebAssembly code at offset 201: type mismatch: expected i32 but nothing on stack
-
-RUNTIME TRAP (wasmtime):
-
+true
+false
+true
+true
+person
+vec
 ```

@@ -861,6 +861,144 @@ fn main() {
     i32.const 1
     call $__write_bytes
   )
+  (func $__print_tagged_raw (param $v i32)
+    (local $d i32) (local $p i32) (local $k i32) (local $i i32) (local $n i32) (local $b i32)
+    local.get $v
+    i32.const 4
+    i32.sub
+    i32.load
+    local.set $d
+    local.get $d
+    i32.const 1
+    i32.add
+    local.set $p
+    local.get $v
+    local.set $b
+    local.get $d
+    i32.load8_u
+    i32.const 86
+    i32.eq
+    (if
+      (then
+        local.get $v
+        i32.const 4
+        i32.add
+        local.set $b
+      )
+    )
+    local.get $p
+    i32.load8_u
+    local.set $n
+    local.get $p
+    i32.const 1
+    i32.add
+    local.set $p
+    local.get $p
+    local.get $n
+    call $__write_bytes
+    local.get $p
+    local.get $n
+    i32.add
+    local.set $p
+    local.get $p
+    i32.load8_u
+    local.set $k
+    local.get $p
+    i32.const 1
+    i32.add
+    local.set $p
+    local.get $k
+    (if
+      (then
+        i32.const 8
+        i32.const 40
+        i32.store8
+        i32.const 8
+        i32.const 1
+        call $__write_bytes
+      )
+    )
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $k
+        i32.ge_u
+        br_if $brk
+        local.get $i
+        (if
+          (then
+            i32.const 8
+            i32.const 44
+            i32.store8
+            i32.const 8
+            i32.const 32
+            i32.store8 offset=1
+            i32.const 8
+            i32.const 2
+            call $__write_bytes
+          )
+        )
+        local.get $p
+        i32.load8_u
+        local.set $n
+        local.get $p
+        i32.const 1
+        i32.add
+        local.set $p
+        local.get $p
+        local.get $n
+        call $__write_bytes
+        local.get $p
+        local.get $n
+        i32.add
+        local.set $p
+        i32.const 8
+        i32.const 58
+        i32.store8
+        i32.const 8
+        i32.const 32
+        i32.store8 offset=1
+        i32.const 8
+        i32.const 2
+        call $__write_bytes
+        local.get $b
+        i32.const 4
+        i32.add
+        local.get $i
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.const 4
+        i32.sub
+        i32.load
+        local.get $p
+        i32.const 1
+        call $__print_shaped_raw
+        local.set $p
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $k
+    (if
+      (then
+        i32.const 8
+        i32.const 41
+        i32.store8
+        i32.const 8
+        i32.const 1
+        call $__write_bytes
+      )
+    )
+  )
+  (func $__print_tagged (param $v i32)
+    local.get $v
+    call $__print_tagged_raw
+    call $__print_nl
+  )
   (func $__print_shaped_raw (param $v i32) (param $sh i32) (param $go i32) (result i32)
     (local $c i32) (local $n i32) (local $i i32) (local $p i32) (local $e i32)
     local.get $sh
@@ -932,6 +1070,24 @@ fn main() {
           (then
             local.get $v
             call $__print_quoted_raw
+          )
+        )
+        local.get $sh
+        i32.const 1
+        i32.add
+        return
+      )
+    )
+    local.get $c
+    i32.const 84
+    i32.eq
+    (if
+      (then
+        local.get $go
+        (if
+          (then
+            local.get $v
+            call $__print_tagged_raw
           )
         )
         local.get $sh
