@@ -11,6 +11,47 @@ pub type Pato(id: i32)
 {labels, 2}.
 ```
 
+----- BEAM ASSEMBLY -- pond__t__pato.S
+```erlang
+{module, pond__t__pato}.
+{exports, [{'__bp_get', 2}, {'__bp_format', 1}]}.
+{attributes, []}.
+{labels, 7}.
+
+{function, '__bp_get', 2, 3}.
+  {label, 2}.
+    {line, [{location, "pond__t__pato.erl", 1}]}.
+    {func_info, {atom, pond__t__pato}, {atom, '__bp_get'}, 2}.
+  {label, 3}.
+    {test, is_eq_exact, {f, 4}, [{x, 1}, {atom, id}]}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {integer, 2}, {x, 0}}.
+    {call_ext_only, 2, {extfunc, erlang, element, 2}}.
+  {label, 4}.
+    {move, {atom, undefined}, {x, 0}}.
+    return.
+
+{function, '__bp_format', 1, 6}.
+  {label, 5}.
+    {line, [{location, "pond__t__pato.erl", 1}]}.
+    {func_info, {atom, pond__t__pato}, {atom, '__bp_format'}, 1}.
+  {label, 6}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, nil, {y, 1}}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 5, 1}.
+    {put_tuple2, {x, 0}, {list, [{literal, <<"id">>}, {x, 0}]}}.
+    {put_list, {x, 0}, {y, 1}, {y, 1}}.
+    {test_heap, 4, 1}.
+    {put_tuple2, {x, 0}, {list, [{atom, record}, {literal, <<"Pato">>}, {y, 1}]}}.
+    {deallocate, 2}.
+    return.
+```
+
 ----- RUN LOG -----
 ```logs
 ```
@@ -37,7 +78,7 @@ fn main() {
 {module, main}.
 {exports, [{'_botopink_main', 0}, {main, 1}, {'Pato_swim', 1}]}.
 {attributes, []}.
-{labels, 24}.
+{labels, 36}.
 
 {function, 'Pato_swim', 1, 3}.
   {label, 2}.
@@ -48,8 +89,8 @@ fn main() {
     {init_yregs, {list, [{y, 0}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_map, {f, 10}, [{x, 0}]}.
-    {get_map_elements, {f, 10}, {x, 0}, {list, [{atom, id}, {x, 0}]}}.
+    {test, is_tagged_tuple, {f, 10}, [{x, 0}, 2, {atom, pond__t__pato}]}.
+    {get_tuple_element, {x, 0}, 1, {x, 0}}.
   {label, 10}.
     {deallocate, 1}.
     return.
@@ -61,7 +102,8 @@ fn main() {
   {label, 5}.
     {allocate, 1, 0}.
     {init_yregs, {list, [{y, 0}]}}.
-    {put_map_assoc, {f, 0}, {literal, #{}}, {x, 0}, 0, {list, [{atom, id}, {integer, 2}]}}.
+    {test_heap, 3, 0}.
+    {put_tuple2, {x, 0}, {list, [{atom, pond__t__pato}, {integer, 2}]}}.
     {move, {x, 0}, {y, 0}}.
     {move, {y, 0}, {x, 0}}.
     {call, 1, {f, 3}}.
@@ -132,18 +174,18 @@ fn main() {
     {move, {x, 0}, {y, 0}}.
     {move, {x, 1}, {y, 1}}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_binary, {f, 20}, [{x, 0}]}.
-    {test, is_eq, {f, 19}, [{y, 1}, {atom, true}]}.
+    {test, is_binary, {f, 26}, [{x, 0}]}.
+    {test, is_eq, {f, 25}, [{y, 1}, {atom, true}]}.
     {move, {y, 0}, {x, 0}}.
     {deallocate, 2}.
     return.
-  {label, 19}.
+  {label, 25}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, unicode, characters_to_list, 1}}.
     {call_ext_last, 1, {extfunc, io_lib, write_string, 1}, 2}.
-  {label, 20}.
+  {label, 26}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_list, {f, 21}, [{x, 0}]}.
+    {test, is_list, {f, 27}, [{x, 0}]}.
     {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
     {make_fun3, {f, 18}, 0, 0, {x, 0}, {list, []}}.
     {move, {y, 0}, {x, 1}}.
@@ -157,20 +199,20 @@ fn main() {
     {put_list, {integer, 91}, {x, 0}, {x, 0}}.
     {deallocate, 2}.
     return.
-  {label, 21}.
+  {label, 27}.
     {move, {y, 0}, {x, 0}}.
-    {test, is_tuple, {f, 23}, [{x, 0}]}.
+    {test, is_tuple, {f, 29}, [{x, 0}]}.
     {call_ext, 1, {extfunc, erlang, tuple_size, 1}}.
-    {test, is_lt, {f, 22}, [{integer, 0}, {x, 0}]}.
+    {test, is_lt, {f, 28}, [{integer, 0}, {x, 0}]}.
     {move, {integer, 1}, {x, 0}}.
     {move, {y, 0}, {x, 1}}.
     {call_ext, 2, {extfunc, erlang, element, 2}}.
-    {test, is_atom, {f, 22}, [{x, 0}]}.
-    {test, is_ne_exact, {f, 22}, [{x, 0}, {atom, true}]}.
-    {test, is_ne_exact, {f, 22}, [{x, 0}, {atom, false}]}.
-    {test, is_ne_exact, {f, 22}, [{x, 0}, {atom, undefined}]}.
-    {jump, {f, 23}}.
-  {label, 22}.
+    {test, is_atom, {f, 28}, [{x, 0}]}.
+    {test, is_ne_exact, {f, 28}, [{x, 0}, {atom, true}]}.
+    {test, is_ne_exact, {f, 28}, [{x, 0}, {atom, false}]}.
+    {test, is_ne_exact, {f, 28}, [{x, 0}, {atom, undefined}]}.
+    {jump, {f, 30}}.
+  {label, 28}.
     {move, {y, 0}, {x, 0}}.
     {call_ext, 1, {extfunc, erlang, tuple_to_list, 1}}.
     {move, {x, 0}, {y, 1}}.
@@ -188,12 +230,129 @@ fn main() {
     {put_list, {integer, 35}, {x, 0}, {x, 0}}.
     {deallocate, 2}.
     return.
-  {label, 23}.
+  {label, 29}.
+    {move, {y, 0}, {x, 0}}.
+    {test, is_atom, {f, 31}, [{x, 0}]}.
+    {test, is_ne_exact, {f, 31}, [{x, 0}, {atom, true}]}.
+    {test, is_ne_exact, {f, 31}, [{x, 0}, {atom, false}]}.
+    {test, is_ne_exact, {f, 31}, [{x, 0}, {atom, undefined}]}.
+  {label, 30}.
+    {move, {y, 0}, {x, 1}}.
+    {call_last, 2, {f, 20}, 2}.
+  {label, 31}.
     {move, {y, 0}, {x, 0}}.
     {test_heap, 2, 1}.
     {put_list, {x, 0}, nil, {x, 1}}.
     {move, {literal, <<"~p">>}, {x, 0}}.
     {call_ext_last, 2, {extfunc, io_lib, format, 2}, 2}.
+
+{function, '__bp_tagged', 2, 20}.
+  {label, 19}.
+    {line, [{location, "main.erl", 3}]}.
+    {func_info, {atom, main}, {atom, '__bp_tagged'}, 2}.
+  {label, 20}.
+    {allocate, 3, 2}.
+    {init_yregs, {list, [{y, 0}, {y, 1}, {y, 2}]}}.
+    {move, {x, 1}, {y, 0}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, atom_to_list, 1}}.
+    {move, {literal, <<"__v__">>}, {x, 1}}.
+    {call_ext, 2, {extfunc, string, split, 2}}.
+    {test, is_nonempty_list, {f, 32}, [{x, 0}]}.
+    {get_list, {x, 0}, {x, 1}, {x, 2}}.
+    {move, {x, 1}, {y, 2}}.
+    {test, is_nonempty_list, {f, 32}, [{x, 2}]}.
+    {move, {y, 2}, {x, 0}}.
+    {call_ext, 1, {extfunc, erlang, list_to_atom, 1}}.
+    {move, {x, 0}, {y, 1}}.
+  {label, 32}.
+    {move, {y, 1}, {x, 0}}.
+    {call_ext, 1, {extfunc, code, ensure_loaded, 1}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {atom, '__bp_format'}, {x, 1}}.
+    {move, {integer, 1}, {x, 2}}.
+    {call_ext, 3, {extfunc, erlang, function_exported, 3}}.
+    {test, is_eq_exact, {f, 33}, [{x, 0}, {atom, true}]}.
+    {test_heap, 2, 1}.
+    {put_list, {y, 0}, nil, {x, 2}}.
+    {move, {y, 1}, {x, 0}}.
+    {move, {atom, '__bp_format'}, {x, 1}}.
+    {call_ext, 3, {extfunc, erlang, apply, 3}}.
+    {call_last, 1, {f, 22}, 3}.
+  {label, 33}.
+    {test_heap, 2, 1}.
+    {put_list, {y, 0}, nil, {x, 1}}.
+    {move, {literal, <<"~p">>}, {x, 0}}.
+    {call_ext_last, 2, {extfunc, io_lib, format, 2}, 3}.
+
+{function, '__bp_render', 1, 22}.
+  {label, 21}.
+    {line, [{location, "main.erl", 3}]}.
+    {func_info, {atom, main}, {atom, '__bp_render'}, 1}.
+  {label, 22}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {integer, 1}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test, is_eq_exact, {f, 34}, [{x, 0}, {atom, text}]}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
+  {label, 34}.
+    {move, {integer, 3}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {move, {x, 0}, {y, 1}}.
+    {test, is_eq_exact, {f, 35}, [{x, 0}, nil]}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext_last, 2, {extfunc, erlang, element, 2}, 2}.
+  {label, 35}.
+    {test_heap, {alloc, [{words, 0}, {floats, 0}, {funs, 1}]}, 0}.
+    {make_fun3, {f, 24}, 0, 0, {x, 0}, {list, []}}.
+    {move, {y, 1}, {x, 1}}.
+    {call_ext, 2, {extfunc, lists, map, 2}}.
+    {move, {x, 0}, {x, 1}}.
+    {move, {literal, <<", ">>}, {x, 0}}.
+    {call_ext, 2, {extfunc, lists, join, 2}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 8, 1}.
+    {put_list, {integer, 41}, nil, {x, 1}}.
+    {put_list, {y, 1}, {x, 1}, {x, 1}}.
+    {put_list, {integer, 40}, {x, 1}, {x, 1}}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {deallocate, 2}.
+    return.
+
+{function, '-bp_render_pair-', 1, 24}.
+  {label, 23}.
+    {line, [{location, "main.erl", 3}]}.
+    {func_info, {atom, main}, {atom, '-bp_render_pair-'}, 1}.
+  {label, 24}.
+    {allocate, 2, 1}.
+    {init_yregs, {list, [{y, 0}, {y, 1}]}}.
+    {move, {x, 0}, {y, 0}}.
+    {move, {integer, 2}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {move, {atom, false}, {x, 1}}.
+    {call, 2, {f, 14}}.
+    {move, {x, 0}, {y, 1}}.
+    {move, {integer, 1}, {x, 0}}.
+    {move, {y, 0}, {x, 1}}.
+    {call_ext, 2, {extfunc, erlang, element, 2}}.
+    {test_heap, 6, 1}.
+    {put_list, {y, 1}, nil, {x, 1}}.
+    {put_list, {literal, <<": ">>}, {x, 1}, {x, 1}}.
+    {put_list, {x, 0}, {x, 1}, {x, 0}}.
+    {deallocate, 2}.
+    return.
 ```
 
 ----- RUN LOG -----

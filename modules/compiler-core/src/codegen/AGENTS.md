@@ -591,8 +591,8 @@ codegen/
   would answer both receivers and read fields the other does not have. Such a
   module keeps the run-time abort until a receiver like that is typed (06 N15).
 - **A field of function type is applied, not called.** `c.set(9)` on
-  `type Cell(value: i32, set: fn(next: i32) -> i32)` reads the map field and
-  applies it (`(maps:get(set, C))(9)`); the record emits no `set/2`.
+  `type Cell(value: i32, set: fn(next: i32) -> i32)` reads the field and
+  applies it (`(element(3, C))(9)` since half 3); the record emits no `set/2`.
   `fn_typed_fields` (built in `collectTypeShapes`) carries the pairs, and the
   name-only set backs the untyped fallback, where inference records no lowering
   for a call on a field.
@@ -1175,7 +1175,11 @@ codegen/
   prints as `[115,287.5,460]` (`$__print_arr_f32`).
 - **Coverage**: numerics, locals, calls, booleans, assign, throw, strings,
   `@print`, field access/assign, arrays, tuples, records/structs and behavior
-  literals (all `put_map_assoc` maps keyed by field name; the anonymous
+  literals (a `type`'s values are decision 21's tagged tuple
+  `{TypeAtom, F1, …}` — `put_tuple2` with the atom of the module that DECLARES
+  the type, a field the call does not fill `undefined`; a behavior literal and
+  an all-labelled anonymous construct have no declared order and stay
+  `put_map_assoc` maps keyed by field name; the anonymous
   `record { … }` literal is gone since front 12 step 4), case (all patterns + guards via
   `emitGuardPre`/`emitGuardPost`; a bare `.ident` arm naming a nullary enum
   variant — local, imported by name, or from a `from "std"` module — is a match
@@ -1189,7 +1193,9 @@ codegen/
   loops, pipeline, closures, `call_fun`, `@Result`/`@Option` ops
   (`lowerResultOptionOp`: `{ok, V}`/`{error, E}` and bare value / `undefined`,
   mirroring erlang), optional chaining (`lowerIdentAccess`: `is_eq` on
-  `undefined`, then `is_map` + `get_map_elements`), `comptime` nodes
+  `undefined`, then the tagged-tuple read below, or `is_map` +
+  `get_map_elements` for a receiver whose type this emit cannot place),
+  `comptime` nodes
   (`lowerComptime`: a folded expression/block is its value), `await e` (eager:
   the value of `e`).
 - **`@print` / `@println` / `@debug`** (`lowerPrint`, `ensurePrintHelper`) lower
@@ -1200,16 +1206,39 @@ codegen/
   `'__bp_show'(V, true)` and `'__bp_show'(V, false)`). A top-level binary is its
   own text, a nested one `io_lib:write_string(unicode:characters_to_list(V))` —
   `"say \"hi\""`, source escapes and all, in one call instead of a per-character
-  walk — a list `[E1, E2]`, a tuple `#(E1, E2)`, and everything else `~p`: an
-  integer, a float (which keeps its `.0`), an atom, a record's map, and a tuple
-  opened by an atom other than `true`/`false`/`undefined`, which is an enum
-  variant or a `@Result`. Records (§7 F2), variants (F3) and `Display` (F4) need
-  a value that knows its own type, which is
-  [`13-module-identity`](../../../../specs/1.0.5-beta/13-module-identity/README.md) step 18.
+  walk — a list `[E1, E2]`, a tuple `#(E1, E2)`. **A value that knows its own
+  declaration prints as the source writes it** (§7 F2/F3/F4, half 3): a tagged
+  tuple and a bare atom both reach `'__bp_tagged'/2`, which cuts any `__v__`
+  segment off the tag with `string:split/2` to get the declaring module, loads
+  it and asks for `'__bp_format'/1` only when `erlang:function_exported/3` says
+  it answers; `'__bp_render'/1` turns the description into text
+  (`{record, "Point", [{"x", 1}, …]}` → `Point(x: 1, y: 2)`,
+  `{variant, "Shape.Dot", []}` → `Shape.Dot`, `{text, …}` → a `Display`
+  implementation's own string) with `'-bp_render_pair-'/1` rendering one
+  `label: value` through `'__bp_show'/2`. Everything else is `~p`: an integer, a
+  float (which keeps its `.0`), `true`/`false`/`undefined`, a `@Result`
+  `{ok, V}`, a host tuple, and any atom no loadable module formats.
   It replaced the per-value format-verb machinery (`'__bp_print_fmt'/1` +
   `'__bp_print_sep'/1`, `~ts` for a binary and `~p` for everything else), which
   printed every compound value as an **Erlang term** — decision 1a never reached
   this backend, so a nested string came out `<<"a">>` and a tuple `{1,<<"a">>}`.
+- **A record field is read positionally, never through a call** (half 3):
+  `is_tagged_tuple` on the receiver's own atom and arity, then
+  `get_tuple_element`. `erlang:element/2` is wrong here even though it is what
+  the tuple-index read uses — a `call_ext` frees every x-register, and
+  `self.side * self.side` holds the first read in `{x, 1}` across the second
+  (`{{x,1},not_live}` out of the loader's consistency check, measured on
+  `surface_type_and_behavior_…`). The record is placed by inference's
+  `InstanceLowering.field_of`, by `self` inside the type's own module, or by the
+  one record declaring the name (`recordTypeOfReceiver`); a destructuring
+  (`emitDestructFromX0`) resolves the same way from the parameter's written type
+  and binds each slot with `get_tuple_element`. A receiver that resolves to
+  nothing keeps the map read.
+- **Every `type`'s module answers about its own values** (`emitTypeIdentity`):
+  `'__bp_get'/2` turns a field name into its position for the reads the emitter
+  could not place, and `'__bp_format'/1` describes the value for
+  `'__bp_render'/1`. A `type` that declares no bodied method is still a module —
+  the tag has to name something loadable.
 - **The index expression** (`lowerIndexExpr`, `ensureIndexHelper`,
   `ensureSliceHelper`): decision 30 reaches every backend as the builtin call
   `"[]"` over `(receiver, index)` (`ast.zig:1717-1740`), so `xs[0]`, `d["k"]`,

@@ -178,7 +178,6 @@ erlang   | test/type_identity_union.bp | 01 step 2, 13 step 17 | the same — "t
 commonJS | test/type_identity_case.bp::§5.1 a case over a union of two named types needs no wildcard ;; §3.3 the arm is chosen by the value's own type | 13 step 17 | re-measured by front 01 in its step-4/5 tree on 2026-09-19: the cell compiles — the arm body is unwrapped — and what is left is identity, not the checker. A `case` arm that names a type has to dispatch on the value's own type, which needs the tag in the value, so `01 step 4` is off this line
 erlang   | test/type_identity_case.bp::§3.3 the arm is chosen by the value's own type | 13 step 17 | the same, and one test fewer: with the cell compiling, `§5.1 a case over a union of two named types needs no wildcard` passes on erlang and only the §3.3 arm-by-own-type row is left. `01 step 4` is off this line
 wasm     | run/type_identity_print.bp | 05 step 1, 13 step 18 | re-measured 2026-09-18 at `b5a9b85d`: `@print(Point(x: 1, y: 2))` **traps** on the very first line — `wasm trap: wasm `unreachable` instruction executed`, exit 134, stdout empty. The `256` / `264` / `268` heap addresses this line used to name are gone
-beam     | run/type_identity_print.bp | 03 step 2, 13 step 18 | §7: the erlang shapes seen from BEAM assembly — a record as a map, a variant as a tagged tuple or a bare atom
 
 # ── beam, the fourth executable target (decision 8) ───────────────────────────
 # `botopink run --target beam` writes `out/*.S`; `erlc +from_asm` then `erl` run
@@ -191,8 +190,6 @@ beam     | run/type_identity_print.bp | 03 step 2, 13 step 18 | §7: the erlang 
 # cells, the last two of those thanks to front 13's half 1. The "9 results,
 # 2 passing" this comment carried was measured at `c2dd780` and is two milestone
 # merges out of date.
-beam     | run/print_formatter.bp     | 03 step 2, 13 step 18 | §7 formatter: arrays/tuples print as erlang terms, a record as `#{x => 1,y => 2}` and a variant as `{'Square',4}` / `'Nothing'`
-beam     | run/display_print.bp       | 03 step 2, 13 step 18 | §7: `@print` does not consult `Display`; the record prints as `#{cents => 5}`
 
 # ── §5 range patterns (decision 53) ───────────────────────────────────────────
 # Decision 53 amended decisions 20 and 36 to Zig's split: `...` is inclusive in a
