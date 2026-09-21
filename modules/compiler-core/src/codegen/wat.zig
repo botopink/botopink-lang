@@ -1549,7 +1549,8 @@ const Emitter = struct {
         // effect), which is a plain function. WASM is single-threaded and eager
         // here: `@Future<T>` resolves to `T` (`await` is identity); full
         // generator state-machine lowering is not yet implemented.
-        if (f.effect != null and f.effect.? != .result) {
+        // `#[@context]` is a plain function too (decision 88: it gates `use`).
+        if (f.effect != null and f.effect.? != .result and f.effect.? != .context) {
             try self.itemComment("#[@future] / #[@asyncGenerator] — eager lowering");
         }
         // Params, and the locals the body needs, are registered *before* the

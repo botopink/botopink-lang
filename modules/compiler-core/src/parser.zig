@@ -253,6 +253,16 @@ pub const Parser = struct {
     noTrailingLambda: bool = false,
     /// When true, `parsePipelineExpr` will not consume a trailing `catch` operator.
     noTailCatch: bool = false,
+    /// The static-prefix rule of `use` (front 19 step 1, decision 88): true once
+    /// an `if`, `case`, `loop` or `return` of the **current function body** has
+    /// been parsed, at any nesting. A `use` seen while it is set is
+    /// `useAfterBranch`. Set by the four constructs themselves (`parser/exprs.zig`),
+    /// so a branch's own block inherits it (`if (a) { use … }` is a `use` after
+    /// an `if`) and a `val c = if (…) …` counts as a branch too. Reset by a block
+    /// that starts a function (`BlockParseOptions.freshUseScope`): a lambda body
+    /// is another function, so its `return` does not break the enclosing prefix
+    /// and the enclosing `if` does not break its own.
+    useBranchSeen: bool = false,
     /// One `>` still owed to an enclosing generic-argument list: nested
     /// generics close with `>>`, which the lexer scans as a single shift
     /// token (`Array<Array<T>>`). `consumeGenericClose` consumes the `>>`
@@ -715,6 +725,11 @@ pub const Parser = struct {
         semicolonPolicy: SemicolonPolicy = .required,
         /// Reject a `use` hook that appears after a branch/return (static-prefix rule).
         useAfterBranchGuard: bool = false,
+        /// This block starts a function body (fn, `test`, lambda): the static
+        /// prefix starts over — `useBranchSeen` is cleared on entry and restored
+        /// on exit. A branch's block (`if`/`else`/`case` arm/`loop` body) leaves
+        /// it false and inherits the enclosing body's flag.
+        freshUseScope: bool = false,
     };
 
     /// Parse `{ stmt; stmt; ... }`. The opening `{` must be the current token.
@@ -743,8 +758,12 @@ pub const Parser = struct {
             for (stmts.items) |*s| s.deinit(alloc);
             stmts.deinit(alloc);
         }
-        var seenBranch = false;
-        _ = &seenBranch; // used only when useAfterBranchGuard is set
+        // The static prefix is a property of the function body, not of this
+        // block: nested branch blocks inherit `useBranchSeen`, a function body
+        // starts clean, and both restore the enclosing state on exit.
+        const savedBranchSeen = this.useBranchSeen;
+        defer this.useBranchSeen = savedBranchSeen;
+        if (opts.freshUseScope) this.useBranchSeen = false;
         while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
             const emptyLinesBefore: u32 = if (opts.trackEmptyLines) blk: {
                 const prevLine = if (this.current > 0) this.tokens[this.current - 1].line else 1;
@@ -754,14 +773,15 @@ pub const Parser = struct {
 
             if (opts.handleComments and try this.tryParseCommentStmt(alloc, &stmts, emptyLinesBefore)) continue;
 
-            if (opts.useAfterBranchGuard) {
-                if (seenBranch and this.check(.use)) {
-                    const tok = this.peek();
-                    this.parseError = ParseErrorInfo.fromToken(.useAfterBranch, tok);
-                    return ParseError.UnexpectedToken;
-                }
-                if (this.check(.@"if") or this.check(.@"return") or this.check(.loop) or this.check(.case))
-                    seenBranch = true;
+            // A bare `use …;` statement after a branch: refused at its own
+            // token before anything is parsed. The `if`/`case`/`loop`/`return`
+            // that set `useBranchSeen` did so when they were parsed
+            // (`parser/exprs.zig`), which is what lets a `use` inside a
+            // branch's block see the branch it is in (row 4c of front 19).
+            if (opts.useAfterBranchGuard and this.useBranchSeen and this.check(.use)) {
+                const tok = this.peek();
+                this.parseError = ParseErrorInfo.fromToken(.useAfterBranch, tok);
+                return ParseError.UnexpectedToken;
             }
 
             var expr = try this.parseExpr(alloc);
@@ -770,6 +790,15 @@ pub const Parser = struct {
             // here rather than leaked; once appended, `stmts`' own errdefer
             // owns it and this one is discharged.
             errdefer expr.deinit(alloc);
+            // `val c = use …` / `var c = use …` / `val {a, b} = use …` after a
+            // branch (row 4b): the statement starts with `val`, so only the
+            // parsed shape shows the `use`. Reported at the `use` token.
+            if (opts.useAfterBranchGuard and this.useBranchSeen) {
+                if (bindingUseLoc(&expr)) |loc| {
+                    this.parseError = ParseErrorInfo.fromToken(.useAfterBranch, this.tokenAt(loc, .use));
+                    return ParseError.UnexpectedToken;
+                }
+            }
             switch (opts.semicolonPolicy) {
                 .required => _ = try this.consume(.semicolon),
                 .optional => _ = this.match(.semicolon),
@@ -791,6 +820,49 @@ pub const Parser = struct {
             .semicolonPolicy = .requiredExceptLast,
             .useAfterBranchGuard = true,
         });
+    }
+
+    /// A block that **starts a function body** — a `fn` / method body, a `test`
+    /// body, a `fn (…) { … }` expression: `parseStmtListInBraces` with the
+    /// static prefix of `use` starting over (`freshUseScope`). Lambdas read a
+    /// prologue and call `parseBlockBody` with the same flag themselves.
+    pub fn parseFnBodyInBraces(this: *This, alloc: std.mem.Allocator) ParseError![]Stmt {
+        return this.parseBlock(alloc, .{
+            .trackEmptyLines = true,
+            .handleComments = true,
+            .semicolonPolicy = .requiredExceptLast,
+            .useAfterBranchGuard = true,
+            .freshUseScope = true,
+        });
+    }
+
+    /// The `use` a statement activates at its top level, if any: a bare
+    /// `use …;`, or a `val`/`var` (plain or destructuring) whose value is the
+    /// `use` prefix. The static-prefix rule tests statements by this shape, not
+    /// by their first token. Same shape as `codegen/commonJS.zig`'s former
+    /// `useHookInner`, over the binding as well.
+    fn bindingUseLoc(e: *const Expr) ?Loc {
+        return switch (e.*) {
+            .useHook => |uh| uh.loc,
+            .binding => |b| switch (b.kind) {
+                .localBind => |lb| if (lb.value.* == .useHook) lb.value.useHook.loc else null,
+                .localBindDestruct => |lb| if (lb.value.* == .useHook) lb.value.useHook.loc else null,
+                else => null,
+            },
+            else => null,
+        };
+    }
+
+    /// The token of kind `kind` at `loc` — the one an already-parsed node was
+    /// built from — so a diagnostic raised after the parse still carries the
+    /// byte offsets `ParseErrorInfo.fromToken` requires. Falls back to the
+    /// current token when no token matches (it always does for a node the
+    /// parser just built).
+    fn tokenAt(this: *This, loc: Loc, kind: TokenKind) Token {
+        for (this.tokens) |tok| {
+            if (tok.kind == kind and tok.line == loc.line and tok.col == loc.col) return tok;
+        }
+        return this.peek();
     }
 
     /// Parse either `{ expr; ... }` or a single `expr`.

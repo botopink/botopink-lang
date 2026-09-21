@@ -4,6 +4,7 @@ val Element = type implement @Context<Element, Element> { }
 fn state(initial: i32) -> @Context<Element, i32> {
     initial;
 }
+#[@context]
 fn Counter() -> Element {
     val {count, setCount} = use state(0);
     Element();
@@ -21,7 +22,7 @@ function state(initial) {
 }
 
 function Counter() {
-    const { count, setCount } = useState(0);
+    const { count, setCount } = state(0);
     new Element();
 }
 ```

@@ -193,12 +193,20 @@ test "js: import ---- named imports" {
     );
 }
 
-test "codegen ---- use object destructure state to useState" {
+// `use` is a transparent prefix on every backend (decision 88, front 19 of
+// 1.0.10-beta): `val c = use state(0)` is `const c = state(0)`. The React rename
+// (`state` → `useState`) and the inferred dependency arrays these four cells
+// used to record were deleted with the decision — the emitted name was never
+// declared, and the client runtime supplies hook semantics through what `state`
+// does. The component carries `#[@context]`, the effect that lets a body
+// activate a hook.
+test "codegen ---- use object destructure is a plain call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val Element = type implement @Context<Element, Element> { }
         \\fn state(initial: i32) -> @Context<Element, i32> {
         \\    initial;
         \\}
+        \\#[@context]
         \\fn Counter() -> Element {
         \\    val {count, setCount} = use state(0);
         \\    Element();
@@ -206,12 +214,13 @@ test "codegen ---- use object destructure state to useState" {
     );
 }
 
-test "codegen ---- use tuple destructure state to useState" {
+test "codegen ---- use tuple destructure is a plain call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val Element = type implement @Context<Element, Element> { }
         \\fn state(initial: i32) -> @Context<Element, i32> {
         \\    initial;
         \\}
+        \\#[@context]
         \\fn Counter() -> Element {
         \\    val #(count, setCount) = use state(0);
         \\    Element();
@@ -219,7 +228,7 @@ test "codegen ---- use tuple destructure state to useState" {
     );
 }
 
-test "codegen ---- use memo infers dependency array" {
+test "codegen ---- use memo is a plain call with no inferred deps" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val Element = type implement @Context<Element, Element> { }
         \\fn state(initial: i32) -> @Context<Element, i32> {
@@ -228,6 +237,7 @@ test "codegen ---- use memo infers dependency array" {
         \\fn memo() -> @Context<Element, i32> {
         \\    0;
         \\}
+        \\#[@context]
         \\fn Counter() -> Element {
         \\    val {count, setCount} = use state(0);
         \\    val doubled = use memo { -> return count * 2; };
@@ -236,7 +246,7 @@ test "codegen ---- use memo infers dependency array" {
     );
 }
 
-test "codegen ---- use effect void hook empty deps" {
+test "codegen ---- use effect void hook is a plain call" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\val Element = type implement @Context<Element, Element> { }
         \\fn cleanup() {
@@ -245,6 +255,7 @@ test "codegen ---- use effect void hook empty deps" {
         \\fn effect() -> @Context<Element, i32> {
         \\    0;
         \\}
+        \\#[@context]
         \\fn Widget() -> Element {
         \\    use effect { -> cleanup(); };
         \\    Element();

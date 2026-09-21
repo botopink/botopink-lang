@@ -281,25 +281,39 @@ recognize → reflect → invoke → apply; marker meaning lives in the lib body
 ## `@Context<B, R>` capability inference
 
 `use` is a **prefix operator** (`use <hookcall>`); bindings come from the
-enclosing `val`/`var` (`val {v, s} = use state(0)`, `use effect { … }` for void).
-AST node: `Expr.useHook { inner }`. It is gated by the function's return type:
+enclosing `val`/`var` (`val {v, s} = use state(0)`, `use effect(…)` for void).
+AST node: `Expr.useHook { inner }`. It is gated by the function's return type
+**and** its effect annotation (decision 88 of 1.0.10-beta, front 19):
 
 - The return must implement `@Context<ContextBase, Return>` — directly
-  (`fn f() -> @Context<Element, R>`) or via a named type whose `implement`
-  clause lists `@Context<…>`.
+  (`fn f() -> @Context<Element, R>`, a custom hook) or via a named type whose
+  `implement` clause lists `@Context<…>` (`fn Widget() -> Element`, a component
+  whose owner type is `Element`).
+- The fn must be `#[@context]`: only the annotated body activates a hook. A
+  `-> Element` without it is an ordinary fn; a `-> @Context<B, R>` without it
+  is a hook declaration whose body activates nothing.
 - Every `use` in the body must return `@Context<B, _>` with the **same**
   `ContextBase` (transitive through custom hooks).
 
 Wiring in `infer.zig`: `contextBaseFromImplements` computes `TypeDef.contextBase`;
 `inferFnDecl` records the body's capability in `env.fnContext`
-(`contextInfoFromReturn`); `inferUseHookExpr` checks `env.fnContext` then
-`validateUseBase` and types the prefix as `R`. Diagnostics: `useNotAllowed`,
-`useNotContext`, `contextMismatch`. `val {v, s} = use …` binds leniently via
-`bindUseDestructure`.
+(`contextInfoFromReturn(env, returnType, effect, name)` → `FnContext
+{implementsContext, base, annotated, fnName}`); `inferUseHookExpr` checks
+`implementsContext` (else `useNotAllowed`), then `annotated` (else
+`useWithoutContextEffect` — `use-without-context-effect`, RC7 in
+`diagnostics.zig`, located at the `use` and naming the fn and its return type),
+then `validateUseBase` (`useNotContext`, `contextMismatch`) and types the prefix
+as `R`. `effectMatchesReturn(env, .context, T)` accepts the `@Context<…>` wrapper
+or a named type with a `contextBase`, so `#[@context] fn … -> Element` passes
+the effect ↔ wrapper check, and `returnTargetFor` makes such a body's `return`
+unify with the owner type as written. `val {v, s} = use …` binds leniently via
+`bindUseDestructure`; a tuple `R` binds fresh vars (front 19 step 3).
 
-Codegen lowers `use` per target (commonJS → React hooks with inferred
-dependency arrays; other targets treat `use` as a transparent prefix). Phantom
-`@Context` base structs are erased — see `codegen/AGENTS.md`.
+Codegen lowers `use f(x)` to `f(x)` on **every** target — the prefix is the
+activation the checker validated, never a rename or an inferred dependency
+array (decision 88 deleted commonJS's React mapping). Phantom `@Context` base
+structs are erased — see `codegen/AGENTS.md`. Documented for users in
+`docs.md` § *use — imports, activation, and hooks*.
 
 ## `return` checking (06 C1)
 

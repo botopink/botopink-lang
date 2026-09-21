@@ -144,7 +144,10 @@ overrides the list path.
 
 `<lib> <target> <owner> <reason…>` per line, `#` comments. The owning front
 deletes its line in the commit that turns the cell green, which makes the cell
-a hard assert.
+a hard assert. Live entries: `jhonstart commonJS` and `jhonstart erlang`, owned
+by the 1.0.10-beta jhonstart library front — `src/hooks.bp:109` writes `use` in
+a `-> Element` body without `#[@context]`, which decision 88 (front 19,
+`use-without-context-effect`) refuses until the library adds the annotation.
 
 ## check-docs.sh
 

@@ -2208,7 +2208,8 @@ const Emitter = struct {
         // effect), which is a plain function. The BEAM model is processes +
         // message passing (spawn/receive); this backend currently emits the
         // eager body, with full process-based lowering left as future work.
-        if (f.effect != null and f.effect.? != .result) {
+        // `#[@context]` is a plain function too (decision 88: it gates `use`).
+        if (f.effect != null and f.effect.? != .result and f.effect.? != .context) {
             try beamEmitter.writeTopComment(self.out, "#[@future] / #[@asyncGenerator] — eager lowering", .{});
         }
         var fn_buf: [256]u8 = undefined;
@@ -2238,7 +2239,7 @@ const Emitter = struct {
         self.cur_line += 1;
         // An eager `#[@iterator]`/`#[@future]` body ending in a yielding loop
         // is that loop's list: the fn returns it instead of `ok`.
-        if (f.effect != null and f.effect.? != .result and f.body.len > 0) {
+        if (f.effect != null and f.effect.? != .result and f.effect.? != .context and f.body.len > 0) {
             const last = f.body[f.body.len - 1].expr;
             if (last == .loop and hasYieldOrBreakValue(last.loop.body)) {
                 for (f.body[0 .. f.body.len - 1]) |stmt| try self.emitStmt(stmt);

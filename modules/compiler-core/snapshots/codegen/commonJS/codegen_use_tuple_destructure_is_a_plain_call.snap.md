@@ -1,14 +1,12 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 val Element = type implement @Context<Element, Element> { }
-fn cleanup() {
-    0;
+fn state(initial: i32) -> @Context<Element, i32> {
+    initial;
 }
-fn effect() -> @Context<Element, i32> {
-    0;
-}
-fn Widget() -> Element {
-    use effect { -> cleanup(); };
+#[@context]
+fn Counter() -> Element {
+    val #(count, setCount) = use state(0);
     Element();
 }
 ```
@@ -19,26 +17,18 @@ class Element {
 }
 Element.prototype.__bp = "Element";
 
-function cleanup() {
-    0;
+function state(initial) {
+    initial;
 }
 
-function effect() {
-    0;
-}
-
-function Widget() {
-    useEffect(() => {
-    cleanup();
-}, []);
+function Counter() {
+    const [ count, setCount ] = state(0);
     new Element();
 }
 ```
 
 ----- TYPESCRIPT TYPEDEF -- main.d.ts
 ```typescript
-
-
 
 
 

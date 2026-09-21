@@ -7,6 +7,7 @@ fn cleanup() {
 fn effect() -> @Context<Element, i32> {
     0;
 }
+#[@context]
 fn Widget() -> Element {
     use effect { -> cleanup(); };
     Element();

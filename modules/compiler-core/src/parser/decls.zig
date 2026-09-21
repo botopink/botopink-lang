@@ -478,7 +478,7 @@ pub fn parseFnBody(
         };
     }
 
-    const body = try this.parseStmtListInBraces(alloc);
+    const body = try this.parseFnBodyInBraces(alloc);
 
     return FnDecl{
         .isPub = isPub,
@@ -542,7 +542,7 @@ pub fn parseTestDecl(this: *This, alloc: std.mem.Allocator) ParseError!ast.TestD
         const tok = this.advance();
         name = tok.lexeme[1 .. tok.lexeme.len - 1];
     }
-    const body = try this.parseStmtListInBraces(alloc);
+    const body = try this.parseFnBodyInBraces(alloc);
     return ast.TestDecl{
         .name = name,
         .loc = locFromToken(testTok),

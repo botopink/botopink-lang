@@ -1856,11 +1856,15 @@ Primitive-receiver methods (`xs.map(f)`, `s.toUpper()`) are tagged `.prim` in
   too; their bodies run in the persistent `erl` comptime runtime
   (`comptime/decorator_eval.zig`). Decls a body contributes via `@emit` are
   spliced into the module and emitted as ordinary declarations.
-- `use` hooks: `use` is a transparent prefix; `val`/`var` does the binding.
-  CommonJS maps hooks to React (`state` → `useState`, …) via `writeHookName`;
-  `memo`/`effect`/`callback` get an inferred dependency array from the reactive
-  names (`hook_state`) the lambda reads (`identInExpr`). Erlang/BEAM/WAT lower
-  `use` transparently. Phantom `@Context` base structs
+- `use` hooks: `use f(x)` lowers to `f(x)` on every backend (decision 88 of
+  1.0.10-beta, front 19); `val`/`var` does the binding. CommonJS used to map
+  hooks to React (`state` → `useState`, an inferred dependency array for
+  `memo`/`effect`/… from the names earlier hooks bound) — `hookName`,
+  `hookTakesDeps`, `buildHookCall`, `buildHookDeps`, `hook_state` are gone: the
+  emitted name was never declared, and the client runtime supplies hook
+  semantics through what `f` does. `#[@context]` is a plain function on every
+  backend (the annotation gates `use` in the checker; the three eager-lowering
+  comments exclude it beside `#[@result]`). Phantom `@Context` base structs
   (`isPhantomContextStruct`: implements `@Context`, no members) emit no runtime
   code. A record/struct with fields (incl. `record implement … { fields }`)
   emits a real constructor (`emitStruct` — field initializers become param
