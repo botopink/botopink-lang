@@ -9,18 +9,3 @@
 # the cell into a hard assert. An unlisted cell that fails always fails the gate.
 #
 # Owners are the 1.0.4-beta fronts (specs/1.0.4-beta/fronts.md).
-
-# `fix/js-instanceof-boundary` (1.0.10-beta front `00 · 04-js`, round 2). The
-# example's two class-body assertions pin the OUTPUT OF A COMPILER DEFECT, on
-# purpose and with the reason written above them: a `case` arm over a variant
-# whose name was unique in the program lowered to `instanceof`, and a consumer
-# package re-emits its own copy of the enum classes, so `.Text.Size.X3xl` and
-# `.Text.Size.Base` went nowhere and the class bodies read
-# `{font-weight:bold;color:red}` and `{color:gray}`. The arm tests the variant's
-# `tag` now and both tokens land: the bodies read
-# `{font-size:1.875rem;font-weight:bold;color:red}` and `{font-size:1rem;…}`,
-# which is what emilia asked for when it wrote "the assertions below pin what is
-# actually emitted so the fix is visible as a change here". The goldens are
-# emilia's to update — this checkout may not edit `repository/emilia/**` — and
-# the line below goes with them.
-emilia-card commonJS 05-emilia flush returns a layered `<style>` document: the two class bodies still assert the pre-fix text, without `font-size:1.875rem` / `font-size:1rem`; update the goldens in examples/emilia-card/src/main.bp and delete this line
