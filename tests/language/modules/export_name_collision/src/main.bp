@@ -1,0 +1,32 @@
+//// A `pub fn` name two modules of one program declare, and a consumer that
+//// says which it means.
+////
+//// Every index that resolves an import used to be keyed by the bare symbol
+//// NAME — the cross-module export index, the erlang/commonJS/beam/wasm import
+//// walks that read it, the checker's registry scan, and the CLI's topological
+//// sort — and a name is unique inside a module, never over a program:
+//// `libs/std` declares `parse` in `json`, in `querystring` and in `url` today.
+//// The `from "<mod>"` clause, the one thing that answers "which `parse`", was
+//// consulted by none of them.
+////
+//// So `import {parse} from "one"` was answered by `two` and the defect wore
+//// three faces, none of them a diagnostic: commonJS emitted
+//// `require("./two.js")` and node printed `2` at exit 0; wasm linked `two`'s
+//// body in and printed `2` at exit 0; erlang emitted a remote call into the
+//// other module and died with `undef {two,parse,[<<"x">>]}`. Reversed — the
+//// consumer naming `two` — all four REFUSED the program with `one`'s arity:
+//// "'parse' expects 1 argument(s), got 2".
+////
+//// `two` is present and imported by nobody: that is the whole collision. A
+//// second module importing `two`'s `parse` as well is NOT written here, and
+//// deliberately — wasm links every module of a program into one flat
+//// namespace, so two `parse` definitions in one wasm module collide there for
+//// a reason that is wasm's and not this index's.
+
+pub mod one;
+pub mod two;
+import {parse} from "one";
+
+pub fn main() {
+    @print(parse("x"));
+}

@@ -814,14 +814,35 @@ fn resolveImports(
                     // `implements`/`contextBase`/fields — is visible here, not
                     // just its constructor value. This mirrors the `from "std"`
                     // type-export path (`stdModuleTypes` → `registerTypeDecl`).
+                    // Both registries are keyed by module PATH and were walked
+                    // taking the first entry that held `name` — so `from
+                    // "<mod>"`, the one thing that says WHICH module the import
+                    // means, was never consulted. A name is unique inside a
+                    // module and not over a program: `libs/std` declares
+                    // `parse` in `json`, in `querystring` and in `url` today.
+                    // Measured before this: a module importing `Outcome` from
+                    // "parser" was bound to "net"'s `Outcome` and the program
+                    // was REFUSED against the wrong record's fields
+                    // ("expected i32, got string").
+                    //
+                    // So the module the source NAMES answers first, and the old
+                    // whole-registry scan is the second pass — a `from "<pkg>"`
+                    // handle covers several modules and names none of them, a
+                    // bare `import { … };` names nothing at all, and a module
+                    // not yet analysed is in neither pass — so every case that
+                    // used to reach the scan still reaches it.
                     var bound_type_decl = false;
-                    var dit = typeDeclRegistry.iterator();
-                    while (dit.next()) |e| {
-                        if (isStdPkgPath(e.key_ptr.*)) continue;
-                        if (e.value_ptr.get(name)) |type_decl| {
-                            try infer.registerImportedTypeDecl(env, type_decl);
-                            bound_type_decl = true;
-                            break;
+                    for ([2]bool{ true, false }) |named_only| {
+                        if (bound_type_decl) break;
+                        var dit = typeDeclRegistry.iterator();
+                        while (dit.next()) |e| {
+                            if (isStdPkgPath(e.key_ptr.*)) continue;
+                            if (named_only and !u.source.namesModule(e.key_ptr.*)) continue;
+                            if (e.value_ptr.get(name)) |type_decl| {
+                                try infer.registerImportedTypeDecl(env, type_decl);
+                                bound_type_decl = true;
+                                break;
+                            }
                         }
                     }
                     // Value/constructor binding. Skipped for nominal types whose
@@ -830,12 +851,18 @@ fn resolveImports(
                     // own type ids, and clobbering it with the exported `*T.Type`
                     // would reintroduce the defining module's ids.
                     if (!bound_type_decl) {
-                        var it = registry.iterator();
-                        while (it.next()) |e| {
-                            if (isStdPkgPath(e.key_ptr.*)) continue;
-                            if (e.value_ptr.get(name)) |ty| {
-                                try env.bind(name, ty);
-                                break;
+                        var bound_value = false;
+                        for ([2]bool{ true, false }) |named_only| {
+                            if (bound_value) break;
+                            var it = registry.iterator();
+                            while (it.next()) |e| {
+                                if (isStdPkgPath(e.key_ptr.*)) continue;
+                                if (named_only and !u.source.namesModule(e.key_ptr.*)) continue;
+                                if (e.value_ptr.get(name)) |ty| {
+                                    try env.bind(name, ty);
+                                    bound_value = true;
+                                    break;
+                                }
                             }
                         }
                     }

@@ -66,6 +66,23 @@ pub fn codegenEmit(
                 });
             },
             .ok => |*ok| {
+                // An import this program cannot resolve to one module: the
+                // index is keyed by the bare symbol name and two modules
+                // export it. Backend-agnostic — every backend reads the same
+                // index — so every backend's driver reports it, the way the
+                // erlang atom fault is reported.
+                if (cross.exportFault(ct.name)) |contest| {
+                    try results.append(alloc, .{
+                        .name = ct.name,
+                        .src = ct.src,
+                        .result = .{
+                            .js = try alloc.dupe(u8, ""),
+                            .comptime_script = null,
+                            .diagnostic = .{ .type = .{ .message = try contest.message(alloc), .loc = null } },
+                        },
+                    });
+                    continue;
+                }
                 // `"std"` package copies are dependencies — never emit their
                 // test blocks (a project's `botopink test` runs only its own
                 // tests; the stdlib's inline tests run from `libs/std` itself).
@@ -1494,7 +1511,7 @@ const Emitter = struct {
             // construction here (`App(8080, "/")`) still needs `new`.
             .use => |u| if (self.cross) |xc| {
                 for (u.imports) |imp| {
-                    if (xc.exports.get(imp.name())) |info| {
+                    if (xc.picked(imp.name(), u.source, null)) |info| {
                         if (info.is_class) try self.class_names.put(imp.name(), {});
                     }
                 }
@@ -1536,7 +1553,7 @@ const Emitter = struct {
             .behavior => |i| try self.local_interfaces.put(i.name, i),
             .use => |u| if (self.cross) |xc| {
                 for (u.imports) |imp| {
-                    const info = xc.exports.get(imp.name()) orelse continue;
+                    const info = xc.picked(imp.name(), u.source, null) orelse continue;
                     if (info.kind == .@"enum") try self.imported_enums.put(imp.name(), {});
                 }
             },
@@ -2396,18 +2413,23 @@ const Emitter = struct {
         // It resolves the same way a `from "<pkg>"` import does — name by name
         // through the cross-module export index — so both enter here.
         if (self.cross != null) {
-            const xm = &self.cross.?.exports;
+            const xm = self.cross.?;
             var seen = std.StringHashMap(void).init(self.alloc);
             defer seen.deinit();
             for (u.imports) |imp| {
-                const info = xm.get(imp.name()) orelse continue;
+                // Which module emits this name — asked of the import's own
+                // `from "<mod>"`, not of a name-keyed `get` whose winner was
+                // the walk order. Measured before this: `import {parse} from
+                // "one"` emitted `require("./two.js")` and node printed the
+                // other module's answer at exit 0.
+                const info = xm.picked(imp.name(), u.source, null) orelse continue;
                 if (seen.contains(info.module)) continue;
                 try seen.put(info.module, {});
                 // Names from this module not already bound here — `const {…}` for
                 // exactly those. If every one is already bound, emit no line.
                 var props: std.ArrayListUnmanaged(js.ObjectPattern.Prop) = .empty;
                 for (u.imports) |imp2| {
-                    const info2 = xm.get(imp2.name()) orelse continue;
+                    const info2 = xm.picked(imp2.name(), u.source, null) orelse continue;
                     if (!std.mem.eql(u8, info2.module, info.module)) continue;
                     if (self.seen_imports.contains(imp2.name())) continue;
                     try self.seen_imports.put(imp2.name(), {});
@@ -2440,7 +2462,7 @@ const Emitter = struct {
                     break;
                 }
             }
-            if (names_lib and xm.get(lib_name) == null) {
+            if (names_lib and xm.exports.get(lib_name) == null) {
                 // Distinct modules emitted under the lib's `<lib>/` path prefix,
                 // sorted for deterministic output (the export map is unordered).
                 var mods: std.ArrayListUnmanaged([]const u8) = .empty;
@@ -2449,7 +2471,7 @@ const Emitter = struct {
                 defer mseen.deinit();
                 const mod_prefix = try std.fmt.allocPrint(self.alloc, "{s}/", .{lib_name});
                 defer self.alloc.free(mod_prefix);
-                var it = xm.valueIterator();
+                var it = xm.exports.valueIterator();
                 while (it.next()) |info| {
                     const m = info.module;
                     if (!std.mem.startsWith(u8, m, mod_prefix)) continue;

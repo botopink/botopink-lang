@@ -405,6 +405,30 @@ fn analyzeModules(sa: std.mem.Allocator, mods: []const Module) Analysis {
     return .{ .owner = owner, .imports = imports, .exports = exports, .sources = sources, .paths = paths };
 }
 
+/// The module an import DEPENDS on: the one its `from "<mod>"` names, when that
+/// is a project module exporting the symbol, and only then the symbol's owner.
+///
+/// `Analysis.owner` maps a bare symbol name to the FIRST module that exports
+/// it, over the whole package — and a name is unique inside a module, never
+/// over a program (`libs/std` declares `parse` in `json`, in `querystring` and
+/// in `url`). So two modules exporting one name drew the edge to the wrong one
+/// and the module actually imported was left with no edge at all: it sorted
+/// AFTER its own importer, was not in the registry when that importer resolved
+/// its imports, and the importer was type-checked against the other module's
+/// declaration. Measured: `import {parse} from "two"` where `one` also declares
+/// `parse` was refused on all four backends with `'parse' expects 1 argument(s),
+/// got 2` — `one`'s arity, quoted against `two`'s function.
+fn importOwner(analysis: Analysis, ref: ImportRef) ?usize {
+    if (ref.from) |from| if (analysis.paths.get(from)) |i| {
+        if (i < analysis.exports.len) {
+            for (analysis.exports[i]) |e| {
+                if (std.mem.eql(u8, e, ref.symbol)) return i;
+            }
+        }
+    };
+    return analysis.owner.get(ref.symbol);
+}
+
 /// Reorder `mods` in place so that every module precedes the modules that
 /// import its symbols (a topological sort of the cross-module import graph).
 /// Best-effort: on any allocation failure, or an import cycle, the affected
@@ -413,10 +437,9 @@ fn analyzeModules(sa: std.mem.Allocator, mods: []const Module) Analysis {
 fn orderByDependencies(sa: std.mem.Allocator, mods: []Module, analysis: Analysis) void {
     const n = mods.len;
     if (n < 2 or analysis.imports.len != n) return;
-    const owner = analysis.owner;
     const imports = analysis.imports;
 
-    // Build the dependency graph: edge owner(sym) → importer.
+    // Build the dependency graph: edge owner(import) → importer.
     var indeg = sa.alloc(usize, n) catch return;
     @memset(indeg, 0);
     var adj = sa.alloc(std.ArrayListUnmanaged(usize), n) catch return;
@@ -425,7 +448,7 @@ fn orderByDependencies(sa: std.mem.Allocator, mods: []Module, analysis: Analysis
     for (imports, 0..) |imps, j| {
         var deps = std.AutoHashMapUnmanaged(usize, void){};
         for (imps) |ref| {
-            const oi = owner.get(ref.symbol) orelse continue;
+            const oi = importOwner(analysis, ref) orelse continue;
             if (oi == j) continue;
             deps.put(sa, oi, {}) catch continue;
         }

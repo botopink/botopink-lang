@@ -43,6 +43,28 @@ pub const ImportSource = union(enum) {
     root,
     /// `import { … } from "name";` — resolves from a named dependency.
     module: []const u8,
+
+    /// Whether `path` is the module this source NAMES. The question every
+    /// name-keyed import index used to skip: a symbol name is unique only
+    /// inside one module, so "which `parse`" is answered by the `from` and not
+    /// by whichever module a hash iteration reached first (`libs/std` declares
+    /// `parse` in `json`, `querystring` and `url` today).
+    ///
+    /// Two spellings name a module: its full path (`web/http`) and the last
+    /// segment of it (`http`). A PACKAGE handle (`std`, a lib's name) names the
+    /// package, so it matches only a module whose basename IS the handle — the
+    /// single-module lib shape — and a caller that gets no match must widen to
+    /// the whole package rather than treat the name as absent. `.root` names no
+    /// module in particular (it is "this project"), so it never narrows.
+    pub fn namesModule(this: ImportSource, path: []const u8) bool {
+        const m = switch (this) {
+            .root => return false,
+            .module => |name| name,
+        };
+        if (std.mem.eql(u8, m, path)) return true;
+        const base = if (std.mem.lastIndexOfScalar(u8, path, '/')) |i| path[i + 1 ..] else path;
+        return std.mem.eql(u8, m, base);
+    }
 };
 
 pub const ImportDecl = struct {

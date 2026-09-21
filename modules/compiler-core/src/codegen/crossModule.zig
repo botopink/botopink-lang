@@ -60,6 +60,53 @@ pub const ExportInfo = struct {
     /// is nothing to wrap and the consumer keeps the bare call, which erlc
     /// rejects by name.
     erlang_backed: bool = false,
+    /// A `.@"fn"` export's arity — the other half of its identity, and the half
+    /// this index used to throw away. `MethodSig` carries it for a method
+    /// because two types may declare one method name; two MODULES may declare
+    /// one function name for exactly the same reason, and `parse/1` from
+    /// `json` is not `parse/2` from `url`. 0 for every other kind (a record, an
+    /// enum and a `val` are identified by their name alone, which is why a
+    /// collision on one of those can only be refused).
+    arity: usize = 0,
+};
+
+/// What a name resolves to for one consumer, counted over the PROGRAM.
+///
+/// The index is keyed by the bare symbol NAME, and a name is unique inside a
+/// module, never over a program — `libs/std` declares `parse` in `json`, in
+/// `querystring` and in `url` today. `exports` answered with a plain `get`, so
+/// the winner was whichever module the `outputs` walk reached last, with no
+/// dissent check and no diagnostic. This is that question asked properly: the
+/// module the import NAMES answers first, then the arity the CALL takes, and
+/// when neither tells the candidates apart the caller is handed the contest
+/// instead of a guess.
+pub const Pick = union(enum) {
+    /// No `pub` declaration of that name anywhere in the program.
+    none,
+    /// Exactly one declaration answers.
+    one: ExportInfo,
+    /// Several answer and nothing in the question separates them.
+    contested: Contested,
+};
+
+/// Two of the modules that declare one exported name, for the diagnostic. Two
+/// is enough to name the defect; listing every one of them would not help a
+/// reader fix it.
+pub const Contested = struct {
+    name: []const u8,
+    a: []const u8,
+    b: []const u8,
+
+    /// This as the message of a `moduleOutput.Diagnostic.type`, so an ambiguous
+    /// import fails the module that wrote it — the shape `AtomFault` uses, and
+    /// for the same reason: the alternative is one module silently winning.
+    pub fn message(self: Contested, alloc: std.mem.Allocator) ![]u8 {
+        return std.fmt.allocPrint(
+            alloc,
+            "`{s}` is declared `pub` by `{s}` and by `{s}`, and this import does not say which — name the module it comes from (`from \"{s}\"`), or rename one of the two",
+            .{ self.name, self.a, self.b, self.a },
+        );
+    }
 };
 
 /// Cross-module link info, built once over every module's transformed program.
@@ -69,6 +116,17 @@ pub const ExportInfo = struct {
 /// unchanged).
 pub const CrossModule = struct {
     exports: std.StringHashMap(ExportInfo),
+    /// EVERY `pub` declaration of a name, in walk order — the population
+    /// `exports` collapses to one entry. `pick` counts dissent over this, the
+    /// way `methodOwnerContested` counts a method's owners and
+    /// `uniqueRecordWithField` counts a field's.
+    owners: std.StringHashMap([]const ExportInfo),
+    /// Consumer module path → the ambiguous import it wrote. Keyed by the
+    /// module that must FAIL, exactly as `atom_faults` is: a name two modules
+    /// export is only a defect where some third module reaches for it without
+    /// saying which, and refusing the declarations themselves would refuse
+    /// `libs/std`, whose `json`, `querystring` and `url` all declare `parse`.
+    export_faults: std.StringHashMap(Contested),
     imported: std.StringHashMap(void),
     /// Every module path in the program → its rendered Erlang/BEAM module atom
     /// (`"std/math"` → `"std@math"`). Rendered once, in `build`, so every
@@ -87,6 +145,8 @@ pub const CrossModule = struct {
     field_arrays: std.ArrayListUnmanaged([]const []const u8) = .empty,
     /// Owns the `methods` arrays allocated for record/enum exports.
     method_arrays: std.ArrayListUnmanaged([]const MethodSig) = .empty,
+    /// Owns the per-name declaration lists `owners` hands out.
+    owner_arrays: std.ArrayListUnmanaged([]const ExportInfo) = .empty,
     alloc: std.mem.Allocator,
 
     pub fn deinit(self: *CrossModule) void {
@@ -94,6 +154,10 @@ pub const CrossModule = struct {
         self.field_arrays.deinit(self.alloc);
         for (self.method_arrays.items) |arr| self.alloc.free(arr);
         self.method_arrays.deinit(self.alloc);
+        for (self.owner_arrays.items) |arr| self.alloc.free(arr);
+        self.owner_arrays.deinit(self.alloc);
+        self.owners.deinit();
+        self.export_faults.deinit();
         var ait = self.atoms.valueIterator();
         while (ait.next()) |a| self.alloc.free(a.*);
         self.atoms.deinit();
@@ -122,6 +186,86 @@ pub const CrossModule = struct {
     /// The fault that makes `path`'s atom unusable, or null.
     pub fn atomFault(self: *const CrossModule, path: []const u8) ?AtomFault {
         return self.atom_faults.get(path);
+    }
+
+    /// The ambiguous import that fails module `path`, or null. Backend-
+    /// independent — the collapse is in this index, not in any one emitter —
+    /// so every backend's driver reports it.
+    pub fn exportFault(self: *const CrossModule, path: []const u8) ?Contested {
+        return self.export_faults.get(path);
+    }
+
+    /// Which declaration of `name` a consumer means.
+    ///
+    /// `source` is the import's own `from "<mod>"` (null where the caller has
+    /// none in hand) and `arity` the argument count of the call (null at an
+    /// import site, which binds a name and not a call). Both are narrowing
+    /// questions and neither is a tie-breaker of last resort: when they leave
+    /// two declarations standing the answer is `.contested`, never the first
+    /// one. Decision 67 — refuse rather than guess.
+    pub fn pick(
+        self: *const CrossModule,
+        name: []const u8,
+        source: ?ast.ImportSource,
+        arity: ?usize,
+    ) Pick {
+        const list = self.owners.get(name) orelse return .none;
+        if (list.len == 0) return .none;
+        if (list.len == 1) return .{ .one = list[0] };
+
+        // The module the import NAMES. A module cannot declare one name twice,
+        // so a source that names a module narrows to at most one — unless it is
+        // a PACKAGE handle that happens to name several, which narrows nothing.
+        var named_n: usize = 0;
+        var named_hit: ExportInfo = undefined;
+        if (source) |src| for (list) |e| {
+            if (!src.namesModule(e.module)) continue;
+            named_n += 1;
+            named_hit = e;
+        };
+        if (named_n == 1) return .{ .one = named_hit };
+
+        // The arity the CALL takes. This is `MethodSig`'s widening (`51a27b97`)
+        // on the plain-`fn` axis: `parse/1` and `parse/2` are two functions and
+        // a call site that passes one argument means the first.
+        if (arity) |want| {
+            var ar_n: usize = 0;
+            var ar_hit: ExportInfo = undefined;
+            for (list) |e| {
+                if (named_n > 1 and !source.?.namesModule(e.module)) continue;
+                if (e.kind != .@"fn" or e.arity != want) continue;
+                ar_n += 1;
+                ar_hit = e;
+            }
+            if (ar_n == 1) return .{ .one = ar_hit };
+        }
+
+        // Two of the candidates still standing, for the message.
+        var a: ?ExportInfo = null;
+        for (list) |e| {
+            if (named_n > 1 and !source.?.namesModule(e.module)) continue;
+            if (a == null) {
+                a = e;
+                continue;
+            }
+            return .{ .contested = .{ .name = name, .a = a.?.module, .b = e.module } };
+        }
+        return .{ .contested = .{ .name = name, .a = list[0].module, .b = list[1].module } };
+    }
+
+    /// `pick` for a caller that only wants the answer when there IS one — a
+    /// lowering with a dynamic fallback, which asks the value instead of the
+    /// name. A contest answers null, exactly as a missing export does.
+    pub fn picked(
+        self: *const CrossModule,
+        name: []const u8,
+        source: ?ast.ImportSource,
+        arity: ?usize,
+    ) ?ExportInfo {
+        return switch (self.pick(name, source, arity)) {
+            .one => |info| info,
+            .none, .contested => null,
+        };
     }
 };
 
@@ -503,6 +647,23 @@ pub const AtomFault = struct {
     }
 };
 
+/// Record one `pub` declaration: in `exports` (last writer, as it always was)
+/// and in `owners` (every writer). Two maps because they answer two questions —
+/// "the export named X", which the eighteen existing call sites ask, and "every
+/// declaration of X", which is the only one that can be counted.
+fn putExport(
+    alloc: std.mem.Allocator,
+    exports: *std.StringHashMap(ExportInfo),
+    owners: *std.StringHashMap(std.ArrayListUnmanaged(ExportInfo)),
+    name: []const u8,
+    info: ExportInfo,
+) !void {
+    try exports.put(name, info);
+    const gop = try owners.getOrPut(name);
+    if (!gop.found_existing) gop.value_ptr.* = .empty;
+    try gop.value_ptr.append(alloc, info);
+}
+
 pub fn build(alloc: std.mem.Allocator, outputs: []ComptimeOutput) !CrossModule {
     var exports = std.StringHashMap(ExportInfo).init(alloc);
     errdefer exports.deinit();
@@ -610,6 +771,24 @@ pub fn build(alloc: std.mem.Allocator, outputs: []ComptimeOutput) !CrossModule {
         }
     }
 
+    // EVERY `pub` declaration of a name, filled in the SAME walk as `exports`
+    // so each one carries its OWN `fields` and `methods` — read back from
+    // `exports` afterwards, the declaration that lost the `put` would carry
+    // the winner's shape or none at all, which is the collapse this index
+    // exists to undo. `exports` keeps its last-writer shape: eighteen call
+    // sites read it and the overwhelming majority of names are declared once.
+    var owners = std.StringHashMap(std.ArrayListUnmanaged(ExportInfo)).init(alloc);
+    defer {
+        var oit = owners.valueIterator();
+        while (oit.next()) |l| l.deinit(alloc);
+        owners.deinit();
+    }
+    var owner_arrays: std.ArrayListUnmanaged([]const ExportInfo) = .empty;
+    errdefer {
+        for (owner_arrays.items) |arr| alloc.free(arr);
+        owner_arrays.deinit(alloc);
+    }
+
     for (outputs) |*ct| {
         const ok = switch (ct.outcome) {
             .ok => |*o| o,
@@ -625,9 +804,9 @@ pub fn build(alloc: std.mem.Allocator, outputs: []ComptimeOutput) !CrossModule {
                         const fields = try alloc.alloc([]const u8, record_fields.len);
                         for (record_fields, 0..) |f, i| fields[i] = f.name;
                         try field_arrays.append(alloc, fields);
-                        try exports.put(r.name, .{ .module = ct.name, .kind = .record, .is_class = true, .fields = fields, .methods = methods });
+                        try putExport(alloc, &exports, &owners, r.name, .{ .module = ct.name, .kind = .record, .is_class = true, .fields = fields, .methods = methods });
                     },
-                    .enum_ => try exports.put(r.name, .{ .module = ct.name, .kind = .@"enum", .is_class = false, .methods = methods }),
+                    .enum_ => try putExport(alloc, &exports, &owners, r.name, .{ .module = ct.name, .kind = .@"enum", .is_class = false, .methods = methods }),
                 }
             },
             // `pub fn` exports — including host-backed `#[@External.<targert>(...)]` declarations.
@@ -636,7 +815,7 @@ pub fn build(alloc: std.mem.Allocator, outputs: []ComptimeOutput) !CrossModule {
             // `from "<lib>"` must `require` that owner just like any other export;
             // omitting externals here left such imports unresolved at the call site.
             .@"fn" => |f| if (f.isPub)
-                try exports.put(f.name, .{
+                try putExport(alloc, &exports, &owners, f.name, .{
                     .module = ct.name,
                     .kind = .@"fn",
                     .is_class = false,
@@ -647,16 +826,65 @@ pub fn build(alloc: std.mem.Allocator, outputs: []ComptimeOutput) !CrossModule {
                     .erlang_backed = f.isExternal() and
                         (f.externalFor("erlang") != null or
                             ast.externalArityBranchFor(f.annotations, "erlang", f.params.len) != null),
+                    .arity = f.params.len,
                 }),
-            .val => |v| if (v.isPub) try exports.put(v.name, .{ .module = ct.name, .kind = .val, .is_class = false }),
+            .val => |v| if (v.isPub) try putExport(alloc, &exports, &owners, v.name, .{ .module = ct.name, .kind = .val, .is_class = false }),
             // A `pub implement` is emitted as a namespace object; a consumer that
             // stars it (`import { Name* }`) references it as a value (`Name.m(x)`).
-            .implement => |im| if (im.isPub) try exports.put(im.name, .{ .module = ct.name, .kind = .val, .is_class = false }),
+            .implement => |im| if (im.isPub) try putExport(alloc, &exports, &owners, im.name, .{ .module = ct.name, .kind = .val, .is_class = false }),
             .use => |u| for (u.imports) |imp| try imported.put(imp.name(), {}),
             else => {},
         };
     }
-    return .{ .exports = exports, .imported = imported, .atoms = atoms, .atom_faults = atom_faults, .fault_atoms = fault_atoms, .field_arrays = field_arrays, .method_arrays = method_arrays, .alloc = alloc };
+
+    var owners_final = std.StringHashMap([]const ExportInfo).init(alloc);
+    errdefer owners_final.deinit();
+    var oit = owners.iterator();
+    while (oit.next()) |e| {
+        const arr = try alloc.dupe(ExportInfo, e.value_ptr.items);
+        try owner_arrays.append(alloc, arr);
+        try owners_final.put(e.key_ptr.*, arr);
+    }
+
+    // An ambiguous IMPORT, keyed by the module that wrote it. A name several
+    // modules export is not itself the defect — `libs/std` has thirteen of
+    // them (`parse`, `stringify`, `empty`, `abs`, …), every one reached
+    // qualified through its module — and refusing the declaration would refuse
+    // the standard library. What cannot be answered is a consumer reaching for
+    // the bare name with nothing in the import that says which module it means.
+    var export_faults = std.StringHashMap(Contested).init(alloc);
+    errdefer export_faults.deinit();
+    {
+        const tmp: CrossModule = .{
+            .exports = exports,
+            .owners = owners_final,
+            .export_faults = export_faults,
+            .imported = imported,
+            .atoms = atoms,
+            .atom_faults = atom_faults,
+            .alloc = alloc,
+        };
+        for (outputs) |*ct| {
+            const ok = switch (ct.outcome) {
+                .ok => |*o| o,
+                else => continue,
+            };
+            for (ok.transformed.decls) |decl| switch (decl) {
+                .use => |u| for (u.imports) |imp| {
+                    if (export_faults.contains(ct.name)) break;
+                    // An import site binds a NAME, not a call, so there is no
+                    // arity to narrow with: botopink has no overloading and
+                    // `import {parse}` binds exactly one `parse`.
+                    switch (tmp.pick(imp.name(), u.source, null)) {
+                        .contested => |c| try export_faults.put(ct.name, c),
+                        .none, .one => {},
+                    }
+                },
+                else => {},
+            };
+        }
+    }
+    return .{ .exports = exports, .owners = owners_final, .export_faults = export_faults, .imported = imported, .atoms = atoms, .atom_faults = atom_faults, .fault_atoms = fault_atoms, .field_arrays = field_arrays, .method_arrays = method_arrays, .owner_arrays = owner_arrays, .alloc = alloc };
 }
 
 // ── tests: the atom, its qualifier, its decoder and the collision check ───────
@@ -910,6 +1138,118 @@ test "build: two paths rendering one atom is a fault on BOTH, not a silent winne
     try testing.expect(std.mem.indexOf(u8, msg, "my__mod/user") != null);
     try testing.expect(std.mem.indexOf(u8, msg, "my_mod/user") != null);
     try testing.expect(std.mem.indexOf(u8, msg, "my_mod@user") != null);
+}
+
+/// A `CrossModule` holding nothing but the `owners` lists — `pick` reads only
+/// those, and building one through `build` would need a whole typed program per
+/// case. Every other map is empty and unused.
+fn pickIndex(owners: *std.StringHashMap([]const ExportInfo)) CrossModule {
+    return .{
+        .exports = std.StringHashMap(ExportInfo).init(testing.allocator),
+        .owners = owners.*,
+        .export_faults = std.StringHashMap(Contested).init(testing.allocator),
+        .imported = std.StringHashMap(void).init(testing.allocator),
+        .atoms = std.StringHashMap([]u8).init(testing.allocator),
+        .atom_faults = std.StringHashMap(AtomFault).init(testing.allocator),
+        .alloc = testing.allocator,
+    };
+}
+
+test "pick: one declaration answers, and the `from` picks between two" {
+    var owners = std.StringHashMap([]const ExportInfo).init(testing.allocator);
+    defer owners.deinit();
+    const parses = [_]ExportInfo{
+        .{ .module = "one", .kind = .@"fn", .is_class = false, .arity = 1 },
+        .{ .module = "two", .kind = .@"fn", .is_class = false, .arity = 2 },
+    };
+    const only = [_]ExportInfo{.{ .module = "solo", .kind = .@"fn", .is_class = false, .arity = 0 }};
+    try owners.put("parse", &parses);
+    try owners.put("solo", &only);
+    var xc = pickIndex(&owners);
+    // `exports` etc. are borrowed empties here, so deinit them directly rather
+    // than through `CrossModule.deinit`, which would also free `owners`.
+    defer {
+        xc.exports.deinit();
+        xc.export_faults.deinit();
+        xc.imported.deinit();
+        xc.atoms.deinit();
+        xc.atom_faults.deinit();
+    }
+
+    try testing.expect(xc.pick("absent", null, null) == .none);
+    // One declaration: no question to ask.
+    try testing.expectEqualStrings("solo", (xc.picked("solo", null, null) orelse return error.TestExpectedPick).module);
+
+    // The `from` answers, in both directions — this is the whole defect: the
+    // old `exports.get` kept ONE of the two and the walk order chose it.
+    const from_one: ast.ImportSource = .{ .module = "one" };
+    const from_two: ast.ImportSource = .{ .module = "two" };
+    try testing.expectEqualStrings("one", (xc.picked("parse", from_one, null) orelse return error.TestExpectedPick).module);
+    try testing.expectEqualStrings("two", (xc.picked("parse", from_two, null) orelse return error.TestExpectedPick).module);
+
+    // The arity answers when the source names nothing (a package handle).
+    const from_pkg: ast.ImportSource = .{ .module = "somepkg" };
+    try testing.expectEqualStrings("one", (xc.picked("parse", from_pkg, 1) orelse return error.TestExpectedPick).module);
+    try testing.expectEqualStrings("two", (xc.picked("parse", from_pkg, 2) orelse return error.TestExpectedPick).module);
+
+    // Neither answers: contested, never the first one.
+    try testing.expect(xc.picked("parse", null, null) == null);
+    try testing.expect(xc.picked("parse", from_pkg, null) == null);
+    // An arity NEITHER declares does not narrow, so it is still contested.
+    try testing.expect(xc.picked("parse", null, 7) == null);
+    switch (xc.pick("parse", null, null)) {
+        .contested => |c| {
+            try testing.expectEqualStrings("parse", c.name);
+            try testing.expectEqualStrings("one", c.a);
+            try testing.expectEqualStrings("two", c.b);
+            const msg = try c.message(testing.allocator);
+            defer testing.allocator.free(msg);
+            try testing.expect(std.mem.indexOf(u8, msg, "one") != null);
+            try testing.expect(std.mem.indexOf(u8, msg, "two") != null);
+        },
+        else => return error.TestExpectedContest,
+    }
+}
+
+test "pick: a record name is contested by its name alone — there is no arity to ask" {
+    var owners = std.StringHashMap([]const ExportInfo).init(testing.allocator);
+    defer owners.deinit();
+    const outcomes = [_]ExportInfo{
+        .{ .module = "parser", .kind = .record, .is_class = true },
+        .{ .module = "net", .kind = .record, .is_class = true },
+    };
+    try owners.put("Outcome", &outcomes);
+    var xc = pickIndex(&owners);
+    defer {
+        xc.exports.deinit();
+        xc.export_faults.deinit();
+        xc.imported.deinit();
+        xc.atoms.deinit();
+        xc.atom_faults.deinit();
+    }
+    const from_parser: ast.ImportSource = .{ .module = "parser" };
+    try testing.expectEqualStrings("parser", (xc.picked("Outcome", from_parser, null) orelse return error.TestExpectedPick).module);
+    // An arity cannot tell two records apart, so it changes nothing.
+    try testing.expect(xc.picked("Outcome", null, 1) == null);
+    try testing.expect(xc.picked("Outcome", null, null) == null);
+}
+
+test "ImportSource.namesModule: the full path and its last segment, never a package handle" {
+    const from_http: ast.ImportSource = .{ .module = "http" };
+    try testing.expect(from_http.namesModule("web/http"));
+    try testing.expect(from_http.namesModule("http"));
+    try testing.expect(!from_http.namesModule("web/https"));
+    const full: ast.ImportSource = .{ .module = "web/http" };
+    try testing.expect(full.namesModule("web/http"));
+    try testing.expect(!full.namesModule("api/http"));
+    // A package handle names the package: it matches only a module whose
+    // basename IS the handle (the single-module lib shape).
+    const pkg: ast.ImportSource = .{ .module = "viewlib" };
+    try testing.expect(pkg.namesModule("viewlib/viewlib"));
+    try testing.expect(!pkg.namesModule("viewlib/query"));
+    // `.root` names no module in particular, so it never narrows.
+    const root: ast.ImportSource = .root;
+    try testing.expect(!root.namesModule("main"));
 }
 
 test "build: an atom over the filename limit is a fault naming the limit" {

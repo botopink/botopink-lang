@@ -181,6 +181,42 @@ wider reason, measured with the collision removed: a method call on a value an i
 answers `0` there whatever the names are. The library measurement behind the cell is erika's
 `examples/erika-linq`, 1 passed / 8 failed → 9 / 0 on erlang.
 
+`modules/export_name_collision` and `modules/type_name_collision` are the fifth and sixth cells that
+need two modules, and they pin the root the two above sit on: **an exported name resolves by walk
+order**. Every index that answers "which module emits this name" was keyed by the bare symbol NAME
+— `CrossModule.exports`, the erlang / commonJS / beam / wasm import walks that read it, the
+checker's registry scan in `comptime.zig`, and the CLI's topological sort — and a name is unique
+inside a module, never over a program: `libs/std` declares `parse` in `json`, in `querystring` and
+in `url` today. The `from "<mod>"` clause, which is the answer, was consulted by none of them.
+
+`export_name_collision` is the `pub fn` half: `one` declares `parse/1` answering `1`, `two` declares
+`parse/2` answering `2`, and `main` imports `one`'s. commonJS emitted `require("./two.js")` and
+printed `2` at exit 0; wasm linked `two`'s body in and printed `2` at exit 0; erlang emitted a
+remote call into the other module and died with `undef`. Reversed — the consumer naming `two` — all
+four REFUSED the program quoting `one`'s arity ("'parse' expects 1 argument(s), got 2"), because
+the CLI drew its dependency edge to `one` and `two` was ordered after its own importer. The cell
+deliberately leaves `two` imported by nobody: wasm links every module of a program into one flat
+namespace, so a second module importing `two`'s `parse` as well would collide there for a reason
+that is wasm's and not this index's.
+
+`type_name_collision` is the `pub type` half, where a NAME is the whole identity (a record has no
+arity to tell two apart). `parser` and `net` each declare `pub type Outcome` with the same two field
+names in the OTHER order and a `describe` of its own, so the wrong declaration answers rather than
+crashes: erlang printed the NEIGHBOURING field (`net-note` for `.tag`, and `404` through the typed
+method call) at exit 0, where commonJS and wasm printed the right one. The cell walks all three
+axes — the field read, the method call and the construction — and every line asserts the VALUE.
+
+`run/variant_name_collision.bp` and `run/variant_name_ambiguous.bp` are the third axis, and the only
+one that fits in one file. Decision 21 puts the ENUM and the enum's module inside a variant's atom,
+and `variant_enum` answered "which enum declares `Circle`" by declaration order — first writer wins,
+mitigated for a `case` SUBJECT only. The first cell is the spelling that always had an answer (the
+enum is written) and asserts six values on every target; the second is the spelling that has none,
+and it is refused now instead of tagged with one of the two — `Hole`'s value written `.Circle` was
+tagged `main__t__shape__v__circle` and died with `{case_clause, …}` at run time. Its `.targets` is
+`erlang` alone, and neither omission is the cell's shape: commonJS cannot run a leading-dot variant
+AT ALL (measured with the collision removed — `ReferenceError: Circle is not defined`, `00 · 04-js`'s
+row), and wasm places it correctly from the expected type, so it has nothing to refuse.
+
 ### The sidecars of a `run/` cell
 
 Three optional files beside `run/<name>.bp`, each a claim the cell makes (C-16, front 12 steps 4.3
