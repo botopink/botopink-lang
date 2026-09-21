@@ -71,7 +71,10 @@ that `.length()` is JavaScript's `length` PROPERTY, emitted a CALL on a number.
 `optional_length_method` (D7) is the same rename one layer deeper — `.length()` on a `?string` from
 `.at()`, on a `?string` field reached with `?.`, and on one a `!= null` test has just checked; its
 header names both the shape it deliberately leaves out (a field read off a `?Record`, which is
-narrowing's row) and why wasm is not in its `.targets`.
+narrowing's row) and why wasm is not in its `.targets`. `comment_in_braced_block` (D9) puts a `//`
+comment inside a braced `if` and inside a condition loop's body: commonJS writes some blocks on one
+line, so the comment ran on and swallowed the closing brace and everything after it, and the module
+did not parse.
 
 ### The `modules/` kind
 

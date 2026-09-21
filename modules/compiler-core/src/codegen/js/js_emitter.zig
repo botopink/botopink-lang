@@ -541,15 +541,49 @@ fn writeInline(w: *Writer, stmts: []const Ast.Stmt, indent: usize, lead: bool) E
         if (s == .group) {
             for (s.group) |item| {
                 if (lead or !first) try w.writeByte(' ');
-                try writeStmt(w, item, indent);
+                try writeInlineStmt(w, item, indent);
                 first = false;
             }
             continue;
         }
         if (lead or !first) try w.writeByte(' ');
-        try writeStmt(w, s, indent);
+        try writeInlineStmt(w, s, indent);
         first = false;
     }
+}
+
+/// One statement of a ONE-LINE block. A `// …` comment runs to the end of the
+/// physical line, and on this line the statements that follow it, the block's
+/// own `}` and everything after it are still to come — a `//` here silently
+/// deletes them (`{ // note; return 1; }` left the module unterminated and node
+/// answered `SyntaxError: Unexpected end of input`). So a line comment is
+/// spelled as a BLOCK comment wherever the rest of the line must survive.
+fn writeInlineStmt(w: *Writer, s: Ast.Stmt, indent: usize) Error!void {
+    switch (s) {
+        .comment => |c| return writeInlineComment(w, c),
+        // A comment written in the SOURCE reaches codegen as an expression
+        // (`literal.comment`), so one standing where a statement stands is an
+        // expression statement around it — and the `;` that statement adds
+        // ends up inside the comment too.
+        .expr => |e| if (e == .comment) return writeInlineComment(w, e.comment),
+        else => {},
+    }
+    try writeStmt(w, s, indent);
+}
+
+/// `/* text */` — a comment that does not eat the rest of its line. A `*/`
+/// inside the text would close it early, so each one is broken up.
+fn writeInlineComment(w: *Writer, c: Ast.Comment) Error!void {
+    if (c.style == .doc) return writeComment(w, c);
+    try w.writeAll("/* ");
+    var rest = c.text;
+    while (std.mem.indexOf(u8, rest, "*/")) |i| {
+        try w.writeAll(rest[0..i]);
+        try w.writeAll("*\\/");
+        rest = rest[i + 2 ..];
+    }
+    try w.writeAll(rest);
+    try w.writeAll(" */");
 }
 
 fn writeFunctionDecl(w: *Writer, f: Ast.FunctionDecl, indent: usize) Error!void {

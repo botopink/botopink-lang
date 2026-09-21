@@ -1,0 +1,23 @@
+//// 1.0.10-beta `00 · 04-js` D9 — a `//` comment inside a braced block.
+//// Measured by rakun's front 05.
+////
+//// A comment written in the source reaches codegen as an EXPRESSION, and
+//// commonJS writes some blocks on ONE line (`Block.Layout.spaced`). A `// …`
+//// runs to the end of the physical line, so the comment ate the statements
+//// after it, the block's own `}` and the `})();` that closed the IIFE — the
+//// module was left unterminated and node answered `SyntaxError: Unexpected end
+//// of input` at exit 1, where erlang printed `3`. The emitter now spells a line
+//// comment `/* … */` wherever the rest of the line still has to survive.
+
+pub fn main() {
+    var i = 0;
+    if (i == 0) {
+        // a comment inside the braced block
+        i = 1;
+    };
+    loop (i < 3) {
+        // and one inside a condition loop's body
+        i = i + 1;
+    };
+    @print(i);
+}
