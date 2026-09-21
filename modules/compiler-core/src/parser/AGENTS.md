@@ -93,7 +93,7 @@ block that reads something between the `{` and its first statement — a prologu
 |---|---|---|---|
 | fn / `test` body, `fn (…) { … }` expression | — (`parseFnBodyInBraces`) | `requiredExceptLast` | fresh |
 | `if` else-branch, `case` arm | — (`parseStmtListInBraces`) | `requiredExceptLast` | inherits |
-| `if` then-branch | `{ x -> ` — the branch's value binding | `requiredExceptLast` | inherits |
+| `if` then-branch | `{ x -> ` or `{ _ -> ` — the branch's value binding | `requiredExceptLast` | inherits |
 | lambda `{ a, b -> … }` | the parameter list | `optional` | fresh |
 | trailing lambda `f { a -> … }` | an optional `label:` and the parameter list | `required` | fresh |
 | `loop (…) { x -> … }` body | the parameter list | `required` | inherits |
@@ -122,7 +122,7 @@ not copy the loop.** The semicolon policy is per block and is what each copy
 already applied — they are recorded above rather than unified, because
 tightening one would refuse a program that compiles today.
 
-## The `if` condition parses at `prec.lowest` (C-08)
+## The `if` condition and its binder (C-08)
 
 The condition parses at **`prec.lowest`**, not `prec.equality`: `if (a && b)`
 and `if (a || b)` are the conditions they look like, and no compound boolean has
@@ -134,6 +134,12 @@ eleven sites (`comptime <expr>`, the value after `yield [:label]`,
 sites in `parser/decls.zig`, the two `case`-subject sites in `parser/patterns.zig`)
 are open-ended and **stay at `prec.equality`**; widening one of them would swallow
 the token that ends the form.
+
+The then-branch's binder accepts `_` as well as a name, and `_` binds the name
+`"_"` — the same discard `val _ = …` records. It is deliberately not a null
+`binding`: a null binding means "this `if` has no binder", and that is what makes
+an `?T` condition the type error `expected bool, got optional`. An author who
+writes `_` is saying the payload is unwanted, not that the condition is a `bool`.
 
 ## A bodyless `fn` declares its return type (decision 33 (b))
 

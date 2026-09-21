@@ -174,8 +174,16 @@ pub fn parseExpr(this: *This, alloc: std.mem.Allocator) ParseError!Expr {
 
         const then_ = if (this.check(.leftBrace)) blk: {
             _ = this.advance(); // consume `{`
-            if (this.check(.identifier) and this.peekAt(1).kind == .rightArrow) {
-                binding = this.advance().lexeme;
+            // `_ ->` is the binder written to say the payload is not wanted.
+            // It binds the name `_`, the same discard `val _ = …` already
+            // binds (`parseLocalBindExpr`), rather than leaving `binding`
+            // null: a null binding is "this `if` has no binder at all", and
+            // that is what licenses an `?T` condition to be a type error. The
+            // author who writes `_` is saying the payload is unwanted, not
+            // that the condition is a `bool`.
+            if ((this.check(.identifier) or this.check(.underscore)) and this.peekAt(1).kind == .rightArrow) {
+                const binderTok = this.advance();
+                binding = if (binderTok.kind == .underscore) "_" else binderTok.lexeme;
                 _ = this.advance(); // consume `->`
             }
             // The shared block body — same options as `parseStmtListInBraces`,

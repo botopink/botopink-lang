@@ -366,6 +366,14 @@ fn show(x: ?i32) {
 }
 ```
 
+Write the binder `_` when the branch only asks whether the value is there:
+
+<!-- docs-check: body -->
+```botopink
+val x: ?i32 = 5;
+if (x) { _ -> @print("present"); } else { @print("absent"); };
+```
+
 ### Case (pattern matching)
 
 ```botopink
