@@ -190,6 +190,28 @@ codegen/
   `tests/language/modules/package_variant_identity/`, which one package cannot
   express. `is`/`val assert` still test `instanceof` (below) and inherit the
   same limit wherever a class is re-emitted.
+- **One spelling can name both a `type` and a variant, and the arm tests
+  BOTH** (`patternTest`'s `.ident`, `isDeclaredVariantName`). Decision 8 §5.3b
+  says which one a `case` arm means — the SUBJECT's type does, and a section's
+  leaves are written bare (`Bold`, `Block`) — but this emitter walks the
+  untyped AST and has no subject type, so a name that is a `class_names` entry
+  AND a declared variant becomes `(_s instanceof Block || _s.tag === "Block")`.
+  The subject makes at most one of the two possible: a variant singleton is
+  `instanceof` no class, and a class instance carries no `tag`. Emitted as the
+  `instanceof` alone — which is what half 3's step 16 wrote, because §3.3's arm
+  over `Person | Vec` needs it — emilia's `Token.Layout` arm never fired:
+  `output` exports a record `Block`, the section carries a `Block` leaf, and
+  `tokenDeclarations(.Layout.Block)` answered the empty string at exit 0 while
+  erlang and wasm answered `display:block` (223 passed / 2 failed against
+  225 / 0, from one source). Pinned by
+  `tests/language/run/case_arm_name_is_also_a_type.bp`, which runs on all four.
+  The other two backends resolve the collision by PRECEDENCE instead, and each
+  gets the mirror case wrong: erlang's `patternNodeExtra` asks `enum_variants`
+  first, so a `case` over a union of records whose arm names a record some enum
+  also declares as a variant matches the variant atom and dies with
+  `case_clause`; wasm's `findVariant` searches every enum for a bare name, so a
+  SECTION whose name also names a record answers its parent's first arm. Both
+  are reported, neither is this backend's.
 - **Self tail calls are a LOOP, not a frame** (`selfTailLoop`, D6 of
   1.0.10-beta `00 · 04-js`). V8 has no tail-call elimination, so `return f(…)`
   inside `f` cost a stack frame per round and a few thousand rounds ended the

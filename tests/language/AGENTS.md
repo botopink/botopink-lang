@@ -58,8 +58,14 @@ leading-dot section path names — `run/enum_section_expected_type`, where two e
 `.Color.Red.500` and every spelling is resolved by the type its position expects, and
 `reject/enum_section_ambiguous_path`, where the position expects nothing and the refusal names both
 candidates, and `run/enum_section_qualified_path`, where `Token.Color.Red.500` names its enum and
-needs no expectation at all), and `narrowing_*` (the same front's `fix/null-narrowing`: which
-shapes of a null test rebind the name they test — § `narrowing_*` below). One scenario group per
+needs no expectation at all), `run/case_arm_name_is_also_a_type` (§5.3b's collision: a
+module declaring a record `Block` and an enum section carrying a `Block` leaf — the arm over the
+section is the VARIANT, the arm over a union of records is still the type, and the cell asserts
+both values on all four targets. commonJS tested only `instanceof`, so the section arm never
+fired and the `case` answered `undefined` at exit 0, which is how emilia read 223/2 on commonJS
+against 225/0 on erlang from one source), and `narrowing_*` (the same front's
+`fix/null-narrowing`: which shapes of a null test rebind the name they test —
+§ `narrowing_*` below). One scenario group per
 file: a parse error is the blast radius, so nine `#[@External]` declarations in one file mean one
 unparseable annotation hides the other eight.
 
