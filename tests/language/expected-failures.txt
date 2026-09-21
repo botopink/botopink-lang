@@ -281,7 +281,7 @@ erlang   | run/index_past_the_end_fails.bp | C-02 | decision 63: the same — `u
 wasm     | run/index_past_the_end_fails.bp | C-02 | decision 63: `$__arr_at` answers `0` out of range and the program runs on, exit 0
 beam     | run/index_past_the_end_fails.bp | C-02 | decision 63: `undefined`, exit 0 — the erlang shape through `erlc +from_asm`
 erlang   | run/index_at_optional.bp | C-18 | decision 47: an absent `?V` prints the atom `undefined`, not `null` — `1` / `undefined` / `b` / `undefined`; `Dict.at` and `String.at` themselves answer correctly
-wasm     | run/index_at_optional.bp | C-18 | decision 47: a `null` optional prints as `0` (`d.at("zz")`), and then `s.at(1)` **traps** — `String.at` has no wasm lowering; the trap is a second defect no row owns (reported in AGENTS.md)
+wasm     | run/index_at_optional.bp | C-18 | decision 47: an absent optional prints as `0` for `d.at("zz")` and as `undefined` for `s.at(7)`, where `null` is owed — re-measured at `fix/wasm-refusals`: `1` / `0` / `b` / `undefined`, exit 0. The second half this line used to carry is gone: `String.at` has a wasm lowering now (`$__str_at`), `s.at(1)` answers `b` instead of trapping, and `run/string_at.bp` pins that on all four targets
 beam     | run/index_at_optional.bp | C-18 | decision 47: the erlang shape — `undefined` twice for the two absent probes
 
 # ── a qualified std host call on the BEAM (decision 64) ───────────────────────

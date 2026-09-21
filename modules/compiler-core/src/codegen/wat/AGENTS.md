@@ -39,7 +39,7 @@ model exists so none of them can be written again:
 |---|---|
 | `wat_ast.zig` | **Types**: `ValType` (`i32`/`i64`/`f32`/`f64`, with `parse` for the backend's spelled type names), `Stack` (`none`/`value`/`terminated`, with `fits(?ValType)`), `Width` (`full`/`byte` — `…8_u` / `…8`), `MemArg` (`ty`, `width`, `offset`). **Instructions**: `Instr` (`const` with the numeral as spelled, `local_get`/`local_set`/`local_tee`, `global_get`/`global_set`, `op` = `<ty>.<name>`, `convert` (a fully-spelled conversion opcode), `load`/`store`, `call`, `call_indirect` (an inline `FuncType`), `br`/`br_if`, `drop`, `return`, `unreachable`, `memory_copy`, `if`, `block` (`block` or `loop`), `comment`). **Layout**: `Line` (instruction + `indent` + trailing `;; comment` + `folded`), `Seq` (lines + stack), `If.Arm.Layout` (`block` vs one-line `inline_`). **Forms**: `Param`, `Local`, `Func` (name, exports, params, result, `locals` as *lines* so a helper can group several, body), `Global`, `FuncType`/`Import`, `Memory`, `DataSegment` (offset + length prefix + raw bytes), `Item` (import/memory/start/table/data/global/func/comment — `table` is `(table funcref (elem $f …))`, each name checked against the module's functions), `Module` (items). **Invariants**: `Invalid`, `validateFunc`, `validateModule`, `declaresCall`. **Helpers**: `Helper` (every symbol is `__<tag>`; `group`), `HelperGroup` (`deps` — the groups a group's functions call into), `HelperSet` (an `EnumSet`; `require` closes over `deps`). **`Builder`**: arena + `seq`/`param`/`localLines`/`func` (which validates) + `helper`. |
 | `wat_emitter.zig` | `renderModule` (validates, then `(module …)`; there is no bare-form entry point). Owns: the two-space item column, the four-space body column and each construct's arm columns, `$`-prefixing, folded (`(call $main)`) vs flat form, inline `(then i32.const 0 return)` arms, `offset=` suppressed when zero, and the data-segment escaping (four little-endian length bytes as `\xx`, then `\n`/`"`/`\`/`\t`/`\r`/`\xx` for control bytes). |
-| `wat_prelude.zig` | The runtime helpers wasm has no opcode for, as `Func` nodes: `print` (`$__write_bytes`, `$__print_nl`, `$__print_sp`, `$__print_i32`, `$__print_i32_raw`, `$__memmove`), `print_str`, `print_bool`, `print_f64`, `arr_at`, `str_concat`, `str_eq`, `str_slice` (transcribed line by line), then — one helper per group, built with the comptime constructors at the bottom of the file (`func`, `loop`, `when`, `whenElse`, `get`/`set`/`op`/…; `func` assigns each line the column its nesting puts it at) — `alloc` (bump, 4-byte aligned), `mem_eq`, `i32_abs`/`i32_min`/`i32_max`, `i32_to_str`, `f64_to_str` (float param — `typedFunc`), `str_case` (ASCII shift of a byte range), `str_index_of`, `str_starts_with`, `str_ends_with`, `str_trim` (mode bits: 1 start, 2 end), `str_split`, `str_repeat`, `arr_new`, `arr_slice` (host bound rules), `arr_reverse`, `arr_prepend`, `arr_push`, `arr_concat`, `arr_zip`, `arr_index_of_i32`/`_str`, `arr_join_str`/`_i32`, `print_arr_i32`, `print_arr_f32` (+`_raw`), `box_i32`, `arr_at_box`, `print_opt` (`$__print_undefined` — the bytes of `undefined` through scratch `176..185` — and `$__print_opt_i32`/`_bool`/`_str` +`_raw`), `print_loop` (`$__print_null` — decision 52's four bytes through scratch `176..180`, one `i32.store` — and `$__print_loop_i32` +`_raw`, which take the value **and** the `$__got{n}` flag; deliberately a different text from `$__print_undefined`, see `../AGENTS.md`), `assert_fail` (`$__write_err` — `fd_write` to fd 2 — and `$__assert_fail`, its literal text through scratch `188..208`), `print_shaped` (`$__print_quoted_raw` — a nested string, quoted with the source escapes — and `$__print_shaped_raw(v, shape, go)`, which walks a shape string — `i`/`f`/`b`/`s`, `[X`, `(XY…)` — writing `[a, b]` / `#(a, b)` and answering the address past the shape; `go = 0` only measures). `items(group)` returns a group's forms, `order` the order a module appends them in (declaration order, so the transcribed groups keep their place), `fd_write_import` the one host import the print group needs. Scratch layout below the data section (which starts at 256): `0..8` the WASI iovec, `8` the newline byte — and `9` the space of §7's `, ` separator (`putSep`), written beside it so the two bytes leave in one `fd_write` —, `16..32` the bool text, `32..64` the float fraction, `64..128` the i32 digits, `128..160` the digits `$__i32_to_str` writes backwards, `168..174` the fraction digits of `$__f64_to_str`. |
+| `wat_prelude.zig` | The runtime helpers wasm has no opcode for, as `Func` nodes: `print` (`$__write_bytes`, `$__print_nl`, `$__print_sp`, `$__print_i32`, `$__print_i32_raw`, `$__memmove`), `print_str`, `print_bool`, `print_f64`, `arr_at`, `str_concat`, `str_eq`, `str_slice` (transcribed line by line), then — one helper per group, built with the comptime constructors at the bottom of the file (`func`, `loop`, `when`, `whenElse`, `get`/`set`/`op`/…; `func` assigns each line the column its nesting puts it at) — `alloc` (bump, 4-byte aligned), `mem_eq`, `i32_abs`/`i32_min`/`i32_max`, `i32_to_str`, `f64_to_str` (float param — `typedFunc`), `str_case` (ASCII shift of a byte range), `str_index_of`, `str_starts_with`, `str_ends_with`, `str_at` (`s.at(i)` as a `?string`: `$__str_slice(s, i, i + 1)`, or `0` — absence — when `i32.ge_u` puts `i` outside `0..len`, which catches a negative index in the one compare `$__arr_at` needs two for), `str_trim` (mode bits: 1 start, 2 end), `str_split`, `str_repeat`, `arr_new`, `arr_slice` (host bound rules), `arr_reverse`, `arr_prepend`, `arr_push`, `arr_concat`, `arr_zip`, `arr_index_of_i32`/`_str`, `arr_join_str`/`_i32`, `print_arr_i32`, `print_arr_f32` (+`_raw`), `box_i32`, `arr_at_box`, `print_opt` (`$__print_undefined` — the bytes of `undefined` through scratch `176..185` — and `$__print_opt_i32`/`_bool`/`_str` +`_raw`), `print_loop` (`$__print_null` — decision 52's four bytes through scratch `176..180`, one `i32.store` — and `$__print_loop_i32` +`_raw`, which take the value **and** the `$__got{n}` flag; deliberately a different text from `$__print_undefined`, see `../AGENTS.md`), `assert_fail` (`$__write_err` — `fd_write` to fd 2 — and `$__assert_fail`, its literal text through scratch `188..208`), `print_shaped` (`$__print_quoted_raw` — a nested string, quoted with the source escapes — and `$__print_shaped_raw(v, shape, go)`, which walks a shape string — `i`/`f`/`b`/`s`, `[X`, `(XY…)` — writing `[a, b]` / `#(a, b)` and answering the address past the shape; `go = 0` only measures). `items(group)` returns a group's forms, `order` the order a module appends them in (declaration order, so the transcribed groups keep their place), `fd_write_import` the one host import the print group needs. Scratch layout below the data section (which starts at 256): `0..8` the WASI iovec, `8` the newline byte — and `9` the space of §7's `, ` separator (`putSep`), written beside it so the two bytes leave in one `fd_write` —, `16..32` the bool text, `32..64` the float fraction, `64..128` the i32 digits, `128..160` the digits `$__i32_to_str` writes backwards, `168..174` the fraction digits of `$__f64_to_str`. |
 
 ## Consumers
 
@@ -56,6 +56,37 @@ number like any other. The rule this directory holds to: *where wasm cannot do a
 shape, it traps*; a wrong value with exit 0 is a bug even when a fixture records
 it. `Instr.unreachable` plus a `;;` comment naming the shape is the mechanism,
 and 24 fixtures already use it.
+
+**A host-backed `declare fn` with no wasm host is REFUSED, not trapped**
+(`wat.zig`'s `external_missing` + `lowerPlainCall`). A `declare fn` carrying
+`#[@External.<Target>(…)]` for some other target and none for `wasm` has no
+symbol here and never claimed to have one, so the call fails where it is
+written:
+
+```
+error: `listToBinary` has no `#[@External.<Target>(…)]` for the wasm backend
+  --> src/main.bp:21:12
+```
+
+That is the diagnostic commonJS, erlang and beam already print (06 C13's
+`moduleOutput.MissingExternal`, target named `wasm`), reaching the driver as a
+located `Diagnostic.type` through `emitWat`'s `missing` slot — the same wiring
+`commonJS.zig` and `erlang.zig` have. It used to lower to `unreachable ;;
+host-backed declare fn …/N: no wasm host` "so the module still loads", which made
+this the only backend where the program compiled and then died at run time
+(exit 134, stdout empty) — the divergence
+`tests/language/run/external_erlang_only.targets` existed to hold wasm out of.
+[Decision 67](../../../../../specs/1.0.5-beta/decisions-taken.md#67-the-most-restrictive-behaviour-and-no-configuration-that-bypasses-it) settles it: the refusal is
+located, and **no flag switches it off**. Ten `snapshots/codegen/wasm/external_*`
+fixtures moved from a `WASM TEXT` block with that trap to a
+`COMPILE DIAGNOSTIC` section; their `externals.zig` tests carry the new
+`refused_on_wasm` expectation, which still requires commonJS, erlang and beam to
+compile and fails if wasm ever starts accepting one.
+
+A **bodyless `declare fn` with no `#[@External.<Target>(…)]` at all** keeps the
+old trap. That is the same cut commonJS makes — its `externals_missing` is filled
+only for an `isExternal()` fn — and it is what an interface's bodyless method
+shape lands in.
 
 **A record or a variant reaching `@print` traps** (`wat.zig`'s `namedShapeOf`,
 consulted first in `lowerPrintArg`). Decision 8 §7's F2 and F3 want
@@ -143,7 +174,18 @@ new fixture whose log holds such a number is worth re-reading against this table
 
 What is left in this class is the **generic-parameter limit** below, which is a
 different cause: there the declared type is a type parameter, so no shape exists
-to slice.
+to slice — and one more, reported on `fix/wasm-refusals` and not fixed there:
+
+**An absent `?string` that `optInfoOf` does not recognise prints through
+`$__print_str`, which loads a length from address 0 — the WASI iovec — and writes
+whatever bytes sit there, exit 0.** Measured by disabling the `s.at(i)` arm of
+`optInfoOf` and rebuilding: `@print(s.at(3))` on `"abc"` wrote six spaces instead
+of saying the value is absent. The `?T` reader is a hand-maintained list
+(`optInfoOf`'s arms plus `fn_ret_typerefs`), so **every** new `?string`-valued
+lowering has to be registered there by hand or it answers garbage silently — the
+wrong default for the backend this section exists for. `$__print_str` guarding
+its own null (printing absence, or trapping) would close it for good. `05-wasm`
+step 1's row.
 
 ## Two run-time rules this backend implements first (2026-09-19)
 

@@ -723,6 +723,28 @@ located error on the `dependencies` entry that named the library, never a
 silent exit 0. See [`docs/botopink-json.md`](./docs/botopink-json.md) § Host
 sidecars.
 
+**Calling a host binding on a target it does not name is refused where the call
+is written, on every backend:**
+
+```
+error: `listToBinary` has no `#[@External.<Target>(…)]` for the wasm backend
+  --> src/main.bp:21:12
+```
+
+| Target | Reads | A call with no binding for it |
+|---|---|---|
+| `commonJS` | `@External.Node` | refused at compile time — "for the node backend" |
+| `erlang` | `@External.Erlang` | refused at compile time — "for the erlang backend" |
+| `beam` | `@External.Erlang` (the same vocabulary) | refused at compile time — "for the beam backend" |
+| `wasm` | `@External.Wasm` — nothing declares one today, so **every** host binding is refused here | refused at compile time — "for the wasm backend" |
+
+wasm has no host to bind a declaration to, and no WASI call stands in for an
+arbitrary host symbol. Until 2026-09-21 it lowered such a call to a `wasm trap`
+instead, so the program compiled and then died at run time where the other three
+refused it; it now refuses too, and there is no flag that restores the trap. A
+program that needs a host symbol on wasm needs a wasm implementation, not a
+looser compiler.
+
 ## Builtins
 
 ```botopink

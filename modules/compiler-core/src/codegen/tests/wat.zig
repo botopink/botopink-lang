@@ -1033,3 +1033,35 @@ test "wat: function value ---- a lambda in a tuple slot or a record field is app
         \\}
     );
 }
+
+// `String.at` — the reader decision 63's amendment gave every indexable type,
+// and what `s[i]` rewrites to. It had no wasm lowering at all: the call fell
+// through `primCallRes` and emitted
+// `unreachable ;; prim method not lowered on wasm: string.at/1`, so
+// `tests/language/run/index_at_optional.bp` died at exit 134 on this backend
+// while commonJS, erlang and beam all answered. `$__str_at` is
+// `$__str_slice(s, i, i + 1)` behind one `i32.ge_u` bounds test — unsigned, so a
+// negative index wraps past any length and is rejected by the same compare.
+//
+// The absent probes are the half that makes the lowering safe rather than merely
+// present: `at` answers a `?string` whose absence is the pointer `0`, and
+// `optInfoOf` routes it through `$__print_opt_str`. Printed as a plain string it
+// would read a length out of the WASI iovec at address 0 and answer garbage with
+// exit 0 — the silent-wrong-answer class this backend refuses to add to.
+//
+// A RUN LOG and not a snapshot: `String.at` already answers on the other three
+// backends, so an all-backend fixture would move
+// `snapshots/codegen/{commonJS,erlang,beam}/`, which this front does not own.
+// `tests/language/run/string_at.bp` is the cross-backend half.
+test "wat: prim method ---- String.at answers a one-character string, and null out of range" {
+    try h.assertWasmRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    val s = "abc";
+        \\    @print(s.at(0));
+        \\    @print(s.at(2));
+        \\    @print(s.at(3));
+        \\    @print(s.at(0 - 1));
+        \\    @print("hello world".at(6));
+        \\}
+    , "a\nc\nundefined\nundefined\nw\n");
+}
