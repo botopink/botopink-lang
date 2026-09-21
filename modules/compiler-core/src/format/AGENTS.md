@@ -14,7 +14,7 @@ format/
 └── tests/        ← format tests, split by feature
     ├── helpers.zig      ← shared harness (`assertFormat`/`assertFormatAs`/`assertIdempotent`)
     ├── imports.zig      ← import formatting
-    ├── declarations.zig ← val/const/let, type/behavior/implement/extend, the 1.0.3 separator rule, fn/pub fn, test blocks, empty lines
+    ├── declarations.zig ← val/var/const/let, type/behavior/implement/extend, the 1.0.3 separator rule, fn/pub fn, test blocks, empty lines
     ├── expressions.zig  ← binary/call/access/lambda/precedence/pipeline/tagged calls
     ├── literals.zig     ← list/tuple/array/float/int/string literals
     ├── patterns.zig     ← case / pattern / assert
@@ -50,6 +50,8 @@ fix.
 | Construct | Rule |
 |---|---|
 | Declarations | Only the 1.0.3 surface is printed, whatever the source spelled (`record`/`enum`/`interface` included): `type`, `behavior`; no `;` after them |
+| Module-level `val` / `var` | `fmtValDecl` prints the keyword the binding was declared with (`var` when `ValDecl.mutable`, decision 48's arm) and its annotations above it, as a `fn`'s print — without the arm `format` deleted `var` and `#[@BeamMemory.Ets]` and reported the file clean |
+| Annotation arguments | A labelled argument prints `label = value` (`#[@BeamMemory.Ets(keyed = true)]`, `#[@External.Node("charAt", inline = true)]`); `label: value` is read and printed in that one canonical form — before `Annotation.labels` it printed `("charAt", true)` |
 | Record (`type`) | Field list in parentheses, no `val` → `type Point(x: i32, y: i32)`; compact without a trailing comma (even past the width), open one field per line with the trailing comma when the source had one or a field carries a `//` comment; field annotations and defaults inline; no body when there are no methods; ` implement B` after the field list |
 | Enum (`type`) | `type Color { Red, Rgb(r: i32, g: i32, b: i32) }` compact; open (one item per line, trailing comma added) with a trailing comma, a section or a method; a blank line before the first method |
 | Behavior | `behavior Name<G> extends B { … }`; `val x: T;`, bodyless `fn …;`, `default fn … { }`; a blank line between the field, signature and default-method groups; `{}` when empty |

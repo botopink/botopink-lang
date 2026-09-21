@@ -50,17 +50,19 @@
 //// execution context has nowhere else to put the state, while an import
 //// asks for the host primitives by name and there are none.
 ////
-//// One thing layer 2 cannot yet do through this module, measured: on the
-//// erlang backend a qualified std host call is emitted as a call to the
-//// std module itself (`beam:pdPut(Slot, Slot)`) and the emitted
-//// `out/std/beam.erl` is `-module(beam).` and nothing else — no export,
-//// no function. It is not this module's doing: `out/std/process.erl` is
-//// `-module(process).` plus its `no_auto_import` line and no function
-//// either, while commonJS emits real wrappers (`function cwd() { return
-//// process.cwd(); }`). So these ten declarations check and resolve on
-//// `erlang` and `beam`, and a call through them would answer `undef` at
-//// run time until the erlang backend emits the wrappers commonJS already
-//// does. That is a backend row, not a `.zig` line owed here.
+//// How a qualified std host call reaches these, measured: on the erlang
+//// backend `beam.pdPut(t, t)` is emitted as a call to the std module
+//// itself (`std@beam:pdPut(T, T)`), so the emitted `out/erl/std@beam.erl`
+//// has to define and export a `pdPut/2` of its own. It used to be
+//// `-module(std@beam).` and nothing else — no export, no function — and
+//// every call through it answered `undef` at run time (`std@erlang:self()`
+//// the same), while commonJS emitted real wrappers (`function cwd() {
+//// return process.cwd(); }`). Decision 64 closed the erlang half: the
+//// backend emits a wrapper and an export per `pub` host-backed `declare
+//// fn`, whether or not the current build imports it by name. The beam
+//// backend's twin predicate is declared (`hostDeclareWrapperNeeded`) and
+//// not yet wired, so on `beam` a call through this module is still
+//// `undef` — a backend row, not a `.zig` line owed here.
 ////
 //// Adding a primitive: one `#[@External.Erlang("<mod>", "<symbol>")] pub
 //// declare fn <camelCase>(…) -> any;`. `root.bp` already declares this

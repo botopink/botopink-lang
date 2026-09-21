@@ -137,6 +137,41 @@ pub behavior Display {
     fn display(self: Self) -> string;
 }
 
+// ── index / slice (decision 63, amended) ─────────────────────────────────────
+//
+// An index expression has NO typing rule of its own: `xs[0]` IS `xs.at(0)`,
+// `d["k"]` IS `d.at("k")`, `xs[0..2]` IS `xs.slice(0, 2)` and `xs[1..]` IS
+// `xs.slice(1, null)`. The type of the expression is whatever the method
+// answers, so indexing stops being a privilege of the three built-in
+// collections: a library's own `Matrix`, `Row` or `Buffer` becomes indexable by
+// answering `at` / `slice`, with no compiler change.
+//
+// Both are ambient — a type says it indexes with no import, exactly as it says
+// how it reads with `Display` above — because the syntax has to find the method
+// without the author having asked for it.
+//
+// `slice` takes two arguments rather than one range because there is no `Range`
+// type in the language: `start..end` is an AST node, not a value, so an open end
+// travels as `null` in the second argument.
+//
+// A TUPLE is deliberately not covered. `t[0]` needs a *constant* index and
+// answers a type *per position*, which `at(key: K) -> ?V` cannot express with a
+// single `V`; the tuple stays a checker special case.
+//
+// `libs/std` answers both: `Dict<K, V>` carries `Index<K, V>` on its
+// declaration; `Array<T>` (`Index<i32, T>`, `Slice<T[]>`) and `string`
+// (`Index<i32, string>`, `Slice<string>`) answer them from the primitive
+// registry in `primitives.bp`, which is a `behavior` and cannot spell an
+// `implement` clause today — the conformance is named in a comment there.
+
+pub behavior Index<K, V> {
+    fn at(self: Self, key: K) -> ?V;
+}
+
+pub behavior Slice<V> {
+    fn slice(self: Self, start: i32, end: ?i32) -> V;
+}
+
 // ── context (hooks) ──────────────────────────────────────────────────────────
 
 pub behavior Context<ContextBase, Return> { }

@@ -32,7 +32,7 @@ parser/
 ├── AGENTS.md      ← you are here
 ├── types.zig      ← type-ref sub-grammar: parseTypeRef/BaseTypeRef/GenericParams/ImplementClause
 ├── patterns.zig   ← case/pattern sub-grammar: parseCaseExpr/parsePattern/SimplePattern/ListPattern
-├── decls.zig      ← declaration sub-grammar: val/fn/test/type/behavior/implement/extend/delegate/import + params;
+├── decls.zig      ← declaration sub-grammar: val/var/fn/test/type/behavior/implement/extend/delegate/import + params;
 │                     the 1.0.3 `type`/`behavior` declarations: `parseTypeDecl`/`parseShorthandTypeDecl`
 │                     (shared `parseFieldList`, shape resolution, `type-*` diagnostics), `parseBehaviorDecl`/`parseShorthandBehaviorDecl`
 │                     (member separators: bodyless members end with `;` — `member-comma-separator` / `member-missing-semicolon`)
@@ -85,17 +85,32 @@ test "import decl" {
 
 `parseBlock` consumes the `{` and delegates to **`parseBlockBody`**, which runs
 the statement loop under `BlockParseOptions` (`handleComments`,
-`trackEmptyLines`, `semicolonPolicy`, `useAfterBranchGuard`). A block that reads
-something between the `{` and its first statement — a prologue — consumes the
-`{` itself, reads the prologue, and then calls `parseBlockBody`:
+`trackEmptyLines`, `semicolonPolicy`, `useAfterBranchGuard`, `freshUseScope`). A
+block that reads something between the `{` and its first statement — a prologue
+— consumes the `{` itself, reads the prologue, and then calls `parseBlockBody`:
 
-| Block | Prologue | Policy |
-|---|---|---|
-| fn / `test` body, `if` else-branch, `case` arm | — (`parseStmtListInBraces`) | `requiredExceptLast` |
-| `if` then-branch | `{ x -> ` — the branch's value binding | `requiredExceptLast` |
-| lambda `{ a, b -> … }` | the parameter list | `optional` |
-| trailing lambda `f { a -> … }` | an optional `label:` and the parameter list | `required` |
-| `loop (…) { x -> … }` body | the parameter list | `required` |
+| Block | Prologue | Policy | `use` scope |
+|---|---|---|---|
+| fn / `test` body, `fn (…) { … }` expression | — (`parseFnBodyInBraces`) | `requiredExceptLast` | fresh |
+| `if` else-branch, `case` arm | — (`parseStmtListInBraces`) | `requiredExceptLast` | inherits |
+| `if` then-branch | `{ x -> ` — the branch's value binding | `requiredExceptLast` | inherits |
+| lambda `{ a, b -> … }` | the parameter list | `optional` | fresh |
+| trailing lambda `f { a -> … }` | an optional `label:` and the parameter list | `required` | fresh |
+| `loop (…) { x -> … }` body | the parameter list | `required` | inherits |
+
+**The static prefix of `use`** (front 19 of 1.0.10-beta, decision 88) is a
+property of the *function body*: every `use` precedes every `if`, `case`, `loop`
+and `return` of that body, at any nesting. `Parser.useBranchSeen` is set by the
+four constructs themselves when they are parsed (`parser/exprs.zig`), so a
+branch's own block sees the branch it is in (`if (a) { use … }` is refused) and
+a `val m = if (…) …` counts as a branch. `parseBlockBody` saves and restores the
+flag around every block; `freshUseScope` clears it on entry — a lambda body is
+another function, so `use memo { -> return … }` keeps the enclosing prefix. Under
+`useAfterBranchGuard` a statement is tested by its **shape**, not its first
+token: a bare `use …;` at its own token before the parse, and a `val`/`var`
+(plain or destructuring) whose value is the `use` prefix after it
+(`bindingUseLoc`, reported at the `use` token found by `tokenAt`). Both are
+`useAfterBranch` (`print.zig`).
 
 **Five of those carried their own copy of the loop**, each written before the
 options existed, and each left out comment handling and empty-line tracking — so
@@ -358,10 +373,22 @@ shapes (vocabulary in `libs/std/AGENTS.md`):
 - **Arity branches** — `when($argc == N): "<template>"` spans the balanced parens,
   the `:` and the value into one lexeme (`spanLexemes`).
 - **Labels** — a leading `identifier :` or `identifier =` (`module:`,
-  `inline = true`) is dropped; the value lands positionally.
+  `inline = true`) lands in `Annotation.labels[i]` (`labelOf(i)`, front 17
+  step 3 — the validator and the formatter read it); the value still lands
+  positionally in `args`.
 - **Enum/member chains** — `.Erlang`, `Target.Erlang`: adjacent `.`/identifier
   tokens fold into one lexeme spanning the source bytes. A bare identifier or
   string literal goes through unchanged.
+
+## Module-level `var` (front 17, decision 38)
+
+`parseValDecl` reads `var name[: T] = v;` as a `ValDecl` with `mutable = true`;
+`parseValForm` sends `var` straight there (no `val Name = fn …`-style shorthand
+reads it). An annotated binding — `#[@BeamMemory.Ets(keyed = true)] var hits:
+i32 = 0;` — is dispatched from the annotation branch of the top-level loop, and
+the annotations land on `ValDecl.annotations`; only the plain form takes them
+(an annotated shorthand is `UnexpectedToken`). What the annotation may say is
+checked by inference, not here.
 
 ## Comments and declaration ids
 

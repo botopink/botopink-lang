@@ -1014,3 +1014,54 @@ test "parser: comments ---- doc, module and normal comments attach to decls" {
         \\}
     );
 }
+
+// ── module-level `var` (front 17, decision 38) ────────────────────────────────
+
+test "parser: `var` parses at module level, and `val` does not become mutable" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lx = Lexer.init("var hits: i32 = 0;\npub var seen = 1;\nval fixed = 2;");
+    const tokens = try lx.scanAll(alloc);
+    var p = Parser.init(tokens);
+    const program = try p.parse(alloc);
+    try std.testing.expectEqual(@as(usize, 3), program.decls.len);
+    try std.testing.expect(program.decls[0].val.mutable);
+    try std.testing.expectEqualStrings("hits", program.decls[0].val.name);
+    try std.testing.expect(program.decls[0].val.typeAnnotation != null);
+    try std.testing.expect(program.decls[1].val.mutable);
+    try std.testing.expect(program.decls[1].val.isPub);
+    try std.testing.expect(!program.decls[2].val.mutable);
+}
+
+test "parser: `#[@BeamMemory.Ets] var` carries the annotation on the binding" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lx = Lexer.init("#[@BeamMemory.Ets(keyed = true)]\nvar cache: i32 = 0;");
+    const tokens = try lx.scanAll(alloc);
+    var p = Parser.init(tokens);
+    const program = try p.parse(alloc);
+    try std.testing.expectEqual(@as(usize, 1), program.decls.len);
+    const v = program.decls[0].val;
+    try std.testing.expect(v.mutable);
+    try std.testing.expectEqual(@as(usize, 1), v.annotations.len);
+    try std.testing.expectEqualStrings("BeamMemory.Ets", v.annotations[0].name);
+    try std.testing.expect(v.annotations[0].is_builtin);
+    // The label survives beside the positional value (front 17 step 3).
+    try std.testing.expectEqualStrings("true", v.annotations[0].args[0]);
+    try std.testing.expectEqualStrings("keyed", v.annotations[0].labelOf(0).?);
+}
+
+test "parser: an unlabelled annotation argument has no label" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lx = Lexer.init("#[@External.Node(\"charAt\")]\npub declare fn f(s: string) -> string;");
+    const tokens = try lx.scanAll(alloc);
+    var p = Parser.init(tokens);
+    const program = try p.parse(alloc);
+    const anns = program.decls[0].@"fn".annotations;
+    try std.testing.expectEqual(@as(usize, 0), anns[0].labels.len);
+    try std.testing.expect(anns[0].labelOf(0) == null);
+}

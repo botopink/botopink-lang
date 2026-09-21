@@ -1015,3 +1015,85 @@ test "infer: unknown type ---- a behavior names a type in annotation position" {
         \\fn read(c: Counter) -> i32 { return c.value(); }
     );
 }
+
+// ── decision 38: a `val` is immutable ─────────────────────────────────────────
+
+/// The error `inferProgram` raises for `src`, rendered — no snapshot: the
+/// message is asserted by content so that the case does not add a cell to
+/// `snapshots/comptime/errors/`.
+fn typeErrorMessage(allocator: std.mem.Allocator, src: []const u8) ![]u8 {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var lx = Lexer.init(src);
+    const tokens = try lx.scanAll(alloc);
+    var p = Parser.init(tokens);
+    var program = try p.parse(alloc);
+    defer program.deinit(alloc);
+    var env = try inferMod.freshEnv(alloc, allocator);
+    defer env.deinit();
+    try std.testing.expectError(error.TypeError, inferMod.inferProgram(&env, program));
+    const err = env.lastError orelse return error.TestExpectedEqual;
+    try std.testing.expect(err.loc != null);
+    // Message and hint together: the hint is where `var` is named.
+    const msg = try err.message(allocator);
+    defer allocator.free(msg);
+    const hint = switch (err.kind) {
+        .custom => |c| c.hint orelse "",
+        else => "",
+    };
+    return std.fmt.allocPrint(allocator, "{s}\n{s}", .{ msg, hint });
+}
+
+test "infer error: assigning to a local `val` names `var`" {
+    const msg = try typeErrorMessage(std.testing.allocator, "fn main() { val x: i32 = 0; x = 1; @print(x); }");
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "`x` is a `val` and cannot be assigned") != null);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "var x") != null);
+}
+
+test "infer error: assigning to a module-level `val` names `var`" {
+    const msg = try typeErrorMessage(std.testing.allocator, "val hits: i32 = 0;\nfn bump() { hits += 1; }");
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "`hits` is a `val` and cannot be assigned") != null);
+}
+
+test "infer error: `#[@BeamMemory.Ets]` on a `val` is refused" {
+    const msg = try typeErrorMessage(std.testing.allocator, "#[@BeamMemory.Ets]\nval hits: i32 = 0;");
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "needs a `var`") != null);
+}
+
+test "infer: a `var` may be assigned, locally and at module level" {
+    try h.assertInfersOk(std.testing.allocator, "var hits: i32 = 0;\nfn bump() { hits += 1; var y = 0; y = hits; }");
+}
+
+// ── front 17 step 3: `#[@BeamMemory.<member>]` is validated (decisions 41, 51) ─
+
+test "infer error: an unknown `@BeamMemory` member" {
+    const msg = try typeErrorMessage(std.testing.allocator, "#[@BeamMemory.Etz]\nvar x: i32 = 0;");
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "unknown member `Etz` in `@BeamMemory` — expected `ProcessDict`, `Ets` or `PersistentTerm`") != null);
+}
+
+test "infer error: an unknown `@BeamMemory` argument" {
+    const msg = try typeErrorMessage(std.testing.allocator, "#[@BeamMemory.Ets(keyd = true)]\nvar x: i32 = 0;");
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "unknown argument `keyd` — expected `keyed`") != null);
+}
+
+test "infer error: `keyed = true` on an `i32` has no key" {
+    const msg = try typeErrorMessage(std.testing.allocator, "#[@BeamMemory.Ets(keyed = true)]\nvar n: i32 = 0;");
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "`keyed` needs a keyed container — an `i32` has no key") != null);
+}
+
+test "infer error: `keyed = true` on a list has no key (decision 51)" {
+    const msg = try typeErrorMessage(std.testing.allocator, "#[@BeamMemory.Ets(keyed = true)]\nvar xs: i32[] = [];");
+    defer std.testing.allocator.free(msg);
+    try std.testing.expect(std.mem.indexOf(u8, msg, "`keyed` needs a keyed container") != null);
+}
+
+test "infer: `@BeamMemory` accepts its three members, the default said out loud included" {
+    try h.assertInfersOk(std.testing.allocator, "#[@BeamMemory.ProcessDict]\nvar a: i32 = 0;\n#[@BeamMemory.Ets]\nvar b: i32 = 0;\n#[@BeamMemory.PersistentTerm]\nvar c: i32 = 0;\n#[@BeamMemory.Ets(keyed = false)]\nvar d: i32 = 0;");
+}

@@ -7,6 +7,7 @@ fn state(initial: i32) -> @Context<Element, i32> {
 fn memo() -> @Context<Element, i32> {
     0;
 }
+#[@context]
 fn Counter() -> Element {
     val {count, setCount} = use state(0);
     val doubled = use memo { -> return count * 2; };

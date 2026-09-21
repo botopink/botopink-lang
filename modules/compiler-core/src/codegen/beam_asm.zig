@@ -193,6 +193,21 @@ fn isHostDeclare(f: ast.FnDecl) bool {
     return f.isExternal() and f.body.len == 0;
 }
 
+/// True when this module must answer a `pub` host-backed `declare fn` with a
+/// callable wrapper of its own. The BEAM twin of `erlang.zig`'s
+/// `externalWrapperNeeded`, and the same reason: a bare call inlines the host
+/// target at the CALL SITE, so a module that only DECLARES the function exported
+/// nothing and defined nothing — `{exports, []}` in `std@erlang.S` — and a
+/// qualified call from another module (`import { erlang } from "std"` then
+/// `erlang.self()`) emitted `{call_ext, 0, {extfunc, std@erlang, self, 0}}`
+/// against a module with no such function. `pub` IS the promise that the name
+/// is callable from outside; whether this particular build reaches it must not
+/// decide whether the module is complete
+/// ([decision 64](../../../../specs/1.0.5-beta/decisions-taken.md)).
+fn hostDeclareWrapperNeeded(f: ast.FnDecl) bool {
+    return f.isPub and isHostDeclare(f);
+}
+
 fn isMain0(f: ast.FnDecl) bool {
     return std.mem.eql(u8, f.name, "main") and fnArityNoSelf(f) == 0;
 }
@@ -2193,7 +2208,8 @@ const Emitter = struct {
         // effect), which is a plain function. The BEAM model is processes +
         // message passing (spawn/receive); this backend currently emits the
         // eager body, with full process-based lowering left as future work.
-        if (f.effect != null and f.effect.? != .result) {
+        // `#[@context]` is a plain function too (decision 88: it gates `use`).
+        if (f.effect != null and f.effect.? != .result and f.effect.? != .context) {
             try beamEmitter.writeTopComment(self.out, "#[@future] / #[@asyncGenerator] — eager lowering", .{});
         }
         var fn_buf: [256]u8 = undefined;
@@ -2223,7 +2239,7 @@ const Emitter = struct {
         self.cur_line += 1;
         // An eager `#[@iterator]`/`#[@future]` body ending in a yielding loop
         // is that loop's list: the fn returns it instead of `ok`.
-        if (f.effect != null and f.effect.? != .result and f.body.len > 0) {
+        if (f.effect != null and f.effect.? != .result and f.effect.? != .context and f.body.len > 0) {
             const last = f.body[f.body.len - 1].expr;
             if (last == .loop and hasYieldOrBreakValue(last.loop.body)) {
                 for (f.body[0 .. f.body.len - 1]) |stmt| try self.emitStmt(stmt);

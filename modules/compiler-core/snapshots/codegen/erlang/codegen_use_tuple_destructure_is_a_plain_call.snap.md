@@ -4,12 +4,9 @@ val Element = type implement @Context<Element, Element> { }
 fn state(initial: i32) -> @Context<Element, i32> {
     initial;
 }
-fn memo() -> @Context<Element, i32> {
-    0;
-}
+#[@context]
 fn Counter() -> Element {
-    val {count, setCount} = use state(0);
-    val doubled = use memo { -> return count * 2; };
+    val #(count, setCount) = use state(0);
     Element();
 }
 ```
@@ -23,14 +20,8 @@ fn Counter() -> Element {
 state(Initial) ->
     Initial.
 
-memo() ->
-    0.
-
 'Counter'() ->
-    #{count := Count, setCount := SetCount} = state(0),
-    Doubled = memo(fun() ->
-        (Count * 2)
-    end),
+    {Count, SetCount} = state(0),
     #{}.
 ```
 

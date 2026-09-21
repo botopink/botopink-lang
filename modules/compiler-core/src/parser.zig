@@ -253,6 +253,16 @@ pub const Parser = struct {
     noTrailingLambda: bool = false,
     /// When true, `parsePipelineExpr` will not consume a trailing `catch` operator.
     noTailCatch: bool = false,
+    /// The static-prefix rule of `use` (front 19 step 1, decision 88): true once
+    /// an `if`, `case`, `loop` or `return` of the **current function body** has
+    /// been parsed, at any nesting. A `use` seen while it is set is
+    /// `useAfterBranch`. Set by the four constructs themselves (`parser/exprs.zig`),
+    /// so a branch's own block inherits it (`if (a) { use … }` is a `use` after
+    /// an `if`) and a `val c = if (…) …` counts as a branch too. Reset by a block
+    /// that starts a function (`BlockParseOptions.freshUseScope`): a lambda body
+    /// is another function, so its `return` does not break the enclosing prefix
+    /// and the enclosing `if` does not break its own.
+    useBranchSeen: bool = false,
     /// One `>` still owed to an enclosing generic-argument list: nested
     /// generics close with `>>`, which the lexer scans as a single shift
     /// token (`Array<Array<T>>`). `consumeGenericClose` consumes the `>>`
@@ -433,7 +443,7 @@ pub const Parser = struct {
                 const ePtr = try this.boxExpr(alloc, .{ .loop = e });
                 _ = this.match(.semicolon);
                 break :blk DeclKind{ .val = ast.ValDecl{ .name = "_loop", .value = ePtr } };
-            } else if (this.checkShorthand(.val)) blk: {
+            } else if (this.checkShorthand(.val) or this.checkShorthand(.@"var")) blk: {
                 const decl = try this.parseValForm(alloc);
                 // Optional semicolon after top-level val declaration
                 _ = this.match(.semicolon);
@@ -455,6 +465,24 @@ pub const Parser = struct {
                     },
                     .type => DeclKind{ .type_ = try this.parseShorthandTypeDecl(alloc) },
                     .behavior => DeclKind{ .behavior = try this.parseShorthandBehaviorDecl(alloc) },
+                    // `#[@BeamMemory.Ets] var hits: i32 = 0;` (front 17): the
+                    // annotations land on the binding. Only the plain form takes
+                    // them — `val Name = fn …` and the other `val` shorthands do
+                    // not, and are refused where the annotation is.
+                    .val, .@"var" => blk2: {
+                        const anns = try this.parseAnnotations(alloc);
+                        var decl = try this.parseValForm(alloc);
+                        switch (decl) {
+                            .val => |*v| v.annotations = anns,
+                            else => {
+                                decl.deinit(alloc);
+                                for (anns) |*ann| ann.deinit(alloc);
+                                alloc.free(anns);
+                                return ParseError.UnexpectedToken;
+                            },
+                        }
+                        break :blk2 decl;
+                    },
                     // An ANNOTATED `declare fn` is the FFI declaration form
                     // (`@[external(…)] pub declare fn …;`), not a delegate.
                     .declare => DeclKind{ .@"fn" = try this.parseFnDecl(alloc) },
@@ -529,6 +557,8 @@ pub const Parser = struct {
     /// Dispatches `val [pub] Name = <kind> ...` to the appropriate sub-parser.
     /// Uses pure lookahead ---- no state mutation.
     pub fn parseValForm(this: *This, alloc: std.mem.Allocator) ParseError!DeclKind {
+        // `var` has the plain form only — no shorthand reads it.
+        if (this.checkShorthand(.@"var")) return .{ .val = try this.parseValDecl(alloc) };
         // Check if we have `val Name : Type = Value` (type annotation) or `val Name = Value`
         var offset: usize = 0;
         if (this.peekAt(offset).kind == .@"pub") offset += 1; // optional pub
@@ -695,6 +725,11 @@ pub const Parser = struct {
         semicolonPolicy: SemicolonPolicy = .required,
         /// Reject a `use` hook that appears after a branch/return (static-prefix rule).
         useAfterBranchGuard: bool = false,
+        /// This block starts a function body (fn, `test`, lambda): the static
+        /// prefix starts over — `useBranchSeen` is cleared on entry and restored
+        /// on exit. A branch's block (`if`/`else`/`case` arm/`loop` body) leaves
+        /// it false and inherits the enclosing body's flag.
+        freshUseScope: bool = false,
     };
 
     /// Parse `{ stmt; stmt; ... }`. The opening `{` must be the current token.
@@ -723,8 +758,12 @@ pub const Parser = struct {
             for (stmts.items) |*s| s.deinit(alloc);
             stmts.deinit(alloc);
         }
-        var seenBranch = false;
-        _ = &seenBranch; // used only when useAfterBranchGuard is set
+        // The static prefix is a property of the function body, not of this
+        // block: nested branch blocks inherit `useBranchSeen`, a function body
+        // starts clean, and both restore the enclosing state on exit.
+        const savedBranchSeen = this.useBranchSeen;
+        defer this.useBranchSeen = savedBranchSeen;
+        if (opts.freshUseScope) this.useBranchSeen = false;
         while (!this.check(.rightBrace) and !this.check(.endOfFile)) {
             const emptyLinesBefore: u32 = if (opts.trackEmptyLines) blk: {
                 const prevLine = if (this.current > 0) this.tokens[this.current - 1].line else 1;
@@ -734,14 +773,15 @@ pub const Parser = struct {
 
             if (opts.handleComments and try this.tryParseCommentStmt(alloc, &stmts, emptyLinesBefore)) continue;
 
-            if (opts.useAfterBranchGuard) {
-                if (seenBranch and this.check(.use)) {
-                    const tok = this.peek();
-                    this.parseError = ParseErrorInfo.fromToken(.useAfterBranch, tok);
-                    return ParseError.UnexpectedToken;
-                }
-                if (this.check(.@"if") or this.check(.@"return") or this.check(.loop) or this.check(.case))
-                    seenBranch = true;
+            // A bare `use …;` statement after a branch: refused at its own
+            // token before anything is parsed. The `if`/`case`/`loop`/`return`
+            // that set `useBranchSeen` did so when they were parsed
+            // (`parser/exprs.zig`), which is what lets a `use` inside a
+            // branch's block see the branch it is in (row 4c of front 19).
+            if (opts.useAfterBranchGuard and this.useBranchSeen and this.check(.use)) {
+                const tok = this.peek();
+                this.parseError = ParseErrorInfo.fromToken(.useAfterBranch, tok);
+                return ParseError.UnexpectedToken;
             }
 
             var expr = try this.parseExpr(alloc);
@@ -750,6 +790,15 @@ pub const Parser = struct {
             // here rather than leaked; once appended, `stmts`' own errdefer
             // owns it and this one is discharged.
             errdefer expr.deinit(alloc);
+            // `val c = use …` / `var c = use …` / `val {a, b} = use …` after a
+            // branch (row 4b): the statement starts with `val`, so only the
+            // parsed shape shows the `use`. Reported at the `use` token.
+            if (opts.useAfterBranchGuard and this.useBranchSeen) {
+                if (bindingUseLoc(&expr)) |loc| {
+                    this.parseError = ParseErrorInfo.fromToken(.useAfterBranch, this.tokenAt(loc, .use));
+                    return ParseError.UnexpectedToken;
+                }
+            }
             switch (opts.semicolonPolicy) {
                 .required => _ = try this.consume(.semicolon),
                 .optional => _ = this.match(.semicolon),
@@ -771,6 +820,49 @@ pub const Parser = struct {
             .semicolonPolicy = .requiredExceptLast,
             .useAfterBranchGuard = true,
         });
+    }
+
+    /// A block that **starts a function body** — a `fn` / method body, a `test`
+    /// body, a `fn (…) { … }` expression: `parseStmtListInBraces` with the
+    /// static prefix of `use` starting over (`freshUseScope`). Lambdas read a
+    /// prologue and call `parseBlockBody` with the same flag themselves.
+    pub fn parseFnBodyInBraces(this: *This, alloc: std.mem.Allocator) ParseError![]Stmt {
+        return this.parseBlock(alloc, .{
+            .trackEmptyLines = true,
+            .handleComments = true,
+            .semicolonPolicy = .requiredExceptLast,
+            .useAfterBranchGuard = true,
+            .freshUseScope = true,
+        });
+    }
+
+    /// The `use` a statement activates at its top level, if any: a bare
+    /// `use …;`, or a `val`/`var` (plain or destructuring) whose value is the
+    /// `use` prefix. The static-prefix rule tests statements by this shape, not
+    /// by their first token. Same shape as `codegen/commonJS.zig`'s former
+    /// `useHookInner`, over the binding as well.
+    fn bindingUseLoc(e: *const Expr) ?Loc {
+        return switch (e.*) {
+            .useHook => |uh| uh.loc,
+            .binding => |b| switch (b.kind) {
+                .localBind => |lb| if (lb.value.* == .useHook) lb.value.useHook.loc else null,
+                .localBindDestruct => |lb| if (lb.value.* == .useHook) lb.value.useHook.loc else null,
+                else => null,
+            },
+            else => null,
+        };
+    }
+
+    /// The token of kind `kind` at `loc` — the one an already-parsed node was
+    /// built from — so a diagnostic raised after the parse still carries the
+    /// byte offsets `ParseErrorInfo.fromToken` requires. Falls back to the
+    /// current token when no token matches (it always does for a node the
+    /// parser just built).
+    fn tokenAt(this: *This, loc: Loc, kind: TokenKind) Token {
+        for (this.tokens) |tok| {
+            if (tok.kind == kind and tok.line == loc.line and tok.col == loc.col) return tok;
+        }
+        return this.peek();
     }
 
     /// Parse either `{ expr; ... }` or a single `expr`.
@@ -913,6 +1005,10 @@ pub const Parser = struct {
 
         var args: std.ArrayList([]const u8) = .empty;
         errdefer args.deinit(alloc);
+        // One entry per argument: the label written before it, or `""`.
+        var labels: std.ArrayList([]const u8) = .empty;
+        defer labels.deinit(alloc);
+        var any_label = false;
         if (this.match(.leftParenthesis)) {
             while (!this.check(.rightParenthesis) and !this.check(.endOfFile)) {
                 // `prim-op-annotation` arity-branch label: `when($argc == N): "..."`
@@ -947,6 +1043,7 @@ pub const Parser = struct {
                         }
                     }
                     try args.append(alloc, spanLexemes(first, last));
+                    try labels.append(alloc, "");
                     if (!this.match(.comma)) break;
                     continue;
                 }
@@ -958,12 +1055,15 @@ pub const Parser = struct {
                 // annotation's reader (`FnDecl.externalFor` / `BehaviorMethod.externalFor`
                 // + `hasExternalInline`, `parseExternalCallTemplate`, …) interprets it. See the
                 // `#[@External.<targert>(...)]` vocabulary in `libs/std/AGENTS.md`.
+                var label: []const u8 = "";
                 if (this.check(.identifier) and
                     (this.peekAt(1).kind == .colon or this.peekAt(1).kind == .equal))
                 {
-                    _ = this.advance(); // label name
+                    label = this.advance().lexeme; // label name
                     _ = this.advance(); // `:` or `=`
+                    any_label = true;
                 }
+                try labels.append(alloc, label);
                 if ((this.check(.dot) or this.check(.identifier)) and
                     (this.peekAt(1).kind == .dot or this.peekAt(1).kind == .identifier))
                 {
@@ -984,6 +1084,7 @@ pub const Parser = struct {
         return Annotation{
             .name = name,
             .args = try args.toOwnedSlice(alloc),
+            .labels = if (any_label) try labels.toOwnedSlice(alloc) else &.{},
             .is_builtin = is_builtin,
             .loc = .{ .line = name_start.line, .col = name_start.col },
         };

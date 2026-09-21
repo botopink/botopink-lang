@@ -15,8 +15,11 @@ fn main() {
 ```erlang
 -module(main).
 -export(['_botopink_main'/0, main/1]).
+-export([parseInt/1]).
 
 %% external fn parseInt -> erlang template
+parseInt(S) ->
+    (fun(__S) -> try {ok, binary_to_integer(__S)} catch _:_ -> {error, <<"not a number">>} end end)(S).
 
 main() ->
     R = (fun(__S) -> try {ok, binary_to_integer(__S)} catch _:_ -> {error, <<"not a number">>} end end)(<<"42">>),

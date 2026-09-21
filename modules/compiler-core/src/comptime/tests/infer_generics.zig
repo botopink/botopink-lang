@@ -267,14 +267,17 @@ test "infer: net-new ---- @Context across three hook layers stays Element-based"
         \\fn layer1(initial: i32) -> @Context<Element, i32> {
         \\    initial;
         \\}
+        \\#[@context]
         \\fn layer2() -> @Context<Element, i32> {
         \\    val a = use layer1(0);
         \\    a;
         \\}
+        \\#[@context]
         \\fn layer3() -> @Context<Element, i32> {
         \\    val b = use layer2();
         \\    b;
         \\}
+        \\#[@context]
         \\fn Widget() -> Element {
         \\    val c = use layer3();
         \\    Element();

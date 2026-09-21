@@ -7,6 +7,7 @@ fn state(initial: i32) -> @Context<Element, i32> {
 fn memo() -> @Context<Element, i32> {
     0;
 }
+#[@context]
 fn Counter() -> Element {
     val {count, setCount} = use state(0);
     val doubled = use memo { -> return count * 2; };
@@ -29,10 +30,10 @@ function memo() {
 }
 
 function Counter() {
-    const { count, setCount } = useState(0);
-    const doubled = useMemo(() => {
+    const { count, setCount } = state(0);
+    const doubled = memo(() => {
     return (count * 2);
-}, [count]);
+});
     new Element();
 }
 ```
