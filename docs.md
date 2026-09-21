@@ -790,6 +790,36 @@ provider stack is not part of this section.
 
 `use` and `#[@context]` (hooks and components) are under *Expressions › use*.
 
+### Recursion
+
+A function may call itself. When the call is the **whole** of a `return` — a
+*tail* call — it costs no stack: commonJS rewrites it into a loop, and erlang
+and beam run on VMs that drop the frame. The depth of a tail-recursive walk is
+bounded by the data, not by the runtime.
+
+```botopink
+fn sumDown(n: i32, acc: i32) -> i32 {
+    if (n == 0) return acc;
+    // A tail call: the whole of the `return`. A loop, not a frame.
+    return sumDown(n - 1, acc + n);
+}
+```
+
+Every other recursion uses the stack, and how deep it may go is the host's
+answer, not the language's:
+
+* a call that is not the whole of the `return` — `return 1 + f(n - 1)`;
+* **mutual** recursion: `a` calling `b` calling `a`;
+* a call through anything but the function's own name — a method on a value, a
+  function held in a binding;
+* a function that also makes a closure reading one of its own parameters, or
+  one with a destructuring or defaulted parameter;
+* an `#[@iterator]`, `#[@generator]` or `#[@future]` function.
+
+`wasm` recurses for every shape, tail call included — about 30 000 frames.
+Measured at 1.0.10-beta, with node's own ceiling for a two-parameter function
+between 10 000 and 20 000.
+
 ### Parameters with defaults
 
 ```botopink

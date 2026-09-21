@@ -57,6 +57,15 @@ needs no expectation at all). One scenario group per
 file: a parse error is the blast radius, so nine `#[@External]` declarations in one file mean one
 unparseable annotation hides the other eight.
 
+1.0.10-beta's `00 · 04-js` adds three more `run/` cells, every one of them measured by rakun's front
+05 while it wrote a configuration reader, and every one asserting the VALUE — each defect made
+commonJS answer differently from erlang, or not answer at all, with nothing said about it.
+`self_tail_recursion` (D6) walks 20 000 rounds of a tail-recursive function: commonJS emitted a
+plain JS call and node has no tail-call elimination, so the program died with `RangeError: Maximum
+call stack size exceeded` while erlang, a tail-recursive VM, printed the sum. Its bound is a
+VARIABLE on purpose — a literal one could be folded and hide the depth — and the cell's header
+records the ceiling each backend still has.
+
 ### The `modules/` kind
 
 The kind for what a single file cannot express: `pub mod`, `import … from "<module>"`, a folder index

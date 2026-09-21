@@ -190,6 +190,39 @@ codegen/
   `tests/language/modules/package_variant_identity/`, which one package cannot
   express. `is`/`val assert` still test `instanceof` (below) and inherit the
   same limit wherever a class is re-emitted.
+- **Self tail calls are a LOOP, not a frame** (`selfTailLoop`, D6 of
+  1.0.10-beta `00 · 04-js`). V8 has no tail-call elimination, so `return f(…)`
+  inside `f` cost a stack frame per round and a few thousand rounds ended the
+  program — while erlang and beam, whose VMs drop the frame, ran the same
+  source to the end. `std`'s `random.intInRange` found it: its `floorWalk`
+  helper is hand-written tail recursion, one frame per unit of range, so a
+  range of a few thousand was `RangeError: Maximum call stack size exceeded` on
+  node and a correct answer everywhere else. Measured: the old shape took
+  10 000 rounds and not 20 000.
+  The rewrite runs on the BUILT js nodes, after the body is lowered: every
+  `return <self>(a, b);` becomes `{ <temps> <assignments> continue; }` and the
+  body becomes the body of a `while (true)`. An argument that READS a parameter
+  is staged in a `__bp_tc<i>` temporary, because the assignments happen in
+  order and an earlier one would be visible to a later argument; an argument
+  that IS its own parameter is dropped. A call inside a loop of the function's
+  own continues a LABELLED loop (`__bp_tc:`), since a bare `continue` would go
+  round that inner loop. Falling off the end of the body becomes an explicit
+  `return;` — inside the loop it would otherwise start another round.
+  **What still recurses**, and this is the limit a reader may rely on, not an
+  oversight: a call that is not in tail position (`return 1 + f(n - 1)`);
+  MUTUAL recursion (`a` → `b` → `a`) — a trampoline would have to change every
+  call site and every module's calling convention, which is a far larger price
+  than the shape is worth; a call through anything but the function's own name
+  (`this.m(…)`, a value holding the function); a function that creates a
+  closure reading one of its parameters (the closure outlives the round that
+  made it, so reassigning the parameter would change what it sees); one that
+  names `arguments` (sloppy mode maps it onto the parameters); one with a
+  destructuring or defaulted parameter (nothing to assign to); one that binds
+  its own name locally; and anything but a plain `function` — a generator's
+  `return f(…)` resumes an iterator rather than ending one, and an `async`
+  one's answer is a promise. Pinned by
+  `tests/language/run/self_tail_recursion.bp` (every target) and three
+  `control_flow.zig` cells that RUN.
 - **`.len`**: `s.len` / `arr.len` on a typed string/array (inference records
   `.prim` in `instance_lowerings`, threaded in as `Emitter.lowerings`) emits
   the native `.length` property; a record field named `len` is untouched (C3).

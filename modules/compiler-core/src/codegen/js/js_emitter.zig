@@ -440,6 +440,11 @@ pub fn writeStmt(w: *Writer, s: Ast.Stmt, indent: usize) Error!void {
             try w.writeByte(';');
         },
         .continue_ => try w.writeAll("continue;"),
+        .continue_label => |l| {
+            try w.writeAll("continue ");
+            try w.writeAll(l);
+            try w.writeByte(';');
+        },
         .break_ => try w.writeAll("break;"),
         .yield_delegate => |e| {
             try w.writeAll("yield* ");
@@ -465,6 +470,10 @@ pub fn writeStmt(w: *Writer, s: Ast.Stmt, indent: usize) Error!void {
             try writeBlock(w, f.body);
         },
         .while_ => |wh| {
+            if (wh.label) |l| {
+                try w.writeAll(l);
+                try w.writeAll(": ");
+            }
             try w.writeAll("while (");
             try writeExpr(w, wh.cond, indent);
             try w.writeAll(") ");
