@@ -790,6 +790,11 @@ const Emitter = struct {
     /// the done-value and yield nothing (the iterator-recursion bug behind the
     /// dead `iterator` suite).
     in_generator: bool = false,
+    /// True while building a `test { … }` body (decision 74): a `try` whose
+    /// operand is an Error there `throw`s the error instead of `return`ing it,
+    /// so the runner's `catch` prints the FAIL line. Reset inside every nested
+    /// function (a lambda is its own fallible context, or none).
+    in_test_body: bool = false,
     /// The innermost `loop` whose body is being built, which is what a
     /// `break` / `continue` / accumulator `yield` binds to. Reset to `.none`
     /// wherever a JS function boundary starts (an arrow, an IIFE), because a
@@ -1543,6 +1548,11 @@ const Emitter = struct {
         self.try_seq = 0;
         const prev_fn_indent = self.current_indent;
         self.current_indent = 1;
+        // Decision 74 — the test body is a fallible context whose failure
+        // channel is the runner, not a returned Result.
+        const prev_in_test = self.in_test_body;
+        self.in_test_body = true;
+        defer self.in_test_body = prev_in_test;
         const body = try self.buildStmts(t.body);
         self.current_indent = prev_fn_indent;
         return .{ .function = .{
@@ -2507,13 +2517,16 @@ const Emitter = struct {
         const prev_in_generator = self.in_generator;
         const prev_ctx = self.loop_ctx;
         const prev_wrap = self.case_ok_wrap;
+        const prev_in_test = self.in_test_body;
         self.in_generator = false;
         self.loop_ctx = .none;
         self.case_ok_wrap = false;
+        self.in_test_body = false;
         defer {
             self.in_generator = prev_in_generator;
             self.loop_ctx = prev_ctx;
             self.case_ok_wrap = prev_wrap;
+            self.in_test_body = prev_in_test;
         }
         const ps = try self.arena().alloc(js.Param, params.len);
         for (params, 0..) |p, i| ps[i] = .{ .pattern = .{ .ident = p } };
@@ -2565,10 +2578,19 @@ const Emitter = struct {
                 )));
             },
             .propagate => {
-                try stmts.append(self.arena(), try self.b.ifStmt(
-                    try self.errorIn(temp),
-                    .{ .return_ = .{ .name = temp } },
-                ));
+                // Inside a `test` body (decision 74) the Error ends the test:
+                // `throw new Error(e)` — a string `e` is the message verbatim,
+                // anything else is JSON-rendered — and `__bp_run_tests`' catch
+                // prints `FAIL <name>  (<e>)  at <file>:<line>`. Everywhere else
+                // it propagates as the fn's own Result.
+                const on_error: js.Stmt = if (self.in_test_body) blk: {
+                    const err_val = try self.b.member(.{ .name = temp }, "error");
+                    const is_string = try self.b.binaryBare("===", try self.b.unary("typeof ", err_val, false), .{ .quoted = "string" });
+                    const rendered = try self.b.call(try self.b.member(.{ .name = "JSON" }, "stringify"), &.{err_val});
+                    const message = try self.b.ternary(is_string, err_val, rendered);
+                    break :blk .{ .throw_ = try self.b.new_(.{ .name = "Error" }, &.{message}) };
+                } else .{ .return_ = .{ .name = temp } };
+                try stmts.append(self.arena(), try self.b.ifStmt(try self.errorIn(temp), on_error));
                 if (try self.tryValueStmt(head, temp)) |s| try stmts.append(self.arena(), s);
             },
             .catchJump => |cj| {

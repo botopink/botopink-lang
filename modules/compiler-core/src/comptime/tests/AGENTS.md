@@ -36,10 +36,10 @@ When adding a test file here, register it in `../tests.zig` or it will not run.
 | File | Covers |
 |---|---|
 | `helpers.zig` | Shared harness (no tests): `assertComptimeAst`, `assertComptimeAstSingle`, `assertComptimeCompileError`, `assertTypeErrorSnap`, `assertInfersOk`, `renderTypeError`. |
-| `infer_exprs.zig` | Literal / binary / case / control-flow inference. |
+| `infer_exprs.zig` | Literal / binary / case / control-flow inference; `@src()` typing as `SourceLocation` (`src_types_as_sourcelocation`). |
 | `infer_decls.zig` | fn / record / interface / implement / test-block inference. |
 | `infer_generics.zig` | Type meta-kind + generic inference (regression guards). |
-| `infer_errors.zig` | Inference type errors (`infer error: …`). The decision 38 / front 17 rows (`val` assignment, `@BeamMemory` validation) assert the message by content through `typeErrorMessage` — no cell under `snapshots/comptime/errors/`. |
+| `infer_errors.zig` | Inference type errors (`infer error: …`), including `src-takes-no-arguments` and `unknown-builtin` (with and without a near name). The decision 38 / front 17 rows (`val` assignment, `@BeamMemory` validation) assert the message by content through `typeErrorMessage` — no cell under `snapshots/comptime/errors/`. |
 | `types.zig` | Types / type unification. |
 | `variants.zig` | Variants, record update, patterns, `@print`, AST probes. |
 | `narrowing.zig` | Null-check / case-variant / type-guard narrowing. |

@@ -224,6 +224,22 @@ pub const Manifest = struct {
         return std.fs.path.dirname(self.path) orelse ".";
     }
 
+    /// A diagnostic about this manifest's `"<key>"`, located at that key (the
+    /// first byte of the file when the manifest does not spell it out). Lets a
+    /// caller outside this module report a problem it found *through* a
+    /// manifest — a dependency's sidecar that cannot be shipped, say — in the
+    /// same shape as the ones raised here.
+    pub fn locateAt(self: Manifest, key: []const u8, message: []const u8) Located {
+        return located(self.text, self.path, locateKey(self.text, key), message);
+    }
+
+    /// The same, located at the `"<entry>"` of this manifest's `"<key>"` object
+    /// (`locateEntryAt("dependencies", "rakun", …)` points at the dependency
+    /// entry), falling back to the key and then to the first byte.
+    pub fn locateEntryAt(self: Manifest, key: []const u8, entry: []const u8, message: []const u8) Located {
+        return located(self.text, self.path, locateEntry(self.text, key, entry), message);
+    }
+
     /// True when the whitelist is absent or contains `target`.
     pub fn supportsTarget(self: Manifest, target: []const u8) bool {
         const list = self.targets orelse return true;

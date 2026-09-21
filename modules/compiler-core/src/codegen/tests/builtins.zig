@@ -435,3 +435,256 @@ test "js: builtin ---- @print writes tuples as #(a,b)" {
         \\}
     );
 }
+
+// ── `@src()` — 1.0.10-beta front 01-std, decisions 73 and 74 ─────────────────
+// `@src()` is rewritten at inference into the ordinary constructor call
+// `SourceLocation(file: "main.bp", line: L, column: C, fnName: "…")`, so every
+// backend lowers it through its record-constructor path; the fixtures below
+// are that path's output plus the RUN LOG of the program that reads the four
+// fields back. In the harness `file` is `main.bp` (the module is `.path = ""`).
+
+test "js: src ---- in a test" {
+    // Test mode (commonJS + erlang, the `botopink test` targets): the test body
+    // prints its own location and the RUN LOG shows `main.bp 3 15 src: in a test`
+    // — `fnName` is the test name, verbatim.
+    try h.assertJsTestMode(std.testing.allocator, @src(),
+        \\fn helper() -> i32 { return 1; }
+        \\test "src: in a test" {
+        \\    val loc = @src();
+        \\    @print(loc.file, loc.line, loc.column, loc.fnName);
+        \\}
+        \\test {
+        \\    @print(@src().fnName);
+        \\}
+    );
+}
+
+test "js: src ---- in a fn" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn locate() -> SourceLocation {
+        \\    return @src();
+        \\}
+        \\fn main() {
+        \\    val loc = locate();
+        \\    @print(loc.file, loc.line, loc.column, loc.fnName);
+        \\}
+    );
+}
+
+test "js: src ---- in a method" {
+    // `fnName` is `Type.method`. KNOWN-WRONG (wasm): a record answered by a
+    // *method* call loses its field types on the wat backend — `loc.file` and
+    // `loc.fnName` print as the raw i32 pointers (`256 … 272`); a hand-written
+    // `SourceLocation(…)` returned from the same method prints the same, so it
+    // is the wat backend's method-return typing, not `@src()`.
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\type Stub(n: i32) {
+        \\    fn where(self: Self) -> SourceLocation {
+        \\        return @src();
+        \\    }
+        \\}
+        \\fn main() {
+        \\    val loc = Stub(n: 1).where();
+        \\    @print(loc.file, loc.line, loc.column, loc.fnName);
+        \\}
+    );
+}
+
+test "js: src ---- at module level" {
+    // `fnName` is `""` outside any declaration.
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\val top = @src();
+        \\fn main() {
+        \\    @print(top.file, top.line, top.column);
+        \\    @print(top.fnName == "");
+        \\}
+    );
+}
+
+test "js: src ---- equals a hand-written constructor" {
+    // The two programs differ only in how line 2 spells the record: the
+    // builtin, or the constructor call with the literals the builtin computes.
+    // Their generated JS is the same text — the rewrite is the constructor.
+    const with_builtin =
+        \\fn locate() -> SourceLocation {
+        \\    return @src();
+        \\}
+        \\fn main() {
+        \\    @print(locate().fnName);
+        \\}
+    ;
+    const hand_written =
+        \\fn locate() -> SourceLocation {
+        \\    return SourceLocation(file: "main.bp", line: 2, column: 12, fnName: "locate");
+        \\}
+        \\fn main() {
+        \\    @print(locate().fnName);
+        \\}
+    ;
+    const a = try h.generateJs(std.testing.allocator, with_builtin);
+    defer std.testing.allocator.free(a);
+    const b = try h.generateJs(std.testing.allocator, hand_written);
+    defer std.testing.allocator.free(b);
+    try std.testing.expectEqualStrings(b, a);
+    try h.assertJsSingle(std.testing.allocator, @src(), with_builtin);
+}
+
+test "js: src ---- run log" {
+    // `@print(@src().line)` — the postfix chain on a builtin call, and the
+    // literal line of the `@`.
+    try h.assertJsRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    @print(@src().line);
+        \\    @print(@src().column, @src().fnName);
+        \\}
+    , "2\n12 main\n");
+}
+
+test "erlang: src ---- run log" {
+    try h.assertErlangRunLog(std.testing.allocator,
+        \\fn main() {
+        \\    @print(@src().line);
+        \\    @print(@src().column, @src().fnName);
+        \\}
+    , "2\n12 main\n", &.{ "line => 2", "column => 12", "fnName => <<\"main\">>" });
+}
+
+test "js: src ---- with an argument is refused" {
+    // `src-takes-no-arguments`, located at the call — recorded as the
+    // `COMPILE DIAGNOSTIC` of every backend (the H3 contract for a program
+    // whose point is that it does not compile).
+    try h.assertJsCompileError(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    val loc = @src(1);
+        \\}
+    );
+}
+
+test "js: src ---- with a trailing lambda is refused" {
+    try h.assertJsCompileError(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    val loc = @src { 1; };
+        \\}
+    );
+}
+
+test "js: unknown builtin ---- is refused" {
+    // The silent `void` fallback is gone (decision 67): a typo is a located
+    // `unknown-builtin`, with the nearest name when one is an edit away.
+    try h.assertJsCompileError(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    @pritn("x");
+        \\}
+    );
+}
+
+test "js: unknown builtin ---- Src is not src" {
+    // Builtin names are exact: `@Src()` is refused and pointed at `@src`.
+    try h.assertJsCompileError(std.testing.allocator, @src(),
+        \\fn main() {
+        \\    val loc = @Src();
+        \\}
+    );
+}
+
+test "js: test body ---- try on an Error fails the test" {
+    // Decision 74 — a test body is a fallible context: `try` on an `Error(e)`
+    // ends the test as `FAIL <name>  (<e>)  at main.bp:<line>` on both
+    // `botopink test` targets, an empty `return;` is the `ok` position of a
+    // `-> @Result<void, string>`, and a `try` inside a lambda is the lambda's.
+    // The RUN LOG is the runner's own output: one FAIL, two ok.
+    try h.assertJsTestMode(std.testing.allocator, @src(),
+        \\#[@result]
+        \\fn failing() -> @Result<void, string> {
+        \\    throw "boom";
+        \\}
+        \\#[@result]
+        \\fn passing() -> @Result<void, string> {
+        \\    return;
+        \\}
+        \\test "t: fails" {
+        \\    try failing();
+        \\    @print("not reached");
+        \\}
+        \\test "t: passes" {
+        \\    try passing();
+        \\    @print("reached");
+        \\}
+        \\test "t: a lambda's try is its own" {
+        \\    val f = { -> try failing(); 0; };
+        \\    @print("still here");
+        \\}
+    );
+}
+
+test "js: src ---- in a test run log" {
+    // What `botopink test` prints on both targets for the `src_in_a_test`
+    // program: the test body's own `main.bp 3 15 src: in a test` line inside
+    // its RUN LOG fence, and `test_1` for the anonymous block. (The snapshot
+    // harness never executes an erlang test module, so this is the erlang
+    // evidence; the commonJS one agrees with `src_in_a_test.snap.md`.)
+    try h.assertTestModeRunLog(std.testing.allocator,
+        \\test "src: in a test" {
+        \\    val loc = @src();
+        \\    @print(loc.file, loc.line, loc.column, loc.fnName);
+        \\}
+        \\test {
+        \\    @print(@src().fnName);
+        \\}
+    ,
+        \\TEST main.bp:1 src: in a test
+        \\----- RUN LOG -----
+        \\```logs
+        \\main.bp 2 15 src: in a test
+        \\```
+        \\  ok   src: in a test
+        \\TEST main.bp:5 test_1
+        \\----- RUN LOG -----
+        \\```logs
+        \\test_1
+        \\```
+        \\  ok   test_1
+        \\2 passed, 0 failed
+        \\
+    );
+}
+
+test "js: test body ---- try on an Error prints the FAIL line" {
+    // Decision 74 on both `botopink test` targets: the propagated Error ends
+    // `t: fails` as `FAIL t: fails  (boom)  at main.bp:9` — the error string
+    // is the message, the `at` is the test's own line — and the statement
+    // after the `try` never runs; `t: passes` reaches its print through the
+    // empty `return;` of a `-> @Result<void, string>`. The runner exits 1.
+    try h.assertTestModeRunLog(std.testing.allocator,
+        \\#[@result]
+        \\fn failing() -> @Result<void, string> {
+        \\    throw "boom";
+        \\}
+        \\#[@result]
+        \\fn passing() -> @Result<void, string> {
+        \\    return;
+        \\}
+        \\test "t: fails" {
+        \\    try failing();
+        \\    @print("not reached");
+        \\}
+        \\test "t: passes" {
+        \\    try passing();
+        \\    @print("reached");
+        \\}
+    ,
+        \\TEST main.bp:9 t: fails
+        \\----- RUN LOG -----
+        \\```logs
+        \\```
+        \\  FAIL t: fails  (boom)  at main.bp:9
+        \\TEST main.bp:13 t: passes
+        \\----- RUN LOG -----
+        \\```logs
+        \\reached
+        \\```
+        \\  ok   t: passes
+        \\1 passed, 1 failed
+        \\
+    );
+}

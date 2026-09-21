@@ -391,6 +391,31 @@ pub const Env = struct {
     scopeSnapshot: ?*template.ScopeSnapshot = null,
     /// Module path of the file being inferred ("" for main) — capture provenance.
     modulePath: []const u8 = "",
+    /// `@src().file` (1.0.10-beta decision 73): the display path of the file being
+    /// inferred, relative to its package root, extension included
+    /// (`src/emilia.bp`). Set by `comptime.zig` from `Module.srcPath`, or from
+    /// `<name>.bp` when the driver did not supply one (tests, LSP).
+    srcPath: []const u8 = "",
+    /// `@src().fnName`: the name of the declaration whose body is being inferred
+    /// — the fn name, `Type.method` for a method, the test name (or `test_<idx>`)
+    /// inside a `test` block, `""` at module level. A lambda does not change it.
+    currentFnName: []const u8 = "",
+    /// `@src()` rewrites (decision 73): call-site location → the untyped
+    /// `SourceLocation(file: …, line: …, column: …, fnName: …)` constructor call
+    /// the transform pass splices in its place, so every backend lowers the
+    /// builtin through its ordinary record-constructor path. Separate from
+    /// `templateExpansions` so the comptime snapshot's "spliced program" trigger
+    /// (`template_expansions > 0`) is not fired by a source location.
+    srcRewrites: std.AutoHashMap(ast.Loc, *const ast.Expr),
+    /// True once the module referenced the builtin `SourceLocation` record
+    /// (`@src()` or a hand-written constructor / annotation). `comptime.zig`
+    /// then prepends the record's declaration to the transformed program so the
+    /// backends learn its field list the way they learn a user record's.
+    usesSourceLocation: bool = false,
+    /// Ordinal of the next `test` block in program order — the `test_<idx>`
+    /// fallback name of an anonymous `test { … }` (the same index the commonJS
+    /// registry uses). Reset by `inferProgram`/`inferProgramTyped`.
+    testIndex: usize = 0,
     /// True while inferring the body of a template function (`-> @Expr<…>`).
     /// Gates the `@expr`/`@code` construction builtins.
     inTemplateFn: bool = false,
@@ -612,6 +637,7 @@ pub const Env = struct {
             .templateLowerings = std.AutoHashMap(ast.Loc, TemplateOp).init(arena),
             .templateFns = std.StringHashMap(ast.FnDecl).init(arena),
             .templateExpansions = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
+            .srcRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .customAstByLoc = std.AutoHashMap(ast.Loc, CustomAstEntry).init(arena),
             .templateEvalCache = std.StringHashMap(*const ast.Expr).init(arena),
             .nextId = 0,
@@ -682,6 +708,7 @@ pub const Env = struct {
             .templateLowerings = std.AutoHashMap(ast.Loc, TemplateOp).init(arena),
             .templateFns = try tmpl.templateFns.cloneWithAllocator(arena),
             .templateExpansions = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
+            .srcRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr).init(arena),
             .customAstByLoc = std.AutoHashMap(ast.Loc, CustomAstEntry).init(arena),
             .templateEvalCache = std.StringHashMap(*const ast.Expr).init(arena),
             .nextId = tmpl.nextId,
@@ -748,6 +775,7 @@ pub const Env = struct {
         self.templateLowerings.deinit();
         self.templateFns.deinit();
         self.templateExpansions.deinit();
+        self.srcRewrites.deinit();
         self.customAstByLoc.deinit();
         self.templateEvalCache.deinit();
         self.extensions.deinit();

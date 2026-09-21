@@ -314,3 +314,18 @@ test "infer: stdlib array method dispatch ---- ys.contains() with arg" {
         \\}
     );
 }
+
+test "infer: src types as SourceLocation" {
+    // 1.0.10-beta decision 73 — `@src()` is rewritten at inference into the
+    // `SourceLocation(file: …, line: …, column: …, fnName: …)` constructor
+    // call, so the typed AST carries the record type and the four literals.
+    try h.assertComptimeAstSingle(std.testing.allocator, @src(),
+        \\fn locate() -> SourceLocation {
+        \\    return @src();
+        \\}
+        \\val loc = @src();
+        \\test "src: in a test" {
+        \\    val here = @src();
+        \\}
+    );
+}
