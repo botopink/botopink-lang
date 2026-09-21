@@ -172,8 +172,24 @@ codegen/
 - **Variant payload arms**: `collectVariantFields` indexes every local payload
   variant's declared field names; `Circle(r) ->` binds positionally
   (`const { radius: r } = _s;`). A variant declared in another module keeps the
-  binding as the key. A payload-less variant arm tests `instanceof` when its
-  bare name names one class in the module and `_s.tag === "Name"` otherwise.
+  binding as the key. A payload-less variant arm tests `_s.tag === "Name"` —
+  always, in every module.
+- **A variant's identity is its `tag`, never its class.** A payload-less arm
+  used to test `_s instanceof <Enum>$<Variant>` whenever the bare name was
+  unique in the module, and `tag` only when it repeated. A class is
+  per-emitted-COPY identity and a copy is emitted per module for every enum a
+  module cannot `require` — an enum SECTION desugars into an inner enum that no
+  module exports, so `Token.Text.Size` is re-emitted in each module that names
+  it. A value built in a consuming package was then never `instanceof` the
+  class the library matched against: the arm did not fire, no later arm did
+  either, and the whole `case` answered `undefined` at exit 0, with no
+  diagnostic. `tag` is a string on the prototype, so it crosses every copy,
+  module and package boundary, and it is what `variantTest`, the payload arms
+  and `@Result` already used. `unit_variant_names` therefore records only the
+  NAMES, to tell a variant from a binding. Pinned by
+  `tests/language/modules/package_variant_identity/`, which one package cannot
+  express. `is`/`val assert` still test `instanceof` (below) and inherit the
+  same limit wherever a class is re-emitted.
 - **`.len`**: `s.len` / `arr.len` on a typed string/array (inference records
   `.prim` in `instance_lowerings`, threaded in as `Emitter.lowerings`) emits
   the native `.length` property; a record field named `len` is untouched (C3).
@@ -202,7 +218,18 @@ codegen/
   the native `.length` **property** without parens (a `member` node, not a
   `call`); inference
   records it only for typed array/string receivers, so a record `length()`
-  method is untouched.
+  method is untouched. **A rename names a native method that matches the
+  SIGNATURE**, not one that shares the botopink name: `Array.reverse` answers a
+  reversed array and leaves the receiver alone (`lists:reverse/1` on erlang, a
+  fresh array on wasm), and native `Array.prototype.reverse` reverses in place,
+  so while the annotation read `#[@External.Node("reverse")]` commonJS alone
+  also reversed the receiver — a fold that read it again answered one thing
+  there and another everywhere else, at exit 0. It names `toReversed`
+  (ES2023, node 20) since `fix/js-instanceof-boundary`, and the rename is
+  type-naive, so it reaches every `.reverse()` call site and not only the ones
+  inference typed. Pinned by
+  `tests/language/run/array_reverse_answers_a_new_array.bp`, which reads the
+  receiver AFTER the call — no commonJS snapshot exercises `reverse` at all.
 - **The only external spelling is `#[@External.<Target>(…)]`.** `FnDecl.isExternal`
   (`ast.zig`) matches on the `External.` prefix, so the retired lowercase
   `#[@external(<target>, …)]` and the retired bracket form `@[external(…)]` match
@@ -224,6 +251,20 @@ codegen/
   `import {env} from "std"`) resolves; calls in the owning module still inline
   the template. A fn with no `node` target raises
   `MissingExternalTarget` when called.
+- **A template on a BEHAVIOR method is a prototype patch, not a call-site
+  render** (`buildInterface`): it becomes `<Owner>.prototype.<m> =
+  function(…){ return <template with $0 = this[.valueOf()]> }` and every call
+  site dispatches through it. So the template must not call the method it
+  patches — it would call the patch. `String.charCodeAt` read
+  `(($0.charCodeAt($1) ?? -1) | 0)`, and since the whole `String` prelude is
+  installed into any module using a member that needs a patch (`slice` does;
+  `split`/`indexOf`/`startsWith` do not), one `s.slice(…)` made every
+  `.charCodeAt(…)` in the PROGRAM blow the stack. The template body is opaque
+  host text (`js_ast.Expr.host`), so there is nothing to rewrite into a call of
+  the original; the rule is instead **gated** by
+  `codegen/tests/externals.zig`'s `no prelude template calls the method it
+  patches`, which walks the embedded prelude. Pinned end to end by
+  `tests/language/run/string_char_code_after_slice.bp`.
 - **`assert`** (semantics decision 4): outside test mode it is always fatal —
   `__bp_assert_fatal(cond, msg, "<module>.bp:<line>")`, a prelude helper that
   throws `Error("<msg> at <file>:<line>")` (`"assertion failed"` without a

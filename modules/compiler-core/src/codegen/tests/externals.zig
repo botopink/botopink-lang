@@ -5,6 +5,8 @@
 const std = @import("std");
 const h = @import("helpers.zig");
 const codegen = @import("../../codegen.zig");
+const lexerMod = @import("../../lexer.zig");
+const parserMod = @import("../../parser.zig");
 
 // The module+symbol form names a module that exists on each host (the node
 // builtin `node:path`, OTP's `filename`), so the RUN LOG is the call's value.
@@ -260,4 +262,50 @@ test "js: external ---- an imported host-backed declare fn is wrapped by its own
             ,
         },
     }, .refused_on_wasm);
+}
+
+// ── the prelude's own shape ──────────────────────────────────────────────────
+// A `#[@External.Node("…$0…")]` template on a BEHAVIOR method becomes a
+// `<Owner>.prototype.<m> = function(…)` patch (`commonJS.buildInterface`), so a
+// template that calls the method it patches calls the patch it has just
+// installed. `String.charCodeAt` read `(($0.charCodeAt($1) ?? -1) | 0)` and one
+// `s.slice(…)` — enough to install the `String` prelude — made every
+// `.charCodeAt(…)` in the program blow the stack, at run time, in a library
+// that never named `charCodeAt` itself. The rule was already written down in
+// `libs/std/AGENTS.md`; this is the gate that holds it, over the prelude the
+// compiler actually embeds rather than over the file on disk.
+test "js: external ---- no prelude template calls the method it patches" {
+    const prelude = @import("std_prelude");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var lx = lexerMod.Lexer.init(prelude.primitives);
+    const tokens = try lx.scanAll(alloc);
+    var p = parserMod.Parser.init(tokens);
+    var program = try p.parse(alloc);
+    defer program.deinit(alloc);
+
+    var seen: usize = 0;
+    for (program.decls) |decl| {
+        if (decl != .behavior) continue;
+        for (decl.behavior.methods) |m| {
+            const ref = m.externalFor("node") orelse continue;
+            if (std.mem.indexOfScalar(u8, ref.symbol, '$') == null) continue; // not a template
+            seen += 1;
+            const call = try std.fmt.allocPrint(alloc, ".{s}(", .{m.name});
+            if (std.mem.indexOf(u8, ref.symbol, call) != null) {
+                std.debug.print(
+                    "\n{s}.{s}: the node template calls `{s}`, which is the prototype method it" ++
+                        " patches — the patch would call itself:\n  {s}\n",
+                    .{ decl.behavior.name, m.name, call, ref.symbol },
+                );
+                return error.SelfRecursivePrototypePatch;
+            }
+        }
+    }
+    // The scan is worthless if the prelude stopped parsing or stopped carrying
+    // templates: `chars`, `lines`, `words`, `charCodeAt` and `Array.zip` are
+    // five of them.
+    try std.testing.expect(seen >= 5);
 }

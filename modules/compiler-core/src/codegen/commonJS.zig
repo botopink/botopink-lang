@@ -827,12 +827,12 @@ const Emitter = struct {
     /// positionally, so `r` is read from the declared field (`radius`), never
     /// from a property named after the binding.
     variant_fields: std.StringHashMap([]const []const u8),
-    /// Payload-less variant name → the JS class this module emits for it
-    /// (`Nothing` → `Shape$Nothing`), for every enum declared here. A unit
-    /// variant is a singleton instance of that class (decision 5), so an arm
-    /// naming it tests `instanceof`, where it used to compare the value with
-    /// the bare string `"Nothing"`.
-    unit_variant_class: std.StringHashMap([]const u8),
+    /// Every payload-less variant name declared by an enum in this module
+    /// (`Nothing`, `X3xl`). It says "this bare name is a variant, not a
+    /// binding" — nothing more. The JS class the variant's singleton is an
+    /// instance of is deliberately NOT recorded: a variant's identity across
+    /// modules is its `tag`, never its class (`patternTest`).
+    unit_variant_names: std.StringHashMap(void),
     /// `Enum.method` for every enum method this module declares that takes the
     /// receiver first (`fn area(self: Self)`, `fn check(m: Self)`). Enum values
     /// are plain objects / variant-name strings with no methods of their own,
@@ -919,7 +919,7 @@ const Emitter = struct {
             .externals_missing = std.StringHashMap(void).init(alloc),
             .class_names = std.StringHashMap(void).init(alloc),
             .variant_fields = std.StringHashMap([]const []const u8).init(alloc),
-            .unit_variant_class = std.StringHashMap([]const u8).init(alloc),
+            .unit_variant_names = std.StringHashMap(void).init(alloc),
             .enum_recv_methods = std.StringHashMap(void).init(alloc),
             .imported_enums = std.StringHashMap(void).init(alloc),
             .prelude_iface_externals = std.StringHashMap(ast.ExternalRef).init(alloc),
@@ -952,7 +952,7 @@ const Emitter = struct {
         self.externals_missing.deinit();
         self.class_names.deinit();
         self.variant_fields.deinit();
-        self.unit_variant_class.deinit();
+        self.unit_variant_names.deinit();
         self.enum_recv_methods.deinit();
         self.imported_enums.deinit();
         self.prelude_iface_externals.deinit();
@@ -1259,18 +1259,13 @@ const Emitter = struct {
             .type_ => |e| if (!e.isRecord()) {
                 for (e.variants()) |v| {
                     if (v.fields.len == 0) {
-                        // Two enums in one module may share a bare variant
-                        // name (emilia's `Token.Text.Bold` and
-                        // `Token.Font.Weight.Bold`). The name alone then does
-                        // not name a class, so the arm keeps the `tag` test —
-                        // exactly as ambiguous as the string compare it
-                        // replaces, and no more.
-                        const gop = try self.unit_variant_class.getOrPut(v.name);
-                        if (gop.found_existing) {
-                            gop.value_ptr.* = "";
-                        } else {
-                            gop.value_ptr.* = try self.variantClassName(e.name, v.name);
-                        }
+                        // The name alone, so that `patternTest` can tell a
+                        // variant from a binding. Two enums in one module may
+                        // share a bare variant name (emilia's
+                        // `Token.Text.Bold` and `Token.Font.Weight.Bold`) and
+                        // that changes nothing here: the arm's test is the
+                        // `tag` either way.
+                        try self.unit_variant_names.put(v.name, {});
                         continue;
                     }
                     const names = try self.arena().alloc([]const u8, v.fields.len);
@@ -4077,7 +4072,7 @@ const Emitter = struct {
     fn isBindingName(self: *Emitter, name: []const u8) bool {
         if (name.len == 0) return false;
         if (isVariantPath(name) or primitiveTypeName(name)) return false;
-        if (self.unit_variant_class.contains(name) or self.variant_fields.contains(name)) return false;
+        if (self.unit_variant_names.contains(name) or self.variant_fields.contains(name)) return false;
         return !std.ascii.isUpper(name[0]);
     }
 
@@ -4172,10 +4167,23 @@ const Emitter = struct {
             .numberLit => |n| return try self.b.binaryBare("===", subject, .{ .number = n }),
             .stringLit => |s| return try self.b.binaryBare("===", subject, .{ .lexeme_string = s }),
             // A bare name is a payload-less variant (a lower-case name alone is
-            // not an arm — decision 8 § 5.2). Declared here it is a singleton
-            // of its own class, so the test is `instanceof`; declared in
-            // another module it is still tested through the `tag` its
-            // prototype carries.
+            // not an arm — decision 8 § 5.2). A variant's identity is the
+            // `tag` its prototype carries, never the JS class the singleton
+            // is an instance of, so the test is the same one here, in a
+            // sibling module and in a consuming package.
+            //
+            // It used to be `instanceof <Enum>$<Variant>` whenever the bare
+            // name was unique in the module, and `tag` only when the name
+            // repeated. A class is per-EMITTED-COPY identity, and a copy is
+            // emitted per module for every enum a module cannot `require` —
+            // an enum section desugars into an inner enum that no module
+            // exports, so `Token.Text.Size` is re-emitted in each module that
+            // names it. A value built against one copy is not `instanceof`
+            // another copy's class, so the arm silently did not fire and the
+            // whole `case` answered `undefined` — at exit 0, with no
+            // diagnostic. `tag` is a string on the prototype, so it crosses
+            // every copy, every module and every package boundary, and it is
+            // what `variantTest` and the payload arms have always used.
             .ident => |n| {
                 const bare = bareVariantName(n);
                 // A primitive type spelling is decision 8 §5.2's type-test arm
@@ -4184,8 +4192,6 @@ const Emitter = struct {
                 if (primitiveTypeName(bare)) return try self.isTest(.{ .named = bare }, subject);
                 // A binding (`#(0, s)`'s `s`) matches anything.
                 if (self.isBindingName(n)) return null;
-                const cls = self.unit_variant_class.get(bare) orelse "";
-                if (cls.len > 0) return try self.b.binaryBare("instanceof", subject, .{ .name = cls });
                 return try self.b.binaryBare("===", try self.b.member(subject, "tag"), .{ .quoted = bare });
             },
             .@"or" => |pats| {

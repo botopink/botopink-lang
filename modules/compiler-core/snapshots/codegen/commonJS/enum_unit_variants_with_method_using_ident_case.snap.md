@@ -23,9 +23,9 @@ class HttpMethod {
     static name(m) {
         const label = (() => {
             const _s = m;
-            if (_s instanceof HttpMethod$Get) return "GET";
-            if (_s instanceof HttpMethod$Post) return "POST";
-            if (_s instanceof HttpMethod$Put) return "PUT";
+            if (_s.tag === "Get") return "GET";
+            if (_s.tag === "Post") return "POST";
+            if (_s.tag === "Put") return "PUT";
             return "DELETE";
         })();
         return label;

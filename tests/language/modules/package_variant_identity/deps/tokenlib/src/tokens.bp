@@ -1,0 +1,22 @@
+//// The library's enum. `Text` and `Bg` are SECTIONS: each desugars into an
+//// inner enum (`__Token__Text`, `__Token__Text__Size`) that no module
+//// exports, so every module that names one emits its own copy of its
+//// classes — the consumer's `main`, this module, and `styler` all have
+//// three different `__Token__Text__Size$X3xl` classes.
+////
+//// `X3xl` is unique in the program; `Lg` is declared twice (`Text.Size.Lg`
+//// and `Bg.Lg`). That pair is the whole point of the cell: the two arms
+//// took different lowerings on commonJS, and only the unique one was wrong.
+
+pub type Token {
+    Text {
+        Bold,
+        Size {
+            Lg,
+            X3xl,
+        }
+    }
+    Bg {
+        Lg,
+    }
+}

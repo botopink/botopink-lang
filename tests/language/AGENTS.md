@@ -71,6 +71,15 @@ at `361d255d` — the cell was written against the array `"dependencies"` of `85
 object form when the workspaces manifest (`aa80e30b`) started refusing the array. A dependency ships
 only what `files` lists — `root.bp` included, or the handle never reaches the consumer.
 
+`modules/package_variant_identity` is the second local-dependency cell, and it is here because the
+defect it pins is **invisible in one package**: the value is built in the consumer and the `case`
+that reads it lives in the dependency. commonJS tested a payload-less arm with `instanceof` whenever
+the variant's bare name was unique in the module; an enum SECTION desugars into an inner enum no
+module exports, so its classes are re-emitted per module and the consumer's value was never
+`instanceof` the library's class — the `case` fell through every arm and printed `undefined`, at
+exit 0. The cell prints four values through one dispatcher: a uniquely-named variant, a repeated one
+(`Lg` is declared twice, which is why it always worked), and one of each section head.
+
 ### The sidecars of a `run/` cell
 
 Three optional files beside `run/<name>.bp`, each a claim the cell makes (C-16, front 12 steps 4.3
@@ -82,15 +91,17 @@ and 4.4). `run.sh`'s usage block is the reference; this is the why.
 | `<name>.<target>.expect` | on that target the compiler **refuses** the program — `reject/`'s shape, per target | exit ≠ 0 and the diagnostic contains line 1 (and ` --> src/main.bp:<L:C>` when line 2 is present). `run/external_erlang_only.{commonJS,wasm}.expect` and `run/std_erlang_node.{commonJS,wasm}.expect` are the live ones |
 | `<name>.targets` | the cell is scheduled only on these targets | — (a target not listed is not run; the cell's header comment says why) |
 
-Any other content in `.exit` is a malformed claim and fails the cell. **No cell carries `.targets`
-today.** The one that did was `run/external_erlang_only.bp`, which kept wasm out because wasm did
+Any other content in `.exit` is a malformed claim and fails the cell. **One cell carries
+`.targets` today**: `run/string_char_code_after_slice.bp` names `commonJS erlang`, because
+`String.charCodeAt` has no wasm or beam lowering — on wasm `@print("A".charCodeAt(0))` traps
+(`unreachable`, exit 134), which is a backend gap of its own and not that cell's claim. Before it
+the only one was `run/external_erlang_only.bp`, which kept wasm out because wasm did
 not refuse a host-backed `declare fn` with no wasm host — `wat.zig`'s `lowerPlainCall` lowered it to
 `unreachable` on purpose ("so the module still loads") and the program trapped at run time where
 commonJS, erlang and beam answered at compile time. That divergence was reported here for want of an
 owner row; it was closed on `fix/wasm-refusals` under decision 67 (a located refusal, no flag), so
 the sidecar is gone, `external_erlang_only.wasm.expect` carries wasm's half of the diagnostic and
-the cell runs on all four targets. The sidecar stays documented: the next divergence of that shape
-is written down the same way.
+the cell runs on all four targets.
 
 ## The targets
 
@@ -250,18 +261,18 @@ unconditionally and can be neither deleted (its tests fail) nor rewritten (by an
 ## Status and the gate
 
 **Recounted on disk at C-04's landing (`fix/trailing-defaults`, merged onto
-`032fd765`):**
+`4aee802d`):**
 
 ```bash
 ls test/*.bp    | wc -l   # 54
-ls run/*.bp     | wc -l   # 31   (each with its .out; 4 with an .exit, 4 with .<target>.expect; none with .targets)
+ls run/*.bp     | wc -l   # 33   (each with its .out; 4 with an .exit, 4 with .<target>.expect; 1 with a .targets)
 ls reject/*.bp  | wc -l   # 42   (each with its .expect)
-ls -d modules/*/| wc -l   #  4
-find . -name '*.bp' | wc -l   # 138
+ls -d modules/*/| wc -l   #  5
+find . -name '*.bp' | wc -l   # 144 — 134 cells, plus the 15 extra .bp of the modules/ projects
 ```
 
-**131 cells.** The difference from the `fix/erlang-module-load` block below is
-C-04's two, one new area row — and `test/fn_defaults.bp`, which grew from 3
+**134 cells.** The difference from the `fix/js-instanceof-boundary` block below
+is C-04's two, one new area row — and `test/fn_defaults.bp`, which grew from 3
 tests to 9 without being a new cell:
 
 | Area | Cells | Total |
@@ -280,34 +291,86 @@ cell: a cell that does not compile asserts nothing.
 
 **`expected-failures.txt` loses 2 lines and keeps 62** — `commonJS |
 test/fn_defaults.bp` and `erlang | test/fn_defaults.bp`, both `01 step 7`.
-Checked by (target, key) against all three sides of the merge, never by count:
+Checked by (target, key) against every side of both merges, never by count:
 C-08's six deletions stay gone, `fix/erlang-module-load`'s two
-`run/module_init_order.bp` additions are present, and no line of the 62 is a
-stray or a loss.
+`run/module_init_order.bp` additions are present, `fix/js-instanceof-boundary`
+added and deleted none, and no line of the 62 is a stray or a loss.
 
 Measured there, this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0, on
-the tree `fix/trailing-defaults` made by merging `origin/feat` `032fd765`:
+the tree `fix/trailing-defaults` made by merging `origin/feat` `4aee802d`:
 
 ```
 $ tests/language/run.sh                 # commonJS, erlang, wasm
 expected-failures.txt: 62 lines, 47 exercised by --target commonJS,erlang,wasm
-language tests: 444 passed, 47 expected failures, 0 failed
+language tests: 452 passed, 47 expected failures, 0 failed
 $ tests/language/run.sh --target beam
 expected-failures.txt: 62 lines, 21 exercised by --target beam
-language tests: 56 passed, 21 expected failures, 0 failed
+language tests: 58 passed, 21 expected failures, 0 failed
 $ zig build test-libs
 test-libs: 21 passed, 0 failed, 0 known red
 ```
 
 Re-derived from the files and a re-run after the merge — neither side's number
-was kept. The +22 on `--target all` over `fix/erlang-module-load`'s 422 accounts
-for itself exactly: a `test/` cell's result is one per NAMED TEST, so
+was kept. The +22 on `--target all` over `fix/js-instanceof-boundary`'s 430
+accounts for itself exactly: a `test/` cell's result is one per NAMED TEST, so
 `test/fn_defaults.bp` going from two expected-failure lines to nine passing
 tests on two targets is +18 and −2; `run/fn_defaults_values.bp` is +3 (commonJS,
 erlang, wasm) and `reject/missing_required_argument.bp` is +1 (it runs once per
-invocation). Beam's +2 over 54 is the same run cell and the same reject cell;
+invocation). Beam's +2 over 56 is the same run cell and the same reject cell;
 its expected count does not move, because both deleted lines were commonJS and
 erlang.
+
+`test-libs` reads `0 known red` here for a reason that is not C-04's:
+`fix/js-instanceof-boundary` listed `emilia-card commonJS` while its goldens
+still pinned the pre-fix text, and said the line goes with them. emilia landed
+them (`fc23760`, "the class bodies are goldens again, not a pinned defect"), so
+the cell passes and the line had to go — a listed cell that passes fails the
+gate until it is deleted, which is the rule working as written.
+
+**Recounted on disk at `fix/js-instanceof-boundary` (00 · 04-js round 2, merged onto
+`032fd765`):**
+
+```bash
+ls test/*.bp    | wc -l   # 54
+ls run/*.bp     | wc -l   # 32   (each with its .out; 4 with an .exit, 4 with .<target>.expect; 1 with a .targets)
+ls reject/*.bp  | wc -l   # 41   (each with its .expect)
+ls -d modules/*/| wc -l   #  5
+find . -name '*.bp' | wc -l   # 142 — 132 cells, plus the 10 extra .bp of the modules/ projects
+```
+
+**132 cells.** The difference from the `fix/erlang-module-load` block below is this branch's three,
+one per defect emilia's front 56 measured while writing real code, and one new area row. It is also
+the first `.targets` sidecar in the suite, which that block records as "none":
+
+| Area | Cells | Total |
+|---|---|---|
+| the three commonJS defects of 00 · 04-js round 2 | 1 `modules/` + 2 run | 3 |
+
+| Cell | What it pins |
+|---|---|
+| `modules/package_variant_identity` | a variant's identity across a package boundary: the value is built in the consumer and the `case` that reads it lives in the dependency. commonJS tested a uniquely-named arm with `instanceof`, which does not cross the boundary, and the `case` answered `undefined` at exit 0. The second local-dependency cell, and one package cannot express it |
+| `run/string_char_code_after_slice.bp` | `s.slice(…)` installs the `String` prelude, whose `charCodeAt` patch called itself — every `.charCodeAt(…)` in the program blew the stack. `commonJS erlang` only, by a `.targets` sidecar: `charCodeAt` has no wasm or beam lowering and traps on wasm |
+| `run/array_reverse_answers_a_new_array.bp` | `xs.reverse()` answers a new array and leaves the receiver alone — native `reverse` is in-place, so commonJS alone reversed the receiver too |
+
+**`expected-failures.txt` does not move**: 64 lines, byte for byte the file at `032fd765`. All three
+cells pass on every target they are scheduled on, nothing was added and nothing was deleted —
+checked by (target, key), not by count, with the six lines C-08 turned green still gone.
+
+Measured there, this compiler, node v25.8.0, OTP 29, `zig version` 0.16.0, on the tree
+`fix/js-instanceof-boundary` made by merging `origin/feat` `032fd765`:
+
+```
+$ tests/language/run.sh                 # commonJS, erlang, wasm
+expected-failures.txt: 64 lines, 49 exercised by --target commonJS,erlang,wasm
+language tests: 430 passed, 49 expected failures, 0 failed
+$ tests/language/run.sh --target beam
+expected-failures.txt: 64 lines, 21 exercised by --target beam
+language tests: 56 passed, 21 expected failures, 0 failed
+```
+
+Re-derived from the files and a re-run after the merge — neither side's number was kept. The **+8**
+on `--target all` is the `modules/` cell on three targets, the `reverse` cell on three, and the
+`charCodeAt` cell on the two its `.targets` names. Beam's **+2** is the two of them that reach it.
 
 **Recounted on disk at `fix/erlang-module-load` (front 00 · 02-erlang, merged onto
 `9c230065`):**

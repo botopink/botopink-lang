@@ -263,8 +263,18 @@ behavior String {
     #[@External.Node("""$0.split(/[ \t\n\r]+/).filter(__w => __w.length > 0)""")]
     fn words(self: Self) -> string[];
 
+    // A template on a behavior method becomes a PROTOTYPE PATCH on commonJS
+    // (`String.prototype.charCodeAt = …`), so it must not name the method it
+    // patches: `$0.charCodeAt($1)` called the patch it had just installed and
+    // every `.charCodeAt(…)` in the program blew the stack, in any module that
+    // installed the `String` prelude for some other member (one `s.slice(…)`
+    // is enough). Native `codePointAt` is not a member of this behavior, so no
+    // patch ever replaces it, and it is what the `?? -1` was written for:
+    // out of range it answers `undefined`, where `charCodeAt` answers `NaN`,
+    // which `??` does not catch and `| 0` turned into `0`. It also answers the
+    // CODE POINT, which is what the erlang form above answers.
     #[@External.Erlang("(fun(__S, __I) -> case unicode:characters_to_list(__S, utf8) of __L when length(__L) > __I, __I >= 0 -> lists:nth(__I + 1, __L); _ -> -1 end end)($0, $1)")]
-    #[@External.Node("(($0.charCodeAt($1) ?? -1) | 0)")]
+    #[@External.Node("(($0.codePointAt($1) ?? -1) | 0)")]
     fn charCodeAt(self: Self, index: i32) -> i32;
 
     #[@External.Erlang("(fun(__S, __Sub) -> __L = byte_size(__S), __SL = byte_size(__Sub), __Find = fun __F(__I) -> case __I < 0 of true -> -1; false -> case binary:part(__S, __I, min(__SL, __L - __I)) =:= __Sub of true -> __I; false -> __F(__I - 1) end end end, __Find(__L - __SL) end)($0, $1)")]
@@ -392,9 +402,17 @@ behavior Array<T> {
     #[@External.Node("join")]
     fn join(self: Self, sep: string) -> string;
 
+    // `reverse` ANSWERS a reversed array and leaves the receiver alone, on
+    // every target. Native `Array.prototype.reverse` reverses in place and
+    // answers the same array, so on commonJS alone `val rev = xs.reverse();`
+    // also reversed `xs` — every fold that read the receiver again after
+    // reversing it answered one thing there and another on erlang and wasm,
+    // at exit 0. `toReversed` is the §A4 rename to the engine's own copying
+    // reader (ES2023; node 20, which is the floor CI installs), so the answer
+    // is the same shape with no prototype patch and no helper.
     #[@External.Erlang("lists", "reverse")]
     #[@External.Beam("""    {call_ext, 1, {extfunc, lists, reverse, 1}}.""")]
-    #[@External.Node("reverse")]
+    #[@External.Node("toReversed")]
     fn reverse(self: Self) -> Self;
 
     #[@External.Erlang("(fun(__L, __X) -> __Find = fun __F(__I, [__H | __T]) -> case (__H =:= __X) of true -> __I; false -> __F(__I + 1, __T) end; __F(_, []) -> -1 end, __Find(0, __L) end)($0, $1)")]

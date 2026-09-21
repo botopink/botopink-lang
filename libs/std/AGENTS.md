@@ -89,9 +89,13 @@ Targets come from `type Target { Node, Typescript, Erlang, Beam, Wasm }` in
 - **Module + symbol** — `#[@External.Erlang("erlang", "abs")]`: call
   `module:symbol(args)` with args in declaration order.
 - **Single string** — `module` comes back empty from `externalFor` (`ast.zig`).
-  On a behavior method it names the native method (`#[@External.Node("reverse")]`,
-  a call-site rename when it differs from the method name, never a prototype
-  patch). On a `declare fn` it is a host expression
+  On a behavior method it names the native method (`#[@External.Node("toReversed")]`
+  for `Array.reverse`, a call-site rename when it differs from the method name,
+  never a prototype patch). The native method it names has to MATCH the
+  signature: `Array.reverse` answers a reversed array and leaves the receiver
+  alone on erlang and wasm, and named native `reverse`, which reverses in
+  place, so commonJS alone also reversed the receiver — `toReversed` is the
+  copying reader that answers what the signature says. On a `declare fn` it is a host expression
   (`#[@External.Node("process.cwd()")]`) that commonJS renders verbatim at each
   call site, and the erlang backend renders the same way — the `:expr()()`
   lowering that used to keep `env`, `os` and `process` off erlang is gone
@@ -137,7 +141,18 @@ erlang and commonJS. A template on a behavior method
 becomes a `<Owner>.prototype.<m>` patch on commonJS, so it must not call the
 native method of the same name (the patch would call itself), and a
 `default fn` body is patched the same way — `stringSlice*`/`arraySlice*`
-therefore cut without `.slice`. `@External.Beam` bodies are `.S`
+therefore cut without `.slice`. **That rule is now gated**, because it was
+written here and broken anyway: `String.charCodeAt` read
+`(($0.charCodeAt($1) ?? -1) | 0)`, and since the `String` prelude is installed
+into any module using a member that needs a patch (one `s.slice(…)` is enough),
+every `.charCodeAt(…)` in the program blew the stack — a library adopted "never
+call `String.slice`" as a house rule rather than find it. `js: external ---- no
+prelude template calls the method it patches`
+(`codegen/tests/externals.zig`) walks the embedded prelude and fails on the
+shape. `charCodeAt` names native `codePointAt`, which no behavior member
+patches, and which is also what the `?? -1` was written for: out of range it
+answers `undefined` where `charCodeAt` answers `NaN`, which `??` does not catch
+and `| 0` turned into `0` — commonJS answered `0` where erlang answered `-1`. `@External.Beam` bodies are `.S`
 instructions: the receiver arrives in `{x, 0}`, argument N in `{x, N+1}`, the
 result leaves in `{x, 0}`, and a `gc_bif` live count must cover every
 register it reads or that is read later. Arity branching

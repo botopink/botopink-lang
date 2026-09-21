@@ -110,8 +110,8 @@ exports.gt = gt;
 function toInt(o) {
     const n = (() => {
         const _s = o;
-        if (_s instanceof Order$Lt) return (-1);
-        if (_s instanceof Order$Eq) return 0;
+        if (_s.tag === "Lt") return (-1);
+        if (_s.tag === "Eq") return 0;
         return 1;
     })();
     return n;
@@ -121,8 +121,8 @@ exports.toInt = toInt;
 function reverse(o) {
     const r = (() => {
         const _s = o;
-        if (_s instanceof Order$Lt) return Order.Gt;
-        if (_s instanceof Order$Gt) return Order.Lt;
+        if (_s.tag === "Lt") return Order.Gt;
+        if (_s.tag === "Gt") return Order.Lt;
         return Order.Eq;
     })();
     return r;
