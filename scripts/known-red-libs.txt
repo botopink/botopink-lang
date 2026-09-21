@@ -9,3 +9,14 @@
 # the cell into a hard assert. An unlisted cell that fails always fails the gate.
 #
 # Owners are the 1.0.4-beta fronts (specs/1.0.4-beta/fronts.md).
+
+# `front/34-modifiers` in `repository/emilia` (landed 2026-09-21 05:01, emilia
+# `b58f43e`). Two of the example's fourteen assertions are about SELECTOR text
+# the library does not emit yet — the peer-sibling `:is(:where(.peer):invalid ~ *)`
+# rule and the `:nth-child(3)` / `!important` row — and both fail the same way on
+# `main.bp:254` and `:264`. Measured from this checkout, which may not edit
+# `repository/emilia/**`: nothing in it touches a record, a variant, `is` or a
+# `case` arm, so it is not `13-module-identity` half 3's, and the same two
+# assertions fail with the half-3 commonJS change reverted. 05-emilia owns the
+# selector; this line goes with it.
+emilia-modifiers commonJS 05-emilia two selector assertions of front 34's new example (main.bp:254 and :264) name text the library does not emit yet

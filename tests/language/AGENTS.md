@@ -847,10 +847,17 @@ half is the one that landed.
 
 **Structural equality of two values of the same type is not legislated, so no cell asserts it.**
 `Person(name: "Ana", age: 30) == Person(name: "Ana", age: 30)` answers `false` on commonJS (reference
-equality on the class instance) and `true` on erlang (one map). No decision of this milestone settles
-it and no front owns it, so `test/type_identity.bp` states the omission in a comment and asserts only
-what **is** settled — that two *different* types with the same fields are different values. Reported
-to the maintainer; a sentence would turn the comment into two assertions.
+equality on the class instance) and `true` on erlang and BEAM (one term, now a tagged tuple). No
+decision of this milestone settles it and no front owns it, so `test/type_identity.bp` states the
+omission in a comment and asserts only what **is** settled — that two *different* types with the same
+fields are different values. Reported to the maintainer; a sentence would turn the comment into two
+assertions.
+
+**The identity is asserted on two backends and RUN on four.** `botopink test` refuses beam and wasm,
+so a `test/` cell reaches only commonJS and erlang. `run/type_identity_equality.bp` is the same
+statement as a `run/`: `Person(name: "a", age: 1) == Vec(name: "a", age: 1)` prints `false` on all
+four since `13-module-identity` half 3 put the declaration inside the value — it answered `true` on
+erlang and BEAM before, where two bare maps with the same keys were one term.
 
 **`@Context` / `use` is tested from botopink since front 19 of 1.0.10-beta** (decision 88 made
 `use f(x)` lower to `f(x)` on every backend, so no host framework is needed): `test/context_use.bp`,
