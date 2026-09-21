@@ -1,0 +1,49 @@
+//// 1.0.10-beta `00 · 01-checker` — the null test inside a `test` block, which
+//// is the third statement walk a program has (a top-level `fn` and a record
+//// method are the other two, both in `run/narrowing_null_guard_clause.bp`).
+//// A `test` body was walked by a bare `for` loop of its own, so the guard
+//// clause would have narrowed everywhere but here.
+////
+//// Each assertion reads something off the narrowed name that only type-checks
+//// — or only lowers correctly — once the `?T` is gone: a record field, and a
+//// primitive method whose commonJS lowering depends on the receiver's type.
+
+type Entry(key: string) {}
+
+fn entries() -> Entry[] { return [Entry(key: "abc")]; }
+
+test "a != null branch narrows the name it tests" {
+    val first = entries().at(0);
+    var got = 0;
+    if (first != null) { got = first.key.length(); };
+    assert got == 3;
+}
+
+test "a == null guard clause narrows the rest of the block" {
+    val first = entries().at(0);
+    if (first == null) { assert false; return; };
+    assert first.key.length() == 3;
+}
+
+test "the else branch of == null narrows" {
+    val ws = ["alpha"];
+    val w = ws.at(0);
+    var got = 0;
+    if (w == null) { got = 0; } else { got = w.length(); };
+    assert got == 5;
+}
+
+test "&& narrows both names it tests" {
+    val first = entries().at(0);
+    val w = ["be"].at(0);
+    var got = 0;
+    if (first != null && w != null) { got = first.key.length() + w.length(); };
+    assert got == 5;
+}
+
+test "the narrowing ends with the branch" {
+    val first = entries().at(0);
+    if (first != null) { assert first.key.length() == 3; };
+    val back = first ?? Entry(key: "zz");
+    assert back.key.length() == 3;
+}

@@ -1,0 +1,16 @@
+//// 1.0.10-beta `00 · 01-checker` — the limit on the other side of the null
+//// test: an OPTIONAL condition with no binder is refused, and `if (x)` is not
+//// a truthiness test on a `?T`.
+////
+//// `if (x != null) { … }` narrows (`run/narrowing_null_check.bp`) and `if (x)
+//// { v -> … }` binds the unwrapped value (`test/optional.bp`). A bare `if
+//// (x)` is neither: the condition is unified with `bool`, so it is a located
+//// type mismatch and the reader is pushed to one of the two forms that say
+//// what they mean. The refusal is what makes "which shapes narrow" answerable
+//// — nothing here narrows by being merely truthy.
+
+pub fn main() {
+    val ws = ["alpha"];
+    val w = ws.at(0);
+    if (w) { @print("truthy"); };
+}
