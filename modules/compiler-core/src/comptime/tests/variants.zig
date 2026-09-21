@@ -532,7 +532,9 @@ test "enum sections F2: payload sibling .Color.Hex(string) untouched" {
 // so more than one enum can carry the same path. Which one a spelling means is
 // the expected type's answer — an annotation, a declared parameter, the return
 // target, an array literal's element type — and never the map's iteration
-// order, which changed with the number of enums in the program.
+// order, which changed with the number of enums in the program. A LABELLED
+// argument claims the parameter it names (C-04), so the parameter the
+// expectation is read from is not always the one at the argument's own index.
 
 test "enum sections: the expected type picks among the enums carrying one path" {
     try h.assertComptimeAstSingle(std.testing.allocator, @src(),
@@ -554,6 +556,10 @@ test "enum sections: the expected type picks among the enums carrying one path" 
         \\val c: Array<Token> = [.Color.Red.100];
         \\val d = onToken(.Color.Red.100);
         \\val e = onBorder(.Color.Red.100);
+        \\type BoxT(w: i32 = 7, tone: Token)
+        \\type BoxB(w: i32 = 7, tone: Border)
+        \\val f = BoxT(tone: .Color.Red.100);
+        \\val g = BoxB(tone: .Color.Red.100);
     );
 }
 

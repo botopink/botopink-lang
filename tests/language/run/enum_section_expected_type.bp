@@ -7,6 +7,11 @@
 ////
 //// The positions that carry an expectation: a `val`'s annotation, a declared
 //// parameter, the body's return target, and an array literal's element type.
+////
+//// A LABELLED argument claims the parameter it names (C-04), so the parameter
+//// the expectation comes from is not always the one at the argument's own
+//// index: `P(y: .Color.Red.500)` writes the second parameter from its first
+//// argument, and the first parameter takes its declared default.
 
 type Token {
     Color {
@@ -38,10 +43,13 @@ fn pickBorder() -> Border {
     return .Color.Red.500;
 }
 
+type Boxed(weight: i32 = 7, tone: Token)
+
 pub fn main() {
     val t: Token = .Color.Red.500;
     val b: Border = .Color.Red.500;
     val ts: Array<Token> = [.Color.Red.100];
+    val boxed = Boxed(tone: .Color.Red.100);
 
     @print(tokenName(t));
     @print(borderName(b));
@@ -49,4 +57,6 @@ pub fn main() {
     @print(tokenName(.Color.Red.100));
     @print(borderName(.Color.Red.500));
     @print(ts.length());
+    @print(tokenName(boxed.tone));
+    @print(boxed.weight);
 }

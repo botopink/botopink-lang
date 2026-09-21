@@ -79,14 +79,15 @@ test "wat: string slice copies bytes into a new buffer" {
     );
 }
 
-// DOCUMENTED SKIP — `libs/std/src/primitives.bp` declares
-// `default fn slice(self, start: i32, end: i32 = null)`, so the one-argument
-// call is legal, but the call-site arity check in `comptime/infer.zig` does not
-// count trailing defaults. Missing feature: trailing defaults at the call site;
-// owner: 07-checker (analysed in 01-comptime-dispatch/trailing-defaults.md).
-// The snapshot pins the arity error.
+// C-04 (01 step 7, N1) closed the documented skip this test used to pin.
+// `libs/std/src/primitives.bp` declares `default fn slice(self, start: i32,
+// end: ?i32 = null)`, so the one-argument call is legal — and now the checker
+// fills the declared default in, so all four snapshots hold the same lowering
+// as the two-argument call and a RUN LOG of `3`. No backend changed: the
+// argument reaches them written out, and `end` is the `null` the declaration
+// gives it.
 test "wat: string slice without end arg slices to source length" {
-    try h.assertJsCompileError(std.testing.allocator, @src(),
+    try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
         \\    val s = "hello";
         \\    val tail = s.slice(2);

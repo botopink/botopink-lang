@@ -636,6 +636,10 @@ fn registerFnSignatures(env: *Env, program: ast.Program) InferError!void {
     for (program.decls) |decl| switch (decl) {
         .@"fn" => |f| {
             try env.bind(f.name, try buildFnSignatureType(env, f));
+            // C-04 — the signature type drops the `default` expressions; keep
+            // the parameters as written so a short call can be told from a
+            // call missing a required argument.
+            try env.fnParams.put(f.name, f.params);
             registerDecoratorSig(env, f.name, f.params, f);
             if (f.typeGuardParam) |paramName| {
                 var paramIndex: usize = 0;
@@ -1157,6 +1161,10 @@ fn registerInherentMethodTypes(
         // "std"` (which `registerExtensions` never sees — it only scans the
         // local program's decls).
         try env.addInherentMethod(typeName, im.name);
+        // C-04 — and its parameters as written. This runs BEFORE the
+        // return-type gate below: a method without an annotated return still
+        // has declared defaults, and its call sites still have to fill them.
+        try env.setInherentMethodParams(typeName, im.name, im.params);
 
         // Only methods with an explicit return-type annotation get a stored
         // signature. Without one the true return type comes from body inference
@@ -8191,6 +8199,100 @@ fn nominalName(ty: *T.Type) ?[]const u8 {
     };
 }
 
+/// C-04 (01 step 7) — the callee's parameters AS WRITTEN, for a call whose
+/// arity is about to be judged. A `T.func` carries no `default` expressions, so
+/// this is the only thing that can tell an omitted trailing default (N1) from a
+/// missing required argument (N2). `null` when the declaration is not reachable
+/// from here — the arity check then stays exactly what it was.
+fn calleeParams(env: *Env, callee: []const u8) ?[]const ast.Param {
+    if (env.fnParams.get(callee)) |ps| return ps;
+    if (env.ctorParams.get(callee)) |ps| return ps;
+    if (env.stdlibFnDecls.get(callee)) |fd| return fd.params;
+    return null;
+}
+
+/// 00 · 01-checker — which parameter each ARGUMENT of a call lands in, when
+/// that is not simply its own index.
+///
+/// A label claims the parameter it names (C-04), so `f(y: <path>)` against
+/// `fn f(x: i32 = 0, y: Token)` writes the SECOND parameter from its FIRST
+/// argument. `planDefaultFill` is the one thing that knows that mapping, so
+/// this inverts its plan rather than working a second one out — the two could
+/// then disagree, and the expectation would name the wrong enum.
+///
+/// `null` is the ordinary answer and means "argument `i` is parameter `i`":
+/// every call that writes its arguments positionally, which is nearly all of
+/// them, allocates nothing here. A returned slice carries a parameter index
+/// per argument, or `params.len` for an argument whose parameter is not
+/// knowable — a full-arity labelled call, which the arity arm below zips
+/// positionally and which a reordered label would not survive either. Reading
+/// no expectation is right there: a wrong one would pick an enum.
+fn argumentParamSlots(
+    env: *Env,
+    params: []const ast.Param,
+    args: []const ast.CallArg,
+) InferError!?[]const usize {
+    var labelled = false;
+    for (args) |a| {
+        if (a.label != null) {
+            labelled = true;
+            break;
+        }
+    }
+    if (!labelled) return null;
+
+    const labels = try env.arena.alloc(?[]const u8, args.len);
+    for (args, 0..) |a, i| labels[i] = a.label;
+    const unknown = try env.arena.alloc(usize, args.len);
+    @memset(unknown, params.len);
+    const planned = envMod.planDefaultFill(env.arena, params, labels) catch return unknown;
+    const fill = planned orelse return unknown;
+
+    const slots = try env.arena.alloc(usize, args.len);
+    @memset(slots, params.len);
+    for (fill.slots, 0..) |slot, pi| {
+        const ai = slot orelse continue;
+        if (ai < slots.len) slots[ai] = pi;
+    }
+    return slots;
+}
+
+/// C-04 — plan the fill for a short call and record it under the call's loc for
+/// `transform.zig`. Answers the plan, or `null` when the call cannot be filled:
+/// that is N2, and the caller then raises the arity error it always raised.
+fn recordDefaultFill(
+    env: *Env,
+    loc: ast.Loc,
+    params: []const ast.Param,
+    typedArgs: []const ast.CallArgOf(.typed),
+) InferError!?envMod.DefaultFill {
+    const labels = try env.arena.alloc(?[]const u8, typedArgs.len);
+    for (typedArgs, 0..) |ta, i| labels[i] = ta.label;
+    const planned = envMod.planDefaultFill(env.arena, params, labels) catch |e| switch (e) {
+        error.CannotFill => return null,
+        else => |rest| return rest,
+    };
+    const fill = planned orelse return null;
+    try env.defaultInjections.put(loc, fill);
+    return fill;
+}
+
+/// C-04 — unify a filled call's arguments with the parameters they actually
+/// landed in. `P(y: 2)` against `type P(x: i32 = 0, y: i32)` puts its one
+/// argument in the SECOND slot; zipping positionally would check it against `x`.
+fn unifyFilledArgs(
+    env: *Env,
+    fill: envMod.DefaultFill,
+    paramTypes: []const *T.Type,
+    typedArgs: []ast.CallArgOf(.typed),
+) InferError!void {
+    for (fill.slots, 0..) |slot, pi| {
+        const ai = slot orelse continue;
+        if (pi >= paramTypes.len) continue;
+        try unifyAt(env, paramTypes[pi], typedArgs[ai].value.getType(), typedArgs[ai].value.getLoc());
+    }
+}
+
 /// Build a typed method-call node, preserving the surface `recv.callee(args)`
 /// shape (`recvPtr` is the typed receiver expression). External dispatch
 /// (rewriting to `Sym.callee(recv, args)`) is recorded separately in
@@ -8203,6 +8305,19 @@ fn makeMethodCall(
     typedTrailing: []ast.TrailingLambdaOf(.typed),
     loc: ast.Loc,
 ) InferError!TypedExpr {
+    // C-04 / N1 — an instance call may omit an argument whose parameter
+    // declares a default. Inference never arity-checked this shape, so there is
+    // no error to keep honest here; what was missing is the fill, and without it
+    // `b.bump()` reached node as `bump()` and answered `NaN`.
+    if (typedTrailing.len == 0) {
+        if (recvPtr) |rp| if (nominalName(rp.getType())) |tn| {
+            if (env.getInherentMethodParams(tn, callee)) |declared| {
+                if (declared.len > 0 and std.mem.eql(u8, declared[0].name, "self")) {
+                    _ = try recordDefaultFill(env, loc, declared[1..], typedArgs);
+                }
+            }
+        };
+    }
     const retType = try methodCallReturnType(env, recvPtr, callee, typedArgs, typedTrailing, loc);
     return TypedExpr{ .call = .{ .loc = loc, .type_ = retType, .kind = .{ .call = .{
         .receiver = recvPtr,
@@ -8250,6 +8365,10 @@ fn methodCallReturnType(
         for (typedArgs, rest) |ta, p| {
             try unifyAt(env, p, ta.value.getType(), ta.value.getLoc());
         }
+    } else if (typedTrailing.len == 0) {
+        // C-04 — a short call whose omitted parameters take their declared
+        // defaults: unify each argument with the parameter it landed in.
+        if (env.defaultInjections.get(loc)) |fill| try unifyFilledArgs(env, fill, rest, typedArgs);
     }
     return fn_.func.ret;
 }
@@ -8664,11 +8783,24 @@ fn resolveStdArrayMethod(
 
     const restParams = im.params[1..]; // drop `self`
     const total = typedArgs.len + typedTrailing.len;
+    // C-04 / N1 — `s.slice(1)` against `slice(self, start: i32, end: ?i32 = null)`.
+    // The interface declares the default; the call may omit it.
+    var fillPlan: ?envMod.DefaultFill = null;
     if (restParams.len != total) {
-        env.lastError = TypeError.arityMismatch(callee, restParams.len, total).withLoc(loc);
-        return error.TypeError;
+        if (typedTrailing.len == 0) fillPlan = try recordDefaultFill(env, loc, restParams, typedArgs);
+        // N2 — anything the defaults do not cover is still the arity error.
+        if (fillPlan == null) {
+            env.lastError = TypeError.arityMismatch(callee, restParams.len, total).withLoc(loc);
+            return error.TypeError;
+        }
     }
-    for (restParams[0..typedArgs.len], typedArgs) |p, ta| {
+    if (fillPlan) |fill| {
+        for (fill.slots, restParams) |slot, p| {
+            const ai = slot orelse continue;
+            const pType = try paramTypeInContext(env, p, gm);
+            try unifyAt(env, pType, typedArgs[ai].value.getType(), typedArgs[ai].value.getLoc());
+        }
+    } else for (restParams[0..typedArgs.len], typedArgs) |p, ta| {
         const pType = try paramTypeInContext(env, p, gm);
         try unifyAt(env, pType, ta.value.getType(), ta.value.getLoc());
     }
@@ -9160,21 +9292,30 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
             else
                 null;
 
+            // C-04 — the callee's parameters AS WRITTEN, read once here and
+            // used twice: 00 · 01-checker's expectation just below, and the
+            // default fill the arity arm plans further down.
+            const declParamsAst: ?[]const ast.Param = calleeParams(env, call.callee);
+
             // 00 · 01-checker — the DECLARED parameter types of a plain call,
             // read only as the expectation an argument is inferred under
             // (`tokenDeclarations(.Color.Red.500)` resolves the path on the
             // parameter's enum). Nothing is unified from here — the arm that
             // types the call still unifies each argument with its parameter.
-            // Labelled arguments may be given out of order, so the hint is
-            // taken only when the call site is positional.
-            const declParams: ?[]*T.Type = blk: {
+            const declParamTypes: ?[]*T.Type = blk: {
                 if (call.receiver != null or call.is_builtin) break :blk null;
-                for (call.args) |a| if (a.label != null) break :blk null;
                 const calleeTy = env.lookup(call.callee) orelse break :blk null;
                 const d = calleeTy.deref();
                 if (d.* != .func) break :blk null;
                 break :blk d.func.params;
             };
+            // Which parameter each argument lands in. Null is the ordinary
+            // answer — argument `i` is parameter `i` — and a slice appears
+            // only when a label moved one (C-04).
+            const argParamIndex: ?[]const usize = if (declParamTypes != null)
+                if (declParamsAst) |ps| try argumentParamSlots(env, ps, call.args) else null
+            else
+                null;
 
             const typedArgs = try env.arena.alloc(ast.CallArgOf(.typed), call.args.len);
             for (call.args, 0..) |arg, i| {
@@ -9195,10 +9336,14 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
                     for (d.func.params) |fp| if (!typeIsGround(fp, 0)) break :blk null;
                     break :blk ps[i];
                 } else null;
-                const argExpected: ?*T.Type = if (declParams) |ps|
-                    (if (i < ps.len) ps[i] else null)
-                else
-                    null;
+                const argExpected: ?*T.Type = if (declParamTypes) |ps| blk: {
+                    const pi = if (argParamIndex) |slots|
+                        (if (i < slots.len) slots[i] else ps.len)
+                    else
+                        i;
+                    if (pi >= ps.len) break :blk null;
+                    break :blk ps[pi];
+                } else null;
                 const val = if (expected != null and arg.value.* == .function)
                     try inferFunctionExprExpected(env, arg.value.*.function, arg.value.*.function.loc, expected.?, true)
                 else
@@ -9571,6 +9716,28 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
 
                     if (spreadCount == 0) {
                         if (f.params.len != call.args.len) {
+                            // C-04 / N1 — a call may omit an argument whose
+                            // parameter declares a default. The fill is planned
+                            // here and materialised in `transform.zig`, so all
+                            // four backends see a complete call and none of them
+                            // learns a new rule. A comptime / `@Expr` / template
+                            // callee keeps the exact check: its own machinery is
+                            // driven by the argument INDEX, and a short call has
+                            // never reached it.
+                            const filled: ?envMod.DefaultFill = fillBlk: {
+                                if (call.args.len > f.params.len) break :fillBlk null;
+                                if (typeparams != null or exprParams != null) break :fillBlk null;
+                                if (env.templateFns.get(call.callee) != null) break :fillBlk null;
+                                const declared = declParamsAst orelse break :fillBlk null;
+                                if (declared.len != f.params.len) break :fillBlk null;
+                                break :fillBlk try recordDefaultFill(env, loc, declared, typedArgs);
+                            };
+                            if (filled) |fill| {
+                                try unifyFilledArgs(env, fill, f.params, typedArgs);
+                                break :blk f.ret;
+                            }
+                            // N2 — a missing REQUIRED argument is the arity
+                            // error it has always been, word for word.
                             env.lastError = TypeError.arityMismatch(call.callee, f.params.len, call.args.len).withLoc(loc);
                             return error.TypeError;
                         }

@@ -657,6 +657,23 @@ pub const Env = struct {
     /// `fn f(x: T) -> x is NarrowedT` narrows `x` from `T` to `NarrowedT`
     /// when called in an `if` condition or as a statement (assertion mode).
     typeGuardFns: std.StringHashMap(TypeGuardInfo),
+    /// C-04 (01 step 7, N1) — call sites where inference accepted a call that
+    /// omitted an argument because the parameter declares a default, keyed by
+    /// the call's `ast.Loc`. `transform` reads the plan and materialises it, so
+    /// every backend sees a complete call and none of them learns a new rule.
+    /// A call short of a REQUIRED argument is never recorded here — that is N2,
+    /// and it stays the arity error it has always been.
+    defaultInjections: std.AutoHashMap(ast.Loc, DefaultFill),
+    /// C-04 — the declared parameter list of every top-level `fn` of this
+    /// module, keyed by name; the mirror of `stdlibFnDecls` for the program's
+    /// own functions. A `T.func` carries no defaults, so without this the
+    /// free-fn call path cannot tell an omitted trailing default (N1) from a
+    /// missing required argument (N2).
+    fnParams: std.StringHashMap([]const ast.Param),
+    /// C-04 — the declared parameter list of every inherent method, keyed
+    /// `"<Type>.<method>"` and **including** `self`, exactly as written.
+    /// `setInherentMethodType` stores TYPES, which carry no defaults.
+    inherentMethodParams: std.StringHashMap([]const ast.Param),
 
     pub fn init(arena: std.mem.Allocator) Env {
         return .{
@@ -707,6 +724,9 @@ pub const Env = struct {
             .decorators = std.StringHashMap(DecoratorSig).init(arena),
             .stdlibFnDecls = std.StringHashMap(ast.FnDecl).init(arena),
             .ctorParams = std.StringHashMap([]const ast.Param).init(arena),
+            .defaultInjections = std.AutoHashMap(ast.Loc, DefaultFill).init(arena),
+            .fnParams = std.StringHashMap([]const ast.Param).init(arena),
+            .inherentMethodParams = std.StringHashMap([]const ast.Param).init(arena),
             .typeGuardFns = std.StringHashMap(TypeGuardInfo).init(arena),
         };
     }
@@ -779,6 +799,9 @@ pub const Env = struct {
             .decorators = try tmpl.decorators.cloneWithAllocator(arena),
             .stdlibFnDecls = try tmpl.stdlibFnDecls.cloneWithAllocator(arena),
             .ctorParams = try tmpl.ctorParams.cloneWithAllocator(arena),
+            .defaultInjections = std.AutoHashMap(ast.Loc, DefaultFill).init(arena),
+            .fnParams = try tmpl.fnParams.cloneWithAllocator(arena),
+            .inherentMethodParams = try tmpl.inherentMethodParams.cloneWithAllocator(arena),
             .typeGuardFns = try tmpl.typeGuardFns.cloneWithAllocator(arena),
         };
     }
@@ -835,6 +858,9 @@ pub const Env = struct {
         self.decorators.deinit();
         self.stdlibFnDecls.deinit();
         self.ctorParams.deinit();
+        self.defaultInjections.deinit();
+        self.fnParams.deinit();
+        self.inherentMethodParams.deinit();
         self.typeGuardFns.deinit();
         self.synthesisedEnumDecls.deinit();
         self.enumSectionRewrites.deinit();
@@ -867,6 +893,20 @@ pub const Env = struct {
     pub fn getInherentMethodType(self: *Env, typeName: []const u8, method: []const u8) ?*T.Type {
         const set = self.inherentMethodTypes.get(typeName) orelse return null;
         return set.get(method);
+    }
+
+    /// C-04 — store `typeName.method`'s parameters AS WRITTEN (`self` included),
+    /// the only place the `default` expressions survive registration.
+    pub fn setInherentMethodParams(self: *Env, typeName: []const u8, method: []const u8, params: []const ast.Param) !void {
+        const key = try std.fmt.allocPrint(self.arena, "{s}.{s}", .{ typeName, method });
+        try self.inherentMethodParams.put(key, params);
+    }
+
+    /// C-04 — `typeName.method`'s parameters as written, `self` included.
+    pub fn getInherentMethodParams(self: *Env, typeName: []const u8, method: []const u8) ?[]const ast.Param {
+        var buf: [256]u8 = undefined;
+        const key = std.fmt.bufPrint(&buf, "{s}.{s}", .{ typeName, method }) catch return null;
+        return self.inherentMethodParams.get(key);
     }
 
     pub fn isActivated(self: *Env, name: []const u8) bool {
@@ -1208,3 +1248,72 @@ pub const TypeGuardInfo = struct {
     paramIndex: usize,
     narrowedTypeName: []const u8,
 };
+
+/// C-04 (01 step 7, N1) — how a call that omitted an argument lines up with the
+/// callee's parameters. Inference writes one of these into `Env.defaultInjections`
+/// the moment it *accepts* such a call; `comptime/transform.zig` materialises it
+/// and nothing else, so the checker and the lowering can never disagree about
+/// which argument was filled in.
+pub const DefaultFill = struct {
+    /// The callee's parameters, in declaration order. For a method this is the
+    /// list the ARGUMENTS line up with — `self` is already dropped.
+    params: []const ast.Param,
+    /// One entry per parameter: the index of the argument the call wrote, or
+    /// `null` for a parameter that takes its own declared `default`.
+    slots: []const ?usize,
+};
+
+/// C-04 — plan the fill for a call of `labels.len` arguments against `params`.
+///
+/// Answers `null` when the call needs no fill (it wrote an argument for every
+/// parameter) and `error.CannotFill` when it cannot have one: a parameter left
+/// without an argument and without a `default` is a missing REQUIRED argument,
+/// which is N2's arity error and must stay one.
+///
+/// An argument whose label names a parameter claims that parameter's slot, so
+/// `P(y: 2)` against `type P(x: i32 = 0, y: i32)` fills `x` from its default —
+/// the rule the plain tail-append cannot express, because `y` is the trailing
+/// parameter and `y` is required. Unlabelled arguments take the remaining slots
+/// in order. Any label that names no parameter (a `..` record-update spread,
+/// most of all) abandons the plan: those calls have their own paths and their
+/// own diagnostics.
+pub fn planDefaultFill(
+    arena: std.mem.Allocator,
+    params: []const ast.Param,
+    labels: []const ?[]const u8,
+) !?DefaultFill {
+    if (labels.len > params.len) return error.CannotFill;
+    if (labels.len == params.len) return null;
+
+    const slots = try arena.alloc(?usize, params.len);
+    @memset(slots, null);
+
+    // Pass 1 — every labelled argument claims the parameter it names.
+    var claimed = try arena.alloc(bool, labels.len);
+    @memset(claimed, false);
+    for (labels, 0..) |maybe_label, ai| {
+        const label = maybe_label orelse continue;
+        const pi = for (params, 0..) |p, i| {
+            if (std.mem.eql(u8, p.name, label)) break i;
+        } else return error.CannotFill;
+        if (slots[pi] != null) return error.CannotFill; // the same slot twice
+        slots[pi] = ai;
+        claimed[ai] = true;
+    }
+
+    // Pass 2 — the rest take the free slots in declaration order.
+    var pi: usize = 0;
+    for (labels, 0..) |_, ai| {
+        if (claimed[ai]) continue;
+        while (pi < params.len and slots[pi] != null) pi += 1;
+        if (pi >= params.len) return error.CannotFill;
+        slots[pi] = ai;
+        pi += 1;
+    }
+
+    // Pass 3 — N2: every slot the call left empty must declare a default.
+    for (slots, params) |slot, p| {
+        if (slot == null and p.default == null) return error.CannotFill;
+    }
+    return DefaultFill{ .params = params, .slots = slots };
+}

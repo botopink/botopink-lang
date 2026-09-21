@@ -18,6 +18,10 @@ val b: Border = .Color.Red.500;
 val c: Array<Token> = [.Color.Red.100];
 val d = onToken(.Color.Red.100);
 val e = onBorder(.Color.Red.100);
+type BoxT(w: i32 = 7, tone: Token)
+type BoxB(w: i32 = 7, tone: Border)
+val f = BoxT(tone: .Color.Red.100);
+val g = BoxB(tone: .Color.Red.100);
 ```
 
 ----- TYPED AST JSON -- main.json
@@ -175,6 +179,52 @@ val e = onBorder(.Color.Red.100);
           }
         ],
         "return_type": "i32"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "BoxT",
+      "fields": {
+        "w": "i32",
+        "tone": "Token"
+      }
+    },
+    {
+      "ast": "record_def",
+      "name": "BoxB",
+      "fields": {
+        "w": "i32",
+        "tone": "Border"
+      }
+    },
+    {
+      "ast": "val",
+      "ident": "f",
+      "return_type": "BoxT",
+      "expr": {
+        "ast": "call",
+        "params": [
+          {
+            "name": "tone",
+            "value": "Token"
+          }
+        ],
+        "return_type": "BoxT"
+      }
+    },
+    {
+      "ast": "val",
+      "ident": "g",
+      "return_type": "BoxB",
+      "expr": {
+        "ast": "call",
+        "params": [
+          {
+            "name": "tone",
+            "value": "Border"
+          }
+        ],
+        "return_type": "BoxB"
       }
     }
   ]
