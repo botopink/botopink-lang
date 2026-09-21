@@ -21,7 +21,11 @@ fn main() {
   (data (i32.const 256) "\02\00\00\00hi")
   (data (i32.const 264) "\01\00\00\00a")
   (data (i32.const 272) "\04\00\00\00(is)")
-  (global $__heap_ptr (mut i32) (i32.const 280))
+  (data (i32.const 280) "\0e\00\00\00R\05Point\02\01xi\01yi")
+  (data (i32.const 300) "\15\00\00\00V\0cShape.Square\01\04sidei")
+  (data (i32.const 328) "\10\00\00\00V\rShape.Nothing\00")
+  (data (i32.const 348) "\02\00\00\00[T")
+  (global $__heap_ptr (mut i32) (i32.const 356))
   (func $main
     (local $__mem0 i32)
     (local $__mem1 i32)
@@ -29,6 +33,7 @@ fn main() {
     (local $__mem3 i32)
     (local $__mem4 i32)
     (local $__mem5 i32)
+    (local $__mem6 i32)
     i32.const 256
     call $__print_str
     global.get $__heap_ptr
@@ -66,10 +71,95 @@ fn main() {
     call $__print_shaped_raw
     drop
     call $__print_nl
-    unreachable ;; §7 F2: no printed form for a record yet (13-module-identity)
-    unreachable ;; §7 F3: no printed form for a variant yet (13-module-identity)
-    unreachable ;; §7 F3: no printed form for a variant yet (13-module-identity)
-    unreachable ;; §7 F2: no printed form for a record yet (13-module-identity)
+    global.get $__heap_ptr
+    local.set $__mem2
+    global.get $__heap_ptr
+    i32.const 12
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem2
+    i32.const 284
+    i32.store
+    local.get $__mem2
+    i32.const 1
+    i32.store offset=4
+    local.get $__mem2
+    i32.const 2
+    i32.store offset=8
+    local.get $__mem2
+    i32.const 4
+    i32.add
+    call $__print_tagged
+    global.get $__heap_ptr
+    local.set $__mem3
+    global.get $__heap_ptr
+    i32.const 12
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem3
+    i32.const 304
+    i32.store
+    local.get $__mem3
+    i32.const 0
+    i32.store offset=4
+    local.get $__mem3
+    i32.const 4
+    i32.store offset=8
+    local.get $__mem3
+    i32.const 4
+    i32.add
+    call $__print_tagged
+    global.get $__heap_ptr
+    local.set $__mem4
+    global.get $__heap_ptr
+    i32.const 8
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem4
+    i32.const 332
+    i32.store
+    local.get $__mem4
+    i32.const 1
+    i32.store offset=4
+    local.get $__mem4
+    i32.const 4
+    i32.add
+    call $__print_tagged
+    global.get $__heap_ptr
+    local.set $__mem5
+    global.get $__heap_ptr
+    i32.const 8
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem5
+    i32.const 1
+    i32.store
+    local.get $__mem5
+    global.get $__heap_ptr
+    local.set $__mem6
+    global.get $__heap_ptr
+    i32.const 12
+    i32.add
+    global.set $__heap_ptr
+    local.get $__mem6
+    i32.const 284
+    i32.store
+    local.get $__mem6
+    i32.const 1
+    i32.store offset=4
+    local.get $__mem6
+    i32.const 2
+    i32.store offset=8
+    local.get $__mem6
+    i32.const 4
+    i32.add
+    i32.store offset=4
+    local.get $__mem5
+    i32.const 352
+    i32.const 1
+    call $__print_shaped_raw
+    drop
+    call $__print_nl
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
@@ -562,6 +652,144 @@ fn main() {
     i32.const 1
     call $__write_bytes
   )
+  (func $__print_tagged_raw (param $v i32)
+    (local $d i32) (local $p i32) (local $k i32) (local $i i32) (local $n i32) (local $b i32)
+    local.get $v
+    i32.const 4
+    i32.sub
+    i32.load
+    local.set $d
+    local.get $d
+    i32.const 1
+    i32.add
+    local.set $p
+    local.get $v
+    local.set $b
+    local.get $d
+    i32.load8_u
+    i32.const 86
+    i32.eq
+    (if
+      (then
+        local.get $v
+        i32.const 4
+        i32.add
+        local.set $b
+      )
+    )
+    local.get $p
+    i32.load8_u
+    local.set $n
+    local.get $p
+    i32.const 1
+    i32.add
+    local.set $p
+    local.get $p
+    local.get $n
+    call $__write_bytes
+    local.get $p
+    local.get $n
+    i32.add
+    local.set $p
+    local.get $p
+    i32.load8_u
+    local.set $k
+    local.get $p
+    i32.const 1
+    i32.add
+    local.set $p
+    local.get $k
+    (if
+      (then
+        i32.const 8
+        i32.const 40
+        i32.store8
+        i32.const 8
+        i32.const 1
+        call $__write_bytes
+      )
+    )
+    (block $brk
+      (loop $cont
+        local.get $i
+        local.get $k
+        i32.ge_u
+        br_if $brk
+        local.get $i
+        (if
+          (then
+            i32.const 8
+            i32.const 44
+            i32.store8
+            i32.const 8
+            i32.const 32
+            i32.store8 offset=1
+            i32.const 8
+            i32.const 2
+            call $__write_bytes
+          )
+        )
+        local.get $p
+        i32.load8_u
+        local.set $n
+        local.get $p
+        i32.const 1
+        i32.add
+        local.set $p
+        local.get $p
+        local.get $n
+        call $__write_bytes
+        local.get $p
+        local.get $n
+        i32.add
+        local.set $p
+        i32.const 8
+        i32.const 58
+        i32.store8
+        i32.const 8
+        i32.const 32
+        i32.store8 offset=1
+        i32.const 8
+        i32.const 2
+        call $__write_bytes
+        local.get $b
+        i32.const 4
+        i32.add
+        local.get $i
+        i32.const 4
+        i32.mul
+        i32.add
+        i32.const 4
+        i32.sub
+        i32.load
+        local.get $p
+        i32.const 1
+        call $__print_shaped_raw
+        local.set $p
+        local.get $i
+        i32.const 1
+        i32.add
+        local.set $i
+        br $cont
+      )
+    )
+    local.get $k
+    (if
+      (then
+        i32.const 8
+        i32.const 41
+        i32.store8
+        i32.const 8
+        i32.const 1
+        call $__write_bytes
+      )
+    )
+  )
+  (func $__print_tagged (param $v i32)
+    local.get $v
+    call $__print_tagged_raw
+    call $__print_nl
+  )
   (func $__print_shaped_raw (param $v i32) (param $sh i32) (param $go i32) (result i32)
     (local $c i32) (local $n i32) (local $i i32) (local $p i32) (local $e i32)
     local.get $sh
@@ -633,6 +861,24 @@ fn main() {
           (then
             local.get $v
             call $__print_quoted_raw
+          )
+        )
+        local.get $sh
+        i32.const 1
+        i32.add
+        return
+      )
+    )
+    local.get $c
+    i32.const 84
+    i32.eq
+    (if
+      (then
+        local.get $go
+        (if
+          (then
+            local.get $v
+            call $__print_tagged_raw
           )
         )
         local.get $sh
@@ -826,6 +1072,8 @@ fn main() {
 hi
 [1, 2]
 #(1, "a")
-RUNTIME TRAP (wasmtime):
-wasm trap: wasm `unreachable` instruction executed
+Point(x: 1, y: 2)
+Shape.Square(side: 4)
+Shape.Nothing
+[Point(x: 1, y: 2)]
 ```

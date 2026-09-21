@@ -54,14 +54,17 @@ pub declare fn tmpdir() -> string;
 // Erlang there is no direct `os:userInfo` BIF so the template lifts the
 // `USER` env var (falling back to `<<"unknown">>`) and reads the uid
 // from `process_info` — best-effort, the Erlang side stays informative
-// without claiming POSIX-grade accuracy.
+// without claiming POSIX-grade accuracy. The Erlang term is the record's
+// own run-time shape (13-module-identity decision 21): the tagged tuple
+// `{'<module atom>__t__<type>', <fields in declared order>}`, which is
+// what `u.username` reads a position out of.
 pub type UserInfo(
     uid: i32,
     username: string,
 )
 
 #[@External.Node("""(() => { const __u = require('os').userInfo(); return { uid: __u.uid, username: __u.username } })()""")]
-#[@External.Erlang("""(fun() -> __U = case os:getenv("USER") of false -> <<"unknown">>; __V -> list_to_binary(__V) end, #{uid => 0, username => __U} end)()""")]
+#[@External.Erlang("""(fun() -> __U = case os:getenv("USER") of false -> <<"unknown">>; __V -> list_to_binary(__V) end, {'std@os__t__userinfo', 0, __U} end)()""")]
 pub declare fn userInfo() -> UserInfo;
 
 // Platform line terminator — `"\n"` on POSIX, `"\r\n"` on Windows.

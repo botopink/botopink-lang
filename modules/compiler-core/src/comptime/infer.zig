@@ -7252,6 +7252,11 @@ fn inferIdentifierExpr(env: *Env, ident: ast.IdentifierExprOf(.untyped), loc: as
                     switch (td) {
                         .record, .struct_ => {
                             if (td.findField(ia.member)) |f| {
+                                // The receiver's type, for the backends that
+                                // store a record positionally — erlang and beam
+                                // under decision 21 read `element(N + 1, V)`,
+                                // and the field's NAME does not carry N.
+                                try env.instanceLowerings.put(loc, .{ .field_of = recvNamed.name });
                                 // Generic instance: substitute the registered
                                 // cells with the instance's type args.
                                 outType = try instantiateFieldType(env, recvNamed.name, recvNamed.args, f.type_);

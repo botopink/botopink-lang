@@ -39,7 +39,7 @@ pub fn items(g: ast.HelperGroup) []const ast.Item {
         .print_arr_i32 => &.{ .{ .func = print_arr_i32_raw }, .{ .func = print_arr_i32 } },
         .print_arr_f32 => &.{ .{ .func = print_arr_f32_raw }, .{ .func = print_arr_f32 } },
         .assert_fail => &.{ .{ .func = write_err }, .{ .func = assert_fail } },
-        .print_shaped => &.{ .{ .func = print_quoted_raw }, .{ .func = print_shaped_raw } },
+        .print_shaped => &.{ .{ .func = print_quoted_raw }, .{ .func = print_tagged_raw }, .{ .func = print_tagged }, .{ .func = print_shaped_raw } },
         .print_opt_f32 => &.{ .{ .func = print_opt_f32_raw }, .{ .func = print_opt_f32 } },
         .print_loop => &.{ .{ .func = print_null }, .{ .func = print_loop_i32_raw }, .{ .func = print_loop_i32 } },
         .print_opt => &.{
@@ -60,6 +60,62 @@ pub const order = blk: {
     for (all, 0..) |g, i| out[i] = g;
     break :blk out;
 };
+
+/// Writes the two bytes `a` then `b` through the scratch cells at 8 and 9, in
+/// one `fd_write` — the separator idiom `putSep` uses, for any pair.
+fn putPair(comptime a: comptime_int, comptime b: comptime_int) [8]Instr {
+    return .{ c32(8), c32(a), store8(0), c32(8), c32(b), store8(1), c32(8), c32(2) };
+}
+
+/// Decision 8 §7 on wasm (decision 22, `13-module-identity` half 3): the text
+/// of a value that carries its own declaration. The value's header word — the
+/// i32 four bytes BEHIND the pointer — is the address of the type descriptor
+/// the emitter interned, so the text is read from the VALUE and not from the
+/// print site, which is what makes a union print correctly.
+///
+/// The descriptor is length-prefixed, because a wasm loop reads a byte and
+/// advances:
+///
+///     'R' <n> name       <k> [ <n> field <shape…> ] * k    a record
+///     'V' <n> Enum.Var   <k> [ <n> field <shape…> ] * k    one variant
+///
+/// A field's shape is the same self-delimiting code `$__print_shaped_raw`
+/// walks, and that function answers the address just past it, so the
+/// descriptor needs no length for it. A record's fields start at the pointer;
+/// a variant's start one slot in, because slot 0 holds the variant ordinal the
+/// `case` arms test.
+const print_tagged_raw = func("__print_tagged_raw", &.{"v"}, null, i32s(&.{ "d", "p", "k", "i", "n", "b" }), &.{
+    get("v"),                                          c32(4),                                                   op("sub"), load(0),                                                  set("d"),
+    get("d"),                                          c32(1),                                                   op("add"), set("p"),
+    // 'V' (86) puts the fields one slot in; 'R' leaves them at the pointer.
+                                                    get("v"),
+    set("b"),                                          get("d"),                                                 load8(0),  c32('V'),                                                 op("eq"),
+    when(&.{ get("v"), c32(4), op("add"), set("b") }),
+    // The declaration's name.
+    get("p"),                                                 load8(0),  set("n"),                                                 get("p"),
+    c32(1),                                            op("add"),                                                set("p"),  get("p"),                                                 get("n"),
+    call("__write_bytes"),                             get("p"),                                                 get("n"),  op("add"),                                                set("p"),
+    // The field count, then one `label: value` per field.
+    get("p"),                                          load8(0),                                                 set("k"),  get("p"),                                                 c32(1),
+    op("add"),                                         set("p"),                                                 get("k"),  when(&(putByte('(') ++ [_]Instr{call("__write_bytes")})),
+    loop(&([_]Instr{
+        get("i"), get("k"),                                             op("ge_u"), brk,
+        get("i"), when(&(putSep() ++ [_]Instr{call("__write_bytes")})), get("p"),   load8(0),
+        set("n"), get("p"),                                             c32(1),     op("add"),
+        set("p"), get("p"),                                             get("n"),   call("__write_bytes"),
+        get("p"), get("n"),                                             op("add"),  set("p"),
+    } ++ putPair(':', ' ') ++ [_]Instr{
+        call("__write_bytes"),
+    } ++ slot("b", "i") ++ [_]Instr{
+        c32(4),    op("sub"), load(0),
+        get("p"),  c32(1),    call("__print_shaped_raw"),
+        set("p"),  get("i"),  c32(1),
+        op("add"), set("i"),  again,
+    })),
+    get("k"),                                          when(&(putByte(')') ++ [_]Instr{call("__write_bytes")})),
+});
+
+const print_tagged = func("__print_tagged", &.{"v"}, null, &.{}, &.{ get("v"), call("__print_tagged_raw"), call("__print_nl") });
 
 /// `fd_write`, the one host function the print helpers need.
 pub const fd_write_import = ast.Import{
@@ -1302,10 +1358,10 @@ const print_quoted_raw = func("__print_quoted_raw", &.{"s"}, null, i32s(&.{ "n",
 /// is read through `v`: the call only measures a shape, which is how an array
 /// finds the end of its element shape when it has no element.
 const print_shaped_raw = func("__print_shaped_raw", &.{ "v", "sh", "go" }, .i32, i32s(&.{ "c", "n", "i", "p", "e" }), &.{
-    get("sh"),                                                                                                  load8(0),                                                                                                 set("c"),
-    get("c"),                                                                                                   c32('i'),                                                                                                 op("eq"),
-    when(&.{ get("go"), when(&.{ get("v"), call("__print_i32_raw") }), get("sh"), c32(1), op("add"), ret }),    get("c"),                                                                                                 c32('b'),
-    op("eq"),                                                                                                   when(&.{ get("go"), when(&.{ get("v"), call("__print_bool_raw") }), get("sh"), c32(1), op("add"), ret }), get("c"),
+    get("sh"),                                                                                                  load8(0),                                                                                                   set("c"),
+    get("c"),                                                                                                   c32('i'),                                                                                                   op("eq"),
+    when(&.{ get("go"), when(&.{ get("v"), call("__print_i32_raw") }), get("sh"), c32(1), op("add"), ret }),    get("c"),                                                                                                   c32('b'),
+    op("eq"),                                                                                                   when(&.{ get("go"), when(&.{ get("v"), call("__print_bool_raw") }), get("sh"), c32(1), op("add"), ret }),   get("c"),
     c32('f'),                                                                                                   op("eq"),
     when(&.{
         get("go"),
@@ -1315,9 +1371,13 @@ const print_shaped_raw = func("__print_shaped_raw", &.{ "v", "sh", "go" }, .i32,
         op("add"),
         ret,
     }),
-    get("c"),                                                                                                   c32('s'),                                                                                                 op("eq"),
-    when(&.{ get("go"), when(&.{ get("v"), call("__print_quoted_raw") }), get("sh"), c32(1), op("add"), ret }), get("c"),                                                                                                 c32('['),
+    get("c"),                                                                                                   c32('s'),                                                                                                   op("eq"),
+    when(&.{ get("go"), when(&.{ get("v"), call("__print_quoted_raw") }), get("sh"), c32(1), op("add"), ret }), get("c"),                                                                                                   c32('T'),
     op("eq"),
+    // `T` — a value that carries its own declaration: its text is read from
+    // the header, so a container of records names each element's type.
+                                                                                                      when(&.{ get("go"), when(&.{ get("v"), call("__print_tagged_raw") }), get("sh"), c32(1), op("add"), ret }), get("c"),
+    c32('['),                                                                                                   op("eq"),
     when(&([_]Instr{
         get("go"),                               when(&(putByte('[') ++ [_]Instr{call("__write_bytes")})),
         get("sh"),                               c32(1),
@@ -1333,7 +1393,7 @@ const print_shaped_raw = func("__print_shaped_raw", &.{ "v", "sh", "go" }, .i32,
         get("go"),                               when(&(putByte(']') ++ [_]Instr{call("__write_bytes")})),
         get("p"),                                ret,
     })),
-    get("c"),                                                                                                   c32('('),                                                                                                 op("eq"),
+    get("c"),                                                                                                   c32('('),                                                                                                   op("eq"),
     when(&([_]Instr{
         get("go"), when(&(putByte('#') ++ [_]Instr{call("__write_bytes")} ++ putByte('(') ++ [_]Instr{call("__write_bytes")})),
         get("sh"), c32(1),
@@ -1349,7 +1409,7 @@ const print_shaped_raw = func("__print_shaped_raw", &.{ "v", "sh", "go" }, .i32,
         get("p"),  c32(1),
         op("add"), ret,
     })),
-    get("sh"),                                                                                                  c32(1),                                                                                                   op("add"),
+    get("sh"),                                                                                                  c32(1),                                                                                                     op("add"),
 });
 
 /// A `?T` box: a fresh 4-byte cell holding `v`.

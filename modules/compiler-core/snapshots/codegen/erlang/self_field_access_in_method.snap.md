@@ -19,10 +19,15 @@ val Point = type(
 ----- ERLANG -- main__t__point.erl
 ```erlang
 -module(main__t__point).
--export([sum/0]).
+-export([sum/0, '__bp_get'/2, '__bp_format'/1]).
 
 sum() ->
-    '__bp_add'(maps:get(x, Self), maps:get(y, Self)).
+    '__bp_add'(element(2, Self), element(3, Self)).
+
+'__bp_get'(V, x) -> element(2, V);
+'__bp_get'(V, y) -> element(3, V).
+
+'__bp_format'(V) -> {record, "Point", [{"x", element(2, V)}, {"y", element(3, V)}]}.
 
 '__bp_add'(A, B) when is_binary(A), is_binary(B) -> <<A/binary, B/binary>>;
 '__bp_add'(A, B) -> A + B.

@@ -18,10 +18,14 @@ val Counter = type(
 ----- ERLANG -- main__t__counter.erl
 ```erlang
 -module(main__t__counter).
--export([inc/0]).
+-export([inc/0, '__bp_get'/2, '__bp_format'/1]).
 
 inc() ->
     %% field assignment is not directly supported in Erlang.
+
+'__bp_get'(V, count) -> element(2, V).
+
+'__bp_format'(V) -> {record, "Counter", [{"count", element(2, V)}]}.
 ```
 
 ----- RUN LOG -----

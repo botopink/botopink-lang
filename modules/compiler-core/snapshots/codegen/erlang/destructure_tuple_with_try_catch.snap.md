@@ -17,7 +17,7 @@ fn f() {
 %% type Error: msg
 
 fetch() ->
-    {error, #{msg => <<"boom">>}}.
+    {error, {main__t__error, <<"boom">>}}.
 
 f() ->
     {A, B} = case try
@@ -27,8 +27,18 @@ f() ->
     end of
         {ok, TryV0} -> TryV0;
         {error, _TryE0} ->
-            erlang:throw(#{msg => <<"failed">>})
+            erlang:throw({main__t__error, <<"failed">>})
     end.
+```
+
+----- ERLANG -- main__t__error.erl
+```erlang
+-module(main__t__error).
+-export(['__bp_get'/2, '__bp_format'/1]).
+
+'__bp_get'(V, msg) -> element(2, V).
+
+'__bp_format'(V) -> {record, "Error", [{"msg", element(2, V)}]}.
 ```
 
 ----- RUN LOG -----

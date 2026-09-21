@@ -23,7 +23,8 @@ fn main() {
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
   (table funcref (elem $__lambda0 $__lambda1 $__lambda2))
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (data (i32.const 256) "\0c\00\00\00R\03Ops\01\04stepi")
+  (global $__heap_ptr (mut i32) (i32.const 272))
   (func $mk (result i32)
     (local $__mem0 i32)
     (local $value i32)
@@ -117,9 +118,12 @@ fn main() {
     global.get $__heap_ptr
     local.set $__mem2
     global.get $__heap_ptr
-    i32.const 4
+    i32.const 8
     i32.add
     global.set $__heap_ptr
+    local.get $__mem2
+    i32.const 260
+    i32.store
     local.get $__mem2
     global.get $__heap_ptr
     local.set $__mem3
@@ -131,8 +135,10 @@ fn main() {
     i32.const 2
     i32.store
     local.get $__mem3
-    i32.store
+    i32.store offset=4
     local.get $__mem2
+    i32.const 4
+    i32.add
     local.set $o
     local.get $o
     i32.load ;; .step

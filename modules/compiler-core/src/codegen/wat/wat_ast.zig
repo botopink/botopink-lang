@@ -422,8 +422,13 @@ pub const HelperGroup = enum {
     print_opt_f32,
     /// `$__write_err` `$__assert_fail`.
     assert_fail,
-    /// `$__print_quoted_raw` `$__print_shaped_raw` — arrays of strings, tuples
-    /// and arrays of tuples (semantics decision 1a).
+    /// `$__print_quoted_raw` `$__print_shaped_raw` `$__print_tagged_raw`
+    /// `$__print_tagged` — arrays of strings, tuples and arrays of tuples
+    /// (semantics decision 1a), and the value that carries its own declaration
+    /// (decision 8 §7, 13-module-identity half 3). One group: the shape walker
+    /// has a `T` arm that calls the tagged printer, and the tagged printer
+    /// prints each field by its shape, so neither is complete without the
+    /// other.
     print_shaped,
     /// `$__print_null`, `$__print_loop_i32` (+`_raw`) — a condition loop's value
     /// and decision 52's `null` when it never broke. Its own group and not part
@@ -530,6 +535,8 @@ pub const Helper = enum {
     print_loop_i32,
     print_loop_i32_raw,
     str_at,
+    print_tagged_raw,
+    print_tagged,
 
     pub fn symbol(h: Helper) []const u8 {
         return switch (h) {
@@ -550,6 +557,7 @@ pub const Helper = enum {
             .print_null, .print_loop_i32, .print_loop_i32_raw => .print_loop,
             .print_undefined, .print_opt_i32, .print_opt_i32_raw, .print_opt_bool, .print_opt_bool_raw, .print_opt_str, .print_opt_str_raw => .print_opt,
             .print_opt_f32, .print_opt_f32_raw => .print_opt_f32,
+            .print_tagged_raw, .print_tagged => .print_shaped,
             inline else => |t| @field(HelperGroup, @tagName(t)),
         };
     }

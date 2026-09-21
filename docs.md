@@ -1095,6 +1095,76 @@ Other builtins (`@panic`, `@field`, `@emit`, …) are declared in
 names are exact: an unrecognised `@name(…)` is `error[unknown-builtin]`
 (with the nearest name when one is an edit away), never a silent `void`.
 
+### What `@print` writes
+
+A value prints the way the source writes it. A record names its type and its
+fields, a variant names its enum, a container separates its elements with
+`", "`, and a type implementing `Display` prints its `display()` instead —
+nested inside a container too.
+
+```botopink
+type Point(x: i32, y: i32)
+type Shape { Square(side: i32), Nothing }
+
+behavior Display { fn display(self: Self) -> string; }
+type Money(cents: i32) implement Display {
+    pub fn display(self: Self) -> string { return "$" + self.cents.toString(); }
+}
+
+fn main() {
+    @print([1, 2]);                   // [1, 2]
+    @print(#(1, "a"));                // #(1, "a")
+    @print(Point(x: 1, y: 2));        // Point(x: 1, y: 2)
+    @print(Shape.Square(side: 4));    // Shape.Square(side: 4)
+    @print(Shape.Nothing);            // Shape.Nothing
+    @print([Money(cents: 1)]);        // [$1]
+}
+```
+
+A string prints as its text at the top level (`hi`) and quoted inside a
+container (`["hi"]`). erlang, BEAM, commonJS and wasm all write the record and
+variant text; `Display` is consulted on the first three, and wasm prints the
+record's own fields instead.
+
+### A value knows its own type
+
+Two declarations with the same fields are two types, and their values are never
+equal:
+
+```botopink
+type Person(name: string, age: i32)
+type Vec(name: string, age: i32)
+
+test "two types with the same fields are different values" {
+    assert (Person(name: "Ana", age: 30) == Vec(name: "Ana", age: 30)) == false;
+}
+```
+
+The declaration is inside the value on every backend: erlang and BEAM tag the
+term with the module the type is declared in, commonJS makes it a class.
+
+`is` and a `case` arm read it back — the arm is chosen by the value's own type,
+not by the annotation it arrived under:
+
+```botopink
+type Person(name: string, age: i32)
+type Vec(name: string, age: i32)
+
+fn nameOf(v: Person | Vec) -> string {
+    return case v {
+        Person { "person" }
+        Vec { "vec" }
+    };
+}
+
+test "the value decides" {
+    val u: unknown = Vec(name: "Ana", age: 30);
+    assert u is Vec;
+    assert (u is Person) == false;
+    assert nameOf(Vec(name: "Ana", age: 30)) == "vec";
+}
+```
+
 ### `@src()` and `SourceLocation`
 
 ```botopink

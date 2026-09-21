@@ -62,6 +62,16 @@ const one: Instr = .{ .@"const" = .{ .ty = .i32, .text = "1" } };
 /// The bump-allocator pointer every aggregate construction advances.
 const heap_ptr = "__heap_ptr";
 
+/// The header a value that knows its own declaration carries
+/// (13-module-identity half 3, decision 22): one i32 holding the address of
+/// the type descriptor, written BEHIND the pointer the value is, so every
+/// field offset is what it was before the header existed.
+const tag_header_bytes: u32 = 4;
+
+/// The lowest address the bump allocator ever answers. A value below it is not
+/// a pointer, so `x is T` must not read a header behind it.
+const heap_floor: i64 = 256;
+
 /// Comments the Result/Option lowering repeats often enough to name.
 const result_tag = "Result tag (0 = Ok, non-zero = Error)";
 const ok_payload = "Ok payload";
@@ -604,6 +614,11 @@ const Emitter = struct {
     record_field_types: std.StringHashMap([]const []const u8),
     /// enum name → variants (tag = declaration index; payload fields follow).
     enums: std.StringHashMap([]const ast.EnumVariant),
+    /// Declaration name → the address of the descriptor a value of it carries
+    /// in its header (13-module-identity half 3). Keyed by the record's name
+    /// and by `"<Enum>.<Variant>"`, because a variant IS a declaration for the
+    /// purpose of identity: `Shape.Dot` and `Shape.Circle` are two of them.
+    type_descs: std.StringHashMap(u32),
     /// Arena backing the slices stored in `records` (field-name strings alias
     /// the AST and are not copied).
     reg_arena: std.heap.ArenaAllocator,
@@ -725,6 +740,7 @@ const Emitter = struct {
             .records = std.StringHashMap([]const []const u8).init(alloc),
             .record_field_types = std.StringHashMap([]const []const u8).init(alloc),
             .enums = std.StringHashMap([]const ast.EnumVariant).init(alloc),
+            .type_descs = std.StringHashMap(u32).init(alloc),
             .reg_arena = std.heap.ArenaAllocator.init(alloc),
             .local_types = std.StringHashMap([]const u8).init(alloc),
             .fn_return_types = std.StringHashMap([]const u8).init(alloc),
@@ -793,6 +809,7 @@ const Emitter = struct {
         self.records.deinit();
         self.record_field_types.deinit();
         self.enums.deinit();
+        self.type_descs.deinit();
         self.local_types.deinit();
         self.fn_return_types.deinit();
         self.reg_arena.deinit();
@@ -1195,6 +1212,139 @@ const Emitter = struct {
                 else => return null,
             },
             else => return null,
+        }
+    }
+
+    /// Whether `name` is a declaration this module can test a value against
+    /// (a record, or an enum with at least one allocated variant).
+    fn namesATestableType(self: *Emitter, name: []const u8) bool {
+        const descs = self.typeDescriptors(.{ .named = name }) catch return false;
+        return descs.len > 0;
+    }
+
+    /// The header test for a named `type`, over the subject already in a
+    /// local: `subj >= <heap floor> && load(subj - 4) == <descriptor>`, an
+    /// enum's variants joined by `or`. False when the name is not a type this
+    /// module can place, and the caller keeps what it wrote before.
+    fn emitNamedTypeTest(self: *Emitter, name: []const u8, subj: []const u8) anyerror!bool {
+        const descs = try self.typeDescriptors(.{ .named = name });
+        if (descs.len == 0) return false;
+        try self.emit(.{ .local_get = subj });
+        try self.emit(try self.constInt(heap_floor));
+        try self.emit(opOf("i32", "ge_u"));
+        for (descs, 0..) |d, i| {
+            try self.emit(.{ .local_get = subj });
+            try self.emit(try self.constInt(tag_header_bytes));
+            try self.emit(opOf("i32", "sub"));
+            try self.emit(.{ .load = .{} });
+            try self.emit(try self.constInt(d));
+            try self.emit(opOf("i32", "eq"));
+            if (i > 0) try self.emit(opOf("i32", "or"));
+        }
+        try self.emit(opOf("i32", "and"));
+        return true;
+    }
+
+    /// Decision 8 §4.2 — `x is T` on wasm. The identity is the descriptor
+    /// address in the value's header, so the test is one `i32.load` behind the
+    /// pointer compared against the constant the declaration interned, under a
+    /// bounds guard: an `i32` that is not a pointer would otherwise read four
+    /// bytes of whatever sits below it. An enum is every variant's descriptor,
+    /// joined by `or`.
+    ///
+    /// A type with no descriptor has no test here — a primitive is an `i32` in
+    /// linear memory like every other value, and wasm cannot tell them apart —
+    /// so it traps rather than answering. The trap is this backend's existing
+    /// mechanism for a shape it cannot lower, and it is a diagnostic where
+    /// `i32.const 0` would be a silent wrong answer.
+    fn lowerIsCall(self: *Emitter, cc: anytype) anyerror!void {
+        const t = cc.isType orelse return error.InvalidArgs;
+        if (cc.args.len != 1) return error.InvalidArgs;
+        const descs = try self.typeDescriptors(t);
+        if (descs.len == 0) {
+            try self.emitCf(.@"unreachable", "§4.2 `is`: no run-time test for this type on wasm", .{});
+            return;
+        }
+        const mem = try self.memName(self.nextMem());
+        try self.lowerCoerced(cc.args[0].value.*, "i32");
+        try self.emit(.{ .local_tee = mem });
+        try self.emit(try self.constInt(heap_floor));
+        try self.emit(opOf("i32", "ge_u"));
+        for (descs, 0..) |d, i| {
+            try self.emit(.{ .local_get = mem });
+            try self.emit(try self.constInt(tag_header_bytes));
+            try self.emit(opOf("i32", "sub"));
+            try self.emit(.{ .load = .{} });
+            try self.emit(try self.constInt(d));
+            try self.emit(opOf("i32", "eq"));
+            if (i > 0) try self.emit(opOf("i32", "or"));
+        }
+        try self.emit(opOf("i32", "and"));
+    }
+
+    /// Every descriptor a value of `t` may carry: one for a record, one per
+    /// variant for an enum, none for anything wasm cannot place.
+    fn typeDescriptors(self: *Emitter, t: ast.TypeRef) anyerror![]const u32 {
+        const name = switch (t) {
+            .named => |n| n,
+            .generic => |g| g.name,
+            else => return &.{},
+        };
+        if (try self.typeDescriptorAddr(name, null)) |d| {
+            const only = try self.arena().alloc(u32, 1);
+            only[0] = d;
+            return only;
+        }
+        const variants = self.enums.get(name) orelse return &.{};
+        if (!enumHasPayload(variants)) return &.{};
+        var out: std.ArrayListUnmanaged(u32) = .empty;
+        for (variants) |v| {
+            if (try self.variantDescriptorAddr(name, v)) |d| try out.append(self.arena(), d);
+        }
+        return out.items;
+    }
+
+    /// Whether `e`'s value carries a descriptor header — every record a
+    /// declaration builds, and every variant of an enum that has at least one
+    /// payload variant (those are allocated; an all-unit enum's member is the
+    /// bare ordinal). An array or a tuple HOLDING one does not: the container
+    /// is printed by its shape, and the shape codes have no record arm yet.
+    fn isTaggedValue(self: *Emitter, e: ast.Expr) bool {
+        if (self.recordTypeOfExpr(e)) |rt| return self.records.contains(rt);
+        switch (e) {
+            .collection => |col| switch (col.kind) {
+                .grouped => |inner| return self.isTaggedValue(inner.*),
+                else => return false,
+            },
+            .call => |c| switch (c.kind) {
+                .call => |cc| {
+                    if (self.callKind(cc) != .enum_ctor) return false;
+                    if (receiverName(cc)) |rcv| {
+                        if (self.enums.get(rcv)) |variants| return enumHasPayload(variants);
+                    }
+                    if (self.enumOfVariant(cc.callee)) |en| {
+                        if (self.enums.get(en)) |variants| return enumHasPayload(variants);
+                    }
+                    return false;
+                },
+                else => return false,
+            },
+            .identifier => |id| switch (id.kind) {
+                .identAccess => |ia| {
+                    const ename = switch (ia.receiver.*) {
+                        .identifier => |rid| switch (rid.kind) {
+                            .ident => |n| n,
+                            else => return false,
+                        },
+                        else => return false,
+                    };
+                    const variants = self.enums.get(ename) orelse return false;
+                    for (variants) |v| if (std.mem.eql(u8, v.name, ia.member)) return enumHasPayload(variants);
+                    return false;
+                },
+                else => return false,
+            },
+            else => return false,
         }
     }
 
@@ -3245,12 +3395,26 @@ const Emitter = struct {
         // no diagnostic. That is the one thing this backend must not do, and it
         // already has the mechanism for a shape it cannot write — the trap 24
         // fixtures record. So it traps, and the wrong number is gone.
+        // §7 F2/F3 — a value that carries its own declaration prints as the
+        // source writes it, read from the VALUE's header and not from this
+        // site. A variant of an ALL-UNIT enum is the ordinal itself, with no
+        // allocation and so no header, and still has no printed form: it keeps
+        // the trap rather than reading four bytes behind an integer.
         if (self.namedShapeOf(arg)) |ns| {
-            try self.emitCf(.@"unreachable", "§7 F{d}: no printed form for a {s} yet (13-module-identity)", .{
-                @as(u8, if (ns == .record) 2 else 3),
-                @tagName(ns),
-            });
-            return;
+            if (self.isTaggedValue(arg)) {
+                try self.lowerCoerced(arg, "i32");
+                try self.emit(self.builder().helper(if (last) .print_tagged else .print_tagged_raw));
+                return;
+            }
+            // A CONTAINER of such values is printed by its shape, whose `T`
+            // arm reads each element's own header.
+            if (try self.printShapeOf(arg)) |_| {} else {
+                try self.emitCf(.@"unreachable", "§7 F{d}: no printed form for a {s} of an all-unit enum (its value is the ordinal, with no header to read)", .{
+                    @as(u8, if (ns == .record) 2 else 3),
+                    @tagName(ns),
+                });
+                return;
+            }
         }
         // Decision 52 — a condition loop that never broke has no value to give,
         // and every backend owes the `null` spelling for it. wasm carries the
@@ -3336,6 +3500,10 @@ const Emitter = struct {
     fn lowerBuiltin(self: *Emitter, cc: anytype) anyerror!void {
         if (std.mem.eql(u8, cc.callee, "todo") or std.mem.eql(u8, cc.callee, "panic")) {
             try self.emit(.@"unreachable");
+            return;
+        }
+        if (std.mem.eql(u8, cc.callee, ast.is_builtin_name) and cc.isType != null) {
+            try self.lowerIsCall(cc);
             return;
         }
         if (std.mem.eql(u8, cc.callee, "block")) {
@@ -3787,7 +3955,8 @@ const Emitter = struct {
             .call => |c| switch (c.kind) {
                 .call => |cc| blk: {
                     if (cc.is_builtin) break :blk std.mem.eql(u8, cc.callee, "__bp_result_isOk") or
-                        std.mem.eql(u8, cc.callee, "__bp_result_isError");
+                        std.mem.eql(u8, cc.callee, "__bp_result_isError") or
+                        (std.mem.eql(u8, cc.callee, ast.is_builtin_name) and cc.isType != null);
                     if (self.primKindAt(cc, c.loc)) |k| break :blk primCallRes(k, cc) == .bool_;
                     if (self.resolvedCallSym(cc, c.loc)) |sym| break :blk self.bool_fns.contains(sym);
                     break :blk false;
@@ -3963,8 +4132,10 @@ const Emitter = struct {
     fn patternIsIrrefutable(self: *Emitter, p: ast.Pattern) bool {
         return switch (p) {
             .wildcard => true,
-            // a written path is a variant, never a binding (§5.1 P8)
-            .ident => |n| !isVariantPath(n) and self.findVariant(n) == null,
+            // a written path is a variant, never a binding (§5.1 P8); a name
+            // that is a `type` this module declares is decision 8 §3.3's arm,
+            // tested by the value's own header, not a binding either
+            .ident => |n| !isVariantPath(n) and self.findVariant(n) == null and !self.namesATestableType(n),
             // no wasm test for these yet: the arm runs as before
             .list, .multi => true,
             else => false,
@@ -3985,6 +4156,11 @@ const Emitter = struct {
                         try self.emitCf(zero, "unknown variant pattern: {s}", .{n});
                 } else if (self.findVariant(n)) |fv| {
                     try self.emitTagTest(.{ .user = fv }, subj);
+                } else if (try self.emitNamedTypeTest(n, subj)) {
+                    // Decision 8 §3.3 — an arm naming a `type` is chosen by the
+                    // VALUE's own declaration, which half 3 put in its header.
+                    // Emitted as the catch-all `1` below, the first arm of a
+                    // `case` over `Person | Vec` answered for every subject.
                 } else try self.emit(one);
             },
             .numberLit => |n| {
@@ -4167,9 +4343,15 @@ const Emitter = struct {
                 try self.emitCf(try self.constInt(tag), ".{s}", .{vname});
             return;
         }
-        const base = try self.allocSlots(4);
-        try self.storeSlotConst(base, 0, tag);
-        try self.loadBase(base);
+        const desc = blk: {
+            for (variants) |v| {
+                if (std.mem.eql(u8, v.name, vname)) break :blk try self.variantDescriptorAddr(ename, v);
+            }
+            break :blk null;
+        };
+        const base = try self.allocTagged(desc orelse 0, 4);
+        try self.storeSlotConst(base, tag_header_bytes, tag);
+        try self.loadTaggedBase(base);
     }
 
     /// The `(if (result …) (then <arm body>) (else <rest of the chain>))` a
@@ -4258,6 +4440,24 @@ const Emitter = struct {
 
     fn loadBase(self: *Emitter, base: []const u8) !void {
         try self.emit(.{ .local_get = base });
+    }
+
+    /// The VALUE of a tagged allocation: the pointer one header word past the
+    /// base (13-module-identity half 3). The header sits BEHIND the pointer on
+    /// purpose — every field offset stays what it was, so no read moved.
+    fn loadTaggedBase(self: *Emitter, base: []const u8) !void {
+        try self.emit(.{ .local_get = base });
+        try self.emit(try self.constInt(tag_header_bytes));
+        try self.emit(opOf("i32", "add"));
+    }
+
+    /// Allocate `nbytes` of payload behind a header holding `desc` — the
+    /// address of the declaration's descriptor. Returns the BASE local; the
+    /// payload starts at `tag_header_bytes`.
+    fn allocTagged(self: *Emitter, desc: u32, nbytes: u32) ![]const u8 {
+        const base = try self.allocSlots(tag_header_bytes + nbytes);
+        try self.storeSlotConst(base, 0, desc);
+        return base;
     }
 
     /// `i32.load` at `offset` — the emitter drops a zero `offset=`. Expects the
@@ -4492,7 +4692,7 @@ const Emitter = struct {
         const il = self.instance_lowerings.get(loc) orelse return null;
         return switch (il) {
             .prim => |k| k,
-            .type_ => null,
+            .type_, .field_of => null,
         };
     }
 
@@ -5101,6 +5301,7 @@ const Emitter = struct {
                 },
                 .arrayLit => |al| if (al.elems.len > 0) {
                     if (try self.printShapeOf(al.elems[0])) |inner| return try std.fmt.allocPrint(self.arena(), "[{s}", .{inner});
+                    if (self.isTaggedValue(al.elems[0])) return "[T";
                 },
                 else => {},
             },
@@ -5150,6 +5351,8 @@ const Emitter = struct {
             },
             .array => |inner| return self.arrayTypeShape(inner.*),
             .generic => |g| if (g.args.len == 1 and std.mem.eql(u8, g.name, "Array")) return self.arrayTypeShape(g.args[0]),
+            // A written record type: the element carries its own declaration.
+            .named => |n| if (self.records.contains(n)) return "T",
             else => {},
         }
         return null;
@@ -5163,6 +5366,8 @@ const Emitter = struct {
         };
     }
 
+    /// The shape of a record written as a FIELD's type is `T` — its own
+    /// header names it, and `$__print_shaped_raw`'s `T` arm reads that.
     /// The shape code of a scalar named type: `i` an integer, `f` a float, `b`
     /// a bool, `s` a string.
     fn scalarCode(t: ast.TypeRef) ?u8 {
@@ -5247,6 +5452,10 @@ const Emitter = struct {
     /// The shape of one element of a tuple.
     fn valueShapeOf(self: *Emitter, e: ast.Expr) anyerror![]const u8 {
         if (try self.printShapeOf(e)) |shape| return shape;
+        // A value that carries its own declaration reads its text from the
+        // header (13-module-identity half 3), so a tuple or an array holding
+        // one names its type too.
+        if (self.isTaggedValue(e)) return "T";
         if (self.isStringExpr(e)) return "s";
         if (self.isBoolExpr(e)) return "b";
         if (self.wasmTypeOf(e)[0] == 'f') return "f";
@@ -6033,7 +6242,7 @@ const Emitter = struct {
         const il = self.instance_lowerings.get(loc) orelse return null;
         const rec = switch (il) {
             .type_ => |r| r,
-            .prim => return null,
+            .prim, .field_of => return null,
         };
         const sym = std.fmt.bufPrint(&self.sym_buf, "{s}_{s}", .{ rec, cc.callee }) catch return null;
         if (!self.fn_sigs.contains(sym)) return null;
@@ -6077,9 +6286,10 @@ const Emitter = struct {
     }
 
     fn lowerRecordCtor(self: *Emitter, cc: anytype, fields: []const []const u8) anyerror!void {
-        const base = try self.allocSlots(@intCast(fields.len * 4));
+        const desc = try self.typeDescriptorAddr(cc.callee, null);
+        const base = try self.allocTagged(desc orelse 0, @intCast(fields.len * 4));
         for (fields, 0..) |fname, i| {
-            const off: u32 = @intCast(i * 4);
+            const off: u32 = @intCast(tag_header_bytes + i * 4);
             if (self.argForField(cc.args, fname, i)) |arg| {
                 const ftref: ?ast.TypeRef = if (self.record_field_typerefs.get(cc.callee)) |ts| (if (i < ts.len) ts[i] else null) else null;
                 if (self.boxesInto(ftref, arg.value.*)) {
@@ -6091,7 +6301,7 @@ const Emitter = struct {
                 try self.storeSlotConst(base, off, 0);
             }
         }
-        try self.loadBase(base);
+        try self.loadTaggedBase(base);
     }
 
     /// Pick the call argument that fills field `fname` (declaration index `idx`):
@@ -6112,17 +6322,18 @@ const Emitter = struct {
     /// lives at offset 0; payload fields follow at 4, 8, ...
     fn lowerEnumCtor(self: *Emitter, cc: anytype, tag: u32, variant: ast.EnumVariant) anyerror!void {
         const nslots = 1 + variant.fields.len;
-        const base = try self.allocSlots(@intCast(nslots * 4));
-        try self.storeSlotConst(base, 0, tag);
+        const desc = try self.variantDescriptorAddr(receiverName(cc) orelse self.enumOfVariant(variant.name) orelse "", variant);
+        const base = try self.allocTagged(desc orelse 0, @intCast(nslots * 4));
+        try self.storeSlotConst(base, tag_header_bytes, tag);
         for (variant.fields, 0..) |vf, i| {
-            const off: u32 = @intCast((i + 1) * 4);
+            const off: u32 = @intCast(tag_header_bytes + (i + 1) * 4);
             if (self.argForField(cc.args, vf.name, i)) |arg| {
                 try self.storeSlotExpr(base, off, arg.value.*);
             } else {
                 try self.storeSlotConst(base, off, 0);
             }
         }
-        try self.loadBase(base);
+        try self.loadTaggedBase(base);
     }
 
     /// `recv.member` — tuple element (`t._0`), qualified enum unit variant
@@ -6267,6 +6478,98 @@ const Emitter = struct {
     /// the same index (i.e., the name maps to one unambiguous offset across the
     /// program's type registry). Returns null when two record types disagree on
     /// the slot — caller falls back to the unresolved-member stub.
+    /// Decision 22 — the descriptor a record's values carry:
+    /// `'R' <n> Name <k> [ <n> field <shape…> ] * k`, interned as an ordinary
+    /// data segment (so two identical descriptors are one blob) and addressed
+    /// past its length word. Null when this module never declared the type.
+    fn typeDescriptorAddr(self: *Emitter, name: []const u8, _: ?u8) anyerror!?u32 {
+        if (self.type_descs.get(name)) |addr| return addr;
+        const fields = self.records.get(name) orelse return null;
+        var out: std.ArrayListUnmanaged(u8) = .empty;
+        try out.append(self.arena(), 'R');
+        try self.appendNameAndFields(&out, name, fields, self.record_field_typerefs.get(name));
+        const seg = try self.internString(out.items);
+        const addr = seg.offset + 4;
+        try self.type_descs.put(name, addr);
+        return addr;
+    }
+
+    /// The same for ONE variant — its name is written `Enum.Variant`, which is
+    /// the text decision 8 §7 wants, and its fields start one slot in because
+    /// slot 0 holds the ordinal the `case` arms test.
+    fn variantDescriptorAddr(self: *Emitter, ename: []const u8, v: ast.EnumVariant) anyerror!?u32 {
+        if (ename.len == 0) return null;
+        const key = try std.fmt.allocPrint(self.reg_arena.allocator(), "{s}.{s}", .{ ename, v.name });
+        if (self.type_descs.get(key)) |addr| return addr;
+        var names: std.ArrayListUnmanaged([]const u8) = .empty;
+        var refs: std.ArrayListUnmanaged(ast.TypeRef) = .empty;
+        for (v.fields) |f| {
+            try names.append(self.arena(), f.name);
+            try refs.append(self.arena(), f.typeRef);
+        }
+        var out: std.ArrayListUnmanaged(u8) = .empty;
+        try out.append(self.arena(), 'V');
+        try self.appendNameAndFields(&out, key, names.items, refs.items);
+        const seg = try self.internString(out.items);
+        const addr = seg.offset + 4;
+        try self.type_descs.put(key, addr);
+        return addr;
+    }
+
+    /// `<n> name <k> [ <n> field <shape…> ] * k`. A name longer than 255 bytes
+    /// has no descriptor — the format is length-prefixed by a byte, and a
+    /// silently truncated name would print the wrong type.
+    fn appendNameAndFields(
+        self: *Emitter,
+        out: *std.ArrayListUnmanaged(u8),
+        name: []const u8,
+        fields: []const []const u8,
+        refs: ?[]const ast.TypeRef,
+    ) anyerror!void {
+        const a = self.arena();
+        if (name.len > 255 or fields.len > 255) return error.NameTooLong;
+        try out.append(a, @intCast(name.len));
+        try out.appendSlice(a, name);
+        try out.append(a, @intCast(fields.len));
+        for (fields, 0..) |fname, i| {
+            if (fname.len > 255) return error.NameTooLong;
+            try out.append(a, @intCast(fname.len));
+            try out.appendSlice(a, fname);
+            const tref: ?ast.TypeRef = if (refs) |rs| (if (i < rs.len) rs[i] else null) else null;
+            try out.appendSlice(a, try self.fieldShape(tref));
+        }
+    }
+
+    /// The `$__print_shaped_raw` code a field's declared type takes. An
+    /// unknown type is `i`, which is what the numeric printer answered for
+    /// every field before this existed.
+    fn fieldShape(self: *Emitter, t: ?ast.TypeRef) anyerror![]const u8 {
+        const tref = t orelse return "i";
+        if (try self.typeRefShape(tref)) |shape| return shape;
+        const code = scalarCode(tref) orelse 'i';
+        return switch (code) {
+            's' => "s",
+            'b' => "b",
+            'f' => "f",
+            else => "i",
+        };
+    }
+
+    /// The enum that declares `vname`, when exactly one does.
+    fn enumOfVariant(self: *Emitter, vname: []const u8) ?[]const u8 {
+        var found: ?[]const u8 = null;
+        var it = self.enums.iterator();
+        while (it.next()) |e| {
+            for (e.value_ptr.*) |v| {
+                if (!std.mem.eql(u8, v.name, vname)) continue;
+                if (found != null) return null;
+                found = e.key_ptr.*;
+                break;
+            }
+        }
+        return found;
+    }
+
     fn uniqueFieldOffset(self: *Emitter, name: []const u8) ?u32 {
         var found: ?u32 = null;
         var it = self.records.iterator();

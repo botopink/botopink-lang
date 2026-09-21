@@ -938,10 +938,13 @@ test "wat: string ---- toUpperCase and toLowerCase answer, under both spellings"
 // **commonJS already answers §7's text** — `Point(x: 1, y: 2)`,
 // `Shape.Square(side: 4)`, `Shape.Nothing`, `[Point(x: 1, y: 2)]` — which is
 // worth recording here: a class instance carries its constructor's name, so that
-// backend needed no identity work. KNOWN-WRONG (erlang, beam): a record is a
-// bare map (`#{x => 1,y => 2}`) and a variant a tagged tuple or an atom
-// (`{'Square',4}`, `'Nothing'`) — `13 step 18`. Neither answers an address, so
-// neither has this front's interim to make; wasm is the only one that did.
+// backend needed no identity work. **erlang answers it too since
+// 13-module-identity half 3**: the value carries the atom of the module that
+// declares its type, and `'__bp_tagged'/2` reaches that module's
+// `'__bp_format'/1`. KNOWN-WRONG (beam): a record is still a bare map
+// (`#{x => 1,y => 2}`) and a variant a tagged tuple or an atom
+// (`{'Square',4}`, `'Nothing'`) — half 3's step 15. Neither answers an address,
+// so neither has this front's interim to make; wasm is the only one that did.
 test "wat: print ---- a record and a variant have no printed form yet, so they trap" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\type Point(x: i32, y: i32)

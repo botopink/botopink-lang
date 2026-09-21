@@ -283,3 +283,44 @@ test "js: optional binding ---- the guard is loose, so `?.`'s undefined is none"
         \\
     );
 }
+
+// ── decision 8 §4.2 and §3.3 — the value's own type, tested ──────────────────
+//
+// `13-module-identity` half 3 put the declaration inside the value, and these
+// are the two expressions that read it back. Both were unwritable before:
+// `x is Person` emitted a call to an `is/1` no module defines on erlang, and a
+// `case` arm naming a type was lowered as a BINDING, so the first arm of a
+// `case` over `Person | Vec` matched every subject and the second was dead.
+//
+// One cell for all four backends: erlang tests the tag in a guard
+// (`element(1, V) =:= 'main__t__person'`), beam as `is_tagged_tuple`, commonJS
+// as `instanceof` (decision 5 — the prototype IS the identity there), and wasm
+// records what it records. The two records have the SAME fields on purpose: a
+// structural test cannot tell them apart, so the arm that fires proves the tag
+// is what chose it.
+test "codegen: is ---- a named type is tested by the tag the value carries" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\type Person(name: string, age: i32)
+        \\type Vec(name: string, age: i32)
+        \\type Shape { Dot, Circle(radius: i32) }
+        \\
+        \\fn nameOf(v: Person | Vec) -> string {
+        \\    return case v {
+        \\        Person { "person" }
+        \\        Vec { "vec" }
+        \\    };
+        \\}
+        \\
+        \\fn main() {
+        \\    val u: unknown = Vec(name: "Ana", age: 30);
+        \\    @print(u is Vec);
+        \\    @print(u is Person);
+        \\    val s: unknown = Shape.Circle(radius: 4);
+        \\    @print(s is Shape);
+        \\    val d: unknown = Shape.Dot;
+        \\    @print(d is Shape);
+        \\    @print(nameOf(Person(name: "Ana", age: 30)));
+        \\    @print(nameOf(Vec(name: "Ana", age: 30)));
+        \\}
+    );
+}

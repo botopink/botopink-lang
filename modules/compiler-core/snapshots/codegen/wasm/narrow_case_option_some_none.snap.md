@@ -20,7 +20,9 @@ fn main() {
   (memory (export "memory") 1)
   (data (i32.const 256) "\05\00\00\00empty")
   (data (i32.const 268) "\07\00\00\00value: ")
-  (global $__heap_ptr (mut i32) (i32.const 280))
+  (data (i32.const 280) "\12\00\00\00V\08Opt.Some\01\05valuei")
+  (data (i32.const 304) "\0b\00\00\00V\08Opt.None\00")
+  (global $__heap_ptr (mut i32) (i32.const 320))
   (func $describe (param $opt i32) (result i32)
     (local $v i32)
     (local $__case_0 i32)
@@ -63,28 +65,38 @@ fn main() {
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 8
+    i32.const 12
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 1
+    i32.const 284
     i32.store
     local.get $__mem0
-    i32.const 42
+    i32.const 1
     i32.store offset=4
     local.get $__mem0
+    i32.const 42
+    i32.store offset=8
+    local.get $__mem0
+    i32.const 4
+    i32.add
     call $describe
     call $__print_str
     global.get $__heap_ptr
     local.set $__mem1
     global.get $__heap_ptr
-    i32.const 4
+    i32.const 8
     i32.add
     global.set $__heap_ptr
     local.get $__mem1
-    i32.const 0
+    i32.const 308
     i32.store
     local.get $__mem1
+    i32.const 0
+    i32.store offset=4
+    local.get $__mem1
+    i32.const 4
+    i32.add
     call $describe
     call $__print_str
   )

@@ -14,23 +14,29 @@ fn main() {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (data (i32.const 256) "\01\00\00\00x")
-  (global $__heap_ptr (mut i32) (i32.const 264))
+  (data (i32.const 256) "\0c\00\00\00R\01E\02\03tags\01ni")
+  (data (i32.const 272) "\01\00\00\00x")
+  (global $__heap_ptr (mut i32) (i32.const 280))
   (func $mk (result i32)
     (local $__mem0 i32)
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 8
+    i32.const 12
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 256
+    i32.const 260
     i32.store
     local.get $__mem0
-    i32.const 5
+    i32.const 272
     i32.store offset=4
     local.get $__mem0
+    i32.const 5
+    i32.store offset=8
+    local.get $__mem0
+    i32.const 4
+    i32.add
     return
   )
   (func $main

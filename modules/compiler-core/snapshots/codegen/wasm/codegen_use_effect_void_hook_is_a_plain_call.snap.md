@@ -18,7 +18,8 @@ fn Widget() -> Element {
 ```wasm
 (module
   (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (data (i32.const 256) "\0a\00\00\00R\07Element\00")
+  (global $__heap_ptr (mut i32) (i32.const 272))
   (func $cleanup (result i32)
     i32.const 0
   )
@@ -31,7 +32,16 @@ fn Widget() -> Element {
     drop
     global.get $__heap_ptr
     local.set $__mem0
+    global.get $__heap_ptr
+    i32.const 4
+    i32.add
+    global.set $__heap_ptr
     local.get $__mem0
+    i32.const 260
+    i32.store
+    local.get $__mem0
+    i32.const 4
+    i32.add
   )
 )
 ```

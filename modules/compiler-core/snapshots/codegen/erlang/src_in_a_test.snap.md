@@ -21,21 +21,30 @@ helper() ->
     1.
 
 '__bp_test_0'() ->
-    Loc = #{file => <<"main.bp">>, line => 3, column => 15, fnName => <<"src: in a test">>},
-    '__bp_print'([maps:get(file, Loc), maps:get(line, Loc), maps:get(column, Loc), maps:get(fnName, Loc)]).
+    Loc = {main__t__sourcelocation, <<"main.bp">>, 3, 15, <<"src: in a test">>},
+    '__bp_print'([element(2, Loc), element(3, Loc), element(4, Loc), element(5, Loc)]).
 
 '__bp_test_1'() ->
-    '__bp_print'([maps:get(fnName, #{file => <<"main.bp">>, line => 7, column => 12, fnName => <<"test_1">>})]).
+    '__bp_print'([element(5, {main__t__sourcelocation, <<"main.bp">>, 7, 12, <<"test_1">>})]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
 
 '__bp_show'(V, true) when is_binary(V) -> V;
 '__bp_show'(V, _) when is_binary(V) -> [$", [case C of $" -> "\\\""; $\\ -> "\\\\"; $\n -> "\\n"; $\r -> "\\r"; $\t -> "\\t"; _ -> C end || C <- unicode:characters_to_list(V)], $"];
-'__bp_show'(V, _) when is_list(V) -> [$[, lists:join(",", ['__bp_show'(E, false) || E <- V]), $]];
-'__bp_show'(V, _) when is_tuple(V), tuple_size(V) > 0, is_atom(element(1, V)), element(1, V) =/= true, element(1, V) =/= false, element(1, V) =/= undefined -> io_lib:format("~p", [V]);
-'__bp_show'(V, _) when is_tuple(V) -> ["#(", lists:join(",", ['__bp_show'(E, false) || E <- tuple_to_list(V)]), $)];
+'__bp_show'(V, _) when is_list(V) -> [$[, lists:join(", ", ['__bp_show'(E, false) || E <- V]), $]];
+'__bp_show'(V, _) when is_tuple(V), tuple_size(V) > 0, is_atom(element(1, V)), element(1, V) =/= true, element(1, V) =/= false, element(1, V) =/= undefined -> '__bp_tagged'(element(1, V), V);
+'__bp_show'(V, _) when is_tuple(V) -> ["#(", lists:join(", ", ['__bp_show'(E, false) || E <- tuple_to_list(V)]), $)];
+'__bp_show'(V, _) when is_atom(V), V =/= true, V =/= false, V =/= undefined -> '__bp_tagged'(V, V);
 '__bp_show'(V, _) -> io_lib:format("~p", [V]).
+
+'__bp_tagged'(A, V) ->
+    M = case string:split(atom_to_list(A), "__v__") of [P, _] -> list_to_atom(P); _ -> A end,
+    case code:ensure_loaded(M) =:= {module, M} andalso erlang:function_exported(M, '__bp_format', 1) of true -> '__bp_render'(apply(M, '__bp_format', [V])); false -> io_lib:format("~p", [V]) end.
+
+'__bp_render'({text, T}) -> T;
+'__bp_render'({variant, N, []}) -> N;
+'__bp_render'({_, N, Fs}) -> [N, $(, lists:join(", ", [[K, ": ", '__bp_show'(Val, false)] || {K, Val} <- Fs]), $)].
 
 '__bp_run_one'({Name, Fun, Loc}) ->
     %% §T `----- RUN LOG -----` envelope (v0.beta.20 frente-b spec):
@@ -90,12 +99,42 @@ helper() ->
     io:format("~p passed, ~p failed~n", [Passed, Failed]),
     case Failed > 0 of true -> halt(1); false -> ok end.
 
+'__bp_load_siblings'() ->
+    (fun() ->
+        Dir = filename:dirname(escript:script_name()),
+        Self = atom_to_list(?MODULE) ++ ".erl",
+        lists:foreach(fun(Src) ->
+            case filename:basename(Src) =:= Self of
+                true -> ok;
+                false ->
+                    case compile:file(Src, [binary, return_errors, {i, Dir}]) of
+                        {ok, Mod, Bin} -> code:load_binary(Mod, Src, Bin);
+                        _ -> ok
+                    end
+            end
+        end, filelib:wildcard(filename:join([Dir, "**", "*.erl"])))
+    end)().
+
 main(Args) ->
+    '__bp_load_siblings'(),
     Filter = case Args of
         [F | _] -> list_to_binary(F);
         _ -> none
     end,
     '__bp_run_tests'(Filter).
+```
+
+----- ERLANG -- main__t__sourcelocation.erl
+```erlang
+-module(main__t__sourcelocation).
+-export(['__bp_get'/2, '__bp_format'/1]).
+
+'__bp_get'(V, file) -> element(2, V);
+'__bp_get'(V, line) -> element(3, V);
+'__bp_get'(V, column) -> element(4, V);
+'__bp_get'(V, fnName) -> element(5, V).
+
+'__bp_format'(V) -> {record, "SourceLocation", [{"file", element(2, V)}, {"line", element(3, V)}, {"column", element(4, V)}, {"fnName", element(5, V)}]}.
 ```
 
 ----- RUN LOG -----

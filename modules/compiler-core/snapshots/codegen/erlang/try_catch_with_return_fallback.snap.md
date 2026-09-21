@@ -18,7 +18,7 @@ fn safe() -> i32 {
 %% type NetError: code
 
 fetch() ->
-    {error, #{code => 500}}.
+    {error, {main__t__neterror, 500}}.
 
 safe() ->
     R = case try
@@ -31,6 +31,16 @@ safe() ->
             (-1)
     end,
     R.
+```
+
+----- ERLANG -- main__t__neterror.erl
+```erlang
+-module(main__t__neterror).
+-export(['__bp_get'/2, '__bp_format'/1]).
+
+'__bp_get'(V, code) -> element(2, V).
+
+'__bp_format'(V) -> {record, "NetError", [{"code", element(2, V)}]}.
 ```
 
 ----- RUN LOG -----

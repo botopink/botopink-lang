@@ -419,7 +419,7 @@ test "erlang: index ---- a range second argument is a slice, open end included" 
         \\  val s = "abcd";
         \\  @print(s[1..3]);
         \\}
-    , "[10,20]\n[20,30]\nbc\n", &.{ "array_slice(Xs, 0, 2)", "array_slice(Xs, 1, undefined)" });
+    , "[10, 20]\n[20, 30]\nbc\n", &.{ "array_slice(Xs, 0, 2)", "array_slice(Xs, 1, undefined)" });
 }
 
 // C-02 on commonJS. The same rewrite, seen from the backend that needed the

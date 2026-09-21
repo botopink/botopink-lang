@@ -33,13 +33,25 @@ run(P) ->
     Result.
 ```
 
+----- ERLANG -- main__t__parseerror.erl
+```erlang
+-module(main__t__parseerror).
+-export(['__bp_get'/2, '__bp_format'/1]).
+
+'__bp_get'(V, msg) -> element(2, V).
+
+'__bp_format'(V) -> {record, "ParseError", [{"msg", element(2, V)}]}.
+```
+
 ----- ERLANG -- main__t__parser.erl
 ```erlang
 -module(main__t__parser).
--export([parse/1]).
+-export([parse/1, '__bp_format'/1]).
 
 parse(Self) ->
-    erlang:throw(#{msg => <<"bad input">>}).
+    erlang:throw({main__t__parseerror, <<"bad input">>}).
+
+'__bp_format'(_) -> {record, "Parser", []}.
 ```
 
 ----- RUN LOG -----

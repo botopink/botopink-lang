@@ -31,7 +31,10 @@ fn main() {
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (global $__heap_ptr (mut i32) (i32.const 256))
+  (data (i32.const 256) "\0f\00\00\00R\06Square\01\04sidei")
+  (data (i32.const 276) "\10\00\00\00V\nSize.Large\01\01ni")
+  (data (i32.const 296) "\0d\00\00\00V\nSize.Small\00")
+  (global $__heap_ptr (mut i32) (i32.const 316))
   (func $Square_area (param $self i32) (result i32)
     local.get $self
     i32.load ;; .side
@@ -81,13 +84,18 @@ fn main() {
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 4
+    i32.const 8
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 3
+    i32.const 260
     i32.store
     local.get $__mem0
+    i32.const 3
+    i32.store offset=4
+    local.get $__mem0
+    i32.const 4
+    i32.add
     local.set $sq
     local.get $sq
     call $Square_area
@@ -95,27 +103,37 @@ fn main() {
     global.get $__heap_ptr
     local.set $__mem1
     global.get $__heap_ptr
-    i32.const 8
+    i32.const 12
     i32.add
     global.set $__heap_ptr
     local.get $__mem1
-    i32.const 1
+    i32.const 280
     i32.store
     local.get $__mem1
-    i32.const 5
+    i32.const 1
     i32.store offset=4
     local.get $__mem1
+    i32.const 5
+    i32.store offset=8
+    local.get $__mem1
+    i32.const 4
+    i32.add
     call $weight
     global.get $__heap_ptr
     local.set $__mem2
     global.get $__heap_ptr
-    i32.const 4
+    i32.const 8
     i32.add
     global.set $__heap_ptr
     local.get $__mem2
-    i32.const 0
+    i32.const 300
     i32.store
     local.get $__mem2
+    i32.const 0
+    i32.store offset=4
+    local.get $__mem2
+    i32.const 4
+    i32.add
     call $weight
     i32.add
     call $__print_i32

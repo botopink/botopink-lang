@@ -16,9 +16,10 @@ fn strict() -> @Result<i32, string> {
 ```wasm
 (module
   (memory (export "memory") 1)
-  (data (i32.const 256) "\09\00\00\00not found")
-  (data (i32.const 272) "\0c\00\00\00fetch failed")
-  (global $__heap_ptr (mut i32) (i32.const 288))
+  (data (i32.const 256) "\10\00\00\00R\08ApiError\01\03msgs")
+  (data (i32.const 276) "\09\00\00\00not found")
+  (data (i32.const 292) "\0c\00\00\00fetch failed")
+  (global $__heap_ptr (mut i32) (i32.const 308))
   (func $fetch (result i32)
     (local $__mem0 i32)
     (local $_res0 i32)
@@ -35,13 +36,18 @@ fn strict() -> @Result<i32, string> {
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 4
+    i32.const 8
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 256
+    i32.const 260
     i32.store
     local.get $__mem0
+    i32.const 276
+    i32.store offset=4
+    local.get $__mem0
+    i32.const 4
+    i32.add
     i32.store offset=4 ;; payload
     local.get $_res0
     return
@@ -67,7 +73,7 @@ fn strict() -> @Result<i32, string> {
     i32.const 1
     i32.store ;; Result tag (Error)
     local.get $_res0
-    i32.const 272
+    i32.const 292
     i32.store offset=4 ;; payload
     local.get $_res0
     return

@@ -21,18 +21,27 @@ fn main() {
 %% type Stub: n
 
 main() ->
-    Loc = main__t__stub:where(#{n => 1}),
-    '__bp_print'([maps:get(file, Loc), maps:get(line, Loc), maps:get(column, Loc), maps:get(fnName, Loc)]).
+    Loc = main__t__stub:where({main__t__stub, 1}),
+    '__bp_print'([element(2, Loc), element(3, Loc), element(4, Loc), element(5, Loc)]).
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
 
 '__bp_show'(V, true) when is_binary(V) -> V;
 '__bp_show'(V, _) when is_binary(V) -> [$", [case C of $" -> "\\\""; $\\ -> "\\\\"; $\n -> "\\n"; $\r -> "\\r"; $\t -> "\\t"; _ -> C end || C <- unicode:characters_to_list(V)], $"];
-'__bp_show'(V, _) when is_list(V) -> [$[, lists:join(",", ['__bp_show'(E, false) || E <- V]), $]];
-'__bp_show'(V, _) when is_tuple(V), tuple_size(V) > 0, is_atom(element(1, V)), element(1, V) =/= true, element(1, V) =/= false, element(1, V) =/= undefined -> io_lib:format("~p", [V]);
-'__bp_show'(V, _) when is_tuple(V) -> ["#(", lists:join(",", ['__bp_show'(E, false) || E <- tuple_to_list(V)]), $)];
+'__bp_show'(V, _) when is_list(V) -> [$[, lists:join(", ", ['__bp_show'(E, false) || E <- V]), $]];
+'__bp_show'(V, _) when is_tuple(V), tuple_size(V) > 0, is_atom(element(1, V)), element(1, V) =/= true, element(1, V) =/= false, element(1, V) =/= undefined -> '__bp_tagged'(element(1, V), V);
+'__bp_show'(V, _) when is_tuple(V) -> ["#(", lists:join(", ", ['__bp_show'(E, false) || E <- tuple_to_list(V)]), $)];
+'__bp_show'(V, _) when is_atom(V), V =/= true, V =/= false, V =/= undefined -> '__bp_tagged'(V, V);
 '__bp_show'(V, _) -> io_lib:format("~p", [V]).
+
+'__bp_tagged'(A, V) ->
+    M = case string:split(atom_to_list(A), "__v__") of [P, _] -> list_to_atom(P); _ -> A end,
+    case code:ensure_loaded(M) =:= {module, M} andalso erlang:function_exported(M, '__bp_format', 1) of true -> '__bp_render'(apply(M, '__bp_format', [V])); false -> io_lib:format("~p", [V]) end.
+
+'__bp_render'({text, T}) -> T;
+'__bp_render'({variant, N, []}) -> N;
+'__bp_render'({_, N, Fs}) -> [N, $(, lists:join(", ", [[K, ": ", '__bp_show'(Val, false)] || {K, Val} <- Fs]), $)].
 
 '_botopink_main'() ->
     main().
@@ -41,13 +50,30 @@ main(_Args) ->
     '_botopink_main'().
 ```
 
+----- ERLANG -- main__t__sourcelocation.erl
+```erlang
+-module(main__t__sourcelocation).
+-export(['__bp_get'/2, '__bp_format'/1]).
+
+'__bp_get'(V, file) -> element(2, V);
+'__bp_get'(V, line) -> element(3, V);
+'__bp_get'(V, column) -> element(4, V);
+'__bp_get'(V, fnName) -> element(5, V).
+
+'__bp_format'(V) -> {record, "SourceLocation", [{"file", element(2, V)}, {"line", element(3, V)}, {"column", element(4, V)}, {"fnName", element(5, V)}]}.
+```
+
 ----- ERLANG -- main__t__stub.erl
 ```erlang
 -module(main__t__stub).
--export([where/1]).
+-export([where/1, '__bp_get'/2, '__bp_format'/1]).
 
 where(Self) ->
-    #{file => <<"main.bp">>, line => 3, column => 16, fnName => <<"Stub.where">>}.
+    {main__t__sourcelocation, <<"main.bp">>, 3, 16, <<"Stub.where">>}.
+
+'__bp_get'(V, n) -> element(2, V).
+
+'__bp_format'(V) -> {record, "Stub", [{"n", element(2, V)}]}.
 ```
 
 ----- RUN LOG -----

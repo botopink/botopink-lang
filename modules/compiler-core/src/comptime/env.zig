@@ -305,6 +305,13 @@ pub const InstanceLowering = union(enum) {
     prim: PrimKind,
     /// A method on a named type (record or enum) — the type's name.
     type_: []const u8,
+    /// A field READ on a record or struct — the receiver's type name. Recorded
+    /// for `p.x` where `x` is a declared field, which is what the backends that
+    /// store a record positionally (13-module-identity's decision 21: erlang
+    /// and beam store `{TypeAtom, F1, …}`) need to turn the field's NAME into
+    /// its index. A method call records `.type_`; only a field read records
+    /// this, so a backend that dispatches natively can ignore it.
+    field_of: []const u8,
 };
 
 /// A recognized decorator's signature, minus its leading `comptime _: @Decl`

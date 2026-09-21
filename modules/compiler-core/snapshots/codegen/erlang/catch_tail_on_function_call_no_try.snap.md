@@ -17,7 +17,7 @@ fn safe() -> i32 {
 %% type RiskError: level
 
 risky() ->
-    {error, #{level => 5}}.
+    {error, {main__t__riskerror, 5}}.
 
 safe() ->
     case try
@@ -29,6 +29,16 @@ safe() ->
         {error, _TryE0} ->
             (-1)
     end.
+```
+
+----- ERLANG -- main__t__riskerror.erl
+```erlang
+-module(main__t__riskerror).
+-export(['__bp_get'/2, '__bp_format'/1]).
+
+'__bp_get'(V, level) -> element(2, V).
+
+'__bp_format'(V) -> {record, "RiskError", [{"level", element(2, V)}]}.
 ```
 
 ----- RUN LOG -----

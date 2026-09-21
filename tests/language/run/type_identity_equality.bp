@@ -1,0 +1,17 @@
+//// Decision 8 §4 — two declarations with the same fields are two types, and
+//// their values are never equal. `test/type_identity.bp` asserts it, but
+//// `botopink test` refuses beam and wasm, so only two backends reach it; this
+//// cell is the same statement as a `run/`, which every backend executes.
+////
+//// The second line is deliberately NOT an assertion: whether two values of the
+//// SAME type with the same fields are equal is structural equality, which no
+//// decision of this milestone legislates. It is printed so the divergence is
+//// visible where it is measured — `true` on erlang and BEAM (one term), `false`
+//// on commonJS and wasm (a reference and a pointer).
+
+type Person(name: string, age: i32)
+type Vec(name: string, age: i32)
+
+pub fn main() {
+    @print(Person(name: "a", age: 1) == Vec(name: "a", age: 1));
+}

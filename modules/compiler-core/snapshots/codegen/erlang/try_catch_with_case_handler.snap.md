@@ -20,7 +20,7 @@ fn handle() -> i32 {
 %%   Timeout
 
 fetch() ->
-    {error, 'NotFound'}.
+    {error, main__t__errorkind__v__notfound}.
 
 handle() ->
     R = case try
@@ -33,6 +33,15 @@ handle() ->
             0
     end,
     R.
+```
+
+----- ERLANG -- main__t__errorkind.erl
+```erlang
+-module(main__t__errorkind).
+-export(['__bp_format'/1]).
+
+'__bp_format'(main__t__errorkind__v__notfound) -> {variant, "ErrorKind.NotFound", []};
+'__bp_format'(main__t__errorkind__v__timeout) -> {variant, "ErrorKind.Timeout", []}.
 ```
 
 ----- RUN LOG -----

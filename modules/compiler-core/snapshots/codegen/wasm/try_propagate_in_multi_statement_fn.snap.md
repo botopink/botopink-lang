@@ -21,9 +21,10 @@ fn pipeline() -> @Result<i32, IoError> {
 ```wasm
 (module
   (memory (export "memory") 1)
-  (data (i32.const 256) "\05\00\00\00/data")
-  (data (i32.const 268) "\04\00\00\00/out")
-  (global $__heap_ptr (mut i32) (i32.const 276))
+  (data (i32.const 256) "\10\00\00\00R\07IoError\01\04paths")
+  (data (i32.const 276) "\05\00\00\00/data")
+  (data (i32.const 288) "\04\00\00\00/out")
+  (global $__heap_ptr (mut i32) (i32.const 296))
   (func $step1 (result i32)
     (local $__mem0 i32)
     (local $_res0 i32)
@@ -40,13 +41,18 @@ fn pipeline() -> @Result<i32, IoError> {
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 4
+    i32.const 8
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 256
+    i32.const 260
     i32.store
     local.get $__mem0
+    i32.const 276
+    i32.store offset=4
+    local.get $__mem0
+    i32.const 4
+    i32.add
     i32.store offset=4 ;; payload
     local.get $_res0
     return
@@ -67,13 +73,18 @@ fn pipeline() -> @Result<i32, IoError> {
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
-    i32.const 4
+    i32.const 8
     i32.add
     global.set $__heap_ptr
     local.get $__mem0
-    i32.const 268
+    i32.const 260
     i32.store
     local.get $__mem0
+    i32.const 288
+    i32.store offset=4
+    local.get $__mem0
+    i32.const 4
+    i32.add
     i32.store offset=4 ;; payload
     local.get $_res0
     return

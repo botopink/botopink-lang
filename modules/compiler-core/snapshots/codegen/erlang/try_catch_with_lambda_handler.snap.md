@@ -18,7 +18,7 @@ fn safe() -> i32 {
 %% type FetchError: url
 
 fetch() ->
-    {error, #{url => <<"/api">>}}.
+    {error, {main__t__fetcherror, <<"/api">>}}.
 
 safe() ->
     R = case try
@@ -33,6 +33,16 @@ safe() ->
             end(_TryE0)
     end,
     R.
+```
+
+----- ERLANG -- main__t__fetcherror.erl
+```erlang
+-module(main__t__fetcherror).
+-export(['__bp_get'/2, '__bp_format'/1]).
+
+'__bp_get'(V, url) -> element(2, V).
+
+'__bp_format'(V) -> {record, "FetchError", [{"url", element(2, V)}]}.
 ```
 
 ----- RUN LOG -----

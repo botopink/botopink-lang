@@ -24,10 +24,10 @@ fn pipeline() -> @Result<i32, IoError> {
 %% type IoError: path
 
 step1() ->
-    {error, #{path => <<"/data">>}}.
+    {error, {main__t__ioerror, <<"/data">>}}.
 
 step2(X) ->
-    {error, #{path => <<"/out">>}}.
+    {error, {main__t__ioerror, <<"/out">>}}.
 
 pipeline() ->
     case step1() of
@@ -39,6 +39,16 @@ pipeline() ->
             end;
         {error, _TryE0} -> {error, _TryE0}
     end.
+```
+
+----- ERLANG -- main__t__ioerror.erl
+```erlang
+-module(main__t__ioerror).
+-export(['__bp_get'/2, '__bp_format'/1]).
+
+'__bp_get'(V, path) -> element(2, V).
+
+'__bp_format'(V) -> {record, "IoError", [{"path", element(2, V)}]}.
 ```
 
 ----- RUN LOG -----
