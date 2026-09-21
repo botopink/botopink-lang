@@ -36,6 +36,14 @@ pub const StdArrayLowerings = std.AutoHashMap(ast.Loc, envMod.StdArrayLowering);
 /// §enum-sections F2 — map of path-access (`.Color.Red.500`) outer-identAccess
 /// locs → the qualified-ctor rewrite expression assembled at inference time.
 pub const EnumSectionRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr);
+
+/// C-02 (decision 63, amended 2026-09-19) — map of index-expression locs to
+/// the method call each one IS: `xs[k]` → `xs.at(k)`, `xs[a..b]` →
+/// `xs.slice(a, b)`, `xs[1..]` → `xs.slice(1, null)`, and a tuple's `t[0]` →
+/// the positional `t._0`. Written by inference, which typed the rewrite and
+/// not the index; applied here, so the backends see a method call they already
+/// emit and **none of them learns a new rule**.
+pub const IndexRewrites = std.AutoHashMap(ast.Loc, *const ast.Expr);
 /// Decision 8 §10 — locs of loops inference typed as condition loops.
 pub const ConditionLoops = std.AutoHashMap(ast.Loc, void);
 
@@ -73,6 +81,12 @@ const Aggregator = struct {
     /// §enum-sections F2 — untyped AST rewrites for dot-shorthand chains
     /// that the F2 path-resolver matched against an enum section path.
     enum_section_rewrites: *const EnumSectionRewrites,
+    /// C-02 — the index expressions inference rewrote to method calls. Applied
+    /// by BOTH aggregators, the `src_only` one included: an index in a method
+    /// body is the same expression it is in a fn body, and a `[]` left in the
+    /// tree reaches each backend's own decision-30 lowering instead of the
+    /// method the language says it is.
+    index_rewrites: *const IndexRewrites,
     /// Decision 8 §10 — loops to mark `condition` (their `iter` is a `bool`).
     condition_loops: *const ConditionLoops,
     optional_null_cases: *const OptionalNullCases,
@@ -102,7 +116,7 @@ const Aggregator = struct {
     /// sites need their defaults as much as a fn body's do.
     default_injections: *const DefaultInjections,
 
-    fn init(allocator: std.mem.Allocator, comptime_vals: std.StringHashMap([]const u8), method_lowerings: *const MethodLowerings, template_expansions: *const TemplateExpansions, src_rewrites: *const TemplateExpansions, result_jump_lowerings: *const ResultJumpLowerings, future_jump_lowerings: *const FutureJumpLowerings, std_array_lowerings: *const StdArrayLowerings, enum_section_rewrites: *const EnumSectionRewrites, condition_loops: *const ConditionLoops, optional_null_cases: *const OptionalNullCases, ctor_params: std.StringHashMap([]const ast.Param), default_injections: *const DefaultInjections) Aggregator {
+    fn init(allocator: std.mem.Allocator, comptime_vals: std.StringHashMap([]const u8), method_lowerings: *const MethodLowerings, template_expansions: *const TemplateExpansions, src_rewrites: *const TemplateExpansions, result_jump_lowerings: *const ResultJumpLowerings, future_jump_lowerings: *const FutureJumpLowerings, std_array_lowerings: *const StdArrayLowerings, enum_section_rewrites: *const EnumSectionRewrites, index_rewrites: *const IndexRewrites, condition_loops: *const ConditionLoops, optional_null_cases: *const OptionalNullCases, ctor_params: std.StringHashMap([]const ast.Param), default_injections: *const DefaultInjections) Aggregator {
         return .{
             .spec_cache = specialize.SpecCache.init(allocator),
             .method_lowerings = method_lowerings,
@@ -112,6 +126,7 @@ const Aggregator = struct {
             .future_jump_lowerings = future_jump_lowerings,
             .std_array_lowerings = std_array_lowerings,
             .enum_section_rewrites = enum_section_rewrites,
+            .index_rewrites = index_rewrites,
             .condition_loops = condition_loops,
             .optional_null_cases = optional_null_cases,
             .total_calls = std.StringHashMap(usize).init(allocator),
@@ -175,12 +190,13 @@ pub fn transform(
     future_jump_lowerings: *const FutureJumpLowerings,
     std_array_lowerings: *const StdArrayLowerings,
     enum_section_rewrites: *const EnumSectionRewrites,
+    index_rewrites: *const IndexRewrites,
     condition_loops: *const ConditionLoops,
     optional_null_cases: *const OptionalNullCases,
     ctor_params: std.StringHashMap([]const ast.Param),
     default_injections: *const DefaultInjections,
 ) !ast.Program {
-    var agg = Aggregator.init(allocator, comptime_vals, method_lowerings, template_expansions, src_rewrites, result_jump_lowerings, future_jump_lowerings, std_array_lowerings, enum_section_rewrites, condition_loops, optional_null_cases, ctor_params, default_injections);
+    var agg = Aggregator.init(allocator, comptime_vals, method_lowerings, template_expansions, src_rewrites, result_jump_lowerings, future_jump_lowerings, std_array_lowerings, enum_section_rewrites, index_rewrites, condition_loops, optional_null_cases, ctor_params, default_injections);
     defer agg.deinit(allocator);
 
     // The method-body aggregator (`src_only`): the `@src()` splice alone.
@@ -204,7 +220,7 @@ pub fn transform(
     const empty_ctor = std.StringHashMap([]const ast.Param).init(allocator);
     const empty_fn_decls = std.StringHashMap(ast.FnDecl).init(allocator);
     const empty_ct_arrays = std.StringHashMap([]const ast.TypedExpr).init(allocator);
-    var src_agg = Aggregator.init(allocator, empty_vals, &empty_ml, &empty_te, src_rewrites, &empty_rj, &empty_fj, &empty_sa, &empty_es, &empty_cl, &empty_onc, empty_ctor, default_injections);
+    var src_agg = Aggregator.init(allocator, empty_vals, &empty_ml, &empty_te, src_rewrites, &empty_rj, &empty_fj, &empty_sa, &empty_es, index_rewrites, &empty_cl, &empty_onc, empty_ctor, default_injections);
     src_agg.src_only = true;
     defer src_agg.deinit(allocator);
 
@@ -883,6 +899,21 @@ fn rewriteExpr(agg: *Aggregator, fn_decls: std.StringHashMap(ast.FnDecl), compti
     // spliced constructor call carries the same loc and must not loop.
     if (expr_ptr.* == .call and expr_ptr.call.kind == .call and expr_ptr.call.kind.call.is_builtin) {
         if (agg.src_rewrites.get(expr_ptr.call.loc)) |rewrite| {
+            expr_ptr.* = rewrite.*;
+        }
+    }
+    // C-02 (decision 63, amended 2026-09-19) — the index IS a method call.
+    // `xs[k]` was typed as `xs.at(k)`, `xs[a..b]` as `xs.slice(a, b)` and a
+    // tuple's `t[0]` as `t._0`; the rewrite inference recorded under this loc
+    // takes the `[]` node's place here, and the walk carries on over the
+    // spliced node — so its own method lowering, its C-04 fill and a nested
+    // index inside its receiver or its arguments are all reached below,
+    // exactly as they would be had the author written the method call.
+    //
+    // It sits after `@src()` and before C-04 for that reason: the fill and
+    // the method lowering reshape an argument list, and there has to BE one.
+    if (expr_ptr.* == .call and expr_ptr.call.kind == .call and expr_ptr.call.kind.call.is_builtin) {
+        if (agg.index_rewrites.get(expr_ptr.call.loc)) |rewrite| {
             expr_ptr.* = rewrite.*;
         }
     }

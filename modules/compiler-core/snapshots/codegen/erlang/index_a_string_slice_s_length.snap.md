@@ -1,8 +1,8 @@
 ----- SOURCE CODE -- main.bp
 ```botopink
 fn main() {
-    val xs = [10, 20, 30];
-    @print(xs[9]);
+    val s = "hello";
+    @print(s[1..3].length);
 }
 ```
 
@@ -11,9 +11,19 @@ fn main() {
 -module(main).
 -export(['_botopink_main'/0, main/1]).
 
+%% behavior String
+
 main() ->
-    Xs = [10, 20, 30],
-    '__bp_print'([(fun(__L, __I) -> case ((__I >= 0) andalso (__I < length(__L))) of true -> lists:nth(__I + 1, __L); false -> undefined end end)(Xs, 9)]).
+    S = <<"hello">>,
+    '__bp_print'([string:length(string_slice(S, 1, 3))]).
+
+string_slice(Self, Start, End) ->
+    case (End =/= undefined) of
+        true ->
+            string:slice(Self, Start, ((End) - (Start)));
+        false ->
+            string:slice(Self, Start)
+    end.
 
 '__bp_print'(Values) ->
     io:format("~ts~n", [lists:join(" ", ['__bp_show'(V, true) || V <- Values])]).
@@ -34,5 +44,5 @@ main(_Args) ->
 
 ----- RUN LOG -----
 ```logs
-undefined
+2
 ```

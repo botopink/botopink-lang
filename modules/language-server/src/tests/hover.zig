@@ -449,3 +449,52 @@ test "hover: an optional of an array keeps both sugars" {
     try std.testing.expect(result != null);
     try snap.assertHover(gpa, "hover_val_optional_array", source, h.pos(1, 4), result);
 }
+
+// ── C-02 — an index is a method call, and the hover says what it answers ──────
+
+test "hover: an index carries the method's answer, not void" {
+    const gpa = std.testing.allocator;
+    // Decision 63 as amended: `xs[0]` IS `xs.at(0)`, so the binding's type is
+    // whatever `Index<i32, T>.at` answers — `?i32`. Before C-02 the checker had
+    // no rule for the index node at all and fell through to `void`, which is
+    // what this hover rendered and what sent two fronts to `.length()` rather
+    // than indexing.
+    const source =
+        \\val xs = [10, 20, 30];
+        \\val first = xs[0];
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    const result = try engine.hover(gpa, source, h.pos(1, 4), bindings);
+    defer if (result) |hov| gpa.free(hov.contents.value);
+
+    try std.testing.expect(result != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.?.contents.value, "void") == null);
+    try snap.assertHover(gpa, "hover_val_index", source, h.pos(1, 4), result);
+}
+
+test "hover: a tuple index carries the type of its position" {
+    const gpa = std.testing.allocator;
+    // The tuple is the checker's special case (decision 63's amendment says why:
+    // a constant index, one type PER POSITION, which `at(key: K) -> ?V` cannot
+    // say with one `V`). `t[1]` is `string` — and not an optional, because a
+    // tuple position either exists in the type or the program is refused.
+    const source =
+        \\val t = #(1, "a");
+        \\val second = t[1];
+    ;
+
+    var c = try h.compile(gpa, source);
+    defer c.deinit(gpa);
+    const bindings = c.bindings() orelse return error.CompileFailed;
+
+    const result = try engine.hover(gpa, source, h.pos(1, 4), bindings);
+    defer if (result) |hov| gpa.free(hov.contents.value);
+
+    try std.testing.expect(result != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.?.contents.value, "void") == null);
+    try snap.assertHover(gpa, "hover_val_tuple_index", source, h.pos(1, 4), result);
+}

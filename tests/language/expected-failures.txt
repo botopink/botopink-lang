@@ -158,12 +158,19 @@ wasm     | run/display_print.bp       | 05 step 1, 13 step 18 | re-measured 2026
 # ── the forms front 15 landed, that nothing lowers or types yet ─────────────
 # `109f6c9` made five forms parse. Three of them run everywhere and are pinned by
 # passing cells (`test/nullish_default.bp`, `test/paren_receiver.bp`,
-# `test/type_suffix.bp`, `test/bodyless_fn.bp`). Two arrive with no lowering and no
-# typing, and their owner is a **handover section** of a front's README — "Handed
+# `test/type_suffix.bp`, `test/bodyless_fn.bp`). One arrives with no lowering and no
+# typing, and its owner is a **handover section** of a front's README — "Handed
 # over by `15-language-surface`" — not a numbered step, which is what
 # `<front> handover 15` means below. That those sections carry no step number is
 # reported to the maintainer, not papered over with an invented one.
-beam     | run/index_expression.bp    | 03 handover 15 | decision 30: the only target that fails **silently** — exit 0, and the index is dropped rather than emitted: `xs[0]` prints the whole array (`[10,20,30]`), `xs[0..2].length` and `rows[1][0]` print `ok`
+#
+# The index expression was the other one, and it is no longer here: C-02 made
+# `xs[0]` the method call it is, and `run/index_expression.bp` passes on commonJS,
+# erlang and **beam** — the `03 handover 15` line that read "the only target that
+# fails silently" is gone, because nothing is dropped any more. wasm keeps one
+# line below, and it is a different defect: not the index, but `Array.at` on an
+# array OF arrays.
+wasm     | run/index_expression.bp    | C-18 (decision 47 on wasm) | the first three probes are right (`10`, `30`, `2`); the fourth, `rows[1][0]`, answers `0`. C-02 made it `rows.at(1).at(0)` and the inner step is where it goes wrong: `@print(rows.at(1))` — the method SPELLED BY HAND, no index anywhere — prints `280`, a raw heap address, and `.at(0)` of that is `0`. So `Array.at` does not carry a `?T` whose `T` is itself an array on wasm; the index expression only reaches it. Measured 2026-09-21
 commonJS | test/curried_call.bp       | 01 handover 15 | 15's R2 made `adder(3)(4)` parse; inference does not type it. The call carries its callee in `calleeExpr`, not `callee`, and nothing reads that: the whole cell reds with `unbound variable ''` at the second `(`
 erlang   | test/curried_call.bp       | 01 handover 15 | the same — the cell does not compile, so the failure is the file's, not a test's
 
@@ -262,22 +269,24 @@ erlang   | run/loop_condition_no_break.bp | C-06 (erlang half not landed) | deci
 beam     | run/loop_condition_no_break.bp | C-06 (beam half not landed) | decision 52: prints the atom `ok` — the value of the loop body's last statement — not `null` (D6)
 
 # ── an index is a method call (decision 63, amended 2026-09-19) ──────────────
-# `xs[i]` is `xs.at(i)` and `d["k"]` is `d.at("k")` through the ambient `Index<K, V>`
-# behavior; the value is `T`, `null` comes out only where `V` is itself optional,
-# and an absent key or index **fails the program**. The `libs/std` half landed
-# (`e065b564`); the compiler half — the checker typing the index `T`, the four
-# backends routing it to `.at` and failing on its empty answer — is C-02. The two
-# cells below abort by claim (`<name>.exit` = `nonzero`); nothing aborts today.
-# `run/index_at_optional.bp` is the method called by name, which answers `?V`
-# and prints `null` for absent (decision 47): commonJS passes it.
-commonJS | run/index_dict.bp | C-02 | decision 63: the index never reaches `Dict.at` — `d["a"]` on a present key prints `undefined`, and so do the optional-valued and the absent probes; exit 0 where the absent key has to fail (measured at `85f883bd`)
-erlang   | run/index_dict.bp | C-02 | decision 63: dies at the **present** key — `{bp_unsupported_index, #{pairs => …}, <<"a">>}` thrown from `__bp_index/2`; a boot crash on the wrong probe, not a located failure on the absent one
-wasm     | run/index_dict.bp | C-02 | decision 63: traps (`unreachable`, exit 134) at the present key, stdout empty
-beam     | run/index_dict.bp | C-02 | decision 63: the commonJS shape seen from BEAM assembly — `undefined` four times, exit 0 (the index is dropped, 03 handover 15)
-commonJS | run/index_past_the_end_fails.bp | C-02 | decision 63: `xs[9]` answers `undefined` and the program runs on (`10` / `undefined` / `after`, exit 0) where it has to fail after `10`
-erlang   | run/index_past_the_end_fails.bp | C-02 | decision 63: the same — `undefined`, exit 0
-wasm     | run/index_past_the_end_fails.bp | C-02 | decision 63: `$__arr_at` answers `0` out of range and the program runs on, exit 0
-beam     | run/index_past_the_end_fails.bp | C-02 | decision 63: `undefined`, exit 0 — the erlang shape through `erlc +from_asm`
+# `xs[i]` IS `xs.at(i)` and `d["k"]` IS `d.at("k")` through the ambient
+# `Index<K, V>` behavior, and the expression's type is whatever the method
+# answers — `?V`, with absent spelled `null` (decision 47). Both halves have
+# landed: `libs/std` at `e065b564`, the checker's rewrite here (C-02), so the
+# route itself is no longer in question. `d["a"]` answers `1` on ALL FOUR
+# backends, and `run/index_dict.bp`'s first probe passes everywhere.
+#
+# What is left below is decision 47's spelling of ABSENCE, which is C-18's row
+# and not this one: on erlang and beam an absent optional prints the atom
+# `undefined`, on wasm it prints `0`, and `Array.at` past the end answers
+# `undefined` on commonJS too. Every line names what it measured.
+commonJS | run/index_past_the_end_is_null.bp | C-18 | decision 47: `xs[9]` is `xs.at(9)` and reaches `Array.at`, which answers `undefined` where `null` is owed — `10` / `undefined` / `after`. The route is right and the spelling of absent is not (measured 2026-09-21)
+erlang   | run/index_past_the_end_is_null.bp | C-18 | decision 47: the same — `undefined`, the atom
+wasm     | run/index_past_the_end_is_null.bp | C-18 | decision 47: the same — `undefined`. It used to print `0` here, from wasm's own `$__arr_at`; through `Array.at` the four backends now disagree with the language in ONE way instead of two
+beam     | run/index_past_the_end_is_null.bp | C-18 | decision 47: the same — `undefined`, the erlang shape through `erlc +from_asm`
+erlang   | run/index_dict.bp | C-18 | decision 47: the PRESENT key is right (`1`); the two absent probes print the atom `undefined` where `null` is owed. `Dict.at` itself answers correctly — the atom is how an empty optional prints (measured 2026-09-21)
+wasm     | run/index_dict.bp | C-18 | decision 47: the present key is right (`1`); the two absent probes print `0`
+beam     | run/index_dict.bp | C-18 | decision 47: the erlang shape — `1`, then `undefined` twice
 erlang   | run/index_at_optional.bp | C-18 | decision 47: an absent `?V` prints the atom `undefined`, not `null` — `1` / `undefined` / `b` / `undefined`; `Dict.at` and `String.at` themselves answer correctly
 wasm     | run/index_at_optional.bp | C-18 | decision 47: an absent optional prints as `0` for `d.at("zz")` and as `undefined` for `s.at(7)`, where `null` is owed — re-measured at `fix/wasm-refusals`: `1` / `0` / `b` / `undefined`, exit 0. The second half this line used to carry is gone: `String.at` has a wasm lowering now (`$__str_at`), `s.at(1)` answers `b` instead of trapping, and `run/string_at.bp` pins that on all four targets
 beam     | run/index_at_optional.bp | C-18 | decision 47: the erlang shape — `undefined` twice for the two absent probes

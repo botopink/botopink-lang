@@ -42,7 +42,7 @@ function __bp_print() {
 
 function main() {
     const fs = [1.5, 2.5];
-    __bp_print(fs[0]);
+    __bp_print(fs.at(0));
     __bp_print(fs.at(0));
 }
 

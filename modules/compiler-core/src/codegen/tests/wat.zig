@@ -597,24 +597,43 @@ test "wat: case ---- a failing guard falls through to the next arm" {
     );
 }
 
-// ── decision 30: the index expression ────────────────────────────────────────
+// ── C-02: an index IS a method call (decision 63, amended 2026-09-19) ───────
 //
 // `15-language-surface` landed `xs[0]` in the parser as the reserved builtin
 // call `ast.index_builtin_name` over `(receiver, index)`, and `xs[0..2]` is the
-// same node with a `range` where the index goes. Until a backend lowers it the
-// form falls into the unrecognised-builtin path, which on wasm left **nothing
-// on the stack**: `wasmtime` refused the module ("expected i32 but nothing on
-// stack at offset 195"). **All four backends lower it now** — `04-js` at
-// `17e20592`, `02-erlang` and `03-beam` in the `f8d97f95` window. erlang refused
-// the module outright (`function '[]'/2 undefined`) and beam was the worst of the
-// four: it **ran**, exit 0, answering the receiver or `ok` where an element
-// belongs (`xs[9]` printed the whole `[10,20,30]`).
+// same node with a `range` where the index goes. Each backend then grew its own
+// lowering for that node — and the checker still had no type for it, so `xs[0]`
+// was `void` and every front wrote `.at(i)` by hand.
 //
-// Two divergences among the four, neither this row's: a slice prints `[20, 30]`
+// C-02 removed the node instead. The checker rewrites it: `xs[k]` IS `xs.at(k)`,
+// `xs[a..b]` is `xs.slice(a, b)`, `xs[1..]` is `xs.slice(1, null)`, and a tuple's
+// `t[0]` is `t._0`. The four fixtures below are unchanged on purpose — the same
+// programs, re-recorded — because what they now measure is different: not four
+// lowerings of an index, but whether `Array.at`, `Array.slice` and `String.slice`
+// answer on each target. Two of them do not, and BOTH are reproducible with the
+// method written by hand and no index anywhere in the program:
+//
+//   wasm   `rows.at(1)` on an array OF arrays answers a raw heap address (`308`),
+//          and `.at(0)` / `.length` of that is `0`; `s.slice(3, null)` — an open
+//          end — traps with `out of bounds memory access`. Decision 47's `?T` on
+//          wasm carries a non-scalar badly; that is C-18's row and `05-wasm`'s
+//          file, not this one.
+//   beam   `xs.slice(1, null)` and `s.slice(1, 3)` do not assemble:
+//          `beam_asm` folds `Array.slice`'s `default fn` body to its
+//          `end != null` arm with no test emitted (the `.S` calls
+//          `lists:sublist/3` on `{atom, undefined}`), and it emits a
+//          `String_slice/3` whose labels do not resolve. `codegen/beam_asm.zig`
+//          is `fix/identity-half3`'s file right now; reported, not reached into.
+//
+// The gain is on the same two targets, and it is why the trade is worth taking:
+// beam used to RUN these programs at exit 0 and answer the receiver or `ok`
+// where an element belongs, and wasm answered `0` for an index past the end. An
+// index that fails is a defect that can be found; an index that quietly answers
+// the wrong thing is what sent two fronts to `.length()`.
+//
+// One divergence among the four is nobody's row here: a slice prints `[20, 30]`
 // on commonJS and beam against `[20,30]` on wasm and erlang (decision 8 §7's
-// separator — this front's step 1 F1, and 02 has the same row), and `xs[9]`
-// answers `undefined` on three backends against `0` on wasm — whether decision 30
-// means `T` or `?T` is still open (`ast.zig:1734`).
+// separator).
 test "wat: index ---- an array element, a string character and a slice" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
@@ -633,9 +652,11 @@ test "wat: index ---- an array element, a string character and a slice" {
     );
 }
 
-// An index past the end answers the element type's zero, the rule `$__arr_at`
-// already followed for `xs.at(i)`. Whether decision 30 means `T` or `?T` is
-// `01-checker`'s to settle (`ast.zig:1734`); this pins what wasm answers today.
+// An index past the end is `xs.at(9)`, whose type is `?i32`, and decision 47
+// spells absent `null`. Three backends print the empty optional as `undefined`
+// and wasm prints it as `0` — C-18's row, one row for four targets instead of
+// the two different wrong answers this fixture used to hold (wasm answered `0`
+// from its own `$__arr_at` while the other three answered `undefined`).
 test "wat: index ---- an index past the end answers zero" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
@@ -645,11 +666,11 @@ test "wat: index ---- an index past the end answers zero" {
     );
 }
 
-// A float array's slots are `f32`, so the four bytes `$__arr_at` answers are
-// the float's *bits*: `fs[0]` reinterprets them. `fs.at(0)` boxes them as a
-// `?T`, and reading that box with `$__print_opt_i32` printed `1069547520` for
-// `1.5` — a wrong value with exit 0. `$__print_opt_f32` is the box's own
-// printer, in its own helper group so no other module's text moves.
+// A float array's slots are `f32`. `fs[0]` and `fs.at(0)` are now the SAME
+// expression — that is the whole of decision 63's amendment in one line — so
+// the two prints are one lowering and answer `1.5` on all four targets. The
+// fixture used to pin them as two different paths, one of which (`$__print_opt_i32`
+// over a `?f32` box) printed `1069547520` for `1.5`.
 test "wat: index ---- a float array element is reinterpreted, not read as bits" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
@@ -660,31 +681,17 @@ test "wat: index ---- a float array element is reinterpreted, not read as bits" 
     );
 }
 
-// The two shapes `tests/language/run/index_expression.bp` asked for that the
-// three fixtures above do not reach, both wrong on wasm with exit 0 until now:
+// The shapes `tests/language/run/index_expression.bp` asks for that the three
+// fixtures above do not reach: an index whose element is itself an array
+// (`rows[1][0]`, which is `rows.at(1).at(0)` — a method call on a `?T`
+// receiver, which the checker lets flow), a slice's length, and a tuple
+// element.
 //
-//   `rows[1][0]`      an index whose element is itself an array. `isArrayExpr`
-//                     answered no for `rows[1]`, so the inner index fell to
-//                     `unreachable` ("index on an unknown receiver") — the cell
-//                     trapped. `indexElemShape` strips one `[` off the
-//                     receiver's print shape (`[[i` → `[i`), which is what
-//                     tells `rows[1]` from `xs[1]`.
-//   `xs[0..2].length` a slice's length. Inference records `.prim` only where it
-//                     typed the receiver and it does not type decision 30's node
-//                     yet, so this reached the field-access stub and printed
-//                     `i32.const 0` — a wrong length, exit 0, no diagnostic. The
-//                     backend's own `isArrayExpr`/`isStringExpr` answer instead.
-//
-// A tuple element is here too, because it takes the same path through
-// `indexElemShape` (`[(is)` → `(is)`), and a nested array printed whole, to pin
-// that the shaped printer still walks both levels.
-// All four backends answer since 02's and 03's index lowerings landed, and this
-// fixture is where the remaining divergence shows: **KNOWN-WRONG (beam)** — beam
-// drops `.length` on an index or slice receiver, exit 0, answering the array
-// instead (`rows[0].length` → `[1, 2]`, `xs[0..2].length` → `[10, 20]`,
-// `s[1..3].length` → `el` where all three mean `2`), which is the beam twin of the
-// gap this commit closes on wasm and is `03-beam`'s to take. commonJS and erlang
-// answer, modulo §7's separator.
+// commonJS and erlang answer everything, modulo §7's separator. The two that do
+// not are named in this section's header and are the libraries' methods on
+// those targets, not the index: on wasm `rows.at(1)` is a heap address and
+// `rows.at(0).length` is `0`; on beam the module does not assemble, because
+// `String_slice/3` comes out with unresolved labels.
 test "wat: index ---- a nested index, a slice's length and a tuple element" {
     try h.assertJsSingle(std.testing.allocator, @src(),
         \\fn main() {
@@ -699,6 +706,30 @@ test "wat: index ---- a nested index, a slice's length and a tuple element" {
         \\    @print(sl.length);
         \\    val ps = [#(1, "a"), #(2, "b")];
         \\    @print(ps[1]);
+        \\}
+    );
+}
+
+// A string slice's length, which belonged in the fixture above and is its own
+// because of a beam defect that would otherwise hide all seven of that one's
+// claims: with a CHAINED primitive method anywhere in the same module
+// (`rows.at(1).at(0)`), `beam_asm` emits `String_slice/3` **twice**, with the
+// same two labels, and `erlc +from_asm` refuses the module — so
+// `scripts/beam_export_audit.sh` refuses the snapshot. Measured by hand, with
+// no index expression in the program at all:
+//
+//     val rows = [[1, 2], [3, 4]];
+//     @print(rows.at(1).at(0));
+//     val s = "hello";
+//     @print(s.slice(1, 3));     // → two `{function, 'String_slice', 3, …}` forms
+//
+// Drop either half and one copy is emitted and the module assembles. It is a
+// duplicate-emission bug in the `default fn` helper, `codegen/beam_asm.zig`'s
+// file — `fix/identity-half3`'s right now — and it is reported rather than
+// reached into.
+test "wat: index ---- a string slice's length" {
+    try h.assertJsSingle(std.testing.allocator, @src(),
+        \\fn main() {
         \\    val s = "hello";
         \\    @print(s[1..3].length);
         \\}

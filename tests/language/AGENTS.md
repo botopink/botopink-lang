@@ -35,7 +35,10 @@ Areas, by filename prefix: `case_*`, `tuple_*`, `loop_*` (decision 8 §5, §6, �
 `optional*` (`optional`, and decision 54's `optional_null_pattern` / `optional_variant_pattern`),
 `context_use` / `use_*` (front 19 of 1.0.10-beta: `use` and `@Context`, two test cells, one run
 cell and eight reject cells), `index_*` (decision 63 as amended: `run/index_dict`,
-`run/index_past_the_end_fails`, `run/index_at_optional`), `std_erlang_node` (decision 64),
+`run/index_past_the_end_is_null` — renamed from `…_fails` when C-02 landed, because the
+amendment makes an index past the end `null` and not a failure — `run/index_at_optional`,
+`run/index_tuple` with `reject/index_tuple_computed` and `reject/index_tuple_out_of_range`
+for the checker's one special case), `std_erlang_node` (decision 64),
 `panic_aborts` / `todo_aborts` (front 12 step 4.3), `external_erlang_only` (step 4.4),
 `string_at` (`05-wasm`: the `String.at` reader, on all four targets), and the
 singletons (`closure_capture`, `recursion`, `expr_sugar`, `fn_defaults` (with `run/fn_defaults_values`, the VALUE on all four targets, and `reject/missing_required_argument`, N2 — both 1.0.10-beta's C-04), the two `lambda_*` cells of
@@ -607,7 +610,7 @@ From 348 / 45 and 31 / 18 at `85f883bd` before C-16: **+12 lines** (8 `C-02`, 3 
 step; …)` / `02 step 5` / `03 step 3` / `04 step 3` to `C-06 (<backend> half not landed)`), none
 deleted — `8594e4ba` had already deleted the three wasm lines, and C-16 verified they stay deleted by
 running the cells and the six moved `loop_*` RUN LOGs under wasmtime. The eight new cells pass 15
-results and are listed on 12 (`run/index_dict` ×4, `run/index_past_the_end_fails` ×4,
+results and are listed on 12 (`run/index_dict` ×4, `run/index_past_the_end_fails` ×4 (the cell is `run/index_past_the_end_is_null` since C-02),
 `run/index_at_optional` ×3, `run/std_erlang_node` on beam). The pre-C-16 tallies below are the audit
 trail.
 

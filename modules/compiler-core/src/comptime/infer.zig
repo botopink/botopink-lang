@@ -4824,7 +4824,10 @@ fn isKnownBuiltinName(env: *Env, callee: []const u8) bool {
     for (runtime_builtin_names) |n| {
         if (std.mem.eql(u8, n, callee)) return true;
     }
-    // The parser's own sugar: `xs[i]` lands as the `[]` builtin call.
+    // The parser's own sugar: `xs[i]` lands as the `[]` builtin call. C-02
+    // intercepts it in `inferCallExpr` and it no longer reaches the `void`
+    // fallback below; the name stays known so a `[]` that survived a degraded
+    // module is not reported as a misspelled builtin.
     if (std.mem.eql(u8, callee, ast.index_builtin_name)) return true;
     return env.stdlibFnDecls.contains(callee);
 }
@@ -9201,6 +9204,141 @@ fn bindUseDestructure(env: *Env, pattern: ast.ParamDestruct, srcTy: *T.Type) Inf
     }
 }
 
+/// C-02 (decision 63, amended 2026-09-19) — **an index is a method call.**
+///
+/// The index expression has no typing rule of its own. `xs[k]` **is**
+/// `xs.at(k)`, `xs[a..b]` is `xs.slice(a, b)` and `xs[1..]` is
+/// `xs.slice(1, null)`; the type of the expression is whatever the method
+/// answers, which for `Index<K, V>.at` is `?V`.
+///
+/// So indexing stops being a privilege of the three built-in collections: a
+/// library's own `Matrix`, `Row` or `Buffer` answers `at` / `slice` — ambient
+/// behaviors, like `Display`, so the syntax finds the method with nothing
+/// imported — and is indexable **with no compiler change**.
+///
+/// Two halves meet at ONE loc. This function records the untyped method call
+/// under the index node's own loc (`env.indexRewrites`) and types that call;
+/// `comptime/transform.zig` splices it into the untyped AST before codegen.
+/// Because the spliced call keeps the index's loc, every loc-keyed plan
+/// inference made while typing it — the method lowering, C-04's default fill —
+/// still finds its node. **No backend learns a new rule**: all four already
+/// emit a method call, and none of them is touched by this row.
+///
+/// A range second argument is the slice — one AST node serves indexing and
+/// slicing because the index is an ordinary expression (`ast.zig`'s contract) —
+/// and an open end travels as `null`, because `start..end` is an AST node and
+/// not a value: there is no `Range` type to pass.
+fn inferIndexExpr(env: *Env, call: anytype, loc: ast.Loc) InferError!TypedExpr {
+    if (call.args.len != 2) {
+        env.lastError = TypeError.custom(
+            "an index expression carries a receiver and an index",
+            "This is the parser's own sugar (`xs[0]`); reaching here with another shape is a compiler bug.",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    const recvExpr = call.args[0].value;
+    const idxExpr = call.args[1].value;
+
+    // The receiver is typed once, HERE, because only its type tells a tuple
+    // from everything else — and a tuple is the one receiver the behavior
+    // cannot cover. Everything else re-reads it through the rewritten call,
+    // which is the ordinary method path and owes nothing to this row.
+    const typedRecv = try inferExprTyped(env, recvExpr.*);
+    const recvType = typedRecv.getType().deref();
+    if (recvType.* == .named and std.mem.eql(u8, recvType.named.name, "tuple")) {
+        return inferTupleIndexExpr(env, recvType.named.args, recvExpr, idxExpr, loc);
+    }
+
+    const rewrite = try env.arena.create(ast.Expr);
+    if (idxExpr.* == .collection and idxExpr.collection.kind == .range) {
+        const r = idxExpr.collection.kind.range;
+        const args = try env.arena.alloc(ast.CallArgOf(.untyped), 2);
+        args[0] = .{ .label = null, .value = r.start };
+        args[1] = .{ .label = null, .value = r.end orelse blk: {
+            const nullLit = try env.arena.create(ast.Expr);
+            nullLit.* = .{ .literal = .{ .loc = idxExpr.collection.loc, .kind = .null_ } };
+            break :blk nullLit;
+        } };
+        rewrite.* = .{ .call = .{ .loc = loc, .kind = .{ .call = .{
+            .receiver = recvExpr,
+            .callee = index_slice_method,
+            .is_builtin = false,
+            .args = args,
+            .trailing = &.{},
+        } } } };
+    } else {
+        const args = try env.arena.alloc(ast.CallArgOf(.untyped), 1);
+        args[0] = .{ .label = null, .value = idxExpr };
+        rewrite.* = .{ .call = .{ .loc = loc, .kind = .{ .call = .{
+            .receiver = recvExpr,
+            .callee = index_at_method,
+            .is_builtin = false,
+            .args = args,
+            .trailing = &.{},
+        } } } };
+    }
+    try env.indexRewrites.put(loc, rewrite);
+    return inferExprTyped(env, rewrite.*);
+}
+
+/// The two method names the index expression rewrites to — the ones
+/// `Index<K, V>` and `Slice<V>` declare in `libs/std/src/builtins.d.bp`.
+const index_at_method = "at";
+const index_slice_method = "slice";
+
+/// A tuple index — the checker's one special case, and the reason the ambient
+/// behavior covers the other three receivers and not this one: `t[0]` needs a
+/// **constant** index and answers a type **per position**, which
+/// `at(key: K) -> ?V` cannot say with a single `V`.
+///
+/// It rewrites to the positional member access the checker already types and
+/// all four backends already emit (`t[0]` → `t._0`), so the special case costs
+/// a checker arm and no backend arm — the same bargain as the method rewrite,
+/// through a different door.
+fn inferTupleIndexExpr(
+    env: *Env,
+    elems: []*T.Type,
+    recvExpr: *ast.Expr,
+    idxExpr: *ast.Expr,
+    loc: ast.Loc,
+) InferError!TypedExpr {
+    const digits: []const u8 = if (idxExpr.* == .literal and idxExpr.literal.kind == .numberLit)
+        idxExpr.literal.kind.numberLit
+    else {
+        env.lastError = TypeError.custom(
+            "a tuple index must be a constant — a tuple answers a type per position",
+            "Write the position (`t[0]`, `t[1]`) or read the element by its label (`t.pop`); an array or a `Dict` is the indexable a computed key belongs to.",
+        ).withLoc(loc);
+        return error.TypeError;
+    };
+    const idx = std.fmt.parseInt(usize, digits, 10) catch {
+        env.lastError = TypeError.custom(
+            "a tuple index must be a constant — a tuple answers a type per position",
+            "Write the position (`t[0]`, `t[1]`) or read the element by its label (`t.pop`).",
+        ).withLoc(loc);
+        return error.TypeError;
+    };
+    if (idx >= elems.len) {
+        env.lastError = TypeError.custom(
+            try std.fmt.allocPrint(
+                env.arena,
+                "this tuple has {d} element(s), so `[{d}]` names no position",
+                .{ elems.len, idx },
+            ),
+            "A tuple's positions are fixed by its type; the last one is one less than its length.",
+        ).withLoc(loc);
+        return error.TypeError;
+    }
+    const rewrite = try env.arena.create(ast.Expr);
+    rewrite.* = .{ .identifier = .{ .loc = loc, .kind = .{ .identAccess = .{
+        .receiver = recvExpr,
+        .member = try std.fmt.allocPrint(env.arena, "_{d}", .{idx}),
+        .optional = false,
+    } } } };
+    try env.indexRewrites.put(loc, rewrite);
+    return inferExprTyped(env, rewrite.*);
+}
+
 /// Infer type for call expressions (function/method invocations and pipelines)
 fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferError!TypedExpr {
     // R12 (§2) — manual `Result.Ok(...)` / `Result.Error(...)` construction
@@ -9235,6 +9373,13 @@ fn inferCallExpr(env: *Env, c: ast.CallExprOf(.untyped), loc: ast.Loc) InferErro
     }
     return switch (c.kind) {
         .call => |call| {
+            // C-02 (decision 63, amended 2026-09-19) — `xs[k]` IS `xs.at(k)`.
+            // First of all, and before the arguments are inferred: the index
+            // has no typing rule of its own, so there is nothing here to type
+            // until it has become the method call it is.
+            if (call.is_builtin and std.mem.eql(u8, call.callee, ast.index_builtin_name)) {
+                return inferIndexExpr(env, call, loc);
+            }
             // `@src()` (1.0.10-beta decision 73) — before the arguments are
             // inferred, so `@src(x)` reports the builtin's rule and not `x`.
             if (call.is_builtin and std.mem.eql(u8, call.callee, "src")) {

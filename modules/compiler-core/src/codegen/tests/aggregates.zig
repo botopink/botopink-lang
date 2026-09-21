@@ -362,18 +362,27 @@ test "js: surface ---- type and behavior compile like record, enum and interface
     );
 }
 
-// ── front 02-erlang: decision 30's index expression ──────────────────────────
+// ── C-02: an index IS a method call (decision 63, amended 2026-09-19) ────────
 //
 // `xs[0]`, `s[0]`, `t[0]` and `xs[0..2]` are one AST node — the builtin call
 // `[]` over `(receiver, index)`, with a `range` second argument for the slice
-// (`ast.index_builtin_name`, `ast.zig:1718-1740`). `01-checker` does not type it
-// yet, so the erlang lowering dispatches on the receiver at run time; these
-// cells pin what each shape answers, by running the emitted module.
+// (`ast.index_builtin_name`) — and the checker now rewrites every one of them
+// before any backend sees it: `xs[k]` IS `xs.at(k)`, `xs[a..b]` is
+// `xs.slice(a, b)` and `xs[1..]` is `xs.slice(1, null)`. So what these cells
+// pin is no longer an erlang lowering of the index: it is that the index
+// arrives here as the ORDINARY METHOD CALL this backend already emitted and
+// already tested, and that running it answers what the method answers.
 //
-// Before the lowering, every one of them emitted `'[]'(Xs, 0)` — the
-// unrecognised-builtin path — and erlc answered `function '[]'/2 undefined`.
+// The needles say exactly that. `'__bp_index'/2` and `'__bp_slice'/3` — the
+// run-time dispatchers this backend used while the checker had no type for the
+// node — are not emitted any more; `Array.at`'s own `@External.Erlang`
+// template is, and `default fn slice` compiles to one `array_slice/3` with the
+// `end =/= undefined` test the language wrote.
 
 test "erlang: index ---- a list, a string and a tuple answer by position" {
+    // The tuple is the checker's one special case (a constant index, a type per
+    // position), and it rewrites to the positional access erlang already
+    // lowered: `element(1, T)`, no method and no dispatcher.
     try h.assertErlangRunLog(std.testing.allocator,
         \\fn main() {
         \\  val xs = [10, 20, 30];
@@ -384,21 +393,24 @@ test "erlang: index ---- a list, a string and a tuple answer by position" {
         \\  val t = #(1, "a");
         \\  @print(t[0]);
         \\}
-    , "10\n30\nb\n1\n", &.{"'__bp_index'(Xs, 0)"});
+    , "10\n30\nb\n1\n", &.{ "lists:nth(__I + 1, __L)", "element(1, T)" });
 }
 
 test "erlang: index ---- out of range answers undefined, not an error" {
-    // The same answer `Array.at` gives and the same one commonJS's `xs[0]`
-    // gives. Whether the language calls that `?T` is `01-checker`'s row.
+    // `xs[5]` is `xs.at(5)`, whose type is `?i32`; decision 47 spells absent
+    // `null` and erlang prints an empty optional as the atom `undefined`, which
+    // is C-18's row rather than this one's. What this cell pins is that the
+    // index reaches `Array.at` at all and does not abort.
     try h.assertErlangRunLog(std.testing.allocator,
         \\fn main() { val xs = [10, 20]; @print(xs[5]); }
     , "undefined\n", &.{});
 }
 
 test "erlang: index ---- a range second argument is a slice, open end included" {
-    // The range is read as two bounds rather than lowered: the range
-    // lowering materialises `lists:seq/2`, a whole list of indices, and an
-    // open end keeps the atom `infinity` that lowering writes.
+    // There is no `Range` type — `start..end` is an AST node, not a value — so
+    // the rewrite passes two bounds and an open end travels as `null`, which is
+    // `undefined` on erlang. `Array.slice` is a `default fn` in `libs/std`, so
+    // one `array_slice/3` carries both arms and the backend learns nothing.
     try h.assertErlangRunLog(std.testing.allocator,
         \\fn main() {
         \\  val xs = [10, 20, 30];
@@ -407,19 +419,18 @@ test "erlang: index ---- a range second argument is a slice, open end included" 
         \\  val s = "abcd";
         \\  @print(s[1..3]);
         \\}
-    , "[10,20]\n[20,30]\nbc\n", &.{ "'__bp_slice'(Xs, 0, 2)", "'__bp_slice'(Xs, 1, infinity)" });
+    , "[10,20]\n[20,30]\nbc\n", &.{ "array_slice(Xs, 0, 2)", "array_slice(Xs, 1, undefined)" });
 }
 
-// Decision 30's index expression, which the parser lands as the builtin call
-// `ast.index_builtin_name` over `(receiver, index)` — one node for the element
-// read and the slice, since the index is an ordinary expression. Written under
-// `@print`, which is the only position the checker lets it through today: it
-// types the call `void` (01-checker owns typing it by the receiver), so
-// `val a: i32 = xs[0]` is still "expected i32, got void".
+// C-02 on commonJS. The same rewrite, seen from the backend that needed the
+// least: `xs[0]` was already a JS index and is now `xs.at(0)` — the method the
+// language says it is, and the one that answers `?T` on an array of anything.
+// The checker used to answer `void` for this node, which is why two fronts wrote
+// `.length()` around an index rather than indexing; what it answers now is what
+// the method answers, and `tests/language/run/index_*` pins that by running.
 //
-// No snapshot: fronts 02, 03 and 05 each own their backend's lowering of the
-// same node, and a shared fixture would write their still-unlowered `@[]` into
-// the snapshot directories they own.
+// A tuple keeps a bare JS index, because a tuple's rewrite is `t._0` and a
+// tuple is a JS array.
 test "js: index ---- element, slice, open slice, string and tuple" {
     const src =
         \\fn main() {
@@ -438,15 +449,16 @@ test "js: index ---- element, slice, open slice, string and tuple" {
         \\}
     ;
     try h.assertJsContains(std.testing.allocator, src, &.{
-        "__bp_print(xs[0]);",
+        "__bp_print(xs.at(0));",
         "__bp_print(xs.slice(0, 2));",
-        "__bp_print(xs.slice(1));",
-        "__bp_print(s[1]);",
+        "__bp_print(xs.slice(1, null));",
+        "__bp_print(__bp_string_char_at(s, 1));",
         "__bp_print(s.slice(1, 3));",
-        "__bp_print(xs[(i + 1)]);",
-        "__bp_print([[1, 2], [3, 4]][1][0]);",
+        "__bp_print(t[0]);",
+        "__bp_print(xs.at((i + 1)));",
+        "__bp_print([[1, 2], [3, 4]].at(1).at(0));",
     });
-    // An open-ended range is `.slice(start)` here and the lazy
+    // An open-ended range is `.slice(start, null)` here and the lazy
     // `__bp_range_from` generator everywhere else, so the helper is not pulled
     // in by a slice.
     try h.assertJsNotContains(std.testing.allocator, src, &.{"__bp_range_from"});

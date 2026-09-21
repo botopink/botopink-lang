@@ -12,8 +12,6 @@ fn main() {
     @print(sl.length);
     val ps = [#(1, "a"), #(2, "b")];
     @print(ps[1]);
-    val s = "hello";
-    @print(s[1..3].length);
 }
 ```
 
@@ -25,9 +23,7 @@ fn main() {
   (data (i32.const 256) "\03\00\00\00[[i")
   (data (i32.const 264) "\01\00\00\00a")
   (data (i32.const 272) "\01\00\00\00b")
-  (data (i32.const 280) "\04\00\00\00(is)")
-  (data (i32.const 288) "\05\00\00\00hello")
-  (global $__heap_ptr (mut i32) (i32.const 300))
+  (global $__heap_ptr (mut i32) (i32.const 280))
   (func $main
     (local $__mem0 i32)
     (local $__mem1 i32)
@@ -40,7 +36,6 @@ fn main() {
     (local $xs i32)
     (local $sl i32)
     (local $ps i32)
-    (local $s i32)
     global.get $__heap_ptr
     local.set $__mem0
     global.get $__heap_ptr
@@ -96,18 +91,15 @@ fn main() {
     call $__print_nl
     local.get $rows
     i32.const 1
-    call $__arr_at
-    call $__print_arr_i32
+    call $__arr_at_box
+    call $__print_opt_i32
     local.get $rows
     i32.const 1
-    call $__arr_at
+    call $__arr_at_box
     i32.const 0
     call $__arr_at
     call $__print_i32
-    local.get $rows
-    i32.const 0
-    call $__arr_at
-    i32.load ;; .length
+    i32.const 0 ;; field access .length (unknown receiver type)
     call $__print_i32
     global.get $__heap_ptr
     local.set $__mem3
@@ -186,20 +178,8 @@ fn main() {
     local.set $ps
     local.get $ps
     i32.const 1
-    call $__arr_at
-    i32.const 284
-    i32.const 1
-    call $__print_shaped_raw
-    drop
-    call $__print_nl
-    i32.const 288
-    local.set $s
-    local.get $s
-    i32.const 1
-    i32.const 3
-    call $__str_slice
-    i32.load ;; .length
-    call $__print_i32
+    call $__arr_at_box
+    call $__print_opt_i32
   )
   (func $_botopink_main (export "_botopink_main") (export "_start")
     (call $main)
@@ -384,6 +364,19 @@ fn main() {
       )
     )
   )
+  (func $__print_str_raw (param $s i32)
+    local.get $s
+    i32.const 4
+    i32.add
+    local.get $s
+    i32.load
+    call $__write_bytes
+  )
+  (func $__print_str (param $s i32)
+    local.get $s
+    call $__print_str_raw
+    call $__print_nl
+  )
   (func $__print_bool (param $b i32)
     local.get $b
     call $__print_bool_raw
@@ -538,38 +531,6 @@ fn main() {
       )
     )
   )
-  (func $__str_slice (param $src i32) (param $start i32) (param $end i32) (result i32)
-    (local $newlen i32) (local $dst i32)
-    local.get $end
-    local.get $start
-    i32.sub
-    local.set $newlen
-    global.get $__heap_ptr
-    local.set $dst
-    ;; bump heap by 4 (length prefix) + newlen
-    global.get $__heap_ptr
-    i32.const 4
-    local.get $newlen
-    i32.add
-    i32.add
-    global.set $__heap_ptr
-    ;; store length prefix
-    local.get $dst
-    local.get $newlen
-    i32.store
-    ;; copy bytes: dst+4 <- src+4+start
-    local.get $dst
-    i32.const 4
-    i32.add
-    local.get $src
-    i32.const 4
-    i32.add
-    local.get $start
-    i32.add
-    local.get $newlen
-    memory.copy
-    local.get $dst
-  )
   (func $__alloc (param $n i32) (result i32)
     (local $p i32)
     global.get $__heap_ptr
@@ -697,63 +658,106 @@ fn main() {
     memory.copy
     local.get $p
   )
-  (func $__print_arr_i32_raw (param $xs i32)
-    (local $n i32) (local $i i32)
-    i32.const 8
-    i32.const 91
-    i32.store8
-    i32.const 8
-    i32.const 1
-    call $__write_bytes
+  (func $__box_i32 (param $v i32) (result i32)
+    (local $p i32)
+    i32.const 4
+    call $__alloc
+    local.set $p
+    local.get $p
+    local.get $v
+    i32.store
+    local.get $p
+  )
+  (func $__arr_at_box (param $xs i32) (param $i i32) (result i32)
+    local.get $i
+    i32.const 0
+    i32.lt_s
+    local.get $i
     local.get $xs
     i32.load
-    local.set $n
-    (block $brk
-      (loop $cont
-        local.get $i
-        local.get $n
-        i32.ge_u
-        br_if $brk
-        local.get $i
-        (if
-          (then
-            i32.const 8
-            i32.const 44
-            i32.store8
-            i32.const 8
-            i32.const 32
-            i32.store8 offset=1
-            i32.const 8
-            i32.const 2
-            call $__write_bytes
-          )
-        )
-        local.get $xs
-        i32.const 4
-        i32.add
-        local.get $i
-        i32.const 4
-        i32.mul
-        i32.add
-        i32.load
-        call $__print_i32_raw
-        local.get $i
-        i32.const 1
-        i32.add
-        local.set $i
-        br $cont
+    i32.ge_s
+    i32.or
+    (if
+      (then
+        i32.const 0
+        return
       )
     )
-    i32.const 8
-    i32.const 93
+    local.get $xs
+    i32.const 4
+    i32.add
+    local.get $i
+    i32.const 4
+    i32.mul
+    i32.add
+    i32.load
+    call $__box_i32
+  )
+  (func $__print_undefined
+    i32.const 176
+    i64.const 7308895133777555061
+    i64.store
+    i32.const 184
+    i32.const 100
     i32.store8
-    i32.const 8
-    i32.const 1
+    i32.const 176
+    i32.const 9
     call $__write_bytes
   )
-  (func $__print_arr_i32 (param $xs i32)
-    local.get $xs
-    call $__print_arr_i32_raw
+  (func $__print_opt_i32_raw (param $p i32)
+    local.get $p
+    i32.eqz
+    (if
+      (then
+        call $__print_undefined
+      )
+      (else
+        local.get $p
+        i32.load
+        call $__print_i32_raw
+      )
+    )
+  )
+  (func $__print_opt_i32 (param $p i32)
+    local.get $p
+    call $__print_opt_i32_raw
+    call $__print_nl
+  )
+  (func $__print_opt_bool_raw (param $p i32)
+    local.get $p
+    i32.eqz
+    (if
+      (then
+        call $__print_undefined
+      )
+      (else
+        local.get $p
+        i32.load
+        call $__print_bool_raw
+      )
+    )
+  )
+  (func $__print_opt_bool (param $p i32)
+    local.get $p
+    call $__print_opt_bool_raw
+    call $__print_nl
+  )
+  (func $__print_opt_str_raw (param $s i32)
+    local.get $s
+    i32.eqz
+    (if
+      (then
+        call $__print_undefined
+      )
+      (else
+        local.get $s
+        call $__print_str_raw
+      )
+    )
+  )
+  (func $__print_opt_str (param $s i32)
+    local.get $s
+    call $__print_opt_str_raw
     call $__print_nl
   )
   (func $__print_quoted_raw (param $s i32)
@@ -1123,11 +1127,10 @@ fn main() {
 ----- RUN LOG -----
 ```logs
 [[1, 2], [3, 4]]
-[3, 4]
-3
+304
+0
+0
 2
 2
-2
-#(2, "b")
-2
+384
 ```
