@@ -62,8 +62,8 @@ Status.Fail = new Status$Fail();
 function check(s) {
     {
         const _s = s;
-        if (_s instanceof Status$Ok) return ({ ok: 1 });
-        if (_s instanceof Status$Fail) return ({ error: "failed" });
+        if (_s.tag === "Ok") return ({ ok: 1 });
+        if (_s.tag === "Fail") return ({ error: "failed" });
     }
 }
 

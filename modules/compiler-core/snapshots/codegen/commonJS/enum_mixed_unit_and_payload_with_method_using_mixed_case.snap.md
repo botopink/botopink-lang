@@ -22,7 +22,7 @@ class Maybe {
     static check(m) {
         return (() => {
             const _s = m;
-            if (_s instanceof Maybe$Nothing) return "nothing";
+            if (_s.tag === "Nothing") return "nothing";
             if (_s.tag === "Just") {
                 const { value } = _s;
                 return "just";

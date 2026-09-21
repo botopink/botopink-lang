@@ -67,6 +67,15 @@ at `361d255d` — the cell was written against the array `"dependencies"` of `85
 object form when the workspaces manifest (`aa80e30b`) started refusing the array. A dependency ships
 only what `files` lists — `root.bp` included, or the handle never reaches the consumer.
 
+`modules/package_variant_identity` is the second local-dependency cell, and it is here because the
+defect it pins is **invisible in one package**: the value is built in the consumer and the `case`
+that reads it lives in the dependency. commonJS tested a payload-less arm with `instanceof` whenever
+the variant's bare name was unique in the module; an enum SECTION desugars into an inner enum no
+module exports, so its classes are re-emitted per module and the consumer's value was never
+`instanceof` the library's class — the `case` fell through every arm and printed `undefined`, at
+exit 0. The cell prints four values through one dispatcher: a uniquely-named variant, a repeated one
+(`Lg` is declared twice, which is why it always worked), and one of each section head.
+
 ### The sidecars of a `run/` cell
 
 Three optional files beside `run/<name>.bp`, each a claim the cell makes (C-16, front 12 steps 4.3

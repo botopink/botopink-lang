@@ -172,8 +172,24 @@ codegen/
 - **Variant payload arms**: `collectVariantFields` indexes every local payload
   variant's declared field names; `Circle(r) ->` binds positionally
   (`const { radius: r } = _s;`). A variant declared in another module keeps the
-  binding as the key. A payload-less variant arm tests `instanceof` when its
-  bare name names one class in the module and `_s.tag === "Name"` otherwise.
+  binding as the key. A payload-less variant arm tests `_s.tag === "Name"` —
+  always, in every module.
+- **A variant's identity is its `tag`, never its class.** A payload-less arm
+  used to test `_s instanceof <Enum>$<Variant>` whenever the bare name was
+  unique in the module, and `tag` only when it repeated. A class is
+  per-emitted-COPY identity and a copy is emitted per module for every enum a
+  module cannot `require` — an enum SECTION desugars into an inner enum that no
+  module exports, so `Token.Text.Size` is re-emitted in each module that names
+  it. A value built in a consuming package was then never `instanceof` the
+  class the library matched against: the arm did not fire, no later arm did
+  either, and the whole `case` answered `undefined` at exit 0, with no
+  diagnostic. `tag` is a string on the prototype, so it crosses every copy,
+  module and package boundary, and it is what `variantTest`, the payload arms
+  and `@Result` already used. `unit_variant_names` therefore records only the
+  NAMES, to tell a variant from a binding. Pinned by
+  `tests/language/modules/package_variant_identity/`, which one package cannot
+  express. `is`/`val assert` still test `instanceof` (below) and inherit the
+  same limit wherever a class is re-emitted.
 - **`.len`**: `s.len` / `arr.len` on a typed string/array (inference records
   `.prim` in `instance_lowerings`, threaded in as `Emitter.lowerings`) emits
   the native `.length` property; a record field named `len` is untouched (C3).

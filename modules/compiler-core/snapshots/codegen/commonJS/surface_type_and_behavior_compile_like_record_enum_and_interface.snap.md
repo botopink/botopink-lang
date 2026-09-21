@@ -94,7 +94,7 @@ Size.Small = new Size$Small();
 function weight(s) {
     return (() => {
         const _s = s;
-        if (_s instanceof Size$Small) return 1;
+        if (_s.tag === "Small") return 1;
         if (_s.tag === "Large") {
             const { n } = _s;
             return n;
